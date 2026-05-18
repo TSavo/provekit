@@ -5,14 +5,16 @@ use std::path::{Path, PathBuf};
 
 use provekit_canonicalizer::blake3_512_of;
 use provekit_ir_types::{
-    ExamManifestMemento, GapKind, IrFormula, IrTerm, OptionStatus, PromotionDecisionEnvelope,
-    PromotionDecisionHeader, PromotionDecisionMemento, PromotionDecisionMetadata, PromotionGate,
-    PromotionResult, ResolutionOption, ResolutionOptionKind, Sort, TransportGapMemento,
+    ExamManifestMemento, GapKind, HaltMemento, IrFormula, IrTerm, OptionStatus,
+    PromotionDecisionEnvelope, PromotionDecisionHeader, PromotionDecisionMemento,
+    PromotionDecisionMetadata, PromotionGate, PromotionResult, RefusalMemento, ResolutionOption,
+    ResolutionOptionKind, Sort, TransportGapMemento,
 };
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value as Json};
 use thiserror::Error;
 
+use crate::effect_propagation::{propagate_effects, PropagationDecision, PropagationInput};
 use crate::proofir_bridge::CatalogIndex;
 
 use super::primitives::address;
@@ -191,9 +193,17 @@ pub struct BindContractWitness {
 pub struct NamedTermDocument {
     #[serde(
         default,
-        rename = "gapRecords",
+        rename = "effectHaltMementos",
         skip_serializing_if = "Vec::is_empty"
     )]
+    pub effect_halt_mementos: Vec<HaltMemento>,
+    #[serde(
+        default,
+        rename = "effectRefusalMementos",
+        skip_serializing_if = "Vec::is_empty"
+    )]
+    pub effect_refusal_mementos: Vec<RefusalMemento>,
+    #[serde(default, rename = "gapRecords", skip_serializing_if = "Vec::is_empty")]
     pub gap_records: Vec<Json>,
     pub kind: String,
     #[serde(rename = "promotionDecisionMementos")]
@@ -280,6 +290,8 @@ pub fn bind_term_document(
     let mut decisions = Vec::new();
     let mut gap_records = Vec::new();
     let mut operation_namer = UnnamedConceptNamer::default();
+    let effect_report = bind_effect_propagation(term_json)?;
+    decisions.extend(effect_report.promotion_decisions);
     for (idx, entry) in entries.into_iter().enumerate() {
         let concept_name = concept_name_for(&entry, idx + 1, &catalog);
         let name = unique_name(&concept_name, &mut seen_names);
@@ -340,6 +352,8 @@ pub fn bind_term_document(
     }
 
     Ok(NamedTermDocument {
+        effect_halt_mementos: effect_report.halt_mementos,
+        effect_refusal_mementos: effect_report.refusal_mementos,
         gap_records,
         kind: "named-term-document".to_string(),
         promotion_decision_mementos: decisions,
@@ -348,6 +362,151 @@ pub fn bind_term_document(
         terms,
         workspace_root,
     })
+}
+
+#[derive(Default)]
+struct BindEffectPropagationReport {
+    promotion_decisions: Vec<PromotionDecisionMemento>,
+    halt_mementos: Vec<HaltMemento>,
+    refusal_mementos: Vec<RefusalMemento>,
+}
+
+fn bind_effect_propagation(term_json: &Json) -> Result<BindEffectPropagationReport, BindError> {
+    let Some(input) = effect_propagation_input(term_json)? else {
+        return Ok(BindEffectPropagationReport::default());
+    };
+    let plan = propagate_effects(&input)
+        .map_err(|error| BindError::Failed(format!("effect propagation: {error}")))?;
+    let mut report = BindEffectPropagationReport::default();
+    for (function, decision) in plan.decisions {
+        match decision {
+            PropagationDecision::Widen {
+                effect,
+                function_cid,
+                triggering_callsite_cid,
+            } => report.promotion_decisions.push(effect_promotion_decision(
+                &function,
+                &function_cid,
+                &triggering_callsite_cid,
+                &effect,
+            )?),
+            PropagationDecision::Halt {
+                admitting_signature_cid,
+                function_cid,
+                reason,
+            } => {
+                let mut halt = HaltMemento {
+                    admitting_sig: admitting_signature_cid,
+                    cid: String::new(),
+                    function_cid,
+                    kind: "halt".to_string(),
+                    reason,
+                    schema_version: "1".to_string(),
+                };
+                halt.cid = halt
+                    .recompute_cid()
+                    .map_err(|error| BindError::Failed(error.to_string()))?;
+                report.halt_mementos.push(halt);
+            }
+            PropagationDecision::Refuse {
+                forbidding_contract_cid,
+                function_cid,
+                reason,
+                ..
+            } => {
+                let mut refusal = RefusalMemento {
+                    cid: String::new(),
+                    forbidding_contract: forbidding_contract_cid,
+                    function_cid,
+                    kind: "refusal".to_string(),
+                    reason,
+                    schema_version: "1".to_string(),
+                };
+                refusal.cid = refusal
+                    .recompute_cid()
+                    .map_err(|error| BindError::Failed(error.to_string()))?;
+                report.refusal_mementos.push(refusal);
+            }
+        }
+    }
+    Ok(report)
+}
+
+fn effect_propagation_input(term_json: &Json) -> Result<Option<PropagationInput>, BindError> {
+    let Some(value) = term_json
+        .get("effectPropagation")
+        .or_else(|| term_json.get("effect_propagation"))
+    else {
+        return Ok(None);
+    };
+    serde_json::from_value(value.clone())
+        .map(Some)
+        .map_err(|error| BindError::Failed(format!("parse effect propagation graph: {error}")))
+}
+
+fn effect_promotion_decision(
+    function: &str,
+    function_cid: &str,
+    triggering_callsite_cid: &str,
+    effect: &str,
+) -> Result<PromotionDecisionMemento, BindError> {
+    let policy_cid = crate::canonical::json_cid(&json!({
+        "effect": effect,
+        "kind": "policy",
+        "name": "bind-effect-propagation"
+    }))
+    .map_err(|error| BindError::Failed(error.to_string()))?;
+    let decider_cid = crate::canonical::json_cid(&json!({
+        "kind": "decider",
+        "name": "provekit-bind-effect-propagation"
+    }))
+    .map_err(|error| BindError::Failed(error.to_string()))?;
+    let promoted_cid = crate::canonical::json_cid(&json!({
+        "effect": effect,
+        "function_cid": function_cid,
+        "kind": "promoted-function"
+    }))
+    .map_err(|error| BindError::Failed(error.to_string()))?;
+    let mut decision = PromotionDecisionMemento {
+        envelope: PromotionDecisionEnvelope {
+            declared_at: "2026-05-18T00:00:00.000Z".to_string(),
+            signature: String::new(),
+            signer: decider_cid.clone(),
+        },
+        header: PromotionDecisionHeader {
+            candidate_cid: function_cid.to_string(),
+            cid: String::new(),
+            decider_cid,
+            decision_payload: json!({
+                "effect_delta": {
+                    "after": effect,
+                    "before": "sync"
+                },
+                "function": function,
+                "reason": "callsite introduced effect during bind",
+                "triggering_callsite": triggering_callsite_cid
+            }),
+            evidence_cids: vec![triggering_callsite_cid.to_string()],
+            gate: PromotionGate::Proof,
+            kind: "promotion-decision".to_string(),
+            policy_cid,
+            promoted_cid,
+            result: PromotionResult::Admitted,
+            schema_version: "1".to_string(),
+        },
+        metadata: PromotionDecisionMetadata {
+            counterexample_cids: None,
+            note: Some("bind effect propagation widened function".to_string()),
+            source_url: None,
+        },
+    };
+    decision.header.cid = decision
+        .recompute_header_cid()
+        .map_err(|error| BindError::Failed(error.to_string()))?;
+    decision
+        .validate()
+        .map_err(|error| BindError::Failed(error.to_string()))?;
+    Ok(decision)
 }
 
 /// Return the canonical named-term document CID emitted by `cmd_bind`.
@@ -1011,6 +1170,14 @@ fn document_metadata_value(named: &NamedTermDocument) -> Result<Json, BindError>
         value["gapRecords"] = serde_json::to_value(&named.gap_records)
             .map_err(|error| BindError::Failed(format!("serialize gap records: {error}")))?;
     }
+    if !named.effect_halt_mementos.is_empty() {
+        value["effectHaltMementos"] = serde_json::to_value(&named.effect_halt_mementos)
+            .map_err(|error| BindError::Failed(format!("serialize effect halts: {error}")))?;
+    }
+    if !named.effect_refusal_mementos.is_empty() {
+        value["effectRefusalMementos"] = serde_json::to_value(&named.effect_refusal_mementos)
+            .map_err(|error| BindError::Failed(format!("serialize effect refusals: {error}")))?;
+    }
     Ok(value)
 }
 
@@ -1038,6 +1205,20 @@ fn named_term_document_from_op_tree(term: &Term) -> Result<NamedTermDocument, Bi
         .transpose()
         .map_err(|error| BindError::Failed(format!("parse gap records: {error}")))?
         .unwrap_or_default();
+    let effect_halt_mementos = document
+        .get("effectHaltMementos")
+        .cloned()
+        .map(serde_json::from_value)
+        .transpose()
+        .map_err(|error| BindError::Failed(format!("parse effect halts: {error}")))?
+        .unwrap_or_default();
+    let effect_refusal_mementos = document
+        .get("effectRefusalMementos")
+        .cloned()
+        .map(serde_json::from_value)
+        .transpose()
+        .map_err(|error| BindError::Failed(format!("parse effect refusals: {error}")))?
+        .unwrap_or_default();
     let terms = citations
         .into_iter()
         .map(|(_, citation)| {
@@ -1050,6 +1231,8 @@ fn named_term_document_from_op_tree(term: &Term) -> Result<NamedTermDocument, Bi
         })
         .collect::<Result<Vec<_>, _>>()?;
     Ok(NamedTermDocument {
+        effect_halt_mementos,
+        effect_refusal_mementos,
         gap_records,
         kind: document
             .get("kind")
@@ -1208,8 +1391,9 @@ fn wp_rule_synthesis_gap_record(
             respec_target_to: None,
             split_targets: None,
             status: OptionStatus::Deferred,
-            tradeoff: "provide source evidence or a catalog wp_rule before treating the bind as exact"
-                .to_string(),
+            tradeoff:
+                "provide source evidence or a catalog wp_rule before treating the bind as exact"
+                    .to_string(),
         }],
         schema_version: "1".to_string(),
         signature: None,
@@ -1519,6 +1703,222 @@ mod tests {
         assert_eq!(named.promotion_decision_mementos.len(), 1);
     }
 
+    fn effect_function(name: &str) -> Json {
+        json!({
+            "function_cid": format!("cid:function:{name}"),
+            "name": name,
+            "signature_cid": format!("cid:signature:{name}"),
+            "admitted_effects": [],
+            "forbidden_effects": []
+        })
+    }
+
+    fn bind_effect_document(functions: Json, callsites: Json, changed_callsites: Json) -> Json {
+        let term = json!({
+            "kind": "ir-document",
+            "sourceLanguage": "rust",
+            "workspaceRoot": "/tmp/provekit-bind-effect-test",
+            "effectPropagation": {
+                "functions": functions,
+                "callsites": callsites,
+                "changed_callsites": changed_callsites
+            },
+            "ir": [{
+                "kind": "bind-lift-entry",
+                "file": "src/lib.rs",
+                "fn_name": "load",
+                "concept_annotation": "load",
+                "param_names": [],
+                "param_types": [],
+                "return_type": "i64",
+                "term_shape": {"kind": "op", "name": "load"},
+                "witnesses": []
+            }]
+        });
+        let named = bind_term_document(
+            &term,
+            &BindOptions {
+                lang: "rust".to_string(),
+                exam_manifest: None,
+            },
+        )
+        .expect("bind succeeds");
+        serde_json::to_value(named).expect("named term serializes")
+    }
+
+    fn single_effect_decision_document(function: Json) -> Json {
+        bind_effect_document(
+            json!({
+                "load": function
+            }),
+            json!({
+                "cs:storage": {
+                    "callee": null,
+                    "cid": "cs:storage",
+                    "containing_fn": "load"
+                }
+            }),
+            json!([{
+                "callsite_cid": "cs:storage",
+                "effect": "io"
+            }]),
+        )
+    }
+
+    fn promotion_decisions(value: &Json) -> &[Json] {
+        value["promotionDecisionMementos"]
+            .as_array()
+            .expect("promotionDecisionMementos array")
+    }
+
+    fn effect_halts(value: &Json) -> &[Json] {
+        value["effectHaltMementos"]
+            .as_array()
+            .expect("effectHaltMementos array")
+    }
+
+    fn effect_refusals(value: &Json) -> &[Json] {
+        value["effectRefusalMementos"]
+            .as_array()
+            .expect("effectRefusalMementos array")
+    }
+
+    #[test]
+    fn bind_effect_propagation_widen_emits_promotion_decision() {
+        let named = single_effect_decision_document(effect_function("load"));
+        let decisions = promotion_decisions(&named);
+
+        assert_eq!(decisions.len(), 1);
+        assert_eq!(
+            decisions[0]["metadata"]["note"],
+            "bind effect propagation widened function"
+        );
+        assert_eq!(
+            decisions[0]["header"]["decision_payload"]["function"],
+            "load"
+        );
+    }
+
+    #[test]
+    fn bind_effect_propagation_widen_records_triggering_callsite() {
+        let named = single_effect_decision_document(effect_function("load"));
+        let decision = &promotion_decisions(&named)[0];
+
+        assert_eq!(
+            decision["header"]["decision_payload"]["triggering_callsite"],
+            "cs:storage"
+        );
+        assert_eq!(decision["header"]["evidence_cids"], json!(["cs:storage"]));
+    }
+
+    #[test]
+    fn bind_effect_propagation_widen_flows_to_callers() {
+        let named = bind_effect_document(
+            json!({
+                "load": effect_function("load"),
+                "render": effect_function("render")
+            }),
+            json!({
+                "cs:storage": {
+                    "callee": null,
+                    "cid": "cs:storage",
+                    "containing_fn": "load"
+                },
+                "cs:render-load": {
+                    "callee": "load",
+                    "cid": "cs:render-load",
+                    "containing_fn": "render"
+                }
+            }),
+            json!([{
+                "callsite_cid": "cs:storage",
+                "effect": "io"
+            }]),
+        );
+        let mut widened = promotion_decisions(&named)
+            .iter()
+            .map(|decision| {
+                decision["header"]["decision_payload"]["function"]
+                    .as_str()
+                    .expect("decision function")
+            })
+            .collect::<Vec<_>>();
+        widened.sort();
+
+        assert_eq!(widened, vec!["load", "render"]);
+    }
+
+    #[test]
+    fn bind_effect_propagation_halt_emits_halt_memento() {
+        let mut function = effect_function("load");
+        function["admitted_effects"] = json!(["io"]);
+        let named = single_effect_decision_document(function);
+        let halts = effect_halts(&named);
+
+        assert_eq!(halts.len(), 1);
+        assert_eq!(halts[0]["kind"], "halt");
+        assert_eq!(halts[0]["function_cid"], "cid:function:load");
+    }
+
+    #[test]
+    fn bind_effect_propagation_halt_uses_admitting_signature_cid() {
+        let mut function = effect_function("load");
+        function["admitted_effects"] = json!(["io"]);
+        let named = single_effect_decision_document(function);
+
+        assert_eq!(
+            effect_halts(&named)[0]["admitting_sig"],
+            "cid:signature:load"
+        );
+    }
+
+    #[test]
+    fn bind_effect_propagation_halt_does_not_widen_admitted_function() {
+        let mut function = effect_function("load");
+        function["admitted_effects"] = json!(["io"]);
+        let named = single_effect_decision_document(function);
+
+        assert_eq!(promotion_decisions(&named).len(), 0);
+        assert_eq!(effect_halts(&named).len(), 1);
+    }
+
+    #[test]
+    fn bind_effect_propagation_refuse_emits_refusal_memento() {
+        let mut function = effect_function("load");
+        function["forbidden_effects"] = json!(["io"]);
+        function["forbidding_contract_cid"] = json!("cid:contract:load-public-api");
+        let named = single_effect_decision_document(function);
+        let refusals = effect_refusals(&named);
+
+        assert_eq!(refusals.len(), 1);
+        assert_eq!(refusals[0]["kind"], "refusal");
+        assert_eq!(refusals[0]["function_cid"], "cid:function:load");
+    }
+
+    #[test]
+    fn bind_effect_propagation_refuse_uses_forbidding_contract_cid() {
+        let mut function = effect_function("load");
+        function["forbidden_effects"] = json!(["io"]);
+        function["forbidding_contract_cid"] = json!("cid:contract:load-public-api");
+        let named = single_effect_decision_document(function);
+
+        assert_eq!(
+            effect_refusals(&named)[0]["forbidding_contract"],
+            "cid:contract:load-public-api"
+        );
+    }
+
+    #[test]
+    fn bind_effect_propagation_refuse_does_not_widen_forbidden_function() {
+        let mut function = effect_function("load");
+        function["forbidden_effects"] = json!(["io"]);
+        function["forbidding_contract_cid"] = json!("cid:contract:load-public-api");
+        let named = single_effect_decision_document(function);
+
+        assert_eq!(promotion_decisions(&named).len(), 0);
+        assert_eq!(effect_refusals(&named).len(), 1);
+    }
+
     #[test]
     fn bind_claim_cid_ignores_realize_sidecar_symbols() {
         fn bind_claim(lhs: &str, rhs: &str) -> DomainClaim {
@@ -1641,7 +2041,10 @@ mod tests {
         // Verify that the recovered named-term-document has function="" in both cases,
         // which is the load-bearing #1093 invariant.
         let add_payload = add_claim.payload.as_ref().expect("add claim has payload");
-        let adder_payload = adder_claim.payload.as_ref().expect("adder claim has payload");
+        let adder_payload = adder_claim
+            .payload
+            .as_ref()
+            .expect("adder claim has payload");
         let add_named = named_term_document_from_bind_payload(add_payload)
             .expect("recover add named term document");
         let adder_named = named_term_document_from_bind_payload(adder_payload)
@@ -1668,8 +2071,10 @@ mod tests {
 
     #[test]
     fn named_term_document_cid_ignores_source_function_name() {
-            fn document(function: &str) -> NamedTermDocument {
-                NamedTermDocument {
+        fn document(function: &str) -> NamedTermDocument {
+            NamedTermDocument {
+                    effect_halt_mementos: vec![],
+                    effect_refusal_mementos: vec![],
                     gap_records: vec![],
                     kind: "named-term-document".to_string(),
                 promotion_decision_mementos: vec![],
@@ -1704,6 +2109,8 @@ mod tests {
     #[test]
     fn named_term_document_omits_empty_source_provenance_fields() {
         let document = NamedTermDocument {
+            effect_halt_mementos: vec![],
+            effect_refusal_mementos: vec![],
             gap_records: vec![],
             kind: "named-term-document".to_string(),
             promotion_decision_mementos: vec![],

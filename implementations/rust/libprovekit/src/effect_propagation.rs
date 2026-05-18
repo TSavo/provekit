@@ -2,33 +2,48 @@
 
 use std::collections::{BTreeMap, BTreeSet, VecDeque};
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+use serde::{Deserialize, Serialize};
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct FunctionEffectInfo {
+    #[serde(default, alias = "forbiddingContractCid")]
     pub forbidding_contract_cid: Option<String>,
+    #[serde(default, alias = "functionCid")]
     pub function_cid: String,
+    #[serde(default)]
     pub name: String,
+    #[serde(default, alias = "signatureCid")]
     pub signature_cid: String,
+    #[serde(default, alias = "admittedEffects")]
     pub admitted_effects: BTreeSet<String>,
+    #[serde(default, alias = "forbiddenEffects")]
     pub forbidden_effects: BTreeSet<String>,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct CallsiteEdge {
+    #[serde(default)]
     pub callee: Option<String>,
+    #[serde(default)]
     pub cid: String,
+    #[serde(alias = "containingFn")]
     pub containing_fn: String,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct ChangedCallsite {
+    #[serde(alias = "callsiteCid")]
     pub callsite_cid: String,
     pub effect: String,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct PropagationInput {
+    #[serde(default)]
     pub callsites: BTreeMap<String, CallsiteEdge>,
+    #[serde(default, alias = "changedCallsites")]
     pub changed_callsites: Vec<ChangedCallsite>,
+    #[serde(default)]
     pub functions: BTreeMap<String, FunctionEffectInfo>,
 }
 
