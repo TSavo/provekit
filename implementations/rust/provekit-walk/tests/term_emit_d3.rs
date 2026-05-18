@@ -57,7 +57,7 @@ fn collect_fully_qualified_paths(term: &serde_json::Value, paths: &mut Vec<Strin
 }
 
 #[test]
-fn accepts_procedural_macro_as_named_loss() {
+fn carries_procedural_macro_invocation_as_op_application() {
     let parsed = term_json(
         r#"
             #[instrument]
@@ -67,7 +67,19 @@ fn accepts_procedural_macro_as_named_loss() {
         "#,
         "traced",
     );
-    assert_partial_loss(&parsed, "procedural-macro");
+    assert!(!parsed["loss_record"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .any(|loss| loss["loss"] == "procedural-macro"));
+    assert!(parsed["proc_macro_invocations"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .any(
+            |invocation| invocation["concept_name"] == "concept:proc-macro-invocation"
+                && invocation["macro_path"] == "instrument"
+        ));
 }
 
 #[test]

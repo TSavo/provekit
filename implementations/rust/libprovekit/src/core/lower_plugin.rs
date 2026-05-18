@@ -31,6 +31,13 @@ pub struct RealizeRequest {
     pub term_shape: Option<Value>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub operand_bindings: Vec<Value>,
+    #[serde(
+        default,
+        rename = "procMacroInvocations",
+        alias = "proc_macro_invocations",
+        skip_serializing_if = "Vec::is_empty"
+    )]
+    pub proc_macro_invocations: Vec<Value>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub source_function_name: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -384,6 +391,10 @@ fn invocation_from_tree_node(
         contract: parent_request.contract.clone(),
         sugar_cids: parent_request.sugar_cids.clone(),
         sugar_plugins: parent_request.sugar_plugins.clone(),
+        proc_macro_invocations: value_array_field(
+            node,
+            &["procMacroInvocations", "proc_macro_invocations"],
+        ),
     };
     let effective_library_tag = node_string(node, &["libraryTag", "library_tag", "library"])
         .or_else(|| library_tag.map(str::to_string));
@@ -650,6 +661,13 @@ fn merge_realize_sidecar(
     if let Some(bindings) = entry.get("operand_bindings").and_then(Value::as_array) {
         spec["operandBindings"] = Value::Array(bindings.clone());
     }
+    if let Some(invocations) = entry
+        .get("proc_macro_invocations")
+        .or_else(|| entry.get("procMacroInvocations"))
+        .and_then(Value::as_array)
+    {
+        spec["procMacroInvocations"] = Value::Array(invocations.clone());
+    }
     if let Some(function_name) = entry.get("source_function_name").and_then(Value::as_str) {
         if !function_name.is_empty() {
             spec["sourceFunctionName"] = Value::String(function_name.to_string());
@@ -729,6 +747,10 @@ fn request_from_spec(spec: &Value) -> Result<RealizeRequest, String> {
         named_term_tree: non_null_field(spec, &["namedTermTree", "named_term_tree"]).cloned(),
         term_shape: non_null_field(spec, &["termShape", "term_shape"]).cloned(),
         operand_bindings: value_array_field(spec, &["operandBindings", "operand_bindings"]),
+        proc_macro_invocations: value_array_field(
+            spec,
+            &["procMacroInvocations", "proc_macro_invocations"],
+        ),
         source_function_name: string_field_optional(
             spec,
             &["sourceFunctionName", "source_function_name"],

@@ -82,6 +82,7 @@ fn http_request_realize_request() -> RealizeRequest {
         contract: None,
         sugar_cids: Vec::new(),
         sugar_plugins: Vec::new(),
+        proc_macro_invocations: Vec::new(),
     }
 }
 
@@ -129,6 +130,7 @@ fn sql_query_realize_request() -> RealizeRequest {
         contract: None,
         sugar_cids: Vec::new(),
         sugar_plugins: Vec::new(),
+        proc_macro_invocations: Vec::new(),
     }
 }
 
