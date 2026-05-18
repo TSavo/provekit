@@ -171,10 +171,6 @@ fn rust_function_term_json_value_with_context(
 /// but not expanded by the Rust term lifter.
 const LOSS_PROCEDURAL_MACRO: &str = "procedural-macro";
 
-/// Accepted-loss dimension for qualified Rust paths whose leading segments are
-/// not preserved in the current algebra-term surface.
-const LOSS_TRAIT_PATH_TRUNCATED: &str = "trait-path-truncated";
-
 /// Accepted-loss dimension for associated type declarations on impl blocks
 /// that are not carried into the emitted function term.
 const LOSS_IMPL_ASSOCIATED_TYPE_NOT_LOWERED: &str = "impl-associated-type-not-lowered";
@@ -204,6 +200,7 @@ enum AlgebraTerm {
         args: Vec<AlgebraTerm>,
     },
     Var(String),
+    FullyQualifiedPath(String),
     Symbol(String),
     List(Vec<AlgebraTerm>),
     Struct {
@@ -245,6 +242,11 @@ impl AlgebraTerm {
                 }))
             }
             AlgebraTerm::Var(name) => Ok(json!({"kind": "var", "name": name})),
+            AlgebraTerm::FullyQualifiedPath(path) => Ok(json!({
+                "concept": "concept:fully-qualified-path",
+                "kind": "fully-qualified-path",
+                "path": path,
+            })),
             AlgebraTerm::Symbol(name) => Ok(json!({"kind": "symbol", "name": name})),
             AlgebraTerm::List(items) => {
                 let items = items
@@ -299,6 +301,7 @@ impl AlgebraTerm {
                 format!("{name}({args})")
             }
             AlgebraTerm::Var(name) => name.clone(),
+            AlgebraTerm::FullyQualifiedPath(path) => path.clone(),
             AlgebraTerm::Symbol(name) => name.clone(),
             AlgebraTerm::List(items) => {
                 let items = items
@@ -1323,18 +1326,25 @@ fn lower_expr_to_bool_term(expr: &Expr, ctx: &LoweringContext) -> Result<Algebra
             _ => Err("non-bool literal in boolean term".to_string()),
         },
         Expr::Path(path) => {
-            let name = path_name_for_expr(path, ctx)
+            let term = path_term_for_expr(path, ctx)
                 .ok_or_else(|| "empty path in boolean term".to_string())?;
-            match ctx.vars.get(&name).copied() {
-                Some(ExprSort::Bool) => Ok(AlgebraTerm::Var(name.clone())),
-                Some(sort) => Err(format!(
-                    "expected Bool path in boolean term, found {} for `{name}`",
-                    sort.name()
-                )),
-                None => {
-                    ctx.add_loss("type-inference-assumed-bool", name.clone());
-                    Ok(AlgebraTerm::Var(name))
+            match &term {
+                AlgebraTerm::Var(name) => match ctx.vars.get(name).copied() {
+                    Some(ExprSort::Bool) => Ok(term),
+                    Some(sort) => Err(format!(
+                        "expected Bool path in boolean term, found {} for `{name}`",
+                        sort.name()
+                    )),
+                    None => {
+                        ctx.add_loss("type-inference-assumed-bool", name.clone());
+                        Ok(term)
+                    }
+                },
+                AlgebraTerm::FullyQualifiedPath(path) => {
+                    ctx.add_loss("type-inference-assumed-bool", path.clone());
+                    Ok(term)
                 }
+                _ => unreachable!("path term must be a var or fully qualified path"),
             }
         }
         Expr::Call(_) | Expr::MethodCall(_) => {
@@ -1414,9 +1424,9 @@ fn lower_expr_to_value_term(expr: &Expr, ctx: &LoweringContext) -> Result<Algebr
             Lit::Bool(value) => Ok(AlgebraTerm::ConstBool(value.value)),
             _ => Err("unsupported literal expression".to_string()),
         },
-        Expr::Path(path) => path_name_for_expr(path, ctx)
-            .map(AlgebraTerm::Var)
-            .ok_or_else(|| "empty path expression".to_string()),
+        Expr::Path(path) => {
+            path_term_for_expr(path, ctx).ok_or_else(|| "empty path expression".to_string())
+        }
         Expr::Paren(paren) => lower_expr_to_value_term(&paren.expr, ctx),
         Expr::Group(group) => lower_expr_to_value_term(&group.expr, ctx),
         Expr::Block(block) => {
@@ -1855,7 +1865,7 @@ fn expr_sort(expr: &Expr, ctx: &LoweringContext) -> Option<ExprSort> {
             _ => None,
         },
         Expr::Path(path) => {
-            path_name_for_expr(path, ctx).and_then(|name| ctx.vars.get(&name).copied())
+            local_path_name_for_expr(path, ctx).and_then(|name| ctx.vars.get(&name).copied())
         }
         Expr::Paren(paren) => expr_sort(&paren.expr, ctx),
         Expr::Block(block) => {
@@ -2176,34 +2186,102 @@ fn path_name(path: &syn::ExprPath) -> Option<String> {
 }
 
 fn path_call_name_for_expr(path: &syn::ExprPath) -> Option<(String, String)> {
-    if path.qself.is_some() {
-        return None;
-    }
     let op_name = path.path.segments.last()?.ident.to_string();
-    let mut callee = path
-        .path
-        .segments
-        .iter()
-        .map(|segment| segment.ident.to_string())
-        .collect::<Vec<_>>()
-        .join("::");
-    if path.path.leading_colon.is_some() {
-        callee = format!("::{callee}");
-    }
+    let callee = expr_path_surface(path)?;
     Some((op_name, callee))
 }
 
-fn path_name_for_expr(path: &syn::ExprPath, ctx: &LoweringContext) -> Option<String> {
-    if path.qself.is_some() {
+fn path_term_for_expr(path: &syn::ExprPath, ctx: &LoweringContext) -> Option<AlgebraTerm> {
+    if let Some(name) = local_path_name_for_expr(path, ctx) {
+        return Some(AlgebraTerm::Var(name));
+    }
+    expr_path_surface(path).map(AlgebraTerm::FullyQualifiedPath)
+}
+
+fn local_path_name_for_expr(path: &syn::ExprPath, ctx: &LoweringContext) -> Option<String> {
+    if path.qself.is_some() || path.path.leading_colon.is_some() || path.path.segments.len() != 1 {
         return None;
     }
-    if path.path.segments.len() > 1 {
-        ctx.add_loss(
-            LOSS_TRAIT_PATH_TRUNCATED,
-            path.path.to_token_stream().to_string(),
-        );
-    }
     path_name(path).map(|name| ctx.current_name(&name))
+}
+
+fn expr_path_surface(path: &syn::ExprPath) -> Option<String> {
+    if let Some(qself) = &path.qself {
+        return qself_path_surface(qself, &path.path);
+    }
+    syn_path_surface(&path.path)
+}
+
+fn qself_path_surface(qself: &syn::QSelf, path: &syn::Path) -> Option<String> {
+    let segments = path
+        .segments
+        .iter()
+        .map(path_segment_surface)
+        .collect::<Vec<_>>();
+    if qself.position > segments.len() {
+        return None;
+    }
+
+    let self_type = compact_rust_token_surface(qself.ty.to_token_stream().to_string());
+    let trait_path = path_surface_from_segments(
+        path.leading_colon.is_some() && qself.position > 0,
+        &segments[..qself.position],
+    );
+    let associated_path = path_surface_from_segments(false, &segments[qself.position..]);
+
+    match (trait_path, associated_path) {
+        (Some(trait_path), Some(associated_path)) => {
+            Some(format!("<{self_type} as {trait_path}>::{associated_path}"))
+        }
+        (Some(trait_path), None) => Some(format!("<{self_type} as {trait_path}>")),
+        (None, Some(associated_path)) => Some(format!("<{self_type}>::{associated_path}")),
+        (None, None) => None,
+    }
+}
+
+fn syn_path_surface(path: &syn::Path) -> Option<String> {
+    let segments = path
+        .segments
+        .iter()
+        .map(path_segment_surface)
+        .collect::<Vec<_>>();
+    path_surface_from_segments(path.leading_colon.is_some(), &segments)
+}
+
+fn path_surface_from_segments(leading_colon: bool, segments: &[String]) -> Option<String> {
+    if segments.is_empty() {
+        return None;
+    }
+    let mut surface = segments.join("::");
+    if leading_colon {
+        surface = format!("::{surface}");
+    }
+    Some(surface)
+}
+
+fn path_segment_surface(segment: &syn::PathSegment) -> String {
+    compact_rust_token_surface(segment.to_token_stream().to_string())
+}
+
+fn compact_rust_token_surface(surface: String) -> String {
+    surface
+        .replace(" :: ", "::")
+        .replace(" ::", "::")
+        .replace(":: ", "::")
+        .replace(" < ", "<")
+        .replace(" <", "<")
+        .replace("< ", "<")
+        .replace(" > ", ">")
+        .replace(" >", ">")
+        .replace("> ", ">")
+        .replace(" , ", ", ")
+        .replace(" ,", ",")
+        .replace(" ( ", "(")
+        .replace(" (", "(")
+        .replace("( ", "(")
+        .replace(" ) ", ")")
+        .replace(" )", ")")
+        .replace(") ", ")")
 }
 
 fn expr_kind(expr: &Expr) -> &'static str {

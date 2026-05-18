@@ -1,0 +1,54 @@
+{
+  "effects": {
+    "effects": []
+  },
+  "fn_name": "concept:fully-qualified-path",
+  "formal_sorts": [
+    {
+      "args": [],
+      "kind": "ctor",
+      "name": "String"
+    }
+  ],
+  "formals": [
+    "path"
+  ],
+  "kind": "algorithm",
+  "path_roles": [
+    "module",
+    "trait",
+    "associated-item",
+    "crate-root"
+  ],
+  "post": {
+    "arity": [
+      "String"
+    ],
+    "arity_shape": {
+      "kind": "named",
+      "slots": [
+        "path"
+      ]
+    },
+    "kind": "operation-contract",
+    "operator": "fully-qualified-path",
+    "result": "Path",
+    "slot_terms": [
+      {
+        "kind": "var",
+        "name": "path"
+      }
+    ],
+    "wp_note": "Carries a Rust path exactly as resolved or structurally qualified by the lifter, including module, trait, associated item, and crate-root segments."
+  },
+  "pre": {
+    "args": [],
+    "kind": "atomic",
+    "name": "true"
+  },
+  "return_sort": {
+    "args": [],
+    "kind": "ctor",
+    "name": "Path"
+  }
+}

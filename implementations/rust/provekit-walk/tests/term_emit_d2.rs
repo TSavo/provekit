@@ -231,14 +231,18 @@ fn lowers_qualified_constructor_call_with_receiver_prefix() {
     );
     assert_eq!(
         parsed["term_surface"].as_str(),
-        Some("return(call:new(Arc::new, [Null]))")
+        Some("return(call:new(Arc::new, [Value::Null]))")
     );
     assert_eq!(parsed["term"]["args"][0]["args"][0]["name"], "Arc::new");
+    assert_eq!(
+        parsed["term"]["args"][0]["args"][1]["items"][0]["path"],
+        "Value::Null"
+    );
     assert!(!parsed["loss_record"]
         .as_array()
         .unwrap()
         .iter()
-        .any(|loss| { loss["loss"] == "trait-path-truncated" && loss["detail"] == "Arc :: new" }));
+        .any(|loss| loss["loss"] == "trait-path-truncated"));
     assert_no_loss(&parsed, "return-type-user-defined");
     assert_eq!(
         parsed["return_sort"],
