@@ -1,0 +1,72 @@
+{
+  "effects": {
+    "effects": []
+  },
+  "fn_name": "concept:derive-attribute",
+  "formal_sorts": [
+    {
+      "args": [],
+      "kind": "ctor",
+      "name": "Cid"
+    },
+    {
+      "args": [],
+      "kind": "ctor",
+      "name": "List<Term>"
+    },
+    {
+      "args": [],
+      "kind": "ctor",
+      "name": "TokenStream"
+    }
+  ],
+  "formals": [
+    "macro_cid",
+    "traits",
+    "token_stream"
+  ],
+  "kind": "algorithm",
+  "post": {
+    "arity": [
+      "Cid",
+      "List<Term>",
+      "TokenStream"
+    ],
+    "arity_shape": {
+      "kind": "named",
+      "slots": [
+        "macro_cid",
+        "traits",
+        "token_stream"
+      ]
+    },
+    "kind": "operation-contract",
+    "operator": "derive-attribute",
+    "result": "Term",
+    "slot_terms": [
+      {
+        "kind": "var",
+        "name": "macro_cid"
+      },
+      {
+        "kind": "var",
+        "name": "traits"
+      },
+      {
+        "kind": "var",
+        "name": "token_stream"
+      }
+    ],
+    "wp_note": "Typed subcase of proc-macro-invocation for Rust derive attributes. traits carries the derived trait paths as terms and token_stream preserves the original attribute tokens."
+  },
+  "pre": {
+    "args": [],
+    "kind": "atomic",
+    "name": "true"
+  },
+  "return_sort": {
+    "args": [],
+    "kind": "ctor",
+    "name": "Term"
+  }
+}

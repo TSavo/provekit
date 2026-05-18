@@ -280,3 +280,13 @@ Examples: `examples.md` in this directory shows high-level bindings for libcurl,
 | `Term` | `sort-instance` | `blake3-512:2b8bffc50e1a4fcae7e3954289941eb5811d14a6175420b06f71742e4ae9a9ce1a848a9251aec73f436123008fbdaf3d3c98d1c1fce04c3d89680051a7bdcafb` |
 | `List<T>` | `sort-instance` | `blake3-512:e3f8d17445f9d2ce89c41c09cbeea08a8bc685d1c34a9fd3dfa7b1df17a94f40eab37396615501f1468baf2a1480fd5a27330ea23202b99876c5f4d97fa2cfb2` |
 | `Map<K,V>` | `sort-instance` | `blake3-512:b81923e3273fedfce0b84d401d8b30965d4c72530af6c7538d9ed9b2905348fa3c639636b21b3f47ac8a242e79eef8e278b1d6c9cfab8e289cf059cef94c82e1` |
+
+## Proc Macro Invocation Concept Shapes
+
+`concept:proc-macro-invocation(macro_cid, args, token_stream)` carries procedural macro syntax without expansion.
+`concept:derive-attribute(macro_cid, traits, token_stream)` is the typed Rust derive subcase.
+
+| Concept | Shape CID | Notes |
+| --- | --- | --- |
+| `concept:proc-macro-invocation` | `blake3-512:b877e50648f55cf4622c303096bf51e4ac0bac8c8d851fa0a5d9921b2ed9b2513a7f6002293058ae489b7ef910bbfa1979077e0e2fe596cb2ac3296fe9fbf858` | carries macro CID, parsed args, and lossless source tokens |
+| `concept:derive-attribute` | `blake3-512:a7e3cd707705197fdc7d8def39d4c075d36b292b5ad41343bd5939a82af4465f7a4baf0aaa1cbe56fe6523c7fea29940e22f06eddc9081ddac0372fd209e01d6` | typed derive attribute subcase with trait path terms |

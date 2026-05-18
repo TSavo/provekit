@@ -23,7 +23,6 @@ FN_RE = re.compile(
 )
 
 ACCEPTED_LOSS_CLASSES = (
-    "procedural-macro",
     "trait-path-truncated",
     "impl-associated-type-not-lowered",
     "abi-attribute-not-carried",
@@ -70,8 +69,6 @@ def classify_failure(stderr: str) -> str:
         return "statement-macro"
     if "unsupported function return type" in stderr:
         return "unsupported-return-type"
-    if "procedural-macro" in stderr:
-        return "procedural-macro"
     if "trait-path-truncated" in stderr:
         return "trait-path-truncated"
     if "impl-associated-type-not-lowered" in stderr:

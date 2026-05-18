@@ -1,0 +1,79 @@
+{
+  "cid": "blake3-512:a7e3cd707705197fdc7d8def39d4c075d36b292b5ad41343bd5939a82af4465f7a4baf0aaa1cbe56fe6523c7fea29940e22f06eddc9081ddac0372fd209e01d6",
+  "memento": {
+    "auto_minted_mementos": [],
+    "effects": {
+      "effects": []
+    },
+    "fn_name": "concept:derive-attribute",
+    "formal_sorts": [
+      {
+        "args": [],
+        "kind": "ctor",
+        "name": "Cid"
+      },
+      {
+        "args": [],
+        "kind": "ctor",
+        "name": "List<Term>"
+      },
+      {
+        "args": [],
+        "kind": "ctor",
+        "name": "TokenStream"
+      }
+    ],
+    "formals": [
+      "macro_cid",
+      "traits",
+      "token_stream"
+    ],
+    "kind": "AlgorithmMemento",
+    "post": {
+      "arity": [
+        "Cid",
+        "List<Term>",
+        "TokenStream"
+      ],
+      "arity_shape": {
+        "kind": "named",
+        "slots": [
+          "macro_cid",
+          "traits",
+          "token_stream"
+        ]
+      },
+      "kind": "operation-contract",
+      "operator": "derive-attribute",
+      "result": "Term",
+      "slot_terms": [
+        {
+          "kind": "var",
+          "name": "macro_cid"
+        },
+        {
+          "kind": "var",
+          "name": "traits"
+        },
+        {
+          "kind": "var",
+          "name": "token_stream"
+        }
+      ],
+      "wp_note": "Typed subcase of proc-macro-invocation for Rust derive attributes. traits carries the derived trait paths as terms and token_stream preserves the original attribute tokens."
+    },
+    "pre": {
+      "args": [],
+      "kind": "atomic",
+      "name": "true"
+    },
+    "protocol": "AMP",
+    "return_sort": {
+      "args": [],
+      "kind": "ctor",
+      "name": "Term"
+    },
+    "schema_version": "1"
+  },
+  "signature": null
+}

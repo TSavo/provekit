@@ -157,6 +157,12 @@ pub struct BindLiftEntry {
     pub return_type: String,
     #[serde(default)]
     pub operand_bindings: Vec<Json>,
+    #[serde(
+        default,
+        rename = "procMacroInvocations",
+        alias = "proc_macro_invocations"
+    )]
+    pub proc_macro_invocations: Vec<Json>,
     #[serde(default)]
     pub source_function_name: Option<String>,
     #[serde(default)]
@@ -484,6 +490,8 @@ fn strip_realize_sidecar_from_lift_term(term: Term) -> Term {
                 object.remove("conceptAnnotation");
                 object.remove("operand_bindings");
                 object.remove("operandBindings");
+                object.remove("proc_macro_invocations");
+                object.remove("procMacroInvocations");
                 object.remove("source_function_name");
                 object.remove("sourceFunctionName");
             }
@@ -574,12 +582,16 @@ fn realize_sidecar_hint(term_json: &Json) -> Result<Option<String>, BindError> {
     let entries = bind_lift_entries(term_json)?;
     let mut sidecar_terms = Vec::new();
     for entry in entries {
-        if entry.operand_bindings.is_empty() && entry.source_function_name.is_none() {
+        if entry.operand_bindings.is_empty()
+            && entry.proc_macro_invocations.is_empty()
+            && entry.source_function_name.is_none()
+        {
             continue;
         }
         sidecar_terms.push(json!({
             "function": entry.fn_name,
             "operand_bindings": entry.operand_bindings,
+            "proc_macro_invocations": entry.proc_macro_invocations,
             "source_function_name": entry.source_function_name,
         }));
     }

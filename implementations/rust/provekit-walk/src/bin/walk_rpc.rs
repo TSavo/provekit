@@ -28,7 +28,9 @@ use base64::Engine;
 use provekit_canonicalizer::{blake3_512_of, encode_jcs, Value as CValue};
 use provekit_ir_types::{EvidenceMemento, ExamManifestMemento, IrFormula, IrTerm, SourceKind};
 use provekit_lift_contracts::lift_file_with_docstring_evidence;
-use provekit_walk::emit::{rust_function_term_json, shadow_proof_ir_cid, shadow_to_proof_ir};
+use provekit_walk::emit::{
+    rust_function_term_json_for_file, shadow_proof_ir_cid, shadow_to_proof_ir,
+};
 use provekit_walk::{
     build_function_contract_with_file, build_shadow_source, lift_function_postcondition,
     lift_function_precondition, CalleeContract,
@@ -164,8 +166,8 @@ fn term(params: &Value) -> Result<Value, String> {
         .get("source")
         .and_then(|v| v.as_str())
         .unwrap_or("<rpc>");
-    let item = parse_fn(src, fn_name)?;
-    let bytes = rust_function_term_json(&item, source)?;
+    let file: syn::File = syn::parse_str(src).map_err(|e| format!("parse error: {}", e))?;
+    let bytes = rust_function_term_json_for_file(&file, fn_name, source)?;
     serde_json::from_slice(&bytes).map_err(|e| e.to_string())
 }
 

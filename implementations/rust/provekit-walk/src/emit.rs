@@ -19,15 +19,16 @@
 use std::{
     cell::RefCell,
     collections::{HashMap, HashSet},
+    path::{Path, PathBuf},
     rc::Rc,
-    sync::Arc,
+    sync::{Arc, OnceLock},
 };
 
-use provekit_canonicalizer::Value;
+use provekit_canonicalizer::{blake3_512_of, Value};
 use quote::ToTokens;
 use serde_json::{json, Value as JsonValue};
 use syn::parse::Parser;
-use syn::{BinOp, Expr, ExprIf, Lit, ReturnType, Stmt, Type, UnOp};
+use syn::{BinOp, Expr, ExprIf, Lit, Meta, ReturnType, Stmt, Type, UnOp};
 
 use crate::canonical::{cid_of_value, jcs_bytes_of_value, serde_to_canonical};
 use crate::shadow::{compose_chain, edge_memento_value, ShadowSource};
@@ -52,7 +53,13 @@ pub fn rust_function_term_json(
     item_fn: &syn::ItemFn,
     source: impl Into<String>,
 ) -> Result<Vec<u8>, String> {
-    let value = rust_function_term_json_value_with_losses(item_fn, source, Vec::new())?;
+    let value = rust_function_term_json_value_with_context(
+        item_fn,
+        source,
+        Vec::new(),
+        HashMap::new(),
+        Vec::new(),
+    )?;
     let canonical = serde_to_canonical(value);
     Ok(jcs_bytes_of_value(&canonical))
 }
@@ -60,9 +67,9 @@ pub fn rust_function_term_json(
 /// Emit a Rust algebra term for a function found inside a parsed source file.
 ///
 /// D3 accepted-loss classes include context that a bare `syn::ItemFn` cannot
-/// carry, such as associated types on a containing impl block and derive or
-/// attribute macros elsewhere in the source file. This entrypoint preserves the
-/// normal term emission path while recording those syntactic losses by name.
+/// carry, such as associated types on a containing impl block. This entrypoint
+/// also preserves source-visible derive and attribute macro invocations as
+/// first-class concept operations.
 pub fn rust_function_term_json_for_file(
     file: &syn::File,
     function_name: &str,
@@ -75,6 +82,7 @@ pub fn rust_function_term_json_for_file(
         source.into(),
         target.contextual_losses,
         target.ffi_declarations,
+        target.contextual_proc_macro_invocations,
     )?;
     let canonical = serde_to_canonical(value);
     Ok(jcs_bytes_of_value(&canonical))
@@ -85,7 +93,13 @@ pub fn rust_function_term_json_cid(
     item_fn: &syn::ItemFn,
     source: impl Into<String>,
 ) -> Result<String, String> {
-    let value = rust_function_term_json_value_with_losses(item_fn, source, Vec::new())?;
+    let value = rust_function_term_json_value_with_context(
+        item_fn,
+        source,
+        Vec::new(),
+        HashMap::new(),
+        Vec::new(),
+    )?;
     let canonical = serde_to_canonical(value);
     Ok(cid_of_value(&canonical))
 }
@@ -103,6 +117,7 @@ pub fn rust_function_term_json_cid_for_file(
         source.into(),
         target.contextual_losses,
         target.ffi_declarations,
+        target.contextual_proc_macro_invocations,
     )?;
     let canonical = serde_to_canonical(value);
     Ok(cid_of_value(&canonical))
@@ -113,34 +128,36 @@ pub fn rust_function_term_json_value(
     item_fn: &syn::ItemFn,
     source: impl Into<String>,
 ) -> Result<JsonValue, String> {
-    rust_function_term_json_value_with_losses(item_fn, source, Vec::new())
-}
-
-fn rust_function_term_json_value_with_losses(
-    item_fn: &syn::ItemFn,
-    source: impl Into<String>,
-    contextual_losses: Vec<LossRecord>,
-) -> Result<JsonValue, String> {
     rust_function_term_json_value_with_context(
         item_fn,
-        source.into(),
-        contextual_losses,
+        source,
+        Vec::new(),
         HashMap::new(),
+        Vec::new(),
     )
 }
 
 fn rust_function_term_json_value_with_context(
     item_fn: &syn::ItemFn,
-    source: String,
+    source: impl Into<String>,
     contextual_losses: Vec<LossRecord>,
     ffi_declarations: HashMap<String, FfiDeclaration>,
+    contextual_proc_macro_invocations: Vec<ProcMacroInvocation>,
 ) -> Result<JsonValue, String> {
+    let source = source.into();
     let ctx = LoweringContext::from_item_fn_with_context(
         item_fn,
         contextual_losses,
         ffi_declarations,
         source.clone(),
     );
+    let mut proc_macro_invocations = Vec::new();
+    for invocation in contextual_proc_macro_invocations {
+        push_proc_macro_invocation(&mut proc_macro_invocations, invocation);
+    }
+    for invocation in proc_macro_invocations_for_attrs(&item_fn.attrs) {
+        push_proc_macro_invocation(&mut proc_macro_invocations, invocation);
+    }
     let term = match lower_function_body_to_term(item_fn, &ctx) {
         Ok(term) => term,
         Err(_) if ctx.allows_accepted_loss_placeholder() => AlgebraTerm::skip(),
@@ -162,14 +179,23 @@ fn rust_function_term_json_value_with_context(
         "effect_occurrences": effect_occurrences,
         "loss_record": loss_record,
         "return_sort": ctx.return_shape.return_sort_json(),
+        "proc_macro_invocations": proc_macro_invocations
+            .iter()
+            .map(ProcMacroInvocation::to_json)
+            .collect::<Vec<_>>(),
         "term_surface": term_surface,
         "term": term.to_json()?,
     }))
 }
 
-/// Accepted-loss dimension for derive and attribute macros that are observed
-/// but not expanded by the Rust term lifter.
-const LOSS_PROCEDURAL_MACRO: &str = "procedural-macro";
+/// Universal op for a source-visible procedural macro invocation.
+const PROC_MACRO_INVOCATION_CONCEPT: &str = "concept:proc-macro-invocation";
+
+/// Typed subcase for Rust derive attributes.
+const DERIVE_ATTRIBUTE_CONCEPT: &str = "concept:derive-attribute";
+
+const CONCEPT_OP_DEFINITION_INDEX_REL: &str =
+    "menagerie/concept-shapes/specs/op-definitions/index.cids.json";
 
 /// Accepted-loss dimension for associated type declarations on impl blocks
 /// that are not carried into the emitted function term.
@@ -426,6 +452,29 @@ struct FfiDeclaration {
     symbol: String,
 }
 
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct ProcMacroInvocation {
+    concept_name: &'static str,
+    macro_path: String,
+    macro_cid: String,
+    args: Vec<JsonValue>,
+    token_stream: String,
+}
+
+impl ProcMacroInvocation {
+    fn to_json(&self) -> JsonValue {
+        json!({
+            "kind": "concept:op-application",
+            "concept_name": self.concept_name,
+            "op_definition_cid": concept_op_definition_cid(self.concept_name),
+            "macro_cid": self.macro_cid,
+            "macro_path": self.macro_path,
+            "args": self.args,
+            "token_stream": self.token_stream,
+        })
+    }
+}
+
 #[derive(Debug, Clone)]
 struct LoweringContext {
     return_shape: ReturnShape,
@@ -466,9 +515,6 @@ impl LoweringContext {
         let losses = Rc::new(RefCell::new(Vec::new()));
         let effect_occurrences = Rc::new(RefCell::new(Vec::new()));
         for loss in contextual_losses {
-            push_loss(&losses, loss);
-        }
-        for loss in accepted_losses_for_attrs(&item_fn.attrs) {
             push_loss(&losses, loss);
         }
         if let Some(abi) = &item_fn.sig.abi {
@@ -693,12 +739,19 @@ struct TermFunctionContext {
     item_fn: syn::ItemFn,
     contextual_losses: Vec<LossRecord>,
     ffi_declarations: HashMap<String, FfiDeclaration>,
+    contextual_proc_macro_invocations: Vec<ProcMacroInvocation>,
 }
 
 fn find_term_function(file: &syn::File, name: &str) -> Option<TermFunctionContext> {
-    let file_losses = accepted_losses_for_file(file);
     let ffi_declarations = ffi_declarations_for_file(file);
-    find_term_function_in_items(&file.items, name, &file_losses, &ffi_declarations)
+    let file_proc_macro_invocations = proc_macro_invocations_for_file(file);
+    find_term_function_in_items(
+        &file.items,
+        name,
+        &[],
+        &ffi_declarations,
+        &file_proc_macro_invocations,
+    )
 }
 
 fn find_term_function_in_items(
@@ -706,6 +759,7 @@ fn find_term_function_in_items(
     name: &str,
     inherited_losses: &[LossRecord],
     ffi_declarations: &HashMap<String, FfiDeclaration>,
+    inherited_proc_macro_invocations: &[ProcMacroInvocation],
 ) -> Option<TermFunctionContext> {
     for item in items {
         match item {
@@ -714,11 +768,11 @@ fn find_term_function_in_items(
                     item_fn: item_fn.clone(),
                     contextual_losses: inherited_losses.to_vec(),
                     ffi_declarations: ffi_declarations.clone(),
+                    contextual_proc_macro_invocations: inherited_proc_macro_invocations.to_vec(),
                 });
             }
             syn::Item::Impl(impl_block) => {
                 let mut impl_losses = inherited_losses.to_vec();
-                impl_losses.extend(accepted_losses_for_attrs(&impl_block.attrs));
                 if impl_block
                     .items
                     .iter()
@@ -741,6 +795,8 @@ fn find_term_function_in_items(
                                 },
                                 contextual_losses: impl_losses,
                                 ffi_declarations: ffi_declarations.clone(),
+                                contextual_proc_macro_invocations: inherited_proc_macro_invocations
+                                    .to_vec(),
                             });
                         }
                     }
@@ -748,13 +804,12 @@ fn find_term_function_in_items(
             }
             syn::Item::Mod(module) => {
                 if let Some((_, nested_items)) = &module.content {
-                    let mut module_losses = inherited_losses.to_vec();
-                    module_losses.extend(accepted_losses_for_attrs(&module.attrs));
                     if let Some(found) = find_term_function_in_items(
                         nested_items,
                         name,
-                        &module_losses,
+                        inherited_losses,
                         ffi_declarations,
+                        inherited_proc_macro_invocations,
                     ) {
                         return Some(found);
                     }
@@ -837,31 +892,34 @@ fn link_name_from_attrs(attrs: &[syn::Attribute]) -> Option<String> {
     })
 }
 
-fn accepted_losses_for_file(file: &syn::File) -> Vec<LossRecord> {
-    let mut losses = Vec::new();
+fn proc_macro_invocations_for_file(file: &syn::File) -> Vec<ProcMacroInvocation> {
+    let mut invocations = Vec::new();
     for item in &file.items {
-        collect_procedural_macro_losses_from_item(item, &mut losses);
+        collect_proc_macro_invocations_from_item(item, &mut invocations);
     }
-    losses
+    invocations
 }
 
-fn collect_procedural_macro_losses_from_item(item: &syn::Item, losses: &mut Vec<LossRecord>) {
+fn collect_proc_macro_invocations_from_item(
+    item: &syn::Item,
+    invocations: &mut Vec<ProcMacroInvocation>,
+) {
     let attrs: &[syn::Attribute] = match item {
         syn::Item::Const(item) => &item.attrs,
         syn::Item::Enum(item) => &item.attrs,
         syn::Item::Fn(item) => &item.attrs,
         syn::Item::Impl(item) => {
-            losses.extend(accepted_losses_for_attrs(&item.attrs));
+            extend_proc_macro_invocations(invocations, &item.attrs);
             for impl_item in &item.items {
                 match impl_item {
                     syn::ImplItem::Const(item) => {
-                        losses.extend(accepted_losses_for_attrs(&item.attrs))
+                        extend_proc_macro_invocations(invocations, &item.attrs)
                     }
                     syn::ImplItem::Fn(item) => {
-                        losses.extend(accepted_losses_for_attrs(&item.attrs))
+                        extend_proc_macro_invocations(invocations, &item.attrs)
                     }
                     syn::ImplItem::Type(item) => {
-                        losses.extend(accepted_losses_for_attrs(&item.attrs))
+                        extend_proc_macro_invocations(invocations, &item.attrs)
                     }
                     _ => {}
                 }
@@ -869,10 +927,10 @@ fn collect_procedural_macro_losses_from_item(item: &syn::Item, losses: &mut Vec<
             return;
         }
         syn::Item::Mod(item) => {
-            losses.extend(accepted_losses_for_attrs(&item.attrs));
+            extend_proc_macro_invocations(invocations, &item.attrs);
             if let Some((_, items)) = &item.content {
                 for item in items {
-                    collect_procedural_macro_losses_from_item(item, losses);
+                    collect_proc_macro_invocations_from_item(item, invocations);
                 }
             }
             return;
@@ -883,21 +941,27 @@ fn collect_procedural_macro_losses_from_item(item: &syn::Item, losses: &mut Vec<
         syn::Item::Union(item) => &item.attrs,
         _ => &[],
     };
-    losses.extend(accepted_losses_for_attrs(attrs));
+    extend_proc_macro_invocations(invocations, attrs);
 }
 
-fn accepted_losses_for_attrs(attrs: &[syn::Attribute]) -> Vec<LossRecord> {
+fn extend_proc_macro_invocations(
+    invocations: &mut Vec<ProcMacroInvocation>,
+    attrs: &[syn::Attribute],
+) {
+    for invocation in proc_macro_invocations_for_attrs(attrs) {
+        push_proc_macro_invocation(invocations, invocation);
+    }
+}
+
+fn proc_macro_invocations_for_attrs(attrs: &[syn::Attribute]) -> Vec<ProcMacroInvocation> {
     attrs
         .iter()
-        .filter(|attr| attr_counts_as_procedural_macro(attr))
-        .map(|attr| LossRecord {
-            loss: LOSS_PROCEDURAL_MACRO,
-            detail: attr.path().to_token_stream().to_string(),
-        })
+        .filter(|attr| attr_counts_as_proc_macro_invocation(attr))
+        .map(proc_macro_invocation_for_attr)
         .collect()
 }
 
-fn attr_counts_as_procedural_macro(attr: &syn::Attribute) -> bool {
+fn attr_counts_as_proc_macro_invocation(attr: &syn::Attribute) -> bool {
     let Some(ident) = attr.path().get_ident() else {
         return true;
     };
@@ -905,6 +969,208 @@ fn attr_counts_as_procedural_macro(attr: &syn::Attribute) -> bool {
         ident.to_string().as_str(),
         "allow" | "cfg" | "cfg_attr" | "deny" | "doc" | "forbid" | "inline" | "must_use" | "warn"
     )
+}
+
+fn proc_macro_invocation_for_attr(attr: &syn::Attribute) -> ProcMacroInvocation {
+    let macro_path = rust_path_surface(attr.path());
+    let concept_name = if macro_path == "derive" {
+        DERIVE_ATTRIBUTE_CONCEPT
+    } else {
+        PROC_MACRO_INVOCATION_CONCEPT
+    };
+    ProcMacroInvocation {
+        concept_name,
+        macro_cid: blake3_512_of(format!("rust:attribute-macro:{macro_path}").as_bytes()),
+        args: if concept_name == DERIVE_ATTRIBUTE_CONCEPT {
+            derive_attribute_args(attr)
+        } else {
+            attribute_macro_args(attr)
+        },
+        token_stream: attr_token_stream(attr),
+        macro_path,
+    }
+}
+
+fn push_proc_macro_invocation(
+    invocations: &mut Vec<ProcMacroInvocation>,
+    invocation: ProcMacroInvocation,
+) {
+    if !invocations.iter().any(|existing| {
+        existing.concept_name == invocation.concept_name
+            && existing.macro_path == invocation.macro_path
+            && existing.token_stream == invocation.token_stream
+    }) {
+        invocations.push(invocation);
+    }
+}
+
+fn derive_attribute_args(attr: &syn::Attribute) -> Vec<JsonValue> {
+    let Meta::List(list) = &attr.meta else {
+        return Vec::new();
+    };
+    let parser = syn::punctuated::Punctuated::<syn::Path, syn::Token![,]>::parse_terminated;
+    parser
+        .parse2(list.tokens.clone())
+        .map(|paths| {
+            paths
+                .iter()
+                .map(|path| json!({"kind": "symbol", "name": rust_path_surface(path)}))
+                .collect()
+        })
+        .unwrap_or_else(|_| {
+            vec![token_stream_term(normalize_attr_tokens(
+                list.tokens.to_string(),
+            ))]
+        })
+}
+
+fn attribute_macro_args(attr: &syn::Attribute) -> Vec<JsonValue> {
+    match &attr.meta {
+        Meta::Path(_) => Vec::new(),
+        Meta::NameValue(name_value) => vec![expr_arg_term(&name_value.value)],
+        Meta::List(list) => {
+            if list.tokens.is_empty() {
+                return Vec::new();
+            }
+            let parser = syn::punctuated::Punctuated::<Expr, syn::Token![,]>::parse_terminated;
+            parser
+                .parse2(list.tokens.clone())
+                .map(|exprs| exprs.iter().map(expr_arg_term).collect())
+                .unwrap_or_else(|_| {
+                    vec![token_stream_term(normalize_attr_tokens(
+                        list.tokens.to_string(),
+                    ))]
+                })
+        }
+    }
+}
+
+fn expr_arg_term(expr: &Expr) -> JsonValue {
+    match expr {
+        Expr::Path(path) => json!({"kind": "symbol", "name": rust_path_surface(&path.path)}),
+        Expr::Lit(lit) => literal_arg_term(&lit.lit),
+        _ => token_stream_term(normalize_attr_tokens(expr.to_token_stream().to_string())),
+    }
+}
+
+fn literal_arg_term(lit: &Lit) -> JsonValue {
+    match lit {
+        Lit::Bool(value) => json!({
+            "kind": "const",
+            "sort": {"kind": "ctor", "name": "Bool", "args": []},
+            "value": value.value(),
+        }),
+        Lit::Int(value) => {
+            let parsed = value.base10_parse::<i64>().unwrap_or(0);
+            json!({
+                "kind": "const",
+                "sort": {"kind": "ctor", "name": "Int", "args": []},
+                "value": parsed,
+            })
+        }
+        Lit::Str(value) => json!({
+            "kind": "const",
+            "sort": {"kind": "ctor", "name": "String", "args": []},
+            "value": value.value(),
+        }),
+        _ => token_stream_term(normalize_attr_tokens(lit.to_token_stream().to_string())),
+    }
+}
+
+fn token_stream_term(surface: String) -> JsonValue {
+    json!({
+        "kind": "token-stream",
+        "surface": surface,
+    })
+}
+
+fn attr_token_stream(attr: &syn::Attribute) -> String {
+    match &attr.meta {
+        Meta::Path(path) => format!("#[{}]", rust_path_surface(path)),
+        Meta::List(list) => {
+            let args = normalize_attr_tokens(list.tokens.to_string());
+            format!("#[{}({args})]", rust_path_surface(&list.path))
+        }
+        Meta::NameValue(name_value) => format!(
+            "#[{} = {}]",
+            rust_path_surface(&name_value.path),
+            normalize_attr_tokens(name_value.value.to_token_stream().to_string())
+        ),
+    }
+}
+
+fn rust_path_surface(path: &syn::Path) -> String {
+    normalize_attr_tokens(path.to_token_stream().to_string())
+}
+
+fn normalize_attr_tokens(raw: String) -> String {
+    let mut out = String::new();
+    let mut prev_ws = false;
+    for ch in raw.chars() {
+        if ch.is_whitespace() {
+            if !prev_ws && !out.is_empty() {
+                out.push(' ');
+            }
+            prev_ws = true;
+        } else {
+            out.push(ch);
+            prev_ws = false;
+        }
+    }
+    let mut normalized = out.trim().to_string();
+    for (from, to) in [
+        (" :: ", "::"),
+        (" ::", "::"),
+        (":: ", "::"),
+        (" < ", "<"),
+        (" >", ">"),
+        (" ,", ","),
+        (" (", "("),
+        ("( ", "("),
+        (" )", ")"),
+        ("[ ", "["),
+        (" ]", "]"),
+    ] {
+        normalized = normalized.replace(from, to);
+    }
+    normalized
+}
+
+fn concept_op_definition_cid(concept_name: &str) -> String {
+    concept_op_definition_cids()
+        .get(concept_name)
+        .cloned()
+        .unwrap_or_else(|| concept_name.to_string())
+}
+
+fn concept_op_definition_cids() -> &'static HashMap<String, String> {
+    static CIDS: OnceLock<HashMap<String, String>> = OnceLock::new();
+    CIDS.get_or_init(|| {
+        find_repo_file(Path::new(CONCEPT_OP_DEFINITION_INDEX_REL))
+            .and_then(|path| std::fs::read_to_string(path).ok())
+            .and_then(|raw| serde_json::from_str::<HashMap<String, String>>(&raw).ok())
+            .unwrap_or_default()
+    })
+}
+
+fn find_repo_file(relative: &Path) -> Option<PathBuf> {
+    let mut bases = Vec::new();
+    if let Some(root) = std::env::var_os("PROVEKIT_REPO_ROOT") {
+        bases.push(PathBuf::from(root));
+    }
+    if let Ok(cwd) = std::env::current_dir() {
+        bases.extend(cwd.ancestors().map(Path::to_path_buf));
+    }
+    let manifest_dir = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
+    bases.extend(manifest_dir.ancestors().map(Path::to_path_buf));
+
+    for base in bases {
+        let candidate = base.join(relative);
+        if candidate.is_file() {
+            return Some(candidate);
+        }
+    }
+    None
 }
 
 fn lower_function_body_to_term(

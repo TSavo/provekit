@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Generate the post-D5 libprovekit audit CSV, gap report, and delta receipt.
+"""Generate a libprovekit audit CSV, gap report, and delta receipt.
 
 The historical D1 CSV is the stable surface inventory. This companion keeps
 that inventory fixed, re-runs function rows through the current
@@ -36,7 +36,7 @@ PR_BY_CLASS = {
     "ffi-call": "#946",
     "ffi-call-unresolved-effect": "#946",
     "vec-macro-desugared-to-array": "#946",
-    "procedural-macro": "#953",
+    "procedural-macro": "#961",
     "trait-path-truncated": "#953",
     "impl-associated-type-not-lowered": "#953",
     "abi-attribute-not-carried": "#953",
@@ -253,7 +253,7 @@ def append_group_section(
         lines.append("")
 
 
-def write_gap_report(path: Path, rows: list[dict[str, str]]) -> None:
+def write_gap_report(path: Path, rows: list[dict[str, str]], label: str = "v2", phase: str = "post-D5") -> None:
     counts = outcome_counts(rows)
     crate_counts = per_crate_counts(rows)
     refusal_counts = class_counts(rows, "refuses-with-typed-reason")
@@ -262,15 +262,15 @@ def write_gap_report(path: Path, rows: list[dict[str, str]]) -> None:
     partial_examples = examples_by_class(rows, "handles-partially-with-loss-record")
 
     lines: list[str] = []
-    lines.append("# libprovekit Rust Surface Audit v2")
+    lines.append(f"# libprovekit Rust Surface Audit {label}")
     lines.append("")
     lines.append("## Summary")
     lines.append("")
     lines.append(
         "Audit scope was the fixed D1 surface inventory: `implementations/rust/libprovekit/src` "
         "plus direct sibling crates `provekit-canonicalizer`, `provekit-proof-envelope`, and "
-        "`provekit-ir-types`. Function rows were re-run through the post-D5 `provekit-walk-emit term` "
-        "path. Non-function rows reflect the post-D5 type-declaration surface, where the current "
+        f"`provekit-ir-types`. Function rows were re-run through the {phase} `provekit-walk-emit term` "
+        f"path. Non-function rows reflect the {phase} type-declaration surface, where the current "
         "mementos carry the item without a typed refusal."
     )
     lines.append("")
@@ -311,7 +311,7 @@ def write_gap_report(path: Path, rows: list[dict[str, str]]) -> None:
     if refusal_counts:
         for klass, count in refusal_counts.most_common():
             lines.append(
-                f"- triage `{klass}` ({count} items): residual post-D5 term-emitter surface class."
+                f"- triage `{klass}` ({count} items): residual {phase} term-emitter surface class."
             )
     else:
         lines.append("- none.")
@@ -335,43 +335,49 @@ def write_gap_report(path: Path, rows: list[dict[str, str]]) -> None:
     path.write_text("\n".join(lines), encoding="utf-8")
 
 
-def write_delta(path: Path, v1_rows: list[dict[str, str]], v2_rows: list[dict[str, str]]) -> None:
-    v1_counts = outcome_counts(v1_rows)
-    v2_counts = outcome_counts(v2_rows)
-    v1_classes = class_counts(v1_rows)
-    v2_classes = class_counts(v2_rows)
-    all_classes = sorted(set(v1_classes) | set(v2_classes))
-    residual_refusals = class_counts(v2_rows, "refuses-with-typed-reason")
+def write_delta(
+    path: Path,
+    baseline_rows: list[dict[str, str]],
+    current_rows: list[dict[str, str]],
+    baseline_label: str = "v1",
+    current_label: str = "v2",
+) -> None:
+    baseline_counts = outcome_counts(baseline_rows)
+    current_counts = outcome_counts(current_rows)
+    baseline_classes = class_counts(baseline_rows)
+    current_classes = class_counts(current_rows)
+    all_classes = sorted(set(baseline_classes) | set(current_classes))
+    residual_refusals = class_counts(current_rows, "refuses-with-typed-reason")
     emerged_gap_classes = [
-        klass for klass in sorted(residual_refusals) if v1_classes[klass] == 0
+        klass for klass in sorted(residual_refusals) if baseline_classes[klass] == 0
     ]
-    full_target = v1_counts["handles-fully"] * 2
-    handled_v2 = v2_counts["handles-fully"] + v2_counts["handles-partially-with-loss-record"]
-    handled_pct = handled_v2 / len(v2_rows) * 100 if v2_rows else 0.0
-    passes_success = v2_counts["handles-fully"] >= full_target or v2_counts["refuses-with-typed-reason"] <= 200
+    full_target = baseline_counts["handles-fully"] * 2
+    handled_current = current_counts["handles-fully"] + current_counts["handles-partially-with-loss-record"]
+    handled_pct = handled_current / len(current_rows) * 100 if current_rows else 0.0
+    passes_success = current_counts["handles-fully"] >= full_target or current_counts["refuses-with-typed-reason"] <= 200
 
     lines: list[str] = []
-    lines.append("# Audit Delta v1 to v2")
+    lines.append(f"# Audit Delta {baseline_label} to {current_label}")
     lines.append("")
     lines.append("## Summary")
     lines.append("")
-    lines.append("| Outcome | v1 | v2 | Delta |")
+    lines.append(f"| Outcome | {baseline_label} | {current_label} | Delta |")
     lines.append("| --- | ---: | ---: | ---: |")
     for outcome in OUTCOMES:
-        lines.append(f"| {outcome} | {v1_counts[outcome]} | {v2_counts[outcome]} | {v2_counts[outcome] - v1_counts[outcome]} |")
+        lines.append(f"| {outcome} | {baseline_counts[outcome]} | {current_counts[outcome]} | {current_counts[outcome] - baseline_counts[outcome]} |")
     lines.append("")
-    lines.append(f"- Total items audited v2: {len(v2_rows)}")
-    lines.append(f"- Success metric: handles-fully v2 {v2_counts['handles-fully']} vs required {full_target}; refuses v2 {v2_counts['refuses-with-typed-reason']} vs fallback ceiling 200.")
+    lines.append(f"- Total items audited {current_label}: {len(current_rows)}")
+    lines.append(f"- Success metric: handles-fully {current_label} {current_counts['handles-fully']} vs required {full_target}; refuses {current_label} {current_counts['refuses-with-typed-reason']} vs fallback ceiling 200.")
     lines.append(f"- Success metric result: {'pass' if passes_success else 'miss'}")
-    lines.append(f"- Target check handles-fully plus partial: {handled_v2}/{len(v2_rows)} ({handled_pct:.1f}%) vs 90.0%.")
+    lines.append(f"- Target check handles-fully plus partial: {handled_current}/{len(current_rows)} ({handled_pct:.1f}%) vs 90.0%.")
     lines.append("")
     lines.append("## Per-gap-class delta")
     lines.append("")
-    lines.append("| Class | v1 | v2 | Delta | Resolution PR |")
+    lines.append(f"| Class | {baseline_label} | {current_label} | Delta | Resolution PR |")
     lines.append("| --- | ---: | ---: | ---: | --- |")
     for klass in all_classes:
         pr = PR_BY_CLASS.get(klass, "post-D5 residual")
-        lines.append(f"| `{klass}` | {v1_classes[klass]} | {v2_classes[klass]} | {v2_classes[klass] - v1_classes[klass]} | {pr} |")
+        lines.append(f"| `{klass}` | {baseline_classes[klass]} | {current_classes[klass]} | {current_classes[klass] - baseline_classes[klass]} | {pr} |")
     lines.append("")
     lines.append("## Newly-emerged gap classes")
     lines.append("")
@@ -394,9 +400,10 @@ def write_delta(path: Path, v1_rows: list[dict[str, str]], v2_rows: list[dict[st
     lines.append("## Resolution PR map")
     lines.append("")
     lines.append("- #946: D2 return sort, let binding, and call/method-call lifting.")
-    lines.append("- #953: D3 accepted named-loss classes for macros, trait paths, associated types, ABI attributes, and statement macros.")
+    lines.append("- #953: D3 accepted named-loss classes for trait paths, associated types, ABI attributes, and statement macros.")
     lines.append("- #955: D4 term-emitter expression and statement coverage.")
     lines.append("- #956: D5 generic and nested-item handling.")
+    lines.append("- #961: procedural macro invocations carried as concept operations.")
     lines.append("")
     path.write_text("\n".join(lines), encoding="utf-8")
 
@@ -407,6 +414,9 @@ def main() -> int:
     parser.add_argument("--csv", type=Path, default=Path("bootstrap/libprovekit-surface-audit.v2.csv"))
     parser.add_argument("--gap-report", type=Path, default=Path("bootstrap/libprovekit-gap-report.v2.md"))
     parser.add_argument("--delta", type=Path, default=Path("bootstrap/audit-delta-v1-to-v2.md"))
+    parser.add_argument("--baseline-label", default="v1")
+    parser.add_argument("--current-label", default="v2")
+    parser.add_argument("--phase-label", default="post-D5")
     parser.add_argument("--skip-build", action="store_true")
     args = parser.parse_args()
 
@@ -426,8 +436,8 @@ def main() -> int:
             v2_rows.append(current_non_function_row(row))
 
     write_csv(root / args.csv, v2_rows)
-    write_gap_report(root / args.gap_report, v2_rows)
-    write_delta(root / args.delta, v1_rows, v2_rows)
+    write_gap_report(root / args.gap_report, v2_rows, args.current_label, args.phase_label)
+    write_delta(root / args.delta, v1_rows, v2_rows, args.baseline_label, args.current_label)
 
     counts = outcome_counts(v2_rows)
     print(f"wrote {args.csv}")

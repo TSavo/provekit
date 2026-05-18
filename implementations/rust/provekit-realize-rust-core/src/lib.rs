@@ -69,16 +69,36 @@ pub fn emit_stub_with_mode(
     concept_name: &str,
     mode: Option<&str>,
 ) -> Realization {
+    emit_stub_with_mode_and_invocations(
+        function,
+        params,
+        param_types,
+        return_type,
+        concept_name,
+        mode,
+        &[],
+    )
+}
+
+fn emit_stub_with_mode_and_invocations(
+    function: &str,
+    params: &[String],
+    param_types: &[String],
+    return_type: &str,
+    concept_name: &str,
+    mode: Option<&str>,
+    proc_macro_invocations: &[Value],
+) -> Realization {
     let rendered = operator_body_template_for(concept_name, params, param_types, return_type, mode)
         .or_else(|| body_template_for(concept_name, params, param_types, return_type, mode));
     if rendered.is_none() {
         if let Some(realized) =
             emit_sugar_carrier(function, params, param_types, return_type, concept_name)
         {
-            return realized;
+            return apply_proc_macro_invocations(realized, proc_macro_invocations);
         }
     }
-    match rendered {
+    let realization = match rendered {
         Some(rendered) => emit_function_with_evidence(
             function,
             params,
@@ -92,7 +112,8 @@ pub fn emit_stub_with_mode(
             let body = stub_body_for(concept_name);
             emit_function(function, params, param_types, return_type, &body, true)
         }
-    }
+    };
+    apply_proc_macro_invocations(realization, proc_macro_invocations)
 }
 
 pub fn emit_from_term_shape(
@@ -268,6 +289,36 @@ fn rust_comment_body(surface: &str) -> String {
         return format!("/*\n{}\n*/", trimmed);
     }
     format!("// {trimmed}")
+}
+
+fn apply_proc_macro_invocations(
+    mut realization: Realization,
+    proc_macro_invocations: &[Value],
+) -> Realization {
+    let prefix = proc_macro_attribute_prefix(proc_macro_invocations);
+    if prefix.is_empty() {
+        return realization;
+    }
+    realization.source = format!("{prefix}{}", realization.source);
+    realization.emitted_artifact_cid = blake3_512_of(realization.source.as_bytes());
+    realization
+}
+
+fn proc_macro_attribute_prefix(proc_macro_invocations: &[Value]) -> String {
+    proc_macro_invocations
+        .iter()
+        .filter_map(proc_macro_attribute_token_stream)
+        .map(|token_stream| format!("{token_stream}\n"))
+        .collect()
+}
+
+fn proc_macro_attribute_token_stream(invocation: &Value) -> Option<String> {
+    let token_stream = invocation.get("token_stream")?.as_str()?.trim();
+    if token_stream.starts_with("#[") && token_stream.ends_with(']') {
+        Some(token_stream.to_string())
+    } else {
+        None
+    }
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -657,22 +708,29 @@ pub fn dispatch(request: &Value) -> Value {
             let mode = params.get("mode").and_then(Value::as_str);
             let param_names = string_array(params.get("params"));
             let param_types = string_array(params.get("param_types"));
+            let proc_macro_invocations = value_array(
+                params
+                    .get("procMacroInvocations")
+                    .or_else(|| params.get("proc_macro_invocations")),
+            );
             let realized = if let Some(term_shape) = params.get("term_shape") {
-                emit_from_term_shape(
+                let r = emit_from_term_shape(
                     term_shape,
                     function,
                     &param_names,
                     &param_types,
                     return_type,
-                )
+                );
+                apply_proc_macro_invocations(r, &proc_macro_invocations)
             } else {
-                emit_stub_with_mode(
+                emit_stub_with_mode_and_invocations(
                     function,
                     &param_names,
                     &param_types,
                     return_type,
                     concept_name,
                     mode,
+                    &proc_macro_invocations,
                 )
             };
             serde_json::json!({
@@ -1025,6 +1083,10 @@ fn string_array(value: Option<&Value>) -> Vec<String> {
         .unwrap_or_default()
 }
 
+fn value_array(value: Option<&Value>) -> Vec<Value> {
+    value.and_then(Value::as_array).cloned().unwrap_or_default()
+}
+
 fn error(id: Value, code: i64, message: &str) -> Value {
     serde_json::json!({
         "jsonrpc": "2.0",
@@ -1272,6 +1334,35 @@ mod tests {
         assert_eq!(
             rendered.source,
             "pub fn unknown_cell(x: i64) -> i64 {\n    panic!(\"provekit-bind canonical: missing-cell\")\n}\n"
+        );
+    }
+
+    #[test]
+    fn rpc_emits_proc_macro_invocations_before_realized_function() {
+        let response = dispatch(&serde_json::json!({
+            "jsonrpc": "2.0",
+            "id": 7,
+            "method": "provekit.plugin.invoke",
+            "params": {
+                "function": "traced",
+                "params": ["x"],
+                "param_types": ["i64"],
+                "return_type": "i64",
+                "concept_name": "identity",
+                "procMacroInvocations": [{
+                    "concept_name": "concept:proc-macro-invocation",
+                    "macro_path": "instrument",
+                    "token_stream": "#[instrument]"
+                }]
+            }
+        }));
+
+        let source = response["result"]["source"]
+            .as_str()
+            .expect("realized source");
+        assert_eq!(
+            source,
+            "#[instrument]\npub fn traced(x: i64) -> i64 {\n    x\n}\n"
         );
     }
 
