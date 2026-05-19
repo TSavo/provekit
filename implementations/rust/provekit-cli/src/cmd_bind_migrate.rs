@@ -2839,6 +2839,79 @@ mod tests {
         }
     }
 
+    fn harness_build_ntt(probe: &CallsiteProbe, target: &HarnessTarget) -> serde_json::Value {
+        let arg_params = if target.is_python {
+            probe
+                .params
+                .iter()
+                .map(|param| snake_case(param))
+                .collect::<Vec<_>>()
+        } else {
+            probe.params.iter().map(|param| param.to_string()).collect()
+        };
+        let arg_source = if target.is_python {
+            harness_python_args_source(&arg_params)
+        } else {
+            harness_typescript_args_source(&arg_params)
+        };
+
+        json!({
+            "args": [
+                {
+                    "args": [],
+                    "conceptName": "Sql",
+                    "operationKind": "const",
+                    "shapeCid": harness_leaf_shape_cid("Sql", "const"),
+                    "source": serde_json::to_string(probe.sql)
+                        .expect("SQL literal serializes as JSON string"),
+                    "sort": "Sql",
+                    "value": probe.sql,
+                },
+                {
+                    "args": [],
+                    "conceptName": "SqlArgs",
+                    "operationKind": "args",
+                    "params": arg_params,
+                    "shapeCid": harness_leaf_shape_cid("SqlArgs", "args"),
+                    "sort": "SqlArgs",
+                    "source": arg_source,
+                },
+            ],
+            "conceptName": probe.concept_name,
+            "operationKind": "op-application",
+            "shapeCid": harness_concept_cid(probe.concept_name),
+        })
+    }
+
+    fn harness_concept_cid(concept_name: &str) -> &'static str {
+        match concept_name {
+            "concept:sql-query" => SQL_QUERY_CONCEPT_CID,
+            "concept:sql-execute" => SQL_EXECUTE_CONCEPT_CID,
+            "concept:insert-and-get-id" => SQL_INSERT_AND_GET_ID_CONCEPT_CID,
+            _ => panic!("unsupported harness concept {concept_name}"),
+        }
+    }
+
+    fn harness_leaf_shape_cid(sort: &str, operation_kind: &str) -> String {
+        cid_for_json(&json!({
+            "kind": "named-term-tree-leaf-shape",
+            "operationKind": operation_kind,
+            "sort": sort,
+        }))
+    }
+
+    fn harness_typescript_args_source(params: &[String]) -> String {
+        format!("[{}]", params.join(", "))
+    }
+
+    fn harness_python_args_source(params: &[String]) -> String {
+        match params {
+            [] => "()".to_string(),
+            [only] => format!("({only},)"),
+            many => format!("({},)", many.join(", ")),
+        }
+    }
+
     fn harness_normalize_whitespace(text: &str) -> String {
         text.split_whitespace().collect::<Vec<_>>().join(" ")
     }
@@ -2976,6 +3049,128 @@ mod tests {
             rows.len(),
             12,
             "harness must produce 12 verification points (4 callsites x 3 targets)"
+        );
+    }
+
+    #[test]
+    fn d5_realize_verification_harness_with_ntt_per_callsite_per_target() {
+        let repo = harness_repo_root();
+        let mut rows: Vec<(String, HarnessCategory, String, String, String)> = Vec::new();
+
+        for probe in harness_callsites() {
+            for target in harness_targets() {
+                let function = if target.is_python {
+                    probe.target_function_name
+                } else {
+                    probe.name
+                };
+                let param_types = if target.is_python {
+                    &probe.param_types_py
+                } else {
+                    &probe.param_types_ts
+                };
+                let return_type = if target.is_python {
+                    probe.return_type_py
+                } else {
+                    probe.return_type_ts
+                };
+                let spec = json!({
+                    "kind": "RealizeRequest",
+                    "function": function,
+                    "params": probe.params,
+                    "paramTypes": param_types,
+                    "returnType": return_type,
+                    "conceptName": probe.concept_name,
+                    "sql": probe.sql,
+                    "namedTermTree": harness_build_ntt(&probe, &target),
+                });
+
+                let cell = format!("{}/{}", probe.name, target.label);
+                let result = realize_probe_via_path(&repo, target.language, target.tag, spec);
+                match result {
+                    Err(err) => {
+                        rows.push((
+                            cell,
+                            HarnessCategory::Missing,
+                            String::new(),
+                            harness_expected(&probe, &target).to_string(),
+                            format!("realize_probe_via_path returned Err: {err}"),
+                        ));
+                    }
+                    Ok(realized) if realized.is_stub => {
+                        rows.push((
+                            cell,
+                            HarnessCategory::Missing,
+                            realized.source.clone(),
+                            harness_expected(&probe, &target).to_string(),
+                            "realize plugin returned is_stub = true".to_string(),
+                        ));
+                    }
+                    Ok(realized) => {
+                        let expected = harness_expected(&probe, &target);
+                        let cat = harness_categorize(&realized.source, expected);
+                        let note = match cat {
+                            HarnessCategory::Matches => "byte-identical (trim)",
+                            HarnessCategory::Cosmetic => {
+                                "whitespace-normalized equivalent or one contains the other"
+                            }
+                            HarnessCategory::Semantic => "semantic divergence",
+                            HarnessCategory::Missing => "unreachable",
+                        };
+                        rows.push((
+                            cell,
+                            cat,
+                            realized.source.clone(),
+                            expected.to_string(),
+                            note.to_string(),
+                        ));
+                    }
+                }
+            }
+        }
+
+        println!("\n========================================");
+        println!("D5 REALIZE VERIFICATION HARNESS (NTT MODE) SUMMARY");
+        println!("12 verification points (4 callsites x 3 targets)");
+        println!("========================================");
+        for (cell, cat, _, _, note) in &rows {
+            println!("[{cell}] {cat:?}: {note}");
+        }
+        let n_matches = rows
+            .iter()
+            .filter(|r| r.1 == HarnessCategory::Matches)
+            .count();
+        let n_cosmetic = rows
+            .iter()
+            .filter(|r| r.1 == HarnessCategory::Cosmetic)
+            .count();
+        let n_semantic = rows
+            .iter()
+            .filter(|r| r.1 == HarnessCategory::Semantic)
+            .count();
+        let n_missing = rows
+            .iter()
+            .filter(|r| r.1 == HarnessCategory::Missing)
+            .count();
+        println!(
+            "\nTotals: MATCHES={n_matches} COSMETIC={n_cosmetic} SEMANTIC={n_semantic} MISSING={n_missing}"
+        );
+        println!("========================================\n");
+
+        for (cell, cat, realized, expected, note) in &rows {
+            println!("\n--- DETAIL [{cell}] => {cat:?} ---");
+            println!("Note: {note}");
+            println!("\n[REALIZED OUTPUT from realize plugin]");
+            println!("{realized}");
+            println!("\n[EXPECTED FRAGMENT from render_*_source (whitespace-collapsed)]");
+            println!("{expected}");
+            println!("--- END {cell} ---");
+        }
+
+        assert_eq!(
+            rows.len(),
+            12,
+            "NTT-mode harness must produce 12 verification points (4 callsites x 3 targets)"
         );
     }
 }
