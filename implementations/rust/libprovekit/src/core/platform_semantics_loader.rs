@@ -35,27 +35,46 @@ pub enum PlatformSemanticsLoadError {
     ResultShape(String),
 }
 
-/// The canonical command for each lower-target kit. Hardcoded by-target rather
-/// than discovered because (a) this dispatcher must work in tests that have
-/// not registered a plugin registry, and (b) the kit binaries are themselves
-/// pinned by the workspace + plugin protocol; their command names are stable
-/// per CCP. Plugin-loader-based resolution remains available for callers that
-/// need it; for the platform-semantics specifically the canonical pinned name
-/// is enough.
-fn kit_command_for(target: &str) -> Option<Vec<String>> {
-    match target {
-        "rust" => Some(vec!["provekit-realize-rust-core".to_string()]),
-        "c" => Some(vec!["provekit-realize-c-core".to_string()]),
-        "java" => Some(vec!["provekit-realize-java-core".to_string()]),
-        "python" => Some(vec!["provekit-realize-python-core".to_string()]),
-        "typescript" => Some(vec!["provekit-realize-typescript-core".to_string()]),
-        // Binding-kit variants (per binding_semantics_for_tag dispatcher).
-        "aiosqlite" => Some(vec!["provekit-realize-python-aiosqlite".to_string()]),
-        "better-sqlite3" => Some(vec!["provekit-realize-typescript-better-sqlite3".to_string()]),
-        "pg" => Some(vec!["provekit-realize-typescript-pg".to_string()]),
-        "sqlite3" => Some(vec!["provekit-realize-python-sqlite3".to_string()]),
-        _ => None,
+/// Resolve a kit binary by convention. The substrate does NOT enumerate kits.
+///
+/// Convention:
+///   1. Try `provekit-realize-<kit_id>-core` on PATH (pure language-kit form)
+///   2. Try `provekit-realize-<kit_id>` on PATH (full kit-identity form,
+///      e.g., `python-aiosqlite`, `typescript-pg`)
+///
+/// Returns the first command that resolves on PATH. If neither candidate
+/// is on PATH, returns the language-kit form as a best-effort command so
+/// the loader's spawn produces a MissingBinary error citing the
+/// convention name, rather than collapsing two failure modes (unknown
+/// kit vs binary-missing) into the same None.
+///
+/// Adding a new kit requires nothing here: name the binary by convention
+/// and the substrate finds it. The previous hardcoded match table was
+/// substrate-uniform-pattern violation: kit enumeration inside libprovekit.
+fn kit_command_for(kit_id: &str) -> Vec<String> {
+    let lang_form = format!("provekit-realize-{kit_id}-core");
+    let identity_form = format!("provekit-realize-{kit_id}");
+    if which_on_path(&lang_form).is_some() {
+        return vec![lang_form];
     }
+    if which_on_path(&identity_form).is_some() {
+        return vec![identity_form];
+    }
+    // Best-effort: surface the language-kit-form name in MissingBinary.
+    vec![lang_form]
+}
+
+fn which_on_path(bin: &str) -> Option<PathBuf> {
+    std::env::var_os("PATH").and_then(|paths| {
+        std::env::split_paths(&paths).find_map(|dir| {
+            let candidate = dir.join(bin);
+            if candidate.is_file() {
+                Some(candidate)
+            } else {
+                None
+            }
+        })
+    })
 }
 
 /// Load a kit's PlatformSemanticsDeclaration over JSON-RPC.
@@ -64,14 +83,20 @@ fn kit_command_for(target: &str) -> Option<Vec<String>> {
 /// `provekit.plugin.platform_semantics`, parses the result, and shuts the
 /// subprocess down.
 pub fn load_platform_semantics(
-    target: &str,
+    kit_id: &str,
 ) -> Result<PlatformSemanticsDeclaration, PlatformSemanticsLoadError> {
-    let Some(command) = kit_command_for(target) else {
-        return Err(PlatformSemanticsLoadError::Failed(format!(
-            "no kit command registered for target {target}"
-        )));
-    };
+    let command = kit_command_for(kit_id);
     load_platform_semantics_for_command(&command, None)
+}
+
+/// Load using an explicit binary command. The substrate's preferred API for
+/// callers that already know the kit's binary path (e.g., the CLI resolved
+/// it via `.provekit/realize/<kit>/manifest.toml`).
+pub fn load_platform_semantics_with_command(
+    command: &[String],
+    working_dir: Option<&PathBuf>,
+) -> Result<PlatformSemanticsDeclaration, PlatformSemanticsLoadError> {
+    load_platform_semantics_for_command(command, working_dir)
 }
 
 /// Same as `load_platform_semantics`, but caches the result per-target for
