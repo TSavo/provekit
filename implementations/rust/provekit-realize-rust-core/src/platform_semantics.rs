@@ -2,10 +2,21 @@
 
 use std::collections::BTreeMap;
 
-use provekit_ir_types::{DimensionValueMemento, IrFormula, PlatformSemanticTag};
+use provekit_ir_types::{DimensionValueMemento, IrFormula, IrTerm, PlatformSemanticTag, Sort};
 use serde::{Deserialize, Serialize};
 
 const RUST_KIT_CID: &str = "blake3-512:e3c223b8b6f39382e43cb06c5b04059987e661d96311decd5003d4ec79c7d6f9969de39ae16dd6509cb5236185260d59c63288db7ff772aae00f8123ea826cbd";
+
+// Canonical sort CIDs (from #1282)
+const SORT_INT_CID: &str = "blake3-512:30ffc51350121a7172f3e4064a33c45bbd345756979fccff6875cd2ab33e4964d098a99df80cfbdf1ec1a0738c5ac3476f0ff8f75589ea511d1acd82c74ecd58";
+const SORT_FLOAT_CID: &str = "blake3-512:b979e70c4d5e53d9bdf13d6f08330be3c5b0714b8c770d69bbd05946b86c36df5274be8145a2683cc29c278155c9c1ee65b6897913524eecb9e4c89c71862f57";
+const SORT_STRING_CID: &str = "blake3-512:be8721d24849feb74c4721520bdba02d352a94f49253a627cd509127472aa1c47cbe99cb705cac4159b5365abcce0c9aaa4901fe67630827deb6be1f9daeea10";
+const SORT_BOOL_CID: &str = "blake3-512:0ee13bf3fd6b7ecfbee72dfbfc18a7c0ea7f1663de6cca43cefb36f5b4c03665452646094a7c296e819e75d683c6ce4821f3d7db3c3c78ae97f2d4e3451d2074";
+const SORT_BYTES_CID: &str = "blake3-512:7116ef6e62e6739b213a8394f975a53c771b89f08c36d27143827acfcfebc0e39e5b82c530be668c3cfd5ec6966ccaa42930b37fdb1f4ac25652a970be10fb6b";
+// Rust does not admit Null (no native null at the value layer)
+
+// concept:literal CID (from #1282)
+const CONCEPT_LITERAL_CID: &str = "blake3-512:02804a0bdbd2d5d541544451f41ee8d0d340baf28f70bd5abf5844e87a96aedd7b5ab3453962754a020679cc8c6b3d1f4cf0336a7ad8118128d42ac667abf2d6";
 
 const OP_ADD: &str = "blake3-512:398980644a46039b0c2875ab36ccb61f52f284ccad5481593305ed3f10efe91e7863c00a3f2d673644430f691e6b5354f5d65f9da4fa23acdb13dc58f5b438f9";
 const OP_SUB: &str = "blake3-512:b6c62a64669ff12d0af45d9932c1ab5e08576f1cac97b4abe60392a9f02393dac9765514b024b1481ddc829d4b7fb97950ad648a9944dceafa194b8423923533";
@@ -72,6 +83,11 @@ pub fn declaration() -> PlatformSemanticsDeclaration {
             tag(OP_BITXOR, &[("BitwiseSemantics", &values.twos_complement)]),
             tag(OP_NEG, &[("ArithmeticOverflow", &values.wrapping)]),
             tag(OP_BITNOT, &[("BitwiseSemantics", &values.twos_complement)]),
+            // concept:literal: which canonical sorts this kit admits at the value layer
+            tag(
+                CONCEPT_LITERAL_CID,
+                &[("SortAdmission", &values.sort_admission)],
+            ),
         ],
     }
 }
@@ -82,6 +98,7 @@ struct DimensionValueCids {
     arithmetic: String,
     panic_on_div_by_zero: String,
     twos_complement: String,
+    sort_admission: String,
 }
 
 fn dimension_value_cids() -> DimensionValueCids {
@@ -98,6 +115,24 @@ fn dimension_value_cids() -> DimensionValueCids {
             "BitwiseSemantics",
             "TwosComplement",
             atom("rust:TwosComplement"),
+        ),
+        // Rust admits: Int, Float, String, Bool, Bytes (no Null)
+        // Args must be sorted alphabetically by CID string value:
+        //   BOOL  (0ee1...)
+        //   INT   (30ff...)
+        //   BYTES (7116...)
+        //   FLOAT (b979...)
+        //   STRING(be87...)
+        sort_admission: dimension_value_cid(
+            "SortAdmission",
+            "RustValueTier",
+            admits_sorts_formula(&[
+                SORT_BOOL_CID,
+                SORT_INT_CID,
+                SORT_BYTES_CID,
+                SORT_FLOAT_CID,
+                SORT_STRING_CID,
+            ]),
         ),
     }
 }
@@ -116,6 +151,18 @@ pub fn dimension_values() -> Vec<DimensionValueMemento> {
             "BitwiseSemantics",
             "TwosComplement",
             atom("rust:TwosComplement"),
+        ),
+        // concept:literal SortAdmission: Rust admits Int, Float, String, Bool, Bytes (no Null)
+        dimension_value(
+            "SortAdmission",
+            "RustValueTier",
+            admits_sorts_formula(&[
+                SORT_BOOL_CID,
+                SORT_INT_CID,
+                SORT_BYTES_CID,
+                SORT_FLOAT_CID,
+                SORT_STRING_CID,
+            ]),
         ),
     ]
 }
@@ -149,5 +196,23 @@ fn atom(name: &str) -> IrFormula {
     IrFormula::Atomic {
         name: name.to_string(),
         args: vec![],
+    }
+}
+
+/// Build an `admits_sorts` formula whose args are CID constants in the given order.
+/// Callers must pass CIDs already sorted alphabetically by string value.
+fn admits_sorts_formula(sorted_cids: &[&str]) -> IrFormula {
+    let args = sorted_cids
+        .iter()
+        .map(|cid| IrTerm::Const {
+            value: serde_json::Value::String((*cid).to_string()),
+            sort: Sort::Primitive {
+                name: "cid".to_string(),
+            },
+        })
+        .collect();
+    IrFormula::Atomic {
+        name: "admits_sorts".to_string(),
+        args,
     }
 }
