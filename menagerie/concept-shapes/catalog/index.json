@@ -49,6 +49,12 @@
       "name": "morphism:zig:bitxor:to:concept:bitxor",
       "path": "algorithms/morphism:zig:bitxor:to:concept:bitxor.blake3-512:01d3251c3ce0ccf4899c0a25bd030aa223b4dfc5536f8dfea1c6800b747b570d3caca56454c9077f1ad13755212eeeabcf1fdfd5f55e965ebe5a09d2b77efa0a.json"
     },
+    "blake3-512:02804a0bdbd2d5d541544451f41ee8d0d340baf28f70bd5abf5844e87a96aedd7b5ab3453962754a020679cc8c6b3d1f4cf0336a7ad8118128d42ac667abf2d6": {
+      "cid": "blake3-512:02804a0bdbd2d5d541544451f41ee8d0d340baf28f70bd5abf5844e87a96aedd7b5ab3453962754a020679cc8c6b3d1f4cf0336a7ad8118128d42ac667abf2d6",
+      "kind": "algorithm",
+      "name": "concept:literal",
+      "path": "algorithms/concept:literal.blake3-512:02804a0bdbd2d5d541544451f41ee8d0d340baf28f70bd5abf5844e87a96aedd7b5ab3453962754a020679cc8c6b3d1f4cf0336a7ad8118128d42ac667abf2d6.json"
+    },
     "blake3-512:031adf28e3de522dff5b5bb910b747f62c8442ca5a08c0cce55edb8b1ec4668f557a62be22fc0369819b9ca68a9d2f13c2400db01ce15e52b93f87249e0d4bea": {
       "cid": "blake3-512:031adf28e3de522dff5b5bb910b747f62c8442ca5a08c0cce55edb8b1ec4668f557a62be22fc0369819b9ca68a9d2f13c2400db01ce15e52b93f87249e0d4bea",
       "kind": "receipt",
@@ -1429,6 +1435,12 @@
       "name": "morphism:python:for:to:concept:for",
       "path": "algorithms/morphism:python:for:to:concept:for.blake3-512:62e85d95a3083b74df386766723446f57c2ac7c84d3f64cec6678f618e5c55b412d96a5a591f0cd31dcce4bcef03811b747d72687fe416778e6fb9ced2086165.json"
     },
+    "blake3-512:62f6040bd3f414c1e6c2b7bdf276669cd5613b33cb508a81170170064ca3ffba771a4b0002dc52e059fce5f9f63a1874ef71bd4ec89ae06e89c87a3e91aac3b5": {
+      "cid": "blake3-512:62f6040bd3f414c1e6c2b7bdf276669cd5613b33cb508a81170170064ca3ffba771a4b0002dc52e059fce5f9f63a1874ef71bd4ec89ae06e89c87a3e91aac3b5",
+      "kind": "sort",
+      "name": "Null",
+      "path": "sorts/Null.blake3-512:62f6040bd3f414c1e6c2b7bdf276669cd5613b33cb508a81170170064ca3ffba771a4b0002dc52e059fce5f9f63a1874ef71bd4ec89ae06e89c87a3e91aac3b5.json"
+    },
     "blake3-512:6320ffdf2eb9d1960e583f47087e95683f6b39b7dfddc5ed5fb453134832dfc471b173a95bd6a4779556e3ba5c47f1b03e02970775252ae5085ebfaf27b6b72e": {
       "cid": "blake3-512:6320ffdf2eb9d1960e583f47087e95683f6b39b7dfddc5ed5fb453134832dfc471b173a95bd6a4779556e3ba5c47f1b03e02970775252ae5085ebfaf27b6b72e",
       "kind": "algorithm",
@@ -2479,6 +2491,12 @@
       "name": "morphism_java_shl_to_shl",
       "path": "receipts/morphism_java_shl_to_shl.blake3-512:b31f2dcc44fb0b1682b5a0ddaf819ebd7d03e4dcfe100404e07e2ec120728f66067f59c3725ba61420f58542c1b90a8f1eb43578c71cf95e20c02d830c11071b.json"
     },
+    "blake3-512:b38426ba10ee3a6c28e9e32cae9aa65cfb5b750950464d1e67e9d669956bd40288d25c247d0ec2d638fd63e2d235d944f419055c0374c78488b4be98da040451": {
+      "cid": "blake3-512:b38426ba10ee3a6c28e9e32cae9aa65cfb5b750950464d1e67e9d669956bd40288d25c247d0ec2d638fd63e2d235d944f419055c0374c78488b4be98da040451",
+      "kind": "exam",
+      "name": "exam-manifest-v1.1",
+      "path": "exams/v1.1.blake3-512:b38426ba10ee3a6c28e9e32cae9aa65cfb5b750950464d1e67e9d669956bd40288d25c247d0ec2d638fd63e2d235d944f419055c0374c78488b4be98da040451.json"
+    },
     "blake3-512:b3dcafd52368f774c941b24aa7a0f40faa5af70377ec2fd735992829cce7b8e21099f7903c20b582832aec59bf94fbb2135f9a281e52338690f533df31b32478": {
       "cid": "blake3-512:b3dcafd52368f774c941b24aa7a0f40faa5af70377ec2fd735992829cce7b8e21099f7903c20b582832aec59bf94fbb2135f9a281e52338690f533df31b32478",
       "kind": "receipt",
@@ -2574,6 +2592,12 @@
       "kind": "realization",
       "name": "concept:assert->python:assert-statement",
       "path": "realizations/concept:assert->python:assert-statement.blake3-512:b95fb78b3e68fa84e34d6b65b913967e17f3b57a8a89247d306ff7fe0dfa9cd056729586a647c8d2925ec14ccdc50b1681f3fcb21196e788083e6ba97e40d4b9.json"
+    },
+    "blake3-512:b979e70c4d5e53d9bdf13d6f08330be3c5b0714b8c770d69bbd05946b86c36df5274be8145a2683cc29c278155c9c1ee65b6897913524eecb9e4c89c71862f57": {
+      "cid": "blake3-512:b979e70c4d5e53d9bdf13d6f08330be3c5b0714b8c770d69bbd05946b86c36df5274be8145a2683cc29c278155c9c1ee65b6897913524eecb9e4c89c71862f57",
+      "kind": "sort",
+      "name": "Float",
+      "path": "sorts/Float.blake3-512:b979e70c4d5e53d9bdf13d6f08330be3c5b0714b8c770d69bbd05946b86c36df5274be8145a2683cc29c278155c9c1ee65b6897913524eecb9e4c89c71862f57.json"
     },
     "blake3-512:b98ae1ac8b8f06800db51e648c3a3567200b73e256fcb4d3f664262c95e928979b93f946362c88c14c91d57e0daaabef4dc97ba8617b39828d802db153b36981": {
       "cid": "blake3-512:b98ae1ac8b8f06800db51e648c3a3567200b73e256fcb4d3f664262c95e928979b93f946362c88c14c91d57e0daaabef4dc97ba8617b39828d802db153b36981",

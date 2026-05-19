@@ -40,6 +40,11 @@ use serde_json::{json, Value};
 const CONCEPT_SHAPES_CATALOG_INDEX_JSON: &str =
     include_str!("../../../../../menagerie/concept-shapes/catalog/index.json");
 const EXAM_MANIFEST_CID: &str = libprovekit::exam_manifest::DEFAULT_EXAM_MANIFEST_CID;
+const SORT_BOOL_CID: &str = "blake3-512:0ee13bf3fd6b7ecfbee72dfbfc18a7c0ea7f1663de6cca43cefb36f5b4c03665452646094a7c296e819e75d683c6ce4821f3d7db3c3c78ae97f2d4e3451d2074";
+const SORT_BYTES_CID: &str = "blake3-512:7116ef6e62e6739b213a8394f975a53c771b89f08c36d27143827acfcfebc0e39e5b82c530be668c3cfd5ec6966ccaa42930b37fdb1f4ac25652a970be10fb6b";
+const SORT_FLOAT_CID: &str = "blake3-512:b979e70c4d5e53d9bdf13d6f08330be3c5b0714b8c770d69bbd05946b86c36df5274be8145a2683cc29c278155c9c1ee65b6897913524eecb9e4c89c71862f57";
+const SORT_INT_CID: &str = "blake3-512:30ffc51350121a7172f3e4064a33c45bbd345756979fccff6875cd2ab33e4964d098a99df80cfbdf1ec1a0738c5ac3476f0ff8f75589ea511d1acd82c74ecd58";
+const SORT_STRING_CID: &str = "blake3-512:be8721d24849feb74c4721520bdba02d352a94f49253a627cd509127472aa1c47cbe99cb705cac4159b5365abcce0c9aaa4901fe67630827deb6be1f9daeea10";
 
 static CONCEPT_OP_CIDS: OnceLock<BTreeMap<String, String>> = OnceLock::new();
 static EXAM_MANIFEST: OnceLock<Option<ExamManifestMemento>> = OnceLock::new();
@@ -265,10 +270,10 @@ fn initialize_result() -> Value {
     json!({
         "name": "provekit-walk-rpc",
         "version": env!("CARGO_PKG_VERSION"),
-        "protocol_version": "pep/1.7.0",
-        "capabilities": {
-            "authoring_surfaces": ["rust", "rust-bind"],
-            "ir_version": "bind-ir/1.0.0",
+            "protocol_version": "pep/1.7.0",
+            "capabilities": {
+                "authoring_surfaces": ["rust", "rust-bind"],
+            "ir_version": "bind-ir/2.0.0",
             "emits_signed_mementos": false
         }
     })
@@ -1788,6 +1793,7 @@ fn shape_of_expr(expr: &syn::Expr, ctx: &ShapeContext) -> Arc<CValue> {
             args.extend(e.args.iter().map(|arg| shape_of_expr(arg, ctx)));
             gamma_operation("concept:call", args)
         }
+        syn::Expr::Lit(lit) => literal_shape(&lit.lit),
         syn::Expr::Block(b) => shape_of_block(&b.block, ctx),
         syn::Expr::Paren(e) => shape_of_expr(&e.expr, ctx),
         syn::Expr::Group(e) => shape_of_expr(&e.expr, ctx),
@@ -1955,6 +1961,67 @@ fn gamma_operation(concept_name: &str, args: Vec<Arc<CValue>>) -> Arc<CValue> {
         ("concept_name", CValue::string(concept_name.to_string())),
         ("op_cid", CValue::string(op_cid.to_string())),
     ])
+}
+
+fn literal_shape(lit: &syn::Lit) -> Arc<CValue> {
+    match lit {
+        syn::Lit::Bool(value) => {
+            concept_literal_shape(CValue::boolean(value.value()), SORT_BOOL_CID)
+        }
+        syn::Lit::Int(value) => value
+            .base10_parse::<i64>()
+            .ok()
+            .map(|decoded| concept_literal_shape(CValue::integer(decoded), SORT_INT_CID))
+            .unwrap_or_else(non_operation_shape),
+        syn::Lit::Float(value) => {
+            concept_literal_shape(CValue::string(value.base10_digits()), SORT_FLOAT_CID)
+        }
+        syn::Lit::Str(value) => {
+            concept_literal_shape(CValue::string(value.value()), SORT_STRING_CID)
+        }
+        syn::Lit::ByteStr(value) => {
+            concept_literal_shape(byte_array_value(value.value()), SORT_BYTES_CID)
+        }
+        syn::Lit::CStr(value) => concept_literal_shape(
+            byte_array_value(value.value().as_bytes_with_nul().to_vec()),
+            SORT_BYTES_CID,
+        ),
+        syn::Lit::Byte(value) => {
+            concept_literal_shape(CValue::integer(i64::from(value.value())), SORT_INT_CID)
+        }
+        // Char refused: Rust `char` is a 32-bit Unicode scalar (no-surrogate
+        // invariant), structurally distinct from String (UTF-8 byte sequence).
+        // The substrate has no proof of equivalence between these sorts, so
+        // claiming `'a': String` would publish a false content-addressed
+        // equivalence. Refuse the lift until `concept:Char` mints.
+        syn::Lit::Char(_) => non_operation_shape(),
+        syn::Lit::Verbatim(_) => non_operation_shape(),
+        // syn::Lit is #[non_exhaustive]; future variants refuse the lift
+        // until the substrate adds an explicit shape claim for them.
+        _ => non_operation_shape(),
+    }
+}
+
+fn concept_literal_shape(value: Arc<CValue>, sort_cid: &str) -> Arc<CValue> {
+    let Some(op_cid) = concept_op_cid("concept:literal") else {
+        return non_operation_shape();
+    };
+    CValue::object([
+        ("args", CValue::array(Vec::new())),
+        ("concept_name", CValue::string("concept:literal")),
+        ("op_cid", CValue::string(op_cid.to_string())),
+        ("sort", CValue::string(sort_cid.to_string())),
+        ("value", value),
+    ])
+}
+
+fn byte_array_value(bytes: Vec<u8>) -> Arc<CValue> {
+    CValue::array(
+        bytes
+            .into_iter()
+            .map(|byte| CValue::integer(i64::from(byte)))
+            .collect(),
+    )
 }
 
 fn concept_op_cid(concept_name: &str) -> Option<&'static str> {
@@ -2244,6 +2311,27 @@ pub fn add(x: i64, y: i64) -> i64 {
                 "concept_name": "concept:add",
                 "op_cid": "blake3-512:95fc70e63a5550fd2e25142f13932919c59d085654ab387789c798886b0111c61d28fe533fc98b50df70eea9428a9af8aa75372c8b1c1deb3acc1a4094790468"
             })
+        );
+    }
+
+    #[test]
+    fn term_shape_rust_char_literal_refuses_lift() {
+        // Rust `char` is a 32-bit Unicode scalar, structurally distinct from
+        // String. The substrate has no proof of equivalence between the two
+        // sorts; refuse the lift (non_operation_shape) until concept:Char
+        // mints. Any other answer would publish a false content-addressed
+        // equivalence claim.
+        let shape = term_shape_json(
+            r#"
+pub fn first() -> char {
+    'a'
+}
+"#,
+        );
+        assert_eq!(
+            shape,
+            json!({}),
+            "Char literal must refuse lift, not project onto String"
         );
     }
 

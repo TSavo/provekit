@@ -1,0 +1,35 @@
+{
+  "memento": {
+    "schema_version": "1",
+    "protocol": "LSP",
+    "kind": "SortMemento",
+    "fn_name": "Float",
+    "formals": [],
+    "formal_sorts": [],
+    "pre": {
+      "args": [],
+      "kind": "atomic",
+      "name": "true"
+    },
+    "post": {
+      "kind": "sort-instance",
+      "name": "Float",
+      "sort_kind": "primitive"
+    },
+    "effects": {
+      "effects": []
+    },
+    "auto_minted_mementos": [],
+    "return_sort": {
+      "args": [],
+      "kind": "ctor",
+      "name": "SortCid"
+    }
+  },
+  "cid": "blake3-512:b979e70c4d5e53d9bdf13d6f08330be3c5b0714b8c770d69bbd05946b86c36df5274be8145a2683cc29c278155c9c1ee65b6897913524eecb9e4c89c71862f57",
+  "signature": {
+    "alg": "ed25519",
+    "key_id": "UNSIGNED_DEV_ONLY",
+    "sig_b64": "p8KUkCBmvf2vVv7FGXsRkwQ9GKYa9o5kNWvRI9ym4tJ/oTw+wzF3LSQl2cDTEHK24hRAvc5m5OkDPNEjvn6BCQ=="
+  }
+}

@@ -18,6 +18,8 @@ SORTS = [
     ("Bool", "primitive"),
     ("String", "primitive"),
     ("Bytes", "primitive"),
+    ("Float", "primitive"),
+    ("Null", "primitive"),
     ("Cid", "primitive"),
     ("OpCid", "primitive"),
     ("SortCid", "primitive"),

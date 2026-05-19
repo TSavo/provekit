@@ -79,11 +79,7 @@ pub fn unknown_shape_gap_record(
     manifest: Option<&ExamManifestMemento>,
 ) -> Result<serde_json::Value, String> {
     let (exam_question_cid, exam_manifest_cid) = libprovekit::exam_manifest::exam_question_citation(
-        manifest,
-        "morphism",
-        concept,
-        language,
-        "cluster",
+        manifest, "morphism", concept, language, "cluster",
     );
     let gap = TransportGapMemento {
         exam_manifest_cid,
@@ -108,8 +104,9 @@ pub fn unknown_shape_gap_record(
             respec_target_to: None,
             split_targets: None,
             status: OptionStatus::Deferred,
-            tradeoff: "name the concept or add a catalog shape before treating the cluster as exact"
-                .to_string(),
+            tradeoff:
+                "name the concept or add a catalog shape before treating the cluster as exact"
+                    .to_string(),
         }],
         schema_version: "1".to_string(),
         signature: None,
@@ -126,7 +123,7 @@ mod tests {
     use super::*;
 
     const EXAM_MANIFEST_JSON: &str = include_str!(
-        "../../../concept-shapes/exams/v1.1.blake3-512:32af210992406289b0863d6f24ab3f05e6707034fd473fe7a8e323edda0376ce018f9ba8a31d00c4e3c4134140b1f3e06cfad6a0afde762778032035066475cc.json"
+        "../../../concept-shapes/exams/v1.1.blake3-512:b38426ba10ee3a6c28e9e32cae9aa65cfb5b750950464d1e67e9d669956bd40288d25c247d0ec2d638fd63e2d235d944f419055c0374c78488b4be98da040451.json"
     );
 
     #[test]
@@ -139,10 +136,14 @@ mod tests {
             Some(&manifest),
         )
         .expect("gap serializes");
-        let expected =
-            libprovekit::exam_manifest::exam_question_cid_for(&manifest, "morphism", "concept:add", "rust")
-                .expect("lookup add/rust")
-                .expect("add/rust question exists");
+        let expected = libprovekit::exam_manifest::exam_question_cid_for(
+            &manifest,
+            "morphism",
+            "concept:add",
+            "rust",
+        )
+        .expect("lookup add/rust")
+        .expect("add/rust question exists");
 
         assert_eq!(gap["target_concept_op"], "concept:add");
         assert_eq!(gap["exam_manifest_cid"], manifest.header.cid);
@@ -174,10 +175,14 @@ mod tests {
             Some(&manifest),
         )
         .expect("gap serializes");
-        let related =
-            libprovekit::exam_manifest::exam_question_cid_for(&manifest, "morphism", "concept:sub", "rust")
-                .expect("lookup sub/rust")
-                .expect("sub/rust question exists");
+        let related = libprovekit::exam_manifest::exam_question_cid_for(
+            &manifest,
+            "morphism",
+            "concept:sub",
+            "rust",
+        )
+        .expect("lookup sub/rust")
+        .expect("sub/rust question exists");
 
         assert_ne!(
             gap["exam_question_cid"].as_str().expect("question cid"),
