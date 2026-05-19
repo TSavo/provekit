@@ -371,6 +371,13 @@ mod sort_admission_tests {
             other => panic!("expected SortAdmission divergence, got {other:?}"),
         };
         assert_eq!(divergence.dimension_name, "SortAdmission");
+        // Pin which DimensionValueMemento CIDs the divergence cites. Without
+        // these the test would pass for any divergence under the
+        // SortAdmission name; with them the test asserts specifically that
+        // python's value diverges into rust's value (and not, say, into a
+        // stale unrelated SortAdmission CID).
+        assert_eq!(divergence.source_value_cid, python_value.cid);
+        assert_eq!(divergence.target_value_cid, rust_value.cid);
 
         let changed = ChangedCallsite {
             callsite_cid: "callsite:null-literal".to_string(),

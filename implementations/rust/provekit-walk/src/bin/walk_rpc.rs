@@ -1989,9 +1989,12 @@ fn literal_shape(lit: &syn::Lit) -> Arc<CValue> {
         syn::Lit::Byte(value) => {
             concept_literal_shape(CValue::integer(i64::from(value.value())), SORT_INT_CID)
         }
-        syn::Lit::Char(value) => {
-            concept_literal_shape(CValue::string(value.value().to_string()), SORT_STRING_CID)
-        }
+        // Char refused: Rust `char` is a 32-bit Unicode scalar (no-surrogate
+        // invariant), structurally distinct from String (UTF-8 byte sequence).
+        // The substrate has no proof of equivalence between these sorts, so
+        // claiming `'a': String` would publish a false content-addressed
+        // equivalence. Refuse the lift until `concept:Char` mints.
+        syn::Lit::Char(_) => non_operation_shape(),
         syn::Lit::Verbatim(_) => non_operation_shape(),
     }
 }
@@ -2305,6 +2308,27 @@ pub fn add(x: i64, y: i64) -> i64 {
                 "concept_name": "concept:add",
                 "op_cid": "blake3-512:95fc70e63a5550fd2e25142f13932919c59d085654ab387789c798886b0111c61d28fe533fc98b50df70eea9428a9af8aa75372c8b1c1deb3acc1a4094790468"
             })
+        );
+    }
+
+    #[test]
+    fn term_shape_rust_char_literal_refuses_lift() {
+        // Rust `char` is a 32-bit Unicode scalar, structurally distinct from
+        // String. The substrate has no proof of equivalence between the two
+        // sorts; refuse the lift (non_operation_shape) until concept:Char
+        // mints. Any other answer would publish a false content-addressed
+        // equivalence claim.
+        let shape = term_shape_json(
+            r#"
+pub fn first() -> char {
+    'a'
+}
+"#,
+        );
+        assert_eq!(
+            shape,
+            json!({}),
+            "Char literal must refuse lift, not project onto String"
         );
     }
 
