@@ -119,6 +119,16 @@ fn write_block_comment_concept_source(src_dir: &Path) -> PathBuf {
     source_path
 }
 
+fn write_malformed_concept_source(src_dir: &Path) -> PathBuf {
+    let source_path = src_dir.join("bad.ts");
+    fs::write(
+        &source_path,
+        "// provekit-concept: {not json}\n// provekit-concept-payload-cid: blake3-512:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\n",
+    )
+    .expect("write malformed source");
+    source_path
+}
+
 #[test]
 fn materialize_dry_run_replaces_concept_citation_with_realized_library_source() {
     let workspace = tempfile::tempdir().expect("tempdir");
@@ -312,4 +322,36 @@ fn materialize_accepts_single_line_block_comment_carriers() {
     assert!(rewritten.contains("db.prepare(sql).all(args)"));
     assert!(!rewritten.contains("provekit-concept:"));
     assert!(!rewritten.contains("*/"));
+}
+
+#[test]
+fn materialize_malformed_carrier_error_names_source_file() {
+    let workspace = tempfile::tempdir().expect("tempdir");
+    let src_dir = write_typescript_project_fixture(workspace.path());
+    write_malformed_concept_source(&src_dir);
+
+    let output = Command::new(env!("CARGO_BIN_EXE_provekit"))
+        .arg("materialize")
+        .arg("--library")
+        .arg("typescript-better-sqlite3")
+        .arg("--source-dir")
+        .arg(&src_dir)
+        .arg("--project")
+        .arg(workspace.path())
+        .output()
+        .expect("spawn provekit materialize");
+
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(
+        !output.status.success(),
+        "malformed carrier should fail\nstderr:\n{stderr}"
+    );
+    assert!(
+        stderr.contains("bad.ts"),
+        "error should identify the source file with the malformed carrier:\n{stderr}"
+    );
+    assert!(
+        stderr.contains("parse provekit-concept payload JSON"),
+        "error should preserve the JSON parse detail:\n{stderr}"
+    );
 }

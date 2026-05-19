@@ -182,7 +182,8 @@ fn materialize_source_dir(
         let raw = std::fs::read_to_string(path)
             .map_err(|error| format!("read {}: {error}", path.display()))?;
         let (content, replacements) =
-            materialize_source_text(project_root, target_lang, library_tag, &raw)?;
+            materialize_source_text(project_root, target_lang, library_tag, &raw)
+                .map_err(|error| format!("{}: {error}", path.display()))?;
         if replacements == 0 {
             continue;
         }
