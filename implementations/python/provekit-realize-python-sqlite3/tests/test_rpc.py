@@ -33,6 +33,137 @@ def test_rpc_invoke_renders_sqlite3_body() -> None:
     assert "db.execute" in response["result"]["source"]
 
 
+def test_rpc_invoke_uses_named_term_tree_shape_for_sql_query() -> None:
+    response = dispatch(
+        {
+            "jsonrpc": "2.0",
+            "id": 3,
+            "method": "provekit.plugin.invoke",
+            "params": {
+                "function": "select_by_id",
+                "params": ["id"],
+                "param_types": ["int"],
+                "return_type": "list[object]",
+                "concept_name": "concept:sql-query",
+                "named_term_tree": {
+                    "conceptName": "concept:sql-query",
+                    "operationKind": "sql-query",
+                    "shapeCid": "blake3-512:sql-query",
+                    "args": [
+                        {
+                            "conceptName": "Sql",
+                            "operationKind": "literal",
+                            "shapeCid": "blake3-512:sql",
+                            "args": [],
+                        },
+                        {
+                            "conceptName": "SqlArgs",
+                            "operationKind": "tuple",
+                            "shapeCid": "blake3-512:sql-args",
+                            "args": [],
+                        },
+                    ],
+                },
+            },
+        }
+    )
+
+    assert response["id"] == 3
+    assert response["result"]["source"] == (
+        "def select_by_id(id):\n"
+        "    cursor = db.execute(sql, tuple(args))\n"
+        "    return cursor.fetchall()\n"
+    )
+    assert response["result"]["is_stub"] is False
+
+
+def test_rpc_invoke_without_named_term_tree_keeps_bare_signature_lookup() -> None:
+    response = dispatch(
+        {
+            "jsonrpc": "2.0",
+            "id": 4,
+            "method": "provekit.plugin.invoke",
+            "params": {
+                "function": "select_by_id",
+                "params": ["id"],
+                "param_types": ["int"],
+                "return_type": "list[object]",
+                "concept_name": "concept:sql-query",
+            },
+        }
+    )
+
+    assert response == {
+        "jsonrpc": "2.0",
+        "id": 4,
+        "error": {
+            "code": -32100,
+            "message": "missing body-template entry",
+            "data": [
+                {
+                    "operation_kind": "concept:sql-query",
+                    "args_shape": ["int"],
+                    "function": "select_by_id",
+                    "term_position": "body",
+                }
+            ],
+        },
+    }
+
+
+def test_rpc_missing_template_reports_named_term_tree_shape() -> None:
+    response = dispatch(
+        {
+            "jsonrpc": "2.0",
+            "id": 5,
+            "method": "provekit.plugin.invoke",
+            "params": {
+                "function": "missing_query",
+                "params": ["id"],
+                "param_types": ["int"],
+                "return_type": "list[object]",
+                "concept_name": "missing-concept",
+                "named_term_tree": {
+                    "conceptName": "missing-concept",
+                    "operationKind": "missing",
+                    "shapeCid": "blake3-512:missing",
+                    "args": [
+                        {
+                            "conceptName": "Sql",
+                            "operationKind": "literal",
+                            "shapeCid": "blake3-512:sql",
+                            "args": [],
+                        },
+                        {
+                            "conceptName": "SqlArgs",
+                            "operationKind": "tuple",
+                            "shapeCid": "blake3-512:sql-args",
+                            "args": [],
+                        },
+                    ],
+                },
+            },
+        }
+    )
+
+    assert response == {
+        "jsonrpc": "2.0",
+        "id": 5,
+        "error": {
+            "code": -32100,
+            "message": "missing body-template entry",
+            "data": [
+                {
+                    "operation_kind": "missing-concept",
+                    "args_shape": ["str", "list[object]"],
+                    "function": "missing_query",
+                    "term_position": "body",
+                }
+            ],
+        },
+    }
+
+
 def test_plugin_invoke_returns_structured_missing_template_error() -> None:
     response = dispatch(
         {
