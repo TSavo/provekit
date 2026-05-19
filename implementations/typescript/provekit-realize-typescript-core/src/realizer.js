@@ -30,6 +30,7 @@ function createRealizer(bodyTemplateRel) {
     const mappedParamTypes = paramTypes.map(mapSourceType);
     const mappedReturnType = mapSourceType(returnType);
     const nttArgsShape = argsShapeFromNamedTermTree(namedTermTree, conceptName);
+    const templateSignature = templateLookupSignature(params, mappedParamTypes, namedTermTree, nttArgsShape);
     const candidateArgShapes = argShapeCandidates(nttArgsShape, mappedParamTypes, params.length);
     const candidateNames = [conceptName, conceptName.replace(/^concept:/, "")];
     for (const entry of entries()) {
@@ -40,7 +41,12 @@ function createRealizer(bodyTemplateRel) {
       if (typeof guard.requires_return_type === "string" && mappedReturnType !== guard.requires_return_type) continue;
       const emissionTemplate = entry.emission_template ?? {};
       if (emissionTemplate.kind !== "verbatim" || typeof emissionTemplate.template !== "string") continue;
-      const rendered = renderTemplate(emissionTemplate.template, params, mappedParamTypes, mappedReturnType);
+      const rendered = renderTemplate(
+        emissionTemplate.template,
+        templateSignature.params,
+        templateSignature.paramTypes,
+        mappedReturnType,
+      );
       if (rendered !== null) return rendered;
     }
     return null;
@@ -73,6 +79,84 @@ function argShapeCandidates(nttArgsShape, mappedParamTypes, paramCount) {
   }
   candidates.push({ count: paramCount, types: mappedParamTypes });
   return candidates;
+}
+
+function templateLookupSignature(params, mappedParamTypes, namedTermTree, nttArgsShape) {
+  if (!Array.isArray(nttArgsShape)) {
+    return { params, paramTypes: mappedParamTypes };
+  }
+  return {
+    params: nttTemplateParams(params, namedTermTree, nttArgsShape.length),
+    paramTypes: nttArgsShape,
+  };
+}
+
+function nttTemplateParams(params, namedTermTree, arity) {
+  const args = isPlainObject(namedTermTree) ? namedTermTree.args : null;
+  if (!Array.isArray(args)) {
+    if (params.length === arity) return params;
+    return Array.from({ length: arity }, (_, index) => `arg${index}`);
+  }
+
+  return Array.from({ length: arity }, (_, index) => {
+    const arg = args[index];
+    if (isPlainObject(arg)) return nttArgTemplateParam(arg, index);
+    return `arg${index}`;
+  });
+}
+
+function nttArgTemplateParam(arg, index) {
+  const source = stringField(arg, ["source"]);
+  if (source !== null) return source;
+
+  for (const key of ["name", "paramName", "param_name", "binding", "symbol"]) {
+    const value = stringField(arg, [key]);
+    if (value !== null) return typescriptIdentifierOrDefault(value, `arg${index}`);
+  }
+
+  const descriptor = nttArgDescriptor(arg);
+  if (descriptor === null) return `arg${index}`;
+  const name = normalizeConceptName(descriptor);
+  switch (name) {
+    case "sql":
+    case "sql-literal":
+      return "sql";
+    case "sqlargs":
+    case "sql-args":
+    case "sql_args":
+      return "args";
+    default:
+      return typescriptIdentifierOrDefault(descriptor.replace(/^concept:/, ""), `arg${index}`);
+  }
+}
+
+function nttArgDescriptor(arg) {
+  for (const key of [
+    "type",
+    "typeName",
+    "type_name",
+    "sort",
+    "sortName",
+    "sort_name",
+    "conceptName",
+    "concept_name",
+    "operationKind",
+    "operation_kind",
+  ]) {
+    const value = arg[key];
+    if (typeof value === "string" && value.trim() !== "") return value.trim();
+    if (isPlainObject(value)) {
+      const name = stringField(value, ["name", "sortName", "sort_name"]);
+      if (name !== null) return name;
+    }
+  }
+  return null;
+}
+
+function typescriptIdentifierOrDefault(value, fallback) {
+  const identifier = value.replace(/-/g, "_");
+  if (/^[A-Za-z_$][0-9A-Za-z_$]*$/.test(identifier)) return identifier;
+  return fallback;
 }
 
 function signatureGuardMatches(guard, candidateArgShapes) {

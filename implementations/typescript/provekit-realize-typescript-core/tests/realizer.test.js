@@ -132,6 +132,32 @@ test("named term tree request resolves the existing pg sql query body template",
   assert.match(result.source, /await pool\.query\(sql, args\)/);
 });
 
+test("named term tree source values drive pg sql query template substitution", () => {
+  const realizer = createRealizer(PG_BODY_TEMPLATE);
+  const result = realizer.emitStub({
+    functionName: "getUserById",
+    params: ["id"],
+    paramTypes: ["number"],
+    returnType: "User",
+    conceptName: "concept:sql-query",
+    namedTermTree: namedTermTree("concept:sql-query", [
+      {
+        ...namedTermTree("Sql"),
+        source: "\"SELECT id, name, email FROM users WHERE id = $1\"",
+        sort: "Sql",
+      },
+      {
+        ...namedTermTree("SqlArgs"),
+        source: "[id]",
+        sort: "SqlArgs",
+      },
+    ]),
+  });
+
+  assert.equal(result.is_stub, false);
+  assert.match(result.source, /await pool\.query\("SELECT id, name, email FROM users WHERE id = \$1", \[id\]\)/);
+});
+
 test("bare signature request still uses mapped param types without named term tree", () => {
   const realizer = createRealizer(SQL_GUARD_TEMPLATE);
   const result = realizer.emitStub({
