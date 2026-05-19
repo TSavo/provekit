@@ -12,6 +12,27 @@ if str(PKG_SRC) not in sys.path:
 from provekit_realize_python_aiosqlite.rpc import dispatch
 
 
+SQL_QUERY_NTT = {
+    "conceptName": "concept:sql-query",
+    "operationKind": "op-application",
+    "shapeCid": "blake3-512:sql-query",
+    "args": [
+        {
+            "conceptName": "Sql",
+            "operationKind": "const",
+            "shapeCid": "blake3-512:sql",
+            "args": [],
+        },
+        {
+            "conceptName": "SqlArgs",
+            "operationKind": "tuple",
+            "shapeCid": "blake3-512:sql-args",
+            "args": [],
+        },
+    ],
+}
+
+
 def test_rpc_invoke_renders_aiosqlite_body() -> None:
     response = dispatch(
         {
@@ -31,6 +52,32 @@ def test_rpc_invoke_renders_aiosqlite_body() -> None:
     assert response["id"] == 1
     assert response["result"]["is_stub"] is False
     assert "async with db.execute" in response["result"]["source"]
+
+
+def test_rpc_invoke_threads_named_term_tree_for_template_lookup() -> None:
+    response = dispatch(
+        {
+            "jsonrpc": "2.0",
+            "id": 9,
+            "method": "provekit.plugin.invoke",
+            "params": {
+                "function": "get_user_by_id",
+                "params": ["id"],
+                "param_types": ["int"],
+                "return_type": "User",
+                "concept_name": "concept:sql-query",
+                "named_term_tree": SQL_QUERY_NTT,
+            },
+        }
+    )
+
+    assert response["id"] == 9
+    assert response["result"]["is_stub"] is False
+    assert response["result"]["source"] == (
+        "async def get_user_by_id(id):\n"
+        "    async with db.execute(sql, tuple(args)) as cursor:\n"
+        "        return await cursor.fetchall()\n"
+    )
 
 
 def test_plugin_invoke_returns_structured_missing_template_error() -> None:
@@ -59,6 +106,41 @@ def test_plugin_invoke_returns_structured_missing_template_error() -> None:
                 {
                     "operation_kind": "missing-concept",
                     "args_shape": ["int"],
+                    "function": "missing",
+                    "term_position": "body",
+                }
+            ],
+        },
+    }
+
+
+def test_plugin_invoke_missing_template_uses_named_term_tree_args_shape() -> None:
+    response = dispatch(
+        {
+            "jsonrpc": "2.0",
+            "id": 10,
+            "method": "provekit.plugin.invoke",
+            "params": {
+                "function": "missing",
+                "params": ["id"],
+                "param_types": ["int"],
+                "return_type": "User",
+                "concept_name": "missing-concept",
+                "named_term_tree": SQL_QUERY_NTT,
+            },
+        }
+    )
+
+    assert response == {
+        "jsonrpc": "2.0",
+        "id": 10,
+        "error": {
+            "code": -32100,
+            "message": "missing body-template entry",
+            "data": [
+                {
+                    "operation_kind": "missing-concept",
+                    "args_shape": ["Sql", "SqlArgs"],
                     "function": "missing",
                     "term_position": "body",
                 }

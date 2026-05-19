@@ -11,6 +11,27 @@ if str(PKG_SRC) not in sys.path:
 from provekit_realize_python_aiosqlite.realizer import MissingTemplateError, emit_stub
 
 
+SQL_QUERY_NTT = {
+    "conceptName": "concept:sql-query",
+    "operationKind": "op-application",
+    "shapeCid": "blake3-512:sql-query",
+    "args": [
+        {
+            "conceptName": "Sql",
+            "operationKind": "const",
+            "shapeCid": "blake3-512:sql",
+            "args": [],
+        },
+        {
+            "conceptName": "SqlArgs",
+            "operationKind": "tuple",
+            "shapeCid": "blake3-512:sql-args",
+            "args": [],
+        },
+    ],
+}
+
+
 def test_sql_query_uses_aiosqlite_execute() -> None:
     result = emit_stub(
         function="select_rows",
@@ -27,6 +48,64 @@ def test_sql_query_uses_aiosqlite_execute() -> None:
     )
     assert result["is_stub"] is False
     assert result["extension"] == "py"
+
+
+def test_sql_query_uses_named_term_tree_args_shape() -> None:
+    result = emit_stub(
+        function="get_user_by_id",
+        params=["id"],
+        param_types=["int"],
+        return_type="User",
+        concept_name="concept:sql-query",
+        named_term_tree=SQL_QUERY_NTT,
+    )
+
+    assert result["source"] == (
+        "async def get_user_by_id(id):\n"
+        "    async with db.execute(sql, tuple(args)) as cursor:\n"
+        "        return await cursor.fetchall()\n"
+    )
+    assert result["is_stub"] is False
+    assert result["extension"] == "py"
+
+
+def test_sql_query_without_named_term_tree_uses_param_types_fallback() -> None:
+    try:
+        emit_stub("get_user_by_id", ["id"], ["int"], "User", "concept:sql-query")
+    except MissingTemplateError as exc:
+        assert [entry.to_json() for entry in exc.entries] == [
+            {
+                "operation_kind": "concept:sql-query",
+                "args_shape": ["int"],
+                "function": "get_user_by_id",
+                "term_position": "body",
+            }
+        ]
+    else:
+        raise AssertionError("bare callsite signature should refuse")
+
+
+def test_missing_template_reports_named_term_tree_args_shape() -> None:
+    try:
+        emit_stub(
+            "missing",
+            ["id"],
+            ["int"],
+            "User",
+            "missing-concept",
+            named_term_tree=SQL_QUERY_NTT,
+        )
+    except MissingTemplateError as exc:
+        assert [entry.to_json() for entry in exc.entries] == [
+            {
+                "operation_kind": "missing-concept",
+                "args_shape": ["Sql", "SqlArgs"],
+                "function": "missing",
+                "term_position": "body",
+            }
+        ]
+    else:
+        raise AssertionError("missing body-template should refuse")
 
 
 def test_unknown_concept_refuses_missing_body_template() -> None:
