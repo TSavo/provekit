@@ -5,6 +5,7 @@ import sys
 import traceback
 from typing import Any
 
+from .platform_semantics import declaration as _platform_semantics_declaration
 from .realizer import MissingTemplateError, emit_stub
 
 
@@ -67,6 +68,13 @@ def dispatch(request: dict[str, Any]) -> dict[str, Any]:
                 "extension": "py",
             },
         }
+    if method == "provekit.plugin.platform_semantics":
+        decl = _platform_semantics_declaration()
+        return {"jsonrpc": "2.0", "id": msg_id, "result": {
+            "tags": decl["tags"],
+            "dimension_values": decl["dimension_values"],
+            "op_aliases": {},
+        }}
     if method == "provekit.plugin.shutdown":
         return {"jsonrpc": "2.0", "id": msg_id, "result": None}
     return _error(msg_id, -32601, f"METHOD_NOT_FOUND: {method}")
