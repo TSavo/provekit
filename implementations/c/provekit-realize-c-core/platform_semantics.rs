@@ -3,7 +3,7 @@
 use std::collections::BTreeMap;
 
 use crate::core::types::PlatformSemanticsDeclaration;
-use provekit_ir_types::{DimensionValueMemento, IrFormula, PlatformSemanticTag};
+use provekit_ir_types::{DimensionValueMemento, IrFormula, IrTerm, PlatformSemanticTag, Sort};
 
 const KIT_CID: &str = "blake3-512:dff15254b714e03acf6f72eb8a65465ffc0140a69e538a610201bfa4ae39456bf4d18a5b87a77c64db12b9e9af53f8538ce73468e44367d1a06006a79d6e9830";
 
@@ -12,11 +12,23 @@ const INTEGER_DIVISION_ROUNDING: &str = "IntegerDivisionRounding";
 const SHIFT_MODE: &str = "ShiftMode";
 const NULL_SEMANTICS: &str = "NullSemantics";
 const BITWISE_SEMANTICS: &str = "BitwiseSemantics";
+const SORT_ADMISSION: &str = "SortAdmission";
+const C_VALUE_TIER: &str = "CValueTier";
+const CONCEPT_LITERAL_CID: &str = "blake3-512:02804a0bdbd2d5d541544451f41ee8d0d340baf28f70bd5abf5844e87a96aedd7b5ab3453962754a020679cc8c6b3d1f4cf0336a7ad8118128d42ac667abf2d6";
 
 const UNDEFINED_BEHAVIOR: &str = "UndefinedBehavior";
 const TRUNCATE: &str = "Truncate";
 const IMPLEMENTATION_DEFINED: &str = "ImplementationDefined";
 const TWOS_COMPLEMENT: &str = "TwosComplement";
+
+// Canonical sort CIDs (alphabetically sorted for admits_sorts formula)
+// C admits: Int, Float, String, Bytes, Null (no Bool)
+// Sorted by CID string: Int(30ff) < Null(62f6) < Bytes(7116) < Float(b979) < String(be87)
+const SORT_INT_CID: &str = "blake3-512:30ffc51350121a7172f3e4064a33c45bbd345756979fccff6875cd2ab33e4964d098a99df80cfbdf1ec1a0738c5ac3476f0ff8f75589ea511d1acd82c74ecd58";
+const SORT_NULL_CID: &str = "blake3-512:62f6040bd3f414c1e6c2b7bdf276669cd5613b33cb508a81170170064ca3ffba771a4b0002dc52e059fce5f9f63a1874ef71bd4ec89ae06e89c87a3e91aac3b5";
+const SORT_BYTES_CID: &str = "blake3-512:7116ef6e62e6739b213a8394f975a53c771b89f08c36d27143827acfcfebc0e39e5b82c530be668c3cfd5ec6966ccaa42930b37fdb1f4ac25652a970be10fb6b";
+const SORT_FLOAT_CID: &str = "blake3-512:b979e70c4d5e53d9bdf13d6f08330be3c5b0714b8c770d69bbd05946b86c36df5274be8145a2683cc29c278155c9c1ee65b6897913524eecb9e4c89c71862f57";
+const SORT_STRING_CID: &str = "blake3-512:be8721d24849feb74c4721520bdba02d352a94f49253a627cd509127472aa1c47cbe99cb705cac4159b5365abcce0c9aaa4901fe67630827deb6be1f9daeea10";
 
 const C_PLATFORM_SEMANTIC_OP_CIDS: &[&str] = &[
     "blake3-512:95fc70e63a5550fd2e25142f13932919c59d085654ab387789c798886b0111c61d28fe533fc98b50df70eea9428a9af8aa75372c8b1c1deb3acc1a4094790468", // concept:add
@@ -44,6 +56,7 @@ struct DimensionCids {
     shift_mode: String,
     null_semantics: String,
     bitwise_semantics: String,
+    sort_admission: String,
 }
 
 impl DimensionCids {
@@ -54,10 +67,11 @@ impl DimensionCids {
             shift_mode: dimension_value(SHIFT_MODE, IMPLEMENTATION_DEFINED).cid,
             null_semantics: dimension_value(NULL_SEMANTICS, UNDEFINED_BEHAVIOR).cid,
             bitwise_semantics: dimension_value(BITWISE_SEMANTICS, TWOS_COMPLEMENT).cid,
+            sort_admission: sort_admission_dimension_value().cid,
         }
     }
 
-    fn dimensions(&self) -> BTreeMap<String, String> {
+    fn op_dimensions(&self) -> BTreeMap<String, String> {
         BTreeMap::from([
             (
                 ARITHMETIC_OVERFLOW.to_string(),
@@ -75,21 +89,34 @@ impl DimensionCids {
             ),
         ])
     }
+
+    fn literal_dimensions(&self) -> BTreeMap<String, String> {
+        BTreeMap::from([(
+            SORT_ADMISSION.to_string(),
+            self.sort_admission.clone(),
+        )])
+    }
 }
 
 pub fn declaration() -> PlatformSemanticsDeclaration {
-    let dimensions = DimensionCids::new();
+    let dim_cids = DimensionCids::new();
+    let mut tags: Vec<PlatformSemanticTag> = C_PLATFORM_SEMANTIC_OP_CIDS
+        .iter()
+        .map(|op_cid| {
+            PlatformSemanticTag::new(
+                KIT_CID.to_string(),
+                (*op_cid).to_string(),
+                dim_cids.op_dimensions(),
+            )
+        })
+        .collect();
+    tags.push(PlatformSemanticTag::new(
+        KIT_CID.to_string(),
+        CONCEPT_LITERAL_CID.to_string(),
+        dim_cids.literal_dimensions(),
+    ));
     PlatformSemanticsDeclaration {
-        tags: C_PLATFORM_SEMANTIC_OP_CIDS
-            .iter()
-            .map(|op_cid| {
-                PlatformSemanticTag::new(
-                    KIT_CID.to_string(),
-                    (*op_cid).to_string(),
-                    dimensions.dimensions(),
-                )
-            })
-            .collect(),
+        tags,
         dimension_values: dimension_values(),
         op_aliases: BTreeMap::new(),
     }
@@ -102,6 +129,7 @@ pub fn dimension_values() -> Vec<DimensionValueMemento> {
         dimension_value(SHIFT_MODE, IMPLEMENTATION_DEFINED),
         dimension_value(NULL_SEMANTICS, UNDEFINED_BEHAVIOR),
         dimension_value(BITWISE_SEMANTICS, TWOS_COMPLEMENT),
+        sort_admission_dimension_value(),
     ]
 }
 
@@ -114,5 +142,37 @@ fn dimension_value(dimension_name: &str, value_name: &str) -> DimensionValueMeme
             name: format!("c:{value_name}"),
             args: vec![],
         },
+    )
+}
+
+fn admits_sorts_formula(sorted_cids: &[&str]) -> IrFormula {
+    let args = sorted_cids
+        .iter()
+        .map(|cid| IrTerm::Const {
+            value: serde_json::Value::String((*cid).to_string()),
+            sort: Sort::Primitive {
+                name: "cid".to_string(),
+            },
+        })
+        .collect();
+    IrFormula::Atomic {
+        name: "admits_sorts".to_string(),
+        args,
+    }
+}
+
+fn sort_admission_dimension_value() -> DimensionValueMemento {
+    let formula = admits_sorts_formula(&[
+        SORT_INT_CID,
+        SORT_NULL_CID,
+        SORT_BYTES_CID,
+        SORT_FLOAT_CID,
+        SORT_STRING_CID,
+    ]);
+    DimensionValueMemento::new(
+        KIT_CID.to_string(),
+        SORT_ADMISSION.to_string(),
+        C_VALUE_TIER.to_string(),
+        formula,
     )
 }
