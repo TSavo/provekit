@@ -132,6 +132,19 @@ def platform_semantics():
     )
     return json.loads(proc.stdout)
 
+CONCEPT_LITERAL_CID = (
+    "blake3-512:02804a0bdbd2d5d541544451f41ee8d0d340baf28f70bd5abf5844e87a96aedd"
+    "7b5ab3453962754a020679cc8c6b3d1f4cf0336a7ad8118128d42ac667abf2d6"
+)
+GOLDEN_SORT_ADMISSION_DV_CID = (
+    "blake3-512:3f4313896772a69aefb7ec0367d53d763e14640e48382c76d96167815696a978"
+    "18e2e3bdd2f65700f3eee66f0d34b92856d387429d246d241d2f93396a3ed131"
+)
+GOLDEN_CONCEPT_LITERAL_TAG_CID = (
+    "blake3-512:25abe129555ae18b71e40424a074d3d0743577839683fa71a360ffca69fcb555"
+    "70985314f33d3fb038ab8f34eba4a3d683f70edbc7ae2e55fad09d9015fd067c"
+)
+
 def test_platform_semantics_shape():
     r = platform_semantics()
     assert r["jsonrpc"] == "2.0"
@@ -140,8 +153,8 @@ def test_platform_semantics_shape():
     assert isinstance(res["tags"], list), "tags must be list"
     assert isinstance(res["dimension_values"], list), "dimension_values must be list"
     assert res["op_aliases"] == {}, "op_aliases must be empty"
-    assert len(res["tags"]) == 17, f"expected 17 tags, got {len(res['tags'])}"
-    assert len(res["dimension_values"]) == 5, f"expected 5 dimension_values, got {len(res['dimension_values'])}"
+    assert len(res["tags"]) == 18, f"expected 18 tags, got {len(res['tags'])}"
+    assert len(res["dimension_values"]) == 6, f"expected 6 dimension_values, got {len(res['dimension_values'])}"
 
 def test_platform_semantics_golden_dim_cids():
     res = platform_semantics()["result"]
@@ -166,6 +179,7 @@ def test_platform_semantics_golden_dim_cids():
         "blake3-512:5b77e0ae0696a1690183175edfdba3780db940c080d2c3992bbff85b4d312df8"
         "cd5b54bfff3a47f5a6a887f532143469d76e2b1131835e42716998932174094d"
     ), "BitwiseSemantics CID mismatch"
+    assert dvs["SortAdmission"]["cid"] == GOLDEN_SORT_ADMISSION_DV_CID, "SortAdmission CID mismatch"
 
 def test_platform_semantics_compare_to_structure():
     res = platform_semantics()["result"]
@@ -173,21 +187,46 @@ def test_platform_semantics_compare_to_structure():
     for dim_name, dv in dvs.items():
         ct = dv["compare_to"]
         assert ct["kind"] == "atomic", f"{dim_name}: compare_to kind must be atomic"
-        assert ct["args"] == [], f"{dim_name}: compare_to args must be empty"
-        assert ct["name"].startswith("c:"), f"{dim_name}: compare_to name must start with c:"
+        if dim_name == "SortAdmission":
+            assert ct["name"] == "admits_sorts", f"{dim_name}: compare_to name must be admits_sorts"
+            assert len(ct["args"]) > 0, f"{dim_name}: compare_to args must not be empty"
+            for arg in ct["args"]:
+                assert arg["kind"] == "const", f"{dim_name}: arg kind must be const"
+                assert arg["sort"]["kind"] == "primitive", f"{dim_name}: arg sort kind must be primitive"
+                assert arg["sort"]["name"] == "cid", f"{dim_name}: arg sort name must be cid"
+                assert arg["value"].startswith("blake3-512:"), f"{dim_name}: arg value must be a CID"
+        else:
+            assert ct["args"] == [], f"{dim_name}: compare_to args must be empty"
+            assert ct["name"].startswith("c:"), f"{dim_name}: compare_to name must start with c:"
 
-def test_platform_semantics_all_tags_have_five_dimensions():
+def test_platform_semantics_op_tags_have_five_dimensions():
     res = platform_semantics()["result"]
     for tag in res["tags"]:
+        if tag["op_cid"] == CONCEPT_LITERAL_CID:
+            continue
         dims = tag["dimensions"]
         assert len(dims) == 5, f"tag {tag['op_cid'][:40]} must have 5 dimensions"
         for k in ("ArithmeticOverflow", "IntegerDivisionRounding", "ShiftMode", "NullSemantics", "BitwiseSemantics"):
             assert k in dims, f"tag missing dimension {k}"
 
+def test_concept_literal_has_sort_admission_only():
+    res = platform_semantics()["result"]
+    literal_tags = [t for t in res["tags"] if t["op_cid"] == CONCEPT_LITERAL_CID]
+    assert len(literal_tags) == 1, f"expected exactly one concept:literal tag, got {len(literal_tags)}"
+    lt = literal_tags[0]
+    assert list(lt["dimensions"].keys()) == ["SortAdmission"], (
+        f"concept:literal must have only SortAdmission, got {list(lt['dimensions'].keys())}"
+    )
+    assert lt["dimensions"]["SortAdmission"] == GOLDEN_SORT_ADMISSION_DV_CID, (
+        "concept:literal SortAdmission CID mismatch"
+    )
+    assert lt["cid"] == GOLDEN_CONCEPT_LITERAL_TAG_CID, "concept:literal tag CID mismatch"
+
 test_platform_semantics_shape()
 test_platform_semantics_golden_dim_cids()
 test_platform_semantics_compare_to_structure()
-test_platform_semantics_all_tags_have_five_dimensions()
+test_platform_semantics_op_tags_have_five_dimensions()
+test_concept_literal_has_sort_admission_only()
 print("platform_semantics tests passed")
 PY
 
