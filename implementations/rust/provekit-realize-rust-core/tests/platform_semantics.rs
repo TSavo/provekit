@@ -2,7 +2,7 @@
 
 use std::collections::{BTreeMap, BTreeSet};
 
-use provekit_ir_types::{DimensionValueMemento, IrFormula, PlatformSemanticTag};
+use provekit_ir_types::{DimensionValueMemento, IrFormula, IrTerm, PlatformSemanticTag, Sort};
 
 const RUST_KIT_CID: &str = "blake3-512:e3c223b8b6f39382e43cb06c5b04059987e661d96311decd5003d4ec79c7d6f9969de39ae16dd6509cb5236185260d59c63288db7ff772aae00f8123ea826cbd";
 
@@ -28,17 +28,46 @@ const OP_BITOR: &str = "blake3-512:5c455355a13fd97a872848613b34b2b56f9738c832f90
 const OP_BITXOR: &str = "blake3-512:16ba612da4883e853dd18b08c8e7b1803e1e2b0a42ab83c261048a49cdfd9b20bc54e809b8f4e8e5c9af63cc7447dee039cb826c611dfec137855a11a502adb9";
 const OP_NEG: &str = "blake3-512:e0c3e13fd7e0d11fa3b78f4e083ab60b1166bdd905bc04e533e6dcc97d79330bd6a403caaf1265d8134ea3ccd5fe8cfd5a3e18f349ea7edcb6310c098e845c0f";
 const OP_BITNOT: &str = "blake3-512:eeaaf14737f661b6bce03f23d281974502182fea83909eeaade25e510887b26e80dac1b10af3b1f2f496b53898051d63e8d250e78cfa8e88380c84809e5eabe0";
+// concept:literal: which canonical sorts this kit admits at the value layer
+const CONCEPT_LITERAL_CID: &str = "blake3-512:02804a0bdbd2d5d541544451f41ee8d0d340baf28f70bd5abf5844e87a96aedd7b5ab3453962754a020679cc8c6b3d1f4cf0336a7ad8118128d42ac667abf2d6";
 
-const VALUE_WRAPPING_CID: &str = "blake3-512:a734f797c61984b7c52d3c88f87f108849391db0a7bba5f69921df50495f7bb7e09aa93dd3dd4dcecb1c7e271ec3f180dd2128f674f5f8b036c913c13ce81076";
-const VALUE_TRUNCATE_CID: &str = "blake3-512:58417eadb3b2c138b4fb5aa48e9d87f433cb68aea8896aedbd5d6643465dd82d1928d4160401c6942fa802b6e8de6e48f3fb76f77aad84be595f9d337df56204";
-const VALUE_ARITHMETIC_CID: &str = "blake3-512:b81b47fe4825ce7de2b555a57c7d25f01fe35fdf77591c2a3ad26204e3ea9d0aecbb978e1081247b8ce2d61ec2f01d2b3059ec9c467e527231a3bb459dd4fb63";
-const VALUE_PANIC_ON_DIV_BY_ZERO_CID: &str = "blake3-512:c4c96f8725547a04b9a39e6b711a21e6eb342cd78b1c0607e5a94784288bd2e84332748d3196c8f41301e593f3b3b7441babfca8441de03fa1c78c8992679271";
-const VALUE_TWOS_COMPLEMENT_CID: &str = "blake3-512:cd6a316263b716899aa4743e84e19d10ba1dbce0f6294ad608f8e6430f69b132b1e40e7e58069f59323d8cddb3ff31c4744e6726fa7b0e922611d093a6899adc";
+// Canonical sort CIDs (from #1282)
+const SORT_INT_CID: &str = "blake3-512:30ffc51350121a7172f3e4064a33c45bbd345756979fccff6875cd2ab33e4964d098a99df80cfbdf1ec1a0738c5ac3476f0ff8f75589ea511d1acd82c74ecd58";
+const SORT_FLOAT_CID: &str = "blake3-512:b979e70c4d5e53d9bdf13d6f08330be3c5b0714b8c770d69bbd05946b86c36df5274be8145a2683cc29c278155c9c1ee65b6897913524eecb9e4c89c71862f57";
+const SORT_STRING_CID: &str = "blake3-512:be8721d24849feb74c4721520bdba02d352a94f49253a627cd509127472aa1c47cbe99cb705cac4159b5365abcce0c9aaa4901fe67630827deb6be1f9daeea10";
+const SORT_BOOL_CID: &str = "blake3-512:0ee13bf3fd6b7ecfbee72dfbfc18a7c0ea7f1663de6cca43cefb36f5b4c03665452646094a7c296e819e75d683c6ce4821f3d7db3c3c78ae97f2d4e3451d2074";
+const SORT_BYTES_CID: &str = "blake3-512:7116ef6e62e6739b213a8394f975a53c771b89f08c36d27143827acfcfebc0e39e5b82c530be668c3cfd5ec6966ccaa42930b37fdb1f4ac25652a970be10fb6b";
+// Rust does not admit Null
+
+// Golden DimensionValueMemento CIDs (computed with #1263 elision: kit_cid elided)
+const VALUE_WRAPPING_CID: &str = "blake3-512:b41427a2dac6053f60e401d86cba437687101d9702d7331021003c209e019083146c7882f4cfcf52177f8e9bc9cd9f29857c35d4ff921001d4ab364e7e599113";
+const VALUE_TRUNCATE_CID: &str = "blake3-512:d9c1599bf81d67c5151cce547ccc24f590b376d5494d47d71d4ebf3a88c6087478160dbb072e721ff6e1e8eaf62c9f7f1b68c4f94494bf203ebae6a746244852";
+const VALUE_ARITHMETIC_CID: &str = "blake3-512:fded608e2f3bac31845a272c8c377205f15bada070cc33e4362b6bb5cac733c981c8ffff7fe8e01e2005c01205bf83e570b793c892ac6aad39b4ccbf96d500bb";
+const VALUE_PANIC_ON_DIV_BY_ZERO_CID: &str = "blake3-512:1dcdd89dfc40a84fe3e99c6abf7acbcee7e11d711552fa96688575dda99ea958324ec5e910765e943955aea7f166b5d0aa8458f3de6072ef4853dfb2c6673d96";
+const VALUE_TWOS_COMPLEMENT_CID: &str = "blake3-512:a8e44e30e136a0a6ea02cbcc38df869c33461ee95c61d9731f1e7cbec8cdf5fd251bc6a3ef994aaffc7b9975eb4624e7c6031673967cde6c4308d79eedf3462e";
+// concept:literal SortAdmission: Rust admits Int, Float, String, Bool, Bytes (no Null)
+const VALUE_SORT_ADMISSION_CID: &str = "blake3-512:4aeaff60222a421d94a76359148c4f88bd3f555c7d7cf33250688391becce9bc4e954fc3bdf84044301d5a0e3006187848b71c9d9e5c9726a11b0d7737607820";
 
 fn atom(name: &str) -> IrFormula {
     IrFormula::Atomic {
         name: name.to_string(),
         args: vec![],
+    }
+}
+
+fn cid_const(cid: &str) -> IrTerm {
+    IrTerm::Const {
+        value: serde_json::Value::String(cid.to_string()),
+        sort: Sort::Primitive {
+            name: "cid".to_string(),
+        },
+    }
+}
+
+fn admits_sorts_formula(sorted_cids: &[&str]) -> IrFormula {
+    IrFormula::Atomic {
+        name: "admits_sorts".to_string(),
+        args: sorted_cids.iter().map(|c| cid_const(c)).collect(),
     }
 }
 
@@ -94,6 +123,23 @@ fn dimension_value_cids() -> BTreeMap<&'static str, String> {
             )
             .cid,
         ),
+        (
+            "RustValueTier",
+            DimensionValueMemento::new(
+                RUST_KIT_CID.to_string(),
+                "SortAdmission".to_string(),
+                "RustValueTier".to_string(),
+                // Args sorted alphabetically by CID string: BOOL, INT, BYTES, FLOAT, STRING
+                admits_sorts_formula(&[
+                    SORT_BOOL_CID,
+                    SORT_INT_CID,
+                    SORT_BYTES_CID,
+                    SORT_FLOAT_CID,
+                    SORT_STRING_CID,
+                ]),
+            )
+            .cid,
+        ),
     ])
 }
 
@@ -111,8 +157,31 @@ fn rust_platform_semantics_covers_a10_operator_surface() {
         BTreeSet::from([
             OP_ADD, OP_SUB, OP_MUL, OP_DIV, OP_REM, OP_EQ, OP_NE, OP_LT, OP_LE, OP_GT, OP_GE,
             OP_AND, OP_OR, OP_NOT, OP_SHL, OP_SHR, OP_BITAND, OP_BITOR, OP_BITXOR, OP_NEG,
-            OP_BITNOT,
+            OP_BITNOT, CONCEPT_LITERAL_CID,
         ])
+    );
+}
+
+#[test]
+fn rust_platform_semantics_concept_literal_has_sort_admission() {
+    let declaration = provekit_realize_rust_core::platform_semantics::declaration();
+    let cids = dimension_value_cids();
+    let tags = tags_by_op(&declaration.tags);
+
+    // concept:literal tag must carry a SortAdmission dimension
+    assert_dimension(
+        tags[CONCEPT_LITERAL_CID],
+        "SortAdmission",
+        &cids["RustValueTier"],
+    );
+
+    // Rust does not admit Null: dimension value CID must equal VALUE_SORT_ADMISSION_CID
+    assert_eq!(
+        tags[CONCEPT_LITERAL_CID]
+            .dimensions
+            .get("SortAdmission")
+            .map(String::as_str),
+        Some(VALUE_SORT_ADMISSION_CID),
     );
 }
 
@@ -154,6 +223,7 @@ fn rust_platform_semantics_round_trips_and_pins_cids() {
             VALUE_PANIC_ON_DIV_BY_ZERO_CID.to_string(),
         ),
         ("TwosComplement", VALUE_TWOS_COMPLEMENT_CID.to_string()),
+        ("RustValueTier", VALUE_SORT_ADMISSION_CID.to_string()),
     ]);
     let actual_values = dimension_value_cids();
     assert_eq!(actual_values, expected_values);
@@ -176,87 +246,91 @@ fn rust_platform_semantics_round_trips_and_pins_cids() {
         BTreeMap::from([
             (
                 OP_ADD,
-                "blake3-512:91708fd03693a204f945bf36fe35b186945f090fbf1f2300f6d6d67e09d7f456bbf597178608cd8b45401733c4b1d3ecd34a3fb0b5dea83e7934643e947d698a",
+                "blake3-512:0dfacd845ef36d7b171abef7b5928744e138c4e0f434eea71bd512608349517c77edaeb380400c62c4d49aa80cb485e33c5ed0d51b1d96405a79307671f15a47",
             ),
             (
                 OP_SUB,
-                "blake3-512:1f046b09b69ab9e3f0dd07c81f02276d464b1a338268eef7dfed9a2c94bf82d33c2b94691de7040975e821855cb35af4345191cda6b633d496f89de599cfee8e",
+                "blake3-512:e1a90c7b6589922548b8ef54d6e7d09f99eaa39dbcc1ce65fd22a835b7180602445bc7a66e69d01e1d864191b2291fbc53b60ecd437dcf102b9443ef9485023f",
             ),
             (
                 OP_MUL,
-                "blake3-512:8a91cbf2dfadb3cc159239e5e0401d53c394e9be0f8e3718cca3391099b121f351f8e36f2bddb32ddbf5c9adbb338c2ec2b70cb14d4b6fc82bfe4e0745d3ec86",
+                "blake3-512:8efb198db60a95f0fe86d752fa4ffa9833da0158ccb68d94b6f121f2981cd7472c1ea5bf05b336b3783d131d4f8f5b0ddcca9116589bf5922fc8efb256749dc6",
             ),
             (
                 OP_DIV,
-                "blake3-512:da815dc5ae6d52ab84104794eaf05c768ce3ef8a63fe17ddf52e8bf00770f227ae85995548f33cafadacaf9b58a7192ed0102b6c0b9cd74a637d78a4ee08f37f",
+                "blake3-512:287f3c237657505dfb2460e08858035fca52b98a797f3cddba470d844dd8465bb41cfb69298d2df41416a8e67424f27270d4af48b36b7250a7a41b99d9940a0e",
             ),
             (
                 OP_REM,
-                "blake3-512:670323ccf5872e7f1d397117b219ff7c4141c72533cca6001b34d9b39135f5f2c06a644e978fe2e57ccb04f9519f7d025a9d7b852932f55ad5aca34c8b924188",
+                "blake3-512:ed74fc4d815f5d61fc011af50f8336ec190355f6fbe1ddcfa51b852516d7e08b66dc08fb448abd7e9fb9b76292bccf9aa3d320ac0c073ab44372f6028d2ae138",
             ),
             (
                 OP_EQ,
-                "blake3-512:e7d7b4c9edad872d5344d59f1c22d176a1400d39e3b066babc62ec3dba23e16d341cb9e9fa7ffa050099f696a6ac965b2f1995563039024985d52720ca1b2f7d",
+                "blake3-512:1348654ce481289f31abd325d74c5a2bae6194eb69bd23ecb4868d4baa2898410d529caa24f638ea70f8832e01c83763cd27fdc809feeeebd694ebb65f487a03",
             ),
             (
                 OP_NE,
-                "blake3-512:54b42e8945004432cf237eb5cb1999d0d0c2b2b913bb750bb3e3b20248ed8862c3972b592eb58b90f091eef6204a3237621adbe9e9ad8bd29fe6859895b00977",
+                "blake3-512:270cfe8acfa144badcd1d61181269d50416c73ae36480f423378bf14764cd3106adb9154d108f8106d9c27b4af7ae781d3e70927aa71546cd6f9e41f08fd0aa7",
             ),
             (
                 OP_LT,
-                "blake3-512:49a4701d7524eec47ed3ff84b72a0989037f04791e38b656fc69ad85e9d7b2c1f77a06609b252b97e9a61c16ae4aef0b82d25ee771cdbf92f825a1b6b3acceaf",
+                "blake3-512:f8e2d9cff1dc5792dd70ac501ee90ee6ccf2a5388753789343f0520b1ca84df2f927db370f40ba9d06eccfdfaaef4c064bb72762fe265991cfd7c340e5ac6681",
             ),
             (
                 OP_LE,
-                "blake3-512:c0e3860af4a9af559a93d7350573faee1fa067a0c5ee6c78a9755645dce4b36fb94f44621a308660943f3110584faf3bfa131a2f7824b4295a8ff0ec4581ac2a",
+                "blake3-512:e1d589c5b8eebd9abc30b82fdba497b9a22a2dffe492c69a5ee28d73fc8637c223920cbeb54930aede156ab149eda5e31f09d29501443d1272ab84592e55366d",
             ),
             (
                 OP_GT,
-                "blake3-512:286d3deac20f6036713504885d97c48088ebde08b0a22278112e88b0b431e58996c93f17902a9311c3463ddb06ebd4bf8cd8ac14a6e1781e0ae9e3c7d472ed46",
+                "blake3-512:12003ccc8d5f09b340e07efd9d77d8ccc66b7732e37d97ab56a1109da2638e0bad19af75ec4adc5c4dc3114d26a6ed81ed11ba5c88813b739e5d48152f9f63b9",
             ),
             (
                 OP_GE,
-                "blake3-512:7a2193f803d72cb4be7840d13193fd1b6482abe317f5bff7ecf93379aa0b54d1ead6eaa5c1cf6c6091159820b4b07e844d3191ca06b317f1816d3cd1d950abc7",
+                "blake3-512:81c44e63350e91801b3fa407d057f5a44af4203a1e1249d8fa3f6628d237f1ee64a0d4571857e230b2f8b673df1beb4b578229a42b08e2dd8186b167144caaae",
             ),
             (
                 OP_AND,
-                "blake3-512:1e52320e20651381c8abdcba363cdf15ec4c3358eb7be7a6a19173503f733fd819676db9bd64e6041482355fe13f41ff9f49db02e7e64d82a65b45640761f6d1",
+                "blake3-512:1ddbc79263a17940ee397804060cd0aa9d09e7f7bb2c55a91b944c7470951699f40bd0b509abcf888f18598ea5ab66e93a2b5c17bbdb865e8f43fff49ffac70c",
             ),
             (
                 OP_OR,
-                "blake3-512:adf379019920a343ae7a2dd18195d623a5bb6f4a08baa32efde39f738ef557b39d54114ae2a17136faf8b37a404cd0cd918d43fda9d8dc8635ffa302f4d4ba73",
+                "blake3-512:aef7b2034dd62c70f7fca1d60082394aacb71b9bbd14ff56881658cabf21b84968564e4bc171113afe76f51454a8e4ed59aa0cdbf83cea6c307da392cb1377a0",
             ),
             (
                 OP_NOT,
-                "blake3-512:111f28a09497322ec0ea0d1f05fd0be8fac27d062123dea71e3d6a879a2f69b7f5cf33258daa314e366b45b4a0c6dc2a707fa60e7776dd37cf1846fcdab3e9a0",
+                "blake3-512:39683c76522dced541058e39fa6aba7b4272125be4e26892b49b85738f621875fa1ffa52c0186f7ff2b5fb48c17306f5fa81dc19c4b08ec82c0d4c1592cff3c0",
             ),
             (
                 OP_SHL,
-                "blake3-512:1276e3dac697a7791e0f597cb546f78380168f710ff0f1a87c167f3bb8fbc6f2b81fcbbdae2e5dd688d805331bee4175dba4237166d43d18fe71180daf7de159",
+                "blake3-512:ae7073d3ae82c97419e3ea07080a3baee50f95cfc2689b15c9c45248e8b8590c6efbdab6660d446ddb5310635878dd02a6e19952e7bf7bbe83290e7ab4e2e8fc",
             ),
             (
                 OP_SHR,
-                "blake3-512:cefd601e271ea246145e5e97c17c49012bac77daef02991c224717ea385ac324732e1940804fdb1c07915671f55e1b02ab06d84f438dbde73e3a296be6c27331",
+                "blake3-512:5ad37cf51db1fa8eae34d4f0ed355f840b2902ee76e9bfe973e681f21b86215eadaeaa13dbaf7970b3bb771549f62c969d612187ffc2dc03413a0d8eee0a7981",
             ),
             (
                 OP_BITAND,
-                "blake3-512:df02004cdedcf2bf174ee0a1afbc8f05d0eddc6a87b0fb451fb511900c22662f013be6c0f2eca3ee7e96b94c47dbeb9854a9d770510bfad85dce8f1cb8cf9f47",
+                "blake3-512:023f60645813ba899792d80fd0c5e387d195631d260b09aa20ac73169a18fbf753e86f7a32fddec7b68f0de06c4457820c15036fe4d475187ce05f3701265e3e",
             ),
             (
                 OP_BITOR,
-                "blake3-512:f46f10314e1f6d4844d8893e0aa44fa4473faef8510fc2075be7abdcb2d711d93362a7bbd27f9791e1312c65581a7b43cbaf9b62f9abd975405801b8e68b4994",
+                "blake3-512:ed9fe854214c745cdc24e4aa65fd70a146376425e50c61885e9bfb110b020036d189d42ceeaeff725c5362f8f38ac22c5eaa76d1cf2935f60d920f2e6aac8ad3",
             ),
             (
                 OP_BITXOR,
-                "blake3-512:6bf02ec3c189d8628d947b0097bc4c338c99c0d37da0cee552fa015a0f9a5957ec982b6d779b3da2d12df12e502f8b3b41fe3bfa7808d4a6abf912c5c8695bd5",
+                "blake3-512:649d32e3fafcb4ef31c7732e9ed72eac4186842927f513386dd0e1dbf23202f50618d651122da0dc9ee73eae39144a6cce58c63f864932f93c35ea00ad809b21",
             ),
             (
                 OP_NEG,
-                "blake3-512:badbc6dd4d338d3a680ea0e1c4a9afe8ca4fafaf63abcff9b416ecb54b6aa62f58006d60c3c97487a59ad9f49d3ca54f2ac83c2e8c6e8b281e0356e64601c928",
+                "blake3-512:79bda3526bd3486522d973afce2f3f9afac7e053f4442c36aa06cc8d817fe191bea55e685f6d63d4771cc524c764dfeabe922e580dcda3a949877f50c50e164d",
             ),
             (
                 OP_BITNOT,
-                "blake3-512:4839862d09aecad3b41362c53080b50cf938af2003cb8bd81e5ada5f363476ddfdb67d8b7ae08ecf9b2152ce1c4aa9d03da7752885583d8a08d4432c93022d4b",
+                "blake3-512:a5c8877837a1be42d679199d3a8064725f857a86cc658ff2a9fe46b8f1cd41d1dcb78bc50e13d25583c46639c98f44415005a55dd8b8cc9185b0b619739c2b9b",
+            ),
+            (
+                CONCEPT_LITERAL_CID,
+                "blake3-512:117d51ef4c61ba1e73c6e0a607c75f8c3078ea19caffb4f8d2040ccf056b0bdde11ba9bf2e817cabc026a00c6fb8ca432c9efbef56d6e3610b4acc1a7e9c6613",
             ),
         ])
     );
