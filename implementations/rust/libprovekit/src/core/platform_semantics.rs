@@ -7,6 +7,7 @@ use std::collections::BTreeMap;
 pub mod better_sqlite3;
 pub mod java;
 pub mod pg;
+pub mod python_aiosqlite;
 pub mod python_sqlite3;
 mod python_common;
 pub mod python_lift_source;
@@ -144,6 +145,7 @@ pub fn platform_semantics_for_binding(
 /// path once the op-CID path is verified.
 fn binding_semantics_for_tag(binding_tag: &str) -> Option<PlatformSemanticsDeclaration> {
     match binding_tag {
+        "aiosqlite" => Some(python_aiosqlite::declaration()),
         "better-sqlite3" => Some(better_sqlite3::declaration()),
         "pg" => Some(pg::declaration()),
         "sqlite3" => Some(python_sqlite3::declaration()),
