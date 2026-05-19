@@ -129,6 +129,18 @@ fn write_malformed_concept_source(src_dir: &Path) -> PathBuf {
     source_path
 }
 
+fn write_malformed_dependency_source(src_dir: &Path) -> PathBuf {
+    let dependency_dir = src_dir.join("node_modules").join("bad-package");
+    fs::create_dir_all(&dependency_dir).expect("create dependency dir");
+    let source_path = dependency_dir.join("index.js");
+    fs::write(
+        &source_path,
+        "// provekit-concept: {not json from dependency}\n",
+    )
+    .expect("write malformed dependency source");
+    source_path
+}
+
 #[test]
 fn materialize_dry_run_replaces_concept_citation_with_realized_library_source() {
     let workspace = tempfile::tempdir().expect("tempdir");
@@ -353,5 +365,37 @@ fn materialize_malformed_carrier_error_names_source_file() {
     assert!(
         stderr.contains("parse provekit-concept payload JSON"),
         "error should preserve the JSON parse detail:\n{stderr}"
+    );
+}
+
+#[test]
+fn materialize_ignores_dependency_directories_when_scanning_sources() {
+    let workspace = tempfile::tempdir().expect("tempdir");
+    let src_dir = write_typescript_project_fixture(workspace.path());
+    write_concept_source(&src_dir);
+    write_malformed_dependency_source(&src_dir);
+
+    let output = Command::new(env!("CARGO_BIN_EXE_provekit"))
+        .arg("materialize")
+        .arg("--library")
+        .arg("typescript-better-sqlite3")
+        .arg("--source-dir")
+        .arg(&src_dir)
+        .arg("--project")
+        .arg(workspace.path())
+        .output()
+        .expect("spawn provekit materialize");
+
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(
+        output.status.success(),
+        "materialize should ignore malformed carriers under dependency directories\nstdout:\n{stdout}\nstderr:\n{stderr}"
+    );
+    assert!(stdout.contains("// file: queries.ts"));
+    assert!(stdout.contains("db.prepare(sql).all(args)"));
+    assert!(
+        !stdout.contains("node_modules"),
+        "dependency files should not appear in materialize output:\n{stdout}"
     );
 }

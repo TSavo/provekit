@@ -174,7 +174,11 @@ fn materialize_source_dir(
     library_tag: Option<&str>,
 ) -> Result<Vec<MaterializedFile>, String> {
     let mut files = Vec::new();
-    for entry in WalkDir::new(source_dir).into_iter().filter_map(Result::ok) {
+    for entry in WalkDir::new(source_dir)
+        .into_iter()
+        .filter_entry(|entry| should_scan_entry(entry.path()))
+        .filter_map(Result::ok)
+    {
         let path = entry.path();
         if !path.is_file() || !is_supported_source_file(path) {
             continue;
@@ -202,6 +206,16 @@ fn is_supported_source_file(path: &Path) -> bool {
     matches!(
         path.extension().and_then(|ext| ext.to_str()),
         Some("ts" | "tsx" | "js" | "jsx" | "py" | "rs" | "java")
+    )
+}
+
+fn should_scan_entry(path: &Path) -> bool {
+    let Some(name) = path.file_name().and_then(|name| name.to_str()) else {
+        return true;
+    };
+    !matches!(
+        name,
+        ".git" | "node_modules" | "target" | "dist" | "build" | "__pycache__"
     )
 }
 
