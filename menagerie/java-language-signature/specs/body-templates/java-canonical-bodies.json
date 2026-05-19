@@ -5,7 +5,7 @@
     "signer": "ed25519:AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA="
   },
   "header": {
-    "cid": "blake3-512:f85399b05a7b6449158115ebedbdd53bba6d846e181a35d7e0e15d13c77d600ba30d588e1e0911402c832d423ea0484002b6d148f0b0449106c3e04a87edf175",
+    "cid": "blake3-512:c1f42db4540bb0c6e4f132e81da5280b0f3a0fcad5b3c889ba8553295da7536123dcb6dea54861bf3dcb2f90ff92d001738cde4c51484f00e6a85fb504a63d0d",
     "content": {
       "entries": [
         {
@@ -646,7 +646,9 @@
     },
     "critical": false,
     "kind": "body-template",
-    "protocol_versions": ["pep/1.7.0"],
+    "protocol_versions": [
+      "pep/1.7.0"
+    ],
     "provenance_cid": "blake3-512:0000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000",
     "schemaVersion": "1",
     "version": "1.0.0"
