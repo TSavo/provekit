@@ -204,6 +204,105 @@ equivalent under any cycle. Lossy migrations explicitly carry a
 `concept:measure` op that produces a classical bit; the receipt records
 the measurement-collapse loss.
 
+## The substrate is algebraic; non-algebraic domains get description without algebraic claims
+
+The substrate is fundamentally an algebraic system. The Heyting category
+(paper 07), the structural-elimination theorem (paper 16), the substrate
+trinity {terms, contracts, implications}, the cycle invariance theorem
+(paper 24), the compose primitive's correctness — every load-bearing claim
+grounds in algebraic structure. `compare_op_with` and `propagate_effects`
+are algebraic mechanisms. Cycle invariance asserts that compositions of
+loss-functions compose to identity post-formatter; that assertion REQUIRES
+the operations being composed to admit algebraic inversion.
+
+Quantum computation HAS NO ALGEBRA in the substrate's sense:
+
+- Quantum operations are unitary transformations on Hilbert space, not
+  algebraic operations on substrate terms.
+- States do not compose algebraically — superposition is linear
+  combination over complex amplitudes; entanglement creates joint states
+  that do not factor through the substrate's product operation.
+- Measurement is irreversible: collapse breaks the algebraic round-trip
+  property cycle invariance underwrites.
+- The no-cloning theorem forbids the duplication that classical term
+  composition assumes.
+
+The substrate's correctness move with quantum is **honest refusal, not
+false algebraic claim**. Specifically:
+
+- The substrate ADMITS quantum representations (via the value-tier op
+  family: `concept:superposition`, `concept:basis-state`, etc., minted by
+  the quantum kit). This is descriptive capability.
+- The substrate's algebraic primitives (compare_op_with's "Same" verdict;
+  cycle invariance theorem; loss-record composition) DO NOT apply to
+  quantum operations. The trichotomy correctly returns NoOpinion or
+  Uncharacterizable; the refuse-leg ruling routes the receipt to refuse.
+- The substrate provides ZERO algebraic correctness proofs about quantum
+  operations. Users relying on quantum kits must obtain correctness from
+  external proof systems (physics, quantum information theory,
+  category-theoretic models like dagger-compact categories that DO admit
+  quantum). The substrate just carries the structure honestly.
+
+This is "Supra omnia, rectum" at its sharpest: the substrate never claims
+more than it can prove. Quantum cannot be proved algebraically inside the
+substrate's machinery; therefore the substrate makes no algebraic claims
+about quantum. It just describes the structure.
+
+### The same principle applies to other non-algebraic domains
+
+- **Stochastic computation.** Probabilistic operations on a sample space
+  do not admit algebraic inversion. Cycle invariance claims do not hold
+  across stochastic transitions; the substrate describes the operations
+  via concept mints and refuses algebraic claims about their composition.
+- **Cellular automata with non-reversible rules.** Conway's Life is
+  non-reversible (forward evolution is unique; backward is not). The
+  substrate's value-tier op family handles cell-state representation;
+  algebraic round-trip claims through non-reversible cellular rules are
+  refused.
+- **Approximate computation (neural networks, fuzzy logic, analog
+  computation).** Floating-point arithmetic itself is non-associative on
+  finite-precision machines; neural networks compose non-linear
+  activations that admit no algebraic inverse. The substrate carries the
+  topology of the computation honestly; correctness claims about the
+  approximation belong to external numerical-analysis frameworks.
+- **Dataflow with shared mutable state.** Race conditions, lock-free
+  algorithms, and CRDT-style eventual consistency operate outside
+  classical algebraic discipline. The substrate carries the operations'
+  structure; correctness claims about their interleaving belong to
+  external concurrency-theoretic frameworks (linearizability proofs,
+  TLA+, etc.).
+
+For each of these domains, the substrate's role is: ADMIT the
+representation (via value-tier op family + sort catalog growth + dimension
+declarations), REFUSE the algebraic claims (via trichotomy's NoOpinion /
+Uncharacterizable / Refuse verdicts), and route to external proof systems
+for the domain-specific correctness questions.
+
+### Discipline for kit authors at non-algebraic boundaries
+
+When filing a kit for a non-algebraic domain:
+
+1. Mint your value-tier ops and sorts as usual (per `Discipline` section
+   below).
+2. Declare the operations your kit recognizes via SortAdmission and
+   domain-specific dimensions.
+3. Where appropriate, declare your operations' algebraic LIMITS via
+   contract mementos. Example: a `concept:measure` op might carry a
+   forbidden-effect declaration `MeasurementCollapse` that the substrate's
+   `propagate_effects` reads to route migrations through refuse-leg.
+4. Document the EXTERNAL proof systems your users must rely on for
+   domain-specific correctness (cite the paper, the framework, the
+   theorem). The substrate does not pretend to subsume them; it just
+   carries representations honestly.
+5. Do NOT extend the substrate's algebraic primitives to "support"
+   non-algebraic domains. The substrate's algebra is its load-bearing
+   property; weakening it to admit non-algebraic claims breaks the entire
+   cycle invariance machinery.
+
+The substrate's open-extensibility is for REPRESENTATION; the substrate's
+algebraic discipline is for CORRECTNESS. Both hold simultaneously by
+keeping them separate.
+
 ## Discipline
 
 When filing a new kit for a new platform:
