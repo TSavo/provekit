@@ -29,6 +29,27 @@ public final class PlatformSemanticsDeclaration {
 
     private static final String KIT_ID = "provekit-realize-java-core@0.1.0";
 
+    // concept:literal CID (from #1282)
+    private static final String CONCEPT_LITERAL_CID =
+        "blake3-512:02804a0bdbd2d5d541544451f41ee8d0d340baf28f70bd5abf5844e87a96aedd7b5ab3453962754a020679cc8c6b3d1f4cf0336a7ad8118128d42ac667abf2d6";
+
+    // Canonical sort CIDs (from #1282)
+    // Java admits: Int, Float, String, Bool, Bytes, Null (full primitive tier)
+    // Args sorted alphabetically by CID string value:
+    //   BOOL (0ee1...) < INT (30ff...) < NULL (62f6...) < BYTES (7116...) < FLOAT (b979...) < STRING (be87...)
+    private static final String SORT_BOOL_CID =
+        "blake3-512:0ee13bf3fd6b7ecfbee72dfbfc18a7c0ea7f1663de6cca43cefb36f5b4c03665452646094a7c296e819e75d683c6ce4821f3d7db3c3c78ae97f2d4e3451d2074";
+    private static final String SORT_INT_CID =
+        "blake3-512:30ffc51350121a7172f3e4064a33c45bbd345756979fccff6875cd2ab33e4964d098a99df80cfbdf1ec1a0738c5ac3476f0ff8f75589ea511d1acd82c74ecd58";
+    private static final String SORT_NULL_CID =
+        "blake3-512:62f6040bd3f414c1e6c2b7bdf276669cd5613b33cb508a81170170064ca3ffba771a4b0002dc52e059fce5f9f63a1874ef71bd4ec89ae06e89c87a3e91aac3b5";
+    private static final String SORT_BYTES_CID =
+        "blake3-512:7116ef6e62e6739b213a8394f975a53c771b89f08c36d27143827acfcfebc0e39e5b82c530be668c3cfd5ec6966ccaa42930b37fdb1f4ac25652a970be10fb6b";
+    private static final String SORT_FLOAT_CID =
+        "blake3-512:b979e70c4d5e53d9bdf13d6f08330be3c5b0714b8c770d69bbd05946b86c36df5274be8145a2683cc29c278155c9c1ee65b6897913524eecb9e4c89c71862f57";
+    private static final String SORT_STRING_CID =
+        "blake3-512:be8721d24849feb74c4721520bdba02d352a94f49253a627cd509127472aa1c47cbe99cb705cac4159b5365abcce0c9aaa4901fe67630827deb6be1f9daeea10";
+
     // Concept op CIDs (from provekit substrate hub)
     private static final String CONCEPT_ADD_CID =
         "blake3-512:95fc70e63a5550fd2e25142f13932919c59d085654ab387789c798886b0111c61d28fe533fc98b50df70eea9428a9af8aa75372c8b1c1deb3acc1a4094790468";
@@ -79,6 +100,10 @@ public final class PlatformSemanticsDeclaration {
         DimValue logical = dimValue(kitCid, "ShiftMode", "Logical");
         DimValue throwArithEx = dimValue(kitCid, "NullSemantics", "ThrowArithmeticException");
         DimValue twosComplement = dimValue(kitCid, "BitwiseSemantics", "TwosComplement");
+        // concept:literal SortAdmission: Java admits full primitive tier (Int, Float, String, Bool, Bytes, Null).
+        // value_name "FullPrimitiveTier" matches Python for cross-kit substrate uniformity.
+        DimValue sortAdmission = dimValueAdmitsSorts(kitCid, "SortAdmission", "FullPrimitiveTier",
+            SORT_BOOL_CID, SORT_INT_CID, SORT_NULL_CID, SORT_BYTES_CID, SORT_FLOAT_CID, SORT_STRING_CID);
 
         // Build tags
         TagEntry addTag = tag(kitCid, CONCEPT_ADD_CID,
@@ -105,6 +130,9 @@ public final class PlatformSemanticsDeclaration {
             new String[]{"ShiftMode", logical.cid});
         TagEntry bitnotTag = tag(kitCid, CONCEPT_BITNOT_CID,
             new String[]{"BitwiseSemantics", twosComplement.cid});
+        // concept:literal tag: carries only the SortAdmission dimension
+        TagEntry literalTag = tag(kitCid, CONCEPT_LITERAL_CID,
+            new String[]{"SortAdmission", sortAdmission.cid});
 
         StringBuilder sb = new StringBuilder();
         sb.append("{\"tags\":[");
@@ -118,6 +146,7 @@ public final class PlatformSemanticsDeclaration {
         sb.append(','); appendTag(sb, shrTag);
         sb.append(','); appendTag(sb, ushrTag);
         sb.append(','); appendTag(sb, bitnotTag);
+        sb.append(','); appendTag(sb, literalTag);
         sb.append("],\"dimension_values\":[");
         appendDimValue(sb, wrapping);
         sb.append(','); appendDimValue(sb, truncate);
@@ -125,6 +154,7 @@ public final class PlatformSemanticsDeclaration {
         sb.append(','); appendDimValue(sb, logical);
         sb.append(','); appendDimValue(sb, throwArithEx);
         sb.append(','); appendDimValue(sb, twosComplement);
+        sb.append(','); appendDimValue(sb, sortAdmission);
         sb.append("]}");
         return sb.toString();
     }
@@ -162,6 +192,45 @@ public final class PlatformSemanticsDeclaration {
 
         // Full memento without cid + kit_cid for CID computation
         // JCS key order: compare_to < dimension_name < kind < schemaVersion < value_name
+        Value forCid = Value.object(
+            "compare_to", compareToVal,
+            "dimension_name", Value.string(dimensionName),
+            "kind", Value.string("platform-dimension-value"),
+            "schemaVersion", Value.string("1.0.0"),
+            "value_name", Value.string(valueName)
+        );
+
+        String cid = Jcs.blake3Cid(forCid);
+        return new DimValue(cid, kitCid, dimensionName, valueName, Jcs.encode(compareToVal));
+    }
+
+    // Construct a DimensionValueMemento for SortAdmission with an admits_sorts formula.
+    // compare_to = IrFormula::Atomic{name:"admits_sorts", args:[IrTerm::Const{kind:"const",sort:{kind:"primitive",name:"cid"},value:"<cid>"},...]}
+    // sortCids must already be sorted alphabetically by string value.
+    // JCS key order in IrTerm::Const: kind < sort < value (alphabetical)
+    // JCS key order in Sort::Primitive: kind < name (alphabetical)
+    // JCS key order in IrFormula::Atomic: args < kind < name (alphabetical)
+    private static DimValue dimValueAdmitsSorts(
+            String kitCid, String dimensionName, String valueName, String... sortCids) {
+        // Build args array
+        Value[] argValues = new Value[sortCids.length];
+        for (int i = 0; i < sortCids.length; i++) {
+            Value sortVal = Value.object(
+                "kind", Value.string("primitive"),
+                "name", Value.string("cid")
+            );
+            argValues[i] = Value.object(
+                "kind", Value.string("const"),
+                "sort", sortVal,
+                "value", Value.string(sortCids[i])
+            );
+        }
+        Value compareToVal = Value.object(
+            "args", Value.array(argValues),
+            "kind", Value.string("atomic"),
+            "name", Value.string("admits_sorts")
+        );
+
         Value forCid = Value.object(
             "compare_to", compareToVal,
             "dimension_name", Value.string(dimensionName),
