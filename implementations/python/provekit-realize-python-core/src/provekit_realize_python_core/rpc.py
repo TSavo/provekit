@@ -5,6 +5,7 @@ import sys
 import traceback
 from typing import Any
 
+from .platform_semantics import declaration as _platform_semantics_declaration
 from .realizer import MissingTemplateError, emit_stub
 
 
@@ -32,6 +33,8 @@ def dispatch(request: dict[str, Any]) -> dict[str, Any]:
     method = str(request.get("method", ""))
     params = request.get("params") or {}
 
+    if method == "provekit.plugin.platform_semantics":
+        return {"jsonrpc": "2.0", "id": msg_id, "result": _platform_semantics_declaration()}
     if method == "provekit.plugin.invoke":
         if not isinstance(params, dict):
             return _error(msg_id, -32602, "INVALID_PARAMS: params must be an object")

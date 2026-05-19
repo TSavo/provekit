@@ -53,9 +53,10 @@ def dimension_values() -> list[Json]:
 
 
 def declaration() -> Json:
+    dim_vals = dimension_values()
     dimensions = {
         value["dimension_name"]: value["cid"]
-        for value in dimension_values()
+        for value in dim_vals
         if isinstance(value["dimension_name"], str)
     }
     return {
@@ -70,7 +71,8 @@ def declaration() -> Json:
                 }
             )
             for op_cid in PYTHON_PLATFORM_CONCEPT_OP_CIDS
-        ]
+        ],
+        "dimension_values": dim_vals,
     }
 
 
@@ -79,6 +81,10 @@ def _compare_atom(value_name: str) -> Json:
 
 
 def _with_cid(memento: Json) -> Json:
+    # CID is computed over JCS(memento) with "cid" and "kit_cid" elided,
+    # per substrate spec (DimensionValueMemento::recompute_cid +
+    # PlatformSemanticTag::recompute_cid in provekit-ir-types).
+    for_cid = {k: v for k, v in memento.items() if k not in ("cid", "kit_cid")}
     result = dict(memento)
-    result["cid"] = _cid_of_json(result)
+    result["cid"] = _cid_of_json(for_cid)
     return result
