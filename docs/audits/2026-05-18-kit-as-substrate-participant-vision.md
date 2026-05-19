@@ -80,13 +80,17 @@ Each kit has three faces: **lift** (source → ProofIR), **declaration** (dimens
 
 ### 4.2 Library kit inventory (current)
 
-| (Language, Library) | Library tag | Declaration face | Body templates | Realize plugin | Lift plugin |
-|---|---|---|---|---|---|
-| TypeScript + better-sqlite3 | `better-sqlite3` | `platform_semantics/better_sqlite3.rs` (180 lines: RowIdMechanism=LastInsertRowid) | `menagerie/typescript-language-signature/specs/body-templates/typescript-canonical-bodies-better-sqlite3.json` | `implementations/typescript/provekit-realize-typescript-better-sqlite3/` | TODO: locate |
-| TypeScript + pg | `pg` | `platform_semantics/pg.rs` (191 lines: RowIdMechanism=ReturningClause) | TODO: locate body templates JSON | `implementations/typescript/provekit-realize-typescript-pg/` | TODO: locate |
-| Python + sqlite3 | `sqlite3` | **MISSING** | TODO: locate body templates JSON | `implementations/python/provekit-realize-python-sqlite3/` (352 lines) | TODO: locate |
-| Python + aiosqlite | `aiosqlite` | **MISSING** | TODO: locate body templates JSON | `implementations/python/provekit-realize-python-aiosqlite/` | TODO: locate |
-| Python + requests | `requests` | TODO: verify | TODO: locate | `implementations/python/provekit-realize-python-requests/` | TODO: locate |
+**Audit miss correction (2026-05-19, post D5a verification per #1238):** The original audit listed body-template JSON files as "exists" without verifying their CONTENT. Empirical probe via #1243 (the D5a verification harness) showed that "file exists" does not imply "face complete." The realize face requires THREE sub-checks: (a) plugin code exists, (b) body-template JSON exists, (c) **entries cover the migrate's actual `(concept_name, param_count, requires_param_types)` shapes**. The original audit verified (a) and (b) but not (c). The matrix below now records (c) status as a separate column.
+
+The harness result for the migrate demo's 12 (callsite, target) probes: 0 MATCHES / 0 COSMETIC / 0 SEMANTIC / 12 MISSING. Failure modes were either `is_stub=true` (TS-pg) or `MissingTemplateError` (Python plugins). The bodies templates that DO exist are keyed for the canonical `(sql, args)` two-param probe shape, not for the migrate's per-function-signature callsite shapes.
+
+| (Language, Library) | Library tag | Declaration face | Body templates exist | Body templates cover migrate's callsites | Realize plugin | Lift plugin |
+|---|---|---|---|---|---|---|
+| TypeScript + better-sqlite3 | `better-sqlite3` | `platform_semantics/better_sqlite3.rs` (180 lines: RowIdMechanism=LastInsertRowid) | `menagerie/typescript-language-signature/specs/body-templates/typescript-canonical-bodies-better-sqlite3.json` | TODO: verify per D5a harness (source side; not exercised by migrate target dispatch) | `implementations/typescript/provekit-realize-typescript-better-sqlite3/` | TODO: locate |
+| TypeScript + pg | `pg` | `platform_semantics/pg.rs` (191 lines: RowIdMechanism=ReturningClause) | TODO: locate body templates JSON | **NO — plugin returns is_stub=true for the migrate's actual callsite signatures (4/4 callsites MISSING per #1243)** | `implementations/typescript/provekit-realize-typescript-pg/` | TODO: locate |
+| Python + sqlite3 | `sqlite3` | `platform_semantics/python_sqlite3.rs` (landed via #1240) | `menagerie/python-language-signature/specs/body-templates/python-canonical-bodies-sqlite3.json` (has entries for concept:sql-query + concept:sql-execute with `signature_guard: {min_params: 2, max_params: 2}` keyed for the canonical (sql, args) probe shape) | **NO — entries require 2 params; migrate's callsites have per-function signatures (e.g., `getUserById(id: int)` is 1 param). 4/4 callsites MISSING per #1243** | `implementations/python/provekit-realize-python-sqlite3/` (352 lines) | TODO: locate |
+| Python + aiosqlite | `aiosqlite` | `platform_semantics/python_aiosqlite.rs` (landed via #1241) | `menagerie/python-language-signature/specs/body-templates/python-canonical-bodies-aiosqlite.json` | **NO — same shape as python-sqlite3. 4/4 callsites MISSING per #1243** | `implementations/python/provekit-realize-python-aiosqlite/` | TODO: locate |
+| Python + requests | `requests` | TODO: verify | TODO: locate | TODO: verify per the harness | `implementations/python/provekit-realize-python-requests/` | TODO: locate |
 
 ### 4.3 Library kit inventory (Trinity demo target — missing)
 
