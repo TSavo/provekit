@@ -7,7 +7,7 @@ name = "provekit-realize-python-sqlite3"
 version = "0.1.0"
 description = "PEP 1.7.0 Python sqlite3 realize kit for ProvekIt bind canonical output"
 requires-python = ">=3.11"
-dependencies = []
+dependencies = ["blake3>=1.0.0"]
 
 [project.scripts]
 provekit-realize-python-sqlite3 = "provekit_realize_python_sqlite3.__main__:main"
