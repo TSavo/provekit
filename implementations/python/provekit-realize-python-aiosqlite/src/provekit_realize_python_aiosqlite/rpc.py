@@ -79,6 +79,7 @@ def _emit_one(params: dict[str, Any]) -> dict[str, Any]:
         param_types=_string_list(params.get("param_types")),
         return_type=str(params.get("return_type", "")),
         concept_name=str(params.get("concept_name", "")),
+        named_term_tree=_dict_value(params, "named_term_tree", "namedTermTree"),
     )
 
 
@@ -86,6 +87,14 @@ def _string_list(value: Any) -> list[str]:
     if not isinstance(value, list):
         return []
     return [str(item) for item in value]
+
+
+def _dict_value(params: dict[str, Any], *keys: str) -> dict[str, Any] | None:
+    for key in keys:
+        value = params.get(key)
+        if isinstance(value, dict):
+            return value
+    return None
 
 
 def _send(obj: dict[str, Any]) -> None:

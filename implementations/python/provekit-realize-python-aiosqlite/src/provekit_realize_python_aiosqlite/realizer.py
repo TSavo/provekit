@@ -53,14 +53,21 @@ def emit_stub(
     param_types: list[str],
     return_type: str,
     concept_name: str,
+    named_term_tree: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
-    body = body_template_for(concept_name, params, param_types, return_type)
+    body = body_template_for(
+        concept_name,
+        params,
+        param_types,
+        return_type,
+        named_term_tree=named_term_tree,
+    )
     if body is None:
         raise MissingTemplateError(
             (
                 MissingTemplateEntry(
                     operation_kind=concept_name,
-                    args_shape=tuple(map_source_type(ty) for ty in param_types),
+                    args_shape=args_shape_for(param_types, named_term_tree),
                     function=function,
                     term_position="body",
                 ),
@@ -78,30 +85,124 @@ def body_template_for(
     params: list[str],
     param_types: list[str],
     return_type: str,
+    named_term_tree: dict[str, Any] | None = None,
 ) -> str | None:
-    mapped_param_types = [map_source_type(ty) for ty in param_types]
+    tree_args_shape = _args_shape_from_named_term_tree(named_term_tree)
+    if tree_args_shape is None:
+        args_shape = tuple(map_source_type(ty) for ty in param_types)
+        template_params = params
+    else:
+        args_shape = tree_args_shape
+        template_params = _tree_template_params(named_term_tree, params, args_shape)
     mapped_return_type = map_source_type(return_type)
     candidate_names = (concept_name, concept_name.removeprefix("concept:"))
     for entry in entries():
         if entry.concept_name not in candidate_names:
             continue
-        if entry.min_params is not None and len(params) < entry.min_params:
+        if entry.min_params is not None and len(args_shape) < entry.min_params:
             continue
-        if entry.max_params is not None and len(params) > entry.max_params:
+        if entry.max_params is not None and len(args_shape) > entry.max_params:
             continue
         if entry.requires_param_types is not None:
-            if tuple(mapped_param_types) != entry.requires_param_types:
+            if args_shape != entry.requires_param_types:
                 continue
         if entry.requires_return_type is not None:
             if mapped_return_type != entry.requires_return_type:
                 continue
         if entry.template_kind != "verbatim":
             continue
-        rendered = render_template(entry.template, params, mapped_param_types, mapped_return_type)
+        rendered = render_template(
+            entry.template,
+            template_params,
+            list(args_shape),
+            mapped_return_type,
+        )
         if rendered is None:
             continue
         return rendered
     return None
+
+
+def args_shape_for(
+    param_types: list[str],
+    named_term_tree: dict[str, Any] | None = None,
+) -> tuple[str, ...]:
+    tree_args_shape = _args_shape_from_named_term_tree(named_term_tree)
+    if tree_args_shape is not None:
+        return tree_args_shape
+    return tuple(map_source_type(ty) for ty in param_types)
+
+
+def _args_shape_from_named_term_tree(
+    named_term_tree: dict[str, Any] | None,
+) -> tuple[str, ...] | None:
+    if not isinstance(named_term_tree, dict):
+        return None
+    args = named_term_tree.get("args")
+    if not isinstance(args, list):
+        return ()
+    return tuple(_tree_arg_shape(arg) for arg in args)
+
+
+def _tree_arg_shape(arg: Any) -> str:
+    if not isinstance(arg, dict):
+        return "arg"
+    for key in (
+        "sort",
+        "sortName",
+        "conceptName",
+        "concept_name",
+        "operationKind",
+        "operation_kind",
+        "kind",
+    ):
+        value = arg.get(key)
+        if isinstance(value, str) and value.strip():
+            return value
+    return "arg"
+
+
+def _tree_template_params(
+    named_term_tree: dict[str, Any] | None,
+    params: list[str],
+    args_shape: tuple[str, ...],
+) -> list[str]:
+    if len(params) == len(args_shape):
+        return params
+    if not isinstance(named_term_tree, dict):
+        return params
+    args = named_term_tree.get("args")
+    if not isinstance(args, list):
+        return []
+    out: list[str] = []
+    for index, arg in enumerate(args):
+        out.append(_tree_arg_name(arg, args_shape[index], index))
+    return out
+
+
+def _tree_arg_name(arg: Any, args_shape: str, index: int) -> str:
+    if isinstance(arg, dict):
+        for key in ("paramName", "param_name", "symbol", "name"):
+            value = arg.get(key)
+            if isinstance(value, str) and value.strip():
+                return _python_identifier(value, index)
+    return _python_identifier(args_shape, index)
+
+
+def _python_identifier(value: str, index: int) -> str:
+    stripped = value.strip()
+    if stripped in ("Sql", "concept:sql", "sql"):
+        return "sql"
+    if stripped in ("SqlArgs", "concept:sql-args", "sql-args", "sql_args"):
+        return "args"
+    if stripped.startswith("concept:"):
+        stripped = stripped.removeprefix("concept:")
+    candidate = re.sub(r"\W+", "_", stripped).strip("_").lower()
+    if not candidate:
+        return f"arg{index}"
+    if not (candidate[0].isalpha() or candidate[0] == "_"):
+        return f"arg{index}"
+    return candidate
 
 
 def map_source_type(src: str) -> str:
