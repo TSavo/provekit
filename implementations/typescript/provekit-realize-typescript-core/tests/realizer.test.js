@@ -1,7 +1,36 @@
 const assert = require("node:assert/strict");
+const path = require("node:path");
 const test = require("node:test");
 
-const { emitStub } = require("../src/realizer");
+const { createRealizer, emitStub } = require("../src/realizer");
+
+const SQL_GUARD_TEMPLATE = path.join(
+  __dirname,
+  "fixtures",
+  "body-templates",
+  "ntt-sql-guard.json",
+);
+const PG_BODY_TEMPLATE = path.join(
+  __dirname,
+  "..",
+  "..",
+  "..",
+  "..",
+  "menagerie",
+  "typescript-language-signature",
+  "specs",
+  "body-templates",
+  "typescript-canonical-bodies-pg.json",
+);
+
+function namedTermTree(conceptName, args = []) {
+  return {
+    args,
+    conceptName,
+    operationKind: "op-application",
+    shapeCid: `blake3-512:${"0".repeat(128)}`,
+  };
+}
 
 test("http request uses fetch and emits an async TypeScript function", () => {
   const result = emitStub({
@@ -65,4 +94,54 @@ test("unknown concept falls back to a TypeScript stub", () => {
     result.source,
     "function missing(value) {\n  throw new Error(\"provekit-bind canonical: concept:missing\");\n}\n",
   );
+});
+
+test("named term tree shape satisfies a canonical sql body template guard", () => {
+  const realizer = createRealizer(SQL_GUARD_TEMPLATE);
+  const result = realizer.emitStub({
+    functionName: "getUserById",
+    params: ["sql", "args"],
+    paramTypes: ["number"],
+    returnType: "User",
+    conceptName: "concept:sql-query",
+    namedTermTree: namedTermTree("concept:sql-query", [
+      namedTermTree("concept:sql-literal"),
+      namedTermTree("concept:sql-args"),
+    ]),
+  });
+
+  assert.equal(result.is_stub, false);
+  assert.match(result.source, /pool\.query\(sql, args\)/);
+});
+
+test("named term tree request resolves the existing pg sql query body template", () => {
+  const realizer = createRealizer(PG_BODY_TEMPLATE);
+  const result = realizer.emitStub({
+    functionName: "getUserById",
+    params: ["sql", "args"],
+    paramTypes: ["number"],
+    returnType: "User",
+    conceptName: "concept:sql-query",
+    namedTermTree: namedTermTree("concept:sql-query", [
+      namedTermTree("concept:sql-literal"),
+      namedTermTree("concept:sql-args"),
+    ]),
+  });
+
+  assert.equal(result.is_stub, false);
+  assert.match(result.source, /await pool\.query\(sql, args\)/);
+});
+
+test("bare signature request still uses mapped param types without named term tree", () => {
+  const realizer = createRealizer(SQL_GUARD_TEMPLATE);
+  const result = realizer.emitStub({
+    functionName: "queryUsers",
+    params: ["sql", "args"],
+    paramTypes: ["string", "unknown[]"],
+    returnType: "User[]",
+    conceptName: "concept:sql-query",
+  });
+
+  assert.equal(result.is_stub, false);
+  assert.match(result.source, /pool\.query\(sql, args\)/);
 });
