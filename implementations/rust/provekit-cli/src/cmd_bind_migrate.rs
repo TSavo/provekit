@@ -74,6 +74,15 @@ fn run_inner(args: BindArgs) -> Result<(), String> {
 
     let (source_lang, source_tag) = split_library_surface(library_from)?;
     let (target_lang, target_tag) = split_library_surface(library_to)?;
+
+    // Substrate-availability probe (#1230 D6-D): refuse loudly when no bind-lift
+    // kit exists for the source language. Replaces the previous hardcoded
+    // `source_lang != "typescript"` check inside TargetSurface::from_parts;
+    // the substrate's resolution chain (manifest, env-var, built-in, PATH)
+    // decides availability rather than an enumerated language list here.
+    crate::kit_dispatch::bind_lift_kit_available(&repo_root, &source_lang)
+        .map_err(|err| format!("migrate source: {err}"))?;
+
     let target_surface = TargetSurface::from_parts(
         library_from,
         library_to,
@@ -253,9 +262,15 @@ impl TargetSurface {
         target_lang: &str,
         target_tag: &str,
     ) -> Result<Self, String> {
-        if source_lang != "typescript" || source_tag != "better-sqlite3" {
+        // Per #1230 D6-D: the source_lang restriction is removed; substrate
+        // availability is now probed at the call site (run_inner) via
+        // kit_dispatch::bind_lift_kit_available so cmd_bind_migrate does not
+        // enumerate languages. The source_tag restriction remains until
+        // extract_sql_callsites is generalized off better-sqlite3 syntax
+        // (separate follow-up per the 2026-05-19 D6 decomposition).
+        if source_tag != "better-sqlite3" {
             return Err(format!(
-                "unsupported migration {library_from} to {library_to}; source must be typescript-better-sqlite3"
+                "unsupported migration {library_from} to {library_to}; source binding must be better-sqlite3 until extract_sql_callsites generalizes"
             ));
         }
         match (target_lang, target_tag) {
