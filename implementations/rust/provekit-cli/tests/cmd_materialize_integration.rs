@@ -43,12 +43,10 @@ fn install_node_manifest(root: &Path, surface: &str, script: &Path, library_tag:
     fs::write(manifest, manifest_text).expect("write manifest");
 }
 
-#[test]
-fn materialize_dry_run_replaces_concept_citation_with_realized_library_source() {
-    let workspace = tempfile::tempdir().expect("tempdir");
+fn write_typescript_project_fixture(workspace: &Path) -> PathBuf {
     let repo = repo_root();
     install_node_manifest(
-        workspace.path(),
+        workspace,
         "typescript-better-sqlite3",
         &repo
             .join("implementations")
@@ -58,13 +56,14 @@ fn materialize_dry_run_replaces_concept_citation_with_realized_library_source() 
             .join("main.js"),
         "better-sqlite3",
     );
-    fs::write(
-        workspace.path().join("package.json"),
-        "{\"type\":\"module\"}\n",
-    )
-    .expect("write package marker");
-    let src_dir = workspace.path().join("src");
+    fs::write(workspace.join("package.json"), "{\"type\":\"module\"}\n")
+        .expect("write package marker");
+    let src_dir = workspace.join("src");
     fs::create_dir_all(&src_dir).expect("create src dir");
+    src_dir
+}
+
+fn write_concept_source(src_dir: &Path) -> PathBuf {
     let source_path = src_dir.join("queries.ts");
     fs::write(
         &source_path,
@@ -75,6 +74,14 @@ fn materialize_dry_run_replaces_concept_citation_with_realized_library_source() 
 "#,
     )
     .expect("write source");
+    source_path
+}
+
+#[test]
+fn materialize_dry_run_replaces_concept_citation_with_realized_library_source() {
+    let workspace = tempfile::tempdir().expect("tempdir");
+    let src_dir = write_typescript_project_fixture(workspace.path());
+    let source_path = write_concept_source(&src_dir);
 
     let output = Command::new(env!("CARGO_BIN_EXE_provekit"))
         .arg("materialize")
@@ -108,5 +115,50 @@ fn materialize_dry_run_replaces_concept_citation_with_realized_library_source() 
             .expect("read original")
             .contains("provekit-concept:"),
         "dry run must not rewrite source files"
+    );
+}
+
+#[test]
+fn materialize_write_rewrites_source_file_in_place_and_reports_summary() {
+    let workspace = tempfile::tempdir().expect("tempdir");
+    let src_dir = write_typescript_project_fixture(workspace.path());
+    let source_path = write_concept_source(&src_dir);
+
+    let output = Command::new(env!("CARGO_BIN_EXE_provekit"))
+        .arg("materialize")
+        .arg("--library")
+        .arg("typescript-better-sqlite3")
+        .arg("--source-dir")
+        .arg(&src_dir)
+        .arg("--project")
+        .arg(workspace.path())
+        .arg("--write")
+        .output()
+        .expect("spawn provekit materialize --write");
+
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(
+        output.status.success(),
+        "materialize --write should succeed\nstdout:\n{stdout}\nstderr:\n{stderr}"
+    );
+    assert!(
+        stdout.contains("materialized 1 concept citation(s) across 1 file(s)"),
+        "write mode should report replacement summary: {stdout}"
+    );
+    let rewritten = fs::read_to_string(&source_path).expect("read rewritten source");
+    assert!(rewritten.contains("// header stays"));
+    assert!(
+        rewritten.contains("db.prepare(sql).all(args)"),
+        "rewritten file should contain better-sqlite3 materialization:\n{rewritten}"
+    );
+    assert!(rewritten.contains("// footer stays"));
+    assert!(
+        !rewritten.contains("provekit-concept:"),
+        "write mode should remove concept citation carrier comments:\n{rewritten}"
+    );
+    assert!(
+        !rewritten.contains("provekit-concept-payload-cid:"),
+        "write mode should remove payload CID carrier comments:\n{rewritten}"
     );
 }
