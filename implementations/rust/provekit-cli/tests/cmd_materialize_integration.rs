@@ -162,3 +162,43 @@ fn materialize_write_rewrites_source_file_in_place_and_reports_summary() {
         "write mode should remove payload CID carrier comments:\n{rewritten}"
     );
 }
+
+#[test]
+fn materialize_out_dir_writes_materialized_copy_and_leaves_source_unchanged() {
+    let workspace = tempfile::tempdir().expect("tempdir");
+    let src_dir = write_typescript_project_fixture(workspace.path());
+    let source_path = write_concept_source(&src_dir);
+    let out_dir = workspace.path().join("materialized");
+
+    let output = Command::new(env!("CARGO_BIN_EXE_provekit"))
+        .arg("materialize")
+        .arg("--library")
+        .arg("typescript-better-sqlite3")
+        .arg("--source-dir")
+        .arg(&src_dir)
+        .arg("--project")
+        .arg(workspace.path())
+        .arg("--out-dir")
+        .arg(&out_dir)
+        .output()
+        .expect("spawn provekit materialize --out-dir");
+
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(
+        output.status.success(),
+        "materialize --out-dir should succeed\nstdout:\n{stdout}\nstderr:\n{stderr}"
+    );
+    assert!(
+        stdout.contains("materialized 1 concept citation(s) across 1 file(s)"),
+        "out-dir mode should report replacement summary: {stdout}"
+    );
+    let copied = fs::read_to_string(out_dir.join("queries.ts")).expect("read materialized copy");
+    assert!(copied.contains("db.prepare(sql).all(args)"));
+    assert!(!copied.contains("provekit-concept:"));
+    let original = fs::read_to_string(&source_path).expect("read original source");
+    assert!(
+        original.contains("provekit-concept:"),
+        "out-dir mode must not rewrite source file: {original}"
+    );
+}
