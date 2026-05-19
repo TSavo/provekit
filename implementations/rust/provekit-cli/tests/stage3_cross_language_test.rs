@@ -75,7 +75,7 @@ fn bind_migrates_better_sqlite3_to_python_with_cross_language_witness_pairs() {
         &sqlite_receipt,
         ExpectedAggregate {
             rewritten: 4,
-            widened: 0,
+            widened: 1,
             halted: 0,
             refused: 0,
             lossy: 1,
@@ -83,8 +83,8 @@ fn bind_migrates_better_sqlite3_to_python_with_cross_language_witness_pairs() {
     );
     assert_eq!(
         sqlite_receipt.promotion_decisions.len(),
-        0,
-        "sync sqlite3 migration must not emit PromotionDecisionMementos"
+        1,
+        "sqlite3 migration emits one PromotionDecisionMemento for recordEvent (async contagion via lossy insert-and-get-id callsite)"
     );
     assert_python_source_parses(&sqlite_out.join("src").join("users.py"));
     assert_language_transition_claim(&sqlite_json, "getUserById", "get_user_by_id");
@@ -167,7 +167,7 @@ fn assert_aggregate(
             expected.refused
         ),
         format!(
-            "{} lossy sites: sqlite-specific last_insert_rowid semantics",
+            "{} lossy callsites: kit-declared dimension divergence",
             expected.lossy
         ),
     ];
