@@ -25,12 +25,16 @@ import com.sun.source.tree.EnhancedForLoopTree;
 import com.sun.source.tree.ExpressionStatementTree;
 import com.sun.source.tree.ForLoopTree;
 import com.sun.source.tree.IfTree;
+import com.sun.source.tree.IdentifierTree;
+import com.sun.source.tree.LiteralTree;
 import com.sun.source.tree.MethodInvocationTree;
 import com.sun.source.tree.MethodTree;
 import com.sun.source.tree.NewClassTree;
+import com.sun.source.tree.ParenthesizedTree;
 import com.sun.source.tree.ReturnTree;
 import com.sun.source.tree.StatementTree;
 import com.sun.source.tree.Tree;
+import com.sun.source.tree.TypeCastTree;
 import com.sun.source.tree.VariableTree;
 import com.sun.source.tree.WhileLoopTree;
 import com.sun.source.util.JavacTask;
@@ -202,7 +206,8 @@ public final class JavaBindLifter {
                 }
             }
 
-            Jcs.Obj termShape = shapeOfStatement(method.getBody());
+            ShapeResult shapeResult = shapeOfStatement(method.getBody());
+            Jcs.Json termShape = shapeResult.shape();
             String termShapeCid = Jcs.cid(termShape);
 
             String conceptAnnotation = extractConceptAnnotation(source, fnLine);
@@ -239,9 +244,11 @@ public final class JavaBindLifter {
                 "fn_line", Jcs.integer(fnLine),
                 "fn_name", Jcs.string(fnName),
                 "kind", Jcs.string("bind-lift-entry"),
+                "operand_bindings", Jcs.array(shapeResult.operandBindings()),
                 "param_names", Jcs.array(paramNames),
                 "param_types", Jcs.array(paramTypes),
                 "return_type", Jcs.string(returnType),
+                "source_function_name", Jcs.string(fnName),
                 "term_shape", termShape,
                 "term_shape_cid", Jcs.string(termShapeCid),
                 "witnesses", Jcs.array(surfaceWitnesses)
@@ -258,86 +265,147 @@ public final class JavaBindLifter {
     // `walk_rpc.rs::term_shape_for_fn` and `cmd_bind::TermShape::from_fn` on
     // the Rust side; same shape, same JCS bytes, same shape_cid.
 
-    private static Jcs.Obj shapeOfStatement(StatementTree stmt) {
-        if (stmt == null) return Jcs.object("kind", Jcs.string("opaque"));
+    private static ShapeResult shapeOfStatement(StatementTree stmt) {
+        if (stmt == null) return ShapeResult.empty();
         if (stmt instanceof BlockTree b) {
-            List<Jcs.Json> ss = new ArrayList<>();
-            for (StatementTree s : b.getStatements()) ss.add(shapeOfStatement(s));
-            return Jcs.object("kind", Jcs.string("body"), "stmts", Jcs.array(ss));
+            List<ShapeResult> children = new ArrayList<>();
+            for (StatementTree s : b.getStatements()) {
+                ShapeResult child = shapeOfStatement(s);
+                if (hasOperatorIdentity(child.shape()) || !child.operandBindings().isEmpty()) {
+                    children.add(child);
+                }
+            }
+            return operatorShapeResult("concept:seq", children);
         }
         if (stmt instanceof IfTree t) {
-            Jcs.Obj o = Jcs.object(
-                "cond", shapeOfExpression(t.getCondition()),
-                "kind", Jcs.string("if"),
-                "then", shapeOfStatement(t.getThenStatement())
-            );
-            if (t.getElseStatement() != null) {
-                o = withField(o, "else", shapeOfStatement(t.getElseStatement()));
-            }
-            return o;
+            List<ShapeResult> args = new ArrayList<>();
+            args.add(shapeOfExpression(t.getCondition()));
+            args.add(shapeOfStatement(t.getThenStatement()));
+            args.add(t.getElseStatement() == null ? operatorShapeResult("concept:skip", List.of()) : shapeOfStatement(t.getElseStatement()));
+            return operatorShapeResult("concept:conditional", args);
         }
-        if (stmt instanceof WhileLoopTree t) {
-            return Jcs.object(
-                "body", shapeOfStatement(t.getStatement()),
-                "cond", shapeOfExpression(t.getCondition()),
-                "kind", Jcs.string("while")
-            );
+        if (stmt instanceof ReturnTree t) {
+            if (t.getExpression() == null) return operatorShapeResult("concept:return", List.of());
+            return operatorShapeResult("concept:return", List.of(shapeOfExpression(t.getExpression())));
         }
-        if (stmt instanceof DoWhileLoopTree t) {
-            return Jcs.object(
-                "body", shapeOfStatement(t.getStatement()),
-                "cond", shapeOfExpression(t.getCondition()),
-                "kind", Jcs.string("while")
-            );
+        if (stmt instanceof VariableTree t) {
+            ShapeResult target = leafBinding(t.getName().toString());
+            ShapeResult init = t.getInitializer() == null ? literalShape(0) : shapeOfExpression(t.getInitializer());
+            return operatorShapeResult("concept:assign", List.of(target, init));
         }
-        if (stmt instanceof ForLoopTree t) {
-            return Jcs.object(
-                "body", shapeOfStatement(t.getStatement()),
-                "kind", Jcs.string("for")
-            );
-        }
-        if (stmt instanceof EnhancedForLoopTree t) {
-            return Jcs.object(
-                "body", shapeOfStatement(t.getStatement()),
-                "kind", Jcs.string("for")
-            );
-        }
-        if (stmt instanceof ReturnTree) return Jcs.object("kind", Jcs.string("exit"));
-        if (stmt instanceof com.sun.source.tree.BreakTree) return Jcs.object("kind", Jcs.string("exit"));
-        if (stmt instanceof com.sun.source.tree.ContinueTree) return Jcs.object("kind", Jcs.string("exit"));
-        if (stmt instanceof VariableTree) return Jcs.object("kind", Jcs.string("let"));
         if (stmt instanceof ExpressionStatementTree es) return shapeOfExpression(es.getExpression());
-        return Jcs.object("kind", Jcs.string("opaque"));
+        if (stmt instanceof com.sun.source.tree.BreakTree || stmt instanceof com.sun.source.tree.ContinueTree) {
+            return operatorShapeResult("concept:skip", List.of());
+        }
+        if (stmt instanceof WhileLoopTree || stmt instanceof DoWhileLoopTree || stmt instanceof ForLoopTree || stmt instanceof EnhancedForLoopTree) {
+            return ShapeResult.empty();
+        }
+        return ShapeResult.empty();
     }
 
-    private static Jcs.Obj shapeOfExpression(Tree expr) {
-        if (expr == null) return Jcs.object("kind", Jcs.string("opaque"));
-        if (expr instanceof AssignmentTree) return Jcs.object("kind", Jcs.string("assign"));
-        if (expr instanceof CompoundAssignmentTree) return Jcs.object("kind", Jcs.string("assign"));
-        if (expr instanceof BinaryTree b) {
-            String op = switch (b.getKind()) {
-                case PLUS -> "+";
-                case MINUS -> "-";
-                case MULTIPLY -> "*";
-                case DIVIDE -> "/";
-                case REMAINDER -> "%";
-                case EQUAL_TO -> "==";
-                case NOT_EQUAL_TO -> "!=";
-                case LESS_THAN -> "<";
-                case LESS_THAN_EQUAL -> "<=";
-                case GREATER_THAN -> ">";
-                case GREATER_THAN_EQUAL -> ">=";
-                default -> "opaque-op";
-            };
-            boolean isRel = switch (op) {
-                case "==", "!=", "<", "<=", ">", ">=" -> true;
-                default -> false;
-            };
-            return Jcs.object("kind", Jcs.string(isRel ? "rel" : "bin"), "op", Jcs.string(op));
+    private static ShapeResult shapeOfExpression(Tree expr) {
+        if (expr == null) return ShapeResult.empty();
+        if (expr instanceof ParenthesizedTree t) return shapeOfExpression(t.getExpression());
+        if (expr instanceof TypeCastTree t) return shapeOfExpression(t.getExpression());
+        if (expr instanceof AssignmentTree t) {
+            return operatorShapeResult("concept:assign", List.of(ShapeResult.empty(), shapeOfExpression(t.getExpression())));
         }
-        if (expr instanceof MethodInvocationTree) return Jcs.object("kind", Jcs.string("call"));
-        if (expr instanceof NewClassTree) return Jcs.object("kind", Jcs.string("call"));
-        return Jcs.object("kind", Jcs.string("opaque"));
+        if (expr instanceof CompoundAssignmentTree t) {
+            return operatorShapeResult("concept:assign", List.of(ShapeResult.empty(), shapeOfExpression(t.getExpression())));
+        }
+        if (expr instanceof BinaryTree b) {
+            String concept = switch (b.getKind()) {
+                case PLUS -> "concept:add";
+                case MINUS -> "concept:sub";
+                case MULTIPLY -> "concept:mul";
+                case DIVIDE -> "concept:div";
+                case REMAINDER -> "concept:mod";
+                case EQUAL_TO -> "concept:eq";
+                case NOT_EQUAL_TO -> "concept:ne";
+                case LESS_THAN -> "concept:lt";
+                case LESS_THAN_EQUAL -> "concept:le";
+                case GREATER_THAN -> "concept:gt";
+                case GREATER_THAN_EQUAL -> "concept:ge";
+                default -> "";
+            };
+            if (!concept.isEmpty()) {
+                return operatorShapeResult(concept, List.of(
+                    shapeOfExpression(b.getLeftOperand()),
+                    shapeOfExpression(b.getRightOperand())
+                ));
+            }
+        }
+        if (expr instanceof IdentifierTree t) return leafBinding(t.getName().toString());
+        if (expr instanceof LiteralTree t) return literalShape(t.getValue());
+        if (expr instanceof MethodInvocationTree || expr instanceof NewClassTree) return ShapeResult.empty();
+        return ShapeResult.empty();
+    }
+
+    private static ShapeResult operatorShapeResult(String conceptName, List<ShapeResult> args) {
+        String opCid = conceptCidForName(conceptName);
+        if (opCid == null || opCid.isBlank()) return ShapeResult.empty();
+        List<Jcs.Json> argShapes = args.stream().map(ShapeResult::shape).toList();
+        List<Jcs.Json> bindings = new ArrayList<>();
+        for (int i = 0; i < args.size(); i++) {
+            for (Jcs.Json binding : args.get(i).operandBindings()) {
+                bindings.add(prefixBinding(binding, i));
+            }
+        }
+        return new ShapeResult(
+            Jcs.object(
+                "args", Jcs.array(argShapes),
+                "concept_name", Jcs.string(conceptName),
+                "op_cid", Jcs.string(opCid)
+            ),
+            bindings
+        );
+    }
+
+    private static ShapeResult leafBinding(String symbol) {
+        return new ShapeResult(
+            Jcs.object(),
+            List.of(Jcs.object(
+                "position", Jcs.array(),
+                "symbol", Jcs.string(symbol)
+            ))
+        );
+    }
+
+    private static ShapeResult literalShape(Object value) {
+        Jcs.Json literal;
+        if (value == null) {
+            literal = Jcs.object("kind", Jcs.string("literal"), "value", Jcs.nullValue());
+        } else if (value instanceof Boolean b) {
+            literal = Jcs.object("kind", Jcs.string("literal"), "value", Jcs.bool(b));
+        } else if (value instanceof Number n) {
+            literal = Jcs.object("kind", Jcs.string("literal"), "value", Jcs.integer(n.longValue()));
+        } else if (value instanceof String s) {
+            literal = Jcs.object("kind", Jcs.string("literal"), "value", Jcs.string(s));
+        } else {
+            literal = Jcs.object();
+        }
+        return new ShapeResult(literal, List.of());
+    }
+
+    private static Jcs.Json prefixBinding(Jcs.Json binding, int prefix) {
+        if (!(binding instanceof Jcs.Obj obj)) return binding;
+        Jcs.Json rawPosition = obj.get("position");
+        String symbol = obj.stringFieldOrNull("symbol");
+        if (!(rawPosition instanceof Jcs.Arr position) || symbol == null) return binding;
+        List<Jcs.Json> prefixed = new ArrayList<>();
+        prefixed.add(Jcs.integer(prefix));
+        prefixed.addAll(position.values());
+        return Jcs.object(
+            "position", Jcs.array(prefixed),
+            "symbol", Jcs.string(symbol)
+        );
+    }
+
+    private static boolean hasOperatorIdentity(Jcs.Json value) {
+        if (value instanceof Jcs.Obj obj) {
+            return obj.stringFieldOrNull("concept_name") != null || obj.stringFieldOrNull("op_cid") != null;
+        }
+        return false;
     }
 
     // ---- Concept annotation extraction -------------------------------------
@@ -824,12 +892,23 @@ public final class JavaBindLifter {
                 if (!validCid(shapeCid) || !(mementoJson instanceof Jcs.Obj memento)) continue;
                 String operationKind = catalogOperationKind(name, memento);
                 if (operationKind != null && !operationKind.isBlank()) {
-                    catalog.put(cid, new CatalogEntry(shapeCid, operationKind));
+                    catalog.put(cid, new CatalogEntry(name, shapeCid, operationKind));
                 }
             } catch (IOException | IllegalArgumentException ignored) {
             }
         }
         return catalog;
+    }
+
+    private static String conceptCidForName(String conceptName) {
+        Map<String, CatalogEntry> catalog = conceptShapeCatalog();
+        if (catalog == null) return null;
+        for (Map.Entry<String, CatalogEntry> entry : catalog.entrySet()) {
+            if (conceptName.equals(entry.getValue().name())) {
+                return entry.getKey();
+            }
+        }
+        return null;
     }
 
     private static String catalogOperationKind(String name, Jcs.Obj memento) {
@@ -1039,7 +1118,13 @@ public final class JavaBindLifter {
         }
     }
 
-    private record CatalogEntry(String shapeCid, String operationKind) {}
+    private record ShapeResult(Jcs.Json shape, List<Jcs.Json> operandBindings) {
+        static ShapeResult empty() {
+            return new ShapeResult(Jcs.object(), List.of());
+        }
+    }
+
+    private record CatalogEntry(String name, String shapeCid, String operationKind) {}
 
     private record TagLine(int line, String key, String value) {}
 

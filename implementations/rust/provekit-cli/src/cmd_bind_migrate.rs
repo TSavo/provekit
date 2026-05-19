@@ -2621,10 +2621,15 @@ fn json_to_value(j: &serde_json::Value) -> Arc<Value> {
 mod tests {
     use super::*;
 
-    use libprovekit::core::platform_semantics_for_lower_target;
+    use provekit_ir_types::{DimensionValueMemento, PlatformSemanticTag};
 
     const CONCEPT_ADD_CID: &str = "blake3-512:95fc70e63a5550fd2e25142f13932919c59d085654ab387789c798886b0111c61d28fe533fc98b50df70eea9428a9af8aa75372c8b1c1deb3acc1a4094790468";
     const CONCEPT_DIV_CID: &str = "blake3-512:c6a13abbcafdf83edcff49d883a7c7440faadd8af896da0ad46e2bcb177ed0649d005b4ddecd4689cf565b10679219a07c784399bafe5c6174642e1b808d7839";
+    const CONCEPT_RUST_ONLY_CID: &str = "blake3-512:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa";
+    const TEST_PY_KIT_CID: &str = "blake3-512:11111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111";
+    const TEST_JAVA_KIT_CID: &str = "blake3-512:22222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222";
+    const TEST_RUST_KIT_CID: &str = "blake3-512:33333333333333333333333333333333333333333333333333333333333333333333333333333333333333333333333333333333333333333333333333333333";
+    const TEST_C_KIT_CID: &str = "blake3-512:44444444444444444444444444444444444444444444444444444444444444444444444444444444444444444444444444444444444444444444444444444444";
 
     fn function(name: &str) -> TsFunction {
         TsFunction {
@@ -2660,16 +2665,122 @@ mod tests {
         }
     }
 
+    fn dim_value(
+        kit_cid: &str,
+        dimension_name: &str,
+        value_name: &str,
+        compare_to_name: &str,
+    ) -> DimensionValueMemento {
+        DimensionValueMemento::new(
+            kit_cid.to_string(),
+            dimension_name.to_string(),
+            value_name.to_string(),
+            atom(compare_to_name),
+        )
+    }
+
+    fn tag(
+        kit_cid: &str,
+        op_cid: &str,
+        dimension_name: &str,
+        value_cid: &str,
+    ) -> PlatformSemanticTag {
+        PlatformSemanticTag::new(
+            kit_cid.to_string(),
+            op_cid.to_string(),
+            BTreeMap::from([(dimension_name.to_string(), value_cid.to_string())]),
+        )
+    }
+
+    fn test_decl(kit_cid: &str, rows: &[(&str, &str, &str, &str)]) -> PlatformSemanticsDeclaration {
+        let mut values = Vec::new();
+        let mut tags = Vec::new();
+        for (op_cid, dimension_name, value_name, compare_to_name) in rows {
+            let value = dim_value(kit_cid, dimension_name, value_name, compare_to_name);
+            tags.push(tag(kit_cid, op_cid, dimension_name, &value.cid));
+            values.push(value);
+        }
+        PlatformSemanticsDeclaration {
+            tags,
+            dimension_values: values,
+            op_aliases: BTreeMap::new(),
+        }
+    }
+
+    fn test_platform_semantics_for_lower_target(target: &str) -> PlatformSemanticsDeclaration {
+        match target {
+            "python" => test_decl(
+                TEST_PY_KIT_CID,
+                &[
+                    (
+                        CONCEPT_ADD_CID,
+                        "ArithmeticOverflow",
+                        "ArbitraryPrecision",
+                        "python:ArbitraryPrecision",
+                    ),
+                    (
+                        CONCEPT_DIV_CID,
+                        "IntegerDivisionRounding",
+                        "Floor",
+                        "python:FloorDivision",
+                    ),
+                ],
+            ),
+            "java" => test_decl(
+                TEST_JAVA_KIT_CID,
+                &[
+                    (
+                        CONCEPT_ADD_CID,
+                        "ArithmeticOverflow",
+                        "Wrapping",
+                        "java:Wrapping",
+                    ),
+                    (
+                        CONCEPT_DIV_CID,
+                        "IntegerDivisionRounding",
+                        "TruncTowardZero",
+                        "java:TruncTowardZero",
+                    ),
+                ],
+            ),
+            "rust" => test_decl(
+                TEST_RUST_KIT_CID,
+                &[
+                    (
+                        CONCEPT_DIV_CID,
+                        "IntegerDivisionRounding",
+                        "TruncTowardZero",
+                        "rust:TruncTowardZero",
+                    ),
+                    (
+                        CONCEPT_RUST_ONLY_CID,
+                        "RustOnlySemantic",
+                        "NativeOnly",
+                        "rust:NativeOnly",
+                    ),
+                ],
+            ),
+            "c" => test_decl(
+                TEST_C_KIT_CID,
+                &[(
+                    CONCEPT_ADD_CID,
+                    "ArithmeticOverflow",
+                    "UndefinedBehavior",
+                    "c:UndefinedBehavior",
+                )],
+            ),
+            other => panic!("unknown test platform semantics target: {other}"),
+        }
+    }
+
     fn receipt_for(
         source: &str,
         target: &str,
         callsites: &[SqlCallsite],
         focus: Option<&str>,
     ) -> MigrateReceiptEnvelope {
-        let source_decl =
-            platform_semantics_for_lower_target(source).expect("source semantics declared");
-        let target_decl =
-            platform_semantics_for_lower_target(target).expect("target semantics declared");
+        let source_decl = test_platform_semantics_for_lower_target(source);
+        let target_decl = test_platform_semantics_for_lower_target(target);
         let changes = platform_semantic_changes(&source_decl, &target_decl, callsites, focus)
             .expect("semantic comparison is characterizable");
         let functions = callsites
@@ -2760,8 +2871,8 @@ mod tests {
     #[test]
     fn point_query_refuse_decision_does_not_emit_partial_loss_records() {
         let callsites = vec![callsite("cs:add", CONCEPT_ADD_CID, "add")];
-        let source = platform_semantics_for_lower_target("python").expect("python semantics");
-        let target = platform_semantics_for_lower_target("java").expect("java semantics");
+        let source = test_platform_semantics_for_lower_target("python");
+        let target = test_platform_semantics_for_lower_target("java");
         let changes =
             platform_semantic_changes(&source, &target, &callsites, None).expect("changes");
         let first_changed = changes.changed_callsites.first().expect("changed callsite");
@@ -2805,8 +2916,8 @@ mod tests {
 
     #[test]
     fn point_query_uncharacterizable_absent_op_routes_to_refuse_signal() {
-        let source = platform_semantics_for_lower_target("rust").expect("rust semantics");
-        let target = platform_semantics_for_lower_target("java").expect("java semantics");
+        let source = test_platform_semantics_for_lower_target("rust");
+        let target = test_platform_semantics_for_lower_target("java");
         // Find a rust-only op: present in source, absent in target.
         // After the OpCoverageVerdict refactor this returns Ok(Uncharacterizable)
         // rather than Err(TargetOpAbsent), so we match on the verdict directly.

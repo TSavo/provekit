@@ -15,7 +15,7 @@
 // provekit-realize-c-core platform_semantics.rs files.
 
 use std::io::{BufRead, BufReader, Write};
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
 use std::sync::OnceLock;
 
@@ -35,33 +35,186 @@ pub enum PlatformSemanticsLoadError {
     ResultShape(String),
 }
 
-/// Resolve a kit binary by convention. The substrate does NOT enumerate kits.
+#[derive(Debug, Clone)]
+struct ResolvedPlatformSemanticsCommand {
+    argv: Vec<String>,
+    working_dir: Option<PathBuf>,
+}
+
+/// Resolve kit commands by project manifest, workspace build convention, then
+/// PATH convention. The substrate does NOT enumerate kits.
 ///
 /// Convention:
-///   1. Try `provekit-realize-<kit_id>-core` on PATH (pure language-kit form)
-///   2. Try `provekit-realize-<kit_id>` on PATH (full kit-identity form,
+///   1. Try `.provekit/realize/<kit_id>/manifest.toml` from the current repo
+///   2. Try workspace-local build products under `implementations/<kit_id>/`
+///   3. Try `provekit-realize-<kit_id>-core` on PATH (pure language-kit form)
+///   4. Try `provekit-realize-<kit_id>` on PATH (full kit-identity form,
 ///      e.g., `python-aiosqlite`, `typescript-pg`)
 ///
-/// Returns the first command that resolves on PATH. If neither candidate
-/// is on PATH, returns the language-kit form as a best-effort command so
+/// If neither candidate is available, returns the language-kit form as a
+/// best-effort command so
 /// the loader's spawn produces a MissingBinary error citing the
 /// convention name, rather than collapsing two failure modes (unknown
 /// kit vs binary-missing) into the same None.
 ///
 /// Adding a new kit requires nothing here: name the binary by convention
-/// and the substrate finds it. The previous hardcoded match table was
-/// substrate-uniform-pattern violation: kit enumeration inside libprovekit.
-fn kit_command_for(kit_id: &str) -> Vec<String> {
+/// or register a manifest and the substrate finds it. The previous hardcoded
+/// match table was substrate-uniform-pattern violation: kit enumeration inside
+/// libprovekit.
+fn kit_command_candidates(kit_id: &str) -> Vec<ResolvedPlatformSemanticsCommand> {
+    let mut candidates = Vec::new();
+    if let Some(root) = find_workspace_root() {
+        if let Some(command) = manifest_command_for(&root, kit_id) {
+            candidates.push(command);
+        }
+        candidates.extend(workspace_build_candidates(&root, kit_id));
+    }
+
     let lang_form = format!("provekit-realize-{kit_id}-core");
     let identity_form = format!("provekit-realize-{kit_id}");
     if which_on_path(&lang_form).is_some() {
-        return vec![lang_form];
+        candidates.push(ResolvedPlatformSemanticsCommand {
+            argv: vec![lang_form.clone()],
+            working_dir: None,
+        });
     }
     if which_on_path(&identity_form).is_some() {
-        return vec![identity_form];
+        candidates.push(ResolvedPlatformSemanticsCommand {
+            argv: vec![identity_form],
+            working_dir: None,
+        });
     }
-    // Best-effort: surface the language-kit-form name in MissingBinary.
-    vec![lang_form]
+    if candidates.is_empty() {
+        // Best-effort: surface the language-kit-form name in MissingBinary.
+        candidates.push(ResolvedPlatformSemanticsCommand {
+            argv: vec![lang_form],
+            working_dir: None,
+        });
+    }
+    candidates
+}
+
+fn find_workspace_root() -> Option<PathBuf> {
+    let mut current = std::env::current_dir().ok()?;
+    loop {
+        if current.join(".provekit").join("realize").is_dir() {
+            return Some(current);
+        }
+        if !current.pop() {
+            return None;
+        }
+    }
+}
+
+fn manifest_command_for(root: &Path, kit_id: &str) -> Option<ResolvedPlatformSemanticsCommand> {
+    let manifest = root
+        .join(".provekit")
+        .join("realize")
+        .join(kit_id)
+        .join("manifest.toml");
+    if !manifest.exists() {
+        return None;
+    }
+    parse_manifest_command(&manifest, root).ok()
+}
+
+fn parse_manifest_command(
+    path: &Path,
+    root: &Path,
+) -> Result<ResolvedPlatformSemanticsCommand, PlatformSemanticsLoadError> {
+    let text = std::fs::read_to_string(path)
+        .map_err(|e| PlatformSemanticsLoadError::Failed(format!("read {}: {e}", path.display())))?;
+    let mut command = Vec::new();
+    let mut working_dir = None;
+    let mut section = String::new();
+    for line in text.lines() {
+        let line = match line.find('#') {
+            Some(pos) => &line[..pos],
+            None => line,
+        }
+        .trim();
+        if line.is_empty() {
+            continue;
+        }
+        if line.starts_with('[') && line.ends_with(']') {
+            section = line
+                .trim_start_matches('[')
+                .trim_end_matches(']')
+                .trim()
+                .to_string();
+            continue;
+        }
+        let Some(eq) = line.find('=') else { continue };
+        let key = line[..eq].trim();
+        let value = line[eq + 1..].trim();
+        match (section.as_str(), key) {
+            ("", "command") => command = parse_toml_string_array(value),
+            ("", "working_dir") => {
+                let path = PathBuf::from(value.trim_matches('"'));
+                working_dir = Some(if path.is_absolute() {
+                    path
+                } else {
+                    root.join(path)
+                });
+            }
+            _ => {}
+        }
+    }
+    if command.is_empty() {
+        return Err(PlatformSemanticsLoadError::Failed(format!(
+            "manifest {} has no `command`",
+            path.display()
+        )));
+    }
+    Ok(ResolvedPlatformSemanticsCommand {
+        argv: command,
+        working_dir: working_dir.or_else(|| Some(root.to_path_buf())),
+    })
+}
+
+fn parse_toml_string_array(value: &str) -> Vec<String> {
+    let inner = value.trim().trim_matches(|c| c == '[' || c == ']');
+    inner
+        .split(',')
+        .map(|s| s.trim().trim_matches('"').to_string())
+        .filter(|s| !s.is_empty())
+        .collect()
+}
+
+fn workspace_build_candidates(root: &Path, kit_id: &str) -> Vec<ResolvedPlatformSemanticsCommand> {
+    let impl_dir = root.join("implementations").join(kit_id);
+    let mut out = Vec::new();
+
+    let jar = impl_dir
+        .join(format!("provekit-realize-{kit_id}-core"))
+        .join("target")
+        .join(format!("provekit-realize-{kit_id}.jar"));
+    if jar.exists() {
+        out.push(ResolvedPlatformSemanticsCommand {
+            argv: vec![
+                "java".to_string(),
+                "-jar".to_string(),
+                jar.display().to_string(),
+                "--rpc".to_string(),
+            ],
+            working_dir: Some(root.to_path_buf()),
+        });
+    }
+
+    for profile in ["release", "debug"] {
+        let binary = impl_dir
+            .join("target")
+            .join(profile)
+            .join(format!("provekit-realize-{kit_id}"));
+        if binary.exists() {
+            out.push(ResolvedPlatformSemanticsCommand {
+                argv: vec![binary.display().to_string(), "--rpc".to_string()],
+                working_dir: Some(root.to_path_buf()),
+            });
+        }
+    }
+
+    out
 }
 
 fn which_on_path(bin: &str) -> Option<PathBuf> {
@@ -85,8 +238,18 @@ fn which_on_path(bin: &str) -> Option<PathBuf> {
 pub fn load_platform_semantics(
     kit_id: &str,
 ) -> Result<PlatformSemanticsDeclaration, PlatformSemanticsLoadError> {
-    let command = kit_command_for(kit_id);
-    load_platform_semantics_for_command(&command, None)
+    let mut last_error = None;
+    for command in kit_command_candidates(kit_id) {
+        match load_platform_semantics_for_command(&command.argv, command.working_dir.as_ref()) {
+            Ok(declaration) => return Ok(declaration),
+            Err(error) => last_error = Some(error),
+        }
+    }
+    Err(
+        last_error.unwrap_or_else(|| PlatformSemanticsLoadError::MissingBinary {
+            binary: format!("provekit-realize-{kit_id}-core"),
+        }),
+    )
 }
 
 /// Load using an explicit binary command. The substrate's preferred API for
@@ -179,10 +342,13 @@ fn load_platform_semantics_for_command(
             "protocol_version": "pep/1.7.0"
         }
     });
-    writeln!(stdin, "{init_req}").map_err(|e| {
-        PlatformSemanticsLoadError::Failed(format!("write initialize: {e}"))
-    })?;
-    let _ = read_response(&mut reader, 1)?;
+    writeln!(stdin, "{init_req}")
+        .map_err(|e| PlatformSemanticsLoadError::Failed(format!("write initialize: {e}")))?;
+    match read_response(&mut reader, 1) {
+        Ok(_) => {}
+        Err(error) if is_optional_handshake_error(&error) => {}
+        Err(error) => return Err(error),
+    }
 
     let req = json!({
         "jsonrpc": "2.0",
@@ -198,7 +364,7 @@ fn load_platform_semantics_for_command(
     let shutdown_req = json!({
         "jsonrpc": "2.0",
         "id": 3,
-        "method": "shutdown"
+        "method": "provekit.plugin.shutdown"
     });
     let _ = writeln!(stdin, "{shutdown_req}");
     drop(stdin);
@@ -239,4 +405,9 @@ fn read_response<R: BufRead>(
         )));
     }
     Ok(value)
+}
+
+fn is_optional_handshake_error(error: &PlatformSemanticsLoadError) -> bool {
+    matches!(error, PlatformSemanticsLoadError::Failed(message)
+        if message.contains("\"code\":-32601") || message.contains("METHOD_NOT_FOUND"))
 }

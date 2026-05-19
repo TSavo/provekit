@@ -283,7 +283,7 @@ fn write_realize_manifest(root: &Path, target: &str) {
     .expect("write realize manifest");
 }
 
-fn lift_source_input(lang: &str, workspace_root: &Path) -> Input {
+fn lift_source_input(lang: &str, _workspace_root: &Path) -> Input {
     let source_paths = match lang {
         "python" => vec!["src/lib.py"],
         "java" => vec!["src/Lib.java"],
@@ -292,7 +292,7 @@ fn lift_source_input(lang: &str, workspace_root: &Path) -> Input {
     };
     let request = json!({
         "surface": lang,
-        "workspace_root": workspace_root,
+        "workspace_root": ".",
         "config_path": ".provekit/config.toml",
         "source_paths": source_paths,
         "options": { "layer": "all", "identifyOnly": false }
@@ -541,6 +541,16 @@ fn run_leg(
     source: &str,
     catalog: &HashMapCatalog,
 ) -> LegResult {
+    run_leg_with_expected_concepts(source_lang, target_lang, source, catalog, true)
+}
+
+fn run_leg_with_expected_concepts(
+    source_lang: &str,
+    target_lang: &str,
+    source: &str,
+    catalog: &HashMapCatalog,
+    require_expected_concepts: bool,
+) -> LegResult {
     let temp = tempfile::tempdir().expect("tempdir");
     let workspace = temp.path();
     write_source_workspace(workspace, source_lang, source);
@@ -553,7 +563,9 @@ fn run_leg(
     assert_bind_payload_shape(&format!("{source_lang} bind"), &bind_claim);
     assert_claim_concept_tier(&format!("{source_lang} bind"), &bind_claim, catalog);
     let concept_cids = concept_cids_from_claim(&bind_claim);
-    assert_expected_concepts_present(&format!("{source_lang} bind"), &concept_cids);
+    if require_expected_concepts {
+        assert_expected_concepts_present(&format!("{source_lang} bind"), &concept_cids);
+    }
 
     let lower_claim = execute_lower(target_lang, workspace, &bind_claim);
     assert_claim_concept_tier(&format!("{target_lang} lower"), &lower_claim, catalog);
@@ -714,8 +726,10 @@ fn fixture_01_discrimination_middle_hop_mutation_changes_final_output() {
     let catalog = concept_catalog();
     let first_leg = run_leg("python", "java", &original, &catalog);
     let mutated_java = mutate_java_middle_hop(&first_leg.source);
-    let java_to_rust = run_leg("java", "rust", &mutated_java, &catalog);
-    let rust_to_python = run_leg("rust", "python", &java_to_rust.source, &catalog);
+    let java_to_rust =
+        run_leg_with_expected_concepts("java", "rust", &mutated_java, &catalog, false);
+    let rust_to_python =
+        run_leg_with_expected_concepts("rust", "python", &java_to_rust.source, &catalog, false);
 
     let original_stdout = python_function_stdout(&original, FIXTURE_FUNCTION, &[3, 4]);
     let mutated_stdout = python_function_stdout(&rust_to_python.source, FIXTURE_FUNCTION, &[3, 4]);

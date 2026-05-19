@@ -368,6 +368,33 @@ class TrinityRoundtripLiftTest {
     }
 
     @Test
+    void bindLifterKeepsOperatorsInsideLocalInitializersForTrinityRelift() {
+        String source = """
+            final class ComputeSumTransported {
+                // concept: UNNAMED-CONCEPT-1
+                public static int compute_sum(int a, int b) {
+                    int total = (a) + (b);
+                    int scaled = (total) * (2);
+                    int reduced = (scaled) - (1);
+                    return reduced;
+                }
+            }
+            """;
+
+        JavaBindLifter.Result lift = new JavaBindLifter().liftPathsFromSource("ComputeSum.java", source);
+        String encoded = Jcs.encode(lift.toJson());
+
+        assertEquals(1, lift.entries().size(), encoded);
+        assertTrue(encoded.contains("\"concept_name\":\"concept:assign\""), encoded);
+        assertTrue(encoded.contains("\"concept_name\":\"concept:add\""), encoded);
+        assertTrue(encoded.contains("\"concept_name\":\"concept:mul\""), encoded);
+        assertTrue(encoded.contains("\"concept_name\":\"concept:sub\""), encoded);
+        assertTrue(encoded.contains("\"operand_bindings\""), encoded);
+        assertTrue(encoded.contains("\"source_function_name\":\"compute_sum\""), encoded);
+        assertTrue(encoded.contains("\"symbol\":\"reduced\""), encoded);
+    }
+
+    @Test
     void test_concept_citation_relift_recovers_identity() {
         Jcs.Obj payload = conceptCitationPayload(ARGS_JCS_CID, "1", CONCEPT_SKIP_CID, "skip");
         String source = conceptTaggedSource(payload, Jcs.cid(payload));

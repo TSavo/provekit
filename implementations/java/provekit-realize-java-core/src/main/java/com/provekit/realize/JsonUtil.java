@@ -125,6 +125,19 @@ final class JsonUtil {
         return extractObjectAt(json, pos);
     }
 
+    static String extractArrayField(String json, String field) {
+        String key = "\"" + field + "\"";
+        int ki = json.indexOf(key);
+        if (ki < 0) return "[]";
+        int pos = ki + key.length();
+        while (pos < json.length()
+            && (json.charAt(pos) == ':' || json.charAt(pos) == ' ' || json.charAt(pos) == '\t')) {
+            pos++;
+        }
+        if (pos >= json.length() || json.charAt(pos) != '[') return "[]";
+        return extractArrayAt(json, pos);
+    }
+
     private static String extractObjectAt(String json, int pos) {
         if (pos >= json.length() || json.charAt(pos) != '{') return "{}";
         int depth = 0;
@@ -133,6 +146,30 @@ final class JsonUtil {
             char c = json.charAt(pos);
             if (c == '{') depth++;
             else if (c == '}') {
+                depth--;
+                if (depth == 0) { pos++; break; }
+            } else if (c == '"') {
+                pos++;
+                while (pos < json.length()) {
+                    char sc = json.charAt(pos);
+                    if (sc == '\\') { pos += 2; continue; }
+                    if (sc == '"') break;
+                    pos++;
+                }
+            }
+            pos++;
+        }
+        return json.substring(start, pos);
+    }
+
+    private static String extractArrayAt(String json, int pos) {
+        if (pos >= json.length() || json.charAt(pos) != '[') return "[]";
+        int depth = 0;
+        int start = pos;
+        while (pos < json.length()) {
+            char c = json.charAt(pos);
+            if (c == '[') depth++;
+            else if (c == ']') {
                 depth--;
                 if (depth == 0) { pos++; break; }
             } else if (c == '"') {

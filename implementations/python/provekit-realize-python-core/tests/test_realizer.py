@@ -151,6 +151,10 @@ def _shape(concept_name: str, args: list[dict] | None = None) -> dict:
     return {"concept_name": concept_name, "args": args or []}
 
 
+def _literal_shape(value: object) -> dict:
+    return {"concept_name": "concept:literal", "args": [], "value": value}
+
+
 def _safe_divide_then_double_shape() -> dict:
     return _shape(
         "concept:conditional",
@@ -569,6 +573,39 @@ def test_term_shape_sidecar_renders_safe_divide_then_double_source_symbols() -> 
     assert fn(-5, 2) == -1
 
 
+def test_term_shape_sidecar_wins_over_lossy_named_tree_for_nested_unary_ops() -> None:
+    lossy_tree = {
+        "conceptName": "concept:seq",
+        "operationKind": "seq",
+        "shapeCid": _cid("a"),
+        "args": [
+            {
+                "conceptName": "concept:neg",
+                "operationKind": "op-application",
+                "shapeCid": _cid("b"),
+                "args": [],
+            }
+        ],
+    }
+
+    result = emit_stub(
+        function="",
+        params=["num", "denom"],
+        param_types=["int", "int"],
+        return_type="int",
+        concept_name="result-bind",
+        named_term_tree=lossy_tree,
+        term_shape=_safe_divide_then_double_shape(),
+        operand_bindings=_safe_divide_then_double_bindings(),
+        source_function_name="safe_divide_then_double",
+    )
+
+    source = result["source"]
+    assert "return -(1)" in source
+    namespace = _compiled_namespace(source)
+    assert namespace["safe_divide_then_double"](8, 2) == 8
+
+
 def test_term_shape_comment_emits_python_comment_surface() -> None:
     result = emit_stub(
         function="comment_only",
@@ -642,6 +679,76 @@ def test_term_shape_operand_bindings_resolve_nested_positions() -> None:
     assert result["source"] == (
         "def nested(a, b, c):\n"
         "    return ((a) * (b)) + (c)\n"
+    )
+
+
+def test_term_shape_operand_bindings_allow_concept_literal_positions() -> None:
+    result = emit_stub(
+        function="add_literal",
+        params=["x"],
+        param_types=["int"],
+        return_type="int",
+        concept_name="concept:add",
+        term_shape=_shape("concept:add", [{}, _literal_shape(2)]),
+        operand_bindings=[
+            {"position": [0], "symbol": "x"},
+            {"position": [1], "symbol": "2"},
+        ],
+    )
+
+    assert result["source"] == "def add_literal(x):\n    return (x) + (2)\n"
+
+
+def test_term_shape_concept_literal_does_not_require_operand_binding() -> None:
+    result = emit_stub(
+        function="add_literal",
+        params=["x"],
+        param_types=["int"],
+        return_type="int",
+        concept_name="concept:add",
+        term_shape=_shape("concept:add", [{}, _literal_shape(2)]),
+        operand_bindings=[{"position": [0], "symbol": "x"}],
+    )
+
+    assert result["source"] == "def add_literal(x):\n    return (x) + (2)\n"
+
+
+def test_term_shape_assignment_sequence_preserves_named_temps_and_return() -> None:
+    result = emit_stub(
+        function="compute_sum",
+        params=["a", "b"],
+        param_types=["int", "int"],
+        return_type="int",
+        concept_name="concept:seq",
+        term_shape=_shape(
+            "concept:seq",
+            [
+                _shape("concept:assign", [{}, _shape("concept:add", [{}, {}])]),
+                _shape("concept:assign", [{}, _shape("concept:mul", [{}, _literal_shape(2)])]),
+                _shape("concept:assign", [{}, _shape("concept:sub", [{}, _literal_shape(1)])]),
+                _shape("concept:return", [{}]),
+            ],
+        ),
+        operand_bindings=[
+            {"position": [0, 0], "symbol": "total"},
+            {"position": [0, 1, 0], "symbol": "a"},
+            {"position": [0, 1, 1], "symbol": "b"},
+            {"position": [1, 0], "symbol": "scaled"},
+            {"position": [1, 1, 0], "symbol": "total"},
+            {"position": [1, 1, 1], "symbol": "2"},
+            {"position": [2, 0], "symbol": "reduced"},
+            {"position": [2, 1, 0], "symbol": "scaled"},
+            {"position": [2, 1, 1], "symbol": "1"},
+            {"position": [3, 0], "symbol": "reduced"},
+        ],
+    )
+
+    assert result["source"] == (
+        "def compute_sum(a, b):\n"
+        "    total = (a) + (b)\n"
+        "    scaled = (total) * (2)\n"
+        "    reduced = (scaled) - (1)\n"
+        "    return reduced\n"
     )
 
 

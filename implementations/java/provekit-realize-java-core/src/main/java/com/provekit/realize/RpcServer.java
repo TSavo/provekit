@@ -88,6 +88,11 @@ public final class RpcServer {
         // Extract the inner params object to avoid ambiguity with the RPC "params" key.
         String paramsObj = JsonUtil.extractParamsObject(line);
         String function = JsonUtil.decodeJsonStringField(paramsObj, "function");
+        String sourceFunctionName = JsonUtil.decodeJsonStringField(paramsObj, "source_function_name");
+        if (sourceFunctionName.isBlank()) {
+            sourceFunctionName = JsonUtil.decodeJsonStringField(paramsObj, "sourceFunctionName");
+        }
+        String emittedFunction = sourceFunctionName.isBlank() ? function : sourceFunctionName;
         String returnType = JsonUtil.decodeJsonStringField(paramsObj, "return_type");
         String conceptName = JsonUtil.decodeJsonStringField(paramsObj, "concept_name");
         String mode = JsonUtil.decodeJsonStringField(paramsObj, "mode");
@@ -101,11 +106,19 @@ public final class RpcServer {
             }
             transportedOp = TransportedOperation.fromNamedTermTree(namedTermTree);
         }
+        String termShape = JsonUtil.extractObjectField(paramsObj, "term_shape");
+        if ("{}".equals(termShape)) {
+            termShape = JsonUtil.extractObjectField(paramsObj, "termShape");
+        }
+        String operandBindings = JsonUtil.extractArrayField(paramsObj, "operand_bindings");
+        if ("[]".equals(operandBindings)) {
+            operandBindings = JsonUtil.extractArrayField(paramsObj, "operandBindings");
+        }
         List<String> sugarPlugins = JsonUtil.decodeJsonObjectArray(paramsObj, "sugar_plugins");
         List<String> params = JsonUtil.decodeJsonStringArray(paramsObj, "params");
         List<String> paramTypes = JsonUtil.decodeJsonStringArray(paramsObj, "param_types");
         SugarRealizer.Realization r =
-                SugarRealizer.emitStub(function, params, paramTypes, returnType, conceptName, mode, modes, contract, sugarPlugins, transportedOp);
+                SugarRealizer.emitStub(emittedFunction, params, paramTypes, returnType, conceptName, mode, modes, contract, sugarPlugins, transportedOp, termShape, operandBindings);
         String wrapperRecord = r.observationWrapperEmissionRecord() == null
                 ? ""
                 : ",\"observation_wrapper_emission_record\":" + r.observationWrapperEmissionRecord();

@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 
+use std::collections::{BTreeMap, BTreeSet};
 use std::path::{Path, PathBuf};
 use std::sync::OnceLock;
 
@@ -123,7 +124,26 @@ pub fn emit_from_term_shape(
     param_types: &[String],
     return_type: &str,
 ) -> Realization {
-    match lower_term_shape_body(term_shape) {
+    emit_from_term_shape_with_bindings(
+        term_shape,
+        &[],
+        function_name,
+        params,
+        param_types,
+        return_type,
+    )
+}
+
+pub fn emit_from_term_shape_with_bindings(
+    term_shape: &Value,
+    operand_bindings: &[Value],
+    function_name: &str,
+    params: &[String],
+    param_types: &[String],
+    return_type: &str,
+) -> Realization {
+    let mut context = ShapeLoweringContext::new(params, param_types, return_type, operand_bindings);
+    match lower_term_shape_body(term_shape, &mut context, &[]) {
         Some(body) => emit_function(
             function_name,
             params,
@@ -230,7 +250,75 @@ fn emit_function_with_evidence(
     }
 }
 
-fn lower_term_shape_body(shape: &Value) -> Option<String> {
+#[derive(Debug, Clone)]
+struct ShapeExpression {
+    text: String,
+    type_name: String,
+}
+
+#[derive(Debug)]
+struct ShapeLoweringContext {
+    params: Vec<String>,
+    param_types: Vec<String>,
+    return_type: String,
+    operand_bindings: BTreeMap<Vec<usize>, String>,
+    defined_symbols: BTreeSet<String>,
+    next_leaf: usize,
+    next_temp: usize,
+    last_assigned_symbol: Option<String>,
+}
+
+impl ShapeLoweringContext {
+    fn new(
+        params: &[String],
+        param_types: &[String],
+        return_type: &str,
+        operand_bindings: &[Value],
+    ) -> Self {
+        Self {
+            params: params.to_vec(),
+            param_types: param_types.to_vec(),
+            return_type: return_type.to_string(),
+            operand_bindings: operand_binding_map(operand_bindings),
+            defined_symbols: params.iter().cloned().collect(),
+            next_leaf: 0,
+            next_temp: 0,
+            last_assigned_symbol: None,
+        }
+    }
+
+    fn fallback_leaf(&mut self) -> ShapeExpression {
+        if self.params.is_empty() {
+            self.next_leaf += 1;
+            return ShapeExpression {
+                text: "0".to_string(),
+                type_name: "i64".to_string(),
+            };
+        }
+        let index = self.next_leaf.min(self.params.len() - 1);
+        self.next_leaf += 1;
+        ShapeExpression {
+            text: self.params[index].clone(),
+            type_name: self
+                .param_types
+                .get(index)
+                .map(|ty| map_source_type(ty))
+                .unwrap_or_default(),
+        }
+    }
+
+    fn temp_name(&mut self) -> String {
+        let name = format!("__provekit_v{}", self.next_temp);
+        self.next_temp += 1;
+        name
+    }
+}
+
+fn lower_term_shape_body(
+    shape: &Value,
+    context: &mut ShapeLoweringContext,
+    position: &[usize],
+) -> Option<String> {
     let concept_name = term_shape_concept_name(shape)?;
     if concept_name == "concept:comment" || concept_name == "comment" {
         return Some(rust_comment_body(term_shape_comment_surface(shape)?));
@@ -240,15 +328,320 @@ fn lower_term_shape_body(shape: &Value) -> Option<String> {
     }
     if concept_name == "concept:seq" || concept_name == "seq" {
         let mut lines = Vec::new();
-        for child in term_shape_args(shape) {
-            let child_body = lower_term_shape_body(child)?;
-            if !child_body.is_empty() {
-                lines.push(child_body);
+        for (index, child) in term_shape_args(shape).into_iter().enumerate() {
+            let child_position = append_position(position, index);
+            if let Some(child_body) = lower_term_shape_body(child, context, &child_position) {
+                if !child_body.is_empty() {
+                    lines.push(child_body);
+                }
+                continue;
+            }
+            let expression = lower_term_shape_expression(child, context, &child_position)?;
+            let temp = context.temp_name();
+            context.defined_symbols.insert(temp.clone());
+            context.last_assigned_symbol = Some(temp.clone());
+            lines.push(format!(
+                "let {temp}: {} = {};",
+                map_source_type(&context.return_type),
+                expression.text
+            ));
+        }
+        if map_source_type(&context.return_type) != "()"
+            && !lines
+                .iter()
+                .any(|line| line.trim_start().starts_with("return "))
+        {
+            if let Some(symbol) = context.last_assigned_symbol.as_deref() {
+                lines.push(format!("return {symbol};"));
             }
         }
         return Some(lines.join("\n"));
     }
+    if concept_name == "concept:assign" || concept_name == "assign" {
+        let args = term_shape_args(shape);
+        if args.len() != 2 {
+            return None;
+        }
+        let target = lower_term_shape_expression(args[0], context, &append_position(position, 0))?;
+        let value = lower_term_shape_expression(args[1], context, &append_position(position, 1))?;
+        if !is_rust_identifier(&target.text) {
+            return None;
+        }
+        let already_defined = context.defined_symbols.contains(&target.text);
+        context.defined_symbols.insert(target.text.clone());
+        context.last_assigned_symbol = Some(target.text.clone());
+        if already_defined {
+            return Some(format!("{} = {};", target.text, value.text));
+        }
+        return Some(format!(
+            "let {}: {} = {};",
+            target.text, value.type_name, value.text
+        ));
+    }
+    if concept_name == "concept:return" || concept_name == "return" {
+        let args = term_shape_args(shape);
+        if args.is_empty() {
+            return Some("return;".to_string());
+        }
+        let value = lower_term_shape_expression(args[0], context, &append_position(position, 0))?;
+        return Some(format!("return {};", value.text));
+    }
+    if concept_name == "concept:conditional" || concept_name == "conditional" {
+        let args = term_shape_args(shape);
+        if args.len() != 3 {
+            return None;
+        }
+        let condition =
+            lower_term_shape_expression(args[0], context, &append_position(position, 0))?;
+        let then_body =
+            lower_term_shape_branch_body(args[1], context, &append_position(position, 1))?;
+        let else_body =
+            lower_term_shape_branch_body(args[2], context, &append_position(position, 2))?;
+        return Some(format!(
+            "if {} {{\n{}\n}} else {{\n{}\n}}",
+            condition.text,
+            indent_block(&then_body),
+            indent_block(&else_body)
+        ));
+    }
     None
+}
+
+fn lower_term_shape_branch_body(
+    shape: &Value,
+    context: &mut ShapeLoweringContext,
+    position: &[usize],
+) -> Option<String> {
+    if let Some(body) = lower_term_shape_body(shape, context, position) {
+        return Some(body);
+    }
+    let expression = lower_term_shape_expression(shape, context, position)?;
+    Some(format!("return {};", expression.text))
+}
+
+fn lower_term_shape_expression(
+    shape: &Value,
+    context: &mut ShapeLoweringContext,
+    position: &[usize],
+) -> Option<ShapeExpression> {
+    let Some(concept_name) = term_shape_concept_name(shape) else {
+        return Some(term_shape_leaf_expression(shape, context, position));
+    };
+    let args = term_shape_args(shape);
+    if concept_name == "concept:seq" || concept_name == "seq" {
+        lower_term_shape_body(shape, context, position)?;
+        return context
+            .last_assigned_symbol
+            .as_ref()
+            .map(|symbol| ShapeExpression {
+                text: symbol.clone(),
+                type_name: map_source_type(&context.return_type),
+            });
+    }
+    let mut arg_terms = Vec::new();
+    for (index, arg) in args.iter().enumerate() {
+        arg_terms.push(lower_term_shape_expression(
+            arg,
+            context,
+            &append_position(position, index),
+        )?);
+    }
+    let expression = operation_expression(&concept_name, &arg_terms)?;
+    Some(ShapeExpression {
+        text: expression,
+        type_name: operation_return_type(&concept_name, &arg_terms, &context.return_type),
+    })
+}
+
+fn term_shape_leaf_expression(
+    shape: &Value,
+    context: &mut ShapeLoweringContext,
+    position: &[usize],
+) -> ShapeExpression {
+    if let Some(symbol) = context.operand_bindings.get(position) {
+        return symbol_term(symbol, context);
+    }
+    if shape.get("kind").and_then(Value::as_str) == Some("var") {
+        if let Some(name) = shape.get("name").and_then(Value::as_str) {
+            return ShapeExpression {
+                text: name.to_string(),
+                type_name: type_for_argument(name, context),
+            };
+        }
+    }
+    if shape.get("kind").and_then(Value::as_str) == Some("literal") || shape.get("value").is_some()
+    {
+        return literal_term(shape.get("value").unwrap_or(&Value::Null));
+    }
+    context.fallback_leaf()
+}
+
+fn operation_expression(concept_name: &str, args: &[ShapeExpression]) -> Option<String> {
+    let op = concept_name
+        .strip_prefix("concept:")
+        .unwrap_or(concept_name);
+    if args.len() == 2 {
+        let left = &args[0].text;
+        let right = &args[1].text;
+        return match op {
+            "add" => Some(format!("({left}) + ({right})")),
+            "sub" => Some(format!("({left}) - ({right})")),
+            "mul" => Some(format!("({left}) * ({right})")),
+            "div" => Some(format!("({left}) / ({right})")),
+            "mod" => Some(format!("({left}) % ({right})")),
+            "eq" => Some(format!("({left}) == ({right})")),
+            "ne" => Some(format!("({left}) != ({right})")),
+            "lt" => Some(format!("({left}) < ({right})")),
+            "le" => Some(format!("({left}) <= ({right})")),
+            "gt" => Some(format!("({left}) > ({right})")),
+            "ge" => Some(format!("({left}) >= ({right})")),
+            "and" => Some(format!("({left}) && ({right})")),
+            "or" => Some(format!("({left}) || ({right})")),
+            _ => None,
+        };
+    }
+    if args.len() == 1 {
+        let value = &args[0].text;
+        return match op {
+            "neg" => Some(format!("-({value})")),
+            "not" => Some(format!("!({value})")),
+            "bitnot" => Some(format!("!({value})")),
+            _ => None,
+        };
+    }
+    None
+}
+
+fn operation_return_type(
+    concept_name: &str,
+    args: &[ShapeExpression],
+    fallback_return_type: &str,
+) -> String {
+    match concept_name
+        .strip_prefix("concept:")
+        .unwrap_or(concept_name)
+    {
+        "eq" | "ne" | "lt" | "le" | "gt" | "ge" | "and" | "or" | "not" => "bool".to_string(),
+        _ => args
+            .first()
+            .map(|arg| arg.type_name.clone())
+            .unwrap_or_else(|| map_source_type(fallback_return_type)),
+    }
+}
+
+fn operand_binding_map(operand_bindings: &[Value]) -> BTreeMap<Vec<usize>, String> {
+    let mut out = BTreeMap::new();
+    for binding in operand_bindings {
+        let Some(position) = binding.get("position").and_then(Value::as_array) else {
+            continue;
+        };
+        let Some(symbol) = binding.get("symbol").and_then(Value::as_str) else {
+            continue;
+        };
+        let mut parts = Vec::new();
+        let mut valid = true;
+        for part in position {
+            if let Some(value) = part.as_u64().and_then(|value| usize::try_from(value).ok()) {
+                parts.push(value);
+            } else {
+                valid = false;
+                break;
+            }
+        }
+        if valid {
+            out.insert(parts, symbol.to_string());
+        }
+    }
+    out
+}
+
+fn symbol_term(symbol: &str, context: &ShapeLoweringContext) -> ShapeExpression {
+    if matches!(symbol, "true" | "True") {
+        return ShapeExpression {
+            text: "true".to_string(),
+            type_name: "bool".to_string(),
+        };
+    }
+    if matches!(symbol, "false" | "False") {
+        return ShapeExpression {
+            text: "false".to_string(),
+            type_name: "bool".to_string(),
+        };
+    }
+    if symbol.parse::<i64>().is_ok() {
+        return ShapeExpression {
+            text: symbol.to_string(),
+            type_name: "i64".to_string(),
+        };
+    }
+    if symbol.starts_with('"') && symbol.ends_with('"') {
+        return ShapeExpression {
+            text: symbol.to_string(),
+            type_name: "String".to_string(),
+        };
+    }
+    ShapeExpression {
+        text: symbol.to_string(),
+        type_name: type_for_argument(symbol, context),
+    }
+}
+
+fn literal_term(value: &Value) -> ShapeExpression {
+    match value {
+        Value::Bool(value) => ShapeExpression {
+            text: value.to_string(),
+            type_name: "bool".to_string(),
+        },
+        Value::Number(value) => ShapeExpression {
+            text: value.to_string(),
+            type_name: "i64".to_string(),
+        },
+        Value::String(value) => ShapeExpression {
+            text: format!("{:?}.to_string()", value),
+            type_name: "String".to_string(),
+        },
+        _ => ShapeExpression {
+            text: "()".to_string(),
+            type_name: "()".to_string(),
+        },
+    }
+}
+
+fn type_for_argument(symbol: &str, context: &ShapeLoweringContext) -> String {
+    context
+        .params
+        .iter()
+        .position(|param| param == symbol)
+        .and_then(|index| context.param_types.get(index))
+        .map(|ty| map_source_type(ty))
+        .unwrap_or_else(|| map_source_type(&context.return_type))
+}
+
+fn append_position(position: &[usize], next: usize) -> Vec<usize> {
+    let mut out = position.to_vec();
+    out.push(next);
+    out
+}
+
+fn is_rust_identifier(value: &str) -> bool {
+    let mut chars = value.chars();
+    let Some(first) = chars.next() else {
+        return false;
+    };
+    (first == '_' || first.is_ascii_alphabetic())
+        && chars.all(|ch| ch == '_' || ch.is_ascii_alphanumeric())
+}
+
+fn indent_block(body: &str) -> String {
+    let lines = body.lines().collect::<Vec<_>>();
+    if lines.is_empty() {
+        return "    ()".to_string();
+    }
+    lines
+        .into_iter()
+        .map(|line| format!("    {line}"))
+        .collect::<Vec<_>>()
+        .join("\n")
 }
 
 fn term_shape_concept_name(shape: &Value) -> Option<String> {
@@ -705,18 +1098,33 @@ pub fn dispatch(request: &Value) -> Value {
                 .get("concept_name")
                 .and_then(Value::as_str)
                 .unwrap_or("");
+            let source_function = params
+                .get("source_function_name")
+                .or_else(|| params.get("sourceFunctionName"))
+                .and_then(Value::as_str)
+                .map(str::trim)
+                .filter(|name| !name.is_empty())
+                .unwrap_or(function);
             let mode = params.get("mode").and_then(Value::as_str);
             let param_names = string_array(params.get("params"));
             let param_types = string_array(params.get("param_types"));
+            let operand_bindings = value_array(
+                params
+                    .get("operand_bindings")
+                    .or_else(|| params.get("operandBindings")),
+            );
             let proc_macro_invocations = value_array(
                 params
                     .get("procMacroInvocations")
                     .or_else(|| params.get("proc_macro_invocations")),
             );
-            let realized = if let Some(term_shape) = params.get("term_shape") {
-                let r = emit_from_term_shape(
+            let realized = if let Some(term_shape) =
+                params.get("term_shape").or_else(|| params.get("termShape"))
+            {
+                let r = emit_from_term_shape_with_bindings(
                     term_shape,
-                    function,
+                    &operand_bindings,
+                    source_function,
                     &param_names,
                     &param_types,
                     return_type,
@@ -724,7 +1132,7 @@ pub fn dispatch(request: &Value) -> Value {
                 apply_proc_macro_invocations(r, &proc_macro_invocations)
             } else {
                 emit_stub_with_mode_and_invocations(
-                    function,
+                    source_function,
                     &param_names,
                     &param_types,
                     return_type,
@@ -1395,6 +1803,98 @@ mod tests {
     }
 
     #[test]
+    fn rpc_term_shape_bindings_render_arithmetic_sequence_despite_unnamed_concept() {
+        let term_shape = serde_json::json!({
+            "concept_name": "concept:seq",
+            "op_cid": "blake3-512:seq",
+            "args": [
+                {
+                    "concept_name": "concept:assign",
+                    "op_cid": "blake3-512:assign-total",
+                    "args": [
+                        {},
+                        {
+                            "concept_name": "concept:add",
+                            "op_cid": "blake3-512:add",
+                            "args": [{}, {}]
+                        }
+                    ]
+                },
+                {
+                    "concept_name": "concept:assign",
+                    "op_cid": "blake3-512:assign-scaled",
+                    "args": [
+                        {},
+                        {
+                            "concept_name": "concept:mul",
+                            "op_cid": "blake3-512:mul",
+                            "args": [{}, {}]
+                        }
+                    ]
+                },
+                {
+                    "concept_name": "concept:assign",
+                    "op_cid": "blake3-512:assign-reduced",
+                    "args": [
+                        {},
+                        {
+                            "concept_name": "concept:sub",
+                            "op_cid": "blake3-512:sub",
+                            "args": [{}, {}]
+                        }
+                    ]
+                }
+            ]
+        });
+        let operand_bindings = serde_json::json!([
+            {"position": [0, 0], "symbol": "total"},
+            {"position": [0, 1, 0], "symbol": "a"},
+            {"position": [0, 1, 1], "symbol": "b"},
+            {"position": [1, 0], "symbol": "scaled"},
+            {"position": [1, 1, 0], "symbol": "total"},
+            {"position": [1, 1, 1], "symbol": "2"},
+            {"position": [2, 0], "symbol": "reduced"},
+            {"position": [2, 1, 0], "symbol": "scaled"},
+            {"position": [2, 1, 1], "symbol": "1"}
+        ]);
+        let response = dispatch(&serde_json::json!({
+            "jsonrpc": "2.0",
+            "id": 7,
+            "method": "provekit.plugin.invoke",
+            "params": {
+                "function": "UNNAMED-CONCEPT-1",
+                "source_function_name": "compute_sum",
+                "params": ["a", "b"],
+                "param_types": ["int", "int"],
+                "return_type": "int",
+                "concept_name": "UNNAMED-CONCEPT-1",
+                "term_shape": term_shape,
+                "operand_bindings": operand_bindings
+            }
+        }));
+
+        assert_eq!(response["result"]["is_stub"], false);
+        let source = response["result"]["source"]
+            .as_str()
+            .expect("realized source");
+        assert!(
+            source.contains("pub fn compute_sum(a: i64, b: i64) -> i64"),
+            "{source}"
+        );
+        assert!(source.contains("let total: i64 = (a) + (b);"), "{source}");
+        assert!(
+            source.contains("let scaled: i64 = (total) * (2);"),
+            "{source}"
+        );
+        assert!(
+            source.contains("let reduced: i64 = (scaled) - (1);"),
+            "{source}"
+        );
+        assert!(source.contains("return reduced;"), "{source}");
+        assert!(!source.contains("panic!"), "{source}");
+    }
+
+    #[test]
     fn falls_back_to_deterministic_stub_for_missing_template() {
         let rendered = emit_stub(
             "unknown_cell",
@@ -1818,7 +2318,9 @@ mod tests {
 
         assert!(!rendered.is_stub);
         assert!(rendered.source.contains("let mut iter = items.iter();"));
-        assert!(rendered.source.contains("iter.next().copied().unwrap_or_default()"));
+        assert!(rendered
+            .source
+            .contains("iter.next().copied().unwrap_or_default()"));
     }
 
     #[test]
@@ -1865,7 +2367,9 @@ mod tests {
         let rendered = boundary_render("generic_id", "concept:generic-instantiation");
 
         assert!(!rendered.is_stub);
-        assert!(rendered.source.contains("std::convert::identity::<i64>(arg)"));
+        assert!(rendered
+            .source
+            .contains("std::convert::identity::<i64>(arg)"));
     }
 
     #[test]

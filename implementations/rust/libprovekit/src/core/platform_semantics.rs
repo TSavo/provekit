@@ -56,7 +56,8 @@ pub fn platform_semantics_for_binding(
     binding_tag: &str,
 ) -> Option<PlatformSemanticsDeclaration> {
     let lang_decl = platform_semantics_for_lower_target(lang);
-    let binding_decl = platform_semantics_for_lower_target(binding_tag);
+    let binding_decl = platform_semantics_for_lower_target(&format!("{lang}-{binding_tag}"))
+        .or_else(|| platform_semantics_for_lower_target(binding_tag));
 
     match (lang_decl, binding_decl) {
         (None, None) => None,
@@ -85,7 +86,11 @@ fn merge_declarations(
 
     let mut seen_cids: BTreeMap<String, ()> = BTreeMap::new();
     let mut merged_values: Vec<DimensionValueMemento> = Vec::new();
-    for value in lang.dimension_values.into_iter().chain(binding.dimension_values) {
+    for value in lang
+        .dimension_values
+        .into_iter()
+        .chain(binding.dimension_values)
+    {
         if seen_cids.insert(value.cid.clone(), ()).is_none() {
             merged_values.push(value);
         }
@@ -125,11 +130,7 @@ mod binding_compose_tests {
     fn one_tag(op_cid: &str, dim: &str, value_cid: &str) -> PlatformSemanticTag {
         let mut dimensions = BTreeMap::new();
         dimensions.insert(dim.to_string(), value_cid.to_string());
-        PlatformSemanticTag::new(
-            TEST_KIT_CID.to_string(),
-            op_cid.to_string(),
-            dimensions,
-        )
+        PlatformSemanticTag::new(TEST_KIT_CID.to_string(), op_cid.to_string(), dimensions)
     }
 
     fn decl_with(op_cid: &str, dim: &str, value_name: &str) -> PlatformSemanticsDeclaration {
@@ -148,7 +149,10 @@ mod binding_compose_tests {
         let binding = decl_with(TEST_OP_B, "BindDim", "BindValue");
         let merged = merge_declarations(lang, binding);
         let op_cids: Vec<&str> = merged.tags.iter().map(|t| t.op_cid.as_str()).collect();
-        assert!(op_cids.contains(&TEST_OP_A), "language op must be in merged");
+        assert!(
+            op_cids.contains(&TEST_OP_A),
+            "language op must be in merged"
+        );
         assert!(op_cids.contains(&TEST_OP_B), "binding op must be in merged");
         assert_eq!(merged.dimension_values.len(), 2);
     }

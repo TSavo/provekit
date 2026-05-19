@@ -1506,11 +1506,18 @@ fn collapse_binding_groups(groups: Vec<Vec<OperandBinding>>) -> BindingResult {
 fn bindings_of_stmt(stmt: &syn::Stmt, ctx: &ShapeContext) -> BindingResult {
     match stmt {
         syn::Stmt::Expr(e, _) => bindings_of_expr(e, ctx),
-        syn::Stmt::Local(local) => local
-            .init
-            .as_ref()
-            .map(|init| bindings_of_expr(&init.expr, ctx))
-            .unwrap_or_default(),
+        syn::Stmt::Local(local) => {
+            let Some(init) = local.init.as_ref() else {
+                return BindingResult::default();
+            };
+            let Some(symbol) = local_binding_symbol(local) else {
+                return bindings_of_expr(&init.expr, ctx);
+            };
+            operation_binding_result(vec![
+                binding_result_for_symbol(symbol),
+                bindings_of_expr(&init.expr, ctx),
+            ])
+        }
         _ => BindingResult::default(),
     }
 }
@@ -1534,11 +1541,14 @@ fn bindings_of_expr(expr: &syn::Expr, ctx: &ShapeContext) -> BindingResult {
             bindings_of_block(&e.body, ctx),
         ]),
         syn::Expr::ForLoop(e) => operation_binding_result(vec![bindings_of_block(&e.body, ctx)]),
-        syn::Expr::Return(e) => e
-            .expr
-            .as_ref()
-            .map(|expr| bindings_of_expr(expr, ctx))
-            .unwrap_or_default(),
+        syn::Expr::Return(e) => {
+            let args = e
+                .expr
+                .as_ref()
+                .map(|expr| vec![bindings_of_expr(expr, ctx)])
+                .unwrap_or_default();
+            operation_binding_result(args)
+        }
         syn::Expr::Break(e) => {
             let args = e
                 .expr
@@ -1585,14 +1595,18 @@ fn bindings_of_expr(expr: &syn::Expr, ctx: &ShapeContext) -> BindingResult {
         syn::Expr::Paren(e) => bindings_of_expr(&e.expr, ctx),
         syn::Expr::Group(e) => bindings_of_expr(&e.expr, ctx),
         _ => operand_symbol(expr)
-            .map(|symbol| BindingResult {
-                has_operator: false,
-                bindings: vec![OperandBinding {
-                    position: Vec::new(),
-                    symbol,
-                }],
-            })
+            .map(binding_result_for_symbol)
             .unwrap_or_default(),
+    }
+}
+
+fn binding_result_for_symbol(symbol: String) -> BindingResult {
+    BindingResult {
+        has_operator: false,
+        bindings: vec![OperandBinding {
+            position: Vec::new(),
+            symbol,
+        }],
     }
 }
 
@@ -1690,6 +1704,19 @@ fn update_context_from_stmt(stmt: &syn::Stmt, ctx: &mut ShapeContext) {
     }
 }
 
+fn local_binding_symbol(local: &syn::Local) -> Option<String> {
+    match &local.pat {
+        syn::Pat::Ident(ident) => Some(ident.ident.to_string()),
+        syn::Pat::Type(pat_type) => {
+            let syn::Pat::Ident(ident) = &*pat_type.pat else {
+                return None;
+            };
+            Some(ident.ident.to_string())
+        }
+        _ => None,
+    }
+}
+
 fn local_binding_sort(
     local: &syn::Local,
     ctx: &ShapeContext,
@@ -1716,11 +1743,18 @@ fn local_binding_sort(
 fn shape_of_stmt(stmt: &syn::Stmt, ctx: &ShapeContext) -> Arc<CValue> {
     match stmt {
         syn::Stmt::Expr(e, _) => shape_of_expr(e, ctx),
-        syn::Stmt::Local(local) => local
-            .init
-            .as_ref()
-            .map(|init| shape_of_expr(&init.expr, ctx))
-            .unwrap_or_else(non_operation_shape),
+        syn::Stmt::Local(local) => {
+            let Some(init) = local.init.as_ref() else {
+                return non_operation_shape();
+            };
+            if local_binding_symbol(local).is_some() {
+                return gamma_operation(
+                    "concept:assign",
+                    vec![non_operation_shape(), shape_of_expr(&init.expr, ctx)],
+                );
+            }
+            shape_of_expr(&init.expr, ctx)
+        }
         _ => non_operation_shape(),
     }
 }
@@ -1747,11 +1781,14 @@ fn shape_of_expr(expr: &syn::Expr, ctx: &ShapeContext) -> Arc<CValue> {
             vec![shape_of_expr(&e.cond, ctx), shape_of_block(&e.body, ctx)],
         ),
         syn::Expr::ForLoop(e) => gamma_operation("concept:for", vec![shape_of_block(&e.body, ctx)]),
-        syn::Expr::Return(e) => e
-            .expr
-            .as_ref()
-            .map(|expr| shape_of_expr(expr, ctx))
-            .unwrap_or_else(non_operation_shape),
+        syn::Expr::Return(e) => {
+            let args = e
+                .expr
+                .as_ref()
+                .map(|expr| vec![shape_of_expr(expr, ctx)])
+                .unwrap_or_default();
+            gamma_operation("concept:return", args)
+        }
         syn::Expr::Break(e) => {
             let args = e
                 .expr
@@ -2535,7 +2572,7 @@ pub fn commented() -> &'static str {
     }
 
     #[test]
-    fn term_shape_let_rhs_operator_is_canonical_gamma() {
+    fn term_shape_let_binding_preserves_assignment_boundary() {
         let shape = term_shape_json(
             r#"
 pub fn add_via_let(a: i64, b: i64) -> i64 {
@@ -2544,20 +2581,29 @@ pub fn add_via_let(a: i64, b: i64) -> i64 {
 }
 "#,
         );
+        let assign_cid = concept_op_cid("concept:assign").expect("assign cid");
+        let add_cid = concept_op_cid("concept:add").expect("add cid");
 
         assert_eq!(
             shape,
             json!({
-                "args": [{}, {}],
-                "concept_name": "concept:add",
-                "op_cid": "blake3-512:95fc70e63a5550fd2e25142f13932919c59d085654ab387789c798886b0111c61d28fe533fc98b50df70eea9428a9af8aa75372c8b1c1deb3acc1a4094790468"
+                "args": [
+                    {},
+                    {
+                        "args": [{}, {}],
+                        "concept_name": "concept:add",
+                        "op_cid": add_cid
+                    }
+                ],
+                "concept_name": "concept:assign",
+                "op_cid": assign_cid
             })
         );
         assert_no_forbidden_term_shape_fields(&shape);
     }
 
     #[test]
-    fn term_shape_top_level_operator_matches_let_rhs_gamma() {
+    fn term_shape_top_level_operator_differs_from_let_assignment_boundary() {
         let top_level = term_shape_json(
             r#"
 pub fn f(a: i64, b: i64) -> i64 {
@@ -2574,8 +2620,33 @@ pub fn f(a: i64, b: i64) -> i64 {
 "#,
         );
 
-        assert_eq!(top_level, let_rhs);
+        assert_ne!(top_level, let_rhs);
+        assert_eq!(
+            top_level["concept_name"],
+            json!("concept:add"),
+            "top-level tail expression remains an add shape"
+        );
+        assert_eq!(
+            let_rhs["concept_name"],
+            json!("concept:assign"),
+            "let binding preserves its assignment boundary"
+        );
         assert_no_forbidden_term_shape_fields(&top_level);
+        assert_no_forbidden_term_shape_fields(&let_rhs);
+    }
+
+    #[test]
+    fn term_shape_explicit_return_preserves_return_boundary() {
+        let shape = term_shape_json(
+            r#"
+pub fn f(a: i64) -> i64 {
+    return a;
+}
+"#,
+        );
+
+        assert_eq!(shape["concept_name"], json!("concept:return"));
+        assert_no_forbidden_term_shape_fields(&shape);
     }
 
     #[test]
