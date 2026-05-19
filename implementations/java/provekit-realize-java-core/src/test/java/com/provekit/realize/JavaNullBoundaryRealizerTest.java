@@ -639,6 +639,77 @@ public class JavaNullBoundaryRealizerTest {
         assertNull(output.observationWrapperEmissionRecord());
     }
 
+    @Test
+    public void termShapeRealizationRendersArithmeticSequenceDespiteUnnamedTopLevelConcept() {
+        String termShape = """
+            {
+              "concept_name": "concept:seq",
+              "op_cid": "%s",
+              "args": [
+                {
+                  "concept_name": "concept:assign",
+                  "op_cid": "%s",
+                  "args": [
+                    {},
+                    {"concept_name": "concept:add", "op_cid": "%s", "args": [{}, {}]}
+                  ]
+                },
+                {
+                  "concept_name": "concept:assign",
+                  "op_cid": "%s",
+                  "args": [
+                    {},
+                    {"concept_name": "concept:mul", "op_cid": "%s", "args": [{}, {}]}
+                  ]
+                },
+                {
+                  "concept_name": "concept:assign",
+                  "op_cid": "%s",
+                  "args": [
+                    {},
+                    {"concept_name": "concept:sub", "op_cid": "%s", "args": [{}, {}]}
+                  ]
+                }
+              ]
+            }
+            """.formatted(cid("a"), cid("b"), cid("c"), cid("d"), cid("e"), cid("f"), cid("1"));
+        String operandBindings = """
+            [
+              {"position":[0,0],"symbol":"total"},
+              {"position":[0,1,0],"symbol":"a"},
+              {"position":[0,1,1],"symbol":"b"},
+              {"position":[1,0],"symbol":"scaled"},
+              {"position":[1,1,0],"symbol":"total"},
+              {"position":[1,1,1],"symbol":"2"},
+              {"position":[2,0],"symbol":"reduced"},
+              {"position":[2,1,0],"symbol":"scaled"},
+              {"position":[2,1,1],"symbol":"1"}
+            ]
+            """;
+
+        SugarRealizer.Realization output = SugarRealizer.emitStub(
+            "compute_sum",
+            java.util.List.of("a", "b"),
+            java.util.List.of("int", "int"),
+            "int",
+            "UNNAMED-CONCEPT-1",
+            "",
+            java.util.List.of(),
+            null,
+            java.util.List.of(),
+            null,
+            termShape,
+            operandBindings
+        );
+
+        assertFalse(output.isStub(), output.source());
+        assertTrue(output.source().contains("int total = (a) + (b);"), output.source());
+        assertTrue(output.source().contains("int scaled = (total) * (2);"), output.source());
+        assertTrue(output.source().contains("int reduced = (scaled) - (1);"), output.source());
+        assertTrue(output.source().contains("return reduced;"), output.source());
+        assertFalse(output.source().contains("UnsupportedOperationException"), output.source());
+    }
+
     private static String modeScopedBeanValidationSugar(String mode) {
         return "{\"header\":{\"cid\":\"java-bean-validation\",\"content\":{\"entries\":[{\"emission_template\":{\"kind\":\"verbatim\",\"surface_locator\":\"annotation:before-parameter\",\"template\":\"@NotNull\"},\"loss_record_contribution\":{\"form\":\"literal\",\"value\":{}},\"mode\":\"" + mode + "\",\"predicate_pattern\":{\"args\":[{\"kind\":\"var\",\"name\":\"${symbol}\"},{\"kind\":\"const\",\"sort\":{\"kind\":\"primitive\",\"name\":\"Ref\"},\"value\":null}],\"kind\":\"atomic\",\"name\":\"neq\"}}],\"sugar_name\":\"bean-validation\",\"target_language\":\"java\"},\"critical\":false,\"kind\":\"sugar\",\"protocol_versions\":[\"pep/1.7.0\"],\"provenance_cid\":\"blake3-512:0\",\"schemaVersion\":\"1\",\"version\":\"1.0.0\"}}";
     }

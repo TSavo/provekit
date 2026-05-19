@@ -127,6 +127,22 @@ final class SugarRealizer {
             ContractPayload contract,
             List<String> sugarPluginJson,
             TransportedOperation transportedOp) {
+        return emitStub(function, params, paramTypes, returnType, conceptName, mode, modes, contract, sugarPluginJson, transportedOp, null, null);
+    }
+
+    static Realization emitStub(
+            String function,
+            List<String> params,
+            List<String> paramTypes,
+            String returnType,
+            String conceptName,
+            String mode,
+            List<String> modes,
+            ContractPayload contract,
+            List<String> sugarPluginJson,
+            TransportedOperation transportedOp,
+            String termShapeJson,
+            String operandBindingsJson) {
 
         String className = snakeToPascal(function) + "Transported";
         String mappedReturn = mapSourceType(returnType);
@@ -157,9 +173,12 @@ final class SugarRealizer {
 
         String conceptCitationBlock = conceptCitationTagBlock(transportedOp, sugarPluginJson);
         boolean hasConceptCitationCarrier = !conceptCitationBlock.isBlank();
+        Optional<RenderedBody> termShapeBody = hasConceptCitationCarrier
+                ? Optional.empty()
+                : renderTermShapeBody(termShapeJson, operandBindingsJson, params, paramTypes, returnType);
         Optional<RenderedBody> bodyTemplate = hasConceptCitationCarrier
                 ? Optional.empty()
-                : renderBodyTemplateFor(conceptName, params, mode);
+                : termShapeBody.or(() -> renderBodyTemplateFor(conceptName, params, mode));
         boolean isStub = bodyTemplate.isEmpty() && !hasConceptCitationCarrier;
         String bodyContent = hasConceptCitationCarrier
                 ? conceptCitationBlock + "\n;"
@@ -835,6 +854,429 @@ final class SugarRealizer {
             if (part.length() > 1) sb.append(part.substring(1));
         }
         return sb.toString();
+    }
+
+    private record ShapeExpression(String text, String typeName) {}
+
+    private static final class ShapeContext {
+        final List<String> params;
+        final List<String> paramTypes;
+        final String returnType;
+        final Map<List<Integer>, String> operandBindings;
+        final Set<String> definedSymbols = new TreeSet<>();
+        int nextLeaf = 0;
+        int nextTemp = 0;
+        String lastAssignedSymbol = "";
+
+        ShapeContext(
+                List<String> params,
+                List<String> paramTypes,
+                String returnType,
+                Map<List<Integer>, String> operandBindings) {
+            this.params = params;
+            this.paramTypes = paramTypes;
+            this.returnType = returnType;
+            this.operandBindings = operandBindings;
+            this.definedSymbols.addAll(params);
+        }
+
+        ShapeExpression fallbackLeaf() {
+            if (!params.isEmpty()) {
+                int index = Math.min(nextLeaf, params.size() - 1);
+                nextLeaf += 1;
+                String type = index < paramTypes.size() ? mapSourceType(paramTypes.get(index)) : "";
+                return new ShapeExpression(params.get(index), type);
+            }
+            nextLeaf += 1;
+            return new ShapeExpression("0", "int");
+        }
+
+        String tempName() {
+            String name = "__provekit_v" + nextTemp;
+            nextTemp += 1;
+            return name;
+        }
+    }
+
+    private static Optional<RenderedBody> renderTermShapeBody(
+            String termShapeJson,
+            String operandBindingsJson,
+            List<String> params,
+            List<String> paramTypes,
+            String returnType) {
+        if (termShapeJson == null || termShapeJson.isBlank() || "{}".equals(termShapeJson.trim())) {
+            return Optional.empty();
+        }
+        Jcs.Json parsed;
+        try {
+            parsed = Jcs.parse(termShapeJson);
+        } catch (IllegalArgumentException e) {
+            return Optional.empty();
+        }
+        if (!(parsed instanceof Jcs.Obj shape)) {
+            return Optional.empty();
+        }
+        ShapeContext context = new ShapeContext(
+                params,
+                paramTypes,
+                returnType,
+                operandBindingMap(operandBindingsJson));
+        Optional<String> body = lowerShapeBody(shape, context, List.of());
+        if (body.isEmpty()) {
+            Optional<ShapeExpression> expression = lowerShapeExpression(shape, context, List.of());
+            if (expression.isEmpty() || expression.get().text().isBlank()) {
+                return Optional.empty();
+            }
+            body = Optional.of("return " + expression.get().text() + ";");
+        }
+        return Optional.of(new RenderedBody(body.get(), Jcs.object()));
+    }
+
+    private static Optional<String> lowerShapeBody(
+            Jcs.Obj shape,
+            ShapeContext context,
+            List<Integer> position) {
+        String conceptName = shapeConceptName(shape);
+        List<Jcs.Obj> args = shapeArgs(shape);
+        if (conceptMatches("concept:seq", conceptName) || "seq".equals(conceptName)) {
+            List<String> lines = new ArrayList<>();
+            for (int i = 0; i < args.size(); i++) {
+                Jcs.Obj child = args.get(i);
+                Optional<String> childBody = lowerShapeBody(child, context, appendPosition(position, i));
+                if (childBody.isPresent()) {
+                    if (!childBody.get().isBlank()) {
+                        lines.add(childBody.get());
+                    }
+                    continue;
+                }
+                Optional<ShapeExpression> expression = lowerShapeExpression(child, context, appendPosition(position, i));
+                if (expression.isEmpty() || expression.get().text().isBlank()) {
+                    return Optional.empty();
+                }
+                String temp = context.tempName();
+                context.definedSymbols.add(temp);
+                context.lastAssignedSymbol = temp;
+                lines.add(localDeclaration(context.returnType, temp, expression.get().text(), false));
+            }
+            if (!"void".equals(mapSourceType(context.returnType))
+                    && lines.stream().noneMatch(line -> line.strip().startsWith("return "))
+                    && !context.lastAssignedSymbol.isBlank()) {
+                lines.add("return " + context.lastAssignedSymbol + ";");
+            }
+            return Optional.of(String.join("\n", lines));
+        }
+        if (conceptMatches("concept:assign", conceptName) && args.size() == 2) {
+            Optional<ShapeExpression> target = lowerShapeExpression(args.get(0), context, appendPosition(position, 0));
+            Optional<ShapeExpression> value = lowerShapeExpression(args.get(1), context, appendPosition(position, 1));
+            if (target.isEmpty() || value.isEmpty() || !isIdentifier(target.get().text())) {
+                return Optional.empty();
+            }
+            String name = target.get().text();
+            boolean alreadyDefined = context.definedSymbols.contains(name);
+            context.definedSymbols.add(name);
+            context.lastAssignedSymbol = name;
+            return Optional.of(localDeclaration(context.returnType, name, value.get().text(), alreadyDefined));
+        }
+        if (conceptMatches("concept:return", conceptName)) {
+            if (args.isEmpty()) {
+                return Optional.of("return;");
+            }
+            Optional<ShapeExpression> value = lowerShapeExpression(args.get(0), context, appendPosition(position, 0));
+            return value.map(shapeExpression -> "return " + shapeExpression.text() + ";");
+        }
+        if (conceptMatches("concept:conditional", conceptName) && args.size() == 3) {
+            Optional<ShapeExpression> condition = lowerShapeExpression(args.get(0), context, appendPosition(position, 0));
+            Optional<String> thenBody = lowerShapeBranchBody(args.get(1), context, appendPosition(position, 1));
+            Optional<String> elseBody = lowerShapeBranchBody(args.get(2), context, appendPosition(position, 2));
+            if (condition.isEmpty() || thenBody.isEmpty() || elseBody.isEmpty()) {
+                return Optional.empty();
+            }
+            return Optional.of("if " + condition.get().text() + " {\n"
+                    + indentBlock(thenBody.get()) + "\n"
+                    + "} else {\n"
+                    + indentBlock(elseBody.get()) + "\n"
+                    + "}");
+        }
+        if (conceptMatches("concept:comment", conceptName) && !args.isEmpty()) {
+            Jcs.Json value = args.get(0).get("value");
+            if (value instanceof Jcs.Str s) {
+                return Optional.of("// " + s.value().replace("\n", "\n// "));
+            }
+        }
+        if (conceptMatches("concept:skip", conceptName) && args.isEmpty()) {
+            return Optional.of("");
+        }
+        return Optional.empty();
+    }
+
+    private static Optional<String> lowerShapeBranchBody(
+            Jcs.Obj shape,
+            ShapeContext context,
+            List<Integer> position) {
+        Optional<String> body = lowerShapeBody(shape, context, position);
+        if (body.isPresent()) {
+            return body;
+        }
+        Optional<ShapeExpression> expression = lowerShapeExpression(shape, context, position);
+        return expression.map(shapeExpression -> "return " + shapeExpression.text() + ";");
+    }
+
+    private static Optional<ShapeExpression> lowerShapeExpression(
+            Jcs.Obj shape,
+            ShapeContext context,
+            List<Integer> position) {
+        String conceptName = shapeConceptName(shape);
+        if (conceptName.isBlank()) {
+            return Optional.of(shapeLeafExpression(shape, context, position));
+        }
+        List<Jcs.Obj> args = shapeArgs(shape);
+        if (conceptMatches("concept:seq", conceptName) || "seq".equals(conceptName)) {
+            Optional<String> body = lowerShapeBody(shape, context, position);
+            if (body.isEmpty()) {
+                return Optional.empty();
+            }
+            if (!context.lastAssignedSymbol.isBlank()) {
+                return Optional.of(new ShapeExpression(context.lastAssignedSymbol, mapSourceType(context.returnType)));
+            }
+            return Optional.empty();
+        }
+        List<ShapeExpression> argTerms = new ArrayList<>();
+        for (int i = 0; i < args.size(); i++) {
+            Optional<ShapeExpression> term = lowerShapeExpression(args.get(i), context, appendPosition(position, i));
+            if (term.isEmpty() || term.get().text().isBlank()) {
+                return Optional.empty();
+            }
+            argTerms.add(term.get());
+        }
+        if (conceptMatches("concept:call", conceptName) && !argTerms.isEmpty()) {
+            String callee = argTerms.get(0).text();
+            if (!isIdentifier(callee)) {
+                return Optional.empty();
+            }
+            String joined = argTerms.stream().skip(1).map(ShapeExpression::text).collect(Collectors.joining(", "));
+            return Optional.of(new ShapeExpression(callee + "(" + joined + ")", mapSourceType(context.returnType)));
+        }
+        String expression = operationExpression(conceptName, argTerms);
+        if (expression == null) {
+            return Optional.empty();
+        }
+        return Optional.of(new ShapeExpression(expression, operationReturnType(conceptName, argTerms, context.returnType)));
+    }
+
+    private static ShapeExpression shapeLeafExpression(
+            Jcs.Obj shape,
+            ShapeContext context,
+            List<Integer> position) {
+        String bound = context.operandBindings.get(position);
+        if (bound != null && !bound.isBlank()) {
+            return symbolTerm(bound, context);
+        }
+        String kind = shape.stringFieldOrNull("kind");
+        if ("var".equals(kind)) {
+            String name = shape.stringFieldOrNull("name");
+            if (name != null && !name.isBlank()) {
+                return new ShapeExpression(name, typeForArgument(name, context));
+            }
+        }
+        Jcs.Json value = shape.get("value");
+        if ("const".equals(kind) || value != null) {
+            return literalTerm(value);
+        }
+        return context.fallbackLeaf();
+    }
+
+    private static String operationExpression(String conceptName, List<ShapeExpression> args) {
+        String op = conceptName.startsWith("concept:") ? conceptName.substring("concept:".length()) : conceptName;
+        if (args.size() == 2) {
+            String left = args.get(0).text();
+            String right = args.get(1).text();
+            return switch (op) {
+                case "add" -> "(" + left + ") + (" + right + ")";
+                case "sub" -> "(" + left + ") - (" + right + ")";
+                case "mul" -> "(" + left + ") * (" + right + ")";
+                case "div" -> "(" + left + ") / (" + right + ")";
+                case "mod" -> "(" + left + ") % (" + right + ")";
+                case "eq" -> "(" + left + ") == (" + right + ")";
+                case "ne" -> "(" + left + ") != (" + right + ")";
+                case "lt" -> "(" + left + ") < (" + right + ")";
+                case "le" -> "(" + left + ") <= (" + right + ")";
+                case "gt" -> "(" + left + ") > (" + right + ")";
+                case "ge" -> "(" + left + ") >= (" + right + ")";
+                case "and" -> "(" + left + ") && (" + right + ")";
+                case "or" -> "(" + left + ") || (" + right + ")";
+                default -> null;
+            };
+        }
+        if (args.size() == 1) {
+            String value = args.get(0).text();
+            return switch (op) {
+                case "neg" -> "-(" + value + ")";
+                case "not" -> "!(" + value + ")";
+                case "bitnot" -> "~(" + value + ")";
+                default -> null;
+            };
+        }
+        if ("skip".equals(op) && args.isEmpty()) {
+            return "null";
+        }
+        return null;
+    }
+
+    private static String operationReturnType(
+            String conceptName,
+            List<ShapeExpression> args,
+            String fallbackReturnType) {
+        String op = conceptName.startsWith("concept:") ? conceptName.substring("concept:".length()) : conceptName;
+        return switch (op) {
+            case "eq", "ne", "lt", "le", "gt", "ge", "and", "or", "not" -> "boolean";
+            case "call" -> mapSourceType(fallbackReturnType);
+            default -> args.isEmpty() ? mapSourceType(fallbackReturnType) : args.get(0).typeName();
+        };
+    }
+
+    private static String localDeclaration(String returnType, String name, String expression, boolean alreadyDefined) {
+        if (alreadyDefined) {
+            return name + " = " + expression + ";";
+        }
+        String type = mapSourceType(returnType);
+        if ("void".equals(type)) {
+            type = "Object";
+        }
+        return type + " " + name + " = " + expression + ";";
+    }
+
+    private static String shapeConceptName(Jcs.Obj shape) {
+        String value = shape.stringFieldOrNull("concept_name");
+        if (value == null || value.isBlank()) {
+            value = shape.stringFieldOrNull("conceptName");
+        }
+        return value == null ? "" : value.strip();
+    }
+
+    private static List<Jcs.Obj> shapeArgs(Jcs.Obj shape) {
+        Jcs.Json value = shape.get("args");
+        if (!(value instanceof Jcs.Arr arr)) {
+            return List.of();
+        }
+        List<Jcs.Obj> out = new ArrayList<>();
+        for (Jcs.Json child : arr.values()) {
+            if (child instanceof Jcs.Obj obj) {
+                out.add(obj);
+            }
+        }
+        return out;
+    }
+
+    private static Map<List<Integer>, String> operandBindingMap(String operandBindingsJson) {
+        Map<List<Integer>, String> out = new TreeMap<>(SugarRealizer::comparePosition);
+        if (operandBindingsJson == null || operandBindingsJson.isBlank() || "[]".equals(operandBindingsJson.trim())) {
+            return out;
+        }
+        Jcs.Json parsed;
+        try {
+            parsed = Jcs.parse(operandBindingsJson);
+        } catch (IllegalArgumentException e) {
+            return out;
+        }
+        if (!(parsed instanceof Jcs.Arr arr)) {
+            return out;
+        }
+        for (Jcs.Json item : arr.values()) {
+            if (!(item instanceof Jcs.Obj obj)) {
+                continue;
+            }
+            Jcs.Json rawPosition = obj.get("position");
+            String symbol = obj.stringFieldOrNull("symbol");
+            if (!(rawPosition instanceof Jcs.Arr parts) || symbol == null || symbol.isBlank()) {
+                continue;
+            }
+            List<Integer> position = new ArrayList<>();
+            boolean valid = true;
+            for (Jcs.Json part : parts.values()) {
+                if (part instanceof Jcs.Num n && n.value() >= 0 && n.value() <= Integer.MAX_VALUE) {
+                    position.add((int) n.value());
+                } else {
+                    valid = false;
+                    break;
+                }
+            }
+            if (valid) {
+                out.put(List.copyOf(position), symbol);
+            }
+        }
+        return out;
+    }
+
+    private static int comparePosition(List<Integer> left, List<Integer> right) {
+        int count = Math.min(left.size(), right.size());
+        for (int i = 0; i < count; i++) {
+            int cmp = Integer.compare(left.get(i), right.get(i));
+            if (cmp != 0) {
+                return cmp;
+            }
+        }
+        return Integer.compare(left.size(), right.size());
+    }
+
+    private static List<Integer> appendPosition(List<Integer> position, int next) {
+        List<Integer> out = new ArrayList<>(position);
+        out.add(next);
+        return List.copyOf(out);
+    }
+
+    private static ShapeExpression symbolTerm(String symbol, ShapeContext context) {
+        if ("true".equals(symbol) || "True".equals(symbol)) {
+            return new ShapeExpression("true", "boolean");
+        }
+        if ("false".equals(symbol) || "False".equals(symbol)) {
+            return new ShapeExpression("false", "boolean");
+        }
+        if ("None".equals(symbol) || "null".equals(symbol)) {
+            return new ShapeExpression("null", "Object");
+        }
+        if (symbol.matches("-?[0-9]+")) {
+            return new ShapeExpression(symbol, "int");
+        }
+        if (symbol.length() >= 2 && symbol.startsWith("\"") && symbol.endsWith("\"")) {
+            return new ShapeExpression(symbol, "String");
+        }
+        return new ShapeExpression(symbol, typeForArgument(symbol, context));
+    }
+
+    private static ShapeExpression literalTerm(Jcs.Json value) {
+        if (value instanceof Jcs.Bool b) {
+            return new ShapeExpression(Boolean.toString(b.value()), "boolean");
+        }
+        if (value instanceof Jcs.Num n) {
+            return new ShapeExpression(Long.toString(n.value()), "int");
+        }
+        if (value instanceof Jcs.Str s) {
+            return new ShapeExpression(JsonUtil.quoted(s.value()), "String");
+        }
+        if (value instanceof Jcs.Null || value == null) {
+            return new ShapeExpression("null", "Object");
+        }
+        return new ShapeExpression("null", "Object");
+    }
+
+    private static String typeForArgument(String symbol, ShapeContext context) {
+        for (int i = 0; i < context.params.size(); i++) {
+            if (context.params.get(i).equals(symbol)) {
+                return i < context.paramTypes.size() ? mapSourceType(context.paramTypes.get(i)) : "";
+            }
+        }
+        return mapSourceType(context.returnType);
+    }
+
+    private static boolean isIdentifier(String value) {
+        return value != null && value.matches("[A-Za-z_$][A-Za-z0-9_$]*");
+    }
+
+    private static String indentBlock(String body) {
+        if (body.isBlank()) {
+            return "    ;";
+        }
+        return body.lines().map(line -> "    " + line).collect(Collectors.joining("\n"));
     }
 
     // -----------------------------------------------------------------------

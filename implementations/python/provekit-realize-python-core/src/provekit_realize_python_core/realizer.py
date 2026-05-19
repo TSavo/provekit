@@ -142,24 +142,24 @@ def emit_stub(
     if concept_lines:
         body = "\n".join([*concept_lines, "pass"])
     else:
-        if named_term_tree is None:
-            if term_shape is None:
-                missing = missing_templates_for(
-                    function,
-                    params,
-                    param_types,
-                    return_type,
-                    concept_name,
-                )
-            else:
-                missing = missing_templates_for_term_shape(
-                    function,
-                    params,
-                    param_types,
-                    return_type,
-                    term_shape,
-                    operand_bindings=operand_bindings,
-                )
+        use_term_shape = isinstance(term_shape, dict) and bool(term_shape)
+        if use_term_shape:
+            missing = missing_templates_for_term_shape(
+                function,
+                params,
+                param_types,
+                return_type,
+                term_shape,
+                operand_bindings=operand_bindings,
+            )
+        elif named_term_tree is None:
+            missing = missing_templates_for(
+                function,
+                params,
+                param_types,
+                return_type,
+                concept_name,
+            )
         else:
             missing = missing_templates_for_tree(
                 function,
@@ -171,17 +171,16 @@ def emit_stub(
         if missing:
             raise MissingTemplateError(missing)
 
-        if named_term_tree is None:
-            if term_shape is None:
-                term_body = term_body_for(concept_name, params, param_types, return_type)
-            else:
-                term_body = term_body_for_term_shape(
-                    term_shape,
-                    params,
-                    param_types,
-                    return_type,
-                    operand_bindings=operand_bindings,
-                )
+        if use_term_shape:
+            term_body = term_body_for_term_shape(
+                term_shape,
+                params,
+                param_types,
+                return_type,
+                operand_bindings=operand_bindings,
+            )
+        elif named_term_tree is None:
+            term_body = term_body_for(concept_name, params, param_types, return_type)
         else:
             term_body = term_body_for_tree(
                 named_term_tree,
@@ -193,8 +192,28 @@ def emit_stub(
         if term_body is not None:
             body = term_body.body
         else:
+            if use_term_shape:
+                missing = missing_templates_for_term_shape(
+                    function,
+                    params,
+                    param_types,
+                    return_type,
+                    term_shape,
+                    operand_bindings=operand_bindings,
+                )
+                if missing:
+                    raise MissingTemplateError(missing)
             body = body_template_for(concept_name, params, param_types, return_type)
             if body is None:
+                missing = missing_templates_for(
+                    function,
+                    params,
+                    param_types,
+                    return_type,
+                    concept_name,
+                )
+                if missing:
+                    raise MissingTemplateError(missing)
                 raise MissingTemplateError(
                     (
                         MissingTemplateEntry(
@@ -1038,10 +1057,16 @@ def _operand_binding_map(
             raise ValueError(f"duplicate operand_bindings position {position}")
         mapping[key] = symbol
 
-    leaf_positions = sorted(_term_shape_leaf_positions(term_shape, ()))
-    leaf_set = set(leaf_positions)
-    missing = [list(position) for position in leaf_positions if position not in mapping]
-    extra = [list(position) for position in sorted(mapping) if position not in leaf_set]
+    required_positions = sorted(_term_shape_leaf_positions(term_shape, ()))
+    allowed_positions = set(_term_shape_allowed_binding_positions(term_shape, ()))
+    missing = [
+        list(position) for position in required_positions if position not in mapping
+    ]
+    extra = [
+        list(position)
+        for position in sorted(mapping)
+        if position not in allowed_positions
+    ]
     if missing or extra:
         raise OperandBindingMisalignmentError(missing, extra)
     return mapping
@@ -1058,6 +1083,21 @@ def _term_shape_leaf_positions(shape: Any, position: tuple[int, ...]) -> list[tu
     out: list[tuple[int, ...]] = []
     for index, child in enumerate(_shape_args(shape)):
         out.extend(_term_shape_leaf_positions(child, (*position, index)))
+    return out
+
+
+def _term_shape_allowed_binding_positions(
+    shape: Any,
+    position: tuple[int, ...],
+) -> list[tuple[int, ...]]:
+    required = _term_shape_leaf_positions(shape, position)
+    if not isinstance(shape, dict):
+        return required
+    out = list(required)
+    if _shape_concept_name(shape) in {"concept:literal", "literal"} and "value" in shape:
+        out.append(position)
+    for index, child in enumerate(_shape_args(shape)):
+        out.extend(_term_shape_allowed_binding_positions(child, (*position, index)))
     return out
 
 
@@ -1092,6 +1132,7 @@ class _ShapeLoweringContext:
     next_leaf: int = 0
     next_temp: int = 0
     defined_symbols: set[str] = field(default_factory=set)
+    last_assigned_symbol: str | None = None
 
     def __post_init__(self) -> None:
         self.defined_symbols.update(self.params)
@@ -1197,12 +1238,39 @@ def _lower_shape_body(
         if tail is not None:
             if tail.body:
                 lines.append(tail.body)
+            if (
+                map_source_type(context.return_type) != "None"
+                and not any(line.lstrip().startswith("return ") for line in lines)
+                and context.last_assigned_symbol is not None
+            ):
+                lines.append(f"return {context.last_assigned_symbol}")
             return TermBody("\n".join(lines))
         expression = _lower_shape_expression(args[-1], context, (*position, len(args) - 1))
         if expression is None or expression.text is None:
             return None
         lines.append(f"return {expression.text}")
         return TermBody("\n".join(lines))
+    if concept_name in {"concept:assign", "assign"} and len(args) == 2:
+        target = _lower_shape_expression(args[0], context, (*position, 0))
+        value = _lower_shape_expression(args[1], context, (*position, 1))
+        if (
+            target is None
+            or target.text is None
+            or value is None
+            or value.text is None
+            or not _is_identifier_symbol(target.text)
+        ):
+            return None
+        context.defined_symbols.add(target.text)
+        context.last_assigned_symbol = target.text
+        return TermBody(f"{target.text} = {value.text}")
+    if concept_name in {"concept:return", "return"}:
+        if not args:
+            return TermBody("return")
+        value = _lower_shape_expression(args[0], context, (*position, 0))
+        if value is None or value.text is None:
+            return None
+        return TermBody(f"return {value.text}")
     if concept_name in {"concept:conditional", "conditional"} and len(args) == 3:
         condition = _lower_shape_expression(args[0], context, (*position, 0))
         if condition is None or condition.text is None:
@@ -1253,6 +1321,12 @@ def _lower_shape_expression(
     concept_name = _shape_concept_name(shape)
     if not concept_name:
         return _shape_leaf_expression(shape, context, position)
+    if concept_name in {"concept:literal", "literal"} and "value" in shape:
+        if context.operand_bindings is not None:
+            symbol = context.operand_bindings.get(position)
+            if symbol is not None:
+                return _symbol_term(symbol, context)
+        return _literal_term(shape.get("value"))
     args = _shape_args(shape)
     if concept_name in {"concept:seq", "seq"}:
         for index, child in enumerate(args[:-1]):
@@ -1293,8 +1367,9 @@ def _shape_leaf_expression(
     position: tuple[int, ...],
 ) -> TermExpression:
     if context.operand_bindings is not None:
-        symbol = context.operand_bindings[position]
-        return _symbol_term(symbol, context)
+        symbol = context.operand_bindings.get(position)
+        if symbol is not None:
+            return _symbol_term(symbol, context)
     kind = str(shape.get("kind", ""))
     if kind == "var":
         name = shape.get("name")
