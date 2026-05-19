@@ -105,7 +105,9 @@ fn bind_migrates_better_sqlite3_to_pg_with_async_receipt() {
         fs::read_to_string(out_dir.join("src").join("users.ts")).expect("migrated users.ts");
     assert!(migrated.contains("import { Pool } from \"pg\";"));
     assert!(migrated.contains("export async function getAllUsers(): Promise<User[]>"));
-    assert!(migrated.contains("await pool.query"));
+    assert!(migrated.contains(
+        "const result = await pool.query(\"SELECT id, name, email FROM users WHERE id = ?\", [id]);"
+    ));
     assert!(migrated.contains("export function exportedFormatter(u: User): string"));
     assert!(
         out_dir.join("package.json").exists(),

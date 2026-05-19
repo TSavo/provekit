@@ -261,16 +261,19 @@ fn fixture_4_exact_no_op_leg_emits_zero_loss_records() {
 }
 
 #[test]
-fn fixture_5_uncharacterizable_insert_routes_to_refusal_without_loss() {
+fn fixture_5_declared_insert_routes_to_loss_without_refusal() {
     let source = insert_source();
     let receipt = receipt_for(&source, "python-sqlite3", None);
 
-    assert!(receipt.aggregate_summary.refused >= 1);
+    assert_eq!(receipt.aggregate_summary.refused, 0);
+    assert!(receipt.refusal_mementos.is_empty());
+    assert_eq!(receipt.aggregate_summary.lossy, 1);
+    assert_eq!(receipt.loss_records.len(), 1);
+    assert_eq!(receipt.loss_records[0].loss_dimension, "RowIdMechanism");
     assert!(receipt
-        .refusal_mementos
+        .concept_sites
         .iter()
-        .any(|refusal| refusal.reason.contains(INSERT_AND_GET_ID_CONCEPT_CID)));
-    assert_eq!(receipt.aggregate_summary.lossy, 0);
+        .any(|site| site.concept_cid == INSERT_AND_GET_ID_CONCEPT_CID));
 }
 
 #[test]
