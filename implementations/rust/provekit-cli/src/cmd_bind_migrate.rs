@@ -750,14 +750,34 @@ fn platform_semantic_changes_for_targets(
     // Compose language-kit (per-op platform semantics: overflow, rounding, etc.)
     // with binding-kit (per-op library semantics: RowIdMechanism, etc.).
     // Binding-kit wins on op-CID conflicts.
-    let Some(source) = platform_semantics_for_binding(source_lang, source_tag) else {
-        return Ok(PlatformSemanticChangeSet::default());
-    };
-    let Some(target) = platform_semantics_for_binding(target_lang, target_tag) else {
-        return Ok(PlatformSemanticChangeSet::default());
-    };
+    //
+    // Either side may be None when no declaration exists for the given
+    // (lang, tag) pair. We do NOT short-circuit to empty here: per the
+    // trichotomy ruling
+    // (docs/plans/2026-05-18-op-coverage-verdict-trichotomy-ruling.md), if
+    // one side has a declaration and the other does not, callsites whose
+    // op-CID is present on the declared side must produce
+    // OpCoverageVerdict::Uncharacterizable. That routes through the refuse
+    // leg in build_receipt. Substitute an empty declaration for the absent
+    // side so compare_op_with produces the per-callsite verdict uniformly.
+    //
+    // (Audit row D3 / #1228: prior shape collapsed NoOpinion AND
+    // Uncharacterizable into "empty change set", silently dropping the
+    // refuse-leg signal when one binding-kit was missing entirely.)
+    let source = platform_semantics_for_binding(source_lang, source_tag)
+        .unwrap_or_else(empty_platform_semantics);
+    let target = platform_semantics_for_binding(target_lang, target_tag)
+        .unwrap_or_else(empty_platform_semantics);
     platform_semantic_changes(&source, &target, sql_callsites, focus)
         .map_err(|error| format!("platform semantic comparison: {error:?}"))
+}
+
+fn empty_platform_semantics() -> PlatformSemanticsDeclaration {
+    PlatformSemanticsDeclaration {
+        tags: Vec::new(),
+        dimension_values: Vec::new(),
+        op_aliases: BTreeMap::new(),
+    }
 }
 
 fn platform_semantic_changes(
@@ -2453,6 +2473,109 @@ mod tests {
         assert!(
             changes.changed_callsites.is_empty(),
             "uncharacterizable must not appear in changed_callsites"
+        );
+    }
+
+    // D3 / #1228: when ONE side has a binding declaration and the OTHER side
+    // does not (whole-binding absence, not per-op absence), per-callsite
+    // verdicts must still produce Uncharacterizable for ops declared on the
+    // present side. The earlier shape collapsed this case into "empty change
+    // set" via an early-return.
+    #[test]
+    fn changes_for_targets_present_source_absent_target_emits_uncharacterizable() {
+        let source = platform_semantics_for_binding("typescript", "better-sqlite3")
+            .expect("better-sqlite3 binding declared");
+        let declared_op = source
+            .tags
+            .first()
+            .map(|tag| tag.op_cid.clone())
+            .expect("better-sqlite3 declares at least one op");
+        let callsites = vec![callsite("cs:present-source", &declared_op, "fn")];
+
+        let changes = platform_semantic_changes_for_targets(
+            "typescript",
+            "better-sqlite3",
+            "nope-lang",
+            "nope-tag",
+            &callsites,
+            None,
+        )
+        .expect("absent target does not bubble as error");
+
+        assert_eq!(
+            changes.uncharacterizable_callsites.len(),
+            1,
+            "callsite declared on source produces uncharacterizable when target is absent"
+        );
+        assert_eq!(
+            changes.uncharacterizable_callsites[0].absent_on,
+            Side::Target,
+            "target binding is absent; source declared the op"
+        );
+        assert!(
+            changes.changed_callsites.is_empty(),
+            "uncharacterizable must not appear in changed_callsites"
+        );
+    }
+
+    #[test]
+    fn changes_for_targets_present_target_absent_source_emits_uncharacterizable() {
+        let target = platform_semantics_for_binding("typescript", "better-sqlite3")
+            .expect("better-sqlite3 binding declared");
+        let declared_op = target
+            .tags
+            .first()
+            .map(|tag| tag.op_cid.clone())
+            .expect("better-sqlite3 declares at least one op");
+        let callsites = vec![callsite("cs:present-target", &declared_op, "fn")];
+
+        let changes = platform_semantic_changes_for_targets(
+            "nope-lang",
+            "nope-tag",
+            "typescript",
+            "better-sqlite3",
+            &callsites,
+            None,
+        )
+        .expect("absent source does not bubble as error");
+
+        assert_eq!(
+            changes.uncharacterizable_callsites.len(),
+            1,
+            "callsite declared on target produces uncharacterizable when source is absent"
+        );
+        assert_eq!(
+            changes.uncharacterizable_callsites[0].absent_on,
+            Side::Source,
+            "source binding is absent; target declared the op"
+        );
+    }
+
+    #[test]
+    fn changes_for_targets_both_absent_produces_empty_change_set() {
+        // Discrimination: both bindings absent is NoOpinion (substrate has
+        // nothing to say), distinct from one-absent (Uncharacterizable / refuse).
+        // The earlier shape collapsed both cases into empty; this test pins
+        // that the both-absent case is still correctly empty under the new
+        // shape.
+        let callsites = vec![callsite("cs:both-absent", "concept:imaginary", "fn")];
+        let changes = platform_semantic_changes_for_targets(
+            "nope-lang-1",
+            "nope-tag-1",
+            "nope-lang-2",
+            "nope-tag-2",
+            &callsites,
+            None,
+        )
+        .expect("both absent does not bubble as error");
+
+        assert!(
+            changes.uncharacterizable_callsites.is_empty(),
+            "both-absent must not produce uncharacterizable; substrate has no opinion"
+        );
+        assert!(
+            changes.changed_callsites.is_empty(),
+            "both-absent must not produce changed callsites"
         );
     }
 
