@@ -575,7 +575,7 @@ impl DimensionValueMemento {
     }
 
     pub fn recompute_cid(&self) -> Cid {
-        platform_semantic_cid_without_keys(self, &["cid"])
+        platform_semantic_cid_without_keys(self, &["cid", "kit_cid"])
     }
 }
 
@@ -621,7 +621,7 @@ impl PlatformSemanticTag {
     }
 
     pub fn recompute_cid(&self) -> Cid {
-        platform_semantic_cid_without_keys(self, &["cid"])
+        platform_semantic_cid_without_keys(self, &["cid", "kit_cid"])
     }
 }
 
@@ -6492,3 +6492,127 @@ fn migration_json_to_canonical(
 // ============================================================
 // End manual extension block -- PipelineMemento and RunMemento (#799)
 // ============================================================
+
+#[cfg(test)]
+mod platform_semantic_envelope_tests {
+    use super::*;
+
+    fn cid(ch: char) -> Cid {
+        format!("blake3-512:{}", ch.to_string().repeat(128))
+    }
+
+    fn structural_formula() -> IrFormula {
+        IrFormula::Atomic {
+            args: vec![IrTerm::Ctor {
+                args: vec![],
+                name: "lhs".to_string(),
+            }],
+            name: "shared_predicate".to_string(),
+        }
+    }
+
+    // #1260: kit_cid is provenance, not content. Two DimensionValueMementos
+    // minted by different kits but asserting identical content (same
+    // dimension_name, value_name, compare_to formula) MUST produce the same
+    // content-CID. Before #1260 they produced different CIDs because the
+    // kit_cid was hashed into the content; cross-kit equivalence at
+    // compare_op_with's short-circuit could not fire.
+    #[test]
+    fn dimension_value_memento_content_cid_independent_of_kit_cid() {
+        let formula = structural_formula();
+        let kit_a = cid('a');
+        let kit_b = cid('b');
+
+        let value_a = DimensionValueMemento::new(
+            kit_a.clone(),
+            "SharedDimension".to_string(),
+            "SharedValue".to_string(),
+            formula.clone(),
+        );
+        let value_b = DimensionValueMemento::new(
+            kit_b.clone(),
+            "SharedDimension".to_string(),
+            "SharedValue".to_string(),
+            formula.clone(),
+        );
+
+        assert_ne!(value_a.kit_cid, value_b.kit_cid, "provenance differs");
+        assert_eq!(
+            value_a.cid, value_b.cid,
+            "identical content from different kits must yield identical content-CID"
+        );
+    }
+
+    // Discrimination: identical kit_cid + identical (dimension, value) but
+    // different compare_to formulas must yield distinct CIDs. Confirms the
+    // CID still addresses the formula content (the actual semantic claim),
+    // just not the provenance.
+    #[test]
+    fn dimension_value_memento_content_cid_distinguishes_compare_to_formulas() {
+        let kit = cid('a');
+        let formula_x = IrFormula::Atomic {
+            args: vec![],
+            name: "predicate_x".to_string(),
+        };
+        let formula_y = IrFormula::Atomic {
+            args: vec![],
+            name: "predicate_y".to_string(),
+        };
+
+        let value_x = DimensionValueMemento::new(
+            kit.clone(),
+            "Dim".to_string(),
+            "Same".to_string(),
+            formula_x,
+        );
+        let value_y = DimensionValueMemento::new(
+            kit,
+            "Dim".to_string(),
+            "Same".to_string(),
+            formula_y,
+        );
+
+        assert_ne!(
+            value_x.cid, value_y.cid,
+            "different compare_to formulas must yield distinct content-CIDs"
+        );
+    }
+
+    // #1260: same envelope-violation pattern, separately for
+    // PlatformSemanticTag. Two tags minted by different kits but referencing
+    // the same op_cid and the same dimensions map must produce identical
+    // content-CIDs.
+    #[test]
+    fn platform_semantic_tag_content_cid_independent_of_kit_cid() {
+        let op_cid = cid('o');
+        let mut dimensions = BTreeMap::new();
+        dimensions.insert("D1".to_string(), cid('v'));
+
+        let tag_a = PlatformSemanticTag::new(cid('a'), op_cid.clone(), dimensions.clone());
+        let tag_b = PlatformSemanticTag::new(cid('b'), op_cid.clone(), dimensions.clone());
+
+        assert_ne!(tag_a.kit_cid, tag_b.kit_cid, "provenance differs");
+        assert_eq!(
+            tag_a.cid, tag_b.cid,
+            "identical (op, dimensions) from different kits must yield identical content-CID"
+        );
+    }
+
+    // Discrimination: identical kit_cid but different op_cid (the actual
+    // semantic claim about which op this tag attaches to) must yield
+    // distinct CIDs.
+    #[test]
+    fn platform_semantic_tag_content_cid_distinguishes_op_cid() {
+        let kit = cid('a');
+        let mut dimensions = BTreeMap::new();
+        dimensions.insert("D1".to_string(), cid('v'));
+
+        let tag_op1 = PlatformSemanticTag::new(kit.clone(), cid('o'), dimensions.clone());
+        let tag_op2 = PlatformSemanticTag::new(kit, cid('p'), dimensions);
+
+        assert_ne!(
+            tag_op1.cid, tag_op2.cid,
+            "different op_cids must yield distinct content-CIDs"
+        );
+    }
+}
