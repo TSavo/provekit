@@ -9,5 +9,8 @@
   },
   "scripts": {
     "test": "node --test tests/*.test.js"
+  },
+  "dependencies": {
+    "@noble/hashes": "^2.2.0"
   }
 }
