@@ -8,7 +8,11 @@ PKG_SRC = ROOT / "implementations/python/provekit-realize-python-core/src"
 if str(PKG_SRC) not in sys.path:
     sys.path.insert(0, str(PKG_SRC))
 
-from provekit_realize_python_core.platform_semantics import declaration, dimension_values
+from provekit_realize_python_core.platform_semantics import (
+    CONCEPT_LITERAL_CID,
+    declaration,
+    dimension_values,
+)
 
 
 EXPECTED_DIMENSIONS = {
@@ -32,10 +36,14 @@ GOLDEN_DIM_VALUE_CIDS: dict[tuple[str, str], str] = {
         "blake3-512:676366cdedf3f53cdf4eade664dd570644217c86f596bb4a18d609723f43512ca100ca1903ef5cd9e2f10cb7309288054cafdcc22734439f9509b9bcad667628",
     ("BitwiseSemantics", "TwosComplement"):
         "blake3-512:01a8d218214a9344ac9f0a1a9b25d429eb8b0a72bd7d535a6377794f7769b3ded74f28b0073e5b64a5e5a64276d2cdeb4fb5ea64c2c5b007dfe5859b9cb13a45",
+    # concept:literal SortAdmission: Python admits full primitive tier (Int, Float, String, Bool, Bytes, Null)
+    # value_name "FullPrimitiveTier" matches Java for cross-kit substrate uniformity.
+    ("SortAdmission", "FullPrimitiveTier"):
+        "blake3-512:cdec58a9736ce0d4efc81a73cde61e1776df742a67de9141e49cf6712ae580f948dc3ee7bfa136e7904cb6d579e50f9644845fe50f8d4ddfeb68902562f13f85",
 }
 
-# Golden tag CIDs (all 12 tags share the same dimension map, so each has a unique CID
-# from the op_cid field).
+# Golden tag CIDs. The 12 operator tags share the same 5-dimension map; each has a unique
+# CID from its op_cid. The concept:literal tag carries only SortAdmission.
 GOLDEN_TAG_CIDS: dict[str, str] = {
     "blake3-512:95fc70e63a5550fd2e25142f13932919c59d085654ab387789c798886b0111c61d28fe533fc98b50df70eea9428a9af8aa75372c8b1c1deb3acc1a4094790468":
         "blake3-512:63e60467c70e6b34af42c9b3ebbd3e4db9688714ecad57bf3e2376a7d36bfb7ac289474a8d0ddba754c2aede056106a6d5f0721307cf3fe676ec32a77b84a4d7",
@@ -61,28 +69,34 @@ GOLDEN_TAG_CIDS: dict[str, str] = {
         "blake3-512:210b62a4782185b311f8791e3886c6432e3a486250621398eb4f520f1b84b11f16c68908c9e2d9549b0937a4760f3e45e1d5fa386c119cf48646762af4f2216d",
     "blake3-512:ad958847b50cf07ddbb92d85ae488a5f983d5619e108476b42e519174cfcce883ecd637544a372b946bb45a1c22893c710bc9b08ea0569ad0e035b3babb6a409":
         "blake3-512:c75facd259c4e04eeb096c715c2507f0040a2043a3cb9f342d47923f069c1bde2c96d0b067b6b160fe5d9a07508d0f416ff1e3e7801d60fef77f271c959bc578",
+    # concept:literal tag (only SortAdmission dimension)
+    "blake3-512:02804a0bdbd2d5d541544451f41ee8d0d340baf28f70bd5abf5844e87a96aedd7b5ab3453962754a020679cc8c6b3d1f4cf0336a7ad8118128d42ac667abf2d6":
+        "blake3-512:5523f7d24d51ff0a0d8ac96798946e4bc1722a7d1936918f4b9477b2246bde112d24f8043680fd22a5272e39d5bedbb2acc2d17590f6ff7afae140dd523c361d",
 }
 
 
 def test_python_realize_platform_semantics_declaration_shape() -> None:
     values = dimension_values()
-    assert {item["dimension_name"]: item["value_name"] for item in values} == EXPECTED_DIMENSIONS
+    dim_map = {item["dimension_name"]: item["value_name"] for item in values}
+    # Existing 5 operator-semantic dimensions
+    for dim, val in EXPECTED_DIMENSIONS.items():
+        assert dim_map[dim] == val
+    # New SortAdmission dimension value
+    assert dim_map["SortAdmission"] == "FullPrimitiveTier"
     for item in values:
-        assert item["compare_to"] == {
-            "kind": "atomic",
-            "name": f"python:{item['value_name']}",
-            "args": [],
-        }
         assert item["cid"].startswith("blake3-512:")
 
     semantics = declaration()
     assert semantics["tags"]
     for tag in semantics["tags"]:
-        assert set(tag["dimensions"]) == set(EXPECTED_DIMENSIONS)
+        if tag["op_cid"] == CONCEPT_LITERAL_CID:
+            assert set(tag["dimensions"]) == {"SortAdmission"}
+        else:
+            assert set(tag["dimensions"]) == set(EXPECTED_DIMENSIONS)
         assert tag["op_cid"].startswith("blake3-512:")
         assert tag["cid"].startswith("blake3-512:")
     assert "dimension_values" in semantics
-    assert len(semantics["dimension_values"]) == 5
+    assert len(semantics["dimension_values"]) == 6
 
 
 def test_dimension_value_cids_match_golden() -> None:
@@ -106,6 +120,18 @@ def test_tag_cids_match_golden() -> None:
         )
 
 
+def test_concept_literal_has_sort_admission() -> None:
+    """concept:literal tag must carry only SortAdmission, with the golden DV CID."""
+    semantics = declaration()
+    literal_tags = [t for t in semantics["tags"] if t["op_cid"] == CONCEPT_LITERAL_CID]
+    assert len(literal_tags) == 1, "expected exactly one concept:literal tag"
+    literal_tag = literal_tags[0]
+    assert set(literal_tag["dimensions"]) == {"SortAdmission"}
+    golden_sort_admission_cid = GOLDEN_DIM_VALUE_CIDS[("SortAdmission", "FullPrimitiveTier")]
+    assert literal_tag["dimensions"]["SortAdmission"] == golden_sort_admission_cid
+    assert literal_tag["cid"] == GOLDEN_TAG_CIDS[CONCEPT_LITERAL_CID]
+
+
 def test_rpc_dispatch_platform_semantics() -> None:
     import sys
     from pathlib import Path
@@ -123,5 +149,5 @@ def test_rpc_dispatch_platform_semantics() -> None:
     result = response["result"]
     assert "tags" in result
     assert "dimension_values" in result
-    assert len(result["tags"]) == 12
-    assert len(result["dimension_values"]) == 5
+    assert len(result["tags"]) == 13
+    assert len(result["dimension_values"]) == 6
