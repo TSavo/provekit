@@ -2967,6 +2967,125 @@ mod tests {
             changes.changed_callsites.is_empty(),
             "uncharacterizable must not appear in changed_callsites"
         );
+
+        // End-to-end through build_receipt (#1202): the uncharacterizable
+        // bucket must mint a RefusalMemento AND short-circuit loss_records
+        // per docs/plans/2026-05-18-refuse-leg-short-circuit-ruling.md.
+        let functions = vec![function("native")];
+        let receipt = build_receipt(
+            &BTreeMap::new(),
+            &callsites,
+            &functions,
+            "source-binding",
+            "target-binding",
+            TargetSurface::TypescriptPg,
+            &changes.divergences_by_callsite_and_dimension,
+            &changes.uncharacterizable_callsites,
+        )
+        .expect("build_receipt succeeds with uncharacterizable bucket populated");
+        assert_eq!(
+            receipt.refusal_mementos.len(),
+            1,
+            "uncharacterizable callsite must mint exactly one RefusalMemento"
+        );
+        assert_eq!(
+            receipt.refusal_mementos[0].function_cid, "cs:rust-native",
+            "RefusalMemento.function_cid must be the callsite CID"
+        );
+        assert!(
+            receipt.refusal_mementos[0]
+                .reason
+                .contains("target kit did not declare"),
+            "RefusalMemento.reason must name the absent side; got {:?}",
+            receipt.refusal_mementos[0].reason,
+        );
+        assert!(
+            receipt.loss_records.is_empty(),
+            "refuse-leg short-circuit must suppress loss_records when any callsite is uncharacterizable"
+        );
+        assert_eq!(
+            receipt.aggregate_summary.refused, 1,
+            "aggregate_summary.refused must count the refusal"
+        );
+        assert_eq!(
+            receipt.aggregate_summary.lossy, 0,
+            "aggregate_summary.lossy must be zero under the refuse-leg short-circuit"
+        );
+
+        // CID stability across runs: the RefusalMemento is content-addressed;
+        // a second build_receipt with identical inputs must produce the same CID.
+        let receipt_again = build_receipt(
+            &BTreeMap::new(),
+            &callsites,
+            &functions,
+            "source-binding",
+            "target-binding",
+            TargetSurface::TypescriptPg,
+            &changes.divergences_by_callsite_and_dimension,
+            &changes.uncharacterizable_callsites,
+        )
+        .expect("build_receipt succeeds again");
+        assert_eq!(
+            receipt.refusal_mementos[0].cid, receipt_again.refusal_mementos[0].cid,
+            "RefusalMemento CIDs must be byte-stable across runs"
+        );
+    }
+
+    #[test]
+    fn point_query_uncharacterizable_source_absent_routes_to_refuse_signal() {
+        // Mirror of the above: Side::Source path. Target declares a tag for
+        // the op; source does not. Substrate cannot characterize the
+        // divergence; refuse leg fires; the absent_side in the reason
+        // identifies SOURCE.
+        let source = test_platform_semantics_for_lower_target("java");
+        let target = test_platform_semantics_for_lower_target("rust");
+        let rust_only_op = target
+            .tags
+            .iter()
+            .map(|tag| tag.op_cid.as_str())
+            .find(|op_cid| {
+                matches!(
+                    source.compare_op_with(op_cid, &target),
+                    Ok(OpCoverageVerdict::Uncharacterizable {
+                        absent_on: Side::Source
+                    })
+                )
+            })
+            .expect("rust-only op fixture exists (target declares; source absent)");
+        let callsites = vec![callsite("cs:rust-native-mirror", rust_only_op, "native")];
+
+        let changes = platform_semantic_changes(&source, &target, &callsites, None)
+            .expect("uncharacterizable does not bubble as error");
+        assert_eq!(changes.uncharacterizable_callsites.len(), 1);
+        assert_eq!(
+            changes.uncharacterizable_callsites[0].absent_on,
+            Side::Source,
+            "target has the tag; source is absent"
+        );
+
+        let functions = vec![function("native")];
+        let receipt = build_receipt(
+            &BTreeMap::new(),
+            &callsites,
+            &functions,
+            "source-binding",
+            "target-binding",
+            TargetSurface::TypescriptPg,
+            &changes.divergences_by_callsite_and_dimension,
+            &changes.uncharacterizable_callsites,
+        )
+        .expect("build_receipt succeeds with Side::Source uncharacterizable");
+        assert_eq!(receipt.refusal_mementos.len(), 1);
+        assert!(
+            receipt.refusal_mementos[0]
+                .reason
+                .contains("source kit did not declare"),
+            "RefusalMemento.reason must name SOURCE as absent; got {:?}",
+            receipt.refusal_mementos[0].reason,
+        );
+        assert!(receipt.loss_records.is_empty());
+        assert_eq!(receipt.aggregate_summary.refused, 1);
+        assert_eq!(receipt.aggregate_summary.lossy, 0);
     }
 
     // D3 / #1228: when ONE side has a binding declaration and the OTHER side
