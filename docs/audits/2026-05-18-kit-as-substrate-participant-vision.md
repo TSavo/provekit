@@ -159,30 +159,32 @@ For each: one-line summary + verdict (on path / off path / reinvention-suspect).
 
 ## 6. Dissolution roadmap
 
-Each work unit is a PAIR: a kit-face mint (or face completion) + the workflow reinvention it enables to dissolve.
+Each work unit is a PAIR: a kit-face mint (or face completion) + the workflow reinvention it enables to dissolve. Each row has been filed as a GitHub issue (or noted as folded / forward-roadmap).
 
-| # | Kit-face mint | Workflow dissolution | Effect |
-|---|---|---|---|
-| D1 | Mint Python + sqlite3 library kit declaration face (`platform_semantics/python_sqlite3.rs` + arm in `binding_semantics_for_tag`) | Remove `TargetSurface::PythonSqlite3` arm + its branches in `requires_async_delta` and `render_migrated_source`. Migrate dispatches through `dispatch_realize("python", Some("sqlite3"), ...)`. | `platform_semantics_for_binding("python", "sqlite3")` resolves. Trichotomy fires. Receipt characterizes RowIdMechanism divergence (CursorLastRowid vs LastInsertRowid). |
-| D2 | Mint Python + aiosqlite library kit declaration face | Same as D1 for PythonAiosqlite arm. | Adds async-aware Python binding kit. |
-| D3 | Fix `platform_semantic_changes_for_targets` early-return | Let `compare_op_with` produce 4-state verdict including `Uncharacterizable { absent_on }` for unilateral declarations. | Substrate becomes honest per #1204 trichotomy ruling. |
-| D4 | Introduce `AsyncMode` (or equivalent) dimension. Declare AsyncMode per binding kit (better-sqlite3: Sync, pg: Async, sqlite3: Sync, aiosqlite: Async). | Remove `requires_async_delta` flag. Effect propagation reads AsyncMode declarations. | Async-ness becomes uniform with other platform semantics. |
-| D5 | Replace `render_migrated_source(target_surface)` with `dispatch_realize` invocation for each callsite. | The hand-written source emission code is deleted. The realize plugins emit the target source. | Migrate workflow becomes thin — composes primitives. |
-| D6 | Remove "source must be typescript-better-sqlite3" check. | Migrate generalizes to (any source binding-kit, any target binding-kit). | M+N hub fully load-bearing. |
-| D7 | Mint Rust + rusqlite library kit (all three faces) | Migrate can target rusqlite as source or target. | First Trinity leg: Rust. |
-| D8 | Mint Java + sqlite-jdbc library kit (all three faces) | Migrate can target sqlite-jdbc as source or target. | Second Trinity leg: Java. |
-| D9 | Complete Python + sqlite3 library kit (declaration + body templates if missing) | Migrate can target sqlite3 as source. | Third Trinity leg: Python. |
-| D10 | Confirm or mint per-language exam manifests for Rust, Java, Python | Substrate runs with per-language exams (per pin-all-three). | Federation across the Trinity becomes provable. |
-| D11 | Implement `cmd_materialize.rs` | New verb composes `dispatch_realize` + .proof reading. | "Give me SQL" workflow works end-to-end. |
-| D12 | Audit remaining cmd_*.rs for reinventions, dissolve each pair | Workflow layer becomes uniformly thin. | Vision realized at the workflow layer. |
-| D13a | Ship Trinity-demo library kits as shim packages (phase B): `java-sqlite-jdbc-proof.jar`, `provekit-shim-python-sqlite3` (pip), `provekit-shim-rusqlite` (cargo) | `binding_semantics_for_tag` resolves library tags via shim package discovery + .proof read. No hardcoded arms. | Substrate consumes library kits via vendor-ecosystem package managers without requiring vendor cooperation. |
-| D13b | Land vendor adoption for first library (paper 22 / phase C) | Selected library's vendor merges shim into native distribution. Substrate's resolution code-path is unchanged (still .proof + package-manager); the shim package becomes deprecated for that library. | Demonstrates viral adoption loop end-to-end. |
-| D14 | Externalize language kits into separate distributions (cosmic-brain endgame, paper 25) | `platform_semantics_for_lower_target` resolves languages via dynamic kit registration. | Substrate becomes purely protocol. |
-| D15 | Unify lift face + realize face as bidirectional kits per body-template spec | One declarative kit spec → both directions, derived. | The cosmic-brain endgame. |
+| # | Kit-face mint | Workflow dissolution | Effect | Issue |
+|---|---|---|---|---|
+| D1 | Mint Python + sqlite3 library kit declaration face (`platform_semantics/python_sqlite3.rs` + arm in `binding_semantics_for_tag`) | Remove `TargetSurface::PythonSqlite3` arm + its branches in `requires_async_delta` and `render_migrated_source`. Migrate dispatches through `dispatch_realize("python", Some("sqlite3"), ...)`. | `platform_semantics_for_binding("python", "sqlite3")` resolves. Trichotomy fires. Receipt characterizes RowIdMechanism divergence (CursorLastRowid vs LastInsertRowid). | #1226 |
+| D2 | Mint Python + aiosqlite library kit declaration face | Same as D1 for PythonAiosqlite arm. | Adds async-aware Python binding kit. | #1227 |
+| D3 | Fix `platform_semantic_changes_for_targets` early-return | Let `compare_op_with` produce 4-state verdict including `Uncharacterizable { absent_on }` for unilateral declarations. | Substrate becomes honest per #1204 trichotomy ruling. | #1228 |
+| D4 | Introduce `AsyncMode` (or equivalent) dimension. Declare AsyncMode per binding kit (better-sqlite3: Sync, pg: Async, sqlite3: Sync, aiosqlite: Async). | Remove `requires_async_delta` flag. Effect propagation reads AsyncMode declarations. | Async-ness becomes uniform with other platform semantics. | #1236 |
+| D5 | Replace `render_migrated_source(target_surface)` with `dispatch_realize` invocation for each callsite. | The 280+ lines of hardcoded fixture output (THE central reinvention) are deleted. The realize plugins emit the target source. | Migrate workflow becomes thin — composes primitives. | #1229 |
+| D6 | Remove "source must be typescript-better-sqlite3" check. | Migrate generalizes to (any source binding-kit, any target binding-kit). | M+N hub fully load-bearing. | #1230 |
+| D7 | Mint Rust + rusqlite library kit (all three faces) | Migrate can target rusqlite as source or target. | First Trinity leg: Rust. | #1231 |
+| D8 | Mint Java + sqlite-jdbc library kit (all three faces) | Migrate can target sqlite-jdbc as source or target. | Second Trinity leg: Java. | #1232 |
+| D9 | Complete Python + sqlite3 library kit. | Folded into D1 — body templates and realize plugin already exist; D1 mints the missing declaration face. | Python leg complete after D1. | folded into #1226 |
+| D10 | Confirm or mint per-language exam manifests for Rust, Java, Python | Substrate runs with per-language exams (per pin-all-three). | Federation across the Trinity becomes provable. | #1233 |
+| D11 | Implement `cmd_materialize.rs` | New verb composes `dispatch_realize` + .proof reading. | "Give me SQL" workflow works end-to-end. | #1234 |
+| D12 | Audit remaining cmd_*.rs for reinventions, dissolve each pair | Workflow layer becomes uniformly thin. | Vision realized at the workflow layer. | #1235 |
+| D13a | Ship Trinity-demo library kits as shim packages (phase B): `java-sqlite-jdbc-proof.jar`, `provekit-shim-python-sqlite3` (pip), `provekit-shim-rusqlite` (cargo) | `binding_semantics_for_tag` resolves library tags via shim package discovery + .proof read. No hardcoded arms. | Substrate consumes library kits via vendor-ecosystem package managers without requiring vendor cooperation. | #1237 |
+| D13b | Land vendor adoption for first library (paper 22 / phase C) | Selected library's vendor merges shim into native distribution. | Demonstrates viral adoption loop end-to-end. | not yet filed (forward roadmap) |
+| D14 | Externalize language kits into separate distributions (cosmic-brain endgame, paper 25) | `platform_semantics_for_lower_target` resolves languages via dynamic kit registration. | Substrate becomes purely protocol. | not yet filed (forward roadmap) |
+| D15 | Unify lift face + realize face as bidirectional kits per body-template spec | One declarative kit spec → both directions, derived. | The cosmic-brain endgame. | not yet filed (forward roadmap) |
 
 D1–D6 unblock the substrate-correctness fixes for the existing migrate demo (TypeScript ↔ Python).
 D7–D11 deliver the Trinity demo (Rust ↔ Java ↔ Python with materialize).
-D12–D15 complete the vision realization.
+D12 systematizes the workflow-layer audit.
+D13a delivers the shim distribution for the Trinity demo's library kits.
+D13b–D15 complete the vision realization.
 
 ## 7. Vision realization milestones
 
