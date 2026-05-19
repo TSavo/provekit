@@ -1,0 +1,211 @@
+# Trinity Shim Distribution Ruling
+
+Date: 2026-05-19
+Status: Active. Ratified by Sir 2026-05-19. Formalizes the architecture for Phase B (shim distribution) of the parent audit's section 7.1 distribution evolution.
+
+## Ruling
+
+Trinity-demo library kits (rusqlite, sqlite-jdbc, python-sqlite3, and any future per-ecosystem library kit) ship as shim packages via each ecosystem's existing package registry. Four substrate-uniform principles govern shim distribution; each principle routes through EXISTING substrate machinery. No new substrate primitives are introduced by shim distribution itself.
+
+## Background
+
+Per the parent audit (`docs/audits/2026-05-18-kit-as-substrate-participant-vision.md`) section 7.1, library kit distribution evolves through three phases:
+
+- **Phase A (Bootstrap-resident):** kit declarations and body templates ship inside the substrate's own source tree (`implementations/rust/libprovekit/src/core/platform_semantics/<tag>.rs`, `menagerie/<lang>-language-signature/specs/body-templates/`). Today's state for better-sqlite3, pg, python-sqlite3, python-aiosqlite. No vendor commitment required.
+- **Phase B (Shim distribution):** shim packages sibling to library packages, distributed via each ecosystem's existing registry. Library author's commitment is zero; anyone can publish a shim.
+- **Phase C (Vendor adoption):** library author ships the `.proof` envelope inside the library's own package; shims become unnecessary for adopted libraries. Library author signs once; the official envelope supersedes the shim.
+
+This ruling governs Phase B. Phase C transitions inherit the same admission-tier mechanics (see §5 below).
+
+## §1. Naming convention per ecosystem
+
+Shim packages follow each ecosystem's natural namespacing convention. The substrate's namespace is `provekit-shim` (kebab-case where ecosystems use flat namespaces; scoped where ecosystems support scoping; reverse-DNS where ecosystems use Java-style groupIds).
+
+| Ecosystem | Shim package name pattern | Example |
+|---|---|---|
+| Cargo (Rust) | `provekit-shim-<library-tag>` | `provekit-shim-rusqlite` |
+| Pip (Python) | `provekit-shim-<library-tag>` | `provekit-shim-python-sqlite3` |
+| npm (JS/TS) | `@provekit-shim/<library-tag>` | `@provekit-shim/typescript-better-sqlite3` |
+| Maven (Java) | `org.provekit-shim:<library-tag>-proof` | `org.provekit-shim:java-sqlite-jdbc-proof` |
+
+The `<library-tag>` field is the SUBSTRATE's canonical library tag (the second component produced by `split_library_surface`), not the ecosystem-specific package name. Example: `provekit-shim-sqlite-jdbc` (substrate tag) even though the corresponding Maven library artifact is `org.xerial:sqlite-jdbc`.
+
+The substrate discovers shim packages by scanning each ecosystem's installed dependencies for matches against these naming patterns. Per §3, the discovery uses each ecosystem's standard resolution mechanism.
+
+## §2. `.proof` location per ecosystem: kit-declared, not substrate-imposed
+
+Each shim package's `.proof` envelope lives at a location declared by the kit's publication metadata, following each ecosystem's standard package conventions. The substrate does NOT impose a single per-ecosystem path; it consults each ecosystem's standard package-resolution mechanism.
+
+Standard ecosystem conventions (informational; each kit follows its ecosystem's natural pattern):
+
+| Ecosystem | Package format | Conventional `.proof` location | Substrate access |
+|---|---|---|---|
+| Cargo | crate | crate asset (e.g., `assets/provekit.proof` via `include_bytes!`) | Read from cargo's source-dir resolution |
+| Pip | wheel / sdist | `provekit_shim_<tag>/provekit.proof` per `pyproject.toml` package-data | Read from `site-packages` directly |
+| npm | tar | `provekit.proof` at package root (or `dist/` per `package.json` files) | Read from `node_modules` walk |
+| Maven | jar / ear | `META-INF/provekit/provekit.proof` (JVM classpath convention) | Unzip jar, read META-INF |
+
+These are conventional; the kit's published metadata is authoritative. The substrate's shim-discovery primitive consults each ecosystem's standard package-resolution mechanism and locates the `.proof` per the kit's published location.
+
+## §3. Substrate discovery: extends existing kit-dispatch tiered resolution
+
+The substrate already has tiered kit discovery at `implementations/rust/provekit-cli/src/kit_dispatch.rs:521-583`:
+
+1. Project-local manifest (`.provekit/lift/<surface>/manifest.toml`).
+2. Env-var override (`PROVEKIT_BIND_LIFT_<LANG>_BIN`).
+3. Built-in convention (workspace-relative compile-time path).
+4. PATH probe (`provekit-bind-lift-<source_lang>` on PATH).
+
+Shim-package discovery slots in as **tier 3.5**, between built-in convention and PATH probe. The shim-discovery primitive consults each ecosystem's standard resolution:
+
+- Cargo: parse `Cargo.toml` / `cargo metadata` output for `provekit-shim-*` dependencies.
+- Pip: walk `site-packages` for packages matching `provekit-shim-*` prefix.
+- Maven: scan classpath / pom dependency graph for `org.provekit-shim:*` artifacts.
+- npm: walk `node_modules` (per nested-resolution semantics) for `@provekit-shim/*` packages.
+
+Per-ecosystem discovery implementations live as separate sub-issues (see §6). Each implementation reads the kit's published metadata to locate the `.proof` envelope.
+
+**Native overriding:** the existing tier 2 env-var override and tier 1 project-local manifest work transparently. A consumer who wants to override a shim's `.proof` location (or substitute a local development version) sets the existing env var or manifest entry. No new override mechanism added.
+
+## §4. Versioning via content-addressed multi-pinning
+
+The substrate does NOT use version-range strings to express shim coverage. Per paper 04 §4.1 (rank-N tuple pinning) and paper 14 §L6 (CVE blast-radius is SELECT), version-range strings are precisely what the substrate dissolves into content-addressed pin sets.
+
+### §4.1 Bound library CIDs
+
+Each shim's `.proof` envelope carries a `bound_library_cids` field (or equivalent shape per the binding-memento spec):
+
+```
+bound_library_cids: [<library-version-CID-1>, <library-version-CID-2>, ...]
+```
+
+Each CID is the content-addressed library version (the bytes of the released library at that version's tag/commit/release-artifact) the shim asserts bindings against. The shim publisher computes the CID over the library's release-artifact bytes (per the ecosystem's release convention: cargo's released crate bytes, npm's tarball bytes, Maven's jar bytes, pip's wheel bytes).
+
+### §4.2 Discovery-time verification
+
+At substrate-CLI time, the shim-discovery primitive:
+
+1. Locates the shim package (per §3).
+2. Reads the shim's `.proof` envelope's `bound_library_cids` set.
+3. Computes the CID of the user's installed library version (the bytes of the library at the user's installed version).
+4. Verifies the installed library's CID is in the shim's `bound_library_cids` set.
+
+If yes: admit the shim's bindings.
+If no: refuse loudly via gap record (per existing trichotomy refuse-leg ruling at `docs/plans/2026-05-18-refuse-leg-short-circuit-ruling.md`). The substrate is honest about coverage; the consumer sees a clear "shim does not cover this library version" message.
+
+### §4.3 Maintenance posture
+
+Shim publishers extend the `bound_library_cids` set as they verify compatibility against new library releases. A library's patch release (no semantic change to surface ops) usually requires the shim publisher to add the new patch version's CID to the set after testing. A library's major release (potentially changing surface op semantics) requires a new shim release with a re-evaluated bound set.
+
+Per paper 14 §L6's blast-radius reasoning: when a vulnerable library version emerges, the substrate's `bound_library_cids` SELECT identifies every shim that admits the vulnerable CID. CVE blast-radius is a content-addressed query, not a prose exercise over version-range strings.
+
+### §4.4 Phase A / Phase B / Phase C coexistence
+
+Phase A bootstrap-resident kits also use `bound_library_cids` (extending the in-source kit declarations to carry the field). The mechanism is uniform: every kit declaration in every phase pins library CIDs the same way.
+
+When a vendor adopts (Phase C transition), the library's own published `.proof` envelope carries `bound_library_cids = [<this-version's-CID>]` (single entry per release). The shim and the Authored envelope coexist; consumer policy (§5) decides which to trust.
+
+## §5. Trust via paper 23's admission tier model
+
+The substrate does NOT enforce shim trust centrally. Per paper 23 §6, trust is consumer-policy-driven through four admission tiers.
+
+### §5.1 Four admission tiers
+
+| Tier | Source | Signature | Trust currency |
+|---|---|---|---|
+| Authored | Library author | Library author's key | Author's signature |
+| Self-Attested | Library author asserts without independent discharge | Author's key | Author's assertion |
+| Third-party (Inferred) | Third party writes bindings; author hasn't shipped envelope | Third party's key | Third-party signer |
+| Third-party (Discharged) | Third party bindings + independent prover discharge | Third party + prover keys | Discharge proof verification |
+
+### §5.2 Phase B shims are Third-party (Inferred)
+
+Trinity-demo shims published by the provekit-project (or trusted maintainers acting as third parties) ship as the Third-party (Inferred) tier. The shim's `.proof` envelope is signed by the publisher's key; the consumer's verifier policy decides whether to trust the publisher's key.
+
+The provekit-project's signing key (per project memory `reference_provekit_provenance_keys`) is the initial bootstrap trust anchor. The Ed25519 key at vault `secret/provekit/provenance-ed25519` signs shims published by the project. Consumer verifier policies that trust the provekit-project key admit these shims at the Third-party (Inferred) tier.
+
+Additional trusted maintainers (community contributors who establish reputation) can publish shims under their own keys; consumer policies decide independently whether to trust those publishers.
+
+### §5.3 Phase C transition: Inferred → Authored
+
+When a library author absorbs the shim and ships their own `.proof` envelope (Phase C / Authored tier), the substrate's discovery encounters both envelopes simultaneously. The consumer's policy resolves the conflict:
+
+- Default policy: Authored supersedes Third-party (Inferred). Library author's signature is canonical.
+- Consumer override: a consumer who specifically trusts a third-party shim's discharge work over the library author's silence can configure a policy that prefers Third-party (Discharged) over Authored.
+
+Both envelopes remain available; neither mechanically supersedes the other. Consumer policy decides per paper 23 §6's framing: "package-author keys are the trust currency, and the trust is on bindings, not on the right to ship a package."
+
+### §5.4 Per-ecosystem signature mechanisms
+
+The substrate's verifier reads each ecosystem's standard signature infrastructure:
+
+- Cargo: crates.io publisher verification; sigstore-rs (when wired).
+- Pip: PEP 740 (sigstore-based signing; when wired).
+- Maven: GPG signatures (Maven Central infrastructure; required for Central publication).
+- npm: sigstore via npm provenance + package signing (when wired).
+
+Per-ecosystem signature-verification implementations live as separate sub-issues (see §6). The substrate's verifier composes consumer policy + ecosystem signature mechanism + admission-tier table at discovery time.
+
+### §5.5 No substrate-central enforcement
+
+The substrate provides:
+- The four admission tiers (paper 23 §6).
+- The signature-reading infrastructure per ecosystem.
+- The verifier discipline that composes consumer policy with admission tier and signer key.
+
+The substrate does NOT provide:
+- A central allowlist of trusted publishers.
+- A central revocation registry.
+- A strict-mode override that forces tier-N-or-refuse.
+- A consumer-policy template that overrides individual configuration.
+
+Consumer policy is the gate. Substrate is uniform infrastructure.
+
+## §6. Implementation sub-issues
+
+This ruling unblocks four implementation sub-issues, one per ecosystem. Each sub-issue:
+
+1. Implements the per-ecosystem shim-discovery primitive (parsing the ecosystem's metadata, locating `.proof` envelopes, reading them per §2's conventional location).
+2. Implements the per-ecosystem signature-verification adapter (consuming the ecosystem's standard signing infrastructure per §5.4).
+3. Adds a new `dispatch_shim_resolve(library_tag, ecosystem) -> Option<KitDeclaration>` primitive call in `implementations/rust/provekit-cli/src/kit_dispatch.rs` at tier 3.5.
+4. Files end-to-end tests verifying the Trinity demo's shim discovery for the affected ecosystem.
+
+Sub-issues to file (not yet filed; each references this ruling):
+
+- D13a-Cargo: rusqlite shim package + cargo discovery primitive + sigstore-rs verification.
+- D13a-Pip: python-sqlite3 shim package + pip discovery primitive + PEP 740 verification.
+- D13a-Maven: sqlite-jdbc shim package + Maven discovery primitive + GPG signature verification.
+- D13a-Npm: better-sqlite3 / pg shim packages + npm discovery primitive + sigstore verification.
+
+## §7. What this ruling deliberately does NOT do
+
+- Does NOT enumerate per-ecosystem packaging mechanics in detail. Each kit's publication is the kit author's responsibility per the ecosystem's standard conventions.
+- Does NOT pre-allowlist any signer key. Consumer policy decides.
+- Does NOT impose substrate-side restrictions on shim publishers. Permissionless publication per paper 23 §8.
+- Does NOT block adoption: provekit-project ships the bootstrap shims; community publishers can ship additional shims; vendor adoption transitions Phase B → Phase C transparently.
+- Does NOT introduce a "ProvekIt shim registry" central infrastructure. The catalog is the union of every published shim across every ecosystem; federation is the ecosystem's existing infrastructure.
+
+## §8. Cross-references
+
+- Paper 04 §4.1 (rank-N tuple pinning model): `docs/papers/04-vertical-stack-and-standardization.md`.
+- Paper 14 §L6 (CVE blast-radius is SELECT over content-addressed facts): `docs/papers/14-after-trust-the-universal-correctness-bundle.md`.
+- Paper 22 (migration as source transformation; the workflow shims participate in): `docs/papers/22-after-vendoring-migration-as-source-transformation.md`.
+- Paper 23 §6 (proof envelope carries the binding; four admission tiers): `docs/papers/23-after-packages-the-proof-envelope-carries-the-binding.md`.
+- Project memory `project_provekit_pin_all_three`: k(I)=t requires all three pinned per run.
+- Project memory `reference_provekit_provenance_keys`: substrate's signing key infrastructure.
+- Rules of engagement: `docs/explanation/substrate-uniform-pattern.md`.
+- Parent audit row D13a: `docs/audits/2026-05-18-kit-as-substrate-participant-vision.md` section 6.
+- Phase A/B/C distribution evolution: parent audit section 7.1.
+- Refuse-leg ruling: `docs/plans/2026-05-18-refuse-leg-short-circuit-ruling.md`.
+- Existing kit-dispatch tiered resolution: `implementations/rust/provekit-cli/src/kit_dispatch.rs:521-583`.
+
+## §9. Discipline
+
+This ruling formalizes the answers to four ecosystem-specific architect calls; it does NOT extend the substrate's primitive set. Every mechanism in this ruling routes through existing substrate machinery:
+
+- Naming convention is a packaging convention; ecosystem-natural.
+- `.proof` location is kit-declared; substrate respects.
+- Versioning is multi-pinning per existing rank-N tuple model.
+- Trust is consumer-policy-driven per paper 23's admission tiers.
+
+If a future shim-distribution PR proposes new substrate machinery, STOP and re-read this ruling + the substrate-uniform-pattern doc.
