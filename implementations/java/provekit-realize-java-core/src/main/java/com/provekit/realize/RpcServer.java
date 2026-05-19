@@ -39,6 +39,8 @@ public final class RpcServer {
             switch (method) {
                 // PEP 1.7.0 methods
                 case "provekit.plugin.describe" -> sendResponse(id, describeResult());
+                case "provekit.plugin.platform_semantics" ->
+                    sendResponse(id, PlatformSemanticsDeclaration.toJson());
                 case "provekit.plugin.invoke" -> {
                     // handleInvoke returns a full JSON object: {"source":..., "is_stub":...}
                     String resultObj = handleInvoke(line);
