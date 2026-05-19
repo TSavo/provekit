@@ -142,7 +142,9 @@ def emit_stub(
     if concept_lines:
         body = "\n".join([*concept_lines, "pass"])
     else:
-        use_term_shape = isinstance(term_shape, dict) and bool(term_shape)
+        use_term_shape = isinstance(term_shape, dict) and (
+            bool(term_shape) or bool(operand_bindings)
+        )
         if use_term_shape:
             missing = missing_templates_for_term_shape(
                 function,

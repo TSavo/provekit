@@ -573,6 +573,23 @@ def test_term_shape_sidecar_renders_safe_divide_then_double_source_symbols() -> 
     assert fn(-5, 2) == -1
 
 
+def test_empty_term_shape_uses_root_operand_binding_literal() -> None:
+    result = emit_stub(
+        function="",
+        params=[],
+        param_types=[],
+        return_type="str",
+        concept_name="UNNAMED-CONCEPT-1",
+        term_shape={},
+        operand_bindings=[{"position": [], "symbol": '"hello"'}],
+        source_function_name="hello",
+    )
+
+    assert result["source"] == "def hello():\n    return \"hello\"\n"
+    namespace = _compiled_namespace(result["source"])
+    assert namespace["hello"]() == "hello"
+
+
 def test_term_shape_sidecar_wins_over_lossy_named_tree_for_nested_unary_ops() -> None:
     lossy_tree = {
         "conceptName": "concept:seq",
