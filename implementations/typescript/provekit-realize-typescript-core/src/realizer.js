@@ -15,8 +15,8 @@ const coreRealizer = createRealizer(BODY_TEMPLATE_REL);
 function createRealizer(bodyTemplateRel) {
   let cachedEntries = null;
 
-  function emitStub({ functionName, params, paramTypes, returnType, conceptName, mode }) {
-    const body = bodyTemplateFor(conceptName, params, paramTypes, returnType, mode);
+  function emitStub({ functionName, params, paramTypes, returnType, conceptName, mode, namedTermTree }) {
+    const body = bodyTemplateFor(conceptName, params, paramTypes, returnType, mode, namedTermTree);
     const isStub = body === null;
     const finalBody = body ?? `throw new Error("provekit-bind canonical: ${conceptName}");`;
     return {
@@ -26,19 +26,17 @@ function createRealizer(bodyTemplateRel) {
     };
   }
 
-  function bodyTemplateFor(conceptName, params, paramTypes, returnType, mode) {
+  function bodyTemplateFor(conceptName, params, paramTypes, returnType, mode, namedTermTree) {
     const mappedParamTypes = paramTypes.map(mapSourceType);
     const mappedReturnType = mapSourceType(returnType);
+    const nttArgsShape = argsShapeFromNamedTermTree(namedTermTree, conceptName);
+    const candidateArgShapes = argShapeCandidates(nttArgsShape, mappedParamTypes, params.length);
     const candidateNames = [conceptName, conceptName.replace(/^concept:/, "")];
     for (const entry of entries()) {
       if (!candidateNames.includes(entry.concept_name)) continue;
       if (!modeMatches(entry.mode, mode)) continue;
       const guard = entry.signature_guard ?? {};
-      if (Number.isInteger(guard.min_params) && params.length < guard.min_params) continue;
-      if (Number.isInteger(guard.max_params) && params.length > guard.max_params) continue;
-      if (Array.isArray(guard.requires_param_types)) {
-        if (!arrayEquals(mappedParamTypes, guard.requires_param_types)) continue;
-      }
+      if (!signatureGuardMatches(guard, candidateArgShapes)) continue;
       if (typeof guard.requires_return_type === "string" && mappedReturnType !== guard.requires_return_type) continue;
       const emissionTemplate = entry.emission_template ?? {};
       if (emissionTemplate.kind !== "verbatim" || typeof emissionTemplate.template !== "string") continue;
@@ -66,6 +64,150 @@ function createRealizer(bodyTemplateRel) {
     bodyTemplateFor,
     emitStub,
   };
+}
+
+function argShapeCandidates(nttArgsShape, mappedParamTypes, paramCount) {
+  const candidates = [];
+  if (Array.isArray(nttArgsShape)) {
+    candidates.push({ count: nttArgsShape.length, types: nttArgsShape });
+  }
+  candidates.push({ count: paramCount, types: mappedParamTypes });
+  return candidates;
+}
+
+function signatureGuardMatches(guard, candidateArgShapes) {
+  return candidateArgShapes.some((shape) => {
+    if (Number.isInteger(guard.min_params) && shape.count < guard.min_params) return false;
+    if (Number.isInteger(guard.max_params) && shape.count > guard.max_params) return false;
+    if (Array.isArray(guard.requires_param_types)) {
+      return arrayEquals(shape.types, guard.requires_param_types);
+    }
+    return true;
+  });
+}
+
+function argsShapeFromNamedTermTree(namedTermTree, fallbackConceptName) {
+  if (!isPlainObject(namedTermTree) || !Array.isArray(namedTermTree.args)) return null;
+  const parentConceptName = stringField(namedTermTree, ["conceptName", "concept_name"]) ?? fallbackConceptName;
+  return namedTermTree.args.map((arg, index) => typeDescriptorForNamedTermArg(arg, parentConceptName, index));
+}
+
+function typeDescriptorForNamedTermArg(arg, parentConceptName, index) {
+  const explicit = explicitTypeDescriptor(arg);
+  if (explicit !== null) return explicit;
+
+  const parentFormal = formalArgType(parentConceptName, index);
+  if (parentFormal !== null) return parentFormal;
+
+  if (isPlainObject(arg)) {
+    const childConcept = stringField(arg, ["conceptName", "concept_name"]);
+    const conceptType = typeDescriptorFromConceptName(childConcept);
+    if (conceptType !== null) return conceptType;
+  }
+
+  // NamedTermTree currently carries structure, concept names, operation kind,
+  // and shape CIDs, but not source language types for arbitrary leaves. Precise
+  // guards that cannot use the known concept formal sorts will miss this
+  // descriptor and fall back to the legacy function paramTypes path.
+  return "object";
+}
+
+function explicitTypeDescriptor(value) {
+  if (!isPlainObject(value)) return null;
+  const direct = stringField(value, [
+    "paramType",
+    "param_type",
+    "type",
+    "typeName",
+    "type_name",
+    "languageType",
+    "language_type",
+    "sourceType",
+    "source_type",
+  ]);
+  if (direct !== null) return typeDescriptorFromSortName(direct) ?? mapSourceType(direct);
+
+  const sort = value.sort;
+  if (typeof sort === "string") return typeDescriptorFromSortName(sort) ?? mapSourceType(sort);
+  if (isPlainObject(sort)) {
+    const sortName = stringField(sort, ["name", "sortName", "sort_name"]);
+    if (sortName !== null) return typeDescriptorFromSortName(sortName) ?? mapSourceType(sortName);
+  }
+  return null;
+}
+
+function formalArgType(conceptName, index) {
+  const name = normalizeConceptName(conceptName);
+  const sqlArgs = ["string", "unknown[]"];
+  switch (name) {
+    case "sql-query":
+    case "sql-execute":
+    case "insert-and-get-id":
+      return sqlArgs[index] ?? null;
+    default:
+      return null;
+  }
+}
+
+function typeDescriptorFromConceptName(conceptName) {
+  return typeDescriptorFromSortName(normalizeConceptName(conceptName));
+}
+
+function typeDescriptorFromSortName(sortName) {
+  const name = normalizeConceptName(sortName);
+  switch (name) {
+    case "sql":
+    case "sql-literal":
+    case "string":
+    case "str":
+      return "string";
+    case "sqlargs":
+    case "sql-args":
+    case "array":
+    case "list":
+      return "unknown[]";
+    case "bool":
+    case "boolean":
+      return "boolean";
+    case "float":
+    case "f32":
+    case "f64":
+    case "i8":
+    case "i16":
+    case "i32":
+    case "i64":
+    case "int":
+    case "integer":
+    case "number":
+    case "u8":
+    case "u16":
+    case "u32":
+    case "u64":
+      return "number";
+    case "()":
+    case "unit":
+    case "void":
+      return "void";
+    default:
+      return null;
+  }
+}
+
+function normalizeConceptName(name) {
+  if (typeof name !== "string") return "";
+  return name.trim().replace(/^concept:/, "").toLowerCase();
+}
+
+function stringField(value, names) {
+  if (!isPlainObject(value)) return null;
+  for (const name of names) {
+    if (typeof value[name] === "string" && value[name].trim() !== "") return value[name];
+  }
+  return null;
+}
+
+function isPlainObject(value) {
+  return value !== null && typeof value === "object" && !Array.isArray(value);
 }
 
 function mapSourceType(src) {
