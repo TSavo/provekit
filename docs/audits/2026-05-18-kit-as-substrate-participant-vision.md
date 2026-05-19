@@ -129,33 +129,45 @@ For each CLI verb, audit whether it composes substrate primitives or reinvents t
 
 **Flagged finding** (verified 2026-05-18): `render_migrated_source` is functionally a fixture selector, not a renderer. Three sub-functions (`render_ts_pg_source`, `render_python_sqlite3_source`, `render_python_aiosqlite_source`) each emit a multi-hundred-line raw string literal of the predetermined migrated source. The migrate tests (`migrate_async_rewrite_test.rs`, `stage3_cross_language_test.rs`) assert against these literals. The test is verifying that the function returns the string the function contains. The substrate's actual realize plugins are bypassed entirely in this code path. Dissolution is tracked in audit row D5 / issue #1229.
 
-### 5.2 cmd_lift.rs — TODO
+### 5.2-5.7 cmd_*.rs triage matrix (audited 2026-05-18 per issue #1235)
 
-Initial reading: dispatches via `dispatch_bind_lift`. Need to verify whether any hardcoded paths exist for specific source languages.
+All 26 remaining `cmd_*.rs` files audited. Categories: **(a)** thin composition of substrate primitives; **(b)** on-critical-path with reinventions; **(c)** off-critical-path for the Trinity demo / substrate-correctness work; **(d)** substrate-only primitive (no kit dispatch by construction).
 
-### 5.3 cmd_bind.rs — TODO
+| Command | Category | Notes |
+|---|---|---|
+| `cmd_agent.rs` | (c) | Plugin enumeration / tool descriptor emission. Substrate-orthogonal. |
+| `cmd_ask.rs` | (c) | Librarian formula query. Substrate-orthogonal. |
+| `cmd_bind.rs` | (a) | Substrate-only algebra pass; dispatches exam manifest via `dispatch_exam_manifest` primitive. `RuntimeMode` enum is substrate-coherent (Monitor/Emitter/Witness/Gate per R5 amendment ruling). |
+| `cmd_bind_migrate.rs` | **(b)** | **FIVE reinventions tracked in #1226-#1230. The only command with substantive reinventions on the substrate-correctness path.** |
+| `cmd_ci.rs` | (c) | CICP reference admission. `lang -> make prove-X` (`cmd_ci.rs:755-767`) is build-infrastructure alias not substrate dispatch. |
+| `cmd_compose.rs` | (d) | Compose primitive JSON-RPC subprocess transport per CCP §6.3. `WireAtomicKind` enum (Load/Store/Rmw/Cas) is substrate-coherent. |
+| `cmd_dump.rs` | (c) | Pretty-print catalog members + bodies. Substrate-orthogonal. |
+| `cmd_exam.rs` | (a) | Dispatches via PEP 1.7.0 exam-manifest primitive. |
+| `cmd_fix.rs` | (c) | Agent-driven patch workflow. Substrate-orthogonal. |
+| `cmd_hash.rs` | (d) | `blake3-512` of input. Substrate primitive. |
+| `cmd_implicate.rs` | (d) | Substrate primitive (implication over CIDs). |
+| `cmd_init.rs` | (c) | Project initialization. Substrate-orthogonal. |
+| `cmd_lift.rs` | (a) | Dispatches via lift-plugin protocol primitives. |
+| `cmd_link.rs` | (c) | Bridge linkage per `2026-05-03-bridge-linkage-protocol.md`. |
+| `cmd_lower.rs` | (a) | Dispatches via `dispatch_lower_witness` / `dispatch_realize`. `LowerMode` enum (Witness) is substrate-coherent. |
+| `cmd_mint.rs` | (a) | Lift-plugin protocol dispatcher. |
+| `cmd_must.rs` | (c) | Agent-driven English-to-contract translation. Substrate-orthogonal. |
+| `cmd_package.rs` | (a) | Supply-chain receipt helpers. Related to D13a shim distribution but no reinvention. |
+| `cmd_plugin.rs` | (a) | PEP 1.7.0 plugin flag plumbing. |
+| `cmd_proof.rs` | (a) | Proof artifact workflow. |
+| `cmd_protocol.rs` | (c) | Protocol catalog evolution. Substrate-orthogonal. |
+| `cmd_prove.rs` | (a) | Six-stage pipeline + lift-plugin conformance gate. |
+| `cmd_search.rs` | (c) | Pattern search. Substrate-orthogonal. |
+| `cmd_transport.rs` | (a) | Cross-language transport via substrate primitives. Lang alias table (`cmd_transport.rs:377-385`: `py` → `python`, `ts` → `typescript`) is normalization not reinvention. |
+| `cmd_verify_protocol.rs` | (a) | Catalog verification. |
+| `cmd_version.rs` | (c) | Version info. Substrate-orthogonal. |
+| `cmd_witness.rs` | (a) | Mints witness memento via substrate primitive. |
 
-Initial reading: `BindKit::transform` is substrate-only. No language/library dispatch expected. Verify.
+**Summary:** of 27 commands (including `cmd_bind_migrate`), 1 has substantive reinventions (already tracked); 12 are thin compositions or substrate-only primitives; 14 are off-critical-path for the Trinity demo work. The substrate is largely coherent at the workflow layer; the reinventions cluster in `cmd_bind_migrate.rs`. No additional issues filed from this triage — #1226-#1230 capture the dissolution work.
 
-### 5.4 cmd_lower.rs — TODO
+### 5.8 cmd_materialize.rs — DOES NOT EXIST
 
-Initial reading: dispatches via `dispatch_lower_witness`. Verify for hardcoded target-language paths.
-
-### 5.5 cmd_transport.rs — TODO
-
-Per the closed #1217 (subsumed into this audit), check for direct-shape walks and any hardcoded transport logic.
-
-### 5.6 cmd_materialize.rs — DOES NOT EXIST
-
-The materialize verb is implied by the vision (Sir's "give me SQL" workflow) but no `cmd_materialize.rs` exists. Implementation is part of vision realization.
-
-### 5.7 Other commands — TODO
-
-The following commands need quick triage to determine whether they're on the Trinity demo critical path:
-
-`cmd_agent.rs`, `cmd_ask.rs`, `cmd_ci.rs`, `cmd_compose.rs`, `cmd_dump.rs`, `cmd_exam.rs`, `cmd_fix.rs`, `cmd_hash.rs`, `cmd_implicate.rs`, `cmd_init.rs`, `cmd_link.rs`, `cmd_mint.rs`, `cmd_must.rs`, `cmd_package.rs`, `cmd_plugin.rs`, `cmd_proof.rs`, `cmd_protocol.rs`, `cmd_prove.rs`, `cmd_search.rs`, `cmd_verify_protocol.rs`, `cmd_version.rs`, `cmd_witness.rs` (27 total).
-
-For each: one-line summary + verdict (on path / off path / reinvention-suspect).
+The materialize verb is implied by the vision (Sir's "give me SQL" workflow) but no `cmd_materialize.rs` exists. Implementation is tracked in #1234 (audit row D11).
 
 ## 6. Dissolution roadmap
 
