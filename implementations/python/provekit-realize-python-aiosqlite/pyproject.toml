@@ -7,7 +7,7 @@ name = "provekit-realize-python-aiosqlite"
 version = "0.1.0"
 description = "PEP 1.7.0 Python aiosqlite realize kit for ProvekIt bind canonical output"
 requires-python = ">=3.11"
-dependencies = []
+dependencies = ["blake3>=1.0.0"]
 
 [project.scripts]
 provekit-realize-python-aiosqlite = "provekit_realize_python_aiosqlite.__main__:main"
