@@ -8,10 +8,10 @@ pub mod better_sqlite3;
 pub mod java;
 pub mod pg;
 pub mod python_aiosqlite;
-pub mod python_sqlite3;
 mod python_common;
 pub mod python_lift_source;
 pub mod python_realize_core;
+pub mod python_sqlite3;
 pub mod typescript;
 
 mod c_realize_core {
@@ -177,7 +177,11 @@ fn merge_declarations(
     // occurrence, so lang values that share a CID with binding values are kept).
     let mut seen_cids: BTreeMap<String, ()> = BTreeMap::new();
     let mut merged_values: Vec<DimensionValueMemento> = Vec::new();
-    for value in lang.dimension_values.into_iter().chain(binding.dimension_values) {
+    for value in lang
+        .dimension_values
+        .into_iter()
+        .chain(binding.dimension_values)
+    {
         if seen_cids.insert(value.cid.clone(), ()).is_none() {
             merged_values.push(value);
         }
@@ -218,11 +222,7 @@ mod binding_compose_tests {
     fn one_tag(op_cid: &str, dim: &str, value_cid: &str) -> PlatformSemanticTag {
         let mut dimensions = BTreeMap::new();
         dimensions.insert(dim.to_string(), value_cid.to_string());
-        PlatformSemanticTag::new(
-            TEST_KIT_CID.to_string(),
-            op_cid.to_string(),
-            dimensions,
-        )
+        PlatformSemanticTag::new(TEST_KIT_CID.to_string(), op_cid.to_string(), dimensions)
     }
 
     fn decl_with(op_cid: &str, dim: &str, value_name: &str) -> PlatformSemanticsDeclaration {
@@ -242,7 +242,10 @@ mod binding_compose_tests {
         let binding = decl_with(TEST_OP_B, "BindDim", "BindValue");
         let merged = merge_declarations(lang, binding);
         let op_cids: Vec<&str> = merged.tags.iter().map(|t| t.op_cid.as_str()).collect();
-        assert!(op_cids.contains(&TEST_OP_A), "language op must be in merged");
+        assert!(
+            op_cids.contains(&TEST_OP_A),
+            "language op must be in merged"
+        );
         assert!(op_cids.contains(&TEST_OP_B), "binding op must be in merged");
         assert_eq!(merged.dimension_values.len(), 2);
     }
@@ -274,5 +277,110 @@ mod binding_compose_tests {
             result.is_none(),
             "unknown lang + unknown binding must return None"
         );
+    }
+}
+
+#[cfg(test)]
+mod sort_admission_tests {
+    use super::*;
+    use crate::core::types::OpCoverageVerdict;
+    use crate::effect_propagation::ChangedCallsite;
+    use provekit_ir_types::{DimensionValueMemento, IrFormula, IrTerm};
+
+    const CONCEPT_LITERAL_CID: &str = "blake3-512:02804a0bdbd2d5d541544451f41ee8d0d340baf28f70bd5abf5844e87a96aedd7b5ab3453962754a020679cc8c6b3d1f4cf0336a7ad8118128d42ac667abf2d6";
+    const NULL_SORT_CID: &str = "blake3-512:62f6040bd3f414c1e6c2b7bdf276669cd5613b33cb508a81170170064ca3ffba771a4b0002dc52e059fce5f9f63a1874ef71bd4ec89ae06e89c87a3e91aac3b5";
+
+    fn sort_admission_value(declaration: &PlatformSemanticsDeclaration) -> &DimensionValueMemento {
+        let tag = declaration
+            .tags
+            .iter()
+            .find(|tag| tag.op_cid == CONCEPT_LITERAL_CID)
+            .expect("kit must declare concept:literal");
+        let sort_admission_cid = tag
+            .dimensions
+            .get("SortAdmission")
+            .expect("concept:literal tag must carry SortAdmission");
+        declaration
+            .dimension_values
+            .iter()
+            .find(|value| &value.cid == sort_admission_cid)
+            .expect("SortAdmission CID must have a dimension value memento")
+    }
+
+    fn formula_admits_sort(formula: &IrFormula, name: &str, cid: &str) -> bool {
+        let IrFormula::Atomic { name: atom, args } = formula else {
+            return false;
+        };
+        atom == "admits_sorts"
+            && args.iter().any(|term| {
+                matches!(
+                    term,
+                    IrTerm::Ctor { name: sort_name, args }
+                        if sort_name == name
+                            && matches!(
+                                args.as_slice(),
+                                [IrTerm::Ctor { name: sort_cid, args }] if sort_cid == cid && args.is_empty()
+                            )
+                )
+            })
+    }
+
+    #[test]
+    fn sort_admission_identical_java_python_sets_share_cid() {
+        let java = java::declaration();
+        let python = python_kit_declaration();
+        let java_value = sort_admission_value(&java);
+        let python_value = sort_admission_value(&python);
+
+        assert_eq!(
+            java_value.cid, python_value.cid,
+            "identical admitted sort sets must share SortAdmission CID"
+        );
+        assert_eq!(
+            java_value.value_name, python_value.value_name,
+            "identical admitted sort sets must use the same derived value name"
+        );
+        assert_eq!(
+            java_value.compare_to, python_value.compare_to,
+            "identical admitted sort sets must have identical compare_to formula"
+        );
+    }
+
+    #[test]
+    fn sort_admission_null_literal_diverges_python_to_rust_changed_callsite() {
+        let python = python_kit_declaration();
+        let rust = platform_semantics_for_lower_target("rust").expect("rust kit declaration");
+        let python_value = sort_admission_value(&python);
+        let rust_value = sort_admission_value(&rust);
+
+        assert!(
+            formula_admits_sort(&python_value.compare_to, "Null", NULL_SORT_CID),
+            "python SortAdmission must admit Null"
+        );
+        assert!(
+            !formula_admits_sort(&rust_value.compare_to, "Null", NULL_SORT_CID),
+            "rust SortAdmission must not admit Null"
+        );
+
+        let verdict = python
+            .compare_op_with(CONCEPT_LITERAL_CID, &rust)
+            .expect("declared concept:literal comparison must not error");
+
+        let divergence = match verdict {
+            OpCoverageVerdict::Divergent(divergence) => divergence,
+            other => panic!("expected SortAdmission divergence, got {other:?}"),
+        };
+        assert_eq!(divergence.dimension_name, "SortAdmission");
+
+        let changed = ChangedCallsite {
+            callsite_cid: "callsite:null-literal".to_string(),
+            dimension_name: Some(divergence.dimension_name),
+            effect: format!(
+                "platform-semantic-divergence:{}->{}",
+                divergence.source_value_cid, divergence.target_value_cid
+            ),
+        };
+        assert_eq!(changed.dimension_name.as_deref(), Some("SortAdmission"));
+        assert_eq!(changed.callsite_cid, "callsite:null-literal");
     }
 }

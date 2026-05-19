@@ -18,9 +18,9 @@ use crate::core::types::{
 
 const EXAM_MANIFEST_CONFORMANCE_REASON: &str =
     "loads exam-manifest mementos via PEP 1.7.0; no target source emission";
-pub const DEFAULT_EXAM_MANIFEST_CID: &str = "blake3-512:32af210992406289b0863d6f24ab3f05e6707034fd473fe7a8e323edda0376ce018f9ba8a31d00c4e3c4134140b1f3e06cfad6a0afde762778032035066475cc";
+pub const DEFAULT_EXAM_MANIFEST_CID: &str = "blake3-512:b38426ba10ee3a6c28e9e32cae9aa65cfb5b750950464d1e67e9d669956bd40288d25c247d0ec2d638fd63e2d235d944f419055c0374c78488b4be98da040451";
 pub const DEFAULT_EXAM_MANIFEST_JSON: &str = include_str!(
-    "../../../../menagerie/concept-shapes/exams/v1.1.blake3-512:32af210992406289b0863d6f24ab3f05e6707034fd473fe7a8e323edda0376ce018f9ba8a31d00c4e3c4134140b1f3e06cfad6a0afde762778032035066475cc.json"
+    "../../../../menagerie/concept-shapes/exams/v1.1.blake3-512:b38426ba10ee3a6c28e9e32cae9aa65cfb5b750950464d1e67e9d669956bd40288d25c247d0ec2d638fd63e2d235d944f419055c0374c78488b4be98da040451.json"
 );
 
 pub struct ExamManifestKit {}
@@ -145,8 +145,10 @@ impl Kit for ExamManifestKit {
 }
 
 pub fn load_default_exam_manifest() -> Result<ExamManifestMemento, KitError> {
-    let manifest: ExamManifestMemento = serde_json::from_str(DEFAULT_EXAM_MANIFEST_JSON)
-        .map_err(|error| KitError::Transformation(format!("parse default exam manifest: {error}")))?;
+    let manifest: ExamManifestMemento =
+        serde_json::from_str(DEFAULT_EXAM_MANIFEST_JSON).map_err(|error| {
+            KitError::Transformation(format!("parse default exam manifest: {error}"))
+        })?;
     validate_manifest(&manifest)?;
     if manifest.header.cid != DEFAULT_EXAM_MANIFEST_CID {
         return Err(KitError::Transformation(format!(

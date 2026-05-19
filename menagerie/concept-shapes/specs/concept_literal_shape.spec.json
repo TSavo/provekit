@@ -1,0 +1,44 @@
+{
+  "effects": {
+    "effects": []
+  },
+  "fn_name": "concept:literal",
+  "formal_sorts": [],
+  "formals": [],
+  "kind": "algorithm",
+  "post": {
+    "arity": [],
+    "arity_shape": {
+      "kind": "named",
+      "slots": []
+    },
+    "kind": "operation-contract",
+    "leaf_shape": {
+      "fields": [
+        {
+          "name": "value",
+          "role": "decoded logical literal value"
+        },
+        {
+          "name": "sort",
+          "role": "substrate-canonical sort CID"
+        }
+      ],
+      "kind": "named"
+    },
+    "operator": "literal",
+    "result": "Term",
+    "slot_terms": [],
+    "wp_note": "Classical value-tier literal leaf. The operation has zero operands; value and sort are properties of the term node, and sort cites a substrate-canonical sort CID from catalog/sorts."
+  },
+  "pre": {
+    "args": [],
+    "kind": "atomic",
+    "name": "true"
+  },
+  "return_sort": {
+    "args": [],
+    "kind": "ctor",
+    "name": "Term"
+  }
+}

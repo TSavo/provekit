@@ -14,8 +14,8 @@ use libprovekit::core::{
     verify, ArityShape, AritySlot, CKit, Canonical, Catalog, Cid, ConformanceDeclaration, Dialect,
     DomainClaim, DomainKind, FunctionContractDomain, HashMapCatalog, HashMapInputCatalog, Input,
     InputCatalog, Kit, KitRegistry, LanguageSignature, LiftKit, LiftPluginKit, OpCoverageVerdict,
-    Path, PathAlgebra, PathDocument, PathDocumentError, PathError, PlatformSemanticComparisonError,
-    PlatformSemanticsDeclaration, Refutation, Side, SlotSort, Term, Truth, Verb, Verdict, Witness,
+    Path, PathAlgebra, PathDocument, PathDocumentError, PathError, PlatformSemanticsDeclaration,
+    Refutation, Side, SlotSort, Term, Truth, Verb, Verdict, Witness,
 };
 use provekit_canonicalizer::{blake3_512_of, Value};
 use provekit_ir_types::{
@@ -61,6 +61,20 @@ const PYTHON_PLATFORM_CONCEPT_OP_CIDS: &[&str] = &[
     "blake3-512:5e788f0d551081f4e709e4418e01017fa9ae1c04963e7be2862fadad8a8434fafa204629fbec53e2e44624c195ac2e32c0410df25cf8ff3a4be672582f89109f",
     "blake3-512:ad958847b50cf07ddbb92d85ae488a5f983d5619e108476b42e519174cfcce883ecd637544a372b946bb45a1c22893c710bc9b08ea0569ad0e035b3babb6a409",
 ];
+
+const CONCEPT_LITERAL_CID: &str = "blake3-512:02804a0bdbd2d5d541544451f41ee8d0d340baf28f70bd5abf5844e87a96aedd7b5ab3453962754a020679cc8c6b3d1f4cf0336a7ad8118128d42ac667abf2d6";
+const SORT_BOOL_CID: &str = "blake3-512:0ee13bf3fd6b7ecfbee72dfbfc18a7c0ea7f1663de6cca43cefb36f5b4c03665452646094a7c296e819e75d683c6ce4821f3d7db3c3c78ae97f2d4e3451d2074";
+const SORT_BYTES_CID: &str = "blake3-512:7116ef6e62e6739b213a8394f975a53c771b89f08c36d27143827acfcfebc0e39e5b82c530be668c3cfd5ec6966ccaa42930b37fdb1f4ac25652a970be10fb6b";
+const SORT_FLOAT_CID: &str = "blake3-512:b979e70c4d5e53d9bdf13d6f08330be3c5b0714b8c770d69bbd05946b86c36df5274be8145a2683cc29c278155c9c1ee65b6897913524eecb9e4c89c71862f57";
+const SORT_INT_CID: &str = "blake3-512:30ffc51350121a7172f3e4064a33c45bbd345756979fccff6875cd2ab33e4964d098a99df80cfbdf1ec1a0738c5ac3476f0ff8f75589ea511d1acd82c74ecd58";
+const SORT_NULL_CID: &str = "blake3-512:62f6040bd3f414c1e6c2b7bdf276669cd5613b33cb508a81170170064ca3ffba771a4b0002dc52e059fce5f9f63a1874ef71bd4ec89ae06e89c87a3e91aac3b5";
+const SORT_STRING_CID: &str = "blake3-512:be8721d24849feb74c4721520bdba02d352a94f49253a627cd509127472aa1c47cbe99cb705cac4159b5365abcce0c9aaa4901fe67630827deb6be1f9daeea10";
+
+#[derive(Clone, Copy)]
+struct TestSort {
+    name: &'static str,
+    cid: &'static str,
+}
 
 fn pure_identity_contract(fn_name: &str, formal: &str) -> FunctionContractMemento {
     let formals = vec![formal.to_string()];
@@ -1325,7 +1339,7 @@ fn python_platform_semantics_wrappers_share_locked_dimension_values() {
     assert_python_platform_semantics(&lift);
 
     let values = libprovekit::core::platform_semantics::python_realize_core::dimension_values();
-    assert_eq!(values.len(), PYTHON_PLATFORM_DIMENSIONS.len());
+    assert_eq!(values.len(), PYTHON_PLATFORM_DIMENSIONS.len() + 1);
     for (dimension, value_name) in PYTHON_PLATFORM_DIMENSIONS {
         let value = values
             .iter()
@@ -1341,6 +1355,11 @@ fn python_platform_semantics_wrappers_share_locked_dimension_values() {
             }
         );
     }
+    let sort_admission = values
+        .iter()
+        .find(|candidate| candidate.dimension_name == "SortAdmission")
+        .expect("python kit must declare SortAdmission");
+    assert!(sort_admission.value_name.contains("Null"));
 }
 
 #[test]
@@ -1348,7 +1367,7 @@ fn dispatcher_returns_rust_platform_semantics_declaration() {
     let declaration =
         platform_semantics_for_lower_target("rust").expect("rust semantics are declared");
 
-    assert_eq!(declaration.tags.len(), 21);
+    assert_eq!(declaration.tags.len(), 22);
     assert!(declaration
         .tags
         .iter()
@@ -1369,6 +1388,9 @@ fn dispatcher_returns_rust_platform_semantics_declaration() {
         .tags
         .iter()
         .any(|tag| tag.dimensions.contains_key("BitwiseSemantics")));
+    assert!(declaration.tags.iter().any(|tag| {
+        tag.op_cid == CONCEPT_LITERAL_CID && tag.dimensions.contains_key("SortAdmission")
+    }));
 }
 
 #[test]
@@ -1405,8 +1427,37 @@ fn dispatcher_returns_java_platform_semantics_declaration() {
     let throw_arithmetic =
         java_dimension_value(&kit_cid, "NullSemantics", "ThrowArithmeticException");
     let twos_complement = java_dimension_value(&kit_cid, "BitwiseSemantics", "TwosComplement");
+    let sort_admission = sort_admission_dimension_value(
+        &kit_cid,
+        &[
+            TestSort {
+                name: "Int",
+                cid: SORT_INT_CID,
+            },
+            TestSort {
+                name: "Float",
+                cid: SORT_FLOAT_CID,
+            },
+            TestSort {
+                name: "String",
+                cid: SORT_STRING_CID,
+            },
+            TestSort {
+                name: "Bool",
+                cid: SORT_BOOL_CID,
+            },
+            TestSort {
+                name: "Bytes",
+                cid: SORT_BYTES_CID,
+            },
+            TestSort {
+                name: "Null",
+                cid: SORT_NULL_CID,
+            },
+        ],
+    );
 
-    assert_eq!(declaration.tags.len(), 10);
+    assert_eq!(declaration.tags.len(), 11);
     assert_java_tag(
         &declaration,
         ADD,
@@ -1479,6 +1530,12 @@ fn dispatcher_returns_java_platform_semantics_declaration() {
         &kit_cid,
         &[("BitwiseSemantics", &twos_complement.cid)],
     );
+    assert_java_tag(
+        &declaration,
+        CONCEPT_LITERAL_CID,
+        &kit_cid,
+        &[("SortAdmission", &sort_admission.cid)],
+    );
 }
 
 #[test]
@@ -1499,9 +1556,14 @@ fn dispatcher_returns_c_platform_semantics_declaration() {
     ]);
 
     for tag in &declaration.tags {
+        let expected = if tag.op_cid == CONCEPT_LITERAL_CID {
+            BTreeSet::from(["SortAdmission".to_string()])
+        } else {
+            expected_dimensions.clone()
+        };
         assert_eq!(
             tag.dimensions.keys().cloned().collect::<BTreeSet<_>>(),
-            expected_dimensions
+            expected
         );
         assert_eq!(tag.cid, tag.recompute_cid());
         for value_cid in tag.dimensions.values() {
@@ -1521,6 +1583,7 @@ fn dispatcher_returns_c_platform_semantics_declaration() {
         "blake3-512:c90e3c159b25e4c4c7f9c899da5aa3ee048a548719ced7360f3e514450811096b21cd5473f22d7a05df088f92210bbc916e65970b9fa1e1511c193ed969f112b", // concept:shr
         "blake3-512:9e96c2445bad6bb1e5a6f902ad7f733e3f4619829b9c0e232361fbf50b978c8332029212ed895762e604d1df009fce58848cda33524a697df798233eae30a14b", // concept:bitand
         "blake3-512:93ff252a879bc061949fecdb9710a0a927b47f5104f5e628c7e0bd2477e3ea3515ebb2bc2794d9cc7c11c6ea16db511ff20a18c699bb94f7854e79b5e195f717", // concept:deref
+        CONCEPT_LITERAL_CID,
     ] {
         assert!(op_cids.contains(required), "missing C semantics tag for {required}");
     }
@@ -1627,7 +1690,11 @@ fn test_dimension_value(value_name: &str) -> DimensionValueMemento {
     )
 }
 
-fn single_op_declaration(op_cid: &str, value_cid: &str, value: DimensionValueMemento) -> PlatformSemanticsDeclaration {
+fn single_op_declaration(
+    op_cid: &str,
+    value_cid: &str,
+    value: DimensionValueMemento,
+) -> PlatformSemanticsDeclaration {
     let tag = platform_tag(op_cid, vec![("TestDimension", value_cid.to_string())]);
     PlatformSemanticsDeclaration {
         tags: vec![tag],
@@ -1648,7 +1715,9 @@ fn op_coverage_verdict_no_opinion_when_both_kits_absent_for_op() {
     // Query with an op that neither declaration has.
     let unknown_op = "blake3-512:cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc";
     assert_eq!(
-        decl_a.compare_op_with(unknown_op, &decl_b).expect("no internal error"),
+        decl_a
+            .compare_op_with(unknown_op, &decl_b)
+            .expect("no internal error"),
         OpCoverageVerdict::NoOpinion,
     );
 }
@@ -1666,12 +1735,16 @@ fn op_coverage_verdict_no_opinion_flips_to_uncharacterizable_when_one_kit_gains_
 
     // With neither kit having the tag: NoOpinion.
     assert_eq!(
-        decl_without_op.compare_op_with(TEST_OP_A, &decl_without_op).expect("no error"),
+        decl_without_op
+            .compare_op_with(TEST_OP_A, &decl_without_op)
+            .expect("no error"),
         OpCoverageVerdict::NoOpinion,
     );
     // Once one kit has the tag: Uncharacterizable.
     assert!(matches!(
-        decl_with_op.compare_op_with(TEST_OP_A, &decl_without_op).expect("no error"),
+        decl_with_op
+            .compare_op_with(TEST_OP_A, &decl_without_op)
+            .expect("no error"),
         OpCoverageVerdict::Uncharacterizable { .. }
     ));
 }
@@ -1684,7 +1757,9 @@ fn op_coverage_verdict_no_opinion_is_unit_variant() {
         dimension_values: vec![],
         op_aliases: BTreeMap::new(),
     };
-    let verdict = decl_empty.compare_op_with(TEST_OP_A, &decl_empty).expect("no error");
+    let verdict = decl_empty
+        .compare_op_with(TEST_OP_A, &decl_empty)
+        .expect("no error");
     // Ensure it is exactly NoOpinion and not a wrapper with payload.
     assert_eq!(verdict, OpCoverageVerdict::NoOpinion);
     // Clone and Eq work correctly.
@@ -1702,8 +1777,12 @@ fn op_coverage_verdict_uncharacterizable_absent_on_target() {
         op_aliases: BTreeMap::new(),
     };
     assert_eq!(
-        decl_source.compare_op_with(TEST_OP_A, &decl_target).expect("no internal error"),
-        OpCoverageVerdict::Uncharacterizable { absent_on: Side::Target },
+        decl_source
+            .compare_op_with(TEST_OP_A, &decl_target)
+            .expect("no internal error"),
+        OpCoverageVerdict::Uncharacterizable {
+            absent_on: Side::Target
+        },
     );
 }
 
@@ -1719,13 +1798,19 @@ fn op_coverage_verdict_uncharacterizable_flips_to_same_when_target_gains_identic
     };
     // Start: Uncharacterizable
     assert!(matches!(
-        decl_source.compare_op_with(TEST_OP_A, &decl_target_empty).expect("no error"),
-        OpCoverageVerdict::Uncharacterizable { absent_on: Side::Target }
+        decl_source
+            .compare_op_with(TEST_OP_A, &decl_target_empty)
+            .expect("no error"),
+        OpCoverageVerdict::Uncharacterizable {
+            absent_on: Side::Target
+        }
     ));
     // After adding the identical tag to target: Same
     let decl_target_with_tag = single_op_declaration(TEST_OP_A, &val_a.cid.clone(), val_a);
     assert_eq!(
-        decl_source.compare_op_with(TEST_OP_A, &decl_target_with_tag).expect("no error"),
+        decl_source
+            .compare_op_with(TEST_OP_A, &decl_target_with_tag)
+            .expect("no error"),
         OpCoverageVerdict::Same,
     );
 }
@@ -1740,9 +1825,16 @@ fn op_coverage_verdict_uncharacterizable_absent_on_source_when_only_target_has_t
         op_aliases: BTreeMap::new(),
     };
     let decl_target = single_op_declaration(TEST_OP_A, &val_a.cid.clone(), val_a);
-    let verdict = decl_source_empty.compare_op_with(TEST_OP_A, &decl_target).expect("no error");
+    let verdict = decl_source_empty
+        .compare_op_with(TEST_OP_A, &decl_target)
+        .expect("no error");
     assert!(
-        matches!(verdict, OpCoverageVerdict::Uncharacterizable { absent_on: Side::Source }),
+        matches!(
+            verdict,
+            OpCoverageVerdict::Uncharacterizable {
+                absent_on: Side::Source
+            }
+        ),
         "expected absent_on = Source but got {verdict:?}"
     );
 }
@@ -1754,7 +1846,9 @@ fn op_coverage_verdict_same_when_both_kits_declare_identical_value() {
     let decl_a = single_op_declaration(TEST_OP_A, &val_a.cid.clone(), val_a.clone());
     let decl_b = single_op_declaration(TEST_OP_A, &val_a.cid.clone(), val_a);
     assert_eq!(
-        decl_a.compare_op_with(TEST_OP_A, &decl_b).expect("no internal error"),
+        decl_a
+            .compare_op_with(TEST_OP_A, &decl_b)
+            .expect("no internal error"),
         OpCoverageVerdict::Same,
     );
 }
@@ -1768,13 +1862,17 @@ fn op_coverage_verdict_same_flips_to_divergent_when_value_cids_differ() {
     // Same: both kits use val_a.
     let decl_same = single_op_declaration(TEST_OP_A, &val_a.cid.clone(), val_a);
     assert_eq!(
-        decl_source.compare_op_with(TEST_OP_A, &decl_same).expect("no error"),
+        decl_source
+            .compare_op_with(TEST_OP_A, &decl_same)
+            .expect("no error"),
         OpCoverageVerdict::Same,
     );
     // Divergent: target uses val_b.
     let decl_divergent = single_op_declaration(TEST_OP_A, &val_b.cid.clone(), val_b);
     assert!(matches!(
-        decl_source.compare_op_with(TEST_OP_A, &decl_divergent).expect("no error"),
+        decl_source
+            .compare_op_with(TEST_OP_A, &decl_divergent)
+            .expect("no error"),
         OpCoverageVerdict::Divergent(_)
     ));
 }
@@ -1785,7 +1883,9 @@ fn op_coverage_verdict_same_is_unit_variant() {
     let val_a = test_dimension_value("ValueA");
     let decl_a = single_op_declaration(TEST_OP_A, &val_a.cid.clone(), val_a.clone());
     let decl_b = single_op_declaration(TEST_OP_A, &val_a.cid.clone(), val_a);
-    let verdict = decl_a.compare_op_with(TEST_OP_A, &decl_b).expect("no error");
+    let verdict = decl_a
+        .compare_op_with(TEST_OP_A, &decl_b)
+        .expect("no error");
     assert_eq!(verdict, OpCoverageVerdict::Same);
     assert_eq!(verdict.clone(), OpCoverageVerdict::Same);
 }
@@ -1798,7 +1898,9 @@ fn op_coverage_verdict_divergent_when_both_kits_have_differing_values() {
     let decl_source = single_op_declaration(TEST_OP_A, &val_a.cid.clone(), val_a);
     let decl_target = single_op_declaration(TEST_OP_A, &val_b.cid.clone(), val_b);
     assert!(matches!(
-        decl_source.compare_op_with(TEST_OP_A, &decl_target).expect("no internal error"),
+        decl_source
+            .compare_op_with(TEST_OP_A, &decl_target)
+            .expect("no internal error"),
         OpCoverageVerdict::Divergent(_)
     ));
 }
@@ -1812,13 +1914,17 @@ fn op_coverage_verdict_divergent_flips_to_same_when_value_cids_made_equal() {
     // Divergent: different values.
     let decl_target_diff = single_op_declaration(TEST_OP_A, &val_b.cid.clone(), val_b);
     assert!(matches!(
-        decl_source.compare_op_with(TEST_OP_A, &decl_target_diff).expect("no error"),
+        decl_source
+            .compare_op_with(TEST_OP_A, &decl_target_diff)
+            .expect("no error"),
         OpCoverageVerdict::Divergent(_)
     ));
     // Same: identical values.
     let decl_target_same = single_op_declaration(TEST_OP_A, &val_a.cid.clone(), val_a);
     assert_eq!(
-        decl_source.compare_op_with(TEST_OP_A, &decl_target_same).expect("no error"),
+        decl_source
+            .compare_op_with(TEST_OP_A, &decl_target_same)
+            .expect("no error"),
         OpCoverageVerdict::Same,
     );
 }
@@ -1830,7 +1936,9 @@ fn op_coverage_verdict_divergent_carries_both_compare_to_formulas() {
     let val_b = test_dimension_value("ValueB");
     let decl_source = single_op_declaration(TEST_OP_A, &val_a.cid.clone(), val_a.clone());
     let decl_target = single_op_declaration(TEST_OP_A, &val_b.cid.clone(), val_b.clone());
-    let verdict = decl_source.compare_op_with(TEST_OP_A, &decl_target).expect("no error");
+    let verdict = decl_source
+        .compare_op_with(TEST_OP_A, &decl_target)
+        .expect("no error");
     match verdict {
         OpCoverageVerdict::Divergent(ref d) => {
             assert_eq!(d.dimension_name, "TestDimension");
@@ -1838,11 +1946,17 @@ fn op_coverage_verdict_divergent_carries_both_compare_to_formulas() {
             assert_eq!(d.target_value_cid, val_b.cid);
             assert_eq!(
                 d.source_compare_to,
-                IrFormula::Atomic { name: "test:ValueA".to_string(), args: vec![] }
+                IrFormula::Atomic {
+                    name: "test:ValueA".to_string(),
+                    args: vec![]
+                }
             );
             assert_eq!(
                 d.target_compare_to,
-                IrFormula::Atomic { name: "test:ValueB".to_string(), args: vec![] }
+                IrFormula::Atomic {
+                    name: "test:ValueB".to_string(),
+                    args: vec![]
+                }
             );
         }
         other => panic!("expected Divergent but got {other:?}"),
@@ -1922,15 +2036,30 @@ fn platform_tag(op_cid: &str, pairs: Vec<(&str, String)>) -> PlatformSemanticTag
 fn assert_python_platform_semantics(declaration: &PlatformSemanticsDeclaration) {
     assert_eq!(
         declaration.tags.len(),
-        PYTHON_PLATFORM_CONCEPT_OP_CIDS.len()
+        PYTHON_PLATFORM_CONCEPT_OP_CIDS.len() + 1
     );
     let expected_dimensions = PYTHON_PLATFORM_DIMENSIONS
         .iter()
         .map(|(dimension, _)| dimension.to_string())
         .collect::<BTreeSet<_>>();
+    let literal_tag = declaration
+        .tags
+        .iter()
+        .find(|tag| tag.op_cid == CONCEPT_LITERAL_CID)
+        .expect("python declaration must include concept:literal");
+    assert_eq!(
+        literal_tag
+            .dimensions
+            .keys()
+            .cloned()
+            .collect::<BTreeSet<_>>(),
+        BTreeSet::from(["SortAdmission".to_string()])
+    );
+
     let actual_op_cids = declaration
         .tags
         .iter()
+        .filter(|tag| tag.op_cid != CONCEPT_LITERAL_CID)
         .map(|tag| {
             assert_eq!(
                 tag.dimensions.keys().cloned().collect::<BTreeSet<_>>(),
@@ -1958,6 +2087,34 @@ fn java_dimension_value(
         IrFormula::Atomic {
             name: format!("java:{value_name}"),
             args: vec![],
+        },
+    )
+}
+
+fn sort_admission_dimension_value(kit_cid: &str, admitted: &[TestSort]) -> DimensionValueMemento {
+    let mut admitted = admitted.to_vec();
+    admitted.sort_by(|left, right| left.cid.cmp(right.cid));
+    let value_name = admitted
+        .iter()
+        .map(|sort| sort.name)
+        .collect::<Vec<_>>()
+        .join("");
+    DimensionValueMemento::new(
+        kit_cid.to_string(),
+        "SortAdmission".to_string(),
+        value_name,
+        IrFormula::Atomic {
+            name: "admits_sorts".to_string(),
+            args: admitted
+                .iter()
+                .map(|sort| IrTerm::Ctor {
+                    name: sort.name.to_string(),
+                    args: vec![IrTerm::Ctor {
+                        name: sort.cid.to_string(),
+                        args: vec![],
+                    }],
+                })
+                .collect(),
         },
     )
 }

@@ -2,7 +2,7 @@
 
 use std::collections::BTreeMap;
 
-use provekit_ir_types::{DimensionValueMemento, IrFormula, PlatformSemanticTag};
+use provekit_ir_types::{DimensionValueMemento, IrFormula, IrTerm, PlatformSemanticTag};
 use serde::{Deserialize, Serialize};
 
 const RUST_KIT_CID: &str = "blake3-512:e3c223b8b6f39382e43cb06c5b04059987e661d96311decd5003d4ec79c7d6f9969de39ae16dd6509cb5236185260d59c63288db7ff772aae00f8123ea826cbd";
@@ -29,6 +29,19 @@ const OP_BITOR: &str = "blake3-512:5c455355a13fd97a872848613b34b2b56f9738c832f90
 const OP_BITXOR: &str = "blake3-512:16ba612da4883e853dd18b08c8e7b1803e1e2b0a42ab83c261048a49cdfd9b20bc54e809b8f4e8e5c9af63cc7447dee039cb826c611dfec137855a11a502adb9";
 const OP_NEG: &str = "blake3-512:e0c3e13fd7e0d11fa3b78f4e083ab60b1166bdd905bc04e533e6dcc97d79330bd6a403caaf1265d8134ea3ccd5fe8cfd5a3e18f349ea7edcb6310c098e845c0f";
 const OP_BITNOT: &str = "blake3-512:eeaaf14737f661b6bce03f23d281974502182fea83909eeaade25e510887b26e80dac1b10af3b1f2f496b53898051d63e8d250e78cfa8e88380c84809e5eabe0";
+const OP_LITERAL: &str = "blake3-512:02804a0bdbd2d5d541544451f41ee8d0d340baf28f70bd5abf5844e87a96aedd7b5ab3453962754a020679cc8c6b3d1f4cf0336a7ad8118128d42ac667abf2d6";
+
+const SORT_BOOL_CID: &str = "blake3-512:0ee13bf3fd6b7ecfbee72dfbfc18a7c0ea7f1663de6cca43cefb36f5b4c03665452646094a7c296e819e75d683c6ce4821f3d7db3c3c78ae97f2d4e3451d2074";
+const SORT_BYTES_CID: &str = "blake3-512:7116ef6e62e6739b213a8394f975a53c771b89f08c36d27143827acfcfebc0e39e5b82c530be668c3cfd5ec6966ccaa42930b37fdb1f4ac25652a970be10fb6b";
+const SORT_FLOAT_CID: &str = "blake3-512:b979e70c4d5e53d9bdf13d6f08330be3c5b0714b8c770d69bbd05946b86c36df5274be8145a2683cc29c278155c9c1ee65b6897913524eecb9e4c89c71862f57";
+const SORT_INT_CID: &str = "blake3-512:30ffc51350121a7172f3e4064a33c45bbd345756979fccff6875cd2ab33e4964d098a99df80cfbdf1ec1a0738c5ac3476f0ff8f75589ea511d1acd82c74ecd58";
+const SORT_STRING_CID: &str = "blake3-512:be8721d24849feb74c4721520bdba02d352a94f49253a627cd509127472aa1c47cbe99cb705cac4159b5365abcce0c9aaa4901fe67630827deb6be1f9daeea10";
+
+#[derive(Clone, Copy)]
+struct AdmittedSort {
+    name: &'static str,
+    cid: &'static str,
+}
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct PlatformSemanticsDeclaration {
@@ -72,6 +85,7 @@ pub fn declaration() -> PlatformSemanticsDeclaration {
             tag(OP_BITXOR, &[("BitwiseSemantics", &values.twos_complement)]),
             tag(OP_NEG, &[("ArithmeticOverflow", &values.wrapping)]),
             tag(OP_BITNOT, &[("BitwiseSemantics", &values.twos_complement)]),
+            tag(OP_LITERAL, &[("SortAdmission", &values.sort_admission)]),
         ],
     }
 }
@@ -82,6 +96,7 @@ struct DimensionValueCids {
     arithmetic: String,
     panic_on_div_by_zero: String,
     twos_complement: String,
+    sort_admission: String,
 }
 
 fn dimension_value_cids() -> DimensionValueCids {
@@ -99,6 +114,29 @@ fn dimension_value_cids() -> DimensionValueCids {
             "TwosComplement",
             atom("rust:TwosComplement"),
         ),
+        sort_admission: sort_admission_value(&[
+            AdmittedSort {
+                name: "Int",
+                cid: SORT_INT_CID,
+            },
+            AdmittedSort {
+                name: "Float",
+                cid: SORT_FLOAT_CID,
+            },
+            AdmittedSort {
+                name: "String",
+                cid: SORT_STRING_CID,
+            },
+            AdmittedSort {
+                name: "Bool",
+                cid: SORT_BOOL_CID,
+            },
+            AdmittedSort {
+                name: "Bytes",
+                cid: SORT_BYTES_CID,
+            },
+        ])
+        .cid,
     }
 }
 
@@ -117,6 +155,28 @@ pub fn dimension_values() -> Vec<DimensionValueMemento> {
             "TwosComplement",
             atom("rust:TwosComplement"),
         ),
+        sort_admission_value(&[
+            AdmittedSort {
+                name: "Int",
+                cid: SORT_INT_CID,
+            },
+            AdmittedSort {
+                name: "Float",
+                cid: SORT_FLOAT_CID,
+            },
+            AdmittedSort {
+                name: "String",
+                cid: SORT_STRING_CID,
+            },
+            AdmittedSort {
+                name: "Bool",
+                cid: SORT_BOOL_CID,
+            },
+            AdmittedSort {
+                name: "Bytes",
+                cid: SORT_BYTES_CID,
+            },
+        ]),
     ]
 }
 
@@ -150,4 +210,31 @@ fn atom(name: &str) -> IrFormula {
         name: name.to_string(),
         args: vec![],
     }
+}
+
+fn sort_admission_value(admitted: &[AdmittedSort]) -> DimensionValueMemento {
+    let mut admitted = admitted.to_vec();
+    admitted.sort_by(|left, right| left.cid.cmp(right.cid));
+    let value_name = admitted
+        .iter()
+        .map(|sort| sort.name)
+        .collect::<Vec<_>>()
+        .join("");
+    dimension_value(
+        "SortAdmission",
+        &value_name,
+        IrFormula::Atomic {
+            name: "admits_sorts".to_string(),
+            args: admitted
+                .iter()
+                .map(|sort| IrTerm::Ctor {
+                    name: sort.name.to_string(),
+                    args: vec![IrTerm::Ctor {
+                        name: sort.cid.to_string(),
+                        args: vec![],
+                    }],
+                })
+                .collect(),
+        },
+    )
 }

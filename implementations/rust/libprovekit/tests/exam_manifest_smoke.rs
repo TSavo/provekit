@@ -5,7 +5,7 @@ use std::path::PathBuf;
 use provekit_ir_types::ExamManifestMemento;
 
 const EXPECTED_EXAM_MANIFEST_CID: &str = "blake3-512:0e0dc132f3e8bf58da065d7fc237e85c225c5c87fbc690a19a42d594e9b1e46ed78e8f0f5a855fa1b75581745f588a4737adb17bc59e9a72b3bb9f6bcb665dd0";
-const EXPECTED_V1_1_EXAM_MANIFEST_CID: &str = "blake3-512:32af210992406289b0863d6f24ab3f05e6707034fd473fe7a8e323edda0376ce018f9ba8a31d00c4e3c4134140b1f3e06cfad6a0afde762778032035066475cc";
+const EXPECTED_V1_1_EXAM_MANIFEST_CID: &str = "blake3-512:b38426ba10ee3a6c28e9e32cae9aa65cfb5b750950464d1e67e9d669956bd40288d25c247d0ec2d638fd63e2d235d944f419055c0374c78488b4be98da040451";
 
 fn repo_root() -> PathBuf {
     PathBuf::from(env!("CARGO_MANIFEST_DIR"))
@@ -75,15 +75,17 @@ fn v1_1_manifest_loads_and_finds_question_cid_by_kind_concept_and_language() {
         .find(|question| {
             question.kind.as_str() == "morphism"
                 && question.concept == "concept:add"
-                && question.parameters.get("from_language").and_then(|v| v.as_str())
+                && question
+                    .parameters
+                    .get("from_language")
+                    .and_then(|v| v.as_str())
                     == Some("rust")
         })
         .expect("fixture has add/rust")
         .to_owned();
     assert_eq!(
         add_rust,
-        libprovekit::exam_manifest::exam_question_cid(&expected)
-            .expect("question cid computes")
+        libprovekit::exam_manifest::exam_question_cid(&expected).expect("question cid computes")
     );
     assert_ne!(add_rust, sub_rust);
     assert_ne!(add_rust, add_python);
