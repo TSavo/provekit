@@ -79,7 +79,16 @@ def _emit_one(params: dict[str, Any]) -> dict[str, Any]:
         param_types=_string_list(params.get("param_types")),
         return_type=str(params.get("return_type", "")),
         concept_name=str(params.get("concept_name", "")),
+        named_term_tree=_dict_field(params, "named_term_tree", "namedTermTree"),
     )
+
+
+def _dict_field(params: dict[str, Any], *keys: str) -> dict[str, Any] | None:
+    for key in keys:
+        value = params.get(key)
+        if isinstance(value, dict):
+            return value
+    return None
 
 
 def _string_list(value: Any) -> list[str]:
