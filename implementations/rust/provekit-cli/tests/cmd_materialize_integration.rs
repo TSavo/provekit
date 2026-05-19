@@ -63,17 +63,35 @@ fn write_typescript_project_fixture(workspace: &Path) -> PathBuf {
     src_dir
 }
 
+fn concept_carrier_lines(indent: &str) -> String {
+    format!(
+        "{indent}// provekit-concept: {{\"artifact_kind\":\"provekit-concept-citation-comment-sugar\",\"concept_name\":\"concept:sql-query\",\"function\":\"selectRows\",\"params\":[\"sql\",\"args\"],\"param_types\":[\"string\",\"unknown[]\"],\"return_type\":\"unknown[]\",\"named_term_tree\":{{\"conceptName\":\"concept:sql-query\",\"args\":[{{\"sort\":\"Sql\",\"source\":\"sql\"}},{{\"sort\":\"SqlArgs\",\"source\":\"args\"}}]}}}}\n{indent}// provekit-concept-payload-cid: blake3-512:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\n"
+    )
+}
+
 fn write_concept_source(src_dir: &Path) -> PathBuf {
     let source_path = src_dir.join("queries.ts");
     fs::write(
         &source_path,
-        r#"// header stays
-// provekit-concept: {"artifact_kind":"provekit-concept-citation-comment-sugar","concept_name":"concept:sql-query","function":"selectRows","params":["sql","args"],"param_types":["string","unknown[]"],"return_type":"unknown[]","named_term_tree":{"conceptName":"concept:sql-query","args":[{"sort":"Sql","source":"sql"},{"sort":"SqlArgs","source":"args"}]}}
-// provekit-concept-payload-cid: blake3-512:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
-// footer stays
-"#,
+        format!(
+            "// header stays\n{}// footer stays\n",
+            concept_carrier_lines("")
+        ),
     )
     .expect("write source");
+    source_path
+}
+
+fn write_indented_concept_source(src_dir: &Path) -> PathBuf {
+    let source_path = src_dir.join("nested.ts");
+    fs::write(
+        &source_path,
+        format!(
+            "export function wrapper() {{\n{}  return true;\n}}\n",
+            concept_carrier_lines("  ")
+        ),
+    )
+    .expect("write indented source");
     source_path
 }
 
@@ -200,5 +218,44 @@ fn materialize_out_dir_writes_materialized_copy_and_leaves_source_unchanged() {
     assert!(
         original.contains("provekit-concept:"),
         "out-dir mode must not rewrite source file: {original}"
+    );
+}
+
+#[test]
+fn materialize_preserves_carrier_indentation_when_replacing_source() {
+    let workspace = tempfile::tempdir().expect("tempdir");
+    let src_dir = write_typescript_project_fixture(workspace.path());
+    let source_path = write_indented_concept_source(&src_dir);
+
+    let output = Command::new(env!("CARGO_BIN_EXE_provekit"))
+        .arg("materialize")
+        .arg("--library")
+        .arg("typescript-better-sqlite3")
+        .arg("--source-dir")
+        .arg(&src_dir)
+        .arg("--project")
+        .arg(workspace.path())
+        .arg("--write")
+        .output()
+        .expect("spawn provekit materialize --write");
+
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(
+        output.status.success(),
+        "materialize --write should succeed\nstdout:\n{stdout}\nstderr:\n{stderr}"
+    );
+    let rewritten = fs::read_to_string(&source_path).expect("read rewritten source");
+    assert!(
+        rewritten.contains("\n  function selectRows"),
+        "replacement should start at the carrier's indentation level:\n{rewritten}"
+    );
+    assert!(
+        rewritten.contains("\n    return db.prepare(sql).all(args);"),
+        "replacement body indentation should be offset from the carrier indentation:\n{rewritten}"
+    );
+    assert!(
+        rewritten.contains("\n  }\n  return true;"),
+        "replacement closing brace should preserve carrier indentation and following code:\n{rewritten}"
     );
 }

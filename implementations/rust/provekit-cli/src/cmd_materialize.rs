@@ -216,11 +216,12 @@ fn materialize_source_text(
     let mut idx = 0usize;
     while idx < lines.len() {
         let line = lines[idx];
-        if let Some(payload) = concept_payload_from_line(line) {
+        if let Some((indent, payload)) = concept_payload_from_line(line) {
             let spec = realize_spec_from_payload(payload)?;
             let realized = realize_spec_via_path(project_root, target_lang, library_tag, spec)?;
-            out.push_str(&realized);
-            if !realized.ends_with('\n') {
+            let indented = indent_realized_source(&realized, indent);
+            out.push_str(&indented);
+            if !indented.ends_with('\n') {
                 out.push('\n');
             }
             replacements += 1;
@@ -237,9 +238,14 @@ fn materialize_source_text(
     Ok((out, replacements))
 }
 
-fn concept_payload_from_line(line: &str) -> Option<&str> {
+fn concept_payload_from_line(line: &str) -> Option<(&str, &str)> {
+    let indent_len = line.len() - line.trim_start().len();
+    let indent = &line[..indent_len];
     let normalized = strip_comment_prefix(line.trim_start())?;
-    normalized.strip_prefix("provekit-concept: ").map(str::trim)
+    normalized
+        .strip_prefix("provekit-concept: ")
+        .map(str::trim)
+        .map(|payload| (indent, payload))
 }
 
 fn concept_payload_cid_from_line(line: &str) -> Option<&str> {
@@ -254,6 +260,22 @@ fn strip_comment_prefix(line: &str) -> Option<&str> {
         .or_else(|| line.strip_prefix('#'))
         .or_else(|| line.strip_prefix("/*"))
         .map(str::trim_start)
+}
+
+fn indent_realized_source(source: &str, indent: &str) -> String {
+    if indent.is_empty() {
+        return source.to_string();
+    }
+    source
+        .split_inclusive('\n')
+        .map(|line| {
+            if line.trim().is_empty() {
+                line.to_string()
+            } else {
+                format!("{indent}{line}")
+            }
+        })
+        .collect()
 }
 
 fn realize_spec_from_payload(payload: &str) -> Result<Json, String> {
