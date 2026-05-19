@@ -3,6 +3,10 @@
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::process::Command;
+use std::sync::Arc;
+
+use provekit_canonicalizer::{blake3_512_of, encode_jcs, Value as CanonicalValue};
+use serde_json::Value as Json;
 
 fn repo_root() -> PathBuf {
     PathBuf::from(env!("CARGO_MANIFEST_DIR"))
@@ -65,7 +69,9 @@ fn write_typescript_project_fixture(workspace: &Path) -> PathBuf {
 
 fn concept_carrier_lines(indent: &str) -> String {
     format!(
-        "{indent}// provekit-concept: {{\"artifact_kind\":\"provekit-concept-citation-comment-sugar\",\"concept_name\":\"concept:sql-query\",\"function\":\"selectRows\",\"params\":[\"sql\",\"args\"],\"param_types\":[\"string\",\"unknown[]\"],\"return_type\":\"unknown[]\",\"named_term_tree\":{{\"conceptName\":\"concept:sql-query\",\"args\":[{{\"sort\":\"Sql\",\"source\":\"sql\"}},{{\"sort\":\"SqlArgs\",\"source\":\"args\"}}]}}}}\n{indent}// provekit-concept-payload-cid: blake3-512:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\n"
+        "{indent}// provekit-concept: {}\n{indent}// provekit-concept-payload-cid: {}\n",
+        concept_payload_json(),
+        concept_payload_cid()
     )
 }
 
@@ -73,10 +79,36 @@ fn concept_payload_json() -> &'static str {
     "{\"artifact_kind\":\"provekit-concept-citation-comment-sugar\",\"concept_name\":\"concept:sql-query\",\"function\":\"selectRows\",\"params\":[\"sql\",\"args\"],\"param_types\":[\"string\",\"unknown[]\"],\"return_type\":\"unknown[]\",\"named_term_tree\":{\"conceptName\":\"concept:sql-query\",\"args\":[{\"sort\":\"Sql\",\"source\":\"sql\"},{\"sort\":\"SqlArgs\",\"source\":\"args\"}]}}"
 }
 
+fn concept_payload_cid() -> String {
+    let json: Json = serde_json::from_str(concept_payload_json()).expect("payload json parses");
+    let canonical = canonical_value_from_json(&json);
+    blake3_512_of(encode_jcs(canonical.as_ref()).as_bytes())
+}
+
+fn canonical_value_from_json(value: &Json) -> Arc<CanonicalValue> {
+    match value {
+        Json::Null => CanonicalValue::null(),
+        Json::Bool(value) => CanonicalValue::boolean(*value),
+        Json::Number(value) => {
+            CanonicalValue::integer(value.as_i64().expect("test JSON uses integers only"))
+        }
+        Json::String(value) => CanonicalValue::string(value),
+        Json::Array(values) => {
+            CanonicalValue::array(values.iter().map(canonical_value_from_json).collect())
+        }
+        Json::Object(entries) => CanonicalValue::object(
+            entries
+                .iter()
+                .map(|(key, value)| (key.clone(), canonical_value_from_json(value))),
+        ),
+    }
+}
+
 fn block_comment_concept_carrier_lines(indent: &str) -> String {
     format!(
-        "{indent}/* provekit-concept: {} */\n{indent}/* provekit-concept-payload-cid: blake3-512:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa */\n",
-        concept_payload_json()
+        "{indent}/* provekit-concept: {} */\n{indent}/* provekit-concept-payload-cid: {} */\n",
+        concept_payload_json(),
+        concept_payload_cid()
     )
 }
 
@@ -138,6 +170,19 @@ fn write_malformed_dependency_source(src_dir: &Path) -> PathBuf {
         "// provekit-concept: {not json from dependency}\n",
     )
     .expect("write malformed dependency source");
+    source_path
+}
+
+fn write_mismatched_cid_concept_source(src_dir: &Path) -> PathBuf {
+    let source_path = src_dir.join("mismatch.ts");
+    fs::write(
+        &source_path,
+        format!(
+            "// provekit-concept: {}\n// provekit-concept-payload-cid: blake3-512:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\n",
+            concept_payload_json()
+        ),
+    )
+    .expect("write mismatched CID source");
     source_path
 }
 
@@ -397,5 +442,37 @@ fn materialize_ignores_dependency_directories_when_scanning_sources() {
     assert!(
         !stdout.contains("node_modules"),
         "dependency files should not appear in materialize output:\n{stdout}"
+    );
+}
+
+#[test]
+fn materialize_rejects_payload_cid_mismatch() {
+    let workspace = tempfile::tempdir().expect("tempdir");
+    let src_dir = write_typescript_project_fixture(workspace.path());
+    write_mismatched_cid_concept_source(&src_dir);
+
+    let output = Command::new(env!("CARGO_BIN_EXE_provekit"))
+        .arg("materialize")
+        .arg("--library")
+        .arg("typescript-better-sqlite3")
+        .arg("--source-dir")
+        .arg(&src_dir)
+        .arg("--project")
+        .arg(workspace.path())
+        .output()
+        .expect("spawn provekit materialize");
+
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(
+        !output.status.success(),
+        "CID mismatch should fail\nstderr:\n{stderr}"
+    );
+    assert!(
+        stderr.contains("mismatch.ts"),
+        "CID mismatch error should name the source file:\n{stderr}"
+    );
+    assert!(
+        stderr.contains("provekit-concept-payload-cid mismatch"),
+        "CID mismatch error should explain the mismatch:\n{stderr}"
     );
 }

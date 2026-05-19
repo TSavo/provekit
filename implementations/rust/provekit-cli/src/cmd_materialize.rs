@@ -5,6 +5,7 @@
 
 use std::io::Write;
 use std::path::{Path, PathBuf};
+use std::sync::Arc;
 
 use clap::Parser;
 use libprovekit::core::{
@@ -12,6 +13,7 @@ use libprovekit::core::{
     Verb,
 };
 use owo_colors::OwoColorize;
+use provekit_canonicalizer::{blake3_512_of, encode_jcs, Value as CanonicalValue};
 use serde_json::Value as Json;
 use walkdir::WalkDir;
 
@@ -232,6 +234,11 @@ fn materialize_source_text(
     while idx < lines.len() {
         let line = lines[idx];
         if let Some((indent, payload)) = concept_payload_from_line(line) {
+            if idx + 1 < lines.len() {
+                if let Some(declared_cid) = concept_payload_cid_from_line(lines[idx + 1]) {
+                    verify_payload_cid(payload, declared_cid)?;
+                }
+            }
             let spec = realize_spec_from_payload(payload)?;
             let realized = realize_spec_via_path(project_root, target_lang, library_tag, spec)?;
             let indented = indent_realized_source(&realized, indent);
@@ -298,6 +305,40 @@ fn indent_realized_source(source: &str, indent: &str) -> String {
             }
         })
         .collect()
+}
+
+fn verify_payload_cid(payload: &str, declared_cid: &str) -> Result<(), String> {
+    let parsed: Json = serde_json::from_str(payload)
+        .map_err(|error| format!("parse provekit-concept payload JSON: {error}"))?;
+    let canonical = canonical_value_from_json(&parsed)?;
+    let actual_cid = blake3_512_of(encode_jcs(canonical.as_ref()).as_bytes());
+    if actual_cid != declared_cid {
+        return Err(format!(
+            "provekit-concept-payload-cid mismatch: declared {declared_cid}, computed {actual_cid}"
+        ));
+    }
+    Ok(())
+}
+
+fn canonical_value_from_json(value: &Json) -> Result<Arc<CanonicalValue>, String> {
+    match value {
+        Json::Null => Ok(CanonicalValue::null()),
+        Json::Bool(value) => Ok(CanonicalValue::boolean(*value)),
+        Json::Number(value) => value.as_i64().map(CanonicalValue::integer).ok_or_else(|| {
+            format!("provekit-concept payload contains non-integer number `{value}`")
+        }),
+        Json::String(value) => Ok(CanonicalValue::string(value)),
+        Json::Array(values) => values
+            .iter()
+            .map(canonical_value_from_json)
+            .collect::<Result<Vec<_>, _>>()
+            .map(CanonicalValue::array),
+        Json::Object(entries) => entries
+            .iter()
+            .map(|(key, value)| canonical_value_from_json(value).map(|value| (key.clone(), value)))
+            .collect::<Result<Vec<_>, _>>()
+            .map(CanonicalValue::object),
+    }
 }
 
 fn realize_spec_from_payload(payload: &str) -> Result<Json, String> {
