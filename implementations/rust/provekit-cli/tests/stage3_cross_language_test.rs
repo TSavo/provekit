@@ -87,6 +87,9 @@ fn bind_migrates_better_sqlite3_to_python_with_cross_language_witness_pairs() {
         "sqlite3 migration emits one PromotionDecisionMemento for recordEvent (async contagion via lossy insert-and-get-id callsite)"
     );
     assert_python_source_parses(&sqlite_out.join("src").join("users.py"));
+    let sqlite_source =
+        fs::read_to_string(sqlite_out.join("src").join("users.py")).expect("read sqlite source");
+    assert!(sqlite_source.contains("cursor = db.execute(sql, tuple(args))"));
     assert_language_transition_claim(&sqlite_json, "getUserById", "get_user_by_id");
     assert_concept_binding_claim(&sqlite_receipt);
     assert_witness_pairs(&sqlite_json);
@@ -116,6 +119,9 @@ fn bind_migrates_better_sqlite3_to_python_with_cross_language_witness_pairs() {
     );
     assert_promotion_function_set(&aiosqlite_receipt);
     assert_python_source_parses(&aiosqlite_out.join("src").join("users.py"));
+    let aiosqlite_source = fs::read_to_string(aiosqlite_out.join("src").join("users.py"))
+        .expect("read aiosqlite source");
+    assert!(aiosqlite_source.contains("async with db.execute(sql, tuple(args)) as cursor:"));
     assert_async_defs_match_promotions(
         &aiosqlite_out.join("src").join("users.py"),
         &aiosqlite_receipt,

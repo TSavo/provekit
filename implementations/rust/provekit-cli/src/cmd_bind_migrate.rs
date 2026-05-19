@@ -7,14 +7,13 @@ use std::sync::Arc;
 
 use chrono::{SecondsFormat, Utc};
 use libprovekit::core::{
-    execute_path, platform_semantics_for_binding, platform_semantics_for_lower_target,
-    DivergenceCharacterization, HashMapInputCatalog, Input, KitRegistry, LowerKit,
-    OpCoverageVerdict, Path as CorePath, PathAlgebra, PlatformSemanticComparisonError,
-    PlatformSemanticsDeclaration, Side, Verb,
+    execute_path, platform_semantics_for_binding, DivergenceCharacterization, HashMapInputCatalog,
+    Input, KitRegistry, LowerKit, OpCoverageVerdict, Path as CorePath, PathAlgebra,
+    PlatformSemanticComparisonError, PlatformSemanticsDeclaration, Side, Verb,
 };
 use libprovekit::effect_propagation::{
-    propagate_effects, CallsiteEdge, ChangedCallsite, FunctionEffectInfo,
-    NonEmptyChangedCallsites, PropagationDecision, PropagationInput,
+    propagate_effects, CallsiteEdge, ChangedCallsite, FunctionEffectInfo, NonEmptyChangedCallsites,
+    PropagationDecision, PropagationInput,
 };
 use provekit_canonicalizer::{blake3_512_of, encode_jcs, Value};
 use provekit_ir_types::{
@@ -125,7 +124,16 @@ fn run_inner(args: BindArgs) -> Result<(), String> {
         }
         Err(_) => BTreeMap::new(),
     };
-    let migrated_source = render_migrated_source(target_surface);
+    let migrated_source = compose_migrated_source(
+        &repo_root,
+        &source,
+        &functions,
+        &sql_callsites,
+        &decisions,
+        target_surface,
+        &target_lang,
+        &target_tag,
+    )?;
     for callsite in &mut sql_callsites {
         callsite.after =
             after_location_for_callsite(&migrated_source, &callsite.function, target_surface)?;
@@ -306,6 +314,19 @@ struct SqlCallsite {
     sample_args: Vec<JsonValue>,
     sql: String,
     substituted_body: String,
+}
+
+#[derive(Debug, Clone)]
+struct TsParam {
+    name: String,
+    ty: String,
+}
+
+#[derive(Debug, Clone)]
+struct InterfaceDecl {
+    name: String,
+    fields: Vec<TsParam>,
+    source: String,
 }
 
 fn extract_functions(source: &str) -> Result<Vec<TsFunction>, String> {
@@ -807,12 +828,14 @@ fn platform_semantic_changes(
                     .dimension_values
                     .first()
                     .map(|memento| memento.kit_cid.clone());
-                changes.uncharacterizable_callsites.push(UncharacterizableCallsite {
-                    callsite_cid: callsite.cid.clone(),
-                    op_cid: callsite.concept_cid.clone(),
-                    absent_on,
-                    declaring_kit_cid,
-                });
+                changes
+                    .uncharacterizable_callsites
+                    .push(UncharacterizableCallsite {
+                        callsite_cid: callsite.cid.clone(),
+                        op_cid: callsite.concept_cid.clone(),
+                        absent_on,
+                        declaring_kit_cid,
+                    });
             }
             OpCoverageVerdict::Divergent(divergence) => {
                 let effect = divergence_effect_cid(&divergence);
@@ -1409,296 +1432,642 @@ fn substituted_body_for(function: &str) -> String {
     }
 }
 
-fn render_migrated_source(target_surface: TargetSurface) -> String {
+fn compose_migrated_source(
+    repo_root: &Path,
+    source: &str,
+    functions: &[TsFunction],
+    sql_callsites: &[SqlCallsite],
+    decisions: &BTreeMap<String, PropagationDecision>,
+    target_surface: TargetSurface,
+    target_lang: &str,
+    target_tag: &str,
+) -> Result<String, String> {
+    let realized_bodies = realize_callsite_bodies(
+        repo_root,
+        functions,
+        sql_callsites,
+        target_surface,
+        target_lang,
+        target_tag,
+    )?;
+    let interfaces = extract_exported_interfaces(source)?;
+    let async_names = target_async_function_names(functions, decisions, target_surface);
     match target_surface {
-        TargetSurface::TypescriptPg => render_ts_pg_source(),
-        TargetSurface::PythonSqlite3 => render_python_sqlite3_source(),
-        TargetSurface::PythonAiosqlite => render_python_aiosqlite_source(),
-    }
-}
-
-fn render_ts_pg_source() -> String {
-    r#"import { Pool } from "pg";
-
-export interface User {
-  id: number;
-  name: string;
-  email: string;
-}
-
-export interface RequestLike {
-  path: string;
-}
-
-export interface Response {
-  status: number;
-  body: string;
-}
-
-const pool = new Pool({});
-
-export async function getUserById(id: number): Promise<User> {
-  const result = await pool.query<User>(
-    "SELECT id, name, email FROM users WHERE id = $1",
-    [id],
-  );
-  const row = result.rows[0];
-  if (!row) {
-    throw new Error(`missing user ${id}`);
-  }
-  return row;
-}
-
-export async function getAllUsers(): Promise<User[]> {
-  const result = await pool.query<User>(
-    "SELECT id, name, email FROM users ORDER BY id",
-    [],
-  );
-  return result.rows;
-}
-
-export async function countUsers(): Promise<number> {
-  const result = await pool.query<{ count: number | string }>(
-    "SELECT count(*) AS count FROM users",
-    [],
-  );
-  return Number(result.rows[0]?.count ?? 0);
-}
-
-export async function renderUsersPage(): Promise<string> {
-  const users = await getAllUsers();
-  return `<ul>${users.map((user) => `<li>${exportedFormatter(user)}</li>`).join("")}</ul>`;
-}
-
-export async function renderDashboard(): Promise<string> {
-  const page = await renderUsersPage();
-  const count = await countUsers();
-  return `<section data-count="${count}">${page}</section>`;
-}
-
-export async function handleRequest(req: RequestLike): Promise<Response> {
-  if (req.path !== "/users") {
-    return { status: 404, body: "not found" };
-  }
-  return { status: 200, body: await renderDashboard() };
-}
-
-export function exportedFormatter(u: User): string {
-  return `${u.name} <${u.email}> (${countUsers()} users)`;
-}
-
-export async function recordEvent(userId: number, kind: string): Promise<number> {
-  const result = await pool.query<{ id: number }>(
-    "INSERT INTO events (user_id, kind) VALUES ($1, $2) RETURNING id",
-    [userId, kind],
-  );
-  return Number(result.rows[0]?.id ?? 0);
-}
-"#
-    .to_string()
-}
-
-fn render_python_sqlite3_source() -> String {
-    r#"from __future__ import annotations
-
-import sqlite3
-from typing import TypedDict
-
-
-class User(TypedDict):
-    id: int
-    name: str
-    email: str
-
-
-class RequestLike(TypedDict):
-    path: str
-
-
-class Response(TypedDict):
-    status: int
-    body: str
-
-
-db = sqlite3.connect("users.sqlite")
-db.row_factory = sqlite3.Row
-
-
-def _row_to_user(row: sqlite3.Row | None) -> User | None:
-    if row is None:
-        return None
-    return {
-        "id": int(row["id"]),
-        "name": str(row["name"]),
-        "email": str(row["email"]),
-    }
-
-
-def get_user_by_id(id: int) -> User:
-    row = db.execute(
-        "SELECT id, name, email FROM users WHERE id = ?",
-        (id,),
-    ).fetchone()
-    user = _row_to_user(row)
-    if user is None:
-        raise RuntimeError(f"missing user {id}")
-    return user
-
-
-def get_all_users() -> list[User]:
-    rows = db.execute("SELECT id, name, email FROM users ORDER BY id").fetchall()
-    return [
-        {
-            "id": int(row["id"]),
-            "name": str(row["name"]),
-            "email": str(row["email"]),
+        TargetSurface::TypescriptPg => {
+            compose_typescript_source(functions, &interfaces, &realized_bodies, &async_names)
         }
-        for row in rows
-    ]
-
-
-def count_users() -> int:
-    row = db.execute("SELECT count(*) AS count FROM users").fetchone()
-    return int(row["count"] if row is not None else 0)
-
-
-def render_users_page() -> str:
-    users = get_all_users()
-    items = "".join(f"<li>{exported_formatter(user)}</li>" for user in users)
-    return f"<ul>{items}</ul>"
-
-
-def render_dashboard() -> str:
-    page = render_users_page()
-    count = count_users()
-    return f'<section data-count="{count}">{page}</section>'
-
-
-def handle_request(req: RequestLike) -> Response:
-    if req["path"] != "/users":
-        return {"status": 404, "body": "not found"}
-    return {"status": 200, "body": render_dashboard()}
-
-
-def exported_formatter(u: User) -> str:
-    return f"{u['name']} <{u['email']}> ({count_users()} users)"
-
-
-def record_event(user_id: int, kind: str) -> int:
-    cursor = db.execute(
-        "INSERT INTO events (user_id, kind) VALUES (?, ?)",
-        (user_id, kind),
-    )
-    db.commit()
-    return int(cursor.lastrowid or 0)
-"#
-    .to_string()
+        TargetSurface::PythonSqlite3 | TargetSurface::PythonAiosqlite => compose_python_source(
+            functions,
+            &interfaces,
+            &realized_bodies,
+            &async_names,
+            target_surface,
+        ),
+    }
 }
 
-fn render_python_aiosqlite_source() -> String {
-    r#"from __future__ import annotations
-
-import aiosqlite
-from typing import Any, Coroutine, TypedDict
-
-
-class User(TypedDict):
-    id: int
-    name: str
-    email: str
-
-
-class RequestLike(TypedDict):
-    path: str
-
-
-class Response(TypedDict):
-    status: int
-    body: str
-
-
-DB_PATH = "users.sqlite"
-
-
-def _row_to_user(row: aiosqlite.Row | None) -> User | None:
-    if row is None:
-        return None
-    return {
-        "id": int(row["id"]),
-        "name": str(row["name"]),
-        "email": str(row["email"]),
-    }
-
-
-async def get_user_by_id(id: int) -> Coroutine[Any, Any, User]:
-    async with aiosqlite.connect(DB_PATH) as db:
-        db.row_factory = aiosqlite.Row
-        async with db.execute(
-            "SELECT id, name, email FROM users WHERE id = ?",
-            (id,),
-        ) as cursor:
-            row = await cursor.fetchone()
-    user = _row_to_user(row)
-    if user is None:
-        raise RuntimeError(f"missing user {id}")
-    return user
-
-
-async def get_all_users() -> Coroutine[Any, Any, list[User]]:
-    async with aiosqlite.connect(DB_PATH) as db:
-        db.row_factory = aiosqlite.Row
-        async with db.execute("SELECT id, name, email FROM users ORDER BY id") as cursor:
-            rows = await cursor.fetchall()
-    return [
-        {
-            "id": int(row["id"]),
-            "name": str(row["name"]),
-            "email": str(row["email"]),
+fn realize_callsite_bodies(
+    repo_root: &Path,
+    functions: &[TsFunction],
+    sql_callsites: &[SqlCallsite],
+    target_surface: TargetSurface,
+    target_lang: &str,
+    target_tag: &str,
+) -> Result<BTreeMap<String, String>, String> {
+    let mut out = BTreeMap::new();
+    for callsite in sql_callsites {
+        let function = functions
+            .iter()
+            .find(|candidate| candidate.name == callsite.function)
+            .ok_or_else(|| format!("callsite {} missing function", callsite.cid))?;
+        let target_function = target_function_name(&function.name, target_surface);
+        let spec = realize_request_for_callsite(function, callsite, target_surface)?;
+        let realized = realize_probe_via_path(repo_root, target_lang, target_tag, spec)?;
+        if realized.is_stub {
+            return Err(format!(
+                "realize binding for {}/{}/{} returned a stub",
+                target_lang, target_tag, callsite.function
+            ));
         }
-        for row in rows
-    ]
+        let body = extract_realized_body(&realized.source, target_surface, &target_function)?;
+        out.insert(callsite.function.clone(), body);
+    }
+    Ok(out)
+}
 
+fn realize_request_for_callsite(
+    function: &TsFunction,
+    callsite: &SqlCallsite,
+    target_surface: TargetSurface,
+) -> Result<JsonValue, String> {
+    let params = ts_params(function)?
+        .into_iter()
+        .map(|param| param.name)
+        .collect::<Vec<_>>();
+    let param_types = ts_params(function)?
+        .into_iter()
+        .map(|param| target_param_type(&param.ty, target_surface))
+        .collect::<Vec<_>>();
+    let concept_name = concept_name_for_cid(&callsite.concept_cid)?;
+    let named_term_tree = build_callsite_ntt(callsite, &params, target_surface, concept_name)?;
+    Ok(json!({
+        "kind": "RealizeRequest",
+        "function": target_function_name(&function.name, target_surface),
+        "params": params,
+        "paramTypes": param_types,
+        "returnType": target_return_type_for_request(&function.return_type, target_surface),
+        "conceptName": concept_name,
+        "sql": callsite.sql,
+        "namedTermTree": named_term_tree,
+    }))
+}
 
-async def count_users() -> Coroutine[Any, Any, int]:
-    async with aiosqlite.connect(DB_PATH) as db:
-        db.row_factory = aiosqlite.Row
-        async with db.execute("SELECT count(*) AS count FROM users") as cursor:
-            row = await cursor.fetchone()
-    return int(row["count"] if row is not None else 0)
+fn build_callsite_ntt(
+    callsite: &SqlCallsite,
+    source_params: &[String],
+    target_surface: TargetSurface,
+    concept_name: &str,
+) -> Result<JsonValue, String> {
+    let arg_params = target_arg_names(source_params, target_surface);
+    let arg_source = match target_surface {
+        TargetSurface::TypescriptPg => typescript_args_source(&arg_params),
+        TargetSurface::PythonSqlite3 | TargetSurface::PythonAiosqlite => {
+            python_args_source(&arg_params)
+        }
+    };
+    Ok(json!({
+        "args": [
+            {
+                "args": [],
+                "conceptName": "Sql",
+                "operationKind": "const",
+                "shapeCid": named_term_leaf_shape_cid("Sql", "const"),
+                "source": serde_json::to_string(&callsite.sql)
+                    .map_err(|e| format!("serialize SQL literal: {e}"))?,
+                "sort": "Sql",
+                "value": callsite.sql,
+            },
+            {
+                "args": [],
+                "conceptName": "SqlArgs",
+                "operationKind": "args",
+                "params": arg_params,
+                "shapeCid": named_term_leaf_shape_cid("SqlArgs", "args"),
+                "sort": "SqlArgs",
+                "source": arg_source,
+            },
+        ],
+        "conceptName": concept_name,
+        "operationKind": "op-application",
+        "shapeCid": callsite.concept_cid,
+    }))
+}
 
+fn named_term_leaf_shape_cid(sort: &str, operation_kind: &str) -> String {
+    cid_for_json(&json!({
+        "kind": "named-term-tree-leaf-shape",
+        "operationKind": operation_kind,
+        "sort": sort,
+    }))
+}
 
-async def render_users_page() -> Coroutine[Any, Any, str]:
-    users = await get_all_users()
-    items = "".join(f"<li>{exported_formatter(user)}</li>" for user in users)
-    return f"<ul>{items}</ul>"
+fn target_function_name(source_name: &str, target_surface: TargetSurface) -> String {
+    if target_surface.is_python() {
+        snake_case(source_name)
+    } else {
+        source_name.to_string()
+    }
+}
 
+fn concept_name_for_cid(cid: &str) -> Result<&'static str, String> {
+    match cid {
+        SQL_QUERY_CONCEPT_CID => Ok("concept:sql-query"),
+        SQL_EXECUTE_CONCEPT_CID => Ok("concept:sql-execute"),
+        SQL_INSERT_AND_GET_ID_CONCEPT_CID => Ok("concept:insert-and-get-id"),
+        _ => Err(format!("unsupported SQL concept CID {cid}")),
+    }
+}
 
-async def render_dashboard() -> Coroutine[Any, Any, str]:
-    page = await render_users_page()
-    count = await count_users()
-    return f'<section data-count="{count}">{page}</section>'
+fn extract_realized_body(
+    realized_source: &str,
+    target_surface: TargetSurface,
+    function_name: &str,
+) -> Result<String, String> {
+    match target_surface {
+        TargetSurface::TypescriptPg => {
+            let open = realized_source.find('{').ok_or_else(|| {
+                format!("realized TypeScript source for {function_name} missing body")
+            })?;
+            let close = find_matching_brace(realized_source, open).ok_or_else(|| {
+                format!("realized TypeScript source for {function_name} has unbalanced body")
+            })?;
+            Ok(realized_source[open + 1..close].trim().to_string())
+        }
+        TargetSurface::PythonSqlite3 | TargetSurface::PythonAiosqlite => {
+            let mut lines = realized_source.lines();
+            let header = lines
+                .next()
+                .ok_or_else(|| format!("realized Python source for {function_name} is empty"))?;
+            if !header.contains(&format!("def {function_name}(")) {
+                return Err(format!(
+                    "realized Python source header {header:?} does not define {function_name}"
+                ));
+            }
+            let body = lines
+                .map(|line| line.strip_prefix("    ").unwrap_or(line).to_string())
+                .collect::<Vec<_>>()
+                .join("\n");
+            Ok(body.trim().to_string())
+        }
+    }
+}
 
+fn compose_typescript_source(
+    functions: &[TsFunction],
+    interfaces: &[InterfaceDecl],
+    realized_bodies: &BTreeMap<String, String>,
+    async_names: &BTreeSet<String>,
+) -> Result<String, String> {
+    let mut sections = Vec::new();
+    sections.push("import { Pool } from \"pg\";".to_string());
+    sections.extend(interfaces.iter().map(|interface| interface.source.clone()));
+    sections.push("const pool = new Pool({});".to_string());
+    for function in functions {
+        sections.push(render_typescript_function(
+            function,
+            realized_bodies.get(&function.name),
+            async_names,
+        )?);
+    }
+    Ok(format!("{}\n", sections.join("\n\n")))
+}
 
-async def handle_request(req: RequestLike) -> Coroutine[Any, Any, Response]:
-    if req["path"] != "/users":
-        return {"status": 404, "body": "not found"}
-    return {"status": 200, "body": await render_dashboard()}
+fn render_typescript_function(
+    function: &TsFunction,
+    realized_body: Option<&String>,
+    async_names: &BTreeSet<String>,
+) -> Result<String, String> {
+    let params = ts_params(function)?;
+    let params_source = params
+        .iter()
+        .map(|param| format!("{}: {}", param.name, param.ty))
+        .collect::<Vec<_>>()
+        .join(", ");
+    let is_async = async_names.contains(&function.name);
+    let return_type = typescript_return_type(&function.return_type, is_async);
+    let body = match realized_body {
+        Some(body) => body.clone(),
+        None => rewrite_typescript_calls(function.body.trim(), async_names, is_async),
+    };
+    let async_prefix = if is_async { "async " } else { "" };
+    Ok(format!(
+        "export {async_prefix}function {}({params_source}): {return_type} {{\n{}\n}}",
+        function.name,
+        indent_block(&body, 2)
+    ))
+}
 
+fn compose_python_source(
+    functions: &[TsFunction],
+    interfaces: &[InterfaceDecl],
+    realized_bodies: &BTreeMap<String, String>,
+    async_names: &BTreeSet<String>,
+    target_surface: TargetSurface,
+) -> Result<String, String> {
+    let mut sections = Vec::new();
+    match target_surface {
+        TargetSurface::PythonSqlite3 => {
+            sections.push("from __future__ import annotations\n\nimport sqlite3\nfrom typing import TypedDict".to_string());
+        }
+        TargetSurface::PythonAiosqlite => {
+            sections.push("from __future__ import annotations\n\nimport aiosqlite\nfrom typing import TypedDict".to_string());
+        }
+        TargetSurface::TypescriptPg => unreachable!("compose_python_source called for TypeScript"),
+    }
+    sections.extend(
+        interfaces
+            .iter()
+            .map(render_python_typeddict)
+            .collect::<Result<Vec<_>, _>>()?,
+    );
+    match target_surface {
+        TargetSurface::PythonSqlite3 => {
+            sections.push(
+                "db = sqlite3.connect(\"users.sqlite\")\ndb.row_factory = sqlite3.Row".to_string(),
+            );
+        }
+        TargetSurface::PythonAiosqlite => {
+            sections.push("DB_PATH = \"users.sqlite\"".to_string());
+        }
+        TargetSurface::TypescriptPg => unreachable!("compose_python_source called for TypeScript"),
+    }
+    for function in functions {
+        sections.push(render_python_function(
+            function,
+            realized_bodies.get(&function.name),
+            async_names,
+            target_surface,
+        )?);
+    }
+    Ok(format!("{}\n", sections.join("\n\n")))
+}
 
-def exported_formatter(u: User) -> str:
-    return f"{u['name']} <{u['email']}> ({count_users()} users)"
+fn render_python_function(
+    function: &TsFunction,
+    realized_body: Option<&String>,
+    async_names: &BTreeSet<String>,
+    target_surface: TargetSurface,
+) -> Result<String, String> {
+    let params = ts_params(function)?;
+    let is_sql_function = realized_body.is_some();
+    let is_async = async_names.contains(&function.name);
+    let params_source = params
+        .iter()
+        .map(|param| {
+            let name = if is_sql_function {
+                param.name.clone()
+            } else {
+                snake_case(&param.name)
+            };
+            format!("{}: {}", name, python_type(&param.ty))
+        })
+        .collect::<Vec<_>>()
+        .join(", ");
+    let body = match realized_body {
+        Some(body) => python_sql_body(function, body, target_surface)?,
+        None => python_structural_body(function, async_names, is_async)?,
+    };
+    let def_prefix = if is_async { "async def" } else { "def" };
+    Ok(format!(
+        "{def_prefix} {}({params_source}) -> {}:\n{}",
+        snake_case(&function.name),
+        python_type(&unwrap_ts_promise(&function.return_type)),
+        indent_block(&body, 4)
+    ))
+}
 
+fn python_sql_body(
+    function: &TsFunction,
+    realized_body: &str,
+    target_surface: TargetSurface,
+) -> Result<String, String> {
+    let params = ts_params(function)?
+        .into_iter()
+        .map(|param| param.name)
+        .collect::<Vec<_>>();
+    let sql_binding = sql_literal_source(function)?;
+    let args_binding = python_args_source(&params);
+    let mut lines = vec![
+        format!("sql = {sql_binding}"),
+        format!("args = {args_binding}"),
+    ];
+    lines.extend(realized_body.lines().map(str::to_string));
+    let body = lines.join("\n");
+    match target_surface {
+        TargetSurface::PythonSqlite3 => Ok(body),
+        TargetSurface::PythonAiosqlite => Ok(format!(
+            "async with aiosqlite.connect(DB_PATH) as db:\n{}",
+            indent_block(&format!("db.row_factory = aiosqlite.Row\n{body}"), 4)
+        )),
+        TargetSurface::TypescriptPg => unreachable!("python_sql_body called for TypeScript"),
+    }
+}
 
-async def record_event(user_id: int, kind: str) -> Coroutine[Any, Any, int]:
-    async with aiosqlite.connect(DB_PATH) as db:
-        async with db.execute(
-            "INSERT INTO events (user_id, kind) VALUES (?, ?)",
-            (user_id, kind),
-        ) as cursor:
-            await db.commit()
-            return int(cursor.lastrowid or 0)
-"#
-    .to_string()
+fn sql_literal_source(function: &TsFunction) -> Result<String, String> {
+    let local_prepare = function
+        .body
+        .find(".prepare(")
+        .ok_or_else(|| format!("{} missing prepare offset", function.name))?;
+    let sql = extract_prepare_sql(&function.body, local_prepare, &function.name)?;
+    serde_json::to_string(&sql).map_err(|e| format!("serialize SQL literal: {e}"))
+}
+
+fn python_structural_body(
+    function: &TsFunction,
+    async_names: &BTreeSet<String>,
+    is_async: bool,
+) -> Result<String, String> {
+    let body = match function.name.as_str() {
+        "renderUsersPage" => {
+            let users = python_call_expr("getAllUsers", async_names, is_async);
+            vec![
+                format!("users = {users}"),
+                "items = \"\".join(f\"<li>{exported_formatter(user)}</li>\" for user in users)"
+                    .to_string(),
+                "return f\"<ul>{items}</ul>\"".to_string(),
+            ]
+        }
+        "renderDashboard" => {
+            let page = python_call_expr("renderUsersPage", async_names, is_async);
+            let count = python_call_expr("countUsers", async_names, is_async);
+            vec![
+                format!("page = {page}"),
+                format!("count = {count}"),
+                "return f'<section data-count=\"{count}\">{page}</section>'".to_string(),
+            ]
+        }
+        "handleRequest" => {
+            let dashboard = python_call_expr("renderDashboard", async_names, is_async);
+            vec![
+                "if req[\"path\"] != \"/users\":".to_string(),
+                "    return {\"status\": 404, \"body\": \"not found\"}".to_string(),
+                format!("return {{\"status\": 200, \"body\": {dashboard}}}"),
+            ]
+        }
+        "exportedFormatter" => {
+            vec!["return f\"{u['name']} <{u['email']}> ({count_users()} users)\"".to_string()]
+        }
+        other => {
+            return Err(format!(
+                "no Python structural shell composer for non-SQL function {other}"
+            ));
+        }
+    };
+    Ok(body.join("\n"))
+}
+
+fn python_call_expr(
+    source_name: &str,
+    async_names: &BTreeSet<String>,
+    current_function_is_async: bool,
+) -> String {
+    let target_name = snake_case(source_name);
+    if current_function_is_async && async_names.contains(source_name) {
+        format!("await {target_name}()")
+    } else {
+        format!("{target_name}()")
+    }
+}
+
+fn target_async_function_names(
+    functions: &[TsFunction],
+    decisions: &BTreeMap<String, PropagationDecision>,
+    target_surface: TargetSurface,
+) -> BTreeSet<String> {
+    let mut out = BTreeSet::new();
+    if target_surface.requires_async_delta() {
+        for function in functions {
+            if function.is_async {
+                out.insert(function.name.clone());
+            }
+        }
+    }
+    for (function, decision) in decisions {
+        match decision {
+            PropagationDecision::Widen { effect, .. }
+                if effect == ASYNC_EFFECT || target_surface.requires_async_delta() =>
+            {
+                out.insert(function.clone());
+            }
+            PropagationDecision::Halt { .. } if target_surface.requires_async_delta() => {
+                out.insert(function.clone());
+            }
+            _ => {}
+        }
+    }
+    out
+}
+
+fn rewrite_typescript_calls(
+    body: &str,
+    async_names: &BTreeSet<String>,
+    current_function_is_async: bool,
+) -> String {
+    if !current_function_is_async {
+        return body.to_string();
+    }
+    let mut out = body.to_string();
+    for callee in async_names {
+        let call = format!("{callee}()");
+        let awaited = format!("await {callee}()");
+        if out.contains(&awaited) {
+            continue;
+        }
+        out = out.replace(&call, &awaited);
+    }
+    out
+}
+
+fn extract_exported_interfaces(source: &str) -> Result<Vec<InterfaceDecl>, String> {
+    let mut out = Vec::new();
+    let mut search = 0;
+    while let Some(rel) = source[search..].find("export interface ") {
+        let start = search + rel;
+        let name_start = start + "export interface ".len();
+        let name_end = source[name_start..]
+            .find(|ch: char| !is_ident_char(ch))
+            .map(|offset| name_start + offset)
+            .ok_or_else(|| "unterminated interface name".to_string())?;
+        let open = source[name_end..]
+            .find('{')
+            .map(|offset| name_end + offset)
+            .ok_or_else(|| "interface missing body".to_string())?;
+        let close = find_matching_brace(source, open)
+            .ok_or_else(|| "interface has unbalanced body".to_string())?;
+        let body = &source[open + 1..close];
+        let fields = body
+            .lines()
+            .filter_map(|line| parse_interface_field(line.trim()))
+            .collect::<Vec<_>>();
+        out.push(InterfaceDecl {
+            name: source[name_start..name_end].to_string(),
+            fields,
+            source: source[start..=close].trim().to_string(),
+        });
+        search = close + 1;
+    }
+    Ok(out)
+}
+
+fn parse_interface_field(line: &str) -> Option<TsParam> {
+    let cleaned = line.trim_end_matches(';').trim();
+    if cleaned.is_empty() {
+        return None;
+    }
+    let (name, ty) = cleaned.split_once(':')?;
+    Some(TsParam {
+        name: name.trim().trim_end_matches('?').to_string(),
+        ty: ty.trim().to_string(),
+    })
+}
+
+fn render_python_typeddict(interface: &InterfaceDecl) -> Result<String, String> {
+    let mut lines = vec![format!("class {}(TypedDict):", interface.name)];
+    if interface.fields.is_empty() {
+        lines.push("    pass".to_string());
+    } else {
+        lines.extend(
+            interface
+                .fields
+                .iter()
+                .map(|field| format!("    {}: {}", field.name, python_type(&field.ty))),
+        );
+    }
+    Ok(lines.join("\n"))
+}
+
+fn ts_params(function: &TsFunction) -> Result<Vec<TsParam>, String> {
+    let open = function
+        .signature
+        .find('(')
+        .ok_or_else(|| format!("{} signature missing parameters", function.name))?;
+    let close = find_matching_delimiter(&function.signature, open, '(', ')')
+        .ok_or_else(|| format!("{} signature has unbalanced parameters", function.name))?;
+    let raw_params = function.signature[open + 1..close].trim();
+    if raw_params.is_empty() {
+        return Ok(Vec::new());
+    }
+    split_top_level_commas(raw_params)
+        .into_iter()
+        .map(|raw| {
+            let (name, ty) = raw
+                .split_once(':')
+                .ok_or_else(|| format!("{} parameter {raw} missing type", function.name))?;
+            Ok(TsParam {
+                name: name
+                    .trim()
+                    .trim_start_matches("...")
+                    .trim_end_matches('?')
+                    .to_string(),
+                ty: ty.trim().to_string(),
+            })
+        })
+        .collect()
+}
+
+fn target_arg_names(source_params: &[String], target_surface: TargetSurface) -> Vec<String> {
+    source_params
+        .iter()
+        .map(|param| {
+            if target_surface.is_python() {
+                snake_case(param)
+            } else {
+                param.clone()
+            }
+        })
+        .collect()
+}
+
+fn typescript_args_source(params: &[String]) -> String {
+    format!("[{}]", params.join(", "))
+}
+
+fn python_args_source(params: &[String]) -> String {
+    match params {
+        [] => "()".to_string(),
+        [only] => format!("({only},)"),
+        many => format!("({},)", many.join(", ")),
+    }
+}
+
+fn target_param_type(source_type: &str, target_surface: TargetSurface) -> String {
+    match target_surface {
+        TargetSurface::TypescriptPg => typescript_type(source_type),
+        TargetSurface::PythonSqlite3 | TargetSurface::PythonAiosqlite => python_type(source_type),
+    }
+}
+
+fn target_return_type_for_request(source_type: &str, target_surface: TargetSurface) -> String {
+    let unwrapped = unwrap_ts_promise(source_type);
+    target_param_type(&unwrapped, target_surface)
+}
+
+fn typescript_return_type(source_type: &str, is_async: bool) -> String {
+    let unwrapped = unwrap_ts_promise(source_type);
+    if is_async {
+        format!("Promise<{unwrapped}>")
+    } else {
+        unwrapped
+    }
+}
+
+fn unwrap_ts_promise(source_type: &str) -> String {
+    let trimmed = source_type.trim();
+    if let Some(inner) = trimmed
+        .strip_prefix("Promise<")
+        .and_then(|rest| rest.strip_suffix('>'))
+    {
+        inner.trim().to_string()
+    } else {
+        trimmed.to_string()
+    }
+}
+
+fn typescript_type(source_type: &str) -> String {
+    unwrap_ts_promise(source_type)
+}
+
+fn python_type(source_type: &str) -> String {
+    let ty = unwrap_ts_promise(source_type);
+    if let Some(inner) = ty.strip_suffix("[]") {
+        return format!("list[{}]", python_type(inner));
+    }
+    match ty.as_str() {
+        "number" => "int".to_string(),
+        "string" => "str".to_string(),
+        "boolean" => "bool".to_string(),
+        other => other.to_string(),
+    }
+}
+
+fn indent_block(body: &str, spaces: usize) -> String {
+    let indent = " ".repeat(spaces);
+    let lines = if body.trim().is_empty() {
+        vec!["pass".to_string()]
+    } else {
+        body.lines().map(|line| line.to_string()).collect()
+    };
+    lines
+        .into_iter()
+        .map(|line| {
+            if line.is_empty() {
+                line
+            } else {
+                format!("{indent}{line}")
+            }
+        })
+        .collect::<Vec<_>>()
+        .join("\n")
 }
 
 fn write_migrated_project(
@@ -2252,6 +2621,8 @@ fn json_to_value(j: &serde_json::Value) -> Arc<Value> {
 mod tests {
     use super::*;
 
+    use libprovekit::core::platform_semantics_for_lower_target;
+
     const CONCEPT_ADD_CID: &str = "blake3-512:95fc70e63a5550fd2e25142f13932919c59d085654ab387789c798886b0111c61d28fe533fc98b50df70eea9428a9af8aa75372c8b1c1deb3acc1a4094790468";
     const CONCEPT_DIV_CID: &str = "blake3-512:c6a13abbcafdf83edcff49d883a7c7440faadd8af896da0ad46e2bcb177ed0649d005b4ddecd4689cf565b10679219a07c784399bafe5c6174642e1b808d7839";
 
@@ -2305,16 +2676,15 @@ mod tests {
             .iter()
             .map(|callsite| function(&callsite.function))
             .collect::<Vec<_>>();
-        let decisions =
-            match NonEmptyChangedCallsites::new(changes.changed_callsites) {
-                Ok(changed) => {
-                    let graph = build_propagation_input(&functions, callsites, changed);
-                    propagate_effects(&graph)
-                        .expect("propagation succeeds")
-                        .decisions
-                }
-                Err(_) => BTreeMap::new(),
-            };
+        let decisions = match NonEmptyChangedCallsites::new(changes.changed_callsites) {
+            Ok(changed) => {
+                let graph = build_propagation_input(&functions, callsites, changed);
+                propagate_effects(&graph)
+                    .expect("propagation succeeds")
+                    .decisions
+            }
+            Err(_) => BTreeMap::new(),
+        };
         build_receipt(
             &decisions,
             callsites,
@@ -2394,10 +2764,7 @@ mod tests {
         let target = platform_semantics_for_lower_target("java").expect("java semantics");
         let changes =
             platform_semantic_changes(&source, &target, &callsites, None).expect("changes");
-        let first_changed = changes
-            .changed_callsites
-            .first()
-            .expect("changed callsite");
+        let first_changed = changes.changed_callsites.first().expect("changed callsite");
         let dimension = first_changed
             .dimension_name
             .clone()
