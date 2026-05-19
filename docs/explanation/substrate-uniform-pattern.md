@@ -79,6 +79,34 @@ Properties of operations at library API boundaries. Declared on `concept:sql-*`,
 Boundary contracts (`boundary:*` namespace) carry their own dimension matrices
 parallel to op declarations.
 
+### 2.3 Dimension identity is open-keyed; value-content distinguishes the layer
+
+Per `docs/plans/2026-05-18-dimension-naming-conventions.md`, dimensions are
+kit-minted open-keyed strings. The substrate does NOT catalog dimension
+identities (no `menagerie/concept-shapes/catalog/dimensions/` tier). Both
+type-layer and boundary-layer dimensions share the same
+`BTreeMap<String, Cid>` storage in `PlatformSemanticTag.dimensions`. What
+distinguishes the layers is the SEMANTIC CONTENT of the dimension VALUE
+mementos' `compare_to` formulas:
+
+- Type-layer value mementos cite substrate-canonical concept CIDs (e.g.,
+  SortAdmission values draw from `menagerie/concept-shapes/catalog/sorts/`).
+  The formula structure looks like `Atomic { name: "admits_sorts", args: [
+  set of canonical sort CIDs ] }`. The substrate provides the value
+  vocabulary via existing canonical catalogs.
+- Boundary-layer value mementos mint their own structural identity (e.g.,
+  RowIdMechanism's LastInsertRowid declares `Atomic { name: "row_id_source",
+  args: [Ctor "last_insert_rowid" applied to Ctor
+  "connection_state_at_call_return"] }`). The kit invents the structural
+  vocabulary; cross-kit equivalence emerges from identical formula content
+  (post-#1260) yielding identical CIDs.
+
+Both kinds participate in `compare_op_with` identically. The distinction is
+which side of the substrate (canonical-vocabulary vs kit-vocabulary) the
+formula draws its content from. Filing a new dimension does NOT create a
+catalog entry; it adds a row to the naming-conventions doc and the affected
+kits declare value mementos.
+
 ## 3. Per-kit declaration matrix
 
 Each `PlatformSemanticsDeclaration` is a matrix of:
@@ -219,3 +247,84 @@ section 2 (new dimensions) or examples to section 3 (new kits).
 If a D-series issue or codex brief proposes a new dispatcher / new primitive
 / new engine, the issue or brief is wrong. The reviewer raises this document
 and asks: "where in the existing matrix does this gap close?"
+
+## 10. Open-extensibility (all platforms, including ones not yet imagined)
+
+The substrate must support every platform that has ever existed and every
+platform that will exist, including ones we have not thought of. Quantum
+computers. Non-von-Neumann architectures (dataflow, cellular automata,
+neuromorphic, stack machines, lambda-calculus combinator machines, future
+substrates). The substrate accommodates these by being open-extensible
+across every tier:
+
+- **Concept catalog grows.** New platforms mint new ops in
+  `menagerie/concept-shapes/catalog/algorithms/` (`concept:state-prep` for
+  quantum state preparation, `concept:cell-rule` for cellular automata,
+  `concept:spike-train` for neuromorphic, etc.). No substrate primitive
+  change.
+- **Sort catalog grows.** New architectures mint new sorts in
+  `menagerie/concept-shapes/catalog/sorts/` (`Qubit`, `QuantumRegister`,
+  `Tensor<...>`, `Stream`, `Cell`, etc.). No substrate primitive change.
+- **Dimension vocabulary grows.** Kit-minted open-keyed strings admit new
+  dimensions (`QuantumStateAdmission`, `MeasurementCollapse`,
+  `DataflowOrder`, `CellNeighborhood`, etc.). Naming-conventions doc adds
+  rows; no substrate primitive change.
+- **Per-(lang, binding) declarations grow.** New platforms register
+  declarations in `platform_semantics_for_lower_target` and
+  `binding_semantics_for_tag`. Hardcoded match arms today; future:
+  dynamic registration per the `D14 externalized language kits` audit row.
+  No primitive change in either case.
+
+No part of the substrate's tiers is closed. Future platforms slot in by
+extending vocabulary; the existing primitives (composition, comparison,
+propagation, realization) operate uniformly across all vocabulary entries.
+
+### 10.1 Edge cases the framework handles correctly
+
+- **Quantum measurement collapse.** Round-trip cycles may not be meaningful
+  because measurement is irreversible. The trichotomy handles this:
+  migrations from quantum to classical languages return Uncharacterizable
+  (refuse-leg per `2026-05-18-refuse-leg-short-circuit-ruling.md`) when
+  measurement-coupled state cannot be preserved across the boundary. The
+  substrate does not falsely claim Same for irreversibly-collapsing
+  migrations.
+- **Non-call-graph control flow.** Dataflow, cellular, neuromorphic,
+  stack-machine, and combinator architectures may not have a call graph in
+  the conventional sense. The current `propagate_effects`
+  (`implementations/rust/libprovekit/src/effect_propagation.rs:111`) is
+  call-graph-based. For genuinely non-call-graph architectures, a new
+  domain-specific propagation primitive may be filed via ruling. This
+  exception is bounded: the "no new machinery" rule of section 7 applies
+  to REINVENTING existing-domain primitives (e.g., adding a parallel
+  propagation engine for call-graph problems); it does NOT forbid
+  extending the substrate to genuinely new problem domains.
+- **Sort vocabulary that does not match classical primitive types.**
+  Quantum has no "Int" in the classical sense; cellular automata may have
+  custom state alphabets per rule. Kits declare what their architecture
+  admits via SortAdmission citing canonical sort CIDs (existing or newly
+  minted). The substrate carries no assumption that classical primitives
+  must appear.
+- **Value-tier ops other than `concept:literal`.** Future platforms may
+  not have a notion of "literal at a position." Their kits declare their
+  own value-tier ops (e.g., `concept:state-preparation`) with admission
+  dimensions parameterized by those ops, not by `concept:literal`. The
+  substrate does not require every architecture to admit literals.
+
+### 10.2 Discipline for future-platform contributors
+
+When filing a substrate extension for a new platform:
+
+1. State which existing-tier extensions cover your needs (catalog mints,
+   dimension declarations, kit registrations). These should be the bulk of
+   the work.
+2. If you propose a new primitive, justify why no existing primitive
+   composes to your need. Reviewers check this against the rules in
+   sections 1, 6, and 7.
+3. If the new primitive crosses a problem-domain boundary (non-call-graph
+   propagation, non-classical comparison, etc.), file a ruling document
+   under `docs/plans/<date>-<topic>-ruling.md` documenting the boundary
+   and the new primitive's contract.
+
+The substrate is OPEN, not closed. Adding new sorts, concepts, dimensions,
+or kits requires zero primitive changes. Adding new problem-domain
+primitives requires a ruling.

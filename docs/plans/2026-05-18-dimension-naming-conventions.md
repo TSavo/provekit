@@ -94,6 +94,45 @@ Concept-op CIDs (e.g., for `concept:insert-and-get-id`) are minted similarly via
 - Dimension VALUES under a given dimension may be added freely by kits without ruling amendment, but should follow naming conventions consistent with this table (e.g., for `ArithmeticOverflow`, value names use a single CamelCase noun phrase describing the behavior).
 - The `compare_to: IrFormula` of each DimensionValueMemento MUST be structurally distinguishable across kits. Two kits declaring the same `value_name` but with different `compare_to` formulas produces DIFFERENT CIDs, which is the substrate being honest about the divergence. Two kits declaring the same `value_name` with the SAME `compare_to` formula produces the SAME CID, indicating they agree on the semantics.
 
+## Type-layer dimensions
+
+Added 2026-05-19. Declared by both language-kits and binding-kits, on `concept:literal` and related value-tier ops. Value mementos CITE substrate-canonical concept CIDs (from `menagerie/concept-shapes/catalog/sorts/`), in contrast to Library-API dimensions whose values are kit-minted structural formulas. Both kinds share the same storage (`BTreeMap<String, Cid>`) and the same `compare_op_with` machinery; the distinction is in the value memento's `compare_to` formula CONTENT, not in any new substrate tier.
+
+### `SortAdmission`
+
+Which substrate-canonical sorts the kit admits at a given literal position.
+
+The value memento's `compare_to` formula has shape:
+
+```
+Atomic { name: "admits_sorts", args: [Set [<sort_cid_1>, <sort_cid_2>, ...]] }
+```
+
+Cross-kit equivalence emerges when two kits declare the same admission set: identical formula content yields identical CID (after #1260's envelope-violation fix lands).
+
+Substrate-canonical sort vocabulary today (in `menagerie/concept-shapes/catalog/sorts/`):
+`Bool`, `Bytes`, `Cid`, `EffectName`, `Formula`, `Int`, `List<T>`, `Map<K,V>`, `OpCid`, `SortCid`, `String`, `Term`. New additions per #1261: `Float`, `Null`.
+
+Example declarations:
+- TypeScript language-kit: `{ Float, String, Bool, Null }` (JS numerics are Float, no native Int).
+- Rust language-kit: `{ Int, Float, String, Bool, Bytes }` (no Null; uses `Option<T>` instead).
+- Java language-kit: `{ Int, Float, String, Bool, Bytes, Null }`.
+- C language-kit: `{ Int, Float, String, Bytes, Null }` (no native Bool until `<stdbool.h>`).
+- Python language-kit: `{ Int, Float, String, Bool, Bytes, Null }`.
+
+A null-free language declaring SortAdmission without `Null` is honest: migration TO that language characterizes source-side Null as a Divergent verdict; `propagate_effects` widens or refuses per the existing trichotomy. No special-casing.
+
+### Future type-layer dimensions
+
+Add when Trinity surfaces the need:
+- `IntegerWidth` (e.g., `Int32`, `Int64`, `Arbitrary`).
+- `FloatPrecision` (e.g., `Float32`, `Float64`).
+- `EncodingMode` (e.g., `UTF-8`, `UTF-16-LE`, `UTF-16-BE`, `ASCII`, `Latin-1`).
+- `MutabilityMode` (`Immutable`, `Mutable`, `InteriorMutable`).
+- `OwnershipMode` (Rust-flavored: `Owned`, `Borrowed`, `Shared`).
+
+Each future type-layer dimension follows the same shape: kit-minted open-keyed name; value mementos cite or structurally describe per the layer's convention.
+
 ## Future work
 
 - Mint additional binding-kits (mysql, sqlserver, redshift) using established patterns. Each will declare `RowIdMechanism` + any library-specific dimensions.
