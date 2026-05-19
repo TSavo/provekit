@@ -37,8 +37,8 @@ use std::sync::Arc;
 use provekit_canonicalizer::{blake3_512_of, encode_jcs, Value};
 use provekit_claim_envelope::{mint_contract, Authoring, MintContractArgs};
 use provekit_ir_types::{
-    CodeSite, CodeSiteSpan, ConceptSiteMemento, ConceptSiteProvenance, Discharge, IrFormula,
-    LossRecord, ExamManifestMemento,
+    CodeSite, CodeSiteSpan, ConceptSiteMemento, ConceptSiteProvenance, Discharge,
+    ExamManifestMemento, IrFormula, LossRecord,
 };
 use provekit_proof_envelope::Ed25519Seed;
 
@@ -54,7 +54,7 @@ mod test_lift;
 use algebra::{FormulaShape, TermShape};
 
 const EXAM_MANIFEST_JSON: &str = include_str!(
-    "../../../concept-shapes/exams/v1.1.blake3-512:32af210992406289b0863d6f24ab3f05e6707034fd473fe7a8e323edda0376ce018f9ba8a31d00c4e3c4134140b1f3e06cfad6a0afde762778032035066475cc.json"
+    "../../../concept-shapes/exams/v1.1.blake3-512:b38426ba10ee3a6c28e9e32cae9aa65cfb5b750950464d1e67e9d669956bd40288d25c247d0ec2d638fd63e2d235d944f419055c0374c78488b4be98da040451.json"
 );
 
 fn main() {
