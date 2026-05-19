@@ -99,6 +99,16 @@ pub fn run(args: MaterializeArgs) -> u8 {
         }
     };
 
+    if files.is_empty() {
+        if !args.out.quiet {
+            eprintln!(
+                "{} found 0 concept citation(s)",
+                "materialize".green().bold()
+            );
+        }
+        return EXIT_OK;
+    }
+
     if let Some(out_dir) = args.out_dir.as_ref() {
         if let Err(error) = write_out_dir(out_dir, &files) {
             eprintln!("{}: {error}", "error".red().bold());

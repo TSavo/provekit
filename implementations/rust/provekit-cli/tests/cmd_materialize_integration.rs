@@ -186,6 +186,12 @@ fn write_mismatched_cid_concept_source(src_dir: &Path) -> PathBuf {
     source_path
 }
 
+fn write_no_carrier_source(src_dir: &Path) -> PathBuf {
+    let source_path = src_dir.join("plain.ts");
+    fs::write(&source_path, "export const untouched = 42;\n").expect("write plain source");
+    source_path
+}
+
 #[test]
 fn materialize_dry_run_replaces_concept_citation_with_realized_library_source() {
     let workspace = tempfile::tempdir().expect("tempdir");
@@ -474,5 +480,42 @@ fn materialize_rejects_payload_cid_mismatch() {
     assert!(
         stderr.contains("provekit-concept-payload-cid mismatch"),
         "CID mismatch error should explain the mismatch:\n{stderr}"
+    );
+}
+
+#[test]
+fn materialize_no_carriers_reports_zero_without_printing_dry_run_source() {
+    let workspace = tempfile::tempdir().expect("tempdir");
+    let src_dir = write_typescript_project_fixture(workspace.path());
+    let source_path = write_no_carrier_source(&src_dir);
+
+    let output = Command::new(env!("CARGO_BIN_EXE_provekit"))
+        .arg("materialize")
+        .arg("--library")
+        .arg("typescript-better-sqlite3")
+        .arg("--source-dir")
+        .arg(&src_dir)
+        .arg("--project")
+        .arg(workspace.path())
+        .output()
+        .expect("spawn provekit materialize");
+
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(
+        output.status.success(),
+        "no-carrier materialize should succeed\nstdout:\n{stdout}\nstderr:\n{stderr}"
+    );
+    assert_eq!(
+        stdout, "",
+        "dry-run no-carrier mode should not print source"
+    );
+    assert!(
+        stderr.contains("found 0 concept citation(s)"),
+        "no-carrier mode should explain why no files were printed:\n{stderr}"
+    );
+    assert_eq!(
+        fs::read_to_string(source_path).expect("read plain source"),
+        "export const untouched = 42;\n"
     );
 }
