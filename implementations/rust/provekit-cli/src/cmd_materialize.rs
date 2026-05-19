@@ -256,10 +256,17 @@ fn concept_payload_cid_from_line(line: &str) -> Option<&str> {
 }
 
 fn strip_comment_prefix(line: &str) -> Option<&str> {
-    line.strip_prefix("//")
+    let body = line
+        .strip_prefix("//")
         .or_else(|| line.strip_prefix('#'))
-        .or_else(|| line.strip_prefix("/*"))
-        .map(str::trim_start)
+        .or_else(|| line.strip_prefix("/*"))?
+        .trim_start();
+    Some(
+        body.trim_end()
+            .strip_suffix("*/")
+            .map(str::trim_end)
+            .unwrap_or(body),
+    )
 }
 
 fn indent_realized_source(source: &str, indent: &str) -> String {
