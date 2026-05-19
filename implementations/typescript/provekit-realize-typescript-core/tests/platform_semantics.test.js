@@ -3,7 +3,7 @@
 const { test } = require("node:test");
 const assert = require("node:assert/strict");
 
-const { declaration, dimensionValues } = require("../src/platform_semantics");
+const { declaration, dimensionValues, CONCEPT_LITERAL_CID } = require("../src/platform_semantics");
 const { dispatch } = require("../src/rpc");
 
 // Golden CIDs for dimension values (kit_cid elided per substrate spec).
@@ -14,7 +14,14 @@ const GOLDEN_DIM_VALUE_CIDS = {
   NullSemantics:            "blake3-512:2b6e67a5513cc768b1c59b9fdbf7fb7ef3f7d12235a4b8c1cd63fcbc52b0c23a8e43b88cbd3bd4c730f2f5f40751d3f1b8c6ba12f3c1307b7a0ff81f593d492f",
   ShiftMode:                "blake3-512:31de26cc4a328f4a3817d5b9587fa67c0cc30b07e1109113e6727f5a553afb0e1f1dc8f01d10cec210f3c04956df2b062c4a127612d535cdbb018ecf4531f5fa",
   BitwiseSemantics:         "blake3-512:de3c71b070d8e228ad2699a0013f95c4ec18a638a1b1e8c5d406737dddde297b738c38eed094f99d8d512ba1f9255ecac911191134f5bea228f68bb4cddde78a",
+  // concept:literal SortAdmission: TS admits Float, String, Bool, Null (no Int, no Bytes)
+  // value_name "JsValueTier" -- TS-specific, no cross-kit equivalence claim
+  SortAdmission:            "blake3-512:91bcbfd2eb398a5dbc614e4cb12595d59f750b752586e2f381e1c17e5e5e392f7884b9171f9cf3c753d9256c1621682bac07f119382509a72cc690619681d274",
 };
+
+// Golden concept:literal tag CID
+const GOLDEN_CONCEPT_LITERAL_TAG_CID =
+  "blake3-512:229156b2e5d513191b6a8acb1b26a7b00b11818e79d763403ce955f0e14024f4ca75814957be03a76830bb7fe6e473e5a9d98fd2996670745f3eb1cf3a2a565c";
 
 const EXPECTED_DIMENSIONS = {
   ArithmeticOverflow:      "Ieee754Saturate",
@@ -22,6 +29,7 @@ const EXPECTED_DIMENSIONS = {
   NullSemantics:           "ReturnsNanOrInfinity",
   ShiftMode:               "Int32Wrapping",
   BitwiseSemantics:        "Int32",
+  SortAdmission:           "JsValueTier",
 };
 
 // Positive: declaration is non-empty
@@ -78,14 +86,42 @@ test("ts_arithmetic_overflow_differs_from_python", () => {
   );
 });
 
-// Structural: compare_to for each dimension value is a proper atomic formula
+// Structural: compare_to for each dimension value is a proper atomic formula.
+// SortAdmission uses admits_sorts (not typescript:X) with non-empty CID args.
 test("ts_dimension_value_compare_to_shapes", () => {
   const dvs = dimensionValues();
   for (const dv of dvs) {
     assert.strictEqual(dv.compare_to.kind, "atomic");
-    assert.ok(dv.compare_to.name.startsWith("typescript:"), `compare_to.name must be 'typescript:...'`);
-    assert.deepStrictEqual(dv.compare_to.args, []);
+    if (dv.dimension_name === "SortAdmission") {
+      assert.strictEqual(dv.compare_to.name, "admits_sorts");
+      assert.ok(dv.compare_to.args.length > 0, "SortAdmission args must not be empty");
+      for (const arg of dv.compare_to.args) {
+        assert.strictEqual(arg.kind, "const");
+        assert.strictEqual(arg.sort.kind, "primitive");
+        assert.strictEqual(arg.sort.name, "cid");
+        assert.ok(arg.value.startsWith("blake3-512:"));
+      }
+    } else {
+      assert.ok(dv.compare_to.name.startsWith("typescript:"), `compare_to.name must be 'typescript:...'`);
+      assert.deepStrictEqual(dv.compare_to.args, []);
+    }
   }
+});
+
+// Positive: concept:literal tag has only SortAdmission dimension
+test("ts_concept_literal_has_sort_admission_only", () => {
+  const decl = declaration();
+  const literalTags = decl.tags.filter((t) => t.op_cid === CONCEPT_LITERAL_CID);
+  assert.strictEqual(literalTags.length, 1, "expected exactly one concept:literal tag");
+  const literalTag = literalTags[0];
+  const dimKeys = Object.keys(literalTag.dimensions);
+  assert.deepStrictEqual(dimKeys, ["SortAdmission"], "concept:literal must have only SortAdmission");
+  assert.strictEqual(
+    literalTag.dimensions.SortAdmission,
+    GOLDEN_DIM_VALUE_CIDS.SortAdmission,
+    "SortAdmission CID must match golden"
+  );
+  assert.strictEqual(literalTag.cid, GOLDEN_CONCEPT_LITERAL_TAG_CID, "tag CID must match golden");
 });
 
 // Positive: RPC dispatch returns correct shape for platform_semantics

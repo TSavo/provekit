@@ -28,6 +28,17 @@ const KIT_CID = "blake3-512:" + _hexOf(blake3(
   { dkLen: 64 }
 ));
 
+// concept:literal CID (from #1282)
+const CONCEPT_LITERAL_CID = "blake3-512:02804a0bdbd2d5d541544451f41ee8d0d340baf28f70bd5abf5844e87a96aedd7b5ab3453962754a020679cc8c6b3d1f4cf0336a7ad8118128d42ac667abf2d6";
+
+// Canonical sort CIDs (from #1282)
+// TypeScript admits: Float, String, Bool, Null (JS Number is IEEE 754 double; no Int or Bytes at language level)
+// Args sorted alphabetically by CID string: BOOL (0ee1) < NULL (62f6) < FLOAT (b979) < STRING (be87)
+const SORT_BOOL_CID   = "blake3-512:0ee13bf3fd6b7ecfbee72dfbfc18a7c0ea7f1663de6cca43cefb36f5b4c03665452646094a7c296e819e75d683c6ce4821f3d7db3c3c78ae97f2d4e3451d2074";
+const SORT_NULL_CID   = "blake3-512:62f6040bd3f414c1e6c2b7bdf276669cd5613b33cb508a81170170064ca3ffba771a4b0002dc52e059fce5f9f63a1874ef71bd4ec89ae06e89c87a3e91aac3b5";
+const SORT_FLOAT_CID  = "blake3-512:b979e70c4d5e53d9bdf13d6f08330be3c5b0714b8c770d69bbd05946b86c36df5274be8145a2683cc29c278155c9c1ee65b6897913524eecb9e4c89c71862f57";
+const SORT_STRING_CID = "blake3-512:be8721d24849feb74c4721520bdba02d352a94f49253a627cd509127472aa1c47cbe99cb705cac4159b5365abcce0c9aaa4901fe67630827deb6be1f9daeea10";
+
 // Concept-op CIDs shared across all language kits (cross-kit hub CIDs).
 // Source of truth: menagerie/concept-shapes/cids.tsv.
 const OP_ADD    = "blake3-512:398980644a46039b0c2875ab36ccb61f52f284ccad5481593305ed3f10efe91e7863c00a3f2d673644430f691e6b5354f5d65f9da4fa23acdb13dc58f5b438f9";
@@ -80,6 +91,8 @@ function declaration() {
     _tag(OP_BITOR,  { BitwiseSemantics: dimCids.BitwiseSemantics }),
     _tag(OP_BITXOR, { BitwiseSemantics: dimCids.BitwiseSemantics }),
     _tag(OP_BITNOT, { BitwiseSemantics: dimCids.BitwiseSemantics }),
+    // concept:literal: only SortAdmission (Float, String, Bool, Null)
+    _tag(CONCEPT_LITERAL_CID, { SortAdmission: dimCids.SortAdmission }),
   ];
 
   _cached = { tags, dimension_values: dimValues };
@@ -99,6 +112,13 @@ function dimensionValues() {
     _dimValue("ShiftMode", "Int32Wrapping"),
     // BitwiseSemantics: bitwise operands are coerced to Int32 via ToInt32 algorithm
     _dimValue("BitwiseSemantics", "Int32"),
+    // concept:literal SortAdmission: TS admits Float, String, Bool, Null (no Int, no Bytes)
+    _dimValueAdmitsSorts("SortAdmission", "JsValueTier", [
+      SORT_BOOL_CID,   // 0ee1...
+      SORT_NULL_CID,   // 62f6...
+      SORT_FLOAT_CID,  // b979...
+      SORT_STRING_CID, // be87...
+    ]),
   ];
 }
 
@@ -106,6 +126,33 @@ function dimensionValues() {
 
 function _dimValue(dimensionName, valueName) {
   const compareTo = { kind: "atomic", name: `typescript:${valueName}`, args: [] };
+  const forCid = {
+    compare_to: compareTo,
+    dimension_name: dimensionName,
+    kind: "platform-dimension-value",
+    schemaVersion: "1.0.0",
+    value_name: valueName,
+  };
+  return {
+    compare_to: compareTo,
+    dimension_name: dimensionName,
+    kind: "platform-dimension-value",
+    kit_cid: KIT_CID,
+    schemaVersion: "1.0.0",
+    value_name: valueName,
+    cid: _cidOf(forCid),
+  };
+}
+
+// Build a DimensionValueMemento for an admits_sorts formula.
+// sortedCids must be pre-sorted alphabetically by CID string value.
+function _dimValueAdmitsSorts(dimensionName, valueName, sortedCids) {
+  const args = sortedCids.map((cid) => ({
+    kind: "const",
+    sort: { kind: "primitive", name: "cid" },
+    value: cid,
+  }));
+  const compareTo = { args, kind: "atomic", name: "admits_sorts" };
   const forCid = {
     compare_to: compareTo,
     dimension_name: dimensionName,
@@ -164,4 +211,4 @@ function _hexOf(bytes) {
   return Array.from(bytes).map((b) => b.toString(16).padStart(2, "0")).join("");
 }
 
-module.exports = { declaration, dimensionValues, KIT_CID };
+module.exports = { declaration, dimensionValues, KIT_CID, CONCEPT_LITERAL_CID };
