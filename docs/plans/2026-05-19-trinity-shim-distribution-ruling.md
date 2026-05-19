@@ -32,40 +32,57 @@ The `<library-tag>` field is the SUBSTRATE's canonical library tag (the second c
 
 The substrate discovers shim packages by scanning each ecosystem's installed dependencies for matches against these naming patterns. Per §3, the discovery uses each ecosystem's standard resolution mechanism.
 
-## §2. `.proof` location per ecosystem: kit-declared, not substrate-imposed
+## §2. `.proof` location per ecosystem: internal to the kit binary, NEVER substrate-discovered
 
-Each shim package's `.proof` envelope lives at a location declared by the kit's publication metadata, following each ecosystem's standard package conventions. The substrate does NOT impose a single per-ecosystem path; it consults each ecosystem's standard package-resolution mechanism.
+The substrate-CLI does NOT directly read `.proof` files from inside shim packages. Per the existing kit-dispatch protocol (PEP 1.7.0 over JSON-RPC), the substrate-CLI invokes a NATIVE KIT BINARY; the kit binary loads its own `.proof` envelope internally using its language's native resource-loading mechanism, then serves the envelope (or queries derived from it) over JSON-RPC.
 
-Standard ecosystem conventions (informational; each kit follows its ecosystem's natural pattern):
+This is the substrate-as-pure-protocol pattern. The substrate-CLI knows how to invoke binaries and speak JSON-RPC. It does NOT know about cargo crates, pip packages, Maven jars, or npm tarballs. Each kit owns its own resource-loading semantics.
 
-| Ecosystem | Package format | Conventional `.proof` location | Substrate access |
-|---|---|---|---|
-| Cargo | crate | crate asset (e.g., `assets/provekit.proof` via `include_bytes!`) | Read from cargo's source-dir resolution |
-| Pip | wheel / sdist | `provekit_shim_<tag>/provekit.proof` per `pyproject.toml` package-data | Read from `site-packages` directly |
-| npm | tar | `provekit.proof` at package root (or `dist/` per `package.json` files) | Read from `node_modules` walk |
-| Maven | jar / ear | `META-INF/provekit/provekit.proof` (JVM classpath convention) | Unzip jar, read META-INF |
+**Per-kit loading mechanism (kit-author's responsibility; informational reference):**
 
-These are conventional; the kit's published metadata is authoritative. The substrate's shim-discovery primitive consults each ecosystem's standard package-resolution mechanism and locates the `.proof` per the kit's published location.
+| Ecosystem | Kit binary loads `.proof` via | Conventional location inside package |
+|---|---|---|
+| Cargo | `include_bytes!("...")` at compile time, OR runtime read from crate asset path | `assets/provekit.proof` (or per kit author's choice) |
+| Pip | `importlib.resources.files("provekit_shim_<tag>") / "provekit.proof"` | `provekit_shim_<tag>/provekit.proof` per `pyproject.toml` package-data |
+| npm | `fs.readFileSync(__dirname + '/provekit.proof')` | Package root or `dist/` per `package.json` files declaration |
+| Maven | `getClass().getResourceAsStream("/META-INF/provekit/provekit.proof")` | `META-INF/provekit/provekit.proof` (JVM classpath convention) |
 
-## §3. Substrate discovery: extends existing kit-dispatch tiered resolution
+These conventions are entirely internal to the kit. The substrate does not enforce them; the kit author publishes the kit binary, and the binary handles its own resource loading. Any future kit author may choose a different internal convention; the substrate is indifferent because it never touches the package directly.
 
-The substrate already has tiered kit discovery at `implementations/rust/provekit-cli/src/kit_dispatch.rs:521-583`:
+**What flows over JSON-RPC:**
+
+The kit binary's RPC methods (per PEP 1.7.0) include `initialize` (returns kit metadata) and per-surface methods (`lift`, `realize`, etc.). For shim discovery, the kit binary's `initialize` response carries:
+
+- The kit's signed `.proof` envelope bytes (or a kit-declaration projection derived from it).
+- The kit's `bound_library_cids` field per §4.
+- The kit's signature(s) per §5.
+- The kit's protocol_version and capability advertisement.
+
+The substrate-CLI verifies the signature against consumer policy (per §5), parses the kit-declaration, and proceeds with bind / realize as usual. The `.proof` envelope's BYTES transit the RPC; the envelope's STORAGE inside the kit's package is invisible to the substrate.
+
+## §3. Substrate discovery: existing PATH probe handles all four ecosystems
+
+The substrate-CLI's existing kit-dispatch tiered resolution at `kit_dispatch.rs:521-583` handles shim discovery WITHOUT per-ecosystem substrate-side code:
 
 1. Project-local manifest (`.provekit/lift/<surface>/manifest.toml`).
 2. Env-var override (`PROVEKIT_BIND_LIFT_<LANG>_BIN`).
 3. Built-in convention (workspace-relative compile-time path).
-4. PATH probe (`provekit-bind-lift-<source_lang>` on PATH).
+4. **PATH probe (`provekit-bind-lift-<source_lang>` on PATH)** — this tier handles shim binaries uniformly.
 
-Shim-package discovery slots in as **tier 3.5**, between built-in convention and PATH probe. The shim-discovery primitive consults each ecosystem's standard resolution:
+Each ecosystem's package manager installs the shim's binary onto PATH as part of its standard package-install behavior:
 
-- Cargo: parse `Cargo.toml` / `cargo metadata` output for `provekit-shim-*` dependencies.
-- Pip: walk `site-packages` for packages matching `provekit-shim-*` prefix.
-- Maven: scan classpath / pom dependency graph for `org.provekit-shim:*` artifacts.
-- npm: walk `node_modules` (per nested-resolution semantics) for `@provekit-shim/*` packages.
+- Cargo: `cargo install provekit-shim-rusqlite` puts the shim binary in `~/.cargo/bin/` (on PATH for cargo users).
+- Pip: `pip install provekit-shim-python-sqlite3` installs the package's console_script entry point in the venv's `bin/`.
+- Maven: `mvn dependency:get` plus a launcher script (or `jar -m org.provekit-shim:java-sqlite-jdbc-proof` invocation) provides the binary.
+- npm: `npm install @provekit-shim/typescript-better-sqlite3` installs the bin entry in `node_modules/.bin/`.
 
-Per-ecosystem discovery implementations live as separate sub-issues (see §6). Each implementation reads the kit's published metadata to locate the `.proof` envelope.
+The substrate-CLI's existing tier 4 PATH probe finds the binary; invokes it with `--rpc`; talks JSON-RPC. No ecosystem-specific substrate code; no `dispatch_shim_resolve` primitive needed; the existing `dispatch_bind_lift` and `dispatch_realize` primitives consume shim-served kit-declarations transparently.
 
-**Native overriding:** the existing tier 2 env-var override and tier 1 project-local manifest work transparently. A consumer who wants to override a shim's `.proof` location (or substitute a local development version) sets the existing env var or manifest entry. No new override mechanism added.
+**Binary naming convention:** the shim binary follows the substrate's existing per-surface PATH-probe convention. For a shim of library `<library>` providing the bind-lift surface for source language `<lang>`, the binary on PATH is named per the existing convention: `provekit-bind-lift-<lang>` (with the shim's PATH location ensuring it resolves to the shim's binary for the relevant library context). For realize surfaces: `provekit-realize-<lang>-<library-tag>` per existing convention.
+
+Per-kit publishing responsibility: each shim package's publish step ensures the appropriate binary lands on PATH under the substrate-convention name. The kit may name its internal binary anything; what matters is what shows up on PATH after install.
+
+**Native overriding:** the existing tier 1 project-local manifest and tier 2 env-var override work transparently. A consumer who wants to substitute a local development binary sets the env var; the substrate's existing tiered resolution picks it up.
 
 ## §4. Versioning via content-addressed multi-pinning
 
@@ -163,19 +180,26 @@ Consumer policy is the gate. Substrate is uniform infrastructure.
 
 ## §6. Implementation sub-issues
 
-This ruling unblocks four implementation sub-issues, one per ecosystem. Each sub-issue:
+Per §3, the substrate-CLI does NOT gain ecosystem-specific code. The existing PATH probe + JSON-RPC dispatch handle all four ecosystems uniformly. The implementation sub-issues collapse dramatically: each is a KIT-SIDE deliverable plus signature-verification wiring on the substrate side.
 
-1. Implements the per-ecosystem shim-discovery primitive (parsing the ecosystem's metadata, locating `.proof` envelopes, reading them per §2's conventional location).
-2. Implements the per-ecosystem signature-verification adapter (consuming the ecosystem's standard signing infrastructure per §5.4).
-3. Adds a new `dispatch_shim_resolve(library_tag, ecosystem) -> Option<KitDeclaration>` primitive call in `implementations/rust/provekit-cli/src/kit_dispatch.rs` at tier 3.5.
-4. Files end-to-end tests verifying the Trinity demo's shim discovery for the affected ecosystem.
+Each sub-issue:
+
+1. **Kit-side:** ship a shim package in the target ecosystem that:
+   - Bundles the signed `.proof` envelope using the ecosystem's standard resource convention.
+   - Provides a binary speaking PEP 1.7.0 over JSON-RPC, named per the substrate's existing PATH-probe convention.
+   - The binary's `initialize` RPC response returns the kit's signed envelope (or projection).
+   - The binary's per-surface RPC methods (`lift`, `realize`, etc.) serve the kit's declaration.
+2. **Substrate-side (signature verification):** wire the per-ecosystem signature-verification adapter (per §5.4) into the substrate-CLI's existing verifier. This is the ONLY substrate-side per-ecosystem work; no new discovery primitive needed.
+3. **End-to-end test:** verify the Trinity demo's shim discovery for the affected ecosystem.
 
 Sub-issues to file (not yet filed; each references this ruling):
 
-- D13a-Cargo: rusqlite shim package + cargo discovery primitive + sigstore-rs verification.
-- D13a-Pip: python-sqlite3 shim package + pip discovery primitive + PEP 740 verification.
-- D13a-Maven: sqlite-jdbc shim package + Maven discovery primitive + GPG signature verification.
-- D13a-Npm: better-sqlite3 / pg shim packages + npm discovery primitive + sigstore verification.
+- **D13a-Cargo:** ship `provekit-shim-rusqlite` crate (Rust binary, sigstore-rs verification adapter). Substrate-side: wire crates.io publisher + sigstore-rs verification.
+- **D13a-Pip:** ship `provekit-shim-python-sqlite3` package (Python binary via console_script, PEP 740 verification adapter). Substrate-side: wire sigstore verification per PEP 740.
+- **D13a-Maven:** ship `org.provekit-shim:java-sqlite-jdbc-proof` (Java jar with executable main class, GPG signature verification adapter). Substrate-side: wire GPG signature verification.
+- **D13a-Npm:** ship `@provekit-shim/typescript-better-sqlite3` and similar (Node binary via package.json bin, sigstore-via-npm verification adapter). Substrate-side: wire sigstore-via-npm verification.
+
+The kit-side work (shipping the shim packages) is the bulk of each sub-issue. The substrate-side work (signature-verification adapter) is a small per-ecosystem addition to the existing verifier; no new discovery primitive, no new dispatcher tier, no new substrate machinery.
 
 ## §7. What this ruling deliberately does NOT do
 
