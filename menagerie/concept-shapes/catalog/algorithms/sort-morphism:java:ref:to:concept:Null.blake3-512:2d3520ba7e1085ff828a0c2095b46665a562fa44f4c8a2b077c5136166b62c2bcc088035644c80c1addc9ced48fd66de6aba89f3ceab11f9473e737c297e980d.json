@@ -1,0 +1,29 @@
+{
+  "envelope": {
+    "declaredAt": "2026-05-19T00:00:00Z",
+    "signature": "ed25519:UNSIGNED_DEV_ONLY",
+    "signer": "ed25519:UNSIGNED_DEV_ONLY"
+  },
+  "header": {
+    "cid": "blake3-512:2d3520ba7e1085ff828a0c2095b46665a562fa44f4c8a2b077c5136166b62c2bcc088035644c80c1addc9ced48fd66de6aba89f3ceab11f9473e737c297e980d",
+    "direction": "left-to-right",
+    "kind": "sort-morphism",
+    "precision_loss": "none",
+    "range_loss": "narrowing",
+    "representation_constraints": [],
+    "runtime_guards": [
+      {
+        "failure_mode": "refuse",
+        "kind": "is-null"
+      }
+    ],
+    "schemaVersion": "1",
+    "source_language_signature_cid": "blake3-512:4d312a5ab13eba517063f097a73b8675f1ea2a915ab5cc5b92587c83b47f707b0298858ac2c48061eee73e30e1c48983bd0aec5641bc806561624fc7e4da44ef",
+    "source_sort_cid": "blake3-512:ce36d6b03f5bf92d45f2859c37fb3ef5caafe17cbc7a85659ecac8c6622b307e42f068a5782a92a6de1b4161e8876462677ea332067f5313e62277c84ec327d2",
+    "target_language_signature_cid": "blake3-512:1979babed41ad51ad8d7a28543815f74e24a9d4ee1ae3d52ccc6549f293aa63519abf5411a67b7882c73333b1b357e4863f6d7781f0b0776e5bd25f90ea7d793",
+    "target_sort_cid": "blake3-512:62f6040bd3f414c1e6c2b7bdf276669cd5613b33cb508a81170170064ca3ffba771a4b0002dc52e059fce5f9f63a1874ef71bd4ec89ae06e89c87a3e91aac3b5"
+  },
+  "metadata": {
+    "note": "Java's `null` is a value of any reference type. Narrowing from java:Ref to substrate Null requires a runtime null check. Refuse on non-null Ref."
+  }
+}
