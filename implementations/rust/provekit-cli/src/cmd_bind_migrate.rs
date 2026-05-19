@@ -2692,4 +2692,290 @@ mod tests {
             ".get( callsite must NOT be concept:insert-and-get-id"
         );
     }
+
+    // D5 / #1229 verification harness. Probes the realize plugin for each
+    // real callsite in examples/migrate-demo/users-better-sqlite3/src/users.ts
+    // against each of the 3 target bindings (typescript-pg, python-sqlite3,
+    // python-aiosqlite). Diffs substrate output against the corresponding
+    // render_*_source fragment. Categorizes each as MATCHES / COSMETIC /
+    // SEMANTIC / MISSING. The output IS the deliverable - run with
+    // `cargo test ... d5_realize_verification_harness_per_callsite_per_target
+    // -- --nocapture` to read the categorization report.
+    //
+    // The 12 verification points (4 callsites x 3 targets) tell us the scope
+    // of what dispatch_realize emits today vs. what the hardcoded fixtures
+    // contain. Any MISSING or SEMANTIC cell is a substrate gap the D5
+    // dissolution must address before deletion of render_*_source is sound.
+
+    #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+    enum HarnessCategory {
+        Matches,
+        Cosmetic,
+        Semantic,
+        Missing,
+    }
+
+    struct CallsiteProbe {
+        name: &'static str,
+        target_function_name: &'static str,
+        params: Vec<&'static str>,
+        param_types_ts: Vec<&'static str>,
+        param_types_py: Vec<&'static str>,
+        return_type_ts: &'static str,
+        return_type_py: &'static str,
+        concept_name: &'static str,
+        sql: &'static str,
+        expected_ts_pg: &'static str,
+        expected_python_sqlite3: &'static str,
+        expected_python_aiosqlite: &'static str,
+    }
+
+    struct HarnessTarget {
+        language: &'static str,
+        tag: &'static str,
+        label: &'static str,
+        is_python: bool,
+    }
+
+    fn harness_repo_root() -> std::path::PathBuf {
+        std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+            .parent()
+            .and_then(|p| p.parent())
+            .and_then(|p| p.parent())
+            .map(|p| p.to_path_buf())
+            .expect("provekit-cli has rust/implementations/repo ancestry")
+    }
+
+    fn harness_callsites() -> Vec<CallsiteProbe> {
+        vec![
+            CallsiteProbe {
+                name: "getUserById",
+                target_function_name: "get_user_by_id",
+                params: vec!["id"],
+                param_types_ts: vec!["number"],
+                param_types_py: vec!["int"],
+                return_type_ts: "User",
+                return_type_py: "User",
+                concept_name: "concept:sql-query",
+                sql: "SELECT id, name, email FROM users WHERE id = ?",
+                expected_ts_pg: "const result = await pool.query<User>(\"SELECT id, name, email FROM users WHERE id = $1\", [id]); const row = result.rows[0]; if (!row) { throw new Error(`missing user ${id}`); } return row;",
+                expected_python_sqlite3: "row = db.execute(\"SELECT id, name, email FROM users WHERE id = ?\", (id,)).fetchone() user = _row_to_user(row) if user is None: raise RuntimeError(f\"missing user {id}\") return user",
+                expected_python_aiosqlite: "async with db.execute(\"SELECT id, name, email FROM users WHERE id = ?\", (id,)) as cursor: row = await cursor.fetchone() user = _row_to_user(row) if user is None: raise RuntimeError(f\"missing user {id}\") return user",
+            },
+            CallsiteProbe {
+                name: "getAllUsers",
+                target_function_name: "get_all_users",
+                params: vec![],
+                param_types_ts: vec![],
+                param_types_py: vec![],
+                return_type_ts: "User[]",
+                return_type_py: "list[User]",
+                concept_name: "concept:sql-query",
+                sql: "SELECT id, name, email FROM users ORDER BY id",
+                expected_ts_pg: "const result = await pool.query<User>(\"SELECT id, name, email FROM users ORDER BY id\", []); return result.rows;",
+                expected_python_sqlite3: "rows = db.execute(\"SELECT id, name, email FROM users ORDER BY id\").fetchall() return [{...} for row in rows]",
+                expected_python_aiosqlite: "async with db.execute(\"SELECT id, name, email FROM users ORDER BY id\") as cursor: rows = await cursor.fetchall() return [{...} for row in rows]",
+            },
+            CallsiteProbe {
+                name: "countUsers",
+                target_function_name: "count_users",
+                params: vec![],
+                param_types_ts: vec![],
+                param_types_py: vec![],
+                return_type_ts: "number",
+                return_type_py: "int",
+                concept_name: "concept:sql-query",
+                sql: "SELECT count(*) AS count FROM users",
+                expected_ts_pg: "const result = await pool.query<{ count: number | string }>(\"SELECT count(*) AS count FROM users\", []); return Number(result.rows[0]?.count ?? 0);",
+                expected_python_sqlite3: "row = db.execute(\"SELECT count(*) AS count FROM users\").fetchone() return int(row[\"count\"] if row is not None else 0)",
+                expected_python_aiosqlite: "async with db.execute(\"SELECT count(*) AS count FROM users\") as cursor: row = await cursor.fetchone() return int(row[\"count\"] if row is not None else 0)",
+            },
+            CallsiteProbe {
+                name: "recordEvent",
+                target_function_name: "record_event",
+                params: vec!["userId", "kind"],
+                param_types_ts: vec!["number", "string"],
+                param_types_py: vec!["int", "str"],
+                return_type_ts: "number",
+                return_type_py: "int",
+                concept_name: "concept:insert-and-get-id",
+                sql: "INSERT INTO events (user_id, kind) VALUES (?, ?)",
+                expected_ts_pg: "const result = await pool.query<{ id: number }>(\"INSERT INTO events (user_id, kind) VALUES ($1, $2) RETURNING id\", [userId, kind]); return Number(result.rows[0]?.id ?? 0);",
+                expected_python_sqlite3: "cursor = db.execute(\"INSERT INTO events (user_id, kind) VALUES (?, ?)\", (user_id, kind),) db.commit() return int(cursor.lastrowid or 0)",
+                expected_python_aiosqlite: "cursor = await db.execute(\"INSERT INTO events (user_id, kind) VALUES (?, ?)\", (user_id, kind),) await db.commit() return int(cursor.lastrowid or 0)",
+            },
+        ]
+    }
+
+    fn harness_targets() -> Vec<HarnessTarget> {
+        vec![
+            HarnessTarget {
+                language: "typescript",
+                tag: "pg",
+                label: "typescript-pg",
+                is_python: false,
+            },
+            HarnessTarget {
+                language: "python",
+                tag: "sqlite3",
+                label: "python-sqlite3",
+                is_python: true,
+            },
+            HarnessTarget {
+                language: "python",
+                tag: "aiosqlite",
+                label: "python-aiosqlite",
+                is_python: true,
+            },
+        ]
+    }
+
+    fn harness_expected(probe: &CallsiteProbe, target: &HarnessTarget) -> &'static str {
+        match target.label {
+            "typescript-pg" => probe.expected_ts_pg,
+            "python-sqlite3" => probe.expected_python_sqlite3,
+            "python-aiosqlite" => probe.expected_python_aiosqlite,
+            _ => "<unknown target>",
+        }
+    }
+
+    fn harness_normalize_whitespace(text: &str) -> String {
+        text.split_whitespace().collect::<Vec<_>>().join(" ")
+    }
+
+    fn harness_categorize(realized: &str, expected: &str) -> HarnessCategory {
+        if realized.trim() == expected.trim() {
+            return HarnessCategory::Matches;
+        }
+        let realized_norm = harness_normalize_whitespace(realized);
+        let expected_norm = harness_normalize_whitespace(expected);
+        if realized_norm == expected_norm {
+            return HarnessCategory::Cosmetic;
+        }
+        if realized_norm.contains(&expected_norm) || expected_norm.contains(&realized_norm) {
+            return HarnessCategory::Cosmetic;
+        }
+        HarnessCategory::Semantic
+    }
+
+    #[test]
+    fn d5_realize_verification_harness_per_callsite_per_target() {
+        let repo = harness_repo_root();
+        let mut rows: Vec<(String, HarnessCategory, String, String, String)> = Vec::new();
+
+        for probe in harness_callsites() {
+            for target in harness_targets() {
+                let function = if target.is_python {
+                    probe.target_function_name
+                } else {
+                    probe.name
+                };
+                let param_types = if target.is_python {
+                    &probe.param_types_py
+                } else {
+                    &probe.param_types_ts
+                };
+                let return_type = if target.is_python {
+                    probe.return_type_py
+                } else {
+                    probe.return_type_ts
+                };
+                let spec = json!({
+                    "kind": "RealizeRequest",
+                    "function": function,
+                    "params": probe.params,
+                    "paramTypes": param_types,
+                    "returnType": return_type,
+                    "conceptName": probe.concept_name,
+                    "sql": probe.sql,
+                });
+
+                let cell = format!("{}/{}", probe.name, target.label);
+                let result = realize_probe_via_path(&repo, target.language, target.tag, spec);
+                match result {
+                    Err(err) => {
+                        rows.push((
+                            cell,
+                            HarnessCategory::Missing,
+                            String::new(),
+                            harness_expected(&probe, &target).to_string(),
+                            format!("realize_probe_via_path returned Err: {err}"),
+                        ));
+                    }
+                    Ok(realized) if realized.is_stub => {
+                        rows.push((
+                            cell,
+                            HarnessCategory::Missing,
+                            realized.source.clone(),
+                            harness_expected(&probe, &target).to_string(),
+                            "realize plugin returned is_stub = true".to_string(),
+                        ));
+                    }
+                    Ok(realized) => {
+                        let expected = harness_expected(&probe, &target);
+                        let cat = harness_categorize(&realized.source, expected);
+                        let note = match cat {
+                            HarnessCategory::Matches => "byte-identical (trim)",
+                            HarnessCategory::Cosmetic => {
+                                "whitespace-normalized equivalent or one contains the other"
+                            }
+                            HarnessCategory::Semantic => "semantic divergence",
+                            HarnessCategory::Missing => "unreachable",
+                        };
+                        rows.push((
+                            cell,
+                            cat,
+                            realized.source.clone(),
+                            expected.to_string(),
+                            note.to_string(),
+                        ));
+                    }
+                }
+            }
+        }
+
+        println!("\n========================================");
+        println!("D5 REALIZE VERIFICATION HARNESS SUMMARY");
+        println!("12 verification points (4 callsites x 3 targets)");
+        println!("========================================");
+        for (cell, cat, _, _, note) in &rows {
+            println!("[{cell}] {cat:?}: {note}");
+        }
+        let n_matches = rows
+            .iter()
+            .filter(|r| r.1 == HarnessCategory::Matches)
+            .count();
+        let n_cosmetic = rows
+            .iter()
+            .filter(|r| r.1 == HarnessCategory::Cosmetic)
+            .count();
+        let n_semantic = rows
+            .iter()
+            .filter(|r| r.1 == HarnessCategory::Semantic)
+            .count();
+        let n_missing = rows
+            .iter()
+            .filter(|r| r.1 == HarnessCategory::Missing)
+            .count();
+        println!(
+            "\nTotals: MATCHES={n_matches} COSMETIC={n_cosmetic} SEMANTIC={n_semantic} MISSING={n_missing}"
+        );
+        println!("========================================\n");
+
+        for (cell, cat, realized, expected, note) in &rows {
+            println!("\n--- DETAIL [{cell}] => {cat:?} ---");
+            println!("Note: {note}");
+            println!("\n[REALIZED OUTPUT from realize plugin]");
+            println!("{realized}");
+            println!("\n[EXPECTED FRAGMENT from render_*_source (whitespace-collapsed)]");
+            println!("{expected}");
+            println!("--- END {cell} ---");
+        }
+
+        assert_eq!(
+            rows.len(),
+            12,
+            "harness must produce 12 verification points (4 callsites x 3 targets)"
+        );
+    }
 }
