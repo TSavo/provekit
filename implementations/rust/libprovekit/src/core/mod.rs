@@ -23,6 +23,7 @@ pub mod lift_plugin;
 pub mod lower_plugin;
 pub mod path_executor;
 pub mod platform_semantics;
+pub mod platform_semantics_loader;
 pub mod primitives;
 pub mod prove_kit;
 pub mod stubs;
