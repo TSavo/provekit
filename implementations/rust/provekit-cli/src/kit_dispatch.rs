@@ -491,6 +491,21 @@ impl std::fmt::Display for KitUnavailable {
     }
 }
 
+/// Probe whether a bind-lift kit is resolvable for `source_lang` without
+/// actually invoking it. Cheap substrate-availability check for callers
+/// that want to refuse loudly before doing heavy work.
+///
+/// Returns `Ok(())` if the resolution chain (manifest, env-var, built-in
+/// convention, PATH) can locate a kit binary. Returns `Err(KitUnavailable)`
+/// otherwise. Per the substrate-uniform pattern, callers MUST NOT
+/// hardcode language-presence checks; they consult this probe instead.
+pub fn bind_lift_kit_available(
+    workspace_root: &Path,
+    source_lang: &str,
+) -> Result<(), KitUnavailable> {
+    resolve_lift_command(workspace_root, source_lang).map(|_| ())
+}
+
 /// Dispatch the bind-lift surface for `source_lang` and decode the response.
 ///
 /// Resolution order:
@@ -2121,5 +2136,23 @@ mod tests {
         assert!(validate_library_tag("Requests").is_err());
         assert!(validate_library_tag("urllib.request").is_err());
         assert!(validate_library_tag("1requests").is_err());
+    }
+
+    /// Probe behavior for an unknown source language. With no manifest,
+    /// no env-var override, no built-in entry, and no PATH binary, the
+    /// resolver must return KitUnavailable. This is the substrate-uniform
+    /// substitute (per #1230 D6-D) for the previously hardcoded
+    /// `source_lang != "typescript"` check in cmd_bind_migrate.
+    #[test]
+    fn bind_lift_kit_available_refuses_unknown_language() {
+        let tempdir = tempfile::tempdir().expect("tempdir");
+        let result = bind_lift_kit_available(tempdir.path(), "definitely_not_a_real_lang_xyz");
+        assert!(
+            result.is_err(),
+            "unknown language must produce KitUnavailable, got Ok"
+        );
+        let err = result.unwrap_err();
+        assert_eq!(err.kit_kind, "lift");
+        assert_eq!(err.language, "definitely_not_a_real_lang_xyz");
     }
 }
