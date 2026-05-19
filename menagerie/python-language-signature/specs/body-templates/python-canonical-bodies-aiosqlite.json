@@ -5,14 +5,14 @@
     "signer": "ed25519:AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA="
   },
   "header": {
-    "cid": "blake3-512:519e4351e4e489cdd9a7609fc181ffe98caba19683886e39332a02ee25a1292cadee7320a66ddd22941964bf39582d9f8b0c07daeb8a46e5617a6d6207cb309a",
+    "cid": "blake3-512:0f3e314c2362259b34b62191dd34ae783defcaf697b53641d7a95935c11d338c0634ea43146e8b34bbcc8ee1425d9ddb88bb72331917aafb05b7e673bfab1a5b",
     "content": {
       "entries": [
         {
-          "concept_name": "concept:sql-query",
+          "concept_name": "concept:insert-and-get-id",
           "emission_template": {
             "kind": "verbatim",
-            "template": "async with db.execute(${param0}, tuple(${param1})) as cursor:\n    return await cursor.fetchall()"
+            "template": "cursor = await db.execute(${param0}, tuple(${param1}))\nawait db.commit()\nreturn int(cursor.lastrowid or 0)"
           },
           "loss_record_contribution": {
             "form": "literal",
@@ -21,11 +21,16 @@
                 "args": [
                   {
                     "kind": "const",
-                    "value": "blake3-512:dd0429a4d4276c076f5dde08a993a046afa15dd36433b1d89c4bc18831f63733788abef283ffb78b2b9f88c607593741367a35ebcbd36a88132c06d6ff233ed1"
+                    "value": "blake3-512:0a4f0a8d36d8dee96b8d5b32a18bb390f35877ecef611771048c6e10cfc3d25ad8f59de89b00c7794f62cabaf91dbd779244338393a8bb6ef5e8309b0929b3ca"
                   }
                 ],
                 "head": "atomic",
-                "name": "sql-query-cites-concept-cid"
+                "name": "insert-and-get-id-cites-concept-cid"
+              },
+              "last_insert_id_loss_claim": {
+                "args": [],
+                "head": "atomic",
+                "name": "aiosqlite-last-insert-id-from-lastrowid"
               }
             }
           },
@@ -57,6 +62,32 @@
                 "args": [],
                 "head": "atomic",
                 "name": "aiosqlite-last-insert-id-from-lastrowid"
+              }
+            }
+          },
+          "signature_guard": {
+            "max_params": 2,
+            "min_params": 2
+          }
+        },
+        {
+          "concept_name": "concept:sql-query",
+          "emission_template": {
+            "kind": "verbatim",
+            "template": "async with db.execute(${param0}, tuple(${param1})) as cursor:\n    return await cursor.fetchall()"
+          },
+          "loss_record_contribution": {
+            "form": "literal",
+            "value": {
+              "api_tier_concept_cid": {
+                "args": [
+                  {
+                    "kind": "const",
+                    "value": "blake3-512:dd0429a4d4276c076f5dde08a993a046afa15dd36433b1d89c4bc18831f63733788abef283ffb78b2b9f88c607593741367a35ebcbd36a88132c06d6ff233ed1"
+                  }
+                ],
+                "head": "atomic",
+                "name": "sql-query-cites-concept-cid"
               }
             }
           },
