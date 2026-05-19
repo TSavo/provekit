@@ -115,4 +115,80 @@ def test_concept_citation_comment_emitted_for_transported_operation():
 test_concept_citation_comment_emitted_for_transported_operation()
 PY
 
+python3 - "$bin" <<'PY'
+import json
+import subprocess
+import sys
+
+BIN = sys.argv[1]
+
+def platform_semantics():
+    proc = subprocess.run(
+        [BIN, "--rpc"],
+        input='{"jsonrpc":"2.0","id":7,"method":"provekit.plugin.platform_semantics"}\n',
+        text=True,
+        stdout=subprocess.PIPE,
+        check=True,
+    )
+    return json.loads(proc.stdout)
+
+def test_platform_semantics_shape():
+    r = platform_semantics()
+    assert r["jsonrpc"] == "2.0"
+    assert r["id"] == 7
+    res = r["result"]
+    assert isinstance(res["tags"], list), "tags must be list"
+    assert isinstance(res["dimension_values"], list), "dimension_values must be list"
+    assert res["op_aliases"] == {}, "op_aliases must be empty"
+    assert len(res["tags"]) == 17, f"expected 17 tags, got {len(res['tags'])}"
+    assert len(res["dimension_values"]) == 5, f"expected 5 dimension_values, got {len(res['dimension_values'])}"
+
+def test_platform_semantics_golden_dim_cids():
+    res = platform_semantics()["result"]
+    dvs = {dv["dimension_name"]: dv for dv in res["dimension_values"]}
+    assert dvs["ArithmeticOverflow"]["cid"] == (
+        "blake3-512:00e74d3e7971790ce523ea5506858c39300f33b47287d8e4b375d6e31813c4fa"
+        "be0e271805fd37c7998a14980a44608e9dd712ad6ae10de7c7abd5050b246d99"
+    ), "ArithmeticOverflow CID mismatch"
+    assert dvs["IntegerDivisionRounding"]["cid"] == (
+        "blake3-512:9e0bab38bcfcce97b77c174bb8a729bde99ae5c84149e23be59d4715586ec361"
+        "d291eb623c0fc77ee627dd76a301cde925199e3738093eb643755b3655613be5"
+    ), "IntegerDivisionRounding CID mismatch"
+    assert dvs["ShiftMode"]["cid"] == (
+        "blake3-512:f43d802cd2046fb9bc1983618ea03560cf9432d409c70ec3329af737a7646516"
+        "154b38f751f12429683e769f505aa116f73467ff0212be92aba3ac062e63ddc7"
+    ), "ShiftMode CID mismatch"
+    assert dvs["NullSemantics"]["cid"] == (
+        "blake3-512:514cb8e34010a16cf8b2af064f7e801ec2385ba9dbe3e25b2b5c4d5dfe8fe369"
+        "fe21c47f8890533e5f7efb29b93a13753028b544d2e167609d53c08a30dbb4ea"
+    ), "NullSemantics CID mismatch"
+    assert dvs["BitwiseSemantics"]["cid"] == (
+        "blake3-512:5b77e0ae0696a1690183175edfdba3780db940c080d2c3992bbff85b4d312df8"
+        "cd5b54bfff3a47f5a6a887f532143469d76e2b1131835e42716998932174094d"
+    ), "BitwiseSemantics CID mismatch"
+
+def test_platform_semantics_compare_to_structure():
+    res = platform_semantics()["result"]
+    dvs = {dv["dimension_name"]: dv for dv in res["dimension_values"]}
+    for dim_name, dv in dvs.items():
+        ct = dv["compare_to"]
+        assert ct["kind"] == "atomic", f"{dim_name}: compare_to kind must be atomic"
+        assert ct["args"] == [], f"{dim_name}: compare_to args must be empty"
+        assert ct["name"].startswith("c:"), f"{dim_name}: compare_to name must start with c:"
+
+def test_platform_semantics_all_tags_have_five_dimensions():
+    res = platform_semantics()["result"]
+    for tag in res["tags"]:
+        dims = tag["dimensions"]
+        assert len(dims) == 5, f"tag {tag['op_cid'][:40]} must have 5 dimensions"
+        for k in ("ArithmeticOverflow", "IntegerDivisionRounding", "ShiftMode", "NullSemantics", "BitwiseSemantics"):
+            assert k in dims, f"tag missing dimension {k}"
+
+test_platform_semantics_shape()
+test_platform_semantics_golden_dim_cids()
+test_platform_semantics_compare_to_structure()
+test_platform_semantics_all_tags_have_five_dimensions()
+print("platform_semantics tests passed")
+PY
+
 python3 tests/conformance.py "$bin"
