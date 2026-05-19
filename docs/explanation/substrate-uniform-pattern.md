@@ -311,9 +311,17 @@ propagation, realization) operate uniformly across all vocabulary entries.
   must appear.
 - **Value-tier ops other than `concept:literal`.** Future platforms may
   not have a notion of "literal at a position." Their kits declare their
-  own value-tier ops (e.g., `concept:state-preparation`) with admission
-  dimensions parameterized by those ops, not by `concept:literal`. The
-  substrate does not require every architecture to admit literals.
+  own value-tier ops (e.g., `concept:state-preparation`,
+  `concept:superposition`, `concept:basis-state`, `concept:cell-state`,
+  `concept:spike-train`, `concept:stack-element`) with admission
+  dimensions parameterized by those ops, not by `concept:literal`.
+  `concept:literal` is the CLASSICAL value-tier construct, one member of
+  a family that grows as new platforms register. The substrate is
+  fundamentally about Term composition; there is NO substrate-canonical
+  "value" op. See `docs/explanation/value-tier-op-family.md` for worked
+  examples covering classical literal, quantum superposition, and
+  cellular state. Each architecture's kit declares its own family
+  members; all members share the same substrate machinery.
 
 ### 10.2 Discipline for future-platform contributors
 
