@@ -22,6 +22,16 @@ path = "src/bin/walk_emit.rs"
 name = "provekit-walk-rpc"
 path = "src/bin/walk_rpc.rs"
 
+# Conventional alias so the kit-dispatch resolver (which looks for
+# `provekit-bind-lift-<source_lang>` per its `provekit-bind-lift-{lang}`
+# convention) finds the Rust lift kit by the same name shape every other
+# language uses. The same source file produces both binaries.
+# This eliminates the substrate-uniform-pattern violation that previously
+# special-cased `if source_lang == "rust"` in kit_dispatch::builtin_lift_candidates.
+[[bin]]
+name = "provekit-bind-lift-rust"
+path = "src/bin/walk_rpc.rs"
+
 [dependencies]
 syn = { workspace = true }
 quote = { workspace = true }

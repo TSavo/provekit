@@ -619,18 +619,14 @@ fn builtin_lift_candidates(workspace_root: &Path, source_lang: &str) -> Vec<Path
             .join(format!("provekit-bind-lift-{source_lang}")),
     );
     // Sibling-of-current-executable convention: when `provekit` is launched
-    // from a cargo target dir, `provekit-walk-rpc` and other kit binaries
-    // live next to it. This lets `cargo test` and `cargo run` resolve the
-    // built-in Rust kit without an env-var override or a manifest at the
-    // workspace_root (which is often a tempdir under tests).
-    if source_lang == "rust" {
-        if let Ok(current) = std::env::current_exe() {
-            if let Some(parent) = current.parent() {
-                out.push(parent.join("provekit-walk-rpc"));
-                out.push(parent.join(format!("provekit-bind-lift-{source_lang}")));
-            }
-        }
-    } else if let Ok(current) = std::env::current_exe() {
+    // from a cargo target dir, kit binaries live next to it. This lets
+    // `cargo test` and `cargo run` resolve built-in kits without an
+    // env-var override or a manifest at the workspace_root (often a
+    // tempdir under tests). The convention is `provekit-bind-lift-<lang>`
+    // for every language. The Rust kit ships an alias bin under that name
+    // (see provekit-walk/Cargo.toml) in addition to its legacy
+    // `provekit-walk-rpc` name.
+    if let Ok(current) = std::env::current_exe() {
         if let Some(parent) = current.parent() {
             out.push(parent.join(format!("provekit-bind-lift-{source_lang}")));
         }
@@ -777,7 +773,6 @@ fn rpc_lift(
     if let Some(wd) = &cmd_spec.working_dir {
         command.current_dir(wd);
     }
-    configure_java_runtime(&mut command, &cmd_spec.argv[0]);
     command.stdin(Stdio::piped());
     command.stdout(Stdio::piped());
     command.stderr(Stdio::null());
@@ -1230,7 +1225,6 @@ fn invoke_realize(
     if let Some(wd) = &cmd_spec.working_dir {
         command.current_dir(wd);
     }
-    configure_java_runtime(&mut command, &cmd_spec.argv[0]);
     command.stdin(Stdio::piped());
     command.stdout(Stdio::piped());
     command.stderr(Stdio::null());
@@ -1349,32 +1343,11 @@ fn invoke_realize(
     })
 }
 
-fn configure_java_runtime(command: &mut Command, argv0: &str) {
-    if argv0 != "java" || std::env::var_os("JAVA_HOME").is_some() {
-        return;
-    }
-    if let Some(java_home) = java_home_from_maven() {
-        command.env("JAVA_HOME", java_home);
-    }
-}
-
-fn java_home_from_maven() -> Option<String> {
-    let output = Command::new("mvn").arg("-version").output().ok()?;
-    let combined = format!(
-        "{}\n{}",
-        String::from_utf8_lossy(&output.stdout),
-        String::from_utf8_lossy(&output.stderr)
-    );
-    for line in combined.lines() {
-        if let Some((_, runtime)) = line.split_once("runtime: ") {
-            let runtime = runtime.trim();
-            if Path::new(runtime).join("bin").join("java").exists() {
-                return Some(runtime.to_string());
-            }
-        }
-    }
-    None
-}
+// Per #1270 Tier 1.4: configure_java_runtime + java_home_from_maven removed.
+// JVM-runtime discovery is the user's environment concern (set JAVA_HOME),
+// not the kit-agnostic dispatcher's job. The dispatcher does not know that
+// "java" is a runtime invocation; it just executes whatever the kit's
+// manifest declares as its launcher.
 
 // ============================================================================
 // Exam manifest dispatch (PEP 1.7.0 kind = "exam-manifest")
@@ -1642,7 +1615,6 @@ fn invoke_exam_manifest(
     if let Some(wd) = &cmd_spec.working_dir {
         command.current_dir(wd);
     }
-    configure_java_runtime(&mut command, &cmd_spec.argv[0]);
     command.stdin(Stdio::piped());
     command.stdout(Stdio::piped());
     command.stderr(Stdio::null());
@@ -1881,7 +1853,6 @@ fn rpc_lower_witness(
     if let Some(wd) = &cmd_spec.working_dir {
         command.current_dir(wd);
     }
-    configure_java_runtime(&mut command, &cmd_spec.argv[0]);
     command.stdin(Stdio::piped());
     command.stdout(Stdio::piped());
     command.stderr(Stdio::piped());
@@ -1978,25 +1949,24 @@ fn realize_request_params(request: &RealizeRequest) -> Value {
     serde_json::to_value(request).expect("serialize realize request params")
 }
 
-/// Filesystem-level extension hint. NOT language semantics: cmd_transport
+/// Filesystem-level extension fallback. NOT language semantics: cmd_transport
 /// and cmd_bind use whatever the realize kit emits in `result.extension`
-/// (per `body-template-memento.md` §3.2). This fallback is only consulted
-/// when the kit elides the field, in which case we use the conventional
-/// short identifier of the language. Adding a row here is filesystem
-/// convention, not CLI policy.
+/// (per `body-template-memento.md` §3.2). The kit is the authority on its
+/// own file extension; the dispatcher only sees a fallback when the kit
+/// elides the field.
+///
+/// Substrate-uniform convention: extension = lang identifier. Kits whose
+/// language name differs from the file extension (e.g., python -> "py",
+/// typescript -> "ts", rust -> "rs") MUST declare `extension` in their
+/// realize RPC response. The dispatcher does not enumerate kits.
+///
+/// Per #1270 Tier 1.3: removed the hardcoded `match` table that listed
+/// "python", "ruby", "typescript", "csharp", "rust" extensions. Built-in
+/// kits (rust, python, typescript) already declare `extension` in their
+/// realize responses, so the table was dead code masking the substrate
+/// violation.
 fn extension_from_convention(lang: &str) -> String {
-    // Mirror the per-language manifest convention. This list lives in the
-    // dispatcher (one file), not scattered across cmd_bind / cmd_transport.
-    // A kit MAY override its extension via `result.extension`.
-    match lang {
-        "python" => "py",
-        "ruby" => "rb",
-        "typescript" => "ts",
-        "csharp" => "cs",
-        "rust" => "rs",
-        other => other,
-    }
-    .to_string()
+    lang.to_string()
 }
 
 // ============================================================================
