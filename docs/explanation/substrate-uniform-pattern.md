@@ -292,12 +292,17 @@ propagation, realization) operate uniformly across all vocabulary entries.
   stack-machine, and combinator architectures may not have a call graph in
   the conventional sense. The current `propagate_effects`
   (`implementations/rust/libprovekit/src/effect_propagation.rs:111`) is
-  call-graph-based. For genuinely non-call-graph architectures, a new
-  domain-specific propagation primitive may be filed via ruling. This
-  exception is bounded: the "no new machinery" rule of section 7 applies
+  call-graph-based. The substrate PROTOCOL is designed to admit multiple
+  propagation primitives as the substrate matures across problem domains;
+  domain-specific propagation is a planned protocol capability, not an
+  exception. When a new problem-domain propagation primitive becomes
+  load-bearing, file a ruling defining its contract and boundary; the
+  substrate's dispatcher routes per (source-arch, target-arch) pair to the
+  appropriate primitive. The "no new machinery" rule of section 7 applies
   to REINVENTING existing-domain primitives (e.g., adding a parallel
-  propagation engine for call-graph problems); it does NOT forbid
-  extending the substrate to genuinely new problem domains.
+  propagation engine for call-graph problems); it explicitly does NOT
+  forbid extending the substrate to genuinely new problem domains, which
+  is part of the protocol's planned evolution.
 - **Sort vocabulary that does not match classical primitive types.**
   Quantum has no "Int" in the classical sense; cellular automata may have
   custom state alphabets per rule. Kits declare what their architecture
