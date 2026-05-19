@@ -5,7 +5,7 @@
     "signer": "ed25519:AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA="
   },
   "header": {
-    "cid": "blake3-512:148269a6fa8da03d34618d575a252bb0152143af993453f153a48f4bb0b26adfa838c3b96e720428ee9b96147c4ba542966f9d48435842874c9ae67b0091f20c",
+    "cid": "blake3-512:29c2a7f4d73c583e30d7ee62a483dc702076488e902a56daa5e50dbf12b8131422a9a6e1c02a6009c12b1e4e4cd30789eee728083bd33753e23145fc6f924afe",
     "content": {
       "entries": [
         {
@@ -103,7 +103,10 @@
           "signature_guard": {
             "max_params": 2,
             "min_params": 2,
-            "requires_param_types": ["&dyn Fn(i64) -> i64", "i64"],
+            "requires_param_types": [
+              "&dyn Fn(i64) -> i64",
+              "i64"
+            ],
             "requires_return_type": "i64"
           },
           "target_library_tag": "rust-language-builtin"
@@ -154,7 +157,9 @@
           "signature_guard": {
             "max_params": 1,
             "min_params": 1,
-            "requires_param_types": ["&[i64]"],
+            "requires_param_types": [
+              "&[i64]"
+            ],
             "requires_return_type": "i64"
           },
           "target_library_tag": "rust-stdlib"
@@ -205,7 +210,9 @@
           "signature_guard": {
             "max_params": 1,
             "min_params": 1,
-            "requires_param_types": ["i64"],
+            "requires_param_types": [
+              "i64"
+            ],
             "requires_return_type": "i64"
           },
           "target_library_tag": "rust-language-builtin"
@@ -456,7 +463,9 @@
     },
     "critical": false,
     "kind": "body-template",
-    "protocol_versions": ["pep/1.7.0"],
+    "protocol_versions": [
+      "pep/1.7.0"
+    ],
     "provenance_cid": "blake3-512:0000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000",
     "schemaVersion": "1",
     "version": "1.0.0"
