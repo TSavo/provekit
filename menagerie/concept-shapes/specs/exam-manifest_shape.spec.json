@@ -71,7 +71,8 @@
       "sort-classification",
       "effect-classification",
       "morphism",
-      "composition"
+      "composition",
+      "literal-encoding"
     ],
     "question_parameter_schemas": {
       "boundary-realization": [
@@ -89,6 +90,9 @@
         "language"
       ],
       "effect-classification": [
+        "language"
+      ],
+      "literal-encoding": [
         "language"
       ],
       "morphism": [

@@ -2,7 +2,10 @@
 
 use std::collections::BTreeMap;
 
-use provekit_ir_types::{DimensionValueMemento, IrFormula, PlatformSemanticTag};
+use provekit_ir_types::{
+    DimensionValueMemento, IrFormula, LiteralEncodingMemento, PlatformSemanticTag,
+};
+use serde_json::json;
 
 const KIT_CID: &str = "blake3-512:11111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111";
 const OP_CID: &str = "blake3-512:22222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222";
@@ -77,5 +80,69 @@ fn platform_semantic_tag_round_trips_and_recomputes_cid() {
             < encoded
                 .find("IntegerDivisionRoundingMode")
                 .expect("division key")
+    );
+}
+
+const SORT_INT_CID: &str = "blake3-512:30ffc51350121a7172f3e4064a33c45bbd345756979fccff6875cd2ab33e4964d098a99df80cfbdf1ec1a0738c5ac3476f0ff8f75589ea511d1acd82c74ecd58";
+
+/// LiteralEncodingMemento round-trips through JCS and recomputes its own
+/// CID. Per #1262, this is the kit-minted answer to a `literal-encoding`
+/// exam question: for (language, sort), what concept:literal node does the
+/// kit's bind-lift emit for a representative source-language literal?
+#[test]
+fn literal_encoding_memento_round_trips_and_recomputes_cid() {
+    let memento = LiteralEncodingMemento::new(
+        KIT_CID.to_string(),
+        "rust".to_string(),
+        SORT_INT_CID.to_string(),
+        "42".to_string(),
+        json!(42),
+    );
+
+    let encoded = memento.to_jcs_string();
+    let decoded: LiteralEncodingMemento =
+        serde_json::from_str(&encoded).expect("literal encoding decodes");
+
+    assert_eq!(decoded, memento);
+    assert_eq!(decoded.cid, decoded.recompute_cid());
+    assert_eq!(decoded.kind, LiteralEncodingMemento::KIND);
+    assert_eq!(decoded.schema_version, LiteralEncodingMemento::SCHEMA_VERSION);
+    assert_eq!(
+        decoded.expected_term_shape_node.concept_name,
+        LiteralEncodingMemento::CONCEPT_LITERAL_NAME
+    );
+    assert_eq!(decoded.expected_term_shape_node.sort, SORT_INT_CID);
+    assert_eq!(decoded.expected_term_shape_node.value, json!(42));
+}
+
+/// Substrate-uniform property (cross-kit equivalence): two kits with
+/// identical (language, sort_cid, source_example, decoded value) tuples
+/// produce byte-identical LiteralEncodingMemento CIDs even when kit_cid
+/// differs. Mirrors the post-#1271 kit_cid elision behavior already
+/// exercised by DimensionValueMemento + PlatformSemanticTag.
+#[test]
+fn literal_encoding_memento_cross_kit_equivalence_via_kit_cid_elision() {
+    let kit_a = "blake3-512:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa";
+    let kit_b = "blake3-512:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb";
+
+    let memento_a = LiteralEncodingMemento::new(
+        kit_a.to_string(),
+        "rust".to_string(),
+        SORT_INT_CID.to_string(),
+        "42".to_string(),
+        json!(42),
+    );
+    let memento_b = LiteralEncodingMemento::new(
+        kit_b.to_string(),
+        "rust".to_string(),
+        SORT_INT_CID.to_string(),
+        "42".to_string(),
+        json!(42),
+    );
+
+    assert_ne!(memento_a.kit_cid, memento_b.kit_cid);
+    assert_eq!(
+        memento_a.cid, memento_b.cid,
+        "kit_cid is elided from content-hash; identical (lang, sort, source, value) MUST collide"
     );
 }

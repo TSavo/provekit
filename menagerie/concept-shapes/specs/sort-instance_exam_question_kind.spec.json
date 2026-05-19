@@ -11,6 +11,7 @@
       "boundary-tag",
       "composition",
       "effect",
+      "literal-encoding",
       "morphism",
       "realization",
       "sort"

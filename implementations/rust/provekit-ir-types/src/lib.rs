@@ -625,6 +625,93 @@ impl PlatformSemanticTag {
     }
 }
 
+/// A kit-minted answer to a `literal-encoding` exam question.
+///
+/// For a given (language, substrate-canonical sort), declares the concrete
+/// `concept:literal { value, sort }` node the kit's bind-lift emits for a
+/// representative source-language literal of that sort. The exam consumer
+/// (filed as a follow-up) runs the kit's lift over `source_example` and
+/// asserts the resulting term_shape contains an equivalent
+/// `expected_term_shape_node`.
+///
+/// Locked JCS key order:
+///   cid, expected_term_shape_node, kind, kit_cid, language,
+///   schemaVersion, sort_cid, source_example.
+///
+/// Per the #1260 envelope-violation fix, `cid` and `kit_cid` are elided
+/// from the content-hash; two kits with byte-identical (language, sort_cid,
+/// source_example, expected_term_shape_node) tuples therefore produce
+/// byte-identical CIDs.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct LiteralEncodingMemento {
+    /// DERIVED: BLAKE3-512 over JCS(memento) with `cid` + `kit_cid` elided.
+    pub cid: Cid,
+    #[serde(rename = "expected_term_shape_node")]
+    pub expected_term_shape_node: ExpectedLiteralNode,
+    pub kind: String,
+    #[serde(rename = "kit_cid")]
+    pub kit_cid: Cid,
+    pub language: String,
+    #[serde(rename = "schemaVersion")]
+    pub schema_version: String,
+    #[serde(rename = "sort_cid")]
+    pub sort_cid: Cid,
+    #[serde(rename = "source_example")]
+    pub source_example: String,
+}
+
+/// The concept:literal leaf shape the kit's bind-lift is expected to emit
+/// for the corresponding source_example.
+///
+/// Locked JCS key order: concept_name, sort, value.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct ExpectedLiteralNode {
+    #[serde(rename = "concept_name")]
+    pub concept_name: String,
+    pub sort: Cid,
+    pub value: serde_json::Value,
+}
+
+impl LiteralEncodingMemento {
+    pub const KIND: &'static str = "literal-encoding-memento";
+    pub const SCHEMA_VERSION: &'static str = "1.0.0";
+    pub const CONCEPT_LITERAL_NAME: &'static str = "concept:literal";
+
+    pub fn new(
+        kit_cid: Cid,
+        language: String,
+        sort_cid: Cid,
+        source_example: String,
+        decoded_value: serde_json::Value,
+    ) -> Self {
+        let expected_term_shape_node = ExpectedLiteralNode {
+            concept_name: Self::CONCEPT_LITERAL_NAME.to_string(),
+            sort: sort_cid.clone(),
+            value: decoded_value,
+        };
+        let mut memento = Self {
+            cid: String::new(),
+            expected_term_shape_node,
+            kind: Self::KIND.to_string(),
+            kit_cid,
+            language,
+            schema_version: Self::SCHEMA_VERSION.to_string(),
+            sort_cid,
+            source_example,
+        };
+        memento.cid = memento.recompute_cid();
+        memento
+    }
+
+    pub fn to_jcs_string(&self) -> String {
+        platform_semantic_jcs_string(self)
+    }
+
+    pub fn recompute_cid(&self) -> Cid {
+        platform_semantic_cid_without_keys(self, &["cid", "kit_cid"])
+    }
+}
+
 fn platform_semantic_jcs_string<T: Serialize>(value: &T) -> String {
     let json = serde_json::to_value(value).expect("platform semantic memento serializes to JSON");
     let canonical = canonical_value_from_json(json);
@@ -3246,6 +3333,11 @@ pub enum ExamQuestionKind {
     Effect,
     BoundaryTag,
     Composition,
+    /// `literal-encoding`: per (language, sort), declares the concept:literal
+    /// node the kit's bind-lift emits for a representative source-language
+    /// literal of that sort. Added per #1262 alongside `LiteralEncodingMemento`
+    /// as the expected_answer_shape.
+    LiteralEncoding,
     Other(String),
 }
 
@@ -3258,6 +3350,7 @@ impl ExamQuestionKind {
             Self::Effect => "effect",
             Self::BoundaryTag => "boundary-tag",
             Self::Composition => "composition",
+            Self::LiteralEncoding => "literal-encoding",
             Self::Other(raw) => raw,
         }
     }
@@ -3272,6 +3365,7 @@ impl From<String> for ExamQuestionKind {
             "effect" => Self::Effect,
             "boundary-tag" => Self::BoundaryTag,
             "composition" => Self::Composition,
+            "literal-encoding" => Self::LiteralEncoding,
             _ => Self::Other(s),
         }
     }
@@ -3286,6 +3380,7 @@ impl From<ExamQuestionKind> for String {
             ExamQuestionKind::Effect => "effect".to_string(),
             ExamQuestionKind::BoundaryTag => "boundary-tag".to_string(),
             ExamQuestionKind::Composition => "composition".to_string(),
+            ExamQuestionKind::LiteralEncoding => "literal-encoding".to_string(),
             ExamQuestionKind::Other(raw) => raw,
         }
     }

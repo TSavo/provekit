@@ -22,6 +22,7 @@ QUESTION_KINDS = [
     "effect-classification",
     "morphism",
     "composition",
+    "literal-encoding",
 ]
 LIVE_V1_1_QUESTION_KINDS = sorted(set(QUESTION_KINDS) - {"composition"})
 LEGACY_V1_QUESTION_KINDS = [
@@ -48,6 +49,7 @@ PARAMETERS_BY_KIND = {
     "composition": set(),
     "concept-realization": {"language"},
     "effect-classification": {"language"},
+    "literal-encoding": {"language"},
     "morphism": {"from_language"},
     "sort-classification": {"language"},
 }
@@ -56,6 +58,7 @@ EXPECTED_ANSWER_SHAPE_BY_KIND = {
     "boundary-tag": "BoundaryTagMemento",
     "concept-realization": "RealizationMemento",
     "effect-classification": "EffectSignatureMemento",
+    "literal-encoding": "LiteralEncodingMemento",
     "morphism": "MorphismMemento",
     "sort-classification": "SortMorphismMemento",
 }
@@ -133,6 +136,14 @@ def _small_v1_1_manifest() -> dict[str, Any]:
                         "concept": "concept:Int",
                         "expected_answer_shape": "SortMorphismMemento",
                         "kind": "sort-classification",
+                        "parameters": {
+                            "language": "python",
+                        },
+                    },
+                    {
+                        "concept": "concept:Int",
+                        "expected_answer_shape": "LiteralEncodingMemento",
+                        "kind": "literal-encoding",
                         "parameters": {
                             "language": "python",
                         },
