@@ -89,7 +89,7 @@ Concept-op CIDs (e.g., for `concept:insert-and-get-id`) are minted similarly via
 ## Discipline
 
 - New language-kits adopting an existing platform-arithmetic dimension MUST reuse the existing value names where the semantic is equivalent. Don't mint synonyms.
-- New binding-kits MUST place their declarations under `implementations/rust/libprovekit/src/core/platform_semantics/<binding-tag>.rs` (inline) or in a `provekit-realize-<binding>-core` crate. Naming convention for the file matches the binding-tag string from `split_library_surface`.
+- **Per #1270 (substrate-uniform correction landed via PRs #1271-#1281):** kit declarations are NOT placed in libprovekit Rust source files. Each kit owns its declaration; libprovekit's job is to LOAD and COMPARE declarations via the `kit.platform_semantics` JSON-RPC method. New kits implement `kit.platform_semantics` in their plugin binary; libprovekit's `platform_semantics_loader` fetches and caches the declaration at startup. The kit binary IS the declaration's source of truth.
 - New dimensions REQUIRE a ruling amendment to this document (or a new dimension-specific ruling). The substrate's claim "this dimension is load-bearing" needs explicit documentation, not implicit kit-by-kit drift.
 - Dimension VALUES under a given dimension may be added freely by kits without ruling amendment, but should follow naming conventions consistent with this table (e.g., for `ArithmeticOverflow`, value names use a single CamelCase noun phrase describing the behavior).
 - The `compare_to: IrFormula` of each DimensionValueMemento MUST be structurally distinguishable across kits. Two kits declaring the same `value_name` but with different `compare_to` formulas produces DIFFERENT CIDs, which is the substrate being honest about the divergence. Two kits declaring the same `value_name` with the SAME `compare_to` formula produces the SAME CID, indicating they agree on the semantics.
@@ -144,4 +144,4 @@ Each future type-layer dimension follows the same shape: kit-minted open-keyed n
 - Stage 4 ruling: `docs/plans/2026-05-16-platform-semantics-via-loss-records.md`
 - [[2026-05-18-platform-semantics-binding-kit-compose-ruling]]
 - [[2026-05-18-op-coverage-verdict-trichotomy-ruling]]
-- Per-kit declaration files: `implementations/rust/libprovekit/src/core/platform_semantics/{java,python_common,typescript,better_sqlite3,pg}.rs` and `provekit-realize-{rust,c}-core/src/platform_semantics.rs`
+- Substrate-side primitive (post-#1270): `implementations/rust/libprovekit/src/core/platform_semantics.rs` (dispatcher + composition) + `implementations/rust/libprovekit/src/core/platform_semantics_loader.rs` (JSON-RPC loader). The hardcoded per-kit Rust declaration files were deleted by #1271; declarations now ship in each kit binary's `kit.platform_semantics` RPC handler.
