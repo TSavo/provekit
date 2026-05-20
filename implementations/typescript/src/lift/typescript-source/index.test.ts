@@ -9,6 +9,7 @@ import {
   compileTypeScriptSourceBodyIr,
   compileTypeScriptSourceIr,
   functionContractCid,
+  liftTypeScriptLibraryBindingsText,
   liftTypeScriptSourcePaths,
   liftTypeScriptSourceText,
 } from "./index.js";
@@ -26,6 +27,40 @@ function canonicalCid(value: unknown): string {
 }
 
 describe("typescript-source lifter", () => {
+  it("lifts TypeScript sugar bindings into library-sugar-binding entries from real source", () => {
+    const source = `
+import Database from "better-sqlite3";
+import { sugar } from "provekit";
+
+@sugar.bind({ concept: "concept:sql-query", library: "better-sqlite3" })
+function selectRows(db: Database.Database, sql: string, args: unknown[]) {
+  return db.prepare(sql).all(args);
+}
+`;
+
+    const result = liftTypeScriptLibraryBindingsText(source, "src/sqlite.ts");
+
+    expect(result.refusals).toEqual([]);
+    expect(result.declarations).toEqual([]);
+    expect(result.libraryBindings).toHaveLength(1);
+    const binding = result.libraryBindings[0]!;
+    expect(binding.kind).toBe("library-sugar-binding-entry");
+    expect(binding.target_language).toBe("typescript");
+    expect(binding.target_library_tag).toBe("better-sqlite3");
+    expect(binding.concept_name).toBe("concept:sql-query");
+    expect(binding.source_function_name).toBe("selectRows");
+    expect(binding.param_names).toEqual(["db", "sql", "args"]);
+    expect(binding.param_types).toEqual(["Database.Database", "string", "unknown[]"]);
+    expect(binding.return_type).toBe("unknown");
+    expect(binding.term_shape_cid).toBe(canonicalCid(binding.term_shape));
+    expect(binding.signature_shape_cid).toBe(canonicalCid(binding.signature_shape));
+    expect(binding.body_source.file).toBe("src/sqlite.ts");
+    expect(binding.body_source.locator).toEqual({ start_line: 5, start_col: 0, end_line: 8, end_col: 1 });
+    const expectedSpan = source.split(/(?<=\n)/).slice(4, 8).join("").replace(/\n$/, "");
+    expect(binding.body_source.source_cid).toBe(computeCid(Buffer.from(expectedSpan, "utf8")));
+    expect(canonicalJsonString(binding)).not.toContain("emission_template");
+  });
+
   it("lifts function declarations into ts:-namespaced function-contracts wrapped by source-unit", () => {
     const result = liftTypeScriptSourceText(
       "export function add(x: number, y: number): number { return x + y; }\n",
