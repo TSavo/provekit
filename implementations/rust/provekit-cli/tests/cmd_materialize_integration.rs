@@ -47,6 +47,34 @@ fn install_node_manifest(root: &Path, surface: &str, script: &Path, library_tag:
     fs::write(manifest, manifest_text).expect("write manifest");
 }
 
+fn install_binary_manifest(
+    root: &Path,
+    surface: &str,
+    binary: &Path,
+    manifest_name: &str,
+    library_tag: &str,
+) {
+    let manifest = root
+        .join(".provekit")
+        .join("realize")
+        .join(surface)
+        .join("manifest.toml");
+    fs::create_dir_all(manifest.parent().expect("manifest path has parent"))
+        .expect("create manifest dir");
+    let binary = binary
+        .display()
+        .to_string()
+        .replace('\\', "\\\\")
+        .replace('"', "\\\"");
+    let manifest_text = format!(
+        "name = \"{manifest_name}\"\n\
+         library_tag = \"{library_tag}\"\n\
+         command = [\"{binary}\", \"--rpc\"]\n\
+         working_dir = \".\"\n",
+    );
+    fs::write(manifest, manifest_text).expect("write manifest");
+}
+
 fn write_typescript_project_fixture(workspace: &Path) -> PathBuf {
     let repo = repo_root();
     install_node_manifest(
@@ -67,6 +95,56 @@ fn write_typescript_project_fixture(workspace: &Path) -> PathBuf {
     src_dir
 }
 
+fn write_python_requests_project_fixture(workspace: &Path) -> Option<PathBuf> {
+    let repo = repo_root();
+    let binary = repo
+        .join("implementations")
+        .join("python")
+        .join("target")
+        .join("release")
+        .join("provekit-realize-python-requests");
+    if !binary.exists() {
+        return None;
+    }
+    install_binary_manifest(
+        workspace,
+        "python-requests",
+        &binary,
+        "python-realize-requests",
+        "requests",
+    );
+    fs::write(
+        workspace.join("pyproject.toml"),
+        "[project]\nname = \"materialize-python-example\"\nversion = \"0.0.0\"\n",
+    )
+    .expect("write python project marker");
+    let src_dir = workspace.join("src");
+    fs::create_dir_all(&src_dir).expect("create python src dir");
+    Some(src_dir)
+}
+
+fn write_rust_reqwest_project_fixture(workspace: &Path) -> Option<PathBuf> {
+    let repo = repo_root();
+    let binary = repo
+        .join("implementations")
+        .join("rust")
+        .join("target")
+        .join("debug")
+        .join("provekit-realize-rust");
+    if !binary.exists() {
+        return None;
+    }
+    install_binary_manifest(workspace, "rust", &binary, "rust-realize", "reqwest");
+    fs::write(
+        workspace.join("Cargo.toml"),
+        "[package]\nname = \"materialize-rust-example\"\nversion = \"0.0.0\"\nedition = \"2021\"\n",
+    )
+    .expect("write rust project marker");
+    let src_dir = workspace.join("src");
+    fs::create_dir_all(&src_dir).expect("create rust src dir");
+    Some(src_dir)
+}
+
 fn concept_carrier_lines(indent: &str) -> String {
     format!(
         "{indent}// provekit-concept: {}\n{indent}// provekit-concept-payload-cid: {}\n",
@@ -80,9 +158,26 @@ fn concept_payload_json() -> &'static str {
 }
 
 fn concept_payload_cid() -> String {
-    let json: Json = serde_json::from_str(concept_payload_json()).expect("payload json parses");
+    payload_cid(concept_payload_json())
+}
+
+fn payload_cid(payload: &str) -> String {
+    let json: Json = serde_json::from_str(payload).expect("payload json parses");
     let canonical = canonical_value_from_json(&json);
     blake3_512_of(encode_jcs(canonical.as_ref()).as_bytes())
+}
+
+fn http_payload_json(function: &str, param_type: &str, return_type: &str) -> String {
+    format!(
+        "{{\"artifact_kind\":\"provekit-concept-citation-comment-sugar\",\"concept_name\":\"concept:http-request\",\"function\":\"{function}\",\"params\":[\"url\"],\"param_types\":[\"{param_type}\"],\"return_type\":\"{return_type}\"}}"
+    )
+}
+
+fn carrier_lines(comment_prefix: &str, indent: &str, payload: &str) -> String {
+    format!(
+        "{indent}{comment_prefix} provekit-concept: {payload}\n{indent}{comment_prefix} provekit-concept-payload-cid: {}\n",
+        payload_cid(payload)
+    )
 }
 
 fn canonical_value_from_json(value: &Json) -> Arc<CanonicalValue> {
@@ -189,6 +284,34 @@ fn write_mismatched_cid_concept_source(src_dir: &Path) -> PathBuf {
 fn write_no_carrier_source(src_dir: &Path) -> PathBuf {
     let source_path = src_dir.join("plain.ts");
     fs::write(&source_path, "export const untouched = 42;\n").expect("write plain source");
+    source_path
+}
+
+fn write_python_http_request_source(src_dir: &Path) -> PathBuf {
+    let source_path = src_dir.join("client.py");
+    let payload = http_payload_json("fetch_status", "str", "int");
+    fs::write(
+        &source_path,
+        format!(
+            "# python materialize example\n{}# end\n",
+            carrier_lines("#", "", &payload)
+        ),
+    )
+    .expect("write python HTTP source");
+    source_path
+}
+
+fn write_rust_http_request_source(src_dir: &Path) -> PathBuf {
+    let source_path = src_dir.join("lib.rs");
+    let payload = http_payload_json("fetch_status", "&str", "i64");
+    fs::write(
+        &source_path,
+        format!(
+            "// rust materialize example\n{}// end\n",
+            carrier_lines("//", "", &payload)
+        ),
+    )
+    .expect("write rust HTTP source");
     source_path
 }
 
@@ -518,4 +641,74 @@ fn materialize_no_carriers_reports_zero_without_printing_dry_run_source() {
         fs::read_to_string(source_path).expect("read plain source"),
         "export const untouched = 42;\n"
     );
+}
+
+#[test]
+fn materialize_python_requests_example_uses_python_library_shim() {
+    let workspace = tempfile::tempdir().expect("tempdir");
+    let Some(src_dir) = write_python_requests_project_fixture(workspace.path()) else {
+        eprintln!("skipping Python materialize example: provekit-realize-python-requests binary is unavailable");
+        return;
+    };
+    write_python_http_request_source(&src_dir);
+
+    let output = Command::new(env!("CARGO_BIN_EXE_provekit"))
+        .env("PROVEKIT_REPO_ROOT", repo_root())
+        .arg("materialize")
+        .arg("--library")
+        .arg("python-requests")
+        .arg("--source-dir")
+        .arg(&src_dir)
+        .arg("--project")
+        .arg(workspace.path())
+        .output()
+        .expect("spawn provekit materialize for Python requests");
+
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(
+        output.status.success(),
+        "Python requests materialize example should succeed\nstdout:\n{stdout}\nstderr:\n{stderr}"
+    );
+    assert!(stdout.contains("// file: client.py"));
+    assert!(
+        stdout.contains("requests.get(url)"),
+        "Python requests example should route through the requests shim:\n{stdout}"
+    );
+    assert!(!stdout.contains("provekit-concept:"));
+}
+
+#[test]
+fn materialize_rust_reqwest_example_uses_rust_library_shim() {
+    let workspace = tempfile::tempdir().expect("tempdir");
+    let Some(src_dir) = write_rust_reqwest_project_fixture(workspace.path()) else {
+        eprintln!("skipping Rust materialize example: provekit-realize-rust binary is unavailable; build with `cargo build -p provekit-realize-rust-core`");
+        return;
+    };
+    write_rust_http_request_source(&src_dir);
+
+    let output = Command::new(env!("CARGO_BIN_EXE_provekit"))
+        .env("PROVEKIT_REPO_ROOT", repo_root())
+        .arg("materialize")
+        .arg("--library")
+        .arg("rust-reqwest")
+        .arg("--source-dir")
+        .arg(&src_dir)
+        .arg("--project")
+        .arg(workspace.path())
+        .output()
+        .expect("spawn provekit materialize for Rust reqwest");
+
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(
+        output.status.success(),
+        "Rust reqwest materialize example should succeed\nstdout:\n{stdout}\nstderr:\n{stderr}"
+    );
+    assert!(stdout.contains("// file: lib.rs"));
+    assert!(
+        stdout.contains("reqwest::get(url)"),
+        "Rust reqwest example should route through the Rust reqwest shim:\n{stdout}"
+    );
+    assert!(!stdout.contains("provekit-concept:"));
 }
