@@ -24,7 +24,8 @@
           "signature_guard": {
             "min_params": 1,
             "max_params": 1
-          }
+          },
+          "target_library_tag": "sqlite-jdbc"
         },
         {
           "concept_name": "concept:sql-connection-open",
@@ -45,7 +46,8 @@
           "signature_guard": {
             "min_params": 0,
             "max_params": 0
-          }
+          },
+          "target_library_tag": "sqlite-jdbc"
         },
         {
           "concept_name": "concept:sql-connection-open",
@@ -68,7 +70,8 @@
           "signature_guard": {
             "min_params": 3,
             "max_params": 3
-          }
+          },
+          "target_library_tag": "sqlite-jdbc"
         },
         {
           "concept_name": "concept:sql-connection-close",
@@ -88,7 +91,8 @@
           "signature_guard": {
             "min_params": 1,
             "max_params": 1
-          }
+          },
+          "target_library_tag": "sqlite-jdbc"
         },
         {
           "concept_name": "concept:sql-connection-pool-acquire",
@@ -110,7 +114,8 @@
           "signature_guard": {
             "min_params": 1,
             "max_params": 1
-          }
+          },
+          "target_library_tag": "sqlite-jdbc"
         },
         {
           "concept_name": "concept:sql-execute",
@@ -132,7 +137,8 @@
           "signature_guard": {
             "min_params": 2,
             "max_params": 2
-          }
+          },
+          "target_library_tag": "sqlite-jdbc"
         },
         {
           "concept_name": "concept:sql-execute",
@@ -153,7 +159,8 @@
           "signature_guard": {
             "min_params": 2,
             "max_params": 2
-          }
+          },
+          "target_library_tag": "sqlite-jdbc"
         },
         {
           "concept_name": "concept:sql-query",
@@ -175,7 +182,8 @@
           "signature_guard": {
             "min_params": 2,
             "max_params": 2
-          }
+          },
+          "target_library_tag": "sqlite-jdbc"
         },
         {
           "concept_name": "concept:sql-prepare",
@@ -197,7 +205,8 @@
           "signature_guard": {
             "min_params": 2,
             "max_params": 2
-          }
+          },
+          "target_library_tag": "sqlite-jdbc"
         },
         {
           "concept_name": "concept:sql-prepare-cached",
@@ -219,7 +228,8 @@
           "signature_guard": {
             "min_params": 2,
             "max_params": 2
-          }
+          },
+          "target_library_tag": "sqlite-jdbc"
         },
         {
           "concept_name": "concept:sql-execute",
@@ -241,7 +251,8 @@
           "signature_guard": {
             "min_params": 1,
             "max_params": 1
-          }
+          },
+          "target_library_tag": "sqlite-jdbc"
         },
         {
           "concept_name": "concept:sql-query",
@@ -262,7 +273,8 @@
           "signature_guard": {
             "min_params": 1,
             "max_params": 1
-          }
+          },
+          "target_library_tag": "sqlite-jdbc"
         },
         {
           "concept_name": "concept:sql-query",
@@ -284,7 +296,8 @@
           "signature_guard": {
             "min_params": 1,
             "max_params": 1
-          }
+          },
+          "target_library_tag": "sqlite-jdbc"
         },
         {
           "concept_name": "concept:sql-query",
@@ -306,7 +319,8 @@
           "signature_guard": {
             "min_params": 1,
             "max_params": 1
-          }
+          },
+          "target_library_tag": "sqlite-jdbc"
         },
         {
           "concept_name": "concept:insert-and-get-id",
@@ -327,7 +341,8 @@
           "signature_guard": {
             "min_params": 1,
             "max_params": 1
-          }
+          },
+          "target_library_tag": "sqlite-jdbc"
         },
         {
           "concept_name": "concept:sql-query",
@@ -348,7 +363,8 @@
           "signature_guard": {
             "min_params": 1,
             "max_params": 1
-          }
+          },
+          "target_library_tag": "sqlite-jdbc"
         },
         {
           "concept_name": "concept:sql-batch-execute",
@@ -369,7 +385,8 @@
           "signature_guard": {
             "min_params": 1,
             "max_params": 1
-          }
+          },
+          "target_library_tag": "sqlite-jdbc"
         },
         {
           "concept_name": "concept:sql-transaction-begin",
@@ -391,7 +408,8 @@
           "signature_guard": {
             "min_params": 1,
             "max_params": 1
-          }
+          },
+          "target_library_tag": "sqlite-jdbc"
         },
         {
           "concept_name": "concept:sql-transaction-begin",
@@ -413,7 +431,8 @@
           "signature_guard": {
             "min_params": 2,
             "max_params": 2
-          }
+          },
+          "target_library_tag": "sqlite-jdbc"
         },
         {
           "concept_name": "concept:sql-transaction-commit",
@@ -434,7 +453,8 @@
           "signature_guard": {
             "min_params": 1,
             "max_params": 1
-          }
+          },
+          "target_library_tag": "sqlite-jdbc"
         },
         {
           "concept_name": "concept:sql-transaction-rollback",
@@ -455,7 +475,8 @@
           "signature_guard": {
             "min_params": 1,
             "max_params": 1
-          }
+          },
+          "target_library_tag": "sqlite-jdbc"
         },
         {
           "concept_name": "concept:sql-savepoint",
@@ -476,7 +497,8 @@
           "signature_guard": {
             "min_params": 1,
             "max_params": 1
-          }
+          },
+          "target_library_tag": "sqlite-jdbc"
         },
         {
           "concept_name": "concept:sql-transaction-rollback",
@@ -497,7 +519,8 @@
           "signature_guard": {
             "min_params": 2,
             "max_params": 2
-          }
+          },
+          "target_library_tag": "sqlite-jdbc"
         },
         {
           "concept_name": "concept:sql-transaction-isolation-level",
@@ -518,7 +541,8 @@
           "signature_guard": {
             "min_params": 2,
             "max_params": 2
-          }
+          },
+          "target_library_tag": "sqlite-jdbc"
         },
         {
           "concept_name": "concept:sql-row-get-column",
@@ -539,7 +563,8 @@
           "signature_guard": {
             "min_params": 2,
             "max_params": 2
-          }
+          },
+          "target_library_tag": "sqlite-jdbc"
         },
         {
           "concept_name": "concept:sql-row-get-column",
@@ -561,7 +586,8 @@
           "signature_guard": {
             "min_params": 2,
             "max_params": 2
-          }
+          },
+          "target_library_tag": "sqlite-jdbc"
         },
         {
           "concept_name": "concept:sql-row-get-column",
@@ -583,7 +609,8 @@
           "signature_guard": {
             "min_params": 2,
             "max_params": 2
-          }
+          },
+          "target_library_tag": "sqlite-jdbc"
         },
         {
           "concept_name": "concept:sql-row-get-column",
@@ -606,7 +633,8 @@
           "signature_guard": {
             "min_params": 2,
             "max_params": 2
-          }
+          },
+          "target_library_tag": "sqlite-jdbc"
         },
         {
           "concept_name": "concept:insert-and-get-id",
@@ -627,7 +655,8 @@
           "signature_guard": {
             "min_params": 1,
             "max_params": 1
-          }
+          },
+          "target_library_tag": "sqlite-jdbc"
         },
         {
           "concept_name": "concept:sql-changes-count",
@@ -648,7 +677,8 @@
           "signature_guard": {
             "min_params": 1,
             "max_params": 1
-          }
+          },
+          "target_library_tag": "sqlite-jdbc"
         },
         {
           "concept_name": "concept:sql-changes-count",
@@ -669,7 +699,8 @@
           "signature_guard": {
             "min_params": 1,
             "max_params": 1
-          }
+          },
+          "target_library_tag": "sqlite-jdbc"
         },
         {
           "concept_name": "concept:contract-observation",
@@ -687,7 +718,8 @@
             "min_params": 1,
             "max_params": 1
           },
-          "observed_dimension": "autocommit-mode"
+          "observed_dimension": "autocommit-mode",
+          "target_library_tag": "sqlite-jdbc"
         },
         {
           "concept_name": "concept:contract-observation",
@@ -705,7 +737,8 @@
             "min_params": 1,
             "max_params": 1
           },
-          "observed_dimension": "write-permission"
+          "observed_dimension": "write-permission",
+          "target_library_tag": "sqlite-jdbc"
         },
         {
           "concept_name": "concept:contract-observation",
@@ -723,7 +756,8 @@
             "min_params": 1,
             "max_params": 1
           },
-          "observed_dimension": "connection-closed"
+          "observed_dimension": "connection-closed",
+          "target_library_tag": "sqlite-jdbc"
         },
         {
           "concept_name": "concept:contract-observation",
@@ -743,7 +777,8 @@
             "min_params": 2,
             "max_params": 2
           },
-          "observed_dimension": "connection-validity"
+          "observed_dimension": "connection-validity",
+          "target_library_tag": "sqlite-jdbc"
         },
         {
           "concept_name": "concept:contract-observation",
@@ -761,7 +796,8 @@
             "min_params": 1,
             "max_params": 1
           },
-          "observed_dimension": "column-count"
+          "observed_dimension": "column-count",
+          "target_library_tag": "sqlite-jdbc"
         },
         {
           "concept_name": "concept:contract-observation",
@@ -779,7 +815,8 @@
             "min_params": 2,
             "max_params": 2
           },
-          "observed_dimension": "column-name-at-index"
+          "observed_dimension": "column-name-at-index",
+          "target_library_tag": "sqlite-jdbc"
         },
         {
           "concept_name": "concept:contract-observation",
@@ -797,7 +834,8 @@
             "min_params": 2,
             "max_params": 2
           },
-          "observed_dimension": "column-index-of-name"
+          "observed_dimension": "column-index-of-name",
+          "target_library_tag": "sqlite-jdbc"
         },
         {
           "concept_name": "concept:contract-observation",
@@ -815,7 +853,8 @@
             "min_params": 1,
             "max_params": 1
           },
-          "observed_dimension": "parameter-count"
+          "observed_dimension": "parameter-count",
+          "target_library_tag": "sqlite-jdbc"
         },
         {
           "concept_name": "concept:sql-result-metadata",
@@ -835,7 +874,8 @@
           "signature_guard": {
             "min_params": 1,
             "max_params": 1
-          }
+          },
+          "target_library_tag": "sqlite-jdbc"
         },
         {
           "concept_name": "concept:sql-result-metadata",
@@ -853,7 +893,8 @@
             "min_params": 2,
             "max_params": 2
           },
-          "observed_dimension": "column-type-name"
+          "observed_dimension": "column-type-name",
+          "target_library_tag": "sqlite-jdbc"
         },
         {
           "concept_name": "concept:sql-catalog-reflection",
@@ -874,7 +915,8 @@
           "signature_guard": {
             "min_params": 1,
             "max_params": 1
-          }
+          },
+          "target_library_tag": "sqlite-jdbc"
         },
         {
           "concept_name": "concept:sql-busy-timeout",
@@ -896,7 +938,8 @@
           "signature_guard": {
             "min_params": 2,
             "max_params": 2
-          }
+          },
+          "target_library_tag": "sqlite-jdbc"
         },
         {
           "concept_name": "concept:sql-autocommit-control",
@@ -916,7 +959,8 @@
           "signature_guard": {
             "min_params": 2,
             "max_params": 2
-          }
+          },
+          "target_library_tag": "sqlite-jdbc"
         },
         {
           "concept_name": "concept:sql-cursor-fetch-size",
@@ -937,7 +981,8 @@
           "signature_guard": {
             "min_params": 2,
             "max_params": 2
-          }
+          },
+          "target_library_tag": "sqlite-jdbc"
         }
       ]
     }

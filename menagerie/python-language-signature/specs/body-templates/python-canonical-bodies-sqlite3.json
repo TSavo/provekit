@@ -23,7 +23,8 @@
           "signature_guard": {
             "min_params": 1,
             "max_params": 1
-          }
+          },
+          "target_library_tag": "sqlite3"
         },
         {
           "concept_name": "concept:sql-connection-open",
@@ -43,7 +44,8 @@
           "signature_guard": {
             "min_params": 0,
             "max_params": 0
-          }
+          },
+          "target_library_tag": "sqlite3"
         },
         {
           "concept_name": "concept:sql-connection-open",
@@ -65,7 +67,8 @@
           "signature_guard": {
             "min_params": 1,
             "max_params": 1
-          }
+          },
+          "target_library_tag": "sqlite3"
         },
         {
           "concept_name": "concept:sql-connection-close",
@@ -85,7 +88,8 @@
           "signature_guard": {
             "min_params": 1,
             "max_params": 1
-          }
+          },
+          "target_library_tag": "sqlite3"
         },
         {
           "concept_name": "concept:sql-execute",
@@ -107,7 +111,8 @@
           "signature_guard": {
             "min_params": 3,
             "max_params": 3
-          }
+          },
+          "target_library_tag": "sqlite3"
         },
         {
           "concept_name": "concept:sql-batch-execute",
@@ -128,7 +133,8 @@
           "signature_guard": {
             "min_params": 2,
             "max_params": 2
-          }
+          },
+          "target_library_tag": "sqlite3"
         },
         {
           "concept_name": "concept:sql-batch-execute",
@@ -148,7 +154,8 @@
           "signature_guard": {
             "min_params": 3,
             "max_params": 3
-          }
+          },
+          "target_library_tag": "sqlite3"
         },
         {
           "concept_name": "concept:sql-query",
@@ -170,7 +177,8 @@
           "signature_guard": {
             "min_params": 3,
             "max_params": 3
-          }
+          },
+          "target_library_tag": "sqlite3"
         },
         {
           "concept_name": "concept:sql-query",
@@ -191,7 +199,8 @@
           "signature_guard": {
             "min_params": 3,
             "max_params": 3
-          }
+          },
+          "target_library_tag": "sqlite3"
         },
         {
           "concept_name": "concept:sql-prepare",
@@ -212,7 +221,8 @@
           "signature_guard": {
             "min_params": 2,
             "max_params": 2
-          }
+          },
+          "target_library_tag": "sqlite3"
         },
         {
           "concept_name": "concept:sql-prepare-cached",
@@ -234,7 +244,8 @@
           "signature_guard": {
             "min_params": 2,
             "max_params": 2
-          }
+          },
+          "target_library_tag": "sqlite3"
         },
         {
           "concept_name": "concept:sql-execute",
@@ -256,7 +267,8 @@
           "signature_guard": {
             "min_params": 3,
             "max_params": 3
-          }
+          },
+          "target_library_tag": "sqlite3"
         },
         {
           "concept_name": "concept:sql-query",
@@ -277,7 +289,8 @@
           "signature_guard": {
             "min_params": 3,
             "max_params": 3
-          }
+          },
+          "target_library_tag": "sqlite3"
         },
         {
           "concept_name": "concept:sql-query",
@@ -298,7 +311,8 @@
           "signature_guard": {
             "min_params": 1,
             "max_params": 1
-          }
+          },
+          "target_library_tag": "sqlite3"
         },
         {
           "concept_name": "concept:sql-query",
@@ -319,7 +333,8 @@
           "signature_guard": {
             "min_params": 1,
             "max_params": 1
-          }
+          },
+          "target_library_tag": "sqlite3"
         },
         {
           "concept_name": "concept:sql-fetch-batch",
@@ -340,7 +355,8 @@
           "signature_guard": {
             "min_params": 2,
             "max_params": 2
-          }
+          },
+          "target_library_tag": "sqlite3"
         },
         {
           "concept_name": "concept:insert-and-get-id",
@@ -361,7 +377,8 @@
           "signature_guard": {
             "min_params": 3,
             "max_params": 3
-          }
+          },
+          "target_library_tag": "sqlite3"
         },
         {
           "concept_name": "concept:sql-query",
@@ -382,7 +399,8 @@
           "signature_guard": {
             "min_params": 3,
             "max_params": 3
-          }
+          },
+          "target_library_tag": "sqlite3"
         },
         {
           "concept_name": "concept:sql-transaction-begin",
@@ -403,7 +421,8 @@
           "signature_guard": {
             "min_params": 1,
             "max_params": 1
-          }
+          },
+          "target_library_tag": "sqlite3"
         },
         {
           "concept_name": "concept:sql-transaction-begin",
@@ -425,7 +444,8 @@
           "signature_guard": {
             "min_params": 2,
             "max_params": 2
-          }
+          },
+          "target_library_tag": "sqlite3"
         },
         {
           "concept_name": "concept:sql-transaction-commit",
@@ -446,7 +466,8 @@
           "signature_guard": {
             "min_params": 1,
             "max_params": 1
-          }
+          },
+          "target_library_tag": "sqlite3"
         },
         {
           "concept_name": "concept:sql-transaction-rollback",
@@ -467,7 +488,8 @@
           "signature_guard": {
             "min_params": 1,
             "max_params": 1
-          }
+          },
+          "target_library_tag": "sqlite3"
         },
         {
           "concept_name": "concept:sql-savepoint",
@@ -487,7 +509,8 @@
           "signature_guard": {
             "min_params": 2,
             "max_params": 2
-          }
+          },
+          "target_library_tag": "sqlite3"
         },
         {
           "concept_name": "concept:sql-transaction-rollback",
@@ -506,7 +529,8 @@
           "signature_guard": {
             "min_params": 2,
             "max_params": 2
-          }
+          },
+          "target_library_tag": "sqlite3"
         },
         {
           "concept_name": "concept:sql-savepoint",
@@ -526,7 +550,8 @@
           "signature_guard": {
             "min_params": 2,
             "max_params": 2
-          }
+          },
+          "target_library_tag": "sqlite3"
         },
         {
           "concept_name": "concept:sql-row-get-column",
@@ -547,7 +572,8 @@
           "signature_guard": {
             "min_params": 2,
             "max_params": 2
-          }
+          },
+          "target_library_tag": "sqlite3"
         },
         {
           "concept_name": "concept:sql-row-get-column",
@@ -568,7 +594,8 @@
           "signature_guard": {
             "min_params": 2,
             "max_params": 2
-          }
+          },
+          "target_library_tag": "sqlite3"
         },
         {
           "concept_name": "concept:sql-row-mapping",
@@ -588,7 +615,8 @@
           "signature_guard": {
             "min_params": 1,
             "max_params": 1
-          }
+          },
+          "target_library_tag": "sqlite3"
         },
         {
           "concept_name": "concept:insert-and-get-id",
@@ -608,7 +636,8 @@
           "signature_guard": {
             "min_params": 1,
             "max_params": 1
-          }
+          },
+          "target_library_tag": "sqlite3"
         },
         {
           "concept_name": "concept:sql-changes-count",
@@ -628,7 +657,8 @@
           "signature_guard": {
             "min_params": 1,
             "max_params": 1
-          }
+          },
+          "target_library_tag": "sqlite3"
         },
         {
           "concept_name": "concept:sql-changes-count",
@@ -648,7 +678,8 @@
           "signature_guard": {
             "min_params": 1,
             "max_params": 1
-          }
+          },
+          "target_library_tag": "sqlite3"
         },
         {
           "concept_name": "concept:contract-observation",
@@ -666,7 +697,8 @@
             "min_params": 1,
             "max_params": 1
           },
-          "observed_dimension": "autocommit-mode"
+          "observed_dimension": "autocommit-mode",
+          "target_library_tag": "sqlite3"
         },
         {
           "concept_name": "concept:contract-observation",
@@ -684,7 +716,8 @@
             "min_params": 1,
             "max_params": 1
           },
-          "observed_dimension": "isolation-level"
+          "observed_dimension": "isolation-level",
+          "target_library_tag": "sqlite3"
         },
         {
           "concept_name": "concept:contract-observation",
@@ -702,7 +735,8 @@
             "min_params": 1,
             "max_params": 1
           },
-          "observed_dimension": "column-names"
+          "observed_dimension": "column-names",
+          "target_library_tag": "sqlite3"
         },
         {
           "concept_name": "concept:contract-observation",
@@ -720,7 +754,8 @@
             "min_params": 1,
             "max_params": 1
           },
-          "observed_dimension": "column-count"
+          "observed_dimension": "column-count",
+          "target_library_tag": "sqlite3"
         },
         {
           "concept_name": "concept:contract-observation",
@@ -738,7 +773,8 @@
             "min_params": 2,
             "max_params": 2
           },
-          "observed_dimension": "column-index-of-name"
+          "observed_dimension": "column-index-of-name",
+          "target_library_tag": "sqlite3"
         },
         {
           "concept_name": "concept:sql-busy-timeout",
@@ -758,7 +794,8 @@
           "signature_guard": {
             "min_params": 2,
             "max_params": 2
-          }
+          },
+          "target_library_tag": "sqlite3"
         },
         {
           "concept_name": "concept:sql-schema-dump",
@@ -778,7 +815,8 @@
           "signature_guard": {
             "min_params": 1,
             "max_params": 1
-          }
+          },
+          "target_library_tag": "sqlite3"
         },
         {
           "concept_name": "concept:sql-udf-register",
@@ -799,7 +837,8 @@
           "signature_guard": {
             "min_params": 4,
             "max_params": 4
-          }
+          },
+          "target_library_tag": "sqlite3"
         },
         {
           "concept_name": "concept:sql-udf-aggregate",
@@ -819,7 +858,8 @@
           "signature_guard": {
             "min_params": 4,
             "max_params": 4
-          }
+          },
+          "target_library_tag": "sqlite3"
         },
         {
           "concept_name": "concept:sql-progress-handler",
@@ -839,7 +879,8 @@
           "signature_guard": {
             "min_params": 3,
             "max_params": 3
-          }
+          },
+          "target_library_tag": "sqlite3"
         },
         {
           "concept_name": "concept:sql-transaction-begin",
@@ -861,7 +902,8 @@
           "signature_guard": {
             "min_params": 1,
             "max_params": 1
-          }
+          },
+          "target_library_tag": "sqlite3"
         },
         {
           "concept_name": "concept:sql-transaction-commit",
@@ -882,7 +924,8 @@
           "signature_guard": {
             "min_params": 1,
             "max_params": 1
-          }
+          },
+          "target_library_tag": "sqlite3"
         },
         {
           "concept_name": "concept:sql-transaction-rollback",
@@ -903,7 +946,8 @@
           "signature_guard": {
             "min_params": 2,
             "max_params": 2
-          }
+          },
+          "target_library_tag": "sqlite3"
         },
         {
           "concept_name": "concept:sql-row-mapping",
@@ -923,7 +967,8 @@
           "signature_guard": {
             "min_params": 2,
             "max_params": 2
-          }
+          },
+          "target_library_tag": "sqlite3"
         }
       ]
     }
