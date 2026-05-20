@@ -22,17 +22,23 @@
 
 use rusqlite::{Connection, Params, Result, Row, Statement, Transaction};
 
-// provekit-concept: {"artifact_kind":"provekit-concept-citation-comment-sugar","concept_name":"concept:sql-connection-open","function":"open_in_memory","params":[],"param_types":[],"return_type":"rusqlite::Result<rusqlite::Connection>","library_tag":"rusqlite"}
+pub fn open_in_memory() -> rusqlite::Result<rusqlite::Connection> {
+    Connection::open_in_memory()
+}
 fn open_in_memory() -> Result<Connection> {
     unimplemented!("provekit materialize fills this from the shim's .proof envelope")
 }
 
-// provekit-concept: {"artifact_kind":"provekit-concept-citation-comment-sugar","concept_name":"concept:sql-execute","function":"execute","params":["conn","sql","params"],"param_types":["&rusqlite::Connection","&str","P"],"return_type":"rusqlite::Result<usize>","library_tag":"rusqlite"}
+pub fn execute(conn: &rusqlite::Connection, sql: String, params: P) -> rusqlite::Result<usize> {
+    conn.execute(sql, params)
+}
 fn execute<P: Params>(_conn: &Connection, _sql: &str, _params: P) -> Result<usize> {
     unimplemented!("provekit materialize fills this from the shim's .proof envelope")
 }
 
-// provekit-concept: {"artifact_kind":"provekit-concept-citation-comment-sugar","concept_name":"concept:sql-query","function":"query_row","params":["conn","sql","params","mapper"],"param_types":["&rusqlite::Connection","&str","P","F"],"return_type":"rusqlite::Result<T>","library_tag":"rusqlite"}
+pub fn query_row(conn: &rusqlite::Connection, sql: String, params: P, mapper: F) -> rusqlite::Result<T> {
+    conn.query_row(sql, params, mapper)
+}
 fn query_row<T, P: Params, F: FnOnce(&Row<'_>) -> Result<T>>(
     _conn: &Connection,
     _sql: &str,
@@ -42,12 +48,16 @@ fn query_row<T, P: Params, F: FnOnce(&Row<'_>) -> Result<T>>(
     unimplemented!("provekit materialize fills this from the shim's .proof envelope")
 }
 
-// provekit-concept: {"artifact_kind":"provekit-concept-citation-comment-sugar","concept_name":"concept:sql-prepare","function":"prepare","params":["conn","sql"],"param_types":["&rusqlite::Connection","&str"],"return_type":"rusqlite::Result<rusqlite::Statement<'_>>","library_tag":"rusqlite"}
+pub fn prepare(conn: &rusqlite::Connection, sql: String) -> rusqlite::Result<rusqlite::Statement<'_>> {
+    conn.prepare(sql)
+}
 fn prepare<'conn>(_conn: &'conn Connection, _sql: &str) -> Result<Statement<'conn>> {
     unimplemented!("provekit materialize fills this from the shim's .proof envelope")
 }
 
-// provekit-concept: {"artifact_kind":"provekit-concept-citation-comment-sugar","concept_name":"concept:sql-query","function":"stmt_query_map","params":["stmt","params","mapper"],"param_types":["&mut rusqlite::Statement<'_>","P","F"],"return_type":"rusqlite::Result<rusqlite::MappedRows<'_,F>>","library_tag":"rusqlite"}
+pub fn stmt_query_map(stmt: &mut rusqlite::Statement<'_>, params: P, mapper: F) -> rusqlite::Result<rusqlite::MappedRows<'_,F>> {
+    stmt.query_map(params, mapper)
+}
 fn stmt_query_map<'stmt, T, P, F>(
     _stmt: &'stmt mut Statement<'_>,
     _params: P,
@@ -60,17 +70,23 @@ where
     unimplemented!("provekit materialize fills this from the shim's .proof envelope")
 }
 
-// provekit-concept: {"artifact_kind":"provekit-concept-citation-comment-sugar","concept_name":"concept:insert-and-get-id","function":"last_insert_rowid","params":["conn"],"param_types":["&rusqlite::Connection"],"return_type":"i64","library_tag":"rusqlite"}
+pub fn last_insert_rowid(conn: &rusqlite::Connection) -> i64 {
+    conn.last_insert_rowid()
+}
 fn last_insert_rowid(_conn: &Connection) -> i64 {
     unimplemented!("provekit materialize fills this from the shim's .proof envelope")
 }
 
-// provekit-concept: {"artifact_kind":"provekit-concept-citation-comment-sugar","concept_name":"concept:sql-transaction-begin","function":"transaction","params":["conn"],"param_types":["&mut rusqlite::Connection"],"return_type":"rusqlite::Result<rusqlite::Transaction<'_>>","library_tag":"rusqlite"}
+pub fn transaction(conn: &mut rusqlite::Connection) -> rusqlite::Result<rusqlite::Transaction<'_>> {
+    conn.transaction()
+}
 fn transaction<'conn>(_conn: &'conn mut Connection) -> Result<Transaction<'conn>> {
     unimplemented!("provekit materialize fills this from the shim's .proof envelope")
 }
 
-// provekit-concept: {"artifact_kind":"provekit-concept-citation-comment-sugar","concept_name":"concept:sql-transaction-commit","function":"tx_commit","params":["tx"],"param_types":["rusqlite::Transaction<'_>"],"return_type":"rusqlite::Result<()>","library_tag":"rusqlite"}
+pub fn tx_commit(tx: rusqlite::Transaction<'_>) -> rusqlite::Result<()> {
+    tx.commit()
+}
 fn tx_commit(_tx: Transaction<'_>) -> Result<()> {
     unimplemented!("provekit materialize fills this from the shim's .proof envelope")
 }
