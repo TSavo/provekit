@@ -41,6 +41,7 @@ impl LiftPluginSession {
 #[derive(Debug, Clone, Copy, Default)]
 pub struct LiftPluginOptions {
     pub identify_only: bool,
+    pub library_bindings: bool,
 }
 
 #[derive(Debug, Clone)]
@@ -334,6 +335,8 @@ pub fn build_lift_params(project_root: &Path, surface: &str, options: LiftPlugin
         .unwrap_or_else(|_| project_root.to_path_buf());
     let layer = if options.identify_only {
         "identify-only"
+    } else if options.library_bindings {
+        "library-bindings"
     } else {
         "all"
     };
@@ -366,6 +369,24 @@ mod tests {
     use provekit_ir_types::Sort;
 
     #[test]
+    fn lift_plugin_options_select_library_bindings_layer() {
+        let request = build_lift_params(
+            Path::new("."),
+            "python",
+            LiftPluginOptions {
+                identify_only: false,
+                library_bindings: true,
+            },
+        );
+
+        assert_eq!(
+            request["options"]["layer"].as_str(),
+            Some("library-bindings")
+        );
+        assert_eq!(request["options"]["identifyOnly"].as_bool(), Some(false));
+    }
+
+    #[test]
     fn lift_session_is_domain_claim_first_and_legacy_response_round_trips() {
         let response = json!({
             "kind": "ir-document",
@@ -377,6 +398,7 @@ mod tests {
             "rust",
             LiftPluginOptions {
                 identify_only: false,
+                library_bindings: false,
             },
         );
 

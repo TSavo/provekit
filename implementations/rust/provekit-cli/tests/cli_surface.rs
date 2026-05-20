@@ -252,6 +252,69 @@ fn lift_identify_only_delegates_from_project_config() {
 }
 
 #[test]
+fn lift_library_bindings_delegates_layer_to_lifter() {
+    let dir = tempfile::tempdir().expect("create tempdir");
+    let project = dir.path().join("project");
+    let manifest_dir = project.join(".provekit/lift/library-bindings");
+    fs::create_dir_all(&manifest_dir).expect("create manifest dir");
+    fs::write(
+        project.join(".provekit/config.toml"),
+        "[authoring.lift]\nsurface = \"library-bindings\"\n",
+    )
+    .expect("write config");
+    let plugin = dir.path().join("library-bindings-plugin.sh");
+    write_executable(
+        &plugin,
+        r#"#!/usr/bin/env bash
+set -euo pipefail
+while IFS= read -r line; do
+  if [[ "$line" == *'"method":"initialize"'* ]]; then
+    printf '%s\n' '{"jsonrpc":"2.0","id":1,"result":{"name":"library-bindings","protocol_version":"pep/1.7.0","capabilities":{}}}'
+  elif [[ "$line" == *'"method":"lift"'* ]]; then
+    if [[ "$line" != *'"layer":"library-bindings"'* ]]; then
+      printf 'expected library-bindings layer, saw: %s\n' "$line" >&2
+      exit 42
+    fi
+    printf '%s\n' '{"jsonrpc":"2.0","id":2,"result":{"kind":"ir-document","ir":[{"body_source":{"file":"src/shims/requests.py","source_cid":"blake3-512:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa","span":{"start_line":1,"start_col":0,"end_line":6,"end_col":0}},"concept_name":"concept:http-request","kind":"library-sugar-binding-entry","loss_record_contribution":{"form":"literal","value":{"entries":[]}},"param_names":["url"],"param_types":["str"],"return_type":"int","signature_shape_cid":"blake3-512:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb","source_function_name":"fetch_status","target_language":"python","target_library_tag":"requests","term_shape":null,"term_shape_cid":null}],"diagnostics":[]}}'
+  elif [[ "$line" == *'"method":"shutdown"'* ]]; then
+    printf '%s\n' '{"jsonrpc":"2.0","id":3,"result":null}'
+    exit 0
+  fi
+done
+"#,
+    );
+    fs::write(
+        manifest_dir.join("manifest.toml"),
+        format!(
+            "name = \"library-bindings\"\ncommand = [\"{}\"]\n",
+            plugin.display()
+        ),
+    )
+    .expect("write manifest");
+
+    let output = output_retrying_etxtbsy(
+        Command::new(provekit_bin())
+            .arg("lift")
+            .arg(&project)
+            .arg("--library-bindings")
+            .arg("--json")
+            .arg("--quiet"),
+    );
+
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(
+        output.status.success(),
+        "provekit lift --library-bindings failed\nstdout:\n{stdout}\nstderr:\n{stderr}"
+    );
+    let report: serde_json::Value =
+        serde_json::from_str(&stdout).expect("library-bindings lift JSON parses");
+    assert_eq!(report["kind"], "ir-document");
+    assert_eq!(report["ir"][0]["kind"], "library-sugar-binding-entry");
+    assert_eq!(report["ir"][0]["target_library_tag"], "requests");
+}
+
+#[test]
 fn lift_identify_only_rejects_non_identity_response() {
     let dir = tempfile::tempdir().expect("create tempdir");
     let project = dir.path().join("project");
