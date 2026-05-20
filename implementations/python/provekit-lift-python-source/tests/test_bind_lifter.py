@@ -1216,3 +1216,45 @@ def test_sugar_and_refuse_coexist_in_same_file() -> None:
     kinds = [e["kind"] for e in result.ir]
     assert kinds.count("library-sugar-binding-entry") == 1
     assert kinds.count("refusal-memento") == 1
+
+
+def test_layer_all_emits_both_bind_entry_and_language_neutral_entry() -> None:
+    """layer='all' must emit BOTH library-sugar-binding-entry AND bind-lift-entry."""
+    source = (
+        "from provekit import sugar\n"
+        "import sqlite3\n"
+        "\n"
+        "@sugar.bind(concept=\"concept:sql-connection-close\", library=\"sqlite3\", loss=[])\n"
+        "def close_connection(conn: sqlite3.Connection) -> None:\n"
+        "    conn.close()\n"
+    )
+    result = lift_source(source, "shim.py", layer="all")
+    assert result.diagnostics == []
+    kinds = [e["kind"] for e in result.ir]
+    assert "library-sugar-binding-entry" in kinds, (
+        "layer='all' must include library-sugar-binding-entry"
+    )
+    assert "bind-lift-entry" in kinds, (
+        "layer='all' must include bind-lift-entry"
+    )
+
+
+def test_sugar_bind_body_text_is_populated_in_body_source() -> None:
+    """body_source.body_text must be set so cmd_mint can project body templates."""
+    source = (
+        "from provekit import sugar\n"
+        "import sqlite3\n"
+        "\n"
+        "@sugar.bind(concept=\"concept:sql-connection-close\", library=\"sqlite3\", loss=[])\n"
+        "def close_connection(conn: sqlite3.Connection) -> None:\n"
+        "    conn.close()\n"
+    )
+    result = lift_source(source, "shim.py", layer="library-bindings")
+    assert result.diagnostics == []
+    assert len(result.ir) == 1
+    entry = result.ir[0]
+    body_text = entry.get("body_source", {}).get("body_text")
+    assert body_text is not None, "body_source.body_text must be present"
+    assert "conn.close()" in body_text, (
+        "body_text should contain the function body"
+    )
