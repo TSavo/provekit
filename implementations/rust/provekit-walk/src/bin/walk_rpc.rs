@@ -424,6 +424,8 @@ fn bind_lift(params: &Value) -> Result<Value, String> {
             let SugarTarget {
                 concept,
                 library,
+                loss,
+                observed_dimension,
                 item_fn,
             } = sugar_target;
             let param_names = fn_param_names(&item_fn);
@@ -454,7 +456,7 @@ fn bind_lift(params: &Value) -> Result<Value, String> {
             ]);
             let signature_shape_cid = blake3_512_of(encode_jcs(&sig_shape).as_bytes());
 
-            entries.push(json!({
+            let mut entry = json!({
                 "kind": "library-sugar-binding-entry",
                 "target_language": "rust",
                 "target_library_tag": library,
@@ -468,9 +470,30 @@ fn bind_lift(params: &Value) -> Result<Value, String> {
                 "signature_shape_cid": signature_shape_cid,
                 "loss_record_contribution": {
                     "form": "literal",
-                    "value": { "entries": [] },
+                    "value": { "entries": loss },
                 },
                 "body_source": sugar_body_source(&rel, &src, &item_fn),
+            });
+            if let Some(observed) = observed_dimension {
+                entry["observed_dimension"] = json!(observed);
+            }
+            entries.push(entry);
+        }
+
+        for refuse_target in collect_refuse_targets(&file) {
+            let RefuseTarget {
+                surface,
+                concept,
+                reason,
+                would_close_with_cluster,
+            } = refuse_target;
+            entries.push(json!({
+                "kind": "refusal-memento",
+                "target_language": "rust",
+                "surface": surface,
+                "concept": concept,
+                "reason": reason,
+                "would_close_with_cluster": would_close_with_cluster,
             }));
         }
     }
@@ -531,7 +554,17 @@ struct BindLiftTarget {
 struct SugarTarget {
     concept: String,
     library: String,
+    loss: Vec<String>,
+    observed_dimension: Option<String>,
     item_fn: syn::ItemFn,
+}
+
+#[derive(Debug, Clone)]
+struct RefuseTarget {
+    surface: String,
+    concept: String,
+    reason: String,
+    would_close_with_cluster: String,
 }
 
 fn collect_bind_lift_targets(file: &syn::File) -> Vec<BindLiftTarget> {
@@ -601,10 +634,12 @@ fn collect_sugar_targets_in_items(items: &[syn::Item], targets: &mut Vec<SugarTa
     for item in items {
         match item {
             syn::Item::Fn(item_fn) => {
-                if let Some((concept, library)) = extract_sugar_attr(item_fn) {
+                if let Some(parsed) = extract_sugar_attr(item_fn) {
                     targets.push(SugarTarget {
-                        concept,
-                        library,
+                        concept: parsed.concept,
+                        library: parsed.library,
+                        loss: parsed.loss,
+                        observed_dimension: parsed.observed_dimension,
                         item_fn: item_fn.clone(),
                     });
                 }
@@ -619,57 +654,162 @@ fn collect_sugar_targets_in_items(items: &[syn::Item], targets: &mut Vec<SugarTa
     }
 }
 
-fn extract_sugar_attr(item_fn: &syn::ItemFn) -> Option<(String, String)> {
+fn collect_refuse_targets(file: &syn::File) -> Vec<RefuseTarget> {
+    let mut targets = Vec::new();
+    collect_refuse_targets_in_items(&file.items, &mut targets);
+    targets
+}
+
+fn collect_refuse_targets_in_items(items: &[syn::Item], targets: &mut Vec<RefuseTarget>) {
+    for item in items {
+        if let syn::Item::Mod(module) = item {
+            if let Some(parsed) = extract_refuse_attr(module) {
+                targets.push(parsed);
+            }
+            if let Some((_, nested_items)) = &module.content {
+                collect_refuse_targets_in_items(nested_items, targets);
+            }
+        }
+    }
+}
+
+#[derive(Debug, Clone, Default)]
+struct SugarAttrParsed {
+    concept: String,
+    library: String,
+    loss: Vec<String>,
+    observed_dimension: Option<String>,
+}
+
+fn extract_sugar_attr(item_fn: &syn::ItemFn) -> Option<SugarAttrParsed> {
     for attr in &item_fn.attrs {
         let path = attr.path();
         let segments: Vec<_> = path.segments.iter().collect();
         if segments.len() == 2 && segments[0].ident == "provekit" && segments[1].ident == "sugar" {
             if let Ok(meta_list) = attr.meta.require_list() {
-                let mut concept: Option<String> = None;
-                let mut library: Option<String> = None;
-                let tokens: Vec<_> = meta_list.tokens.clone().into_iter().collect();
-                let mut i = 0;
-                while i + 2 < tokens.len() {
-                    if let (
-                        proc_macro2::TokenTree::Ident(key),
-                        proc_macro2::TokenTree::Punct(eq),
-                        proc_macro2::TokenTree::Literal(val),
-                    ) = (&tokens[i], &tokens[i + 1], &tokens[i + 2])
-                    {
-                        if eq.as_char() == '=' {
-                            let val_str = val.to_string();
-                            if val_str.starts_with('"') && val_str.ends_with('"') {
-                                let inner = val_str[1..val_str.len() - 1].to_string();
-                                let key_name = key.to_string();
-                                if key_name == "concept" {
-                                    concept = Some(inner.clone());
-                                }
-                                if key_name == "library" {
-                                    library = Some(inner);
-                                }
-                            }
-                        }
-                        i += 3;
-                        if i < tokens.len() {
-                            if let proc_macro2::TokenTree::Punct(punct) = &tokens[i] {
-                                if punct.as_char() == ',' {
-                                    i += 1;
-                                }
-                            }
-                        }
-                    } else {
-                        i += 1;
-                    }
-                }
-                if let (Some(concept), Some(library)) = (concept, library) {
-                    if !concept.is_empty() && !library.is_empty() {
-                        return Some((concept, library));
-                    }
+                let args = parse_attr_named_args(&meta_list.tokens);
+                let concept = args.string("concept").unwrap_or_default();
+                let library = args.string("library").unwrap_or_default();
+                if !concept.is_empty() && !library.is_empty() {
+                    return Some(SugarAttrParsed {
+                        concept,
+                        library,
+                        loss: args.string_array("loss"),
+                        observed_dimension: args.string("observed_dimension"),
+                    });
                 }
             }
         }
     }
     None
+}
+
+fn extract_refuse_attr(item_mod: &syn::ItemMod) -> Option<RefuseTarget> {
+    for attr in &item_mod.attrs {
+        let path = attr.path();
+        let segments: Vec<_> = path.segments.iter().collect();
+        if segments.len() == 2 && segments[0].ident == "provekit" && segments[1].ident == "refuse" {
+            if let Ok(meta_list) = attr.meta.require_list() {
+                let args = parse_attr_named_args(&meta_list.tokens);
+                let surface = args.string("surface").unwrap_or_default();
+                let concept = args.string("concept").unwrap_or_default();
+                let reason = args.string("reason").unwrap_or_default();
+                let would_close_with_cluster =
+                    args.string("would_close_with_cluster").unwrap_or_default();
+                if !surface.is_empty()
+                    && !concept.is_empty()
+                    && !reason.is_empty()
+                    && !would_close_with_cluster.is_empty()
+                {
+                    return Some(RefuseTarget {
+                        surface,
+                        concept,
+                        reason,
+                        would_close_with_cluster,
+                    });
+                }
+            }
+        }
+    }
+    None
+}
+
+#[derive(Debug, Default)]
+struct ParsedAttrArgs {
+    strings: std::collections::BTreeMap<String, String>,
+    string_arrays: std::collections::BTreeMap<String, Vec<String>>,
+}
+
+impl ParsedAttrArgs {
+    fn string(&self, key: &str) -> Option<String> {
+        self.strings.get(key).cloned()
+    }
+
+    fn string_array(&self, key: &str) -> Vec<String> {
+        self.string_arrays.get(key).cloned().unwrap_or_default()
+    }
+}
+
+fn parse_attr_named_args(tokens: &proc_macro2::TokenStream) -> ParsedAttrArgs {
+    let mut out = ParsedAttrArgs::default();
+    let tokens: Vec<_> = tokens.clone().into_iter().collect();
+    let mut i = 0;
+    while i < tokens.len() {
+        let key = match &tokens[i] {
+            proc_macro2::TokenTree::Ident(ident) => ident.to_string(),
+            _ => {
+                i += 1;
+                continue;
+            }
+        };
+        let is_eq = matches!(tokens.get(i + 1), Some(proc_macro2::TokenTree::Punct(p)) if p.as_char() == '=');
+        if !is_eq {
+            i += 1;
+            continue;
+        }
+        match tokens.get(i + 2) {
+            Some(proc_macro2::TokenTree::Literal(lit)) => {
+                if let Some(unquoted) = unquote_string_literal(&lit.to_string()) {
+                    out.strings.insert(key, unquoted);
+                }
+                i += 3;
+            }
+            Some(proc_macro2::TokenTree::Group(group))
+                if group.delimiter() == proc_macro2::Delimiter::Bracket =>
+            {
+                let entries: Vec<String> = group
+                    .stream()
+                    .into_iter()
+                    .filter_map(|tt| match tt {
+                        proc_macro2::TokenTree::Literal(lit) => {
+                            unquote_string_literal(&lit.to_string())
+                        }
+                        _ => None,
+                    })
+                    .collect();
+                out.string_arrays.insert(key, entries);
+                i += 3;
+            }
+            _ => {
+                i += 1;
+                continue;
+            }
+        }
+        if let Some(proc_macro2::TokenTree::Punct(p)) = tokens.get(i) {
+            if p.as_char() == ',' {
+                i += 1;
+            }
+        }
+    }
+    out
+}
+
+fn unquote_string_literal(raw: &str) -> Option<String> {
+    if raw.starts_with('"') && raw.ends_with('"') && raw.len() >= 2 {
+        Some(raw[1..raw.len() - 1].to_string())
+    } else {
+        None
+    }
 }
 
 fn concept_annotation_for_fn(source: &str, item_fn: &syn::ItemFn) -> Option<String> {
@@ -3622,5 +3762,268 @@ pub fn bitwise_not() -> i64 {
         std::fs::create_dir_all(dir.join("src")).expect("create src");
         std::fs::write(dir.join("src/lib.rs"), "fn broken(").expect("write source");
         dir
+    }
+
+    // ---- substrate-honest precursor wire tests (loss, observed_dimension, refusal-memento) ----
+
+    #[test]
+    fn sugar_attr_loss_array_populates_loss_record_entries() {
+        let root = temp_workspace("sugar_loss_array");
+        let src_dir = root.join("src");
+        fs::create_dir_all(&src_dir).expect("create src dir");
+        let src = r#"
+#[provekit::sugar(
+    concept = "concept:sql-query",
+    library = "rusqlite",
+    loss = ["sync-vs-async", "row-cardinality"],
+)]
+fn query(conn: String, sql: String) -> i64 { 0 }
+"#;
+        fs::write(src_dir.join("lib.rs"), src).expect("write source");
+        let out = bind_lift(&json!({
+            "workspace_root": root.to_string_lossy(),
+            "source_paths": ["."],
+        }))
+        .expect("bind lift should succeed");
+        let ir = out["ir"].as_array().expect("ir array");
+        let sugar: Vec<_> = ir
+            .iter()
+            .filter(|e| e["kind"] == "library-sugar-binding-entry")
+            .collect();
+        assert_eq!(sugar.len(), 1, "expected one sugar entry");
+        assert_eq!(
+            sugar[0]["loss_record_contribution"]["value"]["entries"],
+            json!(["sync-vs-async", "row-cardinality"])
+        );
+
+        let _ = fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn sugar_attr_without_loss_still_emits_empty_entries() {
+        let root = temp_workspace("sugar_no_loss");
+        let src_dir = root.join("src");
+        fs::create_dir_all(&src_dir).expect("create src dir");
+        let src = r#"
+#[provekit::sugar(concept = "concept:sql-query", library = "rusqlite")]
+fn query(conn: String, sql: String) -> i64 { 0 }
+"#;
+        fs::write(src_dir.join("lib.rs"), src).expect("write source");
+        let out = bind_lift(&json!({
+            "workspace_root": root.to_string_lossy(),
+            "source_paths": ["."],
+        }))
+        .expect("bind lift should succeed");
+        let ir = out["ir"].as_array().expect("ir array");
+        let sugar: Vec<_> = ir
+            .iter()
+            .filter(|e| e["kind"] == "library-sugar-binding-entry")
+            .collect();
+        assert_eq!(sugar.len(), 1);
+        assert_eq!(
+            sugar[0]["loss_record_contribution"]["value"]["entries"],
+            json!([])
+        );
+
+        let _ = fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn sugar_attr_observed_dimension_propagates_to_entry() {
+        let root = temp_workspace("sugar_observed_dim");
+        let src_dir = root.join("src");
+        fs::create_dir_all(&src_dir).expect("create src dir");
+        let src = r#"
+#[provekit::sugar(
+    concept = "concept:contract-observation",
+    library = "rusqlite",
+    observed_dimension = "autocommit-mode",
+)]
+fn is_autocommit(conn: String) -> bool { false }
+"#;
+        fs::write(src_dir.join("lib.rs"), src).expect("write source");
+        let out = bind_lift(&json!({
+            "workspace_root": root.to_string_lossy(),
+            "source_paths": ["."],
+        }))
+        .expect("bind lift should succeed");
+        let ir = out["ir"].as_array().expect("ir array");
+        let sugar: Vec<_> = ir
+            .iter()
+            .filter(|e| e["kind"] == "library-sugar-binding-entry")
+            .collect();
+        assert_eq!(sugar.len(), 1);
+        assert_eq!(sugar[0]["observed_dimension"], "autocommit-mode");
+
+        let _ = fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn refuse_attr_emits_refusal_memento_with_all_fields() {
+        let root = temp_workspace("refuse_full");
+        let src_dir = root.join("src");
+        fs::create_dir_all(&src_dir).expect("create src dir");
+        let src = r#"
+#[provekit::refuse(
+    surface = "rusqlite::Connection::backup",
+    concept = "concept:sql-physical-backup",
+    reason = "SQLite-binary-specific physical backup; N=1 cluster.",
+    would_close_with_cluster = "Connection-level physical-backup method on >=2 SQL drivers",
+)]
+pub mod refused_backup {}
+"#;
+        fs::write(src_dir.join("lib.rs"), src).expect("write source");
+        let out = bind_lift(&json!({
+            "workspace_root": root.to_string_lossy(),
+            "source_paths": ["."],
+        }))
+        .expect("bind lift should succeed");
+        let ir = out["ir"].as_array().expect("ir array");
+        let refusals: Vec<_> = ir
+            .iter()
+            .filter(|e| e["kind"] == "refusal-memento")
+            .collect();
+        assert_eq!(refusals.len(), 1, "expected one refusal-memento entry");
+        let r = &refusals[0];
+        assert_eq!(r["surface"], "rusqlite::Connection::backup");
+        assert_eq!(r["concept"], "concept:sql-physical-backup");
+        assert_eq!(
+            r["reason"],
+            "SQLite-binary-specific physical backup; N=1 cluster."
+        );
+        assert_eq!(
+            r["would_close_with_cluster"],
+            "Connection-level physical-backup method on >=2 SQL drivers"
+        );
+        assert_eq!(r["target_language"], "rust");
+
+        let _ = fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn refuse_attr_missing_field_produces_zero_memento() {
+        let root = temp_workspace("refuse_missing");
+        let src_dir = root.join("src");
+        fs::create_dir_all(&src_dir).expect("create src dir");
+        let src_missing_reason = r#"
+#[provekit::refuse(
+    surface = "rusqlite::Connection::backup",
+    concept = "concept:sql-physical-backup",
+    would_close_with_cluster = "Cross-driver analog",
+)]
+pub mod refused_backup {}
+"#;
+        fs::write(src_dir.join("lib.rs"), src_missing_reason).expect("write source");
+        let out = bind_lift(&json!({
+            "workspace_root": root.to_string_lossy(),
+            "source_paths": ["."],
+        }))
+        .expect("bind lift should succeed");
+        let ir = out["ir"].as_array().expect("ir array");
+        let refusals: Vec<_> = ir
+            .iter()
+            .filter(|e| e["kind"] == "refusal-memento")
+            .collect();
+        assert_eq!(
+            refusals.len(),
+            0,
+            "missing required field must produce zero refusal mementos"
+        );
+
+        let _ = fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn non_refuse_module_does_not_emit_memento() {
+        let root = temp_workspace("refuse_discrim");
+        let src_dir = root.join("src");
+        fs::create_dir_all(&src_dir).expect("create src dir");
+        let src = r#"
+pub mod plain_module {}
+"#;
+        fs::write(src_dir.join("lib.rs"), src).expect("write source");
+        let out = bind_lift(&json!({
+            "workspace_root": root.to_string_lossy(),
+            "source_paths": ["."],
+        }))
+        .expect("bind lift should succeed");
+        let ir = out["ir"].as_array().expect("ir array");
+        let refusals: Vec<_> = ir
+            .iter()
+            .filter(|e| e["kind"] == "refusal-memento")
+            .collect();
+        assert_eq!(refusals.len(), 0);
+
+        let _ = fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn three_speech_acts_compose_in_one_source_file() {
+        // The load-bearing test for PR A: a single Rust source file declares
+        // (1) a substrate-exact binding (sugar with loss = []), (2) a lossy
+        // binding (sugar with loss = ["sync-vs-async"]), and (3) a refusal
+        // (refuse module). One bind_lift call extracts all three.
+        let root = temp_workspace("three_speech_acts");
+        let src_dir = root.join("src");
+        fs::create_dir_all(&src_dir).expect("create src dir");
+        let src = r#"
+#[provekit::sugar(concept = "concept:sql-execute", library = "rusqlite", loss = [])]
+fn execute(conn: String, sql: String) -> i64 { 0 }
+
+#[provekit::sugar(
+    concept = "concept:sql-query",
+    library = "rusqlite",
+    loss = ["sync-vs-async", "row-cardinality"],
+)]
+fn query_row(conn: String, sql: String) -> String { String::new() }
+
+#[provekit::refuse(
+    surface = "rusqlite::Connection::backup",
+    concept = "concept:sql-physical-backup",
+    reason = "SQLite-specific; cluster N=1.",
+    would_close_with_cluster = "Cross-driver backup method on >=2 SQL drivers",
+)]
+pub mod refused_backup {}
+"#;
+        fs::write(src_dir.join("lib.rs"), src).expect("write source");
+        let out = bind_lift(&json!({
+            "workspace_root": root.to_string_lossy(),
+            "source_paths": ["."],
+        }))
+        .expect("bind lift should succeed");
+        let ir = out["ir"].as_array().expect("ir array");
+
+        let sugar: Vec<_> = ir
+            .iter()
+            .filter(|e| e["kind"] == "library-sugar-binding-entry")
+            .collect();
+        assert_eq!(sugar.len(), 2, "expected two sugar entries (exact + lossy)");
+
+        let exact = sugar
+            .iter()
+            .find(|e| e["source_function_name"] == "execute")
+            .expect("exact binding present");
+        assert_eq!(
+            exact["loss_record_contribution"]["value"]["entries"],
+            json!([])
+        );
+
+        let lossy = sugar
+            .iter()
+            .find(|e| e["source_function_name"] == "query_row")
+            .expect("lossy binding present");
+        assert_eq!(
+            lossy["loss_record_contribution"]["value"]["entries"],
+            json!(["sync-vs-async", "row-cardinality"])
+        );
+
+        let refusals: Vec<_> = ir
+            .iter()
+            .filter(|e| e["kind"] == "refusal-memento")
+            .collect();
+        assert_eq!(refusals.len(), 1, "expected one refusal-memento entry");
+        assert_eq!(refusals[0]["surface"], "rusqlite::Connection::backup");
+
+        let _ = fs::remove_dir_all(root);
     }
 }
