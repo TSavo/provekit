@@ -140,7 +140,7 @@ def test_plugin_invoke_missing_template_uses_named_term_tree_args_shape() -> Non
             "data": [
                 {
                     "operation_kind": "missing-concept",
-                    "args_shape": ["Sql", "SqlArgs"],
+                    "args_shape": ["str", "list[object]"],
                     "function": "missing",
                     "term_position": "body",
                 }
