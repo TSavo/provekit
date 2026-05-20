@@ -790,9 +790,16 @@ fn mint_from_ir_document(
     }
 
     for decl in ir {
-        if decl.get("kind").and_then(|v| v.as_str()) == Some("library-sugar-binding-entry") {
-            let (cid, bytes) = mint_library_sugar_binding_entry(decl)?;
-            members.entry(cid).or_insert(bytes);
+        match decl.get("kind").and_then(|v| v.as_str()) {
+            Some("library-sugar-binding-entry") => {
+                let (cid, bytes) = mint_library_sugar_binding_entry(decl)?;
+                members.entry(cid).or_insert(bytes);
+            }
+            Some("refusal-memento") => {
+                let (cid, bytes) = mint_refusal_memento(decl)?;
+                members.entry(cid).or_insert(bytes);
+            }
+            _ => {}
         }
     }
 
@@ -925,6 +932,39 @@ fn mint_library_sugar_binding_entry(decl: &Value) -> Result<(String, Vec<u8>), S
             "signatureShapeCid": signature_shape_cid,
             "targetLanguage": target_language,
             "targetLibraryTag": target_library_tag,
+        },
+        "schemaVersion": "1",
+    });
+    let canonical = encode_jcs(&json_to_cvalue(&envelope));
+    let cid = blake3_512_of(canonical.as_bytes());
+    Ok((cid, canonical.into_bytes()))
+}
+
+fn mint_refusal_memento(decl: &Value) -> Result<(String, Vec<u8>), String> {
+    let target_language = required_str(decl, "target_language", "refusal-memento")?;
+    let surface = required_str(decl, "surface", "refusal-memento")?;
+    let concept = required_str(decl, "concept", "refusal-memento")?;
+    let reason = required_str(decl, "reason", "refusal-memento")?;
+    let would_close_with_cluster =
+        required_str(decl, "would_close_with_cluster", "refusal-memento")?;
+
+    if reason.trim().is_empty() {
+        return Err("`refusal-memento` missing non-empty `reason`".to_string());
+    }
+    if would_close_with_cluster.trim().is_empty() {
+        return Err(
+            "`refusal-memento` missing non-empty `would_close_with_cluster`".to_string(),
+        );
+    }
+
+    let envelope = json!({
+        "body": decl,
+        "header": {
+            "concept": concept,
+            "kind": "refusal-memento",
+            "surface": surface,
+            "targetLanguage": target_language,
+            "wouldCloseWithCluster": would_close_with_cluster,
         },
         "schemaVersion": "1",
     });
