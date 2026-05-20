@@ -1558,6 +1558,11 @@ fn sugar_body_source(rel: &str, src: &str, item_fn: &syn::ItemFn) -> Value {
     } else {
         String::new()
     };
+    // Extract just the body block (between the outermost `{` and matching
+    // `}`) so cmd_mint can project a substrate-honest body-templates JSON
+    // from the envelope without re-reading source files at mint time. The
+    // full span_text is still hashed for `source_cid`.
+    let body_block = extract_block_body(&span_text);
     json!({
         "file": rel,
         "span": {
@@ -1567,7 +1572,41 @@ fn sugar_body_source(rel: &str, src: &str, item_fn: &syn::ItemFn) -> Value {
             "end_col": end.column,
         },
         "source_cid": blake3_512_of(span_text.as_bytes()),
+        "body_text": body_block,
     })
+}
+
+/// Extract the contents between the outermost `{` and matching `}` of a
+/// function span. Returns the trimmed inner block. The matching tracks
+/// nested braces but does not parse strings or comments; the shim's
+/// wrapper-fn bodies are short and balanced, so simple matching suffices.
+fn extract_block_body(span_text: &str) -> String {
+    let bytes = span_text.as_bytes();
+    let mut start: Option<usize> = None;
+    let mut depth: i32 = 0;
+    let mut end: Option<usize> = None;
+    for (i, &b) in bytes.iter().enumerate() {
+        match b {
+            b'{' => {
+                if start.is_none() {
+                    start = Some(i + 1);
+                }
+                depth += 1;
+            }
+            b'}' => {
+                depth -= 1;
+                if depth == 0 {
+                    end = Some(i);
+                    break;
+                }
+            }
+            _ => {}
+        }
+    }
+    match (start, end) {
+        (Some(s), Some(e)) if e >= s => span_text[s..e].trim().to_string(),
+        _ => String::new(),
+    }
 }
 
 fn normalize_ws(s: &str) -> String {
