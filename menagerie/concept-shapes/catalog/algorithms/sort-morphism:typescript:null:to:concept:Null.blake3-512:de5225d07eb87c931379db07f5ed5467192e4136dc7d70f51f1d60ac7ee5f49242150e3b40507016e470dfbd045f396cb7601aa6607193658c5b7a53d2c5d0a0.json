@@ -1,0 +1,24 @@
+{
+  "envelope": {
+    "declaredAt": "2026-05-19T00:00:00Z",
+    "signature": "ed25519:UNSIGNED_DEV_ONLY",
+    "signer": "ed25519:UNSIGNED_DEV_ONLY"
+  },
+  "header": {
+    "cid": "blake3-512:de5225d07eb87c931379db07f5ed5467192e4136dc7d70f51f1d60ac7ee5f49242150e3b40507016e470dfbd045f396cb7601aa6607193658c5b7a53d2c5d0a0",
+    "direction": "bidirectional",
+    "kind": "sort-morphism",
+    "precision_loss": "none",
+    "range_loss": "none",
+    "representation_constraints": [],
+    "runtime_guards": [],
+    "schemaVersion": "1",
+    "source_language_signature_cid": "blake3-512:31444085d7d08f573d4a68730d9f30f77509be66369a92432d9a76fafe3cdf7c0ed5df53767d934ec0b77b8fafcdf3124589c0b5fa3eb7e9312891a08a95dc0d",
+    "source_sort_cid": "blake3-512:2c966d3cabe7779fde92755e34e809de88c59f541c49fa91737a8d3f91b54f23b3b84c98d4cb6674ed6e43a63f04b3a620f152221fc0dad9b8ea41b95793163b",
+    "target_language_signature_cid": "blake3-512:1979babed41ad51ad8d7a28543815f74e24a9d4ee1ae3d52ccc6549f293aa63519abf5411a67b7882c73333b1b357e4863f6d7781f0b0776e5bd25f90ea7d793",
+    "target_sort_cid": "blake3-512:62f6040bd3f414c1e6c2b7bdf276669cd5613b33cb508a81170170064ca3ffba771a4b0002dc52e059fce5f9f63a1874ef71bd4ec89ae06e89c87a3e91aac3b5"
+  },
+  "metadata": {
+    "note": "TypeScript's `Null` sort denotes the single-value null primitive. Bidirectional with substrate Null; `undefined` is a distinct sort and would mint its own morphism if Trinity surfaces the distinction."
+  }
+}

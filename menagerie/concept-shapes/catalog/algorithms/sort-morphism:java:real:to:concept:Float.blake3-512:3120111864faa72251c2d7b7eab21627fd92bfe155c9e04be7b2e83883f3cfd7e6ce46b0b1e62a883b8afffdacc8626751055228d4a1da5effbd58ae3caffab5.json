@@ -1,0 +1,24 @@
+{
+  "envelope": {
+    "declaredAt": "2026-05-19T00:00:00Z",
+    "signature": "ed25519:UNSIGNED_DEV_ONLY",
+    "signer": "ed25519:UNSIGNED_DEV_ONLY"
+  },
+  "header": {
+    "cid": "blake3-512:3120111864faa72251c2d7b7eab21627fd92bfe155c9e04be7b2e83883f3cfd7e6ce46b0b1e62a883b8afffdacc8626751055228d4a1da5effbd58ae3caffab5",
+    "direction": "bidirectional",
+    "kind": "sort-morphism",
+    "precision_loss": "none",
+    "range_loss": "none",
+    "representation_constraints": [],
+    "runtime_guards": [],
+    "schemaVersion": "1",
+    "source_language_signature_cid": "blake3-512:4d312a5ab13eba517063f097a73b8675f1ea2a915ab5cc5b92587c83b47f707b0298858ac2c48061eee73e30e1c48983bd0aec5641bc806561624fc7e4da44ef",
+    "source_sort_cid": "blake3-512:484a52211f7da78267052614488f602dd5cb2ea30b1819a33ac00a36903a1ca76ef5868bfa24ec2779effca022f55da40ac23c8186cd9b57f59bed4aedcab1c5",
+    "target_language_signature_cid": "blake3-512:1979babed41ad51ad8d7a28543815f74e24a9d4ee1ae3d52ccc6549f293aa63519abf5411a67b7882c73333b1b357e4863f6d7781f0b0776e5bd25f90ea7d793",
+    "target_sort_cid": "blake3-512:b979e70c4d5e53d9bdf13d6f08330be3c5b0714b8c770d69bbd05946b86c36df5274be8145a2683cc29c278155c9c1ee65b6897913524eecb9e4c89c71862f57"
+  },
+  "metadata": {
+    "note": "Java's `real` sort covers `float` and `double` under one polymorphic real sort. Per-precision distinction deferred to FloatPrecision."
+  }
+}
