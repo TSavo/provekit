@@ -1,0 +1,6 @@
+# PEP 1.7.0 lift plugin manifest for provekit-shim-python-sqlite3.
+# Points at the installed provekit-bind-lift-python entry-point script.
+# Required by `provekit mint` which looks for .provekit/lift/<surface>/manifest.toml.
+name = "python-bind-lift"
+command = ["/usr/local/bin/provekit-bind-lift-python", "--rpc"]
+working_dir = "."
