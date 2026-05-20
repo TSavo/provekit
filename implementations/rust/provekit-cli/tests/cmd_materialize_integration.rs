@@ -721,7 +721,9 @@ fn materialize_explicit_target_strips_redundant_language_prefix_from_library() {
     // produces kit_name lower-python-requests, matching the installed plugin.
     let workspace = tempfile::tempdir().expect("tempdir");
     let Some(src_dir) = write_python_requests_project_fixture(workspace.path()) else {
-        eprintln!("skipping N1 prefix-strip test: provekit-realize-python-requests binary is unavailable");
+        eprintln!(
+            "skipping N1 prefix-strip test: provekit-realize-python-requests binary is unavailable"
+        );
         return;
     };
     write_python_http_request_source(&src_dir);

@@ -9,6 +9,7 @@ import {
   compileTypeScriptSourceBodyIr,
   compileTypeScriptSourceIr,
   functionContractCid,
+  liftTypeScriptLibraryBindingsPaths,
   liftTypeScriptLibraryBindingsText,
   liftTypeScriptSourcePaths,
   liftTypeScriptSourceText,
@@ -75,6 +76,36 @@ function unannotated(db: unknown, sql: string): unknown[] {
 
     expect(result.libraryBindings).toHaveLength(0);
     expect(result.refusals).toHaveLength(0);
+  });
+
+  it("lifts library-sugar bindings from workspace paths without ordinary function contracts", () => {
+    const td = tempDir();
+    writeFileSync(
+      join(td, "shim.ts"),
+      `
+import Database from "better-sqlite3";
+import { sugar } from "provekit";
+
+@sugar.bind({ concept: "concept:sql-execute", library: "better-sqlite3" })
+export function run(db: Database.Database, sql: string, args: unknown[]): unknown {
+  return db.prepare(sql).run(args);
+}
+`,
+      "utf8",
+    );
+
+    const result = liftTypeScriptLibraryBindingsPaths(td, ["."]);
+
+    expect(result.declarations).toEqual([]);
+    expect(result.libraryBindings).toHaveLength(1);
+    expect(result.libraryBindings[0]).toMatchObject({
+      kind: "library-sugar-binding-entry",
+      target_language: "typescript",
+      target_library_tag: "better-sqlite3",
+      concept_name: "concept:sql-execute",
+      source_function_name: "run",
+      param_names: ["db", "sql", "args"],
+    });
   });
 
   it("emits one entry per annotated function when multiple appear in the same file", () => {

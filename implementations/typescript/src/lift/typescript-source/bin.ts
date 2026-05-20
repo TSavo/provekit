@@ -3,11 +3,13 @@ import readline from "node:readline";
 
 import {
   compileTypeScriptSourceIr,
+  liftTypeScriptLibraryBindingsPaths,
   liftTypeScriptSourcePaths,
   type FunctionContractMemento,
 } from "./index.js";
 
 const DIALECT = "typescript-source";
+const SURFACE_ALIASES = new Set([DIALECT, "typescript-bind"]);
 const VERSION = "0.1.0-draft";
 
 interface JsonRpcRequest {
@@ -72,7 +74,7 @@ function dispatch(request: JsonRpcRequest): Record<string, unknown> | null {
 function liftRpc(request: JsonRpcRequest): Record<string, unknown> {
   const params = request.params ?? {};
   const surface = typeof params.surface === "string" ? params.surface : DIALECT;
-  if (surface !== DIALECT) {
+  if (!SURFACE_ALIASES.has(surface)) {
     return errorResponse(request.id ?? null, 1003, `SURFACE_NOT_SUPPORTED: ${surface}`);
   }
   const sourcePaths = Array.isArray(params.source_paths)
@@ -82,6 +84,19 @@ function liftRpc(request: JsonRpcRequest): Record<string, unknown> {
     return errorResponse(request.id ?? null, -32602, "source_paths must be a non-empty array of strings");
   }
   const workspaceRoot = typeof params.workspace_root === "string" ? params.workspace_root : ".";
+  const options = params.options && typeof params.options === "object" ? (params.options as Record<string, unknown>) : {};
+  const layer = typeof options.layer === "string" ? options.layer : "all";
+  if (layer === "library-bindings") {
+    const result = liftTypeScriptLibraryBindingsPaths(workspaceRoot, sourcePaths);
+    return success(request.id, {
+      kind: "ir-document",
+      ir: result.libraryBindings,
+      callEdges: [],
+      diagnostics: result.diagnostics,
+      opacityReport: result.opacityReport,
+      refusals: result.refusals,
+    });
+  }
   const result = liftTypeScriptSourcePaths(workspaceRoot, sourcePaths);
   return success(request.id, {
     kind: "ir-document",
