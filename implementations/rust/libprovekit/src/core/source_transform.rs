@@ -356,6 +356,15 @@ pub struct CarrierComment {
     pub param_types: Vec<String>,
     pub return_type: String,
     pub library_tag: Option<String>,
+    /// The enclosing function or module the carrier-cited site lives in.
+    /// Distinct from `function` (which is the carrier's own concept-bound
+    /// function name): `containing_function` names the SCOPE the site sits
+    /// inside, so effect-propagation can identify callers when a site's
+    /// effect signature widens or narrows. Populated by
+    /// `transform_source_text_one_pass` when scanning carriers; absent when
+    /// the carrier sits at module scope (no enclosing fn) or when the
+    /// payload itself carries no scope hint (Phase E `#1339`).
+    pub containing_function: Option<String>,
     /// The raw JSON payload as it appeared in the source comment. Kept for
     /// the carrier-payload-cid verification path that Phase A preserved
     /// (`verify_payload_cid` recomputes JCS+blake3 over the same string the
@@ -412,6 +421,16 @@ impl CarrierComment {
             .and_then(Json::as_str)
             .map(str::to_string);
 
+        // `containing_function` is OPTIONAL in the JSON payload. Existing
+        // carriers that pre-date Phase E (`#1339`) do not declare it, so
+        // parsing must default to `None` rather than fail. The site walk
+        // populates it by source-scan when the JSON didn't (most cases).
+        let containing_function = object
+            .get("containing_function")
+            .or_else(|| object.get("containingFunction"))
+            .and_then(Json::as_str)
+            .map(str::to_string);
+
         Ok(Self {
             concept_name,
             function,
@@ -419,6 +438,7 @@ impl CarrierComment {
             param_types,
             return_type,
             library_tag,
+            containing_function,
             raw_payload,
         })
     }
@@ -631,7 +651,17 @@ fn transform_source_text_one_pass(
                 .map(StubSignatureAndCloseClone::from);
             consumed += stub_line_count;
 
-            let carrier = CarrierComment::parse(payload)?;
+            let mut carrier = CarrierComment::parse(payload)?;
+            // Phase E (`#1339`): populate `containing_function` by source-
+            // scan if the payload did not declare it. Scan upward from the
+            // carrier line for the nearest enclosing `fn ` declaration whose
+            // open brace has not yet closed by the carrier's line. The scan
+            // is conservative (matches Rust-shaped declarations); kits whose
+            // target language uses other declaration shapes can override by
+            // setting `containing_function` in the JSON payload.
+            if carrier.containing_function.is_none() {
+                carrier.containing_function = enclosing_function_name(&lines, idx);
+            }
             let outcome = kit.transform_site(&carrier)?;
 
             let body_opt: Option<&str> = match &outcome {
@@ -640,6 +670,386 @@ fn transform_source_text_one_pass(
                 SiteOutcome::Refuse { reason, .. } => {
                     return Err(reason.clone());
                 }
+            };
+
+            if let Some(body) = body_opt {
+                let emitted = if let Some(stub) = stub_block.signature_and_close.as_ref() {
+                    splice_realized_body_into_stub_signature(stub, body)
+                } else {
+                    body.to_string()
+                };
+                let indented = indent_realized_source(&emitted, indent);
+                out.push_str(&indented);
+                if !indented.ends_with('\n') {
+                    out.push('\n');
+                }
+            }
+            let line_end_exclusive = line_start + consumed;
+            let site = ConceptSite {
+                carrier,
+                indent: indent.to_string(),
+                stub_line_count,
+                stub_signature_and_close,
+                line_start,
+                line_end_exclusive,
+            };
+            sites_and_outcomes.push((site, outcome));
+            idx += consumed;
+            continue;
+        }
+        out.push_str(line);
+        idx += 1;
+    }
+    Ok((out, sites_and_outcomes))
+}
+
+/// Scan upward from `carrier_idx` looking for the nearest enclosing `fn `
+/// declaration whose open brace has not yet closed by the carrier line.
+/// Returns the function name (the identifier after `fn ` and before `(` or
+/// `<` or whitespace) when found.
+///
+/// The scan is conservative and shape-matches Rust-style declarations.
+/// Other languages (Python `def`, TypeScript `function`, Java methods) are
+/// handled by the kit setting `containing_function` directly in the JSON
+/// payload before parsing. Phase E (`#1339`) uses this for the migrate kit's
+/// effect-propagation graph, which is exercised today only on Rust source.
+fn enclosing_function_name(lines: &[&str], carrier_idx: usize) -> Option<String> {
+    // Walk upward from the line above the carrier. Track brace depth so we
+    // skip past sibling blocks (e.g., earlier `fn` blocks that already
+    // closed). When depth is non-negative and we hit a line that starts a
+    // function declaration, return that fn's name.
+    let mut depth: i32 = 0;
+    let mut idx = carrier_idx;
+    while idx > 0 {
+        idx -= 1;
+        let line = lines[idx];
+        for ch in line.chars().rev() {
+            match ch {
+                '}' => depth += 1,
+                '{' => {
+                    depth -= 1;
+                    if depth < 0 {
+                        // Entered the enclosing block. Look at this line
+                        // (and earlier lines if the declaration spans) for
+                        // a `fn <name>` shape.
+                        if let Some(name) = function_name_from_declaration_line(line) {
+                            return Some(name);
+                        }
+                        // Declaration may sit on the line above (the `{`
+                        // landed on a separate line). Walk back one more
+                        // and try there.
+                        if idx > 0 {
+                            if let Some(name) = function_name_from_declaration_line(lines[idx - 1])
+                            {
+                                return Some(name);
+                            }
+                        }
+                        return None;
+                    }
+                }
+                _ => {}
+            }
+        }
+    }
+    None
+}
+
+/// Extract the function name from a Rust-shaped `fn <name>(` line, stripping
+/// modifiers (`pub`, `async`, `unsafe`, etc.). Returns `None` if the line
+/// does not start a function declaration.
+fn function_name_from_declaration_line(line: &str) -> Option<String> {
+    if !line_starts_function_declaration(line) {
+        return None;
+    }
+    let trimmed = line.trim_start();
+    const KEYWORDS_TO_STRIP: &[&str] = &[
+        "pub ", "async ", "const ", "unsafe ", "extern ", "default ",
+    ];
+    let mut remaining = trimmed;
+    loop {
+        let mut stripped = false;
+        if remaining.starts_with("pub(") {
+            if let Some(rest) = remaining.split_once(')').map(|(_, r)| r.trim_start()) {
+                remaining = rest;
+                stripped = true;
+            }
+        }
+        for kw in KEYWORDS_TO_STRIP {
+            if let Some(rest) = remaining.strip_prefix(kw) {
+                remaining = rest.trim_start();
+                stripped = true;
+                break;
+            }
+        }
+        if !stripped {
+            break;
+        }
+    }
+    let after_fn = remaining.strip_prefix("fn ")?.trim_start();
+    let end = after_fn
+        .find(|c: char| c == '(' || c == '<' || c == ' ' || c == '\t' || c == '\n')
+        .unwrap_or(after_fn.len());
+    let name = &after_fn[..end];
+    if name.is_empty() {
+        None
+    } else {
+        Some(name.to_string())
+    }
+}
+
+// -----------------------------------------------------------------------------
+// Phase E (`#1339`): unified SourceTransformReceipt.
+//
+// Both `provekit materialize` (N=1) and `provekit bind migrate` (N=2) end a
+// run with a structured per-site receipt: each site cleared as `Exact`,
+// `LoudlyLossy`, or `Refused`. Phase E exposes the shared shape so:
+//   1. Materialize stops aborting on first refusal (now first-class in
+//      `refusal_mementos`) and emits a receipt the CLI can print.
+//   2. Migrate's existing `MigrateReceiptEnvelope` (which carries language-
+//      transition + propagation-decision + witness machinery) is preserved
+//      byte-identically for the run_inner path; the per-site outcomes
+//      collected through `SiteTransformKit` are exposed via this shape so
+//      downstream consumers see the same trichotomy structure regardless
+//      of which CLI emitted it.
+//
+// Per the umbrella plan, language-specific effect-set details land in each
+// `loss_records` entry's `dimensions` array; the field shape is language-
+// agnostic.
+
+/// Per-run audit of every concept-citation site a source transformation
+/// touched. The trichotomy is preserved at field level: exact realizations
+/// flow into `aggregate_summary.exact`, declared-lossy realizations into
+/// `aggregate_summary.lossy` + `loss_records`, refusals into
+/// `aggregate_summary.refused` + `refusal_mementos`. The `site_witnesses`
+/// list pins one entry per site in source order.
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+pub struct SourceTransformReceipt {
+    /// Schema version for the receipt envelope. Bumped when field shape
+    /// changes in a way that breaks downstream consumers' parsers.
+    pub schema_version: String,
+    pub source_language: String,
+    /// `None` for materialize (which has no source binding to compare
+    /// against); `Some` for migrate (N=2 specialization).
+    pub source_library: Option<String>,
+    pub target_language: String,
+    pub target_library: String,
+    pub aggregate_summary: AggregateSummary,
+    pub site_witnesses: Vec<SiteWitness>,
+    pub loss_records: Vec<LossRecord>,
+    pub refusal_mementos: Vec<RefusalMemento>,
+}
+
+#[derive(Debug, Clone, Default, serde::Serialize, serde::Deserialize)]
+pub struct AggregateSummary {
+    pub exact: usize,
+    pub lossy: usize,
+    pub refused: usize,
+}
+
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+pub struct SiteWitness {
+    pub source_binding_cid: Option<String>,
+    pub target_binding_cid: String,
+    pub concept_name: String,
+    pub function_name: String,
+    pub outcome_kind: OutcomeKind,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+pub enum OutcomeKind {
+    Exact,
+    LoudlyLossy,
+    Refused,
+}
+
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+pub struct LossRecord {
+    pub concept_name: String,
+    pub dimensions: Vec<String>,
+}
+
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+pub struct RefusalMemento {
+    pub concept_name: String,
+    pub reason: String,
+    pub would_close_with_concept: String,
+}
+
+/// Assemble a `SourceTransformReceipt` from a kit and its per-site outcomes.
+/// The kit names the target language; the caller supplies the source-side
+/// labels (materialize passes `source_lib: None`; migrate passes both).
+///
+/// `site_outcomes` is the `(ConceptSite, SiteOutcome)` pair list returned
+/// by a `transform_source_text_one_pass` walk OR an accumulated list across
+/// fixed-point passes. The receipt mirrors the order it sees.
+pub fn build_receipt(
+    kit: &dyn SiteTransformKit,
+    source_lang: &str,
+    source_lib: Option<&str>,
+    target_lib: &str,
+    site_outcomes: &[(ConceptSite, SiteOutcome)],
+) -> SourceTransformReceipt {
+    let mut aggregate_summary = AggregateSummary::default();
+    let mut site_witnesses = Vec::with_capacity(site_outcomes.len());
+    let mut loss_records = Vec::new();
+    let mut refusal_mementos = Vec::new();
+    for (site, outcome) in site_outcomes {
+        let concept_name = site.carrier.concept_name.clone();
+        let function_name = site
+            .carrier
+            .containing_function
+            .clone()
+            .unwrap_or_else(|| site.carrier.function.clone());
+        match outcome {
+            SiteOutcome::Materialize { binding_cid, .. } => {
+                aggregate_summary.exact += 1;
+                site_witnesses.push(SiteWitness {
+                    source_binding_cid: source_lib.map(|_| String::new()),
+                    target_binding_cid: binding_cid.clone(),
+                    concept_name,
+                    function_name,
+                    outcome_kind: OutcomeKind::Exact,
+                });
+            }
+            SiteOutcome::LoudlyLossy {
+                binding_cid,
+                declared_loss,
+                ..
+            } => {
+                aggregate_summary.lossy += 1;
+                loss_records.push(LossRecord {
+                    concept_name: concept_name.clone(),
+                    dimensions: declared_loss.clone(),
+                });
+                site_witnesses.push(SiteWitness {
+                    source_binding_cid: source_lib.map(|_| String::new()),
+                    target_binding_cid: binding_cid.clone(),
+                    concept_name,
+                    function_name,
+                    outcome_kind: OutcomeKind::LoudlyLossy,
+                });
+            }
+            SiteOutcome::Refuse {
+                reason,
+                would_close_with_concept,
+            } => {
+                aggregate_summary.refused += 1;
+                refusal_mementos.push(RefusalMemento {
+                    concept_name: concept_name.clone(),
+                    reason: reason.clone(),
+                    would_close_with_concept: would_close_with_concept.clone(),
+                });
+                site_witnesses.push(SiteWitness {
+                    source_binding_cid: source_lib.map(|_| String::new()),
+                    target_binding_cid: String::new(),
+                    concept_name,
+                    function_name,
+                    outcome_kind: OutcomeKind::Refused,
+                });
+            }
+        }
+    }
+    SourceTransformReceipt {
+        schema_version: "1".to_string(),
+        source_language: source_lang.to_string(),
+        source_library: source_lib.map(str::to_string),
+        target_language: kit.target_language().to_string(),
+        target_library: target_lib.to_string(),
+        aggregate_summary,
+        site_witnesses,
+        loss_records,
+        refusal_mementos,
+    }
+}
+
+/// Variant of `transform_source_text` that does NOT abort on
+/// `SiteOutcome::Refuse`; refusals are collected into the per-site outcome
+/// list and become first-class entries in a `SourceTransformReceipt`
+/// (Phase E `#1339`). The fixed-point propagate loop is preserved; the only
+/// difference from `transform_source_text` is that the refuse leg no longer
+/// shortcuts to `Err`. The substrate honesty contract (trichotomy)
+/// holds: a refused site emits no body into the rewritten source, so the
+/// stub block is dropped; downstream tooling must read the receipt to learn
+/// the refusal landed.
+pub fn transform_source_text_collecting_refusals(
+    source: &str,
+    kit: &dyn SiteTransformKit,
+) -> Result<(String, Vec<(ConceptSite, SiteOutcome)>), String> {
+    const PROPAGATE_PASS_CAP: usize = 32;
+
+    let mut current = source.to_string();
+    let mut all: Vec<(ConceptSite, SiteOutcome)> = Vec::new();
+
+    for _pass in 0..PROPAGATE_PASS_CAP {
+        let (rewritten, sites_and_outcomes) =
+            transform_source_text_one_pass_collecting_refusals(&current, kit)?;
+        let new_carriers = kit.propagate(&sites_and_outcomes)?;
+
+        all.extend(sites_and_outcomes);
+        current = rewritten;
+
+        if new_carriers.is_empty() {
+            return Ok((current, all));
+        }
+
+        if !current.ends_with('\n') {
+            current.push('\n');
+        }
+        for carrier in new_carriers {
+            current.push_str("// provekit-concept: ");
+            current.push_str(&carrier.raw_payload);
+            current.push('\n');
+        }
+    }
+
+    Err(format!(
+        "transform_source_text_collecting_refusals: effect-propagation fixed point did not converge within {PROPAGATE_PASS_CAP} passes"
+    ))
+}
+
+/// Single-pass variant that collects refusals rather than aborting. Shares
+/// the splice/indent machinery with `transform_source_text_one_pass`; the
+/// only behavioral fork is the refuse leg, which here emits no body to the
+/// output (the carrier-plus-stub region is removed) and pushes the outcome
+/// onto the returned list.
+fn transform_source_text_one_pass_collecting_refusals(
+    source: &str,
+    kit: &dyn SiteTransformKit,
+) -> Result<(String, Vec<(ConceptSite, SiteOutcome)>), String> {
+    let mut out = String::new();
+    let mut sites_and_outcomes: Vec<(ConceptSite, SiteOutcome)> = Vec::new();
+    let lines = source.split_inclusive('\n').collect::<Vec<_>>();
+    let mut idx = 0usize;
+    while idx < lines.len() {
+        let line = lines[idx];
+        if let Some((indent, payload)) = concept_payload_from_line(line) {
+            let line_start = idx;
+            let mut consumed = 1usize;
+            if idx + consumed < lines.len()
+                && concept_payload_cid_from_line(lines[idx + consumed]).is_some()
+            {
+                let declared_cid = concept_payload_cid_from_line(lines[idx + consumed]).unwrap();
+                verify_payload_cid(payload, declared_cid)?;
+                consumed += 1;
+            }
+            let stub_block = capture_stub_function_block(&lines[idx + consumed..]);
+            let stub_line_count = stub_block.line_count;
+            let stub_signature_and_close = stub_block
+                .signature_and_close
+                .as_ref()
+                .map(StubSignatureAndCloseClone::from);
+            consumed += stub_line_count;
+
+            let mut carrier = CarrierComment::parse(payload)?;
+            if carrier.containing_function.is_none() {
+                carrier.containing_function = enclosing_function_name(&lines, idx);
+            }
+            let outcome = kit.transform_site(&carrier)?;
+
+            let body_opt: Option<&str> = match &outcome {
+                SiteOutcome::Materialize { body, .. } => Some(body.as_str()),
+                SiteOutcome::LoudlyLossy { body, .. } => Some(body.as_str()),
+                SiteOutcome::Refuse { .. } => None,
             };
 
             if let Some(body) = body_opt {
@@ -912,6 +1322,130 @@ fn after() {}\n";
         let error = transform_source_text(SAMPLE_SOURCE, &kit)
             .expect_err("divergent propagation hits the cap");
         assert!(error.contains("fixed point did not converge"));
+    }
+
+    // -----------------------------------------------------------------
+    // Phase E (`#1339`) tests.
+    // -----------------------------------------------------------------
+
+    #[test]
+    fn carrier_comment_parse_accepts_payload_without_containing_function() {
+        // Existing payloads (pre-Phase-E) do not declare
+        // `containing_function`. They must continue to parse with the
+        // field defaulting to None.
+        let payload = r#"{"concept_name":"concept:demo","function":"do_thing","params":[],"param_types":[],"return_type":"void"}"#;
+        let carrier = CarrierComment::parse(payload).expect("parses without containing_function");
+        assert_eq!(carrier.concept_name, "concept:demo");
+        assert!(
+            carrier.containing_function.is_none(),
+            "containing_function must default to None when payload omits it"
+        );
+    }
+
+    #[test]
+    fn carrier_comment_parse_accepts_containing_function_field() {
+        let payload = r#"{"concept_name":"concept:demo","function":"do_thing","containing_function":"outer_fn","params":[],"param_types":[],"return_type":"void"}"#;
+        let carrier = CarrierComment::parse(payload).expect("parses with containing_function");
+        assert_eq!(carrier.containing_function.as_deref(), Some("outer_fn"));
+    }
+
+    #[test]
+    fn enclosing_function_name_finds_outer_rust_fn() {
+        // The carrier sits inside `outer_fn`; the scan walks upward and
+        // returns it.
+        let source = "fn elsewhere() {}\nfn outer_fn() {\n    // provekit-concept: {}\n    do_thing();\n}\n";
+        let lines = source.split_inclusive('\n').collect::<Vec<_>>();
+        // The carrier is on line index 2 (0-based).
+        let carrier_idx = 2;
+        let name = enclosing_function_name(&lines, carrier_idx);
+        assert_eq!(name.as_deref(), Some("outer_fn"));
+    }
+
+    #[test]
+    fn enclosing_function_name_returns_none_at_module_scope() {
+        let source = "// provekit-concept: {}\nfn after() {}\n";
+        let lines = source.split_inclusive('\n').collect::<Vec<_>>();
+        let name = enclosing_function_name(&lines, 0);
+        assert!(name.is_none());
+    }
+
+    #[test]
+    fn transform_source_text_populates_containing_function_from_scan() {
+        // The carrier sits inside `outer_fn`; the site walk auto-fills
+        // `containing_function` from the source scan when the JSON
+        // payload omits it.
+        let source = "fn before() {}\nfn outer_fn() {\n    // provekit-concept: {\"concept_name\":\"concept:demo\",\"function\":\"do_thing\",\"params\":[\"x\"],\"param_types\":[\"u32\"],\"return_type\":\"u32\"}\n    fn do_thing(x: u32) -> u32 {\n        unimplemented!()\n    }\n}\nfn after() {}\n";
+        struct CaptureKit {
+            captured: std::sync::Mutex<Option<CarrierComment>>,
+        }
+        impl SiteTransformKit for CaptureKit {
+            fn target_language(&self) -> &str {
+                "rust"
+            }
+            fn transform_site(&self, carrier: &CarrierComment) -> Result<SiteOutcome, String> {
+                *self.captured.lock().unwrap() = Some(carrier.clone());
+                Ok(SiteOutcome::Materialize {
+                    body: "fn do_thing(x: u32) -> u32 {\n    x\n}".to_string(),
+                    binding_cid: "cid:mock".to_string(),
+                    loss_record: json!([]),
+                })
+            }
+        }
+        let kit = CaptureKit {
+            captured: std::sync::Mutex::new(None),
+        };
+        let _ = transform_source_text(source, &kit).expect("transform succeeds");
+        let captured = kit.captured.lock().unwrap().clone().expect("site visited");
+        assert_eq!(captured.containing_function.as_deref(), Some("outer_fn"));
+    }
+
+    #[test]
+    fn build_receipt_routes_outcomes_into_trichotomy_buckets() {
+        // Three sites: one Materialize, one LoudlyLossy, one Refuse. The
+        // receipt should land each in the right bucket and preserve
+        // source-order in `site_witnesses`.
+        struct MixedKit;
+        impl SiteTransformKit for MixedKit {
+            fn target_language(&self) -> &str {
+                "rust"
+            }
+            fn transform_site(&self, carrier: &CarrierComment) -> Result<SiteOutcome, String> {
+                match carrier.function.as_str() {
+                    "exact" => Ok(SiteOutcome::Materialize {
+                        body: "fn exact() {}".to_string(),
+                        binding_cid: "cid:exact".to_string(),
+                        loss_record: json!([]),
+                    }),
+                    "lossy" => Ok(SiteOutcome::LoudlyLossy {
+                        body: "fn lossy() {}".to_string(),
+                        binding_cid: "cid:lossy".to_string(),
+                        declared_loss: vec!["dim:overflow".to_string()],
+                    }),
+                    _ => Ok(SiteOutcome::Refuse {
+                        reason: "no binding".to_string(),
+                        would_close_with_concept: "concept:demo".to_string(),
+                    }),
+                }
+            }
+        }
+        let source = "// provekit-concept: {\"concept_name\":\"c:a\",\"function\":\"exact\",\"params\":[],\"param_types\":[],\"return_type\":\"void\"}\n\
+// provekit-concept: {\"concept_name\":\"c:b\",\"function\":\"lossy\",\"params\":[],\"param_types\":[],\"return_type\":\"void\"}\n\
+// provekit-concept: {\"concept_name\":\"c:c\",\"function\":\"refused\",\"params\":[],\"param_types\":[],\"return_type\":\"void\"}\n";
+        let kit = MixedKit;
+        let (_, sites_and_outcomes) =
+            transform_source_text_collecting_refusals(source, &kit).expect("transform");
+        let receipt = build_receipt(&kit, "rust", None, "rusqlite", &sites_and_outcomes);
+        assert_eq!(receipt.aggregate_summary.exact, 1);
+        assert_eq!(receipt.aggregate_summary.lossy, 1);
+        assert_eq!(receipt.aggregate_summary.refused, 1);
+        assert_eq!(receipt.site_witnesses.len(), 3);
+        assert_eq!(receipt.loss_records.len(), 1);
+        assert_eq!(receipt.refusal_mementos.len(), 1);
+        assert_eq!(receipt.refusal_mementos[0].reason, "no binding");
+        assert_eq!(
+            receipt.refusal_mementos[0].would_close_with_concept,
+            "concept:demo"
+        );
     }
 }
 

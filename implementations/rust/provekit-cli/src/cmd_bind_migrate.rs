@@ -2651,8 +2651,8 @@ fn json_to_value(j: &serde_json::Value) -> Arc<Value> {
 // shape.
 
 use libprovekit::core::source_transform::{
-    realize_spec_from_payload, transform_source_text, CarrierComment, ConceptSite, SiteOutcome,
-    SiteTransformKit,
+    realize_spec_from_payload, transform_source_text_collecting_refusals, CarrierComment,
+    ConceptSite, SiteOutcome, SiteTransformKit,
 };
 
 /// `SiteTransformKit` implementation for `provekit bind migrate`. The
@@ -2895,39 +2895,188 @@ impl SiteTransformKit for MigrateKit {
 
     fn propagate(
         &self,
-        _outcomes: &[(ConceptSite, SiteOutcome)],
+        outcomes: &[(ConceptSite, SiteOutcome)],
     ) -> Result<Vec<CarrierComment>, String> {
-        // Effect propagation hook. Phase D records observed deltas in
-        // `transform_site`; this is the seam where the kit emits new
-        // carriers for sites that effect propagation discovered.
+        // Phase E (`#1339`): effect propagation through the trait. Closes
+        // Phase D's deferral.
         //
-        // The MigrateKit's existing machinery
-        // (`build_propagation_input` + `propagate_effects`) requires a
-        // containing-function graph derived from the source text. That
-        // graph is built today by the TS-AST path (`extract_functions`)
-        // and is not available from `CarrierComment` alone in Phase D.
-        // Phase E attaches an EffectSetMemento to each ConceptSite so
-        // the carrier-driven flow can reach the same graph without
-        // reimplementing source-language parsing.
+        // Strategy:
+        //   1. Collect the per-site `containing_function` identities from
+        //      the outcomes (populated by `transform_source_text` via the
+        //      `enclosing_function_name` source scan).
+        //   2. Build a minimal `PropagationInput` from observed effect
+        //      deltas and the carrier-derived function graph. The carrier
+        //      flow does not carry function bodies, so the caller graph
+        //      is limited to the call edges that the carrier's containing
+        //      function can reach (one site per containing function).
+        //   3. Run the existing `propagate_effects` algebra.
+        //   4. For each `PropagationDecision::Widen`, emit a fresh
+        //      CarrierComment for the widened caller's site so the
+        //      `transform_source_text` fixed point picks it up on the
+        //      next pass.
         //
-        // For Phase D, the substrate-honest contract is: a single pass
-        // of site transforms is enough when carriers already cover all
-        // sites the rewrite touches (the consumer signed each site
-        // up-front). Returning an empty vector terminates the
-        // `transform_source_text` fixed-point loop after one pass; the
-        // observed effect deltas remain readable via
-        // `observed_effect_deltas_snapshot` for the receipt assembler.
+        // Termination: the loop terminates because Widen decisions only
+        // propagate *up* the call graph one step per pass, and a finite
+        // carrier-described graph has finite height. The 32-pass cap in
+        // `transform_source_text` is a defensive ceiling, not the
+        // expected bound.
+        let deltas = match self.observed_effect_deltas.lock() {
+            Ok(guard) => guard.clone(),
+            Err(_) => return Ok(Vec::new()),
+        };
+        if deltas.is_empty() {
+            return Ok(Vec::new());
+        }
+
+        // Build the minimal function-effect graph from outcomes' carriers.
+        // Each unique containing_function gets a FunctionEffectInfo with
+        // admitted/forbidden derived from whether the carrier's effect
+        // crossed sync->async.
+        let mut function_map = BTreeMap::new();
+        let mut function_seen: BTreeSet<String> = BTreeSet::new();
+        for (site, _) in outcomes {
+            let func_name = site
+                .carrier
+                .containing_function
+                .clone()
+                .unwrap_or_else(|| site.carrier.function.clone());
+            if function_seen.insert(func_name.clone()) {
+                let function_cid = cid_for_json(&json!({
+                    "function": func_name,
+                    "kind": "function-carrier"
+                }));
+                let signature_cid = cid_for_json(&json!({
+                    "function": func_name,
+                    "kind": "effect-signature-carrier"
+                }));
+                function_map.insert(
+                    func_name.clone(),
+                    FunctionEffectInfo {
+                        forbidding_contract_cid: None,
+                        function_cid,
+                        name: func_name.clone(),
+                        signature_cid,
+                        admitted_effects: BTreeSet::new(),
+                        forbidden_effects: BTreeSet::new(),
+                    },
+                );
+            }
+        }
+
+        // Build callsite edges keyed by `(containing_function, concept)`.
+        // The migrate substrate's existing CallsiteEdge fields fit the
+        // carrier flow directly: `cid` is the per-site callsite CID,
+        // `containing_fn` names the function the carrier sits in,
+        // `callee` stays None because the carrier site is a leaf op
+        // (the kit-realized body), not a call into another lifted fn.
+        let mut callsites = BTreeMap::new();
+        let mut changed: Vec<ChangedCallsite> = Vec::new();
+        for delta in &deltas {
+            // Locate the carrier site whose containing function matches
+            // this delta's `function`. Synthesize a stable callsite CID
+            // from the carrier identity so re-runs are byte-stable.
+            let callsite_cid = cid_for_json(&json!({
+                "carrier_function": delta.function,
+                "concept_name": delta.concept_name,
+                "kind": "carrier-callsite"
+            }));
+            callsites.insert(
+                callsite_cid.clone(),
+                CallsiteEdge {
+                    callee: None,
+                    cid: callsite_cid.clone(),
+                    containing_fn: delta.function.clone(),
+                },
+            );
+            // If the containing function is not in the function map (the
+            // carrier was at module scope), synthesize a minimal entry so
+            // `propagate_effects` can reason about it.
+            if !function_map.contains_key(&delta.function) {
+                let function_cid = cid_for_json(&json!({
+                    "function": delta.function,
+                    "kind": "function-carrier"
+                }));
+                let signature_cid = cid_for_json(&json!({
+                    "function": delta.function,
+                    "kind": "effect-signature-carrier"
+                }));
+                function_map.insert(
+                    delta.function.clone(),
+                    FunctionEffectInfo {
+                        forbidding_contract_cid: None,
+                        function_cid,
+                        name: delta.function.clone(),
+                        signature_cid,
+                        admitted_effects: BTreeSet::new(),
+                        forbidden_effects: BTreeSet::new(),
+                    },
+                );
+            }
+            changed.push(ChangedCallsite {
+                callsite_cid,
+                dimension_name: None,
+                effect: delta.target_effect.clone(),
+            });
+        }
+
+        let Ok(non_empty_changed) = NonEmptyChangedCallsites::new(changed) else {
+            return Ok(Vec::new());
+        };
+
+        let input = PropagationInput {
+            callsites,
+            changed_callsites: non_empty_changed,
+            functions: function_map,
+        };
+
+        let result = match propagate_effects(&input) {
+            Ok(r) => r,
+            Err(error) => {
+                return Err(format!("effect propagation: {error}"));
+            }
+        };
+
+        // Emit fresh carriers for every Widen decision. Each new carrier
+        // names the widened function in the `containing_function` slot
+        // so the next pass's `enclosing_function_name` scan agrees with
+        // the propagation graph. The concept_name carries a synthetic
+        // `concept:effect-widen` tag so the carrier walks through the
+        // substrate-honest path on the next pass: kits that don't
+        // recognize this concept will Refuse, but the migrate kit's own
+        // path treats it as an idempotent marker (already-emitted
+        // carriers exist for the original site; the widen carrier is
+        // metadata only).
         //
-        // When Phase E wires the EffectSetMemento path, the body of
-        // this method becomes:
-        //   1. Collect ChangedCallsite from observed_effect_deltas.
-        //   2. Build PropagationInput from outcomes + memento graph.
-        //   3. Run propagate_effects.
-        //   4. For each PropagationDecision::Widen, emit a new
-        //      CarrierComment naming the widened callsite.
-        // The trait surface (Vec<CarrierComment>) is the right shape
-        // for that wire-up; only the body changes.
-        Ok(Vec::new())
+        // To avoid divergent propagation, we deduplicate against the
+        // delta set: a widen for a function already in `deltas` is
+        // already covered by the original pass. This keeps termination
+        // mechanical.
+        let already_covered: BTreeSet<String> =
+            deltas.iter().map(|d| d.function.clone()).collect();
+        let mut emitted: Vec<CarrierComment> = Vec::new();
+        for (fn_name, decision) in &result.decisions {
+            if let PropagationDecision::Widen { effect, .. } = decision {
+                if already_covered.contains(fn_name) {
+                    continue;
+                }
+                let payload_value = json!({
+                    "concept_name": "concept:effect-widen",
+                    "function": fn_name,
+                    "params": [],
+                    "param_types": [],
+                    "return_type": "void",
+                    "containing_function": fn_name,
+                    "library_tag": self.target_tag,
+                    "effect": effect,
+                });
+                let payload_str = serde_json::to_string(&payload_value)
+                    .map_err(|e| format!("serialize widen carrier payload: {e}"))?;
+                if let Ok(carrier) = CarrierComment::parse(&payload_str) {
+                    emitted.push(carrier);
+                }
+            }
+        }
+        Ok(emitted)
     }
 }
 
@@ -2957,7 +3106,18 @@ pub fn run_carrier_driven_migrate(
         target_tag.to_string(),
         repo_root.to_path_buf(),
     );
-    transform_source_text(source, &kit)
+    // Phase E (`#1339`): use the refusal-collecting variant so a refused
+    // site (including the `concept:effect-widen` carriers MigrateKit's
+    // `propagate` emits, which the source binding does not know about)
+    // becomes a receipt entry instead of aborting the run with a string
+    // Err. Substrate-honest trichotomy is preserved.
+    let (rewritten, sites_and_outcomes) =
+        transform_source_text_collecting_refusals(source, &kit)?;
+    let outcomes = sites_and_outcomes
+        .into_iter()
+        .map(|(_, outcome)| outcome)
+        .collect();
+    Ok((rewritten, outcomes))
 }
 
 #[cfg(test)]
@@ -4164,12 +4324,12 @@ mod tests {
     }
 
     #[test]
-    fn migrate_kit_propagate_is_empty_for_phase_d_scope() {
-        // Phase D's propagate returns empty so transform_source_text
-        // terminates after one pass. Phase E will wire the effect-graph
-        // walk; until then, the kit records observed deltas but does not
-        // emit follow-up carriers. This test pins that contract so a
-        // future change is forced to update the assertion deliberately.
+    fn migrate_kit_propagate_is_empty_with_no_observed_deltas() {
+        // Phase E (`#1339`): propagate wires the effect-propagation
+        // machinery through the trait. With no observed effect deltas
+        // (no `transform_site` has run, so `observed_effect_deltas` is
+        // empty), propagate returns empty. The fixed-point loop in
+        // `transform_source_text` terminates after one pass in this case.
         let kit = MigrateKit::new(
             "typescript".to_string(),
             "better-sqlite3".to_string(),
@@ -4179,10 +4339,10 @@ mod tests {
         );
         let new_carriers = kit
             .propagate(&[])
-            .expect("propagate Phase D always succeeds with empty");
+            .expect("propagate with empty deltas always succeeds");
         assert!(
             new_carriers.is_empty(),
-            "Phase D propagate must return empty; got {} carriers",
+            "propagate must return empty when no deltas observed; got {} carriers",
             new_carriers.len()
         );
     }
