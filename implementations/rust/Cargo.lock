@@ -2145,6 +2145,10 @@ dependencies = [
 ]
 
 [[package]]
+name = "provekit-sugar"
+version = "0.1.0"
+
+[[package]]
 name = "provekit-supply-chain-rails"
 version = "0.1.0"
 dependencies = [

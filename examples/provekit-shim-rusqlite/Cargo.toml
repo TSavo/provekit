@@ -1,0 +1,16 @@
+[package]
+name = "provekit-shim-rusqlite"
+version = "0.1.0"
+edition = "2021"
+license = "Apache-2.0"
+description = "ProvekIt vendored boundary namespace for rusqlite. Substrate-honest sugar bindings for SQLite operations under the rusqlite Rust driver. Concept names signed by the kit author; loss-record contributions declared per binding; refused boundaries signed as signposts."
+repository = "https://github.com/TSavo/provekit"
+keywords = ["sqlite", "rusqlite", "provekit", "proofchain", "boundary-realization"]
+categories = ["database"]
+
+[dependencies]
+rusqlite = "0.39"
+provekit = { package = "provekit-sugar", path = "../../implementations/rust/provekit-sugar" }
+
+[dev-dependencies]
+tempfile = "3"

@@ -1,0 +1,8 @@
+# PEP 1.7.0 realize plugin manifest for Rust + rusqlite body emission.
+# Reuses the workspace's existing provekit-realize-rust binary; concept
+# routing for rusqlite comes from the shim's published .proof envelope
+# and the rust-canonical-bodies body-templates JSON the binary reads.
+name = "rust-realize-rusqlite"
+library_tag = "rusqlite"
+command = ["implementations/rust/target/debug/provekit-realize-rust", "--rpc"]
+working_dir = "."
