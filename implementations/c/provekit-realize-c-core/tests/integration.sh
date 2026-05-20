@@ -230,4 +230,95 @@ test_concept_literal_has_sort_admission_only()
 print("platform_semantics tests passed")
 PY
 
+python3 - "$bin" <<'PY'
+import json
+import subprocess
+import sys
+
+BIN = sys.argv[1]
+
+SORT_INT_CID    = "blake3-512:30ffc51350121a7172f3e4064a33c45bbd345756979fccff6875cd2ab33e4964d098a99df80cfbdf1ec1a0738c5ac3476f0ff8f75589ea511d1acd82c74ecd58"
+SORT_FLOAT_CID  = "blake3-512:b979e70c4d5e53d9bdf13d6f08330be3c5b0714b8c770d69bbd05946b86c36df5274be8145a2683cc29c278155c9c1ee65b6897913524eecb9e4c89c71862f57"
+SORT_STRING_CID = "blake3-512:be8721d24849feb74c4721520bdba02d352a94f49253a627cd509127472aa1c47cbe99cb705cac4159b5365abcce0c9aaa4901fe67630827deb6be1f9daeea10"
+SORT_BYTES_CID  = "blake3-512:7116ef6e62e6739b213a8394f975a53c771b89f08c36d27143827acfcfebc0e39e5b82c530be668c3cfd5ec6966ccaa42930b37fdb1f4ac25652a970be10fb6b"
+SORT_NULL_CID   = "blake3-512:62f6040bd3f414c1e6c2b7bdf276669cd5613b33cb508a81170170064ca3ffba771a4b0002dc52e059fce5f9f63a1874ef71bd4ec89ae06e89c87a3e91aac3b5"
+
+GOLDEN_CIDS = {
+    SORT_INT_CID:    "blake3-512:0e9ed56bee585a3d8dd65463d11ed40e1ead03a58c97c7d5596aa29bcbe83aba90efec5fc5b54c8e1456aa28fb6548877ae364de8eb17d22384f024fa1219a53",
+    SORT_FLOAT_CID:  "blake3-512:c1936f368aebb2e645cc777275e9a206c4a268567fc93611962968634f8fa80568442b807a20fb9a3ec49ec662e559bfb2ed82b3a6e3bed8f415ee239c52373c",
+    SORT_STRING_CID: "blake3-512:c71a6ac3ea71d2f4689d73ae2638cf68643ae5ef2173296fe22261ccc1137b40304557c9d81e475c9f56dae3d068a0c6d03d4b24cef1b6f16df8d3bc3849607b",
+    SORT_BYTES_CID:  "blake3-512:7a3c86169838da1bd19bd37732186a387b2bf0ec0745881ce920446b467af7c3f3fc01a9b356fbb405990b175862de618cbb0ad1a279864d00d0fe31fe1e5915",
+    SORT_NULL_CID:   "blake3-512:62bff3841de389d0c453fbf5a845476d5ccfaabdf50fbd415656ceb5e4347a8dc9b9aa18f5c888d70a44b0b9e0901b0ded5b097b6e1aad68b02561ff7782b92a",
+}
+
+def literal_encoding_answers():
+    proc = subprocess.run(
+        [BIN, "--rpc"],
+        input='{"jsonrpc":"2.0","id":8,"method":"provekit.plugin.literal_encoding_answers"}\n',
+        text=True,
+        stdout=subprocess.PIPE,
+        check=True,
+    )
+    return json.loads(proc.stdout)
+
+def test_literal_encoding_answers_count():
+    r = literal_encoding_answers()
+    assert r["jsonrpc"] == "2.0"
+    assert r["id"] == 8
+    answers = r["result"]["answers"]
+    assert len(answers) == 5, f"C admits Int, Float, String, Bytes, Null -- expected 5, got {len(answers)}"
+
+def test_literal_encoding_answers_language():
+    answers = literal_encoding_answers()["result"]["answers"]
+    for a in answers:
+        assert a["language"] == "c", f"expected language=c, got {a['language']}"
+
+def test_literal_encoding_answers_kind():
+    answers = literal_encoding_answers()["result"]["answers"]
+    for a in answers:
+        assert a["kind"] == "literal-encoding-memento", f"bad kind: {a['kind']}"
+
+def test_literal_encoding_answers_sort_cids():
+    answers = literal_encoding_answers()["result"]["answers"]
+    sort_cids = {a["sort_cid"] for a in answers}
+    assert SORT_INT_CID in sort_cids, "missing Int sort CID"
+    assert SORT_FLOAT_CID in sort_cids, "missing Float sort CID"
+    assert SORT_STRING_CID in sort_cids, "missing String sort CID"
+    assert SORT_BYTES_CID in sort_cids, "missing Bytes sort CID"
+    assert SORT_NULL_CID in sort_cids, "missing Null sort CID"
+
+def test_literal_encoding_answers_golden_cids():
+    answers = literal_encoding_answers()["result"]["answers"]
+    by_sort = {a["sort_cid"]: a["cid"] for a in answers}
+    for sort_cid, expected_cid in GOLDEN_CIDS.items():
+        assert by_sort[sort_cid] == expected_cid, (
+            f"CID mismatch for sort {sort_cid[:30]}: "
+            f"got {by_sort.get(sort_cid, 'MISSING')}, expected {expected_cid}"
+        )
+
+def test_literal_encoding_answers_float_value_shape():
+    answers = literal_encoding_answers()["result"]["answers"]
+    float_answer = next(a for a in answers if a["sort_cid"] == SORT_FLOAT_CID)
+    val = float_answer["expected_term_shape_node"]["value"]
+    assert isinstance(val, dict), f"Float value must be a dict, got {type(val)}"
+    assert "__float_bits__" in val, f"Float value must have __float_bits__ key"
+    assert val["__float_bits__"] == 4614253070214989087, f"wrong float bits: {val}"
+
+def test_literal_encoding_answers_no_bool():
+    from blake3 import blake3 as _blake3
+    SORT_BOOL_CID = "blake3-512:0ee13bf3fd6b7ecfbee72dfbfc18a7c0ea7f1663de6cca43cefb36f5b4c03665452646094a7c296e819e75d683c6ce4821f3d7db3c3c78ae97f2d4e3451d2074"
+    answers = literal_encoding_answers()["result"]["answers"]
+    sort_cids = {a["sort_cid"] for a in answers}
+    assert SORT_BOOL_CID not in sort_cids, "C must NOT admit Bool"
+
+test_literal_encoding_answers_count()
+test_literal_encoding_answers_language()
+test_literal_encoding_answers_kind()
+test_literal_encoding_answers_sort_cids()
+test_literal_encoding_answers_golden_cids()
+test_literal_encoding_answers_float_value_shape()
+test_literal_encoding_answers_no_bool()
+print("literal_encoding_answers tests passed")
+PY
+
 python3 tests/conformance.py "$bin"
