@@ -41,6 +41,8 @@ public final class RpcServer {
                 case "provekit.plugin.describe" -> sendResponse(id, describeResult());
                 case "provekit.plugin.platform_semantics" ->
                     sendResponse(id, PlatformSemanticsDeclaration.toJson());
+                case "provekit.plugin.literal_encoding_answers" ->
+                    sendResponse(id, LiteralEncodingAnswers.toJson());
                 case "provekit.plugin.invoke" -> {
                     // handleInvoke returns a full JSON object: {"source":..., "is_stub":...}
                     String resultObj = handleInvoke(line);
