@@ -29,8 +29,13 @@ const CONCEPT_LITERAL_NAME = "concept:literal";
  */
 function answers() {
   return [
-    // TypeScript stores floats as JSON numbers (IEEE 754 double, not __float_bits__)
-    _memento(SORT_FLOAT_CID, "3.14", 3.14),
+    // Float: bit-preserving shape {"__float_bits__": <u64>} (IEEE 754 raw bits).
+    // 4614253070214989087 == 0x40091EB851EB851F == bits of 3.14 as f64.
+    // JS cannot represent this u64 in a JSON number without precision loss, so the
+    // CID is computed from a manually-built JCS string; the value object carries
+    // the nearest IEEE 754 double (4614253070214989087 rounds to 4614253070214989000
+    // in JS Number -- a known TS platform limitation documented in the substrate issue).
+    _mementoFloatBits(SORT_FLOAT_CID, "3.14", 4614253070214989087n),
     _memento(SORT_STRING_CID, '"hello"', "hello"),
     _memento(SORT_BOOL_CID, "true", true),
     _memento(SORT_NULL_CID, "null", null),
@@ -61,6 +66,57 @@ function _memento(sortCid, sourceExample, decodedValue) {
     sort_cid: sortCid,
     source_example: sourceExample,
   };
+}
+
+/**
+ * Special-case memento builder for Float __float_bits__ shape.
+ * Builds the JCS string manually to avoid JS Number precision loss when
+ * serializing u64 values that exceed Number.MAX_SAFE_INTEGER.
+ *
+ * @param {string} sortCid
+ * @param {string} sourceExample
+ * @param {bigint} floatBits - IEEE 754 raw bits as BigInt
+ */
+function _mementoFloatBits(sortCid, sourceExample, floatBits) {
+  const floatBitsStr = floatBits.toString();
+  // Build JCS (RFC 8785) manually: keys sorted alphabetically, no whitespace.
+  // expected_term_shape_node inner keys: concept_name, sort, value (alphabetical order)
+  const valueJson = "{\"__float_bits__\":" + floatBitsStr + "}";
+  const termShapeJson =
+    "{\"concept_name\":\"concept:literal\"" +
+    ",\"sort\":" + JSON.stringify(sortCid) +
+    ",\"value\":" + valueJson +
+    "}";
+  // Top-level forCid keys: expected_term_shape_node, kind, language, schemaVersion, sort_cid, source_example
+  const forCidJson =
+    "{\"expected_term_shape_node\":" + termShapeJson +
+    ",\"kind\":\"literal-encoding-memento\"" +
+    ",\"language\":\"typescript\"" +
+    ",\"schemaVersion\":\"1.0.0\"" +
+    ",\"sort_cid\":" + JSON.stringify(sortCid) +
+    ",\"source_example\":" + JSON.stringify(sourceExample) +
+    "}";
+  const cid = _cidOfRaw(forCidJson);
+  return {
+    cid,
+    expected_term_shape_node: {
+      concept_name: CONCEPT_LITERAL_NAME,
+      sort: sortCid,
+      value: { __float_bits__: Number(floatBits) }, // nearest representable; CID is exact
+    },
+    kind: "literal-encoding-memento",
+    kit_cid: KIT_CID,
+    language: "typescript",
+    schemaVersion: "1.0.0",
+    sort_cid: sortCid,
+    source_example: sourceExample,
+  };
+}
+
+function _cidOfRaw(jcsString) {
+  const bytes = new TextEncoder().encode(jcsString);
+  const hash = blake3(bytes, { dkLen: 64 });
+  return "blake3-512:" + _hexOf(hash);
 }
 
 function _cidOf(obj) {

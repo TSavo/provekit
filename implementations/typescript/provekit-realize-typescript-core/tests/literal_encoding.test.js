@@ -51,9 +51,10 @@ test("ts_literal_encoding_answers_cid_format", () => {
 });
 
 // Golden LiteralEncodingMemento CIDs (kit_cid elided per #1262 / #1271)
-// TS uses _sortKeys + JSON.stringify (same as platform_semantics.js).
+// TS uses manually-built JCS for Float (BigInt-safe) and _sortKeys+JSON.stringify for others.
+// Float value is {"__float_bits__": 4614253070214989087} (bit-preserving, #1262).
 const GOLDEN_CIDS = {
-  [SORT_FLOAT_CID]:  "blake3-512:9067386da3d0b0a951ac837ff1d1f9d48ae3688ed83b3640534bfc7929d59b1e2ac425303c1a3a08b7085c63dd6624da7c01a13201ecf6b77006f0ebd8629b15",
+  [SORT_FLOAT_CID]:  "blake3-512:00600d78e49b56cf1db5aedda4927602105460c8cea4a628fd83d614121f7c4063a36d4754c62080fd9ec73d24555f50e42a4ef4e4360282491621ec403d1da4",
   [SORT_STRING_CID]: "blake3-512:2afc602d467f858fb5c5e58138e1365be54f9a698a30ed823d5c5c5b966dc24a140c58ab5e1bd75a4a6239d7b934e8d1b7e78f8eb84a96b668f1f8dd3a7049f3",
   [SORT_BOOL_CID]:   "blake3-512:784022d1f5e6a28447da659e347b009e2730b5ac0ab68a3d774e9b46cb59ed1bd07f76e9d6f48f40e123af93f2d65b89d5af4e0b57737694a0835c15405ab7e7",
   [SORT_NULL_CID]:   "blake3-512:d58343632e0e01b35f866256148c90b529656ed22da8ab7e4a1b96e823f651ba5d27145470e514a71443aee432a5d98bb83c19eac9fefd4502d926dbbc62b75e",
