@@ -126,16 +126,17 @@ function _cidOf(obj) {
   return "blake3-512:" + _hexOf(hash);
 }
 
-function _jcs(obj) {
-  return JSON.stringify(_sortKeys(obj));
-}
-
-function _sortKeys(val) {
-  if (val === null || typeof val !== "object") return val;
-  if (Array.isArray(val)) return val.map(_sortKeys);
-  return Object.fromEntries(
-    Object.keys(val).sort().map((k) => [k, _sortKeys(val[k])])
-  );
+function _jcs(val) {
+  // RFC 8785: keys sorted by Unicode code-point, no whitespace, BigInt emitted
+  // as plain decimal digits (JSON.stringify throws on BigInt).
+  if (val === null) return "null";
+  if (typeof val === "boolean") return val ? "true" : "false";
+  if (typeof val === "bigint") return val.toString();
+  if (typeof val === "number") return JSON.stringify(val);
+  if (typeof val === "string") return JSON.stringify(val);
+  if (Array.isArray(val)) return "[" + val.map(_jcs).join(",") + "]";
+  const keys = Object.keys(val).sort();
+  return "{" + keys.map((k) => JSON.stringify(k) + ":" + _jcs(val[k])).join(",") + "}";
 }
 
 function _hexOf(bytes) {

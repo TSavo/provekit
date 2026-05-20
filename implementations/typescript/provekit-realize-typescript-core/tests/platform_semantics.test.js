@@ -3,7 +3,7 @@
 const { test } = require("node:test");
 const assert = require("node:assert/strict");
 
-const { declaration, dimensionValues, CONCEPT_LITERAL_CID } = require("../src/platform_semantics");
+const { declaration, dimensionValues, CONCEPT_LITERAL_CID, _jcs } = require("../src/platform_semantics");
 const { dispatch } = require("../src/rpc");
 
 // Golden CIDs for dimension values (kit_cid elided per substrate spec).
@@ -134,4 +134,25 @@ test("ts_rpc_dispatch_platform_semantics", () => {
   assert.deepStrictEqual(response.result.op_aliases, {});
   assert.ok(response.result.tags.length > 0);
   assert.ok(response.result.dimension_values.length > 0);
+});
+
+// JCS BigInt conformance: _jcs must emit large integers verbatim without truncation.
+// JSON.stringify() throws on BigInt; the old _sortKeys+JSON.stringify path silently
+// truncated u64 values above Number.MAX_SAFE_INTEGER (2^53 = 9007199254740992).
+test("ts_jcs_bigint_emitted_verbatim", () => {
+  // 4614253070214989087 == f64::to_bits(3.14), exceeds Number.MAX_SAFE_INTEGER.
+  // JSON.stringify(4614253070214989087) returns "4614253070214989000" (truncated);
+  // _jcs must emit all 19 digits.
+  const result = _jcs({ __float_bits__: 4614253070214989087n });
+  assert.strictEqual(result, '{"__float_bits__":4614253070214989087}',
+    "_jcs must not truncate BigInt values above Number.MAX_SAFE_INTEGER");
+});
+
+// Discrimination: confirm that JS Number truncation gives a different result,
+// proving the test would catch the regression if the BigInt path were removed.
+test("ts_jcs_number_truncates_but_bigint_does_not", () => {
+  const truncated = _jcs({ __float_bits__: 4614253070214989087 }); // JS Number
+  const exact     = _jcs({ __float_bits__: 4614253070214989087n }); // BigInt
+  assert.notStrictEqual(truncated, exact,
+    "JS Number truncates large u64; BigInt preserves all digits");
 });

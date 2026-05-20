@@ -195,20 +195,26 @@ function _cidOf(obj) {
   return "blake3-512:" + _hexOf(hash);
 }
 
-function _jcs(obj) {
-  return JSON.stringify(_sortKeys(obj));
-}
-
-function _sortKeys(val) {
-  if (val === null || typeof val !== "object") return val;
-  if (Array.isArray(val)) return val.map(_sortKeys);
-  return Object.fromEntries(
-    Object.keys(val).sort().map((k) => [k, _sortKeys(val[k])])
-  );
+function _jcs(val) {
+  // RFC 8785: keys sorted by Unicode code-point, no whitespace, BigInt emitted
+  // as plain decimal digits (JSON.stringify throws on BigInt).
+  if (val === null) return "null";
+  if (typeof val === "boolean") return val ? "true" : "false";
+  if (typeof val === "bigint") return val.toString();
+  if (typeof val === "number") return JSON.stringify(val);
+  if (typeof val === "string") return JSON.stringify(val);
+  if (Array.isArray(val)) return "[" + val.map(_jcs).join(",") + "]";
+  // Object: sort keys by Unicode code-point order (String#localeCompare with
+  // sensitivity:"variant" + sort() gives byte-order for ASCII-only keys, which
+  // are the only keys this protocol produces; Object.keys().sort() uses the same
+  // Unicode code-unit order as the protocol spec requires for ASCII).
+  const keys = Object.keys(val).sort();
+  return "{" + keys.map((k) => JSON.stringify(k) + ":" + _jcs(val[k])).join(",") + "}";
 }
 
 function _hexOf(bytes) {
   return Array.from(bytes).map((b) => b.toString(16).padStart(2, "0")).join("");
 }
 
-module.exports = { declaration, dimensionValues, KIT_CID, CONCEPT_LITERAL_CID };
+// _jcs exported for conformance tests; internal use only (not part of the public API).
+module.exports = { declaration, dimensionValues, KIT_CID, CONCEPT_LITERAL_CID, _jcs };
