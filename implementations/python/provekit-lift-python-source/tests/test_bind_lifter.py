@@ -1055,3 +1055,164 @@ def test_concept_citation_missing_operation_kind_field_tags_as_malformed_json() 
     assert len(result.ir) == 2
     assert all("fn_name" not in entry for entry in result.ir)
     assert "concept-citation:malformed-json" in _concept_diagnostics(result)
+
+
+# =============================================================================
+# Substrate-honest parity: loss, observed_dimension, @refuse
+# =============================================================================
+
+
+def test_sugar_bind_with_empty_loss_emits_empty_entries() -> None:
+    source = (
+        "from provekit import sugar\n"
+        "import sqlite3\n"
+        "\n"
+        "@sugar.bind(concept=\"concept:sql-connection-close\", library=\"sqlite3\", loss=[])\n"
+        "def close_connection(conn: sqlite3.Connection) -> None:\n"
+        "    conn.close()\n"
+    )
+    result = lift_source(source, "shim.py", layer="library-bindings")
+    assert result.diagnostics == []
+    assert len(result.ir) == 1
+    entry = result.ir[0]
+    assert entry["kind"] == "library-sugar-binding-entry"
+    lrc = entry["loss_record_contribution"]
+    assert lrc["form"] == "literal"
+    assert lrc["value"]["entries"] == []
+    assert "observed_dimension" not in entry
+
+
+def test_sugar_bind_with_multi_dim_loss_populates_entries() -> None:
+    source = (
+        "from provekit import sugar\n"
+        "import sqlite3\n"
+        "\n"
+        "@sugar.bind(\n"
+        "    concept=\"concept:sql-connection-open\",\n"
+        "    library=\"sqlite3\",\n"
+        "    loss=[\"sync-vs-async\", \"auth-mechanism\", \"connection-pooling\"],\n"
+        ")\n"
+        "def open_db(path: str) -> sqlite3.Connection:\n"
+        "    return sqlite3.connect(path)\n"
+    )
+    result = lift_source(source, "shim.py", layer="library-bindings")
+    assert result.diagnostics == []
+    assert len(result.ir) == 1
+    entry = result.ir[0]
+    entries = entry["loss_record_contribution"]["value"]["entries"]
+    assert entries == ["sync-vs-async", "auth-mechanism", "connection-pooling"]
+    assert "observed_dimension" not in entry
+
+
+def test_sugar_bind_with_observed_dimension_propagates_to_entry() -> None:
+    source = (
+        "from provekit import sugar\n"
+        "import sqlite3\n"
+        "\n"
+        "@sugar.bind(\n"
+        "    concept=\"concept:contract-observation\",\n"
+        "    library=\"sqlite3\",\n"
+        "    observed_dimension=\"autocommit-mode\",\n"
+        ")\n"
+        "def in_transaction(conn: sqlite3.Connection) -> bool:\n"
+        "    return conn.in_transaction\n"
+    )
+    result = lift_source(source, "shim.py", layer="library-bindings")
+    assert result.diagnostics == []
+    assert len(result.ir) == 1
+    entry = result.ir[0]
+    assert entry["observed_dimension"] == "autocommit-mode"
+    # No loss provided, so entries should be empty
+    assert entry["loss_record_contribution"]["value"]["entries"] == []
+
+
+def test_refuse_decorator_emits_refusal_memento() -> None:
+    source = (
+        "from provekit import refuse\n"
+        "\n"
+        "@refuse(\n"
+        "    surface=\"sqlite3.Connection.backup\",\n"
+        "    concept=\"concept:sql-physical-backup\",\n"
+        "    reason=\"SQLite-binary-specific physical backup. N=1 across connection-level APIs.\",\n"
+        "    would_close_with_cluster=\"Connection-level physical-backup method on >=2 SQL drivers\",\n"
+        ")\n"
+        "class RefusedBackup:\n"
+        "    pass\n"
+    )
+    result = lift_source(source, "shim.py", layer="library-bindings")
+    assert result.diagnostics == []
+    assert len(result.ir) == 1
+    entry = result.ir[0]
+    assert entry["kind"] == "refusal-memento"
+    assert entry["target_language"] == "python"
+    assert entry["surface"] == "sqlite3.Connection.backup"
+    assert entry["concept"] == "concept:sql-physical-backup"
+    assert entry["reason"] != ""
+    assert entry["would_close_with_cluster"] == "Connection-level physical-backup method on >=2 SQL drivers"
+
+
+def test_refuse_decorator_provekit_namespace_also_recognized() -> None:
+    source = (
+        "import provekit\n"
+        "\n"
+        "@provekit.refuse(\n"
+        "    surface=\"sqlite3.Connection.backup\",\n"
+        "    concept=\"concept:sql-physical-backup\",\n"
+        "    reason=\"SQLite-binary-specific physical backup. N=1.\",\n"
+        "    would_close_with_cluster=\"Connection-level physical-backup on >=2 drivers\",\n"
+        ")\n"
+        "class RefusedBackupNs:\n"
+        "    pass\n"
+    )
+    result = lift_source(source, "shim.py", layer="library-bindings")
+    assert result.diagnostics == []
+    assert len(result.ir) == 1
+    entry = result.ir[0]
+    assert entry["kind"] == "refusal-memento"
+    assert entry["surface"] == "sqlite3.Connection.backup"
+
+
+def test_refuse_missing_field_produces_diagnostic_not_ir() -> None:
+    source = (
+        "from provekit import refuse\n"
+        "\n"
+        "@refuse(\n"
+        "    surface=\"sqlite3.Connection.backup\",\n"
+        "    concept=\"concept:sql-physical-backup\",\n"
+        "    # reason and would_close_with_cluster intentionally omitted\n"
+        ")\n"
+        "class RefusedBadBackup:\n"
+        "    pass\n"
+    )
+    result = lift_source(source, "shim.py", layer="library-bindings")
+    assert len(result.ir) == 0
+    assert any(d["kind"] == "refusal-memento-invalid" for d in result.diagnostics)
+
+
+def test_sugar_and_refuse_coexist_in_same_file() -> None:
+    source = (
+        "from provekit import sugar, refuse\n"
+        "import sqlite3\n"
+        "\n"
+        "@sugar.bind(\n"
+        "    concept=\"concept:sql-connection-open\",\n"
+        "    library=\"sqlite3\",\n"
+        "    loss=[\"sync-vs-async\"],\n"
+        ")\n"
+        "def open_db(path: str) -> sqlite3.Connection:\n"
+        "    return sqlite3.connect(path)\n"
+        "\n"
+        "@refuse(\n"
+        "    surface=\"sqlite3.Connection.backup\",\n"
+        "    concept=\"concept:sql-physical-backup\",\n"
+        "    reason=\"SQLite-binary-specific. N=1.\",\n"
+        "    would_close_with_cluster=\"Connection-level backup on >=2 drivers\",\n"
+        ")\n"
+        "class RefusedBackup:\n"
+        "    pass\n"
+    )
+    result = lift_source(source, "shim.py", layer="library-bindings")
+    assert result.diagnostics == []
+    kinds = [e["kind"] for e in result.ir]
+    assert kinds.count("library-sugar-binding-entry") == 1
+    assert kinds.count("refusal-memento") == 1

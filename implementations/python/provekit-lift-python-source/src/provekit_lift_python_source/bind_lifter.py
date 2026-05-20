@@ -105,6 +105,11 @@ def lift_source(source: str, source_path: str, layer: str = "all") -> BindLiftRe
                     "line": exc.line_no,
                 }
             )
+    if layer == "library-bindings":
+        for cls_info in collector.class_definitions:
+            entry = _refusal_memento_for_class(cls_info.node, rel_path, result.diagnostics)
+            if entry is not None:
+                result.ir.append(entry)
     return result
 
 
@@ -162,9 +167,15 @@ def lift_paths(
     return result
 
 
+@dataclass(frozen=True)
+class _ClassInfo:
+    node: ast.ClassDef
+
+
 class _DefinitionCollector(ast.NodeVisitor):
     def __init__(self) -> None:
         self.definitions: list[_FunctionInfo] = []
+        self.class_definitions: list[_ClassInfo] = []
 
     def visit_FunctionDef(self, node: ast.FunctionDef) -> None:
         self.definitions.append(_FunctionInfo(node=node))
@@ -172,6 +183,11 @@ class _DefinitionCollector(ast.NodeVisitor):
 
     def visit_AsyncFunctionDef(self, node: ast.AsyncFunctionDef) -> None:
         self.definitions.append(_FunctionInfo(node=node))
+        self.generic_visit(node)
+
+    def visit_ClassDef(self, node: ast.ClassDef) -> None:
+        self.class_definitions.append(_ClassInfo(node=node))
+        # still recurse so method definitions inside classes are visited for function lifting
         self.generic_visit(node)
 
 
@@ -223,14 +239,15 @@ def _library_binding_entry_for_function(
         "return_type": return_type,
     }
     body_source = _body_source_locator(node, rel_path, source_lines)
+    loss_entries = binding.get("loss") or []
 
-    return {
+    entry: Json = {
         "body_source": body_source,
         "concept_name": binding["concept_name"],
         "kind": "library-sugar-binding-entry",
         "loss_record_contribution": {
             "form": "literal",
-            "value": {"entries": []},
+            "value": {"entries": loss_entries},
         },
         "param_names": param_names,
         "param_types": param_types,
@@ -242,18 +259,29 @@ def _library_binding_entry_for_function(
         "term_shape": term_shape,
         "term_shape_cid": cid_of_json(term_shape),
     }
+    observed = binding.get("observed_dimension")
+    if observed:
+        entry["observed_dimension"] = observed
+    return entry
 
 
 def _sugar_bind_decorator(
     node: ast.FunctionDef | ast.AsyncFunctionDef,
-) -> dict[str, str] | None:
+) -> dict | None:
     for decorator in node.decorator_list:
         if not isinstance(decorator, ast.Call) or not _is_sugar_bind_func(decorator.func):
             continue
         concept = _keyword_str(decorator, "concept")
         library = _keyword_str(decorator, "library")
         if concept and library:
-            return {"concept_name": concept, "target_library_tag": library}
+            result: dict = {"concept_name": concept, "target_library_tag": library}
+            loss = _keyword_str_list(decorator, "loss")
+            if loss is not None:
+                result["loss"] = loss
+            observed = _keyword_str(decorator, "observed_dimension")
+            if observed:
+                result["observed_dimension"] = observed
+            return result
     return None
 
 
@@ -273,6 +301,79 @@ def _keyword_str(call: ast.Call, name: str) -> str | None:
         if keyword.arg == name and isinstance(keyword.value, ast.Constant):
             if isinstance(keyword.value.value, str) and keyword.value.value:
                 return keyword.value.value
+    return None
+
+
+def _keyword_str_list(call: ast.Call, name: str) -> list[str] | None:
+    """Return a keyword argument whose value is a list of string literals, or None if absent."""
+    for keyword in call.keywords:
+        if keyword.arg != name:
+            continue
+        if not isinstance(keyword.value, ast.List):
+            return None
+        result: list[str] = []
+        for elt in keyword.value.elts:
+            if isinstance(elt, ast.Constant) and isinstance(elt.value, str):
+                result.append(elt.value)
+        return result
+    return None
+
+
+def _is_refuse_func(func: ast.expr) -> bool:
+    """Return True for @refuse(...) or @provekit.refuse(...)."""
+    if isinstance(func, ast.Name):
+        return func.id == "refuse"
+    if isinstance(func, ast.Attribute) and func.attr == "refuse":
+        value = func.value
+        return isinstance(value, ast.Name) and value.id == "provekit"
+    return False
+
+
+def _refusal_memento_for_class(
+    node: ast.ClassDef,
+    rel_path: str,
+    diagnostics: list[Json],
+) -> Json | None:
+    """Emit a refusal-memento IR record for an empty class decorated with @refuse(...)."""
+    for decorator in node.decorator_list:
+        if not isinstance(decorator, ast.Call) or not _is_refuse_func(decorator.func):
+            continue
+        surface = _keyword_str(decorator, "surface")
+        concept = _keyword_str(decorator, "concept")
+        reason = _keyword_str(decorator, "reason")
+        would_close = _keyword_str(decorator, "would_close_with_cluster")
+        if not (surface and concept and reason and would_close):
+            diagnostics.append(
+                {
+                    "kind": "refusal-memento-invalid",
+                    "message": "missing required field in @refuse (surface, concept, reason, would_close_with_cluster)",
+                    "path": rel_path,
+                    "line": node.lineno,
+                }
+            )
+            return None
+        # Validate body is trivial (only pass or docstring)
+        body_stmts = [s for s in node.body if not _is_docstring_stmt(s)]
+        if len(body_stmts) > 1 or (
+            len(body_stmts) == 1 and not isinstance(body_stmts[0], ast.Pass)
+        ):
+            diagnostics.append(
+                {
+                    "kind": "refusal-memento-invalid",
+                    "message": "@refuse class body must be empty (pass only)",
+                    "path": rel_path,
+                    "line": node.lineno,
+                }
+            )
+            return None
+        return {
+            "kind": "refusal-memento",
+            "target_language": "python",
+            "surface": surface,
+            "concept": concept,
+            "reason": reason,
+            "would_close_with_cluster": would_close,
+        }
     return None
 
 
