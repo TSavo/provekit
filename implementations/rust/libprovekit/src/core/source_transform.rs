@@ -498,31 +498,6 @@ impl From<&StubSignatureAndClose> for StubSignatureAndCloseClone {
     }
 }
 
-/// Splice a raw body string (the contents that go between the outermost
-/// braces, without surrounding braces) into the consumer's stub signature.
-/// This is the body-first sibling of
-/// `splice_realized_body_into_stub_signature`, which takes the realize
-/// plugin's full `fn ... { body }` source string. The kit-trait flow in
-/// Phase B returns the body directly (the trichotomy outcome carries
-/// `body: String`), so the splice path here avoids the round-trip through
-/// the realize-plugin source format.
-fn splice_body_into_stub_signature(stub: &StubSignatureAndClose, body: &str) -> String {
-    let body = body.trim_matches('\n');
-    let mut out = String::new();
-    out.push_str(&stub.signature_text);
-    if !stub.signature_text.ends_with('\n') {
-        out.push('\n');
-    }
-    for line in body.lines() {
-        out.push_str(line);
-        out.push('\n');
-    }
-    out.push_str(&stub.close_indent);
-    out.push('}');
-    out.push('\n');
-    out
-}
-
 /// Transform a source-file string by walking concept-citation carriers and
 /// replacing each carrier-plus-stub region with the kit's site outcome.
 /// Returns the rewritten source and the per-site outcomes in the order they
@@ -538,13 +513,15 @@ fn splice_body_into_stub_signature(stub: &StubSignatureAndClose, body: &str) -> 
 /// mirrors Phase A's `materialize_source_text` (which surfaces realize
 /// failures as `Err`).
 ///
-/// For `Materialize` and `LoudlyLossy` outcomes, the kit's returned `body`
-/// is spliced into the consumer's stub signature via
-/// `splice_realized_body_into_stub_signature` when a stub was captured.
-/// When no stub was captured (the carrier was not followed by a parseable
-/// stub function declaration), the returned `body` is wrapped in a thin
-/// `fn provekit_materialized() { ... }` skeleton to match the Phase A
-/// fallback path. The caller can then re-indent and append as before.
+/// The kit's returned `body` is the realize plugin's full
+/// `fn ... { ... }` source declaration (the same shape the realize
+/// transport returns). When a stub was captured, the inner body is
+/// extracted from that source and spliced into the consumer's stub
+/// signature via `splice_realized_body_into_stub_signature`, preserving
+/// the consumer's signed signature exactly while filling its body from the
+/// kit binding. When no stub was captured, the kit's source is emitted as
+/// the materialized function, matching the Phase A fallback path. The
+/// caller can then re-indent and append as before.
 pub fn transform_source_text(
     source: &str,
     kit: &dyn SiteTransformKit,
@@ -580,7 +557,7 @@ pub fn transform_source_text(
 
             if let Some(body) = body_opt {
                 let emitted = if let Some(stub) = stub_block.signature_and_close.as_ref() {
-                    splice_body_into_stub_signature(stub, body)
+                    splice_realized_body_into_stub_signature(stub, body)
                 } else {
                     body.to_string()
                 };
@@ -711,8 +688,12 @@ fn after() {}\n";
 
     #[test]
     fn transform_source_text_splices_materialize_body_into_stub_signature() {
+        // Kit returns the realize plugin's full `fn ... { ... }` source; the
+        // stub-splice path extracts the inner body and wraps it in the
+        // consumer's signed signature. Same shape the realize transport
+        // returns and that `MaterializeKit` forwards.
         let kit = MockMaterializeKit {
-            body: "    x.wrapping_add(1)".to_string(),
+            body: "fn realized(x: u32) -> u32 {\n    x.wrapping_add(1)\n}".to_string(),
             binding_cid: "cid:mock".to_string(),
         };
         let (out, outcomes) =
