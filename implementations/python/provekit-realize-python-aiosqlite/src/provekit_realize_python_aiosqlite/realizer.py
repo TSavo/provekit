@@ -87,24 +87,22 @@ def body_template_for(
     return_type: str,
     named_term_tree: dict[str, Any] | None = None,
 ) -> str | None:
-    tree_args_shape = _args_shape_from_named_term_tree(named_term_tree)
-    if tree_args_shape is None:
-        args_shape = tuple(map_source_type(ty) for ty in param_types)
-        template_params = params
-    else:
-        args_shape = tree_args_shape
-        template_params = _tree_template_params(named_term_tree, params, args_shape)
+    template_params, lookup_param_types = _template_lookup_signature(
+        params,
+        param_types,
+        named_term_tree,
+    )
     mapped_return_type = map_source_type(return_type)
     candidate_names = (concept_name, concept_name.removeprefix("concept:"))
     for entry in entries():
         if entry.concept_name not in candidate_names:
             continue
-        if entry.min_params is not None and len(args_shape) < entry.min_params:
+        if entry.min_params is not None and len(lookup_param_types) < entry.min_params:
             continue
-        if entry.max_params is not None and len(args_shape) > entry.max_params:
+        if entry.max_params is not None and len(lookup_param_types) > entry.max_params:
             continue
         if entry.requires_param_types is not None:
-            if args_shape != entry.requires_param_types:
+            if tuple(lookup_param_types) != entry.requires_param_types:
                 continue
         if entry.requires_return_type is not None:
             if mapped_return_type != entry.requires_return_type:
@@ -114,7 +112,7 @@ def body_template_for(
         rendered = render_template(
             entry.template,
             template_params,
-            list(args_shape),
+            lookup_param_types,
             mapped_return_type,
         )
         if rendered is None:
@@ -127,82 +125,123 @@ def args_shape_for(
     param_types: list[str],
     named_term_tree: dict[str, Any] | None = None,
 ) -> tuple[str, ...]:
-    tree_args_shape = _args_shape_from_named_term_tree(named_term_tree)
-    if tree_args_shape is not None:
-        return tree_args_shape
+    ntt_args_shape = _ntt_args_shape(named_term_tree)
+    if ntt_args_shape is not None:
+        return ntt_args_shape
     return tuple(map_source_type(ty) for ty in param_types)
 
 
-def _args_shape_from_named_term_tree(
+# NTT (named_term_tree) helpers. Kept in lock-step with the python-sqlite3
+# kit's equivalents (#1253: latent inconsistency closed). Any change to NTT
+# derivation MUST be applied to both kits in the same PR; the test suite
+# guards this by pinning identical body_template_for outputs across the two
+# plugins for shared catalog entries.
+
+
+def _template_lookup_signature(
+    params: list[str],
+    param_types: list[str],
     named_term_tree: dict[str, Any] | None,
-) -> tuple[str, ...] | None:
+) -> tuple[list[str], list[str]]:
+    ntt_args_shape = _ntt_args_shape(named_term_tree)
+    if ntt_args_shape is None:
+        return params, [map_source_type(ty) for ty in param_types]
+    return (
+        _ntt_template_params(params, named_term_tree, len(ntt_args_shape)),
+        list(ntt_args_shape),
+    )
+
+
+def _ntt_args_shape(named_term_tree: dict[str, Any] | None) -> tuple[str, ...] | None:
     if not isinstance(named_term_tree, dict):
         return None
     args = named_term_tree.get("args")
     if not isinstance(args, list):
-        return ()
-    return tuple(_tree_arg_shape(arg) for arg in args)
+        return None
+    out: list[str] = []
+    for arg in args:
+        if not isinstance(arg, dict):
+            return None
+        descriptor = _ntt_arg_descriptor(arg)
+        if descriptor is None:
+            return None
+        out.append(_map_ntt_arg_descriptor(descriptor))
+    return tuple(out)
 
 
-def _tree_arg_shape(arg: Any) -> str:
-    if not isinstance(arg, dict):
-        return "arg"
+def _ntt_arg_descriptor(arg: dict[str, Any]) -> str | None:
     for key in (
+        "type",
+        "typeName",
+        "type_name",
         "sort",
         "sortName",
+        "sort_name",
         "conceptName",
         "concept_name",
         "operationKind",
         "operation_kind",
-        "kind",
     ):
         value = arg.get(key)
         if isinstance(value, str) and value.strip():
-            return value
-    return "arg"
+            return value.strip()
+    return None
 
 
-def _tree_template_params(
-    named_term_tree: dict[str, Any] | None,
+def _map_ntt_arg_descriptor(descriptor: str) -> str:
+    match descriptor:
+        case "Sql" | "sql" | "concept:sql":
+            return "str"
+        case "SqlArgs" | "sqlArgs" | "sql_args" | "sql-args" | "concept:sql-args":
+            return "list[object]"
+        case _:
+            return map_source_type(descriptor)
+
+
+def _ntt_template_params(
     params: list[str],
-    args_shape: tuple[str, ...],
+    named_term_tree: dict[str, Any] | None,
+    arity: int,
 ) -> list[str]:
-    if len(params) == len(args_shape):
+    if len(params) == arity:
         return params
-    if not isinstance(named_term_tree, dict):
-        return params
-    args = named_term_tree.get("args")
+    args = named_term_tree.get("args") if isinstance(named_term_tree, dict) else None
     if not isinstance(args, list):
-        return []
-    out: list[str] = []
+        return [f"arg{index}" for index in range(arity)]
+    names: list[str] = []
     for index, arg in enumerate(args):
-        out.append(_tree_arg_name(arg, args_shape[index], index))
-    return out
+        if isinstance(arg, dict):
+            names.append(_ntt_arg_name(arg, index))
+        else:
+            names.append(f"arg{index}")
+    return names
 
 
-def _tree_arg_name(arg: Any, args_shape: str, index: int) -> str:
-    if isinstance(arg, dict):
-        for key in ("paramName", "param_name", "symbol", "name"):
-            value = arg.get(key)
-            if isinstance(value, str) and value.strip():
-                return _python_identifier(value, index)
-    return _python_identifier(args_shape, index)
-
-
-def _python_identifier(value: str, index: int) -> str:
-    stripped = value.strip()
-    if stripped in ("Sql", "concept:sql", "sql"):
-        return "sql"
-    if stripped in ("SqlArgs", "concept:sql-args", "sql-args", "sql_args"):
-        return "args"
-    if stripped.startswith("concept:"):
-        stripped = stripped.removeprefix("concept:")
-    candidate = re.sub(r"\W+", "_", stripped).strip("_").lower()
-    if not candidate:
+def _ntt_arg_name(arg: dict[str, Any], index: int) -> str:
+    for key in ("name", "paramName", "param_name", "binding", "symbol"):
+        value = arg.get(key)
+        if isinstance(value, str) and value.strip():
+            return _python_identifier_or_default(value.strip(), f"arg{index}")
+    descriptor = _ntt_arg_descriptor(arg)
+    if descriptor is None:
         return f"arg{index}"
-    if not (candidate[0].isalpha() or candidate[0] == "_"):
-        return f"arg{index}"
-    return candidate
+    match descriptor:
+        case "Sql" | "sql" | "concept:sql":
+            return "sql"
+        case "SqlArgs" | "sqlArgs" | "sql_args" | "sql-args" | "concept:sql-args":
+            return "args"
+        case _:
+            return _python_identifier_or_default(
+                descriptor.removeprefix("concept:"),
+                f"arg{index}",
+            )
+
+
+def _python_identifier_or_default(value: str, default: str) -> str:
+    identifier = value.replace("-", "_")
+    if identifier.isidentifier():
+        return identifier
+    return default
 
 
 def map_source_type(src: str) -> str:
