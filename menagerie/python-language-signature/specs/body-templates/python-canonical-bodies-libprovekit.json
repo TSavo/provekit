@@ -22,7 +22,8 @@
             "max_params": 0,
             "min_params": 0,
             "requires_return_type": "Value"
-          }
+          },
+          "target_library_tag": "libprovekit"
         },
         {
           "concept_name": "concept:value-boolean",
@@ -37,9 +38,12 @@
           "signature_guard": {
             "max_params": 1,
             "min_params": 1,
-            "requires_param_types": ["bool"],
+            "requires_param_types": [
+              "bool"
+            ],
             "requires_return_type": "Value"
-          }
+          },
+          "target_library_tag": "libprovekit"
         },
         {
           "concept_name": "concept:value-integer",
@@ -54,9 +58,12 @@
           "signature_guard": {
             "max_params": 1,
             "min_params": 1,
-            "requires_param_types": ["int"],
+            "requires_param_types": [
+              "int"
+            ],
             "requires_return_type": "Value"
-          }
+          },
+          "target_library_tag": "libprovekit"
         },
         {
           "concept_name": "concept:value-string",
@@ -71,9 +78,12 @@
           "signature_guard": {
             "max_params": 1,
             "min_params": 1,
-            "requires_param_types": ["str"],
+            "requires_param_types": [
+              "str"
+            ],
             "requires_return_type": "Value"
-          }
+          },
+          "target_library_tag": "libprovekit"
         }
       ],
       "target_language": "python",
@@ -81,7 +91,9 @@
     },
     "critical": false,
     "kind": "body-template",
-    "protocol_versions": ["pep/1.7.0"],
+    "protocol_versions": [
+      "pep/1.7.0"
+    ],
     "provenance_cid": "blake3-512:00000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000",
     "schemaVersion": "1",
     "version": "1.0.0"

@@ -32,7 +32,8 @@
           "signature_guard": {
             "max_params": 2,
             "min_params": 2
-          }
+          },
+          "target_library_tag": "better-sqlite3"
         },
         {
           "concept_name": "concept:sql-execute",
@@ -63,7 +64,8 @@
           "signature_guard": {
             "max_params": 2,
             "min_params": 2
-          }
+          },
+          "target_library_tag": "better-sqlite3"
         }
       ],
       "target_language": "typescript",

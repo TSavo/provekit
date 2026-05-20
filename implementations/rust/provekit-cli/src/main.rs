@@ -33,6 +33,7 @@ mod cmd_init;
 mod cmd_lift;
 mod cmd_link;
 mod cmd_lower;
+mod cmd_materialize;
 mod cmd_mint;
 mod cmd_must;
 mod cmd_package;
@@ -164,6 +165,8 @@ enum Cmd {
     /// Implements the eight-verb pipeline (paper 20 §9) against arbitrary user code.
     /// --rewrite={annotate,canonical,invisible} --mode={witness,emitter,monitor,gate} --target-language=<lang>
     Bind(cmd_bind::BindArgs),
+    /// Materialize concept-citation carriers into library-bound source via substrate realize kits.
+    Materialize(cmd_materialize::MaterializeArgs),
     /// Load and inspect substrate exam manifests.
     Exam(cmd_exam::ExamArgs),
 }
@@ -426,6 +429,7 @@ fn main() -> ExitCode {
         Cmd::Transport(a) | Cmd::Migrate(a) => cmd_transport::run(a),
         Cmd::Compose(a) => cmd_compose::run(a),
         Cmd::Bind(a) => cmd_bind::run(a),
+        Cmd::Materialize(a) => cmd_materialize::run(a),
         Cmd::Exam(a) => cmd_exam::run(a),
     };
     ExitCode::from(code)

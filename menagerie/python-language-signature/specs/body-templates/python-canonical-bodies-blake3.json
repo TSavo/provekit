@@ -21,7 +21,8 @@
           "signature_guard": {
             "max_params": 0,
             "min_params": 0
-          }
+          },
+          "target_library_tag": "blake3"
         },
         {
           "concept_name": "rust-method:hasher-update",
@@ -36,7 +37,8 @@
           "signature_guard": {
             "max_params": 2,
             "min_params": 2
-          }
+          },
+          "target_library_tag": "blake3"
         },
         {
           "concept_name": "rust-method:hasher-finalize-xof",
@@ -51,7 +53,8 @@
           "signature_guard": {
             "max_params": 1,
             "min_params": 1
-          }
+          },
+          "target_library_tag": "blake3"
         },
         {
           "concept_name": "rust-method:hasher-finalize-xof-fill",
@@ -66,7 +69,8 @@
           "signature_guard": {
             "max_params": 2,
             "min_params": 2
-          }
+          },
+          "target_library_tag": "blake3"
         },
         {
           "concept_name": "rust-call:hex::encode",
@@ -81,7 +85,8 @@
           "signature_guard": {
             "max_params": 1,
             "min_params": 1
-          }
+          },
+          "target_library_tag": "blake3"
         }
       ],
       "target_language": "python",
@@ -89,7 +94,9 @@
     },
     "critical": false,
     "kind": "body-template",
-    "protocol_versions": ["pep/1.7.0"],
+    "protocol_versions": [
+      "pep/1.7.0"
+    ],
     "provenance_cid": "blake3-512:00000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000",
     "schemaVersion": "1",
     "version": "1.0.0"

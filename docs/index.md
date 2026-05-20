@@ -18,6 +18,7 @@ Current catalog CID: `blake3-512:dd0cc79889ee67d2594f5cfa20a191bafed15196fb2c503
 | Protocol extensions | [reference/protocol-extensions.md](reference/protocol-extensions.md) |
 | Canonical IR bytes | [reference/ir/canonical-form.md](reference/ir/canonical-form.md) |
 | Diagnostic codes | [reference/error-codes.md](reference/error-codes.md) |
+| Materialize concept citations | [reference/materialize.md](reference/materialize.md) |
 | LSP helper protocol | [reference/lsp-plugin-protocol.md](reference/lsp-plugin-protocol.md) |
 
 ## Start here
