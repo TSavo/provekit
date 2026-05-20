@@ -3,17 +3,25 @@
 // @provekit-shim/typescript-better-sqlite3: substrate-honest concept
 // bindings for the synchronous better-sqlite3 Node driver.
 //
-// This package mirrors the vendored-boundary namespace pattern used by
-// provekit-shim-rusqlite, but uses the TypeScript source-native
-// `@sugar.bind(...)` surface. The TypeScript lifter reads this file with
-// `layer = "library-bindings"`, emits `library-sugar-binding-entry` IR, and
-// the shared Rust `provekit mint --library-bindings` path packages those
-// entries into the package-root `provekit.proof` envelope.
+// Paper 24 section 3 ("After Vendoring"): libraries ship their own sugar.
+// This shim is the TypeScript analogue of provekit-shim-rusqlite. The
+// TypeScript lifter reads this file with `layer = "library-bindings"`,
+// emits `library-sugar-binding-entry` and `refusal-memento` IR, and the
+// shared `provekit mint --library-bindings` path packages those entries
+// into the package-root `provekit.proof` envelope.
+//
+// Sugar bindings: 44 (sections A-L)
+// Refusals: 10 (section M)
+// Total envelope members: 54
 
 import Database from "better-sqlite3";
 import { sugar } from "provekit";
 
 export type Params = readonly unknown[] | Record<string, unknown>;
+
+// ============================================================
+// A. Connection management
+// ============================================================
 
 @sugar.bind({
   concept: "concept:sql-connection-open",
@@ -32,6 +40,27 @@ export function openInMemory(): Database.Database {
 }
 
 @sugar.bind({
+  concept: "concept:sql-connection-open",
+  library: "better-sqlite3",
+  loss: ["readonly-flag", "fileMustExist-flag"],
+})
+export function openWithOptions(filename: string, options: Database.Options): Database.Database {
+  return new Database(filename, options);
+}
+
+@sugar.bind({
+  concept: "concept:sql-connection-close",
+  library: "better-sqlite3",
+})
+export function close(db: Database.Database): void {
+  db.close();
+}
+
+// ============================================================
+// B. Statement execution at connection level
+// ============================================================
+
+@sugar.bind({
   concept: "concept:sql-execute",
   library: "better-sqlite3",
 })
@@ -40,28 +69,91 @@ export function execute(db: Database.Database, sql: string, params: Params = [])
 }
 
 @sugar.bind({
-  concept: "concept:sql-query",
+  concept: "concept:sql-execute",
   library: "better-sqlite3",
+  loss: ["multi-statement-support"],
 })
-export function allRows(db: Database.Database, sql: string, params: Params = []): unknown[] {
-  return db.prepare(sql).all(params);
+export function executeBatch(db: Database.Database, sql: string): void {
+  db.exec(sql);
 }
 
 @sugar.bind({
   concept: "concept:sql-query",
   library: "better-sqlite3",
 })
-export function getRow(db: Database.Database, sql: string, params: Params = []): unknown {
+export function queryRow(db: Database.Database, sql: string, params: Params = []): unknown {
   return db.prepare(sql).get(params);
 }
 
 @sugar.bind({
-  concept: "concept:insert-and-get-id",
+  concept: "concept:sql-query",
   library: "better-sqlite3",
 })
-export function lastInsertRowid(result: Database.RunResult): number | bigint {
-  return result.lastInsertRowid;
+export function queryAll(db: Database.Database, sql: string, params: Params = []): unknown[] {
+  return db.prepare(sql).all(params);
 }
+
+// ============================================================
+// C. Statement preparation
+// ============================================================
+
+@sugar.bind({
+  concept: "concept:sql-prepare",
+  library: "better-sqlite3",
+})
+export function prepare(db: Database.Database, sql: string): Database.Statement {
+  return db.prepare(sql);
+}
+
+@sugar.bind({
+  concept: "concept:sql-prepare",
+  library: "better-sqlite3",
+  loss: ["bind-returns-same-stmt"],
+})
+export function stmtBind(stmt: Database.Statement, ...args: unknown[]): Database.Statement {
+  return stmt.bind(...args);
+}
+
+// ============================================================
+// D. Statement execution (prepared statement level)
+// ============================================================
+
+@sugar.bind({
+  concept: "concept:sql-execute",
+  library: "better-sqlite3",
+})
+export function stmtRun(stmt: Database.Statement, params: Params = []): Database.RunResult {
+  return stmt.run(params);
+}
+
+@sugar.bind({
+  concept: "concept:sql-query",
+  library: "better-sqlite3",
+})
+export function stmtAll(stmt: Database.Statement, params: Params = []): unknown[] {
+  return stmt.all(params);
+}
+
+@sugar.bind({
+  concept: "concept:sql-query",
+  library: "better-sqlite3",
+})
+export function stmtGet(stmt: Database.Statement, params: Params = []): unknown {
+  return stmt.get(params);
+}
+
+@sugar.bind({
+  concept: "concept:sql-query",
+  library: "better-sqlite3",
+  loss: ["generator-protocol"],
+})
+export function stmtIterate(stmt: Database.Statement, params: Params = []): IterableIterator<unknown> {
+  return stmt.iterate(params) as IterableIterator<unknown>;
+}
+
+// ============================================================
+// E. Transactions
+// ============================================================
 
 @sugar.bind({
   concept: "concept:sql-transaction-begin",
@@ -72,9 +164,370 @@ export function transaction<T>(db: Database.Database, body: () => T): T {
 }
 
 @sugar.bind({
-  concept: "concept:sql-connection-close",
+  concept: "concept:sql-transaction-begin",
+  library: "better-sqlite3",
+  loss: ["deferred-isolation-level"],
+})
+export function transactionDeferred<T>(db: Database.Database, body: () => T): T {
+  return db.transaction(body).deferred();
+}
+
+@sugar.bind({
+  concept: "concept:sql-transaction-begin",
+  library: "better-sqlite3",
+  loss: ["immediate-isolation-level"],
+})
+export function transactionImmediate<T>(db: Database.Database, body: () => T): T {
+  return db.transaction(body).immediate();
+}
+
+@sugar.bind({
+  concept: "concept:sql-transaction-begin",
+  library: "better-sqlite3",
+  loss: ["exclusive-isolation-level"],
+})
+export function transactionExclusive<T>(db: Database.Database, body: () => T): T {
+  return db.transaction(body).exclusive();
+}
+
+// ============================================================
+// F. Row reading modes
+// ============================================================
+
+@sugar.bind({
+  concept: "concept:sql-query",
+  library: "better-sqlite3",
+  loss: ["named-column-access"],
+})
+export function rowByIndex(stmt: Database.Statement, params: Params = []): unknown[] {
+  return (stmt.raw(true).get(params) ?? []) as unknown[];
+}
+
+@sugar.bind({
+  concept: "concept:sql-query",
   library: "better-sqlite3",
 })
-export function close(db: Database.Database): void {
-  db.close();
+export function rowAsObject(stmt: Database.Statement, params: Params = []): Record<string, unknown> {
+  return (stmt.raw(false).get(params) ?? {}) as Record<string, unknown>;
 }
+
+// ============================================================
+// G. Mutation result observation
+// ============================================================
+
+@sugar.bind({
+  concept: "concept:insert-and-get-id",
+  library: "better-sqlite3",
+  observed_dimension: "last-insert-rowid",
+})
+export function lastInsertRowid(result: Database.RunResult): number | bigint {
+  return result.lastInsertRowid;
+}
+
+@sugar.bind({
+  concept: "concept:sql-changes-affected",
+  library: "better-sqlite3",
+  observed_dimension: "row-count",
+})
+export function changes(result: Database.RunResult): number {
+  return result.changes;
+}
+
+// ============================================================
+// H. Connection state observation
+// ============================================================
+
+@sugar.bind({
+  concept: "concept:sql-connection-state",
+  library: "better-sqlite3",
+  observed_dimension: "in-transaction",
+})
+export function isInTransaction(db: Database.Database): boolean {
+  return db.inTransaction;
+}
+
+@sugar.bind({
+  concept: "concept:sql-connection-state",
+  library: "better-sqlite3",
+  observed_dimension: "open",
+})
+export function isOpen(db: Database.Database): boolean {
+  return db.open;
+}
+
+@sugar.bind({
+  concept: "concept:sql-connection-state",
+  library: "better-sqlite3",
+  observed_dimension: "readonly",
+})
+export function isReadonly(db: Database.Database): boolean {
+  return db.readonly;
+}
+
+@sugar.bind({
+  concept: "concept:sql-connection-state",
+  library: "better-sqlite3",
+  observed_dimension: "memory",
+})
+export function isMemory(db: Database.Database): boolean {
+  return db.memory;
+}
+
+@sugar.bind({
+  concept: "concept:sql-connection-state",
+  library: "better-sqlite3",
+  observed_dimension: "filename",
+})
+export function dbName(db: Database.Database): string {
+  return db.name;
+}
+
+// ============================================================
+// I. Statement metadata
+// ============================================================
+
+@sugar.bind({
+  concept: "concept:sql-stmt-columns",
+  library: "better-sqlite3",
+})
+export function stmtColumns(stmt: Database.Statement): Database.ColumnDefinition[] {
+  return stmt.columns();
+}
+
+@sugar.bind({
+  concept: "concept:sql-stmt-source",
+  library: "better-sqlite3",
+})
+export function stmtSource(stmt: Database.Statement): string {
+  return stmt.source;
+}
+
+@sugar.bind({
+  concept: "concept:sql-stmt-reader",
+  library: "better-sqlite3",
+  observed_dimension: "reader",
+})
+export function stmtReader(stmt: Database.Statement): boolean {
+  return stmt.reader;
+}
+
+// ============================================================
+// J. Concurrency / timeout
+// ============================================================
+
+@sugar.bind({
+  concept: "concept:sql-busy-timeout",
+  library: "better-sqlite3",
+})
+export function busyTimeout(db: Database.Database, ms: number): Database.Database {
+  return db.pragma(`busy_timeout = ${ms}`) as unknown as Database.Database;
+}
+
+@sugar.bind({
+  concept: "concept:sql-pragma",
+  library: "better-sqlite3",
+  loss: ["pragma-value-type-varies"],
+})
+export function pragmaQuery(db: Database.Database, pragma: string): unknown {
+  return db.pragma(pragma);
+}
+
+// ============================================================
+// L. better-sqlite3-unique extensions
+// ============================================================
+
+@sugar.bind({
+  concept: "concept:sql-result-mode",
+  library: "better-sqlite3",
+  loss: ["mode-is-stateful-on-stmt"],
+})
+export function stmtPluck(stmt: Database.Statement, enabled = true): Database.Statement {
+  return stmt.pluck(enabled);
+}
+
+@sugar.bind({
+  concept: "concept:sql-result-mode",
+  library: "better-sqlite3",
+  loss: ["mode-is-stateful-on-stmt", "expand-namespaces-columns"],
+})
+export function stmtExpand(stmt: Database.Statement, enabled = true): Database.Statement {
+  return stmt.expand(enabled);
+}
+
+@sugar.bind({
+  concept: "concept:sql-result-mode",
+  library: "better-sqlite3",
+  loss: ["mode-is-stateful-on-stmt", "raw-array-output"],
+})
+export function stmtRaw(stmt: Database.Statement, enabled = true): Database.Statement {
+  return stmt.raw(enabled);
+}
+
+@sugar.bind({
+  concept: "concept:sql-integer-mode",
+  library: "better-sqlite3",
+  loss: ["bigint-vs-number-switching"],
+})
+export function stmtSafeIntegers(stmt: Database.Statement, enabled = true): Database.Statement {
+  return stmt.safeIntegers(enabled);
+}
+
+@sugar.bind({
+  concept: "concept:sql-scalar-function",
+  library: "better-sqlite3",
+  loss: ["deterministic-flag", "varargs-flag", "direct-only-flag"],
+})
+export function dbFunction(db: Database.Database, name: string, callback: (...args: unknown[]) => unknown): void {
+  db.function(name, callback as (...args: unknown[]) => unknown);
+}
+
+@sugar.bind({
+  concept: "concept:sql-aggregate-function",
+  library: "better-sqlite3",
+  loss: ["step-result-final-step-shape"],
+})
+export function dbAggregate(db: Database.Database, name: string, options: Database.AggregateOptions): void {
+  db.aggregate(name, options);
+}
+
+@sugar.bind({
+  concept: "concept:sql-integer-mode",
+  library: "better-sqlite3",
+  loss: ["bigint-vs-number-switching"],
+})
+export function dbDefaultSafeIntegers(db: Database.Database, enabled = true): Database.Database {
+  db.defaultSafeIntegers(enabled);
+  return db;
+}
+
+@sugar.bind({
+  concept: "concept:sql-serialize",
+  library: "better-sqlite3",
+  loss: ["attached-schema-name"],
+})
+export function dbSerialize(db: Database.Database): Buffer {
+  return db.serialize();
+}
+
+@sugar.bind({
+  concept: "concept:sql-unsafe-mode",
+  library: "better-sqlite3",
+  loss: ["unsafe-flag-semantics"],
+})
+export function dbUnsafeMode(db: Database.Database, enabled = true): Database.Database {
+  db.unsafeMode(enabled);
+  return db;
+}
+
+@sugar.bind({
+  concept: "concept:sql-virtual-table",
+  library: "better-sqlite3",
+  loss: ["vtab-factory-shape", "eponymous-flag"],
+})
+export function dbTable(db: Database.Database, name: string, factory: Database.VirtualTableOptions): void {
+  db.table(name, factory);
+}
+
+@sugar.bind({
+  concept: "concept:sql-stmt-busy",
+  library: "better-sqlite3",
+  observed_dimension: "busy",
+})
+export function stmtBusy(stmt: Database.Statement): boolean {
+  return stmt.busy;
+}
+
+@sugar.bind({
+  concept: "concept:sql-stmt-readonly",
+  library: "better-sqlite3",
+  observed_dimension: "stmt-readonly",
+})
+export function stmtReadonly(stmt: Database.Statement): boolean {
+  return stmt.readonly;
+}
+
+// ============================================================
+// M. Refusals (10)
+//    Each @sugar.refuse class carrier documents one concept whose
+//    shape cannot be expressed by this library's synchronous API.
+// ============================================================
+
+@sugar.refuse({
+  surface: "typescript-bind",
+  concept: "concept:sql-physical-backup",
+  reason: "db.backup() returns Promise<BackupMetadata>; the concept cluster requires a sync-shaped physical-backup primitive and the async shape cannot be losslessly transported",
+  would_close_with_cluster: "concept:sql-physical-backup",
+})
+class RefusedBackup {}
+
+@sugar.refuse({
+  surface: "typescript-bind",
+  concept: "concept:sql-blob-handle",
+  reason: "better-sqlite3 has no incremental BLOB read/write API; blob_open is a SQLite C-level primitive not exposed by this driver",
+  would_close_with_cluster: "concept:sql-blob-handle",
+})
+class RefusedBlobHandle {}
+
+@sugar.refuse({
+  surface: "typescript-bind",
+  concept: "concept:dynamic-library-load",
+  reason: "db.loadExtension() is an OS-tier binding; extension loading belongs at the OS-binding layer, not the SQL-driver layer",
+  would_close_with_cluster: "concept:dynamic-library-load",
+})
+class RefusedLoadExtension {}
+
+@sugar.refuse({
+  surface: "typescript-bind",
+  concept: "concept:sql-collation-register",
+  reason: "better-sqlite3 exposes no collation registration API; the rusqlite create_collation callback shape has no equivalent surface here",
+  would_close_with_cluster: "concept:sql-collation-register",
+})
+class RefusedCollation {}
+
+@sugar.refuse({
+  surface: "typescript-bind",
+  concept: "concept:sql-busy-handler",
+  reason: "better-sqlite3 does not expose a callback-shaped busy handler; only busy_timeout pragma is available, which is already bound",
+  would_close_with_cluster: "concept:sql-busy-handler",
+})
+class RefusedBusyHandler {}
+
+@sugar.refuse({
+  surface: "typescript-bind",
+  concept: "concept:sql-row-pointer-type",
+  reason: "better-sqlite3 has no pointer-passing row type; SQLite pointer-passing is a C-level primitive not surfaced by this driver",
+  would_close_with_cluster: "concept:sql-row-pointer-type",
+})
+class RefusedRowPointerType {}
+
+@sugar.refuse({
+  surface: "typescript-bind",
+  concept: "concept:sql-transaction-commit",
+  reason: "better-sqlite3 transactions commit implicitly when the transaction callback returns; there is no explicit commit() call available",
+  would_close_with_cluster: "concept:sql-transaction-commit",
+})
+class RefusedExplicitCommit {}
+
+@sugar.refuse({
+  surface: "typescript-bind",
+  concept: "concept:sql-transaction-rollback",
+  reason: "better-sqlite3 transactions rollback implicitly on thrown exception; there is no explicit rollback() call available on the transaction object",
+  would_close_with_cluster: "concept:sql-transaction-rollback",
+})
+class RefusedExplicitRollback {}
+
+@sugar.refuse({
+  surface: "typescript-bind",
+  concept: "concept:sql-prepare-cached",
+  reason: "better-sqlite3 statement objects are lightweight and the driver provides no prepare-cache or discard-cached API; statement reuse is caller-managed",
+  would_close_with_cluster: "concept:sql-prepare-cached",
+})
+class RefusedPrepareCached {}
+
+@sugar.refuse({
+  surface: "typescript-bind",
+  concept: "concept:sql-changes-total",
+  reason: "better-sqlite3 exposes no total_changes counter; only per-statement changes is available through RunResult.changes",
+  would_close_with_cluster: "concept:sql-changes-total",
+})
+class RefusedChangesTotal {}
