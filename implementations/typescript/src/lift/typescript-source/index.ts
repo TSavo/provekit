@@ -140,34 +140,7 @@ export function liftTypeScriptSourcePaths(
   workspaceRoot: string,
   sourcePaths: string[],
 ): TypeScriptSourceLiftResult {
-  const root = resolve(workspaceRoot);
-  const diagnostics: TypeScriptSourceDiagnostic[] = [];
-  const refusals: TypeScriptSourceRefusal[] = [];
-  const files: string[] = [];
-
-  for (const sourcePath of sourcePaths) {
-    const fullPath = resolve(root, sourcePath);
-    if (!isInsideRoot(root, fullPath)) {
-      diagnostics.push({ severity: "error", message: `path traversal rejected: ${sourcePath}` });
-      refusals.push({
-        kind: "path-traversal",
-        function: null,
-        line: null,
-        reason: `path '${sourcePath}' escapes workspace root '${root}'`,
-      });
-      continue;
-    }
-    if (!existsSync(fullPath)) {
-      diagnostics.push({ severity: "warning", message: `path not found: ${fullPath}` });
-      continue;
-    }
-    const st = statSync(fullPath);
-    if (st.isDirectory()) {
-      files.push(...enumerateSourceFiles(fullPath));
-    } else if (st.isFile() && isSourceFile(fullPath)) {
-      files.push(fullPath);
-    }
-  }
+  const { root, files, diagnostics, refusals } = collectWorkspaceSourceFiles(workspaceRoot, sourcePaths);
 
   if (files.length === 0) {
     return { declarations: [], diagnostics, opacityReport: [], refusals };
@@ -189,6 +162,34 @@ export function liftTypeScriptSourcePaths(
     refusals.push(...lifted.refusals);
   }
   return { declarations, diagnostics, opacityReport: [], refusals };
+}
+
+export function liftTypeScriptLibraryBindingsPaths(
+  workspaceRoot: string,
+  sourcePaths: string[],
+): TypeScriptLibraryBindingsLiftResult {
+  const { root, files, diagnostics, refusals } = collectWorkspaceSourceFiles(workspaceRoot, sourcePaths);
+
+  if (files.length === 0) {
+    return { declarations: [], diagnostics, opacityReport: [], refusals, libraryBindings: [] };
+  }
+
+  const program = ts.createProgram(files, compilerOptions());
+  const checker = program.getTypeChecker();
+  const libraryBindings: TypeScriptLibrarySugarBindingEntry[] = [];
+  for (const file of files.sort()) {
+    const sourceFile = program.getSourceFile(file);
+    if (!sourceFile) {
+      diagnostics.push({ severity: "error", message: `program did not load ${file}` });
+      continue;
+    }
+    const modulePath = normalizePath(relative(root, file));
+    const lifted = liftLibraryBindingsSourceFile(sourceFile, checker, modulePath);
+    libraryBindings.push(...lifted.libraryBindings);
+    diagnostics.push(...lifted.diagnostics);
+    refusals.push(...lifted.refusals);
+  }
+  return { declarations: [], diagnostics, opacityReport: [], refusals, libraryBindings };
 }
 
 export function functionContractCid(contract: FunctionContractMemento): string {
@@ -1123,6 +1124,47 @@ function readFileIfExists(path: string): string | undefined {
   } catch {
     return undefined;
   }
+}
+
+function collectWorkspaceSourceFiles(
+  workspaceRoot: string,
+  sourcePaths: string[],
+): {
+  root: string;
+  files: string[];
+  diagnostics: TypeScriptSourceDiagnostic[];
+  refusals: TypeScriptSourceRefusal[];
+} {
+  const root = resolve(workspaceRoot);
+  const diagnostics: TypeScriptSourceDiagnostic[] = [];
+  const refusals: TypeScriptSourceRefusal[] = [];
+  const files: string[] = [];
+
+  for (const sourcePath of sourcePaths) {
+    const fullPath = resolve(root, sourcePath);
+    if (!isInsideRoot(root, fullPath)) {
+      diagnostics.push({ severity: "error", message: `path traversal rejected: ${sourcePath}` });
+      refusals.push({
+        kind: "path-traversal",
+        function: null,
+        line: null,
+        reason: `path '${sourcePath}' escapes workspace root '${root}'`,
+      });
+      continue;
+    }
+    if (!existsSync(fullPath)) {
+      diagnostics.push({ severity: "warning", message: `path not found: ${fullPath}` });
+      continue;
+    }
+    const st = statSync(fullPath);
+    if (st.isDirectory()) {
+      files.push(...enumerateSourceFiles(fullPath));
+    } else if (st.isFile() && isSourceFile(fullPath)) {
+      files.push(fullPath);
+    }
+  }
+
+  return { root, files, diagnostics, refusals };
 }
 
 function enumerateSourceFiles(root: string): string[] {

@@ -294,11 +294,17 @@ fn registry_authorizes_plugin(
     registry: &RunPluginRegistry,
     plugin: &ManifestPluginRegistration,
 ) -> bool {
-    registry.sealed.memento.header.load_order.iter().any(|entry| {
-        entry.kind == plugin.kind
-            && entry.cid == plugin.memento.cid()
-            && entry.source == plugin.source
-    })
+    registry
+        .sealed
+        .memento
+        .header
+        .load_order
+        .iter()
+        .any(|entry| {
+            entry.kind == plugin.kind
+                && entry.cid == plugin.memento.cid()
+                && entry.source == plugin.source
+        })
 }
 
 fn registry_lift_command(
@@ -1907,7 +1913,10 @@ fn rpc_lower_witness(
     writeln!(stdin, "{init_req}").map_err(|e| format!("write lower initialize: {e}"))?;
     let init_response = read_response(&mut reader, 1);
     if let Err(message) = &init_response {
-        let _ = writeln!(stdin, "{{\"jsonrpc\":\"2.0\",\"id\":3,\"method\":\"shutdown\"}}");
+        let _ = writeln!(
+            stdin,
+            "{{\"jsonrpc\":\"2.0\",\"id\":3,\"method\":\"shutdown\"}}"
+        );
         drop(stdin);
         let _ = child.wait();
         let stderr_text = stderr_handle
@@ -1934,7 +1943,10 @@ fn rpc_lower_witness(
     writeln!(stdin, "{lower_req}").map_err(|e| format!("write lower realize: {e}"))?;
     let response = read_response(&mut reader, 2);
     if let Err(message) = &response {
-        let _ = writeln!(stdin, "{{\"jsonrpc\":\"2.0\",\"id\":3,\"method\":\"shutdown\"}}");
+        let _ = writeln!(
+            stdin,
+            "{{\"jsonrpc\":\"2.0\",\"id\":3,\"method\":\"shutdown\"}}"
+        );
         drop(stdin);
         let _ = child.wait();
         let stderr_text = stderr_handle

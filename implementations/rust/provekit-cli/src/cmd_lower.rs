@@ -9,7 +9,9 @@ use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
 use clap::{Parser, ValueEnum};
-use libprovekit::core::lower_plugin::{realize_function_name_with_sugar, realize_spec_from_named_term};
+use libprovekit::core::lower_plugin::{
+    realize_function_name_with_sugar, realize_spec_from_named_term,
+};
 use libprovekit::core::{
     execute_path, named_term_document_from_bind_payload, HashMapInputCatalog, Input, KitRegistry,
     LowerKit, Path as CorePath, PathAlgebra, Term,

@@ -228,13 +228,21 @@ impl MintKit {
             .and_then(|options| options.get("quiet"))
             .and_then(Value::as_bool)
             .unwrap_or(false);
+        let lift_options = LiftPluginOptions {
+            identify_only: lift_request
+                .get("options")
+                .and_then(|options| options.get("identifyOnly"))
+                .and_then(Value::as_bool)
+                .unwrap_or(false),
+            library_bindings: lift_request
+                .get("options")
+                .and_then(|options| options.get("layer"))
+                .and_then(Value::as_str)
+                .is_some_and(|layer| layer == "library-bindings"),
+        };
 
-        let session = match lift_plugin::dispatch_lift(
-            &project_root,
-            &surface,
-            LiftPluginOptions::default(),
-            quiet,
-        ) {
+        let session = match lift_plugin::dispatch_lift(&project_root, &surface, lift_options, quiet)
+        {
             Ok(session) => session,
             Err(LiftPluginError::MissingBinary { binary }) => {
                 if !quiet {
@@ -341,8 +349,9 @@ fn dispatch(
     surface: &str,
     out_dir: &Path,
     quiet: bool,
+    library_bindings: bool,
 ) -> Result<MintSession, String> {
-    let mint_input = mint_input(project_root, surface, out_dir, quiet);
+    let mint_input = mint_input(project_root, surface, out_dir, quiet, library_bindings);
     MintKit::new(mint_input.inputs)
         .transform_session(&mint_input.input)
         .map_err(|error| error.to_string())
@@ -374,11 +383,20 @@ fn path_under(project_root: &Path, path: &Path) -> PathBuf {
     }
 }
 
-fn mint_input(project_root: &Path, surface: &str, out_dir: &Path, quiet: bool) -> MintPathInput {
+fn mint_input(
+    project_root: &Path,
+    surface: &str,
+    out_dir: &Path,
+    quiet: bool,
+    library_bindings: bool,
+) -> MintPathInput {
     let lift_input = Input::Spec(lift_plugin::build_lift_params(
         project_root,
         surface,
-        LiftPluginOptions::default(),
+        LiftPluginOptions {
+            identify_only: false,
+            library_bindings,
+        },
     ));
     let lift_input_cid = address(&lift_input);
     let mint_input = Input::Spec(json!({
@@ -989,8 +1007,7 @@ fn project_body_templates_for_sugar_bindings(ir: &[Value]) -> Result<(), String>
     // Locate the repo root by walking up from CWD to find the
     // `menagerie/` directory; the body-templates file lives under
     // `menagerie/<lang>-language-signature/specs/body-templates/`.
-    let cwd = std::env::current_dir()
-        .map_err(|e| format!("cwd: {e}"))?;
+    let cwd = std::env::current_dir().map_err(|e| format!("cwd: {e}"))?;
     let repo_root = locate_menagerie_root(&cwd)?;
 
     for ((lang, libtag), decls) in grouped {
@@ -1021,9 +1038,9 @@ fn project_body_templates_for_sugar_bindings(ir: &[Value]) -> Result<(), String>
             let loss = decl
                 .get("loss_record_contribution")
                 .cloned()
-                .unwrap_or_else(|| {
-                    serde_json::json!({"form": "literal", "value": {"entries": []}})
-                });
+                .unwrap_or_else(
+                    || serde_json::json!({"form": "literal", "value": {"entries": []}}),
+                );
             let arity = param_names.len();
             let mut entry = serde_json::json!({
                 "concept_name": concept_name,
@@ -1056,11 +1073,13 @@ fn project_body_templates_for_sugar_bindings(ir: &[Value]) -> Result<(), String>
             .join("body-templates")
             .join(format!("{lang}-canonical-bodies-{libtag}.json"));
         if let Some(parent) = out_path.parent() {
-            std::fs::create_dir_all(parent).map_err(|e| format!("create {}: {e}", parent.display()))?;
+            std::fs::create_dir_all(parent)
+                .map_err(|e| format!("create {}: {e}", parent.display()))?;
         }
         let body =
             serde_json::to_string_pretty(&doc).map_err(|e| format!("serialize: {e}"))? + "\n";
-        std::fs::write(&out_path, body).map_err(|e| format!("write {}: {e}", out_path.display()))?;
+        std::fs::write(&out_path, body)
+            .map_err(|e| format!("write {}: {e}", out_path.display()))?;
     }
     Ok(())
 }
@@ -1072,9 +1091,7 @@ fn locate_menagerie_root(start: &Path) -> Result<PathBuf, String> {
             return Ok(current);
         }
         if !current.pop() {
-            return Err(
-                "could not locate workspace root containing `menagerie/`".to_string(),
-            );
+            return Err("could not locate workspace root containing `menagerie/`".to_string());
         }
     }
 }
@@ -1092,9 +1109,7 @@ fn substitute_shim_params_with_placeholders(body: &str, param_names: &[String]) 
         let is_ident_start = c.is_ascii_alphabetic() || c == b'_';
         if is_ident_start {
             let mut j = i + 1;
-            while j < bytes.len()
-                && (bytes[j].is_ascii_alphanumeric() || bytes[j] == b'_')
-            {
+            while j < bytes.len() && (bytes[j].is_ascii_alphanumeric() || bytes[j] == b'_') {
                 j += 1;
             }
             let ident = std::str::from_utf8(&bytes[i..j]).unwrap_or("");
@@ -1124,9 +1139,7 @@ fn mint_refusal_memento(decl: &Value) -> Result<(String, Vec<u8>), String> {
         return Err("`refusal-memento` missing non-empty `reason`".to_string());
     }
     if would_close_with_cluster.trim().is_empty() {
-        return Err(
-            "`refusal-memento` missing non-empty `would_close_with_cluster`".to_string(),
-        );
+        return Err("`refusal-memento` missing non-empty `would_close_with_cluster`".to_string());
     }
 
     let envelope = json!({
@@ -1373,6 +1386,9 @@ pub struct MintArgs {
     /// Override the authoring surface (otherwise read from config or derived from --kit).
     #[arg(long)]
     pub surface: Option<String>,
+    /// Ask the configured lifter for proof-producing host-language library-sugar bindings.
+    #[arg(long)]
+    pub library_bindings: bool,
     /// Output directory for the produced `.proof` file. Defaults to current dir.
     #[arg(long)]
     pub out: Option<PathBuf>,
@@ -1475,7 +1491,13 @@ pub fn run(args: MintArgs) -> u8 {
         };
 
         let out_dir = args.out.clone().unwrap_or_else(|| project_root.clone());
-        dispatch(&project_root, &surface, &out_dir, args.flags.quiet)
+        dispatch(
+            &project_root,
+            &surface,
+            &out_dir,
+            args.flags.quiet,
+            args.library_bindings,
+        )
     };
 
     match session {
@@ -1783,6 +1805,7 @@ mod tests {
             "rust-self-contracts",
             std::path::Path::new("out"),
             true,
+            false,
         );
         let Input::Path(path) = input.input else {
             panic!("mint command input must be a composed path");
@@ -1796,6 +1819,33 @@ mod tests {
         assert_eq!(mint.inputs.len(), 1);
         assert_eq!(mint.depends_on, vec!["lift".to_string()]);
         assert!(path.cid().as_str().starts_with("blake3-512:"));
+    }
+
+    #[test]
+    fn mint_input_can_request_library_binding_layer() {
+        let input = mint_input(
+            std::path::Path::new("."),
+            "typescript-bind",
+            std::path::Path::new("out"),
+            true,
+            true,
+        );
+        let Input::Path(path) = input.input else {
+            panic!("mint command input must be a composed path");
+        };
+        let lift = path.step("lift").expect("lift algebra step");
+        let lift_spec = input
+            .inputs
+            .get_input(&lift.inputs[0])
+            .expect("lift input spec materialized");
+        let Input::Spec(lift_spec) = lift_spec else {
+            panic!("lift input must be an Input::Spec");
+        };
+
+        assert_eq!(
+            lift_spec["options"]["layer"].as_str(),
+            Some("library-bindings")
+        );
     }
 
     #[test]
