@@ -27,6 +27,7 @@ members = [
     "provekit-realize-rust-core",
     "provekit-macros",
     "provekit-macros-rt",
+    "provekit-sugar",
     "provekit-lift",
     "provekit-lift-proptest",
     "provekit-lift-contracts",
