@@ -16,6 +16,15 @@
  * Run via `make test` in this directory or `make test-c` from repo root.
  */
 
+/* strdup is POSIX (since 2008) but not C11. Without this macro and the
+ * Makefile's -std=c11, <string.h> does not declare strdup; the resulting
+ * implicit-declaration warning means the int return is truncated when
+ * cast to a pointer on 64-bit hosts, the cross-kit byte-equivalence
+ * tests pass corrupt key/bytes pointers to proof_envelope_build, and
+ * the proof-envelope section segfaults. Must precede any include.
+ */
+#define _POSIX_C_SOURCE 200809L
+
 #include "provekit/self_contracts.h"
 
 #include <stdint.h>
