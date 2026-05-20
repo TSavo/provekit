@@ -15,6 +15,7 @@
 package com.provekit.lift.java_source;
 
 import com.provekit.ir.Jcs;
+import com.sun.source.tree.AnnotationTree;
 import com.sun.source.tree.AssignmentTree;
 import com.sun.source.tree.BinaryTree;
 import com.sun.source.tree.BlockTree;
@@ -22,6 +23,7 @@ import com.sun.source.tree.CompilationUnitTree;
 import com.sun.source.tree.CompoundAssignmentTree;
 import com.sun.source.tree.DoWhileLoopTree;
 import com.sun.source.tree.EnhancedForLoopTree;
+import com.sun.source.tree.ExpressionTree;
 import com.sun.source.tree.ExpressionStatementTree;
 import com.sun.source.tree.ForLoopTree;
 import com.sun.source.tree.IfTree;
@@ -254,6 +256,76 @@ public final class JavaBindLifter {
                 "witnesses", Jcs.array(surfaceWitnesses)
             );
             entries.add(entry);
+
+            Optional<String[]> sugarAnnotation = extractSugarAnnotation(method, trees, path);
+            if (sugarAnnotation.isPresent()) {
+                String[] binding = sugarAnnotation.get();
+                String conceptName = binding[0];
+                String targetLibraryTag = binding[1];
+                Jcs.Obj signatureShape = Jcs.object(
+                    "param_names", Jcs.array(paramNames),
+                    "param_types", Jcs.array(paramTypes),
+                    "return_type", Jcs.string(returnType)
+                );
+                String signatureShapeCid = Jcs.cid(signatureShape);
+
+                long methodStartOffset = trees.getSourcePositions().getStartPosition(
+                    path.getCompilationUnit(), method);
+                long methodEndOffset = trees.getSourcePositions().getEndPosition(
+                    path.getCompilationUnit(), method);
+                int methodStartLine = methodStartOffset >= 0 && methodStartOffset <= Integer.MAX_VALUE
+                    ? lineOf(source, (int) methodStartOffset)
+                    : fnLine;
+                int methodEndLine = methodEndOffset >= 0 && methodEndOffset <= Integer.MAX_VALUE
+                    ? lineOf(source, (int) methodEndOffset)
+                    : fnLine;
+                int methodStartCol = methodStartOffset >= 0 && methodStartOffset <= Integer.MAX_VALUE
+                    ? columnOf(source, (int) methodStartOffset)
+                    : 0;
+                int methodEndCol = methodEndOffset >= 0 && methodEndOffset <= Integer.MAX_VALUE
+                    ? columnOf(source, (int) methodEndOffset)
+                    : 0;
+
+                String[] srcLines = source.split("\n", -1);
+                int startIdx = Math.max(0, methodStartLine - 1);
+                int endIdx = Math.min(srcLines.length, methodEndLine);
+                StringBuilder spanText = new StringBuilder();
+                for (int i = startIdx; i < endIdx; i++) {
+                    spanText.append(srcLines[i]).append("\n");
+                }
+                String sourceCid = Jcs.blake3_512(spanText.toString().getBytes(StandardCharsets.UTF_8));
+
+                Jcs.Obj bodySource = Jcs.object(
+                    "file", Jcs.string(rel),
+                    "source_cid", Jcs.string(sourceCid),
+                    "span", Jcs.object(
+                        "end_col", Jcs.integer(methodEndCol),
+                        "end_line", Jcs.integer(methodEndLine),
+                        "start_col", Jcs.integer(methodStartCol),
+                        "start_line", Jcs.integer(methodStartLine)
+                    )
+                );
+
+                Jcs.Obj sugarEntry = Jcs.object(
+                    "body_source", bodySource,
+                    "concept_name", Jcs.string(conceptName),
+                    "kind", Jcs.string("library-sugar-binding-entry"),
+                    "loss_record_contribution", Jcs.object(
+                        "form", Jcs.string("literal"),
+                        "value", Jcs.object("entries", Jcs.array())
+                    ),
+                    "param_names", Jcs.array(paramNames),
+                    "param_types", Jcs.array(paramTypes),
+                    "return_type", Jcs.string(returnType),
+                    "signature_shape_cid", Jcs.string(signatureShapeCid),
+                    "source_function_name", Jcs.string(fnName),
+                    "target_language", Jcs.string("java"),
+                    "target_library_tag", Jcs.string(targetLibraryTag),
+                    "term_shape", termShape,
+                    "term_shape_cid", Jcs.string(termShapeCid)
+                );
+                entries.add(sugarEntry);
+            }
             return super.visitMethod(method, unused);
         }
     }
@@ -446,6 +518,32 @@ public final class JavaBindLifter {
             break;
         }
         return null;
+    }
+
+    private static Optional<String[]> extractSugarAnnotation(MethodTree method, Trees trees, TreePath path) {
+        for (AnnotationTree ann : method.getModifiers().getAnnotations()) {
+            String annName = ann.getAnnotationType().toString();
+            if (!annName.equals("ProveKitSugar") && !annName.endsWith(".ProveKitSugar")) {
+                continue;
+            }
+            String concept = null;
+            String library = null;
+            for (ExpressionTree arg : ann.getArguments()) {
+                if (!(arg instanceof AssignmentTree assign)) continue;
+                String key = assign.getVariable().toString();
+                String val = assign.getExpression().toString();
+                if (val.startsWith("\"") && val.endsWith("\"")) {
+                    val = val.substring(1, val.length() - 1);
+                }
+                if ("concept".equals(key)) concept = val;
+                if ("library".equals(key)) library = val;
+            }
+            if (concept != null && !concept.isEmpty() && library != null && !library.isEmpty()) {
+                return Optional.of(new String[] { concept, library });
+            }
+            return Optional.empty();
+        }
+        return Optional.empty();
     }
 
     private static List<Jcs.Json> observationTagWitnesses(String source, int startLine, int endLine) {
@@ -1090,6 +1188,17 @@ public final class JavaBindLifter {
         int end = Math.min(offset, source.length());
         for (int i = 0; i < end; i++) if (source.charAt(i) == '\n') line++;
         return line;
+    }
+
+    private static int columnOf(String source, int offset) {
+        if (offset <= 0) return 0;
+        int col = 0;
+        int cursor = Math.min(offset, source.length()) - 1;
+        for (int i = cursor; i >= 0; i--) {
+            if (source.charAt(i) == '\n') break;
+            col++;
+        }
+        return col;
     }
 
     private static String typeName(TypeMirror t) {

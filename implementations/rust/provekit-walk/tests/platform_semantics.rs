@@ -11,7 +11,7 @@ fn rust_walk_exports_lift_side_platform_semantics_declaration() {
         .flat_map(|tag| tag.dimensions.keys().map(String::as_str))
         .collect::<BTreeSet<_>>();
 
-    assert_eq!(declaration.tags.len(), 21);
+    assert_eq!(declaration.tags.len(), 22);
     assert_eq!(
         dimensions,
         BTreeSet::from([
@@ -20,6 +20,7 @@ fn rust_walk_exports_lift_side_platform_semantics_declaration() {
             "IntegerDivisionRounding",
             "NullSemantics",
             "ShiftMode",
+            "SortAdmission",
         ])
     );
 }

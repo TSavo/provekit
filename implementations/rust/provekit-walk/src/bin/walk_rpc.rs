@@ -36,6 +36,7 @@ use provekit_walk::{
     lift_function_precondition, CalleeContract,
 };
 use serde_json::{json, Value};
+use syn::spanned::Spanned;
 
 const CONCEPT_SHAPES_CATALOG_INDEX_JSON: &str =
     include_str!("../../../../../menagerie/concept-shapes/catalog/index.json");
@@ -418,6 +419,60 @@ fn bind_lift(params: &Value) -> Result<Value, String> {
                 }));
             }
         }
+
+        for sugar_target in collect_sugar_targets(&file, &src) {
+            let SugarTarget {
+                concept,
+                library,
+                item_fn,
+            } = sugar_target;
+            let param_names = fn_param_names(&item_fn);
+            let param_types = sugar_param_types(&item_fn);
+            let return_type = sugar_return_type(&item_fn);
+            let term_shape = term_shape_for_fn(&item_fn);
+            let term_shape_cid = blake3_512_of(encode_jcs(&term_shape).as_bytes());
+            let sig_shape = CValue::object([
+                (
+                    "param_names",
+                    CValue::array(
+                        param_names
+                            .iter()
+                            .map(|name| CValue::string(name.clone()))
+                            .collect(),
+                    ),
+                ),
+                (
+                    "param_types",
+                    CValue::array(
+                        param_types
+                            .iter()
+                            .map(|param_type| CValue::string(param_type.clone()))
+                            .collect(),
+                    ),
+                ),
+                ("return_type", CValue::string(return_type.clone())),
+            ]);
+            let signature_shape_cid = blake3_512_of(encode_jcs(&sig_shape).as_bytes());
+
+            entries.push(json!({
+                "kind": "library-sugar-binding-entry",
+                "target_language": "rust",
+                "target_library_tag": library,
+                "concept_name": concept,
+                "source_function_name": item_fn.sig.ident.to_string(),
+                "param_names": param_names,
+                "param_types": param_types,
+                "return_type": return_type,
+                "term_shape": cvalue_to_json(&term_shape),
+                "term_shape_cid": term_shape_cid,
+                "signature_shape_cid": signature_shape_cid,
+                "loss_record_contribution": {
+                    "form": "literal",
+                    "value": { "entries": [] },
+                },
+                "body_source": sugar_body_source(&rel, &src, &item_fn),
+            }));
+        }
     }
 
     Ok(json!({
@@ -469,6 +524,13 @@ struct BindLiftTarget {
     fn_name: String,
     source_name: String,
     concept_annotation: Option<String>,
+    item_fn: syn::ItemFn,
+}
+
+#[derive(Debug, Clone)]
+struct SugarTarget {
+    concept: String,
+    library: String,
     item_fn: syn::ItemFn,
 }
 
@@ -527,6 +589,87 @@ fn collect_bind_lift_targets_in_items(
             _ => {}
         }
     }
+}
+
+fn collect_sugar_targets(file: &syn::File, _src: &str) -> Vec<SugarTarget> {
+    let mut targets = Vec::new();
+    collect_sugar_targets_in_items(&file.items, &mut targets);
+    targets
+}
+
+fn collect_sugar_targets_in_items(items: &[syn::Item], targets: &mut Vec<SugarTarget>) {
+    for item in items {
+        match item {
+            syn::Item::Fn(item_fn) => {
+                if let Some((concept, library)) = extract_sugar_attr(item_fn) {
+                    targets.push(SugarTarget {
+                        concept,
+                        library,
+                        item_fn: item_fn.clone(),
+                    });
+                }
+            }
+            syn::Item::Mod(module) => {
+                if let Some((_, nested_items)) = &module.content {
+                    collect_sugar_targets_in_items(nested_items, targets);
+                }
+            }
+            _ => {}
+        }
+    }
+}
+
+fn extract_sugar_attr(item_fn: &syn::ItemFn) -> Option<(String, String)> {
+    for attr in &item_fn.attrs {
+        let path = attr.path();
+        let segments: Vec<_> = path.segments.iter().collect();
+        if segments.len() == 2 && segments[0].ident == "provekit" && segments[1].ident == "sugar" {
+            if let Ok(meta_list) = attr.meta.require_list() {
+                let mut concept: Option<String> = None;
+                let mut library: Option<String> = None;
+                let tokens: Vec<_> = meta_list.tokens.clone().into_iter().collect();
+                let mut i = 0;
+                while i + 2 < tokens.len() {
+                    if let (
+                        proc_macro2::TokenTree::Ident(key),
+                        proc_macro2::TokenTree::Punct(eq),
+                        proc_macro2::TokenTree::Literal(val),
+                    ) = (&tokens[i], &tokens[i + 1], &tokens[i + 2])
+                    {
+                        if eq.as_char() == '=' {
+                            let val_str = val.to_string();
+                            if val_str.starts_with('"') && val_str.ends_with('"') {
+                                let inner = val_str[1..val_str.len() - 1].to_string();
+                                let key_name = key.to_string();
+                                if key_name == "concept" {
+                                    concept = Some(inner.clone());
+                                }
+                                if key_name == "library" {
+                                    library = Some(inner);
+                                }
+                            }
+                        }
+                        i += 3;
+                        if i < tokens.len() {
+                            if let proc_macro2::TokenTree::Punct(punct) = &tokens[i] {
+                                if punct.as_char() == ',' {
+                                    i += 1;
+                                }
+                            }
+                        }
+                    } else {
+                        i += 1;
+                    }
+                }
+                if let (Some(concept), Some(library)) = (concept, library) {
+                    if !concept.is_empty() && !library.is_empty() {
+                        return Some((concept, library));
+                    }
+                }
+            }
+        }
+    }
+    None
 }
 
 fn concept_annotation_for_fn(source: &str, item_fn: &syn::ItemFn) -> Option<String> {
@@ -1240,6 +1383,51 @@ fn fn_param_names(item_fn: &syn::ItemFn) -> Vec<String> {
         }
     }
     names
+}
+
+fn sugar_param_types(item_fn: &syn::ItemFn) -> Vec<String> {
+    item_fn
+        .sig
+        .inputs
+        .iter()
+        .filter_map(|arg| match arg {
+            syn::FnArg::Typed(pat_type) => Some(sugar_type_surface(&pat_type.ty)),
+            _ => None,
+        })
+        .collect()
+}
+
+fn sugar_return_type(item_fn: &syn::ItemFn) -> String {
+    match &item_fn.sig.output {
+        syn::ReturnType::Default => "()".to_string(),
+        syn::ReturnType::Type(_, ty) => sugar_type_surface(ty),
+    }
+}
+
+fn sugar_type_surface(ty: &syn::Type) -> String {
+    use quote::ToTokens;
+    ty.to_token_stream().to_string().replace(' ', "")
+}
+
+fn sugar_body_source(rel: &str, src: &str, item_fn: &syn::ItemFn) -> Value {
+    let start = item_fn.sig.fn_token.span.start();
+    let end = item_fn.block.span().end();
+    let lines: Vec<&str> = src.lines().collect();
+    let span_text = if start.line > 0 && end.line >= start.line && end.line <= lines.len() {
+        lines[start.line - 1..end.line].join("\n") + "\n"
+    } else {
+        String::new()
+    };
+    json!({
+        "file": rel,
+        "span": {
+            "start_line": start.line,
+            "start_col": start.column,
+            "end_line": end.line,
+            "end_col": end.column,
+        },
+        "source_cid": blake3_512_of(span_text.as_bytes()),
+    })
 }
 
 fn normalize_ws(s: &str) -> String {
@@ -2156,8 +2344,8 @@ pub fn add(left: i64, right: i64) -> i64 {
     fn bind_lift_marries_docstring_evidence_as_witnesses() {
         assert_eq!(
             initialize_result()["capabilities"]["ir_version"],
-            "bind-ir/1.0.0",
-            "the Rust kit must not advertise a schema bump ahead of sibling kits"
+            "bind-ir/2.0.0",
+            "the Rust kit must advertise the current bind IR schema"
         );
 
         let root = temp_workspace("bind_lift_witnesses");
@@ -2219,6 +2407,199 @@ pub fn wrap_positive(amount: usize) -> Option<usize> {
                     .unwrap_or(false)
             }),
             "bind witness wire entries must keep role top-level only: {witnesses:#?}"
+        );
+
+        let _ = fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn sugar_attr_annotated_fn_emits_library_sugar_binding_entry() {
+        let root = temp_workspace("sugar_positive");
+        let src_dir = root.join("src");
+        fs::create_dir_all(&src_dir).expect("create src dir");
+        let src = r#"
+#[provekit::sugar(concept = "concept:http-request", library = "reqwest")]
+async fn fetch_status(url: String) -> i64 {
+    0
+}
+"#;
+        fs::write(src_dir.join("lib.rs"), src).expect("write source");
+        let out = bind_lift(&json!({
+            "workspace_root": root.to_string_lossy(),
+            "source_paths": ["."],
+        }))
+        .expect("bind lift should succeed");
+        let ir = out["ir"].as_array().expect("ir array");
+        let sugar: Vec<_> = ir
+            .iter()
+            .filter(|e| e["kind"] == "library-sugar-binding-entry")
+            .collect();
+        assert_eq!(
+            sugar.len(),
+            1,
+            "expected exactly one sugar entry, got: {sugar:?}"
+        );
+        let e = &sugar[0];
+        assert_eq!(e["kind"], "library-sugar-binding-entry");
+        assert_eq!(e["target_language"], "rust");
+        assert_eq!(e["target_library_tag"], "reqwest");
+        assert_eq!(e["concept_name"], "concept:http-request");
+        assert_eq!(e["source_function_name"], "fetch_status");
+        assert!(
+            e["signature_shape_cid"]
+                .as_str()
+                .expect("signature cid")
+                .starts_with("blake3-512:"),
+            "bad sig cid"
+        );
+        assert!(
+            e["body_source"]["source_cid"]
+                .as_str()
+                .expect("source cid")
+                .starts_with("blake3-512:"),
+            "bad source cid"
+        );
+        assert_eq!(e["body_source"]["span"]["start_line"], 3);
+        assert_eq!(e["loss_record_contribution"]["form"], "literal");
+        assert_eq!(e["loss_record_contribution"]["value"]["entries"], json!([]));
+        assert!(
+            e.get("signature_shape").is_none(),
+            "must not emit full signature_shape doc"
+        );
+        assert!(
+            e["body_source"].get("locator").is_none(),
+            "must use span not locator"
+        );
+
+        let _ = fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn unannotated_fn_produces_zero_sugar_entries() {
+        let root = temp_workspace("sugar_discrim");
+        let src_dir = root.join("src");
+        fs::create_dir_all(&src_dir).expect("create src dir");
+        let src = r#"
+fn plain_fn(x: i64) -> i64 {
+    x + 1
+}
+"#;
+        fs::write(src_dir.join("lib.rs"), src).expect("write source");
+        let out = bind_lift(&json!({
+            "workspace_root": root.to_string_lossy(),
+            "source_paths": ["."],
+        }))
+        .expect("bind lift should succeed");
+        let ir = out["ir"].as_array().expect("ir array");
+        let sugar: Vec<_> = ir
+            .iter()
+            .filter(|e| e["kind"] == "library-sugar-binding-entry")
+            .collect();
+        assert_eq!(
+            sugar.len(),
+            0,
+            "unannotated fn must produce zero sugar entries"
+        );
+        let bind: Vec<_> = ir
+            .iter()
+            .filter(|e| e["kind"] == "bind-lift-entry")
+            .collect();
+        assert_eq!(
+            bind.len(),
+            1,
+            "regular bind-lift-entry must still be emitted"
+        );
+
+        let _ = fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn two_sugar_annotated_fns_produce_two_entries() {
+        let root = temp_workspace("sugar_multi");
+        let src_dir = root.join("src");
+        fs::create_dir_all(&src_dir).expect("create src dir");
+        let src = r#"
+#[provekit::sugar(concept = "concept:http-request", library = "reqwest")]
+fn fetch_one(url: String) -> i64 {
+    0
+}
+
+#[provekit::sugar(concept = "concept:sql-query", library = "rusqlite")]
+fn query_db(sql: String) -> String {
+    String::new()
+}
+"#;
+        fs::write(src_dir.join("lib.rs"), src).expect("write source");
+        let out = bind_lift(&json!({
+            "workspace_root": root.to_string_lossy(),
+            "source_paths": ["."],
+        }))
+        .expect("bind lift should succeed");
+        let ir = out["ir"].as_array().expect("ir array");
+        let sugar: Vec<_> = ir
+            .iter()
+            .filter(|e| e["kind"] == "library-sugar-binding-entry")
+            .collect();
+        assert_eq!(
+            sugar.len(),
+            2,
+            "two annotated fns must produce two sugar entries"
+        );
+        let concepts: Vec<_> = sugar
+            .iter()
+            .map(|e| e["concept_name"].as_str().expect("concept string"))
+            .collect();
+        assert!(concepts.contains(&"concept:http-request"), "{concepts:?}");
+        assert!(concepts.contains(&"concept:sql-query"), "{concepts:?}");
+
+        let _ = fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn malformed_sugar_attr_missing_concept_or_library_produces_zero_entries() {
+        let root = temp_workspace("sugar_malformed");
+        let src_dir = root.join("src");
+        fs::create_dir_all(&src_dir).expect("create src dir");
+        let src_missing_lib = r#"
+#[provekit::sugar(concept = "concept:http-request")]
+fn missing_lib(url: String) -> i64 { 0 }
+"#;
+        fs::write(src_dir.join("lib.rs"), src_missing_lib).expect("write source");
+        let out = bind_lift(&json!({
+            "workspace_root": root.to_string_lossy(),
+            "source_paths": ["."],
+        }))
+        .expect("bind lift should succeed");
+        let ir = out["ir"].as_array().expect("ir array");
+        let sugar: Vec<_> = ir
+            .iter()
+            .filter(|e| e["kind"] == "library-sugar-binding-entry")
+            .collect();
+        assert_eq!(
+            sugar.len(),
+            0,
+            "missing library must produce zero sugar entries"
+        );
+
+        let src_missing_concept = r#"
+#[provekit::sugar(library = "reqwest")]
+fn missing_concept(url: String) -> i64 { 0 }
+"#;
+        fs::write(src_dir.join("lib.rs"), src_missing_concept).expect("write source");
+        let out = bind_lift(&json!({
+            "workspace_root": root.to_string_lossy(),
+            "source_paths": ["."],
+        }))
+        .expect("bind lift should succeed");
+        let ir = out["ir"].as_array().expect("ir array");
+        let sugar: Vec<_> = ir
+            .iter()
+            .filter(|e| e["kind"] == "library-sugar-binding-entry")
+            .collect();
+        assert_eq!(
+            sugar.len(),
+            0,
+            "missing concept must produce zero sugar entries"
         );
 
         let _ = fs::remove_dir_all(root);
