@@ -712,3 +712,43 @@ fn materialize_rust_reqwest_example_uses_rust_library_shim() {
     );
     assert!(!stdout.contains("provekit-concept:"));
 }
+
+#[test]
+fn materialize_explicit_target_strips_redundant_language_prefix_from_library() {
+    // N1 regression: --target python --library python-requests previously produced
+    // kit_name lower-python-python-requests, which no realize plugin matches.
+    // After the fix, resolve_library_surface strips the "python-" prefix and
+    // produces kit_name lower-python-requests, matching the installed plugin.
+    let workspace = tempfile::tempdir().expect("tempdir");
+    let Some(src_dir) = write_python_requests_project_fixture(workspace.path()) else {
+        eprintln!("skipping N1 prefix-strip test: provekit-realize-python-requests binary is unavailable");
+        return;
+    };
+    write_python_http_request_source(&src_dir);
+
+    let output = Command::new(env!("CARGO_BIN_EXE_provekit"))
+        .env("PROVEKIT_REPO_ROOT", repo_root())
+        .arg("materialize")
+        .arg("--target")
+        .arg("python")
+        .arg("--library")
+        .arg("python-requests")
+        .arg("--source-dir")
+        .arg(&src_dir)
+        .arg("--project")
+        .arg(workspace.path())
+        .output()
+        .expect("spawn provekit materialize with explicit target and prefixed library");
+
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(
+        output.status.success(),
+        "explicit --target python --library python-requests should succeed after prefix strip\nstdout:\n{stdout}\nstderr:\n{stderr}"
+    );
+    assert!(
+        stdout.contains("requests.get(url)"),
+        "result should route through the python-requests shim: {stdout}"
+    );
+    assert!(!stdout.contains("provekit-concept:"));
+}

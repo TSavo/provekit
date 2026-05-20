@@ -145,7 +145,15 @@ fn resolve_library_surface(
         return Err("--library must not be empty".to_string());
     }
     if let Some(target) = target {
-        return Ok((target.to_string(), Some(library.to_string())));
+        let tag = library
+            .strip_prefix(&format!("{target}-"))
+            .unwrap_or(library);
+        if tag.is_empty() {
+            return Err(format!(
+                "library surface `{library}` has empty library tag after stripping `{target}-` prefix"
+            ));
+        }
+        return Ok((target.to_string(), Some(tag.to_string())));
     }
     for language in ["typescript", "python", "rust", "java"] {
         if let Some(tag) = library.strip_prefix(&format!("{language}-")) {
@@ -227,7 +235,20 @@ fn should_scan_entry(path: &Path) -> bool {
     };
     !matches!(
         name,
-        ".git" | "node_modules" | "target" | "dist" | "build" | "__pycache__"
+        ".git"
+            | ".mypy_cache"
+            | ".next"
+            | ".pytest_cache"
+            | ".ruff_cache"
+            | ".turbo"
+            | ".venv"
+            | ".vite"
+            | "__pycache__"
+            | "build"
+            | "dist"
+            | "node_modules"
+            | "target"
+            | "venv"
     )
 }
 
@@ -351,6 +372,14 @@ fn canonical_value_from_json(value: &Json) -> Result<Arc<CanonicalValue>, String
     }
 }
 
+// Permissive-defaults for carrier payloads. The materialize command synthesizes
+// defaults for missing carrier-payload fields (function, params, param_types,
+// return_type) to reduce friction during development. The substrate-honest
+// alternative is refuse-on-missing-fields: require each carrier author to
+// provide a complete payload. The permissive shape is intentional for the
+// build-pipeline ergonomics; the trade-off is that incomplete carriers may
+// produce stub-like realize output. A future strict mode (e.g., a
+// --strict-payloads flag) could refuse incomplete carriers up front.
 fn realize_spec_from_payload(payload: &str) -> Result<Json, String> {
     let mut value: Json = serde_json::from_str(payload)
         .map_err(|error| format!("parse provekit-concept payload JSON: {error}"))?;
@@ -381,19 +410,7 @@ fn realize_spec_from_payload(payload: &str) -> Result<Json, String> {
         if let Some(param_types) = object.remove("paramTypes") {
             object.insert("param_types".to_string(), param_types);
         } else {
-            let arity = object
-                .get("params")
-                .and_then(Json::as_array)
-                .map(Vec::len)
-                .unwrap_or(0);
-            object.insert(
-                "param_types".to_string(),
-                Json::Array(
-                    (0..arity)
-                        .map(|_| Json::String("unknown".to_string()))
-                        .collect(),
-                ),
-            );
+            object.insert("param_types".to_string(), Json::Array(Vec::new()));
         }
     }
     if !object.contains_key("return_type") {
@@ -453,6 +470,14 @@ fn realize_spec_via_path(
     })?;
     let realized =
         LowerKit::<DispatchRealizeTransport>::realized_source_from_claim(chain.terminal_claim())?;
+    // String-formatted CLI error rather than a structured gap-record memento:
+    // materialize is a build-pipeline workflow that does not emit a receipt
+    // memento (unlike cmd_bind_migrate which produces MigrateReceiptEnvelope
+    // with refusal_mementos per `2026-05-18-refuse-leg-short-circuit-ruling`).
+    // The CLI surface is the consumer; a string error suffices. If a future
+    // caller needs structured refusal for build-pipeline consumption, extend
+    // materialize to optionally emit a refusal receipt and route through the
+    // existing RefusalMemento machinery.
     if realized.is_stub {
         return Err(format!(
             "realize plugin for `{target_lang}` library `{}` returned a stub",
