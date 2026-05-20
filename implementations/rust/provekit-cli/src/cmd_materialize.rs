@@ -265,30 +265,231 @@ fn materialize_source_text(
     while idx < lines.len() {
         let line = lines[idx];
         if let Some((indent, payload)) = concept_payload_from_line(line) {
-            if idx + 1 < lines.len() {
-                if let Some(declared_cid) = concept_payload_cid_from_line(lines[idx + 1]) {
-                    verify_payload_cid(payload, declared_cid)?;
-                }
+            // Consume the carrier comment, optional payload-cid line, and
+            // the following stub function declaration. The carrier+stub
+            // pair is replaced by a single materialized function whose
+            // signature comes from the consumer's stub (preserving the
+            // consumer's signed claim, including generic params, lifetimes,
+            // and where-clauses) and whose body comes from the realize
+            // plugin's emission of the shim's signed binding (#1331 +
+            // #1332). The consumer's signature is the trade anchor; the
+            // shim's body is the supply that fills it.
+            let mut consumed = 1usize;
+            if idx + consumed < lines.len()
+                && concept_payload_cid_from_line(lines[idx + consumed]).is_some()
+            {
+                let declared_cid = concept_payload_cid_from_line(lines[idx + consumed]).unwrap();
+                verify_payload_cid(payload, declared_cid)?;
+                consumed += 1;
             }
+            let stub_block = capture_stub_function_block(&lines[idx + consumed..]);
+            consumed += stub_block.line_count;
+
             let spec = realize_spec_from_payload(payload)?;
             let realized = realize_spec_via_path(project_root, target_lang, library_tag, spec)?;
-            let indented = indent_realized_source(&realized, indent);
+            let emitted = if let Some(stub) = stub_block.signature_and_close.as_ref() {
+                splice_realized_body_into_stub_signature(stub, &realized)
+            } else {
+                realized
+            };
+            let indented = indent_realized_source(&emitted, indent);
             out.push_str(&indented);
             if !indented.ends_with('\n') {
                 out.push('\n');
             }
             replacements += 1;
-            if idx + 1 < lines.len() && concept_payload_cid_from_line(lines[idx + 1]).is_some() {
-                idx += 2;
-            } else {
-                idx += 1;
-            }
+            idx += consumed;
             continue;
         }
         out.push_str(line);
         idx += 1;
     }
     Ok((out, replacements))
+}
+
+/// A captured stub function block: how many lines it spans, and (when the
+/// block is well-formed) the signature-and-close pair used by the
+/// substrate-honest signature-preservation path. The consumer's signature
+/// (including generics, lifetimes, where-clauses) is the signed claim;
+/// the body is what materialize fills from the shim's binding (#1332).
+struct CapturedStubBlock {
+    line_count: usize,
+    signature_and_close: Option<StubSignatureAndClose>,
+}
+
+struct StubSignatureAndClose {
+    /// Concatenated text from the `fn ...` line through (and including) the
+    /// opening `{`, exactly as written by the consumer. Used as the
+    /// emitted function's signature.
+    signature_text: String,
+    /// Indentation of the closing `}` line as the consumer wrote it.
+    /// Reused when re-emitting the closing brace so the materialized
+    /// function looks like the consumer's original.
+    close_indent: String,
+}
+
+/// Capture the stub function block that follows a carrier comment, if any.
+/// Returns a `CapturedStubBlock` describing how many lines to skip and (if
+/// the block is well-formed) the consumer's exact signature text plus the
+/// indentation of its closing brace. The caller emits the materialized
+/// function by splicing the realize plugin's body into this signature
+/// (#1332).
+///
+/// If no stub function follows the carrier (or the block is unbalanced),
+/// `line_count` is 0 and `signature_and_close` is `None`; the caller falls
+/// back to emitting the realize plugin's full source as-is.
+fn capture_stub_function_block(lines: &[&str]) -> CapturedStubBlock {
+    let none = CapturedStubBlock {
+        line_count: 0,
+        signature_and_close: None,
+    };
+    let Some(first_line) = lines.first() else {
+        return none;
+    };
+    if !line_starts_function_declaration(first_line) {
+        return none;
+    }
+    let mut depth: i32 = 0;
+    let mut saw_open = false;
+    let mut open_line_idx: Option<usize> = None;
+    for (offset, line) in lines.iter().enumerate() {
+        for ch in line.chars() {
+            match ch {
+                '{' => {
+                    if !saw_open {
+                        open_line_idx = Some(offset);
+                    }
+                    depth += 1;
+                    saw_open = true;
+                }
+                '}' => {
+                    depth -= 1;
+                    if saw_open && depth == 0 {
+                        let line_count = offset + 1;
+                        // Signature is lines[0..=open_line_idx], up to and
+                        // including the opening `{`. Trim the opening
+                        // brace from the signature text and add it back
+                        // separately so we can splice a body between.
+                        let Some(open_offset) = open_line_idx else {
+                            return CapturedStubBlock {
+                                line_count,
+                                signature_and_close: None,
+                            };
+                        };
+                        let signature_text =
+                            lines[..=open_offset].iter().copied().collect::<String>();
+                        let close_indent = leading_indent(lines[offset]).to_string();
+                        return CapturedStubBlock {
+                            line_count,
+                            signature_and_close: Some(StubSignatureAndClose {
+                                signature_text,
+                                close_indent,
+                            }),
+                        };
+                    }
+                }
+                _ => {}
+            }
+        }
+    }
+    none
+}
+
+fn leading_indent(line: &str) -> &str {
+    let trimmed_len = line.trim_start().len();
+    &line[..line.len() - trimmed_len]
+}
+
+/// Splice the realize plugin's body into the consumer's stub signature.
+/// The realize plugin returns a full function declaration; we drop its
+/// signature and keep only the body inside its outermost braces. The
+/// consumer's stub signature wraps that body. Substrate-honest: the
+/// consumer's signed signature is preserved exactly, only the body
+/// changes (#1332).
+fn splice_realized_body_into_stub_signature(
+    stub: &StubSignatureAndClose,
+    realized_source: &str,
+) -> String {
+    let body = extract_function_body(realized_source).unwrap_or_default();
+    let mut out = String::new();
+    out.push_str(&stub.signature_text);
+    if !stub.signature_text.ends_with('\n') {
+        out.push('\n');
+    }
+    for line in body.lines() {
+        out.push_str(line);
+        out.push('\n');
+    }
+    out.push_str(&stub.close_indent);
+    out.push('}');
+    out.push('\n');
+    out
+}
+
+/// Extract the contents between the outermost `{` and matching `}` of a
+/// function source string. The realize plugin's emitted source is a single
+/// `fn ... { ... }` declaration; this returns just the inner body, trimmed
+/// to the lines between the outermost braces. Body content is returned
+/// without surrounding indentation normalization; the caller is responsible
+/// for any wrapping or re-indentation.
+fn extract_function_body(source: &str) -> Option<String> {
+    let bytes = source.as_bytes();
+    let mut start: Option<usize> = None;
+    let mut depth: i32 = 0;
+    let mut end: Option<usize> = None;
+    for (i, &b) in bytes.iter().enumerate() {
+        match b {
+            b'{' => {
+                if start.is_none() {
+                    start = Some(i + 1);
+                }
+                depth += 1;
+            }
+            b'}' => {
+                depth -= 1;
+                if depth == 0 {
+                    end = Some(i);
+                    break;
+                }
+            }
+            _ => {}
+        }
+    }
+    match (start, end) {
+        (Some(s), Some(e)) if e >= s => {
+            let raw = &source[s..e];
+            Some(raw.trim_matches('\n').to_string())
+        }
+        _ => None,
+    }
+}
+
+fn line_starts_function_declaration(line: &str) -> bool {
+    let trimmed = line.trim_start();
+    const KEYWORDS_TO_STRIP: &[&str] = &[
+        "pub ", "async ", "const ", "unsafe ", "extern ", "default ",
+    ];
+    let mut remaining = trimmed;
+    loop {
+        let mut stripped = false;
+        if remaining.starts_with("pub(") {
+            if let Some(rest) = remaining.split_once(')').map(|(_, r)| r.trim_start()) {
+                remaining = rest;
+                stripped = true;
+            }
+        }
+        for kw in KEYWORDS_TO_STRIP {
+            if let Some(rest) = remaining.strip_prefix(kw) {
+                remaining = rest.trim_start();
+                stripped = true;
+                break;
+            }
+        }
+        if !stripped {
+            break;
+        }
+    }
+    remaining.starts_with("fn ") || remaining.starts_with("fn(")
 }
 
 fn concept_payload_from_line(line: &str) -> Option<(&str, &str)> {
