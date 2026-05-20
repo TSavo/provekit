@@ -19,6 +19,7 @@ if str(REALIZER_SRC) not in sys.path:
 
 from provekit_lift_python_source.bind_lifter import lift_source
 from provekit_lift_python_source.bind_rpc import dispatch, initialize_result
+from provekit_lift_py_tests.canonicalizer import blake3_512_of
 from provekit_lift_python_source.canonical import cid_of_json
 from provekit_realize_python_core.realizer import emit_stub
 
@@ -198,6 +199,73 @@ def _assert_absent_keys(value: object, forbidden: set[str]) -> None:
     elif isinstance(value, list):
         for child in value:
             _assert_absent_keys(child, forbidden)
+
+
+def test_library_bindings_layer_lifts_requests_shim_from_real_python_source() -> None:
+    fixture = Path(__file__).parent / "fixtures/library_bindings/requests_fetch_status.py"
+    source = fixture.read_text(encoding="utf-8")
+
+    result = lift_source(source, "src/shims/requests.py", layer="library-bindings")
+
+    assert result.diagnostics == []
+    assert len(result.ir) == 1
+    entry = result.ir[0]
+    assert entry["kind"] == "library-sugar-binding-entry"
+    assert entry["concept_name"] == "concept:http-request"
+    assert entry["target_language"] == "python"
+    assert entry["target_library_tag"] == "requests"
+    assert entry["source_function_name"] == "fetch_status"
+    assert entry["param_names"] == ["url"]
+    assert entry["param_types"] == ["str"]
+    assert entry["return_type"] == "int"
+    assert "emission_template" not in entry
+    assert entry["term_shape_cid"] == cid_of_json(entry["term_shape"])
+    assert entry["signature_shape_cid"] == cid_of_json(
+        {
+            "param_names": ["url"],
+            "param_types": ["str"],
+            "return_type": "int",
+        }
+    )
+    body_source = entry["body_source"]
+    assert body_source["file"] == "src/shims/requests.py"
+    assert body_source["span"] == {
+        "start_line": 5,
+        "start_col": 0,
+        "end_line": 8,
+        "end_col": 31,
+    }
+    expected_span = "".join(source.splitlines(keepends=True)[4:8])
+    assert body_source["source_cid"] == blake3_512_of(expected_span.encode("utf-8"))
+
+
+def test_library_bindings_rpc_passes_requested_layer(tmp_path: Path) -> None:
+    (tmp_path / "shim.py").write_text(
+        "from provekit import sugar\n"
+        "import requests\n"
+        "\n"
+        "@sugar.bind(concept=\"concept:http-request\", library=\"requests\")\n"
+        "def fetch_status(url: str) -> int:\n"
+        "    response = requests.get(url)\n"
+        "    return response.status_code\n",
+        encoding="utf-8",
+    )
+    request = {
+        "jsonrpc": "2.0",
+        "id": 7,
+        "method": "lift",
+        "params": {
+            "workspace_root": str(tmp_path),
+            "source_paths": ["shim.py"],
+            "options": {"layer": "library-bindings"},
+        },
+    }
+
+    response = dispatch(request)
+
+    assert response["id"] == 7
+    assert response["result"]["kind"] == "ir-document"
+    assert response["result"]["ir"][0]["kind"] == "library-sugar-binding-entry"
 
 
 def test_bind_lift_erases_signature_types_from_bind_ir_entries() -> None:

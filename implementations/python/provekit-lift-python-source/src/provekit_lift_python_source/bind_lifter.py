@@ -9,7 +9,7 @@ from functools import lru_cache
 from pathlib import Path
 from typing import Any, Iterable
 
-from provekit_lift_py_tests.canonicalizer import encode_jcs
+from provekit_lift_py_tests.canonicalizer import blake3_512_of, encode_jcs
 from provekit_lift_py_tests.decorators import _parse_expr_string
 from provekit_lift_py_tests.ir import formula_to_value
 
@@ -64,7 +64,7 @@ class _CommentOccurrence:
     surface: str
 
 
-def lift_source(source: str, source_path: str) -> BindLiftResult:
+def lift_source(source: str, source_path: str, layer: str = "all") -> BindLiftResult:
     result = BindLiftResult()
     try:
         tree = ast.parse(source, filename=source_path)
@@ -82,9 +82,17 @@ def lift_source(source: str, source_path: str) -> BindLiftResult:
     collector = _DefinitionCollector()
     collector.visit(tree)
     lines = source.splitlines()
+    source_lines = source.splitlines(keepends=True)
     rel_path = source_path.replace(os.sep, "/")
     for info in collector.definitions:
         try:
+            if layer == "library-bindings":
+                entry = _library_binding_entry_for_function(
+                    info.node, rel_path, lines, source_lines
+                )
+                if entry is not None:
+                    result.ir.append(entry)
+                continue
             result.ir.append(
                 _entry_for_function(info.node, rel_path, lines, result.diagnostics)
             )
@@ -100,7 +108,9 @@ def lift_source(source: str, source_path: str) -> BindLiftResult:
     return result
 
 
-def lift_paths(workspace_root: str, source_paths: Iterable[str]) -> BindLiftResult:
+def lift_paths(
+    workspace_root: str, source_paths: Iterable[str], layer: str = "all"
+) -> BindLiftResult:
     result = BindLiftResult()
     root = Path(workspace_root or ".").resolve()
     paths = list(source_paths) or ["."]
@@ -146,7 +156,7 @@ def lift_paths(workspace_root: str, source_paths: Iterable[str]) -> BindLiftResu
                 )
                 continue
             display_path = os.path.relpath(file_path, root).replace(os.sep, "/")
-            file_result = lift_source(source, display_path)
+            file_result = lift_source(source, display_path, layer=layer)
             result.ir.extend(file_result.ir)
             result.diagnostics.extend(file_result.diagnostics)
     return result
@@ -190,8 +200,83 @@ def _entry_for_function(
     }
 
 
-def _signature_param_names(args: ast.arguments) -> list[str]:
-    names: list[str] = []
+def _library_binding_entry_for_function(
+    node: ast.FunctionDef | ast.AsyncFunctionDef,
+    rel_path: str,
+    lines: list[str],
+    source_lines: list[str],
+) -> Json | None:
+    binding = _sugar_bind_decorator(node)
+    if binding is None:
+        return None
+
+    shape_result = _function_shape_with_bindings(node, lines)
+    term_shape = shape_result.shape
+    param_names = _signature_param_names(node.args)
+    param_types = [
+        _annotation_surface(arg.annotation) for arg in _ordered_signature_args(node.args)
+    ]
+    return_type = _annotation_surface(node.returns)
+    signature_shape = {
+        "param_names": param_names,
+        "param_types": param_types,
+        "return_type": return_type,
+    }
+    body_source = _body_source_locator(node, rel_path, source_lines)
+
+    return {
+        "body_source": body_source,
+        "concept_name": binding["concept_name"],
+        "kind": "library-sugar-binding-entry",
+        "loss_record_contribution": {
+            "form": "literal",
+            "value": {"entries": []},
+        },
+        "param_names": param_names,
+        "param_types": param_types,
+        "return_type": return_type,
+        "signature_shape_cid": cid_of_json(signature_shape),
+        "source_function_name": node.name,
+        "target_language": "python",
+        "target_library_tag": binding["target_library_tag"],
+        "term_shape": term_shape,
+        "term_shape_cid": cid_of_json(term_shape),
+    }
+
+
+def _sugar_bind_decorator(
+    node: ast.FunctionDef | ast.AsyncFunctionDef,
+) -> dict[str, str] | None:
+    for decorator in node.decorator_list:
+        if not isinstance(decorator, ast.Call) or not _is_sugar_bind_func(decorator.func):
+            continue
+        concept = _keyword_str(decorator, "concept")
+        library = _keyword_str(decorator, "library")
+        if concept and library:
+            return {"concept_name": concept, "target_library_tag": library}
+    return None
+
+
+def _is_sugar_bind_func(func: ast.expr) -> bool:
+    if not isinstance(func, ast.Attribute) or func.attr != "bind":
+        return False
+    value = func.value
+    if isinstance(value, ast.Name):
+        return value.id == "sugar"
+    if isinstance(value, ast.Attribute) and value.attr == "sugar":
+        return isinstance(value.value, ast.Name) and value.value.id == "provekit"
+    return False
+
+
+def _keyword_str(call: ast.Call, name: str) -> str | None:
+    for keyword in call.keywords:
+        if keyword.arg == name and isinstance(keyword.value, ast.Constant):
+            if isinstance(keyword.value.value, str) and keyword.value.value:
+                return keyword.value.value
+    return None
+
+
+def _ordered_signature_args(args: ast.arguments) -> list[ast.arg]:
     ordered_args: list[ast.arg] = []
     ordered_args.extend(args.posonlyargs)
     ordered_args.extend(args.args)
@@ -200,7 +285,44 @@ def _signature_param_names(args: ast.arguments) -> list[str]:
     ordered_args.extend(args.kwonlyargs)
     if args.kwarg is not None:
         ordered_args.append(args.kwarg)
-    for arg in ordered_args:
+    return ordered_args
+
+
+def _annotation_surface(annotation: ast.expr | None) -> str | None:
+    if annotation is None:
+        return None
+    return ast.unparse(annotation)
+
+
+def _body_source_locator(
+    node: ast.FunctionDef | ast.AsyncFunctionDef,
+    rel_path: str,
+    source_lines: list[str],
+) -> Json:
+    start_line = node.lineno
+    start_col = node.col_offset
+    if node.decorator_list:
+        first = min(node.decorator_list, key=lambda decorator: decorator.lineno)
+        start_line = first.lineno
+        start_col = 0
+    end_line = node.end_lineno or node.lineno
+    end_col = node.end_col_offset or 0
+    span_text = "".join(source_lines[start_line - 1 : end_line])
+    return {
+        "file": rel_path,
+        "source_cid": blake3_512_of(span_text.encode("utf-8")),
+        "span": {
+            "start_line": start_line,
+            "start_col": start_col,
+            "end_line": end_line,
+            "end_col": end_col,
+        },
+    }
+
+
+def _signature_param_names(args: ast.arguments) -> list[str]:
+    names: list[str] = []
+    for arg in _ordered_signature_args(args):
         names.append(arg.arg)
     return names
 
