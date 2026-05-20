@@ -27,6 +27,7 @@ pub mod platform_semantics_loader;
 pub mod primitives;
 pub mod prove_kit;
 pub mod source_transform;
+pub mod source_transform_kit;
 pub mod stubs;
 pub mod traits;
 pub mod types;
@@ -46,6 +47,9 @@ pub use lower_plugin::{
     RealizedSource,
 };
 pub use path_executor::{execute_path, KitRegistry, PathExecutionChain, PathExecutionError};
+pub use source_transform_kit::{
+    decode_source_transform_payload, SourceTransformAdapter, SOURCE_TRANSFORM_PAYLOAD_SORT,
+};
 pub use platform_semantics::{platform_semantics_for_binding, platform_semantics_for_lower_target};
 pub use primitives::{
     address, compose, dropper, resolve, sign, verify_sig, ComposeError, SigningKey,
