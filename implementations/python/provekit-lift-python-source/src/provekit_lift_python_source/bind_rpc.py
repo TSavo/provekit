@@ -63,7 +63,10 @@ def _lift(msg_id: Any, params: dict[str, Any]) -> dict[str, Any]:
     if not paths:
         paths = ["."]
 
-    result = lift_paths(str(params.get("workspace_root", ".")), paths)
+    options_value = params.get("options")
+    options = options_value if isinstance(options_value, dict) else {}
+    layer = str(options.get("layer") or "all")
+    result = lift_paths(str(params.get("workspace_root", ".")), paths, layer=layer)
     return {
         "jsonrpc": "2.0",
         "id": msg_id,
