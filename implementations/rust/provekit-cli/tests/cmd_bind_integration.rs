@@ -267,7 +267,7 @@ fn bind_cli_cites_v1_1_exam_question_for_wp_rule_refusal() {
     let root = repo_root();
     let manifest = root
         .join("menagerie/concept-shapes/exams")
-        .join("v1.1.blake3-512:32af210992406289b0863d6f24ab3f05e6707034fd473fe7a8e323edda0376ce018f9ba8a31d00c4e3c4134140b1f3e06cfad6a0afde762778032035066475cc.json");
+        .join("v1.1.blake3-512:b38426ba10ee3a6c28e9e32cae9aa65cfb5b750950464d1e67e9d669956bd40288d25c247d0ec2d638fd63e2d235d944f419055c0374c78488b4be98da040451.json");
     let mut child = Command::new(provekit_bin())
         .arg("bind")
         .arg("--project")
@@ -297,7 +297,7 @@ fn bind_cli_cites_v1_1_exam_question_for_wp_rule_refusal() {
     assert_eq!(gap["target_concept_op"], "concept:add");
     assert_eq!(
         gap["exam_manifest_cid"],
-        "blake3-512:32af210992406289b0863d6f24ab3f05e6707034fd473fe7a8e323edda0376ce018f9ba8a31d00c4e3c4134140b1f3e06cfad6a0afde762778032035066475cc"
+        "blake3-512:b38426ba10ee3a6c28e9e32cae9aa65cfb5b750950464d1e67e9d669956bd40288d25c247d0ec2d638fd63e2d235d944f419055c0374c78488b4be98da040451"
     );
     assert!(gap["exam_question_cid"]
         .as_str()

@@ -1372,7 +1372,7 @@ const EXAM_MANIFEST_KIND: &str = "exam-manifest";
 const EXAM_MANIFEST_SCHEMA_VERSION: &str = "provekit-exam-manifest/v1.1";
 const EXAM_MANIFEST_SCHEMA_VERSION_V1: &str = "provekit-exam-manifest/v1";
 const PEP_1_7_0: &str = "pep/1.7.0";
-pub const DEFAULT_EXAM_MANIFEST_CID: &str = "blake3-512:32af210992406289b0863d6f24ab3f05e6707034fd473fe7a8e323edda0376ce018f9ba8a31d00c4e3c4134140b1f3e06cfad6a0afde762778032035066475cc";
+pub const DEFAULT_EXAM_MANIFEST_CID: &str = "blake3-512:b38426ba10ee3a6c28e9e32cae9aa65cfb5b750950464d1e67e9d669956bd40288d25c247d0ec2d638fd63e2d235d944f419055c0374c78488b4be98da040451";
 #[allow(dead_code)]
 pub const EXAM_MANIFEST_MISMATCH_REASON: &str = "exam-manifest-mismatch";
 

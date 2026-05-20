@@ -215,6 +215,13 @@ build-java: build-java-self-contracts
 	# built first; `mvn install` (not package) puts artifacts in ~/.m2 so
 	# the downstream resolves.
 	mvn install -q -f implementations/java/pom.xml -pl provekit-lift-java-core -am
+	# provekit-realize-java-core ships the shaded `provekit-realize-java.jar`
+	# that libprovekit's platform_semantics_loader spawns over JSON-RPC for
+	# every `target=java` carrier registration. Without packaging it here,
+	# rust integration tests that touch the java carrier (e.g.
+	# `lower_java_carrier_registration_points_at_required_fixture_set`) fail
+	# with `Unable to access jarfile provekit-realize-java.jar`.
+	mvn package -q -f implementations/java/pom.xml -pl provekit-realize-java-core -am -DskipTests
 	mkdir -p ~/.local/bin
 	cp implementations/java/provekit-lift-java-core/target/appassembler/bin/provekit-lsp-java ~/.local/bin/provekit-lsp-java
 	chmod +x ~/.local/bin/provekit-lsp-java
@@ -605,7 +612,14 @@ bootstrap-self-contracts:
 # --- Per-language test suites ------------------------------------------------
 
 .PHONY: test-rust
-test-rust:
+# The rust integration tests register per-language carriers via
+# `register_with_platform_semantics`, which spawns the target kit binary
+# over JSON-RPC (PEP 1.7.0) to fetch the PlatformSemanticsDeclaration. The
+# java carrier in particular requires the shaded jar from
+# provekit-realize-java-core; without `build-java` first, that jar is
+# absent and `lower_java_carrier_registration_points_at_required_fixture_set`
+# panics with `Unable to access jarfile provekit-realize-java.jar`.
+test-rust: build-java
 	cargo test --release --manifest-path implementations/rust/Cargo.toml
 	cargo test --release --manifest-path tools/recompute-spec-cids/Cargo.toml
 	cargo test --release --manifest-path tools/foundation-keygen/Cargo.toml
