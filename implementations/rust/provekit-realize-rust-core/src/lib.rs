@@ -8,6 +8,7 @@ use provekit_canonicalizer::{blake3_512_of, encode_jcs, Value as CValue};
 use provekit_ir_types::realization_tags::tag_sugar_carrier;
 use serde_json::{json, Value};
 
+pub mod literal_encoding;
 pub mod platform_semantics;
 
 const BODY_TEMPLATE_REL: &str =
@@ -1168,6 +1169,14 @@ pub fn dispatch(request: &Value) -> Value {
                     "dimension_values": dimension_values,
                     "op_aliases": rust_concept_op_aliases()
                 }
+            })
+        }
+        "provekit.plugin.literal_encoding_answers" => {
+            let answers = crate::literal_encoding::answers();
+            serde_json::json!({
+                "jsonrpc": "2.0",
+                "id": id,
+                "result": { "answers": answers }
             })
         }
         "shutdown" | "provekit.plugin.shutdown" => serde_json::json!({
