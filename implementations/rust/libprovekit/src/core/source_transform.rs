@@ -444,9 +444,8 @@ fn json_string_array_field(value: Option<&Json>) -> Result<Vec<String>, String> 
 
 /// A kit that, given a concept-citation carrier, produces a site outcome
 /// (`Materialize`, `LoudlyLossy`, or `Refuse`). Both `provekit materialize`
-/// and `provekit bind migrate` will implement this in Phase C and Phase D
-/// respectively; the site-iteration, splice, and write-back machinery is
-/// shared by both via `transform_source_text`.
+/// and `provekit bind migrate` implement this; the site-iteration, splice,
+/// and write-back machinery is shared by both via `transform_source_text`.
 pub trait SiteTransformKit: Send + Sync {
     /// The target source language this kit emits (e.g., `"rust"`,
     /// `"python"`). Used by callers that key per-language defaults off the
@@ -457,6 +456,26 @@ pub trait SiteTransformKit: Send + Sync {
     /// produce a site outcome. The kit is responsible for any RPC,
     /// path-composition, or binding-resolution it performs internally.
     fn transform_site(&self, carrier: &CarrierComment) -> Result<SiteOutcome, String>;
+
+    /// After a pass of site transformations, return new carriers for sites
+    /// that effect propagation discovered. Default is a no-op for kits
+    /// (like `MaterializeKit`) that change no effect signatures.
+    ///
+    /// The effect vocabulary is language-specific and lives inside the kit
+    /// impl. A migrate kit reads the post-pass outcomes (each carrying its
+    /// own EffectSetMemento via the kit's internal state) and returns
+    /// `CarrierComment`s describing additional sites whose containing
+    /// functions need a follow-up rewrite once an effect (sync->async,
+    /// error-union widening, borrow->owned, panic propagation,
+    /// allocator-implicit->allocator-explicit, etc.) propagated through
+    /// the call graph. `transform_source_text` re-iterates as long as
+    /// `propagate` returns a non-empty vector, capped at 32 iterations.
+    fn propagate(
+        &self,
+        _outcomes: &[(ConceptSite, SiteOutcome)],
+    ) -> Result<Vec<CarrierComment>, String> {
+        Ok(Vec::new())
+    }
 }
 
 /// A captured concept-citation site in a source file: the carrier plus the
@@ -526,13 +545,76 @@ pub fn transform_source_text(
     source: &str,
     kit: &dyn SiteTransformKit,
 ) -> Result<(String, Vec<SiteOutcome>), String> {
+    // Fixed-point loop: run one pass of site transformations, call the kit's
+    // `propagate` hook to discover any additional carriers, append them to
+    // the source (as fresh carrier comments the next pass will pick up), and
+    // re-iterate until `propagate` returns empty. Cap at 32 iterations to
+    // prevent divergent fixed points; emit `Err` if the cap is reached. A
+    // kit whose `propagate` is the trait-default no-op exits the loop after
+    // the first pass.
+    const PROPAGATE_PASS_CAP: usize = 32;
+
+    let mut current = source.to_string();
+    let mut all_outcomes: Vec<SiteOutcome> = Vec::new();
+
+    for pass in 0..PROPAGATE_PASS_CAP {
+        let (rewritten, sites_and_outcomes) = transform_source_text_one_pass(&current, kit)?;
+        let pass_outcomes: Vec<SiteOutcome> = sites_and_outcomes
+            .iter()
+            .map(|(_, outcome)| outcome.clone())
+            .collect();
+
+        let new_carriers = kit.propagate(&sites_and_outcomes)?;
+
+        all_outcomes.extend(pass_outcomes);
+        current = rewritten;
+
+        if new_carriers.is_empty() {
+            return Ok((current, all_outcomes));
+        }
+
+        // Append new carriers as fresh `provekit-concept:` comment lines
+        // for the next pass to pick up. The kit decides where in the source
+        // these belong by virtue of what it puts in the CarrierComment; the
+        // shared loop simply re-runs the site walk over the rewritten
+        // source plus the appended carriers. The minimal shape: one carrier
+        // per line, no stub-function body, so `capture_stub_function_block`
+        // returns 0 and the kit's `transform_site` realization is emitted
+        // verbatim.
+        if !current.ends_with('\n') {
+            current.push('\n');
+        }
+        for carrier in new_carriers {
+            current.push_str("// provekit-concept: ");
+            current.push_str(&carrier.raw_payload);
+            current.push('\n');
+        }
+
+        let _ = pass; // suppress unused warning under non-debug builds
+    }
+
+    Err(format!(
+        "transform_source_text: effect-propagation fixed point did not converge within {PROPAGATE_PASS_CAP} passes"
+    ))
+}
+
+/// One pass of the site-transform walk. Returns the rewritten source plus
+/// the captured `ConceptSite` paired with each site's outcome. Used by
+/// `transform_source_text` to drive the propagate-and-re-iterate loop;
+/// surfaced as a private helper so the fixed-point machinery can hand the
+/// kit a structured view of what just happened.
+fn transform_source_text_one_pass(
+    source: &str,
+    kit: &dyn SiteTransformKit,
+) -> Result<(String, Vec<(ConceptSite, SiteOutcome)>), String> {
     let mut out = String::new();
-    let mut outcomes: Vec<SiteOutcome> = Vec::new();
+    let mut sites_and_outcomes: Vec<(ConceptSite, SiteOutcome)> = Vec::new();
     let lines = source.split_inclusive('\n').collect::<Vec<_>>();
     let mut idx = 0usize;
     while idx < lines.len() {
         let line = lines[idx];
         if let Some((indent, payload)) = concept_payload_from_line(line) {
+            let line_start = idx;
             let mut consumed = 1usize;
             if idx + consumed < lines.len()
                 && concept_payload_cid_from_line(lines[idx + consumed]).is_some()
@@ -542,7 +624,12 @@ pub fn transform_source_text(
                 consumed += 1;
             }
             let stub_block = capture_stub_function_block(&lines[idx + consumed..]);
-            consumed += stub_block.line_count;
+            let stub_line_count = stub_block.line_count;
+            let stub_signature_and_close = stub_block
+                .signature_and_close
+                .as_ref()
+                .map(StubSignatureAndCloseClone::from);
+            consumed += stub_line_count;
 
             let carrier = CarrierComment::parse(payload)?;
             let outcome = kit.transform_site(&carrier)?;
@@ -567,14 +654,23 @@ pub fn transform_source_text(
                     out.push('\n');
                 }
             }
-            outcomes.push(outcome);
+            let line_end_exclusive = line_start + consumed;
+            let site = ConceptSite {
+                carrier,
+                indent: indent.to_string(),
+                stub_line_count,
+                stub_signature_and_close,
+                line_start,
+                line_end_exclusive,
+            };
+            sites_and_outcomes.push((site, outcome));
             idx += consumed;
             continue;
         }
         out.push_str(line);
         idx += 1;
     }
-    Ok((out, outcomes))
+    Ok((out, sites_and_outcomes))
 }
 
 pub fn realize_spec_from_payload(payload: &str) -> Result<Json, String> {
@@ -717,6 +813,105 @@ fn after() {}\n";
         let error =
             transform_source_text(SAMPLE_SOURCE, &kit).expect_err("refusal propagates as Err");
         assert!(error.contains("no binding for concept:demo"));
+    }
+
+    /// A kit whose `propagate` hook fires once with a single fresh carrier,
+    /// then returns empty. Exercises the fixed-point loop: pass 1 picks up
+    /// the seed carrier, pass 2 picks up the propagate-emitted carrier,
+    /// pass 3 sees nothing new and terminates.
+    struct PropagatingKit {
+        propagate_call_count: std::sync::atomic::AtomicUsize,
+    }
+
+    impl SiteTransformKit for PropagatingKit {
+        fn target_language(&self) -> &str {
+            "rust"
+        }
+
+        fn transform_site(&self, carrier: &CarrierComment) -> Result<SiteOutcome, String> {
+            Ok(SiteOutcome::Materialize {
+                body: format!(
+                    "fn {}() {{\n    /* realized {} */\n}}",
+                    carrier.function, carrier.concept_name
+                ),
+                binding_cid: "cid:mock".to_string(),
+                loss_record: json!([]),
+            })
+        }
+
+        fn propagate(
+            &self,
+            _outcomes: &[(ConceptSite, SiteOutcome)],
+        ) -> Result<Vec<CarrierComment>, String> {
+            let count = self
+                .propagate_call_count
+                .fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+            if count == 0 {
+                let payload = r#"{"concept_name":"concept:propagated","function":"propagated_fn","params":[],"param_types":[],"return_type":"void"}"#;
+                let carrier = CarrierComment::parse(payload).unwrap();
+                Ok(vec![carrier])
+            } else {
+                Ok(Vec::new())
+            }
+        }
+    }
+
+    #[test]
+    fn transform_source_text_fixed_point_runs_propagate_until_empty() {
+        let kit = PropagatingKit {
+            propagate_call_count: std::sync::atomic::AtomicUsize::new(0),
+        };
+        let (out, outcomes) =
+            transform_source_text(SAMPLE_SOURCE, &kit).expect("fixed point converges");
+        // Two outcomes: the seed carrier in SAMPLE_SOURCE + the propagated one.
+        assert_eq!(outcomes.len(), 2);
+        // Both should be Materialize variants.
+        for outcome in &outcomes {
+            assert!(matches!(outcome, SiteOutcome::Materialize { .. }));
+        }
+        // The propagated carrier's realization is appended to the rewritten source.
+        assert!(out.contains("propagated_fn"));
+        assert!(out.contains("concept:propagated"));
+        // The kit's propagate was called twice (once returning a carrier, once empty).
+        assert_eq!(
+            kit.propagate_call_count
+                .load(std::sync::atomic::Ordering::SeqCst),
+            2
+        );
+    }
+
+    /// A divergent kit that never returns empty from `propagate`; verifies
+    /// the cap-at-32 safety net.
+    struct DivergentKit;
+
+    impl SiteTransformKit for DivergentKit {
+        fn target_language(&self) -> &str {
+            "rust"
+        }
+
+        fn transform_site(&self, carrier: &CarrierComment) -> Result<SiteOutcome, String> {
+            Ok(SiteOutcome::Materialize {
+                body: format!("fn {}() {{}}", carrier.function),
+                binding_cid: "cid:divergent".to_string(),
+                loss_record: json!([]),
+            })
+        }
+
+        fn propagate(
+            &self,
+            _outcomes: &[(ConceptSite, SiteOutcome)],
+        ) -> Result<Vec<CarrierComment>, String> {
+            let payload = r#"{"concept_name":"concept:never-ends","function":"loop_fn","params":[],"param_types":[],"return_type":"void"}"#;
+            Ok(vec![CarrierComment::parse(payload).unwrap()])
+        }
+    }
+
+    #[test]
+    fn transform_source_text_fixed_point_caps_divergent_propagation() {
+        let kit = DivergentKit;
+        let error = transform_source_text(SAMPLE_SOURCE, &kit)
+            .expect_err("divergent propagation hits the cap");
+        assert!(error.contains("fixed point did not converge"));
     }
 }
 
