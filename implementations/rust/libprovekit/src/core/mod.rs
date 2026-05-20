@@ -26,6 +26,7 @@ pub mod platform_semantics;
 pub mod platform_semantics_loader;
 pub mod primitives;
 pub mod prove_kit;
+pub mod source_transform;
 pub mod stubs;
 pub mod traits;
 pub mod types;
