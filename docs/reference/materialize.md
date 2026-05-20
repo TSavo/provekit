@@ -2,7 +2,7 @@
 
 `provekit materialize` replaces ProvekIt concept-citation carrier comments in source files with source emitted by a selected realize kit.
 
-The command is an orchestration surface only. It does not contain host-language renderers in the Rust CLI: language and library behavior lives behind `.provekit/realize/<surface>/manifest.toml` JSON-RPC realize plugins.
+The command is an orchestration surface only. It does not contain host-language renderers in the Rust CLI: language and library behavior lives behind `.provekit/realize/<surface>/manifest.toml` JSON-RPC realize plugins and body-template entries that explicitly declare their `(target_language, target_library_tag, concept_name)` tuple.
 
 ## Basic usage
 
@@ -79,6 +79,25 @@ provekit materialize --library typescript-better-sqlite3 --source-dir src --proj
 ```
 
 A `concept:sql-query` citation materializes through the TypeScript better-sqlite3 shim and emits code using `db.prepare(sql).all(args)`.
+
+## Body-template tuple normalization
+
+Library-specific body templates live at:
+
+```text
+menagerie/<language>-language-signature/specs/body-templates/<language>-canonical-bodies-<library-tag>.json
+```
+
+Every entry in those files must explicitly declare the sugar tuple it realizes:
+
+```json
+{
+  "target_library_tag": "requests",
+  "concept_name": "concept:http-request"
+}
+```
+
+The file-level `header.content.target_language` supplies the language component. Together, the normalized tuple is `(target_language, target_library_tag, concept_name)`. The selected `.provekit/realize/<surface>/manifest.toml` must agree with that tuple; the Rust CLI only selects the manifest and dispatches to the realize plugin.
 
 ## Scan behavior
 

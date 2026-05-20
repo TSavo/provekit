@@ -21,7 +21,8 @@
           "signature_guard": {
             "max_params": 1,
             "min_params": 1
-          }
+          },
+          "target_library_tag": "rust-runtime"
         },
         {
           "concept_name": "concept:return",
@@ -36,7 +37,8 @@
           "signature_guard": {
             "max_params": 1,
             "min_params": 1
-          }
+          },
+          "target_library_tag": "rust-runtime"
         },
         {
           "concept_name": "concept:string-with-capacity",
@@ -51,8 +53,11 @@
           "signature_guard": {
             "max_params": 1,
             "min_params": 1,
-            "requires_param_types": ["int"]
-          }
+            "requires_param_types": [
+              "int"
+            ]
+          },
+          "target_library_tag": "rust-runtime"
         },
         {
           "concept_name": "concept:string-push-str",
@@ -67,8 +72,12 @@
           "signature_guard": {
             "max_params": 2,
             "min_params": 2,
-            "requires_param_types": ["str", "str"]
-          }
+            "requires_param_types": [
+              "str",
+              "str"
+            ]
+          },
+          "target_library_tag": "rust-runtime"
         },
         {
           "concept_name": "concept:array-repeat",
@@ -83,7 +92,8 @@
           "signature_guard": {
             "max_params": 2,
             "min_params": 2
-          }
+          },
+          "target_library_tag": "rust-runtime"
         },
         {
           "concept_name": "concept:str-len",
@@ -98,7 +108,8 @@
           "signature_guard": {
             "max_params": 1,
             "min_params": 1
-          }
+          },
+          "target_library_tag": "rust-runtime"
         },
         {
           "concept_name": "concept:method-len",
@@ -113,7 +124,8 @@
           "signature_guard": {
             "max_params": 1,
             "min_params": 1
-          }
+          },
+          "target_library_tag": "rust-runtime"
         },
         {
           "concept_name": "concept:add",
@@ -128,8 +140,12 @@
           "signature_guard": {
             "max_params": 2,
             "min_params": 2,
-            "requires_param_types": ["int", "int"]
-          }
+            "requires_param_types": [
+              "int",
+              "int"
+            ]
+          },
+          "target_library_tag": "rust-runtime"
         },
         {
           "concept_name": "concept:sub",
@@ -144,8 +160,12 @@
           "signature_guard": {
             "max_params": 2,
             "min_params": 2,
-            "requires_param_types": ["int", "int"]
-          }
+            "requires_param_types": [
+              "int",
+              "int"
+            ]
+          },
+          "target_library_tag": "rust-runtime"
         },
         {
           "concept_name": "concept:conditional",
@@ -160,7 +180,8 @@
           "signature_guard": {
             "max_params": 3,
             "min_params": 3
-          }
+          },
+          "target_library_tag": "rust-runtime"
         },
         {
           "concept_name": "concept:eq",
@@ -175,8 +196,12 @@
           "signature_guard": {
             "max_params": 2,
             "min_params": 2,
-            "requires_param_types": ["int", "int"]
-          }
+            "requires_param_types": [
+              "int",
+              "int"
+            ]
+          },
+          "target_library_tag": "rust-runtime"
         },
         {
           "concept_name": "concept:ne",
@@ -191,8 +216,12 @@
           "signature_guard": {
             "max_params": 2,
             "min_params": 2,
-            "requires_param_types": ["int", "int"]
-          }
+            "requires_param_types": [
+              "int",
+              "int"
+            ]
+          },
+          "target_library_tag": "rust-runtime"
         },
         {
           "concept_name": "concept:decl",
@@ -207,7 +236,8 @@
           "signature_guard": {
             "max_params": 2,
             "min_params": 2
-          }
+          },
+          "target_library_tag": "rust-runtime"
         },
         {
           "concept_name": "concept:lt",
@@ -222,8 +252,12 @@
           "signature_guard": {
             "max_params": 2,
             "min_params": 2,
-            "requires_param_types": ["int", "int"]
-          }
+            "requires_param_types": [
+              "int",
+              "int"
+            ]
+          },
+          "target_library_tag": "rust-runtime"
         },
         {
           "concept_name": "concept:le",
@@ -238,8 +272,12 @@
           "signature_guard": {
             "max_params": 2,
             "min_params": 2,
-            "requires_param_types": ["int", "int"]
-          }
+            "requires_param_types": [
+              "int",
+              "int"
+            ]
+          },
+          "target_library_tag": "rust-runtime"
         },
         {
           "concept_name": "concept:gt",
@@ -254,8 +292,12 @@
           "signature_guard": {
             "max_params": 2,
             "min_params": 2,
-            "requires_param_types": ["int", "int"]
-          }
+            "requires_param_types": [
+              "int",
+              "int"
+            ]
+          },
+          "target_library_tag": "rust-runtime"
         },
         {
           "concept_name": "concept:ge",
@@ -270,8 +312,12 @@
           "signature_guard": {
             "max_params": 2,
             "min_params": 2,
-            "requires_param_types": ["int", "int"]
-          }
+            "requires_param_types": [
+              "int",
+              "int"
+            ]
+          },
+          "target_library_tag": "rust-runtime"
         },
         {
           "concept_name": "concept:mul",
@@ -286,8 +332,12 @@
           "signature_guard": {
             "max_params": 2,
             "min_params": 2,
-            "requires_param_types": ["int", "int"]
-          }
+            "requires_param_types": [
+              "int",
+              "int"
+            ]
+          },
+          "target_library_tag": "rust-runtime"
         },
         {
           "concept_name": "concept:div",
@@ -302,8 +352,12 @@
           "signature_guard": {
             "max_params": 2,
             "min_params": 2,
-            "requires_param_types": ["int", "int"]
-          }
+            "requires_param_types": [
+              "int",
+              "int"
+            ]
+          },
+          "target_library_tag": "rust-runtime"
         },
         {
           "concept_name": "concept:and",
@@ -318,8 +372,12 @@
           "signature_guard": {
             "max_params": 2,
             "min_params": 2,
-            "requires_param_types": ["bool", "bool"]
-          }
+            "requires_param_types": [
+              "bool",
+              "bool"
+            ]
+          },
+          "target_library_tag": "rust-runtime"
         },
         {
           "concept_name": "concept:or",
@@ -334,8 +392,12 @@
           "signature_guard": {
             "max_params": 2,
             "min_params": 2,
-            "requires_param_types": ["bool", "bool"]
-          }
+            "requires_param_types": [
+              "bool",
+              "bool"
+            ]
+          },
+          "target_library_tag": "rust-runtime"
         },
         {
           "concept_name": "concept:not",
@@ -350,8 +412,11 @@
           "signature_guard": {
             "max_params": 1,
             "min_params": 1,
-            "requires_param_types": ["bool"]
-          }
+            "requires_param_types": [
+              "bool"
+            ]
+          },
+          "target_library_tag": "rust-runtime"
         },
         {
           "concept_name": "concept:mod",
@@ -366,8 +431,12 @@
           "signature_guard": {
             "max_params": 2,
             "min_params": 2,
-            "requires_param_types": ["int", "int"]
-          }
+            "requires_param_types": [
+              "int",
+              "int"
+            ]
+          },
+          "target_library_tag": "rust-runtime"
         },
         {
           "concept_name": "concept:shl",
@@ -382,8 +451,12 @@
           "signature_guard": {
             "max_params": 2,
             "min_params": 2,
-            "requires_param_types": ["int", "int"]
-          }
+            "requires_param_types": [
+              "int",
+              "int"
+            ]
+          },
+          "target_library_tag": "rust-runtime"
         },
         {
           "concept_name": "concept:shr",
@@ -398,8 +471,12 @@
           "signature_guard": {
             "max_params": 2,
             "min_params": 2,
-            "requires_param_types": ["int", "int"]
-          }
+            "requires_param_types": [
+              "int",
+              "int"
+            ]
+          },
+          "target_library_tag": "rust-runtime"
         },
         {
           "concept_name": "concept:bitand",
@@ -414,8 +491,12 @@
           "signature_guard": {
             "max_params": 2,
             "min_params": 2,
-            "requires_param_types": ["int", "int"]
-          }
+            "requires_param_types": [
+              "int",
+              "int"
+            ]
+          },
+          "target_library_tag": "rust-runtime"
         },
         {
           "concept_name": "concept:bitor",
@@ -430,8 +511,12 @@
           "signature_guard": {
             "max_params": 2,
             "min_params": 2,
-            "requires_param_types": ["int", "int"]
-          }
+            "requires_param_types": [
+              "int",
+              "int"
+            ]
+          },
+          "target_library_tag": "rust-runtime"
         },
         {
           "concept_name": "concept:bitxor",
@@ -446,8 +531,12 @@
           "signature_guard": {
             "max_params": 2,
             "min_params": 2,
-            "requires_param_types": ["int", "int"]
-          }
+            "requires_param_types": [
+              "int",
+              "int"
+            ]
+          },
+          "target_library_tag": "rust-runtime"
         },
         {
           "concept_name": "concept:neg",
@@ -462,8 +551,11 @@
           "signature_guard": {
             "max_params": 1,
             "min_params": 1,
-            "requires_param_types": ["int"]
-          }
+            "requires_param_types": [
+              "int"
+            ]
+          },
+          "target_library_tag": "rust-runtime"
         },
         {
           "concept_name": "concept:bitnot",
@@ -478,8 +570,11 @@
           "signature_guard": {
             "max_params": 1,
             "min_params": 1,
-            "requires_param_types": ["int"]
-          }
+            "requires_param_types": [
+              "int"
+            ]
+          },
+          "target_library_tag": "rust-runtime"
         },
         {
           "concept_name": "concept:borrow",
@@ -494,7 +589,8 @@
           "signature_guard": {
             "max_params": 1,
             "min_params": 1
-          }
+          },
+          "target_library_tag": "rust-runtime"
         }
       ],
       "target_language": "python",
@@ -502,7 +598,9 @@
     },
     "critical": false,
     "kind": "body-template",
-    "protocol_versions": ["pep/1.7.0"],
+    "protocol_versions": [
+      "pep/1.7.0"
+    ],
     "provenance_cid": "blake3-512:00000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000",
     "schemaVersion": "1",
     "version": "1.0.0"

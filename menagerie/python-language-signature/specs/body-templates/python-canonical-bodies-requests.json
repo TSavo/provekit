@@ -37,7 +37,8 @@
             "max_params": 1,
             "min_params": 1,
             "requires_return_type": "int"
-          }
+          },
+          "target_library_tag": "requests"
         },
         {
           "concept_name": "concept:http-request",
@@ -68,7 +69,8 @@
             "max_params": 2,
             "min_params": 2,
             "requires_return_type": "int"
-          }
+          },
+          "target_library_tag": "requests"
         },
         {
           "concept_name": "concept:http-response",
@@ -95,7 +97,8 @@
             "max_params": 1,
             "min_params": 1,
             "requires_return_type": "int"
-          }
+          },
+          "target_library_tag": "requests"
         },
         {
           "concept_name": "concept:http-response",
@@ -122,7 +125,8 @@
             "max_params": 1,
             "min_params": 1,
             "requires_return_type": "dict"
-          }
+          },
+          "target_library_tag": "requests"
         }
       ],
       "target_language": "python",
@@ -130,7 +134,9 @@
     },
     "critical": false,
     "kind": "body-template",
-    "protocol_versions": ["pep/1.7.0"],
+    "protocol_versions": [
+      "pep/1.7.0"
+    ],
     "provenance_cid": "blake3-512:0000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000",
     "schemaVersion": "1",
     "version": "1.0.0"

@@ -37,7 +37,8 @@
           "signature_guard": {
             "max_params": 2,
             "min_params": 2
-          }
+          },
+          "target_library_tag": "pg"
         },
         {
           "concept_name": "concept:sql-execute",
@@ -68,7 +69,8 @@
           "signature_guard": {
             "max_params": 2,
             "min_params": 2
-          }
+          },
+          "target_library_tag": "pg"
         },
         {
           "concept_name": "concept:sql-query",
@@ -94,7 +96,8 @@
           "signature_guard": {
             "max_params": 2,
             "min_params": 2
-          }
+          },
+          "target_library_tag": "pg"
         }
       ],
       "target_language": "typescript",
