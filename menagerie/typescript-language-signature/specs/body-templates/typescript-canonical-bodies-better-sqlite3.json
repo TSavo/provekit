@@ -5,7 +5,7 @@
     "signer": "ed25519:AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA="
   },
   "header": {
-    "cid": "blake3-512:5793dafda8c597efb885e89c8b9313fce75b1b10d08dee863a689e2867436a7173fa106abec67e8c6ee978c236c14ed87b33fc8566087ec95f5fde26e61cfe5a",
+    "cid": "blake3-512:3a6872e9b752177089832aba2d4f6cd413f9cf598d70502a6bd77fe3ef2ab0cc1ae07acdba14980afa97d3038278fe5b58d43b9a136af91077743705b99fbd7d",
     "content": {
       "entries": [
         {

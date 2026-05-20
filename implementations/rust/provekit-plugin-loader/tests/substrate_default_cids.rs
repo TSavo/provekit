@@ -165,7 +165,7 @@ fn python_requests_canonical_bodies_cid_self_consistent() {
     );
     assert_self_consistent(
         path,
-        "blake3-512:6612c844a35e288836a838e2a7615be2791eee36e159b3df333db0f63266cbe56db8754e33a8b33cce4fb89927f6e9236c2c5b0cc093eb6d80b1f1f124a2c52b",
+        "blake3-512:100f4c5b7ce1e21bbf63c942d696be3c19ce20c75f6c8be40fb8d7026428575d761e46f3cec9678396958dea2bffb41d1bd46dbc868595e31157bf289798ecaf",
     );
 }
 
@@ -187,7 +187,7 @@ fn typescript_better_sqlite3_canonical_bodies_cid_self_consistent() {
     );
     assert_self_consistent(
         path,
-        "blake3-512:5793dafda8c597efb885e89c8b9313fce75b1b10d08dee863a689e2867436a7173fa106abec67e8c6ee978c236c14ed87b33fc8566087ec95f5fde26e61cfe5a",
+        "blake3-512:3a6872e9b752177089832aba2d4f6cd413f9cf598d70502a6bd77fe3ef2ab0cc1ae07acdba14980afa97d3038278fe5b58d43b9a136af91077743705b99fbd7d",
     );
 }
 
@@ -198,7 +198,7 @@ fn typescript_pg_canonical_bodies_cid_self_consistent() {
     );
     assert_self_consistent(
         path,
-        "blake3-512:6c3b4df2a292388619b212b05c84e45ce94081750c2cfbeea473fe1a4b038ffd047224c740b55f2341758b418142c1b89c9f14d891e9462d1ac79231dcdd4d95",
+        "blake3-512:463dc2febd07836b54fca4f8e0c8ea20c66376cab9428fe1bb4f586fb4a57b332a0be4336fef1e4e1752c9340b57af618132e410050392c04667b9066fe783ad",
     );
 }
 
