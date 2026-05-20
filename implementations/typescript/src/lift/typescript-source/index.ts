@@ -4,7 +4,7 @@ import ts from "typescript";
 
 import { canonicalJsonString } from "../../claimEnvelope/canonicalize.js";
 import { computeCid } from "../../canonicalizer/hash.js";
-import type { IrFormula, IrTerm, Sort } from "../../ir/formulas.js";
+import type { IrFormula, IrTerm, Sort, VarTerm } from "../../ir/formulas.js";
 
 export type TypeScriptSourceEffect =
   | { kind: "reads"; target: string }
@@ -39,6 +39,30 @@ export interface FunctionContractMemento {
   effects: TypeScriptSourceEffect[];
   locus: { file: string; line: number; col: number };
   autoMintedMementos: unknown[];
+}
+
+export interface TypeScriptLibrarySugarBindingEntry {
+  kind: "library-sugar-binding-entry";
+  target_language: "typescript";
+  target_library_tag: string;
+  concept_name: string;
+  source_function_name: string;
+  param_names: string[];
+  param_types: string[];
+  return_type: string;
+  term_shape: Record<string, unknown> | null;
+  term_shape_cid: string | null;
+  signature_shape_cid: string;
+  loss_record_contribution: { form: string; value: { entries: unknown[] } };
+  body_source: {
+    file: string;
+    span: { start_line: number; start_col: number; end_line: number; end_col: number };
+    source_cid: string;
+  };
+}
+
+export interface TypeScriptLibraryBindingsLiftResult extends TypeScriptSourceLiftResult {
+  libraryBindings: TypeScriptLibrarySugarBindingEntry[];
 }
 
 export interface TypeScriptSourceLiftResult {
@@ -79,7 +103,7 @@ class UnsupportedSyntaxError extends Error {
 }
 
 const TRUE_FORMULA: IrFormula = { kind: "atomic", name: "true", args: [] };
-const RETURN_VALUE: IrTerm = { kind: "var", name: "return_value" };
+const RETURN_VALUE: VarTerm = { kind: "var", name: "return_value" };
 const SKIP_DIRS = new Set([
   "node_modules",
   ".git",
@@ -101,6 +125,15 @@ export function liftTypeScriptSourceText(
   const modulePath = normalizePath(fileName);
   const { program, sourceFile } = createProgramFromText(sourceText, modulePath);
   return liftSourceFile(sourceFile, program.getTypeChecker(), modulePath);
+}
+
+export function liftTypeScriptLibraryBindingsText(
+  sourceText: string,
+  fileName = "input.ts",
+): TypeScriptLibraryBindingsLiftResult {
+  const modulePath = normalizePath(fileName);
+  const { program, sourceFile } = createProgramFromText(sourceText, modulePath);
+  return liftLibraryBindingsSourceFile(sourceFile, program.getTypeChecker(), modulePath);
 }
 
 export function liftTypeScriptSourcePaths(
@@ -246,6 +279,150 @@ function liftSourceFile(
   }
 
   return { declarations, diagnostics: [], opacityReport: [], refusals };
+}
+
+function liftLibraryBindingsSourceFile(
+  sourceFile: ts.SourceFile,
+  checker: ts.TypeChecker,
+  modulePath: string,
+): TypeScriptLibraryBindingsLiftResult {
+  const libraryBindings: TypeScriptLibrarySugarBindingEntry[] = [];
+
+  const fileContext: FileLiftContext = {
+    modulePath,
+    sourceFile,
+    checker,
+    moduleVars: new Set(),
+    knownCallables: new Set(),
+    refusals: [],
+  };
+
+  const visit = (node: ts.Node): void => {
+    if (ts.isFunctionDeclaration(node) && node.name && node.body) {
+      const binding = libraryBindingEntryForFunction(node, sourceFile, modulePath, fileContext);
+      if (binding) libraryBindings.push(binding);
+    }
+    ts.forEachChild(node, visit);
+  };
+  visit(sourceFile);
+
+  return { declarations: [], diagnostics: [], opacityReport: [], refusals: [], libraryBindings };
+}
+
+function libraryBindingEntryForFunction(
+  node: ts.FunctionDeclaration,
+  sourceFile: ts.SourceFile,
+  modulePath: string,
+  fileContext: FileLiftContext,
+): TypeScriptLibrarySugarBindingEntry | null {
+  const binding = sugarBindingArgs(node);
+  if (!binding) return null;
+  const paramNames = node.parameters.map((param) => parameterName(param));
+  const paramTypes = node.parameters.map((param) => param.type?.getText(sourceFile) ?? "unknown");
+  const returnType = node.type?.getText(sourceFile) ?? "unknown";
+  const signatureShape = {
+    param_names: paramNames,
+    param_types: paramTypes,
+    return_type: returnType,
+  };
+
+  // Attempt to lift the body term using existing machinery, bypassing the decorator
+  // guard since decorated functions are intentional for library sugar bindings.
+  let termShape: Record<string, unknown> | null = null;
+  let termShapeCid: string | null = null;
+  const body = node.body;
+  if (body) {
+    try {
+      const formals = node.parameters.map((param) => parameterName(param));
+      const functionContext: FunctionContext = {
+        ...fileContext,
+        functionName: `${modulePath}:${node.name?.text ?? "unknown"}`,
+        locals: new Set<string>(formals),
+        effects: new Map(),
+      };
+      collectLocalDeclarations(body, functionContext.locals);
+      const rawBodyTerm = singleReturnExpression(body)
+        ? emitExpression(singleReturnExpression(body)!, functionContext)
+        : emitBlock(body, functionContext);
+      termShape = rawBodyTerm as unknown as Record<string, unknown>;
+      termShapeCid = cidOfValue(termShape);
+    } catch {
+      // Body lifting failed; term_shape remains null and loss_record_contribution tracks the debt.
+    }
+  }
+
+  const span = locatorForNode(node, sourceFile);
+  const spanText = sourceFile.getFullText().slice(node.getStart(sourceFile), node.end);
+  return {
+    kind: "library-sugar-binding-entry",
+    target_language: "typescript",
+    target_library_tag: binding.library,
+    concept_name: binding.concept,
+    source_function_name: node.name?.text ?? "",
+    param_names: paramNames,
+    param_types: paramTypes,
+    return_type: returnType,
+    term_shape: termShape,
+    term_shape_cid: termShapeCid,
+    signature_shape_cid: cidOfValue(signatureShape),
+    loss_record_contribution: {
+      form: "literal",
+      value: { entries: [] },
+    },
+    body_source: {
+      file: modulePath,
+      span,
+      source_cid: computeCid(Buffer.from(spanText, "utf8")),
+    },
+  };
+}
+
+function sugarBindingArgs(node: ts.FunctionDeclaration): { concept: string; library: string } | null {
+  const decorators = decoratorNodes(node);
+  for (const decorator of decorators) {
+    const expr = decorator.expression;
+    if (!ts.isCallExpression(expr) || !isSugarBindExpression(expr.expression)) continue;
+    const first = expr.arguments[0];
+    if (!first || !ts.isObjectLiteralExpression(first)) continue;
+    const concept = stringProperty(first, "concept");
+    const library = stringProperty(first, "library");
+    if (concept && library) return { concept, library };
+  }
+  return null;
+}
+
+function decoratorNodes(node: ts.FunctionDeclaration): ts.Decorator[] {
+  if (ts.canHaveDecorators(node)) return [...(ts.getDecorators(node) ?? [])];
+  return [...(node.modifiers ?? [])].filter((modifier): modifier is ts.Decorator => ts.isDecorator(modifier));
+}
+
+function isSugarBindExpression(expr: ts.Expression): boolean {
+  if (!ts.isPropertyAccessExpression(expr) || expr.name.text !== "bind") return false;
+  const receiver = expr.expression;
+  return ts.isIdentifier(receiver) && receiver.text === "sugar";
+}
+
+function stringProperty(obj: ts.ObjectLiteralExpression, name: string): string | null {
+  for (const prop of obj.properties) {
+    if (!ts.isPropertyAssignment(prop)) continue;
+    if (!ts.isIdentifier(prop.name) || prop.name.text !== name) continue;
+    return ts.isStringLiteralLike(prop.initializer) ? prop.initializer.text : null;
+  }
+  return null;
+}
+
+function locatorForNode(
+  node: ts.Node,
+  sourceFile: ts.SourceFile,
+): { start_line: number; start_col: number; end_line: number; end_col: number } {
+  const start = sourceFile.getLineAndCharacterOfPosition(node.getStart(sourceFile));
+  const end = sourceFile.getLineAndCharacterOfPosition(node.end);
+  return {
+    start_line: start.line + 1,
+    start_col: start.character,
+    end_line: end.line + 1,
+    end_col: end.character,
+  };
 }
 
 function processStatements(

@@ -9,6 +9,7 @@ import {
   compileTypeScriptSourceBodyIr,
   compileTypeScriptSourceIr,
   functionContractCid,
+  liftTypeScriptLibraryBindingsText,
   liftTypeScriptSourcePaths,
   liftTypeScriptSourceText,
 } from "./index.js";
@@ -26,6 +27,97 @@ function canonicalCid(value: unknown): string {
 }
 
 describe("typescript-source lifter", () => {
+  it("lifts TypeScript sugar bindings into library-sugar-binding entries from real source", () => {
+    const source = `
+import Database from "better-sqlite3";
+import { sugar } from "provekit";
+
+@sugar.bind({ concept: "concept:sql-query", library: "better-sqlite3" })
+function selectRows(db: Database.Database, sql: string, args: unknown[]) {
+  return db.prepare(sql).all(args);
+}
+`;
+
+    const result = liftTypeScriptLibraryBindingsText(source, "src/sqlite.ts");
+
+    expect(result.refusals).toEqual([]);
+    expect(result.declarations).toEqual([]);
+    expect(result.libraryBindings).toHaveLength(1);
+    const binding = result.libraryBindings[0]!;
+    expect(binding.kind).toBe("library-sugar-binding-entry");
+    expect(binding.target_language).toBe("typescript");
+    expect(binding.target_library_tag).toBe("better-sqlite3");
+    expect(binding.concept_name).toBe("concept:sql-query");
+    expect(binding.source_function_name).toBe("selectRows");
+    expect(binding.param_names).toEqual(["db", "sql", "args"]);
+    expect(binding.param_types).toEqual(["Database.Database", "string", "unknown[]"]);
+    expect(binding.return_type).toBe("unknown");
+    expect(binding.term_shape).not.toBeNull();
+    expect(binding.term_shape_cid).toBe(canonicalCid(binding.term_shape));
+    expect(binding.signature_shape_cid).toBe(
+      canonicalCid({ param_names: ["db", "sql", "args"], param_types: ["Database.Database", "string", "unknown[]"], return_type: "unknown" }),
+    );
+    expect(binding.loss_record_contribution).toEqual({ form: "literal", value: { entries: [] } });
+    expect(binding.body_source.file).toBe("src/sqlite.ts");
+    expect(binding.body_source.span).toEqual({ start_line: 5, start_col: 0, end_line: 8, end_col: 1 });
+    const expectedSpan = source.split(/(?<=\n)/).slice(4, 8).join("").replace(/\n$/, "");
+    expect(binding.body_source.source_cid).toBe(computeCid(Buffer.from(expectedSpan, "utf8")));
+    expect(canonicalJsonString(binding)).not.toContain("emission_template");
+  });
+
+  it("does not emit library-sugar-binding entries for unannotated functions (discrimination)", () => {
+    const source = `
+function unannotated(db: unknown, sql: string): unknown[] {
+  return [];
+}
+`;
+    const result = liftTypeScriptLibraryBindingsText(source, "src/no-sugar.ts");
+
+    expect(result.libraryBindings).toHaveLength(0);
+    expect(result.refusals).toHaveLength(0);
+  });
+
+  it("emits one entry per annotated function when multiple appear in the same file", () => {
+    const source = `
+import { sugar } from "provekit";
+
+@sugar.bind({ concept: "concept:sql-query", library: "better-sqlite3" })
+function queryAll(db: unknown, sql: string): unknown[] {
+  return [];
+}
+
+function unannotated(): void {}
+
+@sugar.bind({ concept: "concept:sql-execute", library: "better-sqlite3" })
+function execute(db: unknown, sql: string): void {}
+`;
+    const result = liftTypeScriptLibraryBindingsText(source, "src/multi.ts");
+
+    expect(result.libraryBindings).toHaveLength(2);
+    expect(result.libraryBindings[0]!.source_function_name).toBe("queryAll");
+    expect(result.libraryBindings[0]!.concept_name).toBe("concept:sql-query");
+    expect(result.libraryBindings[1]!.source_function_name).toBe("execute");
+    expect(result.libraryBindings[1]!.concept_name).toBe("concept:sql-execute");
+  });
+
+  it("ignores @sugar.bind decorators missing required concept or library fields", () => {
+    const source = `
+import { sugar } from "provekit";
+
+@sugar.bind({ concept: "concept:sql-query" })
+function missingLibrary(x: string): string { return x; }
+
+@sugar.bind({ library: "better-sqlite3" })
+function missingConcept(x: string): string { return x; }
+
+@sugar.bind({})
+function missingBoth(x: string): string { return x; }
+`;
+    const result = liftTypeScriptLibraryBindingsText(source, "src/malformed.ts");
+
+    expect(result.libraryBindings).toHaveLength(0);
+  });
+
   it("lifts function declarations into ts:-namespaced function-contracts wrapped by source-unit", () => {
     const result = liftTypeScriptSourceText(
       "export function add(x: number, y: number): number { return x + y; }\n",
