@@ -54,6 +54,7 @@ export interface TypeScriptLibrarySugarBindingEntry {
   term_shape_cid: string | null;
   signature_shape_cid: string;
   loss_record_contribution: { form: string; value: { entries: unknown[] } };
+  observed_dimension?: string;
   body_source: {
     file: string;
     span: { start_line: number; start_col: number; end_line: number; end_col: number };
@@ -61,8 +62,18 @@ export interface TypeScriptLibrarySugarBindingEntry {
   };
 }
 
+export interface TypeScriptLibraryRefusalMemento {
+  kind: "refusal-memento";
+  target_language: "typescript";
+  surface: string;
+  concept: string;
+  reason: string;
+  would_close_with_cluster: string;
+}
+
 export interface TypeScriptLibraryBindingsLiftResult extends TypeScriptSourceLiftResult {
   libraryBindings: TypeScriptLibrarySugarBindingEntry[];
+  libraryRefusals: TypeScriptLibraryRefusalMemento[];
 }
 
 export interface TypeScriptSourceLiftResult {
@@ -171,12 +182,13 @@ export function liftTypeScriptLibraryBindingsPaths(
   const { root, files, diagnostics, refusals } = collectWorkspaceSourceFiles(workspaceRoot, sourcePaths);
 
   if (files.length === 0) {
-    return { declarations: [], diagnostics, opacityReport: [], refusals, libraryBindings: [] };
+    return { declarations: [], diagnostics, opacityReport: [], refusals, libraryBindings: [], libraryRefusals: [] };
   }
 
   const program = ts.createProgram(files, compilerOptions());
   const checker = program.getTypeChecker();
   const libraryBindings: TypeScriptLibrarySugarBindingEntry[] = [];
+  const libraryRefusals: TypeScriptLibraryRefusalMemento[] = [];
   for (const file of files.sort()) {
     const sourceFile = program.getSourceFile(file);
     if (!sourceFile) {
@@ -186,10 +198,11 @@ export function liftTypeScriptLibraryBindingsPaths(
     const modulePath = normalizePath(relative(root, file));
     const lifted = liftLibraryBindingsSourceFile(sourceFile, checker, modulePath);
     libraryBindings.push(...lifted.libraryBindings);
+    libraryRefusals.push(...lifted.libraryRefusals);
     diagnostics.push(...lifted.diagnostics);
     refusals.push(...lifted.refusals);
   }
-  return { declarations: [], diagnostics, opacityReport: [], refusals, libraryBindings };
+  return { declarations: [], diagnostics, opacityReport: [], refusals, libraryBindings, libraryRefusals };
 }
 
 export function functionContractCid(contract: FunctionContractMemento): string {
@@ -288,6 +301,7 @@ function liftLibraryBindingsSourceFile(
   modulePath: string,
 ): TypeScriptLibraryBindingsLiftResult {
   const libraryBindings: TypeScriptLibrarySugarBindingEntry[] = [];
+  const libraryRefusals: TypeScriptLibraryRefusalMemento[] = [];
 
   const fileContext: FileLiftContext = {
     modulePath,
@@ -303,11 +317,15 @@ function liftLibraryBindingsSourceFile(
       const binding = libraryBindingEntryForFunction(node, sourceFile, modulePath, fileContext);
       if (binding) libraryBindings.push(binding);
     }
+    if (ts.isClassDeclaration(node)) {
+      const refusal = libraryRefusalEntryForClass(node, modulePath);
+      if (refusal) libraryRefusals.push(refusal);
+    }
     ts.forEachChild(node, visit);
   };
   visit(sourceFile);
 
-  return { declarations: [], diagnostics: [], opacityReport: [], refusals: [], libraryBindings };
+  return { declarations: [], diagnostics: [], opacityReport: [], refusals: [], libraryBindings, libraryRefusals };
 }
 
 function libraryBindingEntryForFunction(
@@ -354,7 +372,7 @@ function libraryBindingEntryForFunction(
 
   const span = locatorForNode(node, sourceFile);
   const spanText = sourceFile.getFullText().slice(node.getStart(sourceFile), node.end);
-  return {
+  const entry: TypeScriptLibrarySugarBindingEntry = {
     kind: "library-sugar-binding-entry",
     target_language: "typescript",
     target_library_tag: binding.library,
@@ -368,7 +386,7 @@ function libraryBindingEntryForFunction(
     signature_shape_cid: cidOfValue(signatureShape),
     loss_record_contribution: {
       form: "literal",
-      value: { entries: [] },
+      value: { entries: binding.loss },
     },
     body_source: {
       file: modulePath,
@@ -376,9 +394,11 @@ function libraryBindingEntryForFunction(
       source_cid: computeCid(Buffer.from(spanText, "utf8")),
     },
   };
+  if (binding.observed_dimension !== null) entry.observed_dimension = binding.observed_dimension;
+  return entry;
 }
 
-function sugarBindingArgs(node: ts.FunctionDeclaration): { concept: string; library: string } | null {
+function sugarBindingArgs(node: ts.FunctionDeclaration): { concept: string; library: string; loss: string[]; observed_dimension: string | null } | null {
   const decorators = decoratorNodes(node);
   for (const decorator of decorators) {
     const expr = decorator.expression;
@@ -387,20 +407,64 @@ function sugarBindingArgs(node: ts.FunctionDeclaration): { concept: string; libr
     if (!first || !ts.isObjectLiteralExpression(first)) continue;
     const concept = stringProperty(first, "concept");
     const library = stringProperty(first, "library");
-    if (concept && library) return { concept, library };
+    if (concept && library) {
+      const loss = arrayStringProperty(first, "loss");
+      const observed_dimension = stringProperty(first, "observed_dimension");
+      return { concept, library, loss, observed_dimension };
+    }
   }
   return null;
 }
 
-function decoratorNodes(node: ts.FunctionDeclaration): ts.Decorator[] {
+function decoratorNodes(node: ts.HasDecorators): ts.Decorator[] {
   if (ts.canHaveDecorators(node)) return [...(ts.getDecorators(node) ?? [])];
-  return [...(node.modifiers ?? [])].filter((modifier): modifier is ts.Decorator => ts.isDecorator(modifier));
+  return [...((node as ts.FunctionDeclaration).modifiers ?? [])].filter((modifier): modifier is ts.Decorator => ts.isDecorator(modifier));
 }
 
 function isSugarBindExpression(expr: ts.Expression): boolean {
   if (!ts.isPropertyAccessExpression(expr) || expr.name.text !== "bind") return false;
   const receiver = expr.expression;
   return ts.isIdentifier(receiver) && receiver.text === "sugar";
+}
+
+function isSugarRefuseExpression(expr: ts.Expression): boolean {
+  if (!ts.isPropertyAccessExpression(expr) || expr.name.text !== "refuse") return false;
+  const receiver = expr.expression;
+  return ts.isIdentifier(receiver) && receiver.text === "sugar";
+}
+
+function libraryRefusalEntryForClass(
+  node: ts.ClassDeclaration,
+  modulePath: string,
+): TypeScriptLibraryRefusalMemento | null {
+  const refuseArgs = sugarRefuseArgs(node);
+  if (!refuseArgs) return null;
+  return {
+    kind: "refusal-memento",
+    target_language: "typescript",
+    surface: refuseArgs.surface,
+    concept: refuseArgs.concept,
+    reason: refuseArgs.reason,
+    would_close_with_cluster: refuseArgs.would_close_with_cluster,
+  };
+}
+
+function sugarRefuseArgs(node: ts.ClassDeclaration): { surface: string; concept: string; reason: string; would_close_with_cluster: string } | null {
+  const decorators: ts.Decorator[] = ts.canHaveDecorators(node) ? [...(ts.getDecorators(node) ?? [])] : [];
+  for (const decorator of decorators) {
+    const expr = decorator.expression;
+    if (!ts.isCallExpression(expr) || !isSugarRefuseExpression(expr.expression)) continue;
+    const first = expr.arguments[0];
+    if (!first || !ts.isObjectLiteralExpression(first)) continue;
+    const surface = stringProperty(first, "surface");
+    const concept = stringProperty(first, "concept");
+    const reason = stringProperty(first, "reason");
+    const would_close_with_cluster = stringProperty(first, "would_close_with_cluster");
+    if (surface && concept && reason && would_close_with_cluster) {
+      return { surface, concept, reason, would_close_with_cluster };
+    }
+  }
+  return null;
 }
 
 function stringProperty(obj: ts.ObjectLiteralExpression, name: string): string | null {
@@ -410,6 +474,18 @@ function stringProperty(obj: ts.ObjectLiteralExpression, name: string): string |
     return ts.isStringLiteralLike(prop.initializer) ? prop.initializer.text : null;
   }
   return null;
+}
+
+function arrayStringProperty(obj: ts.ObjectLiteralExpression, name: string): string[] {
+  for (const prop of obj.properties) {
+    if (!ts.isPropertyAssignment(prop)) continue;
+    if (!ts.isIdentifier(prop.name) || prop.name.text !== name) continue;
+    if (!ts.isArrayLiteralExpression(prop.initializer)) return [];
+    return prop.initializer.elements
+      .filter(ts.isStringLiteralLike)
+      .map((el) => el.text);
+  }
+  return [];
 }
 
 function locatorForNode(

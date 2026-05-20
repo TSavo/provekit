@@ -55,7 +55,7 @@ function dispatch(request: JsonRpcRequest): Record<string, unknown> | null {
         version: VERSION,
         protocol_version: "pep/1.7.0",
         capabilities: {
-          authoring_surfaces: [DIALECT],
+          authoring_surfaces: [...SURFACE_ALIASES],
           ir_version: "v1.1.0",
           emits_signed_mementos: false,
         },
@@ -90,7 +90,7 @@ function liftRpc(request: JsonRpcRequest): Record<string, unknown> {
     const result = liftTypeScriptLibraryBindingsPaths(workspaceRoot, sourcePaths);
     return success(request.id, {
       kind: "ir-document",
-      ir: result.libraryBindings,
+      ir: [...result.libraryBindings, ...result.libraryRefusals],
       callEdges: [],
       diagnostics: result.diagnostics,
       opacityReport: result.opacityReport,
