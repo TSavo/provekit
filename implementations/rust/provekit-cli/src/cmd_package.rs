@@ -68,6 +68,7 @@ fn run_inspect(args: PackageInspectArgs) -> u8 {
         &surface,
         LiftPluginOptions {
             identify_only: true,
+            library_bindings: false,
         },
         args.out.quiet,
     ) {

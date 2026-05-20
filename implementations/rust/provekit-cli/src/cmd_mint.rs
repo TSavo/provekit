@@ -789,6 +789,13 @@ fn mint_from_ir_document(
         members.entry(m.cid.clone()).or_insert(m.canonical_bytes);
     }
 
+    for decl in ir {
+        if decl.get("kind").and_then(|v| v.as_str()) == Some("library-sugar-binding-entry") {
+            let (cid, bytes) = mint_library_sugar_binding_entry(decl)?;
+            members.entry(cid).or_insert(bytes);
+        }
+    }
+
     if members.is_empty() {
         return Err("no contracts to mint".to_string());
     }
@@ -895,6 +902,35 @@ fn mint_from_ir_document(
     let built = build_proof_envelope(&proof_input);
 
     Ok((built.bytes, built.cid, contract_set_cid))
+}
+
+fn mint_library_sugar_binding_entry(decl: &Value) -> Result<(String, Vec<u8>), String> {
+    let target_language = required_str(decl, "target_language", "library-sugar-binding-entry")?;
+    let target_library_tag =
+        required_str(decl, "target_library_tag", "library-sugar-binding-entry")?;
+    let concept_name = required_str(decl, "concept_name", "library-sugar-binding-entry")?;
+    let signature_shape_cid =
+        required_str(decl, "signature_shape_cid", "library-sugar-binding-entry")?;
+    let body_source = decl
+        .get("body_source")
+        .ok_or_else(|| "`library-sugar-binding-entry` missing `body_source`".to_string())?;
+    let source_cid = required_str(body_source, "source_cid", "body_source")?;
+
+    let envelope = json!({
+        "body": decl,
+        "header": {
+            "bodySourceCid": source_cid,
+            "conceptName": concept_name,
+            "kind": "library-sugar-binding-entry",
+            "signatureShapeCid": signature_shape_cid,
+            "targetLanguage": target_language,
+            "targetLibraryTag": target_library_tag,
+        },
+        "schemaVersion": "1",
+    });
+    let canonical = encode_jcs(&json_to_cvalue(&envelope));
+    let cid = blake3_512_of(canonical.as_bytes());
+    Ok((cid, canonical.into_bytes()))
 }
 
 fn optional_str<'a>(value: &'a Value, field: &str) -> Option<&'a str> {
@@ -1583,6 +1619,58 @@ mod tests {
         assert!(
             error.contains("missing step `missing`"),
             "unexpected error: {error}"
+        );
+    }
+
+    #[test]
+    fn mint_from_ir_document_accepts_library_sugar_binding_without_contracts() {
+        let ir = vec![json!({
+            "body_source": {
+                "file": "src/shims/requests.py",
+                "source_cid": "blake3-512:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+                "span": {"start_line": 1, "start_col": 0, "end_line": 6, "end_col": 0}
+            },
+            "concept_name": "concept:http-request",
+            "kind": "library-sugar-binding-entry",
+            "loss_record_contribution": {"form": "literal", "value": {"entries": []}},
+            "param_names": ["url"],
+            "param_types": ["str"],
+            "return_type": "int",
+            "signature_shape_cid": "blake3-512:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+            "source_function_name": "fetch_status",
+            "target_language": "python",
+            "target_library_tag": "requests",
+            "term_shape": null,
+            "term_shape_cid": null
+        })];
+
+        let (bytes, filename_cid, contract_set_cid) =
+            mint_from_ir_document(&ir, None, None, None, Path::new("."), Path::new("."), true)
+                .expect("library-sugar-only ir-document must mint without contracts");
+
+        assert!(!bytes.is_empty());
+        assert!(filename_cid.starts_with("blake3-512:"));
+        assert_eq!(contract_set_cid, compute_contract_set_cid(vec![]));
+
+        let catalog = provekit_verifier::cbor_decode::decode(&bytes).expect("decode proof");
+        let members = catalog
+            .as_map()
+            .and_then(|m| m.get("members"))
+            .and_then(|v| v.as_map())
+            .expect("proof members");
+        assert_eq!(members.len(), 1);
+        let member = members.values().next().expect("library binding member");
+        let envelope: Value =
+            serde_json::from_slice(member.as_bstr().expect("member bytes")).expect("member JSON");
+        assert_eq!(
+            envelope.pointer("/header/kind").and_then(|v| v.as_str()),
+            Some("library-sugar-binding-entry")
+        );
+        assert_eq!(
+            envelope
+                .pointer("/body/target_library_tag")
+                .and_then(|v| v.as_str()),
+            Some("requests")
         );
     }
 

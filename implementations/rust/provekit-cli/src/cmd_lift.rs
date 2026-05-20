@@ -71,6 +71,7 @@ pub fn run(args: LiftArgs) -> u8 {
         &surface,
         LiftPluginOptions {
             identify_only: args.identify_only,
+            library_bindings: args.library_bindings,
         },
         true,
     ) {
@@ -318,6 +319,7 @@ mod tests {
             project: Some(PathBuf::from("/provekit/no/such/lift/project")),
             output: None,
             identify_only: false,
+            library_bindings: false,
             out: OutputFlags::default(),
         };
         assert_eq!(run(args), crate::EXIT_USER_ERROR);

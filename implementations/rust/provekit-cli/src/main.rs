@@ -305,8 +305,11 @@ pub struct LiftArgs {
     #[arg(short = 'o', long = "output")]
     pub output: Option<PathBuf>,
     /// Ask the configured lifter to report native contract identities without full ProofIR lowering.
-    #[arg(long)]
+    #[arg(long, conflicts_with = "library_bindings")]
     pub identify_only: bool,
+    /// Ask the configured lifter for proof-producing host-language library-sugar bindings.
+    #[arg(long, conflicts_with = "identify_only")]
+    pub library_bindings: bool,
     #[command(flatten)]
     pub out: OutputFlags,
 }
