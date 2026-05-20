@@ -1,6 +1,7 @@
 const readline = require("node:readline");
 
 const { emitStub } = require("./realizer");
+const { answers: literalEncodingAnswers } = require("./literal_encoding");
 const { declaration: platformSemanticsDeclaration } = require("./platform_semantics");
 
 function runRpc() {
@@ -44,6 +45,9 @@ function dispatch(request) {
   if (method === "provekit.plugin.platform_semantics") {
     const decl = platformSemanticsDeclaration();
     return { jsonrpc: "2.0", id: msgId, result: { tags: decl.tags, dimension_values: decl.dimension_values, op_aliases: {} } };
+  }
+  if (method === "provekit.plugin.literal_encoding_answers") {
+    return { jsonrpc: "2.0", id: msgId, result: { answers: literalEncodingAnswers() } };
   }
   if (method === "provekit.plugin.shutdown") {
     return { jsonrpc: "2.0", id: msgId, result: null };
