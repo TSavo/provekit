@@ -20,11 +20,12 @@ SORT_BYTES_CID = "blake3-512:7116ef6e62e6739b213a8394f975a53c771b89f08c36d271438
 SORT_NULL_CID = "blake3-512:62f6040bd3f414c1e6c2b7bdf276669cd5613b33cb508a81170170064ca3ffba771a4b0002dc52e059fce5f9f63a1874ef71bd4ec89ae06e89c87a3e91aac3b5"
 
 # Golden LiteralEncodingMemento CIDs (kit_cid elided per #1262 / #1271)
-# Python uses json.dumps(sort_keys=True) for CID computation, so these
-# differ from the Rust golden CIDs (which use proper JCS via provekit-canonicalizer).
+# Python uses json.dumps(sort_keys=True) for CID computation; CIDs differ from
+# Rust/C golden CIDs (which use proper JCS) only due to serializer, NOT Float shape.
+# Float value is now {"__float_bits__": 4614253070214989087} (bit-preserving, #1262).
 GOLDEN_CIDS: dict[str, str] = {
     SORT_INT_CID: "blake3-512:9f52add0c36ff83c1f5605cf67ddcc4858729573ba972fb1f3d2605aa519ecd74405579993ad6772053d5d14d1cd0376a398f84fe45411790d6ff72b44757134",
-    SORT_FLOAT_CID: "blake3-512:f6977da3b1edbc3b82e97bfec23877438ea75ec8467a57bbe4eec3a3ce65cd83856956acaf8c92c2fc5dbb4bd85fd0f26a4a41689c7fb680d71920e95fa62759",
+    SORT_FLOAT_CID: "blake3-512:ff91e8b428e9cd2eda7d223cbe0453b8de9f3a511d764f1f22eae68ab9668b8bd361af8eb684b328d4f7ce857bb7e8306d712766acb5449b6f65eb48230aceba",
     SORT_STRING_CID: "blake3-512:978e9c766dc1c45e0abf38c00982c30194556922d809235f317f5f8b474a18898703dcc51d6b9efb58ce173facb7af42cb8b939d729a37a42c1ee567b5f19421",
     SORT_BOOL_CID: "blake3-512:076494a0ea47110a33b287c5f9e2f421925d4662e1f485540462dc513dff49b6c7e8875407c03699e20bce2bdd849ddc09f944993231a2288ba0817ab3cb4962",
     SORT_BYTES_CID: "blake3-512:5eec8ac37173118a18c4df393ea5e88ff04a7fbc9ae01432c1b46a9550d36f816fd425338adf496035286262e75df2970c6c8e6cc447427f5231d50f489340e4",

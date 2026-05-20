@@ -31,8 +31,9 @@ def answers() -> list[Json]:
     """
     return [
         _memento(_SORT_INT_CID, "42", 42),
-        # Python stores floats as JSON numbers (3.14), not as __float_bits__ objects.
-        _memento(_SORT_FLOAT_CID, "3.14", 3.14),
+        # Python float literals are bit-preserved as {"__float_bits__": <u64>} (IEEE 754 raw bits).
+        # 4614253070214989087 == 0x40091EB851EB851F == bits of 3.14 as f64.
+        _memento(_SORT_FLOAT_CID, "3.14", {"__float_bits__": 4614253070214989087}),
         _memento(_SORT_STRING_CID, '"hello"', "hello"),
         _memento(_SORT_BOOL_CID, "True", True),
         # Python bytes literals b"abc" are represented as the UTF-8 string "abc" at
