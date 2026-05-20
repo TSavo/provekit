@@ -1,0 +1,945 @@
+{
+  "header": {
+    "content": {
+      "target_language": "java",
+      "template_name": "java-canonical-bodies-sqlite-jdbc",
+      "entries": [
+        {
+          "concept_name": "concept:sql-connection-open",
+          "emission_template": {
+            "kind": "verbatim",
+            "template": "    @ProveKitSugar(\n        concept = \"concept:sql-connection-open\",\n        library = \"sqlite-jdbc\",\n        loss = {\"sync-vs-async\", \"auth-mechanism\", \"connection-pooling\", \"error-handling-model\"}\n    )\n    public static Connection open(String ${param0}) throws SQLException {\n        return DriverManager.getConnection(${param0});\n    }\n"
+          },
+          "loss_record_contribution": {
+            "form": "literal",
+            "value": {
+              "entries": [
+                "sync-vs-async",
+                "auth-mechanism",
+                "connection-pooling",
+                "error-handling-model"
+              ]
+            }
+          },
+          "signature_guard": {
+            "min_params": 1,
+            "max_params": 1
+          }
+        },
+        {
+          "concept_name": "concept:sql-connection-open",
+          "emission_template": {
+            "kind": "verbatim",
+            "template": "    @ProveKitSugar(\n        concept = \"concept:sql-connection-open\",\n        library = \"sqlite-jdbc\",\n        loss = {\"sync-vs-async\", \"persistence-target\", \"error-handling-model\"}\n    )\n    public static Connection openInMemory() throws SQLException {\n        return DriverManager.getConnection(\"jdbc:sqlite::memory:\");\n    }\n"
+          },
+          "loss_record_contribution": {
+            "form": "literal",
+            "value": {
+              "entries": [
+                "sync-vs-async",
+                "persistence-target",
+                "error-handling-model"
+              ]
+            }
+          },
+          "signature_guard": {
+            "min_params": 0,
+            "max_params": 0
+          }
+        },
+        {
+          "concept_name": "concept:sql-connection-open",
+          "emission_template": {
+            "kind": "verbatim",
+            "template": "    @ProveKitSugar(\n        concept = \"concept:sql-connection-open\",\n        library = \"sqlite-jdbc\",\n        loss = {\"sync-vs-async\", \"auth-mechanism\", \"connection-pooling\", \"error-handling-model\",\n                \"flag-encoding\"}\n    )\n    public static Connection openWithCredentials(String ${param0}, String ${param1}, String ${param2})\n            throws SQLException {\n        return DriverManager.getConnection(${param0}, ${param1}, ${param2});\n    }\n"
+          },
+          "loss_record_contribution": {
+            "form": "literal",
+            "value": {
+              "entries": [
+                "sync-vs-async",
+                "auth-mechanism",
+                "connection-pooling",
+                "error-handling-model",
+                "flag-encoding"
+              ]
+            }
+          },
+          "signature_guard": {
+            "min_params": 3,
+            "max_params": 3
+          }
+        },
+        {
+          "concept_name": "concept:sql-connection-close",
+          "emission_template": {
+            "kind": "verbatim",
+            "template": "    @ProveKitSugar(\n        concept = \"concept:sql-connection-close\",\n        library = \"sqlite-jdbc\",\n        loss = {\"sync-vs-async\", \"error-handling-model\"}\n    )\n    public static void close(Connection ${param0}) throws SQLException {\n        ${param0}.close();\n    }\n"
+          },
+          "loss_record_contribution": {
+            "form": "literal",
+            "value": {
+              "entries": [
+                "sync-vs-async",
+                "error-handling-model"
+              ]
+            }
+          },
+          "signature_guard": {
+            "min_params": 1,
+            "max_params": 1
+          }
+        },
+        {
+          "concept_name": "concept:sql-connection-pool-acquire",
+          "emission_template": {
+            "kind": "verbatim",
+            "template": "    @ProveKitSugar(\n        concept = \"concept:sql-connection-pool-acquire\",\n        library = \"sqlite-jdbc\",\n        loss = {\"sync-vs-async\", \"pool-sizing-policy\", \"error-handling-model\",\n                \"eviction-strategy\"}\n    )\n    public static Connection acquireFromDataSource(DataSource ${param0}) throws SQLException {\n        return ${param0}.getConnection();\n    }\n"
+          },
+          "loss_record_contribution": {
+            "form": "literal",
+            "value": {
+              "entries": [
+                "sync-vs-async",
+                "pool-sizing-policy",
+                "error-handling-model",
+                "eviction-strategy"
+              ]
+            }
+          },
+          "signature_guard": {
+            "min_params": 1,
+            "max_params": 1
+          }
+        },
+        {
+          "concept_name": "concept:sql-execute",
+          "emission_template": {
+            "kind": "verbatim",
+            "template": "    @ProveKitSugar(\n        concept = \"concept:${param1}-execute\",\n        library = \"sqlite-jdbc\",\n        loss = {\"sync-vs-async\", \"last-insert-id\", \"transaction-isolation\",\n                \"error-handling-model\"}\n    )\n    public static int execute(Connection ${param0}, String ${param1}) throws SQLException {\n        try (Statement stmt = ${param0}.createStatement()) {\n            return stmt.executeUpdate(${param1});\n        }\n    }\n"
+          },
+          "loss_record_contribution": {
+            "form": "literal",
+            "value": {
+              "entries": [
+                "sync-vs-async",
+                "last-insert-id",
+                "transaction-isolation",
+                "error-handling-model"
+              ]
+            }
+          },
+          "signature_guard": {
+            "min_params": 2,
+            "max_params": 2
+          }
+        },
+        {
+          "concept_name": "concept:sql-execute",
+          "emission_template": {
+            "kind": "verbatim",
+            "template": "    @ProveKitSugar(\n        concept = \"concept:${param1}-execute\",\n        library = \"sqlite-jdbc\",\n        loss = {\"sync-vs-async\", \"error-handling-model\", \"batch-delimiter-syntax\"}\n    )\n    public static void executeBatch(Connection ${param0}, String ${param1}) throws SQLException {\n        try (Statement stmt = ${param0}.createStatement()) {\n            stmt.execute(${param1});\n        }\n    }\n"
+          },
+          "loss_record_contribution": {
+            "form": "literal",
+            "value": {
+              "entries": [
+                "sync-vs-async",
+                "error-handling-model",
+                "batch-delimiter-syntax"
+              ]
+            }
+          },
+          "signature_guard": {
+            "min_params": 2,
+            "max_params": 2
+          }
+        },
+        {
+          "concept_name": "concept:sql-query",
+          "emission_template": {
+            "kind": "verbatim",
+            "template": "    @ProveKitSugar(\n        concept = \"concept:${param1}-query\",\n        library = \"sqlite-jdbc\",\n        loss = {\"sync-vs-async\", \"row-cardinality\", \"mapper-side-effects\",\n                \"error-handling-model\"}\n    )\n    public static ResultSet queryRow(Connection ${param0}, String ${param1}) throws SQLException {\n        Statement stmt = ${param0}.createStatement();\n        return stmt.executeQuery(${param1});\n    }\n"
+          },
+          "loss_record_contribution": {
+            "form": "literal",
+            "value": {
+              "entries": [
+                "sync-vs-async",
+                "row-cardinality",
+                "mapper-side-effects",
+                "error-handling-model"
+              ]
+            }
+          },
+          "signature_guard": {
+            "min_params": 2,
+            "max_params": 2
+          }
+        },
+        {
+          "concept_name": "concept:sql-prepare",
+          "emission_template": {
+            "kind": "verbatim",
+            "template": "    @ProveKitSugar(\n        concept = \"concept:${param1}-prepare\",\n        library = \"sqlite-jdbc\",\n        loss = {\"sync-vs-async\", \"parameter-style\", \"statement-handle-type\",\n                \"error-handling-model\"}\n    )\n    public static PreparedStatement prepare(Connection ${param0}, String ${param1}) throws SQLException {\n        return ${param0}.prepareStatement(${param1});\n    }\n"
+          },
+          "loss_record_contribution": {
+            "form": "literal",
+            "value": {
+              "entries": [
+                "sync-vs-async",
+                "parameter-style",
+                "statement-handle-type",
+                "error-handling-model"
+              ]
+            }
+          },
+          "signature_guard": {
+            "min_params": 2,
+            "max_params": 2
+          }
+        },
+        {
+          "concept_name": "concept:sql-prepare-cached",
+          "emission_template": {
+            "kind": "verbatim",
+            "template": "    @ProveKitSugar(\n        concept = \"concept:${param1}-prepare-cached\",\n        library = \"sqlite-jdbc\",\n        loss = {\"sync-vs-async\", \"cache-eviction-policy\", \"cache-size-bound\",\n                \"error-handling-model\"}\n    )\n    public static PreparedStatement prepareCached(Connection ${param0}, String ${param1}) throws SQLException {\n        // JDBC has no built-in statement cache; delegate to prepareStatement.\n        // The loss dimension \"cache-eviction-policy\" names this gap explicitly.\n        return ${param0}.prepareStatement(${param1});\n    }\n"
+          },
+          "loss_record_contribution": {
+            "form": "literal",
+            "value": {
+              "entries": [
+                "sync-vs-async",
+                "cache-eviction-policy",
+                "cache-size-bound",
+                "error-handling-model"
+              ]
+            }
+          },
+          "signature_guard": {
+            "min_params": 2,
+            "max_params": 2
+          }
+        },
+        {
+          "concept_name": "concept:sql-execute",
+          "emission_template": {
+            "kind": "verbatim",
+            "template": "    @ProveKitSugar(\n        concept = \"concept:sql-execute\",\n        library = \"sqlite-jdbc\",\n        loss = {\"sync-vs-async\", \"last-insert-id\", \"transaction-isolation\",\n                \"error-handling-model\"}\n    )\n    public static int stmtExecute(PreparedStatement ${param0}) throws SQLException {\n        return ${param0}.executeUpdate();\n    }\n"
+          },
+          "loss_record_contribution": {
+            "form": "literal",
+            "value": {
+              "entries": [
+                "sync-vs-async",
+                "last-insert-id",
+                "transaction-isolation",
+                "error-handling-model"
+              ]
+            }
+          },
+          "signature_guard": {
+            "min_params": 1,
+            "max_params": 1
+          }
+        },
+        {
+          "concept_name": "concept:sql-query",
+          "emission_template": {
+            "kind": "verbatim",
+            "template": "    @ProveKitSugar(\n        concept = \"concept:sql-query\",\n        library = \"sqlite-jdbc\",\n        loss = {\"sync-vs-async\", \"cursor-lifetime\", \"error-handling-model\"}\n    )\n    public static ResultSet stmtQuery(PreparedStatement ${param0}) throws SQLException {\n        return ${param0}.executeQuery();\n    }\n"
+          },
+          "loss_record_contribution": {
+            "form": "literal",
+            "value": {
+              "entries": [
+                "sync-vs-async",
+                "cursor-lifetime",
+                "error-handling-model"
+              ]
+            }
+          },
+          "signature_guard": {
+            "min_params": 1,
+            "max_params": 1
+          }
+        },
+        {
+          "concept_name": "concept:sql-query",
+          "emission_template": {
+            "kind": "verbatim",
+            "template": "    @ProveKitSugar(\n        concept = \"concept:sql-query\",\n        library = \"sqlite-jdbc\",\n        loss = {\"sync-vs-async\", \"cursor-lifetime\", \"mapper-side-effects\",\n                \"error-handling-model\"}\n    )\n    public static ResultSet stmtQueryMap(PreparedStatement ${param0}) throws SQLException {\n        return ${param0}.executeQuery();\n    }\n"
+          },
+          "loss_record_contribution": {
+            "form": "literal",
+            "value": {
+              "entries": [
+                "sync-vs-async",
+                "cursor-lifetime",
+                "mapper-side-effects",
+                "error-handling-model"
+              ]
+            }
+          },
+          "signature_guard": {
+            "min_params": 1,
+            "max_params": 1
+          }
+        },
+        {
+          "concept_name": "concept:sql-query",
+          "emission_template": {
+            "kind": "verbatim",
+            "template": "    @ProveKitSugar(\n        concept = \"concept:sql-query\",\n        library = \"sqlite-jdbc\",\n        loss = {\"sync-vs-async\", \"row-cardinality\", \"mapper-side-effects\",\n                \"error-handling-model\"}\n    )\n    public static ResultSet stmtQueryRow(PreparedStatement ${param0}) throws SQLException {\n        return ${param0}.executeQuery();\n    }\n"
+          },
+          "loss_record_contribution": {
+            "form": "literal",
+            "value": {
+              "entries": [
+                "sync-vs-async",
+                "row-cardinality",
+                "mapper-side-effects",
+                "error-handling-model"
+              ]
+            }
+          },
+          "signature_guard": {
+            "min_params": 1,
+            "max_params": 1
+          }
+        },
+        {
+          "concept_name": "concept:insert-and-get-id",
+          "emission_template": {
+            "kind": "verbatim",
+            "template": "    @ProveKitSugar(\n        concept = \"concept:insert-and-get-id\",\n        library = \"sqlite-jdbc\",\n        loss = {\"sync-vs-async\", \"id-column-discovery\", \"error-handling-model\"}\n    )\n    public static long stmtInsert(PreparedStatement ${param0}) throws SQLException {\n        ${param0}.executeUpdate();\n        try (ResultSet rs = ${param0}.getGeneratedKeys()) {\n            if (rs.next()) return rs.getLong(1);\n            return -1L;\n        }\n    }\n"
+          },
+          "loss_record_contribution": {
+            "form": "literal",
+            "value": {
+              "entries": [
+                "sync-vs-async",
+                "id-column-discovery",
+                "error-handling-model"
+              ]
+            }
+          },
+          "signature_guard": {
+            "min_params": 1,
+            "max_params": 1
+          }
+        },
+        {
+          "concept_name": "concept:sql-query",
+          "emission_template": {
+            "kind": "verbatim",
+            "template": "    @ProveKitSugar(\n        concept = \"concept:sql-query\",\n        library = \"sqlite-jdbc\",\n        loss = {\"sync-vs-async\", \"cardinality-projected-to-boolean\", \"error-handling-model\"}\n    )\n    public static boolean stmtExists(PreparedStatement ${param0}) throws SQLException {\n        try (ResultSet rs = ${param0}.executeQuery()) {\n            return rs.next();\n        }\n    }\n"
+          },
+          "loss_record_contribution": {
+            "form": "literal",
+            "value": {
+              "entries": [
+                "sync-vs-async",
+                "cardinality-projected-to-boolean",
+                "error-handling-model"
+              ]
+            }
+          },
+          "signature_guard": {
+            "min_params": 1,
+            "max_params": 1
+          }
+        },
+        {
+          "concept_name": "concept:sql-batch-execute",
+          "emission_template": {
+            "kind": "verbatim",
+            "template": "    @ProveKitSugar(\n        concept = \"concept:sql-batch-execute\",\n        library = \"sqlite-jdbc\",\n        loss = {\"sync-vs-async\", \"error-handling-model\", \"partial-batch-failure\"}\n    )\n    public static int[] executePreparedBatch(PreparedStatement ${param0}) throws SQLException {\n        return ${param0}.executeBatch();\n    }\n"
+          },
+          "loss_record_contribution": {
+            "form": "literal",
+            "value": {
+              "entries": [
+                "sync-vs-async",
+                "error-handling-model",
+                "partial-batch-failure"
+              ]
+            }
+          },
+          "signature_guard": {
+            "min_params": 1,
+            "max_params": 1
+          }
+        },
+        {
+          "concept_name": "concept:sql-transaction-begin",
+          "emission_template": {
+            "kind": "verbatim",
+            "template": "    @ProveKitSugar(\n        concept = \"concept:sql-transaction-begin\",\n        library = \"sqlite-jdbc\",\n        loss = {\"sync-vs-async\", \"isolation-level\", \"nesting-depth-bound\",\n                \"error-handling-model\"}\n    )\n    public static void transactionBegin(Connection ${param0}) throws SQLException {\n        ${param0}.setAutoCommit(false);\n    }\n"
+          },
+          "loss_record_contribution": {
+            "form": "literal",
+            "value": {
+              "entries": [
+                "sync-vs-async",
+                "isolation-level",
+                "nesting-depth-bound",
+                "error-handling-model"
+              ]
+            }
+          },
+          "signature_guard": {
+            "min_params": 1,
+            "max_params": 1
+          }
+        },
+        {
+          "concept_name": "concept:sql-transaction-begin",
+          "emission_template": {
+            "kind": "verbatim",
+            "template": "    @ProveKitSugar(\n        concept = \"concept:sql-transaction-begin\",\n        library = \"sqlite-jdbc\",\n        loss = {\"sync-vs-async\", \"nesting-depth-bound\", \"error-handling-model\",\n                \"deferred-vs-immediate-vs-exclusive\"}\n    )\n    public static void transactionBeginWithIsolation(Connection ${param0}, int ${param1})\n            throws SQLException {\n        ${param0}.setAutoCommit(false);\n        ${param0}.setTransactionIsolation(${param1});\n    }\n"
+          },
+          "loss_record_contribution": {
+            "form": "literal",
+            "value": {
+              "entries": [
+                "sync-vs-async",
+                "nesting-depth-bound",
+                "error-handling-model",
+                "deferred-vs-immediate-vs-exclusive"
+              ]
+            }
+          },
+          "signature_guard": {
+            "min_params": 2,
+            "max_params": 2
+          }
+        },
+        {
+          "concept_name": "concept:sql-transaction-commit",
+          "emission_template": {
+            "kind": "verbatim",
+            "template": "    @ProveKitSugar(\n        concept = \"concept:sql-transaction-commit\",\n        library = \"sqlite-jdbc\",\n        loss = {\"sync-vs-async\", \"two-phase-commit-support\", \"error-handling-model\"}\n    )\n    public static void txCommit(Connection ${param0}) throws SQLException {\n        ${param0}.commit();\n    }\n"
+          },
+          "loss_record_contribution": {
+            "form": "literal",
+            "value": {
+              "entries": [
+                "sync-vs-async",
+                "two-phase-commit-support",
+                "error-handling-model"
+              ]
+            }
+          },
+          "signature_guard": {
+            "min_params": 1,
+            "max_params": 1
+          }
+        },
+        {
+          "concept_name": "concept:sql-transaction-rollback",
+          "emission_template": {
+            "kind": "verbatim",
+            "template": "    @ProveKitSugar(\n        concept = \"concept:sql-transaction-rollback\",\n        library = \"sqlite-jdbc\",\n        loss = {\"sync-vs-async\", \"partial-rollback-support\", \"error-handling-model\"}\n    )\n    public static void txRollback(Connection ${param0}) throws SQLException {\n        ${param0}.rollback();\n    }\n"
+          },
+          "loss_record_contribution": {
+            "form": "literal",
+            "value": {
+              "entries": [
+                "sync-vs-async",
+                "partial-rollback-support",
+                "error-handling-model"
+              ]
+            }
+          },
+          "signature_guard": {
+            "min_params": 1,
+            "max_params": 1
+          }
+        },
+        {
+          "concept_name": "concept:sql-savepoint",
+          "emission_template": {
+            "kind": "verbatim",
+            "template": "    @ProveKitSugar(\n        concept = \"concept:sql-savepoint\",\n        library = \"sqlite-jdbc\",\n        loss = {\"nesting-depth-bound\", \"naming-discipline\", \"error-handling-model\"}\n    )\n    public static Savepoint txSavepoint(Connection ${param0}) throws SQLException {\n        return ${param0}.setSavepoint();\n    }\n"
+          },
+          "loss_record_contribution": {
+            "form": "literal",
+            "value": {
+              "entries": [
+                "nesting-depth-bound",
+                "naming-discipline",
+                "error-handling-model"
+              ]
+            }
+          },
+          "signature_guard": {
+            "min_params": 1,
+            "max_params": 1
+          }
+        },
+        {
+          "concept_name": "concept:sql-transaction-rollback",
+          "emission_template": {
+            "kind": "verbatim",
+            "template": "    @ProveKitSugar(\n        concept = \"concept:sql-transaction-rollback\",\n        library = \"sqlite-jdbc\",\n        loss = {\"sync-vs-async\", \"error-handling-model\", \"savepoint-scope\"}\n    )\n    public static void txRollbackToSavepoint(Connection ${param0}, Savepoint ${param1})\n            throws SQLException {\n        ${param0}.rollback(${param1});\n    }\n"
+          },
+          "loss_record_contribution": {
+            "form": "literal",
+            "value": {
+              "entries": [
+                "sync-vs-async",
+                "error-handling-model",
+                "savepoint-scope"
+              ]
+            }
+          },
+          "signature_guard": {
+            "min_params": 2,
+            "max_params": 2
+          }
+        },
+        {
+          "concept_name": "concept:sql-transaction-isolation-level",
+          "emission_template": {
+            "kind": "verbatim",
+            "template": "    @ProveKitSugar(\n        concept = \"concept:sql-transaction-isolation-${param1}\",\n        library = \"sqlite-jdbc\",\n        loss = {\"sync-vs-async\", \"error-handling-model\", \"connection-scope-vs-statement-scope\"}\n    )\n    public static void setTransactionIsolation(Connection ${param0}, int ${param1}) throws SQLException {\n        ${param0}.setTransactionIsolation(${param1});\n    }\n"
+          },
+          "loss_record_contribution": {
+            "form": "literal",
+            "value": {
+              "entries": [
+                "sync-vs-async",
+                "error-handling-model",
+                "connection-scope-vs-statement-scope"
+              ]
+            }
+          },
+          "signature_guard": {
+            "min_params": 2,
+            "max_params": 2
+          }
+        },
+        {
+          "concept_name": "concept:sql-row-get-column",
+          "emission_template": {
+            "kind": "verbatim",
+            "template": "    @ProveKitSugar(\n        concept = \"concept:sql-row-get-column\",\n        library = \"sqlite-jdbc\",\n        loss = {\"null-handling\", \"type-coercion-mode\", \"error-handling-model\"}\n    )\n    public static Object rowGet(ResultSet ${param0}, int ${param1}) throws SQLException {\n        return ${param0}.getObject(${param1});\n    }\n"
+          },
+          "loss_record_contribution": {
+            "form": "literal",
+            "value": {
+              "entries": [
+                "null-handling",
+                "type-coercion-mode",
+                "error-handling-model"
+              ]
+            }
+          },
+          "signature_guard": {
+            "min_params": 2,
+            "max_params": 2
+          }
+        },
+        {
+          "concept_name": "concept:sql-row-get-column",
+          "emission_template": {
+            "kind": "verbatim",
+            "template": "    @ProveKitSugar(\n        concept = \"concept:sql-row-get-column\",\n        library = \"sqlite-jdbc\",\n        loss = {\"null-handling\", \"type-coercion-mode\", \"error-handling-model\",\n                \"column-name-vs-index\"}\n    )\n    public static Object rowGetByName(ResultSet ${param0}, String ${param1}) throws SQLException {\n        return ${param0}.getObject(${param1});\n    }\n"
+          },
+          "loss_record_contribution": {
+            "form": "literal",
+            "value": {
+              "entries": [
+                "null-handling",
+                "type-coercion-mode",
+                "error-handling-model",
+                "column-name-vs-index"
+              ]
+            }
+          },
+          "signature_guard": {
+            "min_params": 2,
+            "max_params": 2
+          }
+        },
+        {
+          "concept_name": "concept:sql-row-get-column",
+          "emission_template": {
+            "kind": "verbatim",
+            "template": "    @ProveKitSugar(\n        concept = \"concept:sql-row-get-column\",\n        library = \"sqlite-jdbc\",\n        loss = {\"null-handling\", \"type-coercion-mode\", \"error-handling-model\",\n                \"typed-accessor\"}\n    )\n    public static String rowGetString(ResultSet ${param0}, int ${param1}) throws SQLException {\n        return ${param0}.getString(${param1});\n    }\n"
+          },
+          "loss_record_contribution": {
+            "form": "literal",
+            "value": {
+              "entries": [
+                "null-handling",
+                "type-coercion-mode",
+                "error-handling-model",
+                "typed-accessor"
+              ]
+            }
+          },
+          "signature_guard": {
+            "min_params": 2,
+            "max_params": 2
+          }
+        },
+        {
+          "concept_name": "concept:sql-row-get-column",
+          "emission_template": {
+            "kind": "verbatim",
+            "template": "    @ProveKitSugar(\n        concept = \"concept:sql-row-get-column\",\n        library = \"sqlite-jdbc\",\n        loss = {\"null-handling\", \"type-coercion-mode\", \"error-handling-model\",\n                \"typed-accessor\", \"null-unboxing\"}\n    )\n    public static long rowGetLong(ResultSet ${param0}, int ${param1}) throws SQLException {\n        return ${param0}.getLong(${param1});\n    }\n"
+          },
+          "loss_record_contribution": {
+            "form": "literal",
+            "value": {
+              "entries": [
+                "null-handling",
+                "type-coercion-mode",
+                "error-handling-model",
+                "typed-accessor",
+                "null-unboxing"
+              ]
+            }
+          },
+          "signature_guard": {
+            "min_params": 2,
+            "max_params": 2
+          }
+        },
+        {
+          "concept_name": "concept:insert-and-get-id",
+          "emission_template": {
+            "kind": "verbatim",
+            "template": "    @ProveKitSugar(\n        concept = \"concept:insert-and-get-id\",\n        library = \"sqlite-jdbc\",\n        loss = {\"per-connection-not-per-statement\", \"rowid-vs-integer-pk\",\n                \"error-handling-model\"}\n    )\n    public static long lastInsertRowId(Connection ${param0}) throws SQLException {\n        try (Statement stmt = ${param0}.createStatement();\n             ResultSet rs = stmt.executeQuery(\"SELECT last_insert_rowid()\")) {\n            return rs.next() ? rs.getLong(1) : -1L;\n        }\n    }\n"
+          },
+          "loss_record_contribution": {
+            "form": "literal",
+            "value": {
+              "entries": [
+                "per-connection-not-per-statement",
+                "rowid-vs-integer-pk",
+                "error-handling-model"
+              ]
+            }
+          },
+          "signature_guard": {
+            "min_params": 1,
+            "max_params": 1
+          }
+        },
+        {
+          "concept_name": "concept:sql-changes-count",
+          "emission_template": {
+            "kind": "verbatim",
+            "template": "    @ProveKitSugar(\n        concept = \"concept:sql-changes-count\",\n        library = \"sqlite-jdbc\",\n        loss = {\"per-statement-vs-cumulative\", \"transaction-scope\", \"error-handling-model\"}\n    )\n    public static int changes(Connection ${param0}) throws SQLException {\n        try (Statement stmt = ${param0}.createStatement();\n             ResultSet rs = stmt.executeQuery(\"SELECT changes()\")) {\n            return rs.next() ? rs.getInt(1) : 0;\n        }\n    }\n"
+          },
+          "loss_record_contribution": {
+            "form": "literal",
+            "value": {
+              "entries": [
+                "per-statement-vs-cumulative",
+                "transaction-scope",
+                "error-handling-model"
+              ]
+            }
+          },
+          "signature_guard": {
+            "min_params": 1,
+            "max_params": 1
+          }
+        },
+        {
+          "concept_name": "concept:sql-changes-count",
+          "emission_template": {
+            "kind": "verbatim",
+            "template": "    @ProveKitSugar(\n        concept = \"concept:sql-changes-count\",\n        library = \"sqlite-jdbc\",\n        loss = {\"cumulative-since-connection-open\", \"transaction-scope\",\n                \"error-handling-model\"}\n    )\n    public static long totalChanges(Connection ${param0}) throws SQLException {\n        try (Statement stmt = ${param0}.createStatement();\n             ResultSet rs = stmt.executeQuery(\"SELECT total_changes()\")) {\n            return rs.next() ? rs.getLong(1) : 0L;\n        }\n    }\n"
+          },
+          "loss_record_contribution": {
+            "form": "literal",
+            "value": {
+              "entries": [
+                "cumulative-since-connection-open",
+                "transaction-scope",
+                "error-handling-model"
+              ]
+            }
+          },
+          "signature_guard": {
+            "min_params": 1,
+            "max_params": 1
+          }
+        },
+        {
+          "concept_name": "concept:contract-observation",
+          "emission_template": {
+            "kind": "verbatim",
+            "template": "    @ProveKitSugar(\n        concept = \"concept:contract-observation\",\n        library = \"sqlite-jdbc\",\n        observedDimension = \"autocommit-mode\"\n    )\n    public static boolean isAutoCommit(Connection ${param0}) throws SQLException {\n        return ${param0}.getAutoCommit();\n    }\n"
+          },
+          "loss_record_contribution": {
+            "form": "literal",
+            "value": {
+              "entries": []
+            }
+          },
+          "signature_guard": {
+            "min_params": 1,
+            "max_params": 1
+          },
+          "observed_dimension": "autocommit-mode"
+        },
+        {
+          "concept_name": "concept:contract-observation",
+          "emission_template": {
+            "kind": "verbatim",
+            "template": "    @ProveKitSugar(\n        concept = \"concept:contract-observation\",\n        library = \"sqlite-jdbc\",\n        observedDimension = \"write-permission\"\n    )\n    public static boolean isReadOnly(Connection ${param0}) throws SQLException {\n        return ${param0}.isReadOnly();\n    }\n"
+          },
+          "loss_record_contribution": {
+            "form": "literal",
+            "value": {
+              "entries": []
+            }
+          },
+          "signature_guard": {
+            "min_params": 1,
+            "max_params": 1
+          },
+          "observed_dimension": "write-permission"
+        },
+        {
+          "concept_name": "concept:contract-observation",
+          "emission_template": {
+            "kind": "verbatim",
+            "template": "    @ProveKitSugar(\n        concept = \"concept:contract-observation\",\n        library = \"sqlite-jdbc\",\n        observedDimension = \"connection-closed\"\n    )\n    public static boolean isClosed(Connection ${param0}) throws SQLException {\n        return ${param0}.isClosed();\n    }\n"
+          },
+          "loss_record_contribution": {
+            "form": "literal",
+            "value": {
+              "entries": []
+            }
+          },
+          "signature_guard": {
+            "min_params": 1,
+            "max_params": 1
+          },
+          "observed_dimension": "connection-closed"
+        },
+        {
+          "concept_name": "concept:contract-observation",
+          "emission_template": {
+            "kind": "verbatim",
+            "template": "    @ProveKitSugar(\n        concept = \"concept:contract-observation\",\n        library = \"sqlite-jdbc\",\n        observedDimension = \"connection-validity\",\n        loss = {\"${param1}-meaning\"}\n    )\n    public static boolean isValid(Connection ${param0}, int ${param1}) throws SQLException {\n        return ${param0}.isValid(${param1});\n    }\n"
+          },
+          "loss_record_contribution": {
+            "form": "literal",
+            "value": {
+              "entries": [
+                "timeout-meaning"
+              ]
+            }
+          },
+          "signature_guard": {
+            "min_params": 2,
+            "max_params": 2
+          },
+          "observed_dimension": "connection-validity"
+        },
+        {
+          "concept_name": "concept:contract-observation",
+          "emission_template": {
+            "kind": "verbatim",
+            "template": "    @ProveKitSugar(\n        concept = \"concept:contract-observation\",\n        library = \"sqlite-jdbc\",\n        observedDimension = \"column-count\"\n    )\n    public static int columnCount(ResultSet ${param0}) throws SQLException {\n        return ${param0}.getMetaData().getColumnCount();\n    }\n"
+          },
+          "loss_record_contribution": {
+            "form": "literal",
+            "value": {
+              "entries": []
+            }
+          },
+          "signature_guard": {
+            "min_params": 1,
+            "max_params": 1
+          },
+          "observed_dimension": "column-count"
+        },
+        {
+          "concept_name": "concept:contract-observation",
+          "emission_template": {
+            "kind": "verbatim",
+            "template": "    @ProveKitSugar(\n        concept = \"concept:contract-observation\",\n        library = \"sqlite-jdbc\",\n        observedDimension = \"column-name-at-${param1}\"\n    )\n    public static String columnName(ResultSet ${param0}, int ${param1}) throws SQLException {\n        return ${param0}.getMetaData().getColumnName(${param1});\n    }\n"
+          },
+          "loss_record_contribution": {
+            "form": "literal",
+            "value": {
+              "entries": []
+            }
+          },
+          "signature_guard": {
+            "min_params": 2,
+            "max_params": 2
+          },
+          "observed_dimension": "column-name-at-index"
+        },
+        {
+          "concept_name": "concept:contract-observation",
+          "emission_template": {
+            "kind": "verbatim",
+            "template": "    @ProveKitSugar(\n        concept = \"concept:contract-observation\",\n        library = \"sqlite-jdbc\",\n        observedDimension = \"column-index-of-${param1}\"\n    )\n    public static int columnIndex(ResultSet ${param0}, String ${param1}) throws SQLException {\n        return ${param0}.findColumn(${param1});\n    }\n"
+          },
+          "loss_record_contribution": {
+            "form": "literal",
+            "value": {
+              "entries": []
+            }
+          },
+          "signature_guard": {
+            "min_params": 2,
+            "max_params": 2
+          },
+          "observed_dimension": "column-index-of-name"
+        },
+        {
+          "concept_name": "concept:contract-observation",
+          "emission_template": {
+            "kind": "verbatim",
+            "template": "    @ProveKitSugar(\n        concept = \"concept:contract-observation\",\n        library = \"sqlite-jdbc\",\n        observedDimension = \"parameter-count\"\n    )\n    public static int parameterCount(PreparedStatement ${param0}) throws SQLException {\n        return ${param0}.getParameterMetaData().getParameterCount();\n    }\n"
+          },
+          "loss_record_contribution": {
+            "form": "literal",
+            "value": {
+              "entries": []
+            }
+          },
+          "signature_guard": {
+            "min_params": 1,
+            "max_params": 1
+          },
+          "observed_dimension": "parameter-count"
+        },
+        {
+          "concept_name": "concept:sql-result-metadata",
+          "emission_template": {
+            "kind": "verbatim",
+            "template": "    @ProveKitSugar(\n        concept = \"concept:sql-result-metadata\",\n        library = \"sqlite-jdbc\",\n        loss = {\"sync-vs-async\", \"error-handling-model\"}\n    )\n    public static ResultSetMetaData resultSetMetaData(ResultSet ${param0}) throws SQLException {\n        return ${param0}.getMetaData();\n    }\n"
+          },
+          "loss_record_contribution": {
+            "form": "literal",
+            "value": {
+              "entries": [
+                "sync-vs-async",
+                "error-handling-model"
+              ]
+            }
+          },
+          "signature_guard": {
+            "min_params": 1,
+            "max_params": 1
+          }
+        },
+        {
+          "concept_name": "concept:sql-result-metadata",
+          "emission_template": {
+            "kind": "verbatim",
+            "template": "    @ProveKitSugar(\n        concept = \"concept:sql-result-metadata\",\n        library = \"sqlite-jdbc\",\n        observedDimension = \"column-type-name\"\n    )\n    public static String columnTypeName(ResultSetMetaData ${param0}, int ${param1}) throws SQLException {\n        return ${param0}.getColumnTypeName(${param1});\n    }\n"
+          },
+          "loss_record_contribution": {
+            "form": "literal",
+            "value": {
+              "entries": []
+            }
+          },
+          "signature_guard": {
+            "min_params": 2,
+            "max_params": 2
+          },
+          "observed_dimension": "column-type-name"
+        },
+        {
+          "concept_name": "concept:sql-catalog-reflection",
+          "emission_template": {
+            "kind": "verbatim",
+            "template": "    @ProveKitSugar(\n        concept = \"concept:sql-catalog-reflection\",\n        library = \"sqlite-jdbc\",\n        loss = {\"sync-vs-async\", \"error-handling-model\", \"catalog-depth\"}\n    )\n    public static DatabaseMetaData databaseMetaData(Connection ${param0}) throws SQLException {\n        return ${param0}.getMetaData();\n    }\n"
+          },
+          "loss_record_contribution": {
+            "form": "literal",
+            "value": {
+              "entries": [
+                "sync-vs-async",
+                "error-handling-model",
+                "catalog-depth"
+              ]
+            }
+          },
+          "signature_guard": {
+            "min_params": 1,
+            "max_params": 1
+          }
+        },
+        {
+          "concept_name": "concept:sql-busy-timeout",
+          "emission_template": {
+            "kind": "verbatim",
+            "template": "    @ProveKitSugar(\n        concept = \"concept:sql-busy-timeout\",\n        library = \"sqlite-jdbc\",\n        loss = {\"sync-vs-async\", \"callback-vs-timeout-shape\", \"timeout-unit\",\n                \"error-handling-model\"}\n    )\n    public static void setQueryTimeout(Statement ${param0}, int ${param1})\n            throws SQLException {\n        ${param0}.setQueryTimeout(${param1});\n    }\n"
+          },
+          "loss_record_contribution": {
+            "form": "literal",
+            "value": {
+              "entries": [
+                "sync-vs-async",
+                "callback-vs-timeout-shape",
+                "timeout-unit",
+                "error-handling-model"
+              ]
+            }
+          },
+          "signature_guard": {
+            "min_params": 2,
+            "max_params": 2
+          }
+        },
+        {
+          "concept_name": "concept:sql-autocommit-control",
+          "emission_template": {
+            "kind": "verbatim",
+            "template": "    @ProveKitSugar(\n        concept = \"concept:sql-autocommit-control\",\n        library = \"sqlite-jdbc\",\n        loss = {\"sync-vs-async\", \"error-handling-model\"}\n    )\n    public static void setAutoCommit(Connection ${param0}, boolean ${param1})\n            throws SQLException {\n        ${param0}.setAutoCommit(${param1});\n    }\n"
+          },
+          "loss_record_contribution": {
+            "form": "literal",
+            "value": {
+              "entries": [
+                "sync-vs-async",
+                "error-handling-model"
+              ]
+            }
+          },
+          "signature_guard": {
+            "min_params": 2,
+            "max_params": 2
+          }
+        },
+        {
+          "concept_name": "concept:sql-cursor-fetch-size",
+          "emission_template": {
+            "kind": "verbatim",
+            "template": "    @ProveKitSugar(\n        concept = \"concept:sql-cursor-fetch-size\",\n        library = \"sqlite-jdbc\",\n        loss = {\"sync-vs-async\", \"driver-may-ignore\", \"error-handling-model\"}\n    )\n    public static void setFetchSize(Statement ${param0}, int ${param1}) throws SQLException {\n        ${param0}.setFetchSize(${param1});\n    }\n"
+          },
+          "loss_record_contribution": {
+            "form": "literal",
+            "value": {
+              "entries": [
+                "sync-vs-async",
+                "driver-may-ignore",
+                "error-handling-model"
+              ]
+            }
+          },
+          "signature_guard": {
+            "min_params": 2,
+            "max_params": 2
+          }
+        }
+      ]
+    }
+  }
+}

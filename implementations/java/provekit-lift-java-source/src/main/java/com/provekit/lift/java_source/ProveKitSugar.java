@@ -11,13 +11,19 @@ import java.lang.annotation.Target;
  * The JavaBindLifter recognizes this annotation and emits a
  * {@code library-sugar-binding-entry} record in the bind-IR output.
  *
+ * <p>Three speech acts per paper 24:
+ * <ol>
+ *   <li>{@code @ProveKitSugar(concept=..., library=..., loss={})} -- materialize (exact)</li>
+ *   <li>{@code @ProveKitSugar(concept=..., library=..., loss={"dim1","dim2"})} -- loudly-bounded-lossy</li>
+ *   <li>{@code @ProveKitSugar(concept="concept:contract-observation", ..., observedDimension="...")} -- observation binding</li>
+ * </ol>
+ *
  * <p>Example:
  * <pre>{@code
- * @ProveKitSugar(concept = "concept:http-request", library = "java-net-http")
- * int fetchStatus(URI uri) {
- *     return HttpClient.newHttpClient()
- *         .send(HttpRequest.newBuilder(uri).build(), BodyHandlers.discarding())
- *         .statusCode();
+ * @ProveKitSugar(concept = "concept:sql-execute", library = "sqlite-jdbc",
+ *                loss = {"sync-vs-async", "last-insert-id"})
+ * int execute(Connection conn, String sql) throws SQLException {
+ *     return conn.createStatement().executeUpdate(sql);
  * }
  * }</pre>
  */
@@ -29,4 +35,17 @@ public @interface ProveKitSugar {
 
     /** The library tag, e.g. {@code "java-net-http"}. Must be non-empty. */
     String library();
+
+    /**
+     * Loss dimensions declared for this binding (paper 24 §3).
+     * Empty array means exact materialization; non-empty means loudly-bounded-lossy.
+     * Each entry is a dimension slug, e.g. {@code "sync-vs-async"}.
+     */
+    String[] loss() default {};
+
+    /**
+     * For {@code concept:contract-observation} bindings: the dimension being observed,
+     * e.g. {@code "autocommit-mode"}. Empty string means not an observation binding.
+     */
+    String observedDimension() default "";
 }
