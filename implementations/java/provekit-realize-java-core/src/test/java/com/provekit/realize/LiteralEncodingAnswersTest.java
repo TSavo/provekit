@@ -98,15 +98,62 @@ public class LiteralEncodingAnswersTest {
             "must contain float __float_bits__ value");
     }
 
+    // --- Golden CID regression pins (verified against Rust oracle, provekit-ir-types) ---
+    // CID = blake3-512(JCS({expected_term_shape_node, kind, language, schemaVersion, sort_cid, source_example}))
+    // kit_cid is elided from content-hash per substrate uniformity rule (#1271).
+
+    @Test
+    public void toJsonIntGoldenCid() {
+        // Int memento: source_example="42", value=42
+        String json = LiteralEncodingAnswers.toJson();
+        String expected =
+            "blake3-512:9c60d021b504e537e90385765e3df872a51ad064f4cd71445b013ecc0d08942defcdfb526f08b33ce3d181c40be630fd940eaeb737d100ddd7c581eb2f7b1ef1";
+        assertTrue(json.contains(expected), "Int memento golden CID must match");
+    }
+
     @Test
     public void toJsonFloatGoldenCid() {
-        // Regression: Float memento golden CID must not change.
-        // CID computed from JCS of forCid with __float_bits__ value.
+        // Float memento: source_example="3.14", value={"__float_bits__":4614253070214989087}
         String json = LiteralEncodingAnswers.toJson();
-        String expectedFloatCid =
+        String expected =
             "blake3-512:fa616d402e270631cd136b95d96f9038536c3b507bb736c35554ff41c7e21a20dca3b451d1ae9ee75b6632d5e58b96619c422ea38cab404f47241d471bf77766";
-        assertTrue(json.contains(expectedFloatCid),
-            "Float memento golden CID must match");
+        assertTrue(json.contains(expected), "Float memento golden CID must match");
+    }
+
+    @Test
+    public void toJsonStringGoldenCid() {
+        // String memento: source_example="\"hello\"", value="hello"
+        String json = LiteralEncodingAnswers.toJson();
+        String expected =
+            "blake3-512:870c4363d60fb4825510e110f7289661e9c16428bd85486339f56f75f029edd6a541dd07b95ec668a99f6c8b9cf1f589946385d2f15e2095e0aa00326cc16319";
+        assertTrue(json.contains(expected), "String memento golden CID must match");
+    }
+
+    @Test
+    public void toJsonBoolGoldenCid() {
+        // Bool memento: source_example="true", value=true
+        String json = LiteralEncodingAnswers.toJson();
+        String expected =
+            "blake3-512:f5447d261c4ea59861a94437e2e69565b95e713fda0801a679ecb4c0bac335c7945734e489f0ff320320bde216b230d0a4803c4dc42a9459bc4256084133fa97";
+        assertTrue(json.contains(expected), "Bool memento golden CID must match");
+    }
+
+    @Test
+    public void toJsonBytesGoldenCid() {
+        // Bytes memento: source_example="\"abc\".getBytes()", value="abc" (decoded payload)
+        String json = LiteralEncodingAnswers.toJson();
+        String expected =
+            "blake3-512:a8c69e022a1d13afd23709cf24d37ee84e5f50118dd16ed775b65825bd47192fbb3f6ac15a372b99ee4d2561c15d0e6af4dce0c083522cef9ce3b7aae416533f";
+        assertTrue(json.contains(expected), "Bytes memento golden CID must match");
+    }
+
+    @Test
+    public void toJsonNullGoldenCid() {
+        // Null memento: source_example="null", value=null
+        String json = LiteralEncodingAnswers.toJson();
+        String expected =
+            "blake3-512:93c76b4135da3a4491bff9ea6c992b51a856c8362ef7f0f2a7779e2810eafc3d1c801500f600b060953da8f7b1c6c52bfcc77e9f5c5f8494941af639fd0dd62d";
+        assertTrue(json.contains(expected), "Null memento golden CID must match");
     }
 
     @Test
