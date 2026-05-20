@@ -131,11 +131,12 @@ lift-options = {
   * text => json-value
 }
 
-lift-layer = "all" / "identify-only"
+lift-layer = "all" / "identify-only" / "library-bindings"
 
-lift-result = all-layer-result / identify-only-result
+lift-result = all-layer-result / identify-only-result / library-bindings-result
 all-layer-result = ir-document / signed-mementos / proof-envelope
 identify-only-result = identity-document / package-inspection-document
+library-bindings-result = ir-document / signed-mementos / proof-envelope
 identify-result-kind = "identity-document" / "package-inspection-document"
 
 ir-document = {
@@ -253,8 +254,9 @@ Layer selection is part of the grammar, not an out-of-band CLI convention:
 
 - `options.layer = "all"` selects the proof-producing lift layer. The response MUST be `ir-document`, `signed-mementos`, or `proof-envelope`.
 - `options.layer = "identify-only"` selects the side-effect-free identity layer. The response MUST be `identity-document` or `package-inspection-document`.
-- If `options.identifyOnly` is present, it MUST be `true` exactly when `options.layer = "identify-only"` and `false` exactly when `options.layer = "all"`. It exists only as a legacy mirror for older clients.
-- A plugin that does not implement `identify-only` MAY return JSON-RPC error `1006` / `UNSUPPORTED_LIFT_LAYER`. A client MUST NOT accept a proof-producing response kind as an identify-only response.
+- `options.layer = "library-bindings"` selects proof-producing host-language library-sugar binding lift. The response MUST be `ir-document`, `signed-mementos`, or `proof-envelope`; when returning `ir-document`, the relevant entries use `kind = "library-sugar-binding-entry"` per `2026-05-13-bind-ir-lift-result.md`.
+- If `options.identifyOnly` is present, it MUST be `true` exactly when `options.layer = "identify-only"` and `false` exactly when `options.layer = "all"` or `"library-bindings"`. It exists only as a legacy mirror for older clients.
+- A plugin that does not implement the requested layer MAY return JSON-RPC error `1006` / `UNSUPPORTED_LIFT_LAYER`. A client MUST NOT accept a proof-producing response kind as an identify-only response.
 - `provekit package inspect` is a client command over this same `lift` method. It dispatches to the configured lift plugin with `options.layer = "identify-only"` and requires a `package-inspection-document`. No separate package-manager JSON-RPC protocol exists.
 
 ## Methods
