@@ -350,4 +350,188 @@ function missingBoth(x: string): string { return x; }
       line: null,
     });
   });
+
+  // loss / observed_dimension parsing tests
+
+  it("emits empty loss entries when loss array is absent from @sugar.bind", () => {
+    const source = `
+import { sugar } from "provekit";
+
+@sugar.bind({ concept: "concept:sql-query", library: "better-sqlite3" })
+function queryAll(db: unknown, sql: string): unknown[] { return []; }
+`;
+    const result = liftTypeScriptLibraryBindingsText(source, "src/no-loss.ts");
+
+    expect(result.libraryBindings).toHaveLength(1);
+    const binding = result.libraryBindings[0]!;
+    expect(binding.loss_record_contribution).toEqual({ form: "literal", value: { entries: [] } });
+  });
+
+  it("does not emit a binding for an unannotated function alongside an annotated one (discrimination)", () => {
+    const source = `
+import { sugar } from "provekit";
+
+@sugar.bind({ concept: "concept:sql-query", library: "better-sqlite3" })
+function annotated(db: unknown): unknown[] { return []; }
+
+function bare(): void {}
+`;
+    const result = liftTypeScriptLibraryBindingsText(source, "src/mix.ts");
+
+    expect(result.libraryBindings).toHaveLength(1);
+    expect(result.libraryBindings[0]!.source_function_name).toBe("annotated");
+  });
+
+  it("emits multi-dim loss entries from the loss array on @sugar.bind", () => {
+    const source = `
+import { sugar } from "provekit";
+
+@sugar.bind({ concept: "concept:sql-execute", library: "better-sqlite3", loss: ["async-shape", "error-kind"] })
+function execute(db: unknown, sql: string): void {}
+`;
+    const result = liftTypeScriptLibraryBindingsText(source, "src/loss.ts");
+
+    expect(result.libraryBindings).toHaveLength(1);
+    const binding = result.libraryBindings[0]!;
+    expect(binding.loss_record_contribution).toEqual({
+      form: "literal",
+      value: { entries: ["async-shape", "error-kind"] },
+    });
+  });
+
+  it("does not treat a non-array loss field as entries (structural discrimination)", () => {
+    const source = `
+import { sugar } from "provekit";
+
+@sugar.bind({ concept: "concept:sql-execute", library: "better-sqlite3", loss: "not-an-array" })
+function execute(db: unknown, sql: string): void {}
+`;
+    const result = liftTypeScriptLibraryBindingsText(source, "src/bad-loss.ts");
+
+    // loss field is ignored when it is not an array literal; entries must be empty
+    expect(result.libraryBindings).toHaveLength(1);
+    expect(result.libraryBindings[0]!.loss_record_contribution).toEqual({
+      form: "literal",
+      value: { entries: [] },
+    });
+  });
+
+  it("emits observed_dimension on the binding entry when declared on @sugar.bind", () => {
+    const source = `
+import { sugar } from "provekit";
+
+@sugar.bind({ concept: "concept:sql-changes-affected", library: "better-sqlite3", observed_dimension: "row-count" })
+function changes(result: unknown): number { return 0; }
+`;
+    const result = liftTypeScriptLibraryBindingsText(source, "src/observed.ts");
+
+    expect(result.libraryBindings).toHaveLength(1);
+    const binding = result.libraryBindings[0]!;
+    expect(binding.observed_dimension).toBe("row-count");
+  });
+
+  it("does not set observed_dimension when the field is absent from @sugar.bind (discrimination)", () => {
+    const source = `
+import { sugar } from "provekit";
+
+@sugar.bind({ concept: "concept:sql-query", library: "better-sqlite3" })
+function queryAll(db: unknown): unknown[] { return []; }
+`;
+    const result = liftTypeScriptLibraryBindingsText(source, "src/no-observed.ts");
+
+    expect(result.libraryBindings).toHaveLength(1);
+    expect(result.libraryBindings[0]!.observed_dimension).toBeUndefined();
+  });
+
+  // @sugar.refuse class decorator tests
+
+  it("emits a refusal-memento from a @sugar.refuse class decorator", () => {
+    const source = `
+import { sugar } from "provekit";
+
+@sugar.refuse({
+  surface: "typescript-bind",
+  concept: "concept:sql-physical-backup",
+  reason: "db.backup() returns Promise<BackupMetadata> (async); concept cluster requires sync-shaped physical backup",
+  would_close_with_cluster: "concept:sql-physical-backup",
+})
+class RefusedBackup {}
+`;
+    const result = liftTypeScriptLibraryBindingsText(source, "src/refuse.ts");
+
+    expect(result.libraryBindings).toHaveLength(0);
+    expect(result.libraryRefusals).toHaveLength(1);
+    const refusal = result.libraryRefusals[0]!;
+    expect(refusal.kind).toBe("refusal-memento");
+    expect(refusal.target_language).toBe("typescript");
+    expect(refusal.surface).toBe("typescript-bind");
+    expect(refusal.concept).toBe("concept:sql-physical-backup");
+    expect(refusal.reason).toContain("async");
+    expect(refusal.would_close_with_cluster).toBe("concept:sql-physical-backup");
+  });
+
+  it("does not emit a refusal-memento for a plain class without @sugar.refuse (discrimination)", () => {
+    const source = `
+class PlainClass {
+  method(): void {}
+}
+`;
+    const result = liftTypeScriptLibraryBindingsText(source, "src/plain-class.ts");
+
+    expect(result.libraryRefusals).toHaveLength(0);
+    expect(result.libraryBindings).toHaveLength(0);
+  });
+
+  it("does not emit a refusal-memento when required fields are missing from @sugar.refuse (structural discrimination)", () => {
+    const source = `
+import { sugar } from "provekit";
+
+@sugar.refuse({
+  surface: "typescript-bind",
+  concept: "concept:sql-physical-backup",
+})
+class IncompleteRefusal {}
+`;
+    const result = liftTypeScriptLibraryBindingsText(source, "src/incomplete-refuse.ts");
+
+    // Missing reason and would_close_with_cluster: no refusal emitted
+    expect(result.libraryRefusals).toHaveLength(0);
+  });
+
+  it("does not emit a refusal-memento for a @sugar.bind class decorator (wrong decorator discrimination)", () => {
+    const source = `
+import { sugar } from "provekit";
+
+@sugar.bind({ concept: "concept:sql-query", library: "better-sqlite3" })
+class WrongDecorator {}
+`;
+    const result = liftTypeScriptLibraryBindingsText(source, "src/wrong-dec.ts");
+
+    expect(result.libraryRefusals).toHaveLength(0);
+    expect(result.libraryBindings).toHaveLength(0);
+  });
+
+  it("emits libraryRefusals that are distinct from structural lift-time refusals", () => {
+    const source = `
+import { sugar } from "provekit";
+
+@sugar.refuse({
+  surface: "typescript-bind",
+  concept: "concept:dynamic-library-load",
+  reason: "loadExtension() is an OS-tier binding; not a SQL-driver concern",
+  would_close_with_cluster: "concept:dynamic-library-load",
+})
+class RefusedLoadExtension {}
+
+@sugar.bind({ concept: "concept:sql-query", library: "better-sqlite3" })
+function queryAll(db: unknown): unknown[] { return []; }
+`;
+    const result = liftTypeScriptLibraryBindingsText(source, "src/mixed.ts");
+
+    // Sugar bindings go into libraryBindings; refusals go into libraryRefusals
+    expect(result.libraryBindings).toHaveLength(1);
+    expect(result.libraryRefusals).toHaveLength(1);
+    // Structural lift-time refusals (for unsupported syntax) remain separate
+    expect(result.refusals).toHaveLength(0);
+  });
 });
