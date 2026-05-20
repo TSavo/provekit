@@ -124,6 +124,12 @@ implementations/*/blake3-512:*.proof
 # real source. Rebuild with `make self-lift-<crate>`.
 !.provekit/self-lifts/**/*.proof
 
+# Example shim proof envelopes are checked in. Each examples/<shim>/provekit.proof
+# is the minted output of running `provekit mint` against that shim and serves as
+# the durable signed record of that shim's surface model. Rebuild with
+# `provekit mint --project examples/<shim>`.
+!examples/**/*.proof
+
 # Foundation-baseline catalogs ARE checked in: each per-language
 # `.provekit/baselines/<lang>-baseline-v<N>.proof` is the foundation-signed
 # advisory catalog of std-library predicates (per

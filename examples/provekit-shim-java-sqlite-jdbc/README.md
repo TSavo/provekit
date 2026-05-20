@@ -8,8 +8,8 @@ declare the same concept names; the substrate recognizes the cluster by structur
 
 ## Surface model
 
-54+ members in the `.proof` envelope:
-- 44+ `library-sugar-binding-entry` records (concept name, loss dimensions, optional observed_dimension)
+55 members in the `.proof` envelope:
+- 45 `library-sugar-binding-entry` records (concept name, loss dimensions, optional observed_dimension)
 - 10 `refusal-memento` records (refused boundaries with reasons)
 
 ## Concept alignment with provekit-shim-rusqlite
@@ -38,6 +38,9 @@ declare the same concept names; the substrate recognizes the cluster by structur
 
 The Java realize plugin (`provekit-realize-java`) does not yet support per-library
 body-templates routing (routing by `target_library_tag = "sqlite-jdbc"`). The
-`java-canonical-bodies-sqlite-jdbc.json` body-templates file is emitted by `cmd_mint`
-automatically from the IR, but the realize plugin cannot yet consume it to emit
-sqlite-jdbc-specific bodies. This is gated on issue #1232 (mainline realize work).
+`java-canonical-bodies-sqlite-jdbc.json` body-templates file (45 entries) is emitted
+by `cmd_mint` automatically from the IR. Its `emission_template` values are method-span
+verbatim (full annotation + signature + body), not call-expression only as in rusqlite.
+No current consumer is affected since the realize plugin gap (#1232) means no routing
+occurs yet. The templates will need trimming to call-expression form when the realize
+plugin gains per-library routing. This is gated on issue #1232 (mainline realize work).

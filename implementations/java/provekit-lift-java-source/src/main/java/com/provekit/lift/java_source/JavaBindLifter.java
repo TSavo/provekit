@@ -328,6 +328,7 @@ public final class JavaBindLifter {
                 String sourceCid = Jcs.blake3_512(spanText.toString().getBytes(StandardCharsets.UTF_8));
 
                 Jcs.Obj bodySource = Jcs.object(
+                    "body_text", Jcs.string(spanText.toString()),
                     "file", Jcs.string(rel),
                     "source_cid", Jcs.string(sourceCid),
                     "span", Jcs.object(
