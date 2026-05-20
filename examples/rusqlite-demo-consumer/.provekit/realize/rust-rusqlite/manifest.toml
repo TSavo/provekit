@@ -1,0 +1,4 @@
+name = "rust-realize-rusqlite"
+library_tag = "rusqlite"
+command = ["../../implementations/rust/target/debug/provekit-realize-rust", "--rpc"]
+working_dir = "."
