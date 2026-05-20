@@ -26,6 +26,17 @@ class BodyTemplateEntry:
 
 
 @dataclass(frozen=True)
+class ProofBindingCandidate:
+    admission_tier: str
+    body: str
+    concept_name: str
+    package_evidence: dict[str, Any]
+    signature_shape_cid: str
+    target_language: str
+    target_library_tag: str
+
+
+@dataclass(frozen=True)
 class MissingTemplateEntry:
     operation_kind: str
     args_shape: tuple[str, ...]
@@ -53,24 +64,125 @@ def emit_stub(
     param_types: list[str],
     return_type: str,
     concept_name: str,
+    *,
+    signature_shape_cid: str | None = None,
+    binding_candidates: list[dict[str, Any]] | None = None,
+    strict_proof_bindings: bool = False,
 ) -> dict[str, Any]:
+    proof_binding = proof_binding_for(
+        concept_name=concept_name,
+        signature_shape_cid=signature_shape_cid,
+        binding_candidates=binding_candidates or [],
+    )
+    if proof_binding is not None:
+        return {
+            "source": _function_source(function, params, proof_binding.body),
+            "is_stub": False,
+            "extension": "py",
+            "selection": {
+                "admission_tier": proof_binding.admission_tier,
+                "package_evidence": proof_binding.package_evidence,
+                "signature_shape_cid": proof_binding.signature_shape_cid,
+                "source": "proof-backed-library-binding",
+            },
+        }
+    if strict_proof_bindings:
+        raise _missing_template(function, params, param_types, concept_name)
     body = body_template_for(concept_name, params, param_types, return_type)
     if body is None:
-        raise MissingTemplateError(
-            (
-                MissingTemplateEntry(
-                    operation_kind=concept_name,
-                    args_shape=tuple(map_source_type(ty) for ty in param_types),
-                    function=function,
-                    term_position="body",
-                ),
-            )
-        )
+        raise _missing_template(function, params, param_types, concept_name)
     return {
         "source": _function_source(function, params, body),
         "is_stub": False,
         "extension": "py",
     }
+
+
+def proof_binding_for(
+    *,
+    concept_name: str,
+    signature_shape_cid: str | None,
+    binding_candidates: list[dict[str, Any]],
+) -> ProofBindingCandidate | None:
+    if not signature_shape_cid:
+        return None
+    matches: list[ProofBindingCandidate] = []
+    candidate_names = (concept_name, concept_name.removeprefix("concept:"))
+    for raw in binding_candidates:
+        candidate = _parse_proof_binding_candidate(raw)
+        if candidate is None:
+            continue
+        if candidate.target_language != "python":
+            continue
+        if candidate.target_library_tag != "requests":
+            continue
+        if candidate.concept_name not in candidate_names:
+            continue
+        if candidate.signature_shape_cid != signature_shape_cid:
+            continue
+        matches.append(candidate)
+    matches.sort(key=_proof_binding_sort_key)
+    return matches[0] if matches else None
+
+
+def _parse_proof_binding_candidate(raw: dict[str, Any]) -> ProofBindingCandidate | None:
+    body = raw.get("body")
+    concept_name = raw.get("concept_name")
+    signature_shape_cid = raw.get("signature_shape_cid")
+    target_language = raw.get("target_language")
+    target_library_tag = raw.get("target_library_tag")
+    if not isinstance(body, str):
+        return None
+    if not isinstance(concept_name, str):
+        return None
+    if not isinstance(signature_shape_cid, str):
+        return None
+    if not isinstance(target_language, str):
+        return None
+    if not isinstance(target_library_tag, str):
+        return None
+    package_evidence = raw.get("package_evidence")
+    if not isinstance(package_evidence, dict):
+        package_evidence = {}
+    admission_tier = raw.get("admission_tier")
+    if not isinstance(admission_tier, str):
+        admission_tier = "Third-party Inferred"
+    return ProofBindingCandidate(
+        admission_tier=admission_tier,
+        body=body,
+        concept_name=concept_name,
+        package_evidence=package_evidence,
+        signature_shape_cid=signature_shape_cid,
+        target_language=target_language,
+        target_library_tag=target_library_tag,
+    )
+
+
+def _proof_binding_sort_key(candidate: ProofBindingCandidate) -> tuple[int, str, str]:
+    tier_rank = {
+        "Self-Attested": 0,
+        "Third-party Inferred": 1,
+    }
+    return (
+        tier_rank.get(candidate.admission_tier, 2),
+        candidate.signature_shape_cid,
+        candidate.body,
+    )
+
+
+def _missing_template(
+    function: str, params: list[str], param_types: list[str], concept_name: str
+) -> MissingTemplateError:
+    return MissingTemplateError(
+        (
+            MissingTemplateEntry(
+                operation_kind=concept_name,
+                args_shape=tuple(map_source_type(ty) for ty in param_types),
+                function=function,
+                term_position="body",
+            ),
+        )
+    )
 
 
 def body_template_for(

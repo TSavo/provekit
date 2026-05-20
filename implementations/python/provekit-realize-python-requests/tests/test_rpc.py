@@ -33,6 +33,40 @@ def test_rpc_invoke_renders_requests_body() -> None:
     assert "requests.get" in response["result"]["source"]
 
 
+def test_rpc_invoke_prefers_proof_backed_binding_candidate() -> None:
+    sig = "blake3-512:" + "d" * 128
+    response = dispatch(
+        {
+            "jsonrpc": "2.0",
+            "id": 3,
+            "method": "provekit.plugin.invoke",
+            "params": {
+                "function": "fetch_status",
+                "params": ["url"],
+                "param_types": ["str"],
+                "return_type": "int",
+                "concept_name": "concept:http-request",
+                "signature_shape_cid": sig,
+                "binding_candidates": [
+                    {
+                        "admission_tier": "Self-Attested",
+                        "body": "return 204",
+                        "concept_name": "concept:http-request",
+                        "package_evidence": {"opaque_handle": "python-wheel"},
+                        "signature_shape_cid": sig,
+                        "target_language": "python",
+                        "target_library_tag": "requests",
+                    }
+                ],
+            },
+        }
+    )
+
+    assert response["id"] == 3
+    assert response["result"]["source"] == "def fetch_status(url):\n    return 204\n"
+    assert response["result"]["selection"]["source"] == "proof-backed-library-binding"
+
+
 def test_plugin_invoke_returns_structured_missing_template_error() -> None:
     response = dispatch(
         {
