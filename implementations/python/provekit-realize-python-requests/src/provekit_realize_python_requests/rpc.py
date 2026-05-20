@@ -79,7 +79,20 @@ def _emit_one(params: dict[str, Any]) -> dict[str, Any]:
         param_types=_string_list(params.get("param_types")),
         return_type=str(params.get("return_type", "")),
         concept_name=str(params.get("concept_name", "")),
+        signature_shape_cid=_optional_str(params.get("signature_shape_cid")),
+        binding_candidates=_dict_list(params.get("binding_candidates")),
+        strict_proof_bindings=bool(params.get("strict_proof_bindings", False)),
     )
+
+
+def _optional_str(value: Any) -> str | None:
+    return value if isinstance(value, str) else None
+
+
+def _dict_list(value: Any) -> list[dict[str, Any]]:
+    if not isinstance(value, list):
+        return []
+    return [item for item in value if isinstance(item, dict)]
 
 
 def _string_list(value: Any) -> list[str]:
