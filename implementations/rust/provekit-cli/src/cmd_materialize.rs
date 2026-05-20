@@ -52,7 +52,11 @@ struct MaterializedFile {
     source_path: PathBuf,
     relative_path: PathBuf,
     content: String,
-    replacements: usize,
+    /// Per-file receipt. Carries the trichotomy (exact / lossy /
+    /// refused) plus per-site witnesses + loss/refusal mementos. Phase E
+    /// (`#1339`) wires this so materialize no longer aborts on first
+    /// refusal: every site's outcome lives in the receipt instead.
+    receipt: SourceTransformReceipt,
 }
 
 pub fn run(args: MaterializeArgs) -> u8 {
@@ -127,13 +131,47 @@ pub fn run(args: MaterializeArgs) -> u8 {
         return EXIT_USER_ERROR;
     }
 
-    if !args.out.quiet && (args.write || args.out_dir.is_some()) {
-        let replacements: usize = files.iter().map(|file| file.replacements).sum();
-        println!(
-            "{} materialized {replacements} concept citation(s) across {} file(s)",
-            "materialize".green().bold(),
-            files.len()
-        );
+    // Phase E (`#1339`): emit a per-file SourceTransformReceipt summary so
+    // refusals are first-class output rather than a string-Err abort.
+    // In dry-run mode (no --write, no --out-dir), receipts are printed
+    // as JSON alongside the realized source. In write modes, an aggregate
+    // line per file goes to stdout (or stderr when --quiet).
+    let mut total_exact = 0usize;
+    let mut total_lossy = 0usize;
+    let mut total_refused = 0usize;
+    for file in &files {
+        total_exact += file.receipt.aggregate_summary.exact;
+        total_lossy += file.receipt.aggregate_summary.lossy;
+        total_refused += file.receipt.aggregate_summary.refused;
+    }
+    let dry_run = !args.write && args.out_dir.is_none();
+    if dry_run {
+        // JSON receipt on stdout so consumers can parse it. Mirrors the
+        // shape `cmd_bind_migrate` writes via `MigrateReceiptEnvelope`
+        // for the receipt path; here the receipt is per-file because
+        // materialize walks a directory and emits per-file output.
+        for file in &files {
+            let receipt_json = serde_json::to_string_pretty(&file.receipt)
+                .unwrap_or_else(|err| format!("{{\"error\": \"{err}\"}}"));
+            println!("// receipt: {}", file.relative_path.display());
+            println!("{receipt_json}");
+        }
+    }
+
+    if !args.out.quiet {
+        if args.write || args.out_dir.is_some() {
+            println!(
+                "{} materialized {total_exact} exact + {total_lossy} lossy + {total_refused} refused across {} file(s)",
+                "materialize".green().bold(),
+                files.len()
+            );
+        } else {
+            eprintln!(
+                "{} dry-run: {total_exact} exact + {total_lossy} lossy + {total_refused} refused across {} file(s)",
+                "materialize".green().bold(),
+                files.len()
+            );
+        }
     }
     EXIT_OK
 }
@@ -208,10 +246,12 @@ fn materialize_source_dir(
         }
         let raw = std::fs::read_to_string(path)
             .map_err(|error| format!("read {}: {error}", path.display()))?;
-        let (content, replacements) =
+        let (content, receipt) =
             materialize_source_text(project_root, target_lang, library_tag, &raw)
                 .map_err(|error| format!("{}: {error}", path.display()))?;
-        if replacements == 0 {
+        let replacements =
+            receipt.aggregate_summary.exact + receipt.aggregate_summary.lossy;
+        if replacements == 0 && receipt.aggregate_summary.refused == 0 {
             continue;
         }
         let relative_path = path.strip_prefix(source_dir).unwrap_or(path).to_path_buf();
@@ -219,7 +259,7 @@ fn materialize_source_dir(
             source_path: path.to_path_buf(),
             relative_path,
             content,
-            replacements,
+            receipt,
         });
     }
     Ok(files)
@@ -260,18 +300,21 @@ fn materialize_source_text(
     target_lang: &str,
     library_tag: Option<&str>,
     raw: &str,
-) -> Result<(String, usize), String> {
+) -> Result<(String, SourceTransformReceipt), String> {
     let kit = MaterializeKit::new(target_lang, library_tag, project_root);
-    let (rewritten, outcomes) = transform_source_text(raw, &kit)?;
-    // `transform_source_text` returns `Err(reason)` on any `SiteOutcome::Refuse`
-    // (per Phase B's propagate-on-refuse contract), so the outcomes vec
-    // contains only `Materialize` / `LoudlyLossy` variants here. Both count
-    // as successful site replacements for materialize's CLI summary; the
-    // distinction (loud-bounded-loss vs byte-exact) is recorded in the
-    // outcomes for future receipt-envelope consumers (#1334 Phase E) but
-    // does not alter the CLI's per-file replacement count today.
-    let count = outcomes.len();
-    Ok((rewritten, count))
+    // Phase E (`#1339`): use the refusal-collecting variant so a
+    // `SiteOutcome::Refuse` becomes a first-class entry in the receipt
+    // rather than aborting the run with a string Err.
+    let (rewritten, sites_and_outcomes) =
+        transform_source_text_collecting_refusals(raw, &kit)?;
+    let receipt = build_receipt(
+        &kit,
+        target_lang,
+        None,
+        library_tag.unwrap_or(""),
+        &sites_and_outcomes,
+    );
+    Ok((rewritten, receipt))
 }
 
 /// `SiteTransformKit` implementation for `provekit materialize`. The
