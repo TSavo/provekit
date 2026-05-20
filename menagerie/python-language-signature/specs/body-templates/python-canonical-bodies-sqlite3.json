@@ -1,115 +1,931 @@
 {
-  "envelope": {
-    "declaredAt": "2026-05-14T00:00:00.000Z",
-    "signature": "ed25519:AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA",
-    "signer": "ed25519:AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA="
-  },
   "header": {
-    "cid": "blake3-512:cf611a434c39c0c2e8d520f365a2899c73ea55f82fdc13b12648b21887207330cc2594758e1ce9f9d86fed28b56b81a3fe9a689073cccc54f3ac98cd8aa9f6c8",
     "content": {
+      "target_language": "python",
+      "template_name": "python-canonical-bodies-sqlite3",
       "entries": [
         {
-          "concept_name": "concept:insert-and-get-id",
+          "concept_name": "concept:sql-connection-open",
           "emission_template": {
             "kind": "verbatim",
-            "template": "cursor = db.execute(${param0}, tuple(${param1}))\ndb.commit()\nreturn int(cursor.lastrowid or 0)"
+            "template": "return sqlite3.connect(${param0})"
           },
           "loss_record_contribution": {
             "form": "literal",
             "value": {
-              "api_tier_concept_cid": {
-                "args": [
-                  {
-                    "kind": "const",
-                    "value": "blake3-512:0a4f0a8d36d8dee96b8d5b32a18bb390f35877ecef611771048c6e10cfc3d25ad8f59de89b00c7794f62cabaf91dbd779244338393a8bb6ef5e8309b0929b3ca"
-                  }
-                ],
-                "head": "atomic",
-                "name": "insert-and-get-id-cites-concept-cid"
-              },
-              "last_insert_id_loss_claim": {
-                "args": [],
-                "head": "atomic",
-                "name": "sqlite3-last-insert-id-from-lastrowid"
-              }
+              "entries": [
+                "sync-vs-async",
+                "auth-mechanism",
+                "connection-pooling"
+              ]
             }
           },
           "signature_guard": {
-            "max_params": 2,
-            "min_params": 2
+            "min_params": 1,
+            "max_params": 1
+          }
+        },
+        {
+          "concept_name": "concept:sql-connection-open",
+          "emission_template": {
+            "kind": "verbatim",
+            "template": "return sqlite3.connect(\":memory:\")"
           },
-          "target_library_tag": "sqlite3"
+          "loss_record_contribution": {
+            "form": "literal",
+            "value": {
+              "entries": [
+                "sync-vs-async",
+                "persistence-target"
+              ]
+            }
+          },
+          "signature_guard": {
+            "min_params": 0,
+            "max_params": 0
+          }
+        },
+        {
+          "concept_name": "concept:sql-connection-open",
+          "emission_template": {
+            "kind": "verbatim",
+            "template": "return sqlite3.connect(${param0}, check_same_thread=False)"
+          },
+          "loss_record_contribution": {
+            "form": "literal",
+            "value": {
+              "entries": [
+                "sync-vs-async",
+                "auth-mechanism",
+                "connection-pooling",
+                "flag-encoding"
+              ]
+            }
+          },
+          "signature_guard": {
+            "min_params": 1,
+            "max_params": 1
+          }
+        },
+        {
+          "concept_name": "concept:sql-connection-close",
+          "emission_template": {
+            "kind": "verbatim",
+            "template": "${param0}.close()"
+          },
+          "loss_record_contribution": {
+            "form": "literal",
+            "value": {
+              "entries": [
+                "sync-vs-async",
+                "ownership-model"
+              ]
+            }
+          },
+          "signature_guard": {
+            "min_params": 1,
+            "max_params": 1
+          }
         },
         {
           "concept_name": "concept:sql-execute",
           "emission_template": {
             "kind": "verbatim",
-            "template": "cursor = db.execute(${param0}, tuple(${param1}))\ndb.commit()\nreturn {\"rows_affected\": cursor.rowcount, \"last_insert_id\": cursor.lastrowid}"
+            "template": "return ${param0}.execute(${param1}, ${param2})"
           },
           "loss_record_contribution": {
             "form": "literal",
             "value": {
-              "api_tier_concept_cid": {
-                "args": [
-                  {
-                    "kind": "const",
-                    "value": "blake3-512:1dcfe69eb5a7c6719d3faf2f4d073dfe81f37a4d930a37b7a535aa3de9eae7dc30965bf6d8fa451a9cb97608335a844f619adb4589d0a5e882b30fa98d60b3a9"
-                  }
-                ],
-                "head": "atomic",
-                "name": "sql-execute-cites-concept-cid"
-              },
-              "last_insert_id_loss_claim": {
-                "args": [],
-                "head": "atomic",
-                "name": "sqlite3-last-insert-id-from-lastrowid"
-              }
+              "entries": [
+                "sync-vs-async",
+                "last-insert-id",
+                "transaction-isolation",
+                "row-typing-mode"
+              ]
             }
           },
           "signature_guard": {
-            "max_params": 2,
-            "min_params": 2
+            "min_params": 3,
+            "max_params": 3
+          }
+        },
+        {
+          "concept_name": "concept:sql-batch-execute",
+          "emission_template": {
+            "kind": "verbatim",
+            "template": "return ${param0}.executescript(${param1})"
           },
-          "target_library_tag": "sqlite3"
+          "loss_record_contribution": {
+            "form": "literal",
+            "value": {
+              "entries": [
+                "sync-vs-async",
+                "atomicity-across-statements",
+                "parameter-binding"
+              ]
+            }
+          },
+          "signature_guard": {
+            "min_params": 2,
+            "max_params": 2
+          }
+        },
+        {
+          "concept_name": "concept:sql-batch-execute",
+          "emission_template": {
+            "kind": "verbatim",
+            "template": "return ${param0}.executemany(${param1}, ${param2})"
+          },
+          "loss_record_contribution": {
+            "form": "literal",
+            "value": {
+              "entries": [
+                "sync-vs-async",
+                "atomicity-across-statements"
+              ]
+            }
+          },
+          "signature_guard": {
+            "min_params": 3,
+            "max_params": 3
+          }
         },
         {
           "concept_name": "concept:sql-query",
           "emission_template": {
             "kind": "verbatim",
-            "template": "cursor = db.execute(${param0}, tuple(${param1}))\nreturn cursor.fetchall()"
+            "template": "cursor = ${param0}.execute(${param1}, ${param2})\nreturn cursor.fetchone()"
           },
           "loss_record_contribution": {
             "form": "literal",
             "value": {
-              "api_tier_concept_cid": {
-                "args": [
-                  {
-                    "kind": "const",
-                    "value": "blake3-512:dd0429a4d4276c076f5dde08a993a046afa15dd36433b1d89c4bc18831f63733788abef283ffb78b2b9f88c607593741367a35ebcbd36a88132c06d6ff233ed1"
-                  }
-                ],
-                "head": "atomic",
-                "name": "sql-query-cites-concept-cid"
-              }
+              "entries": [
+                "sync-vs-async",
+                "row-cardinality",
+                "row-typing-mode",
+                "cursor-lifetime"
+              ]
             }
           },
           "signature_guard": {
-            "max_params": 2,
-            "min_params": 2
+            "min_params": 3,
+            "max_params": 3
+          }
+        },
+        {
+          "concept_name": "concept:sql-query",
+          "emission_template": {
+            "kind": "verbatim",
+            "template": "cursor = ${param0}.execute(${param1}, ${param2})\nreturn cursor.fetchall()"
           },
-          "target_library_tag": "sqlite3"
+          "loss_record_contribution": {
+            "form": "literal",
+            "value": {
+              "entries": [
+                "sync-vs-async",
+                "row-typing-mode",
+                "cursor-lifetime"
+              ]
+            }
+          },
+          "signature_guard": {
+            "min_params": 3,
+            "max_params": 3
+          }
+        },
+        {
+          "concept_name": "concept:sql-prepare",
+          "emission_template": {
+            "kind": "verbatim",
+            "template": "return ${param0}.cursor()"
+          },
+          "loss_record_contribution": {
+            "form": "literal",
+            "value": {
+              "entries": [
+                "sync-vs-async",
+                "parameter-style",
+                "ownership-model"
+              ]
+            }
+          },
+          "signature_guard": {
+            "min_params": 2,
+            "max_params": 2
+          }
+        },
+        {
+          "concept_name": "concept:sql-prepare-cached",
+          "emission_template": {
+            "kind": "verbatim",
+            "template": "return ${param0}.cursor()"
+          },
+          "loss_record_contribution": {
+            "form": "literal",
+            "value": {
+              "entries": [
+                "sync-vs-async",
+                "cache-eviction-policy",
+                "cache-size-bound",
+                "ownership-model"
+              ]
+            }
+          },
+          "signature_guard": {
+            "min_params": 2,
+            "max_params": 2
+          }
+        },
+        {
+          "concept_name": "concept:sql-execute",
+          "emission_template": {
+            "kind": "verbatim",
+            "template": "return ${param0}.execute(${param1}, ${param2})"
+          },
+          "loss_record_contribution": {
+            "form": "literal",
+            "value": {
+              "entries": [
+                "sync-vs-async",
+                "last-insert-id",
+                "transaction-isolation",
+                "row-typing-mode"
+              ]
+            }
+          },
+          "signature_guard": {
+            "min_params": 3,
+            "max_params": 3
+          }
+        },
+        {
+          "concept_name": "concept:sql-query",
+          "emission_template": {
+            "kind": "verbatim",
+            "template": "${param0}.execute(${param1}, ${param2})\nreturn ${param0}"
+          },
+          "loss_record_contribution": {
+            "form": "literal",
+            "value": {
+              "entries": [
+                "sync-vs-async",
+                "row-typing-mode",
+                "cursor-lifetime"
+              ]
+            }
+          },
+          "signature_guard": {
+            "min_params": 3,
+            "max_params": 3
+          }
+        },
+        {
+          "concept_name": "concept:sql-query",
+          "emission_template": {
+            "kind": "verbatim",
+            "template": "return ${param0}.fetchone()"
+          },
+          "loss_record_contribution": {
+            "form": "literal",
+            "value": {
+              "entries": [
+                "sync-vs-async",
+                "row-typing-mode",
+                "cursor-lifetime"
+              ]
+            }
+          },
+          "signature_guard": {
+            "min_params": 1,
+            "max_params": 1
+          }
+        },
+        {
+          "concept_name": "concept:sql-query",
+          "emission_template": {
+            "kind": "verbatim",
+            "template": "return ${param0}.fetchall()"
+          },
+          "loss_record_contribution": {
+            "form": "literal",
+            "value": {
+              "entries": [
+                "sync-vs-async",
+                "row-typing-mode",
+                "cursor-lifetime"
+              ]
+            }
+          },
+          "signature_guard": {
+            "min_params": 1,
+            "max_params": 1
+          }
+        },
+        {
+          "concept_name": "concept:sql-fetch-batch",
+          "emission_template": {
+            "kind": "verbatim",
+            "template": "if ${param1} is None:\n    return ${param0}.fetchmany()\nreturn ${param0}.fetchmany(${param1})"
+          },
+          "loss_record_contribution": {
+            "form": "literal",
+            "value": {
+              "entries": [
+                "sync-vs-async",
+                "row-typing-mode",
+                "cursor-pagination"
+              ]
+            }
+          },
+          "signature_guard": {
+            "min_params": 2,
+            "max_params": 2
+          }
+        },
+        {
+          "concept_name": "concept:insert-and-get-id",
+          "emission_template": {
+            "kind": "verbatim",
+            "template": "${param0}.execute(${param1}, ${param2})\nreturn ${param0}.lastrowid"
+          },
+          "loss_record_contribution": {
+            "form": "literal",
+            "value": {
+              "entries": [
+                "sync-vs-async",
+                "id-column-discovery",
+                "row-typing-mode"
+              ]
+            }
+          },
+          "signature_guard": {
+            "min_params": 3,
+            "max_params": 3
+          }
+        },
+        {
+          "concept_name": "concept:sql-query",
+          "emission_template": {
+            "kind": "verbatim",
+            "template": "${param0}.execute(${param1}, ${param2})\nreturn ${param0}.fetchone() is not None"
+          },
+          "loss_record_contribution": {
+            "form": "literal",
+            "value": {
+              "entries": [
+                "sync-vs-async",
+                "cardinality-projected-to-boolean",
+                "row-typing-mode"
+              ]
+            }
+          },
+          "signature_guard": {
+            "min_params": 3,
+            "max_params": 3
+          }
+        },
+        {
+          "concept_name": "concept:sql-transaction-begin",
+          "emission_template": {
+            "kind": "verbatim",
+            "template": "${param0}.execute(\"BEGIN\")"
+          },
+          "loss_record_contribution": {
+            "form": "literal",
+            "value": {
+              "entries": [
+                "sync-vs-async",
+                "isolation-level",
+                "ownership-model"
+              ]
+            }
+          },
+          "signature_guard": {
+            "min_params": 1,
+            "max_params": 1
+          }
+        },
+        {
+          "concept_name": "concept:sql-transaction-begin",
+          "emission_template": {
+            "kind": "verbatim",
+            "template": "${param0}.execute(f\"BEGIN {${param1}}\")"
+          },
+          "loss_record_contribution": {
+            "form": "literal",
+            "value": {
+              "entries": [
+                "sync-vs-async",
+                "isolation-level",
+                "deferred-vs-immediate-vs-exclusive",
+                "ownership-model"
+              ]
+            }
+          },
+          "signature_guard": {
+            "min_params": 2,
+            "max_params": 2
+          }
+        },
+        {
+          "concept_name": "concept:sql-transaction-commit",
+          "emission_template": {
+            "kind": "verbatim",
+            "template": "${param0}.commit()"
+          },
+          "loss_record_contribution": {
+            "form": "literal",
+            "value": {
+              "entries": [
+                "sync-vs-async",
+                "two-phase-commit-support",
+                "ownership-model"
+              ]
+            }
+          },
+          "signature_guard": {
+            "min_params": 1,
+            "max_params": 1
+          }
+        },
+        {
+          "concept_name": "concept:sql-transaction-rollback",
+          "emission_template": {
+            "kind": "verbatim",
+            "template": "${param0}.rollback()"
+          },
+          "loss_record_contribution": {
+            "form": "literal",
+            "value": {
+              "entries": [
+                "sync-vs-async",
+                "partial-rollback-support",
+                "ownership-model"
+              ]
+            }
+          },
+          "signature_guard": {
+            "min_params": 1,
+            "max_params": 1
+          }
+        },
+        {
+          "concept_name": "concept:sql-savepoint",
+          "emission_template": {
+            "kind": "verbatim",
+            "template": "${param0}.execute(f\"SAVEPOINT {${param1}}\")"
+          },
+          "loss_record_contribution": {
+            "form": "literal",
+            "value": {
+              "entries": [
+                "naming-discipline",
+                "ownership-model"
+              ]
+            }
+          },
+          "signature_guard": {
+            "min_params": 2,
+            "max_params": 2
+          }
+        },
+        {
+          "concept_name": "concept:sql-transaction-rollback",
+          "emission_template": {
+            "kind": "verbatim",
+            "template": "${param0}.execute(f\"ROLLBACK TO SAVEPOINT {${param1}}\")"
+          },
+          "loss_record_contribution": {
+            "form": "literal",
+            "value": {
+              "entries": [
+                "partial-rollback-support"
+              ]
+            }
+          },
+          "signature_guard": {
+            "min_params": 2,
+            "max_params": 2
+          }
+        },
+        {
+          "concept_name": "concept:sql-savepoint",
+          "emission_template": {
+            "kind": "verbatim",
+            "template": "${param0}.execute(f\"RELEASE SAVEPOINT {${param1}}\")"
+          },
+          "loss_record_contribution": {
+            "form": "literal",
+            "value": {
+              "entries": [
+                "naming-discipline",
+                "ownership-model"
+              ]
+            }
+          },
+          "signature_guard": {
+            "min_params": 2,
+            "max_params": 2
+          }
+        },
+        {
+          "concept_name": "concept:sql-row-get-column",
+          "emission_template": {
+            "kind": "verbatim",
+            "template": "return ${param0}[${param1}]"
+          },
+          "loss_record_contribution": {
+            "form": "literal",
+            "value": {
+              "entries": [
+                "null-handling",
+                "type-coercion-mode",
+                "row-typing-mode"
+              ]
+            }
+          },
+          "signature_guard": {
+            "min_params": 2,
+            "max_params": 2
+          }
+        },
+        {
+          "concept_name": "concept:sql-row-get-column",
+          "emission_template": {
+            "kind": "verbatim",
+            "template": "return ${param0}[${param1}]"
+          },
+          "loss_record_contribution": {
+            "form": "literal",
+            "value": {
+              "entries": [
+                "null-handling",
+                "type-coercion-mode",
+                "row-typing-mode"
+              ]
+            }
+          },
+          "signature_guard": {
+            "min_params": 2,
+            "max_params": 2
+          }
+        },
+        {
+          "concept_name": "concept:sql-row-mapping",
+          "emission_template": {
+            "kind": "verbatim",
+            "template": "${param0}.row_factory = sqlite3.Row"
+          },
+          "loss_record_contribution": {
+            "form": "literal",
+            "value": {
+              "entries": [
+                "row-typing-mode",
+                "ownership-model"
+              ]
+            }
+          },
+          "signature_guard": {
+            "min_params": 1,
+            "max_params": 1
+          }
+        },
+        {
+          "concept_name": "concept:insert-and-get-id",
+          "emission_template": {
+            "kind": "verbatim",
+            "template": "return ${param0}.lastrowid"
+          },
+          "loss_record_contribution": {
+            "form": "literal",
+            "value": {
+              "entries": [
+                "per-connection-not-per-statement",
+                "rowid-vs-integer-pk"
+              ]
+            }
+          },
+          "signature_guard": {
+            "min_params": 1,
+            "max_params": 1
+          }
+        },
+        {
+          "concept_name": "concept:sql-changes-count",
+          "emission_template": {
+            "kind": "verbatim",
+            "template": "return ${param0}.rowcount"
+          },
+          "loss_record_contribution": {
+            "form": "literal",
+            "value": {
+              "entries": [
+                "per-statement-vs-cumulative",
+                "transaction-scope"
+              ]
+            }
+          },
+          "signature_guard": {
+            "min_params": 1,
+            "max_params": 1
+          }
+        },
+        {
+          "concept_name": "concept:sql-changes-count",
+          "emission_template": {
+            "kind": "verbatim",
+            "template": "return ${param0}.total_changes"
+          },
+          "loss_record_contribution": {
+            "form": "literal",
+            "value": {
+              "entries": [
+                "cumulative-since-connection-open",
+                "transaction-scope"
+              ]
+            }
+          },
+          "signature_guard": {
+            "min_params": 1,
+            "max_params": 1
+          }
+        },
+        {
+          "concept_name": "concept:contract-observation",
+          "emission_template": {
+            "kind": "verbatim",
+            "template": "return ${param0}.in_transaction"
+          },
+          "loss_record_contribution": {
+            "form": "literal",
+            "value": {
+              "entries": []
+            }
+          },
+          "signature_guard": {
+            "min_params": 1,
+            "max_params": 1
+          },
+          "observed_dimension": "autocommit-mode"
+        },
+        {
+          "concept_name": "concept:contract-observation",
+          "emission_template": {
+            "kind": "verbatim",
+            "template": "return ${param0}.isolation_level"
+          },
+          "loss_record_contribution": {
+            "form": "literal",
+            "value": {
+              "entries": []
+            }
+          },
+          "signature_guard": {
+            "min_params": 1,
+            "max_params": 1
+          },
+          "observed_dimension": "isolation-level"
+        },
+        {
+          "concept_name": "concept:contract-observation",
+          "emission_template": {
+            "kind": "verbatim",
+            "template": "return ${param0}.description"
+          },
+          "loss_record_contribution": {
+            "form": "literal",
+            "value": {
+              "entries": []
+            }
+          },
+          "signature_guard": {
+            "min_params": 1,
+            "max_params": 1
+          },
+          "observed_dimension": "column-names"
+        },
+        {
+          "concept_name": "concept:contract-observation",
+          "emission_template": {
+            "kind": "verbatim",
+            "template": "if ${param0}.description is None:\n    return 0\nreturn len(${param0}.description)"
+          },
+          "loss_record_contribution": {
+            "form": "literal",
+            "value": {
+              "entries": []
+            }
+          },
+          "signature_guard": {
+            "min_params": 1,
+            "max_params": 1
+          },
+          "observed_dimension": "column-count"
+        },
+        {
+          "concept_name": "concept:contract-observation",
+          "emission_template": {
+            "kind": "verbatim",
+            "template": "if ${param0}.description is None:\n    return None\nfor idx, col in enumerate(${param0}.description):\n    if col[0] == ${param1}:\n        return idx\nreturn None"
+          },
+          "loss_record_contribution": {
+            "form": "literal",
+            "value": {
+              "entries": []
+            }
+          },
+          "signature_guard": {
+            "min_params": 2,
+            "max_params": 2
+          },
+          "observed_dimension": "column-index-of-name"
+        },
+        {
+          "concept_name": "concept:sql-busy-timeout",
+          "emission_template": {
+            "kind": "verbatim",
+            "template": "${param0}.execute(f\"PRAGMA busy_timeout = {int(${param1} * 1000)}\")"
+          },
+          "loss_record_contribution": {
+            "form": "literal",
+            "value": {
+              "entries": [
+                "sync-vs-async",
+                "callback-vs-timeout-shape"
+              ]
+            }
+          },
+          "signature_guard": {
+            "min_params": 2,
+            "max_params": 2
+          }
+        },
+        {
+          "concept_name": "concept:sql-schema-dump",
+          "emission_template": {
+            "kind": "verbatim",
+            "template": "return ${param0}.iterdump()"
+          },
+          "loss_record_contribution": {
+            "form": "literal",
+            "value": {
+              "entries": [
+                "sync-vs-async",
+                "iteration-vs-string-output"
+              ]
+            }
+          },
+          "signature_guard": {
+            "min_params": 1,
+            "max_params": 1
+          }
+        },
+        {
+          "concept_name": "concept:sql-udf-register",
+          "emission_template": {
+            "kind": "verbatim",
+            "template": "${param0}.create_function(${param1}, ${param2}, ${param3})"
+          },
+          "loss_record_contribution": {
+            "form": "literal",
+            "value": {
+              "entries": [
+                "sync-vs-async",
+                "type-coercion-mode",
+                "determinism-flag"
+              ]
+            }
+          },
+          "signature_guard": {
+            "min_params": 4,
+            "max_params": 4
+          }
+        },
+        {
+          "concept_name": "concept:sql-udf-aggregate",
+          "emission_template": {
+            "kind": "verbatim",
+            "template": "${param0}.create_aggregate(${param1}, ${param2}, ${param3})"
+          },
+          "loss_record_contribution": {
+            "form": "literal",
+            "value": {
+              "entries": [
+                "sync-vs-async",
+                "type-coercion-mode"
+              ]
+            }
+          },
+          "signature_guard": {
+            "min_params": 4,
+            "max_params": 4
+          }
+        },
+        {
+          "concept_name": "concept:sql-progress-handler",
+          "emission_template": {
+            "kind": "verbatim",
+            "template": "${param0}.set_progress_handler(${param1}, ${param2})"
+          },
+          "loss_record_contribution": {
+            "form": "literal",
+            "value": {
+              "entries": [
+                "sync-vs-async",
+                "handler-frequency-semantics"
+              ]
+            }
+          },
+          "signature_guard": {
+            "min_params": 3,
+            "max_params": 3
+          }
+        },
+        {
+          "concept_name": "concept:sql-transaction-begin",
+          "emission_template": {
+            "kind": "verbatim",
+            "template": "return ${param0}.__enter__()"
+          },
+          "loss_record_contribution": {
+            "form": "literal",
+            "value": {
+              "entries": [
+                "sync-vs-async",
+                "isolation-level",
+                "ownership-model",
+                "context-manager-lifetime"
+              ]
+            }
+          },
+          "signature_guard": {
+            "min_params": 1,
+            "max_params": 1
+          }
+        },
+        {
+          "concept_name": "concept:sql-transaction-commit",
+          "emission_template": {
+            "kind": "verbatim",
+            "template": "${param0}.__exit__(None, None, None)"
+          },
+          "loss_record_contribution": {
+            "form": "literal",
+            "value": {
+              "entries": [
+                "sync-vs-async",
+                "ownership-model",
+                "context-manager-lifetime"
+              ]
+            }
+          },
+          "signature_guard": {
+            "min_params": 1,
+            "max_params": 1
+          }
+        },
+        {
+          "concept_name": "concept:sql-transaction-rollback",
+          "emission_template": {
+            "kind": "verbatim",
+            "template": "return ${param0}.__exit__(${param1}, None, None) or False"
+          },
+          "loss_record_contribution": {
+            "form": "literal",
+            "value": {
+              "entries": [
+                "sync-vs-async",
+                "ownership-model",
+                "context-manager-lifetime"
+              ]
+            }
+          },
+          "signature_guard": {
+            "min_params": 2,
+            "max_params": 2
+          }
+        },
+        {
+          "concept_name": "concept:sql-row-mapping",
+          "emission_template": {
+            "kind": "verbatim",
+            "template": "${param0}.row_factory = ${param1}"
+          },
+          "loss_record_contribution": {
+            "form": "literal",
+            "value": {
+              "entries": [
+                "row-typing-mode",
+                "ownership-model"
+              ]
+            }
+          },
+          "signature_guard": {
+            "min_params": 2,
+            "max_params": 2
+          }
         }
-      ],
-      "target_language": "python",
-      "template_name": "python-canonical-bodies-sqlite3"
-    },
-    "critical": false,
-    "kind": "body-template",
-    "protocol_versions": [
-      "pep/1.7.0"
-    ],
-    "provenance_cid": "blake3-512:00000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000",
-    "schemaVersion": "1",
-    "version": "1.0.0"
+      ]
+    }
   }
 }
