@@ -1,0 +1,7 @@
+# PEP 1.7.0 lift plugin manifest for this shim. Points at the same Rust
+# bind-IR walk_rpc binary the parent workspace uses. Required by `provekit
+# mint` which looks for `.provekit/lift/<surface>/manifest.toml` relative
+# to its --project root.
+name = "rust-bind-lift"
+command = ["../../implementations/rust/target/debug/provekit-walk-rpc", "--rpc"]
+working_dir = "."
