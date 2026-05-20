@@ -265,11 +265,22 @@ fn materialize_source_text(
     while idx < lines.len() {
         let line = lines[idx];
         if let Some((indent, payload)) = concept_payload_from_line(line) {
-            if idx + 1 < lines.len() {
-                if let Some(declared_cid) = concept_payload_cid_from_line(lines[idx + 1]) {
-                    verify_payload_cid(payload, declared_cid)?;
-                }
+            // Consume the carrier comment, optional payload-cid line, and
+            // (if present) the following stub function declaration. The
+            // materialized realization is emitted in their place. This is
+            // the in-place body replacement strategy described in #1331:
+            // every carrier+stub pair is replaced by a single materialized
+            // function declaration carrying the realized body.
+            let mut consumed = 1usize;
+            if idx + consumed < lines.len()
+                && concept_payload_cid_from_line(lines[idx + consumed]).is_some()
+            {
+                let declared_cid = concept_payload_cid_from_line(lines[idx + consumed]).unwrap();
+                verify_payload_cid(payload, declared_cid)?;
+                consumed += 1;
             }
+            consumed += skip_stub_function_block(&lines[idx + consumed..]);
+
             let spec = realize_spec_from_payload(payload)?;
             let realized = realize_spec_via_path(project_root, target_lang, library_tag, spec)?;
             let indented = indent_realized_source(&realized, indent);
@@ -278,17 +289,86 @@ fn materialize_source_text(
                 out.push('\n');
             }
             replacements += 1;
-            if idx + 1 < lines.len() && concept_payload_cid_from_line(lines[idx + 1]).is_some() {
-                idx += 2;
-            } else {
-                idx += 1;
-            }
+            idx += consumed;
             continue;
         }
         out.push_str(line);
         idx += 1;
     }
     Ok((out, replacements))
+}
+
+/// Skip the stub function block that follows a carrier comment, if one is
+/// present. Returns the number of lines consumed.
+///
+/// A stub block starts with a line whose first non-whitespace tokens form a
+/// Rust function declaration (`fn`, `pub fn`, `pub(...) fn`, `async fn`,
+/// `const fn`, `unsafe fn`, or combinations thereof) and ends at the
+/// matching closing brace of the function body.
+///
+/// If no stub function follows the carrier (the carrier sits above a non-fn
+/// item, or no item at all), this returns 0 and the carrier replacement is
+/// inserted without consuming subsequent content.
+fn skip_stub_function_block(lines: &[&str]) -> usize {
+    let Some(first_line) = lines.first() else {
+        return 0;
+    };
+    if !line_starts_function_declaration(first_line) {
+        return 0;
+    }
+    // Track brace depth from the first line forward until we balance back
+    // to zero. The opening brace may be on the same line as `fn ...` or on
+    // a subsequent line (Rust style with `fn foo()\n{`).
+    let mut depth: i32 = 0;
+    let mut saw_open = false;
+    for (offset, line) in lines.iter().enumerate() {
+        for ch in line.chars() {
+            match ch {
+                '{' => {
+                    depth += 1;
+                    saw_open = true;
+                }
+                '}' => {
+                    depth -= 1;
+                    if saw_open && depth == 0 {
+                        return offset + 1;
+                    }
+                }
+                _ => {}
+            }
+        }
+    }
+    // Unbalanced or never opened. Consume nothing rather than swallow the
+    // rest of the file; the realized source is still inserted above.
+    0
+}
+
+fn line_starts_function_declaration(line: &str) -> bool {
+    let trimmed = line.trim_start();
+    const KEYWORDS_TO_STRIP: &[&str] = &[
+        "pub ", "async ", "const ", "unsafe ", "extern ", "default ",
+    ];
+    let mut remaining = trimmed;
+    loop {
+        let mut stripped = false;
+        if remaining.starts_with("pub(") {
+            if let Some(rest) = remaining.split_once(')').map(|(_, r)| r.trim_start()) {
+                remaining = rest;
+                stripped = true;
+            }
+        }
+        for kw in KEYWORDS_TO_STRIP {
+            if let Some(rest) = remaining.strip_prefix(kw) {
+                remaining = rest.trim_start();
+                stripped = true;
+                break;
+            }
+        }
+        if !stripped {
+            break;
+        }
+    }
+    remaining.starts_with("fn ") || remaining.starts_with("fn(")
 }
 
 fn concept_payload_from_line(line: &str) -> Option<(&str, &str)> {
