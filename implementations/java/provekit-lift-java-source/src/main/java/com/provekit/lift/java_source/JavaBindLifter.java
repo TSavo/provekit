@@ -9,6 +9,11 @@
 // by term_shape_cid and resolves concepts by `concept_annotation`; neither the
 // dispatcher nor downstream verbs receive any Java-surface ops.
 //
+// Substrate-honest extensions (paper 24 §3 parity with walk_rpc.rs):
+//   - @ProveKitSugar.loss() populates loss_record_contribution.value.entries
+//   - @ProveKitSugar.observedDimension() sets observed_dimension on the entry
+//   - @ProveKitRefuse on TYPE emits a refusal-memento IR record per occurrence
+//
 // Counterpart: `implementations/rust/provekit-walk/src/bin/walk_rpc.rs::bind_lift`
 // (Rust does the same walk over `syn::ItemFn` and emits identical-shape records).
 
@@ -19,6 +24,7 @@ import com.sun.source.tree.AnnotationTree;
 import com.sun.source.tree.AssignmentTree;
 import com.sun.source.tree.BinaryTree;
 import com.sun.source.tree.BlockTree;
+import com.sun.source.tree.ClassTree;
 import com.sun.source.tree.CompilationUnitTree;
 import com.sun.source.tree.CompoundAssignmentTree;
 import com.sun.source.tree.DoWhileLoopTree;
@@ -31,6 +37,7 @@ import com.sun.source.tree.IdentifierTree;
 import com.sun.source.tree.LiteralTree;
 import com.sun.source.tree.MethodInvocationTree;
 import com.sun.source.tree.MethodTree;
+import com.sun.source.tree.NewArrayTree;
 import com.sun.source.tree.NewClassTree;
 import com.sun.source.tree.ParenthesizedTree;
 import com.sun.source.tree.ReturnTree;
@@ -67,6 +74,26 @@ import javax.tools.ToolProvider;
 
 public final class JavaBindLifter {
     private static final String CONCEPT_CITATION_COMMENT_KIND = "provekit-concept-citation-comment-sugar";
+
+    /**
+     * Parsed result of a @ProveKitSugar annotation on a method.
+     * Carries all four fields: concept, library, loss dimensions, and
+     * optional observed_dimension for contract-observation bindings.
+     */
+    record SugarBinding(
+            String concept,
+            String library,
+            List<String> loss,
+            String observedDimension) {}
+
+    /**
+     * Parsed result of a @ProveKitRefuse annotation on a type.
+     */
+    record RefuseBinding(
+            String surface,
+            String concept,
+            String reason,
+            String wouldCloseWithCluster) {}
 
     /** Walk a workspace and emit one bind-lift-entry per method. */
     public Result liftPaths(String workspaceRoot, List<String> sourcePaths) {
@@ -143,6 +170,7 @@ public final class JavaBindLifter {
         Trees trees = Trees.instance(task);
         for (CompilationUnitTree unit : units) {
             new MethodScanner(trees, rel, source, entries, diagnostics).scan(unit, null);
+            extractRefusals(unit, entries);
         }
     }
 
@@ -257,11 +285,15 @@ public final class JavaBindLifter {
             );
             entries.add(entry);
 
-            Optional<String[]> sugarAnnotation = extractSugarAnnotation(method, trees, path);
+            Optional<SugarBinding> sugarAnnotation = extractSugarAnnotation(method, trees, path);
             if (sugarAnnotation.isPresent()) {
-                String[] binding = sugarAnnotation.get();
-                String conceptName = binding[0];
-                String targetLibraryTag = binding[1];
+                SugarBinding binding = sugarAnnotation.get();
+                String conceptName = binding.concept();
+                String targetLibraryTag = binding.library();
+                List<Jcs.Json> lossEntries = binding.loss().stream()
+                    .map(Jcs::string)
+                    .collect(java.util.stream.Collectors.toList());
+                String observedDim = binding.observedDimension();
                 Jcs.Obj signatureShape = Jcs.object(
                     "param_names", Jcs.array(paramNames),
                     "param_types", Jcs.array(paramTypes),
@@ -296,6 +328,7 @@ public final class JavaBindLifter {
                 String sourceCid = Jcs.blake3_512(spanText.toString().getBytes(StandardCharsets.UTF_8));
 
                 Jcs.Obj bodySource = Jcs.object(
+                    "body_text", Jcs.string(spanText.toString()),
                     "file", Jcs.string(rel),
                     "source_cid", Jcs.string(sourceCid),
                     "span", Jcs.object(
@@ -306,13 +339,14 @@ public final class JavaBindLifter {
                     )
                 );
 
-                Jcs.Obj sugarEntry = Jcs.object(
+                // Build the entry; conditionally append observed_dimension.
+                List<Object> entryKvs = new ArrayList<>(List.of(
                     "body_source", bodySource,
                     "concept_name", Jcs.string(conceptName),
                     "kind", Jcs.string("library-sugar-binding-entry"),
                     "loss_record_contribution", Jcs.object(
                         "form", Jcs.string("literal"),
-                        "value", Jcs.object("entries", Jcs.array())
+                        "value", Jcs.object("entries", Jcs.array(lossEntries))
                     ),
                     "param_names", Jcs.array(paramNames),
                     "param_types", Jcs.array(paramTypes),
@@ -323,7 +357,12 @@ public final class JavaBindLifter {
                     "target_library_tag", Jcs.string(targetLibraryTag),
                     "term_shape", termShape,
                     "term_shape_cid", Jcs.string(termShapeCid)
-                );
+                ));
+                if (observedDim != null && !observedDim.isEmpty()) {
+                    entryKvs.add("observed_dimension");
+                    entryKvs.add(Jcs.string(observedDim));
+                }
+                Jcs.Obj sugarEntry = Jcs.object(entryKvs.toArray());
                 entries.add(sugarEntry);
             }
             return super.visitMethod(method, unused);
@@ -520,7 +559,7 @@ public final class JavaBindLifter {
         return null;
     }
 
-    private static Optional<String[]> extractSugarAnnotation(MethodTree method, Trees trees, TreePath path) {
+    private static Optional<SugarBinding> extractSugarAnnotation(MethodTree method, Trees trees, TreePath path) {
         for (AnnotationTree ann : method.getModifiers().getAnnotations()) {
             String annName = ann.getAnnotationType().toString();
             if (!annName.equals("ProveKitSugar") && !annName.endsWith(".ProveKitSugar")) {
@@ -528,20 +567,124 @@ public final class JavaBindLifter {
             }
             String concept = null;
             String library = null;
+            List<String> loss = new ArrayList<>();
+            String observedDimension = "";
             for (ExpressionTree arg : ann.getArguments()) {
                 if (!(arg instanceof AssignmentTree assign)) continue;
                 String key = assign.getVariable().toString();
-                String val = assign.getExpression().toString();
-                if (val.startsWith("\"") && val.endsWith("\"")) {
-                    val = val.substring(1, val.length() - 1);
+                ExpressionTree valExpr = assign.getExpression();
+                if ("concept".equals(key)) {
+                    concept = unquote(valExpr.toString());
+                } else if ("library".equals(key)) {
+                    library = unquote(valExpr.toString());
+                } else if ("loss".equals(key)) {
+                    loss = extractStringArray(valExpr);
+                } else if ("observedDimension".equals(key)) {
+                    observedDimension = unquote(valExpr.toString());
                 }
-                if ("concept".equals(key)) concept = val;
-                if ("library".equals(key)) library = val;
             }
             if (concept != null && !concept.isEmpty() && library != null && !library.isEmpty()) {
-                return Optional.of(new String[] { concept, library });
+                return Optional.of(new SugarBinding(concept, library, loss, observedDimension));
             }
             return Optional.empty();
+        }
+        return Optional.empty();
+    }
+
+    /** Strip surrounding double-quotes from a string literal token, if present. */
+    private static String unquote(String s) {
+        if (s.startsWith("\"") && s.endsWith("\"") && s.length() >= 2) {
+            return s.substring(1, s.length() - 1);
+        }
+        return s;
+    }
+
+    /**
+     * Extract a string array from an annotation argument expression.
+     * Handles: single string literal, array initializer {@code {"a","b"}},
+     * and NewArrayTree from the compiler.
+     */
+    private static List<String> extractStringArray(ExpressionTree expr) {
+        List<String> result = new ArrayList<>();
+        if (expr instanceof NewArrayTree arr) {
+            if (arr.getInitializers() != null) {
+                for (ExpressionTree elem : arr.getInitializers()) {
+                    result.add(unquote(elem.toString()));
+                }
+            }
+        } else {
+            // Single element or already-stringified representation.
+            String raw = expr.toString().trim();
+            // Strip outer braces from inline array literals like {"a","b"}.
+            if (raw.startsWith("{") && raw.endsWith("}")) {
+                raw = raw.substring(1, raw.length() - 1).trim();
+                if (raw.isEmpty()) return result;
+                for (String part : raw.split(",")) {
+                    String s = unquote(part.trim());
+                    if (!s.isEmpty()) result.add(s);
+                }
+            } else {
+                String s = unquote(raw);
+                if (!s.isEmpty()) result.add(s);
+            }
+        }
+        return result;
+    }
+
+    /**
+     * Scan type declarations in a compilation unit for @ProveKitRefuse
+     * and emit refusal-memento IR records.
+     */
+    private static void extractRefusals(
+            CompilationUnitTree unit,
+            List<Jcs.Json> entries) {
+        for (var member : unit.getTypeDecls()) {
+            if (member instanceof ClassTree classDecl) {
+                scanClassForRefusals(classDecl, entries);
+            }
+        }
+    }
+
+    private static void scanClassForRefusals(ClassTree classDecl, List<Jcs.Json> entries) {
+        // Check annotations on this class itself.
+        for (AnnotationTree ann : classDecl.getModifiers().getAnnotations()) {
+            String annName = ann.getAnnotationType().toString();
+            if (!annName.equals("ProveKitRefuse") && !annName.endsWith(".ProveKitRefuse")) continue;
+            parseRefuseAnnotation(ann).ifPresent(rb -> entries.add(Jcs.object(
+                "concept", Jcs.string(rb.concept()),
+                "kind", Jcs.string("refusal-memento"),
+                "reason", Jcs.string(rb.reason()),
+                "surface", Jcs.string(rb.surface()),
+                "target_language", Jcs.string("java"),
+                "would_close_with_cluster", Jcs.string(rb.wouldCloseWithCluster())
+            )));
+        }
+        // Recurse into nested types.
+        for (var member : classDecl.getMembers()) {
+            if (member instanceof ClassTree nested) {
+                scanClassForRefusals(nested, entries);
+            }
+        }
+    }
+
+    private static Optional<RefuseBinding> parseRefuseAnnotation(AnnotationTree ann) {
+        String surface = null;
+        String concept = null;
+        String reason = null;
+        String wouldCloseWithCluster = null;
+        for (ExpressionTree arg : ann.getArguments()) {
+            if (!(arg instanceof AssignmentTree assign)) continue;
+            String key = assign.getVariable().toString();
+            String val = unquote(assign.getExpression().toString());
+            switch (key) {
+                case "surface" -> surface = val;
+                case "concept" -> concept = val;
+                case "reason" -> reason = val;
+                case "wouldCloseWithCluster" -> wouldCloseWithCluster = val;
+            }
+        }
+        if (surface != null && concept != null && reason != null && wouldCloseWithCluster != null) {
+            return Optional.of(new RefuseBinding(surface, concept, reason, wouldCloseWithCluster));
         }
         return Optional.empty();
     }

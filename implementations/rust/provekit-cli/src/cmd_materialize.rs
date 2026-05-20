@@ -9,11 +9,12 @@ use std::path::{Path, PathBuf};
 use clap::Parser;
 use libprovekit::core::{
     execute_path, HashMapInputCatalog, Input, KitRegistry, LowerKit, Path as CorePath, PathAlgebra,
-    Verb,
+    RealizedSource, Verb,
 };
 // Source-transform primitives live in libprovekit (#1335 Phase A). The glob
-// re-export keeps existing call sites (notably in `materialize_source_text`)
-// unchanged after the extract-and-move.
+// re-export keeps the carrier-parsing surface available to `materialize_source_text`
+// after the extract-and-move; Phase C reroutes the per-site loop through
+// `transform_source_text` + the `SiteTransformKit` trait (#1337).
 pub(crate) use libprovekit::core::source_transform::*;
 use owo_colors::OwoColorize;
 use serde_json::Value as Json;
@@ -51,7 +52,11 @@ struct MaterializedFile {
     source_path: PathBuf,
     relative_path: PathBuf,
     content: String,
-    replacements: usize,
+    /// Per-file receipt. Carries the trichotomy (exact / lossy /
+    /// refused) plus per-site witnesses + loss/refusal mementos. Phase E
+    /// (`#1339`) wires this so materialize no longer aborts on first
+    /// refusal: every site's outcome lives in the receipt instead.
+    receipt: SourceTransformReceipt,
 }
 
 pub fn run(args: MaterializeArgs) -> u8 {
@@ -126,13 +131,47 @@ pub fn run(args: MaterializeArgs) -> u8 {
         return EXIT_USER_ERROR;
     }
 
-    if !args.out.quiet && (args.write || args.out_dir.is_some()) {
-        let replacements: usize = files.iter().map(|file| file.replacements).sum();
-        println!(
-            "{} materialized {replacements} concept citation(s) across {} file(s)",
-            "materialize".green().bold(),
-            files.len()
-        );
+    // Phase E (`#1339`): emit a per-file SourceTransformReceipt summary so
+    // refusals are first-class output rather than a string-Err abort.
+    // In dry-run mode (no --write, no --out-dir), receipts are printed
+    // as JSON alongside the realized source. In write modes, an aggregate
+    // line per file goes to stdout (or stderr when --quiet).
+    let mut total_exact = 0usize;
+    let mut total_lossy = 0usize;
+    let mut total_refused = 0usize;
+    for file in &files {
+        total_exact += file.receipt.aggregate_summary.exact;
+        total_lossy += file.receipt.aggregate_summary.lossy;
+        total_refused += file.receipt.aggregate_summary.refused;
+    }
+    let dry_run = !args.write && args.out_dir.is_none();
+    if dry_run {
+        // JSON receipt on stdout so consumers can parse it. Mirrors the
+        // shape `cmd_bind_migrate` writes via `MigrateReceiptEnvelope`
+        // for the receipt path; here the receipt is per-file because
+        // materialize walks a directory and emits per-file output.
+        for file in &files {
+            let receipt_json = serde_json::to_string_pretty(&file.receipt)
+                .unwrap_or_else(|err| format!("{{\"error\": \"{err}\"}}"));
+            println!("// receipt: {}", file.relative_path.display());
+            println!("{receipt_json}");
+        }
+    }
+
+    if !args.out.quiet {
+        if args.write || args.out_dir.is_some() {
+            println!(
+                "{} materialized {total_exact} exact + {total_lossy} lossy + {total_refused} refused across {} file(s)",
+                "materialize".green().bold(),
+                files.len()
+            );
+        } else {
+            eprintln!(
+                "{} dry-run: {total_exact} exact + {total_lossy} lossy + {total_refused} refused across {} file(s)",
+                "materialize".green().bold(),
+                files.len()
+            );
+        }
     }
     EXIT_OK
 }
@@ -207,10 +246,12 @@ fn materialize_source_dir(
         }
         let raw = std::fs::read_to_string(path)
             .map_err(|error| format!("read {}: {error}", path.display()))?;
-        let (content, replacements) =
+        let (content, receipt) =
             materialize_source_text(project_root, target_lang, library_tag, &raw)
                 .map_err(|error| format!("{}: {error}", path.display()))?;
-        if replacements == 0 {
+        let replacements =
+            receipt.aggregate_summary.exact + receipt.aggregate_summary.lossy;
+        if replacements == 0 && receipt.aggregate_summary.refused == 0 {
             continue;
         }
         let relative_path = path.strip_prefix(source_dir).unwrap_or(path).to_path_buf();
@@ -218,7 +259,7 @@ fn materialize_source_dir(
             source_path: path.to_path_buf(),
             relative_path,
             content,
-            replacements,
+            receipt,
         });
     }
     Ok(files)
@@ -259,113 +300,169 @@ fn materialize_source_text(
     target_lang: &str,
     library_tag: Option<&str>,
     raw: &str,
-) -> Result<(String, usize), String> {
-    let mut out = String::new();
-    let mut replacements = 0usize;
-    let lines = raw.split_inclusive('\n').collect::<Vec<_>>();
-    let mut idx = 0usize;
-    while idx < lines.len() {
-        let line = lines[idx];
-        if let Some((indent, payload)) = concept_payload_from_line(line) {
-            // Consume the carrier comment, optional payload-cid line, and
-            // the following stub function declaration. The carrier+stub
-            // pair is replaced by a single materialized function whose
-            // signature comes from the consumer's stub (preserving the
-            // consumer's signed claim, including generic params, lifetimes,
-            // and where-clauses) and whose body comes from the realize
-            // plugin's emission of the shim's signed binding (#1331 +
-            // #1332). The consumer's signature is the trade anchor; the
-            // shim's body is the supply that fills it.
-            let mut consumed = 1usize;
-            if idx + consumed < lines.len()
-                && concept_payload_cid_from_line(lines[idx + consumed]).is_some()
-            {
-                let declared_cid = concept_payload_cid_from_line(lines[idx + consumed]).unwrap();
-                verify_payload_cid(payload, declared_cid)?;
-                consumed += 1;
-            }
-            let stub_block = capture_stub_function_block(&lines[idx + consumed..]);
-            consumed += stub_block.line_count;
-
-            let spec = realize_spec_from_payload(payload)?;
-            let realized = realize_spec_via_path(project_root, target_lang, library_tag, spec)?;
-            let emitted = if let Some(stub) = stub_block.signature_and_close.as_ref() {
-                splice_realized_body_into_stub_signature(stub, &realized)
-            } else {
-                realized
-            };
-            let indented = indent_realized_source(&emitted, indent);
-            out.push_str(&indented);
-            if !indented.ends_with('\n') {
-                out.push('\n');
-            }
-            replacements += 1;
-            idx += consumed;
-            continue;
-        }
-        out.push_str(line);
-        idx += 1;
-    }
-    Ok((out, replacements))
+) -> Result<(String, SourceTransformReceipt), String> {
+    let kit = MaterializeKit::new(target_lang, library_tag, project_root);
+    // Phase E (`#1339`): use the refusal-collecting variant so a
+    // `SiteOutcome::Refuse` becomes a first-class entry in the receipt
+    // rather than aborting the run with a string Err.
+    let (rewritten, sites_and_outcomes) =
+        transform_source_text_collecting_refusals(raw, &kit)?;
+    let receipt = build_receipt(
+        &kit,
+        target_lang,
+        None,
+        library_tag.unwrap_or(""),
+        &sites_and_outcomes,
+    );
+    Ok((rewritten, receipt))
 }
 
-fn realize_spec_via_path(
-    project_root: &Path,
-    target_lang: &str,
-    library_tag: Option<&str>,
-    spec: Json,
-) -> Result<String, String> {
-    let mut inputs = HashMapInputCatalog::default();
-    let input_cid = inputs.insert(Input::Spec(spec));
-    let kit_name = library_tag
-        .map(|tag| format!("lower-{target_lang}-{tag}"))
-        .unwrap_or_else(|| format!("lower-{target_lang}"));
-    let path = Input::Path(Box::new(CorePath {
-        algebra: vec![PathAlgebra {
-            name: "lower".to_string(),
-            kit: kit_name.clone(),
-            inputs: vec![input_cid],
-            depends_on: vec![],
-            verb: Verb::Transform,
-        }],
-    }));
-    let mut registry = KitRegistry::default();
-    registry.register_with_platform_semantics(
-        kit_name,
-        LowerKit::new(
-            project_root.to_path_buf(),
-            target_lang.to_string(),
-            library_tag.map(str::to_string),
-            DispatchRealizeTransport,
-        ),
-        target_lang,
-        project_root.join(format!(
-            "implementations/{target_lang}/conformance/fixtures"
-        )),
-    );
-    let chain = execute_path(&path, &registry, &inputs).map_err(|error| {
-        error
-            .composition_refusal()
-            .and_then(|refusal| serde_json::to_string(refusal).ok())
-            .unwrap_or_else(|| error.to_string())
-    })?;
-    let realized =
-        LowerKit::<DispatchRealizeTransport>::realized_source_from_claim(chain.terminal_claim())?;
-    // String-formatted CLI error rather than a structured gap-record memento:
-    // materialize is a build-pipeline workflow that does not emit a receipt
-    // memento (unlike cmd_bind_migrate which produces MigrateReceiptEnvelope
-    // with refusal_mementos per `2026-05-18-refuse-leg-short-circuit-ruling`).
-    // The CLI surface is the consumer; a string error suffices. If a future
-    // caller needs structured refusal for build-pipeline consumption, extend
-    // materialize to optionally emit a refusal receipt and route through the
-    // existing RefusalMemento machinery.
-    if realized.is_stub {
-        return Err(format!(
-            "realize plugin for `{target_lang}` library `{}` returned a stub",
-            library_tag.unwrap_or("default")
-        ));
+/// `SiteTransformKit` implementation for `provekit materialize`. The
+/// materialize CLI is the N=1 specialization of the unified site-
+/// transformation primitive: for each `provekit-concept:` carrier, build
+/// a realize-request spec, dispatch through the LowerKit `execute_path`
+/// composition (same flow Phase A's `realize_spec_via_path` used), and
+/// map the realize transport's response onto the trichotomy outcome
+/// (`Materialize`, `LoudlyLossy`, `Refuse`) per the substrate-honest
+/// first-principle (#1334).
+pub struct MaterializeKit<'root> {
+    target_lang: String,
+    library_tag: Option<String>,
+    project_root: &'root Path,
+}
+
+impl<'root> MaterializeKit<'root> {
+    pub fn new(
+        target_lang: &str,
+        library_tag: Option<&str>,
+        project_root: &'root Path,
+    ) -> Self {
+        Self {
+            target_lang: target_lang.to_string(),
+            library_tag: library_tag.map(str::to_string),
+            project_root,
+        }
     }
-    Ok(realized.source)
+
+    /// Execute the lower-kit composition path that turns a realize-request
+    /// spec into a `RealizedSource`. This is the kit method that owns the
+    /// `execute_path`+`KitRegistry`+`DispatchRealizeTransport` wiring Phase A's
+    /// `realize_spec_via_path` free function did inline.
+    fn realize_via_path(&self, spec: Json) -> Result<RealizedSource, String> {
+        let mut inputs = HashMapInputCatalog::default();
+        let input_cid = inputs.insert(Input::Spec(spec));
+        let kit_name = self
+            .library_tag
+            .as_deref()
+            .map(|tag| format!("lower-{}-{tag}", self.target_lang))
+            .unwrap_or_else(|| format!("lower-{}", self.target_lang));
+        let path = Input::Path(Box::new(CorePath {
+            algebra: vec![PathAlgebra {
+                name: "lower".to_string(),
+                kit: kit_name.clone(),
+                inputs: vec![input_cid],
+                depends_on: vec![],
+                verb: Verb::Transform,
+            }],
+        }));
+        let mut registry = KitRegistry::default();
+        registry.register_with_platform_semantics(
+            kit_name,
+            LowerKit::new(
+                self.project_root.to_path_buf(),
+                self.target_lang.clone(),
+                self.library_tag.clone(),
+                DispatchRealizeTransport,
+            ),
+            &self.target_lang,
+            self.project_root.join(format!(
+                "implementations/{}/conformance/fixtures",
+                self.target_lang
+            )),
+        );
+        let chain = execute_path(&path, &registry, &inputs).map_err(|error| {
+            error
+                .composition_refusal()
+                .and_then(|refusal| serde_json::to_string(refusal).ok())
+                .unwrap_or_else(|| error.to_string())
+        })?;
+        LowerKit::<DispatchRealizeTransport>::realized_source_from_claim(chain.terminal_claim())
+    }
+}
+
+impl SiteTransformKit for MaterializeKit<'_> {
+    fn target_language(&self) -> &str {
+        &self.target_lang
+    }
+
+    fn transform_site(&self, carrier: &CarrierComment) -> Result<SiteOutcome, String> {
+        // Reuse Phase A's permissive-defaults spec builder (which lives in
+        // libprovekit) by re-serializing the carrier's raw payload. The
+        // typed CarrierComment fields are equivalent; routing through
+        // `realize_spec_from_payload` keeps a single permissive-defaults
+        // surface across both code paths and preserves byte-identical
+        // realize-request shape against Phase A.
+        let spec = realize_spec_from_payload(&carrier.raw_payload)?;
+        let realized = self.realize_via_path(spec)?;
+        // String-formatted refusal sentence rather than a structured
+        // gap-record memento: materialize is a build-pipeline workflow
+        // that does not emit a receipt memento (unlike cmd_bind_migrate
+        // which produces MigrateReceiptEnvelope with refusal_mementos per
+        // `2026-05-18-refuse-leg-short-circuit-ruling`). Phase B's
+        // `transform_source_text` propagates `SiteOutcome::Refuse` as
+        // `Err(reason)` to the CLI, which suffices for the consumer surface.
+        if realized.is_stub {
+            return Ok(SiteOutcome::Refuse {
+                reason: format!(
+                    "realize plugin for `{}` library `{}` returned a stub",
+                    self.target_lang,
+                    self.library_tag.as_deref().unwrap_or("default")
+                ),
+                would_close_with_concept: carrier.concept_name.clone(),
+            });
+        }
+        let binding_cid = realized.emitted_artifact_cid.clone().unwrap_or_default();
+        if has_loss(&realized.observed_loss_record) {
+            Ok(SiteOutcome::LoudlyLossy {
+                body: realized.source,
+                binding_cid,
+                declared_loss: extract_loss_dims(&realized.observed_loss_record),
+            })
+        } else {
+            Ok(SiteOutcome::Materialize {
+                body: realized.source,
+                binding_cid,
+                loss_record: realized.observed_loss_record,
+            })
+        }
+    }
+}
+
+/// A loss record is "loss-bearing" when it is neither JSON null nor an
+/// empty object. `lower_plugin::loss_record_cid` uses the same predicate
+/// shape for deciding whether to mint a loss-record CID; matching it here
+/// keeps the `LoudlyLossy` vs `Materialize` split aligned with the kit
+/// binding's own honesty gradient.
+fn has_loss(record: &Json) -> bool {
+    match record {
+        Json::Null => false,
+        Json::Object(map) => !map.is_empty(),
+        _ => true,
+    }
+}
+
+/// Project an `observed_loss_record` JSON value onto the list of declared
+/// loss dimensions. Object keys are the named dimensions (matching the
+/// shape `merge_observed_loss_records` builds in `lower_plugin`); non-object
+/// records degrade to a single-element vec carrying the value's JSON
+/// rendering, so consumers always get a non-empty `declared_loss` for
+/// loss-bearing records.
+fn extract_loss_dims(record: &Json) -> Vec<String> {
+    match record {
+        Json::Object(map) => map.keys().cloned().collect(),
+        Json::Null => Vec::new(),
+        other => vec![other.to_string()],
+    }
 }
 
 fn print_dry_run(files: &[MaterializedFile]) -> Result<(), String> {

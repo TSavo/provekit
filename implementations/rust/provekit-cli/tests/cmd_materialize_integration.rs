@@ -381,7 +381,7 @@ fn materialize_write_rewrites_source_file_in_place_and_reports_summary() {
         "materialize --write should succeed\nstdout:\n{stdout}\nstderr:\n{stderr}"
     );
     assert!(
-        stdout.contains("materialized 1 concept citation(s) across 1 file(s)"),
+        stdout.contains("materialized 1 exact + 0 lossy + 0 refused across 1 file(s)"),
         "write mode should report replacement summary: {stdout}"
     );
     let rewritten = fs::read_to_string(&source_path).expect("read rewritten source");
@@ -428,7 +428,7 @@ fn materialize_out_dir_writes_materialized_copy_and_leaves_source_unchanged() {
         "materialize --out-dir should succeed\nstdout:\n{stdout}\nstderr:\n{stderr}"
     );
     assert!(
-        stdout.contains("materialized 1 concept citation(s) across 1 file(s)"),
+        stdout.contains("materialized 1 exact + 0 lossy + 0 refused across 1 file(s)"),
         "out-dir mode should report replacement summary: {stdout}"
     );
     let copied = fs::read_to_string(out_dir.join("queries.ts")).expect("read materialized copy");

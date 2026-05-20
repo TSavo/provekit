@@ -290,6 +290,799 @@ pub fn canonical_value_from_json(value: &Json) -> Result<Arc<CanonicalValue>, St
 // build-pipeline ergonomics; the trade-off is that incomplete carriers may
 // produce stub-like realize output. A future strict mode (e.g., a
 // --strict-payloads flag) could refuse incomplete carriers up front.
+// -----------------------------------------------------------------------------
+// Phase B (`#1336`): the unified site-transformation primitive.
+//
+// The materialize and migrate commands both walk a source file, find
+// `provekit-concept:` carrier comments, optionally consume the consumer's
+// stub function declaration that follows, dispatch to a kit-specific binding
+// resolver, and splice the realized body back into the consumer's signature.
+// Phase A extracted the mechanical primitives (carrier parsing, stub capture,
+// body splice). Phase B unifies the dispatch surface as `SiteTransformKit`
+// and the loop as `transform_source_text`. Phase C will reroute
+// `cmd_materialize::materialize_source_text` through this trait; Phase D will
+// do the same for `cmd_bind_migrate`; Phase E will unify the receipt
+// envelope so refusals carry through both flows by the same shape.
+//
+// This phase changes no CLI behavior. It adds the trait surface that the
+// existing commands will route through in subsequent phases.
+
+/// The trichotomy outcome of a single site transformation. Matches the
+/// substrate-honest first-principle: every site clears either with
+/// byte-exact realization, with declared bounded loss, or with refusal that
+/// names the concept hub whose minting would close the gap.
+#[derive(Debug, Clone)]
+pub enum SiteOutcome {
+    /// Site cleared with byte-exact realization. `body` is the spliced
+    /// function body (the contents between the outermost braces of the
+    /// realized function declaration); `binding_cid` pins the kit binding
+    /// that realized it; `loss_record` is the (possibly empty) loss-record
+    /// contribution carried by that binding.
+    Materialize {
+        body: String,
+        binding_cid: String,
+        loss_record: Json,
+    },
+
+    /// Site cleared with declared bounded loss. `body` is the spliced
+    /// function body; `binding_cid` pins the kit binding; `declared_loss`
+    /// is the list of dimensions where the realization is bounded-lossy.
+    LoudlyLossy {
+        body: String,
+        binding_cid: String,
+        declared_loss: Vec<String>,
+    },
+
+    /// Site cannot clear under the requested transformation. `reason` is a
+    /// substrate-honest sentence explaining why; `would_close_with_concept`
+    /// names the concept hub CID (or human-readable concept name) that, if
+    /// minted with an `N>=2` cross-library cluster, would close the
+    /// refusal.
+    Refuse {
+        reason: String,
+        would_close_with_concept: String,
+    },
+}
+
+/// A parsed `provekit-concept:` carrier comment in typed form. The
+/// materialize and migrate commands both consume this. Phase A moved the
+/// carrier-parsing primitive (`concept_payload_from_line`); this struct is
+/// the typed projection of the JSON payload that follows it.
+#[derive(Debug, Clone)]
+pub struct CarrierComment {
+    pub concept_name: String,
+    pub function: String,
+    pub params: Vec<String>,
+    pub param_types: Vec<String>,
+    pub return_type: String,
+    pub library_tag: Option<String>,
+    /// The enclosing function or module the carrier-cited site lives in.
+    /// Distinct from `function` (which is the carrier's own concept-bound
+    /// function name): `containing_function` names the SCOPE the site sits
+    /// inside, so effect-propagation can identify callers when a site's
+    /// effect signature widens or narrows. Populated by
+    /// `transform_source_text_one_pass` when scanning carriers; absent when
+    /// the carrier sits at module scope (no enclosing fn) or when the
+    /// payload itself carries no scope hint (Phase E `#1339`).
+    pub containing_function: Option<String>,
+    /// The raw JSON payload as it appeared in the source comment. Kept for
+    /// the carrier-payload-cid verification path that Phase A preserved
+    /// (`verify_payload_cid` recomputes JCS+blake3 over the same string the
+    /// consumer signed for).
+    pub raw_payload: String,
+}
+
+impl CarrierComment {
+    /// Parse the payload portion of a `provekit-concept: <JSON>` line.
+    /// The payload string is the value Phase A's `concept_payload_from_line`
+    /// returns; this function consumes it into typed fields with the same
+    /// permissive defaults that `realize_spec_from_payload` applies (missing
+    /// `function` becomes `provekit_materialized`, missing `params` becomes
+    /// `[]`, missing `return_type` becomes `"void"`).
+    pub fn parse(payload: &str) -> Result<Self, String> {
+        let raw_payload = payload.to_string();
+        let value: Json = serde_json::from_str(payload)
+            .map_err(|error| format!("parse provekit-concept payload JSON: {error}"))?;
+        let object = value
+            .as_object()
+            .ok_or_else(|| "provekit-concept payload must be a JSON object".to_string())?;
+
+        let concept_name = object
+            .get("concept_name")
+            .or_else(|| object.get("conceptName"))
+            .and_then(Json::as_str)
+            .ok_or_else(|| "provekit-concept payload missing concept_name".to_string())?
+            .to_string();
+
+        let function = object
+            .get("function")
+            .and_then(Json::as_str)
+            .unwrap_or("provekit_materialized")
+            .to_string();
+
+        let params = json_string_array_field(object.get("params"))
+            .map_err(|error| format!("provekit-concept payload `params`: {error}"))?;
+        let param_types = json_string_array_field(
+            object.get("param_types").or_else(|| object.get("paramTypes")),
+        )
+        .map_err(|error| format!("provekit-concept payload `param_types`: {error}"))?;
+
+        let return_type = object
+            .get("return_type")
+            .or_else(|| object.get("returnType"))
+            .and_then(Json::as_str)
+            .unwrap_or("void")
+            .to_string();
+
+        let library_tag = object
+            .get("library_tag")
+            .or_else(|| object.get("libraryTag"))
+            .or_else(|| object.get("library"))
+            .and_then(Json::as_str)
+            .map(str::to_string);
+
+        // `containing_function` is OPTIONAL in the JSON payload. Existing
+        // carriers that pre-date Phase E (`#1339`) do not declare it, so
+        // parsing must default to `None` rather than fail. The site walk
+        // populates it by source-scan when the JSON didn't (most cases).
+        let containing_function = object
+            .get("containing_function")
+            .or_else(|| object.get("containingFunction"))
+            .and_then(Json::as_str)
+            .map(str::to_string);
+
+        Ok(Self {
+            concept_name,
+            function,
+            params,
+            param_types,
+            return_type,
+            library_tag,
+            containing_function,
+            raw_payload,
+        })
+    }
+}
+
+fn json_string_array_field(value: Option<&Json>) -> Result<Vec<String>, String> {
+    let Some(value) = value else {
+        return Ok(Vec::new());
+    };
+    let array = value
+        .as_array()
+        .ok_or_else(|| "field must be a JSON array".to_string())?;
+    array
+        .iter()
+        .map(|entry| {
+            entry
+                .as_str()
+                .map(str::to_string)
+                .ok_or_else(|| "array entries must be strings".to_string())
+        })
+        .collect()
+}
+
+/// A kit that, given a concept-citation carrier, produces a site outcome
+/// (`Materialize`, `LoudlyLossy`, or `Refuse`). Both `provekit materialize`
+/// and `provekit bind migrate` implement this; the site-iteration, splice,
+/// and write-back machinery is shared by both via `transform_source_text`.
+pub trait SiteTransformKit: Send + Sync {
+    /// The target source language this kit emits (e.g., `"rust"`,
+    /// `"python"`). Used by callers that key per-language defaults off the
+    /// kit (e.g., file-extension filters in the file walker).
+    fn target_language(&self) -> &str;
+
+    /// Given a parsed carrier, dispatch to the kit's binding lookup and
+    /// produce a site outcome. The kit is responsible for any RPC,
+    /// path-composition, or binding-resolution it performs internally.
+    fn transform_site(&self, carrier: &CarrierComment) -> Result<SiteOutcome, String>;
+
+    /// After a pass of site transformations, return new carriers for sites
+    /// that effect propagation discovered. Default is a no-op for kits
+    /// (like `MaterializeKit`) that change no effect signatures.
+    ///
+    /// The effect vocabulary is language-specific and lives inside the kit
+    /// impl. A migrate kit reads the post-pass outcomes (each carrying its
+    /// own EffectSetMemento via the kit's internal state) and returns
+    /// `CarrierComment`s describing additional sites whose containing
+    /// functions need a follow-up rewrite once an effect (sync->async,
+    /// error-union widening, borrow->owned, panic propagation,
+    /// allocator-implicit->allocator-explicit, etc.) propagated through
+    /// the call graph. `transform_source_text` re-iterates as long as
+    /// `propagate` returns a non-empty vector, capped at 32 iterations.
+    fn propagate(
+        &self,
+        _outcomes: &[(ConceptSite, SiteOutcome)],
+    ) -> Result<Vec<CarrierComment>, String> {
+        Ok(Vec::new())
+    }
+}
+
+/// A captured concept-citation site in a source file: the carrier plus the
+/// (optional) stub function block that followed it. Returned by the shared
+/// site-iteration loop for callers that want to introspect or aggregate
+/// outcomes before write-back. Held by `transform_source_text` internally;
+/// surfaced so future phases (the migrate receipt envelope, debug tooling)
+/// can consume the same captured shape.
+#[derive(Debug, Clone)]
+pub struct ConceptSite {
+    pub carrier: CarrierComment,
+    pub indent: String,
+    pub stub_line_count: usize,
+    pub stub_signature_and_close: Option<StubSignatureAndCloseClone>,
+    /// Inclusive starting line and exclusive ending line of the
+    /// carrier-plus-stub region in the source, as `split_inclusive('\n')`
+    /// indices. Used by callers that want to slice the source by line
+    /// range.
+    pub line_start: usize,
+    pub line_end_exclusive: usize,
+}
+
+/// Clone-friendly mirror of `StubSignatureAndClose`. The Phase A struct is
+/// owned by the capture step and consumed by the splice step in a single
+/// loop iteration; `ConceptSite` (Phase B) is meant to be cheap to clone
+/// for aggregation, so we carry the owned-string form.
+#[derive(Debug, Clone)]
+pub struct StubSignatureAndCloseClone {
+    pub signature_text: String,
+    pub close_indent: String,
+}
+
+impl From<&StubSignatureAndClose> for StubSignatureAndCloseClone {
+    fn from(value: &StubSignatureAndClose) -> Self {
+        Self {
+            signature_text: value.signature_text.clone(),
+            close_indent: value.close_indent.clone(),
+        }
+    }
+}
+
+/// Transform a source-file string by walking concept-citation carriers and
+/// replacing each carrier-plus-stub region with the kit's site outcome.
+/// Returns the rewritten source and the per-site outcomes in the order they
+/// appeared.
+///
+/// Refusals propagate as `Err(String)` carrying the refusal `reason`; the
+/// function does not continue past a site that returned `Refuse`, and does
+/// not continue past a site whose `transform_site` itself errored.  Phase D
+/// (`cmd_bind_migrate`) needs to accumulate refusals into a structured
+/// receipt envelope; that flow will sit above `transform_source_text` and
+/// catch the propagated `Err` (or, in Phase E, switch to an accumulating
+/// variant). For Phase B's narrow surface, the propagate-on-refuse shape
+/// mirrors Phase A's `materialize_source_text` (which surfaces realize
+/// failures as `Err`).
+///
+/// The kit's returned `body` is the realize plugin's full
+/// `fn ... { ... }` source declaration (the same shape the realize
+/// transport returns). When a stub was captured, the inner body is
+/// extracted from that source and spliced into the consumer's stub
+/// signature via `splice_realized_body_into_stub_signature`, preserving
+/// the consumer's signed signature exactly while filling its body from the
+/// kit binding. When no stub was captured, the kit's source is emitted as
+/// the materialized function, matching the Phase A fallback path. The
+/// caller can then re-indent and append as before.
+pub fn transform_source_text(
+    source: &str,
+    kit: &dyn SiteTransformKit,
+) -> Result<(String, Vec<SiteOutcome>), String> {
+    // Fixed-point loop: run one pass of site transformations, call the kit's
+    // `propagate` hook to discover any additional carriers, append them to
+    // the source (as fresh carrier comments the next pass will pick up), and
+    // re-iterate until `propagate` returns empty. Cap at 32 iterations to
+    // prevent divergent fixed points; emit `Err` if the cap is reached. A
+    // kit whose `propagate` is the trait-default no-op exits the loop after
+    // the first pass.
+    const PROPAGATE_PASS_CAP: usize = 32;
+
+    let mut current = source.to_string();
+    let mut all_outcomes: Vec<SiteOutcome> = Vec::new();
+
+    for pass in 0..PROPAGATE_PASS_CAP {
+        let (rewritten, sites_and_outcomes) = transform_source_text_one_pass(&current, kit)?;
+        let pass_outcomes: Vec<SiteOutcome> = sites_and_outcomes
+            .iter()
+            .map(|(_, outcome)| outcome.clone())
+            .collect();
+
+        let new_carriers = kit.propagate(&sites_and_outcomes)?;
+
+        all_outcomes.extend(pass_outcomes);
+        current = rewritten;
+
+        if new_carriers.is_empty() {
+            return Ok((current, all_outcomes));
+        }
+
+        // Append new carriers as fresh `provekit-concept:` comment lines
+        // for the next pass to pick up. The kit decides where in the source
+        // these belong by virtue of what it puts in the CarrierComment; the
+        // shared loop simply re-runs the site walk over the rewritten
+        // source plus the appended carriers. The minimal shape: one carrier
+        // per line, no stub-function body, so `capture_stub_function_block`
+        // returns 0 and the kit's `transform_site` realization is emitted
+        // verbatim.
+        if !current.ends_with('\n') {
+            current.push('\n');
+        }
+        for carrier in new_carriers {
+            current.push_str("// provekit-concept: ");
+            current.push_str(&carrier.raw_payload);
+            current.push('\n');
+        }
+
+        let _ = pass; // suppress unused warning under non-debug builds
+    }
+
+    Err(format!(
+        "transform_source_text: effect-propagation fixed point did not converge within {PROPAGATE_PASS_CAP} passes"
+    ))
+}
+
+/// One pass of the site-transform walk. Returns the rewritten source plus
+/// the captured `ConceptSite` paired with each site's outcome. Used by
+/// `transform_source_text` to drive the propagate-and-re-iterate loop;
+/// surfaced as a private helper so the fixed-point machinery can hand the
+/// kit a structured view of what just happened.
+fn transform_source_text_one_pass(
+    source: &str,
+    kit: &dyn SiteTransformKit,
+) -> Result<(String, Vec<(ConceptSite, SiteOutcome)>), String> {
+    let mut out = String::new();
+    let mut sites_and_outcomes: Vec<(ConceptSite, SiteOutcome)> = Vec::new();
+    let lines = source.split_inclusive('\n').collect::<Vec<_>>();
+    let mut idx = 0usize;
+    while idx < lines.len() {
+        let line = lines[idx];
+        if let Some((indent, payload)) = concept_payload_from_line(line) {
+            let line_start = idx;
+            let mut consumed = 1usize;
+            if idx + consumed < lines.len()
+                && concept_payload_cid_from_line(lines[idx + consumed]).is_some()
+            {
+                let declared_cid = concept_payload_cid_from_line(lines[idx + consumed]).unwrap();
+                verify_payload_cid(payload, declared_cid)?;
+                consumed += 1;
+            }
+            let stub_block = capture_stub_function_block(&lines[idx + consumed..]);
+            let stub_line_count = stub_block.line_count;
+            let stub_signature_and_close = stub_block
+                .signature_and_close
+                .as_ref()
+                .map(StubSignatureAndCloseClone::from);
+            consumed += stub_line_count;
+
+            let mut carrier = CarrierComment::parse(payload)?;
+            // Phase E (`#1339`): populate `containing_function` by source-
+            // scan if the payload did not declare it. Scan upward from the
+            // carrier line for the nearest enclosing `fn ` declaration whose
+            // open brace has not yet closed by the carrier's line. The scan
+            // is conservative (matches Rust-shaped declarations); kits whose
+            // target language uses other declaration shapes can override by
+            // setting `containing_function` in the JSON payload.
+            if carrier.containing_function.is_none() {
+                carrier.containing_function = enclosing_function_name(&lines, idx);
+            }
+            let outcome = kit.transform_site(&carrier)?;
+
+            let body_opt: Option<&str> = match &outcome {
+                SiteOutcome::Materialize { body, .. } => Some(body.as_str()),
+                SiteOutcome::LoudlyLossy { body, .. } => Some(body.as_str()),
+                SiteOutcome::Refuse { reason, .. } => {
+                    return Err(reason.clone());
+                }
+            };
+
+            if let Some(body) = body_opt {
+                let emitted = if let Some(stub) = stub_block.signature_and_close.as_ref() {
+                    splice_realized_body_into_stub_signature(stub, body)
+                } else {
+                    body.to_string()
+                };
+                let indented = indent_realized_source(&emitted, indent);
+                out.push_str(&indented);
+                if !indented.ends_with('\n') {
+                    out.push('\n');
+                }
+            }
+            let line_end_exclusive = line_start + consumed;
+            let site = ConceptSite {
+                carrier,
+                indent: indent.to_string(),
+                stub_line_count,
+                stub_signature_and_close,
+                line_start,
+                line_end_exclusive,
+            };
+            sites_and_outcomes.push((site, outcome));
+            idx += consumed;
+            continue;
+        }
+        out.push_str(line);
+        idx += 1;
+    }
+    Ok((out, sites_and_outcomes))
+}
+
+/// Scan upward from `carrier_idx` looking for the nearest enclosing `fn `
+/// declaration whose open brace has not yet closed by the carrier line.
+/// Returns the function name (the identifier after `fn ` and before `(` or
+/// `<` or whitespace) when found.
+///
+/// The scan is conservative and shape-matches Rust-style declarations.
+/// Other languages (Python `def`, TypeScript `function`, Java methods) are
+/// handled by the kit setting `containing_function` directly in the JSON
+/// payload before parsing. Phase E (`#1339`) uses this for the migrate kit's
+/// effect-propagation graph, which is exercised today only on Rust source.
+fn enclosing_function_name(lines: &[&str], carrier_idx: usize) -> Option<String> {
+    // Walk upward from the line above the carrier. Track brace depth so we
+    // skip past sibling blocks (e.g., earlier `fn` blocks that already
+    // closed). When depth is non-negative and we hit a line that starts a
+    // function declaration, return that fn's name.
+    let mut depth: i32 = 0;
+    let mut idx = carrier_idx;
+    while idx > 0 {
+        idx -= 1;
+        let line = lines[idx];
+        for ch in line.chars().rev() {
+            match ch {
+                '}' => depth += 1,
+                '{' => {
+                    depth -= 1;
+                    if depth < 0 {
+                        // Entered the enclosing block. Look at this line
+                        // (and earlier lines if the declaration spans) for
+                        // a `fn <name>` shape.
+                        if let Some(name) = function_name_from_declaration_line(line) {
+                            return Some(name);
+                        }
+                        // Declaration may sit on the line above (the `{`
+                        // landed on a separate line). Walk back one more
+                        // and try there.
+                        if idx > 0 {
+                            if let Some(name) = function_name_from_declaration_line(lines[idx - 1])
+                            {
+                                return Some(name);
+                            }
+                        }
+                        return None;
+                    }
+                }
+                _ => {}
+            }
+        }
+    }
+    None
+}
+
+/// Extract the function name from a Rust-shaped `fn <name>(` line, stripping
+/// modifiers (`pub`, `async`, `unsafe`, etc.). Returns `None` if the line
+/// does not start a function declaration.
+fn function_name_from_declaration_line(line: &str) -> Option<String> {
+    if !line_starts_function_declaration(line) {
+        return None;
+    }
+    let trimmed = line.trim_start();
+    const KEYWORDS_TO_STRIP: &[&str] = &[
+        "pub ", "async ", "const ", "unsafe ", "extern ", "default ",
+    ];
+    let mut remaining = trimmed;
+    loop {
+        let mut stripped = false;
+        if remaining.starts_with("pub(") {
+            if let Some(rest) = remaining.split_once(')').map(|(_, r)| r.trim_start()) {
+                remaining = rest;
+                stripped = true;
+            }
+        }
+        for kw in KEYWORDS_TO_STRIP {
+            if let Some(rest) = remaining.strip_prefix(kw) {
+                remaining = rest.trim_start();
+                stripped = true;
+                break;
+            }
+        }
+        if !stripped {
+            break;
+        }
+    }
+    let after_fn = remaining.strip_prefix("fn ")?.trim_start();
+    let end = after_fn
+        .find(|c: char| c == '(' || c == '<' || c == ' ' || c == '\t' || c == '\n')
+        .unwrap_or(after_fn.len());
+    let name = &after_fn[..end];
+    if name.is_empty() {
+        None
+    } else {
+        Some(name.to_string())
+    }
+}
+
+// -----------------------------------------------------------------------------
+// Phase E (`#1339`): unified SourceTransformReceipt.
+//
+// Both `provekit materialize` (N=1) and `provekit bind migrate` (N=2) end a
+// run with a structured per-site receipt: each site cleared as `Exact`,
+// `LoudlyLossy`, or `Refused`. Phase E exposes the shared shape so:
+//   1. Materialize stops aborting on first refusal (now first-class in
+//      `refusal_mementos`) and emits a receipt the CLI can print.
+//   2. Migrate's existing `MigrateReceiptEnvelope` (which carries language-
+//      transition + propagation-decision + witness machinery) is preserved
+//      byte-identically for the run_inner path; the per-site outcomes
+//      collected through `SiteTransformKit` are exposed via this shape so
+//      downstream consumers see the same trichotomy structure regardless
+//      of which CLI emitted it.
+//
+// Per the umbrella plan, language-specific effect-set details land in each
+// `loss_records` entry's `dimensions` array; the field shape is language-
+// agnostic.
+
+/// Per-run audit of every concept-citation site a source transformation
+/// touched. The trichotomy is preserved at field level: exact realizations
+/// flow into `aggregate_summary.exact`, declared-lossy realizations into
+/// `aggregate_summary.lossy` + `loss_records`, refusals into
+/// `aggregate_summary.refused` + `refusal_mementos`. The `site_witnesses`
+/// list pins one entry per site in source order.
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+pub struct SourceTransformReceipt {
+    /// Schema version for the receipt envelope. Bumped when field shape
+    /// changes in a way that breaks downstream consumers' parsers.
+    pub schema_version: String,
+    pub source_language: String,
+    /// `None` for materialize (which has no source binding to compare
+    /// against); `Some` for migrate (N=2 specialization).
+    pub source_library: Option<String>,
+    pub target_language: String,
+    pub target_library: String,
+    pub aggregate_summary: AggregateSummary,
+    pub site_witnesses: Vec<SiteWitness>,
+    pub loss_records: Vec<LossRecord>,
+    pub refusal_mementos: Vec<RefusalMemento>,
+}
+
+#[derive(Debug, Clone, Default, serde::Serialize, serde::Deserialize)]
+pub struct AggregateSummary {
+    pub exact: usize,
+    pub lossy: usize,
+    pub refused: usize,
+}
+
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+pub struct SiteWitness {
+    pub source_binding_cid: Option<String>,
+    pub target_binding_cid: String,
+    pub concept_name: String,
+    pub function_name: String,
+    pub outcome_kind: OutcomeKind,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+pub enum OutcomeKind {
+    Exact,
+    LoudlyLossy,
+    Refused,
+}
+
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+pub struct LossRecord {
+    pub concept_name: String,
+    pub dimensions: Vec<String>,
+}
+
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+pub struct RefusalMemento {
+    pub concept_name: String,
+    pub reason: String,
+    pub would_close_with_concept: String,
+}
+
+/// Assemble a `SourceTransformReceipt` from a kit and its per-site outcomes.
+/// The kit names the target language; the caller supplies the source-side
+/// labels (materialize passes `source_lib: None`; migrate passes both).
+///
+/// `site_outcomes` is the `(ConceptSite, SiteOutcome)` pair list returned
+/// by a `transform_source_text_one_pass` walk OR an accumulated list across
+/// fixed-point passes. The receipt mirrors the order it sees.
+pub fn build_receipt(
+    kit: &dyn SiteTransformKit,
+    source_lang: &str,
+    source_lib: Option<&str>,
+    target_lib: &str,
+    site_outcomes: &[(ConceptSite, SiteOutcome)],
+) -> SourceTransformReceipt {
+    let mut aggregate_summary = AggregateSummary::default();
+    let mut site_witnesses = Vec::with_capacity(site_outcomes.len());
+    let mut loss_records = Vec::new();
+    let mut refusal_mementos = Vec::new();
+    for (site, outcome) in site_outcomes {
+        let concept_name = site.carrier.concept_name.clone();
+        let function_name = site
+            .carrier
+            .containing_function
+            .clone()
+            .unwrap_or_else(|| site.carrier.function.clone());
+        match outcome {
+            SiteOutcome::Materialize { binding_cid, .. } => {
+                aggregate_summary.exact += 1;
+                site_witnesses.push(SiteWitness {
+                    source_binding_cid: source_lib.map(|_| String::new()),
+                    target_binding_cid: binding_cid.clone(),
+                    concept_name,
+                    function_name,
+                    outcome_kind: OutcomeKind::Exact,
+                });
+            }
+            SiteOutcome::LoudlyLossy {
+                binding_cid,
+                declared_loss,
+                ..
+            } => {
+                aggregate_summary.lossy += 1;
+                loss_records.push(LossRecord {
+                    concept_name: concept_name.clone(),
+                    dimensions: declared_loss.clone(),
+                });
+                site_witnesses.push(SiteWitness {
+                    source_binding_cid: source_lib.map(|_| String::new()),
+                    target_binding_cid: binding_cid.clone(),
+                    concept_name,
+                    function_name,
+                    outcome_kind: OutcomeKind::LoudlyLossy,
+                });
+            }
+            SiteOutcome::Refuse {
+                reason,
+                would_close_with_concept,
+            } => {
+                aggregate_summary.refused += 1;
+                refusal_mementos.push(RefusalMemento {
+                    concept_name: concept_name.clone(),
+                    reason: reason.clone(),
+                    would_close_with_concept: would_close_with_concept.clone(),
+                });
+                site_witnesses.push(SiteWitness {
+                    source_binding_cid: source_lib.map(|_| String::new()),
+                    target_binding_cid: String::new(),
+                    concept_name,
+                    function_name,
+                    outcome_kind: OutcomeKind::Refused,
+                });
+            }
+        }
+    }
+    SourceTransformReceipt {
+        schema_version: "1".to_string(),
+        source_language: source_lang.to_string(),
+        source_library: source_lib.map(str::to_string),
+        target_language: kit.target_language().to_string(),
+        target_library: target_lib.to_string(),
+        aggregate_summary,
+        site_witnesses,
+        loss_records,
+        refusal_mementos,
+    }
+}
+
+/// Variant of `transform_source_text` that does NOT abort on
+/// `SiteOutcome::Refuse`; refusals are collected into the per-site outcome
+/// list and become first-class entries in a `SourceTransformReceipt`
+/// (Phase E `#1339`). The fixed-point propagate loop is preserved; the only
+/// difference from `transform_source_text` is that the refuse leg no longer
+/// shortcuts to `Err`. The substrate honesty contract (trichotomy)
+/// holds: a refused site emits no body into the rewritten source, so the
+/// stub block is dropped; downstream tooling must read the receipt to learn
+/// the refusal landed.
+pub fn transform_source_text_collecting_refusals(
+    source: &str,
+    kit: &dyn SiteTransformKit,
+) -> Result<(String, Vec<(ConceptSite, SiteOutcome)>), String> {
+    const PROPAGATE_PASS_CAP: usize = 32;
+
+    let mut current = source.to_string();
+    let mut all: Vec<(ConceptSite, SiteOutcome)> = Vec::new();
+
+    for _pass in 0..PROPAGATE_PASS_CAP {
+        let (rewritten, sites_and_outcomes) =
+            transform_source_text_one_pass_collecting_refusals(&current, kit)?;
+        let new_carriers = kit.propagate(&sites_and_outcomes)?;
+
+        all.extend(sites_and_outcomes);
+        current = rewritten;
+
+        if new_carriers.is_empty() {
+            return Ok((current, all));
+        }
+
+        if !current.ends_with('\n') {
+            current.push('\n');
+        }
+        for carrier in new_carriers {
+            current.push_str("// provekit-concept: ");
+            current.push_str(&carrier.raw_payload);
+            current.push('\n');
+        }
+    }
+
+    Err(format!(
+        "transform_source_text_collecting_refusals: effect-propagation fixed point did not converge within {PROPAGATE_PASS_CAP} passes"
+    ))
+}
+
+/// Single-pass variant that collects refusals rather than aborting. Shares
+/// the splice/indent machinery with `transform_source_text_one_pass`; the
+/// only behavioral fork is the refuse leg, which here emits no body to the
+/// output (the carrier-plus-stub region is removed) and pushes the outcome
+/// onto the returned list.
+fn transform_source_text_one_pass_collecting_refusals(
+    source: &str,
+    kit: &dyn SiteTransformKit,
+) -> Result<(String, Vec<(ConceptSite, SiteOutcome)>), String> {
+    let mut out = String::new();
+    let mut sites_and_outcomes: Vec<(ConceptSite, SiteOutcome)> = Vec::new();
+    let lines = source.split_inclusive('\n').collect::<Vec<_>>();
+    let mut idx = 0usize;
+    while idx < lines.len() {
+        let line = lines[idx];
+        if let Some((indent, payload)) = concept_payload_from_line(line) {
+            let line_start = idx;
+            let mut consumed = 1usize;
+            if idx + consumed < lines.len()
+                && concept_payload_cid_from_line(lines[idx + consumed]).is_some()
+            {
+                let declared_cid = concept_payload_cid_from_line(lines[idx + consumed]).unwrap();
+                verify_payload_cid(payload, declared_cid)?;
+                consumed += 1;
+            }
+            let stub_block = capture_stub_function_block(&lines[idx + consumed..]);
+            let stub_line_count = stub_block.line_count;
+            let stub_signature_and_close = stub_block
+                .signature_and_close
+                .as_ref()
+                .map(StubSignatureAndCloseClone::from);
+            consumed += stub_line_count;
+
+            let mut carrier = CarrierComment::parse(payload)?;
+            if carrier.containing_function.is_none() {
+                carrier.containing_function = enclosing_function_name(&lines, idx);
+            }
+            let outcome = kit.transform_site(&carrier)?;
+
+            let body_opt: Option<&str> = match &outcome {
+                SiteOutcome::Materialize { body, .. } => Some(body.as_str()),
+                SiteOutcome::LoudlyLossy { body, .. } => Some(body.as_str()),
+                SiteOutcome::Refuse { .. } => None,
+            };
+
+            if let Some(body) = body_opt {
+                let emitted = if let Some(stub) = stub_block.signature_and_close.as_ref() {
+                    splice_realized_body_into_stub_signature(stub, body)
+                } else {
+                    body.to_string()
+                };
+                let indented = indent_realized_source(&emitted, indent);
+                out.push_str(&indented);
+                if !indented.ends_with('\n') {
+                    out.push('\n');
+                }
+            }
+            let line_end_exclusive = line_start + consumed;
+            let site = ConceptSite {
+                carrier,
+                indent: indent.to_string(),
+                stub_line_count,
+                stub_signature_and_close,
+                line_start,
+                line_end_exclusive,
+            };
+            sites_and_outcomes.push((site, outcome));
+            idx += consumed;
+            continue;
+        }
+        out.push_str(line);
+        idx += 1;
+    }
+    Ok((out, sites_and_outcomes))
+}
+
 pub fn realize_spec_from_payload(payload: &str) -> Result<Json, String> {
     let mut value: Json = serde_json::from_str(payload)
         .map_err(|error| format!("parse provekit-concept payload JSON: {error}"))?;
@@ -337,3 +1130,322 @@ pub fn realize_spec_from_payload(payload: &str) -> Result<Json, String> {
     }
     Ok(value)
 }
+
+#[cfg(test)]
+mod phase_b_tests {
+    use super::*;
+    use serde_json::json;
+
+    struct MockMaterializeKit {
+        body: String,
+        binding_cid: String,
+    }
+
+    impl SiteTransformKit for MockMaterializeKit {
+        fn target_language(&self) -> &str {
+            "rust"
+        }
+
+        fn transform_site(&self, _carrier: &CarrierComment) -> Result<SiteOutcome, String> {
+            Ok(SiteOutcome::Materialize {
+                body: self.body.clone(),
+                binding_cid: self.binding_cid.clone(),
+                loss_record: json!([]),
+            })
+        }
+    }
+
+    struct RefusingKit {
+        reason: String,
+    }
+
+    impl SiteTransformKit for RefusingKit {
+        fn target_language(&self) -> &str {
+            "rust"
+        }
+
+        fn transform_site(&self, _carrier: &CarrierComment) -> Result<SiteOutcome, String> {
+            Ok(SiteOutcome::Refuse {
+                reason: self.reason.clone(),
+                would_close_with_concept: "concept:demo".to_string(),
+            })
+        }
+    }
+
+    const SAMPLE_SOURCE: &str = "fn before() {}\n\
+// provekit-concept: {\"concept_name\":\"concept:demo\",\"function\":\"do_thing\",\"params\":[\"x\"],\"param_types\":[\"u32\"],\"return_type\":\"u32\"}\n\
+fn do_thing(x: u32) -> u32 {\n\
+    unimplemented!()\n\
+}\n\
+fn after() {}\n";
+
+    #[test]
+    fn carrier_comment_parse_extracts_typed_fields() {
+        let payload = r#"{"concept_name":"concept:demo","function":"do_thing","params":["x"],"param_types":["u32"],"return_type":"u32","library_tag":"std"}"#;
+        let carrier = CarrierComment::parse(payload).expect("parses");
+        assert_eq!(carrier.concept_name, "concept:demo");
+        assert_eq!(carrier.function, "do_thing");
+        assert_eq!(carrier.params, vec!["x".to_string()]);
+        assert_eq!(carrier.param_types, vec!["u32".to_string()]);
+        assert_eq!(carrier.return_type, "u32");
+        assert_eq!(carrier.library_tag.as_deref(), Some("std"));
+        assert_eq!(carrier.raw_payload, payload);
+    }
+
+    #[test]
+    fn transform_source_text_splices_materialize_body_into_stub_signature() {
+        // Kit returns the realize plugin's full `fn ... { ... }` source; the
+        // stub-splice path extracts the inner body and wraps it in the
+        // consumer's signed signature. Same shape the realize transport
+        // returns and that `MaterializeKit` forwards.
+        let kit = MockMaterializeKit {
+            body: "fn realized(x: u32) -> u32 {\n    x.wrapping_add(1)\n}".to_string(),
+            binding_cid: "cid:mock".to_string(),
+        };
+        let (out, outcomes) =
+            transform_source_text(SAMPLE_SOURCE, &kit).expect("transform succeeds");
+        assert_eq!(outcomes.len(), 1);
+        assert!(matches!(outcomes[0], SiteOutcome::Materialize { .. }));
+        // Carrier line is consumed; consumer signature is preserved; body is spliced.
+        assert!(out.contains("fn before() {}"));
+        assert!(out.contains("fn do_thing(x: u32) -> u32 {"));
+        assert!(out.contains("x.wrapping_add(1)"));
+        assert!(out.contains("fn after() {}"));
+        assert!(!out.contains("provekit-concept:"));
+        assert!(!out.contains("unimplemented!()"));
+    }
+
+    #[test]
+    fn transform_source_text_propagates_refusal_as_err() {
+        let kit = RefusingKit {
+            reason: "no binding for concept:demo".to_string(),
+        };
+        let error =
+            transform_source_text(SAMPLE_SOURCE, &kit).expect_err("refusal propagates as Err");
+        assert!(error.contains("no binding for concept:demo"));
+    }
+
+    /// A kit whose `propagate` hook fires once with a single fresh carrier,
+    /// then returns empty. Exercises the fixed-point loop: pass 1 picks up
+    /// the seed carrier, pass 2 picks up the propagate-emitted carrier,
+    /// pass 3 sees nothing new and terminates.
+    struct PropagatingKit {
+        propagate_call_count: std::sync::atomic::AtomicUsize,
+    }
+
+    impl SiteTransformKit for PropagatingKit {
+        fn target_language(&self) -> &str {
+            "rust"
+        }
+
+        fn transform_site(&self, carrier: &CarrierComment) -> Result<SiteOutcome, String> {
+            Ok(SiteOutcome::Materialize {
+                body: format!(
+                    "fn {}() {{\n    /* realized {} */\n}}",
+                    carrier.function, carrier.concept_name
+                ),
+                binding_cid: "cid:mock".to_string(),
+                loss_record: json!([]),
+            })
+        }
+
+        fn propagate(
+            &self,
+            _outcomes: &[(ConceptSite, SiteOutcome)],
+        ) -> Result<Vec<CarrierComment>, String> {
+            let count = self
+                .propagate_call_count
+                .fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+            if count == 0 {
+                let payload = r#"{"concept_name":"concept:propagated","function":"propagated_fn","params":[],"param_types":[],"return_type":"void"}"#;
+                let carrier = CarrierComment::parse(payload).unwrap();
+                Ok(vec![carrier])
+            } else {
+                Ok(Vec::new())
+            }
+        }
+    }
+
+    #[test]
+    fn transform_source_text_fixed_point_runs_propagate_until_empty() {
+        let kit = PropagatingKit {
+            propagate_call_count: std::sync::atomic::AtomicUsize::new(0),
+        };
+        let (out, outcomes) =
+            transform_source_text(SAMPLE_SOURCE, &kit).expect("fixed point converges");
+        // Two outcomes: the seed carrier in SAMPLE_SOURCE + the propagated one.
+        assert_eq!(outcomes.len(), 2);
+        // Both should be Materialize variants.
+        for outcome in &outcomes {
+            assert!(matches!(outcome, SiteOutcome::Materialize { .. }));
+        }
+        // The propagated carrier's realization is appended to the rewritten source.
+        assert!(out.contains("propagated_fn"));
+        assert!(out.contains("concept:propagated"));
+        // The kit's propagate was called twice (once returning a carrier, once empty).
+        assert_eq!(
+            kit.propagate_call_count
+                .load(std::sync::atomic::Ordering::SeqCst),
+            2
+        );
+    }
+
+    /// A divergent kit that never returns empty from `propagate`; verifies
+    /// the cap-at-32 safety net.
+    struct DivergentKit;
+
+    impl SiteTransformKit for DivergentKit {
+        fn target_language(&self) -> &str {
+            "rust"
+        }
+
+        fn transform_site(&self, carrier: &CarrierComment) -> Result<SiteOutcome, String> {
+            Ok(SiteOutcome::Materialize {
+                body: format!("fn {}() {{}}", carrier.function),
+                binding_cid: "cid:divergent".to_string(),
+                loss_record: json!([]),
+            })
+        }
+
+        fn propagate(
+            &self,
+            _outcomes: &[(ConceptSite, SiteOutcome)],
+        ) -> Result<Vec<CarrierComment>, String> {
+            let payload = r#"{"concept_name":"concept:never-ends","function":"loop_fn","params":[],"param_types":[],"return_type":"void"}"#;
+            Ok(vec![CarrierComment::parse(payload).unwrap()])
+        }
+    }
+
+    #[test]
+    fn transform_source_text_fixed_point_caps_divergent_propagation() {
+        let kit = DivergentKit;
+        let error = transform_source_text(SAMPLE_SOURCE, &kit)
+            .expect_err("divergent propagation hits the cap");
+        assert!(error.contains("fixed point did not converge"));
+    }
+
+    // -----------------------------------------------------------------
+    // Phase E (`#1339`) tests.
+    // -----------------------------------------------------------------
+
+    #[test]
+    fn carrier_comment_parse_accepts_payload_without_containing_function() {
+        // Existing payloads (pre-Phase-E) do not declare
+        // `containing_function`. They must continue to parse with the
+        // field defaulting to None.
+        let payload = r#"{"concept_name":"concept:demo","function":"do_thing","params":[],"param_types":[],"return_type":"void"}"#;
+        let carrier = CarrierComment::parse(payload).expect("parses without containing_function");
+        assert_eq!(carrier.concept_name, "concept:demo");
+        assert!(
+            carrier.containing_function.is_none(),
+            "containing_function must default to None when payload omits it"
+        );
+    }
+
+    #[test]
+    fn carrier_comment_parse_accepts_containing_function_field() {
+        let payload = r#"{"concept_name":"concept:demo","function":"do_thing","containing_function":"outer_fn","params":[],"param_types":[],"return_type":"void"}"#;
+        let carrier = CarrierComment::parse(payload).expect("parses with containing_function");
+        assert_eq!(carrier.containing_function.as_deref(), Some("outer_fn"));
+    }
+
+    #[test]
+    fn enclosing_function_name_finds_outer_rust_fn() {
+        // The carrier sits inside `outer_fn`; the scan walks upward and
+        // returns it.
+        let source = "fn elsewhere() {}\nfn outer_fn() {\n    // provekit-concept: {}\n    do_thing();\n}\n";
+        let lines = source.split_inclusive('\n').collect::<Vec<_>>();
+        // The carrier is on line index 2 (0-based).
+        let carrier_idx = 2;
+        let name = enclosing_function_name(&lines, carrier_idx);
+        assert_eq!(name.as_deref(), Some("outer_fn"));
+    }
+
+    #[test]
+    fn enclosing_function_name_returns_none_at_module_scope() {
+        let source = "// provekit-concept: {}\nfn after() {}\n";
+        let lines = source.split_inclusive('\n').collect::<Vec<_>>();
+        let name = enclosing_function_name(&lines, 0);
+        assert!(name.is_none());
+    }
+
+    #[test]
+    fn transform_source_text_populates_containing_function_from_scan() {
+        // The carrier sits inside `outer_fn`; the site walk auto-fills
+        // `containing_function` from the source scan when the JSON
+        // payload omits it.
+        let source = "fn before() {}\nfn outer_fn() {\n    // provekit-concept: {\"concept_name\":\"concept:demo\",\"function\":\"do_thing\",\"params\":[\"x\"],\"param_types\":[\"u32\"],\"return_type\":\"u32\"}\n    fn do_thing(x: u32) -> u32 {\n        unimplemented!()\n    }\n}\nfn after() {}\n";
+        struct CaptureKit {
+            captured: std::sync::Mutex<Option<CarrierComment>>,
+        }
+        impl SiteTransformKit for CaptureKit {
+            fn target_language(&self) -> &str {
+                "rust"
+            }
+            fn transform_site(&self, carrier: &CarrierComment) -> Result<SiteOutcome, String> {
+                *self.captured.lock().unwrap() = Some(carrier.clone());
+                Ok(SiteOutcome::Materialize {
+                    body: "fn do_thing(x: u32) -> u32 {\n    x\n}".to_string(),
+                    binding_cid: "cid:mock".to_string(),
+                    loss_record: json!([]),
+                })
+            }
+        }
+        let kit = CaptureKit {
+            captured: std::sync::Mutex::new(None),
+        };
+        let _ = transform_source_text(source, &kit).expect("transform succeeds");
+        let captured = kit.captured.lock().unwrap().clone().expect("site visited");
+        assert_eq!(captured.containing_function.as_deref(), Some("outer_fn"));
+    }
+
+    #[test]
+    fn build_receipt_routes_outcomes_into_trichotomy_buckets() {
+        // Three sites: one Materialize, one LoudlyLossy, one Refuse. The
+        // receipt should land each in the right bucket and preserve
+        // source-order in `site_witnesses`.
+        struct MixedKit;
+        impl SiteTransformKit for MixedKit {
+            fn target_language(&self) -> &str {
+                "rust"
+            }
+            fn transform_site(&self, carrier: &CarrierComment) -> Result<SiteOutcome, String> {
+                match carrier.function.as_str() {
+                    "exact" => Ok(SiteOutcome::Materialize {
+                        body: "fn exact() {}".to_string(),
+                        binding_cid: "cid:exact".to_string(),
+                        loss_record: json!([]),
+                    }),
+                    "lossy" => Ok(SiteOutcome::LoudlyLossy {
+                        body: "fn lossy() {}".to_string(),
+                        binding_cid: "cid:lossy".to_string(),
+                        declared_loss: vec!["dim:overflow".to_string()],
+                    }),
+                    _ => Ok(SiteOutcome::Refuse {
+                        reason: "no binding".to_string(),
+                        would_close_with_concept: "concept:demo".to_string(),
+                    }),
+                }
+            }
+        }
+        let source = "// provekit-concept: {\"concept_name\":\"c:a\",\"function\":\"exact\",\"params\":[],\"param_types\":[],\"return_type\":\"void\"}\n\
+// provekit-concept: {\"concept_name\":\"c:b\",\"function\":\"lossy\",\"params\":[],\"param_types\":[],\"return_type\":\"void\"}\n\
+// provekit-concept: {\"concept_name\":\"c:c\",\"function\":\"refused\",\"params\":[],\"param_types\":[],\"return_type\":\"void\"}\n";
+        let kit = MixedKit;
+        let (_, sites_and_outcomes) =
+            transform_source_text_collecting_refusals(source, &kit).expect("transform");
+        let receipt = build_receipt(&kit, "rust", None, "rusqlite", &sites_and_outcomes);
+        assert_eq!(receipt.aggregate_summary.exact, 1);
+        assert_eq!(receipt.aggregate_summary.lossy, 1);
+        assert_eq!(receipt.aggregate_summary.refused, 1);
+        assert_eq!(receipt.site_witnesses.len(), 3);
+        assert_eq!(receipt.loss_records.len(), 1);
+        assert_eq!(receipt.refusal_mementos.len(), 1);
+        assert_eq!(receipt.refusal_mementos[0].reason, "no binding");
+        assert_eq!(
+            receipt.refusal_mementos[0].would_close_with_concept,
+            "concept:demo"
+        );
+    }
+}
+

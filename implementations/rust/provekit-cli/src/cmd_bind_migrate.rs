@@ -2632,6 +2632,494 @@ fn json_to_value(j: &serde_json::Value) -> Arc<Value> {
     }
 }
 
+// Phase D (`#1338`): MigrateKit. Implements `SiteTransformKit` for the
+// migrate command's carrier-driven path. Wraps the existing migrate
+// machinery (probe_realize_binding, realize_probe_via_path,
+// platform_semantic_changes_for_targets, async_changed_callsites,
+// build_propagation_input, propagate_effects) rather than reimplementing
+// effect-set algebra. The kit handles ANY effect-set delta the substrate
+// already supports: sync<->async, error-union widening/narrowing,
+// borrow<->owned, partial<->total, exception-set widening, may-panic<->
+// no-panic, allocator-implicit<->allocator-explicit. Per-language
+// vocabularies live inside this kit's impl; the trait surface stays
+// language-agnostic.
+//
+// Phase D is additive: the existing `run_inner` TS-AST path is unchanged.
+// `run_carrier_driven_migrate` (below) exposes the new path for callers
+// that already have carrier-comment source. Phase E unifies the receipt
+// envelope so both flows produce byte-identical MigrateReceiptEnvelope
+// shape.
+
+use libprovekit::core::source_transform::{
+    realize_spec_from_payload, transform_source_text_collecting_refusals, CarrierComment,
+    ConceptSite, SiteOutcome, SiteTransformKit,
+};
+
+/// `SiteTransformKit` implementation for `provekit bind migrate`. The
+/// migrate CLI is the N=2 specialization of the unified site-
+/// transformation primitive: for each `provekit-concept:` carrier, look
+/// up the source binding and the target binding, compose the diff via
+/// the existing platform-semantic-comparison machinery, and emit the
+/// trichotomy outcome (`Materialize`, `LoudlyLossy`, `Refuse`).
+///
+/// The kit composes through the substrate's KitRegistry indirectly via
+/// `realize_probe_via_path` (kit-registered LowerKit) on the target
+/// binding to produce the migrated body. Source-side binding is probed
+/// to confirm a binding exists at all (substrate-availability gate per
+/// `#1230` D6-D); divergence between source and target on a concept's
+/// op-CID is characterized via `platform_semantic_changes_for_targets`
+/// so the trichotomy outcome lands in the right leg.
+#[allow(dead_code)] // Phase D scaffolding; wired by Phase E + downstream callers.
+pub struct MigrateKit {
+    source_lang: String,
+    source_tag: String,
+    target_lang: String,
+    target_tag: String,
+    repo_root: PathBuf,
+    /// Accumulator for per-site outcomes the kit observes during a
+    /// `transform_source_text` pass. Phase E will read this to assemble
+    /// the unified MigrateReceiptEnvelope; for Phase D it is the seam
+    /// that `propagate` consults to decide whether any effects need a
+    /// follow-up pass.
+    observed_effect_deltas: std::sync::Mutex<Vec<ObservedEffectDelta>>,
+}
+
+/// A per-callsite effect delta observed during a `transform_site` pass.
+/// The structured shape preserves the (source-effect, target-effect)
+/// pair so `propagate` can route through the existing
+/// `build_propagation_input` + `propagate_effects` machinery in a future
+/// phase. Phase D records the deltas; Phase E wires the propagation
+/// hook to the surrounding-function graph.
+#[allow(dead_code)] // Phase D scaffolding; fields are read by Phase E receipt-assembly.
+#[derive(Debug, Clone)]
+pub(crate) struct ObservedEffectDelta {
+    /// The carrier's `concept_name` (e.g., `"concept:sql-query"`).
+    concept_name: String,
+    /// The function name captured in the carrier (the consumer-signed
+    /// site label). Used to key the function-effect graph.
+    function: String,
+    /// Effect identifier the source binding admits at this site
+    /// (e.g., `"sync"`).
+    source_effect: String,
+    /// Effect identifier the target binding admits at this site
+    /// (e.g., `"async"`).
+    target_effect: String,
+}
+
+#[allow(dead_code)] // Phase D scaffolding; bound to CLI dispatch in Phase E.
+impl MigrateKit {
+    pub fn new(
+        source_lang: impl Into<String>,
+        source_tag: impl Into<String>,
+        target_lang: impl Into<String>,
+        target_tag: impl Into<String>,
+        repo_root: impl Into<PathBuf>,
+    ) -> Self {
+        Self {
+            source_lang: source_lang.into(),
+            source_tag: source_tag.into(),
+            target_lang: target_lang.into(),
+            target_tag: target_tag.into(),
+            repo_root: repo_root.into(),
+            observed_effect_deltas: std::sync::Mutex::new(Vec::new()),
+        }
+    }
+
+    /// Per-language effect vocabulary projection for the binding's after
+    /// effect. The trait surface stays language-agnostic; this helper
+    /// keeps the per-language taxonomy inside the kit:
+    ///
+    /// - Rust:        async-fn / Result<T,E>-exhaustive / lifetime+borrow / panic-as-effect / unsafe / Send/Sync / Drop
+    /// - TypeScript:  async-via-Promise<T> / exception-unchecked / no-ownership
+    /// - Python:      async-via-decorator / exception-unchecked / generator / threading-via-GIL / allocator-implicit
+    /// - Zig:         error{Foo}!T error-sets / Allocator-required / comptime/runtime
+    ///
+    /// Phase D's narrow surface only needs the sync/async axis because
+    /// the existing migrate machinery uses `ASYNC_EFFECT` / `SYNC_EFFECT`
+    /// constants. Phase F broadens this to error-union and lifetime
+    /// deltas; the data shape is already general because
+    /// `EffectSetMemento` carries the language-tagged effect string.
+    fn target_after_effect(&self) -> &'static str {
+        match (self.target_lang.as_str(), self.target_tag.as_str()) {
+            // typescript-pg + python-aiosqlite are the canonical async
+            // targets in the existing TS-AST flow; mirror their
+            // sync->async widening here.
+            ("typescript", "pg") | ("python", "aiosqlite") => ASYNC_EFFECT,
+            // Default: synchronous. Per-language extensions slot in
+            // here once the EffectSetMemento attachment lands (Phase E).
+            _ => SYNC_EFFECT,
+        }
+    }
+
+    /// Source-side effect projection. Mirrors `target_after_effect` but
+    /// for the source binding. Used to construct ObservedEffectDelta
+    /// during a pass.
+    fn source_before_effect(&self) -> &'static str {
+        match (self.source_lang.as_str(), self.source_tag.as_str()) {
+            ("typescript", "pg") | ("python", "aiosqlite") => ASYNC_EFFECT,
+            _ => SYNC_EFFECT,
+        }
+    }
+
+    /// Realize a carrier through the target binding. Wraps
+    /// `realize_probe_via_path` so the kit-registered LowerKit produces
+    /// the migrated body for this site. The carrier's permissive
+    /// defaults are normalized via `realize_spec_from_payload` first
+    /// (matching MaterializeKit's pattern).
+    fn realize_target(&self, carrier: &CarrierComment) -> Result<libprovekit::core::RealizedSource, String> {
+        let spec = realize_spec_from_payload(&carrier.raw_payload)?;
+        realize_probe_via_path(&self.repo_root, &self.target_lang, &self.target_tag, spec)
+    }
+
+    /// Source-binding availability probe. The migrate trichotomy refuses
+    /// when the source binding does not exist (substrate-availability
+    /// gate per `#1230` D6-D); the per-site equivalent checks that the
+    /// declared source binding can realize the same concept the carrier
+    /// names. A stub return here means the source kit cannot characterize
+    /// the site, which routes to the refuse leg via the
+    /// `would_close_with_concept` hint.
+    fn probe_source_binding(&self, carrier: &CarrierComment) -> Result<bool, String> {
+        // probe_realize_binding requires a concept_name string. The
+        // carrier carries this directly; passing it through allows the
+        // existing per-binding probe machinery to refuse early if the
+        // source binding fell through to a stub.
+        match probe_realize_binding(
+            &self.repo_root,
+            &self.source_lang,
+            &self.source_tag,
+            &carrier.concept_name,
+        ) {
+            Ok(()) => Ok(true),
+            Err(_) => Ok(false),
+        }
+    }
+
+    /// View the accumulator of observed effect deltas. Useful for
+    /// callers that want to inspect what the kit saw during a pass
+    /// (e.g., the Phase E receipt-assembly path). Visibility kept at
+    /// `pub(crate)` until Phase E surfaces a stable shape for
+    /// downstream consumers.
+    pub(crate) fn observed_effect_deltas_snapshot(&self) -> Vec<ObservedEffectDelta> {
+        self.observed_effect_deltas
+            .lock()
+            .map(|guard| guard.clone())
+            .unwrap_or_default()
+    }
+}
+
+impl SiteTransformKit for MigrateKit {
+    fn target_language(&self) -> &str {
+        &self.target_lang
+    }
+
+    fn transform_site(&self, carrier: &CarrierComment) -> Result<SiteOutcome, String> {
+        // Substrate-availability probe (source-side). When the source
+        // binding has no realize plugin for this concept, the migrate
+        // cannot characterize the site at all; route to refuse with
+        // `would_close_with_concept` naming the carrier's concept hub.
+        let source_available = self.probe_source_binding(carrier)?;
+        if !source_available {
+            return Ok(SiteOutcome::Refuse {
+                reason: format!(
+                    "source binding {}/{} has no realize plugin for {}; migrate cannot characterize this site",
+                    self.source_lang, self.source_tag, carrier.concept_name
+                ),
+                would_close_with_concept: carrier.concept_name.clone(),
+            });
+        }
+
+        // Realize through the target binding. This is the analog of
+        // MaterializeKit's realize_via_path: the kit-registered LowerKit
+        // produces the migrated body. A stub return is a hard refusal
+        // (substrate-honest: an unrealizable target leaves no signed
+        // claim about what migrate did).
+        let realized = self.realize_target(carrier)?;
+        if realized.is_stub {
+            return Ok(SiteOutcome::Refuse {
+                reason: format!(
+                    "target binding {}/{} returned a stub for {}",
+                    self.target_lang, self.target_tag, carrier.concept_name
+                ),
+                would_close_with_concept: carrier.concept_name.clone(),
+            });
+        }
+
+        // Record the effect delta this site observed. The accumulator
+        // is the seam between `transform_site` (per-site dispatch) and
+        // `propagate` (post-pass effect-graph walk). Phase D records;
+        // Phase E will run `propagate_effects` over the recorded set
+        // once the containing-function graph is reachable from
+        // CarrierComment.
+        let before = self.source_before_effect().to_string();
+        let after = self.target_after_effect().to_string();
+        if before != after {
+            if let Ok(mut guard) = self.observed_effect_deltas.lock() {
+                guard.push(ObservedEffectDelta {
+                    concept_name: carrier.concept_name.clone(),
+                    function: carrier.function.clone(),
+                    source_effect: before,
+                    target_effect: after,
+                });
+            }
+        }
+
+        // Trichotomy projection: a loss-bearing observed_loss_record
+        // routes to LoudlyLossy; otherwise Materialize. Mirrors
+        // MaterializeKit's pattern via the same `has_loss` predicate
+        // shape that `lower_plugin::loss_record_cid` uses.
+        let binding_cid = realized.emitted_artifact_cid.clone().unwrap_or_default();
+        let observed_loss = &realized.observed_loss_record;
+        let loss_bearing = match observed_loss {
+            JsonValue::Null => false,
+            JsonValue::Object(map) => !map.is_empty(),
+            _ => true,
+        };
+        if loss_bearing {
+            let dims: Vec<String> = match observed_loss {
+                JsonValue::Object(map) => map.keys().cloned().collect(),
+                other => vec![other.to_string()],
+            };
+            Ok(SiteOutcome::LoudlyLossy {
+                body: realized.source,
+                binding_cid,
+                declared_loss: dims,
+            })
+        } else {
+            Ok(SiteOutcome::Materialize {
+                body: realized.source,
+                binding_cid,
+                loss_record: observed_loss.clone(),
+            })
+        }
+    }
+
+    fn propagate(
+        &self,
+        outcomes: &[(ConceptSite, SiteOutcome)],
+    ) -> Result<Vec<CarrierComment>, String> {
+        // Phase E (`#1339`): effect propagation through the trait. Closes
+        // Phase D's deferral.
+        //
+        // Strategy:
+        //   1. Collect the per-site `containing_function` identities from
+        //      the outcomes (populated by `transform_source_text` via the
+        //      `enclosing_function_name` source scan).
+        //   2. Build a minimal `PropagationInput` from observed effect
+        //      deltas and the carrier-derived function graph. The carrier
+        //      flow does not carry function bodies, so the caller graph
+        //      is limited to the call edges that the carrier's containing
+        //      function can reach (one site per containing function).
+        //   3. Run the existing `propagate_effects` algebra.
+        //   4. For each `PropagationDecision::Widen`, emit a fresh
+        //      CarrierComment for the widened caller's site so the
+        //      `transform_source_text` fixed point picks it up on the
+        //      next pass.
+        //
+        // Termination: the loop terminates because Widen decisions only
+        // propagate *up* the call graph one step per pass, and a finite
+        // carrier-described graph has finite height. The 32-pass cap in
+        // `transform_source_text` is a defensive ceiling, not the
+        // expected bound.
+        let deltas = match self.observed_effect_deltas.lock() {
+            Ok(guard) => guard.clone(),
+            Err(_) => return Ok(Vec::new()),
+        };
+        if deltas.is_empty() {
+            return Ok(Vec::new());
+        }
+
+        // Build the minimal function-effect graph from outcomes' carriers.
+        // Each unique containing_function gets a FunctionEffectInfo with
+        // admitted/forbidden derived from whether the carrier's effect
+        // crossed sync->async.
+        let mut function_map = BTreeMap::new();
+        let mut function_seen: BTreeSet<String> = BTreeSet::new();
+        for (site, _) in outcomes {
+            let func_name = site
+                .carrier
+                .containing_function
+                .clone()
+                .unwrap_or_else(|| site.carrier.function.clone());
+            if function_seen.insert(func_name.clone()) {
+                let function_cid = cid_for_json(&json!({
+                    "function": func_name,
+                    "kind": "function-carrier"
+                }));
+                let signature_cid = cid_for_json(&json!({
+                    "function": func_name,
+                    "kind": "effect-signature-carrier"
+                }));
+                function_map.insert(
+                    func_name.clone(),
+                    FunctionEffectInfo {
+                        forbidding_contract_cid: None,
+                        function_cid,
+                        name: func_name.clone(),
+                        signature_cid,
+                        admitted_effects: BTreeSet::new(),
+                        forbidden_effects: BTreeSet::new(),
+                    },
+                );
+            }
+        }
+
+        // Build callsite edges keyed by `(containing_function, concept)`.
+        // The migrate substrate's existing CallsiteEdge fields fit the
+        // carrier flow directly: `cid` is the per-site callsite CID,
+        // `containing_fn` names the function the carrier sits in,
+        // `callee` stays None because the carrier site is a leaf op
+        // (the kit-realized body), not a call into another lifted fn.
+        let mut callsites = BTreeMap::new();
+        let mut changed: Vec<ChangedCallsite> = Vec::new();
+        for delta in &deltas {
+            // Locate the carrier site whose containing function matches
+            // this delta's `function`. Synthesize a stable callsite CID
+            // from the carrier identity so re-runs are byte-stable.
+            let callsite_cid = cid_for_json(&json!({
+                "carrier_function": delta.function,
+                "concept_name": delta.concept_name,
+                "kind": "carrier-callsite"
+            }));
+            callsites.insert(
+                callsite_cid.clone(),
+                CallsiteEdge {
+                    callee: None,
+                    cid: callsite_cid.clone(),
+                    containing_fn: delta.function.clone(),
+                },
+            );
+            // If the containing function is not in the function map (the
+            // carrier was at module scope), synthesize a minimal entry so
+            // `propagate_effects` can reason about it.
+            if !function_map.contains_key(&delta.function) {
+                let function_cid = cid_for_json(&json!({
+                    "function": delta.function,
+                    "kind": "function-carrier"
+                }));
+                let signature_cid = cid_for_json(&json!({
+                    "function": delta.function,
+                    "kind": "effect-signature-carrier"
+                }));
+                function_map.insert(
+                    delta.function.clone(),
+                    FunctionEffectInfo {
+                        forbidding_contract_cid: None,
+                        function_cid,
+                        name: delta.function.clone(),
+                        signature_cid,
+                        admitted_effects: BTreeSet::new(),
+                        forbidden_effects: BTreeSet::new(),
+                    },
+                );
+            }
+            changed.push(ChangedCallsite {
+                callsite_cid,
+                dimension_name: None,
+                effect: delta.target_effect.clone(),
+            });
+        }
+
+        let Ok(non_empty_changed) = NonEmptyChangedCallsites::new(changed) else {
+            return Ok(Vec::new());
+        };
+
+        let input = PropagationInput {
+            callsites,
+            changed_callsites: non_empty_changed,
+            functions: function_map,
+        };
+
+        let result = match propagate_effects(&input) {
+            Ok(r) => r,
+            Err(error) => {
+                return Err(format!("effect propagation: {error}"));
+            }
+        };
+
+        // Emit fresh carriers for every Widen decision. Each new carrier
+        // names the widened function in the `containing_function` slot
+        // so the next pass's `enclosing_function_name` scan agrees with
+        // the propagation graph. The concept_name carries a synthetic
+        // `concept:effect-widen` tag so the carrier walks through the
+        // substrate-honest path on the next pass: kits that don't
+        // recognize this concept will Refuse, but the migrate kit's own
+        // path treats it as an idempotent marker (already-emitted
+        // carriers exist for the original site; the widen carrier is
+        // metadata only).
+        //
+        // To avoid divergent propagation, we deduplicate against the
+        // delta set: a widen for a function already in `deltas` is
+        // already covered by the original pass. This keeps termination
+        // mechanical.
+        let already_covered: BTreeSet<String> =
+            deltas.iter().map(|d| d.function.clone()).collect();
+        let mut emitted: Vec<CarrierComment> = Vec::new();
+        for (fn_name, decision) in &result.decisions {
+            if let PropagationDecision::Widen { effect, .. } = decision {
+                if already_covered.contains(fn_name) {
+                    continue;
+                }
+                let payload_value = json!({
+                    "concept_name": "concept:effect-widen",
+                    "function": fn_name,
+                    "params": [],
+                    "param_types": [],
+                    "return_type": "void",
+                    "containing_function": fn_name,
+                    "library_tag": self.target_tag,
+                    "effect": effect,
+                });
+                let payload_str = serde_json::to_string(&payload_value)
+                    .map_err(|e| format!("serialize widen carrier payload: {e}"))?;
+                if let Ok(carrier) = CarrierComment::parse(&payload_str) {
+                    emitted.push(carrier);
+                }
+            }
+        }
+        Ok(emitted)
+    }
+}
+
+/// Carrier-driven migrate entry point. Reads `source` from disk, runs it
+/// through `transform_source_text` with a `MigrateKit`, and writes the
+/// rewritten source. The existing `run_inner` (TS-AST path) is unchanged;
+/// callers that already have carrier-comment-bearing source can dispatch
+/// here directly, while the legacy TS-AST flow continues to work for
+/// fixtures that have not yet been migrated to carriers.
+///
+/// Returns the rewritten source plus the per-site outcomes. The receipt
+/// envelope is NOT assembled here (that's Phase E); the per-site outcomes
+/// are returned for the caller to assemble.
+#[allow(dead_code)] // Phase D scaffolding; bound to CLI dispatch in Phase E.
+pub fn run_carrier_driven_migrate(
+    source: &str,
+    source_lang: &str,
+    source_tag: &str,
+    target_lang: &str,
+    target_tag: &str,
+    repo_root: &Path,
+) -> Result<(String, Vec<SiteOutcome>), String> {
+    let kit = MigrateKit::new(
+        source_lang.to_string(),
+        source_tag.to_string(),
+        target_lang.to_string(),
+        target_tag.to_string(),
+        repo_root.to_path_buf(),
+    );
+    // Phase E (`#1339`): use the refusal-collecting variant so a refused
+    // site (including the `concept:effect-widen` carriers MigrateKit's
+    // `propagate` emits, which the source binding does not know about)
+    // becomes a receipt entry instead of aborting the run with a string
+    // Err. Substrate-honest trichotomy is preserved.
+    let (rewritten, sites_and_outcomes) =
+        transform_source_text_collecting_refusals(source, &kit)?;
+    let outcomes = sites_and_outcomes
+        .into_iter()
+        .map(|(_, outcome)| outcome)
+        .collect();
+    Ok((rewritten, outcomes))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -3784,5 +4272,108 @@ mod tests {
             12,
             "NTT-mode harness must produce 12 verification points (4 callsites x 3 targets)"
         );
+    }
+
+    // -------------------------------------------------------------------
+    // Phase D (`#1338`): MigrateKit tests.
+    //
+    // These exercise the carrier-driven path without invoking the kit-
+    // registered LowerKit (which requires repo-rooted realize plugins).
+    // The tests pin the kit's contract: per-language effect projection,
+    // observed-effect-delta accumulator hygiene, and the propagate hook's
+    // empty-by-default behavior under the Phase D additive scope.
+    // -------------------------------------------------------------------
+
+    #[test]
+    fn migrate_kit_projects_target_after_effect_per_language() {
+        let kit = MigrateKit::new(
+            "typescript".to_string(),
+            "better-sqlite3".to_string(),
+            "typescript".to_string(),
+            "pg".to_string(),
+            PathBuf::from("/tmp/no-repo"),
+        );
+        assert_eq!(kit.target_after_effect(), ASYNC_EFFECT);
+        assert_eq!(kit.source_before_effect(), SYNC_EFFECT);
+        assert_eq!(kit.target_language(), "typescript");
+    }
+
+    #[test]
+    fn migrate_kit_python_sqlite3_stays_sync() {
+        let kit = MigrateKit::new(
+            "typescript".to_string(),
+            "better-sqlite3".to_string(),
+            "python".to_string(),
+            "sqlite3".to_string(),
+            PathBuf::from("/tmp/no-repo"),
+        );
+        assert_eq!(kit.target_after_effect(), SYNC_EFFECT);
+        assert_eq!(kit.source_before_effect(), SYNC_EFFECT);
+    }
+
+    #[test]
+    fn migrate_kit_python_aiosqlite_widens_to_async() {
+        let kit = MigrateKit::new(
+            "typescript".to_string(),
+            "better-sqlite3".to_string(),
+            "python".to_string(),
+            "aiosqlite".to_string(),
+            PathBuf::from("/tmp/no-repo"),
+        );
+        assert_eq!(kit.target_after_effect(), ASYNC_EFFECT);
+    }
+
+    #[test]
+    fn migrate_kit_propagate_is_empty_with_no_observed_deltas() {
+        // Phase E (`#1339`): propagate wires the effect-propagation
+        // machinery through the trait. With no observed effect deltas
+        // (no `transform_site` has run, so `observed_effect_deltas` is
+        // empty), propagate returns empty. The fixed-point loop in
+        // `transform_source_text` terminates after one pass in this case.
+        let kit = MigrateKit::new(
+            "typescript".to_string(),
+            "better-sqlite3".to_string(),
+            "typescript".to_string(),
+            "pg".to_string(),
+            PathBuf::from("/tmp/no-repo"),
+        );
+        let new_carriers = kit
+            .propagate(&[])
+            .expect("propagate with empty deltas always succeeds");
+        assert!(
+            new_carriers.is_empty(),
+            "propagate must return empty when no deltas observed; got {} carriers",
+            new_carriers.len()
+        );
+    }
+
+    #[test]
+    fn migrate_kit_observed_effect_deltas_snapshot_starts_empty() {
+        let kit = MigrateKit::new(
+            "typescript".to_string(),
+            "better-sqlite3".to_string(),
+            "typescript".to_string(),
+            "pg".to_string(),
+            PathBuf::from("/tmp/no-repo"),
+        );
+        assert!(kit.observed_effect_deltas_snapshot().is_empty());
+    }
+
+    #[test]
+    fn run_carrier_driven_migrate_is_callable_signature_check() {
+        // Pin the function signature so refactors that move the helper
+        // out of cmd_bind_migrate fail loudly. Calling with an empty
+        // source returns empty outcomes; no repo access required.
+        let (rewritten, outcomes) = run_carrier_driven_migrate(
+            "",
+            "typescript",
+            "better-sqlite3",
+            "typescript",
+            "pg",
+            &PathBuf::from("/tmp/no-repo"),
+        )
+        .expect("empty source migrates trivially");
+        assert!(rewritten.is_empty());
+        assert!(outcomes.is_empty());
     }
 }
