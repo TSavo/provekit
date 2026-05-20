@@ -377,6 +377,18 @@ public final class JavaBindLifter {
             literal = Jcs.object("kind", Jcs.string("literal"), "value", Jcs.nullValue());
         } else if (value instanceof Boolean b) {
             literal = Jcs.object("kind", Jcs.string("literal"), "value", Jcs.bool(b));
+        } else if (value instanceof Double d) {
+            // Bit-preserving: emit {"__float_bits__": <u64>} (IEEE 754 raw bits, substrate #1262).
+            // Double.doubleToRawLongBits preserves all bit patterns including NaN, +/-0, infinity.
+            long bits = Double.doubleToRawLongBits(d);
+            literal = Jcs.object("kind", Jcs.string("literal"), "value",
+                Jcs.object("__float_bits__", Jcs.integer(bits)));
+        } else if (value instanceof Float f) {
+            // Widen to double then preserve all 32 bits via doubleToRawLongBits of the widened form.
+            // Java float literals widen to double in the AST; raw float bits via Float.floatToRawIntBits.
+            long bits = Float.floatToRawIntBits(f) & 0xFFFFFFFFL;
+            literal = Jcs.object("kind", Jcs.string("literal"), "value",
+                Jcs.object("__float_bits__", Jcs.integer(bits)));
         } else if (value instanceof Number n) {
             literal = Jcs.object("kind", Jcs.string("literal"), "value", Jcs.integer(n.longValue()));
         } else if (value instanceof String s) {

@@ -14,9 +14,10 @@
 // JCS field order for expected_term_shape_node (alphabetical):
 //   concept_name, sort, value
 //
-// Float value: Java's Term.Value.Real(double) emits "String.valueOf(3.14)" = "3.14"
-// as a JSON number. We build the JCS string manually for the float case because
-// Jcs.Value only supports integer JSON numbers.
+// Float value: bit-preserving {"__float_bits__": <u64>} (IEEE 754 raw bits).
+// 4614253070214989087 == Double.doubleToRawLongBits(3.14) == 0x40091EB851EB851F.
+// We build the JCS string manually via buildMementoRaw because the value is an
+// integer object, not a primitive, and Jcs.Value supports integer JSON numbers.
 
 package com.provekit.realize;
 
@@ -74,7 +75,7 @@ public final class LiteralEncodingAnswers {
 
         // Java admits: Int, Float, String, Bool, Bytes, Null
         String intMemento     = buildMemento(kitCid, SORT_INT_CID,    "42",       intValue(42));
-        String floatMemento   = buildMementoRaw(kitCid, SORT_FLOAT_CID, "3.14",   "3.14");
+        String floatMemento   = buildMementoRaw(kitCid, SORT_FLOAT_CID, "3.14",   "{\"__float_bits__\":4614253070214989087}");
         String stringMemento  = buildMemento(kitCid, SORT_STRING_CID, "\"hello\"", stringValue("hello"));
         String boolMemento    = buildMemento(kitCid, SORT_BOOL_CID,   "true",     boolValue(true));
         String bytesMemento   = buildMemento(kitCid, SORT_BYTES_CID,  "\"abc\".getBytes()", stringValue("abc"));
@@ -132,12 +133,12 @@ public final class LiteralEncodingAnswers {
     }
 
     /**
-     * Builds a LiteralEncodingMemento JSON string for Float sort by constructing
-     * the JCS CID-input string manually (Jcs.Value doesn't support float numbers).
+     * Builds a LiteralEncodingMemento JSON string by constructing
+     * the JCS CID-input string manually from a raw JSON value literal.
      *
-     * The JCS for the forCid object is built manually with sorted keys and the
-     * float value emitted as a plain JSON number (no quotes), matching what
-     * Java's Term.Value.Real(double).toJson() produces.
+     * Used for Float sort: the value literal is the __float_bits__ object
+     * {"__float_bits__":4614253070214989087} (IEEE 754 raw bits of 3.14).
+     * Keys are in alphabetical order (JCS/RFC 8785 requirement).
      */
     private static String buildMementoRaw(String kitCid, String sortCid,
                                            String sourceExample, String valueJsonLiteral) {

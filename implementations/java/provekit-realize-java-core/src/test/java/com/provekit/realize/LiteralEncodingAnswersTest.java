@@ -92,8 +92,21 @@ public class LiteralEncodingAnswersTest {
     @Test
     public void toJsonContainsFloatValue() {
         String json = LiteralEncodingAnswers.toJson();
-        // Float memento must contain the float value 3.14 as a JSON number
-        assertTrue(json.contains("\"value\":3.14"), "must contain float value 3.14");
+        // Float memento must contain the bit-preserving __float_bits__ shape.
+        // 4614253070214989087 == Double.doubleToRawLongBits(3.14) == 0x40091EB851EB851F.
+        assertTrue(json.contains("\"value\":{\"__float_bits__\":4614253070214989087}"),
+            "must contain float __float_bits__ value");
+    }
+
+    @Test
+    public void toJsonFloatGoldenCid() {
+        // Regression: Float memento golden CID must not change.
+        // CID computed from JCS of forCid with __float_bits__ value.
+        String json = LiteralEncodingAnswers.toJson();
+        String expectedFloatCid =
+            "blake3-512:fa616d402e270631cd136b95d96f9038536c3b507bb736c35554ff41c7e21a20dca3b451d1ae9ee75b6632d5e58b96619c422ea38cab404f47241d471bf77766";
+        assertTrue(json.contains(expectedFloatCid),
+            "Float memento golden CID must match");
     }
 
     @Test
