@@ -1988,6 +1988,14 @@ fn bindings_of_stmt(stmt: &syn::Stmt, ctx: &ShapeContext) -> BindingResult {
             let Some(init) = local.init.as_ref() else {
                 return BindingResult::default();
             };
+            // `let _ = X;` mirrors shape_of_stmt: args = [wildcard_literal,
+            // init_shape]. No operand binding for the literal slot.
+            if matches!(&local.pat, syn::Pat::Wild(_)) {
+                return operation_binding_result(vec![
+                    BindingResult::default(),
+                    bindings_of_expr(&init.expr, ctx),
+                ]);
+            }
             let Some(symbol) = local_binding_symbol(local) else {
                 return bindings_of_expr(&init.expr, ctx);
             };
@@ -2087,6 +2095,9 @@ fn bindings_of_expr(expr: &syn::Expr, ctx: &ShapeContext) -> BindingResult {
             bindings_of_expr(&e.expr, ctx),
             BindingResult::default(), // mutability leaf, no operand binding slot
         ]),
+        // Expr::Macro is lifted as a concept:literal source_text leaf — no
+        // inner operand bindings to thread through.
+        syn::Expr::Macro(_) => BindingResult::default(),
         // concept:closure: args[0]=body bindings, args[1..]=param literal slots
         // (no operand bindings — they're concept:literal source_text leaves).
         // Closure-introduced param symbols flow through the existing
@@ -2268,6 +2279,26 @@ fn shape_of_stmt(stmt: &syn::Stmt, ctx: &ShapeContext) -> Arc<CValue> {
             let Some(init) = local.init.as_ref() else {
                 return non_operation_shape();
             };
+            // `let _ = X;` — Pat::Wild discard binding. Emit concept:assign
+            // with target = concept:literal source_text "_" so realize side
+            // can recognize and emit `let _ = X;` byte-correctly. No mutability
+            // arg (wildcard binding is never `let mut _ = ...`).
+            if matches!(&local.pat, syn::Pat::Wild(_)) {
+                let Some(op_cid) = concept_op_cid("concept:literal") else {
+                    return non_operation_shape();
+                };
+                let target_leaf = CValue::object([
+                    ("args", CValue::array(Vec::new())),
+                    ("concept_name", CValue::string("concept:literal")),
+                    ("op_cid", CValue::string(op_cid)),
+                    ("sort", CValue::string(SORT_STRING_CID)),
+                    ("source_text", CValue::string("_")),
+                ]);
+                return gamma_operation(
+                    "concept:assign",
+                    vec![target_leaf, shape_of_expr(&init.expr, ctx)],
+                );
+            }
             if local_binding_symbol(local).is_some() {
                 // Emit concept:assign with an optional third arg for mutability.
                 // args[0] = target (non_operation_shape — symbol resolved via operand_bindings)
@@ -2417,6 +2448,28 @@ fn shape_of_expr(expr: &syn::Expr, ctx: &ShapeContext) -> Arc<CValue> {
                 "concept:ref",
                 vec![shape_of_expr(&e.expr, ctx), mut_leaf],
             )
+        }
+        // Macro invocation: `writeln!(handle, "{}", line)` and similar.
+        // Lifted as a concept:literal leaf with source_text carrying the
+        // formatted token-stream text. This preserves the source form
+        // verbatim (modulo whitespace normalization in the format below).
+        // The realize side reads source_text and emits as-is.
+        syn::Expr::Macro(e) => {
+            use quote::ToTokens;
+            let path = e.mac.path.to_token_stream().to_string();
+            let path = path.replace(" ", ""); // canonical: no spaces in path
+            let tokens = e.mac.tokens.to_string();
+            let formatted = format_macro_tokens(&tokens);
+            let Some(op_cid) = concept_op_cid("concept:literal") else {
+                return non_operation_shape();
+            };
+            CValue::object([
+                ("args", CValue::array(Vec::new())),
+                ("concept_name", CValue::string("concept:literal")),
+                ("op_cid", CValue::string(op_cid)),
+                ("sort", CValue::string(SORT_STRING_CID)),
+                ("source_text", CValue::string(format!("{path}!({formatted})"))),
+            ])
         }
         // |param1, param2, ...| body — emitted as concept:closure with
         // args = [body_shape, param1_literal, param2_literal, ...]. Body
@@ -2606,6 +2659,37 @@ fn unary_operator_concept_name(
         syn::UnOp::Neg(_) => Some("concept:neg"),
         _ => None,
     }
+}
+
+/// Canonical-spacing format for proc_macro2::TokenStream::to_string() output.
+/// The default TokenStream renderer emits space-separated tokens (e.g.
+/// `handle , "{}" , line`). Apply minimal normalization to match common
+/// Rust source conventions: drop spaces before `,` and around `(` `)` `[`
+/// `]` and `;`. This is byte-correct for the macro forms the L0 shims use.
+fn format_macro_tokens(s: &str) -> String {
+    let mut out = String::with_capacity(s.len());
+    let mut prev_was_space = false;
+    let chars: Vec<char> = s.chars().collect();
+    for (i, &c) in chars.iter().enumerate() {
+        if c == ' ' {
+            // Look at the next non-space character: if it's `,` `(` `)` `[` `]` `;` `.`
+            // or we just emitted `(` `[` `.`, drop this space.
+            let next_non_space = chars.iter().skip(i + 1).find(|&&c| c != ' ');
+            let prev = out.chars().last();
+            let skip = matches!(next_non_space, Some(',' | ')' | ']' | ';' | '.'))
+                || matches!(prev, Some('(' | '[' | '.'));
+            if !skip {
+                if !prev_was_space {
+                    out.push(' ');
+                }
+                prev_was_space = true;
+            }
+        } else {
+            out.push(c);
+            prev_was_space = false;
+        }
+    }
+    out.trim().to_string()
 }
 
 fn gamma_operation(concept_name: &str, args: Vec<Arc<CValue>>) -> Arc<CValue> {

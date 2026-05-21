@@ -387,6 +387,12 @@ fn lower_term_shape_body(
         }
         let target = lower_term_shape_expression(args[0], context, &append_position(position, 0))?;
         let value = lower_term_shape_expression(args[1], context, &append_position(position, 1))?;
+        // `let _ = X;` — wildcard discard binding. Emitted by walk_rpc as
+        // concept:assign with target = concept:literal source_text "_".
+        // No mutability, no type annotation, no symbol tracked.
+        if target.text == "_" {
+            return Some(format!("let _ = {};", value.text));
+        }
         if !is_rust_identifier(&target.text) {
             return None;
         }
@@ -645,16 +651,17 @@ fn term_shape_leaf_expression(
     }
     // Literal leaf: concept:literal shape emitted by walk_rpc's literal_shape fn.
     // If `source_text` is present (added for integer literals with type suffixes
-    // like `0u8` or `64usize`), use it verbatim — preserves the suffix.
+    // like `0u8` or `64usize`, wildcard binding "_", macro source, etc.), use
+    // it verbatim — preserves the source form exactly.
     // Otherwise fall back to the integer/bool/string value via literal_term.
+    if let Some(source_text) = shape.get("source_text").and_then(Value::as_str) {
+        return Some(ShapeExpression {
+            text: source_text.to_string(),
+            type_name: String::new(),
+        });
+    }
     if shape.get("kind").and_then(Value::as_str) == Some("literal") || shape.get("value").is_some()
     {
-        if let Some(source_text) = shape.get("source_text").and_then(Value::as_str) {
-            return Some(ShapeExpression {
-                text: source_text.to_string(),
-                type_name: String::new(),
-            });
-        }
         return Some(literal_term(shape.get("value").unwrap_or(&Value::Null)));
     }
     // Leaf kinds emitted by walk_rpc that carry their text verbatim:
