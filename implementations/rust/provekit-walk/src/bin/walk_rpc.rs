@@ -2675,6 +2675,24 @@ fn shape_of_expr(expr: &syn::Expr, ctx: &ShapeContext) -> Arc<CValue> {
         syn::Expr::Block(b) => shape_of_block(&b.block, ctx),
         syn::Expr::Paren(e) => shape_of_expr(&e.expr, ctx),
         syn::Expr::Group(e) => shape_of_expr(&e.expr, ctx),
+        // Free path identifier (e.g. None, Some, Vec::new, Ordering::Less).
+        // Emit as substrate-canonical symbol leaf so deeper consumers (match
+        // arm bodies, conditional branches) can lower them without depending
+        // on operand_bindings position threading.
+        //
+        // Note: parameter references ALSO go through Expr::Path. Those are
+        // handled at use site by the realize binary's operand_bindings
+        // lookup (term_shape_leaf_expression checks operand_bindings.get(
+        // position) BEFORE checking kind=symbol). So this symbol-leaf
+        // emission is the FALLBACK for free identifiers not bound as params.
+        syn::Expr::Path(path) => {
+            use quote::ToTokens;
+            let text = path.to_token_stream().to_string().replace(' ', "");
+            CValue::object([
+                ("kind", CValue::string("symbol")),
+                ("text", CValue::string(text)),
+            ])
+        }
         _ => non_operation_shape(),
     }
 }
