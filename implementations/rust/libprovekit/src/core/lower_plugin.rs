@@ -742,7 +742,7 @@ fn fallback_from(input: &Input) -> Vec<Cid> {
     }
 }
 
-fn request_from_spec(spec: &Value) -> Result<RealizeRequest, String> {
+pub fn request_from_spec(spec: &Value) -> Result<RealizeRequest, String> {
     let contract = match non_null_field(spec, &["contract"]) {
         Some(value) => Some(
             serde_json::from_value(value.clone())

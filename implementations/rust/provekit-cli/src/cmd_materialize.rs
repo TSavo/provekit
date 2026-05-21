@@ -212,6 +212,40 @@ pub fn run(args: MaterializeArgs) -> u8 {
     EXIT_OK
 }
 
+/// #1361 chunk 2 part B / #1355: invoke target kit's realize binary for a
+/// RESOLVE'd boundary in cross-language discovery mode. The realize binary
+/// owns the concept-hub → target-syntax translation internally; cmd_materialize
+/// just routes the concept-hub-typed spec to it and gets back target source.
+///
+/// Returns None on any error (the discovery report continues without the
+/// preview); the RESOLVE outcome itself is unchanged.
+fn invoke_target_realize_for_discovery(
+    project_root: &Path,
+    target_lang: &str,
+    target_library_tag: &str,
+    carrier: &CarrierComment,
+) -> Option<String> {
+    use libprovekit::core::lower_plugin::request_from_spec;
+    use libprovekit::core::RealizeTransport;
+    // Reuse the same spec-construction path the same-language emission uses;
+    // dispatch to the target's realize binary via the kit dispatcher.
+    let spec = realize_spec_from_payload(&carrier.raw_payload).ok()?;
+    let request = request_from_spec(&spec).ok()?;
+    let transport = DispatchRealizeTransport;
+    let response = transport
+        .dispatch_realize(
+            project_root,
+            target_lang,
+            Some(target_library_tag),
+            &request,
+        )
+        .ok()?;
+    if response.is_stub {
+        return None;
+    }
+    Some(response.source)
+}
+
 /// #1361 chunk 2 part A / #1355: cross-language DISCOVERY mode.
 ///
 /// When `--source-lang != --target`, scan the source directory for
@@ -314,6 +348,19 @@ fn run_cross_language_discovery(
                         target_lang,
                         matches[0]
                     );
+                    // #1361 chunk 2 part B / #1355: invoke the target kit's
+                    // realize binary for the RESOLVE'd boundary. The realize
+                    // binary owns its own concept-hub → target-syntax
+                    // translation internally. cmd_materialize just routes
+                    // the concept-hub-typed spec to it and prints the
+                    // emitted body. NO target-syntax knowledge in materialize.
+                    if let Some(body) =
+                        invoke_target_realize_for_discovery(project_root, target_lang, &matches[0], &carrier)
+                    {
+                        let preview: String = body.chars().take(120).collect();
+                        let suffix = if body.chars().count() > 120 { "..." } else { "" };
+                        eprintln!("      target body preview: {preview}{suffix}");
+                    }
                 }
                 _ => {
                     ambiguous += 1;
