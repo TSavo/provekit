@@ -6,7 +6,7 @@
           "concept_name": "concept:stdio-read-line",
           "emission_template": {
             "kind": "verbatim",
-            "template": "        try {\n            return STDIN_READER.readLine();\n        } catch (IOException e) {\n            throw new UncheckedIOException(e);\n        }\n    "
+            "template": "let stdin = io::stdin();\n    let mut handle = stdin.lock();\n    let mut line = String::new();\n    match handle.read_line(&mut line) {\n        Ok(0) => None,\n        Ok(_) => {\n            if line.ends_with('\\n') {\n                line.pop();\n                if line.ends_with('\\r') {\n                    line.pop();\n                }\n            }\n            Some(line)\n        }\n        Err(_) => None,\n    }"
           },
           "loss_record_contribution": {
             "form": "literal",
@@ -18,13 +18,13 @@
             "max_params": 0,
             "min_params": 0
           },
-          "target_library_tag": "java-io"
+          "target_library_tag": "std::io"
         },
         {
           "concept_name": "concept:stdio-write-line",
           "emission_template": {
             "kind": "verbatim",
-            "template": "        System.out.println(${param0});\n    "
+            "template": "let stdout = io::stdout();\n    let mut handle = stdout.lock();\n    let _ = writeln!(handle, \"{}\", ${param0});\n    let _ = handle.flush();"
           },
           "loss_record_contribution": {
             "form": "literal",
@@ -36,13 +36,13 @@
             "max_params": 1,
             "min_params": 1
           },
-          "target_library_tag": "java-io"
+          "target_library_tag": "std::io"
         },
         {
           "concept_name": "concept:stderr-write-line",
           "emission_template": {
             "kind": "verbatim",
-            "template": "        System.err.println(${param0});\n    "
+            "template": "let stderr = io::stderr();\n    let mut handle = stderr.lock();\n    let _ = writeln!(handle, \"{}\", ${param0});"
           },
           "loss_record_contribution": {
             "form": "literal",
@@ -54,11 +54,11 @@
             "max_params": 1,
             "min_params": 1
           },
-          "target_library_tag": "java-io"
+          "target_library_tag": "std::io"
         }
       ],
-      "target_language": "java",
-      "template_name": "java-canonical-bodies-java-io"
+      "target_language": "rust",
+      "template_name": "rust-canonical-bodies-std::io"
     }
   }
 }

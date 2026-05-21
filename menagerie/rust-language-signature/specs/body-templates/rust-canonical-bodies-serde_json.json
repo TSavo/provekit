@@ -1,0 +1,28 @@
+{
+  "header": {
+    "content": {
+      "entries": [
+        {
+          "concept_name": "concept:rfc8785-jcs-encode",
+          "emission_template": {
+            "kind": "verbatim",
+            "template": "let mut out = String::new();\n    encode_value(${param0}, &mut out);\n    out"
+          },
+          "loss_record_contribution": {
+            "form": "literal",
+            "value": {
+              "entries": []
+            }
+          },
+          "signature_guard": {
+            "max_params": 1,
+            "min_params": 1
+          },
+          "target_library_tag": "serde_json"
+        }
+      ],
+      "target_language": "rust",
+      "template_name": "rust-canonical-bodies-serde_json"
+    }
+  }
+}

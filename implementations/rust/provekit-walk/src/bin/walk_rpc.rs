@@ -3655,10 +3655,18 @@ pub fn add(x: i64, y: i64) -> i64 {
 "#,
         );
 
+        // Substrate-canonical shape: free identifier args (x, y) lift as
+        // kind:"symbol" leaves carrying the name. (Previously emitted as
+        // non_operation_shape {} + supplemented by operand_bindings — the
+        // 2026-05-21 substrate-honest pass moved names into the shape so
+        // deeper consumers don't need position-threading to resolve them.)
         assert_eq!(
             shape,
             json!({
-                "args": [{}, {}],
+                "args": [
+                    {"kind": "symbol", "text": "x"},
+                    {"kind": "symbol", "text": "y"},
+                ],
                 "concept_name": "concept:add",
                 "op_cid": "blake3-512:95fc70e63a5550fd2e25142f13932919c59d085654ab387789c798886b0111c61d28fe533fc98b50df70eea9428a9af8aa75372c8b1c1deb3acc1a4094790468"
             })
@@ -3721,17 +3729,12 @@ pub fn first() -> i64 {
     }
 
     #[test]
-    fn term_shape_rust_char_literal_lifts_as_literal_source_text() {
-        // Updated behavior (this session): Rust `char` lifts as a
-        // concept:literal source_text leaf carrying the source-form token
-        // verbatim (e.g. `'a'`). This is byte-correct reproduction for
-        // shim bodies that pass char arguments to method calls (e.g.
-        // `out.push('"')`, `out.push('\n')`). No content-addressed
-        // equivalence claim is made between `char` and `String` — the
-        // source_text is purely a textual leaf form. If a stricter
-        // sort-discipline is wanted, mint `concept:char-width-32-unicode`
-        // as a separate family and route Lit::Char through it (see #1363
-        // for the parallel integer-width work).
+    fn term_shape_rust_char_literal_lifts_as_concept_literal_with_value() {
+        // Substrate-canonical char literal shape: (sort=concept:String CID,
+        // value=<char as string>). Source-form spelling ('a' vs '\u{61}')
+        // is kit presentation; substrate carries semantic identity only.
+        // (2026-05-21: source_text dropped from substrate channel; the rust
+        // realize binary re-spells via literal_term_with_width.)
         let shape = term_shape_json(
             r#"
 pub fn first() -> char {
@@ -3745,9 +3748,13 @@ pub fn first() -> char {
             "Char literal must lift as concept:literal: {shape}"
         );
         assert_eq!(
-            shape.get("source_text").and_then(|v| v.as_str()),
-            Some("'a'"),
-            "source_text must preserve the source-form char token"
+            shape.get("value").and_then(|v| v.as_str()),
+            Some("a"),
+            "char value must carry semantic identity (the actual character)"
+        );
+        assert!(
+            shape.get("source_text").is_none(),
+            "source_text must not appear in substrate channel: {shape}"
         );
     }
 
@@ -3960,22 +3967,37 @@ pub fn add_via_let(a: i64, b: i64) -> i64 {
 }
 "#,
         );
+        let seq_cid = concept_op_cid("concept:seq").expect("seq cid");
         let assign_cid = concept_op_cid("concept:assign").expect("assign cid");
         let add_cid = concept_op_cid("concept:add").expect("add cid");
 
+        // Substrate-canonical shape after 2026-05-21:
+        // - body is concept:seq containing [assign, tail-expression]
+        // - assign target is kind:symbol "q" (was {} relying on operand_bindings)
+        // - free identifier references (a, b, q) are kind:symbol leaves
         assert_eq!(
             shape,
             json!({
                 "args": [
-                    {},
                     {
-                        "args": [{}, {}],
-                        "concept_name": "concept:add",
-                        "op_cid": add_cid
-                    }
+                        "args": [
+                            {"kind": "symbol", "text": "q"},
+                            {
+                                "args": [
+                                    {"kind": "symbol", "text": "a"},
+                                    {"kind": "symbol", "text": "b"},
+                                ],
+                                "concept_name": "concept:add",
+                                "op_cid": add_cid
+                            }
+                        ],
+                        "concept_name": "concept:assign",
+                        "op_cid": assign_cid
+                    },
+                    {"kind": "symbol", "text": "q"}
                 ],
-                "concept_name": "concept:assign",
-                "op_cid": assign_cid
+                "concept_name": "concept:seq",
+                "op_cid": seq_cid
             })
         );
         assert_no_forbidden_term_shape_fields(&shape);
@@ -4005,10 +4027,18 @@ pub fn f(a: i64, b: i64) -> i64 {
             json!("concept:add"),
             "top-level tail expression remains an add shape"
         );
+        // After 2026-05-21: let+tail-expression body is concept:seq
+        // ([assign, tail-symbol]) — both substrate-meaningful nodes.
+        // The assignment boundary is preserved INSIDE the seq, not at top.
         assert_eq!(
             let_rhs["concept_name"],
+            json!("concept:seq"),
+            "let+tail body lifts as concept:seq with the assign as a child"
+        );
+        assert_eq!(
+            let_rhs["args"][0]["concept_name"],
             json!("concept:assign"),
-            "let binding preserves its assignment boundary"
+            "seq's first child is the concept:assign for the let-binding"
         );
         assert_no_forbidden_term_shape_fields(&top_level);
         assert_no_forbidden_term_shape_fields(&let_rhs);
@@ -4043,39 +4073,26 @@ pub fn safe_divide_then_double(num: i64, denom: i64) -> i64 {
 "#,
         );
 
-        // Updated behavior (this session): Expr::If now lifts via
-        // prettyplease as a concept:literal source_text leaf rather than
-        // the partial-structure concept:conditional with 3 args. This is
-        // byte-correct reproduction at the cost of losing the structural
-        // sub-shapes of the condition / then / else arms. The catalog
-        // walker that previously asserted nested concepts (eq, neg, div,
-        // lt, mul, conditional) now sees a single literal-source-text
-        // leaf with the full expression preserved verbatim — same byte-
-        // identity property, different addressability.
-        //
-        // If structural addressability is needed (e.g. for cross-language
-        // synthesis of conditionals, #1361), Expr::If can be re-promoted
-        // to a structural concept; that's tracked separately. Until then,
-        // assert the source-text fidelity.
+        // Substrate-canonical (2026-05-21): Expr::If lifts structurally
+        // as concept:conditional(cond, then, else). No more
+        // concept:literal source_text fallback — source strings don't
+        // belong in the substrate channel. The structural shape carries
+        // identity; each kit re-spells from concept-hub identities.
         assert_no_forbidden_term_shape_fields(&shape);
         assert_eq!(
             shape.get("concept_name").and_then(|v| v.as_str()),
-            Some("concept:literal"),
-            "if-as-tail-expression lifts via prettyplease as a concept:literal source_text leaf: {shape:#?}"
+            Some("concept:conditional"),
+            "if-as-tail-expression lifts as concept:conditional: {shape:#?}"
         );
-        let source_text = shape
-            .get("source_text")
-            .and_then(|v| v.as_str())
-            .expect("source_text on literal leaf");
-        for fragment in [
-            "if denom == 0",
-            "let q = num / denom",
-            "if q < 0",
-            "q * 2",
-        ] {
+        // Collect every concept_name in the tree — verify the structural
+        // shape carries the expected operator chain (eq for the equality
+        // check, conditional for nested if, div for /, lt for <, etc.).
+        let mut names = Vec::new();
+        collect_concept_names(&shape, &mut names);
+        for expected in ["concept:conditional", "concept:eq", "concept:div", "concept:lt"] {
             assert!(
-                source_text.contains(fragment),
-                "source_text must preserve fragment {fragment:?}: actual {source_text:?}"
+                names.contains(&expected.to_string()),
+                "expected operator {expected} in shape names: {names:?}\nshape: {shape:#?}"
             );
         }
         assert!(
@@ -4083,6 +4100,12 @@ pub fn safe_divide_then_double(num: i64, denom: i64) -> i64 {
                 .expect("shape stringifies")
                 .contains("UNNAMED-CONCEPT"),
             "shape must not contain unnamed concept wrappers: {shape:#?}"
+        );
+        // Substrate-honest invariant: no source_text leaves anywhere.
+        let json_text = serde_json::to_string(&shape).expect("shape stringifies");
+        assert!(
+            !json_text.contains("\"source_text\""),
+            "substrate channel must not carry source_text: {json_text}"
         );
     }
 
@@ -4449,8 +4472,11 @@ pub fn bitwise_not() -> i64 {
     fn assert_no_forbidden_term_shape_fields(value: &Value) {
         match value {
             Value::Object(object) => {
+                // `kind` is legitimately used as a leaf-disambiguator (path/
+                // method/mutability/symbol/literal) and is NOT forbidden;
+                // remaining forbiddens are lift-side annotations and source
+                // locations that have no place in the substrate channel.
                 for forbidden in [
-                    "kind",
                     "op",
                     "file",
                     "line",

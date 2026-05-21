@@ -1,8 +1,6 @@
 {
   "header": {
     "content": {
-      "target_language": "java",
-      "template_name": "java-canonical-bodies-gson",
       "entries": [
         {
           "concept_name": "concept:json-parse",
@@ -17,9 +15,10 @@
             }
           },
           "signature_guard": {
-            "min_params": 1,
-            "max_params": 1
-          }
+            "max_params": 1,
+            "min_params": 1
+          },
+          "target_library_tag": "gson"
         },
         {
           "concept_name": "concept:json-serialize",
@@ -36,11 +35,14 @@
             }
           },
           "signature_guard": {
-            "min_params": 1,
-            "max_params": 1
-          }
+            "max_params": 1,
+            "min_params": 1
+          },
+          "target_library_tag": "gson"
         }
-      ]
+      ],
+      "target_language": "java",
+      "template_name": "java-canonical-bodies-gson"
     }
   }
 }

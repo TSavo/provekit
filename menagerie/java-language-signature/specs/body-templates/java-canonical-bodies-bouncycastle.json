@@ -1,8 +1,6 @@
 {
   "header": {
     "content": {
-      "target_language": "java",
-      "template_name": "java-canonical-bodies-bouncycastle",
       "entries": [
         {
           "concept_name": "concept:blake3-512-of",
@@ -17,11 +15,14 @@
             }
           },
           "signature_guard": {
-            "min_params": 1,
-            "max_params": 1
-          }
+            "max_params": 1,
+            "min_params": 1
+          },
+          "target_library_tag": "bouncycastle"
         }
-      ]
+      ],
+      "target_language": "java",
+      "template_name": "java-canonical-bodies-bouncycastle"
     }
   }
 }

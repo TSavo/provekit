@@ -1,8 +1,6 @@
 {
   "header": {
     "content": {
-      "target_language": "java",
-      "template_name": "java-canonical-bodies-provekit-rfc8785-jcs-java",
       "entries": [
         {
           "concept_name": "concept:rfc8785-jcs-encode",
@@ -17,15 +15,16 @@
             }
           },
           "signature_guard": {
-            "min_params": 1,
-            "max_params": 1
-          }
+            "max_params": 1,
+            "min_params": 1
+          },
+          "target_library_tag": "provekit-rfc8785-jcs-java"
         },
         {
           "concept_name": "concept:rfc8785-jcs-encode-value",
           "emission_template": {
             "kind": "verbatim",
-            "template": "        if (${param0} == null || ${param0}.isNull()) {\n            ${param1}.append(\"null\");\n        } else if (${param0}.isBoolean()) {\n            ${param1}.append(${param0}.booleanValue() ? \"true\" : \"false\");\n        } else if (${param0}.isNumber()) {\n            // RFC 8785 uses ECMA-262 number serialization. Java's\n            // double-to-string is close but not identical; for now use the\n            // textual form Jackson chose. (Full ECMA-262 conformance is a\n            // separate loss dimension â declared in the rust sister's\n            // future when minted.)\n            ${param1}.append(${param0}.asText());\n        } else if (${param0}.isTextual()) {\n            encode_string(${param0}.asText(), ${param1});\n        } else if (${param0}.isArray()) {\n            ${param1}.append('[');\n            boolean first = true;\n            for (JsonNode child : ${param0}) {\n                if (!first) ${param1}.append(',');\n                encode_value(child, ${param1});\n                first = false;\n            }\n            ${param1}.append(']');\n        } else if (${param0}.isObject()) {\n            // RFC 8785 requires keys sorted by code-point order (after parsing\n            // unescape).\n            List<String> keys = new ArrayList<>();\n            Iterator<String> it = ${param0}.fieldNames();\n            while (it.hasNext()) keys.add(it.next());\n            Collections.sort(keys);\n            ${param1}.append('{');\n            boolean first = true;\n            for (String k : keys) {\n                if (!first) ${param1}.append(',');\n                encode_string(k, ${param1});\n                ${param1}.append(':');\n                encode_value(${param0}.get(k), ${param1});\n                first = false;\n            }\n            ${param1}.append('}');\n        }\n    "
+            "template": "        if (${param0} == null || ${param0}.isNull()) {\n            ${param1}.append(\"null\");\n        } else if (${param0}.isBoolean()) {\n            ${param1}.append(${param0}.booleanValue() ? \"true\" : \"false\");\n        } else if (${param0}.isNumber()) {\n            // RFC 8785 uses ECMA-262 number serialization. Java's\n            // double-to-string is close but not identical; for now use the\n            // textual form Jackson chose. (Full ECMA-262 conformance is a\n            // separate loss dimension \u00e2\u0080\u0094 declared in the rust sister's\n            // future when minted.)\n            ${param1}.append(${param0}.asText());\n        } else if (${param0}.isTextual()) {\n            encode_string(${param0}.asText(), ${param1});\n        } else if (${param0}.isArray()) {\n            ${param1}.append('[');\n            boolean first = true;\n            for (JsonNode child : ${param0}) {\n                if (!first) ${param1}.append(',');\n                encode_value(child, ${param1});\n                first = false;\n            }\n            ${param1}.append(']');\n        } else if (${param0}.isObject()) {\n            // RFC 8785 requires keys sorted by code-point order (after parsing\n            // unescape).\n            List<String> keys = new ArrayList<>();\n            Iterator<String> it = ${param0}.fieldNames();\n            while (it.hasNext()) keys.add(it.next());\n            Collections.sort(keys);\n            ${param1}.append('{');\n            boolean first = true;\n            for (String k : keys) {\n                if (!first) ${param1}.append(',');\n                encode_string(k, ${param1});\n                ${param1}.append(':');\n                encode_value(${param0}.get(k), ${param1});\n                first = false;\n            }\n            ${param1}.append('}');\n        }\n    "
           },
           "loss_record_contribution": {
             "form": "literal",
@@ -34,9 +33,10 @@
             }
           },
           "signature_guard": {
-            "min_params": 2,
-            "max_params": 2
-          }
+            "max_params": 2,
+            "min_params": 2
+          },
+          "target_library_tag": "provekit-rfc8785-jcs-java"
         },
         {
           "concept_name": "concept:rfc8785-jcs-encode-string",
@@ -51,11 +51,14 @@
             }
           },
           "signature_guard": {
-            "min_params": 2,
-            "max_params": 2
-          }
+            "max_params": 2,
+            "min_params": 2
+          },
+          "target_library_tag": "provekit-rfc8785-jcs-java"
         }
-      ]
+      ],
+      "target_language": "java",
+      "template_name": "java-canonical-bodies-provekit-rfc8785-jcs-java"
     }
   }
 }
