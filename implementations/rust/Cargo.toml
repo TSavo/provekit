@@ -23,6 +23,8 @@ members = [
     "provekit-self-contracts",
     "provekit-baseline-rust-std",
     "libprovekit",
+    "libprovekit-rpc",
+    "libprovekit-rpc-cross-platform",
     "provekit-cli",
     "provekit-realize-rust-core",
     "provekit-macros",

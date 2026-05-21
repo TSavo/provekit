@@ -24,9 +24,56 @@
 
 use std::path::{Path, PathBuf};
 
+/// One entry in `.provekit/config.toml`'s `[[plugins]]` array.
+///
+/// Each entry declares one lift plugin this project enables. cmd_mint
+/// reads the full list and dispatches each plugin via its manifest at
+/// `.provekit/lift/<surface>/manifest.toml`, then merges all
+/// ir-documents into one envelope. The substrate's "config-driven
+/// multi-plugin orchestration" pattern: the user declares which kits
+/// are active; the CLI invokes them.
+#[derive(Debug, Clone, Default)]
+pub struct PluginEntry {
+    /// Human label for diagnostics. Optional; falls back to `surface`.
+    pub name: Option<String>,
+    /// Lift surface — resolves to `.provekit/lift/<surface>/manifest.toml`.
+    pub surface: String,
+    /// Optional absolute path the plugin should treat as its
+    /// `workspace_root`. Use case: a shim that lifts from a
+    /// cargo-resolved dependency's source instead of from its own
+    /// project root. Defaults to the project root (the directory
+    /// containing `.provekit/config.toml`).
+    pub workspace_override: Option<String>,
+    /// Optional `options.emit` value passed through to the plugin.
+    /// `"ir-document"` opts a self-minting plugin (provekit-lift) into
+    /// composable mode for multi-plugin merge; `"proof-envelope"` is
+    /// the default self-mint shape.
+    pub emit: Option<String>,
+    /// Optional `options.layer` value passed through to the plugin.
+    /// Used to opt the sugar/boundary lane into emitting
+    /// `library-sugar-binding-entry` + `refusal-memento` (vs the
+    /// default bind-IR shape). Recognized values per
+    /// `lift-plugin-protocol.md`: "all", "library-bindings",
+    /// "identify-only". Per-plugin so the sugar lane and the contract
+    /// lane can request different layers from their respective
+    /// language-kit lifters.
+    pub layer: Option<String>,
+}
+
+impl PluginEntry {
+    pub fn display_name(&self) -> &str {
+        self.name.as_deref().unwrap_or(self.surface.as_str())
+    }
+}
+
 #[derive(Debug, Clone, Default)]
 pub struct ProjectConfig {
     pub exam_manifest_cid: Option<String>,
+
+    /// Project's declared lift plugins, in array-of-tables form
+    /// (`[[plugins]]` in TOML). Empty if the project still uses the
+    /// legacy single-surface `[authoring] surface = ...` form.
+    pub plugins: Vec<PluginEntry>,
 
     pub surface_default: Option<String>,
     pub surface_must: Option<String>,
@@ -119,12 +166,40 @@ fn read_config_file(path: &Path) -> ProjectConfig {
 fn parse_config(text: &str) -> ProjectConfig {
     let mut cfg = ProjectConfig::default();
     let mut section: Option<String> = None;
+    // In-flight `[[plugins]]` entry. Pushed to `cfg.plugins` on each new
+    // `[[plugins]]` header or at end-of-file. Stays None while the parser
+    // is in any other (single-bracket) section.
+    let mut current_plugin: Option<PluginEntry> = None;
     for raw_line in text.lines() {
         let line = strip_comment(raw_line).trim();
         if line.is_empty() {
             continue;
         }
+        // Array-of-tables header: `[[plugins]]`. Each occurrence starts a
+        // new entry; the previous entry (if any) is finalized into
+        // `cfg.plugins`. The substrate's intent: one [[plugins]] block per
+        // declared lift kit.
+        if let Some(inner) = line.strip_prefix("[[").and_then(|s| s.strip_suffix("]]")) {
+            if let Some(prev) = current_plugin.take() {
+                if !prev.surface.is_empty() {
+                    cfg.plugins.push(prev);
+                }
+            }
+            let header = inner.trim().to_lowercase();
+            if header == "plugins" {
+                current_plugin = Some(PluginEntry::default());
+                section = Some("plugins.entry".to_string());
+            } else {
+                section = Some(header);
+            }
+            continue;
+        }
         if let Some(s) = line.strip_prefix('[').and_then(|s| s.strip_suffix(']')) {
+            if let Some(prev) = current_plugin.take() {
+                if !prev.surface.is_empty() {
+                    cfg.plugins.push(prev);
+                }
+            }
             section = Some(s.trim().to_lowercase());
             continue;
         }
@@ -155,7 +230,38 @@ fn parse_config(text: &str) -> ProjectConfig {
                 cfg.callees = parse_string_array(&val);
             }
             (Some("paths.mint"), "file") => cfg.path_mint = Some(val),
+            (Some("plugins.entry"), "name") => {
+                if let Some(entry) = current_plugin.as_mut() {
+                    entry.name = Some(val);
+                }
+            }
+            (Some("plugins.entry"), "surface") => {
+                if let Some(entry) = current_plugin.as_mut() {
+                    entry.surface = val;
+                }
+            }
+            (Some("plugins.entry"), "workspace_override") => {
+                if let Some(entry) = current_plugin.as_mut() {
+                    entry.workspace_override = Some(val);
+                }
+            }
+            (Some("plugins.entry"), "emit") => {
+                if let Some(entry) = current_plugin.as_mut() {
+                    entry.emit = Some(val);
+                }
+            }
+            (Some("plugins.entry"), "layer") => {
+                if let Some(entry) = current_plugin.as_mut() {
+                    entry.layer = Some(val);
+                }
+            }
             _ => {}
+        }
+    }
+    // Flush the final in-flight entry.
+    if let Some(prev) = current_plugin.take() {
+        if !prev.surface.is_empty() {
+            cfg.plugins.push(prev);
         }
     }
     cfg

@@ -1,0 +1,10 @@
+[package]
+name = "provekit-shim-stdio-rust"
+version = "0.1.0"
+edition = "2021"
+license = "Apache-2.0"
+description = "ProvekIt L0 shim: substrate-honest boundary realization for std::io stdin/stdout/stderr line operations. Sister shims in other languages anchor to the same boundary contract (boundary:stdio-line-stream) via their language's stdio facility (TS's node:readline + process.stdout, Python's sys.stdin/sys.stdout, Java's System.in/out/err)."
+repository = "https://github.com/TSavo/provekit"
+
+[dependencies]
+provekit = { package = "provekit-sugar", path = "../../implementations/rust/provekit-sugar" }

@@ -1155,6 +1155,22 @@ dependencies = [
 ]
 
 [[package]]
+name = "libprovekit-rpc"
+version = "0.1.0"
+dependencies = [
+ "blake3",
+ "serde_json",
+]
+
+[[package]]
+name = "libprovekit-rpc-cross-platform"
+version = "0.1.0"
+dependencies = [
+ "provekit-sugar",
+ "serde_json",
+]
+
+[[package]]
 name = "linux-raw-sys"
 version = "0.12.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"

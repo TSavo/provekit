@@ -764,19 +764,89 @@ fn run_rpc_mode() -> i32 {
                 let _ = writeln!(stdout, "{resp}");
             }
             "lift" => {
-                let workspace = std::env::current_dir().unwrap_or_else(|_| PathBuf::from("."));
-                let out_dir = workspace.join("target").join("release");
+                let params = req.get("params").cloned().unwrap_or_else(|| serde_json::json!({}));
+                // workspace_root: prefer RPC param so the cmd_mint
+                // lift-plugin protocol routes correctly (params are
+                // authoritative per pep/1.7.0); fall back to CWD for
+                // direct CLI use.
+                let workspace = params
+                    .get("workspace_root")
+                    .and_then(|v| v.as_str())
+                    .map(PathBuf::from)
+                    .unwrap_or_else(|| {
+                        std::env::current_dir().unwrap_or_else(|_| PathBuf::from("."))
+                    });
+                // options.emit selects the response shape. Default
+                // "proof-envelope" preserves backward compat with the
+                // self-minted path. "ir-document" emits raw contract
+                // mementos so this plugin composes with sibling plugins
+                // (walk_rpc for sugar/refuse) when cmd_mint runs N
+                // plugins from a `[[plugins]]` config and merges their
+                // ir-documents into one envelope.
+                let emit = params
+                    .get("options")
+                    .and_then(|o| o.get("emit"))
+                    .and_then(|v| v.as_str())
+                    .unwrap_or("proof-envelope")
+                    .to_string();
                 let opts = LiftOptions::default();
-                match lift_and_mint(&workspace, &out_dir, &opts) {
-                    Ok((_report, minted, path)) => {
-                        let bytes = std::fs::read(&path).unwrap_or_default();
-                        let b64 = base64::engine::general_purpose::STANDARD.encode(&bytes);
-                        let resp = serde_json::json!({"jsonrpc":"2.0","id":id,"result":{"kind":"proof-envelope","filename_cid":minted.cid,"contract_set_cid":minted.contract_set_cid,"bytes_base64":b64}});
-                        let _ = writeln!(stdout, "{resp}");
+                if emit == "ir-document" {
+                    let report = lift_path(&workspace);
+                    // Content-addressed names (CID suffix) make
+                    // duplicates safe — same name = same canonical IR =
+                    // same minted memento. Dedup here so downstream
+                    // consumers (cmd_mint's envelope minter) see a
+                    // collision-free ir-document; the substrate's
+                    // mint_proof primitive does the same thing one
+                    // layer down, we surface it at the IR layer for
+                    // multi-plugin merge correctness.
+                    let mut seen: std::collections::HashSet<String> =
+                        std::collections::HashSet::new();
+                    let mut ir: Vec<serde_json::Value> = Vec::new();
+                    for decl in &report.decls {
+                        let entry = contract_decl_to_memento(decl);
+                        let name = entry
+                            .get("name")
+                            .and_then(|v| v.as_str())
+                            .unwrap_or("")
+                            .to_string();
+                        if seen.insert(name) {
+                            ir.push(entry);
+                        }
                     }
-                    Err(e) => {
-                        let resp = serde_json::json!({"jsonrpc":"2.0","id":id,"error":{"code":-32603,"message":format!("lift failed: {e}")}});
-                        let _ = writeln!(stdout, "{resp}");
+                    let diagnostics: Vec<serde_json::Value> = report
+                        .parse_errors
+                        .iter()
+                        .map(|(path, err)| {
+                            serde_json::json!({
+                                "severity": "warning",
+                                "message": format!("parse {path}: {err}"),
+                            })
+                        })
+                        .collect();
+                    let resp = serde_json::json!({
+                        "jsonrpc": "2.0",
+                        "id": id,
+                        "result": {
+                            "kind": "ir-document",
+                            "ir": ir,
+                            "diagnostics": diagnostics,
+                        }
+                    });
+                    let _ = writeln!(stdout, "{resp}");
+                } else {
+                    let out_dir = workspace.join("target").join("release");
+                    match lift_and_mint(&workspace, &out_dir, &opts) {
+                        Ok((_report, minted, path)) => {
+                            let bytes = std::fs::read(&path).unwrap_or_default();
+                            let b64 = base64::engine::general_purpose::STANDARD.encode(&bytes);
+                            let resp = serde_json::json!({"jsonrpc":"2.0","id":id,"result":{"kind":"proof-envelope","filename_cid":minted.cid,"contract_set_cid":minted.contract_set_cid,"bytes_base64":b64}});
+                            let _ = writeln!(stdout, "{resp}");
+                        }
+                        Err(e) => {
+                            let resp = serde_json::json!({"jsonrpc":"2.0","id":id,"error":{"code":-32603,"message":format!("lift failed: {e}")}});
+                            let _ = writeln!(stdout, "{resp}");
+                        }
                     }
                 }
             }
@@ -792,6 +862,52 @@ fn run_rpc_mode() -> i32 {
         }
     }
     0
+}
+
+/// Serialize a `ContractDecl` as a `kind: "contract"` JSON memento in
+/// the canonical-IR shape `cmd_mint`'s ir-document consumer expects.
+/// The contract's `name` is content-addressed by appending the
+/// formula-set CID — byte-identical formulas at the same name collapse
+/// safely; different formulas survive as distinct entries. This is the
+/// same dedup primitive `mint_proof` already applies internally; we
+/// surface it at the IR layer so multi-plugin merges in `cmd_mint`
+/// remain content-honest before envelope minting.
+fn contract_decl_to_memento(decl: &ContractDecl) -> serde_json::Value {
+    use provekit_canonicalizer::encode_jcs;
+    fn formula_pair(
+        f: Option<&provekit_ir_symbolic::Formula>,
+    ) -> (Option<serde_json::Value>, String) {
+        match f {
+            Some(formula) => {
+                let cv = formula_to_value(formula);
+                let jcs = encode_jcs(&cv);
+                let cid = blake3_512_of(jcs.as_bytes());
+                let value = serde_json::from_str(&jcs).unwrap_or(serde_json::Value::Null);
+                (Some(value), cid)
+            }
+            None => (None, String::new()),
+        }
+    }
+    let (inv_value, inv_cid) = formula_pair(decl.inv.as_deref());
+    let (pre_value, pre_cid) = formula_pair(decl.pre.as_deref());
+    let (post_value, post_cid) = formula_pair(decl.post.as_deref());
+    let content_cid = blake3_512_of(format!("{inv_cid}|{pre_cid}|{post_cid}").as_bytes());
+    let name = format!("{}#{}", decl.name, content_cid);
+    let mut entry = serde_json::json!({
+        "kind": "contract",
+        "name": name,
+        "outBinding": decl.out_binding,
+    });
+    if let Some(v) = inv_value {
+        entry["inv"] = v;
+    }
+    if let Some(v) = pre_value {
+        entry["pre"] = v;
+    }
+    if let Some(v) = post_value {
+        entry["post"] = v;
+    }
+    entry
 }
 
 /// Entry point shared by both bin targets. Returns a process exit code.

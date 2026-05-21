@@ -1,0 +1,13 @@
+[package]
+name = "provekit-shim-blake3-rust"
+version = "0.1.0"
+edition = "2021"
+license = "Apache-2.0"
+description = "ProvekIt L0 shim: substrate-honest boundary bindings for the Rust `blake3` crate. Sister to provekit-shim-blake3-typescript (which wraps @noble/hashes/blake3). Both anchor to the same boundary:blake3-512 contract CID, so any consumer materializing through the concept hub picks the per-target library at the boundary."
+repository = "https://github.com/TSavo/provekit"
+keywords = ["blake3", "provekit", "boundary", "shim"]
+categories = ["cryptography"]
+
+[dependencies]
+blake3 = "1"
+provekit = { package = "provekit-sugar", path = "../../implementations/rust/provekit-sugar" }

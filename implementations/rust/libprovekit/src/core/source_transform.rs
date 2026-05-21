@@ -977,7 +977,15 @@ pub fn transform_source_text_collecting_refusals(
 ) -> Result<(String, Vec<(ConceptSite, SiteOutcome)>), String> {
     const PROPAGATE_PASS_CAP: usize = 32;
 
-    let mut current = source.to_string();
+    // Pre-pass: synthesize `// provekit-concept:` carriers from any
+    // `#[provekit::boundary(...)]` attribute call-sites in the source.
+    // The boundary primitive is the substrate's newer source-side
+    // annotation for "this is where a per-target library realization
+    // gets substituted"; this pre-pass bridges it to the line-based
+    // carrier walker below, so the same downstream realize-dispatch
+    // pipeline that already handles `provekit-concept:` carriers
+    // processes @boundary-tagged sources unchanged.
+    let mut current = inject_boundary_carriers(source);
     let mut all: Vec<(ConceptSite, SiteOutcome)> = Vec::new();
 
     for _pass in 0..PROPAGATE_PASS_CAP {
@@ -1129,6 +1137,286 @@ pub fn realize_spec_from_payload(payload: &str) -> Result<Json, String> {
         }
     }
     Ok(value)
+}
+
+// ---------------------------------------------------------------------
+// Boundary-carrier injection: bridge from `#[provekit::boundary(...)]`
+// attribute call-sites to `// provekit-concept:` line carriers so the
+// existing line-based walker can process @boundary-tagged sources.
+// Substrate-honest: the boundary primitive is a newer source-side
+// annotation; this pre-pass translates it into the carrier form the
+// realize-dispatch pipeline already consumes. Idempotent and additive
+// (sources without `#[provekit::boundary]` pass through unchanged).
+// ---------------------------------------------------------------------
+
+/// Synthesize `// provekit-concept:` carriers from
+/// `#[provekit::boundary(...)]` attributes in `source`. For each
+/// matched boundary attribute, inserts a carrier comment on the line
+/// immediately before the attribute, with the carrier payload built
+/// from (attribute fields, function signature). Lines without
+/// `#[provekit::boundary]` pass through unchanged.
+pub fn inject_boundary_carriers(source: &str) -> String {
+    let lines: Vec<&str> = source.split_inclusive('\n').collect();
+    let mut out = String::with_capacity(source.len() + 1024);
+    let mut idx = 0;
+    while idx < lines.len() {
+        let line = lines[idx];
+        if let Some(indent) = boundary_attr_start_indent(line) {
+            // Capture the (possibly multi-line) attribute block until
+            // the line containing `)]`.
+            let mut close_idx = idx;
+            while close_idx < lines.len() && !lines[close_idx].contains(")]") {
+                close_idx += 1;
+            }
+            if close_idx >= lines.len() {
+                // Unterminated attribute: emit verbatim and continue.
+                out.push_str(line);
+                idx += 1;
+                continue;
+            }
+            let attr_text: String = lines[idx..=close_idx].concat();
+            // Look ahead to the function declaration following the attr.
+            // Skip blank lines and other attributes that may sit between
+            // `#[provekit::boundary]` and `fn`.
+            let mut probe = close_idx + 1;
+            while probe < lines.len() {
+                let trimmed = lines[probe].trim();
+                if trimmed.is_empty() || trimmed.starts_with("//") || trimmed.starts_with("#[") {
+                    probe += 1;
+                    continue;
+                }
+                break;
+            }
+            if probe < lines.len() && line_starts_fn(lines[probe]) {
+                // Collect signature lines up through the opening `{`.
+                let mut sig_end = probe;
+                while sig_end < lines.len() && !lines[sig_end].contains('{') {
+                    sig_end += 1;
+                }
+                let sig_end = sig_end.min(lines.len() - 1);
+                let sig_text: String = lines[probe..=sig_end].concat();
+                if let Some(payload) = build_boundary_carrier_payload(&attr_text, &sig_text) {
+                    out.push_str(indent);
+                    out.push_str("// provekit-concept: ");
+                    out.push_str(&payload);
+                    out.push('\n');
+                }
+            }
+            // Emit the attribute block verbatim (we don't strip it).
+            out.push_str(&attr_text);
+            idx = close_idx + 1;
+        } else {
+            out.push_str(line);
+            idx += 1;
+        }
+    }
+    out
+}
+
+fn boundary_attr_start_indent(line: &str) -> Option<&str> {
+    let trimmed = line.trim_start();
+    if trimmed.starts_with("#[provekit::boundary(") || trimmed.starts_with("#[provekit::boundary]")
+    {
+        let leading_len = line.len() - trimmed.len();
+        Some(&line[..leading_len])
+    } else {
+        None
+    }
+}
+
+fn line_starts_fn(line: &str) -> bool {
+    let mut remaining = line.trim_start();
+    let prefixes = [
+        "pub(crate) ",
+        "pub(super) ",
+        "pub ",
+        "async ",
+        "const ",
+        "unsafe ",
+        "extern \"C\" ",
+        "extern ",
+    ];
+    let mut changed = true;
+    while changed {
+        changed = false;
+        for prefix in prefixes {
+            if let Some(rest) = remaining.strip_prefix(prefix) {
+                remaining = rest;
+                changed = true;
+                break;
+            }
+        }
+    }
+    remaining.starts_with("fn ")
+}
+
+fn build_boundary_carrier_payload(attr_text: &str, sig_text: &str) -> Option<String> {
+    let concept = extract_attr_string(attr_text, "concept")?;
+    let library = extract_attr_string(attr_text, "library");
+    let (fn_name, params, param_types, return_type) = parse_fn_signature(sig_text)?;
+    let mut fields = Vec::with_capacity(6);
+    fields.push(format!("\"concept_name\":\"{}\"", escape_json(&concept)));
+    fields.push(format!("\"function\":\"{}\"", escape_json(&fn_name)));
+    fields.push(format!("\"params\":{}", format_string_array(&params)));
+    fields.push(format!("\"param_types\":{}", format_string_array(&param_types)));
+    fields.push(format!("\"return_type\":\"{}\"", escape_json(&return_type)));
+    if let Some(lib) = library {
+        fields.push(format!("\"library\":\"{}\"", escape_json(&lib)));
+    }
+    Some(format!("{{{}}}", fields.join(",")))
+}
+
+fn extract_attr_string(attr_text: &str, key: &str) -> Option<String> {
+    let needle = format!("{} = \"", key);
+    let start = attr_text.find(&needle)?;
+    let value_start = start + needle.len();
+    let end_rel = attr_text[value_start..].find('"')?;
+    Some(attr_text[value_start..value_start + end_rel].to_string())
+}
+
+fn parse_fn_signature(sig: &str) -> Option<(String, Vec<String>, Vec<String>, String)> {
+    let fn_pos = sig.find("fn ")?;
+    let after_fn = &sig[fn_pos + 3..];
+    // Extract the function name (up to `(` or `<`).
+    let name_end = after_fn
+        .find(|c: char| c == '(' || c == '<' || c.is_whitespace())
+        .unwrap_or(after_fn.len());
+    let fn_name = after_fn[..name_end].trim().to_string();
+    if fn_name.is_empty() {
+        return None;
+    }
+    // Find the opening `(` of the parameter list.
+    let paren_open = after_fn[name_end..].find('(')? + name_end;
+    // Find the matching closing `)`.
+    let mut depth = 0;
+    let mut close = None;
+    for (i, c) in after_fn[paren_open..].char_indices() {
+        match c {
+            '(' => depth += 1,
+            ')' => {
+                depth -= 1;
+                if depth == 0 {
+                    close = Some(paren_open + i);
+                    break;
+                }
+            }
+            _ => {}
+        }
+    }
+    let close = close?;
+    let params_text = &after_fn[paren_open + 1..close];
+    let (params, param_types) = split_params(params_text);
+    let after_close = &after_fn[close + 1..];
+    let return_type = if let Some(arrow) = after_close.find("->") {
+        let after_arrow = &after_close[arrow + 2..];
+        let end = after_arrow
+            .find('{')
+            .or_else(|| after_arrow.find("where"))
+            .unwrap_or(after_arrow.len());
+        after_arrow[..end].trim().to_string()
+    } else {
+        "()".to_string()
+    };
+    Some((fn_name, params, param_types, return_type))
+}
+
+fn split_params(text: &str) -> (Vec<String>, Vec<String>) {
+    let mut params = Vec::new();
+    let mut param_types = Vec::new();
+    let mut depth_paren = 0i32;
+    let mut depth_angle = 0i32;
+    let mut depth_bracket = 0i32;
+    let mut current = String::new();
+    for c in text.chars() {
+        match c {
+            '(' => {
+                depth_paren += 1;
+                current.push(c);
+            }
+            ')' => {
+                depth_paren -= 1;
+                current.push(c);
+            }
+            '[' => {
+                depth_bracket += 1;
+                current.push(c);
+            }
+            ']' => {
+                depth_bracket -= 1;
+                current.push(c);
+            }
+            '<' => {
+                depth_angle += 1;
+                current.push(c);
+            }
+            '>' => {
+                depth_angle -= 1;
+                current.push(c);
+            }
+            ',' if depth_paren == 0 && depth_angle == 0 && depth_bracket == 0 => {
+                if let Some((n, t)) = parse_param(&current) {
+                    params.push(n);
+                    param_types.push(t);
+                }
+                current.clear();
+            }
+            _ => current.push(c),
+        }
+    }
+    if !current.trim().is_empty() {
+        if let Some((n, t)) = parse_param(&current) {
+            params.push(n);
+            param_types.push(t);
+        }
+    }
+    (params, param_types)
+}
+
+fn parse_param(p: &str) -> Option<(String, String)> {
+    let p = p.trim();
+    if p.is_empty() || p == "self" || p.starts_with("&self") || p.starts_with("&mut self") {
+        return None;
+    }
+    let colon = p.find(':')?;
+    let raw_name = p[..colon].trim();
+    let name = raw_name.trim_start_matches('_').trim().to_string();
+    let ty = p[colon + 1..].trim().to_string();
+    if name.is_empty() {
+        return None;
+    }
+    Some((name, ty))
+}
+
+fn format_string_array(items: &[String]) -> String {
+    let mut s = String::from("[");
+    for (i, item) in items.iter().enumerate() {
+        if i > 0 {
+            s.push(',');
+        }
+        s.push('"');
+        s.push_str(&escape_json(item));
+        s.push('"');
+    }
+    s.push(']');
+    s
+}
+
+fn escape_json(s: &str) -> String {
+    let mut out = String::with_capacity(s.len());
+    for c in s.chars() {
+        match c {
+            '"' => out.push_str("\\\""),
+            '\\' => out.push_str("\\\\"),
+            '\n' => out.push_str("\\n"),
+            '\r' => out.push_str("\\r"),
+            '\t' => out.push_str("\\t"),
+            c if (c as u32) < 0x20 => {
+                out.push_str(&format!("\\u{:04x}", c as u32));
+            }
+            c => out.push(c),
+        }
+    }
+    out
 }
 
 #[cfg(test)]

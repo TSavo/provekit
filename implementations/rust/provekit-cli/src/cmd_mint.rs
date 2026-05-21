@@ -67,7 +67,7 @@ use provekit_proof_envelope::{
 };
 
 use crate::lift_plugin::{self, LiftPluginError, LiftPluginOptions};
-use crate::project_config::{read_project_config, read_user_config};
+use crate::project_config::{read_project_config, read_user_config, PluginEntry};
 use crate::OutputFlags;
 use crate::{EXIT_OK, EXIT_USER_ERROR, EXIT_VERIFY_FAIL};
 
@@ -150,6 +150,80 @@ struct DispatchResult {
     lift_result: Value,
 }
 
+/// One per-plugin response collected during multi-plugin dispatch. The
+/// `surface` is carried for diagnostics; the `response` is the raw
+/// JSON-RPC result the plugin returned (either `kind: "ir-document"` or
+/// `kind: "proof-envelope"` per the lift-plugin protocol).
+#[derive(Debug, Clone)]
+struct PerPluginDispatch {
+    surface: String,
+    response: Value,
+}
+
+/// Merge N per-plugin lift responses into one canonical `kind:
+/// "ir-document"` value. The union concatenates each plugin's `ir`
+/// array; diagnostics likewise. Every plugin in a multi-plugin path
+/// MUST emit `kind: "ir-document"` — proof-envelope responses are
+/// already self-signed bundles and can't be folded into a fresh mint.
+/// The substrate-honest failure is to reject the mix loudly.
+///
+/// Cross-plugin name collisions are deduplicated by name. With
+/// content-addressed names (CID-suffixed by each plugin's lifter),
+/// a name collision means byte-identical canonical IR, which is
+/// safe to dedup — same identity, same content, same minted memento
+/// downstream. The same primitive `mint_proof` uses internally.
+fn merge_ir_document_responses(per_plugin: Vec<PerPluginDispatch>) -> Result<Value, String> {
+    let mut merged_ir: Vec<Value> = Vec::new();
+    let mut merged_diagnostics: Vec<Value> = Vec::new();
+    let mut seen_names: std::collections::HashSet<String> = std::collections::HashSet::new();
+    for entry in per_plugin {
+        let kind = entry
+            .response
+            .get("kind")
+            .and_then(|v| v.as_str())
+            .unwrap_or("");
+        if kind != "ir-document" {
+            return Err(format!(
+                "multi-plugin mint requires every lift plugin to emit `kind: \"ir-document\"`; \
+                 plugin for surface `{}` emitted `kind: \"{}\"`",
+                entry.surface, kind
+            ));
+        }
+        if let Some(arr) = entry.response.get("ir").and_then(|v| v.as_array()) {
+            for item in arr {
+                // Entries with a `name` field are deduped by it
+                // (content-addressed by construction). Entries without
+                // a `name` — refusal-memento, bind-lift-entry — pass
+                // through unfiltered since their identity is structural.
+                let dedup_key: Option<String> = item
+                    .get("name")
+                    .and_then(|v| v.as_str())
+                    .map(|s| s.to_string());
+                match dedup_key {
+                    Some(key) => {
+                        if seen_names.insert(key) {
+                            merged_ir.push(item.clone());
+                        }
+                    }
+                    None => merged_ir.push(item.clone()),
+                }
+            }
+        }
+        if let Some(arr) = entry
+            .response
+            .get("diagnostics")
+            .and_then(|v| v.as_array())
+        {
+            merged_diagnostics.extend(arr.iter().cloned());
+        }
+    }
+    Ok(json!({
+        "kind": "ir-document",
+        "ir": merged_ir,
+        "diagnostics": merged_diagnostics,
+    }))
+}
+
 #[derive(Debug, Clone, Default)]
 struct MintKit {
     inputs: HashMapInputCatalog,
@@ -197,28 +271,34 @@ impl MintKit {
             .ok_or_else(|| {
                 KitError::Transformation("mint path missing terminal `mint` step".to_string())
             })?;
-        let lift_step = ordered_steps
+        // Collect ALL lift-plugin predecessors of the mint step. The path
+        // executor handles arbitrary dependency fan-in; the substrate's
+        // multi-plugin orchestration is just N lift steps + 1 mint step,
+        // with `depends_on` carrying the dependency structure. Each lift
+        // step represents one `[[plugins]]` entry from config.toml.
+        let lift_steps: Vec<&PathAlgebra> = ordered_steps
             .iter()
             .copied()
-            .find(|step| {
+            .filter(|step| {
                 mint_step.depends_on.iter().any(|name| name == &step.name)
                     && step.kit.starts_with("lift-plugin:")
             })
-            .ok_or_else(|| {
-                KitError::Transformation(
-                    "mint path terminal step must depend on a lift-plugin step".to_string(),
-                )
-            })?;
+            .collect();
+        if lift_steps.is_empty() {
+            return Err(KitError::Transformation(
+                "mint path terminal step must depend on at least one lift-plugin step".to_string(),
+            ));
+        }
 
-        let lift_request = self.path_step_spec(lift_step, "mint path lift step")?;
         let mint_request = self.path_step_spec(mint_step, "mint path mint step")?;
-        let project_root = PathBuf::from(
-            required_str(&lift_request, "workspace_root", "mint path lift step")
+        // The project root (where `.provekit/` lives) is the canonical
+        // location for manifest discovery, regardless of any per-plugin
+        // workspace_override. Read it from the mint_request so it stays
+        // stable across all lift steps in the path.
+        let project_root_for_manifests = PathBuf::from(
+            required_str(&mint_request, "projectRoot", "mint path mint step")
                 .map_err(KitError::Transformation)?,
         );
-        let surface = required_str(&lift_request, "surface", "mint path lift step")
-            .map_err(KitError::Transformation)?
-            .to_string();
         let out_dir = PathBuf::from(
             required_str(&mint_request, "outDir", "mint path mint step")
                 .map_err(KitError::Transformation)?,
@@ -228,68 +308,139 @@ impl MintKit {
             .and_then(|options| options.get("quiet"))
             .and_then(Value::as_bool)
             .unwrap_or(false);
-        let lift_options = LiftPluginOptions {
-            identify_only: lift_request
-                .get("options")
-                .and_then(|options| options.get("identifyOnly"))
-                .and_then(Value::as_bool)
-                .unwrap_or(false),
-            library_bindings: lift_request
-                .get("options")
-                .and_then(|options| options.get("layer"))
-                .and_then(Value::as_str)
-                .is_some_and(|layer| layer == "library-bindings"),
-        };
 
-        let session = match lift_plugin::dispatch_lift(&project_root, &surface, lift_options, quiet)
-        {
-            Ok(session) => session,
-            Err(LiftPluginError::MissingBinary { binary }) => {
-                if !quiet {
-                    println!(
-                        "{}: lifter binary `{}` not found: producing empty-set attestation",
-                        "warn".yellow().bold(),
-                        binary
-                    );
+        // Per-plugin dispatch. Each lift step contributes its own
+        // lift_request (workspace_root, surface, options) and its own
+        // RPC dispatch. Responses are accumulated and (when N > 1)
+        // merged into a single canonical ir-document before being
+        // minted into ONE envelope by the existing minter.
+        let mut per_plugin: Vec<PerPluginDispatch> = Vec::with_capacity(lift_steps.len());
+        let mut combined_lift_claim: Option<DomainClaim> = None;
+        let mut surface_for_session: Option<String> = None;
+        for lift_step in &lift_steps {
+            let lift_request = self.path_step_spec(lift_step, "mint path lift step")?;
+            let surface = required_str(&lift_request, "surface", "mint path lift step")
+                .map_err(KitError::Transformation)?
+                .to_string();
+            // Reconstruct the per-plugin LiftPluginOptions from the
+            // lift_request. workspace_override is carried in
+            // `options.workspaceOverride` (set by build_lift_params on
+            // initial construction). Restoring it lets dispatch_lift's
+            // internal build_lift_params re-derive the same
+            // workspace_root the plugin originally received, while
+            // find_manifest correctly uses project_root_for_manifests
+            // for the .provekit/ lookup.
+            let lift_options = LiftPluginOptions {
+                identify_only: lift_request
+                    .get("options")
+                    .and_then(|options| options.get("identifyOnly"))
+                    .and_then(Value::as_bool)
+                    .unwrap_or(false),
+                library_bindings: lift_request
+                    .get("options")
+                    .and_then(|options| options.get("layer"))
+                    .and_then(Value::as_str)
+                    .is_some_and(|layer| layer == "library-bindings"),
+                workspace_override: lift_request
+                    .get("options")
+                    .and_then(|options| options.get("workspaceOverride"))
+                    .and_then(Value::as_str)
+                    .map(|s| s.to_string()),
+                emit: lift_request
+                    .get("options")
+                    .and_then(|options| options.get("emit"))
+                    .and_then(Value::as_str)
+                    .map(|s| s.to_string()),
+                layer: lift_request
+                    .get("options")
+                    .and_then(|options| options.get("layer"))
+                    .and_then(Value::as_str)
+                    .map(|s| s.to_string()),
+            };
+
+            // The first lift step's surface becomes the session's
+            // canonical (used for the self-contracts attestation file).
+            if surface_for_session.is_none() {
+                surface_for_session = Some(surface.clone());
+            }
+
+            let session = match lift_plugin::dispatch_lift(
+                &project_root_for_manifests,
+                &surface,
+                lift_options,
+                quiet,
+            ) {
+                Ok(session) => session,
+                Err(LiftPluginError::MissingBinary { binary }) => {
+                    if !quiet {
+                        println!(
+                            "{}: lifter binary `{}` not found: producing empty-set attestation",
+                            "warn".yellow().bold(),
+                            binary
+                        );
+                    }
+                    let empty_cid = compute_contract_set_cid(vec![]);
+                    let result = DispatchResult {
+                        filename_cid: String::new(),
+                        contract_set_cid: empty_cid,
+                        bytes_written: 0,
+                        proof_file: None,
+                        lift_result: json!({
+                            "kind": "empty-set",
+                            "reason": "lifter binary not found",
+                            "binary": binary,
+                        }),
+                    };
+                    let claim = mint_result_claim(input, None, &result)?;
+                    return Ok(MintSession {
+                        claim,
+                        result,
+                        surface,
+                        out_dir,
+                    });
                 }
-                let empty_cid = compute_contract_set_cid(vec![]);
-                let result = DispatchResult {
-                    filename_cid: String::new(),
-                    contract_set_cid: empty_cid,
-                    bytes_written: 0,
-                    proof_file: None,
-                    lift_result: json!({
-                        "kind": "empty-set",
-                        "reason": "lifter binary not found",
-                        "binary": binary,
-                    }),
-                };
-                let claim = mint_result_claim(input, None, &result)?;
-                return Ok(MintSession {
-                    claim,
-                    result,
-                    surface,
-                    out_dir,
-                });
-            }
-            Err(LiftPluginError::Refused(refusal)) => {
-                return Err(KitError::Transformation(format!(
-                    "{}: {}",
-                    refusal.header.failure_kind, refusal.header.failure_detail
-                )))
-            }
-            Err(LiftPluginError::Failed(error)) => return Err(KitError::Transformation(error)),
-        };
+                Err(LiftPluginError::Refused(refusal)) => {
+                    return Err(KitError::Transformation(format!(
+                        "{}: {}",
+                        refusal.header.failure_kind, refusal.header.failure_detail
+                    )))
+                }
+                Err(LiftPluginError::Failed(error)) => {
+                    return Err(KitError::Transformation(error))
+                }
+            };
 
-        let lift_response = session.response().clone();
-        let lift_claim = session.claim;
-        let result = mint_lift_response(&project_root, &out_dir, quiet, lift_response)
-            .map_err(KitError::Transformation)?;
-        let claim = mint_result_claim(input, Some(&lift_claim), &result)?;
+            let response = session.response().clone();
+            // Carry forward the first plugin's lift_claim as the
+            // session's lift claim. (Future: aggregate claims into a
+            // composite — out of scope for the multi-plugin landing.)
+            if combined_lift_claim.is_none() {
+                combined_lift_claim = Some(session.claim);
+            }
+            per_plugin.push(PerPluginDispatch { surface, response });
+        }
+
+        let merged_lift_response = if per_plugin.len() == 1 {
+            // Single-plugin path: pass the response through unchanged so
+            // proof-envelope and ir-document both work as before.
+            per_plugin.into_iter().next().unwrap().response
+        } else {
+            // Multi-plugin path: every plugin MUST emit `kind:
+            // "ir-document"`. proof-envelope responses can't be merged
+            // (they're already self-signed bundles); the substrate-honest
+            // failure is to reject the mix loudly.
+            merge_ir_document_responses(per_plugin)
+                .map_err(KitError::Transformation)?
+        };
+        let result =
+            mint_lift_response(&project_root_for_manifests, &out_dir, quiet, merged_lift_response)
+                .map_err(KitError::Transformation)?;
+        let claim = mint_result_claim(input, combined_lift_claim.as_ref(), &result)?;
         Ok(MintSession {
             claim,
             result,
-            surface,
+            surface: surface_for_session
+                .expect("invariant: at least one lift step dispatched"),
             out_dir,
         })
     }
@@ -357,6 +508,26 @@ fn dispatch(
         .map_err(|error| error.to_string())
 }
 
+/// Multi-plugin dispatch: builds a fan-in mint path with N lift steps
+/// (one per declared `[[plugins]]` entry) feeding into one mint terminal
+/// step. Delegates to the same `MintKit::transform_session` as
+/// single-plugin dispatch — the substrate's path executor and the
+/// MintKit's predecessor-fan-in logic handle the rest. The user-facing
+/// wrapper for projects whose `.provekit/config.toml` declares
+/// `[[plugins]]`.
+fn dispatch_multi(
+    project_root: &Path,
+    plugins: &[PluginEntry],
+    out_dir: &Path,
+    quiet: bool,
+    library_bindings: bool,
+) -> Result<MintSession, String> {
+    let mint_input = mint_input_multi(project_root, plugins, out_dir, quiet, library_bindings);
+    MintKit::new(mint_input.inputs)
+        .transform_session(&mint_input.input)
+        .map_err(|error| error.to_string())
+}
+
 fn dispatch_path(project_root: &Path, path_file: &Path) -> Result<MintSession, String> {
     let path = path_under(project_root, path_file);
     let text = std::fs::read_to_string(&path)
@@ -390,47 +561,98 @@ fn mint_input(
     quiet: bool,
     library_bindings: bool,
 ) -> MintPathInput {
-    let lift_input = Input::Spec(lift_plugin::build_lift_params(
+    let entry = PluginEntry {
+        name: None,
+        surface: surface.to_string(),
+        workspace_override: None,
+        emit: None,
+        layer: None,
+    };
+    mint_input_multi(
         project_root,
-        surface,
-        LiftPluginOptions {
-            identify_only: false,
-            library_bindings,
-        },
-    ));
-    let lift_input_cid = address(&lift_input);
+        std::slice::from_ref(&entry),
+        out_dir,
+        quiet,
+        library_bindings,
+    )
+}
+
+/// Build a mint path with N lift steps (one per declared `[[plugins]]`
+/// entry from config.toml) feeding into a single mint terminal step.
+/// The path executor walks each lift step's `Kit::transform(Input) ->
+/// DomainClaim` independently; mint depends on all of them by name and
+/// collects/merges their outputs at the envelope mint stage. This is
+/// the substrate's path-native answer to multi-plugin orchestration:
+/// the dispatch lives in the path algebra, not in side-channel CLI
+/// loops. Single-surface callers route here with a 1-element slice.
+fn mint_input_multi(
+    project_root: &Path,
+    plugins: &[PluginEntry],
+    out_dir: &Path,
+    quiet: bool,
+    library_bindings: bool,
+) -> MintPathInput {
+    let mut inputs = HashMapInputCatalog::default();
+    let mut algebra: Vec<PathAlgebra> = Vec::with_capacity(plugins.len() + 1);
+    let mut lift_step_names: Vec<String> = Vec::with_capacity(plugins.len());
+
+    for (idx, plugin) in plugins.iter().enumerate() {
+        let lift_input = Input::Spec(lift_plugin::build_lift_params(
+            project_root,
+            &plugin.surface,
+            LiftPluginOptions {
+                identify_only: false,
+                library_bindings,
+                workspace_override: plugin.workspace_override.clone(),
+                emit: plugin.emit.clone(),
+                layer: plugin.layer.clone(),
+            },
+        ));
+        let lift_input_cid = address(&lift_input);
+        inputs.put(lift_input_cid.clone(), lift_input);
+        let lift_step_name = if plugins.len() == 1 {
+            // Preserve the historic single-step name `lift` so any
+            // path-document fixtures or external tooling keyed on it
+            // keep working.
+            "lift".to_string()
+        } else {
+            format!("lift_{idx}")
+        };
+        algebra.push(PathAlgebra {
+            name: lift_step_name.clone(),
+            kit: format!("lift-plugin:{}", plugin.surface),
+            inputs: vec![lift_input_cid],
+            depends_on: vec![],
+            verb: Verb::Transform,
+        });
+        lift_step_names.push(lift_step_name);
+    }
+
+    let surface_for_mint = plugins
+        .first()
+        .map(|p| p.surface.clone())
+        .unwrap_or_default();
     let mint_input = Input::Spec(json!({
         "projectRoot": project_root.display().to_string(),
-        "surface": surface,
+        "surface": surface_for_mint,
         "outDir": out_dir.display().to_string(),
         "options": {
             "quiet": quiet
         }
     }));
     let mint_input_cid = address(&mint_input);
-    let mut inputs = HashMapInputCatalog::default();
-    inputs.put(lift_input_cid.clone(), lift_input);
     inputs.put(mint_input_cid.clone(), mint_input);
 
+    algebra.push(PathAlgebra {
+        name: "mint".to_string(),
+        kit: "provekit-mint".to_string(),
+        inputs: vec![mint_input_cid],
+        depends_on: lift_step_names,
+        verb: Verb::Transform,
+    });
+
     MintPathInput {
-        input: Input::Path(Box::new(CorePath {
-            algebra: vec![
-                PathAlgebra {
-                    name: "lift".to_string(),
-                    kit: format!("lift-plugin:{surface}"),
-                    inputs: vec![lift_input_cid],
-                    depends_on: vec![],
-                    verb: Verb::Transform,
-                },
-                PathAlgebra {
-                    name: "mint".to_string(),
-                    kit: "provekit-mint".to_string(),
-                    inputs: vec![mint_input_cid],
-                    depends_on: vec!["lift".to_string()],
-                    verb: Verb::Transform,
-                },
-            ],
-        })),
+        input: Input::Path(Box::new(CorePath { algebra })),
         inputs,
     }
 }
@@ -817,6 +1039,10 @@ fn mint_from_ir_document(
                 let (cid, bytes) = mint_refusal_memento(decl)?;
                 members.entry(cid).or_insert(bytes);
             }
+            Some("realization-memento") => {
+                let (cid, bytes) = mint_realization_memento(decl)?;
+                members.entry(cid).or_insert(bytes);
+            }
             _ => {}
         }
     }
@@ -1158,6 +1384,45 @@ fn mint_refusal_memento(decl: &Value) -> Result<(String, Vec<u8>), String> {
     Ok((cid, canonical.into_bytes()))
 }
 
+/// Mint a `realization-memento` (Boundary variant) into the envelope.
+/// Emitted by `walk_rpc` for each `#[provekit::boundary]` annotation
+/// it finds: a function tagged as the EDGE where a concept binds to
+/// a per-language library. The materializer (downstream) reads these
+/// when retargeting consumers to other languages and substitutes the
+/// per-target sister library at each boundary callsite. The data type
+/// already exists as `RealizationMemento::Boundary` in
+/// `provekit-ir-types`; here we just envelope-mint it for the .proof.
+fn mint_realization_memento(decl: &Value) -> Result<(String, Vec<u8>), String> {
+    let realization_kind = required_str(decl, "realization_kind", "realization-memento")?;
+    if realization_kind != "boundary" {
+        return Err(format!(
+            "realization-memento: only `realization_kind = \"boundary\"` is currently \
+             minted; got `{realization_kind}`"
+        ));
+    }
+    let target_language = required_str(decl, "target_language", "realization-memento")?;
+    let concept_name = required_str(decl, "concept_name", "realization-memento")?;
+    let library = required_str(decl, "library", "realization-memento")?;
+    let source_function_name =
+        required_str(decl, "source_function_name", "realization-memento")?;
+
+    let envelope = json!({
+        "body": decl,
+        "header": {
+            "conceptName": concept_name,
+            "kind": "realization-memento",
+            "realizationKind": "boundary",
+            "library": library,
+            "sourceFunctionName": source_function_name,
+            "targetLanguage": target_language,
+        },
+        "schemaVersion": "1",
+    });
+    let canonical = encode_jcs(&json_to_cvalue(&envelope));
+    let cid = blake3_512_of(canonical.as_bytes());
+    Ok((cid, canonical.into_bytes()))
+}
+
 fn optional_str<'a>(value: &'a Value, field: &str) -> Option<&'a str> {
     value.get(field).and_then(|v| v.as_str())
 }
@@ -1468,6 +1733,35 @@ pub fn run(args: MintArgs) -> u8 {
 
     let session = if let Some(path_file) = configured_path {
         dispatch_path(&project_root, Path::new(&path_file))
+    } else if args.surface.is_none() && derived_surface.is_none() && !project_cfg.plugins.is_empty()
+    {
+        // Multi-plugin path: config.toml declared `[[plugins]]` and the
+        // user didn't override with a single `--surface` or `--kit`.
+        // Build a fan-in path with one lift step per declared plugin and
+        // one terminal mint step depending on all of them. The path
+        // executor walks each plugin's k(I)=t independently; mint merges
+        // their ir-documents at the envelope-mint stage.
+        if !args.flags.quiet {
+            println!(
+                "{}: {} plugin(s) declared: {}",
+                "config".green().bold(),
+                project_cfg.plugins.len(),
+                project_cfg
+                    .plugins
+                    .iter()
+                    .map(|p| p.display_name().to_string())
+                    .collect::<Vec<_>>()
+                    .join(", ")
+            );
+        }
+        let out_dir = args.out.clone().unwrap_or_else(|| project_root.clone());
+        dispatch_multi(
+            &project_root,
+            &project_cfg.plugins,
+            &out_dir,
+            args.flags.quiet,
+            args.library_bindings,
+        )
     } else {
         // Resolve surface: --surface > --kit derived > project config > user config.
         let surface = if let Some(s) = args.surface.clone() {
@@ -1482,7 +1776,7 @@ pub fn run(args: MintArgs) -> u8 {
                 Some(s) => s,
                 None => {
                     eprintln!(
-                        "{}: no lift surface configured. Set [authoring] surface or [authoring.lift] surface in .provekit/config.toml, or pass --surface/--kit.",
+                        "{}: no lift surface configured. Set [[plugins]] or [authoring] surface in .provekit/config.toml, or pass --surface/--kit.",
                         "error".red().bold()
                     );
                     return EXIT_USER_ERROR;

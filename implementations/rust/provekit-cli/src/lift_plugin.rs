@@ -38,10 +38,30 @@ impl LiftPluginSession {
     }
 }
 
-#[derive(Debug, Clone, Copy, Default)]
+#[derive(Debug, Clone, Default)]
 pub struct LiftPluginOptions {
     pub identify_only: bool,
     pub library_bindings: bool,
+    /// Per-plugin workspace_root override (from config.toml's
+    /// `[[plugins]] workspace_override = ...`). When set, replaces the
+    /// project root as the `workspace_root` sent in the lift request.
+    /// Used so a shim can route ONE plugin at a cargo-resolved
+    /// dependency's source while OTHER plugins in the same mint still
+    /// see the shim's own project root.
+    pub workspace_override: Option<String>,
+    /// Optional `options.emit` field passed through to the plugin via
+    /// the lift request. `"ir-document"` flips self-minting plugins
+    /// (provekit-lift) into composable mode so their output can be
+    /// merged with sibling plugins' ir-documents at mint time.
+    pub emit: Option<String>,
+    /// Optional explicit `options.layer` override (from config.toml's
+    /// `[[plugins]] layer = ...`). When set, replaces the layer derived
+    /// from `library_bindings` / `identify_only`. Used by lifters whose
+    /// behavior is gated on the layer string (e.g., the TS sugar lifter
+    /// only emits library-sugar-binding-entry when layer ==
+    /// "library-bindings"), so per-plugin config can request the
+    /// appropriate layer regardless of the global CLI flag.
+    pub layer: Option<String>,
 }
 
 #[derive(Debug, Clone)]
@@ -330,25 +350,54 @@ fn resolved_working_dir(project_root: &Path, manifest: &LiftPluginManifest) -> O
 }
 
 pub fn build_lift_params(project_root: &Path, surface: &str, options: LiftPluginOptions) -> Value {
-    let workspace_root = project_root
-        .canonicalize()
-        .unwrap_or_else(|_| project_root.to_path_buf());
-    let layer = if options.identify_only {
+    // Per-plugin override takes precedence over the project root.
+    // Substrate-honest: the plugin receives the workspace_root the
+    // config declared, not the directory cmd_mint was invoked from.
+    let workspace_root: PathBuf = if let Some(override_path) = options.workspace_override.as_deref()
+    {
+        PathBuf::from(override_path)
+            .canonicalize()
+            .unwrap_or_else(|_| PathBuf::from(override_path))
+    } else {
+        project_root
+            .canonicalize()
+            .unwrap_or_else(|_| project_root.to_path_buf())
+    };
+    // Explicit per-plugin `layer` (from config.toml) wins. Falls back
+    // to the derived layer (CLI flag / identify_only) for back-compat
+    // with single-surface mints.
+    let layer: &str = if let Some(explicit) = options.layer.as_deref() {
+        explicit
+    } else if options.identify_only {
         "identify-only"
     } else if options.library_bindings {
         "library-bindings"
     } else {
         "all"
     };
+    let mut options_obj = json!({
+        "layer": layer,
+        "identifyOnly": options.identify_only,
+    });
+    if let Some(emit) = options.emit.as_deref() {
+        options_obj["emit"] = json!(emit);
+    }
+    // Preserve the original workspace_override in the request itself,
+    // so consumers of the lift_request (like MintKit::transform_session)
+    // can distinguish "use the project root" from "this plugin was
+    // overridden to a different workspace" — important for manifest
+    // lookup, which always lives under the project root regardless of
+    // where the plugin walks. The actual `workspace_root` field above
+    // already encodes the final (post-override) walk root.
+    if let Some(override_path) = options.workspace_override.as_deref() {
+        options_obj["workspaceOverride"] = json!(override_path);
+    }
     json!({
         "surface": surface,
         "workspace_root": workspace_root,
         "config_path": ".provekit/config.toml",
         "source_paths": ["."],
-        "options": {
-            "layer": layer,
-            "identifyOnly": options.identify_only,
-        }
+        "options": options_obj,
     })
 }
 
@@ -376,6 +425,7 @@ mod tests {
             LiftPluginOptions {
                 identify_only: false,
                 library_bindings: true,
+                ..Default::default()
             },
         );
 
@@ -399,6 +449,7 @@ mod tests {
             LiftPluginOptions {
                 identify_only: false,
                 library_bindings: false,
+                ..Default::default()
             },
         );
 

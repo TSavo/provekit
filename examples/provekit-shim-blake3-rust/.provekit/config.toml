@@ -1,0 +1,17 @@
+# First L0 boundary shim. Declares its lift plugins:
+#   - rust-sugar: walk_rpc finds #[provekit::sugar],
+#                 #[provekit::boundary], #[provekit::refuse] on the
+#                 shim's own src. Emits library-sugar-binding-entry,
+#                 realization-memento (boundary), and refusal-memento.
+#   - rust-contracts: provekit-lift dispatches the 9 Rust adapters
+#                 against the shim's own test corpus.
+
+[[plugins]]
+name = "rust-sugar"
+surface = "rust-bind"
+layer = "library-bindings"
+
+[[plugins]]
+name = "rust-contracts"
+surface = "rust-contracts"
+emit = "ir-document"

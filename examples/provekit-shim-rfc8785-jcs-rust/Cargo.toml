@@ -1,0 +1,11 @@
+[package]
+name = "provekit-shim-rfc8785-jcs-rust"
+version = "0.1.0"
+edition = "2021"
+license = "Apache-2.0"
+description = "ProvekIt L0 shim: substrate-honest boundary realization for RFC 8785 (JSON Canonicalization Scheme). Sister shims in other languages (provekit-shim-rfc8785-jcs-typescript, etc.) anchor to the same boundary contract (boundary:rfc8785-canonical-json). Cross-platform consumers declare @boundary; this shim's @sugar realizes the concept via inlined Rust code."
+repository = "https://github.com/TSavo/provekit"
+
+[dependencies]
+serde_json = { version = "1", features = ["preserve_order"] }
+provekit = { package = "provekit-sugar", path = "../../implementations/rust/provekit-sugar" }

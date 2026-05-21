@@ -1,0 +1,11 @@
+[package]
+name = "provekit-shim-serde-json-rust"
+version = "0.1.0"
+edition = "2021"
+license = "Apache-2.0"
+description = "ProvekIt L0 shim: substrate-honest boundary realization for serde_json (RFC 8259 JSON). Sister shims in other languages anchor to the same boundary contract (boundary:rfc8259-json) via their language's native JSON facility (TS's JSON, Python's json, Java's Gson/Jackson, ...)."
+repository = "https://github.com/TSavo/provekit"
+
+[dependencies]
+serde_json = "1"
+provekit = { package = "provekit-sugar", path = "../../implementations/rust/provekit-sugar" }

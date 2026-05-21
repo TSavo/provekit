@@ -402,7 +402,8 @@ impl SiteTransformKit for MaterializeKit<'_> {
         // `realize_spec_from_payload` keeps a single permissive-defaults
         // surface across both code paths and preserves byte-identical
         // realize-request shape against Phase A.
-        let spec = realize_spec_from_payload(&carrier.raw_payload)?;
+        let mut spec = realize_spec_from_payload(&carrier.raw_payload)?;
+        augment_spec_with_shim_term_shape(&mut spec, self.project_root);
         let realized = self.realize_via_path(spec)?;
         // String-formatted refusal sentence rather than a structured
         // gap-record memento: materialize is a build-pipeline workflow
@@ -434,6 +435,101 @@ impl SiteTransformKit for MaterializeKit<'_> {
                 binding_cid,
                 loss_record: realized.observed_loss_record,
             })
+        }
+    }
+}
+
+/// If the carrier's `library` names a shim crate (i.e. there's a directory
+/// `<project_root>/examples/<library>/` containing one or more `.proof`
+/// envelopes), open the .proof, find the `library-sugar-binding-entry`
+/// whose `concept_name` matches the spec's `concept_name`, and merge its
+/// `term_shape` into the spec under `termShape`. The realize plugin's
+/// dispatch already routes `term_shape`-bearing requests through
+/// `emit_from_term_shape_with_bindings`; this is the only wire missing
+/// for cross-platform @boundary stubs to materialize against their
+/// sister shim's @sugar realization.
+fn augment_spec_with_shim_term_shape(spec: &mut Json, project_root: &Path) {
+    let Some(obj) = spec.as_object_mut() else {
+        return;
+    };
+    let Some(library) = obj
+        .get("library")
+        .or_else(|| obj.get("libraryTag"))
+        .and_then(Json::as_str)
+        .map(str::to_string)
+    else {
+        return;
+    };
+    let Some(concept_name) = obj
+        .get("concept_name")
+        .or_else(|| obj.get("conceptName"))
+        .and_then(Json::as_str)
+        .map(str::to_string)
+    else {
+        return;
+    };
+    let shim_dir = project_root.join("examples").join(&library);
+    if !shim_dir.is_dir() {
+        return;
+    }
+    let Ok(entries) = std::fs::read_dir(&shim_dir) else {
+        return;
+    };
+    for entry in entries.flatten() {
+        let path = entry.path();
+        if !path
+            .file_name()
+            .and_then(|n| n.to_str())
+            .is_some_and(|n| n.ends_with(".proof"))
+        {
+            continue;
+        }
+        let Ok(bytes) = std::fs::read(&path) else {
+            continue;
+        };
+        let Ok(catalog) = provekit_proof_envelope::cbor_decode::decode(&bytes) else {
+            continue;
+        };
+        let Some(root) = catalog.as_map() else {
+            continue;
+        };
+        let Some(members) = root.get("members").and_then(|v| v.as_map()) else {
+            continue;
+        };
+        for (_cid, member) in members {
+            // Each member is a CBOR byte string whose contents are the
+            // member's JCS-JSON encoding (`{header, body, schemaVersion}`).
+            let Some(member_bytes) = member.as_bstr() else {
+                continue;
+            };
+            let Ok(member_text) = std::str::from_utf8(member_bytes) else {
+                continue;
+            };
+            let Ok(member_json) = serde_json::from_str::<Json>(member_text) else {
+                continue;
+            };
+            let Some(body) = member_json.get("body") else {
+                continue;
+            };
+            if body.get("kind").and_then(Json::as_str) != Some("library-sugar-binding-entry") {
+                continue;
+            }
+            if body.get("concept_name").and_then(Json::as_str) != Some(concept_name.as_str()) {
+                continue;
+            }
+            if body.get("target_language").and_then(Json::as_str) != Some("rust") {
+                continue;
+            }
+            if let Some(term_shape) = body.get("term_shape") {
+                obj.insert("termShape".to_string(), term_shape.clone());
+            }
+            if let Some(operand_bindings) = body.get("operand_bindings") {
+                obj.insert("operandBindings".to_string(), operand_bindings.clone());
+            }
+            if let Some(cid) = body.get("signature_shape_cid").cloned() {
+                obj.insert("signatureShapeCid".to_string(), cid);
+            }
+            return;
         }
     }
 }

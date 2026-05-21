@@ -19,6 +19,7 @@
 //    (which is a raw bstr per the spec).
 
 pub mod cbor;
+pub mod cbor_decode;
 pub mod proof;
 pub mod sign;
 
@@ -26,6 +27,7 @@ pub use cbor::{
     cbor_encode_array_head, cbor_encode_bstr, cbor_encode_map_head, cbor_encode_tstr,
     cbor_encode_uint, CborMajor,
 };
+pub use cbor_decode::{decode as cbor_decode, CborDecodeError, CborValue};
 pub use proof::{build_proof_envelope, ProofEnvelopeInput, ProofEnvelopeOutput};
 pub use sign::{
     ed25519_pubkey_string, ed25519_sign_string, ed25519_sign_with_seed, ed25519_verify_bytes,

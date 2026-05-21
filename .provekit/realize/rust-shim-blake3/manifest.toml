@@ -1,0 +1,8 @@
+# PEP 1.7.0 realize plugin manifest for Rust + provekit-shim-blake3-rust.
+# Cross-platform @boundary sites tagged `library = "provekit-shim-blake3-rust"`
+# dispatch here. concept:blake3-512-of is realized from the shim's signed
+# .proof envelope.
+name = "rust-realize-shim-blake3"
+library_tag = "provekit-shim-blake3-rust"
+command = ["implementations/rust/target/debug/provekit-realize-rust", "--rpc"]
+working_dir = "."

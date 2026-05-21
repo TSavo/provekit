@@ -1,0 +1,8 @@
+# PEP 1.7.0 realize plugin manifest for Rust + provekit-shim-rfc8785-jcs-rust.
+# Cross-platform @boundary sites tagged `library = "provekit-shim-rfc8785-jcs-rust"`
+# dispatch here. concept:rfc8785-jcs-encode realizes from the shim's
+# signed .proof envelope.
+name = "rust-realize-shim-rfc8785-jcs"
+library_tag = "provekit-shim-rfc8785-jcs-rust"
+command = ["implementations/rust/target/debug/provekit-realize-rust", "--rpc"]
+working_dir = "."
