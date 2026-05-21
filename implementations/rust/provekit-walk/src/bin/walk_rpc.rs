@@ -2077,6 +2077,16 @@ fn bindings_of_expr(expr: &syn::Expr, ctx: &ShapeContext) -> BindingResult {
             args.extend(e.args.iter().map(|arg| bindings_of_expr(arg, ctx)));
             operation_binding_result(args)
         }
+        // concept:array-repeat: args[0]=elem bindings, args[1]=len (no symbol).
+        syn::Expr::Repeat(e) => operation_binding_result(vec![
+            bindings_of_expr(&e.expr, ctx),
+            BindingResult::default(), // len is a leaf, no operand binding slot
+        ]),
+        // concept:ref: args[0]=inner bindings, args[1]=mutability leaf (no symbol).
+        syn::Expr::Reference(e) => operation_binding_result(vec![
+            bindings_of_expr(&e.expr, ctx),
+            BindingResult::default(), // mutability leaf, no operand binding slot
+        ]),
         syn::Expr::Block(b) => bindings_of_block(&b.block, ctx),
         syn::Expr::Paren(e) => bindings_of_expr(&e.expr, ctx),
         syn::Expr::Group(e) => bindings_of_expr(&e.expr, ctx),
@@ -2129,7 +2139,7 @@ fn operand_symbol(expr: &syn::Expr) -> Option<String> {
 fn literal_symbol(lit: &syn::Lit) -> Option<String> {
     match lit {
         syn::Lit::Bool(value) => Some(value.value().to_string()),
-        syn::Lit::Int(value) => Some(value.base10_digits().to_string()),
+        syn::Lit::Int(value) => Some(value.to_string()),
         syn::Lit::Str(value) => Some(format!("{:?}", value.value())),
         _ => None,
     }
@@ -2203,6 +2213,19 @@ fn local_binding_symbol(local: &syn::Local) -> Option<String> {
     }
 }
 
+fn local_binding_is_mut(local: &syn::Local) -> bool {
+    match &local.pat {
+        syn::Pat::Ident(ident) => ident.mutability.is_some(),
+        syn::Pat::Type(pat_type) => {
+            let syn::Pat::Ident(ident) = &*pat_type.pat else {
+                return false;
+            };
+            ident.mutability.is_some()
+        }
+        _ => false,
+    }
+}
+
 fn local_binding_sort(
     local: &syn::Local,
     ctx: &ShapeContext,
@@ -2234,10 +2257,30 @@ fn shape_of_stmt(stmt: &syn::Stmt, ctx: &ShapeContext) -> Arc<CValue> {
                 return non_operation_shape();
             };
             if local_binding_symbol(local).is_some() {
-                return gamma_operation(
-                    "concept:assign",
-                    vec![non_operation_shape(), shape_of_expr(&init.expr, ctx)],
-                );
+                // Emit concept:assign with an optional third arg for mutability.
+                // args[0] = target (non_operation_shape — symbol resolved via operand_bindings)
+                // args[1] = value expression
+                // args[2] = mutability flag leaf {source_text:"mut"} when `let mut`,
+                //           or omitted (2-arg form) for `let`.
+                // The realize side checks args.len() == 3 to detect let-mut.
+                let mut assign_args = vec![
+                    non_operation_shape(),
+                    shape_of_expr(&init.expr, ctx),
+                ];
+                if local_binding_is_mut(local) {
+                    // Emit a concept:literal boolean true as the mutability flag.
+                    let Some(op_cid) = concept_op_cid("concept:literal") else {
+                        return non_operation_shape();
+                    };
+                    assign_args.push(CValue::object([
+                        ("args", CValue::array(Vec::new())),
+                        ("concept_name", CValue::string("concept:literal")),
+                        ("op_cid", CValue::string(op_cid)),
+                        ("sort", CValue::string(SORT_BOOL_CID)),
+                        ("value", CValue::boolean(true)),
+                    ]));
+                }
+                return gamma_operation("concept:assign", assign_args);
             }
             shape_of_expr(&init.expr, ctx)
         }
@@ -2345,6 +2388,24 @@ fn shape_of_expr(expr: &syn::Expr, ctx: &ShapeContext) -> Arc<CValue> {
             gamma_operation("concept:call", args)
         }
         syn::Expr::Lit(lit) => literal_shape(&lit.lit),
+        // [elem; count] syntax — emitted as concept:array-repeat with args [elem, len].
+        syn::Expr::Repeat(e) => gamma_operation(
+            "concept:array-repeat",
+            vec![shape_of_expr(&e.expr, ctx), shape_of_expr(&e.len, ctx)],
+        ),
+        // &expr and &mut expr — emitted as concept:ref with args [inner, mutability_leaf].
+        // mutability_leaf: {kind:"mutability", text:"mut"} or {kind:"mutability", text:""}.
+        syn::Expr::Reference(e) => {
+            let mut_text = if e.mutability.is_some() { "mut" } else { "" };
+            let mut_leaf = CValue::object([
+                ("kind", CValue::string("mutability")),
+                ("text", CValue::string(mut_text)),
+            ]);
+            gamma_operation(
+                "concept:ref",
+                vec![shape_of_expr(&e.expr, ctx), mut_leaf],
+            )
+        }
         syn::Expr::Block(b) => shape_of_block(&b.block, ctx),
         syn::Expr::Paren(e) => shape_of_expr(&e.expr, ctx),
         syn::Expr::Group(e) => shape_of_expr(&e.expr, ctx),
@@ -2519,11 +2580,28 @@ fn literal_shape(lit: &syn::Lit) -> Arc<CValue> {
         syn::Lit::Bool(value) => {
             concept_literal_shape(CValue::boolean(value.value()), SORT_BOOL_CID)
         }
-        syn::Lit::Int(value) => value
-            .base10_parse::<i64>()
-            .ok()
-            .map(|decoded| concept_literal_shape(CValue::integer(decoded), SORT_INT_CID))
-            .unwrap_or_else(non_operation_shape),
+        syn::Lit::Int(value) => {
+            // Emit the standard concept:literal shape with the integer value, PLUS
+            // a `source_text` field carrying the full token (e.g. "0u8", "64usize").
+            // The realize side checks `source_text` first and emits it verbatim,
+            // falling back to the base10 integer value for integers without suffix.
+            // This preserves type suffixes that are load-bearing (e.g. [0u8; 64]).
+            let token_text = value.to_string();
+            let Some(decoded) = value.base10_parse::<i64>().ok() else {
+                return non_operation_shape();
+            };
+            let Some(op_cid) = concept_op_cid("concept:literal") else {
+                return non_operation_shape();
+            };
+            CValue::object([
+                ("args", CValue::array(Vec::new())),
+                ("concept_name", CValue::string("concept:literal")),
+                ("op_cid", CValue::string(op_cid)),
+                ("sort", CValue::string(SORT_INT_CID)),
+                ("source_text", CValue::string(token_text)),
+                ("value", CValue::integer(decoded)),
+            ])
+        }
         syn::Lit::Float(value) => {
             concept_literal_shape(CValue::string(value.base10_digits()), SORT_FLOAT_CID)
         }

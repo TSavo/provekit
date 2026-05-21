@@ -359,7 +359,7 @@ fn lower_term_shape_body(
     }
     if concept_name == "concept:assign" || concept_name == "assign" {
         let args = term_shape_args(shape);
-        if args.len() != 2 {
+        if args.len() < 2 {
             return None;
         }
         let target = lower_term_shape_expression(args[0], context, &append_position(position, 0))?;
@@ -373,9 +373,22 @@ fn lower_term_shape_body(
         if already_defined {
             return Some(format!("{} = {};", target.text, value.text));
         }
+        // 3-arg form: args[2] is a concept:literal bool true → `let mut`.
+        // 2-arg form: no third arg → `let`.
+        let is_mut = args.len() >= 3
+            && args[2]
+                .get("value")
+                .and_then(Value::as_bool)
+                .unwrap_or(false);
+        let let_kw = if is_mut { "let mut" } else { "let" };
+        // Omit type annotation when value.type_name is empty — Rust's local type
+        // inference covers it (happens for concept:call results, array-repeat, etc.).
+        if value.type_name.is_empty() {
+            return Some(format!("{} {} = {};", let_kw, target.text, value.text));
+        }
         return Some(format!(
-            "let {}: {} = {};",
-            target.text, value.type_name, value.text
+            "{} {}: {} = {};",
+            let_kw, target.text, value.type_name, value.text
         ));
     }
     if concept_name == "concept:return" || concept_name == "return" {
@@ -436,6 +449,13 @@ fn lower_term_shape_expression(
         return Some(term_shape_leaf_expression(shape, context, position));
     };
     let args = term_shape_args(shape);
+    // concept:literal shapes have a concept_name but are leaf values, not operations.
+    // Delegate to term_shape_leaf_expression which handles the `value` / `source_text`
+    // fields directly, so literal shapes embedded inside other shapes (e.g. as args
+    // of concept:array-repeat) lower correctly without going through the args loop.
+    if concept_name == "concept:literal" || concept_name == "literal" {
+        return Some(term_shape_leaf_expression(shape, context, position));
+    }
     if concept_name == "concept:seq" || concept_name == "seq" {
         lower_term_shape_body(shape, context, position)?;
         return context
@@ -478,9 +498,11 @@ fn lower_term_shape_expression(
                 })
                 .collect::<Option<Vec<_>>>()?;
             let text = format!("{}({})", callee_text, call_args.join(", "));
+            // Return empty type_name so the enclosing concept:assign arm omits
+            // the type annotation (Rust's local type inference covers it).
             return Some(ShapeExpression {
                 text,
-                type_name: map_source_type(&context.return_type),
+                type_name: String::new(),
             });
         }
         // Method call: args[0] is receiver, args[1] is {kind:"method"} leaf,
@@ -503,13 +525,42 @@ fn lower_term_shape_expression(
                 })
                 .collect::<Option<Vec<_>>>()?;
             let text = format!("{}.{}({})", receiver.text, method_text, call_args.join(", "));
+            // Return empty type_name so the enclosing concept:assign arm omits
+            // the type annotation (Rust's local type inference covers it).
             return Some(ShapeExpression {
                 text,
-                type_name: map_source_type(&context.return_type),
+                type_name: String::new(),
             });
         }
         // Callee identity absent — refuse.
         return None;
+    }
+    // concept:array-repeat: [elem; len] — walk_rpc emits args=[elem_shape, len_shape].
+    if concept_name == "concept:array-repeat" {
+        if args.len() != 2 {
+            return None;
+        }
+        let elem = lower_term_shape_expression(args[0], context, &append_position(position, 0))?;
+        let len = lower_term_shape_expression(args[1], context, &append_position(position, 1))?;
+        return Some(ShapeExpression {
+            text: format!("[{}; {}]", elem.text, len.text),
+            type_name: String::new(),
+        });
+    }
+    // concept:ref: &expr or &mut expr — walk_rpc emits args=[inner_shape, mutability_leaf].
+    // mutability_leaf: {kind:"mutability", text:"mut"} or {kind:"mutability", text:""}.
+    if concept_name == "concept:ref" {
+        if args.len() != 2 {
+            return None;
+        }
+        let inner = lower_term_shape_expression(args[0], context, &append_position(position, 0))?;
+        let mut_leaf = args[1];
+        let mut_text = mut_leaf.get("text").and_then(Value::as_str).unwrap_or("");
+        let prefix = if mut_text == "mut" { "&mut " } else { "&" };
+        return Some(ShapeExpression {
+            text: format!("{}{}", prefix, inner.text),
+            type_name: String::new(),
+        });
     }
     let mut arg_terms = Vec::new();
     for (index, arg) in args.iter().enumerate() {
@@ -542,13 +593,23 @@ fn term_shape_leaf_expression(
             };
         }
     }
+    // Literal leaf: concept:literal shape emitted by walk_rpc's literal_shape fn.
+    // If `source_text` is present (added for integer literals with type suffixes
+    // like `0u8` or `64usize`), use it verbatim — preserves the suffix.
+    // Otherwise fall back to the integer/bool/string value via literal_term.
     if shape.get("kind").and_then(Value::as_str) == Some("literal") || shape.get("value").is_some()
     {
+        if let Some(source_text) = shape.get("source_text").and_then(Value::as_str) {
+            return ShapeExpression {
+                text: source_text.to_string(),
+                type_name: String::new(),
+            };
+        }
         return literal_term(shape.get("value").unwrap_or(&Value::Null));
     }
-    // Callee identity leaves emitted by walk_rpc for concept:call shapes.
-    // kind:"path"   → free function callee text (e.g. "blake3::Hasher::new")
-    // kind:"method" → method ident text (e.g. "update")
+    // Leaf kinds emitted by walk_rpc that carry their text verbatim:
+    // kind:"path"        → free function callee (e.g. "blake3::Hasher::new")
+    // kind:"method"      → method ident (e.g. "update")
     // Return the text verbatim — NOT through literal_term which would quote it.
     if let Some(kind) = shape.get("kind").and_then(Value::as_str) {
         if kind == "path" || kind == "method" {
