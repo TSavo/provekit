@@ -3,6 +3,7 @@
 // `provekit materialize` turns concept-citation carriers in source files into
 // library-bound source by composing the existing LowerKit/realize path.
 
+use std::collections::BTreeMap;
 use std::io::Write;
 use std::path::{Path, PathBuf};
 
@@ -125,6 +126,7 @@ pub fn run(args: MaterializeArgs) -> u8 {
                 &args.source_dir,
                 source_lang,
                 &target_lang,
+                args.out_dir.as_deref(),
             );
         }
     }
@@ -212,6 +214,36 @@ pub fn run(args: MaterializeArgs) -> u8 {
     EXIT_OK
 }
 
+/// #1361 follow-up / #1355: accumulated target-language file content
+/// for cross-language emission. One per source file → emits one composite
+/// target-language file with imports + each RESOLVE'd boundary's body.
+#[derive(Debug, Clone, Default)]
+struct EmittedFile {
+    bodies: Vec<String>,
+    /// Scope-bringings deduplicated across all libraries used in this file.
+    imports: std::collections::BTreeSet<String>,
+}
+
+/// Map a target language to a file extension. Substrate-honest fallback
+/// "txt" for unknown languages (no per-lang knowledge encoded beyond the
+/// declared extension; the kit could declare this in its manifest in a
+/// follow-up substrate-mint).
+fn target_lang_file_extension(target_lang: &str) -> &'static str {
+    match target_lang {
+        "rust" => "rs",
+        "python" => "py",
+        "typescript" => "ts",
+        "java" => "java",
+        "c" => "c",
+        "csharp" => "cs",
+        "go" => "go",
+        "php" => "php",
+        "ruby" => "rb",
+        "zig" => "zig",
+        _ => "txt",
+    }
+}
+
 /// #1361 chunk 2 part B / #1355: invoke target kit's realize binary for a
 /// RESOLVE'd boundary in cross-language discovery mode. The realize binary
 /// owns the concept-hub → target-syntax translation internally; cmd_materialize
@@ -274,6 +306,7 @@ fn run_cross_language_discovery(
     source_dir: &Path,
     source_lang: &str,
     target_lang: &str,
+    out_dir: Option<&Path>,
 ) -> u8 {
     eprintln!(
         "{} cross-language discovery: {} -> {}",
@@ -286,6 +319,11 @@ fn run_cross_language_discovery(
     let mut resolves = 0usize;
     let mut ambiguous = 0usize;
     let mut refuses = 0usize;
+    // #1361 follow-up: accumulate emitted bodies per source file when
+    // --out-dir is set. Each (source_path, target_lang) → composite file
+    // with imports (from realize manifest's scope_bringings) + all
+    // RESOLVE'd boundaries' bodies concatenated.
+    let mut emitted: BTreeMap<PathBuf, EmittedFile> = BTreeMap::new();
 
     for entry in WalkDir::new(source_dir).into_iter().flatten() {
         let path = entry.path();
@@ -352,14 +390,32 @@ fn run_cross_language_discovery(
                     // realize binary for the RESOLVE'd boundary. The realize
                     // binary owns its own concept-hub → target-syntax
                     // translation internally. cmd_materialize just routes
-                    // the concept-hub-typed spec to it and prints the
-                    // emitted body. NO target-syntax knowledge in materialize.
+                    // the concept-hub-typed spec to it and gets target source.
+                    // NO target-syntax knowledge in materialize.
                     if let Some(body) =
                         invoke_target_realize_for_discovery(project_root, target_lang, &matches[0], &carrier)
                     {
                         let preview: String = body.chars().take(120).collect();
                         let suffix = if body.chars().count() > 120 { "..." } else { "" };
                         eprintln!("      target body preview: {preview}{suffix}");
+                        // #1361 follow-up: when --out-dir is set, accumulate
+                        // the emitted body into the per-source-file composite.
+                        // Imports come from the target realize manifest's
+                        // scope_bringings (#1360).
+                        if out_dir.is_some() {
+                            let entry = emitted
+                                .entry(path.to_path_buf())
+                                .or_default();
+                            entry.bodies.push(body);
+                            let scope_imports = scope_bringings_for_realize(
+                                project_root,
+                                target_lang,
+                                &matches[0],
+                            );
+                            for imp in scope_imports {
+                                entry.imports.insert(imp);
+                            }
+                        }
                     }
                 }
                 _ => {
@@ -390,10 +446,68 @@ fn run_cross_language_discovery(
         );
         return EXIT_USER_ERROR;
     }
-    eprintln!(
-        "{}: discovery-only mode — target-language code emission is #1361 chunk 2 part B.",
-        "note".cyan().bold()
-    );
+    // #1361 follow-up: when --out-dir is set and we have any RESOLVE'd
+    // emissions, write target-language composite files.
+    if let Some(out_dir_path) = out_dir {
+        if let Err(err) = std::fs::create_dir_all(out_dir_path) {
+            eprintln!(
+                "{}: failed to create --out-dir {}: {err}",
+                "error".red().bold(),
+                out_dir_path.display()
+            );
+            return EXIT_USER_ERROR;
+        }
+        let ext = target_lang_file_extension(target_lang);
+        let mut files_written = 0usize;
+        for (source_path, file) in &emitted {
+            if file.bodies.is_empty() {
+                continue;
+            }
+            let stem = source_path
+                .file_stem()
+                .and_then(|s| s.to_str())
+                .unwrap_or("materialized");
+            let out_path = out_dir_path.join(format!("{stem}.{ext}"));
+            let imports_block = file
+                .imports
+                .iter()
+                .cloned()
+                .collect::<Vec<_>>()
+                .join("\n");
+            let bodies_block = file.bodies.join("\n\n");
+            let content = if imports_block.is_empty() {
+                format!("{bodies_block}\n")
+            } else {
+                format!("{imports_block}\n\n{bodies_block}\n")
+            };
+            if let Err(err) = std::fs::write(&out_path, content) {
+                eprintln!(
+                    "{}: failed to write {}: {err}",
+                    "error".red().bold(),
+                    out_path.display()
+                );
+                return EXIT_USER_ERROR;
+            }
+            eprintln!(
+                "  {} wrote {} ({} body bodies, {} imports)",
+                "EMIT".green().bold(),
+                out_path.display(),
+                file.bodies.len(),
+                file.imports.len()
+            );
+            files_written += 1;
+        }
+        eprintln!(
+            "{} cross-language emission: {files_written} file(s) written to {}",
+            "materialize".green().bold(),
+            out_dir_path.display()
+        );
+    } else {
+        eprintln!(
+            "{}: discovery-only mode. Add --out-dir <PATH> to emit target-language files.",
+            "note".cyan().bold()
+        );
+    }
     EXIT_OK
 }
 
