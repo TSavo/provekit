@@ -2,5 +2,8 @@
 # cmd_bind dispatches canonical rewrite emission here when target-language=typescript and library_tag=better-sqlite3.
 name = "typescript-realize-better-sqlite3"
 library_tag = "better-sqlite3"
+# #1364 / #1355: per-kit concept coverage. Sourced from
+# menagerie/typescript-language-signature/specs/body-templates/typescript-canonical-bodies-better-sqlite3.json.
+provides_concepts = ["concept:sql-execute", "concept:sql-query"]
 command = ["implementations/typescript/target/release/provekit-realize-typescript-better-sqlite3", "--rpc"]
 working_dir = "."

@@ -2,5 +2,8 @@
 # cmd_bind dispatches canonical rewrite emission here when target-language=python and library_tag=aiosqlite.
 name = "python-realize-aiosqlite"
 library_tag = "aiosqlite"
+# #1364 / #1355: per-kit concept coverage. Sourced from
+# menagerie/python-language-signature/specs/body-templates/python-canonical-bodies-aiosqlite.json.
+provides_concepts = ["concept:insert-and-get-id", "concept:sql-execute", "concept:sql-query"]
 command = ["implementations/python/target/release/provekit-realize-python-aiosqlite", "--rpc"]
 working_dir = "."

@@ -2,5 +2,8 @@
 # cmd_bind dispatches canonical rewrite emission here when target-language=typescript and library_tag=pg.
 name = "typescript-realize-pg"
 library_tag = "pg"
+# #1364 / #1355: per-kit concept coverage. Sourced from
+# menagerie/typescript-language-signature/specs/body-templates/typescript-canonical-bodies-pg.json.
+provides_concepts = ["concept:insert-and-get-id", "concept:sql-execute", "concept:sql-query"]
 command = ["implementations/typescript/target/release/provekit-realize-typescript-pg", "--rpc"]
 working_dir = "."

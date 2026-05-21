@@ -2,5 +2,8 @@
 # cmd_bind dispatches canonical rewrite emission here when target-language=python and library_tag=sqlite3.
 name = "python-realize-sqlite3"
 library_tag = "sqlite3"
+# #1364 / #1355: per-kit concept coverage (22 concepts). Sourced from
+# menagerie/python-language-signature/specs/body-templates/python-canonical-bodies-sqlite3.json.
+provides_concepts = ["concept:contract-observation", "concept:insert-and-get-id", "concept:sql-batch-execute", "concept:sql-busy-timeout", "concept:sql-changes-count", "concept:sql-connection-close", "concept:sql-connection-open", "concept:sql-execute", "concept:sql-fetch-batch", "concept:sql-prepare", "concept:sql-prepare-cached", "concept:sql-progress-handler", "concept:sql-query", "concept:sql-row-get-column", "concept:sql-row-mapping", "concept:sql-savepoint", "concept:sql-schema-dump", "concept:sql-transaction-begin", "concept:sql-transaction-commit", "concept:sql-transaction-rollback", "concept:sql-udf-aggregate", "concept:sql-udf-register"]
 command = ["implementations/python/target/release/provekit-realize-python-sqlite3", "--rpc"]
 working_dir = "."
