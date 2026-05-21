@@ -2087,6 +2087,18 @@ fn bindings_of_expr(expr: &syn::Expr, ctx: &ShapeContext) -> BindingResult {
             bindings_of_expr(&e.expr, ctx),
             BindingResult::default(), // mutability leaf, no operand binding slot
         ]),
+        // concept:closure: args[0]=body bindings, args[1..]=param literal slots
+        // (no operand bindings — they're concept:literal source_text leaves).
+        // Closure-introduced param symbols flow through the existing
+        // Expr::Path -> operand_symbol path when referenced in the body;
+        // that's the McCarthy address resolution.
+        syn::Expr::Closure(e) => {
+            let mut arg_bindings = vec![bindings_of_expr(&e.body, ctx)];
+            for _ in &e.inputs {
+                arg_bindings.push(BindingResult::default());
+            }
+            operation_binding_result(arg_bindings)
+        }
         syn::Expr::Block(b) => bindings_of_block(&b.block, ctx),
         syn::Expr::Paren(e) => bindings_of_expr(&e.expr, ctx),
         syn::Expr::Group(e) => bindings_of_expr(&e.expr, ctx),
@@ -2406,6 +2418,38 @@ fn shape_of_expr(expr: &syn::Expr, ctx: &ShapeContext) -> Arc<CValue> {
                 vec![shape_of_expr(&e.expr, ctx), mut_leaf],
             )
         }
+        // |param1, param2, ...| body — emitted as concept:closure with
+        // args = [body_shape, param1_literal, param2_literal, ...]. Body
+        // at args[0], param-name literals at args[1..]. No new substrate
+        // concept needed (concept:closure already in catalog as
+        // abstraction). Param names are concept:literal with source_text.
+        //
+        // Closure-introduced bindings flow through the existing
+        // Expr::Path -> operand_symbol path at use site (McCarthy address
+        // resolution); we do NOT pre-bind closure params here.
+        syn::Expr::Closure(e) => {
+            // Only handle Pat::Ident inputs (the common case). Anything
+            // else (tuple patterns, type ascribed patterns) refuses
+            // loudly by collapsing to non_operation_shape.
+            let mut closure_args: Vec<Arc<CValue>> = Vec::new();
+            closure_args.push(shape_of_expr(&e.body, ctx));
+            for input in &e.inputs {
+                let syn::Pat::Ident(pat) = input else {
+                    return non_operation_shape();
+                };
+                let Some(op_cid) = concept_op_cid("concept:literal") else {
+                    return non_operation_shape();
+                };
+                closure_args.push(CValue::object([
+                    ("args", CValue::array(Vec::new())),
+                    ("concept_name", CValue::string("concept:literal")),
+                    ("op_cid", CValue::string(op_cid)),
+                    ("sort", CValue::string(SORT_STRING_CID)),
+                    ("source_text", CValue::string(pat.ident.to_string())),
+                ]));
+            }
+            gamma_operation("concept:closure", closure_args)
+        }
         syn::Expr::Block(b) => shape_of_block(&b.block, ctx),
         syn::Expr::Paren(e) => shape_of_expr(&e.expr, ctx),
         syn::Expr::Group(e) => shape_of_expr(&e.expr, ctx),
@@ -2668,7 +2712,13 @@ fn load_concept_op_cids() -> BTreeMap<String, String> {
         return cids;
     };
     for (cid, meta) in entries {
-        if meta.get("kind").and_then(Value::as_str) != Some("algorithm") {
+        // Both `algorithm` and `abstraction` entries are usable as
+        // term-shape node identities. Algorithms are operations (e.g.
+        // concept:assign, concept:call); abstractions are values-as-
+        // operations in syntactic position (e.g. concept:closure —
+        // syntactically a closure-creation node, semantically a value).
+        let kind = meta.get("kind").and_then(Value::as_str).unwrap_or("");
+        if kind != "algorithm" && kind != "abstraction" {
             continue;
         }
         let Some(name) = meta.get("name").and_then(Value::as_str) else {

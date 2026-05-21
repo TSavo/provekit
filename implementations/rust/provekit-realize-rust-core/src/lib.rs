@@ -143,6 +143,32 @@ pub fn emit_from_term_shape_with_bindings(
     return_type: &str,
 ) -> Realization {
     let mut context = ShapeLoweringContext::new(params, param_types, return_type, operand_bindings);
+    // Tail-expression top-level: if the function returns non-unit AND
+    // the top of the term_shape is not a sequence or explicit return,
+    // try lowering as a bare expression (Rust implicit-return tail).
+    // This is the byte-correct form for shim bodies that consist of a
+    // single tail expression like `serde_json::from_str(s).map_err(|e| e.to_string())`.
+    let top_concept = term_shape_concept_name(term_shape);
+    let is_seq_or_return = matches!(
+        top_concept.as_deref(),
+        Some("concept:seq") | Some("seq") | Some("concept:return") | Some("return")
+    );
+    let returns_unit = map_source_type(return_type) == "()";
+    if !is_seq_or_return && !returns_unit {
+        let mut tail_ctx = ShapeLoweringContext::new(
+            params, param_types, return_type, operand_bindings,
+        );
+        if let Some(expr) = lower_term_shape_expression(term_shape, &mut tail_ctx, &[]) {
+            return emit_function(
+                function_name,
+                params,
+                param_types,
+                return_type,
+                &expr.text,
+                false,
+            );
+        }
+    }
     match lower_term_shape_body(term_shape, &mut context, &[]) {
         Some(body) => emit_function(
             function_name,
@@ -556,6 +582,33 @@ fn lower_term_shape_expression(
         let prefix = if mut_text == "mut" { "&mut " } else { "&" };
         return Some(ShapeExpression {
             text: format!("{}{}", prefix, inner.text),
+            type_name: String::new(),
+        });
+    }
+    // concept:closure: |param1, param2, ...| body — walk_rpc emits
+    // args = [body_shape, param1_literal, param2_literal, ...]. Body is
+    // at args[0]; each param is a concept:literal with source_text
+    // carrying the ident name.
+    if concept_name == "concept:closure" {
+        if args.is_empty() {
+            return None;
+        }
+        let body_shape = args[0];
+        let mut param_names: Vec<String> = Vec::with_capacity(args.len().saturating_sub(1));
+        for param in args.iter().skip(1) {
+            let Some(text) = param.get("source_text").and_then(Value::as_str) else {
+                return None;
+            };
+            param_names.push(text.to_string());
+        }
+        let body = lower_term_shape_expression(
+            body_shape,
+            context,
+            &append_position(position, 0),
+        )?;
+        let text = format!("|{}| {}", param_names.join(", "), body.text);
+        return Some(ShapeExpression {
+            text,
             type_name: String::new(),
         });
     }
@@ -1606,23 +1659,26 @@ fn function_source(
     return_type: &str,
     body: &str,
 ) -> String {
+    // Preserve param_types verbatim for byte-exact signature reproduction:
+    // `s: &str` must NOT be transformed to `s: String`. The cross-language
+    // canonicalization done by `map_source_type` is for body-template
+    // matching, not signature emission.
     let typed_params = params
         .iter()
         .enumerate()
         .map(|(index, name)| {
             let ty = param_types
                 .get(index)
-                .map(|s| map_source_type(s))
+                .cloned()
                 .unwrap_or_else(|| "i64".to_string());
             format!("{name}: {ty}")
         })
         .collect::<Vec<_>>()
         .join(", ");
-    let mapped_return = map_source_type(return_type);
-    let return_suffix = if mapped_return.is_empty() || mapped_return == "()" {
+    let return_suffix = if return_type.is_empty() || return_type == "()" || return_type == "void" {
         String::new()
     } else {
-        format!(" -> {mapped_return}")
+        format!(" -> {return_type}")
     };
     let body_lines = body.lines().collect::<Vec<_>>();
     let indented = if body_lines.is_empty() {
