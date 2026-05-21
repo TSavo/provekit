@@ -793,6 +793,15 @@ struct ParsedManifest {
     /// and hoists them into the consumer file's `use` section.
     /// Empty vec when manifest omits the key (back-compat).
     scope_bringings: Vec<String>,
+    /// #1364 / #1355: optional declaration of which concept_names this
+    /// realize plugin CAN handle. cmd_materialize can defensively refuse-
+    /// loudly when a consumer's @boundary asks for a concept not in the
+    /// chosen manifest's provides_concepts list. Empty vec means "no
+    /// declaration" — current cross-kit coverage is implicit (the
+    /// dispatcher tries and the binary returns is_stub on miss); future
+    /// per-kit declarations make the coverage gap surface-explicit.
+    #[allow(dead_code)] // wired into cmd_materialize in #1364 chunk 2 (follow-up)
+    provides_concepts: Vec<String>,
     protocol_versions: Vec<String>,
     capability_kind: Option<String>,
     exam_manifest_schema_version: Option<String>,
@@ -808,6 +817,7 @@ fn parse_manifest(path: &Path) -> Result<ParsedManifest, String> {
     let mut family: Option<String> = None;
     let mut library_version: Option<String> = None;
     let mut scope_bringings: Vec<String> = Vec::new();
+    let mut provides_concepts: Vec<String> = Vec::new();
     let mut protocol_versions: Vec<String> = Vec::new();
     let mut capability_kind: Option<String> = None;
     let mut exam_manifest_schema_version: Option<String> = None;
@@ -851,6 +861,7 @@ fn parse_manifest(path: &Path) -> Result<ParsedManifest, String> {
             ("", "family") => family = Some(val.trim_matches('"').to_string()),
             ("", "library_version") => library_version = Some(val.trim_matches('"').to_string()),
             ("", "scope_bringings") => scope_bringings = parse_toml_string_array(val),
+            ("", "provides_concepts") => provides_concepts = parse_toml_string_array(val),
             ("", "command") => command = parse_toml_string_array(val),
             ("capabilities", "kind") => capability_kind = Some(val.trim_matches('"').to_string()),
             ("capabilities", "exam_manifest_schema_version") => {
@@ -870,6 +881,7 @@ fn parse_manifest(path: &Path) -> Result<ParsedManifest, String> {
         family,
         library_version,
         scope_bringings,
+        provides_concepts,
         protocol_versions,
         capability_kind,
         exam_manifest_schema_version,
@@ -2286,6 +2298,58 @@ mod tests {
     // in the consumer crate's prelude). Parsed here; cmd_materialize
     // reads them at splice time and hoists into the target file.
     // -----------------------------------------------------------------
+
+    // -----------------------------------------------------------------
+    // #1364 / #1355: provides_concepts declaration on realize manifests
+    // (per-kit concept coverage — chunk 1 plumbs the parse; chunk 2
+    // wires defensive checks in cmd_materialize; chunk 3+ populates per
+    // kit).
+    // -----------------------------------------------------------------
+
+    #[test]
+    fn parse_manifest_accepts_provides_concepts_array() {
+        let dir = std::env::temp_dir().join("provekit-test-1364-provides");
+        let _ = fs::remove_dir_all(&dir);
+        fs::create_dir_all(&dir).expect("temp dir");
+        let manifest_path = dir.join("manifest.toml");
+        fs::write(
+            &manifest_path,
+            r#"
+name = "rust-realize-shim-blake3"
+library_tag = "blake3"
+provides_concepts = ["concept:blake3-512-of", "concept:blake3-hasher-new", "concept:blake3-hasher-update", "concept:blake3-hasher-finalize-xof-64"]
+command = ["/bin/true"]
+"#,
+        )
+        .expect("write");
+        let parsed = parse_manifest(&manifest_path).expect("parse");
+        assert_eq!(parsed.provides_concepts.len(), 4);
+        assert!(parsed
+            .provides_concepts
+            .iter()
+            .any(|c| c == "concept:blake3-512-of"));
+        let _ = fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn parse_manifest_without_provides_concepts_yields_empty_vec() {
+        let dir = std::env::temp_dir().join("provekit-test-1364-noprovides");
+        let _ = fs::remove_dir_all(&dir);
+        fs::create_dir_all(&dir).expect("temp dir");
+        let manifest_path = dir.join("manifest.toml");
+        fs::write(
+            &manifest_path,
+            r#"
+name = "rust-realize-default"
+library_tag = "default"
+command = ["/bin/true"]
+"#,
+        )
+        .expect("write");
+        let parsed = parse_manifest(&manifest_path).expect("parse");
+        assert!(parsed.provides_concepts.is_empty());
+        let _ = fs::remove_dir_all(&dir);
+    }
 
     #[test]
     fn parse_manifest_accepts_scope_bringings_array() {

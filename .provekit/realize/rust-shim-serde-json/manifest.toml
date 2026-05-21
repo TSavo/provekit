@@ -3,5 +3,7 @@ name = "rust-realize-shim-serde-json"
 library_tag = "provekit-shim-serde-json-rust"
 family = "concept:family:json"
 library_version = "1"
+# #1364: explicit concept coverage.
+provides_concepts = ["concept:json-parse", "concept:json-serialize"]
 command = ["implementations/rust/target/debug/provekit-realize-rust", "--rpc"]
 working_dir = "."

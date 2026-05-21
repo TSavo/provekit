@@ -6,5 +6,16 @@ name = "rust-realize-shim-blake3"
 library_tag = "provekit-shim-blake3-rust"
 family = "concept:family:hash"
 library_version = "1"
+# #1364 / #1355: explicit per-kit concept coverage declaration. cmd_materialize
+# can defensively refuse-loudly when a consumer @boundary asks for a concept
+# not in this list (chunk 2 follow-up). The L0 shim's library-sugar-binding-entry
+# members in its .proof envelope are the authoritative source; this list
+# mirrors the @sugar inventory for fast lookup at dispatch time.
+provides_concepts = [
+    "concept:blake3-512-of",
+    "concept:blake3-hasher-new",
+    "concept:blake3-hasher-update",
+    "concept:blake3-hasher-finalize-xof-64",
+]
 command = ["implementations/rust/target/debug/provekit-realize-rust", "--rpc"]
 working_dir = "."

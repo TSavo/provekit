@@ -3,5 +3,12 @@ name = "rust-realize-shim-rfc8785-jcs"
 library_tag = "provekit-shim-rfc8785-jcs-rust"
 family = "concept:family:json-canonicalization"
 library_version = "1"
+# #1364: explicit concept coverage (top-level + the two interior helpers
+# the cross-platform crate also declares as boundaries).
+provides_concepts = [
+    "concept:rfc8785-jcs-encode",
+    "concept:rfc8785-jcs-encode-value",
+    "concept:rfc8785-jcs-encode-string",
+]
 command = ["implementations/rust/target/debug/provekit-realize-rust", "--rpc"]
 working_dir = "."
