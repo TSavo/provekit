@@ -1262,8 +1262,10 @@ fn line_starts_fn(line: &str) -> bool {
 fn build_boundary_carrier_payload(attr_text: &str, sig_text: &str) -> Option<String> {
     let concept = extract_attr_string(attr_text, "concept")?;
     let library = extract_attr_string(attr_text, "library");
+    let version = extract_attr_string(attr_text, "version");
+    let family = extract_attr_string(attr_text, "family");
     let (fn_name, params, param_types, return_type) = parse_fn_signature(sig_text)?;
-    let mut fields = Vec::with_capacity(6);
+    let mut fields = Vec::with_capacity(8);
     fields.push(format!("\"concept_name\":\"{}\"", escape_json(&concept)));
     fields.push(format!("\"function\":\"{}\"", escape_json(&fn_name)));
     fields.push(format!("\"params\":{}", format_string_array(&params)));
@@ -1271,6 +1273,16 @@ fn build_boundary_carrier_payload(attr_text: &str, sig_text: &str) -> Option<Str
     fields.push(format!("\"return_type\":\"{}\"", escape_json(&return_type)));
     if let Some(lib) = library {
         fields.push(format!("\"library\":\"{}\"", escape_json(&lib)));
+    }
+    // #1357: thread version + family from the @boundary attribute through
+    // the synthesized carrier comment so realize_spec_from_payload (and the
+    // dispatch downstream in #1359) can see the full pinned tuple. Absent
+    // on attribute → absent in carrier (substrate-honest floating).
+    if let Some(v) = version {
+        fields.push(format!("\"library_version\":\"{}\"", escape_json(&v)));
+    }
+    if let Some(f) = family {
+        fields.push(format!("\"family\":\"{}\"", escape_json(&f)));
     }
     Some(format!("{{{}}}", fields.join(",")))
 }
@@ -1432,6 +1444,77 @@ fn escape_json(s: &str) -> String {
 mod phase_b_tests {
     use super::*;
     use serde_json::json;
+
+    // ---------------------------------------------------------------------
+    // #1357 / #1355: family + version threaded through the carrier payload
+    // ---------------------------------------------------------------------
+
+    #[test]
+    fn boundary_carrier_includes_family_and_version_when_present() {
+        let source = r#"
+#[provekit::boundary(
+    concept = "concept:sql-query",
+    library = "rusqlite",
+    version = "0.39.0",
+    family = "concept:family:sql",
+    loss = [],
+)]
+pub fn query(_conn: &i64, _sql: &str) -> i64 {
+    unimplemented!()
+}
+"#;
+        let injected = inject_boundary_carriers(source);
+        let carrier_line = injected
+            .lines()
+            .find(|l| l.trim_start().starts_with("// provekit-concept:"))
+            .expect("carrier line synthesized");
+        assert!(
+            carrier_line.contains("\"library\":\"rusqlite\""),
+            "library pin in carrier: {carrier_line}"
+        );
+        assert!(
+            carrier_line.contains("\"library_version\":\"0.39.0\""),
+            "version pin in carrier: {carrier_line}"
+        );
+        assert!(
+            carrier_line.contains("\"family\":\"concept:family:sql\""),
+            "family pin in carrier: {carrier_line}"
+        );
+        assert!(
+            carrier_line.contains("\"concept_name\":\"concept:sql-query\""),
+            "concept_name in carrier: {carrier_line}"
+        );
+    }
+
+    #[test]
+    fn boundary_carrier_omits_family_and_version_when_absent() {
+        let source = r#"
+#[provekit::boundary(
+    concept = "concept:blake3-512-of",
+    library = "blake3",
+    loss = [],
+)]
+pub fn h(_bytes: &[u8]) -> i64 {
+    unimplemented!()
+}
+"#;
+        let injected = inject_boundary_carriers(source);
+        let carrier_line = injected
+            .lines()
+            .find(|l| l.trim_start().starts_with("// provekit-concept:"))
+            .expect("carrier line synthesized");
+        // Substrate-honest: absent on attribute → absent in carrier.
+        // NOT empty strings. Same convention as walk_rpc's binding-entry
+        // emission (#1357 chunk 1).
+        assert!(
+            !carrier_line.contains("\"library_version\""),
+            "library_version field absent when not pinned: {carrier_line}"
+        );
+        assert!(
+            !carrier_line.contains("\"family\""),
+            "family field absent when not pinned: {carrier_line}"
+        );
+    }
 
     struct MockMaterializeKit {
         body: String,

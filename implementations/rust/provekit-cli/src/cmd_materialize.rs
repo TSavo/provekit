@@ -526,6 +526,21 @@ fn augment_spec_with_shim_term_shape(spec: &mut Json, project_root: &Path) {
             if let Some(operand_bindings) = body.get("operand_bindings") {
                 obj.insert("operandBindings".to_string(), operand_bindings.clone());
             }
+            // #1357: when the consumer @boundary floated `family` or
+            // `library_version` (absent in the spec), surface the shim's
+            // declared values into the spec. Boundary-pinned values win
+            // (don't overwrite); shim values fill in floating axes. This
+            // is the "consumer floats; shim declares" resolution.
+            if !obj.contains_key("family") {
+                if let Some(family) = body.get("family").cloned() {
+                    obj.insert("family".to_string(), family);
+                }
+            }
+            if !obj.contains_key("library_version") {
+                if let Some(version) = body.get("library_version").cloned() {
+                    obj.insert("library_version".to_string(), version);
+                }
+            }
             if let Some(cid) = body.get("signature_shape_cid").cloned() {
                 obj.insert("signatureShapeCid".to_string(), cid);
             }
