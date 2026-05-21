@@ -337,13 +337,19 @@ fn lower_term_shape_body(
                 expression.text
             ));
         }
+        // Tail expression: when the function returns non-unit and no
+        // explicit `concept:return` appeared inside the seq, emit the
+        // last assigned symbol as a bare expression (Rust's implicit
+        // return), matching the source-side tail-expression convention.
+        // This is byte-correct for shim bodies that end with `out` or
+        // similar, NOT with a `return X;` statement.
         if map_source_type(&context.return_type) != "()"
             && !lines
                 .iter()
                 .any(|line| line.trim_start().starts_with("return "))
         {
             if let Some(symbol) = context.last_assigned_symbol.as_deref() {
-                lines.push(format!("return {symbol};"));
+                lines.push(symbol.to_string());
             }
         }
         return Some(lines.join("\n"));
