@@ -257,6 +257,33 @@ pub fn default_workspace_root() -> PathBuf {
         .unwrap_or_else(|_| PathBuf::from("."))
 }
 
+// SUBSTRATE-HONEST INVARIANT (2026-05-21 architectural correction):
+//
+// kit-internal sort identifiers (rust:Int, python:Value, etc.) MUST NOT
+// appear in ProofIR or in cmd_materialize. They live inside their kits
+// only. The cross-language wire is:
+//
+//   walk_rpc (rust kit, internal: rust:Int)
+//     → ProofIR carries concept-hub-typed signature (concept:Int)
+//   cmd_materialize routes the ProofIR to the target kit
+//     → target realize binary (internal: java:Int / python:int / ts:number)
+//   target kit emits target-language source
+//
+// cmd_materialize does NOT compose source-lang-sort → target-lang-sort.
+// It dispatches concept-hub-typed payloads from one kit to another.
+//
+// The SortMorphismCatalog above is a substrate-level query primitive
+// for AUDIT / DISCOVERY purposes (e.g. "is there a hub-traversal path
+// from concept:Int through java's morphism graph?"). It's NOT the
+// production code path for materialize — that path is kit → kit via
+// concept-hub-typed payloads.
+//
+// Source-syntax recognition (e.g. rust `&str` → rust:Str → concept:String)
+// lives in each kit's source lifter (walk_rpc for rust, the typescript
+// source lifter for ts, etc.). Each kit declares its own source-syntax
+// → lang-sort mapping internally, then composes via its own morphism
+// to concept-hub before emitting the carrier payload.
+
 #[allow(dead_code)]
 pub fn known_sort_cids() -> HashMap<&'static str, &'static str> {
     // For test convenience: known substrate-canonical primitive CIDs.

@@ -1265,12 +1265,34 @@ fn build_boundary_carrier_payload(attr_text: &str, sig_text: &str) -> Option<Str
     let version = extract_attr_string(attr_text, "version");
     let family = extract_attr_string(attr_text, "family");
     let (fn_name, params, param_types, return_type) = parse_fn_signature(sig_text)?;
-    let mut fields = Vec::with_capacity(8);
+    let mut fields = Vec::with_capacity(10);
     fields.push(format!("\"concept_name\":\"{}\"", escape_json(&concept)));
     fields.push(format!("\"function\":\"{}\"", escape_json(&fn_name)));
     fields.push(format!("\"params\":{}", format_string_array(&params)));
     fields.push(format!("\"param_types\":{}", format_string_array(&param_types)));
     fields.push(format!("\"return_type\":\"{}\"", escape_json(&return_type)));
+    // #1361 chunk 2 part B / #1355: emit concept-hub sort CIDs for each
+    // parameter type. The rust source kit owns the rust-syntax →
+    // concept-hub-sort translation; the carrier payload carries
+    // concept-hub-typed sorts (substrate-level), NOT rust-internal
+    // sort labels. By the time the payload crosses into substrate
+    // land, kit-internal sort identifiers (rust:Int, rust:Str, ...)
+    // are gone — only concept-hub identities remain.
+    let param_sort_cids: Vec<String> = param_types
+        .iter()
+        .map(|t| rust_source_type_to_concept_hub_sort_cid(t).unwrap_or("").to_string())
+        .collect();
+    fields.push(format!(
+        "\"param_sort_cids\":{}",
+        format_string_array(&param_sort_cids)
+    ));
+    let return_sort_cid = rust_source_type_to_concept_hub_sort_cid(&return_type)
+        .unwrap_or("")
+        .to_string();
+    fields.push(format!(
+        "\"return_sort_cid\":\"{}\"",
+        escape_json(&return_sort_cid)
+    ));
     if let Some(lib) = library {
         fields.push(format!("\"library\":\"{}\"", escape_json(&lib)));
     }
@@ -1285,6 +1307,76 @@ fn build_boundary_carrier_payload(attr_text: &str, sig_text: &str) -> Option<Str
         fields.push(format!("\"family\":\"{}\"", escape_json(&f)));
     }
     Some(format!("{{{}}}", fields.join(",")))
+}
+
+/// #1361 chunk 2 part B / #1355: rust-source-syntax → concept-hub sort CID.
+///
+/// The rust kit owns this translation. The carrier emission is the
+/// kit/substrate boundary — beyond it, ONLY concept-hub identities
+/// remain in the IR. Rust-internal sort labels (rust:Int, rust:Str)
+/// stay inside the rust kit's catalog and morphism lookups; they
+/// never appear in the carrier payload or in cmd_materialize.
+///
+/// Substrate-canonical sort CIDs (from menagerie/concept-shapes/catalog/sorts/):
+///   concept:Int    → blake3-512:30ffc513...
+///   concept:Float  → blake3-512:b979e70c...
+///   concept:Bool   → blake3-512:0ee13bf3...
+///   concept:String → blake3-512:be8721d2...
+///   concept:Unit   → blake3-512: (look up if/when minted)
+///   concept:Bytes  → blake3-512:7116ef6e...
+///   concept:Null   → blake3-512:62f6040b...
+///   concept:List<T> → blake3-512:e3f8d174...
+///   concept:Map<K,V> → blake3-512:b81923e3...
+fn rust_source_type_to_concept_hub_sort_cid(rust_type: &str) -> Option<&'static str> {
+    let t = rust_type
+        .trim()
+        .trim_start_matches("&mut ")
+        .trim_start_matches('&')
+        .trim();
+    let t = if let Some(stripped) = t
+        .strip_prefix("Option<")
+        .and_then(|s| s.strip_suffix('>'))
+    {
+        stripped.trim()
+    } else if let Some(stripped) = t.strip_prefix("Result<") {
+        let mut depth = 0i32;
+        let mut end = stripped.len();
+        for (i, ch) in stripped.chars().enumerate() {
+            match ch {
+                '<' => depth += 1,
+                '>' => depth -= 1,
+                ',' if depth == 0 => {
+                    end = i;
+                    break;
+                }
+                _ => {}
+            }
+        }
+        stripped[..end].trim()
+    } else {
+        t
+    };
+    // CIDs verified against menagerie/concept-shapes/catalog/sorts/.
+    match t {
+        "i8" | "i16" | "i32" | "i64" | "i128" | "isize"
+        | "u8" | "u16" | "u32" | "u64" | "u128" | "usize" => Some(
+            "blake3-512:30ffc51350121a7172f3e4064a33c45bbd345756979fccff6875cd2ab33e4964d098a99df80cfbdf1ec1a0738c5ac3476f0ff8f75589ea511d1acd82c74ecd58"
+        ),
+        "f32" | "f64" => Some(
+            "blake3-512:b979e70c4d5e53d9bdf13d6f08330be3c5b0714b8c770d69bbd05946b86c36df5274be8145a2683cc29c278155c9c1ee65b6897913524eecb9e4c89c71862f57"
+        ),
+        "bool" => Some(
+            "blake3-512:0ee13bf3fd6b7ecfbee72dfbfc18a7c0ea7f1663de6cca43cefb36f5b4c03665452646094a7c296e819e75d683c6ce4821f3d7db3c3c78ae97f2d4e3451d2074"
+        ),
+        "str" | "String" => Some(
+            "blake3-512:be8721d24849feb74c4721520bdba02d352a94f49253a627cd509127472aa1c47cbe99cb705cac4159b5365abcce0c9aaa4901fe67630827deb6be1f9daeea10"
+        ),
+        "()" => None, // Unit not yet in catalog/sorts/; left empty for now.
+        _ if t.starts_with("Vec<") || t.starts_with('[') => Some(
+            "blake3-512:e3f8d17445f9d2ce89c41c09cbeea08a8bc685d1c34a9fd3dfa7b1df17a94f40eab37396615501f1468baf2a1480fd5a27330ea23202b99876c5f4d97fa2cfb2"
+        ),
+        _ => None,
+    }
 }
 
 fn extract_attr_string(attr_text: &str, key: &str) -> Option<String> {
@@ -1483,6 +1575,79 @@ pub fn query(_conn: &i64, _sql: &str) -> i64 {
         assert!(
             carrier_line.contains("\"concept_name\":\"concept:sql-query\""),
             "concept_name in carrier: {carrier_line}"
+        );
+    }
+
+    // -----------------------------------------------------------------
+    // #1361 chunk 2 part B / #1355: carrier emits concept-hub sort CIDs
+    // for each parameter (rust kit's lift-to-substrate translation).
+    // -----------------------------------------------------------------
+
+    #[test]
+    fn boundary_carrier_emits_concept_hub_sort_cids_for_params() {
+        let source = r#"
+#[provekit::boundary(
+    concept = "concept:sql-query",
+    library = "rusqlite",
+)]
+pub fn query(_conn: &i64, _sql: &str) -> i64 {
+    unimplemented!()
+}
+"#;
+        let injected = inject_boundary_carriers(source);
+        let carrier_line = injected
+            .lines()
+            .find(|l| l.trim_start().starts_with("// provekit-concept:"))
+            .expect("carrier line synthesized");
+        // concept:Int CID for i64
+        let int_cid =
+            "blake3-512:30ffc51350121a7172f3e4064a33c45bbd345756979fccff6875cd2ab33e4964d098a99df80cfbdf1ec1a0738c5ac3476f0ff8f75589ea511d1acd82c74ecd58";
+        // concept:String CID for &str
+        let string_cid =
+            "blake3-512:be8721d24849feb74c4721520bdba02d352a94f49253a627cd509127472aa1c47cbe99cb705cac4159b5365abcce0c9aaa4901fe67630827deb6be1f9daeea10";
+        assert!(
+            carrier_line.contains(int_cid),
+            "param i64 should emit concept:Int CID in carrier: {carrier_line}"
+        );
+        assert!(
+            carrier_line.contains(string_cid),
+            "param &str should emit concept:String CID in carrier: {carrier_line}"
+        );
+        assert!(
+            carrier_line.contains("\"return_sort_cid\":"),
+            "return_sort_cid field present: {carrier_line}"
+        );
+        // CRITICAL: NO rust-kit-internal sort labels (rust:Int, rust:Str)
+        // appear in the carrier — only concept-hub CIDs cross into substrate.
+        assert!(
+            !carrier_line.contains("\"rust:"),
+            "kit-internal `rust:` labels MUST NOT appear in substrate-level carrier payload: {carrier_line}"
+        );
+    }
+
+    #[test]
+    fn boundary_carrier_emits_empty_sort_cid_for_unrecognized_type() {
+        // For types the rust kit doesn't have a concept-hub morphism for
+        // (e.g. a user-defined struct), emit empty string in param_sort_cids.
+        // Substrate-honest: empty signals "no morphism yet, gap remains".
+        let source = r#"
+#[provekit::boundary(
+    concept = "concept:custom",
+    library = "myshim",
+)]
+pub fn op(_x: MyCustomType) -> i64 {
+    unimplemented!()
+}
+"#;
+        let injected = inject_boundary_carriers(source);
+        let carrier_line = injected
+            .lines()
+            .find(|l| l.trim_start().starts_with("// provekit-concept:"))
+            .expect("carrier line synthesized");
+        // The custom type's slot in param_sort_cids should be "" (empty).
+        assert!(
+            carrier_line.contains("\"param_sort_cids\":[\"\"]"),
+            "unrecognized type emits empty sort-cid (substrate-honest gap signal): {carrier_line}"
         );
     }
 
