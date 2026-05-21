@@ -239,6 +239,53 @@ def test_library_bindings_layer_lifts_requests_shim_from_real_python_source() ->
     assert body_source["source_cid"] == blake3_512_of(expected_span.encode("utf-8"))
 
 
+# -----------------------------------------------------------------
+# #1357 / #1355: family + library_version axes on @sugar.bind
+# decorators. Parallel to walk_rpc (rust) + typescript-source tests.
+# Both fields are optional; absent ↔ absent in emitted JSON.
+# -----------------------------------------------------------------
+
+
+def test_library_bindings_lifts_family_and_library_version_when_present() -> None:
+    source = (
+        "from provekit import sugar\n"
+        "\n"
+        "@sugar.bind(\n"
+        '    concept="concept:sql-query",\n'
+        '    library="sqlite3",\n'
+        '    family="concept:family:sql",\n'
+        '    version="python-3",\n'
+        ")\n"
+        "def query(conn, sql):\n"
+        "    return conn.execute(sql).fetchall()\n"
+    )
+    result = lift_source(source, "src/shims/sqlite.py", layer="library-bindings")
+    assert result.diagnostics == []
+    assert len(result.ir) == 1
+    entry = result.ir[0]
+    assert entry["kind"] == "library-sugar-binding-entry"
+    assert entry["family"] == "concept:family:sql"
+    assert entry["library_version"] == "python-3"
+
+
+def test_library_bindings_omits_family_and_library_version_when_absent() -> None:
+    # Back-compat: existing shims without family/version still lift; the
+    # new fields are simply absent (NOT empty strings).
+    source = (
+        "from provekit import sugar\n"
+        "\n"
+        '@sugar.bind(concept="concept:http-request", library="requests")\n'
+        "def fetch_status(url):\n"
+        "    import requests\n"
+        "    return requests.get(url).status_code\n"
+    )
+    result = lift_source(source, "src/shims/requests.py", layer="library-bindings")
+    assert result.diagnostics == []
+    entry = result.ir[0]
+    assert "family" not in entry
+    assert "library_version" not in entry
+
+
 def test_library_bindings_rpc_passes_requested_layer(tmp_path: Path) -> None:
     (tmp_path / "shim.py").write_text(
         "from provekit import sugar\n"

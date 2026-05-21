@@ -46,6 +46,8 @@ from provekit import sugar, refuse
 @sugar.bind(
     concept="concept:sql-connection-open",
     library="sqlite3",
+    family="concept:family:sql",
+    version="python-3",
     loss=["sync-vs-async", "auth-mechanism", "connection-pooling"],
 )
 def open_db(path: str) -> sqlite3.Connection:
@@ -55,6 +57,8 @@ def open_db(path: str) -> sqlite3.Connection:
 @sugar.bind(
     concept="concept:sql-connection-open",
     library="sqlite3",
+    family="concept:family:sql",
+    version="python-3",
     loss=["sync-vs-async", "persistence-target"],
 )
 def open_in_memory() -> sqlite3.Connection:
@@ -64,6 +68,8 @@ def open_in_memory() -> sqlite3.Connection:
 @sugar.bind(
     concept="concept:sql-connection-open",
     library="sqlite3",
+    family="concept:family:sql",
+    version="python-3",
     loss=["sync-vs-async", "auth-mechanism", "connection-pooling", "flag-encoding"],
 )
 def open_with_uri(uri: str) -> sqlite3.Connection:
@@ -75,6 +81,8 @@ def open_with_uri(uri: str) -> sqlite3.Connection:
 @sugar.bind(
     concept="concept:sql-connection-close",
     library="sqlite3",
+    family="concept:family:sql",
+    version="python-3",
     loss=["sync-vs-async", "ownership-model"],
 )
 def close_connection(conn: sqlite3.Connection) -> None:
@@ -88,6 +96,8 @@ def close_connection(conn: sqlite3.Connection) -> None:
 @sugar.bind(
     concept="concept:sql-execute",
     library="sqlite3",
+    family="concept:family:sql",
+    version="python-3",
     loss=["sync-vs-async", "last-insert-id", "transaction-isolation", "row-typing-mode"],
 )
 def execute(conn: sqlite3.Connection, sql: str, params: Any = ()) -> sqlite3.Cursor:
@@ -97,6 +107,8 @@ def execute(conn: sqlite3.Connection, sql: str, params: Any = ()) -> sqlite3.Cur
 @sugar.bind(
     concept="concept:sql-batch-execute",
     library="sqlite3",
+    family="concept:family:sql",
+    version="python-3",
     loss=["sync-vs-async", "atomicity-across-statements", "parameter-binding"],
 )
 def executescript(conn: sqlite3.Connection, sql_script: str) -> sqlite3.Cursor:
@@ -106,6 +118,8 @@ def executescript(conn: sqlite3.Connection, sql_script: str) -> sqlite3.Cursor:
 @sugar.bind(
     concept="concept:sql-batch-execute",
     library="sqlite3",
+    family="concept:family:sql",
+    version="python-3",
     loss=["sync-vs-async", "atomicity-across-statements"],
 )
 def executemany(conn: sqlite3.Connection, sql: str, seq_of_params: Any) -> sqlite3.Cursor:
@@ -115,6 +129,8 @@ def executemany(conn: sqlite3.Connection, sql: str, seq_of_params: Any) -> sqlit
 @sugar.bind(
     concept="concept:sql-query",
     library="sqlite3",
+    family="concept:family:sql",
+    version="python-3",
     loss=["sync-vs-async", "row-cardinality", "row-typing-mode", "cursor-lifetime"],
 )
 def query_row(conn: sqlite3.Connection, sql: str, params: Any = ()) -> Optional[Tuple]:
@@ -125,6 +141,8 @@ def query_row(conn: sqlite3.Connection, sql: str, params: Any = ()) -> Optional[
 @sugar.bind(
     concept="concept:sql-query",
     library="sqlite3",
+    family="concept:family:sql",
+    version="python-3",
     loss=["sync-vs-async", "row-typing-mode", "cursor-lifetime"],
 )
 def query_all(conn: sqlite3.Connection, sql: str, params: Any = ()) -> List[Tuple]:
@@ -139,6 +157,8 @@ def query_all(conn: sqlite3.Connection, sql: str, params: Any = ()) -> List[Tupl
 @sugar.bind(
     concept="concept:sql-prepare",
     library="sqlite3",
+    family="concept:family:sql",
+    version="python-3",
     loss=["sync-vs-async", "parameter-style", "ownership-model"],
 )
 def prepare(conn: sqlite3.Connection, sql: str) -> sqlite3.Cursor:
@@ -148,6 +168,8 @@ def prepare(conn: sqlite3.Connection, sql: str) -> sqlite3.Cursor:
 @sugar.bind(
     concept="concept:sql-prepare-cached",
     library="sqlite3",
+    family="concept:family:sql",
+    version="python-3",
     loss=["sync-vs-async", "cache-eviction-policy", "cache-size-bound", "ownership-model"],
 )
 def prepare_cached(conn: sqlite3.Connection, sql: str) -> sqlite3.Cursor:
@@ -164,6 +186,8 @@ def prepare_cached(conn: sqlite3.Connection, sql: str) -> sqlite3.Cursor:
 @sugar.bind(
     concept="concept:sql-execute",
     library="sqlite3",
+    family="concept:family:sql",
+    version="python-3",
     loss=["sync-vs-async", "last-insert-id", "transaction-isolation", "row-typing-mode"],
 )
 def cursor_execute(cursor: sqlite3.Cursor, sql: str, params: Any = ()) -> sqlite3.Cursor:
@@ -173,6 +197,8 @@ def cursor_execute(cursor: sqlite3.Cursor, sql: str, params: Any = ()) -> sqlite
 @sugar.bind(
     concept="concept:sql-query",
     library="sqlite3",
+    family="concept:family:sql",
+    version="python-3",
     loss=["sync-vs-async", "row-typing-mode", "cursor-lifetime"],
 )
 def cursor_query(cursor: sqlite3.Cursor, sql: str, params: Any = ()) -> sqlite3.Cursor:
@@ -183,6 +209,8 @@ def cursor_query(cursor: sqlite3.Cursor, sql: str, params: Any = ()) -> sqlite3.
 @sugar.bind(
     concept="concept:sql-query",
     library="sqlite3",
+    family="concept:family:sql",
+    version="python-3",
     loss=["sync-vs-async", "row-typing-mode", "cursor-lifetime"],
 )
 def cursor_fetchone(cursor: sqlite3.Cursor) -> Optional[Tuple]:
@@ -192,6 +220,8 @@ def cursor_fetchone(cursor: sqlite3.Cursor) -> Optional[Tuple]:
 @sugar.bind(
     concept="concept:sql-query",
     library="sqlite3",
+    family="concept:family:sql",
+    version="python-3",
     loss=["sync-vs-async", "row-typing-mode", "cursor-lifetime"],
 )
 def cursor_fetchall(cursor: sqlite3.Cursor) -> List[Tuple]:
@@ -201,6 +231,8 @@ def cursor_fetchall(cursor: sqlite3.Cursor) -> List[Tuple]:
 @sugar.bind(
     concept="concept:sql-fetch-batch",
     library="sqlite3",
+    family="concept:family:sql",
+    version="python-3",
     loss=["sync-vs-async", "row-typing-mode", "cursor-pagination"],
 )
 def cursor_fetchmany(cursor: sqlite3.Cursor, size: Optional[int] = None) -> List[Tuple]:
@@ -212,6 +244,8 @@ def cursor_fetchmany(cursor: sqlite3.Cursor, size: Optional[int] = None) -> List
 @sugar.bind(
     concept="concept:insert-and-get-id",
     library="sqlite3",
+    family="concept:family:sql",
+    version="python-3",
     loss=["sync-vs-async", "id-column-discovery", "row-typing-mode"],
 )
 def cursor_execute_and_lastrowid(cursor: sqlite3.Cursor, sql: str, params: Any = ()) -> Optional[int]:
@@ -222,6 +256,8 @@ def cursor_execute_and_lastrowid(cursor: sqlite3.Cursor, sql: str, params: Any =
 @sugar.bind(
     concept="concept:sql-query",
     library="sqlite3",
+    family="concept:family:sql",
+    version="python-3",
     loss=["sync-vs-async", "cardinality-projected-to-boolean", "row-typing-mode"],
 )
 def cursor_exists(cursor: sqlite3.Cursor, sql: str, params: Any = ()) -> bool:
@@ -236,6 +272,8 @@ def cursor_exists(cursor: sqlite3.Cursor, sql: str, params: Any = ()) -> bool:
 @sugar.bind(
     concept="concept:sql-transaction-begin",
     library="sqlite3",
+    family="concept:family:sql",
+    version="python-3",
     loss=["sync-vs-async", "isolation-level", "ownership-model"],
 )
 def begin_transaction(conn: sqlite3.Connection) -> None:
@@ -245,6 +283,8 @@ def begin_transaction(conn: sqlite3.Connection) -> None:
 @sugar.bind(
     concept="concept:sql-transaction-begin",
     library="sqlite3",
+    family="concept:family:sql",
+    version="python-3",
     loss=["sync-vs-async", "isolation-level", "deferred-vs-immediate-vs-exclusive", "ownership-model"],
 )
 def begin_transaction_with_behavior(conn: sqlite3.Connection, behavior: str) -> None:
@@ -255,6 +295,8 @@ def begin_transaction_with_behavior(conn: sqlite3.Connection, behavior: str) -> 
 @sugar.bind(
     concept="concept:sql-transaction-commit",
     library="sqlite3",
+    family="concept:family:sql",
+    version="python-3",
     loss=["sync-vs-async", "two-phase-commit-support", "ownership-model"],
 )
 def commit(conn: sqlite3.Connection) -> None:
@@ -264,6 +306,8 @@ def commit(conn: sqlite3.Connection) -> None:
 @sugar.bind(
     concept="concept:sql-transaction-rollback",
     library="sqlite3",
+    family="concept:family:sql",
+    version="python-3",
     loss=["sync-vs-async", "partial-rollback-support", "ownership-model"],
 )
 def rollback(conn: sqlite3.Connection) -> None:
@@ -273,6 +317,8 @@ def rollback(conn: sqlite3.Connection) -> None:
 @sugar.bind(
     concept="concept:sql-savepoint",
     library="sqlite3",
+    family="concept:family:sql",
+    version="python-3",
     loss=["naming-discipline", "ownership-model"],
 )
 def savepoint(conn: sqlite3.Connection, name: str) -> None:
@@ -282,6 +328,8 @@ def savepoint(conn: sqlite3.Connection, name: str) -> None:
 @sugar.bind(
     concept="concept:sql-transaction-rollback",
     library="sqlite3",
+    family="concept:family:sql",
+    version="python-3",
     loss=["partial-rollback-support"],
 )
 def rollback_to_savepoint(conn: sqlite3.Connection, name: str) -> None:
@@ -291,6 +339,8 @@ def rollback_to_savepoint(conn: sqlite3.Connection, name: str) -> None:
 @sugar.bind(
     concept="concept:sql-savepoint",
     library="sqlite3",
+    family="concept:family:sql",
+    version="python-3",
     loss=["naming-discipline", "ownership-model"],
 )
 def release_savepoint(conn: sqlite3.Connection, name: str) -> None:
@@ -304,6 +354,8 @@ def release_savepoint(conn: sqlite3.Connection, name: str) -> None:
 @sugar.bind(
     concept="concept:sql-row-get-column",
     library="sqlite3",
+    family="concept:family:sql",
+    version="python-3",
     loss=["null-handling", "type-coercion-mode", "row-typing-mode"],
 )
 def row_get_by_index(row: Tuple, idx: int) -> Any:
@@ -313,6 +365,8 @@ def row_get_by_index(row: Tuple, idx: int) -> Any:
 @sugar.bind(
     concept="concept:sql-row-get-column",
     library="sqlite3",
+    family="concept:family:sql",
+    version="python-3",
     loss=["null-handling", "type-coercion-mode", "row-typing-mode"],
 )
 def row_get_by_name(row: sqlite3.Row, name: str) -> Any:
@@ -322,6 +376,8 @@ def row_get_by_name(row: sqlite3.Row, name: str) -> Any:
 @sugar.bind(
     concept="concept:sql-row-mapping",
     library="sqlite3",
+    family="concept:family:sql",
+    version="python-3",
     loss=["row-typing-mode", "ownership-model"],
 )
 def set_row_factory(conn: sqlite3.Connection) -> None:
@@ -335,6 +391,8 @@ def set_row_factory(conn: sqlite3.Connection) -> None:
 @sugar.bind(
     concept="concept:insert-and-get-id",
     library="sqlite3",
+    family="concept:family:sql",
+    version="python-3",
     loss=["per-connection-not-per-statement", "rowid-vs-integer-pk"],
 )
 def last_insert_rowid(cursor: sqlite3.Cursor) -> Optional[int]:
@@ -344,6 +402,8 @@ def last_insert_rowid(cursor: sqlite3.Cursor) -> Optional[int]:
 @sugar.bind(
     concept="concept:sql-changes-count",
     library="sqlite3",
+    family="concept:family:sql",
+    version="python-3",
     loss=["per-statement-vs-cumulative", "transaction-scope"],
 )
 def rowcount(cursor: sqlite3.Cursor) -> int:
@@ -353,6 +413,8 @@ def rowcount(cursor: sqlite3.Cursor) -> int:
 @sugar.bind(
     concept="concept:sql-changes-count",
     library="sqlite3",
+    family="concept:family:sql",
+    version="python-3",
     loss=["cumulative-since-connection-open", "transaction-scope"],
 )
 def total_changes(conn: sqlite3.Connection) -> int:
@@ -366,6 +428,8 @@ def total_changes(conn: sqlite3.Connection) -> int:
 @sugar.bind(
     concept="concept:contract-observation",
     library="sqlite3",
+    family="concept:family:sql",
+    version="python-3",
     observed_dimension="autocommit-mode",
 )
 def in_transaction(conn: sqlite3.Connection) -> bool:
@@ -375,6 +439,8 @@ def in_transaction(conn: sqlite3.Connection) -> bool:
 @sugar.bind(
     concept="concept:contract-observation",
     library="sqlite3",
+    family="concept:family:sql",
+    version="python-3",
     observed_dimension="isolation-level",
 )
 def isolation_level(conn: sqlite3.Connection) -> Optional[str]:
@@ -388,6 +454,8 @@ def isolation_level(conn: sqlite3.Connection) -> Optional[str]:
 @sugar.bind(
     concept="concept:contract-observation",
     library="sqlite3",
+    family="concept:family:sql",
+    version="python-3",
     observed_dimension="column-names",
 )
 def cursor_column_names(cursor: sqlite3.Cursor) -> Optional[Tuple]:
@@ -397,6 +465,8 @@ def cursor_column_names(cursor: sqlite3.Cursor) -> Optional[Tuple]:
 @sugar.bind(
     concept="concept:contract-observation",
     library="sqlite3",
+    family="concept:family:sql",
+    version="python-3",
     observed_dimension="column-count",
 )
 def cursor_column_count(cursor: sqlite3.Cursor) -> int:
@@ -408,6 +478,8 @@ def cursor_column_count(cursor: sqlite3.Cursor) -> int:
 @sugar.bind(
     concept="concept:contract-observation",
     library="sqlite3",
+    family="concept:family:sql",
+    version="python-3",
     observed_dimension="column-index-of-name",
 )
 def cursor_column_index(cursor: sqlite3.Cursor, name: str) -> Optional[int]:
@@ -426,6 +498,8 @@ def cursor_column_index(cursor: sqlite3.Cursor, name: str) -> Optional[int]:
 @sugar.bind(
     concept="concept:sql-busy-timeout",
     library="sqlite3",
+    family="concept:family:sql",
+    version="python-3",
     loss=["sync-vs-async", "callback-vs-timeout-shape"],
 )
 def set_timeout(conn: sqlite3.Connection, timeout_secs: float) -> None:
@@ -441,6 +515,8 @@ def set_timeout(conn: sqlite3.Connection, timeout_secs: float) -> None:
 @sugar.bind(
     concept="concept:sql-schema-dump",
     library="sqlite3",
+    family="concept:family:sql",
+    version="python-3",
     loss=["sync-vs-async", "iteration-vs-string-output"],
 )
 def iterdump(conn: sqlite3.Connection) -> Iterator[str]:
@@ -454,6 +530,8 @@ def iterdump(conn: sqlite3.Connection) -> Iterator[str]:
 @sugar.bind(
     concept="concept:sql-udf-register",
     library="sqlite3",
+    family="concept:family:sql",
+    version="python-3",
     loss=["sync-vs-async", "type-coercion-mode", "determinism-flag"],
 )
 def create_function(conn: sqlite3.Connection, name: str, num_params: int, func: Callable) -> None:
@@ -463,6 +541,8 @@ def create_function(conn: sqlite3.Connection, name: str, num_params: int, func: 
 @sugar.bind(
     concept="concept:sql-udf-aggregate",
     library="sqlite3",
+    family="concept:family:sql",
+    version="python-3",
     loss=["sync-vs-async", "type-coercion-mode"],
 )
 def create_aggregate(conn: sqlite3.Connection, name: str, num_params: int, aggregate_class: type) -> None:
@@ -476,6 +556,8 @@ def create_aggregate(conn: sqlite3.Connection, name: str, num_params: int, aggre
 @sugar.bind(
     concept="concept:sql-progress-handler",
     library="sqlite3",
+    family="concept:family:sql",
+    version="python-3",
     loss=["sync-vs-async", "handler-frequency-semantics"],
 )
 def set_progress_handler(conn: sqlite3.Connection, handler: Optional[Callable], n: int) -> None:
@@ -489,6 +571,8 @@ def set_progress_handler(conn: sqlite3.Connection, handler: Optional[Callable], 
 @sugar.bind(
     concept="concept:sql-transaction-begin",
     library="sqlite3",
+    family="concept:family:sql",
+    version="python-3",
     loss=["sync-vs-async", "isolation-level", "ownership-model", "context-manager-lifetime"],
 )
 def connection_as_context_manager(conn: sqlite3.Connection) -> sqlite3.Connection:
@@ -500,6 +584,8 @@ def connection_as_context_manager(conn: sqlite3.Connection) -> sqlite3.Connectio
 @sugar.bind(
     concept="concept:sql-transaction-commit",
     library="sqlite3",
+    family="concept:family:sql",
+    version="python-3",
     loss=["sync-vs-async", "ownership-model", "context-manager-lifetime"],
 )
 def connection_context_exit_commit(conn: sqlite3.Connection) -> None:
@@ -510,6 +596,8 @@ def connection_context_exit_commit(conn: sqlite3.Connection) -> None:
 @sugar.bind(
     concept="concept:sql-transaction-rollback",
     library="sqlite3",
+    family="concept:family:sql",
+    version="python-3",
     loss=["sync-vs-async", "ownership-model", "context-manager-lifetime"],
 )
 def connection_context_exit_rollback(conn: sqlite3.Connection, exc_type: Any) -> bool:
@@ -520,6 +608,8 @@ def connection_context_exit_rollback(conn: sqlite3.Connection, exc_type: Any) ->
 @sugar.bind(
     concept="concept:sql-row-mapping",
     library="sqlite3",
+    family="concept:family:sql",
+    version="python-3",
     loss=["row-typing-mode", "ownership-model"],
 )
 def connection_row_factory_callable(conn: sqlite3.Connection, factory: Callable) -> None:

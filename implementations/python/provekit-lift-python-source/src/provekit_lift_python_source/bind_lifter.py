@@ -266,6 +266,16 @@ def _library_binding_entry_for_function(
     observed = binding.get("observed_dimension")
     if observed:
         entry["observed_dimension"] = observed
+    # #1357 / #1355: surface optional family + library_version pins on the
+    # binding entry. Absent on the @sugar.bind decorator → absent in the
+    # emitted JSON (NOT empty strings — null/missing is the substrate
+    # signal for "this axis floats"). Parallel to walk_rpc + TS lifter.
+    family = binding.get("family")
+    if family:
+        entry["family"] = family
+    library_version = binding.get("library_version")
+    if library_version:
+        entry["library_version"] = library_version
     return entry
 
 
@@ -285,6 +295,16 @@ def _sugar_bind_decorator(
             observed = _keyword_str(decorator, "observed_dimension")
             if observed:
                 result["observed_dimension"] = observed
+            # #1357 / #1355: optional family + version pins, parallel to
+            # the rust (walk_rpc) and typescript (typescript-source) lifters.
+            # Both float when absent; dispatch downstream narrows via these
+            # when present.
+            family = _keyword_str(decorator, "family")
+            if family:
+                result["family"] = family
+            version = _keyword_str(decorator, "version")
+            if version:
+                result["library_version"] = version
             return result
     return None
 
