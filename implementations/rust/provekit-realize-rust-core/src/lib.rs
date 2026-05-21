@@ -287,24 +287,15 @@ impl ShapeLoweringContext {
         }
     }
 
-    fn fallback_leaf(&mut self) -> ShapeExpression {
-        if self.params.is_empty() {
-            self.next_leaf += 1;
-            return ShapeExpression {
-                text: "0".to_string(),
-                type_name: "i64".to_string(),
-            };
-        }
-        let index = self.next_leaf.min(self.params.len() - 1);
+    /// Substrate-honest: no silent fallback. When the lowerer hits a
+    /// position with no recognized leaf shape AND no operand_binding,
+    /// it must refuse loudly (return None) rather than substitute the
+    /// function's first parameter — silent substitution produces
+    /// compile-able but semantically-wrong Rust, which violates the
+    /// trichotomy (exact / loudly-lossy / refuse).
+    fn fallback_leaf(&mut self) -> Option<ShapeExpression> {
         self.next_leaf += 1;
-        ShapeExpression {
-            text: self.params[index].clone(),
-            type_name: self
-                .param_types
-                .get(index)
-                .map(|ty| map_source_type(ty))
-                .unwrap_or_default(),
-        }
+        None
     }
 
     fn temp_name(&mut self) -> String {
@@ -446,7 +437,7 @@ fn lower_term_shape_expression(
     position: &[usize],
 ) -> Option<ShapeExpression> {
     let Some(concept_name) = term_shape_concept_name(shape) else {
-        return Some(term_shape_leaf_expression(shape, context, position));
+        return term_shape_leaf_expression(shape, context, position);
     };
     let args = term_shape_args(shape);
     // concept:literal shapes have a concept_name but are leaf values, not operations.
@@ -454,7 +445,7 @@ fn lower_term_shape_expression(
     // fields directly, so literal shapes embedded inside other shapes (e.g. as args
     // of concept:array-repeat) lower correctly without going through the args loop.
     if concept_name == "concept:literal" || concept_name == "literal" {
-        return Some(term_shape_leaf_expression(shape, context, position));
+        return term_shape_leaf_expression(shape, context, position);
     }
     if concept_name == "concept:seq" || concept_name == "seq" {
         lower_term_shape_body(shape, context, position)?;
@@ -581,16 +572,16 @@ fn term_shape_leaf_expression(
     shape: &Value,
     context: &mut ShapeLoweringContext,
     position: &[usize],
-) -> ShapeExpression {
+) -> Option<ShapeExpression> {
     if let Some(symbol) = context.operand_bindings.get(position) {
-        return symbol_term(symbol, context);
+        return Some(symbol_term(symbol, context));
     }
     if shape.get("kind").and_then(Value::as_str) == Some("var") {
         if let Some(name) = shape.get("name").and_then(Value::as_str) {
-            return ShapeExpression {
+            return Some(ShapeExpression {
                 text: name.to_string(),
                 type_name: type_for_argument(name, context),
-            };
+            });
         }
     }
     // Literal leaf: concept:literal shape emitted by walk_rpc's literal_shape fn.
@@ -600,24 +591,25 @@ fn term_shape_leaf_expression(
     if shape.get("kind").and_then(Value::as_str) == Some("literal") || shape.get("value").is_some()
     {
         if let Some(source_text) = shape.get("source_text").and_then(Value::as_str) {
-            return ShapeExpression {
+            return Some(ShapeExpression {
                 text: source_text.to_string(),
                 type_name: String::new(),
-            };
+            });
         }
-        return literal_term(shape.get("value").unwrap_or(&Value::Null));
+        return Some(literal_term(shape.get("value").unwrap_or(&Value::Null)));
     }
     // Leaf kinds emitted by walk_rpc that carry their text verbatim:
     // kind:"path"        → free function callee (e.g. "blake3::Hasher::new")
     // kind:"method"      → method ident (e.g. "update")
+    // kind:"mutability"  → "mut" or "" inside concept:ref
     // Return the text verbatim — NOT through literal_term which would quote it.
     if let Some(kind) = shape.get("kind").and_then(Value::as_str) {
-        if kind == "path" || kind == "method" {
+        if kind == "path" || kind == "method" || kind == "mutability" {
             if let Some(text) = shape.get("text").and_then(Value::as_str) {
-                return ShapeExpression {
+                return Some(ShapeExpression {
                     text: text.to_string(),
                     type_name: String::new(),
-                };
+                });
             }
         }
     }
