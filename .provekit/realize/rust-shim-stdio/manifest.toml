@@ -12,10 +12,6 @@ library_version = "rust-1"
 # (deduplicated against existing `use` items).
 scope_bringings = ["use std::io::{self, BufRead, Write};"]
 # #1364: explicit concept coverage for this kit.
-provides_concepts = [
-    "concept:stdio-read-line",
-    "concept:stdio-write-line",
-    "concept:stderr-write-line",
-]
+provides_concepts = ["concept:stdio-read-line", "concept:stdio-write-line", "concept:stderr-write-line"]
 command = ["implementations/rust/target/debug/provekit-realize-rust", "--rpc"]
 working_dir = "."

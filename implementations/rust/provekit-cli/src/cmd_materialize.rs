@@ -20,7 +20,9 @@ use owo_colors::OwoColorize;
 use serde_json::Value as Json;
 use walkdir::WalkDir;
 
-use crate::kit_dispatch::{scope_bringings_for_realize, DispatchRealizeTransport};
+use crate::kit_dispatch::{
+    provides_concepts_for_realize, scope_bringings_for_realize, DispatchRealizeTransport,
+};
 use crate::{OutputFlags, EXIT_OK, EXIT_USER_ERROR, EXIT_VERIFY_FAIL};
 
 #[derive(Parser, Debug, Clone)]
@@ -529,6 +531,40 @@ impl SiteTransformKit for MaterializeKit<'_> {
     }
 
     fn transform_site(&self, carrier: &CarrierComment) -> Result<SiteOutcome, String> {
+        // #1364 chunk 2 / #1355: defensive concept-coverage check. When the
+        // chosen realize manifest declares its `provides_concepts` and the
+        // carrier's concept_name is NOT in that list, refuse-loudly BEFORE
+        // dispatching. Surfaces per-kit coverage gaps at the materialize
+        // boundary rather than at the realize plugin's is_stub fallback,
+        // with an informative reason listing what the kit DOES provide.
+        // Empty provides_concepts (no manifest declaration) ↔ today's
+        // behavior (no enforcement; rely on is_stub).
+        let carrier_library = carrier
+            .library_tag
+            .as_deref()
+            .or(self.library_tag.as_deref())
+            .unwrap_or("");
+        if !carrier_library.is_empty() {
+            let provides = provides_concepts_for_realize(
+                self.project_root,
+                &self.target_lang,
+                carrier_library,
+            );
+            if !provides.is_empty()
+                && !provides.iter().any(|c| c == &carrier.concept_name)
+            {
+                return Ok(SiteOutcome::Refuse {
+                    reason: format!(
+                        "library `{carrier_library}` (target {}) does not declare concept \
+                         `{}` in its provides_concepts list. Declared concepts: {:?}. Either \
+                         add the concept to the realize manifest's provides_concepts or \
+                         point the @boundary at a different library.",
+                        self.target_lang, carrier.concept_name, provides
+                    ),
+                    would_close_with_concept: carrier.concept_name.clone(),
+                });
+            }
+        }
         // Reuse Phase A's permissive-defaults spec builder (which lives in
         // libprovekit) by re-serializing the carrier's raw payload. The
         // typed CarrierComment fields are equivalent; routing through

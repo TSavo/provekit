@@ -11,11 +11,6 @@ library_version = "1"
 # not in this list (chunk 2 follow-up). The L0 shim's library-sugar-binding-entry
 # members in its .proof envelope are the authoritative source; this list
 # mirrors the @sugar inventory for fast lookup at dispatch time.
-provides_concepts = [
-    "concept:blake3-512-of",
-    "concept:blake3-hasher-new",
-    "concept:blake3-hasher-update",
-    "concept:blake3-hasher-finalize-xof-64",
-]
+provides_concepts = ["concept:blake3-512-of", "concept:blake3-hasher-new", "concept:blake3-hasher-update", "concept:blake3-hasher-finalize-xof-64"]
 command = ["implementations/rust/target/debug/provekit-realize-rust", "--rpc"]
 working_dir = "."
