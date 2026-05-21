@@ -17,6 +17,8 @@ use serde_json::Value;
 #[provekit::sugar(
     concept = "concept:json-parse",
     library = "serde_json",
+    version = "1",
+    family = "concept:family:json",
     loss = [],
 )]
 pub fn json_parse(s: &str) -> Result<Value, String> {
@@ -29,6 +31,8 @@ pub fn json_parse(s: &str) -> Result<Value, String> {
 #[provekit::sugar(
     concept = "concept:json-serialize",
     library = "serde_json",
+    version = "1",
+    family = "concept:family:json",
     loss = ["non-canonical-key-order"],
 )]
 pub fn json_serialize(v: &Value) -> Result<String, String> {

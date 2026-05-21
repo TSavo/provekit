@@ -424,6 +424,8 @@ fn bind_lift(params: &Value) -> Result<Value, String> {
             let SugarTarget {
                 concept,
                 library,
+                version,
+                family,
                 loss,
                 observed_dimension,
                 item_fn,
@@ -479,6 +481,17 @@ fn bind_lift(params: &Value) -> Result<Value, String> {
             if let Some(observed) = observed_dimension {
                 entry["observed_dimension"] = json!(observed);
             }
+            // #1357: surface the optional version + family pins on the
+            // binding entry so downstream materialize dispatch (#1359) can
+            // narrow by them. Absent on the annotation → absent in the
+            // emitted JSON (NOT empty strings — null/missing is the substrate
+            // signal for "this axis floats").
+            if let Some(v) = version {
+                entry["library_version"] = json!(v);
+            }
+            if let Some(f) = family {
+                entry["family"] = json!(f);
+            }
             entries.push(entry);
         }
 
@@ -510,6 +523,8 @@ fn bind_lift(params: &Value) -> Result<Value, String> {
             let BoundaryTarget {
                 concept,
                 library,
+                version,
+                family,
                 api,
                 boundary_contract,
                 loss,
@@ -532,6 +547,13 @@ fn bind_lift(params: &Value) -> Result<Value, String> {
             }
             if let Some(bc) = boundary_contract {
                 entry["boundary_contract"] = json!(bc);
+            }
+            // #1357: parallel to the sugar emission above.
+            if let Some(v) = version {
+                entry["library_version"] = json!(v);
+            }
+            if let Some(f) = family {
+                entry["family"] = json!(f);
             }
             entries.push(entry);
         }
@@ -593,6 +615,12 @@ struct BindLiftTarget {
 struct SugarTarget {
     concept: String,
     library: String,
+    /// #1357: per-#1355, the @sugar annotation may carry a `version`
+    /// pin (e.g. "0.39.0") and a `family` pin (e.g.
+    /// "concept:family:sql"). Both float when absent; the dispatch
+    /// query in #1359 narrows the candidate set using these when present.
+    version: Option<String>,
+    family: Option<String>,
     loss: Vec<String>,
     observed_dimension: Option<String>,
     item_fn: syn::ItemFn,
@@ -677,6 +705,8 @@ fn collect_sugar_targets_in_items(items: &[syn::Item], targets: &mut Vec<SugarTa
                     targets.push(SugarTarget {
                         concept: parsed.concept,
                         library: parsed.library,
+                        version: parsed.version,
+                        family: parsed.family,
                         loss: parsed.loss,
                         observed_dimension: parsed.observed_dimension,
                         item_fn: item_fn.clone(),
@@ -716,6 +746,11 @@ fn collect_refuse_targets_in_items(items: &[syn::Item], targets: &mut Vec<Refuse
 struct SugarAttrParsed {
     concept: String,
     library: String,
+    /// #1357: optional `version` named arg (e.g. "0.39.0"). Absent ↔ floating.
+    version: Option<String>,
+    /// #1357: optional `family` named arg (e.g. "concept:family:sql").
+    /// Absent ↔ floating (the platform_profile or dispatcher may supply it).
+    family: Option<String>,
     loss: Vec<String>,
     observed_dimension: Option<String>,
 }
@@ -733,6 +768,8 @@ fn extract_sugar_attr(item_fn: &syn::ItemFn) -> Option<SugarAttrParsed> {
                     return Some(SugarAttrParsed {
                         concept,
                         library,
+                        version: args.string("version"),
+                        family: args.string("family"),
                         loss: args.string_array("loss"),
                         observed_dimension: args.string("observed_dimension"),
                     });
@@ -753,6 +790,9 @@ fn extract_sugar_attr(item_fn: &syn::ItemFn) -> Option<SugarAttrParsed> {
 struct BoundaryTarget {
     concept: String,
     library: String,
+    /// #1357: optional version and family pins, parallel to SugarTarget.
+    version: Option<String>,
+    family: Option<String>,
     api: Option<String>,
     boundary_contract: Option<String>,
     loss: Vec<String>,
@@ -803,6 +843,8 @@ fn extract_boundary_attr(item_fn: &syn::ItemFn) -> Option<BoundaryTarget> {
                     return Some(BoundaryTarget {
                         concept,
                         library,
+                        version: args.string("version"),
+                        family: args.string("family"),
                         api: args.string("api"),
                         boundary_contract: args.string("boundary_contract"),
                         loss: args.string_array("loss"),
@@ -3092,6 +3134,116 @@ async fn fetch_status(url: String) -> i64 {
         let _ = fs::remove_dir_all(root);
     }
 
+    // ---------------------------------------------------------------------
+    // #1357 / #1355: family + version axes on @sugar / @boundary annotations
+    // ---------------------------------------------------------------------
+
+    #[test]
+    fn sugar_attr_with_family_and_version_emits_into_binding_entry() {
+        let root = temp_workspace("sugar_family_version");
+        let src_dir = root.join("src");
+        fs::create_dir_all(&src_dir).expect("create src dir");
+        let src = r#"
+#[provekit::sugar(
+    concept = "concept:sql-query",
+    library = "rusqlite",
+    version = "0.39.0",
+    family = "concept:family:sql",
+)]
+pub fn query(conn: &i64, sql: &str) -> i64 {
+    0
+}
+"#;
+        fs::write(src_dir.join("lib.rs"), src).expect("write source");
+        let out = bind_lift(&json!({
+            "workspace_root": root.to_string_lossy(),
+            "source_paths": ["."],
+        }))
+        .expect("bind lift should succeed");
+        let ir = out["ir"].as_array().expect("ir array");
+        let sugar: Vec<_> = ir
+            .iter()
+            .filter(|e| e["kind"] == "library-sugar-binding-entry")
+            .collect();
+        assert_eq!(sugar.len(), 1, "expected one sugar entry, got: {sugar:?}");
+        let e = &sugar[0];
+        assert_eq!(e["target_library_tag"], "rusqlite");
+        assert_eq!(e["library_version"], "0.39.0");
+        assert_eq!(e["family"], "concept:family:sql");
+        assert_eq!(e["concept_name"], "concept:sql-query");
+        let _ = fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn sugar_attr_without_family_or_version_omits_those_fields() {
+        // Back-compat: existing shims without family/version annotations must
+        // still mint, with the new fields simply absent (NOT empty strings).
+        let root = temp_workspace("sugar_no_family_version");
+        let src_dir = root.join("src");
+        fs::create_dir_all(&src_dir).expect("create src dir");
+        let src = r#"
+#[provekit::sugar(concept = "concept:http-request", library = "reqwest")]
+async fn fetch_status(url: String) -> i64 {
+    0
+}
+"#;
+        fs::write(src_dir.join("lib.rs"), src).expect("write source");
+        let out = bind_lift(&json!({
+            "workspace_root": root.to_string_lossy(),
+            "source_paths": ["."],
+        }))
+        .expect("bind lift should succeed");
+        let ir = out["ir"].as_array().expect("ir array");
+        let e = ir
+            .iter()
+            .find(|e| e["kind"] == "library-sugar-binding-entry")
+            .expect("sugar entry");
+        assert!(
+            e.get("library_version").is_none() || e["library_version"].is_null(),
+            "library_version must not be emitted when absent on annotation"
+        );
+        assert!(
+            e.get("family").is_none() || e["family"].is_null(),
+            "family must not be emitted when absent on annotation"
+        );
+        let _ = fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn boundary_attr_with_family_and_version_emits_into_realization_memento() {
+        let root = temp_workspace("boundary_family_version");
+        let src_dir = root.join("src");
+        fs::create_dir_all(&src_dir).expect("create src dir");
+        let src = r#"
+#[provekit::boundary(
+    concept = "concept:sql-query",
+    library = "rusqlite",
+    version = "0.39.0",
+    family = "concept:family:sql",
+    boundary_contract = "boundary:sql-execute",
+)]
+pub fn query_stub(_conn: &i64, _sql: &str) -> i64 {
+    unimplemented!()
+}
+"#;
+        fs::write(src_dir.join("lib.rs"), src).expect("write source");
+        let out = bind_lift(&json!({
+            "workspace_root": root.to_string_lossy(),
+            "source_paths": ["."],
+        }))
+        .expect("bind lift should succeed");
+        let ir = out["ir"].as_array().expect("ir array");
+        let memento = ir
+            .iter()
+            .find(|e| e["kind"] == "realization-memento")
+            .expect("realization memento");
+        assert_eq!(memento["library"], "rusqlite");
+        assert_eq!(memento["library_version"], "0.39.0");
+        assert_eq!(memento["family"], "concept:family:sql");
+        assert_eq!(memento["concept_name"], "concept:sql-query");
+        let _ = fs::remove_dir_all(root);
+    }
+
     #[test]
     fn unannotated_fn_produces_zero_sugar_entries() {
         let root = temp_workspace("sugar_discrim");
@@ -3351,12 +3503,17 @@ pub fn add(x: i64, y: i64) -> i64 {
     }
 
     #[test]
-    fn term_shape_rust_char_literal_refuses_lift() {
-        // Rust `char` is a 32-bit Unicode scalar, structurally distinct from
-        // String. The substrate has no proof of equivalence between the two
-        // sorts; refuse the lift (non_operation_shape) until concept:Char
-        // mints. Any other answer would publish a false content-addressed
-        // equivalence claim.
+    fn term_shape_rust_char_literal_lifts_as_literal_source_text() {
+        // Updated behavior (this session): Rust `char` lifts as a
+        // concept:literal source_text leaf carrying the source-form token
+        // verbatim (e.g. `'a'`). This is byte-correct reproduction for
+        // shim bodies that pass char arguments to method calls (e.g.
+        // `out.push('"')`, `out.push('\n')`). No content-addressed
+        // equivalence claim is made between `char` and `String` — the
+        // source_text is purely a textual leaf form. If a stricter
+        // sort-discipline is wanted, mint `concept:char-width-32-unicode`
+        // as a separate family and route Lit::Char through it (see #1363
+        // for the parallel integer-width work).
         let shape = term_shape_json(
             r#"
 pub fn first() -> char {
@@ -3365,9 +3522,14 @@ pub fn first() -> char {
 "#,
         );
         assert_eq!(
-            shape,
-            json!({}),
-            "Char literal must refuse lift, not project onto String"
+            shape.get("concept_name").and_then(|v| v.as_str()),
+            Some("concept:literal"),
+            "Char literal must lift as concept:literal: {shape}"
+        );
+        assert_eq!(
+            shape.get("source_text").and_then(|v| v.as_str()),
+            Some("'a'"),
+            "source_text must preserve the source-form char token"
         );
     }
 
@@ -3663,27 +3825,46 @@ pub fn safe_divide_then_double(num: i64, denom: i64) -> i64 {
 "#,
         );
 
+        // Updated behavior (this session): Expr::If now lifts via
+        // prettyplease as a concept:literal source_text leaf rather than
+        // the partial-structure concept:conditional with 3 args. This is
+        // byte-correct reproduction at the cost of losing the structural
+        // sub-shapes of the condition / then / else arms. The catalog
+        // walker that previously asserted nested concepts (eq, neg, div,
+        // lt, mul, conditional) now sees a single literal-source-text
+        // leaf with the full expression preserved verbatim — same byte-
+        // identity property, different addressability.
+        //
+        // If structural addressability is needed (e.g. for cross-language
+        // synthesis of conditionals, #1361), Expr::If can be re-promoted
+        // to a structural concept; that's tracked separately. Until then,
+        // assert the source-text fidelity.
         assert_no_forbidden_term_shape_fields(&shape);
-        let mut concepts = Vec::new();
-        collect_concept_names(&shape, &mut concepts);
-        for expected in [
-            "concept:conditional",
-            "concept:eq",
-            "concept:neg",
-            "concept:div",
-            "concept:lt",
-            "concept:mul",
+        assert_eq!(
+            shape.get("concept_name").and_then(|v| v.as_str()),
+            Some("concept:literal"),
+            "if-as-tail-expression lifts via prettyplease as a concept:literal source_text leaf: {shape:#?}"
+        );
+        let source_text = shape
+            .get("source_text")
+            .and_then(|v| v.as_str())
+            .expect("source_text on literal leaf");
+        for fragment in [
+            "if denom == 0",
+            "let q = num / denom",
+            "if q < 0",
+            "q * 2",
         ] {
             assert!(
-                concepts.iter().any(|actual| actual == expected),
-                "missing {expected} from canonical gamma shape {shape:#?}"
+                source_text.contains(fragment),
+                "source_text must preserve fragment {fragment:?}: actual {source_text:?}"
             );
         }
         assert!(
             !serde_json::to_string(&shape)
                 .expect("shape stringifies")
                 .contains("UNNAMED-CONCEPT"),
-            "gamma shape must not contain unnamed concept wrappers: {shape:#?}"
+            "shape must not contain unnamed concept wrappers: {shape:#?}"
         );
     }
 

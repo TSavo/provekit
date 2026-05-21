@@ -31,6 +31,8 @@ use serde_json::Value;
 #[provekit::sugar(
     concept = "concept:rfc8785-jcs-encode",
     library = "serde_json",
+    version = "1",
+    family = "concept:family:json-canonicalization",
     loss = [],
 )]
 pub fn encode_jcs(v: &Value) -> String {
@@ -42,6 +44,8 @@ pub fn encode_jcs(v: &Value) -> String {
 #[provekit::sugar(
     concept = "concept:rfc8785-jcs-encode-value",
     library = "provekit-shim-rfc8785-jcs-rust",
+    version = "0.1",
+    family = "concept:family:json-canonicalization",
     loss = [],
 )]
 fn encode_value(v: &Value, out: &mut String) {
@@ -81,6 +85,8 @@ fn encode_value(v: &Value, out: &mut String) {
 #[provekit::sugar(
     concept = "concept:rfc8785-jcs-encode-string",
     library = "provekit-shim-rfc8785-jcs-rust",
+    version = "0.1",
+    family = "concept:family:json-canonicalization",
     loss = [],
 )]
 fn encode_string(s: &str, out: &mut String) {

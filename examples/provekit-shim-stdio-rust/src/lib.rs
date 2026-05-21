@@ -16,6 +16,8 @@ use std::io::{self, BufRead, Write};
 #[provekit::sugar(
     concept = "concept:stdio-read-line",
     library = "std::io",
+    version = "rust-1",
+    family = "concept:family:stdio-stream",
     loss = [],
 )]
 pub fn stdin_read_line() -> Option<String> {
@@ -42,6 +44,8 @@ pub fn stdin_read_line() -> Option<String> {
 #[provekit::sugar(
     concept = "concept:stdio-write-line",
     library = "std::io",
+    version = "rust-1",
+    family = "concept:family:stdio-stream",
     loss = [],
 )]
 pub fn stdout_write_line(line: &str) {
@@ -57,6 +61,8 @@ pub fn stdout_write_line(line: &str) {
 #[provekit::sugar(
     concept = "concept:stderr-write-line",
     library = "std::io",
+    version = "rust-1",
+    family = "concept:family:stdio-stream",
     loss = [],
 )]
 pub fn stderr_write_line(line: &str) {

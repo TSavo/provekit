@@ -20,6 +20,8 @@ pub use blake3::Hasher;
 #[provekit::sugar(
     concept = "concept:blake3-512-of",
     library = "blake3",
+    version = "1",
+    family = "concept:family:hash",
     loss = [],
 )]
 pub fn blake3_512_of(bytes: &[u8]) -> [u8; 64] {
@@ -35,6 +37,8 @@ pub fn blake3_512_of(bytes: &[u8]) -> [u8; 64] {
 #[provekit::sugar(
     concept = "concept:blake3-hasher-new",
     library = "blake3",
+    version = "1",
+    family = "concept:family:hash",
     loss = [],
 )]
 pub fn blake3_hasher_new() -> Hasher {
@@ -46,6 +50,8 @@ pub fn blake3_hasher_new() -> Hasher {
 #[provekit::sugar(
     concept = "concept:blake3-hasher-update",
     library = "blake3",
+    version = "1",
+    family = "concept:family:hash",
     loss = [],
 )]
 pub fn blake3_hasher_update(hasher: &mut Hasher, bytes: &[u8]) {
@@ -57,6 +63,8 @@ pub fn blake3_hasher_update(hasher: &mut Hasher, bytes: &[u8]) {
 #[provekit::sugar(
     concept = "concept:blake3-hasher-finalize-xof-64",
     library = "blake3",
+    version = "1",
+    family = "concept:family:hash",
     loss = [],
 )]
 pub fn blake3_hasher_finalize(hasher: &Hasher) -> [u8; 64] {
