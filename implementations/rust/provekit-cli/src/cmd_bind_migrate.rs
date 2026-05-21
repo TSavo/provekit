@@ -246,6 +246,28 @@ fn split_library_surface(surface: &str) -> Result<(String, String), String> {
     Ok((language.to_string(), tag.to_string()))
 }
 
+/// #1362 / #1355: construct a PlatformProfile from a CLI library-surface
+/// string of the form `language-library` (e.g. `rust-rusqlite`,
+/// `typescript-better-sqlite3`). family + version float (None) — they
+/// can be narrowed by later constraint-satisfaction at the dispatcher
+/// (#1359) once the migrate body uses platform profiles instead of the
+/// hardcoded TargetSurface enum. This helper is the path forward for
+/// `cmd_bind_migrate::run_inner` to call `cmd_materialize::materialize_source_text`
+/// with source/target profile pairs once the cross-language synthesis
+/// in #1361 chunk 2 lands.
+#[allow(dead_code)] // wired into cmd_bind_migrate after #1361 chunk 2 + #1362 chunk 2
+pub(crate) fn platform_profile_from_library_surface(
+    surface: &str,
+) -> Result<crate::project_config::PlatformProfile, String> {
+    let (language, library) = split_library_surface(surface)?;
+    Ok(crate::project_config::PlatformProfile {
+        language: Some(language),
+        family: None, // floats — dispatcher narrows via catalog if pinned elsewhere
+        library: Some(library),
+        version: None, // floats — caller can override after construction
+    })
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum TargetSurface {
     TypescriptPg,
@@ -3125,6 +3147,34 @@ mod tests {
     use super::*;
 
     use provekit_ir_types::{DimensionValueMemento, PlatformSemanticTag};
+
+    // -----------------------------------------------------------------
+    // #1362 / #1355: PlatformProfile construction from library-surface
+    // strings (foundation for the post-#1361 TargetSurface deletion).
+    // -----------------------------------------------------------------
+
+    #[test]
+    fn platform_profile_from_library_surface_typescript_better_sqlite3() {
+        let profile =
+            platform_profile_from_library_surface("typescript-better-sqlite3").expect("parse");
+        assert_eq!(profile.language.as_deref(), Some("typescript"));
+        assert_eq!(profile.library.as_deref(), Some("better-sqlite3"));
+        assert!(profile.family.is_none(), "family floats");
+        assert!(profile.version.is_none(), "version floats");
+    }
+
+    #[test]
+    fn platform_profile_from_library_surface_python_aiosqlite() {
+        let profile = platform_profile_from_library_surface("python-aiosqlite").expect("parse");
+        assert_eq!(profile.language.as_deref(), Some("python"));
+        assert_eq!(profile.library.as_deref(), Some("aiosqlite"));
+    }
+
+    #[test]
+    fn platform_profile_from_library_surface_rejects_unhyphenated() {
+        let result = platform_profile_from_library_surface("rusqlite");
+        assert!(result.is_err());
+    }
 
     const CONCEPT_ADD_CID: &str = "blake3-512:95fc70e63a5550fd2e25142f13932919c59d085654ab387789c798886b0111c61d28fe533fc98b50df70eea9428a9af8aa75372c8b1c1deb3acc1a4094790468";
     const CONCEPT_DIV_CID: &str = "blake3-512:c6a13abbcafdf83edcff49d883a7c7440faadd8af896da0ad46e2bcb177ed0649d005b4ddecd4689cf565b10679219a07c784399bafe5c6174642e1b808d7839";
