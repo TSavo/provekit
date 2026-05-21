@@ -328,6 +328,51 @@ fn registry_lift_command(
     Ok(None)
 }
 
+/// #1359 / #1355: Find all realize candidates that satisfy a
+/// constraint set `(target_lang, family?, library_tag?, library_version?)`.
+/// Candidates are filtered down progressively:
+///
+/// 1. target_lang: required (string equality on the manifest's surface-language).
+/// 2. family: when given, candidate's manifest MUST declare a matching family.
+///    When given but a candidate has no family declared → exclude (substrate-
+///    honest: missing means floating, but the consumer pinned, so it can't
+///    satisfy the constraint).
+/// 3. library_tag: when given, candidate's `tag` must equal it.
+/// 4. library_version: when given, candidate's `library_version` must equal it.
+///
+/// Each absent constraint axis is treated as "anything matches" (the axis floats
+/// from the consumer's perspective). The result is the set of candidates eligible
+/// for further dispatch ranking; the actual chosen candidate is the caller's
+/// responsibility (chunk 3 wires this into resolve_realize_command).
+///
+/// Returns an empty Vec when no candidates satisfy. This is the substrate-honest
+/// signal for "refuse with would_close_with reason" upstream.
+#[allow(dead_code)] // wired into dispatch in #1359 chunk 3 (follow-up PR)
+pub(crate) fn find_realize_candidates_for_constraints(
+    workspace_root: &Path,
+    target_lang: &str,
+    family: Option<&str>,
+    library_tag: Option<&str>,
+    library_version: Option<&str>,
+) -> Result<Vec<RealizeCandidate>, String> {
+    let candidates = registry_realize_candidates(workspace_root, target_lang)?;
+    Ok(candidates
+        .into_iter()
+        .filter(|c| match family {
+            Some(want) => c.family.as_deref() == Some(want),
+            None => true,
+        })
+        .filter(|c| match library_tag {
+            Some(want) => c.tag == want,
+            None => true,
+        })
+        .filter(|c| match library_version {
+            Some(want) => c.library_version.as_deref() == Some(want),
+            None => true,
+        })
+        .collect())
+}
+
 fn registry_realize_candidates(
     workspace_root: &Path,
     target_lang: &str,
@@ -347,6 +392,8 @@ fn registry_realize_candidates(
                 .unwrap_or_else(|| DEFAULT_LIBRARY_TAG.to_string()),
             command: resolved_command_from_manifest(workspace_root, &plugin.parsed),
             source: plugin.source.clone(),
+            family: plugin.parsed.family.clone(),
+            library_version: plugin.parsed.library_version.clone(),
         })
         .collect::<Vec<_>>();
     candidates.sort_by(|a, b| a.tag.cmp(&b.tag).then(a.source.cmp(&b.source)));
@@ -1062,10 +1109,17 @@ fn resolve_realize_command(
 }
 
 #[derive(Debug, Clone)]
-struct RealizeCandidate {
-    tag: String,
-    command: ResolvedCommand,
-    source: String,
+pub(crate) struct RealizeCandidate {
+    pub(crate) tag: String,
+    pub(crate) command: ResolvedCommand,
+    pub(crate) source: String,
+    /// #1359 / #1355: realization-tuple axes the manifest declared.
+    /// Used by the family-aware candidate query
+    /// (`find_realize_candidates_for_family`) so dispatchers can resolve
+    /// boundary requests of the form `(family = X, library = floating)`
+    /// to any shim manifest sharing that family.
+    pub(crate) family: Option<String>,
+    pub(crate) library_version: Option<String>,
 }
 
 fn legacy_realize_candidates(
@@ -1090,6 +1144,8 @@ fn legacy_realize_candidates(
                 working_dir: Some(workspace_root.to_path_buf()),
             },
             source: env_var,
+            family: None,
+            library_version: None,
         });
     }
 
@@ -1104,6 +1160,8 @@ fn legacy_realize_candidates(
                     working_dir: Some(workspace_root.to_path_buf()),
                 },
                 source: candidate.path.display().to_string(),
+                family: None,
+                library_version: None,
             });
         }
     }
@@ -1118,6 +1176,8 @@ fn legacy_realize_candidates(
                 working_dir: Some(workspace_root.to_path_buf()),
             },
             source: format!("PATH:{bin}"),
+            family: None,
+            library_version: None,
         });
     }
 
@@ -1166,6 +1226,8 @@ fn project_realize_candidates(
             })
             .or_else(|| Some(workspace_root.to_path_buf()));
         out.push(RealizeCandidate {
+            family: parsed.family.clone(),
+            library_version: parsed.library_version.clone(),
             tag: parsed
                 .library_tag
                 .unwrap_or_else(|| DEFAULT_LIBRARY_TAG.to_string()),
@@ -2116,6 +2178,122 @@ command = ["/bin/true"]
         assert!(parsed.family.is_none());
         assert!(parsed.library_version.is_none());
         let _ = fs::remove_dir_all(&dir);
+    }
+
+    // -----------------------------------------------------------------
+    // #1359 chunk 2: family-aware candidate query
+    // -----------------------------------------------------------------
+
+    fn make_candidate(
+        tag: &str,
+        family: Option<&str>,
+        library_version: Option<&str>,
+    ) -> RealizeCandidate {
+        RealizeCandidate {
+            tag: tag.to_string(),
+            command: ResolvedCommand {
+                argv: vec!["/bin/true".to_string()],
+                working_dir: None,
+            },
+            source: format!("test-fixture:{tag}"),
+            family: family.map(str::to_string),
+            library_version: library_version.map(str::to_string),
+        }
+    }
+
+    fn filter_candidates(
+        candidates: Vec<RealizeCandidate>,
+        family: Option<&str>,
+        library_tag: Option<&str>,
+        library_version: Option<&str>,
+    ) -> Vec<RealizeCandidate> {
+        // Mirror the filter chain in find_realize_candidates_for_constraints
+        // without the registry-load step, so we can unit-test the matching
+        // logic against synthetic candidates.
+        candidates
+            .into_iter()
+            .filter(|c| match family {
+                Some(want) => c.family.as_deref() == Some(want),
+                None => true,
+            })
+            .filter(|c| match library_tag {
+                Some(want) => c.tag == want,
+                None => true,
+            })
+            .filter(|c| match library_version {
+                Some(want) => c.library_version.as_deref() == Some(want),
+                None => true,
+            })
+            .collect()
+    }
+
+    #[test]
+    fn family_constraint_filters_candidates_to_same_family() {
+        let candidates = vec![
+            make_candidate("rusqlite", Some("concept:family:sql"), Some("0.39.0")),
+            make_candidate("postgres-rs", Some("concept:family:sql"), Some("0.19")),
+            make_candidate("blake3", Some("concept:family:hash"), Some("1")),
+        ];
+        let matches = filter_candidates(candidates, Some("concept:family:sql"), None, None);
+        assert_eq!(matches.len(), 2);
+        let tags: Vec<_> = matches.iter().map(|c| c.tag.as_str()).collect();
+        assert!(tags.contains(&"rusqlite"));
+        assert!(tags.contains(&"postgres-rs"));
+    }
+
+    #[test]
+    fn family_plus_library_tag_narrows_to_one_when_both_pinned() {
+        let candidates = vec![
+            make_candidate("rusqlite", Some("concept:family:sql"), Some("0.39.0")),
+            make_candidate("postgres-rs", Some("concept:family:sql"), Some("0.19")),
+        ];
+        let matches = filter_candidates(
+            candidates,
+            Some("concept:family:sql"),
+            Some("rusqlite"),
+            None,
+        );
+        assert_eq!(matches.len(), 1);
+        assert_eq!(matches[0].tag, "rusqlite");
+    }
+
+    #[test]
+    fn version_constraint_excludes_non_matching_version() {
+        let candidates = vec![
+            make_candidate("rusqlite", Some("concept:family:sql"), Some("0.39.0")),
+            make_candidate("rusqlite", Some("concept:family:sql"), Some("0.40.0-rc1")),
+        ];
+        let matches = filter_candidates(candidates, None, Some("rusqlite"), Some("0.39.0"));
+        assert_eq!(matches.len(), 1);
+        assert_eq!(matches[0].library_version.as_deref(), Some("0.39.0"));
+    }
+
+    #[test]
+    fn floating_family_yields_all_candidates_when_other_axes_unconstrained() {
+        let candidates = vec![
+            make_candidate("rusqlite", Some("concept:family:sql"), Some("0.39.0")),
+            make_candidate("blake3", Some("concept:family:hash"), Some("1")),
+        ];
+        let matches = filter_candidates(candidates, None, None, None);
+        assert_eq!(
+            matches.len(),
+            2,
+            "all candidates pass when no constraints pinned"
+        );
+    }
+
+    #[test]
+    fn family_constraint_excludes_candidate_with_no_declared_family() {
+        // Substrate-honest: if the CONSUMER pins family, but a candidate
+        // doesn't declare one, the candidate cannot prove it's in that
+        // family. Exclude it (don't silently default to "anything matches").
+        let candidates = vec![
+            make_candidate("default", None, None),
+            make_candidate("rusqlite", Some("concept:family:sql"), Some("0.39.0")),
+        ];
+        let matches = filter_candidates(candidates, Some("concept:family:sql"), None, None);
+        assert_eq!(matches.len(), 1);
+        assert_eq!(matches[0].tag, "rusqlite");
     }
 
     #[test]
