@@ -4,5 +4,10 @@
 # and the rust-canonical-bodies body-templates JSON the binary reads.
 name = "rust-realize-rusqlite"
 library_tag = "rusqlite"
+family = "concept:family:sql"
+library_version = "0.39"
+# #1364 / #1355: per-kit concept coverage. Sourced from
+# menagerie/rust-language-signature/specs/body-templates/rust-canonical-bodies-rusqlite.json.
+provides_concepts = ["concept:contract-observation", "concept:insert-and-get-id", "concept:sql-batch-execute", "concept:sql-busy-timeout", "concept:sql-changes-count", "concept:sql-connection-close", "concept:sql-connection-open", "concept:sql-execute", "concept:sql-prepare", "concept:sql-prepare-cached", "concept:sql-query", "concept:sql-row-get-column", "concept:sql-savepoint", "concept:sql-transaction-begin", "concept:sql-transaction-commit", "concept:sql-transaction-rollback"]
 command = ["implementations/rust/target/debug/provekit-realize-rust", "--rpc"]
 working_dir = "."

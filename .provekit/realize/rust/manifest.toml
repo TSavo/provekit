@@ -2,5 +2,12 @@
 # cmd_bind dispatches canonical rewrite emission here when target-language=rust.
 name = "rust-realize"
 library_tag = "reqwest"
+family = "concept:family:http"
+library_version = "0.12"
+# #1364 / #1355: per-kit concept coverage. The catch-all rust body-templates
+# JSON declares both http-request and http-response (plus IR-primitive shapes
+# like concept:closure which are realized structurally by the binary's term-
+# shape lowering and don't belong in this list).
+provides_concepts = ["http-request", "http-response"]
 command = ["implementations/rust/target/debug/provekit-realize-rust", "--rpc"]
 working_dir = "."
