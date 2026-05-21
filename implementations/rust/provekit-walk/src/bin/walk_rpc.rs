@@ -2675,6 +2675,23 @@ fn shape_of_expr(expr: &syn::Expr, ctx: &ShapeContext) -> Arc<CValue> {
         syn::Expr::Block(b) => shape_of_block(&b.block, ctx),
         syn::Expr::Paren(e) => shape_of_expr(&e.expr, ctx),
         syn::Expr::Group(e) => shape_of_expr(&e.expr, ctx),
+        // Cast: `value as TargetType` → concept:cast(value_shape, type_symbol_leaf).
+        syn::Expr::Cast(c) => {
+            use quote::ToTokens;
+            let value = shape_of_expr(&c.expr, ctx);
+            let type_text = c.ty.to_token_stream().to_string().replace(' ', "");
+            let type_leaf = CValue::object([
+                ("kind", CValue::string("symbol")),
+                ("text", CValue::string(type_text)),
+            ]);
+            gamma_operation("concept:cast", vec![value, type_leaf])
+        }
+        // Indexed access: `receiver[index]` → concept:index(receiver, index).
+        syn::Expr::Index(idx) => {
+            let receiver = shape_of_expr(&idx.expr, ctx);
+            let index = shape_of_expr(&idx.index, ctx);
+            gamma_operation("concept:index", vec![receiver, index])
+        }
         // Free path identifier (e.g. None, Some, Vec::new, Ordering::Less).
         // Emit as substrate-canonical symbol leaf so deeper consumers (match
         // arm bodies, conditional branches) can lower them without depending

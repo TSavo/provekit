@@ -775,6 +775,28 @@ fn lower_term_shape_expression(
     if concept_name == "concept:skip" {
         return Some(ShapeExpression { text: String::new(), type_name: "()".to_string() });
     }
+    if concept_name == "concept:cast" {
+        if args.len() != 2 {
+            return None;
+        }
+        let value = lower_term_shape_expression(args[0], context, &append_position(position, 0))?;
+        let type_text = args[1].get("text").and_then(Value::as_str)?;
+        return Some(ShapeExpression {
+            text: format!("{} as {}", value.text, type_text),
+            type_name: type_text.to_string(),
+        });
+    }
+    if concept_name == "concept:index" {
+        if args.len() != 2 {
+            return None;
+        }
+        let receiver = lower_term_shape_expression(args[0], context, &append_position(position, 0))?;
+        let index = lower_term_shape_expression(args[1], context, &append_position(position, 1))?;
+        return Some(ShapeExpression {
+            text: format!("{}[{}]", receiver.text, index.text),
+            type_name: String::new(),
+        });
+    }
     let mut arg_terms = Vec::new();
     for (index, arg) in args.iter().enumerate() {
         arg_terms.push(lower_term_shape_expression(
