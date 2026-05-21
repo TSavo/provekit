@@ -468,7 +468,7 @@ pub(crate) fn find_realize_candidates_for_constraints(
         .collect())
 }
 
-fn registry_realize_candidates(
+pub(crate) fn registry_realize_candidates(
     workspace_root: &Path,
     target_lang: &str,
 ) -> Result<Vec<RealizeCandidate>, String> {

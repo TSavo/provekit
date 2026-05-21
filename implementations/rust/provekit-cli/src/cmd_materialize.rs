@@ -106,19 +106,26 @@ pub fn run(args: MaterializeArgs) -> u8 {
             }
         };
 
-    // #1361 chunk 1 / #1355: when --source-lang differs from --target,
-    // cross-language synthesis is required. Refuse loudly until #1361 chunk
-    // 2 wires the source-kit lifter → ProofIR → target-kit realizer exchange.
-    // Same-language case (or omitted --source-lang) keeps today's behavior.
+    // #1361 chunk 2 part A / #1355: when --source-lang differs from --target,
+    // run cross-language DISCOVERY mode — scan @boundary carriers in the
+    // source-dir, query the target-language realize manifest catalog by
+    // (family, concept_name), report which target manifests would resolve
+    // and which would refuse. Does NOT emit target-language code yet (that's
+    // part B — signature translation + per-target realize binary
+    // invocation). The report is the substrate-honest "what would happen if
+    // we materialized this rust source for python target" answer, surfaced
+    // before the code-emission machinery exists.
+    //
+    // Same-language case (or omitted --source-lang) skips this branch and
+    // continues to today's materialize path unchanged.
     if let Some(source_lang) = args.source_lang.as_deref() {
         if source_lang != target_lang {
-            eprintln!(
-                "{}: cross-language materialize (--source-lang {source_lang} != --target {target_lang}) \
-                 not yet wired. Tracked as #1361 chunk 2 + #1364 per-kit concept parity. \
-                 Currently this CLI supports source_lang == target_lang only.",
-                "refuse".red().bold()
+            return run_cross_language_discovery(
+                &project_root,
+                &args.source_dir,
+                source_lang,
+                &target_lang,
             );
-            return EXIT_USER_ERROR;
         }
     }
 
@@ -203,6 +210,219 @@ pub fn run(args: MaterializeArgs) -> u8 {
         }
     }
     EXIT_OK
+}
+
+/// #1361 chunk 2 part A / #1355: cross-language DISCOVERY mode.
+///
+/// When `--source-lang != --target`, scan the source directory for
+/// `#[provekit::boundary(...)]` attribute call-sites, parse each into a
+/// substrate-honest `CarrierComment`, and report which target-language
+/// realize manifests would resolve their (family, concept_name)
+/// tuples. Reports per-site outcome:
+///
+/// - **resolves**: exactly one target manifest matches (family + concept)
+/// - **ambiguous**: multiple target manifests match — caller must
+///   disambiguate via --library
+/// - **refuses**: no target manifest matches — sister shim missing in
+///   target language
+///
+/// This is foundation work for #1361 chunk 2 part B (signature translation
+/// + per-target realize binary invocation + target-language file emission).
+/// Part B picks up where this report leaves off — given the resolved
+/// manifest list, emit target-language code.
+///
+/// Exit codes:
+/// - `EXIT_OK` (0): scan completed, report printed.
+/// - `EXIT_USER_ERROR` (>0): source-dir unreadable or no @boundary
+///   attributes found (nothing to report on).
+fn run_cross_language_discovery(
+    project_root: &Path,
+    source_dir: &Path,
+    source_lang: &str,
+    target_lang: &str,
+) -> u8 {
+    eprintln!(
+        "{} cross-language discovery: {} -> {}",
+        "materialize".cyan().bold(),
+        source_lang,
+        target_lang
+    );
+
+    let mut total_sites = 0usize;
+    let mut resolves = 0usize;
+    let mut ambiguous = 0usize;
+    let mut refuses = 0usize;
+
+    for entry in WalkDir::new(source_dir).into_iter().flatten() {
+        let path = entry.path();
+        if !is_supported_source_file(path) || !should_scan_entry(path) {
+            continue;
+        }
+        let raw = match std::fs::read_to_string(path) {
+            Ok(s) => s,
+            Err(_) => continue,
+        };
+        // inject_boundary_carriers turns @boundary attrs into
+        // // provekit-concept: <payload> carriers — same surface used
+        // by the same-language materialize path.
+        let with_carriers = inject_boundary_carriers(&raw);
+        for line in with_carriers.lines() {
+            let Some((_indent, payload)) = concept_payload_from_line(line) else {
+                continue;
+            };
+            let carrier = match CarrierComment::parse(payload) {
+                Ok(c) => c,
+                Err(_) => continue,
+            };
+            total_sites += 1;
+
+            // Resolve via the catalog query: look for target_lang
+            // manifests whose provides_concepts include this concept.
+            // If family is pinned on the carrier, narrow to manifests
+            // declaring that family too.
+            let matches = find_target_manifests(
+                project_root,
+                target_lang,
+                &carrier.concept_name,
+                // family is carried in raw_payload — for now derive
+                // from the substrate-honest carrier surface by parsing
+                // raw_payload as JSON.
+                family_from_payload(&carrier.raw_payload).as_deref(),
+            );
+
+            let rel = path.strip_prefix(source_dir).unwrap_or(path).display();
+            match matches.len() {
+                0 => {
+                    refuses += 1;
+                    eprintln!(
+                        "  {} {} @ {} (concept={}, library={:?}): no {} manifest declares this concept",
+                        "REFUSE".red().bold(),
+                        carrier.concept_name,
+                        rel,
+                        carrier.concept_name,
+                        carrier.library_tag.as_deref().unwrap_or("?"),
+                        target_lang
+                    );
+                }
+                1 => {
+                    resolves += 1;
+                    eprintln!(
+                        "  {} {} @ {} → {} manifest `{}`",
+                        "RESOLVE".green().bold(),
+                        carrier.concept_name,
+                        rel,
+                        target_lang,
+                        matches[0]
+                    );
+                }
+                _ => {
+                    ambiguous += 1;
+                    eprintln!(
+                        "  {} {} @ {}: multiple {} manifests match — {:?}",
+                        "AMBIGUOUS".yellow().bold(),
+                        carrier.concept_name,
+                        rel,
+                        target_lang,
+                        matches
+                    );
+                }
+            }
+        }
+    }
+
+    eprintln!(
+        "{} discovery: {total_sites} site(s), {resolves} resolve + {ambiguous} ambiguous + {refuses} refused",
+        "materialize".cyan().bold()
+    );
+    if total_sites == 0 {
+        eprintln!(
+            "{}: no @boundary attributes found in {}. Cross-language discovery requires \
+             at least one #[provekit::boundary(...)] call-site.",
+            "warn".yellow().bold(),
+            source_dir.display()
+        );
+        return EXIT_USER_ERROR;
+    }
+    eprintln!(
+        "{}: discovery-only mode — target-language code emission is #1361 chunk 2 part B.",
+        "note".cyan().bold()
+    );
+    EXIT_OK
+}
+
+/// Parse the carrier's raw_payload JSON and return the family field if
+/// declared. Returns None when the payload either doesn't parse or omits
+/// family (the substrate-honest signal for "family floats").
+fn family_from_payload(payload: &str) -> Option<String> {
+    let val: Json = serde_json::from_str(payload).ok()?;
+    val.get("family")?.as_str().map(String::from)
+}
+
+/// Find realize manifests in `target_lang` that declare the given
+/// concept_name in their `provides_concepts`. When `family` is Some,
+/// further narrow to manifests declaring the matching family. Returns
+/// library_tag values for the matches.
+fn find_target_manifests(
+    project_root: &Path,
+    target_lang: &str,
+    concept_name: &str,
+    family: Option<&str>,
+) -> Vec<String> {
+    use crate::kit_dispatch::registry_realize_candidates;
+    let candidates = match registry_realize_candidates(project_root, target_lang) {
+        Ok(c) => c,
+        Err(_) => return Vec::new(),
+    };
+    let mut matches = Vec::new();
+    for cand in &candidates {
+        let provides = provides_concepts_for_realize(project_root, target_lang, &cand.tag);
+        if !provides.iter().any(|c| c == concept_name) {
+            continue;
+        }
+        if let Some(family_pin) = family {
+            // When family is pinned on the carrier, the manifest must
+            // declare the matching family to be considered. Loaded by
+            // parsing the candidate's manifest source.
+            if !manifest_declares_family(project_root, &cand.source, family_pin) {
+                continue;
+            }
+        }
+        matches.push(cand.tag.clone());
+    }
+    matches
+}
+
+/// Check whether the realize manifest at `manifest_source` declares the
+/// given family. Resolves manifest_source against project_root when
+/// relative, falls back to no-match when the file is unreadable.
+fn manifest_declares_family(project_root: &Path, manifest_source: &str, family: &str) -> bool {
+    let path = std::path::PathBuf::from(manifest_source);
+    let resolved = if path.is_absolute() {
+        path
+    } else {
+        project_root.join(&path)
+    };
+    if !resolved.is_file() {
+        return false;
+    }
+    let Ok(raw) = std::fs::read_to_string(&resolved) else {
+        return false;
+    };
+    // Line-based TOML probe matches the same shape kit_dispatch's
+    // parse_manifest uses; the line `family = "<value>"` declares the pin.
+    for line in raw.lines() {
+        let trimmed = line.trim();
+        if let Some(rest) = trimmed.strip_prefix("family") {
+            let rest = rest.trim_start();
+            if rest.starts_with('=') {
+                let val = rest.trim_start_matches('=').trim();
+                if val.trim_matches('"') == family {
+                    return true;
+                }
+            }
+        }
+    }
+    false
 }
 
 fn resolve_library_surface(
