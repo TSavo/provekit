@@ -459,6 +459,22 @@ fn bind_lift(params: &Value) -> Result<Value, String> {
             ]);
             let signature_shape_cid = blake3_512_of(encode_jcs(&sig_shape).as_bytes());
 
+            // #1361 chunk 2 part B / #1355: emit concept-hub sort CIDs for
+            // each parameter type. The rust kit's @sugar lift translates
+            // its source syntax to substrate-canonical sort identities AT
+            // the kit/substrate boundary. Parallel to source_transform's
+            // @boundary carrier emission and JavaBindLifter's @sugar emission.
+            // Kit-internal sort labels (rust:Int, rust:Str, ...) stay inside
+            // the rust kit; only concept-hub CIDs cross to substrate. Empty
+            // string in a slot signals "kit has no morphism for this type" —
+            // substrate-honest gap signal for downstream refusal.
+            let param_sort_cids: Vec<String> = param_types
+                .iter()
+                .map(|t| rust_source_type_to_concept_hub_sort_cid(t).unwrap_or("").to_string())
+                .collect();
+            let return_sort_cid = rust_source_type_to_concept_hub_sort_cid(&return_type)
+                .unwrap_or("")
+                .to_string();
             let mut entry = json!({
                 "kind": "library-sugar-binding-entry",
                 "target_language": "rust",
@@ -467,7 +483,9 @@ fn bind_lift(params: &Value) -> Result<Value, String> {
                 "source_function_name": item_fn.sig.ident.to_string(),
                 "param_names": param_names,
                 "param_types": param_types,
+                "param_sort_cids": param_sort_cids,
                 "return_type": return_type,
+                "return_sort_cid": return_sort_cid,
                 "term_shape": cvalue_to_json(&term_shape),
                 "term_shape_cid": term_shape_cid,
                 "operand_bindings": operand_bindings,
@@ -1676,6 +1694,78 @@ fn fn_param_names(item_fn: &syn::ItemFn) -> Vec<String> {
         }
     }
     names
+}
+
+/// Substrate-honest rust-syntax → concept-hub sort CID translation.
+///
+/// Mirror of source_transform.rs::rust_source_type_to_concept_hub_sort_cid
+/// (which handles @boundary signatures). This handles @sugar bindings —
+/// same kit/substrate boundary semantics: rust-internal sort labels stay
+/// inside the rust kit; only concept-hub CIDs cross to substrate.
+///
+/// CIDs verified against menagerie/concept-shapes/catalog/sorts/.
+fn rust_source_type_to_concept_hub_sort_cid(rust_type: &str) -> Option<&'static str> {
+    let trimmed = rust_type.trim();
+    // &mut T → concept:Ref<T> (minted 2026-05-21).
+    // walk_rpc's sugar_type_surface strips spaces (`&mut String` → `&mutString`);
+    // source_transform's @boundary parser keeps them (`&mut String`). Handle both.
+    if trimmed.starts_with("&mut ") || trimmed.starts_with("&mut") && !trimmed.starts_with("&mute") {
+        return Some(
+            "blake3-512:37d8efe0ce6321d1a16f80aa06cbdf056c846b8a99613731e8d64d9581af61bc517fd8c87daaff2c817585a7dfd763e09ed729fdc71d25fe16fb1b2e6ca33534"
+        );
+    }
+    let t = trimmed.trim_start_matches('&').trim();
+    let t = if let Some(stripped) = t
+        .strip_prefix("Option<")
+        .and_then(|s| s.strip_suffix('>'))
+    {
+        stripped.trim()
+    } else if let Some(stripped) = t.strip_prefix("Result<") {
+        let mut depth = 0i32;
+        let mut end = stripped.len();
+        for (i, ch) in stripped.chars().enumerate() {
+            match ch {
+                '<' => depth += 1,
+                '>' => depth -= 1,
+                ',' if depth == 0 => {
+                    end = i;
+                    break;
+                }
+                _ => {}
+            }
+        }
+        stripped[..end].trim()
+    } else {
+        t
+    };
+    match t {
+        "i8" | "i16" | "i32" | "i64" | "i128" | "isize" | "u8" | "u16" | "u32" | "u64"
+        | "u128" | "usize" => Some(
+            "blake3-512:30ffc51350121a7172f3e4064a33c45bbd345756979fccff6875cd2ab33e4964d098a99df80cfbdf1ec1a0738c5ac3476f0ff8f75589ea511d1acd82c74ecd58"
+        ),
+        "f32" | "f64" => Some(
+            "blake3-512:b979e70c4d5e53d9bdf13d6f08330be3c5b0714b8c770d69bbd05946b86c36df5274be8145a2683cc29c278155c9c1ee65b6897913524eecb9e4c89c71862f57"
+        ),
+        "bool" => Some(
+            "blake3-512:0ee13bf3fd6b7ecfbee72dfbfc18a7c0ea7f1663de6cca43cefb36f5b4c03665452646094a7c296e819e75d683c6ce4821f3d7db3c3c78ae97f2d4e3451d2074"
+        ),
+        "str" | "String" => Some(
+            "blake3-512:be8721d24849feb74c4721520bdba02d352a94f49253a627cd509127472aa1c47cbe99cb705cac4159b5365abcce0c9aaa4901fe67630827deb6be1f9daeea10"
+        ),
+        "()" => Some(
+            "blake3-512:47682b09e5dba71f563db6249c6cb352f7d540986dc7f4cd8d4fb1aa6d9a503064033ee3eb9f36ee6f9e000f700f2f030ebfcfe2b2b8b7e81a345b0d56551f1b"
+        ),
+        _ if t.starts_with("Vec<u8>") || t.starts_with("[u8") => Some(
+            "blake3-512:7116ef6e62e6739b213a8394f975a53c771b89f08c36d27143827acfcfebc0e39e5b82c530be668c3cfd5ec6966ccaa42930b37fdb1f4ac25652a970be10fb6b"
+        ),
+        _ if t.starts_with("Vec<") || t.starts_with('[') => Some(
+            "blake3-512:e3f8d17445f9d2ce89c41c09cbeea08a8bc685d1c34a9fd3dfa7b1df17a94f40eab37396615501f1468baf2a1480fd5a27330ea23202b99876c5f4d97fa2cfb2"
+        ),
+        "Value" | "serde_json::Value" => Some(
+            "blake3-512:702064722b23410fde0d1fd7afac165bf5914441d67abe1e19d63b0e8fe8117296d2677cc721ad096b8b3bb82d178af699bf14fd70bfb18756c5bed6f4434108"
+        ),
+        _ => None,
+    }
 }
 
 fn sugar_param_types(item_fn: &syn::ItemFn) -> Vec<String> {
