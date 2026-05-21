@@ -737,6 +737,13 @@ struct ParsedManifest {
     /// #1359 / #1355: optional `library_version` pin. Parallel to `family`.
     #[allow(dead_code)]
     library_version: Option<String>,
+    /// #1360 / #1355: per-target scope-bringings the consumer crate needs
+    /// in its prelude when bodies from this realize plugin are spliced.
+    /// E.g. `use std::io::{self, BufRead, Write};` for the rust-stdio
+    /// shim. cmd_materialize collects these across all materialized sites
+    /// and hoists them into the consumer file's `use` section.
+    /// Empty vec when manifest omits the key (back-compat).
+    scope_bringings: Vec<String>,
     protocol_versions: Vec<String>,
     capability_kind: Option<String>,
     exam_manifest_schema_version: Option<String>,
@@ -751,6 +758,7 @@ fn parse_manifest(path: &Path) -> Result<ParsedManifest, String> {
     let mut library_tag: Option<String> = None;
     let mut family: Option<String> = None;
     let mut library_version: Option<String> = None;
+    let mut scope_bringings: Vec<String> = Vec::new();
     let mut protocol_versions: Vec<String> = Vec::new();
     let mut capability_kind: Option<String> = None;
     let mut exam_manifest_schema_version: Option<String> = None;
@@ -793,6 +801,7 @@ fn parse_manifest(path: &Path) -> Result<ParsedManifest, String> {
             // Parsed but not yet wired into dispatch resolution (that's chunk 2).
             ("", "family") => family = Some(val.trim_matches('"').to_string()),
             ("", "library_version") => library_version = Some(val.trim_matches('"').to_string()),
+            ("", "scope_bringings") => scope_bringings = parse_toml_string_array(val),
             ("", "command") => command = parse_toml_string_array(val),
             ("capabilities", "kind") => capability_kind = Some(val.trim_matches('"').to_string()),
             ("capabilities", "exam_manifest_schema_version") => {
@@ -811,19 +820,54 @@ fn parse_manifest(path: &Path) -> Result<ParsedManifest, String> {
         library_tag,
         family,
         library_version,
+        scope_bringings,
         protocol_versions,
         capability_kind,
         exam_manifest_schema_version,
     })
 }
 
+/// Parse a TOML inline string array like `["a", "b", "c"]`.
+///
+/// Quote-aware: commas inside `"..."` are NOT separators (needed for
+/// #1360's `scope_bringings = ["use std::io::{self, BufRead, Write};"]`
+/// where the value contains commas inside the quoted use-statement).
 fn parse_toml_string_array(value: &str) -> Vec<String> {
     let inner = value.trim().trim_matches(|c| c == '[' || c == ']');
-    inner
-        .split(',')
-        .map(|s| s.trim().trim_matches('"').to_string())
-        .filter(|s| !s.is_empty())
-        .collect()
+    let mut out: Vec<String> = Vec::new();
+    let mut current = String::new();
+    let mut in_quote = false;
+    let mut escape = false;
+    for ch in inner.chars() {
+        if escape {
+            current.push(ch);
+            escape = false;
+            continue;
+        }
+        match ch {
+            '\\' if in_quote => {
+                current.push(ch);
+                escape = true;
+            }
+            '"' => {
+                in_quote = !in_quote;
+                current.push(ch);
+            }
+            ',' if !in_quote => {
+                let trimmed = current.trim().trim_matches('"').to_string();
+                if !trimmed.is_empty() {
+                    out.push(trimmed);
+                }
+                current.clear();
+            }
+            _ => current.push(ch),
+        }
+    }
+    let trimmed = current.trim().trim_matches('"').to_string();
+    if !trimmed.is_empty() {
+        out.push(trimmed);
+    }
+    out
 }
 
 fn validate_library_tag(tag: &str) -> Result<(), &'static str> {
@@ -2186,6 +2230,59 @@ mod tests {
     // -----------------------------------------------------------------
     // #1359 / #1355: realize manifest gains family + library_version
     // -----------------------------------------------------------------
+
+    // -----------------------------------------------------------------
+    // #1360 / #1355: scope_bringings on realize manifest (case-1
+    // effect propagation — use/import items the materialized body needs
+    // in the consumer crate's prelude). Parsed here; cmd_materialize
+    // reads them at splice time and hoists into the target file.
+    // -----------------------------------------------------------------
+
+    #[test]
+    fn parse_manifest_accepts_scope_bringings_array() {
+        let dir = std::env::temp_dir().join("provekit-test-1360-scope");
+        let _ = fs::remove_dir_all(&dir);
+        fs::create_dir_all(&dir).expect("temp dir");
+        let manifest_path = dir.join("manifest.toml");
+        fs::write(
+            &manifest_path,
+            r#"
+name = "rust-realize-shim-stdio"
+library_tag = "provekit-shim-stdio-rust"
+family = "concept:family:stdio-stream"
+scope_bringings = ["use std::io::{self, BufRead, Write};"]
+command = ["/bin/true"]
+"#,
+        )
+        .expect("write");
+        let parsed = parse_manifest(&manifest_path).expect("parse");
+        assert_eq!(parsed.scope_bringings.len(), 1);
+        assert_eq!(
+            parsed.scope_bringings[0],
+            "use std::io::{self, BufRead, Write};"
+        );
+        let _ = fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn parse_manifest_without_scope_bringings_yields_empty_vec() {
+        let dir = std::env::temp_dir().join("provekit-test-1360-no-scope");
+        let _ = fs::remove_dir_all(&dir);
+        fs::create_dir_all(&dir).expect("temp dir");
+        let manifest_path = dir.join("manifest.toml");
+        fs::write(
+            &manifest_path,
+            r#"
+name = "rust-realize-default"
+library_tag = "default"
+command = ["/bin/true"]
+"#,
+        )
+        .expect("write");
+        let parsed = parse_manifest(&manifest_path).expect("parse");
+        assert!(parsed.scope_bringings.is_empty());
+        let _ = fs::remove_dir_all(&dir);
+    }
 
     #[test]
     fn parse_manifest_accepts_family_and_library_version_pins() {
