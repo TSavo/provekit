@@ -1,0 +1,24 @@
+{
+  "envelope": {
+    "declaredAt": "2026-05-21T00:00:00Z",
+    "signature": "ed25519:UNSIGNED_DEV_ONLY",
+    "signer": "ed25519:UNSIGNED_DEV_ONLY"
+  },
+  "header": {
+    "cid": "blake3-512:42656111eb7edd23327dc7a8443101351584f738915238cbfe389a11d7b1086539ce85db0147087f90a376b9bcfbdb0f8504251dd5da72063fc7ecb01cc2eba8",
+    "direction": "bidirectional",
+    "kind": "sort-morphism",
+    "precision_loss": "none",
+    "range_loss": "none",
+    "representation_constraints": [],
+    "runtime_guards": [],
+    "schemaVersion": "1",
+    "source_language_signature_cid": "blake3-512:4d312a5ab13eba517063f097a73b8675f1ea2a915ab5cc5b92587c83b47f707b0298858ac2c48061eee73e30e1c48983bd0aec5641bc806561624fc7e4da44ef",
+    "source_sort_cid": "blake3-512:3f9e75f1e9fc767abd4ba34f2d6619bd588929dd0acb808a6e4a1e4e6d19478e3cfdc17f77a91bf472d693262235adb2749c28788ec16b9f81230feb43b243e4",
+    "target_language_signature_cid": "blake3-512:1979babed41ad51ad8d7a28543815f74e24a9d4ee1ae3d52ccc6549f293aa63519abf5411a67b7882c73333b1b357e4863f6d7781f0b0776e5bd25f90ea7d793",
+    "target_sort_cid": "blake3-512:e3f8d17445f9d2ce89c41c09cbeea08a8bc685d1c34a9fd3dfa7b1df17a94f40eab37396615501f1468baf2a1480fd5a27330ea23202b99876c5f4d97fa2cfb2"
+  },
+  "metadata": {
+    "note": "java's native list/array realization of concept:List<T>. Parametric — composes with the inner T's morphism: applying this morphism to a value of type lang:List<T> requires applying lang:T → concept:T to each element."
+  }
+}

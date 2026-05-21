@@ -1,0 +1,24 @@
+{
+  "envelope": {
+    "declaredAt": "2026-05-21T00:00:00Z",
+    "signature": "ed25519:UNSIGNED_DEV_ONLY",
+    "signer": "ed25519:UNSIGNED_DEV_ONLY"
+  },
+  "header": {
+    "cid": "blake3-512:90266e038bbf8e0aa9359dca4050b98f88217359da29abb255c1d0f414f0bb5f7ecda3703689d9aaaa62651a89c23b3fc265aacb5a4c174a5a01022dfa437185",
+    "direction": "bidirectional",
+    "kind": "sort-morphism",
+    "precision_loss": "none",
+    "range_loss": "none",
+    "representation_constraints": [],
+    "runtime_guards": [],
+    "schemaVersion": "1",
+    "source_language_signature_cid": "blake3-512:052e54f3a38b581eb4fde81df1a45213022ca06bf9eb50ea2d94996b49f507a0f247ed62bff10eae5a17a7191a8de92b0014af5dcf4ef6ae1d8bf6885e88e535",
+    "source_sort_cid": "blake3-512:19af64aeb6d9812ec908c99101580f98104c1877e51f37bdc8cd832f6da2cdc30d26bdf94aa9548aac1216bdb12f816236218e7bbe88fd02d0b31c57cd3e8875",
+    "target_language_signature_cid": "blake3-512:1979babed41ad51ad8d7a28543815f74e24a9d4ee1ae3d52ccc6549f293aa63519abf5411a67b7882c73333b1b357e4863f6d7781f0b0776e5bd25f90ea7d793",
+    "target_sort_cid": "blake3-512:b81923e3273fedfce0b84d401d8b30965d4c72530af6c7538d9ed9b2905348fa3c639636b21b3f47ac8a242e79eef8e278b1d6c9cfab8e289cf059cef94c82e1"
+  },
+  "metadata": {
+    "note": "zig's native map/dict/hash realization of concept:Map<K,V>. Parametric — composes with inner K and V morphisms."
+  }
+}

@@ -1,0 +1,24 @@
+{
+  "envelope": {
+    "declaredAt": "2026-05-21T00:00:00Z",
+    "signature": "ed25519:UNSIGNED_DEV_ONLY",
+    "signer": "ed25519:UNSIGNED_DEV_ONLY"
+  },
+  "header": {
+    "cid": "blake3-512:efb296d0099b479d55e1ded47051305f78d53cd41e680d373e5333d1914059c4d6fe78c8eace66f2ee68b16bc78b0238bf7d4499dfe2b8ffac92f0abb55c1ff6",
+    "direction": "bidirectional",
+    "kind": "sort-morphism",
+    "precision_loss": "none",
+    "range_loss": "none",
+    "representation_constraints": [],
+    "runtime_guards": [],
+    "schemaVersion": "1",
+    "source_language_signature_cid": "blake3-512:5e9d7f575403591269de929edae0eb247f3da4f9c56ac606ccba582bc4a86473ddd66696cb7cc02d0678c7a7c2a3f45698f5431b7418afefce12f332ee4c9ef4",
+    "source_sort_cid": "blake3-512:acc198dc0e0a5bff8596b69bf0cdbec89ef529c5cfde81cc5e98c57b5609a6015c778ba7fc674006e54eb753f63740c60f0dfde7cb32446e81971522a36f263a",
+    "target_language_signature_cid": "blake3-512:1979babed41ad51ad8d7a28543815f74e24a9d4ee1ae3d52ccc6549f293aa63519abf5411a67b7882c73333b1b357e4863f6d7781f0b0776e5bd25f90ea7d793",
+    "target_sort_cid": "blake3-512:b81923e3273fedfce0b84d401d8b30965d4c72530af6c7538d9ed9b2905348fa3c639636b21b3f47ac8a242e79eef8e278b1d6c9cfab8e289cf059cef94c82e1"
+  },
+  "metadata": {
+    "note": "csharp's native map/dict/hash realization of concept:Map<K,V>. Parametric — composes with inner K and V morphisms."
+  }
+}

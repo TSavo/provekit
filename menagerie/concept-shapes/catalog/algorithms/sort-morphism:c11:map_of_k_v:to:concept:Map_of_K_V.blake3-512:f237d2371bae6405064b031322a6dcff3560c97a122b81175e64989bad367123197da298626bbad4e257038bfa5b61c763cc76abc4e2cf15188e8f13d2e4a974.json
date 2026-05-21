@@ -1,0 +1,29 @@
+{
+  "envelope": {
+    "declaredAt": "2026-05-21T00:00:00Z",
+    "signature": "ed25519:UNSIGNED_DEV_ONLY",
+    "signer": "ed25519:UNSIGNED_DEV_ONLY"
+  },
+  "header": {
+    "cid": "blake3-512:f237d2371bae6405064b031322a6dcff3560c97a122b81175e64989bad367123197da298626bbad4e257038bfa5b61c763cc76abc4e2cf15188e8f13d2e4a974",
+    "direction": "left-to-right",
+    "kind": "sort-morphism",
+    "precision_loss": "none",
+    "range_loss": "narrowing",
+    "representation_constraints": [],
+    "runtime_guards": [
+      {
+        "failure_mode": "loss",
+        "kind": "linear-scan-required"
+      }
+    ],
+    "schemaVersion": "1",
+    "source_language_signature_cid": "blake3-512:ad093bee1f2ad3ad15fe9e793efcc6ce9dc58138a31502af969bac79a8c81b1066abef449414c78867104188e9177dd51de88ccc2f192013f5c82fe69c1a0066",
+    "source_sort_cid": "blake3-512:22f10f05c11d7ce92f44a785475a7645a382671555c07eb5a139cb4be040ad355844a1879ac70ea69777abf92858d57878410d1b0d525ce334f25aa6b12599cc",
+    "target_language_signature_cid": "blake3-512:1979babed41ad51ad8d7a28543815f74e24a9d4ee1ae3d52ccc6549f293aa63519abf5411a67b7882c73333b1b357e4863f6d7781f0b0776e5bd25f90ea7d793",
+    "target_sort_cid": "blake3-512:b81923e3273fedfce0b84d401d8b30965d4c72530af6c7538d9ed9b2905348fa3c639636b21b3f47ac8a242e79eef8e278b1d6c9cfab8e289cf059cef94c82e1"
+  },
+  "metadata": {
+    "note": "C11 has no native polymorphic map — parallel arrays with linear scan. Loss: key-ordering-undefined, lookup-O(n), no amortized-O(1). Parametric over K + V."
+  }
+}
