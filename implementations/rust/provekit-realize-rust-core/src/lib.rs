@@ -625,7 +625,13 @@ fn lower_term_shape_expression(
         let body_shape = args[0];
         let mut param_names: Vec<String> = Vec::with_capacity(args.len().saturating_sub(1));
         for param in args.iter().skip(1) {
-            let Some(text) = param.get("source_text").and_then(Value::as_str) else {
+            // Closure params are now symbol leaves (kind=symbol, text=name).
+            let Some(text) = param.get("text").and_then(Value::as_str) else {
+                // Legacy source_text path (un-re-minted shims).
+                if let Some(legacy) = param.get("source_text").and_then(Value::as_str) {
+                    param_names.push(legacy.to_string());
+                    continue;
+                }
                 return None;
             };
             param_names.push(text.to_string());
@@ -640,6 +646,134 @@ fn lower_term_shape_expression(
             text,
             type_name: String::new(),
         });
+    }
+    // Structural control flow + match + macro lowerings — substrate-canonical
+    // operators minted 2026-05-21. Replace source_text fallbacks.
+    if concept_name == "concept:conditional" || concept_name == "conditional" {
+        if args.len() < 2 {
+            return None;
+        }
+        let cond = lower_term_shape_expression(args[0], context, &append_position(position, 0))?;
+        let then_text = lower_block_or_expr(args[1], context, &append_position(position, 1))?;
+        let else_text = if args.len() >= 3 {
+            if term_shape_concept_name(args[2]).as_deref() == Some("concept:skip") {
+                None
+            } else {
+                Some(lower_block_or_expr(args[2], context, &append_position(position, 2))?)
+            }
+        } else {
+            None
+        };
+        let text = match else_text {
+            Some(e) => format!("if {} {{ {} }} else {{ {} }}", cond.text, then_text, e),
+            None => format!("if {} {{ {} }}", cond.text, then_text),
+        };
+        return Some(ShapeExpression { text, type_name: String::new() });
+    }
+    if concept_name == "concept:while" {
+        if args.len() != 2 {
+            return None;
+        }
+        let cond = lower_term_shape_expression(args[0], context, &append_position(position, 0))?;
+        let body = lower_block_or_expr(args[1], context, &append_position(position, 1))?;
+        return Some(ShapeExpression {
+            text: format!("while {} {{ {} }}", cond.text, body),
+            type_name: String::new(),
+        });
+    }
+    if concept_name == "concept:for-each" {
+        if args.len() != 3 {
+            return None;
+        }
+        let var = args[0].get("text").and_then(Value::as_str)?.to_string();
+        let iter = lower_term_shape_expression(args[1], context, &append_position(position, 1))?;
+        let body = lower_block_or_expr(args[2], context, &append_position(position, 2))?;
+        return Some(ShapeExpression {
+            text: format!("for {} in {} {{ {} }}", var, iter.text, body),
+            type_name: String::new(),
+        });
+    }
+    if concept_name == "concept:for" {
+        // Classic for(init; cond; step; body) — rare in rust source; emit
+        // as a decomposed seq+while for substrate honesty.
+        if args.len() != 4 {
+            return None;
+        }
+        let init = lower_term_shape_expression(args[0], context, &append_position(position, 0))?;
+        let cond = lower_term_shape_expression(args[1], context, &append_position(position, 1))?;
+        let step = lower_term_shape_expression(args[2], context, &append_position(position, 2))?;
+        let body = lower_term_shape_expression(args[3], context, &append_position(position, 3))?;
+        return Some(ShapeExpression {
+            text: format!(
+                "{{ {}; while {} {{ {}; {}; }} }}",
+                init.text, cond.text, body.text, step.text
+            ),
+            type_name: String::new(),
+        });
+    }
+    if concept_name == "concept:match" {
+        if args.is_empty() {
+            return None;
+        }
+        let scrutinee =
+            lower_term_shape_expression(args[0], context, &append_position(position, 0))?;
+        let mut arms_text: Vec<String> = Vec::with_capacity(args.len().saturating_sub(1));
+        for (i, arm) in args.iter().enumerate().skip(1) {
+            let arm_args = term_shape_args(arm);
+            if arm_args.len() != 2 {
+                return None;
+            }
+            let pattern_text = arm_args[0].get("text").and_then(Value::as_str)?.to_string();
+            let body_text = lower_block_or_expr(
+                arm_args[1],
+                context,
+                &append_position(&append_position(position, i), 1),
+            )?;
+            arms_text.push(format!("{} => {},", pattern_text, body_text));
+        }
+        return Some(ShapeExpression {
+            text: format!("match {} {{ {} }}", scrutinee.text, arms_text.join(" ")),
+            type_name: String::new(),
+        });
+    }
+    if concept_name == "concept:macro-call" {
+        // args[0] = path leaf (macro name); args[1] = symbol leaf (macro tokens).
+        if args.len() != 2 {
+            return None;
+        }
+        let path = args[0].get("text").and_then(Value::as_str)?;
+        let tokens = args[1].get("text").and_then(Value::as_str)?;
+        return Some(ShapeExpression {
+            text: format!("{}!({})", path, tokens),
+            type_name: String::new(),
+        });
+    }
+    if concept_name == "concept:try" {
+        // try-body + catches. Rust doesn't natively have try-catch; we emit
+        // the body as-is (rust uses Result for error handling, declared as
+        // an effect on the binding, not in the body shape).
+        if args.is_empty() {
+            return None;
+        }
+        let body = lower_term_shape_expression(args[0], context, &append_position(position, 0))?;
+        return Some(body);
+    }
+    if concept_name == "concept:throw" {
+        if args.is_empty() {
+            // Bare throw (rare in rust — panic!() with no msg).
+            return Some(ShapeExpression {
+                text: "panic!()".to_string(),
+                type_name: "()".to_string(),
+            });
+        }
+        let inner = lower_term_shape_expression(args[0], context, &append_position(position, 0))?;
+        return Some(ShapeExpression {
+            text: format!("panic!({})", inner.text),
+            type_name: "()".to_string(),
+        });
+    }
+    if concept_name == "concept:skip" {
+        return Some(ShapeExpression { text: String::new(), type_name: "()".to_string() });
     }
     let mut arg_terms = Vec::new();
     for (index, arg) in args.iter().enumerate() {
@@ -673,27 +807,35 @@ fn term_shape_leaf_expression(
         }
     }
     // Literal leaf: concept:literal shape emitted by walk_rpc's literal_shape fn.
-    // If `source_text` is present (added for integer literals with type suffixes
-    // like `0u8` or `64usize`, wildcard binding "_", macro source, etc.), use
-    // it verbatim — preserves the source form exactly.
-    // Otherwise fall back to the integer/bool/string value via literal_term.
+    // Substrate-canonical shape: (sort, value, optional integer_width).
+    // source_text dropped from substrate channel (2026-05-21); the rust
+    // realize binary reconstructs rust source from value+sort.
+    if shape.get("kind").and_then(Value::as_str) == Some("literal") || shape.get("value").is_some()
+    {
+        let width = shape.get("integer_width").and_then(Value::as_str);
+        return Some(literal_term_with_width(
+            shape.get("value").unwrap_or(&Value::Null),
+            width,
+        ));
+    }
+    // Legacy source_text fallback — only kept for backwards compat with
+    // un-re-minted shim envelopes. After all shims re-minted post-2026-05-21,
+    // this branch should never fire on shim sources.
     if let Some(source_text) = shape.get("source_text").and_then(Value::as_str) {
         return Some(ShapeExpression {
             text: source_text.to_string(),
             type_name: String::new(),
         });
     }
-    if shape.get("kind").and_then(Value::as_str) == Some("literal") || shape.get("value").is_some()
-    {
-        return Some(literal_term(shape.get("value").unwrap_or(&Value::Null)));
-    }
     // Leaf kinds emitted by walk_rpc that carry their text verbatim:
     // kind:"path"        → free function callee (e.g. "blake3::Hasher::new")
     // kind:"method"      → method ident (e.g. "update")
     // kind:"mutability"  → "mut" or "" inside concept:ref
+    // kind:"symbol"      → identifier binding (closure param, wildcard "_",
+    //                      match-arm pattern text, etc.)
     // Return the text verbatim — NOT through literal_term which would quote it.
     if let Some(kind) = shape.get("kind").and_then(Value::as_str) {
-        if kind == "path" || kind == "method" || kind == "mutability" {
+        if kind == "path" || kind == "method" || kind == "mutability" || kind == "symbol" {
             if let Some(text) = shape.get("text").and_then(Value::as_str) {
                 return Some(ShapeExpression {
                     text: text.to_string(),
@@ -812,6 +954,69 @@ fn symbol_term(symbol: &str, context: &ShapeLoweringContext) -> ShapeExpression 
     ShapeExpression {
         text: symbol.to_string(),
         type_name: type_for_argument(symbol, context),
+    }
+}
+
+/// Try body-lowering first (for concept:seq / concept:assign / concept:return
+/// statement-shapes); fall back to expression-lowering on single-expression
+/// bodies. Used for the body slot of structural operators (while / for-each /
+/// conditional / match-arm) where the body may be either a block or a single
+/// expression.
+fn lower_block_or_expr(
+    shape: &Value,
+    context: &mut ShapeLoweringContext,
+    position: &[usize],
+) -> Option<String> {
+    if let Some(body) = lower_term_shape_body(shape, context, position) {
+        return Some(body);
+    }
+    let expr = lower_term_shape_expression(shape, context, position)?;
+    Some(expr.text)
+}
+
+/// Lower a concept:literal value to a rust source-spelling, including the
+/// integer width suffix when present. Replaces source_text-based reconstruction
+/// (which leaked kit-internal source into substrate state).
+fn literal_term_with_width(value: &Value, integer_width: Option<&str>) -> ShapeExpression {
+    match value {
+        Value::Bool(value) => ShapeExpression {
+            text: value.to_string(),
+            type_name: "bool".to_string(),
+        },
+        Value::Number(value) => {
+            // Re-attach integer width suffix when declared. "inferred" / None
+            // → bare number (rust infers from context).
+            let width = integer_width.unwrap_or("inferred");
+            let suffix = if width == "inferred" || width.is_empty() {
+                String::new()
+            } else {
+                width.to_string()
+            };
+            let type_name = if width.is_empty() || width == "inferred" {
+                "i64".to_string()
+            } else {
+                width.to_string()
+            };
+            ShapeExpression {
+                text: format!("{value}{suffix}"),
+                type_name,
+            }
+        }
+        Value::String(value) => {
+            // Substrate-canonical string literal: rust raw form. (Char/string
+            // disambiguation lost when concept:Char isn't minted as a distinct
+            // sort — for now all string-typed literals emit as rust string
+            // literals. Single-char patterns embedded in match arms emit via
+            // the match-arm pattern path, not here.)
+            ShapeExpression {
+                text: format!("{:?}", value),
+                type_name: "&str".to_string(),
+            }
+        }
+        _ => ShapeExpression {
+            text: "()".to_string(),
+            type_name: "()".to_string(),
+        },
     }
 }
 

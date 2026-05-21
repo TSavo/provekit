@@ -1,0 +1,39 @@
+{
+  "cid": "blake3-512:87682d03506ca890af542fc90a979f8148586a3a461f45776c746574380dfd6a31675af2b999de6221c39e21fea9f9beb713d506c36d09ae495d2ba5ff995b59",
+  "memento": {
+    "contract": {
+      "body": {
+        "kind": "atomic",
+        "name": "true"
+      },
+      "formals": [
+        "pattern",
+        "body"
+      ],
+      "kind": "wp-rule"
+    },
+    "contract_note": "Single arm of a match: pattern + body. Pattern is currently a kit-side symbol leaf; full pattern decomposition is follow-up substrate-mint work.",
+    "formal_sorts": [
+      "Pattern",
+      "Expr"
+    ],
+    "kind": "concept-abstraction",
+    "operator": "concept:match-arm",
+    "realizations": [],
+    "result_sort": "MatchArm",
+    "slots": [
+      {
+        "name": "pattern"
+      },
+      {
+        "name": "body"
+      }
+    ],
+    "tier": "abstraction"
+  },
+  "signature": {
+    "alg": "ed25519",
+    "key_id": "UNSIGNED_DEV_ONLY",
+    "sig_b64": "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"
+  }
+}

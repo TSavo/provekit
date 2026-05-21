@@ -2404,20 +2404,15 @@ fn shape_of_stmt(stmt: &syn::Stmt, ctx: &ShapeContext) -> Arc<CValue> {
             let Some(init) = local.init.as_ref() else {
                 return non_operation_shape();
             };
-            // `let _ = X;` — Pat::Wild discard binding. Emit concept:assign
-            // with target = concept:literal source_text "_" so realize side
-            // can recognize and emit `let _ = X;` byte-correctly. No mutability
-            // arg (wildcard binding is never `let mut _ = ...`).
+            // `let _ = X;` — Pat::Wild discard binding. Target is a symbol
+            // leaf "_" (substrate-canonical name; same shape walk_rpc uses
+            // for other named bindings). The realize side detects "_" and
+            // emits the wildcard form. No source_text — the underscore IS
+            // the substrate name, not a kit-specific source token.
             if matches!(&local.pat, syn::Pat::Wild(_)) {
-                let Some(op_cid) = concept_op_cid("concept:literal") else {
-                    return non_operation_shape();
-                };
                 let target_leaf = CValue::object([
-                    ("args", CValue::array(Vec::new())),
-                    ("concept_name", CValue::string("concept:literal")),
-                    ("op_cid", CValue::string(op_cid)),
-                    ("sort", CValue::string(SORT_STRING_CID)),
-                    ("source_text", CValue::string("_")),
+                    ("kind", CValue::string("symbol")),
+                    ("text", CValue::string("_")),
                 ]);
                 return gamma_operation(
                     "concept:assign",
@@ -2458,26 +2453,63 @@ fn shape_of_stmt(stmt: &syn::Stmt, ctx: &ShapeContext) -> Arc<CValue> {
 
 fn shape_of_expr(expr: &syn::Expr, ctx: &ShapeContext) -> Arc<CValue> {
     match expr {
-        // Control-flow expressions whose patterns / bindings / scrutinees
-        // aren't currently in the substrate's primitive op catalog
-        // (concept:if exists structurally as concept:conditional, but its
-        // 3-arg form drops things like `else if` chains and pattern guards;
-        // concept:for / concept:while drop iterator + pattern). For byte-
-        // exact reproduction we lift these via prettyplease as a single
-        // concept:literal source_text leaf. Outer-scope identifiers
-        // referenced inside survive textually.
-        syn::Expr::If(_) | syn::Expr::While(_) | syn::Expr::ForLoop(_) | syn::Expr::Loop(_) => {
-            let formatted = pretty_print_expr(expr);
-            let Some(op_cid) = concept_op_cid("concept:literal") else {
-                return non_operation_shape();
+        // Structural control-flow lifts (source_text fallback removed):
+        // - if/else → concept:conditional(cond, then, else)
+        // - while → concept:while(cond, body)
+        // - for x in iter → concept:for-each(var, iterable, body)
+        // - loop → concept:while(true, body)  (decomposed via existing primitives)
+        syn::Expr::If(e) => {
+            let cond = shape_of_expr(&e.cond, ctx);
+            let then_shape = shape_of_block(&e.then_branch, ctx);
+            let else_shape = match &e.else_branch {
+                Some((_, expr)) => shape_of_expr(expr, ctx),
+                None => gamma_operation("concept:skip", Vec::new()),
             };
-            CValue::object([
-                ("args", CValue::array(Vec::new())),
-                ("concept_name", CValue::string("concept:literal")),
-                ("op_cid", CValue::string(op_cid)),
-                ("sort", CValue::string(SORT_STRING_CID)),
-                ("source_text", CValue::string(formatted)),
-            ])
+            gamma_operation("concept:conditional", vec![cond, then_shape, else_shape])
+        }
+        syn::Expr::While(e) => {
+            let cond = shape_of_expr(&e.cond, ctx);
+            let body = shape_of_block(&e.body, ctx);
+            gamma_operation("concept:while", vec![cond, body])
+        }
+        syn::Expr::ForLoop(e) => {
+            // `for pat in expr { body }` — concept:for-each(var, iterable, body).
+            // The pattern is captured as a leaf binding by name (full pattern
+            // destructuring resolution is follow-up; matches walk_rpc's
+            // existing pattern-as-leaf convention).
+            let var = match &*e.pat {
+                syn::Pat::Ident(p) => CValue::object([
+                    ("kind", CValue::string("symbol")),
+                    ("text", CValue::string(p.ident.to_string())),
+                ]),
+                other => {
+                    use quote::ToTokens;
+                    CValue::object([
+                        ("kind", CValue::string("symbol")),
+                        ("text", CValue::string(other.to_token_stream().to_string())),
+                    ])
+                }
+            };
+            let iterable = shape_of_expr(&e.expr, ctx);
+            let body = shape_of_block(&e.body, ctx);
+            gamma_operation("concept:for-each", vec![var, iterable, body])
+        }
+        syn::Expr::Loop(e) => {
+            // `loop { body }` ≡ `while true { body }` — decompose via concept:literal(true).
+            let true_lit = {
+                let Some(op_cid) = concept_op_cid("concept:literal") else {
+                    return non_operation_shape();
+                };
+                CValue::object([
+                    ("args", CValue::array(Vec::new())),
+                    ("concept_name", CValue::string("concept:literal")),
+                    ("op_cid", CValue::string(op_cid)),
+                    ("sort", CValue::string(SORT_BOOL_CID)),
+                    ("value", CValue::boolean(true)),
+                ])
+            };
+            let body = shape_of_block(&e.body, ctx);
+            gamma_operation("concept:while", vec![true_lit, body])
         }
         syn::Expr::Return(e) => {
             let args = e
@@ -2575,81 +2607,67 @@ fn shape_of_expr(expr: &syn::Expr, ctx: &ShapeContext) -> Arc<CValue> {
                 vec![shape_of_expr(&e.expr, ctx), mut_leaf],
             )
         }
-        // Match expression: `match scrutinee { arm1, arm2, ... }`. Lifted
-        // as a concept:literal source_text leaf carrying the full match
-        // expression text. Same approach as Expr::Macro — patterns are not
-        // currently in the substrate's primitive op catalog (no concept:match,
-        // no concept:pattern), so we preserve the source form verbatim. The
-        // realize side emits source_text as-is; outer-scope symbols
-        // referenced inside the match body remain in scope via Rust's normal
-        // lexical scoping.
-        //
-        // Multi-line formatting is preserved via `format_match_expression`
-        // which inserts newlines + indentation to match common Rust source
-        // style for the arms.
+        // Structural match: concept:match(scrutinee, arm1, arm2, ...).
+        // Each arm is concept:match-arm(pattern, body). Pattern is a
+        // symbol leaf carrying the textual form (full pattern decomposition
+        // to concept:literal-pattern / concept:constructor-pattern / etc.
+        // is follow-up substrate-mint work; for now patterns live as
+        // symbol-leaf substrate names with kit-side pattern parsing).
         syn::Expr::Match(e) => {
-            let formatted = pretty_print_expr(&syn::Expr::Match(e.clone()));
-            let Some(op_cid) = concept_op_cid("concept:literal") else {
-                return non_operation_shape();
-            };
-            CValue::object([
-                ("args", CValue::array(Vec::new())),
-                ("concept_name", CValue::string("concept:literal")),
-                ("op_cid", CValue::string(op_cid)),
-                ("sort", CValue::string(SORT_STRING_CID)),
-                ("source_text", CValue::string(formatted)),
-            ])
+            use quote::ToTokens;
+            let mut args = vec![shape_of_expr(&e.expr, ctx)];
+            for arm in &e.arms {
+                let pattern_text = arm.pat.to_token_stream().to_string();
+                let pattern_leaf = CValue::object([
+                    ("kind", CValue::string("symbol")),
+                    ("text", CValue::string(pattern_text)),
+                ]);
+                let body = shape_of_expr(&arm.body, ctx);
+                args.push(gamma_operation("concept:match-arm", vec![pattern_leaf, body]));
+            }
+            gamma_operation("concept:match", args)
         }
         // Macro invocation: `writeln!(handle, "{}", line)` and similar.
-        // Lifted as a concept:literal leaf with source_text carrying the
-        // formatted token-stream text. This preserves the source form
-        // verbatim (modulo whitespace normalization in the format below).
-        // The realize side reads source_text and emits as-is.
+        // concept:macro-call(path, args...) — path is symbol leaf for the
+        // macro name; args are the tokens as a single symbol leaf
+        // (structural decomposition of macro tokens to substrate primitives
+        // is follow-up; macros are syntactic — their structure isn't
+        // semantically meaningful until the macro expands).
         syn::Expr::Macro(e) => {
             use quote::ToTokens;
-            let path = e.mac.path.to_token_stream().to_string();
-            let path = path.replace(" ", ""); // canonical: no spaces in path
+            let path = e.mac.path.to_token_stream().to_string().replace(' ', "");
+            let path_leaf = CValue::object([
+                ("kind", CValue::string("symbol")),
+                ("text", CValue::string(path)),
+            ]);
             let tokens = e.mac.tokens.to_string();
             let formatted = format_macro_tokens(&tokens);
-            let Some(op_cid) = concept_op_cid("concept:literal") else {
-                return non_operation_shape();
-            };
-            CValue::object([
-                ("args", CValue::array(Vec::new())),
-                ("concept_name", CValue::string("concept:literal")),
-                ("op_cid", CValue::string(op_cid)),
-                ("sort", CValue::string(SORT_STRING_CID)),
-                ("source_text", CValue::string(format!("{path}!({formatted})"))),
-            ])
+            let args_leaf = CValue::object([
+                ("kind", CValue::string("symbol")),
+                ("text", CValue::string(formatted)),
+            ]);
+            gamma_operation("concept:macro-call", vec![path_leaf, args_leaf])
         }
         // |param1, param2, ...| body — emitted as concept:closure with
         // args = [body_shape, param1_literal, param2_literal, ...]. Body
         // at args[0], param-name literals at args[1..]. No new substrate
-        // concept needed (concept:closure already in catalog as
-        // abstraction). Param names are concept:literal with source_text.
+        // concept:closure (already in catalog as abstraction). Param names
+        // are symbol leaves — substrate-canonical names, NOT source text.
+        // The realize side spells each per its own convention.
         //
         // Closure-introduced bindings flow through the existing
         // Expr::Path -> operand_symbol path at use site (McCarthy address
         // resolution); we do NOT pre-bind closure params here.
         syn::Expr::Closure(e) => {
-            // Only handle Pat::Ident inputs (the common case). Anything
-            // else (tuple patterns, type ascribed patterns) refuses
-            // loudly by collapsing to non_operation_shape.
             let mut closure_args: Vec<Arc<CValue>> = Vec::new();
             closure_args.push(shape_of_expr(&e.body, ctx));
             for input in &e.inputs {
                 let syn::Pat::Ident(pat) = input else {
                     return non_operation_shape();
                 };
-                let Some(op_cid) = concept_op_cid("concept:literal") else {
-                    return non_operation_shape();
-                };
                 closure_args.push(CValue::object([
-                    ("args", CValue::array(Vec::new())),
-                    ("concept_name", CValue::string("concept:literal")),
-                    ("op_cid", CValue::string(op_cid)),
-                    ("sort", CValue::string(SORT_STRING_CID)),
-                    ("source_text", CValue::string(pat.ident.to_string())),
+                    ("kind", CValue::string("symbol")),
+                    ("text", CValue::string(pat.ident.to_string())),
                 ]));
             }
             gamma_operation("concept:closure", closure_args)
@@ -2894,21 +2912,11 @@ fn literal_shape(lit: &syn::Lit) -> Arc<CValue> {
             concept_literal_shape(CValue::boolean(value.value()), SORT_BOOL_CID)
         }
         syn::Lit::Int(value) => {
-            // Emit the standard concept:literal shape with the integer value, PLUS
-            // a `source_text` field carrying the full token (e.g. "0u8", "64usize").
-            // The realize side checks `source_text` first and emits it verbatim,
-            // falling back to the base10 integer value for integers without suffix.
-            // This preserves type suffixes that are load-bearing (e.g. [0u8; 64]).
-            //
-            // #1363 / #1355: integer-width metadata. The token's suffix
-            // (`u8`, `i32`, `usize`, etc.) is the WIDTH+SIGNEDNESS pin —
-            // emit it as a separate `integer_width` field so downstream
-            // realize-side consumers can route width-aware (cross-language
-            // i32 → ts number with bounded loss; rust i32 → java int
-            // direct; etc.). Untype-suffixed literals get
-            // `integer_width: "inferred"`; the realize side falls back to
-            // function-signature-driven width inference.
-            let token_text = value.to_string();
+            // Substrate-canonical literal: (sort=concept:Int, value=N, integer_width=W).
+            // The kit's realize side reconstructs source spelling from these
+            // — no source_text side channel. integer_width covers width
+            // refinements (u8/i32/usize/etc.) so the spelling is fully
+            // derivable from (value + width).
             let Some(decoded) = value.base10_parse::<i64>().ok() else {
                 return non_operation_shape();
             };
@@ -2926,7 +2934,6 @@ fn literal_shape(lit: &syn::Lit) -> Arc<CValue> {
                 ("concept_name", CValue::string("concept:literal")),
                 ("op_cid", CValue::string(op_cid)),
                 ("sort", CValue::string(SORT_INT_CID)),
-                ("source_text", CValue::string(token_text)),
                 ("value", CValue::integer(decoded)),
                 ("integer_width", CValue::string(integer_width)),
             ])
@@ -2935,10 +2942,9 @@ fn literal_shape(lit: &syn::Lit) -> Arc<CValue> {
             concept_literal_shape(CValue::string(value.base10_digits()), SORT_FLOAT_CID)
         }
         syn::Lit::Str(value) => {
-            // Byte-exact: preserve source-form escapes (e.g. `"\\\""` is the
-            // source token, not the post-escape Rust `String` value `"`).
-            use quote::ToTokens;
-            let token_text = value.to_token_stream().to_string();
+            // Substrate-canonical: sort + value (the decoded string).
+            // Source-form escape choices (`"\\\""` vs `"\""`) are kit
+            // presentation, not substrate state.
             let Some(op_cid) = concept_op_cid("concept:literal") else {
                 return non_operation_shape();
             };
@@ -2947,7 +2953,6 @@ fn literal_shape(lit: &syn::Lit) -> Arc<CValue> {
                 ("concept_name", CValue::string("concept:literal")),
                 ("op_cid", CValue::string(op_cid)),
                 ("sort", CValue::string(SORT_STRING_CID)),
-                ("source_text", CValue::string(token_text)),
                 ("value", CValue::string(value.value())),
             ])
         }
@@ -2961,14 +2966,10 @@ fn literal_shape(lit: &syn::Lit) -> Arc<CValue> {
         syn::Lit::Byte(value) => {
             concept_literal_shape(CValue::integer(i64::from(value.value())), SORT_INT_CID)
         }
-        // Char lifted as concept:literal source_text leaf for byte-exact
-        // reproduction. The shim's `char` semantic distinction from String
-        // remains intact at the source-text level: `'a'` is emitted as
-        // `'a'`, not as `"a": String`. No content-addressed equivalence
-        // claim is made — the source_text is just the textual leaf form.
+        // Substrate-canonical char: sort + value (the actual character as a
+        // single-char string). Source spelling (`'a'` vs `'\u{61}'`) is kit
+        // presentation; the substrate carries semantic identity only.
         syn::Lit::Char(value) => {
-            use quote::ToTokens;
-            let token_text = value.to_token_stream().to_string();
             let Some(op_cid) = concept_op_cid("concept:literal") else {
                 return non_operation_shape();
             };
@@ -2977,7 +2978,7 @@ fn literal_shape(lit: &syn::Lit) -> Arc<CValue> {
                 ("concept_name", CValue::string("concept:literal")),
                 ("op_cid", CValue::string(op_cid)),
                 ("sort", CValue::string(SORT_STRING_CID)),
-                ("source_text", CValue::string(token_text)),
+                ("value", CValue::string(value.value().to_string())),
             ])
         }
         syn::Lit::Verbatim(_) => non_operation_shape(),

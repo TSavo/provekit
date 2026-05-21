@@ -1,0 +1,39 @@
+{
+  "cid": "blake3-512:6f144c88686f84bd5d6d99ceaaf30ef29263b5a4bc33488f3c1040fd7b73a3b7bd09e963ae8e032375a53f82c25f4d9aa6aa977e730d299d0dc1e9a0455b09e8",
+  "memento": {
+    "contract": {
+      "body": {
+        "kind": "atomic",
+        "name": "true"
+      },
+      "formals": [
+        "scrutinee",
+        "arms"
+      ],
+      "kind": "wp-rule"
+    },
+    "contract_note": "Pattern-matching dispatch on scrutinee against the ordered arms.",
+    "formal_sorts": [
+      "Expr",
+      "ListOfMatchArm"
+    ],
+    "kind": "concept-abstraction",
+    "operator": "concept:match",
+    "realizations": [],
+    "result_sort": "Expr",
+    "slots": [
+      {
+        "name": "scrutinee"
+      },
+      {
+        "name": "arms"
+      }
+    ],
+    "tier": "abstraction"
+  },
+  "signature": {
+    "alg": "ed25519",
+    "key_id": "UNSIGNED_DEV_ONLY",
+    "sig_b64": "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"
+  }
+}
