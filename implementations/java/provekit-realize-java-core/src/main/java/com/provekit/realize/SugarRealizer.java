@@ -143,9 +143,59 @@ final class SugarRealizer {
             TransportedOperation transportedOp,
             String termShapeJson,
             String operandBindingsJson) {
+        // Legacy entry point (no sort CIDs). Cross-language materialize
+        // routes through the overload with paramSortCids + returnSortCid.
+        return emitStub(function, params, paramTypes, List.of(), returnType, "", conceptName,
+                mode, modes, contract, sugarPluginJson, transportedOp, termShapeJson, operandBindingsJson);
+    }
 
+    /**
+     * Substrate-honest signature emission: when `paramSortCids` /
+     * `returnSortCid` are populated (cross-language materialize), the
+     * realize binary resolves java syntax via the kit's concept-hub →
+     * java map (mapConceptHubSortCidToJava). Falls back to mapSourceType
+     * on the raw source-language strings when sort CIDs are absent.
+     */
+    static Realization emitStub(
+            String function,
+            List<String> params,
+            List<String> paramTypes,
+            List<String> paramSortCids,
+            String returnType,
+            String returnSortCid,
+            String conceptName,
+            String mode,
+            List<String> modes,
+            ContractPayload contract,
+            List<String> sugarPluginJson,
+            TransportedOperation transportedOp,
+            String termShapeJson,
+            String operandBindingsJson) {
+
+        // Substrate-honest refusal: when paramSortCids is provided (cross-
+        // language signaling) and ANY entry is empty OR returnSortCid is
+        // empty, the source kit failed to lift this type to a concept-hub
+        // identity. That's a substrate gap — emitting the raw source
+        // string would leak kit-internal syntax. Refuse loudly with is_stub.
+        boolean crossLang = paramSortCids != null && !paramSortCids.isEmpty();
+        if (crossLang) {
+            boolean anyEmpty = false;
+            for (String cid : paramSortCids) {
+                if (cid == null || cid.isEmpty()) { anyEmpty = true; break; }
+            }
+            if (anyEmpty || returnSortCid == null || returnSortCid.isEmpty()) {
+                // Refuse: the substrate has no morphism for at least one
+                // signature element. Caller (cmd_materialize) sees is_stub
+                // and reports REFUSE — substrate gap surfaced, not concealed.
+                String reason = "concept-hub gap in signature: source kit failed to lift "
+                    + conceptName + " param/return types to concept-hub sort CIDs "
+                    + "(paramSortCids=" + paramSortCids + " returnSortCid='" + returnSortCid + "'). "
+                    + "Mint the missing substrate sort or refuse the boundary.";
+                return new Realization("// REFUSE: " + reason, true, "{}", "[]", null);
+            }
+        }
         String className = snakeToPascal(function) + "Transported";
-        String mappedReturn = mapSourceType(returnType);
+        String mappedReturn = resolveJavaType(returnType, returnSortCid);
         List<String> requestedModes = modeList(mode, modes);
         List<SugarEmission> sugarEmissions = SugarDictionary.emitAll(contract, sugarPluginJson, requestedModes);
         boolean hasBeanValidationNotNull = sugarEmissions.stream()
@@ -157,7 +207,8 @@ final class SugarRealizer {
         for (int i = 0; i < params.size(); i++) {
             String name = params.get(i);
             String srcType = i < paramTypes.size() ? paramTypes.get(i) : "i64";
-            String mapped = mapSourceType(srcType);
+            String sortCid = i < paramSortCids.size() ? paramSortCids.get(i) : "";
+            String mapped = resolveJavaType(srcType, sortCid);
             if (i > 0) typedParamList.append(", ");
             String parameterAnnotations = parameterAnnotations(sugarEmissions, name);
             if (!parameterAnnotations.isBlank()) {
@@ -839,6 +890,74 @@ final class SugarRealizer {
             case "String", "&str", "&String" -> "String";
             default -> src;
         };
+    }
+
+    /**
+     * Substrate-honest type resolution: concept-hub sort CID → java syntax.
+     *
+     * Inverse of JavaBindLifter.javaTypeToConceptHubSortCid. The java kit's
+     * internal knowledge of how its source syntax maps to substrate-canonical
+     * concept-hub identities. Used in cross-language materialize where the
+     * carrier's `param_sort_cids` (concept-hub CIDs) drive signature emission
+     * instead of the source-language type strings.
+     *
+     * Returns null when the CID isn't recognized — caller falls back to
+     * mapSourceType on the raw source string (legacy path).
+     *
+     * CIDs verified against menagerie/concept-shapes/catalog/sorts/.
+     */
+    static String mapConceptHubSortCidToJava(String cid) {
+        if (cid == null || cid.isEmpty()) return null;
+        return switch (cid) {
+            // concept:Bool
+            case "blake3-512:0ee13bf3fd6b7ecfbee72dfbfc18a7c0ea7f1663de6cca43cefb36f5b4c03665452646094a7c296e819e75d683c6ce4821f3d7db3c3c78ae97f2d4e3451d2074" ->
+                "boolean";
+            // concept:Int — defaults to long for cross-language safety (i64
+            // rust → long java; concept:integer-width-* family is a separate
+            // refinement for narrower widths)
+            case "blake3-512:30ffc51350121a7172f3e4064a33c45bbd345756979fccff6875cd2ab33e4964d098a99df80cfbdf1ec1a0738c5ac3476f0ff8f75589ea511d1acd82c74ecd58" ->
+                "long";
+            // concept:Float
+            case "blake3-512:b979e70c4d5e53d9bdf13d6f08330be3c5b0714b8c770d69bbd05946b86c36df5274be8145a2683cc29c278155c9c1ee65b6897913524eecb9e4c89c71862f57" ->
+                "double";
+            // concept:String
+            case "blake3-512:be8721d24849feb74c4721520bdba02d352a94f49253a627cd509127472aa1c47cbe99cb705cac4159b5365abcce0c9aaa4901fe67630827deb6be1f9daeea10" ->
+                "String";
+            // concept:Bytes
+            case "blake3-512:7116ef6e62e6739b213a8394f975a53c771b89f08c36d27143827acfcfebc0e39e5b82c530be668c3cfd5ec6966ccaa42930b37fdb1f4ac25652a970be10fb6b" ->
+                "byte[]";
+            // concept:List<T> — generic placeholder; full parametric resolution
+            // is follow-up (T is itself a sort CID).
+            case "blake3-512:e3f8d17445f9d2ce89c41c09cbeea08a8bc685d1c34a9fd3dfa7b1df17a94f40eab37396615501f1468baf2a1480fd5a27330ea23202b99876c5f4d97fa2cfb2" ->
+                "java.util.List<Object>";
+            // concept:Unit — minted 2026-05-21. java.io: void return.
+            case "blake3-512:47682b09e5dba71f563db6249c6cb352f7d540986dc7f4cd8d4fb1aa6d9a503064033ee3eb9f36ee6f9e000f700f2f030ebfcfe2b2b8b7e81a345b0d56551f1b" ->
+                "void";
+            // concept:Json — minted 2026-05-21. Java's JSON tree realization
+            // is Jackson's JsonNode (substrate-canonical name; Gson would
+            // realize as JsonElement via a separate morphism).
+            case "blake3-512:702064722b23410fde0d1fd7afac165bf5914441d67abe1e19d63b0e8fe8117296d2677cc721ad096b8b3bb82d178af699bf14fd70bfb18756c5bed6f4434108" ->
+                "com.fasterxml.jackson.databind.JsonNode";
+            // concept:Ref<T> — minted 2026-05-21. Java's mutable-reference
+            // realization is StringBuilder (for String content). Full
+            // parametric resolution (different T → different java type) is
+            // follow-up.
+            case "blake3-512:37d8efe0ce6321d1a16f80aa06cbdf056c846b8a99613731e8d64d9581af61bc517fd8c87daaff2c817585a7dfd763e09ed729fdc71d25fe16fb1b2e6ca33534" ->
+                "StringBuilder";
+            default -> null;
+        };
+    }
+
+    /**
+     * Substrate-honest type resolution wrapper. Prefers the concept-hub
+     * sort CID when provided (cross-language materialize path); falls back
+     * to source-language type translation when the CID is missing
+     * (legacy carriers from before #1361 chunk 2 part B).
+     */
+    static String resolveJavaType(String sourceType, String conceptHubSortCid) {
+        String fromCid = mapConceptHubSortCidToJava(conceptHubSortCid);
+        if (fromCid != null) return fromCid;
+        return mapSourceType(sourceType);
     }
 
     /**

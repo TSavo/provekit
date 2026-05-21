@@ -8,7 +8,7 @@
           "concept_name": "concept:json-parse",
           "emission_template": {
             "kind": "verbatim",
-            "template": "    @ProveKitSugar(\n        concept = \"concept:json-parse\",\n        library = \"gson\",\n        family = \"concept:family:json\",\n        version = \"2.11\",\n        loss = {}\n    )\n    public static JsonElement json_parse(String ${param0}) {\n        try {\n            return JsonParser.parseString(${param0});\n        } catch (JsonSyntaxException e) {\n            throw new RuntimeException(\"json-parse: \" + e.getMessage(), e);\n        }\n    }\n"
+            "template": "        try {\n            return JsonParser.parseString(${param0});\n        } catch (JsonSyntaxException e) {\n            throw new RuntimeException(\"json-parse: \" + e.getMessage(), e);\n        }\n    "
           },
           "loss_record_contribution": {
             "form": "literal",
@@ -25,7 +25,7 @@
           "concept_name": "concept:json-serialize",
           "emission_template": {
             "kind": "verbatim",
-            "template": "    @ProveKitSugar(\n        concept = \"concept:json-serialize\",\n        library = \"gson\",\n        family = \"concept:family:json\",\n        version = \"2.11\",\n        loss = {\"non-canonical-key-order\"}\n    )\n    public static String json_serialize(JsonElement ${param0}) {\n        return GSON.toJson(${param0});\n    }\n"
+            "template": "        return GSON.toJson(${param0});\n    "
           },
           "loss_record_contribution": {
             "form": "literal",

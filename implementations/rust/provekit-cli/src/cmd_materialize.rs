@@ -412,31 +412,29 @@ fn run_cross_language_discovery(
                     );
                 }
                 1 => {
-                    resolves += 1;
-                    eprintln!(
-                        "  {} {} @ {} → {} manifest `{}`",
-                        "RESOLVE".green().bold(),
-                        carrier.concept_name,
-                        rel,
-                        target_lang,
-                        matches[0]
-                    );
-                    // #1361 chunk 2 part B / #1355: invoke the target kit's
-                    // realize binary for the RESOLVE'd boundary. The realize
-                    // binary owns its own concept-hub → target-syntax
-                    // translation internally. cmd_materialize just routes
-                    // the concept-hub-typed spec to it and gets target source.
-                    // NO target-syntax knowledge in materialize.
+                    // Substrate-honest 2-stage outcome: dispatch ROUTE found
+                    // (manifest matches family+concept) is RESOLVE; whether
+                    // the target realize binary then accepts the concept-
+                    // hub-typed spec OR refuses-loudly (is_stub due to
+                    // missing concept-hub sort morphism) is reported
+                    // separately. The "route found" + "type gap" outcome
+                    // is REFUSE in the final tally — substrate surfaces
+                    // gaps even when the family dispatch resolves.
                     if let Some(body) =
                         invoke_target_realize_for_discovery(project_root, target_lang, &matches[0], &carrier)
                     {
+                        resolves += 1;
+                        eprintln!(
+                            "  {} {} @ {} → {} manifest `{}`",
+                            "RESOLVE".green().bold(),
+                            carrier.concept_name,
+                            rel,
+                            target_lang,
+                            matches[0]
+                        );
                         let preview: String = body.chars().take(120).collect();
                         let suffix = if body.chars().count() > 120 { "..." } else { "" };
                         eprintln!("      target body preview: {preview}{suffix}");
-                        // #1361 follow-up: when --out-dir is set, accumulate
-                        // the emitted body into the per-source-file composite.
-                        // Imports come from the target realize manifest's
-                        // scope_bringings (#1360).
                         if out_dir.is_some() {
                             let entry = emitted
                                 .entry(path.to_path_buf())
@@ -451,6 +449,16 @@ fn run_cross_language_discovery(
                                 entry.imports.insert(imp);
                             }
                         }
+                    } else {
+                        refuses += 1;
+                        eprintln!(
+                            "  {} {} @ {} → {} manifest `{}` (substrate gap in concept-hub sort morphism)",
+                            "REFUSE".red().bold(),
+                            carrier.concept_name,
+                            rel,
+                            target_lang,
+                            matches[0]
+                        );
                     }
                 }
                 _ => {
@@ -472,18 +480,21 @@ fn run_cross_language_discovery(
                             })
                     });
                     if let Some(pick) = picked {
-                        resolves += 1;
-                        eprintln!(
-                            "  {} {} @ {} → {} manifest `{}` (disambiguated by --family-library)",
-                            "RESOLVE".green().bold(),
-                            carrier.concept_name,
-                            rel,
-                            target_lang,
-                            pick
-                        );
+                        // Substrate-honest 2-stage outcome (same shape as the
+                        // singleton branch): RESOLVE only if realize actually
+                        // emits; REFUSE if it hits a concept-hub sort gap.
                         if let Some(body) =
                             invoke_target_realize_for_discovery(project_root, target_lang, &pick, &carrier)
                         {
+                            resolves += 1;
+                            eprintln!(
+                                "  {} {} @ {} → {} manifest `{}` (disambiguated by --family-library)",
+                                "RESOLVE".green().bold(),
+                                carrier.concept_name,
+                                rel,
+                                target_lang,
+                                pick
+                            );
                             let preview: String = body.chars().take(120).collect();
                             let suffix = if body.chars().count() > 120 { "..." } else { "" };
                             eprintln!("      target body preview: {preview}{suffix}");
@@ -501,6 +512,16 @@ fn run_cross_language_discovery(
                                     entry.imports.insert(imp);
                                 }
                             }
+                        } else {
+                            refuses += 1;
+                            eprintln!(
+                                "  {} {} @ {} → {} manifest `{}` (disambiguated by --family-library, substrate gap in concept-hub sort morphism)",
+                                "REFUSE".red().bold(),
+                                carrier.concept_name,
+                                rel,
+                                target_lang,
+                                pick
+                            );
                         }
                         continue;
                     }

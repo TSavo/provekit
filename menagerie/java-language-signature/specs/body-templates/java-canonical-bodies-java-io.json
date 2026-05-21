@@ -8,7 +8,7 @@
           "concept_name": "concept:stdio-read-line",
           "emission_template": {
             "kind": "verbatim",
-            "template": "    @ProveKitSugar(\n        concept = \"concept:stdio-read-line\",\n        library = \"java-io\",\n        family = \"concept:family:stdio-stream\",\n        version = \"jdk-1.0+\",\n        loss = {}\n    )\n    public static String stdin_read_line() {\n        try {\n            return STDIN_READER.readLine();\n        } catch (IOException e) {\n            throw new UncheckedIOException(e);\n        }\n    }\n"
+            "template": "        try {\n            return STDIN_READER.readLine();\n        } catch (IOException e) {\n            throw new UncheckedIOException(e);\n        }\n    "
           },
           "loss_record_contribution": {
             "form": "literal",
@@ -25,7 +25,7 @@
           "concept_name": "concept:stdio-write-line",
           "emission_template": {
             "kind": "verbatim",
-            "template": "    @ProveKitSugar(\n        concept = \"concept:stdio-write-${param0}\",\n        library = \"java-io\",\n        family = \"concept:family:stdio-stream\",\n        version = \"jdk-1.0+\",\n        loss = {}\n    )\n    public static void stdout_write_line(String ${param0}) {\n        System.out.println(${param0});\n    }\n"
+            "template": "        System.out.println(${param0});\n    "
           },
           "loss_record_contribution": {
             "form": "literal",
@@ -42,7 +42,7 @@
           "concept_name": "concept:stderr-write-line",
           "emission_template": {
             "kind": "verbatim",
-            "template": "    @ProveKitSugar(\n        concept = \"concept:stderr-write-${param0}\",\n        library = \"java-io\",\n        family = \"concept:family:stdio-stream\",\n        version = \"jdk-1.0+\",\n        loss = {}\n    )\n    public static void stderr_write_line(String ${param0}) {\n        System.err.println(${param0});\n    }\n"
+            "template": "        System.err.println(${param0});\n    "
           },
           "loss_record_contribution": {
             "form": "literal",

@@ -119,8 +119,16 @@ public final class RpcServer {
         List<String> sugarPlugins = JsonUtil.decodeJsonObjectArray(paramsObj, "sugar_plugins");
         List<String> params = JsonUtil.decodeJsonStringArray(paramsObj, "params");
         List<String> paramTypes = JsonUtil.decodeJsonStringArray(paramsObj, "param_types");
+        // Substrate-honest cross-language signature pins: concept-hub sort
+        // CIDs flow through the carrier from the SOURCE kit's lift. The
+        // target (java) realize binary uses them to resolve java syntax
+        // via its own catalog — no per-(source, target) translation table.
+        List<String> paramSortCids = JsonUtil.decodeJsonStringArray(paramsObj, "param_sort_cids");
+        String returnSortCid = JsonUtil.decodeJsonStringField(paramsObj, "return_sort_cid");
+        if (returnSortCid == null) returnSortCid = "";
         SugarRealizer.Realization r =
-                SugarRealizer.emitStub(emittedFunction, params, paramTypes, returnType, conceptName, mode, modes, contract, sugarPlugins, transportedOp, termShape, operandBindings);
+                SugarRealizer.emitStub(emittedFunction, params, paramTypes, paramSortCids, returnType, returnSortCid,
+                        conceptName, mode, modes, contract, sugarPlugins, transportedOp, termShape, operandBindings);
         String wrapperRecord = r.observationWrapperEmissionRecord() == null
                 ? ""
                 : ",\"observation_wrapper_emission_record\":" + r.observationWrapperEmissionRecord();

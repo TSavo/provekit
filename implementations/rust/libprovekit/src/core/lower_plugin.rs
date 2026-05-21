@@ -60,6 +60,17 @@ pub struct RealizeRequest {
     pub family: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub library_version: Option<String>,
+    /// Substrate-honest cross-language signature pins. Each entry is a
+    /// concept-hub sort CID (blake3-512:...) — the kit-internal sort
+    /// labels stay inside the source kit. The target kit's realize
+    /// reads these to look up its OWN type syntax via its catalog
+    /// morphism (concept-hub → kit-internal sort → kit-target-syntax).
+    /// Empty strings in the vec signal "kit has no morphism for this
+    /// param type" — substrate-honest gap signal.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub param_sort_cids: Vec<String>,
+    #[serde(default, skip_serializing_if = "String::is_empty")]
+    pub return_sort_cid: String,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -403,6 +414,10 @@ fn invocation_from_tree_node(
         sugar_plugins: parent_request.sugar_plugins.clone(),
         family: parent_request.family.clone(),
         library_version: parent_request.library_version.clone(),
+        param_sort_cids: node_string_array(node, &["paramSortCids", "param_sort_cids"])?
+            .unwrap_or_else(|| parent_request.param_sort_cids.clone()),
+        return_sort_cid: node_string(node, &["returnSortCid", "return_sort_cid"])
+            .unwrap_or_else(|| parent_request.return_sort_cid.clone()),
         proc_macro_invocations: value_array_field(
             node,
             &["procMacroInvocations", "proc_macro_invocations"],
@@ -774,6 +789,10 @@ pub fn request_from_spec(spec: &Value) -> Result<RealizeRequest, String> {
         sugar_plugins: value_array_field(spec, &["sugarPlugins", "sugar_plugins"]),
         family: string_field_optional(spec, &["family"]),
         library_version: string_field_optional(spec, &["library_version", "libraryVersion"]),
+        param_sort_cids: string_array_field(spec, &["param_sort_cids", "paramSortCids"])
+            .unwrap_or_default(),
+        return_sort_cid: string_field_optional(spec, &["return_sort_cid", "returnSortCid"])
+            .unwrap_or_default(),
     })
 }
 

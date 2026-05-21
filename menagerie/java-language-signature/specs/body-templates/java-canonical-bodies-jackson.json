@@ -8,7 +8,7 @@
           "concept_name": "concept:json-parse",
           "emission_template": {
             "kind": "verbatim",
-            "template": "    @ProveKitSugar(\n        concept = \"concept:json-parse\",\n        library = \"jackson\",\n        family = \"concept:family:json\",\n        version = \"2.17\",\n        loss = {}\n    )\n    public static JsonNode json_parse(String ${param0}) {\n        try {\n            return MAPPER.readTree(${param0});\n        } catch (JsonProcessingException e) {\n            throw new RuntimeException(\"json-parse: \" + e.getMessage(), e);\n        }\n    }\n"
+            "template": "        try {\n            return MAPPER.readTree(${param0});\n        } catch (JsonProcessingException e) {\n            throw new RuntimeException(\"json-parse: \" + e.getMessage(), e);\n        }\n    "
           },
           "loss_record_contribution": {
             "form": "literal",
@@ -25,7 +25,7 @@
           "concept_name": "concept:json-serialize",
           "emission_template": {
             "kind": "verbatim",
-            "template": "    @ProveKitSugar(\n        concept = \"concept:json-serialize\",\n        library = \"jackson\",\n        family = \"concept:family:json\",\n        version = \"2.17\",\n        loss = {\"non-canonical-key-order\"}\n    )\n    public static String json_serialize(JsonNode ${param0}) {\n        try {\n            return MAPPER.writeValueAsString(${param0});\n        } catch (JsonProcessingException e) {\n            throw new RuntimeException(\"json-serialize: \" + e.getMessage(), e);\n        }\n    }\n"
+            "template": "        try {\n            return MAPPER.writeValueAsString(${param0});\n        } catch (JsonProcessingException e) {\n            throw new RuntimeException(\"json-serialize: \" + e.getMessage(), e);\n        }\n    "
           },
           "loss_record_contribution": {
             "form": "literal",
