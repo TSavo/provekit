@@ -328,6 +328,52 @@ fn registry_lift_command(
     Ok(None)
 }
 
+/// #1364 / #1355: Return the explicit concept-coverage declaration of
+/// the realize manifest matching `(target_lang, library_tag)`. cmd_materialize
+/// can defensively refuse-loudly when a consumer @boundary asks for a
+/// concept not in the returned list — making per-kit coverage gaps
+/// surface-explicit instead of falling through to the realize plugin's
+/// `is_stub` fallback.
+///
+/// Returns an empty Vec when no manifest matches OR when the matched
+/// manifest declares no `provides_concepts`. Empty is the substrate-honest
+/// signal for "no explicit declaration — fall back to dispatch-time
+/// is_stub behavior" (today's default).
+pub fn provides_concepts_for_realize(
+    workspace_root: &Path,
+    target_lang: &str,
+    library_tag: &str,
+) -> Vec<String> {
+    let Ok(candidates) = registry_realize_candidates(workspace_root, target_lang) else {
+        return Vec::new();
+    };
+    for cand in &candidates {
+        if cand.tag == library_tag {
+            return read_provides_concepts_from_manifest_source(workspace_root, &cand.source);
+        }
+    }
+    Vec::new()
+}
+
+fn read_provides_concepts_from_manifest_source(
+    workspace_root: &Path,
+    source: &str,
+) -> Vec<String> {
+    let candidate_path = PathBuf::from(source);
+    let resolved = if candidate_path.is_absolute() {
+        candidate_path
+    } else {
+        workspace_root.join(&candidate_path)
+    };
+    if !resolved.is_file() {
+        return Vec::new();
+    }
+    match parse_manifest(&resolved) {
+        Ok(parsed) => parsed.provides_concepts,
+        Err(_) => Vec::new(),
+    }
+}
+
 /// #1360 / #1355: Return the per-target scope-bringings declared by
 /// the realize manifest matching `(target_lang, library_tag)`. cmd_materialize
 /// collects these across all materialized sites in a consumer file and
