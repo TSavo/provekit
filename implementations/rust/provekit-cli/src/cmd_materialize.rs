@@ -26,6 +26,30 @@ use crate::kit_dispatch::{
 };
 use crate::{OutputFlags, EXIT_OK, EXIT_USER_ERROR, EXIT_VERIFY_FAIL};
 
+/// #1361 follow-up: `family=library` pair from --family-library clap arg.
+#[derive(Debug, Clone)]
+pub struct FamilyLibraryPair {
+    pub family: String,
+    pub library: String,
+}
+
+fn parse_family_library_pair(raw: &str) -> Result<FamilyLibraryPair, String> {
+    let (family, library) = raw
+        .split_once('=')
+        .ok_or_else(|| format!("--family-library expects `family=library`, got: {raw}"))?;
+    let family = family.trim();
+    let library = library.trim();
+    if family.is_empty() || library.is_empty() {
+        return Err(format!(
+            "--family-library expects non-empty family + library, got: {raw}"
+        ));
+    }
+    Ok(FamilyLibraryPair {
+        family: family.to_string(),
+        library: library.to_string(),
+    })
+}
+
 #[derive(Parser, Debug, Clone)]
 pub struct MaterializeArgs {
     /// Library surface to materialize, e.g. `typescript-better-sqlite3` or `better-sqlite3`.
@@ -45,12 +69,21 @@ pub struct MaterializeArgs {
     /// that's then consumed by the target kit's realizer, enabling cross-
     /// language materialization (e.g. Rust source → Python target). When
     /// equal to --target (today's default behavior; omit the flag to get
-    /// it), the existing same-language path is used. Cross-language synthesis
-    /// requires per-kit ProofIR exchange wired through (see #1361 chunk 2 +
-    /// #1364 per-kit concept parity); this chunk plumbs the flag and
-    /// refuses cross-language requests with a clear "not yet wired" message.
+    /// it), the existing same-language path is used.
     #[arg(long = "source-lang")]
     pub source_lang: Option<String>,
+    /// #1361 follow-up / #1355: per-family library override. Used to
+    /// disambiguate AMBIGUOUS cross-language discovery sites when multiple
+    /// target manifests declare the same `concept:family:X`. Syntax is
+    /// `family=library` (e.g. `--family-library json=jackson` selects the
+    /// jackson realization for any boundary with `family =
+    /// concept:family:json`). Repeatable. The family suffix matches the
+    /// trailing segment of the boundary's family pin (json matches
+    /// concept:family:json). This is the substrate-honest compile-time
+    /// choice mechanism: caller declares per-family realization at
+    /// materialize, the proof envelope captures the selection forever.
+    #[arg(long = "family-library", value_parser = parse_family_library_pair)]
+    pub family_library: Vec<FamilyLibraryPair>,
     /// Write files in place. Omitted means dry-run to stdout.
     #[arg(long)]
     pub write: bool,
@@ -126,6 +159,7 @@ pub fn run(args: MaterializeArgs) -> u8 {
                 &args.source_dir,
                 source_lang,
                 &target_lang,
+                &args.family_library,
                 args.out_dir.as_deref(),
             );
         }
@@ -306,6 +340,7 @@ fn run_cross_language_discovery(
     source_dir: &Path,
     source_lang: &str,
     target_lang: &str,
+    family_library_overrides: &[FamilyLibraryPair],
     out_dir: Option<&Path>,
 ) -> u8 {
     eprintln!(
@@ -419,6 +454,56 @@ fn run_cross_language_discovery(
                     }
                 }
                 _ => {
+                    // #1361 follow-up: --family-library family=lib pairs are
+                    // the substrate-honest compile-time decision mechanism.
+                    // For each AMBIGUOUS site, look up the family override
+                    // matching the carrier's family pin. The family suffix
+                    // (after `concept:family:`) is the user-friendly handle.
+                    // If exactly one candidate matches that library, RESOLVE
+                    // to it. Otherwise report AMBIGUOUS — substrate refuses
+                    // to silently pick beyond the user's explicit hint.
+                    let carrier_family = family_from_payload(&carrier.raw_payload);
+                    let picked = carrier_family.as_deref().and_then(|family| {
+                        family_library_overrides
+                            .iter()
+                            .find(|p| family_matches_override(family, &p.family))
+                            .and_then(|p| {
+                                matches.iter().find(|m| m.as_str() == p.library).cloned()
+                            })
+                    });
+                    if let Some(pick) = picked {
+                        resolves += 1;
+                        eprintln!(
+                            "  {} {} @ {} → {} manifest `{}` (disambiguated by --family-library)",
+                            "RESOLVE".green().bold(),
+                            carrier.concept_name,
+                            rel,
+                            target_lang,
+                            pick
+                        );
+                        if let Some(body) =
+                            invoke_target_realize_for_discovery(project_root, target_lang, &pick, &carrier)
+                        {
+                            let preview: String = body.chars().take(120).collect();
+                            let suffix = if body.chars().count() > 120 { "..." } else { "" };
+                            eprintln!("      target body preview: {preview}{suffix}");
+                            if out_dir.is_some() {
+                                let entry = emitted
+                                    .entry(path.to_path_buf())
+                                    .or_default();
+                                entry.bodies.push(body);
+                                let scope_imports = scope_bringings_for_realize(
+                                    project_root,
+                                    target_lang,
+                                    &pick,
+                                );
+                                for imp in scope_imports {
+                                    entry.imports.insert(imp);
+                                }
+                            }
+                        }
+                        continue;
+                    }
                     ambiguous += 1;
                     eprintln!(
                         "  {} {} @ {}: multiple {} manifests match — {:?}",
@@ -517,6 +602,23 @@ fn run_cross_language_discovery(
 fn family_from_payload(payload: &str) -> Option<String> {
     let val: Json = serde_json::from_str(payload).ok()?;
     val.get("family")?.as_str().map(String::from)
+}
+
+/// #1361 follow-up: match a carrier's family pin (e.g.
+/// `concept:family:json`) against a --family-library override key (e.g.
+/// `json`). Accepts both forms: the full canonical name AND the user-
+/// friendly suffix after `concept:family:`. Substrate-honest equality
+/// uses the full canonical form; the suffix is sugar for CLI ergonomics.
+fn family_matches_override(carrier_family: &str, override_key: &str) -> bool {
+    if carrier_family == override_key {
+        return true;
+    }
+    if let Some(suffix) = carrier_family.strip_prefix("concept:family:") {
+        if suffix == override_key {
+            return true;
+        }
+    }
+    false
 }
 
 /// Find realize manifests in `target_lang` that declare the given

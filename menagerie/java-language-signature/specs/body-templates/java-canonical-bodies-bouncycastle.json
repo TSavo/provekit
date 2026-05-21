@@ -1,0 +1,27 @@
+{
+  "header": {
+    "content": {
+      "target_language": "java",
+      "template_name": "java-canonical-bodies-bouncycastle",
+      "entries": [
+        {
+          "concept_name": "concept:blake3-512-of",
+          "emission_template": {
+            "kind": "verbatim",
+            "template": "    @ProveKitSugar(\n        concept = \"concept:blake3-512-of\",\n        library = \"bouncycastle\",\n        family = \"concept:family:hash\",\n        version = \"1.78\",\n        loss = {}\n    )\n    public static byte[] blake3_512_of(byte[] ${param0}) {\n        Blake3Digest digest = new Blake3Digest(512);  // 512 bits = 64-byte output\n        digest.update(${param0}, 0, ${param0}.length);\n        byte[] out = new byte[64];\n        digest.doFinal(out, 0);\n        return out;\n    }\n"
+          },
+          "loss_record_contribution": {
+            "form": "literal",
+            "value": {
+              "entries": []
+            }
+          },
+          "signature_guard": {
+            "min_params": 1,
+            "max_params": 1
+          }
+        }
+      ]
+    }
+  }
+}

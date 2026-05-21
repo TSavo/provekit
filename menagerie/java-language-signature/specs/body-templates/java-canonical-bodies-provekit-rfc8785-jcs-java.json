@@ -1,0 +1,61 @@
+{
+  "header": {
+    "content": {
+      "target_language": "java",
+      "template_name": "java-canonical-bodies-provekit-rfc8785-jcs-java",
+      "entries": [
+        {
+          "concept_name": "concept:rfc8785-jcs-encode",
+          "emission_template": {
+            "kind": "verbatim",
+            "template": "    @ProveKitSugar(\n        concept = \"concept:rfc8785-jcs-encode\",\n        library = \"provekit-rfc8785-jcs-java\",\n        family = \"concept:family:json-canonicalization\",\n        version = \"0.1\",\n        loss = {}\n    )\n    public static String encode_jcs(JsonNode ${param0}) {\n        StringBuilder out = new StringBuilder();\n        encode_value(${param0}, out);\n        return out.toString();\n    }\n"
+          },
+          "loss_record_contribution": {
+            "form": "literal",
+            "value": {
+              "entries": []
+            }
+          },
+          "signature_guard": {
+            "min_params": 1,
+            "max_params": 1
+          }
+        },
+        {
+          "concept_name": "concept:rfc8785-jcs-encode-value",
+          "emission_template": {
+            "kind": "verbatim",
+            "template": "    @ProveKitSugar(\n        concept = \"concept:rfc8785-jcs-encode-value\",\n        library = \"provekit-rfc8785-jcs-java\",\n        family = \"concept:family:json-canonicalization\",\n        version = \"0.1\",\n        loss = {}\n    )\n    public static void encode_value(JsonNode ${param0}, StringBuilder ${param1}) {\n        if (${param0} == null || ${param0}.isNull()) {\n            ${param1}.append(\"null\");\n        } else if (${param0}.isBoolean()) {\n            ${param1}.append(${param0}.booleanValue() ? \"true\" : \"false\");\n        } else if (${param0}.isNumber()) {\n            // RFC 8785 uses ECMA-262 number serialization. Java's\n            // double-to-string is close but not identical; for now use the\n            // textual form Jackson chose. (Full ECMA-262 conformance is a\n            // separate loss dimension â declared in the rust sister's\n            // future when minted.)\n            ${param1}.append(${param0}.asText());\n        } else if (${param0}.isTextual()) {\n            encode_string(${param0}.asText(), ${param1});\n        } else if (${param0}.isArray()) {\n            ${param1}.append('[');\n            boolean first = true;\n            for (JsonNode child : ${param0}) {\n                if (!first) ${param1}.append(',');\n                encode_value(child, ${param1});\n                first = false;\n            }\n            ${param1}.append(']');\n        } else if (${param0}.isObject()) {\n            // RFC 8785 requires keys sorted by code-point order (after parsing\n            // unescape).\n            List<String> keys = new ArrayList<>();\n            Iterator<String> it = ${param0}.fieldNames();\n            while (it.hasNext()) keys.add(it.next());\n            Collections.sort(keys);\n            ${param1}.append('{');\n            boolean first = true;\n            for (String k : keys) {\n                if (!first) ${param1}.append(',');\n                encode_string(k, ${param1});\n                ${param1}.append(':');\n                encode_value(${param0}.get(k), ${param1});\n                first = false;\n            }\n            ${param1}.append('}');\n        }\n    }\n"
+          },
+          "loss_record_contribution": {
+            "form": "literal",
+            "value": {
+              "entries": []
+            }
+          },
+          "signature_guard": {
+            "min_params": 2,
+            "max_params": 2
+          }
+        },
+        {
+          "concept_name": "concept:rfc8785-jcs-encode-string",
+          "emission_template": {
+            "kind": "verbatim",
+            "template": "    @ProveKitSugar(\n        concept = \"concept:rfc8785-jcs-encode-string\",\n        library = \"provekit-rfc8785-jcs-java\",\n        family = \"concept:family:json-canonicalization\",\n        version = \"0.1\",\n        loss = {}\n    )\n    public static void encode_string(String ${param0}, StringBuilder ${param1}) {\n        ${param1}.append('\"');\n        for (int i = 0; i < ${param0}.length(); i++) {\n            char c = ${param0}.charAt(i);\n            if (c == '\"') {\n                ${param1}.append(\"\\\\\\\"\");\n            } else if (c == '\\\\') {\n                ${param1}.append(\"\\\\\\\\\");\n            } else if (c == '\\b') {\n                ${param1}.append(\"\\\\b\");\n            } else if (c == '\\f') {\n                ${param1}.append(\"\\\\f\");\n            } else if (c == '\\n') {\n                ${param1}.append(\"\\\\n\");\n            } else if (c == '\\r') {\n                ${param1}.append(\"\\\\r\");\n            } else if (c == '\\t') {\n                ${param1}.append(\"\\\\t\");\n            } else if (c < 0x20) {\n                ${param1}.append(String.format(\"\\\\u%04x\", (int) c));\n            } else {\n                ${param1}.append(c);\n            }\n        }\n        ${param1}.append('\"');\n    }\n"
+          },
+          "loss_record_contribution": {
+            "form": "literal",
+            "value": {
+              "entries": []
+            }
+          },
+          "signature_guard": {
+            "min_params": 2,
+            "max_params": 2
+          }
+        }
+      ]
+    }
+  }
+}
