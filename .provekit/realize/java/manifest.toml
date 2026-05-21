@@ -2,5 +2,12 @@
 # cmd_bind dispatches canonical rewrite emission here when target-language=java.
 name = "java-realize"
 library_tag = "java-net-http"
+family = "concept:family:http"
+library_version = "java-11"
+# #1364 / #1355: per-kit concept coverage. java.net.http (HttpClient) is the
+# JDK 11+ standard HTTP API. The catch-all java body-templates JSON also
+# declares IR primitives (concept:closure, generic-instantiation, etc.)
+# which are realized structurally and don't belong in this list.
+provides_concepts = ["http-request", "http-response"]
 command = ["java", "-jar", "implementations/java/provekit-realize-java-core/target/provekit-realize-java.jar", "--rpc"]
 working_dir = "."
