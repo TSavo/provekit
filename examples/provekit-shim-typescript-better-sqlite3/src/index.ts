@@ -26,6 +26,8 @@ export type Params = readonly unknown[] | Record<string, unknown>;
 @sugar.bind({
   concept: "concept:sql-connection-open",
   library: "better-sqlite3",
+  family: "concept:family:sql",
+  version: "12.9.0",
 })
 export function open(filename: string): Database.Database {
   return new Database(filename);
@@ -34,6 +36,8 @@ export function open(filename: string): Database.Database {
 @sugar.bind({
   concept: "concept:sql-connection-open",
   library: "better-sqlite3",
+  family: "concept:family:sql",
+  version: "12.9.0",
 })
 export function openInMemory(): Database.Database {
   return new Database(":memory:");
@@ -42,6 +46,8 @@ export function openInMemory(): Database.Database {
 @sugar.bind({
   concept: "concept:sql-connection-open",
   library: "better-sqlite3",
+  family: "concept:family:sql",
+  version: "12.9.0",
   loss: ["readonly-flag", "fileMustExist-flag"],
 })
 export function openWithOptions(filename: string, options: Database.Options): Database.Database {
@@ -51,6 +57,8 @@ export function openWithOptions(filename: string, options: Database.Options): Da
 @sugar.bind({
   concept: "concept:sql-connection-close",
   library: "better-sqlite3",
+  family: "concept:family:sql",
+  version: "12.9.0",
 })
 export function close(db: Database.Database): void {
   db.close();
@@ -63,6 +71,8 @@ export function close(db: Database.Database): void {
 @sugar.bind({
   concept: "concept:sql-execute",
   library: "better-sqlite3",
+  family: "concept:family:sql",
+  version: "12.9.0",
 })
 export function execute(db: Database.Database, sql: string, params: Params = []): Database.RunResult {
   return db.prepare(sql).run(params);
@@ -71,6 +81,8 @@ export function execute(db: Database.Database, sql: string, params: Params = [])
 @sugar.bind({
   concept: "concept:sql-execute",
   library: "better-sqlite3",
+  family: "concept:family:sql",
+  version: "12.9.0",
   loss: ["multi-statement-support"],
 })
 export function executeBatch(db: Database.Database, sql: string): void {
@@ -80,6 +92,8 @@ export function executeBatch(db: Database.Database, sql: string): void {
 @sugar.bind({
   concept: "concept:sql-query",
   library: "better-sqlite3",
+  family: "concept:family:sql",
+  version: "12.9.0",
 })
 export function queryRow(db: Database.Database, sql: string, params: Params = []): unknown {
   return db.prepare(sql).get(params);
@@ -88,6 +102,8 @@ export function queryRow(db: Database.Database, sql: string, params: Params = []
 @sugar.bind({
   concept: "concept:sql-query",
   library: "better-sqlite3",
+  family: "concept:family:sql",
+  version: "12.9.0",
 })
 export function queryAll(db: Database.Database, sql: string, params: Params = []): unknown[] {
   return db.prepare(sql).all(params);
@@ -100,6 +116,8 @@ export function queryAll(db: Database.Database, sql: string, params: Params = []
 @sugar.bind({
   concept: "concept:sql-prepare",
   library: "better-sqlite3",
+  family: "concept:family:sql",
+  version: "12.9.0",
 })
 export function prepare(db: Database.Database, sql: string): Database.Statement {
   return db.prepare(sql);
@@ -108,6 +126,8 @@ export function prepare(db: Database.Database, sql: string): Database.Statement 
 @sugar.bind({
   concept: "concept:sql-prepare",
   library: "better-sqlite3",
+  family: "concept:family:sql",
+  version: "12.9.0",
   loss: ["bind-returns-same-stmt"],
 })
 export function stmtBind(stmt: Database.Statement, ...args: unknown[]): Database.Statement {
@@ -121,6 +141,8 @@ export function stmtBind(stmt: Database.Statement, ...args: unknown[]): Database
 @sugar.bind({
   concept: "concept:sql-execute",
   library: "better-sqlite3",
+  family: "concept:family:sql",
+  version: "12.9.0",
 })
 export function stmtRun(stmt: Database.Statement, params: Params = []): Database.RunResult {
   return stmt.run(params);
@@ -129,6 +151,8 @@ export function stmtRun(stmt: Database.Statement, params: Params = []): Database
 @sugar.bind({
   concept: "concept:sql-query",
   library: "better-sqlite3",
+  family: "concept:family:sql",
+  version: "12.9.0",
 })
 export function stmtAll(stmt: Database.Statement, params: Params = []): unknown[] {
   return stmt.all(params);
@@ -137,6 +161,8 @@ export function stmtAll(stmt: Database.Statement, params: Params = []): unknown[
 @sugar.bind({
   concept: "concept:sql-query",
   library: "better-sqlite3",
+  family: "concept:family:sql",
+  version: "12.9.0",
 })
 export function stmtGet(stmt: Database.Statement, params: Params = []): unknown {
   return stmt.get(params);
@@ -145,6 +171,8 @@ export function stmtGet(stmt: Database.Statement, params: Params = []): unknown 
 @sugar.bind({
   concept: "concept:sql-query",
   library: "better-sqlite3",
+  family: "concept:family:sql",
+  version: "12.9.0",
   loss: ["generator-protocol"],
 })
 export function stmtIterate(stmt: Database.Statement, params: Params = []): IterableIterator<unknown> {
@@ -158,6 +186,8 @@ export function stmtIterate(stmt: Database.Statement, params: Params = []): Iter
 @sugar.bind({
   concept: "concept:sql-transaction-begin",
   library: "better-sqlite3",
+  family: "concept:family:sql",
+  version: "12.9.0",
 })
 export function transaction<T>(db: Database.Database, body: () => T): T {
   return db.transaction(body)();
@@ -166,6 +196,8 @@ export function transaction<T>(db: Database.Database, body: () => T): T {
 @sugar.bind({
   concept: "concept:sql-transaction-begin",
   library: "better-sqlite3",
+  family: "concept:family:sql",
+  version: "12.9.0",
   loss: ["deferred-isolation-level"],
 })
 export function transactionDeferred<T>(db: Database.Database, body: () => T): T {
@@ -175,6 +207,8 @@ export function transactionDeferred<T>(db: Database.Database, body: () => T): T 
 @sugar.bind({
   concept: "concept:sql-transaction-begin",
   library: "better-sqlite3",
+  family: "concept:family:sql",
+  version: "12.9.0",
   loss: ["immediate-isolation-level"],
 })
 export function transactionImmediate<T>(db: Database.Database, body: () => T): T {
@@ -184,6 +218,8 @@ export function transactionImmediate<T>(db: Database.Database, body: () => T): T
 @sugar.bind({
   concept: "concept:sql-transaction-begin",
   library: "better-sqlite3",
+  family: "concept:family:sql",
+  version: "12.9.0",
   loss: ["exclusive-isolation-level"],
 })
 export function transactionExclusive<T>(db: Database.Database, body: () => T): T {
@@ -197,6 +233,8 @@ export function transactionExclusive<T>(db: Database.Database, body: () => T): T
 @sugar.bind({
   concept: "concept:sql-query",
   library: "better-sqlite3",
+  family: "concept:family:sql",
+  version: "12.9.0",
   loss: ["named-column-access"],
 })
 export function rowByIndex(stmt: Database.Statement, params: Params = []): unknown[] {
@@ -206,6 +244,8 @@ export function rowByIndex(stmt: Database.Statement, params: Params = []): unkno
 @sugar.bind({
   concept: "concept:sql-query",
   library: "better-sqlite3",
+  family: "concept:family:sql",
+  version: "12.9.0",
 })
 export function rowAsObject(stmt: Database.Statement, params: Params = []): Record<string, unknown> {
   return (stmt.raw(false).get(params) ?? {}) as Record<string, unknown>;
@@ -218,6 +258,8 @@ export function rowAsObject(stmt: Database.Statement, params: Params = []): Reco
 @sugar.bind({
   concept: "concept:insert-and-get-id",
   library: "better-sqlite3",
+  family: "concept:family:sql",
+  version: "12.9.0",
   observed_dimension: "last-insert-rowid",
 })
 export function lastInsertRowid(result: Database.RunResult): number | bigint {
@@ -227,6 +269,8 @@ export function lastInsertRowid(result: Database.RunResult): number | bigint {
 @sugar.bind({
   concept: "concept:sql-changes-affected",
   library: "better-sqlite3",
+  family: "concept:family:sql",
+  version: "12.9.0",
   observed_dimension: "row-count",
 })
 export function changes(result: Database.RunResult): number {
@@ -240,6 +284,8 @@ export function changes(result: Database.RunResult): number {
 @sugar.bind({
   concept: "concept:sql-connection-state",
   library: "better-sqlite3",
+  family: "concept:family:sql",
+  version: "12.9.0",
   observed_dimension: "in-transaction",
 })
 export function isInTransaction(db: Database.Database): boolean {
@@ -249,6 +295,8 @@ export function isInTransaction(db: Database.Database): boolean {
 @sugar.bind({
   concept: "concept:sql-connection-state",
   library: "better-sqlite3",
+  family: "concept:family:sql",
+  version: "12.9.0",
   observed_dimension: "open",
 })
 export function isOpen(db: Database.Database): boolean {
@@ -258,6 +306,8 @@ export function isOpen(db: Database.Database): boolean {
 @sugar.bind({
   concept: "concept:sql-connection-state",
   library: "better-sqlite3",
+  family: "concept:family:sql",
+  version: "12.9.0",
   observed_dimension: "readonly",
 })
 export function isReadonly(db: Database.Database): boolean {
@@ -267,6 +317,8 @@ export function isReadonly(db: Database.Database): boolean {
 @sugar.bind({
   concept: "concept:sql-connection-state",
   library: "better-sqlite3",
+  family: "concept:family:sql",
+  version: "12.9.0",
   observed_dimension: "memory",
 })
 export function isMemory(db: Database.Database): boolean {
@@ -276,6 +328,8 @@ export function isMemory(db: Database.Database): boolean {
 @sugar.bind({
   concept: "concept:sql-connection-state",
   library: "better-sqlite3",
+  family: "concept:family:sql",
+  version: "12.9.0",
   observed_dimension: "filename",
 })
 export function dbName(db: Database.Database): string {
@@ -289,6 +343,8 @@ export function dbName(db: Database.Database): string {
 @sugar.bind({
   concept: "concept:sql-stmt-columns",
   library: "better-sqlite3",
+  family: "concept:family:sql",
+  version: "12.9.0",
 })
 export function stmtColumns(stmt: Database.Statement): Database.ColumnDefinition[] {
   return stmt.columns();
@@ -297,6 +353,8 @@ export function stmtColumns(stmt: Database.Statement): Database.ColumnDefinition
 @sugar.bind({
   concept: "concept:sql-stmt-source",
   library: "better-sqlite3",
+  family: "concept:family:sql",
+  version: "12.9.0",
 })
 export function stmtSource(stmt: Database.Statement): string {
   return stmt.source;
@@ -305,6 +363,8 @@ export function stmtSource(stmt: Database.Statement): string {
 @sugar.bind({
   concept: "concept:sql-stmt-reader",
   library: "better-sqlite3",
+  family: "concept:family:sql",
+  version: "12.9.0",
   observed_dimension: "reader",
 })
 export function stmtReader(stmt: Database.Statement): boolean {
@@ -318,6 +378,8 @@ export function stmtReader(stmt: Database.Statement): boolean {
 @sugar.bind({
   concept: "concept:sql-busy-timeout",
   library: "better-sqlite3",
+  family: "concept:family:sql",
+  version: "12.9.0",
 })
 export function busyTimeout(db: Database.Database, ms: number): Database.Database {
   return db.pragma(`busy_timeout = ${ms}`) as unknown as Database.Database;
@@ -326,6 +388,8 @@ export function busyTimeout(db: Database.Database, ms: number): Database.Databas
 @sugar.bind({
   concept: "concept:sql-pragma",
   library: "better-sqlite3",
+  family: "concept:family:sql",
+  version: "12.9.0",
   loss: ["pragma-value-type-varies"],
 })
 export function pragmaQuery(db: Database.Database, pragma: string): unknown {
@@ -339,6 +403,8 @@ export function pragmaQuery(db: Database.Database, pragma: string): unknown {
 @sugar.bind({
   concept: "concept:sql-result-mode",
   library: "better-sqlite3",
+  family: "concept:family:sql",
+  version: "12.9.0",
   loss: ["mode-is-stateful-on-stmt"],
 })
 export function stmtPluck(stmt: Database.Statement, enabled = true): Database.Statement {
@@ -348,6 +414,8 @@ export function stmtPluck(stmt: Database.Statement, enabled = true): Database.St
 @sugar.bind({
   concept: "concept:sql-result-mode",
   library: "better-sqlite3",
+  family: "concept:family:sql",
+  version: "12.9.0",
   loss: ["mode-is-stateful-on-stmt", "expand-namespaces-columns"],
 })
 export function stmtExpand(stmt: Database.Statement, enabled = true): Database.Statement {
@@ -357,6 +425,8 @@ export function stmtExpand(stmt: Database.Statement, enabled = true): Database.S
 @sugar.bind({
   concept: "concept:sql-result-mode",
   library: "better-sqlite3",
+  family: "concept:family:sql",
+  version: "12.9.0",
   loss: ["mode-is-stateful-on-stmt", "raw-array-output"],
 })
 export function stmtRaw(stmt: Database.Statement, enabled = true): Database.Statement {
@@ -366,6 +436,8 @@ export function stmtRaw(stmt: Database.Statement, enabled = true): Database.Stat
 @sugar.bind({
   concept: "concept:sql-integer-mode",
   library: "better-sqlite3",
+  family: "concept:family:sql",
+  version: "12.9.0",
   loss: ["bigint-vs-number-switching"],
 })
 export function stmtSafeIntegers(stmt: Database.Statement, enabled = true): Database.Statement {
@@ -375,6 +447,8 @@ export function stmtSafeIntegers(stmt: Database.Statement, enabled = true): Data
 @sugar.bind({
   concept: "concept:sql-scalar-function",
   library: "better-sqlite3",
+  family: "concept:family:sql",
+  version: "12.9.0",
   loss: ["deterministic-flag", "varargs-flag", "direct-only-flag"],
 })
 export function dbFunction(db: Database.Database, name: string, callback: (...args: unknown[]) => unknown): void {
@@ -384,6 +458,8 @@ export function dbFunction(db: Database.Database, name: string, callback: (...ar
 @sugar.bind({
   concept: "concept:sql-aggregate-function",
   library: "better-sqlite3",
+  family: "concept:family:sql",
+  version: "12.9.0",
   loss: ["step-result-final-step-shape"],
 })
 export function dbAggregate(db: Database.Database, name: string, options: Database.AggregateOptions): void {
@@ -393,6 +469,8 @@ export function dbAggregate(db: Database.Database, name: string, options: Databa
 @sugar.bind({
   concept: "concept:sql-integer-mode",
   library: "better-sqlite3",
+  family: "concept:family:sql",
+  version: "12.9.0",
   loss: ["bigint-vs-number-switching"],
 })
 export function dbDefaultSafeIntegers(db: Database.Database, enabled = true): Database.Database {
@@ -403,6 +481,8 @@ export function dbDefaultSafeIntegers(db: Database.Database, enabled = true): Da
 @sugar.bind({
   concept: "concept:sql-serialize",
   library: "better-sqlite3",
+  family: "concept:family:sql",
+  version: "12.9.0",
   loss: ["attached-schema-name"],
 })
 export function dbSerialize(db: Database.Database): Buffer {
@@ -412,6 +492,8 @@ export function dbSerialize(db: Database.Database): Buffer {
 @sugar.bind({
   concept: "concept:sql-unsafe-mode",
   library: "better-sqlite3",
+  family: "concept:family:sql",
+  version: "12.9.0",
   loss: ["unsafe-flag-semantics"],
 })
 export function dbUnsafeMode(db: Database.Database, enabled = true): Database.Database {
@@ -422,6 +504,8 @@ export function dbUnsafeMode(db: Database.Database, enabled = true): Database.Da
 @sugar.bind({
   concept: "concept:sql-virtual-table",
   library: "better-sqlite3",
+  family: "concept:family:sql",
+  version: "12.9.0",
   loss: ["vtab-factory-shape", "eponymous-flag"],
 })
 export function dbTable(db: Database.Database, name: string, factory: Database.VirtualTableOptions): void {
@@ -431,6 +515,8 @@ export function dbTable(db: Database.Database, name: string, factory: Database.V
 @sugar.bind({
   concept: "concept:sql-stmt-busy",
   library: "better-sqlite3",
+  family: "concept:family:sql",
+  version: "12.9.0",
   observed_dimension: "busy",
 })
 export function stmtBusy(stmt: Database.Statement): boolean {
@@ -440,6 +526,8 @@ export function stmtBusy(stmt: Database.Statement): boolean {
 @sugar.bind({
   concept: "concept:sql-stmt-readonly",
   library: "better-sqlite3",
+  family: "concept:family:sql",
+  version: "12.9.0",
   observed_dimension: "stmt-readonly",
 })
 export function stmtReadonly(stmt: Database.Statement): boolean {

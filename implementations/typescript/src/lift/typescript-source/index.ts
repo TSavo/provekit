@@ -395,10 +395,26 @@ function libraryBindingEntryForFunction(
     },
   };
   if (binding.observed_dimension !== null) entry.observed_dimension = binding.observed_dimension;
+  // #1357 / #1355: surface optional family + version pins on the binding
+  // entry. Absent on the @sugar.bind decorator → absent in emitted JSON
+  // (NOT empty strings — null/missing is the substrate signal for
+  // "this axis floats"). Parallel to walk_rpc's rust-side emission.
+  if (binding.family !== null) (entry as Record<string, unknown>).family = binding.family;
+  if (binding.version !== null) (entry as Record<string, unknown>).library_version = binding.version;
   return entry;
 }
 
-function sugarBindingArgs(node: ts.FunctionDeclaration): { concept: string; library: string; loss: string[]; observed_dimension: string | null } | null {
+function sugarBindingArgs(node: ts.FunctionDeclaration): {
+  concept: string;
+  library: string;
+  loss: string[];
+  observed_dimension: string | null;
+  // #1357 / #1355: optional family + version pins, parallel to the
+  // walk_rpc rust lifter. Both float (null) when @sugar.bind omits them;
+  // the dispatch downstream narrows via these when present.
+  family: string | null;
+  version: string | null;
+} | null {
   const decorators = decoratorNodes(node);
   for (const decorator of decorators) {
     const expr = decorator.expression;
@@ -410,7 +426,9 @@ function sugarBindingArgs(node: ts.FunctionDeclaration): { concept: string; libr
     if (concept && library) {
       const loss = arrayStringProperty(first, "loss");
       const observed_dimension = stringProperty(first, "observed_dimension");
-      return { concept, library, loss, observed_dimension };
+      const family = stringProperty(first, "family");
+      const version = stringProperty(first, "version");
+      return { concept, library, loss, observed_dimension, family, version };
     }
   }
   return null;

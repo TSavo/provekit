@@ -66,6 +66,51 @@ function selectRows(db: Database.Database, sql: string, args: unknown[]) {
     expect(canonicalJsonString(binding)).not.toContain("emission_template");
   });
 
+  // -----------------------------------------------------------------
+  // #1357 / #1355: family + version axes on @sugar.bind decorators.
+  // Parallel to walk_rpc's rust-side tests. Both fields are optional;
+  // absent on decorator ↔ absent in emitted JSON.
+  // -----------------------------------------------------------------
+
+  it("lifts family + library_version when present on @sugar.bind", () => {
+    const source = `
+import Database from "better-sqlite3";
+import { sugar } from "provekit";
+
+@sugar.bind({
+  concept: "concept:sql-query",
+  library: "better-sqlite3",
+  family: "concept:family:sql",
+  version: "12.9.0",
+})
+function selectRows(db: Database.Database, sql: string, args: unknown[]) {
+  return db.prepare(sql).all(args);
+}
+`;
+    const result = liftTypeScriptLibraryBindingsText(source, "src/sqlite.ts");
+    expect(result.libraryBindings).toHaveLength(1);
+    const binding = result.libraryBindings[0]! as Record<string, unknown>;
+    expect(binding.family).toBe("concept:family:sql");
+    expect(binding.library_version).toBe("12.9.0");
+  });
+
+  it("omits family + library_version when absent on @sugar.bind (back-compat)", () => {
+    const source = `
+import Database from "better-sqlite3";
+import { sugar } from "provekit";
+
+@sugar.bind({ concept: "concept:sql-query", library: "better-sqlite3" })
+function selectRows(db: Database.Database, sql: string, args: unknown[]) {
+  return db.prepare(sql).all(args);
+}
+`;
+    const result = liftTypeScriptLibraryBindingsText(source, "src/sqlite.ts");
+    expect(result.libraryBindings).toHaveLength(1);
+    const binding = result.libraryBindings[0]! as Record<string, unknown>;
+    expect(binding.family).toBeUndefined();
+    expect(binding.library_version).toBeUndefined();
+  });
+
   it("does not emit library-sugar-binding entries for unannotated functions (discrimination)", () => {
     const source = `
 function unannotated(db: unknown, sql: string): unknown[] {
