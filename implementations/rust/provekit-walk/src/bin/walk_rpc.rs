@@ -2809,12 +2809,27 @@ fn literal_shape(lit: &syn::Lit) -> Arc<CValue> {
             // The realize side checks `source_text` first and emits it verbatim,
             // falling back to the base10 integer value for integers without suffix.
             // This preserves type suffixes that are load-bearing (e.g. [0u8; 64]).
+            //
+            // #1363 / #1355: integer-width metadata. The token's suffix
+            // (`u8`, `i32`, `usize`, etc.) is the WIDTH+SIGNEDNESS pin —
+            // emit it as a separate `integer_width` field so downstream
+            // realize-side consumers can route width-aware (cross-language
+            // i32 → ts number with bounded loss; rust i32 → java int
+            // direct; etc.). Untype-suffixed literals get
+            // `integer_width: "inferred"`; the realize side falls back to
+            // function-signature-driven width inference.
             let token_text = value.to_string();
             let Some(decoded) = value.base10_parse::<i64>().ok() else {
                 return non_operation_shape();
             };
             let Some(op_cid) = concept_op_cid("concept:literal") else {
                 return non_operation_shape();
+            };
+            let suffix = value.suffix();
+            let integer_width = if suffix.is_empty() {
+                "inferred".to_string()
+            } else {
+                suffix.to_string()
             };
             CValue::object([
                 ("args", CValue::array(Vec::new())),
@@ -2823,6 +2838,7 @@ fn literal_shape(lit: &syn::Lit) -> Arc<CValue> {
                 ("sort", CValue::string(SORT_INT_CID)),
                 ("source_text", CValue::string(token_text)),
                 ("value", CValue::integer(decoded)),
+                ("integer_width", CValue::string(integer_width)),
             ])
         }
         syn::Lit::Float(value) => {
@@ -3499,6 +3515,61 @@ pub fn add(x: i64, y: i64) -> i64 {
                 "concept_name": "concept:add",
                 "op_cid": "blake3-512:95fc70e63a5550fd2e25142f13932919c59d085654ab387789c798886b0111c61d28fe533fc98b50df70eea9428a9af8aa75372c8b1c1deb3acc1a4094790468"
             })
+        );
+    }
+
+    // ---------------------------------------------------------------------
+    // #1363 / #1355: integer-width metadata on concept:literal shapes
+    // ---------------------------------------------------------------------
+
+    #[test]
+    fn integer_literal_with_u8_suffix_emits_integer_width_u8() {
+        let shape = term_shape_json(
+            r#"
+pub fn first() -> i64 {
+    let x = 0u8;
+    1
+}
+"#,
+        );
+        let json_text = serde_json::to_string(&shape).expect("shape stringifies");
+        assert!(
+            json_text.contains("\"integer_width\":\"u8\""),
+            "u8-suffixed literal must carry integer_width=u8: {json_text}"
+        );
+    }
+
+    #[test]
+    fn integer_literal_with_i32_suffix_emits_integer_width_i32() {
+        let shape = term_shape_json(
+            r#"
+pub fn first() -> i64 {
+    let x = 5i32;
+    1
+}
+"#,
+        );
+        let json_text = serde_json::to_string(&shape).expect("shape stringifies");
+        assert!(
+            json_text.contains("\"integer_width\":\"i32\""),
+            "i32-suffixed literal must carry integer_width=i32: {json_text}"
+        );
+    }
+
+    #[test]
+    fn integer_literal_without_suffix_emits_integer_width_inferred() {
+        let shape = term_shape_json(
+            r#"
+pub fn first() -> i64 {
+    let x = 42;
+    1
+}
+"#,
+        );
+        let json_text = serde_json::to_string(&shape).expect("shape stringifies");
+        assert!(
+            json_text.contains("\"integer_width\":\"inferred\""),
+            "unsuffixed literal must mark inferred: {json_text}"
         );
     }
 
