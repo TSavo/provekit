@@ -37,6 +37,17 @@ pub struct MaterializeArgs {
     /// Target language. Inferred from a language-prefixed --library or project markers when omitted.
     #[arg(long, alias = "language")]
     pub target: Option<String>,
+    /// #1361 / #1355: SOURCE language the @boundary stubs live in. When
+    /// different from --target, the source kit's lifter produces ProofIR
+    /// that's then consumed by the target kit's realizer, enabling cross-
+    /// language materialization (e.g. Rust source → Python target). When
+    /// equal to --target (today's default behavior; omit the flag to get
+    /// it), the existing same-language path is used. Cross-language synthesis
+    /// requires per-kit ProofIR exchange wired through (see #1361 chunk 2 +
+    /// #1364 per-kit concept parity); this chunk plumbs the flag and
+    /// refuses cross-language requests with a clear "not yet wired" message.
+    #[arg(long = "source-lang")]
+    pub source_lang: Option<String>,
     /// Write files in place. Omitted means dry-run to stdout.
     #[arg(long)]
     pub write: bool,
@@ -92,6 +103,22 @@ pub fn run(args: MaterializeArgs) -> u8 {
                 return EXIT_USER_ERROR;
             }
         };
+
+    // #1361 chunk 1 / #1355: when --source-lang differs from --target,
+    // cross-language synthesis is required. Refuse loudly until #1361 chunk
+    // 2 wires the source-kit lifter → ProofIR → target-kit realizer exchange.
+    // Same-language case (or omitted --source-lang) keeps today's behavior.
+    if let Some(source_lang) = args.source_lang.as_deref() {
+        if source_lang != target_lang {
+            eprintln!(
+                "{}: cross-language materialize (--source-lang {source_lang} != --target {target_lang}) \
+                 not yet wired. Tracked as #1361 chunk 2 + #1364 per-kit concept parity. \
+                 Currently this CLI supports source_lang == target_lang only.",
+                "refuse".red().bold()
+            );
+            return EXIT_USER_ERROR;
+        }
+    }
 
     let files = match materialize_source_dir(
         &project_root,
