@@ -2,6 +2,8 @@
 # cmd_bind dispatches canonical rewrite emission here when target-language=python and library_tag=requests.
 name = "python-realize-requests"
 library_tag = "requests"
+family = "concept:family:http"
+library_version = "2"
 # #1364 / #1355: per-kit concept coverage. Sourced from
 # menagerie/python-language-signature/specs/body-templates/python-canonical-bodies-requests.json.
 provides_concepts = ["concept:http-request", "concept:http-response"]

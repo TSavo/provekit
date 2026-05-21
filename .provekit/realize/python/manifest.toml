@@ -2,5 +2,12 @@
 # cmd_bind dispatches canonical rewrite emission here when target-language=python.
 name = "python-realize"
 library_tag = "urllib"
+family = "concept:family:http"
+library_version = "python-3"
+# #1364 / #1355: per-kit concept coverage. The catch-all python body-templates
+# JSON declares http-request + http-response alongside IR-primitive shapes
+# (concept:closure et al) which are realized structurally by the binary's
+# term-shape lowering and don't belong in this list.
+provides_concepts = ["http-request", "http-response"]
 command = ["implementations/python/target/release/provekit-realize-python", "--rpc"]
 working_dir = "."
