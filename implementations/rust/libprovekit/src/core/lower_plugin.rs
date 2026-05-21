@@ -50,6 +50,16 @@ pub struct RealizeRequest {
     pub sugar_cids: Vec<String>,
     #[serde(skip_serializing_if = "Vec::is_empty")]
     pub sugar_plugins: Vec<Value>,
+    /// #1359 / #1355: realization-tuple pins propagated through the
+    /// spec. `family` and `library_version` flow from the @sugar /
+    /// @boundary annotation (via the carrier payload) AND from the
+    /// shim's library-sugar-binding-entry (via augment_spec_with_shim_term_shape).
+    /// dispatch_realize reads them to perform family-aware constraint-
+    /// satisfaction over the realize-manifest registry.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub family: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub library_version: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -391,6 +401,8 @@ fn invocation_from_tree_node(
         contract: parent_request.contract.clone(),
         sugar_cids: parent_request.sugar_cids.clone(),
         sugar_plugins: parent_request.sugar_plugins.clone(),
+        family: parent_request.family.clone(),
+        library_version: parent_request.library_version.clone(),
         proc_macro_invocations: value_array_field(
             node,
             &["procMacroInvocations", "proc_macro_invocations"],
@@ -760,6 +772,8 @@ fn request_from_spec(spec: &Value) -> Result<RealizeRequest, String> {
         contract,
         sugar_cids: string_array_field(spec, &["sugarCids", "sugar_cids"]).unwrap_or_default(),
         sugar_plugins: value_array_field(spec, &["sugarPlugins", "sugar_plugins"]),
+        family: string_field_optional(spec, &["family"]),
+        library_version: string_field_optional(spec, &["library_version", "libraryVersion"]),
     })
 }
 

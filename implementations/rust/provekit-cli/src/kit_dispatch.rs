@@ -996,7 +996,18 @@ pub fn dispatch_realize(
     library_tag: Option<&str>,
     request: &RealizeRequest,
 ) -> Result<RealizedSource, KitUnavailable> {
-    let resolved = resolve_realize_command(workspace_root, target_lang, library_tag)?;
+    // #1359 chunk 3 / #1355: read the family + library_version pins from
+    // the RealizeRequest (propagated by #1357 from @sugar / @boundary
+    // annotations + carrier payload + shim binding entry). resolve_realize_command
+    // uses these to perform family-aware constraint satisfaction when the
+    // library_tag-equality lookup is ambiguous or empty.
+    let resolved = resolve_realize_command(
+        workspace_root,
+        target_lang,
+        library_tag,
+        request.family.as_deref(),
+        request.library_version.as_deref(),
+    )?;
     invoke_realize(target_lang, &resolved, request).map_err(|e| KitUnavailable {
         kit_kind: "realize",
         language: target_lang.to_string(),
@@ -1008,6 +1019,8 @@ fn resolve_realize_command(
     workspace_root: &Path,
     target_lang: &str,
     library_tag: Option<&str>,
+    family: Option<&str>,
+    library_version: Option<&str>,
 ) -> Result<ResolvedCommand, KitUnavailable> {
     if let Some(tag) = library_tag {
         if let Err(detail) = validate_library_tag(tag) {
@@ -1033,6 +1046,46 @@ fn resolve_realize_command(
         .find(|candidate| candidate.tag == requested)
     {
         return Ok(candidate.command.clone());
+    }
+
+    // #1359 chunk 3 / #1355: family-aware fallback. When library_tag-equality
+    // didn't match (or library floated, signaled by library_tag == DEFAULT
+    // and no manifest is tagged "default"), try matching by family +
+    // library_version constraints. If exactly one candidate matches, use
+    // it. Multiple matches → return clear refusal listing the candidates
+    // so the consumer can pin further.
+    if family.is_some() || library_version.is_some() {
+        let family_matches: Vec<&RealizeCandidate> = registry_candidates
+            .iter()
+            .filter(|c| match family {
+                Some(want) => c.family.as_deref() == Some(want),
+                None => true,
+            })
+            .filter(|c| match library_version {
+                Some(want) => c.library_version.as_deref() == Some(want),
+                None => true,
+            })
+            .collect();
+        if family_matches.len() == 1 {
+            return Ok(family_matches[0].command.clone());
+        }
+        if !family_matches.is_empty() {
+            let tags = family_matches
+                .iter()
+                .map(|c| format!("{} from {}", c.tag, c.source))
+                .collect::<Vec<_>>()
+                .join(", ");
+            return Err(KitUnavailable {
+                kit_kind: "realize",
+                language: target_lang.to_string(),
+                detail: format!(
+                    "ambiguous realize dispatch for language `{target_lang}` with \
+                     family={family:?} library_version={library_version:?}: {} \
+                     candidates satisfy the constraints. registered: {tags}",
+                    family_matches.len()
+                ),
+            });
+        }
     }
 
     if library_tag.is_none() {
