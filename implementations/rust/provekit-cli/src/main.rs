@@ -53,6 +53,7 @@ mod promotion_query;
 mod prompts;
 mod protocol;
 mod report_fmt;
+mod sort_morphism_catalog;
 
 /// Exit codes used across subcommands.
 pub const EXIT_OK: u8 = 0;
