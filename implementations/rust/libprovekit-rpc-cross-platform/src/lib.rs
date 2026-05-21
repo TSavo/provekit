@@ -161,6 +161,8 @@ pub trait AdapterLifter {
 #[provekit::boundary(
     concept = "concept:stdio-read-line",
     library = "provekit-shim-stdio-rust",
+    family = "concept:family:stdio-stream",
+    version = "rust-1",
     boundary_contract = "boundary:stdio-line-stream",
     loss = [],
 )]
@@ -173,6 +175,8 @@ pub fn stdin_read_line() -> Option<String> {
 #[provekit::boundary(
     concept = "concept:stdio-write-line",
     library = "provekit-shim-stdio-rust",
+    family = "concept:family:stdio-stream",
+    version = "rust-1",
     boundary_contract = "boundary:stdio-line-stream",
     loss = [],
 )]
@@ -185,6 +189,8 @@ pub fn stdout_write_line(line: &str) {
 #[provekit::boundary(
     concept = "concept:stderr-write-line",
     library = "provekit-shim-stdio-rust",
+    family = "concept:family:stdio-stream",
+    version = "rust-1",
     boundary_contract = "boundary:stdio-line-stream",
     loss = [],
 )]
@@ -197,6 +203,8 @@ pub fn stderr_write_line(line: &str) {
 #[provekit::boundary(
     concept = "concept:json-parse",
     library = "provekit-shim-serde-json-rust",
+    family = "concept:family:json",
+    version = "1",
     boundary_contract = "boundary:rfc8259-json",
     loss = [],
 )]
@@ -210,6 +218,8 @@ pub fn json_parse(s: &str) -> Result<Value, String> {
 #[provekit::boundary(
     concept = "concept:json-serialize",
     library = "provekit-shim-serde-json-rust",
+    family = "concept:family:json",
+    version = "1",
     boundary_contract = "boundary:rfc8259-json",
     loss = [],
 )]
@@ -463,6 +473,8 @@ fn slot_cid(memento: &Value, key: &str) -> String {
 #[provekit::boundary(
     concept = "concept:blake3-512-of",
     library = "provekit-shim-blake3-rust",
+    family = "concept:family:hash",
+    version = "1",
     boundary_contract = "boundary:blake3-512",
     loss = [],
 )]
@@ -511,6 +523,8 @@ pub fn blake3_512_cid(bytes: &[u8]) -> String {
 #[provekit::boundary(
     concept = "concept:rfc8785-jcs-encode",
     library = "provekit-shim-rfc8785-jcs-rust",
+    family = "concept:family:json-canonicalization",
+    version = "1",
     boundary_contract = "boundary:rfc8785-canonical-json",
     loss = [],
 )]
@@ -527,6 +541,8 @@ pub fn encode_jcs(v: &Value) -> String {
 #[provekit::boundary(
     concept = "concept:rfc8785-jcs-encode-value",
     library = "provekit-shim-rfc8785-jcs-rust",
+    family = "concept:family:json-canonicalization",
+    version = "1",
     boundary_contract = "boundary:rfc8785-canonical-json",
     loss = [],
 )]
@@ -541,6 +557,8 @@ fn encode_value(v: &Value, out: &mut String) {
 #[provekit::boundary(
     concept = "concept:rfc8785-jcs-encode-string",
     library = "provekit-shim-rfc8785-jcs-rust",
+    family = "concept:family:json-canonicalization",
+    version = "1",
     boundary_contract = "boundary:rfc8785-canonical-json",
     loss = [],
 )]
