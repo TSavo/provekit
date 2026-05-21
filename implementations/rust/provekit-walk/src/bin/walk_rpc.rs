@@ -2419,15 +2419,22 @@ fn shape_of_stmt(stmt: &syn::Stmt, ctx: &ShapeContext) -> Arc<CValue> {
                     vec![target_leaf, shape_of_expr(&init.expr, ctx)],
                 );
             }
-            if local_binding_symbol(local).is_some() {
-                // Emit concept:assign with an optional third arg for mutability.
-                // args[0] = target (non_operation_shape — symbol resolved via operand_bindings)
+            if let Some(binding_name) = local_binding_symbol(local) {
+                // Substrate-honest let-binding: the binding NAME is data,
+                // emit it as a kind:"symbol" leaf in the target slot.
+                // (Previously emitted as non_operation_shape {} relying on
+                // operand_bindings position-resolution — fragile because
+                // for nested lets in loop / conditional bodies, the bindings
+                // collector doesn't always thread the binding name to the
+                // expected position.)
+                // args[0] = target (symbol leaf with binding name)
                 // args[1] = value expression
-                // args[2] = mutability flag leaf {source_text:"mut"} when `let mut`,
-                //           or omitted (2-arg form) for `let`.
-                // The realize side checks args.len() == 3 to detect let-mut.
+                // args[2] = mutability flag leaf when `let mut`, omitted otherwise
                 let mut assign_args = vec![
-                    non_operation_shape(),
+                    CValue::object([
+                        ("kind", CValue::string("symbol")),
+                        ("text", CValue::string(binding_name)),
+                    ]),
                     shape_of_expr(&init.expr, ctx),
                 ];
                 if local_binding_is_mut(local) {
@@ -2691,6 +2698,20 @@ fn shape_of_expr(expr: &syn::Expr, ctx: &ShapeContext) -> Arc<CValue> {
             let receiver = shape_of_expr(&idx.expr, ctx);
             let index = shape_of_expr(&idx.index, ctx);
             gamma_operation("concept:index", vec![receiver, index])
+        }
+        // Field access: `receiver.field` (and `receiver.0` tuple field) →
+        // concept:field(receiver_shape, field_symbol_leaf).
+        syn::Expr::Field(f) => {
+            let receiver = shape_of_expr(&f.base, ctx);
+            let field_text = match &f.member {
+                syn::Member::Named(ident) => ident.to_string(),
+                syn::Member::Unnamed(idx) => idx.index.to_string(),
+            };
+            let field_leaf = CValue::object([
+                ("kind", CValue::string("symbol")),
+                ("text", CValue::string(field_text)),
+            ]);
+            gamma_operation("concept:field", vec![receiver, field_leaf])
         }
         // Free path identifier (e.g. None, Some, Vec::new, Ordering::Less).
         // Emit as substrate-canonical symbol leaf so deeper consumers (match

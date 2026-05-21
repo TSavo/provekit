@@ -797,6 +797,17 @@ fn lower_term_shape_expression(
             type_name: String::new(),
         });
     }
+    if concept_name == "concept:field" {
+        if args.len() != 2 {
+            return None;
+        }
+        let receiver = lower_term_shape_expression(args[0], context, &append_position(position, 0))?;
+        let field_text = args[1].get("text").and_then(Value::as_str)?;
+        return Some(ShapeExpression {
+            text: format!("{}.{}", receiver.text, field_text),
+            type_name: String::new(),
+        });
+    }
     let mut arg_terms = Vec::new();
     for (index, arg) in args.iter().enumerate() {
         arg_terms.push(lower_term_shape_expression(
@@ -890,6 +901,11 @@ fn operation_expression(concept_name: &str, args: &[ShapeExpression]) -> Option<
             "ge" => Some(format!("({left}) >= ({right})")),
             "and" => Some(format!("({left}) && ({right})")),
             "or" => Some(format!("({left}) || ({right})")),
+            "bitand" => Some(format!("({left}) & ({right})")),
+            "bitor" => Some(format!("({left}) | ({right})")),
+            "bitxor" => Some(format!("({left}) ^ ({right})")),
+            "shl" => Some(format!("({left}) << ({right})")),
+            "shr" => Some(format!("({left}) >> ({right})")),
             _ => None,
         };
     }
