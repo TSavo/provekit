@@ -1,0 +1,29 @@
+{
+  "envelope": {
+    "declaredAt": "2026-05-21T00:00:00Z",
+    "signature": "ed25519:UNSIGNED_DEV_ONLY",
+    "signer": "ed25519:UNSIGNED_DEV_ONLY"
+  },
+  "header": {
+    "cid": "blake3-512:776fbfba542c89bd049efe569865025399fba22a73d4adad9d55cbfd53e6971e5b6376ab0e411bfa93655888f317a7086a79c3c042dd82feb5c7b0c237b2b98f",
+    "direction": "left-to-right",
+    "kind": "sort-morphism",
+    "precision_loss": "none",
+    "range_loss": "narrowing",
+    "representation_constraints": [],
+    "runtime_guards": [
+      {
+        "failure_mode": "refuse",
+        "kind": "effect-name-format-check"
+      }
+    ],
+    "schemaVersion": "1",
+    "source_language_signature_cid": "blake3-512:ad093bee1f2ad3ad15fe9e793efcc6ce9dc58138a31502af969bac79a8c81b1066abef449414c78867104188e9177dd51de88ccc2f192013f5c82fe69c1a0066",
+    "source_sort_cid": "blake3-512:79486b695251166bd059a9132f9191488449eaf57b0e5de511a4154d38411939b505f7d264a75a0ee65106f2daef3cba0eba313f066597595a01d551edc25bd6",
+    "target_language_signature_cid": "blake3-512:1979babed41ad51ad8d7a28543815f74e24a9d4ee1ae3d52ccc6549f293aa63519abf5411a67b7882c73333b1b357e4863f6d7781f0b0776e5bd25f90ea7d793",
+    "target_sort_cid": "blake3-512:2e8e8e72cb8563447f8887ace8013bccf789c460440706c6f72e14e4f292ddb7126c365bf04c65f121a69c1c778999530dd15cf2480110975122e451f7710616"
+  },
+  "metadata": {
+    "note": "c11's polymorphic Value sort narrows to concept:EffectName via runtime `effect-name-format-check` guard."
+  }
+}

@@ -1,0 +1,24 @@
+{
+  "envelope": {
+    "declaredAt": "2026-05-21T00:00:00Z",
+    "signature": "ed25519:UNSIGNED_DEV_ONLY",
+    "signer": "ed25519:UNSIGNED_DEV_ONLY"
+  },
+  "header": {
+    "cid": "blake3-512:883457ed8e3ca672230a5d647e4381051c17703f7489c083bb48ad62d6b44bec393b3dcc8a284aac3779af420cbf260a3017944b9522dd0674475ea1e061d1b1",
+    "direction": "bidirectional",
+    "kind": "sort-morphism",
+    "precision_loss": "none",
+    "range_loss": "none",
+    "representation_constraints": [],
+    "runtime_guards": [],
+    "schemaVersion": "1",
+    "source_language_signature_cid": "blake3-512:8f98c68d534e7e799061bb710cc948b067b2a7e9359ec82c2fb5e3681a6fe30e19477fe27aead7b051f9b5a732f35b6235dccf2574c176bb682cd7d534c24d04",
+    "source_sort_cid": "blake3-512:7423686722f49a805824f476f03f5547fcafb041b43212cd773cae7d10527d60a0dbc469ab47cb3a42a2530aa8b13fe492c1ac13964e9b4047b02cd194f23a51",
+    "target_language_signature_cid": "blake3-512:1979babed41ad51ad8d7a28543815f74e24a9d4ee1ae3d52ccc6549f293aa63519abf5411a67b7882c73333b1b357e4863f6d7781f0b0776e5bd25f90ea7d793",
+    "target_sort_cid": "blake3-512:be8721d24849feb74c4721520bdba02d352a94f49253a627cd509127472aa1c47cbe99cb705cac4159b5365abcce0c9aaa4901fe67630827deb6be1f9daeea10"
+  },
+  "metadata": {
+    "note": "go's `String` sort maps cleanly to concept:String."
+  }
+}

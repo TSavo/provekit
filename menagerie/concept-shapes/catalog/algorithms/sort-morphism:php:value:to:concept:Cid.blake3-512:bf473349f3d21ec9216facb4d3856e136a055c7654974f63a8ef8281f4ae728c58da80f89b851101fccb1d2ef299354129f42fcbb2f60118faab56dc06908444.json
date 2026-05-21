@@ -1,0 +1,29 @@
+{
+  "envelope": {
+    "declaredAt": "2026-05-21T00:00:00Z",
+    "signature": "ed25519:UNSIGNED_DEV_ONLY",
+    "signer": "ed25519:UNSIGNED_DEV_ONLY"
+  },
+  "header": {
+    "cid": "blake3-512:bf473349f3d21ec9216facb4d3856e136a055c7654974f63a8ef8281f4ae728c58da80f89b851101fccb1d2ef299354129f42fcbb2f60118faab56dc06908444",
+    "direction": "left-to-right",
+    "kind": "sort-morphism",
+    "precision_loss": "none",
+    "range_loss": "narrowing",
+    "representation_constraints": [],
+    "runtime_guards": [
+      {
+        "failure_mode": "refuse",
+        "kind": "cid-format-check"
+      }
+    ],
+    "schemaVersion": "1",
+    "source_language_signature_cid": "blake3-512:a21df3e5d95608d76bed025cec6a7069b8a87ecef3675f13b273394730427e1c782e128ba827e77b0b7a2e74fdd089657c8807ab7795df9acbf0c0c2b87e4ad4",
+    "source_sort_cid": "blake3-512:e77f967b57778c67fc5488f54594fa911f7b272b698bf1dc98b25c3b03f98769f32aacb960c42b9b2d8c53ff97c98b554e4851472a0038eda81c2067e676f929",
+    "target_language_signature_cid": "blake3-512:1979babed41ad51ad8d7a28543815f74e24a9d4ee1ae3d52ccc6549f293aa63519abf5411a67b7882c73333b1b357e4863f6d7781f0b0776e5bd25f90ea7d793",
+    "target_sort_cid": "blake3-512:4a2bba3a8207f364e0ffea40fb4ea4c7ea2ce6edac9492e8b0364001821978a37d9e3f782587b19f086c7358c35bc237815f7a617b61c9194db93aaf938c9c48"
+  },
+  "metadata": {
+    "note": "php's polymorphic Value sort narrows to concept:Cid via runtime `cid-format-check` guard."
+  }
+}

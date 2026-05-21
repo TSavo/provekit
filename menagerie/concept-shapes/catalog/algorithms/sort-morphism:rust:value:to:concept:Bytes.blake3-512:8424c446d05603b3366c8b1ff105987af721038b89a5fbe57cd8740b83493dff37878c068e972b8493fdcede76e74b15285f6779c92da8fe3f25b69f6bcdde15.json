@@ -1,0 +1,29 @@
+{
+  "envelope": {
+    "declaredAt": "2026-05-21T00:00:00Z",
+    "signature": "ed25519:UNSIGNED_DEV_ONLY",
+    "signer": "ed25519:UNSIGNED_DEV_ONLY"
+  },
+  "header": {
+    "cid": "blake3-512:8424c446d05603b3366c8b1ff105987af721038b89a5fbe57cd8740b83493dff37878c068e972b8493fdcede76e74b15285f6779c92da8fe3f25b69f6bcdde15",
+    "direction": "left-to-right",
+    "kind": "sort-morphism",
+    "precision_loss": "none",
+    "range_loss": "narrowing",
+    "representation_constraints": [],
+    "runtime_guards": [
+      {
+        "failure_mode": "refuse",
+        "kind": "is-bytes-check"
+      }
+    ],
+    "schemaVersion": "1",
+    "source_language_signature_cid": "blake3-512:e3c223b8b6f39382e43cb06c5b04059987e661d96311decd5003d4ec79c7d6f9969de39ae16dd6509cb5236185260d59c63288db7ff772aae00f8123ea826cbd",
+    "source_sort_cid": "blake3-512:b80072371372cfc3d0608cca91783a5db02863e1342b455c75d6a60523cde24818b9907ef1342b9ac3e7b0589bb4f5c75760f05b32762aba9339ca05f6405f0a",
+    "target_language_signature_cid": "blake3-512:1979babed41ad51ad8d7a28543815f74e24a9d4ee1ae3d52ccc6549f293aa63519abf5411a67b7882c73333b1b357e4863f6d7781f0b0776e5bd25f90ea7d793",
+    "target_sort_cid": "blake3-512:7116ef6e62e6739b213a8394f975a53c771b89f08c36d27143827acfcfebc0e39e5b82c530be668c3cfd5ec6966ccaa42930b37fdb1f4ac25652a970be10fb6b"
+  },
+  "metadata": {
+    "note": "rust's polymorphic Value sort narrows to concept:Bytes via runtime `is-bytes-check` guard."
+  }
+}

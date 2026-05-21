@@ -1,0 +1,29 @@
+{
+  "envelope": {
+    "declaredAt": "2026-05-21T00:00:00Z",
+    "signature": "ed25519:UNSIGNED_DEV_ONLY",
+    "signer": "ed25519:UNSIGNED_DEV_ONLY"
+  },
+  "header": {
+    "cid": "blake3-512:030c2625ad28ece456f1d5246e69a94d8ae20f96278f82c41082ef06139b9ec7d5956438e5b1479522cd4f14134395e946d3b456fe2a1aa0de8a17ba0acce1a5",
+    "direction": "left-to-right",
+    "kind": "sort-morphism",
+    "precision_loss": "none",
+    "range_loss": "narrowing",
+    "representation_constraints": [],
+    "runtime_guards": [
+      {
+        "failure_mode": "refuse",
+        "kind": "is-none-variant-check"
+      }
+    ],
+    "schemaVersion": "1",
+    "source_language_signature_cid": "blake3-512:e3c223b8b6f39382e43cb06c5b04059987e661d96311decd5003d4ec79c7d6f9969de39ae16dd6509cb5236185260d59c63288db7ff772aae00f8123ea826cbd",
+    "source_sort_cid": "blake3-512:f58a4b8024c3ac0332fc4a33e3eb0a31a0e272fc41918f373bb6bd3a980d3c3e682625d24699d4a25a8379e68bdf27d86fad4581541a27ec797fc3aa03bb9e1b",
+    "target_language_signature_cid": "blake3-512:1979babed41ad51ad8d7a28543815f74e24a9d4ee1ae3d52ccc6549f293aa63519abf5411a67b7882c73333b1b357e4863f6d7781f0b0776e5bd25f90ea7d793",
+    "target_sort_cid": "blake3-512:62f6040bd3f414c1e6c2b7bdf276669cd5613b33cb508a81170170064ca3ffba771a4b0002dc52e059fce5f9f63a1874ef71bd4ec89ae06e89c87a3e91aac3b5"
+  },
+  "metadata": {
+    "note": "Rust has no null — Option<()>::None is the closest equivalent, but it's a variant not a singleton. Per #1284 the rust:Null mapping was deferred; this morphism uses rust:Bottom as the closest available sort with a runtime guard."
+  }
+}
