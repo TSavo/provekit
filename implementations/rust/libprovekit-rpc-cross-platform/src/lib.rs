@@ -176,7 +176,7 @@ pub fn stdin_read_line() -> Option<String> {
     boundary_contract = "boundary:stdio-line-stream",
     loss = [],
 )]
-pub fn stdout_write_line(_line: &str) {
+pub fn stdout_write_line(line: &str) {
     unimplemented!("materialize-fillable boundary; per-target stdio shim provides the sugar realization")
 }
 
@@ -188,7 +188,7 @@ pub fn stdout_write_line(_line: &str) {
     boundary_contract = "boundary:stdio-line-stream",
     loss = [],
 )]
-pub fn stderr_write_line(_line: &str) {
+pub fn stderr_write_line(line: &str) {
     unimplemented!("materialize-fillable boundary; per-target stdio shim provides the sugar realization")
 }
 
@@ -200,7 +200,7 @@ pub fn stderr_write_line(_line: &str) {
     boundary_contract = "boundary:rfc8259-json",
     loss = [],
 )]
-pub fn json_parse(_s: &str) -> Result<Value, String> {
+pub fn json_parse(s: &str) -> Result<Value, String> {
     unimplemented!("materialize-fillable boundary; per-target JSON shim provides the sugar realization")
 }
 
@@ -213,7 +213,7 @@ pub fn json_parse(_s: &str) -> Result<Value, String> {
     boundary_contract = "boundary:rfc8259-json",
     loss = [],
 )]
-pub fn json_serialize(_v: &Value) -> Result<String, String> {
+pub fn json_serialize(v: &Value) -> Result<String, String> {
     unimplemented!("materialize-fillable boundary; per-target JSON shim provides the sugar realization")
 }
 
@@ -466,7 +466,7 @@ fn slot_cid(memento: &Value, key: &str) -> String {
     boundary_contract = "boundary:blake3-512",
     loss = [],
 )]
-pub fn blake3_512_of(_bytes: &[u8]) -> [u8; 64] {
+pub fn blake3_512_of(bytes: &[u8]) -> [u8; 64] {
     unimplemented!("materialize-fillable boundary; per-target blake3 shim provides the sugar realization")
 }
 
@@ -514,7 +514,37 @@ pub fn blake3_512_cid(bytes: &[u8]) -> String {
     boundary_contract = "boundary:rfc8785-canonical-json",
     loss = [],
 )]
-pub fn encode_jcs(_v: &Value) -> String {
+pub fn encode_jcs(v: &Value) -> String {
+    unimplemented!("materialize-fillable boundary; per-target JCS shim provides the sugar realization")
+}
+
+/// `concept:rfc8785-jcs-encode-value` — interior helper of the JCS
+/// algorithm, recursive over `serde_json::Value`. The JCS shim is
+/// authoritative for the implementation. We declare the boundary in
+/// cross-platform because the materialized `encode_jcs` body calls
+/// `encode_value(v, &mut out)`; without a corresponding @boundary in
+/// cross-platform, the substituted body has an unresolved name.
+#[provekit::boundary(
+    concept = "concept:rfc8785-jcs-encode-value",
+    library = "provekit-shim-rfc8785-jcs-rust",
+    boundary_contract = "boundary:rfc8785-canonical-json",
+    loss = [],
+)]
+fn encode_value(v: &Value, out: &mut String) {
+    unimplemented!("materialize-fillable boundary; per-target JCS shim provides the sugar realization")
+}
+
+/// `concept:rfc8785-jcs-encode-string` — interior helper of the JCS
+/// algorithm, escapes a string per RFC 8785's rules. Same boundary
+/// rationale as encode_value: the JCS shim's encode_value body calls
+/// encode_string, so cross-platform must declare it as a @boundary too.
+#[provekit::boundary(
+    concept = "concept:rfc8785-jcs-encode-string",
+    library = "provekit-shim-rfc8785-jcs-rust",
+    boundary_contract = "boundary:rfc8785-canonical-json",
+    loss = [],
+)]
+fn encode_string(s: &str, out: &mut String) {
     unimplemented!("materialize-fillable boundary; per-target JCS shim provides the sugar realization")
 }
 

@@ -1200,9 +1200,18 @@ pub fn inject_boundary_carriers(source: &str) -> String {
                     out.push_str("// provekit-concept: ");
                     out.push_str(&payload);
                     out.push('\n');
+                    // Skip the #[provekit::boundary(...)] attribute lines —
+                    // the carrier above carries the same information, and
+                    // leaving the attribute in place breaks
+                    // capture_stub_function_block (which expects the line
+                    // immediately after the carrier to start with `fn` /
+                    // `pub fn`, not an attribute).
+                    idx = close_idx + 1;
+                    continue;
                 }
             }
-            // Emit the attribute block verbatim (we don't strip it).
+            // No payload built (parser failed) — emit the attribute verbatim
+            // so the source remains valid Rust.
             out.push_str(&attr_text);
             idx = close_idx + 1;
         } else {

@@ -2010,23 +2010,16 @@ fn bindings_of_stmt(stmt: &syn::Stmt, ctx: &ShapeContext) -> BindingResult {
 
 fn bindings_of_expr(expr: &syn::Expr, ctx: &ShapeContext) -> BindingResult {
     match expr {
-        syn::Expr::If(e) => {
-            let else_bindings = e
-                .else_branch
-                .as_ref()
-                .map(|(_, else_expr)| bindings_of_expr(else_expr, ctx))
-                .unwrap_or_default();
-            operation_binding_result(vec![
-                bindings_of_expr(&e.cond, ctx),
-                bindings_of_block(&e.then_branch, ctx),
-                else_bindings,
-            ])
+        // If/While/ForLoop/Loop now lifted as concept:literal source_text
+        // leaves (see shape_of_expr); no inner operand bindings to thread,
+        // but the leaf IS a real shape (concept:literal), so we MUST mark
+        // has_operator=true so collapse_binding_groups keeps its position
+        // slot in sync with collapse_operation_shapes. Empty bindings
+        // vector — the leaf carries no operand references for the realize
+        // side to look up.
+        syn::Expr::If(_) | syn::Expr::While(_) | syn::Expr::ForLoop(_) | syn::Expr::Loop(_) => {
+            BindingResult { has_operator: true, bindings: Vec::new() }
         }
-        syn::Expr::While(e) => operation_binding_result(vec![
-            bindings_of_expr(&e.cond, ctx),
-            bindings_of_block(&e.body, ctx),
-        ]),
-        syn::Expr::ForLoop(e) => operation_binding_result(vec![bindings_of_block(&e.body, ctx)]),
         syn::Expr::Return(e) => {
             let args = e
                 .expr
@@ -2333,26 +2326,27 @@ fn shape_of_stmt(stmt: &syn::Stmt, ctx: &ShapeContext) -> Arc<CValue> {
 
 fn shape_of_expr(expr: &syn::Expr, ctx: &ShapeContext) -> Arc<CValue> {
     match expr {
-        syn::Expr::If(e) => {
-            let else_shape = e
-                .else_branch
-                .as_ref()
-                .map(|(_, else_expr)| shape_of_expr(else_expr, ctx))
-                .unwrap_or_else(non_operation_shape);
-            gamma_operation(
-                "concept:conditional",
-                vec![
-                    shape_of_expr(&e.cond, ctx),
-                    shape_of_block(&e.then_branch, ctx),
-                    else_shape,
-                ],
-            )
+        // Control-flow expressions whose patterns / bindings / scrutinees
+        // aren't currently in the substrate's primitive op catalog
+        // (concept:if exists structurally as concept:conditional, but its
+        // 3-arg form drops things like `else if` chains and pattern guards;
+        // concept:for / concept:while drop iterator + pattern). For byte-
+        // exact reproduction we lift these via prettyplease as a single
+        // concept:literal source_text leaf. Outer-scope identifiers
+        // referenced inside survive textually.
+        syn::Expr::If(_) | syn::Expr::While(_) | syn::Expr::ForLoop(_) | syn::Expr::Loop(_) => {
+            let formatted = pretty_print_expr(expr);
+            let Some(op_cid) = concept_op_cid("concept:literal") else {
+                return non_operation_shape();
+            };
+            CValue::object([
+                ("args", CValue::array(Vec::new())),
+                ("concept_name", CValue::string("concept:literal")),
+                ("op_cid", CValue::string(op_cid)),
+                ("sort", CValue::string(SORT_STRING_CID)),
+                ("source_text", CValue::string(formatted)),
+            ])
         }
-        syn::Expr::While(e) => gamma_operation(
-            "concept:while",
-            vec![shape_of_expr(&e.cond, ctx), shape_of_block(&e.body, ctx)],
-        ),
-        syn::Expr::ForLoop(e) => gamma_operation("concept:for", vec![shape_of_block(&e.body, ctx)]),
         syn::Expr::Return(e) => {
             let args = e
                 .expr
@@ -2793,7 +2787,21 @@ fn literal_shape(lit: &syn::Lit) -> Arc<CValue> {
             concept_literal_shape(CValue::string(value.base10_digits()), SORT_FLOAT_CID)
         }
         syn::Lit::Str(value) => {
-            concept_literal_shape(CValue::string(value.value()), SORT_STRING_CID)
+            // Byte-exact: preserve source-form escapes (e.g. `"\\\""` is the
+            // source token, not the post-escape Rust `String` value `"`).
+            use quote::ToTokens;
+            let token_text = value.to_token_stream().to_string();
+            let Some(op_cid) = concept_op_cid("concept:literal") else {
+                return non_operation_shape();
+            };
+            CValue::object([
+                ("args", CValue::array(Vec::new())),
+                ("concept_name", CValue::string("concept:literal")),
+                ("op_cid", CValue::string(op_cid)),
+                ("sort", CValue::string(SORT_STRING_CID)),
+                ("source_text", CValue::string(token_text)),
+                ("value", CValue::string(value.value())),
+            ])
         }
         syn::Lit::ByteStr(value) => {
             concept_literal_shape(byte_array_value(value.value()), SORT_BYTES_CID)
@@ -2805,12 +2813,25 @@ fn literal_shape(lit: &syn::Lit) -> Arc<CValue> {
         syn::Lit::Byte(value) => {
             concept_literal_shape(CValue::integer(i64::from(value.value())), SORT_INT_CID)
         }
-        // Char refused: Rust `char` is a 32-bit Unicode scalar (no-surrogate
-        // invariant), structurally distinct from String (UTF-8 byte sequence).
-        // The substrate has no proof of equivalence between these sorts, so
-        // claiming `'a': String` would publish a false content-addressed
-        // equivalence. Refuse the lift until `concept:Char` mints.
-        syn::Lit::Char(_) => non_operation_shape(),
+        // Char lifted as concept:literal source_text leaf for byte-exact
+        // reproduction. The shim's `char` semantic distinction from String
+        // remains intact at the source-text level: `'a'` is emitted as
+        // `'a'`, not as `"a": String`. No content-addressed equivalence
+        // claim is made — the source_text is just the textual leaf form.
+        syn::Lit::Char(value) => {
+            use quote::ToTokens;
+            let token_text = value.to_token_stream().to_string();
+            let Some(op_cid) = concept_op_cid("concept:literal") else {
+                return non_operation_shape();
+            };
+            CValue::object([
+                ("args", CValue::array(Vec::new())),
+                ("concept_name", CValue::string("concept:literal")),
+                ("op_cid", CValue::string(op_cid)),
+                ("sort", CValue::string(SORT_STRING_CID)),
+                ("source_text", CValue::string(token_text)),
+            ])
+        }
         syn::Lit::Verbatim(_) => non_operation_shape(),
         // syn::Lit is #[non_exhaustive]; future variants refuse the lift
         // until the substrate adds an explicit shape claim for them.

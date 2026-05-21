@@ -143,18 +143,21 @@ pub fn emit_from_term_shape_with_bindings(
     return_type: &str,
 ) -> Realization {
     let mut context = ShapeLoweringContext::new(params, param_types, return_type, operand_bindings);
-    // Tail-expression top-level: if the function returns non-unit AND
-    // the top of the term_shape is not a sequence or explicit return,
-    // try lowering as a bare expression (Rust implicit-return tail).
-    // This is the byte-correct form for shim bodies that consist of a
-    // single tail expression like `serde_json::from_str(s).map_err(|e| e.to_string())`.
+    // Tail-expression top-level: if the top of the term_shape is not a
+    // sequence or explicit return, try lowering as a bare expression
+    // (Rust implicit-return tail / unit-typed expression statement).
+    // This covers two source-side forms:
+    //   1. `pub fn json_parse(s) -> Result<...> { serde_json::from_str(s) }`
+    //      — non-unit returning function with a single tail expression.
+    //   2. `pub fn encode_value(v, out) { match v { ... } }`
+    //      — unit-returning function whose body is a single expression
+    //      (a match block, an if block, etc.) used for its side effects.
     let top_concept = term_shape_concept_name(term_shape);
     let is_seq_or_return = matches!(
         top_concept.as_deref(),
         Some("concept:seq") | Some("seq") | Some("concept:return") | Some("return")
     );
-    let returns_unit = map_source_type(return_type) == "()";
-    if !is_seq_or_return && !returns_unit {
+    if !is_seq_or_return {
         let mut tail_ctx = ShapeLoweringContext::new(
             params, param_types, return_type, operand_bindings,
         );
@@ -358,22 +361,30 @@ fn lower_term_shape_body(
             }
             let expression = lower_term_shape_expression(child, context, &child_position)?;
             // Last-child tail-expression form for non-unit returning fns:
-            // emit the expression bare (no `let temp = X;` + `return temp;`
-            // wrapper). This is byte-correct for shim bodies that end with
-            // a bare tail expression like `match ... { ... }` or `out`.
+            // emit the expression bare (no `let temp = X;` + bare-symbol
+            // epilogue wrapper). Byte-correct for shim bodies ending in
+            // `match ... { ... }`, `out`, etc.
             if index == last_index && returns_non_unit {
                 context.last_assigned_symbol = None;
                 lines.push(expression.text);
                 continue;
             }
-            let temp = context.temp_name();
-            context.defined_symbols.insert(temp.clone());
-            context.last_assigned_symbol = Some(temp.clone());
-            lines.push(format!(
-                "let {temp}: {} = {};",
-                map_source_type(&context.return_type),
-                expression.text
-            ));
+            // Non-last expression child = expression-as-statement. Emit
+            // bare (no `let __temp = X;` wrapper) since the substrate's
+            // lift doesn't currently track value-consumption distinct from
+            // side-effect-only execution. Block-terminated expressions
+            // (`match { ... }`, `for { ... }`, `if { ... }`, `loop { ... }`)
+            // are valid Rust statements without a trailing `;`; non-block
+            // expressions need one. The heuristic: peek at the last
+            // non-whitespace character of expression.text to decide.
+            context.last_assigned_symbol = None;
+            let trimmed_end = expression.text.trim_end();
+            let needs_semicolon = !trimmed_end.ends_with('}');
+            if needs_semicolon {
+                lines.push(format!("{};", expression.text));
+            } else {
+                lines.push(expression.text);
+            }
         }
         // Tail expression: when the function returns non-unit and no
         // explicit `concept:return` appeared inside the seq, emit the
