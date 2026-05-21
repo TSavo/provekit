@@ -1,0 +1,24 @@
+{
+  "envelope": {
+    "declaredAt": "2026-05-21T00:00:00Z",
+    "signature": "ed25519:UNSIGNED_DEV_ONLY",
+    "signer": "ed25519:UNSIGNED_DEV_ONLY"
+  },
+  "header": {
+    "cid": "blake3-512:47a57052735d6eeb8ba6212a24d5cdf57e5e0012a74712e136737cdf2a943a5f971f72722c65ac6ca6b4ae398196f67aafd73469efc1bea54a472fe895717810",
+    "direction": "bidirectional",
+    "kind": "sort-morphism",
+    "precision_loss": "none",
+    "range_loss": "none",
+    "representation_constraints": [],
+    "runtime_guards": [],
+    "schemaVersion": "1",
+    "source_language_signature_cid": "blake3-512:c533d7b3d4cafeb50ece583d706ef224496e8e54246600b1ac134bf36e46deb7274de4680a7fd39cc93e41ca658a73445f68d6480acd02880c2083e959d58284",
+    "source_sort_cid": "blake3-512:cdccb02ee924187e50d2a831fbd701deed4c2de4adaf897748f543d3d0e0dbb58df076aff36d92e8ab7f3af94bbce035bf1afea4108ef539f7a45ffaeb9106d1",
+    "target_language_signature_cid": "blake3-512:1979babed41ad51ad8d7a28543815f74e24a9d4ee1ae3d52ccc6549f293aa63519abf5411a67b7882c73333b1b357e4863f6d7781f0b0776e5bd25f90ea7d793",
+    "target_sort_cid": "blake3-512:37d8efe0ce6321d1a16f80aa06cbdf056c846b8a99613731e8d64d9581af61bc517fd8c87daaff2c817585a7dfd763e09ed729fdc71d25fe16fb1b2e6ca33534"
+  },
+  "metadata": {
+    "note": "Ruby's mutable-object pattern (most objects are mutable). Composes."
+  }
+}

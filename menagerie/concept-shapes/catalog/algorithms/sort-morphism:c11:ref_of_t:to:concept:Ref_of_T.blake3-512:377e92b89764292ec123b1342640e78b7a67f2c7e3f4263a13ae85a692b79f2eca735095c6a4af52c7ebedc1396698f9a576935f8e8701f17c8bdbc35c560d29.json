@@ -1,0 +1,24 @@
+{
+  "envelope": {
+    "declaredAt": "2026-05-21T00:00:00Z",
+    "signature": "ed25519:UNSIGNED_DEV_ONLY",
+    "signer": "ed25519:UNSIGNED_DEV_ONLY"
+  },
+  "header": {
+    "cid": "blake3-512:377e92b89764292ec123b1342640e78b7a67f2c7e3f4263a13ae85a692b79f2eca735095c6a4af52c7ebedc1396698f9a576935f8e8701f17c8bdbc35c560d29",
+    "direction": "bidirectional",
+    "kind": "sort-morphism",
+    "precision_loss": "none",
+    "range_loss": "none",
+    "representation_constraints": [],
+    "runtime_guards": [],
+    "schemaVersion": "1",
+    "source_language_signature_cid": "blake3-512:ad093bee1f2ad3ad15fe9e793efcc6ce9dc58138a31502af969bac79a8c81b1066abef449414c78867104188e9177dd51de88ccc2f192013f5c82fe69c1a0066",
+    "source_sort_cid": "blake3-512:022fba535cb164b5eb0baaf5f9ba91691b5ebdef94f84e86ff91ee9e165b0ae11cb474bde1ca8fb03c0acdfe9b12bc391b5c516f4c274ad63d86da6729ac3a3d",
+    "target_language_signature_cid": "blake3-512:1979babed41ad51ad8d7a28543815f74e24a9d4ee1ae3d52ccc6549f293aa63519abf5411a67b7882c73333b1b357e4863f6d7781f0b0776e5bd25f90ea7d793",
+    "target_sort_cid": "blake3-512:37d8efe0ce6321d1a16f80aa06cbdf056c846b8a99613731e8d64d9581af61bc517fd8c87daaff2c817585a7dfd763e09ed729fdc71d25fe16fb1b2e6ca33534"
+  },
+  "metadata": {
+    "note": "C11's T* pointer as parametric reference. Composes over inner T."
+  }
+}

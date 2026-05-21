@@ -1,0 +1,24 @@
+{
+  "envelope": {
+    "declaredAt": "2026-05-21T00:00:00Z",
+    "signature": "ed25519:UNSIGNED_DEV_ONLY",
+    "signer": "ed25519:UNSIGNED_DEV_ONLY"
+  },
+  "header": {
+    "cid": "blake3-512:d00e35bfb91c00f185adeb5539e115a4d9af044d3c764d392da33a181376ba8dca53c6928684e657fad5a3d4d32940010a081b9f91f049e22d2bc82592a22131",
+    "direction": "bidirectional",
+    "kind": "sort-morphism",
+    "precision_loss": "none",
+    "range_loss": "none",
+    "representation_constraints": [],
+    "runtime_guards": [],
+    "schemaVersion": "1",
+    "source_language_signature_cid": "blake3-512:052e54f3a38b581eb4fde81df1a45213022ca06bf9eb50ea2d94996b49f507a0f247ed62bff10eae5a17a7191a8de92b0014af5dcf4ef6ae1d8bf6885e88e535",
+    "source_sort_cid": "blake3-512:0713077e2c5db5c52b7cb0805931fee2eb03f1a04365ed9652e4d288c18574ee71b8f27567a5af3adc16736955e4fe5fbfa8478f5565d12f7237a175d8ef25af",
+    "target_language_signature_cid": "blake3-512:1979babed41ad51ad8d7a28543815f74e24a9d4ee1ae3d52ccc6549f293aa63519abf5411a67b7882c73333b1b357e4863f6d7781f0b0776e5bd25f90ea7d793",
+    "target_sort_cid": "blake3-512:47682b09e5dba71f563db6249c6cb352f7d540986dc7f4cd8d4fb1aa6d9a503064033ee3eb9f36ee6f9e000f700f2f030ebfcfe2b2b8b7e81a345b0d56551f1b"
+  },
+  "metadata": {
+    "note": "Zig's void return type."
+  }
+}

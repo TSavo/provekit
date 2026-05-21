@@ -1,0 +1,24 @@
+{
+  "envelope": {
+    "declaredAt": "2026-05-21T00:00:00Z",
+    "signature": "ed25519:UNSIGNED_DEV_ONLY",
+    "signer": "ed25519:UNSIGNED_DEV_ONLY"
+  },
+  "header": {
+    "cid": "blake3-512:daa5994dc970b985806437d6ca2127ac644b9b8d41921de898ad7dbd8c452a1303663b61efe9e0badbff665325b53d70f0099acdf0b522dd55c8c8843229b838",
+    "direction": "bidirectional",
+    "kind": "sort-morphism",
+    "precision_loss": "none",
+    "range_loss": "none",
+    "representation_constraints": [],
+    "runtime_guards": [],
+    "schemaVersion": "1",
+    "source_language_signature_cid": "blake3-512:bc36b43fec1a80efcecb05f8c4de725f961295466530aec452763c6c479b67c590c2e8062a3f46979383086ae80e6c0a917c443625d3474a7a89705e0a56ab8c",
+    "source_sort_cid": "blake3-512:1c0f7bc4d4a3b99fd3b76862338fb5347c2bcca53fc8d5a7764b0ee6437f8080e6c52ab1a2497ff51741769b396699c687933a0747c12c335ddc5040e26ec221",
+    "target_language_signature_cid": "blake3-512:1979babed41ad51ad8d7a28543815f74e24a9d4ee1ae3d52ccc6549f293aa63519abf5411a67b7882c73333b1b357e4863f6d7781f0b0776e5bd25f90ea7d793",
+    "target_sort_cid": "blake3-512:37d8efe0ce6321d1a16f80aa06cbdf056c846b8a99613731e8d64d9581af61bc517fd8c87daaff2c817585a7dfd763e09ed729fdc71d25fe16fb1b2e6ca33534"
+  },
+  "metadata": {
+    "note": "Python's list-of-one mutable wrapper pattern. Composes."
+  }
+}
