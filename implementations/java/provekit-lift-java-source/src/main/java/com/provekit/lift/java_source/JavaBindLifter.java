@@ -35,6 +35,7 @@ import com.sun.source.tree.ForLoopTree;
 import com.sun.source.tree.IfTree;
 import com.sun.source.tree.IdentifierTree;
 import com.sun.source.tree.LiteralTree;
+import com.sun.source.tree.MemberSelectTree;
 import com.sun.source.tree.MethodInvocationTree;
 import com.sun.source.tree.MethodTree;
 import com.sun.source.tree.NewArrayTree;
@@ -447,6 +448,19 @@ public final class JavaBindLifter {
         if (stmt instanceof WhileLoopTree || stmt instanceof DoWhileLoopTree || stmt instanceof ForLoopTree || stmt instanceof EnhancedForLoopTree) {
             return ShapeResult.empty();
         }
+        // try { ... } catch (...) { ... } — substrate-honest decomposition:
+        // the try-block IS the success-path term-shape; the catch arms are
+        // declared as a "throws E" effect on the binding (not part of the
+        // structural body). concept:try as a primitive is unminted; the
+        // value-of-body decomposes to its success-path content. Parallel
+        // to rust's Result-unwrap-to-T-with-panic-effect convention.
+        if (stmt instanceof com.sun.source.tree.TryTree t) {
+            return shapeOfStatement(t.getBlock());
+        }
+        if (stmt instanceof com.sun.source.tree.ThrowTree t) {
+            return operatorShapeResult("concept:throw",
+                List.of(shapeOfExpression(t.getExpression())));
+        }
         return ShapeResult.empty();
     }
 
@@ -484,8 +498,89 @@ public final class JavaBindLifter {
         }
         if (expr instanceof IdentifierTree t) return leafBinding(t.getName().toString());
         if (expr instanceof LiteralTree t) return literalShape(t.getValue());
-        if (expr instanceof MethodInvocationTree || expr instanceof NewClassTree) return ShapeResult.empty();
+        // Substrate-canonical concept:call shape — parallel to walk_rpc's
+        // emission for rust function calls. args[0] = callee identity leaf
+        // (kind="method" or "path"); args[1..] = argument shapes.
+        if (expr instanceof MethodInvocationTree mi) {
+            List<ShapeResult> args = new ArrayList<>();
+            args.add(calleeLeaf(mi.getMethodSelect()));
+            for (Tree arg : mi.getArguments()) {
+                args.add(shapeOfExpression(arg));
+            }
+            return operatorShapeResult("concept:call", args);
+        }
+        if (expr instanceof NewClassTree nc) {
+            // Constructor call: callee is the type name as a path leaf.
+            List<ShapeResult> args = new ArrayList<>();
+            args.add(pathLeaf(nc.getIdentifier().toString()));
+            for (Tree arg : nc.getArguments()) {
+                args.add(shapeOfExpression(arg));
+            }
+            return operatorShapeResult("concept:call", args);
+        }
+        if (expr instanceof MemberSelectTree ms) {
+            // Bare member access (e.g. `obj.field`) — lift as a method/path
+            // identity leaf. Used when the member access isn't inside a call.
+            return calleeLeaf(ms);
+        }
+        if (expr instanceof NewArrayTree na) {
+            // Array constructor: concept:call with array-of as callee + initializers.
+            List<ShapeResult> args = new ArrayList<>();
+            args.add(pathLeaf("Array"));
+            if (na.getInitializers() != null) {
+                for (Tree init : na.getInitializers()) {
+                    args.add(shapeOfExpression(init));
+                }
+            }
+            return operatorShapeResult("concept:call", args);
+        }
         return ShapeResult.empty();
+    }
+
+    /**
+     * Build a callee identity leaf for a method-select or path expression.
+     * Mirrors walk_rpc's rust emission: kind="method" for member-select
+     * (receiver.method), kind="path" for bare identifier (free function).
+     * The text is a flattened dotted form preserving the source's name chain.
+     */
+    private static ShapeResult calleeLeaf(Tree calleeExpr) {
+        if (calleeExpr instanceof IdentifierTree t) {
+            return pathLeaf(t.getName().toString());
+        }
+        if (calleeExpr instanceof MemberSelectTree ms) {
+            String chain = flattenMemberSelect(ms);
+            return new ShapeResult(
+                Jcs.object("kind", Jcs.string("method"), "text", Jcs.string(chain)),
+                List.of()
+            );
+        }
+        return ShapeResult.empty();
+    }
+
+    private static ShapeResult pathLeaf(String text) {
+        return new ShapeResult(
+            Jcs.object("kind", Jcs.string("path"), "text", Jcs.string(text)),
+            List.of()
+        );
+    }
+
+    private static String flattenMemberSelect(MemberSelectTree ms) {
+        // Walk a chain like A.B.C.method → "A.B.C.method"
+        StringBuilder sb = new StringBuilder();
+        flattenInto(ms, sb);
+        return sb.toString();
+    }
+
+    private static void flattenInto(Tree node, StringBuilder sb) {
+        if (node instanceof MemberSelectTree ms) {
+            flattenInto(ms.getExpression(), sb);
+            if (sb.length() > 0) sb.append('.');
+            sb.append(ms.getIdentifier());
+        } else if (node instanceof IdentifierTree t) {
+            sb.append(t.getName());
+        } else {
+            sb.append(node.toString());
+        }
     }
 
     private static ShapeResult operatorShapeResult(String conceptName, List<ShapeResult> args) {
