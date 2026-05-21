@@ -41,6 +41,8 @@ use std::time::Duration;
 #[provekit::sugar(
     concept = "concept:sql-connection-open",
     library = "rusqlite",
+    family = "concept:family:sql",
+    version = "0.39.0",
     loss = ["sync-vs-async", "auth-mechanism", "connection-pooling"],
 )]
 pub fn open<P: AsRef<Path>>(path: P) -> Result<Connection> {
@@ -50,6 +52,8 @@ pub fn open<P: AsRef<Path>>(path: P) -> Result<Connection> {
 #[provekit::sugar(
     concept = "concept:sql-connection-open",
     library = "rusqlite",
+    family = "concept:family:sql",
+    version = "0.39.0",
     loss = ["sync-vs-async", "persistence-target"],
 )]
 pub fn open_in_memory() -> Result<Connection> {
@@ -59,6 +63,8 @@ pub fn open_in_memory() -> Result<Connection> {
 #[provekit::sugar(
     concept = "concept:sql-connection-open",
     library = "rusqlite",
+    family = "concept:family:sql",
+    version = "0.39.0",
     loss = ["sync-vs-async", "auth-mechanism", "connection-pooling", "flag-encoding"],
 )]
 pub fn open_with_flags<P: AsRef<Path>>(path: P, flags: OpenFlags) -> Result<Connection> {
@@ -68,6 +74,8 @@ pub fn open_with_flags<P: AsRef<Path>>(path: P, flags: OpenFlags) -> Result<Conn
 #[provekit::sugar(
     concept = "concept:sql-connection-close",
     library = "rusqlite",
+    family = "concept:family:sql",
+    version = "0.39.0",
     loss = ["sync-vs-async"],
 )]
 pub fn close(conn: Connection) -> std::result::Result<(), (Connection, rusqlite::Error)> {
@@ -81,6 +89,8 @@ pub fn close(conn: Connection) -> std::result::Result<(), (Connection, rusqlite:
 #[provekit::sugar(
     concept = "concept:sql-execute",
     library = "rusqlite",
+    family = "concept:family:sql",
+    version = "0.39.0",
     loss = ["sync-vs-async", "last-insert-id", "transaction-isolation"],
 )]
 pub fn execute<P: Params>(conn: &Connection, sql: &str, params: P) -> Result<usize> {
@@ -90,6 +100,8 @@ pub fn execute<P: Params>(conn: &Connection, sql: &str, params: P) -> Result<usi
 #[provekit::sugar(
     concept = "concept:sql-batch-execute",
     library = "rusqlite",
+    family = "concept:family:sql",
+    version = "0.39.0",
     loss = ["sync-vs-async", "atomicity-across-statements", "parameter-binding"],
 )]
 pub fn execute_batch(conn: &Connection, sql: &str) -> Result<()> {
@@ -99,6 +111,8 @@ pub fn execute_batch(conn: &Connection, sql: &str) -> Result<()> {
 #[provekit::sugar(
     concept = "concept:sql-query",
     library = "rusqlite",
+    family = "concept:family:sql",
+    version = "0.39.0",
     loss = ["sync-vs-async", "row-cardinality", "mapper-side-effects"],
 )]
 pub fn query_row<T, P: Params, F: FnOnce(&Row<'_>) -> Result<T>>(
@@ -113,6 +127,8 @@ pub fn query_row<T, P: Params, F: FnOnce(&Row<'_>) -> Result<T>>(
 #[provekit::sugar(
     concept = "concept:sql-query",
     library = "rusqlite",
+    family = "concept:family:sql",
+    version = "0.39.0",
     loss = ["sync-vs-async", "row-cardinality", "mapper-side-effects", "error-composition-mode"],
 )]
 pub fn query_row_and_then<T, E, P, F>(
@@ -136,6 +152,8 @@ where
 #[provekit::sugar(
     concept = "concept:sql-prepare",
     library = "rusqlite",
+    family = "concept:family:sql",
+    version = "0.39.0",
     loss = ["sync-vs-async", "parameter-style", "statement-lifetime"],
 )]
 pub fn prepare<'conn>(conn: &'conn Connection, sql: &str) -> Result<Statement<'conn>> {
@@ -145,6 +163,8 @@ pub fn prepare<'conn>(conn: &'conn Connection, sql: &str) -> Result<Statement<'c
 #[provekit::sugar(
     concept = "concept:sql-prepare-cached",
     library = "rusqlite",
+    family = "concept:family:sql",
+    version = "0.39.0",
     loss = ["sync-vs-async", "cache-eviction-policy", "cache-size-bound"],
 )]
 pub fn prepare_cached<'conn>(
@@ -157,6 +177,8 @@ pub fn prepare_cached<'conn>(
 #[provekit::sugar(
     concept = "concept:sql-prepare-cached",
     library = "rusqlite",
+    family = "concept:family:sql",
+    version = "0.39.0",
     loss = ["cache-side-effect"],
 )]
 pub fn discard_cached(stmt: rusqlite::CachedStatement<'_>) {
@@ -170,6 +192,8 @@ pub fn discard_cached(stmt: rusqlite::CachedStatement<'_>) {
 #[provekit::sugar(
     concept = "concept:sql-execute",
     library = "rusqlite",
+    family = "concept:family:sql",
+    version = "0.39.0",
     loss = ["sync-vs-async", "last-insert-id", "transaction-isolation"],
 )]
 pub fn stmt_execute<P: Params>(stmt: &mut Statement<'_>, params: P) -> Result<usize> {
@@ -179,6 +203,8 @@ pub fn stmt_execute<P: Params>(stmt: &mut Statement<'_>, params: P) -> Result<us
 #[provekit::sugar(
     concept = "concept:sql-query",
     library = "rusqlite",
+    family = "concept:family:sql",
+    version = "0.39.0",
     loss = ["sync-vs-async", "cursor-lifetime"],
 )]
 pub fn stmt_query<'stmt, P: Params>(
@@ -191,6 +217,8 @@ pub fn stmt_query<'stmt, P: Params>(
 #[provekit::sugar(
     concept = "concept:sql-query",
     library = "rusqlite",
+    family = "concept:family:sql",
+    version = "0.39.0",
     loss = ["sync-vs-async", "cursor-lifetime", "mapper-side-effects"],
 )]
 pub fn stmt_query_map<'stmt, T, P, F>(
@@ -208,6 +236,8 @@ where
 #[provekit::sugar(
     concept = "concept:sql-query",
     library = "rusqlite",
+    family = "concept:family:sql",
+    version = "0.39.0",
     loss = ["sync-vs-async", "cursor-lifetime", "mapper-side-effects", "error-composition-mode"],
 )]
 pub fn stmt_query_and_then<'stmt, T, E, P, F>(
@@ -226,6 +256,8 @@ where
 #[provekit::sugar(
     concept = "concept:sql-query",
     library = "rusqlite",
+    family = "concept:family:sql",
+    version = "0.39.0",
     loss = ["sync-vs-async", "row-cardinality", "mapper-side-effects"],
 )]
 pub fn stmt_query_row<T, P, F>(stmt: &mut Statement<'_>, params: P, mapper: F) -> Result<T>
@@ -239,6 +271,8 @@ where
 #[provekit::sugar(
     concept = "concept:insert-and-get-id",
     library = "rusqlite",
+    family = "concept:family:sql",
+    version = "0.39.0",
     loss = ["sync-vs-async", "id-column-discovery"],
 )]
 pub fn stmt_insert<P: Params>(stmt: &mut Statement<'_>, params: P) -> Result<i64> {
@@ -248,6 +282,8 @@ pub fn stmt_insert<P: Params>(stmt: &mut Statement<'_>, params: P) -> Result<i64
 #[provekit::sugar(
     concept = "concept:sql-query",
     library = "rusqlite",
+    family = "concept:family:sql",
+    version = "0.39.0",
     loss = ["sync-vs-async", "cardinality-projected-to-boolean"],
 )]
 pub fn stmt_exists<P: Params>(stmt: &mut Statement<'_>, params: P) -> Result<bool> {
@@ -261,6 +297,8 @@ pub fn stmt_exists<P: Params>(stmt: &mut Statement<'_>, params: P) -> Result<boo
 #[provekit::sugar(
     concept = "concept:sql-transaction-begin",
     library = "rusqlite",
+    family = "concept:family:sql",
+    version = "0.39.0",
     loss = ["sync-vs-async", "isolation-level", "nesting-depth-bound"],
 )]
 pub fn transaction<'conn>(conn: &'conn mut Connection) -> Result<Transaction<'conn>> {
@@ -270,6 +308,8 @@ pub fn transaction<'conn>(conn: &'conn mut Connection) -> Result<Transaction<'co
 #[provekit::sugar(
     concept = "concept:sql-transaction-begin",
     library = "rusqlite",
+    family = "concept:family:sql",
+    version = "0.39.0",
     loss = ["sync-vs-async", "isolation-level", "nesting-depth-bound", "deferred-vs-immediate-vs-exclusive"],
 )]
 pub fn transaction_with_behavior<'conn>(
@@ -282,6 +322,8 @@ pub fn transaction_with_behavior<'conn>(
 #[provekit::sugar(
     concept = "concept:sql-transaction-begin",
     library = "rusqlite",
+    family = "concept:family:sql",
+    version = "0.39.0",
     loss = ["sync-vs-async", "isolation-level", "compile-time-nesting-check-bypass"],
 )]
 pub fn unchecked_transaction<'conn>(
@@ -293,6 +335,8 @@ pub fn unchecked_transaction<'conn>(
 #[provekit::sugar(
     concept = "concept:sql-transaction-commit",
     library = "rusqlite",
+    family = "concept:family:sql",
+    version = "0.39.0",
     loss = ["sync-vs-async", "two-phase-commit-support"],
 )]
 pub fn tx_commit(tx: Transaction<'_>) -> Result<()> {
@@ -302,6 +346,8 @@ pub fn tx_commit(tx: Transaction<'_>) -> Result<()> {
 #[provekit::sugar(
     concept = "concept:sql-transaction-rollback",
     library = "rusqlite",
+    family = "concept:family:sql",
+    version = "0.39.0",
     loss = ["sync-vs-async", "partial-rollback-support"],
 )]
 pub fn tx_rollback(tx: Transaction<'_>) -> Result<()> {
@@ -311,6 +357,8 @@ pub fn tx_rollback(tx: Transaction<'_>) -> Result<()> {
 #[provekit::sugar(
     concept = "concept:sql-savepoint",
     library = "rusqlite",
+    family = "concept:family:sql",
+    version = "0.39.0",
     loss = ["nesting-depth-bound", "naming-discipline"],
 )]
 pub fn tx_savepoint<'tx>(tx: &'tx mut Transaction<'_>) -> Result<rusqlite::Savepoint<'tx>> {
@@ -320,6 +368,8 @@ pub fn tx_savepoint<'tx>(tx: &'tx mut Transaction<'_>) -> Result<rusqlite::Savep
 #[provekit::sugar(
     concept = "concept:sql-transaction-rollback",
     library = "rusqlite",
+    family = "concept:family:sql",
+    version = "0.39.0",
     loss = ["runtime-policy-change"],
 )]
 pub fn tx_set_drop_behavior(
@@ -336,6 +386,8 @@ pub fn tx_set_drop_behavior(
 #[provekit::sugar(
     concept = "concept:sql-row-get-column",
     library = "rusqlite",
+    family = "concept:family:sql",
+    version = "0.39.0",
     loss = ["null-handling", "type-coercion-mode"],
 )]
 pub fn row_get<I: rusqlite::RowIndex, T: rusqlite::types::FromSql>(
@@ -348,6 +400,8 @@ pub fn row_get<I: rusqlite::RowIndex, T: rusqlite::types::FromSql>(
 #[provekit::sugar(
     concept = "concept:sql-row-get-column",
     library = "rusqlite",
+    family = "concept:family:sql",
+    version = "0.39.0",
     loss = ["null-handling", "type-coercion-mode", "panic-on-failure"],
 )]
 pub fn row_get_unwrap<I: rusqlite::RowIndex, T: rusqlite::types::FromSql>(
@@ -360,6 +414,8 @@ pub fn row_get_unwrap<I: rusqlite::RowIndex, T: rusqlite::types::FromSql>(
 #[provekit::sugar(
     concept = "concept:sql-row-get-column",
     library = "rusqlite",
+    family = "concept:family:sql",
+    version = "0.39.0",
     loss = ["null-handling", "lifetime-bound-borrow"],
 )]
 pub fn row_get_ref<'row, I: rusqlite::RowIndex>(
@@ -376,6 +432,8 @@ pub fn row_get_ref<'row, I: rusqlite::RowIndex>(
 #[provekit::sugar(
     concept = "concept:insert-and-get-id",
     library = "rusqlite",
+    family = "concept:family:sql",
+    version = "0.39.0",
     loss = ["per-connection-not-per-statement", "rowid-vs-integer-pk"],
 )]
 pub fn last_insert_rowid(conn: &Connection) -> i64 {
@@ -385,6 +443,8 @@ pub fn last_insert_rowid(conn: &Connection) -> i64 {
 #[provekit::sugar(
     concept = "concept:sql-changes-count",
     library = "rusqlite",
+    family = "concept:family:sql",
+    version = "0.39.0",
     loss = ["per-statement-vs-cumulative", "transaction-scope"],
 )]
 pub fn changes(conn: &Connection) -> u64 {
@@ -394,6 +454,8 @@ pub fn changes(conn: &Connection) -> u64 {
 #[provekit::sugar(
     concept = "concept:sql-changes-count",
     library = "rusqlite",
+    family = "concept:family:sql",
+    version = "0.39.0",
     loss = ["cumulative-since-connection-open", "transaction-scope"],
 )]
 pub fn total_changes(conn: &Connection) -> u64 {
@@ -407,6 +469,8 @@ pub fn total_changes(conn: &Connection) -> u64 {
 #[provekit::sugar(
     concept = "concept:contract-observation",
     library = "rusqlite",
+    family = "concept:family:sql",
+    version = "0.39.0",
     observed_dimension = "autocommit-mode",
 )]
 pub fn is_autocommit(conn: &Connection) -> bool {
@@ -416,6 +480,8 @@ pub fn is_autocommit(conn: &Connection) -> bool {
 #[provekit::sugar(
     concept = "concept:contract-observation",
     library = "rusqlite",
+    family = "concept:family:sql",
+    version = "0.39.0",
     observed_dimension = "pending-statement-presence",
 )]
 pub fn is_busy(conn: &Connection) -> bool {
@@ -425,6 +491,8 @@ pub fn is_busy(conn: &Connection) -> bool {
 #[provekit::sugar(
     concept = "concept:contract-observation",
     library = "rusqlite",
+    family = "concept:family:sql",
+    version = "0.39.0",
     observed_dimension = "write-permission",
 )]
 pub fn is_readonly<N: rusqlite::Name>(conn: &Connection, db_name: N) -> Result<bool> {
@@ -434,6 +502,8 @@ pub fn is_readonly<N: rusqlite::Name>(conn: &Connection, db_name: N) -> Result<b
 #[provekit::sugar(
     concept = "concept:contract-observation",
     library = "rusqlite",
+    family = "concept:family:sql",
+    version = "0.39.0",
     observed_dimension = "cache-state",
     loss = ["flush-side-effect"],
 )]
@@ -448,6 +518,8 @@ pub fn cache_flush(conn: &Connection) -> Result<()> {
 #[provekit::sugar(
     concept = "concept:contract-observation",
     library = "rusqlite",
+    family = "concept:family:sql",
+    version = "0.39.0",
     observed_dimension = "column-names",
 )]
 pub fn stmt_column_names<'stmt>(stmt: &'stmt Statement<'_>) -> Vec<&'stmt str> {
@@ -457,6 +529,8 @@ pub fn stmt_column_names<'stmt>(stmt: &'stmt Statement<'_>) -> Vec<&'stmt str> {
 #[provekit::sugar(
     concept = "concept:contract-observation",
     library = "rusqlite",
+    family = "concept:family:sql",
+    version = "0.39.0",
     observed_dimension = "column-count",
 )]
 pub fn stmt_column_count(stmt: &Statement<'_>) -> usize {
@@ -466,6 +540,8 @@ pub fn stmt_column_count(stmt: &Statement<'_>) -> usize {
 #[provekit::sugar(
     concept = "concept:contract-observation",
     library = "rusqlite",
+    family = "concept:family:sql",
+    version = "0.39.0",
     observed_dimension = "column-name-at-index",
 )]
 pub fn stmt_column_name<'stmt>(stmt: &'stmt Statement<'_>, col: usize) -> Result<&'stmt str> {
@@ -475,6 +551,8 @@ pub fn stmt_column_name<'stmt>(stmt: &'stmt Statement<'_>, col: usize) -> Result
 #[provekit::sugar(
     concept = "concept:contract-observation",
     library = "rusqlite",
+    family = "concept:family:sql",
+    version = "0.39.0",
     observed_dimension = "column-index-of-name",
 )]
 pub fn stmt_column_index(stmt: &Statement<'_>, name: &str) -> Result<usize> {
@@ -484,6 +562,8 @@ pub fn stmt_column_index(stmt: &Statement<'_>, name: &str) -> Result<usize> {
 #[provekit::sugar(
     concept = "concept:contract-observation",
     library = "rusqlite",
+    family = "concept:family:sql",
+    version = "0.39.0",
     observed_dimension = "expanded-sql-text",
 )]
 pub fn stmt_expanded_sql(stmt: &Statement<'_>) -> Option<String> {
@@ -493,6 +573,8 @@ pub fn stmt_expanded_sql(stmt: &Statement<'_>) -> Option<String> {
 #[provekit::sugar(
     concept = "concept:contract-observation",
     library = "rusqlite",
+    family = "concept:family:sql",
+    version = "0.39.0",
     observed_dimension = "parameter-count",
 )]
 pub fn stmt_parameter_count(stmt: &Statement<'_>) -> usize {
@@ -502,6 +584,8 @@ pub fn stmt_parameter_count(stmt: &Statement<'_>) -> usize {
 #[provekit::sugar(
     concept = "concept:contract-observation",
     library = "rusqlite",
+    family = "concept:family:sql",
+    version = "0.39.0",
     observed_dimension = "parameter-name-at-index",
 )]
 pub fn stmt_parameter_name<'stmt>(
@@ -514,6 +598,8 @@ pub fn stmt_parameter_name<'stmt>(
 #[provekit::sugar(
     concept = "concept:contract-observation",
     library = "rusqlite",
+    family = "concept:family:sql",
+    version = "0.39.0",
     observed_dimension = "parameter-index-of-name",
 )]
 pub fn stmt_parameter_index(stmt: &Statement<'_>, name: &str) -> Result<Option<usize>> {
@@ -527,6 +613,8 @@ pub fn stmt_parameter_index(stmt: &Statement<'_>, name: &str) -> Result<Option<u
 #[provekit::sugar(
     concept = "concept:sql-busy-timeout",
     library = "rusqlite",
+    family = "concept:family:sql",
+    version = "0.39.0",
     loss = ["sync-vs-async", "callback-vs-timeout-shape"],
 )]
 pub fn busy_timeout(conn: &Connection, timeout: Duration) -> Result<()> {
