@@ -15,3 +15,14 @@ layer = "library-bindings"
 name = "rust-contracts"
 surface = "rust-contracts"
 emit = "ir-document"
+
+# #1358 / #1355: substrate platform_profile — the five-axis realization
+# tuple this shim mints against. Materialize/migrate dispatch resolves
+# consumer @boundary requests against this profile. Per-@sugar annotations
+# may pin or float each axis independently; profile is the default when
+# annotations omit them.
+[platform_profile]
+language = "rust"
+family = "concept:family:hash"
+library = "blake3"
+version = "1"

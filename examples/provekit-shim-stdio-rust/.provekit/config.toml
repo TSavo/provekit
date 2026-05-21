@@ -7,3 +7,9 @@ layer = "library-bindings"
 name = "rust-contracts"
 surface = "rust-contracts"
 emit = "ir-document"
+
+[platform_profile]
+language = "rust"
+family = "concept:family:stdio-stream"
+library = "std::io"
+version = "rust-1"

@@ -7,3 +7,9 @@ layer = "library-bindings"
 name = "rust-contracts"
 surface = "rust-contracts"
 emit = "ir-document"
+
+[platform_profile]
+language = "rust"
+family = "concept:family:json-canonicalization"
+library = "serde_json"
+version = "1"

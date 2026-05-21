@@ -66,6 +66,29 @@ impl PluginEntry {
     }
 }
 
+/// #1358 / #1355: Per-shim or per-consumer-project platform profile.
+/// Declares the five-axis realization tuple (language, family, library,
+/// version) plus the concept-level binding the shim's @sugar / @boundary
+/// annotations declare on a per-function basis. Any axis may be absent
+/// (None) — absent means the axis FLOATS and resolves against the
+/// consumer's profile at materialize time (per #1355 dispatch model).
+///
+/// Declared inline in `.provekit/config.toml`:
+/// ```toml
+/// [platform_profile]
+/// language = "rust"
+/// family = "concept:family:sql"
+/// library = "rusqlite"
+/// version = "0.39.0"
+/// ```
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct PlatformProfile {
+    pub language: Option<String>,
+    pub family: Option<String>,
+    pub library: Option<String>,
+    pub version: Option<String>,
+}
+
 #[derive(Debug, Clone, Default)]
 pub struct ProjectConfig {
     pub exam_manifest_cid: Option<String>,
@@ -102,6 +125,11 @@ pub struct ProjectConfig {
 
     /// Serialized command path documents, keyed by command.
     pub path_mint: Option<String>,
+
+    /// #1358 / #1355: realization tuple for this project. Used by
+    /// `cmd_mint` to stamp every emitted memento and by `cmd_materialize`
+    /// to resolve floating axes against the consumer's profile.
+    pub platform_profile: Option<PlatformProfile>,
 }
 
 impl ProjectConfig {
@@ -230,6 +258,27 @@ fn parse_config(text: &str) -> ProjectConfig {
                 cfg.callees = parse_string_array(&val);
             }
             (Some("paths.mint"), "file") => cfg.path_mint = Some(val),
+            // #1358 / #1355: [platform_profile] section
+            (Some("platform_profile"), "language") => {
+                cfg.platform_profile
+                    .get_or_insert_with(PlatformProfile::default)
+                    .language = Some(val);
+            }
+            (Some("platform_profile"), "family") => {
+                cfg.platform_profile
+                    .get_or_insert_with(PlatformProfile::default)
+                    .family = Some(val);
+            }
+            (Some("platform_profile"), "library") => {
+                cfg.platform_profile
+                    .get_or_insert_with(PlatformProfile::default)
+                    .library = Some(val);
+            }
+            (Some("platform_profile"), "version") => {
+                cfg.platform_profile
+                    .get_or_insert_with(PlatformProfile::default)
+                    .version = Some(val);
+            }
             (Some("plugins.entry"), "name") => {
                 if let Some(entry) = current_plugin.as_mut() {
                     entry.name = Some(val);
@@ -362,6 +411,51 @@ pub const KNOWN_SOLVERS: &[&str] = &["z3", "cvc5", "bitwuzla", "yices2", "mathsa
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    // -----------------------------------------------------------------
+    // #1358 / #1355: [platform_profile] section parsing
+    // -----------------------------------------------------------------
+
+    #[test]
+    fn parses_full_platform_profile_section() {
+        let raw = r#"
+[platform_profile]
+language = "rust"
+family = "concept:family:sql"
+library = "rusqlite"
+version = "0.39.0"
+"#;
+        let cfg = parse_config(raw);
+        let profile = cfg.platform_profile.expect("platform_profile parsed");
+        assert_eq!(profile.language.as_deref(), Some("rust"));
+        assert_eq!(profile.family.as_deref(), Some("concept:family:sql"));
+        assert_eq!(profile.library.as_deref(), Some("rusqlite"));
+        assert_eq!(profile.version.as_deref(), Some("0.39.0"));
+    }
+
+    #[test]
+    fn parses_partial_platform_profile_with_floating_axes() {
+        // Per #1355: any axis may float. Profile must parse cleanly when
+        // only some axes are pinned.
+        let raw = r#"
+[platform_profile]
+language = "rust"
+family = "concept:family:hash"
+"#;
+        let cfg = parse_config(raw);
+        let profile = cfg.platform_profile.expect("platform_profile parsed");
+        assert_eq!(profile.language.as_deref(), Some("rust"));
+        assert_eq!(profile.family.as_deref(), Some("concept:family:hash"));
+        assert!(profile.library.is_none(), "library floats");
+        assert!(profile.version.is_none(), "version floats");
+    }
+
+    #[test]
+    fn absent_platform_profile_section_yields_none() {
+        // Back-compat: configs without [platform_profile] still parse.
+        let cfg = parse_config("[authoring]\nsurface = \"kani\"\n");
+        assert!(cfg.platform_profile.is_none());
+    }
 
     #[test]
     fn parses_surface_default() {
