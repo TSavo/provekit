@@ -77,14 +77,17 @@ public final class JavaBindLifter {
 
     /**
      * Parsed result of a @ProveKitSugar annotation on a method.
-     * Carries all four fields: concept, library, loss dimensions, and
-     * optional observed_dimension for contract-observation bindings.
+     * Carries concept, library, loss dimensions, observed_dimension
+     * (for contract-observation bindings), AND the #1357 floating-axis
+     * pins family + version (empty string ↔ floating).
      */
     record SugarBinding(
             String concept,
             String library,
             List<String> loss,
-            String observedDimension) {}
+            String observedDimension,
+            String family,
+            String version) {}
 
     /**
      * Parsed result of a @ProveKitRefuse annotation on a type.
@@ -362,6 +365,21 @@ public final class JavaBindLifter {
                     entryKvs.add("observed_dimension");
                     entryKvs.add(Jcs.string(observedDim));
                 }
+                // #1357 / #1355: surface optional family + library_version pins
+                // on the binding entry. Absent on the @ProveKitSugar annotation
+                // (empty string) → absent in the emitted JSON (NOT empty string —
+                // null/missing is the substrate signal for "this axis floats").
+                // Parallel to walk_rpc + TS + Python lifters.
+                String family = binding.family();
+                if (family != null && !family.isEmpty()) {
+                    entryKvs.add("family");
+                    entryKvs.add(Jcs.string(family));
+                }
+                String version = binding.version();
+                if (version != null && !version.isEmpty()) {
+                    entryKvs.add("library_version");
+                    entryKvs.add(Jcs.string(version));
+                }
                 Jcs.Obj sugarEntry = Jcs.object(entryKvs.toArray());
                 entries.add(sugarEntry);
             }
@@ -569,6 +587,8 @@ public final class JavaBindLifter {
             String library = null;
             List<String> loss = new ArrayList<>();
             String observedDimension = "";
+            String family = "";
+            String version = "";
             for (ExpressionTree arg : ann.getArguments()) {
                 if (!(arg instanceof AssignmentTree assign)) continue;
                 String key = assign.getVariable().toString();
@@ -581,10 +601,16 @@ public final class JavaBindLifter {
                     loss = extractStringArray(valExpr);
                 } else if ("observedDimension".equals(key)) {
                     observedDimension = unquote(valExpr.toString());
+                } else if ("family".equals(key)) {
+                    // #1357 / #1355: optional concept family pin.
+                    family = unquote(valExpr.toString());
+                } else if ("version".equals(key)) {
+                    // #1357 / #1355: optional library version pin.
+                    version = unquote(valExpr.toString());
                 }
             }
             if (concept != null && !concept.isEmpty() && library != null && !library.isEmpty()) {
-                return Optional.of(new SugarBinding(concept, library, loss, observedDimension));
+                return Optional.of(new SugarBinding(concept, library, loss, observedDimension, family, version));
             }
             return Optional.empty();
         }

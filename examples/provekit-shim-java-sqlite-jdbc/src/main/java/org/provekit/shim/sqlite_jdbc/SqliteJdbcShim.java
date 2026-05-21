@@ -83,6 +83,8 @@ public final class SqliteJdbcShim {
     @ProveKitSugar(
         concept = "concept:sql-connection-open",
         library = "sqlite-jdbc",
+        family = "concept:family:sql",
+        version = "3.45.3.0",
         loss = {"sync-vs-async", "auth-mechanism", "connection-pooling", "error-handling-model"}
     )
     public static Connection open(String url) throws SQLException {
@@ -92,6 +94,8 @@ public final class SqliteJdbcShim {
     @ProveKitSugar(
         concept = "concept:sql-connection-open",
         library = "sqlite-jdbc",
+        family = "concept:family:sql",
+        version = "3.45.3.0",
         loss = {"sync-vs-async", "persistence-target", "error-handling-model"}
     )
     public static Connection openInMemory() throws SQLException {
@@ -101,6 +105,8 @@ public final class SqliteJdbcShim {
     @ProveKitSugar(
         concept = "concept:sql-connection-open",
         library = "sqlite-jdbc",
+        family = "concept:family:sql",
+        version = "3.45.3.0",
         loss = {"sync-vs-async", "auth-mechanism", "connection-pooling", "error-handling-model",
                 "flag-encoding"}
     )
@@ -112,6 +118,8 @@ public final class SqliteJdbcShim {
     @ProveKitSugar(
         concept = "concept:sql-connection-close",
         library = "sqlite-jdbc",
+        family = "concept:family:sql",
+        version = "3.45.3.0",
         loss = {"sync-vs-async", "error-handling-model"}
     )
     public static void close(Connection conn) throws SQLException {
@@ -127,6 +135,8 @@ public final class SqliteJdbcShim {
     @ProveKitSugar(
         concept = "concept:sql-connection-pool-acquire",
         library = "sqlite-jdbc",
+        family = "concept:family:sql",
+        version = "3.45.3.0",
         loss = {"sync-vs-async", "pool-sizing-policy", "error-handling-model",
                 "eviction-strategy"}
     )
@@ -142,6 +152,8 @@ public final class SqliteJdbcShim {
     @ProveKitSugar(
         concept = "concept:sql-execute",
         library = "sqlite-jdbc",
+        family = "concept:family:sql",
+        version = "3.45.3.0",
         loss = {"sync-vs-async", "last-insert-id", "transaction-isolation",
                 "error-handling-model"}
     )
@@ -154,6 +166,8 @@ public final class SqliteJdbcShim {
     @ProveKitSugar(
         concept = "concept:sql-execute",
         library = "sqlite-jdbc",
+        family = "concept:family:sql",
+        version = "3.45.3.0",
         loss = {"sync-vs-async", "error-handling-model", "batch-delimiter-syntax"}
     )
     public static void executeBatch(Connection conn, String sql) throws SQLException {
@@ -165,6 +179,8 @@ public final class SqliteJdbcShim {
     @ProveKitSugar(
         concept = "concept:sql-query",
         library = "sqlite-jdbc",
+        family = "concept:family:sql",
+        version = "3.45.3.0",
         loss = {"sync-vs-async", "row-cardinality", "mapper-side-effects",
                 "error-handling-model"}
     )
@@ -181,6 +197,8 @@ public final class SqliteJdbcShim {
     @ProveKitSugar(
         concept = "concept:sql-prepare",
         library = "sqlite-jdbc",
+        family = "concept:family:sql",
+        version = "3.45.3.0",
         loss = {"sync-vs-async", "parameter-style", "statement-handle-type",
                 "error-handling-model"}
     )
@@ -191,6 +209,8 @@ public final class SqliteJdbcShim {
     @ProveKitSugar(
         concept = "concept:sql-prepare-cached",
         library = "sqlite-jdbc",
+        family = "concept:family:sql",
+        version = "3.45.3.0",
         loss = {"sync-vs-async", "cache-eviction-policy", "cache-size-bound",
                 "error-handling-model"}
     )
@@ -209,6 +229,8 @@ public final class SqliteJdbcShim {
     @ProveKitSugar(
         concept = "concept:sql-execute",
         library = "sqlite-jdbc",
+        family = "concept:family:sql",
+        version = "3.45.3.0",
         loss = {"sync-vs-async", "last-insert-id", "transaction-isolation",
                 "error-handling-model"}
     )
@@ -219,6 +241,8 @@ public final class SqliteJdbcShim {
     @ProveKitSugar(
         concept = "concept:sql-query",
         library = "sqlite-jdbc",
+        family = "concept:family:sql",
+        version = "3.45.3.0",
         loss = {"sync-vs-async", "cursor-lifetime", "error-handling-model"}
     )
     public static ResultSet stmtQuery(PreparedStatement stmt) throws SQLException {
@@ -228,6 +252,8 @@ public final class SqliteJdbcShim {
     @ProveKitSugar(
         concept = "concept:sql-query",
         library = "sqlite-jdbc",
+        family = "concept:family:sql",
+        version = "3.45.3.0",
         loss = {"sync-vs-async", "cursor-lifetime", "mapper-side-effects",
                 "error-handling-model"}
     )
@@ -238,6 +264,8 @@ public final class SqliteJdbcShim {
     @ProveKitSugar(
         concept = "concept:sql-query",
         library = "sqlite-jdbc",
+        family = "concept:family:sql",
+        version = "3.45.3.0",
         loss = {"sync-vs-async", "row-cardinality", "mapper-side-effects",
                 "error-handling-model"}
     )
@@ -248,6 +276,8 @@ public final class SqliteJdbcShim {
     @ProveKitSugar(
         concept = "concept:insert-and-get-id",
         library = "sqlite-jdbc",
+        family = "concept:family:sql",
+        version = "3.45.3.0",
         loss = {"sync-vs-async", "id-column-discovery", "error-handling-model"}
     )
     public static long stmtInsert(PreparedStatement stmt) throws SQLException {
@@ -261,6 +291,8 @@ public final class SqliteJdbcShim {
     @ProveKitSugar(
         concept = "concept:sql-query",
         library = "sqlite-jdbc",
+        family = "concept:family:sql",
+        version = "3.45.3.0",
         loss = {"sync-vs-async", "cardinality-projected-to-boolean", "error-handling-model"}
     )
     public static boolean stmtExists(PreparedStatement stmt) throws SQLException {
@@ -278,6 +310,8 @@ public final class SqliteJdbcShim {
     @ProveKitSugar(
         concept = "concept:sql-batch-execute",
         library = "sqlite-jdbc",
+        family = "concept:family:sql",
+        version = "3.45.3.0",
         loss = {"sync-vs-async", "error-handling-model", "partial-batch-failure"}
     )
     public static int[] executePreparedBatch(PreparedStatement stmt) throws SQLException {
@@ -293,6 +327,8 @@ public final class SqliteJdbcShim {
     @ProveKitSugar(
         concept = "concept:sql-transaction-begin",
         library = "sqlite-jdbc",
+        family = "concept:family:sql",
+        version = "3.45.3.0",
         loss = {"sync-vs-async", "isolation-level", "nesting-depth-bound",
                 "error-handling-model"}
     )
@@ -303,6 +339,8 @@ public final class SqliteJdbcShim {
     @ProveKitSugar(
         concept = "concept:sql-transaction-begin",
         library = "sqlite-jdbc",
+        family = "concept:family:sql",
+        version = "3.45.3.0",
         loss = {"sync-vs-async", "nesting-depth-bound", "error-handling-model",
                 "deferred-vs-immediate-vs-exclusive"}
     )
@@ -315,6 +353,8 @@ public final class SqliteJdbcShim {
     @ProveKitSugar(
         concept = "concept:sql-transaction-commit",
         library = "sqlite-jdbc",
+        family = "concept:family:sql",
+        version = "3.45.3.0",
         loss = {"sync-vs-async", "two-phase-commit-support", "error-handling-model"}
     )
     public static void txCommit(Connection conn) throws SQLException {
@@ -324,6 +364,8 @@ public final class SqliteJdbcShim {
     @ProveKitSugar(
         concept = "concept:sql-transaction-rollback",
         library = "sqlite-jdbc",
+        family = "concept:family:sql",
+        version = "3.45.3.0",
         loss = {"sync-vs-async", "partial-rollback-support", "error-handling-model"}
     )
     public static void txRollback(Connection conn) throws SQLException {
@@ -333,6 +375,8 @@ public final class SqliteJdbcShim {
     @ProveKitSugar(
         concept = "concept:sql-savepoint",
         library = "sqlite-jdbc",
+        family = "concept:family:sql",
+        version = "3.45.3.0",
         loss = {"nesting-depth-bound", "naming-discipline", "error-handling-model"}
     )
     public static Savepoint txSavepoint(Connection conn) throws SQLException {
@@ -342,6 +386,8 @@ public final class SqliteJdbcShim {
     @ProveKitSugar(
         concept = "concept:sql-transaction-rollback",
         library = "sqlite-jdbc",
+        family = "concept:family:sql",
+        version = "3.45.3.0",
         loss = {"sync-vs-async", "error-handling-model", "savepoint-scope"}
     )
     public static void txRollbackToSavepoint(Connection conn, Savepoint sp)
@@ -359,6 +405,8 @@ public final class SqliteJdbcShim {
     @ProveKitSugar(
         concept = "concept:sql-transaction-isolation-level",
         library = "sqlite-jdbc",
+        family = "concept:family:sql",
+        version = "3.45.3.0",
         loss = {"sync-vs-async", "error-handling-model", "connection-scope-vs-statement-scope"}
     )
     public static void setTransactionIsolation(Connection conn, int level) throws SQLException {
@@ -373,6 +421,8 @@ public final class SqliteJdbcShim {
     @ProveKitSugar(
         concept = "concept:sql-row-get-column",
         library = "sqlite-jdbc",
+        family = "concept:family:sql",
+        version = "3.45.3.0",
         loss = {"null-handling", "type-coercion-mode", "error-handling-model"}
     )
     public static Object rowGet(ResultSet rs, int columnIndex) throws SQLException {
@@ -382,6 +432,8 @@ public final class SqliteJdbcShim {
     @ProveKitSugar(
         concept = "concept:sql-row-get-column",
         library = "sqlite-jdbc",
+        family = "concept:family:sql",
+        version = "3.45.3.0",
         loss = {"null-handling", "type-coercion-mode", "error-handling-model",
                 "column-name-vs-index"}
     )
@@ -392,6 +444,8 @@ public final class SqliteJdbcShim {
     @ProveKitSugar(
         concept = "concept:sql-row-get-column",
         library = "sqlite-jdbc",
+        family = "concept:family:sql",
+        version = "3.45.3.0",
         loss = {"null-handling", "type-coercion-mode", "error-handling-model",
                 "typed-accessor"}
     )
@@ -402,6 +456,8 @@ public final class SqliteJdbcShim {
     @ProveKitSugar(
         concept = "concept:sql-row-get-column",
         library = "sqlite-jdbc",
+        family = "concept:family:sql",
+        version = "3.45.3.0",
         loss = {"null-handling", "type-coercion-mode", "error-handling-model",
                 "typed-accessor", "null-unboxing"}
     )
@@ -417,6 +473,8 @@ public final class SqliteJdbcShim {
     @ProveKitSugar(
         concept = "concept:insert-and-get-id",
         library = "sqlite-jdbc",
+        family = "concept:family:sql",
+        version = "3.45.3.0",
         loss = {"per-connection-not-per-statement", "rowid-vs-integer-pk",
                 "error-handling-model"}
     )
@@ -430,6 +488,8 @@ public final class SqliteJdbcShim {
     @ProveKitSugar(
         concept = "concept:sql-changes-count",
         library = "sqlite-jdbc",
+        family = "concept:family:sql",
+        version = "3.45.3.0",
         loss = {"per-statement-vs-cumulative", "transaction-scope", "error-handling-model"}
     )
     public static int changes(Connection conn) throws SQLException {
@@ -442,6 +502,8 @@ public final class SqliteJdbcShim {
     @ProveKitSugar(
         concept = "concept:sql-changes-count",
         library = "sqlite-jdbc",
+        family = "concept:family:sql",
+        version = "3.45.3.0",
         loss = {"cumulative-since-connection-open", "transaction-scope",
                 "error-handling-model"}
     )
@@ -460,6 +522,8 @@ public final class SqliteJdbcShim {
     @ProveKitSugar(
         concept = "concept:contract-observation",
         library = "sqlite-jdbc",
+        family = "concept:family:sql",
+        version = "3.45.3.0",
         observedDimension = "autocommit-mode"
     )
     public static boolean isAutoCommit(Connection conn) throws SQLException {
@@ -469,6 +533,8 @@ public final class SqliteJdbcShim {
     @ProveKitSugar(
         concept = "concept:contract-observation",
         library = "sqlite-jdbc",
+        family = "concept:family:sql",
+        version = "3.45.3.0",
         observedDimension = "write-permission"
     )
     public static boolean isReadOnly(Connection conn) throws SQLException {
@@ -478,6 +544,8 @@ public final class SqliteJdbcShim {
     @ProveKitSugar(
         concept = "concept:contract-observation",
         library = "sqlite-jdbc",
+        family = "concept:family:sql",
+        version = "3.45.3.0",
         observedDimension = "connection-closed"
     )
     public static boolean isClosed(Connection conn) throws SQLException {
@@ -487,6 +555,8 @@ public final class SqliteJdbcShim {
     @ProveKitSugar(
         concept = "concept:contract-observation",
         library = "sqlite-jdbc",
+        family = "concept:family:sql",
+        version = "3.45.3.0",
         observedDimension = "connection-validity",
         loss = {"timeout-meaning"}
     )
@@ -505,6 +575,8 @@ public final class SqliteJdbcShim {
     @ProveKitSugar(
         concept = "concept:contract-observation",
         library = "sqlite-jdbc",
+        family = "concept:family:sql",
+        version = "3.45.3.0",
         observedDimension = "column-count"
     )
     public static int columnCount(ResultSet rs) throws SQLException {
@@ -514,6 +586,8 @@ public final class SqliteJdbcShim {
     @ProveKitSugar(
         concept = "concept:contract-observation",
         library = "sqlite-jdbc",
+        family = "concept:family:sql",
+        version = "3.45.3.0",
         observedDimension = "column-name-at-index"
     )
     public static String columnName(ResultSet rs, int index) throws SQLException {
@@ -523,6 +597,8 @@ public final class SqliteJdbcShim {
     @ProveKitSugar(
         concept = "concept:contract-observation",
         library = "sqlite-jdbc",
+        family = "concept:family:sql",
+        version = "3.45.3.0",
         observedDimension = "column-index-of-name"
     )
     public static int columnIndex(ResultSet rs, String name) throws SQLException {
@@ -532,6 +608,8 @@ public final class SqliteJdbcShim {
     @ProveKitSugar(
         concept = "concept:contract-observation",
         library = "sqlite-jdbc",
+        family = "concept:family:sql",
+        version = "3.45.3.0",
         observedDimension = "parameter-count"
     )
     public static int parameterCount(PreparedStatement stmt) throws SQLException {
@@ -547,6 +625,8 @@ public final class SqliteJdbcShim {
     @ProveKitSugar(
         concept = "concept:sql-result-metadata",
         library = "sqlite-jdbc",
+        family = "concept:family:sql",
+        version = "3.45.3.0",
         loss = {"sync-vs-async", "error-handling-model"}
     )
     public static ResultSetMetaData resultSetMetaData(ResultSet rs) throws SQLException {
@@ -556,6 +636,8 @@ public final class SqliteJdbcShim {
     @ProveKitSugar(
         concept = "concept:sql-result-metadata",
         library = "sqlite-jdbc",
+        family = "concept:family:sql",
+        version = "3.45.3.0",
         observedDimension = "column-type-name"
     )
     public static String columnTypeName(ResultSetMetaData meta, int index) throws SQLException {
@@ -571,6 +653,8 @@ public final class SqliteJdbcShim {
     @ProveKitSugar(
         concept = "concept:sql-catalog-reflection",
         library = "sqlite-jdbc",
+        family = "concept:family:sql",
+        version = "3.45.3.0",
         loss = {"sync-vs-async", "error-handling-model", "catalog-depth"}
     )
     public static DatabaseMetaData databaseMetaData(Connection conn) throws SQLException {
@@ -586,6 +670,8 @@ public final class SqliteJdbcShim {
     @ProveKitSugar(
         concept = "concept:sql-busy-timeout",
         library = "sqlite-jdbc",
+        family = "concept:family:sql",
+        version = "3.45.3.0",
         loss = {"sync-vs-async", "callback-vs-timeout-shape", "timeout-unit",
                 "error-handling-model"}
     )
@@ -604,6 +690,8 @@ public final class SqliteJdbcShim {
     @ProveKitSugar(
         concept = "concept:sql-autocommit-control",
         library = "sqlite-jdbc",
+        family = "concept:family:sql",
+        version = "3.45.3.0",
         loss = {"sync-vs-async", "error-handling-model"}
     )
     public static void setAutoCommit(Connection conn, boolean autoCommit)
@@ -620,6 +708,8 @@ public final class SqliteJdbcShim {
     @ProveKitSugar(
         concept = "concept:sql-cursor-fetch-size",
         library = "sqlite-jdbc",
+        family = "concept:family:sql",
+        version = "3.45.3.0",
         loss = {"sync-vs-async", "driver-may-ignore", "error-handling-model"}
     )
     public static void setFetchSize(Statement stmt, int rows) throws SQLException {

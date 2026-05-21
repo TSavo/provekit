@@ -48,4 +48,19 @@ public @interface ProveKitSugar {
      * e.g. {@code "autocommit-mode"}. Empty string means not an observation binding.
      */
     String observedDimension() default "";
+
+    /**
+     * #1357 / #1355: optional concept family pin, e.g. {@code "concept:family:sql"}.
+     * Empty string means the family axis FLOATS — the dispatcher narrows
+     * via the manifest's family or the project's [platform_profile] at
+     * materialize time. Parallel to walk_rpc (rust) + typescript-source +
+     * python-source lifters.
+     */
+    String family() default "";
+
+    /**
+     * #1357 / #1355: optional library version pin, e.g. {@code "3.45.3.0"}.
+     * Empty string means the version axis FLOATS. Parallel to family().
+     */
+    String version() default "";
 }
