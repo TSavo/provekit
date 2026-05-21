@@ -1,0 +1,8 @@
+[authoring]
+surface = "java-bind"
+
+[platform_profile]
+language = "java"
+family = "concept:family:json"
+library = "jackson"
+version = "2.17"
