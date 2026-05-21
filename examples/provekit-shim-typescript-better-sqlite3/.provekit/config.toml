@@ -1,2 +1,29 @@
-[authoring]
+# Declares the lift plugins this shim runs at mint time. The same
+# `[[plugins]]` pattern the Rust shims use; the substrate's CLI is
+# language-agnostic at the dispatch layer — only the per-plugin
+# manifest names a different bin per language kit.
+#
+# Sugar lane: the TypeScript source lifter (typescript-source/bin.ts)
+# walks @sugar.bind / @sugar.refuse decorators on the shim's own src.
+#
+# Contract lane: the TS umbrella (src/lift/cli.ts) dispatches the 5
+# TypeScript adapters (zod, fast-check, class-validator, vitest-tests,
+# provekit-annotations) against the cargo-equivalent: the pnpm-resolved
+# better-sqlite3 package. emit = "ir-document" puts the umbrella into
+# composable mode so its mementos merge with the sugar lane at
+# cmd_mint's envelope-mint stage.
+
+[[plugins]]
+name = "ts-sugar"
 surface = "typescript-bind"
+# The TS source lifter gates sugar/refusal emission on the layer
+# string; only "library-bindings" produces library-sugar-binding-entry
+# and refusal-memento. Declare it here so this plugin gets the right
+# layer regardless of the global CLI flag.
+layer = "library-bindings"
+
+[[plugins]]
+name = "ts-contracts"
+surface = "typescript-contracts"
+workspace_override = "/Users/tsavo/provekit/node_modules/.pnpm/better-sqlite3@12.9.0/node_modules/better-sqlite3"
+emit = "ir-document"

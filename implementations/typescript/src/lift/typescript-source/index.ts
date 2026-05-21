@@ -399,8 +399,8 @@ function libraryBindingEntryForFunction(
   // entry. Absent on the @sugar.bind decorator → absent in emitted JSON
   // (NOT empty strings — null/missing is the substrate signal for
   // "this axis floats"). Parallel to walk_rpc's rust-side emission.
-  if (binding.family !== null) (entry as Record<string, unknown>).family = binding.family;
-  if (binding.version !== null) (entry as Record<string, unknown>).library_version = binding.version;
+  if (binding.family !== null) (entry as unknown as Record<string, unknown>).family = binding.family;
+  if (binding.version !== null) (entry as unknown as Record<string, unknown>).library_version = binding.version;
   return entry;
 }
 
@@ -415,7 +415,7 @@ function sugarBindingArgs(node: ts.FunctionDeclaration): {
   family: string | null;
   version: string | null;
 } | null {
-  const decorators = decoratorNodes(node);
+  const decorators = decoratorNodes(node as unknown as ts.HasDecorators);
   for (const decorator of decorators) {
     const expr = decorator.expression;
     if (!ts.isCallExpression(expr) || !isSugarBindExpression(expr.expression)) continue;
