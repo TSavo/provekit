@@ -1,0 +1,25 @@
+{
+  "envelope": {
+    "declaredAt": "2026-05-21T00:00:00Z",
+    "signature": "ed25519:UNSIGNED_DEV_ONLY",
+    "signer": "ed25519:UNSIGNED_DEV_ONLY"
+  },
+  "header": {
+    "cid": "blake3-512:adb0d49b324212a5583adaaae5ee7841b495f8da56997101795f4eba0040b04729bf54f7e8f41c31330e5a21db0ce4181b552e6781da45179b80e1e8bdedada0",
+    "classification": "could-be",
+    "declared_at": "2026-05-21",
+    "kind": "sort-morphism-gap",
+    "schemaVersion": "1",
+    "source_language_signature_cid": "blake3-512:bc36b43fec1a80efcecb05f8c4de725f961295466530aec452763c6c479b67c590c2e8062a3f46979383086ae80e6c0a917c443625d3474a7a89705e0a56ab8c",
+    "target_concept_label": "Term",
+    "target_language_signature_cid": "blake3-512:1979babed41ad51ad8d7a28543815f74e24a9d4ee1ae3d52ccc6549f293aa63519abf5411a67b7882c73333b1b357e4863f6d7781f0b0776e5bd25f90ea7d793",
+    "target_sort_cid": "blake3-512:2b8bffc50e1a4fcae7e3954289941eb5811d14a6175420b06f71742e4ae9a9ce1a848a9251aec73f436123008fbdaf3d3c98d1c1fce04c3d89680051a7bdcafb"
+  },
+  "metadata": {
+    "blocked_boundaries": [
+      "Cross-language materialize of any @boundary whose signature uses this primitive."
+    ],
+    "mint_path": "Mint python:Term sort as the kit's AST/IR equivalent + sort-morphism:python:term:to:concept:Term with direction=left-to-right (lift-only).",
+    "note": "Term is a substrate-internal structural type (substrate IR-side). python realizes via the kit's own AST/IR types."
+  }
+}

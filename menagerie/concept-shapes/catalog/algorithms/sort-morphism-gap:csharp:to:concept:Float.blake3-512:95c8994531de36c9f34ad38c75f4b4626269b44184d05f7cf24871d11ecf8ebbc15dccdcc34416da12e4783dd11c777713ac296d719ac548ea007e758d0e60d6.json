@@ -1,0 +1,25 @@
+{
+  "envelope": {
+    "declaredAt": "2026-05-21T00:00:00Z",
+    "signature": "ed25519:UNSIGNED_DEV_ONLY",
+    "signer": "ed25519:UNSIGNED_DEV_ONLY"
+  },
+  "header": {
+    "cid": "blake3-512:95c8994531de36c9f34ad38c75f4b4626269b44184d05f7cf24871d11ecf8ebbc15dccdcc34416da12e4783dd11c777713ac296d719ac548ea007e758d0e60d6",
+    "classification": "could-be",
+    "declared_at": "2026-05-21",
+    "kind": "sort-morphism-gap",
+    "schemaVersion": "1",
+    "source_language_signature_cid": "blake3-512:5e9d7f575403591269de929edae0eb247f3da4f9c56ac606ccba582bc4a86473ddd66696cb7cc02d0678c7a7c2a3f45698f5431b7418afefce12f332ee4c9ef4",
+    "target_concept_label": "Float",
+    "target_language_signature_cid": "blake3-512:1979babed41ad51ad8d7a28543815f74e24a9d4ee1ae3d52ccc6549f293aa63519abf5411a67b7882c73333b1b357e4863f6d7781f0b0776e5bd25f90ea7d793",
+    "target_sort_cid": "blake3-512:b979e70c4d5e53d9bdf13d6f08330be3c5b0714b8c770d69bbd05946b86c36df5274be8145a2683cc29c278155c9c1ee65b6897913524eecb9e4c89c71862f57"
+  },
+  "metadata": {
+    "blocked_boundaries": [
+      "Cross-language materialize of any @boundary whose signature uses this primitive."
+    ],
+    "mint_path": "Mint csharp:Float sort + sort-morphism:csharp:float:to:concept:Float.",
+    "note": "C# has float/double/decimal. Decimal is exact arbitrary-precision."
+  }
+}

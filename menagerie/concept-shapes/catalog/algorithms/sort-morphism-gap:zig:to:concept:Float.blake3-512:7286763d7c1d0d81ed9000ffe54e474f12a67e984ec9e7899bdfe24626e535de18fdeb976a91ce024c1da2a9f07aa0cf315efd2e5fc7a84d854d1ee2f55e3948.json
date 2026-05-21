@@ -1,0 +1,25 @@
+{
+  "envelope": {
+    "declaredAt": "2026-05-21T00:00:00Z",
+    "signature": "ed25519:UNSIGNED_DEV_ONLY",
+    "signer": "ed25519:UNSIGNED_DEV_ONLY"
+  },
+  "header": {
+    "cid": "blake3-512:7286763d7c1d0d81ed9000ffe54e474f12a67e984ec9e7899bdfe24626e535de18fdeb976a91ce024c1da2a9f07aa0cf315efd2e5fc7a84d854d1ee2f55e3948",
+    "classification": "could-be",
+    "declared_at": "2026-05-21",
+    "kind": "sort-morphism-gap",
+    "schemaVersion": "1",
+    "source_language_signature_cid": "blake3-512:052e54f3a38b581eb4fde81df1a45213022ca06bf9eb50ea2d94996b49f507a0f247ed62bff10eae5a17a7191a8de92b0014af5dcf4ef6ae1d8bf6885e88e535",
+    "target_concept_label": "Float",
+    "target_language_signature_cid": "blake3-512:1979babed41ad51ad8d7a28543815f74e24a9d4ee1ae3d52ccc6549f293aa63519abf5411a67b7882c73333b1b357e4863f6d7781f0b0776e5bd25f90ea7d793",
+    "target_sort_cid": "blake3-512:b979e70c4d5e53d9bdf13d6f08330be3c5b0714b8c770d69bbd05946b86c36df5274be8145a2683cc29c278155c9c1ee65b6897913524eecb9e4c89c71862f57"
+  },
+  "metadata": {
+    "blocked_boundaries": [
+      "Cross-language materialize of any @boundary whose signature uses this primitive."
+    ],
+    "mint_path": "Mint zig:Float sort with width-family + sort-morphism:zig:float:to:concept:Float.",
+    "note": "Zig has f16/f32/f64/f80/f128."
+  }
+}

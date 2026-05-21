@@ -1,0 +1,25 @@
+{
+  "envelope": {
+    "declaredAt": "2026-05-21T00:00:00Z",
+    "signature": "ed25519:UNSIGNED_DEV_ONLY",
+    "signer": "ed25519:UNSIGNED_DEV_ONLY"
+  },
+  "header": {
+    "cid": "blake3-512:dc7afe4b8e88fbbab9ed82dfa4c5e073190e98d9513f135caba30a2e35a980e6340148dfb9e73a9c28aece3211348fafb8f46c28f70572a600962b086b3f932b",
+    "classification": "could-be",
+    "declared_at": "2026-05-21",
+    "kind": "sort-morphism-gap",
+    "schemaVersion": "1",
+    "source_language_signature_cid": "blake3-512:c533d7b3d4cafeb50ece583d706ef224496e8e54246600b1ac134bf36e46deb7274de4680a7fd39cc93e41ca658a73445f68d6480acd02880c2083e959d58284",
+    "target_concept_label": "String",
+    "target_language_signature_cid": "blake3-512:1979babed41ad51ad8d7a28543815f74e24a9d4ee1ae3d52ccc6549f293aa63519abf5411a67b7882c73333b1b357e4863f6d7781f0b0776e5bd25f90ea7d793",
+    "target_sort_cid": "blake3-512:be8721d24849feb74c4721520bdba02d352a94f49253a627cd509127472aa1c47cbe99cb705cac4159b5365abcce0c9aaa4901fe67630827deb6be1f9daeea10"
+  },
+  "metadata": {
+    "blocked_boundaries": [
+      "Cross-language materialize of any @boundary whose signature uses this primitive."
+    ],
+    "mint_path": "Mint ruby:String sort + sort-morphism:ruby:string:to:concept:String with direction=bidirectional. Note: Ruby's per-string encoding tag handles UTF-8 cleanly.",
+    "note": "Ruby has `String` (byte sequence + encoding tag)."
+  }
+}

@@ -1,0 +1,25 @@
+{
+  "envelope": {
+    "declaredAt": "2026-05-21T00:00:00Z",
+    "signature": "ed25519:UNSIGNED_DEV_ONLY",
+    "signer": "ed25519:UNSIGNED_DEV_ONLY"
+  },
+  "header": {
+    "cid": "blake3-512:cfcd91292688f78866671c8d4a0fdcf7395eb71e34575f0e780e9ed9d1927a94f564668c5d01acbba8c2617c1afd55461a2ff37dae1e497e9a7d015f0e84ea6d",
+    "classification": "could-be",
+    "declared_at": "2026-05-21",
+    "kind": "sort-morphism-gap",
+    "schemaVersion": "1",
+    "source_language_signature_cid": "blake3-512:e3c223b8b6f39382e43cb06c5b04059987e661d96311decd5003d4ec79c7d6f9969de39ae16dd6509cb5236185260d59c63288db7ff772aae00f8123ea826cbd",
+    "target_concept_label": "Term",
+    "target_language_signature_cid": "blake3-512:1979babed41ad51ad8d7a28543815f74e24a9d4ee1ae3d52ccc6549f293aa63519abf5411a67b7882c73333b1b357e4863f6d7781f0b0776e5bd25f90ea7d793",
+    "target_sort_cid": "blake3-512:2b8bffc50e1a4fcae7e3954289941eb5811d14a6175420b06f71742e4ae9a9ce1a848a9251aec73f436123008fbdaf3d3c98d1c1fce04c3d89680051a7bdcafb"
+  },
+  "metadata": {
+    "blocked_boundaries": [
+      "Cross-language materialize of any @boundary whose signature uses this primitive."
+    ],
+    "mint_path": "Mint rust:Term sort as the kit's AST/IR equivalent + sort-morphism:rust:term:to:concept:Term with direction=left-to-right (lift-only).",
+    "note": "Term is a substrate-internal structural type (substrate IR-side). rust realizes via the kit's own AST/IR types."
+  }
+}

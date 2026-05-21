@@ -1,0 +1,25 @@
+{
+  "envelope": {
+    "declaredAt": "2026-05-21T00:00:00Z",
+    "signature": "ed25519:UNSIGNED_DEV_ONLY",
+    "signer": "ed25519:UNSIGNED_DEV_ONLY"
+  },
+  "header": {
+    "cid": "blake3-512:aa225e1cb044390fa864e29b66d4332fa51b66d5b70d45bff55f2203edf366478ca4ec1edf5c85896f113f5aa3fdfb743b5aacd6453b3fa1820cce2a8bc7bb10",
+    "classification": "could-be",
+    "declared_at": "2026-05-21",
+    "kind": "sort-morphism-gap",
+    "schemaVersion": "1",
+    "source_language_signature_cid": "blake3-512:052e54f3a38b581eb4fde81df1a45213022ca06bf9eb50ea2d94996b49f507a0f247ed62bff10eae5a17a7191a8de92b0014af5dcf4ef6ae1d8bf6885e88e535",
+    "target_concept_label": "Map<K,V>",
+    "target_language_signature_cid": "blake3-512:1979babed41ad51ad8d7a28543815f74e24a9d4ee1ae3d52ccc6549f293aa63519abf5411a67b7882c73333b1b357e4863f6d7781f0b0776e5bd25f90ea7d793",
+    "target_sort_cid": "blake3-512:b81923e3273fedfce0b84d401d8b30965d4c72530af6c7538d9ed9b2905348fa3c639636b21b3f47ac8a242e79eef8e278b1d6c9cfab8e289cf059cef94c82e1"
+  },
+  "metadata": {
+    "blocked_boundaries": [
+      "Cross-language materialize of any @boundary whose signature uses this primitive."
+    ],
+    "mint_path": "Mint zig:Map<K,V> sort + sort-morphism:zig:hashmap:to:concept:Map<K,V>.",
+    "note": "Zig has std.AutoHashMap + std.StringHashMap. Clean realization."
+  }
+}

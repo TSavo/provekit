@@ -1,0 +1,25 @@
+{
+  "envelope": {
+    "declaredAt": "2026-05-21T00:00:00Z",
+    "signature": "ed25519:UNSIGNED_DEV_ONLY",
+    "signer": "ed25519:UNSIGNED_DEV_ONLY"
+  },
+  "header": {
+    "cid": "blake3-512:776d300244b2c51c2a1f0f75d4f3b7dfbf133f80c51b35b5d098f96ccb014f45cbc7914fb5b96a1b514e8ba4e1d4570c7ddfb88aba5e4e8ce8066a0b3fc84daf",
+    "classification": "could-be",
+    "declared_at": "2026-05-21",
+    "kind": "sort-morphism-gap",
+    "schemaVersion": "1",
+    "source_language_signature_cid": "blake3-512:31444085d7d08f573d4a68730d9f30f77509be66369a92432d9a76fafe3cdf7c0ed5df53767d934ec0b77b8fafcdf3124589c0b5fa3eb7e9312891a08a95dc0d",
+    "target_concept_label": "Formula",
+    "target_language_signature_cid": "blake3-512:1979babed41ad51ad8d7a28543815f74e24a9d4ee1ae3d52ccc6549f293aa63519abf5411a67b7882c73333b1b357e4863f6d7781f0b0776e5bd25f90ea7d793",
+    "target_sort_cid": "blake3-512:78296b0cb631f8ab9f66d369ac768c64ef29840c10c0ad378d778222af5af7e2335c5c48526fe2b61e51f74034e523859250d1443aa0d7200af5c91329b038ea"
+  },
+  "metadata": {
+    "blocked_boundaries": [
+      "Cross-language materialize of any @boundary whose signature uses this primitive."
+    ],
+    "mint_path": "Mint typescript:Formula sort as the kit's AST/IR equivalent + sort-morphism:typescript:formula:to:concept:Formula with direction=left-to-right (lift-only).",
+    "note": "Formula is a substrate-internal structural type (substrate IR-side). typescript realizes via the kit's own AST/IR types."
+  }
+}

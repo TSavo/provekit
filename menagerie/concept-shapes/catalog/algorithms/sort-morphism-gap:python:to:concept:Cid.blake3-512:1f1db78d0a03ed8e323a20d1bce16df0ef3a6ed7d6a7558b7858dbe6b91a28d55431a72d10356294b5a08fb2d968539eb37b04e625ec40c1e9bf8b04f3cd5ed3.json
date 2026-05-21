@@ -1,0 +1,25 @@
+{
+  "envelope": {
+    "declaredAt": "2026-05-21T00:00:00Z",
+    "signature": "ed25519:UNSIGNED_DEV_ONLY",
+    "signer": "ed25519:UNSIGNED_DEV_ONLY"
+  },
+  "header": {
+    "cid": "blake3-512:1f1db78d0a03ed8e323a20d1bce16df0ef3a6ed7d6a7558b7858dbe6b91a28d55431a72d10356294b5a08fb2d968539eb37b04e625ec40c1e9bf8b04f3cd5ed3",
+    "classification": "could-be",
+    "declared_at": "2026-05-21",
+    "kind": "sort-morphism-gap",
+    "schemaVersion": "1",
+    "source_language_signature_cid": "blake3-512:bc36b43fec1a80efcecb05f8c4de725f961295466530aec452763c6c479b67c590c2e8062a3f46979383086ae80e6c0a917c443625d3474a7a89705e0a56ab8c",
+    "target_concept_label": "Cid",
+    "target_language_signature_cid": "blake3-512:1979babed41ad51ad8d7a28543815f74e24a9d4ee1ae3d52ccc6549f293aa63519abf5411a67b7882c73333b1b357e4863f6d7781f0b0776e5bd25f90ea7d793",
+    "target_sort_cid": "blake3-512:4a2bba3a8207f364e0ffea40fb4ea4c7ea2ce6edac9492e8b0364001821978a37d9e3f782587b19f086c7358c35bc237815f7a617b61c9194db93aaf938c9c48"
+  },
+  "metadata": {
+    "blocked_boundaries": [
+      "Cross-language materialize of any @boundary whose signature uses this primitive."
+    ],
+    "mint_path": "Mint python:Cid sort as String-with-cid-format-pattern + sort-morphism:python:cid:to:concept:Cid, runtime_guard=cid-format-regex-check.",
+    "note": "Cid is a string-formatted hash (e.g. blake3-512:<hex>). python realizes via its String type with a format constraint."
+  }
+}

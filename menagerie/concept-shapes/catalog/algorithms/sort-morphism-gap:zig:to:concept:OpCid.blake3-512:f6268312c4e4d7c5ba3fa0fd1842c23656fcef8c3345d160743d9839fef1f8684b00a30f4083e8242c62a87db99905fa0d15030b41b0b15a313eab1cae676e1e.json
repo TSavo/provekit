@@ -1,0 +1,25 @@
+{
+  "envelope": {
+    "declaredAt": "2026-05-21T00:00:00Z",
+    "signature": "ed25519:UNSIGNED_DEV_ONLY",
+    "signer": "ed25519:UNSIGNED_DEV_ONLY"
+  },
+  "header": {
+    "cid": "blake3-512:f6268312c4e4d7c5ba3fa0fd1842c23656fcef8c3345d160743d9839fef1f8684b00a30f4083e8242c62a87db99905fa0d15030b41b0b15a313eab1cae676e1e",
+    "classification": "could-be",
+    "declared_at": "2026-05-21",
+    "kind": "sort-morphism-gap",
+    "schemaVersion": "1",
+    "source_language_signature_cid": "blake3-512:052e54f3a38b581eb4fde81df1a45213022ca06bf9eb50ea2d94996b49f507a0f247ed62bff10eae5a17a7191a8de92b0014af5dcf4ef6ae1d8bf6885e88e535",
+    "target_concept_label": "OpCid",
+    "target_language_signature_cid": "blake3-512:1979babed41ad51ad8d7a28543815f74e24a9d4ee1ae3d52ccc6549f293aa63519abf5411a67b7882c73333b1b357e4863f6d7781f0b0776e5bd25f90ea7d793",
+    "target_sort_cid": "blake3-512:3238b8edabae57231223e24f21644b3fa7720cdef57b85f548cd4946ff7b279a6a40eb0d7f064027888aad9a78e5ba0b04a432c83a16b56c7a34c6faf5cd0ba9"
+  },
+  "metadata": {
+    "blocked_boundaries": [
+      "Cross-language materialize of any @boundary whose signature uses this primitive."
+    ],
+    "mint_path": "Mint zig:OpCid sort as subtype of zig:Cid + sort-morphism:zig:opcid:to:concept:OpCid, runtime_guard=cid-format-regex-check + context-claim.",
+    "note": "OpCid is a Cid subtype (string-formatted with op-/sort- prefix or context)."
+  }
+}

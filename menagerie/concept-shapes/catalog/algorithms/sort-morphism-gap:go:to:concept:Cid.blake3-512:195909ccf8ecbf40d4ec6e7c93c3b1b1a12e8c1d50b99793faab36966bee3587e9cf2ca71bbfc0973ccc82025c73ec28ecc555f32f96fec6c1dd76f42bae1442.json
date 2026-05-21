@@ -1,0 +1,25 @@
+{
+  "envelope": {
+    "declaredAt": "2026-05-21T00:00:00Z",
+    "signature": "ed25519:UNSIGNED_DEV_ONLY",
+    "signer": "ed25519:UNSIGNED_DEV_ONLY"
+  },
+  "header": {
+    "cid": "blake3-512:195909ccf8ecbf40d4ec6e7c93c3b1b1a12e8c1d50b99793faab36966bee3587e9cf2ca71bbfc0973ccc82025c73ec28ecc555f32f96fec6c1dd76f42bae1442",
+    "classification": "could-be",
+    "declared_at": "2026-05-21",
+    "kind": "sort-morphism-gap",
+    "schemaVersion": "1",
+    "source_language_signature_cid": "blake3-512:8f98c68d534e7e799061bb710cc948b067b2a7e9359ec82c2fb5e3681a6fe30e19477fe27aead7b051f9b5a732f35b6235dccf2574c176bb682cd7d534c24d04",
+    "target_concept_label": "Cid",
+    "target_language_signature_cid": "blake3-512:1979babed41ad51ad8d7a28543815f74e24a9d4ee1ae3d52ccc6549f293aa63519abf5411a67b7882c73333b1b357e4863f6d7781f0b0776e5bd25f90ea7d793",
+    "target_sort_cid": "blake3-512:4a2bba3a8207f364e0ffea40fb4ea4c7ea2ce6edac9492e8b0364001821978a37d9e3f782587b19f086c7358c35bc237815f7a617b61c9194db93aaf938c9c48"
+  },
+  "metadata": {
+    "blocked_boundaries": [
+      "Cross-language materialize of any @boundary whose signature uses this primitive."
+    ],
+    "mint_path": "Mint go:Cid sort as String-with-cid-format-pattern + sort-morphism:go:cid:to:concept:Cid, runtime_guard=cid-format-regex-check.",
+    "note": "Cid is a string-formatted hash (e.g. blake3-512:<hex>). go realizes via its String type with a format constraint."
+  }
+}

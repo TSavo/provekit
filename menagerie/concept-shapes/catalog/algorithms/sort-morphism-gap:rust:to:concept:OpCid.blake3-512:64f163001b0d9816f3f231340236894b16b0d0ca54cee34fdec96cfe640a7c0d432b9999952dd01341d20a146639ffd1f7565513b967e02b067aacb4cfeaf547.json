@@ -1,0 +1,25 @@
+{
+  "envelope": {
+    "declaredAt": "2026-05-21T00:00:00Z",
+    "signature": "ed25519:UNSIGNED_DEV_ONLY",
+    "signer": "ed25519:UNSIGNED_DEV_ONLY"
+  },
+  "header": {
+    "cid": "blake3-512:64f163001b0d9816f3f231340236894b16b0d0ca54cee34fdec96cfe640a7c0d432b9999952dd01341d20a146639ffd1f7565513b967e02b067aacb4cfeaf547",
+    "classification": "could-be",
+    "declared_at": "2026-05-21",
+    "kind": "sort-morphism-gap",
+    "schemaVersion": "1",
+    "source_language_signature_cid": "blake3-512:e3c223b8b6f39382e43cb06c5b04059987e661d96311decd5003d4ec79c7d6f9969de39ae16dd6509cb5236185260d59c63288db7ff772aae00f8123ea826cbd",
+    "target_concept_label": "OpCid",
+    "target_language_signature_cid": "blake3-512:1979babed41ad51ad8d7a28543815f74e24a9d4ee1ae3d52ccc6549f293aa63519abf5411a67b7882c73333b1b357e4863f6d7781f0b0776e5bd25f90ea7d793",
+    "target_sort_cid": "blake3-512:3238b8edabae57231223e24f21644b3fa7720cdef57b85f548cd4946ff7b279a6a40eb0d7f064027888aad9a78e5ba0b04a432c83a16b56c7a34c6faf5cd0ba9"
+  },
+  "metadata": {
+    "blocked_boundaries": [
+      "Cross-language materialize of any @boundary whose signature uses this primitive."
+    ],
+    "mint_path": "Mint rust:OpCid sort as subtype of rust:Cid + sort-morphism:rust:opcid:to:concept:OpCid, runtime_guard=cid-format-regex-check + context-claim.",
+    "note": "OpCid is a Cid subtype (string-formatted with op-/sort- prefix or context)."
+  }
+}

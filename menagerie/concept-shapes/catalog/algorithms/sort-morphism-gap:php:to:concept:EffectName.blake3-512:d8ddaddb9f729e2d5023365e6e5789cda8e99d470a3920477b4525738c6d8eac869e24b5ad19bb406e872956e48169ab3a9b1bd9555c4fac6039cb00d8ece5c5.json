@@ -1,0 +1,25 @@
+{
+  "envelope": {
+    "declaredAt": "2026-05-21T00:00:00Z",
+    "signature": "ed25519:UNSIGNED_DEV_ONLY",
+    "signer": "ed25519:UNSIGNED_DEV_ONLY"
+  },
+  "header": {
+    "cid": "blake3-512:d8ddaddb9f729e2d5023365e6e5789cda8e99d470a3920477b4525738c6d8eac869e24b5ad19bb406e872956e48169ab3a9b1bd9555c4fac6039cb00d8ece5c5",
+    "classification": "could-be",
+    "declared_at": "2026-05-21",
+    "kind": "sort-morphism-gap",
+    "schemaVersion": "1",
+    "source_language_signature_cid": "blake3-512:a21df3e5d95608d76bed025cec6a7069b8a87ecef3675f13b273394730427e1c782e128ba827e77b0b7a2e74fdd089657c8807ab7795df9acbf0c0c2b87e4ad4",
+    "target_concept_label": "EffectName",
+    "target_language_signature_cid": "blake3-512:1979babed41ad51ad8d7a28543815f74e24a9d4ee1ae3d52ccc6549f293aa63519abf5411a67b7882c73333b1b357e4863f6d7781f0b0776e5bd25f90ea7d793",
+    "target_sort_cid": "blake3-512:2e8e8e72cb8563447f8887ace8013bccf789c460440706c6f72e14e4f292ddb7126c365bf04c65f121a69c1c778999530dd15cf2480110975122e451f7710616"
+  },
+  "metadata": {
+    "blocked_boundaries": [
+      "Cross-language materialize of any @boundary whose signature uses this primitive."
+    ],
+    "mint_path": "Mint php:EffectName sort as String-with-effect-name-pattern + sort-morphism:php:effect-name:to:concept:EffectName.",
+    "note": "EffectName is a string identifier for an effect (e.g. 'IO', 'Async'). php realizes via String."
+  }
+}

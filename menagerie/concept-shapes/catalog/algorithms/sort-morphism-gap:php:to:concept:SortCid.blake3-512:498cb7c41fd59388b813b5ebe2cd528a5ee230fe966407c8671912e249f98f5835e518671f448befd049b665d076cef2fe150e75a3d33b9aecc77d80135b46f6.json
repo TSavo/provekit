@@ -1,0 +1,25 @@
+{
+  "envelope": {
+    "declaredAt": "2026-05-21T00:00:00Z",
+    "signature": "ed25519:UNSIGNED_DEV_ONLY",
+    "signer": "ed25519:UNSIGNED_DEV_ONLY"
+  },
+  "header": {
+    "cid": "blake3-512:498cb7c41fd59388b813b5ebe2cd528a5ee230fe966407c8671912e249f98f5835e518671f448befd049b665d076cef2fe150e75a3d33b9aecc77d80135b46f6",
+    "classification": "could-be",
+    "declared_at": "2026-05-21",
+    "kind": "sort-morphism-gap",
+    "schemaVersion": "1",
+    "source_language_signature_cid": "blake3-512:a21df3e5d95608d76bed025cec6a7069b8a87ecef3675f13b273394730427e1c782e128ba827e77b0b7a2e74fdd089657c8807ab7795df9acbf0c0c2b87e4ad4",
+    "target_concept_label": "SortCid",
+    "target_language_signature_cid": "blake3-512:1979babed41ad51ad8d7a28543815f74e24a9d4ee1ae3d52ccc6549f293aa63519abf5411a67b7882c73333b1b357e4863f6d7781f0b0776e5bd25f90ea7d793",
+    "target_sort_cid": "blake3-512:f5c63d82c8fabb1a2e4dd3a5b01cf5f22bddd8252b92602f18bed37062d76334a77f24941a95698c52836b6f11704ce1e7568f95493a5ebaf2b0836e291e97b0"
+  },
+  "metadata": {
+    "blocked_boundaries": [
+      "Cross-language materialize of any @boundary whose signature uses this primitive."
+    ],
+    "mint_path": "Mint php:SortCid sort as subtype of php:Cid + sort-morphism:php:sortcid:to:concept:SortCid, runtime_guard=cid-format-regex-check + context-claim.",
+    "note": "SortCid is a Cid subtype (string-formatted with op-/sort- prefix or context)."
+  }
+}

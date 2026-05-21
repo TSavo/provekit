@@ -1,0 +1,25 @@
+{
+  "envelope": {
+    "declaredAt": "2026-05-21T00:00:00Z",
+    "signature": "ed25519:UNSIGNED_DEV_ONLY",
+    "signer": "ed25519:UNSIGNED_DEV_ONLY"
+  },
+  "header": {
+    "cid": "blake3-512:51400aa8acbcf37a39a8a46be0a5f3e984ac242e71e9a9b05540757e07205d98d0e040205e9126e8d5ecf163a8b08a733ae1823f0e2be6d2e5457032e6016c0c",
+    "classification": "cannot-be",
+    "declared_at": "2026-05-21",
+    "kind": "sort-morphism-gap",
+    "schemaVersion": "1",
+    "source_language_signature_cid": "blake3-512:31444085d7d08f573d4a68730d9f30f77509be66369a92432d9a76fafe3cdf7c0ed5df53767d934ec0b77b8fafcdf3124589c0b5fa3eb7e9312891a08a95dc0d",
+    "target_concept_label": "Int",
+    "target_language_signature_cid": "blake3-512:1979babed41ad51ad8d7a28543815f74e24a9d4ee1ae3d52ccc6549f293aa63519abf5411a67b7882c73333b1b357e4863f6d7781f0b0776e5bd25f90ea7d793",
+    "target_sort_cid": "blake3-512:30ffc51350121a7172f3e4064a33c45bbd345756979fccff6875cd2ab33e4964d098a99df80cfbdf1ec1a0738c5ac3476f0ff8f75589ea511d1acd82c74ecd58"
+  },
+  "metadata": {
+    "blocked_boundaries": [
+      "Cross-language materialize of any @boundary whose signature uses this primitive."
+    ],
+    "mint_path": "Mint typescript:Int sort as 53-bit-safe + sort-morphism:typescript:number:to:concept:Int with precision_loss=none, range_loss=2^53-bounded. For full concept:Int coverage, mint a separate typescript:bigint:to:concept:Int morphism with direction=left-to-right.",
+    "note": "TypeScript number is IEEE 754 64-bit float — integer range bounded by 2^53-1 (Number.MAX_SAFE_INTEGER). For unbounded Int, must use bigint (separate primitive)."
+  }
+}
