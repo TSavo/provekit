@@ -833,6 +833,44 @@ fn dispatch_result_to_value(result: &DispatchResult) -> Value {
 // ir-document → proof-envelope minting
 // ---------------------------------------------------------------------------
 
+/// #1358 / #1355: Fill `family` and `library_version` on each IR entry from
+/// the project's platform_profile when the entry doesn't already pin those
+/// axes via @sugar / @boundary annotation. ANNOTATION WINS: an entry whose
+/// emission already includes a family or library_version (because walk_rpc
+/// pulled it from the source annotation) keeps that value verbatim.
+///
+/// Applies to all per-concept memento kinds:
+///   - library-sugar-binding-entry
+///   - realization-memento
+///
+/// Refusal-memento is intentionally not stamped — refusals are about a
+/// concept that DIDN'T close in this surface; the realization-tuple axes
+/// don't apply (the realization didn't happen).
+pub(crate) fn stamp_platform_profile(
+    entries: &mut Vec<Value>,
+    profile: &crate::project_config::PlatformProfile,
+) {
+    for entry in entries.iter_mut() {
+        let kind = entry.get("kind").and_then(|v| v.as_str()).unwrap_or("");
+        if kind != "library-sugar-binding-entry" && kind != "realization-memento" {
+            continue;
+        }
+        let Some(obj) = entry.as_object_mut() else {
+            continue;
+        };
+        if let Some(family) = &profile.family {
+            if !obj.contains_key("family") {
+                obj.insert("family".to_string(), Value::String(family.clone()));
+            }
+        }
+        if let Some(version) = &profile.version {
+            if !obj.contains_key("library_version") {
+                obj.insert("library_version".to_string(), Value::String(version.clone()));
+            }
+        }
+    }
+}
+
 fn mint_from_ir_document(
     ir: &[Value],
     authorities: Option<&Vec<Value>>,
@@ -1029,21 +1067,48 @@ fn mint_from_ir_document(
         members.entry(m.cid.clone()).or_insert(m.canonical_bytes);
     }
 
-    for decl in ir {
-        match decl.get("kind").and_then(|v| v.as_str()) {
-            Some("library-sugar-binding-entry") => {
-                let (cid, bytes) = mint_library_sugar_binding_entry(decl)?;
-                members.entry(cid).or_insert(bytes);
+    // #1358 / #1355: stamp the project's platform_profile onto each
+    // realization-bearing IR entry so absent annotation axes get filled in
+    // from the shim's single declarative profile. Annotation pins always
+    // win; this only fills floating axes.
+    let cfg = read_project_config(project_root);
+    if let Some(profile) = cfg.platform_profile.as_ref() {
+        let mut stamped: Vec<Value> = ir.iter().cloned().collect();
+        stamp_platform_profile(&mut stamped, profile);
+        for decl in &stamped {
+            match decl.get("kind").and_then(|v| v.as_str()) {
+                Some("library-sugar-binding-entry") => {
+                    let (cid, bytes) = mint_library_sugar_binding_entry(decl)?;
+                    members.entry(cid).or_insert(bytes);
+                }
+                Some("refusal-memento") => {
+                    let (cid, bytes) = mint_refusal_memento(decl)?;
+                    members.entry(cid).or_insert(bytes);
+                }
+                Some("realization-memento") => {
+                    let (cid, bytes) = mint_realization_memento(decl)?;
+                    members.entry(cid).or_insert(bytes);
+                }
+                _ => {}
             }
-            Some("refusal-memento") => {
-                let (cid, bytes) = mint_refusal_memento(decl)?;
-                members.entry(cid).or_insert(bytes);
+        }
+    } else {
+        for decl in ir {
+            match decl.get("kind").and_then(|v| v.as_str()) {
+                Some("library-sugar-binding-entry") => {
+                    let (cid, bytes) = mint_library_sugar_binding_entry(decl)?;
+                    members.entry(cid).or_insert(bytes);
+                }
+                Some("refusal-memento") => {
+                    let (cid, bytes) = mint_refusal_memento(decl)?;
+                    members.entry(cid).or_insert(bytes);
+                }
+                Some("realization-memento") => {
+                    let (cid, bytes) = mint_realization_memento(decl)?;
+                    members.entry(cid).or_insert(bytes);
+                }
+                _ => {}
             }
-            Some("realization-memento") => {
-                let (cid, bytes) = mint_realization_memento(decl)?;
-                members.entry(cid).or_insert(bytes);
-            }
-            _ => {}
         }
     }
 
@@ -1991,6 +2056,108 @@ fn print_algebraic_error(error: &algebraic_mint::MintError) {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::project_config::PlatformProfile;
+
+    // -----------------------------------------------------------------
+    // #1358 / #1355: stamp_platform_profile fills absent fields from
+    // the project's platform_profile (per-shim default). Annotation-pinned
+    // fields are NEVER overwritten — annotation wins.
+    // -----------------------------------------------------------------
+
+    fn sql_profile() -> PlatformProfile {
+        PlatformProfile {
+            language: Some("rust".to_string()),
+            family: Some("concept:family:sql".to_string()),
+            library: Some("rusqlite".to_string()),
+            version: Some("0.39.0".to_string()),
+        }
+    }
+
+    #[test]
+    fn stamp_fills_absent_family_and_version_on_library_sugar_binding_entry() {
+        let mut entries = vec![json!({
+            "kind": "library-sugar-binding-entry",
+            "concept_name": "concept:sql-query",
+            "target_library_tag": "rusqlite",
+        })];
+        stamp_platform_profile(&mut entries, &sql_profile());
+        let e = &entries[0];
+        assert_eq!(e["family"], "concept:family:sql");
+        assert_eq!(e["library_version"], "0.39.0");
+    }
+
+    #[test]
+    fn stamp_preserves_annotation_pinned_family_and_version() {
+        // Annotation wins — profile MUST NOT overwrite.
+        let mut entries = vec![json!({
+            "kind": "library-sugar-binding-entry",
+            "concept_name": "concept:sql-query",
+            "target_library_tag": "rusqlite",
+            "family": "concept:family:sql-experimental",
+            "library_version": "0.40.0-rc1",
+        })];
+        stamp_platform_profile(&mut entries, &sql_profile());
+        let e = &entries[0];
+        assert_eq!(
+            e["family"], "concept:family:sql-experimental",
+            "annotation family preserved"
+        );
+        assert_eq!(
+            e["library_version"], "0.40.0-rc1",
+            "annotation version preserved"
+        );
+    }
+
+    #[test]
+    fn stamp_applies_to_realization_memento_too() {
+        let mut entries = vec![json!({
+            "kind": "realization-memento",
+            "realization_kind": "boundary",
+            "concept_name": "concept:sql-query",
+            "library": "rusqlite",
+        })];
+        stamp_platform_profile(&mut entries, &sql_profile());
+        let e = &entries[0];
+        assert_eq!(e["family"], "concept:family:sql");
+        assert_eq!(e["library_version"], "0.39.0");
+    }
+
+    #[test]
+    fn stamp_with_partial_profile_only_fills_pinned_axes() {
+        // Profile floats `library`; only family + version get stamped.
+        let profile = PlatformProfile {
+            language: Some("rust".to_string()),
+            family: Some("concept:family:hash".to_string()),
+            library: None,
+            version: Some("1".to_string()),
+        };
+        let mut entries = vec![json!({
+            "kind": "library-sugar-binding-entry",
+            "concept_name": "concept:blake3-512-of",
+            "target_library_tag": "blake3",
+        })];
+        stamp_platform_profile(&mut entries, &profile);
+        let e = &entries[0];
+        assert_eq!(e["family"], "concept:family:hash");
+        assert_eq!(e["library_version"], "1");
+        // library not present in profile → not stamped → entry's
+        // target_library_tag unchanged (annotation already had "blake3").
+        assert_eq!(e["target_library_tag"], "blake3");
+    }
+
+    #[test]
+    fn stamp_with_empty_profile_is_no_op() {
+        let profile = PlatformProfile::default();
+        let mut entries = vec![json!({
+            "kind": "library-sugar-binding-entry",
+            "concept_name": "concept:foo",
+            "target_library_tag": "bar",
+        })];
+        stamp_platform_profile(&mut entries, &profile);
+        let e = &entries[0];
+        assert!(e.get("family").is_none(), "no family stamped");
+        assert!(e.get("library_version").is_none(), "no version stamped");
+    }
 
     #[test]
     fn resolve_kit_ts_maps_to_typescript_dir() {
