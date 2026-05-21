@@ -1470,15 +1470,84 @@ final class SugarRealizer {
     }
 
     private static List<BodyTemplateEntry> loadEntriesFromResource() {
-        try (InputStream in = SugarRealizer.class.getResourceAsStream("java-canonical-bodies.json")) {
+        // Default classpath load: java-canonical-bodies.json (catch-all entries).
+        List<BodyTemplateEntry> classpath = loadEntriesFromClasspath("java-canonical-bodies.json");
+        // #1361 chunk 2 part B follow-up / #1355: also scan filesystem for
+        // per-library-tag body-templates JSONs. Each sister shim (e.g.
+        // provekit-shim-stdio-java) auto-generates one of these on mint;
+        // without this load path, RESOLVE'd boundaries would refuse with
+        // is_stub even when the substrate has the body-template ready.
+        // Same pattern the rust realize binary uses (load_library_body_template
+        // walking menagerie/<lang>-language-signature/specs/body-templates/).
+        List<BodyTemplateEntry> filesystem = loadEntriesFromFilesystem();
+        // Merge: classpath entries first (catch-all), then per-library entries
+        // (more specific). Order matters because conceptMatches is first-match-wins
+        // in callers; per-library entries override catch-all for the same concept.
+        List<BodyTemplateEntry> merged = new ArrayList<>(filesystem);
+        merged.addAll(classpath);
+        return merged;
+    }
+
+    /// Walk menagerie/java-language-signature/specs/body-templates/ for any
+    /// java-canonical-bodies-<library_tag>.json files and load their entries.
+    /// Resolves workspace root by walking up from CWD looking for
+    /// `menagerie/` directory.
+    private static List<BodyTemplateEntry> loadEntriesFromFilesystem() {
+        java.nio.file.Path cwd = java.nio.file.Paths.get(System.getProperty("user.dir", "."));
+        java.nio.file.Path root = null;
+        for (java.nio.file.Path p = cwd; p != null; p = p.getParent()) {
+            if (java.nio.file.Files.isDirectory(p.resolve("menagerie"))) {
+                root = p;
+                break;
+            }
+        }
+        if (root == null) {
+            return List.of();
+        }
+        java.nio.file.Path dir = root.resolve("menagerie")
+                .resolve("java-language-signature")
+                .resolve("specs")
+                .resolve("body-templates");
+        if (!java.nio.file.Files.isDirectory(dir)) {
+            return List.of();
+        }
+        List<BodyTemplateEntry> out = new ArrayList<>();
+        try (java.util.stream.Stream<java.nio.file.Path> files = java.nio.file.Files.list(dir)) {
+            for (java.nio.file.Path file : (Iterable<java.nio.file.Path>) files::iterator) {
+                String name = file.getFileName().toString();
+                if (!name.startsWith("java-canonical-bodies-") || !name.endsWith(".json")) {
+                    continue;
+                }
+                try {
+                    String raw = java.nio.file.Files.readString(file, StandardCharsets.UTF_8);
+                    out.addAll(parseEntriesFromRaw(raw));
+                } catch (IOException ignore) {
+                    // Single bad file: degrade silently. Other files still load.
+                }
+            }
+        } catch (IOException ignore) {
+            return List.of();
+        }
+        return out;
+    }
+
+    private static List<BodyTemplateEntry> loadEntriesFromClasspath(String resource) {
+        try (InputStream in = SugarRealizer.class.getResourceAsStream(resource)) {
             if (in == null) {
-                // Resource absent: degrade to "no entries" (callers get language stub).
                 return List.of();
             }
             String raw;
             try (BufferedReader reader = new BufferedReader(new InputStreamReader(in, StandardCharsets.UTF_8))) {
                 raw = reader.lines().collect(Collectors.joining("\n"));
             }
+            return parseEntriesFromRaw(raw);
+        } catch (IOException e) {
+            return List.of();
+        }
+    }
+
+    private static List<BodyTemplateEntry> parseEntriesFromRaw(String raw) {
+        try {
             Jcs.Json root = Jcs.parse(raw);
             if (!(root instanceof Jcs.Obj rootObj)) return List.of();
             Jcs.Json header = rootObj.get("header");
@@ -1523,8 +1592,8 @@ final class SugarRealizer {
                         maxParams));
             }
             return out;
-        } catch (IOException e) {
-            // I/O failure: degrade to "no entries"; stubs will emit.
+        } catch (RuntimeException e) {
+            // JSON parse failure: degrade to "no entries"; stubs will emit.
             return List.of();
         }
     }
