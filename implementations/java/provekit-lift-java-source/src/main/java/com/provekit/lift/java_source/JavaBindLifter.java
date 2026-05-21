@@ -445,38 +445,59 @@ public final class JavaBindLifter {
         if (stmt instanceof com.sun.source.tree.BreakTree || stmt instanceof com.sun.source.tree.ContinueTree) {
             return operatorShapeResult("concept:skip", List.of());
         }
-        // Loop forms: while / do-while / for / for-each. Substrate-honest
-        // structural lift would require concept:while + concept:for which
-        // are not yet minted; for now mirror walk_rpc's rust-side fallback —
-        // emit concept:literal with source_text from the node's toString.
-        // This is the kit's escape hatch for shapes that lack substrate
-        // primitives (the residual concept:literal-source-text caveat).
-        // Follow-up: mint concept:while + concept:for, replace the fallback
-        // with structural concept:while(cond, body) / concept:for(init,
-        // cond, update, body).
-        if (stmt instanceof WhileLoopTree
-            || stmt instanceof DoWhileLoopTree
-            || stmt instanceof ForLoopTree
-            || stmt instanceof EnhancedForLoopTree) {
-            String src = stmt.toString();
-            return new ShapeResult(
-                Jcs.object(
-                    "args", Jcs.array(List.of()),
-                    "concept_name", Jcs.string("concept:literal"),
-                    "op_cid", Jcs.string(conceptCidForName("concept:literal")),
-                    "source_text", Jcs.string(src)
-                ),
-                List.of()
-            );
+        // Structural loop lifts — the lifter emits the canonical substrate
+        // operator CID; how java REALIZES each operator (back to java syntax)
+        // is an exam question the java kit answers via RealizationMementos.
+        // Operators: concept:while (cond, body), concept:for (init, cond, step,
+        // body), concept:for-each (var, iterable, body).
+        if (stmt instanceof WhileLoopTree t) {
+            return operatorShapeResult("concept:while",
+                List.of(shapeOfExpression(t.getCondition()), shapeOfStatement(t.getStatement())));
         }
-        // try { ... } catch (...) { ... } — substrate-honest decomposition:
-        // the try-block IS the success-path term-shape; the catch arms are
-        // declared as a "throws E" effect on the binding (not part of the
-        // structural body). concept:try as a primitive is unminted; the
-        // value-of-body decomposes to its success-path content. Parallel
-        // to rust's Result-unwrap-to-T-with-panic-effect convention.
+        if (stmt instanceof DoWhileLoopTree t) {
+            // do-while = seq(body, while(cond, body)) — decompose to existing primitives.
+            ShapeResult body = shapeOfStatement(t.getStatement());
+            ShapeResult cond = shapeOfExpression(t.getCondition());
+            ShapeResult loop = operatorShapeResult("concept:while", List.of(cond, body));
+            return operatorShapeResult("concept:seq", List.of(body, loop));
+        }
+        if (stmt instanceof ForLoopTree t) {
+            // Classic C-style for(init; cond; step; body) — 4-arg concept:for.
+            // (Existing substrate primitive — catalog entry concept:for.)
+            ShapeResult init = t.getInitializer().isEmpty()
+                ? operatorShapeResult("concept:skip", List.of())
+                : shapeOfStatement(t.getInitializer().get(0));
+            ShapeResult cond = t.getCondition() == null
+                ? literalShape(true)
+                : shapeOfExpression(t.getCondition());
+            ShapeResult step = t.getUpdate().isEmpty()
+                ? operatorShapeResult("concept:skip", List.of())
+                : shapeOfExpression(t.getUpdate().get(0).getExpression());
+            ShapeResult body = shapeOfStatement(t.getStatement());
+            return operatorShapeResult("concept:for", List.of(init, cond, step, body));
+        }
+        if (stmt instanceof EnhancedForLoopTree t) {
+            // Enhanced for (`for (T var : iter) { body }`) — 3-arg concept:for-each.
+            ShapeResult var = leafBinding(t.getVariable().getName().toString());
+            ShapeResult iterable = shapeOfExpression(t.getExpression());
+            ShapeResult body = shapeOfStatement(t.getStatement());
+            return operatorShapeResult("concept:for-each", List.of(var, iterable, body));
+        }
+        // try { body } catch (...) { ... } — structural lift via concept:try
+        // (minted 2026-05-21). The kit's exam answer for concept-realization
+        // (java, concept:try) tells the realize binary how to emit it back.
         if (stmt instanceof com.sun.source.tree.TryTree t) {
-            return shapeOfStatement(t.getBlock());
+            List<ShapeResult> args = new ArrayList<>();
+            args.add(shapeOfStatement(t.getBlock()));
+            // Catch arms encoded as a seq of their bodies (the catch-arm
+            // pattern + exception-type bindings are kit-level metadata; the
+            // structural ProofIR captures the body shape).
+            List<ShapeResult> catchBodies = new ArrayList<>();
+            for (com.sun.source.tree.CatchTree c : t.getCatches()) {
+                catchBodies.add(shapeOfStatement(c.getBlock()));
+            }
+            args.add(operatorShapeResult("concept:seq", catchBodies));
+            return operatorShapeResult("concept:try", args);
         }
         if (stmt instanceof com.sun.source.tree.ThrowTree t) {
             return operatorShapeResult("concept:throw",
