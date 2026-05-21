@@ -345,7 +345,10 @@ fn lower_term_shape_body(
     }
     if concept_name == "concept:seq" || concept_name == "seq" {
         let mut lines = Vec::new();
-        for (index, child) in term_shape_args(shape).into_iter().enumerate() {
+        let children: Vec<&Value> = term_shape_args(shape).into_iter().collect();
+        let last_index = children.len().saturating_sub(1);
+        let returns_non_unit = map_source_type(&context.return_type) != "()";
+        for (index, child) in children.iter().enumerate() {
             let child_position = append_position(position, index);
             if let Some(child_body) = lower_term_shape_body(child, context, &child_position) {
                 if !child_body.is_empty() {
@@ -354,6 +357,15 @@ fn lower_term_shape_body(
                 continue;
             }
             let expression = lower_term_shape_expression(child, context, &child_position)?;
+            // Last-child tail-expression form for non-unit returning fns:
+            // emit the expression bare (no `let temp = X;` + `return temp;`
+            // wrapper). This is byte-correct for shim bodies that end with
+            // a bare tail expression like `match ... { ... }` or `out`.
+            if index == last_index && returns_non_unit {
+                context.last_assigned_symbol = None;
+                lines.push(expression.text);
+                continue;
+            }
             let temp = context.temp_name();
             context.defined_symbols.insert(temp.clone());
             context.last_assigned_symbol = Some(temp.clone());

@@ -2203,6 +2203,7 @@ version = "0.1.0"
 dependencies = [
  "base64",
  "libprovekit",
+ "prettyplease",
  "proc-macro2",
  "provekit-canonicalizer",
  "provekit-claim-envelope",

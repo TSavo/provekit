@@ -2449,6 +2449,31 @@ fn shape_of_expr(expr: &syn::Expr, ctx: &ShapeContext) -> Arc<CValue> {
                 vec![shape_of_expr(&e.expr, ctx), mut_leaf],
             )
         }
+        // Match expression: `match scrutinee { arm1, arm2, ... }`. Lifted
+        // as a concept:literal source_text leaf carrying the full match
+        // expression text. Same approach as Expr::Macro — patterns are not
+        // currently in the substrate's primitive op catalog (no concept:match,
+        // no concept:pattern), so we preserve the source form verbatim. The
+        // realize side emits source_text as-is; outer-scope symbols
+        // referenced inside the match body remain in scope via Rust's normal
+        // lexical scoping.
+        //
+        // Multi-line formatting is preserved via `format_match_expression`
+        // which inserts newlines + indentation to match common Rust source
+        // style for the arms.
+        syn::Expr::Match(e) => {
+            let formatted = pretty_print_expr(&syn::Expr::Match(e.clone()));
+            let Some(op_cid) = concept_op_cid("concept:literal") else {
+                return non_operation_shape();
+            };
+            CValue::object([
+                ("args", CValue::array(Vec::new())),
+                ("concept_name", CValue::string("concept:literal")),
+                ("op_cid", CValue::string(op_cid)),
+                ("sort", CValue::string(SORT_STRING_CID)),
+                ("source_text", CValue::string(formatted)),
+            ])
+        }
         // Macro invocation: `writeln!(handle, "{}", line)` and similar.
         // Lifted as a concept:literal leaf with source_text carrying the
         // formatted token-stream text. This preserves the source form
@@ -2659,6 +2684,40 @@ fn unary_operator_concept_name(
         syn::UnOp::Neg(_) => Some("concept:neg"),
         _ => None,
     }
+}
+
+/// Pretty-print a `syn::Expr` via prettyplease by wrapping it in a dummy fn,
+/// formatting the resulting `syn::File`, and extracting the body. This is
+/// the byte-exact source-form reproduction used by Expr::Match and other
+/// shapes that aren't structurally lifted in the substrate primitives.
+/// Outer-scope identifier references inside the expression survive because
+/// they're textual; the materialized boundary stub's surrounding scope
+/// must provide them by name (which is what `let` bindings emitted by
+/// earlier seq children give us).
+fn pretty_print_expr(expr: &syn::Expr) -> String {
+    use quote::quote;
+    let wrapped = quote! {
+        fn __provekit_pp() { #expr }
+    };
+    let Ok(file) = syn::parse2::<syn::File>(wrapped) else {
+        return String::new();
+    };
+    let formatted = prettyplease::unparse(&file);
+    // Extract the body between `fn __provekit_pp() {` and the matching `}`,
+    // then strip the 4-space indent prettyplease added.
+    let Some(open) = formatted.find('{') else {
+        return formatted;
+    };
+    let body_start = open + 1;
+    let Some(close) = formatted.rfind('}') else {
+        return formatted;
+    };
+    let inner = formatted[body_start..close].trim_matches('\n');
+    inner
+        .lines()
+        .map(|l| l.strip_prefix("    ").unwrap_or(l))
+        .collect::<Vec<_>>()
+        .join("\n")
 }
 
 /// Canonical-spacing format for proc_macro2::TokenStream::to_string() output.
