@@ -1,0 +1,17 @@
+# PEP 1.7.0 realize plugin manifest for Rust + postgres (postgres-rs driver).
+# Reuses the workspace's existing provekit-realize-rust binary; concept
+# routing for postgres comes from
+# menagerie/rust-language-signature/specs/body-templates/rust-canonical-bodies-postgres.json.
+# Closes the manifest gap surfaced during the #1364 rust kit audit:
+# the body-templates JSON existed but no realize manifest pointed at
+# it, so target_language=rust + library_tag=postgres dispatch had no
+# entry in the registry.
+name = "rust-realize-postgres"
+library_tag = "postgres"
+family = "concept:family:sql"
+library_version = "0.19"
+# #1364 / #1355: per-kit concept coverage. Sourced from
+# menagerie/rust-language-signature/specs/body-templates/rust-canonical-bodies-postgres.json.
+provides_concepts = ["concept:sql-connection-close", "concept:sql-connection-open", "concept:sql-execute", "concept:sql-prepare", "concept:sql-query", "concept:sql-transaction-begin", "concept:sql-transaction-commit", "concept:sql-transaction-rollback"]
+command = ["implementations/rust/target/debug/provekit-realize-rust", "--rpc"]
+working_dir = "."
