@@ -1,0 +1,24 @@
+{
+  "envelope": {
+    "declaredAt": "2026-05-21T00:00:00Z",
+    "signature": "ed25519:UNSIGNED_DEV_ONLY",
+    "signer": "ed25519:UNSIGNED_DEV_ONLY"
+  },
+  "header": {
+    "cid": "blake3-512:c5c57425bf81a594b8e7df4b2e7a1e6df77c53d2ec2cb0b647e41b6154dc08dfe9c3fd134ccd3ca4c84af78840cee64844cada9507ec3d61d354467bebf04be6",
+    "direction": "bidirectional",
+    "kind": "sort-morphism",
+    "precision_loss": "none",
+    "range_loss": "none",
+    "representation_constraints": [],
+    "runtime_guards": [],
+    "schemaVersion": "1",
+    "source_language_signature_cid": "blake3-512:31444085d7d08f573d4a68730d9f30f77509be66369a92432d9a76fafe3cdf7c0ed5df53767d934ec0b77b8fafcdf3124589c0b5fa3eb7e9312891a08a95dc0d",
+    "source_sort_cid": "blake3-512:d47af4e1ff147929650ee499e525c0f1c9dc2df1942a5213d474e5d47c9309f73e2f8c0eb14a8b0421e0d383441f9d4c7eb3bc3dff581fc61d5d53bdc751a638",
+    "target_language_signature_cid": "blake3-512:1979babed41ad51ad8d7a28543815f74e24a9d4ee1ae3d52ccc6549f293aa63519abf5411a67b7882c73333b1b357e4863f6d7781f0b0776e5bd25f90ea7d793",
+    "target_sort_cid": "blake3-512:2e8e8e72cb8563447f8887ace8013bccf789c460440706c6f72e14e4f292ddb7126c365bf04c65f121a69c1c778999530dd15cf2480110975122e451f7710616"
+  },
+  "metadata": {
+    "note": "typescript's `EffectName` sort maps cleanly to concept:EffectName."
+  }
+}

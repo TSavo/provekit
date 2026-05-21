@@ -1,0 +1,34 @@
+{
+  "cid": "blake3-512:278c086a4c4d22fa3357050eba0fe507a918feefe8d482d519d455e741921d9c4b2f438f6110e15caac4817aa528ddd1284300927994d2f94eb068ff6dc3ee61",
+  "memento": {
+    "auto_minted_mementos": [],
+    "effects": {
+      "effects": []
+    },
+    "fn_name": "csharp:SortCid",
+    "formal_sorts": [],
+    "formals": [],
+    "kind": "SortMemento",
+    "post": {
+      "description": "C# sort content-id (string-formatted hash for a sort declaration). Subtype of csharp:Cid.",
+      "kind": "sort-description",
+      "name": "SortCid"
+    },
+    "pre": {
+      "args": [],
+      "kind": "atomic",
+      "name": "true"
+    },
+    "protocol": "LSP",
+    "return_sort": {
+      "kind": "kind",
+      "name": "*"
+    },
+    "schema_version": "1"
+  },
+  "signature": {
+    "alg": "ed25519",
+    "key_id": "UNSIGNED_DEV_ONLY",
+    "sig_b64": "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"
+  }
+}

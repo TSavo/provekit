@@ -1,0 +1,24 @@
+{
+  "envelope": {
+    "declaredAt": "2026-05-21T00:00:00Z",
+    "signature": "ed25519:UNSIGNED_DEV_ONLY",
+    "signer": "ed25519:UNSIGNED_DEV_ONLY"
+  },
+  "header": {
+    "cid": "blake3-512:06fdbbdd997a47c0218fd98ae1a3ef6584ee0539e2367af089a0d69b321c7a4cbd2cf170549ece7de5ff4e0d4a617c8d41dcc6dce4ba0a6c40cfc4bd06717031",
+    "direction": "bidirectional",
+    "kind": "sort-morphism",
+    "precision_loss": "none",
+    "range_loss": "none",
+    "representation_constraints": [],
+    "runtime_guards": [],
+    "schemaVersion": "1",
+    "source_language_signature_cid": "blake3-512:8f98c68d534e7e799061bb710cc948b067b2a7e9359ec82c2fb5e3681a6fe30e19477fe27aead7b051f9b5a732f35b6235dccf2574c176bb682cd7d534c24d04",
+    "source_sort_cid": "blake3-512:52a2c1fe22e68b35ea7cfe8f8354e1ca387c49d6f1a3060226526ca25643b9946e49a38819f005e59f2c365ff588fc939c4a3487ffe5bc1e8403f9908a91f387",
+    "target_language_signature_cid": "blake3-512:1979babed41ad51ad8d7a28543815f74e24a9d4ee1ae3d52ccc6549f293aa63519abf5411a67b7882c73333b1b357e4863f6d7781f0b0776e5bd25f90ea7d793",
+    "target_sort_cid": "blake3-512:78296b0cb631f8ab9f66d369ac768c64ef29840c10c0ad378d778222af5af7e2335c5c48526fe2b61e51f74034e523859250d1443aa0d7200af5c91329b038ea"
+  },
+  "metadata": {
+    "note": "go's `Formula` sort maps cleanly to concept:Formula."
+  }
+}

@@ -1,0 +1,34 @@
+{
+  "cid": "blake3-512:2853764730f156003fb644a1f82354d333faf2f7ff9ae878409e897a1781cf9d8c28b3f0230877140ec86ba4822d1a23299bdd01e221be9d095b864bba233b47",
+  "memento": {
+    "auto_minted_mementos": [],
+    "effects": {
+      "effects": []
+    },
+    "fn_name": "go:Cid",
+    "formal_sorts": [],
+    "formals": [],
+    "kind": "SortMemento",
+    "post": {
+      "description": "Go content-addressed identifier (string-formatted hash). Realized as string with cid-format constraint.",
+      "kind": "sort-description",
+      "name": "Cid"
+    },
+    "pre": {
+      "args": [],
+      "kind": "atomic",
+      "name": "true"
+    },
+    "protocol": "LSP",
+    "return_sort": {
+      "kind": "kind",
+      "name": "*"
+    },
+    "schema_version": "1"
+  },
+  "signature": {
+    "alg": "ed25519",
+    "key_id": "UNSIGNED_DEV_ONLY",
+    "sig_b64": "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"
+  }
+}

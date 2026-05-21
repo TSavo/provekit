@@ -1,0 +1,34 @@
+{
+  "cid": "blake3-512:ef50a7af1b22759433f07d22b4b7c404811a8f95437a004e0cba1d25a658091d03e198e30e37438e85aecf61a7440863c80ff19330c7569ea6c1d99aef0bab30",
+  "memento": {
+    "auto_minted_mementos": [],
+    "effects": {
+      "effects": []
+    },
+    "fn_name": "java:Cid",
+    "formal_sorts": [],
+    "formals": [],
+    "kind": "SortMemento",
+    "post": {
+      "description": "Java content-addressed identifier (string-formatted hash). Realized as java.lang.String with cid-format constraint.",
+      "kind": "sort-description",
+      "name": "Cid"
+    },
+    "pre": {
+      "args": [],
+      "kind": "atomic",
+      "name": "true"
+    },
+    "protocol": "LSP",
+    "return_sort": {
+      "kind": "kind",
+      "name": "*"
+    },
+    "schema_version": "1"
+  },
+  "signature": {
+    "alg": "ed25519",
+    "key_id": "UNSIGNED_DEV_ONLY",
+    "sig_b64": "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"
+  }
+}
