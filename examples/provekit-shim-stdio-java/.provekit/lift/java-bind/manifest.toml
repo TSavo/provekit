@@ -1,0 +1,8 @@
+# PEP 1.7.0 lift plugin manifest for the Java source-native sugar surface.
+# Points at the provekit-lift-java-source shaded JAR built from the
+# implementations/java/provekit-lift-java-source module. Required by
+# `provekit mint` which looks for `.provekit/lift/<surface>/manifest.toml`
+# relative to its --project root.
+name = "java-bind-lift"
+command = ["java", "-jar", "implementations/java/provekit-lift-java-source/target/provekit-lift-java-source.jar", "--rpc"]
+working_dir = "../.."
