@@ -328,6 +328,55 @@ fn registry_lift_command(
     Ok(None)
 }
 
+/// #1360 / #1355: Return the per-target scope-bringings declared by
+/// the realize manifest matching `(target_lang, library_tag)`. cmd_materialize
+/// collects these across all materialized sites in a consumer file and
+/// hoists them into the file's prelude so the spliced bodies compile.
+///
+/// Returns an empty Vec when no manifest matches OR when the matched
+/// manifest declares no `scope_bringings`. This is the substrate-honest
+/// signal for "no scope-bringings needed" (NOT an error condition).
+pub fn scope_bringings_for_realize(
+    workspace_root: &Path,
+    target_lang: &str,
+    library_tag: &str,
+) -> Vec<String> {
+    let Ok(candidates) = registry_realize_candidates(workspace_root, target_lang) else {
+        return Vec::new();
+    };
+    // First try exact library_tag match.
+    for cand in &candidates {
+        if cand.tag == library_tag {
+            // RealizeCandidate.source is the manifest path relative to
+            // workspace_root (`.provekit/realize/<surface>/manifest.toml`)
+            // OR an env-var / built-in / PATH source string. Resolve relative
+            // paths against workspace_root before parsing; non-manifest
+            // sources return empty.
+            return read_scope_bringings_from_manifest_source(workspace_root, &cand.source);
+        }
+    }
+    Vec::new()
+}
+
+fn read_scope_bringings_from_manifest_source(
+    workspace_root: &Path,
+    source: &str,
+) -> Vec<String> {
+    let candidate_path = PathBuf::from(source);
+    let resolved = if candidate_path.is_absolute() {
+        candidate_path
+    } else {
+        workspace_root.join(&candidate_path)
+    };
+    if !resolved.is_file() {
+        return Vec::new();
+    }
+    match parse_manifest(&resolved) {
+        Ok(parsed) => parsed.scope_bringings,
+        Err(_) => Vec::new(),
+    }
+}
+
 /// #1359 / #1355: Find all realize candidates that satisfy a
 /// constraint set `(target_lang, family?, library_tag?, library_version?)`.
 /// Candidates are filtered down progressively:
