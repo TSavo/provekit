@@ -681,6 +681,15 @@ struct ParsedManifest {
     command: Vec<String>,
     working_dir: Option<PathBuf>,
     library_tag: Option<String>,
+    /// #1359 / #1355: optional `family` pin. When present, dispatch can
+    /// resolve consumer @boundary requests with `family = X` against any
+    /// shim manifest sharing that family (even if library tags differ).
+    /// Absent ↔ family floats; dispatch falls back to library_tag-equality.
+    #[allow(dead_code)]
+    family: Option<String>,
+    /// #1359 / #1355: optional `library_version` pin. Parallel to `family`.
+    #[allow(dead_code)]
+    library_version: Option<String>,
     protocol_versions: Vec<String>,
     capability_kind: Option<String>,
     exam_manifest_schema_version: Option<String>,
@@ -693,6 +702,8 @@ fn parse_manifest(path: &Path) -> Result<ParsedManifest, String> {
     let mut command: Vec<String> = Vec::new();
     let mut working_dir: Option<PathBuf> = None;
     let mut library_tag: Option<String> = None;
+    let mut family: Option<String> = None;
+    let mut library_version: Option<String> = None;
     let mut protocol_versions: Vec<String> = Vec::new();
     let mut capability_kind: Option<String> = None;
     let mut exam_manifest_schema_version: Option<String> = None;
@@ -731,6 +742,10 @@ fn parse_manifest(path: &Path) -> Result<ParsedManifest, String> {
                 })?;
                 library_tag = Some(tag);
             }
+            // #1359 / #1355: optional realization-axis pins on realize manifests.
+            // Parsed but not yet wired into dispatch resolution (that's chunk 2).
+            ("", "family") => family = Some(val.trim_matches('"').to_string()),
+            ("", "library_version") => library_version = Some(val.trim_matches('"').to_string()),
             ("", "command") => command = parse_toml_string_array(val),
             ("capabilities", "kind") => capability_kind = Some(val.trim_matches('"').to_string()),
             ("capabilities", "exam_manifest_schema_version") => {
@@ -747,6 +762,8 @@ fn parse_manifest(path: &Path) -> Result<ParsedManifest, String> {
         command,
         working_dir,
         library_tag,
+        family,
+        library_version,
         protocol_versions,
         capability_kind,
         exam_manifest_schema_version,
@@ -2049,6 +2066,57 @@ pub fn detect_lift_language(workspace_root: &Path) -> Option<String> {
 mod tests {
     use super::*;
     use serde_json::json;
+    use std::fs;
+
+    // -----------------------------------------------------------------
+    // #1359 / #1355: realize manifest gains family + library_version
+    // -----------------------------------------------------------------
+
+    #[test]
+    fn parse_manifest_accepts_family_and_library_version_pins() {
+        let dir = std::env::temp_dir().join("provekit-test-1359-family-version");
+        let _ = fs::remove_dir_all(&dir);
+        fs::create_dir_all(&dir).expect("temp dir");
+        let manifest_path = dir.join("manifest.toml");
+        fs::write(
+            &manifest_path,
+            r#"
+name = "rust-realize-rusqlite"
+library_tag = "rusqlite"
+family = "concept:family:sql"
+library_version = "0.39.0"
+command = ["/bin/true"]
+"#,
+        )
+        .expect("write");
+        let parsed = parse_manifest(&manifest_path).expect("parse");
+        assert_eq!(parsed.library_tag.as_deref(), Some("rusqlite"));
+        assert_eq!(parsed.family.as_deref(), Some("concept:family:sql"));
+        assert_eq!(parsed.library_version.as_deref(), Some("0.39.0"));
+        let _ = fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn parse_manifest_without_family_and_version_parses_clean() {
+        // Back-compat: existing manifests without the new axes still parse.
+        let dir = std::env::temp_dir().join("provekit-test-1359-noaxes");
+        let _ = fs::remove_dir_all(&dir);
+        fs::create_dir_all(&dir).expect("temp dir");
+        let manifest_path = dir.join("manifest.toml");
+        fs::write(
+            &manifest_path,
+            r#"
+name = "rust-realize-default"
+library_tag = "default"
+command = ["/bin/true"]
+"#,
+        )
+        .expect("write");
+        let parsed = parse_manifest(&manifest_path).expect("parse");
+        assert!(parsed.family.is_none());
+        assert!(parsed.library_version.is_none());
+        let _ = fs::remove_dir_all(&dir);
+    }
 
     #[test]
     fn realize_request_params_include_contract_mode_and_loss_payload() {

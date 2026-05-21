@@ -1,8 +1,7 @@
 # PEP 1.7.0 realize plugin manifest for Rust + provekit-shim-serde-json-rust.
-# Cross-platform @boundary sites tagged `library = "provekit-shim-serde-json-rust"`
-# dispatch here. concept:json-parse and concept:json-serialize realize
-# from the shim's signed .proof envelope.
 name = "rust-realize-shim-serde-json"
 library_tag = "provekit-shim-serde-json-rust"
+family = "concept:family:json"
+library_version = "1"
 command = ["implementations/rust/target/debug/provekit-realize-rust", "--rpc"]
 working_dir = "."

@@ -4,5 +4,7 @@
 # .proof envelope.
 name = "rust-realize-shim-blake3"
 library_tag = "provekit-shim-blake3-rust"
+family = "concept:family:hash"
+library_version = "1"
 command = ["implementations/rust/target/debug/provekit-realize-rust", "--rpc"]
 working_dir = "."
