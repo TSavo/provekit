@@ -433,6 +433,7 @@ fn bind_lift(params: &Value) -> Result<Value, String> {
             let return_type = sugar_return_type(&item_fn);
             let term_shape = term_shape_for_fn(&item_fn);
             let term_shape_cid = blake3_512_of(encode_jcs(&term_shape).as_bytes());
+            let operand_bindings = operand_bindings_for_fn(&item_fn);
             let sig_shape = CValue::object([
                 (
                     "param_names",
@@ -467,6 +468,7 @@ fn bind_lift(params: &Value) -> Result<Value, String> {
                 "return_type": return_type,
                 "term_shape": cvalue_to_json(&term_shape),
                 "term_shape_cid": term_shape_cid,
+                "operand_bindings": operand_bindings,
                 "signature_shape_cid": signature_shape_cid,
                 "loss_record_contribution": {
                     "form": "literal",
@@ -495,6 +497,43 @@ fn bind_lift(params: &Value) -> Result<Value, String> {
                 "reason": reason,
                 "would_close_with_cluster": would_close_with_cluster,
             }));
+        }
+
+        // Boundary lane: #[provekit::boundary] annotations. Each marks
+        // a function as the EDGE where a concept binds to a per-language
+        // library. Emitted as `realization-memento` (Boundary variant)
+        // entries so cmd_mint can mint them into the envelope; the
+        // materializer reads them when retargeting downstream consumers
+        // to other languages and substitutes the per-target sister
+        // library at each boundary callsite.
+        for boundary_target in collect_boundary_targets(&file) {
+            let BoundaryTarget {
+                concept,
+                library,
+                api,
+                boundary_contract,
+                loss,
+                source_function_name,
+            } = boundary_target;
+            let mut entry = json!({
+                "kind": "realization-memento",
+                "realization_kind": "boundary",
+                "target_language": "rust",
+                "concept_name": concept,
+                "library": library,
+                "source_function_name": source_function_name,
+                "loss_record_contribution": {
+                    "form": "literal",
+                    "value": { "entries": loss },
+                },
+            });
+            if let Some(api_str) = api {
+                entry["api"] = json!(api_str);
+            }
+            if let Some(bc) = boundary_contract {
+                entry["boundary_contract"] = json!(bc);
+            }
+            entries.push(entry);
         }
     }
 
@@ -696,6 +735,78 @@ fn extract_sugar_attr(item_fn: &syn::ItemFn) -> Option<SugarAttrParsed> {
                         library,
                         loss: args.string_array("loss"),
                         observed_dimension: args.string("observed_dimension"),
+                    });
+                }
+            }
+        }
+    }
+    None
+}
+
+/// One `#[provekit::boundary]` target discovered by walking the source.
+/// Each boundary annotation marks a function as the EDGE where a
+/// concept binds to a per-language library. The lifter promotes it to
+/// a `realization-memento` (Boundary variant); the materializer reads
+/// it when retargeting downstream consumers to other languages,
+/// substituting the per-target sister library at that callsite.
+#[derive(Debug, Clone, Default)]
+struct BoundaryTarget {
+    concept: String,
+    library: String,
+    api: Option<String>,
+    boundary_contract: Option<String>,
+    loss: Vec<String>,
+    source_function_name: String,
+}
+
+fn collect_boundary_targets(file: &syn::File) -> Vec<BoundaryTarget> {
+    let mut targets = Vec::new();
+    collect_boundary_targets_in_items(&file.items, &mut targets);
+    targets
+}
+
+fn collect_boundary_targets_in_items(
+    items: &[syn::Item],
+    targets: &mut Vec<BoundaryTarget>,
+) {
+    for item in items {
+        match item {
+            syn::Item::Fn(item_fn) => {
+                if let Some(mut parsed) = extract_boundary_attr(item_fn) {
+                    parsed.source_function_name = item_fn.sig.ident.to_string();
+                    targets.push(parsed);
+                }
+            }
+            syn::Item::Mod(module) => {
+                if let Some((_, nested_items)) = &module.content {
+                    collect_boundary_targets_in_items(nested_items, targets);
+                }
+            }
+            _ => {}
+        }
+    }
+}
+
+fn extract_boundary_attr(item_fn: &syn::ItemFn) -> Option<BoundaryTarget> {
+    for attr in &item_fn.attrs {
+        let path = attr.path();
+        let segments: Vec<_> = path.segments.iter().collect();
+        if segments.len() == 2
+            && segments[0].ident == "provekit"
+            && segments[1].ident == "boundary"
+        {
+            if let Ok(meta_list) = attr.meta.require_list() {
+                let args = parse_attr_named_args(&meta_list.tokens);
+                let concept = args.string("concept").unwrap_or_default();
+                let library = args.string("library").unwrap_or_default();
+                if !concept.is_empty() && !library.is_empty() {
+                    return Some(BoundaryTarget {
+                        concept,
+                        library,
+                        api: args.string("api"),
+                        boundary_contract: args.string("boundary_contract"),
+                        loss: args.string_array("loss"),
+                        source_function_name: String::new(),
                     });
                 }
             }
@@ -1947,14 +2058,22 @@ fn bindings_of_expr(expr: &syn::Expr, ctx: &ShapeContext) -> BindingResult {
             }
             operation_binding_result(vec![bindings_of_expr(&e.expr, ctx)])
         }
-        syn::Expr::Call(e) => operation_binding_result(
-            e.args
-                .iter()
-                .map(|arg| bindings_of_expr(arg, ctx))
-                .collect::<Vec<_>>(),
-        ),
+        syn::Expr::Call(e) => {
+            // Callee path leaf is at args[0] (no operand binding — it's an
+            // inline identifier, not a parameter symbol). Call arguments
+            // are at args[1..], matching the shape_of_expr layout below.
+            let mut args = vec![BindingResult::default()]; // slot for callee leaf
+            args.extend(e.args.iter().map(|arg| bindings_of_expr(arg, ctx)));
+            operation_binding_result(args)
+        }
         syn::Expr::MethodCall(e) => {
-            let mut args = vec![bindings_of_expr(&e.receiver, ctx)];
+            // Receiver is at args[0]. Method ident leaf is at args[1] (no
+            // operand binding). Call arguments are at args[2..], matching
+            // the shape_of_expr layout below.
+            let mut args = vec![
+                bindings_of_expr(&e.receiver, ctx),
+                BindingResult::default(), // slot for method ident leaf
+            ];
             args.extend(e.args.iter().map(|arg| bindings_of_expr(arg, ctx)));
             operation_binding_result(args)
         }
@@ -2185,15 +2304,43 @@ fn shape_of_expr(expr: &syn::Expr, ctx: &ShapeContext) -> Arc<CValue> {
             };
             gamma_operation(concept_name, vec![shape_of_expr(&e.expr, ctx)])
         }
-        syn::Expr::Call(e) => gamma_operation(
-            "concept:call",
-            e.args
-                .iter()
-                .map(|arg| shape_of_expr(arg, ctx))
-                .collect::<Vec<_>>(),
-        ),
+        syn::Expr::Call(e) => {
+            // Extract callee path text from `func`. Only Expr::Path callees are
+            // recognized; anything else (closures, parens, etc.) falls through to
+            // non_operation_shape so we never fabricate a callee.
+            let callee_text = if let syn::Expr::Path(path_expr) = &*e.func {
+                path_expr
+                    .path
+                    .segments
+                    .iter()
+                    .map(|seg| seg.ident.to_string())
+                    .collect::<Vec<_>>()
+                    .join("::")
+            } else {
+                return non_operation_shape();
+            };
+            // args[0]: callee path leaf (kind:"path", text:"blake3::Hasher::new")
+            // args[1..]: call arguments, matching bindings_of_expr layout above.
+            let callee_leaf = CValue::object([
+                ("kind", CValue::string("path")),
+                ("text", CValue::string(callee_text)),
+            ]);
+            let mut args = vec![callee_leaf];
+            args.extend(e.args.iter().map(|arg| shape_of_expr(arg, ctx)));
+            gamma_operation("concept:call", args)
+        }
         syn::Expr::MethodCall(e) => {
-            let mut args = vec![shape_of_expr(&e.receiver, ctx)];
+            // args[0]: receiver shape, matching bindings_of_expr layout above.
+            // args[1]: method ident leaf (kind:"method", text:"update")
+            // args[2..]: call arguments.
+            let method_leaf = CValue::object([
+                ("kind", CValue::string("method")),
+                ("text", CValue::string(e.method.to_string())),
+            ]);
+            let mut args = vec![
+                shape_of_expr(&e.receiver, ctx),
+                method_leaf,
+            ];
             args.extend(e.args.iter().map(|arg| shape_of_expr(arg, ctx)));
             gamma_operation("concept:call", args)
         }

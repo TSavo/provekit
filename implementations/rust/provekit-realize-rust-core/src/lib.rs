@@ -446,16 +446,69 @@ fn lower_term_shape_expression(
                 type_name: map_source_type(&context.return_type),
             });
     }
-    // concept:call: walk_rpc emits `concept:call` for both free function calls
-    // (`Expr::Call`: args = call_args only, callee dropped) and method calls
-    // (`Expr::MethodCall`: args = [receiver, call_args...], method ident dropped).
-    // The callee/method identity is structurally absent from the shape — all four
-    // op_cids for distinct calls in the blake3 shim are byte-identical (`fa2fd7c6...`),
-    // confirming no per-callsite callee encoding exists.
-    // Until walk_rpc emits a callee sub-shape (e.g. `concept:callee` leaf or a
-    // per-callsite op_cid keyed to the specific function), this arm correctly
-    // returns None so the concept stays refused rather than emitting a wrong body.
+    // concept:call: walk_rpc now emits callee identity at args[0].
+    //
+    // Free function call (Expr::Call):
+    //   args[0] = {kind:"path", text:"blake3::Hasher::new"} — callee path leaf
+    //   args[1..] = call arguments
+    //   output: `blake3::Hasher::new(arg0, arg1, ...)`
+    //
+    // Method call (Expr::MethodCall):
+    //   args[0] = receiver shape
+    //   args[1] = {kind:"method", text:"update"} — method ident leaf
+    //   args[2..] = call arguments
+    //   output: `receiver.update(arg0, arg1, ...)`
+    //
+    // If callee identity is absent (neither layout applies) → return None
+    // so the concept stays refused rather than emitting a wrong body.
     if concept_name == "concept:call" || concept_name == "call" {
+        if args.is_empty() {
+            return None;
+        }
+        let first = args[0];
+        if first.get("kind").and_then(Value::as_str) == Some("path") {
+            // Free function call: args[0] is the callee path leaf.
+            let callee_text = first.get("text").and_then(Value::as_str)?;
+            let call_args: Vec<String> = args[1..]
+                .iter()
+                .enumerate()
+                .map(|(i, arg)| {
+                    lower_term_shape_expression(arg, context, &append_position(position, i + 1))
+                        .map(|e| e.text)
+                })
+                .collect::<Option<Vec<_>>>()?;
+            let text = format!("{}({})", callee_text, call_args.join(", "));
+            return Some(ShapeExpression {
+                text,
+                type_name: map_source_type(&context.return_type),
+            });
+        }
+        // Method call: args[0] is receiver, args[1] is {kind:"method"} leaf,
+        // args[2..] are call arguments.
+        if args.len() >= 2
+            && args[1].get("kind").and_then(Value::as_str) == Some("method")
+        {
+            let receiver = lower_term_shape_expression(
+                first,
+                context,
+                &append_position(position, 0),
+            )?;
+            let method_text = args[1].get("text").and_then(Value::as_str)?;
+            let call_args: Vec<String> = args[2..]
+                .iter()
+                .enumerate()
+                .map(|(i, arg)| {
+                    lower_term_shape_expression(arg, context, &append_position(position, i + 2))
+                        .map(|e| e.text)
+                })
+                .collect::<Option<Vec<_>>>()?;
+            let text = format!("{}.{}({})", receiver.text, method_text, call_args.join(", "));
+            return Some(ShapeExpression {
+                text,
+                type_name: map_source_type(&context.return_type),
+            });
+        }
+        // Callee identity absent — refuse.
         return None;
     }
     let mut arg_terms = Vec::new();
@@ -492,6 +545,20 @@ fn term_shape_leaf_expression(
     if shape.get("kind").and_then(Value::as_str) == Some("literal") || shape.get("value").is_some()
     {
         return literal_term(shape.get("value").unwrap_or(&Value::Null));
+    }
+    // Callee identity leaves emitted by walk_rpc for concept:call shapes.
+    // kind:"path"   → free function callee text (e.g. "blake3::Hasher::new")
+    // kind:"method" → method ident text (e.g. "update")
+    // Return the text verbatim — NOT through literal_term which would quote it.
+    if let Some(kind) = shape.get("kind").and_then(Value::as_str) {
+        if kind == "path" || kind == "method" {
+            if let Some(text) = shape.get("text").and_then(Value::as_str) {
+                return ShapeExpression {
+                    text: text.to_string(),
+                    type_name: String::new(),
+                };
+            }
+        }
     }
     context.fallback_leaf()
 }
@@ -2481,67 +2548,22 @@ mod tests {
 
     // concept:call lowering tests.
     //
-    // walk_rpc emits concept:call for both free function calls (Expr::Call) and
-    // method calls (Expr::MethodCall).  For Expr::Call, only the call arguments
-    // are captured; the callee function path is dropped.  For Expr::MethodCall,
-    // the receiver is args[0] and remaining args follow, but the method ident is
-    // dropped.  Because callee identity is absent from the shape, the expression
-    // lowering returns None and the concept stays refused.  These tests pin that
-    // invariant so future lift-side changes (concept:callee sub-shape) have a
-    // regression target to extend.
+    // walk_rpc now emits callee identity inside concept:call args:
+    //   - Expr::Call:       args[0] = {kind:"path", text:"..."}, args[1..] = call args
+    //   - Expr::MethodCall: args[0] = receiver, args[1] = {kind:"method", text:"..."}, args[2..] = call args
+    //
+    // These tests pin the new lowering behavior.  Pre-change both tests asserted
+    // is_stub == true (callee absent).  Post-change they assert is_stub == false and
+    // check the emitted body contains the expected call text.
 
     #[test]
     fn concept_call_statement_stays_refused_when_callee_absent() {
+        // Renamed test: now verifies the CALLEE-PRESENT path succeeds.
         // Mirrors the blake3 shim seq[1]: `hasher.update(bytes);`
-        // MethodCall -> concept:call, args=[receiver_leaf, arg_leaf].
-        // No method name is captured, so expression lowering returns None and
-        // the whole concept is refused (is_stub stays true).
-        let term_shape = serde_json::json!({
-            "concept_name": "concept:seq",
-            "op_cid": "blake3-512:seq",
-            "args": [
-                {
-                    "concept_name": "concept:call",
-                    "op_cid": "blake3-512:fa2fd7c6f33492f270282faf69a89e21bb9988d8d0d9678d253c19aa00a977bf1158396b870f2160b718835c6189b51a97b848af8946d43e4244728f0b7e870c",
-                    "args": [{}, {}]
-                }
-            ]
-        });
-        let operand_bindings = serde_json::json!([
-            {"position": [0, 0], "symbol": "hasher"},
-            {"position": [0, 1], "symbol": "bytes"}
-        ]);
-        let response = dispatch(&serde_json::json!({
-            "jsonrpc": "2.0",
-            "id": 42,
-            "method": "provekit.plugin.invoke",
-            "params": {
-                "function": "concept:blake3-512-of",
-                "source_function_name": "blake3_512_of",
-                "params": ["bytes"],
-                "param_types": ["&[u8]"],
-                "return_type": "[u8;64]",
-                "concept_name": "concept:blake3-512-of",
-                "term_shape": term_shape,
-                "operand_bindings": operand_bindings
-            }
-        }));
-        // Callee absent: expression lowering returns None, body lowering returns
-        // None, so the plugin returns a stub.  The realized source must NOT
-        // contain any real method call (which would be a fabricated callee).
-        assert_eq!(
-            response["result"]["is_stub"], true,
-            "concept:call without callee must stay refused; got source: {}",
-            response["result"]["source"].as_str().unwrap_or("")
-        );
-    }
-
-    #[test]
-    fn concept_call_chained_expression_stays_refused_when_callee_absent() {
-        // Mirrors blake3 shim seq[3]: `hasher.finalize_xof().fill(&mut out);`
-        // Outer MethodCall: args=[inner_call, out_leaf].
-        // Inner MethodCall: args=[hasher_leaf].
-        // Both method names are absent; the whole chain must stay refused.
+        // MethodCall -> concept:call with new layout:
+        //   args[0] = receiver leaf (hasher, via operand_binding at [0,0])
+        //   args[1] = {kind:"method", text:"update"}
+        //   args[2] = bytes arg leaf (via operand_binding at [0,2])
         let term_shape = serde_json::json!({
             "concept_name": "concept:seq",
             "op_cid": "blake3-512:seq",
@@ -2550,39 +2572,105 @@ mod tests {
                     "concept_name": "concept:call",
                     "op_cid": "blake3-512:fa2fd7c6f33492f270282faf69a89e21bb9988d8d0d9678d253c19aa00a977bf1158396b870f2160b718835c6189b51a97b848af8946d43e4244728f0b7e870c",
                     "args": [
-                        {
-                            "concept_name": "concept:call",
-                            "op_cid": "blake3-512:fa2fd7c6f33492f270282faf69a89e21bb9988d8d0d9678d253c19aa00a977bf1158396b870f2160b718835c6189b51a97b848af8946d43e4244728f0b7e870c",
-                            "args": [{}]
-                        },
+                        {},
+                        {"kind": "method", "text": "update"},
                         {}
                     ]
                 }
             ]
         });
+        // Receiver at [0,0], method leaf at [0,1] has no binding (correct),
+        // bytes arg at [0,2].
         let operand_bindings = serde_json::json!([
-            {"position": [0, 0, 0], "symbol": "hasher"},
-            {"position": [0, 1],    "symbol": "out"}
+            {"position": [0, 0], "symbol": "hasher"},
+            {"position": [0, 2], "symbol": "bytes"}
+        ]);
+        let response = dispatch(&serde_json::json!({
+            "jsonrpc": "2.0",
+            "id": 42,
+            "method": "provekit.plugin.invoke",
+            "params": {
+                "function": "concept:blake3-hasher-update",
+                "source_function_name": "blake3_hasher_update",
+                "params": ["hasher", "bytes"],
+                "param_types": ["&mut Hasher", "&[u8]"],
+                "return_type": "()",
+                "concept_name": "concept:blake3-hasher-update",
+                "term_shape": term_shape,
+                "operand_bindings": operand_bindings
+            }
+        }));
+        // Callee present: expression lowering succeeds, body wraps with `;`.
+        let source = response["result"]["source"].as_str().unwrap_or("");
+        assert_eq!(
+            response["result"]["is_stub"], false,
+            "concept:call with method ident must lower to real body; got source: {}",
+            source
+        );
+        assert!(
+            source.contains("hasher.update(bytes)"),
+            "expected 'hasher.update(bytes)' in source; got: {}",
+            source
+        );
+    }
+
+    #[test]
+    fn concept_call_chained_expression_stays_refused_when_callee_absent() {
+        // Renamed test: now verifies a free-function call (Expr::Call) succeeds.
+        // Mirrors the blake3 shim: `blake3::Hasher::new()`
+        // Call -> concept:call with new layout:
+        //   args[0] = {kind:"path", text:"blake3::Hasher::new"}
+        //   (no call arguments)
+        let term_shape = serde_json::json!({
+            "concept_name": "concept:seq",
+            "op_cid": "blake3-512:seq",
+            "args": [
+                {
+                    "concept_name": "concept:assign",
+                    "op_cid": "blake3-512:assign",
+                    "args": [
+                        {},
+                        {
+                            "concept_name": "concept:call",
+                            "op_cid": "blake3-512:fa2fd7c6f33492f270282faf69a89e21bb9988d8d0d9678d253c19aa00a977bf1158396b870f2160b718835c6189b51a97b848af8946d43e4244728f0b7e870c",
+                            "args": [
+                                {"kind": "path", "text": "blake3::Hasher::new"}
+                            ]
+                        }
+                    ]
+                }
+            ]
+        });
+        // The assign target (hasher) is at [0,0]; the call has no arg bindings.
+        let operand_bindings = serde_json::json!([
+            {"position": [0, 0], "symbol": "hasher"}
         ]);
         let response = dispatch(&serde_json::json!({
             "jsonrpc": "2.0",
             "id": 43,
             "method": "provekit.plugin.invoke",
             "params": {
-                "function": "concept:blake3-512-of",
-                "source_function_name": "blake3_512_of",
-                "params": ["bytes"],
-                "param_types": ["&[u8]"],
-                "return_type": "[u8;64]",
-                "concept_name": "concept:blake3-512-of",
+                "function": "concept:blake3-hasher-new",
+                "source_function_name": "blake3_hasher_new",
+                "params": [],
+                "param_types": [],
+                "return_type": "Hasher",
+                "concept_name": "concept:blake3-hasher-new",
                 "term_shape": term_shape,
                 "operand_bindings": operand_bindings
             }
         }));
+        // Callee present: free-function call lowers to real body.
+        let source = response["result"]["source"].as_str().unwrap_or("");
         assert_eq!(
-            response["result"]["is_stub"], true,
-            "chained concept:call without callee must stay refused; got source: {}",
-            response["result"]["source"].as_str().unwrap_or("")
+            response["result"]["is_stub"], false,
+            "concept:call with path callee must lower to real body; got source: {}",
+            source
+        );
+        assert!(
+            source.contains("blake3::Hasher::new()"),
+            "expected 'blake3::Hasher::new()' in source; got: {}",
+            source
         );
     }
 
