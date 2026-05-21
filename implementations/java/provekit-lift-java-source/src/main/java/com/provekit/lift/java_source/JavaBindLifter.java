@@ -445,8 +445,29 @@ public final class JavaBindLifter {
         if (stmt instanceof com.sun.source.tree.BreakTree || stmt instanceof com.sun.source.tree.ContinueTree) {
             return operatorShapeResult("concept:skip", List.of());
         }
-        if (stmt instanceof WhileLoopTree || stmt instanceof DoWhileLoopTree || stmt instanceof ForLoopTree || stmt instanceof EnhancedForLoopTree) {
-            return ShapeResult.empty();
+        // Loop forms: while / do-while / for / for-each. Substrate-honest
+        // structural lift would require concept:while + concept:for which
+        // are not yet minted; for now mirror walk_rpc's rust-side fallback —
+        // emit concept:literal with source_text from the node's toString.
+        // This is the kit's escape hatch for shapes that lack substrate
+        // primitives (the residual concept:literal-source-text caveat).
+        // Follow-up: mint concept:while + concept:for, replace the fallback
+        // with structural concept:while(cond, body) / concept:for(init,
+        // cond, update, body).
+        if (stmt instanceof WhileLoopTree
+            || stmt instanceof DoWhileLoopTree
+            || stmt instanceof ForLoopTree
+            || stmt instanceof EnhancedForLoopTree) {
+            String src = stmt.toString();
+            return new ShapeResult(
+                Jcs.object(
+                    "args", Jcs.array(List.of()),
+                    "concept_name", Jcs.string("concept:literal"),
+                    "op_cid", Jcs.string(conceptCidForName("concept:literal")),
+                    "source_text", Jcs.string(src)
+                ),
+                List.of()
+            );
         }
         // try { ... } catch (...) { ... } — substrate-honest decomposition:
         // the try-block IS the success-path term-shape; the catch arms are
