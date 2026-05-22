@@ -69,8 +69,33 @@ pub struct LowerArgs {
     /// Output directory for the produced witness .proof.
     #[arg(long)]
     pub out: Option<PathBuf>,
+    /// Library disambiguation. When multiple realize plugins are
+    /// registered for the target language, this picks the default for
+    /// concepts not claimed by any single plugin uniquely. Same
+    /// semantics as `provekit materialize --library`.
+    #[arg(long)]
+    pub library: Option<String>,
+    /// Per-family library override. Syntax `family=library`; repeatable.
+    /// Same semantics as `provekit materialize --family-library`.
+    #[arg(long = "family-library", value_parser = parse_lower_family_library_pair)]
+    pub family_library: Vec<crate::cmd_materialize::FamilyLibraryPair>,
     #[command(flatten)]
     pub flags: OutputFlags,
+}
+
+fn parse_lower_family_library_pair(raw: &str) -> Result<crate::cmd_materialize::FamilyLibraryPair, String> {
+    let (family, library) = raw
+        .split_once('=')
+        .ok_or_else(|| format!("--family-library expects `family=library`, got: {raw}"))?;
+    let family = family.trim();
+    let library = library.trim();
+    if family.is_empty() || library.is_empty() {
+        return Err(format!("--family-library expects non-empty family + library, got: {raw}"));
+    }
+    Ok(crate::cmd_materialize::FamilyLibraryPair {
+        family: family.to_string(),
+        library: library.to_string(),
+    })
 }
 
 #[derive(Debug, Clone)]
@@ -115,6 +140,8 @@ pub fn run(args: LowerArgs) -> u8 {
             args.output.as_ref(),
             args.project.as_ref(),
             target,
+            args.library.as_deref(),
+            &args.family_library,
         );
     }
 
@@ -224,6 +251,8 @@ fn lower_named_terms(
     output: Option<&PathBuf>,
     project: Option<&PathBuf>,
     target: &str,
+    default_library: Option<&str>,
+    family_library: &[crate::cmd_materialize::FamilyLibraryPair],
 ) -> u8 {
     if is_solver_target(target) {
         eprintln!(
@@ -250,7 +279,7 @@ fn lower_named_terms(
         .cloned()
         .or_else(|| named.workspace_root.as_ref().map(PathBuf::from))
         .unwrap_or_else(|| PathBuf::from("."));
-    let source = match lower_named_document(&project_root, target, &named) {
+    let source = match lower_named_document(&project_root, target, &named, default_library, family_library) {
         Ok(source) => source,
         Err(LowerNamedError::Message(error)) => {
             eprintln!("{}: {error}", "error".red().bold());
@@ -277,18 +306,23 @@ fn lower_named_document(
     project_root: &Path,
     target: &str,
     named: &NamedTermDocument,
+    default_library: Option<&str>,
+    family_library: &[crate::cmd_materialize::FamilyLibraryPair],
 ) -> Result<String, LowerNamedError> {
     let mut out = String::new();
     for term in &named.terms {
         let mut spec = realize_spec_from_named_term(term).map_err(LowerNamedError::Message)?;
-        // Apply fn_name_sugar override: if the bind payload carried a source function name
-        // annotation (non-CID-affecting sugar), use it to restore the function name in the
-        // realize request. This is the CLI pipe path equivalent of merge_realize_sidecar.
         let sugar_fn = realize_function_name_with_sugar(term);
         if spec.get("function").and_then(|v| v.as_str()) != Some(sugar_fn) {
             spec["function"] = Json::String(sugar_fn.to_string());
         }
-        let source = lower_named_spec_via_path(project_root, target, spec)?;
+        // Per-term library resolution. Each named term has a concept_name;
+        // find which realize plugin claims that concept. Apply --family-library
+        // override or --library default for disambiguation.
+        let library_tag = resolve_library_for_concept(
+            project_root, target, &term.concept_name, default_library, family_library,
+        );
+        let source = lower_named_spec_via_path(project_root, target, spec, library_tag.as_deref())?;
         out.push_str(&source);
         if !out.ends_with('\n') {
             out.push('\n');
@@ -297,10 +331,77 @@ fn lower_named_document(
     Ok(out)
 }
 
+/// Resolve which realize plugin's library_tag should handle a concept.
+/// Order:
+///   1. If any --family-library override has a family that matches a manifest
+///      claiming this concept, pick that override's library.
+///   2. If exactly one realize plugin claims this concept, use it.
+///   3. If multiple claim it, fall back to --library if it's among them.
+///   4. Otherwise return None (lower will surface the ambiguity error).
+fn resolve_library_for_concept(
+    project_root: &Path,
+    target: &str,
+    concept_name: &str,
+    default_library: Option<&str>,
+    family_library: &[crate::cmd_materialize::FamilyLibraryPair],
+) -> Option<String> {
+    let candidates = crate::kit_dispatch::registry_realize_candidates(project_root, target).ok()?;
+    let mut claimers: Vec<String> = Vec::new();
+    for cand in &candidates {
+        let concepts = crate::kit_dispatch::provides_concepts_for_realize(
+            project_root, target, &cand.tag,
+        );
+        if concepts.iter().any(|c| c == concept_name) {
+            claimers.push(cand.tag.clone());
+        }
+    }
+    if claimers.is_empty() {
+        // No plugin CLAIMS this concept, but the realize plugin's term_shape
+        // lowering machinery is library-agnostic — it consumes ProofIR and
+        // emits target syntax regardless of which library_tag the plugin
+        // identifies as. Fall back to --library if set; else pick any plugin.
+        if let Some(lib) = default_library {
+            if candidates.iter().any(|c| &c.tag == lib) {
+                return Some(lib.to_string());
+            }
+        }
+        // Pick the first plugin alphabetically as a stable default.
+        return candidates.first().map(|c| c.tag.clone());
+    }
+    if claimers.len() == 1 {
+        return Some(claimers[0].clone());
+    }
+    // Multi-claimer: apply --family-library override. Match by manifest's
+    // family + override's family suffix (e.g. "json" matches "concept:family:json").
+    for pair in family_library {
+        for tag in &claimers {
+            let manifest = candidates.iter().find(|c| &c.tag == tag);
+            if let Some(m) = manifest {
+                if let Some(family) = &m.family {
+                    if crate::cmd_materialize::family_matches_override(family, &pair.family)
+                        && tag == &pair.library {
+                        return Some(tag.clone());
+                    }
+                }
+            }
+        }
+    }
+    // Fall back to --library if it's among the claimers.
+    if let Some(lib) = default_library {
+        if claimers.iter().any(|t| t == lib) {
+            return Some(lib.to_string());
+        }
+    }
+    // Ambiguous; return first claimer (the lower call will dispatch but
+    // may not be what the user wanted).
+    Some(claimers[0].clone())
+}
+
 fn lower_named_spec_via_path(
     project_root: &Path,
     target: &str,
     spec: Json,
+    library_tag: Option<&str>,
 ) -> Result<String, LowerNamedError> {
     let mut inputs = HashMapInputCatalog::default();
     let input_cid = inputs.insert(Input::Spec(spec));
@@ -320,7 +421,7 @@ fn lower_named_spec_via_path(
         LowerKit::new(
             project_root.to_path_buf(),
             target.to_string(),
-            None,
+            library_tag.map(str::to_string),
             DispatchRealizeTransport,
         ),
         target,

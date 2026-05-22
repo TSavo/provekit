@@ -1293,7 +1293,7 @@ fn family_from_payload(payload: &str) -> Option<String> {
 /// `json`). Accepts both forms: the full canonical name AND the user-
 /// friendly suffix after `concept:family:`. Substrate-honest equality
 /// uses the full canonical form; the suffix is sugar for CLI ergonomics.
-fn family_matches_override(carrier_family: &str, override_key: &str) -> bool {
+pub fn family_matches_override(carrier_family: &str, override_key: &str) -> bool {
     if carrier_family == override_key {
         return true;
     }
