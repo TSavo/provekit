@@ -1088,7 +1088,14 @@ fn sidecar_entry_for_term<'a>(sidecar: &'a Value, term: &NamedTerm) -> Option<&'
 }
 
 fn realize_signature_from_named_term(term: &NamedTerm) -> (Vec<String>, String) {
-    let erased = term.param_types.is_empty() && matches!(term.return_type.trim(), "" | "()");
+    // Erasure heuristic: legacy bind payloads sometimes omit type info
+    // entirely. Distinguish "no types declared" from "types declared as
+    // empty/unit". `return_type == ""` is absence; `return_type == "()"`
+    // is explicit unit. Functions with declared parameters or explicit
+    // return type are NOT erased.
+    let erased = term.param_types.is_empty()
+        && term.params.is_empty()
+        && term.return_type.trim().is_empty();
     if !erased {
         return (term.param_types.clone(), term.return_type.clone());
     }

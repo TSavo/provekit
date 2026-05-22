@@ -1,0 +1,11 @@
+[package]
+name = "provekit-rpc-minimal"
+version = "0.1.0"
+edition = "2021"
+description = "Minimal RPC server using only constructs the substrate's lift→lower vocabulary supports today. Lowers cleanly to java."
+
+[dependencies]
+provekit = { package = "provekit-sugar", path = "../../implementations/rust/provekit-sugar" }
+
+[lib]
+path = "src/lib.rs"

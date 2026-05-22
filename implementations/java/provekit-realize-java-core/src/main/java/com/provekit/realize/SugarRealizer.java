@@ -1247,10 +1247,23 @@ final class SugarRealizer {
                 if (expression.isEmpty() || expression.get().text().isBlank()) {
                     return Optional.empty();
                 }
-                String temp = context.tempName();
-                context.definedSymbols.add(temp);
-                context.lastAssignedSymbol = temp;
-                lines.add(localDeclaration(context.returnType, temp, expression.get().text(), false));
+                String text = expression.get().text();
+                // Expression in statement position. If it's a function call
+                // (or method call) with no obvious result-use, emit as a
+                // bare statement (`call();`). The artifact-binding form
+                // (`T tmp = call();`) is incorrect for void-returning
+                // functions and produces uncompilable java. Heuristic:
+                // emit as bare statement; assign-to-artifact only if the
+                // expression has no parens (rare in practice).
+                if (text.endsWith(")") || text.endsWith("]") || text.endsWith("\"")) {
+                    String stmt = text.endsWith(";") ? text : text + ";";
+                    lines.add(stmt);
+                } else {
+                    String temp = context.tempName();
+                    context.definedSymbols.add(temp);
+                    context.lastAssignedSymbol = temp;
+                    lines.add(localDeclaration(context.returnType, temp, text, false));
+                }
             }
             if (!"void".equals(mapSourceType(context.returnType))
                     && lines.stream().noneMatch(line -> line.strip().startsWith("return "))
@@ -1269,7 +1282,15 @@ final class SugarRealizer {
             boolean alreadyDefined = context.definedSymbols.contains(name);
             context.definedSymbols.add(name);
             context.lastAssignedSymbol = name;
-            return Optional.of(localDeclaration(context.returnType, name, value.get().text(), alreadyDefined));
+            // Use the VALUE's inferred type for the declaration, not the
+            // enclosing function's return type. `let x = call()` declares x
+            // as the call's return type. (Falls back to context.returnType
+            // when value type is unknown/Object.)
+            String declType = value.get().typeName();
+            if (declType == null || declType.isBlank() || "Object".equals(declType)) {
+                declType = context.returnType;
+            }
+            return Optional.of(localDeclaration(declType, name, value.get().text(), alreadyDefined));
         }
         if (conceptMatches("concept:return", conceptName)) {
             if (args.isEmpty()) {
@@ -1371,6 +1392,35 @@ final class SugarRealizer {
             }
             return Optional.empty();
         }
+        // #1390+ vocabulary: concept:call with a method-leaf at args[1] is a
+        // method call. Handle BEFORE the generic arg-lowering loop, because
+        // the method leaf ({kind: "method", text: ...}) doesn't lower as a
+        // normal expression and would fail the loop.
+        if (conceptMatches("concept:call", conceptName) && args.size() >= 2) {
+            Jcs.Json maybeMethod = args.get(1).get("kind");
+            if (maybeMethod instanceof Jcs.Str ks && "method".equals(ks.value())) {
+                Optional<ShapeExpression> receiver = lowerShapeExpression(args.get(0), context, appendPosition(position, 0));
+                if (receiver.isEmpty()) return Optional.empty();
+                String methodName = args.get(1).stringFieldOrNull("text");
+                if (methodName == null || methodName.isBlank()) return Optional.empty();
+                List<String> callArgs = new ArrayList<>();
+                for (int i = 2; i < args.size(); i++) {
+                    Optional<ShapeExpression> a = lowerShapeExpression(args.get(i), context, appendPosition(position, i));
+                    if (a.isEmpty()) return Optional.empty();
+                    callArgs.add(a.get().text());
+                }
+                String joined = String.join(", ", callArgs);
+                return Optional.of(new ShapeExpression(
+                        receiver.get().text() + "." + methodName + "(" + joined + ")",
+                        mapSourceType(context.returnType)));
+            }
+        }
+        // concept:ref(inner, mutability_leaf) — the mutability arg is a leaf
+        // without operand bindings; lower only the inner.
+        if (conceptMatches("concept:ref", conceptName) && args.size() >= 1) {
+            Optional<ShapeExpression> inner = lowerShapeExpression(args.get(0), context, appendPosition(position, 0));
+            return inner;
+        }
         List<ShapeExpression> argTerms = new ArrayList<>();
         for (int i = 0; i < args.size(); i++) {
             Optional<ShapeExpression> term = lowerShapeExpression(args.get(i), context, appendPosition(position, i));
@@ -1454,9 +1504,14 @@ final class SugarRealizer {
                     "(" + params + ") -> " + body,
                     mapSourceType(context.returnType)));
         }
-        // concept:reference (rust &x) and concept:deref (*x): java has neither
-        // explicit reference nor deref operators — references are implicit on
-        // objects; dereference is a no-op. Pass the inner expression through.
+        // concept:reference / concept:ref (rust &x or &mut x) + concept:deref (*x):
+        // java has neither explicit reference nor deref operators. References
+        // are implicit on objects; deref is a no-op. Pass the inner expression
+        // through. The substrate emits concept:ref with TWO args (inner +
+        // mutability_leaf); the older alias concept:reference has one arg.
+        if (conceptMatches("concept:ref", conceptName) && argTerms.size() >= 1) {
+            return Optional.of(argTerms.get(0));
+        }
         if ((conceptMatches("concept:reference", conceptName) || conceptMatches("concept:deref", conceptName))
                 && argTerms.size() == 1) {
             return Optional.of(argTerms.get(0));
@@ -1481,6 +1536,16 @@ final class SugarRealizer {
             String name = shape.stringFieldOrNull("name");
             if (name != null && !name.isBlank()) {
                 return new ShapeExpression(name, typeForArgument(name, context));
+            }
+        }
+        // Rust lifter emits {kind: "symbol", text: "<ident>"} for variable
+        // references and {kind: "path", text: "<path>"} for fn/type paths.
+        // Both are valid java identifiers (after :: → . translation).
+        if ("symbol".equals(kind) || "path".equals(kind)) {
+            String text = shape.stringFieldOrNull("text");
+            if (text != null && !text.isBlank()) {
+                String javaText = text.replace("::", ".");
+                return new ShapeExpression(javaText, typeForArgument(javaText, context));
             }
         }
         Jcs.Json value = shape.get("value");
@@ -1544,8 +1609,12 @@ final class SugarRealizer {
             return name + " = " + expression + ";";
         }
         String type = mapSourceType(returnType);
-        if ("void".equals(type)) {
-            type = "Object";
+        // Use `var` for type inference when the type isn't known or would
+        // be wrong (void function with non-void value, Object fallback).
+        // Java 10+ supports var for local variables; the compiler infers
+        // from RHS, which is correct for `let x = call_returning_String()`.
+        if ("void".equals(type) || "Object".equals(type) || type.isBlank()) {
+            return "var " + name + " = " + expression + ";";
         }
         return type + " " + name + " = " + expression + ";";
     }
