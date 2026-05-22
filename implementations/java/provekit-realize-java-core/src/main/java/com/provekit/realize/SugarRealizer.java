@@ -1878,9 +1878,10 @@ final class SugarRealizer {
                             receiver.get().text() + ".getBytes(java.nio.charset.StandardCharsets.UTF_8)",
                             "byte[]"));
                 }
-                // .into() / .clone() / .to_string() on a value: no-op
-                // for most java types. Drop the call.
-                if ("into".equals(methodName) || "clone".equals(methodName)) {
+                // .into() / .clone() / .cloned() on a value: no-op for
+                // most java types. Drop the call (identity).
+                if ("into".equals(methodName) || "clone".equals(methodName)
+                        || "cloned".equals(methodName)) {
                     return Optional.of(new ShapeExpression(receiver.get().text(), receiver.get().typeName()));
                 }
                 // .iter() on a JsonNode (rust Vec<Value>.iter()) →
@@ -2822,7 +2823,12 @@ final class SugarRealizer {
             case "as_str" -> "asText";
             case "as_array" -> "elements";
             case "field_names" -> "fieldNames";
-            case "cloned" -> "deepCopy";
+            // .cloned() on Option<&T> in rust is null-safe (None → None,
+            // Some(&t) → Some(t.clone())). In our java erasure where
+            // Option<T> = T-or-null and references are already shared,
+            // .cloned() is a no-op. Mapping to .deepCopy() throws NPE
+            // on null receivers; treat as identity instead.
+            case "cloned" -> "_provekit_identity";
             default -> rustMethod;
         };
     }
