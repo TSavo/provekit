@@ -993,7 +993,23 @@ final class SugarRealizer {
      * Mirrors cmd_transport.rs map_source_type for TargetStyle::Java.
      */
     static String mapSourceType(String src) {
-        return switch (src) {
+        if (src == null) return "Object";
+        // Strip rust borrow prefixes — java has no equivalent operator,
+        // and the borrowed type's java mapping is the same as the owned
+        // type in nearly all cases (`&str` is handled specially below;
+        // `&Value` becomes `Value`, `&[u8]` becomes `byte[]`, etc.).
+        String t = src.trim();
+        if (t.startsWith("&mut ")) t = t.substring(5).trim();
+        else if (t.startsWith("&mut")) t = t.substring(4).trim();
+        if (t.startsWith("&")) t = t.substring(1).trim();
+        // Slice-of-T: rust `[T]` → java array `T[]`. Bytes are common
+        // enough to fast-path.
+        if ("[u8]".equals(t)) return "byte[]";
+        if (t.startsWith("[") && t.endsWith("]")) {
+            String inner = t.substring(1, t.length() - 1).split(";")[0].trim();
+            return mapSourceType(inner) + "[]";
+        }
+        return switch (t) {
             case "()" -> "void";
             case "i64", "u64" -> "long";
             case "i32", "u32" -> "int";
@@ -1002,8 +1018,9 @@ final class SugarRealizer {
             case "f64" -> "double";
             case "f32" -> "float";
             case "bool" -> "boolean";
-            case "String", "&str", "&String" -> "String";
-            default -> src;
+            case "String", "str" -> "String";
+            case "Value" -> "com.fasterxml.jackson.databind.JsonNode";
+            default -> t;
         };
     }
 
@@ -1306,7 +1323,10 @@ final class SugarRealizer {
             if (condition.isEmpty() || thenBody.isEmpty() || elseBody.isEmpty()) {
                 return Optional.empty();
             }
-            return Optional.of("if " + condition.get().text() + " {\n"
+            // Java requires parens around the condition.
+            String condText = condition.get().text();
+            if (!condText.startsWith("(")) condText = "(" + condText + ")";
+            return Optional.of("if " + condText + " {\n"
                     + indentBlock(thenBody.get()) + "\n"
                     + "} else {\n"
                     + indentBlock(elseBody.get()) + "\n"
@@ -1504,8 +1524,45 @@ final class SugarRealizer {
                     callArgs.add(a.get().text());
                 }
                 String joined = String.join(", ", callArgs);
+                // Translate common rust methods to java equivalents.
+                String javaMethod = mapRustMethodToJava(methodName);
+                String javaArgs = joined;
+                // .as_bytes() in rust → .getBytes(StandardCharsets.UTF_8) in java.
+                if ("as_bytes".equals(methodName)) {
+                    return Optional.of(new ShapeExpression(
+                            receiver.get().text() + ".getBytes(java.nio.charset.StandardCharsets.UTF_8)",
+                            "byte[]"));
+                }
+                // .unwrap() / .unwrap_or(x) on Option/Result: java has the
+                // value directly (loss = null-means-None). Pass through.
+                if ("unwrap".equals(methodName)) {
+                    return Optional.of(new ShapeExpression(
+                            receiver.get().text(),
+                            mapSourceType(context.returnType)));
+                }
+                if ("unwrap_or".equals(methodName) && callArgs.size() == 1) {
+                    return Optional.of(new ShapeExpression(
+                            "(" + receiver.get().text() + " != null ? " + receiver.get().text() + " : " + callArgs.get(0) + ")",
+                            mapSourceType(context.returnType)));
+                }
+                if ("unwrap_or_else".equals(methodName) && callArgs.size() == 1) {
+                    // closure passed; java has no inline ternary with lambda execution.
+                    // Emit a Supplier invocation.
+                    return Optional.of(new ShapeExpression(
+                            "(" + receiver.get().text() + " != null ? " + receiver.get().text() + " : (" + callArgs.get(0) + ").get())",
+                            mapSourceType(context.returnType)));
+                }
+                // .is_none() → == null; .is_some() → != null.
+                if ("is_none".equals(methodName)) {
+                    return Optional.of(new ShapeExpression(
+                            "(" + receiver.get().text() + " == null)", "boolean"));
+                }
+                if ("is_some".equals(methodName)) {
+                    return Optional.of(new ShapeExpression(
+                            "(" + receiver.get().text() + " != null)", "boolean"));
+                }
                 return Optional.of(new ShapeExpression(
-                        receiver.get().text() + "." + methodName + "(" + joined + ")",
+                        receiver.get().text() + "." + javaMethod + "(" + javaArgs + ")",
                         mapSourceType(context.returnType)));
             }
         }
@@ -1719,13 +1776,32 @@ final class SugarRealizer {
      *
      * Returns null if the body can't be parsed.
      */
+    private static int jsonMacroDepth = 0;
+
     private static String emitJsonMacro(String body, ShapeContext context) {
+        // Unique var name per nested lambda — java forbids shadowing outer
+        // local vars in nested lambdas.
+        int depth = ++jsonMacroDepth;
+        try {
+            return emitJsonMacroInner(body, context, depth);
+        } finally {
+            jsonMacroDepth--;
+        }
+    }
+
+    private static String emitJsonMacroInner(String body, ShapeContext context, int depth) {
+        String objName = "__obj" + depth;
+        String arrName = "__arr" + depth;
         String trimmed = body.trim();
         if (trimmed.startsWith("{") && trimmed.endsWith("}")) {
             String inside = trimmed.substring(1, trimmed.length() - 1).trim();
             List<String> parts = splitTopLevelCommas(inside);
+            // Use a Supplier-wrapped builder: ObjectNode.set returns JsonNode
+            // in jackson, breaking fluent chains. The Supplier form keeps
+            // each call on the local ObjectNode variable.
             StringBuilder sb = new StringBuilder();
-            sb.append("((com.fasterxml.jackson.databind.JsonNode) MAPPER.createObjectNode()");
+            sb.append("((java.util.function.Supplier<com.fasterxml.jackson.databind.JsonNode>)() -> { ");
+            sb.append("com.fasterxml.jackson.databind.node.ObjectNode ").append(objName).append(" = MAPPER.createObjectNode(); ");
             for (String part : parts) {
                 if (part.isEmpty()) continue;
                 int colon = findTopLevelColon(part);
@@ -1734,53 +1810,47 @@ final class SugarRealizer {
                 String valueText = part.substring(colon + 1).trim();
                 String key = stripQuotes(keyText);
                 if (key == null) return null;
-                // If value is a nested json object/array, recurse.
-                if (valueText.startsWith("{")) {
+                if (valueText.startsWith("{") || valueText.startsWith("[")) {
                     String nested = emitJsonMacro(valueText, context);
                     if (nested == null) return null;
-                    sb.append(".set(").append(quote(key)).append(", ").append(nested).append(")");
+                    sb.append("$OBJ$.set(").append(quote(key)).append(", ").append(nested).append("); ");
                 } else if (valueText.startsWith("\"") && valueText.endsWith("\"")) {
-                    sb.append(".put(").append(quote(key)).append(", ").append(valueText).append(")");
+                    sb.append("$OBJ$.put(").append(quote(key)).append(", ").append(valueText).append("); ");
                 } else if (valueText.equals("true") || valueText.equals("false")) {
-                    sb.append(".put(").append(quote(key)).append(", ").append(valueText).append(")");
+                    sb.append("$OBJ$.put(").append(quote(key)).append(", ").append(valueText).append("); ");
                 } else if (valueText.matches("-?\\d+(\\.\\d+)?")) {
-                    sb.append(".put(").append(quote(key)).append(", ").append(valueText).append(")");
+                    sb.append("$OBJ$.put(").append(quote(key)).append(", ").append(valueText).append("); ");
                 } else {
-                    // Identifier or expression. Determine put vs set by the
-                    // identifier's parameter type. JsonNode → .set; primitive
-                    // (long/double/boolean/String) → .put. Unknown → .set
-                    // (default to JsonNode; java compiler will catch
-                    // mismatch and surface it).
                     String paramType = typeForArgument(valueText, context);
                     boolean isPrim = paramType != null && (
                             "long".equals(paramType) || "int".equals(paramType) ||
                             "double".equals(paramType) || "float".equals(paramType) ||
                             "boolean".equals(paramType) || "String".equals(paramType));
-                    String op = isPrim ? ".put(" : ".set(";
-                    sb.append(op).append(quote(key)).append(", ").append(valueText).append(")");
+                    String op = isPrim ? "$OBJ$.put(" : "$OBJ$.set(";
+                    sb.append(op).append(quote(key)).append(", ").append(valueText).append("); ");
                 }
             }
-            sb.append(")");
-            return sb.toString();
+            sb.append("return ").append(objName).append("; }).get()");
+            return sb.toString().replace("$OBJ$", objName);
         }
-        // Array literal `[a, b, c]`.
         if (trimmed.startsWith("[") && trimmed.endsWith("]")) {
             String inside = trimmed.substring(1, trimmed.length() - 1).trim();
             List<String> parts = splitTopLevelCommas(inside);
             StringBuilder sb = new StringBuilder();
-            sb.append("((com.fasterxml.jackson.databind.JsonNode) MAPPER.createArrayNode()");
+            sb.append("((java.util.function.Supplier<com.fasterxml.jackson.databind.JsonNode>)() -> { ");
+            sb.append("com.fasterxml.jackson.databind.node.ArrayNode ").append(arrName).append(" = MAPPER.createArrayNode(); ");
             for (String part : parts) {
                 String v = part.trim();
                 if (v.isEmpty()) continue;
                 if (v.startsWith("{") || v.startsWith("[")) {
                     String nested = emitJsonMacro(v, context);
                     if (nested == null) return null;
-                    sb.append(".add(").append(nested).append(")");
+                    sb.append(arrName).append(".add(").append(nested).append("); ");
                 } else {
-                    sb.append(".add(").append(v).append(")");
+                    sb.append(arrName).append(".add(").append(v).append("); ");
                 }
             }
-            sb.append(")");
+            sb.append("return ").append(arrName).append("; }).get()");
             return sb.toString();
         }
         return null;
@@ -1884,6 +1954,27 @@ final class SugarRealizer {
         }
         sb.append('"');
         return sb.toString();
+    }
+
+    /** Map common rust method names to java equivalents. Falls through to identity. */
+    private static String mapRustMethodToJava(String rustMethod) {
+        return switch (rustMethod) {
+            case "to_string" -> "toString";
+            case "to_owned" -> "toString";
+            case "len" -> "length";
+            case "push_str" -> "append";
+            case "push" -> "append";
+            case "is_empty" -> "isEmpty";
+            case "starts_with" -> "startsWith";
+            case "ends_with" -> "endsWith";
+            case "contains" -> "contains";
+            case "is_null" -> "isNull";
+            case "as_str" -> "asText";
+            case "as_array" -> "elements";
+            case "field_names" -> "fieldNames";
+            case "cloned" -> "deepCopy";
+            default -> rustMethod;
+        };
     }
 
     /** For pattern text like `Some(v)` or `Ok(x)`, return the bound var (`v`/`x`). */
