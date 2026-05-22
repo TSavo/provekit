@@ -87,6 +87,7 @@ fn http_request_realize_request() -> RealizeRequest {
         library_version: None,
         param_sort_cids: Vec::new(),
         return_sort_cid: String::new(),
+        target_library_tag: String::new(),
     }
 }
 
@@ -139,6 +140,7 @@ fn sql_query_realize_request() -> RealizeRequest {
         library_version: None,
         param_sort_cids: Vec::new(),
         return_sort_cid: String::new(),
+        target_library_tag: String::new(),
     }
 }
 

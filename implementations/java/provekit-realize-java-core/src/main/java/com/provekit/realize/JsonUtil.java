@@ -35,6 +35,16 @@ final class JsonUtil {
         return "\"" + escape(s) + "\"";
     }
 
+    /**
+     * Cheap presence-check: does the JSON object contain `"<field>"` as a key?
+     * Used to distinguish field-absent (legacy/same-lang) from field-present-but-
+     * empty (cross-lang signaling a substrate gap). Naive substring scan matches
+     * the rest of this parser's style.
+     */
+    static boolean hasField(String json, String field) {
+        return json != null && json.contains("\"" + field + "\"");
+    }
+
     static String decodeJsonStringField(String json, String field) {
         String key = "\"" + field + "\"";
         int ki = json.indexOf(key);

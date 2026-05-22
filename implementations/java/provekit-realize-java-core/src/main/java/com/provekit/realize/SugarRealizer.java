@@ -143,10 +143,13 @@ final class SugarRealizer {
             TransportedOperation transportedOp,
             String termShapeJson,
             String operandBindingsJson) {
-        // Legacy entry point (no sort CIDs). Cross-language materialize
-        // routes through the overload with paramSortCids + returnSortCid.
+        // Legacy entry point (same-language realize, no cross-lang signaling).
+        // Routes to the full overload with isCrossLang=false so the
+        // substrate-gap refusal guard does NOT fire on empty sort CIDs —
+        // those empties are absence-of-signal, not declared-gap.
         return emitStub(function, params, paramTypes, List.of(), returnType, "", conceptName,
-                mode, modes, contract, sugarPluginJson, transportedOp, termShapeJson, operandBindingsJson);
+                mode, modes, contract, sugarPluginJson, transportedOp, termShapeJson,
+                operandBindingsJson, false);
     }
 
     /**
@@ -170,15 +173,70 @@ final class SugarRealizer {
             List<String> sugarPluginJson,
             TransportedOperation transportedOp,
             String termShapeJson,
-            String operandBindingsJson) {
+            String operandBindingsJson,
+            boolean isCrossLang) {
+        return emitStub(function, params, paramTypes, paramSortCids, returnType, returnSortCid,
+                conceptName, mode, modes, contract, sugarPluginJson, transportedOp, termShapeJson,
+                operandBindingsJson, isCrossLang, "");
+    }
 
-        // Substrate-honest refusal: when paramSortCids is provided (cross-
-        // language signaling) and ANY entry is empty OR returnSortCid is
-        // empty, the source kit failed to lift this type to a concept-hub
-        // identity. That's a substrate gap — emitting the raw source
-        // string would leak kit-internal syntax. Refuse loudly with is_stub.
-        boolean crossLang = paramSortCids != null && !paramSortCids.isEmpty();
-        if (crossLang) {
+    static Realization emitStub(
+            String function,
+            List<String> params,
+            List<String> paramTypes,
+            List<String> paramSortCids,
+            String returnType,
+            String returnSortCid,
+            String conceptName,
+            String mode,
+            List<String> modes,
+            ContractPayload contract,
+            List<String> sugarPluginJson,
+            TransportedOperation transportedOp,
+            String termShapeJson,
+            String operandBindingsJson,
+            boolean isCrossLang,
+            String targetLibraryTag) {
+        // Library-tag scope: set thread-local for the duration of this call so
+        // body-template lookup can disambiguate when multiple libraries ship
+        // templates for the same concept.
+        String previousTag = CURRENT_LIBRARY_TAG.get();
+        CURRENT_LIBRARY_TAG.set(targetLibraryTag == null ? "" : targetLibraryTag);
+        try {
+            return emitStubInner(function, params, paramTypes, paramSortCids, returnType,
+                    returnSortCid, conceptName, mode, modes, contract, sugarPluginJson,
+                    transportedOp, termShapeJson, operandBindingsJson, isCrossLang);
+        } finally {
+            CURRENT_LIBRARY_TAG.set(previousTag);
+        }
+    }
+
+    private static Realization emitStubInner(
+            String function,
+            List<String> params,
+            List<String> paramTypes,
+            List<String> paramSortCids,
+            String returnType,
+            String returnSortCid,
+            String conceptName,
+            String mode,
+            List<String> modes,
+            ContractPayload contract,
+            List<String> sugarPluginJson,
+            TransportedOperation transportedOp,
+            String termShapeJson,
+            String operandBindingsJson,
+            boolean isCrossLang) {
+
+        // Substrate-honest refusal: when this is a cross-language invocation
+        // and ANY sort CID is empty (param or return), the source kit failed
+        // to lift that type to a concept-hub identity. Emitting raw source
+        // strings would leak kit-internal syntax. Refuse loudly with is_stub.
+        //
+        // isCrossLang is an EXPLICIT flag from the caller (RpcServer reads
+        // it from the RPC params). Empty paramSortCids/returnSortCid in
+        // legacy/same-lang context is absence-of-signal, NOT declared-gap.
+        if (isCrossLang) {
             boolean anyEmpty = false;
             for (String cid : paramSortCids) {
                 if (cid == null || cid.isEmpty()) { anyEmpty = true; break; }
@@ -1412,6 +1470,15 @@ final class SugarRealizer {
     private static volatile List<BodyTemplateEntry> ENTRIES_CACHE = null;
 
     /**
+     * Per-invocation library_tag from the dispatcher. Set by emitStub at the
+     * start of a call and cleared at the end. Body-template lookup uses this
+     * to disambiguate when multiple libraries ship templates for the same
+     * concept — without it, selection is load-order-dependent. Empty string
+     * means "library-agnostic" (legacy callers, classpath catch-all).
+     */
+    private static final ThreadLocal<String> CURRENT_LIBRARY_TAG = ThreadLocal.withInitial(() -> "");
+
+    /**
      * One body-template entry per spec §2.
      */
     private record BodyTemplateEntry(
@@ -1422,7 +1489,13 @@ final class SugarRealizer {
             List<TemplateCitation> citations,
             Jcs.Json lossRecord,
             Integer minParams,
-            Integer maxParams) {}
+            Integer maxParams,
+            /// Substrate-honest library_tag pin. Captured from the body-template
+            /// entry's `target_library_tag` field at parse time. Used by the
+            /// matcher to disambiguate when multiple libraries ship templates
+            /// for the same concept. Empty string means "library-agnostic"
+            /// (legacy catch-all).
+            String targetLibraryTag) {}
 
     private record TemplateCitation(
             String placeholder,
@@ -1481,9 +1554,20 @@ final class SugarRealizer {
             String mode,
             List<String> recursionStack) {
         List<BodyTemplateEntry> entries = entries();
+        // Library-tag-keyed selection: prefer entries whose target_library_tag
+        // matches the dispatcher's library_tag. Fall back to entries with empty
+        // target_library_tag (library-agnostic / catch-all classpath entries).
+        // Without this filter, two libraries shipping bodies for the same
+        // concept would resolve load-order-dependently.
+        String currentLib = CURRENT_LIBRARY_TAG.get();
         for (BodyTemplateEntry e : entries) {
             if (!conceptMatches(e.conceptName(), conceptName)) continue;
             if (!modeMatches(e.mode(), mode)) continue;
+            // First pass: only consider entries that match the dispatched library_tag
+            // (or are library-agnostic). Skip entries from OTHER libraries entirely.
+            if (!currentLib.isEmpty()
+                    && !e.targetLibraryTag().isEmpty()
+                    && !e.targetLibraryTag().equals(currentLib)) continue;
             if (e.minParams() != null && params.size() < e.minParams()) continue;
             if (e.maxParams() != null && params.size() > e.maxParams()) continue;
             if (!"verbatim".equals(e.templateKind())) continue;
@@ -1700,6 +1784,8 @@ final class SugarRealizer {
                     if (minJ instanceof Jcs.Num minN) minParams = (int) minN.value();
                     if (maxJ instanceof Jcs.Num maxN) maxParams = (int) maxN.value();
                 }
+                String entryLibraryTag = itemObj.stringFieldOrNull("target_library_tag");
+                if (entryLibraryTag == null) entryLibraryTag = "";
                 out.add(new BodyTemplateEntry(
                         conceptName,
                         mode,
@@ -1708,7 +1794,8 @@ final class SugarRealizer {
                         citations.get(),
                         lossRecordValue(itemObj),
                         minParams,
-                        maxParams));
+                        maxParams,
+                        entryLibraryTag));
             }
             return out;
         } catch (RuntimeException e) {

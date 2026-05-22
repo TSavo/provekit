@@ -1,5 +1,6 @@
 {
   "header": {
+    "cid": "blake3-512:f0375a7de23faec6f68cc1deabd0c6b8fda84ccfb3b9aa3c4ad299e60505f3b94f31f9e46b14212ba5be2ce48d771fd1431a445459b42c50e904380d422c4c8b",
     "content": {
       "entries": [
         {
@@ -11,7 +12,9 @@
           "loss_record_contribution": {
             "form": "literal",
             "value": {
-              "entries": []
+              "entries": [
+                "rfc8785-number-serialization-non-ecma262"
+              ]
             }
           },
           "signature_guard": {

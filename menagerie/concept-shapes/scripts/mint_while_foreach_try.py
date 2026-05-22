@@ -73,8 +73,12 @@ def mint_abstraction(operator: str, slots: list[dict], formal_sorts: list[str],
             "sig_b64": "A" * 86 + "AA",
         },
     }
-    filename = f"{operator}.{cid}.json"
-    out_path = BASE / "catalog" / "abstractions" / filename
+    # Write to catalog/algorithms (where peer concept files live and where
+    # the catalog index expects them). Filesystem-safe filename: replace
+    # angle brackets with `_of_` so the file is checkout-able on Windows.
+    safe_op = operator.replace("<", "_of_").replace(">", "").replace(",", "_")
+    filename = f"{safe_op}.{cid}.json"
+    out_path = ALGORITHMS_DIR / filename
     out_path.parent.mkdir(parents=True, exist_ok=True)
     out_path.write_text(
         json.dumps(envelope, indent=2, sort_keys=True, ensure_ascii=False) + "\n",

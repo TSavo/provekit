@@ -71,6 +71,13 @@ pub struct RealizeRequest {
     pub param_sort_cids: Vec<String>,
     #[serde(default, skip_serializing_if = "String::is_empty")]
     pub return_sort_cid: String,
+    /// The dispatcher-resolved `library_tag` (from the realize manifest
+    /// dispatched by kit_dispatch). The realize plugin uses this to
+    /// disambiguate body-template entries when multiple libraries ship
+    /// templates for the same concept. Without this field, multi-library
+    /// body-template caches degrade to load-order-dependent selection.
+    #[serde(default, skip_serializing_if = "String::is_empty")]
+    pub target_library_tag: String,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -418,6 +425,7 @@ fn invocation_from_tree_node(
             .unwrap_or_else(|| parent_request.param_sort_cids.clone()),
         return_sort_cid: node_string(node, &["returnSortCid", "return_sort_cid"])
             .unwrap_or_else(|| parent_request.return_sort_cid.clone()),
+        target_library_tag: parent_request.target_library_tag.clone(),
         proc_macro_invocations: value_array_field(
             node,
             &["procMacroInvocations", "proc_macro_invocations"],
@@ -793,6 +801,11 @@ pub fn request_from_spec(spec: &Value) -> Result<RealizeRequest, String> {
             .unwrap_or_default(),
         return_sort_cid: string_field_optional(spec, &["return_sort_cid", "returnSortCid"])
             .unwrap_or_default(),
+        target_library_tag: string_field_optional(
+            spec,
+            &["target_library_tag", "targetLibraryTag", "library_tag", "libraryTag"],
+        )
+        .unwrap_or_default(),
     })
 }
 

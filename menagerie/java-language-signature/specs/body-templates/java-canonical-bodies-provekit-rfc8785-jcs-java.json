@@ -1,5 +1,6 @@
 {
   "header": {
+    "cid": "blake3-512:914a52ee058d7d6e3316933072716c1a641640bbf3275e02a1a94fb62954bd95d35643b0f2e5b0822f41ba8c4173293b87300f123f2a9e088ceeb090a90285b9",
     "content": {
       "entries": [
         {
@@ -11,7 +12,9 @@
           "loss_record_contribution": {
             "form": "literal",
             "value": {
-              "entries": []
+              "entries": [
+                "rfc8785-number-serialization-non-ecma262"
+              ]
             }
           },
           "signature_guard": {
@@ -29,7 +32,9 @@
           "loss_record_contribution": {
             "form": "literal",
             "value": {
-              "entries": []
+              "entries": [
+                "rfc8785-number-serialization-non-ecma262"
+              ]
             }
           },
           "signature_guard": {

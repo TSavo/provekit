@@ -126,9 +126,21 @@ public final class RpcServer {
         List<String> paramSortCids = JsonUtil.decodeJsonStringArray(paramsObj, "param_sort_cids");
         String returnSortCid = JsonUtil.decodeJsonStringField(paramsObj, "return_sort_cid");
         if (returnSortCid == null) returnSortCid = "";
+        // Cross-language signaling discriminator: explicit field presence on
+        // the RPC params object. EITHER param_sort_cids OR return_sort_cid
+        // declared in the payload → caller is cross-lang and any empty CID
+        // means "substrate gap; refuse loudly". Field-absent means same-lang
+        // / legacy → empties are absence-of-signal, not declared gap.
+        boolean isCrossLang = JsonUtil.hasField(paramsObj, "param_sort_cids")
+                || JsonUtil.hasField(paramsObj, "return_sort_cid");
+        // Dispatcher-resolved library_tag for body-template disambiguation.
+        // Absent → "" → matcher only considers library-agnostic catch-all entries.
+        String targetLibraryTag = JsonUtil.decodeJsonStringField(paramsObj, "target_library_tag");
+        if (targetLibraryTag == null) targetLibraryTag = "";
         SugarRealizer.Realization r =
                 SugarRealizer.emitStub(emittedFunction, params, paramTypes, paramSortCids, returnType, returnSortCid,
-                        conceptName, mode, modes, contract, sugarPlugins, transportedOp, termShape, operandBindings);
+                        conceptName, mode, modes, contract, sugarPlugins, transportedOp, termShape, operandBindings,
+                        isCrossLang, targetLibraryTag);
         String wrapperRecord = r.observationWrapperEmissionRecord() == null
                 ? ""
                 : ",\"observation_wrapper_emission_record\":" + r.observationWrapperEmissionRecord();

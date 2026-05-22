@@ -463,16 +463,36 @@ public final class JavaBindLifter {
         }
         if (stmt instanceof ForLoopTree t) {
             // Classic C-style for(init; cond; step; body) — 4-arg concept:for.
-            // (Existing substrate primitive — catalog entry concept:for.)
-            ShapeResult init = t.getInitializer().isEmpty()
-                ? operatorShapeResult("concept:skip", List.of())
-                : shapeOfStatement(t.getInitializer().get(0));
+            // Java allows MULTIPLE init expressions (e.g. `for (i = 0, j = 0; ...)`)
+            // and MULTIPLE update expressions (e.g. `i++, j++`). Wrap each list
+            // as concept:seq so all side effects survive the lift.
+            ShapeResult init;
+            if (t.getInitializer().isEmpty()) {
+                init = operatorShapeResult("concept:skip", List.of());
+            } else if (t.getInitializer().size() == 1) {
+                init = shapeOfStatement(t.getInitializer().get(0));
+            } else {
+                List<ShapeResult> initParts = new ArrayList<>();
+                for (StatementTree s : t.getInitializer()) {
+                    initParts.add(shapeOfStatement(s));
+                }
+                init = operatorShapeResult("concept:seq", initParts);
+            }
             ShapeResult cond = t.getCondition() == null
                 ? literalShape(true)
                 : shapeOfExpression(t.getCondition());
-            ShapeResult step = t.getUpdate().isEmpty()
-                ? operatorShapeResult("concept:skip", List.of())
-                : shapeOfExpression(t.getUpdate().get(0).getExpression());
+            ShapeResult step;
+            if (t.getUpdate().isEmpty()) {
+                step = operatorShapeResult("concept:skip", List.of());
+            } else if (t.getUpdate().size() == 1) {
+                step = shapeOfExpression(t.getUpdate().get(0).getExpression());
+            } else {
+                List<ShapeResult> stepParts = new ArrayList<>();
+                for (ExpressionStatementTree es : t.getUpdate()) {
+                    stepParts.add(shapeOfExpression(es.getExpression()));
+                }
+                step = operatorShapeResult("concept:seq", stepParts);
+            }
             ShapeResult body = shapeOfStatement(t.getStatement());
             return operatorShapeResult("concept:for", List.of(init, cond, step, body));
         }
@@ -483,20 +503,32 @@ public final class JavaBindLifter {
             ShapeResult body = shapeOfStatement(t.getStatement());
             return operatorShapeResult("concept:for-each", List.of(var, iterable, body));
         }
-        // try { body } catch (...) { ... } — structural lift via concept:try
-        // (minted 2026-05-21). The kit's exam answer for concept-realization
-        // (java, concept:try) tells the realize binary how to emit it back.
+        // try { body } catch (...) { ... } finally { ... }
+        // Structural lift preserving exception type, binding name, AND finally:
+        //   concept:try(body, catch-arm1, ..., catch-armN, finally-arm?)
+        // Each catch-arm = concept:catch-arm(exception-type-symbol, binding-name-symbol, body).
+        // Finally-arm = concept:finally-arm(body) — only emitted when present so
+        // the realize side can detect it by checking the trailing-arg's operator.
         if (stmt instanceof com.sun.source.tree.TryTree t) {
             List<ShapeResult> args = new ArrayList<>();
             args.add(shapeOfStatement(t.getBlock()));
-            // Catch arms encoded as a seq of their bodies (the catch-arm
-            // pattern + exception-type bindings are kit-level metadata; the
-            // structural ProofIR captures the body shape).
-            List<ShapeResult> catchBodies = new ArrayList<>();
             for (com.sun.source.tree.CatchTree c : t.getCatches()) {
-                catchBodies.add(shapeOfStatement(c.getBlock()));
+                String typeText = c.getParameter().getType().toString();
+                String bindingName = c.getParameter().getName().toString();
+                ShapeResult typeLeaf = new ShapeResult(
+                    Jcs.object("kind", Jcs.string("symbol"), "text", Jcs.string(typeText)),
+                    List.of());
+                ShapeResult bindingLeaf = new ShapeResult(
+                    Jcs.object("kind", Jcs.string("symbol"), "text", Jcs.string(bindingName)),
+                    List.of());
+                ShapeResult catchBody = shapeOfStatement(c.getBlock());
+                args.add(operatorShapeResult("concept:catch-arm",
+                    List.of(typeLeaf, bindingLeaf, catchBody)));
             }
-            args.add(operatorShapeResult("concept:seq", catchBodies));
+            if (t.getFinallyBlock() != null) {
+                ShapeResult finallyBody = shapeOfStatement(t.getFinallyBlock());
+                args.add(operatorShapeResult("concept:finally-arm", List.of(finallyBody)));
+            }
             return operatorShapeResult("concept:try", args);
         }
         if (stmt instanceof com.sun.source.tree.ThrowTree t) {
@@ -540,12 +572,34 @@ public final class JavaBindLifter {
         }
         if (expr instanceof IdentifierTree t) return leafBinding(t.getName().toString());
         if (expr instanceof LiteralTree t) return literalShape(t.getValue());
-        // Substrate-canonical concept:call shape — parallel to walk_rpc's
-        // emission for rust function calls. args[0] = callee identity leaf
-        // (kind="method" or "path"); args[1..] = argument shapes.
+        // Substrate-canonical concept:call shape — MATCHES the rust shape
+        // emitted by walk_rpc (Expr::MethodCall):
+        //   instance method (receiver.method(args)):
+        //     args[0] = receiver shape
+        //     args[1] = kind:"method" leaf with method ident
+        //     args[2..] = argument shapes
+        //   free function call (identifier(args)) — no receiver:
+        //     args[0] = kind:"path" leaf with function ident
+        //     args[1..] = argument shapes
+        // Previously this folded `obj.method` into a single method leaf
+        // text="obj.method", which dropped the receiver operand binding
+        // and broke cycle invariance with rust's call shape.
         if (expr instanceof MethodInvocationTree mi) {
             List<ShapeResult> args = new ArrayList<>();
-            args.add(calleeLeaf(mi.getMethodSelect()));
+            Tree select = mi.getMethodSelect();
+            if (select instanceof MemberSelectTree ms) {
+                // Instance method: receiver as args[0], method-ident as args[1].
+                args.add(shapeOfExpression(ms.getExpression()));
+                args.add(new ShapeResult(
+                    Jcs.object("kind", Jcs.string("method"),
+                               "text", Jcs.string(ms.getIdentifier().toString())),
+                    List.of()));
+            } else if (select instanceof IdentifierTree id) {
+                // Bare identifier call — free function form.
+                args.add(pathLeaf(id.getName().toString()));
+            } else {
+                args.add(calleeLeaf(select));
+            }
             for (Tree arg : mi.getArguments()) {
                 args.add(shapeOfExpression(arg));
             }
@@ -907,11 +961,13 @@ public final class JavaBindLifter {
         String t = javaType.trim();
         int generic = t.indexOf('<');
         if (generic > 0) t = t.substring(0, generic).trim();
-        // Strip common java package prefixes — kit-internal normalization
-        // before lookup. The substrate cares about the semantic identity
-        // (concept:String), not the package path.
-        if (t.startsWith("java.lang.")) t = t.substring("java.lang.".length());
-        if (t.startsWith("java.util.")) t = t.substring("java.util.".length());
+        // Reduce arbitrary fully-qualified names to their simple class name.
+        // javac's TypeMirror.toString() returns FQNs for declared types
+        // (e.g. "com.fasterxml.jackson.databind.JsonNode") — the substrate
+        // cares about semantic identity, not package path. Take everything
+        // after the last '.' (or the whole string if no dot).
+        int lastDot = t.lastIndexOf('.');
+        if (lastDot >= 0) t = t.substring(lastDot + 1);
         // Strip array brackets: byte[] → byte (then map to concept:Bytes)
         boolean isArray = t.endsWith("[]");
         if (isArray) t = t.substring(0, t.length() - 2).trim();

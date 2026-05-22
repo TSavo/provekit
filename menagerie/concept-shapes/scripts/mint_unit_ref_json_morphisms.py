@@ -216,10 +216,20 @@ def mint_lang_sort_if_missing(lang: str, sort_name: str, description: str) -> st
     return cid
 
 
-def existing_morphism(lang: str, sort_name: str) -> bool:
+def existing_morphism(lang: str, sort_name: str, lang_sort_name: str) -> bool:
+    """Check whether a morphism exists for the SPECIFIC (lang, lang_sort, concept_sort)
+    triple. Previously this only checked (lang, concept_sort) — meaning a second
+    realization for the same concept (e.g. java:JsonElement after java:JsonNode for
+    concept:Json) would be silently skipped. Including lang_sort allows multiple
+    realizations of the same concept per language."""
     safe = sort_name.replace("<", "_of_").replace(">", "").replace(",", "_")
+    safe_lang_sort = (
+        lang_sort_name.lower()
+        .replace("<", "_of_").replace(">", "").replace(",", "_")
+    )
+    prefix = f"sort-morphism:{lang}:{safe_lang_sort}:to:concept:{safe}."
     for fn in os.listdir(ALGORITHMS_DIR):
-        if fn.startswith(f"sort-morphism:{lang}:") and f":to:concept:{safe}." in fn:
+        if fn.startswith(prefix):
             return True
     return False
 
@@ -271,7 +281,8 @@ def main() -> int:
     minted = 0
     skipped = 0
     for (lang, sort_name), profile in PROFILES.items():
-        if existing_morphism(lang, sort_name):
+        lang_sort_name = profile[0]
+        if existing_morphism(lang, sort_name, lang_sort_name):
             skipped += 1
             continue
         cid, _ = build_morphism(lang, sort_name, profile, SORTS[sort_name])

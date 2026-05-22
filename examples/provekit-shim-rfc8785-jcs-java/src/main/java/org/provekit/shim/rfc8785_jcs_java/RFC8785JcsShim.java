@@ -41,7 +41,9 @@ public final class RFC8785JcsShim {
         library = "provekit-rfc8785-jcs-java",
         family = "concept:family:json-canonicalization",
         version = "0.1",
-        loss = {}
+        // Inherits the loss from its recursive call into encode_value
+        // (number canonicalization is per-value, not per-top-level call).
+        loss = {"rfc8785-number-serialization-non-ecma262"}
     )
     public static String encode_jcs(JsonNode v) {
         StringBuilder out = new StringBuilder();
@@ -59,7 +61,12 @@ public final class RFC8785JcsShim {
         library = "provekit-rfc8785-jcs-java",
         family = "concept:family:json-canonicalization",
         version = "0.1",
-        loss = {}
+        // Substrate-honest loss declaration: this realization uses
+        // JsonNode.asText() for numbers, which Jackson chooses textually
+        // and is NOT ECMA-262 §7.1.12.1 compliant (RFC 8785 §3.2.2.3).
+        // Recoverable by routing numbers through a proper ECMA-262
+        // formatter (concept:ecma262-number-format, to be minted).
+        loss = {"rfc8785-number-serialization-non-ecma262"}
     )
     public static void encode_value(JsonNode v, StringBuilder out) {
         if (v == null || v.isNull()) {

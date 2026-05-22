@@ -1338,6 +1338,7 @@ fn project_body_templates_for_sugar_bindings(ir: &[Value]) -> Result<(), String>
                 "emission_template": { "kind": "verbatim", "template": template },
                 "loss_record_contribution": loss,
                 "signature_guard": { "min_params": arity, "max_params": arity },
+                "target_library_tag": libtag,
             });
             if let Some(observed) = decl.get("observed_dimension").and_then(|v| v.as_str()) {
                 entry["observed_dimension"] = serde_json::Value::String(observed.to_string());
@@ -1353,8 +1354,13 @@ fn project_body_templates_for_sugar_bindings(ir: &[Value]) -> Result<(), String>
             "template_name": format!("{lang}-canonical-bodies-{libtag}"),
             "entries": entries,
         });
+        // Compute header.cid as blake3-512 of the JCS-canonicalized header
+        // content. cmd_bind_migrate requires this when reading body-templates;
+        // its absence was a pre-existing latent bug in the projection.
+        let content_jcs = encode_jcs(&json_to_cvalue(&header_content));
+        let header_cid = blake3_512_of(content_jcs.as_bytes());
         let doc = serde_json::json!({
-            "header": { "content": header_content },
+            "header": { "cid": header_cid, "content": header_content },
         });
 
         let out_path = repo_root

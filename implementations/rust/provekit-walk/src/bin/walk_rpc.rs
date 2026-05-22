@@ -2142,15 +2142,69 @@ fn bindings_of_stmt(stmt: &syn::Stmt, ctx: &ShapeContext) -> BindingResult {
 
 fn bindings_of_expr(expr: &syn::Expr, ctx: &ShapeContext) -> BindingResult {
     match expr {
-        // If/While/ForLoop/Loop now lifted as concept:literal source_text
-        // leaves (see shape_of_expr); no inner operand bindings to thread,
-        // but the leaf IS a real shape (concept:literal), so we MUST mark
-        // has_operator=true so collapse_binding_groups keeps its position
-        // slot in sync with collapse_operation_shapes. Empty bindings
-        // vector — the leaf carries no operand references for the realize
-        // side to look up.
-        syn::Expr::If(_) | syn::Expr::While(_) | syn::Expr::ForLoop(_) | syn::Expr::Loop(_) => {
-            BindingResult { has_operator: true, bindings: Vec::new() }
+        // Structural control flow — thread bindings through each substrate
+        // operator's argument layout to match shape_of_expr's emission.
+        // Without this, references inside condition/body lose their
+        // operand_binding entries and downstream address resolution can't
+        // see them at the expected positions.
+        syn::Expr::If(e) => {
+            let cond = bindings_of_expr(&e.cond, ctx);
+            let then_branch = bindings_of_block(&e.then_branch, ctx);
+            let else_branch = match &e.else_branch {
+                Some((_, else_expr)) => bindings_of_expr(else_expr, ctx),
+                None => BindingResult { has_operator: true, bindings: Vec::new() },
+            };
+            operation_binding_result(vec![cond, then_branch, else_branch])
+        }
+        syn::Expr::While(e) => {
+            let cond = bindings_of_expr(&e.cond, ctx);
+            let body = bindings_of_block(&e.body, ctx);
+            operation_binding_result(vec![cond, body])
+        }
+        syn::Expr::ForLoop(e) => {
+            // concept:for-each(var, iterable, body); var is a symbol leaf (no binding slot).
+            let iterable = bindings_of_expr(&e.expr, ctx);
+            let body = bindings_of_block(&e.body, ctx);
+            operation_binding_result(vec![BindingResult::default(), iterable, body])
+        }
+        syn::Expr::Loop(e) => {
+            // concept:while(true_literal_leaf, body)
+            let body = bindings_of_block(&e.body, ctx);
+            operation_binding_result(vec![BindingResult::default(), body])
+        }
+        syn::Expr::Match(e) => {
+            // concept:match(scrutinee, arm1, arm2, ...)
+            // Each arm: concept:match-arm(pattern_leaf, body) — pattern is leaf, body has bindings.
+            let mut args = vec![bindings_of_expr(&e.expr, ctx)];
+            for arm in &e.arms {
+                let body_bindings = bindings_of_expr(&arm.body, ctx);
+                args.push(operation_binding_result(vec![
+                    BindingResult::default(),
+                    body_bindings,
+                ]));
+            }
+            operation_binding_result(args)
+        }
+        syn::Expr::Cast(c) => {
+            // concept:cast(value, type_leaf)
+            operation_binding_result(vec![
+                bindings_of_expr(&c.expr, ctx),
+                BindingResult::default(),
+            ])
+        }
+        syn::Expr::Index(idx) => {
+            // concept:index(receiver, index)
+            operation_binding_result(vec![
+                bindings_of_expr(&idx.expr, ctx),
+                bindings_of_expr(&idx.index, ctx),
+            ])
+        }
+        syn::Expr::Field(f) => {
+            // concept:field(receiver, field_leaf)
+            operation_binding_result(vec![
+                bindings_of_expr(&f.base, ctx),
+                BindingResult::default(),
+            ])
         }
         syn::Expr::Return(e) => {
             let args = e
@@ -2238,9 +2292,20 @@ fn bindings_of_expr(expr: &syn::Expr, ctx: &ShapeContext) -> BindingResult {
         syn::Expr::Block(b) => bindings_of_block(&b.block, ctx),
         syn::Expr::Paren(e) => bindings_of_expr(&e.expr, ctx),
         syn::Expr::Group(e) => bindings_of_expr(&e.expr, ctx),
-        _ => operand_symbol(expr)
-            .map(binding_result_for_symbol)
-            .unwrap_or_default(),
+        _ => {
+            // Single-identifier path → only emit a binding when the
+            // identifier is a KNOWN scoped name (function param / local).
+            // Free identifiers (None, Some, Vec::new, etc.) fall through
+            // to the structural kind:"symbol" leaf in shape_of_expr —
+            // emitting a binding for them shadowed the leaf at use site
+            // because realize checks operand_bindings BEFORE kind:symbol.
+            if let Some(symbol) = operand_symbol(expr) {
+                if ctx.vars.contains_key(&symbol) {
+                    return binding_result_for_symbol(symbol);
+                }
+            }
+            BindingResult::default()
+        }
     }
 }
 

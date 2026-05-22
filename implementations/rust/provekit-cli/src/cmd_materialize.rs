@@ -569,11 +569,25 @@ fn run_cross_language_discovery(
             if file.bodies.is_empty() {
                 continue;
             }
-            let stem = source_path
-                .file_stem()
-                .and_then(|s| s.to_str())
-                .unwrap_or("materialized");
-            let out_path = out_dir_path.join(format!("{stem}.{ext}"));
+            // Preserve source-relative directory structure so two source
+            // files with the same basename in different directories (e.g.
+            // src/lib.rs vs tests/lib.rs, or pkg_a/foo.rs vs pkg_b/foo.rs)
+            // don't silently overwrite each other in --out-dir.
+            let rel = source_path
+                .strip_prefix(source_dir)
+                .unwrap_or(source_path);
+            let rel_with_ext = rel.with_extension(ext);
+            let out_path = out_dir_path.join(&rel_with_ext);
+            if let Some(parent) = out_path.parent() {
+                if let Err(err) = std::fs::create_dir_all(parent) {
+                    eprintln!(
+                        "{}: failed to create out-dir subpath {}: {err}",
+                        "error".red().bold(),
+                        parent.display()
+                    );
+                    return EXIT_USER_ERROR;
+                }
+            }
             let imports_block = file
                 .imports
                 .iter()
@@ -595,7 +609,7 @@ fn run_cross_language_discovery(
                 return EXIT_USER_ERROR;
             }
             eprintln!(
-                "  {} wrote {} ({} body bodies, {} imports)",
+                "  {} wrote {} ({} bodies, {} imports)",
                 "EMIT".green().bold(),
                 out_path.display(),
                 file.bodies.len(),

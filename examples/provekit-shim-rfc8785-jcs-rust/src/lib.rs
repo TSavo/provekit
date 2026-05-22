@@ -33,7 +33,8 @@ use serde_json::Value;
     library = "serde_json",
     version = "1",
     family = "concept:family:json-canonicalization",
-    loss = [],
+    // Inherits loss from recursive encode_value call (per-value, not per-top-level).
+    loss = ["rfc8785-number-serialization-non-ecma262"],
 )]
 pub fn encode_jcs(v: &Value) -> String {
     let mut out = String::new();
@@ -46,7 +47,10 @@ pub fn encode_jcs(v: &Value) -> String {
     library = "provekit-shim-rfc8785-jcs-rust",
     version = "0.1",
     family = "concept:family:json-canonicalization",
-    loss = [],
+    // Substrate-honest loss: serde_json::Number::to_string() does NOT emit
+    // ECMA-262 §7.1.12.1 conformant strings (RFC 8785 §3.2.2.3 requires it).
+    // Recoverable by minting concept:ecma262-number-format and substituting.
+    loss = ["rfc8785-number-serialization-non-ecma262"],
 )]
 fn encode_value(v: &Value, out: &mut String) {
     match v {

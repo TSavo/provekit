@@ -65,7 +65,14 @@ def mint_sort(name: str, sort_kind: str) -> str:
             "sig_b64": "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA",
         },
     }
-    filename = f"{name}.{cid}.json"
+    # Filesystem-safe filename: replace < > , with _of_ "" "_" so the file
+    # is checkout-able on Windows NTFS (rejects < and >) and shell-friendly
+    # on POSIX. Substrate identity is the CID + memento content, NOT the
+    # filename — so this rename loses nothing.
+    safe_name = (
+        name.replace("<", "_of_").replace(">", "").replace(",", "_")
+    )
+    filename = f"{safe_name}.{cid}.json"
     out_path = SORTS_DIR / filename
     content = json.dumps(envelope, indent=2, sort_keys=True, ensure_ascii=False) + "\n"
     out_path.write_text(content, encoding="utf-8")
