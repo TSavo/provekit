@@ -137,10 +137,16 @@ public final class RpcServer {
         // Absent → "" → matcher only considers library-agnostic catch-all entries.
         String targetLibraryTag = JsonUtil.decodeJsonStringField(paramsObj, "target_library_tag");
         if (targetLibraryTag == null) targetLibraryTag = "";
+        // #1369: parametric content-addressing expansions for composite sort CIDs.
+        // Each expansion declares (composite_cid → constructor_cid + arg_cids)
+        // so SugarRealizer can decompose composite CIDs for parameterized
+        // morphism dispatch.
+        java.util.List<SugarRealizer.ParametricExpansion> parametricExpansions = parseParametricExpansions(
+                JsonUtil.extractArrayField(paramsObj, "parametric_sort_expansions"));
         SugarRealizer.Realization r =
                 SugarRealizer.emitStub(emittedFunction, params, paramTypes, paramSortCids, returnType, returnSortCid,
                         conceptName, mode, modes, contract, sugarPlugins, transportedOp, termShape, operandBindings,
-                        isCrossLang, targetLibraryTag);
+                        isCrossLang, targetLibraryTag, parametricExpansions);
         String wrapperRecord = r.observationWrapperEmissionRecord() == null
                 ? ""
                 : ",\"observation_wrapper_emission_record\":" + r.observationWrapperEmissionRecord();
@@ -227,5 +233,36 @@ public final class RpcServer {
 
     private void sendError(String id, int code, String message) {
         out.println("{\"jsonrpc\":\"2.0\",\"id\":" + id + ",\"error\":{\"code\":" + code + ",\"message\":" + JsonUtil.quoted(message) + "}}");
+    }
+
+    /**
+     * Parse the JSON array string into a list of ParametricExpansion records.
+     * Returns empty list on null / empty / parse failure (substrate-honest:
+     * absent expansions just means no parametric CIDs to decompose).
+     */
+    private static java.util.List<SugarRealizer.ParametricExpansion> parseParametricExpansions(String json) {
+        if (json == null || json.isBlank() || "[]".equals(json.trim())) return java.util.List.of();
+        java.util.List<SugarRealizer.ParametricExpansion> out = new java.util.ArrayList<>();
+        try {
+            com.provekit.ir.Jcs.Json doc = com.provekit.ir.Jcs.parse(json);
+            if (!(doc instanceof com.provekit.ir.Jcs.Arr arr)) return java.util.List.of();
+            for (com.provekit.ir.Jcs.Json item : arr.values()) {
+                if (!(item instanceof com.provekit.ir.Jcs.Obj o)) continue;
+                String cid = o.stringFieldOrNull("cid");
+                String ctor = o.stringFieldOrNull("constructor_cid");
+                if (cid == null || ctor == null) continue;
+                com.provekit.ir.Jcs.Json argsJson = o.get("arg_cids");
+                java.util.List<String> argCids = new java.util.ArrayList<>();
+                if (argsJson instanceof com.provekit.ir.Jcs.Arr argArr) {
+                    for (com.provekit.ir.Jcs.Json a : argArr.values()) {
+                        if (a instanceof com.provekit.ir.Jcs.Str s) argCids.add(s.value());
+                    }
+                }
+                out.add(new SugarRealizer.ParametricExpansion(cid, ctor, argCids));
+            }
+        } catch (RuntimeException ignored) {
+            // Substrate-honest: malformed expansion data → no decomposition possible.
+        }
+        return out;
     }
 }

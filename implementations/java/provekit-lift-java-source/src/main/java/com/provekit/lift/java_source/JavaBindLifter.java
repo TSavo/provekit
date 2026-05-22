@@ -1150,6 +1150,20 @@ public final class JavaBindLifter {
         }
         Map<String, AliasEntry> aliases = aliasMap();
         AliasEntry direct = aliases.get(outer);
+        // FQN fallback: javac's TypeMirror.toString() returns FQNs for declared
+        // types (e.g. "java.lang.String", "com.fasterxml.jackson.databind.JsonNode").
+        // If the alias map doesn't have an entry for the FQN form, try the
+        // simple class name. Kit-source-alias mementos that list FQN
+        // variants (e.g. "java.util.List", "java.fasterxml.jackson...JsonNode")
+        // get a direct hit; primitive/lang-package types fall through to
+        // simple-name lookup.
+        if (direct == null) {
+            int lastDot = outer.lastIndexOf('.');
+            if (lastDot >= 0) {
+                String simpleName = outer.substring(lastDot + 1);
+                direct = aliases.get(simpleName);
+            }
+        }
         // Handle T[] arrays by recursing on the element type as a List<T>.
         if (direct == null && outer.endsWith("[]")) {
             String elemSrc = outer.substring(0, outer.length() - 2).trim();
