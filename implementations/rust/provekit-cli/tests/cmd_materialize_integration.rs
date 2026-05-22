@@ -898,6 +898,39 @@ for line in sys.stdin:
         .output()
         .expect("spawn provekit materialize cross-language discovery");
 
+/// End-to-end: materialize python with --out-dir + --compile-check.
+/// `python3 -m py_compile` over the emitted file must pass → exit 0.
+/// Requires the provekit-realize-python-requests binary to be built.
+#[test]
+fn compile_check_passes_for_valid_python_materialized_output() {
+    let workspace = tempfile::tempdir().expect("tempdir");
+    let Some(src_dir) = write_python_requests_project_fixture(workspace.path()) else {
+        eprintln!(
+            "skipping compile-check python test: provekit-realize-python-requests binary is unavailable"
+        );
+        return;
+    };
+    write_python_http_request_source(&src_dir);
+    let out_dir = workspace.path().join("compiled-out");
+
+    let output = Command::new(env!("CARGO_BIN_EXE_provekit"))
+        .env("PROVEKIT_REPO_ROOT", repo_root())
+        .arg("materialize")
+        .arg("--target")
+        .arg("python")
+        .arg("--library")
+        .arg("python-requests")
+        .arg("--source-dir")
+        .arg(&src_dir)
+        .arg("--project")
+        .arg(workspace.path())
+        .arg("--out-dir")
+        .arg(&out_dir)
+        .arg("--compile-check")
+        .output()
+        .expect("spawn provekit materialize --compile-check for python");
+>>>>>>> fb7f714a4 (test(materialize): add compile-check integration tests for #1376)
+
     let stdout = String::from_utf8_lossy(&output.stdout);
     let stderr = String::from_utf8_lossy(&output.stderr);
     assert!(
@@ -915,5 +948,106 @@ for line in sys.stdin:
     assert!(
         stderr.contains("1 resolve + 0 ambiguous"),
         "summary should count one resolved site, got stderr:\n{stderr}"
+    );
+}
+
+// --- compile-check tests (#1376) ---
+
+/// --compile-check without --out-dir must be rejected by clap (requires = "out_dir").
+/// Exit code 2 is EXIT_USER_ERROR (clap writes to stderr and exits 2 for usage errors).
+#[test]
+fn compile_check_without_out_dir_is_user_error() {
+    let workspace = tempfile::tempdir().expect("tempdir");
+    let src_dir = workspace.path().join("src");
+    fs::create_dir_all(&src_dir).expect("create src dir");
+
+    let output = Command::new(env!("CARGO_BIN_EXE_provekit"))
+        .arg("materialize")
+        .arg("--library")
+        .arg("typescript-better-sqlite3")
+        .arg("--source-dir")
+        .arg(&src_dir)
+        .arg("--compile-check")
+        .output()
+        .expect("spawn provekit materialize --compile-check without --out-dir");
+
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert_eq!(
+        output.status.code(),
+        Some(2),
+        "--compile-check without --out-dir must exit 2 (user error)\nstderr:\n{stderr}"
+    );
+    assert!(
+        stderr.contains("--out-dir"),
+        "clap error should mention --out-dir as missing required argument\nstderr:\n{stderr}"
+    );
+}
+
+/// End-to-end: materialize python with --out-dir + --compile-check.
+/// `python3 -m py_compile` over the emitted file must pass → exit 0.
+#[test]
+fn compile_check_passes_for_valid_python_materialized_output() {
+    let workspace = tempfile::tempdir().expect("tempdir");
+    let Some(src_dir) = write_python_requests_project_fixture(workspace.path()) else {
+        eprintln!(
+            "skipping compile-check python test: provekit-realize-python-requests binary is unavailable"
+        );
+        return;
+    };
+    write_python_http_request_source(&src_dir);
+    let out_dir = workspace.path().join("compiled-out");
+
+    let output = Command::new(env!("CARGO_BIN_EXE_provekit"))
+        .env("PROVEKIT_REPO_ROOT", repo_root())
+        .arg("materialize")
+        .arg("--target")
+        .arg("python")
+        .arg("--library")
+        .arg("python-requests")
+        .arg("--source-dir")
+        .arg(&src_dir)
+        .arg("--project")
+        .arg(workspace.path())
+        .arg("--out-dir")
+        .arg(&out_dir)
+        .arg("--compile-check")
+        .output()
+        .expect("spawn provekit materialize --compile-check for python");
+
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(
+        output.status.success(),
+        "--compile-check over valid python output should exit 0\nstdout:\n{stdout}\nstderr:\n{stderr}"
+    );
+    assert!(
+        stderr.contains("compile-check: python3 -m py_compile passed"),
+        "stderr should confirm py_compile passed\nstderr:\n{stderr}"
+    );
+    let emitted = fs::read_to_string(out_dir.join("client.py")).expect("read emitted python");
+    assert!(
+        emitted.contains("requests.get(url)"),
+        "emitted python should contain requests body: {emitted}"
+    );
+}
+
+/// Negative test: confirms python3 -m py_compile actually rejects bad python
+/// (so the compile-check gate would fire if materialize emitted bad output).
+#[test]
+fn compile_check_python_gate_fails_on_syntax_error() {
+    let bad_dir = tempfile::tempdir().expect("tempdir");
+    let bad_py = bad_dir.path().join("bad.py");
+    fs::write(&bad_py, "def foo(\n    x = 42\n    return x\n").expect("write bad.py");
+
+    let check = Command::new("python3")
+        .arg("-m")
+        .arg("py_compile")
+        .arg(&bad_py)
+        .output()
+        .expect("spawn python3 -m py_compile");
+
+    assert!(
+        !check.status.success(),
+        "python3 -m py_compile must reject syntactically broken python (gate must be live)"
     );
 }
