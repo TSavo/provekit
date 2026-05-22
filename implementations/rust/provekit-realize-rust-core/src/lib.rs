@@ -2346,18 +2346,30 @@ fn pretty_print_macro_args(tokens: &str) -> String {
     //       "arg0",
     //       arg1
     //   )
-    // No trailing comma on the last arg (matches rustfmt's no-trailing-
-    // comma convention for macro arg lists).
+    // No trailing comma on the last arg.
+    //
+    // Indent issue: rustfmt on stable does NOT re-indent inside macro
+    // bodies (format_macro_bodies is nightly-only). Whatever we emit
+    // here IS the final indent. We don't know runtime nesting depth at
+    // emit time — substrate emits each fragment without global context.
+    // We mark args with sentinel `\u{1F}MACRO_INDENT\u{1F}` so a
+    // post-processing pass in function_source can substitute the
+    // depth-aware indent based on the macro's column position.
     let mut out = String::from("\n");
     for (idx, item) in items.iter().enumerate() {
         let is_last = idx + 1 == items.len();
-        out.push_str("    ");
+        out.push('\u{1F}');
+        out.push_str("MACRO_ARG_INDENT");
+        out.push('\u{1F}');
         out.push_str(item);
         if !is_last {
             out.push(',');
         }
         out.push('\n');
     }
+    out.push('\u{1F}');
+    out.push_str("MACRO_CLOSE_INDENT");
+    out.push('\u{1F}');
     out
 }
 
@@ -2706,11 +2718,65 @@ fn function_source(
             .collect::<Vec<_>>()
             .join("\n")
     };
+    // Post-process macro-arg indent sentinels. For each line containing a
+    // sentinel, look back through previous lines to find the macro call's
+    // leading whitespace, then substitute the sentinel with that indent +
+    // 4 (for args) or same indent (for closing paren). This gives correct
+    // depth-aware indent for macro bodies without rustfmt re-indenting.
+    let indented = resolve_macro_indent_sentinels(&indented);
     let vis_prefix = CURRENT_VISIBILITY.with(|v| {
         let s = v.borrow();
         if s.is_empty() { String::new() } else { format!("{} ", s.as_str()) }
     });
     format!("{vis_prefix}fn {function}{generic_params}({typed_params}){return_suffix} {{\n{indented}\n}}\n")
+}
+
+/// Resolve macro-arg indent sentinels to depth-aware leading whitespace.
+/// Sentinels marker: `\u{1F}MACRO_ARG_INDENT\u{1F}` for arg lines,
+/// `\u{1F}MACRO_CLOSE_INDENT\u{1F}` for the closing paren.
+///
+/// For each line containing a sentinel, look back through previous lines
+/// to find the macro call line (containing the matching `!(`) and use its
+/// leading whitespace + 4 for args, same for closing paren.
+fn resolve_macro_indent_sentinels(text: &str) -> String {
+    let lines: Vec<&str> = text.lines().collect();
+    let mut out_lines: Vec<String> = Vec::with_capacity(lines.len());
+    // Track open macro-call lines: stack of leading-whitespace strings.
+    let mut macro_stack: Vec<String> = Vec::new();
+    for line in lines.iter() {
+        let leading_ws: String = line.chars().take_while(|c| *c == ' ').collect();
+        let trimmed = line.trim_start();
+        // Detect macro call line (ends with `!(`).
+        if trimmed.ends_with("!(") {
+            macro_stack.push(leading_ws.clone());
+        }
+        if line.contains("\u{1F}MACRO_ARG_INDENT\u{1F}") {
+            let call_indent = macro_stack
+                .last()
+                .cloned()
+                .unwrap_or_else(|| "        ".to_string());
+            let arg_indent = format!("{}    ", call_indent);
+            out_lines.push(line.replace("\u{1F}MACRO_ARG_INDENT\u{1F}", &arg_indent));
+            continue;
+        }
+        if line.contains("\u{1F}MACRO_CLOSE_INDENT\u{1F}") {
+            let call_indent = macro_stack
+                .pop()
+                .unwrap_or_else(|| "        ".to_string());
+            out_lines.push(line.replace("\u{1F}MACRO_CLOSE_INDENT\u{1F}", &call_indent));
+            continue;
+        }
+        // Detect closing paren that closes a top-level macro call (no
+        // sentinel — bare `);` or `)` after macro args).
+        if trimmed.starts_with(')') && !macro_stack.is_empty() {
+            // Heuristic: if previous output line ended with a macro arg
+            // or sentinel-resolved value, this `)` likely closes the
+            // macro. Pop.
+            macro_stack.pop();
+        }
+        out_lines.push(line.to_string());
+    }
+    out_lines.join("\n")
 }
 
 fn stub_body_for(concept_name: &str) -> String {
