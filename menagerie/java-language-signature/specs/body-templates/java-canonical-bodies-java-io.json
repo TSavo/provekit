@@ -1,13 +1,15 @@
 {
   "header": {
-    "cid": "blake3-512:b1413dfc617825049e6e2772921480e81154ba4714143288e41d2f5326075e1eec02556a630422025da811feca6aef869e5d89e9a9ed64ded2efab69fb9c5547",
+    "cid": "blake3-512:3bf9283f2db9ef9edabd2bfbc68f11dfcc99e6fbfa048e243d7adb70cd4f6191ab9d9d1256b37d442c6239e465be65127c3ad78b8a5b96207a58b4d691b88ac0",
     "content": {
+      "target_language": "java",
+      "template_name": "java-canonical-bodies-java-io",
       "entries": [
         {
           "concept_name": "concept:stdio-read-line",
           "emission_template": {
             "kind": "verbatim",
-            "template": "        try {\n            return STDIN_READER.readLine();\n        } catch (IOException e) {\n            throw new UncheckedIOException(e);\n        }\n    "
+            "template": "// __fragment_imports__: java.io.BufferedReader, java.io.IOException, java.io.InputStreamReader, java.io.UncheckedIOException\n        try {\n            return STDIN_READER.readLine();\n        } catch (IOException e) {\n            throw new UncheckedIOException(e);\n        }\n    "
           },
           "loss_record_contribution": {
             "form": "literal",
@@ -16,16 +18,19 @@
             }
           },
           "signature_guard": {
-            "max_params": 0,
-            "min_params": 0
+            "min_params": 0,
+            "max_params": 0
           },
-          "target_library_tag": "java-io"
+          "target_library_tag": "java-io",
+          "file_helpers": [
+            "static final BufferedReader STDIN_READER = new BufferedReader(new InputStreamReader(System.in));"
+          ]
         },
         {
           "concept_name": "concept:stdio-write-line",
           "emission_template": {
             "kind": "verbatim",
-            "template": "        System.out.println(${param0});\n    "
+            "template": "// __fragment_imports__: java.io.BufferedReader, java.io.IOException, java.io.InputStreamReader, java.io.UncheckedIOException\n        System.out.println(${param0});\n    "
           },
           "loss_record_contribution": {
             "form": "literal",
@@ -34,16 +39,19 @@
             }
           },
           "signature_guard": {
-            "max_params": 1,
-            "min_params": 1
+            "min_params": 1,
+            "max_params": 1
           },
-          "target_library_tag": "java-io"
+          "target_library_tag": "java-io",
+          "file_helpers": [
+            "static final BufferedReader STDIN_READER = new BufferedReader(new InputStreamReader(System.in));"
+          ]
         },
         {
           "concept_name": "concept:stderr-write-line",
           "emission_template": {
             "kind": "verbatim",
-            "template": "        System.err.println(${param0});\n    "
+            "template": "// __fragment_imports__: java.io.BufferedReader, java.io.IOException, java.io.InputStreamReader, java.io.UncheckedIOException\n        System.err.println(${param0});\n    "
           },
           "loss_record_contribution": {
             "form": "literal",
@@ -52,14 +60,15 @@
             }
           },
           "signature_guard": {
-            "max_params": 1,
-            "min_params": 1
+            "min_params": 1,
+            "max_params": 1
           },
-          "target_library_tag": "java-io"
+          "target_library_tag": "java-io",
+          "file_helpers": [
+            "static final BufferedReader STDIN_READER = new BufferedReader(new InputStreamReader(System.in));"
+          ]
         }
-      ],
-      "target_language": "java",
-      "template_name": "java-canonical-bodies-java-io"
+      ]
     }
   }
 }

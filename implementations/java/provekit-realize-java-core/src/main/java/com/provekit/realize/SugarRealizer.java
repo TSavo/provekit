@@ -57,7 +57,16 @@ final class SugarRealizer {
             boolean isStub,
             String observedLossRecord,
             String usedSugarsJson,
-            String observationWrapperEmissionRecord) {}
+            String observationWrapperEmissionRecord,
+            /// #1390: static field helpers needed by the body. Empty for
+            /// stubs and bodies that don't reference class-level statics.
+            List<String> helpers) {
+        Realization(String source, boolean isStub, String observedLossRecord,
+                   String usedSugarsJson, String observationWrapperEmissionRecord) {
+            this(source, isStub, observedLossRecord, usedSugarsJson,
+                 observationWrapperEmissionRecord, List.of());
+        }
+    }
 
     /**
      * Emit a Java method for a single function. Body source comes from the
@@ -381,12 +390,15 @@ final class SugarRealizer {
                 + "    }\n"
                 + "}\n"
                 + witnessClass;
+        // #1390: collect helpers from the matched body-template entry.
+        List<String> helpers = bodyTemplate.map(RenderedBody::helpers).orElse(List.of());
         return new Realization(
                 source,
                 isStub,
                 observedLossRecordJson(sugarEmissions, bodyLossRecord),
                 usedSugarsJson(sugarEmissions),
-                observationWrapperEmissionRecord);
+                observationWrapperEmissionRecord,
+                helpers);
     }
 
     private static String parameterAnnotations(List<SugarEmission> emissions, String paramName) {
@@ -1616,7 +1628,13 @@ final class SugarRealizer {
             /// matcher to disambiguate when multiple libraries ship templates
             /// for the same concept. Empty string means "library-agnostic"
             /// (legacy catch-all).
-            String targetLibraryTag) {}
+            String targetLibraryTag,
+            /// #1390: static field helpers lifted from the shim's source file.
+            /// Bodies reference these as short-named symbols (e.g.
+            /// `MAPPER.readTree(s)`); the assembler hoists them into the
+            /// compilation unit before methods. Empty when the shim has no
+            /// class-level static fields.
+            List<String> fileHelpers) {}
 
     private record TemplateCitation(
             String placeholder,
@@ -1624,7 +1642,11 @@ final class SugarRealizer {
             String mode,
             List<String> params) {}
 
-    private record RenderedBody(String body, Jcs.Json lossRecord) {}
+    private record RenderedBody(String body, Jcs.Json lossRecord, List<String> helpers) {
+        RenderedBody(String body, Jcs.Json lossRecord) {
+            this(body, lossRecord, List.of());
+        }
+    }
 
     private record ObservationComposition(
             String body,
@@ -1759,7 +1781,10 @@ final class SugarRealizer {
             // Unbound placeholder: refuse-match per spec §2.1.
             return Optional.empty();
         }
-        return Optional.of(new RenderedBody(rendered, lossRecord));
+        // #1390: attach the matched entry's static field helpers to the
+        // rendered body so emitStubInner / RpcServer can carry them through
+        // to the assembler. Empty when the shim has no class-level statics.
+        return Optional.of(new RenderedBody(rendered, lossRecord, entry.fileHelpers()));
     }
 
     private static Optional<String> substituteTemplateBindings(String template, List<String> params) {
@@ -1928,6 +1953,14 @@ final class SugarRealizer {
                 }
                 String entryLibraryTag = itemObj.stringFieldOrNull("target_library_tag");
                 if (entryLibraryTag == null) entryLibraryTag = "";
+                // #1390: static field helpers lifted from the shim's source.
+                List<String> fileHelpers = new ArrayList<>();
+                Jcs.Json helpersJson = itemObj.get("file_helpers");
+                if (helpersJson instanceof Jcs.Arr helpersArr) {
+                    for (Jcs.Json v : helpersArr.values()) {
+                        if (v instanceof Jcs.Str s) fileHelpers.add(s.value());
+                    }
+                }
                 out.add(new BodyTemplateEntry(
                         conceptName,
                         mode,
@@ -1937,7 +1970,8 @@ final class SugarRealizer {
                         lossRecordValue(itemObj),
                         minParams,
                         maxParams,
-                        entryLibraryTag));
+                        entryLibraryTag,
+                        fileHelpers));
             }
             return out;
         } catch (RuntimeException e) {

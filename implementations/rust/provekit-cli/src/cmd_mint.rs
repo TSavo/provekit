@@ -1343,6 +1343,12 @@ fn project_body_templates_for_sugar_bindings(ir: &[Value]) -> Result<(), String>
             if let Some(observed) = decl.get("observed_dimension").and_then(|v| v.as_str()) {
                 entry["observed_dimension"] = serde_json::Value::String(observed.to_string());
             }
+            // #1390: propagate file_helpers (static field declarations) so the
+            // realize plugin can emit them as `helpers` in the invoke response.
+            // The assembler later hoists them into the compilation unit.
+            if let Some(helpers) = decl.get("file_helpers").cloned() {
+                entry["file_helpers"] = helpers;
+            }
             entries.push(entry);
         }
         if entries.is_empty() {

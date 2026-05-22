@@ -188,6 +188,10 @@ public final class JavaBindLifter {
                     // useful in a stripped body; java.lang is implicit.
                     if (fqn.endsWith(".*")) continue;
                     if (fqn.startsWith("java.lang.")) continue;
+                    // Skip provekit's lift-time annotation package — the
+                    // @ProveKitSugar annotation is a build-time marker;
+                    // it's not on the materialized output's runtime classpath.
+                    if (fqn.startsWith("com.provekit.lift.")) continue;
                     fileImports.add(fqn);
                 }
             } catch (RuntimeException ignored) {
@@ -195,7 +199,40 @@ public final class JavaBindLifter {
                 // an empty file_imports just means short-name bodies won't
                 // be augmented (downstream gate catches it).
             }
-            new MethodScanner(trees, rel, source, entries, diagnostics, fileImports).scan(unit, null);
+            // #1390: extract top-level class static fields as helpers.
+            // Bodies reference these as short names (e.g. `MAPPER.readTree`);
+            // the assembler hoists them into the outer compilation unit.
+            // Carried as a STRUCTURED field on the binding entry — NOT
+            // prepended to body_text, which broke cross-lang matching when
+            // attempted that way previously.
+            List<String> fileHelpers = new ArrayList<>();
+            try {
+                for (com.sun.source.tree.Tree typeDecl : unit.getTypeDecls()) {
+                    if (!(typeDecl instanceof ClassTree classTree)) continue;
+                    for (com.sun.source.tree.Tree member : classTree.getMembers()) {
+                        if (!(member instanceof VariableTree var)) continue;
+                        if (var.getModifiers() == null) continue;
+                        if (!var.getModifiers().getFlags().contains(javax.lang.model.element.Modifier.STATIC)) continue;
+                        long start = trees.getSourcePositions().getStartPosition(unit, var);
+                        long end = trees.getSourcePositions().getEndPosition(unit, var);
+                        if (start < 0 || end <= start) continue;
+                        String fieldSrc = source.substring((int) start, (int) end).trim();
+                        if (!fieldSrc.endsWith(";")) fieldSrc = fieldSrc + ";";
+                        // Strip access modifier so the assembler can hoist
+                        // as package-private at the outer class scope.
+                        fieldSrc = fieldSrc
+                            .replaceFirst("^\\s*private\\s+", "")
+                            .replaceFirst("^\\s*public\\s+", "")
+                            .replaceFirst("^\\s*protected\\s+", "");
+                        fileHelpers.add(fieldSrc.replaceAll("\\s+", " ").trim());
+                    }
+                }
+            } catch (RuntimeException ignored) {
+                // Best-effort: empty fileHelpers means MAPPER-style references
+                // in bodies won't resolve in materialized output (the compile-
+                // check gate surfaces it).
+            }
+            new MethodScanner(trees, rel, source, entries, diagnostics, fileImports, fileHelpers).scan(unit, null);
             extractRefusals(unit, entries);
         }
     }
@@ -211,6 +248,10 @@ public final class JavaBindLifter {
         /// Attached to each binding entry's body so materialize can
         /// resolve short-name references in the body.
         private final List<String> fileImports;
+        /// #1390: top-level class static fields (helpers). Emitted as a
+        /// structured field on each binding entry; the assembler hoists
+        /// them into the outer compilation unit, deduplicated.
+        private final List<String> fileHelpers;
 
         MethodScanner(
                 Trees trees,
@@ -218,13 +259,15 @@ public final class JavaBindLifter {
                 String source,
                 List<Jcs.Json> entries,
                 List<Jcs.Json> diagnostics,
-                List<String> fileImports) {
+                List<String> fileImports,
+                List<String> fileHelpers) {
             this.trees = trees;
             this.rel = rel;
             this.source = source;
             this.entries = entries;
             this.diagnostics = diagnostics;
             this.fileImports = fileImports;
+            this.fileHelpers = fileHelpers;
         }
 
         @Override
@@ -467,6 +510,15 @@ public final class JavaBindLifter {
                     }
                     entryKvs.add("parametric_sort_expansions");
                     entryKvs.add(Jcs.array(expValues));
+                }
+                // #1390: file-level static field helpers. Each entry in the
+                // file gets the same helpers list (the assembler dedupes
+                // across fragments at compilation-unit assembly time).
+                if (!fileHelpers.isEmpty()) {
+                    List<Jcs.Json> helperValues = new ArrayList<>();
+                    for (String h : fileHelpers) helperValues.add(Jcs.string(h));
+                    entryKvs.add("file_helpers");
+                    entryKvs.add(Jcs.array(helperValues));
                 }
                 Jcs.Obj sugarEntry = Jcs.object(entryKvs.toArray());
                 entries.add(sugarEntry);

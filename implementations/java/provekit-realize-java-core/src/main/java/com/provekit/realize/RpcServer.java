@@ -133,8 +133,9 @@ public final class RpcServer {
         String packageHint = JsonUtil.decodeJsonStringField(paramsObj, "package_hint");
         String fragmentsJson = JsonUtil.extractArrayField(paramsObj, "fragments");
 
-        // Parse fragments + collect imports/sources.
+        // Parse fragments + collect imports/sources/helpers.
         java.util.TreeSet<String> mergedImports = new java.util.TreeSet<>();
+        java.util.LinkedHashSet<String> mergedHelpers = new java.util.LinkedHashSet<>();
         java.util.List<String> bodies = new java.util.ArrayList<>();
         try {
             com.provekit.ir.Jcs.Json doc = com.provekit.ir.Jcs.parse(fragmentsJson);
@@ -149,6 +150,15 @@ public final class RpcServer {
                             if (v instanceof com.provekit.ir.Jcs.Str s) {
                                 String fqn = s.value();
                                 if (!fqn.startsWith("java.lang.")) mergedImports.add(fqn);
+                            }
+                        }
+                    }
+                    // #1390: collect helpers from each fragment.
+                    com.provekit.ir.Jcs.Json helpersArr = o.get("helpers");
+                    if (helpersArr instanceof com.provekit.ir.Jcs.Arr ha) {
+                        for (com.provekit.ir.Jcs.Json v : ha.values()) {
+                            if (v instanceof com.provekit.ir.Jcs.Str s) {
+                                mergedHelpers.add(s.value());
                             }
                         }
                     }
@@ -169,6 +179,12 @@ public final class RpcServer {
         }
         if (!mergedImports.isEmpty()) out.append('\n');
         out.append("public final class ").append(className).append(" {\n");
+        // #1390: emit helpers (static field declarations) before methods.
+        // Deduplicated by exact source text across fragments.
+        for (String helper : mergedHelpers) {
+            out.append("    ").append(helper).append('\n');
+        }
+        if (!mergedHelpers.isEmpty()) out.append('\n');
         for (int i = 0; i < bodies.size(); i++) {
             String body = bodies.get(i);
             // Strip outer wrapper class if the fragment came pre-wrapped.
@@ -383,6 +399,16 @@ public final class RpcServer {
         // FQN-inline references (compiles either way); the imports field
         // lets downstream tooling know what the fragment USES.
         String importsJson = importsFromSource(r.source());
+        // #1390: emit helpers as a structured field. The assembler hoists
+        // them into the compilation unit before methods.
+        StringBuilder helpersJson = new StringBuilder("[");
+        boolean firstHelper = true;
+        for (String h : r.helpers()) {
+            if (!firstHelper) helpersJson.append(',');
+            helpersJson.append(JsonUtil.quoted(h));
+            firstHelper = false;
+        }
+        helpersJson.append(']');
         return "{\"kind\":\"realization-fragment\""
                 + ",\"source\":" + JsonUtil.quoted(r.source())
                 + ",\"emitted_artifact_cid\":"
@@ -391,6 +417,7 @@ public final class RpcServer {
                 + ",\"observed_loss_record\":" + r.observedLossRecord()
                 + ",\"used_sugars\":" + r.usedSugarsJson()
                 + ",\"imports\":" + importsJson
+                + ",\"helpers\":" + helpersJson
                 + wrapperRecord
                 + "}";
     }
