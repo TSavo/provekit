@@ -161,6 +161,7 @@ pub fn run(args: MaterializeArgs) -> u8 {
                 &target_lang,
                 &args.family_library,
                 args.out_dir.as_deref(),
+                args.out.json,
             );
         }
     }
@@ -297,6 +298,60 @@ enum DiscoveryOutcome {
     TransportError(String),
 }
 
+/// #1373 phase 2: machine-readable per-site resolution record. One entry
+/// per @boundary site scanned; `resolution.status` is the discriminator
+/// for downstream tooling.
+#[derive(Debug, serde::Serialize)]
+struct SiteReport {
+    file: String,
+    concept_name: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    family: Option<String>,
+    resolution: SiteResolution,
+}
+
+#[derive(Debug, serde::Serialize)]
+#[serde(tag = "status", rename_all = "snake_case")]
+enum SiteResolution {
+    Resolve {
+        target_manifest: String,
+        target_language: String,
+        #[serde(skip_serializing_if = "Option::is_none")]
+        disambiguated_by: Option<String>,
+    },
+    Ambiguous {
+        target_language: String,
+        candidates: Vec<String>,
+    },
+    Refuse {
+        target_manifest: String,
+        target_language: String,
+        reason: String,
+    },
+    Error {
+        target_manifest: String,
+        target_language: String,
+        reason: String,
+    },
+}
+
+#[derive(Debug, serde::Serialize)]
+struct ResolutionSummary {
+    total: usize,
+    resolve: usize,
+    ambiguous: usize,
+    refuse: usize,
+    error: usize,
+}
+
+#[derive(Debug, serde::Serialize)]
+struct ResolutionReport {
+    source_lang: String,
+    target_lang: String,
+    sites: Vec<SiteReport>,
+    summary: ResolutionSummary,
+}
+
 /// #1361 chunk 2 part B / #1355: invoke target kit's realize binary for a
 /// RESOLVE'd boundary in cross-language discovery mode. The realize binary
 /// owns the concept-hub → target-syntax translation internally; cmd_materialize
@@ -364,18 +419,27 @@ fn run_cross_language_discovery(
     target_lang: &str,
     family_library_overrides: &[FamilyLibraryPair],
     out_dir: Option<&Path>,
+    json_report: bool,
 ) -> u8 {
-    eprintln!(
-        "{} cross-language discovery: {} -> {}",
-        "materialize".cyan().bold(),
-        source_lang,
-        target_lang
-    );
+    if !json_report {
+        eprintln!(
+            "{} cross-language discovery: {} -> {}",
+            "materialize".cyan().bold(),
+            source_lang,
+            target_lang
+        );
+    }
 
     let mut total_sites = 0usize;
     let mut resolves = 0usize;
     let mut ambiguous = 0usize;
     let mut refuses = 0usize;
+    // #1373: TransportError is an ERROR, not a refuse. Broken manifests /
+    // missing realize binaries / parse failures are kit operational issues,
+    // not substrate gaps. Tally separately so the exit code reflects them.
+    let mut transport_errors = 0usize;
+    // #1373 phase 2: structured site results for --json report mode.
+    let mut site_reports: Vec<SiteReport> = Vec::new();
     // #1361 follow-up: accumulate emitted bodies per source file when
     // --out-dir is set. Each (source_path, target_lang) → composite file
     // with imports (from realize manifest's scope_bringings) + all
@@ -423,15 +487,30 @@ fn run_cross_language_discovery(
             match matches.len() {
                 0 => {
                     refuses += 1;
-                    eprintln!(
-                        "  {} {} @ {} (concept={}, library={:?}): no {} manifest declares this concept",
-                        "REFUSE".red().bold(),
-                        carrier.concept_name,
-                        rel,
-                        carrier.concept_name,
-                        carrier.library_tag.as_deref().unwrap_or("?"),
-                        target_lang
-                    );
+                    if !json_report {
+                        eprintln!(
+                            "  {} {} @ {} (concept={}, library={:?}): no {} manifest declares this concept",
+                            "REFUSE".red().bold(),
+                            carrier.concept_name,
+                            rel,
+                            carrier.concept_name,
+                            carrier.library_tag.as_deref().unwrap_or("?"),
+                            target_lang
+                        );
+                    }
+                    site_reports.push(SiteReport {
+                        file: rel.to_string(),
+                        concept_name: carrier.concept_name.clone(),
+                        family: family_from_payload(&carrier.raw_payload),
+                        resolution: SiteResolution::Refuse {
+                            target_manifest: String::new(),
+                            target_language: target_lang.to_string(),
+                            reason: format!(
+                                "no {} manifest declares concept {}",
+                                target_lang, carrier.concept_name
+                            ),
+                        },
+                    });
                 }
                 1 => {
                     // Substrate-honest 2-stage outcome: dispatch ROUTE found
@@ -442,20 +521,33 @@ fn run_cross_language_discovery(
                     // separately. The "route found" + "type gap" outcome
                     // is REFUSE in the final tally — substrate surfaces
                     // gaps even when the family dispatch resolves.
+                    let carrier_family = family_from_payload(&carrier.raw_payload);
                     match invoke_target_realize_for_discovery(project_root, target_lang, &matches[0], &carrier) {
                         DiscoveryOutcome::Preview(body) => {
                             resolves += 1;
-                            eprintln!(
-                                "  {} {} @ {} → {} manifest `{}`",
-                                "RESOLVE".green().bold(),
-                                carrier.concept_name,
-                                rel,
-                                target_lang,
-                                matches[0]
-                            );
-                            let preview: String = body.chars().take(120).collect();
-                            let suffix = if body.chars().count() > 120 { "..." } else { "" };
-                            eprintln!("      target body preview: {preview}{suffix}");
+                            if !json_report {
+                                eprintln!(
+                                    "  {} {} @ {} → {} manifest `{}`",
+                                    "RESOLVE".green().bold(),
+                                    carrier.concept_name,
+                                    rel,
+                                    target_lang,
+                                    matches[0]
+                                );
+                                let preview: String = body.chars().take(120).collect();
+                                let suffix = if body.chars().count() > 120 { "..." } else { "" };
+                                eprintln!("      target body preview: {preview}{suffix}");
+                            }
+                            site_reports.push(SiteReport {
+                                file: rel.to_string(),
+                                concept_name: carrier.concept_name.clone(),
+                                family: carrier_family.clone(),
+                                resolution: SiteResolution::Resolve {
+                                    target_manifest: matches[0].clone(),
+                                    target_language: target_lang.to_string(),
+                                    disambiguated_by: None,
+                                },
+                            });
                             if out_dir.is_some() {
                                 let entry = emitted
                                     .entry(path.to_path_buf())
@@ -473,27 +565,50 @@ fn run_cross_language_discovery(
                         }
                         DiscoveryOutcome::SemanticGap => {
                             refuses += 1;
-                            eprintln!(
-                                "  {} {} @ {} → {} manifest `{}` (substrate gap in concept-hub sort morphism)",
-                                "REFUSE".red().bold(),
-                                carrier.concept_name,
-                                rel,
-                                target_lang,
-                                matches[0]
-                            );
+                            if !json_report {
+                                eprintln!(
+                                    "  {} {} @ {} → {} manifest `{}` (substrate gap in concept-hub sort morphism)",
+                                    "REFUSE".red().bold(),
+                                    carrier.concept_name,
+                                    rel,
+                                    target_lang,
+                                    matches[0]
+                                );
+                            }
+                            site_reports.push(SiteReport {
+                                file: rel.to_string(),
+                                concept_name: carrier.concept_name.clone(),
+                                family: carrier_family.clone(),
+                                resolution: SiteResolution::Refuse {
+                                    target_manifest: matches[0].clone(),
+                                    target_language: target_lang.to_string(),
+                                    reason: "substrate gap: realize plugin returned is_stub for concept-hub sort morphism".to_string(),
+                                },
+                            });
                         }
                         DiscoveryOutcome::TransportError(err) => {
-                            // Transport error is NOT a semantic gap — log
-                            // and skip without counting as refuse.
-                            eprintln!(
-                                "  {} {} @ {} → {} manifest `{}` realize transport failed: {}",
-                                "WARN".yellow().bold(),
-                                carrier.concept_name,
-                                rel,
-                                target_lang,
-                                matches[0],
-                                err,
-                            );
+                            transport_errors += 1;
+                            if !json_report {
+                                eprintln!(
+                                    "  {} {} @ {} → {} manifest `{}` realize transport failed: {}",
+                                    "ERROR".red().bold(),
+                                    carrier.concept_name,
+                                    rel,
+                                    target_lang,
+                                    matches[0],
+                                    err,
+                                );
+                            }
+                            site_reports.push(SiteReport {
+                                file: rel.to_string(),
+                                concept_name: carrier.concept_name.clone(),
+                                family: carrier_family.clone(),
+                                resolution: SiteResolution::Error {
+                                    target_manifest: matches[0].clone(),
+                                    target_language: target_lang.to_string(),
+                                    reason: err,
+                                },
+                            });
                         }
                     }
                 }
@@ -516,23 +631,32 @@ fn run_cross_language_discovery(
                             })
                     });
                     if let Some(pick) = picked {
-                        // Substrate-honest 3-way outcome: RESOLVE only if realize
-                        // actually emits; REFUSE only on substrate-gap (is_stub);
-                        // WARN on transport failure (broken manifest/binary).
                         match invoke_target_realize_for_discovery(project_root, target_lang, &pick, &carrier) {
                             DiscoveryOutcome::Preview(body) => {
                                 resolves += 1;
-                                eprintln!(
-                                    "  {} {} @ {} → {} manifest `{}` (disambiguated by --family-library)",
-                                    "RESOLVE".green().bold(),
-                                    carrier.concept_name,
-                                    rel,
-                                    target_lang,
-                                    pick
-                                );
-                                let preview: String = body.chars().take(120).collect();
-                                let suffix = if body.chars().count() > 120 { "..." } else { "" };
-                                eprintln!("      target body preview: {preview}{suffix}");
+                                if !json_report {
+                                    eprintln!(
+                                        "  {} {} @ {} → {} manifest `{}` (disambiguated by --family-library)",
+                                        "RESOLVE".green().bold(),
+                                        carrier.concept_name,
+                                        rel,
+                                        target_lang,
+                                        pick
+                                    );
+                                    let preview: String = body.chars().take(120).collect();
+                                    let suffix = if body.chars().count() > 120 { "..." } else { "" };
+                                    eprintln!("      target body preview: {preview}{suffix}");
+                                }
+                                site_reports.push(SiteReport {
+                                    file: rel.to_string(),
+                                    concept_name: carrier.concept_name.clone(),
+                                    family: carrier_family.clone(),
+                                    resolution: SiteResolution::Resolve {
+                                        target_manifest: pick.clone(),
+                                        target_language: target_lang.to_string(),
+                                        disambiguated_by: Some("--family-library".to_string()),
+                                    },
+                                });
                                 if out_dir.is_some() {
                                     let entry = emitted
                                         .entry(path.to_path_buf())
@@ -550,47 +674,107 @@ fn run_cross_language_discovery(
                             }
                             DiscoveryOutcome::SemanticGap => {
                                 refuses += 1;
-                                eprintln!(
-                                    "  {} {} @ {} → {} manifest `{}` (disambiguated by --family-library, substrate gap in concept-hub sort morphism)",
-                                    "REFUSE".red().bold(),
-                                    carrier.concept_name,
-                                    rel,
-                                    target_lang,
-                                    pick
-                                );
+                                if !json_report {
+                                    eprintln!(
+                                        "  {} {} @ {} → {} manifest `{}` (disambiguated by --family-library, substrate gap in concept-hub sort morphism)",
+                                        "REFUSE".red().bold(),
+                                        carrier.concept_name,
+                                        rel,
+                                        target_lang,
+                                        pick
+                                    );
+                                }
+                                site_reports.push(SiteReport {
+                                    file: rel.to_string(),
+                                    concept_name: carrier.concept_name.clone(),
+                                    family: carrier_family.clone(),
+                                    resolution: SiteResolution::Refuse {
+                                        target_manifest: pick.clone(),
+                                        target_language: target_lang.to_string(),
+                                        reason: "substrate gap: realize plugin returned is_stub for concept-hub sort morphism".to_string(),
+                                    },
+                                });
                             }
                             DiscoveryOutcome::TransportError(err) => {
-                                eprintln!(
-                                    "  {} {} @ {} → {} manifest `{}` (disambiguated by --family-library) realize transport failed: {}",
-                                    "WARN".yellow().bold(),
-                                    carrier.concept_name,
-                                    rel,
-                                    target_lang,
-                                    pick,
-                                    err,
-                                );
+                                transport_errors += 1;
+                                if !json_report {
+                                    eprintln!(
+                                        "  {} {} @ {} → {} manifest `{}` (disambiguated by --family-library) realize transport failed: {}",
+                                        "ERROR".red().bold(),
+                                        carrier.concept_name,
+                                        rel,
+                                        target_lang,
+                                        pick,
+                                        err,
+                                    );
+                                }
+                                site_reports.push(SiteReport {
+                                    file: rel.to_string(),
+                                    concept_name: carrier.concept_name.clone(),
+                                    family: carrier_family.clone(),
+                                    resolution: SiteResolution::Error {
+                                        target_manifest: pick.clone(),
+                                        target_language: target_lang.to_string(),
+                                        reason: err,
+                                    },
+                                });
                             }
                         }
                         continue;
                     }
                     ambiguous += 1;
-                    eprintln!(
-                        "  {} {} @ {}: multiple {} manifests match — {:?}",
-                        "AMBIGUOUS".yellow().bold(),
-                        carrier.concept_name,
-                        rel,
-                        target_lang,
-                        matches
-                    );
+                    if !json_report {
+                        eprintln!(
+                            "  {} {} @ {}: multiple {} manifests match — {:?}",
+                            "AMBIGUOUS".yellow().bold(),
+                            carrier.concept_name,
+                            rel,
+                            target_lang,
+                            matches
+                        );
+                    }
+                    site_reports.push(SiteReport {
+                        file: rel.to_string(),
+                        concept_name: carrier.concept_name.clone(),
+                        family: carrier_family.clone(),
+                        resolution: SiteResolution::Ambiguous {
+                            target_language: target_lang.to_string(),
+                            candidates: matches.clone(),
+                        },
+                    });
                 }
             }
         }
     }
 
-    eprintln!(
-        "{} discovery: {total_sites} site(s), {resolves} resolve + {ambiguous} ambiguous + {refuses} refused",
-        "materialize".cyan().bold()
-    );
+    if !json_report {
+        eprintln!(
+            "{} discovery: {total_sites} site(s), {resolves} resolve + {ambiguous} ambiguous + {refuses} refused + {transport_errors} transport-error",
+            "materialize".cyan().bold()
+        );
+    }
+    // #1373 phase 2: emit machine-readable JSON report when --json is set.
+    if json_report {
+        let report = ResolutionReport {
+            source_lang: source_lang.to_string(),
+            target_lang: target_lang.to_string(),
+            sites: site_reports,
+            summary: ResolutionSummary {
+                total: total_sites,
+                resolve: resolves,
+                ambiguous,
+                refuse: refuses,
+                error: transport_errors,
+            },
+        };
+        match serde_json::to_string_pretty(&report) {
+            Ok(json) => println!("{json}"),
+            Err(err) => {
+                eprintln!("{}: failed to serialize report: {err}", "error".red().bold());
+                return EXIT_USER_ERROR;
+            }
+        }
+    }
     if total_sites == 0 {
         eprintln!(
             "{}: no @boundary attributes found in {}. Cross-language discovery requires \
@@ -599,6 +783,25 @@ fn run_cross_language_discovery(
             source_dir.display()
         );
         return EXIT_USER_ERROR;
+    }
+    // #1373: strict resolution exit semantics.
+    //   - ambiguous: caller didn't disambiguate via --family-library → error.
+    //   - transport_errors: kit operational failures (broken manifest /
+    //     missing binary / parse error) → error.
+    //   - refuses: substrate gap (is_stub) → error (caller should mint the
+    //     missing morphism or specify a different library).
+    // Any of these means the cross-language demo did NOT fully resolve.
+    // Emission only proceeds when ALL sites are RESOLVE.
+    let has_failure = ambiguous > 0 || refuses > 0 || transport_errors > 0;
+    if has_failure && out_dir.is_some() {
+        eprintln!(
+            "{}: --out-dir requested but {} site(s) did not resolve ({} ambiguous, {} refused, {} transport-error). \
+             Emission aborted; the substrate refuses to write a partial compilation unit.",
+            "error".red().bold(),
+            ambiguous + refuses + transport_errors,
+            ambiguous, refuses, transport_errors,
+        );
+        return EXIT_VERIFY_FAIL;
     }
     // #1361 follow-up: when --out-dir is set and we have any RESOLVE'd
     // emissions, write target-language composite files.
@@ -676,7 +879,14 @@ fn run_cross_language_discovery(
             "note".cyan().bold()
         );
     }
-    EXIT_OK
+    // #1373: discovery-only mode also exits non-zero when sites didn't
+    // resolve. The substrate-honest result of "9 sites scanned, 2 refuse"
+    // is failure, not success.
+    if ambiguous > 0 || refuses > 0 || transport_errors > 0 {
+        EXIT_VERIFY_FAIL
+    } else {
+        EXIT_OK
+    }
 }
 
 /// Parse the carrier's raw_payload JSON and return the family field if
