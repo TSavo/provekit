@@ -1545,6 +1545,7 @@ final class SugarRealizer {
                 if (patternText == null) patternText = "";
                 patternText = patternText.trim();
                 String boundVar = bindingFromPattern(patternText);
+                if (boundVar != null) context.definedSymbols.add(boundVar);
                 String cond = patternToCondition(patternText, scrutVar);
                 Optional<ShapeExpression> bodyExpr = lowerShapeExpression(armArgs.get(1), context, appendPosition(position, i));
                 if (bodyExpr.isEmpty()) return Optional.empty();
@@ -1770,6 +1771,11 @@ final class SugarRealizer {
                             receiver.get().text() + ".getBytes(java.nio.charset.StandardCharsets.UTF_8)",
                             "byte[]"));
                 }
+                // .into() / .clone() / .to_string() on a value: no-op
+                // for most java types. Drop the call.
+                if ("into".equals(methodName) || "clone".equals(methodName)) {
+                    return Optional.of(new ShapeExpression(receiver.get().text(), receiver.get().typeName()));
+                }
                 // .unwrap() / .unwrap_or(x) on Option/Result: java has the
                 // value directly (loss = null-means-None). Pass through.
                 if ("unwrap".equals(methodName)) {
@@ -1886,6 +1892,11 @@ final class SugarRealizer {
                 }
             }
             String callee = argTerms.get(0).text();
+            // Synthetic tuple constructor from the lifter: emit as Object[].
+            if ("__provekit_tuple_new".equals(callee)) {
+                String joined = argTerms.stream().skip(1).map(ShapeExpression::text).collect(Collectors.joining(", "));
+                return Optional.of(new ShapeExpression("new Object[] {" + joined + "}", "Object[]"));
+            }
             // Rust path expressions use `::` (e.g. String::new, Vec::with_capacity).
             // For java, translate to `.` (String.new isn't valid — translate to
             // common constructor pattern when the suffix is `new`).
@@ -2421,6 +2432,7 @@ final class SugarRealizer {
             String bodyEmit;
             if (bodyStmt.isPresent()) {
                 bodyEmit = bodyStmt.get();
+                if (boundVar != null) bodyEmit = replaceIdentifier(bodyEmit, boundVar, scrutVar);
             } else {
                 Optional<ShapeExpression> bodyExpr = lowerShapeExpression(armArgs.get(1), context, appendPosition(position, i));
                 if (bodyExpr.isEmpty()) return null;
@@ -2469,14 +2481,22 @@ final class SugarRealizer {
         };
     }
 
-    /** For pattern text like `Some(v)` or `Ok(x)`, return the bound var (`v`/`x`). */
+    /** For pattern text like `Some(v)` or `Ok(x)` or bare identifier `other`,
+     *  return the bound var. */
     private static String bindingFromPattern(String pattern) {
         String t = pattern.trim();
-        // Match `Variant(name)` or `Variant (name)`.
+        // Strip guard before checking.
+        int ifIdx = t.indexOf(" if ");
+        if (ifIdx > 0) t = t.substring(0, ifIdx).trim();
+        // Variant(name) form.
         java.util.regex.Matcher m = java.util.regex.Pattern.compile(
             "^(?:Some|Ok|Err|None)\\s*\\(\\s*([A-Za-z_][A-Za-z0-9_]*)\\s*\\)$"
         ).matcher(t);
         if (m.find()) return m.group(1);
+        // Bare identifier (rust catch-all binding like `other => ...`).
+        if (t.matches("^[A-Za-z_][A-Za-z0-9_]*$") && !t.equals("_") && !t.equals("None")) {
+            return t;
+        }
         return null;
     }
 

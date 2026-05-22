@@ -2698,6 +2698,21 @@ fn shape_of_expr(expr: &syn::Expr, ctx: &ShapeContext) -> Arc<CValue> {
                 .unwrap_or_default();
             gamma_operation("concept:return", args)
         }
+        // `(a, b, c)` — rust tuple literal. No first-class tuple concept
+        // in the catalog; encode as concept:call with synthetic path leaf
+        // `__provekit_tuple_new`. The lower side detects this name and
+        // emits target-appropriate tuple constructor (e.g. Object[] in java).
+        syn::Expr::Tuple(e) => {
+            let callee = CValue::object([
+                ("kind", CValue::string("path")),
+                ("text", CValue::string("__provekit_tuple_new")),
+            ]);
+            let mut args = vec![callee];
+            for elem in &e.elems {
+                args.push(shape_of_expr(elem, ctx));
+            }
+            gamma_operation("concept:call", args)
+        }
         syn::Expr::Break(e) => {
             let args = e
                 .expr
