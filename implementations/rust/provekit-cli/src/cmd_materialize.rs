@@ -256,6 +256,17 @@ struct EmittedFile {
     bodies: Vec<String>,
     /// Scope-bringings deduplicated across all libraries used in this file.
     imports: std::collections::BTreeSet<String>,
+    /// #1375 Milestone C: per-fragment objects for target-owned assembly.
+    /// Each entry is the realize-fragment JSON shape (source + imports +
+    /// helpers + dependencies + diagnostics + compile_unit_requirements +
+    /// concept_name) that the target kit's assembler consumes to produce
+    /// a compilation unit. Substrate keeps these alongside the legacy
+    /// bodies+imports so it can fall back to concatenation if the kit
+    /// doesn't implement the assemble RPC.
+    fragments: Vec<serde_json::Value>,
+    /// Target manifest used for this file's emission (kept so the
+    /// substrate knows which kit to call for assemble).
+    target_manifest: Option<String>,
 }
 
 /// Map a target language to a file extension. Substrate-honest fallback
@@ -505,11 +516,15 @@ fn run_cross_language_discovery(
                                 let entry = emitted
                                     .entry(path.to_path_buf())
                                     .or_default();
+                                // #1375 Milestone C: record the fragment shape
+                                // so target-kit assemble can consume it.
+                                entry.fragments.push(serde_json::json!({
+                                    "concept_name": carrier.concept_name,
+                                    "source": body.clone(),
+                                    "imports": fragment_imports.clone(),
+                                }));
+                                entry.target_manifest = Some(matches[0].clone());
                                 entry.bodies.push(body);
-                                // #1374: collect imports from both sources:
-                                //   1. fragment.imports (kit's per-fragment declaration)
-                                //   2. scope_bringings_for_realize (legacy manifest-level)
-                                // Both merge into the per-file deduplicated set.
                                 for imp in fragment_imports {
                                     entry.imports.insert(imp);
                                 }
@@ -589,8 +604,15 @@ fn run_cross_language_discovery(
                                     let entry = emitted
                                         .entry(path.to_path_buf())
                                         .or_default();
+                                    // #1375 Milestone C: record fragment for
+                                    // target-kit assemble.
+                                    entry.fragments.push(serde_json::json!({
+                                        "concept_name": carrier.concept_name,
+                                        "source": body.clone(),
+                                        "imports": fragment_imports.clone(),
+                                    }));
+                                    entry.target_manifest = Some(pick.clone());
                                     entry.bodies.push(body);
-                                    // #1374: merge fragment.imports + scope_bringings.
                                     for imp in fragment_imports {
                                         entry.imports.insert(imp);
                                     }
@@ -692,10 +714,66 @@ fn run_cross_language_discovery(
                     return EXIT_USER_ERROR;
                 }
             }
-            // #1374: wrap raw FQN imports as the target language's import
-            // syntax. Substrate stops here on idiom; assembly (Milestone C
-            // / #1375) takes over deeper file-structure decisions (package
-            // declaration, class wrapping, package-level helpers).
+            // #1375 Milestone C: route compilation-unit assembly to the
+            // target kit. The kit decides file layout, package, imports,
+            // class wrapping. Fall back to substrate-side legacy concat
+            // when the kit doesn't implement assemble (method-not-found).
+            let file_basename = rel
+                .file_stem()
+                .and_then(|s| s.to_str())
+                .unwrap_or("lib");
+            let fragments_json = serde_json::to_string(&file.fragments)
+                .unwrap_or_else(|_| "[]".to_string());
+            let mut wrote_assembled = false;
+            if let Some(manifest) = file.target_manifest.as_deref() {
+                use crate::kit_dispatch::{dispatch_assemble, AssembleError};
+                match dispatch_assemble(
+                    project_root,
+                    target_lang,
+                    Some(manifest),
+                    &fragments_json,
+                    file_basename,
+                    None,
+                ) {
+                    Ok(assembled_files) => {
+                        for af in &assembled_files {
+                            let assembled_path = out_dir_path.join(&af.path);
+                            if let Some(parent) = assembled_path.parent() {
+                                let _ = std::fs::create_dir_all(parent);
+                            }
+                            if let Err(err) = std::fs::write(&assembled_path, &af.content) {
+                                eprintln!(
+                                    "{}: failed to write {}: {err}",
+                                    "error".red().bold(),
+                                    assembled_path.display()
+                                );
+                                return EXIT_USER_ERROR;
+                            }
+                            eprintln!(
+                                "  {} wrote {} (target-owned assembly via {} kit)",
+                                "EMIT".green().bold(),
+                                assembled_path.display(),
+                                target_lang,
+                            );
+                            files_written += 1;
+                        }
+                        wrote_assembled = true;
+                    }
+                    Err(AssembleError::MethodNotSupported) => {
+                        // Legacy kit — fall through to substrate concat.
+                    }
+                    Err(AssembleError::Failed(err)) => {
+                        eprintln!(
+                            "  {}: target-kit assemble failed (falling back to legacy concat): {err}",
+                            "WARN".yellow().bold(),
+                        );
+                    }
+                }
+            }
+            if wrote_assembled {
+                continue;
+            }
+            // Legacy concat path (substrate bakes language syntax).
             let imports_block = format_imports_for(target_lang, &file.imports);
             let bodies_block = file.bodies.join("\n\n");
             let content = if imports_block.is_empty() {

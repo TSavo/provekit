@@ -48,6 +48,15 @@ public final class RpcServer {
                     String resultObj = handleInvoke(line);
                     sendResponse(id, resultObj);
                 }
+                // #1375 Milestone C: target-owned assembly. Substrate sends a
+                // batch of fragments + a destination hint; java decides file
+                // layout (package, imports, class wrapping, helper placement)
+                // and returns the files to write. Substrate stops baking
+                // java's file syntax.
+                case "provekit.plugin.assemble" -> {
+                    String resultObj = handleAssemble(line);
+                    sendResponse(id, resultObj);
+                }
                 case "provekit.plugin.shutdown" -> {
                     sendResponse(id, "null");
                     System.exit(0);
@@ -86,6 +95,146 @@ public final class RpcServer {
      * entry rendered a real body. cmd_bind uses this to emit accurate
      * per-concept `bind-stub-body-emitted` gap entries per body-template-memento.md §5.
      */
+    /**
+     * #1375 Milestone C: target-owned compilation-unit assembly.
+     *
+     * Substrate sends the kit the fragments it collected for one source
+     * file + a destination hint (file_basename, optional package_hint).
+     * The kit decides:
+     *   - file names (may split into multiple files)
+     *   - package declaration
+     *   - import block (dedupe across fragments)
+     *   - class wrapping (one or many)
+     *   - helper placement (static fields, init blocks)
+     *
+     * Returns a list of {path, content} pairs that the substrate writes
+     * verbatim to the out-dir. The substrate stops baking java's file
+     * syntax — that decision lives here now.
+     *
+     * Request shape:
+     *   {"target_lang":"java","file_basename":"lib","package_hint":"...",
+     *    "fragments":[{
+     *       "concept_name":"...",
+     *       "source":"...",
+     *       "imports":[...],
+     *       "helpers":[...],
+     *       "dependencies":[...],
+     *       "diagnostics":[...],
+     *       "compile_unit_requirements":{...}
+     *    }, ...]}
+     *
+     * Response shape:
+     *   {"files":[{"path":"Lib.java","content":"..."}]}
+     */
+    private String handleAssemble(String line) {
+        String paramsObj = JsonUtil.extractParamsObject(line);
+        String fileBasename = JsonUtil.decodeJsonStringField(paramsObj, "file_basename");
+        if (fileBasename == null || fileBasename.isBlank()) fileBasename = "lib";
+        String packageHint = JsonUtil.decodeJsonStringField(paramsObj, "package_hint");
+        String fragmentsJson = JsonUtil.extractArrayField(paramsObj, "fragments");
+
+        // Parse fragments + collect imports/sources.
+        java.util.TreeSet<String> mergedImports = new java.util.TreeSet<>();
+        java.util.List<String> bodies = new java.util.ArrayList<>();
+        try {
+            com.provekit.ir.Jcs.Json doc = com.provekit.ir.Jcs.parse(fragmentsJson);
+            if (doc instanceof com.provekit.ir.Jcs.Arr arr) {
+                for (com.provekit.ir.Jcs.Json item : arr.values()) {
+                    if (!(item instanceof com.provekit.ir.Jcs.Obj o)) continue;
+                    String src = o.stringFieldOrNull("source");
+                    if (src != null && !src.isBlank()) bodies.add(src);
+                    com.provekit.ir.Jcs.Json importsArr = o.get("imports");
+                    if (importsArr instanceof com.provekit.ir.Jcs.Arr ia) {
+                        for (com.provekit.ir.Jcs.Json v : ia.values()) {
+                            if (v instanceof com.provekit.ir.Jcs.Str s) {
+                                String fqn = s.value();
+                                if (!fqn.startsWith("java.lang.")) mergedImports.add(fqn);
+                            }
+                        }
+                    }
+                }
+            }
+        } catch (RuntimeException ignored) {
+            // Substrate-honest: malformed fragments → empty compilation unit.
+        }
+
+        // Class name: PascalCase from file basename.
+        String className = toPascalCase(fileBasename);
+        StringBuilder out = new StringBuilder();
+        if (packageHint != null && !packageHint.isBlank()) {
+            out.append("package ").append(packageHint).append(";\n\n");
+        }
+        for (String imp : mergedImports) {
+            out.append("import ").append(imp).append(";\n");
+        }
+        if (!mergedImports.isEmpty()) out.append('\n');
+        out.append("public final class ").append(className).append(" {\n");
+        for (int i = 0; i < bodies.size(); i++) {
+            String body = bodies.get(i);
+            // Strip outer wrapper class if the fragment came pre-wrapped.
+            // Realizers historically emit `final class FooTransported { method }`;
+            // the assembler peels that to get just the methods. Detected by
+            // a `class` keyword followed by `{` on the first non-comment line.
+            String unwrapped = stripWrappingClass(body);
+            for (String line2 : unwrapped.split("\n", -1)) {
+                if (line2.isEmpty()) {
+                    out.append('\n');
+                } else {
+                    out.append("    ").append(line2).append('\n');
+                }
+            }
+            if (i + 1 < bodies.size()) out.append('\n');
+        }
+        out.append("}\n");
+
+        // Single file response for now.
+        String filePath = className + ".java";
+        return "{\"files\":[{"
+            + "\"path\":" + JsonUtil.quoted(filePath)
+            + ",\"content\":" + JsonUtil.quoted(out.toString())
+            + "}]}";
+    }
+
+    /** PascalCase from snake-case or kebab-case file basename. */
+    private static String toPascalCase(String basename) {
+        StringBuilder sb = new StringBuilder();
+        boolean upNext = true;
+        for (int i = 0; i < basename.length(); i++) {
+            char c = basename.charAt(i);
+            if (c == '_' || c == '-' || c == '.') {
+                upNext = true;
+            } else if (upNext) {
+                sb.append(Character.toUpperCase(c));
+                upNext = false;
+            } else {
+                sb.append(c);
+            }
+        }
+        return sb.length() == 0 ? "Lib" : sb.toString();
+    }
+
+    /**
+     * Strip an outer `final class Foo { ... }` wrapper if present, returning
+     * just the inner body. Realizers historically wrap each method in a
+     * per-concept final class; the assembler collects them into one outer
+     * class, so the inner wrappers must be peeled.
+     *
+     * Returns the original body unchanged if no wrapper is detected.
+     */
+    private static String stripWrappingClass(String body) {
+        String trimmed = body.trim();
+        // Look for "final class <Name> {" near the start, optionally
+        // preceded by comments.
+        java.util.regex.Pattern p = java.util.regex.Pattern.compile(
+            "(?s)^\\s*(?://[^\\n]*\\n\\s*)*(?:final\\s+|public\\s+)?class\\s+\\w+\\s*\\{(.*)\\}\\s*$"
+        );
+        java.util.regex.Matcher m = p.matcher(trimmed);
+        if (m.matches()) {
+            return m.group(1).trim();
+        }
+        return body;
+    }
+
     private String handleInvoke(String line) {
         // Extract the inner params object to avoid ambiguity with the RPC "params" key.
         String paramsObj = JsonUtil.extractParamsObject(line);
