@@ -90,6 +90,12 @@ pub struct MaterializeArgs {
     /// Write materialized files under this directory, preserving paths relative to --source-dir.
     #[arg(long = "out-dir", conflicts_with = "write")]
     pub out_dir: Option<PathBuf>,
+    /// After emitting files (requires --out-dir), invoke the target language's compiler over
+    /// the output directory. Non-zero compiler exit causes `materialize` to return exit code 1.
+    /// Supported targets: java (javac), rust (cargo check / rustc), python (py_compile), typescript (tsc).
+    /// Unsupported targets produce a warning and exit 0. Off by default.
+    #[arg(long = "compile-check", requires = "out_dir")]
+    pub compile_check: bool,
     #[command(flatten)]
     pub out: OutputFlags,
 }
@@ -163,6 +169,7 @@ pub fn run(args: MaterializeArgs) -> u8 {
                 &args.family_library,
                 args.out_dir.as_deref(),
                 args.out.json,
+                args.compile_check,
             );
         }
     }
@@ -194,6 +201,12 @@ pub fn run(args: MaterializeArgs) -> u8 {
         if let Err(error) = write_out_dir(out_dir, &files) {
             eprintln!("{}: {error}", "error".red().bold());
             return EXIT_USER_ERROR;
+        }
+        if args.compile_check {
+            let check_result = run_compile_check(&target_lang, out_dir);
+            if check_result != EXIT_OK {
+                return check_result;
+            }
         }
     } else if args.write {
         if let Err(error) = write_in_place(&files) {
@@ -478,6 +491,7 @@ fn run_cross_language_discovery(
     family_library_overrides: &[FamilyLibraryPair],
     out_dir: Option<&Path>,
     json_report: bool,
+    compile_check: bool,
 ) -> u8 {
     if !json_report {
         eprintln!(
@@ -1028,6 +1042,12 @@ fn run_cross_language_discovery(
             "materialize".green().bold(),
             out_dir_path.display()
         );
+        if compile_check {
+            let check_result = run_compile_check(target_lang, out_dir_path);
+            if check_result != EXIT_OK {
+                return check_result;
+            }
+        }
     } else {
         eprintln!(
             "{}: discovery-only mode. Add --out-dir <PATH> to emit target-language files.",
@@ -1042,6 +1062,168 @@ fn run_cross_language_discovery(
     } else {
         EXIT_OK
     }
+}
+
+/// Invoke the target language's compiler over `out_dir`. Captures stderr and
+/// prints it on non-zero exit. Returns EXIT_VERIFY_FAIL on compiler error,
+/// EXIT_OK on success or for unsupported languages (which get a warning).
+///
+/// Supported targets:
+/// - `java`: `javac <all .java files recursively under out_dir>`
+/// - `rust`: `cargo check` if a Cargo.toml is present, else `rustc --crate-type lib` per .rs file
+/// - `python`: `python3 -m py_compile <all .py files>`
+/// - `typescript`: `tsc --noEmit <all .ts/.tsx files>`
+/// - others: warns and returns EXIT_OK
+fn run_compile_check(target_lang: &str, out_dir: &Path) -> u8 {
+    use std::process::Command;
+
+    eprintln!(
+        "{} compile-check: running {} compiler over {}",
+        "materialize".cyan().bold(),
+        target_lang,
+        out_dir.display()
+    );
+
+    match target_lang {
+        "java" => {
+            let java_files = collect_files_by_ext(out_dir, "java");
+            if java_files.is_empty() {
+                eprintln!(
+                    "{}: compile-check: no .java files found under {}",
+                    "warn".yellow().bold(),
+                    out_dir.display()
+                );
+                return EXIT_OK;
+            }
+            let mut cmd = Command::new("javac");
+            cmd.args(&java_files);
+            run_compiler_command(&mut cmd, "javac")
+        }
+        "rust" => {
+            let cargo_toml = out_dir.join("Cargo.toml");
+            if cargo_toml.is_file() {
+                let mut cmd = Command::new("cargo");
+                cmd.arg("check").current_dir(out_dir);
+                run_compiler_command(&mut cmd, "cargo check")
+            } else {
+                let rs_files = collect_files_by_ext(out_dir, "rs");
+                if rs_files.is_empty() {
+                    eprintln!(
+                        "{}: compile-check: no .rs files found under {}",
+                        "warn".yellow().bold(),
+                        out_dir.display()
+                    );
+                    return EXIT_OK;
+                }
+                let mut any_fail = false;
+                for file in &rs_files {
+                    let mut cmd = Command::new("rustc");
+                    cmd.args(["--crate-type", "lib", "--edition", "2021"])
+                        .arg(file);
+                    if run_compiler_command(&mut cmd, "rustc") != EXIT_OK {
+                        any_fail = true;
+                    }
+                }
+                if any_fail { EXIT_VERIFY_FAIL } else { EXIT_OK }
+            }
+        }
+        "python" => {
+            let py_files = collect_files_by_ext(out_dir, "py");
+            if py_files.is_empty() {
+                eprintln!(
+                    "{}: compile-check: no .py files found under {}",
+                    "warn".yellow().bold(),
+                    out_dir.display()
+                );
+                return EXIT_OK;
+            }
+            let mut cmd = Command::new("python3");
+            cmd.arg("-m").arg("py_compile").args(&py_files);
+            run_compiler_command(&mut cmd, "python3 -m py_compile")
+        }
+        "typescript" => {
+            let ts_files: Vec<PathBuf> = {
+                let mut v = collect_files_by_ext(out_dir, "ts");
+                v.extend(collect_files_by_ext(out_dir, "tsx"));
+                v
+            };
+            if ts_files.is_empty() {
+                eprintln!(
+                    "{}: compile-check: no .ts/.tsx files found under {}",
+                    "warn".yellow().bold(),
+                    out_dir.display()
+                );
+                return EXIT_OK;
+            }
+            let mut cmd = Command::new("tsc");
+            cmd.arg("--noEmit").args(&ts_files);
+            run_compiler_command(&mut cmd, "tsc --noEmit")
+        }
+        other => {
+            eprintln!(
+                "{}: compile-check is not supported for target `{other}`; skipping (exit 0)",
+                "warn".yellow().bold()
+            );
+            EXIT_OK
+        }
+    }
+}
+
+/// Run a compiler Command, capture stdout+stderr, print stderr on non-zero exit,
+/// and return EXIT_VERIFY_FAIL on failure or EXIT_OK on success.
+fn run_compiler_command(cmd: &mut std::process::Command, label: &str) -> u8 {
+    match cmd.output() {
+        Err(err) => {
+            eprintln!(
+                "{}: compile-check: failed to invoke {label}: {err}",
+                "error".red().bold()
+            );
+            EXIT_VERIFY_FAIL
+        }
+        Ok(output) => {
+            if output.status.success() {
+                eprintln!(
+                    "{} compile-check: {label} passed",
+                    "materialize".green().bold()
+                );
+                EXIT_OK
+            } else {
+                eprintln!(
+                    "{}: compile-check: {label} failed (exit {})",
+                    "error".red().bold(),
+                    output.status.code().map(|c| c.to_string()).unwrap_or_else(|| "signal".to_string())
+                );
+                let stderr = String::from_utf8_lossy(&output.stderr);
+                if !stderr.is_empty() {
+                    eprintln!("{}", stderr);
+                }
+                let stdout = String::from_utf8_lossy(&output.stdout);
+                if !stdout.is_empty() {
+                    eprintln!("{}", stdout);
+                }
+                EXIT_VERIFY_FAIL
+            }
+        }
+    }
+}
+
+/// Recursively collect all files with the given extension under `dir`.
+/// Uses WalkDir (already a dependency) to avoid shell globbing.
+fn collect_files_by_ext(dir: &Path, ext: &str) -> Vec<PathBuf> {
+    WalkDir::new(dir)
+        .into_iter()
+        .flatten()
+        .filter_map(|entry| {
+            let path = entry.into_path();
+            if path.is_file()
+                && path.extension().and_then(|e| e.to_str()) == Some(ext)
+            {
+                Some(path)
+            } else {
+                None
+            }
+        })
+        .collect()
 }
 
 /// Parse the carrier's raw_payload JSON and return the family field if
