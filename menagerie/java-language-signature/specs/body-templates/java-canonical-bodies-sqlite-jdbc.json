@@ -1,13 +1,15 @@
 {
   "header": {
-    "cid": "blake3-512:5f1b4478a286d94c972012514bddec81c7876b6aab33bc030b293a5b4dc4397b20ebd8b2663fe4cb1f577043b9371fa0798a1ef95332eeae8bad93f74bc4cfe6",
+    "cid": "blake3-512:58a8fe55256e39021254ea5686785259b1280d999765b2d33df745eeca650eaf8768a9ebfc70bcb1e0a77fe3bc83b455b444c78f3c51d85c2558c68023646ce4",
     "content": {
+      "target_language": "java",
+      "template_name": "java-canonical-bodies-sqlite-jdbc",
       "entries": [
         {
           "concept_name": "concept:sql-connection-open",
           "emission_template": {
             "kind": "verbatim",
-            "template": "        return DriverManager.getConnection(${param0});\n    "
+            "template": "// __fragment_imports__: java.sql.Connection, java.sql.DatabaseMetaData, java.sql.DriverManager, java.sql.PreparedStatement, java.sql.ResultSet, java.sql.ResultSetMetaData, java.sql.SQLException, java.sql.Savepoint, java.sql.Statement, javax.sql.DataSource\n        return DriverManager.getConnection(${param0});\n    "
           },
           "loss_record_contribution": {
             "form": "literal",
@@ -21,8 +23,8 @@
             }
           },
           "signature_guard": {
-            "max_params": 1,
-            "min_params": 1
+            "min_params": 1,
+            "max_params": 1
           },
           "target_library_tag": "sqlite-jdbc"
         },
@@ -30,7 +32,7 @@
           "concept_name": "concept:sql-connection-open",
           "emission_template": {
             "kind": "verbatim",
-            "template": "        return DriverManager.getConnection(\"jdbc:sqlite::memory:\");\n    "
+            "template": "// __fragment_imports__: java.sql.Connection, java.sql.DatabaseMetaData, java.sql.DriverManager, java.sql.PreparedStatement, java.sql.ResultSet, java.sql.ResultSetMetaData, java.sql.SQLException, java.sql.Savepoint, java.sql.Statement, javax.sql.DataSource\n        return DriverManager.getConnection(\"jdbc:sqlite::memory:\");\n    "
           },
           "loss_record_contribution": {
             "form": "literal",
@@ -43,8 +45,8 @@
             }
           },
           "signature_guard": {
-            "max_params": 0,
-            "min_params": 0
+            "min_params": 0,
+            "max_params": 0
           },
           "target_library_tag": "sqlite-jdbc"
         },
@@ -52,7 +54,7 @@
           "concept_name": "concept:sql-connection-open",
           "emission_template": {
             "kind": "verbatim",
-            "template": "        return DriverManager.getConnection(${param0}, ${param1}, ${param2});\n    "
+            "template": "// __fragment_imports__: java.sql.Connection, java.sql.DatabaseMetaData, java.sql.DriverManager, java.sql.PreparedStatement, java.sql.ResultSet, java.sql.ResultSetMetaData, java.sql.SQLException, java.sql.Savepoint, java.sql.Statement, javax.sql.DataSource\n        return DriverManager.getConnection(${param0}, ${param1}, ${param2});\n    "
           },
           "loss_record_contribution": {
             "form": "literal",
@@ -67,8 +69,8 @@
             }
           },
           "signature_guard": {
-            "max_params": 3,
-            "min_params": 3
+            "min_params": 3,
+            "max_params": 3
           },
           "target_library_tag": "sqlite-jdbc"
         },
@@ -76,7 +78,7 @@
           "concept_name": "concept:sql-connection-close",
           "emission_template": {
             "kind": "verbatim",
-            "template": "        ${param0}.close();\n    "
+            "template": "// __fragment_imports__: java.sql.Connection, java.sql.DatabaseMetaData, java.sql.DriverManager, java.sql.PreparedStatement, java.sql.ResultSet, java.sql.ResultSetMetaData, java.sql.SQLException, java.sql.Savepoint, java.sql.Statement, javax.sql.DataSource\n        ${param0}.close();\n    "
           },
           "loss_record_contribution": {
             "form": "literal",
@@ -88,8 +90,8 @@
             }
           },
           "signature_guard": {
-            "max_params": 1,
-            "min_params": 1
+            "min_params": 1,
+            "max_params": 1
           },
           "target_library_tag": "sqlite-jdbc"
         },
@@ -97,7 +99,7 @@
           "concept_name": "concept:sql-connection-pool-acquire",
           "emission_template": {
             "kind": "verbatim",
-            "template": "        return ${param0}.getConnection();\n    "
+            "template": "// __fragment_imports__: java.sql.Connection, java.sql.DatabaseMetaData, java.sql.DriverManager, java.sql.PreparedStatement, java.sql.ResultSet, java.sql.ResultSetMetaData, java.sql.SQLException, java.sql.Savepoint, java.sql.Statement, javax.sql.DataSource\n        return ${param0}.getConnection();\n    "
           },
           "loss_record_contribution": {
             "form": "literal",
@@ -111,8 +113,8 @@
             }
           },
           "signature_guard": {
-            "max_params": 1,
-            "min_params": 1
+            "min_params": 1,
+            "max_params": 1
           },
           "target_library_tag": "sqlite-jdbc"
         },
@@ -120,7 +122,7 @@
           "concept_name": "concept:sql-execute",
           "emission_template": {
             "kind": "verbatim",
-            "template": "        try (Statement stmt = ${param0}.createStatement()) {\n            return stmt.executeUpdate(${param1});\n        }\n    "
+            "template": "// __fragment_imports__: java.${param1}.Connection, java.${param1}.DatabaseMetaData, java.${param1}.DriverManager, java.${param1}.PreparedStatement, java.${param1}.ResultSet, java.${param1}.ResultSetMetaData, java.${param1}.SQLException, java.${param1}.Savepoint, java.${param1}.Statement, javax.${param1}.DataSource\n        try (Statement stmt = ${param0}.createStatement()) {\n            return stmt.executeUpdate(${param1});\n        }\n    "
           },
           "loss_record_contribution": {
             "form": "literal",
@@ -134,8 +136,8 @@
             }
           },
           "signature_guard": {
-            "max_params": 2,
-            "min_params": 2
+            "min_params": 2,
+            "max_params": 2
           },
           "target_library_tag": "sqlite-jdbc"
         },
@@ -143,7 +145,7 @@
           "concept_name": "concept:sql-execute",
           "emission_template": {
             "kind": "verbatim",
-            "template": "        try (Statement stmt = ${param0}.createStatement()) {\n            stmt.execute(${param1});\n        }\n    "
+            "template": "// __fragment_imports__: java.${param1}.Connection, java.${param1}.DatabaseMetaData, java.${param1}.DriverManager, java.${param1}.PreparedStatement, java.${param1}.ResultSet, java.${param1}.ResultSetMetaData, java.${param1}.SQLException, java.${param1}.Savepoint, java.${param1}.Statement, javax.${param1}.DataSource\n        try (Statement stmt = ${param0}.createStatement()) {\n            stmt.execute(${param1});\n        }\n    "
           },
           "loss_record_contribution": {
             "form": "literal",
@@ -156,8 +158,8 @@
             }
           },
           "signature_guard": {
-            "max_params": 2,
-            "min_params": 2
+            "min_params": 2,
+            "max_params": 2
           },
           "target_library_tag": "sqlite-jdbc"
         },
@@ -165,7 +167,7 @@
           "concept_name": "concept:sql-query",
           "emission_template": {
             "kind": "verbatim",
-            "template": "        Statement stmt = ${param0}.createStatement();\n        return stmt.executeQuery(${param1});\n    "
+            "template": "// __fragment_imports__: java.${param1}.Connection, java.${param1}.DatabaseMetaData, java.${param1}.DriverManager, java.${param1}.PreparedStatement, java.${param1}.ResultSet, java.${param1}.ResultSetMetaData, java.${param1}.SQLException, java.${param1}.Savepoint, java.${param1}.Statement, javax.${param1}.DataSource\n        Statement stmt = ${param0}.createStatement();\n        return stmt.executeQuery(${param1});\n    "
           },
           "loss_record_contribution": {
             "form": "literal",
@@ -179,8 +181,8 @@
             }
           },
           "signature_guard": {
-            "max_params": 2,
-            "min_params": 2
+            "min_params": 2,
+            "max_params": 2
           },
           "target_library_tag": "sqlite-jdbc"
         },
@@ -188,7 +190,7 @@
           "concept_name": "concept:sql-prepare",
           "emission_template": {
             "kind": "verbatim",
-            "template": "        return ${param0}.prepareStatement(${param1});\n    "
+            "template": "// __fragment_imports__: java.${param1}.Connection, java.${param1}.DatabaseMetaData, java.${param1}.DriverManager, java.${param1}.PreparedStatement, java.${param1}.ResultSet, java.${param1}.ResultSetMetaData, java.${param1}.SQLException, java.${param1}.Savepoint, java.${param1}.Statement, javax.${param1}.DataSource\n        return ${param0}.prepareStatement(${param1});\n    "
           },
           "loss_record_contribution": {
             "form": "literal",
@@ -202,8 +204,8 @@
             }
           },
           "signature_guard": {
-            "max_params": 2,
-            "min_params": 2
+            "min_params": 2,
+            "max_params": 2
           },
           "target_library_tag": "sqlite-jdbc"
         },
@@ -211,7 +213,7 @@
           "concept_name": "concept:sql-prepare-cached",
           "emission_template": {
             "kind": "verbatim",
-            "template": "        // JDBC has no built-in statement cache; delegate to prepareStatement.\n        // The loss dimension \"cache-eviction-policy\" names this gap explicitly.\n        return ${param0}.prepareStatement(${param1});\n    "
+            "template": "// __fragment_imports__: java.${param1}.Connection, java.${param1}.DatabaseMetaData, java.${param1}.DriverManager, java.${param1}.PreparedStatement, java.${param1}.ResultSet, java.${param1}.ResultSetMetaData, java.${param1}.SQLException, java.${param1}.Savepoint, java.${param1}.Statement, javax.${param1}.DataSource\n        // JDBC has no built-in statement cache; delegate to prepareStatement.\n        // The loss dimension \"cache-eviction-policy\" names this gap explicitly.\n        return ${param0}.prepareStatement(${param1});\n    "
           },
           "loss_record_contribution": {
             "form": "literal",
@@ -225,8 +227,8 @@
             }
           },
           "signature_guard": {
-            "max_params": 2,
-            "min_params": 2
+            "min_params": 2,
+            "max_params": 2
           },
           "target_library_tag": "sqlite-jdbc"
         },
@@ -234,7 +236,7 @@
           "concept_name": "concept:sql-execute",
           "emission_template": {
             "kind": "verbatim",
-            "template": "        return ${param0}.executeUpdate();\n    "
+            "template": "// __fragment_imports__: java.sql.Connection, java.sql.DatabaseMetaData, java.sql.DriverManager, java.sql.PreparedStatement, java.sql.ResultSet, java.sql.ResultSetMetaData, java.sql.SQLException, java.sql.Savepoint, java.sql.Statement, javax.sql.DataSource\n        return ${param0}.executeUpdate();\n    "
           },
           "loss_record_contribution": {
             "form": "literal",
@@ -248,8 +250,8 @@
             }
           },
           "signature_guard": {
-            "max_params": 1,
-            "min_params": 1
+            "min_params": 1,
+            "max_params": 1
           },
           "target_library_tag": "sqlite-jdbc"
         },
@@ -257,7 +259,7 @@
           "concept_name": "concept:sql-query",
           "emission_template": {
             "kind": "verbatim",
-            "template": "        return ${param0}.executeQuery();\n    "
+            "template": "// __fragment_imports__: java.sql.Connection, java.sql.DatabaseMetaData, java.sql.DriverManager, java.sql.PreparedStatement, java.sql.ResultSet, java.sql.ResultSetMetaData, java.sql.SQLException, java.sql.Savepoint, java.sql.Statement, javax.sql.DataSource\n        return ${param0}.executeQuery();\n    "
           },
           "loss_record_contribution": {
             "form": "literal",
@@ -270,8 +272,8 @@
             }
           },
           "signature_guard": {
-            "max_params": 1,
-            "min_params": 1
+            "min_params": 1,
+            "max_params": 1
           },
           "target_library_tag": "sqlite-jdbc"
         },
@@ -279,7 +281,7 @@
           "concept_name": "concept:sql-query",
           "emission_template": {
             "kind": "verbatim",
-            "template": "        return ${param0}.executeQuery();\n    "
+            "template": "// __fragment_imports__: java.sql.Connection, java.sql.DatabaseMetaData, java.sql.DriverManager, java.sql.PreparedStatement, java.sql.ResultSet, java.sql.ResultSetMetaData, java.sql.SQLException, java.sql.Savepoint, java.sql.Statement, javax.sql.DataSource\n        return ${param0}.executeQuery();\n    "
           },
           "loss_record_contribution": {
             "form": "literal",
@@ -293,8 +295,8 @@
             }
           },
           "signature_guard": {
-            "max_params": 1,
-            "min_params": 1
+            "min_params": 1,
+            "max_params": 1
           },
           "target_library_tag": "sqlite-jdbc"
         },
@@ -302,7 +304,7 @@
           "concept_name": "concept:sql-query",
           "emission_template": {
             "kind": "verbatim",
-            "template": "        return ${param0}.executeQuery();\n    "
+            "template": "// __fragment_imports__: java.sql.Connection, java.sql.DatabaseMetaData, java.sql.DriverManager, java.sql.PreparedStatement, java.sql.ResultSet, java.sql.ResultSetMetaData, java.sql.SQLException, java.sql.Savepoint, java.sql.Statement, javax.sql.DataSource\n        return ${param0}.executeQuery();\n    "
           },
           "loss_record_contribution": {
             "form": "literal",
@@ -316,8 +318,8 @@
             }
           },
           "signature_guard": {
-            "max_params": 1,
-            "min_params": 1
+            "min_params": 1,
+            "max_params": 1
           },
           "target_library_tag": "sqlite-jdbc"
         },
@@ -325,7 +327,7 @@
           "concept_name": "concept:insert-and-get-id",
           "emission_template": {
             "kind": "verbatim",
-            "template": "        ${param0}.executeUpdate();\n        try (ResultSet rs = ${param0}.getGeneratedKeys()) {\n            if (rs.next()) return rs.getLong(1);\n            return -1L;\n        }\n    "
+            "template": "// __fragment_imports__: java.sql.Connection, java.sql.DatabaseMetaData, java.sql.DriverManager, java.sql.PreparedStatement, java.sql.ResultSet, java.sql.ResultSetMetaData, java.sql.SQLException, java.sql.Savepoint, java.sql.Statement, javax.sql.DataSource\n        ${param0}.executeUpdate();\n        try (ResultSet rs = ${param0}.getGeneratedKeys()) {\n            if (rs.next()) return rs.getLong(1);\n            return -1L;\n        }\n    "
           },
           "loss_record_contribution": {
             "form": "literal",
@@ -338,8 +340,8 @@
             }
           },
           "signature_guard": {
-            "max_params": 1,
-            "min_params": 1
+            "min_params": 1,
+            "max_params": 1
           },
           "target_library_tag": "sqlite-jdbc"
         },
@@ -347,7 +349,7 @@
           "concept_name": "concept:sql-query",
           "emission_template": {
             "kind": "verbatim",
-            "template": "        try (ResultSet rs = ${param0}.executeQuery()) {\n            return rs.next();\n        }\n    "
+            "template": "// __fragment_imports__: java.sql.Connection, java.sql.DatabaseMetaData, java.sql.DriverManager, java.sql.PreparedStatement, java.sql.ResultSet, java.sql.ResultSetMetaData, java.sql.SQLException, java.sql.Savepoint, java.sql.Statement, javax.sql.DataSource\n        try (ResultSet rs = ${param0}.executeQuery()) {\n            return rs.next();\n        }\n    "
           },
           "loss_record_contribution": {
             "form": "literal",
@@ -360,8 +362,8 @@
             }
           },
           "signature_guard": {
-            "max_params": 1,
-            "min_params": 1
+            "min_params": 1,
+            "max_params": 1
           },
           "target_library_tag": "sqlite-jdbc"
         },
@@ -369,7 +371,7 @@
           "concept_name": "concept:sql-batch-execute",
           "emission_template": {
             "kind": "verbatim",
-            "template": "        return ${param0}.executeBatch();\n    "
+            "template": "// __fragment_imports__: java.sql.Connection, java.sql.DatabaseMetaData, java.sql.DriverManager, java.sql.PreparedStatement, java.sql.ResultSet, java.sql.ResultSetMetaData, java.sql.SQLException, java.sql.Savepoint, java.sql.Statement, javax.sql.DataSource\n        return ${param0}.executeBatch();\n    "
           },
           "loss_record_contribution": {
             "form": "literal",
@@ -382,8 +384,8 @@
             }
           },
           "signature_guard": {
-            "max_params": 1,
-            "min_params": 1
+            "min_params": 1,
+            "max_params": 1
           },
           "target_library_tag": "sqlite-jdbc"
         },
@@ -391,7 +393,7 @@
           "concept_name": "concept:sql-transaction-begin",
           "emission_template": {
             "kind": "verbatim",
-            "template": "        ${param0}.setAutoCommit(false);\n    "
+            "template": "// __fragment_imports__: java.sql.Connection, java.sql.DatabaseMetaData, java.sql.DriverManager, java.sql.PreparedStatement, java.sql.ResultSet, java.sql.ResultSetMetaData, java.sql.SQLException, java.sql.Savepoint, java.sql.Statement, javax.sql.DataSource\n        ${param0}.setAutoCommit(false);\n    "
           },
           "loss_record_contribution": {
             "form": "literal",
@@ -405,8 +407,8 @@
             }
           },
           "signature_guard": {
-            "max_params": 1,
-            "min_params": 1
+            "min_params": 1,
+            "max_params": 1
           },
           "target_library_tag": "sqlite-jdbc"
         },
@@ -414,7 +416,7 @@
           "concept_name": "concept:sql-transaction-begin",
           "emission_template": {
             "kind": "verbatim",
-            "template": "        ${param0}.setAutoCommit(false);\n        ${param0}.setTransactionIsolation(${param1});\n    "
+            "template": "// __fragment_imports__: java.sql.Connection, java.sql.DatabaseMetaData, java.sql.DriverManager, java.sql.PreparedStatement, java.sql.ResultSet, java.sql.ResultSetMetaData, java.sql.SQLException, java.sql.Savepoint, java.sql.Statement, javax.sql.DataSource\n        ${param0}.setAutoCommit(false);\n        ${param0}.setTransactionIsolation(${param1});\n    "
           },
           "loss_record_contribution": {
             "form": "literal",
@@ -428,8 +430,8 @@
             }
           },
           "signature_guard": {
-            "max_params": 2,
-            "min_params": 2
+            "min_params": 2,
+            "max_params": 2
           },
           "target_library_tag": "sqlite-jdbc"
         },
@@ -437,7 +439,7 @@
           "concept_name": "concept:sql-transaction-commit",
           "emission_template": {
             "kind": "verbatim",
-            "template": "        ${param0}.commit();\n    "
+            "template": "// __fragment_imports__: java.sql.Connection, java.sql.DatabaseMetaData, java.sql.DriverManager, java.sql.PreparedStatement, java.sql.ResultSet, java.sql.ResultSetMetaData, java.sql.SQLException, java.sql.Savepoint, java.sql.Statement, javax.sql.DataSource\n        ${param0}.commit();\n    "
           },
           "loss_record_contribution": {
             "form": "literal",
@@ -450,8 +452,8 @@
             }
           },
           "signature_guard": {
-            "max_params": 1,
-            "min_params": 1
+            "min_params": 1,
+            "max_params": 1
           },
           "target_library_tag": "sqlite-jdbc"
         },
@@ -459,7 +461,7 @@
           "concept_name": "concept:sql-transaction-rollback",
           "emission_template": {
             "kind": "verbatim",
-            "template": "        ${param0}.rollback();\n    "
+            "template": "// __fragment_imports__: java.sql.Connection, java.sql.DatabaseMetaData, java.sql.DriverManager, java.sql.PreparedStatement, java.sql.ResultSet, java.sql.ResultSetMetaData, java.sql.SQLException, java.sql.Savepoint, java.sql.Statement, javax.sql.DataSource\n        ${param0}.rollback();\n    "
           },
           "loss_record_contribution": {
             "form": "literal",
@@ -472,8 +474,8 @@
             }
           },
           "signature_guard": {
-            "max_params": 1,
-            "min_params": 1
+            "min_params": 1,
+            "max_params": 1
           },
           "target_library_tag": "sqlite-jdbc"
         },
@@ -481,7 +483,7 @@
           "concept_name": "concept:sql-savepoint",
           "emission_template": {
             "kind": "verbatim",
-            "template": "        return ${param0}.setSavepoint();\n    "
+            "template": "// __fragment_imports__: java.sql.Connection, java.sql.DatabaseMetaData, java.sql.DriverManager, java.sql.PreparedStatement, java.sql.ResultSet, java.sql.ResultSetMetaData, java.sql.SQLException, java.sql.Savepoint, java.sql.Statement, javax.sql.DataSource\n        return ${param0}.setSavepoint();\n    "
           },
           "loss_record_contribution": {
             "form": "literal",
@@ -494,8 +496,8 @@
             }
           },
           "signature_guard": {
-            "max_params": 1,
-            "min_params": 1
+            "min_params": 1,
+            "max_params": 1
           },
           "target_library_tag": "sqlite-jdbc"
         },
@@ -503,7 +505,7 @@
           "concept_name": "concept:sql-transaction-rollback",
           "emission_template": {
             "kind": "verbatim",
-            "template": "        ${param0}.rollback(${param1});\n    "
+            "template": "// __fragment_imports__: java.sql.Connection, java.sql.DatabaseMetaData, java.sql.DriverManager, java.sql.PreparedStatement, java.sql.ResultSet, java.sql.ResultSetMetaData, java.sql.SQLException, java.sql.Savepoint, java.sql.Statement, javax.sql.DataSource\n        ${param0}.rollback(${param1});\n    "
           },
           "loss_record_contribution": {
             "form": "literal",
@@ -516,8 +518,8 @@
             }
           },
           "signature_guard": {
-            "max_params": 2,
-            "min_params": 2
+            "min_params": 2,
+            "max_params": 2
           },
           "target_library_tag": "sqlite-jdbc"
         },
@@ -525,7 +527,7 @@
           "concept_name": "concept:sql-transaction-isolation-level",
           "emission_template": {
             "kind": "verbatim",
-            "template": "        ${param0}.setTransactionIsolation(${param1});\n    "
+            "template": "// __fragment_imports__: java.sql.Connection, java.sql.DatabaseMetaData, java.sql.DriverManager, java.sql.PreparedStatement, java.sql.ResultSet, java.sql.ResultSetMetaData, java.sql.SQLException, java.sql.Savepoint, java.sql.Statement, javax.sql.DataSource\n        ${param0}.setTransactionIsolation(${param1});\n    "
           },
           "loss_record_contribution": {
             "form": "literal",
@@ -538,8 +540,8 @@
             }
           },
           "signature_guard": {
-            "max_params": 2,
-            "min_params": 2
+            "min_params": 2,
+            "max_params": 2
           },
           "target_library_tag": "sqlite-jdbc"
         },
@@ -547,7 +549,7 @@
           "concept_name": "concept:sql-row-get-column",
           "emission_template": {
             "kind": "verbatim",
-            "template": "        return ${param0}.getObject(${param1});\n    "
+            "template": "// __fragment_imports__: java.sql.Connection, java.sql.DatabaseMetaData, java.sql.DriverManager, java.sql.PreparedStatement, java.sql.ResultSet, java.sql.ResultSetMetaData, java.sql.SQLException, java.sql.Savepoint, java.sql.Statement, javax.sql.DataSource\n        return ${param0}.getObject(${param1});\n    "
           },
           "loss_record_contribution": {
             "form": "literal",
@@ -560,8 +562,8 @@
             }
           },
           "signature_guard": {
-            "max_params": 2,
-            "min_params": 2
+            "min_params": 2,
+            "max_params": 2
           },
           "target_library_tag": "sqlite-jdbc"
         },
@@ -569,7 +571,7 @@
           "concept_name": "concept:sql-row-get-column",
           "emission_template": {
             "kind": "verbatim",
-            "template": "        return ${param0}.getObject(${param1});\n    "
+            "template": "// __fragment_imports__: java.sql.Connection, java.sql.DatabaseMetaData, java.sql.DriverManager, java.sql.PreparedStatement, java.sql.ResultSet, java.sql.ResultSetMetaData, java.sql.SQLException, java.sql.Savepoint, java.sql.Statement, javax.sql.DataSource\n        return ${param0}.getObject(${param1});\n    "
           },
           "loss_record_contribution": {
             "form": "literal",
@@ -583,8 +585,8 @@
             }
           },
           "signature_guard": {
-            "max_params": 2,
-            "min_params": 2
+            "min_params": 2,
+            "max_params": 2
           },
           "target_library_tag": "sqlite-jdbc"
         },
@@ -592,7 +594,7 @@
           "concept_name": "concept:sql-row-get-column",
           "emission_template": {
             "kind": "verbatim",
-            "template": "        return ${param0}.getString(${param1});\n    "
+            "template": "// __fragment_imports__: java.sql.Connection, java.sql.DatabaseMetaData, java.sql.DriverManager, java.sql.PreparedStatement, java.sql.ResultSet, java.sql.ResultSetMetaData, java.sql.SQLException, java.sql.Savepoint, java.sql.Statement, javax.sql.DataSource\n        return ${param0}.getString(${param1});\n    "
           },
           "loss_record_contribution": {
             "form": "literal",
@@ -606,8 +608,8 @@
             }
           },
           "signature_guard": {
-            "max_params": 2,
-            "min_params": 2
+            "min_params": 2,
+            "max_params": 2
           },
           "target_library_tag": "sqlite-jdbc"
         },
@@ -615,7 +617,7 @@
           "concept_name": "concept:sql-row-get-column",
           "emission_template": {
             "kind": "verbatim",
-            "template": "        return ${param0}.getLong(${param1});\n    "
+            "template": "// __fragment_imports__: java.sql.Connection, java.sql.DatabaseMetaData, java.sql.DriverManager, java.sql.PreparedStatement, java.sql.ResultSet, java.sql.ResultSetMetaData, java.sql.SQLException, java.sql.Savepoint, java.sql.Statement, javax.sql.DataSource\n        return ${param0}.getLong(${param1});\n    "
           },
           "loss_record_contribution": {
             "form": "literal",
@@ -630,8 +632,8 @@
             }
           },
           "signature_guard": {
-            "max_params": 2,
-            "min_params": 2
+            "min_params": 2,
+            "max_params": 2
           },
           "target_library_tag": "sqlite-jdbc"
         },
@@ -639,7 +641,7 @@
           "concept_name": "concept:insert-and-get-id",
           "emission_template": {
             "kind": "verbatim",
-            "template": "        try (Statement stmt = ${param0}.createStatement();\n             ResultSet rs = stmt.executeQuery(\"SELECT last_insert_rowid()\")) {\n            return rs.next() ? rs.getLong(1) : -1L;\n        }\n    "
+            "template": "// __fragment_imports__: java.sql.Connection, java.sql.DatabaseMetaData, java.sql.DriverManager, java.sql.PreparedStatement, java.sql.ResultSet, java.sql.ResultSetMetaData, java.sql.SQLException, java.sql.Savepoint, java.sql.Statement, javax.sql.DataSource\n        try (Statement stmt = ${param0}.createStatement();\n             ResultSet rs = stmt.executeQuery(\"SELECT last_insert_rowid()\")) {\n            return rs.next() ? rs.getLong(1) : -1L;\n        }\n    "
           },
           "loss_record_contribution": {
             "form": "literal",
@@ -652,8 +654,8 @@
             }
           },
           "signature_guard": {
-            "max_params": 1,
-            "min_params": 1
+            "min_params": 1,
+            "max_params": 1
           },
           "target_library_tag": "sqlite-jdbc"
         },
@@ -661,7 +663,7 @@
           "concept_name": "concept:sql-changes-count",
           "emission_template": {
             "kind": "verbatim",
-            "template": "        try (Statement stmt = ${param0}.createStatement();\n             ResultSet rs = stmt.executeQuery(\"SELECT changes()\")) {\n            return rs.next() ? rs.getInt(1) : 0;\n        }\n    "
+            "template": "// __fragment_imports__: java.sql.Connection, java.sql.DatabaseMetaData, java.sql.DriverManager, java.sql.PreparedStatement, java.sql.ResultSet, java.sql.ResultSetMetaData, java.sql.SQLException, java.sql.Savepoint, java.sql.Statement, javax.sql.DataSource\n        try (Statement stmt = ${param0}.createStatement();\n             ResultSet rs = stmt.executeQuery(\"SELECT changes()\")) {\n            return rs.next() ? rs.getInt(1) : 0;\n        }\n    "
           },
           "loss_record_contribution": {
             "form": "literal",
@@ -674,8 +676,8 @@
             }
           },
           "signature_guard": {
-            "max_params": 1,
-            "min_params": 1
+            "min_params": 1,
+            "max_params": 1
           },
           "target_library_tag": "sqlite-jdbc"
         },
@@ -683,7 +685,7 @@
           "concept_name": "concept:sql-changes-count",
           "emission_template": {
             "kind": "verbatim",
-            "template": "        try (Statement stmt = ${param0}.createStatement();\n             ResultSet rs = stmt.executeQuery(\"SELECT total_changes()\")) {\n            return rs.next() ? rs.getLong(1) : 0L;\n        }\n    "
+            "template": "// __fragment_imports__: java.sql.Connection, java.sql.DatabaseMetaData, java.sql.DriverManager, java.sql.PreparedStatement, java.sql.ResultSet, java.sql.ResultSetMetaData, java.sql.SQLException, java.sql.Savepoint, java.sql.Statement, javax.sql.DataSource\n        try (Statement stmt = ${param0}.createStatement();\n             ResultSet rs = stmt.executeQuery(\"SELECT total_changes()\")) {\n            return rs.next() ? rs.getLong(1) : 0L;\n        }\n    "
           },
           "loss_record_contribution": {
             "form": "literal",
@@ -696,8 +698,8 @@
             }
           },
           "signature_guard": {
-            "max_params": 1,
-            "min_params": 1
+            "min_params": 1,
+            "max_params": 1
           },
           "target_library_tag": "sqlite-jdbc"
         },
@@ -705,7 +707,7 @@
           "concept_name": "concept:contract-observation",
           "emission_template": {
             "kind": "verbatim",
-            "template": "        return ${param0}.getAutoCommit();\n    "
+            "template": "// __fragment_imports__: java.sql.Connection, java.sql.DatabaseMetaData, java.sql.DriverManager, java.sql.PreparedStatement, java.sql.ResultSet, java.sql.ResultSetMetaData, java.sql.SQLException, java.sql.Savepoint, java.sql.Statement, javax.sql.DataSource\n        return ${param0}.getAutoCommit();\n    "
           },
           "loss_record_contribution": {
             "form": "literal",
@@ -713,18 +715,18 @@
               "entries": []
             }
           },
-          "observed_dimension": "autocommit-mode",
           "signature_guard": {
-            "max_params": 1,
-            "min_params": 1
+            "min_params": 1,
+            "max_params": 1
           },
-          "target_library_tag": "sqlite-jdbc"
+          "target_library_tag": "sqlite-jdbc",
+          "observed_dimension": "autocommit-mode"
         },
         {
           "concept_name": "concept:contract-observation",
           "emission_template": {
             "kind": "verbatim",
-            "template": "        return ${param0}.isReadOnly();\n    "
+            "template": "// __fragment_imports__: java.sql.Connection, java.sql.DatabaseMetaData, java.sql.DriverManager, java.sql.PreparedStatement, java.sql.ResultSet, java.sql.ResultSetMetaData, java.sql.SQLException, java.sql.Savepoint, java.sql.Statement, javax.sql.DataSource\n        return ${param0}.isReadOnly();\n    "
           },
           "loss_record_contribution": {
             "form": "literal",
@@ -732,18 +734,18 @@
               "entries": []
             }
           },
-          "observed_dimension": "write-permission",
           "signature_guard": {
-            "max_params": 1,
-            "min_params": 1
+            "min_params": 1,
+            "max_params": 1
           },
-          "target_library_tag": "sqlite-jdbc"
+          "target_library_tag": "sqlite-jdbc",
+          "observed_dimension": "write-permission"
         },
         {
           "concept_name": "concept:contract-observation",
           "emission_template": {
             "kind": "verbatim",
-            "template": "        return ${param0}.isClosed();\n    "
+            "template": "// __fragment_imports__: java.sql.Connection, java.sql.DatabaseMetaData, java.sql.DriverManager, java.sql.PreparedStatement, java.sql.ResultSet, java.sql.ResultSetMetaData, java.sql.SQLException, java.sql.Savepoint, java.sql.Statement, javax.sql.DataSource\n        return ${param0}.isClosed();\n    "
           },
           "loss_record_contribution": {
             "form": "literal",
@@ -751,18 +753,18 @@
               "entries": []
             }
           },
-          "observed_dimension": "connection-closed",
           "signature_guard": {
-            "max_params": 1,
-            "min_params": 1
+            "min_params": 1,
+            "max_params": 1
           },
-          "target_library_tag": "sqlite-jdbc"
+          "target_library_tag": "sqlite-jdbc",
+          "observed_dimension": "connection-closed"
         },
         {
           "concept_name": "concept:contract-observation",
           "emission_template": {
             "kind": "verbatim",
-            "template": "        return ${param0}.isValid(${param1});\n    "
+            "template": "// __fragment_imports__: java.sql.Connection, java.sql.DatabaseMetaData, java.sql.DriverManager, java.sql.PreparedStatement, java.sql.ResultSet, java.sql.ResultSetMetaData, java.sql.SQLException, java.sql.Savepoint, java.sql.Statement, javax.sql.DataSource\n        return ${param0}.isValid(${param1});\n    "
           },
           "loss_record_contribution": {
             "form": "literal",
@@ -772,18 +774,18 @@
               ]
             }
           },
-          "observed_dimension": "connection-validity",
           "signature_guard": {
-            "max_params": 2,
-            "min_params": 2
+            "min_params": 2,
+            "max_params": 2
           },
-          "target_library_tag": "sqlite-jdbc"
+          "target_library_tag": "sqlite-jdbc",
+          "observed_dimension": "connection-validity"
         },
         {
           "concept_name": "concept:contract-observation",
           "emission_template": {
             "kind": "verbatim",
-            "template": "        return ${param0}.getMetaData().getColumnCount();\n    "
+            "template": "// __fragment_imports__: java.sql.Connection, java.sql.DatabaseMetaData, java.sql.DriverManager, java.sql.PreparedStatement, java.sql.ResultSet, java.sql.ResultSetMetaData, java.sql.SQLException, java.sql.Savepoint, java.sql.Statement, javax.sql.DataSource\n        return ${param0}.getMetaData().getColumnCount();\n    "
           },
           "loss_record_contribution": {
             "form": "literal",
@@ -791,18 +793,18 @@
               "entries": []
             }
           },
-          "observed_dimension": "column-count",
           "signature_guard": {
-            "max_params": 1,
-            "min_params": 1
+            "min_params": 1,
+            "max_params": 1
           },
-          "target_library_tag": "sqlite-jdbc"
+          "target_library_tag": "sqlite-jdbc",
+          "observed_dimension": "column-count"
         },
         {
           "concept_name": "concept:contract-observation",
           "emission_template": {
             "kind": "verbatim",
-            "template": "        return ${param0}.getMetaData().getColumnName(${param1});\n    "
+            "template": "// __fragment_imports__: java.sql.Connection, java.sql.DatabaseMetaData, java.sql.DriverManager, java.sql.PreparedStatement, java.sql.ResultSet, java.sql.ResultSetMetaData, java.sql.SQLException, java.sql.Savepoint, java.sql.Statement, javax.sql.DataSource\n        return ${param0}.getMetaData().getColumnName(${param1});\n    "
           },
           "loss_record_contribution": {
             "form": "literal",
@@ -810,18 +812,18 @@
               "entries": []
             }
           },
-          "observed_dimension": "column-name-at-index",
           "signature_guard": {
-            "max_params": 2,
-            "min_params": 2
+            "min_params": 2,
+            "max_params": 2
           },
-          "target_library_tag": "sqlite-jdbc"
+          "target_library_tag": "sqlite-jdbc",
+          "observed_dimension": "column-name-at-index"
         },
         {
           "concept_name": "concept:contract-observation",
           "emission_template": {
             "kind": "verbatim",
-            "template": "        return ${param0}.findColumn(${param1});\n    "
+            "template": "// __fragment_imports__: java.sql.Connection, java.sql.DatabaseMetaData, java.sql.DriverManager, java.sql.PreparedStatement, java.sql.ResultSet, java.sql.ResultSetMetaData, java.sql.SQLException, java.sql.Savepoint, java.sql.Statement, javax.sql.DataSource\n        return ${param0}.findColumn(${param1});\n    "
           },
           "loss_record_contribution": {
             "form": "literal",
@@ -829,18 +831,18 @@
               "entries": []
             }
           },
-          "observed_dimension": "column-index-of-name",
           "signature_guard": {
-            "max_params": 2,
-            "min_params": 2
+            "min_params": 2,
+            "max_params": 2
           },
-          "target_library_tag": "sqlite-jdbc"
+          "target_library_tag": "sqlite-jdbc",
+          "observed_dimension": "column-index-of-name"
         },
         {
           "concept_name": "concept:contract-observation",
           "emission_template": {
             "kind": "verbatim",
-            "template": "        return ${param0}.getParameterMetaData().getParameterCount();\n    "
+            "template": "// __fragment_imports__: java.sql.Connection, java.sql.DatabaseMetaData, java.sql.DriverManager, java.sql.PreparedStatement, java.sql.ResultSet, java.sql.ResultSetMetaData, java.sql.SQLException, java.sql.Savepoint, java.sql.Statement, javax.sql.DataSource\n        return ${param0}.getParameterMetaData().getParameterCount();\n    "
           },
           "loss_record_contribution": {
             "form": "literal",
@@ -848,18 +850,18 @@
               "entries": []
             }
           },
-          "observed_dimension": "parameter-count",
           "signature_guard": {
-            "max_params": 1,
-            "min_params": 1
+            "min_params": 1,
+            "max_params": 1
           },
-          "target_library_tag": "sqlite-jdbc"
+          "target_library_tag": "sqlite-jdbc",
+          "observed_dimension": "parameter-count"
         },
         {
           "concept_name": "concept:sql-result-metadata",
           "emission_template": {
             "kind": "verbatim",
-            "template": "        return ${param0}.getMetaData();\n    "
+            "template": "// __fragment_imports__: java.sql.Connection, java.sql.DatabaseMetaData, java.sql.DriverManager, java.sql.PreparedStatement, java.sql.ResultSet, java.sql.ResultSetMetaData, java.sql.SQLException, java.sql.Savepoint, java.sql.Statement, javax.sql.DataSource\n        return ${param0}.getMetaData();\n    "
           },
           "loss_record_contribution": {
             "form": "literal",
@@ -871,8 +873,8 @@
             }
           },
           "signature_guard": {
-            "max_params": 1,
-            "min_params": 1
+            "min_params": 1,
+            "max_params": 1
           },
           "target_library_tag": "sqlite-jdbc"
         },
@@ -880,7 +882,7 @@
           "concept_name": "concept:sql-result-metadata",
           "emission_template": {
             "kind": "verbatim",
-            "template": "        return ${param0}.getColumnTypeName(${param1});\n    "
+            "template": "// __fragment_imports__: java.sql.Connection, java.sql.DatabaseMetaData, java.sql.DriverManager, java.sql.PreparedStatement, java.sql.ResultSet, java.sql.ResultSetMetaData, java.sql.SQLException, java.sql.Savepoint, java.sql.Statement, javax.sql.DataSource\n        return ${param0}.getColumnTypeName(${param1});\n    "
           },
           "loss_record_contribution": {
             "form": "literal",
@@ -888,18 +890,18 @@
               "entries": []
             }
           },
-          "observed_dimension": "column-type-name",
           "signature_guard": {
-            "max_params": 2,
-            "min_params": 2
+            "min_params": 2,
+            "max_params": 2
           },
-          "target_library_tag": "sqlite-jdbc"
+          "target_library_tag": "sqlite-jdbc",
+          "observed_dimension": "column-type-name"
         },
         {
           "concept_name": "concept:sql-catalog-reflection",
           "emission_template": {
             "kind": "verbatim",
-            "template": "        return ${param0}.getMetaData();\n    "
+            "template": "// __fragment_imports__: java.sql.Connection, java.sql.DatabaseMetaData, java.sql.DriverManager, java.sql.PreparedStatement, java.sql.ResultSet, java.sql.ResultSetMetaData, java.sql.SQLException, java.sql.Savepoint, java.sql.Statement, javax.sql.DataSource\n        return ${param0}.getMetaData();\n    "
           },
           "loss_record_contribution": {
             "form": "literal",
@@ -912,8 +914,8 @@
             }
           },
           "signature_guard": {
-            "max_params": 1,
-            "min_params": 1
+            "min_params": 1,
+            "max_params": 1
           },
           "target_library_tag": "sqlite-jdbc"
         },
@@ -921,7 +923,7 @@
           "concept_name": "concept:sql-busy-timeout",
           "emission_template": {
             "kind": "verbatim",
-            "template": "        ${param0}.setQueryTimeout(${param1});\n    "
+            "template": "// __fragment_imports__: java.sql.Connection, java.sql.DatabaseMetaData, java.sql.DriverManager, java.sql.PreparedStatement, java.sql.ResultSet, java.sql.ResultSetMetaData, java.sql.SQLException, java.sql.Savepoint, java.sql.Statement, javax.sql.DataSource\n        ${param0}.setQueryTimeout(${param1});\n    "
           },
           "loss_record_contribution": {
             "form": "literal",
@@ -935,8 +937,8 @@
             }
           },
           "signature_guard": {
-            "max_params": 2,
-            "min_params": 2
+            "min_params": 2,
+            "max_params": 2
           },
           "target_library_tag": "sqlite-jdbc"
         },
@@ -944,7 +946,7 @@
           "concept_name": "concept:sql-autocommit-control",
           "emission_template": {
             "kind": "verbatim",
-            "template": "        ${param0}.setAutoCommit(${param1});\n    "
+            "template": "// __fragment_imports__: java.sql.Connection, java.sql.DatabaseMetaData, java.sql.DriverManager, java.sql.PreparedStatement, java.sql.ResultSet, java.sql.ResultSetMetaData, java.sql.SQLException, java.sql.Savepoint, java.sql.Statement, javax.sql.DataSource\n        ${param0}.setAutoCommit(${param1});\n    "
           },
           "loss_record_contribution": {
             "form": "literal",
@@ -956,8 +958,8 @@
             }
           },
           "signature_guard": {
-            "max_params": 2,
-            "min_params": 2
+            "min_params": 2,
+            "max_params": 2
           },
           "target_library_tag": "sqlite-jdbc"
         },
@@ -965,7 +967,7 @@
           "concept_name": "concept:sql-cursor-fetch-size",
           "emission_template": {
             "kind": "verbatim",
-            "template": "        ${param0}.setFetchSize(${param1});\n    "
+            "template": "// __fragment_imports__: java.sql.Connection, java.sql.DatabaseMetaData, java.sql.DriverManager, java.sql.PreparedStatement, java.sql.ResultSet, java.sql.ResultSetMetaData, java.sql.SQLException, java.sql.Savepoint, java.sql.Statement, javax.sql.DataSource\n        ${param0}.setFetchSize(${param1});\n    "
           },
           "loss_record_contribution": {
             "form": "literal",
@@ -978,14 +980,12 @@
             }
           },
           "signature_guard": {
-            "max_params": 2,
-            "min_params": 2
+            "min_params": 2,
+            "max_params": 2
           },
           "target_library_tag": "sqlite-jdbc"
         }
-      ],
-      "target_language": "java",
-      "template_name": "java-canonical-bodies-sqlite-jdbc"
+      ]
     }
   }
 }

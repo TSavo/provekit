@@ -1,13 +1,15 @@
 {
   "header": {
-    "cid": "blake3-512:df00c56519c4eb7093083634b623949dc527f206ed853ad7cfbe1281d559bbf15090d7761fc1082c988240adede77b400db1260991916410f6ceaefaad9d27c6",
+    "cid": "blake3-512:b03b2df1badae74dcb039b6490529c1c908429ccfb0eea9ff6b646fc7709bb29b5e88ac68fcd6fc55fbdc8cc54472994f01b1b931f6a71cf9853fa2449460892",
     "content": {
+      "target_language": "java",
+      "template_name": "java-canonical-bodies-gson",
       "entries": [
         {
           "concept_name": "concept:json-parse",
           "emission_template": {
             "kind": "verbatim",
-            "template": "        try {\n            return JsonParser.parseString(${param0});\n        } catch (JsonSyntaxException e) {\n            throw new RuntimeException(\"json-parse: \" + e.getMessage(), e);\n        }\n    "
+            "template": "// __fragment_imports__: com.google.gson.Gson, com.google.gson.JsonElement, com.google.gson.JsonParser, com.google.gson.JsonSyntaxException\n        try {\n            return JsonParser.parseString(${param0});\n        } catch (JsonSyntaxException e) {\n            throw new RuntimeException(\"json-parse: \" + e.getMessage(), e);\n        }\n    "
           },
           "loss_record_contribution": {
             "form": "literal",
@@ -16,16 +18,19 @@
             }
           },
           "signature_guard": {
-            "max_params": 1,
-            "min_params": 1
+            "min_params": 1,
+            "max_params": 1
           },
-          "target_library_tag": "gson"
+          "target_library_tag": "gson",
+          "file_helpers": [
+            "static final Gson GSON = new Gson();"
+          ]
         },
         {
           "concept_name": "concept:json-serialize",
           "emission_template": {
             "kind": "verbatim",
-            "template": "        return GSON.toJson(${param0});\n    "
+            "template": "// __fragment_imports__: com.google.gson.Gson, com.google.gson.JsonElement, com.google.gson.JsonParser, com.google.gson.JsonSyntaxException\n        return GSON.toJson(${param0});\n    "
           },
           "loss_record_contribution": {
             "form": "literal",
@@ -36,14 +41,15 @@
             }
           },
           "signature_guard": {
-            "max_params": 1,
-            "min_params": 1
+            "min_params": 1,
+            "max_params": 1
           },
-          "target_library_tag": "gson"
+          "target_library_tag": "gson",
+          "file_helpers": [
+            "static final Gson GSON = new Gson();"
+          ]
         }
-      ],
-      "target_language": "java",
-      "template_name": "java-canonical-bodies-gson"
+      ]
     }
   }
 }

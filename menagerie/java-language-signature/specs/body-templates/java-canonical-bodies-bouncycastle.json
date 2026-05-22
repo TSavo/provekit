@@ -1,13 +1,15 @@
 {
   "header": {
-    "cid": "blake3-512:0db032f6f6c5a725fc321de49dc703dfed58b976217d0670a3f4991cb8cf1737a4301d3032124c220fec1308007ee2caaf19c908acd8ae9b486b8b73a893e696",
+    "cid": "blake3-512:5cf2913ed41c08b6fe74fe1f574b3fb78cb38886b19420a868335b85b95db2b5ee84d7125406f07bdbf56e3b58d4c15de643e700134dc0379c6740e2ee5ed4c7",
     "content": {
+      "target_language": "java",
+      "template_name": "java-canonical-bodies-bouncycastle",
       "entries": [
         {
           "concept_name": "concept:blake3-512-of",
           "emission_template": {
             "kind": "verbatim",
-            "template": "        Blake3Digest digest = new Blake3Digest(512);  // 512 bits = 64-byte output\n        digest.update(${param0}, 0, ${param0}.length);\n        byte[] out = new byte[64];\n        digest.doFinal(out, 0);\n        return out;\n    "
+            "template": "// __fragment_imports__: org.bouncycastle.crypto.digests.Blake3Digest\n        Blake3Digest digest = new Blake3Digest(512);  // 512 bits = 64-byte output\n        digest.update(${param0}, 0, ${param0}.length);\n        byte[] out = new byte[64];\n        digest.doFinal(out, 0);\n        return out;\n    "
           },
           "loss_record_contribution": {
             "form": "literal",
@@ -16,14 +18,12 @@
             }
           },
           "signature_guard": {
-            "max_params": 1,
-            "min_params": 1
+            "min_params": 1,
+            "max_params": 1
           },
           "target_library_tag": "bouncycastle"
         }
-      ],
-      "target_language": "java",
-      "template_name": "java-canonical-bodies-bouncycastle"
+      ]
     }
   }
 }

@@ -356,7 +356,9 @@ enum DiscoveryOutcome {
     /// can include realizer-declared imports in the emitted compilation
     /// unit. `source` is the fragment body; `imports` is the
     /// fully-qualified names the fragment uses from outside its own body.
-    Preview { source: String, imports: Vec<String> },
+    /// #1390: `helpers` is the list of static field declarations the
+    /// fragment needs hoisted into the compilation unit's class body.
+    Preview { source: String, imports: Vec<String>, helpers: Vec<String> },
     /// Plugin ran but returned is_stub=true; the substrate has a real gap
     /// (no morphism for some sort CID, no body template for concept, etc.).
     SemanticGap,
@@ -453,9 +455,17 @@ fn invoke_target_realize_for_discovery(
     if response.is_stub {
         return DiscoveryOutcome::SemanticGap;
     }
+    // #1390: helpers is a list of strings in the response. The RealizedSource
+    // schema (#1374) types it as Vec<Value>; pull out string entries.
+    let helpers: Vec<String> = response
+        .helpers
+        .iter()
+        .filter_map(|v| v.as_str().map(String::from))
+        .collect();
     DiscoveryOutcome::Preview {
         source: response.source,
         imports: response.imports,
+        helpers,
     }
 }
 
@@ -634,7 +644,7 @@ fn run_cross_language_discovery(
                     // gaps even when the family dispatch resolves.
                     let carrier_family = family_from_payload(&carrier.raw_payload);
                     match invoke_target_realize_for_discovery(project_root, target_lang, &matches[0], &carrier) {
-                        DiscoveryOutcome::Preview { source: body, imports: fragment_imports } => {
+                        DiscoveryOutcome::Preview { source: body, imports: fragment_imports, helpers: fragment_helpers } => {
                             resolves += 1;
                             if !json_report {
                                 eprintln!(
@@ -663,12 +673,14 @@ fn run_cross_language_discovery(
                                 let entry = emitted
                                     .entry(path.to_path_buf())
                                     .or_default();
-                                // #1375 Milestone C: record the fragment shape
-                                // so target-kit assemble can consume it.
+                                // #1375 Milestone C / #1390: record the fragment
+                                // shape (source + imports + helpers) so target-
+                                // kit assemble can consume it.
                                 entry.fragments.push(serde_json::json!({
                                     "concept_name": carrier.concept_name,
                                     "source": body.clone(),
                                     "imports": fragment_imports.clone(),
+                                    "helpers": fragment_helpers.clone(),
                                 }));
                                 entry.target_manifest = Some(matches[0].clone());
                                 entry.bodies.push(body);
@@ -754,7 +766,7 @@ fn run_cross_language_discovery(
                     });
                     if let Some(pick) = picked {
                         match invoke_target_realize_for_discovery(project_root, target_lang, &pick, &carrier) {
-                            DiscoveryOutcome::Preview { source: body, imports: fragment_imports } => {
+                            DiscoveryOutcome::Preview { source: body, imports: fragment_imports, helpers: fragment_helpers } => {
                                 resolves += 1;
                                 if !json_report {
                                     eprintln!(
@@ -783,12 +795,13 @@ fn run_cross_language_discovery(
                                     let entry = emitted
                                         .entry(path.to_path_buf())
                                         .or_default();
-                                    // #1375 Milestone C: record fragment for
-                                    // target-kit assemble.
+                                    // #1375 Milestone C / #1390: fragment with
+                                    // source + imports + helpers.
                                     entry.fragments.push(serde_json::json!({
                                         "concept_name": carrier.concept_name,
                                         "source": body.clone(),
                                         "imports": fragment_imports.clone(),
+                                        "helpers": fragment_helpers.clone(),
                                     }));
                                     entry.target_manifest = Some(pick.clone());
                                     entry.bodies.push(body);
