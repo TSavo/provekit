@@ -1392,6 +1392,100 @@ final class SugarRealizer {
             }
             return Optional.empty();
         }
+        // concept:literal — the lifter wraps literal values as
+        // concept:literal{value: <literal>, sort: <CID>}. Lower by emitting
+        // the literal directly. Strings come with quotes already in value.
+        if (conceptMatches("concept:literal", conceptName)) {
+            Jcs.Json valueJson = shape.get("value");
+            if (valueJson != null) {
+                return Optional.of(literalTerm(valueJson));
+            }
+            return Optional.empty();
+        }
+        // concept:match(scrutinee, arm1, arm2, ...). Each arm is
+        // concept:match-arm(pattern_leaf, body). Lower as a chained
+        // ternary in expression position. The first arm whose pattern
+        // matches wins; rust's `_` wildcard becomes the else.
+        //
+        // Patterns supported (best-effort): `_` (wildcard, always true),
+        // `Some(v)` (treats scrutinee as a JsonNode that may be null —
+        // binds v to the scrutinee value), `None` (scrutinee is null),
+        // bare identifiers (always true, binds to scrutinee). Guards
+        // (`Some(v) if cond`) are recognized in the pattern text.
+        if (conceptMatches("concept:match", conceptName) && args.size() >= 2) {
+            Optional<ShapeExpression> scrut = lowerShapeExpression(args.get(0), context, appendPosition(position, 0));
+            if (scrut.isEmpty()) return Optional.empty();
+            String scrutText = scrut.get().text();
+            // Use a fresh variable for the scrutinee so it isn't re-evaluated.
+            String scrutVar = context.tempName();
+            context.definedSymbols.add(scrutVar);
+            // Build a chain: cond1 ? body1 : (cond2 ? body2 : default).
+            StringBuilder chain = new StringBuilder();
+            int armCount = 0;
+            for (int i = 1; i < args.size(); i++) {
+                Jcs.Obj arm = args.get(i);
+                if (!conceptMatches("concept:match-arm", shapeConceptName(arm))) continue;
+                List<Jcs.Obj> armArgs = shapeArgs(arm);
+                if (armArgs.size() < 2) continue;
+                String patternText = armArgs.get(0).stringFieldOrNull("text");
+                if (patternText == null) patternText = "";
+                patternText = patternText.trim();
+                // For binding patterns like `Some(v)`, expose v as the scrut value.
+                String boundVar = bindingFromPattern(patternText);
+                if (boundVar != null) {
+                    context.definedSymbols.add(boundVar);
+                }
+                Optional<ShapeExpression> body = lowerShapeExpression(armArgs.get(1), context, appendPosition(position, i));
+                if (body.isEmpty()) return Optional.empty();
+                String bodyText = body.get().text();
+                String cond = patternToCondition(patternText, scrutVar);
+                if (boundVar != null) {
+                    // Substitute the bound var in the body with the scrut.
+                    // Use a substring-safe replacement (whole-word).
+                    bodyText = replaceIdentifier(bodyText, boundVar, scrutVar);
+                }
+                if ("true".equals(cond)) {
+                    if (armCount == 0) {
+                        return Optional.of(new ShapeExpression(
+                                "(((java.util.function.Supplier<Object>) () -> { var " + scrutVar + " = " + scrutText + "; return " + bodyText + "; }).get())",
+                                mapSourceType(context.returnType)));
+                    }
+                    // Default arm after at least one conditional: emit as
+                    // ternary else branch.
+                    chain.append(" : ").append(bodyText);
+                    armCount++;
+                    break;
+                } else {
+                    if (armCount > 0) chain.append(" : (");
+                    chain.append(cond).append(" ? ").append(bodyText);
+                    armCount++;
+                }
+            }
+            // Close parens for each non-default arm after the first.
+            // Add a default if none was emitted.
+            if (armCount == 0) return Optional.empty();
+            // Wrap with scrutinee declaration via lambda for expression form.
+            String wrapped = "(((java.util.function.Supplier<Object>) () -> { var " + scrutVar + " = " + scrutText + "; return " + chain + "; }).get())";
+            return Optional.of(new ShapeExpression(wrapped, mapSourceType(context.returnType)));
+        }
+        // concept:macro-call(macro_name_leaf, body_leaf). Handle known macros
+        // by parsing the raw text body. Unknown macros bail to Empty.
+        if (conceptMatches("concept:macro-call", conceptName) && args.size() >= 2) {
+            String macroName = args.get(0).stringFieldOrNull("text");
+            String macroBody = args.get(1).stringFieldOrNull("text");
+            if (macroName == null || macroBody == null) return Optional.empty();
+            if ("json".equals(macroName)) {
+                String emitted = emitJsonMacro(macroBody, context);
+                if (emitted == null) return Optional.empty();
+                return Optional.of(new ShapeExpression(emitted, "com.fasterxml.jackson.databind.JsonNode"));
+            }
+            if ("format".equals(macroName)) {
+                String emitted = emitFormatMacro(macroBody, context);
+                if (emitted == null) return Optional.empty();
+                return Optional.of(new ShapeExpression(emitted, "String"));
+            }
+            return Optional.empty();
+        }
         // #1390+ vocabulary: concept:call with a method-leaf at args[1] is a
         // method call. Handle BEFORE the generic arg-lowering loop, because
         // the method leaf ({kind: "method", text: ...}) doesn't lower as a
@@ -1453,11 +1547,23 @@ final class SugarRealizer {
                 }
             }
             String callee = argTerms.get(0).text();
-            if (!isIdentifier(callee)) {
+            // Rust path expressions use `::` (e.g. String::new, Vec::with_capacity).
+            // For java, translate to `.` (String.new isn't valid — translate to
+            // common constructor pattern when the suffix is `new`).
+            String calleeJava = callee.replace("::", ".");
+            if (calleeJava.endsWith(".new")) {
+                // String::new() → new String(), Vec::with_capacity(n) → new ArrayList<>(n)
+                // For the common case, emit `new Type()`.
+                String typeName = calleeJava.substring(0, calleeJava.length() - 4);
+                String joined = argTerms.stream().skip(1).map(ShapeExpression::text).collect(Collectors.joining(", "));
+                return Optional.of(new ShapeExpression("new " + typeName + "(" + joined + ")", typeName));
+            }
+            // Allow identifiers + dotted paths (after :: → . translation).
+            if (!isIdentifier(calleeJava) && !calleeJava.matches("[A-Za-z_][A-Za-z0-9_]*(\\.[A-Za-z_][A-Za-z0-9_]*)+")) {
                 return Optional.empty();
             }
             String joined = argTerms.stream().skip(1).map(ShapeExpression::text).collect(Collectors.joining(", "));
-            return Optional.of(new ShapeExpression(callee + "(" + joined + ")", mapSourceType(context.returnType)));
+            return Optional.of(new ShapeExpression(calleeJava + "(" + joined + ")", mapSourceType(context.returnType)));
         }
         if (conceptMatches("concept:field", conceptName) && args.size() == 2) {
             // args[0]: receiver expression. args[1]: field name leaf.
@@ -1602,6 +1708,236 @@ final class SugarRealizer {
             case "call" -> mapSourceType(fallbackReturnType);
             default -> args.isEmpty() ? mapSourceType(fallbackReturnType) : args.get(0).typeName();
         };
+    }
+
+    /**
+     * Lower rust's `json!({...})` macro to Jackson ObjectNode construction.
+     * The body is raw rust source text like `{ "k" : "v", "id" : id }`.
+     * For each key:value pair, emit `.put(...)` or `.set(...)` calls on a
+     * fresh ObjectNode. String/number/bool literals → .put(); identifiers
+     * and other expressions → .set() (treated as JsonNode).
+     *
+     * Returns null if the body can't be parsed.
+     */
+    private static String emitJsonMacro(String body, ShapeContext context) {
+        String trimmed = body.trim();
+        if (trimmed.startsWith("{") && trimmed.endsWith("}")) {
+            String inside = trimmed.substring(1, trimmed.length() - 1).trim();
+            List<String> parts = splitTopLevelCommas(inside);
+            StringBuilder sb = new StringBuilder();
+            sb.append("((com.fasterxml.jackson.databind.JsonNode) MAPPER.createObjectNode()");
+            for (String part : parts) {
+                if (part.isEmpty()) continue;
+                int colon = findTopLevelColon(part);
+                if (colon < 0) return null;
+                String keyText = part.substring(0, colon).trim();
+                String valueText = part.substring(colon + 1).trim();
+                String key = stripQuotes(keyText);
+                if (key == null) return null;
+                // If value is a nested json object/array, recurse.
+                if (valueText.startsWith("{")) {
+                    String nested = emitJsonMacro(valueText, context);
+                    if (nested == null) return null;
+                    sb.append(".set(").append(quote(key)).append(", ").append(nested).append(")");
+                } else if (valueText.startsWith("\"") && valueText.endsWith("\"")) {
+                    sb.append(".put(").append(quote(key)).append(", ").append(valueText).append(")");
+                } else if (valueText.equals("true") || valueText.equals("false")) {
+                    sb.append(".put(").append(quote(key)).append(", ").append(valueText).append(")");
+                } else if (valueText.matches("-?\\d+(\\.\\d+)?")) {
+                    sb.append(".put(").append(quote(key)).append(", ").append(valueText).append(")");
+                } else {
+                    // Identifier or expression. Determine put vs set by the
+                    // identifier's parameter type. JsonNode → .set; primitive
+                    // (long/double/boolean/String) → .put. Unknown → .set
+                    // (default to JsonNode; java compiler will catch
+                    // mismatch and surface it).
+                    String paramType = typeForArgument(valueText, context);
+                    boolean isPrim = paramType != null && (
+                            "long".equals(paramType) || "int".equals(paramType) ||
+                            "double".equals(paramType) || "float".equals(paramType) ||
+                            "boolean".equals(paramType) || "String".equals(paramType));
+                    String op = isPrim ? ".put(" : ".set(";
+                    sb.append(op).append(quote(key)).append(", ").append(valueText).append(")");
+                }
+            }
+            sb.append(")");
+            return sb.toString();
+        }
+        // Array literal `[a, b, c]`.
+        if (trimmed.startsWith("[") && trimmed.endsWith("]")) {
+            String inside = trimmed.substring(1, trimmed.length() - 1).trim();
+            List<String> parts = splitTopLevelCommas(inside);
+            StringBuilder sb = new StringBuilder();
+            sb.append("((com.fasterxml.jackson.databind.JsonNode) MAPPER.createArrayNode()");
+            for (String part : parts) {
+                String v = part.trim();
+                if (v.isEmpty()) continue;
+                if (v.startsWith("{") || v.startsWith("[")) {
+                    String nested = emitJsonMacro(v, context);
+                    if (nested == null) return null;
+                    sb.append(".add(").append(nested).append(")");
+                } else {
+                    sb.append(".add(").append(v).append(")");
+                }
+            }
+            sb.append(")");
+            return sb.toString();
+        }
+        return null;
+    }
+
+    /**
+     * Lower rust's `format!(...)` macro. Body looks like:
+     *   `"text {} text", expr1, expr2`
+     * Translate to java String.format with %s placeholders.
+     */
+    private static String emitFormatMacro(String body, ShapeContext context) {
+        List<String> parts = splitTopLevelCommas(body.trim());
+        if (parts.isEmpty()) return null;
+        String fmt = parts.get(0).trim();
+        if (!fmt.startsWith("\"") || !fmt.endsWith("\"")) return null;
+        // Replace rust {} placeholders with java %s. {:?} debug uses
+        // String.valueOf in java since there's no built-in debug format.
+        String javaFmt = fmt.replace("{}", "%s").replace("{:?}", "%s");
+        StringBuilder sb = new StringBuilder();
+        sb.append("String.format(").append(javaFmt);
+        for (int i = 1; i < parts.size(); i++) {
+            sb.append(", ").append(parts.get(i).trim());
+        }
+        sb.append(")");
+        return sb.toString();
+    }
+
+    /** Split a string on commas at top nesting level (depth 0 of {} [] () "")  */
+    private static List<String> splitTopLevelCommas(String s) {
+        List<String> out = new ArrayList<>();
+        int depth = 0;
+        boolean inString = false;
+        int start = 0;
+        for (int i = 0; i < s.length(); i++) {
+            char c = s.charAt(i);
+            if (inString) {
+                if (c == '\\' && i + 1 < s.length()) { i++; continue; }
+                if (c == '"') inString = false;
+                continue;
+            }
+            switch (c) {
+                case '"' -> inString = true;
+                case '{', '[', '(' -> depth++;
+                case '}', ']', ')' -> depth--;
+                case ',' -> {
+                    if (depth == 0) {
+                        out.add(s.substring(start, i));
+                        start = i + 1;
+                    }
+                }
+                default -> {}
+            }
+        }
+        if (start < s.length()) out.add(s.substring(start));
+        return out;
+    }
+
+    /** Find the first top-level colon (not inside quotes/brackets). */
+    private static int findTopLevelColon(String s) {
+        int depth = 0;
+        boolean inString = false;
+        for (int i = 0; i < s.length(); i++) {
+            char c = s.charAt(i);
+            if (inString) {
+                if (c == '\\' && i + 1 < s.length()) { i++; continue; }
+                if (c == '"') inString = false;
+                continue;
+            }
+            switch (c) {
+                case '"' -> inString = true;
+                case '{', '[', '(' -> depth++;
+                case '}', ']', ')' -> depth--;
+                case ':' -> { if (depth == 0) return i; }
+                default -> {}
+            }
+        }
+        return -1;
+    }
+
+    /** Strip surrounding quotes from a string literal. Returns the inner
+     *  text or null if not a valid quoted string. */
+    private static String stripQuotes(String s) {
+        String t = s.trim();
+        if (t.length() >= 2 && t.startsWith("\"") && t.endsWith("\"")) {
+            return t.substring(1, t.length() - 1);
+        }
+        return null;
+    }
+
+    private static String quote(String s) {
+        StringBuilder sb = new StringBuilder("\"");
+        for (int i = 0; i < s.length(); i++) {
+            char c = s.charAt(i);
+            switch (c) {
+                case '"' -> sb.append("\\\"");
+                case '\\' -> sb.append("\\\\");
+                case '\n' -> sb.append("\\n");
+                case '\t' -> sb.append("\\t");
+                default -> sb.append(c);
+            }
+        }
+        sb.append('"');
+        return sb.toString();
+    }
+
+    /** For pattern text like `Some(v)` or `Ok(x)`, return the bound var (`v`/`x`). */
+    private static String bindingFromPattern(String pattern) {
+        String t = pattern.trim();
+        // Match `Variant(name)` or `Variant (name)`.
+        java.util.regex.Matcher m = java.util.regex.Pattern.compile(
+            "^(?:Some|Ok|Err|None)\\s*\\(\\s*([A-Za-z_][A-Za-z0-9_]*)\\s*\\)$"
+        ).matcher(t);
+        if (m.find()) return m.group(1);
+        return null;
+    }
+
+    /**
+     * Translate a rust match pattern to a java boolean condition over the
+     * scrutinee variable. Returns "true" for wildcards (always-match),
+     * a java boolean expression otherwise, or "true" as best-effort fallback.
+     */
+    private static String patternToCondition(String pattern, String scrutVar) {
+        String t = pattern.trim();
+        // Strip guard (`Some(v) if cond`) — guards aren't directly
+        // representable in a chained-ternary form; treat as condition.
+        String guardCond = null;
+        int ifIdx = t.indexOf(" if ");
+        if (ifIdx > 0) {
+            guardCond = t.substring(ifIdx + 4).trim();
+            t = t.substring(0, ifIdx).trim();
+        }
+        String baseCond;
+        if ("_".equals(t)) {
+            baseCond = "true";
+        } else if ("None".equals(t)) {
+            baseCond = "(" + scrutVar + " == null)";
+        } else if (t.matches("^(Some|Ok|Err)\\s*\\(.*\\)$")) {
+            baseCond = "(" + scrutVar + " != null)";
+        } else if (t.matches("^\".*\"$")) {
+            // String literal pattern → equality check.
+            baseCond = "(" + scrutVar + " != null && " + scrutVar + ".equals(" + t + "))";
+        } else if (t.matches("^-?\\d+(\\.\\d+)?$")) {
+            // Numeric literal pattern.
+            baseCond = "((" + scrutVar + ") == (" + t + "))";
+        } else {
+            // Bare identifier or unknown — wildcard-equivalent.
+            baseCond = "true";
+        }
+        if (guardCond != null) {
+            return baseCond + " && (" + guardCond + ")";
+        }
+        return baseCond;
+    }
+
+    /** Replace whole-word identifier `from` with `to` in text. */
+    private static String replaceIdentifier(String text, String from, String to) {
+        return text.replaceAll("(?<![A-Za-z0-9_])" + java.util.regex.Pattern.quote(from) + "(?![A-Za-z0-9_])", java.util.regex.Matcher.quoteReplacement(to));
     }
 
     private static String localDeclaration(String returnType, String name, String expression, boolean alreadyDefined) {
