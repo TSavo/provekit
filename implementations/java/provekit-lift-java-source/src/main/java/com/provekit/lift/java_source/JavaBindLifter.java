@@ -173,7 +173,29 @@ public final class JavaBindLifter {
         }
         Trees trees = Trees.instance(task);
         for (CompilationUnitTree unit : units) {
-            new MethodScanner(trees, rel, source, entries, diagnostics).scan(unit, null);
+            // #41: capture file-level imports. Bodies use SHORT class names
+            // (e.g. List<String>) because the source file's `import` lines
+            // resolve them. When the body is extracted into a body-template,
+            // those imports go away — and the materialized output then has
+            // unresolvable short names. Lift the imports here and pass to
+            // MethodScanner so each entry can carry the file's imports.
+            List<String> fileImports = new ArrayList<>();
+            try {
+                for (com.sun.source.tree.ImportTree imp : unit.getImports()) {
+                    if (imp.isStatic()) continue;
+                    String fqn = imp.getQualifiedIdentifier().toString();
+                    // Skip wildcards and java.lang.* — wildcards are not
+                    // useful in a stripped body; java.lang is implicit.
+                    if (fqn.endsWith(".*")) continue;
+                    if (fqn.startsWith("java.lang.")) continue;
+                    fileImports.add(fqn);
+                }
+            } catch (RuntimeException ignored) {
+                // Substrate-honest: parse failures already reported above;
+                // an empty file_imports just means short-name bodies won't
+                // be augmented (downstream gate catches it).
+            }
+            new MethodScanner(trees, rel, source, entries, diagnostics, fileImports).scan(unit, null);
             extractRefusals(unit, entries);
         }
     }
@@ -185,18 +207,24 @@ public final class JavaBindLifter {
         private final String source;
         private final List<Jcs.Json> entries;
         private final List<Jcs.Json> diagnostics;
+        /// #41: file-level imports lifted from the compilation unit.
+        /// Attached to each binding entry's body so materialize can
+        /// resolve short-name references in the body.
+        private final List<String> fileImports;
 
         MethodScanner(
                 Trees trees,
                 String rel,
                 String source,
                 List<Jcs.Json> entries,
-                List<Jcs.Json> diagnostics) {
+                List<Jcs.Json> diagnostics,
+                List<String> fileImports) {
             this.trees = trees;
             this.rel = rel;
             this.source = source;
             this.entries = entries;
             this.diagnostics = diagnostics;
+            this.fileImports = fileImports;
         }
 
         @Override
@@ -342,6 +370,22 @@ public final class JavaBindLifter {
                 // param_types, return_type). body_text carries only the
                 // remaining substance — what the function actually DOES.
                 String bodyOnly = extractMethodBodyStatements(spanText.toString());
+
+                // #41: prepend file-level imports as a comment so the realize
+                // plugin's FQN-extracting regex picks them up. The comment is
+                // syntactically harmless in the materialized output; the
+                // assembler will emit them as real `import X;` statements
+                // (deduplicated across fragments). Bodies still reference
+                // short class names (List, JsonNode, etc.) — those resolve
+                // against the assembled file's import block.
+                if (!fileImports.isEmpty()) {
+                    StringBuilder importsLine = new StringBuilder("// __fragment_imports__:");
+                    for (int i = 0; i < fileImports.size(); i++) {
+                        importsLine.append(' ').append(fileImports.get(i));
+                        if (i + 1 < fileImports.size()) importsLine.append(',');
+                    }
+                    bodyOnly = importsLine.toString() + "\n" + bodyOnly;
+                }
 
                 Jcs.Obj bodySource = Jcs.object(
                     "body_text", Jcs.string(bodyOnly),
