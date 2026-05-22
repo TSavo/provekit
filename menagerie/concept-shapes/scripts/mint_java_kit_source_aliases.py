@@ -34,13 +34,15 @@ def find_morphism_cid(kit_sort_lc: str, concept_sort_safe: str) -> str:
     """Find a sort-morphism's CID by its filename pattern.
     kit_sort_lc: lowercase kit sort identifier (e.g. 'int', 'list_of_t').
     concept_sort_safe: concept-hub sort filename-safe form (e.g. 'Int', 'List_of_T').
+    Filename pattern: sort-morphism:java:<sort>:to:concept:<concept>.<full_cid>.json
+    where <full_cid> already includes the `blake3-512:` prefix.
     """
     algorithms = BASE / "catalog" / "algorithms"
     prefix = f"sort-morphism:java:{kit_sort_lc}:to:concept:{concept_sort_safe}."
     for fn in os.listdir(algorithms):
         if fn.startswith(prefix) and fn.endswith(".json"):
             rest = fn[len(prefix):]
-            return "blake3-512:" + rest.rsplit(".json", 1)[0]
+            return rest.rsplit(".json", 1)[0]
     raise FileNotFoundError(f"No morphism for {prefix}*")
 
 

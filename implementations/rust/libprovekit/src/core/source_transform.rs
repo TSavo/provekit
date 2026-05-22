@@ -1278,21 +1278,39 @@ fn build_boundary_carrier_payload(attr_text: &str, sig_text: &str) -> Option<Str
     // return_sort_cid — a substrate-honest gap signal that downstream
     // realize binaries refuse on, instead of being able to fall back on
     // raw rust syntax. Forces gap mints rather than hiding them.
+    let mut parametric_sort_expansions: Vec<
+        crate::core::lower_plugin::ParametricSortExpansion,
+    > = Vec::new();
     let param_sort_cids: Vec<String> = param_types
         .iter()
-        .map(|t| rust_source_type_to_concept_hub_sort_cid(t).unwrap_or("").to_string())
+        .map(|t| {
+            rust_source_type_to_concept_hub_sort_cid(t, &mut parametric_sort_expansions)
+                .unwrap_or_default()
+        })
         .collect();
     fields.push(format!(
         "\"param_sort_cids\":{}",
         format_string_array(&param_sort_cids)
     ));
-    let return_sort_cid = rust_source_type_to_concept_hub_sort_cid(&return_type)
-        .unwrap_or("")
-        .to_string();
+    let return_sort_cid = rust_source_type_to_concept_hub_sort_cid(
+        &return_type,
+        &mut parametric_sort_expansions,
+    )
+    .unwrap_or_default();
     fields.push(format!(
         "\"return_sort_cid\":\"{}\"",
         escape_json(&return_sort_cid)
     ));
+    // #1369: emit parametric content-addressing expansions so realize
+    // plugin can decompose composite CIDs into (constructor, args).
+    if !parametric_sort_expansions.is_empty() {
+        let expansions_json = serde_json::to_string(&parametric_sort_expansions)
+            .unwrap_or_else(|_| "[]".to_string());
+        fields.push(format!(
+            "\"parametric_sort_expansions\":{}",
+            expansions_json
+        ));
+    }
     if let Some(lib) = library {
         fields.push(format!("\"library\":\"{}\"", escape_json(&lib)));
     }
@@ -1327,81 +1345,26 @@ fn build_boundary_carrier_payload(attr_text: &str, sig_text: &str) -> Option<Str
 ///   concept:Null   → blake3-512:62f6040b...
 ///   concept:List<T> → blake3-512:e3f8d174...
 ///   concept:Map<K,V> → blake3-512:b81923e3...
-fn rust_source_type_to_concept_hub_sort_cid(rust_type: &str) -> Option<&'static str> {
-    let trimmed = rust_type.trim();
-    // `&mut T` (mutable reference / out-parameter) lifts to
-    // concept:Ref<T> — minted 2026-05-21 to close the substrate gap
-    // surfaced by encode_string's &mut String parameter.
-    if trimmed.starts_with("&mut ") {
-        return Some(
-            "blake3-512:37d8efe0ce6321d1a16f80aa06cbdf056c846b8a99613731e8d64d9581af61bc517fd8c87daaff2c817585a7dfd763e09ed729fdc71d25fe16fb1b2e6ca33534"
-        );
-    }
-    let t = trimmed
-        .trim_start_matches('&')
-        .trim();
-    let t = if let Some(stripped) = t
-        .strip_prefix("Option<")
-        .and_then(|s| s.strip_suffix('>'))
-    {
-        stripped.trim()
-    } else if let Some(stripped) = t.strip_prefix("Result<") {
-        let mut depth = 0i32;
-        let mut end = stripped.len();
-        for (i, ch) in stripped.chars().enumerate() {
-            match ch {
-                '<' => depth += 1,
-                '>' => depth -= 1,
-                ',' if depth == 0 => {
-                    end = i;
-                    break;
-                }
-                _ => {}
-            }
-        }
-        stripped[..end].trim()
-    } else {
-        t
-    };
-    // CIDs verified against menagerie/concept-shapes/catalog/sorts/.
-    match t {
-        "i8" | "i16" | "i32" | "i64" | "i128" | "isize"
-        | "u8" | "u16" | "u32" | "u64" | "u128" | "usize" => Some(
-            "blake3-512:30ffc51350121a7172f3e4064a33c45bbd345756979fccff6875cd2ab33e4964d098a99df80cfbdf1ec1a0738c5ac3476f0ff8f75589ea511d1acd82c74ecd58"
-        ),
-        "f32" | "f64" => Some(
-            "blake3-512:b979e70c4d5e53d9bdf13d6f08330be3c5b0714b8c770d69bbd05946b86c36df5274be8145a2683cc29c278155c9c1ee65b6897913524eecb9e4c89c71862f57"
-        ),
-        "bool" => Some(
-            "blake3-512:0ee13bf3fd6b7ecfbee72dfbfc18a7c0ea7f1663de6cca43cefb36f5b4c03665452646094a7c296e819e75d683c6ce4821f3d7db3c3c78ae97f2d4e3451d2074"
-        ),
-        "str" | "String" => Some(
-            "blake3-512:be8721d24849feb74c4721520bdba02d352a94f49253a627cd509127472aa1c47cbe99cb705cac4159b5365abcce0c9aaa4901fe67630827deb6be1f9daeea10"
-        ),
-        "()" => Some(
-            // concept:Unit — minted 2026-05-21 to close the substrate gap
-            // surfaced by libprovekit-rpc-cross-platform → java refusal of
-            // void-returning boundaries (stdio-write-line, etc.).
-            "blake3-512:47682b09e5dba71f563db6249c6cb352f7d540986dc7f4cd8d4fb1aa6d9a503064033ee3eb9f36ee6f9e000f700f2f030ebfcfe2b2b8b7e81a345b0d56551f1b"
-        ),
-        // Byte-array family → concept:Bytes (NOT concept:List<T>). Substrate-
-        // canonical bytes primitive is its own sort with byte-encoding
-        // semantics distinct from generic list-of-T.
-        _ if t.starts_with("Vec<u8>") || t.starts_with("[u8") => Some(
-            "blake3-512:7116ef6e62e6739b213a8394f975a53c771b89f08c36d27143827acfcfebc0e39e5b82c530be668c3cfd5ec6966ccaa42930b37fdb1f4ac25652a970be10fb6b"
-        ),
-        // Generic list family → concept:List<T>. Parametric inner-T resolution
-        // is follow-up work.
-        _ if t.starts_with("Vec<") || t.starts_with('[') => Some(
-            "blake3-512:e3f8d17445f9d2ce89c41c09cbeea08a8bc685d1c34a9fd3dfa7b1df17a94f40eab37396615501f1468baf2a1480fd5a27330ea23202b99876c5f4d97fa2cfb2"
-        ),
-        // serde_json::Value and Value (the kit's JSON value sort) → concept:Json,
-        // minted 2026-05-21.
-        "Value" | "serde_json::Value" => Some(
-            "blake3-512:702064722b23410fde0d1fd7afac165bf5914441d67abe1e19d63b0e8fe8117296d2677cc721ad096b8b3bb82d178af699bf14fd70bfb18756c5bed6f4434108"
-        ),
-        _ => None,
-    }
+// Substrate-canonical primitive sort CIDs.
+/// Catalog-driven rust-source-syntax → concept-hub sort CID (#1370).
+///
+/// NO hardcoded source-token names. Reads kit-source-alias mementos via
+/// crate::core::lower_plugin::load_kit_source_aliases("rust") and dispatches
+/// via the recursive resolver in libprovekit::core::lower_plugin.
+fn rust_source_type_to_concept_hub_sort_cid(
+    rust_type: &str,
+    expansions: &mut Vec<crate::core::lower_plugin::ParametricSortExpansion>,
+) -> Option<String> {
+    use std::sync::OnceLock;
+    static RUST_ALIASES: OnceLock<
+        std::collections::BTreeMap<String, crate::core::lower_plugin::KitSourceAliasEntry>,
+    > = OnceLock::new();
+    let aliases = RUST_ALIASES.get_or_init(|| {
+        crate::core::lower_plugin::load_kit_source_aliases("rust")
+    });
+    crate::core::lower_plugin::rust_type_to_concept_hub_sort_cid(
+        rust_type, aliases, expansions,
+    )
 }
 
 fn extract_attr_string(attr_text: &str, key: &str) -> Option<String> {

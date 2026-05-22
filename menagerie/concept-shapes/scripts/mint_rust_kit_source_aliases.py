@@ -28,12 +28,14 @@ def blake3_512_of_bytes(data: bytes) -> str:
 
 
 def find_morphism_cid(kit_sort_lc: str, concept_sort_safe: str) -> str:
+    """The filename pattern is sort-morphism:rust:<sort>:to:concept:<concept>.<full_cid>.json
+    where <full_cid> already includes the `blake3-512:` prefix."""
     algorithms = BASE / "catalog" / "algorithms"
     prefix = f"sort-morphism:rust:{kit_sort_lc}:to:concept:{concept_sort_safe}."
     for fn in os.listdir(algorithms):
         if fn.startswith(prefix) and fn.endswith(".json"):
             rest = fn[len(prefix):]
-            return "blake3-512:" + rest.rsplit(".json", 1)[0]
+            return rest.rsplit(".json", 1)[0]
     raise FileNotFoundError(f"No morphism for {prefix}*")
 
 

@@ -1,5 +1,5 @@
 {
-  "cid": "blake3-512:e2b64f8af94d755e5484ceebd15426aa5d4373e31c36f471f197030050815abc5b2ffe4a19d3527d44d70d37f2f938696f2b6a3d7d6320a155d270e2a45eb9ca",
+  "cid": "blake3-512:36a32a3151da185c7f5960cbf97f8e707c5ea628af168e4d46a52098daa6f29e80b4bb149965b812a34afbb3cf93caa01f7118bcee10b8bf9449f4140d2b90ed",
   "memento": {
     "denotes_parametric_application": {
       "arg_cids": [
@@ -10,9 +10,9 @@
     "kind": "KitSourceAlias",
     "kit": "java",
     "parametric_arity": null,
-    "sort_morphism_cid": "blake3-512:blake3-512:5158341a6d7e3738184f3d692d747817a0b733a7a62fc1a9f9296164cd2cc230252b0bf5784d1cd212907a1e427eb5e6167584abb4c9ee49ab4e4bf0d8894efc",
+    "sort_morphism_cid": "blake3-512:5158341a6d7e3738184f3d692d747817a0b733a7a62fc1a9f9296164cd2cc230252b0bf5784d1cd212907a1e427eb5e6167584abb4c9ee49ab4e4bf0d8894efc",
     "source_aliases": [
-      "java.lang.StringBuilder"
+      "StringBuilder"
     ]
   },
   "signature": {

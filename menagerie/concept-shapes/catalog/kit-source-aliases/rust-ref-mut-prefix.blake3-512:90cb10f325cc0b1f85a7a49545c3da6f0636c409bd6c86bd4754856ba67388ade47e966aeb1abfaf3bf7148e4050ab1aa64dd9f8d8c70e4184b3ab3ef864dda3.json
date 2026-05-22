@@ -1,11 +1,11 @@
 {
-  "cid": "blake3-512:1d41f0e0b10a454bf7b2344b5b57f7f515be08917ce6592d39a33fd30d233c3f830eca66fab4fe0ee191c453c19fbda912c3f62ef1214a8f5181b372516496e4",
+  "cid": "blake3-512:90cb10f325cc0b1f85a7a49545c3da6f0636c409bd6c86bd4754856ba67388ade47e966aeb1abfaf3bf7148e4050ab1aa64dd9f8d8c70e4184b3ab3ef864dda3",
   "memento": {
     "denotes_parametric_application": null,
     "kind": "KitSourceAlias",
     "kit": "rust",
     "parametric_arity": 1,
-    "sort_morphism_cid": "blake3-512:blake3-512:49550e85730ce91a49aa791f185241bea00b45d553310bb2b08ad4ebfd602ab84123223ba2781a40fbe745b48df8dd49a865cc9b5355975894be25f0400ee33e",
+    "sort_morphism_cid": "blake3-512:49550e85730ce91a49aa791f185241bea00b45d553310bb2b08ad4ebfd602ab84123223ba2781a40fbe745b48df8dd49a865cc9b5355975894be25f0400ee33e",
     "source_aliases": [
       "&mut"
     ]

@@ -1,5 +1,5 @@
 {
-  "cid": "blake3-512:b16028e9a597a0c271a15e36480cd98bef631f3c86d34272ad3654f0f392cd5b7ee5d42364606b33af1bf738b6bf72ed18193f76e1d5af882ed9fbd6d7f2e258",
+  "cid": "blake3-512:afc3abe2ab09df6dd72a3dd0495449afee3b396d423e6e440e0975ab993679bced984f4fcaa7f94d85aae06b76dc3cddf7bcb825eee309d19789a774907e4de4",
   "memento": {
     "denotes_parametric_application": {
       "arg_cids": [
@@ -10,7 +10,7 @@
     "kind": "KitSourceAlias",
     "kit": "java",
     "parametric_arity": null,
-    "sort_morphism_cid": "blake3-512:blake3-512:5158341a6d7e3738184f3d692d747817a0b733a7a62fc1a9f9296164cd2cc230252b0bf5784d1cd212907a1e427eb5e6167584abb4c9ee49ab4e4bf0d8894efc",
+    "sort_morphism_cid": "blake3-512:5158341a6d7e3738184f3d692d747817a0b733a7a62fc1a9f9296164cd2cc230252b0bf5784d1cd212907a1e427eb5e6167584abb4c9ee49ab4e4bf0d8894efc",
     "source_aliases": [
       "java.io.ByteArrayOutputStream"
     ]

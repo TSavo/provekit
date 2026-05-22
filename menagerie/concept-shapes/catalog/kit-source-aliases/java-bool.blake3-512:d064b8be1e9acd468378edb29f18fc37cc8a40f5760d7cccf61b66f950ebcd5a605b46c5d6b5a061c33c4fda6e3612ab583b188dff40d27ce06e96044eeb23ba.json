@@ -1,13 +1,14 @@
 {
-  "cid": "blake3-512:376383a16054db979a49477b1c9bca269e5a2fc67d35064b3de06c92ec686a93aa341b5dd2ef010f94b726e88933cba0cc16bd6ed6c56d458080281a5866e7cf",
+  "cid": "blake3-512:d064b8be1e9acd468378edb29f18fc37cc8a40f5760d7cccf61b66f950ebcd5a605b46c5d6b5a061c33c4fda6e3612ab583b188dff40d27ce06e96044eeb23ba",
   "memento": {
     "denotes_parametric_application": null,
     "kind": "KitSourceAlias",
     "kit": "java",
     "parametric_arity": null,
-    "sort_morphism_cid": "blake3-512:blake3-512:14b8af0088b7a24f0e552b7c7307a5e5ef8d559e7dab9ae7a423ac81e1ee888c1627ed8abb199273201a4af7d3d09cce1ce367c60a4062e15eeb7cd91859f64c",
+    "sort_morphism_cid": "blake3-512:0200651c0ff55424887c1f8c9f01ba9aa4fd7ff621e18aded9ab42b8066667337bedb7b4044369853a42a101ad70213070f53d9db8675b1b07e2c036ae2a03a1",
     "source_aliases": [
-      "byte[]"
+      "boolean",
+      "Boolean"
     ]
   },
   "signature": {

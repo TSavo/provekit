@@ -1,14 +1,13 @@
 {
-  "cid": "blake3-512:cd7d3fba89b557e9d65082cbcd2edcfca9cbdbc29196dbd8bfe818590f2b5141ad728ffd8ae5a99d8d6a2aedd6199fe079cce91d6a0835a06c1f2e67ba468e46",
+  "cid": "blake3-512:60bcb16cd9126839ddcfce64b950fb92ed838c2ea64fd5e2768504818aa8f2a5442ad5aa812f2478d15570fa0abba78a75e510f9fd1ba437ce119c1387719808",
   "memento": {
     "denotes_parametric_application": null,
     "kind": "KitSourceAlias",
     "kit": "rust",
     "parametric_arity": null,
-    "sort_morphism_cid": "blake3-512:blake3-512:b4639948f83e9516ab5af3e8b450226591c08bc99bdb4f432d8290a98af1fcb03e922fe17cd17550ab8fcbf37e97ed497160ebab52bd5b459b58d12cf5c4e019",
+    "sort_morphism_cid": "blake3-512:ae99af06a943b0c4c217c902a00ec0c6f44417812cc425df68d3cb24f13770ae6ff21e476d9ca32e103e8ed32691f859da8ecdb684d53e1f92a6c7d7d57140cc",
     "source_aliases": [
-      "f32",
-      "f64"
+      "()"
     ]
   },
   "signature": {

@@ -1,11 +1,11 @@
 {
-  "cid": "blake3-512:0c4a7599476db749a1a287dab23d6dbf9bed88d6f9be754bfcf1c9612bec05bf082a5012a84dffe434a2507f91028da9e01a332b2f4ec12ea0e449ce1cce0b97",
+  "cid": "blake3-512:f60b7ea16b0606b3a73331a495fcd385ec37bc14d307eb632c367a5336927fbd303edffc6d5d7e0de53a808c5a0e499d20bba43fa8bc68fcf3d5ffe7a99124ec",
   "memento": {
     "denotes_parametric_application": null,
     "kind": "KitSourceAlias",
     "kit": "java",
     "parametric_arity": null,
-    "sort_morphism_cid": "blake3-512:blake3-512:040afee73906b9fceb8809c158d180e4bd1786fd61d2e6f36304639be1f4ff178408fe8a95b57a8bdfdef4cd5c9f5004f26d470b2ac02de0fb1fa0ae3f0d336d",
+    "sort_morphism_cid": "blake3-512:040afee73906b9fceb8809c158d180e4bd1786fd61d2e6f36304639be1f4ff178408fe8a95b57a8bdfdef4cd5c9f5004f26d470b2ac02de0fb1fa0ae3f0d336d",
     "source_aliases": [
       "int",
       "Integer",
