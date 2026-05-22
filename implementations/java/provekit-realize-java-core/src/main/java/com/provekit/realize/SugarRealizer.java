@@ -1882,11 +1882,12 @@ final class SugarRealizer {
             // silently fabricate `: null` (which the source did not
             // authorize as a return value).
             if (!defaultEmitted) {
-                context.recordApproximation(
-                    "match-expression-synthesized-default",
-                    "Rust match expression had no wildcard; java ternary requires else. "
-                        + "Emitted a panic for the unreachable branch.");
-                chain.append(" : (").append(boxedType(mapSourceType(context.returnType).equals("void") ? "Object" : mapSourceType(context.returnType)))
+                // Substrate-honest citation: rust source had no wildcard
+                // (exhaustive). The panic is unreachable in the well-
+                // formed case so (A)+(B) hold — lossless via citation,
+                // NOT a loss_record entry.
+                chain.append(" : /*@concept concept:exhaustive-match-no-default*/ (")
+                     .append(boxedType(mapSourceType(context.returnType).equals("void") ? "Object" : mapSourceType(context.returnType)))
                      .append(") (Object) ((java.util.function.Supplier<Object>)() -> { throw new RuntimeException(\"exhaustive match: no arm matched\"); }).get()");
             }
             for (int k = 0; k < openParens; k++) chain.append(")");
@@ -1939,19 +1940,18 @@ final class SugarRealizer {
                             receiver.get().text() + ".getBytes(java.nio.charset.StandardCharsets.UTF_8)",
                             "byte[]"));
                 }
-                // .into() / .clone() / .cloned() on a value: no-op for
-                // most java types. Drop the call (identity). Record as
-                // approximation — rust .cloned() on Option<&T> would
-                // clone the inner; we're trusting java reference-sharing
-                // semantics make this safe, which is unverified for
-                // arbitrary T.
+                // .into() / .clone() / .cloned() on a value: identity in
+                // java where references are shared + JsonNode/String are
+                // tree-shared. Substrate-honest: this is (A) recoverable
+                // via citation comment AND (B) functionally opaque (no
+                // behavioral difference). NOT lossy — emit a concept
+                // citation so the round-trip lifter can reconstruct the
+                // explicit .cloned() / .into() call.
                 if ("into".equals(methodName) || "clone".equals(methodName)
                         || "cloned".equals(methodName)) {
-                    context.recordApproximation(
-                        "option-clone-erased",
-                        "Rust ." + methodName + "() lowered as identity on '"
-                            + receiver.get().text() + "'; relies on java reference-sharing");
-                    return Optional.of(new ShapeExpression(receiver.get().text(), receiver.get().typeName()));
+                    String cited = "/*@concept concept:value-clone source-name=" + methodName + "*/"
+                            + receiver.get().text();
+                    return Optional.of(new ShapeExpression(cited, receiver.get().typeName()));
                 }
                 // .iter() on a JsonNode (rust Vec<Value>.iter()) →
                 // StreamSupport.stream over spliterator. Caller's
@@ -1994,10 +1994,13 @@ final class SugarRealizer {
                 // a String via String.valueOf). Caller can wrap in
                 // Objects.requireNonNull at the binding level if needed.
                 if ("ok_or_else".equals(methodName) && callArgs.size() == 1) {
+                    // GENUINELY LOSSY (B fails). Citation gives (A); a
+                    // java Result<T,E> carrier will restore (B).
                     context.recordApproximation(
                         "result-flattened-to-throw",
                         "Rust .ok_or_else(closure) lowered as throw-on-null. "
-                            + "Callers expecting Result<T,E> cannot recover the error path.");
+                            + "Functionally NOT opaque: callers lose Result<T,E> control flow. "
+                            + "Retires when java Result carrier ships.");
                     String fn = callArgs.get(0);
                     String fnInvoked;
                     if (fn.contains("->")) {
@@ -2014,8 +2017,9 @@ final class SugarRealizer {
                         fnInvoked = "((java.util.function.Supplier)(" + fn + ")).get()";
                     }
                     return Optional.of(new ShapeExpression(
-                            "java.util.Objects.requireNonNullElseGet(" + receiver.get().text()
-                            + ", () -> { throw new RuntimeException(String.valueOf(" + fnInvoked + ")); })",
+                            "/*@concept concept:fallible-ok-or-else fallback=" + escapeForComment(callArgs.get(0))
+                                + "*/ java.util.Objects.requireNonNullElseGet(" + receiver.get().text()
+                                + ", () -> { throw new RuntimeException(String.valueOf(" + fnInvoked + ")); })",
                             ""));
                 }
                 // .insert(x) on rust BTreeSet/HashSet → .add(x) returning boolean.
@@ -2200,12 +2204,21 @@ final class SugarRealizer {
             }
             if ("Err".equals(callee)) {
                 String inner = argTerms.size() > 1 ? argTerms.get(1).text() : "\"err\"";
+                // GENUINELY LOSSY (B fails): callers expecting Result<T,E>
+                // can't .is_err()/.map_err() — exception interrupts vs
+                // return-as-value. Citation alone insufficient until a
+                // java Result<T,E> carrier exists. Keep loss_record AND
+                // emit citation so when the carrier ships, only the
+                // citation remains and the loss entry drops.
                 context.recordApproximation(
                     "result-err-as-throw",
                     "Rust Err(" + inner + ") lowered as throw RuntimeException. "
-                        + "Variant identity and structured error payload are lost.");
+                        + "Functionally NOT opaque: callers lose Result<T,E> control flow. "
+                        + "Retires when a java Result carrier ships.");
                 return Optional.of(new ShapeExpression(
-                        "throw new RuntimeException(String.valueOf(" + inner + "))",
+                        "throw /*@concept concept:fallible-err payload="
+                            + escapeForComment(inner) + "*/ new RuntimeException(String.valueOf("
+                            + inner + "))",
                         ""));
             }
             // `str::to_string` method ref → identity (already a String).
@@ -2235,12 +2248,19 @@ final class SugarRealizer {
                 if (parts.length == 2
                         && parts[0].length() > 0 && Character.isUpperCase(parts[0].charAt(0))
                         && parts[1].length() > 0 && Character.isUpperCase(parts[1].charAt(0))) {
+                    // GENUINELY LOSSY (B fails): callers doing variant
+                    // dispatch can no longer distinguish. Citation
+                    // recovers (A); a sealed-class variant carrier will
+                    // restore (B). Keep loss_record until then.
                     context.recordApproximation(
                         "enum-variant-flattened-to-string",
                         "Rust " + parts[0] + "::" + parts[1] + "(" + argTerms.get(1).text()
-                            + ") lowered as String.valueOf(payload). Variant identity erased.");
+                            + ") lowered as String.valueOf(payload). Functionally NOT opaque: "
+                            + "variant dispatch is lost. Retires when sealed-class variant carriers ship.");
                     return Optional.of(new ShapeExpression(
-                            "String.valueOf(" + argTerms.get(1).text() + ")",
+                            "/*@concept concept:sum-variant-construct family=" + parts[0] + ":" + parts[1]
+                                + " payload=" + escapeForComment(argTerms.get(1).text())
+                                + "*/ String.valueOf(" + argTerms.get(1).text() + ")",
                             "String"));
                 }
             }
@@ -2808,6 +2828,18 @@ final class SugarRealizer {
         return "((java.util.function.Function)(" + t + ")).apply(" + arg + ")";
     }
 
+    /** Escape a payload expression for embedding inside a citation
+     *  comment. Replaces the close-comment sequence with a safe form
+     *  so the comment never terminates early. Reversible by round-
+     *  trip lifters. */
+    private static String escapeForComment(String s) {
+        if (s == null) return "";
+        // Escape BOTH comment-start and comment-end so that payloads
+        // already containing citation comments don't break parsing.
+        return s.replace("*/", "*_/").replace("/*", "/_*")
+                .replace("\n", " ").replace("\r", " ");
+    }
+
     /** True iff text looks like a java string literal (starts + ends with "). */
     private static boolean isStringLiteral(String s) {
         if (s == null) return false;
@@ -2883,21 +2915,14 @@ final class SugarRealizer {
             armIdx++;
         }
         if (!defaultSeen && armIdx > 0) {
-            // Rust source was exhaustive (no wildcard) — but java's
-            // ternary chain needs an else. Substrate-honest: emit a
-            // panic + loss_record entry, rather than synthesizing a
-            // null default the source didn't authorize. If the rust
-            // match was truly exhaustive, this branch is unreachable;
-            // if it ISN'T (substrate canonicalized a non-exhaustive
-            // pattern), the panic surfaces the gap at runtime instead
-            // of silently returning null.
-            context.recordApproximation(
-                "match-exhaustive-synthesized-default",
-                "Rust match for assignment to '" + targetName + "' had no wildcard. "
-                    + "Java requires an else branch; emitted a panic since the source "
-                    + "expressed exhaustiveness. If callers reach the else, the substrate "
-                    + "missed an arm.");
-            out.append(" else { throw new RuntimeException(\"exhaustive match without arm: ")
+            // Rust match was exhaustive (no wildcard); java's ternary
+            // chain needs an else. Substrate-honest citation: the round-
+            // trip lifter sees @concept match:exhaustive-no-default and
+            // reconstructs the source as an exhaustive match. The panic
+            // is unreachable in the well-formed case so (A) recoverable
+            // + (B) runtime-equivalent — LOSSLESS, not lossy.
+            out.append(" else { /*@concept concept:exhaustive-match-no-default*/")
+               .append(" throw new RuntimeException(\"exhaustive match without arm: ")
                .append(targetName).append("\"); }");
         }
         return out.toString();
