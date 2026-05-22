@@ -1738,12 +1738,44 @@ static RUST_ALIASES: OnceLock<
 > = OnceLock::new();
 
 fn sugar_param_types(item_fn: &syn::ItemFn) -> Vec<String> {
+    // Build a map from type-parameter ident to its FIRST trait bound.
+    // For `fn f<A: AdapterLifter>(a: A)`, the param_type for `a` is
+    // emitted as "AdapterLifter" so the lower side has the right
+    // method-resolution target instead of the erased Object.
+    let mut bounds: std::collections::HashMap<String, String> = std::collections::HashMap::new();
+    for gp in &item_fn.sig.generics.params {
+        if let syn::GenericParam::Type(tp) = gp {
+            let name = tp.ident.to_string();
+            for b in &tp.bounds {
+                if let syn::TypeParamBound::Trait(tb) = b {
+                    if let Some(last) = tb.path.segments.last() {
+                        bounds.insert(name.clone(), last.ident.to_string());
+                        break;
+                    }
+                }
+            }
+        }
+    }
     item_fn
         .sig
         .inputs
         .iter()
         .filter_map(|arg| match arg {
-            syn::FnArg::Typed(pat_type) => Some(sugar_type_surface(&pat_type.ty)),
+            syn::FnArg::Typed(pat_type) => {
+                let raw = sugar_type_surface(&pat_type.ty);
+                // Strip `&` / `&mut ` prefix for the bound lookup, then
+                // re-apply for non-bound types.
+                let stripped = raw
+                    .trim_start_matches("&mut")
+                    .trim_start_matches("&")
+                    .trim()
+                    .to_string();
+                if let Some(bound) = bounds.get(&stripped) {
+                    Some(bound.clone())
+                } else {
+                    Some(raw)
+                }
+            }
             _ => None,
         })
         .collect()

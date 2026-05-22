@@ -2481,18 +2481,24 @@ final class SugarRealizer {
         };
     }
 
-    /** For pattern text like `Some(v)` or `Ok(x)` or bare identifier `other`,
-     *  return the bound var. */
+    /** For pattern text like `Some(v)` or `Ok(x)` or bare identifier `other`
+     *  or nested `Err(Type::Variant(msg))`, return the bound var. */
     private static String bindingFromPattern(String pattern) {
         String t = pattern.trim();
         // Strip guard before checking.
         int ifIdx = t.indexOf(" if ");
         if (ifIdx > 0) t = t.substring(0, ifIdx).trim();
-        // Variant(name) form.
+        // Outer Variant(name) form.
         java.util.regex.Matcher m = java.util.regex.Pattern.compile(
             "^(?:Some|Ok|Err|None)\\s*\\(\\s*([A-Za-z_][A-Za-z0-9_]*)\\s*\\)$"
         ).matcher(t);
         if (m.find()) return m.group(1);
+        // Nested: `Err(Type::Variant(x))` or `Some(Inner(x))` — pull
+        // the innermost ident.
+        java.util.regex.Matcher nested = java.util.regex.Pattern.compile(
+            "\\(\\s*([A-Za-z_][A-Za-z0-9_]*)\\s*\\)\\s*\\)\\s*$"
+        ).matcher(t);
+        if (nested.find()) return nested.group(1);
         // Bare identifier (rust catch-all binding like `other => ...`).
         if (t.matches("^[A-Za-z_][A-Za-z0-9_]*$") && !t.equals("_") && !t.equals("None")) {
             return t;
