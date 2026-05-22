@@ -1460,6 +1460,53 @@ final class SugarRealizer {
         if (conceptMatches("concept:continue", conceptName)) {
             return Optional.of("continue;");
         }
+        // concept:match in STATEMENT position: emit if-else if-else chain
+        // with `return X;` per arm. Avoids the Supplier-lambda scope issue
+        // (let bindings inside arms can't reach outer scope when wrapped
+        // in a lambda). Each arm body is wrapped as `return body;` since
+        // match in tail position IS the function's return value.
+        if (conceptMatches("concept:match", conceptName) && args.size() >= 2) {
+            Optional<ShapeExpression> scrut = lowerShapeExpression(args.get(0), context, appendPosition(position, 0));
+            if (scrut.isEmpty()) return Optional.empty();
+            String scrutVar = context.tempName();
+            context.definedSymbols.add(scrutVar);
+            StringBuilder out = new StringBuilder();
+            out.append("var ").append(scrutVar).append(" = ").append(scrut.get().text()).append(";\n");
+            boolean defaultSeen = false;
+            int armIdx = 0;
+            for (int i = 1; i < args.size(); i++) {
+                Jcs.Obj arm = args.get(i);
+                if (!conceptMatches("concept:match-arm", shapeConceptName(arm))) continue;
+                List<Jcs.Obj> armArgs = shapeArgs(arm);
+                if (armArgs.size() < 2) continue;
+                String patternText = armArgs.get(0).stringFieldOrNull("text");
+                if (patternText == null) patternText = "";
+                patternText = patternText.trim();
+                String boundVar = bindingFromPattern(patternText);
+                String cond = patternToCondition(patternText, scrutVar);
+                Optional<ShapeExpression> bodyExpr = lowerShapeExpression(armArgs.get(1), context, appendPosition(position, i));
+                if (bodyExpr.isEmpty()) return Optional.empty();
+                String bodyText = bodyExpr.get().text();
+                if (boundVar != null) bodyText = replaceIdentifier(bodyText, boundVar, scrutVar);
+                if ("true".equals(cond)) {
+                    if (armIdx == 0) {
+                        out.append("return ").append(bodyText).append(";");
+                    } else {
+                        out.append(" else {\n    return ").append(bodyText).append(";\n}");
+                    }
+                    defaultSeen = true;
+                    break;
+                }
+                if (armIdx == 0) out.append("if (").append(cond).append(") {\n");
+                else out.append(" else if (").append(cond).append(") {\n");
+                out.append("    return ").append(bodyText).append(";\n}");
+                armIdx++;
+            }
+            if (!defaultSeen && armIdx > 0) {
+                out.append(" else {\n    return null;\n}");
+            }
+            return Optional.of(out.toString());
+        }
         return Optional.empty();
     }
 
