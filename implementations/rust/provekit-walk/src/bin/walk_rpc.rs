@@ -2126,6 +2126,18 @@ fn bindings_of_expr(expr: &syn::Expr, ctx: &ShapeContext) -> BindingResult {
             operation_binding_result(vec![cond, then_branch, else_branch])
         }
         syn::Expr::While(e) => {
+            // Match the shape side's treatment of `while let` — emit
+            // [empty_var_slot, value_bindings, body_bindings] so the
+            // arities align with concept:while-let.
+            if let syn::Expr::Let(let_expr) = &*e.cond {
+                let value_bindings = bindings_of_expr(&let_expr.expr, ctx);
+                let body = bindings_of_block(&e.body, ctx);
+                return operation_binding_result(vec![
+                    BindingResult::default(),
+                    value_bindings,
+                    body,
+                ]);
+            }
             let cond = bindings_of_expr(&e.cond, ctx);
             let body = bindings_of_block(&e.body, ctx);
             operation_binding_result(vec![cond, body])
@@ -2471,6 +2483,57 @@ fn shape_of_stmt(stmt: &syn::Stmt, ctx: &ShapeContext) -> Arc<CValue> {
                     vec![target_leaf, shape_of_expr(&init.expr, ctx)],
                 );
             }
+            // Tuple destructuring: `let (a, b, c) = expr` → seq of assigns
+            // from a temp. The lower side can either emit individual
+            // declarations or use record/Object[] patterns per target.
+            if let syn::Pat::Tuple(tuple_pat) = &local.pat {
+                let mut idents: Vec<String> = Vec::new();
+                for elem in &tuple_pat.elems {
+                    match elem {
+                        syn::Pat::Ident(pi) => idents.push(pi.ident.to_string()),
+                        syn::Pat::Wild(_) => idents.push("_".to_string()),
+                        other => {
+                            use quote::ToTokens;
+                            idents.push(other.to_token_stream().to_string());
+                        }
+                    }
+                }
+                if !idents.is_empty() {
+                    // Emit as: seq(
+                    //   assign(__tuple, init_expr),
+                    //   assign(a, index(__tuple, 0)),
+                    //   assign(b, index(__tuple, 1)),
+                    //   ...
+                    // )
+                    let temp_name = "__provekit_tuple".to_string();
+                    let temp_leaf = || CValue::object([
+                        ("kind", CValue::string("symbol")),
+                        ("text", CValue::string(temp_name.clone())),
+                    ]);
+                    let mut stmts: Vec<Arc<CValue>> = Vec::new();
+                    stmts.push(gamma_operation("concept:assign", vec![
+                        temp_leaf(),
+                        shape_of_expr(&init.expr, ctx),
+                    ]));
+                    for (i, name) in idents.iter().enumerate() {
+                        if name == "_" { continue; }
+                        let idx_lit = concept_literal_shape(
+                            CValue::integer(i as i64), SORT_INT_CID);
+                        let index_op = gamma_operation("concept:index", vec![
+                            temp_leaf(),
+                            idx_lit,
+                        ]);
+                        stmts.push(gamma_operation("concept:assign", vec![
+                            CValue::object([
+                                ("kind", CValue::string("symbol")),
+                                ("text", CValue::string(name.clone())),
+                            ]),
+                            index_op,
+                        ]));
+                    }
+                    return gamma_operation("concept:seq", stmts);
+                }
+            }
             if let Some(binding_name) = local_binding_symbol(local) {
                 // Substrate-honest let-binding: the binding NAME is data,
                 // emit it as a kind:"symbol" leaf in the target slot.
@@ -2527,6 +2590,63 @@ fn shape_of_expr(expr: &syn::Expr, ctx: &ShapeContext) -> Arc<CValue> {
             gamma_operation("concept:conditional", vec![cond, then_shape, else_shape])
         }
         syn::Expr::While(e) => {
+            // Detect `while let PATTERN = EXPR { body }` — rust models this
+            // as ExprWhile with cond = Expr::Let(pat, expr). The pattern
+            // binds a variable that's in scope inside body. Lift as
+            // concept:while-let(var_leaf, expr, body) so the lower side
+            // can emit `while ((var = expr) != null) { body }` or the
+            // equivalent in each target.
+            if let syn::Expr::Let(let_expr) = &*e.cond {
+                // `while let Some(var) = EXPR { BODY }` re-encoded using
+                // existing catalog concepts (no new memento needed):
+                //   loop {
+                //     let var = EXPR;
+                //     if var == null { break; }
+                //     BODY
+                //   }
+                // which lifts as concept:while(true_literal, seq(
+                //   assign(var, expr),
+                //   conditional(eq(var, null), break, BODY))).
+                let var_name = match &*let_expr.pat {
+                    syn::Pat::TupleStruct(tup) if !tup.elems.is_empty() => {
+                        if let syn::Pat::Ident(pi) = &tup.elems[0] {
+                            pi.ident.to_string()
+                        } else {
+                            use quote::ToTokens;
+                            tup.elems[0].to_token_stream().to_string()
+                        }
+                    }
+                    syn::Pat::Ident(pi) => pi.ident.to_string(),
+                    other => {
+                        use quote::ToTokens;
+                        other.to_token_stream().to_string()
+                    }
+                };
+                let var_leaf = CValue::object([
+                    ("kind", CValue::string("symbol")),
+                    ("text", CValue::string(var_name.clone())),
+                ]);
+                let var_use_leaf = CValue::object([
+                    ("kind", CValue::string("symbol")),
+                    ("text", CValue::string(var_name)),
+                ]);
+                let value = shape_of_expr(&let_expr.expr, ctx);
+                let assign = gamma_operation("concept:assign", vec![var_leaf, value]);
+                let null_leaf = CValue::object([
+                    ("kind", CValue::string("symbol")),
+                    ("text", CValue::string("null".to_string())),
+                ]);
+                let null_check = gamma_operation("concept:eq", vec![var_use_leaf, null_leaf]);
+                let break_op = gamma_operation("concept:break", Vec::new());
+                let body = shape_of_block(&e.body, ctx);
+                let cond_break = gamma_operation(
+                    "concept:conditional",
+                    vec![null_check, break_op, gamma_operation("concept:seq", vec![])],
+                );
+                let loop_body = gamma_operation("concept:seq", vec![assign, cond_break, body]);
+                let true_leaf = concept_literal_shape(CValue::boolean(true), SORT_BOOL_CID);
+                return gamma_operation("concept:while", vec![true_leaf, loop_body]);
+            }
             let cond = shape_of_expr(&e.cond, ctx);
             let body = shape_of_block(&e.body, ctx);
             gamma_operation("concept:while", vec![cond, body])
