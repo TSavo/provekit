@@ -475,6 +475,19 @@ fn lower_term_shape_body(
             let_kw, target.text, value.type_name, value.text
         ));
     }
+    if concept_name == "concept:item-decl" {
+        // Function-local item (const, static, fn). args[0] is a symbol leaf
+        // carrying the verbatim source. Emit as-is — items are statement
+        // form (token-tree pass-through is byte-identical with source).
+        let args = term_shape_args(shape);
+        if args.is_empty() {
+            return None;
+        }
+        let source = args[0].get("text").and_then(Value::as_str)?;
+        // Re-normalize macro-style spacing (`X : T` → `X: T`) so token-stream
+        // artifacts don't appear in the emitted source.
+        return Some(normalize_macro_tokens(source));
+    }
     if concept_name == "concept:destructure-struct" {
         // args: [value, type_leaf, field_leaf1, field_leaf2, ...]
         let args = term_shape_args(shape);

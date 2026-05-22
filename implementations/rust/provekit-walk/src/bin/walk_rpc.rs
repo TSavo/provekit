@@ -2533,6 +2533,21 @@ fn local_binding_sort(
 fn shape_of_stmt(stmt: &syn::Stmt, ctx: &ShapeContext) -> Arc<CValue> {
     match stmt {
         syn::Stmt::Expr(e, _) => shape_of_expr(e, ctx),
+        // Function-local item declaration: `const X: T = expr;`, `static X`,
+        // inner `fn`, etc. First-class concept:item-decl carrying the
+        // verbatim source. Realize-side emits it back into the function body.
+        // (Full structural lift of items is future work — preserving source
+        // verbatim is the minimal byte-identical surface.)
+        syn::Stmt::Item(item) => {
+            use quote::ToTokens;
+            let source = item.to_token_stream().to_string();
+            gamma_operation("concept:item-decl", vec![
+                CValue::object([
+                    ("kind", CValue::string("symbol")),
+                    ("text", CValue::string(source)),
+                ]),
+            ])
+        }
         syn::Stmt::Local(local) => {
             let Some(init) = local.init.as_ref() else {
                 return non_operation_shape();
