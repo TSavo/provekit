@@ -164,6 +164,7 @@ impl RealizeTransport for CapturingTransport {
             observed_loss_record: json!({}),
             used_sugars: vec![],
             observation_wrapper_emission_record: None,
+            ..Default::default()
         })
     }
 }

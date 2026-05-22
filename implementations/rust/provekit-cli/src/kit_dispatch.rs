@@ -1646,6 +1646,29 @@ fn invoke_realize(
     }
     let observation_wrapper_emission_record =
         result.get("observation_wrapper_emission_record").cloned();
+    // #1374: extract realization-fragment context if the realize plugin
+    // emitted it. Legacy plugins omit these fields; default-empty/None.
+    let imports = result
+        .get("imports")
+        .and_then(Value::as_array)
+        .map(|arr| arr.iter().filter_map(Value::as_str).map(String::from).collect())
+        .unwrap_or_default();
+    let helpers = result
+        .get("helpers")
+        .and_then(Value::as_array)
+        .cloned()
+        .unwrap_or_default();
+    let dependencies = result
+        .get("dependencies")
+        .and_then(Value::as_array)
+        .cloned()
+        .unwrap_or_default();
+    let diagnostics = result
+        .get("diagnostics")
+        .and_then(Value::as_array)
+        .cloned()
+        .unwrap_or_default();
+    let compile_unit_requirements = result.get("compile_unit_requirements").cloned();
     Ok(RealizedSource {
         extension,
         source,
@@ -1654,6 +1677,11 @@ fn invoke_realize(
         observed_loss_record,
         used_sugars,
         observation_wrapper_emission_record,
+        imports,
+        helpers,
+        dependencies,
+        diagnostics,
+        compile_unit_requirements,
     })
 }
 
