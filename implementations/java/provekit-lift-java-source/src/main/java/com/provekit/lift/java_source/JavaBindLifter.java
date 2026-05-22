@@ -355,6 +355,12 @@ public final class JavaBindLifter {
                     )
                 );
 
+                // #1369 parametric content-addressing: accumulator for composite
+                // CID expansions. Populated by javaTypeToConceptHubSortCid calls;
+                // emitted on the entry so realize plugins can decompose composite
+                // CIDs into (constructor, args) for parameterized morphism dispatch.
+                List<ParametricSortExpansion> parametricExpansions = new ArrayList<>();
+
                 // Build the entry; conditionally append observed_dimension.
                 List<Object> entryKvs = new ArrayList<>(List.of(
                     "body_source", bodySource,
@@ -368,11 +374,11 @@ public final class JavaBindLifter {
                     "param_types", Jcs.array(paramTypes),
                     "param_sort_cids", Jcs.array(
                         paramTypes.stream()
-                            .map(t -> Jcs.string(javaTypeToConceptHubSortCid(((Jcs.Str) t).value())))
+                            .map(t -> Jcs.string(javaTypeToConceptHubSortCid(((Jcs.Str) t).value(), parametricExpansions)))
                             .toList()
                     ),
                     "return_type", Jcs.string(returnType),
-                    "return_sort_cid", Jcs.string(javaTypeToConceptHubSortCid(returnType)),
+                    "return_sort_cid", Jcs.string(javaTypeToConceptHubSortCid(returnType, parametricExpansions)),
                     "signature_shape_cid", Jcs.string(signatureShapeCid),
                     "source_function_name", Jcs.string(fnName),
                     "target_language", Jcs.string("java"),
@@ -398,6 +404,25 @@ public final class JavaBindLifter {
                 if (version != null && !version.isEmpty()) {
                     entryKvs.add("library_version");
                     entryKvs.add(Jcs.string(version));
+                }
+                // #1369: emit parametric content-addressing expansions when any
+                // parametric type appeared in the signature. Each expansion
+                // captures (composite_cid → constructor + arg CIDs) so realize
+                // plugins can decompose composite CIDs for parameterized morphism
+                // dispatch.
+                if (!parametricExpansions.isEmpty()) {
+                    List<Jcs.Json> expValues = new ArrayList<>();
+                    for (ParametricSortExpansion exp : parametricExpansions) {
+                        List<Jcs.Json> argCidsJson = new ArrayList<>();
+                        for (String a : exp.argCids()) argCidsJson.add(Jcs.string(a));
+                        expValues.add(Jcs.object(
+                            "arg_cids", Jcs.array(argCidsJson),
+                            "cid", Jcs.string(exp.cid()),
+                            "constructor_cid", Jcs.string(exp.constructorCid())
+                        ));
+                    }
+                    entryKvs.add("parametric_sort_expansions");
+                    entryKvs.add(Jcs.array(expValues));
                 }
                 Jcs.Obj sugarEntry = Jcs.object(entryKvs.toArray());
                 entries.add(sugarEntry);
@@ -954,54 +979,256 @@ public final class JavaBindLifter {
      * invariant: kit-internal labels never cross to substrate; only
      * concept-hub CIDs do. The translation happens AT the kit boundary.
      */
-    private static String javaTypeToConceptHubSortCid(String javaType) {
+    /**
+     * Carrier-side parametric sort expansion. Same shape as rust's
+     * libprovekit::core::lower_plugin::ParametricSortExpansion. Used to
+     * communicate (composite_cid → constructor + args) so realize plugins
+     * can decompose for parameterized morphism dispatch.
+     */
+    record ParametricSortExpansion(String cid, String constructorCid, List<String> argCids) {
+        /** Compute the composite CID via blake3-512 of JCS-canonicalized form. */
+        static String composeCid(String constructorCid, List<String> argCids) {
+            List<Jcs.Json> argList = new ArrayList<>();
+            for (String a : argCids) argList.add(Jcs.string(a));
+            Jcs.Json canonical = Jcs.object(
+                "arg_cids", Jcs.array(argList),
+                "constructor_cid", Jcs.string(constructorCid),
+                "kind", Jcs.string("parametric-sort-application")
+            );
+            return Jcs.cid(canonical);
+        }
+
+        static ParametricSortExpansion build(String constructorCid, List<String> argCids) {
+            return new ParametricSortExpansion(composeCid(constructorCid, argCids), constructorCid, argCids);
+        }
+    }
+
+    /**
+     * Catalog-driven kit-source alias lookup (#1370). The Java kit's
+     * KitSourceAliasMemento files in menagerie/concept-shapes/catalog/
+     * kit-source-aliases/java-*.json declare the source-text tokens
+     * that denote each kit-sort. This map is built once on first lift.
+     *
+     * Three forms:
+     * - PRIMITIVE: token → concept-hub sort CID (no parametric args)
+     * - PARAMETRIC_CONSTRUCTOR: token denotes a constructor; takes args
+     *   at use-site
+     * - SHORTHAND: token denotes a fixed parametric application
+     *   (e.g. StringBuilder = Ref<String>)
+     */
+    private record AliasEntry(
+        String kind,               // "primitive" / "constructor" / "shorthand"
+        String targetCid,          // primitive: concept-hub CID; constructor: constructor CID; shorthand: composite CID
+        Integer arity,             // for constructor: expected arity; null otherwise
+        String constructorCid,     // for shorthand: the parametric constructor's CID; null otherwise
+        List<String> argCids       // for shorthand: pre-bound arg CIDs; null otherwise
+    ) {}
+
+    private static volatile Map<String, AliasEntry> ALIAS_MAP = null;
+
+    private static Map<String, AliasEntry> aliasMap() {
+        Map<String, AliasEntry> cached = ALIAS_MAP;
+        if (cached != null) return cached;
+        synchronized (JavaBindLifter.class) {
+            if (ALIAS_MAP != null) return ALIAS_MAP;
+            ALIAS_MAP = buildAliasMap();
+            return ALIAS_MAP;
+        }
+    }
+
+    private static Map<String, AliasEntry> buildAliasMap() {
+        Map<String, AliasEntry> map = new HashMap<>();
+        // Walk up from CWD to find menagerie/.
+        java.nio.file.Path cwd = java.nio.file.Paths.get(System.getProperty("user.dir", "."));
+        java.nio.file.Path root = null;
+        for (java.nio.file.Path p = cwd; p != null; p = p.getParent()) {
+            if (java.nio.file.Files.isDirectory(p.resolve("menagerie"))) {
+                root = p;
+                break;
+            }
+        }
+        if (root == null) return map;
+        java.nio.file.Path aliasesDir = root.resolve("menagerie")
+                .resolve("concept-shapes").resolve("catalog").resolve("kit-source-aliases");
+        if (!java.nio.file.Files.isDirectory(aliasesDir)) return map;
+        try (java.util.stream.Stream<java.nio.file.Path> files = java.nio.file.Files.list(aliasesDir)) {
+            for (java.nio.file.Path file : (Iterable<java.nio.file.Path>) files::iterator) {
+                String name = file.getFileName().toString();
+                if (!name.startsWith("java-") || !name.endsWith(".json")) continue;
+                try {
+                    String raw = java.nio.file.Files.readString(file, StandardCharsets.UTF_8);
+                    Jcs.Json doc = Jcs.parse(raw);
+                    if (!(doc instanceof Jcs.Obj envelope)) continue;
+                    Jcs.Json mementoJson = envelope.get("memento");
+                    if (!(mementoJson instanceof Jcs.Obj memento)) continue;
+                    // Resolve target_cid from sort_morphism_cid via the catalog.
+                    String sortMorphismCid = memento.stringFieldOrNull("sort_morphism_cid");
+                    String targetCid = resolveMorphismTargetCid(root, sortMorphismCid);
+                    if (targetCid == null) continue;
+                    Jcs.Json aliasesJ = memento.get("source_aliases");
+                    if (!(aliasesJ instanceof Jcs.Arr aliasesArr)) continue;
+                    Jcs.Json shorthand = memento.get("denotes_parametric_application");
+                    Jcs.Json arityJ = memento.get("parametric_arity");
+                    for (Jcs.Json a : aliasesArr.values()) {
+                        if (!(a instanceof Jcs.Str s)) continue;
+                        String token = s.value();
+                        AliasEntry entry;
+                        if (shorthand instanceof Jcs.Obj sh) {
+                            // Fixed parametric application — bake the composite CID now.
+                            String ctorCid = sh.stringFieldOrNull("constructor_cid");
+                            Jcs.Json argsJ = sh.get("arg_cids");
+                            List<String> argCids = new ArrayList<>();
+                            if (argsJ instanceof Jcs.Arr ar) {
+                                for (Jcs.Json aa : ar.values()) {
+                                    if (aa instanceof Jcs.Str ss) argCids.add(ss.value());
+                                }
+                            }
+                            String compositeCid = ParametricSortExpansion.composeCid(ctorCid, argCids);
+                            entry = new AliasEntry("shorthand", compositeCid, null, ctorCid, argCids);
+                        } else if (arityJ instanceof Jcs.Num arityN) {
+                            // Parametric constructor — target is the constructor CID.
+                            entry = new AliasEntry("constructor", targetCid, (int) arityN.value(), null, null);
+                        } else {
+                            entry = new AliasEntry("primitive", targetCid, null, null, null);
+                        }
+                        map.putIfAbsent(token, entry);
+                    }
+                } catch (IOException | IllegalArgumentException ignored) {
+                    // Skip malformed; other files still load.
+                }
+            }
+        } catch (IOException ignored) {
+            // Empty map; lifter will treat all types as gaps.
+        }
+        return map;
+    }
+
+    /** Read a sort-morphism file by CID; return its target_sort_cid (concept-hub side). */
+    private static String resolveMorphismTargetCid(java.nio.file.Path root, String morphismCid) {
+        if (morphismCid == null) return null;
+        java.nio.file.Path algorithms = root.resolve("menagerie")
+                .resolve("concept-shapes").resolve("catalog").resolve("algorithms");
+        if (!java.nio.file.Files.isDirectory(algorithms)) return null;
+        try (java.util.stream.Stream<java.nio.file.Path> files = java.nio.file.Files.list(algorithms)) {
+            for (java.nio.file.Path file : (Iterable<java.nio.file.Path>) files::iterator) {
+                String name = file.getFileName().toString();
+                if (!name.contains(morphismCid)) continue;
+                if (!name.endsWith(".json")) continue;
+                String raw = java.nio.file.Files.readString(file, StandardCharsets.UTF_8);
+                Jcs.Json doc = Jcs.parse(raw);
+                if (!(doc instanceof Jcs.Obj o)) continue;
+                Jcs.Json header = o.get("header");
+                if (!(header instanceof Jcs.Obj h)) continue;
+                String target = h.stringFieldOrNull("target_sort_cid");
+                if (target != null) return target;
+            }
+        } catch (IOException | IllegalArgumentException ignored) {
+            return null;
+        }
+        return null;
+    }
+
+    /**
+     * #1369 + #1370: catalog-driven java-type → concept-hub sort CID.
+     *
+     * Looks up source tokens in the kit's signed KitSourceAlias mementos
+     * (NO hardcoded names). Parametric types recursively resolve inner
+     * arg CIDs and compose composite CIDs via blake3-512(JCS(...)).
+     */
+    private static String javaTypeToConceptHubSortCid(String javaType, List<ParametricSortExpansion> expansions) {
         if (javaType == null) return "";
-        // Strip generic angle-bracket parameters for primitive lookup;
-        // parametric handling (List<T>, Map<K,V>) is a follow-up.
         String t = javaType.trim();
+        // Parse: "Foo<Bar<Baz>, Qux>" → outer="Foo", args=["Bar<Baz>", "Qux"]
+        // "byte[]" → outer="byte[]"; "List<String>" → outer="List", args=["String"]
+        String outer = t;
+        List<String> argSrcs = new ArrayList<>();
         int generic = t.indexOf('<');
-        if (generic > 0) t = t.substring(0, generic).trim();
-        // Reduce arbitrary fully-qualified names to their simple class name.
-        // javac's TypeMirror.toString() returns FQNs for declared types
-        // (e.g. "com.fasterxml.jackson.databind.JsonNode") — the substrate
-        // cares about semantic identity, not package path. Take everything
-        // after the last '.' (or the whole string if no dot).
-        int lastDot = t.lastIndexOf('.');
-        if (lastDot >= 0) t = t.substring(lastDot + 1);
-        // Strip array brackets: byte[] → byte (then map to concept:Bytes)
-        boolean isArray = t.endsWith("[]");
-        if (isArray) t = t.substring(0, t.length() - 2).trim();
-        if (isArray && (t.equals("byte") || t.equals("Byte"))) {
-            return "blake3-512:7116ef6e62e6739b213a8394f975a53c771b89f08c36d27143827acfcfebc0e39e5b82c530be668c3cfd5ec6966ccaa42930b37fdb1f4ac25652a970be10fb6b"; // concept:Bytes
+        if (generic > 0 && t.endsWith(">")) {
+            outer = t.substring(0, generic).trim();
+            String inside = t.substring(generic + 1, t.length() - 1);
+            argSrcs = splitTopLevelCommas(inside);
         }
-        if (isArray) {
-            // Generic array → concept:List<T>
-            return "blake3-512:e3f8d17445f9d2ce89c41c09cbeea08a8bc685d1c34a9fd3dfa7b1df17a94f40eab37396615501f1468baf2a1480fd5a27330ea23202b99876c5f4d97fa2cfb2";
+        Map<String, AliasEntry> aliases = aliasMap();
+        AliasEntry direct = aliases.get(outer);
+        // Handle T[] arrays by recursing on the element type as a List<T>.
+        if (direct == null && outer.endsWith("[]")) {
+            String elemSrc = outer.substring(0, outer.length() - 2).trim();
+            // Check byte[] shorthand first via direct alias lookup
+            AliasEntry bytesEntry = aliases.get("byte[]");
+            if ((elemSrc.equals("byte") || elemSrc.equals("Byte")) && bytesEntry != null) {
+                return bytesEntry.targetCid();
+            }
+            String innerCid = javaTypeToConceptHubSortCid(elemSrc, expansions);
+            if (innerCid.isEmpty()) return "";
+            AliasEntry listEntry = aliases.get("List");
+            if (listEntry == null || !"constructor".equals(listEntry.kind())) return "";
+            ParametricSortExpansion exp = ParametricSortExpansion.build(
+                listEntry.targetCid(), List.of(innerCid));
+            addExpansionIfMissing(expansions, exp);
+            return exp.cid();
         }
-        return switch (t) {
-            case "boolean", "Boolean" ->
-                "blake3-512:0ee13bf3fd6b7ecfbee72dfbfc18a7c0ea7f1663de6cca43cefb36f5b4c03665452646094a7c296e819e75d683c6ce4821f3d7db3c3c78ae97f2d4e3451d2074";
-            case "byte", "Byte", "short", "Short", "int", "Integer", "long", "Long" ->
-                "blake3-512:30ffc51350121a7172f3e4064a33c45bbd345756979fccff6875cd2ab33e4964d098a99df80cfbdf1ec1a0738c5ac3476f0ff8f75589ea511d1acd82c74ecd58"; // concept:Int
-            case "float", "Float", "double", "Double" ->
-                "blake3-512:b979e70c4d5e53d9bdf13d6f08330be3c5b0714b8c770d69bbd05946b86c36df5274be8145a2683cc29c278155c9c1ee65b6897913524eecb9e4c89c71862f57"; // concept:Float
-            case "String", "CharSequence" ->
-                "blake3-512:be8721d24849feb74c4721520bdba02d352a94f49253a627cd509127472aa1c47cbe99cb705cac4159b5365abcce0c9aaa4901fe67630827deb6be1f9daeea10";
-            case "void", "Void", "()" ->
-                "blake3-512:47682b09e5dba71f563db6249c6cb352f7d540986dc7f4cd8d4fb1aa6d9a503064033ee3eb9f36ee6f9e000f700f2f030ebfcfe2b2b8b7e81a345b0d56551f1b"; // concept:Unit, minted 2026-05-21
-            // concept:Json — minted 2026-05-21 to close substrate gap for
-            // JSON value tree primitives. JsonNode/JsonElement are java's
-            // realizations.
-            case "JsonNode", "JsonElement" ->
-                "blake3-512:702064722b23410fde0d1fd7afac165bf5914441d67abe1e19d63b0e8fe8117296d2677cc721ad096b8b3bb82d178af699bf14fd70bfb18756c5bed6f4434108";
-            // concept:Ref<T> — minted 2026-05-21 to close substrate gap for
-            // mutable references / out-parameters. StringBuilder is java's
-            // mutable-string realization. (Parametric inner T resolution is
-            // follow-up; for now collapses to a single Ref<T> CID.)
-            case "StringBuilder" ->
-                "blake3-512:37d8efe0ce6321d1a16f80aa06cbdf056c846b8a99613731e8d64d9581af61bc517fd8c87daaff2c817585a7dfd763e09ed729fdc71d25fe16fb1b2e6ca33534";
-            default -> "";  // gap signal
+        if (direct == null) return "";
+        return switch (direct.kind()) {
+            case "primitive" -> direct.targetCid();
+            case "shorthand" -> {
+                // Pre-baked composite CID; emit the expansion so realize can
+                // decompose the composite into (constructor, arg_cids).
+                ParametricSortExpansion exp = new ParametricSortExpansion(
+                    direct.targetCid(),
+                    direct.constructorCid(),
+                    direct.argCids() == null ? List.of() : direct.argCids());
+                addExpansionIfMissing(expansions, exp);
+                yield direct.targetCid();
+            }
+            case "constructor" -> {
+                int expectedArity = direct.arity() == null ? 1 : direct.arity();
+                if (argSrcs.size() != expectedArity) yield "";
+                List<String> argCids = new ArrayList<>();
+                for (String a : argSrcs) {
+                    String c = javaTypeToConceptHubSortCid(a, expansions);
+                    if (c.isEmpty()) yield "";
+                    argCids.add(c);
+                }
+                ParametricSortExpansion exp = ParametricSortExpansion.build(
+                    direct.targetCid(), argCids);
+                addExpansionIfMissing(expansions, exp);
+                yield exp.cid();
+            }
+            default -> "";
         };
+    }
+
+    private static void addExpansionIfMissing(List<ParametricSortExpansion> expansions, ParametricSortExpansion exp) {
+        if (expansions.stream().noneMatch(e -> e.cid().equals(exp.cid()))) {
+            expansions.add(exp);
+        }
+    }
+
+    /** Split a top-level comma-separated string respecting nested angle brackets.
+     *  "String, List<Integer>" → ["String", "List<Integer>"]. */
+    private static List<String> splitTopLevelCommas(String inside) {
+        List<String> out = new ArrayList<>();
+        int depth = 0;
+        StringBuilder cur = new StringBuilder();
+        for (int i = 0; i < inside.length(); i++) {
+            char c = inside.charAt(i);
+            if (c == '<') depth++;
+            else if (c == '>') depth--;
+            if (c == ',' && depth == 0) {
+                out.add(cur.toString().trim());
+                cur.setLength(0);
+            } else {
+                cur.append(c);
+            }
+        }
+        if (cur.length() > 0) out.add(cur.toString().trim());
+        return out;
+    }
+
+    /** Legacy entry point for callers that don't accumulate expansions yet.
+     *  Discards expansions — only safe when caller knows the type is primitive. */
+    private static String javaTypeToConceptHubSortCid(String javaType) {
+        return javaTypeToConceptHubSortCid(javaType, new ArrayList<>());
     }
 
     /** Strip surrounding double-quotes from a string literal token, if present. */
