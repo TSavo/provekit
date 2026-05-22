@@ -253,7 +253,13 @@ final class SugarRealizer {
             }
         }
         String className = snakeToPascal(function) + "Transported";
-        String mappedReturn = resolveJavaType(returnType, returnSortCid);
+        String mappedReturn = resolveJavaType(returnType, returnSortCid, isCrossLang);
+        if (mappedReturn == null) {
+            String reason = "concept-hub gap: java kit has no morphism for return sort CID `"
+                + returnSortCid + "` (concept=" + conceptName + "). "
+                + "Mint the missing java realization or refuse the boundary.";
+            return new Realization("// REFUSE: " + reason, true, "{}", "[]", null);
+        }
         List<String> requestedModes = modeList(mode, modes);
         List<SugarEmission> sugarEmissions = SugarDictionary.emitAll(contract, sugarPluginJson, requestedModes);
         boolean hasBeanValidationNotNull = sugarEmissions.stream()
@@ -266,7 +272,13 @@ final class SugarRealizer {
             String name = params.get(i);
             String srcType = i < paramTypes.size() ? paramTypes.get(i) : "i64";
             String sortCid = i < paramSortCids.size() ? paramSortCids.get(i) : "";
-            String mapped = resolveJavaType(srcType, sortCid);
+            String mapped = resolveJavaType(srcType, sortCid, isCrossLang);
+            if (mapped == null) {
+                String reason = "concept-hub gap: java kit has no morphism for param[" + i
+                    + "] sort CID `" + sortCid + "` (concept=" + conceptName + ", param=" + name + "). "
+                    + "Mint the missing java realization or refuse the boundary.";
+                return new Realization("// REFUSE: " + reason, true, "{}", "[]", null);
+            }
             if (i > 0) typedParamList.append(", ");
             String parameterAnnotations = parameterAnnotations(sugarEmissions, name);
             if (!parameterAnnotations.isBlank()) {
@@ -1013,8 +1025,26 @@ final class SugarRealizer {
      * (legacy carriers from before #1361 chunk 2 part B).
      */
     static String resolveJavaType(String sourceType, String conceptHubSortCid) {
+        return resolveJavaType(sourceType, conceptHubSortCid, false);
+    }
+
+    /**
+     * Substrate-honest type resolution. In cross-language mode, a non-empty
+     * concept-hub sort CID that the java kit doesn't recognize is a real
+     * substrate gap — return null so emitStubInner refuses loudly instead
+     * of falling back on the source-language string (which would leak
+     * source syntax into emitted java). In same-language / legacy mode,
+     * fall back to mapSourceType when no concept-hub CID resolution exists.
+     */
+    static String resolveJavaType(String sourceType, String conceptHubSortCid, boolean isCrossLang) {
         String fromCid = mapConceptHubSortCidToJava(conceptHubSortCid);
         if (fromCid != null) return fromCid;
+        if (isCrossLang && conceptHubSortCid != null && !conceptHubSortCid.isBlank()) {
+            // Cross-language gap: the source kit lifted to a concept-hub CID
+            // the java kit has no morphism for. Surface as null so the caller
+            // refuses with is_stub instead of falling back to source syntax.
+            return null;
+        }
         return mapSourceType(sourceType);
     }
 
@@ -1554,20 +1584,41 @@ final class SugarRealizer {
             String mode,
             List<String> recursionStack) {
         List<BodyTemplateEntry> entries = entries();
-        // Library-tag-keyed selection: prefer entries whose target_library_tag
-        // matches the dispatcher's library_tag. Fall back to entries with empty
-        // target_library_tag (library-agnostic / catch-all classpath entries).
-        // Without this filter, two libraries shipping bodies for the same
-        // concept would resolve load-order-dependently.
+        // Library-tag-keyed selection: two ordered passes to remove
+        // load-order dependency.
+        //
+        // Pass 1 (only when currentLib is non-empty): try entries whose
+        // target_library_tag equals currentLib exactly. This is the
+        // intended library's body templates.
+        //
+        // Pass 2 (always): try entries whose target_library_tag is empty
+        // (library-agnostic / classpath catch-all).
+        //
+        // Entries from OTHER libraries are never considered. When
+        // currentLib is empty (legacy / untagged callers), we skip pass 1
+        // entirely so the load-order-dependent selection that was the
+        // original bug stays closed.
         String currentLib = CURRENT_LIBRARY_TAG.get();
+        if (!currentLib.isEmpty()) {
+            Optional<RenderedBody> exact = tryEntries(entries, conceptName, mode, params,
+                    recursionStack, e -> e.targetLibraryTag().equals(currentLib));
+            if (exact.isPresent()) return exact;
+        }
+        return tryEntries(entries, conceptName, mode, params, recursionStack,
+                e -> e.targetLibraryTag().isEmpty());
+    }
+
+    private static Optional<RenderedBody> tryEntries(
+            List<BodyTemplateEntry> entries,
+            String conceptName,
+            String mode,
+            List<String> params,
+            List<String> recursionStack,
+            java.util.function.Predicate<BodyTemplateEntry> filter) {
         for (BodyTemplateEntry e : entries) {
+            if (!filter.test(e)) continue;
             if (!conceptMatches(e.conceptName(), conceptName)) continue;
             if (!modeMatches(e.mode(), mode)) continue;
-            // First pass: only consider entries that match the dispatched library_tag
-            // (or are library-agnostic). Skip entries from OTHER libraries entirely.
-            if (!currentLib.isEmpty()
-                    && !e.targetLibraryTag().isEmpty()
-                    && !e.targetLibraryTag().equals(currentLib)) continue;
             if (e.minParams() != null && params.size() < e.minParams()) continue;
             if (e.maxParams() != null && params.size() > e.maxParams()) continue;
             if (!"verbatim".equals(e.templateKind())) continue;

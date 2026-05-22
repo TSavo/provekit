@@ -19,7 +19,7 @@
 // and pull back proof.ir bytes ready for the substrate's lift / mint /
 // linker pipeline.
 
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 use std::io::{self, BufRead, Write};
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, OnceLock};
@@ -2300,7 +2300,12 @@ fn bindings_of_expr(expr: &syn::Expr, ctx: &ShapeContext) -> BindingResult {
             // emitting a binding for them shadowed the leaf at use site
             // because realize checks operand_bindings BEFORE kind:symbol.
             if let Some(symbol) = operand_symbol(expr) {
-                if ctx.vars.contains_key(&symbol) {
+                // Use scoped_names (all in-scope identifiers) instead of
+                // ctx.vars (only sort-inferred). Params/locals of non-modeled
+                // types (refs, String, custom) belong in scope but aren't
+                // in vars — without scoped_names they were treated as free
+                // symbols and lost their operand_binding.
+                if ctx.scoped_names.contains(&symbol) {
                     return binding_result_for_symbol(symbol);
                 }
             }
@@ -2367,7 +2372,17 @@ enum ShapeSort {
 
 #[derive(Debug, Clone, Default)]
 struct ShapeContext {
+    /// Identifier → inferred sort. Only populated when the type is in
+    /// ShapeSort's modeled set (Int/Float/Bool/String/Bytes/...). Used
+    /// for sort-aware lifts (e.g. binary op result-sort inference).
     vars: BTreeMap<String, ShapeSort>,
+    /// All scoped identifiers, regardless of whether their type is sort-
+    /// inferable. Distinct from `vars` because params/locals with non-
+    /// modeled types (refs, String, custom types) belong in scope but
+    /// not in `vars`. Used by bindings_of_expr to distinguish scoped
+    /// identifiers (emit operand_binding) from free identifiers
+    /// (None/Some/path leaves — let kind:"symbol" handle them).
+    scoped_names: BTreeSet<String>,
 }
 
 impl ShapeContext {
@@ -2386,6 +2401,9 @@ impl ShapeContext {
     }
 
     fn set_local(&mut self, name: String, sort: Option<ShapeSort>) {
+        // Always track the name in scope, even when sort isn't inferable —
+        // bindings_of_expr needs this to recognize the name as scoped.
+        self.scoped_names.insert(name.clone());
         if let Some(sort) = sort {
             self.vars.insert(name, sort);
         } else {

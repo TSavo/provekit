@@ -278,38 +278,60 @@ fn target_lang_file_extension(target_lang: &str) -> &'static str {
     }
 }
 
+/// Discrimated outcome of a cross-language discovery realize-probe.
+///
+/// `None`-collapsed outcomes hide WHY the probe didn't succeed: a transport
+/// error (broken manifest, missing binary, parse failure) looks the same as
+/// a substrate-canonical semantic gap. Callers should treat them differently:
+/// SemanticGap → REFUSE with substrate-gap message; TransportError → log
+/// and skip without counting as a refuse; Preview → RESOLVE with emitted body.
+#[derive(Debug)]
+enum DiscoveryOutcome {
+    /// Realize plugin successfully emitted a body — full RESOLVE.
+    Preview(String),
+    /// Plugin ran but returned is_stub=true; the substrate has a real gap
+    /// (no morphism for some sort CID, no body template for concept, etc.).
+    SemanticGap,
+    /// Plugin couldn't be invoked or its response couldn't be parsed.
+    /// NOT a substrate gap — a kit operational failure.
+    TransportError(String),
+}
+
 /// #1361 chunk 2 part B / #1355: invoke target kit's realize binary for a
 /// RESOLVE'd boundary in cross-language discovery mode. The realize binary
 /// owns the concept-hub → target-syntax translation internally; cmd_materialize
 /// just routes the concept-hub-typed spec to it and gets back target source.
-///
-/// Returns None on any error (the discovery report continues without the
-/// preview); the RESOLVE outcome itself is unchanged.
 fn invoke_target_realize_for_discovery(
     project_root: &Path,
     target_lang: &str,
     target_library_tag: &str,
     carrier: &CarrierComment,
-) -> Option<String> {
+) -> DiscoveryOutcome {
     use libprovekit::core::lower_plugin::request_from_spec;
     use libprovekit::core::RealizeTransport;
-    // Reuse the same spec-construction path the same-language emission uses;
-    // dispatch to the target's realize binary via the kit dispatcher.
-    let spec = realize_spec_from_payload(&carrier.raw_payload).ok()?;
-    let request = request_from_spec(&spec).ok()?;
+    let spec = match realize_spec_from_payload(&carrier.raw_payload) {
+        Ok(s) => s,
+        Err(e) => return DiscoveryOutcome::TransportError(format!("spec parse: {e}")),
+    };
+    let mut request = match request_from_spec(&spec) {
+        Ok(r) => r,
+        Err(e) => return DiscoveryOutcome::TransportError(format!("request build: {e}")),
+    };
+    request.target_library_tag = target_library_tag.to_string();
     let transport = DispatchRealizeTransport;
-    let response = transport
-        .dispatch_realize(
-            project_root,
-            target_lang,
-            Some(target_library_tag),
-            &request,
-        )
-        .ok()?;
+    let response = match transport.dispatch_realize(
+        project_root,
+        target_lang,
+        Some(target_library_tag),
+        &request,
+    ) {
+        Ok(r) => r,
+        Err(e) => return DiscoveryOutcome::TransportError(format!("dispatch: {e:?}")),
+    };
     if response.is_stub {
-        return None;
+        return DiscoveryOutcome::SemanticGap;
     }
-    Some(response.source)
+    DiscoveryOutcome::Preview(response.source)
 }
 
 /// #1361 chunk 2 part A / #1355: cross-language DISCOVERY mode.
@@ -420,45 +442,59 @@ fn run_cross_language_discovery(
                     // separately. The "route found" + "type gap" outcome
                     // is REFUSE in the final tally — substrate surfaces
                     // gaps even when the family dispatch resolves.
-                    if let Some(body) =
-                        invoke_target_realize_for_discovery(project_root, target_lang, &matches[0], &carrier)
-                    {
-                        resolves += 1;
-                        eprintln!(
-                            "  {} {} @ {} → {} manifest `{}`",
-                            "RESOLVE".green().bold(),
-                            carrier.concept_name,
-                            rel,
-                            target_lang,
-                            matches[0]
-                        );
-                        let preview: String = body.chars().take(120).collect();
-                        let suffix = if body.chars().count() > 120 { "..." } else { "" };
-                        eprintln!("      target body preview: {preview}{suffix}");
-                        if out_dir.is_some() {
-                            let entry = emitted
-                                .entry(path.to_path_buf())
-                                .or_default();
-                            entry.bodies.push(body);
-                            let scope_imports = scope_bringings_for_realize(
-                                project_root,
+                    match invoke_target_realize_for_discovery(project_root, target_lang, &matches[0], &carrier) {
+                        DiscoveryOutcome::Preview(body) => {
+                            resolves += 1;
+                            eprintln!(
+                                "  {} {} @ {} → {} manifest `{}`",
+                                "RESOLVE".green().bold(),
+                                carrier.concept_name,
+                                rel,
                                 target_lang,
-                                &matches[0],
+                                matches[0]
                             );
-                            for imp in scope_imports {
-                                entry.imports.insert(imp);
+                            let preview: String = body.chars().take(120).collect();
+                            let suffix = if body.chars().count() > 120 { "..." } else { "" };
+                            eprintln!("      target body preview: {preview}{suffix}");
+                            if out_dir.is_some() {
+                                let entry = emitted
+                                    .entry(path.to_path_buf())
+                                    .or_default();
+                                entry.bodies.push(body);
+                                let scope_imports = scope_bringings_for_realize(
+                                    project_root,
+                                    target_lang,
+                                    &matches[0],
+                                );
+                                for imp in scope_imports {
+                                    entry.imports.insert(imp);
+                                }
                             }
                         }
-                    } else {
-                        refuses += 1;
-                        eprintln!(
-                            "  {} {} @ {} → {} manifest `{}` (substrate gap in concept-hub sort morphism)",
-                            "REFUSE".red().bold(),
-                            carrier.concept_name,
-                            rel,
-                            target_lang,
-                            matches[0]
-                        );
+                        DiscoveryOutcome::SemanticGap => {
+                            refuses += 1;
+                            eprintln!(
+                                "  {} {} @ {} → {} manifest `{}` (substrate gap in concept-hub sort morphism)",
+                                "REFUSE".red().bold(),
+                                carrier.concept_name,
+                                rel,
+                                target_lang,
+                                matches[0]
+                            );
+                        }
+                        DiscoveryOutcome::TransportError(err) => {
+                            // Transport error is NOT a semantic gap — log
+                            // and skip without counting as refuse.
+                            eprintln!(
+                                "  {} {} @ {} → {} manifest `{}` realize transport failed: {}",
+                                "WARN".yellow().bold(),
+                                carrier.concept_name,
+                                rel,
+                                target_lang,
+                                matches[0],
+                                err,
+                            );
+                        }
                     }
                 }
                 _ => {
@@ -480,48 +516,60 @@ fn run_cross_language_discovery(
                             })
                     });
                     if let Some(pick) = picked {
-                        // Substrate-honest 2-stage outcome (same shape as the
-                        // singleton branch): RESOLVE only if realize actually
-                        // emits; REFUSE if it hits a concept-hub sort gap.
-                        if let Some(body) =
-                            invoke_target_realize_for_discovery(project_root, target_lang, &pick, &carrier)
-                        {
-                            resolves += 1;
-                            eprintln!(
-                                "  {} {} @ {} → {} manifest `{}` (disambiguated by --family-library)",
-                                "RESOLVE".green().bold(),
-                                carrier.concept_name,
-                                rel,
-                                target_lang,
-                                pick
-                            );
-                            let preview: String = body.chars().take(120).collect();
-                            let suffix = if body.chars().count() > 120 { "..." } else { "" };
-                            eprintln!("      target body preview: {preview}{suffix}");
-                            if out_dir.is_some() {
-                                let entry = emitted
-                                    .entry(path.to_path_buf())
-                                    .or_default();
-                                entry.bodies.push(body);
-                                let scope_imports = scope_bringings_for_realize(
-                                    project_root,
+                        // Substrate-honest 3-way outcome: RESOLVE only if realize
+                        // actually emits; REFUSE only on substrate-gap (is_stub);
+                        // WARN on transport failure (broken manifest/binary).
+                        match invoke_target_realize_for_discovery(project_root, target_lang, &pick, &carrier) {
+                            DiscoveryOutcome::Preview(body) => {
+                                resolves += 1;
+                                eprintln!(
+                                    "  {} {} @ {} → {} manifest `{}` (disambiguated by --family-library)",
+                                    "RESOLVE".green().bold(),
+                                    carrier.concept_name,
+                                    rel,
                                     target_lang,
-                                    &pick,
+                                    pick
                                 );
-                                for imp in scope_imports {
-                                    entry.imports.insert(imp);
+                                let preview: String = body.chars().take(120).collect();
+                                let suffix = if body.chars().count() > 120 { "..." } else { "" };
+                                eprintln!("      target body preview: {preview}{suffix}");
+                                if out_dir.is_some() {
+                                    let entry = emitted
+                                        .entry(path.to_path_buf())
+                                        .or_default();
+                                    entry.bodies.push(body);
+                                    let scope_imports = scope_bringings_for_realize(
+                                        project_root,
+                                        target_lang,
+                                        &pick,
+                                    );
+                                    for imp in scope_imports {
+                                        entry.imports.insert(imp);
+                                    }
                                 }
                             }
-                        } else {
-                            refuses += 1;
-                            eprintln!(
-                                "  {} {} @ {} → {} manifest `{}` (disambiguated by --family-library, substrate gap in concept-hub sort morphism)",
-                                "REFUSE".red().bold(),
-                                carrier.concept_name,
-                                rel,
-                                target_lang,
-                                pick
-                            );
+                            DiscoveryOutcome::SemanticGap => {
+                                refuses += 1;
+                                eprintln!(
+                                    "  {} {} @ {} → {} manifest `{}` (disambiguated by --family-library, substrate gap in concept-hub sort morphism)",
+                                    "REFUSE".red().bold(),
+                                    carrier.concept_name,
+                                    rel,
+                                    target_lang,
+                                    pick
+                                );
+                            }
+                            DiscoveryOutcome::TransportError(err) => {
+                                eprintln!(
+                                    "  {} {} @ {} → {} manifest `{}` (disambiguated by --family-library) realize transport failed: {}",
+                                    "WARN".yellow().bold(),
+                                    carrier.concept_name,
+                                    rel,
+                                    target_lang,
+                                    pick,
+                                    err,
+                                );
+                            }
                         }
                         continue;
                     }

@@ -400,6 +400,11 @@ fn invocation_from_tree_node(
     let modes =
         node_string_array(node, &["modes"])?.unwrap_or_else(|| parent_request.modes.clone());
     let operand_bindings = value_array_field(node, &["operandBindings", "operand_bindings"]);
+    // Resolve effective library_tag FIRST so child requests payload matches
+    // the library they're actually routed to (transport + body-template
+    // selection both rely on this — previously they could disagree).
+    let effective_library_tag = node_string(node, &["libraryTag", "library_tag", "library"])
+        .or_else(|| library_tag.map(str::to_string));
     let request = RealizeRequest {
         function,
         params,
@@ -425,14 +430,18 @@ fn invocation_from_tree_node(
             .unwrap_or_else(|| parent_request.param_sort_cids.clone()),
         return_sort_cid: node_string(node, &["returnSortCid", "return_sort_cid"])
             .unwrap_or_else(|| parent_request.return_sort_cid.clone()),
-        target_library_tag: parent_request.target_library_tag.clone(),
+        // Child target_library_tag = effective_library_tag (child-level
+        // resolution) falling back to parent's. Previously always copied
+        // parent, which mismatched the transport route when the child had
+        // a libraryTag override.
+        target_library_tag: effective_library_tag
+            .clone()
+            .unwrap_or_else(|| parent_request.target_library_tag.clone()),
         proc_macro_invocations: value_array_field(
             node,
             &["procMacroInvocations", "proc_macro_invocations"],
         ),
     };
-    let effective_library_tag = node_string(node, &["libraryTag", "library_tag", "library"])
-        .or_else(|| library_tag.map(str::to_string));
     let mut from = Vec::new();
     if let Some(shape_cid) = optional_cid_field(node, &["shapeCid", "shape_cid"])? {
         from.push(shape_cid);
