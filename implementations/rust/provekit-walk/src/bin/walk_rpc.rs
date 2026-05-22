@@ -2553,21 +2553,18 @@ fn shape_of_stmt(stmt: &syn::Stmt, ctx: &ShapeContext) -> Arc<CValue> {
                 );
             }
             // Struct destructuring: `let TypeName { field1, field2 } = expr`
-            // → seq of assigns where each field becomes its own let bound
-            // to expr.field. The lower side can emit each as a getter or
-            // field access per target (java uses .get(\"field\") on a
-            // JsonNode source since Rust struct types are erased to
-            // JsonNode in our java realization).
+            // → first-class concept:destructure-struct(value, type_leaf,
+            //   field1_name_leaf, ..., fieldN_name_leaf).
+            // Realize-side: rust emits the source's destructure pattern;
+            // java/etc emit field-by-field getter calls.
             if let syn::Pat::Struct(struct_pat) = &local.pat {
-                let mut stmts: Vec<Arc<CValue>> = Vec::new();
-                let temp_name = "__provekit_struct".to_string();
-                let temp_leaf = || CValue::object([
-                    ("kind", CValue::string("symbol")),
-                    ("text", CValue::string(temp_name.clone())),
-                ]);
-                stmts.push(gamma_operation("concept:assign", vec![
-                    temp_leaf(),
-                    shape_of_expr(&init.expr, ctx),
+                use quote::ToTokens;
+                let type_text = struct_pat.path.to_token_stream().to_string();
+                let mut args: Vec<Arc<CValue>> = Vec::new();
+                args.push(shape_of_expr(&init.expr, ctx));
+                args.push(CValue::object([
+                    ("kind", CValue::string("type")),
+                    ("text", CValue::string(type_text)),
                 ]));
                 for field in &struct_pat.fields {
                     let field_name = match &field.member {
@@ -2578,22 +2575,13 @@ fn shape_of_stmt(stmt: &syn::Stmt, ctx: &ShapeContext) -> Arc<CValue> {
                         syn::Pat::Ident(pi) => pi.ident.to_string(),
                         _ => field_name.clone(),
                     };
-                    let key_lit = concept_literal_shape(
-                        CValue::string(field_name), SORT_STRING_CID);
-                    let getter = gamma_operation("concept:call", vec![
-                        temp_leaf(),
-                        method_concept_leaf("get", 1),
-                        key_lit,
-                    ]);
-                    stmts.push(gamma_operation("concept:assign", vec![
-                        CValue::object([
-                            ("kind", CValue::string("symbol")),
-                            ("text", CValue::string(binding_name)),
-                        ]),
-                        getter,
+                    args.push(CValue::object([
+                        ("kind", CValue::string("symbol")),
+                        ("text", CValue::string(binding_name)),
+                        ("field_name", CValue::string(field_name)),
                     ]));
                 }
-                return gamma_operation("concept:seq", stmts);
+                return gamma_operation("concept:destructure-struct", args);
             }
             // Tuple destructuring: `let (a, b, c) = expr` — first-class
             // concept:destructure-tuple(value, name1, name2, name3, ...).
@@ -2755,10 +2743,17 @@ fn shape_of_expr(expr: &syn::Expr, ctx: &ShapeContext) -> Arc<CValue> {
             // destructuring resolution is follow-up; matches walk_rpc's
             // existing pattern-as-leaf convention).
             let var = match &*e.pat {
-                syn::Pat::Ident(p) => CValue::object([
-                    ("kind", CValue::string("symbol")),
-                    ("text", CValue::string(p.ident.to_string())),
-                ]),
+                syn::Pat::Ident(p) => {
+                    // Preserve `for mut x in ...` mutability marker.
+                    let mut fields = vec![
+                        ("kind", CValue::string("symbol")),
+                        ("text", CValue::string(p.ident.to_string())),
+                    ];
+                    if p.mutability.is_some() {
+                        fields.push(("mut", CValue::boolean(true)));
+                    }
+                    CValue::object(fields)
+                }
                 other => {
                     use quote::ToTokens;
                     CValue::object([
@@ -2880,17 +2875,13 @@ fn shape_of_expr(expr: &syn::Expr, ctx: &ShapeContext) -> Arc<CValue> {
             gamma_operation("concept:call", args)
         }
         syn::Expr::Lit(lit) => literal_shape(&lit.lit),
-        // `expr?` — rust's Try operator. Propagates Err/None up the call
-        // stack. Lift as concept:call(inner, method:try-unwrap) so the
-        // target plugin can emit appropriate unwrap semantics (Result.unwrap()
-        // / Optional.get() / etc.). The leaf identity comes from structure;
-        // no minting required.
+        // `expr?` — rust's Try operator. First-class concept:try(inner)
+        // preserves the source form for byte-identical rust round-trip;
+        // target plugins translate to language-appropriate unwrap (java
+        // gets .try_unwrap() via the method-concept catalog mapping).
         syn::Expr::Try(e) => {
             let inner = shape_of_expr(&e.expr, ctx);
-            gamma_operation("concept:call", vec![
-                inner,
-                method_concept_leaf("try_unwrap", 0),
-            ])
+            gamma_operation("concept:try", vec![inner])
         }
         // [elem; count] syntax — emitted as concept:array-repeat with args [elem, len].
         syn::Expr::Repeat(e) => gamma_operation(

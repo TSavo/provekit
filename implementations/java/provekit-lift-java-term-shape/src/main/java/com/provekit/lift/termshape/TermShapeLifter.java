@@ -403,9 +403,12 @@ public final class TermShapeLifter {
                     );
                 }
                 if ("tryUnwrap".equals(name) && m.getArguments().size() == 1) {
+                    // Substrate-canonical: concept:try (rust source-form
+                    // `expr?`). The rust realize emits `?`; java realize
+                    // emits Substrate.tryUnwrap. Same concept, two surfaces.
                     return Jcs.object(
                         "args", new Jcs.Arr(List.of(liftExpression(m.getArgument(0), losses))),
-                        "concept_name", Jcs.string("concept:try-unwrap")
+                        "concept_name", Jcs.string("concept:try")
                     );
                 }
                 if ("unreachable".equals(name) && m.getArguments().size() == 1) {

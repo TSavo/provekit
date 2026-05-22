@@ -475,6 +475,36 @@ fn lower_term_shape_body(
             let_kw, target.text, value.type_name, value.text
         ));
     }
+    if concept_name == "concept:destructure-struct" {
+        // args: [value, type_leaf, field_leaf1, field_leaf2, ...]
+        let args = term_shape_args(shape);
+        if args.len() < 3 {
+            return None;
+        }
+        let value = lower_term_shape_expression(args[0], context, &append_position(position, 0))?;
+        let type_text = args[1].get("text").and_then(Value::as_str).unwrap_or("");
+        // Each field-leaf has text=binding-name and field_name=source-field.
+        // For rust source emit: `Type { field1: binding1, field2 }` where
+        // we use shorthand `{ field }` if binding-name == field-name.
+        let mut field_specs: Vec<String> = Vec::new();
+        for f in &args[2..] {
+            let binding = f.get("text").and_then(Value::as_str).unwrap_or("");
+            let field = f.get("field_name").and_then(Value::as_str).unwrap_or(binding);
+            context.defined_symbols.insert(binding.to_string());
+            if binding == field {
+                field_specs.push(binding.to_string());
+            } else {
+                field_specs.push(format!("{}: {}", field, binding));
+            }
+        }
+        // Source-style multi-line for non-trivial fields.
+        return Some(format!(
+            "let {} {{\n    {},\n}} = {};",
+            type_text,
+            field_specs.join(",\n    "),
+            value.text
+        ));
+    }
     if concept_name == "concept:destructure-tuple" {
         // args: [value, name_leaf1, name_leaf2, ...]
         let args = term_shape_args(shape);
@@ -803,6 +833,13 @@ fn lower_term_shape_expression(
         let pattern_text = args[0].get("text").and_then(Value::as_str)?;
         let value = lower_term_shape_expression(args[1], context, &append_position(position, 1))?;
         let then_text = lower_term_shape_branch_body(args[2], context, &append_position(position, 2))?;
+        // Omit else when args[3] is concept:skip (source had no else clause).
+        if term_shape_concept_name(args[3]).as_deref() == Some("concept:skip") {
+            return Some(ShapeExpression {
+                text: format!("if let {} = {} {{ {} }}", pattern_text, value.text, then_text),
+                type_name: String::new(),
+            });
+        }
         let else_text = lower_term_shape_branch_body(args[3], context, &append_position(position, 3))?;
         return Some(ShapeExpression {
             text: format!(
@@ -817,10 +854,13 @@ fn lower_term_shape_expression(
             return None;
         }
         let var = args[0].get("text").and_then(Value::as_str)?.to_string();
+        // Preserve `for mut X in ...` mutability marker from lift.
+        let is_mut = args[0].get("mut").and_then(Value::as_bool).unwrap_or(false);
+        let var_decl = if is_mut { format!("mut {}", var) } else { var };
         let iter = lower_term_shape_expression(args[1], context, &append_position(position, 1))?;
         let body = lower_block_or_expr(args[2], context, &append_position(position, 2))?;
         return Some(ShapeExpression {
-            text: format!("for {} in {} {{ {} }}", var, iter.text, body),
+            text: format!("for {} in {} {{ {} }}", var_decl, iter.text, body),
             type_name: String::new(),
         });
     }
@@ -860,11 +900,21 @@ fn lower_term_shape_expression(
                 context,
                 &append_position(&append_position(position, i), 1),
             )?;
-            // Match arms are EXPRESSIONS — strip any trailing `;` that
-            // lower_block_or_expr left over from statement-form lowering.
-            // Without this we emit `body();,` which is invalid rust.
-            let body_trimmed = body_text.trim_end().trim_end_matches(';');
-            arms_text.push(format!("{} => {},", pattern_text, body_trimmed));
+            // Match arms can be expression-form (`=> expr,`) or block-form
+            // (`=> { stmts; expr },`). Source-form preservation:
+            //   - Single statement that's a return → block-form
+            //     `=> { return X; }` matches source byte-identical.
+            //   - Otherwise expression-form `=> expr,` (strip trailing `;`).
+            let trimmed = body_text.trim_end();
+            let is_return_stmt = trimmed.starts_with("return ")
+                && trimmed.ends_with(';')
+                && !trimmed[7..trimmed.len() - 1].contains(';');
+            if is_return_stmt {
+                arms_text.push(format!("{} => {{\n{}\n}},", pattern_text, indent_block(trimmed)));
+            } else {
+                let body_trimmed = trimmed.trim_end_matches(';');
+                arms_text.push(format!("{} => {},", pattern_text, body_trimmed));
+            }
         }
         return Some(ShapeExpression {
             text: format!("match {} {{ {} }}", scrutinee.text, arms_text.join(" ")),
@@ -912,14 +962,19 @@ fn lower_term_shape_expression(
         });
     }
     if concept_name == "concept:try" {
-        // try-body + catches. Rust doesn't natively have try-catch; we emit
-        // the body as-is (rust uses Result for error handling, declared as
-        // an effect on the binding, not in the body shape).
+        // First-class `expr?` operator. The substrate's concept:try
+        // (args=[inner]) is the rust source's Try-operator form;
+        // realize emits `inner?` for byte-identical rust round-trip.
+        // Target languages without `?` translate via method:try_unwrap
+        // mapping in their respective realize plugins.
         if args.is_empty() {
             return None;
         }
         let body = lower_term_shape_expression(args[0], context, &append_position(position, 0))?;
-        return Some(body);
+        return Some(ShapeExpression {
+            text: format!("{}?", body.text),
+            type_name: body.type_name,
+        });
     }
     if concept_name == "concept:throw" {
         if args.is_empty() {
