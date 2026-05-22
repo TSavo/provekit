@@ -1834,11 +1834,26 @@ final class SugarRealizer {
                             ""));
                 }
                 if ("unwrap_or_else".equals(methodName) && callArgs.size() == 1) {
-                    // closure passed; java has no inline ternary with lambda execution.
-                    // Emit a Supplier invocation.
+                    // .unwrap_or_else(|e| f(e)) — inline the lambda body
+                    // with the Err value (best-effort: pass null since
+                    // post-erasure we don't have a typed Err carrier).
+                    String fn = callArgs.get(0);
+                    String fnInvoked;
+                    if (fn.contains("->")) {
+                        java.util.regex.Matcher m = java.util.regex.Pattern.compile(
+                            "^\\s*\\(?\\s*([A-Za-z_][A-Za-z0-9_]*)\\s*\\)?\\s*->\\s*(.+)$"
+                        ).matcher(fn);
+                        if (m.find()) {
+                            fnInvoked = replaceIdentifier(m.group(2).trim(), m.group(1), "null");
+                        } else {
+                            fnInvoked = "((java.util.function.Function<Object, Object>)(" + fn + ")).apply(null)";
+                        }
+                    } else {
+                        fnInvoked = "((java.util.function.Function<Object, Object>)(" + fn + ")).apply(null)";
+                    }
                     return Optional.of(new ShapeExpression(
-                            "(" + receiver.get().text() + " != null ? " + receiver.get().text() + " : (" + callArgs.get(0) + ").get())",
-                            ""));  // unknown call return; var inference
+                            "(" + receiver.get().text() + " != null ? " + receiver.get().text() + " : " + fnInvoked + ")",
+                            ""));
                 }
                 // .is_none() → == null; .is_some() → != null.
                 if ("is_none".equals(methodName)) {
@@ -2205,14 +2220,20 @@ final class SugarRealizer {
                             "long".equals(paramType) || "int".equals(paramType) ||
                             "double".equals(paramType) || "float".equals(paramType) ||
                             "boolean".equals(paramType) || "String".equals(paramType));
+                    boolean isMethodCall = valueText.contains("(") && valueText.contains(")");
                     if (isPrim) {
                         sb.append("$OBJ$.put(").append(quote(key)).append(", ").append(valueText).append("); ");
                     } else if ("com.fasterxml.jackson.databind.JsonNode".equals(paramType)) {
                         sb.append("$OBJ$.set(").append(quote(key)).append(", ").append(valueText).append("); ");
-                    } else {
-                        // Unknown type (method-call result, undeclared identifier).
-                        // Wrap via MAPPER.valueToTree which handles String/long/
+                    } else if (isMethodCall) {
+                        // Method-call result of unknown type — wrap via
+                        // MAPPER.valueToTree which accepts String/long/
                         // double/boolean/JsonNode uniformly.
+                        sb.append("$OBJ$.set(").append(quote(key)).append(", MAPPER.valueToTree(")
+                          .append(valueText).append(")); ");
+                    } else {
+                        // Plain identifier of unknown type — best-effort .set;
+                        // valueToTree wrap if needed at call site.
                         sb.append("$OBJ$.set(").append(quote(key)).append(", MAPPER.valueToTree(")
                           .append(valueText).append(")); ");
                     }
