@@ -1640,7 +1640,12 @@ final class SugarRealizer {
                 Optional<ShapeExpression> bodyExpr = lowerShapeExpression(armArgs.get(1), context, appendPosition(position, i));
                 if (bodyExpr.isEmpty()) return Optional.empty();
                 String bodyText = bodyExpr.get().text();
-                if (boundVar != null) bodyText = replaceIdentifier(bodyText, boundVar, scrutVar);
+                if (boundVar != null) {
+                    String sub = patternHasNestedBinding(patternText)
+                            ? "String.valueOf(" + scrutVar + ")"
+                            : scrutVar;
+                    bodyText = replaceIdentifier(bodyText, boundVar, sub);
+                }
                 if ("true".equals(cond)) {
                     if (armIdx == 0) {
                         out.append("return ").append(bodyText).append(";");
@@ -1771,9 +1776,10 @@ final class SugarRealizer {
                 String bodyText = body.get().text();
                 String cond = patternToCondition(patternText, scrutVar);
                 if (boundVar != null) {
-                    // Substitute the bound var in the body with the scrut.
-                    // Use a substring-safe replacement (whole-word).
-                    bodyText = replaceIdentifier(bodyText, boundVar, scrutVar);
+                    String sub = patternHasNestedBinding(patternText)
+                            ? "String.valueOf(" + scrutVar + ")"
+                            : scrutVar;
+                    bodyText = replaceIdentifier(bodyText, boundVar, sub);
                 }
                 if ("true".equals(cond)) {
                     if (armCount == 0) {
@@ -2642,7 +2648,12 @@ final class SugarRealizer {
                 Optional<ShapeExpression> bodyExpr = lowerShapeExpression(armArgs.get(1), context, appendPosition(position, i));
                 if (bodyExpr.isEmpty()) return null;
                 String bodyText = bodyExpr.get().text();
-                if (boundVar != null) bodyText = replaceIdentifier(bodyText, boundVar, scrutVar);
+                if (boundVar != null) {
+                    String sub = patternHasNestedBinding(patternText)
+                            ? "String.valueOf(" + scrutVar + ")"
+                            : scrutVar;
+                    bodyText = replaceIdentifier(bodyText, boundVar, sub);
+                }
                 bodyEmit = targetName + " = " + bodyText + ";";
             }
             if ("true".equals(cond)) {
@@ -2684,6 +2695,18 @@ final class SugarRealizer {
             case "cloned" -> "deepCopy";
             default -> rustMethod;
         };
+    }
+
+    /** True iff the pattern contains a nested enum-variant binding like
+     *  `Err(LiftError::Internal(msg))`. Nested binds typically destructure
+     *  a String-typed enum variant payload, so the substitution wraps the
+     *  scrutinee in String.valueOf for safety. */
+    private static boolean patternHasNestedBinding(String pattern) {
+        String t = pattern.trim();
+        int ifIdx = t.indexOf(" if ");
+        if (ifIdx > 0) t = t.substring(0, ifIdx).trim();
+        return t.matches("^(?:Some|Ok|Err)\\s*\\(\\s*[A-Z].*\\(\\s*[A-Za-z_][A-Za-z0-9_]*\\s*\\)\\s*\\)$")
+            || java.util.regex.Pattern.compile("::").matcher(t).find();
     }
 
     /** For pattern text like `Some(v)` or `Ok(x)` or bare identifier `other`
