@@ -1300,6 +1300,43 @@ final class SugarRealizer {
         if (conceptMatches("concept:skip", conceptName) && args.isEmpty()) {
             return Optional.of("");
         }
+        // Lift vocabulary parity: rust walk_rpc emits these concepts; java
+        // lower must accept them or translation bails on the first
+        // unrecognized construct in a body.
+        if (conceptMatches("concept:while", conceptName) && args.size() == 2) {
+            Optional<ShapeExpression> cond = lowerShapeExpression(args.get(0), context, appendPosition(position, 0));
+            Optional<String> body = lowerShapeBranchBody(args.get(1), context, appendPosition(position, 1));
+            if (cond.isEmpty() || body.isEmpty()) return Optional.empty();
+            return Optional.of("while (" + cond.get().text() + ") {\n"
+                    + indentBlock(body.get()) + "\n"
+                    + "}");
+        }
+        if (conceptMatches("concept:for-each", conceptName) && args.size() == 3) {
+            // args[0]: loop variable leaf (symbol). args[1]: iterable. args[2]: body.
+            String varName = args.get(0).stringFieldOrNull("text");
+            if (varName == null || varName.isBlank()) {
+                Optional<ShapeExpression> v = lowerShapeExpression(args.get(0), context, appendPosition(position, 0));
+                if (v.isEmpty()) return Optional.empty();
+                varName = v.get().text();
+            }
+            Optional<ShapeExpression> iter = lowerShapeExpression(args.get(1), context, appendPosition(position, 1));
+            if (iter.isEmpty()) return Optional.empty();
+            context.definedSymbols.add(varName);
+            Optional<String> body = lowerShapeBranchBody(args.get(2), context, appendPosition(position, 2));
+            if (body.isEmpty()) return Optional.empty();
+            return Optional.of("for (var " + varName + " : " + iter.get().text() + ") {\n"
+                    + indentBlock(body.get()) + "\n"
+                    + "}");
+        }
+        if (conceptMatches("concept:break", conceptName)) {
+            if (args.isEmpty()) return Optional.of("break;");
+            // break with value (rust's `break expr` in a loop) -> standard
+            // java has no equivalent at statement scope; emit a comment.
+            return Optional.of("break; // TODO: rust break-with-value not directly representable in java");
+        }
+        if (conceptMatches("concept:continue", conceptName)) {
+            return Optional.of("continue;");
+        }
         return Optional.empty();
     }
 
@@ -1343,12 +1380,86 @@ final class SugarRealizer {
             argTerms.add(term.get());
         }
         if (conceptMatches("concept:call", conceptName) && !argTerms.isEmpty()) {
+            // walk_rpc emits method calls AS concept:call with a method-leaf
+            // at args[1] (kind:"method", text:"<name>") and receiver at args[0].
+            // Plain calls have a path/symbol callee at args[0]. Distinguish
+            // by inspecting the raw shape, not the lowered ShapeExpression.
+            if (args.size() >= 2) {
+                Jcs.Json secondArg = args.get(1);
+                if (secondArg instanceof Jcs.Obj methodMaybe) {
+                    String kind = methodMaybe.stringFieldOrNull("kind");
+                    if ("method".equals(kind)) {
+                        String methodName = methodMaybe.stringFieldOrNull("text");
+                        if (methodName != null && !methodName.isBlank()) {
+                            String receiver = argTerms.get(0).text();
+                            String joined = argTerms.stream().skip(2)
+                                    .map(ShapeExpression::text)
+                                    .collect(Collectors.joining(", "));
+                            return Optional.of(new ShapeExpression(
+                                    receiver + "." + methodName + "(" + joined + ")",
+                                    mapSourceType(context.returnType)));
+                        }
+                    }
+                }
+            }
             String callee = argTerms.get(0).text();
             if (!isIdentifier(callee)) {
                 return Optional.empty();
             }
             String joined = argTerms.stream().skip(1).map(ShapeExpression::text).collect(Collectors.joining(", "));
             return Optional.of(new ShapeExpression(callee + "(" + joined + ")", mapSourceType(context.returnType)));
+        }
+        if (conceptMatches("concept:field", conceptName) && args.size() == 2) {
+            // args[0]: receiver expression. args[1]: field name leaf.
+            String fieldName = args.get(1).stringFieldOrNull("text");
+            if (fieldName == null || fieldName.isBlank()) return Optional.empty();
+            String receiver = argTerms.get(0).text();
+            return Optional.of(new ShapeExpression(
+                    receiver + "." + fieldName,
+                    mapSourceType(context.returnType)));
+        }
+        if (conceptMatches("concept:index", conceptName) && argTerms.size() == 2) {
+            // Java: array[idx] OR list.get(idx). Default to array form;
+            // collections use method-call concept instead.
+            String receiver = argTerms.get(0).text();
+            String idx = argTerms.get(1).text();
+            return Optional.of(new ShapeExpression(
+                    receiver + "[" + idx + "]",
+                    mapSourceType(context.returnType)));
+        }
+        if (conceptMatches("concept:cast", conceptName) && args.size() == 2) {
+            // args[0]: value. args[1]: type leaf.
+            String typeName = args.get(1).stringFieldOrNull("text");
+            if (typeName == null || typeName.isBlank()) {
+                Optional<ShapeExpression> t = lowerShapeExpression(args.get(1), context, appendPosition(position, 1));
+                if (t.isEmpty()) return Optional.empty();
+                typeName = t.get().text();
+            }
+            String value = argTerms.get(0).text();
+            return Optional.of(new ShapeExpression(
+                    "(" + mapSourceType(typeName) + ") (" + value + ")",
+                    mapSourceType(typeName)));
+        }
+        if (conceptMatches("concept:closure", conceptName) && !argTerms.isEmpty()) {
+            // Best-effort: emit a java lambda. Rust closures get lifted as
+            // concept:closure(param_leaf*, body). Java's lambda syntax is
+            // (a, b) -> body. Skip captured-state semantics; this only
+            // works for pure-function closures.
+            int bodyIdx = argTerms.size() - 1;
+            String params = argTerms.subList(0, bodyIdx).stream()
+                    .map(ShapeExpression::text)
+                    .collect(Collectors.joining(", "));
+            String body = argTerms.get(bodyIdx).text();
+            return Optional.of(new ShapeExpression(
+                    "(" + params + ") -> " + body,
+                    mapSourceType(context.returnType)));
+        }
+        // concept:reference (rust &x) and concept:deref (*x): java has neither
+        // explicit reference nor deref operators — references are implicit on
+        // objects; dereference is a no-op. Pass the inner expression through.
+        if ((conceptMatches("concept:reference", conceptName) || conceptMatches("concept:deref", conceptName))
+                && argTerms.size() == 1) {
+            return Optional.of(argTerms.get(0));
         }
         String expression = operationExpression(conceptName, argTerms);
         if (expression == null) {
