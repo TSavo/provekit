@@ -91,6 +91,17 @@ pub struct RealizeRequest {
     /// CIDs (non-parametric) are absent from this map.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub parametric_sort_expansions: Vec<ParametricSortExpansion>,
+    /// Substrate-honest cross-term type catalog. Maps function name → its
+    /// raw source-language return type (e.g. "(Value,bool)" for a rust
+    /// tuple-returning function). cmd_lower builds this from the named-
+    /// term-doc once and injects per-term so realize plugins can resolve
+    /// tuple destructure element types + other cross-term return types
+    /// instead of falling back to var inference.
+    #[serde(
+        default,
+        skip_serializing_if = "std::collections::BTreeMap::is_empty"
+    )]
+    pub function_return_types: std::collections::BTreeMap<String, String>,
 }
 
 /// Canonical form of a parametric sort application — the structure whose
@@ -786,6 +797,7 @@ fn invocation_from_tree_node(
             node,
             &["procMacroInvocations", "proc_macro_invocations"],
         ),
+        function_return_types: parent_request.function_return_types.clone(),
     };
     let mut from = Vec::new();
     if let Some(shape_cid) = optional_cid_field(node, &["shapeCid", "shape_cid"])? {
@@ -1170,6 +1182,11 @@ pub fn request_from_spec(spec: &Value) -> Result<RealizeRequest, String> {
         parametric_sort_expansions: spec
             .get("parametric_sort_expansions")
             .or_else(|| spec.get("parametricSortExpansions"))
+            .and_then(|v| serde_json::from_value(v.clone()).ok())
+            .unwrap_or_default(),
+        function_return_types: spec
+            .get("function_return_types")
+            .or_else(|| spec.get("functionReturnTypes"))
             .and_then(|v| serde_json::from_value(v.clone()).ok())
             .unwrap_or_default(),
     })

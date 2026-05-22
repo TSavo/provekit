@@ -109,20 +109,20 @@ public final class CrossPlatformRpc {
         return String.format("%s#%s", original_name, content_cid);
     }
 
-    // ===== [HAND-WRITTEN — vocabulary gaps still open] =====
-
-    // concept:blake3-512-self-identifying-cid (needs for-loop w/ pattern + bit ops)
+    // concept:blake3-512-self-identifying-cid (LOWERED verbatim — was hand-written; the lifter+lowerer now translate for-loop with pattern + bit-shifts + casts + StringBuilder→String coercion)
     public static String blake3_512_cid(byte[] bytes) {
-        byte[] raw = blake3_512_of(bytes);
-        StringBuilder s = new StringBuilder("blake3-512:".length() + 128);
+        var raw = blake3_512_of(bytes);
+        StringBuilder s = new StringBuilder(("blake3-512:".length()) + (128));
         s.append("blake3-512:");
-        final byte[] HEX = "0123456789abcdef".getBytes(StandardCharsets.UTF_8);
-        for (byte b : raw) {
-            s.append((char) HEX[(b >> 4) & 0x0F]);
-            s.append((char) HEX[b & 0x0F]);
+        for (var b : raw) {
+            s.append((char) (HEX_BYTES[(int) ((b) >> (4))]));
+            s.append((char) (HEX_BYTES[(int) ((b) & (15))]));
         }
         return s.toString();
     }
+    private static final byte[] HEX_BYTES = "0123456789abcdef".getBytes(StandardCharsets.UTF_8);
+
+    // ===== [HAND-WRITTEN — vocabulary gaps still open] =====
 
     // concept:jsonrpc-initialize-response (needs json! with nested array literal)
     public static JsonNode initialize_result(String adapterName, String surface) {

@@ -1240,6 +1240,9 @@ final class SugarRealizer {
          *  expressions can pick up real return types instead of falling
          *  back to var inference. */
         Map<String, String> functionReturnTypes = java.util.Map.of();
+        /** Raw rust tuple type captured from a recent `__provekit_tuple = call()`.
+         *  Used by destructuring index-assigns to type each element. */
+        String tupleSourceRawType = "";
 
         /** Reset per-call thread-local catalog into this context. */
         void importThreadLocalCatalog() {
@@ -1446,6 +1449,50 @@ final class SugarRealizer {
             String declType = value.get().typeName();
             if (declType == null || declType.isBlank()) {
                 declType = "";  // localDeclaration emits `var` for blank.
+            }
+            // Substrate-honest tuple destructure: when assigning from a
+            // synthetic tuple index (__provekit_tuple[N]) AND we know the
+            // tuple-producing function's return type, use the element type
+            // for the declaration so downstream method calls don't fail
+            // on Object.
+            String valueText = value.get().text();
+            // Strip outer parens that may have been added (e.g. (__provekit_tuple[0])).
+            String stripped = valueText.trim();
+            while (stripped.startsWith("(") && stripped.endsWith(")")
+                    && matchingOuterParens(stripped)) {
+                stripped = stripped.substring(1, stripped.length() - 1).trim();
+            }
+            if (stripped.startsWith("__provekit_tuple[") && stripped.endsWith("]")) {
+                String tupleType = context.tupleSourceRawType;
+                if (tupleType != null && !tupleType.isBlank()) {
+                    String idxStr = stripped.substring("__provekit_tuple[".length(),
+                                                       stripped.length() - 1).trim();
+                    try {
+                        int idx = Integer.parseInt(idxStr);
+                        String elemType = tupleElementType(tupleType, idx);
+                        if (elemType != null) {
+                            String javaElem = mapSourceType(elemType);
+                            return Optional.of(javaElem + " " + name + " = (" + javaElem + ") " + stripped + ";");
+                        }
+                    } catch (NumberFormatException ignore) {}
+                }
+            }
+            // Detect the seed assign `__provekit_tuple = handle_line(...)` —
+            // record the raw tuple type so subsequent index-assigns can
+            // resolve element types.
+            if ("__provekit_tuple".equals(name)) {
+                String fnName = extractCalledFnName(valueText);
+                if (fnName != null) {
+                    String raw = context.functionReturnTypes.getOrDefault(fnName, "");
+                    String fnRetStripped = raw.trim();
+                    if (fnRetStripped.startsWith("&mut ")) fnRetStripped = fnRetStripped.substring(5).trim();
+                    else if (fnRetStripped.startsWith("&")) fnRetStripped = fnRetStripped.substring(1).trim();
+                    if (fnRetStripped.startsWith("(") && fnRetStripped.endsWith(")")) {
+                        context.tupleSourceRawType = fnRetStripped;
+                    } else {
+                        context.tupleSourceRawType = "";
+                    }
+                }
             }
             return Optional.of(localDeclaration(declType, name, value.get().text(), alreadyDefined));
         }
@@ -1981,10 +2028,11 @@ final class SugarRealizer {
                 return Optional.empty();
             }
             String joined = argTerms.stream().skip(1).map(ShapeExpression::text).collect(Collectors.joining(", "));
-            // Function-return-type catalog: look up if known, else blank
-            // (var inference will resolve).
+            // Function-return-type catalog: look up raw rust type if known,
+            // map to java syntax for the expression's typeName.
             String returnType = context.lookupReturnType(callee);
-            return Optional.of(new ShapeExpression(calleeJava + "(" + joined + ")", returnType));
+            String javaReturnType = returnType.isBlank() ? "" : mapSourceType(returnType);
+            return Optional.of(new ShapeExpression(calleeJava + "(" + joined + ")", javaReturnType));
         }
         if (conceptMatches("concept:field", conceptName) && args.size() == 2) {
             // args[0]: receiver expression. args[1]: field name leaf.
@@ -2429,6 +2477,41 @@ final class SugarRealizer {
             return false;
         }
         return anyStringPattern;
+    }
+
+    /** Extract a tuple's element type at index `idx` from a rust tuple type
+     *  string like `(JsonNode, boolean)`. Returns null if can't parse. */
+    private static String tupleElementType(String tupleType, int idx) {
+        String t = tupleType.trim();
+        if (!t.startsWith("(") || !t.endsWith(")")) return null;
+        String inner = t.substring(1, t.length() - 1).trim();
+        // Split top-level commas.
+        java.util.List<String> elems = new java.util.ArrayList<>();
+        int depth = 0;
+        int start = 0;
+        for (int i = 0; i < inner.length(); i++) {
+            char c = inner.charAt(i);
+            if (c == '<' || c == '(' || c == '[') depth++;
+            else if (c == '>' || c == ')' || c == ']') depth--;
+            else if (c == ',' && depth == 0) {
+                elems.add(inner.substring(start, i).trim());
+                start = i + 1;
+            }
+        }
+        if (start < inner.length()) elems.add(inner.substring(start).trim());
+        if (idx < 0 || idx >= elems.size()) return null;
+        return elems.get(idx);
+    }
+
+    /** Extract the called function name from a text like `handle_line(line, adapter)`.
+     *  Returns null if not a simple call. */
+    private static String extractCalledFnName(String text) {
+        if (text == null) return null;
+        int paren = text.indexOf('(');
+        if (paren <= 0) return null;
+        String head = text.substring(0, paren).trim();
+        if (head.matches("[A-Za-z_][A-Za-z0-9_]*")) return head;
+        return null;
     }
 
     /** True iff text looks like a java string literal (starts + ends with "). */

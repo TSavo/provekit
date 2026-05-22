@@ -553,15 +553,13 @@ public final class RpcServer {
      *  mapSourceType translates them at lookup time. */
     private static java.util.Map<String, String> parseFunctionReturnTypes(String json) {
         if (json == null || json.isBlank() || "{}".equals(json.trim())) return java.util.Map.of();
-        // Use the bundled Jcs parser to avoid a jackson dependency at
-        // this layer.
         java.util.Map<String, String> out = new java.util.HashMap<>();
         try {
             com.provekit.ir.Jcs.Json parsed = com.provekit.ir.Jcs.parse(json);
             if (parsed instanceof com.provekit.ir.Jcs.Obj obj) {
                 for (com.provekit.ir.Jcs.Field f : obj.fields()) {
                     if (f.value() instanceof com.provekit.ir.Jcs.Str s) {
-                        out.put(f.key(), SugarRealizer.mapSourceType(s.value()));
+                        out.put(f.key(), s.value());
                     }
                 }
             }
