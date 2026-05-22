@@ -24,6 +24,17 @@ fn node_bin() -> String {
 }
 
 fn install_node_manifest(root: &Path, surface: &str, script: &Path, library_tag: &str) {
+    install_node_manifest_with_metadata(root, surface, script, library_tag, None, &[]);
+}
+
+fn install_node_manifest_with_metadata(
+    root: &Path,
+    surface: &str,
+    script: &Path,
+    library_tag: &str,
+    family: Option<&str>,
+    provides_concepts: &[&str],
+) {
     let manifest = root
         .join(".provekit")
         .join("realize")
@@ -36,7 +47,7 @@ fn install_node_manifest(root: &Path, surface: &str, script: &Path, library_tag:
         .to_string()
         .replace('\\', "\\\\")
         .replace('"', "\\\"");
-    let manifest_text = format!(
+    let mut manifest_text = format!(
         "name = \"typescript-realize-{library_tag}\"\n\
          library_tag = \"{library_tag}\"\n\
          command = [\"{}\", \"{}\", \"--rpc\"]\n\
@@ -44,6 +55,56 @@ fn install_node_manifest(root: &Path, surface: &str, script: &Path, library_tag:
         node_bin().replace('\\', "\\\\").replace('"', "\\\""),
         script,
     );
+    append_manifest_metadata(&mut manifest_text, family, provides_concepts);
+    fs::write(manifest, manifest_text).expect("write manifest");
+}
+
+fn append_manifest_metadata(
+    manifest_text: &mut String,
+    family: Option<&str>,
+    provides_concepts: &[&str],
+) {
+    if let Some(family) = family {
+        manifest_text.push_str(&format!("family = \"{family}\"\n"));
+    }
+    if !provides_concepts.is_empty() {
+        let concepts = provides_concepts
+            .iter()
+            .map(|concept| format!("\"{concept}\""))
+            .collect::<Vec<_>>()
+            .join(", ");
+        manifest_text.push_str(&format!("provides_concepts = [{concepts}]\n"));
+    }
+}
+
+fn install_python_script_manifest_with_metadata(
+    root: &Path,
+    surface: &str,
+    script: &Path,
+    library_tag: &str,
+    family: Option<&str>,
+    provides_concepts: &[&str],
+) {
+    let manifest = root
+        .join(".provekit")
+        .join("realize")
+        .join(surface)
+        .join("manifest.toml");
+    fs::create_dir_all(manifest.parent().expect("manifest path has parent"))
+        .expect("create manifest dir");
+    let script = script
+        .display()
+        .to_string()
+        .replace('\\', "\\\\")
+        .replace('"', "\\\"");
+    let mut manifest_text = format!(
+        "name = \"typescript-realize-{library_tag}\"\n\
+         library_tag = \"{library_tag}\"\n\
+         command = [\"python3\", \"{}\"]\n\
+         working_dir = \".\"\n",
+        script,
+    );
+    append_manifest_metadata(&mut manifest_text, family, provides_concepts);
     fs::write(manifest, manifest_text).expect("write manifest");
 }
 
@@ -157,6 +218,10 @@ fn concept_payload_json() -> &'static str {
     "{\"artifact_kind\":\"provekit-concept-citation-comment-sugar\",\"concept_name\":\"concept:sql-query\",\"function\":\"selectRows\",\"params\":[\"sql\",\"args\"],\"param_types\":[\"string\",\"unknown[]\"],\"return_type\":\"unknown[]\",\"named_term_tree\":{\"conceptName\":\"concept:sql-query\",\"args\":[{\"sort\":\"Sql\",\"source\":\"sql\"},{\"sort\":\"SqlArgs\",\"source\":\"args\"}]}}"
 }
 
+fn family_sql_payload_json() -> &'static str {
+    "{\"artifact_kind\":\"provekit-concept-citation-comment-sugar\",\"concept_name\":\"concept:sql-query\",\"family\":\"concept:family:sql\",\"function\":\"selectRows\",\"params\":[\"sql\",\"args\"],\"param_types\":[\"string\",\"unknown[]\"],\"return_type\":\"unknown[]\",\"named_term_tree\":{\"conceptName\":\"concept:sql-query\",\"args\":[{\"sort\":\"Sql\",\"source\":\"sql\"},{\"sort\":\"SqlArgs\",\"source\":\"args\"}]}}"
+}
+
 fn concept_payload_cid() -> String {
     payload_cid(concept_payload_json())
 }
@@ -217,6 +282,19 @@ fn write_concept_source(src_dir: &Path) -> PathBuf {
         ),
     )
     .expect("write source");
+    source_path
+}
+
+fn write_rust_family_sql_carrier_source(src_dir: &Path) -> PathBuf {
+    let source_path = src_dir.join("lib.rs");
+    fs::write(
+        &source_path,
+        format!(
+            "// rust source\n{}// end\n",
+            carrier_lines("//", "", family_sql_payload_json())
+        ),
+    )
+    .expect("write rust family SQL carrier source");
     source_path
 }
 
@@ -753,4 +831,89 @@ fn materialize_explicit_target_strips_redundant_language_prefix_from_library() {
         "result should route through the python-requests shim: {stdout}"
     );
     assert!(!stdout.contains("provekit-concept:"));
+}
+
+#[test]
+fn cross_language_discovery_honors_top_level_library_constraint() {
+    let workspace = tempfile::tempdir().expect("tempdir");
+    let repo = repo_root();
+    let src_dir = workspace.path().join("src");
+    fs::create_dir_all(&src_dir).expect("create src dir");
+    write_rust_family_sql_carrier_source(&src_dir);
+    fs::write(
+        workspace.path().join("Cargo.toml"),
+        "[package]\nname = \"cross-language-source\"\nversion = \"0.0.0\"\nedition = \"2021\"\n",
+    )
+    .expect("write source project marker");
+
+    let fake_realize = workspace.path().join("fake_realize.py");
+    fs::write(
+        &fake_realize,
+        r#"import json, sys
+for line in sys.stdin:
+    request = json.loads(line)
+    print(json.dumps({
+        "jsonrpc": "2.0",
+        "id": request.get("id"),
+        "result": {
+            "source": "const rows = db.prepare(sql).all(args);",
+            "is_stub": False,
+            "extension": "ts"
+        }
+    }), flush=True)
+"#,
+    )
+    .expect("write fake realize script");
+
+    install_python_script_manifest_with_metadata(
+        workspace.path(),
+        "typescript-better-sqlite3",
+        &fake_realize,
+        "better-sqlite3",
+        Some("concept:family:sql"),
+        &["concept:sql-query"],
+    );
+    install_python_script_manifest_with_metadata(
+        workspace.path(),
+        "typescript-pg",
+        &fake_realize,
+        "pg",
+        Some("concept:family:sql"),
+        &["concept:sql-query"],
+    );
+
+    let output = Command::new(env!("CARGO_BIN_EXE_provekit"))
+        .env("PROVEKIT_REPO_ROOT", repo)
+        .arg("materialize")
+        .arg("--source-lang")
+        .arg("rust")
+        .arg("--target")
+        .arg("typescript")
+        .arg("--library")
+        .arg("typescript-better-sqlite3")
+        .arg("--source-dir")
+        .arg(&src_dir)
+        .arg("--project")
+        .arg(workspace.path())
+        .output()
+        .expect("spawn provekit materialize cross-language discovery");
+
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(
+        output.status.success(),
+        "top-level --library should disambiguate cross-language discovery\nstdout:\n{stdout}\nstderr:\n{stderr}"
+    );
+    assert!(
+        stderr.contains("RESOLVE") && stderr.contains("manifest `better-sqlite3`"),
+        "should resolve through better-sqlite3, got stderr:\n{stderr}"
+    );
+    assert!(
+        !stderr.contains("AMBIGUOUS"),
+        "--library should prevent ambiguous outcome, got stderr:\n{stderr}"
+    );
+    assert!(
+        stderr.contains("1 resolve + 0 ambiguous"),
+        "summary should count one resolved site, got stderr:\n{stderr}"
+    );
 }

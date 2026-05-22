@@ -159,6 +159,7 @@ pub fn run(args: MaterializeArgs) -> u8 {
                 &args.source_dir,
                 source_lang,
                 &target_lang,
+                library_tag.as_deref(),
                 &args.family_library,
                 args.out_dir.as_deref(),
             );
@@ -362,6 +363,7 @@ fn run_cross_language_discovery(
     source_dir: &Path,
     source_lang: &str,
     target_lang: &str,
+    target_library_tag: Option<&str>,
     family_library_overrides: &[FamilyLibraryPair],
     out_dir: Option<&Path>,
 ) -> u8 {
@@ -418,6 +420,26 @@ fn run_cross_language_discovery(
                 // raw_payload as JSON.
                 family_from_payload(&carrier.raw_payload).as_deref(),
             );
+            let carrier_family = family_from_payload(&carrier.raw_payload);
+            let has_family_override = carrier_family.as_deref().is_some_and(|family| {
+                family_library_overrides
+                    .iter()
+                    .any(|p| family_matches_override(family, &p.family))
+            });
+            let matches = if has_family_override {
+                // Per-family overrides are more specific than top-level
+                // --library. Leave the full candidate set intact so the
+                // ambiguous-site handler below can resolve or loudly report
+                // a bad/conflicting family override.
+                matches
+            } else if let Some(target_library_tag) = target_library_tag {
+                matches
+                    .into_iter()
+                    .filter(|candidate| candidate == target_library_tag)
+                    .collect()
+            } else {
+                matches
+            };
 
             let rel = path.strip_prefix(source_dir).unwrap_or(path).display();
             match matches.len() {
