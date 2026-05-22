@@ -2901,12 +2901,17 @@ fn shape_of_expr(expr: &syn::Expr, ctx: &ShapeContext) -> Arc<CValue> {
         }
         syn::Expr::Lit(lit) => literal_shape(&lit.lit),
         // `expr?` — rust's Try operator. Propagates Err/None up the call
-        // stack. In our java target where Result/Option are erased to
-        // T/null, the simplest semantic mapping is identity — assume the
-        // happy path. The lower side can add null-check + throw via the
-        // concept:try wrapping if desired; for now we transparently lift
-        // the inner expression so the binding receives the unwrapped value.
-        syn::Expr::Try(e) => shape_of_expr(&e.expr, ctx),
+        // stack. Lift as concept:call(inner, method:try-unwrap) so the
+        // target plugin can emit appropriate unwrap semantics (Result.unwrap()
+        // / Optional.get() / etc.). The leaf identity comes from structure;
+        // no minting required.
+        syn::Expr::Try(e) => {
+            let inner = shape_of_expr(&e.expr, ctx);
+            gamma_operation("concept:call", vec![
+                inner,
+                method_concept_leaf("try_unwrap", 0),
+            ])
+        }
         // [elem; count] syntax — emitted as concept:array-repeat with args [elem, len].
         syn::Expr::Repeat(e) => gamma_operation(
             "concept:array-repeat",

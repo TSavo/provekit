@@ -1015,14 +1015,29 @@ final class SugarRealizer {
         if (t.startsWith("(") && t.endsWith(")")) {
             return "Object[]";
         }
-        // Result<T,E>: rust's fallible return. Java equivalent is T +
-        // exception for E. Emit just the success arm; bind sites that
-        // propagate errors should throw RuntimeException.
+        // Result<T,E>: rust's fallible return. LOSSLESS via the
+        // provekit-java-runtime carrier — Result.ok/.err/.isOk/.isErr
+        // preserve (B) functional opacity; citation gives (A) round-trip.
         if (t.startsWith("Result<") && t.endsWith(">")) {
             String inner = t.substring(7, t.length() - 1).trim();
             int comma = findTopLevelComma(inner);
             String okType = comma > 0 ? inner.substring(0, comma).trim() : inner;
-            return mapSourceType(okType);
+            String errType = comma > 0 ? inner.substring(comma + 1).trim() : "Object";
+            // Err side: if it's a rust-source enum (capitalized ident the
+            // substrate hasn't catalogued as a known java type), substitute
+            // with SumVariant — the generic sum-variant carrier from
+            // provekit-java-runtime.
+            String javaErrType = mapSourceType(errType);
+            if (javaErrType.matches("[A-Z][A-Za-z0-9_]*")
+                    && !javaErrType.equals("String")
+                    && !javaErrType.equals("Object")) {
+                javaErrType = "com.provekit.runtime.SumVariant";
+            }
+            return "com.provekit.runtime.Result<"
+                + boxedType(mapSourceType(okType))
+                + ", "
+                + boxedType(javaErrType)
+                + ">";
         }
         // Option<T> → T (java null encodes None).
         if (t.startsWith("Option<") && t.endsWith(">")) {
@@ -1705,9 +1720,7 @@ final class SugarRealizer {
                 if (bodyExpr.isEmpty()) return Optional.empty();
                 String bodyText = bodyExpr.get().text();
                 if (boundVar != null) {
-                    String sub = patternHasNestedBinding(patternText)
-                            ? "String.valueOf(" + scrutVar + ")"
-                            : scrutVar;
+                    String sub = patternBindingExpression(patternText, scrutVar);
                     bodyText = replaceIdentifier(bodyText, boundVar, sub);
                 }
                 if ("true".equals(cond)) {
@@ -1840,9 +1853,7 @@ final class SugarRealizer {
                 String bodyText = body.get().text();
                 String cond = patternToCondition(patternText, scrutVar);
                 if (boundVar != null) {
-                    String sub = patternHasNestedBinding(patternText)
-                            ? "String.valueOf(" + scrutVar + ")"
-                            : scrutVar;
+                    String sub = patternBindingExpression(patternText, scrutVar);
                     bodyText = replaceIdentifier(bodyText, boundVar, sub);
                 }
                 if ("true".equals(cond)) {
@@ -1953,6 +1964,15 @@ final class SugarRealizer {
                             + receiver.get().text();
                     return Optional.of(new ShapeExpression(cited, receiver.get().typeName()));
                 }
+                // .try_unwrap() — substrate's canonical ?-operator method.
+                // Receiver is a Result<T,E> carrier. LOSSLESS: (A) citation +
+                // (B) Result.unwrap mirrors rust's ? panic-on-Err / Ok-extract.
+                if ("try_unwrap".equals(methodName) && callArgs.isEmpty()) {
+                    return Optional.of(new ShapeExpression(
+                            "/*@concept concept:try-unwrap*/((com.provekit.runtime.Result) "
+                                + receiver.get().text() + ").unwrap()",
+                            ""));
+                }
                 // .iter() on a JsonNode (rust Vec<Value>.iter()) →
                 // StreamSupport.stream over spliterator. Caller's
                 // .filter_map / .collect continue the pipeline.
@@ -1994,13 +2014,33 @@ final class SugarRealizer {
                 // a String via String.valueOf). Caller can wrap in
                 // Objects.requireNonNull at the binding level if needed.
                 if ("ok_or_else".equals(methodName) && callArgs.size() == 1) {
-                    // GENUINELY LOSSY (B fails). Citation gives (A); a
-                    // java Result<T,E> carrier will restore (B).
-                    context.recordApproximation(
-                        "result-flattened-to-throw",
-                        "Rust .ok_or_else(closure) lowered as throw-on-null. "
-                            + "Functionally NOT opaque: callers lose Result<T,E> control flow. "
-                            + "Retires when java Result carrier ships.");
+                    // LOSSLESS: Result.okOrElse(value, ()->error) carrier
+                    // returns Result.ok(value) or Result.err(closure()).
+                    // (A) citation + (B) Result-carrier semantics.
+                    String fn = callArgs.get(0);
+                    String supplier;
+                    if (fn.contains("->")) {
+                        java.util.regex.Matcher m = java.util.regex.Pattern.compile(
+                            "^\\s*\\(\\s*\\)\\s*->\\s*(.+)$"
+                        ).matcher(fn);
+                        if (m.find()) {
+                            supplier = "() -> " + m.group(1).trim();
+                        } else {
+                            supplier = "((java.util.function.Supplier)(" + fn + "))";
+                        }
+                    } else {
+                        supplier = "((java.util.function.Supplier)(" + fn + "))";
+                    }
+                    return Optional.of(new ShapeExpression(
+                            "/*@concept concept:fallible-ok-or-else fallback="
+                                + escapeForComment(fn) + "*/ com.provekit.runtime.Result.okOrElse("
+                                + receiver.get().text() + ", " + supplier + ")",
+                            "com.provekit.runtime.Result"));
+                }
+                // Legacy throw-on-null path retained for non-fallible
+                // null-coalesce idioms — currently unreachable since
+                // ok_or_else routes via Result above.
+                if ("__unreachable_ok_or_else".equals(methodName) && callArgs.size() == 1) {
                     String fn = callArgs.get(0);
                     String fnInvoked;
                     if (fn.contains("->")) {
@@ -2193,33 +2233,34 @@ final class SugarRealizer {
                 String joined = argTerms.stream().skip(1).map(ShapeExpression::text).collect(Collectors.joining(", "));
                 return Optional.of(new ShapeExpression("new Object[] {" + joined + "}", "Object[]"));
             }
-            // Rust enum variant constructors with no path qualifier:
-            // - `Ok(x)` returns the wrapped value (java has no Result).
-            // - `Err(x)` throws RuntimeException with the value's string form.
-            // - `Some(x)` returns the value (java null = None).
-            // - `None` is null (handled via leaf).
-            if ("Ok".equals(callee) || "Some".equals(callee)) {
+            // Rust enum variant constructors:
+            // - `Ok(x)`  → Result.ok(x)   [lossless via Result carrier]
+            // - `Err(x)` → Result.err(x)  [lossless via Result carrier]
+            // - `Some(x)` → x             [lossless: java null = None]
+            // - `None`   → null           [via leaf]
+            if ("Some".equals(callee)) {
                 String inner = argTerms.size() > 1 ? argTerms.get(1).text() : "null";
-                return Optional.of(new ShapeExpression(inner, argTerms.size() > 1 ? argTerms.get(1).typeName() : ""));
+                return Optional.of(new ShapeExpression(
+                        "/*@concept concept:option-some payload=" + escapeForComment(inner) + "*/" + inner,
+                        argTerms.size() > 1 ? argTerms.get(1).typeName() : ""));
+            }
+            if ("Ok".equals(callee)) {
+                String inner = argTerms.size() > 1 ? argTerms.get(1).text() : "null";
+                return Optional.of(new ShapeExpression(
+                        "/*@concept concept:fallible-ok payload=" + escapeForComment(inner)
+                            + "*/ com.provekit.runtime.Result.ok(" + inner + ")",
+                        "com.provekit.runtime.Result"));
             }
             if ("Err".equals(callee)) {
                 String inner = argTerms.size() > 1 ? argTerms.get(1).text() : "\"err\"";
-                // GENUINELY LOSSY (B fails): callers expecting Result<T,E>
-                // can't .is_err()/.map_err() — exception interrupts vs
-                // return-as-value. Citation alone insufficient until a
-                // java Result<T,E> carrier exists. Keep loss_record AND
-                // emit citation so when the carrier ships, only the
-                // citation remains and the loss entry drops.
-                context.recordApproximation(
-                    "result-err-as-throw",
-                    "Rust Err(" + inner + ") lowered as throw RuntimeException. "
-                        + "Functionally NOT opaque: callers lose Result<T,E> control flow. "
-                        + "Retires when a java Result carrier ships.");
+                // LOSSLESS: java Result<T,E> carrier (provekit-java-runtime)
+                // gives (B) functional opacity — callers can .isErr()/.mapErr()
+                // exactly as the source did. Citation gives (A) round-trip.
                 return Optional.of(new ShapeExpression(
-                        "throw /*@concept concept:fallible-err payload="
-                            + escapeForComment(inner) + "*/ new RuntimeException(String.valueOf("
-                            + inner + "))",
-                        ""));
+                        "/*@concept concept:fallible-err payload="
+                            + escapeForComment(inner) + "*/ com.provekit.runtime.Result.err("
+                            + inner + ")",
+                        "com.provekit.runtime.Result"));
             }
             // `str::to_string` method ref → identity (already a String).
             if ("str.to_string".equals(callee) || "String.from".equals(callee)) {
@@ -2248,20 +2289,20 @@ final class SugarRealizer {
                 if (parts.length == 2
                         && parts[0].length() > 0 && Character.isUpperCase(parts[0].charAt(0))
                         && parts[1].length() > 0 && Character.isUpperCase(parts[1].charAt(0))) {
-                    // GENUINELY LOSSY (B fails): callers doing variant
-                    // dispatch can no longer distinguish. Citation
-                    // recovers (A); a sealed-class variant carrier will
-                    // restore (B). Keep loss_record until then.
-                    context.recordApproximation(
-                        "enum-variant-flattened-to-string",
-                        "Rust " + parts[0] + "::" + parts[1] + "(" + argTerms.get(1).text()
-                            + ") lowered as String.valueOf(payload). Functionally NOT opaque: "
-                            + "variant dispatch is lost. Retires when sealed-class variant carriers ship.");
+                    // LOSSLESS: SumVariant carrier (provekit-java-runtime)
+                    // preserves family + variant + payload at runtime.
+                    // Callers can dispatch via .is(family, variant) and
+                    // pull .payload() — restoring (B). Citation gives (A).
+                    String family = parts[0];
+                    String variant = parts[1];
+                    String payload = argTerms.get(1).text();
                     return Optional.of(new ShapeExpression(
-                            "/*@concept concept:sum-variant-construct family=" + parts[0] + ":" + parts[1]
-                                + " payload=" + escapeForComment(argTerms.get(1).text())
-                                + "*/ String.valueOf(" + argTerms.get(1).text() + ")",
-                            "String"));
+                            "/*@concept concept:sum-variant-construct family=" + family
+                                + " variant=" + variant
+                                + " payload=" + escapeForComment(payload)
+                                + "*/ new com.provekit.runtime.SumVariant(\""
+                                + family + "\", \"" + variant + "\", " + payload + ")",
+                            "com.provekit.runtime.SumVariant"));
                 }
             }
             // Rust path expressions use `::` (e.g. String::new, Vec::with_capacity).
@@ -2893,9 +2934,7 @@ final class SugarRealizer {
                 if (bodyExpr.isEmpty()) return null;
                 String bodyText = bodyExpr.get().text();
                 if (boundVar != null) {
-                    String sub = patternHasNestedBinding(patternText)
-                            ? "String.valueOf(" + scrutVar + ")"
-                            : scrutVar;
+                    String sub = patternBindingExpression(patternText, scrutVar);
                     bodyText = replaceIdentifier(bodyText, boundVar, sub);
                 }
                 bodyEmit = targetName + " = " + bodyText + ";";
@@ -2952,6 +2991,33 @@ final class SugarRealizer {
             case "cloned" -> "_provekit_identity";
             default -> rustMethod;
         };
+    }
+
+    /** For a pattern like `Some(v)`, `Ok(v)`, `Err(e)`, etc., return the
+     *  java expression that yields the bound value FROM the scrutinee.
+     *  - Some(v)/None: scrut itself (Option<T> erased to T-or-null).
+     *  - Ok(v) on Result carrier: ((Result.Ok) scrut).value().
+     *  - Err(e) on Result carrier: ((Result.Err) scrut).error().
+     *  - Nested enum-variant: String.valueOf(scrut) as a best-effort
+     *    (callers that need variant identity should match SumVariant).
+     */
+    private static String patternBindingExpression(String pattern, String scrutVar) {
+        String t = pattern.trim();
+        int ifIdx = t.indexOf(" if ");
+        if (ifIdx > 0) t = t.substring(0, ifIdx).trim();
+        if (t.matches("^Ok\\s*\\(.*\\)$")) {
+            // .unwrap() on a Result<T,E> returns T (typed via generics).
+            // We're inside the Ok arm so unwrap is safe.
+            return scrutVar + ".unwrap()";
+        }
+        if (t.matches("^Err\\s*\\(.*\\)$")) {
+            // .unwrapErr() returns E. Inside Err arm so it's safe.
+            return scrutVar + ".unwrapErr()";
+        }
+        if (patternHasNestedBinding(t)) {
+            return "String.valueOf(" + scrutVar + ")";
+        }
+        return scrutVar;
     }
 
     /** True iff the pattern contains a nested enum-variant binding like
@@ -3011,15 +3077,16 @@ final class SugarRealizer {
             baseCond = "true";
         } else if ("None".equals(t)) {
             baseCond = "(" + scrutVar + " == null)";
-        } else if (t.matches("^(Some|Ok)\\s*\\(.*\\)$")) {
-            // Truthy unwrap — value present.
+        } else if (t.matches("^Some\\s*\\(.*\\)$")) {
+            // Option<T> erased to T-or-null. Some = non-null.
             baseCond = "(" + scrutVar + " != null)";
+        } else if (t.matches("^Ok\\s*\\(.*\\)$")) {
+            // Result<T,E> carrier — Ok = isOk(). Fallback to (!= null)
+            // if scrut isn't actually a Result (defensive).
+            baseCond = "(" + scrutVar + " instanceof com.provekit.runtime.Result.Ok)";
         } else if (t.matches("^Err\\s*\\(.*\\)$")) {
-            // Err in a Result<T,E> erased to T-or-null: the error path
-            // is reached when the value IS null. Without this
-            // distinction Ok and Err arms had identical conditions,
-            // making Err structurally unreachable in lowered output.
-            baseCond = "(" + scrutVar + " == null)";
+            // Result<T,E> carrier — Err = isErr().
+            baseCond = "(" + scrutVar + " instanceof com.provekit.runtime.Result.Err)";
         } else if (t.matches("^\".*\"$")) {
             // String literal pattern → equality check.
             baseCond = "(" + scrutVar + " != null && " + scrutVar + ".equals(" + t + "))";
