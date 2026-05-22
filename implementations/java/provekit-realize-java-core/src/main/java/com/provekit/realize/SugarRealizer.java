@@ -999,11 +999,14 @@ final class SugarRealizer {
         if (t.startsWith("&mut ")) t = t.substring(5).trim();
         else if (t.startsWith("&mut")) t = t.substring(4).trim();
         if (t.startsWith("&")) t = t.substring(1).trim();
-        // Slice-of-T: rust `[T]` → java array `T[]`.
+        // Slice-of-T: rust `[T]` → java. Bytes are common, fast-path
+        // to byte[]. Other element types: java.util.List<T> for read-only
+        // sequence semantics (matches what Vec<T>.iter().collect()
+        // produces, so consumers don't see Vec↔array mismatches).
         if ("[u8]".equals(t)) return "byte[]";
         if (t.startsWith("[") && t.endsWith("]")) {
             String inner = t.substring(1, t.length() - 1).split(";")[0].trim();
-            return mapSourceType(inner) + "[]";
+            return "java.util.List<" + boxedType(mapSourceType(inner)) + ">";
         }
         // Unit type comes before tuple check.
         if ("()".equals(t)) return "void";
@@ -1361,17 +1364,24 @@ final class SugarRealizer {
                 // emit as bare statement; assign-to-artifact only if the
                 // expression has no parens (rare in practice).
                 if (text.endsWith(")") || text.endsWith("]") || text.endsWith("\"")) {
-                    // Strip ONE matched outer paren pair if present — java
-                    // doesn't accept `(expr);` as a statement even when
-                    // expr is a method invocation. The inner form qualifies
-                    // as ExpressionStatement per JLS §14.8.
                     String inner = text;
                     while (inner.startsWith("(") && inner.endsWith(")") &&
                            matchingOuterParens(inner)) {
                         inner = inner.substring(1, inner.length() - 1).trim();
                     }
-                    String stmt = inner.endsWith(";") ? inner : inner + ";";
-                    lines.add(stmt);
+                    // Tail-expression detection: when this is the LAST
+                    // child of the seq AND we're at the function root
+                    // AND the function returns non-void, emit `return X;`
+                    // instead of a bare statement. This matches rust's
+                    // implicit-tail-return convention.
+                    boolean isLast = (i == args.size() - 1);
+                    boolean nonVoid = !"void".equals(mapSourceType(context.returnType));
+                    if (isLast && position.isEmpty() && nonVoid) {
+                        lines.add("return " + inner + ";");
+                    } else {
+                        String stmt = inner.endsWith(";") ? inner : inner + ";";
+                        lines.add(stmt);
+                    }
                 } else if (isIdentifier(text)) {
                     // Bare identifier as the tail expression — no temp
                     // needed; use the symbol directly as the implicit
@@ -1873,6 +1883,67 @@ final class SugarRealizer {
                 if ("into".equals(methodName) || "clone".equals(methodName)) {
                     return Optional.of(new ShapeExpression(receiver.get().text(), receiver.get().typeName()));
                 }
+                // .iter() on a JsonNode (rust Vec<Value>.iter()) →
+                // StreamSupport.stream over spliterator. Caller's
+                // .filter_map / .collect continue the pipeline.
+                if ("iter".equals(methodName) && callArgs.isEmpty()) {
+                    return Optional.of(new ShapeExpression(
+                            "java.util.stream.StreamSupport.stream(" + receiver.get().text()
+                            + ".spliterator(), false)",
+                            "java.util.stream.Stream"));
+                }
+                // .filter_map(fn) on a Stream — semantically equivalent
+                // to .map(fn).filter(Objects::nonNull) in java.
+                if ("filter_map".equals(methodName) && callArgs.size() == 1) {
+                    String fn = callArgs.get(0);
+                    String mapper;
+                    if (fn.contains("->")) {
+                        // Type the lambda explicitly as
+                        // Function<JsonNode, Object> so that the lambda
+                        // body's method calls resolve against JsonNode
+                        // (the common case for our cross-platform crate).
+                        mapper = "((java.util.function.Function<com.fasterxml.jackson.databind.JsonNode, Object>)(" + fn + "))";
+                    } else {
+                        mapper = "(" + fn + ")";
+                    }
+                    return Optional.of(new ShapeExpression(
+                            receiver.get().text() + ".map(" + mapper + ").filter(java.util.Objects::nonNull)",
+                            "java.util.stream.Stream"));
+                }
+                // .collect() on a Stream → .collect(Collectors.toList()).
+                if ("collect".equals(methodName) && callArgs.isEmpty()) {
+                    return Optional.of(new ShapeExpression(
+                            receiver.get().text() + ".collect(java.util.stream.Collectors.toList())",
+                            "java.util.List"));
+                }
+                // .ok_or_else(closure) on Option<T> in rust: Some(x) → Ok(x),
+                // None → Err(closure()). Java equivalent on a nullable T:
+                // (recv != null ? recv : throw_via_supplier(closure)). We
+                // can't `throw` inline in an expression position; emit a
+                // null-fallback that returns the closure value (already
+                // a String via String.valueOf). Caller can wrap in
+                // Objects.requireNonNull at the binding level if needed.
+                if ("ok_or_else".equals(methodName) && callArgs.size() == 1) {
+                    String fn = callArgs.get(0);
+                    String fnInvoked;
+                    if (fn.contains("->")) {
+                        // Lambda with no param (() -> body) — extract body.
+                        java.util.regex.Matcher m = java.util.regex.Pattern.compile(
+                            "^\\s*\\(\\s*\\)\\s*->\\s*(.+)$"
+                        ).matcher(fn);
+                        if (m.find()) {
+                            fnInvoked = m.group(1).trim();
+                        } else {
+                            fnInvoked = "((java.util.function.Supplier)(" + fn + ")).get()";
+                        }
+                    } else {
+                        fnInvoked = "((java.util.function.Supplier)(" + fn + ")).get()";
+                    }
+                    return Optional.of(new ShapeExpression(
+                            "java.util.Objects.requireNonNullElseGet(" + receiver.get().text()
+                            + ", () -> { throw new RuntimeException(String.valueOf(" + fnInvoked + ")); })",
+                            ""));
+                }
                 // .insert(x) on rust BTreeSet/HashSet → .add(x) returning boolean.
                 // .insert(k, v) on rust BTreeMap/HashMap → .put(k, v) returning prev.
                 // Disambiguate by argument count.
@@ -2249,6 +2320,10 @@ final class SugarRealizer {
                 String remapped = switch (text) {
                     case "Value::Null", "Value.Null" -> "MAPPER.nullNode()";
                     case "Value::as_str" -> "(java.util.function.Function<com.fasterxml.jackson.databind.JsonNode, String>) com.fasterxml.jackson.databind.JsonNode::asText";
+                    case "Value::as_array", "Value.as_array" ->
+                        "(java.util.function.Function<com.fasterxml.jackson.databind.JsonNode, com.fasterxml.jackson.databind.JsonNode>) (n -> n != null && n.isArray() ? n : null)";
+                    case "Value::as_object", "Value.as_object" ->
+                        "(java.util.function.Function<com.fasterxml.jackson.databind.JsonNode, com.fasterxml.jackson.databind.JsonNode>) (n -> n != null && n.isObject() ? n : null)";
                     case "null" -> "null";
                     // Bare `str` / `String::to_string` references — convert
                     // method references to lambdas where java reference syntax
