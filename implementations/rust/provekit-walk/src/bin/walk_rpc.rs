@@ -2515,6 +2515,52 @@ fn shape_of_stmt(stmt: &syn::Stmt, ctx: &ShapeContext) -> Arc<CValue> {
                     vec![target_leaf, shape_of_expr(&init.expr, ctx)],
                 );
             }
+            // Struct destructuring: `let TypeName { field1, field2 } = expr`
+            // → seq of assigns where each field becomes its own let bound
+            // to expr.field. The lower side can emit each as a getter or
+            // field access per target (java uses .get(\"field\") on a
+            // JsonNode source since Rust struct types are erased to
+            // JsonNode in our java realization).
+            if let syn::Pat::Struct(struct_pat) = &local.pat {
+                let mut stmts: Vec<Arc<CValue>> = Vec::new();
+                let temp_name = "__provekit_struct".to_string();
+                let temp_leaf = || CValue::object([
+                    ("kind", CValue::string("symbol")),
+                    ("text", CValue::string(temp_name.clone())),
+                ]);
+                stmts.push(gamma_operation("concept:assign", vec![
+                    temp_leaf(),
+                    shape_of_expr(&init.expr, ctx),
+                ]));
+                for field in &struct_pat.fields {
+                    let field_name = match &field.member {
+                        syn::Member::Named(ident) => ident.to_string(),
+                        syn::Member::Unnamed(idx) => idx.index.to_string(),
+                    };
+                    let binding_name = match &*field.pat {
+                        syn::Pat::Ident(pi) => pi.ident.to_string(),
+                        _ => field_name.clone(),
+                    };
+                    let key_lit = concept_literal_shape(
+                        CValue::string(field_name), SORT_STRING_CID);
+                    let getter = gamma_operation("concept:call", vec![
+                        temp_leaf(),
+                        CValue::object([
+                            ("kind", CValue::string("method")),
+                            ("text", CValue::string("get".to_string())),
+                        ]),
+                        key_lit,
+                    ]);
+                    stmts.push(gamma_operation("concept:assign", vec![
+                        CValue::object([
+                            ("kind", CValue::string("symbol")),
+                            ("text", CValue::string(binding_name)),
+                        ]),
+                        getter,
+                    ]));
+                }
+                return gamma_operation("concept:seq", stmts);
+            }
             // Tuple destructuring: `let (a, b, c) = expr` → seq of assigns
             // from a temp. The lower side can either emit individual
             // declarations or use record/Object[] patterns per target.

@@ -1883,6 +1883,19 @@ final class SugarRealizer {
                                 "boolean"));
                     }
                     if (callArgs.size() == 2) {
+                        String v = callArgs.get(1).trim();
+                        boolean isJsonNodeValue = v.contains("valueToTree")
+                                || v.contains("MAPPER.create")
+                                || v.contains("MAPPER.nullNode");
+                        if (isJsonNodeValue) {
+                            // .set is on ObjectNode, not JsonNode. Cast
+                            // the receiver to ObjectNode so the method
+                            // resolves.
+                            return Optional.of(new ShapeExpression(
+                                    "((com.fasterxml.jackson.databind.node.ObjectNode) " + receiver.get().text() + ")"
+                                    + ".set(" + callArgs.get(0) + ", " + callArgs.get(1) + ")",
+                                    ""));
+                        }
                         return Optional.of(new ShapeExpression(
                                 receiver.get().text() + ".put(" + callArgs.get(0) + ", " + callArgs.get(1) + ")",
                                 ""));
