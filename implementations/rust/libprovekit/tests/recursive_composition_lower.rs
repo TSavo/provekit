@@ -62,6 +62,7 @@ impl RealizeTransport for RecursiveTransport {
                 }),
                 used_sugars: vec![],
                 observation_wrapper_emission_record: None,
+                ..Default::default()
             }),
             "concept:log-emit" => {
                 let binding = request
@@ -101,6 +102,7 @@ impl RealizeTransport for RecursiveTransport {
                     }),
                     used_sugars: vec![],
                     observation_wrapper_emission_record: None,
+                    ..Default::default()
                 })
             }
             other => Err(format!("unexpected concept {other}")),

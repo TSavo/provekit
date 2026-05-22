@@ -386,7 +386,17 @@ pub struct RealizeContractWitness {
     pub source_kind: String,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+/// #1374: structured realize-plugin response shape.
+///
+/// Realize plugins return a FRAGMENT — a per-site emission that says
+/// what the fragment IS plus what CONTEXT it needs (imports, helper
+/// declarations, dependencies, diagnostics, compile-unit requirements).
+/// Assembly (Milestone C, #1375) composes fragments into compilation
+/// units; the substrate doesn't bake file semantics into the CLI.
+///
+/// Backwards compatibility: legacy plugins return only `source` + `is_stub`
+/// (the other fields default to empty/None). New plugins populate them.
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
 pub struct RealizedSource {
     pub extension: String,
     pub source: String,
@@ -395,6 +405,52 @@ pub struct RealizedSource {
     pub observed_loss_record: Value,
     pub used_sugars: Vec<Value>,
     pub observation_wrapper_emission_record: Option<Value>,
+
+    /// #1374: realization-fragment context.
+    ///
+    /// Symbols the fragment's emitted source uses from outside its own
+    /// body. Java: fully-qualified class names ("java.util.List",
+    /// "com.fasterxml.jackson.databind.JsonNode"). Rust: use-path strings
+    /// ("std::io::BufRead", "serde_json::Value"). Python: import names.
+    /// Assembly deduplicates these across fragments and emits the
+    /// import block(s) idiomatically for the target language.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub imports: Vec<String>,
+
+    /// Helper declarations the fragment needs in the surrounding
+    /// compilation unit. Each entry is a kit-specific shape with at
+    /// least a `name`, `kind` (static-field / static-init / function /
+    /// type-alias / module-private / etc.), and `source` (the helper's
+    /// declaration text). Assembly hoists these into the appropriate
+    /// scope (java: static fields in the class, static init blocks;
+    /// rust: const/lazy_static items; python: module-level).
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub helpers: Vec<Value>,
+
+    /// Build-time dependencies the fragment requires. Each entry
+    /// declares (kind, coords): kind = "maven" / "cargo" / "pip" /
+    /// "npm" / "system"; coords = the kit's package-coordinate string
+    /// ("com.fasterxml.jackson.core:jackson-databind:2.17.0",
+    /// "serde_json = 1", ...). Assembly surfaces these to the user
+    /// (or auto-populates project files in future work).
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub dependencies: Vec<Value>,
+
+    /// Realize-side diagnostics — informational, warning, or error
+    /// notes the plugin wants to attach to the fragment. Each entry
+    /// is at least {severity: info/warn/error, message: string}.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub diagnostics: Vec<Value>,
+
+    /// Requirements the compilation unit must satisfy for this
+    /// fragment to compile cleanly. Kit-specific keys:
+    /// - java: `package`, `language_version`, `top_level` (class/interface/record)
+    /// - rust: `edition`, `module_path`
+    /// - python: `version`, `module`
+    /// Assembly reconciles requirements across fragments + materializes
+    /// the appropriate compilation-unit shell.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub compile_unit_requirements: Option<Value>,
 }
 
 /// Transport boundary used by `LowerKit` to call the existing realize layer.

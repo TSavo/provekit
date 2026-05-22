@@ -258,6 +258,17 @@ struct EmittedFile {
     bodies: Vec<String>,
     /// Scope-bringings deduplicated across all libraries used in this file.
     imports: std::collections::BTreeSet<String>,
+    /// #1375 Milestone C: per-fragment objects for target-owned assembly.
+    /// Each entry is the realize-fragment JSON shape (source + imports +
+    /// helpers + dependencies + diagnostics + compile_unit_requirements +
+    /// concept_name) that the target kit's assembler consumes to produce
+    /// a compilation unit. Substrate keeps these alongside the legacy
+    /// bodies+imports so it can fall back to concatenation if the kit
+    /// doesn't implement the assemble RPC.
+    fragments: Vec<serde_json::Value>,
+    /// Target manifest used for this file's emission (kept so the
+    /// substrate knows which kit to call for assemble).
+    target_manifest: Option<String>,
 }
 
 /// Map a target language to a file extension. Substrate-honest fallback
@@ -280,6 +291,44 @@ fn target_lang_file_extension(target_lang: &str) -> &'static str {
     }
 }
 
+/// #1374: wrap fragment-declared FQN imports as the target language's
+/// import-statement syntax. Stops here on substrate-side idiom — the rest
+/// (package declaration, class wrapping, helper placement) is Milestone C
+/// (target-owned assembly). Languages without a standard import-block
+/// syntax (or unsupported) get a comment-listing of the FQNs so the
+/// information isn't lost.
+fn format_imports_for(target_lang: &str, imports: &std::collections::BTreeSet<String>) -> String {
+    if imports.is_empty() { return String::new(); }
+    let lines: Vec<String> = match target_lang {
+        "java" => imports.iter().map(|fqn| format!("import {fqn};")).collect(),
+        "python" => imports.iter().map(|fqn| {
+            // Python convention: `import pkg.mod` for module-paths,
+            // `from pkg.mod import Name` when the FQN ends in a Class.
+            // Substrate-honest minimum: if the last segment starts with
+            // an uppercase letter, emit `from ... import Name`; else
+            // emit `import ...`.
+            let mut parts: Vec<&str> = fqn.split('.').collect();
+            if let Some(last) = parts.last().copied() {
+                if last.chars().next().is_some_and(|c| c.is_ascii_uppercase()) && parts.len() > 1 {
+                    parts.pop();
+                    return format!("from {} import {}", parts.join("."), last);
+                }
+            }
+            format!("import {}", fqn)
+        }).collect(),
+        "rust" => imports.iter().map(|fqn| format!("use {fqn};")).collect(),
+        "typescript" => imports.iter().map(|fqn| {
+            // TS imports require explicit named-bindings + module specifier;
+            // a bare FQN can't unambiguously become either ESM or CJS.
+            // Surface as a TODO comment until Milestone C's target-kit
+            // assembler decides.
+            format!("// TODO(#1375 assembly): import binding for `{}`", fqn)
+        }).collect(),
+        _ => imports.iter().map(|fqn| format!("// fragment import: {}", fqn)).collect(),
+    };
+    lines.join("\n")
+}
+
 /// Discrimated outcome of a cross-language discovery realize-probe.
 ///
 /// `None`-collapsed outcomes hide WHY the probe didn't succeed: a transport
@@ -289,8 +338,12 @@ fn target_lang_file_extension(target_lang: &str) -> &'static str {
 /// and skip without counting as a refuse; Preview → RESOLVE with emitted body.
 #[derive(Debug)]
 enum DiscoveryOutcome {
-    /// Realize plugin successfully emitted a body — full RESOLVE.
-    Preview(String),
+    /// Realize plugin successfully emitted a fragment — full RESOLVE.
+    /// #1374: carries the per-fragment context (imports) so materialize
+    /// can include realizer-declared imports in the emitted compilation
+    /// unit. `source` is the fragment body; `imports` is the
+    /// fully-qualified names the fragment uses from outside its own body.
+    Preview { source: String, imports: Vec<String> },
     /// Plugin ran but returned is_stub=true; the substrate has a real gap
     /// (no morphism for some sort CID, no body template for concept, etc.).
     SemanticGap,
@@ -387,7 +440,10 @@ fn invoke_target_realize_for_discovery(
     if response.is_stub {
         return DiscoveryOutcome::SemanticGap;
     }
-    DiscoveryOutcome::Preview(response.source)
+    DiscoveryOutcome::Preview {
+        source: response.source,
+        imports: response.imports,
+    }
 }
 
 /// #1361 chunk 2 part A / #1355: cross-language DISCOVERY mode.
@@ -545,7 +601,7 @@ fn run_cross_language_discovery(
                     // gaps even when the family dispatch resolves.
                     let carrier_family = family_from_payload(&carrier.raw_payload);
                     match invoke_target_realize_for_discovery(project_root, target_lang, &matches[0], &carrier) {
-                        DiscoveryOutcome::Preview(body) => {
+                        DiscoveryOutcome::Preview { source: body, imports: fragment_imports } => {
                             resolves += 1;
                             if !json_report {
                                 eprintln!(
@@ -574,7 +630,18 @@ fn run_cross_language_discovery(
                                 let entry = emitted
                                     .entry(path.to_path_buf())
                                     .or_default();
+                                // #1375 Milestone C: record the fragment shape
+                                // so target-kit assemble can consume it.
+                                entry.fragments.push(serde_json::json!({
+                                    "concept_name": carrier.concept_name,
+                                    "source": body.clone(),
+                                    "imports": fragment_imports.clone(),
+                                }));
+                                entry.target_manifest = Some(matches[0].clone());
                                 entry.bodies.push(body);
+                                for imp in fragment_imports {
+                                    entry.imports.insert(imp);
+                                }
                                 let scope_imports = scope_bringings_for_realize(
                                     project_root,
                                     target_lang,
@@ -654,7 +721,7 @@ fn run_cross_language_discovery(
                     });
                     if let Some(pick) = picked {
                         match invoke_target_realize_for_discovery(project_root, target_lang, &pick, &carrier) {
-                            DiscoveryOutcome::Preview(body) => {
+                            DiscoveryOutcome::Preview { source: body, imports: fragment_imports } => {
                                 resolves += 1;
                                 if !json_report {
                                     eprintln!(
@@ -683,7 +750,18 @@ fn run_cross_language_discovery(
                                     let entry = emitted
                                         .entry(path.to_path_buf())
                                         .or_default();
+                                    // #1375 Milestone C: record fragment for
+                                    // target-kit assemble.
+                                    entry.fragments.push(serde_json::json!({
+                                        "concept_name": carrier.concept_name,
+                                        "source": body.clone(),
+                                        "imports": fragment_imports.clone(),
+                                    }));
+                                    entry.target_manifest = Some(pick.clone());
                                     entry.bodies.push(body);
+                                    for imp in fragment_imports {
+                                        entry.imports.insert(imp);
+                                    }
                                     let scope_imports = scope_bringings_for_realize(
                                         project_root,
                                         target_lang,
@@ -861,12 +939,67 @@ fn run_cross_language_discovery(
                     return EXIT_USER_ERROR;
                 }
             }
-            let imports_block = file
-                .imports
-                .iter()
-                .cloned()
-                .collect::<Vec<_>>()
-                .join("\n");
+            // #1375 Milestone C: route compilation-unit assembly to the
+            // target kit. The kit decides file layout, package, imports,
+            // class wrapping. Fall back to substrate-side legacy concat
+            // when the kit doesn't implement assemble (method-not-found).
+            let file_basename = rel
+                .file_stem()
+                .and_then(|s| s.to_str())
+                .unwrap_or("lib");
+            let fragments_json = serde_json::to_string(&file.fragments)
+                .unwrap_or_else(|_| "[]".to_string());
+            let mut wrote_assembled = false;
+            if let Some(manifest) = file.target_manifest.as_deref() {
+                use crate::kit_dispatch::{dispatch_assemble, AssembleError};
+                match dispatch_assemble(
+                    project_root,
+                    target_lang,
+                    Some(manifest),
+                    &fragments_json,
+                    file_basename,
+                    None,
+                ) {
+                    Ok(assembled_files) => {
+                        for af in &assembled_files {
+                            let assembled_path = out_dir_path.join(&af.path);
+                            if let Some(parent) = assembled_path.parent() {
+                                let _ = std::fs::create_dir_all(parent);
+                            }
+                            if let Err(err) = std::fs::write(&assembled_path, &af.content) {
+                                eprintln!(
+                                    "{}: failed to write {}: {err}",
+                                    "error".red().bold(),
+                                    assembled_path.display()
+                                );
+                                return EXIT_USER_ERROR;
+                            }
+                            eprintln!(
+                                "  {} wrote {} (target-owned assembly via {} kit)",
+                                "EMIT".green().bold(),
+                                assembled_path.display(),
+                                target_lang,
+                            );
+                            files_written += 1;
+                        }
+                        wrote_assembled = true;
+                    }
+                    Err(AssembleError::MethodNotSupported) => {
+                        // Legacy kit — fall through to substrate concat.
+                    }
+                    Err(AssembleError::Failed(err)) => {
+                        eprintln!(
+                            "  {}: target-kit assemble failed (falling back to legacy concat): {err}",
+                            "WARN".yellow().bold(),
+                        );
+                    }
+                }
+            }
+            if wrote_assembled {
+                continue;
+            }
+            // Legacy concat path (substrate bakes language syntax).
+            let imports_block = format_imports_for(target_lang, &file.imports);
             let bodies_block = file.bodies.join("\n\n");
             let content = if imports_block.is_empty() {
                 format!("{bodies_block}\n")

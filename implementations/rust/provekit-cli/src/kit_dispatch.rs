@@ -1646,6 +1646,29 @@ fn invoke_realize(
     }
     let observation_wrapper_emission_record =
         result.get("observation_wrapper_emission_record").cloned();
+    // #1374: extract realization-fragment context if the realize plugin
+    // emitted it. Legacy plugins omit these fields; default-empty/None.
+    let imports = result
+        .get("imports")
+        .and_then(Value::as_array)
+        .map(|arr| arr.iter().filter_map(Value::as_str).map(String::from).collect())
+        .unwrap_or_default();
+    let helpers = result
+        .get("helpers")
+        .and_then(Value::as_array)
+        .cloned()
+        .unwrap_or_default();
+    let dependencies = result
+        .get("dependencies")
+        .and_then(Value::as_array)
+        .cloned()
+        .unwrap_or_default();
+    let diagnostics = result
+        .get("diagnostics")
+        .and_then(Value::as_array)
+        .cloned()
+        .unwrap_or_default();
+    let compile_unit_requirements = result.get("compile_unit_requirements").cloned();
     Ok(RealizedSource {
         extension,
         source,
@@ -1654,7 +1677,144 @@ fn invoke_realize(
         observed_loss_record,
         used_sugars,
         observation_wrapper_emission_record,
+        imports,
+        helpers,
+        dependencies,
+        diagnostics,
+        compile_unit_requirements,
     })
+}
+
+/// #1375 Milestone C: one file in a target-owned compilation-unit emission.
+#[derive(Debug, Clone)]
+pub struct AssembledFile {
+    pub path: String,
+    pub content: String,
+}
+
+/// Substrate-honest error from dispatch_assemble. Carries a discriminator so
+/// the caller can distinguish "plugin doesn't implement assemble" (fall back
+/// to legacy concat) from "plugin errored" (surface to user).
+#[derive(Debug)]
+pub enum AssembleError {
+    /// The plugin returned -32601 (method not found). Caller should fall
+    /// back to substrate's legacy concatenation logic.
+    MethodNotSupported,
+    /// Something else broke. Caller should treat as a transport error.
+    Failed(String),
+}
+
+/// #1375 Milestone C: route compilation-unit assembly to the target kit.
+///
+/// The substrate sends the kit a batch of fragments (one per @boundary site
+/// in a source file) + a destination hint, and the kit decides file
+/// layout (package, imports, class wrapping, helper placement).
+///
+/// `fragments_json` is the raw JSON array of fragment objects (one per
+/// site); each entry should have at least `source`, `imports`, etc., per
+/// the realization-fragment shape (#1374).
+pub fn dispatch_assemble(
+    workspace_root: &Path,
+    target_lang: &str,
+    library_tag: Option<&str>,
+    fragments_json: &str,
+    file_basename: &str,
+    package_hint: Option<&str>,
+) -> Result<Vec<AssembledFile>, AssembleError> {
+    let resolved = resolve_realize_command(workspace_root, target_lang, library_tag, None, None)
+        .map_err(|e| AssembleError::Failed(e.detail))?;
+    if resolved.argv.is_empty() {
+        return Err(AssembleError::Failed("empty command".to_string()));
+    }
+    let mut command = Command::new(&resolved.argv[0]);
+    if resolved.argv.len() > 1 {
+        command.args(&resolved.argv[1..]);
+    }
+    if let Some(wd) = &resolved.working_dir {
+        command.current_dir(wd);
+    }
+    command.stdin(Stdio::piped());
+    command.stdout(Stdio::piped());
+    command.stderr(Stdio::null());
+
+    let mut child = command
+        .spawn()
+        .map_err(|e| AssembleError::Failed(format!("spawn assemble kit: {e}")))?;
+
+    let fragments_value: Value = serde_json::from_str(fragments_json)
+        .map_err(|e| AssembleError::Failed(format!("fragments_json not valid JSON: {e}")))?;
+    let mut params = serde_json::Map::new();
+    params.insert("target_lang".to_string(), Value::String(target_lang.to_string()));
+    params.insert("file_basename".to_string(), Value::String(file_basename.to_string()));
+    if let Some(pkg) = package_hint {
+        params.insert("package_hint".to_string(), Value::String(pkg.to_string()));
+    }
+    params.insert("fragments".to_string(), fragments_value);
+
+    let req = json!({
+        "jsonrpc": "2.0",
+        "id": 1,
+        "method": "provekit.plugin.assemble",
+        "params": Value::Object(params),
+    });
+
+    {
+        let stdin = child
+            .stdin
+            .as_mut()
+            .ok_or_else(|| AssembleError::Failed("assemble kit stdin unavailable".to_string()))?;
+        let req_str = serde_json::to_string(&req).expect("serialize assemble request");
+        stdin
+            .write_all(req_str.as_bytes())
+            .and_then(|()| stdin.write_all(b"\n"))
+            .map_err(|e| AssembleError::Failed(format!("write assemble request: {e}")))?;
+    }
+
+    let stdout = child
+        .stdout
+        .take()
+        .ok_or_else(|| AssembleError::Failed("assemble kit stdout unavailable".to_string()))?;
+    let mut reader = BufReader::new(stdout);
+    let mut line = String::new();
+    reader
+        .read_line(&mut line)
+        .map_err(|e| AssembleError::Failed(format!("read assemble response: {e}")))?;
+    let _ = child.kill();
+    let _ = child.wait();
+
+    let v: Value = serde_json::from_str(line.trim())
+        .map_err(|e| AssembleError::Failed(format!("assemble response not valid JSON: {e}")))?;
+    if let Some(err) = v.get("error") {
+        // -32601 is JSON-RPC's "method not found" — legacy kits without
+        // the assemble RPC return this. Caller falls back to legacy concat.
+        let code = err.get("code").and_then(Value::as_i64).unwrap_or(0);
+        if code == -32601 {
+            return Err(AssembleError::MethodNotSupported);
+        }
+        return Err(AssembleError::Failed(format!("assemble kit error: {err}")));
+    }
+    let result = v
+        .get("result")
+        .ok_or_else(|| AssembleError::Failed("assemble response missing result".to_string()))?;
+    let files_arr = result
+        .get("files")
+        .and_then(Value::as_array)
+        .ok_or_else(|| AssembleError::Failed("assemble response missing result.files".to_string()))?;
+    let mut out = Vec::with_capacity(files_arr.len());
+    for f in files_arr {
+        let path = f
+            .get("path")
+            .and_then(Value::as_str)
+            .ok_or_else(|| AssembleError::Failed("assemble file missing path".to_string()))?
+            .to_string();
+        let content = f
+            .get("content")
+            .and_then(Value::as_str)
+            .ok_or_else(|| AssembleError::Failed("assemble file missing content".to_string()))?
+            .to_string();
+        out.push(AssembledFile { path, content });
+    }
+    Ok(out)
 }
 
 // Per #1270 Tier 1.4: configure_java_runtime + java_home_from_maven removed.
