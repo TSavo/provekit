@@ -294,12 +294,98 @@ fn lower_named_terms(
 }
 
 fn parse_named_or_bind_payload(raw: &[u8]) -> Result<NamedTermDocument, String> {
+    // 1. Already-named document.
     if let Ok(named) = serde_json::from_slice::<NamedTermDocument>(raw) {
-        return Ok(named);
+        if named.kind == "named-term-document" {
+            return Ok(named);
+        }
     }
+    // 2. ir-document straight from `provekit lift`. Build named-term-doc
+    //    directly from library-sugar-binding-entry records — skip the
+    //    bind serialization round-trip that historically dropped concept
+    //    names and CIDs. Substrate-honest: the lift IR already has
+    //    everything (concept_name, param_sort_cids, return_sort_cid,
+    //    term_shape); we just shape it into NamedTermDocument.
+    if let Ok(ir_doc) = serde_json::from_slice::<Json>(raw) {
+        if ir_doc.get("kind").and_then(Json::as_str) == Some("ir-document") {
+            return named_term_document_from_ir_document(&ir_doc);
+        }
+    }
+    // 3. Bind-result Term tree (legacy / contracts).
     let payload = serde_json::from_slice::<Term>(raw)
         .map_err(|error| format!("parse named-term JSON or bind-result payload: {error}"))?;
     named_term_document_from_bind_payload(&payload).map_err(|error| error.to_string())
+}
+
+/// Build a NamedTermDocument from a lift ir-document directly, threading
+/// through concept-hub CIDs (paramSortCids/returnSortCid) so the lower
+/// side can use the catalog for signature translation. This is the
+/// substrate-honest path: ir-document IS the source of truth; bind's
+/// op-tree round-trip is a legacy shape.
+fn named_term_document_from_ir_document(ir_doc: &Json) -> Result<NamedTermDocument, String> {
+    let ir = ir_doc.get("ir").and_then(Json::as_array)
+        .ok_or_else(|| "ir-document missing `ir` array".to_string())?;
+    let mut terms = Vec::new();
+    for entry in ir {
+        let kind = entry.get("kind").and_then(Json::as_str).unwrap_or("");
+        if kind != "library-sugar-binding-entry" { continue; }
+        let concept_name = entry.get("concept_name").and_then(Json::as_str).unwrap_or("").to_string();
+        let function = entry.get("source_function_name").and_then(Json::as_str).unwrap_or("").to_string();
+        let name = concept_name.replace("concept:", "").replace('-', "_");
+        let param_names: Vec<String> = entry.get("param_names")
+            .and_then(Json::as_array)
+            .map(|a| a.iter().filter_map(|v| v.as_str().map(String::from)).collect())
+            .unwrap_or_default();
+        let param_types: Vec<String> = entry.get("param_types")
+            .and_then(Json::as_array)
+            .map(|a| a.iter().filter_map(|v| v.as_str().map(String::from)).collect())
+            .unwrap_or_default();
+        let return_type = entry.get("return_type").and_then(Json::as_str)
+            .filter(|s| !s.is_empty())
+            .unwrap_or("()").to_string();
+        let param_sort_cids: Vec<String> = entry.get("param_sort_cids")
+            .and_then(Json::as_array)
+            .map(|a| a.iter().filter_map(|v| v.as_str().map(String::from)).collect())
+            .unwrap_or_default();
+        let return_sort_cid = entry.get("return_sort_cid").and_then(Json::as_str).unwrap_or("").to_string();
+        let term_shape = entry.get("term_shape").cloned().unwrap_or(serde_json::json!({}));
+        let term_shape_cid = entry.get("term_shape_cid").and_then(Json::as_str).unwrap_or("").to_string();
+        let site_memento_cid = entry.get("signature_shape_cid").and_then(Json::as_str).unwrap_or("").to_string();
+        let file = entry.get("body_source").and_then(|bs| bs.get("file"))
+            .and_then(Json::as_str).unwrap_or("").to_string();
+
+        let term_json = serde_json::json!({
+            "conceptName": concept_name,
+            "dischargeVerdict": "fillable",
+            "file": file,
+            "function": function,
+            "fnNameSugar": entry.get("source_function_name"),
+            "name": name,
+            "paramTypes": param_types,
+            "params": param_names,
+            "returnType": return_type,
+            "paramSortCids": param_sort_cids,
+            "returnSortCid": return_sort_cid,
+            "siteMementoCid": site_memento_cid,
+            "termShape": term_shape,
+            "termShapeCid": term_shape_cid,
+            "witnesses": [],
+        });
+        let term: libprovekit::core::NamedTerm = serde_json::from_value(term_json)
+            .map_err(|e| format!("convert ir-document entry to NamedTerm: {e}"))?;
+        terms.push(term);
+    }
+    let workspace_root = ir_doc.get("workspaceRoot").and_then(Json::as_str).map(String::from);
+    Ok(NamedTermDocument {
+        candidate_cluster_manifest: Default::default(),
+        gap_records: Vec::new(),
+        kind: "named-term-document".to_string(),
+        promotion_decision_mementos: Vec::new(),
+        schema_version: "1".to_string(),
+        source_language: ir_doc.get("sourceLanguage").and_then(Json::as_str).unwrap_or("rust").to_string(),
+        terms,
+        workspace_root,
+    })
 }
 
 fn lower_named_document(

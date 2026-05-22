@@ -994,24 +994,47 @@ final class SugarRealizer {
      */
     static String mapSourceType(String src) {
         if (src == null) return "Object";
-        // Strip rust borrow prefixes — java has no equivalent operator,
-        // and the borrowed type's java mapping is the same as the owned
-        // type in nearly all cases (`&str` is handled specially below;
-        // `&Value` becomes `Value`, `&[u8]` becomes `byte[]`, etc.).
+        // Strip rust borrow prefixes.
         String t = src.trim();
         if (t.startsWith("&mut ")) t = t.substring(5).trim();
         else if (t.startsWith("&mut")) t = t.substring(4).trim();
         if (t.startsWith("&")) t = t.substring(1).trim();
-        // Slice-of-T: rust `[T]` → java array `T[]`. Bytes are common
-        // enough to fast-path.
+        // Slice-of-T: rust `[T]` → java array `T[]`.
         if ("[u8]".equals(t)) return "byte[]";
         if (t.startsWith("[") && t.endsWith("]")) {
             String inner = t.substring(1, t.length() - 1).split(";")[0].trim();
             return mapSourceType(inner) + "[]";
         }
+        // Unit type comes before tuple check.
+        if ("()".equals(t)) return "void";
+        // Rust tuple return `(A,B)` → java has no tuple; use Object[] as
+        // a uniform carrier. Caller-side composes/destructures.
+        if (t.startsWith("(") && t.endsWith(")")) {
+            return "Object[]";
+        }
+        // Result<T,E>: rust's fallible return. Java equivalent is T +
+        // exception for E. Emit just the success arm; bind sites that
+        // propagate errors should throw RuntimeException.
+        if (t.startsWith("Result<") && t.endsWith(">")) {
+            String inner = t.substring(7, t.length() - 1).trim();
+            int comma = findTopLevelComma(inner);
+            String okType = comma > 0 ? inner.substring(0, comma).trim() : inner;
+            return mapSourceType(okType);
+        }
+        // Option<T> → T (java null encodes None).
+        if (t.startsWith("Option<") && t.endsWith(">")) {
+            return mapSourceType(t.substring(7, t.length() - 1).trim());
+        }
+        // Vec<T> → java.util.List<T> (boxed for primitives).
+        if (t.startsWith("Vec<") && t.endsWith(">")) {
+            String inner = mapSourceType(t.substring(4, t.length() - 1).trim());
+            return "java.util.List<" + boxedType(inner) + ">";
+        }
+        // Generic single-letter type param (A, T, K, V): erase to Object.
+        if (t.matches("[A-Z]")) return "Object";
         return switch (t) {
             case "()" -> "void";
-            case "i64", "u64" -> "long";
+            case "i64", "u64", "usize", "isize" -> "long";
             case "i32", "u32" -> "int";
             case "i16", "u16" -> "short";
             case "i8", "u8" -> "byte";
@@ -1020,7 +1043,38 @@ final class SugarRealizer {
             case "bool" -> "boolean";
             case "String", "str" -> "String";
             case "Value" -> "com.fasterxml.jackson.databind.JsonNode";
+            case "Path", "PathBuf" -> "java.nio.file.Path";
             default -> t;
+        };
+    }
+
+    /** Find top-level comma (not inside <> () [] {}). */
+    private static int findTopLevelComma(String s) {
+        int depth = 0;
+        for (int i = 0; i < s.length(); i++) {
+            char c = s.charAt(i);
+            switch (c) {
+                case '<', '(', '[', '{' -> depth++;
+                case '>', ')', ']', '}' -> depth--;
+                case ',' -> { if (depth == 0) return i; }
+                default -> {}
+            }
+        }
+        return -1;
+    }
+
+    /** Box a java primitive type for generic use. */
+    private static String boxedType(String prim) {
+        return switch (prim) {
+            case "boolean" -> "Boolean";
+            case "byte" -> "Byte";
+            case "short" -> "Short";
+            case "int" -> "Integer";
+            case "long" -> "Long";
+            case "float" -> "Float";
+            case "double" -> "Double";
+            case "char" -> "Character";
+            default -> prim;
         };
     }
 
@@ -1262,7 +1316,15 @@ final class SugarRealizer {
                 }
                 Optional<ShapeExpression> expression = lowerShapeExpression(child, context, appendPosition(position, i));
                 if (expression.isEmpty() || expression.get().text().isBlank()) {
-                    return Optional.empty();
+                    // Partial lowering: emit a TODO comment for the unhandled
+                    // child instead of aborting the entire body. This lets
+                    // simpler statements in the seq translate cleanly even
+                    // when later statements have constructs the lower
+                    // vocabulary can't yet handle. Substrate-honest: surface
+                    // the gap inline; don't paper over with a stub return.
+                    String childConcept = shapeConceptName(child);
+                    lines.add("// TODO(lower): un-lowered " + (childConcept.isBlank() ? "leaf" : childConcept));
+                    continue;
                 }
                 String text = expression.get().text();
                 // Expression in statement position. If it's a function call
@@ -1273,7 +1335,16 @@ final class SugarRealizer {
                 // emit as bare statement; assign-to-artifact only if the
                 // expression has no parens (rare in practice).
                 if (text.endsWith(")") || text.endsWith("]") || text.endsWith("\"")) {
-                    String stmt = text.endsWith(";") ? text : text + ";";
+                    // Strip ONE matched outer paren pair if present — java
+                    // doesn't accept `(expr);` as a statement even when
+                    // expr is a method invocation. The inner form qualifies
+                    // as ExpressionStatement per JLS §14.8.
+                    String inner = text;
+                    while (inner.startsWith("(") && inner.endsWith(")") &&
+                           matchingOuterParens(inner)) {
+                        inner = inner.substring(1, inner.length() - 1).trim();
+                    }
+                    String stmt = inner.endsWith(";") ? inner : inner + ";";
                     lines.add(stmt);
                 } else {
                     String temp = context.tempName();
@@ -1289,7 +1360,11 @@ final class SugarRealizer {
             }
             return Optional.of(String.join("\n", lines));
         }
-        if (conceptMatches("concept:assign", conceptName) && args.size() == 2) {
+        // concept:assign comes in two shapes: 2-arg (target, value) for
+        // standard let, 3-arg (target, value, mutability_leaf) for `let mut`.
+        // The third arg is just a marker — semantically equivalent for java
+        // (where all locals are mutable). Accept both.
+        if (conceptMatches("concept:assign", conceptName) && args.size() >= 2 && args.size() <= 3) {
             Optional<ShapeExpression> target = lowerShapeExpression(args.get(0), context, appendPosition(position, 0));
             Optional<ShapeExpression> value = lowerShapeExpression(args.get(1), context, appendPosition(position, 1));
             if (target.isEmpty() || value.isEmpty() || !isIdentifier(target.get().text())) {
@@ -1299,13 +1374,15 @@ final class SugarRealizer {
             boolean alreadyDefined = context.definedSymbols.contains(name);
             context.definedSymbols.add(name);
             context.lastAssignedSymbol = name;
-            // Use the VALUE's inferred type for the declaration, not the
-            // enclosing function's return type. `let x = call()` declares x
-            // as the call's return type. (Falls back to context.returnType
-            // when value type is unknown/Object.)
+            // Use the VALUE's inferred type for the declaration. If
+            // unknown, prefer `var` (java 10+ infers from RHS) over
+            // falling back to the enclosing function's return type —
+            // that fallback was producing wrong-type declarations like
+            // `String raw = blake3_512_of(bytes);` where blake3_512_of
+            // returns byte[].
             String declType = value.get().typeName();
-            if (declType == null || declType.isBlank() || "Object".equals(declType)) {
-                declType = context.returnType;
+            if (declType == null || declType.isBlank()) {
+                declType = "";  // localDeclaration emits `var` for blank.
             }
             return Optional.of(localDeclaration(declType, name, value.get().text(), alreadyDefined));
         }
@@ -1323,9 +1400,10 @@ final class SugarRealizer {
             if (condition.isEmpty() || thenBody.isEmpty() || elseBody.isEmpty()) {
                 return Optional.empty();
             }
-            // Java requires parens around the condition.
-            String condText = condition.get().text();
-            if (!condText.startsWith("(")) condText = "(" + condText + ")";
+            // Java requires parens around the WHOLE condition. Always
+            // wrap with outer parens — operators like (a)!=(b) start with
+            // `(` but aren't a single parenthesized expression.
+            String condText = "(" + condition.get().text() + ")";
             return Optional.of("if " + condText + " {\n"
                     + indentBlock(thenBody.get()) + "\n"
                     + "} else {\n"
@@ -1360,6 +1438,10 @@ final class SugarRealizer {
                 if (v.isEmpty()) return Optional.empty();
                 varName = v.get().text();
             }
+            // Strip rust ref-pattern prefix from loop var: `& b` → `b`,
+            // `mut b` → `b`, `& mut b` → `b`. The iterable's deref is also
+            // implicit in java collections.
+            varName = varName.replaceAll("^\\s*(&\\s*mut\\s+|&\\s*|mut\\s+)", "").trim();
             Optional<ShapeExpression> iter = lowerShapeExpression(args.get(1), context, appendPosition(position, 1));
             if (iter.isEmpty()) return Optional.empty();
             context.definedSymbols.add(varName);
@@ -1442,6 +1524,8 @@ final class SugarRealizer {
             // Build a chain: cond1 ? body1 : (cond2 ? body2 : default).
             StringBuilder chain = new StringBuilder();
             int armCount = 0;
+            int openParens = 0;
+            boolean defaultEmitted = false;
             for (int i = 1; i < args.size(); i++) {
                 Jcs.Obj arm = args.get(i);
                 if (!conceptMatches("concept:match-arm", shapeConceptName(arm))) continue;
@@ -1474,17 +1558,34 @@ final class SugarRealizer {
                     // ternary else branch.
                     chain.append(" : ").append(bodyText);
                     armCount++;
+                    defaultEmitted = true;
                     break;
                 } else {
-                    if (armCount > 0) chain.append(" : (");
+                    if (armCount > 0) {
+                        chain.append(" : (");
+                        openParens++;
+                    }
                     chain.append(cond).append(" ? ").append(bodyText);
                     armCount++;
                 }
             }
-            // Close parens for each non-default arm after the first.
-            // Add a default if none was emitted.
+            // If no default arm, fall through to a synthetic null/zero.
             if (armCount == 0) return Optional.empty();
-            // Wrap with scrutinee declaration via lambda for expression form.
+            // Was there a wildcard? If chain doesn't end with a default,
+            // append `: null` so the ternary is well-formed.
+            // Heuristic: last arm wasn't a "true" cond means we need a fallback.
+            // Look at the last char of chain; if it ends with bodyText (not closed
+            // with " : default"), append a default.
+            // Simpler: always append " : null" for the innermost level and one
+            // closing paren PER non-default arm after the first.
+            // If no default arm fired, append `: null` so the ternary is
+            // well-formed. (Rust match must be exhaustive; if no wildcard
+            // appeared, the source has covered all variants, but java needs
+            // an explicit else for the ternary.)
+            if (!defaultEmitted) {
+                chain.append(" : null");
+            }
+            for (int k = 0; k < openParens; k++) chain.append(")");
             String wrapped = "(((java.util.function.Supplier<Object>) () -> { var " + scrutVar + " = " + scrutText + "; return " + chain + "; }).get())";
             return Optional.of(new ShapeExpression(wrapped, mapSourceType(context.returnType)));
         }
@@ -1610,8 +1711,22 @@ final class SugarRealizer {
             String calleeJava = callee.replace("::", ".");
             if (calleeJava.endsWith(".new")) {
                 // String::new() → new String(), Vec::with_capacity(n) → new ArrayList<>(n)
-                // For the common case, emit `new Type()`.
                 String typeName = calleeJava.substring(0, calleeJava.length() - 4);
+                String joined = argTerms.stream().skip(1).map(ShapeExpression::text).collect(Collectors.joining(", "));
+                return Optional.of(new ShapeExpression("new " + typeName + "(" + joined + ")", typeName));
+            }
+            // `String::with_capacity(n)` is rust idiom. Java has no direct
+            // equivalent — Strings are immutable; the rust code uses
+            // String here to build via push_str/push, which is really a
+            // StringBuilder pattern in java. Emit `new StringBuilder(n)`.
+            if ("String.with_capacity".equals(calleeJava)) {
+                String joined = argTerms.stream().skip(1).map(ShapeExpression::text).collect(Collectors.joining(", "));
+                return Optional.of(new ShapeExpression("new StringBuilder(" + joined + ")", "StringBuilder"));
+            }
+            if (calleeJava.endsWith(".with_capacity")) {
+                // Vec::with_capacity(n) → new ArrayList<>(n), generic.
+                String typeName = calleeJava.substring(0, calleeJava.length() - ".with_capacity".length());
+                if ("Vec".equals(typeName)) typeName = "java.util.ArrayList<>";
                 String joined = argTerms.stream().skip(1).map(ShapeExpression::text).collect(Collectors.joining(", "));
                 return Optional.of(new ShapeExpression("new " + typeName + "(" + joined + ")", typeName));
             }
@@ -1648,21 +1763,29 @@ final class SugarRealizer {
                 if (t.isEmpty()) return Optional.empty();
                 typeName = t.get().text();
             }
+            // Array indexing in java requires int. `as usize` is rust's
+            // platform-width unsigned; for typical use (indices, sizes),
+            // mapping to int is correct in java (idx must be int).
+            // `as char` on a byte/int returns char; java cast (char) works.
+            String javaType = switch (typeName.trim()) {
+                case "usize", "isize" -> "int";  // array indices want int
+                case "char" -> "char";
+                default -> mapSourceType(typeName);
+            };
             String value = argTerms.get(0).text();
             return Optional.of(new ShapeExpression(
-                    "(" + mapSourceType(typeName) + ") (" + value + ")",
-                    mapSourceType(typeName)));
+                    "(" + javaType + ") (" + value + ")",
+                    javaType));
         }
         if (conceptMatches("concept:closure", conceptName) && !argTerms.isEmpty()) {
-            // Best-effort: emit a java lambda. Rust closures get lifted as
-            // concept:closure(param_leaf*, body). Java's lambda syntax is
-            // (a, b) -> body. Skip captured-state semantics; this only
-            // works for pure-function closures.
-            int bodyIdx = argTerms.size() - 1;
-            String params = argTerms.subList(0, bodyIdx).stream()
+            // Rust walk_rpc emits concept:closure with args=[body, param1,
+            // param2, ...]. Java lambda syntax is (a, b) -> body. Capture
+            // semantics are simplified to lexical capture (java closes over
+            // effectively-final locals).
+            String body = argTerms.get(0).text();
+            String params = argTerms.subList(1, argTerms.size()).stream()
                     .map(ShapeExpression::text)
                     .collect(Collectors.joining(", "));
-            String body = argTerms.get(bodyIdx).text();
             return Optional.of(new ShapeExpression(
                     "(" + params + ") -> " + body,
                     mapSourceType(context.returnType)));
@@ -1737,6 +1860,11 @@ final class SugarRealizer {
                 case "ge" -> "(" + left + ") >= (" + right + ")";
                 case "and" -> "(" + left + ") && (" + right + ")";
                 case "or" -> "(" + left + ") || (" + right + ")";
+                case "bitand" -> "(" + left + ") & (" + right + ")";
+                case "bitor" -> "(" + left + ") | (" + right + ")";
+                case "bitxor" -> "(" + left + ") ^ (" + right + ")";
+                case "shl" -> "(" + left + ") << (" + right + ")";
+                case "shr" -> "(" + left + ") >> (" + right + ")";
                 default -> null;
             };
         }
@@ -1762,8 +1890,12 @@ final class SugarRealizer {
         String op = conceptName.startsWith("concept:") ? conceptName.substring("concept:".length()) : conceptName;
         return switch (op) {
             case "eq", "ne", "lt", "le", "gt", "ge", "and", "or", "not" -> "boolean";
-            case "call" -> mapSourceType(fallbackReturnType);
-            default -> args.isEmpty() ? mapSourceType(fallbackReturnType) : args.get(0).typeName();
+            // Call return type is genuinely unknown without a type DB.
+            // Returning blank lets the caller use `var` (java type
+            // inference) instead of guessing the enclosing function's
+            // return type.
+            case "call" -> "";
+            default -> args.isEmpty() ? "" : args.get(0).typeName();
         };
     }
 
@@ -1826,8 +1958,17 @@ final class SugarRealizer {
                             "long".equals(paramType) || "int".equals(paramType) ||
                             "double".equals(paramType) || "float".equals(paramType) ||
                             "boolean".equals(paramType) || "String".equals(paramType));
-                    String op = isPrim ? "$OBJ$.put(" : "$OBJ$.set(";
-                    sb.append(op).append(quote(key)).append(", ").append(valueText).append("); ");
+                    if (isPrim) {
+                        sb.append("$OBJ$.put(").append(quote(key)).append(", ").append(valueText).append("); ");
+                    } else if ("com.fasterxml.jackson.databind.JsonNode".equals(paramType)) {
+                        sb.append("$OBJ$.set(").append(quote(key)).append(", ").append(valueText).append("); ");
+                    } else {
+                        // Unknown type (method-call result, undeclared identifier).
+                        // Wrap via MAPPER.valueToTree which handles String/long/
+                        // double/boolean/JsonNode uniformly.
+                        sb.append("$OBJ$.set(").append(quote(key)).append(", MAPPER.valueToTree(")
+                          .append(valueText).append(")); ");
+                    }
                 }
             }
             sb.append("return ").append(objName).append("; }).get()");
@@ -1954,6 +2095,29 @@ final class SugarRealizer {
         }
         sb.append('"');
         return sb.toString();
+    }
+
+    /** True iff the outer `(` matches the outer `)` (i.e. no unbalanced
+     *  closing inside that would split the expression). */
+    private static boolean matchingOuterParens(String s) {
+        if (s.length() < 2 || s.charAt(0) != '(' || s.charAt(s.length() - 1) != ')') return false;
+        int depth = 0;
+        boolean inString = false;
+        for (int i = 0; i < s.length(); i++) {
+            char c = s.charAt(i);
+            if (inString) {
+                if (c == '\\' && i + 1 < s.length()) { i++; continue; }
+                if (c == '"') inString = false;
+                continue;
+            }
+            if (c == '"') { inString = true; continue; }
+            if (c == '(') depth++;
+            else if (c == ')') {
+                depth--;
+                if (depth == 0 && i < s.length() - 1) return false;
+            }
+        }
+        return depth == 0;
     }
 
     /** Map common rust method names to java equivalents. Falls through to identity. */

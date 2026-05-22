@@ -155,6 +155,15 @@ pub struct BindLiftEntry {
     pub param_types: Vec<String>,
     #[serde(default)]
     pub return_type: String,
+    /// Concept-hub CIDs lifted from the source's type expressions via the
+    /// kit's source-alias catalog (#1370). These are the substrate-honest
+    /// cross-language type pins. Bind propagates them into NamedTerm so
+    /// lower's realize plugin can translate signatures via the target
+    /// kit's catalog instead of rust-string matching.
+    #[serde(default)]
+    pub param_sort_cids: Vec<String>,
+    #[serde(default)]
+    pub return_sort_cid: String,
     #[serde(default)]
     pub operand_bindings: Vec<Json>,
     #[serde(
@@ -270,6 +279,22 @@ pub struct NamedTerm {
     pub params: Vec<String>,
     #[serde(rename = "returnType")]
     pub return_type: String,
+    /// Substrate-honest cross-language type pins. When present, the lower
+    /// path uses concept-hub CIDs to translate signatures via the target
+    /// kit's catalog (same as cross-language materialize). When absent,
+    /// falls back to raw rust type strings (legacy behavior).
+    #[serde(
+        default,
+        rename = "paramSortCids",
+        skip_serializing_if = "Vec::is_empty"
+    )]
+    pub param_sort_cids: Vec<String>,
+    #[serde(
+        default,
+        rename = "returnSortCid",
+        skip_serializing_if = "String::is_empty"
+    )]
+    pub return_sort_cid: String,
     #[serde(rename = "siteMementoCid")]
     pub site_memento_cid: String,
     #[serde(rename = "termShape")]
@@ -367,6 +392,11 @@ pub fn bind_term_document(
             } else {
                 entry.return_type
             },
+            // #1374-derived: thread concept-hub CIDs through bind so lower
+            // can use the substrate's catalog for signature translation
+            // (same path cross-lang materialize already uses).
+            param_sort_cids: entry.param_sort_cids,
+            return_sort_cid: entry.return_sort_cid,
             site_memento_cid,
             term_shape: entry.term_shape,
             term_shape_cid,
@@ -573,11 +603,31 @@ fn bind_lift_entries(term_json: &Json) -> Result<Vec<BindLiftEntry>, BindError> 
         .ok_or_else(|| BindError::Failed("ProofIR document missing `ir` array".to_string()))?;
     let mut out = Vec::new();
     for item in ir {
-        if item.get("kind").and_then(Json::as_str) != Some("bind-lift-entry") {
+        let kind = item.get("kind").and_then(Json::as_str).unwrap_or("");
+        // Accept BOTH `bind-lift-entry` (contracts) and
+        // `library-sugar-binding-entry` (@sugar functions). The latter
+        // was historically skipped, which meant @sugar functions never
+        // got lifted into named terms — bind dropped them silently.
+        // Now both kinds flow through; BindLiftEntry's #[serde(default)]
+        // on fields lets the deserializer succeed for either shape.
+        if kind != "bind-lift-entry" && kind != "library-sugar-binding-entry" {
             continue;
         }
-        let entry = serde_json::from_value::<BindLiftEntry>(item.clone())
-            .map_err(|e| BindError::Failed(format!("parse bind-lift-entry: {e}")))?;
+        // For library-sugar-binding-entry the function name field is
+        // `source_function_name`. Patch a synthetic `fn_name` so the
+        // common deserialization path works.
+        let mut patched = item.clone();
+        if kind == "library-sugar-binding-entry" {
+            if let Some(obj) = patched.as_object_mut() {
+                if !obj.contains_key("fn_name") {
+                    if let Some(sfn) = obj.get("source_function_name").cloned() {
+                        obj.insert("fn_name".to_string(), sfn);
+                    }
+                }
+            }
+        }
+        let entry = serde_json::from_value::<BindLiftEntry>(patched)
+            .map_err(|e| BindError::Failed(format!("parse {kind}: {e}")))?;
         out.push(entry);
     }
     Ok(out)
