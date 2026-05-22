@@ -1626,6 +1626,15 @@ pub fn dispatch(request: &Value) -> Value {
                 .filter(|name| !name.is_empty())
                 .unwrap_or(function);
             let mode = params.get("mode").and_then(Value::as_str);
+            // Visibility for this function. Set the thread-local so
+            // function_source emits `pub fn` / `pub(crate) fn` / `fn`
+            // matching the lifted source.
+            let visibility = params
+                .get("visibility")
+                .and_then(Value::as_str)
+                .unwrap_or("")
+                .to_string();
+            CURRENT_VISIBILITY.with(|v| *v.borrow_mut() = visibility);
             let param_names = string_array(params.get("params"));
             let mut param_types = string_array(params.get("param_types"));
             // #1369: cross-language parametric dispatch. When param_sort_cids
@@ -2026,6 +2035,16 @@ fn render_template(
     }
 }
 
+thread_local! {
+    /// Visibility for the function currently being realized. Set at the
+    /// dispatch site from the spec's `visibility` field, read in
+    /// function_source. Empty string = private; "pub" = public.
+    /// Threading visibility through every wrapper would touch ~20 call
+    /// sites; thread-local keeps the surface minimal.
+    pub(crate) static CURRENT_VISIBILITY: std::cell::RefCell<String> =
+        std::cell::RefCell::new(String::new());
+}
+
 fn function_source(
     function: &str,
     params: &[String],
@@ -2070,7 +2089,11 @@ fn function_source(
             .collect::<Vec<_>>()
             .join("\n")
     };
-    format!("pub fn {function}({typed_params}){return_suffix} {{\n{indented}\n}}\n")
+    let vis_prefix = CURRENT_VISIBILITY.with(|v| {
+        let s = v.borrow();
+        if s.is_empty() { String::new() } else { format!("{} ", s.as_str()) }
+    });
+    format!("{vis_prefix}fn {function}({typed_params}){return_suffix} {{\n{indented}\n}}\n")
 }
 
 fn stub_body_for(concept_name: &str) -> String {

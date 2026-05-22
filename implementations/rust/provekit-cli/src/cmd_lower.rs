@@ -373,6 +373,7 @@ fn named_term_document_from_ir_document(ir_doc: &Json) -> Result<NamedTermDocume
         let return_type = entry.get("return_type").and_then(Json::as_str)
             .filter(|s| !s.is_empty())
             .unwrap_or("()").to_string();
+        let visibility = entry.get("visibility").and_then(Json::as_str).unwrap_or("").to_string();
         let param_sort_cids: Vec<String> = entry.get("param_sort_cids")
             .and_then(Json::as_array)
             .map(|a| a.iter().filter_map(|v| v.as_str().map(String::from)).collect())
@@ -394,6 +395,7 @@ fn named_term_document_from_ir_document(ir_doc: &Json) -> Result<NamedTermDocume
             "paramTypes": param_types,
             "params": param_names,
             "returnType": return_type,
+            "visibility": visibility,
             "paramSortCids": param_sort_cids,
             "returnSortCid": return_sort_cid,
             "siteMementoCid": site_memento_cid,

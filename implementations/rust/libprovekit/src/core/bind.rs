@@ -155,6 +155,11 @@ pub struct BindLiftEntry {
     pub param_types: Vec<String>,
     #[serde(default)]
     pub return_type: String,
+    /// Source-language visibility ("pub", "pub(crate)", or empty for
+    /// private). Propagated from lift into NamedTerm so the realize
+    /// plugin reproduces it on emit.
+    #[serde(default)]
+    pub visibility: String,
     /// Concept-hub CIDs lifted from the source's type expressions via the
     /// kit's source-alias catalog (#1370). These are the substrate-honest
     /// cross-language type pins. Bind propagates them into NamedTerm so
@@ -279,6 +284,11 @@ pub struct NamedTerm {
     pub params: Vec<String>,
     #[serde(rename = "returnType")]
     pub return_type: String,
+    /// Source-language visibility ("pub", "pub(crate)", or empty for
+    /// private). Threaded through to RealizeRequest so realize plugins
+    /// reproduce the original visibility on emit.
+    #[serde(default, skip_serializing_if = "String::is_empty")]
+    pub visibility: String,
     /// Substrate-honest cross-language type pins. When present, the lower
     /// path uses concept-hub CIDs to translate signatures via the target
     /// kit's catalog (same as cross-language materialize). When absent,
@@ -392,6 +402,7 @@ pub fn bind_term_document(
             } else {
                 entry.return_type
             },
+            visibility: entry.visibility,
             // #1374-derived: thread concept-hub CIDs through bind so lower
             // can use the substrate's catalog for signature translation
             // (same path cross-lang materialize already uses).

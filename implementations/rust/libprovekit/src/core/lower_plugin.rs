@@ -40,6 +40,11 @@ pub struct RealizeRequest {
     pub proc_macro_invocations: Vec<Value>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub source_function_name: Option<String>,
+    /// Source-language visibility for the function (e.g. "pub",
+    /// "pub(crate)", or empty for private/inherited). The realize plugin
+    /// uses this to reproduce the source's visibility on emit.
+    #[serde(default, skip_serializing_if = "String::is_empty")]
+    pub visibility: String,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub mode: Option<String>,
     #[serde(skip_serializing_if = "Vec::is_empty")]
@@ -774,6 +779,7 @@ fn invocation_from_tree_node(
         operand_bindings,
         source_function_name: node_string(node, &["sourceFunctionName", "source_function_name"])
             .or_else(|| parent_request.source_function_name.clone()),
+        visibility: node_string(node, &["visibility"]).unwrap_or_default(),
         mode,
         modes,
         contract: parent_request.contract.clone(),
@@ -1020,6 +1026,7 @@ pub fn realize_spec_from_named_term(term: &NamedTerm) -> Result<Value, String> {
         "params": term.params,
         "paramTypes": param_types,
         "returnType": return_type,
+        "visibility": term.visibility,
         "conceptName": term.concept_name,
         "namedTermTree": named_term_tree,
         "termShape": term.term_shape,
@@ -1163,6 +1170,7 @@ pub fn request_from_spec(spec: &Value) -> Result<RealizeRequest, String> {
             spec,
             &["sourceFunctionName", "source_function_name"],
         ),
+        visibility: string_field_optional(spec, &["visibility"]).unwrap_or_default(),
         mode: string_field_optional(spec, &["mode"]),
         modes: string_array_field(spec, &["modes"]).unwrap_or_default(),
         contract,

@@ -489,6 +489,11 @@ fn bind_lift(params: &Value) -> Result<Value, String> {
                 "target_library_tag": library,
                 "concept_name": concept,
                 "source_function_name": item_fn.sig.ident.to_string(),
+                "visibility": match &item_fn.vis {
+                    syn::Visibility::Public(_) => "pub",
+                    syn::Visibility::Restricted(_) => "pub(crate)",
+                    syn::Visibility::Inherited => "",
+                },
                 "param_names": param_names,
                 "param_types": param_types,
                 "param_sort_cids": param_sort_cids,
@@ -2940,7 +2945,16 @@ fn shape_of_expr(expr: &syn::Expr, ctx: &ShapeContext) -> Arc<CValue> {
             use quote::ToTokens;
             let mut args = vec![shape_of_expr(&e.expr, ctx)];
             for arm in &e.arms {
-                let pattern_text = arm.pat.to_token_stream().to_string();
+                let mut pattern_text = arm.pat.to_token_stream().to_string();
+                // Carry the guard inline in the pattern text so the
+                // realize side reconstructs `Pattern if Cond => Body`.
+                // Storing it in the pattern leaf keeps the substrate
+                // shape stable (no new concept-arity yet); future work
+                // can split guard into its own structural slot.
+                if let Some((_, guard)) = &arm.guard {
+                    pattern_text.push_str(" if ");
+                    pattern_text.push_str(&guard.to_token_stream().to_string());
+                }
                 let pattern_leaf = CValue::object([
                     ("kind", CValue::string("symbol")),
                     ("text", CValue::string(pattern_text)),
