@@ -1238,6 +1238,20 @@ final class SugarRealizer {
         final String returnType;
         final Map<List<Integer>, String> operandBindings;
         final Set<String> definedSymbols = new TreeSet<>();
+        /** Substrate-honest loss accumulator. Each silent approximation
+         *  in the term-shape lowering APPENDS an entry here keyed by
+         *  dimension name (e.g. "option-clone-erased"). emitStubInner
+         *  merges into the realize plugin's observed_loss_record output.
+         *  Empty = exact translation; non-empty = loudly-bounded-lossy. */
+        final List<Jcs.Json> bodyApproximations = new ArrayList<>();
+
+        void recordApproximation(String dimension, String detail) {
+            bodyApproximations.add(Jcs.object(
+                "kind", Jcs.string("approximation"),
+                "dimension", Jcs.string(dimension),
+                "detail", Jcs.string(detail)
+            ));
+        }
         /** Function-name → java return type. Built once from the
          *  named-term-doc; passed into each term's lowering so call
          *  expressions can pick up real return types instead of falling
@@ -1323,7 +1337,47 @@ final class SugarRealizer {
             }
             body = Optional.of("return " + expression.get().text() + ";");
         }
-        return Optional.of(new RenderedBody(body.get(), Jcs.object()));
+        // Aggregate the per-construct approximation entries accumulated
+        // during term-shape lowering into the body's loss_record.
+        // Substrate-honest: every silent lossy translation appended an
+        // entry; this surface them to the realize plugin's caller via
+        // observed_loss_record so the trichotomy
+        // (exact/loudly-bounded-lossy/refuse) is observable.
+        Jcs.Json lossRecord = buildApproximationLossRecord(context.bodyApproximations);
+        return Optional.of(new RenderedBody(body.get(), lossRecord));
+    }
+
+    /** Aggregate context approximations into a loss-record keyed by
+     *  dimension. Multiple approximations in the same dimension combine
+     *  via an "or" formula (each is an independent occurrence). */
+    private static Jcs.Json buildApproximationLossRecord(List<Jcs.Json> approximations) {
+        if (approximations.isEmpty()) return Jcs.object();
+        Map<String, List<Jcs.Json>> byDimension = new TreeMap<>();
+        for (Jcs.Json entry : approximations) {
+            if (!(entry instanceof Jcs.Obj obj)) continue;
+            String dim = null;
+            for (Jcs.Field f : obj.fields()) {
+                if ("dimension".equals(f.key()) && f.value() instanceof Jcs.Str s) {
+                    dim = s.value();
+                }
+            }
+            if (dim == null) continue;
+            byDimension.computeIfAbsent(dim, k -> new ArrayList<>()).add(entry);
+        }
+        List<Jcs.Field> outFields = new ArrayList<>();
+        for (Map.Entry<String, List<Jcs.Json>> e : byDimension.entrySet()) {
+            List<Jcs.Json> entries = e.getValue();
+            if (entries.size() == 1) {
+                outFields.add(new Jcs.Field(e.getKey(), entries.get(0)));
+            } else {
+                List<Jcs.Json> operands = new ArrayList<>(entries);
+                outFields.add(new Jcs.Field(e.getKey(), Jcs.object(
+                    "kind", Jcs.string("or"),
+                    "operands", new Jcs.Arr(operands)
+                )));
+            }
+        }
+        return new Jcs.Obj(outFields);
     }
 
     private static Optional<String> lowerShapeBody(
@@ -1821,12 +1875,19 @@ final class SugarRealizer {
             // with " : default"), append a default.
             // Simpler: always append " : null" for the innermost level and one
             // closing paren PER non-default arm after the first.
-            // If no default arm fired, append `: null` so the ternary is
-            // well-formed. (Rust match must be exhaustive; if no wildcard
-            // appeared, the source has covered all variants, but java needs
-            // an explicit else for the ternary.)
+            // Rust match is exhaustive; java's ternary needs an else.
+            // Substrate-honest: if rust source had no wildcard, the
+            // fallback path is unreachable per rust semantics — emit
+            // a panic at runtime + loss_record entry rather than
+            // silently fabricate `: null` (which the source did not
+            // authorize as a return value).
             if (!defaultEmitted) {
-                chain.append(" : null");
+                context.recordApproximation(
+                    "match-expression-synthesized-default",
+                    "Rust match expression had no wildcard; java ternary requires else. "
+                        + "Emitted a panic for the unreachable branch.");
+                chain.append(" : (").append(boxedType(mapSourceType(context.returnType).equals("void") ? "Object" : mapSourceType(context.returnType)))
+                     .append(") (Object) ((java.util.function.Supplier<Object>)() -> { throw new RuntimeException(\"exhaustive match: no arm matched\"); }).get()");
             }
             for (int k = 0; k < openParens; k++) chain.append(")");
             String supplierType = boxedType(mapSourceType(context.returnType).equals("void") ? "Object" : mapSourceType(context.returnType));
@@ -1879,9 +1940,17 @@ final class SugarRealizer {
                             "byte[]"));
                 }
                 // .into() / .clone() / .cloned() on a value: no-op for
-                // most java types. Drop the call (identity).
+                // most java types. Drop the call (identity). Record as
+                // approximation — rust .cloned() on Option<&T> would
+                // clone the inner; we're trusting java reference-sharing
+                // semantics make this safe, which is unverified for
+                // arbitrary T.
                 if ("into".equals(methodName) || "clone".equals(methodName)
                         || "cloned".equals(methodName)) {
+                    context.recordApproximation(
+                        "option-clone-erased",
+                        "Rust ." + methodName + "() lowered as identity on '"
+                            + receiver.get().text() + "'; relies on java reference-sharing");
                     return Optional.of(new ShapeExpression(receiver.get().text(), receiver.get().typeName()));
                 }
                 // .iter() on a JsonNode (rust Vec<Value>.iter()) →
@@ -1925,6 +1994,10 @@ final class SugarRealizer {
                 // a String via String.valueOf). Caller can wrap in
                 // Objects.requireNonNull at the binding level if needed.
                 if ("ok_or_else".equals(methodName) && callArgs.size() == 1) {
+                    context.recordApproximation(
+                        "result-flattened-to-throw",
+                        "Rust .ok_or_else(closure) lowered as throw-on-null. "
+                            + "Callers expecting Result<T,E> cannot recover the error path.");
                     String fn = callArgs.get(0);
                     String fnInvoked;
                     if (fn.contains("->")) {
@@ -2127,6 +2200,10 @@ final class SugarRealizer {
             }
             if ("Err".equals(callee)) {
                 String inner = argTerms.size() > 1 ? argTerms.get(1).text() : "\"err\"";
+                context.recordApproximation(
+                    "result-err-as-throw",
+                    "Rust Err(" + inner + ") lowered as throw RuntimeException. "
+                        + "Variant identity and structured error payload are lost.");
                 return Optional.of(new ShapeExpression(
                         "throw new RuntimeException(String.valueOf(" + inner + "))",
                         ""));
@@ -2158,6 +2235,10 @@ final class SugarRealizer {
                 if (parts.length == 2
                         && parts[0].length() > 0 && Character.isUpperCase(parts[0].charAt(0))
                         && parts[1].length() > 0 && Character.isUpperCase(parts[1].charAt(0))) {
+                    context.recordApproximation(
+                        "enum-variant-flattened-to-string",
+                        "Rust " + parts[0] + "::" + parts[1] + "(" + argTerms.get(1).text()
+                            + ") lowered as String.valueOf(payload). Variant identity erased.");
                     return Optional.of(new ShapeExpression(
                             "String.valueOf(" + argTerms.get(1).text() + ")",
                             "String"));
@@ -2802,7 +2883,22 @@ final class SugarRealizer {
             armIdx++;
         }
         if (!defaultSeen && armIdx > 0) {
-            out.append(" else { ").append(targetName).append(" = null; }");
+            // Rust source was exhaustive (no wildcard) — but java's
+            // ternary chain needs an else. Substrate-honest: emit a
+            // panic + loss_record entry, rather than synthesizing a
+            // null default the source didn't authorize. If the rust
+            // match was truly exhaustive, this branch is unreachable;
+            // if it ISN'T (substrate canonicalized a non-exhaustive
+            // pattern), the panic surfaces the gap at runtime instead
+            // of silently returning null.
+            context.recordApproximation(
+                "match-exhaustive-synthesized-default",
+                "Rust match for assignment to '" + targetName + "' had no wildcard. "
+                    + "Java requires an else branch; emitted a panic since the source "
+                    + "expressed exhaustiveness. If callers reach the else, the substrate "
+                    + "missed an arm.");
+            out.append(" else { throw new RuntimeException(\"exhaustive match without arm: ")
+               .append(targetName).append("\"); }");
         }
         return out.toString();
     }
@@ -2890,8 +2986,15 @@ final class SugarRealizer {
             baseCond = "true";
         } else if ("None".equals(t)) {
             baseCond = "(" + scrutVar + " == null)";
-        } else if (t.matches("^(Some|Ok|Err)\\s*\\(.*\\)$")) {
+        } else if (t.matches("^(Some|Ok)\\s*\\(.*\\)$")) {
+            // Truthy unwrap — value present.
             baseCond = "(" + scrutVar + " != null)";
+        } else if (t.matches("^Err\\s*\\(.*\\)$")) {
+            // Err in a Result<T,E> erased to T-or-null: the error path
+            // is reached when the value IS null. Without this
+            // distinction Ok and Err arms had identical conditions,
+            // making Err structurally unreachable in lowered output.
+            baseCond = "(" + scrutVar + " == null)";
         } else if (t.matches("^\".*\"$")) {
             // String literal pattern → equality check.
             baseCond = "(" + scrutVar + " != null && " + scrutVar + ".equals(" + t + "))";

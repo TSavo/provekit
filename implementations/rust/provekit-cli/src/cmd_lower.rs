@@ -290,6 +290,36 @@ fn lower_named_terms(
         eprintln!("{}: {error}", "error".red().bold());
         return EXIT_USER_ERROR;
     }
+    // Substrate-honest sidecar: write per-term loss/refuse evidence
+    // next to the source output. Empty when every term was exact.
+    let loss_report = LAST_LOSS_REPORT.with(|cell| cell.borrow().clone());
+    if !loss_report.is_empty() {
+        let sidecar_json = serde_json::to_string_pretty(&serde_json::json!({
+            "kind": "lower-loss-records",
+            "target": target,
+            "terms": loss_report,
+        })).unwrap_or_else(|_| "[]".to_string());
+        match output {
+            Some(out_path) => {
+                let sidecar_path = PathBuf::from(format!(
+                    "{}.loss-records.json", out_path.display()));
+                if let Err(error) = write_bytes(Some(&sidecar_path), sidecar_json.as_bytes()) {
+                    eprintln!("{}: failed to write loss-records sidecar: {error}",
+                        "warning".yellow().bold());
+                } else {
+                    eprintln!("{}: wrote {} ({} term(s) with loss or refusal)",
+                        "loss-records".cyan(),
+                        sidecar_path.display(),
+                        loss_report.len());
+                }
+            }
+            None => {
+                // No output file path → emit to stderr so callers piping
+                // to stdout still see the loss-record surface.
+                eprintln!("{}:\n{}", "loss-records".cyan(), sidecar_json);
+            }
+        }
+    }
     EXIT_OK
 }
 
@@ -388,6 +418,15 @@ fn named_term_document_from_ir_document(ir_doc: &Json) -> Result<NamedTermDocume
     })
 }
 
+thread_local! {
+    /// Per-term loss/refuse evidence from the most recent lower_named_document
+    /// call. cmd_lower's entrypoint reads this after lowering and writes a
+    /// sidecar JSON file alongside the lowered source. Substrate-honest: the
+    /// loss_record / is_stub flags are first-class artifacts, not optional
+    /// debug output.
+    pub static LAST_LOSS_REPORT: std::cell::RefCell<Vec<Json>> = std::cell::RefCell::new(Vec::new());
+}
+
 fn lower_named_document(
     project_root: &Path,
     target: &str,
@@ -410,9 +449,13 @@ fn lower_named_document(
     let function_return_types = Json::Object(function_return_types);
 
     let mut out = String::new();
+    // Substrate-honest per-term loss accounting. Each function's lossy
+    // translations register here; non-empty entries are surfaced via a
+    // sidecar file so callers see the trichotomy
+    // (exact / loudly-bounded-lossy / refuse).
+    let mut per_term_losses: Vec<Json> = Vec::new();
     for term in &named.terms {
         let mut spec = realize_spec_from_named_term(term).map_err(LowerNamedError::Message)?;
-        // Inject the cross-term catalog into the spec.
         if let Some(obj) = spec.as_object_mut() {
             obj.insert("function_return_types".to_string(), function_return_types.clone());
         }
@@ -420,18 +463,28 @@ fn lower_named_document(
         if spec.get("function").and_then(|v| v.as_str()) != Some(sugar_fn) {
             spec["function"] = Json::String(sugar_fn.to_string());
         }
-        // Per-term library resolution. Each named term has a concept_name;
-        // find which realize plugin claims that concept. Apply --family-library
-        // override or --library default for disambiguation.
         let library_tag = resolve_library_for_concept(
             project_root, target, &term.concept_name, default_library, family_library,
         );
-        let source = lower_named_spec_via_path(project_root, target, spec, library_tag.as_deref())?;
-        out.push_str(&source);
+        let realized = lower_named_spec_via_path_full(project_root, target, spec, library_tag.as_deref())?;
+        // Collect loss / refuse evidence.
+        let has_loss = realized.observed_loss_record.as_object().map(|o| !o.is_empty()).unwrap_or(false);
+        if has_loss || realized.is_stub {
+            per_term_losses.push(serde_json::json!({
+                "function": sugar_fn,
+                "concept": term.concept_name,
+                "is_stub": realized.is_stub,
+                "observed_loss_record": realized.observed_loss_record,
+            }));
+        }
+        out.push_str(&realized.source);
         if !out.ends_with('\n') {
             out.push('\n');
         }
     }
+    // Stash for the outer caller — written to a sidecar by the cmd
+    // entrypoint when an --output path is supplied.
+    LAST_LOSS_REPORT.with(|cell| *cell.borrow_mut() = per_term_losses);
     Ok(out)
 }
 
@@ -499,6 +552,50 @@ fn resolve_library_for_concept(
     // Ambiguous; return first claimer (the lower call will dispatch but
     // may not be what the user wanted).
     Some(claimers[0].clone())
+}
+
+/// Substrate-honest variant: returns the FULL RealizedSource so the
+/// caller can surface observed_loss_record (lossy translations recorded
+/// during lower) and is_stub (refusals) — not just the source string.
+fn lower_named_spec_via_path_full(
+    project_root: &Path,
+    target: &str,
+    spec: Json,
+    library_tag: Option<&str>,
+) -> Result<libprovekit::core::RealizedSource, LowerNamedError> {
+    let mut inputs = HashMapInputCatalog::default();
+    let input_cid = inputs.insert(Input::Spec(spec));
+    let kit_name = format!("lower-{target}");
+    let path = Input::Path(Box::new(CorePath {
+        algebra: vec![PathAlgebra {
+            name: "lower".to_string(),
+            kit: kit_name.clone(),
+            inputs: vec![input_cid],
+            depends_on: vec![],
+            verb: Default::default(),
+        }],
+    }));
+    let mut registry = KitRegistry::default();
+    registry.register_with_platform_semantics(
+        kit_name,
+        LowerKit::new(
+            project_root.to_path_buf(),
+            target.to_string(),
+            library_tag.map(str::to_string),
+            DispatchRealizeTransport,
+        ),
+        target,
+        project_root.join(format!("implementations/{target}/conformance/fixtures")),
+    );
+    let chain = execute_path(&path, &registry, &inputs).map_err(|error| {
+        let detail = error
+            .composition_refusal()
+            .and_then(|refusal| serde_json::to_string(refusal).ok())
+            .unwrap_or_else(|| error.to_string());
+        LowerNamedError::Message(format!("lower plugin unavailable for `{target}`: {detail}"))
+    })?;
+    LowerKit::<DispatchRealizeTransport>::realized_source_from_claim(chain.terminal_claim())
+        .map_err(LowerNamedError::Message)
 }
 
 fn lower_named_spec_via_path(
