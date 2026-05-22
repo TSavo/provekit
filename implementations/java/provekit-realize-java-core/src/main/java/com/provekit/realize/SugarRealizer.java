@@ -1967,11 +1967,52 @@ final class SugarRealizer {
                 // .try_unwrap() — substrate's canonical ?-operator method.
                 // Receiver is a Result<T,E> carrier. LOSSLESS: (A) citation +
                 // (B) Result.unwrap mirrors rust's ? panic-on-Err / Ok-extract.
+                //
+                // Parameterize the Result cast with the ENCLOSING function's
+                // return type when it's also Result<T,E> — then .unwrap()
+                // is typed T (not Object). For non-Result enclosing returns
+                // (e.g. a fn -> Value that uses ? on Result-returning child
+                // calls), we fall through to raw cast (caller must downcast).
                 if ("try_unwrap".equals(methodName) && callArgs.isEmpty()) {
+                    String rawReturn = context.returnType == null ? "" : context.returnType;
+                    String stripped = rawReturn.trim();
+                    if (stripped.startsWith("&mut ")) stripped = stripped.substring(5).trim();
+                    else if (stripped.startsWith("&")) stripped = stripped.substring(1).trim();
+                    String resultGeneric = "";
+                    if (stripped.startsWith("Result<") && stripped.endsWith(">")) {
+                        String inner = stripped.substring(7, stripped.length() - 1).trim();
+                        int comma = findTopLevelComma(inner);
+                        String okType = comma > 0 ? inner.substring(0, comma).trim() : inner;
+                        String errType = comma > 0 ? inner.substring(comma + 1).trim() : "Object";
+                        String okJava = boxedType(mapSourceType(okType));
+                        String errJava = boxedType(mapSourceType(errType));
+                        if (errJava.matches("[A-Z][A-Za-z0-9_]*")
+                                && !errJava.equals("String") && !errJava.equals("Object")) {
+                            errJava = "com.provekit.runtime.SumVariant";
+                        }
+                        resultGeneric = "<" + okJava + ", " + errJava + ">";
+                    }
+                    String inferredInner = "";
+                    if (!resultGeneric.isEmpty()) {
+                        // Extract the OK type from resultGeneric for the
+                        // inferred return type of the unwrap expression.
+                        String inner = resultGeneric.substring(1, resultGeneric.length() - 1).trim();
+                        int comma = findTopLevelComma(inner);
+                        inferredInner = comma > 0 ? inner.substring(0, comma).trim() : inner;
+                    }
+                    // Cast to RAW Result (Java doesn't allow casting
+                    // Result<Object, X> to Result<JsonNode, Y> with
+                    // mismatched generics). Then cast .unwrap()'s Object
+                    // return to the inferred inner type for type safety
+                    // at the use site.
+                    String castInner = inferredInner.isEmpty()
+                            ? ""
+                            : "(" + inferredInner + ") ";
                     return Optional.of(new ShapeExpression(
-                            "/*@concept concept:try-unwrap*/((com.provekit.runtime.Result) "
-                                + receiver.get().text() + ").unwrap()",
-                            ""));
+                            "/*@concept concept:try-unwrap*/" + castInner
+                                + "((com.provekit.runtime.Result) " + receiver.get().text()
+                                + ").unwrap()",
+                            inferredInner));
                 }
                 // .iter() on a JsonNode (rust Vec<Value>.iter()) →
                 // StreamSupport.stream over spliterator. Caller's
@@ -3006,12 +3047,22 @@ final class SugarRealizer {
         int ifIdx = t.indexOf(" if ");
         if (ifIdx > 0) t = t.substring(0, ifIdx).trim();
         if (t.matches("^Ok\\s*\\(.*\\)$")) {
-            // .unwrap() on a Result<T,E> returns T (typed via generics).
-            // We're inside the Ok arm so unwrap is safe.
+            // Nested variant inside Ok — rare for Result; treat as Ok(v)
+            // and return scrut.unwrap() (callers do further pattern work).
             return scrutVar + ".unwrap()";
         }
         if (t.matches("^Err\\s*\\(.*\\)$")) {
-            // .unwrapErr() returns E. Inside Err arm so it's safe.
+            // Nested Err: `Err(Type::Variant(payload))` — the bound name
+            // inside is the variant's payload, not the whole error.
+            // Extract via SumVariant.payload().
+            if (patternHasNestedBinding(t)) {
+                // Variant payload is typed Object in SumVariant — wrap
+                // in String.valueOf so use sites expecting String don't
+                // fail. For non-String payloads downstream callers can
+                // cast as needed.
+                return "String.valueOf(((com.provekit.runtime.SumVariant) " + scrutVar
+                    + ".unwrapErr()).payload())";
+            }
             return scrutVar + ".unwrapErr()";
         }
         if (patternHasNestedBinding(t)) {
