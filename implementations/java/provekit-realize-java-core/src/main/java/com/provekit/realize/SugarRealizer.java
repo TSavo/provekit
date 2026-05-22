@@ -2705,7 +2705,12 @@ final class SugarRealizer {
                 return i < context.paramTypes.size() ? mapSourceType(context.paramTypes.get(i)) : "";
             }
         }
-        return mapSourceType(context.returnType);
+        // For unknown symbols (not a param), return blank — let callers
+        // fall back to var inference / valueToTree wrap. Falling back to
+        // context.returnType was wrong: it caused json! macros to treat
+        // `adapter.name()` (String result) as the function's return type
+        // (JsonNode), choosing the wrong .set/.put branch.
+        return "";
     }
 
     private static boolean isIdentifier(String value) {
