@@ -1692,6 +1692,15 @@ pub struct AssembledFile {
     pub content: String,
 }
 
+/// #1388: result of an assemble RPC call. Carries the emitted files AND
+/// the classpath the kit declares the materialized code needs to compile.
+/// Substrate aggregates classpaths across kits and passes to javac via -cp.
+#[derive(Debug, Clone, Default)]
+pub struct AssembleResult {
+    pub files: Vec<AssembledFile>,
+    pub compile_classpath: Vec<String>,
+}
+
 /// Substrate-honest error from dispatch_assemble. Carries a discriminator so
 /// the caller can distinguish "plugin doesn't implement assemble" (fall back
 /// to legacy concat) from "plugin errored" (surface to user).
@@ -1720,7 +1729,7 @@ pub fn dispatch_assemble(
     fragments_json: &str,
     file_basename: &str,
     package_hint: Option<&str>,
-) -> Result<Vec<AssembledFile>, AssembleError> {
+) -> Result<AssembleResult, AssembleError> {
     let resolved = resolve_realize_command(workspace_root, target_lang, library_tag, None, None)
         .map_err(|e| AssembleError::Failed(e.detail))?;
     if resolved.argv.is_empty() {
@@ -1814,7 +1823,13 @@ pub fn dispatch_assemble(
             .to_string();
         out.push(AssembledFile { path, content });
     }
-    Ok(out)
+    // #1388: collect classpath the kit declares its emitted code needs.
+    let compile_classpath: Vec<String> = result
+        .get("compile_classpath")
+        .and_then(Value::as_array)
+        .map(|arr| arr.iter().filter_map(Value::as_str).map(String::from).collect())
+        .unwrap_or_default();
+    Ok(AssembleResult { files: out, compile_classpath })
 }
 
 // Per #1270 Tier 1.4: configure_java_runtime + java_home_from_maven removed.
