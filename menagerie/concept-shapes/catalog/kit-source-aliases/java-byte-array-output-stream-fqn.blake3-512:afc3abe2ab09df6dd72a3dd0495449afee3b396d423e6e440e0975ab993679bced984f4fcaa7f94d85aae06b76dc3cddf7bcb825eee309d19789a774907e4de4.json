@@ -1,0 +1,23 @@
+{
+  "cid": "blake3-512:afc3abe2ab09df6dd72a3dd0495449afee3b396d423e6e440e0975ab993679bced984f4fcaa7f94d85aae06b76dc3cddf7bcb825eee309d19789a774907e4de4",
+  "memento": {
+    "denotes_parametric_application": {
+      "arg_cids": [
+        "blake3-512:7116ef6e62e6739b213a8394f975a53c771b89f08c36d27143827acfcfebc0e39e5b82c530be668c3cfd5ec6966ccaa42930b37fdb1f4ac25652a970be10fb6b"
+      ],
+      "constructor_cid": "blake3-512:37d8efe0ce6321d1a16f80aa06cbdf056c846b8a99613731e8d64d9581af61bc517fd8c87daaff2c817585a7dfd763e09ed729fdc71d25fe16fb1b2e6ca33534"
+    },
+    "kind": "KitSourceAlias",
+    "kit": "java",
+    "parametric_arity": null,
+    "sort_morphism_cid": "blake3-512:5158341a6d7e3738184f3d692d747817a0b733a7a62fc1a9f9296164cd2cc230252b0bf5784d1cd212907a1e427eb5e6167584abb4c9ee49ab4e4bf0d8894efc",
+    "source_aliases": [
+      "java.io.ByteArrayOutputStream"
+    ]
+  },
+  "signature": {
+    "alg": "ed25519",
+    "key_id": "UNSIGNED_DEV_ONLY",
+    "sig_b64": "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"
+  }
+}

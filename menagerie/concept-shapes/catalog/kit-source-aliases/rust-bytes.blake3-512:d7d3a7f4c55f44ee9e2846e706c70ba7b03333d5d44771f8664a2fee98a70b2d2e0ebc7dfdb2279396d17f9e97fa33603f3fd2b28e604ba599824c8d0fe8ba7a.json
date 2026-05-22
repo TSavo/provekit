@@ -1,0 +1,19 @@
+{
+  "cid": "blake3-512:d7d3a7f4c55f44ee9e2846e706c70ba7b03333d5d44771f8664a2fee98a70b2d2e0ebc7dfdb2279396d17f9e97fa33603f3fd2b28e604ba599824c8d0fe8ba7a",
+  "memento": {
+    "denotes_parametric_application": null,
+    "kind": "KitSourceAlias",
+    "kit": "rust",
+    "parametric_arity": null,
+    "sort_morphism_cid": "blake3-512:8424c446d05603b3366c8b1ff105987af721038b89a5fbe57cd8740b83493dff37878c068e972b8493fdcede76e74b15285f6779c92da8fe3f25b69f6bcdde15",
+    "source_aliases": [
+      "Vec<u8>",
+      "[u8]"
+    ]
+  },
+  "signature": {
+    "alg": "ed25519",
+    "key_id": "UNSIGNED_DEV_ONLY",
+    "sig_b64": "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"
+  }
+}

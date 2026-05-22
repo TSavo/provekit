@@ -72,6 +72,7 @@ pub fn run(args: LiftArgs) -> u8 {
         LiftPluginOptions {
             identify_only: args.identify_only,
             library_bindings: args.library_bindings,
+            ..Default::default()
         },
         true,
     ) {

@@ -197,17 +197,50 @@ final class SugarRealizer {
             String operandBindingsJson,
             boolean isCrossLang,
             String targetLibraryTag) {
+        return emitStub(function, params, paramTypes, paramSortCids, returnType, returnSortCid,
+                conceptName, mode, modes, contract, sugarPluginJson, transportedOp,
+                termShapeJson, operandBindingsJson, isCrossLang, targetLibraryTag, List.of());
+    }
+
+    static Realization emitStub(
+            String function,
+            List<String> params,
+            List<String> paramTypes,
+            List<String> paramSortCids,
+            String returnType,
+            String returnSortCid,
+            String conceptName,
+            String mode,
+            List<String> modes,
+            ContractPayload contract,
+            List<String> sugarPluginJson,
+            TransportedOperation transportedOp,
+            String termShapeJson,
+            String operandBindingsJson,
+            boolean isCrossLang,
+            String targetLibraryTag,
+            List<ParametricExpansion> parametricExpansions) {
         // Library-tag scope: set thread-local for the duration of this call so
         // body-template lookup can disambiguate when multiple libraries ship
         // templates for the same concept.
         String previousTag = CURRENT_LIBRARY_TAG.get();
         CURRENT_LIBRARY_TAG.set(targetLibraryTag == null ? "" : targetLibraryTag);
+        // #1369: parametric expansions scope for composite CID decomposition.
+        java.util.Map<String, ParametricExpansion> previousExpansions = CURRENT_EXPANSIONS.get();
+        java.util.Map<String, ParametricExpansion> expMap = new java.util.HashMap<>();
+        if (parametricExpansions != null) {
+            for (ParametricExpansion exp : parametricExpansions) {
+                expMap.put(exp.cid(), exp);
+            }
+        }
+        CURRENT_EXPANSIONS.set(expMap);
         try {
             return emitStubInner(function, params, paramTypes, paramSortCids, returnType,
                     returnSortCid, conceptName, mode, modes, contract, sugarPluginJson,
                     transportedOp, termShapeJson, operandBindingsJson, isCrossLang);
         } finally {
             CURRENT_LIBRARY_TAG.set(previousTag);
+            CURRENT_EXPANSIONS.set(previousExpansions);
         }
     }
 
@@ -978,13 +1011,12 @@ final class SugarRealizer {
      */
     static String mapConceptHubSortCidToJava(String cid) {
         if (cid == null || cid.isEmpty()) return null;
-        return switch (cid) {
+        // Primitive concept-hub sorts → java syntax.
+        String primitive = switch (cid) {
             // concept:Bool
             case "blake3-512:0ee13bf3fd6b7ecfbee72dfbfc18a7c0ea7f1663de6cca43cefb36f5b4c03665452646094a7c296e819e75d683c6ce4821f3d7db3c3c78ae97f2d4e3451d2074" ->
                 "boolean";
-            // concept:Int — defaults to long for cross-language safety (i64
-            // rust → long java; concept:integer-width-* family is a separate
-            // refinement for narrower widths)
+            // concept:Int — defaults to long for cross-language safety
             case "blake3-512:30ffc51350121a7172f3e4064a33c45bbd345756979fccff6875cd2ab33e4964d098a99df80cfbdf1ec1a0738c5ac3476f0ff8f75589ea511d1acd82c74ecd58" ->
                 "long";
             // concept:Float
@@ -996,25 +1028,68 @@ final class SugarRealizer {
             // concept:Bytes
             case "blake3-512:7116ef6e62e6739b213a8394f975a53c771b89f08c36d27143827acfcfebc0e39e5b82c530be668c3cfd5ec6966ccaa42930b37fdb1f4ac25652a970be10fb6b" ->
                 "byte[]";
-            // concept:List<T> — generic placeholder; full parametric resolution
-            // is follow-up (T is itself a sort CID).
-            case "blake3-512:e3f8d17445f9d2ce89c41c09cbeea08a8bc685d1c34a9fd3dfa7b1df17a94f40eab37396615501f1468baf2a1480fd5a27330ea23202b99876c5f4d97fa2cfb2" ->
-                "java.util.List<Object>";
-            // concept:Unit — minted 2026-05-21. java.io: void return.
+            // concept:Unit — void return
             case "blake3-512:47682b09e5dba71f563db6249c6cb352f7d540986dc7f4cd8d4fb1aa6d9a503064033ee3eb9f36ee6f9e000f700f2f030ebfcfe2b2b8b7e81a345b0d56551f1b" ->
                 "void";
-            // concept:Json — minted 2026-05-21. Java's JSON tree realization
-            // is Jackson's JsonNode (substrate-canonical name; Gson would
-            // realize as JsonElement via a separate morphism).
+            // concept:Json — JsonNode (Jackson)
             case "blake3-512:702064722b23410fde0d1fd7afac165bf5914441d67abe1e19d63b0e8fe8117296d2677cc721ad096b8b3bb82d178af699bf14fd70bfb18756c5bed6f4434108" ->
                 "com.fasterxml.jackson.databind.JsonNode";
-            // concept:Ref<T> — minted 2026-05-21. Java's mutable-reference
-            // realization is StringBuilder (for String content). Full
-            // parametric resolution (different T → different java type) is
-            // follow-up.
-            case "blake3-512:37d8efe0ce6321d1a16f80aa06cbdf056c846b8a99613731e8d64d9581af61bc517fd8c87daaff2c817585a7dfd763e09ed729fdc71d25fe16fb1b2e6ca33534" ->
-                "StringBuilder";
             default -> null;
+        };
+        if (primitive != null) return primitive;
+        // #1369: composite parametric CIDs — decompose via the expansion table.
+        ParametricExpansion exp = CURRENT_EXPANSIONS.get().get(cid);
+        if (exp != null) {
+            return resolveParametricToJava(exp);
+        }
+        return null;
+    }
+
+    /**
+     * Parameterized morphism dispatch (#1369). Given a parametric application,
+     * recursively resolve inner sort CIDs and emit the kit's idiomatic java
+     * syntax. Ref<T> branches on inner T per the kit's realization choices:
+     *   Ref<String> → StringBuilder
+     *   Ref<Bytes>  → java.io.ByteArrayOutputStream
+     *   Ref<other>  → AtomicReference<other>
+     */
+    private static String resolveParametricToJava(ParametricExpansion exp) {
+        if (REF_T_CONSTRUCTOR_CID.equals(exp.constructorCid())) {
+            if (exp.argCids().size() != 1) return null;
+            String innerCid = exp.argCids().get(0);
+            String innerJava = mapConceptHubSortCidToJava(innerCid);
+            if (innerJava == null) return null;
+            // Branch on inner T — java has type-specific mutable wrappers.
+            return switch (innerJava) {
+                case "String" -> "StringBuilder";
+                case "byte[]" -> "java.io.ByteArrayOutputStream";
+                default -> "java.util.concurrent.atomic.AtomicReference<" + innerJava + ">";
+            };
+        }
+        if (LIST_T_CONSTRUCTOR_CID.equals(exp.constructorCid())) {
+            if (exp.argCids().size() != 1) return null;
+            String innerJava = mapConceptHubSortCidToJava(exp.argCids().get(0));
+            if (innerJava == null) return null;
+            // Java collections take REFERENCE types only — box primitives.
+            String boxed = boxedJavaType(innerJava);
+            return "java.util.List<" + boxed + ">";
+        }
+        // Unknown parametric constructor — substrate-honest gap signal.
+        return null;
+    }
+
+    /** Box java primitive types for use as generic arguments. */
+    private static String boxedJavaType(String t) {
+        return switch (t) {
+            case "boolean" -> "Boolean";
+            case "byte" -> "Byte";
+            case "short" -> "Short";
+            case "int" -> "Integer";
+            case "long" -> "Long";
+            case "float" -> "Float";
+            case "double" -> "Double";
+            case "char" -> "Character";
+            default -> t;
         };
     }
 
@@ -1507,6 +1582,22 @@ final class SugarRealizer {
      * means "library-agnostic" (legacy callers, classpath catch-all).
      */
     private static final ThreadLocal<String> CURRENT_LIBRARY_TAG = ThreadLocal.withInitial(() -> "");
+
+    /**
+     * #1369: parametric content-addressing. Carries the (composite_cid →
+     * ParametricSortExpansion) map for the current realize invocation so
+     * mapConceptHubSortCidToJava can decompose composite CIDs into
+     * (constructor, args) for parameterized morphism dispatch.
+     */
+    record ParametricExpansion(String cid, String constructorCid, java.util.List<String> argCids) {}
+    private static final ThreadLocal<java.util.Map<String, ParametricExpansion>> CURRENT_EXPANSIONS =
+        ThreadLocal.withInitial(java.util.HashMap::new);
+
+    // Substrate-canonical constructor CIDs for parametric dispatch.
+    private static final String REF_T_CONSTRUCTOR_CID =
+        "blake3-512:37d8efe0ce6321d1a16f80aa06cbdf056c846b8a99613731e8d64d9581af61bc517fd8c87daaff2c817585a7dfd763e09ed729fdc71d25fe16fb1b2e6ca33534";
+    private static final String LIST_T_CONSTRUCTOR_CID =
+        "blake3-512:e3f8d17445f9d2ce89c41c09cbeea08a8bc685d1c34a9fd3dfa7b1df17a94f40eab37396615501f1468baf2a1480fd5a27330ea23202b99876c5f4d97fa2cfb2";
 
     /**
      * One body-template entry per spec §2.

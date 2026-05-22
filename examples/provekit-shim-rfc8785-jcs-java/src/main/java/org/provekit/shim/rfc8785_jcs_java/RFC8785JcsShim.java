@@ -92,12 +92,29 @@ public final class RFC8785JcsShim {
             }
             out.append(']');
         } else if (v.isObject()) {
-            // RFC 8785 requires keys sorted by code-point order (after parsing
-            // unescape).
+            // RFC 8785 §3.2.3 requires keys sorted by Unicode CODE-POINT
+            // order. java's String.compareTo (used by Collections.sort)
+            // uses UTF-16 CODE-UNIT order which disagrees for supplementary
+            // characters: surrogate pairs (0xD800-0xDFFF code units) sort
+            // BEFORE 0xE000-0xFFFF in UTF-16 lex order, but their decoded
+            // code points are 0x10000+ — AFTER 0xE000-0xFFFF in code-point
+            // order. Sort by iterating code points inline (materialized
+            // body cannot reference static helpers on this class).
             List<String> keys = new ArrayList<>();
             Iterator<String> it = v.fieldNames();
             while (it.hasNext()) keys.add(it.next());
-            Collections.sort(keys);
+            keys.sort((a, b) -> {
+                int i = 0, j = 0;
+                int alen = a.length(), blen = b.length();
+                while (i < alen && j < blen) {
+                    int cpA = a.codePointAt(i);
+                    int cpB = b.codePointAt(j);
+                    if (cpA != cpB) return Integer.compare(cpA, cpB);
+                    i += Character.charCount(cpA);
+                    j += Character.charCount(cpB);
+                }
+                return Integer.compare(alen - i, blen - j);
+            });
             out.append('{');
             boolean first = true;
             for (String k : keys) {

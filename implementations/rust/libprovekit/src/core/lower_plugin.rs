@@ -78,6 +78,294 @@ pub struct RealizeRequest {
     /// body-template caches degrade to load-order-dependent selection.
     #[serde(default, skip_serializing_if = "String::is_empty")]
     pub target_library_tag: String,
+    /// #1369: parametric sort identities via compositional content-addressing.
+    ///
+    /// When a `param_sort_cid` or `return_sort_cid` refers to a parametric
+    /// sort (concept:Ref<T>, concept:List<T>, concept:Map<K,V>), its identity
+    /// is computed from (constructor_cid, arg_cids) per the substrate's
+    /// canonical form. The realize plugin needs the (cid → canonical_form)
+    /// expansion to dispatch its parameterized morphism. Lift side computes
+    /// the composite CID + populates this map; realize side reads it.
+    ///
+    /// Each entry: (composite_cid → ParametricSortExpansion). Primitive sort
+    /// CIDs (non-parametric) are absent from this map.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub parametric_sort_expansions: Vec<ParametricSortExpansion>,
+}
+
+/// Canonical form of a parametric sort application — the structure whose
+/// JCS encoding's blake3-512 IS the composite CID. Carried in
+/// RealizeRequest.parametric_sort_expansions so the realize plugin can
+/// decompose composite CIDs into (constructor, args) for parameterized
+/// morphism dispatch.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ParametricSortExpansion {
+    /// The composite CID this expansion identifies. cid == blake3-512(JCS({
+    /// "kind": "parametric-sort-application",
+    /// "constructor_cid": <constructor_cid>,
+    /// "arg_cids": <arg_cids>
+    /// }))
+    pub cid: String,
+    pub constructor_cid: String,
+    pub arg_cids: Vec<String>,
+}
+
+impl ParametricSortExpansion {
+    /// Compute the composite CID for a parametric sort application.
+    /// Same (constructor, args) always produces the same CID (substrate
+    /// content-addressing invariant); different args produce different CIDs.
+    pub fn compose_cid(constructor_cid: &str, arg_cids: &[String]) -> String {
+        let canonical = serde_json::json!({
+            "kind": "parametric-sort-application",
+            "constructor_cid": constructor_cid,
+            "arg_cids": arg_cids,
+        });
+        let jcs = crate::canonical::serializable_jcs(&canonical)
+            .expect("parametric expansion canonicalizes");
+        provekit_canonicalizer::blake3_512_of(jcs.as_bytes())
+    }
+
+    /// Build an expansion + its composite CID from inputs.
+    pub fn build(constructor_cid: &str, arg_cids: Vec<String>) -> Self {
+        let cid = Self::compose_cid(constructor_cid, &arg_cids);
+        Self {
+            cid,
+            constructor_cid: constructor_cid.to_string(),
+            arg_cids,
+        }
+    }
+}
+
+/// Catalog-driven source-token alias entry for a kit (#1370).
+///
+/// The substrate's KitSourceAliasMemento files declare which source-text
+/// tokens denote which kit-sort. Lifters read these via catalog query
+/// instead of hardcoded switches. Three flavors:
+///   - Primitive: token denotes a primitive sort directly (no args)
+///   - Constructor: token denotes a parametric constructor (takes args at use-site)
+///   - Shorthand: token denotes a fixed parametric application
+#[derive(Debug, Clone)]
+pub enum KitSourceAliasEntry {
+    Primitive { target_cid: String },
+    Constructor { constructor_cid: String, arity: usize },
+    Shorthand { composite_cid: String, constructor_cid: String, arg_cids: Vec<String> },
+}
+
+/// Load all KitSourceAliasMemento files for a given kit from the catalog.
+/// Returns a map: source-text token → KitSourceAliasEntry.
+///
+/// Walks up from CWD to find menagerie/, then reads
+/// concept-shapes/catalog/kit-source-aliases/<kit>-*.json.
+pub fn load_kit_source_aliases(kit: &str) -> std::collections::BTreeMap<String, KitSourceAliasEntry> {
+    let mut map = std::collections::BTreeMap::new();
+    let Some(root) = find_menagerie_root() else { return map; };
+    let aliases_dir = root.join("menagerie")
+        .join("concept-shapes").join("catalog").join("kit-source-aliases");
+    if !aliases_dir.is_dir() { return map; }
+    let algorithms_dir = root.join("menagerie")
+        .join("concept-shapes").join("catalog").join("algorithms");
+    let prefix = format!("{}-", kit);
+    let Ok(entries) = std::fs::read_dir(&aliases_dir) else { return map; };
+    for entry in entries.flatten() {
+        let path = entry.path();
+        let Some(name) = path.file_name().and_then(|n| n.to_str()) else { continue };
+        if !name.starts_with(&prefix) || !name.ends_with(".json") { continue; }
+        let Ok(raw) = std::fs::read_to_string(&path) else { continue };
+        let Ok(doc): Result<serde_json::Value, _> = serde_json::from_str(&raw) else { continue };
+        let Some(memento) = doc.get("memento") else { continue };
+        let Some(morphism_cid) = memento.get("sort_morphism_cid").and_then(|v| v.as_str()) else { continue };
+        let Some(target_cid) = resolve_morphism_target_cid(&algorithms_dir, morphism_cid) else { continue };
+        let Some(aliases) = memento.get("source_aliases").and_then(|v| v.as_array()) else { continue };
+        let shorthand = memento.get("denotes_parametric_application");
+        let arity = memento.get("parametric_arity").and_then(|v| v.as_u64());
+        for alias_v in aliases {
+            let Some(token) = alias_v.as_str() else { continue };
+            let entry = if let Some(sh) = shorthand.and_then(|v| v.as_object()) {
+                let ctor = sh.get("constructor_cid").and_then(|v| v.as_str()).unwrap_or("").to_string();
+                let arg_cids: Vec<String> = sh.get("arg_cids")
+                    .and_then(|v| v.as_array())
+                    .map(|arr| arr.iter().filter_map(|x| x.as_str().map(String::from)).collect())
+                    .unwrap_or_default();
+                let composite = ParametricSortExpansion::compose_cid(&ctor, &arg_cids);
+                KitSourceAliasEntry::Shorthand { composite_cid: composite, constructor_cid: ctor, arg_cids }
+            } else if let Some(a) = arity {
+                KitSourceAliasEntry::Constructor { constructor_cid: target_cid.clone(), arity: a as usize }
+            } else {
+                KitSourceAliasEntry::Primitive { target_cid: target_cid.clone() }
+            };
+            map.entry(token.to_string()).or_insert(entry);
+        }
+    }
+    map
+}
+
+fn find_menagerie_root() -> Option<std::path::PathBuf> {
+    let mut p = std::env::current_dir().ok()?;
+    loop {
+        if p.join("menagerie").is_dir() { return Some(p); }
+        p = p.parent()?.to_path_buf();
+    }
+}
+
+fn resolve_morphism_target_cid(algorithms_dir: &std::path::Path, morphism_cid: &str) -> Option<String> {
+    let entries = std::fs::read_dir(algorithms_dir).ok()?;
+    for entry in entries.flatten() {
+        let path = entry.path();
+        let name = path.file_name()?.to_str()?;
+        if !name.contains(morphism_cid) || !name.ends_with(".json") { continue; }
+        let raw = std::fs::read_to_string(&path).ok()?;
+        let doc: serde_json::Value = serde_json::from_str(&raw).ok()?;
+        let target = doc.get("header")?.get("target_sort_cid")?.as_str()?;
+        return Some(target.to_string());
+    }
+    None
+}
+
+/// Resolve a rust type-string to a concept-hub sort CID via the kit-source-alias
+/// catalog (#1370). Parametric types produce COMPOSITE CIDs computed via
+/// blake3-512(JCS(constructor + args)). The `expansions` accumulator captures
+/// each composite CID's canonical form so the realize plugin can decompose them.
+///
+/// NO hardcoded source-token names. The map is loaded once via
+/// load_kit_source_aliases("rust") and queried recursively for parametric types.
+pub fn rust_type_to_concept_hub_sort_cid(
+    rust_type: &str,
+    aliases: &std::collections::BTreeMap<String, KitSourceAliasEntry>,
+    expansions: &mut Vec<ParametricSortExpansion>,
+) -> Option<String> {
+    let trimmed = rust_type.trim();
+
+    // &mut T: prefix syntax for parametric Ref constructor.
+    // walk_rpc emits `&mutT` (no space, sugar_type_surface strips spaces);
+    // source_transform keeps `&mut T`. Handle both.
+    if trimmed.starts_with("&mut ") || (trimmed.starts_with("&mut") && !trimmed.starts_with("&mute")) {
+        let inner_src = if trimmed.starts_with("&mut ") {
+            &trimmed[5..]
+        } else {
+            &trimmed[4..]
+        };
+        let inner_cid = rust_type_to_concept_hub_sort_cid(inner_src, aliases, expansions)?;
+        let mut_alias = aliases.get("&mut")?;
+        if let KitSourceAliasEntry::Constructor { constructor_cid, .. } = mut_alias {
+            let exp = ParametricSortExpansion::build(constructor_cid, vec![inner_cid]);
+            let cid = exp.cid.clone();
+            if !expansions.iter().any(|e| e.cid == cid) {
+                expansions.push(exp);
+            }
+            return Some(cid);
+        }
+        return None;
+    }
+
+    // Strip leading & (immutable borrow: same value identity at substrate level).
+    let t = trimmed.trim_start_matches('&').trim();
+
+    // Strip Option<T> and Result<T, E> wrappers (success arm only).
+    let t = if let Some(stripped) = t.strip_prefix("Option<").and_then(|s| s.strip_suffix('>')) {
+        stripped.trim()
+    } else if let Some(stripped) = t.strip_prefix("Result<") {
+        let mut depth = 0i32;
+        let mut end = stripped.len();
+        for (i, ch) in stripped.chars().enumerate() {
+            match ch {
+                '<' => depth += 1,
+                '>' => depth -= 1,
+                ',' if depth == 0 => { end = i; break; }
+                _ => {}
+            }
+        }
+        stripped[..end].trim()
+    } else {
+        t
+    };
+
+    // Direct lookup first — handles shorthand tokens like "Vec<u8>", "[u8]", "()".
+    if let Some(entry) = aliases.get(t) {
+        return resolve_alias_entry(entry, &[], aliases, expansions);
+    }
+
+    // Parse outer<args>: Foo<A, B> → outer="Foo", args=["A", "B"]
+    if let Some(open) = t.find('<') {
+        if t.ends_with('>') {
+            let outer = t[..open].trim();
+            let inside = &t[open+1..t.len()-1];
+            let arg_srcs = split_top_level_commas(inside);
+            if let Some(entry) = aliases.get(outer) {
+                return resolve_alias_entry(entry, &arg_srcs, aliases, expansions);
+            }
+        }
+    }
+
+    // [T; N] / [T] → composite via the Vec/List constructor when not byte
+    if let Some(rest) = t.strip_prefix('[').and_then(|s| s.strip_suffix(']')) {
+        let inner_src = rest.split(';').next().unwrap_or(rest).trim();
+        // Inner u8 → bytes shorthand
+        if inner_src == "u8" {
+            if let Some(entry) = aliases.get("[u8]") {
+                return resolve_alias_entry(entry, &[], aliases, expansions);
+            }
+        }
+        if let Some(entry) = aliases.get("Vec") {
+            if let KitSourceAliasEntry::Constructor { .. } = entry {
+                return resolve_alias_entry(entry, &[inner_src.to_string()], aliases, expansions);
+            }
+        }
+    }
+
+    None
+}
+
+fn resolve_alias_entry(
+    entry: &KitSourceAliasEntry,
+    arg_srcs: &[String],
+    aliases: &std::collections::BTreeMap<String, KitSourceAliasEntry>,
+    expansions: &mut Vec<ParametricSortExpansion>,
+) -> Option<String> {
+    match entry {
+        KitSourceAliasEntry::Primitive { target_cid } => Some(target_cid.clone()),
+        KitSourceAliasEntry::Shorthand { composite_cid, constructor_cid, arg_cids } => {
+            let exp = ParametricSortExpansion {
+                cid: composite_cid.clone(),
+                constructor_cid: constructor_cid.clone(),
+                arg_cids: arg_cids.clone(),
+            };
+            if !expansions.iter().any(|e| e.cid == exp.cid) {
+                expansions.push(exp);
+            }
+            Some(composite_cid.clone())
+        }
+        KitSourceAliasEntry::Constructor { constructor_cid, arity } => {
+            if arg_srcs.len() != *arity { return None; }
+            let mut arg_cids = Vec::with_capacity(arg_srcs.len());
+            for a in arg_srcs {
+                arg_cids.push(rust_type_to_concept_hub_sort_cid(a, aliases, expansions)?);
+            }
+            let exp = ParametricSortExpansion::build(constructor_cid, arg_cids);
+            let cid = exp.cid.clone();
+            if !expansions.iter().any(|e| e.cid == cid) {
+                expansions.push(exp);
+            }
+            Some(cid)
+        }
+    }
+}
+
+fn split_top_level_commas(s: &str) -> Vec<String> {
+    let mut out = Vec::new();
+    let mut depth = 0i32;
+    let mut cur = String::new();
+    for c in s.chars() {
+        if c == '<' { depth += 1; }
+        else if c == '>' { depth -= 1; }
+        if c == ',' && depth == 0 {
+            out.push(cur.trim().to_string());
+            cur.clear();
+        } else {
+            cur.push(c);
+        }
+    }
+    if !cur.trim().is_empty() { out.push(cur.trim().to_string()); }
+    out
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -437,6 +725,7 @@ fn invocation_from_tree_node(
         target_library_tag: effective_library_tag
             .clone()
             .unwrap_or_else(|| parent_request.target_library_tag.clone()),
+        parametric_sort_expansions: parent_request.parametric_sort_expansions.clone(),
         proc_macro_invocations: value_array_field(
             node,
             &["procMacroInvocations", "proc_macro_invocations"],
@@ -815,6 +1104,11 @@ pub fn request_from_spec(spec: &Value) -> Result<RealizeRequest, String> {
             &["target_library_tag", "targetLibraryTag", "library_tag", "libraryTag"],
         )
         .unwrap_or_default(),
+        parametric_sort_expansions: spec
+            .get("parametric_sort_expansions")
+            .or_else(|| spec.get("parametricSortExpansions"))
+            .and_then(|v| serde_json::from_value(v.clone()).ok())
+            .unwrap_or_default(),
     })
 }
 

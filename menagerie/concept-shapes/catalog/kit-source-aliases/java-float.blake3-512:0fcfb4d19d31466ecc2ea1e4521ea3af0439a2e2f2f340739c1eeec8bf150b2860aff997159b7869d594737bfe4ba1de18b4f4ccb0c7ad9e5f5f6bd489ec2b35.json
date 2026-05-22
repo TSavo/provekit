@@ -1,0 +1,21 @@
+{
+  "cid": "blake3-512:0fcfb4d19d31466ecc2ea1e4521ea3af0439a2e2f2f340739c1eeec8bf150b2860aff997159b7869d594737bfe4ba1de18b4f4ccb0c7ad9e5f5f6bd489ec2b35",
+  "memento": {
+    "denotes_parametric_application": null,
+    "kind": "KitSourceAlias",
+    "kit": "java",
+    "parametric_arity": null,
+    "sort_morphism_cid": "blake3-512:3120111864faa72251c2d7b7eab21627fd92bfe155c9e04be7b2e83883f3cfd7e6ce46b0b1e62a883b8afffdacc8626751055228d4a1da5effbd58ae3caffab5",
+    "source_aliases": [
+      "float",
+      "Float",
+      "double",
+      "Double"
+    ]
+  },
+  "signature": {
+    "alg": "ed25519",
+    "key_id": "UNSIGNED_DEV_ONLY",
+    "sig_b64": "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"
+  }
+}
