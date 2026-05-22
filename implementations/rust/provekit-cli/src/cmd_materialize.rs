@@ -560,17 +560,36 @@ fn run_cross_language_discovery(
                     .iter()
                     .any(|p| family_matches_override(family, &p.family))
             });
+            // #34: --library precedence rule. --library is the DEFAULT for
+            // multi-candidate sites without a more specific override, NOT a
+            // hard filter on the whole site set. Order:
+            //   1. Per-family override (--family-library): most specific. Keep
+            //      all candidates so the ambiguous-site handler resolves via
+            //      family.
+            //   2. --library: if the requested library tag is among the
+            //      candidates, pick it; otherwise leave the full set so the
+            //      site resolves via its own structure (single-candidate
+            //      concepts must not be filtered out by a top-level
+            //      --library that doesn't apply to them).
+            //   3. No hint: leave candidates intact; AMBIGUOUS if >1.
+            //
+            // Pre-#1383 behavior was case 3 only (--library was ignored at
+            // this layer). #1383 added case 2 as a HARD filter which broke
+            // every single-candidate concept whose manifest didn't match
+            // --library. This restores case 2 as a SOFT preference.
             let matches = if has_family_override {
-                // Per-family overrides are more specific than top-level
-                // --library. Leave the full candidate set intact so the
-                // ambiguous-site handler below can resolve or loudly report
-                // a bad/conflicting family override.
                 matches
             } else if let Some(target_library_tag) = target_library_tag {
-                matches
-                    .into_iter()
-                    .filter(|candidate| candidate == target_library_tag)
-                    .collect()
+                let preferred: Vec<String> = matches
+                    .iter()
+                    .filter(|candidate| *candidate == target_library_tag)
+                    .cloned()
+                    .collect();
+                if preferred.is_empty() {
+                    matches
+                } else {
+                    preferred
+                }
             } else {
                 matches
             };
