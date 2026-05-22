@@ -1,0 +1,13 @@
+# PEP 1.7.0 realize plugin manifest for Java + Gson JSON body emission.
+# Second java realization of concept:family:json — sibling to .provekit/realize/java-json
+# (Jackson). Materialize with target=java + family=json sees BOTH manifests
+# and reports AMBIGUOUS unless caller disambiguates with --library gson.
+# Bodies sourced from provekit-shim-gson-java's .proof envelope via the
+# filesystem load path (commit 320d40397).
+name = "java-realize-gson"
+library_tag = "gson"
+family = "concept:family:json"
+library_version = "2.11"
+provides_concepts = ["concept:json-parse", "concept:json-serialize"]
+command = ["java", "-jar", "implementations/java/provekit-realize-java-core/target/provekit-realize-java.jar", "--rpc"]
+working_dir = "."

@@ -1,0 +1,49 @@
+{
+  "header": {
+    "cid": "blake3-512:df00c56519c4eb7093083634b623949dc527f206ed853ad7cfbe1281d559bbf15090d7761fc1082c988240adede77b400db1260991916410f6ceaefaad9d27c6",
+    "content": {
+      "entries": [
+        {
+          "concept_name": "concept:json-parse",
+          "emission_template": {
+            "kind": "verbatim",
+            "template": "        try {\n            return JsonParser.parseString(${param0});\n        } catch (JsonSyntaxException e) {\n            throw new RuntimeException(\"json-parse: \" + e.getMessage(), e);\n        }\n    "
+          },
+          "loss_record_contribution": {
+            "form": "literal",
+            "value": {
+              "entries": []
+            }
+          },
+          "signature_guard": {
+            "max_params": 1,
+            "min_params": 1
+          },
+          "target_library_tag": "gson"
+        },
+        {
+          "concept_name": "concept:json-serialize",
+          "emission_template": {
+            "kind": "verbatim",
+            "template": "        return GSON.toJson(${param0});\n    "
+          },
+          "loss_record_contribution": {
+            "form": "literal",
+            "value": {
+              "entries": [
+                "non-canonical-key-order"
+              ]
+            }
+          },
+          "signature_guard": {
+            "max_params": 1,
+            "min_params": 1
+          },
+          "target_library_tag": "gson"
+        }
+      ],
+      "target_language": "java",
+      "template_name": "java-canonical-bodies-gson"
+    }
+  }
+}

@@ -139,6 +139,11 @@ fn realize_request() -> RealizeRequest {
         sugar_cids: Vec::new(),
         sugar_plugins: Vec::new(),
         proc_macro_invocations: Vec::new(),
+        family: None,
+        library_version: None,
+        param_sort_cids: Vec::new(),
+        return_sort_cid: String::new(),
+        target_library_tag: String::new(),
     }
 }
 

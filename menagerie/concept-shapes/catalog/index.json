@@ -1,5 +1,4 @@
 {
-  "schema_version": "provekit-algebraic-catalog-index/1",
   "entries": {
     "blake3-512:00098e58001c6053ac8b3d46bec2768fadfe9d44fd956f60c000042c5d75e892f53bebe0974af1a571f1eca0f60ddc0acfa91b450658a9615bedb1ba48d9d2b9": {
       "cid": "blake3-512:00098e58001c6053ac8b3d46bec2768fadfe9d44fd956f60c000042c5d75e892f53bebe0974af1a571f1eca0f60ddc0acfa91b450658a9615bedb1ba48d9d2b9",
@@ -330,6 +329,12 @@
       "kind": "algorithm",
       "name": "morphism:java:le:to:concept:le",
       "path": "algorithms/morphism:java:le:to:concept:le.blake3-512:1aa28a828bcffb084537d6c4f866ae0bddde50ca8ce6537caf14060c9aad021aea2176cf1a7bcecac1bf14f0e375f81dd7da1f73437b35ee73241a4c6e335104.json"
+    },
+    "blake3-512:1b6f96599d5693087ff4fc126dca283f75f52a440d19dc27904c85a3c681ff57686b8c6f9ae53ae1e33d8da63be0f874215a2ae1d013bf9b5028d799b35a8f27": {
+      "cid": "blake3-512:1b6f96599d5693087ff4fc126dca283f75f52a440d19dc27904c85a3c681ff57686b8c6f9ae53ae1e33d8da63be0f874215a2ae1d013bf9b5028d799b35a8f27",
+      "kind": "algorithm",
+      "name": "concept:macro-call",
+      "path": "algorithms/concept:macro-call.blake3-512:1b6f96599d5693087ff4fc126dca283f75f52a440d19dc27904c85a3c681ff57686b8c6f9ae53ae1e33d8da63be0f874215a2ae1d013bf9b5028d799b35a8f27.json"
     },
     "blake3-512:1c3d84d0dc521d789f0b2c4083c2101ea6c4389b2dd52f71adb7bc4c46081c1a171ac71e5a441aadbd85a0706fd2c64a4227f2906dc58d97caaebba2273e1927": {
       "cid": "blake3-512:1c3d84d0dc521d789f0b2c4083c2101ea6c4389b2dd52f71adb7bc4c46081c1a171ac71e5a441aadbd85a0706fd2c64a4227f2906dc58d97caaebba2273e1927",
@@ -678,6 +683,12 @@
       "kind": "algorithm",
       "name": "UNNAMED-CONCEPT-6",
       "path": "algorithms/UNNAMED-CONCEPT-6.blake3-512:2fe5b5099c631a3beed511039dcc930992aa5716a834ff277099194a54efca0da4a39714b140ccad263966e850ca42b77136826e159d1c62d4675c2bf2599962.json"
+    },
+    "blake3-512:305e9ff4921c3cfdbe7d0703efa412269b8fbe94b4a7659da788e3cd8656b7afcef08a43c8effd1aa6b27320dfd99b36e79253d4324c52669296fc2286ab5074": {
+      "cid": "blake3-512:305e9ff4921c3cfdbe7d0703efa412269b8fbe94b4a7659da788e3cd8656b7afcef08a43c8effd1aa6b27320dfd99b36e79253d4324c52669296fc2286ab5074",
+      "kind": "algorithm",
+      "name": "concept:catch-arm",
+      "path": "algorithms/concept:catch-arm.blake3-512:305e9ff4921c3cfdbe7d0703efa412269b8fbe94b4a7659da788e3cd8656b7afcef08a43c8effd1aa6b27320dfd99b36e79253d4324c52669296fc2286ab5074.json"
     },
     "blake3-512:30770cc7910218ed1e46602e0741839b913effe358c279d10979da1e2c6588b43fa7343e39bfbdc19dd291b702dba0bc8ea0d1c24d5d705e3344360f327aee80": {
       "cid": "blake3-512:30770cc7910218ed1e46602e0741839b913effe358c279d10979da1e2c6588b43fa7343e39bfbdc19dd291b702dba0bc8ea0d1c24d5d705e3344360f327aee80",
@@ -1447,6 +1458,12 @@
       "name": "morphism:c11:while:to:concept:while",
       "path": "algorithms/morphism:c11:while:to:concept:while.blake3-512:6320ffdf2eb9d1960e583f47087e95683f6b39b7dfddc5ed5fb453134832dfc471b173a95bd6a4779556e3ba5c47f1b03e02970775252ae5085ebfaf27b6b72e.json"
     },
+    "blake3-512:635711d13946184e228260c7d181f93db1f00d5dae2cb6d3068763faa2490e702e1c20fb4280f28ee145aec91cdce48e206a6721eaebb1ccefe5b690cce44b45": {
+      "cid": "blake3-512:635711d13946184e228260c7d181f93db1f00d5dae2cb6d3068763faa2490e702e1c20fb4280f28ee145aec91cdce48e206a6721eaebb1ccefe5b690cce44b45",
+      "kind": "algorithm",
+      "name": "concept:ref",
+      "path": "algorithms/concept:ref.blake3-512:635711d13946184e228260c7d181f93db1f00d5dae2cb6d3068763faa2490e702e1c20fb4280f28ee145aec91cdce48e206a6721eaebb1ccefe5b690cce44b45.json"
+    },
     "blake3-512:6416cb7457c857c60cd901a01edddb95fed1cd8f890ab6a37c874edcdb7125e5308cfdba63247e84abde588e4f555ebdd4020f7362a3f7c8746bae338f57d522": {
       "cid": "blake3-512:6416cb7457c857c60cd901a01edddb95fed1cd8f890ab6a37c874edcdb7125e5308cfdba63247e84abde588e4f555ebdd4020f7362a3f7c8746bae338f57d522",
       "kind": "algorithm",
@@ -1561,6 +1578,12 @@
       "name": "morphism_c11_eq_to_eq",
       "path": "receipts/morphism_c11_eq_to_eq.blake3-512:6ee94dc59f6bc39ff5752257ec52290d2e86c1f3a92f8ecd3b893386ac0f7b3de7ee5e607ef2b517e7a47447753ad544c3dea02dd22b0033ed60399af4da25cb.json"
     },
+    "blake3-512:6f144c88686f84bd5d6d99ceaaf30ef29263b5a4bc33488f3c1040fd7b73a3b7bd09e963ae8e032375a53f82c25f4d9aa6aa977e730d299d0dc1e9a0455b09e8": {
+      "cid": "blake3-512:6f144c88686f84bd5d6d99ceaaf30ef29263b5a4bc33488f3c1040fd7b73a3b7bd09e963ae8e032375a53f82c25f4d9aa6aa977e730d299d0dc1e9a0455b09e8",
+      "kind": "algorithm",
+      "name": "concept:match",
+      "path": "algorithms/concept:match.blake3-512:6f144c88686f84bd5d6d99ceaaf30ef29263b5a4bc33488f3c1040fd7b73a3b7bd09e963ae8e032375a53f82c25f4d9aa6aa977e730d299d0dc1e9a0455b09e8.json"
+    },
     "blake3-512:6f790319928e5cd2e1d2dc23167f3558c10de30a9fe20d2d997635b9839191c04e447c614c097e46b62fa605e1f66c91fbe16bb848e3ee428a2bc0dff01285ec": {
       "cid": "blake3-512:6f790319928e5cd2e1d2dc23167f3558c10de30a9fe20d2d997635b9839191c04e447c614c097e46b62fa605e1f66c91fbe16bb848e3ee428a2bc0dff01285ec",
       "kind": "realization",
@@ -1579,6 +1602,12 @@
       "name": "morphism_c11_sub_to_sub",
       "path": "receipts/morphism_c11_sub_to_sub.blake3-512:7061b2ae8694080f016305b8c3f4aabe7b972fdd0162f81082ea64b818d4fbda572129ff8e609aee80cc5c5fdbfff4fbc0d8d34f7ee4cf44dc8e5b0ddc8ce212.json"
     },
+    "blake3-512:70fce1d476cd4e5ff67aab76b5d270d1a0e5baff5c2637d53efa626664f1b4e45fbca7d1898575c8e8985041b5ac34bd42a342547cfc4e4896fd5518ba51d083": {
+      "cid": "blake3-512:70fce1d476cd4e5ff67aab76b5d270d1a0e5baff5c2637d53efa626664f1b4e45fbca7d1898575c8e8985041b5ac34bd42a342547cfc4e4896fd5518ba51d083",
+      "kind": "algorithm",
+      "name": "concept:try",
+      "path": "algorithms/concept:try.blake3-512:70fce1d476cd4e5ff67aab76b5d270d1a0e5baff5c2637d53efa626664f1b4e45fbca7d1898575c8e8985041b5ac34bd42a342547cfc4e4896fd5518ba51d083.json"
+    },
     "blake3-512:7116ef6e62e6739b213a8394f975a53c771b89f08c36d27143827acfcfebc0e39e5b82c530be668c3cfd5ec6966ccaa42930b37fdb1f4ac25652a970be10fb6b": {
       "cid": "blake3-512:7116ef6e62e6739b213a8394f975a53c771b89f08c36d27143827acfcfebc0e39e5b82c530be668c3cfd5ec6966ccaa42930b37fdb1f4ac25652a970be10fb6b",
       "kind": "sort",
@@ -1590,6 +1619,12 @@
       "kind": "algorithm",
       "name": "morphism:java:mod:to:concept:mod",
       "path": "algorithms/morphism:java:mod:to:concept:mod.blake3-512:71afcdf68b5858c63ff59bb35f4f4c57650bf1ab1bb87f124e5a50f354f50677b139cfce60dba0a86a81974e6215d999a8316fda968b39a718faa18e372fcfb0.json"
+    },
+    "blake3-512:71f5e3b2578b4fabec0ad952c1c96341d55103f61a3b5a50b1ef5f764bc60c2164e706b669b07910a6261a77eda7bbfae529c00d72c4fbc887edfa1e1cb20a6e": {
+      "cid": "blake3-512:71f5e3b2578b4fabec0ad952c1c96341d55103f61a3b5a50b1ef5f764bc60c2164e706b669b07910a6261a77eda7bbfae529c00d72c4fbc887edfa1e1cb20a6e",
+      "kind": "algorithm",
+      "name": "concept:finally-arm",
+      "path": "algorithms/concept:finally-arm.blake3-512:71f5e3b2578b4fabec0ad952c1c96341d55103f61a3b5a50b1ef5f764bc60c2164e706b669b07910a6261a77eda7bbfae529c00d72c4fbc887edfa1e1cb20a6e.json"
     },
     "blake3-512:71ff8be9a37d14b610cdcd19bbe97fbc8c45099b40055ca805de80645f67defd2805d44e340f679a6257a4b823a0c45d863aed2befa9d21c681d15b14647c990": {
       "cid": "blake3-512:71ff8be9a37d14b610cdcd19bbe97fbc8c45099b40055ca805de80645f67defd2805d44e340f679a6257a4b823a0c45d863aed2befa9d21c681d15b14647c990",
@@ -1932,6 +1967,12 @@
       "kind": "realization",
       "name": "concept:tagged-union->java:sealed-interface",
       "path": "realizations/concept:tagged-union->java:sealed-interface.blake3-512:872a0155a4d248ae1b8d88164306f20904898fa11032374a20db110d38dbbebc0fe75cd9e843894008bbd5f47cbf6913ec0f4023ddc09f901f1c1dd3068dc575.json"
+    },
+    "blake3-512:87682d03506ca890af542fc90a979f8148586a3a461f45776c746574380dfd6a31675af2b999de6221c39e21fea9f9beb713d506c36d09ae495d2ba5ff995b59": {
+      "cid": "blake3-512:87682d03506ca890af542fc90a979f8148586a3a461f45776c746574380dfd6a31675af2b999de6221c39e21fea9f9beb713d506c36d09ae495d2ba5ff995b59",
+      "kind": "algorithm",
+      "name": "concept:match-arm",
+      "path": "algorithms/concept:match-arm.blake3-512:87682d03506ca890af542fc90a979f8148586a3a461f45776c746574380dfd6a31675af2b999de6221c39e21fea9f9beb713d506c36d09ae495d2ba5ff995b59.json"
     },
     "blake3-512:88800218a5fa39a69566c3fd27f4288d5eb2328810d291ab12c4e6c412833d2193d40c2d5f60427d753fb92daf55f8f8bacba41d16361cf793c2971d748f27a4": {
       "cid": "blake3-512:88800218a5fa39a69566c3fd27f4288d5eb2328810d291ab12c4e6c412833d2193d40c2d5f60427d753fb92daf55f8f8bacba41d16361cf793c2971d748f27a4",
@@ -2497,6 +2538,12 @@
       "name": "exam-manifest-v1.1",
       "path": "exams/v1.1.blake3-512:b38426ba10ee3a6c28e9e32cae9aa65cfb5b750950464d1e67e9d669956bd40288d25c247d0ec2d638fd63e2d235d944f419055c0374c78488b4be98da040451.json"
     },
+    "blake3-512:b3b80ca6377671d9b7a9a661775f4981a3523203f81b35dcf4b2f238f0d759041f36f82bfb8f094bd57f76045afc66c1f33fe26fed592cfbaa9468c4f309de23": {
+      "cid": "blake3-512:b3b80ca6377671d9b7a9a661775f4981a3523203f81b35dcf4b2f238f0d759041f36f82bfb8f094bd57f76045afc66c1f33fe26fed592cfbaa9468c4f309de23",
+      "kind": "algorithm",
+      "name": "concept:field",
+      "path": "algorithms/concept:field.blake3-512:b3b80ca6377671d9b7a9a661775f4981a3523203f81b35dcf4b2f238f0d759041f36f82bfb8f094bd57f76045afc66c1f33fe26fed592cfbaa9468c4f309de23.json"
+    },
     "blake3-512:b3dcafd52368f774c941b24aa7a0f40faa5af70377ec2fd735992829cce7b8e21099f7903c20b582832aec59bf94fbb2135f9a281e52338690f533df31b32478": {
       "cid": "blake3-512:b3dcafd52368f774c941b24aa7a0f40faa5af70377ec2fd735992829cce7b8e21099f7903c20b582832aec59bf94fbb2135f9a281e52338690f533df31b32478",
       "kind": "receipt",
@@ -2947,6 +2994,12 @@
       "name": "morphism:ts:return:to:concept:return",
       "path": "algorithms/morphism:ts:return:to:concept:return.blake3-512:cc7b47bfd0791c18fdd1167eaa1d06fac8a608106a4522e8c5826c45fa4b7860135de4218688cab7148675620e87bc77ddcfdc962a5ee2fb3272d08503b32551.json"
     },
+    "blake3-512:cd7b5676639179f35197dd848feaa7ed8d37b0343ace32d38384624291442502cb99d65f932832f94d14a9675193f132fcd387c049e1af21f16fcda116ea4c72": {
+      "cid": "blake3-512:cd7b5676639179f35197dd848feaa7ed8d37b0343ace32d38384624291442502cb99d65f932832f94d14a9675193f132fcd387c049e1af21f16fcda116ea4c72",
+      "kind": "algorithm",
+      "name": "concept:for-each",
+      "path": "algorithms/concept:for-each.blake3-512:cd7b5676639179f35197dd848feaa7ed8d37b0343ace32d38384624291442502cb99d65f932832f94d14a9675193f132fcd387c049e1af21f16fcda116ea4c72.json"
+    },
     "blake3-512:cda001205044132fe247b20f0836acd8bfc918cb0923eac6f49e1921dab26fc9eaee98d7df4754f33f9686aeeb34f8a568acdd209c85641c8d9600dd8e5ca61d": {
       "cid": "blake3-512:cda001205044132fe247b20f0836acd8bfc918cb0923eac6f49e1921dab26fc9eaee98d7df4754f33f9686aeeb34f8a568acdd209c85641c8d9600dd8e5ca61d",
       "kind": "receipt",
@@ -3180,6 +3233,12 @@
       "kind": "algorithm",
       "name": "morphism:ts:source-unit:to:concept:source-unit",
       "path": "algorithms/morphism:ts:source-unit:to:concept:source-unit.blake3-512:e147019dff722e95b183b05f16f872d7547dc040990e66d25fa0743b5931cf5a377822706f9f2a5254e00aa40c3d6e14a7a2a338ed5b2c8162599b75c5f1e2ec.json"
+    },
+    "blake3-512:e1d1f13cb94fcdb59a93ae9feb5e883944f7949711de567e91e21576ea644830a5212f6c92da158aa9cd8a25bcbd38a119356d8883a9542d21d1b184bc71eb70": {
+      "cid": "blake3-512:e1d1f13cb94fcdb59a93ae9feb5e883944f7949711de567e91e21576ea644830a5212f6c92da158aa9cd8a25bcbd38a119356d8883a9542d21d1b184bc71eb70",
+      "kind": "algorithm",
+      "name": "concept:array-repeat",
+      "path": "algorithms/concept:array-repeat.blake3-512:e1d1f13cb94fcdb59a93ae9feb5e883944f7949711de567e91e21576ea644830a5212f6c92da158aa9cd8a25bcbd38a119356d8883a9542d21d1b184bc71eb70.json"
     },
     "blake3-512:e1f3a79e39576e01d43f52ed7b538c97c3a36cdf68a03ca1838cc8933b6c88d344382c15ef9fc53887d47ed5c813221702585cd105b28aa93ccee66d0111f45d": {
       "cid": "blake3-512:e1f3a79e39576e01d43f52ed7b538c97c3a36cdf68a03ca1838cc8933b6c88d344382c15ef9fc53887d47ed5c813221702585cd105b28aa93ccee66d0111f45d",
@@ -3619,5 +3678,6 @@
       "name": "morphism_java_ne_to_ne",
       "path": "receipts/morphism_java_ne_to_ne.blake3-512:ff44cb770b63de5a65d616c423b6f114d430e1e2cc0a84ae3f953cc0a46763c055b36b1ad1b8586678233efcc403c9b1417eb6279392b48459759b3635727256.json"
     }
-  }
+  },
+  "schema_version": "provekit-algebraic-catalog-index/1"
 }

@@ -35,6 +35,82 @@ final class JsonUtil {
         return "\"" + escape(s) + "\"";
     }
 
+    /**
+     * Structural depth-1 key check: does the JSON object have `<field>` as a
+     * top-level key (not nested, not inside a string value)? Used to
+     * distinguish field-absent (legacy/same-lang) from field-present-but-
+     * empty (cross-lang signaling a substrate gap).
+     *
+     * A naive substring scan matches `"param_sort_cids"` anywhere — including
+     * nested objects and string values containing those characters — and
+     * misclassifies same-lang requests as cross-lang. This implementation
+     * walks the string respecting JSON quoting + nesting, and only considers
+     * keys at depth 1 (relative to the outer object).
+     */
+    static boolean hasField(String json, String field) {
+        if (json == null) return false;
+        String quoted = "\"" + field + "\"";
+        int depth = 0;
+        int i = 0;
+        int n = json.length();
+        // Skip leading whitespace + the opening `{`.
+        while (i < n && Character.isWhitespace(json.charAt(i))) i++;
+        if (i >= n || json.charAt(i) != '{') return false;
+        i++; // past opening brace
+        depth = 1;
+        while (i < n) {
+            char c = json.charAt(i);
+            if (c == '"') {
+                // At depth 1, look for our key. Other depths: just scan past
+                // the string (it's a value or a nested key).
+                if (depth == 1) {
+                    // Check whether this string token is our field name (depth-1 key).
+                    int end = scanStringEnd(json, i);
+                    if (end < 0) return false;
+                    if (end - i + 1 == quoted.length()
+                            && json.regionMatches(i, quoted, 0, quoted.length())) {
+                        // Skip whitespace after the string; if it's `:`, this
+                        // string was a KEY. Otherwise (e.g. `,` `}`) it was a value.
+                        int p = end + 1;
+                        while (p < n && Character.isWhitespace(json.charAt(p))) p++;
+                        if (p < n && json.charAt(p) == ':') return true;
+                    }
+                    i = end + 1;
+                    continue;
+                }
+                int end = scanStringEnd(json, i);
+                if (end < 0) return false;
+                i = end + 1;
+                continue;
+            }
+            if (c == '{' || c == '[') {
+                depth++;
+            } else if (c == '}' || c == ']') {
+                depth--;
+                if (depth == 0) return false;
+            }
+            i++;
+        }
+        return false;
+    }
+
+    /** Given an index pointing at an opening `"`, return the index of the
+     *  matching closing `"`, respecting backslash escapes. -1 if unterminated. */
+    private static int scanStringEnd(String json, int start) {
+        int i = start + 1;
+        int n = json.length();
+        while (i < n) {
+            char c = json.charAt(i);
+            if (c == '\\') {
+                i += 2;
+                continue;
+            }
+            if (c == '"') return i;
+            i++;
+        }
+        return -1;
+    }
+
     static String decodeJsonStringField(String json, String field) {
         String key = "\"" + field + "\"";
         int ki = json.indexOf(key);

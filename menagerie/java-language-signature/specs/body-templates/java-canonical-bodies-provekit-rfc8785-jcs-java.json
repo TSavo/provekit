@@ -1,0 +1,69 @@
+{
+  "header": {
+    "cid": "blake3-512:914a52ee058d7d6e3316933072716c1a641640bbf3275e02a1a94fb62954bd95d35643b0f2e5b0822f41ba8c4173293b87300f123f2a9e088ceeb090a90285b9",
+    "content": {
+      "entries": [
+        {
+          "concept_name": "concept:rfc8785-jcs-encode",
+          "emission_template": {
+            "kind": "verbatim",
+            "template": "        StringBuilder out = new StringBuilder();\n        encode_value(${param0}, out);\n        return out.toString();\n    "
+          },
+          "loss_record_contribution": {
+            "form": "literal",
+            "value": {
+              "entries": [
+                "rfc8785-number-serialization-non-ecma262"
+              ]
+            }
+          },
+          "signature_guard": {
+            "max_params": 1,
+            "min_params": 1
+          },
+          "target_library_tag": "provekit-rfc8785-jcs-java"
+        },
+        {
+          "concept_name": "concept:rfc8785-jcs-encode-value",
+          "emission_template": {
+            "kind": "verbatim",
+            "template": "        if (${param0} == null || ${param0}.isNull()) {\n            ${param1}.append(\"null\");\n        } else if (${param0}.isBoolean()) {\n            ${param1}.append(${param0}.booleanValue() ? \"true\" : \"false\");\n        } else if (${param0}.isNumber()) {\n            // RFC 8785 uses ECMA-262 number serialization. Java's\n            // double-to-string is close but not identical; for now use the\n            // textual form Jackson chose. (Full ECMA-262 conformance is a\n            // separate loss dimension \u00e2\u0080\u0094 declared in the rust sister's\n            // future when minted.)\n            ${param1}.append(${param0}.asText());\n        } else if (${param0}.isTextual()) {\n            encode_string(${param0}.asText(), ${param1});\n        } else if (${param0}.isArray()) {\n            ${param1}.append('[');\n            boolean first = true;\n            for (JsonNode child : ${param0}) {\n                if (!first) ${param1}.append(',');\n                encode_value(child, ${param1});\n                first = false;\n            }\n            ${param1}.append(']');\n        } else if (${param0}.isObject()) {\n            // RFC 8785 requires keys sorted by code-point order (after parsing\n            // unescape).\n            List<String> keys = new ArrayList<>();\n            Iterator<String> it = ${param0}.fieldNames();\n            while (it.hasNext()) keys.add(it.next());\n            Collections.sort(keys);\n            ${param1}.append('{');\n            boolean first = true;\n            for (String k : keys) {\n                if (!first) ${param1}.append(',');\n                encode_string(k, ${param1});\n                ${param1}.append(':');\n                encode_value(${param0}.get(k), ${param1});\n                first = false;\n            }\n            ${param1}.append('}');\n        }\n    "
+          },
+          "loss_record_contribution": {
+            "form": "literal",
+            "value": {
+              "entries": [
+                "rfc8785-number-serialization-non-ecma262"
+              ]
+            }
+          },
+          "signature_guard": {
+            "max_params": 2,
+            "min_params": 2
+          },
+          "target_library_tag": "provekit-rfc8785-jcs-java"
+        },
+        {
+          "concept_name": "concept:rfc8785-jcs-encode-string",
+          "emission_template": {
+            "kind": "verbatim",
+            "template": "        ${param1}.append('\"');\n        for (int i = 0; i < ${param0}.length(); i++) {\n            char c = ${param0}.charAt(i);\n            if (c == '\"') {\n                ${param1}.append(\"\\\\\\\"\");\n            } else if (c == '\\\\') {\n                ${param1}.append(\"\\\\\\\\\");\n            } else if (c == '\\b') {\n                ${param1}.append(\"\\\\b\");\n            } else if (c == '\\f') {\n                ${param1}.append(\"\\\\f\");\n            } else if (c == '\\n') {\n                ${param1}.append(\"\\\\n\");\n            } else if (c == '\\r') {\n                ${param1}.append(\"\\\\r\");\n            } else if (c == '\\t') {\n                ${param1}.append(\"\\\\t\");\n            } else if (c < 0x20) {\n                ${param1}.append(String.format(\"\\\\u%04x\", (int) c));\n            } else {\n                ${param1}.append(c);\n            }\n        }\n        ${param1}.append('\"');\n    "
+          },
+          "loss_record_contribution": {
+            "form": "literal",
+            "value": {
+              "entries": []
+            }
+          },
+          "signature_guard": {
+            "max_params": 2,
+            "min_params": 2
+          },
+          "target_library_tag": "provekit-rfc8785-jcs-java"
+        }
+      ],
+      "target_language": "java",
+      "template_name": "java-canonical-bodies-provekit-rfc8785-jcs-java"
+    }
+  }
+}

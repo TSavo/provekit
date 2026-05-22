@@ -1,0 +1,44 @@
+{
+  "cid": "blake3-512:cd7b5676639179f35197dd848feaa7ed8d37b0343ace32d38384624291442502cb99d65f932832f94d14a9675193f132fcd387c049e1af21f16fcda116ea4c72",
+  "memento": {
+    "contract": {
+      "body": {
+        "kind": "atomic",
+        "name": "true"
+      },
+      "formals": [
+        "var",
+        "iterable",
+        "body"
+      ],
+      "kind": "wp-rule"
+    },
+    "contract_note": "Iterator-based loop. Bind each element from iterable to var; evaluate body per iteration. Covers Java enhanced-for, Rust for, Python for in-iterator patterns.",
+    "formal_sorts": [
+      "Name",
+      "Expr",
+      "Stmt"
+    ],
+    "kind": "concept-abstraction",
+    "operator": "concept:for-each",
+    "realizations": [],
+    "result_sort": "Stmt",
+    "slots": [
+      {
+        "name": "var"
+      },
+      {
+        "name": "iterable"
+      },
+      {
+        "name": "body"
+      }
+    ],
+    "tier": "abstraction"
+  },
+  "signature": {
+    "alg": "ed25519",
+    "key_id": "UNSIGNED_DEV_ONLY",
+    "sig_b64": "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"
+  }
+}

@@ -1,0 +1,65 @@
+{
+  "header": {
+    "cid": "blake3-512:663c90074b2f32f4efcba4b20f5b30ad6dc6a6dcf6e21785c4ac3651777907d8e4887cef5fa064a907554850aa63b4b49be80b22f07933967dd45f4ad6fa8974",
+    "content": {
+      "entries": [
+        {
+          "concept_name": "concept:stdio-read-line",
+          "emission_template": {
+            "kind": "verbatim",
+            "template": "let stdin = io::stdin();\n    let mut handle = stdin.lock();\n    let mut line = String::new();\n    match handle.read_line(&mut line) {\n        Ok(0) => None,\n        Ok(_) => {\n            if line.ends_with('\\n') {\n                line.pop();\n                if line.ends_with('\\r') {\n                    line.pop();\n                }\n            }\n            Some(line)\n        }\n        Err(_) => None,\n    }"
+          },
+          "loss_record_contribution": {
+            "form": "literal",
+            "value": {
+              "entries": []
+            }
+          },
+          "signature_guard": {
+            "max_params": 0,
+            "min_params": 0
+          },
+          "target_library_tag": "std::io"
+        },
+        {
+          "concept_name": "concept:stdio-write-line",
+          "emission_template": {
+            "kind": "verbatim",
+            "template": "let stdout = io::stdout();\n    let mut handle = stdout.lock();\n    let _ = writeln!(handle, \"{}\", ${param0});\n    let _ = handle.flush();"
+          },
+          "loss_record_contribution": {
+            "form": "literal",
+            "value": {
+              "entries": []
+            }
+          },
+          "signature_guard": {
+            "max_params": 1,
+            "min_params": 1
+          },
+          "target_library_tag": "std::io"
+        },
+        {
+          "concept_name": "concept:stderr-write-line",
+          "emission_template": {
+            "kind": "verbatim",
+            "template": "let stderr = io::stderr();\n    let mut handle = stderr.lock();\n    let _ = writeln!(handle, \"{}\", ${param0});"
+          },
+          "loss_record_contribution": {
+            "form": "literal",
+            "value": {
+              "entries": []
+            }
+          },
+          "signature_guard": {
+            "max_params": 1,
+            "min_params": 1
+          },
+          "target_library_tag": "std::io"
+        }
+      ],
+      "target_language": "rust",
+      "template_name": "rust-canonical-bodies-std::io"
+    }
+  }
+}

@@ -1,0 +1,202 @@
+{
+  "header": {
+    "cid": "blake3-512:20a7bd956bc7f772eef0ccfb4ee087f79ab4d970ac932854ef19d6b0dc9ca722f027624773e93399a4283fa58c66e672e219b39da47a3ea5b0a5021905085ad2",
+    "content": {
+      "entries": [
+        {
+          "concept_name": "concept:sql-connection-open",
+          "emission_template": {
+            "kind": "verbatim",
+            "template": "Client::connect(${param0}, NoTls)"
+          },
+          "loss_record_contribution": {
+            "form": "literal",
+            "value": {
+              "entries": [
+                "sync-vs-async",
+                "tls-bring-your-own",
+                "connection-pooling"
+              ]
+            }
+          },
+          "signature_guard": {
+            "max_params": 1,
+            "min_params": 1
+          },
+          "target_library_tag": "postgres"
+        },
+        {
+          "concept_name": "concept:sql-connection-close",
+          "emission_template": {
+            "kind": "verbatim",
+            "template": "${param0}.close()"
+          },
+          "loss_record_contribution": {
+            "form": "literal",
+            "value": {
+              "entries": [
+                "sync-vs-async",
+                "drop-vs-explicit-close"
+              ]
+            }
+          },
+          "signature_guard": {
+            "max_params": 1,
+            "min_params": 1
+          },
+          "target_library_tag": "postgres"
+        },
+        {
+          "concept_name": "concept:sql-execute",
+          "emission_template": {
+            "kind": "verbatim",
+            "template": "${param0}.execute(${param1}, ${param2})"
+          },
+          "loss_record_contribution": {
+            "form": "literal",
+            "value": {
+              "entries": [
+                "sync-vs-async",
+                "transaction-isolation",
+                "row-count-semantics"
+              ]
+            }
+          },
+          "signature_guard": {
+            "max_params": 3,
+            "min_params": 3
+          },
+          "target_library_tag": "postgres"
+        },
+        {
+          "concept_name": "concept:sql-query",
+          "emission_template": {
+            "kind": "verbatim",
+            "template": "${param0}.query(${param1}, ${param2})"
+          },
+          "loss_record_contribution": {
+            "form": "literal",
+            "value": {
+              "entries": [
+                "sync-vs-async",
+                "row-cardinality",
+                "type-coercion"
+              ]
+            }
+          },
+          "signature_guard": {
+            "max_params": 3,
+            "min_params": 3
+          },
+          "target_library_tag": "postgres"
+        },
+        {
+          "concept_name": "concept:sql-query",
+          "emission_template": {
+            "kind": "verbatim",
+            "template": "${param0}.query_one(${param1}, ${param2})"
+          },
+          "loss_record_contribution": {
+            "form": "literal",
+            "value": {
+              "entries": [
+                "sync-vs-async",
+                "row-cardinality-exactly-one",
+                "type-coercion"
+              ]
+            }
+          },
+          "signature_guard": {
+            "max_params": 3,
+            "min_params": 3
+          },
+          "target_library_tag": "postgres"
+        },
+        {
+          "concept_name": "concept:sql-prepare",
+          "emission_template": {
+            "kind": "verbatim",
+            "template": "${param0}.prepare(${param1})"
+          },
+          "loss_record_contribution": {
+            "form": "literal",
+            "value": {
+              "entries": [
+                "sync-vs-async",
+                "named-statement-cache"
+              ]
+            }
+          },
+          "signature_guard": {
+            "max_params": 2,
+            "min_params": 2
+          },
+          "target_library_tag": "postgres"
+        },
+        {
+          "concept_name": "concept:sql-transaction-begin",
+          "emission_template": {
+            "kind": "verbatim",
+            "template": "${param0}.transaction()"
+          },
+          "loss_record_contribution": {
+            "form": "literal",
+            "value": {
+              "entries": [
+                "sync-vs-async",
+                "isolation-level-default"
+              ]
+            }
+          },
+          "signature_guard": {
+            "max_params": 1,
+            "min_params": 1
+          },
+          "target_library_tag": "postgres"
+        },
+        {
+          "concept_name": "concept:sql-transaction-commit",
+          "emission_template": {
+            "kind": "verbatim",
+            "template": "${param0}.commit()"
+          },
+          "loss_record_contribution": {
+            "form": "literal",
+            "value": {
+              "entries": [
+                "sync-vs-async"
+              ]
+            }
+          },
+          "signature_guard": {
+            "max_params": 1,
+            "min_params": 1
+          },
+          "target_library_tag": "postgres"
+        },
+        {
+          "concept_name": "concept:sql-transaction-rollback",
+          "emission_template": {
+            "kind": "verbatim",
+            "template": "${param0}.rollback()"
+          },
+          "loss_record_contribution": {
+            "form": "literal",
+            "value": {
+              "entries": [
+                "sync-vs-async"
+              ]
+            }
+          },
+          "signature_guard": {
+            "max_params": 1,
+            "min_params": 1
+          },
+          "target_library_tag": "postgres"
+        }
+      ],
+      "target_language": "rust",
+      "template_name": "rust-canonical-bodies-postgres"
+    }
+  }
+}

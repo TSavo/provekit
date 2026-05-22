@@ -1,5 +1,6 @@
 {
   "header": {
+    "cid": "blake3-512:206184cd70160ddf845a4378a1e473042c5f926df8be80d17392f43446bd9fab19377dd35d9d18edd00d6a6b5c8b3881a42eca3013479724aa71fa9987896a61",
     "content": {
       "target_language": "python",
       "template_name": "python-canonical-bodies-sqlite3",
@@ -697,8 +698,8 @@
             "min_params": 1,
             "max_params": 1
           },
-          "observed_dimension": "autocommit-mode",
-          "target_library_tag": "sqlite3"
+          "target_library_tag": "sqlite3",
+          "observed_dimension": "autocommit-mode"
         },
         {
           "concept_name": "concept:contract-observation",
@@ -716,8 +717,8 @@
             "min_params": 1,
             "max_params": 1
           },
-          "observed_dimension": "isolation-level",
-          "target_library_tag": "sqlite3"
+          "target_library_tag": "sqlite3",
+          "observed_dimension": "isolation-level"
         },
         {
           "concept_name": "concept:contract-observation",
@@ -735,8 +736,8 @@
             "min_params": 1,
             "max_params": 1
           },
-          "observed_dimension": "column-names",
-          "target_library_tag": "sqlite3"
+          "target_library_tag": "sqlite3",
+          "observed_dimension": "column-names"
         },
         {
           "concept_name": "concept:contract-observation",
@@ -754,8 +755,8 @@
             "min_params": 1,
             "max_params": 1
           },
-          "observed_dimension": "column-count",
-          "target_library_tag": "sqlite3"
+          "target_library_tag": "sqlite3",
+          "observed_dimension": "column-count"
         },
         {
           "concept_name": "concept:contract-observation",
@@ -773,8 +774,8 @@
             "min_params": 2,
             "max_params": 2
           },
-          "observed_dimension": "column-index-of-name",
-          "target_library_tag": "sqlite3"
+          "target_library_tag": "sqlite3",
+          "observed_dimension": "column-index-of-name"
         },
         {
           "concept_name": "concept:sql-busy-timeout",

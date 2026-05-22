@@ -1,0 +1,83 @@
+{
+  "header": {
+    "cid": "blake3-512:da5f2d8ad054a657e63d05a3bf8e337cc2087f9266bf664d9619d58fbb05b6f901378cddf5ddf0ded808ec4a64c5bad8abec8c250abd447ed5635bc5a2d61165",
+    "content": {
+      "entries": [
+        {
+          "concept_name": "concept:blake3-512-of",
+          "emission_template": {
+            "kind": "verbatim",
+            "template": "let mut hasher = blake3::Hasher::new();\n    hasher.update(${param0});\n    let mut out = [0u8; 64];\n    hasher.finalize_xof().fill(&mut out);\n    out"
+          },
+          "loss_record_contribution": {
+            "form": "literal",
+            "value": {
+              "entries": []
+            }
+          },
+          "signature_guard": {
+            "max_params": 1,
+            "min_params": 1
+          },
+          "target_library_tag": "blake3"
+        },
+        {
+          "concept_name": "concept:blake3-hasher-new",
+          "emission_template": {
+            "kind": "verbatim",
+            "template": "Hasher::new()"
+          },
+          "loss_record_contribution": {
+            "form": "literal",
+            "value": {
+              "entries": []
+            }
+          },
+          "signature_guard": {
+            "max_params": 0,
+            "min_params": 0
+          },
+          "target_library_tag": "blake3"
+        },
+        {
+          "concept_name": "concept:blake3-hasher-update",
+          "emission_template": {
+            "kind": "verbatim",
+            "template": "${param0}.update(${param1});"
+          },
+          "loss_record_contribution": {
+            "form": "literal",
+            "value": {
+              "entries": []
+            }
+          },
+          "signature_guard": {
+            "max_params": 2,
+            "min_params": 2
+          },
+          "target_library_tag": "blake3"
+        },
+        {
+          "concept_name": "concept:blake3-hasher-finalize-xof-64",
+          "emission_template": {
+            "kind": "verbatim",
+            "template": "let mut out = [0u8; 64];\n    ${param0}.finalize_xof().fill(&mut out);\n    out"
+          },
+          "loss_record_contribution": {
+            "form": "literal",
+            "value": {
+              "entries": []
+            }
+          },
+          "signature_guard": {
+            "max_params": 1,
+            "min_params": 1
+          },
+          "target_library_tag": "blake3"
+        }
+      ],
+      "target_language": "rust",
+      "template_name": "rust-canonical-bodies-blake3"
+    }
+  }
+}

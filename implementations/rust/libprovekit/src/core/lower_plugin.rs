@@ -60,6 +60,24 @@ pub struct RealizeRequest {
     pub family: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub library_version: Option<String>,
+    /// Substrate-honest cross-language signature pins. Each entry is a
+    /// concept-hub sort CID (blake3-512:...) — the kit-internal sort
+    /// labels stay inside the source kit. The target kit's realize
+    /// reads these to look up its OWN type syntax via its catalog
+    /// morphism (concept-hub → kit-internal sort → kit-target-syntax).
+    /// Empty strings in the vec signal "kit has no morphism for this
+    /// param type" — substrate-honest gap signal.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub param_sort_cids: Vec<String>,
+    #[serde(default, skip_serializing_if = "String::is_empty")]
+    pub return_sort_cid: String,
+    /// The dispatcher-resolved `library_tag` (from the realize manifest
+    /// dispatched by kit_dispatch). The realize plugin uses this to
+    /// disambiguate body-template entries when multiple libraries ship
+    /// templates for the same concept. Without this field, multi-library
+    /// body-template caches degrade to load-order-dependent selection.
+    #[serde(default, skip_serializing_if = "String::is_empty")]
+    pub target_library_tag: String,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -382,6 +400,11 @@ fn invocation_from_tree_node(
     let modes =
         node_string_array(node, &["modes"])?.unwrap_or_else(|| parent_request.modes.clone());
     let operand_bindings = value_array_field(node, &["operandBindings", "operand_bindings"]);
+    // Resolve effective library_tag FIRST so child requests payload matches
+    // the library they're actually routed to (transport + body-template
+    // selection both rely on this — previously they could disagree).
+    let effective_library_tag = node_string(node, &["libraryTag", "library_tag", "library"])
+        .or_else(|| library_tag.map(str::to_string));
     let request = RealizeRequest {
         function,
         params,
@@ -403,13 +426,22 @@ fn invocation_from_tree_node(
         sugar_plugins: parent_request.sugar_plugins.clone(),
         family: parent_request.family.clone(),
         library_version: parent_request.library_version.clone(),
+        param_sort_cids: node_string_array(node, &["paramSortCids", "param_sort_cids"])?
+            .unwrap_or_else(|| parent_request.param_sort_cids.clone()),
+        return_sort_cid: node_string(node, &["returnSortCid", "return_sort_cid"])
+            .unwrap_or_else(|| parent_request.return_sort_cid.clone()),
+        // Child target_library_tag = effective_library_tag (child-level
+        // resolution) falling back to parent's. Previously always copied
+        // parent, which mismatched the transport route when the child had
+        // a libraryTag override.
+        target_library_tag: effective_library_tag
+            .clone()
+            .unwrap_or_else(|| parent_request.target_library_tag.clone()),
         proc_macro_invocations: value_array_field(
             node,
             &["procMacroInvocations", "proc_macro_invocations"],
         ),
     };
-    let effective_library_tag = node_string(node, &["libraryTag", "library_tag", "library"])
-        .or_else(|| library_tag.map(str::to_string));
     let mut from = Vec::new();
     if let Some(shape_cid) = optional_cid_field(node, &["shapeCid", "shape_cid"])? {
         from.push(shape_cid);
@@ -774,6 +806,15 @@ pub fn request_from_spec(spec: &Value) -> Result<RealizeRequest, String> {
         sugar_plugins: value_array_field(spec, &["sugarPlugins", "sugar_plugins"]),
         family: string_field_optional(spec, &["family"]),
         library_version: string_field_optional(spec, &["library_version", "libraryVersion"]),
+        param_sort_cids: string_array_field(spec, &["param_sort_cids", "paramSortCids"])
+            .unwrap_or_default(),
+        return_sort_cid: string_field_optional(spec, &["return_sort_cid", "returnSortCid"])
+            .unwrap_or_default(),
+        target_library_tag: string_field_optional(
+            spec,
+            &["target_library_tag", "targetLibraryTag", "library_tag", "libraryTag"],
+        )
+        .unwrap_or_default(),
     })
 }
 

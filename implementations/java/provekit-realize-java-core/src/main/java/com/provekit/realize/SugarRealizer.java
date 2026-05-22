@@ -143,9 +143,123 @@ final class SugarRealizer {
             TransportedOperation transportedOp,
             String termShapeJson,
             String operandBindingsJson) {
+        // Legacy entry point (same-language realize, no cross-lang signaling).
+        // Routes to the full overload with isCrossLang=false so the
+        // substrate-gap refusal guard does NOT fire on empty sort CIDs —
+        // those empties are absence-of-signal, not declared-gap.
+        return emitStub(function, params, paramTypes, List.of(), returnType, "", conceptName,
+                mode, modes, contract, sugarPluginJson, transportedOp, termShapeJson,
+                operandBindingsJson, false);
+    }
 
+    /**
+     * Substrate-honest signature emission: when `paramSortCids` /
+     * `returnSortCid` are populated (cross-language materialize), the
+     * realize binary resolves java syntax via the kit's concept-hub →
+     * java map (mapConceptHubSortCidToJava). Falls back to mapSourceType
+     * on the raw source-language strings when sort CIDs are absent.
+     */
+    static Realization emitStub(
+            String function,
+            List<String> params,
+            List<String> paramTypes,
+            List<String> paramSortCids,
+            String returnType,
+            String returnSortCid,
+            String conceptName,
+            String mode,
+            List<String> modes,
+            ContractPayload contract,
+            List<String> sugarPluginJson,
+            TransportedOperation transportedOp,
+            String termShapeJson,
+            String operandBindingsJson,
+            boolean isCrossLang) {
+        return emitStub(function, params, paramTypes, paramSortCids, returnType, returnSortCid,
+                conceptName, mode, modes, contract, sugarPluginJson, transportedOp, termShapeJson,
+                operandBindingsJson, isCrossLang, "");
+    }
+
+    static Realization emitStub(
+            String function,
+            List<String> params,
+            List<String> paramTypes,
+            List<String> paramSortCids,
+            String returnType,
+            String returnSortCid,
+            String conceptName,
+            String mode,
+            List<String> modes,
+            ContractPayload contract,
+            List<String> sugarPluginJson,
+            TransportedOperation transportedOp,
+            String termShapeJson,
+            String operandBindingsJson,
+            boolean isCrossLang,
+            String targetLibraryTag) {
+        // Library-tag scope: set thread-local for the duration of this call so
+        // body-template lookup can disambiguate when multiple libraries ship
+        // templates for the same concept.
+        String previousTag = CURRENT_LIBRARY_TAG.get();
+        CURRENT_LIBRARY_TAG.set(targetLibraryTag == null ? "" : targetLibraryTag);
+        try {
+            return emitStubInner(function, params, paramTypes, paramSortCids, returnType,
+                    returnSortCid, conceptName, mode, modes, contract, sugarPluginJson,
+                    transportedOp, termShapeJson, operandBindingsJson, isCrossLang);
+        } finally {
+            CURRENT_LIBRARY_TAG.set(previousTag);
+        }
+    }
+
+    private static Realization emitStubInner(
+            String function,
+            List<String> params,
+            List<String> paramTypes,
+            List<String> paramSortCids,
+            String returnType,
+            String returnSortCid,
+            String conceptName,
+            String mode,
+            List<String> modes,
+            ContractPayload contract,
+            List<String> sugarPluginJson,
+            TransportedOperation transportedOp,
+            String termShapeJson,
+            String operandBindingsJson,
+            boolean isCrossLang) {
+
+        // Substrate-honest refusal: when this is a cross-language invocation
+        // and ANY sort CID is empty (param or return), the source kit failed
+        // to lift that type to a concept-hub identity. Emitting raw source
+        // strings would leak kit-internal syntax. Refuse loudly with is_stub.
+        //
+        // isCrossLang is an EXPLICIT flag from the caller (RpcServer reads
+        // it from the RPC params). Empty paramSortCids/returnSortCid in
+        // legacy/same-lang context is absence-of-signal, NOT declared-gap.
+        if (isCrossLang) {
+            boolean anyEmpty = false;
+            for (String cid : paramSortCids) {
+                if (cid == null || cid.isEmpty()) { anyEmpty = true; break; }
+            }
+            if (anyEmpty || returnSortCid == null || returnSortCid.isEmpty()) {
+                // Refuse: the substrate has no morphism for at least one
+                // signature element. Caller (cmd_materialize) sees is_stub
+                // and reports REFUSE — substrate gap surfaced, not concealed.
+                String reason = "concept-hub gap in signature: source kit failed to lift "
+                    + conceptName + " param/return types to concept-hub sort CIDs "
+                    + "(paramSortCids=" + paramSortCids + " returnSortCid='" + returnSortCid + "'). "
+                    + "Mint the missing substrate sort or refuse the boundary.";
+                return new Realization("// REFUSE: " + reason, true, "{}", "[]", null);
+            }
+        }
         String className = snakeToPascal(function) + "Transported";
-        String mappedReturn = mapSourceType(returnType);
+        String mappedReturn = resolveJavaType(returnType, returnSortCid, isCrossLang);
+        if (mappedReturn == null) {
+            String reason = "concept-hub gap: java kit has no morphism for return sort CID `"
+                + returnSortCid + "` (concept=" + conceptName + "). "
+                + "Mint the missing java realization or refuse the boundary.";
+            return new Realization("// REFUSE: " + reason, true, "{}", "[]", null);
+        }
         List<String> requestedModes = modeList(mode, modes);
         List<SugarEmission> sugarEmissions = SugarDictionary.emitAll(contract, sugarPluginJson, requestedModes);
         boolean hasBeanValidationNotNull = sugarEmissions.stream()
@@ -157,7 +271,14 @@ final class SugarRealizer {
         for (int i = 0; i < params.size(); i++) {
             String name = params.get(i);
             String srcType = i < paramTypes.size() ? paramTypes.get(i) : "i64";
-            String mapped = mapSourceType(srcType);
+            String sortCid = i < paramSortCids.size() ? paramSortCids.get(i) : "";
+            String mapped = resolveJavaType(srcType, sortCid, isCrossLang);
+            if (mapped == null) {
+                String reason = "concept-hub gap: java kit has no morphism for param[" + i
+                    + "] sort CID `" + sortCid + "` (concept=" + conceptName + ", param=" + name + "). "
+                    + "Mint the missing java realization or refuse the boundary.";
+                return new Realization("// REFUSE: " + reason, true, "{}", "[]", null);
+            }
             if (i > 0) typedParamList.append(", ");
             String parameterAnnotations = parameterAnnotations(sugarEmissions, name);
             if (!parameterAnnotations.isBlank()) {
@@ -842,6 +963,92 @@ final class SugarRealizer {
     }
 
     /**
+     * Substrate-honest type resolution: concept-hub sort CID → java syntax.
+     *
+     * Inverse of JavaBindLifter.javaTypeToConceptHubSortCid. The java kit's
+     * internal knowledge of how its source syntax maps to substrate-canonical
+     * concept-hub identities. Used in cross-language materialize where the
+     * carrier's `param_sort_cids` (concept-hub CIDs) drive signature emission
+     * instead of the source-language type strings.
+     *
+     * Returns null when the CID isn't recognized — caller falls back to
+     * mapSourceType on the raw source string (legacy path).
+     *
+     * CIDs verified against menagerie/concept-shapes/catalog/sorts/.
+     */
+    static String mapConceptHubSortCidToJava(String cid) {
+        if (cid == null || cid.isEmpty()) return null;
+        return switch (cid) {
+            // concept:Bool
+            case "blake3-512:0ee13bf3fd6b7ecfbee72dfbfc18a7c0ea7f1663de6cca43cefb36f5b4c03665452646094a7c296e819e75d683c6ce4821f3d7db3c3c78ae97f2d4e3451d2074" ->
+                "boolean";
+            // concept:Int — defaults to long for cross-language safety (i64
+            // rust → long java; concept:integer-width-* family is a separate
+            // refinement for narrower widths)
+            case "blake3-512:30ffc51350121a7172f3e4064a33c45bbd345756979fccff6875cd2ab33e4964d098a99df80cfbdf1ec1a0738c5ac3476f0ff8f75589ea511d1acd82c74ecd58" ->
+                "long";
+            // concept:Float
+            case "blake3-512:b979e70c4d5e53d9bdf13d6f08330be3c5b0714b8c770d69bbd05946b86c36df5274be8145a2683cc29c278155c9c1ee65b6897913524eecb9e4c89c71862f57" ->
+                "double";
+            // concept:String
+            case "blake3-512:be8721d24849feb74c4721520bdba02d352a94f49253a627cd509127472aa1c47cbe99cb705cac4159b5365abcce0c9aaa4901fe67630827deb6be1f9daeea10" ->
+                "String";
+            // concept:Bytes
+            case "blake3-512:7116ef6e62e6739b213a8394f975a53c771b89f08c36d27143827acfcfebc0e39e5b82c530be668c3cfd5ec6966ccaa42930b37fdb1f4ac25652a970be10fb6b" ->
+                "byte[]";
+            // concept:List<T> — generic placeholder; full parametric resolution
+            // is follow-up (T is itself a sort CID).
+            case "blake3-512:e3f8d17445f9d2ce89c41c09cbeea08a8bc685d1c34a9fd3dfa7b1df17a94f40eab37396615501f1468baf2a1480fd5a27330ea23202b99876c5f4d97fa2cfb2" ->
+                "java.util.List<Object>";
+            // concept:Unit — minted 2026-05-21. java.io: void return.
+            case "blake3-512:47682b09e5dba71f563db6249c6cb352f7d540986dc7f4cd8d4fb1aa6d9a503064033ee3eb9f36ee6f9e000f700f2f030ebfcfe2b2b8b7e81a345b0d56551f1b" ->
+                "void";
+            // concept:Json — minted 2026-05-21. Java's JSON tree realization
+            // is Jackson's JsonNode (substrate-canonical name; Gson would
+            // realize as JsonElement via a separate morphism).
+            case "blake3-512:702064722b23410fde0d1fd7afac165bf5914441d67abe1e19d63b0e8fe8117296d2677cc721ad096b8b3bb82d178af699bf14fd70bfb18756c5bed6f4434108" ->
+                "com.fasterxml.jackson.databind.JsonNode";
+            // concept:Ref<T> — minted 2026-05-21. Java's mutable-reference
+            // realization is StringBuilder (for String content). Full
+            // parametric resolution (different T → different java type) is
+            // follow-up.
+            case "blake3-512:37d8efe0ce6321d1a16f80aa06cbdf056c846b8a99613731e8d64d9581af61bc517fd8c87daaff2c817585a7dfd763e09ed729fdc71d25fe16fb1b2e6ca33534" ->
+                "StringBuilder";
+            default -> null;
+        };
+    }
+
+    /**
+     * Substrate-honest type resolution wrapper. Prefers the concept-hub
+     * sort CID when provided (cross-language materialize path); falls back
+     * to source-language type translation when the CID is missing
+     * (legacy carriers from before #1361 chunk 2 part B).
+     */
+    static String resolveJavaType(String sourceType, String conceptHubSortCid) {
+        return resolveJavaType(sourceType, conceptHubSortCid, false);
+    }
+
+    /**
+     * Substrate-honest type resolution. In cross-language mode, a non-empty
+     * concept-hub sort CID that the java kit doesn't recognize is a real
+     * substrate gap — return null so emitStubInner refuses loudly instead
+     * of falling back on the source-language string (which would leak
+     * source syntax into emitted java). In same-language / legacy mode,
+     * fall back to mapSourceType when no concept-hub CID resolution exists.
+     */
+    static String resolveJavaType(String sourceType, String conceptHubSortCid, boolean isCrossLang) {
+        String fromCid = mapConceptHubSortCidToJava(conceptHubSortCid);
+        if (fromCid != null) return fromCid;
+        if (isCrossLang && conceptHubSortCid != null && !conceptHubSortCid.isBlank()) {
+            // Cross-language gap: the source kit lifted to a concept-hub CID
+            // the java kit has no morphism for. Surface as null so the caller
+            // refuses with is_stub instead of falling back to source syntax.
+            return null;
+        }
+        return mapSourceType(sourceType);
+    }
+
+    /**
      * Convert snake_case to PascalCase.
      *
      * Mirrors cmd_transport.rs snake_to_pascal_local.
@@ -1293,6 +1500,15 @@ final class SugarRealizer {
     private static volatile List<BodyTemplateEntry> ENTRIES_CACHE = null;
 
     /**
+     * Per-invocation library_tag from the dispatcher. Set by emitStub at the
+     * start of a call and cleared at the end. Body-template lookup uses this
+     * to disambiguate when multiple libraries ship templates for the same
+     * concept — without it, selection is load-order-dependent. Empty string
+     * means "library-agnostic" (legacy callers, classpath catch-all).
+     */
+    private static final ThreadLocal<String> CURRENT_LIBRARY_TAG = ThreadLocal.withInitial(() -> "");
+
+    /**
      * One body-template entry per spec §2.
      */
     private record BodyTemplateEntry(
@@ -1303,7 +1519,13 @@ final class SugarRealizer {
             List<TemplateCitation> citations,
             Jcs.Json lossRecord,
             Integer minParams,
-            Integer maxParams) {}
+            Integer maxParams,
+            /// Substrate-honest library_tag pin. Captured from the body-template
+            /// entry's `target_library_tag` field at parse time. Used by the
+            /// matcher to disambiguate when multiple libraries ship templates
+            /// for the same concept. Empty string means "library-agnostic"
+            /// (legacy catch-all).
+            String targetLibraryTag) {}
 
     private record TemplateCitation(
             String placeholder,
@@ -1362,7 +1584,39 @@ final class SugarRealizer {
             String mode,
             List<String> recursionStack) {
         List<BodyTemplateEntry> entries = entries();
+        // Library-tag-keyed selection: two ordered passes to remove
+        // load-order dependency.
+        //
+        // Pass 1 (only when currentLib is non-empty): try entries whose
+        // target_library_tag equals currentLib exactly. This is the
+        // intended library's body templates.
+        //
+        // Pass 2 (always): try entries whose target_library_tag is empty
+        // (library-agnostic / classpath catch-all).
+        //
+        // Entries from OTHER libraries are never considered. When
+        // currentLib is empty (legacy / untagged callers), we skip pass 1
+        // entirely so the load-order-dependent selection that was the
+        // original bug stays closed.
+        String currentLib = CURRENT_LIBRARY_TAG.get();
+        if (!currentLib.isEmpty()) {
+            Optional<RenderedBody> exact = tryEntries(entries, conceptName, mode, params,
+                    recursionStack, e -> e.targetLibraryTag().equals(currentLib));
+            if (exact.isPresent()) return exact;
+        }
+        return tryEntries(entries, conceptName, mode, params, recursionStack,
+                e -> e.targetLibraryTag().isEmpty());
+    }
+
+    private static Optional<RenderedBody> tryEntries(
+            List<BodyTemplateEntry> entries,
+            String conceptName,
+            String mode,
+            List<String> params,
+            List<String> recursionStack,
+            java.util.function.Predicate<BodyTemplateEntry> filter) {
         for (BodyTemplateEntry e : entries) {
+            if (!filter.test(e)) continue;
             if (!conceptMatches(e.conceptName(), conceptName)) continue;
             if (!modeMatches(e.mode(), mode)) continue;
             if (e.minParams() != null && params.size() < e.minParams()) continue;
@@ -1470,15 +1724,84 @@ final class SugarRealizer {
     }
 
     private static List<BodyTemplateEntry> loadEntriesFromResource() {
-        try (InputStream in = SugarRealizer.class.getResourceAsStream("java-canonical-bodies.json")) {
+        // Default classpath load: java-canonical-bodies.json (catch-all entries).
+        List<BodyTemplateEntry> classpath = loadEntriesFromClasspath("java-canonical-bodies.json");
+        // #1361 chunk 2 part B follow-up / #1355: also scan filesystem for
+        // per-library-tag body-templates JSONs. Each sister shim (e.g.
+        // provekit-shim-stdio-java) auto-generates one of these on mint;
+        // without this load path, RESOLVE'd boundaries would refuse with
+        // is_stub even when the substrate has the body-template ready.
+        // Same pattern the rust realize binary uses (load_library_body_template
+        // walking menagerie/<lang>-language-signature/specs/body-templates/).
+        List<BodyTemplateEntry> filesystem = loadEntriesFromFilesystem();
+        // Merge: classpath entries first (catch-all), then per-library entries
+        // (more specific). Order matters because conceptMatches is first-match-wins
+        // in callers; per-library entries override catch-all for the same concept.
+        List<BodyTemplateEntry> merged = new ArrayList<>(filesystem);
+        merged.addAll(classpath);
+        return merged;
+    }
+
+    /// Walk menagerie/java-language-signature/specs/body-templates/ for any
+    /// java-canonical-bodies-<library_tag>.json files and load their entries.
+    /// Resolves workspace root by walking up from CWD looking for
+    /// `menagerie/` directory.
+    private static List<BodyTemplateEntry> loadEntriesFromFilesystem() {
+        java.nio.file.Path cwd = java.nio.file.Paths.get(System.getProperty("user.dir", "."));
+        java.nio.file.Path root = null;
+        for (java.nio.file.Path p = cwd; p != null; p = p.getParent()) {
+            if (java.nio.file.Files.isDirectory(p.resolve("menagerie"))) {
+                root = p;
+                break;
+            }
+        }
+        if (root == null) {
+            return List.of();
+        }
+        java.nio.file.Path dir = root.resolve("menagerie")
+                .resolve("java-language-signature")
+                .resolve("specs")
+                .resolve("body-templates");
+        if (!java.nio.file.Files.isDirectory(dir)) {
+            return List.of();
+        }
+        List<BodyTemplateEntry> out = new ArrayList<>();
+        try (java.util.stream.Stream<java.nio.file.Path> files = java.nio.file.Files.list(dir)) {
+            for (java.nio.file.Path file : (Iterable<java.nio.file.Path>) files::iterator) {
+                String name = file.getFileName().toString();
+                if (!name.startsWith("java-canonical-bodies-") || !name.endsWith(".json")) {
+                    continue;
+                }
+                try {
+                    String raw = java.nio.file.Files.readString(file, StandardCharsets.UTF_8);
+                    out.addAll(parseEntriesFromRaw(raw));
+                } catch (IOException ignore) {
+                    // Single bad file: degrade silently. Other files still load.
+                }
+            }
+        } catch (IOException ignore) {
+            return List.of();
+        }
+        return out;
+    }
+
+    private static List<BodyTemplateEntry> loadEntriesFromClasspath(String resource) {
+        try (InputStream in = SugarRealizer.class.getResourceAsStream(resource)) {
             if (in == null) {
-                // Resource absent: degrade to "no entries" (callers get language stub).
                 return List.of();
             }
             String raw;
             try (BufferedReader reader = new BufferedReader(new InputStreamReader(in, StandardCharsets.UTF_8))) {
                 raw = reader.lines().collect(Collectors.joining("\n"));
             }
+            return parseEntriesFromRaw(raw);
+        } catch (IOException e) {
+            return List.of();
+        }
+    }
+
+    private static List<BodyTemplateEntry> parseEntriesFromRaw(String raw) {
+        try {
             Jcs.Json root = Jcs.parse(raw);
             if (!(root instanceof Jcs.Obj rootObj)) return List.of();
             Jcs.Json header = rootObj.get("header");
@@ -1512,6 +1835,8 @@ final class SugarRealizer {
                     if (minJ instanceof Jcs.Num minN) minParams = (int) minN.value();
                     if (maxJ instanceof Jcs.Num maxN) maxParams = (int) maxN.value();
                 }
+                String entryLibraryTag = itemObj.stringFieldOrNull("target_library_tag");
+                if (entryLibraryTag == null) entryLibraryTag = "";
                 out.add(new BodyTemplateEntry(
                         conceptName,
                         mode,
@@ -1520,11 +1845,12 @@ final class SugarRealizer {
                         citations.get(),
                         lossRecordValue(itemObj),
                         minParams,
-                        maxParams));
+                        maxParams,
+                        entryLibraryTag));
             }
             return out;
-        } catch (IOException e) {
-            // I/O failure: degrade to "no entries"; stubs will emit.
+        } catch (RuntimeException e) {
+            // JSON parse failure: degrade to "no entries"; stubs will emit.
             return List.of();
         }
     }

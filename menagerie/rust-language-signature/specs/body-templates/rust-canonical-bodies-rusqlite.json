@@ -1,8 +1,7 @@
 {
   "header": {
+    "cid": "blake3-512:04c83312f5b978f48a45bbe8944f49dbe52171473b0385eaf038903181a2e999a8e276999aa198a0d9d486000402695ada34096aacc65c3ba470d558b5b63a97",
     "content": {
-      "target_language": "rust",
-      "template_name": "rust-canonical-bodies-rusqlite",
       "entries": [
         {
           "concept_name": "concept:sql-connection-open",
@@ -21,8 +20,8 @@
             }
           },
           "signature_guard": {
-            "min_params": 1,
-            "max_params": 1
+            "max_params": 1,
+            "min_params": 1
           },
           "target_library_tag": "rusqlite"
         },
@@ -42,8 +41,8 @@
             }
           },
           "signature_guard": {
-            "min_params": 0,
-            "max_params": 0
+            "max_params": 0,
+            "min_params": 0
           },
           "target_library_tag": "rusqlite"
         },
@@ -65,8 +64,8 @@
             }
           },
           "signature_guard": {
-            "min_params": 2,
-            "max_params": 2
+            "max_params": 2,
+            "min_params": 2
           },
           "target_library_tag": "rusqlite"
         },
@@ -85,8 +84,8 @@
             }
           },
           "signature_guard": {
-            "min_params": 1,
-            "max_params": 1
+            "max_params": 1,
+            "min_params": 1
           },
           "target_library_tag": "rusqlite"
         },
@@ -107,8 +106,8 @@
             }
           },
           "signature_guard": {
-            "min_params": 3,
-            "max_params": 3
+            "max_params": 3,
+            "min_params": 3
           },
           "target_library_tag": "rusqlite"
         },
@@ -129,8 +128,8 @@
             }
           },
           "signature_guard": {
-            "min_params": 2,
-            "max_params": 2
+            "max_params": 2,
+            "min_params": 2
           },
           "target_library_tag": "rusqlite"
         },
@@ -151,8 +150,8 @@
             }
           },
           "signature_guard": {
-            "min_params": 4,
-            "max_params": 4
+            "max_params": 4,
+            "min_params": 4
           },
           "target_library_tag": "rusqlite"
         },
@@ -174,8 +173,8 @@
             }
           },
           "signature_guard": {
-            "min_params": 4,
-            "max_params": 4
+            "max_params": 4,
+            "min_params": 4
           },
           "target_library_tag": "rusqlite"
         },
@@ -196,8 +195,8 @@
             }
           },
           "signature_guard": {
-            "min_params": 2,
-            "max_params": 2
+            "max_params": 2,
+            "min_params": 2
           },
           "target_library_tag": "rusqlite"
         },
@@ -218,8 +217,8 @@
             }
           },
           "signature_guard": {
-            "min_params": 2,
-            "max_params": 2
+            "max_params": 2,
+            "min_params": 2
           },
           "target_library_tag": "rusqlite"
         },
@@ -238,8 +237,8 @@
             }
           },
           "signature_guard": {
-            "min_params": 1,
-            "max_params": 1
+            "max_params": 1,
+            "min_params": 1
           },
           "target_library_tag": "rusqlite"
         },
@@ -260,8 +259,8 @@
             }
           },
           "signature_guard": {
-            "min_params": 2,
-            "max_params": 2
+            "max_params": 2,
+            "min_params": 2
           },
           "target_library_tag": "rusqlite"
         },
@@ -281,8 +280,8 @@
             }
           },
           "signature_guard": {
-            "min_params": 2,
-            "max_params": 2
+            "max_params": 2,
+            "min_params": 2
           },
           "target_library_tag": "rusqlite"
         },
@@ -303,8 +302,8 @@
             }
           },
           "signature_guard": {
-            "min_params": 3,
-            "max_params": 3
+            "max_params": 3,
+            "min_params": 3
           },
           "target_library_tag": "rusqlite"
         },
@@ -326,8 +325,8 @@
             }
           },
           "signature_guard": {
-            "min_params": 3,
-            "max_params": 3
+            "max_params": 3,
+            "min_params": 3
           },
           "target_library_tag": "rusqlite"
         },
@@ -348,8 +347,8 @@
             }
           },
           "signature_guard": {
-            "min_params": 3,
-            "max_params": 3
+            "max_params": 3,
+            "min_params": 3
           },
           "target_library_tag": "rusqlite"
         },
@@ -369,8 +368,8 @@
             }
           },
           "signature_guard": {
-            "min_params": 2,
-            "max_params": 2
+            "max_params": 2,
+            "min_params": 2
           },
           "target_library_tag": "rusqlite"
         },
@@ -390,8 +389,8 @@
             }
           },
           "signature_guard": {
-            "min_params": 2,
-            "max_params": 2
+            "max_params": 2,
+            "min_params": 2
           },
           "target_library_tag": "rusqlite"
         },
@@ -412,8 +411,8 @@
             }
           },
           "signature_guard": {
-            "min_params": 1,
-            "max_params": 1
+            "max_params": 1,
+            "min_params": 1
           },
           "target_library_tag": "rusqlite"
         },
@@ -435,8 +434,8 @@
             }
           },
           "signature_guard": {
-            "min_params": 2,
-            "max_params": 2
+            "max_params": 2,
+            "min_params": 2
           },
           "target_library_tag": "rusqlite"
         },
@@ -457,8 +456,8 @@
             }
           },
           "signature_guard": {
-            "min_params": 1,
-            "max_params": 1
+            "max_params": 1,
+            "min_params": 1
           },
           "target_library_tag": "rusqlite"
         },
@@ -478,8 +477,8 @@
             }
           },
           "signature_guard": {
-            "min_params": 1,
-            "max_params": 1
+            "max_params": 1,
+            "min_params": 1
           },
           "target_library_tag": "rusqlite"
         },
@@ -499,8 +498,8 @@
             }
           },
           "signature_guard": {
-            "min_params": 1,
-            "max_params": 1
+            "max_params": 1,
+            "min_params": 1
           },
           "target_library_tag": "rusqlite"
         },
@@ -520,8 +519,8 @@
             }
           },
           "signature_guard": {
-            "min_params": 1,
-            "max_params": 1
+            "max_params": 1,
+            "min_params": 1
           },
           "target_library_tag": "rusqlite"
         },
@@ -540,8 +539,8 @@
             }
           },
           "signature_guard": {
-            "min_params": 2,
-            "max_params": 2
+            "max_params": 2,
+            "min_params": 2
           },
           "target_library_tag": "rusqlite"
         },
@@ -561,8 +560,8 @@
             }
           },
           "signature_guard": {
-            "min_params": 2,
-            "max_params": 2
+            "max_params": 2,
+            "min_params": 2
           },
           "target_library_tag": "rusqlite"
         },
@@ -583,8 +582,8 @@
             }
           },
           "signature_guard": {
-            "min_params": 2,
-            "max_params": 2
+            "max_params": 2,
+            "min_params": 2
           },
           "target_library_tag": "rusqlite"
         },
@@ -604,8 +603,8 @@
             }
           },
           "signature_guard": {
-            "min_params": 2,
-            "max_params": 2
+            "max_params": 2,
+            "min_params": 2
           },
           "target_library_tag": "rusqlite"
         },
@@ -625,8 +624,8 @@
             }
           },
           "signature_guard": {
-            "min_params": 1,
-            "max_params": 1
+            "max_params": 1,
+            "min_params": 1
           },
           "target_library_tag": "rusqlite"
         },
@@ -646,8 +645,8 @@
             }
           },
           "signature_guard": {
-            "min_params": 1,
-            "max_params": 1
+            "max_params": 1,
+            "min_params": 1
           },
           "target_library_tag": "rusqlite"
         },
@@ -667,8 +666,8 @@
             }
           },
           "signature_guard": {
-            "min_params": 1,
-            "max_params": 1
+            "max_params": 1,
+            "min_params": 1
           },
           "target_library_tag": "rusqlite"
         },
@@ -684,11 +683,11 @@
               "entries": []
             }
           },
-          "signature_guard": {
-            "min_params": 1,
-            "max_params": 1
-          },
           "observed_dimension": "autocommit-mode",
+          "signature_guard": {
+            "max_params": 1,
+            "min_params": 1
+          },
           "target_library_tag": "rusqlite"
         },
         {
@@ -703,11 +702,11 @@
               "entries": []
             }
           },
-          "signature_guard": {
-            "min_params": 1,
-            "max_params": 1
-          },
           "observed_dimension": "pending-statement-presence",
+          "signature_guard": {
+            "max_params": 1,
+            "min_params": 1
+          },
           "target_library_tag": "rusqlite"
         },
         {
@@ -722,11 +721,11 @@
               "entries": []
             }
           },
-          "signature_guard": {
-            "min_params": 2,
-            "max_params": 2
-          },
           "observed_dimension": "write-permission",
+          "signature_guard": {
+            "max_params": 2,
+            "min_params": 2
+          },
           "target_library_tag": "rusqlite"
         },
         {
@@ -743,11 +742,11 @@
               ]
             }
           },
-          "signature_guard": {
-            "min_params": 1,
-            "max_params": 1
-          },
           "observed_dimension": "cache-state",
+          "signature_guard": {
+            "max_params": 1,
+            "min_params": 1
+          },
           "target_library_tag": "rusqlite"
         },
         {
@@ -762,11 +761,11 @@
               "entries": []
             }
           },
-          "signature_guard": {
-            "min_params": 1,
-            "max_params": 1
-          },
           "observed_dimension": "column-names",
+          "signature_guard": {
+            "max_params": 1,
+            "min_params": 1
+          },
           "target_library_tag": "rusqlite"
         },
         {
@@ -781,11 +780,11 @@
               "entries": []
             }
           },
-          "signature_guard": {
-            "min_params": 1,
-            "max_params": 1
-          },
           "observed_dimension": "column-count",
+          "signature_guard": {
+            "max_params": 1,
+            "min_params": 1
+          },
           "target_library_tag": "rusqlite"
         },
         {
@@ -800,11 +799,11 @@
               "entries": []
             }
           },
-          "signature_guard": {
-            "min_params": 2,
-            "max_params": 2
-          },
           "observed_dimension": "column-name-at-index",
+          "signature_guard": {
+            "max_params": 2,
+            "min_params": 2
+          },
           "target_library_tag": "rusqlite"
         },
         {
@@ -819,11 +818,11 @@
               "entries": []
             }
           },
-          "signature_guard": {
-            "min_params": 2,
-            "max_params": 2
-          },
           "observed_dimension": "column-index-of-name",
+          "signature_guard": {
+            "max_params": 2,
+            "min_params": 2
+          },
           "target_library_tag": "rusqlite"
         },
         {
@@ -838,11 +837,11 @@
               "entries": []
             }
           },
-          "signature_guard": {
-            "min_params": 1,
-            "max_params": 1
-          },
           "observed_dimension": "expanded-sql-text",
+          "signature_guard": {
+            "max_params": 1,
+            "min_params": 1
+          },
           "target_library_tag": "rusqlite"
         },
         {
@@ -857,11 +856,11 @@
               "entries": []
             }
           },
-          "signature_guard": {
-            "min_params": 1,
-            "max_params": 1
-          },
           "observed_dimension": "parameter-count",
+          "signature_guard": {
+            "max_params": 1,
+            "min_params": 1
+          },
           "target_library_tag": "rusqlite"
         },
         {
@@ -876,11 +875,11 @@
               "entries": []
             }
           },
-          "signature_guard": {
-            "min_params": 2,
-            "max_params": 2
-          },
           "observed_dimension": "parameter-name-at-index",
+          "signature_guard": {
+            "max_params": 2,
+            "min_params": 2
+          },
           "target_library_tag": "rusqlite"
         },
         {
@@ -895,11 +894,11 @@
               "entries": []
             }
           },
-          "signature_guard": {
-            "min_params": 2,
-            "max_params": 2
-          },
           "observed_dimension": "parameter-index-of-name",
+          "signature_guard": {
+            "max_params": 2,
+            "min_params": 2
+          },
           "target_library_tag": "rusqlite"
         },
         {
@@ -918,12 +917,14 @@
             }
           },
           "signature_guard": {
-            "min_params": 2,
-            "max_params": 2
+            "max_params": 2,
+            "min_params": 2
           },
           "target_library_tag": "rusqlite"
         }
-      ]
+      ],
+      "target_language": "rust",
+      "template_name": "rust-canonical-bodies-rusqlite"
     }
   }
 }

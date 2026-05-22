@@ -35,6 +35,7 @@ import com.sun.source.tree.ForLoopTree;
 import com.sun.source.tree.IfTree;
 import com.sun.source.tree.IdentifierTree;
 import com.sun.source.tree.LiteralTree;
+import com.sun.source.tree.MemberSelectTree;
 import com.sun.source.tree.MethodInvocationTree;
 import com.sun.source.tree.MethodTree;
 import com.sun.source.tree.NewArrayTree;
@@ -330,8 +331,20 @@ public final class JavaBindLifter {
                 }
                 String sourceCid = Jcs.blake3_512(spanText.toString().getBytes(StandardCharsets.UTF_8));
 
+                // Substrate-honest body capture: the @ProveKitSugar annotation
+                // + signature + braces are presentation/sugar. Only the body
+                // statements (between the outermost `{` and matching `}`)
+                // survive into the substrate. The lifter has already read the
+                // annotation to extract concept/library/family/version + read
+                // the signature to extract param/return types — those facts
+                // live as typed fields on the binding entry (concept_name,
+                // target_library_tag, family, library_version, param_names,
+                // param_types, return_type). body_text carries only the
+                // remaining substance — what the function actually DOES.
+                String bodyOnly = extractMethodBodyStatements(spanText.toString());
+
                 Jcs.Obj bodySource = Jcs.object(
-                    "body_text", Jcs.string(spanText.toString()),
+                    "body_text", Jcs.string(bodyOnly),
                     "file", Jcs.string(rel),
                     "source_cid", Jcs.string(sourceCid),
                     "span", Jcs.object(
@@ -353,7 +366,13 @@ public final class JavaBindLifter {
                     ),
                     "param_names", Jcs.array(paramNames),
                     "param_types", Jcs.array(paramTypes),
+                    "param_sort_cids", Jcs.array(
+                        paramTypes.stream()
+                            .map(t -> Jcs.string(javaTypeToConceptHubSortCid(((Jcs.Str) t).value())))
+                            .toList()
+                    ),
                     "return_type", Jcs.string(returnType),
+                    "return_sort_cid", Jcs.string(javaTypeToConceptHubSortCid(returnType)),
                     "signature_shape_cid", Jcs.string(signatureShapeCid),
                     "source_function_name", Jcs.string(fnName),
                     "target_language", Jcs.string("java"),
@@ -426,8 +445,95 @@ public final class JavaBindLifter {
         if (stmt instanceof com.sun.source.tree.BreakTree || stmt instanceof com.sun.source.tree.ContinueTree) {
             return operatorShapeResult("concept:skip", List.of());
         }
-        if (stmt instanceof WhileLoopTree || stmt instanceof DoWhileLoopTree || stmt instanceof ForLoopTree || stmt instanceof EnhancedForLoopTree) {
-            return ShapeResult.empty();
+        // Structural loop lifts — the lifter emits the canonical substrate
+        // operator CID; how java REALIZES each operator (back to java syntax)
+        // is an exam question the java kit answers via RealizationMementos.
+        // Operators: concept:while (cond, body), concept:for (init, cond, step,
+        // body), concept:for-each (var, iterable, body).
+        if (stmt instanceof WhileLoopTree t) {
+            return operatorShapeResult("concept:while",
+                List.of(shapeOfExpression(t.getCondition()), shapeOfStatement(t.getStatement())));
+        }
+        if (stmt instanceof DoWhileLoopTree t) {
+            // do-while = seq(body, while(cond, body)) — decompose to existing primitives.
+            ShapeResult body = shapeOfStatement(t.getStatement());
+            ShapeResult cond = shapeOfExpression(t.getCondition());
+            ShapeResult loop = operatorShapeResult("concept:while", List.of(cond, body));
+            return operatorShapeResult("concept:seq", List.of(body, loop));
+        }
+        if (stmt instanceof ForLoopTree t) {
+            // Classic C-style for(init; cond; step; body) — 4-arg concept:for.
+            // Java allows MULTIPLE init expressions (e.g. `for (i = 0, j = 0; ...)`)
+            // and MULTIPLE update expressions (e.g. `i++, j++`). Wrap each list
+            // as concept:seq so all side effects survive the lift.
+            ShapeResult init;
+            if (t.getInitializer().isEmpty()) {
+                init = operatorShapeResult("concept:skip", List.of());
+            } else if (t.getInitializer().size() == 1) {
+                init = shapeOfStatement(t.getInitializer().get(0));
+            } else {
+                List<ShapeResult> initParts = new ArrayList<>();
+                for (StatementTree s : t.getInitializer()) {
+                    initParts.add(shapeOfStatement(s));
+                }
+                init = operatorShapeResult("concept:seq", initParts);
+            }
+            ShapeResult cond = t.getCondition() == null
+                ? literalShape(true)
+                : shapeOfExpression(t.getCondition());
+            ShapeResult step;
+            if (t.getUpdate().isEmpty()) {
+                step = operatorShapeResult("concept:skip", List.of());
+            } else if (t.getUpdate().size() == 1) {
+                step = shapeOfExpression(t.getUpdate().get(0).getExpression());
+            } else {
+                List<ShapeResult> stepParts = new ArrayList<>();
+                for (ExpressionStatementTree es : t.getUpdate()) {
+                    stepParts.add(shapeOfExpression(es.getExpression()));
+                }
+                step = operatorShapeResult("concept:seq", stepParts);
+            }
+            ShapeResult body = shapeOfStatement(t.getStatement());
+            return operatorShapeResult("concept:for", List.of(init, cond, step, body));
+        }
+        if (stmt instanceof EnhancedForLoopTree t) {
+            // Enhanced for (`for (T var : iter) { body }`) — 3-arg concept:for-each.
+            ShapeResult var = leafBinding(t.getVariable().getName().toString());
+            ShapeResult iterable = shapeOfExpression(t.getExpression());
+            ShapeResult body = shapeOfStatement(t.getStatement());
+            return operatorShapeResult("concept:for-each", List.of(var, iterable, body));
+        }
+        // try { body } catch (...) { ... } finally { ... }
+        // Structural lift preserving exception type, binding name, AND finally:
+        //   concept:try(body, catch-arm1, ..., catch-armN, finally-arm?)
+        // Each catch-arm = concept:catch-arm(exception-type-symbol, binding-name-symbol, body).
+        // Finally-arm = concept:finally-arm(body) — only emitted when present so
+        // the realize side can detect it by checking the trailing-arg's operator.
+        if (stmt instanceof com.sun.source.tree.TryTree t) {
+            List<ShapeResult> args = new ArrayList<>();
+            args.add(shapeOfStatement(t.getBlock()));
+            for (com.sun.source.tree.CatchTree c : t.getCatches()) {
+                String typeText = c.getParameter().getType().toString();
+                String bindingName = c.getParameter().getName().toString();
+                ShapeResult typeLeaf = new ShapeResult(
+                    Jcs.object("kind", Jcs.string("symbol"), "text", Jcs.string(typeText)),
+                    List.of());
+                ShapeResult bindingLeaf = new ShapeResult(
+                    Jcs.object("kind", Jcs.string("symbol"), "text", Jcs.string(bindingName)),
+                    List.of());
+                ShapeResult catchBody = shapeOfStatement(c.getBlock());
+                args.add(operatorShapeResult("concept:catch-arm",
+                    List.of(typeLeaf, bindingLeaf, catchBody)));
+            }
+            if (t.getFinallyBlock() != null) {
+                ShapeResult finallyBody = shapeOfStatement(t.getFinallyBlock());
+                args.add(operatorShapeResult("concept:finally-arm", List.of(finallyBody)));
+            }
+            return operatorShapeResult("concept:try", args);
+        }
+        if (stmt instanceof com.sun.source.tree.ThrowTree t) {
+            return operatorShapeResult("concept:throw",
+                List.of(shapeOfExpression(t.getExpression())));
         }
         return ShapeResult.empty();
     }
@@ -466,8 +572,111 @@ public final class JavaBindLifter {
         }
         if (expr instanceof IdentifierTree t) return leafBinding(t.getName().toString());
         if (expr instanceof LiteralTree t) return literalShape(t.getValue());
-        if (expr instanceof MethodInvocationTree || expr instanceof NewClassTree) return ShapeResult.empty();
+        // Substrate-canonical concept:call shape — MATCHES the rust shape
+        // emitted by walk_rpc (Expr::MethodCall):
+        //   instance method (receiver.method(args)):
+        //     args[0] = receiver shape
+        //     args[1] = kind:"method" leaf with method ident
+        //     args[2..] = argument shapes
+        //   free function call (identifier(args)) — no receiver:
+        //     args[0] = kind:"path" leaf with function ident
+        //     args[1..] = argument shapes
+        // Previously this folded `obj.method` into a single method leaf
+        // text="obj.method", which dropped the receiver operand binding
+        // and broke cycle invariance with rust's call shape.
+        if (expr instanceof MethodInvocationTree mi) {
+            List<ShapeResult> args = new ArrayList<>();
+            Tree select = mi.getMethodSelect();
+            if (select instanceof MemberSelectTree ms) {
+                // Instance method: receiver as args[0], method-ident as args[1].
+                args.add(shapeOfExpression(ms.getExpression()));
+                args.add(new ShapeResult(
+                    Jcs.object("kind", Jcs.string("method"),
+                               "text", Jcs.string(ms.getIdentifier().toString())),
+                    List.of()));
+            } else if (select instanceof IdentifierTree id) {
+                // Bare identifier call — free function form.
+                args.add(pathLeaf(id.getName().toString()));
+            } else {
+                args.add(calleeLeaf(select));
+            }
+            for (Tree arg : mi.getArguments()) {
+                args.add(shapeOfExpression(arg));
+            }
+            return operatorShapeResult("concept:call", args);
+        }
+        if (expr instanceof NewClassTree nc) {
+            // Constructor call: callee is the type name as a path leaf.
+            List<ShapeResult> args = new ArrayList<>();
+            args.add(pathLeaf(nc.getIdentifier().toString()));
+            for (Tree arg : nc.getArguments()) {
+                args.add(shapeOfExpression(arg));
+            }
+            return operatorShapeResult("concept:call", args);
+        }
+        if (expr instanceof MemberSelectTree ms) {
+            // Bare member access (e.g. `obj.field`) — lift as a method/path
+            // identity leaf. Used when the member access isn't inside a call.
+            return calleeLeaf(ms);
+        }
+        if (expr instanceof NewArrayTree na) {
+            // Array constructor: concept:call with array-of as callee + initializers.
+            List<ShapeResult> args = new ArrayList<>();
+            args.add(pathLeaf("Array"));
+            if (na.getInitializers() != null) {
+                for (Tree init : na.getInitializers()) {
+                    args.add(shapeOfExpression(init));
+                }
+            }
+            return operatorShapeResult("concept:call", args);
+        }
         return ShapeResult.empty();
+    }
+
+    /**
+     * Build a callee identity leaf for a method-select or path expression.
+     * Mirrors walk_rpc's rust emission: kind="method" for member-select
+     * (receiver.method), kind="path" for bare identifier (free function).
+     * The text is a flattened dotted form preserving the source's name chain.
+     */
+    private static ShapeResult calleeLeaf(Tree calleeExpr) {
+        if (calleeExpr instanceof IdentifierTree t) {
+            return pathLeaf(t.getName().toString());
+        }
+        if (calleeExpr instanceof MemberSelectTree ms) {
+            String chain = flattenMemberSelect(ms);
+            return new ShapeResult(
+                Jcs.object("kind", Jcs.string("method"), "text", Jcs.string(chain)),
+                List.of()
+            );
+        }
+        return ShapeResult.empty();
+    }
+
+    private static ShapeResult pathLeaf(String text) {
+        return new ShapeResult(
+            Jcs.object("kind", Jcs.string("path"), "text", Jcs.string(text)),
+            List.of()
+        );
+    }
+
+    private static String flattenMemberSelect(MemberSelectTree ms) {
+        // Walk a chain like A.B.C.method → "A.B.C.method"
+        StringBuilder sb = new StringBuilder();
+        flattenInto(ms, sb);
+        return sb.toString();
+    }
+
+    private static void flattenInto(Tree node, StringBuilder sb) {
+        if (node instanceof MemberSelectTree ms) {
+            flattenInto(ms.getExpression(), sb);
+            if (sb.length() > 0) sb.append('.');
+            sb.append(ms.getIdentifier());
+        } else if (node instanceof IdentifierTree t) {
+            sb.append(t.getName());
+        } else {
+            sb.append(node.toString());
+        }
     }
 
     private static ShapeResult operatorShapeResult(String conceptName, List<ShapeResult> args) {
@@ -615,6 +824,184 @@ public final class JavaBindLifter {
             return Optional.empty();
         }
         return Optional.empty();
+    }
+
+    /**
+     * Substrate-honest body extraction: given the full text of a method
+     * (annotations + signature + body), return ONLY the statements
+     * between the outermost matching braces. Strips leading/trailing
+     * whitespace per line, preserving internal indentation relative to
+     * a baseline of one indent level (so the substrate captures the
+     * body shape without depending on the shim's outer class nesting).
+     *
+     * Mirrors the rust lifter's behavior — body_text in the rust shim's
+     * .proof envelope contains only body statements, not the @sugar
+     * attribute or signature. Java parity required so cross-language
+     * materialize gets consistent body templates.
+     */
+    private static String extractMethodBodyStatements(String methodText) {
+        int openBrace = -1;
+        int depth = 0;
+        boolean inString = false;
+        boolean inChar = false;
+        boolean inLineComment = false;
+        boolean inBlockComment = false;
+        // Walk the text to find the FIRST unescaped `{` outside of strings/
+        // comments; that's the method body's opening brace (any earlier `{`
+        // would belong to annotation values, which use `(` not `{` for args
+        // but could in principle be in array-valued annotation params like
+        // `loss = {...}`). Track depth to find the matching close.
+        int closeBrace = -1;
+        for (int i = 0; i < methodText.length(); i++) {
+            char c = methodText.charAt(i);
+            char next = i + 1 < methodText.length() ? methodText.charAt(i + 1) : '\0';
+            if (inLineComment) {
+                if (c == '\n') inLineComment = false;
+                continue;
+            }
+            if (inBlockComment) {
+                if (c == '*' && next == '/') { inBlockComment = false; i++; }
+                continue;
+            }
+            if (inString) {
+                if (c == '\\') { i++; continue; }
+                if (c == '"') inString = false;
+                continue;
+            }
+            if (inChar) {
+                if (c == '\\') { i++; continue; }
+                if (c == '\'') inChar = false;
+                continue;
+            }
+            if (c == '/' && next == '/') { inLineComment = true; i++; continue; }
+            if (c == '/' && next == '*') { inBlockComment = true; i++; continue; }
+            if (c == '"') { inString = true; continue; }
+            if (c == '\'') { inChar = true; continue; }
+            if (c == '{') {
+                // Skip annotation-argument array literals like `loss = {...}`.
+                // Heuristic: if we're not yet past the signature (no `)` seen
+                // after the LAST opening `(`), the `{` belongs to an annotation.
+                // We can detect "past the signature" by looking back for the
+                // most recent `)` not inside parens — easier: the method body
+                // brace is the one whose `}` is at the end of the method text.
+                if (openBrace < 0) {
+                    // Look ahead for the matching close at depth 0.
+                    int lookDepth = 1;
+                    int j = i + 1;
+                    boolean ls = false, lc = false, lline = false, lblock = false;
+                    while (j < methodText.length() && lookDepth > 0) {
+                        char cc = methodText.charAt(j);
+                        char nn = j + 1 < methodText.length() ? methodText.charAt(j + 1) : '\0';
+                        if (lline) { if (cc == '\n') lline = false; j++; continue; }
+                        if (lblock) { if (cc == '*' && nn == '/') { lblock = false; j++; } j++; continue; }
+                        if (ls) { if (cc == '\\') j++; else if (cc == '"') ls = false; j++; continue; }
+                        if (lc) { if (cc == '\\') j++; else if (cc == '\'') lc = false; j++; continue; }
+                        if (cc == '/' && nn == '/') { lline = true; j += 2; continue; }
+                        if (cc == '/' && nn == '*') { lblock = true; j += 2; continue; }
+                        if (cc == '"') { ls = true; j++; continue; }
+                        if (cc == '\'') { lc = true; j++; continue; }
+                        if (cc == '{') lookDepth++;
+                        else if (cc == '}') lookDepth--;
+                        j++;
+                    }
+                    // If after the matching close there's only whitespace/closing
+                    // characters before EOF, this is the method body brace.
+                    // Otherwise it's an inner brace (annotation array, etc.).
+                    int afterClose = j;
+                    boolean isMethodBrace = true;
+                    while (afterClose < methodText.length()) {
+                        char cc = methodText.charAt(afterClose);
+                        if (!Character.isWhitespace(cc)) {
+                            isMethodBrace = false;
+                            break;
+                        }
+                        afterClose++;
+                    }
+                    if (isMethodBrace) {
+                        openBrace = i;
+                        closeBrace = j - 1;
+                        break;
+                    }
+                }
+            }
+        }
+        if (openBrace < 0 || closeBrace < 0 || closeBrace <= openBrace + 1) {
+            // Fallback: couldn't find body braces; return original (callers
+            // should be tolerant — body-template fallback applies).
+            return methodText;
+        }
+        String body = methodText.substring(openBrace + 1, closeBrace);
+        // Trim leading newline if present; preserve internal indentation.
+        if (body.startsWith("\n")) body = body.substring(1);
+        if (body.endsWith("\n")) body = body.substring(0, body.length() - 1);
+        return body;
+    }
+
+    /**
+     * Substrate-honest java-syntax → concept-hub sort CID translation.
+     *
+     * This is the JAVA KIT's internal knowledge of how its source syntax maps
+     * to substrate-canonical concept-hub identities. Parallel to what
+     * source_transform.rs::rust_source_type_to_concept_hub_sort_cid does for
+     * rust at the rust kit/substrate boundary.
+     *
+     * Concept-hub sort CIDs verified against
+     * menagerie/concept-shapes/catalog/sorts/. Returns empty string for
+     * unrecognized types (substrate-honest gap signal — the kit doesn't
+     * yet know how to lift this java type).
+     *
+     * NOTE: this lives in the kit (not in cmd_materialize) per the
+     * invariant: kit-internal labels never cross to substrate; only
+     * concept-hub CIDs do. The translation happens AT the kit boundary.
+     */
+    private static String javaTypeToConceptHubSortCid(String javaType) {
+        if (javaType == null) return "";
+        // Strip generic angle-bracket parameters for primitive lookup;
+        // parametric handling (List<T>, Map<K,V>) is a follow-up.
+        String t = javaType.trim();
+        int generic = t.indexOf('<');
+        if (generic > 0) t = t.substring(0, generic).trim();
+        // Reduce arbitrary fully-qualified names to their simple class name.
+        // javac's TypeMirror.toString() returns FQNs for declared types
+        // (e.g. "com.fasterxml.jackson.databind.JsonNode") — the substrate
+        // cares about semantic identity, not package path. Take everything
+        // after the last '.' (or the whole string if no dot).
+        int lastDot = t.lastIndexOf('.');
+        if (lastDot >= 0) t = t.substring(lastDot + 1);
+        // Strip array brackets: byte[] → byte (then map to concept:Bytes)
+        boolean isArray = t.endsWith("[]");
+        if (isArray) t = t.substring(0, t.length() - 2).trim();
+        if (isArray && (t.equals("byte") || t.equals("Byte"))) {
+            return "blake3-512:7116ef6e62e6739b213a8394f975a53c771b89f08c36d27143827acfcfebc0e39e5b82c530be668c3cfd5ec6966ccaa42930b37fdb1f4ac25652a970be10fb6b"; // concept:Bytes
+        }
+        if (isArray) {
+            // Generic array → concept:List<T>
+            return "blake3-512:e3f8d17445f9d2ce89c41c09cbeea08a8bc685d1c34a9fd3dfa7b1df17a94f40eab37396615501f1468baf2a1480fd5a27330ea23202b99876c5f4d97fa2cfb2";
+        }
+        return switch (t) {
+            case "boolean", "Boolean" ->
+                "blake3-512:0ee13bf3fd6b7ecfbee72dfbfc18a7c0ea7f1663de6cca43cefb36f5b4c03665452646094a7c296e819e75d683c6ce4821f3d7db3c3c78ae97f2d4e3451d2074";
+            case "byte", "Byte", "short", "Short", "int", "Integer", "long", "Long" ->
+                "blake3-512:30ffc51350121a7172f3e4064a33c45bbd345756979fccff6875cd2ab33e4964d098a99df80cfbdf1ec1a0738c5ac3476f0ff8f75589ea511d1acd82c74ecd58"; // concept:Int
+            case "float", "Float", "double", "Double" ->
+                "blake3-512:b979e70c4d5e53d9bdf13d6f08330be3c5b0714b8c770d69bbd05946b86c36df5274be8145a2683cc29c278155c9c1ee65b6897913524eecb9e4c89c71862f57"; // concept:Float
+            case "String", "CharSequence" ->
+                "blake3-512:be8721d24849feb74c4721520bdba02d352a94f49253a627cd509127472aa1c47cbe99cb705cac4159b5365abcce0c9aaa4901fe67630827deb6be1f9daeea10";
+            case "void", "Void", "()" ->
+                "blake3-512:47682b09e5dba71f563db6249c6cb352f7d540986dc7f4cd8d4fb1aa6d9a503064033ee3eb9f36ee6f9e000f700f2f030ebfcfe2b2b8b7e81a345b0d56551f1b"; // concept:Unit, minted 2026-05-21
+            // concept:Json — minted 2026-05-21 to close substrate gap for
+            // JSON value tree primitives. JsonNode/JsonElement are java's
+            // realizations.
+            case "JsonNode", "JsonElement" ->
+                "blake3-512:702064722b23410fde0d1fd7afac165bf5914441d67abe1e19d63b0e8fe8117296d2677cc721ad096b8b3bb82d178af699bf14fd70bfb18756c5bed6f4434108";
+            // concept:Ref<T> — minted 2026-05-21 to close substrate gap for
+            // mutable references / out-parameters. StringBuilder is java's
+            // mutable-string realization. (Parametric inner T resolution is
+            // follow-up; for now collapses to a single Ref<T> CID.)
+            case "StringBuilder" ->
+                "blake3-512:37d8efe0ce6321d1a16f80aa06cbdf056c846b8a99613731e8d64d9581af61bc517fd8c87daaff2c817585a7dfd763e09ed729fdc71d25fe16fb1b2e6ca33534";
+            default -> "";  // gap signal
+        };
     }
 
     /** Strip surrounding double-quotes from a string literal token, if present. */

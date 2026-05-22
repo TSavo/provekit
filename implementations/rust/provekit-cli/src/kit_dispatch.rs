@@ -1159,7 +1159,17 @@ pub fn dispatch_realize(
         request.family.as_deref(),
         request.library_version.as_deref(),
     )?;
-    invoke_realize(target_lang, &resolved, request).map_err(|e| KitUnavailable {
+    // Inject the dispatched library_tag into the request so the plugin can
+    // disambiguate body-template entries when multiple libraries ship templates
+    // for the same concept. Without this, the multi-library body-template cache
+    // is load-order-dependent.
+    let mut request_with_tag = request.clone();
+    if request_with_tag.target_library_tag.is_empty() {
+        if let Some(tag) = library_tag {
+            request_with_tag.target_library_tag = tag.to_string();
+        }
+    }
+    invoke_realize(target_lang, &resolved, &request_with_tag).map_err(|e| KitUnavailable {
         kit_kind: "realize",
         language: target_lang.to_string(),
         detail: e,

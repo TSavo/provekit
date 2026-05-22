@@ -1,0 +1,65 @@
+{
+  "header": {
+    "cid": "blake3-512:b1413dfc617825049e6e2772921480e81154ba4714143288e41d2f5326075e1eec02556a630422025da811feca6aef869e5d89e9a9ed64ded2efab69fb9c5547",
+    "content": {
+      "entries": [
+        {
+          "concept_name": "concept:stdio-read-line",
+          "emission_template": {
+            "kind": "verbatim",
+            "template": "        try {\n            return STDIN_READER.readLine();\n        } catch (IOException e) {\n            throw new UncheckedIOException(e);\n        }\n    "
+          },
+          "loss_record_contribution": {
+            "form": "literal",
+            "value": {
+              "entries": []
+            }
+          },
+          "signature_guard": {
+            "max_params": 0,
+            "min_params": 0
+          },
+          "target_library_tag": "java-io"
+        },
+        {
+          "concept_name": "concept:stdio-write-line",
+          "emission_template": {
+            "kind": "verbatim",
+            "template": "        System.out.println(${param0});\n    "
+          },
+          "loss_record_contribution": {
+            "form": "literal",
+            "value": {
+              "entries": []
+            }
+          },
+          "signature_guard": {
+            "max_params": 1,
+            "min_params": 1
+          },
+          "target_library_tag": "java-io"
+        },
+        {
+          "concept_name": "concept:stderr-write-line",
+          "emission_template": {
+            "kind": "verbatim",
+            "template": "        System.err.println(${param0});\n    "
+          },
+          "loss_record_contribution": {
+            "form": "literal",
+            "value": {
+              "entries": []
+            }
+          },
+          "signature_guard": {
+            "max_params": 1,
+            "min_params": 1
+          },
+          "target_library_tag": "java-io"
+        }
+      ],
+      "target_language": "java",
+      "template_name": "java-canonical-bodies-java-io"
+    }
+  }
+}

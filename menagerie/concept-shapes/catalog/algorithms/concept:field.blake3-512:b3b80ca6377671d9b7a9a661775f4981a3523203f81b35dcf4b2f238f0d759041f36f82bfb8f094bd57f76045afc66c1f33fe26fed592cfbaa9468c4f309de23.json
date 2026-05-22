@@ -1,0 +1,39 @@
+{
+  "cid": "blake3-512:b3b80ca6377671d9b7a9a661775f4981a3523203f81b35dcf4b2f238f0d759041f36f82bfb8f094bd57f76045afc66c1f33fe26fed592cfbaa9468c4f309de23",
+  "memento": {
+    "contract": {
+      "body": {
+        "kind": "atomic",
+        "name": "true"
+      },
+      "formals": [
+        "receiver",
+        "field"
+      ],
+      "kind": "wp-rule"
+    },
+    "contract_note": "Field access: realizes as `receiver.field` across most languages.",
+    "formal_sorts": [
+      "Expr",
+      "Name"
+    ],
+    "kind": "concept-abstraction",
+    "operator": "concept:field",
+    "realizations": [],
+    "result_sort": "Expr",
+    "slots": [
+      {
+        "name": "receiver"
+      },
+      {
+        "name": "field"
+      }
+    ],
+    "tier": "abstraction"
+  },
+  "signature": {
+    "alg": "ed25519",
+    "key_id": "UNSIGNED_DEV_ONLY",
+    "sig_b64": "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"
+  }
+}

@@ -19,7 +19,7 @@
 // and pull back proof.ir bytes ready for the substrate's lift / mint /
 // linker pipeline.
 
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 use std::io::{self, BufRead, Write};
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, OnceLock};
@@ -459,6 +459,22 @@ fn bind_lift(params: &Value) -> Result<Value, String> {
             ]);
             let signature_shape_cid = blake3_512_of(encode_jcs(&sig_shape).as_bytes());
 
+            // #1361 chunk 2 part B / #1355: emit concept-hub sort CIDs for
+            // each parameter type. The rust kit's @sugar lift translates
+            // its source syntax to substrate-canonical sort identities AT
+            // the kit/substrate boundary. Parallel to source_transform's
+            // @boundary carrier emission and JavaBindLifter's @sugar emission.
+            // Kit-internal sort labels (rust:Int, rust:Str, ...) stay inside
+            // the rust kit; only concept-hub CIDs cross to substrate. Empty
+            // string in a slot signals "kit has no morphism for this type" —
+            // substrate-honest gap signal for downstream refusal.
+            let param_sort_cids: Vec<String> = param_types
+                .iter()
+                .map(|t| rust_source_type_to_concept_hub_sort_cid(t).unwrap_or("").to_string())
+                .collect();
+            let return_sort_cid = rust_source_type_to_concept_hub_sort_cid(&return_type)
+                .unwrap_or("")
+                .to_string();
             let mut entry = json!({
                 "kind": "library-sugar-binding-entry",
                 "target_language": "rust",
@@ -467,7 +483,9 @@ fn bind_lift(params: &Value) -> Result<Value, String> {
                 "source_function_name": item_fn.sig.ident.to_string(),
                 "param_names": param_names,
                 "param_types": param_types,
+                "param_sort_cids": param_sort_cids,
                 "return_type": return_type,
+                "return_sort_cid": return_sort_cid,
                 "term_shape": cvalue_to_json(&term_shape),
                 "term_shape_cid": term_shape_cid,
                 "operand_bindings": operand_bindings,
@@ -1678,6 +1696,78 @@ fn fn_param_names(item_fn: &syn::ItemFn) -> Vec<String> {
     names
 }
 
+/// Substrate-honest rust-syntax → concept-hub sort CID translation.
+///
+/// Mirror of source_transform.rs::rust_source_type_to_concept_hub_sort_cid
+/// (which handles @boundary signatures). This handles @sugar bindings —
+/// same kit/substrate boundary semantics: rust-internal sort labels stay
+/// inside the rust kit; only concept-hub CIDs cross to substrate.
+///
+/// CIDs verified against menagerie/concept-shapes/catalog/sorts/.
+fn rust_source_type_to_concept_hub_sort_cid(rust_type: &str) -> Option<&'static str> {
+    let trimmed = rust_type.trim();
+    // &mut T → concept:Ref<T> (minted 2026-05-21).
+    // walk_rpc's sugar_type_surface strips spaces (`&mut String` → `&mutString`);
+    // source_transform's @boundary parser keeps them (`&mut String`). Handle both.
+    if trimmed.starts_with("&mut ") || trimmed.starts_with("&mut") && !trimmed.starts_with("&mute") {
+        return Some(
+            "blake3-512:37d8efe0ce6321d1a16f80aa06cbdf056c846b8a99613731e8d64d9581af61bc517fd8c87daaff2c817585a7dfd763e09ed729fdc71d25fe16fb1b2e6ca33534"
+        );
+    }
+    let t = trimmed.trim_start_matches('&').trim();
+    let t = if let Some(stripped) = t
+        .strip_prefix("Option<")
+        .and_then(|s| s.strip_suffix('>'))
+    {
+        stripped.trim()
+    } else if let Some(stripped) = t.strip_prefix("Result<") {
+        let mut depth = 0i32;
+        let mut end = stripped.len();
+        for (i, ch) in stripped.chars().enumerate() {
+            match ch {
+                '<' => depth += 1,
+                '>' => depth -= 1,
+                ',' if depth == 0 => {
+                    end = i;
+                    break;
+                }
+                _ => {}
+            }
+        }
+        stripped[..end].trim()
+    } else {
+        t
+    };
+    match t {
+        "i8" | "i16" | "i32" | "i64" | "i128" | "isize" | "u8" | "u16" | "u32" | "u64"
+        | "u128" | "usize" => Some(
+            "blake3-512:30ffc51350121a7172f3e4064a33c45bbd345756979fccff6875cd2ab33e4964d098a99df80cfbdf1ec1a0738c5ac3476f0ff8f75589ea511d1acd82c74ecd58"
+        ),
+        "f32" | "f64" => Some(
+            "blake3-512:b979e70c4d5e53d9bdf13d6f08330be3c5b0714b8c770d69bbd05946b86c36df5274be8145a2683cc29c278155c9c1ee65b6897913524eecb9e4c89c71862f57"
+        ),
+        "bool" => Some(
+            "blake3-512:0ee13bf3fd6b7ecfbee72dfbfc18a7c0ea7f1663de6cca43cefb36f5b4c03665452646094a7c296e819e75d683c6ce4821f3d7db3c3c78ae97f2d4e3451d2074"
+        ),
+        "str" | "String" => Some(
+            "blake3-512:be8721d24849feb74c4721520bdba02d352a94f49253a627cd509127472aa1c47cbe99cb705cac4159b5365abcce0c9aaa4901fe67630827deb6be1f9daeea10"
+        ),
+        "()" => Some(
+            "blake3-512:47682b09e5dba71f563db6249c6cb352f7d540986dc7f4cd8d4fb1aa6d9a503064033ee3eb9f36ee6f9e000f700f2f030ebfcfe2b2b8b7e81a345b0d56551f1b"
+        ),
+        _ if t.starts_with("Vec<u8>") || t.starts_with("[u8") => Some(
+            "blake3-512:7116ef6e62e6739b213a8394f975a53c771b89f08c36d27143827acfcfebc0e39e5b82c530be668c3cfd5ec6966ccaa42930b37fdb1f4ac25652a970be10fb6b"
+        ),
+        _ if t.starts_with("Vec<") || t.starts_with('[') => Some(
+            "blake3-512:e3f8d17445f9d2ce89c41c09cbeea08a8bc685d1c34a9fd3dfa7b1df17a94f40eab37396615501f1468baf2a1480fd5a27330ea23202b99876c5f4d97fa2cfb2"
+        ),
+        "Value" | "serde_json::Value" => Some(
+            "blake3-512:702064722b23410fde0d1fd7afac165bf5914441d67abe1e19d63b0e8fe8117296d2677cc721ad096b8b3bb82d178af699bf14fd70bfb18756c5bed6f4434108"
+        ),
+        _ => None,
+    }
+}
+
 fn sugar_param_types(item_fn: &syn::ItemFn) -> Vec<String> {
     item_fn
         .sig
@@ -2052,15 +2142,69 @@ fn bindings_of_stmt(stmt: &syn::Stmt, ctx: &ShapeContext) -> BindingResult {
 
 fn bindings_of_expr(expr: &syn::Expr, ctx: &ShapeContext) -> BindingResult {
     match expr {
-        // If/While/ForLoop/Loop now lifted as concept:literal source_text
-        // leaves (see shape_of_expr); no inner operand bindings to thread,
-        // but the leaf IS a real shape (concept:literal), so we MUST mark
-        // has_operator=true so collapse_binding_groups keeps its position
-        // slot in sync with collapse_operation_shapes. Empty bindings
-        // vector — the leaf carries no operand references for the realize
-        // side to look up.
-        syn::Expr::If(_) | syn::Expr::While(_) | syn::Expr::ForLoop(_) | syn::Expr::Loop(_) => {
-            BindingResult { has_operator: true, bindings: Vec::new() }
+        // Structural control flow — thread bindings through each substrate
+        // operator's argument layout to match shape_of_expr's emission.
+        // Without this, references inside condition/body lose their
+        // operand_binding entries and downstream address resolution can't
+        // see them at the expected positions.
+        syn::Expr::If(e) => {
+            let cond = bindings_of_expr(&e.cond, ctx);
+            let then_branch = bindings_of_block(&e.then_branch, ctx);
+            let else_branch = match &e.else_branch {
+                Some((_, else_expr)) => bindings_of_expr(else_expr, ctx),
+                None => BindingResult { has_operator: true, bindings: Vec::new() },
+            };
+            operation_binding_result(vec![cond, then_branch, else_branch])
+        }
+        syn::Expr::While(e) => {
+            let cond = bindings_of_expr(&e.cond, ctx);
+            let body = bindings_of_block(&e.body, ctx);
+            operation_binding_result(vec![cond, body])
+        }
+        syn::Expr::ForLoop(e) => {
+            // concept:for-each(var, iterable, body); var is a symbol leaf (no binding slot).
+            let iterable = bindings_of_expr(&e.expr, ctx);
+            let body = bindings_of_block(&e.body, ctx);
+            operation_binding_result(vec![BindingResult::default(), iterable, body])
+        }
+        syn::Expr::Loop(e) => {
+            // concept:while(true_literal_leaf, body)
+            let body = bindings_of_block(&e.body, ctx);
+            operation_binding_result(vec![BindingResult::default(), body])
+        }
+        syn::Expr::Match(e) => {
+            // concept:match(scrutinee, arm1, arm2, ...)
+            // Each arm: concept:match-arm(pattern_leaf, body) — pattern is leaf, body has bindings.
+            let mut args = vec![bindings_of_expr(&e.expr, ctx)];
+            for arm in &e.arms {
+                let body_bindings = bindings_of_expr(&arm.body, ctx);
+                args.push(operation_binding_result(vec![
+                    BindingResult::default(),
+                    body_bindings,
+                ]));
+            }
+            operation_binding_result(args)
+        }
+        syn::Expr::Cast(c) => {
+            // concept:cast(value, type_leaf)
+            operation_binding_result(vec![
+                bindings_of_expr(&c.expr, ctx),
+                BindingResult::default(),
+            ])
+        }
+        syn::Expr::Index(idx) => {
+            // concept:index(receiver, index)
+            operation_binding_result(vec![
+                bindings_of_expr(&idx.expr, ctx),
+                bindings_of_expr(&idx.index, ctx),
+            ])
+        }
+        syn::Expr::Field(f) => {
+            // concept:field(receiver, field_leaf)
+            operation_binding_result(vec![
+                bindings_of_expr(&f.base, ctx),
+                BindingResult::default(),
+            ])
         }
         syn::Expr::Return(e) => {
             let args = e
@@ -2148,9 +2292,25 @@ fn bindings_of_expr(expr: &syn::Expr, ctx: &ShapeContext) -> BindingResult {
         syn::Expr::Block(b) => bindings_of_block(&b.block, ctx),
         syn::Expr::Paren(e) => bindings_of_expr(&e.expr, ctx),
         syn::Expr::Group(e) => bindings_of_expr(&e.expr, ctx),
-        _ => operand_symbol(expr)
-            .map(binding_result_for_symbol)
-            .unwrap_or_default(),
+        _ => {
+            // Single-identifier path → only emit a binding when the
+            // identifier is a KNOWN scoped name (function param / local).
+            // Free identifiers (None, Some, Vec::new, etc.) fall through
+            // to the structural kind:"symbol" leaf in shape_of_expr —
+            // emitting a binding for them shadowed the leaf at use site
+            // because realize checks operand_bindings BEFORE kind:symbol.
+            if let Some(symbol) = operand_symbol(expr) {
+                // Use scoped_names (all in-scope identifiers) instead of
+                // ctx.vars (only sort-inferred). Params/locals of non-modeled
+                // types (refs, String, custom) belong in scope but aren't
+                // in vars — without scoped_names they were treated as free
+                // symbols and lost their operand_binding.
+                if ctx.scoped_names.contains(&symbol) {
+                    return binding_result_for_symbol(symbol);
+                }
+            }
+            BindingResult::default()
+        }
     }
 }
 
@@ -2212,7 +2372,17 @@ enum ShapeSort {
 
 #[derive(Debug, Clone, Default)]
 struct ShapeContext {
+    /// Identifier → inferred sort. Only populated when the type is in
+    /// ShapeSort's modeled set (Int/Float/Bool/String/Bytes/...). Used
+    /// for sort-aware lifts (e.g. binary op result-sort inference).
     vars: BTreeMap<String, ShapeSort>,
+    /// All scoped identifiers, regardless of whether their type is sort-
+    /// inferable. Distinct from `vars` because params/locals with non-
+    /// modeled types (refs, String, custom types) belong in scope but
+    /// not in `vars`. Used by bindings_of_expr to distinguish scoped
+    /// identifiers (emit operand_binding) from free identifiers
+    /// (None/Some/path leaves — let kind:"symbol" handle them).
+    scoped_names: BTreeSet<String>,
 }
 
 impl ShapeContext {
@@ -2231,6 +2401,9 @@ impl ShapeContext {
     }
 
     fn set_local(&mut self, name: String, sort: Option<ShapeSort>) {
+        // Always track the name in scope, even when sort isn't inferable —
+        // bindings_of_expr needs this to recognize the name as scoped.
+        self.scoped_names.insert(name.clone());
         if let Some(sort) = sort {
             self.vars.insert(name, sort);
         } else {
@@ -2314,35 +2487,37 @@ fn shape_of_stmt(stmt: &syn::Stmt, ctx: &ShapeContext) -> Arc<CValue> {
             let Some(init) = local.init.as_ref() else {
                 return non_operation_shape();
             };
-            // `let _ = X;` — Pat::Wild discard binding. Emit concept:assign
-            // with target = concept:literal source_text "_" so realize side
-            // can recognize and emit `let _ = X;` byte-correctly. No mutability
-            // arg (wildcard binding is never `let mut _ = ...`).
+            // `let _ = X;` — Pat::Wild discard binding. Target is a symbol
+            // leaf "_" (substrate-canonical name; same shape walk_rpc uses
+            // for other named bindings). The realize side detects "_" and
+            // emits the wildcard form. No source_text — the underscore IS
+            // the substrate name, not a kit-specific source token.
             if matches!(&local.pat, syn::Pat::Wild(_)) {
-                let Some(op_cid) = concept_op_cid("concept:literal") else {
-                    return non_operation_shape();
-                };
                 let target_leaf = CValue::object([
-                    ("args", CValue::array(Vec::new())),
-                    ("concept_name", CValue::string("concept:literal")),
-                    ("op_cid", CValue::string(op_cid)),
-                    ("sort", CValue::string(SORT_STRING_CID)),
-                    ("source_text", CValue::string("_")),
+                    ("kind", CValue::string("symbol")),
+                    ("text", CValue::string("_")),
                 ]);
                 return gamma_operation(
                     "concept:assign",
                     vec![target_leaf, shape_of_expr(&init.expr, ctx)],
                 );
             }
-            if local_binding_symbol(local).is_some() {
-                // Emit concept:assign with an optional third arg for mutability.
-                // args[0] = target (non_operation_shape — symbol resolved via operand_bindings)
+            if let Some(binding_name) = local_binding_symbol(local) {
+                // Substrate-honest let-binding: the binding NAME is data,
+                // emit it as a kind:"symbol" leaf in the target slot.
+                // (Previously emitted as non_operation_shape {} relying on
+                // operand_bindings position-resolution — fragile because
+                // for nested lets in loop / conditional bodies, the bindings
+                // collector doesn't always thread the binding name to the
+                // expected position.)
+                // args[0] = target (symbol leaf with binding name)
                 // args[1] = value expression
-                // args[2] = mutability flag leaf {source_text:"mut"} when `let mut`,
-                //           or omitted (2-arg form) for `let`.
-                // The realize side checks args.len() == 3 to detect let-mut.
+                // args[2] = mutability flag leaf when `let mut`, omitted otherwise
                 let mut assign_args = vec![
-                    non_operation_shape(),
+                    CValue::object([
+                        ("kind", CValue::string("symbol")),
+                        ("text", CValue::string(binding_name)),
+                    ]),
                     shape_of_expr(&init.expr, ctx),
                 ];
                 if local_binding_is_mut(local) {
@@ -2368,26 +2543,63 @@ fn shape_of_stmt(stmt: &syn::Stmt, ctx: &ShapeContext) -> Arc<CValue> {
 
 fn shape_of_expr(expr: &syn::Expr, ctx: &ShapeContext) -> Arc<CValue> {
     match expr {
-        // Control-flow expressions whose patterns / bindings / scrutinees
-        // aren't currently in the substrate's primitive op catalog
-        // (concept:if exists structurally as concept:conditional, but its
-        // 3-arg form drops things like `else if` chains and pattern guards;
-        // concept:for / concept:while drop iterator + pattern). For byte-
-        // exact reproduction we lift these via prettyplease as a single
-        // concept:literal source_text leaf. Outer-scope identifiers
-        // referenced inside survive textually.
-        syn::Expr::If(_) | syn::Expr::While(_) | syn::Expr::ForLoop(_) | syn::Expr::Loop(_) => {
-            let formatted = pretty_print_expr(expr);
-            let Some(op_cid) = concept_op_cid("concept:literal") else {
-                return non_operation_shape();
+        // Structural control-flow lifts (source_text fallback removed):
+        // - if/else → concept:conditional(cond, then, else)
+        // - while → concept:while(cond, body)
+        // - for x in iter → concept:for-each(var, iterable, body)
+        // - loop → concept:while(true, body)  (decomposed via existing primitives)
+        syn::Expr::If(e) => {
+            let cond = shape_of_expr(&e.cond, ctx);
+            let then_shape = shape_of_block(&e.then_branch, ctx);
+            let else_shape = match &e.else_branch {
+                Some((_, expr)) => shape_of_expr(expr, ctx),
+                None => gamma_operation("concept:skip", Vec::new()),
             };
-            CValue::object([
-                ("args", CValue::array(Vec::new())),
-                ("concept_name", CValue::string("concept:literal")),
-                ("op_cid", CValue::string(op_cid)),
-                ("sort", CValue::string(SORT_STRING_CID)),
-                ("source_text", CValue::string(formatted)),
-            ])
+            gamma_operation("concept:conditional", vec![cond, then_shape, else_shape])
+        }
+        syn::Expr::While(e) => {
+            let cond = shape_of_expr(&e.cond, ctx);
+            let body = shape_of_block(&e.body, ctx);
+            gamma_operation("concept:while", vec![cond, body])
+        }
+        syn::Expr::ForLoop(e) => {
+            // `for pat in expr { body }` — concept:for-each(var, iterable, body).
+            // The pattern is captured as a leaf binding by name (full pattern
+            // destructuring resolution is follow-up; matches walk_rpc's
+            // existing pattern-as-leaf convention).
+            let var = match &*e.pat {
+                syn::Pat::Ident(p) => CValue::object([
+                    ("kind", CValue::string("symbol")),
+                    ("text", CValue::string(p.ident.to_string())),
+                ]),
+                other => {
+                    use quote::ToTokens;
+                    CValue::object([
+                        ("kind", CValue::string("symbol")),
+                        ("text", CValue::string(other.to_token_stream().to_string())),
+                    ])
+                }
+            };
+            let iterable = shape_of_expr(&e.expr, ctx);
+            let body = shape_of_block(&e.body, ctx);
+            gamma_operation("concept:for-each", vec![var, iterable, body])
+        }
+        syn::Expr::Loop(e) => {
+            // `loop { body }` ≡ `while true { body }` — decompose via concept:literal(true).
+            let true_lit = {
+                let Some(op_cid) = concept_op_cid("concept:literal") else {
+                    return non_operation_shape();
+                };
+                CValue::object([
+                    ("args", CValue::array(Vec::new())),
+                    ("concept_name", CValue::string("concept:literal")),
+                    ("op_cid", CValue::string(op_cid)),
+                    ("sort", CValue::string(SORT_BOOL_CID)),
+                    ("value", CValue::boolean(true)),
+                ])
+            };
+            let body = shape_of_block(&e.body, ctx);
+            gamma_operation("concept:while", vec![true_lit, body])
         }
         syn::Expr::Return(e) => {
             let args = e
@@ -2485,81 +2697,67 @@ fn shape_of_expr(expr: &syn::Expr, ctx: &ShapeContext) -> Arc<CValue> {
                 vec![shape_of_expr(&e.expr, ctx), mut_leaf],
             )
         }
-        // Match expression: `match scrutinee { arm1, arm2, ... }`. Lifted
-        // as a concept:literal source_text leaf carrying the full match
-        // expression text. Same approach as Expr::Macro — patterns are not
-        // currently in the substrate's primitive op catalog (no concept:match,
-        // no concept:pattern), so we preserve the source form verbatim. The
-        // realize side emits source_text as-is; outer-scope symbols
-        // referenced inside the match body remain in scope via Rust's normal
-        // lexical scoping.
-        //
-        // Multi-line formatting is preserved via `format_match_expression`
-        // which inserts newlines + indentation to match common Rust source
-        // style for the arms.
+        // Structural match: concept:match(scrutinee, arm1, arm2, ...).
+        // Each arm is concept:match-arm(pattern, body). Pattern is a
+        // symbol leaf carrying the textual form (full pattern decomposition
+        // to concept:literal-pattern / concept:constructor-pattern / etc.
+        // is follow-up substrate-mint work; for now patterns live as
+        // symbol-leaf substrate names with kit-side pattern parsing).
         syn::Expr::Match(e) => {
-            let formatted = pretty_print_expr(&syn::Expr::Match(e.clone()));
-            let Some(op_cid) = concept_op_cid("concept:literal") else {
-                return non_operation_shape();
-            };
-            CValue::object([
-                ("args", CValue::array(Vec::new())),
-                ("concept_name", CValue::string("concept:literal")),
-                ("op_cid", CValue::string(op_cid)),
-                ("sort", CValue::string(SORT_STRING_CID)),
-                ("source_text", CValue::string(formatted)),
-            ])
+            use quote::ToTokens;
+            let mut args = vec![shape_of_expr(&e.expr, ctx)];
+            for arm in &e.arms {
+                let pattern_text = arm.pat.to_token_stream().to_string();
+                let pattern_leaf = CValue::object([
+                    ("kind", CValue::string("symbol")),
+                    ("text", CValue::string(pattern_text)),
+                ]);
+                let body = shape_of_expr(&arm.body, ctx);
+                args.push(gamma_operation("concept:match-arm", vec![pattern_leaf, body]));
+            }
+            gamma_operation("concept:match", args)
         }
         // Macro invocation: `writeln!(handle, "{}", line)` and similar.
-        // Lifted as a concept:literal leaf with source_text carrying the
-        // formatted token-stream text. This preserves the source form
-        // verbatim (modulo whitespace normalization in the format below).
-        // The realize side reads source_text and emits as-is.
+        // concept:macro-call(path, args...) — path is symbol leaf for the
+        // macro name; args are the tokens as a single symbol leaf
+        // (structural decomposition of macro tokens to substrate primitives
+        // is follow-up; macros are syntactic — their structure isn't
+        // semantically meaningful until the macro expands).
         syn::Expr::Macro(e) => {
             use quote::ToTokens;
-            let path = e.mac.path.to_token_stream().to_string();
-            let path = path.replace(" ", ""); // canonical: no spaces in path
+            let path = e.mac.path.to_token_stream().to_string().replace(' ', "");
+            let path_leaf = CValue::object([
+                ("kind", CValue::string("symbol")),
+                ("text", CValue::string(path)),
+            ]);
             let tokens = e.mac.tokens.to_string();
             let formatted = format_macro_tokens(&tokens);
-            let Some(op_cid) = concept_op_cid("concept:literal") else {
-                return non_operation_shape();
-            };
-            CValue::object([
-                ("args", CValue::array(Vec::new())),
-                ("concept_name", CValue::string("concept:literal")),
-                ("op_cid", CValue::string(op_cid)),
-                ("sort", CValue::string(SORT_STRING_CID)),
-                ("source_text", CValue::string(format!("{path}!({formatted})"))),
-            ])
+            let args_leaf = CValue::object([
+                ("kind", CValue::string("symbol")),
+                ("text", CValue::string(formatted)),
+            ]);
+            gamma_operation("concept:macro-call", vec![path_leaf, args_leaf])
         }
         // |param1, param2, ...| body — emitted as concept:closure with
         // args = [body_shape, param1_literal, param2_literal, ...]. Body
         // at args[0], param-name literals at args[1..]. No new substrate
-        // concept needed (concept:closure already in catalog as
-        // abstraction). Param names are concept:literal with source_text.
+        // concept:closure (already in catalog as abstraction). Param names
+        // are symbol leaves — substrate-canonical names, NOT source text.
+        // The realize side spells each per its own convention.
         //
         // Closure-introduced bindings flow through the existing
         // Expr::Path -> operand_symbol path at use site (McCarthy address
         // resolution); we do NOT pre-bind closure params here.
         syn::Expr::Closure(e) => {
-            // Only handle Pat::Ident inputs (the common case). Anything
-            // else (tuple patterns, type ascribed patterns) refuses
-            // loudly by collapsing to non_operation_shape.
             let mut closure_args: Vec<Arc<CValue>> = Vec::new();
             closure_args.push(shape_of_expr(&e.body, ctx));
             for input in &e.inputs {
                 let syn::Pat::Ident(pat) = input else {
                     return non_operation_shape();
                 };
-                let Some(op_cid) = concept_op_cid("concept:literal") else {
-                    return non_operation_shape();
-                };
                 closure_args.push(CValue::object([
-                    ("args", CValue::array(Vec::new())),
-                    ("concept_name", CValue::string("concept:literal")),
-                    ("op_cid", CValue::string(op_cid)),
-                    ("sort", CValue::string(SORT_STRING_CID)),
-                    ("source_text", CValue::string(pat.ident.to_string())),
+                    ("kind", CValue::string("symbol")),
+                    ("text", CValue::string(pat.ident.to_string())),
                 ]));
             }
             gamma_operation("concept:closure", closure_args)
@@ -2567,6 +2765,55 @@ fn shape_of_expr(expr: &syn::Expr, ctx: &ShapeContext) -> Arc<CValue> {
         syn::Expr::Block(b) => shape_of_block(&b.block, ctx),
         syn::Expr::Paren(e) => shape_of_expr(&e.expr, ctx),
         syn::Expr::Group(e) => shape_of_expr(&e.expr, ctx),
+        // Cast: `value as TargetType` → concept:cast(value_shape, type_symbol_leaf).
+        syn::Expr::Cast(c) => {
+            use quote::ToTokens;
+            let value = shape_of_expr(&c.expr, ctx);
+            let type_text = c.ty.to_token_stream().to_string().replace(' ', "");
+            let type_leaf = CValue::object([
+                ("kind", CValue::string("symbol")),
+                ("text", CValue::string(type_text)),
+            ]);
+            gamma_operation("concept:cast", vec![value, type_leaf])
+        }
+        // Indexed access: `receiver[index]` → concept:index(receiver, index).
+        syn::Expr::Index(idx) => {
+            let receiver = shape_of_expr(&idx.expr, ctx);
+            let index = shape_of_expr(&idx.index, ctx);
+            gamma_operation("concept:index", vec![receiver, index])
+        }
+        // Field access: `receiver.field` (and `receiver.0` tuple field) →
+        // concept:field(receiver_shape, field_symbol_leaf).
+        syn::Expr::Field(f) => {
+            let receiver = shape_of_expr(&f.base, ctx);
+            let field_text = match &f.member {
+                syn::Member::Named(ident) => ident.to_string(),
+                syn::Member::Unnamed(idx) => idx.index.to_string(),
+            };
+            let field_leaf = CValue::object([
+                ("kind", CValue::string("symbol")),
+                ("text", CValue::string(field_text)),
+            ]);
+            gamma_operation("concept:field", vec![receiver, field_leaf])
+        }
+        // Free path identifier (e.g. None, Some, Vec::new, Ordering::Less).
+        // Emit as substrate-canonical symbol leaf so deeper consumers (match
+        // arm bodies, conditional branches) can lower them without depending
+        // on operand_bindings position threading.
+        //
+        // Note: parameter references ALSO go through Expr::Path. Those are
+        // handled at use site by the realize binary's operand_bindings
+        // lookup (term_shape_leaf_expression checks operand_bindings.get(
+        // position) BEFORE checking kind=symbol). So this symbol-leaf
+        // emission is the FALLBACK for free identifiers not bound as params.
+        syn::Expr::Path(path) => {
+            use quote::ToTokens;
+            let text = path.to_token_stream().to_string().replace(' ', "");
+            CValue::object([
+                ("kind", CValue::string("symbol")),
+                ("text", CValue::string(text)),
+            ])
+        }
         _ => non_operation_shape(),
     }
 }
@@ -2804,21 +3051,11 @@ fn literal_shape(lit: &syn::Lit) -> Arc<CValue> {
             concept_literal_shape(CValue::boolean(value.value()), SORT_BOOL_CID)
         }
         syn::Lit::Int(value) => {
-            // Emit the standard concept:literal shape with the integer value, PLUS
-            // a `source_text` field carrying the full token (e.g. "0u8", "64usize").
-            // The realize side checks `source_text` first and emits it verbatim,
-            // falling back to the base10 integer value for integers without suffix.
-            // This preserves type suffixes that are load-bearing (e.g. [0u8; 64]).
-            //
-            // #1363 / #1355: integer-width metadata. The token's suffix
-            // (`u8`, `i32`, `usize`, etc.) is the WIDTH+SIGNEDNESS pin —
-            // emit it as a separate `integer_width` field so downstream
-            // realize-side consumers can route width-aware (cross-language
-            // i32 → ts number with bounded loss; rust i32 → java int
-            // direct; etc.). Untype-suffixed literals get
-            // `integer_width: "inferred"`; the realize side falls back to
-            // function-signature-driven width inference.
-            let token_text = value.to_string();
+            // Substrate-canonical literal: (sort=concept:Int, value=N, integer_width=W).
+            // The kit's realize side reconstructs source spelling from these
+            // — no source_text side channel. integer_width covers width
+            // refinements (u8/i32/usize/etc.) so the spelling is fully
+            // derivable from (value + width).
             let Some(decoded) = value.base10_parse::<i64>().ok() else {
                 return non_operation_shape();
             };
@@ -2836,7 +3073,6 @@ fn literal_shape(lit: &syn::Lit) -> Arc<CValue> {
                 ("concept_name", CValue::string("concept:literal")),
                 ("op_cid", CValue::string(op_cid)),
                 ("sort", CValue::string(SORT_INT_CID)),
-                ("source_text", CValue::string(token_text)),
                 ("value", CValue::integer(decoded)),
                 ("integer_width", CValue::string(integer_width)),
             ])
@@ -2845,10 +3081,9 @@ fn literal_shape(lit: &syn::Lit) -> Arc<CValue> {
             concept_literal_shape(CValue::string(value.base10_digits()), SORT_FLOAT_CID)
         }
         syn::Lit::Str(value) => {
-            // Byte-exact: preserve source-form escapes (e.g. `"\\\""` is the
-            // source token, not the post-escape Rust `String` value `"`).
-            use quote::ToTokens;
-            let token_text = value.to_token_stream().to_string();
+            // Substrate-canonical: sort + value (the decoded string).
+            // Source-form escape choices (`"\\\""` vs `"\""`) are kit
+            // presentation, not substrate state.
             let Some(op_cid) = concept_op_cid("concept:literal") else {
                 return non_operation_shape();
             };
@@ -2857,7 +3092,6 @@ fn literal_shape(lit: &syn::Lit) -> Arc<CValue> {
                 ("concept_name", CValue::string("concept:literal")),
                 ("op_cid", CValue::string(op_cid)),
                 ("sort", CValue::string(SORT_STRING_CID)),
-                ("source_text", CValue::string(token_text)),
                 ("value", CValue::string(value.value())),
             ])
         }
@@ -2871,14 +3105,10 @@ fn literal_shape(lit: &syn::Lit) -> Arc<CValue> {
         syn::Lit::Byte(value) => {
             concept_literal_shape(CValue::integer(i64::from(value.value())), SORT_INT_CID)
         }
-        // Char lifted as concept:literal source_text leaf for byte-exact
-        // reproduction. The shim's `char` semantic distinction from String
-        // remains intact at the source-text level: `'a'` is emitted as
-        // `'a'`, not as `"a": String`. No content-addressed equivalence
-        // claim is made — the source_text is just the textual leaf form.
+        // Substrate-canonical char: sort + value (the actual character as a
+        // single-char string). Source spelling (`'a'` vs `'\u{61}'`) is kit
+        // presentation; the substrate carries semantic identity only.
         syn::Lit::Char(value) => {
-            use quote::ToTokens;
-            let token_text = value.to_token_stream().to_string();
             let Some(op_cid) = concept_op_cid("concept:literal") else {
                 return non_operation_shape();
             };
@@ -2887,7 +3117,7 @@ fn literal_shape(lit: &syn::Lit) -> Arc<CValue> {
                 ("concept_name", CValue::string("concept:literal")),
                 ("op_cid", CValue::string(op_cid)),
                 ("sort", CValue::string(SORT_STRING_CID)),
-                ("source_text", CValue::string(token_text)),
+                ("value", CValue::string(value.value().to_string())),
             ])
         }
         syn::Lit::Verbatim(_) => non_operation_shape(),
@@ -3508,10 +3738,18 @@ pub fn add(x: i64, y: i64) -> i64 {
 "#,
         );
 
+        // Substrate-canonical shape: free identifier args (x, y) lift as
+        // kind:"symbol" leaves carrying the name. (Previously emitted as
+        // non_operation_shape {} + supplemented by operand_bindings — the
+        // 2026-05-21 substrate-honest pass moved names into the shape so
+        // deeper consumers don't need position-threading to resolve them.)
         assert_eq!(
             shape,
             json!({
-                "args": [{}, {}],
+                "args": [
+                    {"kind": "symbol", "text": "x"},
+                    {"kind": "symbol", "text": "y"},
+                ],
                 "concept_name": "concept:add",
                 "op_cid": "blake3-512:95fc70e63a5550fd2e25142f13932919c59d085654ab387789c798886b0111c61d28fe533fc98b50df70eea9428a9af8aa75372c8b1c1deb3acc1a4094790468"
             })
@@ -3574,17 +3812,12 @@ pub fn first() -> i64 {
     }
 
     #[test]
-    fn term_shape_rust_char_literal_lifts_as_literal_source_text() {
-        // Updated behavior (this session): Rust `char` lifts as a
-        // concept:literal source_text leaf carrying the source-form token
-        // verbatim (e.g. `'a'`). This is byte-correct reproduction for
-        // shim bodies that pass char arguments to method calls (e.g.
-        // `out.push('"')`, `out.push('\n')`). No content-addressed
-        // equivalence claim is made between `char` and `String` — the
-        // source_text is purely a textual leaf form. If a stricter
-        // sort-discipline is wanted, mint `concept:char-width-32-unicode`
-        // as a separate family and route Lit::Char through it (see #1363
-        // for the parallel integer-width work).
+    fn term_shape_rust_char_literal_lifts_as_concept_literal_with_value() {
+        // Substrate-canonical char literal shape: (sort=concept:String CID,
+        // value=<char as string>). Source-form spelling ('a' vs '\u{61}')
+        // is kit presentation; substrate carries semantic identity only.
+        // (2026-05-21: source_text dropped from substrate channel; the rust
+        // realize binary re-spells via literal_term_with_width.)
         let shape = term_shape_json(
             r#"
 pub fn first() -> char {
@@ -3598,9 +3831,13 @@ pub fn first() -> char {
             "Char literal must lift as concept:literal: {shape}"
         );
         assert_eq!(
-            shape.get("source_text").and_then(|v| v.as_str()),
-            Some("'a'"),
-            "source_text must preserve the source-form char token"
+            shape.get("value").and_then(|v| v.as_str()),
+            Some("a"),
+            "char value must carry semantic identity (the actual character)"
+        );
+        assert!(
+            shape.get("source_text").is_none(),
+            "source_text must not appear in substrate channel: {shape}"
         );
     }
 
@@ -3813,22 +4050,37 @@ pub fn add_via_let(a: i64, b: i64) -> i64 {
 }
 "#,
         );
+        let seq_cid = concept_op_cid("concept:seq").expect("seq cid");
         let assign_cid = concept_op_cid("concept:assign").expect("assign cid");
         let add_cid = concept_op_cid("concept:add").expect("add cid");
 
+        // Substrate-canonical shape after 2026-05-21:
+        // - body is concept:seq containing [assign, tail-expression]
+        // - assign target is kind:symbol "q" (was {} relying on operand_bindings)
+        // - free identifier references (a, b, q) are kind:symbol leaves
         assert_eq!(
             shape,
             json!({
                 "args": [
-                    {},
                     {
-                        "args": [{}, {}],
-                        "concept_name": "concept:add",
-                        "op_cid": add_cid
-                    }
+                        "args": [
+                            {"kind": "symbol", "text": "q"},
+                            {
+                                "args": [
+                                    {"kind": "symbol", "text": "a"},
+                                    {"kind": "symbol", "text": "b"},
+                                ],
+                                "concept_name": "concept:add",
+                                "op_cid": add_cid
+                            }
+                        ],
+                        "concept_name": "concept:assign",
+                        "op_cid": assign_cid
+                    },
+                    {"kind": "symbol", "text": "q"}
                 ],
-                "concept_name": "concept:assign",
-                "op_cid": assign_cid
+                "concept_name": "concept:seq",
+                "op_cid": seq_cid
             })
         );
         assert_no_forbidden_term_shape_fields(&shape);
@@ -3858,10 +4110,18 @@ pub fn f(a: i64, b: i64) -> i64 {
             json!("concept:add"),
             "top-level tail expression remains an add shape"
         );
+        // After 2026-05-21: let+tail-expression body is concept:seq
+        // ([assign, tail-symbol]) — both substrate-meaningful nodes.
+        // The assignment boundary is preserved INSIDE the seq, not at top.
         assert_eq!(
             let_rhs["concept_name"],
+            json!("concept:seq"),
+            "let+tail body lifts as concept:seq with the assign as a child"
+        );
+        assert_eq!(
+            let_rhs["args"][0]["concept_name"],
             json!("concept:assign"),
-            "let binding preserves its assignment boundary"
+            "seq's first child is the concept:assign for the let-binding"
         );
         assert_no_forbidden_term_shape_fields(&top_level);
         assert_no_forbidden_term_shape_fields(&let_rhs);
@@ -3896,39 +4156,26 @@ pub fn safe_divide_then_double(num: i64, denom: i64) -> i64 {
 "#,
         );
 
-        // Updated behavior (this session): Expr::If now lifts via
-        // prettyplease as a concept:literal source_text leaf rather than
-        // the partial-structure concept:conditional with 3 args. This is
-        // byte-correct reproduction at the cost of losing the structural
-        // sub-shapes of the condition / then / else arms. The catalog
-        // walker that previously asserted nested concepts (eq, neg, div,
-        // lt, mul, conditional) now sees a single literal-source-text
-        // leaf with the full expression preserved verbatim — same byte-
-        // identity property, different addressability.
-        //
-        // If structural addressability is needed (e.g. for cross-language
-        // synthesis of conditionals, #1361), Expr::If can be re-promoted
-        // to a structural concept; that's tracked separately. Until then,
-        // assert the source-text fidelity.
+        // Substrate-canonical (2026-05-21): Expr::If lifts structurally
+        // as concept:conditional(cond, then, else). No more
+        // concept:literal source_text fallback — source strings don't
+        // belong in the substrate channel. The structural shape carries
+        // identity; each kit re-spells from concept-hub identities.
         assert_no_forbidden_term_shape_fields(&shape);
         assert_eq!(
             shape.get("concept_name").and_then(|v| v.as_str()),
-            Some("concept:literal"),
-            "if-as-tail-expression lifts via prettyplease as a concept:literal source_text leaf: {shape:#?}"
+            Some("concept:conditional"),
+            "if-as-tail-expression lifts as concept:conditional: {shape:#?}"
         );
-        let source_text = shape
-            .get("source_text")
-            .and_then(|v| v.as_str())
-            .expect("source_text on literal leaf");
-        for fragment in [
-            "if denom == 0",
-            "let q = num / denom",
-            "if q < 0",
-            "q * 2",
-        ] {
+        // Collect every concept_name in the tree — verify the structural
+        // shape carries the expected operator chain (eq for the equality
+        // check, conditional for nested if, div for /, lt for <, etc.).
+        let mut names = Vec::new();
+        collect_concept_names(&shape, &mut names);
+        for expected in ["concept:conditional", "concept:eq", "concept:div", "concept:lt"] {
             assert!(
-                source_text.contains(fragment),
-                "source_text must preserve fragment {fragment:?}: actual {source_text:?}"
+                names.contains(&expected.to_string()),
+                "expected operator {expected} in shape names: {names:?}\nshape: {shape:#?}"
             );
         }
         assert!(
@@ -3936,6 +4183,12 @@ pub fn safe_divide_then_double(num: i64, denom: i64) -> i64 {
                 .expect("shape stringifies")
                 .contains("UNNAMED-CONCEPT"),
             "shape must not contain unnamed concept wrappers: {shape:#?}"
+        );
+        // Substrate-honest invariant: no source_text leaves anywhere.
+        let json_text = serde_json::to_string(&shape).expect("shape stringifies");
+        assert!(
+            !json_text.contains("\"source_text\""),
+            "substrate channel must not carry source_text: {json_text}"
         );
     }
 
@@ -4302,8 +4555,11 @@ pub fn bitwise_not() -> i64 {
     fn assert_no_forbidden_term_shape_fields(value: &Value) {
         match value {
             Value::Object(object) => {
+                // `kind` is legitimately used as a leaf-disambiguator (path/
+                // method/mutability/symbol/literal) and is NOT forbidden;
+                // remaining forbiddens are lift-side annotations and source
+                // locations that have no place in the substrate channel.
                 for forbidden in [
-                    "kind",
                     "op",
                     "file",
                     "line",
