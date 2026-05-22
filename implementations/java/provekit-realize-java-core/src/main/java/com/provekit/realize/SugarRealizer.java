@@ -1394,9 +1394,18 @@ final class SugarRealizer {
             // body itself). Nested seqs (inside for/while/match arms) must
             // NOT inject a return — they're statement-blocks, not the
             // function tail. Position == empty list means root.
+            // Only emit implicit return when:
+            // - position is empty (function root)
+            // - non-void return type
+            // - NO existing return statement appears in any line (search
+            //   substring not just prefix to catch nested returns inside
+            //   if/else/switch blocks the match handler emitted)
+            // - we have a tail symbol to return
+            boolean anyReturn = lines.stream().anyMatch(line ->
+                line.contains("return ") || line.contains("throw "));
             if (position.isEmpty()
                     && !"void".equals(mapSourceType(context.returnType))
-                    && lines.stream().noneMatch(line -> line.strip().startsWith("return "))
+                    && !anyReturn
                     && !context.lastAssignedSymbol.isBlank()) {
                 String sym = context.lastAssignedSymbol;
                 // If the symbol's declared type was StringBuilder but the
@@ -1501,7 +1510,16 @@ final class SugarRealizer {
                 return Optional.of("return;");
             }
             Optional<ShapeExpression> value = lowerShapeExpression(args.get(0), context, appendPosition(position, 0));
-            return value.map(shapeExpression -> "return " + shapeExpression.text() + ";");
+            return value.map(shapeExpression -> {
+                String text = shapeExpression.text().trim();
+                // If value is already a throw/return statement (from Err
+                // translation), use it as-is — `return throw new ...;`
+                // is invalid.
+                if (text.startsWith("throw ") || text.startsWith("return ")) {
+                    return text.endsWith(";") ? text : text + ";";
+                }
+                return "return " + shapeExpression.text() + ";";
+            });
         }
         if (conceptMatches("concept:conditional", conceptName) && args.size() == 3) {
             Optional<ShapeExpression> condition = lowerShapeExpression(args.get(0), context, appendPosition(position, 0));
@@ -1760,7 +1778,7 @@ final class SugarRealizer {
                 if ("true".equals(cond)) {
                     if (armCount == 0) {
                         return Optional.of(new ShapeExpression(
-                                "(((java.util.function.Supplier<Object>) () -> { var " + scrutVar + " = " + scrutText + "; return " + bodyText + "; }).get())",
+                                "(((java.util.function.Supplier<" + boxedType(mapSourceType(context.returnType).equals("void") ? "Object" : mapSourceType(context.returnType)) + ">) () -> { var " + scrutVar + " = " + scrutText + "; return " + bodyText + "; }).get())",
                                 mapSourceType(context.returnType)));
                     }
                     // Default arm after at least one conditional: emit as
@@ -1795,7 +1813,8 @@ final class SugarRealizer {
                 chain.append(" : null");
             }
             for (int k = 0; k < openParens; k++) chain.append(")");
-            String wrapped = "(((java.util.function.Supplier<Object>) () -> { var " + scrutVar + " = " + scrutText + "; return " + chain + "; }).get())";
+            String supplierType = boxedType(mapSourceType(context.returnType).equals("void") ? "Object" : mapSourceType(context.returnType));
+            String wrapped = "(((java.util.function.Supplier<" + supplierType + ">) () -> { var " + scrutVar + " = " + scrutText + "; return " + chain + "; }).get())";
             return Optional.of(new ShapeExpression(wrapped, mapSourceType(context.returnType)));
         }
         // concept:macro-call(macro_name_leaf, body_leaf). Handle known macros
@@ -1878,8 +1897,12 @@ final class SugarRealizer {
                         } else {
                             fnApplied = "(" + fn + ").apply(" + receiver.get().text() + ")";
                         }
+                    } else if ("str.to_string".equals(fn) || "String.to_string".equals(fn)
+                            || fn.endsWith(".to_string")) {
+                        // Method ref to identity-style String conversion.
+                        fnApplied = "String.valueOf(" + receiver.get().text() + ")";
                     } else {
-                        fnApplied = "(" + fn + ").apply(" + receiver.get().text() + ")";
+                        fnApplied = "((java.util.function.Function)(" + fn + ")).apply(" + receiver.get().text() + ")";
                     }
                     return Optional.of(new ShapeExpression(
                             "(" + receiver.get().text() + " != null ? " + fnApplied + " : null)",
@@ -1888,19 +1911,7 @@ final class SugarRealizer {
                 // .map(f) on Option: same semantics, same translation.
                 if ("map".equals(methodName) && callArgs.size() == 1) {
                     String fn = callArgs.get(0);
-                    String fnApplied;
-                    if (fn.contains("->")) {
-                        java.util.regex.Matcher m = java.util.regex.Pattern.compile(
-                            "^\\s*\\(?\\s*([A-Za-z_][A-Za-z0-9_]*)\\s*\\)?\\s*->\\s*(.+)$"
-                        ).matcher(fn);
-                        if (m.find()) {
-                            fnApplied = replaceIdentifier(m.group(2).trim(), m.group(1), receiver.get().text());
-                        } else {
-                            fnApplied = "(" + fn + ").apply(" + receiver.get().text() + ")";
-                        }
-                    } else {
-                        fnApplied = "(" + fn + ").apply(" + receiver.get().text() + ")";
-                    }
+                    String fnApplied = applyFnToReceiver(fn, receiver.get().text());
                     return Optional.of(new ShapeExpression(
                             "(" + receiver.get().text() + " != null ? " + fnApplied + " : null)",
                             ""));
@@ -1918,10 +1929,10 @@ final class SugarRealizer {
                         if (m.find()) {
                             fnInvoked = replaceIdentifier(m.group(2).trim(), m.group(1), "null");
                         } else {
-                            fnInvoked = "((java.util.function.Function<Object, Object>)(" + fn + ")).apply(null)";
+                            fnInvoked = "((java.util.function.Function)(" + fn + ")).apply(null)";
                         }
                     } else {
-                        fnInvoked = "((java.util.function.Function<Object, Object>)(" + fn + ")).apply(null)";
+                        fnInvoked = "((java.util.function.Function)(" + fn + ")).apply(null)";
                     }
                     return Optional.of(new ShapeExpression(
                             "(" + receiver.get().text() + " != null ? " + receiver.get().text() + " : " + fnInvoked + ")",
@@ -1984,6 +1995,41 @@ final class SugarRealizer {
                 String joined = argTerms.stream().skip(1).map(ShapeExpression::text).collect(Collectors.joining(", "));
                 return Optional.of(new ShapeExpression("new Object[] {" + joined + "}", "Object[]"));
             }
+            // Rust enum variant constructors with no path qualifier:
+            // - `Ok(x)` returns the wrapped value (java has no Result).
+            // - `Err(x)` throws RuntimeException with the value's string form.
+            // - `Some(x)` returns the value (java null = None).
+            // - `None` is null (handled via leaf).
+            if ("Ok".equals(callee) || "Some".equals(callee)) {
+                String inner = argTerms.size() > 1 ? argTerms.get(1).text() : "null";
+                return Optional.of(new ShapeExpression(inner, argTerms.size() > 1 ? argTerms.get(1).typeName() : ""));
+            }
+            if ("Err".equals(callee)) {
+                String inner = argTerms.size() > 1 ? argTerms.get(1).text() : "\"err\"";
+                return Optional.of(new ShapeExpression(
+                        "throw new RuntimeException(String.valueOf(" + inner + "))",
+                        ""));
+            }
+            // `str::to_string` method ref → identity (already a String).
+            if ("str.to_string".equals(callee) || "String.from".equals(callee)) {
+                String inner = argTerms.size() > 1 ? argTerms.get(1).text() : "\"\"";
+                return Optional.of(new ShapeExpression(inner, "String"));
+            }
+            // Generic enum variant constructor with a path:
+            // `LiftError::Internal(msg)`, `Status::Failed(reason)`, etc.
+            // No enum infrastructure in java by default — reduce to the
+            // payload value as a string. Detect via capitalized identifier
+            // segments + uppercase variant.
+            if (callee.contains(".") && argTerms.size() == 2) {
+                String[] parts = callee.split("\\.");
+                if (parts.length == 2
+                        && parts[0].length() > 0 && Character.isUpperCase(parts[0].charAt(0))
+                        && parts[1].length() > 0 && Character.isUpperCase(parts[1].charAt(0))) {
+                    return Optional.of(new ShapeExpression(
+                            "String.valueOf(" + argTerms.get(1).text() + ")",
+                            "String"));
+                }
+            }
             // Rust path expressions use `::` (e.g. String::new, Vec::with_capacity).
             // For java, translate to `.` (String.new isn't valid — translate to
             // common constructor pattern when the suffix is `new`).
@@ -2007,6 +2053,14 @@ final class SugarRealizer {
                 String diamond = needsDiamond ? "<>" : "";
                 String joined = argTerms.stream().skip(1).map(ShapeExpression::text).collect(Collectors.joining(", "));
                 return Optional.of(new ShapeExpression("new " + typeName + diamond + "(" + joined + ")", typeName));
+            }
+            // `Path::from(p)` — when arg is already a Path, just use it.
+            // Otherwise convert to string and use Path.of.
+            if ("java.nio.file.Path.from".equals(calleeJava) || "Path.from".equals(calleeJava)) {
+                String joined = argTerms.stream().skip(1).map(ShapeExpression::text).collect(Collectors.joining(", "));
+                return Optional.of(new ShapeExpression(
+                        "java.nio.file.Path.of(" + joined + ".toString())",
+                        "java.nio.file.Path"));
             }
             // `String::with_capacity(n)` is rust idiom. Java has no direct
             // equivalent — Strings are immutable; the rust code uses
@@ -2512,6 +2566,28 @@ final class SugarRealizer {
         String head = text.substring(0, paren).trim();
         if (head.matches("[A-Za-z_][A-Za-z0-9_]*")) return head;
         return null;
+    }
+
+    /** Apply a function-like expression `fn` to a single argument expression.
+     *  Handles three forms: lambda (inlined by substitution), known str-conv
+     *  refs (identity-like), generic method refs (Function cast + apply). */
+    private static String applyFnToReceiver(String fn, String arg) {
+        if (fn == null) return arg;
+        String t = fn.trim();
+        if (t.contains("->")) {
+            java.util.regex.Matcher m = java.util.regex.Pattern.compile(
+                "^\\s*\\(?\\s*([A-Za-z_][A-Za-z0-9_]*)\\s*\\)?\\s*->\\s*(.+)$"
+            ).matcher(t);
+            if (m.find()) {
+                return replaceIdentifier(m.group(2).trim(), m.group(1), arg);
+            }
+        }
+        if ("str.to_string".equals(t) || "String.to_string".equals(t)
+                || t.endsWith(".to_string") || t.equals("String.valueOf")) {
+            return "String.valueOf(" + arg + ")";
+        }
+        // Method ref (Type::method or instance::method) — apply via Function.
+        return "((java.util.function.Function)(" + t + ")).apply(" + arg + ")";
     }
 
     /** True iff text looks like a java string literal (starts + ends with "). */
