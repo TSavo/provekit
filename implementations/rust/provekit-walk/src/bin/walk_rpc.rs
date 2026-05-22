@@ -2613,6 +2613,49 @@ fn shape_of_expr(expr: &syn::Expr, ctx: &ShapeContext) -> Arc<CValue> {
         // - for x in iter → concept:for-each(var, iterable, body)
         // - loop → concept:while(true, body)  (decomposed via existing primitives)
         syn::Expr::If(e) => {
+            // Detect `if let PATTERN = EXPR { body }` — rust models this
+            // as ExprIf with cond = Expr::Let(pat, expr). Re-encode as
+            //   { let var = EXPR; if var != null { body } else { else } }
+            // using existing catalog concepts.
+            if let syn::Expr::Let(let_expr) = &*e.cond {
+                let var_name = match &*let_expr.pat {
+                    syn::Pat::TupleStruct(tup) if !tup.elems.is_empty() => {
+                        if let syn::Pat::Ident(pi) = &tup.elems[0] {
+                            pi.ident.to_string()
+                        } else {
+                            use quote::ToTokens;
+                            tup.elems[0].to_token_stream().to_string()
+                        }
+                    }
+                    syn::Pat::Ident(pi) => pi.ident.to_string(),
+                    other => {
+                        use quote::ToTokens;
+                        other.to_token_stream().to_string()
+                    }
+                };
+                let var_leaf = CValue::object([
+                    ("kind", CValue::string("symbol")),
+                    ("text", CValue::string(var_name.clone())),
+                ]);
+                let var_use_leaf = CValue::object([
+                    ("kind", CValue::string("symbol")),
+                    ("text", CValue::string(var_name)),
+                ]);
+                let value = shape_of_expr(&let_expr.expr, ctx);
+                let assign = gamma_operation("concept:assign", vec![var_leaf, value]);
+                let null_leaf = CValue::object([
+                    ("kind", CValue::string("symbol")),
+                    ("text", CValue::string("null".to_string())),
+                ]);
+                let not_null = gamma_operation("concept:ne", vec![var_use_leaf, null_leaf]);
+                let then_shape = shape_of_block(&e.then_branch, ctx);
+                let else_shape = match &e.else_branch {
+                    Some((_, expr)) => shape_of_expr(expr, ctx),
+                    None => gamma_operation("concept:skip", Vec::new()),
+                };
+                let if_op = gamma_operation("concept:conditional", vec![not_null, then_shape, else_shape]);
+                return gamma_operation("concept:seq", vec![assign, if_op]);
+            }
             let cond = shape_of_expr(&e.cond, ctx);
             let then_shape = shape_of_block(&e.then_branch, ctx);
             let else_shape = match &e.else_branch {

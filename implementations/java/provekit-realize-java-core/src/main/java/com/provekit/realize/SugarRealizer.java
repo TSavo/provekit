@@ -1873,6 +1873,36 @@ final class SugarRealizer {
                 if ("into".equals(methodName) || "clone".equals(methodName)) {
                     return Optional.of(new ShapeExpression(receiver.get().text(), receiver.get().typeName()));
                 }
+                // .insert(x) on rust BTreeSet/HashSet → .add(x) returning boolean.
+                // .insert(k, v) on rust BTreeMap/HashMap → .put(k, v) returning prev.
+                // Disambiguate by argument count.
+                if ("insert".equals(methodName)) {
+                    if (callArgs.size() == 1) {
+                        return Optional.of(new ShapeExpression(
+                                receiver.get().text() + ".add(" + callArgs.get(0) + ")",
+                                "boolean"));
+                    }
+                    if (callArgs.size() == 2) {
+                        return Optional.of(new ShapeExpression(
+                                receiver.get().text() + ".put(" + callArgs.get(0) + ", " + callArgs.get(1) + ")",
+                                ""));
+                    }
+                }
+                // .push(x) is ambiguous: rust Vec.push → java List.add;
+                // rust String.push(char) → java StringBuilder.append. The
+                // arg's surface gives the cleanest signal — a (char) cast
+                // means StringBuilder. Otherwise default to List.add.
+                if ("push".equals(methodName) && callArgs.size() == 1) {
+                    String arg = callArgs.get(0).trim();
+                    if (arg.startsWith("(char)") || arg.startsWith("(char ")) {
+                        return Optional.of(new ShapeExpression(
+                                receiver.get().text() + ".append(" + arg + ")",
+                                ""));
+                    }
+                    return Optional.of(new ShapeExpression(
+                            receiver.get().text() + ".add(" + arg + ")",
+                            "boolean"));
+                }
                 // .unwrap() / .unwrap_or(x) on Option/Result: java has the
                 // value directly (loss = null-means-None). Pass through.
                 if ("unwrap".equals(methodName)) {
@@ -2020,6 +2050,18 @@ final class SugarRealizer {
             if ("str.to_string".equals(callee) || "String.from".equals(callee)) {
                 String inner = argTerms.size() > 1 ? argTerms.get(1).text() : "\"\"";
                 return Optional.of(new ShapeExpression(inner, "String"));
+            }
+            // Value::String(s) (or its `::` → `.` form JsonNode.String) →
+            // build a Jackson TextNode via MAPPER.valueToTree. Same for
+            // Value::Number, Value::Bool — all collapse to valueToTree
+            // since Jackson coerces the primitive to the right node type.
+            if (("Value.String".equals(callee) || "Value.Number".equals(callee) || "Value.Bool".equals(callee)
+                    || callee.endsWith("JsonNode.String") || callee.endsWith("JsonNode.Number")
+                    || callee.endsWith("JsonNode.Bool"))
+                    && argTerms.size() == 2) {
+                return Optional.of(new ShapeExpression(
+                        "MAPPER.valueToTree(" + argTerms.get(1).text() + ")",
+                        "com.fasterxml.jackson.databind.JsonNode"));
             }
             // Generic enum variant constructor with a path:
             // `LiftError::Internal(msg)`, `Status::Failed(reason)`, etc.
