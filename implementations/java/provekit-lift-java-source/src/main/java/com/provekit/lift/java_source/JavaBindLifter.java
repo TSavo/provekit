@@ -142,7 +142,7 @@ public final class JavaBindLifter {
         String rel = root.relativize(javaFile).toString().replace('\\', '/');
         String source;
         try {
-            source = Files.readString(javaFile);
+            source = Files.readString(javaFile, StandardCharsets.UTF_8);
         } catch (IOException e) {
             diagnostics.add(diag("error", "read failed for " + javaFile + ": " + e.getMessage()));
             return;
