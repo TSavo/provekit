@@ -1579,7 +1579,60 @@ pub fn dispatch(request: &Value) -> Value {
                 .unwrap_or(function);
             let mode = params.get("mode").and_then(Value::as_str);
             let param_names = string_array(params.get("params"));
-            let param_types = string_array(params.get("param_types"));
+            let mut param_types = string_array(params.get("param_types"));
+            // #1369: cross-language parametric dispatch. When param_sort_cids
+            // is provided (cross-lang signaling), translate them to rust syntax
+            // via the catalog + composite-CID expansions. Override the source-
+            // language strings in param_types. Returns rust strings; signature
+            // emission uses these directly.
+            let param_sort_cids = string_array(
+                params
+                    .get("param_sort_cids")
+                    .or_else(|| params.get("paramSortCids")),
+            );
+            let return_sort_cid = params
+                .get("return_sort_cid")
+                .or_else(|| params.get("returnSortCid"))
+                .and_then(Value::as_str)
+                .unwrap_or("");
+            let parametric_expansions = parse_parametric_expansions(
+                params
+                    .get("parametric_sort_expansions")
+                    .or_else(|| params.get("parametricSortExpansions")),
+            );
+            let is_cross_lang = !param_sort_cids.iter().all(|c| c.is_empty())
+                || !return_sort_cid.is_empty();
+            if is_cross_lang {
+                let mut translated = Vec::with_capacity(param_sort_cids.len());
+                for cid in &param_sort_cids {
+                    if cid.is_empty() {
+                        translated.push(String::new());
+                        continue;
+                    }
+                    translated.push(
+                        map_concept_hub_sort_cid_to_rust(cid, &parametric_expansions)
+                            .unwrap_or_default(),
+                    );
+                }
+                // Use translated types where non-empty; else keep original
+                // (which lets primitives fall through legacy map_source_type).
+                for (i, t) in translated.iter().enumerate() {
+                    if !t.is_empty() && i < param_types.len() {
+                        param_types[i] = t.clone();
+                    } else if !t.is_empty() {
+                        // pad if param_types shorter than param_sort_cids
+                        while param_types.len() < i { param_types.push(String::new()); }
+                        param_types.push(t.clone());
+                    }
+                }
+            }
+            let return_type = if is_cross_lang && !return_sort_cid.is_empty() {
+                map_concept_hub_sort_cid_to_rust(return_sort_cid, &parametric_expansions)
+                    .unwrap_or_else(|| return_type.to_string())
+            } else {
+                return_type.to_string()
+            };
+            let return_type = return_type.as_str();
             let operand_bindings = value_array(
                 params
                     .get("operand_bindings")
@@ -2008,6 +2061,98 @@ fn map_source_type(src: &str) -> String {
         "list" | "List" | "list[int]" | "list[i64]" => "&[i64]".to_string(),
         other => other.to_string(),
     }
+}
+
+/// #1369: cross-language rust realize parametric dispatch.
+///
+/// Translate a concept-hub sort CID to rust syntax. Primitive CIDs map
+/// directly; composite CIDs decompose via the expansions map and dispatch
+/// on constructor. Mirrors the java SugarRealizer's mapConceptHubSortCidToJava.
+fn map_concept_hub_sort_cid_to_rust(
+    cid: &str,
+    expansions: &std::collections::HashMap<String, ParametricExpansion>,
+) -> Option<String> {
+    if cid.is_empty() {
+        return None;
+    }
+    // Primitive concept-hub sorts.
+    let primitive = match cid {
+        // concept:Bool
+        "blake3-512:0ee13bf3fd6b7ecfbee72dfbfc18a7c0ea7f1663de6cca43cefb36f5b4c03665452646094a7c296e819e75d683c6ce4821f3d7db3c3c78ae97f2d4e3451d2074"
+            => Some("bool"),
+        // concept:Int — default i64
+        "blake3-512:30ffc51350121a7172f3e4064a33c45bbd345756979fccff6875cd2ab33e4964d098a99df80cfbdf1ec1a0738c5ac3476f0ff8f75589ea511d1acd82c74ecd58"
+            => Some("i64"),
+        // concept:Float
+        "blake3-512:b979e70c4d5e53d9bdf13d6f08330be3c5b0714b8c770d69bbd05946b86c36df5274be8145a2683cc29c278155c9c1ee65b6897913524eecb9e4c89c71862f57"
+            => Some("f64"),
+        // concept:String
+        "blake3-512:be8721d24849feb74c4721520bdba02d352a94f49253a627cd509127472aa1c47cbe99cb705cac4159b5365abcce0c9aaa4901fe67630827deb6be1f9daeea10"
+            => Some("String"),
+        // concept:Unit
+        "blake3-512:47682b09e5dba71f563db6249c6cb352f7d540986dc7f4cd8d4fb1aa6d9a503064033ee3eb9f36ee6f9e000f700f2f030ebfcfe2b2b8b7e81a345b0d56551f1b"
+            => Some("()"),
+        // concept:Bytes
+        "blake3-512:7116ef6e62e6739b213a8394f975a53c771b89f08c36d27143827acfcfebc0e39e5b82c530be668c3cfd5ec6966ccaa42930b37fdb1f4ac25652a970be10fb6b"
+            => Some("Vec<u8>"),
+        // concept:Json
+        "blake3-512:702064722b23410fde0d1fd7afac165bf5914441d67abe1e19d63b0e8fe8117296d2677cc721ad096b8b3bb82d178af699bf14fd70bfb18756c5bed6f4434108"
+            => Some("serde_json::Value"),
+        _ => None,
+    };
+    if let Some(s) = primitive {
+        return Some(s.to_string());
+    }
+    // Composite parametric CID — decompose via expansion table.
+    let exp = expansions.get(cid)?;
+    // Ref<T> → "&mut T_resolved"
+    if exp.constructor_cid == "blake3-512:37d8efe0ce6321d1a16f80aa06cbdf056c846b8a99613731e8d64d9581af61bc517fd8c87daaff2c817585a7dfd763e09ed729fdc71d25fe16fb1b2e6ca33534" {
+        let inner = exp.arg_cids.first()?;
+        let inner_rust = map_concept_hub_sort_cid_to_rust(inner, expansions)?;
+        return Some(format!("&mut {inner_rust}"));
+    }
+    // List<T> → "Vec<T_resolved>"
+    if exp.constructor_cid == "blake3-512:e3f8d17445f9d2ce89c41c09cbeea08a8bc685d1c34a9fd3dfa7b1df17a94f40eab37396615501f1468baf2a1480fd5a27330ea23202b99876c5f4d97fa2cfb2" {
+        let inner = exp.arg_cids.first()?;
+        let inner_rust = map_concept_hub_sort_cid_to_rust(inner, expansions)?;
+        return Some(format!("Vec<{inner_rust}>"));
+    }
+    None
+}
+
+/// Carrier-side parametric sort expansion (#1369). Same shape as
+/// libprovekit::core::lower_plugin::ParametricSortExpansion. Re-declared
+/// locally here to keep realize-rust-core independent of libprovekit.
+#[derive(Debug, Clone)]
+pub struct ParametricExpansion {
+    pub cid: String,
+    pub constructor_cid: String,
+    pub arg_cids: Vec<String>,
+}
+
+/// Parse the parametric_sort_expansions field from the realize RPC params
+/// into a (composite_cid → expansion) map for dispatch.
+fn parse_parametric_expansions(value: Option<&Value>) -> std::collections::HashMap<String, ParametricExpansion> {
+    let mut map = std::collections::HashMap::new();
+    let Some(arr) = value.and_then(Value::as_array) else {
+        return map;
+    };
+    for item in arr {
+        let Some(obj) = item.as_object() else { continue };
+        let cid = obj.get("cid").and_then(Value::as_str).unwrap_or("").to_string();
+        let ctor = obj.get("constructor_cid").and_then(Value::as_str).unwrap_or("").to_string();
+        if cid.is_empty() || ctor.is_empty() { continue; }
+        let arg_cids: Vec<String> = obj
+            .get("arg_cids")
+            .and_then(Value::as_array)
+            .map(|arr| arr.iter().filter_map(Value::as_str).map(String::from).collect())
+            .unwrap_or_default();
+        map.insert(
+            cid.clone(),
+            ParametricExpansion { cid, constructor_cid: ctor, arg_cids },
+        );
+    }
+    map
 }
 
 fn concept_matches(entry_name: &str, request_name: &str) -> bool {
