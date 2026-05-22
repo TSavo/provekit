@@ -150,14 +150,57 @@ public final class RpcServer {
         String wrapperRecord = r.observationWrapperEmissionRecord() == null
                 ? ""
                 : ",\"observation_wrapper_emission_record\":" + r.observationWrapperEmissionRecord();
-        return "{\"source\":" + JsonUtil.quoted(r.source())
+        // #1374: extract FQN imports from the emitted source. Substrate-side
+        // assembly (Milestone C) deduplicates these and emits the idiomatic
+        // import block for the target language. The body itself can keep
+        // FQN-inline references (compiles either way); the imports field
+        // lets downstream tooling know what the fragment USES.
+        String importsJson = importsFromSource(r.source());
+        return "{\"kind\":\"realization-fragment\""
+                + ",\"source\":" + JsonUtil.quoted(r.source())
                 + ",\"emitted_artifact_cid\":"
                 + JsonUtil.quoted(Blake3.blake3_512(r.source().getBytes(StandardCharsets.UTF_8)))
                 + ",\"is_stub\":" + (r.isStub() ? "true" : "false")
                 + ",\"observed_loss_record\":" + r.observedLossRecord()
                 + ",\"used_sugars\":" + r.usedSugarsJson()
+                + ",\"imports\":" + importsJson
                 + wrapperRecord
                 + "}";
+    }
+
+    /**
+     * #1374: extract java FQN imports from the emitted source.
+     *
+     * Pattern: lowercase package segments separated by dots, then a
+     * PascalCase class name. Matches `com.fasterxml.jackson.databind.JsonNode`,
+     * `java.util.List`, `java.io.ByteArrayOutputStream`. Skips inner class
+     * suffixes (the matcher captures up to the FIRST PascalCase identifier;
+     * `JsonNode.NumberType` matches just `JsonNode`).
+     *
+     * Returns a JSON array of unique FQN strings sorted lexicographically.
+     */
+    private static String importsFromSource(String source) {
+        if (source == null || source.isEmpty()) return "[]";
+        java.util.regex.Pattern p = java.util.regex.Pattern.compile(
+            "\\b([a-z][a-z0-9_]*(?:\\.[a-z][a-z0-9_]*)+\\.[A-Z][A-Za-z0-9_]*)"
+        );
+        java.util.regex.Matcher m = p.matcher(source);
+        java.util.TreeSet<String> imports = new java.util.TreeSet<>();
+        while (m.find()) {
+            String fqn = m.group(1);
+            // Skip java.lang.* — implicit in every compilation unit.
+            if (fqn.startsWith("java.lang.")) continue;
+            imports.add(fqn);
+        }
+        StringBuilder sb = new StringBuilder("[");
+        boolean first = true;
+        for (String fqn : imports) {
+            if (!first) sb.append(',');
+            sb.append(JsonUtil.quoted(fqn));
+            first = false;
+        }
+        sb.append(']');
+        return sb.toString();
     }
 
     /**

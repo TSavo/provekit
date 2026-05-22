@@ -278,6 +278,44 @@ fn target_lang_file_extension(target_lang: &str) -> &'static str {
     }
 }
 
+/// #1374: wrap fragment-declared FQN imports as the target language's
+/// import-statement syntax. Stops here on substrate-side idiom — the rest
+/// (package declaration, class wrapping, helper placement) is Milestone C
+/// (target-owned assembly). Languages without a standard import-block
+/// syntax (or unsupported) get a comment-listing of the FQNs so the
+/// information isn't lost.
+fn format_imports_for(target_lang: &str, imports: &std::collections::BTreeSet<String>) -> String {
+    if imports.is_empty() { return String::new(); }
+    let lines: Vec<String> = match target_lang {
+        "java" => imports.iter().map(|fqn| format!("import {fqn};")).collect(),
+        "python" => imports.iter().map(|fqn| {
+            // Python convention: `import pkg.mod` for module-paths,
+            // `from pkg.mod import Name` when the FQN ends in a Class.
+            // Substrate-honest minimum: if the last segment starts with
+            // an uppercase letter, emit `from ... import Name`; else
+            // emit `import ...`.
+            let mut parts: Vec<&str> = fqn.split('.').collect();
+            if let Some(last) = parts.last().copied() {
+                if last.chars().next().is_some_and(|c| c.is_ascii_uppercase()) && parts.len() > 1 {
+                    parts.pop();
+                    return format!("from {} import {}", parts.join("."), last);
+                }
+            }
+            format!("import {}", fqn)
+        }).collect(),
+        "rust" => imports.iter().map(|fqn| format!("use {fqn};")).collect(),
+        "typescript" => imports.iter().map(|fqn| {
+            // TS imports require explicit named-bindings + module specifier;
+            // a bare FQN can't unambiguously become either ESM or CJS.
+            // Surface as a TODO comment until Milestone C's target-kit
+            // assembler decides.
+            format!("// TODO(#1375 assembly): import binding for `{}`", fqn)
+        }).collect(),
+        _ => imports.iter().map(|fqn| format!("// fragment import: {}", fqn)).collect(),
+    };
+    lines.join("\n")
+}
+
 /// Discrimated outcome of a cross-language discovery realize-probe.
 ///
 /// `None`-collapsed outcomes hide WHY the probe didn't succeed: a transport
@@ -287,8 +325,12 @@ fn target_lang_file_extension(target_lang: &str) -> &'static str {
 /// and skip without counting as a refuse; Preview → RESOLVE with emitted body.
 #[derive(Debug)]
 enum DiscoveryOutcome {
-    /// Realize plugin successfully emitted a body — full RESOLVE.
-    Preview(String),
+    /// Realize plugin successfully emitted a fragment — full RESOLVE.
+    /// #1374: carries the per-fragment context (imports) so materialize
+    /// can include realizer-declared imports in the emitted compilation
+    /// unit. `source` is the fragment body; `imports` is the
+    /// fully-qualified names the fragment uses from outside its own body.
+    Preview { source: String, imports: Vec<String> },
     /// Plugin ran but returned is_stub=true; the substrate has a real gap
     /// (no morphism for some sort CID, no body template for concept, etc.).
     SemanticGap,
@@ -331,7 +373,10 @@ fn invoke_target_realize_for_discovery(
     if response.is_stub {
         return DiscoveryOutcome::SemanticGap;
     }
-    DiscoveryOutcome::Preview(response.source)
+    DiscoveryOutcome::Preview {
+        source: response.source,
+        imports: response.imports,
+    }
 }
 
 /// #1361 chunk 2 part A / #1355: cross-language DISCOVERY mode.
@@ -443,7 +488,7 @@ fn run_cross_language_discovery(
                     // is REFUSE in the final tally — substrate surfaces
                     // gaps even when the family dispatch resolves.
                     match invoke_target_realize_for_discovery(project_root, target_lang, &matches[0], &carrier) {
-                        DiscoveryOutcome::Preview(body) => {
+                        DiscoveryOutcome::Preview { source: body, imports: fragment_imports } => {
                             resolves += 1;
                             eprintln!(
                                 "  {} {} @ {} → {} manifest `{}`",
@@ -461,6 +506,13 @@ fn run_cross_language_discovery(
                                     .entry(path.to_path_buf())
                                     .or_default();
                                 entry.bodies.push(body);
+                                // #1374: collect imports from both sources:
+                                //   1. fragment.imports (kit's per-fragment declaration)
+                                //   2. scope_bringings_for_realize (legacy manifest-level)
+                                // Both merge into the per-file deduplicated set.
+                                for imp in fragment_imports {
+                                    entry.imports.insert(imp);
+                                }
                                 let scope_imports = scope_bringings_for_realize(
                                     project_root,
                                     target_lang,
@@ -520,7 +572,7 @@ fn run_cross_language_discovery(
                         // actually emits; REFUSE only on substrate-gap (is_stub);
                         // WARN on transport failure (broken manifest/binary).
                         match invoke_target_realize_for_discovery(project_root, target_lang, &pick, &carrier) {
-                            DiscoveryOutcome::Preview(body) => {
+                            DiscoveryOutcome::Preview { source: body, imports: fragment_imports } => {
                                 resolves += 1;
                                 eprintln!(
                                     "  {} {} @ {} → {} manifest `{}` (disambiguated by --family-library)",
@@ -538,6 +590,10 @@ fn run_cross_language_discovery(
                                         .entry(path.to_path_buf())
                                         .or_default();
                                     entry.bodies.push(body);
+                                    // #1374: merge fragment.imports + scope_bringings.
+                                    for imp in fragment_imports {
+                                        entry.imports.insert(imp);
+                                    }
                                     let scope_imports = scope_bringings_for_realize(
                                         project_root,
                                         target_lang,
@@ -636,12 +692,11 @@ fn run_cross_language_discovery(
                     return EXIT_USER_ERROR;
                 }
             }
-            let imports_block = file
-                .imports
-                .iter()
-                .cloned()
-                .collect::<Vec<_>>()
-                .join("\n");
+            // #1374: wrap raw FQN imports as the target language's import
+            // syntax. Substrate stops here on idiom; assembly (Milestone C
+            // / #1375) takes over deeper file-structure decisions (package
+            // declaration, class wrapping, package-level helpers).
+            let imports_block = format_imports_for(target_lang, &file.imports);
             let bodies_block = file.bodies.join("\n\n");
             let content = if imports_block.is_empty() {
                 format!("{bodies_block}\n")
