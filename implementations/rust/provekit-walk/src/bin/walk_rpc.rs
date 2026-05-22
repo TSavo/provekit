@@ -432,6 +432,8 @@ fn bind_lift(params: &Value) -> Result<Value, String> {
             } = sugar_target;
             let param_names = fn_param_names(&item_fn);
             let param_types = sugar_param_types(&item_fn);
+            let original_param_types = sugar_original_param_types(&item_fn);
+            let generic_params = sugar_generic_params(&item_fn);
             let return_type = sugar_return_type(&item_fn);
             let term_shape = term_shape_for_fn(&item_fn);
             let term_shape_cid = blake3_512_of(encode_jcs(&term_shape).as_bytes());
@@ -494,6 +496,8 @@ fn bind_lift(params: &Value) -> Result<Value, String> {
                     syn::Visibility::Restricted(_) => "pub(crate)",
                     syn::Visibility::Inherited => "",
                 },
+                "generic_params": generic_params,
+                "original_param_types": original_param_types,
                 "param_names": param_names,
                 "param_types": param_types,
                 "param_sort_cids": param_sort_cids,
@@ -1793,6 +1797,34 @@ fn sugar_return_type(item_fn: &syn::ItemFn) -> String {
     }
 }
 
+/// Original param types as written in source (no trait-bound substitution).
+/// Preserves generic-param references like `&A` so realize can emit the
+/// signature byte-identical. param_types (above) carries the substituted
+/// form for body-template matching.
+fn sugar_original_param_types(item_fn: &syn::ItemFn) -> Vec<String> {
+    item_fn
+        .sig
+        .inputs
+        .iter()
+        .filter_map(|arg| match arg {
+            syn::FnArg::Typed(pat_type) => Some(sugar_type_surface(&pat_type.ty)),
+            _ => None,
+        })
+        .collect()
+}
+
+/// Generic parameter declarations as a single string suitable for
+/// inserting between `fn name` and `(`. Empty if no generics.
+/// Example: `<A: AdapterLifter, T>`.
+fn sugar_generic_params(item_fn: &syn::ItemFn) -> String {
+    use quote::ToTokens;
+    if item_fn.sig.generics.params.is_empty() {
+        String::new()
+    } else {
+        item_fn.sig.generics.to_token_stream().to_string()
+    }
+}
+
 fn sugar_type_surface(ty: &syn::Type) -> String {
     use quote::ToTokens;
     ty.to_token_stream().to_string().replace(' ', "")
@@ -2625,11 +2657,29 @@ fn shape_of_stmt(stmt: &syn::Stmt, ctx: &ShapeContext) -> Arc<CValue> {
                 // args[0] = target (symbol leaf with binding name)
                 // args[1] = value expression
                 // args[2] = mutability flag leaf when `let mut`, omitted otherwise
-                let mut assign_args = vec![
+                // Preserve explicit `: Type` annotation when present.
+                // Stored on the symbol leaf as `let_type` so the lower side
+                // can emit `let X: Type = value` byte-identical with source.
+                let explicit_type = if let syn::Pat::Type(pat_type) = &local.pat {
+                    use quote::ToTokens;
+                    Some(pat_type.ty.to_token_stream().to_string())
+                } else {
+                    None
+                };
+                let target_leaf = if let Some(ty) = explicit_type {
                     CValue::object([
                         ("kind", CValue::string("symbol")),
                         ("text", CValue::string(binding_name)),
-                    ]),
+                        ("let_type", CValue::string(ty)),
+                    ])
+                } else {
+                    CValue::object([
+                        ("kind", CValue::string("symbol")),
+                        ("text", CValue::string(binding_name)),
+                    ])
+                };
+                let mut assign_args = vec![
+                    target_leaf,
                     shape_of_expr(&init.expr, ctx),
                 ];
                 if local_binding_is_mut(local) {
@@ -3348,6 +3398,19 @@ fn literal_shape(lit: &syn::Lit) -> Arc<CValue> {
             } else {
                 suffix.to_string()
             };
+            // Preserve source radix (hex, oct, bin) so realize reproduces
+            // `0x0F` not `15`. base10_digits gives "15" for any radix; we
+            // peek at the original token text for the prefix.
+            let token_text = value.to_string();
+            let radix = if token_text.starts_with("0x") || token_text.starts_with("0X") {
+                "hex"
+            } else if token_text.starts_with("0o") || token_text.starts_with("0O") {
+                "oct"
+            } else if token_text.starts_with("0b") || token_text.starts_with("0B") {
+                "bin"
+            } else {
+                "dec"
+            };
             CValue::object([
                 ("args", CValue::array(Vec::new())),
                 ("concept_name", CValue::string("concept:literal")),
@@ -3355,6 +3418,7 @@ fn literal_shape(lit: &syn::Lit) -> Arc<CValue> {
                 ("sort", CValue::string(SORT_INT_CID)),
                 ("value", CValue::integer(decoded)),
                 ("integer_width", CValue::string(integer_width)),
+                ("radix", CValue::string(radix)),
             ])
         }
         syn::Lit::Float(value) => {

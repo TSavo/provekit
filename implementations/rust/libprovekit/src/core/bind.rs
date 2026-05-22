@@ -160,6 +160,13 @@ pub struct BindLiftEntry {
     /// plugin reproduces it on emit.
     #[serde(default)]
     pub visibility: String,
+    /// Generic parameter declarations from source (e.g. `<A: AdapterLifter>`).
+    #[serde(default)]
+    pub generic_params: String,
+    /// Original param types as written in source. param_types is the
+    /// substituted form; this is the byte-identical form.
+    #[serde(default)]
+    pub original_param_types: Vec<String>,
     /// Concept-hub CIDs lifted from the source's type expressions via the
     /// kit's source-alias catalog (#1370). These are the substrate-honest
     /// cross-language type pins. Bind propagates them into NamedTerm so
@@ -289,6 +296,25 @@ pub struct NamedTerm {
     /// reproduce the original visibility on emit.
     #[serde(default, skip_serializing_if = "String::is_empty")]
     pub visibility: String,
+    /// Generic parameter declarations as a single string (e.g.
+    /// `<A: AdapterLifter>`). Empty if the function has no generics.
+    /// Threaded so realize can emit the signature byte-identical with source.
+    #[serde(
+        default,
+        rename = "genericParams",
+        skip_serializing_if = "String::is_empty"
+    )]
+    pub generic_params: String,
+    /// Original param types as written in source (no trait-bound
+    /// substitution). `param_types` carries the substituted form for
+    /// body-template matching; this carries the byte-identical form for
+    /// signature emission.
+    #[serde(
+        default,
+        rename = "originalParamTypes",
+        skip_serializing_if = "Vec::is_empty"
+    )]
+    pub original_param_types: Vec<String>,
     /// Substrate-honest cross-language type pins. When present, the lower
     /// path uses concept-hub CIDs to translate signatures via the target
     /// kit's catalog (same as cross-language materialize). When absent,
@@ -403,6 +429,8 @@ pub fn bind_term_document(
                 entry.return_type
             },
             visibility: entry.visibility,
+            generic_params: entry.generic_params,
+            original_param_types: entry.original_param_types,
             // #1374-derived: thread concept-hub CIDs through bind so lower
             // can use the substrate's catalog for signature translation
             // (same path cross-lang materialize already uses).

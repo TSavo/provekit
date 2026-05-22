@@ -454,6 +454,17 @@ fn lower_term_shape_body(
                 .and_then(Value::as_bool)
                 .unwrap_or(false);
         let let_kw = if is_mut { "let mut" } else { "let" };
+        // Explicit `let X: Type = value` annotation preserved from source.
+        // Stored on the target symbol leaf by the lift; takes precedence
+        // over inferred-from-value type.
+        let explicit_let_type = args[0]
+            .get("let_type")
+            .and_then(Value::as_str)
+            .map(|s| s.trim().to_string())
+            .filter(|s| !s.is_empty());
+        if let Some(ty) = explicit_let_type {
+            return Some(format!("{} {}: {} = {};", let_kw, target.text, ty, value.text));
+        }
         // Omit type annotation when value.type_name is empty — Rust's local type
         // inference covers it (happens for concept:call results, array-repeat, etc.).
         if value.type_name.is_empty() {
@@ -791,8 +802,22 @@ fn lower_term_shape_expression(
         }
         let path = args[0].get("text").and_then(Value::as_str)?;
         let tokens = args[1].get("text").and_then(Value::as_str)?;
+        // syn's to_token_stream normalizes spacing around `:` to
+        // `key : value`. Normalize back to `key: value` so json!{}
+        // and similar map-body macros byte-compare against source
+        // after rustfmt (which won't reformat macro bodies by default).
+        let normalized = normalize_macro_tokens(tokens);
+        // For json! (and similar map-body macros) the source layout is
+        // multi-line: { "k": v, "k2": v2, }. rustfmt on stable doesn't
+        // format inside macro bodies. Pretty-print here so byte-comparison
+        // post-format matches source.
+        let pretty = if path == "json" {
+            pretty_print_macro_body(&normalized)
+        } else {
+            normalized
+        };
         return Some(ShapeExpression {
-            text: format!("{}!({})", path, tokens),
+            text: format!("{}!({})", path, pretty),
             type_name: String::new(),
         });
     }
@@ -829,8 +854,14 @@ fn lower_term_shape_expression(
         }
         let value = lower_term_shape_expression(args[0], context, &append_position(position, 0))?;
         let type_text = args[1].get("text").and_then(Value::as_str)?;
+        // Paren-wrap the operand when it's a non-atomic expression.
+        // `as` binds tighter than `>>`, `&`, etc., so `b >> 4 as usize`
+        // parses as `b >> (4 as usize)` — semantically different from
+        // `(b >> 4) as usize`. paren_for_op detects top-level operators
+        // and wraps accordingly.
+        let value_text = paren_for_op(&value.text);
         return Some(ShapeExpression {
-            text: format!("{} as {}", value.text, type_text),
+            text: format!("{} as {}", value_text, type_text),
             type_name: type_text.to_string(),
         });
     }
@@ -894,9 +925,11 @@ fn term_shape_leaf_expression(
     if shape.get("kind").and_then(Value::as_str) == Some("literal") || shape.get("value").is_some()
     {
         let width = shape.get("integer_width").and_then(Value::as_str);
-        return Some(literal_term_with_width(
+        let radix = shape.get("radix").and_then(Value::as_str);
+        return Some(literal_term_with_width_and_radix(
             shape.get("value").unwrap_or(&Value::Null),
             width,
+            radix,
         ));
     }
     // Legacy source_text fallback — only kept for backwards compat with
@@ -933,35 +966,35 @@ fn operation_expression(concept_name: &str, args: &[ShapeExpression]) -> Option<
         .strip_prefix("concept:")
         .unwrap_or(concept_name);
     if args.len() == 2 {
-        let left = &args[0].text;
-        let right = &args[1].text;
+        let left = paren_for_op(&args[0].text);
+        let right = paren_for_op(&args[1].text);
         return match op {
-            "add" => Some(format!("({left}) + ({right})")),
-            "sub" => Some(format!("({left}) - ({right})")),
-            "mul" => Some(format!("({left}) * ({right})")),
-            "div" => Some(format!("({left}) / ({right})")),
-            "mod" => Some(format!("({left}) % ({right})")),
-            "eq" => Some(format!("({left}) == ({right})")),
-            "ne" => Some(format!("({left}) != ({right})")),
-            "lt" => Some(format!("({left}) < ({right})")),
-            "le" => Some(format!("({left}) <= ({right})")),
-            "gt" => Some(format!("({left}) > ({right})")),
-            "ge" => Some(format!("({left}) >= ({right})")),
-            "and" => Some(format!("({left}) && ({right})")),
-            "or" => Some(format!("({left}) || ({right})")),
-            "bitand" => Some(format!("({left}) & ({right})")),
-            "bitor" => Some(format!("({left}) | ({right})")),
-            "bitxor" => Some(format!("({left}) ^ ({right})")),
-            "shl" => Some(format!("({left}) << ({right})")),
-            "shr" => Some(format!("({left}) >> ({right})")),
+            "add" => Some(format!("{left} + {right}")),
+            "sub" => Some(format!("{left} - {right}")),
+            "mul" => Some(format!("{left} * {right}")),
+            "div" => Some(format!("{left} / {right}")),
+            "mod" => Some(format!("{left} % {right}")),
+            "eq" => Some(format!("{left} == {right}")),
+            "ne" => Some(format!("{left} != {right}")),
+            "lt" => Some(format!("{left} < {right}")),
+            "le" => Some(format!("{left} <= {right}")),
+            "gt" => Some(format!("{left} > {right}")),
+            "ge" => Some(format!("{left} >= {right}")),
+            "and" => Some(format!("{left} && {right}")),
+            "or" => Some(format!("{left} || {right}")),
+            "bitand" => Some(format!("{left} & {right}")),
+            "bitor" => Some(format!("{left} | {right}")),
+            "bitxor" => Some(format!("{left} ^ {right}")),
+            "shl" => Some(format!("{left} << {right}")),
+            "shr" => Some(format!("{left} >> {right}")),
             _ => None,
         };
     }
     if args.len() == 1 {
-        let value = &args[0].text;
+        let value = paren_for_op(&args[0].text);
         return match op {
-            "neg" => Some(format!("-({value})")),
-            "not" => Some(format!("!({value})")),
+            "neg" => Some(format!("-{value}")),
+            "not" => Some(format!("!{value}")),
             "bitnot" => Some(format!("!({value})")),
             _ => None,
         };
@@ -1064,6 +1097,14 @@ fn lower_block_or_expr(
 /// integer width suffix when present. Replaces source_text-based reconstruction
 /// (which leaked kit-internal source into substrate state).
 fn literal_term_with_width(value: &Value, integer_width: Option<&str>) -> ShapeExpression {
+    literal_term_with_width_and_radix(value, integer_width, None)
+}
+
+fn literal_term_with_width_and_radix(
+    value: &Value,
+    integer_width: Option<&str>,
+    radix: Option<&str>,
+) -> ShapeExpression {
     match value {
         Value::Bool(value) => ShapeExpression {
             text: value.to_string(),
@@ -1083,8 +1124,33 @@ fn literal_term_with_width(value: &Value, integer_width: Option<&str>) -> ShapeE
             } else {
                 width.to_string()
             };
+            // Preserve source radix when declared. The lift carries radix
+            // because base10 reproduction would normalize `0x0F` to `15`
+            // — semantically equivalent but not byte-identical for round-trip.
+            let number_text = match radix {
+                Some("hex") => {
+                    if let Some(n) = value.as_i64() {
+                        format!("0x{:02X}", n)
+                    } else if let Some(n) = value.as_u64() {
+                        format!("0x{:02X}", n)
+                    } else {
+                        value.to_string()
+                    }
+                }
+                Some("oct") => {
+                    if let Some(n) = value.as_i64() {
+                        format!("0o{:o}", n)
+                    } else { value.to_string() }
+                }
+                Some("bin") => {
+                    if let Some(n) = value.as_i64() {
+                        format!("0b{:b}", n)
+                    } else { value.to_string() }
+                }
+                _ => value.to_string(),
+            };
             ShapeExpression {
-                text: format!("{value}{suffix}"),
+                text: format!("{number_text}{suffix}"),
                 type_name,
             }
         }
@@ -1635,6 +1701,18 @@ pub fn dispatch(request: &Value) -> Value {
                 .unwrap_or("")
                 .to_string();
             CURRENT_VISIBILITY.with(|v| *v.borrow_mut() = visibility);
+            let generic_params = params
+                .get("genericParams")
+                .or_else(|| params.get("generic_params"))
+                .and_then(Value::as_str)
+                .unwrap_or("")
+                .to_string();
+            CURRENT_GENERIC_PARAMS.with(|v| *v.borrow_mut() = generic_params);
+            let original_param_types = string_array(
+                params.get("originalParamTypes")
+                    .or_else(|| params.get("original_param_types")),
+            );
+            CURRENT_ORIGINAL_PARAM_TYPES.with(|v| *v.borrow_mut() = original_param_types);
             let param_names = string_array(params.get("params"));
             let mut param_types = string_array(params.get("param_types"));
             // #1369: cross-language parametric dispatch. When param_sort_cids
@@ -2043,6 +2121,309 @@ thread_local! {
     /// sites; thread-local keeps the surface minimal.
     pub(crate) static CURRENT_VISIBILITY: std::cell::RefCell<String> =
         std::cell::RefCell::new(String::new());
+    /// Generic parameter declarations (e.g. "<A: AdapterLifter>") set at
+    /// dispatch, read in function_source for byte-identical signature emit.
+    pub(crate) static CURRENT_GENERIC_PARAMS: std::cell::RefCell<String> =
+        std::cell::RefCell::new(String::new());
+    /// Original param types as-written (with `&A` etc preserved). When set,
+    /// function_source uses these for signature emission instead of the
+    /// substituted param_types.
+    pub(crate) static CURRENT_ORIGINAL_PARAM_TYPES: std::cell::RefCell<Vec<String>> =
+        std::cell::RefCell::new(Vec::new());
+}
+
+/// Pretty-print a json!-style macro body that was lifted as a token
+/// stream (loses original layout). Emits the canonical rustfmt-style
+/// layout: opening brace on the call line, items indented, closing
+/// brace on its own line. Strings, nested objects, and arrays render
+/// with rustfmt-consistent spacing.
+///
+/// Input shape: `{ "k1": v1, "k2": v2, }` (post-normalize).
+/// Output shape (matching rustfmt source layout):
+///   {
+///       "k1": v1,
+///       "k2": v2,
+///   }
+fn pretty_print_macro_body(tokens: &str) -> String {
+    let trimmed = tokens.trim();
+    // Only pretty-print balanced-brace top-level. Bail otherwise (caller
+    // already emits the inline form which is at least valid rust).
+    if !trimmed.starts_with('{') || !trimmed.ends_with('}') {
+        return tokens.to_string();
+    }
+    let inner_raw = &trimmed[1..trimmed.len() - 1].trim();
+    // Preserve source-comma style: if the source had a trailing comma
+    // after the last item, our output should too (and vice versa).
+    // The trim() above strips a trailing comma if it was the last byte
+    // followed only by whitespace — re-check the raw inner.
+    let source_has_trailing_comma = inner_raw.trim_end().ends_with(',');
+    let inner = inner_raw.trim_end_matches(',').trim_end();
+    let mut items: Vec<String> = Vec::new();
+    let mut current = String::new();
+    let mut depth_brace = 0i32;
+    let mut depth_paren = 0i32;
+    let mut depth_bracket = 0i32;
+    let mut in_string = false;
+    for c in inner.chars() {
+        if in_string {
+            current.push(c);
+            if c == '"' { in_string = false; }
+            continue;
+        }
+        match c {
+            '"' => { in_string = true; current.push(c); }
+            '{' => { depth_brace += 1; current.push(c); }
+            '}' => { depth_brace -= 1; current.push(c); }
+            '(' => { depth_paren += 1; current.push(c); }
+            ')' => { depth_paren -= 1; current.push(c); }
+            '[' => { depth_bracket += 1; current.push(c); }
+            ']' => { depth_bracket -= 1; current.push(c); }
+            ',' if depth_brace == 0 && depth_paren == 0 && depth_bracket == 0 => {
+                let trimmed_item = current.trim().to_string();
+                if !trimmed_item.is_empty() {
+                    items.push(trimmed_item);
+                }
+                current.clear();
+            }
+            _ => { current.push(c); }
+        }
+    }
+    let trimmed_last = current.trim().to_string();
+    if !trimmed_last.is_empty() {
+        items.push(trimmed_last);
+    }
+    if items.is_empty() {
+        return "{}".to_string();
+    }
+    // Each item is "key: value" or just a value. For nested objects in
+    // values, recursively pretty-print so multi-line layout cascades.
+    let mut out = String::from("{\n");
+    for (idx, item) in items.iter().enumerate() {
+        let is_last = idx + 1 == items.len();
+        let sep = if is_last && !source_has_trailing_comma { "" } else { "," };
+        if let Some(colon_idx) = find_top_level_colon(item) {
+            let key = item[..colon_idx].trim();
+            let value = item[colon_idx + 1..].trim();
+            let value_pretty = if value.starts_with('{') && value.ends_with('}') {
+                // Small nested objects (3 or fewer items, <= 80 chars
+                // total) stay inline. Larger ones get pretty-printed
+                // for readability — matches rustfmt's source-layout style.
+                let pretty = pretty_print_macro_body(value);
+                let item_count = pretty.matches(",\n").count();
+                if item_count <= 2 && value.len() <= 80 {
+                    value.to_string()
+                } else {
+                    indent_lines(&pretty, 4)
+                }
+            } else if value.starts_with('[') && value.ends_with(']') {
+                value.to_string()
+            } else {
+                value.to_string()
+            };
+            out.push_str(&format!("    {}: {}{}\n", key, value_pretty, sep));
+        } else {
+            out.push_str(&format!("    {}{}\n", item, sep));
+        }
+    }
+    out.push('}');
+    out
+}
+
+fn find_top_level_colon(s: &str) -> Option<usize> {
+    let bytes = s.as_bytes();
+    let mut depth = 0i32;
+    let mut in_string = false;
+    let mut i = 0;
+    while i < bytes.len() {
+        let b = bytes[i];
+        if in_string {
+            if b == b'"' { in_string = false; }
+            i += 1;
+            continue;
+        }
+        match b {
+            b'"' => in_string = true,
+            b'{' | b'(' | b'[' => depth += 1,
+            b'}' | b')' | b']' => depth -= 1,
+            b':' if depth == 0 => {
+                // Skip `::` (path separator).
+                if i + 1 < bytes.len() && bytes[i + 1] == b':' {
+                    i += 2;
+                    continue;
+                }
+                return Some(i);
+            }
+            _ => {}
+        }
+        i += 1;
+    }
+    None
+}
+
+fn indent_lines(text: &str, _indent: usize) -> String {
+    // The first line stays where it is; subsequent lines get an extra
+    // 4-space indent to align with their parent's nesting level. rustfmt's
+    // canonical layout for nested objects in macro bodies is:
+    //   "outer": {
+    //       "inner": value,
+    //   },
+    // We add 4 spaces to lines 2..N (the closing brace + inner items).
+    let lines: Vec<&str> = text.lines().collect();
+    if lines.len() <= 1 {
+        return text.to_string();
+    }
+    let mut out = String::from(lines[0]);
+    for line in &lines[1..] {
+        out.push('\n');
+        if !line.is_empty() {
+            out.push_str("    ");
+        }
+        out.push_str(line);
+    }
+    out
+}
+
+/// Normalize whitespace in macro token text. syn::to_token_stream renders
+/// every punctuation token with surrounding spaces (`key : value`,
+/// `! v . is_null ( )`). For byte-comparison with source we collapse:
+///   `key : value` -> `key: value`
+///   `recv . method ( )` -> `recv.method()`
+///   `! expr` -> `!expr`  (when not part of `!=`)
+/// This is a pragmatic cleanup; the canonical fix is preserving original
+/// source spans at lift time.
+fn normalize_macro_tokens(tokens: &str) -> String {
+    let mut out = String::with_capacity(tokens.len());
+    let bytes = tokens.as_bytes();
+    let mut i = 0;
+    let mut in_string = false;
+    while i < bytes.len() {
+        // Track string-literal regions so we don't mangle their content.
+        // Rust string literal: starts with `"`, ends with unescaped `"`.
+        // Within a string we copy bytes verbatim.
+        if in_string {
+            out.push(bytes[i] as char);
+            if bytes[i] == b'\\' && i + 1 < bytes.len() {
+                // Skip the escaped char.
+                out.push(bytes[i + 1] as char);
+                i += 2;
+                continue;
+            }
+            if bytes[i] == b'"' {
+                in_string = false;
+            }
+            i += 1;
+            continue;
+        }
+        if bytes[i] == b'"' {
+            in_string = true;
+            out.push('"');
+            i += 1;
+            continue;
+        }
+        // Pattern: ` X ` where X is `:` `.` `(` `)` `[` `]` `,` `;` `!`
+        if i + 2 < bytes.len() && bytes[i] == b' ' {
+            let next = bytes[i + 1];
+            match next {
+                b':' => {
+                    // Distinguish `:` from `::`. For json! body we have
+                    // `key : value` (single colon, KV separator).
+                    if i + 2 < bytes.len() && bytes[i + 2] == b':' {
+                        // Path separator `Foo :: Bar` -> `Foo::Bar`
+                        out.push(':');
+                        out.push(':');
+                        i += 4.min(bytes.len() - i);
+                        // Skip the space after `::` too
+                        while i < bytes.len() && bytes[i] == b' ' {
+                            i += 1;
+                        }
+                        continue;
+                    } else {
+                        // `key : value` -> `key: value` (drop space before)
+                        out.push(':');
+                        i += 2;
+                        continue;
+                    }
+                }
+                b'.' => {
+                    // `recv . method` -> `recv.method`. Drop space before
+                    // and after.
+                    out.push('.');
+                    i += 2;
+                    while i < bytes.len() && bytes[i] == b' ' { i += 1; }
+                    continue;
+                }
+                b'(' | b'[' | b',' | b';' => {
+                    out.push(next as char);
+                    i += 2;
+                    continue;
+                }
+                _ => {}
+            }
+        }
+        // ` ) ` / ` ] ` — drop space before closers.
+        if i + 1 < bytes.len() && bytes[i] == b' ' && (bytes[i + 1] == b')' || bytes[i + 1] == b']') {
+            out.push(bytes[i + 1] as char);
+            i += 2;
+            continue;
+        }
+        // `! v` — drop space when prev char isn't `=` (not `!=`).
+        if i + 1 < bytes.len() && bytes[i] == b'!' && bytes[i + 1] == b' ' {
+            let prev_is_op_or_start = out.is_empty()
+                || matches!(out.as_bytes().last(), Some(b' ' | b'(' | b'[' | b'{' | b',' | b';' | b':'));
+            if prev_is_op_or_start {
+                out.push('!');
+                i += 2;
+                continue;
+            }
+        }
+        out.push(bytes[i] as char);
+        i += 1;
+    }
+    out
+}
+
+/// Decide whether a binary-op operand text needs parens. Atoms (a single
+/// identifier, literal, call, method chain, indexed-access) are emitted
+/// bare; anything with a binary operator at the top level gets wrapped.
+/// Avoids the verbose `(a) + (b)` form rustfmt won't simplify.
+fn paren_for_op(text: &str) -> String {
+    let trimmed = text.trim();
+    // Already parenthesized at top level — leave as-is.
+    if trimmed.starts_with('(') && trimmed.ends_with(')') {
+        // Verify the wrapping parens match (could be `(a) + (b)` which
+        // is NOT a single parenthesized expression).
+        let mut depth = 0;
+        let mut first_zero_at_end = true;
+        for (i, c) in trimmed.char_indices() {
+            if c == '(' { depth += 1; }
+            else if c == ')' { depth -= 1; if depth == 0 && i + 1 < trimmed.len() { first_zero_at_end = false; break; } }
+        }
+        if first_zero_at_end { return trimmed.to_string(); }
+    }
+    // Atomic forms: identifier, literal, call, method chain — no
+    // binary op at top level. Crude but effective: if there's no
+    // unparenthesized space-separated operator like ' + ' / ' && ',
+    // emit bare.
+    let mut depth_paren = 0i32;
+    let mut depth_bracket = 0i32;
+    let bytes = trimmed.as_bytes();
+    let mut i = 0;
+    while i < bytes.len() {
+        match bytes[i] {
+            b'(' => depth_paren += 1,
+            b')' => depth_paren -= 1,
+            b'[' => depth_bracket += 1,
+            b']' => depth_bracket -= 1,
+            b' ' if depth_paren == 0 && depth_bracket == 0 => {
+                // Top-level space — likely surrounds a binary op.
+                // Need parens.
+                return format!("({trimmed})");
+            }
+            _ => {}
+        }
+        i += 1;
+    }
+    trimmed.to_string()
 }
 
 fn function_source(
@@ -2056,13 +2437,19 @@ fn function_source(
     // `s: &str` must NOT be transformed to `s: String`. The cross-language
     // canonicalization done by `map_source_type` is for body-template
     // matching, not signature emission.
+    // Prefer original_param_types (byte-identical source spelling, e.g.
+    // `&A`) when available. Fall back to param_types (substituted form,
+    // e.g. `AdapterLifter` after trait-bound substitution).
+    let original_params = CURRENT_ORIGINAL_PARAM_TYPES.with(|v| v.borrow().clone());
     let typed_params = params
         .iter()
         .enumerate()
         .map(|(index, name)| {
-            let ty = param_types
+            let ty = original_params
                 .get(index)
                 .cloned()
+                .filter(|s| !s.is_empty())
+                .or_else(|| param_types.get(index).cloned())
                 .unwrap_or_else(|| "i64".to_string());
             format!("{name}: {ty}")
         })
@@ -2073,6 +2460,7 @@ fn function_source(
     } else {
         format!(" -> {return_type}")
     };
+    let generic_params = CURRENT_GENERIC_PARAMS.with(|v| v.borrow().clone());
     let body_lines = body.lines().collect::<Vec<_>>();
     let indented = if body_lines.is_empty() {
         String::new()
@@ -2093,7 +2481,7 @@ fn function_source(
         let s = v.borrow();
         if s.is_empty() { String::new() } else { format!("{} ", s.as_str()) }
     });
-    format!("{vis_prefix}fn {function}({typed_params}){return_suffix} {{\n{indented}\n}}\n")
+    format!("{vis_prefix}fn {function}{generic_params}({typed_params}){return_suffix} {{\n{indented}\n}}\n")
 }
 
 fn stub_body_for(concept_name: &str) -> String {
