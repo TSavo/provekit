@@ -949,6 +949,9 @@ fn run_cross_language_discovery(
         }
         let ext = target_lang_file_extension(target_lang);
         let mut files_written = 0usize;
+        // #1388: aggregate kit-declared classpath entries across all files
+        // so the substrate's --compile-check can pass them to javac.
+        let mut aggregated_classpath: std::collections::BTreeSet<String> = std::collections::BTreeSet::new();
         for (source_path, file) in &emitted {
             if file.bodies.is_empty() {
                 continue;
@@ -993,8 +996,8 @@ fn run_cross_language_discovery(
                     file_basename,
                     None,
                 ) {
-                    Ok(assembled_files) => {
-                        for af in &assembled_files {
+                    Ok(assembled_result) => {
+                        for af in &assembled_result.files {
                             let assembled_path = out_dir_path.join(&af.path);
                             if let Some(parent) = assembled_path.parent() {
                                 let _ = std::fs::create_dir_all(parent);
@@ -1014,6 +1017,10 @@ fn run_cross_language_discovery(
                                 target_lang,
                             );
                             files_written += 1;
+                        }
+                        // #1388: collect kit-declared classpath entries.
+                        for cp in &assembled_result.compile_classpath {
+                            aggregated_classpath.insert(cp.clone());
                         }
                         wrote_assembled = true;
                     }
@@ -1062,7 +1069,10 @@ fn run_cross_language_discovery(
             out_dir_path.display()
         );
         if compile_check {
-            let check_result = run_compile_check(target_lang, out_dir_path);
+            // #1388: pass kit-aggregated classpath so javac can find the
+            // dependency JARs the materialized code references.
+            let classpath: Vec<String> = aggregated_classpath.iter().cloned().collect();
+            let check_result = run_compile_check_with_classpath(target_lang, out_dir_path, &classpath);
             if check_result != EXIT_OK {
                 return check_result;
             }
@@ -1094,6 +1104,13 @@ fn run_cross_language_discovery(
 /// - `typescript`: `tsc --noEmit <all .ts/.tsx files>`
 /// - others: warns and returns EXIT_OK
 fn run_compile_check(target_lang: &str, out_dir: &Path) -> u8 {
+    run_compile_check_with_classpath(target_lang, out_dir, &[])
+}
+
+/// #1388: variant that passes a kit-declared classpath to the compiler.
+/// For java, that means `javac -cp <colon-joined classpath>`. Other languages
+/// ignore the classpath today (cargo + python use project-managed deps).
+fn run_compile_check_with_classpath(target_lang: &str, out_dir: &Path, classpath: &[String]) -> u8 {
     use std::process::Command;
 
     eprintln!(
@@ -1115,6 +1132,11 @@ fn run_compile_check(target_lang: &str, out_dir: &Path) -> u8 {
                 return EXIT_OK;
             }
             let mut cmd = Command::new("javac");
+            if !classpath.is_empty() {
+                let sep = if cfg!(windows) { ";" } else { ":" };
+                let cp_str = classpath.join(sep);
+                cmd.arg("-cp").arg(&cp_str);
+            }
             cmd.args(&java_files);
             run_compiler_command(&mut cmd, "javac")
         }

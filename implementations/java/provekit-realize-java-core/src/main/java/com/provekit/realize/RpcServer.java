@@ -187,12 +187,90 @@ public final class RpcServer {
         }
         out.append("}\n");
 
+        // #1388: emit the kit's runtime classpath so the substrate's
+        // --compile-check can invoke javac with the JARs the materialized
+        // code references (jackson, bouncycastle, etc.).
+        //
+        // Sources:
+        //   1. The plugin's java.class.path (the realize-java jar with its
+        //      shaded dependencies).
+        //   2. Known maven-cached dependency JARs (jackson, bouncycastle)
+        //      that the materialized code references but the realize plugin
+        //      doesn't load itself. Stop-gap until proper Maven-coord
+        //      resolution lands on the substrate side.
+        java.util.LinkedHashSet<String> classpath = new java.util.LinkedHashSet<>();
+        String javaCp = System.getProperty("java.class.path", "");
+        if (!javaCp.isEmpty()) {
+            String sep = System.getProperty("path.separator", ":");
+            for (String e : javaCp.split(java.util.regex.Pattern.quote(sep))) {
+                if (!e.isEmpty()) classpath.add(e);
+            }
+        }
+        // Scan the user's local Maven repo for the JARs the materialized
+        // code is likely to need. Picks the highest available version of
+        // each artifact under ~/.m2/repository/. Substrate-honest version
+        // pinning belongs in a per-kit dependencies list (next iteration).
+        String userHome = System.getProperty("user.home", "");
+        if (!userHome.isEmpty()) {
+            java.nio.file.Path m2 = java.nio.file.Paths.get(userHome, ".m2", "repository");
+            scanMavenJars(m2, "com/fasterxml/jackson/core/jackson-databind", classpath);
+            scanMavenJars(m2, "com/fasterxml/jackson/core/jackson-core", classpath);
+            scanMavenJars(m2, "com/fasterxml/jackson/core/jackson-annotations", classpath);
+            scanMavenJars(m2, "org/bouncycastle/bcprov-jdk18on", classpath);
+            scanMavenJars(m2, "org/bouncycastle/bcprov-jdk15on", classpath);
+            scanMavenJars(m2, "com/google/code/gson/gson", classpath);
+            scanMavenJars(m2, "org/xerial/sqlite-jdbc", classpath);
+        }
+        StringBuilder cpJson = new StringBuilder("[");
+        boolean first = true;
+        for (String e : classpath) {
+            if (!first) cpJson.append(',');
+            cpJson.append(JsonUtil.quoted(e));
+            first = false;
+        }
+        cpJson.append(']');
+
         // Single file response for now.
         String filePath = className + ".java";
         return "{\"files\":[{"
             + "\"path\":" + JsonUtil.quoted(filePath)
             + ",\"content\":" + JsonUtil.quoted(out.toString())
-            + "}]}";
+            + "}],\"compile_classpath\":" + cpJson
+            + "}";
+    }
+
+    /**
+     * #1388: scan ~/.m2/repository/<group>/<artifact>/ for the most-recent
+     * version's JAR and add it to the classpath set. Picks the
+     * lexicographically-latest version directory. Silent on absence — the
+     * substrate's compile-check will surface missing JARs as
+     * package-not-found errors.
+     */
+    private static void scanMavenJars(
+            java.nio.file.Path m2Root,
+            String artifactDir,
+            java.util.Collection<String> classpath) {
+        if (m2Root == null || !java.nio.file.Files.isDirectory(m2Root)) return;
+        java.nio.file.Path artifactPath = m2Root.resolve(artifactDir);
+        if (!java.nio.file.Files.isDirectory(artifactPath)) return;
+        try (java.util.stream.Stream<java.nio.file.Path> versions =
+                java.nio.file.Files.list(artifactPath)) {
+            java.util.List<java.nio.file.Path> dirs = versions
+                .filter(java.nio.file.Files::isDirectory)
+                .sorted(java.util.Comparator.reverseOrder())
+                .toList();
+            for (java.nio.file.Path versionDir : dirs) {
+                String artifactBase = artifactDir.substring(artifactDir.lastIndexOf('/') + 1);
+                String jarName = artifactBase + "-" + versionDir.getFileName().toString() + ".jar";
+                java.nio.file.Path jar = versionDir.resolve(jarName);
+                if (java.nio.file.Files.isRegularFile(jar)) {
+                    classpath.add(jar.toAbsolutePath().toString());
+                    return;  // first (latest) match wins
+                }
+            }
+        } catch (Exception ignored) {
+            // Best-effort: missing dep manifests as javac error downstream.
+        }
     }
 
     /** PascalCase from snake-case or kebab-case file basename. */
