@@ -2545,10 +2545,7 @@ fn shape_of_stmt(stmt: &syn::Stmt, ctx: &ShapeContext) -> Arc<CValue> {
                         CValue::string(field_name), SORT_STRING_CID);
                     let getter = gamma_operation("concept:call", vec![
                         temp_leaf(),
-                        CValue::object([
-                            ("kind", CValue::string("method")),
-                            ("text", CValue::string("get".to_string())),
-                        ]),
+                        method_concept_leaf("get", 1),
                         key_lit,
                     ]);
                     stmts.push(gamma_operation("concept:assign", vec![
@@ -2890,12 +2887,11 @@ fn shape_of_expr(expr: &syn::Expr, ctx: &ShapeContext) -> Arc<CValue> {
         }
         syn::Expr::MethodCall(e) => {
             // args[0]: receiver shape, matching bindings_of_expr layout above.
-            // args[1]: method ident leaf (kind:"method", text:"update")
+            // args[1]: canonical method-concept leaf (kind:"method",
+            // concept_name:"method:<name>", arity:<n>, op_cid:<derived>).
+            // The CID is determined by structure — no minting required.
             // args[2..]: call arguments.
-            let method_leaf = CValue::object([
-                ("kind", CValue::string("method")),
-                ("text", CValue::string(e.method.to_string())),
-            ]);
+            let method_leaf = method_concept_leaf(&e.method.to_string(), e.args.len());
             let mut args = vec![
                 shape_of_expr(&e.receiver, ctx),
                 method_leaf,
@@ -3264,6 +3260,39 @@ fn format_macro_tokens(s: &str) -> String {
         }
     }
     out.trim().to_string()
+}
+
+/// Build a substrate-canonical method-concept leaf.
+///
+/// A method's identity comes from its STRUCTURE — the canonical shape
+/// is `{kind:"method-concept", name:"<name>", arity:<n>}`, and its
+/// op_cid is `blake3_512(JCS(that))`. No catalog minting required:
+/// the structure IS the identity. Any source language emitting a
+/// method with the same (name, arity) gets the same CID automatically.
+///
+/// The leaf also keeps `text` for legacy readers that haven't migrated
+/// to `concept_name` yet. New readers should prefer `concept_name`
+/// + `op_cid`.
+fn method_concept_leaf(method_name: &str, arity: usize) -> Arc<CValue> {
+    let concept_name = format!("method:{}", method_name);
+    // Canonical content-addressable shape (no text/legacy fields,
+    // no op_cid yet — those are derived/auxiliary).
+    let canonical = CValue::object([
+        ("arity", CValue::integer(arity as i64)),
+        ("concept_name", CValue::string(concept_name.clone())),
+        ("kind", CValue::string("method-concept")),
+    ]);
+    let op_cid = blake3_512_of(encode_jcs(&canonical).as_bytes());
+    // Emitted leaf includes op_cid (self-describing) AND keeps text/
+    // kind="method" for backwards compatibility with existing readers
+    // (e.g. the java realize plugin's pattern-match on "kind":"method").
+    CValue::object([
+        ("arity", CValue::integer(arity as i64)),
+        ("concept_name", CValue::string(concept_name)),
+        ("kind", CValue::string("method")),
+        ("op_cid", CValue::string(op_cid.to_string())),
+        ("text", CValue::string(method_name.to_string())),
+    ])
 }
 
 fn gamma_operation(concept_name: &str, args: Vec<Arc<CValue>>) -> Arc<CValue> {
