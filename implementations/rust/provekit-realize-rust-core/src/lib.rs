@@ -353,6 +353,22 @@ fn lower_term_shape_body(
         let returns_non_unit = map_source_type(&context.return_type) != "()";
         for (index, child) in children.iter().enumerate() {
             let child_position = append_position(position, index);
+            // Tail-expression preference: when this is the LAST child of
+            // the function-root seq AND the function returns non-unit,
+            // try the EXPRESSION form first (no `;`). This matches rust's
+            // tail-expression convention — `Ok(build_ir_document(...))`
+            // as the last line, not `Ok(...);` followed by a synthesized
+            // tail. Falls through to body form if expression-lift fails.
+            let is_function_tail = position.is_empty()
+                && index == last_index
+                && returns_non_unit;
+            if is_function_tail {
+                if let Some(expr) = lower_term_shape_expression(child, context, &child_position) {
+                    context.last_assigned_symbol = None;
+                    lines.push(expr.text);
+                    continue;
+                }
+            }
             if let Some(child_body) = lower_term_shape_body(child, context, &child_position) {
                 if !child_body.is_empty() {
                     lines.push(child_body);
@@ -392,7 +408,12 @@ fn lower_term_shape_body(
         // return), matching the source-side tail-expression convention.
         // This is byte-correct for shim bodies that end with `out` or
         // similar, NOT with a `return X;` statement.
-        if map_source_type(&context.return_type) != "()"
+        // Implicit tail-expression only fires at the function ROOT.
+        // Nested seqs (inside for/while/match/if bodies) are statement-
+        // groups, not return points — appending a symbol there produces
+        // invalid rust like `diagnostics\n let mut ir_entries = ...`.
+        if position.is_empty()
+            && map_source_type(&context.return_type) != "()"
             && !lines
                 .iter()
                 .any(|line| line.trim_start().starts_with("return "))
@@ -450,6 +471,17 @@ fn lower_term_shape_body(
         }
         let value = lower_term_shape_expression(args[0], context, &append_position(position, 0))?;
         return Some(format!("return {};", value.text));
+    }
+    if concept_name == "concept:break" {
+        let args = term_shape_args(shape);
+        if args.is_empty() {
+            return Some("break;".to_string());
+        }
+        let value = lower_term_shape_expression(args[0], context, &append_position(position, 0))?;
+        return Some(format!("break {};", value.text));
+    }
+    if concept_name == "concept:continue" {
+        return Some("continue;".to_string());
     }
     if concept_name == "concept:conditional" || concept_name == "conditional" {
         let args = term_shape_args(shape);
@@ -549,6 +581,18 @@ fn lower_term_shape_expression(
                         .map(|e| e.text)
                 })
                 .collect::<Option<Vec<_>>>()?;
+            // Substrate-canonical tuple literal: the java side emits tuple
+            // construction as `concept:call(__provekit_tuple_new, ...)` because
+            // there's no concept:tuple-literal in the catalog yet. Round-trip
+            // back to rust by emitting a tuple literal `(a, b, c)` — the same
+            // surface the rust lifter produced originally.
+            if callee_text == "__provekit_tuple_new" {
+                let text = format!("({})", call_args.join(", "));
+                return Some(ShapeExpression {
+                    text,
+                    type_name: String::new(),
+                });
+            }
             let text = format!("{}({})", callee_text, call_args.join(", "));
             // Return empty type_name so the enclosing concept:assign arm omits
             // the type annotation (Rust's local type inference covers it).
@@ -729,7 +773,11 @@ fn lower_term_shape_expression(
                 context,
                 &append_position(&append_position(position, i), 1),
             )?;
-            arms_text.push(format!("{} => {},", pattern_text, body_text));
+            // Match arms are EXPRESSIONS — strip any trailing `;` that
+            // lower_block_or_expr left over from statement-form lowering.
+            // Without this we emit `body();,` which is invalid rust.
+            let body_trimmed = body_text.trim_end().trim_end_matches(';');
+            arms_text.push(format!("{} => {},", pattern_text, body_trimmed));
         }
         return Some(ShapeExpression {
             text: format!("match {} {{ {} }}", scrutinee.text, arms_text.join(" ")),
