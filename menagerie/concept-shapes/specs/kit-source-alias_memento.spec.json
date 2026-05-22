@@ -1,0 +1,51 @@
+{
+  "effects": {
+    "effects": []
+  },
+  "fn_name": "KitSourceAliasMemento",
+  "formal_sorts": [],
+  "formals": [],
+  "kind": "sort",
+  "post": {
+    "fields": [
+      {
+        "name": "kit",
+        "sort": "String",
+        "description": "The language kit declaring this alias (e.g. 'java', 'rust', 'python')."
+      },
+      {
+        "name": "sort_morphism_cid",
+        "sort": "Cid",
+        "description": "CID of the sort-morphism memento this alias attaches to (the kit's commitment of 'my-kit:Sort -> concept:Sort')."
+      },
+      {
+        "name": "source_aliases",
+        "sort": "ListOfString",
+        "description": "Source-text tokens in the kit's language that denote this kit-sort. For java:int → concept:Int, e.g. ['int', 'Integer', 'byte', 'Byte', 'short', 'Short', 'long', 'Long']."
+      },
+      {
+        "name": "denotes_parametric_application",
+        "sort": "OptionalParametricApplication",
+        "description": "When the source-token denotes a FIXED application of a parametric constructor (e.g. java's StringBuilder = Ref<String>), captures the constructor + bound args. Null for non-parametric primitives or for parametric constructors that take args at use-site (e.g. List<T>)."
+      },
+      {
+        "name": "parametric_arity",
+        "sort": "OptionalInteger",
+        "description": "When the source-token is a parametric constructor that takes args at use-site (List, Map, AtomicReference), captures the expected arity. Null for non-parametric / fixed-shorthand aliases."
+      }
+    ],
+    "kind": "sort-instance",
+    "name": "KitSourceAliasMemento",
+    "sort_kind": "record"
+  },
+  "pre": {
+    "args": [],
+    "kind": "atomic",
+    "name": "true"
+  },
+  "return_sort": {
+    "args": [],
+    "kind": "ctor",
+    "name": "SortCid"
+  }
+}
