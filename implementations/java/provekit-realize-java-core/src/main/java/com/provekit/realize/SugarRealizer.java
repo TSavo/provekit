@@ -1664,7 +1664,7 @@ final class SugarRealizer {
                 }
                 return Optional.of(new ShapeExpression(
                         receiver.get().text() + "." + javaMethod + "(" + javaArgs + ")",
-                        mapSourceType(context.returnType)));
+                        ""));  // unknown call return; let var infer
             }
         }
         // concept:ref(inner, mutability_leaf) — the mutability arg is a leaf
@@ -1735,7 +1735,9 @@ final class SugarRealizer {
                 return Optional.empty();
             }
             String joined = argTerms.stream().skip(1).map(ShapeExpression::text).collect(Collectors.joining(", "));
-            return Optional.of(new ShapeExpression(calleeJava + "(" + joined + ")", mapSourceType(context.returnType)));
+            // Return-type is unknown without a function-DB; emit blank
+            // so callers use java's var inference.
+            return Optional.of(new ShapeExpression(calleeJava + "(" + joined + ")", ""));
         }
         if (conceptMatches("concept:field", conceptName) && args.size() == 2) {
             // args[0]: receiver expression. args[1]: field name leaf.
