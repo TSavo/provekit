@@ -1369,17 +1369,42 @@ final class SugarRealizer {
                     }
                     String stmt = inner.endsWith(";") ? inner : inner + ";";
                     lines.add(stmt);
+                } else if (isIdentifier(text)) {
+                    // Bare identifier as the tail expression — no temp
+                    // needed; use the symbol directly as the implicit
+                    // return value.
+                    context.lastAssignedSymbol = text;
                 } else {
                     String temp = context.tempName();
                     context.definedSymbols.add(temp);
                     context.lastAssignedSymbol = temp;
-                    lines.add(localDeclaration(context.returnType, temp, text, false));
+                    // Use the value's typeName when known; falls back to
+                    // var inference for unknown types.
+                    String tempType = expression.get().typeName();
+                    if (tempType == null || tempType.isBlank() || "Object".equals(tempType)) {
+                        tempType = "";  // localDeclaration emits `var`
+                    }
+                    lines.add(localDeclaration(tempType, temp, text, false));
                 }
             }
-            if (!"void".equals(mapSourceType(context.returnType))
+            // Only emit implicit return at the OUTERMOST seq (the function
+            // body itself). Nested seqs (inside for/while/match arms) must
+            // NOT inject a return — they're statement-blocks, not the
+            // function tail. Position == empty list means root.
+            if (position.isEmpty()
+                    && !"void".equals(mapSourceType(context.returnType))
                     && lines.stream().noneMatch(line -> line.strip().startsWith("return "))
                     && !context.lastAssignedSymbol.isBlank()) {
-                lines.add("return " + context.lastAssignedSymbol + ";");
+                String sym = context.lastAssignedSymbol;
+                // If the symbol's declared type was StringBuilder but the
+                // function returns String, call .toString() to coerce.
+                // (Rust idiom: build a String via String + push_str/push
+                // which maps to StringBuilder in java.)
+                String fnReturn = mapSourceType(context.returnType);
+                boolean needsToString = "String".equals(fnReturn)
+                        && lines.stream().anyMatch(line ->
+                            line.contains("StringBuilder " + sym + " ="));
+                lines.add("return " + sym + (needsToString ? ".toString()" : "") + ";");
             }
             return Optional.of(String.join("\n", lines));
         }
