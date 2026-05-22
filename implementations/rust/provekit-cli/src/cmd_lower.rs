@@ -395,9 +395,27 @@ fn lower_named_document(
     default_library: Option<&str>,
     family_library: &[crate::cmd_materialize::FamilyLibraryPair],
 ) -> Result<String, LowerNamedError> {
+    // Pre-pass: build a function-name → return-type catalog from all
+    // terms in the named-term-doc. Inject into each per-term spec as a
+    // side-channel so call expressions can pick up real return types
+    // instead of falling back to var inference. Substrate-honest cross-
+    // term type propagation.
+    let mut function_return_types = serde_json::Map::new();
+    for t in &named.terms {
+        let fn_name = if !t.function.is_empty() { t.function.clone() } else { t.name.clone() };
+        if !fn_name.is_empty() {
+            function_return_types.insert(fn_name, Json::String(t.return_type.clone()));
+        }
+    }
+    let function_return_types = Json::Object(function_return_types);
+
     let mut out = String::new();
     for term in &named.terms {
         let mut spec = realize_spec_from_named_term(term).map_err(LowerNamedError::Message)?;
+        // Inject the cross-term catalog into the spec.
+        if let Some(obj) = spec.as_object_mut() {
+            obj.insert("function_return_types".to_string(), function_return_types.clone());
+        }
         let sugar_fn = realize_function_name_with_sugar(term);
         if spec.get("function").and_then(|v| v.as_str()) != Some(sugar_fn) {
             spec["function"] = Json::String(sugar_fn.to_string());

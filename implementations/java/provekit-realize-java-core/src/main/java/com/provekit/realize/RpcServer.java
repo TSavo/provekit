@@ -386,10 +386,21 @@ public final class RpcServer {
         // morphism dispatch.
         java.util.List<SugarRealizer.ParametricExpansion> parametricExpansions = parseParametricExpansions(
                 JsonUtil.extractArrayField(paramsObj, "parametric_sort_expansions"));
-        SugarRealizer.Realization r =
-                SugarRealizer.emitStub(emittedFunction, params, paramTypes, paramSortCids, returnType, returnSortCid,
-                        conceptName, mode, modes, contract, sugarPlugins, transportedOp, termShape, operandBindings,
-                        isCrossLang, targetLibraryTag, parametricExpansions);
+        // Function-return-type catalog from the cross-term pre-pass.
+        // Substrate-honest: lower passes ALL terms' return types so
+        // call expressions inside a term can pick up real types from
+        // sibling terms instead of falling back to var inference.
+        java.util.Map<String, String> functionReturnTypes = parseFunctionReturnTypes(
+                JsonUtil.extractObjectField(paramsObj, "function_return_types"));
+        SugarRealizer.currentCallReturnTypes.set(functionReturnTypes);
+        SugarRealizer.Realization r;
+        try {
+            r = SugarRealizer.emitStub(emittedFunction, params, paramTypes, paramSortCids, returnType, returnSortCid,
+                    conceptName, mode, modes, contract, sugarPlugins, transportedOp, termShape, operandBindings,
+                    isCrossLang, targetLibraryTag, parametricExpansions);
+        } finally {
+            SugarRealizer.currentCallReturnTypes.remove();
+        }
         String wrapperRecord = r.observationWrapperEmissionRecord() == null
                 ? ""
                 : ",\"observation_wrapper_emission_record\":" + r.observationWrapperEmissionRecord();
@@ -537,6 +548,27 @@ public final class RpcServer {
      * Returns empty list on null / empty / parse failure (substrate-honest:
      * absent expansions just means no parametric CIDs to decompose).
      */
+    /** Parse `{ "fn_name": "ret_type", ... }` into a java map. The map's
+     *  values are RUST source-language type strings; SugarRealizer's
+     *  mapSourceType translates them at lookup time. */
+    private static java.util.Map<String, String> parseFunctionReturnTypes(String json) {
+        if (json == null || json.isBlank() || "{}".equals(json.trim())) return java.util.Map.of();
+        // Use the bundled Jcs parser to avoid a jackson dependency at
+        // this layer.
+        java.util.Map<String, String> out = new java.util.HashMap<>();
+        try {
+            com.provekit.ir.Jcs.Json parsed = com.provekit.ir.Jcs.parse(json);
+            if (parsed instanceof com.provekit.ir.Jcs.Obj obj) {
+                for (com.provekit.ir.Jcs.Field f : obj.fields()) {
+                    if (f.value() instanceof com.provekit.ir.Jcs.Str s) {
+                        out.put(f.key(), SugarRealizer.mapSourceType(s.value()));
+                    }
+                }
+            }
+        } catch (Exception ignore) {}
+        return out;
+    }
+
     private static java.util.List<SugarRealizer.ParametricExpansion> parseParametricExpansions(String json) {
         if (json == null || json.isBlank() || "[]".equals(json.trim())) return java.util.List.of();
         java.util.List<SugarRealizer.ParametricExpansion> out = new java.util.ArrayList<>();

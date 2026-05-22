@@ -1223,12 +1223,29 @@ final class SugarRealizer {
 
     private record ShapeExpression(String text, String typeName) {}
 
+    /** Cross-term function-return-type catalog set by the RPC entrypoint
+     *  before invoking lowering. ShapeContext picks it up on construction
+     *  via importThreadLocalCatalog(). Cleared between requests. */
+    static final ThreadLocal<Map<String, String>> currentCallReturnTypes =
+            ThreadLocal.withInitial(java.util.Map::of);
+
     private static final class ShapeContext {
         final List<String> params;
         final List<String> paramTypes;
         final String returnType;
         final Map<List<Integer>, String> operandBindings;
         final Set<String> definedSymbols = new TreeSet<>();
+        /** Function-name → java return type. Built once from the
+         *  named-term-doc; passed into each term's lowering so call
+         *  expressions can pick up real return types instead of falling
+         *  back to var inference. */
+        Map<String, String> functionReturnTypes = java.util.Map.of();
+
+        /** Reset per-call thread-local catalog into this context. */
+        void importThreadLocalCatalog() {
+            Map<String, String> tl = currentCallReturnTypes.get();
+            if (tl != null && !tl.isEmpty()) this.functionReturnTypes = tl;
+        }
         int nextLeaf = 0;
         int nextTemp = 0;
         String lastAssignedSymbol = "";
@@ -1243,6 +1260,11 @@ final class SugarRealizer {
             this.returnType = returnType;
             this.operandBindings = operandBindings;
             this.definedSymbols.addAll(params);
+        }
+
+        String lookupReturnType(String fnName) {
+            String t = functionReturnTypes.get(fnName);
+            return t == null ? "" : t;
         }
 
         ShapeExpression fallbackLeaf() {
@@ -1286,6 +1308,7 @@ final class SugarRealizer {
                 paramTypes,
                 returnType,
                 operandBindingMap(operandBindingsJson));
+        context.importThreadLocalCatalog();
         Optional<String> body = lowerShapeBody(shape, context, List.of());
         if (body.isEmpty()) {
             Optional<ShapeExpression> expression = lowerShapeExpression(shape, context, List.of());
@@ -1565,6 +1588,33 @@ final class SugarRealizer {
             Optional<ShapeExpression> scrut = lowerShapeExpression(args.get(0), context, appendPosition(position, 0));
             if (scrut.isEmpty()) return Optional.empty();
             String scrutText = scrut.get().text();
+            // If ALL non-wildcard arm patterns are string literals, emit
+            // java switch expression (java 14+). Cleaner than ternary
+            // lambda — keeps each arm at its own statement scope,
+            // sidesteps the Supplier-lambda issue where let-bindings
+            // inside one arm can't reach outer code.
+            if (allPatternsStringLiteral(args)) {
+                StringBuilder sw = new StringBuilder();
+                sw.append("switch (").append(scrutText).append(") {");
+                String defaultArm = null;
+                for (int i = 1; i < args.size(); i++) {
+                    Jcs.Obj arm = args.get(i);
+                    if (!conceptMatches("concept:match-arm", shapeConceptName(arm))) continue;
+                    List<Jcs.Obj> armArgs = shapeArgs(arm);
+                    if (armArgs.size() < 2) continue;
+                    String patternText = (armArgs.get(0).stringFieldOrNull("text") == null
+                            ? "" : armArgs.get(0).stringFieldOrNull("text")).trim();
+                    Optional<ShapeExpression> body = lowerShapeExpression(armArgs.get(1), context, appendPosition(position, i));
+                    if (body.isEmpty()) return Optional.empty();
+                    if ("_".equals(patternText)) {
+                        defaultArm = body.get().text();
+                    } else if (isStringLiteral(patternText)) {
+                        sw.append(" case ").append(patternText).append(" -> ").append(body.get().text()).append(";");
+                    }
+                }
+                sw.append(" default -> ").append(defaultArm != null ? defaultArm : "null").append("; }");
+                return Optional.of(new ShapeExpression(sw.toString(), mapSourceType(context.returnType)));
+            }
             // Use a fresh variable for the scrutinee so it isn't re-evaluated.
             String scrutVar = context.tempName();
             context.definedSymbols.add(scrutVar);
@@ -1686,19 +1736,19 @@ final class SugarRealizer {
                 if ("unwrap".equals(methodName)) {
                     return Optional.of(new ShapeExpression(
                             receiver.get().text(),
-                            mapSourceType(context.returnType)));
+                            ""));  // unknown call return; var inference
                 }
                 if ("unwrap_or".equals(methodName) && callArgs.size() == 1) {
                     return Optional.of(new ShapeExpression(
                             "(" + receiver.get().text() + " != null ? " + receiver.get().text() + " : " + callArgs.get(0) + ")",
-                            mapSourceType(context.returnType)));
+                            ""));  // unknown call return; var inference
                 }
                 if ("unwrap_or_else".equals(methodName) && callArgs.size() == 1) {
                     // closure passed; java has no inline ternary with lambda execution.
                     // Emit a Supplier invocation.
                     return Optional.of(new ShapeExpression(
                             "(" + receiver.get().text() + " != null ? " + receiver.get().text() + " : (" + callArgs.get(0) + ").get())",
-                            mapSourceType(context.returnType)));
+                            ""));  // unknown call return; var inference
                 }
                 // .is_none() → == null; .is_some() → != null.
                 if ("is_none".equals(methodName)) {
@@ -1782,9 +1832,10 @@ final class SugarRealizer {
                 return Optional.empty();
             }
             String joined = argTerms.stream().skip(1).map(ShapeExpression::text).collect(Collectors.joining(", "));
-            // Return-type is unknown without a function-DB; emit blank
-            // so callers use java's var inference.
-            return Optional.of(new ShapeExpression(calleeJava + "(" + joined + ")", ""));
+            // Function-return-type catalog: look up if known, else blank
+            // (var inference will resolve).
+            String returnType = context.lookupReturnType(callee);
+            return Optional.of(new ShapeExpression(calleeJava + "(" + joined + ")", returnType));
         }
         if (conceptMatches("concept:field", conceptName) && args.size() == 2) {
             // args[0]: receiver expression. args[1]: field name leaf.
@@ -1901,8 +1952,21 @@ final class SugarRealizer {
                 case "mul" -> "(" + left + ") * (" + right + ")";
                 case "div" -> "(" + left + ") / (" + right + ")";
                 case "mod" -> "(" + left + ") % (" + right + ")";
-                case "eq" -> "(" + left + ") == (" + right + ")";
-                case "ne" -> "(" + left + ") != (" + right + ")";
+                case "eq" -> {
+                    // String == in rust is value equality; java needs .equals.
+                    // If either side is a string literal, use Objects.equals
+                    // (handles null + values uniformly).
+                    if (isStringLiteral(left) || isStringLiteral(right)) {
+                        yield "java.util.Objects.equals(" + left + ", " + right + ")";
+                    }
+                    yield "(" + left + ") == (" + right + ")";
+                }
+                case "ne" -> {
+                    if (isStringLiteral(left) || isStringLiteral(right)) {
+                        yield "!java.util.Objects.equals(" + left + ", " + right + ")";
+                    }
+                    yield "(" + left + ") != (" + right + ")";
+                }
                 case "lt" -> "(" + left + ") < (" + right + ")";
                 case "le" -> "(" + left + ") <= (" + right + ")";
                 case "gt" -> "(" + left + ") > (" + right + ")";
@@ -2167,6 +2231,31 @@ final class SugarRealizer {
             }
         }
         return depth == 0;
+    }
+
+    /** True iff every non-wildcard match arm has a string-literal pattern. */
+    private static boolean allPatternsStringLiteral(List<Jcs.Obj> matchArgs) {
+        boolean anyStringPattern = false;
+        for (int i = 1; i < matchArgs.size(); i++) {
+            Jcs.Obj arm = matchArgs.get(i);
+            if (!"concept:match-arm".equals(shapeConceptName(arm))) continue;
+            List<Jcs.Obj> armArgs = shapeArgs(arm);
+            if (armArgs.size() < 2) continue;
+            String pat = armArgs.get(0).stringFieldOrNull("text");
+            if (pat == null) return false;
+            pat = pat.trim();
+            if ("_".equals(pat)) continue;  // wildcard ok
+            if (isStringLiteral(pat)) { anyStringPattern = true; continue; }
+            return false;
+        }
+        return anyStringPattern;
+    }
+
+    /** True iff text looks like a java string literal (starts + ends with "). */
+    private static boolean isStringLiteral(String s) {
+        if (s == null) return false;
+        String t = s.trim();
+        return t.length() >= 2 && t.startsWith("\"") && t.endsWith("\"");
     }
 
     /** Map common rust method names to java equivalents. Falls through to identity. */
