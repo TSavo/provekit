@@ -54,17 +54,39 @@ public final class Main {
             // with `// concept: concept:X`. Methods without this header
             // are boundaries (hand-written shim primitives) — emit as
             // boundary references, not lifted bodies.
-            boolean isSugar = method.getComment()
-                    .map(c -> c.getContent().trim().startsWith("concept:"))
-                    .orElse(false);
-            if (!isSugar) {
+            String conceptHeader = method.getComment()
+                    .map(c -> c.getContent().trim())
+                    .filter(c -> c.startsWith("concept:"))
+                    .orElse(null);
+            if (conceptHeader == null) {
                 continue;
             }
+            // Self-declaration short-circuit: the method header declares
+            // its concept. The IDENTITY of this method's term_shape IS
+            // a concept-ref leaf to the declared concept. Both lifter
+            // paths (citation-driven and syntax-driven) observe the
+            // same header and produce the same leaf — convergence is
+            // structural, not coincidental.
+            //
+            // The body walk still runs to produce realize metadata
+            // (param_names, param_types, return_type, structural detail
+            // attached as `body_shape`), but the canonical term_shape
+            // at this level is the declared concept.
+            //
+            // If the concept isn't in the live catalogue, the
+            // body_shape becomes the structural definition the
+            // catalogue accepts on first sight — the concept is
+            // lifted into existence.
             TermShapeLifter.LiftedMethod lifted = lifter.liftMethod(method);
+            Jcs.Json termShape = Jcs.object(
+                "concept_name", Jcs.string(conceptHeader),
+                "kind", Jcs.string("concept-ref")
+            );
             entries.add(Jcs.object(
                 "kind", Jcs.string("lift-term-shape-entry"),
                 "function", Jcs.string(method.getNameAsString()),
-                "term_shape", lifted.termShape(),
+                "term_shape", termShape,
+                "body_shape", lifted.termShape(),
                 "param_names", new Jcs.Arr(lifted.paramNames()),
                 "param_types", new Jcs.Arr(lifted.paramTypes()),
                 "return_type", Jcs.string(lifted.returnType())

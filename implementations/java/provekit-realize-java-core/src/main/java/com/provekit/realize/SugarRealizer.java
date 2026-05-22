@@ -1893,13 +1893,11 @@ final class SugarRealizer {
             // silently fabricate `: null` (which the source did not
             // authorize as a return value).
             if (!defaultEmitted) {
-                // Substrate-honest citation: rust source had no wildcard
-                // (exhaustive). The panic is unreachable in the well-
-                // formed case so (A)+(B) hold — lossless via citation,
-                // NOT a loss_record entry.
-                chain.append(" : /*@concept concept:exhaustive-match-no-default*/ (")
-                     .append(boxedType(mapSourceType(context.returnType).equals("void") ? "Object" : mapSourceType(context.returnType)))
-                     .append(") (Object) ((java.util.function.Supplier<Object>)() -> { throw new RuntimeException(\"exhaustive match: no arm matched\"); }).get()");
+                // Substrate.unreachable names the concept at runtime.
+                String castType = boxedType(mapSourceType(context.returnType).equals("void") ? "Object" : mapSourceType(context.returnType));
+                chain.append(" : /*@concept concept:exhaustive-match-no-default*/ ")
+                     .append("com.provekit.runtime.Substrate.<").append(castType)
+                     .append(">unreachable(\"exhaustive match: no arm matched\")");
             }
             for (int k = 0; k < openParens; k++) chain.append(")");
             String supplierType = boxedType(mapSourceType(context.returnType).equals("void") ? "Object" : mapSourceType(context.returnType));
@@ -1960,8 +1958,10 @@ final class SugarRealizer {
                 // explicit .cloned() / .into() call.
                 if ("into".equals(methodName) || "clone".equals(methodName)
                         || "cloned".equals(methodName)) {
-                    String cited = "/*@concept concept:value-clone source-name=" + methodName + "*/"
-                            + receiver.get().text();
+                    // Substrate.cloneOf carries the concept identity at
+                    // runtime — the lifter recognizes the call directly.
+                    String cited = "/*@concept concept:value-clone source-name=" + methodName
+                        + "*/com.provekit.runtime.Substrate.cloneOf(" + receiver.get().text() + ")";
                     return Optional.of(new ShapeExpression(cited, receiver.get().typeName()));
                 }
                 // .try_unwrap() — substrate's canonical ?-operator method.
@@ -2000,18 +2000,15 @@ final class SugarRealizer {
                         int comma = findTopLevelComma(inner);
                         inferredInner = comma > 0 ? inner.substring(0, comma).trim() : inner;
                     }
-                    // Cast to RAW Result (Java doesn't allow casting
-                    // Result<Object, X> to Result<JsonNode, Y> with
-                    // mismatched generics). Then cast .unwrap()'s Object
-                    // return to the inferred inner type for type safety
-                    // at the use site.
+                    // Substrate.tryUnwrap names the concept at runtime;
+                    // citation is belt+suspenders.
                     String castInner = inferredInner.isEmpty()
                             ? ""
                             : "(" + inferredInner + ") ";
                     return Optional.of(new ShapeExpression(
                             "/*@concept concept:try-unwrap*/" + castInner
-                                + "((com.provekit.runtime.Result) " + receiver.get().text()
-                                + ").unwrap()",
+                                + "com.provekit.runtime.Substrate.tryUnwrap((com.provekit.runtime.Result) "
+                                + receiver.get().text() + ")",
                             inferredInner));
                 }
                 // .iter() on a JsonNode (rust Vec<Value>.iter()) →
@@ -3001,8 +2998,11 @@ final class SugarRealizer {
             // reconstructs the source as an exhaustive match. The panic
             // is unreachable in the well-formed case so (A) recoverable
             // + (B) runtime-equivalent — LOSSLESS, not lossy.
+            // Substrate.unreachable carries the concept identity at
+            // runtime — both the citation and the call surface name it.
             out.append(" else { /*@concept concept:exhaustive-match-no-default*/")
-               .append(" throw new RuntimeException(\"exhaustive match without arm: ")
+               .append(" ").append(targetName)
+               .append(" = com.provekit.runtime.Substrate.unreachable(\"exhaustive match without arm: ")
                .append(targetName).append("\"); }");
         }
         return out.toString();
