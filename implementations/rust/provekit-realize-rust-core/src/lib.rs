@@ -475,6 +475,30 @@ fn lower_term_shape_body(
             let_kw, target.text, value.type_name, value.text
         ));
     }
+    if concept_name == "concept:destructure-tuple" {
+        // args: [value, name_leaf1, name_leaf2, ...]
+        let args = term_shape_args(shape);
+        if args.len() < 2 {
+            return None;
+        }
+        let value = lower_term_shape_expression(args[0], context, &append_position(position, 0))?;
+        let names: Vec<String> = args[1..]
+            .iter()
+            .filter_map(|n| n.get("text").and_then(Value::as_str).map(String::from))
+            .collect();
+        if names.is_empty() {
+            return None;
+        }
+        // Track each name as a defined symbol.
+        for name in &names {
+            context.defined_symbols.insert(name.clone());
+        }
+        // Last-bound symbol for tail-expression detection.
+        if let Some(last) = names.last() {
+            context.last_assigned_symbol = Some(last.clone());
+        }
+        return Some(format!("let ({}) = {};", names.join(", "), value.text));
+    }
     if concept_name == "concept:return" || concept_name == "return" {
         let args = term_shape_args(shape);
         if args.is_empty() {
@@ -503,6 +527,12 @@ fn lower_term_shape_body(
             lower_term_shape_expression(args[0], context, &append_position(position, 0))?;
         let then_body =
             lower_term_shape_branch_body(args[1], context, &append_position(position, 1))?;
+        // Omit else-clause when args[2] is concept:skip (the substrate's
+        // canonical "no-else" placeholder). Matches source `if cond { body }`
+        // byte-identical instead of emitting `if cond { body } else { () }`.
+        if term_shape_concept_name(args[2]).as_deref() == Some("concept:skip") {
+            return Some(format!("if {} {{\n{}\n}}", condition.text, indent_block(&then_body)));
+        }
         let else_body =
             lower_term_shape_branch_body(args[2], context, &append_position(position, 2))?;
         return Some(format!(
@@ -696,7 +726,23 @@ fn lower_term_shape_expression(
             context,
             &append_position(position, 0),
         )?;
-        let text = format!("|{}| {}", param_names.join(", "), body.text);
+        // Source-form choice: when the lift marked closure_block_body=true
+        // (source had `|e| { ... }`), wrap the body in braces so the lower
+        // emits `|e| { body }`. rustfmt can then split long lines inside.
+        // Without the marker emit the expression form `|e| body`.
+        let is_block_body = body_shape
+            .get("closure_block_body")
+            .and_then(Value::as_bool)
+            .unwrap_or(false);
+        let text = if is_block_body {
+            // Block-form closure: put body on its own line so rustfmt
+            // can normalize layout (break long lines, indent body).
+            // The single-line form `|e| { body }` blocks rustfmt's
+            // line-breaking inside the closure body.
+            format!("|{}| {{\n{}\n}}", param_names.join(", "), body.text)
+        } else {
+            format!("|{}| {}", param_names.join(", "), body.text)
+        };
         return Some(ShapeExpression {
             text,
             type_name: String::new(),
@@ -733,6 +779,36 @@ fn lower_term_shape_expression(
         let body = lower_block_or_expr(args[1], context, &append_position(position, 1))?;
         return Some(ShapeExpression {
             text: format!("while {} {{ {} }}", cond.text, body),
+            type_name: String::new(),
+        });
+    }
+    if concept_name == "concept:while-let" {
+        // args: pattern_leaf, value, body
+        if args.len() != 3 {
+            return None;
+        }
+        let pattern_text = args[0].get("text").and_then(Value::as_str)?;
+        let value = lower_term_shape_expression(args[1], context, &append_position(position, 1))?;
+        let body = lower_block_or_expr(args[2], context, &append_position(position, 2))?;
+        return Some(ShapeExpression {
+            text: format!("while let {} = {} {{ {} }}", pattern_text, value.text, body),
+            type_name: String::new(),
+        });
+    }
+    if concept_name == "concept:if-let" {
+        // args: pattern_leaf, value, then, else
+        if args.len() != 4 {
+            return None;
+        }
+        let pattern_text = args[0].get("text").and_then(Value::as_str)?;
+        let value = lower_term_shape_expression(args[1], context, &append_position(position, 1))?;
+        let then_text = lower_term_shape_branch_body(args[2], context, &append_position(position, 2))?;
+        let else_text = lower_term_shape_branch_body(args[3], context, &append_position(position, 3))?;
+        return Some(ShapeExpression {
+            text: format!(
+                "if let {} = {} {{ {} }} else {{ {} }}",
+                pattern_text, value.text, then_text, else_text
+            ),
             type_name: String::new(),
         });
     }
@@ -813,6 +889,20 @@ fn lower_term_shape_expression(
         // post-format matches source.
         let pretty = if path == "json" {
             pretty_print_macro_body(&normalized)
+        } else if path == "format" || path == "println" || path == "eprintln" || path == "write" || path == "writeln" {
+            // Comma-separated arg list. Break across lines when EITHER
+            // total exceeds 100 chars OR the format-string first arg is
+            // long enough that the source likely wrote it multi-line.
+            // Threshold of 60 catches typical multi-arg format! calls
+            // with non-trivial format strings (which is when rustfmt
+            // would break too if it formatted macros).
+            let total_len = path.len() + 2 + normalized.len();
+            let has_multi_arg = normalized.contains(',');
+            if total_len > 100 || (total_len > 60 && has_multi_arg) {
+                pretty_print_macro_args(&normalized)
+            } else {
+                normalized
+            }
         } else {
             normalized
         };
@@ -2130,6 +2220,77 @@ thread_local! {
     /// substituted param_types.
     pub(crate) static CURRENT_ORIGINAL_PARAM_TYPES: std::cell::RefCell<Vec<String>> =
         std::cell::RefCell::new(Vec::new());
+}
+
+/// Pretty-print comma-separated macro args (format!, println!, etc.).
+/// Each top-level arg on its own line, matching rustfmt's source-layout
+/// style for long macro calls. Splits on top-level `,` only (not inside
+/// nested parens/brackets/braces/strings).
+fn pretty_print_macro_args(tokens: &str) -> String {
+    let trimmed = tokens.trim();
+    let mut items: Vec<String> = Vec::new();
+    let mut current = String::new();
+    let mut depth_paren = 0i32;
+    let mut depth_bracket = 0i32;
+    let mut depth_brace = 0i32;
+    let mut in_string = false;
+    let mut chars = trimmed.chars().peekable();
+    while let Some(c) = chars.next() {
+        if in_string {
+            current.push(c);
+            if c == '\\' {
+                if let Some(&next) = chars.peek() {
+                    current.push(next);
+                    chars.next();
+                }
+                continue;
+            }
+            if c == '"' { in_string = false; }
+            continue;
+        }
+        match c {
+            '"' => { in_string = true; current.push(c); }
+            '(' => { depth_paren += 1; current.push(c); }
+            ')' => { depth_paren -= 1; current.push(c); }
+            '[' => { depth_bracket += 1; current.push(c); }
+            ']' => { depth_bracket -= 1; current.push(c); }
+            '{' => { depth_brace += 1; current.push(c); }
+            '}' => { depth_brace -= 1; current.push(c); }
+            ',' if depth_paren == 0 && depth_bracket == 0 && depth_brace == 0 => {
+                let item = current.trim().to_string();
+                if !item.is_empty() {
+                    items.push(item);
+                }
+                current.clear();
+            }
+            _ => current.push(c),
+        }
+    }
+    let last = current.trim().to_string();
+    if !last.is_empty() {
+        items.push(last);
+    }
+    if items.is_empty() {
+        return String::new();
+    }
+    // Source-style layout:
+    //   format!(
+    //       "arg0",
+    //       arg1
+    //   )
+    // No trailing comma on the last arg (matches rustfmt's no-trailing-
+    // comma convention for macro arg lists).
+    let mut out = String::from("\n");
+    for (idx, item) in items.iter().enumerate() {
+        let is_last = idx + 1 == items.len();
+        out.push_str("    ");
+        out.push_str(item);
+        if !is_last {
+            out.push(',');
+        }
+        out.push('\n');
+    }
+    out
 }
 
 /// Pretty-print a json!-style macro body that was lifted as a token
