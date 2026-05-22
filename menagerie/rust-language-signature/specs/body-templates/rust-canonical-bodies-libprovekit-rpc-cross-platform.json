@@ -1,0 +1,191 @@
+{
+  "header": {
+    "cid": "blake3-512:e21df23b3833da3f12fa6db178f74618d412407c254ad1d8fedc352da08c4a08ec531fa15e12d21da1189bb989c4b2c9615ce3e5f1a5b923a0ae37b51cac008f",
+    "content": {
+      "target_language": "rust",
+      "template_name": "rust-canonical-bodies-libprovekit-rpc-cross-platform",
+      "entries": [
+        {
+          "concept_name": "concept:jsonrpc-ndjson-server-loop",
+          "emission_template": {
+            "kind": "verbatim",
+            "template": "stderr_write_line(&format!(\n        \"{} listening on stdio (JSON-RPC 2.0, NDJSON)\",\n        ${param0}.name()\n    ));\n    while let Some(line) = stdin_read_line() {\n        if line.trim().is_empty() {\n            continue;\n        }\n        let (response, stop) = handle_line(&line, &${param0});\n        let response_str = json_serialize(&response).unwrap_or_else(|e| {\n            format!(\n                \"{{\\\"jsonrpc\\\":\\\"2.0\\\",\\\"id\\\":null,\\\"error\\\":{{\\\"code\\\":-32603,\\\"message\\\":\\\"{}\\\"}}}}\",\n                e\n            )\n        });\n        stdout_write_line(&response_str);\n        if stop {\n            break;\n        }\n    }"
+          },
+          "loss_record_contribution": {
+            "form": "literal",
+            "value": {
+              "entries": []
+            }
+          },
+          "signature_guard": {
+            "min_params": 1,
+            "max_params": 1
+          },
+          "target_library_tag": "libprovekit-rpc-cross-platform"
+        },
+        {
+          "concept_name": "concept:jsonrpc-request-dispatch",
+          "emission_template": {
+            "kind": "verbatim",
+            "template": "let req: Value = match json_parse(${param0}) {\n        Ok(v) => v,\n        Err(e) => {\n            return (\n                error_response(Value::Null, -32700, format!(\"parse error: {}\", e)),\n                false,\n            );\n        }\n    };\n    let id = req.get(\"id\").cloned().unwrap_or(Value::Null);\n    let method = req.get(\"method\").and_then(|m| m.as_str()).unwrap_or(\"\");\n    let params = req.get(\"params\").cloned().unwrap_or(Value::Null);\n\n    match method {\n        \"initialize\" => (ok_response(id, initialize_result(${param1})), false),\n        \"lift\" => match lift(&params, ${param1}) {\n            Ok(v) => (ok_response(id, v), false),\n            Err(LiftError::InvalidParams(msg)) => (error_response(id, -32602, msg), false),\n            Err(LiftError::Internal(msg)) => (error_response(id, -32603, msg), false),\n        },\n        \"shutdown\" => (ok_response(id, Value::Null), true),\n        \"\" => (\n            error_response(id, -32600, \"missing `method` field\".into()),\n            false,\n        ),\n        other => (\n            error_response(id, -32601, format!(\"unknown method: {}\", other)),\n            false,\n        ),\n    }"
+          },
+          "loss_record_contribution": {
+            "form": "literal",
+            "value": {
+              "entries": []
+            }
+          },
+          "signature_guard": {
+            "min_params": 2,
+            "max_params": 2
+          },
+          "target_library_tag": "libprovekit-rpc-cross-platform"
+        },
+        {
+          "concept_name": "concept:jsonrpc-initialize-response",
+          "emission_template": {
+            "kind": "verbatim",
+            "template": "json!({\n        \"name\": ${param0}.name(),\n        \"version\": PLUGIN_VERSION,\n        \"protocol_version\": PROTOCOL_VERSION,\n        \"capabilities\": {\n            \"authoring_surfaces\": [${param0}.surface()],\n            \"ir_version\": IR_VERSION,\n            \"emits_signed_mementos\": false,\n        }\n    })"
+          },
+          "loss_record_contribution": {
+            "form": "literal",
+            "value": {
+              "entries": []
+            }
+          },
+          "signature_guard": {
+            "min_params": 1,
+            "max_params": 1
+          },
+          "target_library_tag": "libprovekit-rpc-cross-platform"
+        },
+        {
+          "concept_name": "concept:lift-method-handler",
+          "emission_template": {
+            "kind": "verbatim",
+            "template": "let workspace_root = ${param0}\n        .get(\"workspace_root\")\n        .and_then(Value::as_str)\n        .ok_or_else(|| LiftError::InvalidParams(\"missing `workspace_root`\".into()))?;\n    let source_paths_raw = ${param0}\n        .get(\"source_paths\")\n        .and_then(Value::as_array)\n        .ok_or_else(|| LiftError::InvalidParams(\"missing `source_paths`\".into()))?;\n    let source_paths: Vec<String> = source_paths_raw\n        .iter()\n        .filter_map(|v| v.as_str().map(str::to_string))\n        .collect();\n\n    let options = ${param0}.get(\"options\").cloned().unwrap_or(Value::Null);\n    let emit = options\n        .get(\"emit\")\n        .and_then(Value::as_str)\n        .unwrap_or(\"ir-document\");\n    if emit != \"ir-document\" {\n        return Err(LiftError::Internal(format!(\n            \"emit mode `{}` not implemented (only `ir-document` is supported in this version)\",\n            emit\n        )));\n    }\n\n    let root = PathBuf::from(workspace_root);\n    Ok(build_ir_document(&root, &source_paths, ${param1}))"
+          },
+          "loss_record_contribution": {
+            "form": "literal",
+            "value": {
+              "entries": []
+            }
+          },
+          "signature_guard": {
+            "min_params": 2,
+            "max_params": 2
+          },
+          "target_library_tag": "libprovekit-rpc-cross-platform"
+        },
+        {
+          "concept_name": "concept:ir-document-assembly",
+          "emission_template": {
+            "kind": "verbatim",
+            "template": "let LiftResult {\n        mementos,\n        diagnostics,\n    } = ${param2}.lift(${param0}, ${param1});\n\n    let mut ir_entries: Vec<Value> = Vec::new();\n    let mut seen_names: BTreeSet<String> = BTreeSet::new();\n    for mut memento in mementos {\n        let original_name = memento\n            .get(\"name\")\n            .and_then(Value::as_str)\n            .unwrap_or(\"\")\n            .to_string();\n        let addressed_name = content_addressed_name(&original_name, &memento);\n        if !seen_names.insert(addressed_name.clone()) {\n            continue;\n        }\n        if let Value::Object(map) = &mut memento {\n            map.insert(\"name\".to_string(), Value::String(addressed_name));\n        }\n        ir_entries.push(memento);\n    }\n\n    json!({\n        \"kind\": \"ir-document\",\n        \"ir\": ir_entries,\n        \"diagnostics\": diagnostics,\n    })"
+          },
+          "loss_record_contribution": {
+            "form": "literal",
+            "value": {
+              "entries": []
+            }
+          },
+          "signature_guard": {
+            "min_params": 3,
+            "max_params": 3
+          },
+          "target_library_tag": "libprovekit-rpc-cross-platform"
+        },
+        {
+          "concept_name": "concept:content-addressed-memento-name",
+          "emission_template": {
+            "kind": "verbatim",
+            "template": "let inv_cid = slot_cid(${param1}, \"inv\");\n    let pre_cid = slot_cid(${param1}, \"pre\");\n    let post_cid = slot_cid(${param1}, \"post\");\n    let composed = format!(\"{}|{}|{}\", inv_cid, pre_cid, post_cid);\n    let content_cid = blake3_512_cid(composed.as_bytes());\n    format!(\"{}#{}\", ${param0}, content_cid)"
+          },
+          "loss_record_contribution": {
+            "form": "literal",
+            "value": {
+              "entries": []
+            }
+          },
+          "signature_guard": {
+            "min_params": 2,
+            "max_params": 2
+          },
+          "target_library_tag": "libprovekit-rpc-cross-platform"
+        },
+        {
+          "concept_name": "concept:formula-slot-content-cid",
+          "emission_template": {
+            "kind": "verbatim",
+            "template": "match ${param0}.get(${param1}) {\n        Some(v) if !v.is_null() => blake3_512_cid(encode_jcs(v).as_bytes()),\n        _ => String::new(),\n    }"
+          },
+          "loss_record_contribution": {
+            "form": "literal",
+            "value": {
+              "entries": []
+            }
+          },
+          "signature_guard": {
+            "min_params": 2,
+            "max_params": 2
+          },
+          "target_library_tag": "libprovekit-rpc-cross-platform"
+        },
+        {
+          "concept_name": "concept:blake3-512-self-identifying-cid",
+          "emission_template": {
+            "kind": "verbatim",
+            "template": "let raw = blake3_512_of(${param0});\n    let mut s = String::with_capacity(\"blake3-512:\".len() + 128);\n    s.push_str(\"blake3-512:\");\n    const HEX: &[u8; 16] = b\"0123456789abcdef\";\n    for &b in &raw {\n        s.push(HEX[(b >> 4) as usize] as char);\n        s.push(HEX[(b & 0x0F) as usize] as char);\n    }\n    s"
+          },
+          "loss_record_contribution": {
+            "form": "literal",
+            "value": {
+              "entries": []
+            }
+          },
+          "signature_guard": {
+            "min_params": 1,
+            "max_params": 1
+          },
+          "target_library_tag": "libprovekit-rpc-cross-platform"
+        },
+        {
+          "concept_name": "concept:jsonrpc-success-response",
+          "emission_template": {
+            "kind": "verbatim",
+            "template": "json!({\n        \"jsonrpc\": \"2.0\",\n        \"${param0}\": ${param0},\n        \"${param1}\": ${param1},\n    })"
+          },
+          "loss_record_contribution": {
+            "form": "literal",
+            "value": {
+              "entries": []
+            }
+          },
+          "signature_guard": {
+            "min_params": 2,
+            "max_params": 2
+          },
+          "target_library_tag": "libprovekit-rpc-cross-platform"
+        },
+        {
+          "concept_name": "concept:jsonrpc-error-response",
+          "emission_template": {
+            "kind": "verbatim",
+            "template": "json!({\n        \"jsonrpc\": \"2.0\",\n        \"${param0}\": ${param0},\n        \"error\": { \"${param1}\": ${param1}, \"${param2}\": ${param2} },\n    })"
+          },
+          "loss_record_contribution": {
+            "form": "literal",
+            "value": {
+              "entries": []
+            }
+          },
+          "signature_guard": {
+            "min_params": 3,
+            "max_params": 3
+          },
+          "target_library_tag": "libprovekit-rpc-cross-platform"
+        }
+      ]
+    }
+  }
+}
