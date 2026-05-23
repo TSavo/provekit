@@ -562,7 +562,19 @@ fn lower_term_shape_body(
             .map(|s| s.trim().to_string())
             .filter(|s| !s.is_empty());
         if let Some(ty) = explicit_let_type {
-            return Some(format!("{} {}: {} = {};", let_kw, target.text, ty, value.text));
+            // #1391 follow-on: when let_type came from java AST
+            // (java.util.*, java.lang.*, Object, etc.), map it to a rust
+            // type via java_type_to_rust_let_annotation. The java lift
+            // restricts let_type emission to generic-container shapes
+            // (ArrayList/TreeSet/HashMap/etc.) which is where rust's
+            // type inference can't recover the parameter, so we MUST
+            // emit an annotation; otherwise the cycled rust won't
+            // compile. For other types the lift omits let_type.
+            let mapped = java_type_to_rust_let_annotation(&ty);
+            if !mapped.is_empty() {
+                return Some(format!("{} {}: {} = {};", let_kw, target.text, mapped, value.text));
+            }
+            return Some(format!("{} {} = {};", let_kw, target.text, value.text));
         }
         // Omit type annotation when value.type_name is empty — Rust's local type
         // inference covers it (happens for concept:call results, array-repeat, etc.).
@@ -3328,6 +3340,74 @@ fn reindent_macro_bodies(text: &str) -> String {
         joined.push('\n');
     }
     joined
+}
+
+/// Map a java type string (as it appears in the lowered.java source)
+/// to a rust let-binding annotation. The java lift restricts let_type
+/// emission to generic-constructor sites, so the only inputs we see
+/// here are container-shaped: `java.util.ArrayList<T>`, `java.util.TreeSet<T>`,
+/// `java.util.HashMap<K,V>`, etc. Plus the fully-qualified Jackson
+/// JsonNode + unparameterised List/Map/Set that arose pre-#1391.
+fn java_type_to_rust_let_annotation(ty: &str) -> String {
+    let t = ty.trim();
+    // Strip outer parens/generics for the family check, but preserve
+    // them for parameter forwarding when present.
+    let head = t.split('<').next().unwrap_or(t).trim();
+    let params: Option<&str> = t.find('<').and_then(|i| {
+        let rest = &t[i + 1..];
+        rest.rfind('>').map(|j| &rest[..j])
+    });
+    fn map_param_to_rust(p: &str) -> String {
+        // Recursively map parametric components — but for our
+        // libprovekit-rpc-cross-platform corpus, the inner type is
+        // always String/JsonNode/etc. Use the existing primitive map.
+        let p = p.trim();
+        match p {
+            "String" | "java.lang.String" => "String".to_string(),
+            "Integer" | "Long" | "java.lang.Long" | "java.lang.Integer" => "i64".to_string(),
+            "com.fasterxml.jackson.databind.JsonNode" | "JsonNode" => "Value".to_string(),
+            _ => p.to_string(),
+        }
+    }
+    let container = match head {
+        "java.util.ArrayList" | "ArrayList" | "java.util.List" | "List"
+        | "java.util.LinkedList" | "LinkedList" => "Vec",
+        "java.util.TreeSet" | "TreeSet" => "BTreeSet",
+        "java.util.HashSet" | "HashSet" => "HashSet",
+        "java.util.HashMap" | "HashMap" => "HashMap",
+        "java.util.TreeMap" | "TreeMap" => "BTreeMap",
+        _ => return String::new(), // Unrecognized — suppress annotation.
+    };
+    match params {
+        Some(p) if !p.trim().is_empty() => {
+            // Single-param container: List<T> / Set<T>.
+            // Two-param container: Map<K,V>.
+            let mut depth = 0i32;
+            let mut parts: Vec<String> = Vec::new();
+            let mut current = String::new();
+            for ch in p.chars() {
+                match ch {
+                    '<' => { depth += 1; current.push(ch); }
+                    '>' => { depth -= 1; current.push(ch); }
+                    ',' if depth == 0 => {
+                        parts.push(current.trim().to_string());
+                        current.clear();
+                    }
+                    _ => current.push(ch),
+                }
+            }
+            if !current.trim().is_empty() { parts.push(current.trim().to_string()); }
+            let mapped: Vec<String> = parts.iter().map(|s| map_param_to_rust(s)).collect();
+            format!("{}<{}>", container, mapped.join(", "))
+        }
+        _ => {
+            // No parameters supplied (e.g. bare `java.util.List`). For
+            // the libprovekit corpus, source-side Vec was `Vec<Value>`
+            // for JsonNode arrays and `Vec<String>` for paths; without
+            // generics we can't tell. Suppress to avoid wrong types.
+            String::new()
+        }
+    }
 }
 
 /// Scan a line of code (string-aware) and update paren depth. Returns

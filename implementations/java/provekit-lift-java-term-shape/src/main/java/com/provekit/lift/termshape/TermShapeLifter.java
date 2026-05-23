@@ -721,10 +721,40 @@ public final class TermShapeLifter {
             // Multiple declarators in one expr emit as a seq.
             List<Json> assigns = new ArrayList<>();
             for (var v : vde.getVariables()) {
-                Json nameLeaf = Jcs.object(
-                    "kind", Jcs.string("symbol"),
-                    "text", Jcs.string(v.getNameAsString())
-                );
+                // #1391 follow-on: preserve explicit type annotation ONLY
+                // when the initializer is a generic-constructor that the
+                // rust compiler can't type-infer (Vec::new(), BTreeSet::new(),
+                // HashMap::new()). Rust's local inference handles plain
+                // typed bindings; emitting `let x: String = call()` when
+                // source had `let x = call()` adds noise.
+                //
+                // Test: initializer is `new <FQN><>()` with no args — the
+                // generic-container case the rust source MUST annotate.
+                String declaredType = v.getType().asString();
+                boolean propagateType = false;
+                if (v.getInitializer().isPresent()
+                        && v.getInitializer().get() instanceof com.github.javaparser.ast.expr.ObjectCreationExpr oce0
+                        && oce0.getArguments().isEmpty()) {
+                    String initType = oce0.getType().asString().replaceFirst("<.*>", "");
+                    if (initType.endsWith("ArrayList") || initType.endsWith("TreeSet")
+                            || initType.endsWith("HashMap") || initType.endsWith("TreeMap")
+                            || initType.endsWith("HashSet") || initType.endsWith("LinkedList")) {
+                        propagateType = !declaredType.equals("var");
+                    }
+                }
+                Json nameLeaf;
+                if (propagateType) {
+                    nameLeaf = Jcs.object(
+                        "kind", Jcs.string("symbol"),
+                        "let_type", Jcs.string(declaredType),
+                        "text", Jcs.string(v.getNameAsString())
+                    );
+                } else {
+                    nameLeaf = Jcs.object(
+                        "kind", Jcs.string("symbol"),
+                        "text", Jcs.string(v.getNameAsString())
+                    );
+                }
                 Json value = v.getInitializer()
                         .map(init -> liftExpression(init, losses))
                         .orElseGet(Jcs::object);
@@ -753,8 +783,17 @@ public final class TermShapeLifter {
             // for rust's `X.unwrap_or(default)` is `(X != null ? X : default)`
             // (assuming X is Option-like). Recognize this canonical
             // ternary shape and emit concept:call(X, method:unwrap_or, default).
-            String condText = ce.getCondition().toString().replaceAll("\\s+", "");
-            String thenText = ce.getThenExpr().toString().replaceAll("\\s+", "");
+            // #1391 follow-on: strip /*...*/ block comments before
+            // text-comparing. JavaParser's toString includes attached
+            // citation comments on child nodes, which causes startsWith
+            // checks to fail when the cycled lower has citation
+            // annotations (e.g. /*@concept concept:value-clone
+            // source-name=cloned*/Substrate.cloneOf(X)).
+            java.util.function.Function<String, String> stripCmts = s ->
+                s.replaceAll("(?s)/\\*[^*]*\\*+(?:[^/*][^*]*\\*+)*/", "")
+                 .replaceAll("\\s+", "");
+            String condText = stripCmts.apply(ce.getCondition().toString());
+            String thenText = stripCmts.apply(ce.getThenExpr().toString());
             String elseText = ce.getElseExpr().toString();
             // #1391 follow-on: detect java lower's emission for
             // .and_then(f): `X != null ? ((Function)f).apply(X) : null` or
@@ -791,6 +830,37 @@ public final class TermShapeLifter {
                                 operandShape,
                                 methodConceptLeaf("and_then", 1),
                                 fnShape
+                            )),
+                            "concept_name", Jcs.string("concept:call")
+                        );
+                    }
+                }
+            }
+            // #1391 follow-on: Pattern X != null ? String.valueOf(X) : null
+            // → X.map(str::to_string). The java lower emits this for
+            // rust source `option.map(str::to_string)`. Without the
+            // recognizer the cycled rust emits a verbose ternary
+            // expansion that's semantically equivalent but not
+            // byte-identical.
+            if (condText.endsWith("!=null") && elseText.replaceAll("\\s+", "").equals("null")) {
+                // Then branch should be `String.valueOf(X)` where X matches operand.
+                if (ce.getThenExpr() instanceof com.github.javaparser.ast.expr.MethodCallExpr toStrCall
+                        && "valueOf".equals(toStrCall.getNameAsString())
+                        && toStrCall.getScope().map(Object::toString).orElse("").equals("String")
+                        && toStrCall.getArguments().size() == 1) {
+                    String operand2 = condText.substring(0, condText.length() - "!=null".length());
+                    if (toStrCall.getArgument(0).toString().replaceAll("\\s+", "").equals(operand2)) {
+                        com.github.javaparser.ast.expr.Expression operandExpr2 = toStrCall.getArgument(0);
+                        Json operandShape2 = liftExpression(operandExpr2, losses);
+                        Json fnLeaf = Jcs.object(
+                            "kind", Jcs.string("symbol"),
+                            "text", Jcs.string("str::to_string")
+                        );
+                        return Jcs.object(
+                            "args", new Jcs.Arr(List.of(
+                                operandShape2,
+                                methodConceptLeaf("map", 1),
+                                fnLeaf
                             )),
                             "concept_name", Jcs.string("concept:call")
                         );
@@ -950,6 +1020,28 @@ public final class TermShapeLifter {
             //  int → usize (when used as array index, which is the common case)
             //  long → i64; double → f64; char → char.
             String castType = cast.getType().asString();
+            // #1391 follow-on: strip Function<...,...>-typed casts on
+            // lambdas. The java lower wraps closures in functional-
+            // interface casts for type inference; the inner lambda IS
+            // the concept:closure. Without stripping, the cycled rust
+            // emits `concept:cast(closure, Function<...>)` which has no
+            // rust analogue. Recognize Function/Supplier/Consumer/etc.
+            // and pass through to the lambda lift.
+            com.github.javaparser.ast.expr.Expression castInner = cast.getExpression();
+            while (castInner instanceof com.github.javaparser.ast.expr.EnclosedExpr enc) {
+                castInner = enc.getInner();
+            }
+            boolean isFunctionalInterfaceType =
+                castType.startsWith("Function<") || castType.startsWith("Function ")
+                || castType.contains(".Function<") || castType.equals("Function")
+                || castType.startsWith("Supplier<") || castType.contains(".Supplier<")
+                || castType.startsWith("Consumer<") || castType.contains(".Consumer<")
+                || castType.startsWith("Predicate<") || castType.contains(".Predicate<")
+                || castType.startsWith("BiFunction<") || castType.contains(".BiFunction<");
+            if (isFunctionalInterfaceType
+                    && castInner instanceof com.github.javaparser.ast.expr.LambdaExpr) {
+                return liftExpression(castInner, losses);
+            }
             String rustCastType = switch (castType) {
                 case "int" -> "usize";
                 case "long" -> "i64";
@@ -1824,24 +1916,34 @@ public final class TermShapeLifter {
         // byte-identity — the citation IS the concept identity, so the
         // structural form preserves both round-trip and concept content.
         if ("concept:value-clone".equals(conceptName)
-                && attrs.containsKey("source-name")
-                && structuralArgs.size() == 1) {
+                && attrs.containsKey("source-name")) {
             String sourceName = attrs.get("source-name").trim();
-            // Build method leaf matching the rust lift's emission for
-            // X.into() / X.clone() / X.cloned().
-            Json methodLeaf = Jcs.object(
-                "arity", Jcs.string("0"),
-                "concept_name", Jcs.string("method:" + sourceName),
-                "kind", Jcs.string("method"),
-                "text", Jcs.string(sourceName)
-            );
-            List<Json> callArgs = new ArrayList<>();
-            callArgs.add(structuralArgs.get(0)); // receiver
-            callArgs.add(methodLeaf);
-            return Jcs.object(
-                "args", new Jcs.Arr(callArgs),
-                "concept_name", Jcs.string("concept:call")
-            );
+            if (structuralArgs.size() == 1) {
+                // Build method leaf matching the rust lift's emission for
+                // X.into() / X.clone() / X.cloned().
+                Json methodLeaf = Jcs.object(
+                    "arity", Jcs.string("0"),
+                    "concept_name", Jcs.string("method:" + sourceName),
+                    "kind", Jcs.string("method"),
+                    "text", Jcs.string(sourceName)
+                );
+                List<Json> callArgs = new ArrayList<>();
+                callArgs.add(structuralArgs.get(0)); // receiver
+                callArgs.add(methodLeaf);
+                return Jcs.object(
+                    "args", new Jcs.Arr(callArgs),
+                    "concept_name", Jcs.string("concept:call")
+                );
+            }
+            // Citation comment was POSITIONALLY attached to a larger AST
+            // node (e.g. EnclosedExpr wrapping a ConditionalExpr). The
+            // value-clone identity belongs to a child cloneOf call inside,
+            // not the outer expression. Drop the citation and return the
+            // structural lift — child cloneOf nodes will be re-cited via
+            // their own readCitation. This preserves the round-trip
+            // unwrap_or / and_then recognizers that need the structural
+            // ConditionalExpr form.
+            return structural;
         }
         List<Jcs.Field> fields = new ArrayList<>();
         fields.add(new Jcs.Field("args", new Jcs.Arr(structuralArgs)));
