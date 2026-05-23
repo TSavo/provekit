@@ -445,7 +445,18 @@ fn lower_term_shape_body(
                 }
                 continue;
             }
-            let expression = lower_term_shape_expression(child, context, &child_position)?;
+            // #1391 follow-on: tolerant seq lowering. When a child can't
+            // be lowered (java lift gap), emit a TODO comment instead of
+            // failing the whole function. The remaining children still
+            // lower; the cycle produces partial output with explicit gaps.
+            let expression = match lower_term_shape_expression(child, context, &child_position) {
+                Some(e) => e,
+                None => {
+                    let concept = term_shape_concept_name(child).unwrap_or_else(|| "?".into());
+                    lines.push(format!("// TODO(lower): un-lowered {}", concept));
+                    continue;
+                }
+            };
             // Last-child tail-expression form for non-unit returning fns:
             // emit the expression bare (no `let temp = X;` + bare-symbol
             // epilogue wrapper). Byte-correct for shim bodies ending in
@@ -500,7 +511,25 @@ fn lower_term_shape_body(
             return None;
         }
         let target = lower_term_shape_expression(args[0], context, &append_position(position, 0))?;
-        let value = lower_term_shape_expression(args[1], context, &append_position(position, 1))?;
+        // #1391 follow-on: tolerate EMPTY value object (the java lift
+        // sometimes emits {} when it can't interpret the RHS of a java
+        // local declaration). Emit a placeholder comment + skip; the rest
+        // of the seq continues lowering instead of dropping to a stub.
+        let value = match lower_term_shape_expression(args[1], context, &append_position(position, 1)) {
+            Some(v) => v,
+            None => {
+                let is_empty = args[1].as_object().map(|o| o.is_empty()).unwrap_or(false);
+                if is_empty {
+                    context.defined_symbols.insert(target.text.clone());
+                    context.last_assigned_symbol = Some(target.text.clone());
+                    return Some(format!(
+                        "// TODO(lift): empty RHS for `{}` (java lift gap)",
+                        target.text
+                    ));
+                }
+                return None;
+            }
+        };
         // `let _ = X;` — wildcard discard binding. Emitted by walk_rpc as
         // concept:assign with target = concept:literal source_text "_".
         // No mutability, no type annotation, no symbol tracked.
