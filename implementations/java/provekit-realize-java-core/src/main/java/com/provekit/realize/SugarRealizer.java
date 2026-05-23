@@ -1590,15 +1590,30 @@ final class SugarRealizer {
             boolean alreadyDefined = context.definedSymbols.contains(name);
             context.definedSymbols.add(name);
             context.lastAssignedSymbol = name;
-            // Use the VALUE's inferred type for the declaration. If
-            // unknown, prefer `var` (java 10+ infers from RHS) over
-            // falling back to the enclosing function's return type —
-            // that fallback was producing wrong-type declarations like
-            // `String raw = blake3_512_of(bytes);` where blake3_512_of
-            // returns byte[].
-            String declType = value.get().typeName();
-            if (declType == null || declType.isBlank()) {
-                declType = "";  // localDeclaration emits `var` for blank.
+            // #1391 follow-on: when the lift captured an explicit `let_type`
+            // from the rust source (e.g. `let x: Vec<String> = ...`), use it
+            // verbatim (mapped to java syntax) for the declaration so that
+            // java lift can re-derive `let_type` and rust realize emits the
+            // exact same annotation byte-for-byte. Without this, the
+            // declared type is inferred from the value expression and
+            // generic parameters are lost (e.g. java.util.List instead of
+            // java.util.List<String>), so the cycle drops the annotation.
+            String letTypeRaw = args.get(0).stringFieldOrNull("let_type");
+            String letTypeMapped = rustLetTypeToJava(letTypeRaw);
+            String declType;
+            if (!letTypeMapped.isEmpty()) {
+                declType = letTypeMapped;
+            } else {
+                // Use the VALUE's inferred type for the declaration. If
+                // unknown, prefer `var` (java 10+ infers from RHS) over
+                // falling back to the enclosing function's return type —
+                // that fallback was producing wrong-type declarations like
+                // `String raw = blake3_512_of(bytes);` where blake3_512_of
+                // returns byte[].
+                declType = value.get().typeName();
+                if (declType == null || declType.isBlank()) {
+                    declType = "";  // localDeclaration emits `var` for blank.
+                }
             }
             // Substrate-honest tuple destructure: when assigning from a
             // synthetic tuple index (__provekit_tuple[N]) AND we know the
@@ -3493,6 +3508,108 @@ final class SugarRealizer {
             return "var " + name + " = " + expression + ";";
         }
         return type + " " + name + " = " + expression + ";";
+    }
+
+    /**
+     * Map a rust-source explicit `let_type` annotation (as captured by the
+     * rust lift, e.g. `"Vec < String >"`, `"BTreeSet < String >"`) to its
+     * java-syntax equivalent for the declaration. Returns empty string for
+     * unrecognized types so the caller falls back to value-inferred type.
+     *
+     * The mapping is the inverse of `java_type_to_rust_let_annotation` in
+     * provekit-realize-rust-core: java lift re-extracts the type from
+     * the declaration site, rust realize maps back, and the rust source's
+     * annotation comes through byte-identical.
+     */
+    private static String rustLetTypeToJava(String letTypeRaw) {
+        if (letTypeRaw == null) return "";
+        // Normalize internal whitespace (syn token-stream emits `Vec < String >`
+        // with spaces around angle brackets).
+        String t = letTypeRaw
+                .replace("< ", "<")
+                .replace(" >", ">")
+                .replace(" <", "<")
+                .replace("> ", ">")
+                .trim();
+        if (t.isEmpty()) return "";
+        // Split into head + generic params (top-level only).
+        int lt = t.indexOf('<');
+        String head;
+        String params = null;
+        if (lt < 0) {
+            head = t;
+        } else {
+            int gt = t.lastIndexOf('>');
+            if (gt < lt) return "";
+            head = t.substring(0, lt).trim();
+            params = t.substring(lt + 1, gt).trim();
+        }
+        String container;
+        switch (head) {
+            case "Vec":
+                container = "java.util.List";
+                break;
+            case "BTreeSet":
+                container = "java.util.TreeSet";
+                break;
+            case "HashSet":
+                container = "java.util.HashSet";
+                break;
+            case "HashMap":
+                container = "java.util.HashMap";
+                break;
+            case "BTreeMap":
+                container = "java.util.TreeMap";
+                break;
+            default:
+                return "";
+        }
+        if (params == null || params.isEmpty()) {
+            return container;
+        }
+        // Split params at top-level commas (handle nested generics).
+        java.util.List<String> parts = new java.util.ArrayList<>();
+        StringBuilder cur = new StringBuilder();
+        int depth = 0;
+        for (int i = 0; i < params.length(); i++) {
+            char ch = params.charAt(i);
+            if (ch == '<') { depth++; cur.append(ch); }
+            else if (ch == '>') { depth--; cur.append(ch); }
+            else if (ch == ',' && depth == 0) {
+                parts.add(cur.toString().trim());
+                cur.setLength(0);
+            } else {
+                cur.append(ch);
+            }
+        }
+        if (cur.length() > 0) parts.add(cur.toString().trim());
+        java.util.List<String> mapped = new java.util.ArrayList<>();
+        for (String p : parts) {
+            mapped.add(mapRustParamToJava(p));
+        }
+        return container + "<" + String.join(", ", mapped) + ">";
+    }
+
+    private static String mapRustParamToJava(String p) {
+        String s = p.trim();
+        switch (s) {
+            case "String":
+            case "str":
+            case "&str":
+                return "String";
+            case "i64":
+            case "u64":
+                return "Long";
+            case "i32":
+            case "u32":
+                return "Integer";
+            case "Value":
+            case "serde_json::Value":
+                return "com.fasterxml.jackson.databind.JsonNode";
+            default:
+                // For unrecognized inner types, pass through verbatim.
+                return s;
+        }
     }
 
     private static String shapeConceptName(Jcs.Obj shape) {

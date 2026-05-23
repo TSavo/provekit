@@ -721,25 +721,47 @@ public final class TermShapeLifter {
             // Multiple declarators in one expr emit as a seq.
             List<Json> assigns = new ArrayList<>();
             for (var v : vde.getVariables()) {
-                // #1391 follow-on: preserve explicit type annotation ONLY
-                // when the initializer is a generic-constructor that the
-                // rust compiler can't type-infer (Vec::new(), BTreeSet::new(),
-                // HashMap::new()). Rust's local inference handles plain
-                // typed bindings; emitting `let x: String = call()` when
-                // source had `let x = call()` adds noise.
+                // #1391 follow-on: preserve explicit type annotation
+                // whenever it is a recognized generic-container type
+                // (java.util.List<T>, BTreeSet<T>, HashMap<K,V>, etc.),
+                // regardless of the initializer shape. Rust realize's
+                // java_type_to_rust_let_annotation maps these to their
+                // rust-side equivalents (Vec<T>, BTreeSet<T>, …). For
+                // unrecognized types the annotation would be wrong, so
+                // we suppress and let rust's local type inference fill in.
                 //
-                // Test: initializer is `new <FQN><>()` with no args — the
-                // generic-container case the rust source MUST annotate.
+                // Rule: declaredType is non-`var` AND its head matches one
+                // of the container families that have a rust equivalent.
                 String declaredType = v.getType().asString();
                 boolean propagateType = false;
-                if (v.getInitializer().isPresent()
-                        && v.getInitializer().get() instanceof com.github.javaparser.ast.expr.ObjectCreationExpr oce0
-                        && oce0.getArguments().isEmpty()) {
-                    String initType = oce0.getType().asString().replaceFirst("<.*>", "");
-                    if (initType.endsWith("ArrayList") || initType.endsWith("TreeSet")
-                            || initType.endsWith("HashMap") || initType.endsWith("TreeMap")
-                            || initType.endsWith("HashSet") || initType.endsWith("LinkedList")) {
-                        propagateType = !declaredType.equals("var");
+                if (!declaredType.equals("var")) {
+                    // Strip generics for head check.
+                    String head = declaredType;
+                    int lt = head.indexOf('<');
+                    if (lt >= 0) head = head.substring(0, lt);
+                    head = head.trim();
+                    // Recognized container families (java.util.* or simple form).
+                    if (head.endsWith("ArrayList") || head.endsWith("List")
+                            || head.endsWith("TreeSet") || head.endsWith("HashSet")
+                            || head.endsWith("LinkedList") || head.endsWith("Set")
+                            || head.endsWith("HashMap") || head.endsWith("TreeMap")
+                            || head.endsWith("Map")) {
+                        propagateType = true;
+                    }
+                    // Backstop: if the initializer is `new X<>()` with no
+                    // args, always propagate (the original rule). Required
+                    // for `let x = Vec::new()` style where the inner type
+                    // can't be inferred from the call.
+                    if (!propagateType
+                            && v.getInitializer().isPresent()
+                            && v.getInitializer().get() instanceof com.github.javaparser.ast.expr.ObjectCreationExpr oce0
+                            && oce0.getArguments().isEmpty()) {
+                        String initType = oce0.getType().asString().replaceFirst("<.*>", "");
+                        if (initType.endsWith("ArrayList") || initType.endsWith("TreeSet")
+                                || initType.endsWith("HashMap") || initType.endsWith("TreeMap")
+                                || initType.endsWith("HashSet") || initType.endsWith("LinkedList")) {
+                            propagateType = true;
+                        }
                     }
                 }
                 Json nameLeaf;
