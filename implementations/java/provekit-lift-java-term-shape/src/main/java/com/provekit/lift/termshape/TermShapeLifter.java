@@ -523,6 +523,17 @@ public final class TermShapeLifter {
                     return jsonMacro.get();
                 }
             }
+            // Iterator chain recognition: rust `X.iter().filter_map(c).collect()`
+            // lowers to java `StreamSupport.stream(X.spliterator(), false)
+            //   .map(c).filter(Objects::nonNull).collect(Collectors.toList())`.
+            // Detect the canonical .collect(Collectors.toList()) form +
+            // walk back through the chain.
+            if ("collect".equals(name) && m.getArguments().size() == 1) {
+                Optional<Jcs.Json> iterChain = tryRecognizeIteratorChain(m, losses);
+                if (iterChain.isPresent()) {
+                    return iterChain.get();
+                }
+            }
             // com.provekit.runtime.Substrate.X — the runtime helpers
             // that carry concept identity at runtime. Both the citation
             // path and the syntax path produce the same canonical concept.
@@ -724,6 +735,73 @@ public final class TermShapeLifter {
         return Optional.of(Jcs.object(
             "args", new Jcs.Arr(java.util.List.of(pathLeaf, tokensLeaf)),
             "concept_name", Jcs.string("concept:macro-call")
+        ));
+    }
+
+    /** Recognize rust's `X.iter().filter_map(c).collect()` chain from the
+     *  java emission `StreamSupport.stream(X.spliterator(), false)
+     *  .map(c).filter(Objects::nonNull).collect(Collectors.toList())`.
+     *  Returns concept:call chain mirroring the rust source form. */
+    private Optional<Jcs.Json> tryRecognizeIteratorChain(MethodCallExpr collectCall, List<Json> losses) {
+        // Verify collect arg is Collectors.toList() (or similar).
+        String collectArg = collectCall.getArgument(0).toString();
+        if (!collectArg.contains("Collectors.toList") && !collectArg.contains("Collectors.toUnmodifiableList")) {
+            return Optional.empty();
+        }
+        // Receiver of collect: should be .filter(...) of .map(...) of StreamSupport.stream(...).
+        com.github.javaparser.ast.expr.Expression recv = collectCall.getScope().orElse(null);
+        if (!(recv instanceof MethodCallExpr filterCall)) return Optional.empty();
+        if (!"filter".equals(filterCall.getNameAsString())) return Optional.empty();
+        com.github.javaparser.ast.expr.Expression filterRecv = filterCall.getScope().orElse(null);
+        if (!(filterRecv instanceof MethodCallExpr mapCall)) return Optional.empty();
+        if (!"map".equals(mapCall.getNameAsString())) return Optional.empty();
+        com.github.javaparser.ast.expr.Expression mapRecv = mapCall.getScope().orElse(null);
+        if (!(mapRecv instanceof MethodCallExpr streamCall)) return Optional.empty();
+        if (!"stream".equals(streamCall.getNameAsString())) return Optional.empty();
+        String streamScope = streamCall.getScope().map(Object::toString).orElse("");
+        if (!streamScope.contains("StreamSupport")) return Optional.empty();
+        // Stream args: (X.spliterator(), false). Extract X.
+        if (streamCall.getArguments().isEmpty()) return Optional.empty();
+        com.github.javaparser.ast.expr.Expression splitArg = streamCall.getArgument(0);
+        // Unwrap any casts.
+        while (splitArg instanceof com.github.javaparser.ast.expr.CastExpr cast) {
+            splitArg = cast.getExpression();
+        }
+        if (!(splitArg instanceof MethodCallExpr splitCall)) return Optional.empty();
+        if (!"spliterator".equals(splitCall.getNameAsString())) return Optional.empty();
+        // The source data is splitCall's receiver.
+        com.github.javaparser.ast.expr.Expression sourceExpr = splitCall.getScope().orElse(null);
+        if (sourceExpr == null) return Optional.empty();
+        // The map closure is the filter_map closure.
+        com.github.javaparser.ast.expr.Expression mapClosure = mapCall.getArgument(0);
+        // Reconstruct as concept:call chain: collect(filter_map(iter(source), closure))
+        Jcs.Json sourceShape = liftExpression(sourceExpr, losses);
+        // .iter() leaf wrapper:
+        Jcs.Json iterChain = Jcs.object(
+            "args", new Jcs.Arr(java.util.List.of(
+                sourceShape,
+                methodConceptLeaf("iter", 0)
+            )),
+            "concept_name", Jcs.string("concept:call")
+        );
+        // .filter_map(closure) chain (skip the explicit filter step —
+        // rust's filter_map IS map-then-filter-non-null fused).
+        Jcs.Json closureShape = liftExpression(mapClosure, losses);
+        Jcs.Json filterMapChain = Jcs.object(
+            "args", new Jcs.Arr(java.util.List.of(
+                iterChain,
+                methodConceptLeaf("filter_map", 1),
+                closureShape
+            )),
+            "concept_name", Jcs.string("concept:call")
+        );
+        // .collect():
+        return Optional.of(Jcs.object(
+            "args", new Jcs.Arr(java.util.List.of(
+                filterMapChain,
+                methodConceptLeaf("collect", 0)
+            )),
+            "concept_name", Jcs.string("concept:call")
         ));
     }
 
