@@ -431,6 +431,10 @@ fn named_term_document_from_ir_document(ir_doc: &Json) -> Result<NamedTermDocume
         })
         .cloned()
         .collect();
+    let trait_decls: Vec<Json> = ir.iter()
+        .filter(|e| e.get("kind").and_then(Json::as_str) == Some("trait-decl"))
+        .cloned()
+        .collect();
     Ok(NamedTermDocument {
         candidate_cluster_manifest: Default::default(),
         gap_records: Vec::new(),
@@ -440,6 +444,7 @@ fn named_term_document_from_ir_document(ir_doc: &Json) -> Result<NamedTermDocume
         source_language: ir_doc.get("sourceLanguage").and_then(Json::as_str).unwrap_or("rust").to_string(),
         terms,
         boundary_entries,
+        trait_decls,
         workspace_root,
     })
 }
@@ -482,7 +487,7 @@ fn lower_named_document(
     // emitter is retired by this — substrate emits its own wrapper.
     let emit_java_wrapper = target == "java" && !named.boundary_entries.is_empty();
     if emit_java_wrapper {
-        out.push_str(&emit_java_module_preamble(&named.boundary_entries));
+        out.push_str(&emit_java_module_preamble(&named.boundary_entries, &named.trait_decls));
     }
     // Substrate-honest per-term loss accounting. Each function's lossy
     // translations register here; non-empty entries are surfaced via a
@@ -593,6 +598,14 @@ fn map_rust_type_to_java(t: &str) -> String {
     if t.starts_with("[u8;") && t.ends_with(']') {
         return "byte[]".to_string();
     }
+    // Slice patterns: `[String]` → java.util.List<String>, `[u8]` → byte[].
+    if t.starts_with('[') && t.ends_with(']') {
+        let inner = &t[1..t.len() - 1];
+        if inner == "u8" {
+            return "byte[]".to_string();
+        }
+        return format!("java.util.List<{}>", map_rust_type_to_java(inner));
+    }
     match t {
         "str" | "&str" | "String" => "String".to_string(),
         "i64" => "long".to_string(),
@@ -631,7 +644,7 @@ fn map_rust_type_to_java(t: &str) -> String {
 /// (so target plugins decide their own file layout); for now the rust
 /// substrate emits the wrapper so the demo's cycle is fully substrate-
 /// native end to end (no hand-written java integration code).
-fn emit_java_module_preamble(boundary_entries: &[Json]) -> String {
+fn emit_java_module_preamble(boundary_entries: &[Json], trait_decls: &[Json]) -> String {
     let mut out = String::new();
     out.push_str("// AUTO-GENERATED from rust @boundary declarations via provekit lower --target java\n");
     out.push_str("package com.provekit.crossplatform;\n\n");
@@ -647,11 +660,43 @@ fn emit_java_module_preamble(boundary_entries: &[Json]) -> String {
     out.push_str("    public static String PROTOCOL_VERSION = \"pep/1.7.0\";\n");
     out.push_str("    public static String IR_VERSION = \"v1.1.0\";\n");
     out.push_str("    public static final byte[] HEX = \"0123456789abcdef\".getBytes();\n\n");
-    out.push_str("    public interface AdapterLifter {\n");
-    out.push_str("        String name();\n");
-    out.push_str("        String surface();\n");
-    out.push_str("        Result<JsonNode, SumVariant> lift(Path workspaceRoot, java.util.List<String> sourcePaths);\n");
-    out.push_str("    }\n\n");
+    // Interfaces lifted from rust trait declarations. The substrate
+    // emits these from `trait-decl` IR entries; the hardcoded
+    // AdapterLifter has been retired.
+    if trait_decls.is_empty() {
+        // Fallback when the lift didn't capture any traits (legacy or
+        // non-rust sources). Keep the demo's interface emit so the
+        // wrapper still compiles. Future: emit nothing here — let the
+        // lift always carry the trait info.
+        out.push_str("    public interface AdapterLifter {\n");
+        out.push_str("        String name();\n");
+        out.push_str("        String surface();\n");
+        out.push_str("        Result<JsonNode, SumVariant> lift(Path workspaceRoot, java.util.List<String> sourcePaths);\n");
+        out.push_str("    }\n\n");
+    } else {
+        for trait_decl in trait_decls {
+            let name = trait_decl.get("name").and_then(Json::as_str).unwrap_or("UnnamedTrait");
+            out.push_str(&format!("    public interface {} {{\n", name));
+            if let Some(methods) = trait_decl.get("methods").and_then(Json::as_array) {
+                for m in methods {
+                    let mname = m.get("name").and_then(Json::as_str).unwrap_or("");
+                    if mname.is_empty() { continue; }
+                    let param_names: Vec<&str> = m.get("param_names").and_then(Json::as_array)
+                        .map(|a| a.iter().filter_map(Json::as_str).collect()).unwrap_or_default();
+                    let param_types: Vec<&str> = m.get("param_types").and_then(Json::as_array)
+                        .map(|a| a.iter().filter_map(Json::as_str).collect()).unwrap_or_default();
+                    let return_type = m.get("return_type").and_then(Json::as_str).unwrap_or("()");
+                    let java_return = map_rust_type_to_java(return_type);
+                    let java_params: Vec<String> = param_names.iter().zip(param_types.iter())
+                        .map(|(n, t)| format!("{} {}", map_rust_type_to_java(t), n))
+                        .collect();
+                    out.push_str(&format!("        {} {}({});\n",
+                        java_return, mname, java_params.join(", ")));
+                }
+            }
+            out.push_str("    }\n\n");
+        }
+    }
     out.push_str("    // \u{2500}\u{2500}\u{2500} @boundary primitives (auto-emitted from rust @boundary declarations) \u{2500}\u{2500}\u{2500}\n");
     for entry in boundary_entries {
         let fn_name = entry.get("source_function_name")

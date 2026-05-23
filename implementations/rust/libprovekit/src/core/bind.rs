@@ -240,6 +240,16 @@ pub struct NamedTermDocument {
         skip_serializing_if = "Vec::is_empty"
     )]
     pub boundary_entries: Vec<Json>,
+    /// Trait declarations lifted from rust source. Each carries the
+    /// trait name + per-method signatures. The target plugin uses these
+    /// to emit native interface declarations (java interface, etc.)
+    /// matching the rust trait — no hand-written interface code.
+    #[serde(
+        default,
+        rename = "traitDecls",
+        skip_serializing_if = "Vec::is_empty"
+    )]
+    pub trait_decls: Vec<Json>,
     #[serde(rename = "workspaceRoot", skip_serializing_if = "Option::is_none")]
     pub workspace_root: Option<String>,
 }
@@ -466,6 +476,7 @@ pub fn bind_term_document(
         source_language,
         terms,
         boundary_entries: Vec::new(),
+        trait_decls: Vec::new(),
         workspace_root,
     })
 }
@@ -1358,6 +1369,11 @@ fn named_term_document_from_op_tree(term: &Term) -> Result<NamedTermDocument, Bi
         terms,
         boundary_entries: document
             .get("boundaryEntries")
+            .and_then(Json::as_array)
+            .cloned()
+            .unwrap_or_default(),
+        trait_decls: document
+            .get("traitDecls")
             .and_then(Json::as_array)
             .cloned()
             .unwrap_or_default(),

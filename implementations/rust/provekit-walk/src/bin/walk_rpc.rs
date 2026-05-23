@@ -616,6 +616,62 @@ fn bind_lift(params: &Value) -> Result<Value, String> {
             }
             entries.push(entry);
         }
+
+        // Trait declarations: walk top-level pub trait items and emit
+        // `trait-decl` entries so the target plugin can synthesize an
+        // interface matching the rust trait. Substrate-honest: the
+        // AdapterLifter interface in the java wrapper comes from the
+        // rust trait declaration, not from hand-written java code.
+        use quote::ToTokens;
+        for item in &file.items {
+            if let syn::Item::Trait(t) = item {
+                let trait_name = t.ident.to_string();
+                let visibility = match &t.vis {
+                    syn::Visibility::Public(_) => "pub",
+                    syn::Visibility::Restricted(_) => "pub(crate)",
+                    syn::Visibility::Inherited => "",
+                };
+                let mut methods: Vec<Value> = Vec::new();
+                for trait_item in &t.items {
+                    if let syn::TraitItem::Fn(m) = trait_item {
+                        let name = m.sig.ident.to_string();
+                        let return_type = match &m.sig.output {
+                            syn::ReturnType::Default => "()".to_string(),
+                            syn::ReturnType::Type(_, ty) => ty.to_token_stream().to_string().replace(' ', ""),
+                        };
+                        let mut param_names: Vec<String> = Vec::new();
+                        let mut param_types: Vec<String> = Vec::new();
+                        for input in &m.sig.inputs {
+                            match input {
+                                syn::FnArg::Receiver(_) => {
+                                    // Skip `&self` / `&mut self` — java interface methods are implicit.
+                                }
+                                syn::FnArg::Typed(pt) => {
+                                    if let syn::Pat::Ident(pi) = &*pt.pat {
+                                        param_names.push(pi.ident.to_string());
+                                    } else {
+                                        param_names.push(pt.pat.to_token_stream().to_string());
+                                    }
+                                    param_types.push(pt.ty.to_token_stream().to_string().replace(' ', ""));
+                                }
+                            }
+                        }
+                        methods.push(json!({
+                            "name": name,
+                            "param_names": param_names,
+                            "param_types": param_types,
+                            "return_type": return_type,
+                        }));
+                    }
+                }
+                entries.push(json!({
+                    "kind": "trait-decl",
+                    "name": trait_name,
+                    "visibility": visibility,
+                    "methods": methods,
+                }));
+            }
+        }
     }
 
     Ok(json!({
