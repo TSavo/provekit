@@ -108,6 +108,18 @@ public final class TermShapeLifter {
         // Detect this canonical 2-statement pattern and emit concept:match.
         Optional<Json> matchRecognized = tryRecognizeMatch(block, losses);
         if (matchRecognized.isPresent()) return matchRecognized.get();
+        // Tuple destructure recognition: rust `let (a, b) = expr;`
+        // emits `Object[] __tuple = expr; var a = __tuple[0]; var b = __tuple[1];`.
+        // Detect this 3-statement (or N+1) pattern and emit
+        // concept:destructure-tuple(value, name1, name2, ...).
+        List<Json> destructure = tryRecognizeTupleDestructure(block, losses);
+        if (destructure != null) {
+            if (destructure.size() == 1) return destructure.get(0);
+            return Jcs.object(
+                "args", new Jcs.Arr(destructure),
+                "concept_name", Jcs.string("concept:seq")
+            );
+        }
         // While-let recognition: rust `while let Some(x) = expr { body }`
         // emits `var x = expr; while (x != null) { body... x = expr; }`.
         // Walk the block looking for this two-stmt run and emit the
@@ -130,6 +142,71 @@ public final class TermShapeLifter {
             "args", new Jcs.Arr(stmts),
             "concept_name", Jcs.string("concept:seq")
         );
+    }
+
+    /** Scan a block for the rust `let (a, b, ...) = expr` emission:
+     *  `Object[] __tuple = expr; var a = __tuple[0]; var b = __tuple[1]; ...`
+     *  Returns the list of lifted statements with the tuple expansion
+     *  collapsed to a single concept:destructure-tuple. */
+    private List<Json> tryRecognizeTupleDestructure(BlockStmt block, List<Json> losses) {
+        List<Statement> stmts = block.getStatements();
+        for (int i = 0; i < stmts.size() - 1; i++) {
+            Statement first = stmts.get(i);
+            String tupleVar = null;
+            com.github.javaparser.ast.expr.Expression initExpr = null;
+            if (first instanceof com.github.javaparser.ast.stmt.ExpressionStmt es
+                    && es.getExpression() instanceof com.github.javaparser.ast.expr.VariableDeclarationExpr vde
+                    && vde.getVariables().size() == 1) {
+                var v0 = vde.getVariable(0);
+                if (v0.getInitializer().isPresent()
+                        && v0.getNameAsString().startsWith("__provekit_tuple")) {
+                    tupleVar = v0.getNameAsString();
+                    initExpr = v0.getInitializer().get();
+                }
+            }
+            if (tupleVar == null) continue;
+            // Collect consecutive `var X = __tuple[N];` statements.
+            List<String> names = new ArrayList<>();
+            int j = i + 1;
+            while (j < stmts.size()) {
+                Statement s = stmts.get(j);
+                if (!(s instanceof com.github.javaparser.ast.stmt.ExpressionStmt sesxs)) break;
+                if (!(sesxs.getExpression() instanceof com.github.javaparser.ast.expr.VariableDeclarationExpr svde)) break;
+                if (svde.getVariables().size() != 1) break;
+                var sv = svde.getVariable(0);
+                if (sv.getInitializer().isEmpty()) break;
+                com.github.javaparser.ast.expr.Expression vinit = sv.getInitializer().get();
+                if (!(vinit instanceof com.github.javaparser.ast.expr.ArrayAccessExpr aae)) break;
+                if (!aae.getName().toString().equals(tupleVar)) break;
+                names.add(sv.getNameAsString());
+                j++;
+            }
+            if (names.isEmpty()) continue;
+            // Build the result: pre-stmts + destructure + post-stmts.
+            List<Json> out = new ArrayList<>();
+            for (int k = 0; k < i; k++) {
+                Json s = liftStatement(stmts.get(k), losses);
+                if (s != null) out.add(s);
+            }
+            List<Json> destructArgs = new ArrayList<>();
+            destructArgs.add(liftExpression(initExpr, losses));
+            for (String n : names) {
+                destructArgs.add(Jcs.object(
+                    "kind", Jcs.string("symbol"),
+                    "text", Jcs.string(n)
+                ));
+            }
+            out.add(Jcs.object(
+                "args", new Jcs.Arr(destructArgs),
+                "concept_name", Jcs.string("concept:destructure-tuple")
+            ));
+            for (int k = j; k < stmts.size(); k++) {
+                Json s = liftStatement(stmts.get(k), losses);
+                if (s != null) out.add(s);
+            }
+            return out;
+        }
+        return null;
     }
 
     /** Scan a block for the rust `while let Some(x) = expr { body }`
@@ -188,16 +265,16 @@ public final class TermShapeLifter {
             );
             Json initShape = liftExpression(initExpr, losses);
             // Body is loop's stmts minus the last (re-assign).
-            List<Json> bodyStmts = new ArrayList<>();
+            // Build a synthetic BlockStmt + run liftBlock to get
+            // multi-stmt pattern recognition (tuple destructure, etc.).
+            com.github.javaparser.ast.NodeList<com.github.javaparser.ast.stmt.Statement> bodyNodes =
+                new com.github.javaparser.ast.NodeList<>();
             for (int j = 0; j < loopStmts.size() - 1; j++) {
-                Json s = liftStatement(loopStmts.get(j), losses);
-                if (s != null) bodyStmts.add(s);
+                bodyNodes.add(loopStmts.get(j));
             }
-            Json bodyShape = bodyStmts.size() == 1 ? bodyStmts.get(0)
-                : Jcs.object(
-                    "args", new Jcs.Arr(bodyStmts),
-                    "concept_name", Jcs.string("concept:seq")
-                );
+            com.github.javaparser.ast.stmt.BlockStmt syntheticBody =
+                new com.github.javaparser.ast.stmt.BlockStmt(bodyNodes);
+            Json bodyShape = liftBlock(syntheticBody, losses);
             out.add(Jcs.object(
                 "args", new Jcs.Arr(List.of(patternLeaf, initShape, bodyShape)),
                 "concept_name", Jcs.string("concept:while-let")
@@ -265,6 +342,31 @@ public final class TermShapeLifter {
             "args", new Jcs.Arr(List.of(scrutShape, arm1, arm2)),
             "concept_name", Jcs.string("concept:match")
         ));
+    }
+
+    /** True if a lifted shape is effectively empty (nothing, concept:skip,
+     *  or a concept:seq with no operative children). Used to detect
+     *  empty else-branches that should fall back to concept:skip. */
+    private boolean isEffectivelyEmpty(Json shape) {
+        if (shape == null) return true;
+        if (!(shape instanceof Jcs.Obj obj)) return false;
+        String cn = null;
+        Jcs.Json args = null;
+        for (Jcs.Field f : obj.fields()) {
+            if ("concept_name".equals(f.key()) && f.value() instanceof Jcs.Str s) cn = s.value();
+            else if ("args".equals(f.key())) args = f.value();
+        }
+        if ("concept:skip".equals(cn)) return true;
+        if ("concept:seq".equals(cn) && args instanceof Jcs.Arr arr && arr.values().isEmpty()) return true;
+        // Empty object {} from non-operation_shape.
+        return obj.fields().isEmpty();
+    }
+
+    private Json skipShape() {
+        return Jcs.object(
+            "args", new Jcs.Arr(List.of()),
+            "concept_name", Jcs.string("concept:skip")
+        );
     }
 
     /** Extract the bound variable name from a pattern string like
@@ -355,12 +457,15 @@ public final class TermShapeLifter {
         if (stmt instanceof IfStmt ifs) {
             Json cond = liftExpression(ifs.getCondition(), losses);
             Json thenBranch = ifs.getThenStmt() instanceof BlockStmt tb ? liftBlock(tb, losses) : liftStatement(ifs.getThenStmt(), losses);
+            // Detect "empty else" (substrate's emit for missing source
+            // `else` is `else { ; }` or `else {}`); treat as concept:skip
+            // so the rust realize omits the else clause.
             Json elseBranch = ifs.getElseStmt()
-                    .map(e -> e instanceof BlockStmt eb ? liftBlock(eb, losses) : liftStatement(e, losses))
-                    .orElseGet(() -> Jcs.object(
-                        "args", new Jcs.Arr(List.of()),
-                        "concept_name", Jcs.string("concept:skip")
-                    ));
+                    .map(e -> {
+                        Json lifted = e instanceof BlockStmt eb ? liftBlock(eb, losses) : liftStatement(e, losses);
+                        return isEffectivelyEmpty(lifted) ? skipShape() : lifted;
+                    })
+                    .orElseGet(this::skipShape);
             return Jcs.object(
                 "args", new Jcs.Arr(List.of(cond, thenBranch, elseBranch)),
                 "concept_name", Jcs.string("concept:conditional")
@@ -862,7 +967,7 @@ public final class TermShapeLifter {
             if ("toString".equals(name) && m.getArguments().isEmpty() && m.getScope().isPresent()) {
                 return liftExpression(m.getScope().get(), losses);
             }
-            // Jackson JsonNode method names → rust serde_json::Value method names.
+            // Jackson JsonNode + java String method names → rust equivalents.
             // These map 1:1 between the substrate's emit and source idiom.
             String rustMethodName = null;
             if (m.getScope().isPresent() && m.getArguments().isEmpty()) {
@@ -876,6 +981,8 @@ public final class TermShapeLifter {
                     case "isArray": rustMethodName = "is_array"; break;
                     case "isObject": rustMethodName = "is_object"; break;
                     case "isString": rustMethodName = "is_string"; break;
+                    case "isEmpty": rustMethodName = "is_empty"; break;
+                    case "toString": rustMethodName = null; break; // already handled
                 }
             }
             if (rustMethodName != null) {
