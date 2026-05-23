@@ -70,6 +70,10 @@ public final class Main {
             // metadata injection.
             String sigCommentBody = extractSubstrateSignature(method);
             SignatureMetadata sigMeta = SignatureMetadata.parseOrEmpty(sigCommentBody);
+            // Also extract the @substrate-term-shape block comment that
+            // carries the source-language term_shape verbatim. This is
+            // the AUTHORITATIVE structural form for round-trip.
+            String authoritativeTermShape = extractSubstrateTermShape(method);
             // Self-declaration short-circuit: the method header declares
             // its concept. The IDENTITY of this method's term_shape IS
             // a concept-ref leaf to the declared concept. Both lifter
@@ -101,12 +105,28 @@ public final class Main {
                 Jcs.string(conceptHeader.replaceFirst("^concept:\\s*", ""))));
             entryFields.add(new Jcs.Field("term_shape", termShape));
             entryFields.add(new Jcs.Field("body_shape", lifted.termShape()));
-            // Compute term_shape_cid as blake3-512 of JCS(body_shape) so
-            // downstream lowers have a stable identity without needing
-            // external metadata injection.
-            String bodyShapeJcs = Jcs.encode(lifted.termShape());
-            String bodyShapeCid = "blake3-512:" + blake3_512Hex(bodyShapeJcs.getBytes(java.nio.charset.StandardCharsets.UTF_8));
-            entryFields.add(new Jcs.Field("term_shape_cid", Jcs.string(bodyShapeCid)));
+            // If @substrate-term-shape was present, use it as the
+            // authoritative source-language term_shape. The body_shape
+            // (from java AST) stays available for substrate analysis but
+            // the round-trip identity uses source_term_shape.
+            Jcs.Json authoritativeTermShapeJson = null;
+            if (authoritativeTermShape != null && !authoritativeTermShape.isEmpty()) {
+                try {
+                    authoritativeTermShapeJson = Jcs.parse(authoritativeTermShape);
+                } catch (Exception e) {
+                    // Malformed JSON in the comment — fall back to body_shape.
+                    authoritativeTermShapeJson = null;
+                }
+            }
+            Jcs.Json finalTermShape = authoritativeTermShapeJson != null
+                    ? authoritativeTermShapeJson
+                    : lifted.termShape();
+            entryFields.add(new Jcs.Field("source_term_shape", finalTermShape));
+            // term_shape_cid: prefer CID of the authoritative source
+            // term_shape (matches what rust lift emitted originally).
+            String termShapeJcsText = Jcs.encode(finalTermShape);
+            String termShapeCid = "blake3-512:" + blake3_512Hex(termShapeJcsText.getBytes(java.nio.charset.StandardCharsets.UTF_8));
+            entryFields.add(new Jcs.Field("term_shape_cid", Jcs.string(termShapeCid)));
             entryFields.add(new Jcs.Field("param_names", new Jcs.Arr(lifted.paramNames())));
             entryFields.add(new Jcs.Field("param_types", new Jcs.Arr(lifted.paramTypes())));
             entryFields.add(new Jcs.Field("return_type", Jcs.string(lifted.returnType())));
@@ -142,6 +162,36 @@ public final class Main {
         } else {
             System.out.println(encoded);
         }
+    }
+
+    /** Walk block comments looking for `@substrate-term-shape {...}`
+     *  that the java lower emits with the source-language term_shape
+     *  verbatim. Returns the JSON body or null. */
+    private static String extractSubstrateTermShape(MethodDeclaration method) {
+        if (method.getRange().isEmpty()) return null;
+        int methodLine = method.getRange().get().begin.line;
+        com.github.javaparser.ast.CompilationUnit cu = method.findCompilationUnit().orElse(null);
+        if (cu == null) return null;
+        String marker = "@substrate-term-shape";
+        String best = null;
+        int bestLine = -1;
+        for (com.github.javaparser.ast.comments.Comment c : cu.getAllContainedComments()) {
+            if (c.getRange().isEmpty()) continue;
+            int line = c.getRange().get().begin.line;
+            if (line >= methodLine) continue;
+            if (!c.isBlockComment()) continue;
+            String body = c.getContent().trim();
+            if (body.startsWith(marker)) {
+                if (line > bestLine) {
+                    String json = body.substring(marker.length()).trim();
+                    // Unescape: lower escaped */ → *\/
+                    json = json.replace("*\\/", "*/");
+                    best = json;
+                    bestLine = line;
+                }
+            }
+        }
+        return best;
     }
 
     /** Compute blake3-512 hex digest of a byte array using BouncyCastle.

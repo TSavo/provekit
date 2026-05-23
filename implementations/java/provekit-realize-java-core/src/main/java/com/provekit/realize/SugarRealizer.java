@@ -356,12 +356,27 @@ final class SugarRealizer {
         sigMetadata.append("\"returnSortCid\":\"").append(jsonStringEscape(returnSortCid)).append("\",");
         sigMetadata.append("\"sourceReturnType\":\"").append(jsonStringEscape(returnType)).append("\"");
         sigMetadata.append("}\n");
-        // Order: @substrate-signature FIRST, concept header IMMEDIATELY
-        // before the method. JavaParser's getComment() returns the
-        // immediate-preceding comment — keeping `concept:` adjacent to
-        // the method declaration lets the java lift's existing
-        // recognition path keep working unchanged.
-        String annotationPrefix = sigMetadata
+        // Embed the source-language term_shape verbatim. The java lift
+        // reads this back as the AUTHORITATIVE structural form for
+        // round-trip — the body_shape derived from java AST encodes
+        // java idioms, not the source's structural form. Cross-language
+        // transport must preserve source structure as DATA, not via
+        // re-derivation from target syntax. Block-comment form so the
+        // JSON's `//` and `*/` don't accidentally terminate the comment.
+        String srcTermShape = currentSourceTermShape.get();
+        String termShapeBlock = "";
+        if (!srcTermShape.isEmpty() && !"{}".equals(srcTermShape)) {
+            termShapeBlock = "    /* @substrate-term-shape "
+                + srcTermShape.replace("*/", "*\\/") + " */\n";
+        }
+        // Order: @substrate-term-shape FIRST (largest, least likely to be
+        // confused with method-attached comment), @substrate-signature
+        // NEXT, concept header IMMEDIATELY before the method. JavaParser's
+        // getComment() returns the immediate-preceding comment — keeping
+        // `concept:` adjacent to the method declaration lets the java
+        // lift's existing recognition path keep working unchanged.
+        String annotationPrefix = termShapeBlock
+                + sigMetadata
                 + "    // concept: " + conceptName + "\n"
                 + contractPrefix(contract)
                 + commentPrefix(contract, sugarEmissions);
@@ -1288,6 +1303,11 @@ final class SugarRealizer {
             ThreadLocal.withInitial(() -> "");
     static final ThreadLocal<List<String>> currentSourceOriginalParamTypes =
             ThreadLocal.withInitial(java.util.List::of);
+    /** Source-language term_shape as JSON. Embedded verbatim in the
+     *  @substrate-term-shape header comment so the java lift can recover
+     *  the authoritative source structural form for round-trip. */
+    static final ThreadLocal<String> currentSourceTermShape =
+            ThreadLocal.withInitial(() -> "");
 
     private static final class ShapeContext {
         final List<String> params;

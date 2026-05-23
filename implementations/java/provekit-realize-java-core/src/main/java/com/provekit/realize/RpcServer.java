@@ -417,6 +417,12 @@ public final class RpcServer {
         SugarRealizer.currentSourceVisibility.set(sourceVisibility);
         SugarRealizer.currentSourceGenericParams.set(sourceGenericParams);
         SugarRealizer.currentSourceOriginalParamTypes.set(sourceOriginalParamTypes);
+        // Carry the source-language term_shape verbatim so the @sugar
+        // header can embed it for round-trip. This is the authoritative
+        // structural form — the java body_shape (re-derived from AST)
+        // would only be a target-language idiom. The substrate cycle
+        // needs the SOURCE's term_shape preserved as data.
+        SugarRealizer.currentSourceTermShape.set(termShape == null ? "" : termShape);
         SugarRealizer.Realization r;
         try {
             r = SugarRealizer.emitStub(emittedFunction, params, paramTypes, paramSortCids, returnType, returnSortCid,
@@ -427,6 +433,7 @@ public final class RpcServer {
             SugarRealizer.currentSourceVisibility.remove();
             SugarRealizer.currentSourceGenericParams.remove();
             SugarRealizer.currentSourceOriginalParamTypes.remove();
+            SugarRealizer.currentSourceTermShape.remove();
         }
         String wrapperRecord = r.observationWrapperEmissionRecord() == null
                 ? ""
