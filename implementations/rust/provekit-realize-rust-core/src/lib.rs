@@ -3229,7 +3229,130 @@ fn function_source(
             )
         }
     });
-    format!("{attr_prefix}{vis_prefix}fn {function}{generic_params}({typed_params}){return_suffix} {{\n{indented}\n}}\n")
+    let assembled = format!("{attr_prefix}{vis_prefix}fn {function}{generic_params}({typed_params}){return_suffix} {{\n{indented}\n}}\n");
+    // #1391 follow-on: macro-body re-indent. rustfmt on stable does NOT
+    // reformat macro internals. The sentinel resolver gives args the
+    // pre-rustfmt column position; when rustfmt re-indents the macro call
+    // line (e.g. moving `format!(` from col 4 to col 12 because it's
+    // inside a closure block), the args stay at their original column.
+    // Fix: run rustfmt over the assembled source, then for each macro call
+    // line in the rustfmt output, re-indent the body between `!(` and the
+    // matching `)` to call_col+4. This closes the run_server diff.
+    rustfmt_then_reindent_macro_bodies(&assembled)
+}
+
+/// Run rustfmt on the assembled function source, then re-indent macro
+/// body lines to match the macro call's final column position. If
+/// rustfmt is unavailable or fails, returns the input unchanged.
+fn rustfmt_then_reindent_macro_bodies(src: &str) -> String {
+    // Try rustfmt first. If it fails (rustfmt not on PATH, parse error,
+    // etc.) fall through to the original sentinel-resolved output.
+    let rustfmt_out = match std::process::Command::new("rustfmt")
+        .arg("--emit=stdout")
+        .arg("--edition=2021")
+        .stdin(std::process::Stdio::piped())
+        .stdout(std::process::Stdio::piped())
+        .stderr(std::process::Stdio::piped())
+        .spawn()
+    {
+        Ok(mut child) => {
+            use std::io::Write;
+            if let Some(stdin) = child.stdin.as_mut() {
+                let _ = stdin.write_all(src.as_bytes());
+            }
+            match child.wait_with_output() {
+                Ok(out) if out.status.success() => {
+                    String::from_utf8_lossy(&out.stdout).to_string()
+                }
+                _ => return src.to_string(),
+            }
+        }
+        Err(_) => return src.to_string(),
+    };
+    reindent_macro_bodies(&rustfmt_out)
+}
+
+/// For each macro call line ending `!(`, find the matching closing `)`
+/// and re-indent every body line to match call_col+4. The closing `)`
+/// is re-indented to match the call_col.
+fn reindent_macro_bodies(text: &str) -> String {
+    let lines: Vec<&str> = text.lines().collect();
+    let mut out: Vec<String> = Vec::with_capacity(lines.len());
+    let mut i = 0;
+    while i < lines.len() {
+        let line = lines[i];
+        let trimmed = line.trim_start();
+        // Detect a macro call line: ends with `!(` after the trimmed text.
+        // Examples: `format!(`, `json!(`, `panic!(`. Ignore lines that
+        // also contain `)` (single-line macro call — nothing to re-indent).
+        if trimmed.ends_with("!(") && !trimmed.contains(')') {
+            let call_indent: String = line.chars().take_while(|c| *c == ' ').collect();
+            let arg_indent = format!("{}    ", call_indent);
+            out.push(line.to_string());
+            i += 1;
+            // Track paren depth to find the matching `)`. Start at 1
+            // (the `!(` we just consumed). Body lines re-indented; the
+            // line containing the matching `)` becomes call_indent + `);`
+            // (or call_indent + `)` if no semicolon, or call_indent + `)?`
+            // etc — preserve the trailing tokens after the closing paren).
+            let mut depth: i32 = 1;
+            while i < lines.len() && depth > 0 {
+                let body_line = lines[i];
+                let body_trim = body_line.trim_start();
+                // Scan for parens but respect strings. The macro body lines
+                // we emit contain JSON-escaped strings; track in-string state.
+                let (new_depth, closes_here, close_col) =
+                    scan_paren_balance(body_trim, depth);
+                if closes_here {
+                    // Closing line: indent at call_indent, then keep the
+                    // trailing characters after the `)`. Reconstruct as
+                    // call_indent + body_trim (preserve the `);` or `)?`).
+                    out.push(format!("{}{}", call_indent, body_trim));
+                    depth = new_depth;
+                } else {
+                    // Continuation body line: re-indent to arg_indent.
+                    out.push(format!("{}{}", arg_indent, body_trim));
+                    depth = new_depth;
+                    let _ = close_col;
+                }
+                i += 1;
+            }
+            continue;
+        }
+        out.push(line.to_string());
+        i += 1;
+    }
+    let mut joined = out.join("\n");
+    // Preserve trailing newline if original had one.
+    if text.ends_with('\n') && !joined.ends_with('\n') {
+        joined.push('\n');
+    }
+    joined
+}
+
+/// Scan a line of code (string-aware) and update paren depth. Returns
+/// (new_depth, does_this_line_close_to_zero, col_of_closing_paren).
+fn scan_paren_balance(line: &str, mut depth: i32) -> (i32, bool, usize) {
+    let mut in_str = false;
+    let mut esc = false;
+    let bytes = line.as_bytes();
+    let mut close_col = 0usize;
+    let mut closed_here = false;
+    for (col, &b) in bytes.iter().enumerate() {
+        if esc { esc = false; continue; }
+        if b == b'\\' { esc = true; continue; }
+        if b == b'"' { in_str = !in_str; continue; }
+        if in_str { continue; }
+        if b == b'(' { depth += 1; }
+        else if b == b')' {
+            depth -= 1;
+            if depth == 0 {
+                closed_here = true;
+                close_col = col;
+            }
+        }
+    }
+    (depth, closed_here, close_col)
 }
 
 /// Resolve macro-arg indent sentinels to depth-aware leading whitespace.
