@@ -236,6 +236,17 @@ public final class TermShapeLifter {
         Json scrutShape = liftExpression(scrutExpr, losses);
         Json arm1Body = thenStmt instanceof BlockStmt tb ? liftBlock(tb, losses) : liftStatement(thenStmt, losses);
         Json arm2Body = elseStmt instanceof BlockStmt eb ? liftBlock(eb, losses) : liftStatement(elseStmt, losses);
+        // Substitute the synthetic binding (__provekit_vN) with the
+        // pattern's named binding (e.g. `v` from `Some(v)`).
+        String patternBinding = extractBindingFromPattern(arm1Pattern);
+        if (patternBinding != null && !patternBinding.equals(binding)) {
+            arm1Body = substituteSymbolBinding(arm1Body, binding, patternBinding);
+        }
+        // Match arms in rust are expressions: `pat => expr,`. When the
+        // arm body is concept:return wrapping a single expression, unwrap
+        // it (rust source's arm form is bare expression).
+        arm1Body = stripTrailingReturn(arm1Body);
+        arm2Body = stripTrailingReturn(arm2Body);
         Json arm1 = Jcs.object(
             "args", new Jcs.Arr(List.of(
                 Jcs.object("kind", Jcs.string("symbol"), "text", Jcs.string(arm1Pattern)),
@@ -254,6 +265,54 @@ public final class TermShapeLifter {
             "args", new Jcs.Arr(List.of(scrutShape, arm1, arm2)),
             "concept_name", Jcs.string("concept:match")
         ));
+    }
+
+    /** Extract the bound variable name from a pattern string like
+     *  "Some(v)", "Err(e)", "Some(v) if !v.is_null()". Returns null
+     *  for non-binding patterns like "_". */
+    private String extractBindingFromPattern(String pattern) {
+        if (pattern == null) return null;
+        int lparen = pattern.indexOf('(');
+        if (lparen < 0) return null;
+        int rparen = pattern.indexOf(')', lparen);
+        if (rparen < 0) return null;
+        String inner = pattern.substring(lparen + 1, rparen).trim();
+        if (inner.isEmpty() || "_".equals(inner)) return null;
+        // For nested patterns like "Type::Variant(x)" return the deepest binding.
+        int innerParen = inner.indexOf('(');
+        if (innerParen > 0) {
+            return extractBindingFromPattern(inner);
+        }
+        return inner;
+    }
+
+    /** Recursively substitute symbol-leaf text from one binding to another
+     *  in a lifted term-shape tree. */
+    private Json substituteSymbolBinding(Json node, String oldName, String newName) {
+        if (!(node instanceof Jcs.Obj obj)) return node;
+        List<Jcs.Field> newFields = new ArrayList<>();
+        for (Jcs.Field f : obj.fields()) {
+            Json v = f.value();
+            if (v instanceof Jcs.Arr arr) {
+                List<Jcs.Json> newArr = new ArrayList<>();
+                for (Jcs.Json e : arr.values()) {
+                    newArr.add(substituteSymbolBinding(e, oldName, newName));
+                }
+                newFields.add(new Jcs.Field(f.key(), new Jcs.Arr(newArr)));
+            } else if (v instanceof Jcs.Obj) {
+                newFields.add(new Jcs.Field(f.key(), substituteSymbolBinding(v, oldName, newName)));
+            } else if (v instanceof Jcs.Str s) {
+                // Rewrite text fields containing the symbol's name.
+                if ("text".equals(f.key()) && oldName.equals(s.value())) {
+                    newFields.add(new Jcs.Field(f.key(), Jcs.string(newName)));
+                } else {
+                    newFields.add(f);
+                }
+            } else {
+                newFields.add(f);
+            }
+        }
+        return new Jcs.Obj(newFields);
     }
 
     /** Heuristic pattern-from-condition mapping. Recognizes the common
@@ -433,7 +492,30 @@ public final class TermShapeLifter {
             );
         }
         if (expr instanceof ConditionalExpr ce) {
-            // Ternary `cond ? then : else` → concept:conditional.
+            // Substrate-symmetric recognition: the substrate's java emit
+            // for rust's `X.unwrap_or(default)` is `(X != null ? X : default)`
+            // (assuming X is Option-like). Recognize this canonical
+            // ternary shape and emit concept:call(X, method:unwrap_or, default).
+            String condText = ce.getCondition().toString().replaceAll("\\s+", "");
+            String thenText = ce.getThenExpr().toString().replaceAll("\\s+", "");
+            String elseText = ce.getElseExpr().toString();
+            // Pattern: X != null ? X : default → X.unwrap_or(default)
+            if (condText.endsWith("!=null") && condText.startsWith(thenText)) {
+                Json optShape = liftExpression(ce.getThenExpr(), losses);
+                Json defaultShape = liftExpression(ce.getElseExpr(), losses);
+                return Jcs.object(
+                    "args", new Jcs.Arr(List.of(
+                        optShape,
+                        methodConceptLeaf("unwrap_or", 1),
+                        defaultShape
+                    )),
+                    "concept_name", Jcs.string("concept:call")
+                );
+            }
+            // Pattern: X != null ? f(X) : default → X.map(|v| f(v)).unwrap_or(default)
+            // (closer to source for transforming-then-defaulting Optionals).
+            // For now: fall through to plain conditional if not the
+            // simple identity-then form.
             return Jcs.object(
                 "args", new Jcs.Arr(List.of(
                     liftExpression(ce.getCondition(), losses),
@@ -494,12 +576,24 @@ public final class TermShapeLifter {
             );
         }
         if (expr instanceof CastExpr cast) {
+            // Map java numeric types to rust equivalents:
+            //  int → usize (when used as array index, which is the common case)
+            //  long → i64; double → f64; char → char.
+            String castType = cast.getType().asString();
+            String rustCastType = switch (castType) {
+                case "int" -> "usize";
+                case "long" -> "i64";
+                case "double" -> "f64";
+                case "float" -> "f32";
+                case "char" -> "char";
+                default -> castType;
+            };
             return Jcs.object(
                 "args", new Jcs.Arr(List.of(
                     liftExpression(cast.getExpression(), losses),
                     Jcs.object(
                         "kind", Jcs.string("type"),
-                        "text", Jcs.string(cast.getType().asString())
+                        "text", Jcs.string(rustCastType)
                     ))),
                 "concept_name", Jcs.string("concept:cast")
             );
@@ -535,6 +629,19 @@ public final class TermShapeLifter {
                 rustType = "BTreeSet";
             } else if (pathTypeStr.equals("java.util.HashMap") || pathTypeStr.endsWith(".HashMap") || pathTypeStr.equals("HashMap")) {
                 rustType = "std::collections::HashMap";
+            } else if (pathTypeStr.equals("StringBuilder") || pathTypeStr.endsWith(".StringBuilder")) {
+                // StringBuilder → String::with_capacity (when N arg) or String::new()
+                if (!oce.getArguments().isEmpty()) {
+                    Json argShape = liftExpression(oce.getArgument(0), losses);
+                    return Jcs.object(
+                        "args", new Jcs.Arr(List.of(
+                            Jcs.object("kind", Jcs.string("path"), "text", Jcs.string("String::with_capacity")),
+                            argShape
+                        )),
+                        "concept_name", Jcs.string("concept:call")
+                    );
+                }
+                rustType = "String";
             }
             // Default: `new Type(args)` → concept:call with ::new path leaf.
             List<Json> args = new ArrayList<>();
@@ -656,6 +763,26 @@ public final class TermShapeLifter {
                     return jsonMacro.get();
                 }
             }
+            // java.util.Objects.equals(a, b) → a == b (rust equality).
+            if ("equals".equals(name) && scopeText.endsWith("Objects") && m.getArguments().size() == 2) {
+                Json a = liftExpression(m.getArgument(0), losses);
+                Json b = liftExpression(m.getArgument(1), losses);
+                return Jcs.object(
+                    "args", new Jcs.Arr(List.of(a, b)),
+                    "concept_name", Jcs.string("concept:eq")
+                );
+            }
+            // java.nio.file.Path.of(X) → PathBuf::from(X).
+            if ("of".equals(name) && scopeText.endsWith("Path") && m.getArguments().size() == 1) {
+                Json argShape = liftExpression(m.getArgument(0), losses);
+                return Jcs.object(
+                    "args", new Jcs.Arr(List.of(
+                        Jcs.object("kind", Jcs.string("path"), "text", Jcs.string("PathBuf::from")),
+                        argShape
+                    )),
+                    "concept_name", Jcs.string("concept:call")
+                );
+            }
             // String.format(fmt, args...) → rust's format! macro.
             if ("format".equals(name) && scopeText.equals("String") && !m.getArguments().isEmpty()) {
                 // Convert java fmt (%s, %d) → rust fmt ({}, {}) in the first arg.
@@ -707,6 +834,80 @@ public final class TermShapeLifter {
                     )),
                     "concept_name", Jcs.string("concept:call")
                 );
+            }
+            // StringBuilder.append(X) → String's push_str (for &str) or push (for char).
+            // The substrate's String::with_capacity path needs `let mut s = ...`
+            // and these calls modify it.
+            if ("append".equals(name) && m.getScope().isPresent() && m.getArguments().size() == 1) {
+                Json recvShape = liftExpression(m.getScope().get(), losses);
+                Json argShape = liftExpression(m.getArgument(0), losses);
+                String argText = m.getArgument(0).toString();
+                // Char-typed (cast as char) → .push(); String-typed → .push_str().
+                String mname = argText.contains("as char") ? "push" : "push_str";
+                return Jcs.object(
+                    "args", new Jcs.Arr(List.of(
+                        recvShape,
+                        methodConceptLeaf(mname, 1),
+                        argShape
+                    )),
+                    "concept_name", Jcs.string("concept:call")
+                );
+            }
+            // StringBuilder.toString() — when called on a String accumulator,
+            // drop the call (rust source has just the tail expression).
+            if ("toString".equals(name) && m.getArguments().isEmpty() && m.getScope().isPresent()) {
+                return liftExpression(m.getScope().get(), losses);
+            }
+            // Jackson JsonNode method names → rust serde_json::Value method names.
+            // These map 1:1 between the substrate's emit and source idiom.
+            String rustMethodName = null;
+            if (m.getScope().isPresent() && m.getArguments().isEmpty()) {
+                switch (name) {
+                    case "asText": rustMethodName = "as_str"; break;
+                    case "asLong": rustMethodName = "as_i64"; break;
+                    case "asInt": rustMethodName = "as_i64"; break;
+                    case "asDouble": rustMethodName = "as_f64"; break;
+                    case "asBoolean": rustMethodName = "as_bool"; break;
+                    case "isNull": rustMethodName = "is_null"; break;
+                    case "isArray": rustMethodName = "is_array"; break;
+                    case "isObject": rustMethodName = "is_object"; break;
+                    case "isString": rustMethodName = "is_string"; break;
+                }
+            }
+            if (rustMethodName != null) {
+                Json recvShape = liftExpression(m.getScope().get(), losses);
+                return Jcs.object(
+                    "args", new Jcs.Arr(List.of(
+                        recvShape,
+                        methodConceptLeaf(rustMethodName, 0)
+                    )),
+                    "concept_name", Jcs.string("concept:call")
+                );
+            }
+            // Function.apply(X) → method call on X. The substrate emits
+            // `((Function) m_ref).apply(arg)` for some translations;
+            // unwrap to just calling m_ref(arg) directly.
+            if ("apply".equals(name) && m.getScope().isPresent() && m.getArguments().size() == 1) {
+                com.github.javaparser.ast.expr.Expression scope = m.getScope().get();
+                while (scope instanceof com.github.javaparser.ast.expr.EnclosedExpr enc) {
+                    scope = enc.getInner();
+                }
+                while (scope instanceof com.github.javaparser.ast.expr.CastExpr cast) {
+                    scope = cast.getExpression();
+                }
+                // If scope is a MethodReferenceExpr (e.g. Value::as_str),
+                // emit as method call: arg.method()
+                if (scope instanceof com.github.javaparser.ast.expr.MethodReferenceExpr mref) {
+                    String mname = mref.getIdentifier();
+                    Json argShape = liftExpression(m.getArgument(0), losses);
+                    return Jcs.object(
+                        "args", new Jcs.Arr(List.of(
+                            argShape,
+                            methodConceptLeaf(mname, 0)
+                        )),
+                        "concept_name", Jcs.string("concept:call")
+                    );
+                }
             }
             // Iterator chain recognition: rust `X.iter().filter_map(c).collect()`
             // lowers to java `StreamSupport.stream(X.spliterator(), false)
