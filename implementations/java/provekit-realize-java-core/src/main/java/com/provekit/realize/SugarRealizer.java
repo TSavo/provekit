@@ -356,8 +356,13 @@ final class SugarRealizer {
         sigMetadata.append("\"returnSortCid\":\"").append(jsonStringEscape(returnSortCid)).append("\",");
         sigMetadata.append("\"sourceReturnType\":\"").append(jsonStringEscape(returnType)).append("\"");
         sigMetadata.append("}\n");
-        String annotationPrefix = "    // concept: " + conceptName + "\n"
-                + sigMetadata
+        // Order: @substrate-signature FIRST, concept header IMMEDIATELY
+        // before the method. JavaParser's getComment() returns the
+        // immediate-preceding comment — keeping `concept:` adjacent to
+        // the method declaration lets the java lift's existing
+        // recognition path keep working unchanged.
+        String annotationPrefix = sigMetadata
+                + "    // concept: " + conceptName + "\n"
                 + contractPrefix(contract)
                 + commentPrefix(contract, sugarEmissions);
 
@@ -1671,9 +1676,13 @@ final class SugarRealizer {
         // The var is declared in the enclosing scope so the loop can refer
         // to it; the loop body can also assume var is non-null.
         if (conceptMatches("concept:while-let", conceptName) && args.size() == 3) {
-            String varName = args.get(0).stringFieldOrNull("text");
+            // Pattern leaf: e.g. "Some(line)", "Ok(v)", "Some (line)".
+            // Extract the binding variable from the pattern. For Some/Ok
+            // we use the inner binding; for raw idents we use as-is.
+            String patternText = args.get(0).stringFieldOrNull("text");
+            if (patternText == null || patternText.isBlank()) return Optional.empty();
+            String varName = extractPatternBinding(patternText);
             if (varName == null || varName.isBlank()) return Optional.empty();
-            varName = varName.trim();
             Optional<ShapeExpression> value = lowerShapeExpression(args.get(1), context, appendPosition(position, 1));
             if (value.isEmpty()) return Optional.empty();
             context.definedSymbols.add(varName);
@@ -1689,6 +1698,91 @@ final class SugarRealizer {
                 "    " + varName + " = " + value.get().text() + ";\n" +
                 "}"
             );
+        }
+        // concept:if-let(pattern_leaf, value, then, else) — rust's
+        // `if let Some(x) = value { then } else { else }`.
+        if (conceptMatches("concept:if-let", conceptName) && args.size() == 4) {
+            String patternText = args.get(0).stringFieldOrNull("text");
+            if (patternText == null || patternText.isBlank()) return Optional.empty();
+            String varName = extractPatternBinding(patternText);
+            Optional<ShapeExpression> value = lowerShapeExpression(args.get(1), context, appendPosition(position, 1));
+            if (value.isEmpty()) return Optional.empty();
+            String thenScopeBinding = (varName != null && !varName.isBlank()) ? varName : "__provekit_if_let";
+            context.definedSymbols.add(thenScopeBinding);
+            Optional<String> thenBody = lowerShapeBranchBody(args.get(2), context, appendPosition(position, 2));
+            Optional<String> elseBody = lowerShapeBranchBody(args.get(3), context, appendPosition(position, 3));
+            if (thenBody.isEmpty() || elseBody.isEmpty()) return Optional.empty();
+            String valueType = value.get().typeName();
+            String decl = (valueType == null || valueType.isBlank() || "Object".equals(valueType)) ? "var" : valueType;
+            return Optional.of(
+                decl + " " + thenScopeBinding + " = " + value.get().text() + ";\n" +
+                "if (" + thenScopeBinding + " != null) {\n" +
+                indentBlock(thenBody.get()) + "\n" +
+                "} else {\n" +
+                indentBlock(elseBody.get()) + "\n" +
+                "}"
+            );
+        }
+        // concept:destructure-tuple(value, name1_leaf, name2_leaf, ...) —
+        // rust's `let (a, b, c) = value`. Java has no tuples; emit as
+        // indexed access on an Object[].
+        if (conceptMatches("concept:destructure-tuple", conceptName) && args.size() >= 2) {
+            Optional<ShapeExpression> value = lowerShapeExpression(args.get(0), context, appendPosition(position, 0));
+            if (value.isEmpty()) return Optional.empty();
+            String tmp = "__provekit_tuple";
+            StringBuilder sb = new StringBuilder();
+            sb.append("Object[] ").append(tmp).append(" = (Object[]) ").append(value.get().text()).append(";\n");
+            for (int i = 1; i < args.size(); i++) {
+                String name = args.get(i).stringFieldOrNull("text");
+                if (name == null || "_".equals(name)) continue;
+                context.definedSymbols.add(name);
+                sb.append("var ").append(name).append(" = ").append(tmp).append("[").append(i - 1).append("];\n");
+            }
+            // Strip trailing newline.
+            String text = sb.toString();
+            if (text.endsWith("\n")) text = text.substring(0, text.length() - 1);
+            return Optional.of(text);
+        }
+        // concept:destructure-struct(value, type_leaf, field_leaf1, ...) —
+        // rust's `let LiftResult { mementos, diagnostics } = value`. Java
+        // emits field-by-field getter access on the value (treated as a
+        // JsonNode since rust struct types are erased to JsonNode at the
+        // java boundary).
+        if (conceptMatches("concept:destructure-struct", conceptName) && args.size() >= 3) {
+            Optional<ShapeExpression> value = lowerShapeExpression(args.get(0), context, appendPosition(position, 0));
+            if (value.isEmpty()) return Optional.empty();
+            String tmp = "__provekit_struct";
+            StringBuilder sb = new StringBuilder();
+            sb.append("var ").append(tmp).append(" = ").append(value.get().text()).append(";\n");
+            for (int i = 2; i < args.size(); i++) {
+                String binding = args.get(i).stringFieldOrNull("text");
+                String fieldName = args.get(i).stringFieldOrNull("field_name");
+                if (fieldName == null || fieldName.isBlank()) fieldName = binding;
+                if (binding == null || binding.isBlank()) continue;
+                context.definedSymbols.add(binding);
+                sb.append("var ").append(binding).append(" = ").append(tmp)
+                  .append(".get(\"").append(fieldName).append("\");\n");
+            }
+            String text = sb.toString();
+            if (text.endsWith("\n")) text = text.substring(0, text.length() - 1);
+            return Optional.of(text);
+        }
+        // concept:try(inner) — rust's `expr?` operator. Java translates via
+        // Substrate.tryUnwrap which mirrors the unwrap-or-propagate.
+        if (conceptMatches("concept:try", conceptName) && args.size() == 1) {
+            Optional<ShapeExpression> inner = lowerShapeExpression(args.get(0), context, appendPosition(position, 0));
+            if (inner.isEmpty()) return Optional.empty();
+            return Optional.of("com.provekit.runtime.Substrate.tryUnwrap("
+                + inner.get().text() + ")");
+        }
+        // concept:item-decl(source_leaf) — function-local items (const,
+        // static, inner fn). Rust's `const HEX = b"..."` has no exact
+        // java equivalent at statement scope; emit as a comment preserving
+        // the rust source text so the substrate identity is captured.
+        if (conceptMatches("concept:item-decl", conceptName) && args.size() >= 1) {
+            String source = args.get(0).stringFieldOrNull("text");
+            if (source == null) return Optional.empty();
+            return Optional.of("// item-decl (rust): " + source.replace("\n", " "));
         }
         if (conceptMatches("concept:while", conceptName) && args.size() == 2) {
             Optional<ShapeExpression> cond = lowerShapeExpression(args.get(0), context, appendPosition(position, 0));
@@ -2954,6 +3048,48 @@ final class SugarRealizer {
         // already containing citation comments don't break parsing.
         return s.replace("*/", "*_/").replace("/*", "/_*")
                 .replace("\n", " ").replace("\r", " ");
+    }
+
+    /** Extract the binding variable from a pattern leaf's text. Examples:
+     *  "Some(line)" → "line", "Ok(v)" → "v", "(a, b)" → "a" (first only),
+     *  "x" → "x". Used by concept:while-let / concept:if-let to derive the
+     *  java variable name from the source-language pattern. */
+    private static String extractPatternBinding(String patternText) {
+        if (patternText == null) return null;
+        String t = patternText.trim();
+        // Strip trailing guard: "Pattern if cond" → "Pattern"
+        int ifIdx = t.indexOf(" if ");
+        if (ifIdx > 0) t = t.substring(0, ifIdx).trim();
+        // Match Constructor(inner) — Some(line), Ok(v), Err(e), etc.
+        int paren = t.indexOf('(');
+        if (paren > 0) {
+            // Find matching close
+            int depth = 0;
+            int close = -1;
+            for (int i = paren; i < t.length(); i++) {
+                char c = t.charAt(i);
+                if (c == '(') depth++;
+                else if (c == ')') {
+                    depth--;
+                    if (depth == 0) { close = i; break; }
+                }
+            }
+            if (close > paren) {
+                String inner = t.substring(paren + 1, close).trim();
+                // For multi-elem patterns (tuples, nested) take first.
+                int comma = inner.indexOf(',');
+                if (comma > 0) inner = inner.substring(0, comma).trim();
+                // Recurse into nested patterns: "Variant(x)" → "x"
+                return extractPatternBinding(inner);
+            }
+        }
+        // Bare identifier or fallback.
+        // Java identifier rules: letters, digits, _, $. First char letter/_.
+        // The pattern might have leading whitespace or `mut` qualifier.
+        t = t.replaceFirst("^mut\\s+", "");
+        // Strip refs: "&v" → "v"
+        t = t.replaceFirst("^&\\s*(mut\\s+)?", "");
+        return t.isBlank() ? null : t;
     }
 
     /** Escape a string for inclusion in a JSON literal. Used to embed
