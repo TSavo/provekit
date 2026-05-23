@@ -108,6 +108,16 @@ public final class TermShapeLifter {
         // Detect this canonical 2-statement pattern and emit concept:match.
         Optional<Json> matchRecognized = tryRecognizeMatch(block, losses);
         if (matchRecognized.isPresent()) return matchRecognized.get();
+        // Struct destructure: `var __provekit_struct = expr; var a = __provekit_struct.get("a"); var b = __provekit_struct.get("b");`
+        // → concept:destructure-struct(expr, type_leaf, a, b)
+        List<Json> structSweep = tryRecognizeStructDestructure(block, losses);
+        if (structSweep != null) {
+            if (structSweep.size() == 1) return structSweep.get(0);
+            return Jcs.object(
+                "args", new Jcs.Arr(structSweep),
+                "concept_name", Jcs.string("concept:seq")
+            );
+        }
         // Tuple destructure recognition: rust `let (a, b) = expr;`
         // emits `Object[] __tuple = expr; var a = __tuple[0]; var b = __tuple[1];`.
         // Detect this 3-statement (or N+1) pattern and emit
@@ -142,6 +152,78 @@ public final class TermShapeLifter {
             "args", new Jcs.Arr(stmts),
             "concept_name", Jcs.string("concept:seq")
         );
+    }
+
+    /** Scan a block for rust's `let TypeName { a, b } = expr;` emission:
+     *  `var __provekit_struct = expr; var a = __provekit_struct.get("a"); ...`
+     *  Returns concept:destructure-struct alongside surrounding statements. */
+    private List<Json> tryRecognizeStructDestructure(BlockStmt block, List<Json> losses) {
+        List<Statement> stmts = block.getStatements();
+        for (int i = 0; i < stmts.size() - 1; i++) {
+            Statement first = stmts.get(i);
+            String structVar = null;
+            com.github.javaparser.ast.expr.Expression initExpr = null;
+            if (first instanceof com.github.javaparser.ast.stmt.ExpressionStmt es
+                    && es.getExpression() instanceof com.github.javaparser.ast.expr.VariableDeclarationExpr vde
+                    && vde.getVariables().size() == 1) {
+                var v0 = vde.getVariable(0);
+                if (v0.getInitializer().isPresent()
+                        && v0.getNameAsString().startsWith("__provekit_struct")) {
+                    structVar = v0.getNameAsString();
+                    initExpr = v0.getInitializer().get();
+                }
+            }
+            if (structVar == null) continue;
+            // Collect `var X = __provekit_struct.get("X");` lines.
+            List<String[]> fields = new ArrayList<>(); // [binding, field-name]
+            int j = i + 1;
+            while (j < stmts.size()) {
+                Statement s = stmts.get(j);
+                if (!(s instanceof com.github.javaparser.ast.stmt.ExpressionStmt sesxs)) break;
+                if (!(sesxs.getExpression() instanceof com.github.javaparser.ast.expr.VariableDeclarationExpr svde)) break;
+                if (svde.getVariables().size() != 1) break;
+                var sv = svde.getVariable(0);
+                if (sv.getInitializer().isEmpty()) break;
+                com.github.javaparser.ast.expr.Expression vinit = sv.getInitializer().get();
+                if (!(vinit instanceof MethodCallExpr getCall)) break;
+                if (!"get".equals(getCall.getNameAsString())) break;
+                if (getCall.getScope().isEmpty()
+                        || !getCall.getScope().get().toString().equals(structVar)) break;
+                if (getCall.getArguments().size() != 1) break;
+                String fieldKey = getCall.getArgument(0).toString();
+                if (fieldKey.startsWith("\"") && fieldKey.endsWith("\"")) {
+                    fieldKey = fieldKey.substring(1, fieldKey.length() - 1);
+                }
+                fields.add(new String[]{sv.getNameAsString(), fieldKey});
+                j++;
+            }
+            if (fields.isEmpty()) continue;
+            List<Json> out = new ArrayList<>();
+            for (int k = 0; k < i; k++) {
+                Json s = liftStatement(stmts.get(k), losses);
+                if (s != null) out.add(s);
+            }
+            List<Json> destructArgs = new ArrayList<>();
+            destructArgs.add(liftExpression(initExpr, losses));
+            destructArgs.add(Jcs.object("kind", Jcs.string("type"), "text", Jcs.string("LiftResult")));
+            for (String[] f : fields) {
+                destructArgs.add(Jcs.object(
+                    "kind", Jcs.string("symbol"),
+                    "text", Jcs.string(f[0]),
+                    "field_name", Jcs.string(f[1])
+                ));
+            }
+            out.add(Jcs.object(
+                "args", new Jcs.Arr(destructArgs),
+                "concept_name", Jcs.string("concept:destructure-struct")
+            ));
+            for (int k = j; k < stmts.size(); k++) {
+                Json s = liftStatement(stmts.get(k), losses);
+                if (s != null) out.add(s);
+            }
+            return out;
+        }
+        return null;
     }
 
     /** Scan a block for the rust `let (a, b, ...) = expr` emission:
