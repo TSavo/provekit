@@ -384,6 +384,15 @@ fn bind_lift(params: &Value) -> Result<Value, String> {
                 base_has_operator,
             );
             let param_names = fn_param_names(item_fn);
+            let param_types = sugar_param_types(item_fn);
+            let original_param_types = sugar_original_param_types(item_fn);
+            let return_type = sugar_return_type(item_fn);
+            let generic_params = sugar_generic_params(item_fn);
+            let visibility = match &item_fn.vis {
+                syn::Visibility::Public(_) => "pub",
+                syn::Visibility::Restricted(_) => "pub(crate)",
+                syn::Visibility::Inherited => "",
+            };
             let function_symbol = format!("{fn_name}@{rel}");
             let fallback_function_symbol = format!("{}@{rel}", target.source_name);
             let witnesses = witnesses_by_symbol
@@ -395,6 +404,11 @@ fn bind_lift(params: &Value) -> Result<Value, String> {
             let mut entry = json!({
                 "kind": "bind-lift-entry",
                 "param_names": param_names,
+                "param_types": param_types,
+                "original_param_types": original_param_types,
+                "return_type": return_type,
+                "generic_params": generic_params,
+                "visibility": visibility,
                 "term_shape": cvalue_to_json(&term_shape),
                 "term_shape_cid": term_shape_cid,
                 "operand_bindings": operand_bindings,
