@@ -3013,6 +3013,18 @@ fn shape_of_expr(expr: &syn::Expr, ctx: &ShapeContext) -> Arc<CValue> {
             } else {
                 return non_operation_shape();
             };
+            // catalog-driven abstraction recognition (#1391): nullary path
+            // calls Vec::new() / HashMap::new() map to abstraction operators.
+            if e.args.is_empty() {
+                let abstraction = match callee_text.as_str() {
+                    "Vec::new" => Some("concept:list-create"),
+                    "HashMap::new" => Some("concept:map-create"),
+                    _ => None,
+                };
+                if let Some(concept) = abstraction {
+                    return gamma_operation(concept, vec![]);
+                }
+            }
             // args[0]: callee path leaf (kind:"path", text:"blake3::Hasher::new")
             // args[1..]: call arguments, matching bindings_of_expr layout above.
             let callee_leaf = CValue::object([
@@ -3024,12 +3036,29 @@ fn shape_of_expr(expr: &syn::Expr, ctx: &ShapeContext) -> Arc<CValue> {
             gamma_operation("concept:call", args)
         }
         syn::Expr::MethodCall(e) => {
+            // catalog-driven abstraction recognition (#1391): when the
+            // method+arity matches a catalog'd realization, emit the
+            // abstraction operator directly instead of concept:call wrapping
+            // a method:<name> leaf. Both sides do the same; the cycle
+            // collapses to the abstraction at the substrate seam.
+            let m_name = e.method.to_string();
+            if e.args.is_empty() {
+                let abstraction = match m_name.as_str() {
+                    "as_bytes" => Some("concept:utf8-encode"),
+                    "as_str" => Some("concept:json-text-coerce"),
+                    "is_some" => Some("concept:option-is-some"),
+                    _ => None,
+                };
+                if let Some(concept) = abstraction {
+                    return gamma_operation(concept, vec![shape_of_expr(&e.receiver, ctx)]);
+                }
+            }
             // args[0]: receiver shape, matching bindings_of_expr layout above.
             // args[1]: canonical method-concept leaf (kind:"method",
             // concept_name:"method:<name>", arity:<n>, op_cid:<derived>).
             // The CID is determined by structure — no minting required.
             // args[2..]: call arguments.
-            let method_leaf = method_concept_leaf(&e.method.to_string(), e.args.len());
+            let method_leaf = method_concept_leaf(&m_name, e.args.len());
             let mut args = vec![
                 shape_of_expr(&e.receiver, ctx),
                 method_leaf,

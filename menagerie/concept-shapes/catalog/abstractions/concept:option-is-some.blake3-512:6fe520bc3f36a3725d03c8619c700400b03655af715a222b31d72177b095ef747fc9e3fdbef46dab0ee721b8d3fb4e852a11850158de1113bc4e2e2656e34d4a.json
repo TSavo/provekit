@@ -1,0 +1,43 @@
+{
+  "memento": {
+    "kind": "concept-abstraction",
+    "operator": "concept:option-is-some",
+    "tier": "abstraction",
+    "slots": [],
+    "formals": [
+      "o"
+    ],
+    "formal_sorts": [
+      {
+        "kind": "ctor",
+        "name": "OptionOfA",
+        "args": []
+      }
+    ],
+    "result_sort": {
+      "kind": "ctor",
+      "name": "Bool",
+      "args": []
+    },
+    "contract": {
+      "kind": "wp-rule",
+      "formals": [],
+      "body": {
+        "kind": "atomic",
+        "name": "true",
+        "args": []
+      }
+    },
+    "contract_note": "Predicate: is the option present (Some)?",
+    "realizations": [
+      "blake3-512:e2b5bbb1989387f2d3068bf52a3ab61a23767d27cf00e43a374aa29e1e1050c6c33bce10c18d8fe79e3681ed90c7eaa4015a0d27f0152cbb95d9081de3764d26",
+      "blake3-512:f1823f03c1b2cdd5eb6afb4e7c0baaaea22a37848e928f7fd0ca321b5846e571e94fb04583276966420fcc1e2cba5eab63b7789a7475f3a2c3fed9b4fc632555"
+    ]
+  },
+  "cid": "blake3-512:6fe520bc3f36a3725d03c8619c700400b03655af715a222b31d72177b095ef747fc9e3fdbef46dab0ee721b8d3fb4e852a11850158de1113bc4e2e2656e34d4a",
+  "signature": {
+    "alg": "ed25519",
+    "key_id": "UNSIGNED_DEV_ONLY",
+    "sig_b64": "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"
+  }
+}

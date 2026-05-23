@@ -1,0 +1,49 @@
+{
+  "memento": {
+    "kind": "concept-abstraction",
+    "operator": "concept:format-string-interp",
+    "tier": "abstraction",
+    "slots": [],
+    "formals": [
+      "fmt",
+      "args"
+    ],
+    "formal_sorts": [
+      {
+        "kind": "ctor",
+        "name": "FormatString",
+        "args": []
+      },
+      {
+        "kind": "ctor",
+        "name": "ListOfValue",
+        "args": []
+      }
+    ],
+    "result_sort": {
+      "kind": "ctor",
+      "name": "String",
+      "args": []
+    },
+    "contract": {
+      "kind": "wp-rule",
+      "formals": [],
+      "body": {
+        "kind": "atomic",
+        "name": "true",
+        "args": []
+      }
+    },
+    "contract_note": "Format-string interpolation: substitute positional args into fmt placeholders.",
+    "realizations": [
+      "blake3-512:4cd4f879d512243e4ab4e4f70b3bd5203bd553414cceb1cd04327ae13a279a451e75a9a6592abd8a2ffeb58676415b3adf858937b6834f7ee1f94696be46f94c",
+      "blake3-512:13d224b3efc48a7a3ee79a3e78bd116ff0879fe78f3f97022d1c385fcc5d4d1f13ef249efc5779d2422417e185b37dddc26892dfe7758f4f572c6eb5d5a0ee35"
+    ]
+  },
+  "cid": "blake3-512:d563fec34f6faf285d8ff9807dd0331e35a9c060adb6cc2b034c02fdd85e39b086f1f8ad68b5bad7d697b30bdbda10139fc200b3a17423bcc63683bad589970b",
+  "signature": {
+    "alg": "ed25519",
+    "key_id": "UNSIGNED_DEV_ONLY",
+    "sig_b64": "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"
+  }
+}

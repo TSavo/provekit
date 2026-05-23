@@ -1044,6 +1044,53 @@ fn lower_term_shape_expression(
             type_name: String::new(),
         });
     }
+    if concept_name == "concept:utf8-encode" {
+        // catalog #1391: concept:utf8-encode->rust:str-as-bytes — emit `s.as_bytes()`.
+        if args.is_empty() {
+            return None;
+        }
+        let recv = lower_term_shape_expression(args[0], context, &append_position(position, 0))?;
+        return Some(ShapeExpression {
+            text: format!("{}.as_bytes()", recv.text),
+            type_name: String::new(),
+        });
+    }
+    if concept_name == "concept:json-text-coerce" {
+        // catalog #1391: concept:json-text-coerce->rust:serde-value-as-str — emit `v.as_str()`.
+        if args.is_empty() {
+            return None;
+        }
+        let recv = lower_term_shape_expression(args[0], context, &append_position(position, 0))?;
+        return Some(ShapeExpression {
+            text: format!("{}.as_str()", recv.text),
+            type_name: String::new(),
+        });
+    }
+    if concept_name == "concept:option-is-some" {
+        // catalog #1391: concept:option-is-some->rust:option-is-some — emit `o.is_some()`.
+        if args.is_empty() {
+            return None;
+        }
+        let recv = lower_term_shape_expression(args[0], context, &append_position(position, 0))?;
+        return Some(ShapeExpression {
+            text: format!("{}.is_some()", recv.text),
+            type_name: "bool".to_string(),
+        });
+    }
+    if concept_name == "concept:list-create" {
+        // catalog #1391: concept:list-create->rust:vec-new — emit `Vec::new()`.
+        return Some(ShapeExpression {
+            text: "Vec::new()".to_string(),
+            type_name: String::new(),
+        });
+    }
+    if concept_name == "concept:map-create" {
+        // catalog #1391: concept:map-create->rust:hashmap-new — emit `HashMap::new()`.
+        return Some(ShapeExpression {
+            text: "HashMap::new()".to_string(),
+            type_name: String::new(),
+        });
+    }
     if concept_name == "concept:value-clone" {
         // Substrate.cloneOf(x) → x.cloned() (rust source-form)
         if args.is_empty() {

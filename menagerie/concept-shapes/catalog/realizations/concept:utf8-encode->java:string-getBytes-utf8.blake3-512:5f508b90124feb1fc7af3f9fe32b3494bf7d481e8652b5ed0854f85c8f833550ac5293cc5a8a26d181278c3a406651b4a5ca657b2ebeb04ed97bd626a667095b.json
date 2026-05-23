@@ -1,0 +1,53 @@
+{
+  "memento": {
+    "kind": "equation",
+    "fn_name": "concept:utf8-encode->java:string-getBytes-utf8",
+    "formals": [
+      "s"
+    ],
+    "formal_sorts": [
+      {
+        "kind": "ctor",
+        "name": "String",
+        "args": []
+      }
+    ],
+    "post": {
+      "lhs": {
+        "kind": "op",
+        "name": "concept:utf8-encode",
+        "args": [
+          {
+            "kind": "var",
+            "name": "s"
+          }
+        ]
+      },
+      "rhs": {
+        "kind": "op",
+        "name": "java:string-getBytes-utf8",
+        "args": [
+          {
+            "kind": "var",
+            "name": "s"
+          }
+        ]
+      }
+    },
+    "role": "abstraction-realization",
+    "direction": "left-to-right",
+    "target_lang": "java",
+    "target_library": "java-language-builtin",
+    "loss_record": {
+      "structural_divergence": "java getBytes(StandardCharsets.UTF_8) allocates new byte[]"
+    },
+    "discharge_receipt": "deferred:pending-pk-1391",
+    "effects": []
+  },
+  "cid": "blake3-512:5f508b90124feb1fc7af3f9fe32b3494bf7d481e8652b5ed0854f85c8f833550ac5293cc5a8a26d181278c3a406651b4a5ca657b2ebeb04ed97bd626a667095b",
+  "signature": {
+    "alg": "ed25519",
+    "key_id": "UNSIGNED_DEV_ONLY",
+    "sig_b64": "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"
+  }
+}

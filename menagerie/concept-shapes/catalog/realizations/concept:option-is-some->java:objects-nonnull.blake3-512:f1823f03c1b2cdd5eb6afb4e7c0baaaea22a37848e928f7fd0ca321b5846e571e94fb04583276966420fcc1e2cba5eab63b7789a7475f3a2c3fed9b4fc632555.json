@@ -1,0 +1,53 @@
+{
+  "memento": {
+    "kind": "equation",
+    "fn_name": "concept:option-is-some->java:objects-nonnull",
+    "formals": [
+      "o"
+    ],
+    "formal_sorts": [
+      {
+        "kind": "ctor",
+        "name": "OptionOfA",
+        "args": []
+      }
+    ],
+    "post": {
+      "lhs": {
+        "kind": "op",
+        "name": "concept:option-is-some",
+        "args": [
+          {
+            "kind": "var",
+            "name": "o"
+          }
+        ]
+      },
+      "rhs": {
+        "kind": "op",
+        "name": "java:objects-nonnull",
+        "args": [
+          {
+            "kind": "var",
+            "name": "o"
+          }
+        ]
+      }
+    },
+    "role": "abstraction-realization",
+    "direction": "left-to-right",
+    "target_lang": "java",
+    "target_library": "java-language-builtin",
+    "loss_record": {
+      "structural_divergence": "java Objects.nonNull(v) inverts null-check; nullable reference is the option encoding"
+    },
+    "discharge_receipt": "deferred:pending-pk-1391",
+    "effects": []
+  },
+  "cid": "blake3-512:f1823f03c1b2cdd5eb6afb4e7c0baaaea22a37848e928f7fd0ca321b5846e571e94fb04583276966420fcc1e2cba5eab63b7789a7475f3a2c3fed9b4fc632555",
+  "signature": {
+    "alg": "ed25519",
+    "key_id": "UNSIGNED_DEV_ONLY",
+    "sig_b64": "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"
+  }
+}

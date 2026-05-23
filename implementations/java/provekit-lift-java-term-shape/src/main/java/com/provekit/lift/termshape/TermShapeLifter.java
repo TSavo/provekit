@@ -803,12 +803,29 @@ public final class TermShapeLifter {
                     "concept_name", Jcs.string("concept:sum-variant-construct")
                 );
             }
+            // catalog #1391: nullary collection constructors are abstractions.
+            // new ArrayList<>() → concept:list-create; new HashMap<>() → concept:map-create.
+            String pathTypeStr0 = typeStr.replaceFirst("<.*>", "");
+            if (oce.getArguments().isEmpty()) {
+                if (pathTypeStr0.equals("java.util.ArrayList") || pathTypeStr0.endsWith(".ArrayList") || pathTypeStr0.equals("ArrayList")) {
+                    return Jcs.object(
+                        "args", new Jcs.Arr(List.of()),
+                        "concept_name", Jcs.string("concept:list-create")
+                    );
+                }
+                if (pathTypeStr0.equals("java.util.HashMap") || pathTypeStr0.endsWith(".HashMap") || pathTypeStr0.equals("HashMap")) {
+                    return Jcs.object(
+                        "args", new Jcs.Arr(List.of()),
+                        "concept_name", Jcs.string("concept:map-create")
+                    );
+                }
+            }
             // Map common java types back to rust equivalents for
             // substrate-symmetric closure. `java.util.ArrayList` was the
             // substrate's emit for `Vec`; `java.util.TreeSet` for `BTreeSet`.
             // Strip diamond `<>` (java's inferred-generics) since rust's
             // `::new()` doesn't need it.
-            String pathTypeStr = typeStr.replaceFirst("<.*>", "");
+            String pathTypeStr = pathTypeStr0;
             String rustType = pathTypeStr;
             if (pathTypeStr.equals("java.util.ArrayList") || pathTypeStr.endsWith(".ArrayList") || pathTypeStr.equals("ArrayList")) {
                 rustType = "Vec";
@@ -996,20 +1013,16 @@ public final class TermShapeLifter {
                     "concept_name", Jcs.string("concept:macro-call")
                 );
             }
-            // .getBytes(StandardCharsets.UTF_8) → .as_bytes()
+            // .getBytes(StandardCharsets.UTF_8) → concept:utf8-encode(recv)
+            // catalog: concept:utf8-encode->java:string-getBytes-utf8 (#1391)
             if ("getBytes".equals(name) && m.getArguments().size() == 1
-                    && m.getArgument(0).toString().contains("StandardCharsets")) {
-                // emit as concept:call(receiver, method:as_bytes)
-                if (m.getScope().isPresent()) {
-                    Json recvShape = liftExpression(m.getScope().get(), losses);
-                    return Jcs.object(
-                        "args", new Jcs.Arr(List.of(
-                            recvShape,
-                            methodConceptLeaf("as_bytes", 0)
-                        )),
-                        "concept_name", Jcs.string("concept:call")
-                    );
-                }
+                    && m.getArgument(0).toString().contains("StandardCharsets")
+                    && m.getScope().isPresent()) {
+                Json recvShape = liftExpression(m.getScope().get(), losses);
+                return Jcs.object(
+                    "args", new Jcs.Arr(List.of(recvShape)),
+                    "concept_name", Jcs.string("concept:utf8-encode")
+                );
             }
             // .length() → .len()
             if ("length".equals(name) && m.getArguments().isEmpty() && m.getScope().isPresent()) {
@@ -1018,6 +1031,36 @@ public final class TermShapeLifter {
                     "args", new Jcs.Arr(List.of(
                         recvShape,
                         methodConceptLeaf("len", 0)
+                    )),
+                    "concept_name", Jcs.string("concept:call")
+                );
+            }
+            // Java collection method name maps to rust equivalents.
+            // List.add(x) → Vec::push(x); Set.add(x) → BTreeSet::insert(x).
+            // The substrate's java emit doesn't carry the receiver type,
+            // so we use a conservative mapping: when scope is a known
+            // Vec-like binding, use .push; else .insert. For now: emit
+            // both as .push (Vec) or .insert (Set) via a simple name-
+            // based heuristic. The receiver's binding name typically
+            // hints the type (ir_entries → Vec; seen_names → BTreeSet).
+            if ("add".equals(name) && m.getScope().isPresent() && m.getArguments().size() == 1) {
+                String recvName = m.getScope().get().toString();
+                String mname;
+                // Conservative heuristic: receivers ending in `_names` or
+                // `_set` are sets (BTreeSet); others are Vecs.
+                if (recvName.endsWith("_names") || recvName.endsWith("_set")
+                        || recvName.endsWith("Names") || recvName.endsWith("Set")) {
+                    mname = "insert";
+                } else {
+                    mname = "push";
+                }
+                Json recvShape = liftExpression(m.getScope().get(), losses);
+                Json argShape = liftExpression(m.getArgument(0), losses);
+                return Jcs.object(
+                    "args", new Jcs.Arr(List.of(
+                        recvShape,
+                        methodConceptLeaf(mname, 1),
+                        argShape
                     )),
                     "concept_name", Jcs.string("concept:call")
                 );
@@ -1048,6 +1091,31 @@ public final class TermShapeLifter {
             // drop the call (rust source has just the tail expression).
             if ("toString".equals(name) && m.getArguments().isEmpty() && m.getScope().isPresent()) {
                 return liftExpression(m.getScope().get(), losses);
+            }
+            // catalog #1391: instance methods that realize concept hubs.
+            if (m.getScope().isPresent() && m.getArguments().isEmpty()) {
+                String abstraction = null;
+                switch (name) {
+                    case "asText": abstraction = "concept:json-text-coerce"; break;
+                    default: break;
+                }
+                if (abstraction != null) {
+                    Json recvShape = liftExpression(m.getScope().get(), losses);
+                    return Jcs.object(
+                        "args", new Jcs.Arr(List.of(recvShape)),
+                        "concept_name", Jcs.string(abstraction)
+                    );
+                }
+            }
+            // catalog #1391: Objects.nonNull(x) → concept:option-is-some(x).
+            if ("nonNull".equals(name) && m.getArguments().size() == 1
+                    && m.getScope().isPresent()
+                    && m.getScope().get().toString().endsWith("Objects")) {
+                Json argShape = liftExpression(m.getArgument(0), losses);
+                return Jcs.object(
+                    "args", new Jcs.Arr(List.of(argShape)),
+                    "concept_name", Jcs.string("concept:option-is-some")
+                );
             }
             // Jackson JsonNode + java String method names → rust equivalents.
             // These map 1:1 between the substrate's emit and source idiom.

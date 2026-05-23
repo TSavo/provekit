@@ -1787,6 +1787,32 @@ final class SugarRealizer {
             if (text.endsWith("\n")) text = text.substring(0, text.length() - 1);
             return Optional.of(text);
         }
+        // catalog #1391: concept:utf8-encode->java:string-getBytes-utf8.
+        if (conceptMatches("concept:utf8-encode", conceptName) && args.size() == 1) {
+            Optional<ShapeExpression> recv = lowerShapeExpression(args.get(0), context, appendPosition(position, 0));
+            if (recv.isEmpty()) return Optional.empty();
+            return Optional.of(recv.get().text() + ".getBytes(java.nio.charset.StandardCharsets.UTF_8)");
+        }
+        // catalog #1391: concept:json-text-coerce->java:jackson-jsonnode-asText.
+        if (conceptMatches("concept:json-text-coerce", conceptName) && args.size() == 1) {
+            Optional<ShapeExpression> recv = lowerShapeExpression(args.get(0), context, appendPosition(position, 0));
+            if (recv.isEmpty()) return Optional.empty();
+            return Optional.of(recv.get().text() + ".asText()");
+        }
+        // catalog #1391: concept:option-is-some->java:objects-nonnull.
+        if (conceptMatches("concept:option-is-some", conceptName) && args.size() == 1) {
+            Optional<ShapeExpression> arg = lowerShapeExpression(args.get(0), context, appendPosition(position, 0));
+            if (arg.isEmpty()) return Optional.empty();
+            return Optional.of("java.util.Objects.nonNull(" + arg.get().text() + ")");
+        }
+        // catalog #1391: concept:list-create->java:array-list-new.
+        if (conceptMatches("concept:list-create", conceptName) && args.isEmpty()) {
+            return Optional.of("new java.util.ArrayList<>()");
+        }
+        // catalog #1391: concept:map-create->java:hashmap-new.
+        if (conceptMatches("concept:map-create", conceptName) && args.isEmpty()) {
+            return Optional.of("new java.util.HashMap<>()");
+        }
         // concept:try(inner) — rust's `expr?` operator. Java translates via
         // Substrate.tryUnwrap which mirrors the unwrap-or-propagate.
         if (conceptMatches("concept:try", conceptName) && args.size() == 1) {
