@@ -582,6 +582,14 @@ fn lower_term_shape_body(
             if !mapped.is_empty() {
                 return Some(format!("{} {}: {} = {};", let_kw, target.text, mapped, value.text));
             }
+            // The match-assign triplet recognizer in the java lift puts
+            // a rust-source-spelled type (e.g. `Value`, `String`, `bool`)
+            // directly into let_type. Java-shaped types are handled above;
+            // these are emit-ready.
+            let looks_rusty = !ty.contains('.') && !ty.contains('[') && !ty.contains("Object");
+            if looks_rusty {
+                return Some(format!("{} {}: {} = {};", let_kw, target.text, ty, value.text));
+            }
             return Some(format!("{} {} = {};", let_kw, target.text, value.text));
         }
         // Omit type annotation when value.type_name is empty — Rust's local type
@@ -863,14 +871,20 @@ fn lower_term_shape_expression(
                     // both the (mapped) param_types and (preserved) original
                     // — Value, str, JsonNode all canonically arrive via
                     // reference in this codebase.
+                    let original_param_types = CURRENT_ORIGINAL_PARAM_TYPES
+                        .with(|v| v.borrow().clone());
                     let is_already_ref = is_bare_ident && context.params.iter()
                         .position(|p| p == trimmed)
                         .map(|pi| {
                             let mapped = context.param_types.get(pi).cloned().unwrap_or_default();
+                            // Prefer rust-source spelling (e.g. `&str`) over
+                            // java-mapped (`String`) which loses the reference.
+                            let original = original_param_types.get(pi).cloned().unwrap_or_default();
                             // Heuristic: if mapped type is one of the
                             // canonical pass-by-reference types in this
                             // source (Value, str), treat as ref.
-                            mapped.starts_with('&') || mapped == "Value" || mapped == "str"
+                            original.starts_with('&') || mapped.starts_with('&')
+                                || mapped == "Value" || mapped == "str"
                         })
                         .unwrap_or(false);
                     if (is_bare_ident && !is_already_ref) || is_format_macro {
@@ -937,6 +951,34 @@ fn lower_term_shape_expression(
         let len = lower_term_shape_expression(args[1], context, &append_position(position, 1))?;
         return Some(ShapeExpression {
             text: format!("[{}; {}]", elem.text, len.text),
+            type_name: String::new(),
+        });
+    }
+    // concept:array-literal: java's `new T[]{a, b, c}` lifts here. When the
+    // enclosing fn returns a rust tuple `(A,B,...)`, this is the lifted form
+    // of `__provekit_tuple_new(a, b)` — the java lower's tuple emit. Emit as
+    // rust tuple literal `(a, b)` in tuple-return contexts; else as rust
+    // array literal `[a, b]`. The return-type check is purely the function
+    // signature's surface form — when the source emitted `(Value, bool)`
+    // the realize side sees `(Value,bool)` in context.return_type.
+    if concept_name == "concept:array-literal" {
+        let elems: Vec<String> = args
+            .iter()
+            .enumerate()
+            .map(|(i, a)| {
+                lower_term_shape_expression(a, context, &append_position(position, i))
+                    .map(|e| e.text)
+            })
+            .collect::<Option<Vec<_>>>()?;
+        let rt = context.return_type.trim();
+        let is_tuple_return = rt.starts_with('(') && rt.ends_with(')');
+        let text = if is_tuple_return {
+            format!("({})", elems.join(", "))
+        } else {
+            format!("[{}]", elems.join(", "))
+        };
+        return Some(ShapeExpression {
+            text,
             type_name: String::new(),
         });
     }

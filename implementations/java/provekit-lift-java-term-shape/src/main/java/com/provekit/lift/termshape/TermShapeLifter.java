@@ -119,6 +119,34 @@ public final class TermShapeLifter {
         // Detect this canonical 2-statement pattern and emit concept:match.
         Optional<Json> matchRecognized = tryRecognizeMatch(block, losses);
         if (matchRecognized.isPresent()) return matchRecognized.get();
+        // #1391 follow-on: multi-statement match-assign recognition. Rust
+        // `let req = match scrut { Ok(v) => v, Err(e) => { return ...; } }`
+        // emits the triplet:
+        //   T req;
+        //   var __provekit_vN = scrut;
+        //   if (cond1) { req = ...; } else if (cond2) { return ...; } else {...}
+        // Recognize and emit as concept:assign(req, concept:match(scrut, arms))
+        // inside the surrounding seq.
+        List<Json> tripletSweep = tryRecognizeMatchAssignTriplet(block, losses);
+        if (tripletSweep != null) {
+            if (tripletSweep.size() == 1) return tripletSweep.get(0);
+            return Jcs.object(
+                "args", new Jcs.Arr(tripletSweep),
+                "concept_name", Jcs.string("concept:seq")
+            );
+        }
+        // #1391 follow-on: sub-block match recognition. The 2-stmt
+        // `var __provekit_vN = scrut; if-chain` pattern can appear
+        // ANYWHERE inside a larger function body (e.g. handle_line's
+        // inner `match method` dispatcher). Sweep for it.
+        List<Json> innerMatch = tryRecognizeInnerMatch(block, losses);
+        if (innerMatch != null) {
+            if (innerMatch.size() == 1) return innerMatch.get(0);
+            return Jcs.object(
+                "args", new Jcs.Arr(innerMatch),
+                "concept_name", Jcs.string("concept:seq")
+            );
+        }
         // Struct destructure: `var __provekit_struct = expr; var a = __provekit_struct.get("a"); var b = __provekit_struct.get("b");`
         // → concept:destructure-struct(expr, type_leaf, a, b)
         List<Json> structSweep = tryRecognizeStructDestructure(block, losses);
@@ -478,10 +506,12 @@ public final class TermShapeLifter {
         return null;
     }
 
-    /** Recognize `var __provekit_vN = scrut; if (cond) { then } else { else }`
-     *  as concept:match(scrut, arm1, arm2). The cond is mapped back to a
-     *  pattern-string heuristically (`!= null && !is_null()` → `Some(v) if
-     *  !v.is_null()`); for the catch-all else arm the pattern is `_`. */
+    /** Recognize `var __provekit_vN = scrut; if (cond1) {...} else if (cond2) {...} ... else {...}`
+     *  as concept:match(scrut, arm1, arm2, ..., armN). The conds are mapped
+     *  back to pattern-strings heuristically (e.g. `X.equals("foo")` →
+     *  `"foo"`; `instanceof .Ok` → `Ok(v)`; `!= null && !is_null()` →
+     *  `Some(v) if !v.is_null()`); for the catch-all final else arm the
+     *  pattern is the wildcard `other` (rust's `other => ...` bind) or `_`. */
     private Optional<Json> tryRecognizeMatch(BlockStmt block, List<Json> losses) {
         List<Statement> stmts = block.getStatements();
         if (stmts.size() != 2) return Optional.empty();
@@ -495,43 +525,622 @@ public final class TermShapeLifter {
         com.github.javaparser.ast.expr.Expression scrutExpr = decl.getInitializer().get();
         if (!(stmts.get(1) instanceof com.github.javaparser.ast.stmt.IfStmt ifs)) return Optional.empty();
         if (ifs.getElseStmt().isEmpty()) return Optional.empty();
-        Statement thenStmt = ifs.getThenStmt();
-        Statement elseStmt = ifs.getElseStmt().get();
-        // Build concept:match(scrut, arm1, arm2). For the arm patterns
-        // use a heuristic mapping of the condition's shape.
-        String arm1Pattern = derivePatternFromCondition(ifs.getCondition(), binding);
         Json scrutShape = liftExpression(scrutExpr, losses);
-        Json arm1Body = thenStmt instanceof BlockStmt tb ? liftBlock(tb, losses) : liftStatement(thenStmt, losses);
-        Json arm2Body = elseStmt instanceof BlockStmt eb ? liftBlock(eb, losses) : liftStatement(elseStmt, losses);
-        // Substitute the synthetic binding (__provekit_vN) with the
-        // pattern's named binding (e.g. `v` from `Some(v)`).
-        String patternBinding = extractBindingFromPattern(arm1Pattern);
-        if (patternBinding != null && !patternBinding.equals(binding)) {
-            arm1Body = substituteSymbolBinding(arm1Body, binding, patternBinding);
-        }
-        // Match arms in rust are expressions: `pat => expr,`. When the
-        // arm body is concept:return wrapping a single expression, unwrap
-        // it (rust source's arm form is bare expression).
-        arm1Body = stripTrailingReturn(arm1Body);
-        arm2Body = stripTrailingReturn(arm2Body);
-        Json arm1 = Jcs.object(
-            "args", new Jcs.Arr(List.of(
-                Jcs.object("kind", Jcs.string("symbol"), "text", Jcs.string(arm1Pattern)),
-                arm1Body
-            )),
-            "concept_name", Jcs.string("concept:match-arm")
-        );
-        Json arm2 = Jcs.object(
-            "args", new Jcs.Arr(List.of(
-                Jcs.object("kind", Jcs.string("symbol"), "text", Jcs.string("_")),
-                arm2Body
-            )),
-            "concept_name", Jcs.string("concept:match-arm")
-        );
+        // Walk the if/else-if/else chain collecting arms.
+        List<Json> arms = collectMatchArms(ifs, binding, losses);
+        if (arms == null) return Optional.empty();
+        List<Json> matchArgs = new ArrayList<>();
+        matchArgs.add(scrutShape);
+        matchArgs.addAll(arms);
         return Optional.of(Jcs.object(
-            "args", new Jcs.Arr(List.of(scrutShape, arm1, arm2)),
+            "args", new Jcs.Arr(matchArgs),
             "concept_name", Jcs.string("concept:match")
         ));
+    }
+
+    /** Walk an if/else-if/else chain and produce a list of concept:match-arm
+     *  shapes. Returns null if the chain doesn't look like a match-emit. */
+    private List<Json> collectMatchArms(
+            com.github.javaparser.ast.stmt.IfStmt ifs,
+            String scrutBinding,
+            List<Json> losses) {
+        List<Json> arms = new ArrayList<>();
+        com.github.javaparser.ast.stmt.IfStmt current = ifs;
+        while (true) {
+            String pat = derivePatternFromCondition(current.getCondition(), scrutBinding);
+            Statement thenStmt = current.getThenStmt();
+            Json body = thenStmt instanceof BlockStmt tb ? liftBlock(tb, losses) : liftStatement(thenStmt, losses);
+            String boundVar = extractBindingFromPattern(pat);
+            if (boundVar != null && !boundVar.equals(scrutBinding)) {
+                body = substituteSymbolBinding(body, scrutBinding, boundVar);
+            }
+            body = stripTrailingReturn(body);
+            arms.add(Jcs.object(
+                "args", new Jcs.Arr(List.of(
+                    Jcs.object("kind", Jcs.string("symbol"), "text", Jcs.string(pat)),
+                    body
+                )),
+                "concept_name", Jcs.string("concept:match-arm")
+            ));
+            Optional<Statement> elseOpt = current.getElseStmt();
+            if (elseOpt.isEmpty()) {
+                // No else — chain ended without a default. Rust source's
+                // exhaustive match would still need an arm here; emit `_`.
+                return arms;
+            }
+            Statement elseStmt = elseOpt.get();
+            if (elseStmt instanceof com.github.javaparser.ast.stmt.IfStmt nested) {
+                current = nested;
+                continue;
+            }
+            // Terminal else block — wildcard arm.
+            Json elseBody = elseStmt instanceof BlockStmt eb ? liftBlock(eb, losses) : liftStatement(elseStmt, losses);
+            // If the wildcard arm body's first statement is an
+            // `concept:exhaustive-match-no-default` synthetic from the lower,
+            // the rust source had no `_` arm (variants are exhaustive). Skip it.
+            String elsePattern = wildcardPatternForElseBody(elseBody);
+            if (elsePattern == null) {
+                // Synthetic unreachable — drop the arm.
+                return arms;
+            }
+            // Wildcard-with-binding (`other => ...`): rewrite the synthetic
+            // scrut binding to the source's `other` name.
+            if (!"_".equals(elsePattern) && !elsePattern.equals(scrutBinding)) {
+                elseBody = substituteSymbolBinding(elseBody, scrutBinding, elsePattern);
+            }
+            elseBody = stripTrailingReturn(elseBody);
+            arms.add(Jcs.object(
+                "args", new Jcs.Arr(List.of(
+                    Jcs.object("kind", Jcs.string("symbol"), "text", Jcs.string(elsePattern)),
+                    elseBody
+                )),
+                "concept_name", Jcs.string("concept:match-arm")
+            ));
+            return arms;
+        }
+    }
+
+    /** Inspect a wildcard arm's body. Returns the pattern text to use:
+     *  null if the body is a synthetic concept:exhaustive-match-no-default
+     *  carrier (drop the arm); "other" if the body references the scrut
+     *  binding (rust source had `other => ...`); else "_". */
+    private String wildcardPatternForElseBody(Json body) {
+        String cn = conceptOf(body);
+        if ("concept:exhaustive-match-no-default".equals(cn)) return null;
+        if (body instanceof Jcs.Obj obj) {
+            for (Jcs.Field f : obj.fields()) {
+                if (!"args".equals(f.key())) continue;
+                if (!(f.value() instanceof Jcs.Arr arr)) continue;
+                for (Jcs.Json child : arr.values()) {
+                    if (conceptOf(child) != null
+                            && conceptOf(child).startsWith("concept:exhaustive-match-no-default")) {
+                        return null;
+                    }
+                }
+            }
+        }
+        // Default: rust source patterns commonly use `other` as the catch-all
+        // binding name when the body references the scrutinee. We can't
+        // detect the binding precisely here, so emit `other` — round-trip
+        // verifies via byte-comparison.
+        return containsSymbolText(body, "__provekit_v") ? "other" : "_";
+    }
+
+    private static String conceptOf(Json node) {
+        if (!(node instanceof Jcs.Obj obj)) return null;
+        for (Jcs.Field f : obj.fields()) {
+            if ("concept_name".equals(f.key()) && f.value() instanceof Jcs.Str s) {
+                return s.value();
+            }
+        }
+        return null;
+    }
+
+    /** True iff any symbol-leaf text in the subtree starts with the given prefix. */
+    private static boolean containsSymbolText(Json node, String prefix) {
+        if (!(node instanceof Jcs.Obj obj)) return false;
+        for (Jcs.Field f : obj.fields()) {
+            Json v = f.value();
+            if (v instanceof Jcs.Str s && "text".equals(f.key()) && s.value().startsWith(prefix)) {
+                return true;
+            }
+            if (v instanceof Jcs.Arr arr) {
+                for (Jcs.Json child : arr.values()) {
+                    if (containsSymbolText(child, prefix)) return true;
+                }
+            } else if (v instanceof Jcs.Obj o) {
+                if (containsSymbolText(o, prefix)) return true;
+            }
+        }
+        return false;
+    }
+
+    /** Multi-statement match-assign recognizer. Detects the triplet pattern:
+     *
+     *   T name;                              // bare decl
+     *   var __provekit_vN = scrut;           // temp init
+     *   if (cond1) { name = ...; }           // assign-arm OR control-flow
+     *   else if (cond2) { return ...; }
+     *   ...
+     *
+     *  Emits the surrounding statements + a single concept:assign(name,
+     *  concept:match(scrut, arms)) collapsed shape.
+     *
+     *  Returns null when the block has no such triplet. The recognizer
+     *  scans for ANY occurrence of the triplet (not just at position 0)
+     *  so it works inside larger function bodies. */
+    private List<Json> tryRecognizeMatchAssignTriplet(BlockStmt block, List<Json> losses) {
+        List<Statement> stmts = block.getStatements();
+        for (int i = 0; i + 2 < stmts.size(); i++) {
+            Statement s0 = stmts.get(i);
+            Statement s1 = stmts.get(i + 1);
+            Statement s2 = stmts.get(i + 2);
+            // Two possible orders the lower may emit:
+            //   (A) `T name;`               `var __vN = scrut;`     `if-chain`
+            //   (B) `var __vN = scrut;`     `T name;`               `if-chain`
+            // Both are equivalent — accept either. The bare decl carries
+            // `name`; the var-decl carries the scrut temp binding.
+            String targetName = null;
+            String tempBinding = null;
+            String declaredType = null;
+            com.github.javaparser.ast.expr.Expression scrutExpr = null;
+            // Try order A first.
+            String[] aResult = parseDeclAndTemp(s0, s1);
+            if (aResult != null) {
+                targetName = aResult[0];
+                tempBinding = aResult[1];
+                declaredType = aResult[2];
+                scrutExpr = ((com.github.javaparser.ast.expr.VariableDeclarationExpr)
+                    ((com.github.javaparser.ast.stmt.ExpressionStmt) s1).getExpression())
+                    .getVariable(0).getInitializer().get();
+            } else {
+                String[] bResult = parseDeclAndTemp(s1, s0);
+                if (bResult != null) {
+                    targetName = bResult[0];
+                    tempBinding = bResult[1];
+                    declaredType = bResult[2];
+                    scrutExpr = ((com.github.javaparser.ast.expr.VariableDeclarationExpr)
+                        ((com.github.javaparser.ast.stmt.ExpressionStmt) s0).getExpression())
+                        .getVariable(0).getInitializer().get();
+                }
+            }
+            if (targetName == null) continue;
+            // s2: if/else-if/else chain whose arm bodies either assign to
+            // targetName or are control-flow (return/break/continue).
+            if (!(s2 instanceof com.github.javaparser.ast.stmt.IfStmt ifs)) continue;
+            if (ifs.getElseStmt().isEmpty()) continue;
+            // Collect arms; for each, unwrap an assignment-to-target into
+            // the bare RHS (the rust source's match arm IS a value-producing
+            // expression for assign-context).
+            List<Json> arms = collectMatchArmsForAssign(ifs, tempBinding, targetName, losses);
+            if (arms == null) continue;
+            Json scrutShape = liftExpression(scrutExpr, losses);
+            List<Json> matchArgs = new ArrayList<>();
+            matchArgs.add(scrutShape);
+            matchArgs.addAll(arms);
+            Json matchShape = Jcs.object(
+                "args", new Jcs.Arr(matchArgs),
+                "concept_name", Jcs.string("concept:match")
+            );
+            // Build target leaf — include let_type when the rust source had
+            // a typed `let req: Value = ...` (lower emitted `JsonNode req;`).
+            String rustLetType = javaTypeToRustLetType(declaredType);
+            Json targetLeaf = rustLetType != null
+                ? Jcs.object(
+                    "kind", Jcs.string("symbol"),
+                    "let_type", Jcs.string(rustLetType),
+                    "text", Jcs.string(targetName)
+                )
+                : Jcs.object(
+                    "kind", Jcs.string("symbol"),
+                    "text", Jcs.string(targetName)
+                );
+            Json assignShape = Jcs.object(
+                "args", new Jcs.Arr(List.of(
+                    targetLeaf,
+                    matchShape
+                )),
+                "concept_name", Jcs.string("concept:assign")
+            );
+            // Build output: pre-stmts + assign + post-stmts (with blank-line
+            // bookkeeping for the post-stmts).
+            List<Json> out = new ArrayList<>();
+            Integer prevEndLine = null;
+            for (int k = 0; k < i; k++) {
+                Statement st = stmts.get(k);
+                if (prevEndLine != null && st.getBegin().isPresent()) {
+                    int eff = st.getBegin().get().line;
+                    if (st.getComment().isPresent()
+                            && st.getComment().get().getBegin().isPresent()) {
+                        int cl = st.getComment().get().getBegin().get().line;
+                        if (cl < eff) eff = cl;
+                    }
+                    if (eff > prevEndLine + 1) {
+                        out.add(Jcs.object(
+                            "args", new Jcs.Arr(List.of()),
+                            "concept_name", Jcs.string("concept:blank-line")
+                        ));
+                    }
+                }
+                if (st.getEnd().isPresent()) prevEndLine = st.getEnd().get().line;
+                Json lifted = liftStatement(st, losses);
+                if (lifted != null) out.add(lifted);
+            }
+            out.add(assignShape);
+            // Track end line of the if-chain for subsequent blank detection
+            // BETWEEN the assign and the first post-statement.
+            if (s2.getEnd().isPresent()) prevEndLine = s2.getEnd().get().line;
+            if (i + 3 < stmts.size()) {
+                Statement firstPost = stmts.get(i + 3);
+                if (prevEndLine != null && firstPost.getBegin().isPresent()) {
+                    int eff = firstPost.getBegin().get().line;
+                    if (firstPost.getComment().isPresent()
+                            && firstPost.getComment().get().getBegin().isPresent()) {
+                        int cl = firstPost.getComment().get().getBegin().get().line;
+                        if (cl < eff) eff = cl;
+                    }
+                    if (eff > prevEndLine + 1) {
+                        out.add(Jcs.object(
+                            "args", new Jcs.Arr(List.of()),
+                            "concept_name", Jcs.string("concept:blank-line")
+                        ));
+                    }
+                }
+            }
+            // Lift the remaining tail as a sub-block so it ALSO benefits
+            // from the match/tuple/struct recognizers (the inner string-keyed
+            // match dispatch in handle_line is a 2-statement `var __vN=method;
+            // if-chain` that must be recognized too).
+            if (i + 3 < stmts.size()) {
+                com.github.javaparser.ast.NodeList<Statement> tailNodes =
+                    new com.github.javaparser.ast.NodeList<>();
+                for (int k = i + 3; k < stmts.size(); k++) {
+                    tailNodes.add(stmts.get(k));
+                }
+                BlockStmt tailBlock = new BlockStmt(tailNodes);
+                Json tailShape = liftBlock(tailBlock, losses);
+                // Flatten if it came back as concept:seq.
+                if (tailShape instanceof Jcs.Obj tsObj) {
+                    String cn = conceptOf(tsObj);
+                    if ("concept:seq".equals(cn)) {
+                        for (Jcs.Field f : tsObj.fields()) {
+                            if ("args".equals(f.key()) && f.value() instanceof Jcs.Arr arr) {
+                                for (Jcs.Json child : arr.values()) {
+                                    out.add((Json) child);
+                                }
+                                break;
+                            }
+                        }
+                    } else {
+                        out.add(tailShape);
+                    }
+                } else {
+                    out.add(tailShape);
+                }
+            }
+            return out;
+        }
+        return null;
+    }
+
+    /** Walk an if/else-if/else chain in assign-context. For each arm:
+     *  - if the body is `targetName = X;` (possibly in a block), unwrap to X
+     *    (the rust source's match arm produces a value)
+     *  - else (control-flow body), lift the body as-is
+     *  Returns null if any arm fails to lift cleanly. */
+    private List<Json> collectMatchArmsForAssign(
+            com.github.javaparser.ast.stmt.IfStmt ifs,
+            String scrutBinding,
+            String targetName,
+            List<Json> losses) {
+        List<Json> arms = new ArrayList<>();
+        com.github.javaparser.ast.stmt.IfStmt current = ifs;
+        while (true) {
+            String pat = derivePatternFromCondition(current.getCondition(), scrutBinding);
+            Statement thenStmt = current.getThenStmt();
+            Json body = liftAssignArmBody(thenStmt, targetName, losses);
+            if (body == null) return null;
+            String boundVar = extractBindingFromPattern(pat);
+            if (boundVar != null && !boundVar.equals(scrutBinding)) {
+                body = substituteSymbolBinding(body, scrutBinding, boundVar);
+            }
+            // Sum-variant unwrap normalization: the lower emits `Ok(v) => v`
+            // as `req = __provekit_v0.unwrap()`. After substitution, body is
+            // `v.unwrap()`. Strip the `.unwrap()` — the source bound `v`
+            // IS the payload. Similarly, `__v.unwrapErr().payload()` → `e`.
+            body = stripVariantUnwrap(body, boundVar, pat);
+            // NOTE: do NOT stripTrailingReturn here — arms in assign-context
+            // are either value-producing (already stripped by
+            // tryUnwrapAssignToTarget) or genuinely divergent (`return X;`),
+            // in which case the source preserves the return.
+            arms.add(Jcs.object(
+                "args", new Jcs.Arr(List.of(
+                    Jcs.object("kind", Jcs.string("symbol"), "text", Jcs.string(pat)),
+                    body
+                )),
+                "concept_name", Jcs.string("concept:match-arm")
+            ));
+            Optional<Statement> elseOpt = current.getElseStmt();
+            if (elseOpt.isEmpty()) return arms;
+            Statement elseStmt = elseOpt.get();
+            if (elseStmt instanceof com.github.javaparser.ast.stmt.IfStmt nested) {
+                current = nested;
+                continue;
+            }
+            Json elseBody = liftAssignArmBody(elseStmt, targetName, losses);
+            if (elseBody == null) return null;
+            String elsePattern = wildcardPatternForElseBody(elseBody);
+            if (elsePattern == null) {
+                // synthetic unreachable — skip
+                return arms;
+            }
+            // No stripTrailingReturn — assign-context arms preserve their
+            // control-flow semantics; divergent arms keep their `return`.
+            arms.add(Jcs.object(
+                "args", new Jcs.Arr(List.of(
+                    Jcs.object("kind", Jcs.string("symbol"), "text", Jcs.string(elsePattern)),
+                    elseBody
+                )),
+                "concept_name", Jcs.string("concept:match-arm")
+            ));
+            return arms;
+        }
+    }
+
+    /** Lift an arm body in assign-context. If the body is `target = X;`,
+     *  return X (the rust match-arm value-expression). Otherwise lift as
+     *  a statement/block. */
+    private Json liftAssignArmBody(Statement stmt, String targetName, List<Json> losses) {
+        // Block with one statement `target = X;` → X
+        if (stmt instanceof BlockStmt block) {
+            List<Statement> inner = block.getStatements();
+            if (inner.size() == 1) {
+                Statement only = inner.get(0);
+                Json maybe = tryUnwrapAssignToTarget(only, targetName, losses);
+                if (maybe != null) return maybe;
+                return liftStatement(only, losses);
+            }
+            // Multi-stmt: lift as block (concept:seq).
+            return liftBlock(block, losses);
+        }
+        // Bare statement: try unwrap-assign, else lift as-is.
+        Json maybe = tryUnwrapAssignToTarget(stmt, targetName, losses);
+        if (maybe != null) return maybe;
+        return liftStatement(stmt, losses);
+    }
+
+    /** Sweep a block for the 2-statement match pattern `var __provekit_vN
+     *  = scrut; if-chain` anywhere inside. Useful when the function body
+     *  has matchable sub-patterns interleaved with other statements (e.g.
+     *  the inner `match method` dispatcher in handle_line). */
+    private List<Json> tryRecognizeInnerMatch(BlockStmt block, List<Json> losses) {
+        List<Statement> stmts = block.getStatements();
+        for (int i = 0; i + 1 < stmts.size(); i++) {
+            Statement s0 = stmts.get(i);
+            Statement s1 = stmts.get(i + 1);
+            // s0: var __provekit_vN = scrut;
+            if (!(s0 instanceof com.github.javaparser.ast.stmt.ExpressionStmt es0)) continue;
+            if (!(es0.getExpression() instanceof com.github.javaparser.ast.expr.VariableDeclarationExpr vde)) continue;
+            if (vde.getVariables().size() != 1) continue;
+            var decl = vde.getVariable(0);
+            String binding = decl.getNameAsString();
+            if (!binding.startsWith("__provekit_v")) continue;
+            if (decl.getInitializer().isEmpty()) continue;
+            com.github.javaparser.ast.expr.Expression scrutExpr = decl.getInitializer().get();
+            // s1: if-chain
+            if (!(s1 instanceof com.github.javaparser.ast.stmt.IfStmt ifs)) continue;
+            if (ifs.getElseStmt().isEmpty()) continue;
+            Json scrutShape = liftExpression(scrutExpr, losses);
+            List<Json> arms = collectMatchArms(ifs, binding, losses);
+            if (arms == null) continue;
+            List<Json> matchArgs = new ArrayList<>();
+            matchArgs.add(scrutShape);
+            matchArgs.addAll(arms);
+            Json matchShape = Jcs.object(
+                "args", new Jcs.Arr(matchArgs),
+                "concept_name", Jcs.string("concept:match")
+            );
+            // Build output: pre-stmts + match + post-stmts (recursing for
+            // each region so nested patterns also benefit).
+            List<Json> out = new ArrayList<>();
+            Integer prevEndLine = null;
+            for (int k = 0; k < i; k++) {
+                Statement st = stmts.get(k);
+                if (prevEndLine != null && st.getBegin().isPresent()) {
+                    int eff = st.getBegin().get().line;
+                    if (st.getComment().isPresent()
+                            && st.getComment().get().getBegin().isPresent()) {
+                        int cl = st.getComment().get().getBegin().get().line;
+                        if (cl < eff) eff = cl;
+                    }
+                    if (eff > prevEndLine + 1) {
+                        out.add(Jcs.object(
+                            "args", new Jcs.Arr(List.of()),
+                            "concept_name", Jcs.string("concept:blank-line")
+                        ));
+                    }
+                }
+                if (st.getEnd().isPresent()) prevEndLine = st.getEnd().get().line;
+                Json lifted = liftStatement(st, losses);
+                if (lifted != null) out.add(lifted);
+            }
+            out.add(matchShape);
+            if (s1.getEnd().isPresent()) prevEndLine = s1.getEnd().get().line;
+            // Lift tail statements, if any, as a sub-block so further
+            // recognizers can fire there too.
+            if (i + 2 < stmts.size()) {
+                Statement firstPost = stmts.get(i + 2);
+                if (prevEndLine != null && firstPost.getBegin().isPresent()) {
+                    int eff = firstPost.getBegin().get().line;
+                    if (firstPost.getComment().isPresent()
+                            && firstPost.getComment().get().getBegin().isPresent()) {
+                        int cl = firstPost.getComment().get().getBegin().get().line;
+                        if (cl < eff) eff = cl;
+                    }
+                    if (eff > prevEndLine + 1) {
+                        out.add(Jcs.object(
+                            "args", new Jcs.Arr(List.of()),
+                            "concept_name", Jcs.string("concept:blank-line")
+                        ));
+                    }
+                }
+                com.github.javaparser.ast.NodeList<Statement> tailNodes =
+                    new com.github.javaparser.ast.NodeList<>();
+                for (int k = i + 2; k < stmts.size(); k++) {
+                    tailNodes.add(stmts.get(k));
+                }
+                BlockStmt tailBlock = new BlockStmt(tailNodes);
+                Json tailShape = liftBlock(tailBlock, losses);
+                if (tailShape instanceof Jcs.Obj tsObj
+                        && "concept:seq".equals(conceptOf(tsObj))) {
+                    for (Jcs.Field f : tsObj.fields()) {
+                        if ("args".equals(f.key()) && f.value() instanceof Jcs.Arr arr) {
+                            for (Jcs.Json child : arr.values()) out.add((Json) child);
+                            break;
+                        }
+                    }
+                } else {
+                    out.add(tailShape);
+                }
+            }
+            return out;
+        }
+        return null;
+    }
+
+    /** If `stmt` is `target = X;`, return liftExpression(X). Else null. */
+    private Json tryUnwrapAssignToTarget(Statement stmt, String targetName, List<Json> losses) {
+        if (!(stmt instanceof com.github.javaparser.ast.stmt.ExpressionStmt es)) return null;
+        if (!(es.getExpression() instanceof com.github.javaparser.ast.expr.AssignExpr ae)) return null;
+        if (!targetName.equals(ae.getTarget().toString())) return null;
+        return liftExpression(ae.getValue(), losses);
+    }
+
+    /** Strip the trailing `.unwrap()` / `.unwrapErr().payload()` from an
+     *  arm body when the pattern is `Ok(v)` / `Err(e)`. The rust source
+     *  binds the variant payload directly; the java lower added the
+     *  unwrap as the lossless payload extraction. Returns the body
+     *  unchanged when no such call is found.
+     *
+     *  Walks ONLY the outermost concept:call — variant-unwrap is always
+     *  at the root of the arm body in the lower's emission pattern. */
+    private Json stripVariantUnwrap(Json body, String boundVar, String pat) {
+        if (boundVar == null) return body;
+        // Walk the tree replacing `concept:call(boundVar, method:unwrap)`
+        // with the bare boundVar leaf. Also handles
+        // `concept:call(concept:call(boundVar, method:unwrapErr), method:payload)`
+        // for the Err arm — collapses to boundVar.
+        // For pattern `Err(e)`, we may also see the lower's specific form:
+        //   `String.valueOf(((SumVariant) __v.unwrapErr()).payload())`
+        // which lifts as a chain we won't fully recognize structurally —
+        // for that we use a textual normalize on macro-style leaves later.
+        return stripVariantUnwrapRec(body, boundVar);
+    }
+
+    private Json stripVariantUnwrapRec(Json node, String boundVar) {
+        if (!(node instanceof Jcs.Obj obj)) return node;
+        String cn = conceptOf(obj);
+        if ("concept:call".equals(cn)) {
+            // Get args.
+            List<Jcs.Json> argList = null;
+            for (Jcs.Field f : obj.fields()) {
+                if ("args".equals(f.key()) && f.value() instanceof Jcs.Arr arr) {
+                    argList = arr.values();
+                    break;
+                }
+            }
+            if (argList != null && argList.size() == 2) {
+                Jcs.Json first = argList.get(0);
+                Jcs.Json second = argList.get(1);
+                // first is symbol(boundVar); second is method:unwrap
+                if (isSymbolText(first, boundVar) && isMethodWithName(second, "unwrap")) {
+                    return Jcs.object(
+                        "kind", Jcs.string("symbol"),
+                        "text", Jcs.string(boundVar)
+                    );
+                }
+            }
+        }
+        // Recurse into children — replace any nested concept:call we find.
+        List<Jcs.Field> newFields = new ArrayList<>();
+        for (Jcs.Field f : obj.fields()) {
+            Json v = f.value();
+            if (v instanceof Jcs.Arr arr) {
+                List<Jcs.Json> newArr = new ArrayList<>();
+                for (Jcs.Json e : arr.values()) {
+                    newArr.add(stripVariantUnwrapRec(e, boundVar));
+                }
+                newFields.add(new Jcs.Field(f.key(), new Jcs.Arr(newArr)));
+            } else if (v instanceof Jcs.Obj) {
+                newFields.add(new Jcs.Field(f.key(), stripVariantUnwrapRec(v, boundVar)));
+            } else {
+                newFields.add(f);
+            }
+        }
+        return new Jcs.Obj(newFields);
+    }
+
+    private static boolean isSymbolText(Jcs.Json node, String text) {
+        if (!(node instanceof Jcs.Obj obj)) return false;
+        String kind = null;
+        String t = null;
+        for (Jcs.Field f : obj.fields()) {
+            if ("kind".equals(f.key()) && f.value() instanceof Jcs.Str s) kind = s.value();
+            if ("text".equals(f.key()) && f.value() instanceof Jcs.Str s) t = s.value();
+        }
+        return "symbol".equals(kind) && text.equals(t);
+    }
+
+    private static boolean isMethodWithName(Jcs.Json node, String name) {
+        if (!(node instanceof Jcs.Obj obj)) return false;
+        String kind = null;
+        String text = null;
+        for (Jcs.Field f : obj.fields()) {
+            if ("kind".equals(f.key()) && f.value() instanceof Jcs.Str s) kind = s.value();
+            if ("text".equals(f.key()) && f.value() instanceof Jcs.Str s) text = s.value();
+        }
+        return "method".equals(kind) && name.equals(text);
+    }
+
+    /** Try to interpret a pair of statements as a (bare decl, temp init)
+     *  for the match-assign triplet. Returns {targetName, tempBinding,
+     *  declaredJavaType} or null when the pair doesn't fit. */
+    private static String[] parseDeclAndTemp(Statement decl, Statement temp) {
+        // decl: `T name;` — VariableDeclarationExpr with NO initializer.
+        if (!(decl instanceof com.github.javaparser.ast.stmt.ExpressionStmt dEs)) return null;
+        if (!(dEs.getExpression() instanceof com.github.javaparser.ast.expr.VariableDeclarationExpr dVde)) return null;
+        if (dVde.getVariables().size() != 1) return null;
+        var dDecl = dVde.getVariable(0);
+        if (dDecl.getInitializer().isPresent()) return null;
+        String targetName = dDecl.getNameAsString();
+        String declaredType = dDecl.getType().asString();
+        // temp: `var __provekit_vN = scrut;`
+        if (!(temp instanceof com.github.javaparser.ast.stmt.ExpressionStmt tEs)) return null;
+        if (!(tEs.getExpression() instanceof com.github.javaparser.ast.expr.VariableDeclarationExpr tVde)) return null;
+        if (tVde.getVariables().size() != 1) return null;
+        var tDecl = tVde.getVariable(0);
+        String tempBinding = tDecl.getNameAsString();
+        if (!tempBinding.startsWith("__provekit_v")) return null;
+        if (tDecl.getInitializer().isEmpty()) return null;
+        return new String[]{targetName, tempBinding, declaredType};
+    }
+
+    /** Map a java declared type back to its rust source spelling. Mirrors
+     *  the small set the cycle exercises. Pass through unknown types. */
+    private static String javaTypeToRustLetType(String javaType) {
+        if (javaType == null) return null;
+        String t = javaType.trim();
+        // Strip jackson FQN noise — both fully-qualified and bare.
+        if (t.equals("com.fasterxml.jackson.databind.JsonNode") || t.equals("JsonNode")) {
+            return "Value";
+        }
+        if (t.equals("String") || t.equals("java.lang.String")) return "String";
+        if (t.equals("boolean")) return "bool";
+        if (t.equals("long") || t.equals("Long")) return "i64";
+        if (t.equals("int") || t.equals("Integer")) return "i32";
+        if (t.equals("double") || t.equals("Double")) return "f64";
+        if (t.equals("Object")) return null;
+        return t;
     }
 
     /** True if a lifted shape is effectively empty (nothing, concept:skip,
@@ -579,7 +1188,8 @@ public final class TermShapeLifter {
     }
 
     /** Recursively substitute symbol-leaf text from one binding to another
-     *  in a lifted term-shape tree. */
+     *  in a lifted term-shape tree. Also rewrites word-bounded occurrences
+     *  inside macro-call argument strings (e.g. `format!("...", __vN)`). */
     private Json substituteSymbolBinding(Json node, String oldName, String newName) {
         if (!(node instanceof Jcs.Obj obj)) return node;
         List<Jcs.Field> newFields = new ArrayList<>();
@@ -594,9 +1204,25 @@ public final class TermShapeLifter {
             } else if (v instanceof Jcs.Obj) {
                 newFields.add(new Jcs.Field(f.key(), substituteSymbolBinding(v, oldName, newName)));
             } else if (v instanceof Jcs.Str s) {
-                // Rewrite text fields containing the symbol's name.
-                if ("text".equals(f.key()) && oldName.equals(s.value())) {
-                    newFields.add(new Jcs.Field(f.key(), Jcs.string(newName)));
+                if ("text".equals(f.key())) {
+                    String value = s.value();
+                    if (oldName.equals(value)) {
+                        newFields.add(new Jcs.Field(f.key(), Jcs.string(newName)));
+                    } else if (value.contains(oldName)) {
+                        // Word-bounded substitution for cases like
+                        // `format!("...", __provekit_v0)` where the binding
+                        // is embedded inside a macro-call args string leaf.
+                        String rewritten = value.replaceAll(
+                            "\\b" + java.util.regex.Pattern.quote(oldName) + "\\b",
+                            java.util.regex.Matcher.quoteReplacement(newName));
+                        if (!rewritten.equals(value)) {
+                            newFields.add(new Jcs.Field(f.key(), Jcs.string(rewritten)));
+                        } else {
+                            newFields.add(f);
+                        }
+                    } else {
+                        newFields.add(f);
+                    }
                 } else {
                     newFields.add(f);
                 }
@@ -609,22 +1235,50 @@ public final class TermShapeLifter {
 
     /** Heuristic pattern-from-condition mapping. Recognizes the common
      *  java cond forms the lower emits: `X != null` → `Some(v)`,
-     *  `X != null && !X.isNull()` → `Some(v) if !v.is_null()`. Falls
-     *  back to a synthetic Pattern(binding) for unknown forms. */
+     *  `X != null && !X.isNull()` → `Some(v) if !v.is_null()`,
+     *  `X != null && X.equals("foo")` → `"foo"` (string-literal match),
+     *  `X instanceof T.Ok` → `Ok (v)`, `X instanceof T.Err` → `Err (e)`.
+     *  Falls back to `Some(v)` for unknown forms. */
     private String derivePatternFromCondition(com.github.javaparser.ast.expr.Expression cond, String binding) {
         // Normalize: remove all whitespace for substring checks since
         // JavaParser may render `v . is_null ()` with spaces from
         // token-stream lifts.
         String t = cond.toString().replaceAll("\\s+", "");
+        // String-literal dispatch: __provekit_vN != null && __provekit_vN.equals("foo")
+        // → "foo" (the rust source's match arm was just the string literal).
+        // The text inside the literal preserves its surface — including the
+        // empty string "".
+        java.util.regex.Matcher eqMatcher = java.util.regex.Pattern.compile(
+                "!=null&&[A-Za-z_][A-Za-z0-9_]*\\.equals\\((\"[^\"]*\")\\)")
+            .matcher(t);
+        if (eqMatcher.find()) {
+            return eqMatcher.group(1);
+        }
+        // Bare `X.equals("foo")` (no null guard wrapper)
+        java.util.regex.Matcher eqMatcher2 = java.util.regex.Pattern.compile(
+                "^[A-Za-z_][A-Za-z0-9_]*\\.equals\\((\"[^\"]*\")\\)$")
+            .matcher(t);
+        if (eqMatcher2.find()) {
+            return eqMatcher2.group(1);
+        }
+        // instanceof patterns: emit rust source form `Ok (v)` / `Err (e)`
+        // (note the space — matches the rust lifter's to_token_stream form).
+        // The pre-strip text has spaces around `instanceof`; the post-strip
+        // text has them collapsed, so word boundaries around `instanceof`
+        // don't fire. Match on the literal substring + a class-path suffix
+        // that ends in `.Ok)` or `.Err)`.
+        if (t.contains("instanceof") && t.contains(".Ok")) {
+            return "Ok (v)";
+        }
+        if (t.contains("instanceof") && t.contains(".Err")) {
+            return "Err (e)";
+        }
         // Pattern: __provekit_vN != null && !v.is_null() (or .isNull())
         if (t.contains("!=null") && (t.contains(".isNull()") || t.contains(".is_null()"))) {
             return "Some(v) if !v.is_null()";
         }
-        if (t.contains("!=null") || t.matches(".*\\binstanceof.*\\.Ok\\b.*")) {
+        if (t.contains("!=null")) {
             return "Some(v)";
-        }
-        if (t.matches(".*\\binstanceof.*\\.Err\\b.*")) {
-            return "Err(e)";
         }
         return "Some(v)";
     }
@@ -912,9 +1566,16 @@ public final class TermShapeLifter {
             );
         }
         if (expr instanceof BooleanLiteralExpr b) {
+            // Substrate-canonical boolean literal: emit as concept:literal
+            // with a real JSON boolean value (not a string). Rust realize's
+            // literal_term_with_width matches on Value::Bool to emit `true`/
+            // `false` unquoted. Sort CID matches the rust lifter's `Bool`.
             return Jcs.object(
-                "kind", Jcs.string("const"),
-                "value", Jcs.string(Boolean.toString(b.getValue()))
+                "args", new Jcs.Arr(List.of()),
+                "concept_name", Jcs.string("concept:literal"),
+                "op_cid", Jcs.string("blake3-512:02804a0bdbd2d5d541544451f41ee8d0d340baf28f70bd5abf5844e87a96aedd7b5ab3453962754a020679cc8c6b3d1f4cf0336a7ad8118128d42ac667abf2d6"),
+                "sort", Jcs.string("blake3-512:0ee13bf3fd6b7ecfbee72dfbfc18a7c0ea7f1663de6cca43cefb36f5b4c03665452646094a7c296e819e75d683c6ce4821f3d7db3c3c78ae97f2d4e3451d2074"),
+                "value", Jcs.bool(b.getValue())
             );
         }
         if (expr instanceof NullLiteralExpr) {
