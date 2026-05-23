@@ -756,6 +756,39 @@ public final class TermShapeLifter {
             String condText = ce.getCondition().toString().replaceAll("\\s+", "");
             String thenText = ce.getThenExpr().toString().replaceAll("\\s+", "");
             String elseText = ce.getElseExpr().toString();
+            // #1391 follow-on: detect java lower's emission for
+            // .and_then(f): `X != null ? ((Function)f).apply(X) : null` or
+            // `X != null ? f.apply(X) : null` → concept:call(X, method:and_then, f).
+            // The cycled rust gets `X.and_then(f)` matching source form.
+            if (condText.endsWith("!=null") && elseText.replaceAll("\\s+", "").equals("null")) {
+                // Then branch should be `f.apply(X)` where X is the
+                // null-checked operand. Walk the then expr for a
+                // MethodCallExpr with name "apply" and one arg = X.
+                String operand = condText.substring(0, condText.length() - "!=null".length());
+                com.github.javaparser.ast.expr.MethodCallExpr applyCall = null;
+                if (ce.getThenExpr() instanceof com.github.javaparser.ast.expr.MethodCallExpr mc
+                        && "apply".equals(mc.getNameAsString())
+                        && mc.getArguments().size() == 1) {
+                    applyCall = mc;
+                }
+                if (applyCall != null
+                        && applyCall.getArgument(0).toString().replaceAll("\\s+", "").equals(operand)) {
+                    com.github.javaparser.ast.expr.Expression operandExpr = applyCall.getArgument(0);
+                    com.github.javaparser.ast.expr.Expression fnExpr = applyCall.getScope().orElse(null);
+                    if (fnExpr != null) {
+                        Json operandShape = liftExpression(operandExpr, losses);
+                        Json fnShape = liftExpression(fnExpr, losses);
+                        return Jcs.object(
+                            "args", new Jcs.Arr(List.of(
+                                operandShape,
+                                methodConceptLeaf("and_then", 1),
+                                fnShape
+                            )),
+                            "concept_name", Jcs.string("concept:call")
+                        );
+                    }
+                }
+            }
             // Pattern: X != null ? X : default → X.unwrap_or(default)
             if (condText.endsWith("!=null") && condText.startsWith(thenText)) {
                 // #1391 follow-on: detect the .unwrap_or_else marker the
