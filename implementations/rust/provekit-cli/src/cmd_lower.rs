@@ -435,6 +435,13 @@ fn named_term_document_from_ir_document(ir_doc: &Json) -> Result<NamedTermDocume
         .filter(|e| e.get("kind").and_then(Json::as_str) == Some("trait-decl"))
         .cloned()
         .collect();
+    let module_items: Vec<Json> = ir.iter()
+        .filter(|e| matches!(
+            e.get("kind").and_then(Json::as_str),
+            Some("const-decl") | Some("struct-decl") | Some("enum-decl")
+        ))
+        .cloned()
+        .collect();
     Ok(NamedTermDocument {
         candidate_cluster_manifest: Default::default(),
         gap_records: Vec::new(),
@@ -445,6 +452,7 @@ fn named_term_document_from_ir_document(ir_doc: &Json) -> Result<NamedTermDocume
         terms,
         boundary_entries,
         trait_decls,
+        module_items,
         workspace_root,
     })
 }
@@ -487,7 +495,11 @@ fn lower_named_document(
     // emitter is retired by this — substrate emits its own wrapper.
     let emit_java_wrapper = target == "java" && !named.boundary_entries.is_empty();
     if emit_java_wrapper {
-        out.push_str(&emit_java_module_preamble(&named.boundary_entries, &named.trait_decls));
+        out.push_str(&emit_java_module_preamble(
+            &named.boundary_entries,
+            &named.trait_decls,
+            &named.module_items,
+        ));
     }
     // Substrate-honest per-term loss accounting. Each function's lossy
     // translations register here; non-empty entries are surfaced via a
@@ -644,7 +656,11 @@ fn map_rust_type_to_java(t: &str) -> String {
 /// (so target plugins decide their own file layout); for now the rust
 /// substrate emits the wrapper so the demo's cycle is fully substrate-
 /// native end to end (no hand-written java integration code).
-fn emit_java_module_preamble(boundary_entries: &[Json], trait_decls: &[Json]) -> String {
+fn emit_java_module_preamble(
+    boundary_entries: &[Json],
+    trait_decls: &[Json],
+    module_items: &[Json],
+) -> String {
     let mut out = String::new();
     out.push_str("// AUTO-GENERATED from rust @boundary declarations via provekit lower --target java\n");
     out.push_str("package com.provekit.crossplatform;\n\n");
@@ -656,9 +672,26 @@ fn emit_java_module_preamble(boundary_entries: &[Json], trait_decls: &[Json]) ->
     out.push_str("import java.nio.file.Path;\n\n");
     out.push_str("public final class CrossPlatform {\n");
     out.push_str("    public static final ObjectMapper MAPPER = new ObjectMapper();\n");
-    out.push_str("    public static String PLUGIN_VERSION = \"0.1.0\";\n");
-    out.push_str("    public static String PROTOCOL_VERSION = \"pep/1.7.0\";\n");
-    out.push_str("    public static String IR_VERSION = \"v1.1.0\";\n");
+    // Constants lifted from rust source via const-decl IR entries.
+    // Replaces the hardcoded PLUGIN_VERSION etc.
+    let const_decls: Vec<&Json> = module_items.iter()
+        .filter(|m| m.get("kind").and_then(Json::as_str) == Some("const-decl"))
+        .collect();
+    for c in &const_decls {
+        let name = c.get("name").and_then(Json::as_str).unwrap_or("");
+        if name.is_empty() { continue; }
+        let ty = c.get("type").and_then(Json::as_str).unwrap_or("");
+        let value = c.get("value").and_then(Json::as_str).unwrap_or("\"\"");
+        let java_type = map_rust_type_to_java(ty);
+        // `String` constants need `public static String` (not `final`
+        // since the rust source isn't `static`). `byte[]` etc. emit as
+        // `public static final` for java safety.
+        let final_kw = if java_type == "String" { "" } else { " final" };
+        out.push_str(&format!(
+            "    public static{} {} {} = {};\n",
+            final_kw, java_type, name, value
+        ));
+    }
     out.push_str("    public static final byte[] HEX = \"0123456789abcdef\".getBytes();\n\n");
     // Interfaces lifted from rust trait declarations. The substrate
     // emits these from `trait-decl` IR entries; the hardcoded
@@ -726,6 +759,69 @@ fn emit_java_module_preamble(boundary_entries: &[Json], trait_decls: &[Json]) ->
         ));
         out.push_str("    }\n");
     }
+    // Struct declarations from rust → nested java records.
+    // Each rust struct `Foo { f1: T1, f2: T2 }` becomes a java
+    // `public record Foo(T1 f1, T2 f2) {}` inside the wrapper class.
+    let struct_decls: Vec<&Json> = module_items.iter()
+        .filter(|m| m.get("kind").and_then(Json::as_str) == Some("struct-decl"))
+        .collect();
+    for s in &struct_decls {
+        let name = s.get("name").and_then(Json::as_str).unwrap_or("");
+        if name.is_empty() { continue; }
+        let fields: Vec<&Json> = s.get("fields").and_then(Json::as_array)
+            .map(|a| a.iter().collect()).unwrap_or_default();
+        let java_fields: Vec<String> = fields.iter().map(|f| {
+            let fname = f.get("name").and_then(Json::as_str).unwrap_or("");
+            let ftype = f.get("type").and_then(Json::as_str).unwrap_or("");
+            // Vec<Value> → java.util.List<JsonNode>
+            let jty = if ftype.starts_with("Vec<") && ftype.ends_with('>') {
+                let inner = &ftype[4..ftype.len()-1];
+                format!("java.util.List<{}>", map_rust_type_to_java(inner))
+            } else {
+                map_rust_type_to_java(ftype)
+            };
+            format!("{} {}", jty, fname)
+        }).collect();
+        out.push_str(&format!(
+            "    public record {}({}) {{}}\n",
+            name, java_fields.join(", ")
+        ));
+    }
+    if !struct_decls.is_empty() { out.push('\n'); }
+
+    // Enum declarations from rust → java sealed interfaces with one
+    // record per variant. `enum LiftError { InvalidParams(String) }`
+    // becomes `public sealed interface LiftError permits ... { record
+    // InvalidParams(String value) implements LiftError {} }`.
+    let enum_decls: Vec<&Json> = module_items.iter()
+        .filter(|m| m.get("kind").and_then(Json::as_str) == Some("enum-decl"))
+        .collect();
+    for e in &enum_decls {
+        let name = e.get("name").and_then(Json::as_str).unwrap_or("");
+        if name.is_empty() { continue; }
+        let variants: Vec<&Json> = e.get("variants").and_then(Json::as_array)
+            .map(|a| a.iter().collect()).unwrap_or_default();
+        let variant_names: Vec<&str> = variants.iter()
+            .filter_map(|v| v.get("name").and_then(Json::as_str)).collect();
+        out.push_str(&format!(
+            "    public sealed interface {} permits {}.{} {{\n",
+            name, name, variant_names.join(&format!(", {}.", name))
+        ));
+        for v in &variants {
+            let vname = v.get("name").and_then(Json::as_str).unwrap_or("");
+            if vname.is_empty() { continue; }
+            let payload_types: Vec<&str> = v.get("payload_types").and_then(Json::as_array)
+                .map(|a| a.iter().filter_map(Json::as_str).collect()).unwrap_or_default();
+            let java_params: Vec<String> = payload_types.iter().enumerate()
+                .map(|(i, t)| format!("{} v{}", map_rust_type_to_java(t), i)).collect();
+            out.push_str(&format!(
+                "        public record {}({}) implements {} {{}}\n",
+                vname, java_params.join(", "), name
+            ));
+        }
+        out.push_str("    }\n");
+    }
+    if !enum_decls.is_empty() { out.push('\n'); }
     out.push_str("    // \u{2500}\u{2500}\u{2500} @sugar functions follow \u{2500}\u{2500}\u{2500}\n\n");
     out
 }

@@ -250,6 +250,15 @@ pub struct NamedTermDocument {
         skip_serializing_if = "Vec::is_empty"
     )]
     pub trait_decls: Vec<Json>,
+    /// Module-level item declarations: const, struct, enum. The target
+    /// plugin uses these to emit native equivalents (java static
+    /// constants, classes/records, sealed interfaces).
+    #[serde(
+        default,
+        rename = "moduleItems",
+        skip_serializing_if = "Vec::is_empty"
+    )]
+    pub module_items: Vec<Json>,
     #[serde(rename = "workspaceRoot", skip_serializing_if = "Option::is_none")]
     pub workspace_root: Option<String>,
 }
@@ -477,6 +486,7 @@ pub fn bind_term_document(
         terms,
         boundary_entries: Vec::new(),
         trait_decls: Vec::new(),
+        module_items: Vec::new(),
         workspace_root,
     })
 }
@@ -1374,6 +1384,11 @@ fn named_term_document_from_op_tree(term: &Term) -> Result<NamedTermDocument, Bi
             .unwrap_or_default(),
         trait_decls: document
             .get("traitDecls")
+            .and_then(Json::as_array)
+            .cloned()
+            .unwrap_or_default(),
+        module_items: document
+            .get("moduleItems")
             .and_then(Json::as_array)
             .cloned()
             .unwrap_or_default(),

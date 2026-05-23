@@ -617,13 +617,91 @@ fn bind_lift(params: &Value) -> Result<Value, String> {
             entries.push(entry);
         }
 
-        // Trait declarations: walk top-level pub trait items and emit
-        // `trait-decl` entries so the target plugin can synthesize an
-        // interface matching the rust trait. Substrate-honest: the
-        // AdapterLifter interface in the java wrapper comes from the
-        // rust trait declaration, not from hand-written java code.
+        // Module-level item declarations: const, static, struct, enum,
+        // trait. Each becomes its own substrate IR entry so the target
+        // plugin can emit native equivalents (java class+interface+
+        // constants from rust mod-level items, no hand-written code).
         use quote::ToTokens;
         for item in &file.items {
+            // const X: T = value;
+            if let syn::Item::Const(c) = item {
+                let name = c.ident.to_string();
+                let ty = c.ty.to_token_stream().to_string().replace(' ', "");
+                let value = c.expr.to_token_stream().to_string();
+                let visibility = match &c.vis {
+                    syn::Visibility::Public(_) => "pub",
+                    syn::Visibility::Restricted(_) => "pub(crate)",
+                    syn::Visibility::Inherited => "",
+                };
+                entries.push(json!({
+                    "kind": "const-decl",
+                    "name": name,
+                    "type": ty,
+                    "value": value,
+                    "visibility": visibility,
+                }));
+            }
+            // struct X { field: T, ... }
+            if let syn::Item::Struct(s) = item {
+                let name = s.ident.to_string();
+                let visibility = match &s.vis {
+                    syn::Visibility::Public(_) => "pub",
+                    syn::Visibility::Restricted(_) => "pub(crate)",
+                    syn::Visibility::Inherited => "",
+                };
+                let mut fields: Vec<Value> = Vec::new();
+                if let syn::Fields::Named(named) = &s.fields {
+                    for f in &named.named {
+                        let fname = f.ident.as_ref().map(|i| i.to_string()).unwrap_or_default();
+                        let fty = f.ty.to_token_stream().to_string().replace(' ', "");
+                        fields.push(json!({"name": fname, "type": fty}));
+                    }
+                }
+                entries.push(json!({
+                    "kind": "struct-decl",
+                    "name": name,
+                    "visibility": visibility,
+                    "fields": fields,
+                }));
+            }
+            // enum X { Variant1(T), Variant2 }
+            if let syn::Item::Enum(e) = item {
+                let name = e.ident.to_string();
+                let visibility = match &e.vis {
+                    syn::Visibility::Public(_) => "pub",
+                    syn::Visibility::Restricted(_) => "pub(crate)",
+                    syn::Visibility::Inherited => "",
+                };
+                let mut variants: Vec<Value> = Vec::new();
+                for v in &e.variants {
+                    let vname = v.ident.to_string();
+                    let mut payload_types: Vec<String> = Vec::new();
+                    match &v.fields {
+                        syn::Fields::Unnamed(unn) => {
+                            for f in &unn.unnamed {
+                                payload_types.push(f.ty.to_token_stream().to_string().replace(' ', ""));
+                            }
+                        }
+                        syn::Fields::Named(_) => {
+                            // struct-style variant; skip detail for now (named-fields
+                            // variant data is future work — pull as a struct with the
+                            // variant's name).
+                        }
+                        syn::Fields::Unit => {}
+                    }
+                    variants.push(json!({
+                        "name": vname,
+                        "payload_types": payload_types,
+                    }));
+                }
+                entries.push(json!({
+                    "kind": "enum-decl",
+                    "name": name,
+                    "visibility": visibility,
+                    "variants": variants,
+                }));
+            }
+            // Original trait-decl handling kept below — fall through.
             if let syn::Item::Trait(t) = item {
                 let trait_name = t.ident.to_string();
                 let visibility = match &t.vis {
