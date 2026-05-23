@@ -2906,6 +2906,58 @@ final class SugarRealizer {
                 && argTerms.size() == 1) {
             return Optional.of(argTerms.get(0));
         }
+        if (conceptMatches("concept:field", conceptName) && args.size() == 2) {
+            // args[0]: receiver expression. args[1]: field name leaf.
+            String fieldName = args.get(1).stringFieldOrNull("text");
+            if (fieldName == null || fieldName.isBlank()) return Optional.empty();
+            String receiver = argTerms.get(0).text();
+            return Optional.of(new ShapeExpression(
+                    receiver + "." + fieldName,
+                    mapSourceType(context.returnType)));
+        }
+        if (conceptMatches("concept:index", conceptName) && argTerms.size() == 2) {
+            // Java: array[idx] OR list.get(idx). Default to array form;
+            // collections use method-call concept instead.
+            String receiver = argTerms.get(0).text();
+            String idx = argTerms.get(1).text();
+            return Optional.of(new ShapeExpression(
+                    receiver + "[" + idx + "]",
+                    mapSourceType(context.returnType)));
+        }
+        if (conceptMatches("concept:cast", conceptName) && args.size() == 2) {
+            // args[0]: value. args[1]: type leaf.
+            String typeName = args.get(1).stringFieldOrNull("text");
+            if (typeName == null || typeName.isBlank()) {
+                Optional<ShapeExpression> t = lowerShapeExpression(args.get(1), context, appendPosition(position, 1));
+                if (t.isEmpty()) return Optional.empty();
+                typeName = t.get().text();
+            }
+            String value = argTerms.get(0).text();
+            return Optional.of(new ShapeExpression(
+                    "(" + mapSourceType(typeName) + ") (" + value + ")",
+                    mapSourceType(typeName)));
+        }
+        if (conceptMatches("concept:closure", conceptName) && !argTerms.isEmpty()) {
+            // Best-effort: emit a java lambda. Rust closures get lifted as
+            // concept:closure(param_leaf*, body). Java's lambda syntax is
+            // (a, b) -> body. Skip captured-state semantics; this only
+            // works for pure-function closures.
+            int bodyIdx = argTerms.size() - 1;
+            String params = argTerms.subList(0, bodyIdx).stream()
+                    .map(ShapeExpression::text)
+                    .collect(Collectors.joining(", "));
+            String body = argTerms.get(bodyIdx).text();
+            return Optional.of(new ShapeExpression(
+                    "(" + params + ") -> " + body,
+                    mapSourceType(context.returnType)));
+        }
+        // concept:reference (rust &x) and concept:deref (*x): java has neither
+        // explicit reference nor deref operators — references are implicit on
+        // objects; dereference is a no-op. Pass the inner expression through.
+        if ((conceptMatches("concept:reference", conceptName) || conceptMatches("concept:deref", conceptName))
+                && argTerms.size() == 1) {
+            return Optional.of(argTerms.get(0));
+        }
         String expression = operationExpression(conceptName, argTerms);
         if (expression == null) {
             return Optional.empty();

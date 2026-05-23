@@ -520,6 +520,9 @@ fn lower_named_document(
         if spec.get("function").and_then(|v| v.as_str()) != Some(sugar_fn) {
             spec["function"] = Json::String(sugar_fn.to_string());
         }
+        // Per-term library resolution. Each named term has a concept_name;
+        // find which realize plugin claims that concept. Apply --family-library
+        // override or --library default for disambiguation.
         let library_tag = resolve_library_for_concept(
             project_root, target, &term.concept_name, default_library, family_library,
         );
