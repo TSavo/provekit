@@ -888,6 +888,28 @@ public final class TermShapeLifter {
             }
         }
         if (expr instanceof UnaryExpr ue) {
+            // #1391 follow-on: !(Objects.equals(a, b)) → concept:ne(a, b).
+            // Rust source `a != b` (string-valued) lowers to java
+            // `!Objects.equals(a, b)`. Without this rewrite the lift
+            // produces concept:not(concept:eq(...)) which the rust realize
+            // emits as `!(a == b)` — semantically equivalent but not
+            // byte-identical. Recognizing the !-of-Objects.equals shape
+            // canonicalizes back to concept:ne so the round-trip yields
+            // `a != b` verbatim.
+            if (ue.getOperator() == UnaryExpr.Operator.LOGICAL_COMPLEMENT
+                    && ue.getExpression() instanceof MethodCallExpr inner) {
+                String innerName = inner.getNameAsString();
+                String innerScope = inner.getScope().map(Object::toString).orElse("");
+                if ("equals".equals(innerName) && innerScope.endsWith("Objects")
+                        && inner.getArguments().size() == 2) {
+                    Json a = liftExpression(inner.getArgument(0), losses);
+                    Json b = liftExpression(inner.getArgument(1), losses);
+                    return Jcs.object(
+                        "args", new Jcs.Arr(List.of(a, b)),
+                        "concept_name", Jcs.string("concept:ne")
+                    );
+                }
+            }
             // Negation, not, etc. Map common ones.
             String op = switch (ue.getOperator()) {
                 case MINUS -> "neg";
@@ -1771,6 +1793,37 @@ public final class TermShapeLifter {
         // separate fields — they're informational redundancy with the
         // structural args, not new ProofIR content. Keeping them would
         // make cited-lift diverge from syntax-lift on the same construct.
+        //
+        // #1391 follow-on: concept:value-clone with source-name attr.
+        // Rust source `X.into()` → java `/*@concept concept:value-clone
+        // source-name=into*/ Substrate.cloneOf(X)`. The citation attr
+        // carries the SOURCE METHOD NAME (into/clone/cloned). To round-trip
+        // back to byte-identical rust, we reconstruct the structural
+        // method-call shape that the rust lift originally produced:
+        // concept:call(receiver, method:<name>, []). Skipping the
+        // concept:value-clone identity here trades concept-honesty for
+        // byte-identity — the citation IS the concept identity, so the
+        // structural form preserves both round-trip and concept content.
+        if ("concept:value-clone".equals(conceptName)
+                && attrs.containsKey("source-name")
+                && structuralArgs.size() == 1) {
+            String sourceName = attrs.get("source-name").trim();
+            // Build method leaf matching the rust lift's emission for
+            // X.into() / X.clone() / X.cloned().
+            Json methodLeaf = Jcs.object(
+                "arity", Jcs.string("0"),
+                "concept_name", Jcs.string("method:" + sourceName),
+                "kind", Jcs.string("method"),
+                "text", Jcs.string(sourceName)
+            );
+            List<Json> callArgs = new ArrayList<>();
+            callArgs.add(structuralArgs.get(0)); // receiver
+            callArgs.add(methodLeaf);
+            return Jcs.object(
+                "args", new Jcs.Arr(callArgs),
+                "concept_name", Jcs.string("concept:call")
+            );
+        }
         List<Jcs.Field> fields = new ArrayList<>();
         fields.add(new Jcs.Field("args", new Jcs.Arr(structuralArgs)));
         fields.add(new Jcs.Field("concept_name", Jcs.string(conceptName)));
