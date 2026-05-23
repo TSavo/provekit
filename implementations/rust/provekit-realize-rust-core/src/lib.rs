@@ -467,7 +467,17 @@ fn lower_term_shape_body(
         }
         // Omit type annotation when value.type_name is empty — Rust's local type
         // inference covers it (happens for concept:call results, array-repeat, etc.).
-        if value.type_name.is_empty() {
+        // Also omit when the type came from java AST (java syntax like
+        // `Object[]`, `java.util.List`, etc.) — those aren't valid rust types.
+        // Rust's type inference covers the cycle when the value expression
+        // is well-formed.
+        let ty = &value.type_name;
+        let java_like = ty.is_empty()
+            || ty.contains('[')
+            || ty.contains("java.")
+            || ty.contains("com.")
+            || ty.contains("Object");
+        if java_like {
             return Some(format!("{} {} = {};", let_kw, target.text, value.text));
         }
         return Some(format!(
@@ -974,6 +984,88 @@ fn lower_term_shape_expression(
             type_name: String::new(),
         });
     }
+    // Carrier-canonical concepts that the java lift emits when it
+    // recognizes Result.ok/.err/.okOrElse / SumVariant constructor /
+    // Substrate.tryUnwrap. Map back to native rust syntax for byte-
+    // identical round-trip.
+    if concept_name == "concept:fallible-ok" {
+        if args.is_empty() {
+            return Some(ShapeExpression {
+                text: "Ok(())".to_string(),
+                type_name: String::new(),
+            });
+        }
+        let inner = lower_term_shape_expression(args[0], context, &append_position(position, 0))?;
+        return Some(ShapeExpression {
+            text: format!("Ok({})", inner.text),
+            type_name: String::new(),
+        });
+    }
+    if concept_name == "concept:fallible-err" {
+        if args.is_empty() {
+            return Some(ShapeExpression {
+                text: "Err(())".to_string(),
+                type_name: String::new(),
+            });
+        }
+        let inner = lower_term_shape_expression(args[0], context, &append_position(position, 0))?;
+        return Some(ShapeExpression {
+            text: format!("Err({})", inner.text),
+            type_name: String::new(),
+        });
+    }
+    if concept_name == "concept:sum-variant-construct" {
+        // args: [family_text, variant_text, payload]
+        if args.len() < 3 {
+            return None;
+        }
+        // family/variant may be string-literal expressions; extract text.
+        let family = lower_term_shape_expression(args[0], context, &append_position(position, 0))?;
+        let variant = lower_term_shape_expression(args[1], context, &append_position(position, 1))?;
+        let payload = lower_term_shape_expression(args[2], context, &append_position(position, 2))?;
+        // Strip the surrounding quotes from family/variant if they're
+        // string literals (they came as "LiftError" / "Internal").
+        let family_clean = family.text.trim_matches('"').to_string();
+        let variant_clean = variant.text.trim_matches('"').to_string();
+        return Some(ShapeExpression {
+            text: format!("{}::{}({})", family_clean, variant_clean, payload.text),
+            type_name: family_clean,
+        });
+    }
+    if concept_name == "concept:fallible-ok-or-else" {
+        // Result.okOrElse(value, errSupplier) → `value.ok_or_else(closure)`
+        if args.len() != 2 {
+            return None;
+        }
+        let value = lower_term_shape_expression(args[0], context, &append_position(position, 0))?;
+        let supplier = lower_term_shape_expression(args[1], context, &append_position(position, 1))?;
+        return Some(ShapeExpression {
+            text: format!("{}.ok_or_else({})", value.text, supplier.text),
+            type_name: String::new(),
+        });
+    }
+    if concept_name == "concept:value-clone" {
+        // Substrate.cloneOf(x) → x.cloned() (rust source-form)
+        if args.is_empty() {
+            return None;
+        }
+        let inner = lower_term_shape_expression(args[0], context, &append_position(position, 0))?;
+        return Some(ShapeExpression {
+            text: format!("{}.cloned()", inner.text),
+            type_name: String::new(),
+        });
+    }
+    if concept_name == "concept:try-unwrap" {
+        // Substrate.tryUnwrap(x) — alternate name for concept:try.
+        if args.is_empty() {
+            return None;
+        }
+        let inner = lower_term_shape_expression(args[0], context, &append_position(position, 0))?;
+        return Some(ShapeExpression {
+            text: format!("{}?", inner.text),
+            type_name: inner.type_name,
+        });
+    }
     if concept_name == "concept:try" {
         // First-class `expr?` operator. The substrate's concept:try
         // (args=[inner]) is the rust source's Try-operator form;
@@ -1012,6 +1104,12 @@ fn lower_term_shape_expression(
         }
         let value = lower_term_shape_expression(args[0], context, &append_position(position, 0))?;
         let type_text = args[1].get("text").and_then(Value::as_str)?;
+        // Java-only types (Object[], java.util.List, etc.) have no rust
+        // equivalent — drop the cast and emit just the value. The
+        // surrounding context's type inference handles it.
+        if type_text.contains('[') || type_text.contains("java.") || type_text.contains("Object") {
+            return Some(value);
+        }
         // Paren-wrap the operand when it's a non-atomic expression.
         // `as` binds tighter than `>>`, `&`, etc., so `b >> 4 as usize`
         // parses as `b >> (4 as usize)` — semantically different from

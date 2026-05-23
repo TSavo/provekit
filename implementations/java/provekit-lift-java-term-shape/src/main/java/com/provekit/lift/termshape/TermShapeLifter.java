@@ -108,6 +108,18 @@ public final class TermShapeLifter {
         // Detect this canonical 2-statement pattern and emit concept:match.
         Optional<Json> matchRecognized = tryRecognizeMatch(block, losses);
         if (matchRecognized.isPresent()) return matchRecognized.get();
+        // While-let recognition: rust `while let Some(x) = expr { body }`
+        // emits `var x = expr; while (x != null) { body... x = expr; }`.
+        // Walk the block looking for this two-stmt run and emit the
+        // remaining stmts AROUND it as a flatter seq.
+        List<Json> sweep = tryRecognizeWhileLet(block, losses);
+        if (sweep != null) {
+            if (sweep.size() == 1) return sweep.get(0);
+            return Jcs.object(
+                "args", new Jcs.Arr(sweep),
+                "concept_name", Jcs.string("concept:seq")
+            );
+        }
         List<Json> stmts = new ArrayList<>();
         for (Statement s : block.getStatements()) {
             Json lifted = liftStatement(s, losses);
@@ -118,6 +130,85 @@ public final class TermShapeLifter {
             "args", new Jcs.Arr(stmts),
             "concept_name", Jcs.string("concept:seq")
         );
+    }
+
+    /** Scan a block for the rust `while let Some(x) = expr { body }`
+     *  emission pattern: `var x = expr; while (x != null) { body...
+     *  x = expr; }`. When found, lifts as concept:while-let alongside
+     *  the surrounding statements. Returns null if no match. */
+    private List<Json> tryRecognizeWhileLet(BlockStmt block, List<Json> losses) {
+        List<Statement> stmts = block.getStatements();
+        // Look for pairs (init-var, while-loop) anywhere in the block.
+        for (int i = 0; i < stmts.size() - 1; i++) {
+            Statement first = stmts.get(i);
+            Statement second = stmts.get(i + 1);
+            // first: ExpressionStmt VariableDeclarationExpr with init
+            String varName = null;
+            com.github.javaparser.ast.expr.Expression initExpr = null;
+            if (first instanceof com.github.javaparser.ast.stmt.ExpressionStmt es
+                    && es.getExpression() instanceof com.github.javaparser.ast.expr.VariableDeclarationExpr vde
+                    && vde.getVariables().size() == 1) {
+                var v0 = vde.getVariable(0);
+                if (v0.getInitializer().isPresent()) {
+                    varName = v0.getNameAsString();
+                    initExpr = v0.getInitializer().get();
+                }
+            }
+            if (varName == null || initExpr == null) continue;
+            // second: while (varName != null) { body... varName = initExpr; }
+            if (!(second instanceof com.github.javaparser.ast.stmt.WhileStmt ws)) continue;
+            String cond = ws.getCondition().toString().replaceAll("\\s+", "");
+            if (!cond.contains(varName + "!=null")) continue;
+            if (!(ws.getBody() instanceof BlockStmt loopBody)) continue;
+            // Last statement should be `varName = initExpr` (re-assign).
+            List<Statement> loopStmts = loopBody.getStatements();
+            if (loopStmts.isEmpty()) continue;
+            Statement last = loopStmts.get(loopStmts.size() - 1);
+            boolean lastReassigns = false;
+            if (last instanceof com.github.javaparser.ast.stmt.ExpressionStmt lastEs
+                    && lastEs.getExpression() instanceof com.github.javaparser.ast.expr.AssignExpr ae) {
+                if (ae.getTarget().toString().equals(varName)
+                        && ae.getValue().toString().equals(initExpr.toString())) {
+                    lastReassigns = true;
+                }
+            }
+            if (!lastReassigns) continue;
+            // Build the rest of the block: pre-stmts (before i) +
+            // concept:while-let + post-stmts (after i+1).
+            List<Json> out = new ArrayList<>();
+            for (int j = 0; j < i; j++) {
+                Json s = liftStatement(stmts.get(j), losses);
+                if (s != null) out.add(s);
+            }
+            // Reconstruct concept:while-let. Pattern is "Some(varName)"
+            // (the rust source's typical pattern).
+            Json patternLeaf = Jcs.object(
+                "kind", Jcs.string("symbol"),
+                "text", Jcs.string("Some(" + varName + ")")
+            );
+            Json initShape = liftExpression(initExpr, losses);
+            // Body is loop's stmts minus the last (re-assign).
+            List<Json> bodyStmts = new ArrayList<>();
+            for (int j = 0; j < loopStmts.size() - 1; j++) {
+                Json s = liftStatement(loopStmts.get(j), losses);
+                if (s != null) bodyStmts.add(s);
+            }
+            Json bodyShape = bodyStmts.size() == 1 ? bodyStmts.get(0)
+                : Jcs.object(
+                    "args", new Jcs.Arr(bodyStmts),
+                    "concept_name", Jcs.string("concept:seq")
+                );
+            out.add(Jcs.object(
+                "args", new Jcs.Arr(List.of(patternLeaf, initShape, bodyShape)),
+                "concept_name", Jcs.string("concept:while-let")
+            ));
+            for (int j = i + 2; j < stmts.size(); j++) {
+                Json s = liftStatement(stmts.get(j), losses);
+                if (s != null) out.add(s);
+            }
+            return out;
+        }
+        return null;
     }
 
     /** Recognize `var __provekit_vN = scrut; if (cond) { then } else { else }`
@@ -284,9 +375,11 @@ public final class TermShapeLifter {
             );
         }
         if (expr instanceof IntegerLiteralExpr i) {
+            // Emit value as integer (not string) so the rust realize
+            // renders it as a numeric literal, not a quoted string.
             return Jcs.object(
                 "kind", Jcs.string("const"),
-                "value", Jcs.string(i.getValue())
+                "value", Jcs.integer(Long.parseLong(i.getValue()))
             );
         }
         if (expr instanceof NameExpr n) {
@@ -587,7 +680,24 @@ public final class TermShapeLifter {
                     );
                 }
             }
-            // Default: concept:call(receiver, method-concept-leaf, args...).
+            // No scope (free function / static method call without
+            // class qualifier) → emit as concept:call(path, args...)
+            // matching rust source-form for free function calls.
+            if (m.getScope().isEmpty()) {
+                List<Json> args = new ArrayList<>();
+                args.add(Jcs.object(
+                    "kind", Jcs.string("path"),
+                    "text", Jcs.string(m.getNameAsString())
+                ));
+                for (Expression a : m.getArguments()) {
+                    args.add(liftExpression(a, losses));
+                }
+                return Jcs.object(
+                    "args", new Jcs.Arr(args),
+                    "concept_name", Jcs.string("concept:call")
+                );
+            }
+            // With scope: concept:call(receiver, method-concept-leaf, args...).
             List<Json> args = new ArrayList<>();
             m.getScope().ifPresent(scope -> args.add(liftExpression(scope, losses)));
             args.add(methodConceptLeaf(m.getNameAsString(), m.getArguments().size()));
