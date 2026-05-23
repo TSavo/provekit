@@ -2,8 +2,12 @@ package com.provekit.emit.junit;
 
 import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
+import java.util.LinkedHashMap;
+import java.util.LinkedHashSet;
 import java.util.List;
+import java.util.Map;
 import java.util.Optional;
+import java.util.Set;
 
 import com.provekit.ir.Blake3;
 import com.provekit.ir.Jcs;
@@ -56,6 +60,15 @@ public final class JUnitEmitter {
     public Emission emit(EmitPlan plan) {
         String className = toPascalCase(plan.function()) + "ContractTest";
 
+        // Map declared formal -> java type, parallel arrays from the plan.
+        Map<String, String> declaredTypes = new LinkedHashMap<>();
+        List<String> formals = plan.params();
+        List<String> formalTypes = plan.paramTypes();
+        for (int i = 0; i < formals.size(); i++) {
+            String t = i < formalTypes.size() ? formalTypes.get(i) : "int";
+            declaredTypes.put(formals.get(i), t == null || t.isBlank() ? "int" : t);
+        }
+
         List<String> emitted = new ArrayList<>();
         List<String> unsupported = new ArrayList<>();
         List<String> methods = new ArrayList<>();
@@ -69,13 +82,92 @@ public final class JUnitEmitter {
                 continue;
             }
             emitted.add(head);
-            methods.add(renderTestMethod(methodName(head, idx), assertion.get()));
+            // Each emitted @Test method is self-contained: it declares
+            // placeholder locals for every free variable the predicate
+            // references so the assertion compiles standalone. The catalog
+            // contract is about the SHAPE of the assertion, not runtime
+            // values; placeholders are the type-correct stand-ins.
+            List<String> declarations = freeVarDeclarations(predicate, head, declaredTypes);
+            methods.add(renderTestMethod(methodName(head, idx), declarations, assertion.get()));
             idx++;
         }
 
         String source = renderClass(className, methods);
         String cid = Blake3.blake3_512(source.getBytes(StandardCharsets.UTF_8));
         return new Emission(source, cid, emitted, unsupported);
+    }
+
+    /**
+     * Build placeholder local-variable declarations for every free variable
+     * referenced by the predicate term, in deterministic encounter order.
+     * Type resolution, in priority order:
+     * <ol>
+     *   <li>the declared formal type from the function signature, if the
+     *       variable is a known parameter;</li>
+     *   <li>a per-predicate default driven by the assertion's java surface:
+     *       reference type ({@code Object}) for nullness predicates,
+     *       {@code int} for ordering/equality comparisons.</li>
+     * </ol>
+     */
+    private List<String> freeVarDeclarations(
+            Jcs.Obj predicate, String head, Map<String, String> declaredTypes) {
+        Set<String> vars = new LinkedHashSet<>();
+        collectVars(predicate, vars);
+        String fallbackType = defaultTypeFor(head);
+        List<String> decls = new ArrayList<>();
+        for (String v : vars) {
+            String type = declaredTypes.getOrDefault(v, fallbackType);
+            decls.add(type + " " + v + " = " + defaultValueFor(type) + ";");
+        }
+        return decls;
+    }
+
+    /** Walk a term tree collecting {@code kind:"var"} names in encounter order. */
+    private static void collectVars(Jcs.Json term, Set<String> out) {
+        if (!(term instanceof Jcs.Obj obj)) return;
+        String kind = obj.stringFieldOrNull("kind");
+        if ("var".equals(kind)) {
+            String name = obj.stringFieldOrNull("name");
+            if (name != null && !name.isBlank()) out.add(name);
+            return;
+        }
+        Jcs.Json args = obj.get("args");
+        if (args instanceof Jcs.Arr arr) {
+            for (Jcs.Json a : arr.values()) collectVars(a, out);
+        }
+    }
+
+    /** Default placeholder type when a variable is not a declared formal. */
+    private static String defaultTypeFor(String head) {
+        if (head == null) return "int";
+        switch (head) {
+            case "option-is-some":
+            case "option-is-none":
+            case "not-null":
+            case "fallible-err":
+                return "Object";
+            default:
+                return "int"; // eq/ne/lt/gt/le/ge: numeric comparison surface
+        }
+    }
+
+    private static String defaultValueFor(String type) {
+        switch (type) {
+            case "int":
+            case "long":
+            case "short":
+            case "byte":
+                return "0";
+            case "double":
+            case "float":
+                return "0.0";
+            case "boolean":
+                return "false";
+            case "char":
+                return "'\\0'";
+            default:
+                return "null"; // reference types: Object, String, etc.
+        }
     }
 
     private String renderClass(String className, List<String> methods) {
@@ -92,11 +184,17 @@ public final class JUnitEmitter {
         return sb.toString();
     }
 
-    private String renderTestMethod(String methodName, String assertionStmt) {
-        return "    @Test\n"
-            + "    void " + methodName + "() {\n"
-            + "        " + assertionStmt + "\n"
-            + "    }\n";
+    private String renderTestMethod(
+            String methodName, List<String> declarations, String assertionStmt) {
+        StringBuilder sb = new StringBuilder();
+        sb.append("    @Test\n");
+        sb.append("    void ").append(methodName).append("() {\n");
+        for (String decl : declarations) {
+            sb.append("        ").append(decl).append('\n');
+        }
+        sb.append("        ").append(assertionStmt).append('\n');
+        sb.append("    }\n");
+        return sb.toString();
     }
 
     private String methodName(String head, int idx) {

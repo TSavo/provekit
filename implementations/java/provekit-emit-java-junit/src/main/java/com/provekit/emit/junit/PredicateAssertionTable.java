@@ -76,11 +76,16 @@ final class PredicateAssertionTable {
             case "fallible-err":
                 // The predicate's single argument is the fallible expression
                 // whose evaluation is asserted to throw. We wrap it in a
-                // throwing-supplier lambda; the catch type is the broadest
-                // checked surface (Exception) since the neutral concept does
-                // not pin a specific java exception class.
+                // throwing executable lambda; the catch type is the broadest
+                // surface (Exception) since the neutral concept does not pin a
+                // specific java exception class. The operand is bound to a
+                // throwaway local so the lambda body is a valid statement (a
+                // bare expression is not a statement in java); this compiles
+                // standalone when the operand is a var/literal and round-trips
+                // a real call expression when the function-under-test is in
+                // scope.
                 return unary(args, x ->
-                    "assertThrows(Exception.class, () -> { " + x + "; });");
+                    "assertThrows(Exception.class, () -> { Object __thrown = " + x + "; });");
             default:
                 return Optional.empty();
         }

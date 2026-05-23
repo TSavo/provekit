@@ -82,6 +82,19 @@ public final class RpcServer {
         }
     }
 
+    /**
+     * Plugin self-description.
+     *
+     * <p>TODO(loader-integration, out of scope for #1402/PR-6): the strict
+     * PEP 1.7.0 loader in {@code provekit-plugin-loader} expects a full plugin
+     * memento envelope ({@code {envelope, header:{cid, content, ...}, metadata}})
+     * and recomputes the {@code header.cid} to verify it. This kit returns a
+     * simpler capability summary because PR-6's scope is the emitter + module +
+     * tests + PR, NOT substrate-side loader wiring (which also needs a
+     * pre-computed PLUGIN_CID over a canonical content payload this kit does
+     * not yet mint). Wire the envelope/header/CID when integrating the kit
+     * into the loader registry.
+     */
     private String describeResult() {
         return "{"
             + "\"name\":\"provekit-emit-java-junit\","

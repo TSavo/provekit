@@ -92,6 +92,56 @@ class EndToEndCompileTest {
         assertCompiles(dir, "BoundedContractTest", e.source());
     }
 
+    /**
+     * Every supported predicate, with VARIABLE operands and a declared
+     * function signature, must produce a compiling test method. This is the
+     * case the brief asks for: "feed it a contract with each supported
+     * predicate, assert the emitted JUnit source is correct + compiles."
+     * Free variables are declared as placeholder locals from the signature
+     * types so each method compiles standalone.
+     */
+    @Test
+    void everySupportedPredicateWithVarOperandsCompiles(@TempDir Path dir) throws Exception {
+        EmitPlan plan = new EmitPlan(
+            "concept:mixed",
+            "mixed",
+            List.of("a", "b", "o"),
+            List.of("int", "int", "Object"),
+            List.of(
+                binaryVar("eq", "a", "b"),
+                binaryVar("ne", "a", "b"),
+                binaryVar("lt", "a", "b"),
+                binaryVar("gt", "a", "b"),
+                binaryVar("le", "a", "b"),
+                binaryVar("ge", "a", "b"),
+                unaryVar("option-is-some", "o"),
+                unaryVar("option-is-none", "o"),
+                unaryVar("fallible-err", "o")));
+
+        JUnitEmitter.Emission e = emitter.emit(plan);
+        assertEquals(
+            List.of("eq", "ne", "lt", "gt", "le", "ge",
+                    "option-is-some", "option-is-none", "fallible-err"),
+            e.emittedPredicates());
+        // Declarations let var-operand assertions compile standalone.
+        assertTrue(e.source().contains("int a = 0;"), e.source());
+        assertTrue(e.source().contains("Object o = null;"), e.source());
+        assertCompiles(dir, "MixedContractTest", e.source());
+    }
+
+    private static Jcs.Obj binaryVar(String concept, String a, String b) {
+        return (Jcs.Obj) Jcs.parse(
+            "{\"kind\":\"op\",\"name\":\"concept:" + concept + "\",\"args\":["
+            + "{\"kind\":\"var\",\"name\":\"" + a + "\"},"
+            + "{\"kind\":\"var\",\"name\":\"" + b + "\"}]}");
+    }
+
+    private static Jcs.Obj unaryVar(String concept, String x) {
+        return (Jcs.Obj) Jcs.parse(
+            "{\"kind\":\"op\",\"name\":\"concept:" + concept + "\",\"args\":["
+            + "{\"kind\":\"var\",\"name\":\"" + x + "\"}]}");
+    }
+
     private static String lit(long v) {
         return "{\"kind\":\"const\",\"value\":" + v
             + ",\"sort\":{\"kind\":\"primitive\",\"name\":\"Int\"}}";

@@ -113,7 +113,7 @@ class PredicateAssertionTableTest {
     @Test
     void fallibleErrMapsToAssertThrows() {
         assertEquals(
-            "assertThrows(Exception.class, () -> { parse(s); });",
+            "assertThrows(Exception.class, () -> { Object __thrown = parse(s); });",
             render(unary("fallible-err",
                 Jcs.parse("{\"kind\":\"op\",\"name\":\"parse\",\"args\":["
                     + Jcs.encode(var("s")) + "]}"))));
