@@ -56,6 +56,12 @@ public final class TermShapeLifter {
 
     /** Lift a block as concept:seq of its statements. */
     private Json liftBlock(BlockStmt block, List<Json> losses) {
+        // Substrate-symmetric match recognition: the rust lower emits
+        // `match scrut { pat1 => body1, _ => body2 }` as java
+        // `var __provekit_vN = scrut; if (pat-as-cond) { body1 } else { body2 }`.
+        // Detect this canonical 2-statement pattern and emit concept:match.
+        Optional<Json> matchRecognized = tryRecognizeMatch(block, losses);
+        if (matchRecognized.isPresent()) return matchRecognized.get();
         List<Json> stmts = new ArrayList<>();
         for (Statement s : block.getStatements()) {
             Json lifted = liftStatement(s, losses);
@@ -66,6 +72,73 @@ public final class TermShapeLifter {
             "args", new Jcs.Arr(stmts),
             "concept_name", Jcs.string("concept:seq")
         );
+    }
+
+    /** Recognize `var __provekit_vN = scrut; if (cond) { then } else { else }`
+     *  as concept:match(scrut, arm1, arm2). The cond is mapped back to a
+     *  pattern-string heuristically (`!= null && !is_null()` → `Some(v) if
+     *  !v.is_null()`); for the catch-all else arm the pattern is `_`. */
+    private Optional<Json> tryRecognizeMatch(BlockStmt block, List<Json> losses) {
+        List<Statement> stmts = block.getStatements();
+        if (stmts.size() != 2) return Optional.empty();
+        if (!(stmts.get(0) instanceof com.github.javaparser.ast.stmt.ExpressionStmt es)) return Optional.empty();
+        if (!(es.getExpression() instanceof com.github.javaparser.ast.expr.VariableDeclarationExpr vde)) return Optional.empty();
+        if (vde.getVariables().size() != 1) return Optional.empty();
+        var decl = vde.getVariable(0);
+        String binding = decl.getNameAsString();
+        if (!binding.startsWith("__provekit_v")) return Optional.empty();
+        if (decl.getInitializer().isEmpty()) return Optional.empty();
+        com.github.javaparser.ast.expr.Expression scrutExpr = decl.getInitializer().get();
+        if (!(stmts.get(1) instanceof com.github.javaparser.ast.stmt.IfStmt ifs)) return Optional.empty();
+        if (ifs.getElseStmt().isEmpty()) return Optional.empty();
+        Statement thenStmt = ifs.getThenStmt();
+        Statement elseStmt = ifs.getElseStmt().get();
+        // Build concept:match(scrut, arm1, arm2). For the arm patterns
+        // use a heuristic mapping of the condition's shape.
+        String arm1Pattern = derivePatternFromCondition(ifs.getCondition(), binding);
+        Json scrutShape = liftExpression(scrutExpr, losses);
+        Json arm1Body = thenStmt instanceof BlockStmt tb ? liftBlock(tb, losses) : liftStatement(thenStmt, losses);
+        Json arm2Body = elseStmt instanceof BlockStmt eb ? liftBlock(eb, losses) : liftStatement(elseStmt, losses);
+        Json arm1 = Jcs.object(
+            "args", new Jcs.Arr(List.of(
+                Jcs.object("kind", Jcs.string("symbol"), "text", Jcs.string(arm1Pattern)),
+                arm1Body
+            )),
+            "concept_name", Jcs.string("concept:match-arm")
+        );
+        Json arm2 = Jcs.object(
+            "args", new Jcs.Arr(List.of(
+                Jcs.object("kind", Jcs.string("symbol"), "text", Jcs.string("_")),
+                arm2Body
+            )),
+            "concept_name", Jcs.string("concept:match-arm")
+        );
+        return Optional.of(Jcs.object(
+            "args", new Jcs.Arr(List.of(scrutShape, arm1, arm2)),
+            "concept_name", Jcs.string("concept:match")
+        ));
+    }
+
+    /** Heuristic pattern-from-condition mapping. Recognizes the common
+     *  java cond forms the lower emits: `X != null` → `Some(v)`,
+     *  `X != null && !X.isNull()` → `Some(v) if !v.is_null()`. Falls
+     *  back to a synthetic Pattern(binding) for unknown forms. */
+    private String derivePatternFromCondition(com.github.javaparser.ast.expr.Expression cond, String binding) {
+        // Normalize: remove all whitespace for substring checks since
+        // JavaParser may render `v . is_null ()` with spaces from
+        // token-stream lifts.
+        String t = cond.toString().replaceAll("\\s+", "");
+        // Pattern: __provekit_vN != null && !v.is_null() (or .isNull())
+        if (t.contains("!=null") && (t.contains(".isNull()") || t.contains(".is_null()"))) {
+            return "Some(v) if !v.is_null()";
+        }
+        if (t.contains("!=null") || t.matches(".*\\binstanceof.*\\.Ok\\b.*")) {
+            return "Some(v)";
+        }
+        if (t.matches(".*\\binstanceof.*\\.Err\\b.*")) {
+            return "Err(e)";
+        }
+        return "Some(v)";
     }
 
     private Json liftStatement(Statement stmt, List<Json> losses) {
@@ -391,6 +464,19 @@ public final class TermShapeLifter {
             // concept_name for the same emitted construct.
             String scopeText = m.getScope().map(Object::toString).orElse("");
             String name = m.getNameAsString();
+            // json!{} → Supplier-closure pattern recognition.
+            // Substrate-symmetric lift: when java emit form was
+            // `((Supplier<X>) () -> { var __obj = MAPPER.createObjectNode();
+            //   __obj.put(K,V); ... return __obj; }).get()`,
+            // recognize it as concept:macro-call(json, ...). Closes the
+            // substrate-symmetric cycle for this pattern without needing
+            // the @substrate-term-shape sidecar.
+            if ("get".equals(name) && m.getArguments().isEmpty()) {
+                Optional<Jcs.Json> jsonMacro = tryRecognizeJsonSupplier(m);
+                if (jsonMacro.isPresent()) {
+                    return jsonMacro.get();
+                }
+            }
             // com.provekit.runtime.Substrate.X — the runtime helpers
             // that carry concept identity at runtime. Both the citation
             // path and the syntax path produce the same canonical concept.
@@ -458,6 +544,136 @@ public final class TermShapeLifter {
         }
         recordLoss(losses, "unrecognized-expr", expr);
         return Jcs.object();
+    }
+
+    /** Try to recognize the json!-macro emission pattern in java:
+     *  `((Supplier&lt;X&gt;) () -> { ObjectNode __obj = MAPPER.createObjectNode();
+     *    __obj.put(K, V); ... return __obj; }).get()`
+     *
+     *  When matched, returns a concept:macro-call node mirroring what
+     *  the rust lift would have emitted from `json!{ K: V, ... }`. Closes
+     *  the substrate-symmetric cycle for this pattern.
+     *
+     *  Approach: walk the .get() receiver looking for a cast →
+     *  lambda(no params) → block body matching the createObjectNode +
+     *  put chain. Reconstruct the K:V pairs from the put() calls and
+     *  emit them as concept:macro-call args.
+     */
+    private Optional<Jcs.Json> tryRecognizeJsonSupplier(MethodCallExpr getCall) {
+        var scope = getCall.getScope();
+        if (scope.isEmpty()) return Optional.empty();
+        // Unwrap outer parens.
+        com.github.javaparser.ast.expr.Expression inner = scope.get();
+        while (inner instanceof com.github.javaparser.ast.expr.EnclosedExpr enc) {
+            inner = enc.getInner();
+        }
+        // Expect a CastExpr to Supplier<X>.
+        if (!(inner instanceof com.github.javaparser.ast.expr.CastExpr cast)) {
+            return Optional.empty();
+        }
+        String castType = cast.getType().asString();
+        if (!castType.contains("Supplier")) return Optional.empty();
+        // Cast operand is the lambda.
+        com.github.javaparser.ast.expr.Expression lambdaExpr = cast.getExpression();
+        while (lambdaExpr instanceof com.github.javaparser.ast.expr.EnclosedExpr enc) {
+            lambdaExpr = enc.getInner();
+        }
+        if (!(lambdaExpr instanceof com.github.javaparser.ast.expr.LambdaExpr lambda)) {
+            return Optional.empty();
+        }
+        if (!lambda.getParameters().isEmpty()) return Optional.empty();
+        // Body should be a Block.
+        if (!(lambda.getBody() instanceof com.github.javaparser.ast.stmt.BlockStmt block)) {
+            return Optional.empty();
+        }
+        // Walk block: expect var __obj = MAPPER.createObjectNode(); puts; return __obj
+        java.util.List<com.github.javaparser.ast.stmt.Statement> stmts = block.getStatements();
+        if (stmts.size() < 2) return Optional.empty();
+        // First stmt: var binding to createObjectNode call.
+        com.github.javaparser.ast.stmt.Statement first = stmts.get(0);
+        String objVar = null;
+        if (first instanceof com.github.javaparser.ast.stmt.ExpressionStmt es
+                && es.getExpression() instanceof com.github.javaparser.ast.expr.VariableDeclarationExpr vde) {
+            for (var v : vde.getVariables()) {
+                if (v.getInitializer().isPresent()
+                        && v.getInitializer().get() instanceof MethodCallExpr init
+                        && "createObjectNode".equals(init.getNameAsString())) {
+                    objVar = v.getNameAsString();
+                    break;
+                }
+            }
+        }
+        if (objVar == null) return Optional.empty();
+        // Collect put(K, V) and set(K, V) pairs.
+        java.util.List<String> kvPairs = new java.util.ArrayList<>();
+        for (int i = 1; i < stmts.size() - 1; i++) {
+            com.github.javaparser.ast.stmt.Statement s = stmts.get(i);
+            if (!(s instanceof com.github.javaparser.ast.stmt.ExpressionStmt ese)) continue;
+            if (!(ese.getExpression() instanceof MethodCallExpr putCall)) continue;
+            String putName = putCall.getNameAsString();
+            if (!"put".equals(putName) && !"set".equals(putName)) continue;
+            if (putCall.getArguments().size() != 2) continue;
+            // Detect nested json! macros (nested objects): the value arg
+            // could itself be a Supplier-closure .get() call — recurse.
+            com.github.javaparser.ast.expr.Expression keyExpr = putCall.getArgument(0);
+            com.github.javaparser.ast.expr.Expression valExpr = putCall.getArgument(1);
+            String key = keyExpr.toString();
+            String value;
+            if (valExpr instanceof MethodCallExpr nestedGet
+                    && "get".equals(nestedGet.getNameAsString())
+                    && nestedGet.getArguments().isEmpty()) {
+                Optional<Jcs.Json> nested = tryRecognizeJsonSupplier(nestedGet);
+                if (nested.isPresent()) {
+                    // Render nested as its inner token form.
+                    value = renderJsonMacroBody(nested.get());
+                } else {
+                    value = valExpr.toString();
+                }
+            } else {
+                value = valExpr.toString();
+            }
+            kvPairs.add(key + ": " + value);
+        }
+        // Reconstruct json! body tokens. Format matches what syn::Macro
+        // emits via to_token_stream + our normalizer:
+        // `{ "k" : v , "k2" : v2 , }`.
+        StringBuilder body = new StringBuilder("{ ");
+        for (String kv : kvPairs) {
+            body.append(kv).append(", ");
+        }
+        body.append("}");
+        Jcs.Json pathLeaf = Jcs.object(
+            "kind", Jcs.string("symbol"),
+            "text", Jcs.string("json")
+        );
+        Jcs.Json tokensLeaf = Jcs.object(
+            "kind", Jcs.string("symbol"),
+            "text", Jcs.string(body.toString())
+        );
+        return Optional.of(Jcs.object(
+            "args", new Jcs.Arr(java.util.List.of(pathLeaf, tokensLeaf)),
+            "concept_name", Jcs.string("concept:macro-call")
+        ));
+    }
+
+    /** Render a concept:macro-call node back to its body-token form for
+     *  use as a nested value in another json! reconstruction. */
+    private String renderJsonMacroBody(Jcs.Json macroCall) {
+        if (!(macroCall instanceof Jcs.Obj obj)) return "";
+        for (Jcs.Field f : obj.fields()) {
+            if ("args".equals(f.key()) && f.value() instanceof Jcs.Arr arr
+                    && arr.values().size() >= 2) {
+                Jcs.Json tokensLeaf = arr.values().get(1);
+                if (tokensLeaf instanceof Jcs.Obj t) {
+                    for (Jcs.Field tf : t.fields()) {
+                        if ("text".equals(tf.key()) && tf.value() instanceof Jcs.Str s) {
+                            return s.value();
+                        }
+                    }
+                }
+            }
+        }
+        return "";
     }
 
     /** Read a leading {@code /*@concept ...*}{@code /} citation comment

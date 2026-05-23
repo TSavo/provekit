@@ -38,6 +38,10 @@ public final class Main {
             }
         }
         String source = Files.readString(inputPath);
+        // Configure JavaParser for JAVA_17 to support records + sealed
+        // interfaces (which the substrate emits for rust struct/enum decls).
+        StaticJavaParser.getParserConfiguration().setLanguageLevel(
+            com.github.javaparser.ParserConfiguration.LanguageLevel.JAVA_17);
         CompilationUnit cu = StaticJavaParser.parse(source);
 
         TermShapeLifter lifter = new TermShapeLifter();
