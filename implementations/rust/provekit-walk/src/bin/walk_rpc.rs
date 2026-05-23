@@ -401,6 +401,7 @@ fn bind_lift(params: &Value) -> Result<Value, String> {
                 .cloned()
                 .unwrap_or_default();
 
+            let doc_lines = sugar_doc_lines(item_fn);
             let mut entry = json!({
                 "kind": "bind-lift-entry",
                 "param_names": param_names,
@@ -414,6 +415,7 @@ fn bind_lift(params: &Value) -> Result<Value, String> {
                 "operand_bindings": operand_bindings,
                 "source_function_name": target.source_name,
                 "witnesses": witnesses,
+                "doc_lines": doc_lines,
             });
             if let Some(concept_annotation) = &target.concept_annotation {
                 entry["concept_annotation"] = json!(concept_annotation);
@@ -1971,6 +1973,51 @@ fn sugar_generic_params(item_fn: &syn::ItemFn) -> String {
     } else {
         item_fn.sig.generics.to_token_stream().to_string()
     }
+}
+
+/// #1391 follow-on: extract the `///` doc-comment lines that appear
+/// AFTER the `#[provekit::sugar(...)]` attribute on a fn (syn surfaces
+/// these as `#[doc = "..."]` attributes interleaved with sugar). Doc
+/// comments BEFORE the sugar attribute belong to the rust source-level
+/// concept declaration block (a different surface that measure_fn skips)
+/// and are NOT round-tripped through the cycle's body channel.
+///
+/// Returns the doc body lines (without the `/// ` prefix and without
+/// `\n`), preserving source order. Empty when the function has no
+/// post-sugar docs.
+fn sugar_doc_lines(item_fn: &syn::ItemFn) -> Vec<String> {
+    let mut out = Vec::new();
+    let mut seen_sugar = false;
+    for attr in &item_fn.attrs {
+        let path = attr.path();
+        // Detect the `#[provekit::sugar(...)]` attribute by its two-segment
+        // path.
+        let segs: Vec<_> = path.segments.iter().collect();
+        if segs.len() == 2
+            && segs[0].ident == "provekit"
+            && segs[1].ident == "sugar"
+        {
+            seen_sugar = true;
+            continue;
+        }
+        if !path.is_ident("doc") {
+            continue;
+        }
+        if !seen_sugar {
+            // Doc BEFORE sugar — belongs to the rust-source concept block;
+            // skip for the cycle's emit (the block precedes the cycle's
+            // function-level surface).
+            continue;
+        }
+        if let syn::Meta::NameValue(nv) = &attr.meta {
+            if let syn::Expr::Lit(elit) = &nv.value {
+                if let syn::Lit::Str(s) = &elit.lit {
+                    out.push(s.value());
+                }
+            }
+        }
+    }
+    out
 }
 
 fn sugar_type_surface(ty: &syn::Type) -> String {

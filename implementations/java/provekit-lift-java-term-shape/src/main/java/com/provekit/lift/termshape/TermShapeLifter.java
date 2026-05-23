@@ -1109,6 +1109,18 @@ public final class TermShapeLifter {
                 Json lifted = liftStatement(st, losses);
                 if (lifted != null) out.add(lifted);
             }
+            // Blank-line check between the last pre-stmt and the match
+            // temp-init line (s0). The match consumes BOTH s0 and s1; the
+            // blank-line precedes s0 in source.
+            if (prevEndLine != null && s0.getBegin().isPresent()) {
+                int eff = s0.getBegin().get().line;
+                if (eff > prevEndLine + 1) {
+                    out.add(Jcs.object(
+                        "args", new Jcs.Arr(List.of()),
+                        "concept_name", Jcs.string("concept:blank-line")
+                    ));
+                }
+            }
             out.add(matchShape);
             if (s1.getEnd().isPresent()) prevEndLine = s1.getEnd().get().line;
             // Lift tail statements, if any, as a sub-block so further
@@ -1973,10 +1985,54 @@ public final class TermShapeLifter {
             // `X != null ? f.apply(X) : null` → concept:call(X, method:and_then, f).
             // The cycled rust gets `X.and_then(f)` matching source form.
             if (condText.endsWith("!=null") && elseText.replaceAll("\\s+", "").equals("null")) {
-                // Then branch should be `f.apply(X)` where X is the
-                // null-checked operand. Walk the then expr for a
-                // MethodCallExpr with name "apply" and one arg = X.
+                // Pattern: `X != null ? X.M() : null` → `X.and_then(|m| m.M())`.
+                // Distinct from the `apply` form below — when the lambda
+                // body is just `m.M()`, the lower inlines the lambda body.
                 String operand = condText.substring(0, condText.length() - "!=null".length());
+                if (ce.getThenExpr() instanceof com.github.javaparser.ast.expr.MethodCallExpr mcInline
+                        && mcInline.getScope().isPresent()
+                        && mcInline.getArguments().isEmpty()) {
+                    String scopeStripped = mcInline.getScope().get().toString().replaceAll("\\s+", "");
+                    if (scopeStripped.equals(operand)) {
+                        // The receiver is the same as the operand → inlined lambda.
+                        Json operandShape = liftExpression(mcInline.getScope().get(), losses);
+                        String methodName = mcInline.getNameAsString();
+                        // Map common java method names back to rust.
+                        String rustMethod = switch (methodName) {
+                            case "asText" -> "as_str";
+                            case "isNull" -> "is_null";
+                            case "isArray" -> "is_array";
+                            case "isObject" -> "is_object";
+                            default -> methodName;
+                        };
+                        // Build the closure `|m| m.M()` shape.
+                        Json closureBody = Jcs.object(
+                            "args", new Jcs.Arr(List.of(
+                                Jcs.object("kind", Jcs.string("symbol"), "text", Jcs.string("m")),
+                                Jcs.object("arity", Jcs.string("0"),
+                                    "concept_name", Jcs.string("method:" + rustMethod),
+                                    "kind", Jcs.string("method"),
+                                    "text", Jcs.string(rustMethod))
+                            )),
+                            "concept_name", Jcs.string("concept:call")
+                        );
+                        Json closureShape = Jcs.object(
+                            "args", new Jcs.Arr(List.of(
+                                closureBody,
+                                Jcs.object("kind", Jcs.string("symbol"), "text", Jcs.string("m"))
+                            )),
+                            "concept_name", Jcs.string("concept:closure")
+                        );
+                        return Jcs.object(
+                            "args", new Jcs.Arr(List.of(
+                                operandShape,
+                                methodConceptLeaf("and_then", 1),
+                                closureShape
+                            )),
+                            "concept_name", Jcs.string("concept:call")
+                        );
+                    }
+                }
                 com.github.javaparser.ast.expr.MethodCallExpr applyCall = null;
                 if (ce.getThenExpr() instanceof com.github.javaparser.ast.expr.MethodCallExpr mc
                         && "apply".equals(mc.getNameAsString())

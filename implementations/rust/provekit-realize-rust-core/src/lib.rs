@@ -2247,6 +2247,11 @@ pub fn dispatch(request: &Value) -> Value {
                 .unwrap_or("")
                 .to_string();
             CURRENT_GENERIC_PARAMS.with(|v| *v.borrow_mut() = generic_params);
+            let doc_lines = string_array(
+                params.get("docLines")
+                    .or_else(|| params.get("doc_lines")),
+            );
+            CURRENT_DOC_LINES.with(|v| *v.borrow_mut() = doc_lines);
             let original_param_types = string_array(
                 params.get("originalParamTypes")
                     .or_else(|| params.get("original_param_types")),
@@ -2674,6 +2679,11 @@ thread_local! {
     /// re-lifted (cycle-invariance test).
     pub(crate) static CURRENT_CONCEPT_NAME: std::cell::RefCell<String> =
         std::cell::RefCell::new(String::new());
+    /// Doc comment lines (`///` content, without the prefix) for the
+    /// function being realized. Emitted as `/// <text>` lines between the
+    /// concept attribute and the fn signature. Empty when source had no docs.
+    pub(crate) static CURRENT_DOC_LINES: std::cell::RefCell<Vec<String>> =
+        std::cell::RefCell::new(Vec::new());
 }
 
 /// Pretty-print comma-separated macro args (format!, println!, etc.).
@@ -3291,7 +3301,21 @@ fn function_source(
             )
         }
     });
-    let assembled = format!("{attr_prefix}{vis_prefix}fn {function}{generic_params}({typed_params}){return_suffix} {{\n{indented}\n}}\n");
+    // Doc-comment prefix: emit each doc line as `/// <text>` between the
+    // @sugar attribute and the fn signature, matching the rust source's
+    // typical `attr → doc → fn` order.
+    let doc_prefix = CURRENT_DOC_LINES.with(|v| {
+        let lines = v.borrow();
+        if lines.is_empty() {
+            String::new()
+        } else {
+            lines.iter()
+                .map(|l| format!("///{}\n", l))
+                .collect::<Vec<_>>()
+                .join("")
+        }
+    });
+    let assembled = format!("{attr_prefix}{doc_prefix}{vis_prefix}fn {function}{generic_params}({typed_params}){return_suffix} {{\n{indented}\n}}\n");
     // #1391 follow-on: macro-body re-indent. rustfmt on stable does NOT
     // reformat macro internals. The sentinel resolver gives args the
     // pre-rustfmt column position; when rustfmt re-indents the macro call
