@@ -777,7 +777,15 @@ public final class TermShapeLifter {
                     com.github.javaparser.ast.expr.Expression fnExpr = applyCall.getScope().orElse(null);
                     if (fnExpr != null) {
                         Json operandShape = liftExpression(operandExpr, losses);
-                        Json fnShape = liftExpression(fnExpr, losses);
+                        // #1391 follow-on: recognize the canned Value::as_*
+                        // lambda expansions. The java lower emits
+                        // `(Function<JsonNode,JsonNode>)(n -> n != null &&
+                        // n.isArray() ? n : null)` for Value::as_array (and
+                        // analogous for as_object). Strip the cast +
+                        // parens, then pattern-match the lambda body to
+                        // reconstruct the rust symbol.
+                        Json fnShape = recognizeAsValueAccessor(fnExpr)
+                            .orElseGet(() -> liftExpression(fnExpr, losses));
                         return Jcs.object(
                             "args", new Jcs.Arr(List.of(
                                 operandShape,
@@ -1159,6 +1167,17 @@ public final class TermShapeLifter {
                 if (jsonMacro.isPresent()) {
                     return jsonMacro.get();
                 }
+            }
+            // #1391 follow-on: MAPPER.nullNode() → Value::Null symbol.
+            // Substrate-symmetric: rust source `Value::Null` lowers to
+            // `MAPPER.nullNode()` via the symbol remap; the reverse lift
+            // restores the symbol so the round-trip is byte-identical.
+            if ("nullNode".equals(name) && scopeText.endsWith("MAPPER")
+                    && m.getArguments().isEmpty()) {
+                return Jcs.object(
+                    "kind", Jcs.string("symbol"),
+                    "text", Jcs.string("Value::Null")
+                );
             }
             // java.util.Objects.equals(a, b) → a == b (rust equality).
             if ("equals".equals(name) && scopeText.endsWith("Objects") && m.getArguments().size() == 2) {
@@ -1897,6 +1916,51 @@ public final class TermShapeLifter {
             "kind", Jcs.string("method"),
             "text", Jcs.string(name)
         );
+    }
+
+    /** #1391 follow-on: pattern-recognize the canned Value::as_* lambda
+     *  expansions emitted by SugarRealizer. Returns a {kind:"symbol",
+     *  text:"Value::as_array"} leaf if the expression is one of those
+     *  expansions; otherwise empty.
+     *
+     *  Patterns recognized (after stripping EnclosedExpr + CastExpr):
+     *    n -> n != null && n.isArray() ? n : null   → Value::as_array
+     *    n -> n != null && n.isObject() ? n : null  → Value::as_object
+     *
+     *  The rust realize side will emit this as the symbol passed to
+     *  and_then, matching the source-form chain.
+     */
+    private Optional<Json> recognizeAsValueAccessor(com.github.javaparser.ast.expr.Expression e) {
+        com.github.javaparser.ast.expr.Expression core = e;
+        while (core instanceof com.github.javaparser.ast.expr.EnclosedExpr enc) {
+            core = enc.getInner();
+        }
+        while (core instanceof com.github.javaparser.ast.expr.CastExpr cast) {
+            core = cast.getExpression();
+            while (core instanceof com.github.javaparser.ast.expr.EnclosedExpr enc) {
+                core = enc.getInner();
+            }
+        }
+        if (!(core instanceof LambdaExpr lam)) return Optional.empty();
+        if (lam.getParameters().size() != 1) return Optional.empty();
+        // Collapse whitespace + compare against the canonical body shapes
+        // emitted by SugarRealizer's Value::as_* remap.
+        String pName = lam.getParameter(0).getNameAsString();
+        String bodyText;
+        if (lam.getExpressionBody().isPresent()) {
+            bodyText = lam.getExpressionBody().get().toString().replaceAll("\\s+", "");
+        } else {
+            return Optional.empty();
+        }
+        String arrayExpect = pName + "!=null&&" + pName + ".isArray()?" + pName + ":null";
+        String objectExpect = pName + "!=null&&" + pName + ".isObject()?" + pName + ":null";
+        if (bodyText.equals(arrayExpect)) {
+            return Optional.of(Jcs.object("kind", Jcs.string("symbol"), "text", Jcs.string("Value::as_array")));
+        }
+        if (bodyText.equals(objectExpect)) {
+            return Optional.of(Jcs.object("kind", Jcs.string("symbol"), "text", Jcs.string("Value::as_object")));
+        }
+        return Optional.empty();
     }
 
     private void recordLoss(List<Json> losses, String dimension, Node node) {
