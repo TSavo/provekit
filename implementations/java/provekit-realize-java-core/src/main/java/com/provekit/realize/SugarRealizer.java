@@ -1467,6 +1467,15 @@ final class SugarRealizer {
             List<String> lines = new ArrayList<>();
             for (int i = 0; i < args.size(); i++) {
                 Jcs.Obj child = args.get(i);
+                // #1391 follow-on: blank-line carrier. Emit an empty line
+                // in the lowered java so the substrate-symmetric path
+                // can re-detect it on the lift side. (Single blank line
+                // per marker — rustfmt normalizes multi-blanks anyway.)
+                String childCN = shapeConceptName(child);
+                if (conceptMatches("concept:blank-line", childCN)) {
+                    lines.add("");
+                    continue;
+                }
                 Optional<String> childBody = lowerShapeBody(child, context, appendPosition(position, i));
                 if (childBody.isPresent()) {
                     if (!childBody.get().isBlank()) {

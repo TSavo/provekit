@@ -154,7 +154,39 @@ public final class TermShapeLifter {
             );
         }
         List<Json> stmts = new ArrayList<>();
+        // #1391 follow-on: blank-line carrier — detect blank line(s) between
+        // consecutive java statements via JavaParser begin/end lines and
+        // emit a concept:blank-line marker so the cycle preserves rust's
+        // paragraph-style separators. One marker per gap (rustfmt
+        // normalizes multi-blank to single).
+        Integer prevEndLine = null;
         for (Statement s : block.getStatements()) {
+            if (prevEndLine != null && s.getBegin().isPresent()) {
+                int startLine = s.getBegin().get().line;
+                // If a comment is attached to this statement, use the
+                // comment's begin line as the effective start — the
+                // comment is part of this statement's "span" for
+                // blank-line detection purposes. A `// item-decl (rust):`
+                // line carrier that immediately follows a statement is
+                // NOT a blank line. Without this adjustment, we falsely
+                // detect a blank between the previous stmt and the
+                // comment-bearing stmt.
+                int effectiveStart = startLine;
+                if (s.getComment().isPresent()
+                        && s.getComment().get().getBegin().isPresent()) {
+                    int commentLine = s.getComment().get().getBegin().get().line;
+                    if (commentLine < effectiveStart) effectiveStart = commentLine;
+                }
+                if (effectiveStart > prevEndLine + 1) {
+                    stmts.add(Jcs.object(
+                        "args", new Jcs.Arr(List.of()),
+                        "concept_name", Jcs.string("concept:blank-line")
+                    ));
+                }
+            }
+            if (s.getEnd().isPresent()) {
+                prevEndLine = s.getEnd().get().line;
+            }
             // #1391 follow-on: when java lower emitted a function-local
             // const as a `// item-decl (rust): <source>` comment, the
             // comment attaches to the NEXT statement. Detect such

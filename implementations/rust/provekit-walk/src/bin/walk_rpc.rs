@@ -2613,7 +2613,25 @@ impl ShapeContext {
 fn shape_of_block(block: &syn::Block, ctx: &ShapeContext) -> Arc<CValue> {
     let mut block_ctx = ctx.clone();
     let mut shapes = Vec::with_capacity(block.stmts.len());
+    // #1391 follow-on: blank-line carrier for substrate-symmetric
+    // round-trip. When the source has a blank line between two
+    // statements, emit a concept:blank-line marker so the lower side
+    // (java) can carry it through and rust realize can re-emit the
+    // blank line. Detection: stmt end line vs next stmt start line
+    // is > 1 (i.e. at least one blank line between them).
+    let mut prev_end_line: Option<usize> = None;
     for stmt in &block.stmts {
+        let span = stmt.span();
+        let start_line = span.start().line;
+        if let Some(prev) = prev_end_line {
+            if start_line > prev + 1 {
+                // One concept:blank-line marker per gap, regardless of
+                // how many blank lines (rustfmt normalizes multi-blank
+                // to single).
+                shapes.push(gamma_operation("concept:blank-line", Vec::new()));
+            }
+        }
+        prev_end_line = Some(span.end().line);
         shapes.push(shape_of_stmt(stmt, &block_ctx));
         update_context_from_stmt(stmt, &mut block_ctx);
     }

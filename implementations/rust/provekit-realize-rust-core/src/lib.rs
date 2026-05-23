@@ -423,6 +423,14 @@ fn lower_term_shape_body(
         let returns_non_unit = map_source_type(&context.return_type) != "()";
         for (index, child) in children.iter().enumerate() {
             let child_position = append_position(position, index);
+            // #1391 follow-on: blank-line carrier — emit an empty line
+            // entry. The join("\n") in the function-body assembler turns
+            // it into a single blank line, matching rust source's
+            // paragraph-style separators. One marker per gap.
+            if term_shape_concept_name(child).as_deref() == Some("concept:blank-line") {
+                lines.push(String::new());
+                continue;
+            }
             // Tail-expression preference: when this is the LAST child of
             // the function-root seq AND the function returns non-unit,
             // try the EXPRESSION form first (no `;`). This matches rust's
