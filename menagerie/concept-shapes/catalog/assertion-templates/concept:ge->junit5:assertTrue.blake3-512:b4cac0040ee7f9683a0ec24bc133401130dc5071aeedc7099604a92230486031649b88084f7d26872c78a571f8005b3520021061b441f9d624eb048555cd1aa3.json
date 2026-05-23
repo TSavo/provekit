@@ -1,0 +1,41 @@
+{
+  "memento": {
+    "kind": "assertion-template",
+    "fn_name": "concept:ge->junit5:assertTrue",
+    "predicate_concept": "concept:ge",
+    "target": {
+      "framework": "junit5",
+      "assertion": "assertTrue"
+    },
+    "formals": [
+      "a",
+      "b"
+    ],
+    "formal_sorts": [
+      {
+        "kind": "ctor",
+        "name": "Comparable",
+        "args": []
+      },
+      {
+        "kind": "ctor",
+        "name": "Comparable",
+        "args": []
+      }
+    ],
+    "emit_template": "assertTrue({a} >= {b})",
+    "harvest_pattern": "assertTrue({a} >= {b})",
+    "harvest_pattern_alt": [],
+    "loss_record": {
+      "structural_divergence": "JUnit has no native assertGreaterOrEqual; encoded as assertTrue over the >= operator. Harvester must inspect the inline operator (>=) to disambiguate."
+    },
+    "discharge_receipt": "deferred:pending-pk-1401",
+    "effects": []
+  },
+  "cid": "blake3-512:b4cac0040ee7f9683a0ec24bc133401130dc5071aeedc7099604a92230486031649b88084f7d26872c78a571f8005b3520021061b441f9d624eb048555cd1aa3",
+  "signature": {
+    "alg": "ed25519",
+    "key_id": "UNSIGNED_DEV_ONLY",
+    "sig_b64": "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"
+  }
+}

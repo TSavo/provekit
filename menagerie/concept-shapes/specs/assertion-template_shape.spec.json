@@ -1,0 +1,86 @@
+{
+  "effects": {
+    "effects": []
+  },
+  "fn_name": "AssertionTemplateMemento",
+  "formal_sorts": [],
+  "formals": [],
+  "kind": "sort",
+  "post": {
+    "fields": [
+      {
+        "name": "kind",
+        "sort": "String",
+        "description": "Discriminator. Always 'assertion-template' for this memento family."
+      },
+      {
+        "name": "fn_name",
+        "sort": "String",
+        "description": "Human-readable composite name of the form '<predicate-concept>->junit5:<assertion>'. Matches the filename stem."
+      },
+      {
+        "name": "predicate_concept",
+        "sort": "String",
+        "description": "The concept hub operator this template realizes (e.g. 'concept:option-is-some', 'concept:eq'). Must reference an existing concept hub minted under catalog/abstractions/ or catalog/algorithms/."
+      },
+      {
+        "name": "target",
+        "sort": "AssertionTemplateTarget",
+        "description": "The native test framework target. Record with two fields: 'framework' (e.g. 'junit5') and 'assertion' (the native assertion method name, e.g. 'assertNotNull', 'assertEquals')."
+      },
+      {
+        "name": "formals",
+        "sort": "ListOfString",
+        "description": "Ordered list of formal parameter names referenced inside emit_template / harvest_pattern (e.g. ['x'] or ['a', 'b'])."
+      },
+      {
+        "name": "formal_sorts",
+        "sort": "ListOfSort",
+        "description": "Sort constructor for each formal, parallel to 'formals' (e.g. [{kind: ctor, name: OptionOfA}] or [{kind: ctor, name: Comparable}])."
+      },
+      {
+        "name": "emit_template",
+        "sort": "String",
+        "description": "EMITTER direction. The native-language assertion source string with {formal} placeholders. Substituting actual argument source into the placeholders yields a syntactically valid call in the target framework."
+      },
+      {
+        "name": "harvest_pattern",
+        "sort": "String",
+        "description": "HARVESTER direction (primary). The canonical native source pattern this template matches against (with {formal} placeholders). Multiple distinct comparison ops (lt/gt/le/ge) all map to assertTrue, so this pattern carries the disambiguating inline operator literally."
+      },
+      {
+        "name": "harvest_pattern_alt",
+        "sort": "OptionalListOfString",
+        "description": "HARVESTER direction (alternatives). Additional surface-form patterns the harvester should also recognise as the same predicate (e.g. 'assertTrue({x} != null)' as an alt for 'assertNotNull({x})'). May be empty."
+      },
+      {
+        "name": "loss_record",
+        "sort": "LossRecord",
+        "description": "Structural-divergence dictionary noting where the JUnit assertion form loses information relative to the abstract concept (per ProvekIt first principle: exact, loudly-bounded-lossy, or refuse). May be empty if the form is exact."
+      },
+      {
+        "name": "discharge_receipt",
+        "sort": "String",
+        "description": "Either a CID of an executed discharge receipt, or 'deferred:pending-pk-<NNNN>' until the per-language predicate-emitter plugin lands and re-verifies."
+      },
+      {
+        "name": "effects",
+        "sort": "ListOfEffectName",
+        "description": "Effect annotations on this assertion form. JUnit assertions typically have effect 'assertion-failure-throw' or empty; reserved for richer effect typing once plugins land."
+      }
+    ],
+    "kind": "sort-instance",
+    "name": "AssertionTemplateMemento",
+    "sort_kind": "record"
+  },
+  "pre": {
+    "args": [],
+    "kind": "atomic",
+    "name": "true"
+  },
+  "return_sort": {
+    "args": [],
+    "kind": "ctor",
+    "name": "SortCid"
+  }
+}

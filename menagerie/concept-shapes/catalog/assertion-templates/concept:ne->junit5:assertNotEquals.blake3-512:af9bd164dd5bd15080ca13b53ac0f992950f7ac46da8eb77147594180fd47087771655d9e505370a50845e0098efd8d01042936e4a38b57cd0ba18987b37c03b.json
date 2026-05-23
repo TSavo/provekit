@@ -1,0 +1,41 @@
+{
+  "memento": {
+    "kind": "assertion-template",
+    "fn_name": "concept:ne->junit5:assertNotEquals",
+    "predicate_concept": "concept:ne",
+    "target": {
+      "framework": "junit5",
+      "assertion": "assertNotEquals"
+    },
+    "formals": [
+      "a",
+      "b"
+    ],
+    "formal_sorts": [
+      {
+        "kind": "ctor",
+        "name": "A",
+        "args": []
+      },
+      {
+        "kind": "ctor",
+        "name": "A",
+        "args": []
+      }
+    ],
+    "emit_template": "assertNotEquals({a}, {b})",
+    "harvest_pattern": "assertNotEquals({a}, {b})",
+    "harvest_pattern_alt": [],
+    "loss_record": {
+      "structural_divergence": "Same as concept:eq inverted. JUnit assertNotEquals delegates to the same equals contract."
+    },
+    "discharge_receipt": "deferred:pending-pk-1401",
+    "effects": []
+  },
+  "cid": "blake3-512:af9bd164dd5bd15080ca13b53ac0f992950f7ac46da8eb77147594180fd47087771655d9e505370a50845e0098efd8d01042936e4a38b57cd0ba18987b37c03b",
+  "signature": {
+    "alg": "ed25519",
+    "key_id": "UNSIGNED_DEV_ONLY",
+    "sig_b64": "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"
+  }
+}

@@ -1,0 +1,41 @@
+{
+  "memento": {
+    "kind": "assertion-template",
+    "fn_name": "concept:eq->junit5:assertEquals",
+    "predicate_concept": "concept:eq",
+    "target": {
+      "framework": "junit5",
+      "assertion": "assertEquals"
+    },
+    "formals": [
+      "a",
+      "b"
+    ],
+    "formal_sorts": [
+      {
+        "kind": "ctor",
+        "name": "A",
+        "args": []
+      },
+      {
+        "kind": "ctor",
+        "name": "A",
+        "args": []
+      }
+    ],
+    "emit_template": "assertEquals({a}, {b})",
+    "harvest_pattern": "assertEquals({a}, {b})",
+    "harvest_pattern_alt": [],
+    "loss_record": {
+      "structural_divergence": "JUnit assertEquals dispatches on runtime type: uses Objects.equals for refs, primitive == for boxed primitives unboxed. concept:eq is sort-polymorphic structural equality."
+    },
+    "discharge_receipt": "deferred:pending-pk-1401",
+    "effects": []
+  },
+  "cid": "blake3-512:1fd1fb0fbb290cd0e1ce9a28c4ba738daa792768447906f24dc5ab4491d9c2c6d7f71a8914b9dce95d121586b010739781c5f2411988654c646c8753c88fff1f",
+  "signature": {
+    "alg": "ed25519",
+    "key_id": "UNSIGNED_DEV_ONLY",
+    "sig_b64": "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"
+  }
+}

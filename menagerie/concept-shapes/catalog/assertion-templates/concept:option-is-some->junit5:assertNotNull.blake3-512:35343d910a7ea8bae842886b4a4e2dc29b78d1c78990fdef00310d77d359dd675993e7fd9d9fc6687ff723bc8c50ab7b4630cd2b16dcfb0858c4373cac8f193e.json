@@ -1,0 +1,38 @@
+{
+  "memento": {
+    "kind": "assertion-template",
+    "fn_name": "concept:option-is-some->junit5:assertNotNull",
+    "predicate_concept": "concept:option-is-some",
+    "target": {
+      "framework": "junit5",
+      "assertion": "assertNotNull"
+    },
+    "formals": [
+      "x"
+    ],
+    "formal_sorts": [
+      {
+        "kind": "ctor",
+        "name": "OptionOfA",
+        "args": []
+      }
+    ],
+    "emit_template": "assertNotNull({x})",
+    "harvest_pattern": "assertNotNull({x})",
+    "harvest_pattern_alt": [
+      "assertTrue({x} != null)",
+      "assertFalse({x} == null)"
+    ],
+    "loss_record": {
+      "structural_divergence": "JUnit encodes option-is-some as null-check; nullable reference IS the option encoding in java. Lossy with respect to Option<Unit> sentinel distinctions (None vs Some(Unit) collapse to null vs non-null)."
+    },
+    "discharge_receipt": "deferred:pending-pk-1401",
+    "effects": []
+  },
+  "cid": "blake3-512:35343d910a7ea8bae842886b4a4e2dc29b78d1c78990fdef00310d77d359dd675993e7fd9d9fc6687ff723bc8c50ab7b4630cd2b16dcfb0858c4373cac8f193e",
+  "signature": {
+    "alg": "ed25519",
+    "key_id": "UNSIGNED_DEV_ONLY",
+    "sig_b64": "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"
+  }
+}

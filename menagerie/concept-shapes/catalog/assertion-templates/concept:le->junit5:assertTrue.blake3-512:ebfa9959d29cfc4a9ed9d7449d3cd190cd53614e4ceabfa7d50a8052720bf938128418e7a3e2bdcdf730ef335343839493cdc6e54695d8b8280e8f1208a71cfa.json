@@ -1,0 +1,41 @@
+{
+  "memento": {
+    "kind": "assertion-template",
+    "fn_name": "concept:le->junit5:assertTrue",
+    "predicate_concept": "concept:le",
+    "target": {
+      "framework": "junit5",
+      "assertion": "assertTrue"
+    },
+    "formals": [
+      "a",
+      "b"
+    ],
+    "formal_sorts": [
+      {
+        "kind": "ctor",
+        "name": "Comparable",
+        "args": []
+      },
+      {
+        "kind": "ctor",
+        "name": "Comparable",
+        "args": []
+      }
+    ],
+    "emit_template": "assertTrue({a} <= {b})",
+    "harvest_pattern": "assertTrue({a} <= {b})",
+    "harvest_pattern_alt": [],
+    "loss_record": {
+      "structural_divergence": "JUnit has no native assertLessOrEqual; encoded as assertTrue over the <= operator. Harvester must inspect the inline operator (<=) to disambiguate."
+    },
+    "discharge_receipt": "deferred:pending-pk-1401",
+    "effects": []
+  },
+  "cid": "blake3-512:ebfa9959d29cfc4a9ed9d7449d3cd190cd53614e4ceabfa7d50a8052720bf938128418e7a3e2bdcdf730ef335343839493cdc6e54695d8b8280e8f1208a71cfa",
+  "signature": {
+    "alg": "ed25519",
+    "key_id": "UNSIGNED_DEV_ONLY",
+    "sig_b64": "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"
+  }
+}
