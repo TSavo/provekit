@@ -234,14 +234,23 @@ pub fn emit_from_term_shape_with_bindings(
         }
     }
     match lower_term_shape_body(term_shape, &mut context, &[]) {
-        Some(body) => emit_function(
-            function_name,
-            params,
-            param_types,
-            return_type,
-            &body,
-            false,
-        ),
+        Some(body) => {
+            // #1391 follow-on: post-pass mut inference. When a local binding
+            // is later used as the receiver of a mutating method call
+            // (.push, .insert, .push_str, .set, .append, .add), promote its
+            // `let X = ...` to `let mut X = ...`. The lift side often loses
+            // mut markers in cross-language round-trips; this recovers them
+            // structurally from usage.
+            let body = infer_let_mut(&body);
+            emit_function(
+                function_name,
+                params,
+                param_types,
+                return_type,
+                &body,
+                false,
+            )
+        },
         None => emit_stub(
             function_name,
             params,
@@ -2909,6 +2918,89 @@ fn paren_for_op(text: &str) -> String {
         i += 1;
     }
     trimmed.to_string()
+}
+
+/// Post-pass mut inference (#1391 follow-on). Scan the emitted body for
+/// mutating method calls `<recv>.<method>(...)` where method ∈ {push,
+/// insert, push_str, set, append, add, extend, pop, clear, remove,
+/// truncate} and promote the receiver's `let recv = ...;` (or `let recv:
+/// T = ...;`) to `let mut recv = ...;`. Conservative: only promotes
+/// receivers that appear as a `<ident>.<method>(` text pattern and have
+/// a matching `let <ident>` line earlier in the body.
+fn infer_let_mut(body: &str) -> String {
+    use std::collections::HashSet;
+    const MUTATING: &[&str] = &[
+        "push", "insert", "push_str", "set", "append", "add", "extend",
+        "pop", "clear", "remove", "truncate",
+    ];
+    let mut receivers: HashSet<String> = HashSet::new();
+    let receiver_pat = regex_lite_find_method_receivers(body, MUTATING);
+    for r in receiver_pat {
+        receivers.insert(r);
+    }
+    if receivers.is_empty() {
+        return body.to_string();
+    }
+    let mut out = Vec::new();
+    for line in body.lines() {
+        let trim = line.trim_start();
+        let mut rewritten = None;
+        if let Some(rest) = trim.strip_prefix("let ") {
+            if !rest.starts_with("mut ") {
+                // Extract the binding identifier.
+                let end = rest.find(|c: char| !c.is_ascii_alphanumeric() && c != '_');
+                if let Some(end) = end {
+                    let name = &rest[..end];
+                    let next = rest[end..].chars().next();
+                    if matches!(next, Some(':') | Some('=') | Some(' ')) && receivers.contains(name) {
+                        let indent = &line[..line.len() - trim.len()];
+                        rewritten = Some(format!("{}let mut {}", indent, rest));
+                    }
+                }
+            }
+        }
+        out.push(rewritten.unwrap_or_else(|| line.to_string()));
+    }
+    out.join("\n")
+}
+
+/// Find receivers of mutating method calls. Returns identifiers that
+/// appear as `<ident>.<method>(`.
+fn regex_lite_find_method_receivers(body: &str, methods: &[&str]) -> Vec<String> {
+    let mut out = Vec::new();
+    for method in methods {
+        let needle = format!(".{}(", method);
+        let mut search_from = 0;
+        while let Some(pos) = body[search_from..].find(&needle) {
+            let absolute = search_from + pos;
+            // Walk backwards over identifier chars from `absolute`.
+            let bytes = body.as_bytes();
+            let mut start = absolute;
+            while start > 0 {
+                let c = bytes[start - 1] as char;
+                if c.is_ascii_alphanumeric() || c == '_' {
+                    start -= 1;
+                } else {
+                    break;
+                }
+            }
+            if start < absolute {
+                let ident = &body[start..absolute];
+                // Skip if preceded by `.` (chained call: `a.b.push(...)`) or
+                // by `::` (path call: `Foo::push(...)`).
+                if start > 0 {
+                    let prev = bytes[start - 1] as char;
+                    if prev == '.' || prev == ':' {
+                        search_from = absolute + needle.len();
+                        continue;
+                    }
+                }
+                out.push(ident.to_string());
+            }
+            search_from = absolute + needle.len();
+        }
+    }
+    out
 }
 
 fn function_source(

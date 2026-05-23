@@ -621,11 +621,30 @@ public final class TermShapeLifter {
             );
         }
         if (expr instanceof IntegerLiteralExpr i) {
-            // Emit value as integer (not string) so the rust realize
-            // renders it as a numeric literal, not a quoted string.
+            // #1391 follow-on: preserve source radix (hex/oct/bin) so
+            // round-trip is byte-identical. JavaParser preserves the
+            // source token; we sniff the prefix and parse with the right
+            // radix.
+            String raw = i.getValue();
+            String radix;
+            long parsed;
+            if (raw.startsWith("0x") || raw.startsWith("0X")) {
+                radix = "hex";
+                parsed = Long.parseLong(raw.substring(2).replace("_", ""), 16);
+            } else if (raw.startsWith("0b") || raw.startsWith("0B")) {
+                radix = "bin";
+                parsed = Long.parseLong(raw.substring(2).replace("_", ""), 2);
+            } else if (raw.length() > 1 && raw.startsWith("0") && raw.chars().allMatch(c -> c >= '0' && c <= '7' || c == '_')) {
+                radix = "oct";
+                parsed = Long.parseLong(raw.substring(1).replace("_", ""), 8);
+            } else {
+                radix = "dec";
+                parsed = Long.parseLong(raw.replace("_", ""));
+            }
             return Jcs.object(
                 "kind", Jcs.string("const"),
-                "value", Jcs.integer(Long.parseLong(i.getValue()))
+                "value", Jcs.integer(parsed),
+                "radix", Jcs.string(radix)
             );
         }
         if (expr instanceof NameExpr n) {

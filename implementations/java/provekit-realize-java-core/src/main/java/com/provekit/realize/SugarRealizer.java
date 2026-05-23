@@ -2737,7 +2737,8 @@ final class SugarRealizer {
         }
         Jcs.Json value = shape.get("value");
         if ("const".equals(kind) || value != null) {
-            return literalTerm(value);
+            String radix = shape.stringFieldOrNull("radix");
+            return literalTermWithRadix(value, radix);
         }
         return context.fallbackLeaf();
     }
@@ -3547,11 +3548,24 @@ final class SugarRealizer {
     }
 
     private static ShapeExpression literalTerm(Jcs.Json value) {
+        return literalTermWithRadix(value, null);
+    }
+
+    /** #1391 follow-on: preserve source radix when emitting int literals
+     *  so the rust→java→rust round-trip produces byte-identical hex literals. */
+    private static ShapeExpression literalTermWithRadix(Jcs.Json value, String radix) {
         if (value instanceof Jcs.Bool b) {
             return new ShapeExpression(Boolean.toString(b.value()), "boolean");
         }
         if (value instanceof Jcs.Num n) {
-            return new ShapeExpression(Long.toString(n.value()), "int");
+            long v = n.value();
+            String text = switch (radix == null ? "dec" : radix) {
+                case "hex" -> String.format("0x%02X", v);
+                case "oct" -> "0" + Long.toOctalString(v);
+                case "bin" -> "0b" + Long.toBinaryString(v);
+                default -> Long.toString(v);
+            };
+            return new ShapeExpression(text, "int");
         }
         if (value instanceof Jcs.Str s) {
             return new ShapeExpression(JsonUtil.quoted(s.value()), "String");
