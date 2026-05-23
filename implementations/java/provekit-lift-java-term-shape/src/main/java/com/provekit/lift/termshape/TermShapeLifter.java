@@ -841,9 +841,13 @@ public final class TermShapeLifter {
             if ("append".equals(name) && m.getScope().isPresent() && m.getArguments().size() == 1) {
                 Json recvShape = liftExpression(m.getScope().get(), losses);
                 Json argShape = liftExpression(m.getArgument(0), losses);
-                String argText = m.getArgument(0).toString();
-                // Char-typed (cast as char) → .push(); String-typed → .push_str().
-                String mname = argText.contains("as char") ? "push" : "push_str";
+                // Detect char-typed arg: java cast `(char) X` or `char X`.
+                com.github.javaparser.ast.expr.Expression argE = m.getArgument(0);
+                boolean isChar = false;
+                if (argE instanceof com.github.javaparser.ast.expr.CastExpr c) {
+                    isChar = "char".equals(c.getType().asString());
+                }
+                String mname = isChar ? "push" : "push_str";
                 return Jcs.object(
                     "args", new Jcs.Arr(List.of(
                         recvShape,
