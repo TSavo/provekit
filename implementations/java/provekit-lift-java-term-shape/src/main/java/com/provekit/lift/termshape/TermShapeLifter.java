@@ -522,11 +522,25 @@ public final class TermShapeLifter {
                     "concept_name", Jcs.string("concept:sum-variant-construct")
                 );
             }
+            // Map common java types back to rust equivalents for
+            // substrate-symmetric closure. `java.util.ArrayList` was the
+            // substrate's emit for `Vec`; `java.util.TreeSet` for `BTreeSet`.
+            // Strip diamond `<>` (java's inferred-generics) since rust's
+            // `::new()` doesn't need it.
+            String pathTypeStr = typeStr.replaceFirst("<.*>", "");
+            String rustType = pathTypeStr;
+            if (pathTypeStr.equals("java.util.ArrayList") || pathTypeStr.endsWith(".ArrayList") || pathTypeStr.equals("ArrayList")) {
+                rustType = "Vec";
+            } else if (pathTypeStr.equals("java.util.TreeSet") || pathTypeStr.endsWith(".TreeSet") || pathTypeStr.equals("TreeSet")) {
+                rustType = "BTreeSet";
+            } else if (pathTypeStr.equals("java.util.HashMap") || pathTypeStr.endsWith(".HashMap") || pathTypeStr.equals("HashMap")) {
+                rustType = "std::collections::HashMap";
+            }
             // Default: `new Type(args)` → concept:call with ::new path leaf.
             List<Json> args = new ArrayList<>();
             args.add(Jcs.object(
                 "kind", Jcs.string("path"),
-                "text", Jcs.string(typeStr + "::new")
+                "text", Jcs.string(rustType + "::new")
             ));
             for (Expression a : oce.getArguments()) {
                 args.add(liftExpression(a, losses));
@@ -571,11 +585,37 @@ public final class TermShapeLifter {
             );
         }
         if (expr instanceof MethodReferenceExpr mre) {
-            // `Type::method` — emit as path-leaf (the canonical form for
-            // function references in our ProofIR).
+            // `Type::method` — emit as path-leaf with rust-canonical form.
+            // Map common java idioms back to rust:
+            //   JsonNode::asText → Value::as_str  (was rust source)
+            //   String::valueOf → str::to_string  (rust closure shorthand)
+            //   Objects::nonNull → (handled by filter recognizer, but
+            //                       emit as canonical text for fallback)
+            String scope = mre.getScope().toString();
+            String ident = mre.getIdentifier();
+            String javaPath = scope + "::" + ident;
+            String rustPath = javaPath;
+            // Strip java FQN prefixes — drop com.fasterxml.jackson.databind.
+            String shortScope = scope;
+            if (shortScope.contains(".")) {
+                shortScope = shortScope.substring(shortScope.lastIndexOf('.') + 1);
+            }
+            if (shortScope.equals("JsonNode") && ident.equals("asText")) {
+                rustPath = "Value::as_str";
+            } else if (shortScope.equals("JsonNode") && ident.equals("asArray")) {
+                rustPath = "Value::as_array";
+            } else if (shortScope.equals("String") && ident.equals("valueOf")) {
+                rustPath = "str::to_string";
+            } else if (shortScope.equals("Objects") && ident.equals("nonNull")) {
+                // Used by filter chains — map to the rust idiom.
+                rustPath = "Option::is_some";
+            } else if (scope.contains(".")) {
+                // Generic FQN strip: java.util.X::y → X::y
+                rustPath = shortScope + "::" + ident;
+            }
             return Jcs.object(
                 "kind", Jcs.string("path"),
-                "text", Jcs.string(mre.getScope().toString() + "::" + mre.getIdentifier())
+                "text", Jcs.string(rustPath)
             );
         }
         if (expr instanceof LambdaExpr lam) {
