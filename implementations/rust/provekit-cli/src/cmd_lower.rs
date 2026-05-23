@@ -840,7 +840,16 @@ fn resolve_library_for_concept(
     default_library: Option<&str>,
     family_library: &[crate::cmd_materialize::FamilyLibraryPair],
 ) -> Option<String> {
-    let candidates = crate::kit_dispatch::registry_realize_candidates(project_root, target).ok()?;
+    // #1391 follow-on: registry_realize_candidates returns empty when no
+    // sealed dev registry is present. Fall back to legacy_realize_candidates
+    // so cmd_lower works in development workflows without requiring a sealed
+    // registry. This mirrors the dispatch_realize path which also falls
+    // through to legacy candidates when the registry is empty.
+    let mut candidates = crate::kit_dispatch::registry_realize_candidates(project_root, target).ok()?;
+    if candidates.is_empty() {
+        candidates = crate::kit_dispatch::legacy_realize_candidates(project_root, target)
+            .unwrap_or_default();
+    }
     let mut claimers: Vec<String> = Vec::new();
     for cand in &candidates {
         let concepts = crate::kit_dispatch::provides_concepts_for_realize(

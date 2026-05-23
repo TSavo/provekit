@@ -25,14 +25,49 @@ Empirical evidence the catalog is load-bearing:
     Java: `OperationRealizationCatalogTest.operationRealizationCatalogRoundTrips`
     Rust: `provekit_realize_rust_core::tests::operation_realization_catalog_round_trips`
 
-Cycle measurement gap (separate from path B):
-The full rust→java→rust harness (`provekit lift | provekit lower`) is currently
-blocked by an unrelated registry-authorization regression in cmd_lower dispatch —
-`.provekit/realize/java/manifest.toml` + builtin jar both exist, but
-`registry_realize_candidates` returns empty without a sealed registry, and the
-legacy fallback path then reports `registered: none`. Closing the byte-identical
-metric needs either a sealed dev registry or direct-RPC invocation of the realize
-jars; both are harness work, not path B work.
+## Cycle measurement (post path B + #1391 follow-ons)
+
+Harness fixes applied this run:
+- `cmd_lower::resolve_library_for_concept` now falls back to
+  `legacy_realize_candidates` when the sealed registry is empty (previously
+  returned None, dropping the `--library` flag silently).
+- `realize-rust-core::function_source` now passes return_type + param_types
+  through `map_source_type` when they look cross-language (contain a dot, equal
+  `JsonNode`, or start with `Result<`).
+- `map_source_type` extended with Jackson + java.util + provekit.runtime FQN
+  translations + a parametric `Result<X,Y>` decomposer.
+
+End-to-end cycle (rust source → `provekit lift` → `provekit lower --target java`
+→ java source → java lift CLI → `provekit-realize-rust --rpc` per term) on
+`libprovekit-rpc-cross-platform/src/lib.rs`:
+
+| function | strict (rustfmt) | diff |
+|---|---|---|
+| ok_response             | ✓ | 0b |
+| error_response          | ✓ | 0b |
+| initialize_result       | ✓ | 0b |
+| run_server              |   | -47b (& references + closure variable preservation) |
+| handle_line             |   | -965b (java lower REFUSED — tuple return + nested match not yet supported) |
+| lift                    |   | -578b (concept:assign chain dropped during java lower) |
+| build_ir_document       |   | -42b (let mut + ref patterns + type annotations) |
+| content_addressed_name  |   | -59b (one assign dropped during java lower: `let content_cid = blake3_512_cid(composed.as_bytes())`) |
+| slot_cid                |   | -18b (java lower REFUSED — match-arm guard `Some(v) if !v.is_null()`) |
+| blake3_512_cid          |   | -56b (let mut + ref patterns + const HEX local-decl + hex literal 0x0F vs 15) |
+
+**SUBSTRATE-SYMMETRIC STRICT: 3/10** (was effectively 0/10 — pre-#1391 numbers
+in the baseline below were ad-hoc per-function diffs without round-trip
+verification; the 3/10 here is verified end-to-end via real RPC + rustfmt).
+
+Remaining residuals are bounded:
+- TWO functions (`handle_line`, `slot_cid`) are JAVA-LOWER refusals; the java
+  realizer emits stubs. Closing them needs richer java vocabulary (tuple
+  return, match-guard).
+- The other FIVE failures are lift-side gaps where rust lift drops source
+  information the realize side then can't reconstruct: mutability markers,
+  ref-patterns in `for`, function-local `const` decls, hex vs decimal
+  literals, the `concept:assign` chain mid-body.
+
+Each gap is a named pattern, not an architectural unknown.
 
 ## Pre-#1391 baseline (manual ad-hoc measurement)
 

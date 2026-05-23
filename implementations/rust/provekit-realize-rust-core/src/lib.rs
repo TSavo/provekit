@@ -2936,10 +2936,25 @@ fn function_source(
                 .filter(|s| !s.is_empty())
                 .or_else(|| param_types.get(index).cloned())
                 .unwrap_or_else(|| "i64".to_string());
+            // #1391 follow-on: when type is a java FQN (cross-language
+            // signal), translate to rust source via map_source_type.
+            // map_source_type's fallback is identity, so same-language
+            // types pass through unchanged.
+            let ty = if ty.contains('.') || ty == "JsonNode" || ty.starts_with("Result<") {
+                map_source_type(&ty)
+            } else {
+                ty
+            };
             format!("{name}: {ty}")
         })
         .collect::<Vec<_>>()
         .join(", ");
+    let mapped_return = if return_type.contains('.') || return_type == "JsonNode" || return_type.starts_with("Result<") {
+        map_source_type(return_type)
+    } else {
+        return_type.to_string()
+    };
+    let return_type = mapped_return.as_str();
     let return_suffix = if return_type.is_empty() || return_type == "()" || return_type == "void" {
         String::new()
     } else {
@@ -3065,19 +3080,57 @@ fn rust_string_literal(value: &str) -> String {
 }
 
 fn map_source_type(src: &str) -> String {
-    match src.trim() {
-        "" => "()".to_string(),
-        "void" | "None" | "()" => "()".to_string(),
-        "long" | "int" | "i64" | "u64" => "i64".to_string(),
-        "i32" | "u32" => "i32".to_string(),
-        "short" | "i16" | "u16" => "i16".to_string(),
-        "byte" | "char" | "i8" | "u8" => "i8".to_string(),
-        "boolean" | "bool" => "bool".to_string(),
-        "double" | "float" | "f64" | "f32" => "f64".to_string(),
-        "String" | "str" | "&str" | "&String" => "String".to_string(),
-        "list" | "List" | "list[int]" | "list[i64]" => "&[i64]".to_string(),
-        other => other.to_string(),
+    let t = src.trim();
+    // Java FQN translations back to rust (cross-language source-text mapping).
+    // #1391 follow-on: handles the rust→java→rust cycle's residual type
+    // leakage when param_sort_cids isn't populated by the java lift.
+    match t {
+        "" => return "()".to_string(),
+        "void" | "None" | "()" => return "()".to_string(),
+        "long" | "int" | "i64" | "u64" => return "i64".to_string(),
+        "i32" | "u32" => return "i32".to_string(),
+        "short" | "i16" | "u16" => return "i16".to_string(),
+        "byte" | "char" | "i8" | "u8" => return "i8".to_string(),
+        "boolean" | "bool" => return "bool".to_string(),
+        "double" | "float" | "f64" | "f32" => return "f64".to_string(),
+        "String" | "str" | "&str" | "&String" => return "String".to_string(),
+        "list" | "List" | "list[int]" | "list[i64]" => return "&[i64]".to_string(),
+        // Jackson / java.util / provekit runtime FQNs from the java emit.
+        "com.fasterxml.jackson.databind.JsonNode" | "JsonNode" => return "Value".to_string(),
+        "java.util.List<String>" => return "&[String]".to_string(),
+        "java.nio.file.Path" | "Path" => return "&Path".to_string(),
+        "byte[]" => return "&[u8]".to_string(),
+        _ => {}
     }
+    // Parametric java→rust translations.
+    if let Some(inner) = t.strip_prefix("java.util.List<").and_then(|s| s.strip_suffix('>')) {
+        return format!("&[{}]", map_source_type(inner));
+    }
+    if let Some(inner) = t.strip_prefix("com.provekit.runtime.Result<")
+        .or_else(|| t.strip_prefix("Result<"))
+        .and_then(|s| s.strip_suffix('>'))
+    {
+        // Split top-level comma; map both sides.
+        let mut depth = 0i32;
+        let mut split = None;
+        for (i, c) in inner.char_indices() {
+            match c {
+                '<' => depth += 1,
+                '>' => depth -= 1,
+                ',' if depth == 0 => { split = Some(i); break; }
+                _ => {}
+            }
+        }
+        if let Some(i) = split {
+            let ok = map_source_type(inner[..i].trim());
+            let err = map_source_type(inner[i+1..].trim());
+            return format!("Result<{}, {}>", ok, err);
+        }
+    }
+    if t == "com.provekit.runtime.SumVariant" || t == "SumVariant" {
+        return "LiftError".to_string();
+    }
+    t.to_string()
 }
 
 /// #1369: cross-language rust realize parametric dispatch.

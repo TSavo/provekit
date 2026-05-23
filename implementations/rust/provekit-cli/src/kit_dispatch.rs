@@ -1336,7 +1336,7 @@ pub(crate) struct RealizeCandidate {
     pub(crate) library_version: Option<String>,
 }
 
-fn legacy_realize_candidates(
+pub(crate) fn legacy_realize_candidates(
     workspace_root: &Path,
     target_lang: &str,
 ) -> Result<Vec<RealizeCandidate>, KitUnavailable> {
