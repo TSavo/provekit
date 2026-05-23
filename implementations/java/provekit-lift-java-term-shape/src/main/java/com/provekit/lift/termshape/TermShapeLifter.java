@@ -101,6 +101,17 @@ public final class TermShapeLifter {
     }
 
     /** Lift a block as concept:seq of its statements. */
+    /** When a lambda's BlockStmt body is a single `return X;` statement,
+     *  lift the inner expression directly. */
+    private Json unwrapSingleReturn(BlockStmt block, List<Json> losses) {
+        if (block.getStatements().size() == 1 &&
+                block.getStatement(0) instanceof com.github.javaparser.ast.stmt.ReturnStmt rs &&
+                rs.getExpression().isPresent()) {
+            return liftExpression(rs.getExpression().get(), losses);
+        }
+        return liftBlock(block, losses);
+    }
+
     private Json liftBlock(BlockStmt block, List<Json> losses) {
         // Substrate-symmetric match recognition: the rust lower emits
         // `match scrut { pat1 => body1, _ => body2 }` as java
@@ -747,6 +758,56 @@ public final class TermShapeLifter {
             String elseText = ce.getElseExpr().toString();
             // Pattern: X != null ? X : default → X.unwrap_or(default)
             if (condText.endsWith("!=null") && condText.startsWith(thenText)) {
+                // #1391 follow-on: detect the .unwrap_or_else marker the
+                // java lower emits for closure-preserving cases:
+                //   default = `((Function<Object,Object>)(e -> body)).apply(/*@unwrap-or-else-marker*/null)`
+                // → emit `X.unwrap_or_else(concept:closure(body, [e]))`.
+                String elseStr = elseText.replaceAll("\\s+", "");
+                if (elseStr.contains("/*@unwrap-or-else-marker*/")
+                        || elseText.contains("@unwrap-or-else-marker")) {
+                    // Walk the else expression for the inner LambdaExpr.
+                    com.github.javaparser.ast.expr.LambdaExpr lambda = ce.getElseExpr()
+                        .findFirst(com.github.javaparser.ast.expr.LambdaExpr.class).orElse(null);
+                    if (lambda != null && lambda.getParameters().size() == 1) {
+                        String paramName = lambda.getParameter(0).getNameAsString();
+                        boolean isBlockBody = lambda.getBody() instanceof BlockStmt;
+                        Json bodyShape = lambda.getExpressionBody()
+                                .map(e -> liftExpression(e, losses))
+                                .orElseGet(() -> lambda.getBody() instanceof BlockStmt bb
+                                        ? unwrapSingleReturn(bb, losses)
+                                        : null);
+                        if (bodyShape != null) {
+                            // Tag block-form body so the rust realize emits
+                            // `|e| { body }` matching the source.
+                            if (isBlockBody && bodyShape instanceof Jcs.Obj bodyObj) {
+                                List<Object> kv = new ArrayList<>();
+                                for (Jcs.Field f : bodyObj.fields()) {
+                                    kv.add(f.key()); kv.add(f.value());
+                                }
+                                kv.add("closure_block_body");
+                                kv.add(Jcs.bool(true));
+                                bodyShape = Jcs.object(kv.toArray());
+                            }
+                            Json closure = Jcs.object(
+                                "args", new Jcs.Arr(List.of(
+                                    bodyShape,
+                                    Jcs.object("kind", Jcs.string("symbol"),
+                                               "text", Jcs.string(paramName))
+                                )),
+                                "concept_name", Jcs.string("concept:closure")
+                            );
+                            Json optShape = liftExpression(ce.getThenExpr(), losses);
+                            return Jcs.object(
+                                "args", new Jcs.Arr(List.of(
+                                    optShape,
+                                    methodConceptLeaf("unwrap_or_else", 1),
+                                    closure
+                                )),
+                                "concept_name", Jcs.string("concept:call")
+                            );
+                        }
+                    }
+                }
                 Json optShape = liftExpression(ce.getThenExpr(), losses);
                 Json defaultShape = liftExpression(ce.getElseExpr(), losses);
                 return Jcs.object(
@@ -995,9 +1056,23 @@ public final class TermShapeLifter {
         if (expr instanceof LambdaExpr lam) {
             // (params) -> body  → concept:closure(body, p1, p2, ...).
             List<Json> args = new ArrayList<>();
+            boolean isBlockBody = lam.getBody() instanceof BlockStmt;
             Json body = lam.getExpressionBody()
                     .map(e -> liftExpression(e, losses))
                     .orElseGet(() -> lam.getBody() instanceof BlockStmt bb ? liftBlock(bb, losses) : Jcs.object());
+            // #1391 follow-on: tag block-form lambda bodies so the rust
+            // realize emits `|e| { body }` form, matching the source surface
+            // (instead of expression-form `|e| body`).
+            if (isBlockBody && body instanceof Jcs.Obj bodyObj) {
+                List<Object> kv = new ArrayList<>();
+                for (Jcs.Field f : bodyObj.fields()) {
+                    kv.add(f.key());
+                    kv.add(f.value());
+                }
+                kv.add("closure_block_body");
+                kv.add(Jcs.bool(true));
+                body = Jcs.object(kv.toArray());
+            }
             args.add(body);
             for (Parameter p : lam.getParameters()) {
                 args.add(Jcs.object(

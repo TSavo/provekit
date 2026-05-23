@@ -2416,9 +2416,11 @@ final class SugarRealizer {
                             ""));
                 }
                 if ("unwrap_or_else".equals(methodName) && callArgs.size() == 1) {
-                    // .unwrap_or_else(|e| f(e)) — inline the lambda body
-                    // with the Err value (best-effort: pass null since
-                    // post-erasure we don't have a typed Err carrier).
+                    // .unwrap_or_else(|e| f(e)) — preserve the closure arg
+                    // name + body inside a lambda so (a) the java code
+                    // remains valid, and (b) the java lift can recognize
+                    // the `((Function<?,?>)(e -> body)).apply(null)` shape
+                    // and round-trip back to `.unwrap_or_else(|e| body)`.
                     String fn = callArgs.get(0);
                     String fnInvoked;
                     if (fn.contains("->")) {
@@ -2426,7 +2428,14 @@ final class SugarRealizer {
                             "^\\s*\\(?\\s*([A-Za-z_][A-Za-z0-9_]*)\\s*\\)?\\s*->\\s*(.+)$"
                         ).matcher(fn);
                         if (m.find()) {
-                            fnInvoked = replaceIdentifier(m.group(2).trim(), m.group(1), "null");
+                            String argName = m.group(1);
+                            String body = m.group(2).trim();
+                            // Round-trippable: lambda preserves both
+                            // captured-arg NAME and body. Java lift sees
+                            // the lambda and emits concept:closure(body, [argName]).
+                            fnInvoked = "((java.util.function.Function<Object,Object>)("
+                                    + argName + " -> " + body
+                                    + ")).apply(/*@unwrap-or-else-marker*/null)";
                         } else {
                             fnInvoked = "((java.util.function.Function)(" + fn + ")).apply(null)";
                         }
@@ -2673,8 +2682,18 @@ final class SugarRealizer {
             String params = argTerms.subList(1, argTerms.size()).stream()
                     .map(ShapeExpression::text)
                     .collect(Collectors.joining(", "));
+            // #1391 follow-on: preserve block-form closure surface when the
+            // lift carried closure_block_body=true. Java block-form lambda
+            // is `(params) -> { return body; }` (requires explicit return
+            // since the body's a statement). Round-trips back to
+            // `|e| { body }` on the rust side.
+            Jcs.Json blockBodyJ = args.get(0).get("closure_block_body");
+            boolean blockBody = blockBodyJ instanceof Jcs.Bool bb && bb.value();
+            String lambda = blockBody
+                    ? "(" + params + ") -> { return " + body + "; }"
+                    : "(" + params + ") -> " + body;
             return Optional.of(new ShapeExpression(
-                    "(" + params + ") -> " + body,
+                    lambda,
                     mapSourceType(context.returnType)));
         }
         // concept:reference / concept:ref (rust &x or &mut x) + concept:deref (*x):
