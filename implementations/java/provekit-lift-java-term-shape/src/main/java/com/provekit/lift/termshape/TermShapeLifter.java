@@ -51,7 +51,53 @@ public final class TermShapeLifter {
                 .map(body -> liftBlock(body, losses))
                 .orElseGet(Jcs::object);
 
+        // Tail-expression form: when the function body is a single
+        // concept:return wrapping an expression, the rust source had
+        // a tail expression (no `return` keyword). Strip the wrapper
+        // for substrate-symmetric cycle closure.
+        //
+        // ALSO applies when the body is concept:seq[..., concept:return(X)]
+        // with X being the final value-producing expression — strip the
+        // return on the LAST element only.
+        shape = stripTrailingReturn(shape);
+
         return new LiftedMethod(shape, paramNames, paramTypes, returnType, losses);
+    }
+
+    /** Strip outer/trailing concept:return wrapper for substrate-symmetric
+     *  closure. Rust source `fn f() -> T { tail_expr }` lifts as just the
+     *  tail expression; java emit `return X;` lifts as concept:return(X);
+     *  this restores the tail-expression form so the cycle round-trips. */
+    private Json stripTrailingReturn(Json shape) {
+        if (!(shape instanceof Jcs.Obj obj)) return shape;
+        String cn = null;
+        Jcs.Json args = null;
+        for (Jcs.Field f : obj.fields()) {
+            if ("concept_name".equals(f.key()) && f.value() instanceof Jcs.Str s) {
+                cn = s.value();
+            } else if ("args".equals(f.key())) {
+                args = f.value();
+            }
+        }
+        if ("concept:return".equals(cn) && args instanceof Jcs.Arr arr
+                && arr.values().size() == 1) {
+            return arr.values().get(0);
+        }
+        if ("concept:seq".equals(cn) && args instanceof Jcs.Arr arr
+                && !arr.values().isEmpty()) {
+            List<Jcs.Json> children = new ArrayList<>(arr.values());
+            int lastIdx = children.size() - 1;
+            Jcs.Json last = children.get(lastIdx);
+            Jcs.Json strippedLast = stripTrailingReturn(last);
+            if (!strippedLast.equals(last)) {
+                children.set(lastIdx, strippedLast);
+                return Jcs.object(
+                    "args", new Jcs.Arr(children),
+                    "concept_name", Jcs.string("concept:seq")
+                );
+            }
+        }
+        return shape;
     }
 
     /** Lift a block as concept:seq of its statements. */
@@ -560,6 +606,10 @@ public final class TermShapeLifter {
      *  emit them as concept:macro-call args.
      */
     private Optional<Jcs.Json> tryRecognizeJsonSupplier(MethodCallExpr getCall) {
+        return tryRecognizeJsonSupplier(getCall, /*nested=*/false);
+    }
+
+    private Optional<Jcs.Json> tryRecognizeJsonSupplier(MethodCallExpr getCall, boolean nested) {
         var scope = getCall.getScope();
         if (scope.isEmpty()) return Optional.empty();
         // Unwrap outer parens.
@@ -622,26 +672,47 @@ public final class TermShapeLifter {
             if (valExpr instanceof MethodCallExpr nestedGet
                     && "get".equals(nestedGet.getNameAsString())
                     && nestedGet.getArguments().isEmpty()) {
-                Optional<Jcs.Json> nested = tryRecognizeJsonSupplier(nestedGet);
-                if (nested.isPresent()) {
+                Optional<Jcs.Json> nestedCall = tryRecognizeJsonSupplier(nestedGet, /*nested=*/true);
+                if (nestedCall.isPresent()) {
                     // Render nested as its inner token form.
-                    value = renderJsonMacroBody(nested.get());
+                    value = renderJsonMacroBody(nestedCall.get());
                 } else {
-                    value = valExpr.toString();
+                    // Could be array-Supplier — recognize createArrayNode pattern.
+                    Optional<String> arr = tryRecognizeArraySupplier(nestedGet);
+                    value = arr.orElse(valExpr.toString());
                 }
+            } else if (valExpr instanceof MethodCallExpr valToTree
+                    && "valueToTree".equals(valToTree.getNameAsString())
+                    && valToTree.getArguments().size() == 1) {
+                // MAPPER.valueToTree(X) is the substrate's primitive
+                // wrapper for non-JsonNode values in json!{}. Unwrap to
+                // just X (source had a bare value there).
+                value = valToTree.getArgument(0).toString();
             } else {
                 value = valExpr.toString();
             }
             kvPairs.add(key + ": " + value);
         }
-        // Reconstruct json! body tokens. Format matches what syn::Macro
-        // emits via to_token_stream + our normalizer:
-        // `{ "k" : v , "k2" : v2 , }`.
+        // Reconstruct json! body tokens. Source-style: outer-level
+        // (multi-line in source) gets trailing comma + space; nested
+        // inline objects omit trailing comma.
         StringBuilder body = new StringBuilder("{ ");
-        for (String kv : kvPairs) {
-            body.append(kv).append(", ");
+        for (int i = 0; i < kvPairs.size(); i++) {
+            body.append(kvPairs.get(i));
+            if (i + 1 < kvPairs.size()) {
+                body.append(", ");
+            }
         }
-        body.append("}");
+        // Trailing-comma heuristic: source convention has trailing comma
+        // on multi-line layouts (3+ items OR body > 60 chars) and no
+        // trailing comma on small inline objects. Matches what the rust
+        // pretty-printer expects to decide layout style.
+        boolean wouldBeMultiLine = !nested || kvPairs.size() >= 3 || body.length() > 60;
+        if (wouldBeMultiLine) {
+            body.append(", }");
+        } else {
+            body.append(" }");
+        }
         Jcs.Json pathLeaf = Jcs.object(
             "kind", Jcs.string("symbol"),
             "text", Jcs.string("json")
@@ -654,6 +725,58 @@ public final class TermShapeLifter {
             "args", new Jcs.Arr(java.util.List.of(pathLeaf, tokensLeaf)),
             "concept_name", Jcs.string("concept:macro-call")
         ));
+    }
+
+    /** Recognize the array-Supplier emission pattern:
+     *  `((Supplier<JsonNode>) () -> { var __arr = MAPPER.createArrayNode();
+     *  __arr.add(X); ... return __arr; }).get()` → rust source form
+     *  `[X, ...]`. Returns the source-form `[a, b, c]` string if matched. */
+    private Optional<String> tryRecognizeArraySupplier(MethodCallExpr getCall) {
+        com.github.javaparser.ast.expr.Expression inner = getCall.getScope().orElse(null);
+        if (inner == null) return Optional.empty();
+        while (inner instanceof com.github.javaparser.ast.expr.EnclosedExpr enc) {
+            inner = enc.getInner();
+        }
+        if (!(inner instanceof com.github.javaparser.ast.expr.CastExpr cast)) return Optional.empty();
+        com.github.javaparser.ast.expr.Expression body = cast.getExpression();
+        while (body instanceof com.github.javaparser.ast.expr.EnclosedExpr enc) {
+            body = enc.getInner();
+        }
+        if (!(body instanceof com.github.javaparser.ast.expr.LambdaExpr lambda)) return Optional.empty();
+        if (!lambda.getParameters().isEmpty()) return Optional.empty();
+        if (!(lambda.getBody() instanceof com.github.javaparser.ast.stmt.BlockStmt block)) return Optional.empty();
+        java.util.List<com.github.javaparser.ast.stmt.Statement> stmts = block.getStatements();
+        if (stmts.size() < 2) return Optional.empty();
+        // First stmt: var __arr = MAPPER.createArrayNode()
+        String arrVar = null;
+        if (stmts.get(0) instanceof com.github.javaparser.ast.stmt.ExpressionStmt es
+                && es.getExpression() instanceof com.github.javaparser.ast.expr.VariableDeclarationExpr vde) {
+            for (var v : vde.getVariables()) {
+                if (v.getInitializer().isPresent()
+                        && v.getInitializer().get() instanceof MethodCallExpr init
+                        && "createArrayNode".equals(init.getNameAsString())) {
+                    arrVar = v.getNameAsString();
+                    break;
+                }
+            }
+        }
+        if (arrVar == null) return Optional.empty();
+        // Collect add(X) values.
+        java.util.List<String> values = new java.util.ArrayList<>();
+        for (int i = 1; i < stmts.size() - 1; i++) {
+            if (!(stmts.get(i) instanceof com.github.javaparser.ast.stmt.ExpressionStmt ese)) continue;
+            if (!(ese.getExpression() instanceof MethodCallExpr addCall)) continue;
+            if (!"add".equals(addCall.getNameAsString())) continue;
+            if (addCall.getArguments().size() != 1) continue;
+            values.add(addCall.getArgument(0).toString());
+        }
+        StringBuilder out = new StringBuilder("[");
+        for (int i = 0; i < values.size(); i++) {
+            out.append(values.get(i));
+            if (i + 1 < values.size()) out.append(", ");
+        }
+        out.append("]");
+        return Optional.of(out.toString());
     }
 
     /** Render a concept:macro-call node back to its body-token form for
