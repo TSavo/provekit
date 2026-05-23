@@ -523,19 +523,106 @@ public final class TermShapeLifter {
         if (!binding.startsWith("__provekit_v")) return Optional.empty();
         if (decl.getInitializer().isEmpty()) return Optional.empty();
         com.github.javaparser.ast.expr.Expression scrutExpr = decl.getInitializer().get();
-        if (!(stmts.get(1) instanceof com.github.javaparser.ast.stmt.IfStmt ifs)) return Optional.empty();
-        if (ifs.getElseStmt().isEmpty()) return Optional.empty();
         Json scrutShape = liftExpression(scrutExpr, losses);
-        // Walk the if/else-if/else chain collecting arms.
-        List<Json> arms = collectMatchArms(ifs, binding, losses);
-        if (arms == null) return Optional.empty();
-        List<Json> matchArgs = new ArrayList<>();
-        matchArgs.add(scrutShape);
-        matchArgs.addAll(arms);
-        return Optional.of(Jcs.object(
-            "args", new Jcs.Arr(matchArgs),
-            "concept_name", Jcs.string("concept:match")
-        ));
+        // Case A: stmts[1] is `if-chain` (statement-form match).
+        if (stmts.get(1) instanceof com.github.javaparser.ast.stmt.IfStmt ifs) {
+            if (ifs.getElseStmt().isEmpty()) return Optional.empty();
+            List<Json> arms = collectMatchArms(ifs, binding, losses);
+            if (arms == null) return Optional.empty();
+            List<Json> matchArgs = new ArrayList<>();
+            matchArgs.add(scrutShape);
+            matchArgs.addAll(arms);
+            return Optional.of(Jcs.object(
+                "args", new Jcs.Arr(matchArgs),
+                "concept_name", Jcs.string("concept:match")
+            ));
+        }
+        // Case B: stmts[1] is `return ternary` (expression-form match,
+        // emitted by java lower for match-in-expression-context). Each
+        // ternary arm is a value (not a return).
+        if (stmts.get(1) instanceof com.github.javaparser.ast.stmt.ReturnStmt rs
+                && rs.getExpression().isPresent()) {
+            com.github.javaparser.ast.expr.Expression rExpr = rs.getExpression().get();
+            while (rExpr instanceof com.github.javaparser.ast.expr.EnclosedExpr enc) {
+                rExpr = enc.getInner();
+            }
+            if (rExpr instanceof com.github.javaparser.ast.expr.ConditionalExpr ce) {
+                List<Json> arms = collectMatchArmsFromTernary(ce, binding, losses);
+                if (arms != null) {
+                    List<Json> matchArgs = new ArrayList<>();
+                    matchArgs.add(scrutShape);
+                    matchArgs.addAll(arms);
+                    return Optional.of(Jcs.object(
+                        "args", new Jcs.Arr(matchArgs),
+                        "concept_name", Jcs.string("concept:match")
+                    ));
+                }
+            }
+        }
+        return Optional.empty();
+    }
+
+    /** Walk a ternary chain `cond1 ? body1 : (cond2 ? body2 : default)` and
+     *  produce a list of concept:match-arm shapes. Returns null when the
+     *  chain doesn't look like a match-emit (e.g. cond can't be mapped
+     *  to a pattern). */
+    private List<Json> collectMatchArmsFromTernary(
+            com.github.javaparser.ast.expr.ConditionalExpr ce,
+            String scrutBinding,
+            List<Json> losses) {
+        List<Json> arms = new ArrayList<>();
+        com.github.javaparser.ast.expr.ConditionalExpr current = ce;
+        while (true) {
+            String pat = derivePatternFromCondition(current.getCondition(), scrutBinding);
+            // Variant-arm marker on the then-expr (same recovery as if-chain).
+            String[] variantInfo = extractVariantMarkerFromExpr(current.getThenExpr());
+            String overridePat = variantInfo != null ? variantInfo[0] : null;
+            String overrideBind = variantInfo != null ? variantInfo[1] : null;
+            Json body = liftExpression(current.getThenExpr(), losses);
+            String effectivePat = overridePat != null ? overridePat : pat;
+            String boundVar = overrideBind != null ? overrideBind
+                : extractBindingFromPattern(effectivePat);
+            if (boundVar != null && !boundVar.equals(scrutBinding)) {
+                body = substituteSymbolBinding(body, scrutBinding, boundVar);
+                body = stripVariantUnwrap(body, boundVar, effectivePat);
+            }
+            if (overridePat != null && overrideBind != null) {
+                body = collapseSumVariantPayload(body, scrutBinding, overrideBind);
+            }
+            arms.add(Jcs.object(
+                "args", new Jcs.Arr(List.of(
+                    Jcs.object("kind", Jcs.string("symbol"), "text", Jcs.string(effectivePat)),
+                    body
+                )),
+                "concept_name", Jcs.string("concept:match-arm")
+            ));
+            com.github.javaparser.ast.expr.Expression elseExpr = current.getElseExpr();
+            while (elseExpr instanceof com.github.javaparser.ast.expr.EnclosedExpr enc) {
+                elseExpr = enc.getInner();
+            }
+            if (elseExpr instanceof com.github.javaparser.ast.expr.ConditionalExpr nested) {
+                current = nested;
+                continue;
+            }
+            // Terminal else-expression — wildcard arm. Check if it's the
+            // synthetic exhaustive-no-default unreachable marker.
+            Json elseBody = liftExpression(elseExpr, losses);
+            String elsePattern = wildcardPatternForElseBody(elseBody);
+            if (elsePattern == null) {
+                return arms;
+            }
+            if (!"_".equals(elsePattern) && !elsePattern.equals(scrutBinding)) {
+                elseBody = substituteSymbolBinding(elseBody, scrutBinding, elsePattern);
+            }
+            arms.add(Jcs.object(
+                "args", new Jcs.Arr(List.of(
+                    Jcs.object("kind", Jcs.string("symbol"), "text", Jcs.string(elsePattern)),
+                    elseBody
+                )),
+                "concept_name", Jcs.string("concept:match-arm")
+            ));
+            return arms;
+        }
     }
 
     /** Walk an if/else-if/else chain and produce a list of concept:match-arm
@@ -549,15 +636,29 @@ public final class TermShapeLifter {
         while (true) {
             String pat = derivePatternFromCondition(current.getCondition(), scrutBinding);
             Statement thenStmt = current.getThenStmt();
+            // Variant-arm marker: when the lower emitted a nested-variant
+            // pattern (e.g. `Err(LiftError::InvalidParams(msg))`), it
+            // attached a `/*@match-arm-pattern=...*/` comment. Recover the
+            // pattern text and bound-var to undo the SumVariant payload
+            // unwrap that the lower applied.
+            String[] variantInfo = extractVariantMarker(thenStmt);
+            String overridePat = variantInfo != null ? variantInfo[0] : null;
+            String overrideBind = variantInfo != null ? variantInfo[1] : null;
             Json body = thenStmt instanceof BlockStmt tb ? liftBlock(tb, losses) : liftStatement(thenStmt, losses);
-            String boundVar = extractBindingFromPattern(pat);
+            String effectivePat = overridePat != null ? overridePat : pat;
+            String boundVar = overrideBind != null ? overrideBind : extractBindingFromPattern(effectivePat);
             if (boundVar != null && !boundVar.equals(scrutBinding)) {
                 body = substituteSymbolBinding(body, scrutBinding, boundVar);
+            }
+            if (overridePat != null && overrideBind != null) {
+                // The lower replaced the binding with `String.valueOf((SumVariant)
+                // SCRUT.unwrapErr()).payload()`. Collapse back to the bound name.
+                body = collapseSumVariantPayload(body, scrutBinding, overrideBind);
             }
             body = stripTrailingReturn(body);
             arms.add(Jcs.object(
                 "args", new Jcs.Arr(List.of(
-                    Jcs.object("kind", Jcs.string("symbol"), "text", Jcs.string(pat)),
+                    Jcs.object("kind", Jcs.string("symbol"), "text", Jcs.string(effectivePat)),
                     body
                 )),
                 "concept_name", Jcs.string("concept:match-arm")
@@ -636,12 +737,17 @@ public final class TermShapeLifter {
         return null;
     }
 
-    /** True iff any symbol-leaf text in the subtree starts with the given prefix. */
+    /** True iff any text-bearing leaf in the subtree contains the prefix
+     *  as a word (handles both bare symbol leaves and embedded refs
+     *  inside macro-call argument strings like `"...{}, __provekit_v1"`). */
     private static boolean containsSymbolText(Json node, String prefix) {
         if (!(node instanceof Jcs.Obj obj)) return false;
+        java.util.regex.Pattern pat = java.util.regex.Pattern.compile(
+                "\\b" + java.util.regex.Pattern.quote(prefix) + "\\d*\\b");
         for (Jcs.Field f : obj.fields()) {
             Json v = f.value();
-            if (v instanceof Jcs.Str s && "text".equals(f.key()) && s.value().startsWith(prefix)) {
+            if (v instanceof Jcs.Str s && "text".equals(f.key())
+                    && pat.matcher(s.value()).find()) {
                 return true;
             }
             if (v instanceof Jcs.Arr arr) {
@@ -909,6 +1015,45 @@ public final class TermShapeLifter {
         return liftStatement(stmt, losses);
     }
 
+    /** Recognize `((Supplier<T>) () -> { body }).get()` — the java lower's
+     *  expression-scope match wrapper — and inline the lambda body. The
+     *  body's typical shape is `var __provekit_vN = scrut; return ternary;`
+     *  which downstream recognition (tryRecognizeMatchTernary,
+     *  tryRecognizeInnerMatch) turns into a clean concept:match.
+     *
+     *  Returns Optional.empty() if the receiver isn't a 0-arg lambda. */
+    private Optional<Json> tryInlineSupplierGet(MethodCallExpr m, List<Json> losses) {
+        if (m.getScope().isEmpty()) return Optional.empty();
+        com.github.javaparser.ast.expr.Expression scope = m.getScope().get();
+        // Unwrap parens.
+        while (scope instanceof com.github.javaparser.ast.expr.EnclosedExpr enc) {
+            scope = enc.getInner();
+        }
+        // Unwrap Supplier cast (the existing CastExpr handler strips it
+        // when called via liftExpression, but we're inspecting structure).
+        if (scope instanceof com.github.javaparser.ast.expr.CastExpr cx) {
+            scope = cx.getExpression();
+            while (scope instanceof com.github.javaparser.ast.expr.EnclosedExpr enc) {
+                scope = enc.getInner();
+            }
+        }
+        if (!(scope instanceof com.github.javaparser.ast.expr.LambdaExpr lam)) {
+            return Optional.empty();
+        }
+        if (!lam.getParameters().isEmpty()) return Optional.empty();
+        // Lift the lambda body. If the body is a BlockStmt, lift as a
+        // block (downstream recognizers fire). If it's a single expression,
+        // lift as an expression.
+        com.github.javaparser.ast.stmt.Statement body = lam.getBody();
+        if (body instanceof BlockStmt bb) {
+            return Optional.of(liftBlock(bb, losses));
+        }
+        if (body instanceof com.github.javaparser.ast.stmt.ExpressionStmt es) {
+            return Optional.of(liftExpression(es.getExpression(), losses));
+        }
+        return Optional.of(liftStatement(body, losses));
+    }
+
     /** Sweep a block for the 2-statement match pattern `var __provekit_vN
      *  = scrut; if-chain` anywhere inside. Useful when the function body
      *  has matchable sub-patterns interleaved with other statements (e.g.
@@ -1089,6 +1234,144 @@ public final class TermShapeLifter {
             if ("text".equals(f.key()) && f.value() instanceof Jcs.Str s) t = s.value();
         }
         return "symbol".equals(kind) && text.equals(t);
+    }
+
+    /** Scan a statement's source-text surface for a
+     *  `/*@match-arm-pattern=PATTERN binding=NAME*\/` marker that's at the
+     *  IMMEDIATE outer level (not nested in a deeper expression). Returns
+     *  {patternText, bindingName} or null.
+     *
+     *  Heuristic: the marker appears between `return` and the value expr,
+     *  so only match the first marker that follows a `return` keyword. */
+    private static String[] extractVariantMarker(Statement stmt) {
+        if (stmt == null) return null;
+        String src = stmt.toString();
+        // Only match a marker that's immediately after `return ` at the
+        // outer level (i.e. the first `return <marker>`). Nested matches
+        // INSIDE the body have their own `return` markers — the FIRST
+        // marker encountered in source order is the outer arm's.
+        java.util.regex.Matcher m = java.util.regex.Pattern.compile(
+                "return\\s+/\\*@match-arm-pattern=([^*]+?)(?:\\s+binding=([A-Za-z_][A-Za-z0-9_]*))?\\*/")
+            .matcher(src);
+        if (!m.find()) return null;
+        String pat = m.group(1).trim();
+        String bind = m.group(2);
+        return new String[]{pat, bind};
+    }
+
+    /** Same for an expression's source-text surface. The marker for an
+     *  expression-form arm appears at the START of the expression text. */
+    private static String[] extractVariantMarkerFromExpr(com.github.javaparser.ast.expr.Expression expr) {
+        if (expr == null) return null;
+        String src = expr.toString();
+        // For expression arms (ternary form), the marker is prepended to
+        // the body text. It must appear at the START of the source.
+        java.util.regex.Matcher m = java.util.regex.Pattern.compile(
+                "^\\s*/\\*@match-arm-pattern=([^*]+?)(?:\\s+binding=([A-Za-z_][A-Za-z0-9_]*))?\\*/")
+            .matcher(src);
+        if (!m.find()) return null;
+        return new String[]{m.group(1).trim(), m.group(2)};
+    }
+
+    /** Collapse the lower's `String.valueOf((SumVariant) SCRUT.unwrapErr()).payload()`
+     *  back to the bound variable name. The body has been substituted by
+     *  the lower so the SumVariant chain appears wherever the rust source
+     *  referenced the binding. Replace ALL such occurrences with `bindName`. */
+    private Json collapseSumVariantPayload(Json node, String scrutBinding, String bindName) {
+        if (!(node instanceof Jcs.Obj obj)) return node;
+        // Recognize String.valueOf(...) call wrapping a chain that ends in
+        // `.payload()` whose receiver mentions scrutBinding. Replace with
+        // a bare symbol leaf carrying bindName.
+        String cn = conceptOf(obj);
+        if ("concept:call".equals(cn)) {
+            // String.format / String.valueOf calls — args[0] is path leaf
+            // (or callee), args[1+] are arguments. Detect by serializing
+            // the immediate shape's first arg.
+            // Look for the deepest payload() method call in args.
+        }
+        // Simpler: walk all symbol-leaf text fields. The lower's emission
+        // of `String.valueOf(((SumVariant) X.unwrapErr()).payload())` does
+        // NOT survive the lift unchanged — it gets parsed as nested calls.
+        // We need to recognize the call-tree shape. The call tree for
+        // `String.valueOf(((SumVariant) SCRUT.unwrapErr()).payload())` is:
+        //   concept:call(
+        //     concept:cast(
+        //       concept:call(SCRUT, method:unwrapErr),
+        //       type:SumVariant),
+        //     method:payload)
+        // wrapped in String.valueOf via concept:call(path:String, method:valueOf, ...).
+        // Walk and replace ANY concept:call whose chain bottoms out at
+        // SCRUT.unwrapErr() with `bindName` symbol leaf.
+        if (isSumVariantPayloadChain(obj, scrutBinding)) {
+            return Jcs.object(
+                "kind", Jcs.string("symbol"),
+                "text", Jcs.string(bindName)
+            );
+        }
+        // Recurse.
+        List<Jcs.Field> newFields = new ArrayList<>();
+        for (Jcs.Field f : obj.fields()) {
+            Json v = f.value();
+            if (v instanceof Jcs.Arr arr) {
+                List<Jcs.Json> newArr = new ArrayList<>();
+                for (Jcs.Json e : arr.values()) {
+                    newArr.add(collapseSumVariantPayload(e, scrutBinding, bindName));
+                }
+                newFields.add(new Jcs.Field(f.key(), new Jcs.Arr(newArr)));
+            } else if (v instanceof Jcs.Obj) {
+                newFields.add(new Jcs.Field(f.key(), collapseSumVariantPayload(v, scrutBinding, bindName)));
+            } else {
+                newFields.add(f);
+            }
+        }
+        return new Jcs.Obj(newFields);
+    }
+
+    /** True iff the node IS the call chain
+     *  `String.valueOf((SumVariant) X.unwrapErr().payload())` —
+     *  the lower's exact emission for sum-variant payload extraction.
+     *  The top-level call MUST be `String.valueOf`; nested unwrap+payload
+     *  alone is NOT enough (the chain could be inside a larger expression
+     *  the source did want to preserve). */
+    private static boolean isSumVariantPayloadChain(Json node, String scrutBinding) {
+        if (!(node instanceof Jcs.Obj obj)) return false;
+        String cn = conceptOf(obj);
+        if (!"concept:call".equals(cn)) return false;
+        // First two args of a `String.valueOf(...)` lift are:
+        //   args[0]: {kind:"path", text:"String"} (or via concept:call(String, method:valueOf, ...))
+        //   args[1]: {kind:"method", text:"valueOf", arity:1}
+        // Verify the call's top is String.valueOf.
+        for (Jcs.Field f : obj.fields()) {
+            if (!"args".equals(f.key())) continue;
+            if (!(f.value() instanceof Jcs.Arr arr)) continue;
+            List<Jcs.Json> aL = arr.values();
+            if (aL.size() < 3) return false;
+            // arg0: path/symbol "String"
+            String t0Kind = null, t0Text = null;
+            if (aL.get(0) instanceof Jcs.Obj o0) {
+                for (Jcs.Field f0 : o0.fields()) {
+                    if ("kind".equals(f0.key()) && f0.value() instanceof Jcs.Str s) t0Kind = s.value();
+                    if ("text".equals(f0.key()) && f0.value() instanceof Jcs.Str s) t0Text = s.value();
+                }
+            }
+            // arg1: method "valueOf"
+            String t1Kind = null, t1Text = null;
+            if (aL.get(1) instanceof Jcs.Obj o1) {
+                for (Jcs.Field f1 : o1.fields()) {
+                    if ("kind".equals(f1.key()) && f1.value() instanceof Jcs.Str s) t1Kind = s.value();
+                    if ("text".equals(f1.key()) && f1.value() instanceof Jcs.Str s) t1Text = s.value();
+                }
+            }
+            boolean topIsStringValueOf =
+                ("path".equals(t0Kind) || "symbol".equals(t0Kind))
+                && "String".equals(t0Text)
+                && "method".equals(t1Kind) && "valueOf".equals(t1Text);
+            if (!topIsStringValueOf) return false;
+            // arg2 onwards: serialized form must contain unwrapErr+payload.
+            String inner = Jcs.encode(aL.get(2));
+            return inner.contains("\"unwrapErr\"") && inner.contains("\"payload\"");
+        }
+        return false;
     }
 
     private static boolean isMethodWithName(Jcs.Json node, String name) {
@@ -2239,6 +2522,14 @@ public final class TermShapeLifter {
                 Optional<Jcs.Json> jsonMacro = tryRecognizeJsonSupplier(m);
                 if (jsonMacro.isPresent()) {
                     return jsonMacro.get();
+                }
+                // #1391 follow-on: `((Supplier<X>) () -> { body }).get()`
+                // is the lower's expression-scope match wrapper. Inline
+                // the lambda's body — the lift downstream then sees the
+                // match pattern inside the arm and recognizes it.
+                Optional<Jcs.Json> supplierInlined = tryInlineSupplierGet(m, losses);
+                if (supplierInlined.isPresent()) {
+                    return supplierInlined.get();
                 }
             }
             // #1391 follow-on: MAPPER.nullNode() → Value::Null symbol.

@@ -1987,18 +1987,23 @@ final class SugarRealizer {
                     String sub = patternBindingExpression(patternText, scrutVar);
                     bodyText = replaceIdentifier(bodyText, boundVar, sub);
                 }
+                // #1391 follow-on: variant-pattern carrier. Emit an arm
+                // marker carrying the rust source pattern text so the java
+                // lift can reconstruct discriminating variants (e.g.
+                // `Err(LiftError::InvalidParams(msg))` vs `…::Internal(msg)`).
+                String armMarker = variantArmMarker(patternText, boundVar);
                 if ("true".equals(cond)) {
                     if (armIdx == 0) {
-                        out.append("return ").append(bodyText).append(";");
+                        out.append("return ").append(armMarker).append(bodyText).append(";");
                     } else {
-                        out.append(" else {\n    return ").append(bodyText).append(";\n}");
+                        out.append(" else {\n    return ").append(armMarker).append(bodyText).append(";\n}");
                     }
                     defaultSeen = true;
                     break;
                 }
                 if (armIdx == 0) out.append("if (").append(cond).append(") {\n");
                 else out.append(" else if (").append(cond).append(") {\n");
-                out.append("    return ").append(bodyText).append(";\n}");
+                out.append("    return ").append(armMarker).append(bodyText).append(";\n}");
                 armIdx++;
             }
             if (!defaultSeen && armIdx > 0) {
@@ -2007,6 +2012,30 @@ final class SugarRealizer {
             return Optional.of(out.toString());
         }
         return Optional.empty();
+    }
+
+    /** Emit a block comment carrying the rust source pattern text when
+     *  it's a nested-variant pattern (e.g. `Err(LiftError::Internal(x))`).
+     *  Returns "" when the pattern is a simple variant or wildcard the
+     *  lift can re-derive from the condition shape. */
+    private static String variantArmMarker(String patternText, String boundVar) {
+        if (patternText == null || patternText.isBlank()) return "";
+        String t = patternText.trim();
+        // Strip guard.
+        int ifIdx = t.indexOf(" if ");
+        if (ifIdx > 0) t = t.substring(0, ifIdx).trim();
+        // Only emit a marker when the pattern has `::` (nested variant
+        // path like `Err(LiftError::InvalidParams(msg))`). Simple
+        // `Some(v)` / `Ok(v)` / `Err(e)` / `"foo"` / `_` are recoverable
+        // from the condition shape alone.
+        if (!t.contains("::")) return "";
+        StringBuilder sb = new StringBuilder("/*@match-arm-pattern=");
+        sb.append(t.replace("*/", "*\\/"));
+        if (boundVar != null && !boundVar.isBlank()) {
+            sb.append(" binding=").append(boundVar);
+        }
+        sb.append("*/ ");
+        return sb.toString();
     }
 
     /**
@@ -2188,6 +2217,14 @@ final class SugarRealizer {
                 if (boundVar != null) {
                     String sub = patternBindingExpression(patternText, scrutVar);
                     bodyText = replaceIdentifier(bodyText, boundVar, sub);
+                }
+                // Variant marker — only emitted when the pattern has `::`
+                // (nested variant path). Comment-only carriers preserve
+                // the rust pattern text + binding name for the java lift
+                // to reconstruct discriminating arms.
+                String armMarker = variantArmMarker(patternText, boundVar);
+                if (!armMarker.isEmpty()) {
+                    bodyText = armMarker + bodyText;
                 }
                 if ("true".equals(cond)) {
                     if (armCount == 0) {
