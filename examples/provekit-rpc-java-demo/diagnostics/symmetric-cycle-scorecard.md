@@ -48,18 +48,30 @@ End-to-end cycle (rust source → `provekit lift` → `provekit lower --target j
 | initialize_result       | ✓ | 0b |
 | content_addressed_name  | ✓ | 0b |
 | slot_cid                | ✓ | 0b |
-| run_server              |   | -47b (& references + .unwrap_or_else closure preservation) |
-| lift                    |   | -208b (chain transform: .and_then().unwrap_or().to_string() not yet reversible) |
-| build_ir_document       |   | +3b (rustfmt-norm small; structurally: type annot, ref pattern in for, if-let destructure all lost) |
-| blake3_512_cid          |   | -50b (function-local const HEX + `for &b in &raw` ref-pattern still lost) |
-| handle_line             |   | -965b (java lower refused — tuple return + nested match-with-guard) |
+| blake3_512_cid          | ✓ | 0b |
+| run_server              |   | -42b (.unwrap_or_else closure preservation, residual only) |
+| lift                    |   | -206b (two `ok_or_else(\|\| ...)?` propagation chains lost in java) |
+| build_ir_document       |   | +3b (type annot + if-let destructure + chain transform) |
+| handle_line             |   | -536b (tuple return + nested match-arm-guard partial recovery) |
 
-**SUBSTRATE-SYMMETRIC STRICT: 5/10**
+**SUBSTRATE-SYMMETRIC STRICT: 6/10**
 
-(Improvements this run: expression-position catalog dispatch in SugarRealizer
-closed content_addressed_name and slot_cid; the catalog dispatcher was
-previously only wired into the body-position path, so nested concept:utf8-encode
-inside concept:assign value was silently dropped as un-lowered.) (was effectively 0/10 — pre-#1391 numbers
+Improvements landed this run (six progressive commits):
+1. Expression-position catalog dispatch — closes content_addressed_name, slot_cid.
+2. Tolerant seq lowering + empty-RHS placeholder — un-stubs handle_line.
+3. Item-decl round-trip via java line-comment recognition (`// item-decl
+   (rust): X` → concept:item-decl(symbol{text:X})) — closes the const-HEX
+   gap in blake3_512_cid.
+4. Hex literal radix preservation through both edges — closes the
+   `0x0F` vs `15` byte-difference.
+5. Ref-pattern inference: detect primitive-use of the loop var in body
+   (`b >> 4`, `b & 0x0F`, `b as char`) and emit `for &b in &raw` —
+   closes the iter-borrow gap in blake3_512_cid.
+6. Callee-signature-aware `&` insertion: known-callees registry for
+   @boundary/@sugar functions in this source. Guarded against
+   double-borrow when caller already passes by reference (skips args
+   that name a caller param of canonical reference-type Value/str).
+   Closes most of run_server's `&` gaps. (was effectively 0/10 — pre-#1391 numbers
 in the baseline below were ad-hoc per-function diffs without round-trip
 verification; the 3/10 here is verified end-to-end via real RPC + rustfmt).
 

@@ -824,6 +824,7 @@ fn lower_term_shape_expression(
                 "json_parse"        => Some(&[0]),
                 "blake3_512_cid"    => Some(&[0]),
                 "handle_line"       => Some(&[0, 1]),
+                "build_ir_document" => Some(&[0, 1]),
                 // content_addressed_name, slot_cid, encode_jcs take &-args
                 // but their typical callsites pass already-reference values
                 // (match-bound or param-bound); skip to avoid double-&.
@@ -837,13 +838,22 @@ fn lower_term_shape_expression(
                     let is_bare_ident = !trimmed.is_empty()
                         && trimmed.chars().all(|c| c.is_ascii_alphanumeric() || c == '_');
                     let is_format_macro = trimmed.starts_with("format!(");
-                    // Skip if the arg names a function PARAM of the caller —
-                    // params in this source are reference-typed (&str/&Value)
-                    // in the rust original even when the java→rust map
-                    // strips the ampersand. Adding `&` here produces &&.
-                    let is_caller_param = is_bare_ident
-                        && context.params.iter().any(|p| p == trimmed);
-                    if (is_bare_ident && !is_caller_param) || is_format_macro {
+                    // Skip if the arg names a function PARAM that's already
+                    // typed `&T`. Adding `&` produces &&T. Detect by checking
+                    // both the (mapped) param_types and (preserved) original
+                    // — Value, str, JsonNode all canonically arrive via
+                    // reference in this codebase.
+                    let is_already_ref = is_bare_ident && context.params.iter()
+                        .position(|p| p == trimmed)
+                        .map(|pi| {
+                            let mapped = context.param_types.get(pi).cloned().unwrap_or_default();
+                            // Heuristic: if mapped type is one of the
+                            // canonical pass-by-reference types in this
+                            // source (Value, str), treat as ref.
+                            mapped.starts_with('&') || mapped == "Value" || mapped == "str"
+                        })
+                        .unwrap_or(false);
+                    if (is_bare_ident && !is_already_ref) || is_format_macro {
                         call_args[idx] = format!("&{}", arg);
                     }
                 }
