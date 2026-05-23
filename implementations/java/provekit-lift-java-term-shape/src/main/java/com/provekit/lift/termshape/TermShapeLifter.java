@@ -144,8 +144,48 @@ public final class TermShapeLifter {
         }
         List<Json> stmts = new ArrayList<>();
         for (Statement s : block.getStatements()) {
+            // #1391 follow-on: when java lower emitted a function-local
+            // const as a `// item-decl (rust): <source>` comment, the
+            // comment attaches to the NEXT statement. Detect such
+            // comments here and emit a concept:item-decl shape before
+            // the actual statement.
+            s.getComment().ifPresent(c -> {
+                if (c instanceof com.github.javaparser.ast.comments.LineComment lc) {
+                    String txt = lc.getContent().trim();
+                    String marker = "item-decl (rust):";
+                    int ix = txt.indexOf(marker);
+                    if (ix >= 0) {
+                        String src = txt.substring(ix + marker.length()).trim();
+                        stmts.add(Jcs.object(
+                            "args", new Jcs.Arr(List.of(
+                                Jcs.object("kind", Jcs.string("symbol"),
+                                           "text", Jcs.string(src))
+                            )),
+                            "concept_name", Jcs.string("concept:item-decl")
+                        ));
+                    }
+                }
+            });
             Json lifted = liftStatement(s, losses);
             if (lifted != null) stmts.add(lifted);
+        }
+        // Also scan orphan comments at the end of the block (no following stmt).
+        for (com.github.javaparser.ast.comments.Comment c : block.getOrphanComments()) {
+            if (c instanceof com.github.javaparser.ast.comments.LineComment lc) {
+                String txt = lc.getContent().trim();
+                String marker = "item-decl (rust):";
+                int ix = txt.indexOf(marker);
+                if (ix >= 0) {
+                    String src = txt.substring(ix + marker.length()).trim();
+                    stmts.add(Jcs.object(
+                        "args", new Jcs.Arr(List.of(
+                            Jcs.object("kind", Jcs.string("symbol"),
+                                       "text", Jcs.string(src))
+                        )),
+                        "concept_name", Jcs.string("concept:item-decl")
+                    ));
+                }
+            }
         }
         if (stmts.size() == 1) return stmts.get(0);
         return Jcs.object(

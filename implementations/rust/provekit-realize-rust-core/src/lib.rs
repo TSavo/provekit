@@ -1012,14 +1012,34 @@ fn lower_term_shape_expression(
         if args.len() != 3 {
             return None;
         }
-        let var = args[0].get("text").and_then(Value::as_str)?.to_string();
+        let var_text = args[0].get("text").and_then(Value::as_str)?.to_string();
         // Preserve `for mut X in ...` mutability marker from lift.
         let is_mut = args[0].get("mut").and_then(Value::as_bool).unwrap_or(false);
-        let var_decl = if is_mut { format!("mut {}", var) } else { var };
+        // Detect explicit ref pattern from lift: `& b` from syn::Pat::Reference.
+        let already_ref_pat = var_text.trim_start().starts_with('&');
         let iter = lower_term_shape_expression(args[1], context, &append_position(position, 1))?;
         let body = lower_block_or_expr(args[2], context, &append_position(position, 2))?;
+        // #1391 follow-on: ref-pattern inference. When the loop body uses
+        // `var` in primitive-numeric position (>>, &, +, -, * as int, etc.)
+        // and the iterable isn't already borrowed, prefer `for &var in &iter`
+        // to match the idiomatic rust source form. Heuristic: scan body for
+        // patterns like `(var)` followed by binary ops or as-cast that
+        // require primitive (not &u8) semantics.
+        let bare_var = var_text.trim_start_matches('&').trim().to_string();
+        let needs_ref_pat = !already_ref_pat
+            && !is_mut
+            && body_uses_var_as_primitive(&body, &bare_var)
+            && !iter.text.starts_with('&');
+        let (final_var, final_iter) = if needs_ref_pat {
+            (format!("&{}", bare_var), format!("&{}", iter.text))
+        } else if already_ref_pat {
+            (var_text, iter.text)
+        } else {
+            let v = if is_mut { format!("mut {}", bare_var) } else { bare_var };
+            (v, iter.text)
+        };
         return Some(ShapeExpression {
-            text: format!("for {} in {} {{ {} }}", var_decl, iter.text, body),
+            text: format!("for {} in {} {{ {} }}", final_var, final_iter, body),
             type_name: String::new(),
         });
     }
@@ -2947,6 +2967,41 @@ fn paren_for_op(text: &str) -> String {
         i += 1;
     }
     trimmed.to_string()
+}
+
+/// Heuristic: does the for-loop body use `var` in a position that requires
+/// primitive (non-reference) semantics? Detects `var >> N`, `var & N`,
+/// `var as TYPE`, and similar — all of which require var:T not var:&T,
+/// implying the source was `for &var in &iter`.
+fn body_uses_var_as_primitive(body: &str, var: &str) -> bool {
+    if var.is_empty() { return false; }
+    // Look for `<var>` followed (after optional whitespace) by an op that
+    // needs primitive semantics, OR `(<var>)` followed by such an op.
+    let patterns: &[&str] = &[
+        &format!("{} >>", var), &format!("{}>>", var),
+        &format!("{} <<", var), &format!("{}<<", var),
+        &format!("{} & ", var), &format!("{}&", var),
+        &format!("{} | ", var), &format!("{}|", var),
+        &format!("{} as ", var),
+        &format!("{} + ", var), &format!("{} - ", var),
+        &format!("{} * ", var), &format!("{} / ", var),
+        &format!("{} % ", var),
+        &format!("({})", var),
+    ];
+    // Boundary check: don't match `bar` against `bart`. Look for the
+    // pattern preceded by non-identifier char.
+    for pat in patterns {
+        let mut from = 0usize;
+        while let Some(pos) = body[from..].find(pat) {
+            let abs = from + pos;
+            let prev = if abs == 0 { ' ' } else { body.as_bytes()[abs - 1] as char };
+            if !(prev.is_ascii_alphanumeric() || prev == '_') {
+                return true;
+            }
+            from = abs + pat.len();
+        }
+    }
+    false
 }
 
 /// Post-pass mut inference (#1391 follow-on). Scan the emitted body for
