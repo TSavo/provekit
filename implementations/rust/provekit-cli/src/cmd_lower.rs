@@ -384,6 +384,10 @@ fn named_term_document_from_ir_document(ir_doc: &Json) -> Result<NamedTermDocume
             .map(|a| a.iter().filter_map(|v| v.as_str().map(String::from)).collect())
             .unwrap_or_default();
         let return_sort_cid = entry.get("return_sort_cid").and_then(Json::as_str).unwrap_or("").to_string();
+        let doc_lines: Vec<String> = entry.get("doc_lines")
+            .and_then(Json::as_array)
+            .map(|a| a.iter().filter_map(|v| v.as_str().map(String::from)).collect())
+            .unwrap_or_default();
         let term_shape = entry.get("term_shape").cloned().unwrap_or(serde_json::json!({}));
         let term_shape_cid = entry.get("term_shape_cid").and_then(Json::as_str).unwrap_or("").to_string();
         let site_memento_cid = entry.get("signature_shape_cid").and_then(Json::as_str).unwrap_or("").to_string();
@@ -409,6 +413,7 @@ fn named_term_document_from_ir_document(ir_doc: &Json) -> Result<NamedTermDocume
             "termShape": term_shape,
             "termShapeCid": term_shape_cid,
             "witnesses": [],
+            "docLines": doc_lines,
         });
         let term: libprovekit::core::NamedTerm = serde_json::from_value(term_json)
             .map_err(|e| format!("convert ir-document entry to NamedTerm: {e}"))?;

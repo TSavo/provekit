@@ -501,6 +501,7 @@ fn bind_lift(params: &Value) -> Result<Value, String> {
                 &mut parametric_sort_expansions,
             )
             .unwrap_or_default();
+            let doc_lines_sb = sugar_doc_lines(&item_fn);
             let mut entry = json!({
                 "kind": "library-sugar-binding-entry",
                 "target_language": "rust",
@@ -528,6 +529,7 @@ fn bind_lift(params: &Value) -> Result<Value, String> {
                     "value": { "entries": loss },
                 },
                 "body_source": sugar_body_source(&rel, &src, &item_fn),
+                "doc_lines": doc_lines_sb,
             });
             // #1369: parametric content-addressing — emit expansions for any
             // composite CIDs the signature contains. Realize plugin reads

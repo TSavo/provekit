@@ -354,7 +354,14 @@ final class SugarRealizer {
         }
         sigMetadata.append("],");
         sigMetadata.append("\"returnSortCid\":\"").append(jsonStringEscape(returnSortCid)).append("\",");
-        sigMetadata.append("\"sourceReturnType\":\"").append(jsonStringEscape(returnType)).append("\"");
+        sigMetadata.append("\"sourceReturnType\":\"").append(jsonStringEscape(returnType)).append("\",");
+        sigMetadata.append("\"docLines\":[");
+        List<String> srcDocLines = currentSourceDocLines.get();
+        for (int i = 0; i < srcDocLines.size(); i++) {
+            if (i > 0) sigMetadata.append(",");
+            sigMetadata.append("\"").append(jsonStringEscape(srcDocLines.get(i))).append("\"");
+        }
+        sigMetadata.append("]");
         sigMetadata.append("}\n");
         // Embed the source-language term_shape verbatim. The java lift
         // reads this back as the AUTHORITATIVE structural form for
@@ -1302,6 +1309,12 @@ final class SugarRealizer {
     static final ThreadLocal<String> currentSourceGenericParams =
             ThreadLocal.withInitial(() -> "");
     static final ThreadLocal<List<String>> currentSourceOriginalParamTypes =
+            ThreadLocal.withInitial(java.util.List::of);
+    /** Source-language doc-comment lines (`///` body, without prefix). The
+     *  rust lift carries these from item_fn.attrs; lower threads them into
+     *  the @substrate-signature header so the java lift can round-trip
+     *  them back into rust source-form doc comments. */
+    static final ThreadLocal<List<String>> currentSourceDocLines =
             ThreadLocal.withInitial(java.util.List::of);
     /** Source-language term_shape as JSON. Embedded verbatim in the
      *  @substrate-term-shape header comment so the java lift can recover

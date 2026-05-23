@@ -115,6 +115,17 @@ pub struct RealizeRequest {
         skip_serializing_if = "std::collections::BTreeMap::is_empty"
     )]
     pub function_return_types: std::collections::BTreeMap<String, String>,
+    /// Source-language doc comments (the `///` lines after the
+    /// `#[provekit::sugar(...)]` attribute). Realize plugins emit these
+    /// in the @substrate-signature header so subsequent lifts can
+    /// recover them for the cycle round-trip.
+    #[serde(
+        default,
+        rename = "docLines",
+        alias = "doc_lines",
+        skip_serializing_if = "Vec::is_empty"
+    )]
+    pub doc_lines: Vec<String>,
 }
 
 /// Canonical form of a parametric sort application — the structure whose
@@ -816,6 +827,8 @@ fn invocation_from_tree_node(
             &["procMacroInvocations", "proc_macro_invocations"],
         ),
         function_return_types: parent_request.function_return_types.clone(),
+        doc_lines: node_string_array(node, &["docLines", "doc_lines"])?
+            .unwrap_or_else(|| parent_request.doc_lines.clone()),
     };
     let mut from = Vec::new();
     if let Some(shape_cid) = optional_cid_field(node, &["shapeCid", "shape_cid"])? {
@@ -1045,6 +1058,7 @@ pub fn realize_spec_from_named_term(term: &NamedTerm) -> Result<Value, String> {
         "namedTermTree": named_term_tree,
         "termShape": term.term_shape,
         "termShapeCid": term.term_shape_cid,
+        "docLines": term.doc_lines,
     }))
 }
 
@@ -1217,6 +1231,8 @@ pub fn request_from_spec(spec: &Value) -> Result<RealizeRequest, String> {
             .get("function_return_types")
             .or_else(|| spec.get("functionReturnTypes"))
             .and_then(|v| serde_json::from_value(v.clone()).ok())
+            .unwrap_or_default(),
+        doc_lines: string_array_field(spec, &["docLines", "doc_lines"])
             .unwrap_or_default(),
     })
 }

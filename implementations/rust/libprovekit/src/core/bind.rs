@@ -192,6 +192,11 @@ pub struct BindLiftEntry {
     pub term_shape_cid: String,
     #[serde(default)]
     pub witnesses: Vec<BindContractWitness>,
+    /// Doc comment lines from rust source (only `///` after the
+    /// `#[provekit::sugar(...)]` attribute). Propagated end-to-end so
+    /// realize can reproduce them on emit.
+    #[serde(default, rename = "docLines", alias = "doc_lines")]
+    pub doc_lines: Vec<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -369,6 +374,16 @@ pub struct NamedTerm {
     #[serde(rename = "termShapeCid")]
     pub term_shape_cid: String,
     pub witnesses: Vec<NamedWitness>,
+    /// Doc comment lines (`///` body, without prefix or trailing newline)
+    /// that appear AFTER the `#[provekit::sugar(...)]` attribute. Threaded
+    /// through to realize so cycle output preserves source doc comments.
+    /// Empty when the source had no post-sugar docs.
+    #[serde(
+        default,
+        rename = "docLines",
+        skip_serializing_if = "Vec::is_empty"
+    )]
+    pub doc_lines: Vec<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -471,6 +486,7 @@ pub fn bind_term_document(
             term_shape: entry.term_shape,
             term_shape_cid,
             witnesses,
+            doc_lines: entry.doc_lines,
         });
     }
 
@@ -2019,6 +2035,7 @@ mod tests {
                     term_shape: json!({"kind": "bin", "op": "+"}),
                     term_shape_cid: "blake3-512:33333333333333333333333333333333333333333333333333333333333333333333333333333333333333333333333333333333333333333333333333333333".to_string(),
                     witnesses: vec![],
+                    doc_lines: vec![],
                 }],
                 workspace_root: None,
             }
@@ -2054,6 +2071,7 @@ mod tests {
                 term_shape: json!({}),
                 term_shape_cid: "blake3-512:33333333333333333333333333333333333333333333333333333333333333333333333333333333333333333333333333333333333333333333333333333333".to_string(),
                 witnesses: vec![],
+                doc_lines: vec![],
             }],
             workspace_root: None,
         };

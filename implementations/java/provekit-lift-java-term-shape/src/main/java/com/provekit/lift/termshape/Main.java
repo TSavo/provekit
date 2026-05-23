@@ -145,6 +145,9 @@ public final class Main {
             entryFields.add(new Jcs.Field("param_sort_cids", new Jcs.Arr(sortCids)));
             entryFields.add(new Jcs.Field("return_sort_cid", Jcs.string(sigMeta.returnSortCid)));
             entryFields.add(new Jcs.Field("source_return_type", Jcs.string(sigMeta.sourceReturnType)));
+            List<Jcs.Json> docLinesJson = new ArrayList<>();
+            for (String d : sigMeta.docLines) docLinesJson.add(Jcs.string(d));
+            entryFields.add(new Jcs.Field("doc_lines", new Jcs.Arr(docLinesJson)));
             entries.add(new Jcs.Obj(entryFields));
             losses.addAll(lifted.lossRecords());
         }
@@ -261,6 +264,7 @@ public final class Main {
         List<String> paramSortCids = new ArrayList<>();
         String returnSortCid = "";
         String sourceReturnType = "";
+        List<String> docLines = new ArrayList<>();
 
         static SignatureMetadata parseOrEmpty(String body) {
             SignatureMetadata m = new SignatureMetadata();
@@ -283,6 +287,8 @@ public final class Main {
                     for (Object o : l) if (o instanceof String s) m.originalParamTypes.add(s);
                 if ((v = kv.get("paramSortCids")) instanceof List<?> l)
                     for (Object o : l) if (o instanceof String s) m.paramSortCids.add(s);
+                if ((v = kv.get("docLines")) instanceof List<?> l)
+                    for (Object o : l) if (o instanceof String s) m.docLines.add(s);
             } catch (Exception e) {
                 // Malformed — fall back to empty metadata. The substrate
                 // round-trip will still work, just without source-language

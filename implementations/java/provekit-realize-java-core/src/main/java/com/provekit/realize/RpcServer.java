@@ -417,6 +417,16 @@ public final class RpcServer {
         SugarRealizer.currentSourceVisibility.set(sourceVisibility);
         SugarRealizer.currentSourceGenericParams.set(sourceGenericParams);
         SugarRealizer.currentSourceOriginalParamTypes.set(sourceOriginalParamTypes);
+        // Source doc comment lines (after the @sugar attribute). The
+        // lower passes them as `docLines`; @substrate-signature embeds
+        // them so the java lift can restore for the cycle round-trip.
+        java.util.List<String> sourceDocLines =
+                JsonUtil.decodeJsonStringArray(paramsObj, "doc_lines");
+        if (sourceDocLines == null || sourceDocLines.isEmpty()) {
+            sourceDocLines = JsonUtil.decodeJsonStringArray(paramsObj, "docLines");
+        }
+        if (sourceDocLines == null) sourceDocLines = java.util.List.of();
+        SugarRealizer.currentSourceDocLines.set(sourceDocLines);
         // Carry the source-language term_shape verbatim so the @sugar
         // header can embed it for round-trip. This is the authoritative
         // structural form — the java body_shape (re-derived from AST)
