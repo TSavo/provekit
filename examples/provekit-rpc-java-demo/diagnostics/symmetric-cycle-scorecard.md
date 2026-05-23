@@ -1,6 +1,41 @@
 # Substrate-symmetric cycle scorecard (no @substrate-term-shape sidecar)
 
-Date: 2026-05-22 — after json! + match recognizers landed.
+Date: 2026-05-22 — after path B (#1391, catalog-driven operation realizations).
+
+## Path B — catalog-driven dispatch (#1391)
+
+Architectural landing:
+- 18 operation-realization mementos minted (6 concepts × 3: abstraction + rust +
+  java realizations). Catalog at `menagerie/concept-shapes/catalog/realizations/`.
+- `OperationRealizationCatalog` (Java, provekit-ir) + `operation_realization_catalog`
+  (Rust, realize-rust-core): forward (concept → kit-op) + reverse (kit-op → concept)
+  lookups; OnceLock/synchronized-cached on first call.
+- SugarRealizer.lowerShapeExpression / realize-rust-core::lower_term_shape_expression:
+  hardcoded `if conceptName == "concept:utf8-encode"` chains REPLACED with catalog
+  lookup → per-kit-op emitter. Kit-op emitters keyed by `java:string-getBytes-utf8`,
+  `rust:vec-new`, etc — catalog'd names, not concept-hub names.
+- TermShapeLifter + walk_rpc.rs MethodCall/Call recognizers: reverse-lookup catalog
+  whenever the matcher recognizes an AST pattern.
+
+Empirical evidence the catalog is load-bearing:
+- Java lift of `examples/provekit-rpc-java-demo/src/main/java/CrossPlatformRpc.java`
+  emits `concept:utf8-encode` 4× via reverse lookup. Source: `.getBytes(
+  StandardCharsets.UTF_8)` appears 4× in the file.
+- Round-trip tests on both sides pass against on-disk catalog:
+    Java: `OperationRealizationCatalogTest.operationRealizationCatalogRoundTrips`
+    Rust: `provekit_realize_rust_core::tests::operation_realization_catalog_round_trips`
+
+Cycle measurement gap (separate from path B):
+The full rust→java→rust harness (`provekit lift | provekit lower`) is currently
+blocked by an unrelated registry-authorization regression in cmd_lower dispatch —
+`.provekit/realize/java/manifest.toml` + builtin jar both exist, but
+`registry_realize_candidates` returns empty without a sealed registry, and the
+legacy fallback path then reports `registered: none`. Closing the byte-identical
+metric needs either a sealed dev registry or direct-RPC invocation of the realize
+jars; both are harness work, not path B work.
+
+## Pre-#1391 baseline (manual ad-hoc measurement)
+
 
 ## Method
 Strip @substrate-term-shape block comments from the substrate-emitted
