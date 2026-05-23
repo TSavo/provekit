@@ -1,5 +1,47 @@
 # Substrate-symmetric cycle scorecard (no @substrate-term-shape sidecar)
 
+**STATUS (2026-05-23): 10/10 strict byte-identical.** All ten @sugar functions in
+`libprovekit-rpc-cross-platform/src/lib.rs` round-trip through rust→java→rust
+byte-identical after rustfmt. Verified end-to-end via:
+`provekit lift | provekit lower --target java | java lift CLI | provekit-realize-rust --rpc`
+followed by per-function rustfmt comparison.
+
+```
+run_server              ✓ 0b
+handle_line             ✓ 0b
+initialize_result       ✓ 0b
+lift                    ✓ 0b
+build_ir_document       ✓ 0b
+content_addressed_name  ✓ 0b
+slot_cid                ✓ 0b
+blake3_512_cid          ✓ 0b
+ok_response             ✓ 0b
+error_response          ✓ 0b
+```
+
+Substrate carriers added across this work:
+- `let_type` end-to-end (concept:assign target leaves)
+- `concept:blank-line` (lifted from rust source via syn::Spanned, java lift via
+  JavaParser begin/end lines, emitted as empty line both sides)
+- `/*@ref*/`, `/*@ref-mut*/` markers for `&x` / `&mut x` preservation
+- `/*@for-mut*/`, `/*@for-ref*/` markers for for-each var pattern preservation
+- `/*@if-let-variant=*/` marker with java-17 instanceof-pattern lowering
+- `/*@map-insert*/`, `/*@set-insert*/` markers
+- `/*@unwrap-or-else-marker*/` for closure-arg preservation in unwrap_or_else
+- `/*@match-arm-pattern=*/` carrier for variant-arm discrimination
+- `doc_lines` plumbed envelope-style through @substrate-signature
+- Tuple-return signature recovery via `source_return_type` envelope + concept:array-literal
+- `provekit-realize-rust-core::function_source`: rustfmt-then-reindent macro
+  bodies (rustfmt on stable doesn't reformat macro internals; we shell out
+  to rustfmt and re-indent macro args based on the macro call's final column)
+
+Path: substrate-symmetric (no @substrate-term-shape sidecar). All round-trip
+information flows through either structural concept shapes OR through
+substrate-signature envelope fields (which are themselves part of the
+substrate, not opaque sidecars).
+
+---
+
 Date: 2026-05-22 — after path B (#1391, catalog-driven operation realizations).
 
 ## Path B — catalog-driven dispatch (#1391)
