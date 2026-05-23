@@ -61,6 +61,15 @@ public final class Main {
             if (conceptHeader == null) {
                 continue;
             }
+            // Parse @substrate-signature comment if present. The java lower
+            // emits this marker comment in the @sugar header carrying the
+            // source-language signature metadata. Lift reads it to recover
+            // visibility / generic params / original param types / sort
+            // CIDs / source return type so the rust lower (or any other
+            // source-language lower) can round-trip without external
+            // metadata injection.
+            String sigCommentBody = extractSubstrateSignature(method);
+            SignatureMetadata sigMeta = SignatureMetadata.parseOrEmpty(sigCommentBody);
             // Self-declaration short-circuit: the method header declares
             // its concept. The IDENTITY of this method's term_shape IS
             // a concept-ref leaf to the declared concept. Both lifter
@@ -82,15 +91,31 @@ public final class Main {
                 "concept_name", Jcs.string(conceptHeader),
                 "kind", Jcs.string("concept-ref")
             );
-            entries.add(Jcs.object(
-                "kind", Jcs.string("lift-term-shape-entry"),
-                "function", Jcs.string(method.getNameAsString()),
-                "term_shape", termShape,
-                "body_shape", lifted.termShape(),
-                "param_names", new Jcs.Arr(lifted.paramNames()),
-                "param_types", new Jcs.Arr(lifted.paramTypes()),
-                "return_type", Jcs.string(lifted.returnType())
-            ));
+            // Build the IR entry. When @substrate-signature was present,
+            // populate the source-language fields from it; otherwise leave
+            // them empty (lift fell back to java-as-source-language).
+            List<Jcs.Field> entryFields = new ArrayList<>();
+            entryFields.add(new Jcs.Field("kind", Jcs.string("lift-term-shape-entry")));
+            entryFields.add(new Jcs.Field("function", Jcs.string(method.getNameAsString())));
+            entryFields.add(new Jcs.Field("concept_name",
+                Jcs.string(conceptHeader.replaceFirst("^concept:\\s*", ""))));
+            entryFields.add(new Jcs.Field("term_shape", termShape));
+            entryFields.add(new Jcs.Field("body_shape", lifted.termShape()));
+            entryFields.add(new Jcs.Field("param_names", new Jcs.Arr(lifted.paramNames())));
+            entryFields.add(new Jcs.Field("param_types", new Jcs.Arr(lifted.paramTypes())));
+            entryFields.add(new Jcs.Field("return_type", Jcs.string(lifted.returnType())));
+            // Substrate-signature fields (empty when comment absent).
+            entryFields.add(new Jcs.Field("visibility", Jcs.string(sigMeta.visibility)));
+            entryFields.add(new Jcs.Field("generic_params", Jcs.string(sigMeta.genericParams)));
+            List<Jcs.Json> origTypes = new ArrayList<>();
+            for (String t : sigMeta.originalParamTypes) origTypes.add(Jcs.string(t));
+            entryFields.add(new Jcs.Field("original_param_types", new Jcs.Arr(origTypes)));
+            List<Jcs.Json> sortCids = new ArrayList<>();
+            for (String c : sigMeta.paramSortCids) sortCids.add(Jcs.string(c));
+            entryFields.add(new Jcs.Field("param_sort_cids", new Jcs.Arr(sortCids)));
+            entryFields.add(new Jcs.Field("return_sort_cid", Jcs.string(sigMeta.returnSortCid)));
+            entryFields.add(new Jcs.Field("source_return_type", Jcs.string(sigMeta.sourceReturnType)));
+            entries.add(new Jcs.Obj(entryFields));
             losses.addAll(lifted.lossRecords());
         }
 
@@ -111,6 +136,155 @@ public final class Main {
         } else {
             System.out.println(encoded);
         }
+    }
+
+    /** Walk orphan comments around the method declaration looking for the
+     *  `@substrate-signature {...}` marker the java lower emits. JavaParser's
+     *  `getComment()` only returns the immediate-preceding comment; the
+     *  substrate-signature comment is a SECOND comment after the concept
+     *  header, so we scan the file's line comments near the method. */
+    private static String extractSubstrateSignature(MethodDeclaration method) {
+        // JavaParser exposes all comments via getAllContainedComments + parent
+        // navigation. The substrate-signature comment is placed immediately
+        // before the method declaration, after the concept header. The
+        // safest scan: walk all comments in the enclosing CompilationUnit
+        // and find one positioned just before this method's line whose body
+        // starts with "@substrate-signature ".
+        if (method.getRange().isEmpty()) return null;
+        int methodLine = method.getRange().get().begin.line;
+        com.github.javaparser.ast.CompilationUnit cu = method.findCompilationUnit().orElse(null);
+        if (cu == null) return null;
+        String marker = "@substrate-signature";
+        String best = null;
+        int bestLine = -1;
+        for (com.github.javaparser.ast.comments.Comment c : cu.getAllContainedComments()) {
+            if (c.getRange().isEmpty()) continue;
+            int line = c.getRange().get().begin.line;
+            if (line >= methodLine) continue;
+            String body = c.getContent().trim();
+            if (body.startsWith(marker)) {
+                if (line > bestLine) {
+                    best = body;
+                    bestLine = line;
+                }
+            }
+        }
+        return best;
+    }
+
+    /** Parsed @substrate-signature metadata. */
+    static final class SignatureMetadata {
+        String visibility = "";
+        String genericParams = "";
+        List<String> originalParamTypes = new ArrayList<>();
+        List<String> paramSortCids = new ArrayList<>();
+        String returnSortCid = "";
+        String sourceReturnType = "";
+
+        static SignatureMetadata parseOrEmpty(String body) {
+            SignatureMetadata m = new SignatureMetadata();
+            if (body == null) return m;
+            int brace = body.indexOf('{');
+            if (brace < 0) return m;
+            String json = body.substring(brace);
+            try {
+                com.github.javaparser.ast.expr.Expression parsed = null;
+                // Use a minimal JSON-ish parser. The substrate-signature
+                // JSON is generated by jsonStringEscape — only basic types
+                // (strings + string arrays). Walk char-by-char.
+                java.util.Map<String, Object> kv = parseFlatJsonObject(json);
+                Object v;
+                if ((v = kv.get("visibility")) instanceof String s) m.visibility = s;
+                if ((v = kv.get("genericParams")) instanceof String s) m.genericParams = s;
+                if ((v = kv.get("returnSortCid")) instanceof String s) m.returnSortCid = s;
+                if ((v = kv.get("sourceReturnType")) instanceof String s) m.sourceReturnType = s;
+                if ((v = kv.get("originalParamTypes")) instanceof List<?> l)
+                    for (Object o : l) if (o instanceof String s) m.originalParamTypes.add(s);
+                if ((v = kv.get("paramSortCids")) instanceof List<?> l)
+                    for (Object o : l) if (o instanceof String s) m.paramSortCids.add(s);
+            } catch (Exception e) {
+                // Malformed — fall back to empty metadata. The substrate
+                // round-trip will still work, just without source-language
+                // signature recovery for this method.
+            }
+            return m;
+        }
+    }
+
+    /** Tiny ad-hoc parser for `{"k": "v", "k2": ["a", "b"]}` JSON objects.
+     *  Only handles strings and string arrays (the substrate-signature
+     *  schema). Returns Map<String, Object> where values are String or
+     *  List<String>. */
+    private static java.util.Map<String, Object> parseFlatJsonObject(String json) {
+        java.util.Map<String, Object> out = new java.util.LinkedHashMap<>();
+        int i = json.indexOf('{');
+        if (i < 0) return out;
+        i++;
+        while (i < json.length()) {
+            while (i < json.length() && Character.isWhitespace(json.charAt(i))) i++;
+            if (i >= json.length() || json.charAt(i) == '}') break;
+            if (json.charAt(i) != '"') break;
+            int keyEnd = nextUnescapedQuote(json, i + 1);
+            if (keyEnd < 0) break;
+            String key = unescapeJsonString(json.substring(i + 1, keyEnd));
+            i = keyEnd + 1;
+            while (i < json.length() && (Character.isWhitespace(json.charAt(i)) || json.charAt(i) == ':')) i++;
+            if (i >= json.length()) break;
+            if (json.charAt(i) == '"') {
+                int valEnd = nextUnescapedQuote(json, i + 1);
+                if (valEnd < 0) break;
+                out.put(key, unescapeJsonString(json.substring(i + 1, valEnd)));
+                i = valEnd + 1;
+            } else if (json.charAt(i) == '[') {
+                i++;
+                List<String> arr = new ArrayList<>();
+                while (i < json.length()) {
+                    while (i < json.length() && (Character.isWhitespace(json.charAt(i)) || json.charAt(i) == ',')) i++;
+                    if (i >= json.length() || json.charAt(i) == ']') break;
+                    if (json.charAt(i) != '"') break;
+                    int e = nextUnescapedQuote(json, i + 1);
+                    if (e < 0) break;
+                    arr.add(unescapeJsonString(json.substring(i + 1, e)));
+                    i = e + 1;
+                }
+                if (i < json.length() && json.charAt(i) == ']') i++;
+                out.put(key, arr);
+            } else {
+                break;
+            }
+            while (i < json.length() && (Character.isWhitespace(json.charAt(i)) || json.charAt(i) == ',')) i++;
+        }
+        return out;
+    }
+
+    private static int nextUnescapedQuote(String s, int from) {
+        for (int i = from; i < s.length(); i++) {
+            char c = s.charAt(i);
+            if (c == '\\') { i++; continue; }
+            if (c == '"') return i;
+        }
+        return -1;
+    }
+
+    private static String unescapeJsonString(String s) {
+        StringBuilder sb = new StringBuilder(s.length());
+        for (int i = 0; i < s.length(); i++) {
+            char c = s.charAt(i);
+            if (c == '\\' && i + 1 < s.length()) {
+                char n = s.charAt(i + 1);
+                switch (n) {
+                    case '"':  sb.append('"'); i++; break;
+                    case '\\': sb.append('\\'); i++; break;
+                    case 'n':  sb.append('\n'); i++; break;
+                    case 'r':  sb.append('\r'); i++; break;
+                    case 't':  sb.append('\t'); i++; break;
+                    default:   sb.append(c);
+                }
+            } else {
+                sb.append(c);
+            }
+        }
+        return sb.toString();
     }
 
     /** Aggregate loss entries by dimension (node_class) for the sidecar

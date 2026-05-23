@@ -329,8 +329,35 @@ final class SugarRealizer {
             typedParamList.append(mapped).append(" ").append(name);
         }
 
-        // annotation_prefix for Java: top_indent = "    "
+        // annotation_prefix for Java: top_indent = "    ". Includes
+        // substrate-canonical signature metadata as JSON in a marker
+        // comment so the java lift can recover the source-language
+        // signature for round-trip back to the source language WITHOUT
+        // external metadata injection.
+        String srcVis = currentSourceVisibility.get();
+        String srcGenerics = currentSourceGenericParams.get();
+        List<String> srcOrigParamTypes = currentSourceOriginalParamTypes.get();
+        StringBuilder sigMetadata = new StringBuilder();
+        sigMetadata.append("    // @substrate-signature {");
+        sigMetadata.append("\"visibility\":\"").append(jsonStringEscape(srcVis)).append("\",");
+        sigMetadata.append("\"genericParams\":\"").append(jsonStringEscape(srcGenerics)).append("\",");
+        sigMetadata.append("\"originalParamTypes\":[");
+        for (int i = 0; i < srcOrigParamTypes.size(); i++) {
+            if (i > 0) sigMetadata.append(",");
+            sigMetadata.append("\"").append(jsonStringEscape(srcOrigParamTypes.get(i))).append("\"");
+        }
+        sigMetadata.append("],");
+        sigMetadata.append("\"paramSortCids\":[");
+        for (int i = 0; i < paramSortCids.size(); i++) {
+            if (i > 0) sigMetadata.append(",");
+            sigMetadata.append("\"").append(jsonStringEscape(paramSortCids.get(i))).append("\"");
+        }
+        sigMetadata.append("],");
+        sigMetadata.append("\"returnSortCid\":\"").append(jsonStringEscape(returnSortCid)).append("\",");
+        sigMetadata.append("\"sourceReturnType\":\"").append(jsonStringEscape(returnType)).append("\"");
+        sigMetadata.append("}\n");
         String annotationPrefix = "    // concept: " + conceptName + "\n"
+                + sigMetadata
                 + contractPrefix(contract)
                 + commentPrefix(contract, sugarEmissions);
 
@@ -1246,6 +1273,16 @@ final class SugarRealizer {
      *  via importThreadLocalCatalog(). Cleared between requests. */
     static final ThreadLocal<Map<String, String>> currentCallReturnTypes =
             ThreadLocal.withInitial(java.util.Map::of);
+
+    /** Source-language signature metadata threaded from RPC params. Used
+     *  to emit the @substrate-signature header comment so java lift can
+     *  recover it for round-trip without external metadata injection. */
+    static final ThreadLocal<String> currentSourceVisibility =
+            ThreadLocal.withInitial(() -> "");
+    static final ThreadLocal<String> currentSourceGenericParams =
+            ThreadLocal.withInitial(() -> "");
+    static final ThreadLocal<List<String>> currentSourceOriginalParamTypes =
+            ThreadLocal.withInitial(java.util.List::of);
 
     private static final class ShapeContext {
         final List<String> params;
@@ -2917,6 +2954,30 @@ final class SugarRealizer {
         // already containing citation comments don't break parsing.
         return s.replace("*/", "*_/").replace("/*", "/_*")
                 .replace("\n", " ").replace("\r", " ");
+    }
+
+    /** Escape a string for inclusion in a JSON literal. Used to embed
+     *  the substrate-signature metadata in the @sugar header comment. */
+    private static String jsonStringEscape(String s) {
+        if (s == null) return "";
+        StringBuilder sb = new StringBuilder(s.length() + 4);
+        for (int i = 0; i < s.length(); i++) {
+            char c = s.charAt(i);
+            switch (c) {
+                case '\\': sb.append("\\\\"); break;
+                case '"':  sb.append("\\\""); break;
+                case '\n': sb.append("\\n"); break;
+                case '\r': sb.append("\\r"); break;
+                case '\t': sb.append("\\t"); break;
+                default:
+                    if (c < 0x20) {
+                        sb.append(String.format("\\u%04x", (int) c));
+                    } else {
+                        sb.append(c);
+                    }
+            }
+        }
+        return sb.toString();
     }
 
     /** True iff text looks like a java string literal (starts + ends with "). */

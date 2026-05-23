@@ -393,6 +393,30 @@ public final class RpcServer {
         java.util.Map<String, String> functionReturnTypes = parseFunctionReturnTypes(
                 JsonUtil.extractObjectField(paramsObj, "function_return_types"));
         SugarRealizer.currentCallReturnTypes.set(functionReturnTypes);
+        // Source-language signature metadata (visibility, generic params,
+        // original param types). The lower passes these so the @sugar header
+        // comment can carry them — the java lift then recovers them for
+        // round-trip back to the source language WITHOUT external metadata
+        // injection at integration time.
+        // RealizeRequest serializes via serde's default snake_case for
+        // unrenamed fields. Try both snake_case and camelCase for safety
+        // across spec construction paths (some use rename = camelCase).
+        String sourceVisibility = JsonUtil.decodeJsonStringField(paramsObj, "visibility");
+        if (sourceVisibility == null) sourceVisibility = "";
+        String sourceGenericParams = JsonUtil.decodeJsonStringField(paramsObj, "generic_params");
+        if (sourceGenericParams == null || sourceGenericParams.isEmpty()) {
+            sourceGenericParams = JsonUtil.decodeJsonStringField(paramsObj, "genericParams");
+        }
+        if (sourceGenericParams == null) sourceGenericParams = "";
+        java.util.List<String> sourceOriginalParamTypes =
+                JsonUtil.decodeJsonStringArray(paramsObj, "original_param_types");
+        if (sourceOriginalParamTypes == null || sourceOriginalParamTypes.isEmpty()) {
+            sourceOriginalParamTypes =
+                JsonUtil.decodeJsonStringArray(paramsObj, "originalParamTypes");
+        }
+        SugarRealizer.currentSourceVisibility.set(sourceVisibility);
+        SugarRealizer.currentSourceGenericParams.set(sourceGenericParams);
+        SugarRealizer.currentSourceOriginalParamTypes.set(sourceOriginalParamTypes);
         SugarRealizer.Realization r;
         try {
             r = SugarRealizer.emitStub(emittedFunction, params, paramTypes, paramSortCids, returnType, returnSortCid,
@@ -400,6 +424,9 @@ public final class RpcServer {
                     isCrossLang, targetLibraryTag, parametricExpansions);
         } finally {
             SugarRealizer.currentCallReturnTypes.remove();
+            SugarRealizer.currentSourceVisibility.remove();
+            SugarRealizer.currentSourceGenericParams.remove();
+            SugarRealizer.currentSourceOriginalParamTypes.remove();
         }
         String wrapperRecord = r.observationWrapperEmissionRecord() == null
                 ? ""
