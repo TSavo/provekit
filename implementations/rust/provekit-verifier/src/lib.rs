@@ -58,7 +58,8 @@ pub use runner::{
     VERIFIER_STAGE_VOCABULARY,
 };
 pub use solvers::{
-    DispatchConfig, PortfolioMode, SolveResult, Solver, SolverConfig, SolverHandle, SolverPlan,
-    SolversConfig, StubSolver, SubprocessSolver,
+    classify, dispatch_for_formula, run_plan, DispatchConfig, FormulaTheory, PortfolioMode,
+    SolveResult, Solver, SolverConfig, SolverHandle, SolverInvocation, SolverPlan, SolversConfig,
+    StubSolver, SubprocessSolver,
 };
 pub use types::*;

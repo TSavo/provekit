@@ -43,6 +43,7 @@ mod cmd_protocol;
 mod cmd_prove;
 mod cmd_search;
 mod cmd_transport;
+mod cmd_verify;
 mod cmd_verify_protocol;
 mod cmd_version;
 mod cmd_witness;
@@ -114,8 +115,12 @@ enum Cmd {
     Package(cmd_package::PackageArgs),
     /// Check content-addressed CI protocol artifacts.
     Ci(cmd_ci::CiArgs),
-    /// Same as `prove`. Reserved for a future split.
-    Verify(ProveArgs),
+    /// Verify a kit end-to-end: lift its contract claims, discharge each
+    /// via the solver-dispatch table, mint a signed witness citing the
+    /// discharging solver, and emit a per-claim verification receipt.
+    /// This is the real GATE verb (#1405); distinct from `prove` (the
+    /// six-stage prover / `--kit` lift-plugin conformance gate).
+    Verify(cmd_verify::VerifyArgs),
     /// Look up a formula by content. Parses an IR-JSON formula file, hashes it, reports the CID.
     Ask(AskArgs),
     /// Search proof catalogs by content hash.
@@ -408,7 +413,8 @@ pub struct LinkArgs {
 fn main() -> ExitCode {
     let cli = Cli::parse();
     let code = match cli.cmd {
-        Cmd::Prove(a) | Cmd::Verify(a) => cmd_prove::run(a),
+        Cmd::Prove(a) => cmd_prove::run(a),
+        Cmd::Verify(a) => cmd_verify::run(a),
         Cmd::Proof(a) => cmd_proof::run(a),
         Cmd::Protocol(a) => cmd_protocol::run(a),
         Cmd::Package(a) => cmd_package::run(a),

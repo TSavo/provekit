@@ -83,7 +83,7 @@ pub type SolverHandle = Arc<dyn Solver>;
 pub use ceta::{CetaGate, CetaGateConfig};
 pub use config::{DispatchConfig, PortfolioMode, SolverConfig, SolverPlan, SolversConfig};
 pub use coq::CoqSubprocessSolver;
-pub use dispatch::dispatch_for_formula;
+pub use dispatch::{classify, dispatch_for_formula, FormulaTheory};
 pub use lean::LeanSubprocessSolver;
 pub use maude::MaudeSubprocessSolver;
 pub use plan::{run_plan, SolverInvocation};
