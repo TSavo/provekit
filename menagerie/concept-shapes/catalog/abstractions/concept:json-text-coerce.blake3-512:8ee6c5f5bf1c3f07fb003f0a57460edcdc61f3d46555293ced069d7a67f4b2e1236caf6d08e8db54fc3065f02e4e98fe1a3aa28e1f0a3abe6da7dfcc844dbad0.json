@@ -1,0 +1,43 @@
+{
+  "memento": {
+    "kind": "concept-abstraction",
+    "operator": "concept:json-text-coerce",
+    "tier": "abstraction",
+    "slots": [],
+    "formals": [
+      "v"
+    ],
+    "formal_sorts": [
+      {
+        "kind": "ctor",
+        "name": "Json",
+        "args": []
+      }
+    ],
+    "result_sort": {
+      "kind": "ctor",
+      "name": "OptionOfString",
+      "args": []
+    },
+    "contract": {
+      "kind": "wp-rule",
+      "formals": [],
+      "body": {
+        "kind": "atomic",
+        "name": "true",
+        "args": []
+      }
+    },
+    "contract_note": "Coerce a JSON value to a text string; returns None if not a string.",
+    "realizations": [
+      "blake3-512:255f57108fa16c19c75c4c4dc8f3df4a991c6d7454fd65d5036bd03ba59d4552bc194ce2e1e50f6c185c39fbf5e3d896356d8b7a9999bfdaa24d2b733d2fb4f5",
+      "blake3-512:017f8e4d3fed0965b7ce01adee6bd418e3b3f73797bc2a6ad4ce73dc1abc6dc0a8795bec6e27cb3029edf1227960526320cc4cceb71883a277e640689d0fb383"
+    ]
+  },
+  "cid": "blake3-512:8ee6c5f5bf1c3f07fb003f0a57460edcdc61f3d46555293ced069d7a67f4b2e1236caf6d08e8db54fc3065f02e4e98fe1a3aa28e1f0a3abe6da7dfcc844dbad0",
+  "signature": {
+    "alg": "ed25519",
+    "key_id": "UNSIGNED_DEV_ONLY",
+    "sig_b64": "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"
+  }
+}

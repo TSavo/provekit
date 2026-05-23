@@ -1,0 +1,43 @@
+{
+  "memento": {
+    "kind": "concept-abstraction",
+    "operator": "concept:utf8-encode",
+    "tier": "abstraction",
+    "slots": [],
+    "formals": [
+      "s"
+    ],
+    "formal_sorts": [
+      {
+        "kind": "ctor",
+        "name": "String",
+        "args": []
+      }
+    ],
+    "result_sort": {
+      "kind": "ctor",
+      "name": "Bytes",
+      "args": []
+    },
+    "contract": {
+      "kind": "wp-rule",
+      "formals": [],
+      "body": {
+        "kind": "atomic",
+        "name": "true",
+        "args": []
+      }
+    },
+    "contract_note": "Encode a string as UTF-8 bytes. Total function.",
+    "realizations": [
+      "blake3-512:7196a732c23beae9a5143b8da4687e413b5c67acf182462f5daaff500796a18e13e6865cb3cb7d7529464d5372aa47ac655bf203eaf15e66ef9ce5a847fee088",
+      "blake3-512:5f508b90124feb1fc7af3f9fe32b3494bf7d481e8652b5ed0854f85c8f833550ac5293cc5a8a26d181278c3a406651b4a5ca657b2ebeb04ed97bd626a667095b"
+    ]
+  },
+  "cid": "blake3-512:d252fedb368856b01612dc8e4b7fdcbbc42d33a39c160f50cdcc218b86bf29ac1e1ac57866e3f99fc498538634e6a4b9c41250bc9c70091cd3bab4411b6dd03a",
+  "signature": {
+    "alg": "ed25519",
+    "key_id": "UNSIGNED_DEV_ONLY",
+    "sig_b64": "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"
+  }
+}

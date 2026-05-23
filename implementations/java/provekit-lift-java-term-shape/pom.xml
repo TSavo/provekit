@@ -1,0 +1,57 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project xmlns="http://maven.apache.org/POM/4.0.0"
+         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/xsd/maven-4.0.0.xsd">
+    <modelVersion>4.0.0</modelVersion>
+    <parent>
+        <groupId>com.provekit</groupId>
+        <artifactId>provekit-lift-java-parent</artifactId>
+        <version>0.1.0</version>
+    </parent>
+    <artifactId>provekit-lift-java-term-shape</artifactId>
+    <packaging>jar</packaging>
+    <description>
+        Body-structural lift for java source: produces ProofIR term_shapes
+        from function bodies (parallel to provekit-walk-rpc for rust).
+        Recognizes substrate-emitted java idioms (citation comments,
+        runtime carriers from provekit-java-runtime). Every unrecognized
+        AST node becomes a loss_record entry — the empirical work list
+        for what the substrate emits but the lifter doesn't yet read.
+    </description>
+    <dependencies>
+        <dependency>
+            <groupId>com.provekit</groupId>
+            <artifactId>provekit-ir</artifactId>
+            <version>${project.version}</version>
+        </dependency>
+        <dependency>
+            <groupId>com.provekit</groupId>
+            <artifactId>provekit-java-runtime</artifactId>
+            <version>${project.version}</version>
+        </dependency>
+        <dependency>
+            <groupId>com.github.javaparser</groupId>
+            <artifactId>javaparser-core</artifactId>
+            <version>3.25.10</version>
+        </dependency>
+        <dependency>
+            <groupId>org.bouncycastle</groupId>
+            <artifactId>bcprov-jdk18on</artifactId>
+            <version>1.78.1</version>
+        </dependency>
+    </dependencies>
+    <build>
+        <plugins>
+            <plugin>
+                <artifactId>maven-jar-plugin</artifactId>
+                <configuration>
+                    <archive>
+                        <manifest>
+                            <mainClass>com.provekit.lift.termshape.Main</mainClass>
+                        </manifest>
+                    </archive>
+                </configuration>
+            </plugin>
+        </plugins>
+    </build>
+</project>

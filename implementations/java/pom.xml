@@ -18,6 +18,7 @@
     <modules>
         <module>provekit-ir</module>
         <module>provekit-claim-envelope</module>
+        <module>provekit-java-runtime</module>
         <module>provekit-java-contract-annotations</module>
         <module>provekit-java-self-contracts</module>
         <module>provekit-lift-java-core</module>
@@ -33,6 +34,7 @@
         <module>provekit-lift-java-jackson</module>
         <module>provekit-lift-java-jpa</module>
         <module>provekit-lift-java-hibernate</module>
+        <module>provekit-lift-java-term-shape</module>
         <module>provekit-realize-java-core</module>
         <module>provekit-lift-java-integration-tests</module>
     </modules>

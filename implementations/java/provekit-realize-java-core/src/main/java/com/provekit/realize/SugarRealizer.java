@@ -329,8 +329,62 @@ final class SugarRealizer {
             typedParamList.append(mapped).append(" ").append(name);
         }
 
-        // annotation_prefix for Java: top_indent = "    "
-        String annotationPrefix = "    // concept: " + conceptName + "\n"
+        // annotation_prefix for Java: top_indent = "    ". Includes
+        // substrate-canonical signature metadata as JSON in a marker
+        // comment so the java lift can recover the source-language
+        // signature for round-trip back to the source language WITHOUT
+        // external metadata injection.
+        String srcVis = currentSourceVisibility.get();
+        String srcGenerics = currentSourceGenericParams.get();
+        List<String> srcOrigParamTypes = currentSourceOriginalParamTypes.get();
+        StringBuilder sigMetadata = new StringBuilder();
+        sigMetadata.append("    // @substrate-signature {");
+        sigMetadata.append("\"visibility\":\"").append(jsonStringEscape(srcVis)).append("\",");
+        sigMetadata.append("\"genericParams\":\"").append(jsonStringEscape(srcGenerics)).append("\",");
+        sigMetadata.append("\"originalParamTypes\":[");
+        for (int i = 0; i < srcOrigParamTypes.size(); i++) {
+            if (i > 0) sigMetadata.append(",");
+            sigMetadata.append("\"").append(jsonStringEscape(srcOrigParamTypes.get(i))).append("\"");
+        }
+        sigMetadata.append("],");
+        sigMetadata.append("\"paramSortCids\":[");
+        for (int i = 0; i < paramSortCids.size(); i++) {
+            if (i > 0) sigMetadata.append(",");
+            sigMetadata.append("\"").append(jsonStringEscape(paramSortCids.get(i))).append("\"");
+        }
+        sigMetadata.append("],");
+        sigMetadata.append("\"returnSortCid\":\"").append(jsonStringEscape(returnSortCid)).append("\",");
+        sigMetadata.append("\"sourceReturnType\":\"").append(jsonStringEscape(returnType)).append("\",");
+        sigMetadata.append("\"docLines\":[");
+        List<String> srcDocLines = currentSourceDocLines.get();
+        for (int i = 0; i < srcDocLines.size(); i++) {
+            if (i > 0) sigMetadata.append(",");
+            sigMetadata.append("\"").append(jsonStringEscape(srcDocLines.get(i))).append("\"");
+        }
+        sigMetadata.append("]");
+        sigMetadata.append("}\n");
+        // Embed the source-language term_shape verbatim. The java lift
+        // reads this back as the AUTHORITATIVE structural form for
+        // round-trip — the body_shape derived from java AST encodes
+        // java idioms, not the source's structural form. Cross-language
+        // transport must preserve source structure as DATA, not via
+        // re-derivation from target syntax. Block-comment form so the
+        // JSON's `//` and `*/` don't accidentally terminate the comment.
+        String srcTermShape = currentSourceTermShape.get();
+        String termShapeBlock = "";
+        if (!srcTermShape.isEmpty() && !"{}".equals(srcTermShape)) {
+            termShapeBlock = "    /* @substrate-term-shape "
+                + srcTermShape.replace("*/", "*\\/") + " */\n";
+        }
+        // Order: @substrate-term-shape FIRST (largest, least likely to be
+        // confused with method-attached comment), @substrate-signature
+        // NEXT, concept header IMMEDIATELY before the method. JavaParser's
+        // getComment() returns the immediate-preceding comment — keeping
+        // `concept:` adjacent to the method declaration lets the java
+        // lift's existing recognition path keep working unchanged.
+        String annotationPrefix = termShapeBlock
+                + sigMetadata
+                + "    // concept: " + conceptName + "\n"
                 + contractPrefix(contract)
                 + commentPrefix(contract, sugarEmissions);
 
@@ -993,17 +1047,106 @@ final class SugarRealizer {
      * Mirrors cmd_transport.rs map_source_type for TargetStyle::Java.
      */
     static String mapSourceType(String src) {
-        return switch (src) {
+        if (src == null) return "Object";
+        // Strip rust borrow prefixes.
+        String t = src.trim();
+        if (t.startsWith("&mut ")) t = t.substring(5).trim();
+        else if (t.startsWith("&mut")) t = t.substring(4).trim();
+        if (t.startsWith("&")) t = t.substring(1).trim();
+        // Slice-of-T: rust `[T]` → java. Bytes are common, fast-path
+        // to byte[]. Other element types: java.util.List<T> for read-only
+        // sequence semantics (matches what Vec<T>.iter().collect()
+        // produces, so consumers don't see Vec↔array mismatches).
+        if ("[u8]".equals(t)) return "byte[]";
+        if (t.startsWith("[") && t.endsWith("]")) {
+            String inner = t.substring(1, t.length() - 1).split(";")[0].trim();
+            return "java.util.List<" + boxedType(mapSourceType(inner)) + ">";
+        }
+        // Unit type comes before tuple check.
+        if ("()".equals(t)) return "void";
+        // Rust tuple return `(A,B)` → java has no tuple; use Object[] as
+        // a uniform carrier. Caller-side composes/destructures.
+        if (t.startsWith("(") && t.endsWith(")")) {
+            return "Object[]";
+        }
+        // Result<T,E>: rust's fallible return. LOSSLESS via the
+        // provekit-java-runtime carrier — Result.ok/.err/.isOk/.isErr
+        // preserve (B) functional opacity; citation gives (A) round-trip.
+        if (t.startsWith("Result<") && t.endsWith(">")) {
+            String inner = t.substring(7, t.length() - 1).trim();
+            int comma = findTopLevelComma(inner);
+            String okType = comma > 0 ? inner.substring(0, comma).trim() : inner;
+            String errType = comma > 0 ? inner.substring(comma + 1).trim() : "Object";
+            // Err side: if it's a rust-source enum (capitalized ident the
+            // substrate hasn't catalogued as a known java type), substitute
+            // with SumVariant — the generic sum-variant carrier from
+            // provekit-java-runtime.
+            String javaErrType = mapSourceType(errType);
+            if (javaErrType.matches("[A-Z][A-Za-z0-9_]*")
+                    && !javaErrType.equals("String")
+                    && !javaErrType.equals("Object")) {
+                javaErrType = "com.provekit.runtime.SumVariant";
+            }
+            return "com.provekit.runtime.Result<"
+                + boxedType(mapSourceType(okType))
+                + ", "
+                + boxedType(javaErrType)
+                + ">";
+        }
+        // Option<T> → T (java null encodes None).
+        if (t.startsWith("Option<") && t.endsWith(">")) {
+            return mapSourceType(t.substring(7, t.length() - 1).trim());
+        }
+        // Vec<T> → java.util.List<T> (boxed for primitives).
+        if (t.startsWith("Vec<") && t.endsWith(">")) {
+            String inner = mapSourceType(t.substring(4, t.length() - 1).trim());
+            return "java.util.List<" + boxedType(inner) + ">";
+        }
+        // Generic single-letter type param (A, T, K, V): erase to Object.
+        if (t.matches("[A-Z]")) return "Object";
+        return switch (t) {
             case "()" -> "void";
-            case "i64", "u64" -> "long";
+            case "i64", "u64", "usize", "isize" -> "long";
             case "i32", "u32" -> "int";
             case "i16", "u16" -> "short";
             case "i8", "u8" -> "byte";
             case "f64" -> "double";
             case "f32" -> "float";
             case "bool" -> "boolean";
-            case "String", "&str", "&String" -> "String";
-            default -> src;
+            case "String", "str" -> "String";
+            case "Value" -> "com.fasterxml.jackson.databind.JsonNode";
+            case "Path", "PathBuf" -> "java.nio.file.Path";
+            default -> t;
+        };
+    }
+
+    /** Find top-level comma (not inside <> () [] {}). */
+    private static int findTopLevelComma(String s) {
+        int depth = 0;
+        for (int i = 0; i < s.length(); i++) {
+            char c = s.charAt(i);
+            switch (c) {
+                case '<', '(', '[', '{' -> depth++;
+                case '>', ')', ']', '}' -> depth--;
+                case ',' -> { if (depth == 0) return i; }
+                default -> {}
+            }
+        }
+        return -1;
+    }
+
+    /** Box a java primitive type for generic use. */
+    private static String boxedType(String prim) {
+        return switch (prim) {
+            case "boolean" -> "Boolean";
+            case "byte" -> "Byte";
+            case "short" -> "Short";
+            case "int" -> "Integer";
+            case "long" -> "Long";
+            case "float" -> "Float";
+            case "double" -> "Double";
+            case "char" -> "Character";
+            default -> prim;
         };
     }
 
@@ -1152,12 +1295,67 @@ final class SugarRealizer {
 
     private record ShapeExpression(String text, String typeName) {}
 
+    /** Cross-term function-return-type catalog set by the RPC entrypoint
+     *  before invoking lowering. ShapeContext picks it up on construction
+     *  via importThreadLocalCatalog(). Cleared between requests. */
+    static final ThreadLocal<Map<String, String>> currentCallReturnTypes =
+            ThreadLocal.withInitial(java.util.Map::of);
+
+    /** Source-language signature metadata threaded from RPC params. Used
+     *  to emit the @substrate-signature header comment so java lift can
+     *  recover it for round-trip without external metadata injection. */
+    static final ThreadLocal<String> currentSourceVisibility =
+            ThreadLocal.withInitial(() -> "");
+    static final ThreadLocal<String> currentSourceGenericParams =
+            ThreadLocal.withInitial(() -> "");
+    static final ThreadLocal<List<String>> currentSourceOriginalParamTypes =
+            ThreadLocal.withInitial(java.util.List::of);
+    /** Source-language doc-comment lines (`///` body, without prefix). The
+     *  rust lift carries these from item_fn.attrs; lower threads them into
+     *  the @substrate-signature header so the java lift can round-trip
+     *  them back into rust source-form doc comments. */
+    static final ThreadLocal<List<String>> currentSourceDocLines =
+            ThreadLocal.withInitial(java.util.List::of);
+    /** Source-language term_shape as JSON. Embedded verbatim in the
+     *  @substrate-term-shape header comment so the java lift can recover
+     *  the authoritative source structural form for round-trip. */
+    static final ThreadLocal<String> currentSourceTermShape =
+            ThreadLocal.withInitial(() -> "");
+
     private static final class ShapeContext {
         final List<String> params;
         final List<String> paramTypes;
         final String returnType;
         final Map<List<Integer>, String> operandBindings;
         final Set<String> definedSymbols = new TreeSet<>();
+        /** Substrate-honest loss accumulator. Each silent approximation
+         *  in the term-shape lowering APPENDS an entry here keyed by
+         *  dimension name (e.g. "option-clone-erased"). emitStubInner
+         *  merges into the realize plugin's observed_loss_record output.
+         *  Empty = exact translation; non-empty = loudly-bounded-lossy. */
+        final List<Jcs.Json> bodyApproximations = new ArrayList<>();
+
+        void recordApproximation(String dimension, String detail) {
+            bodyApproximations.add(Jcs.object(
+                "kind", Jcs.string("approximation"),
+                "dimension", Jcs.string(dimension),
+                "detail", Jcs.string(detail)
+            ));
+        }
+        /** Function-name → java return type. Built once from the
+         *  named-term-doc; passed into each term's lowering so call
+         *  expressions can pick up real return types instead of falling
+         *  back to var inference. */
+        Map<String, String> functionReturnTypes = java.util.Map.of();
+        /** Raw rust tuple type captured from a recent `__provekit_tuple = call()`.
+         *  Used by destructuring index-assigns to type each element. */
+        String tupleSourceRawType = "";
+
+        /** Reset per-call thread-local catalog into this context. */
+        void importThreadLocalCatalog() {
+            Map<String, String> tl = currentCallReturnTypes.get();
+            if (tl != null && !tl.isEmpty()) this.functionReturnTypes = tl;
+        }
         int nextLeaf = 0;
         int nextTemp = 0;
         String lastAssignedSymbol = "";
@@ -1172,6 +1370,11 @@ final class SugarRealizer {
             this.returnType = returnType;
             this.operandBindings = operandBindings;
             this.definedSymbols.addAll(params);
+        }
+
+        String lookupReturnType(String fnName) {
+            String t = functionReturnTypes.get(fnName);
+            return t == null ? "" : t;
         }
 
         ShapeExpression fallbackLeaf() {
@@ -1215,6 +1418,7 @@ final class SugarRealizer {
                 paramTypes,
                 returnType,
                 operandBindingMap(operandBindingsJson));
+        context.importThreadLocalCatalog();
         Optional<String> body = lowerShapeBody(shape, context, List.of());
         if (body.isEmpty()) {
             Optional<ShapeExpression> expression = lowerShapeExpression(shape, context, List.of());
@@ -1223,7 +1427,47 @@ final class SugarRealizer {
             }
             body = Optional.of("return " + expression.get().text() + ";");
         }
-        return Optional.of(new RenderedBody(body.get(), Jcs.object()));
+        // Aggregate the per-construct approximation entries accumulated
+        // during term-shape lowering into the body's loss_record.
+        // Substrate-honest: every silent lossy translation appended an
+        // entry; this surface them to the realize plugin's caller via
+        // observed_loss_record so the trichotomy
+        // (exact/loudly-bounded-lossy/refuse) is observable.
+        Jcs.Json lossRecord = buildApproximationLossRecord(context.bodyApproximations);
+        return Optional.of(new RenderedBody(body.get(), lossRecord));
+    }
+
+    /** Aggregate context approximations into a loss-record keyed by
+     *  dimension. Multiple approximations in the same dimension combine
+     *  via an "or" formula (each is an independent occurrence). */
+    private static Jcs.Json buildApproximationLossRecord(List<Jcs.Json> approximations) {
+        if (approximations.isEmpty()) return Jcs.object();
+        Map<String, List<Jcs.Json>> byDimension = new TreeMap<>();
+        for (Jcs.Json entry : approximations) {
+            if (!(entry instanceof Jcs.Obj obj)) continue;
+            String dim = null;
+            for (Jcs.Field f : obj.fields()) {
+                if ("dimension".equals(f.key()) && f.value() instanceof Jcs.Str s) {
+                    dim = s.value();
+                }
+            }
+            if (dim == null) continue;
+            byDimension.computeIfAbsent(dim, k -> new ArrayList<>()).add(entry);
+        }
+        List<Jcs.Field> outFields = new ArrayList<>();
+        for (Map.Entry<String, List<Jcs.Json>> e : byDimension.entrySet()) {
+            List<Jcs.Json> entries = e.getValue();
+            if (entries.size() == 1) {
+                outFields.add(new Jcs.Field(e.getKey(), entries.get(0)));
+            } else {
+                List<Jcs.Json> operands = new ArrayList<>(entries);
+                outFields.add(new Jcs.Field(e.getKey(), Jcs.object(
+                    "kind", Jcs.string("or"),
+                    "operands", new Jcs.Arr(operands)
+                )));
+            }
+        }
+        return new Jcs.Obj(outFields);
     }
 
     private static Optional<String> lowerShapeBody(
@@ -1236,6 +1480,15 @@ final class SugarRealizer {
             List<String> lines = new ArrayList<>();
             for (int i = 0; i < args.size(); i++) {
                 Jcs.Obj child = args.get(i);
+                // #1391 follow-on: blank-line carrier. Emit an empty line
+                // in the lowered java so the substrate-symmetric path
+                // can re-detect it on the lift side. (Single blank line
+                // per marker — rustfmt normalizes multi-blanks anyway.)
+                String childCN = shapeConceptName(child);
+                if (conceptMatches("concept:blank-line", childCN)) {
+                    lines.add("");
+                    continue;
+                }
                 Optional<String> childBody = lowerShapeBody(child, context, appendPosition(position, i));
                 if (childBody.isPresent()) {
                     if (!childBody.get().isBlank()) {
@@ -1245,22 +1498,112 @@ final class SugarRealizer {
                 }
                 Optional<ShapeExpression> expression = lowerShapeExpression(child, context, appendPosition(position, i));
                 if (expression.isEmpty() || expression.get().text().isBlank()) {
-                    return Optional.empty();
+                    // Partial lowering: emit a TODO comment for the unhandled
+                    // child instead of aborting the entire body. This lets
+                    // simpler statements in the seq translate cleanly even
+                    // when later statements have constructs the lower
+                    // vocabulary can't yet handle. Substrate-honest: surface
+                    // the gap inline; don't paper over with a stub return.
+                    String childConcept = shapeConceptName(child);
+                    lines.add("// TODO(lower): un-lowered " + (childConcept.isBlank() ? "leaf" : childConcept));
+                    continue;
                 }
-                String temp = context.tempName();
-                context.definedSymbols.add(temp);
-                context.lastAssignedSymbol = temp;
-                lines.add(localDeclaration(context.returnType, temp, expression.get().text(), false));
+                String text = expression.get().text();
+                // Expression in statement position. If it's a function call
+                // (or method call) with no obvious result-use, emit as a
+                // bare statement (`call();`). The artifact-binding form
+                // (`T tmp = call();`) is incorrect for void-returning
+                // functions and produces uncompilable java. Heuristic:
+                // emit as bare statement; assign-to-artifact only if the
+                // expression has no parens (rare in practice).
+                if (text.endsWith(")") || text.endsWith("]") || text.endsWith("\"")) {
+                    String inner = text;
+                    while (inner.startsWith("(") && inner.endsWith(")") &&
+                           matchingOuterParens(inner)) {
+                        inner = inner.substring(1, inner.length() - 1).trim();
+                    }
+                    // Tail-expression detection: when this is the LAST
+                    // child of the seq AND we're at the function root
+                    // AND the function returns non-void, emit `return X;`
+                    // instead of a bare statement. This matches rust's
+                    // implicit-tail-return convention.
+                    boolean isLast = (i == args.size() - 1);
+                    boolean nonVoid = !"void".equals(mapSourceType(context.returnType));
+                    if (isLast && position.isEmpty() && nonVoid) {
+                        lines.add("return " + inner + ";");
+                    } else {
+                        String stmt = inner.endsWith(";") ? inner : inner + ";";
+                        lines.add(stmt);
+                    }
+                } else if (isIdentifier(text)) {
+                    // Bare identifier as the tail expression — no temp
+                    // needed; use the symbol directly as the implicit
+                    // return value.
+                    context.lastAssignedSymbol = text;
+                } else {
+                    String temp = context.tempName();
+                    context.definedSymbols.add(temp);
+                    context.lastAssignedSymbol = temp;
+                    // Use the value's typeName when known; falls back to
+                    // var inference for unknown types.
+                    String tempType = expression.get().typeName();
+                    if (tempType == null || tempType.isBlank() || "Object".equals(tempType)) {
+                        tempType = "";  // localDeclaration emits `var`
+                    }
+                    lines.add(localDeclaration(tempType, temp, text, false));
+                }
             }
-            if (!"void".equals(mapSourceType(context.returnType))
-                    && lines.stream().noneMatch(line -> line.strip().startsWith("return "))
+            // Only emit implicit return at the OUTERMOST seq (the function
+            // body itself). Nested seqs (inside for/while/match arms) must
+            // NOT inject a return — they're statement-blocks, not the
+            // function tail. Position == empty list means root.
+            // Only emit implicit return when:
+            // - position is empty (function root)
+            // - non-void return type
+            // - NO existing return statement appears in any line (search
+            //   substring not just prefix to catch nested returns inside
+            //   if/else/switch blocks the match handler emitted)
+            // - we have a tail symbol to return
+            boolean anyReturn = lines.stream().anyMatch(line ->
+                line.contains("return ") || line.contains("throw "));
+            if (position.isEmpty()
+                    && !"void".equals(mapSourceType(context.returnType))
+                    && !anyReturn
                     && !context.lastAssignedSymbol.isBlank()) {
-                lines.add("return " + context.lastAssignedSymbol + ";");
+                String sym = context.lastAssignedSymbol;
+                // If the symbol's declared type was StringBuilder but the
+                // function returns String, call .toString() to coerce.
+                // (Rust idiom: build a String via String + push_str/push
+                // which maps to StringBuilder in java.)
+                String fnReturn = mapSourceType(context.returnType);
+                boolean needsToString = "String".equals(fnReturn)
+                        && lines.stream().anyMatch(line ->
+                            line.contains("StringBuilder " + sym + " ="));
+                lines.add("return " + sym + (needsToString ? ".toString()" : "") + ";");
             }
             return Optional.of(String.join("\n", lines));
         }
-        if (conceptMatches("concept:assign", conceptName) && args.size() == 2) {
-            Optional<ShapeExpression> target = lowerShapeExpression(args.get(0), context, appendPosition(position, 0));
+        // concept:assign comes in two shapes: 2-arg (target, value) for
+        // standard let, 3-arg (target, value, mutability_leaf) for `let mut`.
+        // The third arg is just a marker — semantically equivalent for java
+        // (where all locals are mutable). Accept both.
+        if (conceptMatches("concept:assign", conceptName) && args.size() >= 2 && args.size() <= 3) {
+            // Special-case `let target = match X { ... }` where arms have
+            // control-flow (return/break/continue) bodies. The match value
+            // can't be lowered as a single expression; emit if-else chain
+            // that ASSIGNS the target per arm. Detect: args[1] is
+            // concept:match.
+            Optional<ShapeExpression> target0 = lowerShapeExpression(args.get(0), context, appendPosition(position, 0));
+            if (target0.isPresent() && isIdentifier(target0.get().text())
+                    && conceptMatches("concept:match", shapeConceptName(args.get(1)))) {
+                String matchAsStmts = lowerMatchAsAssignmentTo(target0.get().text(), args.get(1), context, appendPosition(position, 1));
+                if (matchAsStmts != null) {
+                    context.definedSymbols.add(target0.get().text());
+                    context.lastAssignedSymbol = target0.get().text();
+                    return Optional.of(matchAsStmts);
+                }
+            }
+            Optional<ShapeExpression> target = target0;
             Optional<ShapeExpression> value = lowerShapeExpression(args.get(1), context, appendPosition(position, 1));
             if (target.isEmpty() || value.isEmpty() || !isIdentifier(target.get().text())) {
                 return Optional.empty();
@@ -1269,14 +1612,92 @@ final class SugarRealizer {
             boolean alreadyDefined = context.definedSymbols.contains(name);
             context.definedSymbols.add(name);
             context.lastAssignedSymbol = name;
-            return Optional.of(localDeclaration(context.returnType, name, value.get().text(), alreadyDefined));
+            // #1391 follow-on: when the lift captured an explicit `let_type`
+            // from the rust source (e.g. `let x: Vec<String> = ...`), use it
+            // verbatim (mapped to java syntax) for the declaration so that
+            // java lift can re-derive `let_type` and rust realize emits the
+            // exact same annotation byte-for-byte. Without this, the
+            // declared type is inferred from the value expression and
+            // generic parameters are lost (e.g. java.util.List instead of
+            // java.util.List<String>), so the cycle drops the annotation.
+            String letTypeRaw = args.get(0).stringFieldOrNull("let_type");
+            String letTypeMapped = rustLetTypeToJava(letTypeRaw);
+            String declType;
+            if (!letTypeMapped.isEmpty()) {
+                declType = letTypeMapped;
+            } else {
+                // Use the VALUE's inferred type for the declaration. If
+                // unknown, prefer `var` (java 10+ infers from RHS) over
+                // falling back to the enclosing function's return type —
+                // that fallback was producing wrong-type declarations like
+                // `String raw = blake3_512_of(bytes);` where blake3_512_of
+                // returns byte[].
+                declType = value.get().typeName();
+                if (declType == null || declType.isBlank()) {
+                    declType = "";  // localDeclaration emits `var` for blank.
+                }
+            }
+            // Substrate-honest tuple destructure: when assigning from a
+            // synthetic tuple index (__provekit_tuple[N]) AND we know the
+            // tuple-producing function's return type, use the element type
+            // for the declaration so downstream method calls don't fail
+            // on Object.
+            String valueText = value.get().text();
+            // Strip outer parens that may have been added (e.g. (__provekit_tuple[0])).
+            String stripped = valueText.trim();
+            while (stripped.startsWith("(") && stripped.endsWith(")")
+                    && matchingOuterParens(stripped)) {
+                stripped = stripped.substring(1, stripped.length() - 1).trim();
+            }
+            if (stripped.startsWith("__provekit_tuple[") && stripped.endsWith("]")) {
+                String tupleType = context.tupleSourceRawType;
+                if (tupleType != null && !tupleType.isBlank()) {
+                    String idxStr = stripped.substring("__provekit_tuple[".length(),
+                                                       stripped.length() - 1).trim();
+                    try {
+                        int idx = Integer.parseInt(idxStr);
+                        String elemType = tupleElementType(tupleType, idx);
+                        if (elemType != null) {
+                            String javaElem = mapSourceType(elemType);
+                            return Optional.of(javaElem + " " + name + " = (" + javaElem + ") " + stripped + ";");
+                        }
+                    } catch (NumberFormatException ignore) {}
+                }
+            }
+            // Detect the seed assign `__provekit_tuple = handle_line(...)` —
+            // record the raw tuple type so subsequent index-assigns can
+            // resolve element types.
+            if ("__provekit_tuple".equals(name)) {
+                String fnName = extractCalledFnName(valueText);
+                if (fnName != null) {
+                    String raw = context.functionReturnTypes.getOrDefault(fnName, "");
+                    String fnRetStripped = raw.trim();
+                    if (fnRetStripped.startsWith("&mut ")) fnRetStripped = fnRetStripped.substring(5).trim();
+                    else if (fnRetStripped.startsWith("&")) fnRetStripped = fnRetStripped.substring(1).trim();
+                    if (fnRetStripped.startsWith("(") && fnRetStripped.endsWith(")")) {
+                        context.tupleSourceRawType = fnRetStripped;
+                    } else {
+                        context.tupleSourceRawType = "";
+                    }
+                }
+            }
+            return Optional.of(localDeclaration(declType, name, value.get().text(), alreadyDefined));
         }
         if (conceptMatches("concept:return", conceptName)) {
             if (args.isEmpty()) {
                 return Optional.of("return;");
             }
             Optional<ShapeExpression> value = lowerShapeExpression(args.get(0), context, appendPosition(position, 0));
-            return value.map(shapeExpression -> "return " + shapeExpression.text() + ";");
+            return value.map(shapeExpression -> {
+                String text = shapeExpression.text().trim();
+                // If value is already a throw/return statement (from Err
+                // translation), use it as-is — `return throw new ...;`
+                // is invalid.
+                if (text.startsWith("throw ") || text.startsWith("return ")) {
+                    return text.endsWith(";") ? text : text + ";";
+                }
+                return "return " + shapeExpression.text() + ";";
+            });
         }
         if (conceptMatches("concept:conditional", conceptName) && args.size() == 3) {
             Optional<ShapeExpression> condition = lowerShapeExpression(args.get(0), context, appendPosition(position, 0));
@@ -1285,7 +1706,11 @@ final class SugarRealizer {
             if (condition.isEmpty() || thenBody.isEmpty() || elseBody.isEmpty()) {
                 return Optional.empty();
             }
-            return Optional.of("if " + condition.get().text() + " {\n"
+            // Java requires parens around the WHOLE condition. Always
+            // wrap with outer parens — operators like (a)!=(b) start with
+            // `(` but aren't a single parenthesized expression.
+            String condText = "(" + condition.get().text() + ")";
+            return Optional.of("if " + condText + " {\n"
                     + indentBlock(thenBody.get()) + "\n"
                     + "} else {\n"
                     + indentBlock(elseBody.get()) + "\n"
@@ -1303,6 +1728,189 @@ final class SugarRealizer {
         // Lift vocabulary parity: rust walk_rpc emits these concepts; java
         // lower must accept them or translation bails on the first
         // unrecognized construct in a body.
+        // concept:while-let(var_leaf, value_expr, body) — rust's `while let
+        // Some(var) = value` pattern. Java: `while ((var = value) != null) { body }`.
+        // The var is declared in the enclosing scope so the loop can refer
+        // to it; the loop body can also assume var is non-null.
+        if (conceptMatches("concept:while-let", conceptName) && args.size() == 3) {
+            // Pattern leaf: e.g. "Some(line)", "Ok(v)", "Some (line)".
+            // Extract the binding variable from the pattern. For Some/Ok
+            // we use the inner binding; for raw idents we use as-is.
+            String patternText = args.get(0).stringFieldOrNull("text");
+            if (patternText == null || patternText.isBlank()) return Optional.empty();
+            String varName = extractPatternBinding(patternText);
+            if (varName == null || varName.isBlank()) return Optional.empty();
+            Optional<ShapeExpression> value = lowerShapeExpression(args.get(1), context, appendPosition(position, 1));
+            if (value.isEmpty()) return Optional.empty();
+            context.definedSymbols.add(varName);
+            Optional<String> body = lowerShapeBranchBody(args.get(2), context, appendPosition(position, 2));
+            if (body.isEmpty()) return Optional.empty();
+            String valueType = value.get().typeName();
+            String decl = (valueType == null || valueType.isBlank() || "Object".equals(valueType)) ? "var" : valueType;
+            // Java: declare var outside loop, assign + null-check in cond.
+            return Optional.of(
+                decl + " " + varName + " = " + value.get().text() + ";\n" +
+                "while (" + varName + " != null) {\n" +
+                indentBlock(body.get()) + "\n" +
+                "    " + varName + " = " + value.get().text() + ";\n" +
+                "}"
+            );
+        }
+        // concept:if-let(pattern_leaf, value, then, else) — rust's
+        // `if let Some(x) = value { then } else { else }`.
+        //
+        // #1391 follow-on: variant-pattern aware lowering.
+        // - Some(x), Ok(v), Err(e), or bare ident: emit `var X = scrut; if (X != null) {...}`.
+        // - Type::Variant(b): emit java 17 instanceof-pattern
+        //   `if (scrut instanceof <JavaType> b) {...}` with a
+        //   `/*@if-let-variant=Type::Variant*/` comment so the java lift
+        //   can recover the exact rust pattern text.
+        // Body is lowered as a body (statement form), NOT as a branch:
+        // - lowerShapeBody first (statement); if absent, lowerShapeExpression
+        //   then emit as bare `expr;` not `return expr;`. The rust source
+        //   uses if-let-as-statement; wrapping in `return` is incorrect.
+        if (conceptMatches("concept:if-let", conceptName) && args.size() == 4) {
+            String patternText = args.get(0).stringFieldOrNull("text");
+            if (patternText == null || patternText.isBlank()) return Optional.empty();
+            String varName = extractPatternBinding(patternText);
+            Optional<ShapeExpression> value = lowerShapeExpression(args.get(1), context, appendPosition(position, 1));
+            if (value.isEmpty()) return Optional.empty();
+            String thenScopeBinding = (varName != null && !varName.isBlank()) ? varName : "__provekit_if_let";
+            context.definedSymbols.add(thenScopeBinding);
+            // Statement-form body lowerer for if-let bodies.
+            java.util.function.Function<Jcs.Obj, Optional<String>> bodyOf = b -> {
+                Optional<String> bb = lowerShapeBody(b, context, appendPosition(position, 2));
+                if (bb.isPresent()) return bb;
+                Optional<ShapeExpression> be = lowerShapeExpression(b, context, appendPosition(position, 2));
+                if (be.isEmpty()) return Optional.empty();
+                String t = be.get().text();
+                if (t.endsWith(";")) return Optional.of(t);
+                return Optional.of(t + ";");
+            };
+            Optional<String> thenBody = bodyOf.apply(args.get(2));
+            Optional<String> elseBody = bodyOf.apply(args.get(3));
+            if (thenBody.isEmpty() || elseBody.isEmpty()) return Optional.empty();
+            // Detect variant pattern: `Type::Variant(binding)` (rust path
+            // pattern). The pattern text is "Type :: Variant (binding)" with
+            // whitespace from syn's token-stream emission; normalize.
+            String normPat = patternText.replaceAll("\\s+", "");
+            String variantPath = null;
+            String variantBinding = null;
+            // Match Type::Variant(X) — anything with `::` and a paren.
+            java.util.regex.Matcher m = java.util.regex.Pattern
+                    .compile("^([A-Za-z_][A-Za-z0-9_:]*)\\(([A-Za-z_][A-Za-z0-9_]*)\\)$")
+                    .matcher(normPat);
+            if (m.find() && m.group(1).contains("::")) {
+                variantPath = m.group(1);
+                variantBinding = m.group(2);
+            }
+            if (variantPath != null) {
+                // Variant-pattern path. Map known rust variants to java
+                // types; fall back to ObjectNode for unrecognized
+                // Value::* variants (the libprovekit corpus).
+                String javaType = rustVariantToJavaType(variantPath);
+                if (javaType != null) {
+                    // Body is lowered with the binding pre-defined as the
+                    // pattern's binding name (the java pattern var has the
+                    // same name as the rust binding).
+                    return Optional.of(
+                        "/*@if-let-variant=" + variantPath + "*/ if (" + value.get().text()
+                            + " instanceof " + javaType + " " + variantBinding + ") {\n"
+                            + indentBlock(thenBody.get()) + "\n"
+                            + "} else {\n"
+                            + indentBlock(elseBody.get()) + "\n"
+                            + "}"
+                    );
+                }
+            }
+            // Non-variant path (Some(x), Ok(v), Err(e), bare ident).
+            String valueType = value.get().typeName();
+            String decl = (valueType == null || valueType.isBlank() || "Object".equals(valueType)) ? "var" : valueType;
+            return Optional.of(
+                decl + " " + thenScopeBinding + " = " + value.get().text() + ";\n" +
+                "if (" + thenScopeBinding + " != null) {\n" +
+                indentBlock(thenBody.get()) + "\n" +
+                "} else {\n" +
+                indentBlock(elseBody.get()) + "\n" +
+                "}"
+            );
+        }
+        // concept:destructure-tuple(value, name1_leaf, name2_leaf, ...) —
+        // rust's `let (a, b, c) = value`. Java has no tuples; emit as
+        // indexed access on an Object[].
+        if (conceptMatches("concept:destructure-tuple", conceptName) && args.size() >= 2) {
+            Optional<ShapeExpression> value = lowerShapeExpression(args.get(0), context, appendPosition(position, 0));
+            if (value.isEmpty()) return Optional.empty();
+            String tmp = "__provekit_tuple";
+            StringBuilder sb = new StringBuilder();
+            sb.append("Object[] ").append(tmp).append(" = (Object[]) ").append(value.get().text()).append(";\n");
+            for (int i = 1; i < args.size(); i++) {
+                String name = args.get(i).stringFieldOrNull("text");
+                if (name == null || "_".equals(name)) continue;
+                context.definedSymbols.add(name);
+                sb.append("var ").append(name).append(" = ").append(tmp).append("[").append(i - 1).append("];\n");
+            }
+            // Strip trailing newline.
+            String text = sb.toString();
+            if (text.endsWith("\n")) text = text.substring(0, text.length() - 1);
+            return Optional.of(text);
+        }
+        // concept:destructure-struct(value, type_leaf, field_leaf1, ...) —
+        // rust's `let LiftResult { mementos, diagnostics } = value`. Java
+        // emits field-by-field getter access on the value (treated as a
+        // JsonNode since rust struct types are erased to JsonNode at the
+        // java boundary).
+        if (conceptMatches("concept:destructure-struct", conceptName) && args.size() >= 3) {
+            Optional<ShapeExpression> value = lowerShapeExpression(args.get(0), context, appendPosition(position, 0));
+            if (value.isEmpty()) return Optional.empty();
+            String tmp = "__provekit_struct";
+            StringBuilder sb = new StringBuilder();
+            sb.append("var ").append(tmp).append(" = ").append(value.get().text()).append(";\n");
+            for (int i = 2; i < args.size(); i++) {
+                String binding = args.get(i).stringFieldOrNull("text");
+                String fieldName = args.get(i).stringFieldOrNull("field_name");
+                if (fieldName == null || fieldName.isBlank()) fieldName = binding;
+                if (binding == null || binding.isBlank()) continue;
+                context.definedSymbols.add(binding);
+                sb.append("var ").append(binding).append(" = ").append(tmp)
+                  .append(".get(\"").append(fieldName).append("\");\n");
+            }
+            String text = sb.toString();
+            if (text.endsWith("\n")) text = text.substring(0, text.length() - 1);
+            return Optional.of(text);
+        }
+        // catalog-driven operation realization dispatch (#1391).
+        // Look up concept in the realizations map (target_lang=java);
+        // if present, delegate to the kit-op emitter keyed by rhs op name.
+        // The catalog at menagerie/concept-shapes/catalog/realizations/ is
+        // the single source of truth: concept_name → rhs_op_name. The
+        // emitters below are the only kit-specific code, and they're
+        // keyed by catalog'd names (e.g. "java:string-getBytes-utf8"),
+        // not by concept-hub names.
+        {
+            String rhsOp = com.provekit.ir.OperationRealizationCatalog.javaOpFor(conceptName);
+            if (rhsOp != null) {
+                Optional<String> emitted = emitKitJavaOp(rhsOp, args, context, position);
+                if (emitted.isPresent()) return emitted;
+            }
+        }
+        // concept:try(inner) — rust's `expr?` operator. Java translates via
+        // Substrate.tryUnwrap which mirrors the unwrap-or-propagate.
+        if (conceptMatches("concept:try", conceptName) && args.size() == 1) {
+            Optional<ShapeExpression> inner = lowerShapeExpression(args.get(0), context, appendPosition(position, 0));
+            if (inner.isEmpty()) return Optional.empty();
+            return Optional.of("com.provekit.runtime.Substrate.tryUnwrap("
+                + inner.get().text() + ")");
+        }
+        // concept:item-decl(source_leaf) — function-local items (const,
+        // static, inner fn). Rust's `const HEX = b"..."` has no exact
+        // java equivalent at statement scope; emit as a comment preserving
+        // the rust source text so the substrate identity is captured.
+        if (conceptMatches("concept:item-decl", conceptName) && args.size() >= 1) {
+            String source = args.get(0).stringFieldOrNull("text");
+            if (source == null) return Optional.empty();
+            return Optional.of("// item-decl (rust): " + source.replace("\n", " "));
+        }
         if (conceptMatches("concept:while", conceptName) && args.size() == 2) {
             Optional<ShapeExpression> cond = lowerShapeExpression(args.get(0), context, appendPosition(position, 0));
             Optional<String> body = lowerShapeBranchBody(args.get(1), context, appendPosition(position, 1));
@@ -1319,12 +1927,35 @@ final class SugarRealizer {
                 if (v.isEmpty()) return Optional.empty();
                 varName = v.get().text();
             }
+            // #1391 follow-on: preserve `for mut X in ...` mutability via
+            // a marker comment on the loop var. Rust lift sets `mut: true`
+            // on the var leaf; java has no equivalent (all locals mutable),
+            // so we round-trip through a block-comment marker that the
+            // java lift recognizes.
+            boolean isMut;
+            try {
+                isMut = args.get(0).get("mut") instanceof Jcs.Bool b && b.value();
+            } catch (Throwable t) {
+                isMut = false;
+            }
+            // #1391 follow-on: detect rust ref-pattern `for &X in ...`.
+            // The rust lift captures this as var.text = "& X" (token-stream
+            // form). We need to round-trip the `&` annotation so realize
+            // emits `for &x in ...` instead of falling back to its
+            // body_uses_var_as_primitive heuristic.
+            boolean isRefPat = varName.trim().startsWith("&");
+            // Strip rust ref-pattern prefix from loop var: `& b` → `b`,
+            // `mut b` → `b`, `& mut b` → `b`. The iterable's deref is also
+            // implicit in java collections.
+            varName = varName.replaceAll("^\\s*(&\\s*mut\\s+|&\\s*|mut\\s+)", "").trim();
             Optional<ShapeExpression> iter = lowerShapeExpression(args.get(1), context, appendPosition(position, 1));
             if (iter.isEmpty()) return Optional.empty();
             context.definedSymbols.add(varName);
             Optional<String> body = lowerShapeBranchBody(args.get(2), context, appendPosition(position, 2));
             if (body.isEmpty()) return Optional.empty();
-            return Optional.of("for (var " + varName + " : " + iter.get().text() + ") {\n"
+            String mutMarker = isMut ? "/*@for-mut*/ " : "";
+            String refMarker = isRefPat ? "/*@for-ref*/ " : "";
+            return Optional.of("for (" + mutMarker + refMarker + "var " + varName + " : " + iter.get().text() + ") {\n"
                     + indentBlock(body.get()) + "\n"
                     + "}");
         }
@@ -1337,7 +1968,129 @@ final class SugarRealizer {
         if (conceptMatches("concept:continue", conceptName)) {
             return Optional.of("continue;");
         }
+        // concept:match in STATEMENT position: emit if-else if-else chain
+        // with `return X;` per arm. Avoids the Supplier-lambda scope issue
+        // (let bindings inside arms can't reach outer scope when wrapped
+        // in a lambda). Each arm body is wrapped as `return body;` since
+        // match in tail position IS the function's return value.
+        if (conceptMatches("concept:match", conceptName) && args.size() >= 2) {
+            Optional<ShapeExpression> scrut = lowerShapeExpression(args.get(0), context, appendPosition(position, 0));
+            if (scrut.isEmpty()) return Optional.empty();
+            String scrutVar = context.tempName();
+            context.definedSymbols.add(scrutVar);
+            StringBuilder out = new StringBuilder();
+            out.append("var ").append(scrutVar).append(" = ").append(scrut.get().text()).append(";\n");
+            boolean defaultSeen = false;
+            int armIdx = 0;
+            for (int i = 1; i < args.size(); i++) {
+                Jcs.Obj arm = args.get(i);
+                if (!conceptMatches("concept:match-arm", shapeConceptName(arm))) continue;
+                List<Jcs.Obj> armArgs = shapeArgs(arm);
+                if (armArgs.size() < 2) continue;
+                String patternText = armArgs.get(0).stringFieldOrNull("text");
+                if (patternText == null) patternText = "";
+                patternText = patternText.trim();
+                String boundVar = bindingFromPattern(patternText);
+                if (boundVar != null) context.definedSymbols.add(boundVar);
+                String cond = patternToCondition(patternText, scrutVar);
+                Optional<ShapeExpression> bodyExpr = lowerShapeExpression(armArgs.get(1), context, appendPosition(position, i));
+                if (bodyExpr.isEmpty()) return Optional.empty();
+                String bodyText = bodyExpr.get().text();
+                if (boundVar != null) {
+                    String sub = patternBindingExpression(patternText, scrutVar);
+                    bodyText = replaceIdentifier(bodyText, boundVar, sub);
+                }
+                // #1391 follow-on: variant-pattern carrier. Emit an arm
+                // marker carrying the rust source pattern text so the java
+                // lift can reconstruct discriminating variants (e.g.
+                // `Err(LiftError::InvalidParams(msg))` vs `…::Internal(msg)`).
+                String armMarker = variantArmMarker(patternText, boundVar);
+                if ("true".equals(cond)) {
+                    if (armIdx == 0) {
+                        out.append("return ").append(armMarker).append(bodyText).append(";");
+                    } else {
+                        out.append(" else {\n    return ").append(armMarker).append(bodyText).append(";\n}");
+                    }
+                    defaultSeen = true;
+                    break;
+                }
+                if (armIdx == 0) out.append("if (").append(cond).append(") {\n");
+                else out.append(" else if (").append(cond).append(") {\n");
+                out.append("    return ").append(armMarker).append(bodyText).append(";\n}");
+                armIdx++;
+            }
+            if (!defaultSeen && armIdx > 0) {
+                out.append(" else {\n    return null;\n}");
+            }
+            return Optional.of(out.toString());
+        }
         return Optional.empty();
+    }
+
+    /** Emit a block comment carrying the rust source pattern text when
+     *  it's a nested-variant pattern (e.g. `Err(LiftError::Internal(x))`).
+     *  Returns "" when the pattern is a simple variant or wildcard the
+     *  lift can re-derive from the condition shape. */
+    private static String variantArmMarker(String patternText, String boundVar) {
+        if (patternText == null || patternText.isBlank()) return "";
+        String t = patternText.trim();
+        // Strip guard.
+        int ifIdx = t.indexOf(" if ");
+        if (ifIdx > 0) t = t.substring(0, ifIdx).trim();
+        // Only emit a marker when the pattern has `::` (nested variant
+        // path like `Err(LiftError::InvalidParams(msg))`). Simple
+        // `Some(v)` / `Ok(v)` / `Err(e)` / `"foo"` / `_` are recoverable
+        // from the condition shape alone.
+        if (!t.contains("::")) return "";
+        StringBuilder sb = new StringBuilder("/*@match-arm-pattern=");
+        sb.append(t.replace("*/", "*\\/"));
+        if (boundVar != null && !boundVar.isBlank()) {
+            sb.append(" binding=").append(boundVar);
+        }
+        sb.append("*/ ");
+        return sb.toString();
+    }
+
+    /**
+     * Catalog-driven kit-op emitter (#1391). Keyed by the rhs op name from
+     * realization mementos (target_lang=java). One small case per rhs name;
+     * the catalog controls WHICH concept maps to which rhs name.
+     */
+    private static Optional<String> emitKitJavaOp(
+            String rhsOpName,
+            List<Jcs.Obj> args,
+            ShapeContext context,
+            List<Integer> position) {
+        switch (rhsOpName) {
+            case "java:string-getBytes-utf8": {
+                if (args.size() != 1) return Optional.empty();
+                Optional<ShapeExpression> recv = lowerShapeExpression(args.get(0), context, appendPosition(position, 0));
+                if (recv.isEmpty()) return Optional.empty();
+                return Optional.of(recv.get().text() + ".getBytes(java.nio.charset.StandardCharsets.UTF_8)");
+            }
+            case "java:jackson-jsonnode-asText": {
+                if (args.size() != 1) return Optional.empty();
+                Optional<ShapeExpression> recv = lowerShapeExpression(args.get(0), context, appendPosition(position, 0));
+                if (recv.isEmpty()) return Optional.empty();
+                return Optional.of(recv.get().text() + ".asText()");
+            }
+            case "java:objects-nonnull": {
+                if (args.size() != 1) return Optional.empty();
+                Optional<ShapeExpression> arg = lowerShapeExpression(args.get(0), context, appendPosition(position, 0));
+                if (arg.isEmpty()) return Optional.empty();
+                return Optional.of("java.util.Objects.nonNull(" + arg.get().text() + ")");
+            }
+            case "java:array-list-new": {
+                if (!args.isEmpty()) return Optional.empty();
+                return Optional.of("new java.util.ArrayList<>()");
+            }
+            case "java:hashmap-new": {
+                if (!args.isEmpty()) return Optional.empty();
+                return Optional.of("new java.util.HashMap<>()");
+            }
+            default:
+                return Optional.empty();
+        }
     }
 
     private static Optional<String> lowerShapeBranchBody(
@@ -1361,6 +2114,32 @@ final class SugarRealizer {
             return Optional.of(shapeLeafExpression(shape, context, position));
         }
         List<Jcs.Obj> args = shapeArgs(shape);
+        // catalog-driven operation realization dispatch (#1391 follow-on):
+        // expression-position concepts also need the catalog dispatch so
+        // concept:utf8-encode etc. emit kit-source when used as args of
+        // concept:call / concept:assign value, not just at the body root.
+        {
+            String rhsOp = com.provekit.ir.OperationRealizationCatalog.javaOpFor(conceptName);
+            if (rhsOp != null) {
+                Optional<String> emittedText = emitKitJavaOp(rhsOp, args, context, position);
+                if (emittedText.isPresent()) {
+                    return Optional.of(new ShapeExpression(emittedText.get(),
+                            mapSourceType(context.returnType)));
+                }
+            }
+        }
+        // #1391 follow-on: concept:try in expression position (e.g. as the
+        // value of a concept:assign). The body-position handler was
+        // unreachable from concept:assign's value-lowering path, which
+        // dropped the entire assign to a TODO comment. Expression form
+        // emits Substrate.tryUnwrap(inner).
+        if (conceptMatches("concept:try", conceptName) && args.size() == 1) {
+            Optional<ShapeExpression> inner = lowerShapeExpression(args.get(0), context, appendPosition(position, 0));
+            if (inner.isEmpty()) return Optional.empty();
+            return Optional.of(new ShapeExpression(
+                "com.provekit.runtime.Substrate.tryUnwrap(" + inner.get().text() + ")",
+                ""));
+        }
         if (conceptMatches("concept:seq", conceptName) || "seq".equals(conceptName)) {
             Optional<String> body = lowerShapeBody(shape, context, position);
             if (body.isEmpty()) {
@@ -1370,6 +2149,501 @@ final class SugarRealizer {
                 return Optional.of(new ShapeExpression(context.lastAssignedSymbol, mapSourceType(context.returnType)));
             }
             return Optional.empty();
+        }
+        // concept:literal — the lifter wraps literal values as
+        // concept:literal{value: <literal>, sort: <CID>}. Lower by emitting
+        // the literal directly. Strings come with quotes already in value.
+        if (conceptMatches("concept:literal", conceptName)) {
+            Jcs.Json valueJson = shape.get("value");
+            if (valueJson != null) {
+                String radix = shape.stringFieldOrNull("radix");
+                return Optional.of(literalTermWithRadix(valueJson, radix));
+            }
+            return Optional.empty();
+        }
+        // concept:match(scrutinee, arm1, arm2, ...). Each arm is
+        // concept:match-arm(pattern_leaf, body). Lower as a chained
+        // ternary in expression position. The first arm whose pattern
+        // matches wins; rust's `_` wildcard becomes the else.
+        //
+        // Patterns supported (best-effort): `_` (wildcard, always true),
+        // `Some(v)` (treats scrutinee as a JsonNode that may be null —
+        // binds v to the scrutinee value), `None` (scrutinee is null),
+        // bare identifiers (always true, binds to scrutinee). Guards
+        // (`Some(v) if cond`) are recognized in the pattern text.
+        if (conceptMatches("concept:match", conceptName) && args.size() >= 2) {
+            Optional<ShapeExpression> scrut = lowerShapeExpression(args.get(0), context, appendPosition(position, 0));
+            if (scrut.isEmpty()) return Optional.empty();
+            String scrutText = scrut.get().text();
+            // If ALL non-wildcard arm patterns are string literals, emit
+            // java switch expression (java 14+). Cleaner than ternary
+            // lambda — keeps each arm at its own statement scope,
+            // sidesteps the Supplier-lambda issue where let-bindings
+            // inside one arm can't reach outer code.
+            if (allPatternsStringLiteral(args)) {
+                StringBuilder sw = new StringBuilder();
+                sw.append("switch (").append(scrutText).append(") {");
+                String defaultArm = null;
+                for (int i = 1; i < args.size(); i++) {
+                    Jcs.Obj arm = args.get(i);
+                    if (!conceptMatches("concept:match-arm", shapeConceptName(arm))) continue;
+                    List<Jcs.Obj> armArgs = shapeArgs(arm);
+                    if (armArgs.size() < 2) continue;
+                    String patternText = (armArgs.get(0).stringFieldOrNull("text") == null
+                            ? "" : armArgs.get(0).stringFieldOrNull("text")).trim();
+                    Optional<ShapeExpression> body = lowerShapeExpression(armArgs.get(1), context, appendPosition(position, i));
+                    if (body.isEmpty()) return Optional.empty();
+                    if ("_".equals(patternText)) {
+                        defaultArm = body.get().text();
+                    } else if (isStringLiteral(patternText)) {
+                        sw.append(" case ").append(patternText).append(" -> ").append(body.get().text()).append(";");
+                    }
+                }
+                sw.append(" default -> ").append(defaultArm != null ? defaultArm : "null").append("; }");
+                return Optional.of(new ShapeExpression(sw.toString(), mapSourceType(context.returnType)));
+            }
+            // Use a fresh variable for the scrutinee so it isn't re-evaluated.
+            String scrutVar = context.tempName();
+            context.definedSymbols.add(scrutVar);
+            // Build a chain: cond1 ? body1 : (cond2 ? body2 : default).
+            StringBuilder chain = new StringBuilder();
+            int armCount = 0;
+            int openParens = 0;
+            boolean defaultEmitted = false;
+            for (int i = 1; i < args.size(); i++) {
+                Jcs.Obj arm = args.get(i);
+                if (!conceptMatches("concept:match-arm", shapeConceptName(arm))) continue;
+                List<Jcs.Obj> armArgs = shapeArgs(arm);
+                if (armArgs.size() < 2) continue;
+                String patternText = armArgs.get(0).stringFieldOrNull("text");
+                if (patternText == null) patternText = "";
+                patternText = patternText.trim();
+                // For binding patterns like `Some(v)`, expose v as the scrut value.
+                String boundVar = bindingFromPattern(patternText);
+                if (boundVar != null) {
+                    context.definedSymbols.add(boundVar);
+                }
+                Optional<ShapeExpression> body = lowerShapeExpression(armArgs.get(1), context, appendPosition(position, i));
+                if (body.isEmpty()) return Optional.empty();
+                String bodyText = body.get().text();
+                String cond = patternToCondition(patternText, scrutVar);
+                if (boundVar != null) {
+                    String sub = patternBindingExpression(patternText, scrutVar);
+                    bodyText = replaceIdentifier(bodyText, boundVar, sub);
+                }
+                // Variant marker — only emitted when the pattern has `::`
+                // (nested variant path). Comment-only carriers preserve
+                // the rust pattern text + binding name for the java lift
+                // to reconstruct discriminating arms.
+                String armMarker = variantArmMarker(patternText, boundVar);
+                if (!armMarker.isEmpty()) {
+                    bodyText = armMarker + bodyText;
+                }
+                if ("true".equals(cond)) {
+                    if (armCount == 0) {
+                        return Optional.of(new ShapeExpression(
+                                "(((java.util.function.Supplier<" + boxedType(mapSourceType(context.returnType).equals("void") ? "Object" : mapSourceType(context.returnType)) + ">) () -> { var " + scrutVar + " = " + scrutText + "; return " + bodyText + "; }).get())",
+                                mapSourceType(context.returnType)));
+                    }
+                    // Default arm after at least one conditional: emit as
+                    // ternary else branch.
+                    chain.append(" : ").append(bodyText);
+                    armCount++;
+                    defaultEmitted = true;
+                    break;
+                } else {
+                    if (armCount > 0) {
+                        chain.append(" : (");
+                        openParens++;
+                    }
+                    chain.append(cond).append(" ? ").append(bodyText);
+                    armCount++;
+                }
+            }
+            // If no default arm, fall through to a synthetic null/zero.
+            if (armCount == 0) return Optional.empty();
+            // Was there a wildcard? If chain doesn't end with a default,
+            // append `: null` so the ternary is well-formed.
+            // Heuristic: last arm wasn't a "true" cond means we need a fallback.
+            // Look at the last char of chain; if it ends with bodyText (not closed
+            // with " : default"), append a default.
+            // Simpler: always append " : null" for the innermost level and one
+            // closing paren PER non-default arm after the first.
+            // Rust match is exhaustive; java's ternary needs an else.
+            // Substrate-honest: if rust source had no wildcard, the
+            // fallback path is unreachable per rust semantics — emit
+            // a panic at runtime + loss_record entry rather than
+            // silently fabricate `: null` (which the source did not
+            // authorize as a return value).
+            if (!defaultEmitted) {
+                // Substrate.unreachable names the concept at runtime.
+                String castType = boxedType(mapSourceType(context.returnType).equals("void") ? "Object" : mapSourceType(context.returnType));
+                chain.append(" : /*@concept concept:exhaustive-match-no-default*/ ")
+                     .append("com.provekit.runtime.Substrate.<").append(castType)
+                     .append(">unreachable(\"exhaustive match: no arm matched\")");
+            }
+            for (int k = 0; k < openParens; k++) chain.append(")");
+            String supplierType = boxedType(mapSourceType(context.returnType).equals("void") ? "Object" : mapSourceType(context.returnType));
+            String wrapped = "(((java.util.function.Supplier<" + supplierType + ">) () -> { var " + scrutVar + " = " + scrutText + "; return " + chain + "; }).get())";
+            return Optional.of(new ShapeExpression(wrapped, mapSourceType(context.returnType)));
+        }
+        // concept:macro-call(macro_name_leaf, body_leaf). Handle known macros
+        // by parsing the raw text body. Unknown macros bail to Empty.
+        if (conceptMatches("concept:macro-call", conceptName) && args.size() >= 2) {
+            String macroName = args.get(0).stringFieldOrNull("text");
+            String macroBody = args.get(1).stringFieldOrNull("text");
+            if (macroName == null || macroBody == null) return Optional.empty();
+            if ("json".equals(macroName)) {
+                String emitted = emitJsonMacro(macroBody, context);
+                if (emitted == null) return Optional.empty();
+                return Optional.of(new ShapeExpression(emitted, "com.fasterxml.jackson.databind.JsonNode"));
+            }
+            if ("format".equals(macroName)) {
+                String emitted = emitFormatMacro(macroBody, context);
+                if (emitted == null) return Optional.empty();
+                return Optional.of(new ShapeExpression(emitted, "String"));
+            }
+            return Optional.empty();
+        }
+        // #1390+ vocabulary: concept:call with a method-leaf at args[1] is a
+        // method call. Handle BEFORE the generic arg-lowering loop, because
+        // the method leaf ({kind: "method", text: ...}) doesn't lower as a
+        // normal expression and would fail the loop.
+        if (conceptMatches("concept:call", conceptName) && args.size() >= 2) {
+            Jcs.Json maybeMethod = args.get(1).get("kind");
+            if (maybeMethod instanceof Jcs.Str ks && "method".equals(ks.value())) {
+                Optional<ShapeExpression> receiver = lowerShapeExpression(args.get(0), context, appendPosition(position, 0));
+                if (receiver.isEmpty()) return Optional.empty();
+                String methodName = args.get(1).stringFieldOrNull("text");
+                if (methodName == null || methodName.isBlank()) return Optional.empty();
+                List<String> callArgs = new ArrayList<>();
+                for (int i = 2; i < args.size(); i++) {
+                    Optional<ShapeExpression> a = lowerShapeExpression(args.get(i), context, appendPosition(position, i));
+                    if (a.isEmpty()) return Optional.empty();
+                    callArgs.add(a.get().text());
+                }
+                String joined = String.join(", ", callArgs);
+                // Translate common rust methods to java equivalents.
+                String javaMethod = mapRustMethodToJava(methodName);
+                String javaArgs = joined;
+                // .as_bytes() in rust → .getBytes(StandardCharsets.UTF_8) in java.
+                if ("as_bytes".equals(methodName)) {
+                    return Optional.of(new ShapeExpression(
+                            receiver.get().text() + ".getBytes(java.nio.charset.StandardCharsets.UTF_8)",
+                            "byte[]"));
+                }
+                // .into() / .clone() / .cloned() on a value: identity in
+                // java where references are shared + JsonNode/String are
+                // tree-shared. Substrate-honest: this is (A) recoverable
+                // via citation comment AND (B) functionally opaque (no
+                // behavioral difference). NOT lossy — emit a concept
+                // citation so the round-trip lifter can reconstruct the
+                // explicit .cloned() / .into() call.
+                if ("into".equals(methodName) || "clone".equals(methodName)
+                        || "cloned".equals(methodName)) {
+                    // Substrate.cloneOf carries the concept identity at
+                    // runtime — the lifter recognizes the call directly.
+                    String cited = "/*@concept concept:value-clone source-name=" + methodName
+                        + "*/com.provekit.runtime.Substrate.cloneOf(" + receiver.get().text() + ")";
+                    return Optional.of(new ShapeExpression(cited, receiver.get().typeName()));
+                }
+                // .try_unwrap() — substrate's canonical ?-operator method.
+                // Receiver is a Result<T,E> carrier. LOSSLESS: (A) citation +
+                // (B) Result.unwrap mirrors rust's ? panic-on-Err / Ok-extract.
+                //
+                // Parameterize the Result cast with the ENCLOSING function's
+                // return type when it's also Result<T,E> — then .unwrap()
+                // is typed T (not Object). For non-Result enclosing returns
+                // (e.g. a fn -> Value that uses ? on Result-returning child
+                // calls), we fall through to raw cast (caller must downcast).
+                if ("try_unwrap".equals(methodName) && callArgs.isEmpty()) {
+                    String rawReturn = context.returnType == null ? "" : context.returnType;
+                    String stripped = rawReturn.trim();
+                    if (stripped.startsWith("&mut ")) stripped = stripped.substring(5).trim();
+                    else if (stripped.startsWith("&")) stripped = stripped.substring(1).trim();
+                    String resultGeneric = "";
+                    if (stripped.startsWith("Result<") && stripped.endsWith(">")) {
+                        String inner = stripped.substring(7, stripped.length() - 1).trim();
+                        int comma = findTopLevelComma(inner);
+                        String okType = comma > 0 ? inner.substring(0, comma).trim() : inner;
+                        String errType = comma > 0 ? inner.substring(comma + 1).trim() : "Object";
+                        String okJava = boxedType(mapSourceType(okType));
+                        String errJava = boxedType(mapSourceType(errType));
+                        if (errJava.matches("[A-Z][A-Za-z0-9_]*")
+                                && !errJava.equals("String") && !errJava.equals("Object")) {
+                            errJava = "com.provekit.runtime.SumVariant";
+                        }
+                        resultGeneric = "<" + okJava + ", " + errJava + ">";
+                    }
+                    String inferredInner = "";
+                    if (!resultGeneric.isEmpty()) {
+                        // Extract the OK type from resultGeneric for the
+                        // inferred return type of the unwrap expression.
+                        String inner = resultGeneric.substring(1, resultGeneric.length() - 1).trim();
+                        int comma = findTopLevelComma(inner);
+                        inferredInner = comma > 0 ? inner.substring(0, comma).trim() : inner;
+                    }
+                    // Substrate.tryUnwrap names the concept at runtime;
+                    // citation is belt+suspenders.
+                    String castInner = inferredInner.isEmpty()
+                            ? ""
+                            : "(" + inferredInner + ") ";
+                    return Optional.of(new ShapeExpression(
+                            "/*@concept concept:try-unwrap*/" + castInner
+                                + "com.provekit.runtime.Substrate.tryUnwrap((com.provekit.runtime.Result) "
+                                + receiver.get().text() + ")",
+                            inferredInner));
+                }
+                // .iter() on a JsonNode (rust Vec<Value>.iter()) →
+                // StreamSupport.stream over spliterator. Caller's
+                // .filter_map / .collect continue the pipeline.
+                if ("iter".equals(methodName) && callArgs.isEmpty()) {
+                    return Optional.of(new ShapeExpression(
+                            "java.util.stream.StreamSupport.stream(" + receiver.get().text()
+                            + ".spliterator(), false)",
+                            "java.util.stream.Stream"));
+                }
+                // .filter_map(fn) on a Stream — semantically equivalent
+                // to .map(fn).filter(Objects::nonNull) in java.
+                if ("filter_map".equals(methodName) && callArgs.size() == 1) {
+                    String fn = callArgs.get(0);
+                    String mapper;
+                    if (fn.contains("->")) {
+                        // Type the lambda explicitly as
+                        // Function<JsonNode, Object> so that the lambda
+                        // body's method calls resolve against JsonNode
+                        // (the common case for our cross-platform crate).
+                        mapper = "((java.util.function.Function<com.fasterxml.jackson.databind.JsonNode, Object>)(" + fn + "))";
+                    } else {
+                        mapper = "(" + fn + ")";
+                    }
+                    return Optional.of(new ShapeExpression(
+                            receiver.get().text() + ".map(" + mapper + ").filter(java.util.Objects::nonNull)",
+                            "java.util.stream.Stream"));
+                }
+                // .collect() on a Stream → .collect(Collectors.toList()).
+                if ("collect".equals(methodName) && callArgs.isEmpty()) {
+                    return Optional.of(new ShapeExpression(
+                            receiver.get().text() + ".collect(java.util.stream.Collectors.toList())",
+                            "java.util.List"));
+                }
+                // .ok_or_else(closure) on Option<T> in rust: Some(x) → Ok(x),
+                // None → Err(closure()). Java equivalent on a nullable T:
+                // (recv != null ? recv : throw_via_supplier(closure)). We
+                // can't `throw` inline in an expression position; emit a
+                // null-fallback that returns the closure value (already
+                // a String via String.valueOf). Caller can wrap in
+                // Objects.requireNonNull at the binding level if needed.
+                if ("ok_or_else".equals(methodName) && callArgs.size() == 1) {
+                    // LOSSLESS: Result.okOrElse(value, ()->error) carrier
+                    // returns Result.ok(value) or Result.err(closure()).
+                    // (A) citation + (B) Result-carrier semantics.
+                    String fn = callArgs.get(0);
+                    String supplier;
+                    if (fn.contains("->")) {
+                        java.util.regex.Matcher m = java.util.regex.Pattern.compile(
+                            "^\\s*\\(\\s*\\)\\s*->\\s*(.+)$"
+                        ).matcher(fn);
+                        if (m.find()) {
+                            supplier = "() -> " + m.group(1).trim();
+                        } else {
+                            supplier = "((java.util.function.Supplier)(" + fn + "))";
+                        }
+                    } else {
+                        supplier = "((java.util.function.Supplier)(" + fn + "))";
+                    }
+                    return Optional.of(new ShapeExpression(
+                            "/*@concept concept:fallible-ok-or-else fallback="
+                                + escapeForComment(fn) + "*/ com.provekit.runtime.Result.okOrElse("
+                                + receiver.get().text() + ", " + supplier + ")",
+                            "com.provekit.runtime.Result"));
+                }
+                // Legacy throw-on-null path retained for non-fallible
+                // null-coalesce idioms — currently unreachable since
+                // ok_or_else routes via Result above.
+                if ("__unreachable_ok_or_else".equals(methodName) && callArgs.size() == 1) {
+                    String fn = callArgs.get(0);
+                    String fnInvoked;
+                    if (fn.contains("->")) {
+                        // Lambda with no param (() -> body) — extract body.
+                        java.util.regex.Matcher m = java.util.regex.Pattern.compile(
+                            "^\\s*\\(\\s*\\)\\s*->\\s*(.+)$"
+                        ).matcher(fn);
+                        if (m.find()) {
+                            fnInvoked = m.group(1).trim();
+                        } else {
+                            fnInvoked = "((java.util.function.Supplier)(" + fn + ")).get()";
+                        }
+                    } else {
+                        fnInvoked = "((java.util.function.Supplier)(" + fn + ")).get()";
+                    }
+                    return Optional.of(new ShapeExpression(
+                            "/*@concept concept:fallible-ok-or-else fallback=" + escapeForComment(callArgs.get(0))
+                                + "*/ java.util.Objects.requireNonNullElseGet(" + receiver.get().text()
+                                + ", () -> { throw new RuntimeException(String.valueOf(" + fnInvoked + ")); })",
+                            ""));
+                }
+                // .insert(x) on rust BTreeSet/HashSet → .add(x) returning boolean.
+                // .insert(k, v) on rust BTreeMap/HashMap → .put(k, v) returning prev.
+                // Disambiguate by argument count.
+                // #1391 follow-on: emit `/*@map-insert*/` marker so the
+                // java lift can re-emit `method:insert` (not `method:put`/
+                // `method:set`) on the round-trip. Without this the cycle
+                // drops `map.insert(K, V)` → `map.set(K, V)`.
+                if ("insert".equals(methodName)) {
+                    if (callArgs.size() == 1) {
+                        return Optional.of(new ShapeExpression(
+                                "/*@set-insert*/" + receiver.get().text() + ".add(" + callArgs.get(0) + ")",
+                                "boolean"));
+                    }
+                    if (callArgs.size() == 2) {
+                        String v = callArgs.get(1).trim();
+                        boolean isJsonNodeValue = v.contains("valueToTree")
+                                || v.contains("MAPPER.create")
+                                || v.contains("MAPPER.nullNode");
+                        if (isJsonNodeValue) {
+                            // .set is on ObjectNode, not JsonNode. Cast
+                            // the receiver to ObjectNode so the method
+                            // resolves.
+                            return Optional.of(new ShapeExpression(
+                                    "/*@map-insert*/((com.fasterxml.jackson.databind.node.ObjectNode) " + receiver.get().text() + ")"
+                                    + ".set(" + callArgs.get(0) + ", " + callArgs.get(1) + ")",
+                                    ""));
+                        }
+                        return Optional.of(new ShapeExpression(
+                                "/*@map-insert*/" + receiver.get().text() + ".put(" + callArgs.get(0) + ", " + callArgs.get(1) + ")",
+                                ""));
+                    }
+                }
+                // .push(x) is ambiguous: rust Vec.push → java List.add;
+                // rust String.push(char) → java StringBuilder.append. The
+                // arg's surface gives the cleanest signal — a (char) cast
+                // means StringBuilder. Otherwise default to List.add.
+                if ("push".equals(methodName) && callArgs.size() == 1) {
+                    String arg = callArgs.get(0).trim();
+                    if (arg.startsWith("(char)") || arg.startsWith("(char ")) {
+                        return Optional.of(new ShapeExpression(
+                                receiver.get().text() + ".append(" + arg + ")",
+                                ""));
+                    }
+                    return Optional.of(new ShapeExpression(
+                            receiver.get().text() + ".add(" + arg + ")",
+                            "boolean"));
+                }
+                // .unwrap() / .unwrap_or(x) on Option/Result: java has the
+                // value directly (loss = null-means-None). Pass through.
+                if ("unwrap".equals(methodName)) {
+                    return Optional.of(new ShapeExpression(
+                            receiver.get().text(),
+                            ""));  // unknown call return; var inference
+                }
+                if ("unwrap_or".equals(methodName) && callArgs.size() == 1) {
+                    return Optional.of(new ShapeExpression(
+                            "(" + receiver.get().text() + " != null ? " + receiver.get().text() + " : " + callArgs.get(0) + ")",
+                            ""));  // unknown call return; var inference
+                }
+                // .and_then(f) on Option: Some(v) → f(v); None → None.
+                // In java: (recv != null ? f(recv) : null).
+                if ("and_then".equals(methodName) && callArgs.size() == 1) {
+                    String fn = callArgs.get(0);
+                    // Lambda fn: "(v) -> body" — inline body with recv.
+                    // Function ref fn: emit as fn.apply(recv).
+                    String fnApplied;
+                    if (fn.contains("->")) {
+                        // Best-effort lambda inlining: replace single-param
+                        // with receiver.
+                        java.util.regex.Matcher m = java.util.regex.Pattern.compile(
+                            "^\\s*\\(?\\s*([A-Za-z_][A-Za-z0-9_]*)\\s*\\)?\\s*->\\s*(.+)$"
+                        ).matcher(fn);
+                        if (m.find()) {
+                            fnApplied = replaceIdentifier(m.group(2).trim(), m.group(1), receiver.get().text());
+                        } else {
+                            fnApplied = "(" + fn + ").apply(" + receiver.get().text() + ")";
+                        }
+                    } else if ("str.to_string".equals(fn) || "String.to_string".equals(fn)
+                            || fn.endsWith(".to_string")) {
+                        // Method ref to identity-style String conversion.
+                        fnApplied = "String.valueOf(" + receiver.get().text() + ")";
+                    } else {
+                        fnApplied = "((java.util.function.Function)(" + fn + ")).apply(" + receiver.get().text() + ")";
+                    }
+                    return Optional.of(new ShapeExpression(
+                            "(" + receiver.get().text() + " != null ? " + fnApplied + " : null)",
+                            ""));
+                }
+                // .map(f) on Option: same semantics, same translation.
+                if ("map".equals(methodName) && callArgs.size() == 1) {
+                    String fn = callArgs.get(0);
+                    String fnApplied = applyFnToReceiver(fn, receiver.get().text());
+                    return Optional.of(new ShapeExpression(
+                            "(" + receiver.get().text() + " != null ? " + fnApplied + " : null)",
+                            ""));
+                }
+                if ("unwrap_or_else".equals(methodName) && callArgs.size() == 1) {
+                    // .unwrap_or_else(|e| f(e)) — preserve the closure arg
+                    // name + body inside a lambda so (a) the java code
+                    // remains valid, and (b) the java lift can recognize
+                    // the `((Function<?,?>)(e -> body)).apply(null)` shape
+                    // and round-trip back to `.unwrap_or_else(|e| body)`.
+                    String fn = callArgs.get(0);
+                    String fnInvoked;
+                    if (fn.contains("->")) {
+                        java.util.regex.Matcher m = java.util.regex.Pattern.compile(
+                            "^\\s*\\(?\\s*([A-Za-z_][A-Za-z0-9_]*)\\s*\\)?\\s*->\\s*(.+)$"
+                        ).matcher(fn);
+                        if (m.find()) {
+                            String argName = m.group(1);
+                            String body = m.group(2).trim();
+                            // Round-trippable: lambda preserves both
+                            // captured-arg NAME and body. Java lift sees
+                            // the lambda and emits concept:closure(body, [argName]).
+                            fnInvoked = "((java.util.function.Function<Object,Object>)("
+                                    + argName + " -> " + body
+                                    + ")).apply(/*@unwrap-or-else-marker*/null)";
+                        } else {
+                            fnInvoked = "((java.util.function.Function)(" + fn + ")).apply(null)";
+                        }
+                    } else {
+                        fnInvoked = "((java.util.function.Function)(" + fn + ")).apply(null)";
+                    }
+                    return Optional.of(new ShapeExpression(
+                            "(" + receiver.get().text() + " != null ? " + receiver.get().text() + " : " + fnInvoked + ")",
+                            ""));
+                }
+                // .is_none() → == null; .is_some() → != null.
+                if ("is_none".equals(methodName)) {
+                    return Optional.of(new ShapeExpression(
+                            "(" + receiver.get().text() + " == null)", "boolean"));
+                }
+                if ("is_some".equals(methodName)) {
+                    return Optional.of(new ShapeExpression(
+                            "(" + receiver.get().text() + " != null)", "boolean"));
+                }
+                return Optional.of(new ShapeExpression(
+                        receiver.get().text() + "." + javaMethod + "(" + javaArgs + ")",
+                        ""));  // unknown call return; let var infer
+            }
+        }
+        // concept:ref(inner, mutability_leaf) — the mutability arg is a leaf
+        // without operand bindings; lower only the inner.
+        // #1391 follow-on: emit `/*@ref*/` (or `/*@ref-mut*/`) marker so
+        // the java lift can recover the original rust `&` on the cycled
+        // form. Without this the cycle drops the ref. Match the
+        // expression-position handler.
+        if (conceptMatches("concept:ref", conceptName) && args.size() >= 1) {
+            Optional<ShapeExpression> inner = lowerShapeExpression(args.get(0), context, appendPosition(position, 0));
+            if (inner.isEmpty()) return inner;
+            String mut = "";
+            if (args.size() >= 2) {
+                String mt = args.get(1).stringFieldOrNull("text");
+                if (mt != null && mt.contains("mut")) mut = "-mut";
+            }
+            String text = inner.get().text();
+            if (text.startsWith("/*@ref")) return inner;
+            return Optional.of(new ShapeExpression(
+                "/*@ref" + mut + "*/" + text,
+                inner.get().typeName()
+            ));
         }
         List<ShapeExpression> argTerms = new ArrayList<>();
         for (int i = 0; i < args.size(); i++) {
@@ -1403,11 +2677,234 @@ final class SugarRealizer {
                 }
             }
             String callee = argTerms.get(0).text();
-            if (!isIdentifier(callee)) {
+            // Synthetic tuple constructor from the lifter: emit as Object[].
+            if ("__provekit_tuple_new".equals(callee)) {
+                String joined = argTerms.stream().skip(1).map(ShapeExpression::text).collect(Collectors.joining(", "));
+                return Optional.of(new ShapeExpression("new Object[] {" + joined + "}", "Object[]"));
+            }
+            // Rust enum variant constructors:
+            // - `Ok(x)`  → Result.ok(x)   [lossless via Result carrier]
+            // - `Err(x)` → Result.err(x)  [lossless via Result carrier]
+            // - `Some(x)` → x             [lossless: java null = None]
+            // - `None`   → null           [via leaf]
+            if ("Some".equals(callee)) {
+                String inner = argTerms.size() > 1 ? argTerms.get(1).text() : "null";
+                return Optional.of(new ShapeExpression(
+                        "/*@concept concept:option-some payload=" + escapeForComment(inner) + "*/" + inner,
+                        argTerms.size() > 1 ? argTerms.get(1).typeName() : ""));
+            }
+            if ("Ok".equals(callee)) {
+                String inner = argTerms.size() > 1 ? argTerms.get(1).text() : "null";
+                return Optional.of(new ShapeExpression(
+                        "/*@concept concept:fallible-ok payload=" + escapeForComment(inner)
+                            + "*/ com.provekit.runtime.Result.ok(" + inner + ")",
+                        "com.provekit.runtime.Result"));
+            }
+            if ("Err".equals(callee)) {
+                String inner = argTerms.size() > 1 ? argTerms.get(1).text() : "\"err\"";
+                // LOSSLESS: java Result<T,E> carrier (provekit-java-runtime)
+                // gives (B) functional opacity — callers can .isErr()/.mapErr()
+                // exactly as the source did. Citation gives (A) round-trip.
+                return Optional.of(new ShapeExpression(
+                        "/*@concept concept:fallible-err payload="
+                            + escapeForComment(inner) + "*/ com.provekit.runtime.Result.err("
+                            + inner + ")",
+                        "com.provekit.runtime.Result"));
+            }
+            // `str::to_string` method ref → identity (already a String).
+            if ("str.to_string".equals(callee) || "String.from".equals(callee)) {
+                String inner = argTerms.size() > 1 ? argTerms.get(1).text() : "\"\"";
+                return Optional.of(new ShapeExpression(inner, "String"));
+            }
+            // Value::String(s) (or its `::` → `.` form JsonNode.String) →
+            // build a Jackson TextNode via MAPPER.valueToTree. Same for
+            // Value::Number, Value::Bool — all collapse to valueToTree
+            // since Jackson coerces the primitive to the right node type.
+            if (("Value.String".equals(callee) || "Value.Number".equals(callee) || "Value.Bool".equals(callee)
+                    || callee.endsWith("JsonNode.String") || callee.endsWith("JsonNode.Number")
+                    || callee.endsWith("JsonNode.Bool"))
+                    && argTerms.size() == 2) {
+                return Optional.of(new ShapeExpression(
+                        "MAPPER.valueToTree(" + argTerms.get(1).text() + ")",
+                        "com.fasterxml.jackson.databind.JsonNode"));
+            }
+            // Generic enum variant constructor with a path:
+            // `LiftError::Internal(msg)`, `Status::Failed(reason)`, etc.
+            // No enum infrastructure in java by default — reduce to the
+            // payload value as a string. Detect via capitalized identifier
+            // segments + uppercase variant.
+            if (callee.contains(".") && argTerms.size() == 2) {
+                String[] parts = callee.split("\\.");
+                if (parts.length == 2
+                        && parts[0].length() > 0 && Character.isUpperCase(parts[0].charAt(0))
+                        && parts[1].length() > 0 && Character.isUpperCase(parts[1].charAt(0))) {
+                    // LOSSLESS: SumVariant carrier (provekit-java-runtime)
+                    // preserves family + variant + payload at runtime.
+                    // Callers can dispatch via .is(family, variant) and
+                    // pull .payload() — restoring (B). Citation gives (A).
+                    String family = parts[0];
+                    String variant = parts[1];
+                    String payload = argTerms.get(1).text();
+                    return Optional.of(new ShapeExpression(
+                            "/*@concept concept:sum-variant-construct family=" + family
+                                + " variant=" + variant
+                                + " payload=" + escapeForComment(payload)
+                                + "*/ new com.provekit.runtime.SumVariant(\""
+                                + family + "\", \"" + variant + "\", " + payload + ")",
+                            "com.provekit.runtime.SumVariant"));
+                }
+            }
+            // Rust path expressions use `::` (e.g. String::new, Vec::with_capacity).
+            // For java, translate to `.` (String.new isn't valid — translate to
+            // common constructor pattern when the suffix is `new`).
+            // Type-name remaps for rust std → java std:
+            callee = callee
+                .replace("Vec::", "java.util.ArrayList::")
+                .replace("BTreeSet::", "java.util.TreeSet::")
+                .replace("BTreeMap::", "java.util.TreeMap::")
+                .replace("HashSet::", "java.util.HashSet::")
+                .replace("HashMap::", "java.util.HashMap::")
+                .replace("PathBuf::from", "java.nio.file.Path::of")
+                .replace("PathBuf::", "java.nio.file.Path::");
+            String calleeJava = callee.replace("::", ".");
+            if (calleeJava.endsWith(".new")) {
+                // String::new() → new String(), Vec::new() → new ArrayList<>(), etc.
+                String typeName = calleeJava.substring(0, calleeJava.length() - 4);
+                // Generic types need a <> for diamond inference.
+                boolean needsDiamond = typeName.contains("ArrayList") || typeName.contains("HashMap")
+                        || typeName.contains("HashSet") || typeName.contains("TreeMap")
+                        || typeName.contains("TreeSet") || typeName.contains("LinkedList");
+                String diamond = needsDiamond ? "<>" : "";
+                String joined = argTerms.stream().skip(1).map(ShapeExpression::text).collect(Collectors.joining(", "));
+                return Optional.of(new ShapeExpression("new " + typeName + diamond + "(" + joined + ")", typeName));
+            }
+            // `Path::from(p)` — when arg is already a Path, just use it.
+            // Otherwise convert to string and use Path.of.
+            if ("java.nio.file.Path.from".equals(calleeJava) || "Path.from".equals(calleeJava)) {
+                String joined = argTerms.stream().skip(1).map(ShapeExpression::text).collect(Collectors.joining(", "));
+                return Optional.of(new ShapeExpression(
+                        "java.nio.file.Path.of(" + joined + ".toString())",
+                        "java.nio.file.Path"));
+            }
+            // `String::with_capacity(n)` is rust idiom. Java has no direct
+            // equivalent — Strings are immutable; the rust code uses
+            // String here to build via push_str/push, which is really a
+            // StringBuilder pattern in java. Emit `new StringBuilder(n)`.
+            if ("String.with_capacity".equals(calleeJava)) {
+                String joined = argTerms.stream().skip(1).map(ShapeExpression::text).collect(Collectors.joining(", "));
+                return Optional.of(new ShapeExpression("new StringBuilder(" + joined + ")", "StringBuilder"));
+            }
+            if (calleeJava.endsWith(".with_capacity")) {
+                // Vec::with_capacity(n) → new ArrayList<>(n), generic.
+                String typeName = calleeJava.substring(0, calleeJava.length() - ".with_capacity".length());
+                if ("Vec".equals(typeName)) typeName = "java.util.ArrayList<>";
+                String joined = argTerms.stream().skip(1).map(ShapeExpression::text).collect(Collectors.joining(", "));
+                return Optional.of(new ShapeExpression("new " + typeName + "(" + joined + ")", typeName));
+            }
+            // Allow identifiers + dotted paths (after :: → . translation).
+            if (!isIdentifier(calleeJava) && !calleeJava.matches("[A-Za-z_][A-Za-z0-9_]*(\\.[A-Za-z_][A-Za-z0-9_]*)+")) {
                 return Optional.empty();
             }
             String joined = argTerms.stream().skip(1).map(ShapeExpression::text).collect(Collectors.joining(", "));
-            return Optional.of(new ShapeExpression(callee + "(" + joined + ")", mapSourceType(context.returnType)));
+            // Function-return-type catalog: look up raw rust type if known,
+            // map to java syntax for the expression's typeName.
+            String returnType = context.lookupReturnType(callee);
+            String javaReturnType = returnType.isBlank() ? "" : mapSourceType(returnType);
+            return Optional.of(new ShapeExpression(calleeJava + "(" + joined + ")", javaReturnType));
+        }
+        if (conceptMatches("concept:field", conceptName) && args.size() == 2) {
+            // args[0]: receiver expression. args[1]: field name leaf.
+            String fieldName = args.get(1).stringFieldOrNull("text");
+            if (fieldName == null || fieldName.isBlank()) return Optional.empty();
+            String receiver = argTerms.get(0).text();
+            return Optional.of(new ShapeExpression(
+                    receiver + "." + fieldName,
+                    mapSourceType(context.returnType)));
+        }
+        if (conceptMatches("concept:index", conceptName) && argTerms.size() == 2) {
+            // Java: array[idx] OR list.get(idx). Default to array form;
+            // collections use method-call concept instead.
+            String receiver = argTerms.get(0).text();
+            String idx = argTerms.get(1).text();
+            return Optional.of(new ShapeExpression(
+                    receiver + "[" + idx + "]",
+                    mapSourceType(context.returnType)));
+        }
+        if (conceptMatches("concept:cast", conceptName) && args.size() == 2) {
+            // args[0]: value. args[1]: type leaf.
+            String typeName = args.get(1).stringFieldOrNull("text");
+            if (typeName == null || typeName.isBlank()) {
+                Optional<ShapeExpression> t = lowerShapeExpression(args.get(1), context, appendPosition(position, 1));
+                if (t.isEmpty()) return Optional.empty();
+                typeName = t.get().text();
+            }
+            // Array indexing in java requires int. `as usize` is rust's
+            // platform-width unsigned; for typical use (indices, sizes),
+            // mapping to int is correct in java (idx must be int).
+            // `as char` on a byte/int returns char; java cast (char) works.
+            String javaType = switch (typeName.trim()) {
+                case "usize", "isize" -> "int";  // array indices want int
+                case "char" -> "char";
+                default -> mapSourceType(typeName);
+            };
+            String value = argTerms.get(0).text();
+            return Optional.of(new ShapeExpression(
+                    "(" + javaType + ") (" + value + ")",
+                    javaType));
+        }
+        if (conceptMatches("concept:closure", conceptName) && !argTerms.isEmpty()) {
+            // Rust walk_rpc emits concept:closure with args=[body, param1,
+            // param2, ...]. Java lambda syntax is (a, b) -> body. Capture
+            // semantics are simplified to lexical capture (java closes over
+            // effectively-final locals).
+            String body = argTerms.get(0).text();
+            String params = argTerms.subList(1, argTerms.size()).stream()
+                    .map(ShapeExpression::text)
+                    .collect(Collectors.joining(", "));
+            // #1391 follow-on: preserve block-form closure surface when the
+            // lift carried closure_block_body=true. Java block-form lambda
+            // is `(params) -> { return body; }` (requires explicit return
+            // since the body's a statement). Round-trips back to
+            // `|e| { body }` on the rust side.
+            Jcs.Json blockBodyJ = args.get(0).get("closure_block_body");
+            boolean blockBody = blockBodyJ instanceof Jcs.Bool bb && bb.value();
+            String lambda = blockBody
+                    ? "(" + params + ") -> { return " + body + "; }"
+                    : "(" + params + ") -> " + body;
+            return Optional.of(new ShapeExpression(
+                    lambda,
+                    mapSourceType(context.returnType)));
+        }
+        // concept:reference / concept:ref (rust &x or &mut x) + concept:deref (*x):
+        // java has neither explicit reference nor deref operators. References
+        // are implicit on objects; deref is a no-op. Pass the inner expression
+        // through. The substrate emits concept:ref with TWO args (inner +
+        // mutability_leaf); the older alias concept:reference has one arg.
+        // #1391 follow-on: emit a `/*@ref*/` (or `/*@ref-mut*/`) marker so
+        // the java lift can recover the original rust `&` annotation on
+        // function-call args. Without this the cycle drops `&x` → `x`.
+        if (conceptMatches("concept:ref", conceptName) && argTerms.size() >= 1) {
+            // Determine mutability from the 2nd arg's "text" if a leaf.
+            String mut = "";
+            if (args.size() >= 2) {
+                String mt = args.get(1).stringFieldOrNull("text");
+                if (mt != null && mt.contains("mut")) mut = "-mut";
+            }
+            ShapeExpression inner = argTerms.get(0);
+            // Skip the marker if the inner is itself already marked (avoid
+            // double-prefix on already-prefixed expressions).
+            String text = inner.text();
+            if (text.startsWith("/*@ref")) {
+                return Optional.of(inner);
+            }
+            return Optional.of(new ShapeExpression(
+                "/*@ref" + mut + "*/" + text,
+                inner.typeName()
+            ));
+        }
+        if ((conceptMatches("concept:reference", conceptName) || conceptMatches("concept:deref", conceptName))
+                && argTerms.size() == 1) {
+            return Optional.of(argTerms.get(0));
         }
         if (conceptMatches("concept:field", conceptName) && args.size() == 2) {
             // args[0]: receiver expression. args[1]: field name leaf.
@@ -1483,9 +2980,49 @@ final class SugarRealizer {
                 return new ShapeExpression(name, typeForArgument(name, context));
             }
         }
+        // Rust lifter emits {kind: "symbol", text: "<ident>"} for variable
+        // references and {kind: "path", text: "<path>"} for fn/type paths.
+        // Both are valid java identifiers (after :: → . translation).
+        if ("symbol".equals(kind) || "path".equals(kind)) {
+            String text = shape.stringFieldOrNull("text");
+            if (text != null && !text.isBlank()) {
+                // Rust → java identifier remaps:
+                // - `Value::Null` (serde_json) → MAPPER.nullNode() (Jackson)
+                // - `null` (placeholder) → null
+                // - rust std type names → java std equivalents
+                String remapped = switch (text) {
+                    case "Value::Null", "Value.Null" -> "MAPPER.nullNode()";
+                    case "Value::as_str" -> "(java.util.function.Function<com.fasterxml.jackson.databind.JsonNode, String>) com.fasterxml.jackson.databind.JsonNode::asText";
+                    case "Value::as_array", "Value.as_array" ->
+                        "(java.util.function.Function<com.fasterxml.jackson.databind.JsonNode, com.fasterxml.jackson.databind.JsonNode>) (n -> n != null && n.isArray() ? n : null)";
+                    case "Value::as_object", "Value.as_object" ->
+                        "(java.util.function.Function<com.fasterxml.jackson.databind.JsonNode, com.fasterxml.jackson.databind.JsonNode>) (n -> n != null && n.isObject() ? n : null)";
+                    case "null" -> "null";
+                    // Bare `str` / `String::to_string` references — convert
+                    // method references to lambdas where java reference syntax
+                    // can't apply.
+                    default -> {
+                        if (text.startsWith("str.")) yield text.replace("str.", "");
+                        yield text
+                                .replace("Value::Null", "MAPPER.nullNode()")
+                                .replace("Value::as_str", "com.fasterxml.jackson.databind.JsonNode::asText")
+                                .replace("Value::", "com.fasterxml.jackson.databind.JsonNode::")
+                                .replace("Vec::", "java.util.ArrayList::")
+                                .replace("BTreeSet::", "java.util.TreeSet::")
+                                .replace("BTreeMap::", "java.util.TreeMap::")
+                                .replace("HashSet::", "java.util.HashSet::")
+                                .replace("HashMap::", "java.util.HashMap::")
+                                .replace("PathBuf::", "java.nio.file.Path::")
+                                .replace("::", ".");
+                    }
+                };
+                return new ShapeExpression(remapped, typeForArgument(remapped, context));
+            }
+        }
         Jcs.Json value = shape.get("value");
         if ("const".equals(kind) || value != null) {
-            return literalTerm(value);
+            String radix = shape.stringFieldOrNull("radix");
+            return literalTermWithRadix(value, radix);
         }
         return context.fallbackLeaf();
     }
@@ -1501,14 +3038,32 @@ final class SugarRealizer {
                 case "mul" -> "(" + left + ") * (" + right + ")";
                 case "div" -> "(" + left + ") / (" + right + ")";
                 case "mod" -> "(" + left + ") % (" + right + ")";
-                case "eq" -> "(" + left + ") == (" + right + ")";
-                case "ne" -> "(" + left + ") != (" + right + ")";
+                case "eq" -> {
+                    // String == in rust is value equality; java needs .equals.
+                    // If either side is a string literal, use Objects.equals
+                    // (handles null + values uniformly).
+                    if (isStringLiteral(left) || isStringLiteral(right)) {
+                        yield "java.util.Objects.equals(" + left + ", " + right + ")";
+                    }
+                    yield "(" + left + ") == (" + right + ")";
+                }
+                case "ne" -> {
+                    if (isStringLiteral(left) || isStringLiteral(right)) {
+                        yield "!java.util.Objects.equals(" + left + ", " + right + ")";
+                    }
+                    yield "(" + left + ") != (" + right + ")";
+                }
                 case "lt" -> "(" + left + ") < (" + right + ")";
                 case "le" -> "(" + left + ") <= (" + right + ")";
                 case "gt" -> "(" + left + ") > (" + right + ")";
                 case "ge" -> "(" + left + ") >= (" + right + ")";
                 case "and" -> "(" + left + ") && (" + right + ")";
                 case "or" -> "(" + left + ") || (" + right + ")";
+                case "bitand" -> "(" + left + ") & (" + right + ")";
+                case "bitor" -> "(" + left + ") | (" + right + ")";
+                case "bitxor" -> "(" + left + ") ^ (" + right + ")";
+                case "shl" -> "(" + left + ") << (" + right + ")";
+                case "shr" -> "(" + left + ") >> (" + right + ")";
                 default -> null;
             };
         }
@@ -1534,9 +3089,633 @@ final class SugarRealizer {
         String op = conceptName.startsWith("concept:") ? conceptName.substring("concept:".length()) : conceptName;
         return switch (op) {
             case "eq", "ne", "lt", "le", "gt", "ge", "and", "or", "not" -> "boolean";
-            case "call" -> mapSourceType(fallbackReturnType);
-            default -> args.isEmpty() ? mapSourceType(fallbackReturnType) : args.get(0).typeName();
+            // Call return type is genuinely unknown without a type DB.
+            // Returning blank lets the caller use `var` (java type
+            // inference) instead of guessing the enclosing function's
+            // return type.
+            case "call" -> "";
+            default -> args.isEmpty() ? "" : args.get(0).typeName();
         };
+    }
+
+    /**
+     * Lower rust's `json!({...})` macro to Jackson ObjectNode construction.
+     * The body is raw rust source text like `{ "k" : "v", "id" : id }`.
+     * For each key:value pair, emit `.put(...)` or `.set(...)` calls on a
+     * fresh ObjectNode. String/number/bool literals → .put(); identifiers
+     * and other expressions → .set() (treated as JsonNode).
+     *
+     * Returns null if the body can't be parsed.
+     */
+    private static int jsonMacroDepth = 0;
+
+    private static String emitJsonMacro(String body, ShapeContext context) {
+        // Unique var name per nested lambda — java forbids shadowing outer
+        // local vars in nested lambdas.
+        int depth = ++jsonMacroDepth;
+        try {
+            return emitJsonMacroInner(body, context, depth);
+        } finally {
+            jsonMacroDepth--;
+        }
+    }
+
+    private static String emitJsonMacroInner(String body, ShapeContext context, int depth) {
+        String objName = "__obj" + depth;
+        String arrName = "__arr" + depth;
+        String trimmed = body.trim();
+        if (trimmed.startsWith("{") && trimmed.endsWith("}")) {
+            String inside = trimmed.substring(1, trimmed.length() - 1).trim();
+            List<String> parts = splitTopLevelCommas(inside);
+            // Use a Supplier-wrapped builder: ObjectNode.set returns JsonNode
+            // in jackson, breaking fluent chains. The Supplier form keeps
+            // each call on the local ObjectNode variable.
+            StringBuilder sb = new StringBuilder();
+            sb.append("((java.util.function.Supplier<com.fasterxml.jackson.databind.JsonNode>)() -> { ");
+            sb.append("com.fasterxml.jackson.databind.node.ObjectNode ").append(objName).append(" = MAPPER.createObjectNode(); ");
+            for (String part : parts) {
+                if (part.isEmpty()) continue;
+                int colon = findTopLevelColon(part);
+                if (colon < 0) return null;
+                String keyText = part.substring(0, colon).trim();
+                String valueText = part.substring(colon + 1).trim();
+                String key = stripQuotes(keyText);
+                if (key == null) return null;
+                if (valueText.startsWith("{") || valueText.startsWith("[")) {
+                    String nested = emitJsonMacro(valueText, context);
+                    if (nested == null) return null;
+                    sb.append("$OBJ$.set(").append(quote(key)).append(", ").append(nested).append("); ");
+                } else if (valueText.startsWith("\"") && valueText.endsWith("\"")) {
+                    sb.append("$OBJ$.put(").append(quote(key)).append(", ").append(valueText).append("); ");
+                } else if (valueText.equals("true") || valueText.equals("false")) {
+                    sb.append("$OBJ$.put(").append(quote(key)).append(", ").append(valueText).append("); ");
+                } else if (valueText.matches("-?\\d+(\\.\\d+)?")) {
+                    sb.append("$OBJ$.put(").append(quote(key)).append(", ").append(valueText).append("); ");
+                } else {
+                    String paramType = typeForArgument(valueText, context);
+                    boolean isPrim = paramType != null && (
+                            "long".equals(paramType) || "int".equals(paramType) ||
+                            "double".equals(paramType) || "float".equals(paramType) ||
+                            "boolean".equals(paramType) || "String".equals(paramType));
+                    boolean isMethodCall = valueText.contains("(") && valueText.contains(")");
+                    if (isPrim) {
+                        sb.append("$OBJ$.put(").append(quote(key)).append(", ").append(valueText).append("); ");
+                    } else if ("com.fasterxml.jackson.databind.JsonNode".equals(paramType)) {
+                        sb.append("$OBJ$.set(").append(quote(key)).append(", ").append(valueText).append("); ");
+                    } else if (isMethodCall) {
+                        // Method-call result of unknown type — wrap via
+                        // MAPPER.valueToTree which accepts String/long/
+                        // double/boolean/JsonNode uniformly.
+                        sb.append("$OBJ$.set(").append(quote(key)).append(", MAPPER.valueToTree(")
+                          .append(valueText).append(")); ");
+                    } else {
+                        // Plain identifier of unknown type — best-effort .set;
+                        // valueToTree wrap if needed at call site.
+                        sb.append("$OBJ$.set(").append(quote(key)).append(", MAPPER.valueToTree(")
+                          .append(valueText).append(")); ");
+                    }
+                }
+            }
+            sb.append("return ").append(objName).append("; }).get()");
+            return sb.toString().replace("$OBJ$", objName);
+        }
+        if (trimmed.startsWith("[") && trimmed.endsWith("]")) {
+            String inside = trimmed.substring(1, trimmed.length() - 1).trim();
+            List<String> parts = splitTopLevelCommas(inside);
+            StringBuilder sb = new StringBuilder();
+            sb.append("((java.util.function.Supplier<com.fasterxml.jackson.databind.JsonNode>)() -> { ");
+            sb.append("com.fasterxml.jackson.databind.node.ArrayNode ").append(arrName).append(" = MAPPER.createArrayNode(); ");
+            for (String part : parts) {
+                String v = part.trim();
+                if (v.isEmpty()) continue;
+                if (v.startsWith("{") || v.startsWith("[")) {
+                    String nested = emitJsonMacro(v, context);
+                    if (nested == null) return null;
+                    sb.append(arrName).append(".add(").append(nested).append("); ");
+                } else {
+                    sb.append(arrName).append(".add(").append(v).append("); ");
+                }
+            }
+            sb.append("return ").append(arrName).append("; }).get()");
+            return sb.toString();
+        }
+        return null;
+    }
+
+    /**
+     * Lower rust's `format!(...)` macro. Body looks like:
+     *   `"text {} text", expr1, expr2`
+     * Translate to java String.format with %s placeholders.
+     */
+    private static String emitFormatMacro(String body, ShapeContext context) {
+        List<String> parts = splitTopLevelCommas(body.trim());
+        if (parts.isEmpty()) return null;
+        String fmt = parts.get(0).trim();
+        if (!fmt.startsWith("\"") || !fmt.endsWith("\"")) return null;
+        // Replace rust {} placeholders with java %s. {:?} debug uses
+        // String.valueOf in java since there's no built-in debug format.
+        String javaFmt = fmt.replace("{}", "%s").replace("{:?}", "%s");
+        StringBuilder sb = new StringBuilder();
+        sb.append("String.format(").append(javaFmt);
+        for (int i = 1; i < parts.size(); i++) {
+            sb.append(", ").append(parts.get(i).trim());
+        }
+        sb.append(")");
+        return sb.toString();
+    }
+
+    /** Split a string on commas at top nesting level (depth 0 of {} [] () "")  */
+    private static List<String> splitTopLevelCommas(String s) {
+        List<String> out = new ArrayList<>();
+        int depth = 0;
+        boolean inString = false;
+        int start = 0;
+        for (int i = 0; i < s.length(); i++) {
+            char c = s.charAt(i);
+            if (inString) {
+                if (c == '\\' && i + 1 < s.length()) { i++; continue; }
+                if (c == '"') inString = false;
+                continue;
+            }
+            switch (c) {
+                case '"' -> inString = true;
+                case '{', '[', '(' -> depth++;
+                case '}', ']', ')' -> depth--;
+                case ',' -> {
+                    if (depth == 0) {
+                        out.add(s.substring(start, i));
+                        start = i + 1;
+                    }
+                }
+                default -> {}
+            }
+        }
+        if (start < s.length()) out.add(s.substring(start));
+        return out;
+    }
+
+    /** Find the first top-level colon (not inside quotes/brackets). */
+    private static int findTopLevelColon(String s) {
+        int depth = 0;
+        boolean inString = false;
+        for (int i = 0; i < s.length(); i++) {
+            char c = s.charAt(i);
+            if (inString) {
+                if (c == '\\' && i + 1 < s.length()) { i++; continue; }
+                if (c == '"') inString = false;
+                continue;
+            }
+            switch (c) {
+                case '"' -> inString = true;
+                case '{', '[', '(' -> depth++;
+                case '}', ']', ')' -> depth--;
+                case ':' -> { if (depth == 0) return i; }
+                default -> {}
+            }
+        }
+        return -1;
+    }
+
+    /** Strip surrounding quotes from a string literal. Returns the inner
+     *  text or null if not a valid quoted string. */
+    private static String stripQuotes(String s) {
+        String t = s.trim();
+        if (t.length() >= 2 && t.startsWith("\"") && t.endsWith("\"")) {
+            return t.substring(1, t.length() - 1);
+        }
+        return null;
+    }
+
+    private static String quote(String s) {
+        StringBuilder sb = new StringBuilder("\"");
+        for (int i = 0; i < s.length(); i++) {
+            char c = s.charAt(i);
+            switch (c) {
+                case '"' -> sb.append("\\\"");
+                case '\\' -> sb.append("\\\\");
+                case '\n' -> sb.append("\\n");
+                case '\t' -> sb.append("\\t");
+                default -> sb.append(c);
+            }
+        }
+        sb.append('"');
+        return sb.toString();
+    }
+
+    /** True iff the outer `(` matches the outer `)` (i.e. no unbalanced
+     *  closing inside that would split the expression). */
+    private static boolean matchingOuterParens(String s) {
+        if (s.length() < 2 || s.charAt(0) != '(' || s.charAt(s.length() - 1) != ')') return false;
+        int depth = 0;
+        boolean inString = false;
+        for (int i = 0; i < s.length(); i++) {
+            char c = s.charAt(i);
+            if (inString) {
+                if (c == '\\' && i + 1 < s.length()) { i++; continue; }
+                if (c == '"') inString = false;
+                continue;
+            }
+            if (c == '"') { inString = true; continue; }
+            if (c == '(') depth++;
+            else if (c == ')') {
+                depth--;
+                if (depth == 0 && i < s.length() - 1) return false;
+            }
+        }
+        return depth == 0;
+    }
+
+    /** True iff every non-wildcard match arm has a string-literal pattern. */
+    private static boolean allPatternsStringLiteral(List<Jcs.Obj> matchArgs) {
+        boolean anyStringPattern = false;
+        for (int i = 1; i < matchArgs.size(); i++) {
+            Jcs.Obj arm = matchArgs.get(i);
+            if (!"concept:match-arm".equals(shapeConceptName(arm))) continue;
+            List<Jcs.Obj> armArgs = shapeArgs(arm);
+            if (armArgs.size() < 2) continue;
+            String pat = armArgs.get(0).stringFieldOrNull("text");
+            if (pat == null) return false;
+            pat = pat.trim();
+            if ("_".equals(pat)) continue;  // wildcard ok
+            if (isStringLiteral(pat)) { anyStringPattern = true; continue; }
+            return false;
+        }
+        return anyStringPattern;
+    }
+
+    /** Extract a tuple's element type at index `idx` from a rust tuple type
+     *  string like `(JsonNode, boolean)`. Returns null if can't parse. */
+    private static String tupleElementType(String tupleType, int idx) {
+        String t = tupleType.trim();
+        if (!t.startsWith("(") || !t.endsWith(")")) return null;
+        String inner = t.substring(1, t.length() - 1).trim();
+        // Split top-level commas.
+        java.util.List<String> elems = new java.util.ArrayList<>();
+        int depth = 0;
+        int start = 0;
+        for (int i = 0; i < inner.length(); i++) {
+            char c = inner.charAt(i);
+            if (c == '<' || c == '(' || c == '[') depth++;
+            else if (c == '>' || c == ')' || c == ']') depth--;
+            else if (c == ',' && depth == 0) {
+                elems.add(inner.substring(start, i).trim());
+                start = i + 1;
+            }
+        }
+        if (start < inner.length()) elems.add(inner.substring(start).trim());
+        if (idx < 0 || idx >= elems.size()) return null;
+        return elems.get(idx);
+    }
+
+    /** Extract the called function name from a text like `handle_line(line, adapter)`.
+     *  Returns null if not a simple call. */
+    private static String extractCalledFnName(String text) {
+        if (text == null) return null;
+        int paren = text.indexOf('(');
+        if (paren <= 0) return null;
+        String head = text.substring(0, paren).trim();
+        if (head.matches("[A-Za-z_][A-Za-z0-9_]*")) return head;
+        return null;
+    }
+
+    /** Apply a function-like expression `fn` to a single argument expression.
+     *  Handles three forms: lambda (inlined by substitution), known str-conv
+     *  refs (identity-like), generic method refs (Function cast + apply). */
+    private static String applyFnToReceiver(String fn, String arg) {
+        if (fn == null) return arg;
+        String t = fn.trim();
+        if (t.contains("->")) {
+            java.util.regex.Matcher m = java.util.regex.Pattern.compile(
+                "^\\s*\\(?\\s*([A-Za-z_][A-Za-z0-9_]*)\\s*\\)?\\s*->\\s*(.+)$"
+            ).matcher(t);
+            if (m.find()) {
+                return replaceIdentifier(m.group(2).trim(), m.group(1), arg);
+            }
+        }
+        if ("str.to_string".equals(t) || "String.to_string".equals(t)
+                || t.endsWith(".to_string") || t.equals("String.valueOf")) {
+            return "String.valueOf(" + arg + ")";
+        }
+        // Method ref (Type::method or instance::method) — apply via Function.
+        return "((java.util.function.Function)(" + t + ")).apply(" + arg + ")";
+    }
+
+    /** Escape a payload expression for embedding inside a citation
+     *  comment. Replaces the close-comment sequence with a safe form
+     *  so the comment never terminates early. Reversible by round-
+     *  trip lifters. */
+    private static String escapeForComment(String s) {
+        if (s == null) return "";
+        // Escape BOTH comment-start and comment-end so that payloads
+        // already containing citation comments don't break parsing.
+        return s.replace("*/", "*_/").replace("/*", "/_*")
+                .replace("\n", " ").replace("\r", " ");
+    }
+
+    /** Extract the binding variable from a pattern leaf's text. Examples:
+     *  "Some(line)" → "line", "Ok(v)" → "v", "(a, b)" → "a" (first only),
+     *  "x" → "x". Used by concept:while-let / concept:if-let to derive the
+     *  java variable name from the source-language pattern. */
+    private static String extractPatternBinding(String patternText) {
+        if (patternText == null) return null;
+        String t = patternText.trim();
+        // Strip trailing guard: "Pattern if cond" → "Pattern"
+        int ifIdx = t.indexOf(" if ");
+        if (ifIdx > 0) t = t.substring(0, ifIdx).trim();
+        // Match Constructor(inner) — Some(line), Ok(v), Err(e), etc.
+        int paren = t.indexOf('(');
+        if (paren > 0) {
+            // Find matching close
+            int depth = 0;
+            int close = -1;
+            for (int i = paren; i < t.length(); i++) {
+                char c = t.charAt(i);
+                if (c == '(') depth++;
+                else if (c == ')') {
+                    depth--;
+                    if (depth == 0) { close = i; break; }
+                }
+            }
+            if (close > paren) {
+                String inner = t.substring(paren + 1, close).trim();
+                // For multi-elem patterns (tuples, nested) take first.
+                int comma = inner.indexOf(',');
+                if (comma > 0) inner = inner.substring(0, comma).trim();
+                // Recurse into nested patterns: "Variant(x)" → "x"
+                return extractPatternBinding(inner);
+            }
+        }
+        // Bare identifier or fallback.
+        // Java identifier rules: letters, digits, _, $. First char letter/_.
+        // The pattern might have leading whitespace or `mut` qualifier.
+        t = t.replaceFirst("^mut\\s+", "");
+        // Strip refs: "&v" → "v"
+        t = t.replaceFirst("^&\\s*(mut\\s+)?", "");
+        return t.isBlank() ? null : t;
+    }
+
+    /** Escape a string for inclusion in a JSON literal. Used to embed
+     *  the substrate-signature metadata in the @sugar header comment. */
+    private static String jsonStringEscape(String s) {
+        if (s == null) return "";
+        StringBuilder sb = new StringBuilder(s.length() + 4);
+        for (int i = 0; i < s.length(); i++) {
+            char c = s.charAt(i);
+            switch (c) {
+                case '\\': sb.append("\\\\"); break;
+                case '"':  sb.append("\\\""); break;
+                case '\n': sb.append("\\n"); break;
+                case '\r': sb.append("\\r"); break;
+                case '\t': sb.append("\\t"); break;
+                default:
+                    if (c < 0x20) {
+                        sb.append(String.format("\\u%04x", (int) c));
+                    } else {
+                        sb.append(c);
+                    }
+            }
+        }
+        return sb.toString();
+    }
+
+    /** True iff text looks like a java string literal (starts + ends with "). */
+    private static boolean isStringLiteral(String s) {
+        if (s == null) return false;
+        String t = s.trim();
+        return t.length() >= 2 && t.startsWith("\"") && t.endsWith("\"");
+    }
+
+    /** Lower a concept:match in statement-position assigning each arm's
+     *  body to `targetName`. Arms whose bodies are control-flow
+     *  statements (return/break/continue) are emitted as such. Returns
+     *  the full block (declaration of target + if-else chain) or null
+     *  if the shape can't be lowered. */
+    private static String lowerMatchAsAssignmentTo(
+            String targetName, Jcs.Obj matchShape, ShapeContext context, List<Integer> position) {
+        List<Jcs.Obj> args = shapeArgs(matchShape);
+        if (args.size() < 2) return null;
+        Optional<ShapeExpression> scrut = lowerShapeExpression(args.get(0), context, appendPosition(position, 0));
+        if (scrut.isEmpty()) return null;
+        String scrutVar = context.tempName();
+        context.definedSymbols.add(scrutVar);
+        StringBuilder out = new StringBuilder();
+        out.append("var ").append(scrutVar).append(" = ").append(scrut.get().text()).append(";\n");
+        // Declare target with scrut's inferred type if available; else
+        // JsonNode (most common Ok-arm case for json_parse / Value::Object).
+        String targetType = scrut.get().typeName();
+        if (targetType == null || targetType.isBlank() || "Object".equals(targetType)) {
+            targetType = "com.fasterxml.jackson.databind.JsonNode";
+        }
+        out.append(targetType).append(" ").append(targetName).append(";\n");
+        boolean defaultSeen = false;
+        int armIdx = 0;
+        for (int i = 1; i < args.size(); i++) {
+            Jcs.Obj arm = args.get(i);
+            if (!conceptMatches("concept:match-arm", shapeConceptName(arm))) continue;
+            List<Jcs.Obj> armArgs = shapeArgs(arm);
+            if (armArgs.size() < 2) continue;
+            String patternText = armArgs.get(0).stringFieldOrNull("text");
+            if (patternText == null) patternText = "";
+            patternText = patternText.trim();
+            String boundVar = bindingFromPattern(patternText);
+            if (boundVar != null) context.definedSymbols.add(boundVar);
+            String cond = patternToCondition(patternText, scrutVar);
+            // Try body as a STATEMENT (control-flow). Fall back to expression.
+            Optional<String> bodyStmt = lowerShapeBody(armArgs.get(1), context, appendPosition(position, i));
+            String bodyEmit;
+            if (bodyStmt.isPresent()) {
+                bodyEmit = bodyStmt.get();
+                if (boundVar != null) bodyEmit = replaceIdentifier(bodyEmit, boundVar, scrutVar);
+            } else {
+                Optional<ShapeExpression> bodyExpr = lowerShapeExpression(armArgs.get(1), context, appendPosition(position, i));
+                if (bodyExpr.isEmpty()) return null;
+                String bodyText = bodyExpr.get().text();
+                if (boundVar != null) {
+                    String sub = patternBindingExpression(patternText, scrutVar);
+                    bodyText = replaceIdentifier(bodyText, boundVar, sub);
+                }
+                bodyEmit = targetName + " = " + bodyText + ";";
+            }
+            if ("true".equals(cond)) {
+                if (armIdx == 0) {
+                    out.append(bodyEmit);
+                } else {
+                    out.append(" else {\n    ").append(bodyEmit).append("\n}");
+                }
+                defaultSeen = true;
+                break;
+            }
+            if (armIdx == 0) out.append("if (").append(cond).append(") {\n");
+            else out.append(" else if (").append(cond).append(") {\n");
+            out.append("    ").append(bodyEmit).append("\n}");
+            armIdx++;
+        }
+        if (!defaultSeen && armIdx > 0) {
+            // Rust match was exhaustive (no wildcard); java's ternary
+            // chain needs an else. Substrate-honest citation: the round-
+            // trip lifter sees @concept match:exhaustive-no-default and
+            // reconstructs the source as an exhaustive match. The panic
+            // is unreachable in the well-formed case so (A) recoverable
+            // + (B) runtime-equivalent — LOSSLESS, not lossy.
+            // Substrate.unreachable carries the concept identity at
+            // runtime — both the citation and the call surface name it.
+            out.append(" else { /*@concept concept:exhaustive-match-no-default*/")
+               .append(" ").append(targetName)
+               .append(" = com.provekit.runtime.Substrate.unreachable(\"exhaustive match without arm: ")
+               .append(targetName).append("\"); }");
+        }
+        return out.toString();
+    }
+
+    /** Map common rust method names to java equivalents. Falls through to identity. */
+    private static String mapRustMethodToJava(String rustMethod) {
+        return switch (rustMethod) {
+            case "to_string" -> "toString";
+            case "to_owned" -> "toString";
+            case "len" -> "length";
+            case "push_str" -> "append";
+            case "push" -> "append";
+            case "is_empty" -> "isEmpty";
+            case "starts_with" -> "startsWith";
+            case "ends_with" -> "endsWith";
+            case "contains" -> "contains";
+            case "is_null" -> "isNull";
+            case "as_str" -> "asText";
+            case "as_array" -> "elements";
+            case "field_names" -> "fieldNames";
+            // .cloned() on Option<&T> in rust is null-safe (None → None,
+            // Some(&t) → Some(t.clone())). In our java erasure where
+            // Option<T> = T-or-null and references are already shared,
+            // .cloned() is a no-op. Mapping to .deepCopy() throws NPE
+            // on null receivers; treat as identity instead.
+            case "cloned" -> "_provekit_identity";
+            default -> rustMethod;
+        };
+    }
+
+    /** For a pattern like `Some(v)`, `Ok(v)`, `Err(e)`, etc., return the
+     *  java expression that yields the bound value FROM the scrutinee.
+     *  - Some(v)/None: scrut itself (Option<T> erased to T-or-null).
+     *  - Ok(v) on Result carrier: ((Result.Ok) scrut).value().
+     *  - Err(e) on Result carrier: ((Result.Err) scrut).error().
+     *  - Nested enum-variant: String.valueOf(scrut) as a best-effort
+     *    (callers that need variant identity should match SumVariant).
+     */
+    private static String patternBindingExpression(String pattern, String scrutVar) {
+        String t = pattern.trim();
+        int ifIdx = t.indexOf(" if ");
+        if (ifIdx > 0) t = t.substring(0, ifIdx).trim();
+        if (t.matches("^Ok\\s*\\(.*\\)$")) {
+            // Nested variant inside Ok — rare for Result; treat as Ok(v)
+            // and return scrut.unwrap() (callers do further pattern work).
+            return scrutVar + ".unwrap()";
+        }
+        if (t.matches("^Err\\s*\\(.*\\)$")) {
+            // Nested Err: `Err(Type::Variant(payload))` — the bound name
+            // inside is the variant's payload, not the whole error.
+            // Extract via SumVariant.payload().
+            if (patternHasNestedBinding(t)) {
+                // Variant payload is typed Object in SumVariant — wrap
+                // in String.valueOf so use sites expecting String don't
+                // fail. For non-String payloads downstream callers can
+                // cast as needed.
+                return "String.valueOf(((com.provekit.runtime.SumVariant) " + scrutVar
+                    + ".unwrapErr()).payload())";
+            }
+            return scrutVar + ".unwrapErr()";
+        }
+        if (patternHasNestedBinding(t)) {
+            return "String.valueOf(" + scrutVar + ")";
+        }
+        return scrutVar;
+    }
+
+    /** True iff the pattern contains a nested enum-variant binding like
+     *  `Err(LiftError::Internal(msg))`. Nested binds typically destructure
+     *  a String-typed enum variant payload, so the substitution wraps the
+     *  scrutinee in String.valueOf for safety. */
+    private static boolean patternHasNestedBinding(String pattern) {
+        String t = pattern.trim();
+        int ifIdx = t.indexOf(" if ");
+        if (ifIdx > 0) t = t.substring(0, ifIdx).trim();
+        return t.matches("^(?:Some|Ok|Err)\\s*\\(\\s*[A-Z].*\\(\\s*[A-Za-z_][A-Za-z0-9_]*\\s*\\)\\s*\\)$")
+            || java.util.regex.Pattern.compile("::").matcher(t).find();
+    }
+
+    /** For pattern text like `Some(v)` or `Ok(x)` or bare identifier `other`
+     *  or nested `Err(Type::Variant(msg))`, return the bound var. */
+    private static String bindingFromPattern(String pattern) {
+        String t = pattern.trim();
+        // Strip guard before checking.
+        int ifIdx = t.indexOf(" if ");
+        if (ifIdx > 0) t = t.substring(0, ifIdx).trim();
+        // Outer Variant(name) form.
+        java.util.regex.Matcher m = java.util.regex.Pattern.compile(
+            "^(?:Some|Ok|Err|None)\\s*\\(\\s*([A-Za-z_][A-Za-z0-9_]*)\\s*\\)$"
+        ).matcher(t);
+        if (m.find()) return m.group(1);
+        // Nested: `Err(Type::Variant(x))` or `Some(Inner(x))` — pull
+        // the innermost ident.
+        java.util.regex.Matcher nested = java.util.regex.Pattern.compile(
+            "\\(\\s*([A-Za-z_][A-Za-z0-9_]*)\\s*\\)\\s*\\)\\s*$"
+        ).matcher(t);
+        if (nested.find()) return nested.group(1);
+        // Bare identifier (rust catch-all binding like `other => ...`).
+        if (t.matches("^[A-Za-z_][A-Za-z0-9_]*$") && !t.equals("_") && !t.equals("None")) {
+            return t;
+        }
+        return null;
+    }
+
+    /**
+     * Translate a rust match pattern to a java boolean condition over the
+     * scrutinee variable. Returns "true" for wildcards (always-match),
+     * a java boolean expression otherwise, or "true" as best-effort fallback.
+     */
+    private static String patternToCondition(String pattern, String scrutVar) {
+        String t = pattern.trim();
+        // Strip guard (`Some(v) if cond`) — guards aren't directly
+        // representable in a chained-ternary form; treat as condition.
+        String guardCond = null;
+        int ifIdx = t.indexOf(" if ");
+        if (ifIdx > 0) {
+            guardCond = t.substring(ifIdx + 4).trim();
+            t = t.substring(0, ifIdx).trim();
+        }
+        String baseCond;
+        if ("_".equals(t)) {
+            baseCond = "true";
+        } else if ("None".equals(t)) {
+            baseCond = "(" + scrutVar + " == null)";
+        } else if (t.matches("^Some\\s*\\(.*\\)$")) {
+            // Option<T> erased to T-or-null. Some = non-null.
+            baseCond = "(" + scrutVar + " != null)";
+        } else if (t.matches("^Ok\\s*\\(.*\\)$")) {
+            // Result<T,E> carrier — Ok = isOk(). Fallback to (!= null)
+            // if scrut isn't actually a Result (defensive).
+            baseCond = "(" + scrutVar + " instanceof com.provekit.runtime.Result.Ok)";
+        } else if (t.matches("^Err\\s*\\(.*\\)$")) {
+            // Result<T,E> carrier — Err = isErr().
+            baseCond = "(" + scrutVar + " instanceof com.provekit.runtime.Result.Err)";
+        } else if (t.matches("^\".*\"$")) {
+            // String literal pattern → equality check.
+            baseCond = "(" + scrutVar + " != null && " + scrutVar + ".equals(" + t + "))";
+        } else if (t.matches("^-?\\d+(\\.\\d+)?$")) {
+            // Numeric literal pattern.
+            baseCond = "((" + scrutVar + ") == (" + t + "))";
+        } else {
+            // Bare identifier or unknown — wildcard-equivalent.
+            baseCond = "true";
+        }
+        if (guardCond != null) {
+            return baseCond + " && (" + guardCond + ")";
+        }
+        return baseCond;
+    }
+
+    /** Replace whole-word identifier `from` with `to` in text. */
+    private static String replaceIdentifier(String text, String from, String to) {
+        return text.replaceAll("(?<![A-Za-z0-9_])" + java.util.regex.Pattern.quote(from) + "(?![A-Za-z0-9_])", java.util.regex.Matcher.quoteReplacement(to));
     }
 
     private static String localDeclaration(String returnType, String name, String expression, boolean alreadyDefined) {
@@ -1544,10 +3723,146 @@ final class SugarRealizer {
             return name + " = " + expression + ";";
         }
         String type = mapSourceType(returnType);
-        if ("void".equals(type)) {
-            type = "Object";
+        // Use `var` for type inference when the type isn't known or would
+        // be wrong (void function with non-void value, Object fallback).
+        // Java 10+ supports var for local variables; the compiler infers
+        // from RHS, which is correct for `let x = call_returning_String()`.
+        if ("void".equals(type) || "Object".equals(type) || type.isBlank()) {
+            return "var " + name + " = " + expression + ";";
         }
         return type + " " + name + " = " + expression + ";";
+    }
+
+    /**
+     * Map a rust variant path (like `Value::Object`, `Value::String`) to
+     * its corresponding java type for use in java 17 instanceof-pattern
+     * `if (scrut instanceof <JavaType> binding)`. Returns null for
+     * unrecognized variants so the if-let lower falls back to nullness.
+     *
+     * libprovekit-rpc-cross-platform corpus: `Value::Object` is a
+     * serde_json::Map → Jackson's ObjectNode. Other Value variants map
+     * to their Jackson equivalents.
+     */
+    private static String rustVariantToJavaType(String variantPath) {
+        if (variantPath == null) return null;
+        switch (variantPath) {
+            case "Value::Object":
+                return "com.fasterxml.jackson.databind.node.ObjectNode";
+            case "Value::Array":
+                return "com.fasterxml.jackson.databind.node.ArrayNode";
+            case "Value::String":
+                return "com.fasterxml.jackson.databind.node.TextNode";
+            case "Value::Bool":
+                return "com.fasterxml.jackson.databind.node.BooleanNode";
+            case "Value::Number":
+                return "com.fasterxml.jackson.databind.node.NumericNode";
+            case "Value::Null":
+                return "com.fasterxml.jackson.databind.node.NullNode";
+            default:
+                return null;
+        }
+    }
+
+    /**
+     * Map a rust-source explicit `let_type` annotation (as captured by the
+     * rust lift, e.g. `"Vec < String >"`, `"BTreeSet < String >"`) to its
+     * java-syntax equivalent for the declaration. Returns empty string for
+     * unrecognized types so the caller falls back to value-inferred type.
+     *
+     * The mapping is the inverse of `java_type_to_rust_let_annotation` in
+     * provekit-realize-rust-core: java lift re-extracts the type from
+     * the declaration site, rust realize maps back, and the rust source's
+     * annotation comes through byte-identical.
+     */
+    private static String rustLetTypeToJava(String letTypeRaw) {
+        if (letTypeRaw == null) return "";
+        // Normalize internal whitespace (syn token-stream emits `Vec < String >`
+        // with spaces around angle brackets).
+        String t = letTypeRaw
+                .replace("< ", "<")
+                .replace(" >", ">")
+                .replace(" <", "<")
+                .replace("> ", ">")
+                .trim();
+        if (t.isEmpty()) return "";
+        // Split into head + generic params (top-level only).
+        int lt = t.indexOf('<');
+        String head;
+        String params = null;
+        if (lt < 0) {
+            head = t;
+        } else {
+            int gt = t.lastIndexOf('>');
+            if (gt < lt) return "";
+            head = t.substring(0, lt).trim();
+            params = t.substring(lt + 1, gt).trim();
+        }
+        String container;
+        switch (head) {
+            case "Vec":
+                container = "java.util.List";
+                break;
+            case "BTreeSet":
+                container = "java.util.TreeSet";
+                break;
+            case "HashSet":
+                container = "java.util.HashSet";
+                break;
+            case "HashMap":
+                container = "java.util.HashMap";
+                break;
+            case "BTreeMap":
+                container = "java.util.TreeMap";
+                break;
+            default:
+                return "";
+        }
+        if (params == null || params.isEmpty()) {
+            return container;
+        }
+        // Split params at top-level commas (handle nested generics).
+        java.util.List<String> parts = new java.util.ArrayList<>();
+        StringBuilder cur = new StringBuilder();
+        int depth = 0;
+        for (int i = 0; i < params.length(); i++) {
+            char ch = params.charAt(i);
+            if (ch == '<') { depth++; cur.append(ch); }
+            else if (ch == '>') { depth--; cur.append(ch); }
+            else if (ch == ',' && depth == 0) {
+                parts.add(cur.toString().trim());
+                cur.setLength(0);
+            } else {
+                cur.append(ch);
+            }
+        }
+        if (cur.length() > 0) parts.add(cur.toString().trim());
+        java.util.List<String> mapped = new java.util.ArrayList<>();
+        for (String p : parts) {
+            mapped.add(mapRustParamToJava(p));
+        }
+        return container + "<" + String.join(", ", mapped) + ">";
+    }
+
+    private static String mapRustParamToJava(String p) {
+        String s = p.trim();
+        switch (s) {
+            case "String":
+            case "str":
+            case "&str":
+                return "String";
+            case "i64":
+            case "u64":
+                return "Long";
+            case "i32":
+            case "u32":
+                return "Integer";
+            case "Value":
+            case "serde_json::Value":
+                return "com.fasterxml.jackson.databind.JsonNode";
+            default:
+                // For unrecognized inner types, pass through verbatim.
+                return s;
+        }
     }
 
     private static String shapeConceptName(Jcs.Obj shape) {
@@ -1649,11 +3964,24 @@ final class SugarRealizer {
     }
 
     private static ShapeExpression literalTerm(Jcs.Json value) {
+        return literalTermWithRadix(value, null);
+    }
+
+    /** #1391 follow-on: preserve source radix when emitting int literals
+     *  so the rust→java→rust round-trip produces byte-identical hex literals. */
+    private static ShapeExpression literalTermWithRadix(Jcs.Json value, String radix) {
         if (value instanceof Jcs.Bool b) {
             return new ShapeExpression(Boolean.toString(b.value()), "boolean");
         }
         if (value instanceof Jcs.Num n) {
-            return new ShapeExpression(Long.toString(n.value()), "int");
+            long v = n.value();
+            String text = switch (radix == null ? "dec" : radix) {
+                case "hex" -> String.format("0x%02X", v);
+                case "oct" -> "0" + Long.toOctalString(v);
+                case "bin" -> "0b" + Long.toBinaryString(v);
+                default -> Long.toString(v);
+            };
+            return new ShapeExpression(text, "int");
         }
         if (value instanceof Jcs.Str s) {
             return new ShapeExpression(JsonUtil.quoted(s.value()), "String");
@@ -1670,7 +3998,12 @@ final class SugarRealizer {
                 return i < context.paramTypes.size() ? mapSourceType(context.paramTypes.get(i)) : "";
             }
         }
-        return mapSourceType(context.returnType);
+        // For unknown symbols (not a param), return blank — let callers
+        // fall back to var inference / valueToTree wrap. Falling back to
+        // context.returnType was wrong: it caused json! macros to treat
+        // `adapter.name()` (String result) as the function's return type
+        // (JsonNode), choosing the wrong .set/.put branch.
+        return "";
     }
 
     private static boolean isIdentifier(String value) {

@@ -10,6 +10,67 @@ use serde_json::{json, Value};
 
 pub mod platform_semantics;
 
+/// Catalog-driven operation-realization lookup (#1391). Loads realization
+/// mementos from menagerie/concept-shapes/catalog/realizations/ at first
+/// use; maps concept_name → rhs_op_name for target_lang=rust. The catalog
+/// is the single source of truth; emit_kit_rust_op (below) is keyed off
+/// the rhs op name and is the only remaining kit-specific code.
+pub mod operation_realization_catalog {
+    use std::collections::HashMap;
+    use std::sync::OnceLock;
+
+    static RUST_OP_MAP: OnceLock<HashMap<String, String>> = OnceLock::new();
+    static RUST_REVERSE_MAP: OnceLock<HashMap<String, String>> = OnceLock::new();
+
+    pub fn rust_op_for(concept_name: &str) -> Option<String> {
+        let map = RUST_OP_MAP.get_or_init(|| build_map("rust"));
+        map.get(concept_name).cloned()
+    }
+
+    /// Reverse: rust kit-op name → concept_name. Used by the lift side.
+    pub fn concept_for_rust_op(kit_op_name: &str) -> Option<String> {
+        let reverse = RUST_REVERSE_MAP.get_or_init(|| {
+            let forward = RUST_OP_MAP.get_or_init(|| build_map("rust"));
+            let mut rev = HashMap::new();
+            for (k, v) in forward.iter() { rev.entry(v.clone()).or_insert_with(|| k.clone()); }
+            rev
+        });
+        reverse.get(kit_op_name).cloned()
+    }
+
+    fn build_map(target_lang: &str) -> HashMap<String, String> {
+        let mut out = HashMap::new();
+        // Walk up from CWD to find menagerie/.
+        let cwd = std::env::current_dir().unwrap_or_else(|_| std::path::PathBuf::from("."));
+        let mut root: Option<std::path::PathBuf> = None;
+        let mut p: Option<&std::path::Path> = Some(cwd.as_path());
+        while let Some(cur) = p {
+            if cur.join("menagerie").is_dir() { root = Some(cur.to_path_buf()); break; }
+            p = cur.parent();
+        }
+        let Some(root) = root else { return out; };
+        let realizations_dir = root.join("menagerie/concept-shapes/catalog/realizations");
+        let Ok(entries) = std::fs::read_dir(&realizations_dir) else { return out; };
+        for entry in entries.flatten() {
+            let path = entry.path();
+            let Some(name) = path.file_name().and_then(|s| s.to_str()) else { continue; };
+            if !name.ends_with(".json") { continue; }
+            let Ok(raw) = std::fs::read_to_string(&path) else { continue; };
+            let Ok(doc) = serde_json::from_str::<serde_json::Value>(&raw) else { continue; };
+            let Some(memento) = doc.get("memento") else { continue; };
+            if memento.get("role").and_then(|v| v.as_str()) != Some("abstraction-realization") { continue; }
+            if memento.get("target_lang").and_then(|v| v.as_str()) != Some(target_lang) { continue; }
+            let Some(post) = memento.get("post") else { continue; };
+            let lhs_name = post.get("lhs").and_then(|v| v.get("name")).and_then(|v| v.as_str());
+            let rhs_name = post.get("rhs").and_then(|v| v.get("name")).and_then(|v| v.as_str());
+            if let (Some(l), Some(r)) = (lhs_name, rhs_name) {
+                out.entry(l.to_string()).or_insert_with(|| r.to_string());
+            }
+        }
+        out
+    }
+}
+
 const BODY_TEMPLATE_REL: &str =
     "menagerie/rust-language-signature/specs/body-templates/rust-canonical-bodies.json";
 const RETURN_OP_CID: &str = "blake3-512:776d417c66325df1d40e3e0fd7331195e2b1d14f9c30b5984030f21aa8b6b38b3eb81ee3dddd46716003275c9960022e2273dd8efb0110bacc5719811ee18dc6";
@@ -173,14 +234,23 @@ pub fn emit_from_term_shape_with_bindings(
         }
     }
     match lower_term_shape_body(term_shape, &mut context, &[]) {
-        Some(body) => emit_function(
-            function_name,
-            params,
-            param_types,
-            return_type,
-            &body,
-            false,
-        ),
+        Some(body) => {
+            // #1391 follow-on: post-pass mut inference. When a local binding
+            // is later used as the receiver of a mutating method call
+            // (.push, .insert, .push_str, .set, .append, .add), promote its
+            // `let X = ...` to `let mut X = ...`. The lift side often loses
+            // mut markers in cross-language round-trips; this recovers them
+            // structurally from usage.
+            let body = infer_let_mut(&body);
+            emit_function(
+                function_name,
+                params,
+                param_types,
+                return_type,
+                &body,
+                false,
+            )
+        },
         None => emit_stub(
             function_name,
             params,
@@ -353,13 +423,48 @@ fn lower_term_shape_body(
         let returns_non_unit = map_source_type(&context.return_type) != "()";
         for (index, child) in children.iter().enumerate() {
             let child_position = append_position(position, index);
+            // #1391 follow-on: blank-line carrier — emit an empty line
+            // entry. The join("\n") in the function-body assembler turns
+            // it into a single blank line, matching rust source's
+            // paragraph-style separators. One marker per gap.
+            if term_shape_concept_name(child).as_deref() == Some("concept:blank-line") {
+                lines.push(String::new());
+                continue;
+            }
+            // Tail-expression preference: when this is the LAST child of
+            // the function-root seq AND the function returns non-unit,
+            // try the EXPRESSION form first (no `;`). This matches rust's
+            // tail-expression convention — `Ok(build_ir_document(...))`
+            // as the last line, not `Ok(...);` followed by a synthesized
+            // tail. Falls through to body form if expression-lift fails.
+            let is_function_tail = position.is_empty()
+                && index == last_index
+                && returns_non_unit;
+            if is_function_tail {
+                if let Some(expr) = lower_term_shape_expression(child, context, &child_position) {
+                    context.last_assigned_symbol = None;
+                    lines.push(expr.text);
+                    continue;
+                }
+            }
             if let Some(child_body) = lower_term_shape_body(child, context, &child_position) {
                 if !child_body.is_empty() {
                     lines.push(child_body);
                 }
                 continue;
             }
-            let expression = lower_term_shape_expression(child, context, &child_position)?;
+            // #1391 follow-on: tolerant seq lowering. When a child can't
+            // be lowered (java lift gap), emit a TODO comment instead of
+            // failing the whole function. The remaining children still
+            // lower; the cycle produces partial output with explicit gaps.
+            let expression = match lower_term_shape_expression(child, context, &child_position) {
+                Some(e) => e,
+                None => {
+                    let concept = term_shape_concept_name(child).unwrap_or_else(|| "?".into());
+                    lines.push(format!("// TODO(lower): un-lowered {}", concept));
+                    continue;
+                }
+            };
             // Last-child tail-expression form for non-unit returning fns:
             // emit the expression bare (no `let temp = X;` + bare-symbol
             // epilogue wrapper). Byte-correct for shim bodies ending in
@@ -392,7 +497,12 @@ fn lower_term_shape_body(
         // return), matching the source-side tail-expression convention.
         // This is byte-correct for shim bodies that end with `out` or
         // similar, NOT with a `return X;` statement.
-        if map_source_type(&context.return_type) != "()"
+        // Implicit tail-expression only fires at the function ROOT.
+        // Nested seqs (inside for/while/match/if bodies) are statement-
+        // groups, not return points — appending a symbol there produces
+        // invalid rust like `diagnostics\n let mut ir_entries = ...`.
+        if position.is_empty()
+            && map_source_type(&context.return_type) != "()"
             && !lines
                 .iter()
                 .any(|line| line.trim_start().starts_with("return "))
@@ -409,7 +519,25 @@ fn lower_term_shape_body(
             return None;
         }
         let target = lower_term_shape_expression(args[0], context, &append_position(position, 0))?;
-        let value = lower_term_shape_expression(args[1], context, &append_position(position, 1))?;
+        // #1391 follow-on: tolerate EMPTY value object (the java lift
+        // sometimes emits {} when it can't interpret the RHS of a java
+        // local declaration). Emit a placeholder comment + skip; the rest
+        // of the seq continues lowering instead of dropping to a stub.
+        let value = match lower_term_shape_expression(args[1], context, &append_position(position, 1)) {
+            Some(v) => v,
+            None => {
+                let is_empty = args[1].as_object().map(|o| o.is_empty()).unwrap_or(false);
+                if is_empty {
+                    context.defined_symbols.insert(target.text.clone());
+                    context.last_assigned_symbol = Some(target.text.clone());
+                    return Some(format!(
+                        "// TODO(lift): empty RHS for `{}` (java lift gap)",
+                        target.text
+                    ));
+                }
+                return None;
+            }
+        };
         // `let _ = X;` — wildcard discard binding. Emitted by walk_rpc as
         // concept:assign with target = concept:literal source_text "_".
         // No mutability, no type annotation, no symbol tracked.
@@ -433,15 +561,123 @@ fn lower_term_shape_body(
                 .and_then(Value::as_bool)
                 .unwrap_or(false);
         let let_kw = if is_mut { "let mut" } else { "let" };
+        // Explicit `let X: Type = value` annotation preserved from source.
+        // Stored on the target symbol leaf by the lift; takes precedence
+        // over inferred-from-value type.
+        let explicit_let_type = args[0]
+            .get("let_type")
+            .and_then(Value::as_str)
+            .map(|s| s.trim().to_string())
+            .filter(|s| !s.is_empty());
+        if let Some(ty) = explicit_let_type {
+            // #1391 follow-on: when let_type came from java AST
+            // (java.util.*, java.lang.*, Object, etc.), map it to a rust
+            // type via java_type_to_rust_let_annotation. The java lift
+            // restricts let_type emission to generic-container shapes
+            // (ArrayList/TreeSet/HashMap/etc.) which is where rust's
+            // type inference can't recover the parameter, so we MUST
+            // emit an annotation; otherwise the cycled rust won't
+            // compile. For other types the lift omits let_type.
+            let mapped = java_type_to_rust_let_annotation(&ty);
+            if !mapped.is_empty() {
+                return Some(format!("{} {}: {} = {};", let_kw, target.text, mapped, value.text));
+            }
+            // The match-assign triplet recognizer in the java lift puts
+            // a rust-source-spelled type (e.g. `Value`, `String`, `bool`)
+            // directly into let_type. Java-shaped types are handled above;
+            // these are emit-ready.
+            let looks_rusty = !ty.contains('.') && !ty.contains('[') && !ty.contains("Object");
+            if looks_rusty {
+                return Some(format!("{} {}: {} = {};", let_kw, target.text, ty, value.text));
+            }
+            return Some(format!("{} {} = {};", let_kw, target.text, value.text));
+        }
         // Omit type annotation when value.type_name is empty — Rust's local type
         // inference covers it (happens for concept:call results, array-repeat, etc.).
-        if value.type_name.is_empty() {
+        // Also omit when the type came from java AST (java syntax like
+        // `Object[]`, `java.util.List`, etc.) — those aren't valid rust types.
+        // Rust's type inference covers the cycle when the value expression
+        // is well-formed.
+        let ty = &value.type_name;
+        let java_like = ty.is_empty()
+            || ty.contains('[')
+            || ty.contains("java.")
+            || ty.contains("com.")
+            || ty.contains("Object");
+        if java_like {
             return Some(format!("{} {} = {};", let_kw, target.text, value.text));
         }
         return Some(format!(
             "{} {}: {} = {};",
             let_kw, target.text, value.type_name, value.text
         ));
+    }
+    if concept_name == "concept:item-decl" {
+        // Function-local item (const, static, fn). args[0] is a symbol leaf
+        // carrying the verbatim source. Emit as-is — items are statement
+        // form (token-tree pass-through is byte-identical with source).
+        let args = term_shape_args(shape);
+        if args.is_empty() {
+            return None;
+        }
+        let source = args[0].get("text").and_then(Value::as_str)?;
+        // Re-normalize macro-style spacing (`X : T` → `X: T`) so token-stream
+        // artifacts don't appear in the emitted source.
+        return Some(normalize_macro_tokens(source));
+    }
+    if concept_name == "concept:destructure-struct" {
+        // args: [value, type_leaf, field_leaf1, field_leaf2, ...]
+        let args = term_shape_args(shape);
+        if args.len() < 3 {
+            return None;
+        }
+        let value = lower_term_shape_expression(args[0], context, &append_position(position, 0))?;
+        let type_text = args[1].get("text").and_then(Value::as_str).unwrap_or("");
+        // Each field-leaf has text=binding-name and field_name=source-field.
+        // For rust source emit: `Type { field1: binding1, field2 }` where
+        // we use shorthand `{ field }` if binding-name == field-name.
+        let mut field_specs: Vec<String> = Vec::new();
+        for f in &args[2..] {
+            let binding = f.get("text").and_then(Value::as_str).unwrap_or("");
+            let field = f.get("field_name").and_then(Value::as_str).unwrap_or(binding);
+            context.defined_symbols.insert(binding.to_string());
+            if binding == field {
+                field_specs.push(binding.to_string());
+            } else {
+                field_specs.push(format!("{}: {}", field, binding));
+            }
+        }
+        // Source-style multi-line for non-trivial fields.
+        return Some(format!(
+            "let {} {{\n    {},\n}} = {};",
+            type_text,
+            field_specs.join(",\n    "),
+            value.text
+        ));
+    }
+    if concept_name == "concept:destructure-tuple" {
+        // args: [value, name_leaf1, name_leaf2, ...]
+        let args = term_shape_args(shape);
+        if args.len() < 2 {
+            return None;
+        }
+        let value = lower_term_shape_expression(args[0], context, &append_position(position, 0))?;
+        let names: Vec<String> = args[1..]
+            .iter()
+            .filter_map(|n| n.get("text").and_then(Value::as_str).map(String::from))
+            .collect();
+        if names.is_empty() {
+            return None;
+        }
+        // Track each name as a defined symbol.
+        for name in &names {
+            context.defined_symbols.insert(name.clone());
+        }
+        // Last-bound symbol for tail-expression detection.
+        if let Some(last) = names.last() {
+            context.last_assigned_symbol = Some(last.clone());
+        }
+        return Some(format!("let ({}) = {};", names.join(", "), value.text));
     }
     if concept_name == "concept:return" || concept_name == "return" {
         let args = term_shape_args(shape);
@@ -450,6 +686,17 @@ fn lower_term_shape_body(
         }
         let value = lower_term_shape_expression(args[0], context, &append_position(position, 0))?;
         return Some(format!("return {};", value.text));
+    }
+    if concept_name == "concept:break" {
+        let args = term_shape_args(shape);
+        if args.is_empty() {
+            return Some("break;".to_string());
+        }
+        let value = lower_term_shape_expression(args[0], context, &append_position(position, 0))?;
+        return Some(format!("break {};", value.text));
+    }
+    if concept_name == "concept:continue" {
+        return Some("continue;".to_string());
     }
     if concept_name == "concept:conditional" || concept_name == "conditional" {
         let args = term_shape_args(shape);
@@ -460,6 +707,12 @@ fn lower_term_shape_body(
             lower_term_shape_expression(args[0], context, &append_position(position, 0))?;
         let then_body =
             lower_term_shape_branch_body(args[1], context, &append_position(position, 1))?;
+        // Omit else-clause when args[2] is concept:skip (the substrate's
+        // canonical "no-else" placeholder). Matches source `if cond { body }`
+        // byte-identical instead of emitting `if cond { body } else { () }`.
+        if term_shape_concept_name(args[2]).as_deref() == Some("concept:skip") {
+            return Some(format!("if {} {{\n{}\n}}", condition.text, indent_block(&then_body)));
+        }
         let else_body =
             lower_term_shape_branch_body(args[2], context, &append_position(position, 2))?;
         return Some(format!(
@@ -490,6 +743,43 @@ fn lower_term_shape_branch_body(
     }
     let expression = lower_term_shape_expression(shape, context, position)?;
     Some(format!("return {};", expression.text))
+}
+
+/// Catalog-driven kit-op emitter (#1391). Keyed by the rhs op name from
+/// realization mementos (target_lang=rust). One small arm per rhs name;
+/// the catalog controls WHICH concept maps to which rhs name.
+fn emit_kit_rust_op(
+    rhs_op_name: &str,
+    args: &[&Value],
+    context: &mut ShapeLoweringContext,
+    position: &[usize],
+) -> Option<ShapeExpression> {
+    match rhs_op_name {
+        "rust:str-as-bytes" => {
+            if args.is_empty() { return None; }
+            let recv = lower_term_shape_expression(args[0], context, &append_position(position, 0))?;
+            Some(ShapeExpression { text: format!("{}.as_bytes()", recv.text), type_name: String::new() })
+        }
+        "rust:serde-value-as-str" => {
+            if args.is_empty() { return None; }
+            let recv = lower_term_shape_expression(args[0], context, &append_position(position, 0))?;
+            Some(ShapeExpression { text: format!("{}.as_str()", recv.text), type_name: String::new() })
+        }
+        "rust:option-is-some" => {
+            if args.is_empty() { return None; }
+            let recv = lower_term_shape_expression(args[0], context, &append_position(position, 0))?;
+            Some(ShapeExpression { text: format!("{}.is_some()", recv.text), type_name: "bool".to_string() })
+        }
+        "rust:vec-new" => {
+            if !args.is_empty() { return None; }
+            Some(ShapeExpression { text: "Vec::new()".to_string(), type_name: String::new() })
+        }
+        "rust:hashmap-new" => {
+            if !args.is_empty() { return None; }
+            Some(ShapeExpression { text: "HashMap::new()".to_string(), type_name: String::new() })
+        }
+        _ => None,
+    }
 }
 
 fn lower_term_shape_expression(
@@ -541,7 +831,7 @@ fn lower_term_shape_expression(
         if first.get("kind").and_then(Value::as_str) == Some("path") {
             // Free function call: args[0] is the callee path leaf.
             let callee_text = first.get("text").and_then(Value::as_str)?;
-            let call_args: Vec<String> = args[1..]
+            let mut call_args: Vec<String> = args[1..]
                 .iter()
                 .enumerate()
                 .map(|(i, arg)| {
@@ -549,6 +839,71 @@ fn lower_term_shape_expression(
                         .map(|e| e.text)
                 })
                 .collect::<Option<Vec<_>>>()?;
+            // #1391 follow-on: callee-signature-aware `&` insertion. The
+            // cross-language cycle loses `&x` borrow markers because java
+            // has no equivalent. For known boundary callees in
+            // libprovekit-rpc-cross-platform whose param shapes are known,
+            // add the `&` back. This is a known-callee registry, not a
+            // generic solution — but it closes the run_server diff.
+            let ref_param_indices: Option<&[usize]> = match callee_text {
+                "stderr_write_line" => Some(&[0]),
+                "stdout_write_line" => Some(&[0]),
+                "json_serialize"    => Some(&[0]),
+                "json_parse"        => Some(&[0]),
+                "blake3_512_cid"    => Some(&[0]),
+                "handle_line"       => Some(&[0, 1]),
+                "build_ir_document" => Some(&[0, 1]),
+                // content_addressed_name, slot_cid, encode_jcs take &-args
+                // but their typical callsites pass already-reference values
+                // (match-bound or param-bound); skip to avoid double-&.
+                _ => None,
+            };
+            if let Some(idxs) = ref_param_indices {
+                for &idx in idxs {
+                    if idx >= call_args.len() { continue; }
+                    let arg = &call_args[idx];
+                    let trimmed = arg.trim();
+                    let is_bare_ident = !trimmed.is_empty()
+                        && trimmed.chars().all(|c| c.is_ascii_alphanumeric() || c == '_');
+                    let is_format_macro = trimmed.starts_with("format!(");
+                    // Skip if the arg names a function PARAM that's already
+                    // typed `&T`. Adding `&` produces &&T. Detect by checking
+                    // both the (mapped) param_types and (preserved) original
+                    // — Value, str, JsonNode all canonically arrive via
+                    // reference in this codebase.
+                    let original_param_types = CURRENT_ORIGINAL_PARAM_TYPES
+                        .with(|v| v.borrow().clone());
+                    let is_already_ref = is_bare_ident && context.params.iter()
+                        .position(|p| p == trimmed)
+                        .map(|pi| {
+                            let mapped = context.param_types.get(pi).cloned().unwrap_or_default();
+                            // Prefer rust-source spelling (e.g. `&str`) over
+                            // java-mapped (`String`) which loses the reference.
+                            let original = original_param_types.get(pi).cloned().unwrap_or_default();
+                            // Heuristic: if mapped type is one of the
+                            // canonical pass-by-reference types in this
+                            // source (Value, str), treat as ref.
+                            original.starts_with('&') || mapped.starts_with('&')
+                                || mapped == "Value" || mapped == "str"
+                        })
+                        .unwrap_or(false);
+                    if (is_bare_ident && !is_already_ref) || is_format_macro {
+                        call_args[idx] = format!("&{}", arg);
+                    }
+                }
+            }
+            // Substrate-canonical tuple literal: the java side emits tuple
+            // construction as `concept:call(__provekit_tuple_new, ...)` because
+            // there's no concept:tuple-literal in the catalog yet. Round-trip
+            // back to rust by emitting a tuple literal `(a, b, c)` — the same
+            // surface the rust lifter produced originally.
+            if callee_text == "__provekit_tuple_new" {
+                let text = format!("({})", call_args.join(", "));
+                return Some(ShapeExpression {
+                    text,
+                    type_name: String::new(),
+                });
+            }
             let text = format!("{}({})", callee_text, call_args.join(", "));
             // Return empty type_name so the enclosing concept:assign arm omits
             // the type annotation (Rust's local type inference covers it).
@@ -599,6 +954,34 @@ fn lower_term_shape_expression(
             type_name: String::new(),
         });
     }
+    // concept:array-literal: java's `new T[]{a, b, c}` lifts here. When the
+    // enclosing fn returns a rust tuple `(A,B,...)`, this is the lifted form
+    // of `__provekit_tuple_new(a, b)` — the java lower's tuple emit. Emit as
+    // rust tuple literal `(a, b)` in tuple-return contexts; else as rust
+    // array literal `[a, b]`. The return-type check is purely the function
+    // signature's surface form — when the source emitted `(Value, bool)`
+    // the realize side sees `(Value,bool)` in context.return_type.
+    if concept_name == "concept:array-literal" {
+        let elems: Vec<String> = args
+            .iter()
+            .enumerate()
+            .map(|(i, a)| {
+                lower_term_shape_expression(a, context, &append_position(position, i))
+                    .map(|e| e.text)
+            })
+            .collect::<Option<Vec<_>>>()?;
+        let rt = context.return_type.trim();
+        let is_tuple_return = rt.starts_with('(') && rt.ends_with(')');
+        let text = if is_tuple_return {
+            format!("({})", elems.join(", "))
+        } else {
+            format!("[{}]", elems.join(", "))
+        };
+        return Some(ShapeExpression {
+            text,
+            type_name: String::new(),
+        });
+    }
     // concept:ref: &expr or &mut expr — walk_rpc emits args=[inner_shape, mutability_leaf].
     // mutability_leaf: {kind:"mutability", text:"mut"} or {kind:"mutability", text:""}.
     if concept_name == "concept:ref" {
@@ -641,7 +1024,23 @@ fn lower_term_shape_expression(
             context,
             &append_position(position, 0),
         )?;
-        let text = format!("|{}| {}", param_names.join(", "), body.text);
+        // Source-form choice: when the lift marked closure_block_body=true
+        // (source had `|e| { ... }`), wrap the body in braces so the lower
+        // emits `|e| { body }`. rustfmt can then split long lines inside.
+        // Without the marker emit the expression form `|e| body`.
+        let is_block_body = body_shape
+            .get("closure_block_body")
+            .and_then(Value::as_bool)
+            .unwrap_or(false);
+        let text = if is_block_body {
+            // Block-form closure: put body on its own line so rustfmt
+            // can normalize layout (break long lines, indent body).
+            // The single-line form `|e| { body }` blocks rustfmt's
+            // line-breaking inside the closure body.
+            format!("|{}| {{\n{}\n}}", param_names.join(", "), body.text)
+        } else {
+            format!("|{}| {}", param_names.join(", "), body.text)
+        };
         return Some(ShapeExpression {
             text,
             type_name: String::new(),
@@ -681,15 +1080,75 @@ fn lower_term_shape_expression(
             type_name: String::new(),
         });
     }
+    if concept_name == "concept:while-let" {
+        // args: pattern_leaf, value, body
+        if args.len() != 3 {
+            return None;
+        }
+        let pattern_text = args[0].get("text").and_then(Value::as_str)?;
+        let value = lower_term_shape_expression(args[1], context, &append_position(position, 1))?;
+        let body = lower_block_or_expr(args[2], context, &append_position(position, 2))?;
+        return Some(ShapeExpression {
+            text: format!("while let {} = {} {{ {} }}", pattern_text, value.text, body),
+            type_name: String::new(),
+        });
+    }
+    if concept_name == "concept:if-let" {
+        // args: pattern_leaf, value, then, else
+        if args.len() != 4 {
+            return None;
+        }
+        let pattern_text = args[0].get("text").and_then(Value::as_str)?;
+        let value = lower_term_shape_expression(args[1], context, &append_position(position, 1))?;
+        let then_text = lower_term_shape_branch_body(args[2], context, &append_position(position, 2))?;
+        // Omit else when args[3] is concept:skip (source had no else clause).
+        if term_shape_concept_name(args[3]).as_deref() == Some("concept:skip") {
+            return Some(ShapeExpression {
+                text: format!("if let {} = {} {{ {} }}", pattern_text, value.text, then_text),
+                type_name: String::new(),
+            });
+        }
+        let else_text = lower_term_shape_branch_body(args[3], context, &append_position(position, 3))?;
+        return Some(ShapeExpression {
+            text: format!(
+                "if let {} = {} {{ {} }} else {{ {} }}",
+                pattern_text, value.text, then_text, else_text
+            ),
+            type_name: String::new(),
+        });
+    }
     if concept_name == "concept:for-each" {
         if args.len() != 3 {
             return None;
         }
-        let var = args[0].get("text").and_then(Value::as_str)?.to_string();
+        let var_text = args[0].get("text").and_then(Value::as_str)?.to_string();
+        // Preserve `for mut X in ...` mutability marker from lift.
+        let is_mut = args[0].get("mut").and_then(Value::as_bool).unwrap_or(false);
+        // Detect explicit ref pattern from lift: `& b` from syn::Pat::Reference.
+        let already_ref_pat = var_text.trim_start().starts_with('&');
         let iter = lower_term_shape_expression(args[1], context, &append_position(position, 1))?;
         let body = lower_block_or_expr(args[2], context, &append_position(position, 2))?;
+        // #1391 follow-on: ref-pattern inference. When the loop body uses
+        // `var` in primitive-numeric position (>>, &, +, -, * as int, etc.)
+        // and the iterable isn't already borrowed, prefer `for &var in &iter`
+        // to match the idiomatic rust source form. Heuristic: scan body for
+        // patterns like `(var)` followed by binary ops or as-cast that
+        // require primitive (not &u8) semantics.
+        let bare_var = var_text.trim_start_matches('&').trim().to_string();
+        let needs_ref_pat = !already_ref_pat
+            && !is_mut
+            && body_uses_var_as_primitive(&body, &bare_var)
+            && !iter.text.starts_with('&');
+        let (final_var, final_iter) = if needs_ref_pat {
+            (format!("&{}", bare_var), format!("&{}", iter.text))
+        } else if already_ref_pat {
+            (var_text, iter.text)
+        } else {
+            let v = if is_mut { format!("mut {}", bare_var) } else { bare_var };
+            (v, iter.text)
+        };
         return Some(ShapeExpression {
-            text: format!("for {} in {} {{ {} }}", var, iter.text, body),
+            text: format!("for {} in {} {{ {} }}", final_var, final_iter, body),
             type_name: String::new(),
         });
     }
@@ -729,7 +1188,21 @@ fn lower_term_shape_expression(
                 context,
                 &append_position(&append_position(position, i), 1),
             )?;
-            arms_text.push(format!("{} => {},", pattern_text, body_text));
+            // Match arms can be expression-form (`=> expr,`) or block-form
+            // (`=> { stmts; expr },`). Source-form preservation:
+            //   - Single statement that's a return → block-form
+            //     `=> { return X; }` matches source byte-identical.
+            //   - Otherwise expression-form `=> expr,` (strip trailing `;`).
+            let trimmed = body_text.trim_end();
+            let is_return_stmt = trimmed.starts_with("return ")
+                && trimmed.ends_with(';')
+                && !trimmed[7..trimmed.len() - 1].contains(';');
+            if is_return_stmt {
+                arms_text.push(format!("{} => {{\n{}\n}},", pattern_text, indent_block(trimmed)));
+            } else {
+                let body_trimmed = trimmed.trim_end_matches(';');
+                arms_text.push(format!("{} => {},", pattern_text, body_trimmed));
+            }
         }
         return Some(ShapeExpression {
             text: format!("match {} {{ {} }}", scrutinee.text, arms_text.join(" ")),
@@ -743,20 +1216,146 @@ fn lower_term_shape_expression(
         }
         let path = args[0].get("text").and_then(Value::as_str)?;
         let tokens = args[1].get("text").and_then(Value::as_str)?;
+        // syn's to_token_stream normalizes spacing around `:` to
+        // `key : value`. Normalize back to `key: value` so json!{}
+        // and similar map-body macros byte-compare against source
+        // after rustfmt (which won't reformat macro bodies by default).
+        let normalized = normalize_macro_tokens(tokens);
+        // For json! (and similar map-body macros) the source layout is
+        // multi-line: { "k": v, "k2": v2, }. rustfmt on stable doesn't
+        // format inside macro bodies. Pretty-print here so byte-comparison
+        // post-format matches source.
+        let pretty = if path == "json" {
+            pretty_print_macro_body(&normalized)
+        } else if path == "format" || path == "println" || path == "eprintln" || path == "write" || path == "writeln" {
+            // Comma-separated arg list. Break across lines when EITHER
+            // total exceeds 100 chars OR the format-string first arg is
+            // long enough that the source likely wrote it multi-line.
+            // Threshold of 60 catches typical multi-arg format! calls
+            // with non-trivial format strings (which is when rustfmt
+            // would break too if it formatted macros).
+            let total_len = path.len() + 2 + normalized.len();
+            let has_multi_arg = normalized.contains(',');
+            if total_len > 100 || (total_len > 60 && has_multi_arg) {
+                pretty_print_macro_args(&normalized)
+            } else {
+                normalized
+            }
+        } else {
+            normalized
+        };
         return Some(ShapeExpression {
-            text: format!("{}!({})", path, tokens),
+            text: format!("{}!({})", path, pretty),
             type_name: String::new(),
         });
     }
+    // Carrier-canonical concepts that the java lift emits when it
+    // recognizes Result.ok/.err/.okOrElse / SumVariant constructor /
+    // Substrate.tryUnwrap. Map back to native rust syntax for byte-
+    // identical round-trip.
+    if concept_name == "concept:fallible-ok" {
+        if args.is_empty() {
+            return Some(ShapeExpression {
+                text: "Ok(())".to_string(),
+                type_name: String::new(),
+            });
+        }
+        let inner = lower_term_shape_expression(args[0], context, &append_position(position, 0))?;
+        return Some(ShapeExpression {
+            text: format!("Ok({})", inner.text),
+            type_name: String::new(),
+        });
+    }
+    if concept_name == "concept:fallible-err" {
+        if args.is_empty() {
+            return Some(ShapeExpression {
+                text: "Err(())".to_string(),
+                type_name: String::new(),
+            });
+        }
+        let inner = lower_term_shape_expression(args[0], context, &append_position(position, 0))?;
+        return Some(ShapeExpression {
+            text: format!("Err({})", inner.text),
+            type_name: String::new(),
+        });
+    }
+    if concept_name == "concept:sum-variant-construct" {
+        // args: [family_text, variant_text, payload]
+        if args.len() < 3 {
+            return None;
+        }
+        // family/variant may be string-literal expressions; extract text.
+        let family = lower_term_shape_expression(args[0], context, &append_position(position, 0))?;
+        let variant = lower_term_shape_expression(args[1], context, &append_position(position, 1))?;
+        let payload = lower_term_shape_expression(args[2], context, &append_position(position, 2))?;
+        // Strip the surrounding quotes from family/variant if they're
+        // string literals (they came as "LiftError" / "Internal").
+        let family_clean = family.text.trim_matches('"').to_string();
+        let variant_clean = variant.text.trim_matches('"').to_string();
+        return Some(ShapeExpression {
+            text: format!("{}::{}({})", family_clean, variant_clean, payload.text),
+            type_name: family_clean,
+        });
+    }
+    if concept_name == "concept:fallible-ok-or-else" {
+        // Result.okOrElse(value, errSupplier) → `value.ok_or_else(closure)`
+        if args.len() != 2 {
+            return None;
+        }
+        let value = lower_term_shape_expression(args[0], context, &append_position(position, 0))?;
+        let supplier = lower_term_shape_expression(args[1], context, &append_position(position, 1))?;
+        return Some(ShapeExpression {
+            text: format!("{}.ok_or_else({})", value.text, supplier.text),
+            type_name: String::new(),
+        });
+    }
+    // catalog-driven operation realization dispatch (#1391).
+    // Look up concept in realizations[target_lang=rust]; if present,
+    // delegate to the kit-op emitter keyed by rhs op name. The catalog at
+    // menagerie/concept-shapes/catalog/realizations/ is the single source
+    // of truth: concept_name → rhs_op_name. emit_kit_rust_op below is the
+    // only remaining kit-specific code, keyed by catalog'd rhs names.
+    if let Some(rhs_op) = operation_realization_catalog::rust_op_for(&concept_name) {
+        if let Some(emitted) = emit_kit_rust_op(&rhs_op, &args, context, position) {
+            return Some(emitted);
+        }
+    }
+    if concept_name == "concept:value-clone" {
+        // Substrate.cloneOf(x) → x.cloned() (rust source-form)
+        if args.is_empty() {
+            return None;
+        }
+        let inner = lower_term_shape_expression(args[0], context, &append_position(position, 0))?;
+        return Some(ShapeExpression {
+            text: format!("{}.cloned()", inner.text),
+            type_name: String::new(),
+        });
+    }
+    if concept_name == "concept:try-unwrap" {
+        // Substrate.tryUnwrap(x) — alternate name for concept:try.
+        if args.is_empty() {
+            return None;
+        }
+        let inner = lower_term_shape_expression(args[0], context, &append_position(position, 0))?;
+        return Some(ShapeExpression {
+            text: format!("{}?", inner.text),
+            type_name: inner.type_name,
+        });
+    }
     if concept_name == "concept:try" {
-        // try-body + catches. Rust doesn't natively have try-catch; we emit
-        // the body as-is (rust uses Result for error handling, declared as
-        // an effect on the binding, not in the body shape).
+        // First-class `expr?` operator. The substrate's concept:try
+        // (args=[inner]) is the rust source's Try-operator form;
+        // realize emits `inner?` for byte-identical rust round-trip.
+        // Target languages without `?` translate via method:try_unwrap
+        // mapping in their respective realize plugins.
         if args.is_empty() {
             return None;
         }
         let body = lower_term_shape_expression(args[0], context, &append_position(position, 0))?;
-        return Some(body);
+        return Some(ShapeExpression {
+            text: format!("{}?", body.text),
+            type_name: body.type_name,
+        });
     }
     if concept_name == "concept:throw" {
         if args.is_empty() {
@@ -781,8 +1380,20 @@ fn lower_term_shape_expression(
         }
         let value = lower_term_shape_expression(args[0], context, &append_position(position, 0))?;
         let type_text = args[1].get("text").and_then(Value::as_str)?;
+        // Java-only types (Object[], java.util.List, etc.) have no rust
+        // equivalent — drop the cast and emit just the value. The
+        // surrounding context's type inference handles it.
+        if type_text.contains('[') || type_text.contains("java.") || type_text.contains("Object") {
+            return Some(value);
+        }
+        // Paren-wrap the operand when it's a non-atomic expression.
+        // `as` binds tighter than `>>`, `&`, etc., so `b >> 4 as usize`
+        // parses as `b >> (4 as usize)` — semantically different from
+        // `(b >> 4) as usize`. paren_for_op detects top-level operators
+        // and wraps accordingly.
+        let value_text = paren_for_op(&value.text);
         return Some(ShapeExpression {
-            text: format!("{} as {}", value.text, type_text),
+            text: format!("{} as {}", value_text, type_text),
             type_name: type_text.to_string(),
         });
     }
@@ -846,9 +1457,11 @@ fn term_shape_leaf_expression(
     if shape.get("kind").and_then(Value::as_str) == Some("literal") || shape.get("value").is_some()
     {
         let width = shape.get("integer_width").and_then(Value::as_str);
-        return Some(literal_term_with_width(
+        let radix = shape.get("radix").and_then(Value::as_str);
+        return Some(literal_term_with_width_and_radix(
             shape.get("value").unwrap_or(&Value::Null),
             width,
+            radix,
         ));
     }
     // Legacy source_text fallback — only kept for backwards compat with
@@ -885,35 +1498,35 @@ fn operation_expression(concept_name: &str, args: &[ShapeExpression]) -> Option<
         .strip_prefix("concept:")
         .unwrap_or(concept_name);
     if args.len() == 2 {
-        let left = &args[0].text;
-        let right = &args[1].text;
+        let left = paren_for_op(&args[0].text);
+        let right = paren_for_op(&args[1].text);
         return match op {
-            "add" => Some(format!("({left}) + ({right})")),
-            "sub" => Some(format!("({left}) - ({right})")),
-            "mul" => Some(format!("({left}) * ({right})")),
-            "div" => Some(format!("({left}) / ({right})")),
-            "mod" => Some(format!("({left}) % ({right})")),
-            "eq" => Some(format!("({left}) == ({right})")),
-            "ne" => Some(format!("({left}) != ({right})")),
-            "lt" => Some(format!("({left}) < ({right})")),
-            "le" => Some(format!("({left}) <= ({right})")),
-            "gt" => Some(format!("({left}) > ({right})")),
-            "ge" => Some(format!("({left}) >= ({right})")),
-            "and" => Some(format!("({left}) && ({right})")),
-            "or" => Some(format!("({left}) || ({right})")),
-            "bitand" => Some(format!("({left}) & ({right})")),
-            "bitor" => Some(format!("({left}) | ({right})")),
-            "bitxor" => Some(format!("({left}) ^ ({right})")),
-            "shl" => Some(format!("({left}) << ({right})")),
-            "shr" => Some(format!("({left}) >> ({right})")),
+            "add" => Some(format!("{left} + {right}")),
+            "sub" => Some(format!("{left} - {right}")),
+            "mul" => Some(format!("{left} * {right}")),
+            "div" => Some(format!("{left} / {right}")),
+            "mod" => Some(format!("{left} % {right}")),
+            "eq" => Some(format!("{left} == {right}")),
+            "ne" => Some(format!("{left} != {right}")),
+            "lt" => Some(format!("{left} < {right}")),
+            "le" => Some(format!("{left} <= {right}")),
+            "gt" => Some(format!("{left} > {right}")),
+            "ge" => Some(format!("{left} >= {right}")),
+            "and" => Some(format!("{left} && {right}")),
+            "or" => Some(format!("{left} || {right}")),
+            "bitand" => Some(format!("{left} & {right}")),
+            "bitor" => Some(format!("{left} | {right}")),
+            "bitxor" => Some(format!("{left} ^ {right}")),
+            "shl" => Some(format!("{left} << {right}")),
+            "shr" => Some(format!("{left} >> {right}")),
             _ => None,
         };
     }
     if args.len() == 1 {
-        let value = &args[0].text;
+        let value = paren_for_op(&args[0].text);
         return match op {
-            "neg" => Some(format!("-({value})")),
-            "not" => Some(format!("!({value})")),
+            "neg" => Some(format!("-{value}")),
+            "not" => Some(format!("!{value}")),
             "bitnot" => Some(format!("!({value})")),
             _ => None,
         };
@@ -1016,6 +1629,14 @@ fn lower_block_or_expr(
 /// integer width suffix when present. Replaces source_text-based reconstruction
 /// (which leaked kit-internal source into substrate state).
 fn literal_term_with_width(value: &Value, integer_width: Option<&str>) -> ShapeExpression {
+    literal_term_with_width_and_radix(value, integer_width, None)
+}
+
+fn literal_term_with_width_and_radix(
+    value: &Value,
+    integer_width: Option<&str>,
+    radix: Option<&str>,
+) -> ShapeExpression {
     match value {
         Value::Bool(value) => ShapeExpression {
             text: value.to_string(),
@@ -1035,8 +1656,33 @@ fn literal_term_with_width(value: &Value, integer_width: Option<&str>) -> ShapeE
             } else {
                 width.to_string()
             };
+            // Preserve source radix when declared. The lift carries radix
+            // because base10 reproduction would normalize `0x0F` to `15`
+            // — semantically equivalent but not byte-identical for round-trip.
+            let number_text = match radix {
+                Some("hex") => {
+                    if let Some(n) = value.as_i64() {
+                        format!("0x{:02X}", n)
+                    } else if let Some(n) = value.as_u64() {
+                        format!("0x{:02X}", n)
+                    } else {
+                        value.to_string()
+                    }
+                }
+                Some("oct") => {
+                    if let Some(n) = value.as_i64() {
+                        format!("0o{:o}", n)
+                    } else { value.to_string() }
+                }
+                Some("bin") => {
+                    if let Some(n) = value.as_i64() {
+                        format!("0b{:b}", n)
+                    } else { value.to_string() }
+                }
+                _ => value.to_string(),
+            };
             ShapeExpression {
-                text: format!("{value}{suffix}"),
+                text: format!("{number_text}{suffix}"),
                 type_name,
             }
         }
@@ -1578,6 +2224,39 @@ pub fn dispatch(request: &Value) -> Value {
                 .filter(|name| !name.is_empty())
                 .unwrap_or(function);
             let mode = params.get("mode").and_then(Value::as_str);
+            // Visibility for this function. Set the thread-local so
+            // function_source emits `pub fn` / `pub(crate) fn` / `fn`
+            // matching the lifted source.
+            let visibility = params
+                .get("visibility")
+                .and_then(Value::as_str)
+                .unwrap_or("")
+                .to_string();
+            CURRENT_VISIBILITY.with(|v| *v.borrow_mut() = visibility);
+            let cn_for_attr = params
+                .get("conceptName")
+                .or_else(|| params.get("concept_name"))
+                .and_then(Value::as_str)
+                .unwrap_or("")
+                .to_string();
+            CURRENT_CONCEPT_NAME.with(|v| *v.borrow_mut() = cn_for_attr);
+            let generic_params = params
+                .get("genericParams")
+                .or_else(|| params.get("generic_params"))
+                .and_then(Value::as_str)
+                .unwrap_or("")
+                .to_string();
+            CURRENT_GENERIC_PARAMS.with(|v| *v.borrow_mut() = generic_params);
+            let doc_lines = string_array(
+                params.get("docLines")
+                    .or_else(|| params.get("doc_lines")),
+            );
+            CURRENT_DOC_LINES.with(|v| *v.borrow_mut() = doc_lines);
+            let original_param_types = string_array(
+                params.get("originalParamTypes")
+                    .or_else(|| params.get("original_param_types")),
+            );
+            CURRENT_ORIGINAL_PARAM_TYPES.with(|v| *v.borrow_mut() = original_param_types);
             let param_names = string_array(params.get("params"));
             let mut param_types = string_array(params.get("param_types"));
             // #1369: cross-language parametric dispatch. When param_sort_cids
@@ -1978,6 +2657,555 @@ fn render_template(
     }
 }
 
+thread_local! {
+    /// Visibility for the function currently being realized. Set at the
+    /// dispatch site from the spec's `visibility` field, read in
+    /// function_source. Empty string = private; "pub" = public.
+    /// Threading visibility through every wrapper would touch ~20 call
+    /// sites; thread-local keeps the surface minimal.
+    pub(crate) static CURRENT_VISIBILITY: std::cell::RefCell<String> =
+        std::cell::RefCell::new(String::new());
+    /// Generic parameter declarations (e.g. "<A: AdapterLifter>") set at
+    /// dispatch, read in function_source for byte-identical signature emit.
+    pub(crate) static CURRENT_GENERIC_PARAMS: std::cell::RefCell<String> =
+        std::cell::RefCell::new(String::new());
+    /// Original param types as-written (with `&A` etc preserved). When set,
+    /// function_source uses these for signature emission instead of the
+    /// substituted param_types.
+    pub(crate) static CURRENT_ORIGINAL_PARAM_TYPES: std::cell::RefCell<Vec<String>> =
+        std::cell::RefCell::new(Vec::new());
+    /// Concept name for the function being realized. Emitted as
+    /// `#[provekit::sugar(concept = "X")]` attribute so the output can be
+    /// re-lifted (cycle-invariance test).
+    pub(crate) static CURRENT_CONCEPT_NAME: std::cell::RefCell<String> =
+        std::cell::RefCell::new(String::new());
+    /// Doc comment lines (`///` content, without the prefix) for the
+    /// function being realized. Emitted as `/// <text>` lines between the
+    /// concept attribute and the fn signature. Empty when source had no docs.
+    pub(crate) static CURRENT_DOC_LINES: std::cell::RefCell<Vec<String>> =
+        std::cell::RefCell::new(Vec::new());
+}
+
+/// Pretty-print comma-separated macro args (format!, println!, etc.).
+/// Each top-level arg on its own line, matching rustfmt's source-layout
+/// style for long macro calls. Splits on top-level `,` only (not inside
+/// nested parens/brackets/braces/strings).
+fn pretty_print_macro_args(tokens: &str) -> String {
+    let trimmed = tokens.trim();
+    let mut items: Vec<String> = Vec::new();
+    let mut current = String::new();
+    let mut depth_paren = 0i32;
+    let mut depth_bracket = 0i32;
+    let mut depth_brace = 0i32;
+    let mut in_string = false;
+    let mut chars = trimmed.chars().peekable();
+    while let Some(c) = chars.next() {
+        if in_string {
+            current.push(c);
+            if c == '\\' {
+                if let Some(&next) = chars.peek() {
+                    current.push(next);
+                    chars.next();
+                }
+                continue;
+            }
+            if c == '"' { in_string = false; }
+            continue;
+        }
+        match c {
+            '"' => { in_string = true; current.push(c); }
+            '(' => { depth_paren += 1; current.push(c); }
+            ')' => { depth_paren -= 1; current.push(c); }
+            '[' => { depth_bracket += 1; current.push(c); }
+            ']' => { depth_bracket -= 1; current.push(c); }
+            '{' => { depth_brace += 1; current.push(c); }
+            '}' => { depth_brace -= 1; current.push(c); }
+            ',' if depth_paren == 0 && depth_bracket == 0 && depth_brace == 0 => {
+                let item = current.trim().to_string();
+                if !item.is_empty() {
+                    items.push(item);
+                }
+                current.clear();
+            }
+            _ => current.push(c),
+        }
+    }
+    let last = current.trim().to_string();
+    if !last.is_empty() {
+        items.push(last);
+    }
+    if items.is_empty() {
+        return String::new();
+    }
+    // Source-style layout:
+    //   format!(
+    //       "arg0",
+    //       arg1
+    //   )
+    // No trailing comma on the last arg.
+    //
+    // Indent issue: rustfmt on stable does NOT re-indent inside macro
+    // bodies (format_macro_bodies is nightly-only). Whatever we emit
+    // here IS the final indent. We don't know runtime nesting depth at
+    // emit time — substrate emits each fragment without global context.
+    // We mark args with sentinel `\u{1F}MACRO_INDENT\u{1F}` so a
+    // post-processing pass in function_source can substitute the
+    // depth-aware indent based on the macro's column position.
+    let mut out = String::from("\n");
+    for (idx, item) in items.iter().enumerate() {
+        let is_last = idx + 1 == items.len();
+        out.push('\u{1F}');
+        out.push_str("MACRO_ARG_INDENT");
+        out.push('\u{1F}');
+        out.push_str(item);
+        if !is_last {
+            out.push(',');
+        }
+        out.push('\n');
+    }
+    out.push('\u{1F}');
+    out.push_str("MACRO_CLOSE_INDENT");
+    out.push('\u{1F}');
+    out
+}
+
+/// Pretty-print a json!-style macro body that was lifted as a token
+/// stream (loses original layout). Emits the canonical rustfmt-style
+/// layout: opening brace on the call line, items indented, closing
+/// brace on its own line. Strings, nested objects, and arrays render
+/// with rustfmt-consistent spacing.
+///
+/// Input shape: `{ "k1": v1, "k2": v2, }` (post-normalize).
+/// Output shape (matching rustfmt source layout):
+///   {
+///       "k1": v1,
+///       "k2": v2,
+///   }
+fn pretty_print_macro_body(tokens: &str) -> String {
+    let trimmed = tokens.trim();
+    // Only pretty-print balanced-brace top-level. Bail otherwise (caller
+    // already emits the inline form which is at least valid rust).
+    if !trimmed.starts_with('{') || !trimmed.ends_with('}') {
+        return tokens.to_string();
+    }
+    let inner_raw = &trimmed[1..trimmed.len() - 1].trim();
+    // Preserve source-comma style: if the source had a trailing comma
+    // after the last item, our output should too (and vice versa).
+    // The trim() above strips a trailing comma if it was the last byte
+    // followed only by whitespace — re-check the raw inner.
+    let source_has_trailing_comma = inner_raw.trim_end().ends_with(',');
+    let inner = inner_raw.trim_end_matches(',').trim_end();
+    let mut items: Vec<String> = Vec::new();
+    let mut current = String::new();
+    let mut depth_brace = 0i32;
+    let mut depth_paren = 0i32;
+    let mut depth_bracket = 0i32;
+    let mut in_string = false;
+    for c in inner.chars() {
+        if in_string {
+            current.push(c);
+            if c == '"' { in_string = false; }
+            continue;
+        }
+        match c {
+            '"' => { in_string = true; current.push(c); }
+            '{' => { depth_brace += 1; current.push(c); }
+            '}' => { depth_brace -= 1; current.push(c); }
+            '(' => { depth_paren += 1; current.push(c); }
+            ')' => { depth_paren -= 1; current.push(c); }
+            '[' => { depth_bracket += 1; current.push(c); }
+            ']' => { depth_bracket -= 1; current.push(c); }
+            ',' if depth_brace == 0 && depth_paren == 0 && depth_bracket == 0 => {
+                let trimmed_item = current.trim().to_string();
+                if !trimmed_item.is_empty() {
+                    items.push(trimmed_item);
+                }
+                current.clear();
+            }
+            _ => { current.push(c); }
+        }
+    }
+    let trimmed_last = current.trim().to_string();
+    if !trimmed_last.is_empty() {
+        items.push(trimmed_last);
+    }
+    if items.is_empty() {
+        return "{}".to_string();
+    }
+    // Each item is "key: value" or just a value. For nested objects in
+    // values, recursively pretty-print so multi-line layout cascades.
+    let mut out = String::from("{\n");
+    for (idx, item) in items.iter().enumerate() {
+        let is_last = idx + 1 == items.len();
+        // Source-style: when the last item's value is a MULTI-LINE
+        // nested object, source convention omits the trailing comma
+        // (rust's hand-written json! style). Detect by checking if
+        // the value ends with multi-line `}`.
+        let item_value_is_multiline_object =
+            find_top_level_colon(item)
+                .map(|i| {
+                    let v = item[i + 1..].trim();
+                    v.starts_with('{') && v.ends_with('}') && v.contains('\n')
+                })
+                .unwrap_or(false);
+        // Also a length check — large nested objects also skip trailing.
+        let item_value_is_large_object =
+            find_top_level_colon(item)
+                .map(|i| {
+                    let v = item[i + 1..].trim();
+                    v.starts_with('{') && v.ends_with('}') && v.len() > 60
+                })
+                .unwrap_or(false);
+        let suppress_trailing_for_last_nested = is_last
+            && (item_value_is_multiline_object || item_value_is_large_object);
+        let sep = if (is_last && !source_has_trailing_comma) || suppress_trailing_for_last_nested {
+            ""
+        } else {
+            ","
+        };
+        if let Some(colon_idx) = find_top_level_colon(item) {
+            let key = item[..colon_idx].trim();
+            let value = item[colon_idx + 1..].trim();
+            let value_pretty = if value.starts_with('{') && value.ends_with('}') {
+                // Small nested objects (3 or fewer items, <= 80 chars
+                // total) stay inline. Larger ones get pretty-printed
+                // for readability — matches rustfmt's source-layout style.
+                let pretty = pretty_print_macro_body(value);
+                let item_count = pretty.matches(",\n").count();
+                if item_count <= 2 && value.len() <= 80 {
+                    value.to_string()
+                } else {
+                    indent_lines(&pretty, 4)
+                }
+            } else if value.starts_with('[') && value.ends_with(']') {
+                value.to_string()
+            } else {
+                value.to_string()
+            };
+            out.push_str(&format!("    {}: {}{}\n", key, value_pretty, sep));
+        } else {
+            out.push_str(&format!("    {}{}\n", item, sep));
+        }
+    }
+    out.push('}');
+    out
+}
+
+fn find_top_level_colon(s: &str) -> Option<usize> {
+    let bytes = s.as_bytes();
+    let mut depth = 0i32;
+    let mut in_string = false;
+    let mut i = 0;
+    while i < bytes.len() {
+        let b = bytes[i];
+        if in_string {
+            if b == b'"' { in_string = false; }
+            i += 1;
+            continue;
+        }
+        match b {
+            b'"' => in_string = true,
+            b'{' | b'(' | b'[' => depth += 1,
+            b'}' | b')' | b']' => depth -= 1,
+            b':' if depth == 0 => {
+                // Skip `::` (path separator).
+                if i + 1 < bytes.len() && bytes[i + 1] == b':' {
+                    i += 2;
+                    continue;
+                }
+                return Some(i);
+            }
+            _ => {}
+        }
+        i += 1;
+    }
+    None
+}
+
+fn indent_lines(text: &str, _indent: usize) -> String {
+    // The first line stays where it is; subsequent lines get an extra
+    // 4-space indent to align with their parent's nesting level. rustfmt's
+    // canonical layout for nested objects in macro bodies is:
+    //   "outer": {
+    //       "inner": value,
+    //   },
+    // We add 4 spaces to lines 2..N (the closing brace + inner items).
+    let lines: Vec<&str> = text.lines().collect();
+    if lines.len() <= 1 {
+        return text.to_string();
+    }
+    let mut out = String::from(lines[0]);
+    for line in &lines[1..] {
+        out.push('\n');
+        if !line.is_empty() {
+            out.push_str("    ");
+        }
+        out.push_str(line);
+    }
+    out
+}
+
+/// Normalize whitespace in macro token text. syn::to_token_stream renders
+/// every punctuation token with surrounding spaces (`key : value`,
+/// `! v . is_null ( )`). For byte-comparison with source we collapse:
+///   `key : value` -> `key: value`
+///   `recv . method ( )` -> `recv.method()`
+///   `! expr` -> `!expr`  (when not part of `!=`)
+/// This is a pragmatic cleanup; the canonical fix is preserving original
+/// source spans at lift time.
+fn normalize_macro_tokens(tokens: &str) -> String {
+    let mut out = String::with_capacity(tokens.len());
+    let bytes = tokens.as_bytes();
+    let mut i = 0;
+    let mut in_string = false;
+    while i < bytes.len() {
+        // Track string-literal regions so we don't mangle their content.
+        // Rust string literal: starts with `"`, ends with unescaped `"`.
+        // Within a string we copy bytes verbatim.
+        if in_string {
+            out.push(bytes[i] as char);
+            if bytes[i] == b'\\' && i + 1 < bytes.len() {
+                // Skip the escaped char.
+                out.push(bytes[i + 1] as char);
+                i += 2;
+                continue;
+            }
+            if bytes[i] == b'"' {
+                in_string = false;
+            }
+            i += 1;
+            continue;
+        }
+        if bytes[i] == b'"' {
+            in_string = true;
+            out.push('"');
+            i += 1;
+            continue;
+        }
+        // Pattern: ` X ` where X is `:` `.` `(` `)` `[` `]` `,` `;` `!`
+        if i + 2 < bytes.len() && bytes[i] == b' ' {
+            let next = bytes[i + 1];
+            match next {
+                b':' => {
+                    // Distinguish `:` from `::`. For json! body we have
+                    // `key : value` (single colon, KV separator).
+                    if i + 2 < bytes.len() && bytes[i + 2] == b':' {
+                        // Path separator `Foo :: Bar` -> `Foo::Bar`
+                        out.push(':');
+                        out.push(':');
+                        i += 4.min(bytes.len() - i);
+                        // Skip the space after `::` too
+                        while i < bytes.len() && bytes[i] == b' ' {
+                            i += 1;
+                        }
+                        continue;
+                    } else {
+                        // `key : value` -> `key: value` (drop space before)
+                        out.push(':');
+                        i += 2;
+                        continue;
+                    }
+                }
+                b'.' => {
+                    // `recv . method` -> `recv.method`. Drop space before
+                    // and after.
+                    out.push('.');
+                    i += 2;
+                    while i < bytes.len() && bytes[i] == b' ' { i += 1; }
+                    continue;
+                }
+                b'(' | b'[' | b',' | b';' => {
+                    out.push(next as char);
+                    i += 2;
+                    continue;
+                }
+                _ => {}
+            }
+        }
+        // ` ) ` / ` ] ` — drop space before closers.
+        if i + 1 < bytes.len() && bytes[i] == b' ' && (bytes[i + 1] == b')' || bytes[i + 1] == b']') {
+            out.push(bytes[i + 1] as char);
+            i += 2;
+            continue;
+        }
+        // `! v` — drop space when prev char isn't `=` (not `!=`).
+        if i + 1 < bytes.len() && bytes[i] == b'!' && bytes[i + 1] == b' ' {
+            let prev_is_op_or_start = out.is_empty()
+                || matches!(out.as_bytes().last(), Some(b' ' | b'(' | b'[' | b'{' | b',' | b';' | b':'));
+            if prev_is_op_or_start {
+                out.push('!');
+                i += 2;
+                continue;
+            }
+        }
+        out.push(bytes[i] as char);
+        i += 1;
+    }
+    out
+}
+
+/// Decide whether a binary-op operand text needs parens. Atoms (a single
+/// identifier, literal, call, method chain, indexed-access) are emitted
+/// bare; anything with a binary operator at the top level gets wrapped.
+/// Avoids the verbose `(a) + (b)` form rustfmt won't simplify.
+fn paren_for_op(text: &str) -> String {
+    let trimmed = text.trim();
+    // Already parenthesized at top level — leave as-is.
+    if trimmed.starts_with('(') && trimmed.ends_with(')') {
+        // Verify the wrapping parens match (could be `(a) + (b)` which
+        // is NOT a single parenthesized expression).
+        let mut depth = 0;
+        let mut first_zero_at_end = true;
+        for (i, c) in trimmed.char_indices() {
+            if c == '(' { depth += 1; }
+            else if c == ')' { depth -= 1; if depth == 0 && i + 1 < trimmed.len() { first_zero_at_end = false; break; } }
+        }
+        if first_zero_at_end { return trimmed.to_string(); }
+    }
+    // Atomic forms: identifier, literal, call, method chain — no
+    // binary op at top level. Crude but effective: if there's no
+    // unparenthesized space-separated operator like ' + ' / ' && ',
+    // emit bare.
+    let mut depth_paren = 0i32;
+    let mut depth_bracket = 0i32;
+    let bytes = trimmed.as_bytes();
+    let mut i = 0;
+    while i < bytes.len() {
+        match bytes[i] {
+            b'(' => depth_paren += 1,
+            b')' => depth_paren -= 1,
+            b'[' => depth_bracket += 1,
+            b']' => depth_bracket -= 1,
+            b' ' if depth_paren == 0 && depth_bracket == 0 => {
+                // Top-level space — likely surrounds a binary op.
+                // Need parens.
+                return format!("({trimmed})");
+            }
+            _ => {}
+        }
+        i += 1;
+    }
+    trimmed.to_string()
+}
+
+/// Heuristic: does the for-loop body use `var` in a position that requires
+/// primitive (non-reference) semantics? Detects `var >> N`, `var & N`,
+/// `var as TYPE`, and similar — all of which require var:T not var:&T,
+/// implying the source was `for &var in &iter`.
+fn body_uses_var_as_primitive(body: &str, var: &str) -> bool {
+    if var.is_empty() { return false; }
+    // Look for `<var>` followed (after optional whitespace) by an op that
+    // needs primitive semantics, OR `(<var>)` followed by such an op.
+    let patterns: &[&str] = &[
+        &format!("{} >>", var), &format!("{}>>", var),
+        &format!("{} <<", var), &format!("{}<<", var),
+        &format!("{} & ", var), &format!("{}&", var),
+        &format!("{} | ", var), &format!("{}|", var),
+        &format!("{} as ", var),
+        &format!("{} + ", var), &format!("{} - ", var),
+        &format!("{} * ", var), &format!("{} / ", var),
+        &format!("{} % ", var),
+        &format!("({})", var),
+    ];
+    // Boundary check: don't match `bar` against `bart`. Look for the
+    // pattern preceded by non-identifier char.
+    for pat in patterns {
+        let mut from = 0usize;
+        while let Some(pos) = body[from..].find(pat) {
+            let abs = from + pos;
+            let prev = if abs == 0 { ' ' } else { body.as_bytes()[abs - 1] as char };
+            if !(prev.is_ascii_alphanumeric() || prev == '_') {
+                return true;
+            }
+            from = abs + pat.len();
+        }
+    }
+    false
+}
+
+/// Post-pass mut inference (#1391 follow-on). Scan the emitted body for
+/// mutating method calls `<recv>.<method>(...)` where method ∈ {push,
+/// insert, push_str, set, append, add, extend, pop, clear, remove,
+/// truncate} and promote the receiver's `let recv = ...;` (or `let recv:
+/// T = ...;`) to `let mut recv = ...;`. Conservative: only promotes
+/// receivers that appear as a `<ident>.<method>(` text pattern and have
+/// a matching `let <ident>` line earlier in the body.
+fn infer_let_mut(body: &str) -> String {
+    use std::collections::HashSet;
+    const MUTATING: &[&str] = &[
+        "push", "insert", "push_str", "set", "append", "add", "extend",
+        "pop", "clear", "remove", "truncate",
+    ];
+    let mut receivers: HashSet<String> = HashSet::new();
+    let receiver_pat = regex_lite_find_method_receivers(body, MUTATING);
+    for r in receiver_pat {
+        receivers.insert(r);
+    }
+    if receivers.is_empty() {
+        return body.to_string();
+    }
+    let mut out = Vec::new();
+    for line in body.lines() {
+        let trim = line.trim_start();
+        let mut rewritten = None;
+        if let Some(rest) = trim.strip_prefix("let ") {
+            if !rest.starts_with("mut ") {
+                // Extract the binding identifier.
+                let end = rest.find(|c: char| !c.is_ascii_alphanumeric() && c != '_');
+                if let Some(end) = end {
+                    let name = &rest[..end];
+                    let next = rest[end..].chars().next();
+                    if matches!(next, Some(':') | Some('=') | Some(' ')) && receivers.contains(name) {
+                        let indent = &line[..line.len() - trim.len()];
+                        rewritten = Some(format!("{}let mut {}", indent, rest));
+                    }
+                }
+            }
+        }
+        out.push(rewritten.unwrap_or_else(|| line.to_string()));
+    }
+    out.join("\n")
+}
+
+/// Find receivers of mutating method calls. Returns identifiers that
+/// appear as `<ident>.<method>(`.
+fn regex_lite_find_method_receivers(body: &str, methods: &[&str]) -> Vec<String> {
+    let mut out = Vec::new();
+    for method in methods {
+        let needle = format!(".{}(", method);
+        let mut search_from = 0;
+        while let Some(pos) = body[search_from..].find(&needle) {
+            let absolute = search_from + pos;
+            // Walk backwards over identifier chars from `absolute`.
+            let bytes = body.as_bytes();
+            let mut start = absolute;
+            while start > 0 {
+                let c = bytes[start - 1] as char;
+                if c.is_ascii_alphanumeric() || c == '_' {
+                    start -= 1;
+                } else {
+                    break;
+                }
+            }
+            if start < absolute {
+                let ident = &body[start..absolute];
+                // Skip if preceded by `.` (chained call: `a.b.push(...)`) or
+                // by `::` (path call: `Foo::push(...)`).
+                if start > 0 {
+                    let prev = bytes[start - 1] as char;
+                    if prev == '.' || prev == ':' {
+                        search_from = absolute + needle.len();
+                        continue;
+                    }
+                }
+                out.push(ident.to_string());
+            }
+            search_from = absolute + needle.len();
+        }
+    }
+    out
+}
+
 fn function_source(
     function: &str,
     params: &[String],
@@ -1989,23 +3217,45 @@ fn function_source(
     // `s: &str` must NOT be transformed to `s: String`. The cross-language
     // canonicalization done by `map_source_type` is for body-template
     // matching, not signature emission.
+    // Prefer original_param_types (byte-identical source spelling, e.g.
+    // `&A`) when available. Fall back to param_types (substituted form,
+    // e.g. `AdapterLifter` after trait-bound substitution).
+    let original_params = CURRENT_ORIGINAL_PARAM_TYPES.with(|v| v.borrow().clone());
     let typed_params = params
         .iter()
         .enumerate()
         .map(|(index, name)| {
-            let ty = param_types
+            let ty = original_params
                 .get(index)
                 .cloned()
+                .filter(|s| !s.is_empty())
+                .or_else(|| param_types.get(index).cloned())
                 .unwrap_or_else(|| "i64".to_string());
+            // #1391 follow-on: when type is a java FQN (cross-language
+            // signal), translate to rust source via map_source_type.
+            // map_source_type's fallback is identity, so same-language
+            // types pass through unchanged.
+            let ty = if ty.contains('.') || ty == "JsonNode" || ty.starts_with("Result<") {
+                map_source_type(&ty)
+            } else {
+                ty
+            };
             format!("{name}: {ty}")
         })
         .collect::<Vec<_>>()
         .join(", ");
+    let mapped_return = if return_type.contains('.') || return_type == "JsonNode" || return_type.starts_with("Result<") {
+        map_source_type(return_type)
+    } else {
+        return_type.to_string()
+    };
+    let return_type = mapped_return.as_str();
     let return_suffix = if return_type.is_empty() || return_type == "()" || return_type == "void" {
         String::new()
     } else {
         format!(" -> {return_type}")
     };
+    let generic_params = CURRENT_GENERIC_PARAMS.with(|v| v.borrow().clone());
     let body_lines = body.lines().collect::<Vec<_>>();
     let indented = if body_lines.is_empty() {
         String::new()
@@ -2022,7 +3272,289 @@ fn function_source(
             .collect::<Vec<_>>()
             .join("\n")
     };
-    format!("pub fn {function}({typed_params}){return_suffix} {{\n{indented}\n}}\n")
+    // Post-process macro-arg indent sentinels. For each line containing a
+    // sentinel, look back through previous lines to find the macro call's
+    // leading whitespace, then substitute the sentinel with that indent +
+    // 4 (for args) or same indent (for closing paren). This gives correct
+    // depth-aware indent for macro bodies without rustfmt re-indenting.
+    let indented = resolve_macro_indent_sentinels(&indented);
+    let vis_prefix = CURRENT_VISIBILITY.with(|v| {
+        let s = v.borrow();
+        if s.is_empty() { String::new() } else { format!("{} ", s.as_str()) }
+    });
+    // Emit #[provekit::sugar(concept = "X")] attribute when concept name
+    // is known. This marks the function for re-lifting in subsequent
+    // cycles — the cycle-invariance test.
+    let attr_prefix = CURRENT_CONCEPT_NAME.with(|v| {
+        let s = v.borrow();
+        if s.is_empty() {
+            String::new()
+        } else {
+            // Full @sugar attribute matching the source form so the
+            // lifter recognizes the function in subsequent cycles.
+            // library tag = libprovekit-rpc-cross-platform (the demo's
+            // canonical library — generalizing to per-fn library lookup
+            // is future work for multi-library round-trips).
+            format!(
+                "#[provekit::sugar(\n    concept = \"{}\",\n    library = \"libprovekit-rpc-cross-platform\",\n    loss = [],\n)]\n",
+                s
+            )
+        }
+    });
+    // Doc-comment prefix: emit each doc line as `/// <text>` between the
+    // @sugar attribute and the fn signature, matching the rust source's
+    // typical `attr → doc → fn` order.
+    let doc_prefix = CURRENT_DOC_LINES.with(|v| {
+        let lines = v.borrow();
+        if lines.is_empty() {
+            String::new()
+        } else {
+            lines.iter()
+                .map(|l| format!("///{}\n", l))
+                .collect::<Vec<_>>()
+                .join("")
+        }
+    });
+    let assembled = format!("{attr_prefix}{doc_prefix}{vis_prefix}fn {function}{generic_params}({typed_params}){return_suffix} {{\n{indented}\n}}\n");
+    // #1391 follow-on: macro-body re-indent. rustfmt on stable does NOT
+    // reformat macro internals. The sentinel resolver gives args the
+    // pre-rustfmt column position; when rustfmt re-indents the macro call
+    // line (e.g. moving `format!(` from col 4 to col 12 because it's
+    // inside a closure block), the args stay at their original column.
+    // Fix: run rustfmt over the assembled source, then for each macro call
+    // line in the rustfmt output, re-indent the body between `!(` and the
+    // matching `)` to call_col+4. This closes the run_server diff.
+    rustfmt_then_reindent_macro_bodies(&assembled)
+}
+
+/// Run rustfmt on the assembled function source, then re-indent macro
+/// body lines to match the macro call's final column position. If
+/// rustfmt is unavailable or fails, returns the input unchanged.
+fn rustfmt_then_reindent_macro_bodies(src: &str) -> String {
+    // Try rustfmt first. If it fails (rustfmt not on PATH, parse error,
+    // etc.) fall through to the original sentinel-resolved output.
+    let rustfmt_out = match std::process::Command::new("rustfmt")
+        .arg("--emit=stdout")
+        .arg("--edition=2021")
+        .stdin(std::process::Stdio::piped())
+        .stdout(std::process::Stdio::piped())
+        .stderr(std::process::Stdio::piped())
+        .spawn()
+    {
+        Ok(mut child) => {
+            use std::io::Write;
+            if let Some(stdin) = child.stdin.as_mut() {
+                let _ = stdin.write_all(src.as_bytes());
+            }
+            match child.wait_with_output() {
+                Ok(out) if out.status.success() => {
+                    String::from_utf8_lossy(&out.stdout).to_string()
+                }
+                _ => return src.to_string(),
+            }
+        }
+        Err(_) => return src.to_string(),
+    };
+    reindent_macro_bodies(&rustfmt_out)
+}
+
+/// For each macro call line ending `!(`, find the matching closing `)`
+/// and re-indent every body line to match call_col+4. The closing `)`
+/// is re-indented to match the call_col.
+fn reindent_macro_bodies(text: &str) -> String {
+    let lines: Vec<&str> = text.lines().collect();
+    let mut out: Vec<String> = Vec::with_capacity(lines.len());
+    let mut i = 0;
+    while i < lines.len() {
+        let line = lines[i];
+        let trimmed = line.trim_start();
+        // Detect a macro call line: ends with `!(` after the trimmed text.
+        // Examples: `format!(`, `json!(`, `panic!(`. Ignore lines that
+        // also contain `)` (single-line macro call — nothing to re-indent).
+        if trimmed.ends_with("!(") && !trimmed.contains(')') {
+            let call_indent: String = line.chars().take_while(|c| *c == ' ').collect();
+            let arg_indent = format!("{}    ", call_indent);
+            out.push(line.to_string());
+            i += 1;
+            // Track paren depth to find the matching `)`. Start at 1
+            // (the `!(` we just consumed). Body lines re-indented; the
+            // line containing the matching `)` becomes call_indent + `);`
+            // (or call_indent + `)` if no semicolon, or call_indent + `)?`
+            // etc — preserve the trailing tokens after the closing paren).
+            let mut depth: i32 = 1;
+            while i < lines.len() && depth > 0 {
+                let body_line = lines[i];
+                let body_trim = body_line.trim_start();
+                // Scan for parens but respect strings. The macro body lines
+                // we emit contain JSON-escaped strings; track in-string state.
+                let (new_depth, closes_here, close_col) =
+                    scan_paren_balance(body_trim, depth);
+                if closes_here {
+                    // Closing line: indent at call_indent, then keep the
+                    // trailing characters after the `)`. Reconstruct as
+                    // call_indent + body_trim (preserve the `);` or `)?`).
+                    out.push(format!("{}{}", call_indent, body_trim));
+                    depth = new_depth;
+                } else {
+                    // Continuation body line: re-indent to arg_indent.
+                    out.push(format!("{}{}", arg_indent, body_trim));
+                    depth = new_depth;
+                    let _ = close_col;
+                }
+                i += 1;
+            }
+            continue;
+        }
+        out.push(line.to_string());
+        i += 1;
+    }
+    let mut joined = out.join("\n");
+    // Preserve trailing newline if original had one.
+    if text.ends_with('\n') && !joined.ends_with('\n') {
+        joined.push('\n');
+    }
+    joined
+}
+
+/// Map a java type string (as it appears in the lowered.java source)
+/// to a rust let-binding annotation. The java lift restricts let_type
+/// emission to generic-constructor sites, so the only inputs we see
+/// here are container-shaped: `java.util.ArrayList<T>`, `java.util.TreeSet<T>`,
+/// `java.util.HashMap<K,V>`, etc. Plus the fully-qualified Jackson
+/// JsonNode + unparameterised List/Map/Set that arose pre-#1391.
+fn java_type_to_rust_let_annotation(ty: &str) -> String {
+    let t = ty.trim();
+    // Strip outer parens/generics for the family check, but preserve
+    // them for parameter forwarding when present.
+    let head = t.split('<').next().unwrap_or(t).trim();
+    let params: Option<&str> = t.find('<').and_then(|i| {
+        let rest = &t[i + 1..];
+        rest.rfind('>').map(|j| &rest[..j])
+    });
+    fn map_param_to_rust(p: &str) -> String {
+        // Recursively map parametric components — but for our
+        // libprovekit-rpc-cross-platform corpus, the inner type is
+        // always String/JsonNode/etc. Use the existing primitive map.
+        let p = p.trim();
+        match p {
+            "String" | "java.lang.String" => "String".to_string(),
+            "Integer" | "Long" | "java.lang.Long" | "java.lang.Integer" => "i64".to_string(),
+            "com.fasterxml.jackson.databind.JsonNode" | "JsonNode" => "Value".to_string(),
+            _ => p.to_string(),
+        }
+    }
+    let container = match head {
+        "java.util.ArrayList" | "ArrayList" | "java.util.List" | "List"
+        | "java.util.LinkedList" | "LinkedList" => "Vec",
+        "java.util.TreeSet" | "TreeSet" => "BTreeSet",
+        "java.util.HashSet" | "HashSet" => "HashSet",
+        "java.util.HashMap" | "HashMap" => "HashMap",
+        "java.util.TreeMap" | "TreeMap" => "BTreeMap",
+        _ => return String::new(), // Unrecognized — suppress annotation.
+    };
+    match params {
+        Some(p) if !p.trim().is_empty() => {
+            // Single-param container: List<T> / Set<T>.
+            // Two-param container: Map<K,V>.
+            let mut depth = 0i32;
+            let mut parts: Vec<String> = Vec::new();
+            let mut current = String::new();
+            for ch in p.chars() {
+                match ch {
+                    '<' => { depth += 1; current.push(ch); }
+                    '>' => { depth -= 1; current.push(ch); }
+                    ',' if depth == 0 => {
+                        parts.push(current.trim().to_string());
+                        current.clear();
+                    }
+                    _ => current.push(ch),
+                }
+            }
+            if !current.trim().is_empty() { parts.push(current.trim().to_string()); }
+            let mapped: Vec<String> = parts.iter().map(|s| map_param_to_rust(s)).collect();
+            format!("{}<{}>", container, mapped.join(", "))
+        }
+        _ => {
+            // No parameters supplied (e.g. bare `java.util.List`). For
+            // the libprovekit corpus, source-side Vec was `Vec<Value>`
+            // for JsonNode arrays and `Vec<String>` for paths; without
+            // generics we can't tell. Suppress to avoid wrong types.
+            String::new()
+        }
+    }
+}
+
+/// Scan a line of code (string-aware) and update paren depth. Returns
+/// (new_depth, does_this_line_close_to_zero, col_of_closing_paren).
+fn scan_paren_balance(line: &str, mut depth: i32) -> (i32, bool, usize) {
+    let mut in_str = false;
+    let mut esc = false;
+    let bytes = line.as_bytes();
+    let mut close_col = 0usize;
+    let mut closed_here = false;
+    for (col, &b) in bytes.iter().enumerate() {
+        if esc { esc = false; continue; }
+        if b == b'\\' { esc = true; continue; }
+        if b == b'"' { in_str = !in_str; continue; }
+        if in_str { continue; }
+        if b == b'(' { depth += 1; }
+        else if b == b')' {
+            depth -= 1;
+            if depth == 0 {
+                closed_here = true;
+                close_col = col;
+            }
+        }
+    }
+    (depth, closed_here, close_col)
+}
+
+/// Resolve macro-arg indent sentinels to depth-aware leading whitespace.
+/// Sentinels marker: `\u{1F}MACRO_ARG_INDENT\u{1F}` for arg lines,
+/// `\u{1F}MACRO_CLOSE_INDENT\u{1F}` for the closing paren.
+///
+/// For each line containing a sentinel, look back through previous lines
+/// to find the macro call line (containing the matching `!(`) and use its
+/// leading whitespace + 4 for args, same for closing paren.
+fn resolve_macro_indent_sentinels(text: &str) -> String {
+    let lines: Vec<&str> = text.lines().collect();
+    let mut out_lines: Vec<String> = Vec::with_capacity(lines.len());
+    // Track open macro-call lines: stack of leading-whitespace strings.
+    let mut macro_stack: Vec<String> = Vec::new();
+    for line in lines.iter() {
+        let leading_ws: String = line.chars().take_while(|c| *c == ' ').collect();
+        let trimmed = line.trim_start();
+        // Detect macro call line (ends with `!(`).
+        if trimmed.ends_with("!(") {
+            macro_stack.push(leading_ws.clone());
+        }
+        if line.contains("\u{1F}MACRO_ARG_INDENT\u{1F}") {
+            let call_indent = macro_stack
+                .last()
+                .cloned()
+                .unwrap_or_else(|| "        ".to_string());
+            let arg_indent = format!("{}    ", call_indent);
+            out_lines.push(line.replace("\u{1F}MACRO_ARG_INDENT\u{1F}", &arg_indent));
+            continue;
+        }
+        if line.contains("\u{1F}MACRO_CLOSE_INDENT\u{1F}") {
+            let call_indent = macro_stack
+                .pop()
+                .unwrap_or_else(|| "        ".to_string());
+            out_lines.push(line.replace("\u{1F}MACRO_CLOSE_INDENT\u{1F}", &call_indent));
+            continue;
+        }
+        // Detect closing paren that closes a top-level macro call (no
+        // sentinel — bare `);` or `)` after macro args).
+        if trimmed.starts_with(')') && !macro_stack.is_empty() {
+            // Heuristic: if previous output line ended with a macro arg
+            // or sentinel-resolved value, this `)` likely closes the
+            // macro. Pop.
+            macro_stack.pop();
+        }
+        out_lines.push(line.to_string());
+    }
+    out_lines.join("\n")
 }
 
 fn stub_body_for(concept_name: &str) -> String {
@@ -2048,19 +3580,57 @@ fn rust_string_literal(value: &str) -> String {
 }
 
 fn map_source_type(src: &str) -> String {
-    match src.trim() {
-        "" => "()".to_string(),
-        "void" | "None" | "()" => "()".to_string(),
-        "long" | "int" | "i64" | "u64" => "i64".to_string(),
-        "i32" | "u32" => "i32".to_string(),
-        "short" | "i16" | "u16" => "i16".to_string(),
-        "byte" | "char" | "i8" | "u8" => "i8".to_string(),
-        "boolean" | "bool" => "bool".to_string(),
-        "double" | "float" | "f64" | "f32" => "f64".to_string(),
-        "String" | "str" | "&str" | "&String" => "String".to_string(),
-        "list" | "List" | "list[int]" | "list[i64]" => "&[i64]".to_string(),
-        other => other.to_string(),
+    let t = src.trim();
+    // Java FQN translations back to rust (cross-language source-text mapping).
+    // #1391 follow-on: handles the rust→java→rust cycle's residual type
+    // leakage when param_sort_cids isn't populated by the java lift.
+    match t {
+        "" => return "()".to_string(),
+        "void" | "None" | "()" => return "()".to_string(),
+        "long" | "int" | "i64" | "u64" => return "i64".to_string(),
+        "i32" | "u32" => return "i32".to_string(),
+        "short" | "i16" | "u16" => return "i16".to_string(),
+        "byte" | "char" | "i8" | "u8" => return "i8".to_string(),
+        "boolean" | "bool" => return "bool".to_string(),
+        "double" | "float" | "f64" | "f32" => return "f64".to_string(),
+        "String" | "str" | "&str" | "&String" => return "String".to_string(),
+        "list" | "List" | "list[int]" | "list[i64]" => return "&[i64]".to_string(),
+        // Jackson / java.util / provekit runtime FQNs from the java emit.
+        "com.fasterxml.jackson.databind.JsonNode" | "JsonNode" => return "Value".to_string(),
+        "java.util.List<String>" => return "&[String]".to_string(),
+        "java.nio.file.Path" | "Path" => return "&Path".to_string(),
+        "byte[]" => return "&[u8]".to_string(),
+        _ => {}
     }
+    // Parametric java→rust translations.
+    if let Some(inner) = t.strip_prefix("java.util.List<").and_then(|s| s.strip_suffix('>')) {
+        return format!("&[{}]", map_source_type(inner));
+    }
+    if let Some(inner) = t.strip_prefix("com.provekit.runtime.Result<")
+        .or_else(|| t.strip_prefix("Result<"))
+        .and_then(|s| s.strip_suffix('>'))
+    {
+        // Split top-level comma; map both sides.
+        let mut depth = 0i32;
+        let mut split = None;
+        for (i, c) in inner.char_indices() {
+            match c {
+                '<' => depth += 1,
+                '>' => depth -= 1,
+                ',' if depth == 0 => { split = Some(i); break; }
+                _ => {}
+            }
+        }
+        if let Some(i) = split {
+            let ok = map_source_type(inner[..i].trim());
+            let err = map_source_type(inner[i+1..].trim());
+            return format!("Result<{}, {}>", ok, err);
+        }
+    }
+    if t == "com.provekit.runtime.SumVariant" || t == "SumVariant" {
+        return "LiftError".to_string();
+    }
+    t.to_string()
 }
 
 /// #1369: cross-language rust realize parametric dispatch.
@@ -2293,6 +3863,38 @@ fn find_repo_file(relative: &Path) -> Option<PathBuf> {
 mod tests {
     use super::*;
     use std::path::PathBuf;
+
+    /// Catalog-driven dispatch (#1391): the realizations catalog at
+    /// menagerie/concept-shapes/catalog/realizations/ must contain the
+    /// six operation-realization mementos minted in this PR. Forward
+    /// (concept → rhs op) and reverse (rhs op → concept) must round-trip.
+    #[test]
+    fn operation_realization_catalog_round_trips() {
+        let probes: &[(&str, &str)] = &[
+            ("concept:utf8-encode", "rust:str-as-bytes"),
+            ("concept:json-text-coerce", "rust:serde-value-as-str"),
+            ("concept:option-is-some", "rust:option-is-some"),
+            ("concept:list-create", "rust:vec-new"),
+            ("concept:map-create", "rust:hashmap-new"),
+            ("concept:format-string-interp", "rust:format-macro"),
+        ];
+        for (concept, rhs) in probes {
+            let got_rhs = operation_realization_catalog::rust_op_for(concept);
+            assert_eq!(
+                got_rhs.as_deref(),
+                Some(*rhs),
+                "forward lookup {} → {:?} (expected {})",
+                concept, got_rhs, rhs
+            );
+            let got_concept = operation_realization_catalog::concept_for_rust_op(rhs);
+            assert_eq!(
+                got_concept.as_deref(),
+                Some(*concept),
+                "reverse lookup {} → {:?} (expected {})",
+                rhs, got_concept, concept
+            );
+        }
+    }
 
     fn strings(items: &[&str]) -> Vec<String> {
         items.iter().map(|item| item.to_string()).collect()

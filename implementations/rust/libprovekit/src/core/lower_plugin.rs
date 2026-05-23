@@ -40,6 +40,19 @@ pub struct RealizeRequest {
     pub proc_macro_invocations: Vec<Value>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub source_function_name: Option<String>,
+    /// Source-language visibility for the function (e.g. "pub",
+    /// "pub(crate)", or empty for private/inherited). The realize plugin
+    /// uses this to reproduce the source's visibility on emit.
+    #[serde(default, skip_serializing_if = "String::is_empty")]
+    pub visibility: String,
+    /// Generic parameter declarations (e.g. "<A: AdapterLifter>"). Empty
+    /// for non-generic functions.
+    #[serde(default, skip_serializing_if = "String::is_empty")]
+    pub generic_params: String,
+    /// Original param types as-written in source (byte-identical signature
+    /// emission). param_types is the substituted form for body templates.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub original_param_types: Vec<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub mode: Option<String>,
     #[serde(skip_serializing_if = "Vec::is_empty")]
@@ -91,6 +104,28 @@ pub struct RealizeRequest {
     /// CIDs (non-parametric) are absent from this map.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub parametric_sort_expansions: Vec<ParametricSortExpansion>,
+    /// Substrate-honest cross-term type catalog. Maps function name → its
+    /// raw source-language return type (e.g. "(Value,bool)" for a rust
+    /// tuple-returning function). cmd_lower builds this from the named-
+    /// term-doc once and injects per-term so realize plugins can resolve
+    /// tuple destructure element types + other cross-term return types
+    /// instead of falling back to var inference.
+    #[serde(
+        default,
+        skip_serializing_if = "std::collections::BTreeMap::is_empty"
+    )]
+    pub function_return_types: std::collections::BTreeMap<String, String>,
+    /// Source-language doc comments (the `///` lines after the
+    /// `#[provekit::sugar(...)]` attribute). Realize plugins emit these
+    /// in the @substrate-signature header so subsequent lifts can
+    /// recover them for the cycle round-trip.
+    #[serde(
+        default,
+        rename = "docLines",
+        alias = "doc_lines",
+        skip_serializing_if = "Vec::is_empty"
+    )]
+    pub doc_lines: Vec<String>,
 }
 
 /// Canonical form of a parametric sort application — the structure whose
@@ -763,6 +798,11 @@ fn invocation_from_tree_node(
         operand_bindings,
         source_function_name: node_string(node, &["sourceFunctionName", "source_function_name"])
             .or_else(|| parent_request.source_function_name.clone()),
+        visibility: node_string(node, &["visibility"]).unwrap_or_default(),
+        generic_params: node_string(node, &["genericParams", "generic_params"])
+            .unwrap_or_default(),
+        original_param_types: node_string_array(node, &["originalParamTypes", "original_param_types"])?
+            .unwrap_or_default(),
         mode,
         modes,
         contract: parent_request.contract.clone(),
@@ -786,6 +826,9 @@ fn invocation_from_tree_node(
             node,
             &["procMacroInvocations", "proc_macro_invocations"],
         ),
+        function_return_types: parent_request.function_return_types.clone(),
+        doc_lines: node_string_array(node, &["docLines", "doc_lines"])?
+            .unwrap_or_else(|| parent_request.doc_lines.clone()),
     };
     let mut from = Vec::new();
     if let Some(shape_cid) = optional_cid_field(node, &["shapeCid", "shape_cid"])? {
@@ -1008,10 +1051,14 @@ pub fn realize_spec_from_named_term(term: &NamedTerm) -> Result<Value, String> {
         "params": term.params,
         "paramTypes": param_types,
         "returnType": return_type,
+        "visibility": term.visibility,
+        "genericParams": term.generic_params,
+        "originalParamTypes": term.original_param_types,
         "conceptName": term.concept_name,
         "namedTermTree": named_term_tree,
         "termShape": term.term_shape,
         "termShapeCid": term.term_shape_cid,
+        "docLines": term.doc_lines,
     }))
 }
 
@@ -1088,7 +1135,14 @@ fn sidecar_entry_for_term<'a>(sidecar: &'a Value, term: &NamedTerm) -> Option<&'
 }
 
 fn realize_signature_from_named_term(term: &NamedTerm) -> (Vec<String>, String) {
-    let erased = term.param_types.is_empty() && matches!(term.return_type.trim(), "" | "()");
+    // Erasure heuristic: legacy bind payloads sometimes omit type info
+    // entirely. Distinguish "no types declared" from "types declared as
+    // empty/unit". `return_type == ""` is absence; `return_type == "()"`
+    // is explicit unit. Functions with declared parameters or explicit
+    // return type are NOT erased.
+    let erased = term.param_types.is_empty()
+        && term.params.is_empty()
+        && term.return_type.trim().is_empty();
     if !erased {
         return (term.param_types.clone(), term.return_type.clone());
     }
@@ -1144,6 +1198,14 @@ pub fn request_from_spec(spec: &Value) -> Result<RealizeRequest, String> {
             spec,
             &["sourceFunctionName", "source_function_name"],
         ),
+        visibility: string_field_optional(spec, &["visibility"]).unwrap_or_default(),
+        generic_params: string_field_optional(spec, &["genericParams", "generic_params"])
+            .unwrap_or_default(),
+        original_param_types: string_array_field(
+            spec,
+            &["originalParamTypes", "original_param_types"],
+        )
+        .unwrap_or_default(),
         mode: string_field_optional(spec, &["mode"]),
         modes: string_array_field(spec, &["modes"]).unwrap_or_default(),
         contract,
@@ -1164,6 +1226,13 @@ pub fn request_from_spec(spec: &Value) -> Result<RealizeRequest, String> {
             .get("parametric_sort_expansions")
             .or_else(|| spec.get("parametricSortExpansions"))
             .and_then(|v| serde_json::from_value(v.clone()).ok())
+            .unwrap_or_default(),
+        function_return_types: spec
+            .get("function_return_types")
+            .or_else(|| spec.get("functionReturnTypes"))
+            .and_then(|v| serde_json::from_value(v.clone()).ok())
+            .unwrap_or_default(),
+        doc_lines: string_array_field(spec, &["docLines", "doc_lines"])
             .unwrap_or_default(),
     })
 }

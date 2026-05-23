@@ -1,0 +1,35 @@
+{
+  "memento": {
+    "kind": "equation",
+    "fn_name": "concept:list-create->rust:vec-new",
+    "formals": [],
+    "formal_sorts": [],
+    "post": {
+      "lhs": {
+        "kind": "op",
+        "name": "concept:list-create",
+        "args": []
+      },
+      "rhs": {
+        "kind": "op",
+        "name": "rust:vec-new",
+        "args": []
+      }
+    },
+    "role": "abstraction-realization",
+    "direction": "left-to-right",
+    "target_lang": "rust",
+    "target_library": "rust-language-builtin",
+    "loss_record": {
+      "structural_divergence": "rust Vec::new() allocates 0-capacity heap vector"
+    },
+    "discharge_receipt": "deferred:pending-pk-1391",
+    "effects": []
+  },
+  "cid": "blake3-512:ad2b68ea76d6656c57f388386590aca1caf94f32ebb94fc81c447a764e5184d6f1987328dec22ac84a0845e8521dbb3f4a932e2e3efc7c620e56ef965c80fdaf",
+  "signature": {
+    "alg": "ed25519",
+    "key_id": "UNSIGNED_DEV_ONLY",
+    "sig_b64": "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"
+  }
+}

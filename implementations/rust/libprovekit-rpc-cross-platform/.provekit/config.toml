@@ -1,3 +1,6 @@
+[authoring]
+surface = "rust-bind"
+
 [[plugins]]
 name = "rust-sugar"
 surface = "rust-bind"

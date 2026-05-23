@@ -2210,6 +2210,7 @@ dependencies = [
  "provekit-ir-types",
  "provekit-lift-contracts",
  "provekit-proof-envelope",
+ "provekit-realize-rust-core",
  "quote",
  "serde_json",
  "syn",

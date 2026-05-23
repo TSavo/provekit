@@ -386,10 +386,65 @@ public final class RpcServer {
         // morphism dispatch.
         java.util.List<SugarRealizer.ParametricExpansion> parametricExpansions = parseParametricExpansions(
                 JsonUtil.extractArrayField(paramsObj, "parametric_sort_expansions"));
-        SugarRealizer.Realization r =
-                SugarRealizer.emitStub(emittedFunction, params, paramTypes, paramSortCids, returnType, returnSortCid,
-                        conceptName, mode, modes, contract, sugarPlugins, transportedOp, termShape, operandBindings,
-                        isCrossLang, targetLibraryTag, parametricExpansions);
+        // Function-return-type catalog from the cross-term pre-pass.
+        // Substrate-honest: lower passes ALL terms' return types so
+        // call expressions inside a term can pick up real types from
+        // sibling terms instead of falling back to var inference.
+        java.util.Map<String, String> functionReturnTypes = parseFunctionReturnTypes(
+                JsonUtil.extractObjectField(paramsObj, "function_return_types"));
+        SugarRealizer.currentCallReturnTypes.set(functionReturnTypes);
+        // Source-language signature metadata (visibility, generic params,
+        // original param types). The lower passes these so the @sugar header
+        // comment can carry them — the java lift then recovers them for
+        // round-trip back to the source language WITHOUT external metadata
+        // injection at integration time.
+        // RealizeRequest serializes via serde's default snake_case for
+        // unrenamed fields. Try both snake_case and camelCase for safety
+        // across spec construction paths (some use rename = camelCase).
+        String sourceVisibility = JsonUtil.decodeJsonStringField(paramsObj, "visibility");
+        if (sourceVisibility == null) sourceVisibility = "";
+        String sourceGenericParams = JsonUtil.decodeJsonStringField(paramsObj, "generic_params");
+        if (sourceGenericParams == null || sourceGenericParams.isEmpty()) {
+            sourceGenericParams = JsonUtil.decodeJsonStringField(paramsObj, "genericParams");
+        }
+        if (sourceGenericParams == null) sourceGenericParams = "";
+        java.util.List<String> sourceOriginalParamTypes =
+                JsonUtil.decodeJsonStringArray(paramsObj, "original_param_types");
+        if (sourceOriginalParamTypes == null || sourceOriginalParamTypes.isEmpty()) {
+            sourceOriginalParamTypes =
+                JsonUtil.decodeJsonStringArray(paramsObj, "originalParamTypes");
+        }
+        SugarRealizer.currentSourceVisibility.set(sourceVisibility);
+        SugarRealizer.currentSourceGenericParams.set(sourceGenericParams);
+        SugarRealizer.currentSourceOriginalParamTypes.set(sourceOriginalParamTypes);
+        // Source doc comment lines (after the @sugar attribute). The
+        // lower passes them as `docLines`; @substrate-signature embeds
+        // them so the java lift can restore for the cycle round-trip.
+        java.util.List<String> sourceDocLines =
+                JsonUtil.decodeJsonStringArray(paramsObj, "doc_lines");
+        if (sourceDocLines == null || sourceDocLines.isEmpty()) {
+            sourceDocLines = JsonUtil.decodeJsonStringArray(paramsObj, "docLines");
+        }
+        if (sourceDocLines == null) sourceDocLines = java.util.List.of();
+        SugarRealizer.currentSourceDocLines.set(sourceDocLines);
+        // Carry the source-language term_shape verbatim so the @sugar
+        // header can embed it for round-trip. This is the authoritative
+        // structural form — the java body_shape (re-derived from AST)
+        // would only be a target-language idiom. The substrate cycle
+        // needs the SOURCE's term_shape preserved as data.
+        SugarRealizer.currentSourceTermShape.set(termShape == null ? "" : termShape);
+        SugarRealizer.Realization r;
+        try {
+            r = SugarRealizer.emitStub(emittedFunction, params, paramTypes, paramSortCids, returnType, returnSortCid,
+                    conceptName, mode, modes, contract, sugarPlugins, transportedOp, termShape, operandBindings,
+                    isCrossLang, targetLibraryTag, parametricExpansions);
+        } finally {
+            SugarRealizer.currentCallReturnTypes.remove();
+            SugarRealizer.currentSourceVisibility.remove();
+            SugarRealizer.currentSourceGenericParams.remove();
+            SugarRealizer.currentSourceOriginalParamTypes.remove();
+            SugarRealizer.currentSourceTermShape.remove();
+        }
         String wrapperRecord = r.observationWrapperEmissionRecord() == null
                 ? ""
                 : ",\"observation_wrapper_emission_record\":" + r.observationWrapperEmissionRecord();
@@ -537,6 +592,25 @@ public final class RpcServer {
      * Returns empty list on null / empty / parse failure (substrate-honest:
      * absent expansions just means no parametric CIDs to decompose).
      */
+    /** Parse `{ "fn_name": "ret_type", ... }` into a java map. The map's
+     *  values are RUST source-language type strings; SugarRealizer's
+     *  mapSourceType translates them at lookup time. */
+    private static java.util.Map<String, String> parseFunctionReturnTypes(String json) {
+        if (json == null || json.isBlank() || "{}".equals(json.trim())) return java.util.Map.of();
+        java.util.Map<String, String> out = new java.util.HashMap<>();
+        try {
+            com.provekit.ir.Jcs.Json parsed = com.provekit.ir.Jcs.parse(json);
+            if (parsed instanceof com.provekit.ir.Jcs.Obj obj) {
+                for (com.provekit.ir.Jcs.Field f : obj.fields()) {
+                    if (f.value() instanceof com.provekit.ir.Jcs.Str s) {
+                        out.put(f.key(), s.value());
+                    }
+                }
+            }
+        } catch (Exception ignore) {}
+        return out;
+    }
+
     private static java.util.List<SugarRealizer.ParametricExpansion> parseParametricExpansions(String json) {
         if (json == null || json.isBlank() || "[]".equals(json.trim())) return java.util.List.of();
         java.util.List<SugarRealizer.ParametricExpansion> out = new java.util.ArrayList<>();

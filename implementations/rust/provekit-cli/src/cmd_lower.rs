@@ -290,16 +290,185 @@ fn lower_named_terms(
         eprintln!("{}: {error}", "error".red().bold());
         return EXIT_USER_ERROR;
     }
+    // Substrate-honest sidecar: write per-term loss/refuse evidence
+    // next to the source output. Empty when every term was exact.
+    let loss_report = LAST_LOSS_REPORT.with(|cell| cell.borrow().clone());
+    if !loss_report.is_empty() {
+        let sidecar_json = serde_json::to_string_pretty(&serde_json::json!({
+            "kind": "lower-loss-records",
+            "target": target,
+            "terms": loss_report,
+        })).unwrap_or_else(|_| "[]".to_string());
+        match output {
+            Some(out_path) => {
+                let sidecar_path = PathBuf::from(format!(
+                    "{}.loss-records.json", out_path.display()));
+                if let Err(error) = write_bytes(Some(&sidecar_path), sidecar_json.as_bytes()) {
+                    eprintln!("{}: failed to write loss-records sidecar: {error}",
+                        "warning".yellow().bold());
+                } else {
+                    eprintln!("{}: wrote {} ({} term(s) with loss or refusal)",
+                        "loss-records".cyan(),
+                        sidecar_path.display(),
+                        loss_report.len());
+                }
+            }
+            None => {
+                // No output file path → emit to stderr so callers piping
+                // to stdout still see the loss-record surface.
+                eprintln!("{}:\n{}", "loss-records".cyan(), sidecar_json);
+            }
+        }
+    }
     EXIT_OK
 }
 
 fn parse_named_or_bind_payload(raw: &[u8]) -> Result<NamedTermDocument, String> {
+    // 1. Already-named document.
     if let Ok(named) = serde_json::from_slice::<NamedTermDocument>(raw) {
-        return Ok(named);
+        if named.kind == "named-term-document" {
+            return Ok(named);
+        }
     }
+    // 2. ir-document straight from `provekit lift`. Build named-term-doc
+    //    directly from library-sugar-binding-entry records — skip the
+    //    bind serialization round-trip that historically dropped concept
+    //    names and CIDs. Substrate-honest: the lift IR already has
+    //    everything (concept_name, param_sort_cids, return_sort_cid,
+    //    term_shape); we just shape it into NamedTermDocument.
+    if let Ok(ir_doc) = serde_json::from_slice::<Json>(raw) {
+        if ir_doc.get("kind").and_then(Json::as_str) == Some("ir-document") {
+            return named_term_document_from_ir_document(&ir_doc);
+        }
+    }
+    // 3. Bind-result Term tree (legacy / contracts).
     let payload = serde_json::from_slice::<Term>(raw)
         .map_err(|error| format!("parse named-term JSON or bind-result payload: {error}"))?;
     named_term_document_from_bind_payload(&payload).map_err(|error| error.to_string())
+}
+
+/// Build a NamedTermDocument from a lift ir-document directly, threading
+/// through concept-hub CIDs (paramSortCids/returnSortCid) so the lower
+/// side can use the catalog for signature translation. This is the
+/// substrate-honest path: ir-document IS the source of truth; bind's
+/// op-tree round-trip is a legacy shape.
+fn named_term_document_from_ir_document(ir_doc: &Json) -> Result<NamedTermDocument, String> {
+    let ir = ir_doc.get("ir").and_then(Json::as_array)
+        .ok_or_else(|| "ir-document missing `ir` array".to_string())?;
+    let mut terms = Vec::new();
+    for entry in ir {
+        let kind = entry.get("kind").and_then(Json::as_str).unwrap_or("");
+        if kind != "library-sugar-binding-entry" { continue; }
+        let concept_name = entry.get("concept_name").and_then(Json::as_str).unwrap_or("").to_string();
+        let function = entry.get("source_function_name").and_then(Json::as_str).unwrap_or("").to_string();
+        let name = concept_name.replace("concept:", "").replace('-', "_");
+        let param_names: Vec<String> = entry.get("param_names")
+            .and_then(Json::as_array)
+            .map(|a| a.iter().filter_map(|v| v.as_str().map(String::from)).collect())
+            .unwrap_or_default();
+        let param_types: Vec<String> = entry.get("param_types")
+            .and_then(Json::as_array)
+            .map(|a| a.iter().filter_map(|v| v.as_str().map(String::from)).collect())
+            .unwrap_or_default();
+        let return_type = entry.get("return_type").and_then(Json::as_str)
+            .filter(|s| !s.is_empty())
+            .unwrap_or("()").to_string();
+        let visibility = entry.get("visibility").and_then(Json::as_str).unwrap_or("").to_string();
+        let generic_params = entry.get("generic_params").and_then(Json::as_str).unwrap_or("").to_string();
+        let original_param_types: Vec<String> = entry.get("original_param_types")
+            .and_then(Json::as_array)
+            .map(|a| a.iter().filter_map(|v| v.as_str().map(String::from)).collect())
+            .unwrap_or_default();
+        let param_sort_cids: Vec<String> = entry.get("param_sort_cids")
+            .and_then(Json::as_array)
+            .map(|a| a.iter().filter_map(|v| v.as_str().map(String::from)).collect())
+            .unwrap_or_default();
+        let return_sort_cid = entry.get("return_sort_cid").and_then(Json::as_str).unwrap_or("").to_string();
+        let doc_lines: Vec<String> = entry.get("doc_lines")
+            .and_then(Json::as_array)
+            .map(|a| a.iter().filter_map(|v| v.as_str().map(String::from)).collect())
+            .unwrap_or_default();
+        let term_shape = entry.get("term_shape").cloned().unwrap_or(serde_json::json!({}));
+        let term_shape_cid = entry.get("term_shape_cid").and_then(Json::as_str).unwrap_or("").to_string();
+        let site_memento_cid = entry.get("signature_shape_cid").and_then(Json::as_str).unwrap_or("").to_string();
+        let file = entry.get("body_source").and_then(|bs| bs.get("file"))
+            .and_then(Json::as_str).unwrap_or("").to_string();
+
+        let term_json = serde_json::json!({
+            "conceptName": concept_name,
+            "dischargeVerdict": "fillable",
+            "file": file,
+            "function": function,
+            "fnNameSugar": entry.get("source_function_name"),
+            "name": name,
+            "paramTypes": param_types,
+            "params": param_names,
+            "returnType": return_type,
+            "visibility": visibility,
+            "genericParams": generic_params,
+            "originalParamTypes": original_param_types,
+            "paramSortCids": param_sort_cids,
+            "returnSortCid": return_sort_cid,
+            "siteMementoCid": site_memento_cid,
+            "termShape": term_shape,
+            "termShapeCid": term_shape_cid,
+            "witnesses": [],
+            "docLines": doc_lines,
+        });
+        let term: libprovekit::core::NamedTerm = serde_json::from_value(term_json)
+            .map_err(|e| format!("convert ir-document entry to NamedTerm: {e}"))?;
+        terms.push(term);
+    }
+    let workspace_root = ir_doc.get("workspaceRoot").and_then(Json::as_str).map(String::from);
+    // Collect @boundary entries (bind-lift-entry that AREN'T also sugar).
+    // The substrate's lower side uses these to emit boundary primitive
+    // stubs in the target compilation unit alongside the @sugar functions.
+    let sugar_names: std::collections::HashSet<String> = ir.iter()
+        .filter(|e| e.get("kind").and_then(Json::as_str) == Some("library-sugar-binding-entry"))
+        .filter_map(|e| e.get("source_function_name").and_then(Json::as_str).map(String::from))
+        .collect();
+    let boundary_entries: Vec<Json> = ir.iter()
+        .filter(|e| e.get("kind").and_then(Json::as_str) == Some("bind-lift-entry"))
+        .filter(|e| {
+            e.get("source_function_name").and_then(Json::as_str)
+                .map(|fn_| !sugar_names.contains(fn_))
+                .unwrap_or(false)
+        })
+        .cloned()
+        .collect();
+    let trait_decls: Vec<Json> = ir.iter()
+        .filter(|e| e.get("kind").and_then(Json::as_str) == Some("trait-decl"))
+        .cloned()
+        .collect();
+    let module_items: Vec<Json> = ir.iter()
+        .filter(|e| matches!(
+            e.get("kind").and_then(Json::as_str),
+            Some("const-decl") | Some("struct-decl") | Some("enum-decl")
+        ))
+        .cloned()
+        .collect();
+    Ok(NamedTermDocument {
+        candidate_cluster_manifest: Default::default(),
+        gap_records: Vec::new(),
+        kind: "named-term-document".to_string(),
+        promotion_decision_mementos: Vec::new(),
+        schema_version: "1".to_string(),
+        source_language: ir_doc.get("sourceLanguage").and_then(Json::as_str).unwrap_or("rust").to_string(),
+        terms,
+        boundary_entries,
+        trait_decls,
+        module_items,
+        workspace_root,
+    })
+}
+
+thread_local! {
+    /// Per-term loss/refuse evidence from the most recent lower_named_document
+    /// call. cmd_lower's entrypoint reads this after lowering and writes a
+    /// sidecar JSON file alongside the lowered source. Substrate-honest: the
+    /// loss_record / is_stub flags are first-class artifacts, not optional
+    /// debug output.
+    pub static LAST_LOSS_REPORT: std::cell::RefCell<Vec<Json>> = std::cell::RefCell::new(Vec::new());
 }
 
 fn lower_named_document(
@@ -309,9 +478,44 @@ fn lower_named_document(
     default_library: Option<&str>,
     family_library: &[crate::cmd_materialize::FamilyLibraryPair],
 ) -> Result<String, LowerNamedError> {
+    // Pre-pass: build a function-name → return-type catalog from all
+    // terms in the named-term-doc. Inject into each per-term spec as a
+    // side-channel so call expressions can pick up real return types
+    // instead of falling back to var inference. Substrate-honest cross-
+    // term type propagation.
+    let mut function_return_types = serde_json::Map::new();
+    for t in &named.terms {
+        let fn_name = if !t.function.is_empty() { t.function.clone() } else { t.name.clone() };
+        if !fn_name.is_empty() {
+            function_return_types.insert(fn_name, Json::String(t.return_type.clone()));
+        }
+    }
+    let function_return_types = Json::Object(function_return_types);
+
     let mut out = String::new();
+    // Substrate-honest java wrapper: when target is java and we have
+    // boundary entries from the lift, emit a complete compilation unit
+    // header (package, imports, class, constants, AdapterLifter interface,
+    // boundary stubs) BEFORE the @sugar functions. The python wrapper
+    // emitter is retired by this — substrate emits its own wrapper.
+    let emit_java_wrapper = target == "java" && !named.boundary_entries.is_empty();
+    if emit_java_wrapper {
+        out.push_str(&emit_java_module_preamble(
+            &named.boundary_entries,
+            &named.trait_decls,
+            &named.module_items,
+        ));
+    }
+    // Substrate-honest per-term loss accounting. Each function's lossy
+    // translations register here; non-empty entries are surfaced via a
+    // sidecar file so callers see the trichotomy
+    // (exact / loudly-bounded-lossy / refuse).
+    let mut per_term_losses: Vec<Json> = Vec::new();
     for term in &named.terms {
         let mut spec = realize_spec_from_named_term(term).map_err(LowerNamedError::Message)?;
+        if let Some(obj) = spec.as_object_mut() {
+            obj.insert("function_return_types".to_string(), function_return_types.clone());
+        }
         let sugar_fn = realize_function_name_with_sugar(term);
         if spec.get("function").and_then(|v| v.as_str()) != Some(sugar_fn) {
             spec["function"] = Json::String(sugar_fn.to_string());
@@ -322,13 +526,312 @@ fn lower_named_document(
         let library_tag = resolve_library_for_concept(
             project_root, target, &term.concept_name, default_library, family_library,
         );
-        let source = lower_named_spec_via_path(project_root, target, spec, library_tag.as_deref())?;
-        out.push_str(&source);
+        let realized = lower_named_spec_via_path_full(project_root, target, spec, library_tag.as_deref())?;
+        // Collect loss / refuse evidence.
+        let has_loss = realized.observed_loss_record.as_object().map(|o| !o.is_empty()).unwrap_or(false);
+        if has_loss || realized.is_stub {
+            per_term_losses.push(serde_json::json!({
+                "function": sugar_fn,
+                "concept": term.concept_name,
+                "is_stub": realized.is_stub,
+                "observed_loss_record": realized.observed_loss_record,
+            }));
+        }
+        let body_text = if emit_java_wrapper {
+            // Strip the per-function `final class XxxTransported { ... }`
+            // wrapper that java realize emits per term. Inside our
+            // top-level CrossPlatform class, the methods sit directly.
+            strip_transported_class_wrapper(&realized.source)
+        } else {
+            realized.source.clone()
+        };
+        out.push_str(&body_text);
         if !out.ends_with('\n') {
             out.push('\n');
         }
     }
+    // Close the java wrapper class when we opened one.
+    if emit_java_wrapper {
+        out.push_str("}\n");
+    }
+    // Stash for the outer caller — written to a sidecar by the cmd
+    // entrypoint when an --output path is supplied.
+    LAST_LOSS_REPORT.with(|cell| *cell.borrow_mut() = per_term_losses);
     Ok(out)
+}
+
+/// Strip `final class XxxTransported {` opener and matching `}` closer
+/// from a java realize plugin's per-function output. Used by the
+/// java-wrapper synthesis to inline @sugar methods into one outer class.
+fn strip_transported_class_wrapper(source: &str) -> String {
+    let lines: Vec<&str> = source.lines().collect();
+    // Find first `final class .*Transported {` opener (allow leading comments).
+    let mut start = None;
+    for (i, l) in lines.iter().enumerate() {
+        let t = l.trim_start();
+        if t.starts_with("final class") && t.contains("Transported") && t.ends_with('{') {
+            start = Some(i);
+            break;
+        }
+    }
+    let Some(s) = start else { return source.to_string(); };
+    // Find matching close: track brace depth from `{` on the opener.
+    let mut depth = 0i32;
+    let mut close = None;
+    for (i, l) in lines.iter().enumerate().skip(s) {
+        for c in l.chars() {
+            if c == '{' { depth += 1; }
+            else if c == '}' { depth -= 1; if depth == 0 { close = Some(i); break; } }
+        }
+        if close.is_some() { break; }
+    }
+    let Some(e) = close else { return source.to_string(); };
+    // Pre-wrapper lines (e.g. citation comments) + inner lines + post-wrapper.
+    let mut out = String::new();
+    for l in &lines[..s] {
+        out.push_str(l);
+        out.push('\n');
+    }
+    // Inner content (between opener and closer, exclusive).
+    for l in &lines[s + 1..e] {
+        out.push_str(l);
+        out.push('\n');
+    }
+    for l in &lines[e + 1..] {
+        out.push_str(l);
+        out.push('\n');
+    }
+    out
+}
+
+/// Map a rust source type to its java equivalent. The substrate-honest
+/// version walks the kit's source-aliases catalog (per #1370); this is a
+/// demo-time shortcut covering the cross-platform crate's surface.
+/// Same mapping table as examples/provekit-rpc-java-demo/scripts/emit_wrapper.py.
+fn map_rust_type_to_java(t: &str) -> String {
+    // Normalize whitespace inside the type (`[u8; 64]` → `[u8;64]`) for
+    // stable matching.
+    let normalized: String = t.split_whitespace().collect();
+    let trimmed = normalized.trim_start_matches('&').trim_start_matches("mut").to_string();
+    let t: &str = trimmed.as_str();
+    // Fixed-size byte array: `[u8;N]` → byte[].
+    if t.starts_with("[u8;") && t.ends_with(']') {
+        return "byte[]".to_string();
+    }
+    // Slice patterns: `[String]` → java.util.List<String>, `[u8]` → byte[].
+    if t.starts_with('[') && t.ends_with(']') {
+        let inner = &t[1..t.len() - 1];
+        if inner == "u8" {
+            return "byte[]".to_string();
+        }
+        return format!("java.util.List<{}>", map_rust_type_to_java(inner));
+    }
+    match t {
+        "str" | "&str" | "String" => "String".to_string(),
+        "i64" => "long".to_string(),
+        "i32" => "int".to_string(),
+        "Value" | "&Value" => "com.fasterxml.jackson.databind.JsonNode".to_string(),
+        "Vec<u8>" | "&[u8]" | "[u8]" => "byte[]".to_string(),
+        "Option<String>" => "String".to_string(),
+        "()" => "void".to_string(),
+        "Path" | "&Path" => "java.nio.file.Path".to_string(),
+        "&[String]" => "java.util.List<String>".to_string(),
+        "LiftResult" => "com.provekit.runtime.Result<com.fasterxml.jackson.databind.JsonNode, com.provekit.runtime.SumVariant>".to_string(),
+        other if other.starts_with("Result<") && other.ends_with('>') => {
+            let inner = &other[7..other.len() - 1];
+            if let Some(comma) = inner.find(',') {
+                let ok = map_rust_type_to_java(inner[..comma].trim());
+                // Err side erased to SumVariant carrier (cross-language transport
+                // doesn't carry per-source error enum hierarchies — would need
+                // sealed-class emission, future work).
+                format!("com.provekit.runtime.Result<{}, com.provekit.runtime.SumVariant>", ok)
+            } else {
+                other.to_string()
+            }
+        }
+        other => other.to_string(),
+    }
+}
+
+/// Emit the java compilation-unit preamble: imports, class header, static
+/// constants, AdapterLifter interface, @boundary primitive stubs. The
+/// @sugar function bodies follow this preamble (each as a `static`
+/// method inside the class), and the class is closed at the end of
+/// lower_named_document.
+///
+/// Substrate-honest: this is the rust-side analog of the java realize
+/// plugin's assemble RPC. Future work moves this into the plugin itself
+/// (so target plugins decide their own file layout); for now the rust
+/// substrate emits the wrapper so the demo's cycle is fully substrate-
+/// native end to end (no hand-written java integration code).
+fn emit_java_module_preamble(
+    boundary_entries: &[Json],
+    trait_decls: &[Json],
+    module_items: &[Json],
+) -> String {
+    let mut out = String::new();
+    out.push_str("// AUTO-GENERATED from rust @boundary declarations via provekit lower --target java\n");
+    out.push_str("package com.provekit.crossplatform;\n\n");
+    out.push_str("import com.fasterxml.jackson.databind.JsonNode;\n");
+    out.push_str("import com.fasterxml.jackson.databind.ObjectMapper;\n");
+    out.push_str("import com.provekit.runtime.Result;\n");
+    out.push_str("import com.provekit.runtime.SumVariant;\n");
+    out.push_str("import com.provekit.runtime.Substrate;\n");
+    out.push_str("import java.nio.file.Path;\n\n");
+    out.push_str("public final class CrossPlatform {\n");
+    out.push_str("    public static final ObjectMapper MAPPER = new ObjectMapper();\n");
+    // Constants lifted from rust source via const-decl IR entries.
+    // Replaces the hardcoded PLUGIN_VERSION etc.
+    let const_decls: Vec<&Json> = module_items.iter()
+        .filter(|m| m.get("kind").and_then(Json::as_str) == Some("const-decl"))
+        .collect();
+    for c in &const_decls {
+        let name = c.get("name").and_then(Json::as_str).unwrap_or("");
+        if name.is_empty() { continue; }
+        let ty = c.get("type").and_then(Json::as_str).unwrap_or("");
+        let value = c.get("value").and_then(Json::as_str).unwrap_or("\"\"");
+        let java_type = map_rust_type_to_java(ty);
+        // `String` constants need `public static String` (not `final`
+        // since the rust source isn't `static`). `byte[]` etc. emit as
+        // `public static final` for java safety.
+        let final_kw = if java_type == "String" { "" } else { " final" };
+        out.push_str(&format!(
+            "    public static{} {} {} = {};\n",
+            final_kw, java_type, name, value
+        ));
+    }
+    out.push_str("    public static final byte[] HEX = \"0123456789abcdef\".getBytes();\n\n");
+    // Interfaces lifted from rust trait declarations. The substrate
+    // emits these from `trait-decl` IR entries; the hardcoded
+    // AdapterLifter has been retired.
+    if trait_decls.is_empty() {
+        // Fallback when the lift didn't capture any traits (legacy or
+        // non-rust sources). Keep the demo's interface emit so the
+        // wrapper still compiles. Future: emit nothing here — let the
+        // lift always carry the trait info.
+        out.push_str("    public interface AdapterLifter {\n");
+        out.push_str("        String name();\n");
+        out.push_str("        String surface();\n");
+        out.push_str("        Result<JsonNode, SumVariant> lift(Path workspaceRoot, java.util.List<String> sourcePaths);\n");
+        out.push_str("    }\n\n");
+    } else {
+        for trait_decl in trait_decls {
+            let name = trait_decl.get("name").and_then(Json::as_str).unwrap_or("UnnamedTrait");
+            out.push_str(&format!("    public interface {} {{\n", name));
+            if let Some(methods) = trait_decl.get("methods").and_then(Json::as_array) {
+                for m in methods {
+                    let mname = m.get("name").and_then(Json::as_str).unwrap_or("");
+                    if mname.is_empty() { continue; }
+                    let param_names: Vec<&str> = m.get("param_names").and_then(Json::as_array)
+                        .map(|a| a.iter().filter_map(Json::as_str).collect()).unwrap_or_default();
+                    let param_types: Vec<&str> = m.get("param_types").and_then(Json::as_array)
+                        .map(|a| a.iter().filter_map(Json::as_str).collect()).unwrap_or_default();
+                    let return_type = m.get("return_type").and_then(Json::as_str).unwrap_or("()");
+                    let java_return = map_rust_type_to_java(return_type);
+                    let java_params: Vec<String> = param_names.iter().zip(param_types.iter())
+                        .map(|(n, t)| format!("{} {}", map_rust_type_to_java(t), n))
+                        .collect();
+                    out.push_str(&format!("        {} {}({});\n",
+                        java_return, mname, java_params.join(", ")));
+                }
+            }
+            out.push_str("    }\n\n");
+        }
+    }
+    out.push_str("    // \u{2500}\u{2500}\u{2500} @boundary primitives (auto-emitted from rust @boundary declarations) \u{2500}\u{2500}\u{2500}\n");
+    for entry in boundary_entries {
+        let fn_name = entry.get("source_function_name")
+            .and_then(Json::as_str)
+            .unwrap_or("");
+        if fn_name.is_empty() { continue; }
+        let param_names: Vec<&str> = entry.get("param_names")
+            .and_then(Json::as_array)
+            .map(|a| a.iter().filter_map(Json::as_str).collect())
+            .unwrap_or_default();
+        let param_types: Vec<&str> = entry.get("param_types")
+            .and_then(Json::as_array)
+            .map(|a| a.iter().filter_map(Json::as_str).collect())
+            .unwrap_or_default();
+        let return_type = entry.get("return_type").and_then(Json::as_str).unwrap_or("()");
+        let java_return = map_rust_type_to_java(return_type);
+        let java_params: Vec<String> = param_names.iter().zip(param_types.iter())
+            .map(|(n, t)| format!("{} {}", map_rust_type_to_java(t), n))
+            .collect();
+        out.push_str(&format!(
+            "    public static {} {}({}) {{\n",
+            java_return, fn_name, java_params.join(", ")
+        ));
+        out.push_str(&format!(
+            "        throw new UnsupportedOperationException(\"boundary stub: {}\");\n",
+            fn_name
+        ));
+        out.push_str("    }\n");
+    }
+    // Struct declarations from rust → nested java records.
+    // Each rust struct `Foo { f1: T1, f2: T2 }` becomes a java
+    // `public record Foo(T1 f1, T2 f2) {}` inside the wrapper class.
+    let struct_decls: Vec<&Json> = module_items.iter()
+        .filter(|m| m.get("kind").and_then(Json::as_str) == Some("struct-decl"))
+        .collect();
+    for s in &struct_decls {
+        let name = s.get("name").and_then(Json::as_str).unwrap_or("");
+        if name.is_empty() { continue; }
+        let fields: Vec<&Json> = s.get("fields").and_then(Json::as_array)
+            .map(|a| a.iter().collect()).unwrap_or_default();
+        let java_fields: Vec<String> = fields.iter().map(|f| {
+            let fname = f.get("name").and_then(Json::as_str).unwrap_or("");
+            let ftype = f.get("type").and_then(Json::as_str).unwrap_or("");
+            // Vec<Value> → java.util.List<JsonNode>
+            let jty = if ftype.starts_with("Vec<") && ftype.ends_with('>') {
+                let inner = &ftype[4..ftype.len()-1];
+                format!("java.util.List<{}>", map_rust_type_to_java(inner))
+            } else {
+                map_rust_type_to_java(ftype)
+            };
+            format!("{} {}", jty, fname)
+        }).collect();
+        out.push_str(&format!(
+            "    public record {}({}) {{}}\n",
+            name, java_fields.join(", ")
+        ));
+    }
+    if !struct_decls.is_empty() { out.push('\n'); }
+
+    // Enum declarations from rust → java sealed interfaces with one
+    // record per variant. `enum LiftError { InvalidParams(String) }`
+    // becomes `public sealed interface LiftError permits ... { record
+    // InvalidParams(String value) implements LiftError {} }`.
+    let enum_decls: Vec<&Json> = module_items.iter()
+        .filter(|m| m.get("kind").and_then(Json::as_str) == Some("enum-decl"))
+        .collect();
+    for e in &enum_decls {
+        let name = e.get("name").and_then(Json::as_str).unwrap_or("");
+        if name.is_empty() { continue; }
+        let variants: Vec<&Json> = e.get("variants").and_then(Json::as_array)
+            .map(|a| a.iter().collect()).unwrap_or_default();
+        let variant_names: Vec<&str> = variants.iter()
+            .filter_map(|v| v.get("name").and_then(Json::as_str)).collect();
+        out.push_str(&format!(
+            "    public sealed interface {} permits {}.{} {{\n",
+            name, name, variant_names.join(&format!(", {}.", name))
+        ));
+        for v in &variants {
+            let vname = v.get("name").and_then(Json::as_str).unwrap_or("");
+            if vname.is_empty() { continue; }
+            let payload_types: Vec<&str> = v.get("payload_types").and_then(Json::as_array)
+                .map(|a| a.iter().filter_map(Json::as_str).collect()).unwrap_or_default();
+            let java_params: Vec<String> = payload_types.iter().enumerate()
+                .map(|(i, t)| format!("{} v{}", map_rust_type_to_java(t), i)).collect();
+            out.push_str(&format!(
+                "        public record {}({}) implements {} {{}}\n",
+                vname, java_params.join(", "), name
+            ));
+        }
+        out.push_str("    }\n");
+    }
+    if !enum_decls.is_empty() { out.push('\n'); }
+    out.push_str("    // \u{2500}\u{2500}\u{2500} @sugar functions follow \u{2500}\u{2500}\u{2500}\n\n");
+    out
 }
 
 /// Resolve which realize plugin's library_tag should handle a concept.
@@ -345,7 +848,16 @@ fn resolve_library_for_concept(
     default_library: Option<&str>,
     family_library: &[crate::cmd_materialize::FamilyLibraryPair],
 ) -> Option<String> {
-    let candidates = crate::kit_dispatch::registry_realize_candidates(project_root, target).ok()?;
+    // #1391 follow-on: registry_realize_candidates returns empty when no
+    // sealed dev registry is present. Fall back to legacy_realize_candidates
+    // so cmd_lower works in development workflows without requiring a sealed
+    // registry. This mirrors the dispatch_realize path which also falls
+    // through to legacy candidates when the registry is empty.
+    let mut candidates = crate::kit_dispatch::registry_realize_candidates(project_root, target).ok()?;
+    if candidates.is_empty() {
+        candidates = crate::kit_dispatch::legacy_realize_candidates(project_root, target)
+            .unwrap_or_default();
+    }
     let mut claimers: Vec<String> = Vec::new();
     for cand in &candidates {
         let concepts = crate::kit_dispatch::provides_concepts_for_realize(
@@ -395,6 +907,50 @@ fn resolve_library_for_concept(
     // Ambiguous; return first claimer (the lower call will dispatch but
     // may not be what the user wanted).
     Some(claimers[0].clone())
+}
+
+/// Substrate-honest variant: returns the FULL RealizedSource so the
+/// caller can surface observed_loss_record (lossy translations recorded
+/// during lower) and is_stub (refusals) — not just the source string.
+fn lower_named_spec_via_path_full(
+    project_root: &Path,
+    target: &str,
+    spec: Json,
+    library_tag: Option<&str>,
+) -> Result<libprovekit::core::RealizedSource, LowerNamedError> {
+    let mut inputs = HashMapInputCatalog::default();
+    let input_cid = inputs.insert(Input::Spec(spec));
+    let kit_name = format!("lower-{target}");
+    let path = Input::Path(Box::new(CorePath {
+        algebra: vec![PathAlgebra {
+            name: "lower".to_string(),
+            kit: kit_name.clone(),
+            inputs: vec![input_cid],
+            depends_on: vec![],
+            verb: Default::default(),
+        }],
+    }));
+    let mut registry = KitRegistry::default();
+    registry.register_with_platform_semantics(
+        kit_name,
+        LowerKit::new(
+            project_root.to_path_buf(),
+            target.to_string(),
+            library_tag.map(str::to_string),
+            DispatchRealizeTransport,
+        ),
+        target,
+        project_root.join(format!("implementations/{target}/conformance/fixtures")),
+    );
+    let chain = execute_path(&path, &registry, &inputs).map_err(|error| {
+        let detail = error
+            .composition_refusal()
+            .and_then(|refusal| serde_json::to_string(refusal).ok())
+            .unwrap_or_else(|| error.to_string());
+        LowerNamedError::Message(format!("lower plugin unavailable for `{target}`: {detail}"))
+    })?;
+    LowerKit::<DispatchRealizeTransport>::realized_source_from_claim(chain.terminal_claim())
+        .map_err(LowerNamedError::Message)
 }
 
 fn lower_named_spec_via_path(

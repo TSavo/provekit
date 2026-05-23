@@ -1,0 +1,18 @@
+[authoring]
+surface = "rust-bind"
+
+[[plugins]]
+name = "rust-sugar"
+surface = "rust-bind"
+layer = "library-bindings"
+
+[[plugins]]
+name = "rust-contracts"
+surface = "rust-contracts"
+emit = "ir-document"
+
+[platform_profile]
+language = "rust"
+family = "concept:family:rpc-minimal"
+library = "provekit-rpc-minimal"
+version = "rust-1"

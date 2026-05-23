@@ -1,0 +1,35 @@
+{
+  "memento": {
+    "kind": "equation",
+    "fn_name": "concept:map-create->rust:hashmap-new",
+    "formals": [],
+    "formal_sorts": [],
+    "post": {
+      "lhs": {
+        "kind": "op",
+        "name": "concept:map-create",
+        "args": []
+      },
+      "rhs": {
+        "kind": "op",
+        "name": "rust:hashmap-new",
+        "args": []
+      }
+    },
+    "role": "abstraction-realization",
+    "direction": "left-to-right",
+    "target_lang": "rust",
+    "target_library": "rust-language-builtin",
+    "loss_record": {
+      "structural_divergence": "rust HashMap::new() default hasher (SipHash-1-3 randomised)"
+    },
+    "discharge_receipt": "deferred:pending-pk-1391",
+    "effects": []
+  },
+  "cid": "blake3-512:987a9bd95243e7b4cc67617b6acb4c10e10cff0756fb0fcf9f60142479a0fc04f51327cb89c7d687795450b436be742f64b657f0b33310e7b62d398ab59c1d7e",
+  "signature": {
+    "alg": "ed25519",
+    "key_id": "UNSIGNED_DEV_ONLY",
+    "sig_b64": "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"
+  }
+}

@@ -384,6 +384,15 @@ fn bind_lift(params: &Value) -> Result<Value, String> {
                 base_has_operator,
             );
             let param_names = fn_param_names(item_fn);
+            let param_types = sugar_param_types(item_fn);
+            let original_param_types = sugar_original_param_types(item_fn);
+            let return_type = sugar_return_type(item_fn);
+            let generic_params = sugar_generic_params(item_fn);
+            let visibility = match &item_fn.vis {
+                syn::Visibility::Public(_) => "pub",
+                syn::Visibility::Restricted(_) => "pub(crate)",
+                syn::Visibility::Inherited => "",
+            };
             let function_symbol = format!("{fn_name}@{rel}");
             let fallback_function_symbol = format!("{}@{rel}", target.source_name);
             let witnesses = witnesses_by_symbol
@@ -392,14 +401,21 @@ fn bind_lift(params: &Value) -> Result<Value, String> {
                 .cloned()
                 .unwrap_or_default();
 
+            let doc_lines = sugar_doc_lines(item_fn);
             let mut entry = json!({
                 "kind": "bind-lift-entry",
                 "param_names": param_names,
+                "param_types": param_types,
+                "original_param_types": original_param_types,
+                "return_type": return_type,
+                "generic_params": generic_params,
+                "visibility": visibility,
                 "term_shape": cvalue_to_json(&term_shape),
                 "term_shape_cid": term_shape_cid,
                 "operand_bindings": operand_bindings,
                 "source_function_name": target.source_name,
                 "witnesses": witnesses,
+                "doc_lines": doc_lines,
             });
             if let Some(concept_annotation) = &target.concept_annotation {
                 entry["concept_annotation"] = json!(concept_annotation);
@@ -432,6 +448,8 @@ fn bind_lift(params: &Value) -> Result<Value, String> {
             } = sugar_target;
             let param_names = fn_param_names(&item_fn);
             let param_types = sugar_param_types(&item_fn);
+            let original_param_types = sugar_original_param_types(&item_fn);
+            let generic_params = sugar_generic_params(&item_fn);
             let return_type = sugar_return_type(&item_fn);
             let term_shape = term_shape_for_fn(&item_fn);
             let term_shape_cid = blake3_512_of(encode_jcs(&term_shape).as_bytes());
@@ -483,12 +501,20 @@ fn bind_lift(params: &Value) -> Result<Value, String> {
                 &mut parametric_sort_expansions,
             )
             .unwrap_or_default();
+            let doc_lines_sb = sugar_doc_lines(&item_fn);
             let mut entry = json!({
                 "kind": "library-sugar-binding-entry",
                 "target_language": "rust",
                 "target_library_tag": library,
                 "concept_name": concept,
                 "source_function_name": item_fn.sig.ident.to_string(),
+                "visibility": match &item_fn.vis {
+                    syn::Visibility::Public(_) => "pub",
+                    syn::Visibility::Restricted(_) => "pub(crate)",
+                    syn::Visibility::Inherited => "",
+                },
+                "generic_params": generic_params,
+                "original_param_types": original_param_types,
                 "param_names": param_names,
                 "param_types": param_types,
                 "param_sort_cids": param_sort_cids,
@@ -503,6 +529,7 @@ fn bind_lift(params: &Value) -> Result<Value, String> {
                     "value": { "entries": loss },
                 },
                 "body_source": sugar_body_source(&rel, &src, &item_fn),
+                "doc_lines": doc_lines_sb,
             });
             // #1369: parametric content-addressing — emit expansions for any
             // composite CIDs the signature contains. Realize plugin reads
@@ -592,6 +619,140 @@ fn bind_lift(params: &Value) -> Result<Value, String> {
                 entry["family"] = json!(f);
             }
             entries.push(entry);
+        }
+
+        // Module-level item declarations: const, static, struct, enum,
+        // trait. Each becomes its own substrate IR entry so the target
+        // plugin can emit native equivalents (java class+interface+
+        // constants from rust mod-level items, no hand-written code).
+        use quote::ToTokens;
+        for item in &file.items {
+            // const X: T = value;
+            if let syn::Item::Const(c) = item {
+                let name = c.ident.to_string();
+                let ty = c.ty.to_token_stream().to_string().replace(' ', "");
+                let value = c.expr.to_token_stream().to_string();
+                let visibility = match &c.vis {
+                    syn::Visibility::Public(_) => "pub",
+                    syn::Visibility::Restricted(_) => "pub(crate)",
+                    syn::Visibility::Inherited => "",
+                };
+                entries.push(json!({
+                    "kind": "const-decl",
+                    "name": name,
+                    "type": ty,
+                    "value": value,
+                    "visibility": visibility,
+                }));
+            }
+            // struct X { field: T, ... }
+            if let syn::Item::Struct(s) = item {
+                let name = s.ident.to_string();
+                let visibility = match &s.vis {
+                    syn::Visibility::Public(_) => "pub",
+                    syn::Visibility::Restricted(_) => "pub(crate)",
+                    syn::Visibility::Inherited => "",
+                };
+                let mut fields: Vec<Value> = Vec::new();
+                if let syn::Fields::Named(named) = &s.fields {
+                    for f in &named.named {
+                        let fname = f.ident.as_ref().map(|i| i.to_string()).unwrap_or_default();
+                        let fty = f.ty.to_token_stream().to_string().replace(' ', "");
+                        fields.push(json!({"name": fname, "type": fty}));
+                    }
+                }
+                entries.push(json!({
+                    "kind": "struct-decl",
+                    "name": name,
+                    "visibility": visibility,
+                    "fields": fields,
+                }));
+            }
+            // enum X { Variant1(T), Variant2 }
+            if let syn::Item::Enum(e) = item {
+                let name = e.ident.to_string();
+                let visibility = match &e.vis {
+                    syn::Visibility::Public(_) => "pub",
+                    syn::Visibility::Restricted(_) => "pub(crate)",
+                    syn::Visibility::Inherited => "",
+                };
+                let mut variants: Vec<Value> = Vec::new();
+                for v in &e.variants {
+                    let vname = v.ident.to_string();
+                    let mut payload_types: Vec<String> = Vec::new();
+                    match &v.fields {
+                        syn::Fields::Unnamed(unn) => {
+                            for f in &unn.unnamed {
+                                payload_types.push(f.ty.to_token_stream().to_string().replace(' ', ""));
+                            }
+                        }
+                        syn::Fields::Named(_) => {
+                            // struct-style variant; skip detail for now (named-fields
+                            // variant data is future work — pull as a struct with the
+                            // variant's name).
+                        }
+                        syn::Fields::Unit => {}
+                    }
+                    variants.push(json!({
+                        "name": vname,
+                        "payload_types": payload_types,
+                    }));
+                }
+                entries.push(json!({
+                    "kind": "enum-decl",
+                    "name": name,
+                    "visibility": visibility,
+                    "variants": variants,
+                }));
+            }
+            // Original trait-decl handling kept below — fall through.
+            if let syn::Item::Trait(t) = item {
+                let trait_name = t.ident.to_string();
+                let visibility = match &t.vis {
+                    syn::Visibility::Public(_) => "pub",
+                    syn::Visibility::Restricted(_) => "pub(crate)",
+                    syn::Visibility::Inherited => "",
+                };
+                let mut methods: Vec<Value> = Vec::new();
+                for trait_item in &t.items {
+                    if let syn::TraitItem::Fn(m) = trait_item {
+                        let name = m.sig.ident.to_string();
+                        let return_type = match &m.sig.output {
+                            syn::ReturnType::Default => "()".to_string(),
+                            syn::ReturnType::Type(_, ty) => ty.to_token_stream().to_string().replace(' ', ""),
+                        };
+                        let mut param_names: Vec<String> = Vec::new();
+                        let mut param_types: Vec<String> = Vec::new();
+                        for input in &m.sig.inputs {
+                            match input {
+                                syn::FnArg::Receiver(_) => {
+                                    // Skip `&self` / `&mut self` — java interface methods are implicit.
+                                }
+                                syn::FnArg::Typed(pt) => {
+                                    if let syn::Pat::Ident(pi) = &*pt.pat {
+                                        param_names.push(pi.ident.to_string());
+                                    } else {
+                                        param_names.push(pt.pat.to_token_stream().to_string());
+                                    }
+                                    param_types.push(pt.ty.to_token_stream().to_string().replace(' ', ""));
+                                }
+                            }
+                        }
+                        methods.push(json!({
+                            "name": name,
+                            "param_names": param_names,
+                            "param_types": param_types,
+                            "return_type": return_type,
+                        }));
+                    }
+                }
+                entries.push(json!({
+                    "kind": "trait-decl",
+                    "name": trait_name,
+                    "visibility": visibility,
+                    "methods": methods,
+                }));
+            }
         }
     }
 
@@ -1738,6 +1899,61 @@ static RUST_ALIASES: OnceLock<
 > = OnceLock::new();
 
 fn sugar_param_types(item_fn: &syn::ItemFn) -> Vec<String> {
+    // Build a map from type-parameter ident to its FIRST trait bound.
+    // For `fn f<A: AdapterLifter>(a: A)`, the param_type for `a` is
+    // emitted as "AdapterLifter" so the lower side has the right
+    // method-resolution target instead of the erased Object.
+    let mut bounds: std::collections::HashMap<String, String> = std::collections::HashMap::new();
+    for gp in &item_fn.sig.generics.params {
+        if let syn::GenericParam::Type(tp) = gp {
+            let name = tp.ident.to_string();
+            for b in &tp.bounds {
+                if let syn::TypeParamBound::Trait(tb) = b {
+                    if let Some(last) = tb.path.segments.last() {
+                        bounds.insert(name.clone(), last.ident.to_string());
+                        break;
+                    }
+                }
+            }
+        }
+    }
+    item_fn
+        .sig
+        .inputs
+        .iter()
+        .filter_map(|arg| match arg {
+            syn::FnArg::Typed(pat_type) => {
+                let raw = sugar_type_surface(&pat_type.ty);
+                // Strip `&` / `&mut ` prefix for the bound lookup, then
+                // re-apply for non-bound types.
+                let stripped = raw
+                    .trim_start_matches("&mut")
+                    .trim_start_matches("&")
+                    .trim()
+                    .to_string();
+                if let Some(bound) = bounds.get(&stripped) {
+                    Some(bound.clone())
+                } else {
+                    Some(raw)
+                }
+            }
+            _ => None,
+        })
+        .collect()
+}
+
+fn sugar_return_type(item_fn: &syn::ItemFn) -> String {
+    match &item_fn.sig.output {
+        syn::ReturnType::Default => "()".to_string(),
+        syn::ReturnType::Type(_, ty) => sugar_type_surface(ty),
+    }
+}
+
+/// Original param types as written in source (no trait-bound substitution).
+/// Preserves generic-param references like `&A` so realize can emit the
+/// signature byte-identical. param_types (above) carries the substituted
+/// form for body-template matching.
+fn sugar_original_param_types(item_fn: &syn::ItemFn) -> Vec<String> {
     item_fn
         .sig
         .inputs
@@ -1749,11 +1965,61 @@ fn sugar_param_types(item_fn: &syn::ItemFn) -> Vec<String> {
         .collect()
 }
 
-fn sugar_return_type(item_fn: &syn::ItemFn) -> String {
-    match &item_fn.sig.output {
-        syn::ReturnType::Default => "()".to_string(),
-        syn::ReturnType::Type(_, ty) => sugar_type_surface(ty),
+/// Generic parameter declarations as a single string suitable for
+/// inserting between `fn name` and `(`. Empty if no generics.
+/// Example: `<A: AdapterLifter, T>`.
+fn sugar_generic_params(item_fn: &syn::ItemFn) -> String {
+    use quote::ToTokens;
+    if item_fn.sig.generics.params.is_empty() {
+        String::new()
+    } else {
+        item_fn.sig.generics.to_token_stream().to_string()
     }
+}
+
+/// #1391 follow-on: extract the `///` doc-comment lines that appear
+/// AFTER the `#[provekit::sugar(...)]` attribute on a fn (syn surfaces
+/// these as `#[doc = "..."]` attributes interleaved with sugar). Doc
+/// comments BEFORE the sugar attribute belong to the rust source-level
+/// concept declaration block (a different surface that measure_fn skips)
+/// and are NOT round-tripped through the cycle's body channel.
+///
+/// Returns the doc body lines (without the `/// ` prefix and without
+/// `\n`), preserving source order. Empty when the function has no
+/// post-sugar docs.
+fn sugar_doc_lines(item_fn: &syn::ItemFn) -> Vec<String> {
+    let mut out = Vec::new();
+    let mut seen_sugar = false;
+    for attr in &item_fn.attrs {
+        let path = attr.path();
+        // Detect the `#[provekit::sugar(...)]` attribute by its two-segment
+        // path.
+        let segs: Vec<_> = path.segments.iter().collect();
+        if segs.len() == 2
+            && segs[0].ident == "provekit"
+            && segs[1].ident == "sugar"
+        {
+            seen_sugar = true;
+            continue;
+        }
+        if !path.is_ident("doc") {
+            continue;
+        }
+        if !seen_sugar {
+            // Doc BEFORE sugar — belongs to the rust-source concept block;
+            // skip for the cycle's emit (the block precedes the cycle's
+            // function-level surface).
+            continue;
+        }
+        if let syn::Meta::NameValue(nv) = &attr.meta {
+            if let syn::Expr::Lit(elit) = &nv.value {
+                if let syn::Lit::Str(s) = &elit.lit {
+                    out.push(s.value());
+                }
+            }
+        }
+    }
+    out
 }
 
 fn sugar_type_surface(ty: &syn::Type) -> String {
@@ -2126,6 +2392,18 @@ fn bindings_of_expr(expr: &syn::Expr, ctx: &ShapeContext) -> BindingResult {
             operation_binding_result(vec![cond, then_branch, else_branch])
         }
         syn::Expr::While(e) => {
+            // Match the shape side's treatment of `while let` — emit
+            // [empty_var_slot, value_bindings, body_bindings] so the
+            // arities align with concept:while-let.
+            if let syn::Expr::Let(let_expr) = &*e.cond {
+                let value_bindings = bindings_of_expr(&let_expr.expr, ctx);
+                let body = bindings_of_block(&e.body, ctx);
+                return operation_binding_result(vec![
+                    BindingResult::default(),
+                    value_bindings,
+                    body,
+                ]);
+            }
             let cond = bindings_of_expr(&e.cond, ctx);
             let body = bindings_of_block(&e.body, ctx);
             operation_binding_result(vec![cond, body])
@@ -2384,7 +2662,25 @@ impl ShapeContext {
 fn shape_of_block(block: &syn::Block, ctx: &ShapeContext) -> Arc<CValue> {
     let mut block_ctx = ctx.clone();
     let mut shapes = Vec::with_capacity(block.stmts.len());
+    // #1391 follow-on: blank-line carrier for substrate-symmetric
+    // round-trip. When the source has a blank line between two
+    // statements, emit a concept:blank-line marker so the lower side
+    // (java) can carry it through and rust realize can re-emit the
+    // blank line. Detection: stmt end line vs next stmt start line
+    // is > 1 (i.e. at least one blank line between them).
+    let mut prev_end_line: Option<usize> = None;
     for stmt in &block.stmts {
+        let span = stmt.span();
+        let start_line = span.start().line;
+        if let Some(prev) = prev_end_line {
+            if start_line > prev + 1 {
+                // One concept:blank-line marker per gap, regardless of
+                // how many blank lines (rustfmt normalizes multi-blank
+                // to single).
+                shapes.push(gamma_operation("concept:blank-line", Vec::new()));
+            }
+        }
+        prev_end_line = Some(span.end().line);
         shapes.push(shape_of_stmt(stmt, &block_ctx));
         update_context_from_stmt(stmt, &mut block_ctx);
     }
@@ -2452,6 +2748,21 @@ fn local_binding_sort(
 fn shape_of_stmt(stmt: &syn::Stmt, ctx: &ShapeContext) -> Arc<CValue> {
     match stmt {
         syn::Stmt::Expr(e, _) => shape_of_expr(e, ctx),
+        // Function-local item declaration: `const X: T = expr;`, `static X`,
+        // inner `fn`, etc. First-class concept:item-decl carrying the
+        // verbatim source. Realize-side emits it back into the function body.
+        // (Full structural lift of items is future work — preserving source
+        // verbatim is the minimal byte-identical surface.)
+        syn::Stmt::Item(item) => {
+            use quote::ToTokens;
+            let source = item.to_token_stream().to_string();
+            gamma_operation("concept:item-decl", vec![
+                CValue::object([
+                    ("kind", CValue::string("symbol")),
+                    ("text", CValue::string(source)),
+                ]),
+            ])
+        }
         syn::Stmt::Local(local) => {
             let Some(init) = local.init.as_ref() else {
                 return non_operation_shape();
@@ -2471,6 +2782,63 @@ fn shape_of_stmt(stmt: &syn::Stmt, ctx: &ShapeContext) -> Arc<CValue> {
                     vec![target_leaf, shape_of_expr(&init.expr, ctx)],
                 );
             }
+            // Struct destructuring: `let TypeName { field1, field2 } = expr`
+            // → first-class concept:destructure-struct(value, type_leaf,
+            //   field1_name_leaf, ..., fieldN_name_leaf).
+            // Realize-side: rust emits the source's destructure pattern;
+            // java/etc emit field-by-field getter calls.
+            if let syn::Pat::Struct(struct_pat) = &local.pat {
+                use quote::ToTokens;
+                let type_text = struct_pat.path.to_token_stream().to_string();
+                let mut args: Vec<Arc<CValue>> = Vec::new();
+                args.push(shape_of_expr(&init.expr, ctx));
+                args.push(CValue::object([
+                    ("kind", CValue::string("type")),
+                    ("text", CValue::string(type_text)),
+                ]));
+                for field in &struct_pat.fields {
+                    let field_name = match &field.member {
+                        syn::Member::Named(ident) => ident.to_string(),
+                        syn::Member::Unnamed(idx) => idx.index.to_string(),
+                    };
+                    let binding_name = match &*field.pat {
+                        syn::Pat::Ident(pi) => pi.ident.to_string(),
+                        _ => field_name.clone(),
+                    };
+                    args.push(CValue::object([
+                        ("kind", CValue::string("symbol")),
+                        ("text", CValue::string(binding_name)),
+                        ("field_name", CValue::string(field_name)),
+                    ]));
+                }
+                return gamma_operation("concept:destructure-struct", args);
+            }
+            // Tuple destructuring: `let (a, b, c) = expr` — first-class
+            // concept:destructure-tuple(value, name1, name2, name3, ...).
+            // Realize-side translates to `let (a, b, c) = expr` (rust-native)
+            // OR to a temp + indexed assigns (java/etc).
+            if let syn::Pat::Tuple(tuple_pat) = &local.pat {
+                let mut name_leaves: Vec<Arc<CValue>> = Vec::new();
+                for elem in &tuple_pat.elems {
+                    let name = match elem {
+                        syn::Pat::Ident(pi) => pi.ident.to_string(),
+                        syn::Pat::Wild(_) => "_".to_string(),
+                        other => {
+                            use quote::ToTokens;
+                            other.to_token_stream().to_string()
+                        }
+                    };
+                    name_leaves.push(CValue::object([
+                        ("kind", CValue::string("symbol")),
+                        ("text", CValue::string(name)),
+                    ]));
+                }
+                if !name_leaves.is_empty() {
+                    let mut args = vec![shape_of_expr(&init.expr, ctx)];
+                    args.extend(name_leaves);
+                    return gamma_operation("concept:destructure-tuple", args);
+                }
+            }
             if let Some(binding_name) = local_binding_symbol(local) {
                 // Substrate-honest let-binding: the binding NAME is data,
                 // emit it as a kind:"symbol" leaf in the target slot.
@@ -2482,11 +2850,29 @@ fn shape_of_stmt(stmt: &syn::Stmt, ctx: &ShapeContext) -> Arc<CValue> {
                 // args[0] = target (symbol leaf with binding name)
                 // args[1] = value expression
                 // args[2] = mutability flag leaf when `let mut`, omitted otherwise
-                let mut assign_args = vec![
+                // Preserve explicit `: Type` annotation when present.
+                // Stored on the symbol leaf as `let_type` so the lower side
+                // can emit `let X: Type = value` byte-identical with source.
+                let explicit_type = if let syn::Pat::Type(pat_type) = &local.pat {
+                    use quote::ToTokens;
+                    Some(pat_type.ty.to_token_stream().to_string())
+                } else {
+                    None
+                };
+                let target_leaf = if let Some(ty) = explicit_type {
                     CValue::object([
                         ("kind", CValue::string("symbol")),
                         ("text", CValue::string(binding_name)),
-                    ]),
+                        ("let_type", CValue::string(ty)),
+                    ])
+                } else {
+                    CValue::object([
+                        ("kind", CValue::string("symbol")),
+                        ("text", CValue::string(binding_name)),
+                    ])
+                };
+                let mut assign_args = vec![
+                    target_leaf,
                     shape_of_expr(&init.expr, ctx),
                 ];
                 if local_binding_is_mut(local) {
@@ -2518,6 +2904,30 @@ fn shape_of_expr(expr: &syn::Expr, ctx: &ShapeContext) -> Arc<CValue> {
         // - for x in iter → concept:for-each(var, iterable, body)
         // - loop → concept:while(true, body)  (decomposed via existing primitives)
         syn::Expr::If(e) => {
+            // Detect `if let PATTERN = EXPR { body }` — rust models this
+            // as ExprIf with cond = Expr::Let(pat, expr). Re-encode as
+            //   { let var = EXPR; if var != null { body } else { else } }
+            // using existing catalog concepts.
+            if let syn::Expr::Let(let_expr) = &*e.cond {
+                // First-class concept:if-let(pattern_leaf, expr, then, else).
+                // Pattern text preserved so lower emits the source idiom.
+                use quote::ToTokens;
+                let pattern_text = let_expr.pat.to_token_stream().to_string();
+                let pattern_leaf = CValue::object([
+                    ("kind", CValue::string("symbol")),
+                    ("text", CValue::string(pattern_text)),
+                ]);
+                let value = shape_of_expr(&let_expr.expr, ctx);
+                let then_shape = shape_of_block(&e.then_branch, ctx);
+                let else_shape = match &e.else_branch {
+                    Some((_, expr)) => shape_of_expr(expr, ctx),
+                    None => gamma_operation("concept:skip", Vec::new()),
+                };
+                return gamma_operation(
+                    "concept:if-let",
+                    vec![pattern_leaf, value, then_shape, else_shape],
+                );
+            }
             let cond = shape_of_expr(&e.cond, ctx);
             let then_shape = shape_of_block(&e.then_branch, ctx);
             let else_shape = match &e.else_branch {
@@ -2527,6 +2937,32 @@ fn shape_of_expr(expr: &syn::Expr, ctx: &ShapeContext) -> Arc<CValue> {
             gamma_operation("concept:conditional", vec![cond, then_shape, else_shape])
         }
         syn::Expr::While(e) => {
+            // Detect `while let PATTERN = EXPR { body }` — rust models this
+            // as ExprWhile with cond = Expr::Let(pat, expr). The pattern
+            // binds a variable that's in scope inside body. Lift as
+            // concept:while-let(var_leaf, expr, body) so the lower side
+            // can emit `while ((var = expr) != null) { body }` or the
+            // equivalent in each target.
+            if let syn::Expr::Let(let_expr) = &*e.cond {
+                // First-class concept:while-let(pattern_leaf, expr, body).
+                // The pattern's full text is preserved (e.g. `Some(line)`)
+                // so the lower side can emit the original `while let
+                // PATTERN = EXPR { body }` byte-identical with source.
+                // Synthetic decomposition into while-true + assign + break
+                // is a target-side translation, not a substrate concept.
+                use quote::ToTokens;
+                let pattern_text = let_expr.pat.to_token_stream().to_string();
+                let pattern_leaf = CValue::object([
+                    ("kind", CValue::string("symbol")),
+                    ("text", CValue::string(pattern_text)),
+                ]);
+                let value = shape_of_expr(&let_expr.expr, ctx);
+                let body = shape_of_block(&e.body, ctx);
+                return gamma_operation(
+                    "concept:while-let",
+                    vec![pattern_leaf, value, body],
+                );
+            }
             let cond = shape_of_expr(&e.cond, ctx);
             let body = shape_of_block(&e.body, ctx);
             gamma_operation("concept:while", vec![cond, body])
@@ -2537,10 +2973,17 @@ fn shape_of_expr(expr: &syn::Expr, ctx: &ShapeContext) -> Arc<CValue> {
             // destructuring resolution is follow-up; matches walk_rpc's
             // existing pattern-as-leaf convention).
             let var = match &*e.pat {
-                syn::Pat::Ident(p) => CValue::object([
-                    ("kind", CValue::string("symbol")),
-                    ("text", CValue::string(p.ident.to_string())),
-                ]),
+                syn::Pat::Ident(p) => {
+                    // Preserve `for mut x in ...` mutability marker.
+                    let mut fields = vec![
+                        ("kind", CValue::string("symbol")),
+                        ("text", CValue::string(p.ident.to_string())),
+                    ];
+                    if p.mutability.is_some() {
+                        fields.push(("mut", CValue::boolean(true)));
+                    }
+                    CValue::object(fields)
+                }
                 other => {
                     use quote::ToTokens;
                     CValue::object([
@@ -2577,6 +3020,21 @@ fn shape_of_expr(expr: &syn::Expr, ctx: &ShapeContext) -> Arc<CValue> {
                 .map(|expr| vec![shape_of_expr(expr, ctx)])
                 .unwrap_or_default();
             gamma_operation("concept:return", args)
+        }
+        // `(a, b, c)` — rust tuple literal. No first-class tuple concept
+        // in the catalog; encode as concept:call with synthetic path leaf
+        // `__provekit_tuple_new`. The lower side detects this name and
+        // emits target-appropriate tuple constructor (e.g. Object[] in java).
+        syn::Expr::Tuple(e) => {
+            let callee = CValue::object([
+                ("kind", CValue::string("path")),
+                ("text", CValue::string("__provekit_tuple_new")),
+            ]);
+            let mut args = vec![callee];
+            for elem in &e.elems {
+                args.push(shape_of_expr(elem, ctx));
+            }
+            gamma_operation("concept:call", args)
         }
         syn::Expr::Break(e) => {
             let args = e
@@ -2622,6 +3080,19 @@ fn shape_of_expr(expr: &syn::Expr, ctx: &ShapeContext) -> Arc<CValue> {
             } else {
                 return non_operation_shape();
             };
+            // catalog #1391: nullary path-call → kit-op → concept (reverse lookup).
+            if e.args.is_empty() {
+                let kit_op = match callee_text.as_str() {
+                    "Vec::new" => Some("rust:vec-new"),
+                    "HashMap::new" => Some("rust:hashmap-new"),
+                    _ => None,
+                };
+                if let Some(kit_op) = kit_op {
+                    if let Some(concept) = provekit_realize_rust_core::operation_realization_catalog::concept_for_rust_op(kit_op) {
+                        return gamma_operation(&concept, vec![]);
+                    }
+                }
+            }
             // args[0]: callee path leaf (kind:"path", text:"blake3::Hasher::new")
             // args[1..]: call arguments, matching bindings_of_expr layout above.
             let callee_leaf = CValue::object([
@@ -2633,13 +3104,33 @@ fn shape_of_expr(expr: &syn::Expr, ctx: &ShapeContext) -> Arc<CValue> {
             gamma_operation("concept:call", args)
         }
         syn::Expr::MethodCall(e) => {
+            // catalog-driven abstraction recognition (#1391): when the
+            // method+arity matches a catalog'd realization, emit the
+            // abstraction operator directly instead of concept:call wrapping
+            // a method:<name> leaf. Both sides do the same; the cycle
+            // collapses to the abstraction at the substrate seam.
+            let m_name = e.method.to_string();
+            if e.args.is_empty() {
+                // catalog #1391: reverse-lookup matcher AST shape → kit-op
+                // name → concept-hub name. The catalog supplies the concept.
+                let kit_op = match m_name.as_str() {
+                    "as_bytes" => Some("rust:str-as-bytes"),
+                    "as_str" => Some("rust:serde-value-as-str"),
+                    "is_some" => Some("rust:option-is-some"),
+                    _ => None,
+                };
+                if let Some(kit_op) = kit_op {
+                    if let Some(concept) = provekit_realize_rust_core::operation_realization_catalog::concept_for_rust_op(kit_op) {
+                        return gamma_operation(&concept, vec![shape_of_expr(&e.receiver, ctx)]);
+                    }
+                }
+            }
             // args[0]: receiver shape, matching bindings_of_expr layout above.
-            // args[1]: method ident leaf (kind:"method", text:"update")
+            // args[1]: canonical method-concept leaf (kind:"method",
+            // concept_name:"method:<name>", arity:<n>, op_cid:<derived>).
+            // The CID is determined by structure — no minting required.
             // args[2..]: call arguments.
-            let method_leaf = CValue::object([
-                ("kind", CValue::string("method")),
-                ("text", CValue::string(e.method.to_string())),
-            ]);
+            let method_leaf = method_concept_leaf(&m_name, e.args.len());
             let mut args = vec![
                 shape_of_expr(&e.receiver, ctx),
                 method_leaf,
@@ -2648,6 +3139,14 @@ fn shape_of_expr(expr: &syn::Expr, ctx: &ShapeContext) -> Arc<CValue> {
             gamma_operation("concept:call", args)
         }
         syn::Expr::Lit(lit) => literal_shape(&lit.lit),
+        // `expr?` — rust's Try operator. First-class concept:try(inner)
+        // preserves the source form for byte-identical rust round-trip;
+        // target plugins translate to language-appropriate unwrap (java
+        // gets .try_unwrap() via the method-concept catalog mapping).
+        syn::Expr::Try(e) => {
+            let inner = shape_of_expr(&e.expr, ctx);
+            gamma_operation("concept:try", vec![inner])
+        }
         // [elem; count] syntax — emitted as concept:array-repeat with args [elem, len].
         syn::Expr::Repeat(e) => gamma_operation(
             "concept:array-repeat",
@@ -2676,7 +3175,16 @@ fn shape_of_expr(expr: &syn::Expr, ctx: &ShapeContext) -> Arc<CValue> {
             use quote::ToTokens;
             let mut args = vec![shape_of_expr(&e.expr, ctx)];
             for arm in &e.arms {
-                let pattern_text = arm.pat.to_token_stream().to_string();
+                let mut pattern_text = arm.pat.to_token_stream().to_string();
+                // Carry the guard inline in the pattern text so the
+                // realize side reconstructs `Pattern if Cond => Body`.
+                // Storing it in the pattern leaf keeps the substrate
+                // shape stable (no new concept-arity yet); future work
+                // can split guard into its own structural slot.
+                if let Some((_, guard)) = &arm.guard {
+                    pattern_text.push_str(" if ");
+                    pattern_text.push_str(&guard.to_token_stream().to_string());
+                }
                 let pattern_leaf = CValue::object([
                     ("kind", CValue::string("symbol")),
                     ("text", CValue::string(pattern_text)),
@@ -2719,7 +3227,31 @@ fn shape_of_expr(expr: &syn::Expr, ctx: &ShapeContext) -> Arc<CValue> {
         // resolution); we do NOT pre-bind closure params here.
         syn::Expr::Closure(e) => {
             let mut closure_args: Vec<Arc<CValue>> = Vec::new();
-            closure_args.push(shape_of_expr(&e.body, ctx));
+            // Record source form choice: block-body vs expression-body.
+            // `|e| { ... }` is Expr::Block (block-form); `|e| expr` is
+            // any other expression. The lower side uses this to emit
+            // byte-identical surface — block form lets rustfmt split
+            // long lines, expression form keeps them inline.
+            let is_block_body = matches!(&*e.body, syn::Expr::Block(_));
+            let body_shape = shape_of_expr(&e.body, ctx);
+            // Attach closure_block_body marker on a wrapper. Cloning the
+            // inner object's fields and re-wrapping is simpler than
+            // get_mut-and-mutate (Arc has multiple refs in the IR tree).
+            let body_shape = if is_block_body {
+                let cloned = (*body_shape).clone();
+                match cloned {
+                    CValue::Object(mut fields) => {
+                        // CValue::Object is Vec<(String, Arc<Value>)>
+                        let val: Arc<CValue> = CValue::boolean(true);
+                        fields.push(("closure_block_body".to_string(), val));
+                        Arc::new(CValue::Object(fields))
+                    }
+                    other => Arc::new(other),
+                }
+            } else {
+                body_shape
+            };
+            closure_args.push(body_shape);
             for input in &e.inputs {
                 let syn::Pat::Ident(pat) = input else {
                     return non_operation_shape();
@@ -3003,14 +3535,56 @@ fn format_macro_tokens(s: &str) -> String {
     out.trim().to_string()
 }
 
+/// Build a substrate-canonical method-concept leaf.
+///
+/// A method's identity comes from its STRUCTURE — the canonical shape
+/// is `{kind:"method-concept", name:"<name>", arity:<n>}`, and its
+/// op_cid is `blake3_512(JCS(that))`. No catalog minting required:
+/// the structure IS the identity. Any source language emitting a
+/// method with the same (name, arity) gets the same CID automatically.
+///
+/// The leaf also keeps `text` for legacy readers that haven't migrated
+/// to `concept_name` yet. New readers should prefer `concept_name`
+/// + `op_cid`.
+fn method_concept_leaf(method_name: &str, arity: usize) -> Arc<CValue> {
+    let concept_name = format!("method:{}", method_name);
+    // Canonical content-addressable shape (no text/legacy fields,
+    // no op_cid yet — those are derived/auxiliary).
+    let canonical = CValue::object([
+        ("arity", CValue::integer(arity as i64)),
+        ("concept_name", CValue::string(concept_name.clone())),
+        ("kind", CValue::string("method-concept")),
+    ]);
+    let op_cid = blake3_512_of(encode_jcs(&canonical).as_bytes());
+    // Emitted leaf includes op_cid (self-describing) AND keeps text/
+    // kind="method" for backwards compatibility with existing readers
+    // (e.g. the java realize plugin's pattern-match on "kind":"method").
+    CValue::object([
+        ("arity", CValue::integer(arity as i64)),
+        ("concept_name", CValue::string(concept_name)),
+        ("kind", CValue::string("method")),
+        ("op_cid", CValue::string(op_cid.to_string())),
+        ("text", CValue::string(method_name.to_string())),
+    ])
+}
+
 fn gamma_operation(concept_name: &str, args: Vec<Arc<CValue>>) -> Arc<CValue> {
-    let Some(op_cid) = concept_op_cid(concept_name) else {
-        return non_operation_shape();
+    let op_cid = match concept_op_cid(concept_name) {
+        Some(cid) => cid.to_string(),
+        None => {
+            // Not in the live catalogue yet — derive a CID from the
+            // concept name. The substrate's accretion-over-time model:
+            // new concepts come into existence at lift time, get their
+            // CID from structure (here just the name), and join the
+            // catalogue. Catalog memento files can be generated later
+            // from observed CIDs.
+            format!("blake3-512:{}", blake3_512_of(concept_name.as_bytes()))
+        }
     };
     CValue::object([
         ("args", CValue::array(args)),
         ("concept_name", CValue::string(concept_name.to_string())),
-        ("op_cid", CValue::string(op_cid.to_string())),
+        ("op_cid", CValue::string(op_cid)),
     ])
 }
 
@@ -3037,6 +3611,19 @@ fn literal_shape(lit: &syn::Lit) -> Arc<CValue> {
             } else {
                 suffix.to_string()
             };
+            // Preserve source radix (hex, oct, bin) so realize reproduces
+            // `0x0F` not `15`. base10_digits gives "15" for any radix; we
+            // peek at the original token text for the prefix.
+            let token_text = value.to_string();
+            let radix = if token_text.starts_with("0x") || token_text.starts_with("0X") {
+                "hex"
+            } else if token_text.starts_with("0o") || token_text.starts_with("0O") {
+                "oct"
+            } else if token_text.starts_with("0b") || token_text.starts_with("0B") {
+                "bin"
+            } else {
+                "dec"
+            };
             CValue::object([
                 ("args", CValue::array(Vec::new())),
                 ("concept_name", CValue::string("concept:literal")),
@@ -3044,6 +3631,7 @@ fn literal_shape(lit: &syn::Lit) -> Arc<CValue> {
                 ("sort", CValue::string(SORT_INT_CID)),
                 ("value", CValue::integer(decoded)),
                 ("integer_width", CValue::string(integer_width)),
+                ("radix", CValue::string(radix)),
             ])
         }
         syn::Lit::Float(value) => {

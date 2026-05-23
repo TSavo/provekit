@@ -1,0 +1,53 @@
+{
+  "memento": {
+    "kind": "equation",
+    "fn_name": "concept:utf8-encode->rust:str-as-bytes",
+    "formals": [
+      "s"
+    ],
+    "formal_sorts": [
+      {
+        "kind": "ctor",
+        "name": "String",
+        "args": []
+      }
+    ],
+    "post": {
+      "lhs": {
+        "kind": "op",
+        "name": "concept:utf8-encode",
+        "args": [
+          {
+            "kind": "var",
+            "name": "s"
+          }
+        ]
+      },
+      "rhs": {
+        "kind": "op",
+        "name": "rust:str-as-bytes",
+        "args": [
+          {
+            "kind": "var",
+            "name": "s"
+          }
+        ]
+      }
+    },
+    "role": "abstraction-realization",
+    "direction": "left-to-right",
+    "target_lang": "rust",
+    "target_library": "rust-language-builtin",
+    "loss_record": {
+      "structural_divergence": "rust .as_bytes() returns &[u8] view; concept models owned Bytes"
+    },
+    "discharge_receipt": "deferred:pending-pk-1391",
+    "effects": []
+  },
+  "cid": "blake3-512:7196a732c23beae9a5143b8da4687e413b5c67acf182462f5daaff500796a18e13e6865cb3cb7d7529464d5372aa47ac655bf203eaf15e66ef9ce5a847fee088",
+  "signature": {
+    "alg": "ed25519",
+    "key_id": "UNSIGNED_DEV_ONLY",
+    "sig_b64": "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"
+  }
+}

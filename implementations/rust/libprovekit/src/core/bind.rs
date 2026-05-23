@@ -155,6 +155,27 @@ pub struct BindLiftEntry {
     pub param_types: Vec<String>,
     #[serde(default)]
     pub return_type: String,
+    /// Source-language visibility ("pub", "pub(crate)", or empty for
+    /// private). Propagated from lift into NamedTerm so the realize
+    /// plugin reproduces it on emit.
+    #[serde(default)]
+    pub visibility: String,
+    /// Generic parameter declarations from source (e.g. `<A: AdapterLifter>`).
+    #[serde(default)]
+    pub generic_params: String,
+    /// Original param types as written in source. param_types is the
+    /// substituted form; this is the byte-identical form.
+    #[serde(default)]
+    pub original_param_types: Vec<String>,
+    /// Concept-hub CIDs lifted from the source's type expressions via the
+    /// kit's source-alias catalog (#1370). These are the substrate-honest
+    /// cross-language type pins. Bind propagates them into NamedTerm so
+    /// lower's realize plugin can translate signatures via the target
+    /// kit's catalog instead of rust-string matching.
+    #[serde(default)]
+    pub param_sort_cids: Vec<String>,
+    #[serde(default)]
+    pub return_sort_cid: String,
     #[serde(default)]
     pub operand_bindings: Vec<Json>,
     #[serde(
@@ -171,6 +192,11 @@ pub struct BindLiftEntry {
     pub term_shape_cid: String,
     #[serde(default)]
     pub witnesses: Vec<BindContractWitness>,
+    /// Doc comment lines from rust source (only `///` after the
+    /// `#[provekit::sugar(...)]` attribute). Propagated end-to-end so
+    /// realize can reproduce them on emit.
+    #[serde(default, rename = "docLines", alias = "doc_lines")]
+    pub doc_lines: Vec<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -207,6 +233,37 @@ pub struct NamedTermDocument {
     #[serde(rename = "sourceLanguage")]
     pub source_language: String,
     pub terms: Vec<NamedTerm>,
+    /// @boundary entries carried alongside @sugar terms. The substrate's
+    /// lower side uses these to emit boundary primitive stubs in the
+    /// target compilation unit. Each entry mirrors a rust @boundary fn
+    /// declaration with full signature info (visibility, generics,
+    /// param types, return type) so the target plugin can emit a
+    /// byte-correct interface declaration.
+    #[serde(
+        default,
+        rename = "boundaryEntries",
+        skip_serializing_if = "Vec::is_empty"
+    )]
+    pub boundary_entries: Vec<Json>,
+    /// Trait declarations lifted from rust source. Each carries the
+    /// trait name + per-method signatures. The target plugin uses these
+    /// to emit native interface declarations (java interface, etc.)
+    /// matching the rust trait — no hand-written interface code.
+    #[serde(
+        default,
+        rename = "traitDecls",
+        skip_serializing_if = "Vec::is_empty"
+    )]
+    pub trait_decls: Vec<Json>,
+    /// Module-level item declarations: const, struct, enum. The target
+    /// plugin uses these to emit native equivalents (java static
+    /// constants, classes/records, sealed interfaces).
+    #[serde(
+        default,
+        rename = "moduleItems",
+        skip_serializing_if = "Vec::is_empty"
+    )]
+    pub module_items: Vec<Json>,
     #[serde(rename = "workspaceRoot", skip_serializing_if = "Option::is_none")]
     pub workspace_root: Option<String>,
 }
@@ -270,6 +327,46 @@ pub struct NamedTerm {
     pub params: Vec<String>,
     #[serde(rename = "returnType")]
     pub return_type: String,
+    /// Source-language visibility ("pub", "pub(crate)", or empty for
+    /// private). Threaded through to RealizeRequest so realize plugins
+    /// reproduce the original visibility on emit.
+    #[serde(default, skip_serializing_if = "String::is_empty")]
+    pub visibility: String,
+    /// Generic parameter declarations as a single string (e.g.
+    /// `<A: AdapterLifter>`). Empty if the function has no generics.
+    /// Threaded so realize can emit the signature byte-identical with source.
+    #[serde(
+        default,
+        rename = "genericParams",
+        skip_serializing_if = "String::is_empty"
+    )]
+    pub generic_params: String,
+    /// Original param types as written in source (no trait-bound
+    /// substitution). `param_types` carries the substituted form for
+    /// body-template matching; this carries the byte-identical form for
+    /// signature emission.
+    #[serde(
+        default,
+        rename = "originalParamTypes",
+        skip_serializing_if = "Vec::is_empty"
+    )]
+    pub original_param_types: Vec<String>,
+    /// Substrate-honest cross-language type pins. When present, the lower
+    /// path uses concept-hub CIDs to translate signatures via the target
+    /// kit's catalog (same as cross-language materialize). When absent,
+    /// falls back to raw rust type strings (legacy behavior).
+    #[serde(
+        default,
+        rename = "paramSortCids",
+        skip_serializing_if = "Vec::is_empty"
+    )]
+    pub param_sort_cids: Vec<String>,
+    #[serde(
+        default,
+        rename = "returnSortCid",
+        skip_serializing_if = "String::is_empty"
+    )]
+    pub return_sort_cid: String,
     #[serde(rename = "siteMementoCid")]
     pub site_memento_cid: String,
     #[serde(rename = "termShape")]
@@ -277,6 +374,16 @@ pub struct NamedTerm {
     #[serde(rename = "termShapeCid")]
     pub term_shape_cid: String,
     pub witnesses: Vec<NamedWitness>,
+    /// Doc comment lines (`///` body, without prefix or trailing newline)
+    /// that appear AFTER the `#[provekit::sugar(...)]` attribute. Threaded
+    /// through to realize so cycle output preserves source doc comments.
+    /// Empty when the source had no post-sugar docs.
+    #[serde(
+        default,
+        rename = "docLines",
+        skip_serializing_if = "Vec::is_empty"
+    )]
+    pub doc_lines: Vec<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -367,10 +474,19 @@ pub fn bind_term_document(
             } else {
                 entry.return_type
             },
+            visibility: entry.visibility,
+            generic_params: entry.generic_params,
+            original_param_types: entry.original_param_types,
+            // #1374-derived: thread concept-hub CIDs through bind so lower
+            // can use the substrate's catalog for signature translation
+            // (same path cross-lang materialize already uses).
+            param_sort_cids: entry.param_sort_cids,
+            return_sort_cid: entry.return_sort_cid,
             site_memento_cid,
             term_shape: entry.term_shape,
             term_shape_cid,
             witnesses,
+            doc_lines: entry.doc_lines,
         });
     }
 
@@ -384,6 +500,9 @@ pub fn bind_term_document(
         schema_version: "1".to_string(),
         source_language,
         terms,
+        boundary_entries: Vec::new(),
+        trait_decls: Vec::new(),
+        module_items: Vec::new(),
         workspace_root,
     })
 }
@@ -573,11 +692,31 @@ fn bind_lift_entries(term_json: &Json) -> Result<Vec<BindLiftEntry>, BindError> 
         .ok_or_else(|| BindError::Failed("ProofIR document missing `ir` array".to_string()))?;
     let mut out = Vec::new();
     for item in ir {
-        if item.get("kind").and_then(Json::as_str) != Some("bind-lift-entry") {
+        let kind = item.get("kind").and_then(Json::as_str).unwrap_or("");
+        // Accept BOTH `bind-lift-entry` (contracts) and
+        // `library-sugar-binding-entry` (@sugar functions). The latter
+        // was historically skipped, which meant @sugar functions never
+        // got lifted into named terms — bind dropped them silently.
+        // Now both kinds flow through; BindLiftEntry's #[serde(default)]
+        // on fields lets the deserializer succeed for either shape.
+        if kind != "bind-lift-entry" && kind != "library-sugar-binding-entry" {
             continue;
         }
-        let entry = serde_json::from_value::<BindLiftEntry>(item.clone())
-            .map_err(|e| BindError::Failed(format!("parse bind-lift-entry: {e}")))?;
+        // For library-sugar-binding-entry the function name field is
+        // `source_function_name`. Patch a synthetic `fn_name` so the
+        // common deserialization path works.
+        let mut patched = item.clone();
+        if kind == "library-sugar-binding-entry" {
+            if let Some(obj) = patched.as_object_mut() {
+                if !obj.contains_key("fn_name") {
+                    if let Some(sfn) = obj.get("source_function_name").cloned() {
+                        obj.insert("fn_name".to_string(), sfn);
+                    }
+                }
+            }
+        }
+        let entry = serde_json::from_value::<BindLiftEntry>(patched)
+            .map_err(|e| BindError::Failed(format!("parse {kind}: {e}")))?;
         out.push(entry);
     }
     Ok(out)
@@ -1254,6 +1393,21 @@ fn named_term_document_from_op_tree(term: &Term) -> Result<NamedTermDocument, Bi
             .unwrap_or("unknown")
             .to_string(),
         terms,
+        boundary_entries: document
+            .get("boundaryEntries")
+            .and_then(Json::as_array)
+            .cloned()
+            .unwrap_or_default(),
+        trait_decls: document
+            .get("traitDecls")
+            .and_then(Json::as_array)
+            .cloned()
+            .unwrap_or_default(),
+        module_items: document
+            .get("moduleItems")
+            .and_then(Json::as_array)
+            .cloned()
+            .unwrap_or_default(),
         workspace_root: document
             .get("workspaceRoot")
             .and_then(Json::as_str)
@@ -1881,6 +2035,7 @@ mod tests {
                     term_shape: json!({"kind": "bin", "op": "+"}),
                     term_shape_cid: "blake3-512:33333333333333333333333333333333333333333333333333333333333333333333333333333333333333333333333333333333333333333333333333333333".to_string(),
                     witnesses: vec![],
+                    doc_lines: vec![],
                 }],
                 workspace_root: None,
             }
@@ -1916,6 +2071,7 @@ mod tests {
                 term_shape: json!({}),
                 term_shape_cid: "blake3-512:33333333333333333333333333333333333333333333333333333333333333333333333333333333333333333333333333333333333333333333333333333333".to_string(),
                 witnesses: vec![],
+                doc_lines: vec![],
             }],
             workspace_root: None,
         };
