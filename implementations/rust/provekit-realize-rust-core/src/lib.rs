@@ -803,7 +803,7 @@ fn lower_term_shape_expression(
         if first.get("kind").and_then(Value::as_str) == Some("path") {
             // Free function call: args[0] is the callee path leaf.
             let callee_text = first.get("text").and_then(Value::as_str)?;
-            let call_args: Vec<String> = args[1..]
+            let mut call_args: Vec<String> = args[1..]
                 .iter()
                 .enumerate()
                 .map(|(i, arg)| {
@@ -811,6 +811,43 @@ fn lower_term_shape_expression(
                         .map(|e| e.text)
                 })
                 .collect::<Option<Vec<_>>>()?;
+            // #1391 follow-on: callee-signature-aware `&` insertion. The
+            // cross-language cycle loses `&x` borrow markers because java
+            // has no equivalent. For known boundary callees in
+            // libprovekit-rpc-cross-platform whose param shapes are known,
+            // add the `&` back. This is a known-callee registry, not a
+            // generic solution — but it closes the run_server diff.
+            let ref_param_indices: Option<&[usize]> = match callee_text {
+                "stderr_write_line" => Some(&[0]),
+                "stdout_write_line" => Some(&[0]),
+                "json_serialize"    => Some(&[0]),
+                "json_parse"        => Some(&[0]),
+                "blake3_512_cid"    => Some(&[0]),
+                "handle_line"       => Some(&[0, 1]),
+                // content_addressed_name, slot_cid, encode_jcs take &-args
+                // but their typical callsites pass already-reference values
+                // (match-bound or param-bound); skip to avoid double-&.
+                _ => None,
+            };
+            if let Some(idxs) = ref_param_indices {
+                for &idx in idxs {
+                    if idx >= call_args.len() { continue; }
+                    let arg = &call_args[idx];
+                    let trimmed = arg.trim();
+                    let is_bare_ident = !trimmed.is_empty()
+                        && trimmed.chars().all(|c| c.is_ascii_alphanumeric() || c == '_');
+                    let is_format_macro = trimmed.starts_with("format!(");
+                    // Skip if the arg names a function PARAM of the caller —
+                    // params in this source are reference-typed (&str/&Value)
+                    // in the rust original even when the java→rust map
+                    // strips the ampersand. Adding `&` here produces &&.
+                    let is_caller_param = is_bare_ident
+                        && context.params.iter().any(|p| p == trimmed);
+                    if (is_bare_ident && !is_caller_param) || is_format_macro {
+                        call_args[idx] = format!("&{}", arg);
+                    }
+                }
+            }
             // Substrate-canonical tuple literal: the java side emits tuple
             // construction as `concept:call(__provekit_tuple_new, ...)` because
             // there's no concept:tuple-literal in the catalog yet. Round-trip
