@@ -1745,6 +1745,17 @@ final class SugarRealizer {
         }
         // concept:if-let(pattern_leaf, value, then, else) — rust's
         // `if let Some(x) = value { then } else { else }`.
+        //
+        // #1391 follow-on: variant-pattern aware lowering.
+        // - Some(x), Ok(v), Err(e), or bare ident: emit `var X = scrut; if (X != null) {...}`.
+        // - Type::Variant(b): emit java 17 instanceof-pattern
+        //   `if (scrut instanceof <JavaType> b) {...}` with a
+        //   `/*@if-let-variant=Type::Variant*/` comment so the java lift
+        //   can recover the exact rust pattern text.
+        // Body is lowered as a body (statement form), NOT as a branch:
+        // - lowerShapeBody first (statement); if absent, lowerShapeExpression
+        //   then emit as bare `expr;` not `return expr;`. The rust source
+        //   uses if-let-as-statement; wrapping in `return` is incorrect.
         if (conceptMatches("concept:if-let", conceptName) && args.size() == 4) {
             String patternText = args.get(0).stringFieldOrNull("text");
             if (patternText == null || patternText.isBlank()) return Optional.empty();
@@ -1753,9 +1764,53 @@ final class SugarRealizer {
             if (value.isEmpty()) return Optional.empty();
             String thenScopeBinding = (varName != null && !varName.isBlank()) ? varName : "__provekit_if_let";
             context.definedSymbols.add(thenScopeBinding);
-            Optional<String> thenBody = lowerShapeBranchBody(args.get(2), context, appendPosition(position, 2));
-            Optional<String> elseBody = lowerShapeBranchBody(args.get(3), context, appendPosition(position, 3));
+            // Statement-form body lowerer for if-let bodies.
+            java.util.function.Function<Jcs.Obj, Optional<String>> bodyOf = b -> {
+                Optional<String> bb = lowerShapeBody(b, context, appendPosition(position, 2));
+                if (bb.isPresent()) return bb;
+                Optional<ShapeExpression> be = lowerShapeExpression(b, context, appendPosition(position, 2));
+                if (be.isEmpty()) return Optional.empty();
+                String t = be.get().text();
+                if (t.endsWith(";")) return Optional.of(t);
+                return Optional.of(t + ";");
+            };
+            Optional<String> thenBody = bodyOf.apply(args.get(2));
+            Optional<String> elseBody = bodyOf.apply(args.get(3));
             if (thenBody.isEmpty() || elseBody.isEmpty()) return Optional.empty();
+            // Detect variant pattern: `Type::Variant(binding)` (rust path
+            // pattern). The pattern text is "Type :: Variant (binding)" with
+            // whitespace from syn's token-stream emission; normalize.
+            String normPat = patternText.replaceAll("\\s+", "");
+            String variantPath = null;
+            String variantBinding = null;
+            // Match Type::Variant(X) — anything with `::` and a paren.
+            java.util.regex.Matcher m = java.util.regex.Pattern
+                    .compile("^([A-Za-z_][A-Za-z0-9_:]*)\\(([A-Za-z_][A-Za-z0-9_]*)\\)$")
+                    .matcher(normPat);
+            if (m.find() && m.group(1).contains("::")) {
+                variantPath = m.group(1);
+                variantBinding = m.group(2);
+            }
+            if (variantPath != null) {
+                // Variant-pattern path. Map known rust variants to java
+                // types; fall back to ObjectNode for unrecognized
+                // Value::* variants (the libprovekit corpus).
+                String javaType = rustVariantToJavaType(variantPath);
+                if (javaType != null) {
+                    // Body is lowered with the binding pre-defined as the
+                    // pattern's binding name (the java pattern var has the
+                    // same name as the rust binding).
+                    return Optional.of(
+                        "/*@if-let-variant=" + variantPath + "*/ if (" + value.get().text()
+                            + " instanceof " + javaType + " " + variantBinding + ") {\n"
+                            + indentBlock(thenBody.get()) + "\n"
+                            + "} else {\n"
+                            + indentBlock(elseBody.get()) + "\n"
+                            + "}"
+                    );
+                }
+            }
+            // Non-variant path (Some(x), Ok(v), Err(e), bare ident).
             String valueType = value.get().typeName();
             String decl = (valueType == null || valueType.isBlank() || "Object".equals(valueType)) ? "var" : valueType;
             return Optional.of(
@@ -2381,10 +2436,14 @@ final class SugarRealizer {
                 // .insert(x) on rust BTreeSet/HashSet → .add(x) returning boolean.
                 // .insert(k, v) on rust BTreeMap/HashMap → .put(k, v) returning prev.
                 // Disambiguate by argument count.
+                // #1391 follow-on: emit `/*@map-insert*/` marker so the
+                // java lift can re-emit `method:insert` (not `method:put`/
+                // `method:set`) on the round-trip. Without this the cycle
+                // drops `map.insert(K, V)` → `map.set(K, V)`.
                 if ("insert".equals(methodName)) {
                     if (callArgs.size() == 1) {
                         return Optional.of(new ShapeExpression(
-                                receiver.get().text() + ".add(" + callArgs.get(0) + ")",
+                                "/*@set-insert*/" + receiver.get().text() + ".add(" + callArgs.get(0) + ")",
                                 "boolean"));
                     }
                     if (callArgs.size() == 2) {
@@ -2397,12 +2456,12 @@ final class SugarRealizer {
                             // the receiver to ObjectNode so the method
                             // resolves.
                             return Optional.of(new ShapeExpression(
-                                    "((com.fasterxml.jackson.databind.node.ObjectNode) " + receiver.get().text() + ")"
+                                    "/*@map-insert*/((com.fasterxml.jackson.databind.node.ObjectNode) " + receiver.get().text() + ")"
                                     + ".set(" + callArgs.get(0) + ", " + callArgs.get(1) + ")",
                                     ""));
                         }
                         return Optional.of(new ShapeExpression(
-                                receiver.get().text() + ".put(" + callArgs.get(0) + ", " + callArgs.get(1) + ")",
+                                "/*@map-insert*/" + receiver.get().text() + ".put(" + callArgs.get(0) + ", " + callArgs.get(1) + ")",
                                 ""));
                     }
                 }
@@ -3570,6 +3629,36 @@ final class SugarRealizer {
             return "var " + name + " = " + expression + ";";
         }
         return type + " " + name + " = " + expression + ";";
+    }
+
+    /**
+     * Map a rust variant path (like `Value::Object`, `Value::String`) to
+     * its corresponding java type for use in java 17 instanceof-pattern
+     * `if (scrut instanceof <JavaType> binding)`. Returns null for
+     * unrecognized variants so the if-let lower falls back to nullness.
+     *
+     * libprovekit-rpc-cross-platform corpus: `Value::Object` is a
+     * serde_json::Map → Jackson's ObjectNode. Other Value variants map
+     * to their Jackson equivalents.
+     */
+    private static String rustVariantToJavaType(String variantPath) {
+        if (variantPath == null) return null;
+        switch (variantPath) {
+            case "Value::Object":
+                return "com.fasterxml.jackson.databind.node.ObjectNode";
+            case "Value::Array":
+                return "com.fasterxml.jackson.databind.node.ArrayNode";
+            case "Value::String":
+                return "com.fasterxml.jackson.databind.node.TextNode";
+            case "Value::Bool":
+                return "com.fasterxml.jackson.databind.node.BooleanNode";
+            case "Value::Number":
+                return "com.fasterxml.jackson.databind.node.NumericNode";
+            case "Value::Null":
+                return "com.fasterxml.jackson.databind.node.NullNode";
+            default:
+                return null;
+        }
     }
 
     /**

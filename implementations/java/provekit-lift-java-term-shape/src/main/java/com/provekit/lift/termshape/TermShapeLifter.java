@@ -645,6 +645,66 @@ public final class TermShapeLifter {
             );
         }
         if (stmt instanceof IfStmt ifs) {
+            // #1391 follow-on: recognize java 17 instanceof-pattern as
+            // rust if-let with a variant pattern. The lower emits
+            // `/*@if-let-variant=Value::Object*/ if (X instanceof T binding) {...}`
+            // for rust's `if let Value::Object(binding) = X { ... }`. Detect
+            // the marker on the if-stmt's surface form + the
+            // InstanceOfExpr condition.
+            String ifStr = ifs.toString();
+            java.util.regex.Matcher vmatch = java.util.regex.Pattern
+                    .compile("/\\*@if-let-variant=([A-Za-z_][A-Za-z0-9_:]*)\\*/")
+                    .matcher(ifStr);
+            if (vmatch.find()
+                    && ifs.getCondition() instanceof com.github.javaparser.ast.expr.InstanceOfExpr ioe
+                    && ioe.getPattern().isPresent()) {
+                String variantPath = vmatch.group(1);
+                String bindingName = ioe.getPattern().get().toString().replaceFirst(".*\\s+", "").trim();
+                // Re-derive the rust pattern text: "Type::Variant(binding)"
+                // → token-stream form "Type :: Variant (binding)" so it's
+                // byte-identical with the rust lift's emission.
+                String parts = variantPath.replace("::", " :: ");
+                String rustPattern = parts + " (" + bindingName + ")";
+                Json patternLeaf = Jcs.object(
+                    "kind", Jcs.string("symbol"),
+                    "text", Jcs.string(rustPattern)
+                );
+                // The scrutinee may carry a `/*@ref*/` or `/*@ref-mut*/`
+                // marker in the if-stmt surface form (JavaParser doesn't
+                // always attach the comment to the inner NameExpr). Detect
+                // by scanning the cond's text up to `instanceof`.
+                String condText = ioe.toString();
+                boolean scrutIsRef = condText.startsWith("/*@ref")
+                        || condText.contains("/*@ref*/")
+                        || condText.contains("/*@ref-mut*/");
+                boolean scrutIsRefMut = condText.contains("/*@ref-mut*/");
+                Json scrut = liftExpression(ioe.getExpression(), losses);
+                if (scrutIsRef && !(scrut instanceof Jcs.Obj sobj && "concept:ref".equals(sobj.stringFieldOrNull("concept_name")))) {
+                    Json mutLeaf = Jcs.object(
+                        "kind", Jcs.string("mutability"),
+                        "text", Jcs.string(scrutIsRefMut ? "mut" : "")
+                    );
+                    scrut = Jcs.object(
+                        "args", new Jcs.Arr(List.of(scrut, mutLeaf)),
+                        "concept_name", Jcs.string("concept:ref")
+                    );
+                }
+                Json thenBody = ifs.getThenStmt() instanceof BlockStmt tb
+                        ? liftBlock(tb, losses)
+                        : liftStatement(ifs.getThenStmt(), losses);
+                Json elseBody = ifs.getElseStmt()
+                        .map(e -> {
+                            Json lifted = e instanceof BlockStmt eb
+                                    ? liftBlock(eb, losses)
+                                    : liftStatement(e, losses);
+                            return isEffectivelyEmpty(lifted) ? skipShape() : lifted;
+                        })
+                        .orElseGet(this::skipShape);
+                return Jcs.object(
+                    "args", new Jcs.Arr(List.of(patternLeaf, scrut, thenBody, elseBody)),
+                    "concept_name", Jcs.string("concept:if-let")
+                );
+            }
             Json cond = liftExpression(ifs.getCondition(), losses);
             Json thenBranch = ifs.getThenStmt() instanceof BlockStmt tb ? liftBlock(tb, losses) : liftStatement(ifs.getThenStmt(), losses);
             // Detect "empty else" (substrate's emit for missing source
@@ -733,6 +793,33 @@ public final class TermShapeLifter {
                     ));
         }
         if (stmt instanceof ExpressionStmt es) {
+            // #1391 follow-on: if the ExpressionStmt carries a
+            // `/*@map-insert*/` or `/*@set-insert*/` comment, propagate it
+            // to the inner method-call so the lift recognizer fires.
+            es.getComment().ifPresent(c -> {
+                if (c.isBlockComment()) {
+                    String ct = c.getContent().trim();
+                    if (ct.equals("@map-insert") || ct.equals("@set-insert")) {
+                        Expression inner = es.getExpression();
+                        if (inner instanceof MethodCallExpr mci) {
+                            mci.setComment(c.clone());
+                        } else {
+                            // The expression is wrapped (CastExpr / EnclosedExpr) —
+                            // unwrap and tag the inner MethodCallExpr.
+                            Expression u = inner;
+                            while (u instanceof com.github.javaparser.ast.expr.EnclosedExpr enc) {
+                                u = enc.getInner();
+                            }
+                            while (u instanceof com.github.javaparser.ast.expr.CastExpr cx) {
+                                u = cx.getExpression();
+                            }
+                            if (u instanceof MethodCallExpr mci) {
+                                mci.setComment(c.clone());
+                            }
+                        }
+                    }
+                }
+            });
             return liftExpression(es.getExpression(), losses);
         }
         recordLoss(losses, "unrecognized-stmt", stmt);
@@ -750,7 +837,10 @@ public final class TermShapeLifter {
         // The marker appears as an attached block comment on the
         // expression's representation. JavaParser parses block comments
         // before an expression as the expression's "comment" attribute.
+        // The marker may also appear in the expression's toString() (when
+        // attached to a wrapping cast / paren / etc.).
         Optional<com.github.javaparser.ast.comments.Comment> attached = expr.getComment();
+        String surface = expr.toString();
         boolean isRefMarker = false;
         boolean isRefMut = false;
         if (attached.isPresent() && attached.get().isBlockComment()) {
@@ -761,6 +851,12 @@ public final class TermShapeLifter {
                 isRefMarker = true;
                 isRefMut = true;
             }
+        }
+        if (!isRefMarker && surface.startsWith("/*@ref-mut*/")) {
+            isRefMarker = true;
+            isRefMut = true;
+        } else if (!isRefMarker && surface.startsWith("/*@ref*/")) {
+            isRefMarker = true;
         }
         if (isRefMarker) {
             // Detach the comment so the recursive lift doesn't loop.
@@ -1374,6 +1470,97 @@ public final class TermShapeLifter {
             );
         }
         if (expr instanceof MethodCallExpr m) {
+            // #1391 follow-on: recognize the `/*@map-insert*/` and
+            // `/*@set-insert*/` markers the lower emits for rust's
+            // `map.insert(K, V)` and `set.insert(X)`. Without these
+            // markers the cycle drops rust's `method:insert` to
+            // jackson's `.set()` / java collections' `.add()`/`.put()`.
+            //
+            // The marker appears as an attached block comment on the
+            // MethodCallExpr's surface form. Extract scope + args and
+            // emit a 3-arg (set) or 4-arg (map) concept:call with
+            // method:insert.
+            // The marker may be attached to the method-call's surface, OR
+            // to a wrapping CastExpr / EnclosedExpr. Inspect the call's
+            // toString() to cover all attachment positions.
+            Optional<com.github.javaparser.ast.comments.Comment> attachedC = m.getComment();
+            String mSurface = m.toString();
+            boolean isMapInsert = (attachedC.isPresent() && attachedC.get().isBlockComment()
+                    && attachedC.get().getContent().trim().equals("@map-insert"))
+                    || mSurface.startsWith("/*@map-insert*/")
+                    || mSurface.contains("/*@map-insert*/");
+            boolean isSetInsert = (attachedC.isPresent() && attachedC.get().isBlockComment()
+                    && attachedC.get().getContent().trim().equals("@set-insert"))
+                    || mSurface.startsWith("/*@set-insert*/")
+                    || mSurface.contains("/*@set-insert*/");
+            if (isMapInsert || isSetInsert) {
+                String cnt = isMapInsert ? "@map-insert" : "@set-insert";
+                if (cnt.equals("@map-insert") || cnt.equals("@set-insert")) {
+                    // For map-insert the receiver could be wrapped in
+                    // a CastExpr `((ObjectNode) X)` — unwrap.
+                    com.github.javaparser.ast.expr.Expression scope = m.getScope().orElse(null);
+                    while (scope instanceof com.github.javaparser.ast.expr.EnclosedExpr enc) {
+                        scope = enc.getInner();
+                    }
+                    while (scope instanceof com.github.javaparser.ast.expr.CastExpr cx) {
+                        scope = cx.getExpression();
+                    }
+                    if (scope != null) {
+                        Json recvShape = liftExpression(scope, losses);
+                        List<Json> outArgs = new ArrayList<>();
+                        outArgs.add(recvShape);
+                        outArgs.add(methodConceptLeaf("insert", m.getArguments().size()));
+                        for (var a : m.getArguments()) {
+                            // For the key arg, if it's `K.toString()` and
+                            // K is a string literal, unwrap to the literal —
+                            // the lower wraps string keys with .toString().
+                            if (a instanceof com.github.javaparser.ast.expr.MethodCallExpr mc
+                                    && "toString".equals(mc.getNameAsString())
+                                    && mc.getArguments().isEmpty()
+                                    && mc.getScope().isPresent()) {
+                                // We still want to preserve the .to_string() call
+                                // around the literal — rust source is
+                                // `"name".to_string()`. Lift as concept:call(literal, method:to_string).
+                                Json keyShape = liftExpression(mc.getScope().get(), losses);
+                                outArgs.add(Jcs.object(
+                                    "args", new Jcs.Arr(List.of(
+                                        keyShape,
+                                        methodConceptLeaf("to_string", 0)
+                                    )),
+                                    "concept_name", Jcs.string("concept:call")
+                                ));
+                                continue;
+                            }
+                            // For the value arg, `MAPPER.valueToTree(X)` is
+                            // the lower's emission of rust's `Value::String(X)`
+                            // (corpus convention: only String values flow
+                            // through this site). Unwrap to
+                            // `concept:call(Value::String, X)`.
+                            if (a instanceof com.github.javaparser.ast.expr.MethodCallExpr vc
+                                    && "valueToTree".equals(vc.getNameAsString())
+                                    && vc.getArguments().size() == 1
+                                    && vc.getScope().isPresent()
+                                    && "MAPPER".equals(vc.getScope().get().toString())) {
+                                Json valArgShape = liftExpression(vc.getArgument(0), losses);
+                                outArgs.add(Jcs.object(
+                                    "args", new Jcs.Arr(List.of(
+                                        Jcs.object("kind", Jcs.string("path"),
+                                                   "text", Jcs.string("Value::String")),
+                                        valArgShape
+                                    )),
+                                    "concept_name", Jcs.string("concept:call")
+                                ));
+                                continue;
+                            }
+                            outArgs.add(liftExpression(a, losses));
+                        }
+                        return Jcs.object(
+                            "args", new Jcs.Arr(outArgs),
+                            "concept_name", Jcs.string("concept:call")
+                        );
+                    }
+                }
+            }
             // Carrier-aware recognition: substrate-emitted carrier
             // factory calls produce canonical concepts. The syntax-
             // driven and citation-driven paths must converge — same
@@ -1529,8 +1716,32 @@ public final class TermShapeLifter {
             }
             // StringBuilder.toString() — when called on a String accumulator,
             // drop the call (rust source has just the tail expression).
+            // #1391 follow-on: detect rust's `X.unwrap_or("").to_string()`
+            // shape. Lower emits this as `(X != null ? X : "").toString()`
+            // — a ConditionalExpr (wrapped in EnclosedExpr) followed by
+            // toString. The ternary's elseBranch is `""` (StringLiteralExpr).
+            // For this shape preserve the method:to_string call.
             if ("toString".equals(name) && m.getArguments().isEmpty() && m.getScope().isPresent()) {
-                return liftExpression(m.getScope().get(), losses);
+                com.github.javaparser.ast.expr.Expression scope = m.getScope().get();
+                com.github.javaparser.ast.expr.Expression unwrapped = scope;
+                while (unwrapped instanceof com.github.javaparser.ast.expr.EnclosedExpr enc) {
+                    unwrapped = enc.getInner();
+                }
+                if (unwrapped instanceof ConditionalExpr ucond
+                        && ucond.getElseExpr() instanceof com.github.javaparser.ast.expr.StringLiteralExpr sle
+                        && sle.getValue().isEmpty()) {
+                    // The `.unwrap_or("").to_string()` shape. Preserve
+                    // method:to_string on the cycled rust output.
+                    Json recvShape = liftExpression(scope, losses);
+                    return Jcs.object(
+                        "args", new Jcs.Arr(List.of(
+                            recvShape,
+                            methodConceptLeaf("to_string", 0)
+                        )),
+                        "concept_name", Jcs.string("concept:call")
+                    );
+                }
+                return liftExpression(scope, losses);
             }
             // catalog #1391: zero-arg instance methods (catalog reverse-lookup
             // keyed by kit-op name; matcher knows AST shape → kit-op name).
