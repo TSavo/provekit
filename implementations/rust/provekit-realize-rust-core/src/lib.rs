@@ -1859,6 +1859,13 @@ pub fn dispatch(request: &Value) -> Value {
                 .unwrap_or("")
                 .to_string();
             CURRENT_VISIBILITY.with(|v| *v.borrow_mut() = visibility);
+            let cn_for_attr = params
+                .get("conceptName")
+                .or_else(|| params.get("concept_name"))
+                .and_then(Value::as_str)
+                .unwrap_or("")
+                .to_string();
+            CURRENT_CONCEPT_NAME.with(|v| *v.borrow_mut() = cn_for_attr);
             let generic_params = params
                 .get("genericParams")
                 .or_else(|| params.get("generic_params"))
@@ -2288,6 +2295,11 @@ thread_local! {
     /// substituted param_types.
     pub(crate) static CURRENT_ORIGINAL_PARAM_TYPES: std::cell::RefCell<Vec<String>> =
         std::cell::RefCell::new(Vec::new());
+    /// Concept name for the function being realized. Emitted as
+    /// `#[provekit::sugar(concept = "X")]` attribute so the output can be
+    /// re-lifted (cycle-invariance test).
+    pub(crate) static CURRENT_CONCEPT_NAME: std::cell::RefCell<String> =
+        std::cell::RefCell::new(String::new());
 }
 
 /// Pretty-print comma-separated macro args (format!, println!, etc.).
@@ -2728,7 +2740,26 @@ fn function_source(
         let s = v.borrow();
         if s.is_empty() { String::new() } else { format!("{} ", s.as_str()) }
     });
-    format!("{vis_prefix}fn {function}{generic_params}({typed_params}){return_suffix} {{\n{indented}\n}}\n")
+    // Emit #[provekit::sugar(concept = "X")] attribute when concept name
+    // is known. This marks the function for re-lifting in subsequent
+    // cycles — the cycle-invariance test.
+    let attr_prefix = CURRENT_CONCEPT_NAME.with(|v| {
+        let s = v.borrow();
+        if s.is_empty() {
+            String::new()
+        } else {
+            // Full @sugar attribute matching the source form so the
+            // lifter recognizes the function in subsequent cycles.
+            // library tag = libprovekit-rpc-cross-platform (the demo's
+            // canonical library — generalizing to per-fn library lookup
+            // is future work for multi-library round-trips).
+            format!(
+                "#[provekit::sugar(\n    concept = \"{}\",\n    library = \"libprovekit-rpc-cross-platform\",\n    loss = [],\n)]\n",
+                s
+            )
+        }
+    });
+    format!("{attr_prefix}{vis_prefix}fn {function}{generic_params}({typed_params}){return_suffix} {{\n{indented}\n}}\n")
 }
 
 /// Resolve macro-arg indent sentinels to depth-aware leading whitespace.
