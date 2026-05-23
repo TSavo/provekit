@@ -1859,6 +1859,23 @@ final class SugarRealizer {
                 if (v.isEmpty()) return Optional.empty();
                 varName = v.get().text();
             }
+            // #1391 follow-on: preserve `for mut X in ...` mutability via
+            // a marker comment on the loop var. Rust lift sets `mut: true`
+            // on the var leaf; java has no equivalent (all locals mutable),
+            // so we round-trip through a block-comment marker that the
+            // java lift recognizes.
+            boolean isMut;
+            try {
+                isMut = args.get(0).get("mut") instanceof Jcs.Bool b && b.value();
+            } catch (Throwable t) {
+                isMut = false;
+            }
+            // #1391 follow-on: detect rust ref-pattern `for &X in ...`.
+            // The rust lift captures this as var.text = "& X" (token-stream
+            // form). We need to round-trip the `&` annotation so realize
+            // emits `for &x in ...` instead of falling back to its
+            // body_uses_var_as_primitive heuristic.
+            boolean isRefPat = varName.trim().startsWith("&");
             // Strip rust ref-pattern prefix from loop var: `& b` → `b`,
             // `mut b` → `b`, `& mut b` → `b`. The iterable's deref is also
             // implicit in java collections.
@@ -1868,7 +1885,9 @@ final class SugarRealizer {
             context.definedSymbols.add(varName);
             Optional<String> body = lowerShapeBranchBody(args.get(2), context, appendPosition(position, 2));
             if (body.isEmpty()) return Optional.empty();
-            return Optional.of("for (var " + varName + " : " + iter.get().text() + ") {\n"
+            String mutMarker = isMut ? "/*@for-mut*/ " : "";
+            String refMarker = isRefPat ? "/*@for-ref*/ " : "";
+            return Optional.of("for (" + mutMarker + refMarker + "var " + varName + " : " + iter.get().text() + ") {\n"
                     + indentBlock(body.get()) + "\n"
                     + "}");
         }
@@ -2498,9 +2517,24 @@ final class SugarRealizer {
         }
         // concept:ref(inner, mutability_leaf) — the mutability arg is a leaf
         // without operand bindings; lower only the inner.
+        // #1391 follow-on: emit `/*@ref*/` (or `/*@ref-mut*/`) marker so
+        // the java lift can recover the original rust `&` on the cycled
+        // form. Without this the cycle drops the ref. Match the
+        // expression-position handler.
         if (conceptMatches("concept:ref", conceptName) && args.size() >= 1) {
             Optional<ShapeExpression> inner = lowerShapeExpression(args.get(0), context, appendPosition(position, 0));
-            return inner;
+            if (inner.isEmpty()) return inner;
+            String mut = "";
+            if (args.size() >= 2) {
+                String mt = args.get(1).stringFieldOrNull("text");
+                if (mt != null && mt.contains("mut")) mut = "-mut";
+            }
+            String text = inner.get().text();
+            if (text.startsWith("/*@ref")) return inner;
+            return Optional.of(new ShapeExpression(
+                "/*@ref" + mut + "*/" + text,
+                inner.get().typeName()
+            ));
         }
         List<ShapeExpression> argTerms = new ArrayList<>();
         for (int i = 0; i < args.size(); i++) {
@@ -2737,8 +2771,27 @@ final class SugarRealizer {
         // are implicit on objects; deref is a no-op. Pass the inner expression
         // through. The substrate emits concept:ref with TWO args (inner +
         // mutability_leaf); the older alias concept:reference has one arg.
+        // #1391 follow-on: emit a `/*@ref*/` (or `/*@ref-mut*/`) marker so
+        // the java lift can recover the original rust `&` annotation on
+        // function-call args. Without this the cycle drops `&x` → `x`.
         if (conceptMatches("concept:ref", conceptName) && argTerms.size() >= 1) {
-            return Optional.of(argTerms.get(0));
+            // Determine mutability from the 2nd arg's "text" if a leaf.
+            String mut = "";
+            if (args.size() >= 2) {
+                String mt = args.get(1).stringFieldOrNull("text");
+                if (mt != null && mt.contains("mut")) mut = "-mut";
+            }
+            ShapeExpression inner = argTerms.get(0);
+            // Skip the marker if the inner is itself already marked (avoid
+            // double-prefix on already-prefixed expressions).
+            String text = inner.text();
+            if (text.startsWith("/*@ref")) {
+                return Optional.of(inner);
+            }
+            return Optional.of(new ShapeExpression(
+                "/*@ref" + mut + "*/" + text,
+                inner.typeName()
+            ));
         }
         if ((conceptMatches("concept:reference", conceptName) || conceptMatches("concept:deref", conceptName))
                 && argTerms.size() == 1) {

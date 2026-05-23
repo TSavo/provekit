@@ -662,10 +662,32 @@ public final class TermShapeLifter {
             );
         }
         if (stmt instanceof ForEachStmt fes) {
-            Json varLeaf = Jcs.object(
-                "kind", Jcs.string("symbol"),
-                "text", Jcs.string(fes.getVariable().getVariable(0).getNameAsString())
-            );
+            // #1391 follow-on: detect the `/*@for-mut*/` marker the lower
+            // emits when the rust source had `for mut x in ...`. The marker
+            // appears as a block comment on either the for stmt itself or
+            // the VariableDeclarationExpr/Type of the loop variable. Scan
+            // the toString() for the marker — JavaParser preserves the
+            // comment in the for-stmt's surface form.
+            boolean isMut = fes.toString().contains("/*@for-mut*/");
+            boolean isRefPat = fes.toString().contains("/*@for-ref*/");
+            String bareName = fes.getVariable().getVariable(0).getNameAsString();
+            // Reconstruct the rust ref-pattern text "& X" when isRefPat is set;
+            // otherwise the bare name. Rust realize's for-each lower checks
+            // `var_text.starts_with('&')` and emits the right pattern.
+            String varText = isRefPat ? ("& " + bareName) : bareName;
+            Json varLeaf;
+            if (isMut) {
+                varLeaf = Jcs.object(
+                    "kind", Jcs.string("symbol"),
+                    "text", Jcs.string(varText),
+                    "mut", Jcs.bool(true)
+                );
+            } else {
+                varLeaf = Jcs.object(
+                    "kind", Jcs.string("symbol"),
+                    "text", Jcs.string(varText)
+                );
+            }
             Json iterable = liftExpression(fes.getIterable(), losses);
             Json body = fes.getBody() instanceof BlockStmt bb ? liftBlock(bb, losses) : liftStatement(fes.getBody(), losses);
             return Jcs.object(
@@ -721,6 +743,38 @@ public final class TermShapeLifter {
         Optional<String> cited = readCitation(expr);
         if (cited.isPresent()) {
             return reconstructFromCitation(cited.get(), expr, losses);
+        }
+        // #1391 follow-on: recognize `/*@ref*/X` and `/*@ref-mut*/X` markers
+        // the java lower emits for rust's `&X` / `&mut X`. Wrap the inner
+        // shape in concept:ref so the cycle restores the `&` annotation.
+        // The marker appears as an attached block comment on the
+        // expression's representation. JavaParser parses block comments
+        // before an expression as the expression's "comment" attribute.
+        Optional<com.github.javaparser.ast.comments.Comment> attached = expr.getComment();
+        boolean isRefMarker = false;
+        boolean isRefMut = false;
+        if (attached.isPresent() && attached.get().isBlockComment()) {
+            String content = attached.get().getContent().trim();
+            if (content.equals("@ref")) {
+                isRefMarker = true;
+            } else if (content.equals("@ref-mut")) {
+                isRefMarker = true;
+                isRefMut = true;
+            }
+        }
+        if (isRefMarker) {
+            // Detach the comment so the recursive lift doesn't loop.
+            expr.setComment(null);
+            Json inner = liftExpression(expr, losses);
+            String mutText = isRefMut ? "mut" : "";
+            Json mutLeaf = Jcs.object(
+                "kind", Jcs.string("mutability"),
+                "text", Jcs.string(mutText)
+            );
+            return Jcs.object(
+                "args", new Jcs.Arr(List.of(inner, mutLeaf)),
+                "concept_name", Jcs.string("concept:ref")
+            );
         }
         if (expr instanceof StringLiteralExpr s) {
             return Jcs.object(
