@@ -300,8 +300,33 @@ public final class TermShapeLifter {
                 "args", new Jcs.Arr(destructArgs),
                 "concept_name", Jcs.string("concept:destructure-struct")
             ));
+            // #1391 follow-on: blank-line carrier — track end-line of the
+            // last consumed statement (the LAST destructure get-call), then
+            // for each remaining stmt, emit concept:blank-line when there's
+            // a line gap > 1. Same logic as the main liftBlock loop.
+            Integer prevEndLine = null;
+            if (j > 0 && stmts.get(j - 1).getEnd().isPresent()) {
+                prevEndLine = stmts.get(j - 1).getEnd().get().line;
+            }
             for (int k = j; k < stmts.size(); k++) {
-                Json s = liftStatement(stmts.get(k), losses);
+                Statement st = stmts.get(k);
+                if (prevEndLine != null && st.getBegin().isPresent()) {
+                    int startLine = st.getBegin().get().line;
+                    int effective = startLine;
+                    if (st.getComment().isPresent()
+                            && st.getComment().get().getBegin().isPresent()) {
+                        int cl = st.getComment().get().getBegin().get().line;
+                        if (cl < effective) effective = cl;
+                    }
+                    if (effective > prevEndLine + 1) {
+                        out.add(Jcs.object(
+                            "args", new Jcs.Arr(List.of()),
+                            "concept_name", Jcs.string("concept:blank-line")
+                        ));
+                    }
+                }
+                if (st.getEnd().isPresent()) prevEndLine = st.getEnd().get().line;
+                Json s = liftStatement(st, losses);
                 if (s != null) out.add(s);
             }
             return out;
