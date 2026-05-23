@@ -1678,6 +1678,16 @@ dependencies = [
 ]
 
 [[package]]
+name = "provekit-emit-rust-cargo-test"
+version = "0.1.0"
+dependencies = [
+ "provekit-ir-types",
+ "serde",
+ "serde_json",
+ "tempfile",
+]
+
+[[package]]
 name = "provekit-ir-codegen"
 version = "0.1.0"
 dependencies = [

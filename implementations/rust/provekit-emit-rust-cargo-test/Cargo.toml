@@ -1,0 +1,23 @@
+[package]
+name = "provekit-emit-rust-cargo-test"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+authors.workspace = true
+description = "ProvekIt Rust emitter kit: materialize a contract's neutral predicates as a cargo-test module (#[cfg(test)] mod tests) whose assertions verify the predicates."
+
+[lib]
+name = "provekit_emit_rust_cargo_test"
+path = "src/lib.rs"
+
+[[bin]]
+name = "provekit-emit-rust-cargo-test"
+path = "src/main.rs"
+
+[dependencies]
+provekit-ir-types = { path = "../provekit-ir-types" }
+serde = { workspace = true }
+serde_json = { workspace = true }
+
+[dev-dependencies]
+tempfile = "3"
