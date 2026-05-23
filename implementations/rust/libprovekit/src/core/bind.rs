@@ -228,6 +228,18 @@ pub struct NamedTermDocument {
     #[serde(rename = "sourceLanguage")]
     pub source_language: String,
     pub terms: Vec<NamedTerm>,
+    /// @boundary entries carried alongside @sugar terms. The substrate's
+    /// lower side uses these to emit boundary primitive stubs in the
+    /// target compilation unit. Each entry mirrors a rust @boundary fn
+    /// declaration with full signature info (visibility, generics,
+    /// param types, return type) so the target plugin can emit a
+    /// byte-correct interface declaration.
+    #[serde(
+        default,
+        rename = "boundaryEntries",
+        skip_serializing_if = "Vec::is_empty"
+    )]
+    pub boundary_entries: Vec<Json>,
     #[serde(rename = "workspaceRoot", skip_serializing_if = "Option::is_none")]
     pub workspace_root: Option<String>,
 }
@@ -453,6 +465,7 @@ pub fn bind_term_document(
         schema_version: "1".to_string(),
         source_language,
         terms,
+        boundary_entries: Vec::new(),
         workspace_root,
     })
 }
@@ -1343,6 +1356,11 @@ fn named_term_document_from_op_tree(term: &Term) -> Result<NamedTermDocument, Bi
             .unwrap_or("unknown")
             .to_string(),
         terms,
+        boundary_entries: document
+            .get("boundaryEntries")
+            .and_then(Json::as_array)
+            .cloned()
+            .unwrap_or_default(),
         workspace_root: document
             .get("workspaceRoot")
             .and_then(Json::as_str)

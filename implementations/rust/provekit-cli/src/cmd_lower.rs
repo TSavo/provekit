@@ -415,6 +415,22 @@ fn named_term_document_from_ir_document(ir_doc: &Json) -> Result<NamedTermDocume
         terms.push(term);
     }
     let workspace_root = ir_doc.get("workspaceRoot").and_then(Json::as_str).map(String::from);
+    // Collect @boundary entries (bind-lift-entry that AREN'T also sugar).
+    // The substrate's lower side uses these to emit boundary primitive
+    // stubs in the target compilation unit alongside the @sugar functions.
+    let sugar_names: std::collections::HashSet<String> = ir.iter()
+        .filter(|e| e.get("kind").and_then(Json::as_str) == Some("library-sugar-binding-entry"))
+        .filter_map(|e| e.get("source_function_name").and_then(Json::as_str).map(String::from))
+        .collect();
+    let boundary_entries: Vec<Json> = ir.iter()
+        .filter(|e| e.get("kind").and_then(Json::as_str) == Some("bind-lift-entry"))
+        .filter(|e| {
+            e.get("source_function_name").and_then(Json::as_str)
+                .map(|fn_| !sugar_names.contains(fn_))
+                .unwrap_or(false)
+        })
+        .cloned()
+        .collect();
     Ok(NamedTermDocument {
         candidate_cluster_manifest: Default::default(),
         gap_records: Vec::new(),
@@ -423,6 +439,7 @@ fn named_term_document_from_ir_document(ir_doc: &Json) -> Result<NamedTermDocume
         schema_version: "1".to_string(),
         source_language: ir_doc.get("sourceLanguage").and_then(Json::as_str).unwrap_or("rust").to_string(),
         terms,
+        boundary_entries,
         workspace_root,
     })
 }
@@ -458,6 +475,15 @@ fn lower_named_document(
     let function_return_types = Json::Object(function_return_types);
 
     let mut out = String::new();
+    // Substrate-honest java wrapper: when target is java and we have
+    // boundary entries from the lift, emit a complete compilation unit
+    // header (package, imports, class, constants, AdapterLifter interface,
+    // boundary stubs) BEFORE the @sugar functions. The python wrapper
+    // emitter is retired by this — substrate emits its own wrapper.
+    let emit_java_wrapper = target == "java" && !named.boundary_entries.is_empty();
+    if emit_java_wrapper {
+        out.push_str(&emit_java_module_preamble(&named.boundary_entries));
+    }
     // Substrate-honest per-term loss accounting. Each function's lossy
     // translations register here; non-empty entries are surfaced via a
     // sidecar file so callers see the trichotomy
@@ -486,15 +512,177 @@ fn lower_named_document(
                 "observed_loss_record": realized.observed_loss_record,
             }));
         }
-        out.push_str(&realized.source);
+        let body_text = if emit_java_wrapper {
+            // Strip the per-function `final class XxxTransported { ... }`
+            // wrapper that java realize emits per term. Inside our
+            // top-level CrossPlatform class, the methods sit directly.
+            strip_transported_class_wrapper(&realized.source)
+        } else {
+            realized.source.clone()
+        };
+        out.push_str(&body_text);
         if !out.ends_with('\n') {
             out.push('\n');
         }
+    }
+    // Close the java wrapper class when we opened one.
+    if emit_java_wrapper {
+        out.push_str("}\n");
     }
     // Stash for the outer caller — written to a sidecar by the cmd
     // entrypoint when an --output path is supplied.
     LAST_LOSS_REPORT.with(|cell| *cell.borrow_mut() = per_term_losses);
     Ok(out)
+}
+
+/// Strip `final class XxxTransported {` opener and matching `}` closer
+/// from a java realize plugin's per-function output. Used by the
+/// java-wrapper synthesis to inline @sugar methods into one outer class.
+fn strip_transported_class_wrapper(source: &str) -> String {
+    let lines: Vec<&str> = source.lines().collect();
+    // Find first `final class .*Transported {` opener (allow leading comments).
+    let mut start = None;
+    for (i, l) in lines.iter().enumerate() {
+        let t = l.trim_start();
+        if t.starts_with("final class") && t.contains("Transported") && t.ends_with('{') {
+            start = Some(i);
+            break;
+        }
+    }
+    let Some(s) = start else { return source.to_string(); };
+    // Find matching close: track brace depth from `{` on the opener.
+    let mut depth = 0i32;
+    let mut close = None;
+    for (i, l) in lines.iter().enumerate().skip(s) {
+        for c in l.chars() {
+            if c == '{' { depth += 1; }
+            else if c == '}' { depth -= 1; if depth == 0 { close = Some(i); break; } }
+        }
+        if close.is_some() { break; }
+    }
+    let Some(e) = close else { return source.to_string(); };
+    // Pre-wrapper lines (e.g. citation comments) + inner lines + post-wrapper.
+    let mut out = String::new();
+    for l in &lines[..s] {
+        out.push_str(l);
+        out.push('\n');
+    }
+    // Inner content (between opener and closer, exclusive).
+    for l in &lines[s + 1..e] {
+        out.push_str(l);
+        out.push('\n');
+    }
+    for l in &lines[e + 1..] {
+        out.push_str(l);
+        out.push('\n');
+    }
+    out
+}
+
+/// Map a rust source type to its java equivalent. The substrate-honest
+/// version walks the kit's source-aliases catalog (per #1370); this is a
+/// demo-time shortcut covering the cross-platform crate's surface.
+/// Same mapping table as examples/provekit-rpc-java-demo/scripts/emit_wrapper.py.
+fn map_rust_type_to_java(t: &str) -> String {
+    // Normalize whitespace inside the type (`[u8; 64]` → `[u8;64]`) for
+    // stable matching.
+    let normalized: String = t.split_whitespace().collect();
+    let trimmed = normalized.trim_start_matches('&').trim_start_matches("mut").to_string();
+    let t: &str = trimmed.as_str();
+    // Fixed-size byte array: `[u8;N]` → byte[].
+    if t.starts_with("[u8;") && t.ends_with(']') {
+        return "byte[]".to_string();
+    }
+    match t {
+        "str" | "&str" | "String" => "String".to_string(),
+        "i64" => "long".to_string(),
+        "i32" => "int".to_string(),
+        "Value" | "&Value" => "com.fasterxml.jackson.databind.JsonNode".to_string(),
+        "Vec<u8>" | "&[u8]" | "[u8]" => "byte[]".to_string(),
+        "Option<String>" => "String".to_string(),
+        "()" => "void".to_string(),
+        "Path" | "&Path" => "java.nio.file.Path".to_string(),
+        "&[String]" => "java.util.List<String>".to_string(),
+        "LiftResult" => "com.provekit.runtime.Result<com.fasterxml.jackson.databind.JsonNode, com.provekit.runtime.SumVariant>".to_string(),
+        other if other.starts_with("Result<") && other.ends_with('>') => {
+            let inner = &other[7..other.len() - 1];
+            if let Some(comma) = inner.find(',') {
+                let ok = map_rust_type_to_java(inner[..comma].trim());
+                // Err side erased to SumVariant carrier (cross-language transport
+                // doesn't carry per-source error enum hierarchies — would need
+                // sealed-class emission, future work).
+                format!("com.provekit.runtime.Result<{}, com.provekit.runtime.SumVariant>", ok)
+            } else {
+                other.to_string()
+            }
+        }
+        other => other.to_string(),
+    }
+}
+
+/// Emit the java compilation-unit preamble: imports, class header, static
+/// constants, AdapterLifter interface, @boundary primitive stubs. The
+/// @sugar function bodies follow this preamble (each as a `static`
+/// method inside the class), and the class is closed at the end of
+/// lower_named_document.
+///
+/// Substrate-honest: this is the rust-side analog of the java realize
+/// plugin's assemble RPC. Future work moves this into the plugin itself
+/// (so target plugins decide their own file layout); for now the rust
+/// substrate emits the wrapper so the demo's cycle is fully substrate-
+/// native end to end (no hand-written java integration code).
+fn emit_java_module_preamble(boundary_entries: &[Json]) -> String {
+    let mut out = String::new();
+    out.push_str("// AUTO-GENERATED from rust @boundary declarations via provekit lower --target java\n");
+    out.push_str("package com.provekit.crossplatform;\n\n");
+    out.push_str("import com.fasterxml.jackson.databind.JsonNode;\n");
+    out.push_str("import com.fasterxml.jackson.databind.ObjectMapper;\n");
+    out.push_str("import com.provekit.runtime.Result;\n");
+    out.push_str("import com.provekit.runtime.SumVariant;\n");
+    out.push_str("import com.provekit.runtime.Substrate;\n");
+    out.push_str("import java.nio.file.Path;\n\n");
+    out.push_str("public final class CrossPlatform {\n");
+    out.push_str("    public static final ObjectMapper MAPPER = new ObjectMapper();\n");
+    out.push_str("    public static String PLUGIN_VERSION = \"0.1.0\";\n");
+    out.push_str("    public static String PROTOCOL_VERSION = \"pep/1.7.0\";\n");
+    out.push_str("    public static String IR_VERSION = \"v1.1.0\";\n");
+    out.push_str("    public static final byte[] HEX = \"0123456789abcdef\".getBytes();\n\n");
+    out.push_str("    public interface AdapterLifter {\n");
+    out.push_str("        String name();\n");
+    out.push_str("        String surface();\n");
+    out.push_str("        Result<JsonNode, SumVariant> lift(Path workspaceRoot, java.util.List<String> sourcePaths);\n");
+    out.push_str("    }\n\n");
+    out.push_str("    // \u{2500}\u{2500}\u{2500} @boundary primitives (auto-emitted from rust @boundary declarations) \u{2500}\u{2500}\u{2500}\n");
+    for entry in boundary_entries {
+        let fn_name = entry.get("source_function_name")
+            .and_then(Json::as_str)
+            .unwrap_or("");
+        if fn_name.is_empty() { continue; }
+        let param_names: Vec<&str> = entry.get("param_names")
+            .and_then(Json::as_array)
+            .map(|a| a.iter().filter_map(Json::as_str).collect())
+            .unwrap_or_default();
+        let param_types: Vec<&str> = entry.get("param_types")
+            .and_then(Json::as_array)
+            .map(|a| a.iter().filter_map(Json::as_str).collect())
+            .unwrap_or_default();
+        let return_type = entry.get("return_type").and_then(Json::as_str).unwrap_or("()");
+        let java_return = map_rust_type_to_java(return_type);
+        let java_params: Vec<String> = param_names.iter().zip(param_types.iter())
+            .map(|(n, t)| format!("{} {}", map_rust_type_to_java(t), n))
+            .collect();
+        out.push_str(&format!(
+            "    public static {} {}({}) {{\n",
+            java_return, fn_name, java_params.join(", ")
+        ));
+        out.push_str(&format!(
+            "        throw new UnsupportedOperationException(\"boundary stub: {}\");\n",
+            fn_name
+        ));
+        out.push_str("    }\n");
+    }
+    out.push_str("    // \u{2500}\u{2500}\u{2500} @sugar functions follow \u{2500}\u{2500}\u{2500}\n\n");
+    out
 }
 
 /// Resolve which realize plugin's library_tag should handle a concept.
