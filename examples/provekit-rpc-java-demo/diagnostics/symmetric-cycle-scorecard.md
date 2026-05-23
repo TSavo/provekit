@@ -46,15 +46,20 @@ End-to-end cycle (rust source → `provekit lift` → `provekit lower --target j
 | ok_response             | ✓ | 0b |
 | error_response          | ✓ | 0b |
 | initialize_result       | ✓ | 0b |
-| run_server              |   | -47b (& references + closure variable preservation) |
-| handle_line             |   | -965b (java lower REFUSED — tuple return + nested match not yet supported) |
-| lift                    |   | -578b (concept:assign chain dropped during java lower) |
-| build_ir_document       |   | -42b (let mut + ref patterns + type annotations) |
-| content_addressed_name  |   | -59b (one assign dropped during java lower: `let content_cid = blake3_512_cid(composed.as_bytes())`) |
-| slot_cid                |   | -18b (java lower REFUSED — match-arm guard `Some(v) if !v.is_null()`) |
-| blake3_512_cid          |   | -56b (let mut + ref patterns + const HEX local-decl + hex literal 0x0F vs 15) |
+| content_addressed_name  | ✓ | 0b |
+| slot_cid                | ✓ | 0b |
+| run_server              |   | -47b (& references + .unwrap_or_else closure preservation) |
+| lift                    |   | -208b (chain transform: .and_then().unwrap_or().to_string() not yet reversible) |
+| build_ir_document       |   | +3b (rustfmt-norm small; structurally: type annot, ref pattern in for, if-let destructure all lost) |
+| blake3_512_cid          |   | -50b (function-local const HEX + `for &b in &raw` ref-pattern still lost) |
+| handle_line             |   | -965b (java lower refused — tuple return + nested match-with-guard) |
 
-**SUBSTRATE-SYMMETRIC STRICT: 3/10** (was effectively 0/10 — pre-#1391 numbers
+**SUBSTRATE-SYMMETRIC STRICT: 5/10**
+
+(Improvements this run: expression-position catalog dispatch in SugarRealizer
+closed content_addressed_name and slot_cid; the catalog dispatcher was
+previously only wired into the body-position path, so nested concept:utf8-encode
+inside concept:assign value was silently dropped as un-lowered.) (was effectively 0/10 — pre-#1391 numbers
 in the baseline below were ad-hoc per-function diffs without round-trip
 verification; the 3/10 here is verified end-to-end via real RPC + rustfmt).
 

@@ -1974,6 +1974,20 @@ final class SugarRealizer {
             return Optional.of(shapeLeafExpression(shape, context, position));
         }
         List<Jcs.Obj> args = shapeArgs(shape);
+        // catalog-driven operation realization dispatch (#1391 follow-on):
+        // expression-position concepts also need the catalog dispatch so
+        // concept:utf8-encode etc. emit kit-source when used as args of
+        // concept:call / concept:assign value, not just at the body root.
+        {
+            String rhsOp = com.provekit.ir.OperationRealizationCatalog.javaOpFor(conceptName);
+            if (rhsOp != null) {
+                Optional<String> emittedText = emitKitJavaOp(rhsOp, args, context, position);
+                if (emittedText.isPresent()) {
+                    return Optional.of(new ShapeExpression(emittedText.get(),
+                            mapSourceType(context.returnType)));
+                }
+            }
+        }
         if (conceptMatches("concept:seq", conceptName) || "seq".equals(conceptName)) {
             Optional<String> body = lowerShapeBody(shape, context, position);
             if (body.isEmpty()) {
@@ -1990,7 +2004,8 @@ final class SugarRealizer {
         if (conceptMatches("concept:literal", conceptName)) {
             Jcs.Json valueJson = shape.get("value");
             if (valueJson != null) {
-                return Optional.of(literalTerm(valueJson));
+                String radix = shape.stringFieldOrNull("radix");
+                return Optional.of(literalTermWithRadix(valueJson, radix));
             }
             return Optional.empty();
         }
