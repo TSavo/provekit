@@ -3013,16 +3013,17 @@ fn shape_of_expr(expr: &syn::Expr, ctx: &ShapeContext) -> Arc<CValue> {
             } else {
                 return non_operation_shape();
             };
-            // catalog-driven abstraction recognition (#1391): nullary path
-            // calls Vec::new() / HashMap::new() map to abstraction operators.
+            // catalog #1391: nullary path-call → kit-op → concept (reverse lookup).
             if e.args.is_empty() {
-                let abstraction = match callee_text.as_str() {
-                    "Vec::new" => Some("concept:list-create"),
-                    "HashMap::new" => Some("concept:map-create"),
+                let kit_op = match callee_text.as_str() {
+                    "Vec::new" => Some("rust:vec-new"),
+                    "HashMap::new" => Some("rust:hashmap-new"),
                     _ => None,
                 };
-                if let Some(concept) = abstraction {
-                    return gamma_operation(concept, vec![]);
+                if let Some(kit_op) = kit_op {
+                    if let Some(concept) = provekit_realize_rust_core::operation_realization_catalog::concept_for_rust_op(kit_op) {
+                        return gamma_operation(&concept, vec![]);
+                    }
                 }
             }
             // args[0]: callee path leaf (kind:"path", text:"blake3::Hasher::new")
@@ -3043,14 +3044,18 @@ fn shape_of_expr(expr: &syn::Expr, ctx: &ShapeContext) -> Arc<CValue> {
             // collapses to the abstraction at the substrate seam.
             let m_name = e.method.to_string();
             if e.args.is_empty() {
-                let abstraction = match m_name.as_str() {
-                    "as_bytes" => Some("concept:utf8-encode"),
-                    "as_str" => Some("concept:json-text-coerce"),
-                    "is_some" => Some("concept:option-is-some"),
+                // catalog #1391: reverse-lookup matcher AST shape → kit-op
+                // name → concept-hub name. The catalog supplies the concept.
+                let kit_op = match m_name.as_str() {
+                    "as_bytes" => Some("rust:str-as-bytes"),
+                    "as_str" => Some("rust:serde-value-as-str"),
+                    "is_some" => Some("rust:option-is-some"),
                     _ => None,
                 };
-                if let Some(concept) = abstraction {
-                    return gamma_operation(concept, vec![shape_of_expr(&e.receiver, ctx)]);
+                if let Some(kit_op) = kit_op {
+                    if let Some(concept) = provekit_realize_rust_core::operation_realization_catalog::concept_for_rust_op(kit_op) {
+                        return gamma_operation(&concept, vec![shape_of_expr(&e.receiver, ctx)]);
+                    }
                 }
             }
             // args[0]: receiver shape, matching bindings_of_expr layout above.

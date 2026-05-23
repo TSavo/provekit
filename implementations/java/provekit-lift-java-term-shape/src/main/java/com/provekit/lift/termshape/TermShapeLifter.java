@@ -804,20 +804,24 @@ public final class TermShapeLifter {
                 );
             }
             // catalog #1391: nullary collection constructors are abstractions.
-            // new ArrayList<>() → concept:list-create; new HashMap<>() → concept:map-create.
+            // The matcher recognizes the AST shape; the catalog supplies the
+            // concept-hub name (reverse lookup keyed by kit-op name).
             String pathTypeStr0 = typeStr.replaceFirst("<.*>", "");
             if (oce.getArguments().isEmpty()) {
+                String kitOp = null;
                 if (pathTypeStr0.equals("java.util.ArrayList") || pathTypeStr0.endsWith(".ArrayList") || pathTypeStr0.equals("ArrayList")) {
-                    return Jcs.object(
-                        "args", new Jcs.Arr(List.of()),
-                        "concept_name", Jcs.string("concept:list-create")
-                    );
+                    kitOp = "java:array-list-new";
+                } else if (pathTypeStr0.equals("java.util.HashMap") || pathTypeStr0.endsWith(".HashMap") || pathTypeStr0.equals("HashMap")) {
+                    kitOp = "java:hashmap-new";
                 }
-                if (pathTypeStr0.equals("java.util.HashMap") || pathTypeStr0.endsWith(".HashMap") || pathTypeStr0.equals("HashMap")) {
-                    return Jcs.object(
-                        "args", new Jcs.Arr(List.of()),
-                        "concept_name", Jcs.string("concept:map-create")
-                    );
+                if (kitOp != null) {
+                    String concept = com.provekit.ir.OperationRealizationCatalog.conceptForJavaOp(kitOp);
+                    if (concept != null) {
+                        return Jcs.object(
+                            "args", new Jcs.Arr(List.of()),
+                            "concept_name", Jcs.string(concept)
+                        );
+                    }
                 }
             }
             // Map common java types back to rust equivalents for
@@ -1013,16 +1017,19 @@ public final class TermShapeLifter {
                     "concept_name", Jcs.string("concept:macro-call")
                 );
             }
-            // .getBytes(StandardCharsets.UTF_8) → concept:utf8-encode(recv)
-            // catalog: concept:utf8-encode->java:string-getBytes-utf8 (#1391)
+            // catalog #1391: .getBytes(StandardCharsets.UTF_8) — reverse lookup
+            // on java:string-getBytes-utf8.
             if ("getBytes".equals(name) && m.getArguments().size() == 1
                     && m.getArgument(0).toString().contains("StandardCharsets")
                     && m.getScope().isPresent()) {
-                Json recvShape = liftExpression(m.getScope().get(), losses);
-                return Jcs.object(
-                    "args", new Jcs.Arr(List.of(recvShape)),
-                    "concept_name", Jcs.string("concept:utf8-encode")
-                );
+                String concept = com.provekit.ir.OperationRealizationCatalog.conceptForJavaOp("java:string-getBytes-utf8");
+                if (concept != null) {
+                    Json recvShape = liftExpression(m.getScope().get(), losses);
+                    return Jcs.object(
+                        "args", new Jcs.Arr(List.of(recvShape)),
+                        "concept_name", Jcs.string(concept)
+                    );
+                }
             }
             // .length() → .len()
             if ("length".equals(name) && m.getArguments().isEmpty() && m.getScope().isPresent()) {
@@ -1092,30 +1099,37 @@ public final class TermShapeLifter {
             if ("toString".equals(name) && m.getArguments().isEmpty() && m.getScope().isPresent()) {
                 return liftExpression(m.getScope().get(), losses);
             }
-            // catalog #1391: instance methods that realize concept hubs.
+            // catalog #1391: zero-arg instance methods (catalog reverse-lookup
+            // keyed by kit-op name; matcher knows AST shape → kit-op name).
             if (m.getScope().isPresent() && m.getArguments().isEmpty()) {
-                String abstraction = null;
+                String kitOp = null;
                 switch (name) {
-                    case "asText": abstraction = "concept:json-text-coerce"; break;
+                    case "asText": kitOp = "java:jackson-jsonnode-asText"; break;
                     default: break;
                 }
-                if (abstraction != null) {
-                    Json recvShape = liftExpression(m.getScope().get(), losses);
-                    return Jcs.object(
-                        "args", new Jcs.Arr(List.of(recvShape)),
-                        "concept_name", Jcs.string(abstraction)
-                    );
+                if (kitOp != null) {
+                    String concept = com.provekit.ir.OperationRealizationCatalog.conceptForJavaOp(kitOp);
+                    if (concept != null) {
+                        Json recvShape = liftExpression(m.getScope().get(), losses);
+                        return Jcs.object(
+                            "args", new Jcs.Arr(List.of(recvShape)),
+                            "concept_name", Jcs.string(concept)
+                        );
+                    }
                 }
             }
-            // catalog #1391: Objects.nonNull(x) → concept:option-is-some(x).
+            // catalog #1391: Objects.nonNull(x) — reverse lookup on java:objects-nonnull.
             if ("nonNull".equals(name) && m.getArguments().size() == 1
                     && m.getScope().isPresent()
                     && m.getScope().get().toString().endsWith("Objects")) {
-                Json argShape = liftExpression(m.getArgument(0), losses);
-                return Jcs.object(
-                    "args", new Jcs.Arr(List.of(argShape)),
-                    "concept_name", Jcs.string("concept:option-is-some")
-                );
+                String concept = com.provekit.ir.OperationRealizationCatalog.conceptForJavaOp("java:objects-nonnull");
+                if (concept != null) {
+                    Json argShape = liftExpression(m.getArgument(0), losses);
+                    return Jcs.object(
+                        "args", new Jcs.Arr(List.of(argShape)),
+                        "concept_name", Jcs.string(concept)
+                    );
+                }
             }
             // Jackson JsonNode + java String method names → rust equivalents.
             // These map 1:1 between the substrate's emit and source idiom.

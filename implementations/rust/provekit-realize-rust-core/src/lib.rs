@@ -10,6 +10,67 @@ use serde_json::{json, Value};
 
 pub mod platform_semantics;
 
+/// Catalog-driven operation-realization lookup (#1391). Loads realization
+/// mementos from menagerie/concept-shapes/catalog/realizations/ at first
+/// use; maps concept_name → rhs_op_name for target_lang=rust. The catalog
+/// is the single source of truth; emit_kit_rust_op (below) is keyed off
+/// the rhs op name and is the only remaining kit-specific code.
+pub mod operation_realization_catalog {
+    use std::collections::HashMap;
+    use std::sync::OnceLock;
+
+    static RUST_OP_MAP: OnceLock<HashMap<String, String>> = OnceLock::new();
+    static RUST_REVERSE_MAP: OnceLock<HashMap<String, String>> = OnceLock::new();
+
+    pub fn rust_op_for(concept_name: &str) -> Option<String> {
+        let map = RUST_OP_MAP.get_or_init(|| build_map("rust"));
+        map.get(concept_name).cloned()
+    }
+
+    /// Reverse: rust kit-op name → concept_name. Used by the lift side.
+    pub fn concept_for_rust_op(kit_op_name: &str) -> Option<String> {
+        let reverse = RUST_REVERSE_MAP.get_or_init(|| {
+            let forward = RUST_OP_MAP.get_or_init(|| build_map("rust"));
+            let mut rev = HashMap::new();
+            for (k, v) in forward.iter() { rev.entry(v.clone()).or_insert_with(|| k.clone()); }
+            rev
+        });
+        reverse.get(kit_op_name).cloned()
+    }
+
+    fn build_map(target_lang: &str) -> HashMap<String, String> {
+        let mut out = HashMap::new();
+        // Walk up from CWD to find menagerie/.
+        let cwd = std::env::current_dir().unwrap_or_else(|_| std::path::PathBuf::from("."));
+        let mut root: Option<std::path::PathBuf> = None;
+        let mut p: Option<&std::path::Path> = Some(cwd.as_path());
+        while let Some(cur) = p {
+            if cur.join("menagerie").is_dir() { root = Some(cur.to_path_buf()); break; }
+            p = cur.parent();
+        }
+        let Some(root) = root else { return out; };
+        let realizations_dir = root.join("menagerie/concept-shapes/catalog/realizations");
+        let Ok(entries) = std::fs::read_dir(&realizations_dir) else { return out; };
+        for entry in entries.flatten() {
+            let path = entry.path();
+            let Some(name) = path.file_name().and_then(|s| s.to_str()) else { continue; };
+            if !name.ends_with(".json") { continue; }
+            let Ok(raw) = std::fs::read_to_string(&path) else { continue; };
+            let Ok(doc) = serde_json::from_str::<serde_json::Value>(&raw) else { continue; };
+            let Some(memento) = doc.get("memento") else { continue; };
+            if memento.get("role").and_then(|v| v.as_str()) != Some("abstraction-realization") { continue; }
+            if memento.get("target_lang").and_then(|v| v.as_str()) != Some(target_lang) { continue; }
+            let Some(post) = memento.get("post") else { continue; };
+            let lhs_name = post.get("lhs").and_then(|v| v.get("name")).and_then(|v| v.as_str());
+            let rhs_name = post.get("rhs").and_then(|v| v.get("name")).and_then(|v| v.as_str());
+            if let (Some(l), Some(r)) = (lhs_name, rhs_name) {
+                out.entry(l.to_string()).or_insert_with(|| r.to_string());
+            }
+        }
+        out
+    }
+}
+
 const BODY_TEMPLATE_REL: &str =
     "menagerie/rust-language-signature/specs/body-templates/rust-canonical-bodies.json";
 const RETURN_OP_CID: &str = "blake3-512:776d417c66325df1d40e3e0fd7331195e2b1d14f9c30b5984030f21aa8b6b38b3eb81ee3dddd46716003275c9960022e2273dd8efb0110bacc5719811ee18dc6";
@@ -618,6 +679,43 @@ fn lower_term_shape_branch_body(
     Some(format!("return {};", expression.text))
 }
 
+/// Catalog-driven kit-op emitter (#1391). Keyed by the rhs op name from
+/// realization mementos (target_lang=rust). One small arm per rhs name;
+/// the catalog controls WHICH concept maps to which rhs name.
+fn emit_kit_rust_op(
+    rhs_op_name: &str,
+    args: &[&Value],
+    context: &mut ShapeLoweringContext,
+    position: &[usize],
+) -> Option<ShapeExpression> {
+    match rhs_op_name {
+        "rust:str-as-bytes" => {
+            if args.is_empty() { return None; }
+            let recv = lower_term_shape_expression(args[0], context, &append_position(position, 0))?;
+            Some(ShapeExpression { text: format!("{}.as_bytes()", recv.text), type_name: String::new() })
+        }
+        "rust:serde-value-as-str" => {
+            if args.is_empty() { return None; }
+            let recv = lower_term_shape_expression(args[0], context, &append_position(position, 0))?;
+            Some(ShapeExpression { text: format!("{}.as_str()", recv.text), type_name: String::new() })
+        }
+        "rust:option-is-some" => {
+            if args.is_empty() { return None; }
+            let recv = lower_term_shape_expression(args[0], context, &append_position(position, 0))?;
+            Some(ShapeExpression { text: format!("{}.is_some()", recv.text), type_name: "bool".to_string() })
+        }
+        "rust:vec-new" => {
+            if !args.is_empty() { return None; }
+            Some(ShapeExpression { text: "Vec::new()".to_string(), type_name: String::new() })
+        }
+        "rust:hashmap-new" => {
+            if !args.is_empty() { return None; }
+            Some(ShapeExpression { text: "HashMap::new()".to_string(), type_name: String::new() })
+        }
+        _ => None,
+    }
+}
+
 fn lower_term_shape_expression(
     shape: &Value,
     context: &mut ShapeLoweringContext,
@@ -1044,52 +1142,16 @@ fn lower_term_shape_expression(
             type_name: String::new(),
         });
     }
-    if concept_name == "concept:utf8-encode" {
-        // catalog #1391: concept:utf8-encode->rust:str-as-bytes — emit `s.as_bytes()`.
-        if args.is_empty() {
-            return None;
+    // catalog-driven operation realization dispatch (#1391).
+    // Look up concept in realizations[target_lang=rust]; if present,
+    // delegate to the kit-op emitter keyed by rhs op name. The catalog at
+    // menagerie/concept-shapes/catalog/realizations/ is the single source
+    // of truth: concept_name → rhs_op_name. emit_kit_rust_op below is the
+    // only remaining kit-specific code, keyed by catalog'd rhs names.
+    if let Some(rhs_op) = operation_realization_catalog::rust_op_for(&concept_name) {
+        if let Some(emitted) = emit_kit_rust_op(&rhs_op, &args, context, position) {
+            return Some(emitted);
         }
-        let recv = lower_term_shape_expression(args[0], context, &append_position(position, 0))?;
-        return Some(ShapeExpression {
-            text: format!("{}.as_bytes()", recv.text),
-            type_name: String::new(),
-        });
-    }
-    if concept_name == "concept:json-text-coerce" {
-        // catalog #1391: concept:json-text-coerce->rust:serde-value-as-str — emit `v.as_str()`.
-        if args.is_empty() {
-            return None;
-        }
-        let recv = lower_term_shape_expression(args[0], context, &append_position(position, 0))?;
-        return Some(ShapeExpression {
-            text: format!("{}.as_str()", recv.text),
-            type_name: String::new(),
-        });
-    }
-    if concept_name == "concept:option-is-some" {
-        // catalog #1391: concept:option-is-some->rust:option-is-some — emit `o.is_some()`.
-        if args.is_empty() {
-            return None;
-        }
-        let recv = lower_term_shape_expression(args[0], context, &append_position(position, 0))?;
-        return Some(ShapeExpression {
-            text: format!("{}.is_some()", recv.text),
-            type_name: "bool".to_string(),
-        });
-    }
-    if concept_name == "concept:list-create" {
-        // catalog #1391: concept:list-create->rust:vec-new — emit `Vec::new()`.
-        return Some(ShapeExpression {
-            text: "Vec::new()".to_string(),
-            type_name: String::new(),
-        });
-    }
-    if concept_name == "concept:map-create" {
-        // catalog #1391: concept:map-create->rust:hashmap-new — emit `HashMap::new()`.
-        return Some(ShapeExpression {
-            text: "HashMap::new()".to_string(),
-            type_name: String::new(),
-        });
     }
     if concept_name == "concept:value-clone" {
         // Substrate.cloneOf(x) → x.cloned() (rust source-form)
@@ -3248,6 +3310,38 @@ fn find_repo_file(relative: &Path) -> Option<PathBuf> {
 mod tests {
     use super::*;
     use std::path::PathBuf;
+
+    /// Catalog-driven dispatch (#1391): the realizations catalog at
+    /// menagerie/concept-shapes/catalog/realizations/ must contain the
+    /// six operation-realization mementos minted in this PR. Forward
+    /// (concept → rhs op) and reverse (rhs op → concept) must round-trip.
+    #[test]
+    fn operation_realization_catalog_round_trips() {
+        let probes: &[(&str, &str)] = &[
+            ("concept:utf8-encode", "rust:str-as-bytes"),
+            ("concept:json-text-coerce", "rust:serde-value-as-str"),
+            ("concept:option-is-some", "rust:option-is-some"),
+            ("concept:list-create", "rust:vec-new"),
+            ("concept:map-create", "rust:hashmap-new"),
+            ("concept:format-string-interp", "rust:format-macro"),
+        ];
+        for (concept, rhs) in probes {
+            let got_rhs = operation_realization_catalog::rust_op_for(concept);
+            assert_eq!(
+                got_rhs.as_deref(),
+                Some(*rhs),
+                "forward lookup {} → {:?} (expected {})",
+                concept, got_rhs, rhs
+            );
+            let got_concept = operation_realization_catalog::concept_for_rust_op(rhs);
+            assert_eq!(
+                got_concept.as_deref(),
+                Some(*concept),
+                "reverse lookup {} → {:?} (expected {})",
+                rhs, got_concept, concept
+            );
+        }
+    }
 
     fn strings(items: &[&str]) -> Vec<String> {
         items.iter().map(|item| item.to_string()).collect()

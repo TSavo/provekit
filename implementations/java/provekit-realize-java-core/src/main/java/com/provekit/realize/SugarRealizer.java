@@ -1787,31 +1787,20 @@ final class SugarRealizer {
             if (text.endsWith("\n")) text = text.substring(0, text.length() - 1);
             return Optional.of(text);
         }
-        // catalog #1391: concept:utf8-encode->java:string-getBytes-utf8.
-        if (conceptMatches("concept:utf8-encode", conceptName) && args.size() == 1) {
-            Optional<ShapeExpression> recv = lowerShapeExpression(args.get(0), context, appendPosition(position, 0));
-            if (recv.isEmpty()) return Optional.empty();
-            return Optional.of(recv.get().text() + ".getBytes(java.nio.charset.StandardCharsets.UTF_8)");
-        }
-        // catalog #1391: concept:json-text-coerce->java:jackson-jsonnode-asText.
-        if (conceptMatches("concept:json-text-coerce", conceptName) && args.size() == 1) {
-            Optional<ShapeExpression> recv = lowerShapeExpression(args.get(0), context, appendPosition(position, 0));
-            if (recv.isEmpty()) return Optional.empty();
-            return Optional.of(recv.get().text() + ".asText()");
-        }
-        // catalog #1391: concept:option-is-some->java:objects-nonnull.
-        if (conceptMatches("concept:option-is-some", conceptName) && args.size() == 1) {
-            Optional<ShapeExpression> arg = lowerShapeExpression(args.get(0), context, appendPosition(position, 0));
-            if (arg.isEmpty()) return Optional.empty();
-            return Optional.of("java.util.Objects.nonNull(" + arg.get().text() + ")");
-        }
-        // catalog #1391: concept:list-create->java:array-list-new.
-        if (conceptMatches("concept:list-create", conceptName) && args.isEmpty()) {
-            return Optional.of("new java.util.ArrayList<>()");
-        }
-        // catalog #1391: concept:map-create->java:hashmap-new.
-        if (conceptMatches("concept:map-create", conceptName) && args.isEmpty()) {
-            return Optional.of("new java.util.HashMap<>()");
+        // catalog-driven operation realization dispatch (#1391).
+        // Look up concept in the realizations map (target_lang=java);
+        // if present, delegate to the kit-op emitter keyed by rhs op name.
+        // The catalog at menagerie/concept-shapes/catalog/realizations/ is
+        // the single source of truth: concept_name → rhs_op_name. The
+        // emitters below are the only kit-specific code, and they're
+        // keyed by catalog'd names (e.g. "java:string-getBytes-utf8"),
+        // not by concept-hub names.
+        {
+            String rhsOp = com.provekit.ir.OperationRealizationCatalog.javaOpFor(conceptName);
+            if (rhsOp != null) {
+                Optional<String> emitted = emitKitJavaOp(rhsOp, args, context, position);
+                if (emitted.isPresent()) return emitted;
+            }
         }
         // concept:try(inner) — rust's `expr?` operator. Java translates via
         // Substrate.tryUnwrap which mirrors the unwrap-or-propagate.
@@ -1920,6 +1909,48 @@ final class SugarRealizer {
             return Optional.of(out.toString());
         }
         return Optional.empty();
+    }
+
+    /**
+     * Catalog-driven kit-op emitter (#1391). Keyed by the rhs op name from
+     * realization mementos (target_lang=java). One small case per rhs name;
+     * the catalog controls WHICH concept maps to which rhs name.
+     */
+    private static Optional<String> emitKitJavaOp(
+            String rhsOpName,
+            List<Jcs.Obj> args,
+            ShapeContext context,
+            List<Integer> position) {
+        switch (rhsOpName) {
+            case "java:string-getBytes-utf8": {
+                if (args.size() != 1) return Optional.empty();
+                Optional<ShapeExpression> recv = lowerShapeExpression(args.get(0), context, appendPosition(position, 0));
+                if (recv.isEmpty()) return Optional.empty();
+                return Optional.of(recv.get().text() + ".getBytes(java.nio.charset.StandardCharsets.UTF_8)");
+            }
+            case "java:jackson-jsonnode-asText": {
+                if (args.size() != 1) return Optional.empty();
+                Optional<ShapeExpression> recv = lowerShapeExpression(args.get(0), context, appendPosition(position, 0));
+                if (recv.isEmpty()) return Optional.empty();
+                return Optional.of(recv.get().text() + ".asText()");
+            }
+            case "java:objects-nonnull": {
+                if (args.size() != 1) return Optional.empty();
+                Optional<ShapeExpression> arg = lowerShapeExpression(args.get(0), context, appendPosition(position, 0));
+                if (arg.isEmpty()) return Optional.empty();
+                return Optional.of("java.util.Objects.nonNull(" + arg.get().text() + ")");
+            }
+            case "java:array-list-new": {
+                if (!args.isEmpty()) return Optional.empty();
+                return Optional.of("new java.util.ArrayList<>()");
+            }
+            case "java:hashmap-new": {
+                if (!args.isEmpty()) return Optional.empty();
+                return Optional.of("new java.util.HashMap<>()");
+            }
+            default:
+                return Optional.empty();
+        }
     }
 
     private static Optional<String> lowerShapeBranchBody(
