@@ -656,6 +656,58 @@ public final class TermShapeLifter {
                     return jsonMacro.get();
                 }
             }
+            // String.format(fmt, args...) → rust's format! macro.
+            if ("format".equals(name) && scopeText.equals("String") && !m.getArguments().isEmpty()) {
+                // Convert java fmt (%s, %d) → rust fmt ({}, {}) in the first arg.
+                Expression fmtArg = m.getArgument(0);
+                String fmtText = fmtArg.toString();
+                // Strip surrounding quotes if string literal.
+                String inner = fmtText;
+                if (inner.startsWith("\"") && inner.endsWith("\"")) {
+                    inner = inner.substring(1, inner.length() - 1);
+                }
+                // Java specifiers → rust:
+                inner = inner.replace("%s", "{}").replace("%d", "{}").replace("%i", "{}");
+                String rustFmt = "\"" + inner + "\"";
+                // Build the macro body as `"fmt", arg1, arg2`.
+                StringBuilder body = new StringBuilder(rustFmt);
+                for (int i = 1; i < m.getArguments().size(); i++) {
+                    body.append(", ").append(m.getArgument(i).toString());
+                }
+                return Jcs.object(
+                    "args", new Jcs.Arr(List.of(
+                        Jcs.object("kind", Jcs.string("symbol"), "text", Jcs.string("format")),
+                        Jcs.object("kind", Jcs.string("symbol"), "text", Jcs.string(body.toString()))
+                    )),
+                    "concept_name", Jcs.string("concept:macro-call")
+                );
+            }
+            // .getBytes(StandardCharsets.UTF_8) → .as_bytes()
+            if ("getBytes".equals(name) && m.getArguments().size() == 1
+                    && m.getArgument(0).toString().contains("StandardCharsets")) {
+                // emit as concept:call(receiver, method:as_bytes)
+                if (m.getScope().isPresent()) {
+                    Json recvShape = liftExpression(m.getScope().get(), losses);
+                    return Jcs.object(
+                        "args", new Jcs.Arr(List.of(
+                            recvShape,
+                            methodConceptLeaf("as_bytes", 0)
+                        )),
+                        "concept_name", Jcs.string("concept:call")
+                    );
+                }
+            }
+            // .length() → .len()
+            if ("length".equals(name) && m.getArguments().isEmpty() && m.getScope().isPresent()) {
+                Json recvShape = liftExpression(m.getScope().get(), losses);
+                return Jcs.object(
+                    "args", new Jcs.Arr(List.of(
+                        recvShape,
+                        methodConceptLeaf("len", 0)
+                    )),
+                    "concept_name", Jcs.string("concept:call")
+                );
+            }
             // Iterator chain recognition: rust `X.iter().filter_map(c).collect()`
             // lowers to java `StreamSupport.stream(X.spliterator(), false)
             //   .map(c).filter(Objects::nonNull).collect(Collectors.toList())`.

@@ -2551,7 +2551,32 @@ fn pretty_print_macro_body(tokens: &str) -> String {
     let mut out = String::from("{\n");
     for (idx, item) in items.iter().enumerate() {
         let is_last = idx + 1 == items.len();
-        let sep = if is_last && !source_has_trailing_comma { "" } else { "," };
+        // Source-style: when the last item's value is a MULTI-LINE
+        // nested object, source convention omits the trailing comma
+        // (rust's hand-written json! style). Detect by checking if
+        // the value ends with multi-line `}`.
+        let item_value_is_multiline_object =
+            find_top_level_colon(item)
+                .map(|i| {
+                    let v = item[i + 1..].trim();
+                    v.starts_with('{') && v.ends_with('}') && v.contains('\n')
+                })
+                .unwrap_or(false);
+        // Also a length check — large nested objects also skip trailing.
+        let item_value_is_large_object =
+            find_top_level_colon(item)
+                .map(|i| {
+                    let v = item[i + 1..].trim();
+                    v.starts_with('{') && v.ends_with('}') && v.len() > 60
+                })
+                .unwrap_or(false);
+        let suppress_trailing_for_last_nested = is_last
+            && (item_value_is_multiline_object || item_value_is_large_object);
+        let sep = if (is_last && !source_has_trailing_comma) || suppress_trailing_for_last_nested {
+            ""
+        } else {
+            ","
+        };
         if let Some(colon_idx) = find_top_level_colon(item) {
             let key = item[..colon_idx].trim();
             let value = item[colon_idx + 1..].trim();
