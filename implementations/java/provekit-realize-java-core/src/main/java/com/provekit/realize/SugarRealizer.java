@@ -1988,6 +1988,18 @@ final class SugarRealizer {
                 }
             }
         }
+        // #1391 follow-on: concept:try in expression position (e.g. as the
+        // value of a concept:assign). The body-position handler was
+        // unreachable from concept:assign's value-lowering path, which
+        // dropped the entire assign to a TODO comment. Expression form
+        // emits Substrate.tryUnwrap(inner).
+        if (conceptMatches("concept:try", conceptName) && args.size() == 1) {
+            Optional<ShapeExpression> inner = lowerShapeExpression(args.get(0), context, appendPosition(position, 0));
+            if (inner.isEmpty()) return Optional.empty();
+            return Optional.of(new ShapeExpression(
+                "com.provekit.runtime.Substrate.tryUnwrap(" + inner.get().text() + ")",
+                ""));
+        }
         if (conceptMatches("concept:seq", conceptName) || "seq".equals(conceptName)) {
             Optional<String> body = lowerShapeBody(shape, context, position);
             if (body.isEmpty()) {
