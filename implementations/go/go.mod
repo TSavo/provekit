@@ -4,6 +4,7 @@ go 1.22
 
 require (
 	github.com/tsavo/provekit/go/provekit-ir-symbolic v0.0.0
+	github.com/tsavo/provekit/go/provekit-lift-go v0.0.0
 	github.com/tsavo/provekit/go/provekit-lift-go-tests v0.0.0
 )
 

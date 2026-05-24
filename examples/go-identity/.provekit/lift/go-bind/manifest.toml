@@ -1,0 +1,3 @@
+name = "go-bind"
+command = ["provekit-lift-go-verify", "--rpc"]
+working_dir = "."

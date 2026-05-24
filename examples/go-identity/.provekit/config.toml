@@ -1,0 +1,32 @@
+# Go AUTHORING surface, mirroring the rust authoring config:
+#
+#   [[plugins]] go-bind      (layer = "library-bindings")  -> emits the
+#       `library-sugar-binding-entry` DECLARATION catalog for each
+#       `//provekit:` annotated function.
+#   [[plugins]] go-contracts (emit = "ir-document")        -> emits the
+#       body-derived function-contracts + harvested callsites, gated on the
+#       declaration.
+#
+# Both plugins resolve to the same binary (provekit-lift-go-verify); it emits
+# different IR per surface (as rust's rust-bind / rust-contracts do), so a
+# function is not minted twice.
+[[plugins]]
+name = "go-sugar"
+surface = "go-bind"
+layer = "library-bindings"
+
+[[plugins]]
+name = "go-contracts"
+surface = "go-contracts"
+emit = "ir-document"
+
+[solvers]
+default = "z3"
+
+[solvers.dispatch]
+linear_arithmetic = "z3"
+default = "z3"
+
+[solvers.z3]
+binary = "z3"
+flags = ["-smt2", "-in"]
