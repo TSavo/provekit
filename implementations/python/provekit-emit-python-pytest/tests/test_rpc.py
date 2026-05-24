@@ -15,16 +15,35 @@ def _var(name: str) -> dict:
     return {"kind": "var", "name": name}
 
 
-def test_describe_lists_capabilities_and_predicates() -> None:
+def test_describe_returns_plugin_memento_shape() -> None:
+    # The loader requires the result to be a full {envelope, header, metadata}
+    # plugin memento, not a flat capability object.
     response = dispatch({"jsonrpc": "2.0", "id": 1, "method": "provekit.plugin.describe"})
     result = response["result"]
     assert response["id"] == 1
-    assert result["name"] == "provekit-emit-python-pytest"
-    assert result["kind"] == "realize"
-    assert result["target_language"] == "python"
-    assert result["target_framework"] == "pytest"
-    assert "concept:eq" in result["capabilities"]["predicates"]
+    assert set(result.keys()) == {"envelope", "header", "metadata"}
+    header = result["header"]
+    assert header["schemaVersion"] == "1"
+    assert "pep/1.7.0" in header["protocol_versions"]
+    assert header["cid"].startswith("blake3-512:")
+    # Capabilities live inside header.content (opaque to the loader).
+    assert "concept:eq" in header["content"]["capabilities"]["predicates"]
+    assert header["content"]["target_framework"] == "pytest"
     json.dumps(response)  # must be serializable
+
+
+def test_describe_accepts_loader_runtime_protocol_versions_param() -> None:
+    # The loader sends params={"runtime_protocol_versions": ["pep/1.7.0"]};
+    # dispatch must not crash on it and must still return the memento.
+    response = dispatch(
+        {
+            "jsonrpc": "2.0",
+            "id": 11,
+            "method": "provekit.plugin.describe",
+            "params": {"runtime_protocol_versions": ["pep/1.7.0"]},
+        }
+    )
+    assert set(response["result"].keys()) == {"envelope", "header", "metadata"}
 
 
 def test_invoke_emits_pytest_module() -> None:

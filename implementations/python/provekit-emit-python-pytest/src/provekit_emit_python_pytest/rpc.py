@@ -25,8 +25,8 @@ import sys
 import traceback
 from typing import Any
 
-from . import predicate_table as pt
 from .emitter import EmitPlan, emit
+from .plugin_memento import PLUGIN_MEMENTO
 
 
 def run_rpc() -> None:
@@ -56,7 +56,11 @@ def dispatch(request: dict[str, Any]) -> dict[str, Any]:
         params = {}
 
     if method == "provekit.plugin.describe":
-        return {"jsonrpc": "2.0", "id": msg_id, "result": _describe()}
+        # The result IS the plugin memento (loader.rs:parse_and_validate).
+        # The loader recomputes header.cid and refuses on mismatch, so the
+        # memento must be the full {envelope, header, metadata} shape, not a
+        # flat capability object. Capabilities live inside header.content.
+        return {"jsonrpc": "2.0", "id": msg_id, "result": PLUGIN_MEMENTO}
 
     if method == "provekit.plugin.invoke":
         if not isinstance(params, dict):
@@ -69,22 +73,6 @@ def dispatch(request: dict[str, Any]) -> dict[str, Any]:
         return {"jsonrpc": "2.0", "id": msg_id, "result": None}
 
     return _error(msg_id, -32601, f"METHOD_NOT_FOUND: {method}")
-
-
-def _describe() -> dict[str, Any]:
-    return {
-        "name": "provekit-emit-python-pytest",
-        "version": "0.1.0",
-        "protocol_versions": ["pep/1.7.0"],
-        "kind": "realize",
-        "target_language": "python",
-        "target_framework": "pytest",
-        "capabilities": {
-            "kits": ["python"],
-            "emits": "pytest-assertions",
-            "predicates": pt.supported_predicates(),
-        },
-    }
 
 
 def _send(obj: dict[str, Any]) -> None:

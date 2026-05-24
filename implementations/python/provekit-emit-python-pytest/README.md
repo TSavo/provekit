@@ -58,9 +58,39 @@ provekit-emit-python-pytest --rpc
 
 Methods:
 
-- `provekit.plugin.describe` — capability summary + supported predicates.
+- `provekit.plugin.describe` — returns a full PEP 1.7.0 plugin memento
+  `{envelope, header, metadata}` (NOT a flat object). The loader
+  (`provekit-plugin-loader`) recomputes `header.cid` per §6.1 and refuses on
+  mismatch, so the kit mints the CID itself (see `plugin_memento.py`). The kit's
+  capability summary + supported predicates live in `header.content` (opaque to
+  the loader). This is what lets `provekit verify`/`materialize` load the kit
+  through the standard plugin loader and invoke it to emit pytest gates.
 - `provekit.plugin.invoke` — emit a pytest module from an emit plan in `params`.
 - `provekit.plugin.shutdown` — exit.
+
+`describe` result (plugin memento, abbreviated):
+
+```json
+{
+  "envelope": {"declaredAt": "...", "signature": "ed25519:...", "signer": "ed25519:..."},
+  "header": {
+    "cid": "blake3-512:...",
+    "content": {"name": "provekit-emit-python-pytest", "kind": "realize",
+                "target_framework": "pytest",
+                "capabilities": {"predicates": ["concept:eq", "..."]}},
+    "critical": false,
+    "kind": "realize",
+    "protocol_versions": ["pep/1.7.0"],
+    "provenance_cid": "blake3-512:...",
+    "schemaVersion": "1",
+    "version": "0.1.0"
+  },
+  "metadata": {"maintainer": "...", "note": "...", "source_url": "..."}
+}
+```
+
+Signing is a placeholder (zero-bytes ed25519); full signature verification is
+the loader-integration follow-up (§12 out-of-scope for the loader skeleton).
 
 `invoke` params:
 

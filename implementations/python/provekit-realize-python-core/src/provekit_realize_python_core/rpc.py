@@ -32,7 +32,12 @@ def run_rpc() -> None:
 def dispatch(request: dict[str, Any]) -> dict[str, Any]:
     msg_id = request.get("id")
     method = str(request.get("method", ""))
-    params = request.get("params") or {}
+    # Default ONLY when params is absent (None). Do NOT coerce a falsy non-dict
+    # (e.g. []) to {} via `or`, which would bypass the isinstance(dict) guard
+    # below and turn an INVALID_PARAMS error into a silent default plan.
+    params = request.get("params")
+    if params is None:
+        params = {}
 
     if method == "provekit.plugin.platform_semantics":
         return {"jsonrpc": "2.0", "id": msg_id, "result": _platform_semantics_declaration()}
