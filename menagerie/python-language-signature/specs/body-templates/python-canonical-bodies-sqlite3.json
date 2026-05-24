@@ -116,6 +116,51 @@
           "target_library_tag": "sqlite3"
         },
         {
+          "concept_name": "concept:sql-execute",
+          "emission_template": {
+            "kind": "verbatim",
+            "template": "cursor = db.execute(${param0}, tuple(${param1}))\ndb.commit()\nreturn {\"rows_affected\": cursor.rowcount, \"last_insert_id\": cursor.lastrowid}"
+          },
+          "loss_record_contribution": {
+            "form": "literal",
+            "value": {
+              "entries": [
+                "sync-vs-async",
+                "last-insert-id",
+                "transaction-isolation",
+                "row-typing-mode"
+              ]
+            }
+          },
+          "signature_guard": {
+            "min_params": 2,
+            "max_params": 2
+          },
+          "target_library_tag": "sqlite3"
+        },
+        {
+          "concept_name": "concept:insert-and-get-id",
+          "emission_template": {
+            "kind": "verbatim",
+            "template": "cursor = db.execute(${param0}, tuple(${param1}))\ndb.commit()\nreturn int(cursor.lastrowid or 0)"
+          },
+          "loss_record_contribution": {
+            "form": "literal",
+            "value": {
+              "entries": [
+                "sync-vs-async",
+                "id-column-discovery",
+                "row-typing-mode"
+              ]
+            }
+          },
+          "signature_guard": {
+            "min_params": 2,
+            "max_params": 2
+          },
+          "target_library_tag": "sqlite3"
+        },
+        {
           "concept_name": "concept:sql-batch-execute",
           "emission_template": {
             "kind": "verbatim",
@@ -155,6 +200,28 @@
           "signature_guard": {
             "min_params": 3,
             "max_params": 3
+          },
+          "target_library_tag": "sqlite3"
+        },
+        {
+          "concept_name": "concept:sql-query",
+          "emission_template": {
+            "kind": "verbatim",
+            "template": "cursor = db.execute(${param0}, tuple(${param1}))\nreturn cursor.fetchall()"
+          },
+          "loss_record_contribution": {
+            "form": "literal",
+            "value": {
+              "entries": [
+                "sync-vs-async",
+                "row-typing-mode",
+                "cursor-lifetime"
+              ]
+            }
+          },
+          "signature_guard": {
+            "min_params": 2,
+            "max_params": 2
           },
           "target_library_tag": "sqlite3"
         },
