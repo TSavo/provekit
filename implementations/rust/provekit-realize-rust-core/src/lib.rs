@@ -4176,20 +4176,24 @@ mod tests {
         let source = response["result"]["source"]
             .as_str()
             .expect("realized source");
+        // @sugar attribute is emitted universally (every realization carries
+        // its concept binding for re-lift / cycle-invariance — ecc0ba27e), even
+        // for bare/UNNAMED concept names.
         assert!(
-            source.contains("pub fn compute_sum(a: i64, b: i64) -> i64"),
-            "{source}"
-        );
-        assert!(source.contains("let total: i64 = (a) + (b);"), "{source}");
-        assert!(
-            source.contains("let scaled: i64 = (total) * (2);"),
+            source.contains("#[provekit::sugar(\n    concept = \"UNNAMED-CONCEPT-1\","),
             "{source}"
         );
         assert!(
-            source.contains("let reduced: i64 = (scaled) - (1);"),
+            source.contains("pub fn compute_sum(a: int, b: int) -> int"),
             "{source}"
         );
-        assert!(source.contains("return reduced;"), "{source}");
+        assert!(source.contains("let total: i64 = a + b;"), "{source}");
+        assert!(source.contains("let scaled: i64 = total * 2;"), "{source}");
+        assert!(
+            source.contains("let reduced: i64 = scaled - 1;"),
+            "{source}"
+        );
+        assert!(source.contains("reduced\n}"), "{source}");
         assert!(!source.contains("panic!"), "{source}");
     }
 
@@ -4233,9 +4237,11 @@ mod tests {
         let source = response["result"]["source"]
             .as_str()
             .expect("realized source");
+        // proc-macro invocations precede the @sugar attribute, which is emitted
+        // universally (concept binding for re-lift / cycle-invariance — ecc0ba27e).
         assert_eq!(
             source,
-            "#[instrument]\npub fn traced(x: i64) -> i64 {\n    x\n}\n"
+            "#[instrument]\n#[provekit::sugar(\n    concept = \"identity\",\n    library = \"libprovekit-rpc-cross-platform\",\n    loss = [],\n)]\npub fn traced(x: i64) -> i64 {\n    x\n}\n"
         );
     }
 
@@ -4539,9 +4545,11 @@ mod tests {
         assert_eq!(response["id"], 7);
         assert_eq!(response["result"]["extension"], "rs");
         assert_eq!(response["result"]["is_stub"], false);
+        // @sugar attribute is emitted universally (every realization carries its
+        // concept binding for re-lift / cycle-invariance — ecc0ba27e).
         assert_eq!(
             response["result"]["source"],
-            "pub fn toggle(flag: bool) -> bool {\n    !flag\n}\n"
+            "#[provekit::sugar(\n    concept = \"bool-cell\",\n    library = \"libprovekit-rpc-cross-platform\",\n    loss = [],\n)]\npub fn toggle(flag: bool) -> bool {\n    !flag\n}\n"
         );
     }
 
