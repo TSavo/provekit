@@ -1025,15 +1025,49 @@ fn decompose_bind_result(args: &[Term], claim: &DomainClaim) -> Result<Value, St
     };
     let named = named_term_document_from_bind_payload(&wrapper)
         .map_err(|error| format!("decompose bind-result wrapper named form: {error}"))?;
-    let term_count = named.terms.len();
-    let [term] = named.terms.as_slice() else {
-        return Err(format!(
-            "bind-result wrapper expected exactly one named term, got {term_count}"
-        ));
-    };
+    let term = reconcile_single_realizable_term(&named.terms)?;
     let mut spec = realize_spec_from_named_term(term)?;
     merge_realize_sidecar(&mut spec, claim, term)?;
     Ok(spec)
+}
+
+/// Select the single realizable named term from a bind-result wrapper.
+///
+/// A @sugar-annotated function (the form a cross-language realize cycle emits,
+/// e.g. `#[provekit::sugar(concept = "...")] fn compute_sum(...)`) lifts to TWO
+/// named terms that share the SAME `term_shape_cid`: a sugar-binding carrier
+/// (`fn_name_sugar == None`) and the realizable function body (`fn_name_sugar`
+/// set to the source function name). They are the same function, not two
+/// distinct functions. The realizer needs exactly one, so when every term
+/// shares a `term_shape_cid` we collapse to the one carrying `fn_name_sugar`
+/// (the realizable body). Genuinely-distinct terms (different `term_shape_cid`)
+/// are NOT collapsed — the multi-function case still refuses loudly, because a
+/// single realize request cannot represent two different functions.
+fn reconcile_single_realizable_term(terms: &[NamedTerm]) -> Result<&NamedTerm, String> {
+    if let [term] = terms {
+        return Ok(term);
+    }
+    let term_count = terms.len();
+    if term_count == 0 {
+        return Err("bind-result wrapper expected exactly one named term, got 0".to_string());
+    }
+    // Only reconcile when all terms are the SAME function (shared term_shape_cid).
+    let first_shape = terms[0].term_shape_cid.as_str();
+    let all_same_shape = terms
+        .iter()
+        .all(|term| term.term_shape_cid == first_shape && !first_shape.is_empty());
+    if all_same_shape {
+        let bodies = terms
+            .iter()
+            .filter(|term| term.fn_name_sugar.as_deref().is_some_and(|s| !s.trim().is_empty()))
+            .collect::<Vec<_>>();
+        if let [body] = bodies.as_slice() {
+            return Ok(body);
+        }
+    }
+    Err(format!(
+        "bind-result wrapper expected exactly one realizable named term, got {term_count}"
+    ))
 }
 
 pub fn realize_spec_from_named_term(term: &NamedTerm) -> Result<Value, String> {
@@ -1110,12 +1144,22 @@ fn merge_realize_sidecar(
         }
     }
     // Source signature types travel CID-invisibly through the sidecar (A9
-    // erased them from the canonical lift term for seam-4 federation). When
-    // present they OVERRIDE the `realize_signature_from_named_term` erasure
-    // heuristic's `int` guess, so the realizer matches signature-keyed body
-    // templates against the true source types instead of a fabricated default.
+    // erased them from the canonical lift term for seam-4 federation). When the
+    // sidecar carries REAL types they OVERRIDE the
+    // `realize_signature_from_named_term` erasure heuristic's `int` guess, so
+    // the realizer matches signature-keyed body templates against the true
+    // source types. An EMPTY/ABSENT sidecar type is the "no declared type"
+    // signal and must NOT clobber the heuristic (otherwise erased-signature
+    // claims that legitimately rely on the `int` reconstruction would regress).
     if let Some(param_types) = entry.get("realize_param_types").and_then(Value::as_array) {
-        spec["paramTypes"] = Value::Array(param_types.clone());
+        // Override only when at least one slot carries a real (non-empty) type;
+        // an all-empty vector is the "unannotated" signal, not type evidence.
+        let has_real_type = param_types
+            .iter()
+            .any(|value| value.as_str().is_some_and(|s| !s.is_empty()));
+        if has_real_type {
+            spec["paramTypes"] = Value::Array(param_types.clone());
+        }
     }
     if let Some(return_type) = entry.get("realize_return_type").and_then(Value::as_str) {
         if !return_type.is_empty() {
