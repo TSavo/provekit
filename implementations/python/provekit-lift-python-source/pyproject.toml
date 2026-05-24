@@ -19,6 +19,7 @@ test = ["pytest>=7"]
 [project.scripts]
 provekit-lift-python-source = "provekit_lift_python_source.rpc:main"
 provekit-bind-lift-python = "provekit_lift_python_source.bind_rpc:main"
+provekit-lift-python-verify = "provekit_lift_python_source.verify_rpc:main"
 
 [tool.setuptools.packages.find]
 where = ["src"]
