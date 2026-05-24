@@ -620,7 +620,7 @@ bootstrap-self-contracts:
 # absent and `lower_java_carrier_registration_points_at_required_fixture_set`
 # panics with `Unable to access jarfile provekit-realize-java.jar`.
 test-rust: build-java
-	cargo test --release --manifest-path implementations/rust/Cargo.toml
+	cargo test --release --no-fail-fast --manifest-path implementations/rust/Cargo.toml
 	cargo test --release --manifest-path tools/recompute-spec-cids/Cargo.toml
 	cargo test --release --manifest-path tools/foundation-keygen/Cargo.toml
 
