@@ -195,7 +195,10 @@ fn visibility_of_fn_slice(slice: &str) -> String {
             "pub".to_string()
         }
     } else {
-        String::new()
+        // Private/inherited source. The realizer defaults an unset visibility to
+        // `pub`, so a private source must thread the explicit "private" sentinel
+        // to override that default and regenerate a bare `fn` byte-identically.
+        "private".to_string()
     }
 }
 

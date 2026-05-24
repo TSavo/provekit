@@ -159,7 +159,7 @@ fn term_summary(fixture: &JsonValue, resolved: &ResolvedTerm) -> String {
 }
 
 /// Extract the source-language visibility (`pub`, `pub(crate)`, `pub(super)`,
-/// or `""` for private) that precedes the `fn` keyword in a function source
+/// or `"private"` for private) that precedes the `fn` keyword in a function source
 /// slice. The D7 round-trip must thread this into the realizer so the
 /// regenerated signature reproduces the original visibility byte-for-byte
 /// instead of defaulting to a private `fn`.
@@ -177,7 +177,10 @@ fn visibility_of_fn_slice(slice: &str) -> String {
             "pub".to_string()
         }
     } else {
-        String::new()
+        // Private/inherited source. The realizer defaults an unset visibility to
+        // `pub`, so a private source must thread the explicit "private" sentinel
+        // to override that default and regenerate a bare `fn` byte-identically.
+        "private".to_string()
     }
 }
 

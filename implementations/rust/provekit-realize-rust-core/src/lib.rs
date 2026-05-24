@@ -308,14 +308,44 @@ pub fn emit_from_resolved(
     }
 }
 
+/// RAII guard that sets `CURRENT_VISIBILITY` for the lifetime of a realization
+/// and restores the prior value on drop — even across a panic. Every site that
+/// writes `CURRENT_VISIBILITY` MUST do so through this guard: a leaked write
+/// (the bug the unguarded dispatch path used to have) silently contaminates
+/// later realizations on the same thread, which is exactly what made the
+/// realize-rust-core unit tests order-dependent on each other's pollution.
+struct VisibilityGuard {
+    previous: String,
+}
+
+impl VisibilityGuard {
+    /// Snapshot the current thread-local value and install `visibility` for the
+    /// duration of the returned guard.
+    fn set(visibility: &str) -> Self {
+        let guard = VisibilityGuard {
+            previous: CURRENT_VISIBILITY.with(|v| v.borrow().clone()),
+        };
+        CURRENT_VISIBILITY.with(|v| *v.borrow_mut() = visibility.to_string());
+        guard
+    }
+}
+
+impl Drop for VisibilityGuard {
+    fn drop(&mut self) {
+        let previous = std::mem::take(&mut self.previous);
+        CURRENT_VISIBILITY.with(|v| *v.borrow_mut() = previous);
+    }
+}
+
 /// Like [`emit_from_resolved`] but reproduces the source-language visibility
-/// (`pub`, `pub(crate)`, or `""` for private/inherited) on the emitted
+/// (`pub`, `pub(crate)`, or `"private"` for private/inherited) on the emitted
 /// signature. `function_source` reads visibility from the `CURRENT_VISIBILITY`
 /// thread-local, which the RPC dispatch path sets from the spec's `visibility`
 /// field; direct callers (e.g. the D7 source-round-trip receipts) had no way to
-/// thread it and so silently regenerated a `pub fn` as a private `fn` — a
-/// byte-divergence the round-trip rightly flags. This variant sets and restores
-/// the thread-local around the emit so visibility round-trips byte-identically.
+/// thread it. Unset (`""`) defaults to `pub`; pass `"private"` to override that
+/// default and regenerate a bare `fn` for a private source slice. This variant
+/// sets and restores the thread-local around the emit so visibility round-trips
+/// byte-identically.
 pub fn emit_from_resolved_with_visibility(
     resolved_term_json: &str,
     function_name: &str,
@@ -327,19 +357,7 @@ pub fn emit_from_resolved_with_visibility(
     // RAII guard so the thread-local is restored even if emit_from_resolved
     // panics — a leaked CURRENT_VISIBILITY would otherwise contaminate
     // subsequent realizations on the same thread.
-    struct VisibilityGuard {
-        previous: String,
-    }
-    impl Drop for VisibilityGuard {
-        fn drop(&mut self) {
-            let previous = std::mem::take(&mut self.previous);
-            CURRENT_VISIBILITY.with(|v| *v.borrow_mut() = previous);
-        }
-    }
-    let _guard = VisibilityGuard {
-        previous: CURRENT_VISIBILITY.with(|v| v.borrow().clone()),
-    };
-    CURRENT_VISIBILITY.with(|v| *v.borrow_mut() = visibility.to_string());
+    let _guard = VisibilityGuard::set(visibility);
     emit_from_resolved(
         resolved_term_json,
         function_name,
@@ -2265,15 +2283,19 @@ pub fn dispatch(request: &Value) -> Value {
                 .filter(|name| !name.is_empty())
                 .unwrap_or(function);
             let mode = params.get("mode").and_then(Value::as_str);
-            // Visibility for this function. Set the thread-local so
-            // function_source emits `pub fn` / `pub(crate) fn` / `fn`
-            // matching the lifted source.
+            // Visibility for this function. Install via the RAII guard so the
+            // thread-local is restored when this dispatch arm returns (or
+            // panics) — an un-restored write would leak `pub`/`pub(crate)` into
+            // the next realization on this thread (the cross-test pollution bug).
+            // function_source then emits `pub fn` (default/unset) /
+            // `pub(crate) fn` / bare `fn` (explicit "private") matching the
+            // lifted source.
             let visibility = params
                 .get("visibility")
                 .and_then(Value::as_str)
                 .unwrap_or("")
                 .to_string();
-            CURRENT_VISIBILITY.with(|v| *v.borrow_mut() = visibility);
+            let _visibility_guard = VisibilityGuard::set(&visibility);
             let cn_for_attr = params
                 .get("conceptName")
                 .or_else(|| params.get("concept_name"))
@@ -3321,7 +3343,21 @@ fn function_source(
     let indented = resolve_macro_indent_sentinels(&indented);
     let vis_prefix = CURRENT_VISIBILITY.with(|v| {
         let s = v.borrow();
-        if s.is_empty() { String::new() } else { format!("{} ", s.as_str()) }
+        // Visibility resolution:
+        //   ""        (unset/default) => `pub` — the realizer's product surface
+        //             is public API (every emit_stub/emit_from_resolved fixture
+        //             plus the trinity/value functions are `pub fn`), so an unset
+        //             thread-local must default to public, not silently private.
+        //   "private" (explicit sentinel) => no prefix => bare `fn`. The D7
+        //             source-round-trip threads this when the lifted source slice
+        //             had inherited/private visibility, so explicit private still
+        //             overrides the public default (#1448 round-trip invariant).
+        //   "pub" / "pub(crate)" / "pub(super)" / "pub(in ...)" => emit verbatim.
+        match s.as_str() {
+            "" => "pub ".to_string(),
+            "private" => String::new(),
+            other => format!("{other} "),
+        }
     });
     // Emit #[provekit::sugar(concept = "X")] attribute when concept name
     // is known. This marks the function for re-lifting in subsequent
@@ -4248,7 +4284,7 @@ mod tests {
         assert!(!rendered.is_stub);
         assert_eq!(
             rendered.source,
-            "pub fn null() -> Arc < Value > {\n    new(Value::Null)\n}\n"
+            "pub fn null() -> Arc<Value> {\n    new(Value::Null)\n}\n"
         );
     }
 
@@ -4297,7 +4333,7 @@ mod tests {
         assert!(!rendered.is_stub);
         assert_eq!(
             rendered.source,
-            "pub fn null() -> Arc < Value > {\n    Arc::new(Value::Null)\n}\n"
+            "pub fn null() -> Arc<Value> {\n    Arc::new(Value::Null)\n}\n"
         );
     }
 
@@ -4317,7 +4353,7 @@ mod tests {
         assert!(!rendered.is_stub);
         assert_eq!(
             rendered.source,
-            "pub fn boolean(b: bool) -> Arc < Value > {\n    Arc::new(Value::Bool(b))\n}\n"
+            "pub fn boolean(b: bool) -> Arc<Value> {\n    Arc::new(Value::Bool(b))\n}\n"
         );
     }
 
@@ -4337,7 +4373,7 @@ mod tests {
         assert!(!rendered.is_stub);
         assert_eq!(
             rendered.source,
-            "pub fn integer(n: i64) -> Arc < Value > {\n    Arc::new(Value::Integer(n))\n}\n"
+            "pub fn integer(n: i64) -> Arc<Value> {\n    Arc::new(Value::Integer(n))\n}\n"
         );
     }
 
@@ -4357,7 +4393,7 @@ mod tests {
         assert!(!rendered.is_stub);
         assert_eq!(
             rendered.source,
-            "pub fn string(s: String) -> Arc < Value > {\n    Arc::new(Value::String(s))\n}\n"
+            "pub fn string(s: String) -> Arc<Value> {\n    Arc::new(Value::String(s))\n}\n"
         );
     }
 
@@ -4377,7 +4413,7 @@ mod tests {
         assert!(!rendered.is_stub);
         assert_eq!(
             rendered.source,
-            "pub fn string<S: Into<String>>(s: S) -> Arc < Value > {\n    Arc::new(Value::String(s.into()))\n}\n"
+            "pub fn string<S: Into<String>>(s: S) -> Arc<Value> {\n    Arc::new(Value::String(s.into()))\n}\n"
         );
     }
 
