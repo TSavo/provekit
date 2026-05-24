@@ -4,7 +4,12 @@ import java.io.BufferedReader;
 import java.io.IOException;
 import java.io.InputStreamReader;
 import java.io.PrintWriter;
+import java.util.ArrayList;
+import java.util.Collections;
+import java.util.LinkedHashMap;
+import java.util.List;
 
+import com.provekit.ir.Blake3;
 import com.provekit.ir.Jcs;
 
 /**
@@ -26,6 +31,57 @@ import com.provekit.ir.Jcs;
  * test-class shell.
  */
 public final class RpcServer {
+
+    /**
+     * The plugin-memento {@code header.content} payload (§4.2.1) for this
+     * kit's {@code provekit.plugin.describe} response. This is the kit's
+     * capability self-description: which neutral predicates it can emit
+     * JUnit5 assertions for. It is INLINE plugin self-description, NOT a
+     * substrate catalog memento (the #1402 reframe: framework knowledge stays
+     * in the kit).
+     *
+     * <p>It is the single source of truth for both the describe response and
+     * the {@link #PLUGIN_CID} computation. JCS-canonicalizing this exact
+     * object (with the surrounding header fields, {@code cid} elided) and
+     * BLAKE3-512 hashing it MUST reproduce {@link #PLUGIN_CID} — enforced by
+     * {@code RpcServerDescribeTest}. Changing it requires re-minting the CID
+     * (via {@code mint-plugin-cid}) and updating the constant.
+     */
+    static final String CONTENT_JSON =
+        "{"
+        + "\"emits\":\"junit5-assertions\","
+        + "\"predicates\":["
+        + "\"concept:eq\",\"concept:ne\",\"concept:lt\",\"concept:gt\","
+        + "\"concept:le\",\"concept:ge\",\"concept:option-is-some\","
+        + "\"concept:option-is-none\",\"concept:fallible-err\""
+        + "],"
+        + "\"target_framework\":\"junit5\","
+        + "\"target_language\":\"java\""
+        + "}";
+
+    static final String KIND = "realize";
+    static final boolean CRITICAL = false;
+    static final String VERSION = "0.1.0";
+    static final List<String> PROTOCOL_VERSIONS = List.of("pep/1.7.0");
+    static final String PROVENANCE_CID =
+        "blake3-512:00000000000000000000000000000000000000000000000000000000"
+        + "00000000000000000000000000000000000000000000000000000000000000000000000000";
+
+    /**
+     * PEP 1.7.0 plugin CID for this kit's describe header. Pre-computed by
+     * {@code mint-plugin-cid} over the §6.1 cid-input
+     * (JCS of {@code {content, critical, kind, protocol_versions,
+     * provenance_cid, schemaVersion, version}}; the {@code cid} field is
+     * elided). The strict loader ({@code provekit-plugin-loader/src/loader.rs})
+     * recomputes and compares this; a mismatch refuses the load. Kept in lockstep
+     * with {@link #CONTENT_JSON} by {@code RpcServerDescribeTest}, which recomputes
+     * the CID in java (provekit-ir Jcs + Blake3, which are byte-identical to the
+     * rust canonicalizer) and asserts equality.
+     */
+    static final String PLUGIN_CID =
+        "blake3-512:b58c3b05c9922848fa235bd93f914a0158780db406484a9d3d5a32836f"
+        + "a93b4d53f52eeebea270062dcc2163905a0a76c113f1d72229d935cf5dc3b517625820";
+
     private final BufferedReader in = new BufferedReader(new InputStreamReader(System.in));
     private final PrintWriter out = new PrintWriter(System.out, true);
     private final JUnitEmitter emitter = new JUnitEmitter();
@@ -83,36 +139,74 @@ public final class RpcServer {
     }
 
     /**
-     * Plugin self-description.
+     * Plugin self-description per PEP 1.7.0 §4.2.1: the JSON-RPC {@code result}
+     * IS the plugin-memento body, an enveloped {@code {envelope, header,
+     * metadata}} object. The strict loader
+     * ({@code provekit-plugin-loader/src/loader.rs}) shape-validates these three
+     * keys, deserializes the header, checks {@code schemaVersion == "1"},
+     * checks {@code protocol_versions} intersects the runtime set, and
+     * recomputes {@code header.cid} via §6.1 — refusing the load on any
+     * mismatch. This response satisfies all of those so the kit loads through
+     * the standard plugin loader (required by the #1436 retirement gauntlet,
+     * which invokes this emitter through that loader).
      *
-     * <p>TODO(loader-integration, out of scope for #1402/PR-6): the strict
-     * PEP 1.7.0 loader in {@code provekit-plugin-loader} expects a full plugin
-     * memento envelope ({@code {envelope, header:{cid, content, ...}, metadata}})
-     * and recomputes the {@code header.cid} to verify it. This kit returns a
-     * simpler capability summary because PR-6's scope is the emitter + module +
-     * tests + PR, NOT substrate-side loader wiring (which also needs a
-     * pre-computed PLUGIN_CID over a canonical content payload this kit does
-     * not yet mint). Wire the envelope/header/CID when integrating the kit
-     * into the loader registry.
+     * <p>Mirrors the enveloped shape of {@code provekit-realize-java-core}'s
+     * {@code describeResult()}. The envelope signature is the all-zero
+     * placeholder (the v0 loader parses but does not yet verify signatures).
      */
-    private String describeResult() {
+    String describeResult() {
         return "{"
-            + "\"name\":\"provekit-emit-java-junit\","
-            + "\"version\":\"0.1.0\","
+            + "\"envelope\":{"
+            + "\"declaredAt\":\"2026-05-23T00:00:00.000Z\","
+            + "\"signature\":\"ed25519:AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA\","
+            + "\"signer\":\"ed25519:AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=\""
+            + "},"
+            + "\"header\":{"
+            + "\"cid\":\"" + PLUGIN_CID + "\","
+            + "\"content\":" + CONTENT_JSON + ","
+            + "\"critical\":" + CRITICAL + ","
+            + "\"kind\":\"" + KIND + "\","
             + "\"protocol_versions\":[\"pep/1.7.0\"],"
-            + "\"kind\":\"realize\","
-            + "\"target_language\":\"java\","
-            + "\"target_framework\":\"junit5\","
-            + "\"capabilities\":{"
-            + "\"kits\":[\"java\"],"
-            + "\"emits\":\"junit5-assertions\","
-            + "\"predicates\":["
-            + "\"concept:eq\",\"concept:ne\",\"concept:lt\",\"concept:gt\","
-            + "\"concept:le\",\"concept:ge\",\"concept:option-is-some\","
-            + "\"concept:option-is-none\",\"concept:fallible-err\""
-            + "]"
+            + "\"provenance_cid\":\"" + PROVENANCE_CID + "\","
+            + "\"schemaVersion\":\"1\","
+            + "\"version\":\"" + VERSION + "\""
+            + "},"
+            + "\"metadata\":{"
+            + "\"note\":\"Emits JUnit5 assertions that verify a contract's neutral predicates. Predicate->assertion mapping is inline java framework knowledge (PR-6 / #1402).\""
             + "}"
             + "}";
+    }
+
+    /**
+     * Recompute this kit's plugin CID exactly as the rust loader does (§6.1):
+     * BLAKE3-512 of the JCS encoding of the cid-input map
+     * {@code {content, critical, kind, protocol_versions, provenance_cid,
+     * schemaVersion, version}} (the {@code cid} field is elided;
+     * {@code protocol_versions} sorted ascending). provekit-ir's {@link Jcs}
+     * encoder is byte-identical to rust's {@code provekit_canonicalizer}
+     * (lexicographic codepoint key sort, integer rendering, RFC 8259 string
+     * escaping), so this reproduces {@link #PLUGIN_CID}.
+     */
+    static String computePluginCid() {
+        Jcs.Json content = Jcs.parse(CONTENT_JSON);
+        List<String> pv = new ArrayList<>(PROTOCOL_VERSIONS);
+        Collections.sort(pv);
+        List<Jcs.Json> pvJson = new ArrayList<>();
+        for (String v : pv) pvJson.add(Jcs.string(v));
+
+        LinkedHashMap<String, Jcs.Json> fields = new LinkedHashMap<>();
+        fields.put("content", content);
+        fields.put("critical", Jcs.bool(CRITICAL));
+        fields.put("kind", Jcs.string(KIND));
+        fields.put("protocol_versions", Jcs.array(pvJson));
+        fields.put("provenance_cid", Jcs.string(PROVENANCE_CID));
+        fields.put("schemaVersion", Jcs.string("1"));
+        fields.put("version", Jcs.string(VERSION));
+
+        List<Jcs.Field> fieldList = new ArrayList<>();
+        for (var e : fields.entrySet()) fieldList.add(new Jcs.Field(e.getKey(), e.getValue()));
+        Jcs.Obj input = new Jcs.Obj(fieldList);
+        return Blake3.blake3_512(Jcs.encodeUtf8(input));
     }
 
     private void sendResponse(String id, String result) {
