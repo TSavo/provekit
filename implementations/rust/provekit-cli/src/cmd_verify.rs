@@ -480,9 +480,15 @@ fn verify_one_claim(
             }
         }
         Err(e) => {
-            // wp resolved the callee but refused/errored on a contract it
-            // DID see (e.g. arity mismatch) — a real, reportable gap, not a
-            // silent fall-through.
+            // The callee IS body-bearing (it has a body-derived op-contract)
+            // but the obligation could not be reduced through the body: an
+            // unrecognized assertion shape, an unconvertible operand, an
+            // arity mismatch, or a wp refusal on a nested call. The spine
+            // REFUSES rather than falling through to the refinement path,
+            // because that path would mis-read the body-derived op-contract
+            // (post/formals, no pre) as vacuous and report a FALSE pass.
+            // Refusal leaves the default verdict (Undecidable): not
+            // discharged, not pass, no witness, reason surfaced on the row.
             result.reason = format!("body-discharge: {e}");
             return result;
         }

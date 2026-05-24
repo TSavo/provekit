@@ -90,6 +90,21 @@ fn int_const(n: i64) -> Json {
 ///     `=(double(3), 6)` in its `inv` slot (one bridged callsite).
 ///   - BRIDGE: `sourceSymbol "double" -> targetContractCid <double>`.
 fn publish_double_project(suffix: &str, body_factor: i64) -> PathBuf {
+    // The harvested test assertion `assert_eq!(double(3), 6)` -> inv =(call, 6).
+    let inv = json!({
+        "kind": "atomic", "name": "=",
+        "args": [
+            {"kind": "ctor", "name": "double", "args": [int_const(3)]},
+            int_const(6)
+        ]
+    });
+    publish_double_project_with_inv(suffix, body_factor, inv)
+}
+
+/// Like `publish_double_project` but with an explicit harvested `inv`
+/// formula, so a test can drive an assertion shape OTHER than
+/// `=(<call>, <expected>)` (the reviewer's `<=` false-green probe).
+fn publish_double_project_with_inv(suffix: &str, body_factor: i64, inv: Json) -> PathBuf {
     let dir = unique_dir(suffix);
     let proof_dir = dir.join(".provekit");
     fs::create_dir_all(&proof_dir).expect("mkdir .provekit");
@@ -123,19 +138,14 @@ fn publish_double_project(suffix: &str, body_factor: i64) -> PathBuf {
     let (target_cid, target_bytes) = flat_member(target_env);
     members.insert(target_cid.clone(), target_bytes);
 
-    // The harvested test assertion `assert_eq!(double(3), 6)` -> inv =(call, 6).
+    // The harvested test assertion in the source contract's `inv` slot
+    // (one bridged callsite). The default is `=(double(3), 6)`.
     let source_env = json!({
         "evidence": {
             "kind": "contract",
             "body": {
                 "contractName": "double_test",
-                "inv": {
-                    "kind": "atomic", "name": "=",
-                    "args": [
-                        {"kind": "ctor", "name": "double", "args": [int_const(3)]},
-                        int_const(6)
-                    ]
-                }
+                "inv": inv
             }
         }
     });
@@ -314,6 +324,91 @@ fn verify_double_broken_body_fails_unsatisfied_no_witness() {
         "broken-body claim must exit 1 (EXIT_VERIFY_FAIL, not 3=undecidable); got {code}"
     );
     eprintln!("NEGATIVE_EXIT_CODE={code} STATUS={}", claim["status"]);
+
+    let _ = fs::remove_dir_all(&project);
+}
+
+/// FALSE-GREEN REGRESSION (PR-22 review blocker). The reviewer's exact
+/// probe: take the POSITIVE fixture and change the assertion predicate from
+/// `=` to `<=`. The callee `double` STILL has a body-derived op-contract,
+/// but `<=(double(3), 10)` is NOT the reducible `=(<call>, <expected>)`
+/// shape.
+///
+/// Before the fix, `extract_body_obligation` returned `Ok(None)` for the
+/// unrecognized shape, the claim fell through to `resolve_target` +
+/// `instantiate`, the body-derived op-contract (post/formals, NO `pre`) hit
+/// the "vacuous: target carries no precondition" branch, and verify
+/// reported `status:"discharged", pass:true, exit 0` -- a GREEN PASS for a
+/// claim it never checked. That is the one thing the verify spine must
+/// never do.
+///
+/// The fix: once a callee is body-bearing, an unreducible obligation
+/// REFUSES (not vacuous-pass). This test asserts the false green is closed:
+/// the claim must NOT be discharged and must NOT pass.
+#[test]
+fn verify_body_bearing_unrecognized_shape_refuses_not_vacuous_pass() {
+    if !z3_available() {
+        eprintln!("z3 not on PATH: skipping false-green regression test");
+        return;
+    }
+    // `<=(double(3), 10)` -- a body-bearing callee, but not the `=` shape.
+    let inv = json!({
+        "kind": "atomic", "name": "<=",
+        "args": [
+            {"kind": "ctor", "name": "double", "args": [int_const(3)]},
+            int_const(10)
+        ]
+    });
+    let project = publish_double_project_with_inv("falsegreen", 2, inv);
+    let witnesses = project.join("witnesses-out");
+    let (receipt, code) = run_verify_json_with_code(&project, &witnesses);
+
+    assert_eq!(receipt["totalClaims"], 1, "receipt: {receipt}");
+    let claim = &receipt["claims"].as_array().expect("claims")[0];
+
+    // THE BLOCKER ASSERTION: a body-bearing claim whose shape we cannot
+    // reduce must NOT report a green pass.
+    assert_ne!(
+        claim["status"], "discharged",
+        "unreducible body-bearing claim must NOT be discharged (no false green); claim: {claim}"
+    );
+    assert_eq!(
+        claim["pass"], false,
+        "unreducible body-bearing claim must NOT pass; claim: {claim}"
+    );
+    assert_ne!(
+        claim["obligationClass"], "vacuous",
+        "must NOT take the vacuous-discharge branch; claim: {claim}"
+    );
+
+    // It refuses with a body-discharge reason (the honest posture).
+    let reason = claim["reason"].as_str().unwrap_or("");
+    assert!(
+        reason.contains("body-discharge") && reason.contains("refuse"),
+        "refusal reason must be surfaced; got `{reason}`"
+    );
+
+    // No witness for a claim that was never discharged.
+    assert!(
+        claim["witnessCid"].is_null(),
+        "no witness for a refused claim; claim: {claim}"
+    );
+    let witness_files: Vec<_> = fs::read_dir(&witnesses)
+        .map(|rd| rd.filter_map(|e| e.ok()).collect())
+        .unwrap_or_default();
+    assert!(
+        witness_files.is_empty(),
+        "witness dir must be empty for a refused claim; found {} files",
+        witness_files.len()
+    );
+
+    // Must NOT exit 0 (clean pass). Undecidable -> the receipt is not `ok`.
+    assert_ne!(code, 0, "a refused claim must not exit 0 (clean); got {code}");
+    assert_eq!(
+        receipt["ok"], false,
+        "receipt must not be ok when a claim was refused; receipt: {receipt}"
+    );
+    eprintln!("FALSEGREEN_STATUS={} EXIT={code}", claim["status"]);
 
     let _ = fs::remove_dir_all(&project);
 }

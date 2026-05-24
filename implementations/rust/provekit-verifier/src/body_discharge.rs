@@ -147,11 +147,19 @@ pub enum BodyObligation {
 ///     `<call>` the ctor whose name == the bridge's sourceSymbol, AND
 ///   - the resolver knows the callee's body-derived op-contract.
 ///
-/// Returns `Ok(None)` when the shape is not recognized or the callee has
-/// no body-derived contract: the caller falls through to the existing
-/// (instantiate-based) discharge path. Returns `Err` only when wp itself
-/// refuses or errors on a contract it DID resolve (a real, reportable gap,
-/// e.g. an arity mismatch).
+/// Returns `Ok(None)` ONLY when the callee has **no** body-derived
+/// op-contract: the claim is genuinely not body-bearing and the caller
+/// falls through to the existing (instantiate-based) refinement path.
+///
+/// Returns `Err` (a REFUSAL) when the callee **does** have a body-derived
+/// op-contract but the obligation cannot be reduced through it: the
+/// assertion shape is not the recognized `=(<call>, <expected>)`, an
+/// operand is unconvertible, or wp itself refuses/errors. This is the
+/// load-bearing honesty boundary: once a callee is body-bearing, the spine
+/// MUST either reduce the obligation or refuse it. It must NOT fall through
+/// to the refinement path, because that path treats a body-derived
+/// op-contract (which carries `post`/`formals` but no `pre`) as VACUOUS and
+/// reports a false `discharged`/`pass` for a claim it never checked.
 pub fn extract_body_obligation(
     cs: &CallSite,
     pool: &MementoPool,
@@ -159,37 +167,63 @@ pub fn extract_body_obligation(
     let resolver = CatalogResolver::new(pool);
 
     // The callee must have a body-derived contract; otherwise this is not
-    // a body-bearing claim (fall through).
+    // a body-bearing claim (fall through honestly).
     if resolver.lookup(&cs.bridge_ir_name).is_none() {
         return Ok(None);
     }
+
+    // From here on the callee IS body-bearing. Every failure to build the
+    // obligation is a REFUSAL (`Err`), never an `Ok(None)` fall-through —
+    // see the doc comment's honesty boundary.
 
     // Recognize the `=(<call>, <expected>)` assertion shape. The callsite
     // carries the containing atomic (the `=` predicate the call sits in),
     // captured by `enumerate_callsites`.
     let Some((call_json, expected_json)) = recognize_eq_call(cs) else {
-        return Ok(None);
+        let shape = cs
+            .containing_atomic
+            .as_ref()
+            .and_then(|a| a.get("name"))
+            .and_then(|v| v.as_str())
+            .unwrap_or("<none>");
+        return Err(format!(
+            "refuse: callee `{}` has a body-derived contract but the harvested \
+             assertion is not the reducible `=(<call>, <expected>)` shape \
+             (containing predicate: `{shape}`); the body-discharge spine \
+             refuses rather than reporting a vacuous pass",
+            cs.bridge_ir_name
+        ));
     };
 
     // Ctor->Op (Delta 1): deserialize the harvested call as an `IrTerm`
     // (a `ctor`), then convert into a `core::Term::Op` so wp's `wp_op`
     // dispatches on it. The op CID is the deterministic name-derived CID.
-    let call_ir: IrTerm = match serde_json::from_value(call_json.clone()) {
-        Ok(t) => t,
-        Err(_) => return Ok(None),
-    };
+    let call_ir: IrTerm = serde_json::from_value(call_json.clone()).map_err(|e| {
+        format!(
+            "refuse: callee `{}` is body-bearing but its call term did not \
+             deserialize as an IR term: {e}",
+            cs.bridge_ir_name
+        )
+    })?;
     let call_term: Term = call_ir.into();
     // Guard: the recognized call must actually be an op (a ctor with args).
     if !matches!(call_term, Term::Op { .. }) {
-        return Ok(None);
+        return Err(format!(
+            "refuse: callee `{}` is body-bearing but its call term is not an \
+             op (no args to reduce through the body)",
+            cs.bridge_ir_name
+        ));
     }
 
     // The expected value (RHS of the assertion) becomes the postcondition:
     //   Q = (result == <expected>)
-    let expected_ir: IrTerm = match serde_json::from_value(expected_json.clone()) {
-        Ok(t) => t,
-        Err(_) => return Ok(None),
-    };
+    let expected_ir: IrTerm = serde_json::from_value(expected_json.clone()).map_err(|e| {
+        format!(
+            "refuse: callee `{}` is body-bearing but the assertion's expected \
+             value did not deserialize as an IR term: {e}",
+            cs.bridge_ir_name
+        )
+    })?;
     let q = IrFormula::Atomic {
         name: "=".to_string(),
         args: vec![
@@ -208,11 +242,18 @@ pub fn extract_body_obligation(
                 serde_json::to_value(&reduced).map_err(|e| format!("wp obligation serialize: {e}"))?;
             Ok(Some(BodyObligation::Reduced(reduced_json)))
         }
-        Err(WpError::Refused(_)) => {
-            // The callee resolved but a sub-term did not (an unresolved
-            // nested call). Not a body-bearing claim we can discharge; fall
-            // through honestly rather than forcing.
-            Ok(None)
+        Err(WpError::Refused(r)) => {
+            // The top-level callee resolved (we are past the lookup gate),
+            // but wp could not complete the reduction — e.g. a nested call
+            // whose contract has not landed. This is a body-bearing claim we
+            // cannot discharge, so we REFUSE: falling through to the
+            // refinement path would mis-read the body-derived op-contract as
+            // vacuous and report a false pass.
+            Err(format!(
+                "refuse: callee `{}` is body-bearing but wp could not reduce \
+                 the obligation: {r}",
+                cs.bridge_ir_name
+            ))
         }
         Err(e) => Err(format!("wp body-reduction failed: {e}")),
     }
