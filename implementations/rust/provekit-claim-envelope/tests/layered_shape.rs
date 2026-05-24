@@ -79,6 +79,8 @@ fn pre_n_gt_0() -> Arc<Value> {
 
 fn contract_args() -> MintContractArgs {
     MintContractArgs {
+        formals: Vec::new(),
+        formal_sorts: Vec::new(),
         contract_name: "demo".into(),
         pre: Some(pre_n_gt_0()),
         post: None,

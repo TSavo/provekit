@@ -69,6 +69,11 @@ type LiftResult struct {
 	SourceUnits []SourceUnit
 	Refusals    []Refusal
 	Diagnostics []Diagnostic
+	// Annotations maps a lifted function's fnName to the authoring
+	// declaration (`//provekit:boundary` / `//provekit:sugar`) that drove
+	// its emission, when one was present. Empty under the bare verify/round-
+	// trip surfaces; populated by the authoring surface (AnnotatedOnly).
+	Annotations map[string]*Annotation
 }
 
 func (r LiftResult) FunctionContracts() []FunctionContract {

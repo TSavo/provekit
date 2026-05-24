@@ -52,6 +52,7 @@ use owo_colors::OwoColorize;
 use provekit_canonicalizer::{blake3_512_of, encode_jcs};
 use provekit_proof_envelope::{ed25519_pubkey_string, ed25519_sign_string};
 use provekit_verifier::solvers::registry;
+use provekit_verifier::body_discharge;
 use provekit_verifier::{
     classify, enumerate_callsites, instantiate, load_all_proofs, resolve_target, run_plan,
     smt_emitter, DispatchConfig, FormulaTheory, MementoPool, ObligationVerdict, SolverHandle,
@@ -436,32 +437,80 @@ fn verify_one_claim(
         witness_cid: None,
     };
 
-    // Resolve the claim's target contract (its pre formula = the
-    // refinement target).
-    let resolved = match resolve_target::run(cs, pool) {
-        Ok(r) => r,
-        Err(e) => {
-            result.reason = format!("resolve-target: {e}");
-            return result;
+    // Body-discharge path (#1440): when the callsite names a callee with a
+    // body-derived op-contract AND its harvested assertion has the
+    // `=(<call>, <expected>)` shape, reduce the obligation THROUGH the
+    // body. wp inlines the callee's value-semantics (`double(x) = x*2`),
+    // so the solver sees a concrete formula (`*(3,2) == 6`) instead of an
+    // uninterpreted `double` symbol. This is the spine that turns a
+    // harvested body-obligation into a real, dischargeable / refutable
+    // claim. Anything outside the recognized shape falls through to the
+    // existing refinement path below.
+    let obligation = match body_discharge::extract_body_obligation(cs, pool) {
+        Ok(Some(body_discharge::BodyObligation::Reduced(reduced))) => reduced,
+        Ok(None) => {
+            // Not a body-bearing claim: resolve the target contract's pre
+            // and build the refinement obligation, exactly as before.
+            let resolved = match resolve_target::run(cs, pool) {
+                Ok(r) => r,
+                Err(e) => {
+                    result.reason = format!("resolve-target: {e}");
+                    return result;
+                }
+            };
+
+            // When the target has no precondition the claim is vacuously
+            // discharged (nothing to prove). Otherwise build the wp /
+            // refinement obligation: instantiate the resolved pre with the
+            // call's arg term (the same obligation the prover builds).
+            let Some(_pre) = resolved.ir_formula.as_ref() else {
+                // HONESTY BOUNDARY (catches every body-bearing variant). The
+                // vacuous-discharge shortcut is legitimate ONLY for a
+                // genuinely non-body-bearing target. A target carrying
+                // `formals` is body-bearing by definition: its `post`
+                // describes a body whose obligation we reached here WITHOUT
+                // reducing (e.g. `extract_body_obligation` could not build the
+                // obligation because the body-derived `post` was not a
+                // `result == <expr>` equation, so the resolver dropped it).
+                // Vacuous-passing it would be a false green. Refuse instead:
+                // leave the default Undecidable verdict (not discharged, not
+                // pass, no witness).
+                if resolved.target_is_body_bearing {
+                    result.reason = format!(
+                        "body-discharge: refuse: target `{}` is body-bearing \
+                         (carries `formals`) but its obligation was not reduced \
+                         and it has no precondition; refusing rather than \
+                         reporting a vacuous pass",
+                        cs.bridge_ir_name
+                    );
+                    return result;
+                }
+                result.verdict = ObligationVerdict::Discharged;
+                result.reason = "vacuous: target carries no precondition".to_string();
+                result.obligation_class = "vacuous".to_string();
+                result.discharging_solver = "none (vacuous)".to_string();
+                return result;
+            };
+
+            match instantiate::run(&resolved, &cs.arg_term) {
+                Ok(ob) => ob.ir_formula,
+                Err(e) => {
+                    result.reason = format!("instantiate: {e}");
+                    return result;
+                }
+            }
         }
-    };
-
-    // Build the obligation. When the target has no precondition the
-    // claim is vacuously discharged (nothing to prove). Otherwise build
-    // the wp / refinement obligation: instantiate the resolved pre with
-    // the call's arg term (the same obligation the prover builds).
-    let Some(_pre) = resolved.ir_formula.as_ref() else {
-        result.verdict = ObligationVerdict::Discharged;
-        result.reason = "vacuous: target carries no precondition".to_string();
-        result.obligation_class = "vacuous".to_string();
-        result.discharging_solver = "none (vacuous)".to_string();
-        return result;
-    };
-
-    let obligation = match instantiate::run(&resolved, &cs.arg_term) {
-        Ok(ob) => ob.ir_formula,
         Err(e) => {
-            result.reason = format!("instantiate: {e}");
+            // The callee IS body-bearing (it has a body-derived op-contract)
+            // but the obligation could not be reduced through the body: an
+            // unrecognized assertion shape, an unconvertible operand, an
+            // arity mismatch, or a wp refusal on a nested call. The spine
+            // REFUSES rather than falling through to the refinement path,
+            // because that path would mis-read the body-derived op-contract
+            // (post/formals, no pre) as vacuous and report a FALSE pass.
+            // Refusal leaves the default verdict (Undecidable): not
+            // discharged, not pass, no witness, reason surfaced on the row.
+            result.reason = format!("body-discharge: {e}");
             return result;
         }
     };
@@ -804,6 +853,7 @@ mod tests {
             property_name: "demo_property".into(),
             property_cid: "blake3-512:prop".into(),
             arg_term: None,
+            containing_atomic: None,
         };
         let obligation = json!({"kind":"atomic","name":"true","args":[]});
         let cid = mint_verification_witness(

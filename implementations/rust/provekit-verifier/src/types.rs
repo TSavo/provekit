@@ -684,6 +684,13 @@ pub struct CallSite {
     pub property_name: String,
     pub property_cid: String,
     pub arg_term: Option<Json>,
+    /// The atomic predicate the matched call ctor sits directly inside, if
+    /// the call was found as an argument of an atomic (e.g. the `=` in a
+    /// harvested `assert_eq!(double(3), 6)` -> `=(double(3), 6)`). Captured
+    /// so the body-discharge path can derive the postcondition `Q` (the
+    /// atomic with the call replaced by `result`). `None` when the call was
+    /// not directly under an atomic. Does not participate in any CID.
+    pub containing_atomic: Option<Json>,
 }
 
 #[derive(Debug, Default, Clone)]
@@ -691,6 +698,23 @@ pub struct ResolvedProperty {
     pub cid: String,
     pub ir_formula: Option<Json>,
     pub ir_kit_version: String,
+    /// True iff the resolved target contract is a body-derived op-contract
+    /// (body-bearing), not a plain refinement target.
+    ///
+    /// The canonical marker is a non-empty `formals` array on the contract
+    /// body: that is what `core::bind::bind_function_bridge` mints and what
+    /// body-bearing test fixtures construct. If a future contract shape
+    /// carries body markers under a different field, it MUST be recognized
+    /// here (`resolve_target::run` is the single setter) so the honesty
+    /// boundary stays complete.
+    ///
+    /// A body-bearing target whose obligation cannot be reduced and
+    /// discharged MUST be refused, never vacuous-passed -- the "no
+    /// precondition => vacuously true" shortcut is only legitimate for
+    /// genuinely non-body-bearing claims. Both consumers enforce this before
+    /// their vacuous-discharge branch: `cmd_verify::verify_one_claim` and
+    /// `runner::work_one`.
+    pub target_is_body_bearing: bool,
 }
 
 #[derive(Debug, Clone)]

@@ -17,11 +17,37 @@ type rpcRequest struct {
 }
 
 type liftParams struct {
-	WorkspaceRoot string   `json:"workspace_root"`
-	SourcePaths   []string `json:"source_paths"`
+	WorkspaceRoot string         `json:"workspace_root"`
+	SourcePaths   []string       `json:"source_paths"`
+	Options       map[string]any `json:"options"`
+}
+
+// dialectOptionsFromParams reads the verify-facing dialect selector from the
+// lift `options` bag. The verifier-driving caller (kit-dispatch) passes
+// `options.dialect = "core"` so the body-derived postcondition uses SMT-LIB
+// core op symbols and is z3-dischargeable. Absent / any other value keeps the
+// round-trip namespaced dialect.
+func dialectOptionsFromParams(opts map[string]any) LiftOptions {
+	if opts == nil {
+		return LiftOptions{}
+	}
+	if d, ok := opts["dialect"].(string); ok && d == "core" {
+		return LiftOptions{NormalizeCoreArith: true}
+	}
+	return LiftOptions{}
 }
 
 func RunRPC(stdin io.Reader, stdout io.Writer) error {
+	return RunRPCWithDefault(stdin, stdout, LiftOptions{})
+}
+
+// RunRPCWithDefault runs the lift RPC loop with a default op dialect applied
+// to every `lift` call that does not itself name a `dialect` in its options.
+// The kit-dispatch verify pipeline resolves the `go` lift surface to a binary
+// launched with `--dialect=core`, so the body-derived postconditions are
+// z3-dischargeable without the language-neutral dispatcher having to know
+// anything about Go.
+func RunRPCWithDefault(stdin io.Reader, stdout io.Writer, defaultOpts LiftOptions) error {
 	scanner := bufio.NewScanner(stdin)
 	for scanner.Scan() {
 		line := scanner.Bytes()
@@ -37,7 +63,7 @@ func RunRPC(stdin io.Reader, stdout io.Writer) error {
 		case "initialize":
 			writeRPC(stdout, successResponse(req.ID, InitializeResult()))
 		case "lift":
-			writeRPC(stdout, handleLift(req.ID, req.Params))
+			writeRPC(stdout, handleLift(req.ID, req.Params, defaultOpts))
 		case "compile":
 			writeRPC(stdout, handleCompile(req.ID, req.Params))
 		case "shutdown":
@@ -50,7 +76,7 @@ func RunRPC(stdin io.Reader, stdout io.Writer) error {
 	return scanner.Err()
 }
 
-func handleLift(id json.RawMessage, raw json.RawMessage) any {
+func handleLift(id json.RawMessage, raw json.RawMessage, defaultOpts LiftOptions) any {
 	var params liftParams
 	if len(raw) > 0 {
 		if err := json.Unmarshal(raw, &params); err != nil {
@@ -68,7 +94,11 @@ func handleLift(id json.RawMessage, raw json.RawMessage) any {
 	if len(params.SourcePaths) == 0 {
 		return errorResponse(id, -32602, "source_paths must be a non-empty array of strings")
 	}
-	result, err := LiftPaths(params.WorkspaceRoot, params.SourcePaths)
+	liftOpts := defaultOpts
+	if perCall := dialectOptionsFromParams(params.Options); perCall.NormalizeCoreArith {
+		liftOpts = perCall
+	}
+	result, err := LiftPathsWithOptions(params.WorkspaceRoot, params.SourcePaths, liftOpts)
 	if err != nil {
 		return errorResponse(id, -32603, fmt.Sprintf("Lift failed: %v", err))
 	}

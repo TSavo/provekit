@@ -8,19 +8,20 @@
 
 use serde_json::Value as Json;
 
-use crate::types::{CallSite, MementoPool};
+use crate::types::{memento_body, memento_kind, CallSite, MementoPool};
 
 pub fn run(pool: &MementoPool) -> Vec<CallSite> {
     let mut out = Vec::new();
     for (cid, env) in &pool.mementos {
-        let ev = match env.get("evidence") {
-            Some(v) if v.is_object() => v,
-            _ => continue,
-        };
-        if ev.get("kind").and_then(|k| k.as_str()) != Some("contract") {
+        // Shape-agnostic (matches resolve_target): v1.2-layered contracts
+        // carry their kind on `header.kind` and pre/post/inv on `header`;
+        // v1.1-flat carry them on `evidence.kind` / `evidence.body`. The
+        // production harvest path (`mint_contract`) emits v1.2; reading
+        // only `evidence.body` here meant harvested calls never enumerated.
+        if memento_kind(env) != Some("contract") {
             continue;
         }
-        let body = match ev.get("body") {
+        let body = match memento_body(env) {
             Some(v) if v.is_object() => v,
             _ => continue,
         };
@@ -56,7 +57,11 @@ fn walk_formula(
         "atomic" => {
             if let Some(args) = f.get("args").and_then(|v| v.as_array()) {
                 for a in args {
-                    walk_term(a, property_name, property_cid, pool, out);
+                    // Pass the enclosing atomic down: when a bridged call
+                    // ctor is found as a direct argument of this atomic,
+                    // the body-discharge path needs the whole predicate
+                    // (e.g. `=(double(3), 6)`) to derive the postcondition.
+                    walk_term(a, property_name, property_cid, pool, Some(f), out);
                 }
             }
         }
@@ -83,6 +88,7 @@ fn walk_term(
     property_name: &str,
     property_cid: &str,
     pool: &MementoPool,
+    containing_atomic: Option<&Json>,
     out: &mut Vec<CallSite>,
 ) {
     if !t.is_object() {
@@ -97,9 +103,9 @@ fn walk_term(
         .unwrap_or_default()
         .to_string();
     if let Some(benv) = pool.bridges_by_symbol.get(&name) {
-        let bbody = benv
-            .get("evidence")
-            .and_then(|e| e.get("body"))
+        // Shape-agnostic: v1.2-layered bridges carry the fields on
+        // `header`; v1.1-flat on `evidence.body`.
+        let bbody = memento_body(benv)
             .cloned()
             .unwrap_or_else(|| serde_json::json!({}));
         // Forward pin: REQUIRED by the current BridgeDeclaration grammar
@@ -137,12 +143,16 @@ fn walk_term(
                 .get("args")
                 .and_then(|v| v.as_array())
                 .and_then(|arr| arr.first().cloned()),
+            containing_atomic: containing_atomic.cloned(),
         };
         out.push(cs);
     }
+    // Descend into the call's arguments. A nested call is no longer a
+    // direct argument of `containing_atomic`, so stop threading it: only a
+    // call DIRECTLY under an atomic carries that atomic as its `Q` source.
     if let Some(args) = t.get("args").and_then(|v| v.as_array()) {
         for a in args {
-            walk_term(a, property_name, property_cid, pool, out);
+            walk_term(a, property_name, property_cid, pool, None, out);
         }
     }
 }

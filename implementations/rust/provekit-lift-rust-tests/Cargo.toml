@@ -19,3 +19,5 @@ serde_json = { workspace = true }
 [dev-dependencies]
 provekit-lift = { path = "../provekit-lift" }
 provekit-verifier = { path = "../provekit-verifier" }
+libprovekit = { path = "../libprovekit" }
+syn = { workspace = true, features = ["full", "extra-traits"] }

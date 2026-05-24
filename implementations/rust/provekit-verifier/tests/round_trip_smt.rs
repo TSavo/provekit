@@ -29,6 +29,7 @@ fn instantiate_then_smt_emit_basic() {
         cid: "blake3-512:00".into(),
         ir_formula: Some(pre),
         ir_kit_version: String::new(),
+        ..Default::default()
     };
     // Caller passed a var "x" as the argument.
     let arg = Some(json!({"kind": "var", "name": "x"}));

@@ -697,6 +697,154 @@ fn bind_response_contract(payload: &Json, payload_cid: &Cid) -> Contract {
     )
 }
 
+// ============================================================
+// Bridge writer (PR-22, #1440).
+// ============================================================
+//
+// A harvested call `double(3)` is dischargeable through verify ONLY when
+// three things are in the pool:
+//   1. a body-derived op-contract for `double` (post = result == *(x, 2)),
+//   2. a bridge `sourceSymbol "double" -> targetContractCid <op-contract>`,
+//   3. (transitively) the proof bundle the bridge pins.
+// The bridge's CID commits to the op-contract CID (it is in `inputCids`),
+// and the bundle commits to both; that is the proofchain rollup.
+//
+// This writer is the production source of (1) and (2): it takes the
+// `FunctionContractMemento` walk already builds for a function (which
+// carries `fn_name`, `formals`, `formal_sorts`, and the BODY-DERIVED
+// `post`), and emits both member envelopes in the v1.1-flat
+// `evidence.body` shape that `enumerate_callsites` / `resolve_target` /
+// `body_discharge::CatalogResolver` consume. The op-contract member CID is
+// the bridge's `targetContractCid`, so verify resolves the chain.
+
+/// One v1.1-flat member envelope plus its re-derivable member CID
+/// (`blake3_512(JCS(envelope))`, the same identity `load_all_proofs`
+/// recomputes for a member with no `cid` / `producerSignature` field).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct BridgeMember {
+    /// The member CID = `blake3-512:<hex>`.
+    pub cid: Cid,
+    /// The member envelope JSON (no `cid` / `producerSignature` — those are
+    /// added by the proof-envelope builder when the bundle is assembled).
+    pub envelope: Json,
+}
+
+/// The pair of members a function bind produces for body-discharge: the
+/// body-derived op-contract and the bridge that points a harvested call at
+/// it.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct FunctionBridgeMembers {
+    /// The body-derived op-contract member (carries `formals` + `post`).
+    pub op_contract: BridgeMember,
+    /// The bridge member (`sourceSymbol -> targetContractCid`).
+    pub bridge: BridgeMember,
+}
+
+/// Re-derive a v1.1-flat member CID for an envelope, matching
+/// `provekit_verifier::load_all_proofs::compute_member_cid`: strip any
+/// `cid` / `producerSignature`, JCS-encode, BLAKE3-512.
+fn flat_member_cid(envelope: &Json) -> Cid {
+    let mut stripped = envelope.clone();
+    if let Json::Object(map) = &mut stripped {
+        map.remove("cid");
+        map.remove("producerSignature");
+    }
+    let canonical = provekit_canonicalizer::encode_jcs(&json_to_canonical_value(&stripped));
+    Cid::from_hash_output(blake3_512_of(canonical.as_bytes()))
+}
+
+/// Convert a `serde_json::Value` into the canonicalizer's `Value` so the
+/// JCS bytes line up with every other minter in the tree.
+fn json_to_canonical_value(j: &Json) -> std::sync::Arc<provekit_canonicalizer::Value> {
+    use provekit_canonicalizer::Value as CV;
+    match j {
+        Json::Null => CV::null(),
+        Json::Bool(b) => CV::boolean(*b),
+        Json::Number(n) => CV::integer(n.as_i64().unwrap_or(0)),
+        Json::String(s) => CV::string(s.clone()),
+        Json::Array(items) => CV::array(items.iter().map(json_to_canonical_value).collect()),
+        Json::Object(map) => CV::object(
+            map.iter()
+                .map(|(k, v)| (k.clone(), json_to_canonical_value(v)))
+                .collect::<Vec<_>>(),
+        ),
+    }
+}
+
+/// Build the body-discharge members (op-contract + bridge) for a function
+/// contract. `target_proof_cid` is the `.proof` bundle CID the bridge pins
+/// (`BridgeDeclaration.targetProofCid`); pass the CID of the bundle these
+/// members will be assembled into. `source_layer` / `target_layer` name
+/// the language axes (e.g. `"rust"` -> `"rust-kit"`).
+///
+/// The op-contract carries the function's BODY-DERIVED `post` (the
+/// `FunctionContractMemento`'s `post`, which walk lifts from the body's
+/// trailing expression), plus `formals` / `formalSorts` so the resolver
+/// can name the value slots. This is the lift-half of walk (verification
+/// substrate); it does NOT touch the lower/cycle/carrier machinery.
+pub fn bind_function_bridge(
+    contract: &Contract,
+    source_layer: &str,
+    target_layer: &str,
+    target_proof_cid: Option<&str>,
+) -> Result<FunctionBridgeMembers, BindError> {
+    let post_json = serde_json::to_value(&contract.post)
+        .map_err(|e| BindError::Failed(format!("serialize body-derived post: {e}")))?;
+    let formals: Vec<Json> = contract
+        .formals
+        .iter()
+        .map(|f| Json::String(f.clone()))
+        .collect();
+    let formal_sorts: Vec<Json> = contract
+        .formal_sorts
+        .iter()
+        .map(|s| serde_json::to_value(s).unwrap_or(Json::Null))
+        .collect();
+
+    let op_contract_env = json!({
+        "evidence": {
+            "kind": "contract",
+            "body": {
+                "contractName": contract.fn_name,
+                "formals": formals,
+                "formalSorts": formal_sorts,
+                "post": post_json
+            }
+        }
+    });
+    let op_contract_cid = flat_member_cid(&op_contract_env);
+
+    let mut bridge_body = serde_json::Map::new();
+    bridge_body.insert("sourceSymbol".into(), Json::String(contract.fn_name.clone()));
+    bridge_body.insert("sourceLayer".into(), Json::String(source_layer.to_string()));
+    bridge_body.insert(
+        "targetContractCid".into(),
+        Json::String(op_contract_cid.as_str().to_string()),
+    );
+    bridge_body.insert("targetLayer".into(), Json::String(target_layer.to_string()));
+    if let Some(tpc) = target_proof_cid {
+        bridge_body.insert("targetProofCid".into(), Json::String(tpc.to_string()));
+    }
+    let bridge_env = json!({
+        "evidence": {
+            "kind": "bridge",
+            "body": Json::Object(bridge_body)
+        }
+    });
+    let bridge_cid = flat_member_cid(&bridge_env);
+
+    Ok(FunctionBridgeMembers {
+        op_contract: BridgeMember {
+            cid: op_contract_cid,
+            envelope: op_contract_env,
+        },
+        bridge: BridgeMember {
+            cid: bridge_cid,
+            envelope: bridge_env,
+        },
+    })
+}
+
 fn bind_lift_entries(term_json: &Json) -> Result<Vec<BindLiftEntry>, BindError> {
     if term_json.get("kind").and_then(Json::as_str) == Some("named-term-document") {
         return Err(BindError::Failed(
@@ -1845,6 +1993,90 @@ fn primitive_sort(name: &str) -> Sort {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// A `double(x) = x*2` function contract, as walk's
+    /// `build_function_contract` would produce: body-derived
+    /// `post = (result == *(x, 2))`, one formal `x`.
+    fn double_contract() -> Contract {
+        use crate::compose::{EffectSet, Locus};
+        let post = IrFormula::Atomic {
+            name: "=".to_string(),
+            args: vec![
+                IrTerm::Var {
+                    name: "result".to_string(),
+                },
+                IrTerm::Ctor {
+                    name: "*".to_string(),
+                    args: vec![
+                        IrTerm::Var {
+                            name: "x".to_string(),
+                        },
+                        IrTerm::Const {
+                            value: json!(2),
+                            sort: primitive_sort("Int"),
+                        },
+                    ],
+                },
+            ],
+        };
+        Contract {
+            fn_name: "double".to_string(),
+            formals: vec!["x".to_string()],
+            formal_sorts: vec![primitive_sort("Int")],
+            formal_regions: vec![],
+            return_sort: primitive_sort("Int"),
+            return_region: None,
+            pre: IrFormula::Atomic {
+                name: "true".to_string(),
+                args: vec![],
+            },
+            post,
+            body_cid: None,
+            effects: EffectSet::empty(),
+            locus: Locus::default(),
+            canonical_bytes: vec![],
+            cid: "blake3-512:test".to_string(),
+            auto_minted_mementos: vec![],
+            concept_hint: None,
+        }
+    }
+
+    #[test]
+    fn bind_function_bridge_emits_op_contract_and_pinned_bridge() {
+        let contract = double_contract();
+        let members =
+            bind_function_bridge(&contract, "rust", "rust-kit", Some("blake3-512:bundle"))
+                .expect("bind_function_bridge");
+
+        // Op-contract carries the body-derived post + formals.
+        let oc = members
+            .op_contract
+            .envelope
+            .pointer("/evidence/body")
+            .unwrap();
+        assert_eq!(oc.get("contractName").unwrap(), "double");
+        assert_eq!(oc.get("formals").unwrap(), &json!(["x"]));
+        // post is `result == *(x, 2)`.
+        let value_expr = oc.pointer("/post/args/1").unwrap();
+        assert_eq!(value_expr.get("name").unwrap(), "*");
+
+        // The bridge points at the op-contract member CID and pins the bundle.
+        let br = members.bridge.envelope.pointer("/evidence/body").unwrap();
+        assert_eq!(br.get("sourceSymbol").unwrap(), "double");
+        assert_eq!(
+            br.get("targetContractCid").unwrap().as_str().unwrap(),
+            members.op_contract.cid.as_str(),
+            "bridge.targetContractCid must equal the op-contract member CID (proofchain rollup)"
+        );
+        assert_eq!(br.get("targetProofCid").unwrap(), "blake3-512:bundle");
+
+        // CIDs are content-addressed and stable.
+        assert_eq!(
+            members.op_contract.cid,
+            super::flat_member_cid(&members.op_contract.envelope)
+        );
+        assert!(members.op_contract.cid.as_str().starts_with("blake3-512:"));
+    }
 
     #[test]
     fn bind_names_lifted_entries_without_plugin_dispatch() {

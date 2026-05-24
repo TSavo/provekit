@@ -785,6 +785,8 @@ fn compute_contract_set_cid_for_ir(ir: &[Value]) -> Result<String, String> {
                 source_cid: None,
             },
             signer_seed: [0x42u8; 32],
+            formals: Vec::new(),
+            formal_sorts: Vec::new(),
         };
         contract_cids.push(contract_cid(&args));
     }

@@ -56,8 +56,9 @@ use libprovekit::core::{
 };
 use provekit_canonicalizer::{blake3_512_of, encode_jcs, Value as CValue};
 use provekit_claim_envelope::{
-    compute_contract_set_cid, contract_cid, mint_authority, mint_contract, mint_implication,
-    Authoring, MintAuthorityArgs, MintContractArgs, MintImplicationArgs,
+    compute_contract_set_cid, contract_cid, mint_authority, mint_bridge, mint_contract,
+    mint_implication, Authoring, MintAuthorityArgs, MintBridgeArgs, MintContractArgs,
+    MintImplicationArgs,
 };
 use provekit_ir_types::Sort;
 use provekit_mint_amp as algebraic_mint;
@@ -1003,6 +1004,49 @@ fn mint_from_ir_document(
         if pre.is_none() && post.is_none() && inv.is_none() {
             continue;
         }
+
+        // Body-derived op-contract slots (#1436/#1440): a `function-contract`
+        // decl carries the function's `formals` (+ `formalSorts`), lifted by
+        // walk / JavaSourceLifter from the method body. Carry them through so
+        // the minted `kind:"contract"` memento's header bears them and
+        // `body_discharge::CatalogResolver` can resolve the body-obligation.
+        // Non-function `contract` decls have no formals; the vecs stay empty
+        // and the minted bytes are unchanged.
+        let formals: Vec<String> = decl
+            .get("formals")
+            .and_then(|v| v.as_array())
+            .map(|arr| {
+                arr.iter()
+                    .filter_map(|v| v.as_str().map(|s| s.to_string()))
+                    .collect()
+            })
+            .unwrap_or_default();
+        let formal_sorts: Vec<std::sync::Arc<provekit_canonicalizer::Value>> = decl
+            .get("formalSorts")
+            .or_else(|| decl.get("formal_sorts"))
+            .and_then(|v| v.as_array())
+            .map(|arr| arr.iter().map(json_to_cvalue).collect())
+            .unwrap_or_default();
+        // A bridge is written only when this contract is a body-bearing
+        // function target: it carries a `post` AND formals (the resolver
+        // needs both). The bridge's `sourceSymbol` is the function's bare
+        // name as it appears in harvested call ctors. For a v1 function
+        // contract the harvested ctor uses the bare ident, so prefer the
+        // explicit `bridgeSourceSymbol` if the lifter set one, else the
+        // function's simple name.
+        let bridge_source_symbol: Option<String> = if kind == "function-contract"
+            && post.is_some()
+            && !formals.is_empty()
+        {
+            Some(
+                decl.get("bridgeSourceSymbol")
+                    .and_then(|v| v.as_str())
+                    .map(|s| s.to_string())
+                    .unwrap_or_else(|| simple_function_symbol(&name)),
+            )
+        } else {
+            None
+        };
         let authority = optional_str(decl, "authority")
             .map(|authority_id| {
                 authorities_by_id.get(authority_id).ok_or_else(|| {
@@ -1039,6 +1083,8 @@ fn mint_from_ir_document(
                 source_cid: None,
             },
             signer_seed,
+            formals,
+            formal_sorts,
         };
 
         let ccid = contract_cid(&args);
@@ -1048,6 +1094,32 @@ fn mint_from_ir_document(
         content_cids.push(ccid.clone());
 
         let m = mint_contract(&args).map_err(|e| format!("mint contract: {e}"))?;
+
+        // Production bridge-writer (#1436/#1440, PR-23): for a body-derived
+        // function contract, AUTOMATICALLY mint the bridge that points a
+        // harvested call at this contract's body-obligation. This is the
+        // pipeline that was missing -- `bind_function_bridge` existed but no
+        // production verb called it, so verify could only reach the seam via
+        // hand-built test bundles. The bridge's `targetContractCid` is this
+        // contract's ATTESTATION CID (`m.cid`, the member key the verifier
+        // indexes `pool.mementos` by), so `CatalogResolver` resolves the
+        // chain. Language-neutral: it operates on the protocol's fields, not
+        // on any source language.
+        if let Some(source_symbol) = bridge_source_symbol {
+            let bridge = mint_bridge(&MintBridgeArgs {
+                produced_by: "provekit-cli".to_string(),
+                produced_at: produced_at.clone(),
+                source_symbol,
+                source_layer: "source".to_string(),
+                target_contract_cid: m.cid.clone(),
+                target_layer: "kit".to_string(),
+                ir_arg_sorts: vec![],
+                ir_return_sort: String::new(),
+                notes: "auto-minted body-discharge bridge (PR-23)".to_string(),
+                signer_seed,
+            });
+            members.entry(bridge.cid.clone()).or_insert(bridge.canonical_bytes);
+        }
 
         if contracts_by_name
             .insert(
@@ -1498,6 +1570,23 @@ fn mint_realization_memento(decl: &Value) -> Result<(String, Vec<u8>), String> {
     let canonical = encode_jcs(&json_to_cvalue(&envelope));
     let cid = blake3_512_of(canonical.as_bytes());
     Ok((cid, canonical.into_bytes()))
+}
+
+/// Reduce a function-contract `fnName` to the bare symbol a harvested call
+/// ctor uses. Rust walk emits the bare ident already (`double`), so this is
+/// the identity. Java's `JavaSourceLifter` emits a fully-qualified mangled
+/// name (`com.example.Foo.doubleIt(int)`); the harvested junit assertion
+/// ctor is the bare method name (`doubleIt`). Strip any parameter
+/// signature, then take the last dot-segment. This is the bridge
+/// `sourceSymbol`, which must equal the call ctor name for
+/// `enumerate_callsites` to match.
+fn simple_function_symbol(fn_name: &str) -> String {
+    let without_params = fn_name.split('(').next().unwrap_or(fn_name);
+    without_params
+        .rsplit('.')
+        .next()
+        .unwrap_or(without_params)
+        .to_string()
 }
 
 fn optional_str<'a>(value: &'a Value, field: &str) -> Option<&'a str> {

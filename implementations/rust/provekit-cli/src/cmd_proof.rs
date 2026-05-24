@@ -559,6 +559,8 @@ fn build_fixture_proof(name: &str, seed_byte: u8) -> BuiltProof {
     let signer_seed: Ed25519Seed = [seed_byte; 32];
     let declared_at = "2026-05-06T00:00:00.000Z";
     let member = mint_contract(&MintContractArgs {
+        formals: Vec::new(),
+        formal_sorts: Vec::new(),
         contract_name: format!("{name}/contract"),
         pre: Some(CValue::boolean(true)),
         post: None,

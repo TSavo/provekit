@@ -219,6 +219,8 @@ fn mint_baseline(config: &BaselineConfig, out_dir: &Path) -> String {
             };
 
             let args = MintContractArgs {
+                formals: Vec::new(),
+                formal_sorts: Vec::new(),
                 contract_name: cname,
                 pre: None,
                 post: Some(formula_to_value(&formula)),

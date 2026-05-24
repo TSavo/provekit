@@ -36,6 +36,8 @@ fn fixture_proof_bytes() -> (String, Vec<u8>) {
     let signer_seed: Ed25519Seed = [0x44u8; 32];
     let declared_at = "2026-05-06T00:00:00.000Z";
     let member = mint_contract(&MintContractArgs {
+        formals: Vec::new(),
+        formal_sorts: Vec::new(),
         contract_name: declaration.name.clone(),
         pre: declaration.pre.as_deref().map(formula_to_value),
         post: declaration.post.as_deref().map(formula_to_value),

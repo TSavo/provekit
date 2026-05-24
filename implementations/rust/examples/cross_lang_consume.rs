@@ -126,6 +126,8 @@ fn run() -> Result<(), String> {
     let mut members: BTreeMap<String, Vec<u8>> = BTreeMap::new();
     for d in &decls {
         let args = MintContractArgs {
+            formals: Vec::new(),
+            formal_sorts: Vec::new(),
             contract_name: d.name.clone(),
             pre: d.pre.as_deref().map(formula_to_value),
             post: d.post.as_deref().map(formula_to_value),

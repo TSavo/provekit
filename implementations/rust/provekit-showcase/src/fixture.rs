@@ -313,6 +313,8 @@ fn mint_one_contract(root_seed: u64, idx: u64) -> ContractRow {
     };
 
     let mint = mint_contract(&MintContractArgs {
+        formals: Vec::new(),
+        formal_sorts: Vec::new(),
         contract_name: format!("synthContract_{idx}"),
         pre: Some(pre.clone()),
         post: Some(post.clone()),
