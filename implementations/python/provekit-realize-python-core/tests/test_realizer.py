@@ -811,6 +811,88 @@ def test_term_shape_operand_binding_gate_refuses_missing_and_extra_positions() -
         raise AssertionError("extra operand binding should refuse")
 
 
+def test_term_shape_without_bindings_refuses_rather_than_misemits() -> None:
+    # Honesty guard (supra omnia, rectum): the abs_value conditional
+    # `if x < 0: return -x else: return x` lifts to a term_shape whose operand
+    # leaves (the `x` and `0` slots) live ONLY in operand_bindings. WITHOUT the
+    # bindings the leaf lowering would fabricate symbols and silently emit
+    # `if (x) < (x)` — plausible, compilable, and WRONG. Emitting wrong code is
+    # the cardinal sin one layer worse than refusing, so the realizer must
+    # REFUSE (loud missing-body-template error), never mis-emit.
+    shape = _shape(
+        "concept:conditional",
+        [
+            _shape("concept:lt", [{}, {}]),
+            _shape("concept:neg", [{}]),
+            {},
+        ],
+    )
+    bindings = [
+        {"position": [0, 0], "symbol": "x"},
+        {"position": [0, 1], "symbol": "0"},
+        {"position": [1, 0], "symbol": "x"},
+        {"position": [2], "symbol": "x"},
+    ]
+
+    # Positive: WITH the operand bindings, the realizer emits correct python
+    # that preserves the `0` literal (not a fabricated second `x`).
+    positive = emit_stub(
+        function="abs_value",
+        params=["x"],
+        param_types=["int"],
+        return_type="int",
+        concept_name="concept:conditional",
+        term_shape=shape,
+        operand_bindings=bindings,
+    )
+    assert positive["source"] == (
+        "def abs_value(x):\n"
+        "    if (x) < (0):\n"
+        "        return -(x)\n"
+        "    else:\n"
+        "        return x\n"
+    )
+
+    # Discrimination: WITHOUT bindings the realizer must refuse, NOT emit the
+    # silently-wrong `if (x) < (x)`.
+    try:
+        emit_stub(
+            function="abs_value",
+            params=["x"],
+            param_types=["int"],
+            return_type="int",
+            concept_name="concept:conditional",
+            term_shape=shape,
+            operand_bindings=None,
+        )
+    except MissingTemplateError as exc:
+        # Structural: the refusal cites the function and the term-shape body
+        # position so the gap is inspectable.
+        entries = [entry.to_json() for entry in exc.entries]
+        assert len(entries) == 1
+        assert entries[0]["function"] == "abs_value"
+        assert entries[0]["term_position"] == "body.termShape"
+        assert entries[0]["operation_kind"] == "concept:conditional"
+    else:
+        raise AssertionError(
+            "term_shape with unbound operand leaves must refuse, not silently mis-emit"
+        )
+
+    # And the preflight reports the same gap (so the RPC returns the loud
+    # `missing body-template entry` error rather than a 200 with wrong code).
+    missing = realizer.missing_templates_for_term_shape(
+        "abs_value",
+        ["x"],
+        ["int"],
+        "int",
+        shape,
+        operand_bindings=None,
+    )
+    assert len(missing) == 1
+    assert missing[0].function == "abs_value"
+    assert missing[0].term_position == "body.termShape"
+
+
 def test_a10_operator_templates_discriminate_distinct_ops() -> None:
     add = emit_stub(
         function="calc_add",

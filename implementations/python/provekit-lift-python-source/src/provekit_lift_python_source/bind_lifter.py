@@ -209,12 +209,31 @@ def _entry_for_function(
     witnesses.extend(_decorator_contract_witnesses(node, param_names, rel_path, diagnostics))
     _concept_citation_comments(lines, node, rel_path, diagnostics)
 
+    # Source-language signature types travel as realize-sidecar-only fields
+    # (`realize_param_types` / `realize_return_type`), NOT as the CID-bearing
+    # `param_types` / `return_type` keys. A9 (#1075) deliberately erased types
+    # from the bind-lift-entry so that the same algebra lifted from untyped
+    # Python and typed Rust binds to a byte-identical CID (seam 4 federation).
+    # But the realizer needs the source types to match signature-keyed body
+    # templates (e.g. concept:mul requires ("int","int")); without them the
+    # recursive `factorial` body refuses. These sidecar keys are stripped from
+    # the canonical lift term by `strip_realize_sidecar_from_lift_term`
+    # (bind.rs) before the CID is taken, so federation byte-identity holds while
+    # the realizer still receives the types via `merge_realize_sidecar`.
+    # Unannotated params/returns emit the empty string (substrate-honest gap).
+    realize_param_types = [
+        _annotation_surface(arg.annotation) or "" for arg in _ordered_signature_args(node.args)
+    ]
+    realize_return_type = _annotation_surface(node.returns) or ""
+
     return {
         "kind": "bind-lift-entry",
         "param_names": param_names,
         "term_shape": term_shape,
         "term_shape_cid": cid_of_json(term_shape),
         "operand_bindings": shape_result.operand_bindings,
+        "realize_param_types": realize_param_types,
+        "realize_return_type": realize_return_type,
         "source_function_name": node.name,
         "witnesses": witnesses,
     }

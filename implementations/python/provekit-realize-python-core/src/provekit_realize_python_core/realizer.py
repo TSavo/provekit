@@ -1074,6 +1074,25 @@ def _operand_binding_map(
     return mapping
 
 
+def _term_shape_has_unbindable_empty_leaf(shape: Any) -> bool:
+    """True if `shape` contains any EMPTY operand slot (a dict with no
+    `concept_name`, no `kind`, and no `value`) — i.e. a leaf whose source
+    symbol lives only in operand_bindings and cannot be resolved without them.
+
+    Self-describing leaves (`kind` var/const, literals with `value`) and
+    cataloged operations (with `concept_name`) resolve on their own, so they do
+    NOT trip the honesty guard.
+    """
+    if not isinstance(shape, dict):
+        return False
+    if _shape_concept_name(shape):
+        return any(_term_shape_has_unbindable_empty_leaf(child) for child in _shape_args(shape))
+    # Leaf node: empty if it carries no self-describing kind/value.
+    has_kind = isinstance(shape.get("kind"), str) and shape.get("kind") != ""
+    has_value = "value" in shape
+    return not (has_kind or has_value)
+
+
 def _term_shape_leaf_positions(shape: Any, position: tuple[int, ...]) -> list[tuple[int, ...]]:
     if not isinstance(shape, dict):
         return []
@@ -1190,6 +1209,19 @@ def term_body_for_term_shape(
     *,
     operand_bindings: list[dict[str, Any]] | None = None,
 ) -> TermBody | None:
+    # Honesty guard (supra omnia, rectum): a term_shape may carry its operands
+    # as EMPTY leaf slots (`{}`) whose source symbols live ONLY in
+    # operand_bindings. When such slots exist and bindings are absent, the leaf
+    # lowering would otherwise fabricate a symbol via `fallback_leaf` and
+    # silently emit plausible-but-wrong code (e.g. `if (x) < (x)` for
+    # `if x < 0`, collapsing the `0` literal onto `x`). Emitting wrong code is
+    # the cardinal sin one layer worse than refusing, so we REFUSE here (return
+    # None) — the caller's preflight surfaces this as a loud `missing
+    # body-template entry` RPC error instead of mis-emitting. Self-describing
+    # leaves (`{"kind":"var",...}`, `{"kind":"const",...}`, literals) resolve
+    # without bindings and are NOT gated.
+    if operand_bindings is None and _term_shape_has_unbindable_empty_leaf(term_shape):
+        return None
     binding_map = _operand_binding_map(term_shape, operand_bindings)
     context = _ShapeLoweringContext(params, param_types, return_type, binding_map)
     body = _lower_shape_body(term_shape, context, ())

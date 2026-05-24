@@ -1109,6 +1109,19 @@ fn merge_realize_sidecar(
             spec["sourceFunctionName"] = Value::String(function_name.to_string());
         }
     }
+    // Source signature types travel CID-invisibly through the sidecar (A9
+    // erased them from the canonical lift term for seam-4 federation). When
+    // present they OVERRIDE the `realize_signature_from_named_term` erasure
+    // heuristic's `int` guess, so the realizer matches signature-keyed body
+    // templates against the true source types instead of a fabricated default.
+    if let Some(param_types) = entry.get("realize_param_types").and_then(Value::as_array) {
+        spec["paramTypes"] = Value::Array(param_types.clone());
+    }
+    if let Some(return_type) = entry.get("realize_return_type").and_then(Value::as_str) {
+        if !return_type.is_empty() {
+            spec["returnType"] = Value::String(return_type.to_string());
+        }
+    }
     Ok(())
 }
 
