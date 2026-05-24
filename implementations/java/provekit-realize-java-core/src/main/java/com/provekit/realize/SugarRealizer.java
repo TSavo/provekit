@@ -1322,6 +1322,15 @@ final class SugarRealizer {
     static final ThreadLocal<String> currentSourceTermShape =
             ThreadLocal.withInitial(() -> "");
 
+    /** `.proof`-load-via-RPC: the per-request `bodyTemplates` JSON array (a
+     *  bare `[...]` of emission-template entries) that cmd_materialize lifted
+     *  from the shim's signed .proof. When non-blank, `entries()` PREFERS
+     *  these over the on-disk canonical-bodies cache — the shim source is the
+     *  authority. Blank ("") ↔ no RPC templates → disk-load fallback (kits
+     *  whose dispatcher hasn't migrated keep working unchanged). */
+    static final ThreadLocal<String> currentBodyTemplates =
+            ThreadLocal.withInitial(() -> "");
+
     private static final class ShapeContext {
         final List<String> params;
         final List<String> paramTypes;
@@ -4274,6 +4283,24 @@ final class SugarRealizer {
     }
 
     private static List<BodyTemplateEntry> entries() {
+        // `.proof`-load-via-RPC: when the dispatcher fed `bodyTemplates` for
+        // this request, those entries are the authority. Prepend them so the
+        // first-match-wins matcher prefers them over the disk cache. They are
+        // NEVER cached statically (they are per-request, library-specific).
+        // Blank → fall through to the static disk-loaded cache (back-compat).
+        String rpcTemplates = currentBodyTemplates.get();
+        if (rpcTemplates != null && !rpcTemplates.isBlank()) {
+            List<BodyTemplateEntry> rpcEntries = parseEntriesFromRpcArray(rpcTemplates);
+            if (!rpcEntries.isEmpty()) {
+                List<BodyTemplateEntry> merged = new ArrayList<>(rpcEntries);
+                merged.addAll(diskEntries());
+                return merged;
+            }
+        }
+        return diskEntries();
+    }
+
+    private static List<BodyTemplateEntry> diskEntries() {
         List<BodyTemplateEntry> cached = ENTRIES_CACHE;
         if (cached != null) return cached;
         synchronized (SugarRealizer.class) {
@@ -4370,7 +4397,29 @@ final class SugarRealizer {
             if (!(content instanceof Jcs.Obj contentObj)) return List.of();
             Jcs.Json entriesJson = contentObj.get("entries");
             if (!(entriesJson instanceof Jcs.Arr entriesArr)) return List.of();
+            return parseEntryArray(entriesArr);
+        } catch (RuntimeException e) {
+            // JSON parse failure: degrade to "no entries"; stubs will emit.
+            return List.of();
+        }
+    }
 
+    /// `.proof`-load-via-RPC: parse a BARE `bodyTemplates` array (as sent by
+    /// cmd_materialize from the shim .proof) into BodyTemplateEntry records.
+    /// Same per-entry shape as the on-disk projection's `content.entries`, so
+    /// it shares `parseEntryArray` with `parseEntriesFromRaw`.
+    private static List<BodyTemplateEntry> parseEntriesFromRpcArray(String rawArray) {
+        try {
+            Jcs.Json root = Jcs.parse(rawArray);
+            if (!(root instanceof Jcs.Arr arr)) return List.of();
+            return parseEntryArray(arr);
+        } catch (RuntimeException e) {
+            return List.of();
+        }
+    }
+
+    private static List<BodyTemplateEntry> parseEntryArray(Jcs.Arr entriesArr) {
+        try {
             List<BodyTemplateEntry> out = new ArrayList<>();
             for (Jcs.Json item : entriesArr.values()) {
                 if (!(item instanceof Jcs.Obj itemObj)) continue;

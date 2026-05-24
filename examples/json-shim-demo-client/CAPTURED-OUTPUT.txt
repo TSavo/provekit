@@ -1,63 +1,14 @@
-# json-shim-demo-client — captured provekit materialize output
-# Generated 2026-05-24T22:10:30Z on branch java-json-shim-demo
-# provekit: implementations/rust/target/release/provekit (release build)
-# Same concept:family:json contract, two libraries, caller picks via --library.
+# json-shim-demo-client — captured provekit materialize output (PIECE 1: .proof-load-via-RPC)
+# Generated 2026-05-24T22:23:40Z on branch java-json-shim-demo
+# The two java-canonical-bodies-{jackson,gson}.json are DELETED. Bodies now come
+# from the @ProveKitSugar shim .proof, lifted by cmd_materialize and fed to the
+# realize plugin over RPC (RealizeRequest.body_templates). Same concept:family:json
+# contract, two libraries, caller picks via --library.
 
-================ RUN 1: --library jackson (out-dir + compile-check) ================
-[1m[36mmaterialize[39m[0m compile-check: running java compiler over /tmp/mat-jackson
-[1m[31merror[39m[0m: compile-check: javac failed (exit 1)
-/tmp/mat-jackson/ConfigCodec.java:21: error: cannot find symbol
-        public static JsonNode parseConfig(String s) {
-                      ^
-  symbol:   class JsonNode
-  location: class ConfigCodec.ParseConfigTransported
-/tmp/mat-jackson/ConfigCodec.java:35: error: cannot find symbol
-        public static String renderConfig(JsonNode v) {
-                                          ^
-  symbol:   class JsonNode
-  location: class ConfigCodec.RenderConfigTransported
-/tmp/mat-jackson/ConfigCodec.java:24: error: cannot find symbol
-                        return MAPPER.readTree(s);
-                               ^
-  symbol:   variable MAPPER
-  location: class ConfigCodec.ParseConfigTransported
-/tmp/mat-jackson/ConfigCodec.java:25: error: cannot find symbol
-                    } catch (JsonProcessingException e) {
-                             ^
-  symbol:   class JsonProcessingException
-  location: class ConfigCodec.ParseConfigTransported
-/tmp/mat-jackson/ConfigCodec.java:38: error: cannot find symbol
-                        return MAPPER.writeValueAsString(v);
-                               ^
-  symbol:   variable MAPPER
-  location: class ConfigCodec.RenderConfigTransported
-/tmp/mat-jackson/ConfigCodec.java:39: error: cannot find symbol
-                    } catch (JsonProcessingException e) {
-                             ^
-  symbol:   class JsonProcessingException
-  location: class ConfigCodec.RenderConfigTransported
-6 errors
+================ JSON canonical-bodies present? ================
+(none — java-canonical-bodies-{jackson,gson}.json deleted)
 
-[exit: 1]
-
----- emitted /tmp/mat-jackson/ConfigCodec.java ----
-// SPDX-License-Identifier: Apache-2.0
-//
-// json-shim-demo-client: a CONSUMER that needs JSON parse + serialize via the
-// concept:family:json CONTRACT, not a specific library. The two carrier sites
-// below cite concept:json-parse and concept:json-serialize. `provekit
-// materialize --library jackson` realizes them against the Jackson shim;
-// `--library gson` realizes the SAME contract against the Gson shim.
-//
-// The body between the carrier and the next site is what materialize replaces.
-
-package org.provekit.demo.jsonclient;
-
-public final class ConfigCodec {
-
-    private ConfigCodec() {
-    }
-
+================ RUN: --library jackson (dry-run, JSON deleted) ================
     final class ParseConfigTransported {
         // @substrate-signature {"visibility":"","genericParams":"","originalParamTypes":[],"paramSortCids":[],"returnSortCid":"","sourceReturnType":"JsonNode","docLines":[]}
         // concept: concept:json-parse
@@ -86,57 +37,10 @@ public final class ConfigCodec {
         }
     }
 }
+[summary]
+[1m[32mmaterialize[39m[0m dry-run: 0 exact + 2 lossy + 0 refused across 1 file(s)
 
-================ RUN 2: --library gson (out-dir + compile-check) ================
-[1m[36mmaterialize[39m[0m compile-check: running java compiler over /tmp/mat-gson
-[1m[31merror[39m[0m: compile-check: javac failed (exit 1)
-/tmp/mat-gson/ConfigCodec.java:21: error: cannot find symbol
-        public static JsonNode parseConfig(String s) {
-                      ^
-  symbol:   class JsonNode
-  location: class ConfigCodec.ParseConfigTransported
-/tmp/mat-gson/ConfigCodec.java:35: error: cannot find symbol
-        public static String renderConfig(JsonNode v) {
-                                          ^
-  symbol:   class JsonNode
-  location: class ConfigCodec.RenderConfigTransported
-/tmp/mat-gson/ConfigCodec.java:24: error: cannot find symbol
-                        return JsonParser.parseString(s);
-                               ^
-  symbol:   variable JsonParser
-  location: class ConfigCodec.ParseConfigTransported
-/tmp/mat-gson/ConfigCodec.java:25: error: cannot find symbol
-                    } catch (JsonSyntaxException e) {
-                             ^
-  symbol:   class JsonSyntaxException
-  location: class ConfigCodec.ParseConfigTransported
-/tmp/mat-gson/ConfigCodec.java:37: error: cannot find symbol
-                    return GSON.toJson(v);
-                           ^
-  symbol:   variable GSON
-  location: class ConfigCodec.RenderConfigTransported
-5 errors
-
-[exit: 1]
-
----- emitted /tmp/mat-gson/ConfigCodec.java ----
-// SPDX-License-Identifier: Apache-2.0
-//
-// json-shim-demo-client: a CONSUMER that needs JSON parse + serialize via the
-// concept:family:json CONTRACT, not a specific library. The two carrier sites
-// below cite concept:json-parse and concept:json-serialize. `provekit
-// materialize --library jackson` realizes them against the Jackson shim;
-// `--library gson` realizes the SAME contract against the Gson shim.
-//
-// The body between the carrier and the next site is what materialize replaces.
-
-package org.provekit.demo.jsonclient;
-
-public final class ConfigCodec {
-
-    private ConfigCodec() {
-    }
-
+================ RUN: --library gson (dry-run, JSON deleted) ================
     final class ParseConfigTransported {
         // @substrate-signature {"visibility":"","genericParams":"","originalParamTypes":[],"paramSortCids":[],"returnSortCid":"","sourceReturnType":"JsonNode","docLines":[]}
         // concept: concept:json-parse
@@ -161,11 +65,9 @@ public final class ConfigCodec {
         }
     }
 }
+[summary]
+[1m[32mmaterialize[39m[0m dry-run: 0 exact + 2 lossy + 0 refused across 1 file(s)
 
-================ PROOF: realize body-source is the DISK JSON, not the .proof/shim ================
-# With java-canonical-bodies-{jackson,gson}.json moved aside, both sites REFUSE:
-    "exact": 0,
-    "lossy": 0,
-    "refused": 2
-[1m[32mmaterialize[39m[0m dry-run: 0 exact + 0 lossy + 2 refused across 1 file(s)
-# (restored). With the JSON present, both sites resolve (see RUN 1/2 above).
+# VERDICT: with the disk JSON deleted, jackson emits MAPPER.readTree / MAPPER.writeValueAsString,
+# gson emits JsonParser.parseString / GSON.toJson — proving realize loads templates from the
+# shim .proof via RPC, not from the (now absent) disk cache. PIECE 2 (compile) tracked separately.

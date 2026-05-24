@@ -433,12 +433,23 @@ public final class RpcServer {
         // would only be a target-language idiom. The substrate cycle
         // needs the SOURCE's term_shape preserved as data.
         SugarRealizer.currentSourceTermShape.set(termShape == null ? "" : termShape);
+        // `.proof`-load-via-RPC: when the dispatcher (cmd_materialize) lifted
+        // the shim's signed binding entries and sent them as `bodyTemplates`,
+        // prefer them over the on-disk canonical-bodies cache. The shim source
+        // is then the authority; the disk JSON is fallback for kits whose
+        // dispatcher hasn't migrated. Absent → "" → SugarRealizer disk-loads.
+        String bodyTemplates = JsonUtil.extractArrayField(paramsObj, "bodyTemplates");
+        if (bodyTemplates == null || "[]".equals(bodyTemplates)) {
+            bodyTemplates = JsonUtil.extractArrayField(paramsObj, "body_templates");
+        }
+        SugarRealizer.currentBodyTemplates.set(bodyTemplates == null ? "" : bodyTemplates);
         SugarRealizer.Realization r;
         try {
             r = SugarRealizer.emitStub(emittedFunction, params, paramTypes, paramSortCids, returnType, returnSortCid,
                     conceptName, mode, modes, contract, sugarPlugins, transportedOp, termShape, operandBindings,
                     isCrossLang, targetLibraryTag, parametricExpansions);
         } finally {
+            SugarRealizer.currentBodyTemplates.remove();
             SugarRealizer.currentCallReturnTypes.remove();
             SugarRealizer.currentSourceVisibility.remove();
             SugarRealizer.currentSourceGenericParams.remove();

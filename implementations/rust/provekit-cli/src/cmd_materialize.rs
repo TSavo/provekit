@@ -1740,6 +1740,27 @@ impl SiteTransformKit for MaterializeKit<'_> {
         // realize-request shape against Phase A.
         let mut spec = realize_spec_from_payload(&carrier.raw_payload)?;
         augment_spec_with_shim_term_shape(&mut spec, self.project_root);
+        // `.proof`-load-via-RPC: when the resolved realize manifest declares a
+        // `sugar_proof` pointer, lift the shim's signed binding entries into
+        // emission-template entries and attach them to the spec. The realize
+        // kit prefers these over its on-disk canonical-bodies cache, so the
+        // @ProveKitSugar shim source is the authority. Absent pointer → empty
+        // → kit uses its disk cache (back-compat for not-yet-migrated kits).
+        if !carrier_library.is_empty() {
+            let templates = body_templates_from_shim_proof(
+                self.project_root,
+                &self.target_lang,
+                carrier_library,
+            );
+            if !templates.is_empty() {
+                if let Some(obj) = spec.as_object_mut() {
+                    obj.insert(
+                        "bodyTemplates".to_string(),
+                        Json::Array(templates),
+                    );
+                }
+            }
+        }
         let realized = self.realize_via_path(spec)?;
         // String-formatted refusal sentence rather than a structured
         // gap-record memento: materialize is a build-pipeline workflow
@@ -1883,6 +1904,103 @@ fn augment_spec_with_shim_term_shape(spec: &mut Json, project_root: &Path) {
             return;
         }
     }
+}
+
+/// `.proof`-load-via-RPC: lift the shim's signed `library-sugar-binding-entry`
+/// records into emission-template entries (the same shape the on-disk
+/// projector writes) so they can be fed to the realize kit over RPC. This
+/// makes the @ProveKitSugar shim source the AUTHORITY for the emitted body;
+/// the on-disk `<lang>-canonical-bodies-<tag>.json` becomes an optional
+/// fallback for not-yet-migrated kits.
+///
+/// Resolution: the realize manifest for `(target_lang, library_tag)` declares
+/// `sugar_proof = "<path>"`. `<path>` is project-root-relative and may point
+/// at a shim project directory (we glob its `*.proof`) or a specific `.proof`.
+/// We decode the envelope, find every `library-sugar-binding-entry` whose
+/// `target_library_tag` matches `library_tag`, and transform each via the
+/// projector's shared `binding_entry_to_template_entry`. Returns an empty Vec
+/// when no pointer is declared, the file is unreadable, or no entries match —
+/// the realize kit then uses its disk cache (back-compat).
+fn body_templates_from_shim_proof(
+    project_root: &Path,
+    target_lang: &str,
+    library_tag: &str,
+) -> Vec<Json> {
+    use crate::cmd_mint::binding_entry_to_template_entry;
+    use crate::kit_dispatch::sugar_proof_for_realize;
+
+    let Some(pointer) = sugar_proof_for_realize(project_root, target_lang, library_tag) else {
+        return Vec::new();
+    };
+    let pointer_path = {
+        let p = PathBuf::from(&pointer);
+        if p.is_absolute() { p } else { project_root.join(p) }
+    };
+
+    // Collect candidate .proof files: a directory globs its *.proof; a file
+    // is used directly. Globbing the dir (vs pinning the CID-named file in the
+    // manifest) keeps the pointer stable across re-mints of the shim.
+    let mut proof_files: Vec<PathBuf> = Vec::new();
+    if pointer_path.is_dir() {
+        if let Ok(entries) = std::fs::read_dir(&pointer_path) {
+            for entry in entries.flatten() {
+                let path = entry.path();
+                if path
+                    .file_name()
+                    .and_then(|n| n.to_str())
+                    .is_some_and(|n| n.ends_with(".proof"))
+                {
+                    proof_files.push(path);
+                }
+            }
+        }
+    } else if pointer_path.is_file() {
+        proof_files.push(pointer_path);
+    }
+    proof_files.sort();
+
+    let mut templates: Vec<Json> = Vec::new();
+    for proof in &proof_files {
+        let Ok(bytes) = std::fs::read(proof) else {
+            continue;
+        };
+        let Ok(catalog) = provekit_proof_envelope::cbor_decode::decode(&bytes) else {
+            continue;
+        };
+        let Some(root) = catalog.as_map() else { continue };
+        let Some(members) = root.get("members").and_then(|v| v.as_map()) else {
+            continue;
+        };
+        for (_cid, member) in members {
+            let Some(member_bytes) = member.as_bstr() else {
+                continue;
+            };
+            let Ok(member_text) = std::str::from_utf8(member_bytes) else {
+                continue;
+            };
+            let Ok(member_json) = serde_json::from_str::<Json>(member_text) else {
+                continue;
+            };
+            let Some(body) = member_json.get("body") else {
+                continue;
+            };
+            if body.get("kind").and_then(Json::as_str) != Some("library-sugar-binding-entry") {
+                continue;
+            }
+            // Only this library's entries (a shim .proof carries exactly its
+            // own tag, but the guard keeps the contract explicit for the
+            // fan-out and for multi-tag .proof envelopes).
+            if body.get("target_library_tag").and_then(Json::as_str) != Some(library_tag) {
+                continue;
+            }
+            match binding_entry_to_template_entry(body, library_tag) {
+                Ok(Some(entry)) => templates.push(entry),
+                Ok(None) => {}
+                Err(_) => {}
+            }
+        }
+    }
+    templates
 }
 
 /// A loss record is "loss-bearing" when it is neither JSON null nor an
