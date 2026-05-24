@@ -185,3 +185,110 @@ fn e2e_multi_predicate_conjunction_compiles_and_passes() {
     assert!(compiled, "conjunction contract must COMPILE.\n{detail}");
     assert!(passed, "conjunction contract must PASS (green).\n{detail}");
 }
+
+#[test]
+fn e2e_bool_literal_contract_compiles_and_passes() {
+    // REGRESSION (#1430 review): the harvester lifts bool literals as
+    // Ctor("True"/"False", []). The emitter MUST render lowercase `true`/
+    // `false`, not bare `True`/`False` (which is invalid rust and fails to
+    // compile). This is the test that would have caught the original bug.
+    let true_lit = IrTerm::Ctor {
+        name: "True".to_string(),
+        args: vec![],
+    };
+    let false_lit = IrTerm::Ctor {
+        name: "False".to_string(),
+        args: vec![],
+    };
+    let module = emit_test_module(
+        &FunctionSignature {
+            function: "is_even".to_string(),
+            params: vec!["n".to_string()],
+            ..Default::default()
+        },
+        &[
+            // is_even(4) == true
+            atom(
+                "=",
+                vec![
+                    IrTerm::Ctor {
+                        name: "is_even".to_string(),
+                        args: vec![int_const(4)],
+                    },
+                    true_lit,
+                ],
+            ),
+            // is_even(3) == false
+            atom(
+                "=",
+                vec![
+                    IrTerm::Ctor {
+                        name: "is_even".to_string(),
+                        args: vec![int_const(3)],
+                    },
+                    false_lit,
+                ],
+            ),
+        ],
+    );
+
+    // Guard: the emitted source must use lowercase rust bool literals.
+    assert!(
+        module.source.contains("assert_eq!(is_even(4), true);"),
+        "bool literal must render lowercase `true`, got:\n{}",
+        module.source
+    );
+    assert!(
+        !module.source.contains("True") && !module.source.contains("False"),
+        "emitted source must not contain bare `True`/`False`:\n{}",
+        module.source
+    );
+
+    let source = format!(
+        "pub fn is_even(n: i64) -> bool {{ n % 2 == 0 }}\n\n{}",
+        module.source
+    );
+    let (compiled, passed, detail) = compile_and_run_tests(&source);
+    assert!(compiled, "bool-literal contract must COMPILE.\n{detail}");
+    assert!(passed, "bool-literal contract must PASS (green).\n{detail}");
+}
+
+#[test]
+fn e2e_fallible_err_contract_compiles_and_passes() {
+    // Function under test: `parse(s) -> Result<i64, String>`. Contract: the
+    // result of parsing a bad input is an Err. `fallible-err(x)` ->
+    // `assert!(x.is_err())`.
+    let module = emit_test_module(
+        &FunctionSignature {
+            function: "parse".to_string(),
+            params: vec!["s".to_string()],
+            ..Default::default()
+        },
+        &[atom(
+            "fallible-err",
+            vec![IrTerm::Ctor {
+                name: "parse".to_string(),
+                args: vec![IrTerm::Const {
+                    value: serde_json::json!("not-a-number"),
+                    sort: Sort::Primitive {
+                        name: "str".to_string(),
+                    },
+                }],
+            }],
+        )],
+    );
+
+    assert!(
+        module.source.contains("parse(\"not-a-number\").is_err()"),
+        "got: {}",
+        module.source
+    );
+
+    let source = format!(
+        "pub fn parse(s: &str) -> Result<i64, String> {{ s.parse::<i64>().map_err(|e| e.to_string()) }}\n\n{}",
+        module.source
+    );
+    let (compiled, passed, detail) = compile_and_run_tests(&source);
+    assert!(compiled, "fallible-err contract must COMPILE.\n{detail}");
+    assert!(passed, "fallible-err contract must PASS (green).\n{detail}");
+}

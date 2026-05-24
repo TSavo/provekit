@@ -105,6 +105,8 @@ proc-macro2 = "1"
 inventory = "0.3"
 # Trybuild for compile-fail / pass UI tests on the macros
 trybuild = "1"
+# Temp dirs/files for kits that compile + run emitted source in tests
+tempfile = "3"
 
 [profile.release]
 opt-level = 3

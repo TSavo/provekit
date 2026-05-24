@@ -159,12 +159,25 @@ fn render_ctor(name: &str, args: &[IrTerm]) -> Result<String, String> {
         }
         "tuple" => {
             let rendered = render_args(args)?;
-            Ok(format!("({})", rendered.join(", ")))
+            // A 1-tuple in rust requires a trailing comma: `(x,)`. Without it
+            // `(x)` is a parenthesized scalar, not a tuple, so it would not
+            // round-trip a `Ctor("tuple", [x])` faithfully.
+            if rendered.len() == 1 {
+                Ok(format!("({},)", rendered[0]))
+            } else {
+                Ok(format!("({})", rendered.join(", ")))
+            }
         }
         "vec" => {
             let rendered = render_args(args)?;
             Ok(format!("vec![{}]", rendered.join(", ")))
         }
+        // The harvester lifts bool literals as `Ctor("True"/"False", [])`
+        // (provekit-lift-rust-tests, syn::Lit::Bool). Render them as the rust
+        // lowercase bool literals, NOT bare `True`/`False` (which are not valid
+        // rust and would fail to compile, e.g. `assert_eq!(is_even(4), True)`).
+        "True" if args.is_empty() => Ok("true".to_string()),
+        "False" if args.is_empty() => Ok("false".to_string()),
         "None" if args.is_empty() => Ok("None".to_string()),
         m if METHOD_CTORS.contains(&m) && !args.is_empty() => {
             let recv = render_term(&args[0])?;
@@ -623,6 +636,45 @@ mod unit_tests {
         };
         let s = assertion_for_atom("=", &[var("x"), some_42]).unwrap();
         assert_eq!(s, "assert_eq!(x, Some(42));");
+    }
+
+    #[test]
+    fn bool_literal_ctor_renders_lowercase() {
+        // The harvester lifts `true`/`false` as Ctor("True"/"False", []).
+        let true_lit = IrTerm::Ctor {
+            name: "True".to_string(),
+            args: vec![],
+        };
+        let false_lit = IrTerm::Ctor {
+            name: "False".to_string(),
+            args: vec![],
+        };
+        // `is_even(4) == true`
+        let call_true = IrTerm::Ctor {
+            name: "is_even".to_string(),
+            args: vec![int_const(4)],
+        };
+        assert_eq!(
+            assertion_for_atom("=", &[call_true, true_lit]).unwrap(),
+            "assert_eq!(is_even(4), true);"
+        );
+        let call_false = IrTerm::Ctor {
+            name: "is_even".to_string(),
+            args: vec![int_const(3)],
+        };
+        assert_eq!(
+            assertion_for_atom("=", &[call_false, false_lit]).unwrap(),
+            "assert_eq!(is_even(3), false);"
+        );
+    }
+
+    #[test]
+    fn one_tuple_renders_with_trailing_comma() {
+        let one_tuple = IrTerm::Ctor {
+            name: "tuple".to_string(),
+            args: vec![int_const(7)],
+        };
+        assert_eq!(render_term(&one_tuple).unwrap(), "(7,)");
     }
 
     #[test]
