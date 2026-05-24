@@ -49,6 +49,8 @@ fn publish_parseint_proof(dir: &Path) -> String {
     let mut name_to_cid = std::collections::HashMap::<String, String>::new();
     for d in &decls {
         let args = MintContractArgs {
+            formals: Vec::new(),
+            formal_sorts: Vec::new(),
             contract_name: d.name.clone(),
             pre: d.pre.as_deref().map(formula_to_value),
             post: d.post.as_deref().map(formula_to_value),
@@ -270,6 +272,8 @@ fn multiple_proofs_in_one_dir_all_loaded() {
     let mut members: BTreeMap<String, Vec<u8>> = BTreeMap::new();
     for d in &decls {
         let args = MintContractArgs {
+            formals: Vec::new(),
+            formal_sorts: Vec::new(),
             contract_name: d.name.clone(),
             pre: d.pre.as_deref().map(formula_to_value),
             post: None,

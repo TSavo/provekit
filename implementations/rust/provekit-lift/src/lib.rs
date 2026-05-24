@@ -443,6 +443,8 @@ pub fn lift_path(root: &Path) -> LiftReport {
             // MintContractArgs (only the content-bearing fields matter;
             // signer_seed, produced_at, etc. do not affect the CID per spec #94).
             let args = MintContractArgs {
+                formals: Vec::new(),
+                formal_sorts: Vec::new(),
                 contract_name: d.name.clone(),
                 pre: d.pre.as_deref().map(formula_to_value),
                 post: d.post.as_deref().map(formula_to_value),
@@ -589,6 +591,8 @@ pub fn mint_proof(decls: &[ContractDecl], opts: &LiftOptions) -> Result<MintOutp
 
     for d in decls {
         let args = MintContractArgs {
+            formals: Vec::new(),
+            formal_sorts: Vec::new(),
             contract_name: d.name.clone(),
             pre: d.pre.as_deref().map(formula_to_value),
             post: d.post.as_deref().map(formula_to_value),

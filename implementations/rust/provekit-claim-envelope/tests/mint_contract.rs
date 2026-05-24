@@ -106,6 +106,8 @@ fn args_with(
     inv: Option<Arc<Value>>,
 ) -> MintContractArgs {
     MintContractArgs {
+        formals: Vec::new(),
+        formal_sorts: Vec::new(),
         contract_name: "demo".into(),
         pre,
         post,

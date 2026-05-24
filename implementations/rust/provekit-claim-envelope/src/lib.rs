@@ -242,6 +242,20 @@ pub struct MintContractArgs {
     pub input_cids: Vec<String>,
     pub authoring: Authoring,
     pub signer_seed: Ed25519Seed,
+    /// Formal parameter names of the function this contract describes, in
+    /// declaration order. Body-derived op-contracts (the verification-spine
+    /// target the `body_discharge::CatalogResolver` consumes, #1440/#1436)
+    /// REQUIRE this: the resolver substitutes a harvested call's argument
+    /// into the matching formal of the body-derived `post`, so without
+    /// `formals` it returns `None` and the callee stays uninterpreted
+    /// (Undecidable). Empty for non-function contracts (LIA tautologies,
+    /// cross-language refinement targets); the field is then omitted from
+    /// the header so those mementos keep their current bytes/CIDs.
+    pub formals: Vec<String>,
+    /// Sorts of the formals, parallel to `formals`. Carried alongside
+    /// `formals` so the resolver can name the value slots; omitted from the
+    /// header when empty.
+    pub formal_sorts: Vec<Arc<Value>>,
 }
 
 // =============================================================================
@@ -356,6 +370,25 @@ pub fn contract_cid(args: &MintContractArgs) -> String {
     if let Some(inv) = &args.inv {
         kvs.push(("inv".into(), inv.clone()));
     }
+    // Body-derived op-contracts carry their formals as part of contract
+    // identity: two functions with the same `post` but different formal
+    // names are different contracts (the resolver substitutes by formal
+    // name). Omitted when empty so non-function contracts keep their
+    // existing content CIDs unchanged.
+    if !args.formals.is_empty() {
+        let formals_arr: Vec<Arc<Value>> = args
+            .formals
+            .iter()
+            .map(|f| Value::string(f.clone()))
+            .collect();
+        kvs.push(("formals".into(), Value::array(formals_arr)));
+    }
+    if !args.formal_sorts.is_empty() {
+        kvs.push((
+            "formalSorts".into(),
+            Value::array(args.formal_sorts.clone()),
+        ));
+    }
     let v = Arc::new(Value::Object(kvs));
     blake3_512_of(encode_jcs(&v).as_bytes())
 }
@@ -443,6 +476,25 @@ pub fn mint_contract(args: &MintContractArgs) -> Result<MintedEnvelope, ClaimEnv
     }
     if let Some(inv) = &args.inv {
         kind_specific.push(("inv".into(), inv.clone()));
+    }
+    // Body-derived op-contract slots: `formals` (+ `formalSorts`) ride in
+    // the header so `body_discharge::CatalogResolver` (which reads the
+    // header via `memento_body` for v1.2-layered mementos) can project them
+    // into `OpContractInfo` value slots. Omitted when empty so non-function
+    // contracts are byte-identical to their pre-#1436 form.
+    if !args.formals.is_empty() {
+        let formals_arr: Vec<Arc<Value>> = args
+            .formals
+            .iter()
+            .map(|f| Value::string(f.clone()))
+            .collect();
+        kind_specific.push(("formals".into(), Value::array(formals_arr)));
+    }
+    if !args.formal_sorts.is_empty() {
+        kind_specific.push((
+            "formalSorts".into(),
+            Value::array(args.formal_sorts.clone()),
+        ));
     }
     kind_specific.push(("verdict".into(), Value::string("holds")));
     kind_specific.push(("bindingHash".into(), Value::string(binding_hash)));
@@ -983,6 +1035,8 @@ mod tests {
     #[test]
     fn empty_contract_rejected() {
         let args = MintContractArgs {
+            formals: Vec::new(),
+            formal_sorts: Vec::new(),
             contract_name: "x".into(),
             pre: None,
             post: None,
@@ -1025,6 +1079,8 @@ mod tests {
             ),
         ]);
         let args = MintContractArgs {
+            formals: Vec::new(),
+            formal_sorts: Vec::new(),
             contract_name: "parseInt".into(),
             pre: Some(pre),
             post: None,
@@ -1052,6 +1108,8 @@ mod tests {
             ("args", Value::array(vec![Value::string("out")])),
         ]);
         let args = MintContractArgs {
+            formals: Vec::new(),
+            formal_sorts: Vec::new(),
             contract_name: "checked_add_u8.postcondition".into(),
             pre: None,
             post: Some(post),
