@@ -17,6 +17,15 @@ kind is derived from the directory name via KIND_BY_DIR.
 `kit-source-aliases/` is intentionally NOT indexed (it has never appeared in
 index.json); expanding the index's kind-set is out of scope for #1435.
 
+Only catalog-MEMENTO files are indexed: a content-addressed `.json` whose
+top-level object carries a `memento` key (the `{cid, memento, signature}`
+shape the catalog loader parses). `algorithms/` also contains 295
+proof-envelope files (`{envelope, header, metadata}` shape) that are a
+DISTINCT artifact class — the loader cannot parse them as catalog entries
+and the pre-existing index correctly excluded all of them. Indexing them
+would make the catalog loader fail (`missing field memento`). We replicate
+the established curation rule: memento-shaped files only.
+
 Entry shape mirrors the existing index:
     { "cid", "kind", "name", "path" }
 Output is sorted by CID for stable, churn-free diffs; `schema_version` is
@@ -78,6 +87,16 @@ def main() -> int:
         for f in sorted(d.glob("*.json")):
             split = split_name_cid(f.name)
             if split is None:
+                continue
+            # Index only catalog-memento files. Files of the proof-envelope
+            # shape (`envelope/header/metadata`) live in the same dir but are
+            # a distinct artifact class the catalog loader cannot parse; the
+            # pre-existing index excluded all of them. Replicate that rule.
+            try:
+                obj = json.loads(f.read_text())
+            except json.JSONDecodeError:
+                continue
+            if not isinstance(obj, dict) or "memento" not in obj:
                 continue
             name, cid = split
             entries[cid] = {
