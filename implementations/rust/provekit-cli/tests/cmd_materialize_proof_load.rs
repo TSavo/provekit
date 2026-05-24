@@ -323,3 +323,56 @@ fn materialize_stdio_client_java_io_loads_from_proof_and_compiles() {
         "java-io must hoist the STDIN_READER helper field:\n{emitted}"
     );
 }
+
+#[test]
+fn materialize_jcs_client_rfc8785_loads_from_proof_and_compiles() {
+    if !java_realize_jar().exists() {
+        eprintln!(
+            "skipping rfc8785-jcs .proof-load test: {} is unavailable; build with \
+             `mvn -q -f implementations/java/pom.xml -pl provekit-realize-java-core -am package -DskipTests`",
+            java_realize_jar().display()
+        );
+        return;
+    }
+    if !javac_available() {
+        eprintln!("skipping rfc8785-jcs .proof-load test: javac is unavailable on PATH");
+        return;
+    }
+    // The disk cache (java-canonical-bodies-provekit-rfc8785-jcs-java.json) is
+    // deleted; a green body assert below == RPC-authority path from the
+    // rfc8785-jcs shim .proof.
+    assert_no_canonical_bodies_on_disk("provekit-rfc8785-jcs-java");
+
+    let (_stdout, _stderr, emitted) = materialize_client_and_assemble(
+        "provekit-rfc8785-jcs-java",
+        "rfc8785-jcs-shim-demo-client",
+        "Canonicalizer.java",
+    );
+
+    // Library-specific bodies: the top-level entry recurses into the encode
+    // helpers (cross-method calls must resolve to the materialized siblings).
+    assert!(
+        emitted.contains("StringBuilder out = new StringBuilder();")
+            && emitted.contains("encode_value(v, out);"),
+        "rfc8785-jcs-encode must build a StringBuilder and recurse into encode_value:\n{emitted}"
+    );
+    assert!(
+        emitted.contains("encode_string(v.asText(), out)"),
+        "rfc8785-jcs-encode-value must recurse into encode_string for textual nodes:\n{emitted}"
+    );
+    // encode-string's RFC 8785 §3.2.2.2 escaping body.
+    assert!(
+        emitted.contains("out.append('\"');"),
+        "rfc8785-jcs-encode-string must emit the quote-delimited escape body:\n{emitted}"
+    );
+    // Kit-owned assembly: real Jackson imports + hoisted ObjectMapper helper.
+    assert!(
+        emitted.contains("import com.fasterxml.jackson.databind.JsonNode;")
+            && emitted.contains("import com.fasterxml.jackson.databind.node.ObjectNode;"),
+        "rfc8785-jcs must pull real com.fasterxml.jackson.* imports:\n{emitted}"
+    );
+    assert!(
+        emitted.contains("static final ObjectMapper MAPPER = new ObjectMapper();"),
+        "rfc8785-jcs must hoist the ObjectMapper helper field:\n{emitted}"
+    );
+}
