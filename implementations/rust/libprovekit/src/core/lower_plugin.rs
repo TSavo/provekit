@@ -1192,18 +1192,25 @@ fn sidecar_entry_for_term<'a>(sidecar: &'a Value, term: &NamedTerm) -> Option<&'
 }
 
 fn realize_signature_from_named_term(term: &NamedTerm) -> (Vec<String>, String) {
-    // Erasure heuristic: legacy bind payloads sometimes omit type info
-    // entirely. Distinguish "no types declared" from "types declared as
-    // empty/unit". `return_type == ""` is absence; `return_type == "()"`
-    // is explicit unit. Functions with declared parameters or explicit
-    // return type are NOT erased.
-    let erased = term.param_types.is_empty()
-        && term.params.is_empty()
-        && term.return_type.trim().is_empty();
+    // Erasure heuristic: A9 strips declared types from the canonical lift term
+    // for seam-4 federation byte-identity, so a bind payload that round-trips
+    // through that path carries NO param_types and a unit/absent return even
+    // when the source function had real parameters (e.g. `identity(x)` lifts to
+    // params=["x"], param_types=[], return_type="()"). The erased signal is
+    // therefore "no declared param_types AND return is absent or unit" —
+    // INDEPENDENT of whether params exist. (Sidecar-carried real types override
+    // this guess later in merge_realize_sidecar; this is the fallback when the
+    // payload truly has nothing.)
+    let return_trimmed = term.return_type.trim();
+    let erased =
+        term.param_types.is_empty() && (return_trimmed.is_empty() || return_trimmed == "()");
     if !erased {
         return (term.param_types.clone(), term.return_type.clone());
     }
 
+    // Reconstruct one `int` per declared parameter; a zero-param function yields
+    // an empty vec (correct). The return is `()` only when the concept is unit;
+    // any other erased concept reconstructs to `int`.
     let param_types = term
         .params
         .iter()
