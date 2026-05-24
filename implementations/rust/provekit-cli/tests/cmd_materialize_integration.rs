@@ -898,39 +898,6 @@ for line in sys.stdin:
         .output()
         .expect("spawn provekit materialize cross-language discovery");
 
-/// End-to-end: materialize python with --out-dir + --compile-check.
-/// `python3 -m py_compile` over the emitted file must pass → exit 0.
-/// Requires the provekit-realize-python-requests binary to be built.
-#[test]
-fn compile_check_passes_for_valid_python_materialized_output() {
-    let workspace = tempfile::tempdir().expect("tempdir");
-    let Some(src_dir) = write_python_requests_project_fixture(workspace.path()) else {
-        eprintln!(
-            "skipping compile-check python test: provekit-realize-python-requests binary is unavailable"
-        );
-        return;
-    };
-    write_python_http_request_source(&src_dir);
-    let out_dir = workspace.path().join("compiled-out");
-
-    let output = Command::new(env!("CARGO_BIN_EXE_provekit"))
-        .env("PROVEKIT_REPO_ROOT", repo_root())
-        .arg("materialize")
-        .arg("--target")
-        .arg("python")
-        .arg("--library")
-        .arg("python-requests")
-        .arg("--source-dir")
-        .arg(&src_dir)
-        .arg("--project")
-        .arg(workspace.path())
-        .arg("--out-dir")
-        .arg(&out_dir)
-        .arg("--compile-check")
-        .output()
-        .expect("spawn provekit materialize --compile-check for python");
->>>>>>> fb7f714a4 (test(materialize): add compile-check integration tests for #1376)
-
     let stdout = String::from_utf8_lossy(&output.stdout);
     let stderr = String::from_utf8_lossy(&output.stderr);
     assert!(
