@@ -28,6 +28,74 @@ type lifter struct {
 	locals     map[types.Object]bool
 	knownFuncs map[string]bool
 	effects    *effectSet
+	// normalizeCoreArith selects the VERIFY-FACING op dialect: when true, the
+	// arithmetic / comparison operators that map onto SMT-LIB core theories
+	// (Int / Bool) are emitted with their core symbol (`*`, `+`, `<`, ...)
+	// instead of the namespaced round-trip form (`go:mul`, `go:add`, ...).
+	//
+	// This mirrors Java's two-lifter split: JavaSourceLifter emits `java:mul`
+	// (the round-trippable source dialect), ProductionWalk emits `*` (the
+	// verify-facing dialect the z3-backed verifier discharges). The default
+	// (false) keeps the byte-identical round-trip lift the existing tests and
+	// the Go source compiler depend on; the verify-facing entry points
+	// (LiftSourceCore / LiftPathsCore) set it true so the body-derived
+	// `post = result == (* x 2)` is something z3 can actually reduce. The
+	// verifier spine is NOT touched; Go is wired INTO it by speaking the op
+	// vocabulary the spine already understands.
+	normalizeCoreArith bool
+}
+
+// coreArithOp maps a namespaced Go op name to the SMT-LIB core-theory symbol
+// the z3-backed verifier discharges, when one exists. Only the operators whose
+// semantics are exactly an Int/Bool core operation are mapped; everything else
+// (bitwise ops, shifts, dereference, ...) keeps its namespaced form because it
+// has no faithful core-theory counterpart and must stay an uninterpreted /
+// loudly-bounded symbol rather than silently aliasing to the wrong theory.
+func coreArithOp(name string) (string, bool) {
+	switch name {
+	case "go:add":
+		return "+", true
+	case "go:sub":
+		return "-", true
+	case "go:mul":
+		return "*", true
+	case "go:div":
+		return "div", true
+	case "go:mod":
+		return "mod", true
+	case "go:eq":
+		return "=", true
+	case "go:lt":
+		return "<", true
+	case "go:le":
+		return "<=", true
+	case "go:gt":
+		return ">", true
+	case "go:ge":
+		return ">=", true
+	case "go:and":
+		return "and", true
+	case "go:or":
+		return "or", true
+	case "go:neg":
+		return "-", true
+	case "go:not":
+		return "not", true
+	default:
+		return "", false
+	}
+}
+
+// opForDialect returns the op name to emit for opName under this lifter's
+// dialect. In the verify-facing dialect a known core-arith op is normalized to
+// its SMT-LIB symbol; otherwise the namespaced name passes through unchanged.
+func (l *lifter) opForDialect(opName string) string {
+	if l.normalizeCoreArith {
+		if core, ok := coreArithOp(opName); ok {
+			return core
+		}
+	}
+	return opName
 }
 
 type exprResult struct {
@@ -42,7 +110,31 @@ type stmtResult struct {
 	hasReturn bool
 }
 
+// LiftOptions selects the op dialect a lift emits.
+type LiftOptions struct {
+	// NormalizeCoreArith emits the SMT-LIB core-theory symbol (`*`, `+`,
+	// `<`, ...) for arithmetic / comparison operators instead of the
+	// namespaced round-trip form (`go:mul`, ...). Set by the verify-facing
+	// entry points so the body-derived postcondition is z3-dischargeable.
+	NormalizeCoreArith bool
+}
+
+// LiftSource lifts a single Go source file in the round-trip dialect
+// (namespaced ops, byte-identical to the source compiler's expectation).
 func LiftSource(packagePath, sourcePath string, source []byte) (LiftResult, error) {
+	return LiftSourceWithOptions(packagePath, sourcePath, source, LiftOptions{})
+}
+
+// LiftSourceCore lifts a single Go source file in the VERIFY-FACING dialect:
+// arithmetic / comparison ops are normalized to their SMT-LIB core symbols so
+// the emitted `function-contract`'s `post = result == <body-expr>` discharges
+// through the z3-backed verifier. Mirrors Java's ProductionWalk.
+func LiftSourceCore(packagePath, sourcePath string, source []byte) (LiftResult, error) {
+	return LiftSourceWithOptions(packagePath, sourcePath, source, LiftOptions{NormalizeCoreArith: true})
+}
+
+// LiftSourceWithOptions lifts a single Go source file under the given dialect.
+func LiftSourceWithOptions(packagePath, sourcePath string, source []byte, opts LiftOptions) (LiftResult, error) {
 	if packagePath == "" {
 		packagePath = "command-line-arguments"
 	}
@@ -91,7 +183,7 @@ func LiftSource(packagePath, sourcePath string, source []byte) (LiftResult, erro
 		if !ok {
 			continue
 		}
-		contract, bodyTerm, refusals := liftFunc(fset, file, pkg, info, sourcePath, known, packagePath, fn)
+		contract, bodyTerm, refusals := liftFunc(fset, file, pkg, info, sourcePath, known, packagePath, fn, opts)
 		if len(refusals) > 0 {
 			result.Refusals = append(result.Refusals, refusals...)
 			continue
@@ -126,7 +218,7 @@ func LiftSource(packagePath, sourcePath string, source []byte) (LiftResult, erro
 	return result, nil
 }
 
-func liftFunc(fset *token.FileSet, file *ast.File, pkg *types.Package, info *types.Info, sourcePath string, known map[string]bool, packagePath string, fn *ast.FuncDecl) (FunctionContract, any, []Refusal) {
+func liftFunc(fset *token.FileSet, file *ast.File, pkg *types.Package, info *types.Info, sourcePath string, known map[string]bool, packagePath string, fn *ast.FuncDecl, opts LiftOptions) (FunctionContract, any, []Refusal) {
 	fnName := fallbackFuncName(packagePath, fn)
 	if obj, ok := info.Defs[fn.Name].(*types.Func); ok {
 		fnName = obj.FullName()
@@ -157,15 +249,16 @@ func liftFunc(fset *token.FileSet, file *ast.File, pkg *types.Package, info *typ
 	}
 
 	l := &lifter{
-		fset:       fset,
-		file:       file,
-		pkg:        pkg,
-		info:       info,
-		path:       sourcePath,
-		fnName:     fnName,
-		locals:     localObjects,
-		knownFuncs: known,
-		effects:    newEffectSet(),
+		fset:               fset,
+		file:               file,
+		pkg:                pkg,
+		info:               info,
+		path:               sourcePath,
+		fnName:             fnName,
+		locals:             localObjects,
+		knownFuncs:         known,
+		effects:            newEffectSet(),
+		normalizeCoreArith: opts.NormalizeCoreArith,
 	}
 	body, err := l.liftBlock(fn.Body.List)
 	if err != nil {
@@ -552,6 +645,7 @@ func (l *lifter) liftExpr(expr ast.Expr) (exprResult, error) {
 		if !ok {
 			return exprResult{}, errAt(e.OpPos, "binary operator %s is not modeled", e.Op)
 		}
+		opName = l.opForDialect(opName)
 		sort := irSort(l.info.Types[e].Type)
 		return exprResult{term: ir.MakeCtor(opName, []ir.IrTerm{left.term, right.term}, sort), alg: op(opName, left.alg, right.alg), sort: sort}, nil
 	case *ast.UnaryExpr:
@@ -563,6 +657,7 @@ func (l *lifter) liftExpr(expr ast.Expr) (exprResult, error) {
 		if !ok {
 			return exprResult{}, errAt(e.OpPos, "unary operator %s is not modeled", e.Op)
 		}
+		opName = l.opForDialect(opName)
 		sort := irSort(l.info.Types[e].Type)
 		return exprResult{term: ir.MakeCtor(opName, []ir.IrTerm{inner.term}, sort), alg: op(opName, inner.alg), sort: sort}, nil
 	case *ast.StarExpr:
@@ -1050,6 +1145,17 @@ func isIOCall(name string) bool {
 }
 
 func LiftPaths(workspaceRoot string, sourcePaths []string) (LiftResult, error) {
+	return LiftPathsWithOptions(workspaceRoot, sourcePaths, LiftOptions{})
+}
+
+// LiftPathsCore lifts the given Go sources in the VERIFY-FACING dialect
+// (core-arith op symbols). See LiftSourceCore.
+func LiftPathsCore(workspaceRoot string, sourcePaths []string) (LiftResult, error) {
+	return LiftPathsWithOptions(workspaceRoot, sourcePaths, LiftOptions{NormalizeCoreArith: true})
+}
+
+// LiftPathsWithOptions lifts the given Go sources under the given dialect.
+func LiftPathsWithOptions(workspaceRoot string, sourcePaths []string, opts LiftOptions) (LiftResult, error) {
 	modulePath := modulePathFor(workspaceRoot)
 	var merged LiftResult
 	for _, sourcePath := range sourcePaths {
@@ -1062,7 +1168,7 @@ func LiftPaths(workspaceRoot string, sourcePaths []string) (LiftResult, error) {
 			return LiftResult{}, err
 		}
 		pkgPath := packagePathFor(modulePath, workspaceRoot, path)
-		lifted, err := LiftSource(pkgPath, sourcePath, bytes)
+		lifted, err := LiftSourceWithOptions(pkgPath, sourcePath, bytes, opts)
 		if err != nil {
 			return LiftResult{}, err
 		}
