@@ -28,6 +28,94 @@ type lifter struct {
 	locals     map[types.Object]bool
 	knownFuncs map[string]bool
 	effects    *effectSet
+	// normalizeCoreArith selects the VERIFY-FACING op dialect: when true, the
+	// arithmetic / comparison operators that map onto SMT-LIB core theories
+	// (Int / Bool) are emitted with their core symbol (`*`, `+`, `<`, ...)
+	// instead of the namespaced round-trip form (`go:mul`, `go:add`, ...).
+	//
+	// This mirrors Java's two-lifter split: JavaSourceLifter emits `java:mul`
+	// (the round-trippable source dialect), ProductionWalk emits `*` (the
+	// verify-facing dialect the z3-backed verifier discharges). The default
+	// (false) keeps the byte-identical round-trip lift the existing tests and
+	// the Go source compiler depend on; the verify-facing entry points
+	// (LiftSourceCore / LiftPathsCore) set it true so the body-derived
+	// `post = result == (* x 2)` is something z3 can actually reduce. The
+	// verifier spine is NOT touched; Go is wired INTO it by speaking the op
+	// vocabulary the spine already understands.
+	normalizeCoreArith bool
+}
+
+// coreArithOp maps a namespaced Go op name to the SMT-LIB core-theory symbol
+// the z3-backed verifier discharges, when (and ONLY when) the SMT-LIB Int/Bool
+// semantics are FAITHFUL to Go for every in-range input. An op whose SMT
+// meaning diverges from Go MUST NOT be mapped: it stays namespaced
+// (`go:<op>`), so the obligation retains an opaque uninterpreted symbol and
+// verify returns Undecidable (no witness) -- the honest "I cannot prove this"
+// rather than a false discharge. Supra omnia, rectum: refuse, never
+// false-discharge.
+//
+// Cardinal-sin guard (PR #1445 review): `go:div` / `go:mod` were previously
+// mapped to SMT-LIB `div` / `mod`, but the semantics DIVERGE on negatives:
+//
+//	Go `-7 / 2 == -3`   (truncates toward zero)
+//	SMT `(div -7 2) == -4` (floors toward -inf)
+//	Go `-7 % 2 == -1`   ;  SMT `(mod -7 2) == 1`
+//
+// That made `Halve(-7) == -4` (FALSE in Go) discharge with a SIGNED WITNESS --
+// an inverted proof. They are now left uninterpreted until faithful
+// truncation-toward-zero modeling lands (Euclidean correction / bitvector
+// theory; tracked follow-up). z3's `/` and `%` are NO better (real division /
+// floored remainder), so they are NOT substituted either.
+//
+// KEPT (faithful): `+` `-` `*` on Int (unbounded-Int overflow-modeling gap is
+// the accepted rust/java baseline, NOT introduced here); the signed
+// comparisons `<` `<=` `>` `>=` `=`; boolean `and` `or` `not`; unary `-`.
+// EXCLUDED (unfaithful / no faithful core form): div, mod/rem, shifts,
+// bitwise ops, unsigned comparisons, dereference -- all stay namespaced.
+func coreArithOp(name string) (string, bool) {
+	switch name {
+	case "go:add":
+		return "+", true
+	case "go:sub":
+		return "-", true
+	case "go:mul":
+		return "*", true
+	// go:div and go:mod are DELIBERATELY NOT mapped: SMT-LIB div/mod (floor)
+	// diverge from Go (truncate) on negatives. Leaving them namespaced makes
+	// the obligation Undecidable instead of a false discharge.
+	case "go:eq":
+		return "=", true
+	case "go:lt":
+		return "<", true
+	case "go:le":
+		return "<=", true
+	case "go:gt":
+		return ">", true
+	case "go:ge":
+		return ">=", true
+	case "go:and":
+		return "and", true
+	case "go:or":
+		return "or", true
+	case "go:neg":
+		return "-", true
+	case "go:not":
+		return "not", true
+	default:
+		return "", false
+	}
+}
+
+// opForDialect returns the op name to emit for opName under this lifter's
+// dialect. In the verify-facing dialect a known core-arith op is normalized to
+// its SMT-LIB symbol; otherwise the namespaced name passes through unchanged.
+func (l *lifter) opForDialect(opName string) string {
+	if l.normalizeCoreArith {
+		if core, ok := coreArithOp(opName); ok {
+			return core
+		}
+	}
+	return opName
 }
 
 type exprResult struct {
@@ -42,7 +130,41 @@ type stmtResult struct {
 	hasReturn bool
 }
 
+// LiftOptions selects the op dialect a lift emits and which functions it
+// emits contracts for.
+type LiftOptions struct {
+	// NormalizeCoreArith emits the SMT-LIB core-theory symbol (`*`, `+`,
+	// `<`, ...) for arithmetic / comparison operators instead of the
+	// namespaced round-trip form (`go:mul`, ...). Set by the verify-facing
+	// entry points so the body-derived postcondition is z3-dischargeable.
+	NormalizeCoreArith bool
+	// AnnotatedOnly gates contract emission on the AUTHORING declaration:
+	// when true, only functions carrying a `//provekit:boundary(...)` or
+	// `//provekit:sugar(...)` doc-comment directive are lifted. The
+	// authoring surface (`go-bind` / `go-contracts` plugins) sets this so
+	// the DECLARATION drives emission, mirroring rust's
+	// `#[provekit::sugar(...)]` / `#[provekit::boundary(...)]`. The default
+	// (false) keeps the emit-all behavior the bare `go` verify surface and
+	// the round-trip lift depend on.
+	AnnotatedOnly bool
+}
+
+// LiftSource lifts a single Go source file in the round-trip dialect
+// (namespaced ops, byte-identical to the source compiler's expectation).
 func LiftSource(packagePath, sourcePath string, source []byte) (LiftResult, error) {
+	return LiftSourceWithOptions(packagePath, sourcePath, source, LiftOptions{})
+}
+
+// LiftSourceCore lifts a single Go source file in the VERIFY-FACING dialect:
+// arithmetic / comparison ops are normalized to their SMT-LIB core symbols so
+// the emitted `function-contract`'s `post = result == <body-expr>` discharges
+// through the z3-backed verifier. Mirrors Java's ProductionWalk.
+func LiftSourceCore(packagePath, sourcePath string, source []byte) (LiftResult, error) {
+	return LiftSourceWithOptions(packagePath, sourcePath, source, LiftOptions{NormalizeCoreArith: true})
+}
+
+// LiftSourceWithOptions lifts a single Go source file under the given dialect.
+func LiftSourceWithOptions(packagePath, sourcePath string, source []byte, opts LiftOptions) (LiftResult, error) {
 	if packagePath == "" {
 		packagePath = "command-line-arguments"
 	}
@@ -85,13 +207,32 @@ func LiftSource(packagePath, sourcePath string, source []byte) (LiftResult, erro
 
 	var result LiftResult
 	result.Diagnostics = diagnostics
+	result.Annotations = map[string]*Annotation{}
 	var bodyTerms []any
 	for _, decl := range file.Decls {
 		fn, ok := decl.(*ast.FuncDecl)
 		if !ok {
 			continue
 		}
-		contract, bodyTerm, refusals := liftFunc(fset, file, pkg, info, sourcePath, known, packagePath, fn)
+		// Authoring surface: the DECLARATION drives emission. A malformed
+		// `//provekit:` directive is refused loudly (an author who typed it
+		// meant to declare something), not silently dropped.
+		ann, annErr := parseFuncAnnotation(fn)
+		if annErr != nil {
+			result.Refusals = append(result.Refusals, Refusal{
+				Kind:     "malformed-annotation",
+				Function: fallbackFuncName(packagePath, fn),
+				Line:     fset.Position(fn.Pos()).Line,
+				Reason:   annErr.Error(),
+			})
+			continue
+		}
+		if opts.AnnotatedOnly && ann == nil {
+			// No boundary/sugar declared: the author did not ask the
+			// authoring surface to lift this function.
+			continue
+		}
+		contract, bodyTerm, refusals := liftFunc(fset, file, pkg, info, sourcePath, known, packagePath, fn, opts)
 		if len(refusals) > 0 {
 			result.Refusals = append(result.Refusals, refusals...)
 			continue
@@ -99,6 +240,9 @@ func LiftSource(packagePath, sourcePath string, source []byte) (LiftResult, erro
 		result.Contracts = append(result.Contracts, contract)
 		result.IR = append(result.IR, contract)
 		bodyTerms = append(bodyTerms, bodyTerm)
+		if ann != nil {
+			result.Annotations[contract.FnName] = ann
+		}
 	}
 
 	if len(bodyTerms) > 0 {
@@ -126,7 +270,7 @@ func LiftSource(packagePath, sourcePath string, source []byte) (LiftResult, erro
 	return result, nil
 }
 
-func liftFunc(fset *token.FileSet, file *ast.File, pkg *types.Package, info *types.Info, sourcePath string, known map[string]bool, packagePath string, fn *ast.FuncDecl) (FunctionContract, any, []Refusal) {
+func liftFunc(fset *token.FileSet, file *ast.File, pkg *types.Package, info *types.Info, sourcePath string, known map[string]bool, packagePath string, fn *ast.FuncDecl, opts LiftOptions) (FunctionContract, any, []Refusal) {
 	fnName := fallbackFuncName(packagePath, fn)
 	if obj, ok := info.Defs[fn.Name].(*types.Func); ok {
 		fnName = obj.FullName()
@@ -157,15 +301,16 @@ func liftFunc(fset *token.FileSet, file *ast.File, pkg *types.Package, info *typ
 	}
 
 	l := &lifter{
-		fset:       fset,
-		file:       file,
-		pkg:        pkg,
-		info:       info,
-		path:       sourcePath,
-		fnName:     fnName,
-		locals:     localObjects,
-		knownFuncs: known,
-		effects:    newEffectSet(),
+		fset:               fset,
+		file:               file,
+		pkg:                pkg,
+		info:               info,
+		path:               sourcePath,
+		fnName:             fnName,
+		locals:             localObjects,
+		knownFuncs:         known,
+		effects:            newEffectSet(),
+		normalizeCoreArith: opts.NormalizeCoreArith,
 	}
 	body, err := l.liftBlock(fn.Body.List)
 	if err != nil {
@@ -552,6 +697,7 @@ func (l *lifter) liftExpr(expr ast.Expr) (exprResult, error) {
 		if !ok {
 			return exprResult{}, errAt(e.OpPos, "binary operator %s is not modeled", e.Op)
 		}
+		opName = l.opForDialect(opName)
 		sort := irSort(l.info.Types[e].Type)
 		return exprResult{term: ir.MakeCtor(opName, []ir.IrTerm{left.term, right.term}, sort), alg: op(opName, left.alg, right.alg), sort: sort}, nil
 	case *ast.UnaryExpr:
@@ -563,6 +709,7 @@ func (l *lifter) liftExpr(expr ast.Expr) (exprResult, error) {
 		if !ok {
 			return exprResult{}, errAt(e.OpPos, "unary operator %s is not modeled", e.Op)
 		}
+		opName = l.opForDialect(opName)
 		sort := irSort(l.info.Types[e].Type)
 		return exprResult{term: ir.MakeCtor(opName, []ir.IrTerm{inner.term}, sort), alg: op(opName, inner.alg), sort: sort}, nil
 	case *ast.StarExpr:
@@ -1050,6 +1197,17 @@ func isIOCall(name string) bool {
 }
 
 func LiftPaths(workspaceRoot string, sourcePaths []string) (LiftResult, error) {
+	return LiftPathsWithOptions(workspaceRoot, sourcePaths, LiftOptions{})
+}
+
+// LiftPathsCore lifts the given Go sources in the VERIFY-FACING dialect
+// (core-arith op symbols). See LiftSourceCore.
+func LiftPathsCore(workspaceRoot string, sourcePaths []string) (LiftResult, error) {
+	return LiftPathsWithOptions(workspaceRoot, sourcePaths, LiftOptions{NormalizeCoreArith: true})
+}
+
+// LiftPathsWithOptions lifts the given Go sources under the given dialect.
+func LiftPathsWithOptions(workspaceRoot string, sourcePaths []string, opts LiftOptions) (LiftResult, error) {
 	modulePath := modulePathFor(workspaceRoot)
 	var merged LiftResult
 	for _, sourcePath := range sourcePaths {
@@ -1062,7 +1220,7 @@ func LiftPaths(workspaceRoot string, sourcePaths []string) (LiftResult, error) {
 			return LiftResult{}, err
 		}
 		pkgPath := packagePathFor(modulePath, workspaceRoot, path)
-		lifted, err := LiftSource(pkgPath, sourcePath, bytes)
+		lifted, err := LiftSourceWithOptions(pkgPath, sourcePath, bytes, opts)
 		if err != nil {
 			return LiftResult{}, err
 		}
@@ -1071,6 +1229,12 @@ func LiftPaths(workspaceRoot string, sourcePaths []string) (LiftResult, error) {
 		merged.SourceUnits = append(merged.SourceUnits, lifted.SourceUnits...)
 		merged.Refusals = append(merged.Refusals, lifted.Refusals...)
 		merged.Diagnostics = append(merged.Diagnostics, lifted.Diagnostics...)
+		for fnName, ann := range lifted.Annotations {
+			if merged.Annotations == nil {
+				merged.Annotations = map[string]*Annotation{}
+			}
+			merged.Annotations[fnName] = ann
+		}
 	}
 	return merged, nil
 }

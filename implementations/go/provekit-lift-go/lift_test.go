@@ -297,6 +297,126 @@ func TestRPCProtocolLiftsFixture(t *testing.T) {
 	}
 }
 
+const doubleSource = `package sample
+
+func Double(x int) int {
+	return x * 2
+}
+`
+
+// The round-trip dialect (default) keeps the namespaced op `go:mul`, which the
+// Go source compiler round-trips byte-identically.
+func TestRoundTripDialectKeepsNamespacedOp(t *testing.T) {
+	result, err := LiftSource("example.com/sample", "double.go", []byte(doubleSource))
+	if err != nil {
+		t.Fatalf("LiftSource: %v", err)
+	}
+	contracts := result.FunctionContracts()
+	if len(contracts) != 1 {
+		t.Fatalf("contracts = %d, want 1", len(contracts))
+	}
+	body, err := json.Marshal(contracts[0].Post)
+	if err != nil {
+		t.Fatalf("marshal post: %v", err)
+	}
+	if !strings.Contains(string(body), `"name":"go:mul"`) {
+		t.Fatalf("round-trip dialect must emit go:mul, got: %s", body)
+	}
+	if strings.Contains(string(body), `"name":"*"`) {
+		t.Fatalf("round-trip dialect must NOT normalize to core `*`: %s", body)
+	}
+}
+
+// The verify-facing dialect normalizes arithmetic to the SMT-LIB core symbol
+// `*`, so the body-derived postcondition is z3-dischargeable.
+func TestCoreDialectNormalizesArithToSmtSymbol(t *testing.T) {
+	result, err := LiftSourceCore("example.com/sample", "double.go", []byte(doubleSource))
+	if err != nil {
+		t.Fatalf("LiftSourceCore: %v", err)
+	}
+	contracts := result.FunctionContracts()
+	if len(contracts) != 1 {
+		t.Fatalf("contracts = %d, want 1", len(contracts))
+	}
+	body, err := json.Marshal(contracts[0].Post)
+	if err != nil {
+		t.Fatalf("marshal post: %v", err)
+	}
+	if !strings.Contains(string(body), `"name":"*"`) {
+		t.Fatalf("core dialect must emit `*`, got: %s", body)
+	}
+	// Discrimination: the namespaced form must be gone in the core dialect.
+	if strings.Contains(string(body), `"name":"go:mul"`) {
+		t.Fatalf("core dialect must NOT leave go:mul: %s", body)
+	}
+}
+
+// coreArithOp maps only the operators with a faithful Int/Bool core-theory
+// counterpart; structurally-unmappable ops (bitwise, shifts, deref) stay
+// namespaced so they cannot silently alias to the wrong theory.
+func TestCoreArithOpMappingIsBounded(t *testing.T) {
+	mapped := map[string]string{
+		"go:add": "+", "go:sub": "-", "go:mul": "*",
+		"go:eq": "=", "go:lt": "<", "go:le": "<=", "go:gt": ">", "go:ge": ">=",
+		"go:and": "and", "go:or": "or", "go:not": "not", "go:neg": "-",
+	}
+	for in, want := range mapped {
+		got, ok := coreArithOp(in)
+		if !ok || got != want {
+			t.Fatalf("coreArithOp(%q) = (%q, %v), want (%q, true)", in, got, ok, want)
+		}
+	}
+	// Discrimination: ops whose SMT-LIB semantics DIVERGE from Go (or have no
+	// faithful core form) must have NO core mapping, so they stay
+	// uninterpreted -> Undecidable, never a false discharge.
+	//
+	// `go:div` / `go:mod` are the cardinal-sin guard (PR #1445): SMT-LIB
+	// div/mod floor toward -inf while Go truncates toward zero, so mapping
+	// them signed a witness for `Halve(-7) == -4` (false in Go). They MUST
+	// stay namespaced until faithful truncation modeling lands.
+	for _, unmapped := range []string{
+		"go:div", "go:mod", // divergent semantics (truncate vs floor) — cardinal-sin guard
+		"go:bitand", "go:bitor", "go:bitxor", "go:bitnot", // no faithful Int core form
+		"go:shl", "go:shr", // shifts
+		"go:deref", "go:ne", // deref; ne intentionally conservative (left uninterpreted)
+	} {
+		if got, ok := coreArithOp(unmapped); ok {
+			t.Fatalf("coreArithOp(%q) must be unmapped (unfaithful/no core form), got %q", unmapped, got)
+		}
+	}
+}
+
+// The verify-facing dialect must NOT normalize Go integer division to SMT-LIB
+// `div`: their rounding diverges on negatives, which would let a Go-false
+// equation discharge. The lifted body must keep the uninterpreted `go:div`.
+func TestCoreDialectLeavesDivisionUninterpreted(t *testing.T) {
+	src := `package sample
+
+func Halve(x int) int {
+	return x / 2
+}
+`
+	result, err := LiftSourceCore("example.com/sample", "halve.go", []byte(src))
+	if err != nil {
+		t.Fatalf("LiftSourceCore: %v", err)
+	}
+	contracts := result.FunctionContracts()
+	if len(contracts) != 1 {
+		t.Fatalf("contracts = %d, want 1", len(contracts))
+	}
+	body, err := json.Marshal(contracts[0].Post)
+	if err != nil {
+		t.Fatalf("marshal post: %v", err)
+	}
+	if !strings.Contains(string(body), `"name":"go:div"`) {
+		t.Fatalf("division must stay uninterpreted as go:div, got: %s", body)
+	}
+	// Decisive: it must NOT have been aliased to the floor-division SMT op.
+	if strings.Contains(string(body), `"name":"div"`) {
+		t.Fatalf("division must NOT normalize to SMT-LIB `div` (floor != Go truncate): %s", body)
+	}
+}
+
 func resultBodyTerm(t *testing.T, post any) any {
 	t.Helper()
 	generic, err := toGeneric(post)

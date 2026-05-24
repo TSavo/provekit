@@ -35,11 +35,75 @@ package lifgotests
 import (
 	"fmt"
 	"go/ast"
+	"go/parser"
 	"go/token"
 	"strconv"
 
 	"github.com/tsavo/provekit/go/provekit-ir-symbolic/ir"
 )
+
+// LiftLeafAssertions is the Layer-0 entry point: it harvests each single
+// top-level recognized assertion in a test file into its own `contract`
+// ContractDeclaration with `inv = <assertion-formula>`. This is the
+// single-assertion path the Layer-2 patterns RELEASE to (their warnings say
+// "releasing to layer 0"); it lifts shapes like
+//
+//	assert.Equal(t, Double(3), 6)  ->  contract{ inv = =(Double(3), 6) }
+//
+// where `Double(3)` is a `ctor` named `Double` — exactly the harvested
+// `=(<call>, <expected>)` callsite the verifier's body-discharge seam
+// enumerates and reduces through the body-derived function-contract for
+// `Double`. One contract per test function (Inv is the conjunction of that
+// test's recognized assertions; for the common single-assertion case this is
+// just the bare `=( ... )`), so a function-contract bridge can match it.
+//
+// Unlike LiftFile (Layer 2: bounded-loop / helper-inlining / multi-assert
+// characterization), this does NOT require >= 2 assertions and does NOT fold
+// into an opaque conjunction when there is exactly one — preserving the
+// clean `=(<call>, <expected>)` shape the body-discharge enumerator needs.
+func LiftLeafAssertions(src []byte, sourcePath string) ([]ir.ContractDeclaration, []LiftWarning, error) {
+	fset := token.NewFileSet()
+	f, err := parser.ParseFile(fset, sourcePath, src, 0)
+	if err != nil {
+		return nil, nil, fmt.Errorf("parse %s: %w", sourcePath, err)
+	}
+	var decls []ir.ContractDeclaration
+	var warnings []LiftWarning
+	for _, decl := range f.Decls {
+		fn, ok := decl.(*ast.FuncDecl)
+		if !ok || !isTestFunc(fn) || fn.Body == nil {
+			continue
+		}
+		var atoms []ir.IrFormula
+		for _, stmt := range fn.Body.List {
+			call, ok := exprStmtCall(stmt)
+			if !ok || !isAssertionCall(call) {
+				continue
+			}
+			formula, err := liftAssertionCall(call)
+			if err != nil {
+				warnings = append(warnings, LiftWarning{
+					Adapter: ADAPTER, SourcePath: sourcePath, ItemName: fn.Name.Name, Reason: err.Error(),
+				})
+				continue
+			}
+			atoms = append(atoms, formula)
+		}
+		if len(atoms) == 0 {
+			continue
+		}
+		inv := atoms[0]
+		if len(atoms) > 1 {
+			inv = ir.And(atoms...)
+		}
+		decls = append(decls, ir.ContractDeclaration{
+			Name:       fn.Name.Name,
+			OutBinding: ir.DefaultOutBinding,
+			Inv:        inv,
+		})
+	}
+	return decls, warnings, nil
+}
 
 // isAssertionCall returns true if call is a recognized assertion-call
 // shape. Used by Pattern 2 / 3 to filter top-level statements before
