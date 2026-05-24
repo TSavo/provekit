@@ -635,6 +635,25 @@ pub fn strip_realize_sidecar_from_lift_term(term: Term) -> Term {
                 object.remove("realizeParamTypes");
                 object.remove("realize_return_type");
                 object.remove("realizeReturnType");
+                object.remove("realize_original_param_types");
+                object.remove("realizeOriginalParamTypes");
+                // #1075/A9 federation: the bind-lift-entry is the cross-language
+                // boundary surface and must hash to the SAME bytes whether
+                // lifted from typed Rust or untyped Python. The Python lifter
+                // emits only {kind, param_names, term_shape, term_shape_cid,
+                // operand_bindings, realize_*, source_function_name, witnesses};
+                // Rust additionally carries visibility/generic_params/doc_lines
+                // for the Java boundary realize path. Those are realize-only
+                // metadata (read off the UN-stripped lift IR by cmd_lower, never
+                // off this hashed term) so they ride CID-invisible here too,
+                // scoped to bind-lift-entry to leave sugar-entry CIDs untouched.
+                if object.get("kind").and_then(Json::as_str) == Some("bind-lift-entry") {
+                    object.remove("visibility");
+                    object.remove("generic_params");
+                    object.remove("genericParams");
+                    object.remove("doc_lines");
+                    object.remove("docLines");
+                }
             }
         }
     }

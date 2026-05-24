@@ -402,12 +402,23 @@ fn bind_lift(params: &Value) -> Result<Value, String> {
                 .unwrap_or_default();
 
             let doc_lines = sugar_doc_lines(item_fn);
+            // #1075/A9 federation invariant: the bind-lift-entry is a
+            // CID-bearing surface (it is embedded verbatim as arg[0] of the
+            // federated `concept:bind-result` payload and feeds NamedTerm via
+            // `bind_term_document`). Declared source signature types MUST NOT
+            // ride here, or typed-Rust and untyped-Python bind to DIFFERENT
+            // CIDs and seam-4 federation byte-identity breaks (regression
+            // 48b343a43). The Java boundary emitter genuinely needs these
+            // types to realize the interface signature, so they travel on the
+            // CID-INVISIBLE realize sidecar (`realize_*`, stripped by
+            // `strip_realize_sidecar_from_lift_term` before hashing) — the
+            // same channel #1448 already uses for the sugar/realizer path.
             let mut entry = json!({
                 "kind": "bind-lift-entry",
                 "param_names": param_names,
-                "param_types": param_types,
-                "original_param_types": original_param_types,
-                "return_type": return_type,
+                "realize_param_types": param_types,
+                "realize_original_param_types": original_param_types,
+                "realize_return_type": return_type,
                 "generic_params": generic_params,
                 "visibility": visibility,
                 "term_shape": cvalue_to_json(&term_shape),
@@ -3923,8 +3934,36 @@ pub fn add(left: i64, right: i64) -> i64 {
         let entry = entries.first().expect("add entry");
         assert_no_forbidden_bind_lift_entry_fields(entry);
         assert_eq!(entry["param_names"], json!(["left", "right"]));
-        assert!(entry.get("param_types").is_none());
-        assert!(entry.get("return_type").is_none());
+        // Federation invariant (#1075/A9): the bind-lift-entry is CID-bearing
+        // (embedded as arg[0] of the federated concept:bind-result payload and
+        // feeding NamedTerm), so declared signature types must NOT appear on it
+        // under the bare keys — typed-Rust would otherwise bind to a different
+        // CID than untyped-Python and seam-4 byte-identity would break.
+        assert!(
+            entry.get("param_types").is_none(),
+            "bare param_types must not ride the CID-bearing bind-lift-entry"
+        );
+        assert!(
+            entry.get("return_type").is_none(),
+            "bare return_type must not ride the CID-bearing bind-lift-entry"
+        );
+        assert!(
+            entry.get("original_param_types").is_none(),
+            "bare original_param_types must not ride the CID-bearing bind-lift-entry"
+        );
+        // The types are not LOST: they travel on the CID-invisible realize
+        // sidecar (stripped before hashing by strip_realize_sidecar_from_lift_term)
+        // so the Java boundary emitter can still realize the interface signature.
+        assert_eq!(
+            entry["realize_param_types"],
+            json!(["i64", "i64"]),
+            "signature types must be carried on the CID-invisible realize sidecar"
+        );
+        assert_eq!(
+            entry["realize_return_type"],
+            json!("i64"),
+            "return type must be carried on the CID-invisible realize sidecar"
+        );
         assert!(
             entry["witnesses"]
                 .as_array()
