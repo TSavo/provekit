@@ -62,11 +62,75 @@ use serde_json::{json, Value as Json};
 use crate::cmd_mint;
 use crate::{EXIT_OK, EXIT_SOLVER_FAIL, EXIT_USER_ERROR, EXIT_VERIFY_FAIL};
 
-// Ed25519 seed used to sign minted verification witnesses. Mirrors the
-// runner's `RUN_SIGNER_SEED` convention (a deterministic developer seed;
-// production minting overrides via the provenance key path). Distinct
-// byte so verify-witness signers are distinguishable from run signers.
-const VERIFY_SIGNER_SEED: [u8; 32] = [0x76; 32];
+// Default Ed25519 seed used to sign minted verification witnesses when
+// no real signer is configured. This is a deterministic *developer*
+// seed: a signature under it is an INTEGRITY TAG (it binds the witness
+// bytes so tampering is detectable and the witness CID is reproducible),
+// NOT an authority attestation (everyone knows this seed, so it asserts
+// nothing about *who* produced the proof). Distinct byte from the
+// runner's `RUN_SIGNER_SEED` so verify-witness signers are
+// distinguishable from run signers.
+//
+// A real signer is honored when configured (see [`resolve_signer_seed`]):
+//   - env `PROVEKIT_VERIFY_SIGNER_KEY` = hex-encoded 32-byte seed, or
+//   - env `PROVEKIT_VERIFY_SIGNER_KEY_FILE` = path to a file whose first
+//     non-whitespace token is the hex-encoded 32-byte seed.
+// Only then does the signature carry authority.
+const VERIFY_SIGNER_SEED_DEV: [u8; 32] = [0x76; 32];
+
+/// The env var carrying a hex-encoded 32-byte Ed25519 signer seed.
+const SIGNER_KEY_ENV: &str = "PROVEKIT_VERIFY_SIGNER_KEY";
+/// The env var carrying a path to a file holding the hex-encoded seed.
+const SIGNER_KEY_FILE_ENV: &str = "PROVEKIT_VERIFY_SIGNER_KEY_FILE";
+
+/// Resolve the Ed25519 signer seed for minted witnesses.
+///
+/// Precedence:
+///   1. `PROVEKIT_VERIFY_SIGNER_KEY`      — hex(32 bytes) inline,
+///   2. `PROVEKIT_VERIFY_SIGNER_KEY_FILE` — path to a file whose first
+///      whitespace-delimited token is hex(32 bytes),
+///   3. the dev seed [`VERIFY_SIGNER_SEED_DEV`] (integrity tag only).
+///
+/// Returns `(seed, is_authoritative)`: `is_authoritative` is true only
+/// when an override was supplied, so callers can be honest in output
+/// about whether the signature attests authority. A malformed override
+/// is an error (fail closed: do not silently fall back to the dev seed
+/// when the operator clearly intended a real key).
+fn resolve_signer_seed() -> Result<([u8; 32], bool), String> {
+    if let Some(hex) = std::env::var_os(SIGNER_KEY_ENV) {
+        let hex = hex.to_string_lossy().trim().to_string();
+        return decode_seed_hex(&hex).map(|s| (s, true));
+    }
+    if let Some(path) = std::env::var_os(SIGNER_KEY_FILE_ENV) {
+        let path = std::path::PathBuf::from(path);
+        let contents = std::fs::read_to_string(&path)
+            .map_err(|e| format!("read {SIGNER_KEY_FILE_ENV} `{}`: {e}", path.display()))?;
+        let token = contents
+            .split_whitespace()
+            .next()
+            .ok_or_else(|| format!("{SIGNER_KEY_FILE_ENV} `{}` is empty", path.display()))?;
+        return decode_seed_hex(token).map(|s| (s, true));
+    }
+    Ok((VERIFY_SIGNER_SEED_DEV, false))
+}
+
+/// Decode a hex-encoded 32-byte Ed25519 seed.
+fn decode_seed_hex(hex: &str) -> Result<[u8; 32], String> {
+    let hex = hex.strip_prefix("0x").unwrap_or(hex);
+    if hex.len() != 64 {
+        return Err(format!(
+            "signer seed must be 64 hex chars (32 bytes); got {} chars",
+            hex.len()
+        ));
+    }
+    let mut seed = [0u8; 32];
+    for (i, byte) in seed.iter_mut().enumerate() {
+        let s = &hex[i * 2..i * 2 + 2];
+        *byte = u8::from_str_radix(s, 16)
+            .map_err(|e| format!("signer seed has non-hex at byte {i}: {e}"))?;
+    }
+    Ok(seed)
+}
 
 #[derive(Parser, Debug, Clone)]
 pub struct VerifyArgs {
@@ -226,15 +290,24 @@ pub fn run(args: VerifyArgs) -> u8 {
     }
 
     // Build the solver-dispatch plan + registry. Honor the kit's own
-    // config when present; otherwise use the default verify dispatch
-    // table over a default registry.
-    let (plan, solver_registry) = build_dispatch_plan_and_registry(&project_root, &args.z3);
+    // The kit author's declared `[solvers]` plan wins; otherwise the
+    // default verify dispatch table over a single-Z3 registry.
+    let (plan, solver_registry, plan_is_default) =
+        build_plan_and_registry(&project_root, &args.z3);
 
     if !quiet && !json_out {
+        let plan_label = match (&plan, plan_is_default) {
+            (_, true) => "default solver-dispatch table".to_string(),
+            (SolverPlan::Dispatch(_), false) => "kit-declared solver-dispatch table".to_string(),
+            (SolverPlan::Chain(_), false) => "kit-declared solver chain".to_string(),
+            (SolverPlan::Portfolio { .. }, false) => "kit-declared solver portfolio".to_string(),
+            (SolverPlan::Single(n), false) => format!("kit-declared single solver `{n}`"),
+        };
         println!(
-            "  {} {} claims via solver-dispatch table",
+            "  {} {} claims via {}",
             "discharging".dimmed(),
-            callsites.len()
+            callsites.len(),
+            plan_label
         );
     }
 
@@ -244,10 +317,35 @@ pub fn run(args: VerifyArgs) -> u8 {
         .clone()
         .unwrap_or_else(|| project_root.join(".provekit").join("witnesses"));
 
+    // Resolve the signer seed once. A malformed override fails the whole
+    // run (fail closed) rather than silently signing with the dev seed.
+    let (signer_seed, signer_is_authoritative) = match resolve_signer_seed() {
+        Ok(s) => s,
+        Err(e) => {
+            eprintln!("{}: signer key: {e}", "error".red().bold());
+            return EXIT_USER_ERROR;
+        }
+    };
+    if !quiet && !json_out && !signer_is_authoritative {
+        println!(
+            "  {} witnesses signed with the well-known dev seed (integrity tag only; set {} for an authoritative signer)",
+            "note:".yellow(),
+            SIGNER_KEY_ENV
+        );
+    }
+
     // Stage 2-4: per-claim discharge + witness mint.
     let mut results: Vec<ClaimResult> = Vec::with_capacity(callsites.len());
     for cs in &callsites {
-        results.push(verify_one_claim(cs, &pool, &plan, &solver_registry, &witness_dir));
+        results.push(verify_one_claim(
+            cs,
+            &pool,
+            &plan,
+            &solver_registry,
+            &witness_dir,
+            &signer_seed,
+            signer_is_authoritative,
+        ));
     }
 
     // Stage 5: emit receipt.
@@ -280,36 +378,41 @@ pub fn run(args: VerifyArgs) -> u8 {
     }
 }
 
-/// Build the dispatch plan + solver registry for verification.
+/// Build the solver plan + registry for verification.
 ///
 /// Precedence:
-///   1. If the kit's `.provekit/config.toml` declares a solver config,
-///      build the registry from it. If that config declares a
-///      `[solvers.dispatch]` table, use it (kit author's table wins);
-///      otherwise overlay the default verify dispatch table over the
-///      kit's registered solver seats.
-///   2. Otherwise: default registry (Z3 at `--z3`) + the default verify
-///      dispatch table.
-fn build_dispatch_plan_and_registry(
+///   1. If the kit's `.provekit/config.toml` declares a `[solvers]`
+///      config, the KIT AUTHOR'S PLAN WINS: build the registry from it
+///      and derive the plan via `SolverPlan::from_config` (whatever the
+///      kit declared — `Dispatch`, `Chain`, `Portfolio`, or `Single`).
+///      `verify` does not override the kit's chosen routing.
+///   2. Otherwise (no `[solvers]` config): synthesize the default
+///      `verify` dispatch table over a single-Z3 registry. The default
+///      table is the structure `verify` introduces so the verb still
+///      routes by obligation class without a kit config; missing seats
+///      simply miss the registry and `run_plan` reports Undecidable for
+///      those rows (loudly), the correct posture on a host lacking those
+///      backends.
+///
+/// Returns the plan, the registry, and whether the plan is the
+/// synthesized default (vs. kit-declared) for honest receipt labelling.
+fn build_plan_and_registry(
     project_root: &std::path::Path,
     z3_path: &str,
-) -> (SolverPlan, std::collections::HashMap<String, SolverHandle>) {
+) -> (
+    SolverPlan,
+    std::collections::HashMap<String, SolverHandle>,
+    bool,
+) {
     if let Ok(Some(sc)) = SolversConfig::load(project_root) {
+        // Kit author's declared plan wins, verbatim.
         let reg = registry::build(&sc);
-        // Use the kit's own dispatch table if it declared one; else the
-        // default verify table routed over the kit's registered seats.
-        let plan = match SolverPlan::from_config(&sc) {
-            SolverPlan::Dispatch(d) => SolverPlan::Dispatch(d),
-            _ => SolverPlan::Dispatch(verify_dispatch_table()),
-        };
-        return (plan, reg);
+        let plan = SolverPlan::from_config(&sc);
+        return (plan, reg, false);
     }
-    // Fallback: a single Z3 seat is enough to drive the LIA / default
-    // rows of the dispatch table. Other seats simply miss the registry
-    // and `run_plan` reports Undecidable for those rows (loudly), which
-    // is the correct posture for a host lacking those backends.
+    // No kit config: the default verify dispatch table over single-Z3.
     let reg = registry::build_default_z3(z3_path);
-    (SolverPlan::Dispatch(verify_dispatch_table()), reg)
+    (SolverPlan::Dispatch(verify_dispatch_table()), reg, true)
 }
 
 /// Discharge a single contract claim and mint a witness if it holds.
@@ -319,6 +422,8 @@ fn verify_one_claim(
     plan: &SolverPlan,
     solver_registry: &std::collections::HashMap<String, SolverHandle>,
     witness_dir: &std::path::Path,
+    signer_seed: &[u8; 32],
+    signer_is_authoritative: bool,
 ) -> ClaimResult {
     let mut result = ClaimResult {
         property_name: cs.property_name.clone(),
@@ -384,9 +489,18 @@ fn verify_one_claim(
         .map(|i| format!("{}@{}", i.result.solver_name, i.result.solver_version))
         .unwrap_or_else(|| "<none>".to_string());
 
-    // Mint + sign a witness for a discharged claim.
+    // Mint + sign a witness for a discharged claim. A witness is minted
+    // ONLY when the obligation is discharged (unsat for its negation); an
+    // unsatisfied (violated) or undecidable claim mints nothing.
     if verdict == ObligationVerdict::Discharged {
-        match mint_verification_witness(cs, &obligation, &result.discharging_solver, witness_dir) {
+        match mint_verification_witness(
+            cs,
+            &obligation,
+            &result.discharging_solver,
+            witness_dir,
+            signer_seed,
+            signer_is_authoritative,
+        ) {
             Ok(cid) => result.witness_cid = Some(cid),
             Err(e) => {
                 // Minting failure does not flip the verdict (the proof
@@ -399,12 +513,21 @@ fn verify_one_claim(
     result
 }
 
-/// The solver seat the dispatch table routes `theory` to (for the
-/// receipt's per-claim "routed solver" field). Returns the table's
-/// seat for the class, falling back to its `default`.
+/// The solver seat the plan routes `theory` to (for the receipt's
+/// per-claim "routed solver" field).
+///
+/// For a `Dispatch` plan this is the class-specific seat (falling back
+/// to `default`). For a kit-declared non-dispatch plan the routing is
+/// not theory-keyed, so we name the plan shape honestly rather than
+/// pretending a per-class seat exists; the authoritative answer for
+/// those is the `dischargingSolver` field, which records who actually
+/// returned the verdict.
 fn routed_seat(plan: &SolverPlan, theory: FormulaTheory) -> String {
-    let SolverPlan::Dispatch(d) = plan else {
-        return "<plan-not-dispatch>".to_string();
+    let d = match plan {
+        SolverPlan::Dispatch(d) => d,
+        SolverPlan::Single(n) => return format!("single:{n}"),
+        SolverPlan::Chain(names) => return format!("chain:{}", names.join(",")),
+        SolverPlan::Portfolio { names, .. } => return format!("portfolio:{}", names.join(",")),
     };
     let by_theory = match theory {
         FormulaTheory::EquationalTheory => d.equational_theory.as_deref(),
@@ -433,22 +556,28 @@ fn mint_verification_witness(
     obligation: &Json,
     discharging_solver: &str,
     witness_dir: &std::path::Path,
+    signer_seed: &[u8; 32],
+    signer_is_authoritative: bool,
 ) -> Result<String, String> {
     std::fs::create_dir_all(witness_dir).map_err(|e| format!("create {}: {e}", witness_dir.display()))?;
 
-    let pubkey = ed25519_pubkey_string(&VERIFY_SIGNER_SEED);
+    let pubkey = ed25519_pubkey_string(signer_seed);
     let observed_at = chrono::Utc::now().to_rfc3339_opts(chrono::SecondsFormat::Millis, true);
 
     // The obligation CID is the fixture state this witness pins to.
     let obligation_jcs = jcs_of_json(obligation)?;
     let obligation_cid = blake3_512_of(obligation_jcs.as_bytes());
 
+    // `signer_attests_authority` is honest about whether `signed_by`
+    // names a real producer key or the well-known dev seed (integrity
+    // tag only). Consumers trust-discriminate on it.
     let measurements = json!({
         "solver": discharging_solver,
         "obligation_cid": obligation_cid,
         "bridge_ir_name": cs.bridge_ir_name,
         "source_layer": cs.bridge_source_layer,
         "target_layer": cs.bridge_target_layer,
+        "signer_attests_authority": signer_is_authoritative,
     });
 
     // Build the content over which the CID + signature are computed.
@@ -469,7 +598,7 @@ fn mint_verification_witness(
     });
     let signable_jcs = jcs_of_json(&signable)?;
     let cid = blake3_512_of(signable_jcs.as_bytes());
-    let signature = ed25519_sign_string(&VERIFY_SIGNER_SEED, signable_jcs.as_bytes());
+    let signature = ed25519_sign_string(signer_seed, signable_jcs.as_bytes());
 
     let witness = provekit_ir_types::WitnessMemento {
         kind: "witness".to_string(),
@@ -677,8 +806,15 @@ mod tests {
             arg_term: None,
         };
         let obligation = json!({"kind":"atomic","name":"true","args":[]});
-        let cid = mint_verification_witness(&cs, &obligation, "z3@4.x", &tmp)
-            .expect("witness mint must succeed");
+        let cid = mint_verification_witness(
+            &cs,
+            &obligation,
+            "z3@4.x",
+            &tmp,
+            &VERIFY_SIGNER_SEED_DEV,
+            false,
+        )
+        .expect("witness mint must succeed");
         assert!(cid.starts_with("blake3-512:"));
         // The witness file exists and re-parses as a WitnessMemento.
         let hex = cid.trim_start_matches("blake3-512:");
@@ -688,7 +824,21 @@ mod tests {
             serde_json::from_str(&bytes).expect("witness re-parses");
         assert_eq!(parsed.outcome, "pass");
         assert_eq!(parsed.measurements["solver"], "z3@4.x");
+        // The dev seed is an integrity tag, not authority.
+        assert_eq!(parsed.measurements["signer_attests_authority"], false);
         assert!(parsed.signature.is_some());
         let _ = std::fs::remove_dir_all(&tmp);
+    }
+
+    #[test]
+    fn signer_seed_hex_override_decodes_and_is_authoritative() {
+        // An override seed decodes to 32 bytes and is marked authoritative.
+        let hex = "ab".repeat(32);
+        let seed = decode_seed_hex(&hex).expect("valid 64-hex seed decodes");
+        assert_eq!(seed, [0xabu8; 32]);
+        // 0x-prefixed accepted; wrong length rejected.
+        assert_eq!(decode_seed_hex(&format!("0x{hex}")).unwrap(), [0xabu8; 32]);
+        assert!(decode_seed_hex("dead").is_err());
+        assert!(decode_seed_hex(&"zz".repeat(32)).is_err());
     }
 }

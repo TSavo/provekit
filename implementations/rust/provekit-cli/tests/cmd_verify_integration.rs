@@ -69,14 +69,15 @@ fn json_to_canonical_jcs(j: &Json) -> String {
     encode_jcs(&to_cv(j))
 }
 
-/// Publish a `.proof` catalog with one contract claim (`parseInt` whose
-/// pre asserts `parseInt(s) > 0`, a linear-arithmetic property) plus a
-/// self-call bridge, in the v1.1-flat `evidence.body` shape that
-/// `enumerate_callsites` consumes, so it yields exactly one callsite
-/// whose obligation classifies as linear-arithmetic. Returns the
+/// Publish a `.proof` catalog with one contract claim plus a self-call
+/// bridge, in the v1.1-flat `evidence.body` shape `enumerate_callsites`
+/// consumes, so it yields exactly one callsite. The TARGET contract's
+/// `pre` is `forall n:Int. <body>` — the obligation that gets
+/// discharged. The SOURCE contract carries a single `parseInt` ctor in
+/// its `post` slot so exactly one callsite enumerates. Returns the
 /// project dir.
-fn publish_lia_claim_project() -> PathBuf {
-    let dir = unique_dir("lia");
+fn publish_claim_project(suffix: &str, name: &str, target_pre_body: Json) -> PathBuf {
+    let dir = unique_dir(suffix);
     let proof_dir = dir.join(".provekit");
     fs::create_dir_all(&proof_dir).expect("mkdir .provekit");
 
@@ -85,10 +86,6 @@ fn publish_lia_claim_project() -> PathBuf {
 
     let mut members: BTreeMap<String, Vec<u8>> = BTreeMap::new();
 
-    // TARGET contract: its `pre` is the obligation that gets discharged.
-    // A pure linear-arithmetic tautology (`forall n:Int. n >= n`) so the
-    // SMT seat (z3) returns unsat for the negation = the claim holds. No
-    // uninterpreted function in the obligation, so z3 decides it.
     let target_env = json!({
         "evidence": {
             "kind": "contract",
@@ -98,13 +95,7 @@ fn publish_lia_claim_project() -> PathBuf {
                     "kind": "forall",
                     "name": "n",
                     "sort": {"kind": "primitive", "name": "Int"},
-                    "body": {
-                        "kind": "atomic", "name": ">=",
-                        "args": [
-                            {"kind": "var", "name": "n"},
-                            {"kind": "var", "name": "n"}
-                        ]
-                    }
+                    "body": target_pre_body
                 }
             }
         }
@@ -112,14 +103,11 @@ fn publish_lia_claim_project() -> PathBuf {
     let (target_cid, target_bytes) = flat_member(target_env);
     members.insert(target_cid.clone(), target_bytes);
 
-    // SOURCE contract: a single `parseInt` ctor in its `post` slot, so
-    // exactly one callsite enumerates. The bridge routes this source
-    // symbol to the target contract above.
     let source_env = json!({
         "evidence": {
             "kind": "contract",
             "body": {
-                "contractName": "parseInt",
+                "contractName": name,
                 "post": {
                     "kind": "atomic", "name": "=",
                     "args": [
@@ -134,7 +122,6 @@ fn publish_lia_claim_project() -> PathBuf {
     let (source_cid, source_bytes) = flat_member(source_env);
     members.insert(source_cid, source_bytes);
 
-    // Bridge member: sourceSymbol parseInt -> the target contract.
     let bridge_env = json!({
         "evidence": {
             "kind": "bridge",
@@ -152,7 +139,7 @@ fn publish_lia_claim_project() -> PathBuf {
     let signer_pubkey = ed25519_pubkey_string(&signer_seed);
     let signer_cid = blake3_512_of(signer_pubkey.as_bytes());
     let input = ProofEnvelopeInput {
-        name: "@test/verify-lia".into(),
+        name: format!("@test/verify-{suffix}"),
         version: "1.0.0".into(),
         binary_cid: None,
         metadata: None,
@@ -165,6 +152,39 @@ fn publish_lia_claim_project() -> PathBuf {
     let hex = built.cid.strip_prefix("blake3-512:").unwrap();
     fs::write(proof_dir.join(format!("{hex}.proof")), &built.bytes).expect("write proof");
     dir
+}
+
+/// A valid linear-arithmetic claim: `forall n:Int. n >= n` (a
+/// tautology, so z3 returns unsat for the negation = discharged).
+fn publish_lia_claim_project() -> PathBuf {
+    publish_claim_project(
+        "lia",
+        "parseInt",
+        json!({
+            "kind": "atomic", "name": ">=",
+            "args": [
+                {"kind": "var", "name": "n"},
+                {"kind": "var", "name": "n"}
+            ]
+        }),
+    )
+}
+
+/// A VIOLATED linear-arithmetic claim: `forall n:Int. n > n` (false for
+/// every n, so z3 returns sat for the negation = unsatisfied). No valid
+/// witness must be minted for this claim.
+fn publish_violated_claim_project() -> PathBuf {
+    publish_claim_project(
+        "violated",
+        "parseInt",
+        json!({
+            "kind": "atomic", "name": ">",
+            "args": [
+                {"kind": "var", "name": "n"},
+                {"kind": "var", "name": "n"}
+            ]
+        }),
+    )
 }
 
 fn provekit_bin() -> PathBuf {
@@ -181,7 +201,8 @@ fn z3_available() -> bool {
         .unwrap_or(false)
 }
 
-fn run_verify_json(project: &Path, witness_dir: &Path) -> Json {
+/// Run `provekit verify --project <p> --json` and return (receipt, exit_code).
+fn run_verify_json_with_code(project: &Path, witness_dir: &Path) -> (Json, i32) {
     let out = Command::new(provekit_bin())
         .arg("verify")
         .arg("--project")
@@ -192,8 +213,13 @@ fn run_verify_json(project: &Path, witness_dir: &Path) -> Json {
         .output()
         .expect("spawn provekit verify");
     let stdout = String::from_utf8_lossy(&out.stdout);
-    serde_json::from_str(&stdout)
-        .unwrap_or_else(|e| panic!("verify JSON parse failed: {e}\nstdout: {stdout}"))
+    let receipt = serde_json::from_str(&stdout)
+        .unwrap_or_else(|e| panic!("verify JSON parse failed: {e}\nstdout: {stdout}"));
+    (receipt, out.status.code().unwrap_or(-1))
+}
+
+fn run_verify_json(project: &Path, witness_dir: &Path) -> Json {
+    run_verify_json_with_code(project, witness_dir).0
 }
 
 #[test]
@@ -283,6 +309,63 @@ fn verify_lia_claim_routes_to_smt_and_mints_witness() {
         assert_eq!(claim["pass"], false);
         assert!(claim["witnessCid"].is_null());
     }
+
+    let _ = fs::remove_dir_all(&project);
+}
+
+/// NEGATIVE / regression test: a claim that VIOLATES its contract must
+/// fail loudly. `forall n:Int. n > n` is false for every n, so z3
+/// returns sat for the negation = `unsatisfied`. The verb must report
+/// `pass: false`, `status: unsatisfied`, exit code 1
+/// (`EXIT_VERIFY_FAIL`), and mint NO witness. Without this the "catch"
+/// path ships untested — this is the gate that proves verify can fail.
+#[test]
+fn verify_violated_claim_fails_and_mints_no_witness() {
+    if !z3_available() {
+        eprintln!("z3 not on PATH: skipping the violated-claim negative test");
+        return;
+    }
+    let project = publish_violated_claim_project();
+    let witnesses = project.join("witnesses-out");
+    let (receipt, code) = run_verify_json_with_code(&project, &witnesses);
+
+    assert_eq!(receipt["totalClaims"], 1, "receipt: {receipt}");
+    let claim = &receipt["claims"].as_array().expect("claims")[0];
+
+    // The obligation routed to z3 (LIA), and z3 found it unsatisfiable:
+    // the claim is VIOLATED.
+    assert_eq!(claim["obligationClass"], "linear-arithmetic");
+    assert_eq!(
+        claim["status"], "unsatisfied",
+        "violated `n > n` claim must be unsatisfied; claim: {claim}"
+    );
+    assert_eq!(
+        claim["pass"], false,
+        "violated claim must not pass; claim: {claim}"
+    );
+
+    // No witness for a violated claim.
+    assert!(
+        claim["witnessCid"].is_null(),
+        "no witness may be minted for a violated claim; claim: {claim}"
+    );
+    assert_eq!(receipt["ok"], false);
+
+    // No witness file was written.
+    let witness_files: Vec<_> = fs::read_dir(&witnesses)
+        .map(|rd| rd.filter_map(|e| e.ok()).collect())
+        .unwrap_or_default();
+    assert!(
+        witness_files.is_empty(),
+        "witness dir must be empty for a violated claim; found {} files",
+        witness_files.len()
+    );
+
+    // Exit code 1 = EXIT_VERIFY_FAIL (a hard violation, not a solver miss).
+    assert_eq!(
+        code, 1,
+        "violated claim must exit 1 (EXIT_VERIFY_FAIL); got {code}"
+    );
 
     let _ = fs::remove_dir_all(&project);
 }
