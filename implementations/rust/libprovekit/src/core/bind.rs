@@ -543,6 +543,32 @@ fn bind_payload_wire_named_term_document(named: &NamedTermDocument) -> NamedTerm
         term.function.clear();
         // fn_name_sugar is preserved: it carries the source fn name as a
         // non-CID-affecting annotation on the citation (Option C sugar layer)
+        //
+        // #1075 federation: the wire op-tree is arg[1] of the federated
+        // concept:bind-result payload (the cross-language CID). Source-language
+        // realize-only display metadata — visibility, generic_params, doc_lines
+        // — must NOT ride it, or typed-Rust (`pub fn add ...`) and untyped-Python
+        // (`def add ...`) bind to different CIDs. These are NOT lost: the full
+        // NamedTermDocument (with them intact) is addressed separately as the
+        // bind claim's `artifacts[0]` (named_cid) and is the canonical realize
+        // channel; cmd_lower's production path reconstructs from the ir-document,
+        // never from this wire op-tree. Parallel to the bind-lift-entry strip in
+        // strip_realize_sidecar_from_lift_term.
+        //
+        // NOTE: the signature TYPES (param_types/return_type/original_param_types)
+        // are deliberately NOT cleared here. After the layer-1 sidecar migration
+        // the rust + python lifters both emit the bare types empty on
+        // bind-lift-entry, so NamedTerm.param_types is already [] for the
+        // federated `add` algebra — clearing it would be a CID no-op there. But
+        // the LEGACY bind-result lower path (named_term_document_from_bind_payload
+        // -> op-tree reconstruction, used by lower_plugin for Term inputs) reads
+        // the types back from this wire form to build the realize request; for a
+        // function that DID carry source types, clearing them here would degrade
+        // its emitted signature (i64 -> int int-inference fallback). Keeping them
+        // preserves that path's fidelity without affecting seam-4 byte-identity.
+        term.visibility.clear();
+        term.generic_params.clear();
+        term.doc_lines.clear();
     }
     wire
 }
@@ -635,6 +661,25 @@ pub fn strip_realize_sidecar_from_lift_term(term: Term) -> Term {
                 object.remove("realizeParamTypes");
                 object.remove("realize_return_type");
                 object.remove("realizeReturnType");
+                object.remove("realize_original_param_types");
+                object.remove("realizeOriginalParamTypes");
+                // #1075/A9 federation: the bind-lift-entry is the cross-language
+                // boundary surface and must hash to the SAME bytes whether
+                // lifted from typed Rust or untyped Python. The Python lifter
+                // emits only {kind, param_names, term_shape, term_shape_cid,
+                // operand_bindings, realize_*, source_function_name, witnesses};
+                // Rust additionally carries visibility/generic_params/doc_lines
+                // for the Java boundary realize path. Those are realize-only
+                // metadata (read off the UN-stripped lift IR by cmd_lower, never
+                // off this hashed term) so they ride CID-invisible here too,
+                // scoped to bind-lift-entry to leave sugar-entry CIDs untouched.
+                if object.get("kind").and_then(Json::as_str) == Some("bind-lift-entry") {
+                    object.remove("visibility");
+                    object.remove("generic_params");
+                    object.remove("genericParams");
+                    object.remove("doc_lines");
+                    object.remove("docLines");
+                }
             }
         }
     }

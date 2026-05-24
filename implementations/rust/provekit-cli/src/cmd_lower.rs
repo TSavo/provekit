@@ -748,11 +748,19 @@ fn emit_java_module_preamble(
             .and_then(Json::as_array)
             .map(|a| a.iter().filter_map(Json::as_str).collect())
             .unwrap_or_default();
-        let param_types: Vec<&str> = entry.get("param_types")
+        // #1075/A9: signature types ride the CID-invisible realize sidecar on
+        // the bind-lift-entry (so federation byte-identity holds); the Java
+        // boundary emitter reads them from there. Fall back to the bare keys
+        // for any older/other entry shape that still emits them inline.
+        let param_types: Vec<&str> = entry.get("realize_param_types")
+            .or_else(|| entry.get("param_types"))
             .and_then(Json::as_array)
             .map(|a| a.iter().filter_map(Json::as_str).collect())
             .unwrap_or_default();
-        let return_type = entry.get("return_type").and_then(Json::as_str).unwrap_or("()");
+        let return_type = entry.get("realize_return_type")
+            .or_else(|| entry.get("return_type"))
+            .and_then(Json::as_str)
+            .unwrap_or("()");
         let java_return = map_rust_type_to_java(return_type);
         let java_params: Vec<String> = param_names.iter().zip(param_types.iter())
             .map(|(n, t)| format!("{} {}", map_rust_type_to_java(t), n))
