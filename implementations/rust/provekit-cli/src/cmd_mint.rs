@@ -1376,52 +1376,15 @@ fn project_body_templates_for_sugar_bindings(ir: &[Value]) -> Result<(), String>
     for ((lang, libtag), decls) in grouped {
         let mut entries: Vec<Value> = Vec::with_capacity(decls.len());
         for decl in &decls {
-            let concept_name = decl
-                .get("concept_name")
-                .and_then(|v| v.as_str())
-                .ok_or("library-sugar-binding-entry missing concept_name")?;
-            let param_names: Vec<String> = decl
-                .get("param_names")
-                .and_then(|v| v.as_array())
-                .map(|arr| {
-                    arr.iter()
-                        .filter_map(|v| v.as_str().map(str::to_string))
-                        .collect()
-                })
-                .unwrap_or_default();
-            let body_text = decl
-                .get("body_source")
-                .and_then(|bs| bs.get("body_text"))
-                .and_then(|v| v.as_str())
-                .unwrap_or("");
-            if body_text.is_empty() {
-                continue;
+            // #1361 follow-up: the per-entry transform is factored into
+            // `binding_entry_to_template_entry` so `provekit materialize`
+            // can derive the SAME emission-template entries directly from a
+            // shim's .proof (RPC-fed templates) without round-tripping
+            // through the on-disk projection cache. The disk-write projector
+            // here and the materialize path share one transform.
+            if let Some(entry) = binding_entry_to_template_entry(decl, &libtag)? {
+                entries.push(entry);
             }
-            let template = substitute_shim_params_with_placeholders(body_text, &param_names);
-            let loss = decl
-                .get("loss_record_contribution")
-                .cloned()
-                .unwrap_or_else(
-                    || serde_json::json!({"form": "literal", "value": {"entries": []}}),
-                );
-            let arity = param_names.len();
-            let mut entry = serde_json::json!({
-                "concept_name": concept_name,
-                "emission_template": { "kind": "verbatim", "template": template },
-                "loss_record_contribution": loss,
-                "signature_guard": { "min_params": arity, "max_params": arity },
-                "target_library_tag": libtag,
-            });
-            if let Some(observed) = decl.get("observed_dimension").and_then(|v| v.as_str()) {
-                entry["observed_dimension"] = serde_json::Value::String(observed.to_string());
-            }
-            // #1390: propagate file_helpers (static field declarations) so the
-            // realize plugin can emit them as `helpers` in the invoke response.
-            // The assembler later hoists them into the compilation unit.
-            if let Some(helpers) = decl.get("file_helpers").cloned() {
-                entry["file_helpers"] = helpers;
-            }
-            entries.push(entry);
         }
         if entries.is_empty() {
             continue;
@@ -1457,6 +1420,70 @@ fn project_body_templates_for_sugar_bindings(ir: &[Value]) -> Result<(), String>
             .map_err(|e| format!("write {}: {e}", out_path.display()))?;
     }
     Ok(())
+}
+
+/// Transform a single `library-sugar-binding-entry` IR record into the
+/// emission-template entry shape that realize kits consume (the same shape
+/// written into `<lang>-canonical-bodies-<tag>.json`). Returns `Ok(None)`
+/// when the entry has no body text (nothing to emit).
+///
+/// `libtag` is the resolved target library tag; it stamps the entry so a
+/// multi-library template cache can disambiguate. The shim's source param
+/// names in `body_text` are rewritten to `${param0}`/`${param1}`/... so the
+/// consumer's carrier substitutes positionally at realize time — this is
+/// the load-bearing step that makes the template library-agnostic.
+///
+/// This is the single transform shared by the on-disk projector
+/// (`project_body_templates_for_sugar_bindings`) and the materialize path
+/// (`body_templates_from_shim_proof`, which feeds them over RPC).
+pub(crate) fn binding_entry_to_template_entry(
+    decl: &Value,
+    libtag: &str,
+) -> Result<Option<Value>, String> {
+    let concept_name = decl
+        .get("concept_name")
+        .and_then(|v| v.as_str())
+        .ok_or("library-sugar-binding-entry missing concept_name")?;
+    let param_names: Vec<String> = decl
+        .get("param_names")
+        .and_then(|v| v.as_array())
+        .map(|arr| {
+            arr.iter()
+                .filter_map(|v| v.as_str().map(str::to_string))
+                .collect()
+        })
+        .unwrap_or_default();
+    let body_text = decl
+        .get("body_source")
+        .and_then(|bs| bs.get("body_text"))
+        .and_then(|v| v.as_str())
+        .unwrap_or("");
+    if body_text.is_empty() {
+        return Ok(None);
+    }
+    let template = substitute_shim_params_with_placeholders(body_text, &param_names);
+    let loss = decl
+        .get("loss_record_contribution")
+        .cloned()
+        .unwrap_or_else(|| serde_json::json!({"form": "literal", "value": {"entries": []}}));
+    let arity = param_names.len();
+    let mut entry = serde_json::json!({
+        "concept_name": concept_name,
+        "emission_template": { "kind": "verbatim", "template": template },
+        "loss_record_contribution": loss,
+        "signature_guard": { "min_params": arity, "max_params": arity },
+        "target_library_tag": libtag,
+    });
+    if let Some(observed) = decl.get("observed_dimension").and_then(|v| v.as_str()) {
+        entry["observed_dimension"] = serde_json::Value::String(observed.to_string());
+    }
+    // #1390: propagate file_helpers (static field declarations) so the
+    // realize plugin can emit them as `helpers` in the invoke response.
+    // The assembler later hoists them into the compilation unit.
+    if let Some(helpers) = decl.get("file_helpers").cloned() {
+        entry["file_helpers"] = helpers;
+    }
+    Ok(Some(entry))
 }
 
 fn locate_menagerie_root(start: &Path) -> Result<PathBuf, String> {

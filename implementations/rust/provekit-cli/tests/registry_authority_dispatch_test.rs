@@ -150,6 +150,7 @@ fn realize_request() -> RealizeRequest {
         parametric_sort_expansions: Vec::new(),
         function_return_types: std::collections::BTreeMap::new(),
         doc_lines: Vec::new(),
+        body_templates: Vec::new(),
     }
 }
 

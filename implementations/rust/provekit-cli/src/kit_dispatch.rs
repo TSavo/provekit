@@ -374,6 +374,31 @@ fn read_provides_concepts_from_manifest_source(
     }
 }
 
+/// Return the `sugar_proof` pointer declared by the realize manifest matching
+/// `(target_lang, library_tag)`, if any. The pointer is a project-root-
+/// relative path to either a shim project directory containing `.proof`
+/// envelope(s) or a specific `.proof` file. cmd_materialize uses it to lift
+/// the shim's `library-sugar-binding-entry` records and feed them over RPC
+/// (the `.proof`-load path). `None` ↔ no pointer declared → disk fallback.
+pub fn sugar_proof_for_realize(
+    workspace_root: &Path,
+    target_lang: &str,
+    library_tag: &str,
+) -> Option<String> {
+    let candidates = registry_realize_candidates(workspace_root, target_lang).ok()?;
+    let cand = candidates.iter().find(|c| c.tag == library_tag)?;
+    let candidate_path = PathBuf::from(&cand.source);
+    let resolved = if candidate_path.is_absolute() {
+        candidate_path
+    } else {
+        workspace_root.join(&candidate_path)
+    };
+    if !resolved.is_file() {
+        return None;
+    }
+    parse_manifest(&resolved).ok()?.sugar_proof
+}
+
 /// #1360 / #1355: Return the per-target scope-bringings declared by
 /// the realize manifest matching `(target_lang, library_tag)`. cmd_materialize
 /// collects these across all materialized sites in a consumer file and
@@ -851,6 +876,15 @@ struct ParsedManifest {
     protocol_versions: Vec<String>,
     capability_kind: Option<String>,
     exam_manifest_schema_version: Option<String>,
+    /// `.proof`-load-via-RPC pointer. When set, names the shim project
+    /// directory (or a specific `.proof`) whose signed
+    /// `library-sugar-binding-entry` records are the AUTHORITY for this
+    /// kit's emission templates. cmd_materialize lifts them and feeds them
+    /// over RPC (`RealizeRequest.body_templates`), so the @ProveKitSugar shim
+    /// source is the source of truth and the on-disk canonical-bodies JSON is
+    /// an optional fallback. Absent → kit uses its disk cache (back-compat;
+    /// every not-yet-migrated kit keeps working unchanged).
+    sugar_proof: Option<String>,
 }
 
 fn parse_manifest(path: &Path) -> Result<ParsedManifest, String> {
@@ -867,6 +901,7 @@ fn parse_manifest(path: &Path) -> Result<ParsedManifest, String> {
     let mut protocol_versions: Vec<String> = Vec::new();
     let mut capability_kind: Option<String> = None;
     let mut exam_manifest_schema_version: Option<String> = None;
+    let mut sugar_proof: Option<String> = None;
     let mut section = String::new();
     for line in text.lines() {
         let line = match line.find('#') {
@@ -908,6 +943,7 @@ fn parse_manifest(path: &Path) -> Result<ParsedManifest, String> {
             ("", "library_version") => library_version = Some(val.trim_matches('"').to_string()),
             ("", "scope_bringings") => scope_bringings = parse_toml_string_array(val),
             ("", "provides_concepts") => provides_concepts = parse_toml_string_array(val),
+            ("", "sugar_proof") => sugar_proof = Some(val.trim_matches('"').to_string()),
             ("", "command") => command = parse_toml_string_array(val),
             ("capabilities", "kind") => capability_kind = Some(val.trim_matches('"').to_string()),
             ("capabilities", "exam_manifest_schema_version") => {
@@ -931,6 +967,7 @@ fn parse_manifest(path: &Path) -> Result<ParsedManifest, String> {
         protocol_versions,
         capability_kind,
         exam_manifest_schema_version,
+        sugar_proof,
     })
 }
 

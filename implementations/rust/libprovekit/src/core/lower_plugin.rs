@@ -126,6 +126,24 @@ pub struct RealizeRequest {
         skip_serializing_if = "Vec::is_empty"
     )]
     pub doc_lines: Vec<String>,
+    /// `.proof`-fed emission-template entries (the .proof-load-via-RPC path).
+    ///
+    /// When present, the realize kit MUST prefer these over its on-disk
+    /// `<lang>-canonical-bodies-<tag>.json` cache: they are the deterministic
+    /// projection of the shim's signed `library-sugar-binding-entry` records
+    /// (each `{concept_name, emission_template, loss_record_contribution,
+    /// signature_guard, target_library_tag, file_helpers?}` — the same shape
+    /// the on-disk projector writes). cmd_materialize derives them by lifting
+    /// the shim's .proof via `body_templates_from_shim_proof`, making the
+    /// Java/Rust/... shim source the authority and the disk JSON an optional
+    /// fallback for not-yet-migrated kits. Empty → kit uses its disk cache.
+    #[serde(
+        default,
+        rename = "bodyTemplates",
+        alias = "body_templates",
+        skip_serializing_if = "Vec::is_empty"
+    )]
+    pub body_templates: Vec<Value>,
 }
 
 /// Canonical form of a parametric sort application — the structure whose
@@ -829,6 +847,9 @@ fn invocation_from_tree_node(
         function_return_types: parent_request.function_return_types.clone(),
         doc_lines: node_string_array(node, &["docLines", "doc_lines"])?
             .unwrap_or_else(|| parent_request.doc_lines.clone()),
+        // Child realize calls inherit the parent's .proof-fed templates so a
+        // composite term doesn't silently fall back to the disk cache mid-tree.
+        body_templates: parent_request.body_templates.clone(),
     };
     let mut from = Vec::new();
     if let Some(shape_cid) = optional_cid_field(node, &["shapeCid", "shape_cid"])? {
@@ -1298,6 +1319,7 @@ pub fn request_from_spec(spec: &Value) -> Result<RealizeRequest, String> {
             .unwrap_or_default(),
         doc_lines: string_array_field(spec, &["docLines", "doc_lines"])
             .unwrap_or_default(),
+        body_templates: value_array_field(spec, &["bodyTemplates", "body_templates"]),
     })
 }
 
