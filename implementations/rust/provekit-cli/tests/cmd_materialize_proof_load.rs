@@ -274,3 +274,52 @@ fn materialize_blake3_client_bouncycastle_loads_from_proof_and_compiles() {
         "bouncycastle must pull the real org.bouncycastle.* import:\n{emitted}"
     );
 }
+
+#[test]
+fn materialize_stdio_client_java_io_loads_from_proof_and_compiles() {
+    if !java_realize_jar().exists() {
+        eprintln!(
+            "skipping java-io .proof-load test: {} is unavailable; build with \
+             `mvn -q -f implementations/java/pom.xml -pl provekit-realize-java-core -am package -DskipTests`",
+            java_realize_jar().display()
+        );
+        return;
+    }
+    if !javac_available() {
+        eprintln!("skipping java-io .proof-load test: javac is unavailable on PATH");
+        return;
+    }
+    // The disk cache (java-canonical-bodies-java-io.json) is deleted; a green
+    // body assert below == RPC-authority path from the java.io shim .proof.
+    assert_no_canonical_bodies_on_disk("java-io");
+
+    let (_stdout, _stderr, emitted) =
+        materialize_client_and_assemble("java-io", "stdio-shim-demo-client", "LineEcho.java");
+
+    // Library-specific bodies: java.io System.in/out/err + BufferedReader.
+    assert!(
+        emitted.contains("STDIN_READER.readLine()"),
+        "java-io stdio-read-line must emit STDIN_READER.readLine:\n{emitted}"
+    );
+    assert!(
+        emitted.contains("System.out.println(line)"),
+        "java-io stdio-write-line must emit System.out.println:\n{emitted}"
+    );
+    assert!(
+        emitted.contains("System.err.println(line)"),
+        "java-io stderr-write-line must emit System.err.println:\n{emitted}"
+    );
+    // Kit-owned assembly: real java.io imports + hoisted reader helper field.
+    assert!(
+        emitted.contains("import java.io.BufferedReader;")
+            && emitted.contains("import java.io.UncheckedIOException;"),
+        "java-io must pull real java.io.* imports:\n{emitted}"
+    );
+    assert!(
+        emitted.contains(
+            "static final BufferedReader STDIN_READER = \
+             new BufferedReader(new InputStreamReader(System.in));"
+        ),
+        "java-io must hoist the STDIN_READER helper field:\n{emitted}"
+    );
+}
