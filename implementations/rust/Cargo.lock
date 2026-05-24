@@ -1985,6 +1985,7 @@ dependencies = [
 name = "provekit-lift-rust-tests"
 version = "0.1.0"
 dependencies = [
+ "libprovekit",
  "proc-macro2",
  "provekit-canonicalizer",
  "provekit-ir-symbolic",

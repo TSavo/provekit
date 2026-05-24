@@ -143,6 +143,48 @@ fn fixture_lifts_4_skips_2_and_round_trips_through_verifier() {
         "expected 4 distinct mementos (one per lifted callsite assertion)"
     );
 
+    // REGRESSION (PR-22, #1440): the harvested proof alone yields ZERO
+    // callsites, because `enumerate_callsites` only emits a callsite when a
+    // harvested call ctor matches a BRIDGE `sourceSymbol`. Before this PR
+    // the round-trip test never asserted enumeration, so the
+    // bridge-is-required invariant was untested. Assert it both ways: empty
+    // before bind, non-empty after.
+    assert!(
+        provekit_verifier::enumerate_callsites::run(&pool).is_empty(),
+        "harvested proof with no bridge must enumerate zero callsites"
+    );
+
+    // After bind: a `bind_function_bridge` for `parse_int` makes the
+    // harvested `parse_int(\"42\")` call enumerate as a discharge callsite.
+    let mut pool = pool;
+    let item_fn: syn::ItemFn =
+        syn::parse_str("fn parse_int(s: &str) -> i64 { 42 }").expect("parse parse_int fixture");
+    let contract = provekit_walk::contract::build_function_contract(&item_fn, None);
+    let members =
+        libprovekit::core::bind::bind_function_bridge(&contract, "rust", "rust-kit", None)
+            .expect("bind_function_bridge");
+    pool.mementos.insert(
+        members.op_contract.cid.as_str().to_string(),
+        members.op_contract.envelope.clone(),
+    );
+    pool.mementos.insert(
+        members.bridge.cid.as_str().to_string(),
+        members.bridge.envelope.clone(),
+    );
+    pool.bridges_by_symbol
+        .insert("parse_int".to_string(), members.bridge.envelope.clone());
+
+    let callsites = provekit_verifier::enumerate_callsites::run(&pool);
+    assert!(
+        !callsites.is_empty(),
+        "after harvest+bind, enumerate_callsites must be non-empty (the bridge wires the harvested call to a dischargeable target)"
+    );
+    assert!(
+        callsites.iter().any(|cs| cs.bridge_ir_name == "parse_int"),
+        "the parse_int callsite must enumerate; got {:?}",
+        callsites.iter().map(|c| &c.bridge_ir_name).collect::<Vec<_>>()
+    );
+
     println!("FIXTURE_PROOF_CID={}", minted.cid);
     let _ = std::fs::remove_dir_all(&td);
 }

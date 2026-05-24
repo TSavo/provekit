@@ -52,6 +52,7 @@ use owo_colors::OwoColorize;
 use provekit_canonicalizer::{blake3_512_of, encode_jcs};
 use provekit_proof_envelope::{ed25519_pubkey_string, ed25519_sign_string};
 use provekit_verifier::solvers::registry;
+use provekit_verifier::body_discharge;
 use provekit_verifier::{
     classify, enumerate_callsites, instantiate, load_all_proofs, resolve_target, run_plan,
     smt_emitter, DispatchConfig, FormulaTheory, MementoPool, ObligationVerdict, SolverHandle,
@@ -436,32 +437,53 @@ fn verify_one_claim(
         witness_cid: None,
     };
 
-    // Resolve the claim's target contract (its pre formula = the
-    // refinement target).
-    let resolved = match resolve_target::run(cs, pool) {
-        Ok(r) => r,
-        Err(e) => {
-            result.reason = format!("resolve-target: {e}");
-            return result;
+    // Body-discharge path (#1440): when the callsite names a callee with a
+    // body-derived op-contract AND its harvested assertion has the
+    // `=(<call>, <expected>)` shape, reduce the obligation THROUGH the
+    // body. wp inlines the callee's value-semantics (`double(x) = x*2`),
+    // so the solver sees a concrete formula (`*(3,2) == 6`) instead of an
+    // uninterpreted `double` symbol. This is the spine that turns a
+    // harvested body-obligation into a real, dischargeable / refutable
+    // claim. Anything outside the recognized shape falls through to the
+    // existing refinement path below.
+    let obligation = match body_discharge::extract_body_obligation(cs, pool) {
+        Ok(Some(body_discharge::BodyObligation::Reduced(reduced))) => reduced,
+        Ok(None) => {
+            // Not a body-bearing claim: resolve the target contract's pre
+            // and build the refinement obligation, exactly as before.
+            let resolved = match resolve_target::run(cs, pool) {
+                Ok(r) => r,
+                Err(e) => {
+                    result.reason = format!("resolve-target: {e}");
+                    return result;
+                }
+            };
+
+            // When the target has no precondition the claim is vacuously
+            // discharged (nothing to prove). Otherwise build the wp /
+            // refinement obligation: instantiate the resolved pre with the
+            // call's arg term (the same obligation the prover builds).
+            let Some(_pre) = resolved.ir_formula.as_ref() else {
+                result.verdict = ObligationVerdict::Discharged;
+                result.reason = "vacuous: target carries no precondition".to_string();
+                result.obligation_class = "vacuous".to_string();
+                result.discharging_solver = "none (vacuous)".to_string();
+                return result;
+            };
+
+            match instantiate::run(&resolved, &cs.arg_term) {
+                Ok(ob) => ob.ir_formula,
+                Err(e) => {
+                    result.reason = format!("instantiate: {e}");
+                    return result;
+                }
+            }
         }
-    };
-
-    // Build the obligation. When the target has no precondition the
-    // claim is vacuously discharged (nothing to prove). Otherwise build
-    // the wp / refinement obligation: instantiate the resolved pre with
-    // the call's arg term (the same obligation the prover builds).
-    let Some(_pre) = resolved.ir_formula.as_ref() else {
-        result.verdict = ObligationVerdict::Discharged;
-        result.reason = "vacuous: target carries no precondition".to_string();
-        result.obligation_class = "vacuous".to_string();
-        result.discharging_solver = "none (vacuous)".to_string();
-        return result;
-    };
-
-    let obligation = match instantiate::run(&resolved, &cs.arg_term) {
-        Ok(ob) => ob.ir_formula,
         Err(e) => {
-            result.reason = format!("instantiate: {e}");
+            // wp resolved the callee but refused/errored on a contract it
+            // DID see (e.g. arity mismatch) — a real, reportable gap, not a
+            // silent fall-through.
+            result.reason = format!("body-discharge: {e}");
             return result;
         }
     };
@@ -804,6 +826,7 @@ mod tests {
             property_name: "demo_property".into(),
             property_cid: "blake3-512:prop".into(),
             arg_term: None,
+            containing_atomic: None,
         };
         let obligation = json!({"kind":"atomic","name":"true","args":[]});
         let cid = mint_verification_witness(

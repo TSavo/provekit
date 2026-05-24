@@ -684,6 +684,13 @@ pub struct CallSite {
     pub property_name: String,
     pub property_cid: String,
     pub arg_term: Option<Json>,
+    /// The atomic predicate the matched call ctor sits directly inside, if
+    /// the call was found as an argument of an atomic (e.g. the `=` in a
+    /// harvested `assert_eq!(double(3), 6)` -> `=(double(3), 6)`). Captured
+    /// so the body-discharge path can derive the postcondition `Q` (the
+    /// atomic with the call replaced by `result`). `None` when the call was
+    /// not directly under an atomic. Does not participate in any CID.
+    pub containing_atomic: Option<Json>,
 }
 
 #[derive(Debug, Default, Clone)]
