@@ -126,6 +126,28 @@ fn publish_double_project_with_inv(suffix: &str, body_factor: i64, inv: Json) ->
 /// false-green the reviewer found, where the resolver drops the contract
 /// and the claim falls through to the vacuous branch.
 fn publish_double_project_full(suffix: &str, post: Json, inv: Json) -> PathBuf {
+    publish_double_project_with_formals(
+        suffix,
+        json!(["x"]),
+        json!([{"kind": "primitive", "name": "Int"}]),
+        post,
+        inv,
+    )
+}
+
+/// Like `publish_double_project_full` but with an explicit `formals` /
+/// `formalSorts` on the target op-contract. Lets a test drive the zero-arg
+/// `formals: []` shape -- a body-derived contract for a zero-parameter
+/// function is STILL body-bearing (it has a body, just no parameters), and
+/// must not slip into the vacuous-discharge branch. The `double(3)` callsite
+/// from `inv` still enumerates regardless of the target's formals count.
+fn publish_double_project_with_formals(
+    suffix: &str,
+    formals: Json,
+    formal_sorts: Json,
+    post: Json,
+    inv: Json,
+) -> PathBuf {
     let dir = unique_dir(suffix);
     let proof_dir = dir.join(".provekit");
     fs::create_dir_all(&proof_dir).expect("mkdir .provekit");
@@ -142,8 +164,8 @@ fn publish_double_project_full(suffix: &str, post: Json, inv: Json) -> PathBuf {
             "kind": "contract",
             "body": {
                 "contractName": "double",
-                "formals": ["x"],
-                "formalSorts": [{"kind": "primitive", "name": "Int"}],
+                "formals": formals,
+                "formalSorts": formal_sorts,
                 "post": post
             }
         }
@@ -514,6 +536,84 @@ fn verify_body_bearing_non_equation_post_refuses_not_vacuous_pass() {
         "receipt must not be ok when a claim was refused; receipt: {receipt}"
     );
     eprintln!("FALSEGREEN2_STATUS={} EXIT={code}", claim["status"]);
+
+    let _ = fs::remove_dir_all(&project);
+}
+
+/// FALSE-GREEN REGRESSION #3 (the empty-`formals` corner -- caught in the
+/// third-pass review as a writer-unreachable nit, closed on principle:
+/// honesty must hold for ALL inputs, not just what today's writer emits).
+///
+/// The `target_is_body_bearing` marker once gated on `!formals.is_empty()`,
+/// so a ZERO-ARG body-derived contract (`formals: []`) with a non-equation
+/// post and no `pre` was classified NON-body-bearing -> it slipped back into
+/// the vacuous-discharge branch -> GREEN PASS, exit 0. A zero-parameter
+/// function still has a body; its contract is body-bearing. The marker now
+/// gates on `formals` PRESENT (the key exists), not non-empty.
+///
+/// This test asserts the corner is closed: `formals: []` + non-equation post
+/// + no pre must REFUSE, exactly like the `formals: ["x"]` variants.
+#[test]
+fn verify_zero_arg_body_bearing_non_equation_post_refuses_not_vacuous_pass() {
+    if !z3_available() {
+        eprintln!("z3 not on PATH: skipping false-green-3 (zero-arg) regression test");
+        return;
+    }
+    // Body-bearing op-contract with EMPTY formals + a non-equation post.
+    let post = json!({
+        "kind": "atomic", "name": "<=",
+        "args": [
+            {"kind": "var", "name": "result"},
+            int_const(10)
+        ]
+    });
+    // A normal `=(double(3), 6)` assertion, so exactly one callsite enumerates.
+    let inv = json!({
+        "kind": "atomic", "name": "=",
+        "args": [
+            {"kind": "ctor", "name": "double", "args": [int_const(3)]},
+            int_const(6)
+        ]
+    });
+    let project =
+        publish_double_project_with_formals("falsegreen3", json!([]), json!([]), post, inv);
+    let witnesses = project.join("witnesses-out");
+    let (receipt, code) = run_verify_json_with_code(&project, &witnesses);
+
+    assert_eq!(receipt["totalClaims"], 1, "receipt: {receipt}");
+    let claim = &receipt["claims"].as_array().expect("claims")[0];
+
+    // THE BLOCKER ASSERTION: an empty-formals body-bearing contract must NOT
+    // vacuous-pass.
+    assert_ne!(
+        claim["status"], "discharged",
+        "zero-arg body-bearing contract must NOT be discharged; claim: {claim}"
+    );
+    assert_eq!(claim["pass"], false, "must NOT pass; claim: {claim}");
+    assert_ne!(
+        claim["obligationClass"], "vacuous",
+        "must NOT take the vacuous-discharge branch; claim: {claim}"
+    );
+
+    assert!(
+        claim["witnessCid"].is_null(),
+        "no witness for a refused claim; claim: {claim}"
+    );
+    let witness_files: Vec<_> = fs::read_dir(&witnesses)
+        .map(|rd| rd.filter_map(|e| e.ok()).collect())
+        .unwrap_or_default();
+    assert!(
+        witness_files.is_empty(),
+        "witness dir must be empty for a refused claim; found {} files",
+        witness_files.len()
+    );
+
+    assert_ne!(code, 0, "a refused claim must not exit 0 (clean); got {code}");
+    assert_eq!(
+        receipt["ok"], false,
+        "receipt must not be ok when a claim was refused; receipt: {receipt}"
+    );
+    eprintln!("FALSEGREEN3_STATUS={} EXIT={code}", claim["status"]);
 
     let _ = fs::remove_dir_all(&project);
 }
