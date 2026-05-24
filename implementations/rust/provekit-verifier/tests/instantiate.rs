@@ -32,6 +32,7 @@ fn resolved(formula: serde_json::Value) -> ResolvedProperty {
         cid: "blake3-512:00".into(),
         ir_formula: Some(formula),
         ir_kit_version: String::new(),
+        ..Default::default()
     }
 }
 
@@ -242,6 +243,7 @@ fn errors_when_resolved_has_no_ir_formula() {
         cid: "blake3-512:00".into(),
         ir_formula: None,
         ir_kit_version: String::new(),
+        ..Default::default()
     };
     let arg = Some(json!({"kind": "var", "name": "x"}));
     let r = instantiate::run(&rp, &arg);
@@ -296,6 +298,7 @@ fn obligation_carries_property_cid_and_kit_version() {
         cid: "blake3-512:abc".into(),
         ir_formula: Some(forall_n_gt_0()),
         ir_kit_version: "rust-kit@1.0".into(),
+        ..Default::default()
     };
     let r = instantiate::run(&rp, &arg).expect("instantiate");
     assert_eq!(r.property_cid, "blake3-512:abc");

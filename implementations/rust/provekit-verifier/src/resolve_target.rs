@@ -65,9 +65,18 @@ pub fn run(cs: &CallSite, pool: &MementoPool) -> Result<ResolvedProperty, String
     }
 
     let ir_formula = body.get("pre").cloned();
+    // A target carrying a `formals` array is a body-derived op-contract
+    // (body-bearing). The caller must NOT vacuous-pass such a target if its
+    // obligation was not reduced + discharged; it must refuse. Surface the
+    // marker here, where the body is already in hand.
+    let target_is_body_bearing = body
+        .get("formals")
+        .and_then(|v| v.as_array())
+        .is_some_and(|arr| !arr.is_empty());
     Ok(ResolvedProperty {
         cid: cs.bridge_target_cid.clone(),
         ir_formula,
         ir_kit_version: String::new(),
+        target_is_body_bearing,
     })
 }

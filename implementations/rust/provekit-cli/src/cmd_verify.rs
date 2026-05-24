@@ -464,6 +464,27 @@ fn verify_one_claim(
             // refinement obligation: instantiate the resolved pre with the
             // call's arg term (the same obligation the prover builds).
             let Some(_pre) = resolved.ir_formula.as_ref() else {
+                // HONESTY BOUNDARY (catches every body-bearing variant). The
+                // vacuous-discharge shortcut is legitimate ONLY for a
+                // genuinely non-body-bearing target. A target carrying
+                // `formals` is body-bearing by definition: its `post`
+                // describes a body whose obligation we reached here WITHOUT
+                // reducing (e.g. `extract_body_obligation` could not build the
+                // obligation because the body-derived `post` was not a
+                // `result == <expr>` equation, so the resolver dropped it).
+                // Vacuous-passing it would be a false green. Refuse instead:
+                // leave the default Undecidable verdict (not discharged, not
+                // pass, no witness).
+                if resolved.target_is_body_bearing {
+                    result.reason = format!(
+                        "body-discharge: refuse: target `{}` is body-bearing \
+                         (carries `formals`) but its obligation was not reduced \
+                         and it has no precondition; refusing rather than \
+                         reporting a vacuous pass",
+                        cs.bridge_ir_name
+                    );
+                    return result;
+                }
                 result.verdict = ObligationVerdict::Discharged;
                 result.reason = "vacuous: target carries no precondition".to_string();
                 result.obligation_class = "vacuous".to_string();

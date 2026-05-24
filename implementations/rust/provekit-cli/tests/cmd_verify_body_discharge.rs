@@ -105,6 +105,27 @@ fn publish_double_project(suffix: &str, body_factor: i64) -> PathBuf {
 /// formula, so a test can drive an assertion shape OTHER than
 /// `=(<call>, <expected>)` (the reviewer's `<=` false-green probe).
 fn publish_double_project_with_inv(suffix: &str, body_factor: i64, inv: Json) -> PathBuf {
+    // The body-derived op-contract for `double`: post = result == *(x, k).
+    let post = json!({
+        "kind": "atomic", "name": "=",
+        "args": [
+            {"kind": "var", "name": "result"},
+            {"kind": "ctor", "name": "*", "args": [
+                {"kind": "var", "name": "x"},
+                int_const(body_factor)
+            ]}
+        ]
+    });
+    publish_double_project_full(suffix, post, inv)
+}
+
+/// Fully parameterized publisher: explicit body-derived op-contract `post`
+/// AND harvested `inv`. The target ALWAYS carries `formals: ["x"]` (it is a
+/// body-bearing op-contract) and NO `pre`. Lets a test drive a `post` that
+/// is not a `result == <expr>` equation -- the trigger for the second
+/// false-green the reviewer found, where the resolver drops the contract
+/// and the claim falls through to the vacuous branch.
+fn publish_double_project_full(suffix: &str, post: Json, inv: Json) -> PathBuf {
     let dir = unique_dir(suffix);
     let proof_dir = dir.join(".provekit");
     fs::create_dir_all(&proof_dir).expect("mkdir .provekit");
@@ -114,7 +135,8 @@ fn publish_double_project_with_inv(suffix: &str, body_factor: i64, inv: Json) ->
 
     let mut members: BTreeMap<String, Vec<u8>> = BTreeMap::new();
 
-    // The body-derived op-contract for `double`: post = result == *(x, k).
+    // The body-derived op-contract for `double`: carries `formals` (so it is
+    // body-bearing) and the supplied `post`; NO `pre`.
     let target_env = json!({
         "evidence": {
             "kind": "contract",
@@ -122,16 +144,7 @@ fn publish_double_project_with_inv(suffix: &str, body_factor: i64, inv: Json) ->
                 "contractName": "double",
                 "formals": ["x"],
                 "formalSorts": [{"kind": "primitive", "name": "Int"}],
-                "post": {
-                    "kind": "atomic", "name": "=",
-                    "args": [
-                        {"kind": "var", "name": "result"},
-                        {"kind": "ctor", "name": "*", "args": [
-                            {"kind": "var", "name": "x"},
-                            int_const(body_factor)
-                        ]}
-                    ]
-                }
+                "post": post
             }
         }
     });
@@ -409,6 +422,98 @@ fn verify_body_bearing_unrecognized_shape_refuses_not_vacuous_pass() {
         "receipt must not be ok when a claim was refused; receipt: {receipt}"
     );
     eprintln!("FALSEGREEN_STATUS={} EXIT={code}", claim["status"]);
+
+    let _ = fs::remove_dir_all(&project);
+}
+
+/// FALSE-GREEN REGRESSION #2 (the false green MOVED, not closed -- caught
+/// in re-review). The first fix put the honesty boundary AFTER the resolver
+/// lookup gate. But `CatalogResolver::lookup` itself drops a body-bearing
+/// contract whose `post` is NOT a `result == <expr>` equation (the
+/// `value_expr()?` early-return), so it returns `None` -> `Ok(None)` ->
+/// fall-through -> the target has `formals` but no `pre` -> the
+/// vacuous-discharge branch fired -> GREEN PASS, exit 0. Same cardinal sin,
+/// narrower trigger.
+///
+/// The trigger: a body-bearing op-contract (`formals: ["x"]`, NO `pre`)
+/// whose `post` is a non-equation predicate `<=(result, x)`, with a
+/// harvested `=(double(3), 6)` assertion (so a callsite enumerates).
+///
+/// The consumer-side fix: `verify_one_claim` checks
+/// `resolved.target_is_body_bearing` BEFORE the vacuous branch and refuses.
+/// This test asserts the false green is closed for THIS variant too: the
+/// claim must NOT be discharged, must NOT pass, must NOT be vacuous.
+#[test]
+fn verify_body_bearing_non_equation_post_refuses_not_vacuous_pass() {
+    if !z3_available() {
+        eprintln!("z3 not on PATH: skipping false-green-2 regression test");
+        return;
+    }
+    // Body-bearing op-contract whose post is NOT `result == <expr>` -- the
+    // resolver's `value_expr()` returns None and it drops the contract.
+    let post = json!({
+        "kind": "atomic", "name": "<=",
+        "args": [
+            {"kind": "var", "name": "result"},
+            {"kind": "var", "name": "x"}
+        ]
+    });
+    // A normal `=(double(3), 6)` assertion, so exactly one callsite enumerates.
+    let inv = json!({
+        "kind": "atomic", "name": "=",
+        "args": [
+            {"kind": "ctor", "name": "double", "args": [int_const(3)]},
+            int_const(6)
+        ]
+    });
+    let project = publish_double_project_full("falsegreen2", post, inv);
+    let witnesses = project.join("witnesses-out");
+    let (receipt, code) = run_verify_json_with_code(&project, &witnesses);
+
+    assert_eq!(receipt["totalClaims"], 1, "receipt: {receipt}");
+    let claim = &receipt["claims"].as_array().expect("claims")[0];
+
+    // THE BLOCKER ASSERTION: a body-bearing claim that the resolver dropped
+    // must NOT slip through to a vacuous green pass.
+    assert_ne!(
+        claim["status"], "discharged",
+        "body-bearing contract dropped by the resolver must NOT be discharged; claim: {claim}"
+    );
+    assert_eq!(
+        claim["pass"], false,
+        "must NOT pass; claim: {claim}"
+    );
+    assert_ne!(
+        claim["obligationClass"], "vacuous",
+        "must NOT take the vacuous-discharge branch; claim: {claim}"
+    );
+
+    // The consumer-side refusal reason is surfaced.
+    let reason = claim["reason"].as_str().unwrap_or("");
+    assert!(
+        reason.contains("body-discharge") && reason.contains("refuse"),
+        "refusal reason must be surfaced; got `{reason}`"
+    );
+
+    assert!(
+        claim["witnessCid"].is_null(),
+        "no witness for a refused claim; claim: {claim}"
+    );
+    let witness_files: Vec<_> = fs::read_dir(&witnesses)
+        .map(|rd| rd.filter_map(|e| e.ok()).collect())
+        .unwrap_or_default();
+    assert!(
+        witness_files.is_empty(),
+        "witness dir must be empty for a refused claim; found {} files",
+        witness_files.len()
+    );
+
+    assert_ne!(code, 0, "a refused claim must not exit 0 (clean); got {code}");
+    assert_eq!(
+        receipt["ok"], false,
+        "receipt must not be ok when a claim was refused; receipt: {receipt}"
+    );
+    eprintln!("FALSEGREEN2_STATUS={} EXIT={code}", claim["status"]);
 
     let _ = fs::remove_dir_all(&project);
 }

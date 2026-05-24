@@ -834,6 +834,27 @@ fn work_one(
     };
 
     if resolved.ir_formula.is_none() {
+        // HONESTY BOUNDARY (mirrors cmd_verify::verify_one_claim). The
+        // vacuous-discharge shortcut ("no precondition => nothing to prove")
+        // is legitimate ONLY for a genuinely non-body-bearing target. A
+        // target carrying `formals` is a body-derived op-contract: its `post`
+        // describes a body whose obligation the runner does NOT reduce here,
+        // so vacuous-passing it would be a false green. Refuse instead
+        // (Undecidable): not discharged, no witness.
+        if resolved.target_is_body_bearing {
+            n_residue.fetch_add(1, Ordering::Relaxed);
+            return (
+                cs.clone(),
+                ObligationVerdict::Undecidable,
+                format!(
+                    "body-discharge: refuse: target `{}` is body-bearing \
+                     (carries `formals`) but the runner did not reduce its \
+                     obligation and it has no precondition; refusing rather \
+                     than reporting a vacuous pass",
+                    cs.bridge_ir_name
+                ),
+            );
+        }
         n_vacuous.fetch_add(1, Ordering::Relaxed);
         return (
             cs.clone(),
