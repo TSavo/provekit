@@ -237,7 +237,7 @@ fn lower_cli_missing_body_template_refuses_without_partial_output() {
     fs::write(
         &input,
         serde_json::to_vec_pretty(&json!({
-            "kind": "NamedTermDocument",
+            "kind": "named-term-document",
             "promotionDecisionMementos": [],
             "schemaVersion": "1",
             "sourceLanguage": "rust",
