@@ -46,11 +46,32 @@ type lifter struct {
 }
 
 // coreArithOp maps a namespaced Go op name to the SMT-LIB core-theory symbol
-// the z3-backed verifier discharges, when one exists. Only the operators whose
-// semantics are exactly an Int/Bool core operation are mapped; everything else
-// (bitwise ops, shifts, dereference, ...) keeps its namespaced form because it
-// has no faithful core-theory counterpart and must stay an uninterpreted /
-// loudly-bounded symbol rather than silently aliasing to the wrong theory.
+// the z3-backed verifier discharges, when (and ONLY when) the SMT-LIB Int/Bool
+// semantics are FAITHFUL to Go for every in-range input. An op whose SMT
+// meaning diverges from Go MUST NOT be mapped: it stays namespaced
+// (`go:<op>`), so the obligation retains an opaque uninterpreted symbol and
+// verify returns Undecidable (no witness) -- the honest "I cannot prove this"
+// rather than a false discharge. Supra omnia, rectum: refuse, never
+// false-discharge.
+//
+// Cardinal-sin guard (PR #1445 review): `go:div` / `go:mod` were previously
+// mapped to SMT-LIB `div` / `mod`, but the semantics DIVERGE on negatives:
+//
+//	Go `-7 / 2 == -3`   (truncates toward zero)
+//	SMT `(div -7 2) == -4` (floors toward -inf)
+//	Go `-7 % 2 == -1`   ;  SMT `(mod -7 2) == 1`
+//
+// That made `Halve(-7) == -4` (FALSE in Go) discharge with a SIGNED WITNESS --
+// an inverted proof. They are now left uninterpreted until faithful
+// truncation-toward-zero modeling lands (Euclidean correction / bitvector
+// theory; tracked follow-up). z3's `/` and `%` are NO better (real division /
+// floored remainder), so they are NOT substituted either.
+//
+// KEPT (faithful): `+` `-` `*` on Int (unbounded-Int overflow-modeling gap is
+// the accepted rust/java baseline, NOT introduced here); the signed
+// comparisons `<` `<=` `>` `>=` `=`; boolean `and` `or` `not`; unary `-`.
+// EXCLUDED (unfaithful / no faithful core form): div, mod/rem, shifts,
+// bitwise ops, unsigned comparisons, dereference -- all stay namespaced.
 func coreArithOp(name string) (string, bool) {
 	switch name {
 	case "go:add":
@@ -59,10 +80,9 @@ func coreArithOp(name string) (string, bool) {
 		return "-", true
 	case "go:mul":
 		return "*", true
-	case "go:div":
-		return "div", true
-	case "go:mod":
-		return "mod", true
+	// go:div and go:mod are DELIBERATELY NOT mapped: SMT-LIB div/mod (floor)
+	// diverge from Go (truncate) on negatives. Leaving them namespaced makes
+	// the obligation Undecidable instead of a false discharge.
 	case "go:eq":
 		return "=", true
 	case "go:lt":

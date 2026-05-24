@@ -124,11 +124,22 @@ fn stage_authoring_project(suffix: &str, lift_bin: &Path, broken: bool) -> PathB
         )
         .expect("write manifest");
     }
+
+    // HERMETIC: mint's body-template projection
+    // (project_body_templates_for_sugar_bindings) writes
+    // `<menagerie-root>/<lang>-language-signature/specs/body-templates/...`,
+    // locating the menagerie root by walking UP from the process CWD. Give the
+    // staged project its OWN menagerie/ dir and run mint with CWD set here (see
+    // run_mint), so the projection lands in the tempdir and NEVER clobbers the
+    // repo's tracked artifacts. (The non-hermetic walk-up is a tracked
+    // follow-up against the shared spine, out of scope for this fix.)
+    fs::create_dir_all(project.join("menagerie")).expect("mkdir menagerie");
     project
 }
 
 fn run_mint(project: &Path) {
     let out = Command::new(provekit_bin())
+        .current_dir(project) // hermetic projection: locate menagerie/ in the tempdir
         .args(["mint", "--project"])
         .arg(project)
         .arg("--out")
