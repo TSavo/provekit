@@ -221,6 +221,18 @@ fn bind_result_claim_lower_uses_named_term_realize_request() {
     let expected_spec =
         realize_spec_from_named_term(&named.terms[0]).expect("named term spec builds");
 
+    // Producer-side of the private-round-trip contract (PR #1455 review):
+    // realize_spec_from_named_term must FORWARD the source visibility verbatim
+    // into the dispatch spec — never coerce it. A private source fn carries the
+    // empty string (bind's private encoding), and it must reach the realizer as
+    // a PRESENT empty `"visibility": ""` so the realizer emits a bare `fn`
+    // rather than over-promoting it to `pub`.
+    assert_eq!(
+        expected_spec.get("visibility").and_then(|v| v.as_str()),
+        Some(named.terms[0].visibility.as_str()),
+        "realize spec must forward NamedTerm.visibility verbatim (no coercion)"
+    );
+
     let (result, transport) = lower_with_capture(claim, "python");
 
     result.expect("lower claim succeeds");
