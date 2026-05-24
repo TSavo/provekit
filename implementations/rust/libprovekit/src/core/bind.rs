@@ -546,21 +546,29 @@ fn bind_payload_wire_named_term_document(named: &NamedTermDocument) -> NamedTerm
         //
         // #1075 federation: the wire op-tree is arg[1] of the federated
         // concept:bind-result payload (the cross-language CID). Source-language
-        // realize-only metadata — visibility, generic_params, doc_lines, and the
-        // signature types — must NOT ride it, or typed-Rust (`pub fn add(x: i64,
-        // y: i64) -> i64`) and untyped-Python (`def add(x, y)`) bind to different
-        // CIDs. These fields are NOT lost: the full NamedTermDocument (with them
-        // intact) is addressed separately as the bind claim's `artifacts[0]`
-        // (named_cid) and is the canonical realize-input channel; cmd_lower's
-        // production path reconstructs from the ir-document, never from this wire
-        // op-tree. Parallel to the bind-lift-entry strip in
+        // realize-only display metadata — visibility, generic_params, doc_lines
+        // — must NOT ride it, or typed-Rust (`pub fn add ...`) and untyped-Python
+        // (`def add ...`) bind to different CIDs. These are NOT lost: the full
+        // NamedTermDocument (with them intact) is addressed separately as the
+        // bind claim's `artifacts[0]` (named_cid) and is the canonical realize
+        // channel; cmd_lower's production path reconstructs from the ir-document,
+        // never from this wire op-tree. Parallel to the bind-lift-entry strip in
         // strip_realize_sidecar_from_lift_term.
+        //
+        // NOTE: the signature TYPES (param_types/return_type/original_param_types)
+        // are deliberately NOT cleared here. After the layer-1 sidecar migration
+        // the rust + python lifters both emit the bare types empty on
+        // bind-lift-entry, so NamedTerm.param_types is already [] for the
+        // federated `add` algebra — clearing it would be a CID no-op there. But
+        // the LEGACY bind-result lower path (named_term_document_from_bind_payload
+        // -> op-tree reconstruction, used by lower_plugin for Term inputs) reads
+        // the types back from this wire form to build the realize request; for a
+        // function that DID carry source types, clearing them here would degrade
+        // its emitted signature (i64 -> int int-inference fallback). Keeping them
+        // preserves that path's fidelity without affecting seam-4 byte-identity.
         term.visibility.clear();
         term.generic_params.clear();
         term.doc_lines.clear();
-        term.param_types.clear();
-        term.return_type.clear();
-        term.original_param_types.clear();
     }
     wire
 }
