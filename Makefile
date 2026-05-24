@@ -687,6 +687,11 @@ test-python:
 		. .venv/bin/activate && \
 		python -m pip install --quiet -e . pytest && \
 		pytest
+	cd implementations/python/provekit-emit-python-pytest && \
+		python3 -m venv .venv && \
+		. .venv/bin/activate && \
+		python -m pip install --quiet -e . pytest && \
+		pytest
 
 .PHONY: test-ruby
 test-ruby: build-ruby ruby-language-signature

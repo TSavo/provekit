@@ -22,6 +22,7 @@ mod cmd_agent;
 mod cmd_ask;
 mod cmd_bind;
 mod cmd_bind_migrate;
+mod cmd_catalog;
 mod cmd_ci;
 mod cmd_compose;
 mod cmd_dump;
@@ -175,6 +176,9 @@ enum Cmd {
     Materialize(cmd_materialize::MaterializeArgs),
     /// Load and inspect substrate exam manifests.
     Exam(cmd_exam::ExamArgs),
+    /// Browse the contract catalog: list/show/realizations/filter concept hubs.
+    /// READ-ONLY query surface over menagerie/concept-shapes/catalog.
+    Catalog(cmd_catalog::CatalogArgs),
 }
 
 #[derive(Parser, Debug, Clone)]
@@ -441,6 +445,7 @@ fn main() -> ExitCode {
         Cmd::Bind(a) => cmd_bind::run(a),
         Cmd::Materialize(a) => cmd_materialize::run(a),
         Cmd::Exam(a) => cmd_exam::run(a),
+        Cmd::Catalog(a) => cmd_catalog::run(a),
     };
     ExitCode::from(code)
 }

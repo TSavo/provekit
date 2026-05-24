@@ -36,6 +36,7 @@
         <module>provekit-lift-java-hibernate</module>
         <module>provekit-lift-java-term-shape</module>
         <module>provekit-realize-java-core</module>
+        <module>provekit-emit-java-junit</module>
         <module>provekit-lift-java-integration-tests</module>
     </modules>
 
