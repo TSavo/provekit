@@ -308,6 +308,47 @@ pub fn emit_from_resolved(
     }
 }
 
+/// Like [`emit_from_resolved`] but reproduces the source-language visibility
+/// (`pub`, `pub(crate)`, or `""` for private/inherited) on the emitted
+/// signature. `function_source` reads visibility from the `CURRENT_VISIBILITY`
+/// thread-local, which the RPC dispatch path sets from the spec's `visibility`
+/// field; direct callers (e.g. the D7 source-round-trip receipts) had no way to
+/// thread it and so silently regenerated a `pub fn` as a private `fn` — a
+/// byte-divergence the round-trip rightly flags. This variant sets and restores
+/// the thread-local around the emit so visibility round-trips byte-identically.
+pub fn emit_from_resolved_with_visibility(
+    resolved_term_json: &str,
+    function_name: &str,
+    params: &[String],
+    param_types: &[String],
+    return_type: &str,
+    visibility: &str,
+) -> Realization {
+    // RAII guard so the thread-local is restored even if emit_from_resolved
+    // panics — a leaked CURRENT_VISIBILITY would otherwise contaminate
+    // subsequent realizations on the same thread.
+    struct VisibilityGuard {
+        previous: String,
+    }
+    impl Drop for VisibilityGuard {
+        fn drop(&mut self) {
+            let previous = std::mem::take(&mut self.previous);
+            CURRENT_VISIBILITY.with(|v| *v.borrow_mut() = previous);
+        }
+    }
+    let _guard = VisibilityGuard {
+        previous: CURRENT_VISIBILITY.with(|v| v.borrow().clone()),
+    };
+    CURRENT_VISIBILITY.with(|v| *v.borrow_mut() = visibility.to_string());
+    emit_from_resolved(
+        resolved_term_json,
+        function_name,
+        params,
+        param_types,
+        return_type,
+    )
+}
+
 fn emit_function(
     function: &str,
     params: &[String],

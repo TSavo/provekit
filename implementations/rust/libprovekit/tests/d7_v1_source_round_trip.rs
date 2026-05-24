@@ -158,6 +158,29 @@ fn term_summary(fixture: &JsonValue, resolved: &ResolvedTerm) -> String {
     format!("{} -> sort {}", inner(fixture, resolved), resolved.sort)
 }
 
+/// Extract the source-language visibility (`pub`, `pub(crate)`, `pub(super)`,
+/// or `""` for private) that precedes the `fn` keyword in a function source
+/// slice. The D7 round-trip must thread this into the realizer so the
+/// regenerated signature reproduces the original visibility byte-for-byte
+/// instead of defaulting to a private `fn`.
+fn visibility_of_fn_slice(slice: &str) -> String {
+    let fn_index = slice.find("fn ").expect("slice must contain `fn `");
+    let prefix = slice[..fn_index].trim();
+    if let Some(rest) = prefix.strip_prefix("pub") {
+        let rest = rest.trim();
+        if rest.is_empty() {
+            "pub".to_string()
+        } else if rest.starts_with('(') {
+            // pub(crate) / pub(super) / pub(in ...)
+            format!("pub{rest}")
+        } else {
+            "pub".to_string()
+        }
+    } else {
+        String::new()
+    }
+}
+
 fn extract_value_null_slice(source: &str) -> String {
     let needle = "pub fn null(";
     let method = source.find(needle).expect("find Value::null method");
@@ -373,15 +396,17 @@ fn value_null_source_round_trip_receipt_is_complete() {
         std::fs::read_to_string(source_path(&repo_root)).expect("read canonicalizer value.rs");
     let original_slice = extract_value_null_slice(&source_text);
     let original_slice_cid = blake3_512_of(original_slice.as_bytes());
+    let source_visibility = visibility_of_fn_slice(&original_slice);
     let (original_rustfmt, original_rustfmt_command) =
         rustfmt_source(&repo_root, "value_null_original.rs", &original_slice);
 
-    let v3_realization = provekit_realize_rust_core::emit_from_resolved(
+    let v3_realization = provekit_realize_rust_core::emit_from_resolved_with_visibility(
         &resolved_jcs,
         &function,
         &params,
         &param_types,
         &return_type,
+        &source_visibility,
     );
     let (v3_regenerated_rustfmt, v3_regenerated_rustfmt_command) = rustfmt_source(
         &repo_root,

@@ -20,7 +20,7 @@
       ],
       "return_type": "Arc < Value >"
     },
-    "step_3_4_regenerated_source": "pub fn integer(n: i64) -> Arc < Value > {\n    Arc::new(Value::Integer(n))\n}\n",
+    "step_3_4_regenerated_source": "pub fn integer(n: i64) -> Arc<Value> {\n    Arc::new(Value::Integer(n))\n}\n",
     "step_5_original_slice_cid": "blake3-512:16fb069e21ea947daa7ab28932a6ac3e59a68b64db291a698212446b273d25892a14de2b9b4ee1cd046b3832236c5c414fe67159b1a7964804c8e97355628f42",
     "step_6_rustfmt_command": "rustfmt --edition 2021 --emit stdout <stdin:value_integer_regenerated.rs>\nrustfmt --edition 2021 --emit stdout <stdin:value_integer_original.rs>",
     "step_7_byte_identical_post_rustfmt": true,

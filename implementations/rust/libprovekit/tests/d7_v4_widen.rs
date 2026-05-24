@@ -180,6 +180,25 @@ fn term_summary(fixture: &JsonValue, resolved: &ResolvedTerm) -> String {
     format!("{} -> sort {}", inner(fixture, resolved), resolved.sort)
 }
 
+/// Extract the source visibility (`pub`, `pub(crate)`, ... or `""`) preceding
+/// the `fn` keyword in a function source slice, so the realizer reproduces it
+/// on emit instead of defaulting to a private `fn` (a byte-divergence the
+/// round-trip flags).
+fn visibility_of_fn_slice(slice: &str) -> String {
+    let fn_index = slice.find("fn ").expect("slice must contain `fn `");
+    let prefix = slice[..fn_index].trim();
+    if let Some(rest) = prefix.strip_prefix("pub") {
+        let rest = rest.trim();
+        if rest.starts_with('(') {
+            format!("pub{rest}")
+        } else {
+            "pub".to_string()
+        }
+    } else {
+        String::new()
+    }
+}
+
 fn extract_method_slice(source: &str, needle: &str) -> String {
     let method = source.find(needle).expect("find target Value method");
     let start = source[..method]
@@ -392,18 +411,20 @@ fn run_case(repo_root: &Path, case: &MethodCase) -> JsonValue {
         std::fs::read_to_string(source_path(repo_root)).expect("read canonicalizer value.rs");
     let original_slice = extract_method_slice(&source_text, case.original_needle);
     let original_slice_cid = blake3_512_of(original_slice.as_bytes());
+    let source_visibility = visibility_of_fn_slice(&original_slice);
     let (original_rustfmt, original_rustfmt_command) = rustfmt_source(
         repo_root,
         &format!("value_{}_original.rs", case.method),
         &original_slice,
     );
 
-    let realization = provekit_realize_rust_core::emit_from_resolved(
+    let realization = provekit_realize_rust_core::emit_from_resolved_with_visibility(
         &resolved_jcs,
         case.realize_function,
         &params,
         &param_types,
         case.return_type,
+        &source_visibility,
     );
     let (regenerated_rustfmt, regenerated_rustfmt_command) = rustfmt_source(
         repo_root,

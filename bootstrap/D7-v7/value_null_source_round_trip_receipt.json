@@ -42,7 +42,7 @@
       "param_types": [],
       "return_type": "Arc < Value >"
     },
-    "step_3_4_regenerated_source": "pub fn null() -> Arc < Value > {\n    Arc::new(Value::Null)\n}\n",
+    "step_3_4_regenerated_source": "pub fn null() -> Arc<Value> {\n    Arc::new(Value::Null)\n}\n",
     "step_5_original_slice_cid": "blake3-512:12832f678b924c4503c8d5e5839471bffa8051e2dfbc6f4d455b302dbbc7c649c56b5aec0d31fbd336c532111dbd46091b6efed10f288e68a511a32d08d29450",
     "step_6_rustfmt_command": "rustfmt --edition 2021 --emit stdout <stdin:value_null_regenerated.rs>\nrustfmt --edition 2021 --emit stdout <stdin:value_null_original.rs>",
     "step_7_byte_identical_post_rustfmt": true,
