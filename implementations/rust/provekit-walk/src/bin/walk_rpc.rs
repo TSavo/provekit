@@ -3343,10 +3343,27 @@ fn shape_of_expr(expr: &syn::Expr, ctx: &ShapeContext) -> Arc<CValue> {
         syn::Expr::Path(path) => {
             use quote::ToTokens;
             let text = path.to_token_stream().to_string().replace(' ', "");
-            CValue::object([
-                ("kind", CValue::string("symbol")),
-                ("text", CValue::string(text)),
-            ])
+            // #1075 federation: operand NAMES are sugar — the term_shape is
+            // structural identity, so `f(x)=x*2` and `f(y)=y*2` MUST share a
+            // term_shape. A scoped param/local reference therefore emits an
+            // EMPTY structural leaf `{}`; its symbol travels on the CID-invisible
+            // operand_bindings sidecar (same position, see bindings_of_expr's
+            // matching scoped_names check). This makes the rust term_shape
+            // byte-identical to the python lifter's empty-leaf + operand_bindings
+            // form (seam-4 federation). Discharge is unaffected: the realize
+            // binary's term_shape_leaf_expression checks operand_bindings.get(
+            // position) BEFORE kind=symbol, so it never read these leaves for
+            // scoped names. FREE identifiers (None, Some, Vec::new, enum paths)
+            // are NOT operands — they keep their symbol leaf so deeper consumers
+            // can lower them without operand_bindings position threading.
+            if ctx.scoped_names.contains(&text) {
+                non_operation_shape()
+            } else {
+                CValue::object([
+                    ("kind", CValue::string("symbol")),
+                    ("text", CValue::string(text)),
+                ])
+            }
         }
         _ => non_operation_shape(),
     }
