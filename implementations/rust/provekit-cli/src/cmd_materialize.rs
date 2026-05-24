@@ -1415,9 +1415,19 @@ fn resolve_library_surface(
         return Err("--library must not be empty".to_string());
     }
     if let Some(target) = target {
-        let tag = library
-            .strip_prefix(&format!("{target}-"))
-            .unwrap_or(library);
+        // The `{target}-` prefix on the library surface is OPTIONAL sugar
+        // (e.g. `java-jackson` is `(java, jackson)`). But some real library
+        // tags literally begin with `{target}-` — `java-io` is the JDK
+        // `java.io` package, tag `java-io`, NOT `(java, io)`. Stripping
+        // unconditionally truncated it to `io` and broke dispatch. Resolve
+        // manifest-aware: prefer whichever of {full, stripped} actually has a
+        // realize manifest for this target; only fall back to the bare strip
+        // when neither does (back-compat for unregistered tags).
+        let stripped = library.strip_prefix(&format!("{target}-"));
+        if realize_tag_exists(project_root, target, library) {
+            return Ok((target.to_string(), Some(library.to_string())));
+        }
+        let tag = stripped.unwrap_or(library);
         if tag.is_empty() {
             return Err(format!(
                 "library surface `{library}` has empty library tag after stripping `{target}-` prefix"
@@ -1426,6 +1436,14 @@ fn resolve_library_surface(
         return Ok((target.to_string(), Some(tag.to_string())));
     }
     for language in ["typescript", "python", "rust", "java"] {
+        // Same manifest-aware preference as the `--target` arm: a tag that
+        // literally starts with `{language}-` (e.g. `java-io`) must not be
+        // truncated when it names a real manifest.
+        if library.starts_with(&format!("{language}-"))
+            && realize_tag_exists(project_root, language, library)
+        {
+            return Ok((language.to_string(), Some(library.to_string())));
+        }
         if let Some(tag) = library.strip_prefix(&format!("{language}-")) {
             if tag.is_empty() {
                 return Err(format!("library surface `{library}` has empty library tag"));
@@ -1439,6 +1457,17 @@ fn resolve_library_surface(
         )
     })?;
     Ok((language, Some(library.to_string())))
+}
+
+/// True when a realize manifest registered for `target_lang` declares exactly
+/// `library_tag` as its `library_tag`. Used by `resolve_library_surface` to
+/// avoid truncating tags that literally begin with `{target_lang}-` (e.g. the
+/// JDK `java-io` tag) when stripping the optional language prefix.
+fn realize_tag_exists(project_root: &Path, target_lang: &str, library_tag: &str) -> bool {
+    use crate::kit_dispatch::registry_realize_candidates;
+    registry_realize_candidates(project_root, target_lang)
+        .map(|cands| cands.iter().any(|c| c.tag == library_tag))
+        .unwrap_or(false)
 }
 
 fn detect_project_language(project_root: &Path) -> Option<String> {
