@@ -59,38 +59,50 @@ fn javac_available() -> bool {
 }
 
 /// Invariant for the `.proof`-authority claim: the on-disk canonical-bodies
-/// cache for jackson/gson must NOT exist. With it absent, the only place the
-/// realize kit can get the jackson/gson bodies is the shim `.proof` over RPC —
-/// so a passing body assertion below is itself proof of the RPC-authority path.
-fn assert_no_canonical_bodies_on_disk() {
-    let body_dir = repo_root()
+/// cache for the given library tag must NOT exist. With it absent, the only
+/// place the realize kit can get that library's bodies is the shim `.proof`
+/// over RPC — so a passing body assertion below is itself proof of the
+/// RPC-authority path. Each test asserts ONLY its own tag, so the fan-out can
+/// land one shim at a time (the suite never depends on a not-yet-migrated tag).
+///
+/// Migrated tags this asserts across the suite:
+///   - jackson, gson           (PR #1458, the template)
+///   - bouncycastle, java-io,
+///     provekit-rfc8785-jcs-java,
+///     sqlite-jdbc             (this branch, kill-json-fanout-java)
+fn assert_no_canonical_bodies_on_disk(tag: &str) {
+    let cache = repo_root()
         .join("menagerie")
         .join("java-language-signature")
         .join("specs")
-        .join("body-templates");
-    for tag in ["jackson", "gson"] {
-        let cache = body_dir.join(format!("java-canonical-bodies-{tag}.json"));
-        assert!(
-            !cache.exists(),
-            "RPC-authority path requires the disk cache to be deleted, but {} exists. \
-             If it came back, the test would no longer prove templates load from the \
-             shim .proof over RPC (it could be reading disk instead).",
-            cache.display()
-        );
-    }
+        .join("body-templates")
+        .join(format!("java-canonical-bodies-{tag}.json"));
+    assert!(
+        !cache.exists(),
+        "RPC-authority path requires the disk cache to be deleted, but {} exists. \
+         If it came back, the test would no longer prove templates load from the \
+         shim .proof over RPC (it could be reading disk instead).",
+        cache.display()
+    );
 }
 
-/// Run the json-shim demo client through the real CLI for one library, with
-/// `--out-dir` + `--compile-check`, and return (stdout, stderr, the emitted
-/// ConfigCodec.java contents). Asserts the run succeeded (javac 0).
-fn materialize_via_proof_and_assemble(library: &str) -> (String, String, String) {
+/// Run a demo client through the real CLI for one library, with `--out-dir` +
+/// `--compile-check`, and return (stdout, stderr, the emitted client-file
+/// contents). Asserts the run succeeded (javac 0), the kit assembled via RPC,
+/// and javac passed. `client_subdir` is under `examples/` and `client_file`
+/// is the single `.java` consumer the materializer rewrites.
+fn materialize_client_and_assemble(
+    library: &str,
+    client_subdir: &str,
+    client_file: &str,
+) -> (String, String, String) {
     let repo = repo_root();
     let out_dir = tempfile::tempdir().expect("out-dir tempdir");
-    let source_dir = repo.join("examples").join("json-shim-demo-client").join("src");
+    let source_dir = repo.join("examples").join(client_subdir).join("src");
     assert!(
-        source_dir.join("ConfigCodec.java").is_file(),
+        source_dir.join(client_file).is_file(),
         "demo client missing at {}",
-        source_dir.display()
+        source_dir.join(client_file).display()
     );
 
     let output = Command::new(env!("CARGO_BIN_EXE_provekit"))
@@ -127,9 +139,14 @@ fn materialize_via_proof_and_assemble(library: &str) -> (String, String, String)
         "--compile-check must report javac passed:\n{stderr}"
     );
 
-    let emitted = std::fs::read_to_string(out_dir.path().join("ConfigCodec.java"))
-        .expect("emitted ConfigCodec.java");
+    let emitted = std::fs::read_to_string(out_dir.path().join(client_file))
+        .unwrap_or_else(|_| panic!("emitted {client_file}"));
     (stdout, stderr, emitted)
+}
+
+/// The jackson/gson template path: the json-shim demo client.
+fn materialize_via_proof_and_assemble(library: &str) -> (String, String, String) {
+    materialize_client_and_assemble(library, "json-shim-demo-client", "ConfigCodec.java")
 }
 
 #[test]
@@ -147,7 +164,7 @@ fn materialize_json_client_jackson_loads_from_proof_and_compiles() {
         return;
     }
     // The disk cache is deleted; a green body assert below == RPC-authority path.
-    assert_no_canonical_bodies_on_disk();
+    assert_no_canonical_bodies_on_disk("jackson");
 
     let (_stdout, _stderr, emitted) = materialize_via_proof_and_assemble("jackson");
 
@@ -191,7 +208,7 @@ fn materialize_json_client_gson_loads_from_proof_and_compiles() {
         eprintln!("skipping gson .proof-load test: javac is unavailable on PATH");
         return;
     }
-    assert_no_canonical_bodies_on_disk();
+    assert_no_canonical_bodies_on_disk("gson");
 
     let (_stdout, _stderr, emitted) = materialize_via_proof_and_assemble("gson");
 
@@ -218,5 +235,42 @@ fn materialize_json_client_gson_loads_from_proof_and_compiles() {
     assert!(
         !emitted.contains("com.fasterxml.jackson"),
         "gson output must not reference jackson:\n{emitted}"
+    );
+}
+
+#[test]
+fn materialize_blake3_client_bouncycastle_loads_from_proof_and_compiles() {
+    if !java_realize_jar().exists() {
+        eprintln!(
+            "skipping bouncycastle .proof-load test: {} is unavailable; build with \
+             `mvn -q -f implementations/java/pom.xml -pl provekit-realize-java-core -am package -DskipTests`",
+            java_realize_jar().display()
+        );
+        return;
+    }
+    if !javac_available() {
+        eprintln!("skipping bouncycastle .proof-load test: javac is unavailable on PATH");
+        return;
+    }
+    // The disk cache (java-canonical-bodies-bouncycastle.json) is deleted; a
+    // green body assert below == RPC-authority path from the blake3 shim .proof.
+    assert_no_canonical_bodies_on_disk("bouncycastle");
+
+    let (_stdout, _stderr, emitted) =
+        materialize_client_and_assemble("bouncycastle", "blake3-shim-demo-client", "Hasher.java");
+
+    // Library-specific body: Bouncy Castle's Blake3Digest.
+    assert!(
+        emitted.contains("new Blake3Digest(512)"),
+        "bouncycastle blake3-512-of must emit new Blake3Digest(512):\n{emitted}"
+    );
+    assert!(
+        emitted.contains("digest.doFinal(out, 0)"),
+        "bouncycastle blake3-512-of must emit digest.doFinal:\n{emitted}"
+    );
+    // Kit-owned assembly: the real Bouncy Castle import.
+    assert!(
+        emitted.contains("import org.bouncycastle.crypto.digests.Blake3Digest;"),
+        "bouncycastle must pull the real org.bouncycastle.* import:\n{emitted}"
     );
 }
