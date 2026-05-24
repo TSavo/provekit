@@ -41,6 +41,7 @@ import (
 	"path/filepath"
 	"strings"
 
+	"github.com/tsavo/provekit/go/provekit-ir-symbolic/canonicalizer"
 	liftgo "github.com/tsavo/provekit/go/provekit-lift-go"
 	lifgotests "github.com/tsavo/provekit/go/provekit-lift-go-tests"
 )
@@ -65,8 +66,45 @@ type rpcRequest struct {
 }
 
 type liftParams struct {
-	WorkspaceRoot string   `json:"workspace_root"`
-	SourcePaths   []string `json:"source_paths"`
+	WorkspaceRoot string         `json:"workspace_root"`
+	SourcePaths   []string       `json:"source_paths"`
+	Options       map[string]any `json:"options"`
+}
+
+// liftMode is which of the three surfaces this call serves. The two authoring
+// surfaces (the `go-bind` / `go-contracts` plugins) emit DIFFERENT IR -- as
+// rust's `rust-bind` (library-sugar-binding-entry) and `rust-contracts`
+// (function-contract) do -- so the same function is not minted twice when both
+// plugins run in one `provekit mint`.
+type liftMode int
+
+const (
+	// modeBare: the standalone `go` verify surface (no authoring options).
+	// Emits function-contracts + harvested callsites for ALL functions.
+	modeBare liftMode = iota
+	// modeBindings: `go-bind`, layer = "library-bindings". Emits the
+	// `library-sugar-binding-entry` DECLARATION record for each annotated
+	// function (mint skips this kind -- it is the authoring catalog, not a
+	// contract).
+	modeBindings
+	// modeContracts: `go-contracts`, emit = "ir-document". Emits the
+	// body-derived function-contracts + harvested callsites, gated on the
+	// `//provekit:` declaration.
+	modeContracts
+)
+
+// modeFromOptions selects the surface mode from the dispatcher's lift options.
+func modeFromOptions(opts map[string]any) liftMode {
+	if opts == nil {
+		return modeBare
+	}
+	if layer, ok := opts["layer"].(string); ok && layer == "library-bindings" {
+		return modeBindings
+	}
+	if emit, ok := opts["emit"].(string); ok && emit == "ir-document" {
+		return modeContracts
+	}
+	return modeBare
 }
 
 func runRPC(stdin io.Reader, stdout io.Writer) error {
@@ -122,7 +160,7 @@ func handleLift(id json.RawMessage, raw json.RawMessage) any {
 		}
 	}
 
-	irItems, diagnostics, err := liftWorkspace(root)
+	irItems, diagnostics, err := liftWorkspace(root, modeFromOptions(params.Options))
 	if err != nil {
 		return errorResponse(id, -32603, fmt.Sprintf("lift failed: %v", err))
 	}
@@ -134,14 +172,22 @@ func handleLift(id json.RawMessage, raw json.RawMessage) any {
 	})
 }
 
-// liftWorkspace walks every `.go` file under root, splitting on the
-// `_test.go` suffix: non-test files feed the verify-facing body lifter,
-// test files feed the assertion harvester. Both halves land in one `ir[]`.
-func liftWorkspace(root string) ([]any, []map[string]any, error) {
+// liftWorkspace walks every `.go` file under root and emits IR according to
+// the surface mode:
+//
+//   - modeBindings (go-bind): one `library-sugar-binding-entry` per annotated
+//     function -- the authoring DECLARATION catalog. mint skips this kind, so
+//     it does not double-mint the contracts the go-contracts surface emits.
+//   - modeContracts (go-contracts): body-derived function-contracts (gated on
+//     the annotation) + harvested callsites.
+//   - modeBare (standalone `go` surface): function-contracts for ALL functions
+//     + harvested callsites (the existing production-bridge behavior).
+func liftWorkspace(root string, mode liftMode) ([]any, []map[string]any, error) {
 	var irItems []any
 	var diagnostics []map[string]any
 	seenFn := map[string]bool{}
 	seenContract := map[string]bool{}
+	annotatedOnly := mode != modeBare
 
 	err := filepath.Walk(root, func(path string, info os.FileInfo, walkErr error) error {
 		if walkErr != nil {
@@ -162,6 +208,11 @@ func liftWorkspace(root string) ([]any, []map[string]any, error) {
 		}
 
 		if strings.HasSuffix(path, "_test.go") {
+			// The bindings surface is the declaration catalog only -- it does
+			// not harvest callsites (those belong to the contracts surface).
+			if mode == modeBindings {
+				return nil
+			}
 			// Harvested callsite assertions (Layer-0 leaf harvester): each
 			// single top-level `assert.Equal(t, Fn(args), expected)` becomes a
 			// `contract` whose `inv = =(Fn(args), expected)` -- the harvested
@@ -185,9 +236,13 @@ func liftWorkspace(root string) ([]any, []map[string]any, error) {
 			return nil
 		}
 
-		// Body-derived function-contracts (verify-facing dialect).
+		// Body-derived function-contracts (verify-facing dialect). The
+		// authoring surfaces gate emission on the `//provekit:` declaration.
 		rel := relPath(root, path)
-		lifted, liftErr := liftgo.LiftSourceCore("", rel, src)
+		lifted, liftErr := liftgo.LiftSourceWithOptions("", rel, src, liftgo.LiftOptions{
+			NormalizeCoreArith: true,
+			AnnotatedOnly:      annotatedOnly,
+		})
 		if liftErr != nil {
 			diagnostics = append(diagnostics, map[string]any{"path": path, "message": liftErr.Error()})
 			return nil
@@ -195,15 +250,74 @@ func liftWorkspace(root string) ([]any, []map[string]any, error) {
 		for _, d := range lifted.Diagnostics {
 			diagnostics = append(diagnostics, map[string]any{"path": d.Path, "message": d.Message})
 		}
+		for _, r := range lifted.Refusals {
+			diagnostics = append(diagnostics, map[string]any{"path": rel, "message": fmt.Sprintf("%s: %s (%s)", r.Function, r.Reason, r.Kind)})
+		}
 		for _, fc := range lifted.Contracts {
 			if seenFn[fc.FnName] {
 				continue
 			}
 			seenFn[fc.FnName] = true
+			ann := lifted.Annotations[fc.FnName]
+
+			if mode == modeBindings {
+				// The DECLARATION catalog entry: WHICH boundary/sugar the
+				// library author declared on this function (mint skips this
+				// kind). This is the Go peer of rust's
+				// `library-sugar-binding-entry`.
+				if ann == nil {
+					continue
+				}
+				library := ann.Library
+				if library == "" {
+					library = "default"
+				}
+				paramTypes := goParamTypes(fc)
+				returnType := goReturnType(fc)
+				bodyText := extractGoFuncBody(string(src), bareSymbol(fc.FnName))
+				entry := map[string]any{
+					"kind":                 "library-sugar-binding-entry",
+					"target_language":      "go",
+					"target_library_tag":   library,
+					"concept_name":         ann.Concept,
+					"source_function_name": bareSymbol(fc.FnName),
+					"fnName":               fc.FnName,
+					"authoring_kind":       string(ann.Kind),
+					"param_names":          fc.Formals,
+					"param_types":          paramTypes,
+					"return_type":          returnType,
+					"visibility":           "",
+					"signature_shape_cid":  signatureShapeCID(bareSymbol(fc.FnName), fc.Formals, paramTypes, returnType),
+					"body_source": map[string]any{
+						"file":       rel,
+						"source_cid": cidOf([]byte(bodyText)),
+						"body_text":  bodyText,
+					},
+				}
+				if ann.Family != "" {
+					entry["family"] = ann.Family
+				}
+				if ann.Version != "" {
+					entry["version"] = ann.Version
+				}
+				irItems = append(irItems, entry)
+				continue
+			}
+
+			// modeContracts / modeBare: the function-contract.
 			item, convErr := functionContractWithBridgeSymbol(fc)
 			if convErr != nil {
 				diagnostics = append(diagnostics, map[string]any{"path": rel, "message": convErr.Error()})
 				continue
+			}
+			// Tag the contract with the authoring declaration so the emitted
+			// ir-document records WHICH concept the library declared.
+			if ann != nil {
+				item["conceptName"] = ann.Concept
+				item["authoringKind"] = string(ann.Kind)
+				if ann.Library != "" {
+					item["library"] = ann.Library
+				}
 			}
 			irItems = append(irItems, item)
 		}
@@ -252,6 +366,103 @@ func bareSymbol(fnName string) string {
 		name = name[i+1:]
 	}
 	return name
+}
+
+// goParamTypes maps each formal's IR sort to a Go type string for the
+// binding-entry catalog. The realize shim re-derives the actual Go types; this
+// is the declaration record, so a primitive-sort -> Go-type best-effort is
+// sufficient (Int -> int, others fall back to the sort name).
+func goParamTypes(fc liftgo.FunctionContract) []string {
+	out := make([]string, 0, len(fc.FormalSorts))
+	for _, s := range fc.FormalSorts {
+		out = append(out, goTypeForSort(s))
+	}
+	return out
+}
+
+func goReturnType(fc liftgo.FunctionContract) string {
+	if fc.ReturnSort == nil {
+		return ""
+	}
+	return goTypeForSort(fc.ReturnSort)
+}
+
+func goTypeForSort(sort any) string {
+	m, ok := sort.(map[string]any)
+	if !ok {
+		return "int"
+	}
+	name, _ := m["name"].(string)
+	switch name {
+	case "Int":
+		return "int"
+	case "Bool":
+		return "bool"
+	case "String":
+		return "string"
+	case "":
+		return "int"
+	default:
+		return name
+	}
+}
+
+// cidOf is the substrate's blake3-512 content address of raw bytes.
+func cidOf(b []byte) string {
+	return canonicalizer.ComputeCID(b)
+}
+
+// signatureShapeCID content-addresses the function's signature shape (name +
+// formal names + types + return type) -- the binding-entry's stable identity
+// for the declared boundary. Deterministic over the signature string.
+func signatureShapeCID(name string, formals, paramTypes []string, returnType string) string {
+	var b strings.Builder
+	b.WriteString("go-sig:")
+	b.WriteString(name)
+	b.WriteString("(")
+	for i, f := range formals {
+		if i > 0 {
+			b.WriteString(",")
+		}
+		b.WriteString(f)
+		b.WriteString(":")
+		if i < len(paramTypes) {
+			b.WriteString(paramTypes[i])
+		}
+	}
+	b.WriteString(")")
+	b.WriteString(returnType)
+	return cidOf([]byte(b.String()))
+}
+
+// extractGoFuncBody returns the text between the outermost `{` and matching
+// `}` of `func <name>(...)`, mirroring rust's `sugar_body_source` body_text.
+// Best-effort brace matching (does not parse strings/comments); sufficient for
+// the simple annotated bodies the authoring surface targets.
+func extractGoFuncBody(src, name string) string {
+	marker := "func " + name + "("
+	idx := strings.Index(src, marker)
+	if idx < 0 {
+		return ""
+	}
+	open := strings.IndexByte(src[idx:], '{')
+	if open < 0 {
+		return ""
+	}
+	open += idx
+	depth := 0
+	for i := open; i < len(src); i++ {
+		switch src[i] {
+		case '{':
+			depth++
+		case '}':
+			depth--
+			if depth == 0 {
+				return strings.TrimSpace(src[open+1 : i])
+			}
+		}
+	}
+	return ""
 }
 
 func relPath(root, path string) string {

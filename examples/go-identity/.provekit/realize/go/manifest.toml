@@ -1,0 +1,6 @@
+# Go realize surface: the SHIM that materializes the `identity` concept back
+# into Go sugar (provekit-realize-go-core). Closes the loop: the boundary the
+# author declared above is realized here as `func Id(x int) int { return x }`.
+name = "go-realize"
+command = ["provekit-realize-go", "--rpc"]
+working_dir = "."

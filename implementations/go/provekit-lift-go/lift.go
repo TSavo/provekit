@@ -110,13 +110,23 @@ type stmtResult struct {
 	hasReturn bool
 }
 
-// LiftOptions selects the op dialect a lift emits.
+// LiftOptions selects the op dialect a lift emits and which functions it
+// emits contracts for.
 type LiftOptions struct {
 	// NormalizeCoreArith emits the SMT-LIB core-theory symbol (`*`, `+`,
 	// `<`, ...) for arithmetic / comparison operators instead of the
 	// namespaced round-trip form (`go:mul`, ...). Set by the verify-facing
 	// entry points so the body-derived postcondition is z3-dischargeable.
 	NormalizeCoreArith bool
+	// AnnotatedOnly gates contract emission on the AUTHORING declaration:
+	// when true, only functions carrying a `//provekit:boundary(...)` or
+	// `//provekit:sugar(...)` doc-comment directive are lifted. The
+	// authoring surface (`go-bind` / `go-contracts` plugins) sets this so
+	// the DECLARATION drives emission, mirroring rust's
+	// `#[provekit::sugar(...)]` / `#[provekit::boundary(...)]`. The default
+	// (false) keeps the emit-all behavior the bare `go` verify surface and
+	// the round-trip lift depend on.
+	AnnotatedOnly bool
 }
 
 // LiftSource lifts a single Go source file in the round-trip dialect
@@ -177,10 +187,29 @@ func LiftSourceWithOptions(packagePath, sourcePath string, source []byte, opts L
 
 	var result LiftResult
 	result.Diagnostics = diagnostics
+	result.Annotations = map[string]*Annotation{}
 	var bodyTerms []any
 	for _, decl := range file.Decls {
 		fn, ok := decl.(*ast.FuncDecl)
 		if !ok {
+			continue
+		}
+		// Authoring surface: the DECLARATION drives emission. A malformed
+		// `//provekit:` directive is refused loudly (an author who typed it
+		// meant to declare something), not silently dropped.
+		ann, annErr := parseFuncAnnotation(fn)
+		if annErr != nil {
+			result.Refusals = append(result.Refusals, Refusal{
+				Kind:     "malformed-annotation",
+				Function: fallbackFuncName(packagePath, fn),
+				Line:     fset.Position(fn.Pos()).Line,
+				Reason:   annErr.Error(),
+			})
+			continue
+		}
+		if opts.AnnotatedOnly && ann == nil {
+			// No boundary/sugar declared: the author did not ask the
+			// authoring surface to lift this function.
 			continue
 		}
 		contract, bodyTerm, refusals := liftFunc(fset, file, pkg, info, sourcePath, known, packagePath, fn, opts)
@@ -191,6 +220,9 @@ func LiftSourceWithOptions(packagePath, sourcePath string, source []byte, opts L
 		result.Contracts = append(result.Contracts, contract)
 		result.IR = append(result.IR, contract)
 		bodyTerms = append(bodyTerms, bodyTerm)
+		if ann != nil {
+			result.Annotations[contract.FnName] = ann
+		}
 	}
 
 	if len(bodyTerms) > 0 {
@@ -1177,6 +1209,12 @@ func LiftPathsWithOptions(workspaceRoot string, sourcePaths []string, opts LiftO
 		merged.SourceUnits = append(merged.SourceUnits, lifted.SourceUnits...)
 		merged.Refusals = append(merged.Refusals, lifted.Refusals...)
 		merged.Diagnostics = append(merged.Diagnostics, lifted.Diagnostics...)
+		for fnName, ann := range lifted.Annotations {
+			if merged.Annotations == nil {
+				merged.Annotations = map[string]*Annotation{}
+			}
+			merged.Annotations[fnName] = ann
+		}
 	}
 	return merged, nil
 }
