@@ -110,6 +110,15 @@ struct MaterializedFile {
     /// (`#1339`) wires this so materialize no longer aborts on first
     /// refusal: every site's outcome lives in the receipt instead.
     receipt: SourceTransformReceipt,
+    /// Per-site realization fragments for the LANGUAGE KIT's assemble RPC.
+    /// Empty for kits/languages whose realize plugin produced no body (e.g.
+    /// refuse-only files). The `--out-dir` path routes these through
+    /// `dispatch_assemble`; the substrate writes back what the kit returns.
+    fragments: Vec<Json>,
+    /// Source-declared package/namespace (e.g. Java `package x.y;`). Passed
+    /// to the assemble RPC as `package_hint` so the kit reproduces it. None
+    /// when the source declares none.
+    package_hint: Option<String>,
 }
 
 pub fn run(args: MaterializeArgs) -> u8 {
@@ -198,14 +207,38 @@ pub fn run(args: MaterializeArgs) -> u8 {
     }
 
     if let Some(out_dir) = args.out_dir.as_ref() {
-        if let Err(error) = write_out_dir(out_dir, &files) {
-            eprintln!("{}: {error}", "error".red().bold());
-            return EXIT_USER_ERROR;
-        }
-        if args.compile_check {
-            let check_result = run_compile_check(&target_lang, out_dir);
-            if check_result != EXIT_OK {
-                return check_result;
+        // The compilation unit is assembled BY THE LANGUAGE KIT over RPC
+        // (imports, helper hoisting, package, class wrapping are the kit's
+        // job; the substrate holds no language syntax). When the kit supports
+        // the assemble RPC, route every file's fragments through it and write
+        // back what the kit returns, then compile-check with the kit-declared
+        // classpath. When the kit does NOT implement assemble, fall back to
+        // writing the in-place-rewritten content (kits not yet on the assemble
+        // protocol keep working unchanged).
+        match emit_out_dir_via_kit_assemble(
+            &project_root,
+            &target_lang,
+            library_tag.as_deref(),
+            out_dir,
+            &files,
+            args.compile_check,
+        ) {
+            EmitOutcome::Assembled(code) => {
+                if code != EXIT_OK {
+                    return code;
+                }
+            }
+            EmitOutcome::KitDoesNotAssemble => {
+                if let Err(error) = write_out_dir(out_dir, &files) {
+                    eprintln!("{}: {error}", "error".red().bold());
+                    return EXIT_USER_ERROR;
+                }
+                if args.compile_check {
+                    let check_result = run_compile_check(&target_lang, out_dir);
+                    if check_result != EXIT_OK {
+                        return check_result;
+                    }
+                }
             }
         }
     } else if args.write {
@@ -1442,7 +1475,7 @@ fn materialize_source_dir(
         }
         let raw = std::fs::read_to_string(path)
             .map_err(|error| format!("read {}: {error}", path.display()))?;
-        let (content, receipt) =
+        let (content, receipt, fragments) =
             materialize_source_text(project_root, target_lang, library_tag, &raw)
                 .map_err(|error| format!("{}: {error}", path.display()))?;
         let replacements =
@@ -1451,11 +1484,14 @@ fn materialize_source_dir(
             continue;
         }
         let relative_path = path.strip_prefix(source_dir).unwrap_or(path).to_path_buf();
+        let package_hint = extract_package_hint(&raw);
         files.push(MaterializedFile {
             source_path: path.to_path_buf(),
             relative_path,
             content,
             receipt,
+            fragments,
+            package_hint,
         });
     }
     Ok(files)
@@ -1587,7 +1623,7 @@ fn materialize_source_text(
     target_lang: &str,
     library_tag: Option<&str>,
     raw: &str,
-) -> Result<(String, SourceTransformReceipt), String> {
+) -> Result<(String, SourceTransformReceipt, Vec<Json>), String> {
     let kit = MaterializeKit::new(target_lang, library_tag, project_root);
     // Phase E (`#1339`): use the refusal-collecting variant so a
     // `SiteOutcome::Refuse` becomes a first-class entry in the receipt
@@ -1601,6 +1637,7 @@ fn materialize_source_text(
         library_tag.unwrap_or(""),
         &sites_and_outcomes,
     );
+    let fragments = kit.take_fragments();
 
     // #1360 / #1355: collect per-target scope-bringings from each
     // @boundary site's named library and splice them into the rewritten
@@ -1616,7 +1653,25 @@ fn materialize_source_text(
     }
     let final_source = splice_use_items(&rewritten, &bringings);
 
-    Ok((final_source, receipt))
+    Ok((final_source, receipt, fragments))
+}
+
+/// Extract the source-declared package/namespace so the assemble RPC can
+/// reproduce it (`package_hint`). Java/Kotlin/Scala: `package x.y;` or
+/// `package x.y`. Returns None when the source declares none. Substrate-honest
+/// minimum — the kit owns the real package policy; this only forwards what the
+/// consumer already wrote so the materialized unit lands in the same package.
+fn extract_package_hint(raw: &str) -> Option<String> {
+    for line in raw.lines() {
+        let t = line.trim();
+        if let Some(rest) = t.strip_prefix("package ") {
+            let pkg = rest.trim().trim_end_matches(';').trim();
+            if !pkg.is_empty() {
+                return Some(pkg.to_string());
+            }
+        }
+    }
+    None
 }
 
 /// `SiteTransformKit` implementation for `provekit materialize`. The
@@ -1631,6 +1686,13 @@ pub struct MaterializeKit<'root> {
     target_lang: String,
     library_tag: Option<String>,
     project_root: &'root Path,
+    /// Per-site realization fragments, collected during `transform_site`, so
+    /// the `--out-dir` path can hand them to the LANGUAGE KIT's assemble RPC
+    /// (which owns imports/helper-hoisting/package/class-wrapping — the
+    /// substrate holds no language syntax). Each entry mirrors the cross-
+    /// language fragment shape `{concept_name, source, imports, helpers}`.
+    /// `Mutex` (not `RefCell`) because `SiteTransformKit: Send + Sync`.
+    fragments: std::sync::Mutex<Vec<Json>>,
 }
 
 impl<'root> MaterializeKit<'root> {
@@ -1643,7 +1705,13 @@ impl<'root> MaterializeKit<'root> {
             target_lang: target_lang.to_string(),
             library_tag: library_tag.map(str::to_string),
             project_root,
+            fragments: std::sync::Mutex::new(Vec::new()),
         }
+    }
+
+    /// Drain the fragments collected across this kit's `transform_site` calls.
+    pub fn take_fragments(&self) -> Vec<Json> {
+        std::mem::take(&mut self.fragments.lock().expect("fragments mutex"))
     }
 
     /// Execute the lower-kit composition path that turns a realize-request
@@ -1780,6 +1848,20 @@ impl SiteTransformKit for MaterializeKit<'_> {
             });
         }
         let binding_cid = realized.emitted_artifact_cid.clone().unwrap_or_default();
+        // Collect the per-site fragment for the kit's assemble RPC. Mirrors the
+        // cross-language fragment shape (cmd_materialize.rs discovery loop): the
+        // kit's assembler peels the wrapper class, dedupes imports, hoists
+        // helpers, and emits the package + compilation unit. The substrate does
+        // not assemble — it just forwards what the realize plugin produced.
+        self.fragments
+            .lock()
+            .expect("fragments mutex")
+            .push(serde_json::json!({
+                "concept_name": carrier.concept_name,
+                "source": realized.source.clone(),
+                "imports": realized.imports.clone(),
+                "helpers": realized.helpers.clone(),
+            }));
         if has_loss(&realized.observed_loss_record) {
             Ok(SiteOutcome::LoudlyLossy {
                 body: realized.source,
@@ -2051,6 +2133,143 @@ fn write_in_place(files: &[MaterializedFile]) -> Result<(), String> {
             .map_err(|error| format!("write {}: {error}", file.source_path.display()))?;
     }
     Ok(())
+}
+
+/// Outcome of attempting kit-owned assembly for `--out-dir`.
+enum EmitOutcome {
+    /// The kit assembled (one or more files); inner is the compile-check exit
+    /// code (EXIT_OK when --compile-check is off or javac passed).
+    Assembled(u8),
+    /// The kit does not implement the assemble RPC; caller falls back to the
+    /// legacy in-place-rewrite write path (back-compat for not-yet-migrated kits).
+    KitDoesNotAssemble,
+}
+
+/// Route each materialized file's fragments through the LANGUAGE KIT's
+/// assemble RPC and write back what the kit returns, then (optionally)
+/// compile-check with the kit-declared classpath. This is the ONLY assembly
+/// path — the substrate never bakes language syntax. Same-language and
+/// cross-language both land here; source-lang == target-lang changes the lift,
+/// not who assembles.
+///
+/// Returns `KitDoesNotAssemble` when the kit replies method-not-found on the
+/// FIRST file with fragments, so the caller can fall back to the legacy
+/// carrier-rewrite write path for kits not yet on the assemble protocol.
+fn emit_out_dir_via_kit_assemble(
+    project_root: &Path,
+    target_lang: &str,
+    library_tag: Option<&str>,
+    out_dir: &Path,
+    files: &[MaterializedFile],
+    compile_check: bool,
+) -> EmitOutcome {
+    use crate::kit_dispatch::{dispatch_assemble, AssembleError};
+
+    if let Err(err) = std::fs::create_dir_all(out_dir) {
+        eprintln!(
+            "{}: failed to create --out-dir {}: {err}",
+            "error".red().bold(),
+            out_dir.display()
+        );
+        return EmitOutcome::Assembled(EXIT_USER_ERROR);
+    }
+
+    let mut aggregated_classpath: std::collections::BTreeSet<String> =
+        std::collections::BTreeSet::new();
+    let mut wrote_any = false;
+
+    for file in files {
+        // Files with no realizable fragments (refuse-only) have nothing for
+        // the kit to assemble; preserve the in-place-rewritten content so the
+        // refusal markers / untouched source still land in the out-dir.
+        if file.fragments.is_empty() {
+            let target = out_dir.join(&file.relative_path);
+            if let Some(parent) = target.parent() {
+                let _ = std::fs::create_dir_all(parent);
+            }
+            if let Err(err) = std::fs::write(&target, &file.content) {
+                eprintln!("{}: failed to write {}: {err}", "error".red().bold(), target.display());
+                return EmitOutcome::Assembled(EXIT_USER_ERROR);
+            }
+            continue;
+        }
+
+        let file_basename = file
+            .relative_path
+            .file_stem()
+            .and_then(|s| s.to_str())
+            .unwrap_or("lib");
+        let fragments_json =
+            serde_json::to_string(&file.fragments).unwrap_or_else(|_| "[]".to_string());
+
+        match dispatch_assemble(
+            project_root,
+            target_lang,
+            library_tag,
+            &fragments_json,
+            file_basename,
+            file.package_hint.as_deref(),
+        ) {
+            Ok(assembled) => {
+                for af in &assembled.files {
+                    // Preserve the source file's relative directory so the
+                    // assembled unit lands next to the consumer.
+                    let rel_parent = file.relative_path.parent();
+                    let out_path = match rel_parent {
+                        Some(p) if !p.as_os_str().is_empty() => out_dir.join(p).join(&af.path),
+                        _ => out_dir.join(&af.path),
+                    };
+                    if let Some(parent) = out_path.parent() {
+                        let _ = std::fs::create_dir_all(parent);
+                    }
+                    if let Err(err) = std::fs::write(&out_path, &af.content) {
+                        eprintln!("{}: failed to write {}: {err}", "error".red().bold(), out_path.display());
+                        return EmitOutcome::Assembled(EXIT_USER_ERROR);
+                    }
+                    eprintln!(
+                        "  {} wrote {} (assembled by {} kit via RPC)",
+                        "EMIT".green().bold(),
+                        out_path.display(),
+                        target_lang,
+                    );
+                    wrote_any = true;
+                }
+                for cp in &assembled.compile_classpath {
+                    aggregated_classpath.insert(cp.clone());
+                }
+            }
+            Err(AssembleError::MethodNotSupported) => {
+                // Kit predates the assemble protocol. If we haven't written
+                // anything yet, signal fallback to the legacy write path.
+                if !wrote_any {
+                    return EmitOutcome::KitDoesNotAssemble;
+                }
+                // Mixed-capability shouldn't happen within one (lang, library);
+                // surface it loudly rather than silently dropping the file.
+                eprintln!(
+                    "{}: kit for {target_lang} stopped supporting assemble mid-run for {}",
+                    "error".red().bold(),
+                    file.relative_path.display()
+                );
+                return EmitOutcome::Assembled(EXIT_VERIFY_FAIL);
+            }
+            Err(AssembleError::Failed(err)) => {
+                eprintln!(
+                    "{}: assemble RPC failed for {}: {err}",
+                    "error".red().bold(),
+                    file.relative_path.display()
+                );
+                return EmitOutcome::Assembled(EXIT_VERIFY_FAIL);
+            }
+        }
+    }
+
+    if compile_check {
+        let classpath: Vec<String> = aggregated_classpath.iter().cloned().collect();
+        let code = run_compile_check_with_classpath(target_lang, out_dir, &classpath);
+        return EmitOutcome::Assembled(code);
+    }
+    EmitOutcome::Assembled(EXIT_OK)
 }
 
 fn write_out_dir(out_dir: &Path, files: &[MaterializedFile]) -> Result<(), String> {

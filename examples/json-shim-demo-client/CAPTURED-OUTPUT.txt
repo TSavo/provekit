@@ -1,73 +1,98 @@
-# json-shim-demo-client — captured provekit materialize output (PIECE 1: .proof-load-via-RPC)
-# Generated 2026-05-24T22:23:40Z on branch java-json-shim-demo
-# The two java-canonical-bodies-{jackson,gson}.json are DELETED. Bodies now come
-# from the @ProveKitSugar shim .proof, lifted by cmd_materialize and fed to the
-# realize plugin over RPC (RealizeRequest.body_templates). Same concept:family:json
-# contract, two libraries, caller picks via --library.
+# json-shim-demo-client — captured provekit materialize output
+# Generated 2026-05-24T22:30:53Z on branch java-json-shim-demo
+#
+# PIECE 1 (.proof-load-via-RPC): the two java-canonical-bodies-{jackson,gson}.json
+#   are DELETED. Emission bodies come from the @ProveKitSugar shim .proof, lifted by
+#   cmd_materialize and fed over RPC (RealizeRequest.body_templates).
+# PIECE 2 (kit-owned assembly): the compilation unit is assembled BY THE JAVA KIT over
+#   the assemble RPC (package, imports, helper hoisting, class wrapping). The substrate
+#   bakes no language syntax; it writes back what the kit returns + runs the kit-declared
+#   classpath. Same concept:family:json contract, two libraries, caller picks via --library.
 
-================ JSON canonical-bodies present? ================
+================ canonical-bodies JSON on disk? ================
 (none — java-canonical-bodies-{jackson,gson}.json deleted)
 
-================ RUN: --library jackson (dry-run, JSON deleted) ================
-    final class ParseConfigTransported {
-        // @substrate-signature {"visibility":"","genericParams":"","originalParamTypes":[],"paramSortCids":[],"returnSortCid":"","sourceReturnType":"JsonNode","docLines":[]}
+================ RUN 1: --library jackson  (out-dir + compile-check) ================
+  [1m[32mEMIT[39m[0m wrote /tmp/mat-jackson/ConfigCodec.java (assembled by java kit via RPC)
+[1m[36mmaterialize[39m[0m compile-check: running java compiler over /tmp/mat-jackson
+[1m[32mmaterialize[39m[0m compile-check: javac passed
+[1m[32mmaterialize[39m[0m materialized 0 exact + 2 lossy + 0 refused across 1 file(s)
+[exit: 0]
+---- emitted /tmp/mat-jackson/ConfigCodec.java (assembled by the java kit) ----
+package org.provekit.demo.jsonclient;
+
+import com.fasterxml.jackson.core.JsonProcessingException;
+import com.fasterxml.jackson.databind.JsonNode;
+import com.fasterxml.jackson.databind.ObjectMapper;
+
+public final class ConfigCodec {
+    static final ObjectMapper MAPPER = new ObjectMapper();
+
+    // @substrate-signature {"visibility":"","genericParams":"","originalParamTypes":[],"paramSortCids":[],"returnSortCid":"","sourceReturnType":"Object","docLines":[]}
         // concept: concept:json-parse
-        public static JsonNode parseConfig(String s) {
+        public static Object parseConfig(String s) {
             // __fragment_imports__: com.fasterxml.jackson.databind.JsonNode, com.fasterxml.jackson.databind.ObjectMapper, com.fasterxml.jackson.core.JsonProcessingException
                     try {
                         return MAPPER.readTree(s);
                     } catch (JsonProcessingException e) {
                         throw new RuntimeException("json-parse: " + e.getMessage(), e);
                     }
-            
+                
         }
-    }
 
-    final class RenderConfigTransported {
-        // @substrate-signature {"visibility":"","genericParams":"","originalParamTypes":[],"paramSortCids":[],"returnSortCid":"","sourceReturnType":"String","docLines":[]}
+    // @substrate-signature {"visibility":"","genericParams":"","originalParamTypes":[],"paramSortCids":[],"returnSortCid":"","sourceReturnType":"String","docLines":[]}
         // concept: concept:json-serialize
-        public static String renderConfig(JsonNode v) {
+        public static String renderConfig(Object v) {
             // __fragment_imports__: com.fasterxml.jackson.databind.JsonNode, com.fasterxml.jackson.databind.ObjectMapper, com.fasterxml.jackson.core.JsonProcessingException
                     try {
                         return MAPPER.writeValueAsString(v);
                     } catch (JsonProcessingException e) {
                         throw new RuntimeException("json-serialize: " + e.getMessage(), e);
                     }
-            
+                
         }
-    }
 }
-[summary]
-[1m[32mmaterialize[39m[0m dry-run: 0 exact + 2 lossy + 0 refused across 1 file(s)
 
-================ RUN: --library gson (dry-run, JSON deleted) ================
-    final class ParseConfigTransported {
-        // @substrate-signature {"visibility":"","genericParams":"","originalParamTypes":[],"paramSortCids":[],"returnSortCid":"","sourceReturnType":"JsonNode","docLines":[]}
+================ RUN 2: --library gson  (out-dir + compile-check) ================
+  [1m[32mEMIT[39m[0m wrote /tmp/mat-gson/ConfigCodec.java (assembled by java kit via RPC)
+[1m[36mmaterialize[39m[0m compile-check: running java compiler over /tmp/mat-gson
+[1m[32mmaterialize[39m[0m compile-check: javac passed
+[1m[32mmaterialize[39m[0m materialized 0 exact + 2 lossy + 0 refused across 1 file(s)
+[exit: 0]
+---- emitted /tmp/mat-gson/ConfigCodec.java (assembled by the java kit) ----
+package org.provekit.demo.jsonclient;
+
+import com.google.gson.Gson;
+import com.google.gson.JsonElement;
+import com.google.gson.JsonParser;
+import com.google.gson.JsonSyntaxException;
+
+public final class ConfigCodec {
+    static final Gson GSON = new Gson();
+
+    // @substrate-signature {"visibility":"","genericParams":"","originalParamTypes":[],"paramSortCids":[],"returnSortCid":"","sourceReturnType":"Object","docLines":[]}
         // concept: concept:json-parse
-        public static JsonNode parseConfig(String s) {
+        public static Object parseConfig(String s) {
             // __fragment_imports__: com.google.gson.Gson, com.google.gson.JsonElement, com.google.gson.JsonParser, com.google.gson.JsonSyntaxException
                     try {
                         return JsonParser.parseString(s);
                     } catch (JsonSyntaxException e) {
                         throw new RuntimeException("json-parse: " + e.getMessage(), e);
                     }
-            
+                
         }
-    }
 
-    final class RenderConfigTransported {
-        // @substrate-signature {"visibility":"","genericParams":"","originalParamTypes":[],"paramSortCids":[],"returnSortCid":"","sourceReturnType":"String","docLines":[]}
+    // @substrate-signature {"visibility":"","genericParams":"","originalParamTypes":[],"paramSortCids":[],"returnSortCid":"","sourceReturnType":"String","docLines":[]}
         // concept: concept:json-serialize
-        public static String renderConfig(JsonNode v) {
+        public static String renderConfig(Object v) {
             // __fragment_imports__: com.google.gson.Gson, com.google.gson.JsonElement, com.google.gson.JsonParser, com.google.gson.JsonSyntaxException
                     return GSON.toJson(v);
-            
+                
         }
-    }
 }
-[summary]
-[1m[32mmaterialize[39m[0m dry-run: 0 exact + 2 lossy + 0 refused across 1 file(s)
 
-# VERDICT: with the disk JSON deleted, jackson emits MAPPER.readTree / MAPPER.writeValueAsString,
-# gson emits JsonParser.parseString / GSON.toJson — proving realize loads templates from the
-# shim .proof via RPC, not from the (now absent) disk cache. PIECE 2 (compile) tracked separately.
+================ PROOF: templates load from the shim .proof, not disk ================
+# The canonical-bodies JSON are already deleted (see top). Both runs above still emit
+# MAPPER.readTree/writeValueAsString (jackson) and JsonParser.parseString/GSON.toJson
+# (gson) — so realize sources its bodies from the shim .proof via RPC. Before PIECE 1,
+# deleting the JSON made both sites REFUSE; now they resolve and compile (javac 0).
