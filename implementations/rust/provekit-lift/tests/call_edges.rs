@@ -46,6 +46,8 @@ fn b(n: i64) -> i64 { a(n) }
         .iter()
         .map(|d| {
             let args = MintContractArgs {
+                formals: Vec::new(),
+                formal_sorts: Vec::new(),
                 contract_name: d.name.clone(),
                 pre: d.pre.as_deref().map(formula_to_value),
                 post: d.post.as_deref().map(formula_to_value),
@@ -126,6 +128,8 @@ fn b(x: i64) -> i64 {
         .iter()
         .map(|d| {
             let args = MintContractArgs {
+                formals: Vec::new(),
+                formal_sorts: Vec::new(),
                 contract_name: d.name.clone(),
                 pre: d.pre.as_deref().map(formula_to_value),
                 post: d.post.as_deref().map(formula_to_value),
@@ -195,6 +199,8 @@ fn b(n: i64) -> i64 { a(n) }
             .iter()
             .map(|d| {
                 let args = MintContractArgs {
+                    formals: Vec::new(),
+                    formal_sorts: Vec::new(),
                     contract_name: d.name.clone(),
                     pre: d.pre.as_deref().map(formula_to_value),
                     post: d.post.as_deref().map(formula_to_value),
@@ -291,6 +297,8 @@ pub extern "C" fn foo(n: i32) -> i32 {
 
     // Verify it round-trips through the CID computation without panic.
     let args = MintContractArgs {
+        formals: Vec::new(),
+        formal_sorts: Vec::new(),
         contract_name: foo_contract.name.clone(),
         pre: foo_contract.pre.as_deref().map(formula_to_value),
         post: foo_contract.post.as_deref().map(formula_to_value),

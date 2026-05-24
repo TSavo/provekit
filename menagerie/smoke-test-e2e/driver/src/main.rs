@@ -524,6 +524,8 @@ fn run_pass(source_root: &Path, pass_id: u32, read_concept_comments: bool) -> Pa
                     source_cid: None,
                 },
                 signer_seed,
+                formals: Vec::new(),
+                formal_sorts: Vec::new(),
             };
             match mint_contract(&mint_args) {
                 Ok(env) => {

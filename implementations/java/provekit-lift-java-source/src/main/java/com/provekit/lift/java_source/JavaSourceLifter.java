@@ -92,7 +92,7 @@ public final class JavaSourceLifter {
             List.of(),
             List.of(),
             sort("Int"),
-            eq(var("return_value"), sourceUnitTerm),
+            eq(var("result"), sourceUnitTerm),
             List.of(),
             path,
             1,
@@ -332,7 +332,15 @@ public final class JavaSourceLifter {
                     formals,
                     formalSorts,
                     sortFor(executable.getReturnType()),
-                    eq(var("return_value"), postValue),
+                    // Body-derived postcondition: `result == <body value-expr>`.
+                    // The result var MUST be `result` (not `return_value`): the
+                    // verification spine's body_discharge::CatalogResolver
+                    // (RESULT_VAR = "result", #1436/#1440) substitutes a
+                    // harvested call's arg into the matching formal of a
+                    // `result == ...` post. With `return_value` the resolver
+                    // returns None and the java callee stays uninterpreted ->
+                    // Undecidable.
+                    eq(var("result"), postValue),
                     emitter.effectsJson(),
                     path,
                     line,

@@ -99,6 +99,8 @@ fn post_out_eq_0() -> Arc<Value> {
 /// Canonical fixture args used by every kit's cross-kit byte test.
 fn fixture_args() -> MintContractArgs {
     MintContractArgs {
+        formals: Vec::new(),
+        formal_sorts: Vec::new(),
         contract_name: "demo".into(),
         pre: Some(pre_n_gt_0()),
         post: Some(post_out_eq_0()),

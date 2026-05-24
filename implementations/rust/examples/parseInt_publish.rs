@@ -60,6 +60,8 @@ fn main() -> ExitCode {
 
     for d in &contract_decls {
         let args = MintContractArgs {
+            formals: Vec::new(),
+            formal_sorts: Vec::new(),
             contract_name: d.name.clone(),
             pre: d.pre.as_deref().map(formula_to_value),
             post: d.post.as_deref().map(formula_to_value),

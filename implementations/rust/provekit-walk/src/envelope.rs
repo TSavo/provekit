@@ -117,6 +117,21 @@ pub fn mint_args(
         .map(|c| vec![c.clone()])
         .unwrap_or_default();
 
+    // Carry the body-derived op-contract's formals (+ sorts) into the
+    // minted header so `body_discharge::CatalogResolver` can resolve the
+    // body-obligation (#1436/#1440). walk's `post` already equates
+    // `result == <body-expr>`, so with formals present the contract is a
+    // complete body-discharge target.
+    let formals = contract.formals.clone();
+    let formal_sorts = contract
+        .formal_sorts
+        .iter()
+        .map(|s| {
+            let json = serde_json::to_value(s).unwrap_or(serde_json::Value::Null);
+            crate::canonical::serde_to_canonical(json)
+        })
+        .collect();
+
     MintContractArgs {
         contract_name: contract.fn_name.clone(),
         pre: Some(pre),
@@ -132,6 +147,8 @@ pub fn mint_args(
             source_cid: contract.body_cid.clone(),
         },
         signer_seed: *signer_seed,
+        formals,
+        formal_sorts,
     }
 }
 

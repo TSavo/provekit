@@ -162,6 +162,8 @@ fn lift_rust_contracts(rust_dir: &Path) -> Result<Vec<LinkerContract>, String> {
         let inv_v = decl.inv.as_deref().map(formula_to_value);
 
         let args = MintContractArgs {
+            formals: Vec::new(),
+            formal_sorts: Vec::new(),
             contract_name: decl.name.clone(),
             pre: pre_v.clone(),
             post: post_v.clone(),

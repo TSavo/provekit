@@ -333,6 +333,8 @@ pub fn mint_validated(
     );
 
     let args = MintContractArgs {
+        formals: Vec::new(),
+        formal_sorts: Vec::new(),
         contract_name: v.name.clone(),
         pre: v.pre_value.clone(),
         post: v.post_value.clone(),
