@@ -20,7 +20,7 @@
       ],
       "return_type": "Arc < Value >"
     },
-    "step_3_4_regenerated_source": "pub fn string<S: Into<String>>(s: S) -> Arc < Value > {\n    Arc::new(Value::String(s.into()))\n}\n",
+    "step_3_4_regenerated_source": "pub fn string<S: Into<String>>(s: S) -> Arc<Value> {\n    Arc::new(Value::String(s.into()))\n}\n",
     "step_5_original_slice_cid": "blake3-512:2326ad724a2dfd96c463b1a1ae71d025e953d35a850ecbdd6954a409e2f4c0b100174ca0a6a62121b15b3a2f374b891110750617dc2b9466e11533df286122a7",
     "step_6_rustfmt_command": "rustfmt --edition 2021 --emit stdout <stdin:value_string_regenerated.rs>\nrustfmt --edition 2021 --emit stdout <stdin:value_string_original.rs>",
     "step_7_byte_identical_post_rustfmt": true,

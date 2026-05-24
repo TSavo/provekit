@@ -186,6 +186,19 @@ pub struct BindLiftEntry {
     pub proc_macro_invocations: Vec<Json>,
     #[serde(default)]
     pub source_function_name: Option<String>,
+    /// Realize-sidecar-only source signature types. These intentionally do NOT
+    /// feed the CID-bearing `param_types` / `return_type` fields: A9 (#1075)
+    /// erased declared types from the canonical lift term so the same algebra
+    /// lifted from untyped Python and typed Rust binds byte-identically
+    /// (seam 4 federation). The realizer still needs the source types to match
+    /// signature-keyed body templates, so the lifter emits them here; bind
+    /// forwards them through the realize sidecar (CID-invisible, stripped by
+    /// `strip_realize_sidecar_from_lift_term`) and `merge_realize_sidecar`
+    /// injects them into the realize spec.
+    #[serde(default, rename = "realize_param_types", alias = "realizeParamTypes")]
+    pub realize_param_types: Vec<String>,
+    #[serde(default, rename = "realize_return_type", alias = "realizeReturnType")]
+    pub realize_return_type: String,
     #[serde(default)]
     pub term_shape: Json,
     #[serde(default)]
@@ -618,6 +631,10 @@ pub fn strip_realize_sidecar_from_lift_term(term: Term) -> Term {
                 object.remove("procMacroInvocations");
                 object.remove("source_function_name");
                 object.remove("sourceFunctionName");
+                object.remove("realize_param_types");
+                object.remove("realizeParamTypes");
+                object.remove("realize_return_type");
+                object.remove("realizeReturnType");
             }
         }
     }
@@ -877,6 +894,8 @@ fn realize_sidecar_hint(term_json: &Json) -> Result<Option<String>, BindError> {
         if entry.operand_bindings.is_empty()
             && entry.proc_macro_invocations.is_empty()
             && entry.source_function_name.is_none()
+            && entry.realize_param_types.is_empty()
+            && entry.realize_return_type.is_empty()
         {
             continue;
         }
@@ -885,6 +904,8 @@ fn realize_sidecar_hint(term_json: &Json) -> Result<Option<String>, BindError> {
             "operand_bindings": entry.operand_bindings,
             "proc_macro_invocations": entry.proc_macro_invocations,
             "source_function_name": entry.source_function_name,
+            "realize_param_types": entry.realize_param_types,
+            "realize_return_type": entry.realize_return_type,
         }));
     }
     if sidecar_terms.is_empty() {

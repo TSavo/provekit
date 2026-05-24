@@ -46,7 +46,7 @@
       ],
       "return_type": "Arc < Value >"
     },
-    "step_3_4_regenerated_source": "pub fn boolean(b: bool) -> Arc < Value > {\n    Arc::new(Value::Bool(b))\n}\n",
+    "step_3_4_regenerated_source": "pub fn boolean(b: bool) -> Arc<Value> {\n    Arc::new(Value::Bool(b))\n}\n",
     "step_5_original_slice_cid": "blake3-512:f6eaf0ebbb9589ce23cad273e29d19da6ddacf20d3c7d654a41ed3d718f8ec94f0793648808318b18a375da350a8d4de300594fe649d84ac260c5cab460d8c3d",
     "step_6_rustfmt_command": "rustfmt --edition 2021 --emit stdout <stdin:value_boolean_regenerated.rs>\nrustfmt --edition 2021 --emit stdout <stdin:value_boolean_original.rs>",
     "step_7_byte_identical_post_rustfmt": true,
