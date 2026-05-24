@@ -88,6 +88,12 @@ fn http_request_realize_request() -> RealizeRequest {
         param_sort_cids: Vec::new(),
         return_sort_cid: String::new(),
         target_library_tag: String::new(),
+        visibility: String::new(),
+        generic_params: String::new(),
+        original_param_types: Vec::new(),
+        parametric_sort_expansions: Vec::new(),
+        function_return_types: std::collections::BTreeMap::new(),
+        doc_lines: Vec::new(),
     }
 }
 
@@ -141,6 +147,12 @@ fn sql_query_realize_request() -> RealizeRequest {
         param_sort_cids: Vec::new(),
         return_sort_cid: String::new(),
         target_library_tag: String::new(),
+        visibility: String::new(),
+        generic_params: String::new(),
+        original_param_types: Vec::new(),
+        parametric_sort_expansions: Vec::new(),
+        function_return_types: std::collections::BTreeMap::new(),
+        doc_lines: Vec::new(),
     }
 }
 
