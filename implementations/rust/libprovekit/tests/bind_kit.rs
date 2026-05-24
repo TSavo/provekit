@@ -154,6 +154,16 @@ fn bind_kit_transform_emits_bind_result_op_tree() {
             term.fn_name_sugar = Some(term.function.clone());
         }
         term.function.clear();
+        // #1075 federation: the wire op-tree (arg[1] of concept:bind-result, the
+        // cross-language CID) clears source-language realize-only DISPLAY metadata
+        // so typed-Rust and untyped-Python federate byte-identically. The full
+        // NamedTermDocument (with these fields) lives on artifacts[0]; the wire
+        // reconstruction recovered here legitimately lacks them. Signature types
+        // are preserved on the wire (legacy lower path reads them back). Mirror
+        // bind_payload_wire_named_term_document.
+        term.visibility.clear();
+        term.generic_params.clear();
+        term.doc_lines.clear();
     }
 
     let claim = BindKit::default()

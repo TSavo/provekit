@@ -402,12 +402,23 @@ fn bind_lift(params: &Value) -> Result<Value, String> {
                 .unwrap_or_default();
 
             let doc_lines = sugar_doc_lines(item_fn);
+            // #1075/A9 federation invariant: the bind-lift-entry is a
+            // CID-bearing surface (it is embedded verbatim as arg[0] of the
+            // federated `concept:bind-result` payload and feeds NamedTerm via
+            // `bind_term_document`). Declared source signature types MUST NOT
+            // ride here, or typed-Rust and untyped-Python bind to DIFFERENT
+            // CIDs and seam-4 federation byte-identity breaks (regression
+            // 48b343a43). The Java boundary emitter genuinely needs these
+            // types to realize the interface signature, so they travel on the
+            // CID-INVISIBLE realize sidecar (`realize_*`, stripped by
+            // `strip_realize_sidecar_from_lift_term` before hashing) — the
+            // same channel #1448 already uses for the sugar/realizer path.
             let mut entry = json!({
                 "kind": "bind-lift-entry",
                 "param_names": param_names,
-                "param_types": param_types,
-                "original_param_types": original_param_types,
-                "return_type": return_type,
+                "realize_param_types": param_types,
+                "realize_original_param_types": original_param_types,
+                "realize_return_type": return_type,
                 "generic_params": generic_params,
                 "visibility": visibility,
                 "term_shape": cvalue_to_json(&term_shape),
@@ -3332,10 +3343,27 @@ fn shape_of_expr(expr: &syn::Expr, ctx: &ShapeContext) -> Arc<CValue> {
         syn::Expr::Path(path) => {
             use quote::ToTokens;
             let text = path.to_token_stream().to_string().replace(' ', "");
-            CValue::object([
-                ("kind", CValue::string("symbol")),
-                ("text", CValue::string(text)),
-            ])
+            // #1075 federation: operand NAMES are sugar — the term_shape is
+            // structural identity, so `f(x)=x*2` and `f(y)=y*2` MUST share a
+            // term_shape. A scoped param/local reference therefore emits an
+            // EMPTY structural leaf `{}`; its symbol travels on the CID-invisible
+            // operand_bindings sidecar (same position, see bindings_of_expr's
+            // matching scoped_names check). This makes the rust term_shape
+            // byte-identical to the python lifter's empty-leaf + operand_bindings
+            // form (seam-4 federation). Discharge is unaffected: the realize
+            // binary's term_shape_leaf_expression checks operand_bindings.get(
+            // position) BEFORE kind=symbol, so it never read these leaves for
+            // scoped names. FREE identifiers (None, Some, Vec::new, enum paths)
+            // are NOT operands — they keep their symbol leaf so deeper consumers
+            // can lower them without operand_bindings position threading.
+            if ctx.scoped_names.contains(&text) {
+                non_operation_shape()
+            } else {
+                CValue::object([
+                    ("kind", CValue::string("symbol")),
+                    ("text", CValue::string(text)),
+                ])
+            }
         }
         _ => non_operation_shape(),
     }
@@ -3923,8 +3951,36 @@ pub fn add(left: i64, right: i64) -> i64 {
         let entry = entries.first().expect("add entry");
         assert_no_forbidden_bind_lift_entry_fields(entry);
         assert_eq!(entry["param_names"], json!(["left", "right"]));
-        assert!(entry.get("param_types").is_none());
-        assert!(entry.get("return_type").is_none());
+        // Federation invariant (#1075/A9): the bind-lift-entry is CID-bearing
+        // (embedded as arg[0] of the federated concept:bind-result payload and
+        // feeding NamedTerm), so declared signature types must NOT appear on it
+        // under the bare keys — typed-Rust would otherwise bind to a different
+        // CID than untyped-Python and seam-4 byte-identity would break.
+        assert!(
+            entry.get("param_types").is_none(),
+            "bare param_types must not ride the CID-bearing bind-lift-entry"
+        );
+        assert!(
+            entry.get("return_type").is_none(),
+            "bare return_type must not ride the CID-bearing bind-lift-entry"
+        );
+        assert!(
+            entry.get("original_param_types").is_none(),
+            "bare original_param_types must not ride the CID-bearing bind-lift-entry"
+        );
+        // The types are not LOST: they travel on the CID-invisible realize
+        // sidecar (stripped before hashing by strip_realize_sidecar_from_lift_term)
+        // so the Java boundary emitter can still realize the interface signature.
+        assert_eq!(
+            entry["realize_param_types"],
+            json!(["i64", "i64"]),
+            "signature types must be carried on the CID-invisible realize sidecar"
+        );
+        assert_eq!(
+            entry["realize_return_type"],
+            json!("i64"),
+            "return type must be carried on the CID-invisible realize sidecar"
+        );
         assert!(
             entry["witnesses"]
                 .as_array()
@@ -4429,21 +4485,56 @@ pub fn add(x: i64, y: i64) -> i64 {
 "#,
         );
 
-        // Substrate-canonical shape: free identifier args (x, y) lift as
-        // kind:"symbol" leaves carrying the name. (Previously emitted as
-        // non_operation_shape {} + supplemented by operand_bindings — the
-        // 2026-05-21 substrate-honest pass moved names into the shape so
-        // deeper consumers don't need position-threading to resolve them.)
+        // Substrate-canonical shape (#1075 federation): operand NAMES are
+        // sugar, so scoped param/local references lift as EMPTY structural
+        // leaves {}. The names travel on the CID-invisible operand_bindings
+        // sidecar (verified separately below), making the rust term_shape
+        // byte-identical to the python lifter's empty-leaf form so the same
+        // algebra federates cross-language. f(x)=x+y and f(a)=a+b share this
+        // shape. (Earlier the names rode the leaf, which made the shape
+        // name-dependent and broke seam-4 byte-identity.)
         assert_eq!(
             shape,
             json!({
                 "args": [
-                    {"kind": "symbol", "text": "x"},
-                    {"kind": "symbol", "text": "y"},
+                    {},
+                    {},
                 ],
                 "concept_name": "concept:add",
                 "op_cid": "blake3-512:95fc70e63a5550fd2e25142f13932919c59d085654ab387789c798886b0111c61d28fe533fc98b50df70eea9428a9af8aa75372c8b1c1deb3acc1a4094790468"
             })
+        );
+
+        // Names-are-sugar: the operand symbols are recovered from the
+        // operand_bindings sidecar (CID-invisible), not the leaves.
+        let out = bind_lift(&{
+            let root = temp_workspace("term_shape_add_bindings");
+            let src_dir = root.join("src");
+            fs::create_dir_all(&src_dir).expect("create src dir");
+            fs::write(
+                src_dir.join("lib.rs"),
+                "pub fn add(x: i64, y: i64) -> i64 {\n    x + y\n}\n",
+            )
+            .expect("write source");
+            let params = json!({
+                "workspace_root": root.to_string_lossy(),
+                "source_paths": ["."]
+            });
+            // leak the temp dir path via params; cleaned by OS temp reaper
+            params
+        })
+        .expect("bind lift should succeed");
+        let entry = out["ir"].as_array().expect("ir").first().expect("entry");
+        let bindings = entry["operand_bindings"]
+            .as_array()
+            .expect("operand_bindings array");
+        let symbols: Vec<&str> = bindings
+            .iter()
+            .filter_map(|b| b["symbol"].as_str())
+            .collect();
+        assert!(
+            symbols.contains(&"x") && symbols.contains(&"y"),
+            "operand symbols x,y must live on the operand_bindings sidecar, not the leaves: {bindings:#?}"
         );
     }
 
@@ -4741,37 +4832,39 @@ pub fn add_via_let(a: i64, b: i64) -> i64 {
 }
 "#,
         );
-        let seq_cid = concept_op_cid("concept:seq").expect("seq cid");
         let assign_cid = concept_op_cid("concept:assign").expect("assign cid");
         let add_cid = concept_op_cid("concept:add").expect("add cid");
 
-        // Substrate-canonical shape after 2026-05-21:
-        // - body is concept:seq containing [assign, tail-expression]
-        // - assign target is kind:symbol "q" (was {} relying on operand_bindings)
-        // - free identifier references (a, b, q) are kind:symbol leaves
+        // Substrate-canonical shape (#1075 federation):
+        // - assign TARGET is kind:symbol "q" — a let-binding NAME is structural
+        //   data (it declares a new name), so it stays in the shape.
+        // - SCOPED operand references (a, b) are EMPTY leaves {} — operand NAMES
+        //   are sugar, recovered from operand_bindings so the shape is
+        //   name-independent and federates cross-language.
+        // - The tail expression `q` is a bare scoped-variable return: it is now
+        //   an empty {} non-operation leaf and is dropped by
+        //   collapse_operation_shapes, so the body collapses from
+        //   seq([assign, q]) to just the assign. This is a CONSEQUENCE of
+        //   names-are-sugar: `{ let q = a+b; q }` and `{ let z = a+b; z }` carry
+        //   the same computation and now share a term_shape. The value-return
+        //   flows via operand_bindings; discharge (#1441 5/5) and the rust/go
+        //   production bridges round-trip unaffected.
         assert_eq!(
             shape,
             json!({
                 "args": [
+                    {"kind": "symbol", "text": "q"},
                     {
                         "args": [
-                            {"kind": "symbol", "text": "q"},
-                            {
-                                "args": [
-                                    {"kind": "symbol", "text": "a"},
-                                    {"kind": "symbol", "text": "b"},
-                                ],
-                                "concept_name": "concept:add",
-                                "op_cid": add_cid
-                            }
+                            {},
+                            {},
                         ],
-                        "concept_name": "concept:assign",
-                        "op_cid": assign_cid
-                    },
-                    {"kind": "symbol", "text": "q"}
+                        "concept_name": "concept:add",
+                        "op_cid": add_cid
+                    }
                 ],
-                "concept_name": "concept:seq",
-                "op_cid": seq_cid
+                "concept_name": "concept:assign",
+                "op_cid": assign_cid
             })
         );
         assert_no_forbidden_term_shape_fields(&shape);
@@ -4801,18 +4894,21 @@ pub fn f(a: i64, b: i64) -> i64 {
             json!("concept:add"),
             "top-level tail expression remains an add shape"
         );
-        // After 2026-05-21: let+tail-expression body is concept:seq
-        // ([assign, tail-symbol]) — both substrate-meaningful nodes.
-        // The assignment boundary is preserved INSIDE the seq, not at top.
+        // #1075 federation: `{ let q = a+b; q }` lifts as concept:assign(q, add).
+        // The trailing bare scoped-variable return `q` is now an empty {}
+        // non-operation leaf (operand NAMES are sugar), so collapse_operation_shapes
+        // drops it and the seq([assign, q]) collapses to the assign alone. The
+        // assignment boundary is still structurally distinct from a top-level
+        // operator (assign != add), which is what this test guards.
         assert_eq!(
             let_rhs["concept_name"],
-            json!("concept:seq"),
-            "let+tail body lifts as concept:seq with the assign as a child"
+            json!("concept:assign"),
+            "let+bare-tail-return body collapses to the concept:assign for the let-binding"
         );
         assert_eq!(
-            let_rhs["args"][0]["concept_name"],
-            json!("concept:assign"),
-            "seq's first child is the concept:assign for the let-binding"
+            let_rhs["args"][0],
+            json!({"kind": "symbol", "text": "q"}),
+            "assign's first child is the let-binding NAME leaf (structural, not sugar)"
         );
         assert_no_forbidden_term_shape_fields(&top_level);
         assert_no_forbidden_term_shape_fields(&let_rhs);
