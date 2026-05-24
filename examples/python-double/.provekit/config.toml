@@ -1,0 +1,19 @@
+# ProvekIt project config for the Python end-to-end example.
+#
+# `[authoring] surface = "python"` selects the Python verify lift surface (the
+# manifest at .provekit/lift/python/manifest.toml). `[solvers]` names z3 for
+# the linear-arithmetic class the body-obligation `(* 3 2) == 6` falls into;
+# the `-smt2 -in` flags mirror the verifier's default z3 invocation.
+[authoring]
+surface = "python"
+
+[solvers]
+default = "z3"
+
+[solvers.dispatch]
+linear_arithmetic = "z3"
+default = "z3"
+
+[solvers.z3]
+binary = "z3"
+flags = ["-smt2", "-in"]

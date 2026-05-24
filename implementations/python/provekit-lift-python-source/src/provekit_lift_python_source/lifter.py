@@ -455,7 +455,15 @@ def _lift_function(
     try:
         if isinstance(node, ast.AsyncFunctionDef):
             raise _UnsupportedSyntax(node, "async functions are refused")
-        if node.decorator_list:
+        # Verify-facing AUTHORING decorators (@provekit.boundary / @boundary /
+        # @provekit.sugar / @sugar) are declarative metadata, not behavioral
+        # wrappers, so they do NOT make a function "decorated" for lift
+        # purposes -- the body underneath is lifted (mirrors Go stripping the
+        # //provekit: pragma). Any OTHER decorator still refuses.
+        from .authoring import is_authoring_decorator
+
+        non_authoring = [d for d in node.decorator_list if not is_authoring_decorator(d)]
+        if non_authoring:
             raise _UnsupportedSyntax(node, "decorated functions are refused")
         if node.args.vararg is not None or node.args.kwarg is not None:
             raise _UnsupportedSyntax(node, "*args and **kwargs are refused")
