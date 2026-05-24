@@ -315,17 +315,31 @@ pub fn emit_from_resolved(
 /// later realizations on the same thread, which is exactly what made the
 /// realize-rust-core unit tests order-dependent on each other's pollution.
 struct VisibilityGuard {
-    previous: String,
+    previous: Option<String>,
 }
 
 impl VisibilityGuard {
-    /// Snapshot the current thread-local value and install `visibility` for the
-    /// duration of the returned guard.
+    /// Snapshot the current thread-local value and install an EXPLICIT
+    /// `visibility` (`Some(visibility)`) for the duration of the returned
+    /// guard. An empty `visibility` is `Some("")` — explicit private — NOT the
+    /// absent/default state, so a private source visibility threaded here emits
+    /// a bare `fn` and is never over-promoted to `pub`.
     fn set(visibility: &str) -> Self {
+        Self::set_optional(Some(visibility))
+    }
+
+    /// Like [`VisibilityGuard::set`] but preserves the ABSENT vs PRESENT-EMPTY
+    /// distinction: `None` installs `None` (the default => `pub`), `Some(v)`
+    /// installs `Some(v)` (explicit; `Some("")` => private `fn`). The dispatch
+    /// path uses this so a spec that simply omits `visibility` defaults to
+    /// public, while a spec carrying `visibility: ""` (bind's private encoding)
+    /// emits a bare `fn`.
+    fn set_optional(visibility: Option<&str>) -> Self {
         let guard = VisibilityGuard {
             previous: CURRENT_VISIBILITY.with(|v| v.borrow().clone()),
         };
-        CURRENT_VISIBILITY.with(|v| *v.borrow_mut() = visibility.to_string());
+        CURRENT_VISIBILITY
+            .with(|v| *v.borrow_mut() = visibility.map(|s| s.to_string()));
         guard
     }
 }
@@ -338,12 +352,13 @@ impl Drop for VisibilityGuard {
 }
 
 /// Like [`emit_from_resolved`] but reproduces the source-language visibility
-/// (`pub`, `pub(crate)`, or `"private"` for private/inherited) on the emitted
+/// (`pub`, `pub(crate)`, or `""` for private/inherited) on the emitted
 /// signature. `function_source` reads visibility from the `CURRENT_VISIBILITY`
 /// thread-local, which the RPC dispatch path sets from the spec's `visibility`
 /// field; direct callers (e.g. the D7 source-round-trip receipts) had no way to
-/// thread it. Unset (`""`) defaults to `pub`; pass `"private"` to override that
-/// default and regenerate a bare `fn` for a private source slice. This variant
+/// thread it. Passing this explicitly makes the visibility PRESENT: `""`
+/// regenerates a bare `fn` for a private source slice (distinct from the absent
+/// case, which defaults to `pub`); `"pub"` regenerates `pub fn`. This variant
 /// sets and restores the thread-local around the emit so visibility round-trips
 /// byte-identically.
 pub fn emit_from_resolved_with_visibility(
@@ -2287,15 +2302,15 @@ pub fn dispatch(request: &Value) -> Value {
             // thread-local is restored when this dispatch arm returns (or
             // panics) — an un-restored write would leak `pub`/`pub(crate)` into
             // the next realization on this thread (the cross-test pollution bug).
-            // function_source then emits `pub fn` (default/unset) /
-            // `pub(crate) fn` / bare `fn` (explicit "private") matching the
-            // lifted source.
-            let visibility = params
-                .get("visibility")
-                .and_then(Value::as_str)
-                .unwrap_or("")
-                .to_string();
-            let _visibility_guard = VisibilityGuard::set(&visibility);
+            //
+            // ABSENT vs PRESENT-EMPTY is load-bearing: when the spec omits
+            // `visibility` entirely, leave the thread-local at its default
+            // (`None` => `pub`). When `visibility` is PRESENT — including the
+            // empty string, which is how `bind` encodes a PRIVATE source fn —
+            // thread it verbatim (`Some("")` => bare `fn`), so the real
+            // bind->realize pipeline never over-promotes a private fn to `pub`.
+            let visibility = params.get("visibility").and_then(Value::as_str);
+            let _visibility_guard = VisibilityGuard::set_optional(visibility);
             let cn_for_attr = params
                 .get("conceptName")
                 .or_else(|| params.get("concept_name"))
@@ -2723,11 +2738,22 @@ fn render_template(
 thread_local! {
     /// Visibility for the function currently being realized. Set at the
     /// dispatch site from the spec's `visibility` field, read in
-    /// function_source. Empty string = private; "pub" = public.
-    /// Threading visibility through every wrapper would touch ~20 call
-    /// sites; thread-local keeps the surface minimal.
-    pub(crate) static CURRENT_VISIBILITY: std::cell::RefCell<String> =
-        std::cell::RefCell::new(String::new());
+    /// function_source. Threading visibility through every wrapper would touch
+    /// ~20 call sites; thread-local keeps the surface minimal.
+    ///
+    /// The `Option` distinguishes ABSENT from PRESENT-EMPTY, which is
+    /// load-bearing for correctness:
+    ///   `None`        => no visibility was threaded (e.g. emit_stub /
+    ///                    emit_from_resolved called directly as the public-API
+    ///                    realization surface). Defaults to `pub`.
+    ///   `Some("")`    => an explicit PRIVATE/inherited source visibility. This
+    ///                    is exactly how `bind` encodes a private function
+    ///                    (bind.rs: NamedTerm.visibility = String::new()), so
+    ///                    the real bind->realize pipeline MUST emit a bare `fn`
+    ///                    and must NOT over-promote it to `pub`.
+    ///   `Some("pub")` / `Some("pub(crate)")` / ... => emit verbatim.
+    pub(crate) static CURRENT_VISIBILITY: std::cell::RefCell<Option<String>> =
+        std::cell::RefCell::new(None);
     /// Generic parameter declarations (e.g. "<A: AdapterLifter>") set at
     /// dispatch, read in function_source for byte-identical signature emit.
     pub(crate) static CURRENT_GENERIC_PARAMS: std::cell::RefCell<String> =
@@ -3343,20 +3369,20 @@ fn function_source(
     let indented = resolve_macro_indent_sentinels(&indented);
     let vis_prefix = CURRENT_VISIBILITY.with(|v| {
         let s = v.borrow();
-        // Visibility resolution:
-        //   ""        (unset/default) => `pub` — the realizer's product surface
-        //             is public API (every emit_stub/emit_from_resolved fixture
-        //             plus the trinity/value functions are `pub fn`), so an unset
-        //             thread-local must default to public, not silently private.
-        //   "private" (explicit sentinel) => no prefix => bare `fn`. The D7
-        //             source-round-trip threads this when the lifted source slice
-        //             had inherited/private visibility, so explicit private still
-        //             overrides the public default (#1448 round-trip invariant).
-        //   "pub" / "pub(crate)" / "pub(super)" / "pub(in ...)" => emit verbatim.
-        match s.as_str() {
-            "" => "pub ".to_string(),
-            "private" => String::new(),
-            other => format!("{other} "),
+        // Visibility resolution (see CURRENT_VISIBILITY thread-local doc):
+        //   None        (no visibility threaded) => `pub`. The realizer's
+        //               direct entry points (emit_stub / emit_from_resolved) are
+        //               the public-API realization surface, so an absent
+        //               visibility defaults to public.
+        //   Some("")    (explicit private/inherited — how `bind` encodes a
+        //               private source fn) => no prefix => bare `fn`. The real
+        //               bind->realize pipeline lands here and must NOT
+        //               over-promote a private fn to `pub`.
+        //   Some("pub") / Some("pub(crate)") / ... => emit verbatim.
+        match s.as_deref() {
+            None => "pub ".to_string(),
+            Some("") => String::new(),
+            Some(other) => format!("{other} "),
         }
     });
     // Emit #[provekit::sugar(concept = "X")] attribute when concept name
@@ -4550,6 +4576,79 @@ mod tests {
         assert_eq!(
             response["result"]["source"],
             "#[provekit::sugar(\n    concept = \"bool-cell\",\n    library = \"libprovekit-rpc-cross-platform\",\n    loss = [],\n)]\npub fn toggle(flag: bool) -> bool {\n    !flag\n}\n"
+        );
+    }
+
+    /// Pipeline-level private-round-trip regression (PR #1455 review).
+    ///
+    /// A private function lifted from real source is encoded by `bind` as
+    /// `NamedTerm.visibility = String::new()`, and `realize_spec_from_named_term`
+    /// forwards that into the dispatch spec's `visibility` field as a PRESENT
+    /// empty string (`"visibility": ""`). This RPC shape — visibility present
+    /// and empty — is exactly what the real bind->realize pipeline emits for a
+    /// private fn. The realizer MUST treat it as private (bare `fn`) and MUST
+    /// NOT over-promote it to `pub`. (The earlier visibility fix defaulted an
+    /// unset visibility to `pub` but conflated absent with present-empty,
+    /// silently materializing private APIs as public — the bug this guards.)
+    #[test]
+    fn dispatch_with_present_empty_visibility_emits_private_fn_not_pub() {
+        let request = serde_json::json!({
+            "jsonrpc": "2.0",
+            "id": 11,
+            "method": "provekit.plugin.invoke",
+            "params": {
+                "function": "secret",
+                "params": ["flag"],
+                "param_types": ["bool"],
+                "return_type": "bool",
+                "concept_name": "bool-cell",
+                // bind's PRIVATE encoding: present, empty.
+                "visibility": ""
+            }
+        });
+
+        let response = dispatch(&request);
+        let source = response["result"]["source"]
+            .as_str()
+            .expect("realized source");
+        assert!(
+            source.contains("\nfn secret(flag: bool) -> bool"),
+            "private fn (visibility present+empty) must emit a bare `fn`, not be \
+             over-promoted to `pub`: {source}"
+        );
+        assert!(
+            !source.contains("pub fn secret"),
+            "private fn was over-promoted to `pub`: {source}"
+        );
+    }
+
+    /// Companion: an explicitly-public spec (`"visibility": "pub"`) still emits
+    /// `pub fn`. Together with `dispatch_invoke_returns_rpc_result_shape`
+    /// (visibility ABSENT => default `pub`) this pins all three points of the
+    /// absent / present-empty / present-pub contract.
+    #[test]
+    fn dispatch_with_present_pub_visibility_emits_pub_fn() {
+        let request = serde_json::json!({
+            "jsonrpc": "2.0",
+            "id": 12,
+            "method": "provekit.plugin.invoke",
+            "params": {
+                "function": "exposed",
+                "params": ["flag"],
+                "param_types": ["bool"],
+                "return_type": "bool",
+                "concept_name": "bool-cell",
+                "visibility": "pub"
+            }
+        });
+
+        let response = dispatch(&request);
+        let source = response["result"]["source"]
+            .as_str()
+            .expect("realized source");
+        assert!(
+            source.contains("pub fn exposed(flag: bool) -> bool"),
+            "explicit `pub` visibility must emit `pub fn`: {source}"
         );
     }
 

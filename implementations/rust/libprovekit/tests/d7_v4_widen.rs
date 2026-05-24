@@ -195,10 +195,11 @@ fn visibility_of_fn_slice(slice: &str) -> String {
             "pub".to_string()
         }
     } else {
-        // Private/inherited source. The realizer defaults an unset visibility to
-        // `pub`, so a private source must thread the explicit "private" sentinel
-        // to override that default and regenerate a bare `fn` byte-identically.
-        "private".to_string()
+        // Private/inherited source. Threaded as the explicit empty string, which
+        // the realizer treats as PRESENT-but-private (`Some("")` => bare `fn`),
+        // distinct from an absent visibility (which defaults to `pub`). This is
+        // the same encoding `bind` uses for a private source fn.
+        String::new()
     }
 }
 
