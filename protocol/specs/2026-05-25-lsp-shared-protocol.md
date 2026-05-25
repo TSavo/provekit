@@ -385,8 +385,10 @@ receipts, or other content-addressed producers.
    protocol_catalog_cid, policy_cids)`.
 5. The coordinator SHALL convert shared diagnostics to LSP diagnostics without
    changing stable diagnostic codes.
-6. The coordinator MAY call linkerd `parseFile`, `getDiagnostics`, and
-   `projectStatus`, but it MUST preserve kit ownership of source ranges.
+6. The coordinator MAY call linkerd `getDiagnostics` and `projectStatus`, and
+   MAY call legacy `parseFile` adapters during migration. A `parseFile` adapter
+   MUST invoke the owning kit helper or a lossless adapter to that helper; it
+   MUST NOT make linkerd the owner of host-language source parsing.
 7. The coordinator SHALL treat `provekit.lsp.vacuous_proof` as at least a
    warning.
 
@@ -416,17 +418,18 @@ The preferred live route is:
 
 1. Kit helper analyzes the live document and emits normalized entries, ranges,
    diagnostics, and statuses.
-2. Coordinator forwards contract and call-edge streams, or the original snapshot
-   when linkerd owns dispatch for that kit, to `provekit-linkerd`.
+2. Coordinator forwards normalized document facts, contract streams, and
+   call-edge streams to `provekit-linkerd`.
 3. Linkerd derives bridge/link diagnostics and project pins.
 4. Coordinator merges kit diagnostics/statuses with linkerd/verifier
    diagnostics/statuses.
 5. Editor receives LSP diagnostics, hovers, code lenses, and future inline hints.
 
-If linkerd directly invokes kit helpers, it SHOULD consume
-`analyzeDocument` or a lossless adapter to the same `lsp-document-analysis`
-shape. The older `parse` and `lift` routes remain migration inputs, not the
-shared target.
+If linkerd receives a live source snapshot through the older `parseFile`
+surface, that surface is a legacy adapter only. Linkerd MUST invoke the owning
+kit helper through `analyzeDocument` or a lossless adapter to the same
+`lsp-document-analysis` shape; it MUST NOT grow host-language parsers. The older
+`parse` and `lift` routes remain migration inputs, not the shared target.
 
 ## §12. Migration
 

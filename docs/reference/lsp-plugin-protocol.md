@@ -38,7 +38,12 @@ The helper should cache by source-text hash, AST hash, protocol catalog CID, and
 
 ## Diagnostics
 
-Diagnostics use source `provekit`, stable codes from [error codes](error-codes.md), and source ranges from the editor's document snapshot. The helper should report the protocol catalog CID it used so editor logs can diagnose catalog mismatch.
+Diagnostics use source `provekit`, stable codes, and source ranges from the
+editor's document snapshot. The `provekit.lsp.*` code authority is
+[`2026-05-25-lsp-shared-protocol.md` §6](../../protocol/specs/2026-05-25-lsp-shared-protocol.md#6-diagnostics);
+[error codes](error-codes.md) covers the broader cross-component
+`PROVEKIT_*` handles. The helper should report the protocol catalog CID it used
+so editor logs can diagnose catalog mismatch.
 
 ## Read Next
 
