@@ -107,6 +107,7 @@ fn args_with(
 ) -> MintContractArgs {
     MintContractArgs {
         formals: Vec::new(),
+        emit_empty_formals: false,
         formal_sorts: Vec::new(),
         contract_name: "demo".into(),
         pre,

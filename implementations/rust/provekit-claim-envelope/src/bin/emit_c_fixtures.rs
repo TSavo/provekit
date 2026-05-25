@@ -67,6 +67,7 @@ fn main() {
     // --- 4. mint_contract canonical_bytes + CID ---
     let args = MintContractArgs {
         formals: Vec::new(),
+        emit_empty_formals: false,
         formal_sorts: Vec::new(),
         contract_name: "parseInt".into(),
         pre: Some(pre_n_gt_0()),

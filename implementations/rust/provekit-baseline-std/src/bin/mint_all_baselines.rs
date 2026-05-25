@@ -220,6 +220,7 @@ fn mint_baseline(config: &BaselineConfig, out_dir: &Path) -> String {
 
             let args = MintContractArgs {
                 formals: Vec::new(),
+                emit_empty_formals: false,
                 formal_sorts: Vec::new(),
                 contract_name: cname,
                 pre: None,
