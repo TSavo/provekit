@@ -70,6 +70,29 @@ import javax.sql.DataSource;
  * batch execute, transaction isolation) are introduced as N=1 carriers
  * per the substrate scope rule (N=1 single-kit = carrier, not a hub).
  * They may promote to concept hubs when a second library joins.
+ *
+ * CARDINALITY-SPLIT QUERY CONCEPTS (#1468)
+ * ----------------------------------------
+ * A different post-condition is a different contract, so concept:sql-query is
+ * split by result cardinality into the global Phase-0 catalog concepts:
+ *
+ *   - concept:sql-query-row      -> Optional<SqlRow>   (at most one row or null)
+ *   - concept:sql-query-all      -> SqlRowSet          (fully-materialized array)
+ *   - concept:sql-query-iterate  -> SqlRowCursor       (lazy single-pass cursor)
+ *
+ * Map by what the bound helper ACTUALLY returns, not by its name. Every query
+ * helper in this shim returns a raw java.sql.ResultSet straight from
+ * executeQuery, which IS a lazy, single-pass, consume-once cursor whose
+ * validity is bound to the cursor lifetime (the caller walks it via .next()).
+ * That matches concept:sql-query-iterate's SqlRowCursor post-condition exactly.
+ * No helper here materializes a List/array (no -all) or returns Optional<SqlRow>
+ * (no -row): the method names queryRow/stmtQueryRow mirror rusqlite's surface
+ * naming but, unlike rusqlite::query_row, the JDBC helper hands back the cursor
+ * rather than the first row, so binding them to -row would misstate the post.
+ * Therefore queryRow, stmtQuery, stmtQueryMap, and stmtQueryRow all bind
+ * concept:sql-query-iterate. stmtExists returns a boolean (a cardinality
+ * projection, not a row/set/cursor), so it keeps the flat concept:sql-query;
+ * additive coexistence with the pre-split concept is intentional.
  */
 public final class SqliteJdbcShim {
 
@@ -177,7 +200,7 @@ public final class SqliteJdbcShim {
     }
 
     @ProveKitSugar(
-        concept = "concept:sql-query",
+        concept = "concept:sql-query-iterate",
         library = "sqlite-jdbc",
         family = "concept:family:sql",
         version = "3.45.3.0",
@@ -239,7 +262,7 @@ public final class SqliteJdbcShim {
     }
 
     @ProveKitSugar(
-        concept = "concept:sql-query",
+        concept = "concept:sql-query-iterate",
         library = "sqlite-jdbc",
         family = "concept:family:sql",
         version = "3.45.3.0",
@@ -250,7 +273,7 @@ public final class SqliteJdbcShim {
     }
 
     @ProveKitSugar(
-        concept = "concept:sql-query",
+        concept = "concept:sql-query-iterate",
         library = "sqlite-jdbc",
         family = "concept:family:sql",
         version = "3.45.3.0",
@@ -262,7 +285,7 @@ public final class SqliteJdbcShim {
     }
 
     @ProveKitSugar(
-        concept = "concept:sql-query",
+        concept = "concept:sql-query-iterate",
         library = "sqlite-jdbc",
         family = "concept:family:sql",
         version = "3.45.3.0",
