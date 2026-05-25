@@ -150,8 +150,14 @@ fn e2e_option_is_some_contract_compiles_and_passes() {
     );
 
     let (compiled, passed, detail) = compile_and_run_tests(&source);
-    assert!(compiled, "emitted option contract test must COMPILE.\n{detail}");
-    assert!(passed, "emitted option contract test must PASS (green).\n{detail}");
+    assert!(
+        compiled,
+        "emitted option contract test must COMPILE.\n{detail}"
+    );
+    assert!(
+        passed,
+        "emitted option contract test must PASS (green).\n{detail}"
+    );
 }
 
 #[test]

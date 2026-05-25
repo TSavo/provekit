@@ -9,10 +9,5 @@ library_tag = "gson"
 family = "concept:family:json"
 library_version = "2.11"
 provides_concepts = ["concept:json-parse", "concept:json-serialize"]
-# `.proof`-load-via-RPC: AUTHORITY is the Gson shim's @ProveKitSugar source,
-# lifted into its signed .proof. cmd_materialize globs this dir's *.proof,
-# extracts the library-sugar-binding-entry records for tag `gson`, and feeds
-# them over RPC. The on-disk java-canonical-bodies-gson.json is deleted.
-sugar_proof = "examples/provekit-shim-gson-java"
 command = ["java", "-jar", "implementations/java/provekit-realize-java-core/target/provekit-realize-java.jar", "--rpc"]
 working_dir = "."

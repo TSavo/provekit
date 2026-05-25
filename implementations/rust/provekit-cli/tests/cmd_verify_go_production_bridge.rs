@@ -83,10 +83,7 @@ fn unique_dir(suffix: &str) -> PathBuf {
 /// path, and return it. Panics on build failure (a real regression).
 fn build_go_lift_verify() -> PathBuf {
     let go_module = repo_root().join("implementations").join("go");
-    let out = std::env::temp_dir().join(format!(
-        "provekit-lift-go-verify-{}",
-        std::process::id()
-    ));
+    let out = std::env::temp_dir().join(format!("provekit-lift-go-verify-{}", std::process::id()));
     let status = Command::new("go")
         .current_dir(&go_module)
         .args([
@@ -103,7 +100,11 @@ fn build_go_lift_verify() -> PathBuf {
         String::from_utf8_lossy(&status.stdout),
         String::from_utf8_lossy(&status.stderr)
     );
-    assert!(out.exists(), "go build produced no binary at {}", out.display());
+    assert!(
+        out.exists(),
+        "go build produced no binary at {}",
+        out.display()
+    );
     out
 }
 
@@ -115,9 +116,8 @@ fn stage_go_project(suffix: &str, lift_bin: &Path, body_factor: i64) -> PathBuf 
     let project = unique_dir(suffix);
 
     // double.go: the library, with the body multiplier (2 honest, 3 broken).
-    let double_src = format!(
-        "package sample\n\nfunc Double(x int) int {{\n\treturn x * {body_factor}\n}}\n"
-    );
+    let double_src =
+        format!("package sample\n\nfunc Double(x int) int {{\n\treturn x * {body_factor}\n}}\n");
     fs::write(project.join("double.go"), double_src).expect("write double.go");
 
     // double_test.go: copied verbatim (the harvested `Double(3) == 6`).
@@ -207,15 +207,12 @@ fn go_mint_auto_writes_body_discharge_bridge() {
         pool.load_errors
     );
 
-    let bridge = pool
-        .bridges_by_symbol
-        .get("Double")
-        .unwrap_or_else(|| {
-            panic!(
-                "mint must auto-write + index a bridge with sourceSymbol=Double; indexed: {:?}",
-                pool.bridges_by_symbol.keys().collect::<Vec<_>>()
-            )
-        });
+    let bridge = pool.bridges_by_symbol.get("Double").unwrap_or_else(|| {
+        panic!(
+            "mint must auto-write + index a bridge with sourceSymbol=Double; indexed: {:?}",
+            pool.bridges_by_symbol.keys().collect::<Vec<_>>()
+        )
+    });
 
     let target_cid = provekit_verifier::types::memento_body_field(bridge, "targetContractCid")
         .and_then(|v| v.as_str())
@@ -265,7 +262,10 @@ fn go_production_path_double_discharges_and_mints_witness() {
     let witnesses = project.join("witnesses-out");
     let (receipt, code) = run_verify_json_with_code(&project, &witnesses);
 
-    assert_eq!(receipt["kind"], "verification-receipt", "receipt: {receipt}");
+    assert_eq!(
+        receipt["kind"], "verification-receipt",
+        "receipt: {receipt}"
+    );
     assert_eq!(
         receipt["totalClaims"], 1,
         "exactly one body-bearing callsite (the tool-written bridge made Double(3) enumerate); receipt: {receipt}"
@@ -339,7 +339,10 @@ fn go_production_path_broken_body_fails_unsatisfied_no_witness() {
         code, 1,
         "broken-body claim must exit 1 (EXIT_VERIFY_FAIL, not 3=undecidable); got {code}"
     );
-    eprintln!("GO_PRODUCTION_NEGATIVE_EXIT_CODE={code} STATUS={}", claim["status"]);
+    eprintln!(
+        "GO_PRODUCTION_NEGATIVE_EXIT_CODE={code} STATUS={}",
+        claim["status"]
+    );
 
     let _ = fs::remove_dir_all(&project);
 }

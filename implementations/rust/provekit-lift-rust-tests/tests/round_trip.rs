@@ -182,7 +182,10 @@ fn fixture_lifts_4_skips_2_and_round_trips_through_verifier() {
     assert!(
         callsites.iter().any(|cs| cs.bridge_ir_name == "parse_int"),
         "the parse_int callsite must enumerate; got {:?}",
-        callsites.iter().map(|c| &c.bridge_ir_name).collect::<Vec<_>>()
+        callsites
+            .iter()
+            .map(|c| &c.bridge_ir_name)
+            .collect::<Vec<_>>()
     );
 
     println!("FIXTURE_PROOF_CID={}", minted.cid);

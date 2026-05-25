@@ -43,6 +43,16 @@ public final class RpcServer {
                     sendResponse(id, PlatformSemanticsDeclaration.toJson());
                 case "provekit.plugin.literal_encoding_answers" ->
                     sendResponse(id, LiteralEncodingAnswers.toJson());
+                case "provekit.plugin.body_template_entries" -> {
+                    String paramsObj = JsonUtil.extractObjectField(line, "params");
+                    if (paramsObj == null) paramsObj = "{}";
+                    String tag = JsonUtil.decodeJsonStringField(paramsObj, "target_library_tag");
+                    if (tag == null || tag.isBlank()) {
+                        tag = JsonUtil.decodeJsonStringField(paramsObj, "targetLibraryTag");
+                    }
+                    if (tag == null) tag = "";
+                    sendResponse(id, SugarRealizer.bodyTemplateEntriesJson(tag));
+                }
                 case "provekit.plugin.invoke" -> {
                     // handleInvoke returns a full JSON object: {"source":..., "is_stub":...}
                     String resultObj = handleInvoke(line);
@@ -433,23 +443,12 @@ public final class RpcServer {
         // would only be a target-language idiom. The substrate cycle
         // needs the SOURCE's term_shape preserved as data.
         SugarRealizer.currentSourceTermShape.set(termShape == null ? "" : termShape);
-        // `.proof`-load-via-RPC: when the dispatcher (cmd_materialize) lifted
-        // the shim's signed binding entries and sent them as `bodyTemplates`,
-        // prefer them over the on-disk canonical-bodies cache. The shim source
-        // is then the authority; the disk JSON is fallback for kits whose
-        // dispatcher hasn't migrated. Absent → "" → SugarRealizer disk-loads.
-        String bodyTemplates = JsonUtil.extractArrayField(paramsObj, "bodyTemplates");
-        if (bodyTemplates == null || "[]".equals(bodyTemplates)) {
-            bodyTemplates = JsonUtil.extractArrayField(paramsObj, "body_templates");
-        }
-        SugarRealizer.currentBodyTemplates.set(bodyTemplates == null ? "" : bodyTemplates);
         SugarRealizer.Realization r;
         try {
             r = SugarRealizer.emitStub(emittedFunction, params, paramTypes, paramSortCids, returnType, returnSortCid,
                     conceptName, mode, modes, contract, sugarPlugins, transportedOp, termShape, operandBindings,
                     isCrossLang, targetLibraryTag, parametricExpansions);
         } finally {
-            SugarRealizer.currentBodyTemplates.remove();
             SugarRealizer.currentCallReturnTypes.remove();
             SugarRealizer.currentSourceVisibility.remove();
             SugarRealizer.currentSourceGenericParams.remove();

@@ -75,15 +75,17 @@ fn v1_1_manifest_loads_and_finds_question_cid_by_kind_concept_and_language() {
         .find(|question| {
             question.kind.as_str() == "morphism"
                 && question.concept == "concept:add"
-                && question.parameters.get("from_language").and_then(|v| v.as_str())
+                && question
+                    .parameters
+                    .get("from_language")
+                    .and_then(|v| v.as_str())
                     == Some("rust")
         })
         .expect("fixture has add/rust")
         .to_owned();
     assert_eq!(
         add_rust,
-        libprovekit::exam_manifest::exam_question_cid(&expected)
-            .expect("question cid computes")
+        libprovekit::exam_manifest::exam_question_cid(&expected).expect("question cid computes")
     );
     assert_ne!(add_rust, sub_rust);
     assert_ne!(add_rust, add_python);

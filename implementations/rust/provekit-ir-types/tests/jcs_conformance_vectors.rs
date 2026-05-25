@@ -84,7 +84,10 @@ fn v4_nested_object_mixed_types() {
     ]);
     let v = Value::object([("outer", inner), ("arr", arr)]);
     let jcs = encode_jcs(&v);
-    assert_eq!(jcs, r#"{"arr":[1,2,3],"outer":{"b":true,"n":null,"s":"hello"}}"#);
+    assert_eq!(
+        jcs,
+        r#"{"arr":[1,2,3],"outer":{"b":true,"n":null,"s":"hello"}}"#
+    );
 }
 
 // ---------------------------------------------------------------------------

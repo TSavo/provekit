@@ -209,9 +209,7 @@ impl SortMorphismCatalog {
             });
         }
 
-        let direction = if leg1.direction == "bidirectional"
-            && leg2.direction == "bidirectional"
-        {
+        let direction = if leg1.direction == "bidirectional" && leg2.direction == "bidirectional" {
             "bidirectional".to_string()
         } else {
             "left-to-right".to_string()

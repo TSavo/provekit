@@ -11,6 +11,10 @@
 
 use serde_json::Value;
 
+pub const PROVEKIT_PROOF_BYTES: &[u8] = include_bytes!(
+    "../blake3-512:2887b2f19cc35a2b0381a79cadb43fb69d8a9b9c61062fde7208d54f2d273093b171873cea49cf43459ff6aaa6ebf85fd6c8a3de1d3b070152c158ea0fd9b6b8.proof"
+);
+
 /// `concept:json-parse` — serde_json's sugar. Parse one canonical
 /// JSON value from a UTF-8 string. Returns `Err` with a human-readable
 /// message on parse failure.

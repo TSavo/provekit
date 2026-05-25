@@ -321,15 +321,12 @@ fn mint_auto_writes_body_discharge_bridge() {
 
     // mint auto-indexed the bridge by sourceSymbol (the same index
     // `enumerate_callsites` consults). The TOOL wrote this, not the test.
-    let bridge = pool
-        .bridges_by_symbol
-        .get("double")
-        .unwrap_or_else(|| {
-            panic!(
-                "mint must auto-write + index a bridge with sourceSymbol=double; indexed symbols: {:?}",
-                pool.bridges_by_symbol.keys().collect::<Vec<_>>()
-            )
-        });
+    let bridge = pool.bridges_by_symbol.get("double").unwrap_or_else(|| {
+        panic!(
+            "mint must auto-write + index a bridge with sourceSymbol=double; indexed symbols: {:?}",
+            pool.bridges_by_symbol.keys().collect::<Vec<_>>()
+        )
+    });
 
     let target_cid = provekit_verifier::types::memento_body_field(bridge, "targetContractCid")
         .and_then(|v| v.as_str())
@@ -438,7 +435,10 @@ fn production_path_double_discharges_and_mints_witness() {
     let witnesses = project.join("witnesses-out");
     let (receipt, code) = run_verify_json_with_code(&project, &witnesses);
 
-    assert_eq!(receipt["kind"], "verification-receipt", "receipt: {receipt}");
+    assert_eq!(
+        receipt["kind"], "verification-receipt",
+        "receipt: {receipt}"
+    );
     assert_eq!(
         receipt["totalClaims"], 1,
         "exactly one body-bearing callsite (the tool-written bridge made `double(3)` enumerate); receipt: {receipt}"
@@ -451,7 +451,10 @@ fn production_path_double_discharges_and_mints_witness() {
     assert_eq!(claim["status"], "discharged", "claim: {claim}");
 
     let solver = claim["dischargingSolver"].as_str().unwrap_or("");
-    assert!(solver.starts_with("z3@"), "discharging solver must be z3; got `{solver}`");
+    assert!(
+        solver.starts_with("z3@"),
+        "discharging solver must be z3; got `{solver}`"
+    );
 
     let witness_cid = claim["witnessCid"].as_str().expect("witness minted");
     assert!(witness_cid.starts_with("blake3-512:"));
@@ -504,7 +507,10 @@ fn production_path_broken_body_fails_unsatisfied_no_witness() {
         code, 1,
         "broken-body claim must exit 1 (EXIT_VERIFY_FAIL, not 3=undecidable); got {code}"
     );
-    eprintln!("PRODUCTION_NEGATIVE_EXIT_CODE={code} STATUS={}", claim["status"]);
+    eprintln!(
+        "PRODUCTION_NEGATIVE_EXIT_CODE={code} STATUS={}",
+        claim["status"]
+    );
 
     let _ = fs::remove_dir_all(&project);
 }

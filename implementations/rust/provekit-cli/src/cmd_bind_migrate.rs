@@ -624,14 +624,18 @@ fn extract_sql_callsites(
             "concept:sql-execute"
         } else {
             // Safe: `read_cardinality` is `Some` whenever `!is_execute`.
-            read_cardinality.expect("read callsite must resolve a cardinality").0
+            read_cardinality
+                .expect("read callsite must resolve a cardinality")
+                .0
         };
         let concept_cid = if is_execute && has_last_insert_rowid {
             SQL_INSERT_AND_GET_ID_CONCEPT_CID
         } else if is_execute {
             SQL_EXECUTE_CONCEPT_CID
         } else {
-            read_cardinality.expect("read callsite must resolve a cardinality").1
+            read_cardinality
+                .expect("read callsite must resolve a cardinality")
+                .1
         };
         let sql = extract_prepare_sql(&function.body, local_prepare, &function.name)?;
         let sample_args = extract_sample_args(function, &function.body)?;
@@ -1059,28 +1063,11 @@ fn build_propagation_input(
 /// Resolve the provenance `binding_cid` recorded in a migrate receipt's
 /// source/target leg for `surface` (`"<lang>-<tag>"`).
 ///
-/// SECOND migrate-path enabler (mirrors #1460's body-content shape). #1460
-/// wired the realize BODY-CONTENT path off the on-disk
-/// `<lang>-canonical-bodies-<tag>.json` (templates now arrive over RPC via
-/// `attach_body_templates_from_shim_proof`), but this function was a SECOND,
-/// independent JSON consumer: it disk-read the canonical-bodies JSON purely to
-/// lift `header.cid` for the receipt's provenance `binding_cid`. That last read
-/// pinned the JSON on disk.
-///
-/// Now, when the target shim's @ProveKitSugar `.proof` resolves for `(lang,
-/// tag)` (i.e. `body_templates_from_shim_proof` returns the signed
-/// binding-entry templates), the `binding_cid` is DERIVED deterministically
-/// from that `.proof` content via JCS+blake3-512 over the template array. The
-/// templates are sorted by their JCS rendering before hashing so the derivation
-/// is manifestly order-independent (the underlying CBOR decode already yields a
-/// `BTreeMap`, but the sort makes the contract explicit and robust to future
-/// multi-`.proof` globbing). This is a shared enabler: every migrate-receipt
-/// target whose realize kit declares a `sugar_proof` now sources its
-/// `binding_cid` from the `.proof`, not from a disk JSON.
-///
-/// The on-disk `<lang>-canonical-bodies-<tag>.json` `header.cid` read is kept
-/// as a back-compat FALLBACK for surfaces with no `sugar_proof` pointer (or
-/// whose shim `.proof` carries no matching entries).
+/// The target kit owns shim proof resolution. For migrated kits this asks the
+/// realize plugin for its native package-manager-resolved body-template entries
+/// and derives the receipt `binding_cid` with the universal sorted-JCS scheme.
+/// The legacy on-disk body-template JSON read remains only for old Python
+/// surfaces that have not moved to kit-owned shim resolution.
 fn body_template_cid(repo_root: &Path, surface: &str) -> Result<String, String> {
     let (language, tag) = split_library_surface(surface)?;
 
@@ -1089,21 +1076,6 @@ fn body_template_cid(repo_root: &Path, surface: &str) -> Result<String, String> 
     // sorted by their JCS rendering. The ONLY thing that varies per language is
     // who supplies the entry array.
 
-    // (1) Substrate-resolved: a `sugar_proof` pointer in the manifest tells the
-    //     CLI where the shim `.proof` lives (java/python). The CLI reads it and
-    //     builds the entries directly.
-    let templates =
-        crate::cmd_materialize::body_templates_from_shim_proof(repo_root, &language, &tag);
-    if !templates.is_empty() {
-        let mut sorted = templates;
-        sorted.sort_by_cached_key(|entry| encode_jcs(&json_to_value(entry)));
-        return Ok(cid_for_json(&serde_json::Value::Array(sorted)));
-    }
-
-    // (2) Kit-resolved: the kit owns its package manager and resolves the shim
-    //     `.proof` itself (typescript reads `node_modules`). It returns the
-    //     entry array over RPC; the substrate applies the SAME sorted-JCS
-    //     `cid_for_json` algebra. No `sugar_proof`, no on-disk JSON.
     let kit_entries =
         crate::kit_dispatch::body_template_entries_via_rpc(repo_root, &language, &tag)?;
     if !kit_entries.is_empty() {
@@ -1124,8 +1096,8 @@ fn body_template_cid(repo_root: &Path, surface: &str) -> Result<String, String> 
         _ => {
             return Err(format!(
                 "no body-template source resolved for surface {surface}: \
-                 no sugar_proof pointer, no kit-returned entries, no on-disk \
-                 canonical-bodies JSON fallback for language `{language}`"
+                 no kit-returned entries and no on-disk canonical-bodies JSON \
+                 fallback for language `{language}`"
             ))
         }
     };
@@ -1178,22 +1150,8 @@ fn realize_probe_via_path(
     repo_root: &Path,
     language: &str,
     tag: &str,
-    mut spec: JsonValue,
+    spec: JsonValue,
 ) -> Result<libprovekit::core::RealizedSource, String> {
-    // `.proof`-load-via-RPC for the MIGRATE path: this is the single choke
-    // point every migrate realize dispatch funnels through (the binding probe,
-    // per-callsite body realization, and the MigrateKit's `realize_target`).
-    // Attaching the target shim's signed binding-entry templates here mirrors
-    // what `cmd_materialize` does for the materialize path, so a migrate into a
-    // target library no longer depends on that library's on-disk
-    // `<lang>-canonical-bodies-<tag>.json`: the @ProveKitSugar shim `.proof` is
-    // the authority, carried over RPC. Absent a `sugar_proof` pointer (or for a
-    // kit not yet preferring RPC), this is a no-op and the disk cache remains
-    // the fallback. `repo_root` is the project root; `(language, tag)` are the
-    // target lang/library tag.
-    crate::cmd_materialize::attach_body_templates_from_shim_proof(
-        &mut spec, repo_root, language, tag,
-    );
     let mut inputs = HashMapInputCatalog::default();
     let input_cid = inputs.insert(Input::Spec(spec));
     let kit_name = format!("lower-{language}");
@@ -2932,7 +2890,10 @@ impl MigrateKit {
     /// the migrated body for this site. The carrier's permissive
     /// defaults are normalized via `realize_spec_from_payload` first
     /// (matching MaterializeKit's pattern).
-    fn realize_target(&self, carrier: &CarrierComment) -> Result<libprovekit::core::RealizedSource, String> {
+    fn realize_target(
+        &self,
+        carrier: &CarrierComment,
+    ) -> Result<libprovekit::core::RealizedSource, String> {
         let spec = realize_spec_from_payload(&carrier.raw_payload)?;
         realize_probe_via_path(&self.repo_root, &self.target_lang, &self.target_tag, spec)
     }
@@ -3217,8 +3178,7 @@ impl SiteTransformKit for MigrateKit {
         // delta set: a widen for a function already in `deltas` is
         // already covered by the original pass. This keeps termination
         // mechanical.
-        let already_covered: BTreeSet<String> =
-            deltas.iter().map(|d| d.function.clone()).collect();
+        let already_covered: BTreeSet<String> = deltas.iter().map(|d| d.function.clone()).collect();
         let mut emitted: Vec<CarrierComment> = Vec::new();
         for (fn_name, decision) in &result.decisions {
             if let PropagationDecision::Widen { effect, .. } = decision {
@@ -3277,8 +3237,7 @@ pub fn run_carrier_driven_migrate(
     // `propagate` emits, which the source binding does not know about)
     // becomes a receipt entry instead of aborting the run with a string
     // Err. Substrate-honest trichotomy is preserved.
-    let (rewritten, sites_and_outcomes) =
-        transform_source_text_collecting_refusals(source, &kit)?;
+    let (rewritten, sites_and_outcomes) = transform_source_text_collecting_refusals(source, &kit)?;
     let outcomes = sites_and_outcomes
         .into_iter()
         .map(|(_, outcome)| outcome)
@@ -4151,93 +4110,8 @@ mod tests {
             .expect("provekit-cli has rust/implementations/repo ancestry")
     }
 
-    /// #1460 enabler plumbing: prove the MIGRATE realize path now attaches the
-    /// target shim's signed `.proof` body-templates to its realize spec via the
-    /// shared `attach_body_templates_from_shim_proof` helper factored out of the
-    /// materialize path. Verified against a real on-main java shim
-    /// (`examples/provekit-shim-java-sqlite-jdbc/*.proof`, library_tag
-    /// `sqlite-jdbc`), whose realize manifest declares `sugar_proof` and whose
-    /// canonical-bodies JSON was deleted in #1459 — so the templates can ONLY
-    /// come from the `.proof`. This is the choke point every migrate realize
-    /// dispatch (`probe_realize_binding`, `realize_callsite_bodies` via
-    /// `realize_request_for_callsite`, `MigrateKit::realize_target`) funnels
-    /// through, so wiring it here covers all of them.
-    #[test]
-    fn migrate_realize_spec_carries_shim_proof_body_templates() {
-        let repo = harness_repo_root();
-
-        // (1) The factored helper extracts library-sugar-binding-entry templates
-        // from the target shim `.proof` for (java, sqlite-jdbc).
-        let templates = crate::cmd_materialize::body_templates_from_shim_proof(
-            &repo,
-            "java",
-            "sqlite-jdbc",
-        );
-        assert!(
-            !templates.is_empty(),
-            "factored helper must extract body-templates from the on-main \
-             java sqlite-jdbc shim .proof (manifest declares sugar_proof; \
-             canonical-bodies JSON was deleted in #1459)"
-        );
-
-        // (2) The shared attach point inserts those templates into a realize
-        // spec under `bodyTemplates` — exactly what the migrate choke point
-        // `realize_probe_via_path` now does before RPC dispatch. Build a spec
-        // the same shape the migrate path builds (probe shape).
-        let mut spec = json!({
-            "kind": "RealizeRequest",
-            "function": "__provekit_migrate_probe",
-            "params": ["sql", "args"],
-            "paramTypes": ["string", "unknown[]"],
-            "returnType": "unknown[]",
-            "conceptName": "concept:sql-query-row",
-        });
-        crate::cmd_materialize::attach_body_templates_from_shim_proof(
-            &mut spec, &repo, "java", "sqlite-jdbc",
-        );
-        let attached = spec
-            .get("bodyTemplates")
-            .and_then(|v| v.as_array())
-            .expect("migrate realize spec must carry bodyTemplates after attach");
-        assert_eq!(
-            attached.len(),
-            templates.len(),
-            "attached bodyTemplates count must match the helper's extraction"
-        );
-
-        // (3) Negative control: empty library_tag is a no-op (back-compat — the
-        // kit then falls back to its on-disk canonical-bodies cache).
-        let mut bare = json!({ "kind": "RealizeRequest" });
-        crate::cmd_materialize::attach_body_templates_from_shim_proof(
-            &mut bare, &repo, "java", "",
-        );
-        assert!(
-            bare.get("bodyTemplates").is_none(),
-            "empty library_tag must not attach bodyTemplates (disk-cache fallback)"
-        );
-    }
-
-    /// SECOND migrate-path enabler (python-sqlite3 fan-out, post-#1460): #1460
-    /// wired the realize BODY-CONTENT path off the canonical-bodies JSON
-    /// (templates now arrive over RPC via `attach_body_templates_from_shim_proof`),
-    /// but the migrate path had a SECOND, independent JSON consumer #1460 did
-    /// NOT touch: `body_template_cid` disk-read
-    /// `python-canonical-bodies-<tag>.json` purely to extract `header.cid` for
-    /// the receipt's source/target `binding_cid` (a provenance reference, not
-    /// body content). That last read pinned the JSON on disk, so
-    /// `cross_platform_point_query_receipt_test` went red on deletion.
-    ///
-    /// The enabler (mirroring #1460's shape) derives the `binding_cid` from the
-    /// shim `.proof` body-templates content when `sugar_proof_for_realize`
-    /// resolves (JCS+blake3-512 over the sorted template array), with the disk
-    /// `header.cid` read kept as a back-compat fallback for surfaces with no
-    /// `sugar_proof`. With the enabler landed, `python-canonical-bodies-sqlite3.json`
-    /// is now DELETED from the repo.
-    ///
-    /// This test pins the post-deletion reality directly (no rename dance):
-    /// the JSON is genuinely absent, the (python, sqlite3) shim `.proof` carries
-    /// the binding templates, and `body_template_cid` resolves to a
-    /// deterministic content address sourced from that `.proof`.
+    /// The substrate derives migrate binding_cid from kit-returned entries,
+    /// not by reading a shim `.proof` or a deleted canonical-bodies JSON.
     #[test]
     fn body_template_cid_resolves_python_sqlite3_with_json_absent() {
         let repo = harness_repo_root();
@@ -4252,40 +4126,35 @@ mod tests {
         assert!(
             !json.exists(),
             "python-canonical-bodies-sqlite3.json must be DELETED; the shim \
-             .proof is the binding_cid authority now"
+             kit-resolved entries are the binding_cid authority now"
         );
 
-        // The (python, sqlite3) shim .proof carries the binding templates
-        // (target_library_tag == manifest library_tag == "sqlite3"), so a
-        // .proof-derived binding_cid is well-defined.
-        let templates = crate::cmd_materialize::body_templates_from_shim_proof(
-            &repo, "python", "sqlite3",
-        );
+        let kit_entries =
+            crate::kit_dispatch::body_template_entries_via_rpc(&repo, "python", "sqlite3")
+                .expect("python-sqlite3 kit must answer body_template_entries");
         assert!(
-            !templates.is_empty(),
-            "python-sqlite3 shim .proof must carry binding templates for the \
-             enabler to derive a binding_cid from"
+            !kit_entries.is_empty(),
+            "python-sqlite3 kit must self-resolve shim entries"
         );
 
         // body_template_cid resolves with the JSON ABSENT: the CID is derived
-        // from the shim .proof, mirroring #1460's body-content enabler.
+        // from the kit's native shim-resolution RPC result.
         let cid = body_template_cid(&repo, "python-sqlite3").expect(
             "body_template_cid must resolve python-sqlite3 with the \
-             canonical-bodies JSON ABSENT (binding_cid derived from the shim \
-             .proof)",
+             canonical-bodies JSON ABSENT (binding_cid derived from kit entries)",
         );
         assert!(
             cid.starts_with("blake3-512:"),
             "binding_cid must be a content address, got {cid}"
         );
 
-        // Deterministic: the derivation is a pure function of the .proof
-        // content (sorted JCS + blake3-512), so it is byte-stable across calls.
+        // Deterministic: the derivation is a pure function of sorted JCS over
+        // the kit-returned entries, so it is byte-stable across calls.
         let cid_again = body_template_cid(&repo, "python-sqlite3")
             .expect("body_template_cid must resolve deterministically");
         assert_eq!(
             cid, cid_again,
-            "shim-.proof-derived binding_cid must be deterministic"
+            "kit-entry-derived binding_cid must be deterministic"
         );
     }
 

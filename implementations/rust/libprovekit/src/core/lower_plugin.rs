@@ -65,10 +65,9 @@ pub struct RealizeRequest {
     pub sugar_plugins: Vec<Value>,
     /// #1359 / #1355: realization-tuple pins propagated through the
     /// spec. `family` and `library_version` flow from the @sugar /
-    /// @boundary annotation (via the carrier payload) AND from the
-    /// shim's library-sugar-binding-entry (via augment_spec_with_shim_term_shape).
-    /// dispatch_realize reads them to perform family-aware constraint-
-    /// satisfaction over the realize-manifest registry.
+    /// @boundary annotation (via the carrier payload). dispatch_realize
+    /// reads them to perform family-aware constraint-satisfaction over
+    /// the realize-manifest registry.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub family: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -110,10 +109,7 @@ pub struct RealizeRequest {
     /// term-doc once and injects per-term so realize plugins can resolve
     /// tuple destructure element types + other cross-term return types
     /// instead of falling back to var inference.
-    #[serde(
-        default,
-        skip_serializing_if = "std::collections::BTreeMap::is_empty"
-    )]
+    #[serde(default, skip_serializing_if = "std::collections::BTreeMap::is_empty")]
     pub function_return_types: std::collections::BTreeMap<String, String>,
     /// Source-language doc comments (the `///` lines after the
     /// `#[provekit::sugar(...)]` attribute). Realize plugins emit these
@@ -126,24 +122,6 @@ pub struct RealizeRequest {
         skip_serializing_if = "Vec::is_empty"
     )]
     pub doc_lines: Vec<String>,
-    /// `.proof`-fed emission-template entries (the .proof-load-via-RPC path).
-    ///
-    /// When present, the realize kit MUST prefer these over its on-disk
-    /// `<lang>-canonical-bodies-<tag>.json` cache: they are the deterministic
-    /// projection of the shim's signed `library-sugar-binding-entry` records
-    /// (each `{concept_name, emission_template, loss_record_contribution,
-    /// signature_guard, target_library_tag, file_helpers?}` — the same shape
-    /// the on-disk projector writes). cmd_materialize derives them by lifting
-    /// the shim's .proof via `body_templates_from_shim_proof`, making the
-    /// Java/Rust/... shim source the authority and the disk JSON an optional
-    /// fallback for not-yet-migrated kits. Empty → kit uses its disk cache.
-    #[serde(
-        default,
-        rename = "bodyTemplates",
-        alias = "body_templates",
-        skip_serializing_if = "Vec::is_empty"
-    )]
-    pub body_templates: Vec<Value>,
 }
 
 /// Canonical form of a parametric sort application — the structure whose
@@ -199,9 +177,18 @@ impl ParametricSortExpansion {
 ///   - Shorthand: token denotes a fixed parametric application
 #[derive(Debug, Clone)]
 pub enum KitSourceAliasEntry {
-    Primitive { target_cid: String },
-    Constructor { constructor_cid: String, arity: usize },
-    Shorthand { composite_cid: String, constructor_cid: String, arg_cids: Vec<String> },
+    Primitive {
+        target_cid: String,
+    },
+    Constructor {
+        constructor_cid: String,
+        arity: usize,
+    },
+    Shorthand {
+        composite_cid: String,
+        constructor_cid: String,
+        arg_cids: Vec<String>,
+    },
 }
 
 /// Load all KitSourceAliasMemento files for a given kit from the catalog.
@@ -209,42 +196,92 @@ pub enum KitSourceAliasEntry {
 ///
 /// Walks up from CWD to find menagerie/, then reads
 /// concept-shapes/catalog/kit-source-aliases/<kit>-*.json.
-pub fn load_kit_source_aliases(kit: &str) -> std::collections::BTreeMap<String, KitSourceAliasEntry> {
+pub fn load_kit_source_aliases(
+    kit: &str,
+) -> std::collections::BTreeMap<String, KitSourceAliasEntry> {
     let mut map = std::collections::BTreeMap::new();
-    let Some(root) = find_menagerie_root() else { return map; };
-    let aliases_dir = root.join("menagerie")
-        .join("concept-shapes").join("catalog").join("kit-source-aliases");
-    if !aliases_dir.is_dir() { return map; }
-    let algorithms_dir = root.join("menagerie")
-        .join("concept-shapes").join("catalog").join("algorithms");
+    let Some(root) = find_menagerie_root() else {
+        return map;
+    };
+    let aliases_dir = root
+        .join("menagerie")
+        .join("concept-shapes")
+        .join("catalog")
+        .join("kit-source-aliases");
+    if !aliases_dir.is_dir() {
+        return map;
+    }
+    let algorithms_dir = root
+        .join("menagerie")
+        .join("concept-shapes")
+        .join("catalog")
+        .join("algorithms");
     let prefix = format!("{}-", kit);
-    let Ok(entries) = std::fs::read_dir(&aliases_dir) else { return map; };
+    let Ok(entries) = std::fs::read_dir(&aliases_dir) else {
+        return map;
+    };
     for entry in entries.flatten() {
         let path = entry.path();
-        let Some(name) = path.file_name().and_then(|n| n.to_str()) else { continue };
-        if !name.starts_with(&prefix) || !name.ends_with(".json") { continue; }
-        let Ok(raw) = std::fs::read_to_string(&path) else { continue };
-        let Ok(doc): Result<serde_json::Value, _> = serde_json::from_str(&raw) else { continue };
-        let Some(memento) = doc.get("memento") else { continue };
-        let Some(morphism_cid) = memento.get("sort_morphism_cid").and_then(|v| v.as_str()) else { continue };
-        let Some(target_cid) = resolve_morphism_target_cid(&algorithms_dir, morphism_cid) else { continue };
-        let Some(aliases) = memento.get("source_aliases").and_then(|v| v.as_array()) else { continue };
+        let Some(name) = path.file_name().and_then(|n| n.to_str()) else {
+            continue;
+        };
+        if !name.starts_with(&prefix) || !name.ends_with(".json") {
+            continue;
+        }
+        let Ok(raw) = std::fs::read_to_string(&path) else {
+            continue;
+        };
+        let Ok(doc): Result<serde_json::Value, _> = serde_json::from_str(&raw) else {
+            continue;
+        };
+        let Some(memento) = doc.get("memento") else {
+            continue;
+        };
+        let Some(morphism_cid) = memento.get("sort_morphism_cid").and_then(|v| v.as_str()) else {
+            continue;
+        };
+        let Some(target_cid) = resolve_morphism_target_cid(&algorithms_dir, morphism_cid) else {
+            continue;
+        };
+        let Some(aliases) = memento.get("source_aliases").and_then(|v| v.as_array()) else {
+            continue;
+        };
         let shorthand = memento.get("denotes_parametric_application");
         let arity = memento.get("parametric_arity").and_then(|v| v.as_u64());
         for alias_v in aliases {
-            let Some(token) = alias_v.as_str() else { continue };
+            let Some(token) = alias_v.as_str() else {
+                continue;
+            };
             let entry = if let Some(sh) = shorthand.and_then(|v| v.as_object()) {
-                let ctor = sh.get("constructor_cid").and_then(|v| v.as_str()).unwrap_or("").to_string();
-                let arg_cids: Vec<String> = sh.get("arg_cids")
+                let ctor = sh
+                    .get("constructor_cid")
+                    .and_then(|v| v.as_str())
+                    .unwrap_or("")
+                    .to_string();
+                let arg_cids: Vec<String> = sh
+                    .get("arg_cids")
                     .and_then(|v| v.as_array())
-                    .map(|arr| arr.iter().filter_map(|x| x.as_str().map(String::from)).collect())
+                    .map(|arr| {
+                        arr.iter()
+                            .filter_map(|x| x.as_str().map(String::from))
+                            .collect()
+                    })
                     .unwrap_or_default();
                 let composite = ParametricSortExpansion::compose_cid(&ctor, &arg_cids);
-                KitSourceAliasEntry::Shorthand { composite_cid: composite, constructor_cid: ctor, arg_cids }
+                KitSourceAliasEntry::Shorthand {
+                    composite_cid: composite,
+                    constructor_cid: ctor,
+                    arg_cids,
+                }
             } else if let Some(a) = arity {
-                KitSourceAliasEntry::Constructor { constructor_cid: target_cid.clone(), arity: a as usize }
+                KitSourceAliasEntry::Constructor {
+                    constructor_cid: target_cid.clone(),
+                    arity: a as usize,
+                }
             } else {
-                KitSourceAliasEntry::Primitive { target_cid: target_cid.clone() }
+                KitSourceAliasEntry::Primitive {
+                    target_cid: target_cid.clone(),
+                }
             };
             map.entry(token.to_string()).or_insert(entry);
         }
@@ -255,17 +292,24 @@ pub fn load_kit_source_aliases(kit: &str) -> std::collections::BTreeMap<String, 
 fn find_menagerie_root() -> Option<std::path::PathBuf> {
     let mut p = std::env::current_dir().ok()?;
     loop {
-        if p.join("menagerie").is_dir() { return Some(p); }
+        if p.join("menagerie").is_dir() {
+            return Some(p);
+        }
         p = p.parent()?.to_path_buf();
     }
 }
 
-fn resolve_morphism_target_cid(algorithms_dir: &std::path::Path, morphism_cid: &str) -> Option<String> {
+fn resolve_morphism_target_cid(
+    algorithms_dir: &std::path::Path,
+    morphism_cid: &str,
+) -> Option<String> {
     let entries = std::fs::read_dir(algorithms_dir).ok()?;
     for entry in entries.flatten() {
         let path = entry.path();
         let name = path.file_name()?.to_str()?;
-        if !name.contains(morphism_cid) || !name.ends_with(".json") { continue; }
+        if !name.contains(morphism_cid) || !name.ends_with(".json") {
+            continue;
+        }
         let raw = std::fs::read_to_string(&path).ok()?;
         let doc: serde_json::Value = serde_json::from_str(&raw).ok()?;
         let target = doc.get("header")?.get("target_sort_cid")?.as_str()?;
@@ -291,7 +335,9 @@ pub fn rust_type_to_concept_hub_sort_cid(
     // &mut T: prefix syntax for parametric Ref constructor.
     // walk_rpc emits `&mutT` (no space, sugar_type_surface strips spaces);
     // source_transform keeps `&mut T`. Handle both.
-    if trimmed.starts_with("&mut ") || (trimmed.starts_with("&mut") && !trimmed.starts_with("&mute")) {
+    if trimmed.starts_with("&mut ")
+        || (trimmed.starts_with("&mut") && !trimmed.starts_with("&mute"))
+    {
         let inner_src = if trimmed.starts_with("&mut ") {
             &trimmed[5..]
         } else {
@@ -299,7 +345,10 @@ pub fn rust_type_to_concept_hub_sort_cid(
         };
         let inner_cid = rust_type_to_concept_hub_sort_cid(inner_src, aliases, expansions)?;
         let mut_alias = aliases.get("&mut")?;
-        if let KitSourceAliasEntry::Constructor { constructor_cid, .. } = mut_alias {
+        if let KitSourceAliasEntry::Constructor {
+            constructor_cid, ..
+        } = mut_alias
+        {
             let exp = ParametricSortExpansion::build(constructor_cid, vec![inner_cid]);
             let cid = exp.cid.clone();
             if !expansions.iter().any(|e| e.cid == cid) {
@@ -323,7 +372,10 @@ pub fn rust_type_to_concept_hub_sort_cid(
             match ch {
                 '<' => depth += 1,
                 '>' => depth -= 1,
-                ',' if depth == 0 => { end = i; break; }
+                ',' if depth == 0 => {
+                    end = i;
+                    break;
+                }
                 _ => {}
             }
         }
@@ -341,7 +393,7 @@ pub fn rust_type_to_concept_hub_sort_cid(
     if let Some(open) = t.find('<') {
         if t.ends_with('>') {
             let outer = t[..open].trim();
-            let inside = &t[open+1..t.len()-1];
+            let inside = &t[open + 1..t.len() - 1];
             let arg_srcs = split_top_level_commas(inside);
             if let Some(entry) = aliases.get(outer) {
                 return resolve_alias_entry(entry, &arg_srcs, aliases, expansions);
@@ -376,7 +428,11 @@ fn resolve_alias_entry(
 ) -> Option<String> {
     match entry {
         KitSourceAliasEntry::Primitive { target_cid } => Some(target_cid.clone()),
-        KitSourceAliasEntry::Shorthand { composite_cid, constructor_cid, arg_cids } => {
+        KitSourceAliasEntry::Shorthand {
+            composite_cid,
+            constructor_cid,
+            arg_cids,
+        } => {
             let exp = ParametricSortExpansion {
                 cid: composite_cid.clone(),
                 constructor_cid: constructor_cid.clone(),
@@ -387,8 +443,13 @@ fn resolve_alias_entry(
             }
             Some(composite_cid.clone())
         }
-        KitSourceAliasEntry::Constructor { constructor_cid, arity } => {
-            if arg_srcs.len() != *arity { return None; }
+        KitSourceAliasEntry::Constructor {
+            constructor_cid,
+            arity,
+        } => {
+            if arg_srcs.len() != *arity {
+                return None;
+            }
             let mut arg_cids = Vec::with_capacity(arg_srcs.len());
             for a in arg_srcs {
                 arg_cids.push(rust_type_to_concept_hub_sort_cid(a, aliases, expansions)?);
@@ -408,8 +469,11 @@ fn split_top_level_commas(s: &str) -> Vec<String> {
     let mut depth = 0i32;
     let mut cur = String::new();
     for c in s.chars() {
-        if c == '<' { depth += 1; }
-        else if c == '>' { depth -= 1; }
+        if c == '<' {
+            depth += 1;
+        } else if c == '>' {
+            depth -= 1;
+        }
         if c == ',' && depth == 0 {
             out.push(cur.trim().to_string());
             cur.clear();
@@ -417,7 +481,9 @@ fn split_top_level_commas(s: &str) -> Vec<String> {
             cur.push(c);
         }
     }
-    if !cur.trim().is_empty() { out.push(cur.trim().to_string()); }
+    if !cur.trim().is_empty() {
+        out.push(cur.trim().to_string());
+    }
     out
 }
 
@@ -817,10 +883,12 @@ fn invocation_from_tree_node(
         source_function_name: node_string(node, &["sourceFunctionName", "source_function_name"])
             .or_else(|| parent_request.source_function_name.clone()),
         visibility: node_string(node, &["visibility"]).unwrap_or_default(),
-        generic_params: node_string(node, &["genericParams", "generic_params"])
-            .unwrap_or_default(),
-        original_param_types: node_string_array(node, &["originalParamTypes", "original_param_types"])?
-            .unwrap_or_default(),
+        generic_params: node_string(node, &["genericParams", "generic_params"]).unwrap_or_default(),
+        original_param_types: node_string_array(
+            node,
+            &["originalParamTypes", "original_param_types"],
+        )?
+        .unwrap_or_default(),
         mode,
         modes,
         contract: parent_request.contract.clone(),
@@ -847,9 +915,6 @@ fn invocation_from_tree_node(
         function_return_types: parent_request.function_return_types.clone(),
         doc_lines: node_string_array(node, &["docLines", "doc_lines"])?
             .unwrap_or_else(|| parent_request.doc_lines.clone()),
-        // Child realize calls inherit the parent's .proof-fed templates so a
-        // composite term doesn't silently fall back to the disk cache mid-tree.
-        body_templates: parent_request.body_templates.clone(),
     };
     let mut from = Vec::new();
     if let Some(shape_cid) = optional_cid_field(node, &["shapeCid", "shape_cid"])? {
@@ -1080,7 +1145,11 @@ fn reconcile_single_realizable_term(terms: &[NamedTerm]) -> Result<&NamedTerm, S
     if all_same_shape {
         let bodies = terms
             .iter()
-            .filter(|term| term.fn_name_sugar.as_deref().is_some_and(|s| !s.trim().is_empty()))
+            .filter(|term| {
+                term.fn_name_sugar
+                    .as_deref()
+                    .is_some_and(|s| !s.trim().is_empty())
+            })
             .collect::<Vec<_>>();
         if let [body] = bodies.as_slice() {
             return Ok(body);
@@ -1304,7 +1373,12 @@ pub fn request_from_spec(spec: &Value) -> Result<RealizeRequest, String> {
             .unwrap_or_default(),
         target_library_tag: string_field_optional(
             spec,
-            &["target_library_tag", "targetLibraryTag", "library_tag", "libraryTag"],
+            &[
+                "target_library_tag",
+                "targetLibraryTag",
+                "library_tag",
+                "libraryTag",
+            ],
         )
         .unwrap_or_default(),
         parametric_sort_expansions: spec
@@ -1317,9 +1391,7 @@ pub fn request_from_spec(spec: &Value) -> Result<RealizeRequest, String> {
             .or_else(|| spec.get("functionReturnTypes"))
             .and_then(|v| serde_json::from_value(v.clone()).ok())
             .unwrap_or_default(),
-        doc_lines: string_array_field(spec, &["docLines", "doc_lines"])
-            .unwrap_or_default(),
-        body_templates: value_array_field(spec, &["bodyTemplates", "body_templates"]),
+        doc_lines: string_array_field(spec, &["docLines", "doc_lines"]).unwrap_or_default(),
     })
 }
 

@@ -65,9 +65,11 @@ fn json_to_canonical_jcs(j: &Json) -> String {
             Json::Number(n) => CV::integer(n.as_i64().unwrap_or(0)),
             Json::String(s) => CV::string(s.clone()),
             Json::Array(items) => CV::array(items.iter().map(to_cv).collect()),
-            Json::Object(map) => {
-                CV::object(map.iter().map(|(k, v)| (k.clone(), to_cv(v))).collect::<Vec<_>>())
-            }
+            Json::Object(map) => CV::object(
+                map.iter()
+                    .map(|(k, v)| (k.clone(), to_cv(v)))
+                    .collect::<Vec<_>>(),
+            ),
         }
     }
     encode_jcs(&to_cv(j))
@@ -438,7 +440,10 @@ fn verify_body_bearing_unrecognized_shape_refuses_not_vacuous_pass() {
     );
 
     // Must NOT exit 0 (clean pass). Undecidable -> the receipt is not `ok`.
-    assert_ne!(code, 0, "a refused claim must not exit 0 (clean); got {code}");
+    assert_ne!(
+        code, 0,
+        "a refused claim must not exit 0 (clean); got {code}"
+    );
     assert_eq!(
         receipt["ok"], false,
         "receipt must not be ok when a claim was refused; receipt: {receipt}"
@@ -501,10 +506,7 @@ fn verify_body_bearing_non_equation_post_refuses_not_vacuous_pass() {
         claim["status"], "discharged",
         "body-bearing contract dropped by the resolver must NOT be discharged; claim: {claim}"
     );
-    assert_eq!(
-        claim["pass"], false,
-        "must NOT pass; claim: {claim}"
-    );
+    assert_eq!(claim["pass"], false, "must NOT pass; claim: {claim}");
     assert_ne!(
         claim["obligationClass"], "vacuous",
         "must NOT take the vacuous-discharge branch; claim: {claim}"
@@ -530,7 +532,10 @@ fn verify_body_bearing_non_equation_post_refuses_not_vacuous_pass() {
         witness_files.len()
     );
 
-    assert_ne!(code, 0, "a refused claim must not exit 0 (clean); got {code}");
+    assert_ne!(
+        code, 0,
+        "a refused claim must not exit 0 (clean); got {code}"
+    );
     assert_eq!(
         receipt["ok"], false,
         "receipt must not be ok when a claim was refused; receipt: {receipt}"
@@ -608,7 +613,10 @@ fn verify_zero_arg_body_bearing_non_equation_post_refuses_not_vacuous_pass() {
         witness_files.len()
     );
 
-    assert_ne!(code, 0, "a refused claim must not exit 0 (clean); got {code}");
+    assert_ne!(
+        code, 0,
+        "a refused claim must not exit 0 (clean); got {code}"
+    );
     assert_eq!(
         receipt["ok"], false,
         "receipt must not be ok when a claim was refused; receipt: {receipt}"

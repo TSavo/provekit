@@ -14,6 +14,10 @@
 
 use serde_json::Value;
 
+pub const PROVEKIT_PROOF_BYTES: &[u8] = include_bytes!(
+    "../blake3-512:17120b3d4e31d200448de2e086457cca1b119fee50526bccd6b1b151c139b0fc5421f754ce025c71aea5d4d5c55db89fa4c5e407eae165dfcd2181d32395fe08.proof"
+);
+
 /// `concept:rfc8785-jcs-encode` — RFC 8785's sugar. JCS-encode a
 /// JSON value to its canonical byte string. Rules:
 ///

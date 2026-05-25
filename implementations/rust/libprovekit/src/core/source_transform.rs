@@ -175,9 +175,8 @@ pub fn extract_function_body(source: &str) -> Option<String> {
 
 pub fn line_starts_function_declaration(line: &str) -> bool {
     let trimmed = line.trim_start();
-    const KEYWORDS_TO_STRIP: &[&str] = &[
-        "pub ", "async ", "const ", "unsafe ", "extern ", "default ",
-    ];
+    const KEYWORDS_TO_STRIP: &[&str] =
+        &["pub ", "async ", "const ", "unsafe ", "extern ", "default "];
     let mut remaining = trimmed;
     loop {
         let mut stripped = false;
@@ -403,7 +402,9 @@ impl CarrierComment {
         let params = json_string_array_field(object.get("params"))
             .map_err(|error| format!("provekit-concept payload `params`: {error}"))?;
         let param_types = json_string_array_field(
-            object.get("param_types").or_else(|| object.get("paramTypes")),
+            object
+                .get("param_types")
+                .or_else(|| object.get("paramTypes")),
         )
         .map_err(|error| format!("provekit-concept payload `param_types`: {error}"))?;
 
@@ -762,9 +763,8 @@ fn function_name_from_declaration_line(line: &str) -> Option<String> {
         return None;
     }
     let trimmed = line.trim_start();
-    const KEYWORDS_TO_STRIP: &[&str] = &[
-        "pub ", "async ", "const ", "unsafe ", "extern ", "default ",
-    ];
+    const KEYWORDS_TO_STRIP: &[&str] =
+        &["pub ", "async ", "const ", "unsafe ", "extern ", "default "];
     let mut remaining = trimmed;
     loop {
         let mut stripped = false;
@@ -1278,9 +1278,8 @@ fn build_boundary_carrier_payload(attr_text: &str, sig_text: &str) -> Option<Str
     // return_sort_cid — a substrate-honest gap signal that downstream
     // realize binaries refuse on, instead of being able to fall back on
     // raw rust syntax. Forces gap mints rather than hiding them.
-    let mut parametric_sort_expansions: Vec<
-        crate::core::lower_plugin::ParametricSortExpansion,
-    > = Vec::new();
+    let mut parametric_sort_expansions: Vec<crate::core::lower_plugin::ParametricSortExpansion> =
+        Vec::new();
     let param_sort_cids: Vec<String> = param_types
         .iter()
         .map(|t| {
@@ -1292,11 +1291,9 @@ fn build_boundary_carrier_payload(attr_text: &str, sig_text: &str) -> Option<Str
         "\"param_sort_cids\":{}",
         format_string_array(&param_sort_cids)
     ));
-    let return_sort_cid = rust_source_type_to_concept_hub_sort_cid(
-        &return_type,
-        &mut parametric_sort_expansions,
-    )
-    .unwrap_or_default();
+    let return_sort_cid =
+        rust_source_type_to_concept_hub_sort_cid(&return_type, &mut parametric_sort_expansions)
+            .unwrap_or_default();
     fields.push(format!(
         "\"return_sort_cid\":\"{}\"",
         escape_json(&return_sort_cid)
@@ -1304,8 +1301,8 @@ fn build_boundary_carrier_payload(attr_text: &str, sig_text: &str) -> Option<Str
     // #1369: emit parametric content-addressing expansions so realize
     // plugin can decompose composite CIDs into (constructor, args).
     if !parametric_sort_expansions.is_empty() {
-        let expansions_json = serde_json::to_string(&parametric_sort_expansions)
-            .unwrap_or_else(|_| "[]".to_string());
+        let expansions_json =
+            serde_json::to_string(&parametric_sort_expansions).unwrap_or_else(|_| "[]".to_string());
         fields.push(format!(
             "\"parametric_sort_expansions\":{}",
             expansions_json
@@ -1359,12 +1356,9 @@ fn rust_source_type_to_concept_hub_sort_cid(
     static RUST_ALIASES: OnceLock<
         std::collections::BTreeMap<String, crate::core::lower_plugin::KitSourceAliasEntry>,
     > = OnceLock::new();
-    let aliases = RUST_ALIASES.get_or_init(|| {
-        crate::core::lower_plugin::load_kit_source_aliases("rust")
-    });
-    crate::core::lower_plugin::rust_type_to_concept_hub_sort_cid(
-        rust_type, aliases, expansions,
-    )
+    let aliases =
+        RUST_ALIASES.get_or_init(|| crate::core::lower_plugin::load_kit_source_aliases("rust"));
+    crate::core::lower_plugin::rust_type_to_concept_hub_sort_cid(rust_type, aliases, expansions)
 }
 
 fn extract_attr_string(attr_text: &str, key: &str) -> Option<String> {
@@ -1886,7 +1880,8 @@ fn after() {}\n";
     fn enclosing_function_name_finds_outer_rust_fn() {
         // The carrier sits inside `outer_fn`; the scan walks upward and
         // returns it.
-        let source = "fn elsewhere() {}\nfn outer_fn() {\n    // provekit-concept: {}\n    do_thing();\n}\n";
+        let source =
+            "fn elsewhere() {}\nfn outer_fn() {\n    // provekit-concept: {}\n    do_thing();\n}\n";
         let lines = source.split_inclusive('\n').collect::<Vec<_>>();
         // The carrier is on line index 2 (0-based).
         let carrier_idx = 2;
@@ -1981,4 +1976,3 @@ fn after() {}\n";
         );
     }
 }
-

@@ -355,10 +355,7 @@ pub fn provides_concepts_for_realize(
     Vec::new()
 }
 
-fn read_provides_concepts_from_manifest_source(
-    workspace_root: &Path,
-    source: &str,
-) -> Vec<String> {
+fn read_provides_concepts_from_manifest_source(workspace_root: &Path, source: &str) -> Vec<String> {
     let candidate_path = PathBuf::from(source);
     let resolved = if candidate_path.is_absolute() {
         candidate_path
@@ -374,18 +371,11 @@ fn read_provides_concepts_from_manifest_source(
     }
 }
 
-/// Return the `sugar_proof` pointer declared by the realize manifest matching
-/// `(target_lang, library_tag)`, if any. The pointer is a project-root-
-/// relative path to either a shim project directory containing `.proof`
-/// envelope(s) or a specific `.proof` file. cmd_materialize uses it to lift
-/// the shim's `library-sugar-binding-entry` records and feed them over RPC
-/// (the `.proof`-load path). `None` ↔ no pointer declared → disk fallback.
 /// Ask the realize kit for the body-template entries it resolved from its own
 /// package manager (e.g. the TypeScript kit reads the shim `.proof` out of
 /// `node_modules`). The kit returns the entries; the substrate content-addresses
 /// them with the universal sorted-JCS scheme. This is the resolution path for
-/// languages whose dependency graph is owned by the kit, not declared via a
-/// `sugar_proof` pointer in the manifest.
+/// languages whose dependency graph is owned by the kit.
 ///
 /// Returns the entries array on success. Returns Ok(empty) when no realize
 /// candidate matches `(target_lang, library_tag)` or the kit does not implement
@@ -422,7 +412,9 @@ pub fn body_template_entries_via_rpc(
         "jsonrpc": "2.0",
         "id": 1,
         "method": "provekit.plugin.body_template_entries",
-        "params": {},
+        "params": {
+            "target_library_tag": library_tag,
+        },
     });
     {
         let stdin = child
@@ -449,7 +441,10 @@ pub fn body_template_entries_via_rpc(
     let _ = child.wait();
 
     let v: Value = serde_json::from_str(line.trim()).map_err(|e| {
-        format!("body_template_entries response not valid JSON: {e}; raw={}", line.trim())
+        format!(
+            "body_template_entries response not valid JSON: {e}; raw={}",
+            line.trim()
+        )
     })?;
     if let Some(err) = v.get("error") {
         // METHOD_NOT_FOUND (-32601) means this kit does not implement the
@@ -466,25 +461,6 @@ pub fn body_template_entries_via_rpc(
         .cloned()
         .unwrap_or_default();
     Ok(entries)
-}
-
-pub fn sugar_proof_for_realize(
-    workspace_root: &Path,
-    target_lang: &str,
-    library_tag: &str,
-) -> Option<String> {
-    let candidates = registry_realize_candidates(workspace_root, target_lang).ok()?;
-    let cand = candidates.iter().find(|c| c.tag == library_tag)?;
-    let candidate_path = PathBuf::from(&cand.source);
-    let resolved = if candidate_path.is_absolute() {
-        candidate_path
-    } else {
-        workspace_root.join(&candidate_path)
-    };
-    if !resolved.is_file() {
-        return None;
-    }
-    parse_manifest(&resolved).ok()?.sugar_proof
 }
 
 /// #1360 / #1355: Return the per-target scope-bringings declared by
@@ -517,10 +493,7 @@ pub fn scope_bringings_for_realize(
     Vec::new()
 }
 
-fn read_scope_bringings_from_manifest_source(
-    workspace_root: &Path,
-    source: &str,
-) -> Vec<String> {
+fn read_scope_bringings_from_manifest_source(workspace_root: &Path, source: &str) -> Vec<String> {
     let candidate_path = PathBuf::from(source);
     let resolved = if candidate_path.is_absolute() {
         candidate_path
@@ -632,6 +605,13 @@ fn resolved_command_from_manifest(
     workspace_root: &Path,
     parsed: &ParsedManifest,
 ) -> ResolvedCommand {
+    let mut argv = parsed.command.clone();
+    if let Some(program) = argv.first_mut() {
+        let path = Path::new(program);
+        if path.is_relative() && path.components().count() > 1 {
+            *program = workspace_root.join(path).to_string_lossy().into_owned();
+        }
+    }
     let working_dir = parsed
         .working_dir
         .clone()
@@ -643,10 +623,7 @@ fn resolved_command_from_manifest(
             }
         })
         .or_else(|| Some(workspace_root.to_path_buf()));
-    ResolvedCommand {
-        argv: parsed.command.clone(),
-        working_dir,
-    }
+    ResolvedCommand { argv, working_dir }
 }
 
 fn record_fallback_diagnostic(kind: &str, surface: &str) {
@@ -964,15 +941,6 @@ struct ParsedManifest {
     protocol_versions: Vec<String>,
     capability_kind: Option<String>,
     exam_manifest_schema_version: Option<String>,
-    /// `.proof`-load-via-RPC pointer. When set, names the shim project
-    /// directory (or a specific `.proof`) whose signed
-    /// `library-sugar-binding-entry` records are the AUTHORITY for this
-    /// kit's emission templates. cmd_materialize lifts them and feeds them
-    /// over RPC (`RealizeRequest.body_templates`), so the @ProveKitSugar shim
-    /// source is the source of truth and the on-disk canonical-bodies JSON is
-    /// an optional fallback. Absent → kit uses its disk cache (back-compat;
-    /// every not-yet-migrated kit keeps working unchanged).
-    sugar_proof: Option<String>,
 }
 
 fn parse_manifest(path: &Path) -> Result<ParsedManifest, String> {
@@ -989,7 +957,6 @@ fn parse_manifest(path: &Path) -> Result<ParsedManifest, String> {
     let mut protocol_versions: Vec<String> = Vec::new();
     let mut capability_kind: Option<String> = None;
     let mut exam_manifest_schema_version: Option<String> = None;
-    let mut sugar_proof: Option<String> = None;
     let mut section = String::new();
     for line in text.lines() {
         let line = match line.find('#') {
@@ -1031,7 +998,6 @@ fn parse_manifest(path: &Path) -> Result<ParsedManifest, String> {
             ("", "library_version") => library_version = Some(val.trim_matches('"').to_string()),
             ("", "scope_bringings") => scope_bringings = parse_toml_string_array(val),
             ("", "provides_concepts") => provides_concepts = parse_toml_string_array(val),
-            ("", "sugar_proof") => sugar_proof = Some(val.trim_matches('"').to_string()),
             ("", "command") => command = parse_toml_string_array(val),
             ("capabilities", "kind") => capability_kind = Some(val.trim_matches('"').to_string()),
             ("capabilities", "exam_manifest_schema_version") => {
@@ -1055,7 +1021,6 @@ fn parse_manifest(path: &Path) -> Result<ParsedManifest, String> {
         protocol_versions,
         capability_kind,
         exam_manifest_schema_version,
-        sugar_proof,
     })
 }
 
@@ -1665,7 +1630,12 @@ fn invoke_realize(
     let imports = result
         .get("imports")
         .and_then(Value::as_array)
-        .map(|arr| arr.iter().filter_map(Value::as_str).map(String::from).collect())
+        .map(|arr| {
+            arr.iter()
+                .filter_map(Value::as_str)
+                .map(String::from)
+                .collect()
+        })
         .unwrap_or_default();
     let helpers = result
         .get("helpers")
@@ -1767,8 +1737,14 @@ pub fn dispatch_assemble(
     let fragments_value: Value = serde_json::from_str(fragments_json)
         .map_err(|e| AssembleError::Failed(format!("fragments_json not valid JSON: {e}")))?;
     let mut params = serde_json::Map::new();
-    params.insert("target_lang".to_string(), Value::String(target_lang.to_string()));
-    params.insert("file_basename".to_string(), Value::String(file_basename.to_string()));
+    params.insert(
+        "target_lang".to_string(),
+        Value::String(target_lang.to_string()),
+    );
+    params.insert(
+        "file_basename".to_string(),
+        Value::String(file_basename.to_string()),
+    );
     if let Some(pkg) = package_hint {
         params.insert("package_hint".to_string(), Value::String(pkg.to_string()));
     }
@@ -1822,7 +1798,9 @@ pub fn dispatch_assemble(
     let files_arr = result
         .get("files")
         .and_then(Value::as_array)
-        .ok_or_else(|| AssembleError::Failed("assemble response missing result.files".to_string()))?;
+        .ok_or_else(|| {
+            AssembleError::Failed("assemble response missing result.files".to_string())
+        })?;
     let mut out = Vec::with_capacity(files_arr.len());
     for f in files_arr {
         let path = f
@@ -1841,9 +1819,17 @@ pub fn dispatch_assemble(
     let compile_classpath: Vec<String> = result
         .get("compile_classpath")
         .and_then(Value::as_array)
-        .map(|arr| arr.iter().filter_map(Value::as_str).map(String::from).collect())
+        .map(|arr| {
+            arr.iter()
+                .filter_map(Value::as_str)
+                .map(String::from)
+                .collect()
+        })
         .unwrap_or_default();
-    Ok(AssembleResult { files: out, compile_classpath })
+    Ok(AssembleResult {
+        files: out,
+        compile_classpath,
+    })
 }
 
 // Per #1270 Tier 1.4: configure_java_runtime + java_home_from_maven removed.

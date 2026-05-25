@@ -7,12 +7,5 @@ library_tag = "jackson"
 family = "concept:family:json"
 library_version = "2.17"
 provides_concepts = ["concept:json-parse", "concept:json-serialize"]
-# `.proof`-load-via-RPC: the AUTHORITY for this kit's emission bodies is the
-# Jackson shim's @ProveKitSugar source, lifted into its signed .proof. The
-# pointer names the shim project dir; cmd_materialize globs its *.proof,
-# extracts the library-sugar-binding-entry records for tag `jackson`, and
-# feeds them to the realize plugin over RPC (RealizeRequest.body_templates).
-# The on-disk java-canonical-bodies-jackson.json is no longer needed (deleted).
-sugar_proof = "examples/provekit-shim-json-java"
 command = ["java", "-jar", "implementations/java/provekit-realize-java-core/target/provekit-realize-java.jar", "--rpc"]
 working_dir = "."

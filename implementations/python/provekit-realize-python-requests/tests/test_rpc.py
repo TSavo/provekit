@@ -8,6 +8,9 @@ ROOT = Path(__file__).resolve().parents[4]
 PKG_SRC = ROOT / "implementations/python/provekit-realize-python-requests/src"
 if str(PKG_SRC) not in sys.path:
     sys.path.insert(0, str(PKG_SRC))
+SHIM_SRC = ROOT / "examples/provekit-shim-python-requests"
+if str(SHIM_SRC) not in sys.path:
+    sys.path.insert(0, str(SHIM_SRC))
 
 from provekit_realize_python_requests.rpc import dispatch
 
@@ -33,38 +36,51 @@ def test_rpc_invoke_renders_requests_body() -> None:
     assert "requests.get" in response["result"]["source"]
 
 
-def test_rpc_invoke_prefers_proof_backed_binding_candidate() -> None:
-    sig = "blake3-512:" + "d" * 128
+def test_rpc_invoke_renders_catalog_http_request_shape() -> None:
     response = dispatch(
         {
             "jsonrpc": "2.0",
             "id": 3,
             "method": "provekit.plugin.invoke",
             "params": {
-                "function": "fetch_status",
-                "params": ["url"],
-                "param_types": ["str"],
-                "return_type": "int",
-                "concept_name": "concept:http-request",
-                "signature_shape_cid": sig,
-                "binding_candidates": [
-                    {
-                        "admission_tier": "Self-Attested",
-                        "body": "return 204",
-                        "concept_name": "concept:http-request",
-                        "package_evidence": {"opaque_handle": "python-wheel"},
-                        "signature_shape_cid": sig,
-                        "target_language": "python",
-                        "target_library_tag": "requests",
-                    }
+                "function": "send_request",
+                "params": ["method", "url", "headers", "body"],
+                "param_types": [
+                    "HttpMethod",
+                    "Url",
+                    "HeaderMap",
+                    "Optional<ByteStreamOrBytes>",
                 ],
+                "return_type": "HttpResponse",
+                "concept_name": "concept:http-request",
             },
         }
     )
 
     assert response["id"] == 3
-    assert response["result"]["source"] == "def fetch_status(url):\n    return 204\n"
-    assert response["result"]["selection"]["source"] == "proof-backed-library-binding"
+    assert response["result"]["source"] == (
+        "def send_request(method, url, headers, body):\n"
+        "    import requests\n"
+        "    kwargs = {\"headers\": headers, \"data\": body}\n"
+        "    return requests.request(method, url, **kwargs)\n"
+    )
+
+
+def test_rpc_body_template_entries_returns_shim_proof_entries() -> None:
+    response = dispatch(
+        {
+            "jsonrpc": "2.0",
+            "id": 4,
+            "method": "provekit.plugin.body_template_entries",
+            "params": {"target_library_tag": "requests"},
+        }
+    )
+
+    assert response["id"] == 4
+    assert response["result"]["proof_path"].endswith(".proof")
+    concepts = {entry["concept_name"] for entry in response["result"]["entries"]}
+    assert "concept:http-request" in concepts
+    assert "concept:http-response" in concepts
 
 
 def test_plugin_invoke_returns_structured_missing_template_error() -> None:

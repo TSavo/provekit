@@ -15,15 +15,5 @@ library_version = "3.45.3.0"
 # caller walks), so they bind concept:sql-query-iterate; concept:sql-query is
 # retained for stmtExists (boolean projection). Both coexist additively.
 provides_concepts = ["concept:contract-observation", "concept:insert-and-get-id", "concept:sql-autocommit-control", "concept:sql-batch-execute", "concept:sql-busy-timeout", "concept:sql-catalog-reflection", "concept:sql-changes-count", "concept:sql-connection-close", "concept:sql-connection-open", "concept:sql-connection-pool-acquire", "concept:sql-cursor-fetch-size", "concept:sql-execute", "concept:sql-prepare", "concept:sql-prepare-cached", "concept:sql-query", "concept:sql-query-iterate", "concept:sql-result-metadata", "concept:sql-row-get-column", "concept:sql-savepoint", "concept:sql-transaction-begin", "concept:sql-transaction-commit", "concept:sql-transaction-isolation-level", "concept:sql-transaction-rollback"]
-# `.proof`-load-via-RPC: AUTHORITY is the sqlite-jdbc shim's @ProveKitSugar
-# source (SqliteJdbcShim.java, library = "sqlite-jdbc"), lifted into its signed
-# .proof. cmd_materialize globs this dir's *.proof, extracts the
-# library-sugar-binding-entry records for tag `sqlite-jdbc`, and feeds them over
-# RPC (RealizeRequest.body_templates). The on-disk
-# java-canonical-bodies-sqlite-jdbc.json is deleted (migrated off JSON per the
-# jackson/gson template, PR #1458). The lifted .proof bodies are the
-# substrate-honest source: they fix a pre-existing `${param}`-in-imports
-# substitution bug that the deleted JSON cache carried in its 2-param entries.
-sugar_proof = "examples/provekit-shim-java-sqlite-jdbc"
 command = ["java", "-jar", "implementations/java/provekit-realize-java-core/target/provekit-realize-java.jar", "--rpc"]
 working_dir = "."

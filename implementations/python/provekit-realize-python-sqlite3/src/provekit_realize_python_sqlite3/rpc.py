@@ -6,7 +6,8 @@ import traceback
 from typing import Any
 
 from .platform_semantics import declaration as _platform_semantics_declaration
-from .realizer import MissingTemplateError, current_body_templates, emit_stub
+from . import realizer
+from .realizer import MissingTemplateError, emit_stub
 
 
 def run_rpc() -> None:
@@ -41,16 +42,10 @@ def dispatch(request: dict[str, Any]) -> dict[str, Any]:
     if method == "provekit.plugin.invoke":
         if not isinstance(params, dict):
             return _error(msg_id, -32602, "INVALID_PARAMS: params must be an object")
-        # `.proof`-load-via-RPC: prefer the dispatcher's `bodyTemplates` (lifted
-        # from the sqlite3 shim .proof) over the on-disk cache. Set/reset around
-        # the emit so concurrent invocations do not race. Mirrors Java #1458.
-        token = current_body_templates.set(_body_templates_json(params))
         try:
             result = _emit_one(params)
         except MissingTemplateError as exc:
             return _missing_template_error(msg_id, exc)
-        finally:
-            current_body_templates.reset(token)
         return {"jsonrpc": "2.0", "id": msg_id, "result": result}
     if method == "provekit.plugin.emit_module":
         if not isinstance(params, dict):
@@ -60,22 +55,13 @@ def dispatch(request: dict[str, Any]) -> dict[str, Any]:
             return _error(msg_id, -32602, "INVALID_PARAMS: functions must be an array")
         results: list[dict[str, Any]] = []
         missing = []
-        token = current_body_templates.set(_body_templates_json(params))
-        try:
-            for item in functions:
-                if not isinstance(item, dict):
-                    continue
-                item_token = current_body_templates.set(
-                    _body_templates_json(item) or current_body_templates.get()
-                )
-                try:
-                    results.append(_emit_one(item))
-                except MissingTemplateError as exc:
-                    missing.extend(exc.entries)
-                finally:
-                    current_body_templates.reset(item_token)
-        finally:
-            current_body_templates.reset(token)
+        for item in functions:
+            if not isinstance(item, dict):
+                continue
+            try:
+                results.append(_emit_one(item))
+            except MissingTemplateError as exc:
+                missing.extend(exc.entries)
         if missing:
             return _missing_template_error(msg_id, MissingTemplateError(tuple(missing)))
         source = "\n".join(result["source"] for result in results)
@@ -95,6 +81,18 @@ def dispatch(request: dict[str, Any]) -> dict[str, Any]:
             "dimension_values": decl["dimension_values"],
             "op_aliases": {},
         }}
+    if method == "provekit.plugin.body_template_entries":
+        proof_path = realizer._resolve_shim_proof_path()
+        if proof_path is None:
+            return _error(msg_id, 1404, "SHIM_NOT_FOUND: provekit-shim-python-sqlite3 not installed")
+        return {
+            "jsonrpc": "2.0",
+            "id": msg_id,
+            "result": {
+                "entries": [_body_template_entry_json(entry, realizer._LIBRARY_TAG) for entry in realizer.entries()],
+                "proof_path": str(proof_path),
+            },
+        }
     if method == "provekit.plugin.shutdown":
         return {"jsonrpc": "2.0", "id": msg_id, "result": None}
     return _error(msg_id, -32601, f"METHOD_NOT_FOUND: {method}")
@@ -111,17 +109,22 @@ def _emit_one(params: dict[str, Any]) -> dict[str, Any]:
     )
 
 
-def _body_templates_json(params: dict[str, Any]) -> str:
-    """`.proof`-load-via-RPC: extract the request's `bodyTemplates` array (serde
-    rename of RealizeRequest.body_templates; `body_templates` alias accepted)
-    and re-serialize it to the bare-array JSON string that
-    realizer.current_body_templates carries. Returns "" when absent or empty."""
-    value = params.get("bodyTemplates")
-    if not isinstance(value, list):
-        value = params.get("body_templates")
-    if not isinstance(value, list) or not value:
-        return ""
-    return json.dumps(value, separators=(",", ":"), ensure_ascii=False)
+def _body_template_entry_json(entry: realizer.BodyTemplateEntry, library_tag: str) -> dict[str, Any]:
+    guard: dict[str, Any] = {}
+    if entry.min_params is not None:
+        guard["min_params"] = entry.min_params
+    if entry.max_params is not None:
+        guard["max_params"] = entry.max_params
+    if entry.requires_param_types is not None:
+        guard["requires_param_types"] = list(entry.requires_param_types)
+    if entry.requires_return_type is not None:
+        guard["requires_return_type"] = entry.requires_return_type
+    return {
+        "concept_name": entry.concept_name,
+        "emission_template": {"kind": entry.template_kind, "template": entry.template},
+        "signature_guard": guard,
+        "target_library_tag": library_tag,
+    }
 
 
 def _dict_field(params: dict[str, Any], *keys: str) -> dict[str, Any] | None:

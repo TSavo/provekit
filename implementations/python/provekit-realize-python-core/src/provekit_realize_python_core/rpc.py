@@ -7,7 +7,7 @@ from typing import Any
 
 from .literal_encoding import answers as _literal_encoding_answers
 from .platform_semantics import declaration as _platform_semantics_declaration
-from .realizer import MissingTemplateError, current_body_templates, emit_stub
+from .realizer import MissingTemplateError, emit_stub
 
 
 def run_rpc() -> None:
@@ -46,18 +46,10 @@ def dispatch(request: dict[str, Any]) -> dict[str, Any]:
     if method == "provekit.plugin.invoke":
         if not isinstance(params, dict):
             return _error(msg_id, -32602, "INVALID_PARAMS: params must be an object")
-        # `.proof`-load-via-RPC: when the dispatcher (cmd_materialize) lifted the
-        # shim's signed binding entries and sent them as `bodyTemplates`, prefer
-        # them over the on-disk canonical-bodies cache. Set/reset the contextvar
-        # around the emit so concurrent invocations do not race. Absent -> ""
-        # -> realizer.entries() disk-loads. Mirrors RpcServer (Java, PR #1458).
-        token = current_body_templates.set(_body_templates_json(params))
         try:
             result = _emit_one(params)
         except MissingTemplateError as exc:
             return _missing_template_error(msg_id, exc)
-        finally:
-            current_body_templates.reset(token)
         return {"jsonrpc": "2.0", "id": msg_id, "result": result}
     if method == "provekit.plugin.emit_module":
         if not isinstance(params, dict):
@@ -67,25 +59,13 @@ def dispatch(request: dict[str, Any]) -> dict[str, Any]:
             return _error(msg_id, -32602, "INVALID_PARAMS: functions must be an array")
         results: list[dict[str, Any]] = []
         missing = []
-        token = current_body_templates.set(_body_templates_json(params))
-        try:
-            for item in functions:
-                if not isinstance(item, dict):
-                    continue
-                # Per-function templates override the request-level default when
-                # present (matches the request_from_spec inheritance shape).
-                item_token = current_body_templates.set(
-                    _body_templates_json(item)
-                    or current_body_templates.get()
-                )
-                try:
-                    results.append(_emit_one(item))
-                except MissingTemplateError as exc:
-                    missing.extend(exc.entries)
-                finally:
-                    current_body_templates.reset(item_token)
-        finally:
-            current_body_templates.reset(token)
+        for item in functions:
+            if not isinstance(item, dict):
+                continue
+            try:
+                results.append(_emit_one(item))
+            except MissingTemplateError as exc:
+                missing.extend(exc.entries)
         if missing:
             return _missing_template_error(msg_id, MissingTemplateError(tuple(missing)))
         source = "\n".join(result["source"] for result in results)
@@ -132,20 +112,6 @@ def _emit_one(params: dict[str, Any]) -> dict[str, Any]:
         else None,
         annotate=_annotation_enabled(params),
     )
-
-
-def _body_templates_json(params: dict[str, Any]) -> str:
-    """`.proof`-load-via-RPC: extract the request's `bodyTemplates` array (serde
-    rename of RealizeRequest.body_templates; `body_templates` alias accepted)
-    and re-serialize it to the bare-array JSON string that
-    realizer.current_body_templates carries. Returns "" when absent or empty so
-    realizer.entries() falls through to the disk cache."""
-    value = params.get("bodyTemplates")
-    if not isinstance(value, list):
-        value = params.get("body_templates")
-    if not isinstance(value, list) or not value:
-        return ""
-    return json.dumps(value, separators=(",", ":"), ensure_ascii=False)
 
 
 def _string_list(value: Any) -> list[str]:

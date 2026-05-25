@@ -210,11 +210,7 @@ fn merge_ir_document_responses(per_plugin: Vec<PerPluginDispatch>) -> Result<Val
                 }
             }
         }
-        if let Some(arr) = entry
-            .response
-            .get("diagnostics")
-            .and_then(|v| v.as_array())
-        {
+        if let Some(arr) = entry.response.get("diagnostics").and_then(|v| v.as_array()) {
             merged_diagnostics.extend(arr.iter().cloned());
         }
     }
@@ -406,9 +402,7 @@ impl MintKit {
                         refusal.header.failure_kind, refusal.header.failure_detail
                     )))
                 }
-                Err(LiftPluginError::Failed(error)) => {
-                    return Err(KitError::Transformation(error))
-                }
+                Err(LiftPluginError::Failed(error)) => return Err(KitError::Transformation(error)),
             };
 
             let response = session.response().clone();
@@ -430,18 +424,20 @@ impl MintKit {
             // "ir-document"`. proof-envelope responses can't be merged
             // (they're already self-signed bundles); the substrate-honest
             // failure is to reject the mix loudly.
-            merge_ir_document_responses(per_plugin)
-                .map_err(KitError::Transformation)?
+            merge_ir_document_responses(per_plugin).map_err(KitError::Transformation)?
         };
-        let result =
-            mint_lift_response(&project_root_for_manifests, &out_dir, quiet, merged_lift_response)
-                .map_err(KitError::Transformation)?;
+        let result = mint_lift_response(
+            &project_root_for_manifests,
+            &out_dir,
+            quiet,
+            merged_lift_response,
+        )
+        .map_err(KitError::Transformation)?;
         let claim = mint_result_claim(input, combined_lift_claim.as_ref(), &result)?;
         Ok(MintSession {
             claim,
             result,
-            surface: surface_for_session
-                .expect("invariant: at least one lift step dispatched"),
+            surface: surface_for_session.expect("invariant: at least one lift step dispatched"),
             out_dir,
         })
     }
@@ -866,7 +862,10 @@ pub(crate) fn stamp_platform_profile(
         }
         if let Some(version) = &profile.version {
             if !obj.contains_key("library_version") {
-                obj.insert("library_version".to_string(), Value::String(version.clone()));
+                obj.insert(
+                    "library_version".to_string(),
+                    Value::String(version.clone()),
+                );
             }
         }
     }
@@ -1120,7 +1119,9 @@ fn mint_from_ir_document(
                 notes: "auto-minted body-discharge bridge (PR-23)".to_string(),
                 signer_seed,
             });
-            members.entry(bridge.cid.clone()).or_insert(bridge.canonical_bytes);
+            members
+                .entry(bridge.cid.clone())
+                .or_insert(bridge.canonical_bytes);
         }
 
         if contracts_by_name
@@ -1362,13 +1363,16 @@ fn project_body_templates_for_sugar_bindings(ir: &[Value]) -> Result<(), String>
         if lang.is_empty() || libtag.is_empty() {
             continue;
         }
-        // TypeScript does not use the on-disk canonical-bodies JSON cache: its
-        // realize kits resolve emission bodies from the shim's `provekit.proof`
-        // via `node_modules`, and `body_template_cid` content-addresses the
-        // kit-returned entries directly. Projecting a JSON for TS would
-        // re-introduce the central registry the kit-resolution model removed.
-        // (java/python still project here until their kits migrate.)
-        if lang == "typescript" {
+        // Kits that self-resolve shim proofs do not use the on-disk
+        // canonical-bodies JSON cache: their realize kits resolve emission
+        // bodies from package-manager-installed shim `.proof` files, and
+        // `body_template_cid` content-addresses the kit-returned entries
+        // directly. Projecting a JSON for those kits would re-introduce the
+        // central registry the kit-resolution model removed.
+        if lang == "typescript"
+            || (lang == "python"
+                && matches!(libtag.as_str(), "sqlite3" | "aiosqlite" | "requests"))
+        {
             continue;
         }
         grouped.entry((lang, libtag)).or_default().push(decl);
@@ -1444,9 +1448,9 @@ fn project_body_templates_for_sugar_bindings(ir: &[Value]) -> Result<(), String>
 /// consumer's carrier substitutes positionally at realize time — this is
 /// the load-bearing step that makes the template library-agnostic.
 ///
-/// This is the single transform shared by the on-disk projector
-/// (`project_body_templates_for_sugar_bindings`) and the materialize path
-/// (`body_templates_from_shim_proof`, which feeds them over RPC).
+/// This transform is used by the on-disk projector retained for legacy
+/// body-template JSON generation. Runtime kit realization resolves shim
+/// proofs inside each language kit.
 pub(crate) fn binding_entry_to_template_entry(
     decl: &Value,
     libtag: &str,
@@ -1590,8 +1594,7 @@ fn mint_realization_memento(decl: &Value) -> Result<(String, Vec<u8>), String> {
     let target_language = required_str(decl, "target_language", "realization-memento")?;
     let concept_name = required_str(decl, "concept_name", "realization-memento")?;
     let library = required_str(decl, "library", "realization-memento")?;
-    let source_function_name =
-        required_str(decl, "source_function_name", "realization-memento")?;
+    let source_function_name = required_str(decl, "source_function_name", "realization-memento")?;
 
     let envelope = json!({
         "body": decl,

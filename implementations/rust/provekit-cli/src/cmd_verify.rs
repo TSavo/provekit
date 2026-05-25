@@ -51,8 +51,8 @@ use clap::Parser;
 use owo_colors::OwoColorize;
 use provekit_canonicalizer::{blake3_512_of, encode_jcs};
 use provekit_proof_envelope::{ed25519_pubkey_string, ed25519_sign_string};
-use provekit_verifier::solvers::registry;
 use provekit_verifier::body_discharge;
+use provekit_verifier::solvers::registry;
 use provekit_verifier::{
     classify, enumerate_callsites, instantiate, load_all_proofs, resolve_target, run_plan,
     smt_emitter, DispatchConfig, FormulaTheory, MementoPool, ObligationVerdict, SolverHandle,
@@ -329,7 +329,10 @@ pub fn run(args: VerifyArgs) -> u8 {
         // failure: it is the verb correctly reporting an empty catalog.
         // (The lifter has not yet written claims, or the kit declares
         // none.) Surface it loudly so the operator knows to lift first.
-        let kit_label = args.kit.clone().unwrap_or_else(|| project_root.display().to_string());
+        let kit_label = args
+            .kit
+            .clone()
+            .unwrap_or_else(|| project_root.display().to_string());
         if json_out {
             let out = json!({
                 "kind": "verification-receipt",
@@ -350,8 +353,10 @@ pub fn run(args: VerifyArgs) -> u8 {
                 "verify".yellow().bold(),
                 kit_label
             );
-            println!("  (lift the kit first: `provekit mint --kit={}` or run the kit's lifter)",
-                args.kit.as_deref().unwrap_or("<kit>"));
+            println!(
+                "  (lift the kit first: `provekit mint --kit={}` or run the kit's lifter)",
+                args.kit.as_deref().unwrap_or("<kit>")
+            );
         }
         return EXIT_OK;
     }
@@ -359,8 +364,7 @@ pub fn run(args: VerifyArgs) -> u8 {
     // Build the solver-dispatch plan + registry. Honor the kit's own
     // The kit author's declared `[solvers]` plan wins; otherwise the
     // default verify dispatch table over a single-Z3 registry.
-    let (plan, solver_registry, plan_is_default) =
-        build_plan_and_registry(&project_root, &args.z3);
+    let (plan, solver_registry, plan_is_default) = build_plan_and_registry(&project_root, &args.z3);
 
     if !quiet && !json_out {
         let plan_label = match (&plan, plan_is_default) {
@@ -674,7 +678,8 @@ fn mint_verification_witness(
     signer_seed: &[u8; 32],
     signer_is_authoritative: bool,
 ) -> Result<String, String> {
-    std::fs::create_dir_all(witness_dir).map_err(|e| format!("create {}: {e}", witness_dir.display()))?;
+    std::fs::create_dir_all(witness_dir)
+        .map_err(|e| format!("create {}: {e}", witness_dir.display()))?;
 
     let pubkey = ed25519_pubkey_string(signer_seed);
     let observed_at = chrono::Utc::now().to_rfc3339_opts(chrono::SecondsFormat::Millis, true);
@@ -730,11 +735,12 @@ fn mint_verification_witness(
         cid: cid.clone(),
     };
 
-    let bytes = serde_json::to_string_pretty(&witness)
-        .map_err(|e| format!("serialize witness: {e}"))?;
+    let bytes =
+        serde_json::to_string_pretty(&witness).map_err(|e| format!("serialize witness: {e}"))?;
     let hex = cid.trim_start_matches("blake3-512:");
     let path = witness_dir.join(format!("witness-{hex}.json"));
-    std::fs::write(&path, format!("{bytes}\n")).map_err(|e| format!("write {}: {e}", path.display()))?;
+    std::fs::write(&path, format!("{bytes}\n"))
+        .map_err(|e| format!("write {}: {e}", path.display()))?;
 
     Ok(cid)
 }
@@ -747,7 +753,9 @@ fn jcs_of_json(v: &Json) -> Result<String, String> {
 /// Convert serde_json into the canonicalizer's Value for JCS encoding.
 /// (Mirrors the runner's `json_to_canonical`; integers only — witness
 /// payloads carry no floats.)
-fn json_to_canonical(value: &Json) -> Result<std::sync::Arc<provekit_canonicalizer::Value>, String> {
+fn json_to_canonical(
+    value: &Json,
+) -> Result<std::sync::Arc<provekit_canonicalizer::Value>, String> {
     use provekit_canonicalizer::Value as CV;
     match value {
         Json::Null => Ok(CV::null()),
@@ -906,10 +914,7 @@ mod tests {
         // A minted witness must canonicalize (JCS) and produce a verifiable
         // CID + signature. This exercises the signing path without needing
         // a real solver or catalog.
-        let tmp = std::env::temp_dir().join(format!(
-            "provekit-verify-test-{}",
-            std::process::id()
-        ));
+        let tmp = std::env::temp_dir().join(format!("provekit-verify-test-{}", std::process::id()));
         let cs = provekit_verifier::CallSite {
             bridge_ir_name: "demo_bridge".into(),
             bridge_target_cid: "blake3-512:target".into(),
@@ -1041,8 +1046,7 @@ fn run_empirically_witnessed_gate(args: &VerifyArgs) -> u8 {
         &policy,
     ) {
         Ok(Some(hit)) => {
-            let report =
-                crate::promotion_query::status_json(concept, fixture, &hit, Some(&policy));
+            let report = crate::promotion_query::status_json(concept, fixture, &hit, Some(&policy));
             let ok = report["ok"].as_bool().unwrap_or(false);
             if args.out.json {
                 println!("{}", serde_json::to_string_pretty(&report).unwrap());

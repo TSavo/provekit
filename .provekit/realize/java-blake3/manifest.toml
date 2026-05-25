@@ -5,13 +5,5 @@ library_tag = "bouncycastle"
 family = "concept:family:hash"
 library_version = "1.78"
 provides_concepts = ["concept:blake3-512-of"]
-# `.proof`-load-via-RPC: AUTHORITY is the Bouncy Castle Blake3 shim's
-# @ProveKitSugar source (Blake3Shim.java, library = "bouncycastle"), lifted into
-# its signed .proof. cmd_materialize globs this dir's *.proof, extracts the
-# library-sugar-binding-entry records for tag `bouncycastle`, and feeds them
-# over RPC (RealizeRequest.body_templates). The on-disk
-# java-canonical-bodies-bouncycastle.json is deleted (migrated off JSON per
-# the jackson/gson template, PR #1458).
-sugar_proof = "examples/provekit-shim-blake3-java"
 command = ["java", "-jar", "implementations/java/provekit-realize-java-core/target/provekit-realize-java.jar", "--rpc"]
 working_dir = "."

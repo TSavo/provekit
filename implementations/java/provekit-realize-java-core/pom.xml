@@ -94,6 +94,36 @@
                                         <include>java-canonical-bodies.json</include>
                                     </includes>
                                 </resource>
+                                <resource>
+                                    <directory>${project.basedir}/../../../examples/provekit-shim-blake3-java</directory>
+                                    <targetPath>shims/bouncycastle</targetPath>
+                                    <includes><include>*.proof</include></includes>
+                                </resource>
+                                <resource>
+                                    <directory>${project.basedir}/../../../examples/provekit-shim-gson-java</directory>
+                                    <targetPath>shims/gson</targetPath>
+                                    <includes><include>*.proof</include></includes>
+                                </resource>
+                                <resource>
+                                    <directory>${project.basedir}/../../../examples/provekit-shim-json-java</directory>
+                                    <targetPath>shims/jackson</targetPath>
+                                    <includes><include>*.proof</include></includes>
+                                </resource>
+                                <resource>
+                                    <directory>${project.basedir}/../../../examples/provekit-shim-stdio-java</directory>
+                                    <targetPath>shims/java-io</targetPath>
+                                    <includes><include>*.proof</include></includes>
+                                </resource>
+                                <resource>
+                                    <directory>${project.basedir}/../../../examples/provekit-shim-rfc8785-jcs-java</directory>
+                                    <targetPath>shims/provekit-rfc8785-jcs-java</targetPath>
+                                    <includes><include>*.proof</include></includes>
+                                </resource>
+                                <resource>
+                                    <directory>${project.basedir}/../../../examples/provekit-shim-java-sqlite-jdbc</directory>
+                                    <targetPath>shims/sqlite-jdbc</targetPath>
+                                    <includes><include>provekit.proof</include></includes>
+                                </resource>
                             </resources>
                         </configuration>
                     </execution>

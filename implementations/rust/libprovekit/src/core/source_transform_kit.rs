@@ -34,8 +34,8 @@ use super::source_transform::{
 };
 use super::traits::{Kit, KitError};
 use super::types::{
-    any_sort, formula_true, memento_from_parts, Cid, Dialect, DomainClaim, DomainKind, Input,
-    Term, Verdict,
+    any_sort, formula_true, memento_from_parts, Cid, Dialect, DomainClaim, DomainKind, Input, Term,
+    Verdict,
 };
 
 /// Wire-stable schema name advertised in the [`Term::Const`] payload's
@@ -161,14 +161,12 @@ impl<K: SiteTransformKit + 'static> Kit for SourceTransformAdapter<K> {
 fn extract_source_from_input(input: &Input) -> Result<String, KitError> {
     match input {
         Input::Spec(value) => extract_source_from_spec(value),
-        Input::Source { bytes, .. } => String::from_utf8(bytes.clone()).map_err(|error| {
-            KitError::UnsupportedInput {
+        Input::Source { bytes, .. } => {
+            String::from_utf8(bytes.clone()).map_err(|error| KitError::UnsupportedInput {
                 dialect: Dialect::Other("source-transform".to_string()),
-                message: format!(
-                    "source-transform adapter requires UTF-8 source bytes: {error}"
-                ),
-            }
-        }),
+                message: format!("source-transform adapter requires UTF-8 source bytes: {error}"),
+            })
+        }
         other => Err(KitError::UnsupportedInput {
             dialect: Dialect::Other("source-transform".to_string()),
             message: format!(
@@ -180,12 +178,14 @@ fn extract_source_from_input(input: &Input) -> Result<String, KitError> {
 }
 
 fn extract_source_from_spec(value: &Value) -> Result<String, KitError> {
-    let source = value.get("source").and_then(Value::as_str).ok_or_else(|| {
-        KitError::UnsupportedInput {
-            dialect: Dialect::Other("source-transform".to_string()),
-            message: "Input::Spec missing string field `source`".to_string(),
-        }
-    })?;
+    let source =
+        value
+            .get("source")
+            .and_then(Value::as_str)
+            .ok_or_else(|| KitError::UnsupportedInput {
+                dialect: Dialect::Other("source-transform".to_string()),
+                message: "Input::Spec missing string field `source`".to_string(),
+            })?;
     Ok(source.to_string())
 }
 
@@ -333,12 +333,7 @@ mod tests {
     #[test]
     fn adapter_transform_emits_receipt_for_one_carrier() {
         let kit = MockKit::new();
-        let adapter = SourceTransformAdapter::new(
-            kit,
-            "rust",
-            None,
-            "rusqlite",
-        );
+        let adapter = SourceTransformAdapter::new(kit, "rust", None, "rusqlite");
         let input = Input::Spec(json!({ "source": one_carrier_source() }));
 
         let claim = adapter

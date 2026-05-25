@@ -1,5 +1,6 @@
 package com.provekit.realize;
 
+import com.provekit.claimenvelope.Cbor;
 import com.provekit.ir.Blake3;
 import com.provekit.ir.Jcs;
 import java.io.BufferedReader;
@@ -8,6 +9,7 @@ import java.io.InputStream;
 import java.io.InputStreamReader;
 import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
@@ -15,6 +17,8 @@ import java.util.Optional;
 import java.util.Set;
 import java.util.TreeMap;
 import java.util.TreeSet;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
 import java.util.stream.Collectors;
 
 /**
@@ -1322,21 +1326,13 @@ final class SugarRealizer {
     static final ThreadLocal<String> currentSourceTermShape =
             ThreadLocal.withInitial(() -> "");
 
-    /** `.proof`-load-via-RPC: the per-request `bodyTemplates` JSON array (a
-     *  bare `[...]` of emission-template entries) that cmd_materialize lifted
-     *  from the shim's signed .proof. When non-blank, `entries()` PREFERS
-     *  these over the on-disk canonical-bodies cache — the shim source is the
-     *  authority. Blank ("") ↔ no RPC templates → disk-load fallback (kits
-     *  whose dispatcher hasn't migrated keep working unchanged). */
-    static final ThreadLocal<String> currentBodyTemplates =
-            ThreadLocal.withInitial(() -> "");
-
     private static final class ShapeContext {
         final List<String> params;
         final List<String> paramTypes;
         final String returnType;
         final Map<List<Integer>, String> operandBindings;
         final Set<String> definedSymbols = new TreeSet<>();
+        final Map<String, String> localSymbolTypes = new TreeMap<>();
         /** Substrate-honest loss accumulator. Each silent approximation
          *  in the term-shape lowering APPENDS an entry here keyed by
          *  dimension name (e.g. "option-clone-erased"). emitStubInner
@@ -1379,6 +1375,14 @@ final class SugarRealizer {
             this.returnType = returnType;
             this.operandBindings = operandBindings;
             this.definedSymbols.addAll(params);
+            for (int i = 0; i < params.size(); i++) {
+                if (i < paramTypes.size()) {
+                    String type = mapSourceType(paramTypes.get(i));
+                    if (!type.isBlank()) {
+                        this.localSymbolTypes.put(params.get(i), type);
+                    }
+                }
+            }
         }
 
         String lookupReturnType(String fnName) {
@@ -1558,6 +1562,8 @@ final class SugarRealizer {
                     String tempType = expression.get().typeName();
                     if (tempType == null || tempType.isBlank() || "Object".equals(tempType)) {
                         tempType = "";  // localDeclaration emits `var`
+                    } else {
+                        context.localSymbolTypes.put(temp, mapSourceType(tempType));
                     }
                     lines.add(localDeclaration(tempType, temp, text, false));
                 }
@@ -1645,6 +1651,10 @@ final class SugarRealizer {
                 if (declType == null || declType.isBlank()) {
                     declType = "";  // localDeclaration emits `var` for blank.
                 }
+            }
+            String resolvedDeclType = mapSourceType(declType);
+            if (!resolvedDeclType.isBlank() && !"Object".equals(resolvedDeclType)) {
+                context.localSymbolTypes.put(name, resolvedDeclType);
             }
             // Substrate-honest tuple destructure: when assigning from a
             // synthetic tuple index (__provekit_tuple[N]) AND we know the
@@ -4002,6 +4012,10 @@ final class SugarRealizer {
     }
 
     private static String typeForArgument(String symbol, ShapeContext context) {
+        String localType = context.localSymbolTypes.get(symbol);
+        if (localType != null && !localType.isBlank()) {
+            return localType;
+        }
         for (int i = 0; i < context.params.size(); i++) {
             if (context.params.get(i).equals(symbol)) {
                 return i < context.paramTypes.size() ? mapSourceType(context.paramTypes.get(i)) : "";
@@ -4283,21 +4297,323 @@ final class SugarRealizer {
     }
 
     private static List<BodyTemplateEntry> entries() {
-        // `.proof`-load-via-RPC: when the dispatcher fed `bodyTemplates` for
-        // this request, those entries are the authority. Prepend them so the
-        // first-match-wins matcher prefers them over the disk cache. They are
-        // NEVER cached statically (they are per-request, library-specific).
-        // Blank → fall through to the static disk-loaded cache (back-compat).
-        String rpcTemplates = currentBodyTemplates.get();
-        if (rpcTemplates != null && !rpcTemplates.isBlank()) {
-            List<BodyTemplateEntry> rpcEntries = parseEntriesFromRpcArray(rpcTemplates);
-            if (!rpcEntries.isEmpty()) {
-                List<BodyTemplateEntry> merged = new ArrayList<>(rpcEntries);
+        String currentLib = CURRENT_LIBRARY_TAG.get();
+        if (currentLib != null && !currentLib.isBlank()) {
+            List<BodyTemplateEntry> shimEntries = shimProofEntries(currentLib);
+            if (!shimEntries.isEmpty()) {
+                List<BodyTemplateEntry> merged = new ArrayList<>(shimEntries);
                 merged.addAll(diskEntries());
                 return merged;
             }
         }
         return diskEntries();
+    }
+
+    private static final Map<String, String> SHIM_PROOF_RESOURCES = Map.of(
+            "bouncycastle", "/com/provekit/realize/shims/bouncycastle/blake3-512:770481f33404435cf173a4a81bbbebbcacf022fde64db1f9e7d00d0e6b6822ec6cd8dd2cec0cf87d2c37574264bf7f6832e857b3fad44eda95470e0f114573b5.proof",
+            "gson", "/com/provekit/realize/shims/gson/blake3-512:7b50fce8bcd93e84afcd7d7362d296752b9631dc408969b3a7e219762d80fae7b34f8309c92db3a752b9562d1de78580cdde69b27f6d72e42c5a2b3277ddd3bf.proof",
+            "jackson", "/com/provekit/realize/shims/jackson/blake3-512:40d365e8b3a11aac6905695b3515ec5000dad493b060ae394e376ab19962a2a98690e96fd0afaed51e5b983e6ec7e9de0a120679653d83202f5fd99c0f58e735.proof",
+            "java-io", "/com/provekit/realize/shims/java-io/blake3-512:00aee809bad2f258abe6bba3af84d2b5a0b10a4a15173831d685b9dcf267e8903627cc32557a10a94dfda297c440b39d0323f1d89e9f413b8294d71f9e56ce2e.proof",
+            "provekit-rfc8785-jcs-java", "/com/provekit/realize/shims/provekit-rfc8785-jcs-java/blake3-512:7e6ade178fcba5a31d9fdeebc1872ea65e727a8ebd2d57d03a75d9cd86f0653ddfb31ef87e045d8f11f8148a05341f607fba0a8fa85d269b876f784023ebd8e9.proof",
+            "sqlite-jdbc", "/com/provekit/realize/shims/sqlite-jdbc/provekit.proof"
+    );
+    private static final Map<String, List<BodyTemplateEntry>> SHIM_ENTRIES_CACHE = new HashMap<>();
+
+    static List<BodyTemplateEntry> shimProofEntriesForTesting(String libraryTag) {
+        return shimProofEntries(libraryTag);
+    }
+
+    static String bodyTemplateEntriesJson(String libraryTag) {
+        List<BodyTemplateEntry> entries = shimProofEntries(libraryTag);
+        StringBuilder out = new StringBuilder();
+        out.append("{\"entries\":[");
+        for (int i = 0; i < entries.size(); i++) {
+            if (i > 0) out.append(",");
+            out.append(bodyTemplateEntryJson(entries.get(i)));
+        }
+        out.append("]}");
+        return out.toString();
+    }
+
+    private static String bodyTemplateEntryJson(BodyTemplateEntry entry) {
+        StringBuilder guard = new StringBuilder("{");
+        boolean first = true;
+        if (entry.minParams() != null) {
+            guard.append("\"min_params\":").append(entry.minParams());
+            first = false;
+        }
+        if (entry.maxParams() != null) {
+            if (!first) guard.append(",");
+            guard.append("\"max_params\":").append(entry.maxParams());
+        }
+        guard.append("}");
+        StringBuilder helpers = new StringBuilder("[");
+        for (int i = 0; i < entry.fileHelpers().size(); i++) {
+            if (i > 0) helpers.append(",");
+            helpers.append(JsonUtil.quoted(entry.fileHelpers().get(i)));
+        }
+        helpers.append("]");
+        return "{"
+                + "\"concept_name\":" + JsonUtil.quoted(entry.conceptName()) + ","
+                + "\"emission_template\":{\"kind\":" + JsonUtil.quoted(entry.templateKind())
+                + ",\"template\":" + JsonUtil.quoted(entry.template()) + "},"
+                + "\"loss_record_contribution\":{\"form\":\"literal\",\"value\":" + Jcs.encode(entry.lossRecord()) + "},"
+                + "\"signature_guard\":" + guard + ","
+                + "\"target_library_tag\":" + JsonUtil.quoted(entry.targetLibraryTag()) + ","
+                + "\"file_helpers\":" + helpers
+                + "}";
+    }
+
+    private static List<BodyTemplateEntry> shimProofEntries(String libraryTag) {
+        if (libraryTag == null || libraryTag.isBlank()) return List.of();
+        synchronized (SHIM_ENTRIES_CACHE) {
+            List<BodyTemplateEntry> cached = SHIM_ENTRIES_CACHE.get(libraryTag);
+            if (cached != null) return cached;
+            List<BodyTemplateEntry> loaded = loadShimProofEntries(libraryTag);
+            SHIM_ENTRIES_CACHE.put(libraryTag, loaded);
+            return loaded;
+        }
+    }
+
+    private static List<BodyTemplateEntry> loadShimProofEntries(String libraryTag) {
+        String resource = SHIM_PROOF_RESOURCES.get(libraryTag);
+        if (resource == null) return List.of();
+        try (InputStream in = SugarRealizer.class.getResourceAsStream(resource)) {
+            if (in == null) return List.of();
+            byte[] bytes = in.readAllBytes();
+            Map<String, Object> members = cborMembers(bytes);
+            if (members.isEmpty()) return List.of();
+            List<BodyTemplateEntry> out = new ArrayList<>();
+            for (Object member : members.values()) {
+                Jcs.Json parsed = parseProofMember(member);
+                if (!(parsed instanceof Jcs.Obj parsedObj)) continue;
+                Jcs.Json bodyJson = parsedObj.get("body");
+                Jcs.Obj body = bodyJson instanceof Jcs.Obj bodyObj ? bodyObj : parsedObj;
+                if (!"library-sugar-binding-entry".equals(body.stringFieldOrNull("kind"))) continue;
+                if (!libraryTag.equals(body.stringFieldOrNull("target_library_tag"))) continue;
+                BodyTemplateEntry entry = bindingEntryToTemplateEntry(body, libraryTag);
+                if (entry != null) out.add(entry);
+            }
+            return List.copyOf(out);
+        } catch (IOException | RuntimeException e) {
+            return List.of();
+        }
+    }
+
+    private static Jcs.Json parseProofMember(Object member) {
+        try {
+            if (member instanceof byte[] bytes) {
+                return Jcs.parse(new String(bytes, StandardCharsets.UTF_8));
+            }
+            if (member instanceof String text) {
+                return Jcs.parse(text);
+            }
+        } catch (RuntimeException ignored) {
+        }
+        return null;
+    }
+
+    private static BodyTemplateEntry bindingEntryToTemplateEntry(Jcs.Obj decl, String libraryTag) {
+        String conceptName = decl.stringFieldOrNull("concept_name");
+        if (conceptName == null || conceptName.isBlank()) return null;
+        List<String> paramNames = stringArray(decl.get("param_names"));
+        Jcs.Json bodySourceJson = decl.get("body_source");
+        if (!(bodySourceJson instanceof Jcs.Obj bodySource)) return null;
+        String bodyText = bodySource.stringFieldOrNull("body_text");
+        if (bodyText == null || bodyText.isBlank()) return null;
+        List<String> fileHelpers = new ArrayList<>();
+        Jcs.Json helpersJson = decl.get("file_helpers");
+        if (helpersJson instanceof Jcs.Arr helpersArr) {
+            for (Jcs.Json helper : helpersArr.values()) {
+                if (helper instanceof Jcs.Str s) fileHelpers.add(s.value());
+            }
+        }
+        int arity = paramNames.size();
+        return new BodyTemplateEntry(
+                conceptName,
+                null,
+                "verbatim",
+                substituteShimParamsWithPlaceholders(bodyText, paramNames),
+                List.of(),
+                lossRecordFromBindingEntry(decl),
+                arity,
+                arity,
+                libraryTag,
+                List.copyOf(fileHelpers));
+    }
+
+    private static List<String> stringArray(Jcs.Json value) {
+        if (!(value instanceof Jcs.Arr arr)) return List.of();
+        List<String> out = new ArrayList<>();
+        for (Jcs.Json item : arr.values()) {
+            if (item instanceof Jcs.Str s) out.add(s.value());
+        }
+        return out;
+    }
+
+    private static Jcs.Json lossRecordFromBindingEntry(Jcs.Obj decl) {
+        Jcs.Json contribution = decl.get("loss_record_contribution");
+        if (!(contribution instanceof Jcs.Obj contributionObj)) return Jcs.object();
+        if (!"literal".equals(contributionObj.stringFieldOrNull("form"))) return Jcs.object();
+        Jcs.Json value = contributionObj.get("value");
+        return value instanceof Jcs.Obj ? value : Jcs.object();
+    }
+
+    private static final Pattern IDENT_PATTERN = Pattern.compile("[A-Za-z_][A-Za-z0-9_]*");
+
+    private static String substituteShimParamsWithPlaceholders(String bodyText, List<String> paramNames) {
+        Matcher matcher = IDENT_PATTERN.matcher(bodyText);
+        StringBuffer out = new StringBuffer();
+        while (matcher.find()) {
+            String ident = matcher.group();
+            int idx = paramNames.indexOf(ident);
+            String replacement = idx >= 0 ? "${param" + idx + "}" : ident;
+            matcher.appendReplacement(out, Matcher.quoteReplacement(replacement));
+        }
+        matcher.appendTail(out);
+        return out.toString();
+    }
+
+    private static Map<String, Object> cborMembers(byte[] bytes) {
+        CborCursor cursor = new CborCursor(bytes);
+        long pairs = readCborMapHead(cursor);
+        if (pairs < 0) return Map.of();
+        for (long i = 0; i < pairs; i++) {
+            String key = readCborText(cursor);
+            if (key == null) return Map.of();
+            if ("members".equals(key)) {
+                return readCborMembersMap(cursor);
+            }
+            if (!skipCborValue(cursor)) return Map.of();
+        }
+        return Map.of();
+    }
+
+    private static Map<String, Object> readCborMembersMap(CborCursor cursor) {
+        long pairs = readCborMapHead(cursor);
+        if (pairs < 0) return Map.of();
+        Map<String, Object> out = new TreeMap<>();
+        for (long i = 0; i < pairs; i++) {
+            String key = readCborText(cursor);
+            if (key == null) return Map.of();
+            int major = cborMajor(cursor);
+            if (major == Cbor.MAJOR_BYTE_STRING) {
+                byte[] bytes = readCborBytes(cursor);
+                if (bytes == null) return Map.of();
+                out.put(key, bytes);
+            } else if (major == Cbor.MAJOR_TEXT_STRING) {
+                String text = readCborText(cursor);
+                if (text == null) return Map.of();
+                out.put(key, text);
+            } else {
+                if (!skipCborValue(cursor)) return Map.of();
+            }
+        }
+        return out;
+    }
+
+    private static final class CborCursor {
+        final byte[] bytes;
+        int pos;
+
+        CborCursor(byte[] bytes) {
+            this.bytes = bytes;
+            this.pos = 0;
+        }
+    }
+
+    private static int cborMajor(CborCursor cursor) {
+        if (cursor.pos >= cursor.bytes.length) return -1;
+        return (cursor.bytes[cursor.pos] & 0xFF) >>> 5;
+    }
+
+    private static long readCborHead(CborCursor cursor, int expectedMajor) {
+        if (cursor.pos >= cursor.bytes.length) return -1;
+        int b = cursor.bytes[cursor.pos++] & 0xFF;
+        int major = b >>> 5;
+        if (major != expectedMajor) return -1;
+        int info = b & 0x1F;
+        if (info < 24) return info;
+        int len = switch (info) {
+            case 24 -> 1;
+            case 25 -> 2;
+            case 26 -> 4;
+            case 27 -> 8;
+            default -> -1;
+        };
+        if (len < 0 || cursor.pos + len > cursor.bytes.length) return -1;
+        long value = 0;
+        for (int i = 0; i < len; i++) {
+            value = (value << 8) | (cursor.bytes[cursor.pos++] & 0xFF);
+        }
+        return value;
+    }
+
+    private static long readCborMapHead(CborCursor cursor) {
+        return readCborHead(cursor, Cbor.MAJOR_MAP);
+    }
+
+    private static String readCborText(CborCursor cursor) {
+        long len = readCborHead(cursor, Cbor.MAJOR_TEXT_STRING);
+        if (len < 0 || cursor.pos + len > cursor.bytes.length) return null;
+        String out = new String(cursor.bytes, cursor.pos, (int) len, StandardCharsets.UTF_8);
+        cursor.pos += (int) len;
+        return out;
+    }
+
+    private static byte[] readCborBytes(CborCursor cursor) {
+        long len = readCborHead(cursor, Cbor.MAJOR_BYTE_STRING);
+        if (len < 0 || cursor.pos + len > cursor.bytes.length) return null;
+        byte[] out = new byte[(int) len];
+        System.arraycopy(cursor.bytes, cursor.pos, out, 0, out.length);
+        cursor.pos += (int) len;
+        return out;
+    }
+
+    private static boolean skipCborValue(CborCursor cursor) {
+        if (cursor.pos >= cursor.bytes.length) return false;
+        int b = cursor.bytes[cursor.pos++] & 0xFF;
+        int major = b >>> 5;
+        int info = b & 0x1F;
+        long arg;
+        if (info < 24) {
+            arg = info;
+        } else {
+            int len = switch (info) {
+                case 24 -> 1;
+                case 25 -> 2;
+                case 26 -> 4;
+                case 27 -> 8;
+                default -> -1;
+            };
+            if (len < 0 || cursor.pos + len > cursor.bytes.length) return false;
+            long value = 0;
+            for (int i = 0; i < len; i++) {
+                value = (value << 8) | (cursor.bytes[cursor.pos++] & 0xFF);
+            }
+            arg = value;
+        }
+        return switch (major) {
+            case Cbor.MAJOR_UNSIGNED_INT -> true;
+            case Cbor.MAJOR_BYTE_STRING, Cbor.MAJOR_TEXT_STRING -> {
+                if (cursor.pos + arg > cursor.bytes.length) yield false;
+                cursor.pos += (int) arg;
+                yield true;
+            }
+            case Cbor.MAJOR_ARRAY -> {
+                boolean ok = true;
+                for (long i = 0; i < arg; i++) ok = ok && skipCborValue(cursor);
+                yield ok;
+            }
+            case Cbor.MAJOR_MAP -> {
+                boolean ok = true;
+                for (long i = 0; i < arg; i++) {
+                    ok = ok && skipCborValue(cursor) && skipCborValue(cursor);
+                }
+                yield ok;
+            }
+            default -> false;
+        };
     }
 
     private static List<BodyTemplateEntry> diskEntries() {
@@ -4400,20 +4716,6 @@ final class SugarRealizer {
             return parseEntryArray(entriesArr);
         } catch (RuntimeException e) {
             // JSON parse failure: degrade to "no entries"; stubs will emit.
-            return List.of();
-        }
-    }
-
-    /// `.proof`-load-via-RPC: parse a BARE `bodyTemplates` array (as sent by
-    /// cmd_materialize from the shim .proof) into BodyTemplateEntry records.
-    /// Same per-entry shape as the on-disk projection's `content.entries`, so
-    /// it shares `parseEntryArray` with `parseEntriesFromRaw`.
-    private static List<BodyTemplateEntry> parseEntriesFromRpcArray(String rawArray) {
-        try {
-            Jcs.Json root = Jcs.parse(rawArray);
-            if (!(root instanceof Jcs.Arr arr)) return List.of();
-            return parseEntryArray(arr);
-        } catch (RuntimeException e) {
             return List.of();
         }
     }

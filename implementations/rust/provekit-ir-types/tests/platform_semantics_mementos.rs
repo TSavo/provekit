@@ -106,7 +106,10 @@ fn literal_encoding_memento_round_trips_and_recomputes_cid() {
     assert_eq!(decoded, memento);
     assert_eq!(decoded.cid, decoded.recompute_cid());
     assert_eq!(decoded.kind, LiteralEncodingMemento::KIND);
-    assert_eq!(decoded.schema_version, LiteralEncodingMemento::SCHEMA_VERSION);
+    assert_eq!(
+        decoded.schema_version,
+        LiteralEncodingMemento::SCHEMA_VERSION
+    );
     assert_eq!(
         decoded.expected_term_shape_node.concept_name,
         LiteralEncodingMemento::CONCEPT_LITERAL_NAME

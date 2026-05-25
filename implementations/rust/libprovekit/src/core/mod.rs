@@ -47,14 +47,14 @@ pub use lower_plugin::{
     RealizedSource,
 };
 pub use path_executor::{execute_path, KitRegistry, PathExecutionChain, PathExecutionError};
-pub use source_transform_kit::{
-    decode_source_transform_payload, SourceTransformAdapter, SOURCE_TRANSFORM_PAYLOAD_SORT,
-};
 pub use platform_semantics::{platform_semantics_for_binding, platform_semantics_for_lower_target};
 pub use primitives::{
     address, compose, dropper, resolve, sign, verify_sig, ComposeError, SigningKey,
 };
 pub use prove_kit::ProveKit;
+pub use source_transform_kit::{
+    decode_source_transform_payload, SourceTransformAdapter, SOURCE_TRANSFORM_PAYLOAD_SORT,
+};
 pub use stubs::{CKit, FunctionContractDomain, NoopPortfolio, RustKit};
 pub use traits::{
     Canonical, Catalog, CoreError, Domain, DomainError, HashMapCatalog, HashMapInputCatalog,

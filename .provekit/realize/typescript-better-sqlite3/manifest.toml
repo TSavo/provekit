@@ -4,11 +4,8 @@ name = "typescript-realize-better-sqlite3"
 library_tag = "better-sqlite3"
 family = "concept:family:sql"
 library_version = "12.9.0"
-# #1364 / #1355 / #1468: per-kit concept coverage. Source of truth is the shim's
-# signed .proof (the central body-templates JSON was deleted); `sugar_proof`
-# points the manifest_audit at it. After the cardinality split, the connection-
-# level query concept is the global pair concept:sql-query-row / -all.
+# #1364 / #1355 / #1468: per-kit concept coverage. After the cardinality split,
+# the connection-level query concept is the global pair concept:sql-query-row / -all.
 provides_concepts = ["concept:sql-execute", "concept:sql-query-row", "concept:sql-query-all"]
-sugar_proof = "examples/provekit-shim-typescript-better-sqlite3"
 command = ["implementations/typescript/target/release/provekit-realize-typescript-better-sqlite3", "--rpc"]
 working_dir = "."

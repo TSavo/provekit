@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-import contextvars
+import importlib.util as _importlib_util
 import json
 import os
 import re
@@ -11,16 +11,6 @@ from typing import Any
 
 BODY_TEMPLATE_REL = Path(
     "menagerie/python-language-signature/specs/body-templates/python-canonical-bodies-sqlite3.json"
-)
-
-# `.proof`-load-via-RPC: per-request `bodyTemplates` JSON array lifted by
-# cmd_materialize from the sqlite3 shim's signed .proof. When non-empty,
-# `entries()` PREFERS these over the on-disk canonical-bodies-sqlite3.json
-# cache -- the @sugar.bind shim source is the authority. Empty -> disk
-# fallback. ContextVar (not a global) so concurrent RPC invocations do not
-# race; rpc.py sets/resets it per invoke. Mirrors the core kit + Java #1458.
-current_body_templates: contextvars.ContextVar[str] = contextvars.ContextVar(
-    "current_body_templates", default=""
 )
 
 PLACEHOLDER_RE = re.compile(r"\$\{[^}]+\}")
@@ -283,18 +273,136 @@ def render_template(
     return rendered
 
 
+_SHIM_PACKAGE = "provekit_shim_python_sqlite3"
+_LIBRARY_TAG = "sqlite3"
+_IDENT_RE = re.compile(r"[A-Za-z_][A-Za-z0-9_]*")
+
+
 def entries() -> tuple[BodyTemplateEntry, ...]:
-    # `.proof`-load-via-RPC: when cmd_materialize fed `bodyTemplates` for this
-    # request, those entries are the authority. Prepend them so the
-    # first-match-wins matcher prefers them over the disk cache; they are NEVER
-    # cached statically (per-request, library-specific). Empty -> fall through
-    # to the disk-loaded cache. Mirrors the core kit + Java #1458.
-    rpc_templates = current_body_templates.get()
-    if rpc_templates:
-        rpc_entries = _parse_entries_from_rpc_array(rpc_templates)
-        if rpc_entries:
-            return rpc_entries + _disk_entries()
-    return _disk_entries()
+    # The kit resolves its OWN shim `.proof` from its installed package
+    # (pip / site-packages), CBOR-decodes it, and extracts the binding entries.
+    # The substrate is language-blind and never reads the `.proof` — this
+    # mirrors the TS kit's `createRealizerFromShimProof` (node_modules), the
+    # canonical model. Substrate-fed template bodies are ignored.
+    return _shim_proof_entries()
+
+
+def _substitute_shim_params(body_text: str, param_names: list[str]) -> str:
+    """Replace each shim parameter identifier with `${paramN}` so
+    `render_template` can re-bind to the call's actual args. Mirrors the TS
+    `substituteShimParamsWithPlaceholders`."""
+
+    def repl(match: re.Match[str]) -> str:
+        ident = match.group(0)
+        try:
+            return f"${{param{param_names.index(ident)}}}"
+        except ValueError:
+            return ident
+
+    return _IDENT_RE.sub(repl, body_text)
+
+
+def _binding_entry_to_template_entry(decl: dict[str, Any]) -> dict[str, Any] | None:
+    """Convert a library-sugar-binding-entry body to the template-entry shape
+    `_parse_entry_array` consumes. Mirrors TS `bindingEntryToTemplateEntry` and
+    Rust `binding_entry_to_template_entry`."""
+    concept_name = decl.get("concept_name")
+    if not isinstance(concept_name, str):
+        return None
+    param_names = [p for p in decl.get("param_names", []) if isinstance(p, str)]
+    body_source = decl.get("body_source")
+    body_text = body_source.get("body_text") if isinstance(body_source, dict) else None
+    if not isinstance(body_text, str) or not body_text:
+        return None
+    arity = len(param_names)
+    return {
+        "concept_name": concept_name,
+        "emission_template": {
+            "kind": "verbatim",
+            "template": _substitute_shim_params(body_text, param_names),
+        },
+        "signature_guard": {"min_params": arity, "max_params": arity},
+        "target_library_tag": decl.get("target_library_tag", ""),
+    }
+
+
+def _entries_from_shim_proof(proof_path: Path, library_tag: str) -> tuple[BodyTemplateEntry, ...]:
+    """Read a shim `.proof` (CBOR catalog), extract its
+    library-sugar-binding-entry members for `library_tag`, and convert them to
+    BodyTemplateEntry records. Mirrors TS `entriesFromShimProof`."""
+    try:
+        import cbor2
+    except ImportError:
+        return ()
+    try:
+        data = cbor2.loads(proof_path.read_bytes())
+    except (OSError, ValueError):
+        return ()
+    members = data.get("members") if isinstance(data, dict) else None
+    if not isinstance(members, dict):
+        return ()
+    items: list[dict[str, Any]] = []
+    for val in members.values():
+        if isinstance(val, (bytes, bytearray)):
+            try:
+                parsed = json.loads(bytes(val).decode("utf-8"))
+            except (ValueError, UnicodeDecodeError):
+                continue
+        elif isinstance(val, str):
+            try:
+                parsed = json.loads(val)
+            except ValueError:
+                continue
+        else:
+            parsed = val
+        body = parsed.get("body") if isinstance(parsed, dict) else None
+        if not isinstance(body, dict):
+            body = parsed if isinstance(parsed, dict) else None
+        if not isinstance(body, dict) or body.get("kind") != "library-sugar-binding-entry":
+            continue
+        if library_tag and body.get("target_library_tag") != library_tag:
+            continue
+        entry = _binding_entry_to_template_entry(body)
+        if entry is not None:
+            items.append(entry)
+    return _parse_entry_array(items)
+
+
+def _resolve_shim_proof_path() -> Path | None:
+    """Locate the installed shim package's `.proof`. Primary: the kit finds the
+    shim exactly as `import <pkg>` would (importlib spec), then looks for
+    `provekit.proof` (or any `*.proof`) in the package dir and its parent (the
+    latter covers `pip install -e` editable layouts). Mirrors TS
+    `resolveShimProofPath` (node_modules resolution), independent of cwd."""
+    spec = _importlib_util.find_spec(_SHIM_PACKAGE)
+    bases: list[Path] = []
+    if spec is not None:
+        for loc in spec.submodule_search_locations or []:
+            bases.append(Path(loc))
+            bases.append(Path(loc).parent)
+        if spec.origin:
+            bases.append(Path(spec.origin).resolve().parent)
+            bases.append(Path(spec.origin).resolve().parent.parent)
+    seen: set[Path] = set()
+    for base in bases:
+        if base in seen:
+            continue
+        seen.add(base)
+        stable = base / "provekit.proof"
+        if stable.exists():
+            return stable
+        proofs = sorted(base.glob("*.proof"))
+        if proofs:
+            return proofs[0]
+    return None
+
+
+@lru_cache(maxsize=1)
+def _shim_proof_entries() -> tuple[BodyTemplateEntry, ...]:
+    path = _resolve_shim_proof_path()
+    if path is None:
+        return ()
+    return _entries_from_shim_proof(path, _LIBRARY_TAG)
 
 
 @lru_cache(maxsize=1)
@@ -306,20 +414,6 @@ def _disk_entries() -> tuple[BodyTemplateEntry, ...]:
     root = json.loads(raw)
     content = root.get("header", {}).get("content", {})
     return _parse_entry_array(content.get("entries", []))
-
-
-def _parse_entries_from_rpc_array(raw_array: str) -> tuple[BodyTemplateEntry, ...]:
-    """`.proof`-load-via-RPC: parse a BARE `bodyTemplates` array (sent by
-    cmd_materialize from the shim .proof) into BodyTemplateEntry records. Same
-    per-entry shape as the disk projection's `content.entries`."""
-    try:
-        root = json.loads(raw_array)
-    except (ValueError, TypeError):
-        return ()
-    if not isinstance(root, list):
-        return ()
-    return _parse_entry_array(root)
-
 
 def _parse_entry_array(items: Any) -> tuple[BodyTemplateEntry, ...]:
     if not isinstance(items, list):

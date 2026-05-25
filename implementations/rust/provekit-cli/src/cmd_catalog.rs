@@ -122,11 +122,7 @@ pub fn run(args: CatalogArgs) -> u8 {
 
 /// Load the catalog once and hand it to `body`, mapping load errors to a
 /// user-error exit. Keeps every subcommand's I/O bootstrap identical.
-fn dispatch(
-    project: Option<&Path>,
-    out: OutputFlags,
-    body: impl FnOnce(&Catalog) -> u8,
-) -> u8 {
+fn dispatch(project: Option<&Path>, out: OutputFlags, body: impl FnOnce(&Catalog) -> u8) -> u8 {
     let root = match resolve_catalog_root(project) {
         Some(r) => r,
         None => {
@@ -332,7 +328,10 @@ impl Catalog {
 fn load_realizations(dir: &Path) -> Result<BTreeMap<String, Realization>, String> {
     let mut out = BTreeMap::new();
     if !dir.is_dir() {
-        return Err(format!("realizations directory not found: {}", dir.display()));
+        return Err(format!(
+            "realizations directory not found: {}",
+            dir.display()
+        ));
     }
     for entry in read_dir_sorted(dir)? {
         let raw = match std::fs::read_to_string(&entry) {
@@ -514,7 +513,9 @@ fn run_show(cat: &Catalog, concept: &str, out: &OutputFlags) -> u8 {
         let edge = if r.is_n_edge() {
             r.target_lang.green().to_string()
         } else {
-            format!("{} [{}]", r.target_lang, r.role).dimmed().to_string()
+            format!("{} [{}]", r.target_lang, r.role)
+                .dimmed()
+                .to_string()
         };
         println!("    - {:<10}  {}", edge, r.fn_name);
     }
@@ -623,11 +624,7 @@ fn run_filter(cat: &Catalog, args: &FilterArgs, out: &OutputFlags) -> u8 {
         return crate::EXIT_OK;
     }
 
-    println!(
-        "{} {} match(es)",
-        "catalog filter:".bold(),
-        matched.len()
-    );
+    println!("{} {} match(es)", "catalog filter:".bold(), matched.len());
     for c in &matched {
         let langs = c.languages().join(", ");
         let flag = if c.is_singleton() {
@@ -686,7 +683,10 @@ mod tests {
             .get("concept:option-bind")
             .expect("option-bind hub present");
         assert_eq!(c.name, "concept:option-bind");
-        assert!(c.contract_note.is_some(), "description maps to contract_note");
+        assert!(
+            c.contract_note.is_some(),
+            "description maps to contract_note"
+        );
     }
 
     #[test]
