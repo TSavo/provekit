@@ -23,9 +23,10 @@ cargo run --manifest-path ../../implementations/rust/Cargo.toml \
     -p provekit-cli --bin provekit -- proof inspect blake3-512:*.proof
 ```
 
-`mint --out .` writes the CID-named `.proof` (the materialize `sugar_proof`
-glob reads it) and re-projects `menagerie/.../python-canonical-bodies-sqlite3.json`
-from this source, so the on-disk cache stays byte-identical to the shim.
+`mint --out .` writes the CID-named `.proof`; the materialize `sugar_proof`
+glob and `manifest_audit` read it as the source-of-truth for this kit's
+binding-entry concepts. (The old central `python-canonical-bodies-sqlite3.json`
+was deleted in #1463; the `.proof` is now the only body-source.)
 
 ## Concept coverage
 
