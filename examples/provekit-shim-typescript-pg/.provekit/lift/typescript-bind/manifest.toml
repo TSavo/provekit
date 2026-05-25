@@ -1,0 +1,4 @@
+# PEP 1.7.0 `kind = "lift"` plugin manifest for the TypeScript source-native sugar surface.
+name = "typescript-bind-lift"
+command = ["npx", "tsx", "implementations/typescript/src/lift/typescript-source/bin.ts", "--rpc"]
+working_dir = "../.."
