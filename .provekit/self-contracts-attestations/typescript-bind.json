@@ -2,9 +2,9 @@
   "schemaVersion": "1",
   "kind": "self-contracts-attestation",
   "lang": "typescript-bind",
-  "cid": "blake3-512:70f24d635e99787b6c31053eca270256f12d2fc199fd2a883d237838242d69eba8be3c264829aa6e2a4f2f7f186b2532b3dec7cfdecb00cfc7440bf7acaffe96",
+  "cid": "blake3-512:632c7732793599cdfd875fdbf7a49416bdf76a5a88b6dc2457058e853009cd748602fcf79104a6268dedb187ed320acb439c11dbeaa34e3a50c74cf32ad60469",
   "contractSetCid": "blake3-512:d53d18c23212ea7b6300594bb89bce60218f6eff2b9d628b8cc42d3e79bbd5ab09994845815cc7185113418f9fc2edc7606b06f0d57a6d581e7cff5b290f3229",
   "declaredAt": "2026-05-05T18:00:00Z",
   "signer": "ed25519:IVL40Zt5HSRFMkLhXy6rbLfP+ntqXtMAl5YOBpiB2xI=",
-  "signature": "ed25519:tGPDHbawBbd0H7/bAlRCBSdSK2kHMzagVY/T1O5I0U0VYP7GsAtlBh822gXUuJeMhZr+XZ8kd2tNC7Smo2q+Bw=="
+  "signature": "ed25519:nOhClLMtECVlqK7RkMT2Ezo/dpRZNIUoTirjXU20mLKJv49/0tK4dRdIS6skq+LHgIJQkPopMsSPU0x5+hU0Cg=="
 }
