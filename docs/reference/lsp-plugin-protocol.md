@@ -1,5 +1,9 @@
 # LSP Plugin Protocol
 
+This page is the short operational reference for kit-local editor helpers.
+The shared editor protocol is defined in
+[`2026-05-25-lsp-shared-protocol.md`](../../protocol/specs/2026-05-25-lsp-shared-protocol.md).
+
 ProvekIt editor plugins speak a small line-delimited JSON protocol to kit-local helpers. The editor owns Language Server Protocol wiring; the helper owns ProvekIt parsing, lifting, and handshake checks.
 
 ## Transport
@@ -14,12 +18,15 @@ ProvekIt editor plugins speak a small line-delimited JSON protocol to kit-local 
 | Method | Purpose |
 |---|---|
 | `initialize` | Return helper version, protocol catalog CID, supported source surfaces, and supported diagnostics. |
-| `parse` | Parse one document snapshot and return lifted claims, diagnostics, and handshake results. |
+| `analyzeDocument` | Analyze one document snapshot and return normalized entries, diagnostics, statuses, and optional project state. |
 | `shutdown` | Flush caches and exit cleanly. |
 
-## `parse` Inputs
+Legacy helpers may still expose `parse` during migration. New helpers should
+target `analyzeDocument` from the shared protocol.
 
-`parse` receives:
+## `analyzeDocument` Inputs
+
+`analyzeDocument` receives:
 
 - document URI;
 - language or kit key;
@@ -27,7 +34,7 @@ ProvekIt editor plugins speak a small line-delimited JSON protocol to kit-local 
 - editor version metadata;
 - optional project roots and policy paths.
 
-The helper should cache by source-text hash, AST hash, and `(postCid, preCid)` handshake pair.
+The helper should cache by source-text hash, AST hash, protocol catalog CID, and policy CIDs.
 
 ## Diagnostics
 
