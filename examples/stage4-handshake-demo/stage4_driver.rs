@@ -182,6 +182,7 @@ fn run() -> Result<(), String> {
             signer_seed: parse_kit_seed,
             formals: Vec::new(),
             formal_sorts: Vec::new(),
+            emit_empty_formals: false,
         })
         .map_err(|e| format!("mint parse-kit {}: {e}", d.name))?;
         parse_kit_contract_cid = m.cid.clone();
@@ -280,6 +281,7 @@ fn run() -> Result<(), String> {
             signer_seed: consumer_seed,
             formals: Vec::new(),
             formal_sorts: Vec::new(),
+            emit_empty_formals: false,
         })
         .map_err(|e| format!("mint consumer {}: {e}", d.name))?;
         consumer_contract_cid = m.cid.clone();
