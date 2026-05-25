@@ -10,6 +10,21 @@
 // shared `provekit mint --library-bindings` path packages those entries
 // into the package-root `provekit.proof` envelope.
 //
+// CARDINALITY-SPLIT QUERY CONCEPTS (#1468)
+// ----------------------------------------
+// A different post-condition is a different contract, so the connection-level
+// query bindings cite the GLOBAL cardinality concepts (Phase 0 catalog), not a
+// flat concept:sql-query:
+//
+//   * .get(...)     -> concept:sql-query-row      (at most one row or null)
+//   * .all(...)     -> concept:sql-query-all      (fully-materialized array)
+//   * .iterate(...) -> concept:sql-query-iterate  (lazy single-pass cursor)
+//
+// This shim's connection-level surface exposes .get and .all, so it binds
+// concept:sql-query-row and concept:sql-query-all. There is no connection-level
+// .iterate method, so concept:sql-query-iterate is left unbound here (the
+// prepared-statement-level stmtIterate is concept:sql-stmt-query, distinct).
+//
 // MULTIPLE SUGARS PER CONCEPT
 // ---------------------------
 // Sugar format is taste; a concept can carry multiple bindings. For each
@@ -128,7 +143,7 @@ export function executeBatch(db: Database.Database, sql: string): void {
 }
 
 @sugar.bind({
-  concept: "concept:sql-query",
+  concept: "concept:sql-query-row",
   library: "better-sqlite3",
   family: "concept:family:sql",
   version: "12.9.0",
@@ -138,7 +153,7 @@ export function queryRow(db: Database.Database, sql: string, params: Params = []
 }
 
 @sugar.bind({
-  concept: "concept:sql-query",
+  concept: "concept:sql-query-all",
   library: "better-sqlite3",
   family: "concept:family:sql",
   version: "12.9.0",
@@ -148,7 +163,7 @@ export function queryAll(db: Database.Database, sql: string, params: Params = []
 }
 
 @sugar.bind({
-  concept: "concept:sql-query",
+  concept: "concept:sql-query-all",
   library: "better-sqlite3",
   family: "concept:family:sql",
   version: "12.9.0",
@@ -158,7 +173,7 @@ export function queryAllFree(sql: string, args: Params = []): unknown[] {
 }
 
 @sugar.bind({
-  concept: "concept:sql-query",
+  concept: "concept:sql-query-row",
   library: "better-sqlite3",
   family: "concept:family:sql",
   version: "12.9.0",
