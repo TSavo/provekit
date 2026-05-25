@@ -619,7 +619,11 @@ bootstrap-self-contracts:
 # provekit-realize-java-core; without `build-java` first, that jar is
 # absent and `lower_java_carrier_registration_points_at_required_fixture_set`
 # panics with `Unable to access jarfile provekit-realize-java.jar`.
-test-rust: build-java
+#
+# build-ts (pnpm install) is also required: the bug-zoo smoke tests call
+# `pnpm exec tsx` from the repo root and fail with ERR_PNPM_RECURSIVE_EXEC_FIRST_FAIL
+# if node_modules is absent (fresh worktrees, CI).
+test-rust: build-java build-ts
 	@failed=""; \
 	cargo test --no-fail-fast --release --manifest-path implementations/rust/Cargo.toml \
 	  || failed="$$failed implementations/rust"; \
