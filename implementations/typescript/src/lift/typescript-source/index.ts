@@ -59,6 +59,7 @@ export interface TypeScriptLibrarySugarBindingEntry {
     file: string;
     span: { start_line: number; start_col: number; end_line: number; end_col: number };
     source_cid: string;
+    body_text: string;
   };
 }
 
@@ -392,6 +393,7 @@ function libraryBindingEntryForFunction(
       file: modulePath,
       span,
       source_cid: computeCid(Buffer.from(spanText, "utf8")),
+      body_text: spanText,
     },
   };
   if (binding.observed_dimension !== null) entry.observed_dimension = binding.observed_dimension;

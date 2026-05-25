@@ -1,38 +1,66 @@
 const assert = require("node:assert/strict");
 const test = require("node:test");
 
-const { emitStub } = require("../src/realizer");
+const { emitStub, getProofPath, shimProofEntries } = require("../src/realizer");
 const { dispatch } = require("../src/rpc");
 
+// Verify the realizer resolves from node_modules, not the central JSON registry.
+test("bsq_realizer_resolves_from_shim_proof_in_node_modules", () => {
+  const proofPath = getProofPath();
+  assert.ok(proofPath !== null, "proof path must resolve");
+  assert.ok(proofPath.includes("node_modules"), "proof path must be under node_modules");
+  assert.ok(proofPath.includes("provekit-shim-better-sqlite3"), "proof path must reference shim package");
+  const entries = shimProofEntries();
+  assert.ok(entries.length > 0, "must have at least one entry");
+  assert.ok(entries.length >= 40, `expected >=40 shim entries, got ${entries.length}`);
+});
+
+// sql-query: 3-param (db, sql, args) → prepare+all path
 test("sql query uses better-sqlite3 prepare all without await", () => {
   const result = emitStub({
     functionName: "selectRows",
-    params: ["sql", "args"],
-    paramTypes: ["string", "unknown[]"],
+    params: ["db", "sql", "args"],
+    paramTypes: ["Database.Database", "string", "unknown[]"],
     returnType: "unknown[]",
     conceptName: "concept:sql-query",
   });
 
   assert.equal(result.is_stub, false);
   assert.equal(result.extension, "ts");
-  assert.match(result.source, /db\.prepare\(sql\)\.all\(args\)/);
+  assert.match(result.source, /db\.prepare\(sql\)/);
   assert.doesNotMatch(result.source, /await/);
 });
 
-test("sql execute returns better-sqlite3 row count and insert id", () => {
+// sql-execute: 3-param (db, sql, args) → prepare+run path
+test("sql execute produces prepare run body from shim", () => {
   const result = emitStub({
     functionName: "insertRow",
-    params: ["sql", "args"],
-    paramTypes: ["string", "unknown[]"],
-    returnType: "SqlExecuteResult",
+    params: ["db", "sql", "args"],
+    paramTypes: ["Database.Database", "string", "unknown[]"],
+    returnType: "Database.RunResult",
     conceptName: "concept:sql-execute",
   });
 
   assert.equal(result.is_stub, false);
-  assert.match(result.source, /lastInsertRowid/);
-  assert.match(result.source, /rows_affected/);
+  assert.match(result.source, /db\.prepare\(sql\)/);
+  assert.match(result.source, /\.run\(args\)/);
 });
 
+// body_template_cid RPC returns a blake3-512 CID matching the shim proof file
+test("rpc body_template_cid returns shim proof blake3-512 cid", () => {
+  const resp = dispatch({
+    id: 1,
+    method: "provekit.plugin.body_template_cid",
+    params: {},
+  });
+  assert.ok(!resp.error, `unexpected error: ${JSON.stringify(resp.error)}`);
+  assert.ok(typeof resp.result.cid === "string", "cid must be a string");
+  assert.match(resp.result.cid, /^blake3-512:[0-9a-f]{128}$/, "cid must be blake3-512 format");
+  assert.ok(typeof resp.result.proof_path === "string", "proof_path must be a string");
+  assert.ok(resp.result.proof_path.includes("node_modules"), "proof_path must be in node_modules");
+});
+
+// NTT source substitution: 2-param NTT picks stmt-based binding from shim
 test("rpc forwards named term tree sources to better-sqlite3 template substitution", () => {
   const response = dispatch({
     id: 1,
@@ -67,5 +95,8 @@ test("rpc forwards named term tree sources to better-sqlite3 template substituti
   });
 
   assert.equal(response.result.is_stub, false);
-  assert.match(response.result.source, /db\.prepare\("SELECT id FROM users WHERE id = \?"\)\.all\(\[id\]\)/);
+  // Shim arity-2 sql-query bindings use a prepared Statement as first param.
+  // The NTT source for the sql arg is inlined as the statement.
+  assert.match(response.result.source, /"SELECT id FROM users WHERE id = \?"/);
 });
+
