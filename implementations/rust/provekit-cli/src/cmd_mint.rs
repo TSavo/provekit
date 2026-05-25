@@ -1360,6 +1360,15 @@ fn project_body_templates_for_sugar_bindings(ir: &[Value]) -> Result<(), String>
         if lang.is_empty() || libtag.is_empty() {
             continue;
         }
+        // TypeScript does not use the on-disk canonical-bodies JSON cache: its
+        // realize kits resolve emission bodies from the shim's `provekit.proof`
+        // via `node_modules`, and `body_template_cid` content-addresses the
+        // kit-returned entries directly. Projecting a JSON for TS would
+        // re-introduce the central registry the kit-resolution model removed.
+        // (java/python still project here until their kits migrate.)
+        if lang == "typescript" {
+            continue;
+        }
         grouped.entry((lang, libtag)).or_default().push(decl);
     }
 

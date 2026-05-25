@@ -11,6 +11,8 @@
     "test": "node --test tests/*.test.js"
   },
   "dependencies": {
-    "@noble/hashes": "^2.2.0"
+    "@ipld/dag-cbor": "^9.2.2",
+    "@noble/hashes": "^2.2.0",
+    "provekit-shim-better-sqlite3": "^0.1.2"
   }
 }
