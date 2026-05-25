@@ -789,6 +789,7 @@ async fn lift_rust_source(
 
             let args = MintContractArgs {
                 formals: Vec::new(),
+                emit_empty_formals: false,
                 formal_sorts: Vec::new(),
                 contract_name: decl.name.clone(),
                 pre: pre_v.clone(),

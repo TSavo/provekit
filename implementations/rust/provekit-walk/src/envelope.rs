@@ -148,6 +148,7 @@ pub fn mint_args(
         },
         signer_seed: *signer_seed,
         formals,
+        emit_empty_formals: contract.formals.is_empty(),
         formal_sorts,
     }
 }

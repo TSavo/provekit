@@ -360,6 +360,7 @@ pub fn lift_plugin_protocol_contract_cids() -> Result<BTreeMap<String, String>, 
     for d in &slab.contracts {
         let args = MintContractArgs {
             formals: Vec::new(),
+            emit_empty_formals: false,
             formal_sorts: Vec::new(),
             contract_name: d.name.clone(),
             pre: d.pre.as_deref().map(formula_to_value),
@@ -467,6 +468,7 @@ pub fn mint_self_proof(out_dir: &Path) -> Result<MintResult, String> {
         for d in &slab.contracts {
             let args = MintContractArgs {
                 formals: Vec::new(),
+                emit_empty_formals: false,
                 formal_sorts: Vec::new(),
                 contract_name: d.name.clone(),
                 pre: d.pre.as_deref().map(formula_to_value),
