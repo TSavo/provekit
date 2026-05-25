@@ -49,6 +49,21 @@
             <version>5.10.0</version>
             <scope>test</scope>
         </dependency>
+        <!-- gson boundary library. Declared so building this kit resolves the
+             gson JAR into ~/.m2, where RpcServer.scanMavenJars locates it and
+             returns it on the materialize compile-check classpath. Without
+             this, gson lands in m2 only on machines that have separately built
+             the gson shim project, so the gson compile-check passed locally but
+             failed in CI. The provided scope keeps the shade plugin from
+             bundling gson into the kit jar: the kit never imports gson, only
+             the materialized client does. Mirrors how jackson reaches m2
+             transitively. -->
+        <dependency>
+            <groupId>com.google.code.gson</groupId>
+            <artifactId>gson</artifactId>
+            <version>2.11.0</version>
+            <scope>provided</scope>
+        </dependency>
     </dependencies>
 
     <build>
