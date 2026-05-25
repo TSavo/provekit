@@ -12,10 +12,10 @@ if str(PKG_SRC) not in sys.path:
 from provekit_realize_python_aiosqlite.rpc import dispatch
 
 
-SQL_QUERY_NTT = {
-    "conceptName": "concept:sql-query",
+SQL_QUERY_ALL_NTT = {
+    "conceptName": "concept:sql-query-all",
     "operationKind": "op-application",
-    "shapeCid": "blake3-512:sql-query",
+    "shapeCid": "blake3-512:sql-query-all",
     "args": [
         {
             "conceptName": "Sql",
@@ -33,7 +33,7 @@ SQL_QUERY_NTT = {
 }
 
 
-def test_rpc_invoke_renders_aiosqlite_body(disk_fixture) -> None:
+def test_rpc_invoke_renders_aiosqlite_query_all_body(disk_fixture) -> None:
     response = dispatch(
         {
             "jsonrpc": "2.0",
@@ -44,7 +44,7 @@ def test_rpc_invoke_renders_aiosqlite_body(disk_fixture) -> None:
                 "params": ["sql", "args"],
                 "param_types": ["str", "list[object]"],
                 "return_type": "list[object]",
-                "concept_name": "concept:sql-query",
+                "concept_name": "concept:sql-query-all",
             },
         }
     )
@@ -65,8 +65,8 @@ def test_rpc_invoke_threads_named_term_tree_for_template_lookup(disk_fixture) ->
                 "params": ["id"],
                 "param_types": ["int"],
                 "return_type": "User",
-                "concept_name": "concept:sql-query",
-                "named_term_tree": SQL_QUERY_NTT,
+                "concept_name": "concept:sql-query-all",
+                "named_term_tree": SQL_QUERY_ALL_NTT,
             },
         }
     )
@@ -126,7 +126,7 @@ def test_plugin_invoke_missing_template_uses_named_term_tree_args_shape() -> Non
                 "param_types": ["int"],
                 "return_type": "User",
                 "concept_name": "missing-concept",
-                "named_term_tree": SQL_QUERY_NTT,
+                "named_term_tree": SQL_QUERY_ALL_NTT,
             },
         }
     )

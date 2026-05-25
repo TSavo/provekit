@@ -12,7 +12,7 @@ if str(PKG_SRC) not in sys.path:
 from provekit_realize_python_sqlite3.rpc import dispatch
 
 
-def test_rpc_invoke_renders_sqlite3_body(disk_fixture) -> None:
+def test_rpc_invoke_renders_sqlite3_query_all_body(disk_fixture) -> None:
     response = dispatch(
         {
             "jsonrpc": "2.0",
@@ -23,7 +23,7 @@ def test_rpc_invoke_renders_sqlite3_body(disk_fixture) -> None:
                 "params": ["sql", "args"],
                 "param_types": ["str", "list[object]"],
                 "return_type": "list[object]",
-                "concept_name": "concept:sql-query",
+                "concept_name": "concept:sql-query-all",
             },
         }
     )
@@ -33,7 +33,7 @@ def test_rpc_invoke_renders_sqlite3_body(disk_fixture) -> None:
     assert "db.execute" in response["result"]["source"]
 
 
-def test_rpc_invoke_uses_named_term_tree_shape_for_sql_query(disk_fixture) -> None:
+def test_rpc_invoke_uses_named_term_tree_shape_for_sql_query_all(disk_fixture) -> None:
     response = dispatch(
         {
             "jsonrpc": "2.0",
@@ -44,11 +44,11 @@ def test_rpc_invoke_uses_named_term_tree_shape_for_sql_query(disk_fixture) -> No
                 "params": ["id"],
                 "param_types": ["int"],
                 "return_type": "list[object]",
-                "concept_name": "concept:sql-query",
+                "concept_name": "concept:sql-query-all",
                 "named_term_tree": {
-                    "conceptName": "concept:sql-query",
-                    "operationKind": "sql-query",
-                    "shapeCid": "blake3-512:sql-query",
+                    "conceptName": "concept:sql-query-all",
+                    "operationKind": "sql-query-all",
+                    "shapeCid": "blake3-512:sql-query-all",
                     "args": [
                         {
                             "conceptName": "Sql",
@@ -90,7 +90,7 @@ def test_rpc_invoke_without_named_term_tree_keeps_bare_signature_lookup(
                 "params": ["id"],
                 "param_types": ["int"],
                 "return_type": "list[object]",
-                "concept_name": "concept:sql-query",
+                "concept_name": "missing-concept",
             },
         }
     )
@@ -103,7 +103,7 @@ def test_rpc_invoke_without_named_term_tree_keeps_bare_signature_lookup(
             "message": "missing body-template entry",
             "data": [
                 {
-                    "operation_kind": "concept:sql-query",
+                    "operation_kind": "missing-concept",
                     "args_shape": ["int"],
                     "function": "select_by_id",
                     "term_position": "body",

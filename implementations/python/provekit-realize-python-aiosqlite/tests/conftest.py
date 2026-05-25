@@ -31,14 +31,14 @@ from provekit_realize_python_aiosqlite.realizer import BODY_TEMPLATE_REL  # noqa
 
 # Minimal disk body-templates content. Only the concepts the tests probe, in
 # the 2-param `db.execute(sql, tuple(args))` shape the shim ships. A 1-param
-# `concept:sql-query` lookup MISSES this (no matching guard), which is exactly
+# lookup MISSES this (no matching guard), which is exactly
 # the "bare signature -> missing template" invariant the rpc tests assert.
 _DISK_FIXTURE = {
     "header": {
         "content": {
             "entries": [
                 {
-                    "concept_name": "concept:sql-query",
+                    "concept_name": "concept:sql-query-all",
                     "emission_template": {
                         "kind": "verbatim",
                         "template": (
