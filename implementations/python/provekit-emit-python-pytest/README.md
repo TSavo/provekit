@@ -1,6 +1,6 @@
 # provekit-emit-python-pytest
 
-A PEP 1.7.0 **emitter** kit (a `realize` plugin whose target framework is
+A PEP 1.7.0 **emitter** kit (an `emit` plugin whose target framework is
 `pytest`). It takes a contract — its neutral predicates plus the target
 function signature — and emits a pytest test module whose `test_*` functions
 assert the contract's predicates.
@@ -75,11 +75,11 @@ Methods:
   "envelope": {"declaredAt": "...", "signature": "ed25519:...", "signer": "ed25519:..."},
   "header": {
     "cid": "blake3-512:...",
-    "content": {"name": "provekit-emit-python-pytest", "kind": "realize",
+    "content": {"name": "provekit-emit-python-pytest", "kind": "emit",
                 "target_framework": "pytest",
                 "capabilities": {"predicates": ["concept:eq", "..."]}},
     "critical": false,
-    "kind": "realize",
+    "kind": "emit",
     "protocol_versions": ["pep/1.7.0"],
     "provenance_cid": "blake3-512:...",
     "schemaVersion": "1",
@@ -115,6 +115,7 @@ the loader-integration follow-up (§12 out-of-scope for the loader skeleton).
 {
   "kind": "pytest-test-emission",
   "source": "def test_verifies_ge_0():\n    ...",
+  "path": "test_clamp_contract.py",
   "extension": "py",
   "emitted_artifact_cid": "blake3-512:...",
   "emitted_predicates": ["ge", "le"],

@@ -181,6 +181,7 @@ build-cpp:
 
 .PHONY: build-go
 build-go:
+	cd implementations/go && go build ./...
 	cd implementations/go/provekit-ir-symbolic && go build ./...
 	cd implementations/go/provekit-self-contracts && go build ./...
 	cd implementations/go/provekit-lift-go-tests && go build ./...
@@ -685,6 +686,8 @@ menagerie-zig-language-signature:
 .PHONY: test-go
 test-go:
 	@failed=""; \
+	(cd implementations/go && go test ./...) \
+	  || failed="$$failed implementations/go"; \
 	(cd implementations/go/provekit-ir-symbolic && go test ./...) \
 	  || failed="$$failed provekit-ir-symbolic"; \
 	(cd implementations/go/provekit-self-contracts && go test ./...) \

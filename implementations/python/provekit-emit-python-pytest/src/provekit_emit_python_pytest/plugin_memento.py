@@ -42,7 +42,7 @@ import blake3
 
 from . import predicate_table as pt
 
-PLUGIN_KIND = "realize"
+PLUGIN_KIND = "emit"
 PLUGIN_VERSION = "0.1.0"
 PROTOCOL_VERSIONS = ["pep/1.7.0"]
 PROVENANCE_CID = "blake3-512:provenance-provekit-emit-python-pytest-0.1.0"

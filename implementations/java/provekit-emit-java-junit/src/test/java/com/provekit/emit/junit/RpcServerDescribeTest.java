@@ -54,6 +54,7 @@ class RpcServerDescribeTest {
     void headerHasAllRequiredFieldsWithCorrectValues() {
         Jcs.Obj header = (Jcs.Obj) ((Jcs.Obj) Jcs.parse(server.describeResult())).get("header");
         assertEquals("1", header.stringFieldOrNull("schemaVersion"));
+        assertEquals("emit", header.stringFieldOrNull("kind"));
         assertEquals(RpcServer.KIND, header.stringFieldOrNull("kind"));
         assertEquals(RpcServer.VERSION, header.stringFieldOrNull("version"));
         assertEquals(RpcServer.PROVENANCE_CID, header.stringFieldOrNull("provenance_cid"));

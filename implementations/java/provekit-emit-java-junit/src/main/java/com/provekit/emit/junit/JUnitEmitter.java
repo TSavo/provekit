@@ -31,6 +31,7 @@ public final class JUnitEmitter {
     /** The emission result: source text, per-predicate gaps, and a CID. */
     public record Emission(
         String source,
+        String path,
         String artifactCid,
         List<String> emittedPredicates,
         List<String> unsupportedPredicates
@@ -48,6 +49,8 @@ public final class JUnitEmitter {
             StringBuilder sb = new StringBuilder("{");
             sb.append("\"kind\":\"junit-test-emission\"");
             sb.append(",\"source\":").append(jsonString(source));
+            sb.append(",\"path\":").append(jsonString(path));
+            sb.append(",\"extension\":\"java\"");
             sb.append(",\"emitted_artifact_cid\":").append(jsonString(artifactCid));
             sb.append(",\"emitted_predicates\":").append(jsonStringArray(emittedPredicates));
             sb.append(",\"unsupported_predicates\":").append(jsonStringArray(unsupportedPredicates));
@@ -94,7 +97,7 @@ public final class JUnitEmitter {
 
         String source = renderClass(className, methods);
         String cid = Blake3.blake3_512(source.getBytes(StandardCharsets.UTF_8));
-        return new Emission(source, cid, emitted, unsupported);
+        return new Emission(source, className + ".java", cid, emitted, unsupported);
     }
 
     /**

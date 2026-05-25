@@ -62,7 +62,7 @@ pub struct BindArgs {
     #[arg(long, value_delimiter = ',', default_value = "monitor", value_parser = parse_mode)]
     pub mode: Vec<RuntimeMode>,
 
-    /// Legacy target-language flag. Use `provekit lower --target=<lang>`.
+    /// Legacy target-language flag. Body lowering is retired; use `provekit emit`.
     #[arg(long)]
     pub target_language: Option<String>,
 

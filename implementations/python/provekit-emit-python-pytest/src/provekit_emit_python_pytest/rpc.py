@@ -1,9 +1,8 @@
 """PEP 1.7.0 newline-delimited JSON-RPC server for the pytest emitter plugin.
 
 Reads one JSON-RPC request per line on stdin, writes one response per line to
-stdout. Mirrors the RPC conventions of the python realize kits
-(``provekit-realize-python-sqlite3``) and the emitter protocol shape of the
-java sibling (``provekit-emit-java-junit``).
+stdout. Mirrors the emitter protocol shape of the java sibling
+(``provekit-emit-java-junit``).
 
 Supported methods:
 

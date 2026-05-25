@@ -1,1 +1,1 @@
-"""Python pytest emitter kit (PEP 1.7.0 realize plugin, target framework = pytest)."""
+"""Python pytest emitter kit (PEP 1.7.0 emit plugin, target framework = pytest)."""

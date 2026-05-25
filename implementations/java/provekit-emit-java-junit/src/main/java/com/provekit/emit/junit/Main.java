@@ -1,7 +1,7 @@
 package com.provekit.emit.junit;
 
 /**
- * Entry point for the provekit-emit-java-junit PEP 1.7.0 realize-plugin.
+ * Entry point for the provekit-emit-java-junit PEP 1.7.0 emit-plugin.
  *
  * <p>Usage: {@code provekit-emit-java-junit --rpc}
  *

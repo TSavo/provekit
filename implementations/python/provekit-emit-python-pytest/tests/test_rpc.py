@@ -64,6 +64,7 @@ def test_invoke_emits_pytest_module() -> None:
     result = response["result"]
     assert response["id"] == 2
     assert result["kind"] == "pytest-test-emission"
+    assert result["path"] == "test_f_contract.py"
     assert result["extension"] == "py"
     assert "assert a == b" in result["source"]
     assert result["emitted_predicates"] == ["eq"]

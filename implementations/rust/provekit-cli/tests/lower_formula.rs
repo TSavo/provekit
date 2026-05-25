@@ -88,7 +88,7 @@ fn prove_formula_from_stdin_emits_coq() {
 }
 
 #[test]
-fn lower_rejects_solver_target() {
+fn lower_verb_is_retired() {
     let output = Command::new(provekit_bin())
         .arg("lower")
         .arg("--target")
@@ -97,15 +97,15 @@ fn lower_rejects_solver_target() {
         .stdout(Stdio::piped())
         .stderr(Stdio::piped())
         .output()
-        .expect("spawn provekit lower --target smt-lib");
+        .expect("spawn retired lower verb");
 
     let stderr = String::from_utf8_lossy(&output.stderr);
     assert!(
         !output.status.success(),
-        "lower --target=smt-lib must be rejected"
+        "retired lower verb must be rejected"
     );
     assert!(
-        stderr.contains("provekit prove --target=smt-lib"),
-        "stderr should point to prove target path\n{stderr}"
+        stderr.contains("unrecognized subcommand 'lower'"),
+        "stderr should report retired lower verb\n{stderr}"
     );
 }
