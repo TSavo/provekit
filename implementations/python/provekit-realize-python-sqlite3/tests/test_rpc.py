@@ -12,7 +12,7 @@ if str(PKG_SRC) not in sys.path:
 from provekit_realize_python_sqlite3.rpc import dispatch
 
 
-def test_rpc_invoke_renders_sqlite3_body() -> None:
+def test_rpc_invoke_renders_sqlite3_body(disk_fixture) -> None:
     response = dispatch(
         {
             "jsonrpc": "2.0",
@@ -33,7 +33,7 @@ def test_rpc_invoke_renders_sqlite3_body() -> None:
     assert "db.execute" in response["result"]["source"]
 
 
-def test_rpc_invoke_uses_named_term_tree_shape_for_sql_query() -> None:
+def test_rpc_invoke_uses_named_term_tree_shape_for_sql_query(disk_fixture) -> None:
     response = dispatch(
         {
             "jsonrpc": "2.0",
@@ -77,7 +77,9 @@ def test_rpc_invoke_uses_named_term_tree_shape_for_sql_query() -> None:
     assert response["result"]["is_stub"] is False
 
 
-def test_rpc_invoke_without_named_term_tree_keeps_bare_signature_lookup() -> None:
+def test_rpc_invoke_without_named_term_tree_keeps_bare_signature_lookup(
+    disk_fixture,
+) -> None:
     response = dispatch(
         {
             "jsonrpc": "2.0",

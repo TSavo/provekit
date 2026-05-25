@@ -618,6 +618,60 @@ def connection_row_factory_callable(conn: sqlite3.Connection, factory: Callable)
 
 
 # =============================================================================
+# P. Migrate-shaped 2-param SQL bindings (#1451)
+# =============================================================================
+#
+# The typescript-better-sqlite3 -> python-sqlite3 migrate probes
+# concept:sql-query / concept:sql-execute / concept:insert-and-get-id at the
+# 2-param ["string","unknown[]"] arity that better-sqlite3's db.prepare(q).all(p)
+# lifts to (substrate-availability probe, #1230 D6-D). These mirror the sibling
+# aiosqlite spec's trio with synchronous sqlite3 templates: the connection is a
+# free `db` binding the migrate assembler hoists (not a method receiver), and the
+# args list is bound by position then tuple()-wrapped for the sqlite3 driver.
+# Back-propagated from python-canonical-bodies-sqlite3.json (authored there by
+# #1451 to green cross_platform_point_query_receipt_test, never into this source).
+# The free `db`/`cursor` names pass through the param->placeholder projection
+# unchanged; only `sql`/`args` map to ${param0}/${param1}.
+
+@sugar.bind(
+    concept="concept:sql-execute",
+    library="sqlite3",
+    family="concept:family:sql",
+    version="python-3",
+    loss=["sync-vs-async", "last-insert-id", "transaction-isolation", "row-typing-mode"],
+)
+def migrate_execute(sql, args):
+    cursor = db.execute(sql, tuple(args))
+    db.commit()
+    return {"rows_affected": cursor.rowcount, "last_insert_id": cursor.lastrowid}
+
+
+@sugar.bind(
+    concept="concept:insert-and-get-id",
+    library="sqlite3",
+    family="concept:family:sql",
+    version="python-3",
+    loss=["sync-vs-async", "id-column-discovery", "row-typing-mode"],
+)
+def migrate_insert_and_get_id(sql, args):
+    cursor = db.execute(sql, tuple(args))
+    db.commit()
+    return int(cursor.lastrowid or 0)
+
+
+@sugar.bind(
+    concept="concept:sql-query",
+    library="sqlite3",
+    family="concept:family:sql",
+    version="python-3",
+    loss=["sync-vs-async", "row-typing-mode", "cursor-lifetime"],
+)
+def migrate_query(sql, args):
+    cursor = db.execute(sql, tuple(args))
+    return cursor.fetchall()
+
+
+# =============================================================================
 # Refusals
 # =============================================================================
 #

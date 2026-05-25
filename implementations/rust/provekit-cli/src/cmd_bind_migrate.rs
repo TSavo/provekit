@@ -985,8 +985,46 @@ fn build_propagation_input(
     }
 }
 
+/// Resolve the provenance `binding_cid` recorded in a migrate receipt's
+/// source/target leg for `surface` (`"<lang>-<tag>"`).
+///
+/// SECOND migrate-path enabler (mirrors #1460's body-content shape). #1460
+/// wired the realize BODY-CONTENT path off the on-disk
+/// `<lang>-canonical-bodies-<tag>.json` (templates now arrive over RPC via
+/// `attach_body_templates_from_shim_proof`), but this function was a SECOND,
+/// independent JSON consumer: it disk-read the canonical-bodies JSON purely to
+/// lift `header.cid` for the receipt's provenance `binding_cid`. That last read
+/// pinned the JSON on disk.
+///
+/// Now, when the target shim's @ProveKitSugar `.proof` resolves for `(lang,
+/// tag)` (i.e. `body_templates_from_shim_proof` returns the signed
+/// binding-entry templates), the `binding_cid` is DERIVED deterministically
+/// from that `.proof` content via JCS+blake3-512 over the template array. The
+/// templates are sorted by their JCS rendering before hashing so the derivation
+/// is manifestly order-independent (the underlying CBOR decode already yields a
+/// `BTreeMap`, but the sort makes the contract explicit and robust to future
+/// multi-`.proof` globbing). This is a shared enabler: every migrate-receipt
+/// target whose realize kit declares a `sugar_proof` now sources its
+/// `binding_cid` from the `.proof`, not from a disk JSON.
+///
+/// The on-disk `<lang>-canonical-bodies-<tag>.json` `header.cid` read is kept
+/// as a back-compat FALLBACK for surfaces with no `sugar_proof` pointer (or
+/// whose shim `.proof` carries no matching entries).
 fn body_template_cid(repo_root: &Path, surface: &str) -> Result<String, String> {
     let (language, tag) = split_library_surface(surface)?;
+
+    // Shim-`.proof`-first: derive the provenance CID from the signed
+    // binding-entry templates when a `sugar_proof` pointer resolves them.
+    let templates =
+        crate::cmd_materialize::body_templates_from_shim_proof(repo_root, &language, &tag);
+    if !templates.is_empty() {
+        let mut sorted = templates;
+        sorted.sort_by_cached_key(|entry| encode_jcs(&json_to_value(entry)));
+        return Ok(cid_for_json(&serde_json::Value::Array(sorted)));
+    }
+
+    // Back-compat fallback: lift `header.cid` from the on-disk canonical-bodies
+    // JSON (surfaces with no shim `.proof`).
     let file_name = match language.as_str() {
         "typescript" => {
             if tag.is_empty() {
@@ -3973,6 +4011,78 @@ mod tests {
         assert!(
             bare.get("bodyTemplates").is_none(),
             "empty library_tag must not attach bodyTemplates (disk-cache fallback)"
+        );
+    }
+
+    /// SECOND migrate-path enabler (python-sqlite3 fan-out, post-#1460): #1460
+    /// wired the realize BODY-CONTENT path off the canonical-bodies JSON
+    /// (templates now arrive over RPC via `attach_body_templates_from_shim_proof`),
+    /// but the migrate path had a SECOND, independent JSON consumer #1460 did
+    /// NOT touch: `body_template_cid` disk-read
+    /// `python-canonical-bodies-<tag>.json` purely to extract `header.cid` for
+    /// the receipt's source/target `binding_cid` (a provenance reference, not
+    /// body content). That last read pinned the JSON on disk, so
+    /// `cross_platform_point_query_receipt_test` went red on deletion.
+    ///
+    /// The enabler (mirroring #1460's shape) derives the `binding_cid` from the
+    /// shim `.proof` body-templates content when `sugar_proof_for_realize`
+    /// resolves (JCS+blake3-512 over the sorted template array), with the disk
+    /// `header.cid` read kept as a back-compat fallback for surfaces with no
+    /// `sugar_proof`. With the enabler landed, `python-canonical-bodies-sqlite3.json`
+    /// is now DELETED from the repo.
+    ///
+    /// This test pins the post-deletion reality directly (no rename dance):
+    /// the JSON is genuinely absent, the (python, sqlite3) shim `.proof` carries
+    /// the binding templates, and `body_template_cid` resolves to a
+    /// deterministic content address sourced from that `.proof`.
+    #[test]
+    fn body_template_cid_resolves_python_sqlite3_with_json_absent() {
+        let repo = harness_repo_root();
+
+        // The deletion shipped: the canonical-bodies JSON is gone for good.
+        let json = repo
+            .join("menagerie")
+            .join("python-language-signature")
+            .join("specs")
+            .join("body-templates")
+            .join("python-canonical-bodies-sqlite3.json");
+        assert!(
+            !json.exists(),
+            "python-canonical-bodies-sqlite3.json must be DELETED; the shim \
+             .proof is the binding_cid authority now"
+        );
+
+        // The (python, sqlite3) shim .proof carries the binding templates
+        // (target_library_tag == manifest library_tag == "sqlite3"), so a
+        // .proof-derived binding_cid is well-defined.
+        let templates = crate::cmd_materialize::body_templates_from_shim_proof(
+            &repo, "python", "sqlite3",
+        );
+        assert!(
+            !templates.is_empty(),
+            "python-sqlite3 shim .proof must carry binding templates for the \
+             enabler to derive a binding_cid from"
+        );
+
+        // body_template_cid resolves with the JSON ABSENT: the CID is derived
+        // from the shim .proof, mirroring #1460's body-content enabler.
+        let cid = body_template_cid(&repo, "python-sqlite3").expect(
+            "body_template_cid must resolve python-sqlite3 with the \
+             canonical-bodies JSON ABSENT (binding_cid derived from the shim \
+             .proof)",
+        );
+        assert!(
+            cid.starts_with("blake3-512:"),
+            "binding_cid must be a content address, got {cid}"
+        );
+
+        // Deterministic: the derivation is a pure function of the .proof
+        // content (sorted JCS + blake3-512), so it is byte-stable across calls.
+        let cid_again = body_template_cid(&repo, "python-sqlite3")
+            .expect("body_template_cid must resolve deterministically");
+        assert_eq!(
+            cid, cid_again,
+            "shim-.proof-derived binding_cid must be deterministic"
         );
     }
 
