@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import contextvars
 import importlib.util as _importlib_util
 import json
 import os
@@ -12,16 +11,6 @@ from typing import Any
 
 BODY_TEMPLATE_REL = Path(
     "menagerie/python-language-signature/specs/body-templates/python-canonical-bodies-sqlite3.json"
-)
-
-# `.proof`-load-via-RPC: per-request `bodyTemplates` JSON array lifted by
-# cmd_materialize from the sqlite3 shim's signed .proof. When non-empty,
-# `entries()` PREFERS these over the on-disk canonical-bodies-sqlite3.json
-# cache -- the @sugar.bind shim source is the authority. Empty -> disk
-# fallback. ContextVar (not a global) so concurrent RPC invocations do not
-# race; rpc.py sets/resets it per invoke. Mirrors the core kit + Java #1458.
-current_body_templates: contextvars.ContextVar[str] = contextvars.ContextVar(
-    "current_body_templates", default=""
 )
 
 PLACEHOLDER_RE = re.compile(r"\$\{[^}]+\}")
@@ -294,7 +283,7 @@ def entries() -> tuple[BodyTemplateEntry, ...]:
     # (pip / site-packages), CBOR-decodes it, and extracts the binding entries.
     # The substrate is language-blind and never reads the `.proof` — this
     # mirrors the TS kit's `createRealizerFromShimProof` (node_modules), the
-    # canonical model. `bodyTemplates` fed over RPC are ignored.
+    # canonical model. Substrate-fed template bodies are ignored.
     return _shim_proof_entries()
 
 
@@ -425,20 +414,6 @@ def _disk_entries() -> tuple[BodyTemplateEntry, ...]:
     root = json.loads(raw)
     content = root.get("header", {}).get("content", {})
     return _parse_entry_array(content.get("entries", []))
-
-
-def _parse_entries_from_rpc_array(raw_array: str) -> tuple[BodyTemplateEntry, ...]:
-    """`.proof`-load-via-RPC: parse a BARE `bodyTemplates` array (sent by
-    cmd_materialize from the shim .proof) into BodyTemplateEntry records. Same
-    per-entry shape as the disk projection's `content.entries`."""
-    try:
-        root = json.loads(raw_array)
-    except (ValueError, TypeError):
-        return ()
-    if not isinstance(root, list):
-        return ()
-    return _parse_entry_array(root)
-
 
 def _parse_entry_array(items: Any) -> tuple[BodyTemplateEntry, ...]:
     if not isinstance(items, list):

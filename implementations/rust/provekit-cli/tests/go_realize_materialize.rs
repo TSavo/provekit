@@ -76,7 +76,11 @@ fn build_go_realize() -> PathBuf {
         String::from_utf8_lossy(&built.stdout),
         String::from_utf8_lossy(&built.stderr)
     );
-    assert!(out.exists(), "go build produced no binary at {}", out.display());
+    assert!(
+        out.exists(),
+        "go build produced no binary at {}",
+        out.display()
+    );
     out
 }
 
@@ -90,7 +94,10 @@ fn install_go_realize_manifest(root: &Path, bin: &Path) {
     fs::create_dir_all(manifest.parent().unwrap()).expect("mkdir manifest dir");
     let text = format!(
         "name = \"go-realize\"\ncommand = [\"{}\", \"--rpc\"]\nworking_dir = \".\"\n",
-        bin.display().to_string().replace('\\', "\\\\").replace('"', "\\\"")
+        bin.display()
+            .to_string()
+            .replace('\\', "\\\\")
+            .replace('"', "\\\"")
     );
     fs::write(manifest, text).expect("write manifest");
 }
@@ -123,7 +130,6 @@ fn identity_request() -> RealizeRequest {
         parametric_sort_expansions: Vec::new(),
         function_return_types: std::collections::BTreeMap::new(),
         doc_lines: Vec::new(),
-        body_templates: Vec::new(),
     }
 }
 

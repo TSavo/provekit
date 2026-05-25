@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import contextvars
 import json
 import os
 import re
@@ -22,18 +21,6 @@ RUST_RUNTIME_BODY_TEMPLATE_REL = Path(
 )
 BLAKE3_BODY_TEMPLATE_REL = Path(
     "menagerie/python-language-signature/specs/body-templates/python-canonical-bodies-blake3.json"
-)
-
-# `.proof`-load-via-RPC: the per-request `bodyTemplates` JSON array (a bare
-# `[...]` of emission-template entries) that cmd_materialize lifted from the
-# shim's signed .proof. When non-empty, `entries()` PREFERS these over the
-# on-disk canonical-bodies cache -- the shim source is the authority. Empty
-# ("") <-> no RPC templates -> disk-load fallback (kits whose dispatcher hasn't
-# migrated keep working unchanged). A ContextVar (not a plain global) so
-# concurrent RPC invocations do not race; rpc.py sets/resets it per invoke.
-# Mirrors SugarRealizer.currentBodyTemplates (Java, PR #1458).
-current_body_templates: contextvars.ContextVar[str] = contextvars.ContextVar(
-    "current_body_templates", default=""
 )
 
 PLACEHOLDER_RE = re.compile(r"\$\{[^}]+\}")
@@ -2377,17 +2364,6 @@ def render_template(
 
 
 def entries() -> tuple[BodyTemplateEntry, ...]:
-    # `.proof`-load-via-RPC: when the dispatcher (cmd_materialize) fed
-    # `bodyTemplates` for this request, those entries are the authority.
-    # Prepend them so the first-match-wins matcher prefers them over the disk
-    # cache. They are NEVER cached statically (per-request, library-specific).
-    # Empty -> fall through to the static disk-loaded cache (back-compat for
-    # not-yet-migrated kits). Mirrors SugarRealizer.entries() (Java, PR #1458).
-    rpc_templates = current_body_templates.get()
-    if rpc_templates:
-        rpc_entries = _parse_entries_from_rpc_array(rpc_templates)
-        if rpc_entries:
-            return rpc_entries + _disk_entries()
     return _disk_entries()
 
 
@@ -2418,21 +2394,6 @@ def _entries_from_file(relative: Path) -> tuple[BodyTemplateEntry, ...]:
     root = json.loads(raw)
     content = root.get("header", {}).get("content", {})
     return _parse_entry_array(content.get("entries", []))
-
-
-def _parse_entries_from_rpc_array(raw_array: str) -> tuple[BodyTemplateEntry, ...]:
-    """`.proof`-load-via-RPC: parse a BARE `bodyTemplates` array (as sent by
-    cmd_materialize from the shim .proof) into BodyTemplateEntry records. Same
-    per-entry shape as the on-disk projection's `content.entries`, so it shares
-    `_parse_entry_array` with `_entries_from_file`. Mirrors
-    SugarRealizer.parseEntriesFromRpcArray (Java)."""
-    try:
-        root = json.loads(raw_array)
-    except (ValueError, TypeError):
-        return ()
-    if not isinstance(root, list):
-        return ()
-    return _parse_entry_array(root)
 
 
 def _parse_entry_array(items: Any) -> tuple[BodyTemplateEntry, ...]:

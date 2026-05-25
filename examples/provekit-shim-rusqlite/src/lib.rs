@@ -27,9 +27,12 @@
 // 24 §2, paper 21 §6 Authored path).
 
 pub use rusqlite::{
-    Connection, OpenFlags, Params, Result, Row, Rows, Statement, Transaction,
-    TransactionBehavior,
+    Connection, OpenFlags, Params, Result, Row, Rows, Statement, Transaction, TransactionBehavior,
 };
+
+pub const PROVEKIT_PROOF_BYTES: &[u8] = include_bytes!(
+    "../blake3-512:c080549edaafb3aa98c77f1095fd2afcdeb5b2c381ccc6425539ad5667ac71ef64570f3f46adbba7861b503859d7d2dae7b67b4bb6ae5e6dfa914e0487169528.proof"
+);
 
 use std::path::Path;
 use std::time::Duration;
@@ -326,9 +329,7 @@ pub fn transaction_with_behavior<'conn>(
     version = "0.39.0",
     loss = ["sync-vs-async", "isolation-level", "compile-time-nesting-check-bypass"],
 )]
-pub fn unchecked_transaction<'conn>(
-    conn: &'conn Connection,
-) -> Result<Transaction<'conn>> {
+pub fn unchecked_transaction<'conn>(conn: &'conn Connection) -> Result<Transaction<'conn>> {
     conn.unchecked_transaction()
 }
 
@@ -372,10 +373,7 @@ pub fn tx_savepoint<'tx>(tx: &'tx mut Transaction<'_>) -> Result<rusqlite::Savep
     version = "0.39.0",
     loss = ["runtime-policy-change"],
 )]
-pub fn tx_set_drop_behavior(
-    tx: &mut Transaction<'_>,
-    behavior: rusqlite::DropBehavior,
-) {
+pub fn tx_set_drop_behavior(tx: &mut Transaction<'_>, behavior: rusqlite::DropBehavior) {
     tx.set_drop_behavior(behavior)
 }
 
@@ -471,7 +469,7 @@ pub fn total_changes(conn: &Connection) -> u64 {
     library = "rusqlite",
     family = "concept:family:sql",
     version = "0.39.0",
-    observed_dimension = "autocommit-mode",
+    observed_dimension = "autocommit-mode"
 )]
 pub fn is_autocommit(conn: &Connection) -> bool {
     conn.is_autocommit()
@@ -482,7 +480,7 @@ pub fn is_autocommit(conn: &Connection) -> bool {
     library = "rusqlite",
     family = "concept:family:sql",
     version = "0.39.0",
-    observed_dimension = "pending-statement-presence",
+    observed_dimension = "pending-statement-presence"
 )]
 pub fn is_busy(conn: &Connection) -> bool {
     conn.is_busy()
@@ -493,7 +491,7 @@ pub fn is_busy(conn: &Connection) -> bool {
     library = "rusqlite",
     family = "concept:family:sql",
     version = "0.39.0",
-    observed_dimension = "write-permission",
+    observed_dimension = "write-permission"
 )]
 pub fn is_readonly<N: rusqlite::Name>(conn: &Connection, db_name: N) -> Result<bool> {
     conn.is_readonly(db_name)
@@ -520,7 +518,7 @@ pub fn cache_flush(conn: &Connection) -> Result<()> {
     library = "rusqlite",
     family = "concept:family:sql",
     version = "0.39.0",
-    observed_dimension = "column-names",
+    observed_dimension = "column-names"
 )]
 pub fn stmt_column_names<'stmt>(stmt: &'stmt Statement<'_>) -> Vec<&'stmt str> {
     stmt.column_names()
@@ -531,7 +529,7 @@ pub fn stmt_column_names<'stmt>(stmt: &'stmt Statement<'_>) -> Vec<&'stmt str> {
     library = "rusqlite",
     family = "concept:family:sql",
     version = "0.39.0",
-    observed_dimension = "column-count",
+    observed_dimension = "column-count"
 )]
 pub fn stmt_column_count(stmt: &Statement<'_>) -> usize {
     stmt.column_count()
@@ -542,7 +540,7 @@ pub fn stmt_column_count(stmt: &Statement<'_>) -> usize {
     library = "rusqlite",
     family = "concept:family:sql",
     version = "0.39.0",
-    observed_dimension = "column-name-at-index",
+    observed_dimension = "column-name-at-index"
 )]
 pub fn stmt_column_name<'stmt>(stmt: &'stmt Statement<'_>, col: usize) -> Result<&'stmt str> {
     stmt.column_name(col)
@@ -553,7 +551,7 @@ pub fn stmt_column_name<'stmt>(stmt: &'stmt Statement<'_>, col: usize) -> Result
     library = "rusqlite",
     family = "concept:family:sql",
     version = "0.39.0",
-    observed_dimension = "column-index-of-name",
+    observed_dimension = "column-index-of-name"
 )]
 pub fn stmt_column_index(stmt: &Statement<'_>, name: &str) -> Result<usize> {
     stmt.column_index(name)
@@ -564,7 +562,7 @@ pub fn stmt_column_index(stmt: &Statement<'_>, name: &str) -> Result<usize> {
     library = "rusqlite",
     family = "concept:family:sql",
     version = "0.39.0",
-    observed_dimension = "expanded-sql-text",
+    observed_dimension = "expanded-sql-text"
 )]
 pub fn stmt_expanded_sql(stmt: &Statement<'_>) -> Option<String> {
     stmt.expanded_sql()
@@ -575,7 +573,7 @@ pub fn stmt_expanded_sql(stmt: &Statement<'_>) -> Option<String> {
     library = "rusqlite",
     family = "concept:family:sql",
     version = "0.39.0",
-    observed_dimension = "parameter-count",
+    observed_dimension = "parameter-count"
 )]
 pub fn stmt_parameter_count(stmt: &Statement<'_>) -> usize {
     stmt.parameter_count()
@@ -586,12 +584,9 @@ pub fn stmt_parameter_count(stmt: &Statement<'_>) -> usize {
     library = "rusqlite",
     family = "concept:family:sql",
     version = "0.39.0",
-    observed_dimension = "parameter-name-at-index",
+    observed_dimension = "parameter-name-at-index"
 )]
-pub fn stmt_parameter_name<'stmt>(
-    stmt: &'stmt Statement<'_>,
-    idx: usize,
-) -> Option<&'stmt str> {
+pub fn stmt_parameter_name<'stmt>(stmt: &'stmt Statement<'_>, idx: usize) -> Option<&'stmt str> {
     stmt.parameter_name(idx)
 }
 
@@ -600,7 +595,7 @@ pub fn stmt_parameter_name<'stmt>(
     library = "rusqlite",
     family = "concept:family:sql",
     version = "0.39.0",
-    observed_dimension = "parameter-index-of-name",
+    observed_dimension = "parameter-index-of-name"
 )]
 pub fn stmt_parameter_index(stmt: &Statement<'_>, name: &str) -> Result<Option<usize>> {
     stmt.parameter_index(name)
@@ -634,7 +629,7 @@ pub fn busy_timeout(conn: &Connection, timeout: Duration) -> Result<()> {
     surface = "rusqlite::Connection::backup",
     concept = "concept:sql-physical-backup",
     reason = "SQLite-binary-specific physical backup. Postgres has pg_basebackup (out-of-band, not a connection method); MySQL has equivalent. N=1 across connection-level APIs for now; cluster does not yet form. Refusing rather than minting a single-kit concept hub.",
-    would_close_with_cluster = "Connection-level physical-backup method on >=2 SQL drivers",
+    would_close_with_cluster = "Connection-level physical-backup method on >=2 SQL drivers"
 )]
 pub mod refused_backup {}
 
@@ -642,7 +637,7 @@ pub mod refused_backup {}
     surface = "rusqlite::Connection::blob_open",
     concept = "concept:sql-blob-handle",
     reason = "Incremental BLOB I/O is SQLite-specific surface shape. Postgres has lo_open with a different lifecycle model; MySQL has no equivalent. The semantic shapes diverge enough that a single-kit cluster would not serve cross-library composition.",
-    would_close_with_cluster = "Incremental BLOB I/O on >=2 SQL drivers with structurally compatible handle semantics",
+    would_close_with_cluster = "Incremental BLOB I/O on >=2 SQL drivers with structurally compatible handle semantics"
 )]
 pub mod refused_blob_open {}
 
@@ -650,7 +645,7 @@ pub mod refused_blob_open {}
     surface = "rusqlite::Connection::load_extension",
     concept = "concept:dynamic-library-load",
     reason = "OS-level dynamic-library-load, not SQL-domain. The right concept lives at the OS-binding tier (Rust libloading, Python ctypes, C dlopen, etc.) not at the SQL kit tier. Refusing rather than crossing tier boundaries.",
-    would_close_with_cluster = "OS-tier kit minting (separate from SQL-driver-tier)",
+    would_close_with_cluster = "OS-tier kit minting (separate from SQL-driver-tier)"
 )]
 pub mod refused_load_extension {}
 
@@ -658,7 +653,7 @@ pub mod refused_load_extension {}
     surface = "rusqlite::Connection::create_collation",
     concept = "concept:sql-collation-register",
     reason = "Custom string-comparison callback registration. Postgres supports custom collations via CREATE COLLATION SQL; SQLite registers them as host-language closures. The mechanism diverges enough that a single-kit binding would carry opaque callback semantics.",
-    would_close_with_cluster = "Custom collation registration on >=2 SQL drivers with structurally compatible callback semantics",
+    would_close_with_cluster = "Custom collation registration on >=2 SQL drivers with structurally compatible callback semantics"
 )]
 pub mod refused_create_collation {}
 
@@ -666,7 +661,7 @@ pub mod refused_create_collation {}
     surface = "rusqlite::Connection::busy_handler",
     concept = "concept:sql-busy-handler",
     reason = "Dynamic callback-based busy handler. concept:sql-busy-timeout (which this kit DOES bind) covers the timeout-shaped variant; the callback-shaped variant is SQLite-specific and Postgres/MySQL have no analog at this granularity.",
-    would_close_with_cluster = "Callback-based busy-collision handling on >=2 SQL drivers",
+    would_close_with_cluster = "Callback-based busy-collision handling on >=2 SQL drivers"
 )]
 pub mod refused_busy_handler {}
 
@@ -674,7 +669,7 @@ pub mod refused_busy_handler {}
     surface = "rusqlite::Row::get_pointer",
     concept = "concept:sql-row-pointer-type",
     reason = "Pointer-passing through SQLite's auxiliary data interface. SQLite-specific feature; not a concept the substrate carries today.",
-    would_close_with_cluster = "Pointer-passing row column type on >=2 SQL drivers",
+    would_close_with_cluster = "Pointer-passing row column type on >=2 SQL drivers"
 )]
 pub mod refused_row_get_pointer {}
 
@@ -682,7 +677,7 @@ pub mod refused_row_get_pointer {}
     surface = "rusqlite::Connection::pragma_query",
     concept = "concept:sql-pragma",
     reason = "PRAGMA bindings deferred to provekit-shim-rusqlite v0.2. rusqlite 0.39's PRAGMA API uses `DatabaseName<'_>` whose exact crate-level re-export path needs cargo-verified confirmation before binding. Substrate-honest discipline: refuse to ship API shapes that have not been verified to compile against the upstream crate.",
-    would_close_with_cluster = "Cargo-verified API shape for rusqlite 0.39 PRAGMA family",
+    would_close_with_cluster = "Cargo-verified API shape for rusqlite 0.39 PRAGMA family"
 )]
 pub mod refused_pragma_query {}
 
@@ -690,7 +685,7 @@ pub mod refused_pragma_query {}
     surface = "rusqlite::Connection::pragma_query_value",
     concept = "concept:sql-pragma",
     reason = "Same as refused_pragma_query: API shape verification pending for v0.2.",
-    would_close_with_cluster = "Cargo-verified API shape for rusqlite 0.39 PRAGMA family",
+    would_close_with_cluster = "Cargo-verified API shape for rusqlite 0.39 PRAGMA family"
 )]
 pub mod refused_pragma_query_value {}
 
@@ -698,7 +693,7 @@ pub mod refused_pragma_query_value {}
     surface = "rusqlite::Connection::pragma_update",
     concept = "concept:sql-pragma",
     reason = "Same as refused_pragma_query: API shape verification pending for v0.2.",
-    would_close_with_cluster = "Cargo-verified API shape for rusqlite 0.39 PRAGMA family",
+    would_close_with_cluster = "Cargo-verified API shape for rusqlite 0.39 PRAGMA family"
 )]
 pub mod refused_pragma_update {}
 
@@ -706,7 +701,7 @@ pub mod refused_pragma_update {}
     surface = "rusqlite::Connection::db_name",
     concept = "concept:contract-observation",
     reason = "Feature-gated behind `modern_sqlite` and return type signature (Result<String> vs Option<String>) needs cargo-verified confirmation. Deferred to v0.2.",
-    would_close_with_cluster = "Cargo-verified API signature for db_name under modern_sqlite feature",
+    would_close_with_cluster = "Cargo-verified API signature for db_name under modern_sqlite feature"
 )]
 pub mod refused_db_name {}
 
@@ -762,8 +757,8 @@ mod tests {
              INSERT INTO animals VALUES ('owl', 3);",
         )
         .expect("seed");
-        let mut stmt = prepare(&conn, "SELECT kind, count FROM animals ORDER BY count")
-            .expect("prepare");
+        let mut stmt =
+            prepare(&conn, "SELECT kind, count FROM animals ORDER BY count").expect("prepare");
         let rows: Vec<(String, i64)> = stmt_query_map(&mut stmt, [], |row| {
             Ok((row_get(row, 0)?, row_get(row, 1)?))
         })
@@ -794,9 +789,12 @@ mod tests {
         execute(&tx, "INSERT INTO counters VALUES ('a', 1)", []).expect("insert in tx");
         tx_commit(tx).expect("commit");
 
-        let count: i64 = query_row(&conn, "SELECT value FROM counters WHERE name = 'a'", [], |row| {
-            row_get(row, 0)
-        })
+        let count: i64 = query_row(
+            &conn,
+            "SELECT value FROM counters WHERE name = 'a'",
+            [],
+            |row| row_get(row, 0),
+        )
         .expect("query");
         assert_eq!(count, 1);
 

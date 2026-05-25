@@ -768,16 +768,22 @@ mod tests {
         let catalog = HashMapCatalog::default();
         let term = make_op("add", missing_cid.clone(), vec![const_leaf()]);
 
-        let err =
-            assert_concept_tier_with_exam_manifest(&term, &catalog, "rust", Some(&manifest))
-                .expect_err("missing concept-tier op must be refused");
+        let err = assert_concept_tier_with_exam_manifest(&term, &catalog, "rust", Some(&manifest))
+            .expect_err("missing concept-tier op must be refused");
 
-        let expected =
-            crate::exam_manifest::exam_question_cid_for(&manifest, "morphism", "concept:add", "rust")
-                .expect("lookup succeeds")
-                .expect("add/rust question exists");
+        let expected = crate::exam_manifest::exam_question_cid_for(
+            &manifest,
+            "morphism",
+            "concept:add",
+            "rust",
+        )
+        .expect("lookup succeeds")
+        .expect("add/rust question exists");
         assert_eq!(err.node_op_cid, missing_cid);
-        assert_eq!(err.exam_manifest_cid.as_deref(), Some(manifest.header.cid.as_str()));
+        assert_eq!(
+            err.exam_manifest_cid.as_deref(),
+            Some(manifest.header.cid.as_str())
+        );
         assert_eq!(err.exam_question_cid.as_deref(), Some(expected.as_str()));
     }
 
@@ -802,19 +808,32 @@ mod tests {
         let catalog = HashMapCatalog::default();
         let term = make_op("sub", missing_cid, vec![const_leaf()]);
 
-        let err =
-            assert_concept_tier_with_exam_manifest(&term, &catalog, "rust", Some(&manifest))
-                .expect_err("missing concept-tier op must be refused");
+        let err = assert_concept_tier_with_exam_manifest(&term, &catalog, "rust", Some(&manifest))
+            .expect_err("missing concept-tier op must be refused");
 
-        let sub_question =
-            crate::exam_manifest::exam_question_cid_for(&manifest, "morphism", "concept:sub", "rust")
-                .expect("lookup succeeds")
-                .expect("sub/rust question exists");
-        let add_question =
-            crate::exam_manifest::exam_question_cid_for(&manifest, "morphism", "concept:add", "rust")
-                .expect("lookup succeeds")
-                .expect("add/rust question exists");
-        assert_eq!(err.exam_question_cid.as_deref(), Some(sub_question.as_str()));
-        assert_ne!(err.exam_question_cid.as_deref(), Some(add_question.as_str()));
+        let sub_question = crate::exam_manifest::exam_question_cid_for(
+            &manifest,
+            "morphism",
+            "concept:sub",
+            "rust",
+        )
+        .expect("lookup succeeds")
+        .expect("sub/rust question exists");
+        let add_question = crate::exam_manifest::exam_question_cid_for(
+            &manifest,
+            "morphism",
+            "concept:add",
+            "rust",
+        )
+        .expect("lookup succeeds")
+        .expect("add/rust question exists");
+        assert_eq!(
+            err.exam_question_cid.as_deref(),
+            Some(sub_question.as_str())
+        );
+        assert_ne!(
+            err.exam_question_cid.as_deref(),
+            Some(add_question.as_str())
+        );
     }
 }

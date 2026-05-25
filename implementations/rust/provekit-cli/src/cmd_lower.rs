@@ -83,14 +83,18 @@ pub struct LowerArgs {
     pub flags: OutputFlags,
 }
 
-fn parse_lower_family_library_pair(raw: &str) -> Result<crate::cmd_materialize::FamilyLibraryPair, String> {
+fn parse_lower_family_library_pair(
+    raw: &str,
+) -> Result<crate::cmd_materialize::FamilyLibraryPair, String> {
     let (family, library) = raw
         .split_once('=')
         .ok_or_else(|| format!("--family-library expects `family=library`, got: {raw}"))?;
     let family = family.trim();
     let library = library.trim();
     if family.is_empty() || library.is_empty() {
-        return Err(format!("--family-library expects non-empty family + library, got: {raw}"));
+        return Err(format!(
+            "--family-library expects non-empty family + library, got: {raw}"
+        ));
     }
     Ok(crate::cmd_materialize::FamilyLibraryPair {
         family: family.to_string(),
@@ -279,7 +283,13 @@ fn lower_named_terms(
         .cloned()
         .or_else(|| named.workspace_root.as_ref().map(PathBuf::from))
         .unwrap_or_else(|| PathBuf::from("."));
-    let source = match lower_named_document(&project_root, target, &named, default_library, family_library) {
+    let source = match lower_named_document(
+        &project_root,
+        target,
+        &named,
+        default_library,
+        family_library,
+    ) {
         Ok(source) => source,
         Err(LowerNamedError::Message(error)) => {
             eprintln!("{}: {error}", "error".red().bold());
@@ -298,19 +308,24 @@ fn lower_named_terms(
             "kind": "lower-loss-records",
             "target": target,
             "terms": loss_report,
-        })).unwrap_or_else(|_| "[]".to_string());
+        }))
+        .unwrap_or_else(|_| "[]".to_string());
         match output {
             Some(out_path) => {
-                let sidecar_path = PathBuf::from(format!(
-                    "{}.loss-records.json", out_path.display()));
+                let sidecar_path =
+                    PathBuf::from(format!("{}.loss-records.json", out_path.display()));
                 if let Err(error) = write_bytes(Some(&sidecar_path), sidecar_json.as_bytes()) {
-                    eprintln!("{}: failed to write loss-records sidecar: {error}",
-                        "warning".yellow().bold());
+                    eprintln!(
+                        "{}: failed to write loss-records sidecar: {error}",
+                        "warning".yellow().bold()
+                    );
                 } else {
-                    eprintln!("{}: wrote {} ({} term(s) with loss or refusal)",
+                    eprintln!(
+                        "{}: wrote {} ({} term(s) with loss or refusal)",
                         "loss-records".cyan(),
                         sidecar_path.display(),
-                        loss_report.len());
+                        loss_report.len()
+                    );
                 }
             }
             None => {
@@ -353,46 +368,113 @@ fn parse_named_or_bind_payload(raw: &[u8]) -> Result<NamedTermDocument, String> 
 /// substrate-honest path: ir-document IS the source of truth; bind's
 /// op-tree round-trip is a legacy shape.
 fn named_term_document_from_ir_document(ir_doc: &Json) -> Result<NamedTermDocument, String> {
-    let ir = ir_doc.get("ir").and_then(Json::as_array)
+    let ir = ir_doc
+        .get("ir")
+        .and_then(Json::as_array)
         .ok_or_else(|| "ir-document missing `ir` array".to_string())?;
     let mut terms = Vec::new();
     for entry in ir {
         let kind = entry.get("kind").and_then(Json::as_str).unwrap_or("");
-        if kind != "library-sugar-binding-entry" { continue; }
-        let concept_name = entry.get("concept_name").and_then(Json::as_str).unwrap_or("").to_string();
-        let function = entry.get("source_function_name").and_then(Json::as_str).unwrap_or("").to_string();
+        if kind != "library-sugar-binding-entry" {
+            continue;
+        }
+        let concept_name = entry
+            .get("concept_name")
+            .and_then(Json::as_str)
+            .unwrap_or("")
+            .to_string();
+        let function = entry
+            .get("source_function_name")
+            .and_then(Json::as_str)
+            .unwrap_or("")
+            .to_string();
         let name = concept_name.replace("concept:", "").replace('-', "_");
-        let param_names: Vec<String> = entry.get("param_names")
+        let param_names: Vec<String> = entry
+            .get("param_names")
             .and_then(Json::as_array)
-            .map(|a| a.iter().filter_map(|v| v.as_str().map(String::from)).collect())
+            .map(|a| {
+                a.iter()
+                    .filter_map(|v| v.as_str().map(String::from))
+                    .collect()
+            })
             .unwrap_or_default();
-        let param_types: Vec<String> = entry.get("param_types")
+        let param_types: Vec<String> = entry
+            .get("param_types")
             .and_then(Json::as_array)
-            .map(|a| a.iter().filter_map(|v| v.as_str().map(String::from)).collect())
+            .map(|a| {
+                a.iter()
+                    .filter_map(|v| v.as_str().map(String::from))
+                    .collect()
+            })
             .unwrap_or_default();
-        let return_type = entry.get("return_type").and_then(Json::as_str)
+        let return_type = entry
+            .get("return_type")
+            .and_then(Json::as_str)
             .filter(|s| !s.is_empty())
-            .unwrap_or("()").to_string();
-        let visibility = entry.get("visibility").and_then(Json::as_str).unwrap_or("").to_string();
-        let generic_params = entry.get("generic_params").and_then(Json::as_str).unwrap_or("").to_string();
-        let original_param_types: Vec<String> = entry.get("original_param_types")
+            .unwrap_or("()")
+            .to_string();
+        let visibility = entry
+            .get("visibility")
+            .and_then(Json::as_str)
+            .unwrap_or("")
+            .to_string();
+        let generic_params = entry
+            .get("generic_params")
+            .and_then(Json::as_str)
+            .unwrap_or("")
+            .to_string();
+        let original_param_types: Vec<String> = entry
+            .get("original_param_types")
             .and_then(Json::as_array)
-            .map(|a| a.iter().filter_map(|v| v.as_str().map(String::from)).collect())
+            .map(|a| {
+                a.iter()
+                    .filter_map(|v| v.as_str().map(String::from))
+                    .collect()
+            })
             .unwrap_or_default();
-        let param_sort_cids: Vec<String> = entry.get("param_sort_cids")
+        let param_sort_cids: Vec<String> = entry
+            .get("param_sort_cids")
             .and_then(Json::as_array)
-            .map(|a| a.iter().filter_map(|v| v.as_str().map(String::from)).collect())
+            .map(|a| {
+                a.iter()
+                    .filter_map(|v| v.as_str().map(String::from))
+                    .collect()
+            })
             .unwrap_or_default();
-        let return_sort_cid = entry.get("return_sort_cid").and_then(Json::as_str).unwrap_or("").to_string();
-        let doc_lines: Vec<String> = entry.get("doc_lines")
+        let return_sort_cid = entry
+            .get("return_sort_cid")
+            .and_then(Json::as_str)
+            .unwrap_or("")
+            .to_string();
+        let doc_lines: Vec<String> = entry
+            .get("doc_lines")
             .and_then(Json::as_array)
-            .map(|a| a.iter().filter_map(|v| v.as_str().map(String::from)).collect())
+            .map(|a| {
+                a.iter()
+                    .filter_map(|v| v.as_str().map(String::from))
+                    .collect()
+            })
             .unwrap_or_default();
-        let term_shape = entry.get("term_shape").cloned().unwrap_or(serde_json::json!({}));
-        let term_shape_cid = entry.get("term_shape_cid").and_then(Json::as_str).unwrap_or("").to_string();
-        let site_memento_cid = entry.get("signature_shape_cid").and_then(Json::as_str).unwrap_or("").to_string();
-        let file = entry.get("body_source").and_then(|bs| bs.get("file"))
-            .and_then(Json::as_str).unwrap_or("").to_string();
+        let term_shape = entry
+            .get("term_shape")
+            .cloned()
+            .unwrap_or(serde_json::json!({}));
+        let term_shape_cid = entry
+            .get("term_shape_cid")
+            .and_then(Json::as_str)
+            .unwrap_or("")
+            .to_string();
+        let site_memento_cid = entry
+            .get("signature_shape_cid")
+            .and_then(Json::as_str)
+            .unwrap_or("")
+            .to_string();
+        let file = entry
+            .get("body_source")
+            .and_then(|bs| bs.get("file"))
+            .and_then(Json::as_str)
+            .unwrap_or("")
+            .to_string();
 
         let term_json = serde_json::json!({
             "conceptName": concept_name,
@@ -419,32 +501,46 @@ fn named_term_document_from_ir_document(ir_doc: &Json) -> Result<NamedTermDocume
             .map_err(|e| format!("convert ir-document entry to NamedTerm: {e}"))?;
         terms.push(term);
     }
-    let workspace_root = ir_doc.get("workspaceRoot").and_then(Json::as_str).map(String::from);
+    let workspace_root = ir_doc
+        .get("workspaceRoot")
+        .and_then(Json::as_str)
+        .map(String::from);
     // Collect @boundary entries (bind-lift-entry that AREN'T also sugar).
     // The substrate's lower side uses these to emit boundary primitive
     // stubs in the target compilation unit alongside the @sugar functions.
-    let sugar_names: std::collections::HashSet<String> = ir.iter()
+    let sugar_names: std::collections::HashSet<String> = ir
+        .iter()
         .filter(|e| e.get("kind").and_then(Json::as_str) == Some("library-sugar-binding-entry"))
-        .filter_map(|e| e.get("source_function_name").and_then(Json::as_str).map(String::from))
+        .filter_map(|e| {
+            e.get("source_function_name")
+                .and_then(Json::as_str)
+                .map(String::from)
+        })
         .collect();
-    let boundary_entries: Vec<Json> = ir.iter()
+    let boundary_entries: Vec<Json> = ir
+        .iter()
         .filter(|e| e.get("kind").and_then(Json::as_str) == Some("bind-lift-entry"))
         .filter(|e| {
-            e.get("source_function_name").and_then(Json::as_str)
+            e.get("source_function_name")
+                .and_then(Json::as_str)
                 .map(|fn_| !sugar_names.contains(fn_))
                 .unwrap_or(false)
         })
         .cloned()
         .collect();
-    let trait_decls: Vec<Json> = ir.iter()
+    let trait_decls: Vec<Json> = ir
+        .iter()
         .filter(|e| e.get("kind").and_then(Json::as_str) == Some("trait-decl"))
         .cloned()
         .collect();
-    let module_items: Vec<Json> = ir.iter()
-        .filter(|e| matches!(
-            e.get("kind").and_then(Json::as_str),
-            Some("const-decl") | Some("struct-decl") | Some("enum-decl")
-        ))
+    let module_items: Vec<Json> = ir
+        .iter()
+        .filter(|e| {
+            matches!(
+                e.get("kind").and_then(Json::as_str),
+                Some("const-decl") | Some("struct-decl") | Some("enum-decl")
+            )
+        })
         .cloned()
         .collect();
     Ok(NamedTermDocument {
@@ -453,7 +549,11 @@ fn named_term_document_from_ir_document(ir_doc: &Json) -> Result<NamedTermDocume
         kind: "named-term-document".to_string(),
         promotion_decision_mementos: Vec::new(),
         schema_version: "1".to_string(),
-        source_language: ir_doc.get("sourceLanguage").and_then(Json::as_str).unwrap_or("rust").to_string(),
+        source_language: ir_doc
+            .get("sourceLanguage")
+            .and_then(Json::as_str)
+            .unwrap_or("rust")
+            .to_string(),
         terms,
         boundary_entries,
         trait_decls,
@@ -485,7 +585,11 @@ fn lower_named_document(
     // term type propagation.
     let mut function_return_types = serde_json::Map::new();
     for t in &named.terms {
-        let fn_name = if !t.function.is_empty() { t.function.clone() } else { t.name.clone() };
+        let fn_name = if !t.function.is_empty() {
+            t.function.clone()
+        } else {
+            t.name.clone()
+        };
         if !fn_name.is_empty() {
             function_return_types.insert(fn_name, Json::String(t.return_type.clone()));
         }
@@ -514,7 +618,10 @@ fn lower_named_document(
     for term in &named.terms {
         let mut spec = realize_spec_from_named_term(term).map_err(LowerNamedError::Message)?;
         if let Some(obj) = spec.as_object_mut() {
-            obj.insert("function_return_types".to_string(), function_return_types.clone());
+            obj.insert(
+                "function_return_types".to_string(),
+                function_return_types.clone(),
+            );
         }
         let sugar_fn = realize_function_name_with_sugar(term);
         if spec.get("function").and_then(|v| v.as_str()) != Some(sugar_fn) {
@@ -524,11 +631,20 @@ fn lower_named_document(
         // find which realize plugin claims that concept. Apply --family-library
         // override or --library default for disambiguation.
         let library_tag = resolve_library_for_concept(
-            project_root, target, &term.concept_name, default_library, family_library,
+            project_root,
+            target,
+            &term.concept_name,
+            default_library,
+            family_library,
         );
-        let realized = lower_named_spec_via_path_full(project_root, target, spec, library_tag.as_deref())?;
+        let realized =
+            lower_named_spec_via_path_full(project_root, target, spec, library_tag.as_deref())?;
         // Collect loss / refuse evidence.
-        let has_loss = realized.observed_loss_record.as_object().map(|o| !o.is_empty()).unwrap_or(false);
+        let has_loss = realized
+            .observed_loss_record
+            .as_object()
+            .map(|o| !o.is_empty())
+            .unwrap_or(false);
         if has_loss || realized.is_stub {
             per_term_losses.push(serde_json::json!({
                 "function": sugar_fn,
@@ -574,18 +690,31 @@ fn strip_transported_class_wrapper(source: &str) -> String {
             break;
         }
     }
-    let Some(s) = start else { return source.to_string(); };
+    let Some(s) = start else {
+        return source.to_string();
+    };
     // Find matching close: track brace depth from `{` on the opener.
     let mut depth = 0i32;
     let mut close = None;
     for (i, l) in lines.iter().enumerate().skip(s) {
         for c in l.chars() {
-            if c == '{' { depth += 1; }
-            else if c == '}' { depth -= 1; if depth == 0 { close = Some(i); break; } }
+            if c == '{' {
+                depth += 1;
+            } else if c == '}' {
+                depth -= 1;
+                if depth == 0 {
+                    close = Some(i);
+                    break;
+                }
+            }
         }
-        if close.is_some() { break; }
+        if close.is_some() {
+            break;
+        }
     }
-    let Some(e) = close else { return source.to_string(); };
+    let Some(e) = close else {
+        return source.to_string();
+    };
     // Pre-wrapper lines (e.g. citation comments) + inner lines + post-wrapper.
     let mut out = String::new();
     for l in &lines[..s] {
@@ -612,7 +741,10 @@ fn map_rust_type_to_java(t: &str) -> String {
     // Normalize whitespace inside the type (`[u8; 64]` → `[u8;64]`) for
     // stable matching.
     let normalized: String = t.split_whitespace().collect();
-    let trimmed = normalized.trim_start_matches('&').trim_start_matches("mut").to_string();
+    let trimmed = normalized
+        .trim_start_matches('&')
+        .trim_start_matches("mut")
+        .to_string();
     let t: &str = trimmed.as_str();
     // Fixed-size byte array: `[u8;N]` → byte[].
     if t.starts_with("[u8;") && t.ends_with(']') {
@@ -670,7 +802,9 @@ fn emit_java_module_preamble(
     module_items: &[Json],
 ) -> String {
     let mut out = String::new();
-    out.push_str("// AUTO-GENERATED from rust @boundary declarations via provekit lower --target java\n");
+    out.push_str(
+        "// AUTO-GENERATED from rust @boundary declarations via provekit lower --target java\n",
+    );
     out.push_str("package com.provekit.crossplatform;\n\n");
     out.push_str("import com.fasterxml.jackson.databind.JsonNode;\n");
     out.push_str("import com.fasterxml.jackson.databind.ObjectMapper;\n");
@@ -682,12 +816,15 @@ fn emit_java_module_preamble(
     out.push_str("    public static final ObjectMapper MAPPER = new ObjectMapper();\n");
     // Constants lifted from rust source via const-decl IR entries.
     // Replaces the hardcoded PLUGIN_VERSION etc.
-    let const_decls: Vec<&Json> = module_items.iter()
+    let const_decls: Vec<&Json> = module_items
+        .iter()
         .filter(|m| m.get("kind").and_then(Json::as_str) == Some("const-decl"))
         .collect();
     for c in &const_decls {
         let name = c.get("name").and_then(Json::as_str).unwrap_or("");
-        if name.is_empty() { continue; }
+        if name.is_empty() {
+            continue;
+        }
         let ty = c.get("type").and_then(Json::as_str).unwrap_or("");
         let value = c.get("value").and_then(Json::as_str).unwrap_or("\"\"");
         let java_type = map_rust_type_to_java(ty);
@@ -716,23 +853,40 @@ fn emit_java_module_preamble(
         out.push_str("    }\n\n");
     } else {
         for trait_decl in trait_decls {
-            let name = trait_decl.get("name").and_then(Json::as_str).unwrap_or("UnnamedTrait");
+            let name = trait_decl
+                .get("name")
+                .and_then(Json::as_str)
+                .unwrap_or("UnnamedTrait");
             out.push_str(&format!("    public interface {} {{\n", name));
             if let Some(methods) = trait_decl.get("methods").and_then(Json::as_array) {
                 for m in methods {
                     let mname = m.get("name").and_then(Json::as_str).unwrap_or("");
-                    if mname.is_empty() { continue; }
-                    let param_names: Vec<&str> = m.get("param_names").and_then(Json::as_array)
-                        .map(|a| a.iter().filter_map(Json::as_str).collect()).unwrap_or_default();
-                    let param_types: Vec<&str> = m.get("param_types").and_then(Json::as_array)
-                        .map(|a| a.iter().filter_map(Json::as_str).collect()).unwrap_or_default();
+                    if mname.is_empty() {
+                        continue;
+                    }
+                    let param_names: Vec<&str> = m
+                        .get("param_names")
+                        .and_then(Json::as_array)
+                        .map(|a| a.iter().filter_map(Json::as_str).collect())
+                        .unwrap_or_default();
+                    let param_types: Vec<&str> = m
+                        .get("param_types")
+                        .and_then(Json::as_array)
+                        .map(|a| a.iter().filter_map(Json::as_str).collect())
+                        .unwrap_or_default();
                     let return_type = m.get("return_type").and_then(Json::as_str).unwrap_or("()");
                     let java_return = map_rust_type_to_java(return_type);
-                    let java_params: Vec<String> = param_names.iter().zip(param_types.iter())
+                    let java_params: Vec<String> = param_names
+                        .iter()
+                        .zip(param_types.iter())
                         .map(|(n, t)| format!("{} {}", map_rust_type_to_java(t), n))
                         .collect();
-                    out.push_str(&format!("        {} {}({});\n",
-                        java_return, mname, java_params.join(", ")));
+                    out.push_str(&format!(
+                        "        {} {}({});\n",
+                        java_return,
+                        mname,
+                        java_params.join(", ")
+                    ));
                 }
             }
             out.push_str("    }\n\n");
@@ -740,11 +894,15 @@ fn emit_java_module_preamble(
     }
     out.push_str("    // \u{2500}\u{2500}\u{2500} @boundary primitives (auto-emitted from rust @boundary declarations) \u{2500}\u{2500}\u{2500}\n");
     for entry in boundary_entries {
-        let fn_name = entry.get("source_function_name")
+        let fn_name = entry
+            .get("source_function_name")
             .and_then(Json::as_str)
             .unwrap_or("");
-        if fn_name.is_empty() { continue; }
-        let param_names: Vec<&str> = entry.get("param_names")
+        if fn_name.is_empty() {
+            continue;
+        }
+        let param_names: Vec<&str> = entry
+            .get("param_names")
             .and_then(Json::as_array)
             .map(|a| a.iter().filter_map(Json::as_str).collect())
             .unwrap_or_default();
@@ -752,22 +910,28 @@ fn emit_java_module_preamble(
         // the bind-lift-entry (so federation byte-identity holds); the Java
         // boundary emitter reads them from there. Fall back to the bare keys
         // for any older/other entry shape that still emits them inline.
-        let param_types: Vec<&str> = entry.get("realize_param_types")
+        let param_types: Vec<&str> = entry
+            .get("realize_param_types")
             .or_else(|| entry.get("param_types"))
             .and_then(Json::as_array)
             .map(|a| a.iter().filter_map(Json::as_str).collect())
             .unwrap_or_default();
-        let return_type = entry.get("realize_return_type")
+        let return_type = entry
+            .get("realize_return_type")
             .or_else(|| entry.get("return_type"))
             .and_then(Json::as_str)
             .unwrap_or("()");
         let java_return = map_rust_type_to_java(return_type);
-        let java_params: Vec<String> = param_names.iter().zip(param_types.iter())
+        let java_params: Vec<String> = param_names
+            .iter()
+            .zip(param_types.iter())
             .map(|(n, t)| format!("{} {}", map_rust_type_to_java(t), n))
             .collect();
         out.push_str(&format!(
             "    public static {} {}({}) {{\n",
-            java_return, fn_name, java_params.join(", ")
+            java_return,
+            fn_name,
+            java_params.join(", ")
         ));
         out.push_str(&format!(
             "        throw new UnsupportedOperationException(\"boundary stub: {}\");\n",
@@ -778,67 +942,103 @@ fn emit_java_module_preamble(
     // Struct declarations from rust → nested java records.
     // Each rust struct `Foo { f1: T1, f2: T2 }` becomes a java
     // `public record Foo(T1 f1, T2 f2) {}` inside the wrapper class.
-    let struct_decls: Vec<&Json> = module_items.iter()
+    let struct_decls: Vec<&Json> = module_items
+        .iter()
         .filter(|m| m.get("kind").and_then(Json::as_str) == Some("struct-decl"))
         .collect();
     for s in &struct_decls {
         let name = s.get("name").and_then(Json::as_str).unwrap_or("");
-        if name.is_empty() { continue; }
-        let fields: Vec<&Json> = s.get("fields").and_then(Json::as_array)
-            .map(|a| a.iter().collect()).unwrap_or_default();
-        let java_fields: Vec<String> = fields.iter().map(|f| {
-            let fname = f.get("name").and_then(Json::as_str).unwrap_or("");
-            let ftype = f.get("type").and_then(Json::as_str).unwrap_or("");
-            // Vec<Value> → java.util.List<JsonNode>
-            let jty = if ftype.starts_with("Vec<") && ftype.ends_with('>') {
-                let inner = &ftype[4..ftype.len()-1];
-                format!("java.util.List<{}>", map_rust_type_to_java(inner))
-            } else {
-                map_rust_type_to_java(ftype)
-            };
-            format!("{} {}", jty, fname)
-        }).collect();
+        if name.is_empty() {
+            continue;
+        }
+        let fields: Vec<&Json> = s
+            .get("fields")
+            .and_then(Json::as_array)
+            .map(|a| a.iter().collect())
+            .unwrap_or_default();
+        let java_fields: Vec<String> = fields
+            .iter()
+            .map(|f| {
+                let fname = f.get("name").and_then(Json::as_str).unwrap_or("");
+                let ftype = f.get("type").and_then(Json::as_str).unwrap_or("");
+                // Vec<Value> → java.util.List<JsonNode>
+                let jty = if ftype.starts_with("Vec<") && ftype.ends_with('>') {
+                    let inner = &ftype[4..ftype.len() - 1];
+                    format!("java.util.List<{}>", map_rust_type_to_java(inner))
+                } else {
+                    map_rust_type_to_java(ftype)
+                };
+                format!("{} {}", jty, fname)
+            })
+            .collect();
         out.push_str(&format!(
             "    public record {}({}) {{}}\n",
-            name, java_fields.join(", ")
+            name,
+            java_fields.join(", ")
         ));
     }
-    if !struct_decls.is_empty() { out.push('\n'); }
+    if !struct_decls.is_empty() {
+        out.push('\n');
+    }
 
     // Enum declarations from rust → java sealed interfaces with one
     // record per variant. `enum LiftError { InvalidParams(String) }`
     // becomes `public sealed interface LiftError permits ... { record
     // InvalidParams(String value) implements LiftError {} }`.
-    let enum_decls: Vec<&Json> = module_items.iter()
+    let enum_decls: Vec<&Json> = module_items
+        .iter()
         .filter(|m| m.get("kind").and_then(Json::as_str) == Some("enum-decl"))
         .collect();
     for e in &enum_decls {
         let name = e.get("name").and_then(Json::as_str).unwrap_or("");
-        if name.is_empty() { continue; }
-        let variants: Vec<&Json> = e.get("variants").and_then(Json::as_array)
-            .map(|a| a.iter().collect()).unwrap_or_default();
-        let variant_names: Vec<&str> = variants.iter()
-            .filter_map(|v| v.get("name").and_then(Json::as_str)).collect();
+        if name.is_empty() {
+            continue;
+        }
+        let variants: Vec<&Json> = e
+            .get("variants")
+            .and_then(Json::as_array)
+            .map(|a| a.iter().collect())
+            .unwrap_or_default();
+        let variant_names: Vec<&str> = variants
+            .iter()
+            .filter_map(|v| v.get("name").and_then(Json::as_str))
+            .collect();
         out.push_str(&format!(
             "    public sealed interface {} permits {}.{} {{\n",
-            name, name, variant_names.join(&format!(", {}.", name))
+            name,
+            name,
+            variant_names.join(&format!(", {}.", name))
         ));
         for v in &variants {
             let vname = v.get("name").and_then(Json::as_str).unwrap_or("");
-            if vname.is_empty() { continue; }
-            let payload_types: Vec<&str> = v.get("payload_types").and_then(Json::as_array)
-                .map(|a| a.iter().filter_map(Json::as_str).collect()).unwrap_or_default();
-            let java_params: Vec<String> = payload_types.iter().enumerate()
-                .map(|(i, t)| format!("{} v{}", map_rust_type_to_java(t), i)).collect();
+            if vname.is_empty() {
+                continue;
+            }
+            let payload_types: Vec<&str> = v
+                .get("payload_types")
+                .and_then(Json::as_array)
+                .map(|a| a.iter().filter_map(Json::as_str).collect())
+                .unwrap_or_default();
+            let java_params: Vec<String> = payload_types
+                .iter()
+                .enumerate()
+                .map(|(i, t)| format!("{} v{}", map_rust_type_to_java(t), i))
+                .collect();
             out.push_str(&format!(
                 "        public record {}({}) implements {} {{}}\n",
-                vname, java_params.join(", "), name
+                vname,
+                java_params.join(", "),
+                name
             ));
         }
         out.push_str("    }\n");
     }
-    if !enum_decls.is_empty() { out.push('\n'); }
-    out.push_str("    // \u{2500}\u{2500}\u{2500} @sugar functions follow \u{2500}\u{2500}\u{2500}\n\n");
+    if !enum_decls.is_empty() {
+        out.push('\n');
+    }
+    out.push_str(
+        "    // \u{2500}\u{2500}\u{2500} @sugar functions follow \u{2500}\u{2500}\u{2500}\n\n",
+    );
     out
 }
 
@@ -861,16 +1061,16 @@ fn resolve_library_for_concept(
     // so cmd_lower works in development workflows without requiring a sealed
     // registry. This mirrors the dispatch_realize path which also falls
     // through to the live candidates when the registry is empty.
-    let mut candidates = crate::kit_dispatch::registry_realize_candidates(project_root, target).ok()?;
+    let mut candidates =
+        crate::kit_dispatch::registry_realize_candidates(project_root, target).ok()?;
     if candidates.is_empty() {
-        candidates = crate::kit_dispatch::live_realize_candidates(project_root, target)
-            .unwrap_or_default();
+        candidates =
+            crate::kit_dispatch::live_realize_candidates(project_root, target).unwrap_or_default();
     }
     let mut claimers: Vec<String> = Vec::new();
     for cand in &candidates {
-        let concepts = crate::kit_dispatch::provides_concepts_for_realize(
-            project_root, target, &cand.tag,
-        );
+        let concepts =
+            crate::kit_dispatch::provides_concepts_for_realize(project_root, target, &cand.tag);
         if concepts.iter().any(|c| c == concept_name) {
             claimers.push(cand.tag.clone());
         }
@@ -899,7 +1099,8 @@ fn resolve_library_for_concept(
             if let Some(m) = manifest {
                 if let Some(family) = &m.family {
                     if crate::cmd_materialize::family_matches_override(family, &pair.family)
-                        && tag == &pair.library {
+                        && tag == &pair.library
+                    {
                         return Some(tag.clone());
                     }
                 }

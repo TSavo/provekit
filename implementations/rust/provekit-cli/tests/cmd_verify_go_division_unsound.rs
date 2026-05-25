@@ -73,10 +73,18 @@ fn unique_dir(suffix: &str) -> PathBuf {
 
 fn build_go_lift_verify() -> PathBuf {
     let go_module = repo_root().join("implementations").join("go");
-    let out = std::env::temp_dir().join(format!("provekit-lift-go-verify-div-{}", std::process::id()));
+    let out = std::env::temp_dir().join(format!(
+        "provekit-lift-go-verify-div-{}",
+        std::process::id()
+    ));
     let built = Command::new("go")
         .current_dir(&go_module)
-        .args(["build", "-o", out.to_str().unwrap(), "./cmd/provekit-lift-go-verify"])
+        .args([
+            "build",
+            "-o",
+            out.to_str().unwrap(),
+            "./cmd/provekit-lift-go-verify",
+        ])
         .output()
         .expect("spawn go build");
     assert!(
@@ -202,7 +210,9 @@ fn assert_undecidable_no_witness(suffix: &str, expected: i64) {
         code, 3,
         "division claim must exit 3 (EXIT_SOLVER_FAIL / undecidable), not 0 (discharged); got {code}"
     );
-    eprintln!("GO_DIV_UNSOUND_GUARD expected={expected} status=undecidable exit={code} witnesses=0");
+    eprintln!(
+        "GO_DIV_UNSOUND_GUARD expected={expected} status=undecidable exit={code} witnesses=0"
+    );
 
     let _ = fs::remove_dir_all(&project);
 }

@@ -167,7 +167,9 @@ pub trait AdapterLifter {
     loss = [],
 )]
 pub fn stdin_read_line() -> Option<String> {
-    unimplemented!("materialize-fillable boundary; per-target stdio shim provides the sugar realization")
+    unimplemented!(
+        "materialize-fillable boundary; per-target stdio shim provides the sugar realization"
+    )
 }
 
 /// `concept:stdio-write-line` — std::io's sugar. Writes one line +
@@ -181,7 +183,9 @@ pub fn stdin_read_line() -> Option<String> {
     loss = [],
 )]
 pub fn stdout_write_line(line: &str) {
-    unimplemented!("materialize-fillable boundary; per-target stdio shim provides the sugar realization")
+    unimplemented!(
+        "materialize-fillable boundary; per-target stdio shim provides the sugar realization"
+    )
 }
 
 /// `concept:stderr-write-line` — std::io's sugar. Writes one line +
@@ -195,7 +199,9 @@ pub fn stdout_write_line(line: &str) {
     loss = [],
 )]
 pub fn stderr_write_line(line: &str) {
-    unimplemented!("materialize-fillable boundary; per-target stdio shim provides the sugar realization")
+    unimplemented!(
+        "materialize-fillable boundary; per-target stdio shim provides the sugar realization"
+    )
 }
 
 /// `concept:json-parse` — serde_json's sugar. Parses one canonical
@@ -209,7 +215,9 @@ pub fn stderr_write_line(line: &str) {
     loss = [],
 )]
 pub fn json_parse(s: &str) -> Result<Value, String> {
-    unimplemented!("materialize-fillable boundary; per-target JSON shim provides the sugar realization")
+    unimplemented!(
+        "materialize-fillable boundary; per-target JSON shim provides the sugar realization"
+    )
 }
 
 /// `concept:json-serialize` — serde_json's sugar. Serializes a JSON
@@ -224,7 +232,9 @@ pub fn json_parse(s: &str) -> Result<Value, String> {
     loss = [],
 )]
 pub fn json_serialize(v: &Value) -> Result<String, String> {
-    unimplemented!("materialize-fillable boundary; per-target JSON shim provides the sugar realization")
+    unimplemented!(
+        "materialize-fillable boundary; per-target JSON shim provides the sugar realization"
+    )
 }
 
 /// `concept:jsonrpc-ndjson-server-loop` — our sugar. NDJSON dispatch
@@ -479,7 +489,9 @@ fn slot_cid(memento: &Value, key: &str) -> String {
     loss = [],
 )]
 pub fn blake3_512_of(bytes: &[u8]) -> [u8; 64] {
-    unimplemented!("materialize-fillable boundary; per-target blake3 shim provides the sugar realization")
+    unimplemented!(
+        "materialize-fillable boundary; per-target blake3 shim provides the sugar realization"
+    )
 }
 
 // ---------------------------------------------------------------------
@@ -529,7 +541,9 @@ pub fn blake3_512_cid(bytes: &[u8]) -> String {
     loss = [],
 )]
 pub fn encode_jcs(v: &Value) -> String {
-    unimplemented!("materialize-fillable boundary; per-target JCS shim provides the sugar realization")
+    unimplemented!(
+        "materialize-fillable boundary; per-target JCS shim provides the sugar realization"
+    )
 }
 
 /// `concept:rfc8785-jcs-encode-value` — interior helper of the JCS
@@ -547,7 +561,9 @@ pub fn encode_jcs(v: &Value) -> String {
     loss = [],
 )]
 fn encode_value(v: &Value, out: &mut String) {
-    unimplemented!("materialize-fillable boundary; per-target JCS shim provides the sugar realization")
+    unimplemented!(
+        "materialize-fillable boundary; per-target JCS shim provides the sugar realization"
+    )
 }
 
 /// `concept:rfc8785-jcs-encode-string` — interior helper of the JCS
@@ -563,7 +579,9 @@ fn encode_value(v: &Value, out: &mut String) {
     loss = [],
 )]
 fn encode_string(s: &str, out: &mut String) {
-    unimplemented!("materialize-fillable boundary; per-target JCS shim provides the sugar realization")
+    unimplemented!(
+        "materialize-fillable boundary; per-target JCS shim provides the sugar realization"
+    )
 }
 
 // ---------------------------------------------------------------------

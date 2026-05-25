@@ -6660,12 +6660,8 @@ mod platform_semantic_envelope_tests {
             "Same".to_string(),
             formula_x,
         );
-        let value_y = DimensionValueMemento::new(
-            kit,
-            "Dim".to_string(),
-            "Same".to_string(),
-            formula_y,
-        );
+        let value_y =
+            DimensionValueMemento::new(kit, "Dim".to_string(), "Same".to_string(), formula_y);
 
         assert_ne!(
             value_x.cid, value_y.cid,

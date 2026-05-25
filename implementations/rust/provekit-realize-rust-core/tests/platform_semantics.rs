@@ -155,9 +155,28 @@ fn rust_platform_semantics_covers_a10_operator_surface() {
     assert_eq!(
         op_cids,
         BTreeSet::from([
-            OP_ADD, OP_SUB, OP_MUL, OP_DIV, OP_REM, OP_EQ, OP_NE, OP_LT, OP_LE, OP_GT, OP_GE,
-            OP_AND, OP_OR, OP_NOT, OP_SHL, OP_SHR, OP_BITAND, OP_BITOR, OP_BITXOR, OP_NEG,
-            OP_BITNOT, CONCEPT_LITERAL_CID,
+            OP_ADD,
+            OP_SUB,
+            OP_MUL,
+            OP_DIV,
+            OP_REM,
+            OP_EQ,
+            OP_NE,
+            OP_LT,
+            OP_LE,
+            OP_GT,
+            OP_GE,
+            OP_AND,
+            OP_OR,
+            OP_NOT,
+            OP_SHL,
+            OP_SHR,
+            OP_BITAND,
+            OP_BITOR,
+            OP_BITXOR,
+            OP_NEG,
+            OP_BITNOT,
+            CONCEPT_LITERAL_CID,
         ])
     );
 }

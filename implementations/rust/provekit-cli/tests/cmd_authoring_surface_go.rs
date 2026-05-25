@@ -74,10 +74,18 @@ fn unique_dir(suffix: &str) -> PathBuf {
 
 fn build_go_lift_verify() -> PathBuf {
     let go_module = repo_root().join("implementations").join("go");
-    let out = std::env::temp_dir().join(format!("provekit-lift-go-verify-auth-{}", std::process::id()));
+    let out = std::env::temp_dir().join(format!(
+        "provekit-lift-go-verify-auth-{}",
+        std::process::id()
+    ));
     let built = Command::new("go")
         .current_dir(&go_module)
-        .args(["build", "-o", out.to_str().unwrap(), "./cmd/provekit-lift-go-verify"])
+        .args([
+            "build",
+            "-o",
+            out.to_str().unwrap(),
+            "./cmd/provekit-lift-go-verify",
+        ])
         .output()
         .expect("spawn go build");
     assert!(
@@ -268,7 +276,10 @@ fn go_authoring_surface_declared_contract_discharges() {
 
     assert_eq!(receipt["totalClaims"], 1, "receipt: {receipt}");
     let claim = &receipt["claims"].as_array().expect("claims")[0];
-    assert_eq!(claim["pass"], true, "Id(3)==3 must discharge; claim: {claim}");
+    assert_eq!(
+        claim["pass"], true,
+        "Id(3)==3 must discharge; claim: {claim}"
+    );
     assert_eq!(claim["status"], "discharged", "claim: {claim}");
     let witness_cid = claim["witnessCid"].as_str().expect("witness minted");
     assert!(witness_cid.starts_with("blake3-512:"));

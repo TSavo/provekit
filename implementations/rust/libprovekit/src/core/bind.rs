@@ -262,20 +262,12 @@ pub struct NamedTermDocument {
     /// trait name + per-method signatures. The target plugin uses these
     /// to emit native interface declarations (java interface, etc.)
     /// matching the rust trait — no hand-written interface code.
-    #[serde(
-        default,
-        rename = "traitDecls",
-        skip_serializing_if = "Vec::is_empty"
-    )]
+    #[serde(default, rename = "traitDecls", skip_serializing_if = "Vec::is_empty")]
     pub trait_decls: Vec<Json>,
     /// Module-level item declarations: const, struct, enum. The target
     /// plugin uses these to emit native equivalents (java static
     /// constants, classes/records, sealed interfaces).
-    #[serde(
-        default,
-        rename = "moduleItems",
-        skip_serializing_if = "Vec::is_empty"
-    )]
+    #[serde(default, rename = "moduleItems", skip_serializing_if = "Vec::is_empty")]
     pub module_items: Vec<Json>,
     #[serde(rename = "workspaceRoot", skip_serializing_if = "Option::is_none")]
     pub workspace_root: Option<String>,
@@ -391,11 +383,7 @@ pub struct NamedTerm {
     /// that appear AFTER the `#[provekit::sugar(...)]` attribute. Threaded
     /// through to realize so cycle output preserves source doc comments.
     /// Empty when the source had no post-sugar docs.
-    #[serde(
-        default,
-        rename = "docLines",
-        skip_serializing_if = "Vec::is_empty"
-    )]
+    #[serde(default, rename = "docLines", skip_serializing_if = "Vec::is_empty")]
     pub doc_lines: Vec<String>,
 }
 
@@ -860,7 +848,10 @@ pub fn bind_function_bridge(
     let op_contract_cid = flat_member_cid(&op_contract_env);
 
     let mut bridge_body = serde_json::Map::new();
-    bridge_body.insert("sourceSymbol".into(), Json::String(contract.fn_name.clone()));
+    bridge_body.insert(
+        "sourceSymbol".into(),
+        Json::String(contract.fn_name.clone()),
+    );
     bridge_body.insert("sourceLayer".into(), Json::String(source_layer.to_string()));
     bridge_body.insert(
         "targetContractCid".into(),

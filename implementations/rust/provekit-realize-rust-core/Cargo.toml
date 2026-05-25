@@ -17,5 +17,8 @@ path = "src/main.rs"
 [dependencies]
 provekit-canonicalizer = { path = "../provekit-canonicalizer" }
 provekit-ir-types = { path = "../provekit-ir-types" }
+provekit-proof-envelope = { path = "../provekit-proof-envelope" }
+provekit-shim-postgres = { path = "../../../examples/provekit-shim-postgres" }
+provekit-shim-rusqlite = { path = "../../../examples/provekit-shim-rusqlite" }
 serde = { workspace = true }
 serde_json = { workspace = true }

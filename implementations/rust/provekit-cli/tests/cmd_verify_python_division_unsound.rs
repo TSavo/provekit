@@ -84,8 +84,10 @@ fn unique_dir(suffix: &str) -> PathBuf {
 
 fn build_python_lift_verify() -> PathBuf {
     let src = python_lift_src();
-    let script =
-        std::env::temp_dir().join(format!("provekit-lift-python-verify-div-{}.sh", std::process::id()));
+    let script = std::env::temp_dir().join(format!(
+        "provekit-lift-python-verify-div-{}.sh",
+        std::process::id()
+    ));
     let body = format!(
         "#!/bin/sh\nexec python3 -c \"import sys; sys.path.insert(0, '{}'); \
          from provekit_lift_python_source.verify_rpc import run_rpc; run_rpc()\"\n",
@@ -116,7 +118,9 @@ fn stage_halve_project(suffix: &str, lift_script: &Path, expected: i64) -> PathB
     .expect("write halve.py");
     fs::write(
         project.join("test_halve.py"),
-        format!("from halve import halve\n\n\ndef test_halve():\n    assert halve(-7) == {expected}\n"),
+        format!(
+            "from halve import halve\n\n\ndef test_halve():\n    assert halve(-7) == {expected}\n"
+        ),
     )
     .expect("write test_halve.py");
 
@@ -212,7 +216,9 @@ fn assert_undecidable_no_witness(suffix: &str, expected: i64) {
         code, 3,
         "division claim must exit 3 (EXIT_SOLVER_FAIL / undecidable), not 0 (discharged); got {code}"
     );
-    eprintln!("PYTHON_DIV_UNSOUND_GUARD expected={expected} status=undecidable exit={code} witnesses=0");
+    eprintln!(
+        "PYTHON_DIV_UNSOUND_GUARD expected={expected} status=undecidable exit={code} witnesses=0"
+    );
 
     let _ = fs::remove_dir_all(&project);
 }

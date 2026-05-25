@@ -344,33 +344,46 @@ fn target_lang_file_extension(target_lang: &str) -> &'static str {
 /// syntax (or unsupported) get a comment-listing of the FQNs so the
 /// information isn't lost.
 fn format_imports_for(target_lang: &str, imports: &std::collections::BTreeSet<String>) -> String {
-    if imports.is_empty() { return String::new(); }
+    if imports.is_empty() {
+        return String::new();
+    }
     let lines: Vec<String> = match target_lang {
         "java" => imports.iter().map(|fqn| format!("import {fqn};")).collect(),
-        "python" => imports.iter().map(|fqn| {
-            // Python convention: `import pkg.mod` for module-paths,
-            // `from pkg.mod import Name` when the FQN ends in a Class.
-            // Substrate-honest minimum: if the last segment starts with
-            // an uppercase letter, emit `from ... import Name`; else
-            // emit `import ...`.
-            let mut parts: Vec<&str> = fqn.split('.').collect();
-            if let Some(last) = parts.last().copied() {
-                if last.chars().next().is_some_and(|c| c.is_ascii_uppercase()) && parts.len() > 1 {
-                    parts.pop();
-                    return format!("from {} import {}", parts.join("."), last);
+        "python" => imports
+            .iter()
+            .map(|fqn| {
+                // Python convention: `import pkg.mod` for module-paths,
+                // `from pkg.mod import Name` when the FQN ends in a Class.
+                // Substrate-honest minimum: if the last segment starts with
+                // an uppercase letter, emit `from ... import Name`; else
+                // emit `import ...`.
+                let mut parts: Vec<&str> = fqn.split('.').collect();
+                if let Some(last) = parts.last().copied() {
+                    if last.chars().next().is_some_and(|c| c.is_ascii_uppercase())
+                        && parts.len() > 1
+                    {
+                        parts.pop();
+                        return format!("from {} import {}", parts.join("."), last);
+                    }
                 }
-            }
-            format!("import {}", fqn)
-        }).collect(),
+                format!("import {}", fqn)
+            })
+            .collect(),
         "rust" => imports.iter().map(|fqn| format!("use {fqn};")).collect(),
-        "typescript" => imports.iter().map(|fqn| {
-            // TS imports require explicit named-bindings + module specifier;
-            // a bare FQN can't unambiguously become either ESM or CJS.
-            // Surface as a TODO comment until Milestone C's target-kit
-            // assembler decides.
-            format!("// TODO(#1375 assembly): import binding for `{}`", fqn)
-        }).collect(),
-        _ => imports.iter().map(|fqn| format!("// fragment import: {}", fqn)).collect(),
+        "typescript" => imports
+            .iter()
+            .map(|fqn| {
+                // TS imports require explicit named-bindings + module specifier;
+                // a bare FQN can't unambiguously become either ESM or CJS.
+                // Surface as a TODO comment until Milestone C's target-kit
+                // assembler decides.
+                format!("// TODO(#1375 assembly): import binding for `{}`", fqn)
+            })
+            .collect(),
+        _ => imports
+            .iter()
+            .map(|fqn| format!("// fragment import: {}", fqn))
+            .collect(),
     };
     lines.join("\n")
 }
@@ -391,7 +404,11 @@ enum DiscoveryOutcome {
     /// fully-qualified names the fragment uses from outside its own body.
     /// #1390: `helpers` is the list of static field declarations the
     /// fragment needs hoisted into the compilation unit's class body.
-    Preview { source: String, imports: Vec<String>, helpers: Vec<String> },
+    Preview {
+        source: String,
+        imports: Vec<String>,
+        helpers: Vec<String>,
+    },
     /// Plugin ran but returned is_stub=true; the substrate has a real gap
     /// (no morphism for some sort CID, no body template for concept, etc.).
     SemanticGap,
@@ -676,8 +693,17 @@ fn run_cross_language_discovery(
                     // is REFUSE in the final tally — substrate surfaces
                     // gaps even when the family dispatch resolves.
                     let carrier_family = family_from_payload(&carrier.raw_payload);
-                    match invoke_target_realize_for_discovery(project_root, target_lang, &matches[0], &carrier) {
-                        DiscoveryOutcome::Preview { source: body, imports: fragment_imports, helpers: fragment_helpers } => {
+                    match invoke_target_realize_for_discovery(
+                        project_root,
+                        target_lang,
+                        &matches[0],
+                        &carrier,
+                    ) {
+                        DiscoveryOutcome::Preview {
+                            source: body,
+                            imports: fragment_imports,
+                            helpers: fragment_helpers,
+                        } => {
                             resolves += 1;
                             if !json_report {
                                 eprintln!(
@@ -689,7 +715,11 @@ fn run_cross_language_discovery(
                                     matches[0]
                                 );
                                 let preview: String = body.chars().take(120).collect();
-                                let suffix = if body.chars().count() > 120 { "..." } else { "" };
+                                let suffix = if body.chars().count() > 120 {
+                                    "..."
+                                } else {
+                                    ""
+                                };
                                 eprintln!("      target body preview: {preview}{suffix}");
                             }
                             site_reports.push(SiteReport {
@@ -703,9 +733,7 @@ fn run_cross_language_discovery(
                                 },
                             });
                             if out_dir.is_some() {
-                                let entry = emitted
-                                    .entry(path.to_path_buf())
-                                    .or_default();
+                                let entry = emitted.entry(path.to_path_buf()).or_default();
                                 // #1375 Milestone C / #1390: record the fragment
                                 // shape (source + imports + helpers) so target-
                                 // kit assemble can consume it.
@@ -793,13 +821,20 @@ fn run_cross_language_discovery(
                         family_library_overrides
                             .iter()
                             .find(|p| family_matches_override(family, &p.family))
-                            .and_then(|p| {
-                                matches.iter().find(|m| m.as_str() == p.library).cloned()
-                            })
+                            .and_then(|p| matches.iter().find(|m| m.as_str() == p.library).cloned())
                     });
                     if let Some(pick) = picked {
-                        match invoke_target_realize_for_discovery(project_root, target_lang, &pick, &carrier) {
-                            DiscoveryOutcome::Preview { source: body, imports: fragment_imports, helpers: fragment_helpers } => {
+                        match invoke_target_realize_for_discovery(
+                            project_root,
+                            target_lang,
+                            &pick,
+                            &carrier,
+                        ) {
+                            DiscoveryOutcome::Preview {
+                                source: body,
+                                imports: fragment_imports,
+                                helpers: fragment_helpers,
+                            } => {
                                 resolves += 1;
                                 if !json_report {
                                     eprintln!(
@@ -811,7 +846,11 @@ fn run_cross_language_discovery(
                                         pick
                                     );
                                     let preview: String = body.chars().take(120).collect();
-                                    let suffix = if body.chars().count() > 120 { "..." } else { "" };
+                                    let suffix = if body.chars().count() > 120 {
+                                        "..."
+                                    } else {
+                                        ""
+                                    };
                                     eprintln!("      target body preview: {preview}{suffix}");
                                 }
                                 site_reports.push(SiteReport {
@@ -825,9 +864,7 @@ fn run_cross_language_discovery(
                                     },
                                 });
                                 if out_dir.is_some() {
-                                    let entry = emitted
-                                        .entry(path.to_path_buf())
-                                        .or_default();
+                                    let entry = emitted.entry(path.to_path_buf()).or_default();
                                     // #1375 Milestone C / #1390: fragment with
                                     // source + imports + helpers.
                                     entry.fragments.push(serde_json::json!({
@@ -949,7 +986,10 @@ fn run_cross_language_discovery(
         match serde_json::to_string_pretty(&report) {
             Ok(json) => println!("{json}"),
             Err(err) => {
-                eprintln!("{}: failed to serialize report: {err}", "error".red().bold());
+                eprintln!(
+                    "{}: failed to serialize report: {err}",
+                    "error".red().bold()
+                );
                 return EXIT_USER_ERROR;
             }
         }
@@ -997,7 +1037,8 @@ fn run_cross_language_discovery(
         let mut files_written = 0usize;
         // #1388: aggregate kit-declared classpath entries across all files
         // so the substrate's --compile-check can pass them to javac.
-        let mut aggregated_classpath: std::collections::BTreeSet<String> = std::collections::BTreeSet::new();
+        let mut aggregated_classpath: std::collections::BTreeSet<String> =
+            std::collections::BTreeSet::new();
         for (source_path, file) in &emitted {
             if file.bodies.is_empty() {
                 continue;
@@ -1006,9 +1047,7 @@ fn run_cross_language_discovery(
             // files with the same basename in different directories (e.g.
             // src/lib.rs vs tests/lib.rs, or pkg_a/foo.rs vs pkg_b/foo.rs)
             // don't silently overwrite each other in --out-dir.
-            let rel = source_path
-                .strip_prefix(source_dir)
-                .unwrap_or(source_path);
+            let rel = source_path.strip_prefix(source_dir).unwrap_or(source_path);
             let rel_with_ext = rel.with_extension(ext);
             let out_path = out_dir_path.join(&rel_with_ext);
             if let Some(parent) = out_path.parent() {
@@ -1025,12 +1064,9 @@ fn run_cross_language_discovery(
             // target kit. The kit decides file layout, package, imports,
             // class wrapping. Fall back to substrate-side legacy concat
             // when the kit doesn't implement assemble (method-not-found).
-            let file_basename = rel
-                .file_stem()
-                .and_then(|s| s.to_str())
-                .unwrap_or("lib");
-            let fragments_json = serde_json::to_string(&file.fragments)
-                .unwrap_or_else(|_| "[]".to_string());
+            let file_basename = rel.file_stem().and_then(|s| s.to_str()).unwrap_or("lib");
+            let fragments_json =
+                serde_json::to_string(&file.fragments).unwrap_or_else(|_| "[]".to_string());
             let mut wrote_assembled = false;
             if let Some(manifest) = file.target_manifest.as_deref() {
                 use crate::kit_dispatch::{dispatch_assemble, AssembleError};
@@ -1118,7 +1154,8 @@ fn run_cross_language_discovery(
             // #1388: pass kit-aggregated classpath so javac can find the
             // dependency JARs the materialized code references.
             let classpath: Vec<String> = aggregated_classpath.iter().cloned().collect();
-            let check_result = run_compile_check_with_classpath(target_lang, out_dir_path, &classpath);
+            let check_result =
+                run_compile_check_with_classpath(target_lang, out_dir_path, &classpath);
             if check_result != EXIT_OK {
                 return check_result;
             }
@@ -1211,7 +1248,11 @@ fn run_compile_check_with_classpath(target_lang: &str, out_dir: &Path, classpath
                         any_fail = true;
                     }
                 }
-                if any_fail { EXIT_VERIFY_FAIL } else { EXIT_OK }
+                if any_fail {
+                    EXIT_VERIFY_FAIL
+                } else {
+                    EXIT_OK
+                }
             }
         }
         "python" => {
@@ -1278,7 +1319,11 @@ fn run_compiler_command(cmd: &mut std::process::Command, label: &str) -> u8 {
                 eprintln!(
                     "{}: compile-check: {label} failed (exit {})",
                     "error".red().bold(),
-                    output.status.code().map(|c| c.to_string()).unwrap_or_else(|| "signal".to_string())
+                    output
+                        .status
+                        .code()
+                        .map(|c| c.to_string())
+                        .unwrap_or_else(|| "signal".to_string())
                 );
                 let stderr = String::from_utf8_lossy(&output.stderr);
                 if !stderr.is_empty() {
@@ -1302,9 +1347,7 @@ fn collect_files_by_ext(dir: &Path, ext: &str) -> Vec<PathBuf> {
         .flatten()
         .filter_map(|entry| {
             let path = entry.into_path();
-            if path.is_file()
-                && path.extension().and_then(|e| e.to_str()) == Some(ext)
-            {
+            if path.is_file() && path.extension().and_then(|e| e.to_str()) == Some(ext) {
                 Some(path)
             } else {
                 None
@@ -1507,8 +1550,7 @@ fn materialize_source_dir(
         let (content, receipt, fragments) =
             materialize_source_text(project_root, target_lang, library_tag, &raw)
                 .map_err(|error| format!("{}: {error}", path.display()))?;
-        let replacements =
-            receipt.aggregate_summary.exact + receipt.aggregate_summary.lossy;
+        let replacements = receipt.aggregate_summary.exact + receipt.aggregate_summary.lossy;
         if replacements == 0 && receipt.aggregate_summary.refused == 0 {
             continue;
         }
@@ -1657,8 +1699,7 @@ fn materialize_source_text(
     // Phase E (`#1339`): use the refusal-collecting variant so a
     // `SiteOutcome::Refuse` becomes a first-class entry in the receipt
     // rather than aborting the run with a string Err.
-    let (rewritten, sites_and_outcomes) =
-        transform_source_text_collecting_refusals(raw, &kit)?;
+    let (rewritten, sites_and_outcomes) = transform_source_text_collecting_refusals(raw, &kit)?;
     let receipt = build_receipt(
         &kit,
         target_lang,
@@ -1725,11 +1766,7 @@ pub struct MaterializeKit<'root> {
 }
 
 impl<'root> MaterializeKit<'root> {
-    pub fn new(
-        target_lang: &str,
-        library_tag: Option<&str>,
-        project_root: &'root Path,
-    ) -> Self {
+    pub fn new(target_lang: &str, library_tag: Option<&str>, project_root: &'root Path) -> Self {
         Self {
             target_lang: target_lang.to_string(),
             library_tag: library_tag.map(str::to_string),
@@ -1814,9 +1851,7 @@ impl SiteTransformKit for MaterializeKit<'_> {
                 &self.target_lang,
                 carrier_library,
             );
-            if !provides.is_empty()
-                && !provides.iter().any(|c| c == &carrier.concept_name)
-            {
+            if !provides.is_empty() && !provides.iter().any(|c| c == &carrier.concept_name) {
                 return Ok(SiteOutcome::Refuse {
                     reason: format!(
                         "library `{carrier_library}` (target {}) does not declare concept \
@@ -1835,22 +1870,7 @@ impl SiteTransformKit for MaterializeKit<'_> {
         // `realize_spec_from_payload` keeps a single permissive-defaults
         // surface across both code paths and preserves byte-identical
         // realize-request shape against Phase A.
-        let mut spec = realize_spec_from_payload(&carrier.raw_payload)?;
-        augment_spec_with_shim_term_shape(&mut spec, self.project_root);
-        // `.proof`-load-via-RPC: when the resolved realize manifest declares a
-        // `sugar_proof` pointer, lift the shim's signed binding entries into
-        // emission-template entries and attach them to the spec. The realize
-        // kit prefers these over its on-disk canonical-bodies cache, so the
-        // @ProveKitSugar shim source is the authority. Absent pointer → empty
-        // → kit uses its disk cache (back-compat for not-yet-migrated kits).
-        if !carrier_library.is_empty() {
-            attach_body_templates_from_shim_proof(
-                &mut spec,
-                self.project_root,
-                &self.target_lang,
-                carrier_library,
-            );
-        }
+        let spec = realize_spec_from_payload(&carrier.raw_payload)?;
         let realized = self.realize_via_path(spec)?;
         // String-formatted refusal sentence rather than a structured
         // gap-record memento: materialize is a build-pipeline workflow
@@ -1898,245 +1918,6 @@ impl SiteTransformKit for MaterializeKit<'_> {
             })
         }
     }
-}
-
-/// If the carrier's `library` names a shim crate (i.e. there's a directory
-/// `<project_root>/examples/<library>/` containing one or more `.proof`
-/// envelopes), open the .proof, find the `library-sugar-binding-entry`
-/// whose `concept_name` matches the spec's `concept_name`, and merge its
-/// `term_shape` into the spec under `termShape`. The realize plugin's
-/// dispatch already routes `term_shape`-bearing requests through
-/// `emit_from_term_shape_with_bindings`; this is the only wire missing
-/// for cross-platform @boundary stubs to materialize against their
-/// sister shim's @sugar realization.
-fn augment_spec_with_shim_term_shape(spec: &mut Json, project_root: &Path) {
-    let Some(obj) = spec.as_object_mut() else {
-        return;
-    };
-    let Some(library) = obj
-        .get("library")
-        .or_else(|| obj.get("libraryTag"))
-        .and_then(Json::as_str)
-        .map(str::to_string)
-    else {
-        return;
-    };
-    let Some(concept_name) = obj
-        .get("concept_name")
-        .or_else(|| obj.get("conceptName"))
-        .and_then(Json::as_str)
-        .map(str::to_string)
-    else {
-        return;
-    };
-    let shim_dir = project_root.join("examples").join(&library);
-    if !shim_dir.is_dir() {
-        return;
-    }
-    let Ok(entries) = std::fs::read_dir(&shim_dir) else {
-        return;
-    };
-    for entry in entries.flatten() {
-        let path = entry.path();
-        if !path
-            .file_name()
-            .and_then(|n| n.to_str())
-            .is_some_and(|n| n.ends_with(".proof"))
-        {
-            continue;
-        }
-        let Ok(bytes) = std::fs::read(&path) else {
-            continue;
-        };
-        let Ok(catalog) = provekit_proof_envelope::cbor_decode::decode(&bytes) else {
-            continue;
-        };
-        let Some(root) = catalog.as_map() else {
-            continue;
-        };
-        let Some(members) = root.get("members").and_then(|v| v.as_map()) else {
-            continue;
-        };
-        for (_cid, member) in members {
-            // Each member is a CBOR byte string whose contents are the
-            // member's JCS-JSON encoding (`{header, body, schemaVersion}`).
-            let Some(member_bytes) = member.as_bstr() else {
-                continue;
-            };
-            let Ok(member_text) = std::str::from_utf8(member_bytes) else {
-                continue;
-            };
-            let Ok(member_json) = serde_json::from_str::<Json>(member_text) else {
-                continue;
-            };
-            let Some(body) = member_json.get("body") else {
-                continue;
-            };
-            if body.get("kind").and_then(Json::as_str) != Some("library-sugar-binding-entry") {
-                continue;
-            }
-            if body.get("concept_name").and_then(Json::as_str) != Some(concept_name.as_str()) {
-                continue;
-            }
-            if body.get("target_language").and_then(Json::as_str) != Some("rust") {
-                continue;
-            }
-            if let Some(term_shape) = body.get("term_shape") {
-                obj.insert("termShape".to_string(), term_shape.clone());
-            }
-            if let Some(operand_bindings) = body.get("operand_bindings") {
-                obj.insert("operandBindings".to_string(), operand_bindings.clone());
-            }
-            // #1357: when the consumer @boundary floated `family` or
-            // `library_version` (absent in the spec), surface the shim's
-            // declared values into the spec. Boundary-pinned values win
-            // (don't overwrite); shim values fill in floating axes. This
-            // is the "consumer floats; shim declares" resolution.
-            if !obj.contains_key("family") {
-                if let Some(family) = body.get("family").cloned() {
-                    obj.insert("family".to_string(), family);
-                }
-            }
-            if !obj.contains_key("library_version") {
-                if let Some(version) = body.get("library_version").cloned() {
-                    obj.insert("library_version".to_string(), version);
-                }
-            }
-            if let Some(cid) = body.get("signature_shape_cid").cloned() {
-                obj.insert("signatureShapeCid".to_string(), cid);
-            }
-            return;
-        }
-    }
-}
-
-/// `.proof`-load-via-RPC: lift the shim's signed `library-sugar-binding-entry`
-/// records into emission-template entries (the same shape the on-disk
-/// projector writes) so they can be fed to the realize kit over RPC. This
-/// makes the @ProveKitSugar shim source the AUTHORITY for the emitted body;
-/// the on-disk `<lang>-canonical-bodies-<tag>.json` becomes an optional
-/// fallback for not-yet-migrated kits.
-///
-/// Resolution: the realize manifest for `(target_lang, library_tag)` declares
-/// `sugar_proof = "<path>"`. `<path>` is project-root-relative and may point
-/// at a shim project directory (we glob its `*.proof`) or a specific `.proof`.
-/// We decode the envelope, find every `library-sugar-binding-entry` whose
-/// `target_library_tag` matches `library_tag`, and transform each via the
-/// projector's shared `binding_entry_to_template_entry`. Returns an empty Vec
-/// when no pointer is declared, the file is unreadable, or no entries match —
-/// the realize kit then uses its disk cache (back-compat).
-/// Attach the target shim's `.proof`-derived emission templates to a realize
-/// `spec` under the `bodyTemplates` key, in place. Shared by the materialize
-/// path (above) and the `bind`/MIGRATE path (`cmd_bind_migrate`) so both wire
-/// the @ProveKitSugar shim source as the body authority over RPC, with the
-/// on-disk `<lang>-canonical-bodies-<tag>.json` left as a back-compat fallback.
-///
-/// Behavior mirrors the materialize call site verbatim:
-/// - no-op when `library_tag` is empty (no library to resolve a shim for);
-/// - no-op when `body_templates_from_shim_proof` returns empty (no `sugar_proof`
-///   pointer, unreadable `.proof`, or no matching entries → kit uses disk cache);
-/// - no-op when `spec` is not a JSON object (all call sites build via `json!`,
-///   but the guard keeps the contract explicit);
-/// - otherwise inserts `bodyTemplates: [..]` (overwriting any prior key so the
-///   shim `.proof` is the single authority).
-pub(crate) fn attach_body_templates_from_shim_proof(
-    spec: &mut Json,
-    project_root: &Path,
-    target_lang: &str,
-    library_tag: &str,
-) {
-    if library_tag.is_empty() {
-        return;
-    }
-    let templates = body_templates_from_shim_proof(project_root, target_lang, library_tag);
-    if templates.is_empty() {
-        return;
-    }
-    if let Some(obj) = spec.as_object_mut() {
-        obj.insert("bodyTemplates".to_string(), Json::Array(templates));
-    }
-}
-
-pub(crate) fn body_templates_from_shim_proof(
-    project_root: &Path,
-    target_lang: &str,
-    library_tag: &str,
-) -> Vec<Json> {
-    use crate::cmd_mint::binding_entry_to_template_entry;
-    use crate::kit_dispatch::sugar_proof_for_realize;
-
-    let Some(pointer) = sugar_proof_for_realize(project_root, target_lang, library_tag) else {
-        return Vec::new();
-    };
-    let pointer_path = {
-        let p = PathBuf::from(&pointer);
-        if p.is_absolute() { p } else { project_root.join(p) }
-    };
-
-    // Collect candidate .proof files: a directory globs its *.proof; a file
-    // is used directly. Globbing the dir (vs pinning the CID-named file in the
-    // manifest) keeps the pointer stable across re-mints of the shim.
-    let mut proof_files: Vec<PathBuf> = Vec::new();
-    if pointer_path.is_dir() {
-        if let Ok(entries) = std::fs::read_dir(&pointer_path) {
-            for entry in entries.flatten() {
-                let path = entry.path();
-                if path
-                    .file_name()
-                    .and_then(|n| n.to_str())
-                    .is_some_and(|n| n.ends_with(".proof"))
-                {
-                    proof_files.push(path);
-                }
-            }
-        }
-    } else if pointer_path.is_file() {
-        proof_files.push(pointer_path);
-    }
-    proof_files.sort();
-
-    let mut templates: Vec<Json> = Vec::new();
-    for proof in &proof_files {
-        let Ok(bytes) = std::fs::read(proof) else {
-            continue;
-        };
-        let Ok(catalog) = provekit_proof_envelope::cbor_decode::decode(&bytes) else {
-            continue;
-        };
-        let Some(root) = catalog.as_map() else { continue };
-        let Some(members) = root.get("members").and_then(|v| v.as_map()) else {
-            continue;
-        };
-        for (_cid, member) in members {
-            let Some(member_bytes) = member.as_bstr() else {
-                continue;
-            };
-            let Ok(member_text) = std::str::from_utf8(member_bytes) else {
-                continue;
-            };
-            let Ok(member_json) = serde_json::from_str::<Json>(member_text) else {
-                continue;
-            };
-            let Some(body) = member_json.get("body") else {
-                continue;
-            };
-            if body.get("kind").and_then(Json::as_str) != Some("library-sugar-binding-entry") {
-                continue;
-            }
-            // Only this library's entries (a shim .proof carries exactly its
-            // own tag, but the guard keeps the contract explicit for the
-            // fan-out and for multi-tag .proof envelopes).
-            if body.get("target_library_tag").and_then(Json::as_str) != Some(library_tag) {
-                continue;
-            }
-            match binding_entry_to_template_entry(body, library_tag) {
-                Ok(Some(entry)) => templates.push(entry),
-                Ok(None) => {}
-                Err(_) => {}
-            }
-        }
-    }
-    templates
 }
 
 /// A loss record is "loss-bearing" when it is neither JSON null nor an
@@ -2242,7 +2023,11 @@ fn emit_out_dir_via_kit_assemble(
                 let _ = std::fs::create_dir_all(parent);
             }
             if let Err(err) = std::fs::write(&target, &file.content) {
-                eprintln!("{}: failed to write {}: {err}", "error".red().bold(), target.display());
+                eprintln!(
+                    "{}: failed to write {}: {err}",
+                    "error".red().bold(),
+                    target.display()
+                );
                 return EmitOutcome::Assembled(EXIT_USER_ERROR);
             }
             continue;
@@ -2277,7 +2062,11 @@ fn emit_out_dir_via_kit_assemble(
                         let _ = std::fs::create_dir_all(parent);
                     }
                     if let Err(err) = std::fs::write(&out_path, &af.content) {
-                        eprintln!("{}: failed to write {}: {err}", "error".red().bold(), out_path.display());
+                        eprintln!(
+                            "{}: failed to write {}: {err}",
+                            "error".red().bold(),
+                            out_path.display()
+                        );
                         return EmitOutcome::Assembled(EXIT_USER_ERROR);
                     }
                     eprintln!(

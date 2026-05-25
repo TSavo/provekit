@@ -143,7 +143,9 @@ fn render_const(value: &serde_json::Value) -> Result<String, String> {
 }
 
 /// Method-receiver ctors we render as `recv.method(args)`.
-const METHOD_CTORS: &[&str] = &["len", "is_some", "is_none", "is_err", "is_ok", "abs", "count"];
+const METHOD_CTORS: &[&str] = &[
+    "len", "is_some", "is_none", "is_err", "is_ok", "abs", "count",
+];
 
 fn render_ctor(name: &str, args: &[IrTerm]) -> Result<String, String> {
     // Operator ctors, rendered infix.
@@ -301,7 +303,11 @@ fn is_some_wildcard(t: &IrTerm) -> bool {
 /// point predicates; each conjunct becomes its own `#[test]`.) Quantifiers,
 /// disjunctions, and implications are not materializable as concrete cargo
 /// tests and are reported as skipped by the caller.
-fn flatten_atoms(f: &IrFormula, out: &mut Vec<(String, Vec<IrTerm>)>, unsupported: &mut Vec<String>) {
+fn flatten_atoms(
+    f: &IrFormula,
+    out: &mut Vec<(String, Vec<IrTerm>)>,
+    unsupported: &mut Vec<String>,
+) {
     match f {
         IrFormula::Atomic { name, args } => out.push((name.clone(), args.clone())),
         IrFormula::And { operands } => {
@@ -336,7 +342,13 @@ fn ident_fragment(s: &str) -> String {
             out.push('_');
         }
     }
-    if out.is_empty() || out.chars().next().map(|c| c.is_ascii_digit()).unwrap_or(false) {
+    if out.is_empty()
+        || out
+            .chars()
+            .next()
+            .map(|c| c.is_ascii_digit())
+            .unwrap_or(false)
+    {
         format!("c_{out}")
     } else {
         out
@@ -453,7 +465,9 @@ pub fn dispatch(request: &Value) -> Value {
                 for v in arr {
                     match serde_json::from_value::<IrFormula>(v.clone()) {
                         Ok(f) => out.push(f),
-                        Err(e) => return error(id, -32602, &format!("INVALID_PARAMS: predicate: {e}")),
+                        Err(e) => {
+                            return error(id, -32602, &format!("INVALID_PARAMS: predicate: {e}"))
+                        }
                     }
                 }
                 out
@@ -463,7 +477,11 @@ pub fn dispatch(request: &Value) -> Value {
                     Err(e) => return error(id, -32602, &format!("INVALID_PARAMS: predicate: {e}")),
                 }
             } else {
-                return error(id, -32602, "INVALID_PARAMS: missing `predicate`/`predicates`");
+                return error(
+                    id,
+                    -32602,
+                    "INVALID_PARAMS: missing `predicate`/`predicates`",
+                );
             };
 
             let emitted = emit_test_module(&sig, &predicates);

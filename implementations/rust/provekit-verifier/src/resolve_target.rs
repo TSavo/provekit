@@ -76,10 +76,7 @@ pub fn run(cs: &CallSite, pool: &MementoPool) -> Result<ResolvedProperty, String
     // non-equation post + no pre slip back into the vacuous-discharge branch.
     // A genuinely non-body-bearing target (e.g. a LIA refinement contract)
     // carries no `formals` key at all, so it stays on the legitimate path.
-    let target_is_body_bearing = body
-        .get("formals")
-        .and_then(|v| v.as_array())
-        .is_some();
+    let target_is_body_bearing = body.get("formals").and_then(|v| v.as_array()).is_some();
     Ok(ResolvedProperty {
         cid: cs.bridge_target_cid.clone(),
         ir_formula,

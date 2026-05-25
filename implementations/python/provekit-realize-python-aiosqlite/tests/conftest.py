@@ -2,7 +2,7 @@
 
 As of the python-aiosqlite fan-out (#1468), `python-canonical-bodies-aiosqlite.json`
 is DELETED from the repo: the @ProveKitSugar shim `.proof` (carried over RPC via
-`current_body_templates`) is the body authority, and the migrate path derives
+the kit-owned shim proof resolver is the body authority, and the migrate path derives
 its provenance `binding_cid` from that `.proof` too. So the disk-fallback
 invariant can no longer be exercised against a shipped repo file. `disk_fixture`
 points `PROVEKIT_REPO_ROOT` at a temp tree carrying a MINIMAL canonical-bodies

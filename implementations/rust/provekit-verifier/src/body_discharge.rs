@@ -238,8 +238,8 @@ pub fn extract_body_obligation(
     // value-expression, leaving e.g. `*(3, 2) == 6` (no `double` symbol).
     match wp::wp(&call_term, &q, &resolver) {
         Ok(reduced) => {
-            let reduced_json =
-                serde_json::to_value(&reduced).map_err(|e| format!("wp obligation serialize: {e}"))?;
+            let reduced_json = serde_json::to_value(&reduced)
+                .map_err(|e| format!("wp obligation serialize: {e}"))?;
             Ok(Some(BodyObligation::Reduced(reduced_json)))
         }
         Err(WpError::Refused(r)) => {

@@ -16,6 +16,10 @@
 
 pub use postgres::{Client, Config, NoTls, Row, Statement, Transaction};
 
+pub const PROVEKIT_PROOF_BYTES: &[u8] = include_bytes!(
+    "../blake3-512:7daa11e4331386107779a872c66e886e0b71c75bec1a150daa4f86676b2a304002b3ee3c3598b46b47976e85a33afd15aea038a6b47b976c5b26603862cdffec.proof"
+);
+
 // =============================================================================
 // A. Connection lifecycle
 // =============================================================================
@@ -151,7 +155,7 @@ pub fn rollback(tx: Transaction) -> Result<(), postgres::Error> {
     surface = "postgres::Client::copy_in",
     concept = "concept:sql-bulk-load",
     reason = "streaming COPY protocol has no concept-hub binding yet; would close once concept:streaming-ingest is minted with byte-stream effect signature",
-    would_close_with_cluster = "streaming-ingest-with-typed-rows",
+    would_close_with_cluster = "streaming-ingest-with-typed-rows"
 )]
 mod _refuse_copy_in {}
 
@@ -159,7 +163,7 @@ mod _refuse_copy_in {}
     surface = "postgres::Client::copy_out",
     concept = "concept:sql-bulk-export",
     reason = "streaming COPY OUT mirror of copy_in; same concept gap",
-    would_close_with_cluster = "streaming-ingest-with-typed-rows",
+    would_close_with_cluster = "streaming-ingest-with-typed-rows"
 )]
 mod _refuse_copy_out {}
 
@@ -167,6 +171,6 @@ mod _refuse_copy_out {}
     surface = "postgres::Notifications",
     concept = "concept:sql-pub-sub",
     reason = "Postgres LISTEN/NOTIFY has no SQL-concept-hub equivalent; would close with concept:async-channel-of-named-events",
-    would_close_with_cluster = "async-channel-of-named-events",
+    would_close_with_cluster = "async-channel-of-named-events"
 )]
 mod _refuse_notifications {}

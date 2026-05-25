@@ -4,9 +4,8 @@
 //
 // This is the CI coverage for the architecture the per-language fan-out copies:
 //   1. Emission body templates come from the @ProveKitSugar shim's signed
-//      `.proof`, lifted by `provekit materialize` and fed to the realize plugin
-//      over RPC (RealizeRequest.body_templates) — NOT from the on-disk
-//      `<lang>-canonical-bodies-<tag>.json` cache.
+//      `.proof`, resolved by the Java realize plugin from its classpath — NOT
+//      from the on-disk `<lang>-canonical-bodies-<tag>.json` cache.
 //   2. The compilation unit is assembled BY THE LANGUAGE KIT over the assemble
 //      RPC (package, imports, helper hoisting, class wrapping). The substrate
 //      bakes no language syntax; `--compile-check` runs the kit-declared

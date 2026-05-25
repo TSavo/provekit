@@ -569,10 +569,8 @@ fn bind_lift(params: &Value) -> Result<Value, String> {
             // these to decompose composite CIDs into (constructor, args)
             // for parameterized morphism dispatch.
             if !parametric_sort_expansions.is_empty() {
-                entry["parametric_sort_expansions"] = serde_json::to_value(
-                    &parametric_sort_expansions,
-                )
-                .unwrap_or_else(|_| json!([]));
+                entry["parametric_sort_expansions"] =
+                    serde_json::to_value(&parametric_sort_expansions).unwrap_or_else(|_| json!([]));
             }
             if let Some(observed) = observed_dimension {
                 entry["observed_dimension"] = json!(observed);
@@ -716,7 +714,8 @@ fn bind_lift(params: &Value) -> Result<Value, String> {
                     match &v.fields {
                         syn::Fields::Unnamed(unn) => {
                             for f in &unn.unnamed {
-                                payload_types.push(f.ty.to_token_stream().to_string().replace(' ', ""));
+                                payload_types
+                                    .push(f.ty.to_token_stream().to_string().replace(' ', ""));
                             }
                         }
                         syn::Fields::Named(_) => {
@@ -752,7 +751,9 @@ fn bind_lift(params: &Value) -> Result<Value, String> {
                         let name = m.sig.ident.to_string();
                         let return_type = match &m.sig.output {
                             syn::ReturnType::Default => "()".to_string(),
-                            syn::ReturnType::Type(_, ty) => ty.to_token_stream().to_string().replace(' ', ""),
+                            syn::ReturnType::Type(_, ty) => {
+                                ty.to_token_stream().to_string().replace(' ', "")
+                            }
                         };
                         let mut param_names: Vec<String> = Vec::new();
                         let mut param_types: Vec<String> = Vec::new();
@@ -767,7 +768,8 @@ fn bind_lift(params: &Value) -> Result<Value, String> {
                                     } else {
                                         param_names.push(pt.pat.to_token_stream().to_string());
                                     }
-                                    param_types.push(pt.ty.to_token_stream().to_string().replace(' ', ""));
+                                    param_types
+                                        .push(pt.ty.to_token_stream().to_string().replace(' ', ""));
                                 }
                             }
                         }
@@ -1035,10 +1037,7 @@ fn collect_boundary_targets(file: &syn::File) -> Vec<BoundaryTarget> {
     targets
 }
 
-fn collect_boundary_targets_in_items(
-    items: &[syn::Item],
-    targets: &mut Vec<BoundaryTarget>,
-) {
+fn collect_boundary_targets_in_items(items: &[syn::Item], targets: &mut Vec<BoundaryTarget>) {
     for item in items {
         match item {
             syn::Item::Fn(item_fn) => {
@@ -1061,9 +1060,7 @@ fn extract_boundary_attr(item_fn: &syn::ItemFn) -> Option<BoundaryTarget> {
     for attr in &item_fn.attrs {
         let path = attr.path();
         let segments: Vec<_> = path.segments.iter().collect();
-        if segments.len() == 2
-            && segments[0].ident == "provekit"
-            && segments[1].ident == "boundary"
+        if segments.len() == 2 && segments[0].ident == "provekit" && segments[1].ident == "boundary"
         {
             if let Ok(meta_list) = attr.meta.require_list() {
                 let args = parse_attr_named_args(&meta_list.tokens);
@@ -1919,9 +1916,8 @@ fn rust_source_type_to_concept_hub_sort_cid(
     rust_type: &str,
     expansions: &mut Vec<libprovekit::core::lower_plugin::ParametricSortExpansion>,
 ) -> Option<String> {
-    let aliases = RUST_ALIASES.get_or_init(|| {
-        libprovekit::core::lower_plugin::load_kit_source_aliases("rust")
-    });
+    let aliases = RUST_ALIASES
+        .get_or_init(|| libprovekit::core::lower_plugin::load_kit_source_aliases("rust"));
     libprovekit::core::lower_plugin::rust_type_to_concept_hub_sort_cid(
         rust_type, aliases, expansions,
     )
@@ -2028,10 +2024,7 @@ fn sugar_doc_lines(item_fn: &syn::ItemFn) -> Vec<String> {
         // Detect the `#[provekit::sugar(...)]` attribute by its two-segment
         // path.
         let segs: Vec<_> = path.segments.iter().collect();
-        if segs.len() == 2
-            && segs[0].ident == "provekit"
-            && segs[1].ident == "sugar"
-        {
+        if segs.len() == 2 && segs[0].ident == "provekit" && segs[1].ident == "sugar" {
             seen_sugar = true;
             continue;
         }
@@ -2420,7 +2413,10 @@ fn bindings_of_expr(expr: &syn::Expr, ctx: &ShapeContext) -> BindingResult {
             let then_branch = bindings_of_block(&e.then_branch, ctx);
             let else_branch = match &e.else_branch {
                 Some((_, else_expr)) => bindings_of_expr(else_expr, ctx),
-                None => BindingResult { has_operator: true, bindings: Vec::new() },
+                None => BindingResult {
+                    has_operator: true,
+                    bindings: Vec::new(),
+                },
             };
             operation_binding_result(vec![cond, then_branch, else_branch])
         }
@@ -2789,12 +2785,13 @@ fn shape_of_stmt(stmt: &syn::Stmt, ctx: &ShapeContext) -> Arc<CValue> {
         syn::Stmt::Item(item) => {
             use quote::ToTokens;
             let source = item.to_token_stream().to_string();
-            gamma_operation("concept:item-decl", vec![
-                CValue::object([
+            gamma_operation(
+                "concept:item-decl",
+                vec![CValue::object([
                     ("kind", CValue::string("symbol")),
                     ("text", CValue::string(source)),
-                ]),
-            ])
+                ])],
+            )
         }
         syn::Stmt::Local(local) => {
             let Some(init) = local.init.as_ref() else {
@@ -2904,10 +2901,7 @@ fn shape_of_stmt(stmt: &syn::Stmt, ctx: &ShapeContext) -> Arc<CValue> {
                         ("text", CValue::string(binding_name)),
                     ])
                 };
-                let mut assign_args = vec![
-                    target_leaf,
-                    shape_of_expr(&init.expr, ctx),
-                ];
+                let mut assign_args = vec![target_leaf, shape_of_expr(&init.expr, ctx)];
                 if local_binding_is_mut(local) {
                     // Emit a concept:literal boolean true as the mutability flag.
                     let Some(op_cid) = concept_op_cid("concept:literal") else {
@@ -2991,10 +2985,7 @@ fn shape_of_expr(expr: &syn::Expr, ctx: &ShapeContext) -> Arc<CValue> {
                 ]);
                 let value = shape_of_expr(&let_expr.expr, ctx);
                 let body = shape_of_block(&e.body, ctx);
-                return gamma_operation(
-                    "concept:while-let",
-                    vec![pattern_leaf, value, body],
-                );
+                return gamma_operation("concept:while-let", vec![pattern_leaf, value, body]);
             }
             let cond = shape_of_expr(&e.cond, ctx);
             let body = shape_of_block(&e.body, ctx);
@@ -3164,10 +3155,7 @@ fn shape_of_expr(expr: &syn::Expr, ctx: &ShapeContext) -> Arc<CValue> {
             // The CID is determined by structure — no minting required.
             // args[2..]: call arguments.
             let method_leaf = method_concept_leaf(&m_name, e.args.len());
-            let mut args = vec![
-                shape_of_expr(&e.receiver, ctx),
-                method_leaf,
-            ];
+            let mut args = vec![shape_of_expr(&e.receiver, ctx), method_leaf];
             args.extend(e.args.iter().map(|arg| shape_of_expr(arg, ctx)));
             gamma_operation("concept:call", args)
         }
@@ -3193,10 +3181,7 @@ fn shape_of_expr(expr: &syn::Expr, ctx: &ShapeContext) -> Arc<CValue> {
                 ("kind", CValue::string("mutability")),
                 ("text", CValue::string(mut_text)),
             ]);
-            gamma_operation(
-                "concept:ref",
-                vec![shape_of_expr(&e.expr, ctx), mut_leaf],
-            )
+            gamma_operation("concept:ref", vec![shape_of_expr(&e.expr, ctx), mut_leaf])
         }
         // Structural match: concept:match(scrutinee, arm1, arm2, ...).
         // Each arm is concept:match-arm(pattern, body). Pattern is a
@@ -3223,7 +3208,10 @@ fn shape_of_expr(expr: &syn::Expr, ctx: &ShapeContext) -> Arc<CValue> {
                     ("text", CValue::string(pattern_text)),
                 ]);
                 let body = shape_of_expr(&arm.body, ctx);
-                args.push(gamma_operation("concept:match-arm", vec![pattern_leaf, body]));
+                args.push(gamma_operation(
+                    "concept:match-arm",
+                    vec![pattern_leaf, body],
+                ));
             }
             gamma_operation("concept:match", args)
         }
@@ -4959,7 +4947,12 @@ pub fn safe_divide_then_double(num: i64, denom: i64) -> i64 {
         // check, conditional for nested if, div for /, lt for <, etc.).
         let mut names = Vec::new();
         collect_concept_names(&shape, &mut names);
-        for expected in ["concept:conditional", "concept:eq", "concept:div", "concept:lt"] {
+        for expected in [
+            "concept:conditional",
+            "concept:eq",
+            "concept:div",
+            "concept:lt",
+        ] {
             assert!(
                 names.contains(&expected.to_string()),
                 "expected operator {expected} in shape names: {names:?}\nshape: {shape:#?}"
@@ -5816,9 +5809,7 @@ pub mod refused_backup {}
             .as_array()
             .map(|arr| {
                 arr.iter()
-                    .filter(|d| {
-                        d["kind"] == "lift-gap" && d["category"] == "singleton-concept"
-                    })
+                    .filter(|d| d["kind"] == "lift-gap" && d["category"] == "singleton-concept")
                     .collect::<Vec<_>>()
             })
             .unwrap_or_default()
@@ -5959,7 +5950,10 @@ pub fn kit_private_helper(_x: i64) -> i64 {
             "library-sugar-binding-entry must still be emitted regardless of \
              singleton-concept validator outcome"
         );
-        assert_eq!(sugar_entries[0]["concept_name"], "library:kit-private-helper");
+        assert_eq!(
+            sugar_entries[0]["concept_name"],
+            "library:kit-private-helper"
+        );
 
         let _ = fs::remove_dir_all(root);
     }

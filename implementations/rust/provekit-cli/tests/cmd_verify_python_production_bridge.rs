@@ -214,15 +214,12 @@ fn python_mint_auto_writes_body_discharge_bridge() {
         pool.load_errors
     );
 
-    let bridge = pool
-        .bridges_by_symbol
-        .get("double")
-        .unwrap_or_else(|| {
-            panic!(
-                "mint must auto-write + index a bridge with sourceSymbol=double; indexed: {:?}",
-                pool.bridges_by_symbol.keys().collect::<Vec<_>>()
-            )
-        });
+    let bridge = pool.bridges_by_symbol.get("double").unwrap_or_else(|| {
+        panic!(
+            "mint must auto-write + index a bridge with sourceSymbol=double; indexed: {:?}",
+            pool.bridges_by_symbol.keys().collect::<Vec<_>>()
+        )
+    });
 
     let target_cid = provekit_verifier::types::memento_body_field(bridge, "targetContractCid")
         .and_then(|v| v.as_str())
@@ -272,7 +269,10 @@ fn python_production_path_double_discharges_and_mints_witness() {
     let witnesses = project.join("witnesses-out");
     let (receipt, code) = run_verify_json_with_code(&project, &witnesses);
 
-    assert_eq!(receipt["kind"], "verification-receipt", "receipt: {receipt}");
+    assert_eq!(
+        receipt["kind"], "verification-receipt",
+        "receipt: {receipt}"
+    );
     assert_eq!(
         receipt["totalClaims"], 1,
         "exactly one body-bearing callsite (the tool-written bridge made double(3) enumerate); receipt: {receipt}"

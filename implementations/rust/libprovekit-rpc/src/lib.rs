@@ -597,8 +597,7 @@ mod tests {
 
     #[test]
     fn lift_missing_workspace_root_is_invalid_params() {
-        let line =
-            r#"{"jsonrpc":"2.0","id":2,"method":"lift","params":{"source_paths":["src"]}}"#;
+        let line = r#"{"jsonrpc":"2.0","id":2,"method":"lift","params":{"source_paths":["src"]}}"#;
         let (resp, _) = handle_line(line, &EmptyAdapter);
         assert_eq!(resp["error"]["code"], -32602);
     }

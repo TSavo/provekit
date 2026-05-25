@@ -34,7 +34,6 @@ if str(PKG_SRC) not in sys.path:
 from provekit_realize_python_core.realizer import (
     MissingTemplateError,
     body_template_for,
-    current_body_templates,
     emit_stub,
     entries,
     sugar_carrier_entry_for,
@@ -317,73 +316,3 @@ def test_generic_instantiation_discrimination_body_template_returns_none() -> No
 # PREFERS those over its on-disk canonical-bodies cache (the shim source is
 # the authority); absent RPC templates fall through to disk (back-compat).
 #
-# Three discrimination tests per the per-variant discipline:
-#   1. Positive   -- RPC template wins over disk for the same (concept, arity)
-#   2. Back-compat -- empty contextvar falls through to the disk cache
-#   3. Discrimination -- RPC template for an unrelated concept does NOT
-#      shadow disk entries for OTHER concepts (no spurious match)
-# ---------------------------------------------------------------------------
-
-# A bare `bodyTemplates` array as cmd_materialize sends it: one entry that
-# REPLACES the disk template for concept:closure (arity 1) with a marker body.
-_RPC_CLOSURE_OVERRIDE = json.dumps(
-    [
-        {
-            "concept_name": "concept:closure",
-            "emission_template": {
-                "kind": "verbatim",
-                "template": "return lambda: ('rpc-authority', ${param0})",
-            },
-            "signature_guard": {"min_params": 1, "max_params": 1},
-            "loss_record_contribution": {"form": "literal", "value": {"entries": []}},
-            "target_library_tag": "sqlite3",
-        }
-    ]
-)
-
-
-def test_rpc_body_template_prefers_proof_over_disk() -> None:
-    # Disk template for concept:closure/1 is `return lambda: x`. With the RPC
-    # array set, entries() must prepend the RPC entry so the first-match-wins
-    # matcher prefers it.
-    disk_body = body_template_for("concept:closure", ["x"], ["int"], "object")
-    assert disk_body == "return lambda: x"
-    token = current_body_templates.set(_RPC_CLOSURE_OVERRIDE)
-    try:
-        rpc_body = body_template_for("concept:closure", ["x"], ["int"], "object")
-    finally:
-        current_body_templates.reset(token)
-    assert rpc_body == "return lambda: ('rpc-authority', x)"
-    # And once the contextvar is reset, the disk template is back (no leakage).
-    assert body_template_for("concept:closure", ["x"], ["int"], "object") == "return lambda: x"
-
-
-def test_rpc_body_template_empty_falls_through_to_disk() -> None:
-    # Empty contextvar (the default) -> disk authority. This is the back-compat
-    # path for kits whose dispatcher has not migrated to .proof-load.
-    assert current_body_templates.get() == ""
-    body = body_template_for("concept:closure", ["x"], ["int"], "object")
-    assert body == "return lambda: x"
-
-
-def test_rpc_body_template_unrelated_concept_does_not_shadow_disk() -> None:
-    # An RPC entry for concept:closure must NOT shadow disk entries for OTHER
-    # concepts: concept:iterator/1 still resolves from disk.
-    token = current_body_templates.set(_RPC_CLOSURE_OVERRIDE)
-    try:
-        iter_body = body_template_for("concept:iterator", ["col"], ["list[int]"], "object")
-    finally:
-        current_body_templates.reset(token)
-    assert iter_body == "return iter(col)"
-
-
-def test_rpc_body_template_malformed_array_falls_through_to_disk() -> None:
-    # A non-array / unparseable RPC payload must not crash; entries() degrades
-    # to the disk cache (refuse-don't-misemit honesty: never emit garbage).
-    for bad in ("not json", "{}", "[", json.dumps({"not": "an array"})):
-        token = current_body_templates.set(bad)
-        try:
-            body = body_template_for("concept:closure", ["x"], ["int"], "object")
-        finally:
-            current_body_templates.reset(token)
-        assert body == "return lambda: x", bad

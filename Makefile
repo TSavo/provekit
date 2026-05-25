@@ -65,12 +65,16 @@ CICP_ACCEPTED_DIR ?= .provekit/ci/accepted
 CONFORMANCE_PROFILE ?= linux
 CONFORMANCE_JOBS ?= 4
 RUBY ?= $(shell for p in /usr/local/opt/ruby/bin/ruby /opt/homebrew/opt/ruby/bin/ruby /usr/local/bin/ruby /opt/homebrew/bin/ruby; do if [ -x "$$p" ]; then echo "$$p"; exit; fi; done; command -v ruby || echo ruby)
+PYTHON ?= $(shell command -v python3 || echo python3)
+PIP ?= pip3 --python $(PYTHON)
+MVN ?= mvn
+LOCAL_BIN ?= /private/tmp/provekit-local-bin
 JAVA_HOME ?= $(shell for d in /usr/local/opt/openjdk /opt/homebrew/opt/openjdk; do if [ -x "$$d/bin/java" ]; then echo "$$d"; exit; fi; done)
 export JAVA_HOME
 ifeq ($(strip $(JAVA_HOME)),)
-export PATH := $(dir $(RUBY)):$(PATH)
+export PATH := $(LOCAL_BIN):$(dir $(RUBY)):$(PATH)
 else
-export PATH := $(dir $(RUBY)):$(JAVA_HOME)/bin:$(PATH)
+export PATH := $(LOCAL_BIN):$(dir $(RUBY)):$(JAVA_HOME)/bin:$(PATH)
 endif
 
 .PHONY: help
@@ -92,11 +96,12 @@ help:
 	@echo "  make test-all       language test suites (Swift excluded: macOS-only, use test-swift)"
 	@echo ""
 	@echo "Per-language build:"
-	@echo "  make build-all      build every kit (rust + cpp + go + ts + csharp + java + ruby)"
+	@echo "  make build-all      build every kit (rust + cpp + go + ts + csharp + java + python + ruby)"
 	@echo "  make build-rust     cargo build --release (workspace + tools)"
 	@echo "  make build-cpp      clang++ + vendored-blake3"
 	@echo "  make build-go       go build per Go module"
 	@echo "  make build-ts       pnpm install"
+	@echo "  make build-python   pip-install Python realize kits and shim packages"
 	@echo "  make build-csharp   dotnet build"
 	@echo "  make build-java     mvn package + install provekit-lsp-java to ~/.local/bin"
 	@echo "  make build-c        cc build of C IR, lifters, LSP, and self-contracts"
@@ -137,7 +142,7 @@ help:
 # with the Swift toolchain and is not run by Linux CI. Use `make build-swift`
 # directly on macOS.
 .PHONY: build-all
-build-all: build-rust build-cpp build-go build-ts build-csharp build-java build-ruby
+build-all: build-rust build-cpp build-go build-ts build-csharp build-java build-python build-ruby
 
 .PHONY: ci-accept-check
 ci-accept-check: build-rust
@@ -212,19 +217,28 @@ build-c-self-contracts:
 build-java: build-java-self-contracts
 	# provekit-lift-java-core depends on the sibling provekit-ir module.
 	# Use the parent pom + `-pl ... -am` (also-make) so dependencies are
-	# built first; `mvn install` (not package) puts artifacts in ~/.m2 so
-	# the downstream resolves.
-	mvn install -q -f implementations/java/pom.xml -pl provekit-lift-java-core -am
+	# built first.
+	$(MVN) package -q -f implementations/java/pom.xml -pl provekit-lift-java-core -am
 	# provekit-realize-java-core ships the shaded `provekit-realize-java.jar`
 	# that libprovekit's platform_semantics_loader spawns over JSON-RPC for
 	# every `target=java` carrier registration. Without packaging it here,
 	# rust integration tests that touch the java carrier (e.g.
 	# `lower_java_carrier_registration_points_at_required_fixture_set`) fail
 	# with `Unable to access jarfile provekit-realize-java.jar`.
-	mvn package -q -f implementations/java/pom.xml -pl provekit-realize-java-core -am -DskipTests
-	mkdir -p ~/.local/bin
-	cp implementations/java/provekit-lift-java-core/target/appassembler/bin/provekit-lsp-java ~/.local/bin/provekit-lsp-java
-	chmod +x ~/.local/bin/provekit-lsp-java
+	$(MVN) package -q -f implementations/java/pom.xml -pl provekit-realize-java-core -am -DskipTests
+	mkdir -p $(LOCAL_BIN)
+	cp implementations/java/provekit-lift-java-core/target/appassembler/bin/provekit-lsp-java $(LOCAL_BIN)/provekit-lsp-java
+	chmod +x $(LOCAL_BIN)/provekit-lsp-java
+
+.PHONY: build-python
+build-python:
+	$(PIP) install --quiet --no-cache-dir \
+		-e examples/provekit-shim-python-sqlite3 \
+		-e examples/provekit-shim-python-aiosqlite \
+		-e implementations/python/provekit-realize-python-core \
+		-e implementations/python/provekit-realize-python-sqlite3 \
+		-e implementations/python/provekit-realize-python-aiosqlite \
+		-e implementations/python/provekit-realize-python-requests
 
 .PHONY: build-java-self-contracts
 build-java-self-contracts:
@@ -232,7 +246,7 @@ build-java-self-contracts:
 	# provekit-claim-envelope bundled). The jar lands at
 	# implementations/java/provekit-java-self-contracts/target/provekit-java-self-contracts.jar
 	# and the lift manifest spawns it with `java -jar`.
-	mvn -q -f implementations/java/pom.xml -pl provekit-java-self-contracts -am package -DskipTests
+	$(MVN) -q -f implementations/java/pom.xml -pl provekit-java-self-contracts -am package -DskipTests
 
 .PHONY: build-ruby
 build-ruby:
@@ -623,7 +637,7 @@ bootstrap-self-contracts:
 # build-ts (pnpm install) is also required: the bug-zoo smoke tests call
 # `pnpm exec tsx` from the repo root and fail with ERR_PNPM_RECURSIVE_EXEC_FIRST_FAIL
 # if node_modules is absent (fresh worktrees, CI).
-test-rust: build-java build-ts
+test-rust: build-java build-ts build-python
 	@failed=""; \
 	cargo test --no-fail-fast --release --manifest-path implementations/rust/Cargo.toml \
 	  || failed="$$failed implementations/rust"; \
@@ -698,7 +712,7 @@ test-c: build-c
 	if [ -n "$$failed" ]; then echo "test-c FAIL:$$failed"; exit 1; fi
 
 .PHONY: test-python
-test-python:
+test-python: build-python
 	@failed=""; \
 	(cd implementations/python/provekit-lift-py-tests && \
 		python3 -m venv .venv && \
@@ -710,6 +724,26 @@ test-python:
 		. .venv/bin/activate && \
 		python -m pip install --quiet -e . pytest && \
 		pytest) || failed="$$failed provekit-emit-python-pytest"; \
+	(cd implementations/python/provekit-realize-python-core && \
+		python3 -m venv .venv && \
+		. .venv/bin/activate && \
+		python -m pip install --quiet -e . pytest && \
+		pytest) || failed="$$failed provekit-realize-python-core"; \
+	(cd implementations/python/provekit-realize-python-sqlite3 && \
+		python3 -m venv .venv && \
+		. .venv/bin/activate && \
+		python -m pip install --quiet -e ../../../examples/provekit-shim-python-sqlite3 -e . pytest && \
+		pytest) || failed="$$failed provekit-realize-python-sqlite3"; \
+	(cd implementations/python/provekit-realize-python-aiosqlite && \
+		python3 -m venv .venv && \
+		. .venv/bin/activate && \
+		python -m pip install --quiet -e ../../../examples/provekit-shim-python-aiosqlite -e . pytest && \
+		pytest) || failed="$$failed provekit-realize-python-aiosqlite"; \
+	(cd implementations/python/provekit-realize-python-requests && \
+		python3 -m venv .venv && \
+		. .venv/bin/activate && \
+		python -m pip install --quiet -e . pytest && \
+		pytest) || failed="$$failed provekit-realize-python-requests"; \
 	if [ -n "$$failed" ]; then echo "test-python FAIL:$$failed"; exit 1; fi
 
 .PHONY: test-ruby
@@ -723,9 +757,9 @@ test-php:
 .PHONY: test-java
 test-java: build-java
 	@failed=""; \
-	mvn test -q -f implementations/java/provekit-lift-java-core/pom.xml \
+	$(MVN) test -q -f implementations/java/provekit-lift-java-core/pom.xml \
 	  || failed="$$failed provekit-lift-java-core"; \
-	mvn test -q -f implementations/java/pom.xml -pl provekit-realize-java-core -am \
+	$(MVN) test -q -f implementations/java/pom.xml -pl provekit-realize-java-core -am \
 	  || failed="$$failed provekit-realize-java-core"; \
 	if [ -n "$$failed" ]; then echo "test-java FAIL:$$failed"; exit 1; fi
 

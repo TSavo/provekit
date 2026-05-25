@@ -768,7 +768,10 @@ fn run_rpc_mode() -> i32 {
                 let _ = writeln!(stdout, "{resp}");
             }
             "lift" => {
-                let params = req.get("params").cloned().unwrap_or_else(|| serde_json::json!({}));
+                let params = req
+                    .get("params")
+                    .cloned()
+                    .unwrap_or_else(|| serde_json::json!({}));
                 // workspace_root: prefer RPC param so the cmd_mint
                 // lift-plugin protocol routes correctly (params are
                 // authoritative per pep/1.7.0); fall back to CWD for
