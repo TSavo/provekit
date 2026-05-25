@@ -1050,8 +1050,22 @@ fn realize_probe_via_path(
     repo_root: &Path,
     language: &str,
     tag: &str,
-    spec: JsonValue,
+    mut spec: JsonValue,
 ) -> Result<libprovekit::core::RealizedSource, String> {
+    // `.proof`-load-via-RPC for the MIGRATE path: this is the single choke
+    // point every migrate realize dispatch funnels through (the binding probe,
+    // per-callsite body realization, and the MigrateKit's `realize_target`).
+    // Attaching the target shim's signed binding-entry templates here mirrors
+    // what `cmd_materialize` does for the materialize path, so a migrate into a
+    // target library no longer depends on that library's on-disk
+    // `<lang>-canonical-bodies-<tag>.json`: the @ProveKitSugar shim `.proof` is
+    // the authority, carried over RPC. Absent a `sugar_proof` pointer (or for a
+    // kit not yet preferring RPC), this is a no-op and the disk cache remains
+    // the fallback. `repo_root` is the project root; `(language, tag)` are the
+    // target lang/library tag.
+    crate::cmd_materialize::attach_body_templates_from_shim_proof(
+        &mut spec, repo_root, language, tag,
+    );
     let mut inputs = HashMapInputCatalog::default();
     let input_cid = inputs.insert(Input::Spec(spec));
     let kit_name = format!("lower-{language}");
@@ -3894,6 +3908,72 @@ mod tests {
             .and_then(|p| p.parent())
             .map(|p| p.to_path_buf())
             .expect("provekit-cli has rust/implementations/repo ancestry")
+    }
+
+    /// #1460 enabler plumbing: prove the MIGRATE realize path now attaches the
+    /// target shim's signed `.proof` body-templates to its realize spec via the
+    /// shared `attach_body_templates_from_shim_proof` helper factored out of the
+    /// materialize path. Verified against a real on-main java shim
+    /// (`examples/provekit-shim-java-sqlite-jdbc/*.proof`, library_tag
+    /// `sqlite-jdbc`), whose realize manifest declares `sugar_proof` and whose
+    /// canonical-bodies JSON was deleted in #1459 — so the templates can ONLY
+    /// come from the `.proof`. This is the choke point every migrate realize
+    /// dispatch (`probe_realize_binding`, `realize_callsite_bodies` via
+    /// `realize_request_for_callsite`, `MigrateKit::realize_target`) funnels
+    /// through, so wiring it here covers all of them.
+    #[test]
+    fn migrate_realize_spec_carries_shim_proof_body_templates() {
+        let repo = harness_repo_root();
+
+        // (1) The factored helper extracts library-sugar-binding-entry templates
+        // from the target shim `.proof` for (java, sqlite-jdbc).
+        let templates = crate::cmd_materialize::body_templates_from_shim_proof(
+            &repo,
+            "java",
+            "sqlite-jdbc",
+        );
+        assert!(
+            !templates.is_empty(),
+            "factored helper must extract body-templates from the on-main \
+             java sqlite-jdbc shim .proof (manifest declares sugar_proof; \
+             canonical-bodies JSON was deleted in #1459)"
+        );
+
+        // (2) The shared attach point inserts those templates into a realize
+        // spec under `bodyTemplates` — exactly what the migrate choke point
+        // `realize_probe_via_path` now does before RPC dispatch. Build a spec
+        // the same shape the migrate path builds (probe shape).
+        let mut spec = json!({
+            "kind": "RealizeRequest",
+            "function": "__provekit_migrate_probe",
+            "params": ["sql", "args"],
+            "paramTypes": ["string", "unknown[]"],
+            "returnType": "unknown[]",
+            "conceptName": "concept:sql-query",
+        });
+        crate::cmd_materialize::attach_body_templates_from_shim_proof(
+            &mut spec, &repo, "java", "sqlite-jdbc",
+        );
+        let attached = spec
+            .get("bodyTemplates")
+            .and_then(|v| v.as_array())
+            .expect("migrate realize spec must carry bodyTemplates after attach");
+        assert_eq!(
+            attached.len(),
+            templates.len(),
+            "attached bodyTemplates count must match the helper's extraction"
+        );
+
+        // (3) Negative control: empty library_tag is a no-op (back-compat — the
+        // kit then falls back to its on-disk canonical-bodies cache).
+        let mut bare = json!({ "kind": "RealizeRequest" });
+        crate::cmd_materialize::attach_body_templates_from_shim_proof(
+            &mut bare, &repo, "java", "",
+        );
+        assert!(
+            bare.get("bodyTemplates").is_none(),
+            "empty library_tag must not attach bodyTemplates (disk-cache fallback)"
+        );
     }
 
     fn harness_callsites() -> Vec<CallsiteProbe> {
