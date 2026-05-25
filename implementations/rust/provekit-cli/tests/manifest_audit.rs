@@ -20,6 +20,7 @@
 use std::fs;
 use std::path::{Path, PathBuf};
 
+use provekit_proof_envelope::cbor_decode;
 use serde_json::Value;
 
 fn repo_root() -> PathBuf {
@@ -30,13 +31,23 @@ fn repo_root() -> PathBuf {
 }
 
 /// Parse a realize manifest TOML file and return its declared
-/// provides_concepts list + library_tag. Uses the same line-based
-/// parsing kit_dispatch.rs::parse_manifest uses (single-line array form).
-fn read_provides_concepts(manifest_path: &Path) -> (String, Vec<String>) {
+/// provides_concepts list, library_tag, and optional `sugar_proof` pointer.
+/// Uses the same line-based parsing kit_dispatch.rs::parse_manifest uses
+/// (single-line array form).
+///
+/// `sugar_proof`, when present, names the @ProveKitSugar shim project (a dir
+/// we glob for `*.proof`, or a specific `.proof`) whose signed
+/// `library-sugar-binding-entry` members are the AUTHORITY for this kit's
+/// emission bodies. It supersedes the on-disk body-templates JSON as the
+/// source-of-truth (the JSON is then deletable), mirroring the realize
+/// path's `.proof`-load-via-RPC enabler (#1460) and the migrate path's
+/// `body_template_cid` enabler.
+fn read_provides_concepts(manifest_path: &Path) -> (String, Vec<String>, Option<String>) {
     let raw = fs::read_to_string(manifest_path)
         .unwrap_or_else(|_| panic!("read manifest {manifest_path:?}"));
     let mut library_tag = String::new();
     let mut concepts: Vec<String> = Vec::new();
+    let mut sugar_proof: Option<String> = None;
     for line in raw.lines() {
         let trimmed = line.trim();
         if let Some(rest) = trimmed.strip_prefix("library_tag") {
@@ -47,8 +58,15 @@ fn read_provides_concepts(manifest_path: &Path) -> (String, Vec<String>) {
             let val = rest.trim_start().trim_start_matches('=').trim();
             concepts = parse_toml_string_array(val);
         }
+        if let Some(rest) = trimmed.strip_prefix("sugar_proof") {
+            let val = rest.trim_start().trim_start_matches('=').trim();
+            let pointer = val.trim_matches('"').to_string();
+            if !pointer.is_empty() {
+                sugar_proof = Some(pointer);
+            }
+        }
     }
-    (library_tag, concepts)
+    (library_tag, concepts, sugar_proof)
 }
 
 /// Mirror of kit_dispatch::parse_toml_string_array (quote-aware splitter
@@ -153,6 +171,98 @@ fn shim_proof_concepts(root: &Path, library_tag: &str) -> Option<Vec<String>> {
     Some(concepts)
 }
 
+/// Read the concept_name set from a shim `.proof` source-of-truth named by a
+/// manifest's `sugar_proof` pointer (resolved against `root`).
+///
+/// This is the source-of-truth selector for ANY realize kit that declares a
+/// `sugar_proof` (java-json/gson, python-sqlite3, etc.) — the @ProveKitSugar
+/// shim `.proof` is authoritative once the on-disk body-templates JSON is
+/// deleted. Discovery mirrors `cmd_materialize::body_templates_from_shim_proof`:
+/// a directory globs its `*.proof`; a file is used directly. Only
+/// `library-sugar-binding-entry` members whose `target_library_tag` matches
+/// `library_tag` count, so a multi-tag `.proof` audits the right slice.
+/// Returns the deduped, sorted concept_name set, or `None` if nothing resolves
+/// (caller treats that as un-auditable, not a failure).
+fn shim_proof_concepts_at(root: &Path, pointer: &Path, library_tag: &str) -> Option<Vec<String>> {
+    let pointer = if pointer.is_absolute() {
+        pointer.to_path_buf()
+    } else {
+        root.join(pointer)
+    };
+
+    let mut proof_files: Vec<PathBuf> = Vec::new();
+    if pointer.is_dir() {
+        for entry in fs::read_dir(&pointer).ok()?.flatten() {
+            let path = entry.path();
+            if path
+                .file_name()
+                .and_then(|n| n.to_str())
+                .is_some_and(|n| n.ends_with(".proof"))
+            {
+                proof_files.push(path);
+            }
+        }
+    } else if pointer.is_file() {
+        proof_files.push(pointer);
+    }
+    if proof_files.is_empty() {
+        return None;
+    }
+    proof_files.sort();
+
+    // Decode the CBOR proof envelope exactly as the realize/migrate enabler
+    // does (`cbor_decode::decode` -> `members` map -> per-member bstr -> utf8 ->
+    // serde_json body). NOTE: shim `.proof` envelopes are CBOR, not JSON, so a
+    // `serde_json::from_slice` on the whole file would fail.
+    let mut concepts: Vec<String> = Vec::new();
+    for proof in &proof_files {
+        let Ok(bytes) = fs::read(proof) else {
+            continue;
+        };
+        let Ok(catalog) = cbor_decode::decode(&bytes) else {
+            continue;
+        };
+        let Some(root) = catalog.as_map() else {
+            continue;
+        };
+        let Some(members) = root.get("members").and_then(cbor_decode::CborValue::as_map) else {
+            continue;
+        };
+        for member in members.values() {
+            let Some(member_bytes) = member.as_bstr() else {
+                continue;
+            };
+            let Ok(member_text) = std::str::from_utf8(member_bytes) else {
+                continue;
+            };
+            let Ok(member_json) = serde_json::from_str::<Value>(member_text) else {
+                continue;
+            };
+            let Some(body) = member_json.get("body") else {
+                continue;
+            };
+            if body.get("kind").and_then(Value::as_str) != Some("library-sugar-binding-entry") {
+                continue;
+            }
+            // Match the tag (a single-tag shim carries only its own, but the
+            // guard keeps multi-tag envelopes honest — same predicate
+            // `body_templates_from_shim_proof` uses).
+            if body.get("target_library_tag").and_then(Value::as_str) != Some(library_tag) {
+                continue;
+            }
+            if let Some(name) = body.get("concept_name").and_then(Value::as_str) {
+                concepts.push(name.to_string());
+            }
+        }
+    }
+    if concepts.is_empty() {
+        return None;
+    }
+    concepts.sort();
+    concepts.dedup();
+    Some(concepts)
+}
+
 /// Walk .provekit/realize/*/manifest.toml, run the audit per manifest,
 /// return mismatches found.
 fn audit_all_manifests(root: &Path) -> Vec<String> {
@@ -169,7 +279,8 @@ fn audit_all_manifests(root: &Path) -> Vec<String> {
             continue;
         }
         let dirname = entry.file_name().to_string_lossy().into_owned();
-        let (library_tag, declared_concepts) = read_provides_concepts(&manifest_path);
+        let (library_tag, declared_concepts, sugar_proof) =
+            read_provides_concepts(&manifest_path);
 
         // No provides_concepts declaration ↔ no enforcement (back-compat).
         if declared_concepts.is_empty() {
@@ -193,9 +304,20 @@ fn audit_all_manifests(root: &Path) -> Vec<String> {
             continue;
         };
 
-        // Pick source of truth: rust-shim-* uses the shim's .proof
-        // envelope; everything else uses body-templates JSON.
-        let source_of_truth: Option<Vec<String>> = if dirname.starts_with("rust-shim-") {
+        // Pick source of truth, in precedence order:
+        //   1. `sugar_proof` declared → the named @ProveKitSugar shim `.proof`
+        //      is authoritative (java-json/gson, python-sqlite3, ...). Once a
+        //      kit declares a `sugar_proof`, its on-disk body-templates JSON is
+        //      deletable; the manifest field — not a dir-name convention — is
+        //      the actual source-of-truth signal. Falls back to the JSON only
+        //      if the pointer resolves no matching entries.
+        //   2. rust-shim-* (legacy convention, no `sugar_proof` field) → the
+        //      shim's `examples/<tag>/blake3-512:*.proof`.
+        //   3. everything else → body-templates JSON.
+        let source_of_truth: Option<Vec<String>> = if let Some(pointer) = &sugar_proof {
+            shim_proof_concepts_at(root, Path::new(pointer), &library_tag)
+                .or_else(|| body_template_concepts(root, target_lang, &library_tag))
+        } else if dirname.starts_with("rust-shim-") {
             shim_proof_concepts(root, &library_tag)
         } else {
             body_template_concepts(root, target_lang, &library_tag)

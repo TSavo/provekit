@@ -17,8 +17,12 @@ from provekit_realize_python_sqlite3.realizer import (
     emit_stub,
 )
 
+# `disk_fixture` is provided by tests/conftest.py: it points PROVEKIT_REPO_ROOT
+# at a temp tree carrying a minimal canonical-bodies-sqlite3.json so the
+# disk-fallback invariants stay covered after the shipped JSON's deletion.
 
-def test_sql_query_uses_sqlite3_execute() -> None:
+
+def test_sql_query_uses_sqlite3_execute(disk_fixture) -> None:
     result = emit_stub(
         function="select_rows",
         params=["sql", "args"],
@@ -58,7 +62,7 @@ _RPC_SQL_QUERY_OVERRIDE = json.dumps(
 )
 
 
-def test_rpc_body_template_prefers_proof_over_disk() -> None:
+def test_rpc_body_template_prefers_proof_over_disk(disk_fixture) -> None:
     disk_body = body_template_for(
         "concept:sql-query", ["sql", "args"], ["str", "list[object]"], "list[object]"
     )
@@ -71,7 +75,7 @@ def test_rpc_body_template_prefers_proof_over_disk() -> None:
     finally:
         current_body_templates.reset(token)
     assert rpc_body == "return db.execute(sql, args).fetchall()  # rpc"
-    # No leakage after reset.
+    # No leakage after reset: back to the disk-fixture body.
     assert (
         body_template_for(
             "concept:sql-query", ["sql", "args"], ["str", "list[object]"], "list[object]"
@@ -80,7 +84,7 @@ def test_rpc_body_template_prefers_proof_over_disk() -> None:
     )
 
 
-def test_rpc_body_template_empty_falls_through_to_disk() -> None:
+def test_rpc_body_template_empty_falls_through_to_disk(disk_fixture) -> None:
     assert current_body_templates.get() == ""
     body = body_template_for(
         "concept:sql-query", ["sql", "args"], ["str", "list[object]"], "list[object]"
@@ -88,7 +92,9 @@ def test_rpc_body_template_empty_falls_through_to_disk() -> None:
     assert body == "cursor = db.execute(sql, tuple(args))\nreturn cursor.fetchall()"
 
 
-def test_rpc_body_template_unrelated_concept_does_not_shadow_disk() -> None:
+def test_rpc_body_template_unrelated_concept_does_not_shadow_disk(
+    disk_fixture,
+) -> None:
     # RPC override for sql-query must not shadow disk entries for other concepts.
     token = current_body_templates.set(_RPC_SQL_QUERY_OVERRIDE)
     try:
