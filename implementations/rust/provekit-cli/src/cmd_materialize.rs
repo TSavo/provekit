@@ -1844,19 +1844,12 @@ impl SiteTransformKit for MaterializeKit<'_> {
         // @ProveKitSugar shim source is the authority. Absent pointer → empty
         // → kit uses its disk cache (back-compat for not-yet-migrated kits).
         if !carrier_library.is_empty() {
-            let templates = body_templates_from_shim_proof(
+            attach_body_templates_from_shim_proof(
+                &mut spec,
                 self.project_root,
                 &self.target_lang,
                 carrier_library,
             );
-            if !templates.is_empty() {
-                if let Some(obj) = spec.as_object_mut() {
-                    obj.insert(
-                        "bodyTemplates".to_string(),
-                        Json::Array(templates),
-                    );
-                }
-            }
         }
         let realized = self.realize_via_path(spec)?;
         // String-formatted refusal sentence rather than a structured
@@ -2032,7 +2025,39 @@ fn augment_spec_with_shim_term_shape(spec: &mut Json, project_root: &Path) {
 /// projector's shared `binding_entry_to_template_entry`. Returns an empty Vec
 /// when no pointer is declared, the file is unreadable, or no entries match —
 /// the realize kit then uses its disk cache (back-compat).
-fn body_templates_from_shim_proof(
+/// Attach the target shim's `.proof`-derived emission templates to a realize
+/// `spec` under the `bodyTemplates` key, in place. Shared by the materialize
+/// path (above) and the `bind`/MIGRATE path (`cmd_bind_migrate`) so both wire
+/// the @ProveKitSugar shim source as the body authority over RPC, with the
+/// on-disk `<lang>-canonical-bodies-<tag>.json` left as a back-compat fallback.
+///
+/// Behavior mirrors the materialize call site verbatim:
+/// - no-op when `library_tag` is empty (no library to resolve a shim for);
+/// - no-op when `body_templates_from_shim_proof` returns empty (no `sugar_proof`
+///   pointer, unreadable `.proof`, or no matching entries → kit uses disk cache);
+/// - no-op when `spec` is not a JSON object (all call sites build via `json!`,
+///   but the guard keeps the contract explicit);
+/// - otherwise inserts `bodyTemplates: [..]` (overwriting any prior key so the
+///   shim `.proof` is the single authority).
+pub(crate) fn attach_body_templates_from_shim_proof(
+    spec: &mut Json,
+    project_root: &Path,
+    target_lang: &str,
+    library_tag: &str,
+) {
+    if library_tag.is_empty() {
+        return;
+    }
+    let templates = body_templates_from_shim_proof(project_root, target_lang, library_tag);
+    if templates.is_empty() {
+        return;
+    }
+    if let Some(obj) = spec.as_object_mut() {
+        obj.insert("bodyTemplates".to_string(), Json::Array(templates));
+    }
+}
+
+pub(crate) fn body_templates_from_shim_proof(
     project_root: &Path,
     target_lang: &str,
     library_tag: &str,
