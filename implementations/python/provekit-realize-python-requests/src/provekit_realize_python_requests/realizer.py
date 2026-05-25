@@ -1,16 +1,13 @@
 from __future__ import annotations
 
+import importlib.util as _importlib_util
 import json
-import os
 import re
 from dataclasses import dataclass
 from functools import lru_cache
 from pathlib import Path
 from typing import Any
 
-BODY_TEMPLATE_REL = Path(
-    "menagerie/python-language-signature/specs/body-templates/python-canonical-bodies-requests.json"
-)
 PLACEHOLDER_RE = re.compile(r"\$\{[^}]+\}")
 
 
@@ -23,17 +20,6 @@ class BodyTemplateEntry:
     max_params: int | None
     requires_param_types: tuple[str, ...] | None
     requires_return_type: str | None
-
-
-@dataclass(frozen=True)
-class ProofBindingCandidate:
-    admission_tier: str
-    body: str
-    concept_name: str
-    package_evidence: dict[str, Any]
-    signature_shape_cid: str
-    target_language: str
-    target_library_tag: str
 
 
 @dataclass(frozen=True)
@@ -64,33 +50,26 @@ def emit_stub(
     param_types: list[str],
     return_type: str,
     concept_name: str,
-    *,
-    signature_shape_cid: str | None = None,
-    binding_candidates: list[dict[str, Any]] | None = None,
-    strict_proof_bindings: bool = False,
+    named_term_tree: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
-    proof_binding = proof_binding_for(
-        concept_name=concept_name,
-        signature_shape_cid=signature_shape_cid,
-        binding_candidates=binding_candidates or [],
+    body = body_template_for(
+        concept_name,
+        params,
+        param_types,
+        return_type,
+        named_term_tree=named_term_tree,
     )
-    if proof_binding is not None:
-        return {
-            "source": _function_source(function, params, proof_binding.body),
-            "is_stub": False,
-            "extension": "py",
-            "selection": {
-                "admission_tier": proof_binding.admission_tier,
-                "package_evidence": proof_binding.package_evidence,
-                "signature_shape_cid": proof_binding.signature_shape_cid,
-                "source": "proof-backed-library-binding",
-            },
-        }
-    if strict_proof_bindings:
-        raise _missing_template(function, params, param_types, concept_name)
-    body = body_template_for(concept_name, params, param_types, return_type)
     if body is None:
-        raise _missing_template(function, params, param_types, concept_name)
+        raise MissingTemplateError(
+            (
+                MissingTemplateEntry(
+                    operation_kind=concept_name,
+                    args_shape=args_shape_for_lookup(param_types, named_term_tree),
+                    function=function,
+                    term_position="body",
+                ),
+            )
+        )
     return {
         "source": _function_source(function, params, body),
         "is_stub": False,
@@ -98,136 +77,221 @@ def emit_stub(
     }
 
 
-def proof_binding_for(
-    *,
-    concept_name: str,
-    signature_shape_cid: str | None,
-    binding_candidates: list[dict[str, Any]],
-) -> ProofBindingCandidate | None:
-    if not signature_shape_cid:
-        return None
-    matches: list[ProofBindingCandidate] = []
-    candidate_names = (concept_name, concept_name.removeprefix("concept:"))
-    for raw in binding_candidates:
-        candidate = _parse_proof_binding_candidate(raw)
-        if candidate is None:
-            continue
-        if candidate.target_language != "python":
-            continue
-        if candidate.target_library_tag != "requests":
-            continue
-        if candidate.concept_name not in candidate_names:
-            continue
-        if candidate.signature_shape_cid != signature_shape_cid:
-            continue
-        matches.append(candidate)
-    matches.sort(key=_proof_binding_sort_key)
-    return matches[0] if matches else None
-
-
-def _parse_proof_binding_candidate(raw: dict[str, Any]) -> ProofBindingCandidate | None:
-    body = raw.get("body")
-    concept_name = raw.get("concept_name")
-    signature_shape_cid = raw.get("signature_shape_cid")
-    target_language = raw.get("target_language")
-    target_library_tag = raw.get("target_library_tag")
-    if not isinstance(body, str):
-        return None
-    if not isinstance(concept_name, str):
-        return None
-    if not isinstance(signature_shape_cid, str):
-        return None
-    if not isinstance(target_language, str):
-        return None
-    if not isinstance(target_library_tag, str):
-        return None
-    package_evidence = raw.get("package_evidence")
-    if not isinstance(package_evidence, dict):
-        package_evidence = {}
-    admission_tier = raw.get("admission_tier")
-    if not isinstance(admission_tier, str):
-        admission_tier = "Third-party Inferred"
-    return ProofBindingCandidate(
-        admission_tier=admission_tier,
-        body=body,
-        concept_name=concept_name,
-        package_evidence=package_evidence,
-        signature_shape_cid=signature_shape_cid,
-        target_language=target_language,
-        target_library_tag=target_library_tag,
-    )
-
-
-def _proof_binding_sort_key(candidate: ProofBindingCandidate) -> tuple[int, str, str]:
-    tier_rank = {
-        "Self-Attested": 0,
-        "Third-party Inferred": 1,
-    }
-    return (
-        tier_rank.get(candidate.admission_tier, 2),
-        candidate.signature_shape_cid,
-        candidate.body,
-    )
-
-
-def _missing_template(
-    function: str, params: list[str], param_types: list[str], concept_name: str
-) -> MissingTemplateError:
-    return MissingTemplateError(
-        (
-            MissingTemplateEntry(
-                operation_kind=concept_name,
-                args_shape=tuple(map_source_type(ty) for ty in param_types),
-                function=function,
-                term_position="body",
-            ),
-        )
-    )
-
-
 def body_template_for(
     concept_name: str,
     params: list[str],
     param_types: list[str],
     return_type: str,
+    named_term_tree: dict[str, Any] | None = None,
 ) -> str | None:
-    mapped_param_types = [map_source_type(ty) for ty in param_types]
+    template_params, lookup_param_types = _template_lookup_signature(
+        params,
+        param_types,
+        named_term_tree,
+    )
     mapped_return_type = map_source_type(return_type)
     candidate_names = (concept_name, concept_name.removeprefix("concept:"))
     for entry in entries():
         if entry.concept_name not in candidate_names:
             continue
-        if entry.min_params is not None and len(params) < entry.min_params:
+        if entry.min_params is not None and len(lookup_param_types) < entry.min_params:
             continue
-        if entry.max_params is not None and len(params) > entry.max_params:
+        if entry.max_params is not None and len(lookup_param_types) > entry.max_params:
             continue
         if entry.requires_param_types is not None:
-            if tuple(mapped_param_types) != entry.requires_param_types:
+            if tuple(lookup_param_types) != entry.requires_param_types:
                 continue
         if entry.requires_return_type is not None:
             if mapped_return_type != entry.requires_return_type:
                 continue
         if entry.template_kind != "verbatim":
             continue
-        rendered = render_template(entry.template, params, mapped_param_types, mapped_return_type)
+        rendered = render_template(
+            entry.template,
+            template_params,
+            lookup_param_types,
+            mapped_return_type,
+        )
         if rendered is None:
             continue
         return rendered
     return None
 
 
+def args_shape_for_lookup(
+    param_types: list[str],
+    named_term_tree: dict[str, Any] | None = None,
+) -> tuple[str, ...]:
+    ntt_args_shape = _ntt_args_shape(named_term_tree)
+    if ntt_args_shape is not None:
+        return ntt_args_shape
+    return tuple(map_source_type(ty) for ty in param_types)
+
+
+def _template_lookup_signature(
+    params: list[str],
+    param_types: list[str],
+    named_term_tree: dict[str, Any] | None,
+) -> tuple[list[str], list[str]]:
+    ntt_args_shape = _ntt_args_shape(named_term_tree)
+    if ntt_args_shape is None:
+        return params, [map_source_type(ty) for ty in param_types]
+    return (
+        _ntt_template_params(params, named_term_tree, len(ntt_args_shape)),
+        list(ntt_args_shape),
+    )
+
+
+def _ntt_args_shape(named_term_tree: dict[str, Any] | None) -> tuple[str, ...] | None:
+    if not isinstance(named_term_tree, dict):
+        return None
+    args = named_term_tree.get("args")
+    if not isinstance(args, list):
+        return None
+    out: list[str] = []
+    for arg in args:
+        if not isinstance(arg, dict):
+            return None
+        descriptor = _ntt_arg_descriptor(arg)
+        if descriptor is None:
+            return None
+        out.append(_map_ntt_arg_descriptor(descriptor))
+    return tuple(out)
+
+
+def _ntt_arg_descriptor(arg: dict[str, Any]) -> str | None:
+    for key in (
+        "type",
+        "typeName",
+        "type_name",
+        "sort",
+        "sortName",
+        "sort_name",
+        "conceptName",
+        "concept_name",
+        "operationKind",
+        "operation_kind",
+    ):
+        value = arg.get(key)
+        if isinstance(value, str) and value.strip():
+            return value.strip()
+    return None
+
+
+def _map_ntt_arg_descriptor(descriptor: str) -> str:
+    match descriptor:
+        case "HttpMethod" | "Url" | "Scheme" | "Authority" | "Path":
+            return "str"
+        case "HeaderMap" | "concept:header-map":
+            return "dict[str, str]"
+        case "Optional<ByteStreamOrBytes>":
+            return "object"
+        case "ByteStreamOrBytes" | "ByteStream" | "concept:byte-stream":
+            return "bytes"
+        case "HttpStatus":
+            return "int"
+        case "ListOfHeaderEntry":
+            return "list[tuple[str, str]]"
+        case "ListOfBytes":
+            return "list[bytes]"
+        case "Optional<Int>":
+            return "int | None"
+        case "Optional<Query>" | "Optional<Fragment>":
+            return "str | None"
+        case _:
+            return map_source_type(descriptor)
+
+
+def _ntt_template_params(
+    params: list[str],
+    named_term_tree: dict[str, Any] | None,
+    arity: int,
+) -> list[str]:
+    if len(params) == arity:
+        return params
+    args = named_term_tree.get("args") if isinstance(named_term_tree, dict) else None
+    if not isinstance(args, list):
+        return [f"arg{index}" for index in range(arity)]
+    names: list[str] = []
+    for index, arg in enumerate(args):
+        if isinstance(arg, dict):
+            names.append(_ntt_arg_name(arg, index))
+        else:
+            names.append(f"arg{index}")
+    return names
+
+
+def _ntt_arg_name(arg: dict[str, Any], index: int) -> str:
+    for key in ("name", "paramName", "param_name", "binding", "symbol"):
+        value = arg.get(key)
+        if isinstance(value, str) and value.strip():
+            return _python_identifier_or_default(value.strip(), f"arg{index}")
+    descriptor = _ntt_arg_descriptor(arg)
+    if descriptor is None:
+        return f"arg{index}"
+    match descriptor:
+        case "HttpMethod":
+            return "method"
+        case "Url" | "concept:url":
+            return "url"
+        case "HeaderMap" | "concept:header-map":
+            return "headers"
+        case "Optional<ByteStreamOrBytes>" | "ByteStreamOrBytes" | "concept:byte-stream":
+            return "body"
+        case "HttpStatus":
+            return "status"
+        case "ListOfHeaderEntry":
+            return "entries"
+        case "ListOfBytes":
+            return "chunks"
+        case "Optional<Int>":
+            return "length_hint"
+        case "Scheme":
+            return "scheme"
+        case "Authority":
+            return "authority"
+        case "Path":
+            return "path"
+        case "Optional<Query>":
+            return "query"
+        case "Optional<Fragment>":
+            return "fragment"
+        case _:
+            return _python_identifier_or_default(
+                descriptor.removeprefix("concept:"),
+                f"arg{index}",
+            )
+
+
+def _python_identifier_or_default(value: str, default: str) -> str:
+    identifier = value.replace("-", "_")
+    if identifier.isidentifier():
+        return identifier
+    return default
+
+
 def map_source_type(src: str) -> str:
     match src:
         case "()":
             return "None"
-        case "i64" | "u64" | "i32" | "u32" | "i16" | "u16" | "i8" | "u8" | "int":
+        case "i64" | "u64" | "i32" | "u32" | "i16" | "u16" | "i8" | "u8" | "int" | "number":
             return "int"
         case "f64" | "f32" | "float":
             return "float"
-        case "bool":
+        case "bool" | "boolean":
             return "bool"
-        case "String" | "&str" | "&String" | "str":
+        case "String" | "&str" | "&String" | "str" | "string":
             return "str"
+        case "HttpMethod" | "Url" | "Scheme" | "Authority" | "Path":
+            return "str"
+        case "HeaderMap":
+            return "dict[str, str]"
+        case "Optional<ByteStreamOrBytes>":
+            return "object"
+        case "ByteStreamOrBytes" | "bytes":
+            return "bytes"
+        case "HttpStatus":
+            return "int"
         case _:
             return src
 
@@ -250,16 +314,126 @@ def render_template(
     return rendered
 
 
-@lru_cache(maxsize=1)
+_SHIM_PACKAGE = "provekit_shim_python_requests"
+_LIBRARY_TAG = "requests"
+_IDENT_RE = re.compile(r"[A-Za-z_][A-Za-z0-9_]*")
+
+
 def entries() -> tuple[BodyTemplateEntry, ...]:
-    path = _find_repo_file(BODY_TEMPLATE_REL)
+    # The kit resolves its own shim `.proof` from its installed package
+    # (pip / site-packages), CBOR-decodes it, and extracts the binding entries.
+    # The substrate is language-blind and never reads the `.proof`.
+    return _shim_proof_entries()
+
+
+def _substitute_shim_params(body_text: str, param_names: list[str]) -> str:
+    def repl(match: re.Match[str]) -> str:
+        ident = match.group(0)
+        try:
+            return f"${{param{param_names.index(ident)}}}"
+        except ValueError:
+            return ident
+
+    return _IDENT_RE.sub(repl, body_text)
+
+
+def _binding_entry_to_template_entry(decl: dict[str, Any]) -> dict[str, Any] | None:
+    concept_name = decl.get("concept_name")
+    if not isinstance(concept_name, str):
+        return None
+    param_names = [p for p in decl.get("param_names", []) if isinstance(p, str)]
+    body_source = decl.get("body_source")
+    body_text = body_source.get("body_text") if isinstance(body_source, dict) else None
+    if not isinstance(body_text, str) or not body_text:
+        return None
+    arity = len(param_names)
+    return {
+        "concept_name": concept_name,
+        "emission_template": {
+            "kind": "verbatim",
+            "template": _substitute_shim_params(body_text, param_names),
+        },
+        "signature_guard": {"min_params": arity, "max_params": arity},
+        "target_library_tag": decl.get("target_library_tag", ""),
+    }
+
+
+def _entries_from_shim_proof(proof_path: Path, library_tag: str) -> tuple[BodyTemplateEntry, ...]:
+    try:
+        import cbor2
+    except ImportError:
+        return ()
+    try:
+        data = cbor2.loads(proof_path.read_bytes())
+    except (OSError, ValueError):
+        return ()
+    members = data.get("members") if isinstance(data, dict) else None
+    if not isinstance(members, dict):
+        return ()
+    items: list[dict[str, Any]] = []
+    for val in members.values():
+        if isinstance(val, (bytes, bytearray)):
+            try:
+                parsed = json.loads(bytes(val).decode("utf-8"))
+            except (ValueError, UnicodeDecodeError):
+                continue
+        elif isinstance(val, str):
+            try:
+                parsed = json.loads(val)
+            except ValueError:
+                continue
+        else:
+            parsed = val
+        body = parsed.get("body") if isinstance(parsed, dict) else None
+        if not isinstance(body, dict):
+            body = parsed if isinstance(parsed, dict) else None
+        if not isinstance(body, dict) or body.get("kind") != "library-sugar-binding-entry":
+            continue
+        if library_tag and body.get("target_library_tag") != library_tag:
+            continue
+        entry = _binding_entry_to_template_entry(body)
+        if entry is not None:
+            items.append(entry)
+    return _parse_entry_array(items)
+
+
+def _resolve_shim_proof_path() -> Path | None:
+    spec = _importlib_util.find_spec(_SHIM_PACKAGE)
+    bases: list[Path] = []
+    if spec is not None:
+        for loc in spec.submodule_search_locations or []:
+            bases.append(Path(loc))
+            bases.append(Path(loc).parent)
+        if spec.origin:
+            bases.append(Path(spec.origin).resolve().parent)
+            bases.append(Path(spec.origin).resolve().parent.parent)
+    seen: set[Path] = set()
+    for base in bases:
+        if base in seen:
+            continue
+        seen.add(base)
+        stable = base / "provekit.proof"
+        if stable.exists():
+            return stable
+        proofs = sorted(base.glob("*.proof"))
+        if proofs:
+            return proofs[0]
+    return None
+
+
+@lru_cache(maxsize=1)
+def _shim_proof_entries() -> tuple[BodyTemplateEntry, ...]:
+    path = _resolve_shim_proof_path()
     if path is None:
         return ()
-    raw = path.read_text(encoding="utf-8")
-    root = json.loads(raw)
-    content = root.get("header", {}).get("content", {})
+    return _entries_from_shim_proof(path, _LIBRARY_TAG)
+
+
+def _parse_entry_array(items: Any) -> tuple[BodyTemplateEntry, ...]:
+    if not isinstance(items, list):
+        return ()
     out: list[BodyTemplateEntry] = []
-    for item in content.get("entries", []):
+    for item in items:
         if not isinstance(item, dict):
             continue
         template = item.get("emission_template", {})
@@ -305,27 +479,3 @@ def _int_or_none(value: Any) -> int | None:
     if isinstance(value, int):
         return value
     return None
-
-
-def _find_repo_file(relative: Path) -> Path | None:
-    seen: set[Path] = set()
-    for base in _candidate_bases():
-        candidate = base / relative
-        if candidate in seen:
-            continue
-        seen.add(candidate)
-        if candidate.exists():
-            return candidate
-    return None
-
-
-def _candidate_bases() -> list[Path]:
-    bases: list[Path] = []
-    env_root = os.environ.get("PROVEKIT_REPO_ROOT")
-    if env_root:
-        bases.append(Path(env_root))
-    cwd = Path.cwd().resolve()
-    bases.extend([cwd, *cwd.parents])
-    here = Path(__file__).resolve()
-    bases.extend(here.parents)
-    return bases

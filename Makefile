@@ -235,6 +235,7 @@ build-python:
 	$(PIP) install --quiet --no-cache-dir \
 		-e examples/provekit-shim-python-sqlite3 \
 		-e examples/provekit-shim-python-aiosqlite \
+		-e examples/provekit-shim-python-requests \
 		-e implementations/python/provekit-realize-python-core \
 		-e implementations/python/provekit-realize-python-sqlite3 \
 		-e implementations/python/provekit-realize-python-aiosqlite \
@@ -742,7 +743,7 @@ test-python: build-python
 	(cd implementations/python/provekit-realize-python-requests && \
 		python3 -m venv .venv && \
 		. .venv/bin/activate && \
-		python -m pip install --quiet -e . pytest && \
+		python -m pip install --quiet -e ../../../examples/provekit-shim-python-requests -e . pytest && \
 		pytest) || failed="$$failed provekit-realize-python-requests"; \
 	if [ -n "$$failed" ]; then echo "test-python FAIL:$$failed"; exit 1; fi
 
