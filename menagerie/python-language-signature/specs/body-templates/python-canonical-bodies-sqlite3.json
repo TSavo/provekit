@@ -1,6 +1,6 @@
 {
   "header": {
-    "cid": "blake3-512:206184cd70160ddf845a4378a1e473042c5f926df8be80d17392f43446bd9fab19377dd35d9d18edd00d6a6b5c8b3881a42eca3013479724aa71fa9987896a61",
+    "cid": "blake3-512:fccde2bef8c919553a0bb86dd5e6510ed37a4e3c0e0c36c517eba44cf3cdde60bd06b6cc7cf3e7249d51767db13bf5d28a825031bc1fccb4db63b6a24adec79f",
     "content": {
       "target_language": "python",
       "template_name": "python-canonical-bodies-sqlite3",
@@ -116,51 +116,6 @@
           "target_library_tag": "sqlite3"
         },
         {
-          "concept_name": "concept:sql-execute",
-          "emission_template": {
-            "kind": "verbatim",
-            "template": "cursor = db.execute(${param0}, tuple(${param1}))\ndb.commit()\nreturn {\"rows_affected\": cursor.rowcount, \"last_insert_id\": cursor.lastrowid}"
-          },
-          "loss_record_contribution": {
-            "form": "literal",
-            "value": {
-              "entries": [
-                "sync-vs-async",
-                "last-insert-id",
-                "transaction-isolation",
-                "row-typing-mode"
-              ]
-            }
-          },
-          "signature_guard": {
-            "min_params": 2,
-            "max_params": 2
-          },
-          "target_library_tag": "sqlite3"
-        },
-        {
-          "concept_name": "concept:insert-and-get-id",
-          "emission_template": {
-            "kind": "verbatim",
-            "template": "cursor = db.execute(${param0}, tuple(${param1}))\ndb.commit()\nreturn int(cursor.lastrowid or 0)"
-          },
-          "loss_record_contribution": {
-            "form": "literal",
-            "value": {
-              "entries": [
-                "sync-vs-async",
-                "id-column-discovery",
-                "row-typing-mode"
-              ]
-            }
-          },
-          "signature_guard": {
-            "min_params": 2,
-            "max_params": 2
-          },
-          "target_library_tag": "sqlite3"
-        },
-        {
           "concept_name": "concept:sql-batch-execute",
           "emission_template": {
             "kind": "verbatim",
@@ -200,28 +155,6 @@
           "signature_guard": {
             "min_params": 3,
             "max_params": 3
-          },
-          "target_library_tag": "sqlite3"
-        },
-        {
-          "concept_name": "concept:sql-query",
-          "emission_template": {
-            "kind": "verbatim",
-            "template": "cursor = db.execute(${param0}, tuple(${param1}))\nreturn cursor.fetchall()"
-          },
-          "loss_record_contribution": {
-            "form": "literal",
-            "value": {
-              "entries": [
-                "sync-vs-async",
-                "row-typing-mode",
-                "cursor-lifetime"
-              ]
-            }
-          },
-          "signature_guard": {
-            "min_params": 2,
-            "max_params": 2
           },
           "target_library_tag": "sqlite3"
         },
@@ -1029,6 +962,73 @@
               "entries": [
                 "row-typing-mode",
                 "ownership-model"
+              ]
+            }
+          },
+          "signature_guard": {
+            "min_params": 2,
+            "max_params": 2
+          },
+          "target_library_tag": "sqlite3"
+        },
+        {
+          "concept_name": "concept:sql-execute",
+          "emission_template": {
+            "kind": "verbatim",
+            "template": "cursor = db.execute(${param0}, tuple(${param1}))\ndb.commit()\nreturn {\"rows_affected\": cursor.rowcount, \"last_insert_id\": cursor.lastrowid}"
+          },
+          "loss_record_contribution": {
+            "form": "literal",
+            "value": {
+              "entries": [
+                "sync-vs-async",
+                "last-insert-id",
+                "transaction-isolation",
+                "row-typing-mode"
+              ]
+            }
+          },
+          "signature_guard": {
+            "min_params": 2,
+            "max_params": 2
+          },
+          "target_library_tag": "sqlite3"
+        },
+        {
+          "concept_name": "concept:insert-and-get-id",
+          "emission_template": {
+            "kind": "verbatim",
+            "template": "cursor = db.execute(${param0}, tuple(${param1}))\ndb.commit()\nreturn int(cursor.lastrowid or 0)"
+          },
+          "loss_record_contribution": {
+            "form": "literal",
+            "value": {
+              "entries": [
+                "sync-vs-async",
+                "id-column-discovery",
+                "row-typing-mode"
+              ]
+            }
+          },
+          "signature_guard": {
+            "min_params": 2,
+            "max_params": 2
+          },
+          "target_library_tag": "sqlite3"
+        },
+        {
+          "concept_name": "concept:sql-query",
+          "emission_template": {
+            "kind": "verbatim",
+            "template": "cursor = db.execute(${param0}, tuple(${param1}))\nreturn cursor.fetchall()"
+          },
+          "loss_record_contribution": {
+            "form": "literal",
+            "value": {
+              "entries": [
+                "sync-vs-async",
+                "row-typing-mode",
+                "cursor-lifetime"
               ]
             }
           },
