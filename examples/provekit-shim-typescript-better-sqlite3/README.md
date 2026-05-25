@@ -18,7 +18,7 @@ from the shim proof.
 ## Re-minting
 
 ```bash
-provekit lift --project examples/provekit-shim-typescript-better-sqlite3 --library-bindings
+provekit lift examples/provekit-shim-typescript-better-sqlite3 --library-bindings
 provekit mint --project examples/provekit-shim-typescript-better-sqlite3 --library-bindings --out examples/provekit-shim-typescript-better-sqlite3
 ```
 
