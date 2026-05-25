@@ -46,7 +46,8 @@ use provekit_claim_envelope::{
     compute_contract_set_cid, contract_cid as compute_contract_cid, mint_contract, Authoring,
     MintContractArgs,
 };
-use provekit_ir_symbolic::{serialize::formula_to_value, ContractDecl};
+use provekit_ir_symbolic::{serialize::formula_to_value, ContractDecl, Formula};
+use std::rc::Rc;
 use provekit_proof_envelope::{
     build_proof_envelope, ed25519_pubkey_string, Ed25519Seed, ProofEnvelopeInput,
 };
@@ -578,19 +579,109 @@ pub enum LiftMintError {
     NameCollisionDifferentIr(String),
 }
 
+/// Coalesce decls that share a name into one. A producer callsite asserted
+/// about in multiple places (e.g. a let-bound `.expect()` used in two
+/// `assert!`s) is lifted as several decls with the same name but different
+/// invariants. The honest single memento for that callsite carries the
+/// CONJUNCTION of every fact asserted about it. This is computation over the
+/// lifted data — the substrate's job, post-RPC — not the language kit's.
+///
+/// Exact-duplicate operands collapse (`a ∧ a ≡ a`). A contradiction
+/// (`a ∧ ¬a`) is NOT masked here: it rides into the contract as an
+/// unsatisfiable invariant and surfaces at prove/verify. That diagnostic is
+/// the point of the system, caught at the proving layer — not papered over by
+/// a naming-time error that also false-positived on compatible facts.
+fn coalesce_decls_by_name(decls: &[ContractDecl]) -> (Vec<ContractDecl>, usize) {
+    let mut order: Vec<String> = Vec::new();
+    let mut grouped: BTreeMap<String, ContractDecl> = BTreeMap::new();
+    // A same-name decl carrying IDENTICAL facts is a true duplicate (no new
+    // information) and counts toward the dedup receipt. A same-name decl with
+    // DISTINCT facts is conjoined, not deduplicated — it adds a fact (possibly
+    // a contradictory one, which the solver will catch).
+    let mut deduplicated = 0usize;
+    for d in decls {
+        if let Some(acc) = grouped.get_mut(&d.name) {
+            let identical = format!("{:?}", acc.pre) == format!("{:?}", d.pre)
+                && format!("{:?}", acc.post) == format!("{:?}", d.post)
+                && format!("{:?}", acc.inv) == format!("{:?}", d.inv);
+            if identical {
+                deduplicated += 1;
+            } else {
+                acc.pre = conjoin_formula(acc.pre.take(), d.pre.clone());
+                acc.post = conjoin_formula(acc.post.take(), d.post.clone());
+                acc.inv = conjoin_formula(acc.inv.take(), d.inv.clone());
+            }
+        } else {
+            order.push(d.name.clone());
+            grouped.insert(d.name.clone(), d.clone());
+        }
+    }
+    let out = order
+        .into_iter()
+        .filter_map(|name| grouped.remove(&name))
+        .collect();
+    (out, deduplicated)
+}
+
+/// Conjoin two optional formulas into one `and` connective, flattening nested
+/// `and`s and dropping exact-duplicate operands (compared by canonical Debug
+/// form, since `Formula` has no `PartialEq`). Distinct operands — including a
+/// fact and its negation — are all preserved for the prover.
+fn conjoin_formula(a: Option<Rc<Formula>>, b: Option<Rc<Formula>>) -> Option<Rc<Formula>> {
+    let (a, b) = match (a, b) {
+        (None, None) => return None,
+        (Some(x), None) | (None, Some(x)) => return Some(x),
+        (Some(x), Some(y)) => (x, y),
+    };
+    let mut operands: Vec<Rc<Formula>> = Vec::new();
+    for f in [a, b] {
+        match &*f {
+            Formula::Connective { kind, operands: inner } if kind == "and" => {
+                for op in inner {
+                    push_unique_operand(&mut operands, op.clone());
+                }
+            }
+            _ => push_unique_operand(&mut operands, f.clone()),
+        }
+    }
+    match operands.len() {
+        0 => None,
+        1 => operands.into_iter().next(),
+        _ => Some(Rc::new(Formula::Connective {
+            kind: "and".to_string(),
+            operands,
+        })),
+    }
+}
+
+fn push_unique_operand(operands: &mut Vec<Rc<Formula>>, candidate: Rc<Formula>) {
+    let key = format!("{candidate:?}");
+    if !operands.iter().any(|existing| format!("{existing:?}") == key) {
+        operands.push(candidate);
+    }
+}
+
 /// Mint each lifted ContractDecl as a signed memento and bundle into a
 /// single `.proof` catalog. CONTENT-ADDRESSED DEDUP: two decls whose
-/// canonical IR encodes to the same byte string mint to the same CID
-/// and collapse to one member. Names that disagree on the IR fail
-/// loud (the lattice should not silently accept contradiction).
+/// canonical IR encodes to the same byte string mint to the same CID and
+/// collapse to one member. Decls that share a NAME are coalesced first
+/// (`coalesce_decls_by_name`) so every fact about a producer callsite lives in
+/// one memento; the residual same-name guard below is then a defensive
+/// tripwire that should never fire.
 pub fn mint_proof(decls: &[ContractDecl], opts: &LiftOptions) -> Result<MintOutput, LiftMintError> {
     let mut members: BTreeMap<String, Vec<u8>> = BTreeMap::new();
     let mut contract_cids: BTreeMap<String, String> = BTreeMap::new();
     // Signer-independent content CIDs for contractSetCid computation (spec #94).
     let mut content_cids: Vec<String> = Vec::new();
-    let mut deduplicated = 0usize;
+    // Coalesce same-named decls (computation over the lifted data) before
+    // minting, so each producer callsite yields one memento carrying the
+    // conjunction of every fact asserted about it. The coalesce reports the
+    // true-duplicate count (identical facts under one name); the mint loop
+    // below adds content-CID collapses (identical canonical bytes under
+    // different names).
+    let (coalesced, mut deduplicated) = coalesce_decls_by_name(decls);
 
-    for d in decls {
+    for d in &coalesced {
         let args = MintContractArgs {
             formals: Vec::new(),
             emit_empty_formals: false,

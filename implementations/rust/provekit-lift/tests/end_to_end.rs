@@ -206,7 +206,13 @@ fn dedup_collapses_identical_ir_across_files() {
 }
 
 #[test]
-fn name_collision_on_different_ir_fails_loud() {
+fn name_collision_on_different_ir_conjoins_for_the_solver() {
+    // Two facts asserted under the same name (x == 42 and x == 99) are NOT a
+    // mint-time error. They conjoin into ONE contract whose invariant is
+    // (x == 42) ∧ (x == 99). That conjunction is unsatisfiable -- but detecting
+    // the contradiction is the SOLVER's job, not the lifter's. The substrate's
+    // job is to assemble the honest total fact about the name and hand it on;
+    // routing the contradiction to the solver is the whole point of the system.
     let a_src = r#"
         proptest! {
             #[test]
@@ -228,13 +234,16 @@ fn name_collision_on_different_ir_fails_loud() {
     let mut decls = provekit_lift::adapter_proptest::lift_file(&af, "a.rs").decls;
     decls.extend(provekit_lift::adapter_proptest::lift_file(&bf, "b.rs").decls);
     let opts = LiftOptions::default();
-    let r = mint_proof(&decls, &opts);
-    match r {
-        Err(provekit_lift::LiftMintError::NameCollisionDifferentIr(name)) => {
-            assert_eq!(name, "p_eq");
-        }
-        other => panic!("expected NameCollisionDifferentIr, got {other:?}"),
-    }
+    let minted =
+        mint_proof(&decls, &opts).expect("distinct facts under one name conjoin; they do not fail at mint");
+    assert_eq!(
+        minted.member_count, 1,
+        "the two p_eq facts coalesce into one conjoined contract"
+    );
+    assert_eq!(
+        minted.deduplicated, 0,
+        "distinct facts are conjoined, not deduplicated"
+    );
 }
 
 #[test]
