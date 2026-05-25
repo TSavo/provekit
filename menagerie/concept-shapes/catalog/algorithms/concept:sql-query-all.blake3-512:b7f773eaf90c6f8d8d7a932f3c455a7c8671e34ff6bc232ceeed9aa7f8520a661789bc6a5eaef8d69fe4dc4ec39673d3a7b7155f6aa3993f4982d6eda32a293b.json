@@ -1,0 +1,80 @@
+{
+  "memento": {
+    "schema_version": "1",
+    "protocol": "AMP",
+    "kind": "AlgorithmMemento",
+    "fn_name": "concept:sql-query-all",
+    "formals": [
+      "sql",
+      "args"
+    ],
+    "formal_sorts": [
+      {
+        "args": [],
+        "kind": "ctor",
+        "name": "Sql"
+      },
+      {
+        "args": [],
+        "kind": "ctor",
+        "name": "SqlArgs"
+      }
+    ],
+    "pre": {
+      "args": [],
+      "kind": "atomic",
+      "name": "true"
+    },
+    "post": {
+      "arity": [
+        "Sql",
+        "SqlArgs"
+      ],
+      "arity_shape": {
+        "kind": "named",
+        "slots": [
+          {
+            "name": "sql"
+          },
+          {
+            "name": "args"
+          }
+        ]
+      },
+      "cardinality": "all",
+      "kind": "operation-contract",
+      "materialization": "fully-materialized",
+      "operator": "sql-query-all",
+      "result": "SqlRowSet",
+      "row_shape_sketch": {
+        "row_set_sort": "SqlRowSet",
+        "row_sort": "SqlRow"
+      },
+      "wp_note": "Executes a parameterized SQL read operation and returns a fully-materialized array of all matching rows. Sql is the parameterized query string. SqlArgs carries positional or named parameters. SqlRowSet is a fully-materialized, in-memory row set: indexable, length-known, and re-readable. Materializing every matching row in memory is the post-condition of this concept, not a realization loss. Implementation-defined row order in the absence of an ORDER BY clause, transaction isolation, and sync versus async behavior are realization loss dimensions."
+    },
+    "effects": {
+      "effects": [
+        {
+          "kind": "effect-signature",
+          "name": "Async"
+        },
+        {
+          "kind": "effect-signature",
+          "name": "IO"
+        }
+      ]
+    },
+    "auto_minted_mementos": [],
+    "return_sort": {
+      "args": [],
+      "kind": "ctor",
+      "name": "SqlRowSet"
+    }
+  },
+  "cid": "blake3-512:b7f773eaf90c6f8d8d7a932f3c455a7c8671e34ff6bc232ceeed9aa7f8520a661789bc6a5eaef8d69fe4dc4ec39673d3a7b7155f6aa3993f4982d6eda32a293b",
+  "signature": {
+    "alg": "ed25519",
+    "key_id": "UNSIGNED_DEV_ONLY",
+    "sig_b64": "3CkEd7XVzc6Jf02sxOt7L264WC1dd41htKTST+sFw3iXoV0AeFu+tjcuhP/66b4pobVr0DmZdMfn2JbOvkKKBQ=="
+  }
+}
