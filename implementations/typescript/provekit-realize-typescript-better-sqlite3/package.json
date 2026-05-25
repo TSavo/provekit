@@ -13,6 +13,6 @@
   "dependencies": {
     "@ipld/dag-cbor": "^9.2.2",
     "@noble/hashes": "^2.2.0",
-    "provekit-shim-better-sqlite3": "^0.1.3"
+    "provekit-shim-better-sqlite3": "^0.1.4"
   }
 }
