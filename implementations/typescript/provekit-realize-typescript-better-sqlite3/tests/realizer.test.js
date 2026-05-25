@@ -15,14 +15,14 @@ test("bsq_realizer_resolves_from_shim_proof_in_node_modules", () => {
   assert.ok(entries.length >= 40, `expected >=40 shim entries, got ${entries.length}`);
 });
 
-// sql-query: 3-param (db, sql, args) → prepare+all path
+// sql-query-all: 3-param (db, sql, args) → prepare+all path
 test("sql query uses better-sqlite3 prepare all without await", () => {
   const result = emitStub({
     functionName: "selectRows",
     params: ["db", "sql", "args"],
     paramTypes: ["Database.Database", "string", "unknown[]"],
     returnType: "unknown[]",
-    conceptName: "concept:sql-query",
+    conceptName: "concept:sql-query-all",
   });
 
   assert.equal(result.is_stub, false);
@@ -75,9 +75,9 @@ test("rpc forwards named term tree sources to better-sqlite3 template substituti
       params: ["id"],
       param_types: ["number"],
       return_type: "User",
-      concept_name: "concept:sql-query",
+      concept_name: "concept:sql-query-all",
       namedTermTree: {
-        conceptName: "concept:sql-query",
+        conceptName: "concept:sql-query-all",
         operationKind: "op-application",
         args: [
           {
