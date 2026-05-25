@@ -3976,6 +3976,89 @@ mod tests {
         );
     }
 
+    /// GAP PIN (python-sqlite3 fan-out, post-#1460): the #1460 enabler wired the
+    /// realize BODY-CONTENT path off the canonical-bodies JSON (templates now
+    /// arrive over RPC via `attach_body_templates_from_shim_proof`), but the
+    /// migrate path has a SECOND, independent JSON consumer that #1460 did NOT
+    /// touch: `body_template_cid` disk-reads
+    /// `menagerie/python-language-signature/specs/body-templates/python-canonical-bodies-<tag>.json`
+    /// purely to extract `header.cid` for the receipt's source/target
+    /// `binding_cid` (provenance reference, not body content). So deleting
+    /// `python-canonical-bodies-sqlite3.json` breaks the migrate
+    /// (`cmd_bind_migrate.rs:1010` read error), which is exactly why
+    /// `cross_platform_point_query_receipt_test` goes red on deletion. PIECE 2a's
+    /// commit message named this gate explicitly. The deletion is therefore
+    /// gated on a SECOND shared enabler (mirroring #1460's shape): derive the
+    /// target `binding_cid` from the shim `.proof` body-templates content when
+    /// `sugar_proof_for_realize` resolves, with disk as back-compat fallback.
+    ///
+    /// This is the RED-GREEN TARGET for that enabler: it exercises
+    /// `body_template_cid` for `python-sqlite3` WITH the canonical-bodies JSON
+    /// absent (temporarily renamed away, restored on drop so the workspace is
+    /// never left mutated). TODAY this FAILS (the disk read at
+    /// `cmd_bind_migrate.rs:1010` errors with the JSON gone); POST-ENABLER it
+    /// must PASS (the CID derived from the shim `.proof`). It also asserts the
+    /// shim `.proof` is already wired correctly so the enabler has a source of
+    /// truth to derive from. `#[ignore]`d so CI stays green until the enabler
+    /// lands; run with `-- --ignored` to drive the enabler.
+    #[test]
+    #[ignore = "enabler-PR-pending: body_template_cid must derive binding_cid from the shim .proof (mirror #1460) so python-canonical-bodies-sqlite3.json can be deleted; see GAP PIN"]
+    fn body_template_cid_resolves_python_sqlite3_with_json_absent() {
+        let repo = harness_repo_root();
+
+        // Precondition the enabler relies on: the (python, sqlite3) shim .proof
+        // already carries the binding templates (48 entries, target_library_tag
+        // == manifest library_tag == "sqlite3" -- no #1462-style mismatch), so a
+        // .proof-derived binding_cid is well-defined.
+        let templates = crate::cmd_materialize::body_templates_from_shim_proof(
+            &repo, "python", "sqlite3",
+        );
+        assert!(
+            !templates.is_empty(),
+            "python-sqlite3 shim .proof must carry binding templates for the \
+             enabler to derive a binding_cid from"
+        );
+
+        // Rename the canonical-bodies JSON away for the duration of the call,
+        // restoring it on drop (panic-safe). This is the deletion the brief
+        // wants to ship; today body_template_cid breaks on it.
+        struct Restore {
+            from: std::path::PathBuf,
+            to: std::path::PathBuf,
+        }
+        impl Drop for Restore {
+            fn drop(&mut self) {
+                if self.to.exists() {
+                    let _ = std::fs::rename(&self.to, &self.from);
+                }
+            }
+        }
+        let json = repo
+            .join("menagerie")
+            .join("python-language-signature")
+            .join("specs")
+            .join("body-templates")
+            .join("python-canonical-bodies-sqlite3.json");
+        assert!(json.is_file(), "fixture JSON must exist pre-test");
+        let stashed = json.with_extension("json.gap-pin-tmp");
+        std::fs::rename(&json, &stashed).expect("stash JSON");
+        let _restore = Restore {
+            from: json.clone(),
+            to: stashed,
+        };
+
+        // TODAY: Err (disk read fails). POST-ENABLER: Ok (CID from shim .proof).
+        let cid = body_template_cid(&repo, "python-sqlite3").expect(
+            "body_template_cid must resolve python-sqlite3 with the \
+             canonical-bodies JSON ABSENT (derive binding_cid from the shim \
+             .proof, mirroring #1460's body-content enabler)",
+        );
+        assert!(
+            cid.starts_with("blake3-512:"),
+            "binding_cid must be a content address, got {cid}"
+        );
+    }
+
     fn harness_callsites() -> Vec<CallsiteProbe> {
         vec![
             CallsiteProbe {
