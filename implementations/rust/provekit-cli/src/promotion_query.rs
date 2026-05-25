@@ -63,6 +63,24 @@ pub(crate) fn concept_query_terms(project_root: &Path, concept: &str) -> Vec<Str
     if let Some(resolved) = resolve_concept_counterpart(project_root, concept) {
         terms.insert(resolved);
     }
+    // Family expansion: a grouping concept (e.g. concept:family:sql-query, which
+    // rolls up the cardinality concepts sql-query-row/-all/-iterate after the
+    // #1469 split) declares a `members` array in its catalog index entry. When
+    // present, the query terms include each member name AND its CID, so witness
+    // consensus / verify aggregate witnesses across the whole family rather than
+    // a single concept. Non-family concepts have no `members` and are unaffected.
+    if let Some((_, entry)) = resolve_concept_index_entry(project_root, concept) {
+        if let Some(members) = entry.get("members").and_then(Value::as_array) {
+            for member in members {
+                if let Some(name) = member.as_str() {
+                    terms.insert(name.to_string());
+                    if let Some(cid) = resolve_concept_counterpart(project_root, name) {
+                        terms.insert(cid);
+                    }
+                }
+            }
+        }
+    }
     terms.into_iter().collect()
 }
 
