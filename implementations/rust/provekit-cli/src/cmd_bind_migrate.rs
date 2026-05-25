@@ -1013,8 +1013,14 @@ fn build_propagation_input(
 fn body_template_cid(repo_root: &Path, surface: &str) -> Result<String, String> {
     let (language, tag) = split_library_surface(surface)?;
 
-    // Shim-`.proof`-first: derive the provenance CID from the signed
-    // binding-entry templates when a `sugar_proof` pointer resolves them.
+    // Universal CID scheme: whoever resolves the binding-entry templates, the
+    // substrate content-addresses them with `cid_for_json` over the entries
+    // sorted by their JCS rendering. The ONLY thing that varies per language is
+    // who supplies the entry array.
+
+    // (1) Substrate-resolved: a `sugar_proof` pointer in the manifest tells the
+    //     CLI where the shim `.proof` lives (java/python). The CLI reads it and
+    //     builds the entries directly.
     let templates =
         crate::cmd_materialize::body_templates_from_shim_proof(repo_root, &language, &tag);
     if !templates.is_empty() {
@@ -1023,21 +1029,34 @@ fn body_template_cid(repo_root: &Path, surface: &str) -> Result<String, String> 
         return Ok(cid_for_json(&serde_json::Value::Array(sorted)));
     }
 
+    // (2) Kit-resolved: the kit owns its package manager and resolves the shim
+    //     `.proof` itself (typescript reads `node_modules`). It returns the
+    //     entry array over RPC; the substrate applies the SAME sorted-JCS
+    //     `cid_for_json` algebra. No `sugar_proof`, no on-disk JSON.
+    let kit_entries =
+        crate::kit_dispatch::body_template_entries_via_rpc(repo_root, &language, &tag)?;
+    if !kit_entries.is_empty() {
+        let mut sorted = kit_entries;
+        sorted.sort_by_cached_key(|entry| encode_jcs(&json_to_value(entry)));
+        return Ok(cid_for_json(&serde_json::Value::Array(sorted)));
+    }
+
     // Back-compat fallback: lift `header.cid` from the on-disk canonical-bodies
-    // JSON (surfaces with no shim `.proof`).
+    // JSON. TypeScript no longer uses this path (the better-sqlite3 JSON is
+    // deleted; the kit resolves from node_modules). Python urllib + any
+    // not-yet-migrated tags still read disk here.
     let file_name = match language.as_str() {
-        "typescript" => {
-            if tag.is_empty() {
-                "typescript-canonical-bodies.json".to_string()
-            } else {
-                format!("typescript-canonical-bodies-{tag}.json")
-            }
-        }
         "python" => match tag.as_str() {
             "urllib" => "python-canonical-bodies.json".to_string(),
             _ => format!("python-canonical-bodies-{tag}.json"),
         },
-        _ => return Err(format!("unsupported body template surface {surface}")),
+        _ => {
+            return Err(format!(
+                "no body-template source resolved for surface {surface}: \
+                 no sugar_proof pointer, no kit-returned entries, no on-disk \
+                 canonical-bodies JSON fallback for language `{language}`"
+            ))
+        }
     };
     let path = repo_root
         .join("menagerie")

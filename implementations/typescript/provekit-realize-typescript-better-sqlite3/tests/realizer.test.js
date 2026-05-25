@@ -46,16 +46,21 @@ test("sql execute produces prepare run body from shim", () => {
   assert.match(result.source, /\.run\(args\)/);
 });
 
-// body_template_cid RPC returns a blake3-512 CID matching the shim proof file
-test("rpc body_template_cid returns shim proof blake3-512 cid", () => {
+// body_template_entries RPC returns the kit-built template entries (the
+// substrate content-addresses these with the universal sorted-JCS scheme).
+test("rpc body_template_entries returns shim-resolved entries", () => {
   const resp = dispatch({
     id: 1,
-    method: "provekit.plugin.body_template_cid",
+    method: "provekit.plugin.body_template_entries",
     params: {},
   });
   assert.ok(!resp.error, `unexpected error: ${JSON.stringify(resp.error)}`);
-  assert.ok(typeof resp.result.cid === "string", "cid must be a string");
-  assert.match(resp.result.cid, /^blake3-512:[0-9a-f]{128}$/, "cid must be blake3-512 format");
+  assert.ok(Array.isArray(resp.result.entries), "entries must be an array");
+  assert.ok(resp.result.entries.length >= 40, `expected >=40 entries, got ${resp.result.entries.length}`);
+  const first = resp.result.entries[0];
+  assert.ok(typeof first.concept_name === "string", "entry must have concept_name");
+  assert.ok(first.emission_template && first.emission_template.kind === "verbatim", "entry must have verbatim emission_template");
+  assert.ok(first.signature_guard, "entry must have signature_guard");
   assert.ok(typeof resp.result.proof_path === "string", "proof_path must be a string");
   assert.ok(resp.result.proof_path.includes("node_modules"), "proof_path must be in node_modules");
 });

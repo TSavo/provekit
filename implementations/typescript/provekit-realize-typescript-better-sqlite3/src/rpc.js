@@ -46,24 +46,18 @@ function dispatch(request) {
     const decl = platformSemanticsDeclaration();
     return { jsonrpc: "2.0", id: msgId, result: { tags: decl.tags, dimension_values: decl.dimension_values, op_aliases: {} } };
   }
-  if (method === "provekit.plugin.body_template_cid") {
+  if (method === "provekit.plugin.body_template_entries") {
+    // The kit resolved the shim .proof from node_modules and built the template
+    // entries. It hands them back so the substrate can content-address them with
+    // the canonical sorted-JCS scheme (the same cid_for_json algebra every
+    // language uses). The kit does NOT compute the CID itself — the address
+    // space is universal and owned by the substrate.
     const proofPath = realizer.getProofPath ? realizer.getProofPath() : null;
     if (!proofPath) {
       return errorResponse(msgId, 1404, "SHIM_NOT_FOUND: provekit-shim-better-sqlite3 not installed in node_modules");
     }
-    const fs = require("node:fs");
-    let cid = null;
-    try {
-      const raw = fs.readFileSync(proofPath);
-      // Compute blake3-512 of the file bytes, matching the CID-named filename scheme.
-      const { blake3 } = require("@noble/hashes/blake3.js");
-      const hash = blake3(raw, { dkLen: 64 });
-      const hex = Buffer.from(hash).toString("hex");
-      cid = `blake3-512:${hex}`;
-    } catch (_e) {
-      return errorResponse(msgId, 1500, `PROOF_CID_UNREADABLE: ${_e.message}`);
-    }
-    return { jsonrpc: "2.0", id: msgId, result: { cid, proof_path: proofPath } };
+    const entries = realizer.shimProofEntries ? realizer.shimProofEntries() : [];
+    return { jsonrpc: "2.0", id: msgId, result: { entries, proof_path: proofPath } };
   }
   if (method === "provekit.plugin.shutdown") {
     return { jsonrpc: "2.0", id: msgId, result: null };

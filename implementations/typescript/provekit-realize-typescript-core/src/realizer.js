@@ -519,10 +519,28 @@ function proofFileCid(proofPath) {
 
 /**
  * Resolve the path to a shim package's provekit.proof via node_modules.
- * Walks up from the current working directory and __dirname looking for
- * a node_modules/<packageName>/provekit.proof file.
+ *
+ * Primary mechanism: Node's own module resolution (`require.resolve`) seeded
+ * from the calling kit's resolution paths (`resolveFromPaths`). This is the
+ * honest resolution: the kit finds the shim exactly as `require("<pkg>")`
+ * would, from the kit package's own node_modules — independent of cwd.
+ *
+ * Fallback: walk up from cwd and the given base dirs looking for
+ * node_modules/<packageName>/provekit.proof, for callers that did not (or
+ * could not) supply resolution paths.
  */
-function resolveShimProofPath(packageName) {
+function resolveShimProofPath(packageName, resolveFromPaths) {
+  // Primary: ask Node to resolve the shipped proof the same way it resolves
+  // any package subpath. `provekit.proof` is exported via the package `files`
+  // array, so `require.resolve("<pkg>/provekit.proof")` lands on it.
+  if (Array.isArray(resolveFromPaths) && resolveFromPaths.length > 0) {
+    try {
+      return require.resolve(`${packageName}/provekit.proof`, { paths: resolveFromPaths });
+    } catch (_e) {
+      // fall through to the directory walk
+    }
+  }
+
   const bases = [];
   let current = process.cwd();
   while (true) {
@@ -538,9 +556,18 @@ function resolveShimProofPath(packageName) {
     if (parent === current) break;
     current = parent;
   }
+  if (Array.isArray(resolveFromPaths)) {
+    for (const p of resolveFromPaths) {
+      // resolveFromPaths entries are node_modules dirs; their parent is a base.
+      bases.push(path.dirname(p));
+      bases.push(p);
+    }
+  }
   const seen = new Set();
   for (const base of bases) {
-    const candidate = path.join(base, "node_modules", packageName, "provekit.proof");
+    const candidate = base.endsWith("node_modules")
+      ? path.join(base, packageName, "provekit.proof")
+      : path.join(base, "node_modules", packageName, "provekit.proof");
     if (seen.has(candidate)) continue;
     seen.add(candidate);
     if (fs.existsSync(candidate)) return candidate;
@@ -555,13 +582,13 @@ function resolveShimProofPath(packageName) {
  *
  * Falls back to an empty entry set if the shim is not installed.
  */
-function createRealizerFromShimProof(packageName, libraryTag) {
+function createRealizerFromShimProof(packageName, libraryTag, resolveFromPaths) {
   let cachedEntries = null;
   let cachedProofPath = undefined;
 
   function getProofPath() {
     if (cachedProofPath !== undefined) return cachedProofPath;
-    cachedProofPath = resolveShimProofPath(packageName);
+    cachedProofPath = resolveShimProofPath(packageName, resolveFromPaths);
     return cachedProofPath;
   }
 

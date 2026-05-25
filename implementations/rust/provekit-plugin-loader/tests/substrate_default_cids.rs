@@ -180,16 +180,11 @@ fn typescript_canonical_bodies_cid_self_consistent() {
     );
 }
 
-#[test]
-fn typescript_better_sqlite3_canonical_bodies_cid_self_consistent() {
-    let path = repo_root().join(
-        "menagerie/typescript-language-signature/specs/body-templates/typescript-canonical-bodies-better-sqlite3.json",
-    );
-    assert_self_consistent(
-        path,
-        "blake3-512:3a6872e9b752177089832aba2d4f6cd413f9cf598d70502a6bd77fe3ef2ab0cc1ae07acdba14980afa97d3038278fe5b58d43b9a136af91077743705b99fbd7d",
-    );
-}
+// `typescript_better_sqlite3_canonical_bodies_cid_self_consistent` removed:
+// the better-sqlite3 canonical-bodies JSON is deleted. The realize kit resolves
+// emission bodies from the shim `provekit.proof` via node_modules, and
+// `body_template_cid` content-addresses the kit-returned entries with the
+// universal sorted-JCS scheme. There is no on-disk JSON to self-check.
 
 #[test]
 fn typescript_pg_canonical_bodies_cid_self_consistent() {
