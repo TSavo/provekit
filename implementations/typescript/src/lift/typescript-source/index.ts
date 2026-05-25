@@ -417,11 +417,20 @@ function libraryBindingEntryForFunction(
 
 /**
  * Extract only the statements inside a function's block body — the text between
- * the block's outermost `{` and matching `}`, with original indentation
- * preserved. Mirrors the Java lifter's `extractMethodBodyStatements`: the
+ * the block's outermost `{` and matching `}`, dedented to column 0. The
  * decorator + signature + braces are sugar already captured as typed fields;
  * body_text carries what the function DOES. Returns "" when there is no block
  * body (so the binding entry contributes no emission template).
+ *
+ * Dedent rationale: the shim source indents method bodies (e.g. 2 spaces inside
+ * the function block). That source-level indentation is presentation, not
+ * substance — the realizer's functionSource / emission template owns body
+ * indentation and the materialize indent pass adds the carrier's column on top.
+ * Capturing body_text at column 0 keeps it byte-equal to the canonical
+ * de-indented emission template the central body-templates JSON shipped before
+ * it was deleted, so realized output is indented exactly once (not once per
+ * source-nesting level). Without this, a 2-space carrier produced a 6-space body
+ * instead of the expected 4.
  */
 function extractFunctionBodyStatements(
   body: ts.Block | undefined,
@@ -435,11 +444,39 @@ function extractFunctionBodyStatements(
   const interiorEnd = body.getEnd() - 1;
   if (interiorEnd <= interiorStart) return "";
   // Strip a single leading newline (after `{`) and trailing whitespace before
-  // `}` so the captured text is the statement block without the brace lines,
-  // matching the Java lifter's line-range capture.
+  // `}` so the captured text is the statement block without the brace lines.
   let text = full.slice(interiorStart, interiorEnd);
   text = text.replace(/^\r?\n/, "").replace(/\s+$/, "");
-  return text;
+  return dedentCommonIndent(text);
+}
+
+/**
+ * Strip the longest whitespace prefix shared by every non-blank line. Blank
+ * lines are ignored when computing the common prefix and are left untouched.
+ * The common prefix is matched character-for-character (tabs and spaces
+ * literal), so mixed indentation degrades gracefully to a shorter prefix.
+ */
+function dedentCommonIndent(text: string): string {
+  const lines = text.split("\n");
+  let common: string | null = null;
+  for (const line of lines) {
+    if (line.trim() === "") continue;
+    const indent = line.slice(0, line.length - line.trimStart().length);
+    if (common === null) {
+      common = indent;
+      continue;
+    }
+    let i = 0;
+    const max = Math.min(common.length, indent.length);
+    while (i < max && common[i] === indent[i]) i += 1;
+    common = common.slice(0, i);
+    if (common === "") break;
+  }
+  if (!common) return text;
+  const prefix = common;
+  return lines
+    .map((line) => (line.startsWith(prefix) ? line.slice(prefix.length) : line))
+    .join("\n");
 }
 
 function sugarBindingArgs(node: ts.FunctionDeclaration): {
