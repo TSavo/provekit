@@ -789,12 +789,34 @@ fn run_empirically_witnessed_gate(args: &ProveArgs) -> u8 {
 }
 
 fn run_admission_gate(args: &ProveArgs) -> u8 {
-    match verify_artifact_or_policy(args) {
+    run_admission_gate_with(
+        &args.artifact,
+        &args.proof,
+        &args.policy,
+        args.out.json,
+        args.out.quiet,
+    )
+}
+
+/// Shared admission-gate entry point. The supply-chain artifact/policy
+/// verification logic is owned here (it predates the keystone `verify`
+/// verb), but both `prove` (legacy alias) and `verify` (PR-9 / #1405)
+/// surface the same `--artifact`/`--proof`/`--policy` flags. Threading the
+/// three `Option<PathBuf>` values directly (rather than `&ProveArgs`) lets
+/// `cmd_verify` reuse this without coupling to the prover's arg struct.
+pub fn run_admission_gate_with(
+    artifact: &Option<PathBuf>,
+    proof: &Option<PathBuf>,
+    policy: &Option<PathBuf>,
+    json: bool,
+    quiet: bool,
+) -> u8 {
+    match verify_artifact_or_policy(artifact, proof, policy) {
         Ok(report) => {
             let ok = report["ok"].as_bool().unwrap_or(false);
-            if args.out.json {
+            if json {
                 println!("{}", serde_json::to_string_pretty(&report).unwrap());
-            } else if !args.out.quiet {
+            } else if !quiet {
                 let verdict = report["verdict"].as_str().unwrap_or("unknown");
                 println!("verify admission: {verdict}");
                 if let Some(reason) = report.get("reason").and_then(Value::as_str) {
@@ -814,20 +836,21 @@ fn run_admission_gate(args: &ProveArgs) -> u8 {
     }
 }
 
-fn verify_artifact_or_policy(args: &ProveArgs) -> Result<Value, String> {
-    let proof_path = args
-        .proof
+fn verify_artifact_or_policy(
+    artifact: &Option<PathBuf>,
+    proof: &Option<PathBuf>,
+    policy: &Option<PathBuf>,
+) -> Result<Value, String> {
+    let proof_path = proof
         .as_ref()
         .ok_or_else(|| "--proof is required for admission verification".to_string())?;
     let proof = read_json_value(proof_path)?;
 
-    let policy_report = args
-        .policy
+    let policy_report = policy
         .as_ref()
         .map(|policy_path| verify_policy_receipt(&proof, policy_path))
         .transpose()?;
-    let artifact_report = args
-        .artifact
+    let artifact_report = artifact
         .as_ref()
         .map(|artifact_path| verify_artifact_receipt(&proof, artifact_path))
         .transpose()?;

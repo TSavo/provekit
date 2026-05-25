@@ -174,6 +174,21 @@ pub struct VerifyArgs {
     #[arg(long = "consensus-policy", requires = "require_empirically_witnessed")]
     pub consensus_policy: Option<PathBuf>,
 
+    /// Artifact bytes to verify against a package release proof/receipt.
+    /// Selects the supply-chain admission gate (binaryCid match).
+    #[arg(long, requires = "proof")]
+    pub artifact: Option<PathBuf>,
+
+    /// Package release proof/receipt naming the expected binaryCid /
+    /// policyCid. Required for the supply-chain admission gate.
+    #[arg(long)]
+    pub proof: Option<PathBuf>,
+
+    /// Consumer policy proof/receipt used for policy admission checks
+    /// (policyCid match).
+    #[arg(long, requires = "proof")]
+    pub policy: Option<PathBuf>,
+
     #[command(flatten)]
     pub out: crate::OutputFlags,
 }
@@ -233,6 +248,21 @@ pub fn run(args: VerifyArgs) -> u8 {
     // standard solver-dispatch flow and queries the promotion catalog.
     if args.require_empirically_witnessed.is_some() {
         return run_empirically_witnessed_gate(&args);
+    }
+
+    // Early dispatch: the supply-chain admission gate. When any of
+    // --artifact / --proof / --policy is given, verify a package release
+    // receipt (binaryCid / policyCid match) rather than running the
+    // solver-dispatch flow. The logic is owned by cmd_prove (it predates
+    // this verb); we reuse it so both verbs expose one behavior.
+    if args.artifact.is_some() || args.proof.is_some() || args.policy.is_some() {
+        return crate::cmd_prove::run_admission_gate_with(
+            &args.artifact,
+            &args.proof,
+            &args.policy,
+            args.out.json,
+            args.out.quiet,
+        );
     }
 
     // Resolve the project root: a named kit, an explicit --project, or
