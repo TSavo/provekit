@@ -10,8 +10,13 @@ name = "rust-realize-postgres"
 library_tag = "postgres"
 family = "concept:family:sql"
 library_version = "0.19"
-# #1364 / #1355: per-kit concept coverage. Sourced from
+# #1364 / #1355 / #1468: per-kit concept coverage. Sourced from
 # menagerie/rust-language-signature/specs/body-templates/rust-canonical-bodies-postgres.json.
-provides_concepts = ["concept:sql-connection-close", "concept:sql-connection-open", "concept:sql-execute", "concept:sql-prepare", "concept:sql-query", "concept:sql-transaction-begin", "concept:sql-transaction-commit", "concept:sql-transaction-rollback"]
+# After the cardinality split (#1468): client.query -> Vec<Row> materialized
+# -> concept:sql-query-all; client.query_one -> exactly one Row
+# -> concept:sql-query-row. This shim binds no -iterate (no query_raw/portal
+# surface in v0.1), so concept:sql-query-iterate is left unbound. The flat
+# concept:sql-query no longer appears: both methods carry a cardinality.
+provides_concepts = ["concept:sql-connection-close", "concept:sql-connection-open", "concept:sql-execute", "concept:sql-prepare", "concept:sql-query-all", "concept:sql-query-row", "concept:sql-transaction-begin", "concept:sql-transaction-commit", "concept:sql-transaction-rollback"]
 command = ["implementations/rust/target/debug/provekit-realize-rust", "--rpc"]
 working_dir = "."

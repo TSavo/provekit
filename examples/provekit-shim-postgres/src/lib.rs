@@ -62,7 +62,7 @@ pub fn execute(
 }
 
 #[provekit::sugar(
-    concept = "concept:sql-query",
+    concept = "concept:sql-query-all",
     library = "postgres",
     family = "concept:family:sql",
     version = "0.19",
@@ -77,7 +77,7 @@ pub fn query(
 }
 
 #[provekit::sugar(
-    concept = "concept:sql-query",
+    concept = "concept:sql-query-row",
     library = "postgres",
     family = "concept:family:sql",
     version = "0.19",

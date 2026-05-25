@@ -69,7 +69,7 @@
           "target_library_tag": "postgres"
         },
         {
-          "concept_name": "concept:sql-query",
+          "concept_name": "concept:sql-query-all",
           "emission_template": {
             "kind": "verbatim",
             "template": "${param0}.query(${param1}, ${param2})"
@@ -91,7 +91,7 @@
           "target_library_tag": "postgres"
         },
         {
-          "concept_name": "concept:sql-query",
+          "concept_name": "concept:sql-query-row",
           "emission_template": {
             "kind": "verbatim",
             "template": "${param0}.query_one(${param1}, ${param2})"

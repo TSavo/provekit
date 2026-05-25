@@ -134,7 +134,7 @@
           "target_library_tag": "rusqlite"
         },
         {
-          "concept_name": "concept:sql-query",
+          "concept_name": "concept:sql-query-row",
           "emission_template": {
             "kind": "verbatim",
             "template": "${param0}.query_row(${param1}, ${param2}, ${param3})"
@@ -156,7 +156,7 @@
           "target_library_tag": "rusqlite"
         },
         {
-          "concept_name": "concept:sql-query",
+          "concept_name": "concept:sql-query-row",
           "emission_template": {
             "kind": "verbatim",
             "template": "${param0}.query_row_and_then(${param1}, ${param2}, ${param3})"
@@ -265,7 +265,7 @@
           "target_library_tag": "rusqlite"
         },
         {
-          "concept_name": "concept:sql-query",
+          "concept_name": "concept:sql-query-iterate",
           "emission_template": {
             "kind": "verbatim",
             "template": "${param0}.query(${param1})"
@@ -286,7 +286,7 @@
           "target_library_tag": "rusqlite"
         },
         {
-          "concept_name": "concept:sql-query",
+          "concept_name": "concept:sql-query-iterate",
           "emission_template": {
             "kind": "verbatim",
             "template": "${param0}.query_map(${param1}, ${param2})"
@@ -308,7 +308,7 @@
           "target_library_tag": "rusqlite"
         },
         {
-          "concept_name": "concept:sql-query",
+          "concept_name": "concept:sql-query-iterate",
           "emission_template": {
             "kind": "verbatim",
             "template": "${param0}.query_and_then(${param1}, ${param2})"
@@ -331,7 +331,7 @@
           "target_library_tag": "rusqlite"
         },
         {
-          "concept_name": "concept:sql-query",
+          "concept_name": "concept:sql-query-row",
           "emission_template": {
             "kind": "verbatim",
             "template": "${param0}.query_row(${param1}, ${param2})"
