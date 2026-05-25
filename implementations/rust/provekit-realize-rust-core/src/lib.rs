@@ -2311,6 +2311,22 @@ pub fn dispatch(request: &Value) -> Value {
             // bind->realize pipeline never over-promotes a private fn to `pub`.
             let visibility = params.get("visibility").and_then(Value::as_str);
             let _visibility_guard = VisibilityGuard::set_optional(visibility);
+            // `.proof`-load-via-RPC: when cmd_materialize lifted the shim's
+            // signed binding entries and sent them as `bodyTemplates`, install
+            // them for the duration of this realize so `operator_body_template_for`
+            // prefers them over the on-disk canonical-bodies cache. The shim
+            // source is then the authority; the disk JSON is fallback only.
+            // RAII guard restores the prior value on return/panic so RPC
+            // templates from one request can never leak into the next call on
+            // this thread. Accepts both `bodyTemplates` (camelCase, the
+            // serde-renamed RealizeRequest field) and `body_templates`.
+            let body_templates_raw = params
+                .get("bodyTemplates")
+                .or_else(|| params.get("body_templates"))
+                .filter(|v| v.is_array())
+                .map(|v| v.to_string())
+                .unwrap_or_default();
+            let _body_templates_guard = BodyTemplatesGuard::set(&body_templates_raw);
             let cn_for_attr = params
                 .get("conceptName")
                 .or_else(|| params.get("concept_name"))
@@ -2637,6 +2653,28 @@ fn operator_body_template_for(
     return_type: &str,
     mode: Option<&str>,
 ) -> Option<RenderedBody> {
+    // `.proof`-load-via-RPC (mirror of java SugarRealizer.entries()): when the
+    // dispatcher (cmd_materialize) fed this request the shim's `.proof`-lifted
+    // binding entries over RPC, they are the AUTHORITY. Try them first; a match
+    // here means we never touch the on-disk `rust-canonical-bodies-<tag>.json`.
+    // The RPC entries are library-tagged (per-shim), matching exactly what the
+    // operator/library path resolves, so this is the correct injection point
+    // (the base `rust-canonical-bodies.json` core ops route through
+    // `body_template_for`, which is left untouched). Disk fallback below keeps
+    // back-compat for kits whose dispatcher hasn't migrated yet.
+    let rpc_entries = rpc_body_template_entries();
+    if !rpc_entries.is_empty() {
+        if let Some(rendered) = body_template_for_entries(
+            &rpc_entries,
+            concept_name,
+            params,
+            param_types,
+            return_type,
+            mode,
+        ) {
+            return Some(rendered);
+        }
+    }
     let root = operator_root()?;
     let (language, library_tag) = operator_binding_surface(&root, concept_name)?;
     if language != "rust" {
@@ -2773,6 +2811,67 @@ thread_local! {
     /// concept attribute and the fn signature. Empty when source had no docs.
     pub(crate) static CURRENT_DOC_LINES: std::cell::RefCell<Vec<String>> =
         std::cell::RefCell::new(Vec::new());
+    /// `.proof`-load-via-RPC (mirror of java's SugarRealizer.currentBodyTemplates):
+    /// the per-request `bodyTemplates` JSON array string the dispatcher
+    /// (cmd_materialize) lifted from the shim's signed `.proof` and sent over
+    /// RPC. When non-blank, `operator_body_template_for` PREFERS these entries
+    /// over the on-disk `rust-canonical-bodies-<tag>.json` cache; the shim
+    /// source becomes the authority and the disk JSON is fallback only.
+    /// Blank => fall through to disk (back-compat for un-migrated kits).
+    /// Written ONLY via [`BodyTemplatesGuard`] so a leaked value can never
+    /// contaminate a later realization on the same thread (the same cross-test
+    /// pollution hazard that motivated `VisibilityGuard`).
+    pub(crate) static CURRENT_BODY_TEMPLATES: std::cell::RefCell<String> =
+        std::cell::RefCell::new(String::new());
+}
+
+/// RAII guard that installs the per-request RPC `bodyTemplates` JSON for the
+/// lifetime of a single realize dispatch and restores the prior value on drop,
+/// even across a panic. Mirrors [`VisibilityGuard`]: every write to
+/// `CURRENT_BODY_TEMPLATES` MUST go through this guard so RPC templates from one
+/// request never leak into the next call on the same thread (which would
+/// silently corrupt seam4 federation byte-identity).
+struct BodyTemplatesGuard {
+    previous: String,
+}
+
+impl BodyTemplatesGuard {
+    fn set(templates: &str) -> Self {
+        let guard = BodyTemplatesGuard {
+            previous: CURRENT_BODY_TEMPLATES.with(|v| v.borrow().clone()),
+        };
+        CURRENT_BODY_TEMPLATES.with(|v| *v.borrow_mut() = templates.to_string());
+        guard
+    }
+}
+
+impl Drop for BodyTemplatesGuard {
+    fn drop(&mut self) {
+        let previous = std::mem::take(&mut self.previous);
+        CURRENT_BODY_TEMPLATES.with(|v| *v.borrow_mut() = previous);
+    }
+}
+
+/// Parse the per-request RPC `bodyTemplates` array (set via [`BodyTemplatesGuard`])
+/// into [`BodyTemplateEntry`] records. The array is the BARE list of
+/// `content.entries`-shaped objects (same per-entry shape the on-disk
+/// projection carries), so it reuses [`parse_entries`] by wrapping it in the
+/// `{ header: { content: { entries: [...] } } }` envelope `parse_entries`
+/// expects. Returns an empty Vec when the thread-local is blank or unparseable
+/// — the caller then falls through to the disk cache.
+fn rpc_body_template_entries() -> Vec<BodyTemplateEntry> {
+    let raw = CURRENT_BODY_TEMPLATES.with(|v| v.borrow().clone());
+    if raw.trim().is_empty() {
+        return Vec::new();
+    }
+    let Ok(arr) = serde_json::from_str::<Value>(&raw) else {
+        return Vec::new();
+    };
+    if !arr.is_array() {
+        return Vec::new();
+    }
+    let envelope = json!({ "header": { "content": { "entries": arr } } });
+    parse_entries(&envelope)
 }
 
 /// Pretty-print comma-separated macro args (format!, println!, etc.).
