@@ -1308,7 +1308,7 @@ fn resolve_realize_command(
     }
 
     record_fallback_diagnostic("realize", target_lang);
-    let candidates = legacy_realize_candidates(workspace_root, target_lang)?;
+    let candidates = live_realize_candidates(workspace_root, target_lang)?;
     if let Some(candidate) = candidates
         .iter()
         .find(|candidate| candidate.tag == requested)
@@ -1337,7 +1337,6 @@ fn resolve_realize_command(
         }
     }
 
-    let env_var = format!("PROVEKIT_REALIZE_{}_BIN", target_lang.to_uppercase());
     let registered = if candidates.is_empty() {
         "none".to_string()
     } else {
@@ -1352,9 +1351,7 @@ fn resolve_realize_command(
         language: target_lang.to_string(),
         detail: format!(
             "no realize plugin for language `{target_lang}` and library_tag `{requested}`. \
-             looked in .provekit/realize/*/manifest.toml, env {env_var}, built-in binaries \
-             under implementations/{target_lang}/, and `provekit-realize-{target_lang}` on \
-             PATH. registered: {registered}"
+             looked in .provekit/realize/*/manifest.toml. registered: {registered}"
         ),
     })
 }
@@ -1373,66 +1370,19 @@ pub(crate) struct RealizeCandidate {
     pub(crate) library_version: Option<String>,
 }
 
-pub(crate) fn legacy_realize_candidates(
+/// Live (unsealed) realize candidates: the `.provekit/realize/*/manifest.toml`
+/// scan used when the sealed plugin registry is absent (dev/test). The
+/// pre-registry env-var / built-in-binary / PATH discovery was removed — every
+/// realize kit ships a manifest, so the manifest is the only realize source.
+pub(crate) fn live_realize_candidates(
     workspace_root: &Path,
     target_lang: &str,
 ) -> Result<Vec<RealizeCandidate>, KitUnavailable> {
-    let mut candidates =
-        project_realize_candidates(workspace_root, target_lang).map_err(|e| KitUnavailable {
-            kit_kind: "realize",
-            language: target_lang.to_string(),
-            detail: e,
-        })?;
-
-    // Env-var, built-in, and PATH fallbacks have no manifest tag, so they occupy
-    // the back-compatible default slot.
-    let env_var = format!("PROVEKIT_REALIZE_{}_BIN", target_lang.to_uppercase());
-    if let Ok(bin) = std::env::var(&env_var) {
-        candidates.push(RealizeCandidate {
-            tag: DEFAULT_LIBRARY_TAG.to_string(),
-            command: ResolvedCommand {
-                argv: vec![bin, "--rpc".to_string()],
-                working_dir: Some(workspace_root.to_path_buf()),
-            },
-            source: env_var,
-            family: None,
-            library_version: None,
-        });
-    }
-
-    // Substrate-convention built-in binaries. Same shape as lift:
-    // the dispatcher consults the FILESYSTEM, not a hard-coded list.
-    for candidate in builtin_realize_candidates(workspace_root, target_lang) {
-        if candidate.path.exists() {
-            candidates.push(RealizeCandidate {
-                tag: DEFAULT_LIBRARY_TAG.to_string(),
-                command: ResolvedCommand {
-                    argv: candidate.argv,
-                    working_dir: Some(workspace_root.to_path_buf()),
-                },
-                source: candidate.path.display().to_string(),
-                family: None,
-                library_version: None,
-            });
-        }
-    }
-
-    // PATH probe.
-    let bin = format!("provekit-realize-{target_lang}");
-    if which_on_path(&bin).is_some() {
-        candidates.push(RealizeCandidate {
-            tag: DEFAULT_LIBRARY_TAG.to_string(),
-            command: ResolvedCommand {
-                argv: vec![bin.clone(), "--rpc".to_string()],
-                working_dir: Some(workspace_root.to_path_buf()),
-            },
-            source: format!("PATH:{bin}"),
-            family: None,
-            library_version: None,
-        });
-    }
-
-    Ok(candidates)
+    project_realize_candidates(workspace_root, target_lang).map_err(|e| KitUnavailable {
+        kit_kind: "realize",
+        language: target_lang.to_string(),
+        detail: e,
+    })
 }
 
 fn project_realize_candidates(
@@ -1498,67 +1448,6 @@ fn realize_surface_matches_target(surface: &str, target_lang: &str) -> bool {
             .strip_prefix(target_lang)
             .and_then(|suffix| suffix.strip_prefix('-'))
             .is_some()
-}
-
-struct RealizeBuiltin {
-    path: PathBuf,
-    argv: Vec<String>,
-}
-
-fn builtin_realize_candidates(workspace_root: &Path, target_lang: &str) -> Vec<RealizeBuiltin> {
-    let mut out = Vec::new();
-    // Java: special-case in the SUBSTRATE CONVENTION (Maven build product), not
-    // in the CLI semantics. The convention is "every Java realize kit ships a
-    // jar at provekit-realize-java-core/target/provekit-realize-java.jar".
-    // We register it here as a filesystem path, just like Rust's
-    // target/{release,debug}/provekit-walk-rpc. Per "Rust isn't special"
-    // (and "Java isn't special either"), this is filesystem discovery, not
-    // a switch on `target_lang == "java"`.
-    let impl_dir = workspace_root.join("implementations").join(target_lang);
-    let realize_subdir = impl_dir.join(format!("provekit-realize-{target_lang}-core"));
-    let jar = realize_subdir
-        .join("target")
-        .join(format!("provekit-realize-{target_lang}.jar"));
-    if jar.exists() || jar.parent().map(|p| p.exists()).unwrap_or(false) {
-        // Java/JVM jar convention.
-        out.push(RealizeBuiltin {
-            path: jar.clone(),
-            argv: vec![
-                "java".to_string(),
-                "-jar".to_string(),
-                jar.display().to_string(),
-                "--rpc".to_string(),
-            ],
-        });
-    }
-    // Native binary convention (mirrors lift discovery).
-    out.push(RealizeBuiltin {
-        path: impl_dir
-            .join("target/release")
-            .join(format!("provekit-realize-{target_lang}")),
-        argv: vec![
-            impl_dir
-                .join("target/release")
-                .join(format!("provekit-realize-{target_lang}"))
-                .display()
-                .to_string(),
-            "--rpc".to_string(),
-        ],
-    });
-    out.push(RealizeBuiltin {
-        path: impl_dir
-            .join("target/debug")
-            .join(format!("provekit-realize-{target_lang}")),
-        argv: vec![
-            impl_dir
-                .join("target/debug")
-                .join(format!("provekit-realize-{target_lang}"))
-                .display()
-                .to_string(),
-            "--rpc".to_string(),
-        ],
-    });
-    out
 }
 
 fn invoke_realize(

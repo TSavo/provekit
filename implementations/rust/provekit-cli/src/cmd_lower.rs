@@ -857,13 +857,13 @@ fn resolve_library_for_concept(
     family_library: &[crate::cmd_materialize::FamilyLibraryPair],
 ) -> Option<String> {
     // #1391 follow-on: registry_realize_candidates returns empty when no
-    // sealed dev registry is present. Fall back to legacy_realize_candidates
+    // sealed dev registry is present. Fall back to the live manifest scan
     // so cmd_lower works in development workflows without requiring a sealed
     // registry. This mirrors the dispatch_realize path which also falls
-    // through to legacy candidates when the registry is empty.
+    // through to the live candidates when the registry is empty.
     let mut candidates = crate::kit_dispatch::registry_realize_candidates(project_root, target).ok()?;
     if candidates.is_empty() {
-        candidates = crate::kit_dispatch::legacy_realize_candidates(project_root, target)
+        candidates = crate::kit_dispatch::live_realize_candidates(project_root, target)
             .unwrap_or_default();
     }
     let mut claimers: Vec<String> = Vec::new();
