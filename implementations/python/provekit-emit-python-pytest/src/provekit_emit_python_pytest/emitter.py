@@ -16,6 +16,7 @@ function PASSES when run standalone under pytest.
 
 from __future__ import annotations
 
+import re
 from dataclasses import dataclass, field
 from typing import Any
 
@@ -68,6 +69,7 @@ class Emission:
     """The emission result: source text, per-predicate gaps, and a CID."""
 
     source: str
+    path: str
     artifact_cid: str
     emitted_predicates: list[str]
     unsupported_predicates: list[str]
@@ -80,6 +82,7 @@ class Emission:
         return {
             "kind": "pytest-test-emission",
             "source": self.source,
+            "path": self.path,
             "extension": "py",
             "emitted_artifact_cid": self.artifact_cid,
             "emitted_predicates": list(self.emitted_predicates),
@@ -114,7 +117,14 @@ def emit(plan: EmitPlan) -> Emission:
 
     source = _render_module(functions, needs_pytest)
     cid = "blake3-512:" + blake3.blake3(source.encode("utf-8")).digest(length=64).hex()
-    return Emission(source, cid, emitted, unsupported)
+    return Emission(source, _module_path(plan.function), cid, emitted, unsupported)
+
+
+def _module_path(function: str) -> str:
+    safe = re.sub(r"[^0-9A-Za-z_]+", "_", function or "").strip("_").lower()
+    if not safe:
+        safe = "contract"
+    return f"test_{safe}_contract.py"
 
 
 def _free_var_declarations(predicate: dict[str, Any], head: str | None) -> list[str]:

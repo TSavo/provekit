@@ -52,6 +52,7 @@ def test_header_satisfies_loader_validation_rules() -> None:
     header = PLUGIN_MEMENTO["header"]
     # schemaVersion MUST be "1".
     assert header["schemaVersion"] == "1"
+    assert header["kind"] == "emit"
     # At least one protocol_versions token must be runtime-accepted.
     assert "pep/1.7.0" in header["protocol_versions"]
     # The eight canonical header fields must all be present.
@@ -86,6 +87,7 @@ def test_cid_field_is_elided_from_input() -> None:
 
 def test_capabilities_live_in_content() -> None:
     content = PLUGIN_MEMENTO["header"]["content"]
+    assert content["kind"] == "emit"
     assert content["target_language"] == "python"
     assert content["target_framework"] == "pytest"
     assert "concept:eq" in content["capabilities"]["predicates"]

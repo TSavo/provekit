@@ -48,7 +48,8 @@ pub struct EmitArgs {
     #[arg(long = "out-dir")]
     pub out_dir: PathBuf,
     /// After writing the artifact, invoke the target language's test/build checker.
-    /// Supported today: go (`go test ./...`) and java (`mvn -q test`).
+    /// Supported today: go (`go test ./...`), java (`mvn -q test`),
+    /// and python (`python -m pytest`).
     #[arg(long = "compile-check")]
     pub compile_check: bool,
     #[command(flatten)]
@@ -287,6 +288,30 @@ fn compile_check(target: &str, out_dir: &Path) -> Result<Json, String> {
                 Err(format!(
                     "mvn -q test failed in {}\nstdout:\n{}\nstderr:\n{}",
                     project_root.display(),
+                    String::from_utf8_lossy(&output.stdout),
+                    String::from_utf8_lossy(&output.stderr)
+                ))
+            }
+        }
+        "python" => {
+            let python = std::env::var("PYTHON").unwrap_or_else(|_| "python3".to_string());
+            let output = Command::new(&python)
+                .current_dir(out_dir)
+                .args(["-m", "pytest", ".", "-q"])
+                .output()
+                .map_err(|e| format!("spawn python pytest: {e}"))?;
+            if output.status.success() {
+                Ok(json!({
+                    "ok": true,
+                    "command": format!("{python} -m pytest . -q"),
+                    "cwd": out_dir,
+                    "stdout": String::from_utf8_lossy(&output.stdout),
+                    "stderr": String::from_utf8_lossy(&output.stderr),
+                }))
+            } else {
+                Err(format!(
+                    "{python} -m pytest . -q failed in {}\nstdout:\n{}\nstderr:\n{}",
+                    out_dir.display(),
                     String::from_utf8_lossy(&output.stdout),
                     String::from_utf8_lossy(&output.stderr)
                 ))

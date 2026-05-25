@@ -32,6 +32,7 @@ def test_emits_function_per_predicate() -> None:
     assert e.emitted_predicates == ["ge", "le"]
     assert e.unsupported_predicates == []
     assert e.is_complete
+    assert e.path == "test_clamp_contract.py"
     assert e.artifact_cid.startswith("blake3-512:")
 
 
@@ -44,6 +45,7 @@ def test_unsupported_predicate_recorded_as_gap_not_emitted() -> None:
         ],
     )
     e = emit(plan)
+    assert e.path == "test_f_contract.py"
     assert e.emitted_predicates == ["eq"]
     assert e.unsupported_predicates == ["mystery"]
     assert not e.is_complete
