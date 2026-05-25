@@ -181,21 +181,12 @@ fn typescript_canonical_bodies_cid_self_consistent() {
 }
 
 // `typescript_better_sqlite3_canonical_bodies_cid_self_consistent` removed:
-// the better-sqlite3 canonical-bodies JSON is deleted. The realize kit resolves
-// emission bodies from the shim `provekit.proof` via node_modules, and
+// the better-sqlite3 AND pg canonical-bodies JSONs are deleted. The realize kits
+// resolve emission bodies from the shim `provekit.proof` via node_modules, and
 // `body_template_cid` content-addresses the kit-returned entries with the
-// universal sorted-JCS scheme. There is no on-disk JSON to self-check.
-
-#[test]
-fn typescript_pg_canonical_bodies_cid_self_consistent() {
-    let path = repo_root().join(
-        "menagerie/typescript-language-signature/specs/body-templates/typescript-canonical-bodies-pg.json",
-    );
-    assert_self_consistent(
-        path,
-        "blake3-512:463dc2febd07836b54fca4f8e0c8ea20c66376cab9428fe1bb4f586fb4a57b332a0be4336fef1e4e1752c9340b57af618132e410050392c04667b9066fe783ad",
-    );
-}
+// universal sorted-JCS scheme. There is no on-disk JSON to self-check, so the
+// former typescript_pg_canonical_bodies_cid_self_consistent test is removed
+// (it referenced typescript-canonical-bodies-pg.json, deleted in #1468).
 
 #[test]
 fn c_canonical_sugar_cid_self_consistent() {

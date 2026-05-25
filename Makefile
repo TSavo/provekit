@@ -648,6 +648,13 @@ bootstrap-self-contracts:
 # `pnpm exec tsx` from the repo root and fail with ERR_PNPM_RECURSIVE_EXEC_FIRST_FAIL
 # if node_modules is absent (fresh worktrees, CI).
 test-rust: build-java build-ts build-python
+	# The rust realize manifests (.provekit/realize/rust-*) spawn the DEBUG
+	# binary `implementations/rust/target/debug/provekit-realize-rust`; the
+	# release test build does not produce it, so manifest_audit / migrate tests
+	# that query the rust kit over RPC would spawn a stale/missing binary and
+	# see empty bindings. Build it first so the kit self-resolves its shim
+	# .proof for the audit.
+	cargo build --manifest-path implementations/rust/Cargo.toml -p provekit-realize-rust-core --bin provekit-realize-rust
 	@failed=""; \
 	cargo test --no-fail-fast --release --manifest-path implementations/rust/Cargo.toml \
 	  || failed="$$failed implementations/rust"; \
