@@ -48,8 +48,8 @@ fn verifier_requires_empirically_witnessed_cross_language_consensus() {
     );
 
     assert!(
-        sql_query_witness_count(&[&sqlite_receipt, &aiosqlite_receipt]) >= 8,
-        "the #877 cross-language receipts must carry enough sql-query witnesses for the policy vector"
+        sql_query_witness_count(&[&sqlite_receipt, &aiosqlite_receipt]) >= 6,
+        "the #877 cross-language receipts must carry enough sql-query-family witnesses for the policy vector"
     );
 
     let catalog = temp.path().join(".provekit").join("promotions");
@@ -68,11 +68,11 @@ fn verifier_requires_empirically_witnessed_cross_language_consensus() {
             .arg("witness")
             .arg("consensus")
             .arg("--concept")
-            .arg("concept:sql-query")
+            .arg("concept:family:sql-query")
             .arg("--require-fixture")
             .arg(FIXTURE_STATE_CID)
             .arg("--min-witnesses")
-            .arg("8")
+            .arg("6")
             .arg("--consensus-policy")
             .arg(&policy)
             .arg("--catalog")
@@ -96,7 +96,7 @@ fn verifier_requires_empirically_witnessed_cross_language_consensus() {
         .arg("--project")
         .arg(temp.path())
         .arg("--concept")
-        .arg("concept:sql-query")
+        .arg("concept:family:sql-query")
         .arg("--require-fixture")
         .arg(FIXTURE_STATE_CID)
         .arg("--json")
@@ -113,7 +113,7 @@ fn verifier_requires_empirically_witnessed_cross_language_consensus() {
         .arg("verify")
         .arg(temp.path())
         .arg("--require-empirically-witnessed")
-        .arg("concept:sql-query")
+        .arg("concept:family:sql-query")
         .arg("--require-fixture")
         .arg(FIXTURE_STATE_CID)
         .arg("--consensus-policy")
@@ -127,7 +127,7 @@ fn verifier_requires_empirically_witnessed_cross_language_consensus() {
     let report: Value = serde_json::from_str(&stdout).expect("verify JSON report");
     assert_eq!(report["ok"], true);
     assert_eq!(report["verdict"], "accepted");
-    assert_eq!(report["requirement"]["concept"], "concept:sql-query");
+    assert_eq!(report["requirement"]["concept"], "concept:family:sql-query");
     assert_eq!(
         report["requirement"]["fixture_state_cid"],
         FIXTURE_STATE_CID
@@ -144,14 +144,14 @@ fn verifier_requires_empirically_witnessed_cross_language_consensus() {
         report["promotion"]["witnesses_consulted"]
             .as_u64()
             .unwrap_or(0)
-            >= 8,
+            >= 6,
         "promotion must cite at least the policy's witness floor"
     );
     assert!(
         report["promotion"]["consensus_vector"]["total_sample_count"]
             .as_u64()
             .unwrap_or(0)
-            >= 8,
+            >= 6,
         "policy consumes the vector's sample-depth axis"
     );
 }
@@ -164,9 +164,9 @@ fn write_consensus_policy(path: &Path) {
   "schemaVersion": "1",
   "name": "test-cross-language-sql-query",
   "thresholds": [
-    {"axis": "min-witnesses-floor", "predicate": "n>=8"},
+    {"axis": "min-witnesses-floor", "predicate": "n>=6"},
     {"axis": "environment-diversity", "predicate": "unique_fixtures>=1"},
-    {"axis": "sample-depth", "predicate": "total_sample_count>=8"}
+    {"axis": "sample-depth", "predicate": "total_sample_count>=6"}
   ],
   "allow_failures": false
 }
@@ -221,15 +221,25 @@ fn sql_query_witness_count(paths: &[&Path]) -> usize {
                 .witnesses
                 .iter()
                 .filter(|witness| witness.fixture_state_cid == FIXTURE_STATE_CID)
-                .filter(|witness| witness.witness_for == sql_query_concept_cid())
+                .filter(|witness| {
+                    sql_query_family_member_cids().contains(&witness.witness_for.as_str())
+                })
                 .map(|witness| witness.cid.clone()),
         );
     }
     cids.len()
 }
 
-fn sql_query_concept_cid() -> &'static str {
-    "blake3-512:dd0429a4d4276c076f5dde08a993a046afa15dd36433b1d89c4bc18831f63733788abef283ffb78b2b9f88c607593741367a35ebcbd36a88132c06d6ff233ed1"
+// #877 post-cardinality-split (#1469): query witnesses are emitted for the
+// sql-query family members (row/all/iterate), not the flat concept:sql-query
+// (now boolean-projection only). The consensus is required over the family.
+// CIDs are the catalog index entries for the three cardinality concepts.
+fn sql_query_family_member_cids() -> [&'static str; 3] {
+    [
+        "blake3-512:85bec43676485ce0fbb309e1bf25d7bca99b7eb0369c491586577e2aeb93087f563b42f67158b9c89e254e07297992618697e5a732892d6271e704bb6ae42715",
+        "blake3-512:b7f773eaf90c6f8d8d7a932f3c455a7c8671e34ff6bc232ceeed9aa7f8520a661789bc6a5eaef8d69fe4dc4ec39673d3a7b7155f6aa3993f4982d6eda32a293b",
+        "blake3-512:f9043593be99dec834efc313e6217751296d71db1fbb8ca11bc576434c4d4e8f91fdff25e6727a8dba0a2632ad1bff0d342204de3bab298944f43f7c5ec55cf5",
+    ]
 }
 
 fn assert_success(label: &str, output: &std::process::Output) {

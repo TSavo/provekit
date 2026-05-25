@@ -1,5 +1,16 @@
 {
   "entries": {
+    "blake3-512:42cf6239cd0f45ebbe4b6d8d5a14e66082cc7565b3848db72434cdbe583e478d2d7166454d757e9852262a1af2d86e5736e1ef3c81a030682783deb8e873ca7d": {
+      "cid": "blake3-512:42cf6239cd0f45ebbe4b6d8d5a14e66082cc7565b3848db72434cdbe583e478d2d7166454d757e9852262a1af2d86e5736e1ef3c81a030682783deb8e873ca7d",
+      "kind": "family",
+      "name": "concept:family:sql-query",
+      "members": [
+        "concept:sql-query-row",
+        "concept:sql-query-all",
+        "concept:sql-query-iterate"
+      ],
+      "path": "families/concept:family:sql-query.json"
+    },
     "blake3-512:00098e58001c6053ac8b3d46bec2768fadfe9d44fd956f60c000042c5d75e892f53bebe0974af1a571f1eca0f60ddc0acfa91b450658a9615bedb1ba48d9d2b9": {
       "cid": "blake3-512:00098e58001c6053ac8b3d46bec2768fadfe9d44fd956f60c000042c5d75e892f53bebe0974af1a571f1eca0f60ddc0acfa91b450658a9615bedb1ba48d9d2b9",
       "kind": "algorithm",
