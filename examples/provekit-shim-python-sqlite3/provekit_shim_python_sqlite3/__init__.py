@@ -31,8 +31,8 @@
 #         not statically typed via FromSql; wherever rusqlite has typed get<T>
 #         calls, sqlite3 carries row-typing-mode.
 #       sync-vs-async: sqlite3 is sync (matches rusqlite).
-#   - CONCEPT COUNT: 48 sugar bindings across 26 unique concept names, plus
-#     10 refusals. Total envelope members: 58.
+#   - CONCEPT COUNT: 50 sugar bindings across 26 unique concept names, plus
+#     10 refusals. Total envelope members: 60.
 #   - CARDINALITY SPLIT (#1468): the connection/cursor query bindings cite the
 #     GLOBAL cardinality concepts (Phase 0 catalog) by post-condition, not a flat
 #     concept:sql-query:
@@ -631,19 +631,27 @@ def connection_row_factory_callable(conn: sqlite3.Connection, factory: Callable)
 # P. Migrate-shaped 2-param SQL bindings (#1451)
 # =============================================================================
 #
-# The typescript-better-sqlite3 -> python-sqlite3 migrate probes
-# concept:sql-query-all / concept:sql-execute / concept:insert-and-get-id at the
-# 2-param ["string","unknown[]"] arity that better-sqlite3's db.prepare(q).all(p)
-# lifts to (substrate-availability probe, #1230 D6-D). Post the cardinality split
-# (#1468), the better-sqlite3 .all(p) carrier cites concept:sql-query-all, and the
-# materializing migrate_query body (cursor.fetchall()) cites the same. These mirror the sibling
-# aiosqlite spec's trio with synchronous sqlite3 templates: the connection is a
-# free `db` binding the migrate assembler hoists (not a method receiver), and the
-# args list is bound by position then tuple()-wrapped for the sqlite3 driver.
-# Back-propagated from python-canonical-bodies-sqlite3.json (authored there by
-# #1451 to green cross_platform_point_query_receipt_test, never into this source).
-# The free `db`/`cursor` names pass through the param->placeholder projection
-# unchanged; only `sql`/`args` map to ${param0}/${param1}.
+# The typescript-better-sqlite3 -> python-sqlite3 migrate probes the SQL read /
+# write / insert concepts at the 2-param ["string","unknown[]"] arity that
+# better-sqlite3's db.prepare(q).{get,all,iterate}(p) lifts to (substrate-
+# availability probe, #1230 D6-D). Post the cardinality split (#1468), the read
+# concept is no longer flat concept:sql-query: it is selected by result
+# cardinality, so the migrate path needs a 2-param (sql, args) binding for EACH
+# cardinality the better-sqlite3 source can produce at a migrate callsite:
+#   * .all(p)  / fetchall() -> concept:sql-query-all    (migrate_query)
+#   * .get(p)  / fetchone() -> concept:sql-query-row    (migrate_query_row)
+#   * .iterate(p) / cursor  -> concept:sql-query-iterate (migrate_query_iterate)
+# The regular query_row/cursor_fetchone bindings are arity-1/arity-3 (the wrong
+# shape for the migrate probe, which is fixed arity-2), so the migrate trio mints
+# its own per-cardinality siblings. They mirror the sibling aiosqlite spec's trio
+# with synchronous sqlite3 templates: the connection is a free `db` binding the
+# migrate assembler hoists (not a method receiver), and the args list is bound by
+# position then tuple()-wrapped for the sqlite3 driver. Originally back-propagated
+# from python-canonical-bodies-sqlite3.json (authored by #1451 to green
+# cross_platform_point_query_receipt_test, never into this source); the row/iterate
+# siblings are added here directly (#1468) so the .proof carries them. The free
+# `db`/`cursor` names pass through the param->placeholder projection unchanged;
+# only `sql`/`args` map to ${param0}/${param1}.
 
 @sugar.bind(
     concept="concept:sql-execute",
@@ -681,6 +689,30 @@ def migrate_insert_and_get_id(sql, args):
 def migrate_query(sql, args):
     cursor = db.execute(sql, tuple(args))
     return cursor.fetchall()
+
+
+@sugar.bind(
+    concept="concept:sql-query-row",
+    library="sqlite3",
+    family="concept:family:sql",
+    version="python-3",
+    loss=["sync-vs-async", "row-typing-mode", "cursor-lifetime"],
+)
+def migrate_query_row(sql, args):
+    cursor = db.execute(sql, tuple(args))
+    return cursor.fetchone()
+
+
+@sugar.bind(
+    concept="concept:sql-query-iterate",
+    library="sqlite3",
+    family="concept:family:sql",
+    version="python-3",
+    loss=["sync-vs-async", "row-typing-mode", "cursor-lifetime"],
+)
+def migrate_query_iterate(sql, args):
+    cursor = db.execute(sql, tuple(args))
+    return cursor
 
 
 # =============================================================================

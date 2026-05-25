@@ -7,7 +7,7 @@ Substrate-honest concept bindings for the Python stdlib `sqlite3` module.
 A vendored boundary namespace under the ProvekIt proofchain (paper 24). Every
 claim lives in `provekit_shim_python_sqlite3/__init__.py`. No sidecar files.
 
-58 envelope members: 48 `library-sugar-binding-entry` + 10 `refusal-memento`.
+60 envelope members: 50 `library-sugar-binding-entry` + 10 `refusal-memento`.
 
 ## How to lift and mint
 
@@ -30,5 +30,5 @@ was deleted in #1463; the `.proof` is now the only body-source.)
 
 ## Concept coverage
 
-See `provekit_shim_python_sqlite3/__init__.py` for all 48 bindings and 10 refusals.
+See `provekit_shim_python_sqlite3/__init__.py` for all 50 bindings and 10 refusals.
 Concept names match the rusqlite shim to enable cluster formation across kits.
