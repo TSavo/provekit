@@ -13,6 +13,6 @@
   "dependencies": {
     "@ipld/dag-cbor": "^9.2.2",
     "@noble/hashes": "^2.2.0",
-    "provekit-shim-pg": "^0.1.1"
+    "provekit-shim-pg": "file:../../../examples/provekit-shim-typescript-pg"
   }
 }
