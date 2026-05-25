@@ -358,6 +358,7 @@ fn walkthrough_binary_prep_ignores_test_only_cli_edits() {
 }
 
 #[test]
+#[ignore = "superseded: bridgeworks is a `lower`-era demo (lift -> lower to C witness); `provekit lower` retired in #1476. Pending redo-on-emit or retire; do not delete."]
 fn checked_add_exhibit_passes() {
     let _guard = shared_host_tool_lock();
     let _cli_env = CliEnvGuard::force_source_cli();
@@ -374,6 +375,7 @@ fn checked_add_exhibit_passes() {
 }
 
 #[test]
+#[ignore = "superseded: bridgeworks is a `lower`-era demo (lift -> lower to C witness); `provekit lower` retired in #1476. Pending redo-on-emit or retire; do not delete."]
 fn all_exhibits_reports_contract_and_implication_mementos() {
     let _guard = shared_host_tool_lock();
     let root = repo_root();

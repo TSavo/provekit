@@ -129,6 +129,7 @@ fn all_mode_rejects_empty_specimen_root() {
 }
 
 #[test]
+#[ignore = "superseded: drives the retired `lower` JS-lowerer (#1476). Pending emit-era redesign; do not delete."]
 fn all_exhibits_show_conventional_green_then_provekit_red() {
     let root = repo_root();
     let provekit = build_provekit(&root);

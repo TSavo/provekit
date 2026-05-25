@@ -15,6 +15,18 @@ for path in (PY_TESTS_SRC, LIFT_SRC, REALIZER_SRC):
     if str(path) not in sys.path:
         sys.path.insert(0, str(path))
 
+import pytest
+
+# This cross-kit conformance test imports provekit-lift-python-source, which
+# transitively needs cbor2 (a dependency of provekit-lift-py-tests, not of this
+# realize kit). The Makefile runs it in the realize-python-core ISOLATED venv,
+# where cbor2 is absent -> collection error. Skip cleanly there; it still runs
+# in a full repo env. Pending conformance-harness rethink; do not delete.
+pytest.importorskip(
+    "cbor2",
+    reason="cross-kit conformance dep (cbor2 via provekit-lift-py-tests) absent in isolated venv",
+)
+
 from provekit_lift_python_source.bind_lifter import lift_source
 from provekit_realize_python_core.realizer import emit_stub
 
