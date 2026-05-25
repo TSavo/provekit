@@ -620,9 +620,14 @@ bootstrap-self-contracts:
 # absent and `lower_java_carrier_registration_points_at_required_fixture_set`
 # panics with `Unable to access jarfile provekit-realize-java.jar`.
 test-rust: build-java
-	cargo test --release --manifest-path implementations/rust/Cargo.toml
-	cargo test --release --manifest-path tools/recompute-spec-cids/Cargo.toml
-	cargo test --release --manifest-path tools/foundation-keygen/Cargo.toml
+	@failed=""; \
+	cargo test --no-fail-fast --release --manifest-path implementations/rust/Cargo.toml \
+	  || failed="$$failed implementations/rust"; \
+	cargo test --no-fail-fast --release --manifest-path tools/recompute-spec-cids/Cargo.toml \
+	  || failed="$$failed tools/recompute-spec-cids"; \
+	cargo test --no-fail-fast --release --manifest-path tools/foundation-keygen/Cargo.toml \
+	  || failed="$$failed tools/foundation-keygen"; \
+	if [ -n "$$failed" ]; then echo "test-rust FAIL:$$failed"; exit 1; fi
 
 .PHONY: bug-zoo
 bug-zoo:
@@ -644,10 +649,16 @@ menagerie-zig-language-signature:
 
 .PHONY: test-go
 test-go:
-	cd implementations/go/provekit-ir-symbolic && go test ./...
-	cd implementations/go/provekit-self-contracts && go test ./...
-	cd implementations/go/provekit-lift-go-tests && go test ./...
-	cd implementations/go/provekit-lift-go && go test ./...
+	@failed=""; \
+	(cd implementations/go/provekit-ir-symbolic && go test ./...) \
+	  || failed="$$failed provekit-ir-symbolic"; \
+	(cd implementations/go/provekit-self-contracts && go test ./...) \
+	  || failed="$$failed provekit-self-contracts"; \
+	(cd implementations/go/provekit-lift-go-tests && go test ./...) \
+	  || failed="$$failed provekit-lift-go-tests"; \
+	(cd implementations/go/provekit-lift-go && go test ./...) \
+	  || failed="$$failed provekit-lift-go"; \
+	if [ -n "$$failed" ]; then echo "test-go FAIL:$$failed"; exit 1; fi
 
 .PHONY: test-cpp-source-lift
 test-cpp-source-lift:
@@ -669,29 +680,33 @@ test-csharp: build-csharp
 
 .PHONY: test-c
 test-c: build-c
-	$(MAKE) -C implementations/c/provekit-ir test
-	$(MAKE) -C implementations/c/provekit-lift test
-	$(MAKE) -C implementations/c/provekit-lift-core test
-	$(MAKE) -C implementations/c/provekit-lift-c-sparse test
-	$(MAKE) -C implementations/c/provekit-lift-c-kernel-doc test
-	$(MAKE) -C implementations/c/provekit-lift-c-assertions test
-	$(MAKE) -C implementations/c/provekit-realize-c-core test
-	$(MAKE) -C implementations/c/provekit-lift-composition test
-	$(MAKE) -C implementations/c/provekit-lsp-c test
-	$(MAKE) -C implementations/c/provekit-self-contracts test
+	@failed=""; \
+	$(MAKE) -C implementations/c/provekit-ir test || failed="$$failed provekit-ir"; \
+	$(MAKE) -C implementations/c/provekit-lift test || failed="$$failed provekit-lift"; \
+	$(MAKE) -C implementations/c/provekit-lift-core test || failed="$$failed provekit-lift-core"; \
+	$(MAKE) -C implementations/c/provekit-lift-c-sparse test || failed="$$failed provekit-lift-c-sparse"; \
+	$(MAKE) -C implementations/c/provekit-lift-c-kernel-doc test || failed="$$failed provekit-lift-c-kernel-doc"; \
+	$(MAKE) -C implementations/c/provekit-lift-c-assertions test || failed="$$failed provekit-lift-c-assertions"; \
+	$(MAKE) -C implementations/c/provekit-realize-c-core test || failed="$$failed provekit-realize-c-core"; \
+	$(MAKE) -C implementations/c/provekit-lift-composition test || failed="$$failed provekit-lift-composition"; \
+	$(MAKE) -C implementations/c/provekit-lsp-c test || failed="$$failed provekit-lsp-c"; \
+	$(MAKE) -C implementations/c/provekit-self-contracts test || failed="$$failed provekit-self-contracts"; \
+	if [ -n "$$failed" ]; then echo "test-c FAIL:$$failed"; exit 1; fi
 
 .PHONY: test-python
 test-python:
-	cd implementations/python/provekit-lift-py-tests && \
+	@failed=""; \
+	(cd implementations/python/provekit-lift-py-tests && \
 		python3 -m venv .venv && \
 		. .venv/bin/activate && \
 		python -m pip install --quiet -e . pytest && \
-		pytest
-	cd implementations/python/provekit-emit-python-pytest && \
+		pytest) || failed="$$failed provekit-lift-py-tests"; \
+	(cd implementations/python/provekit-emit-python-pytest && \
 		python3 -m venv .venv && \
 		. .venv/bin/activate && \
 		python -m pip install --quiet -e . pytest && \
-		pytest
+		pytest) || failed="$$failed provekit-emit-python-pytest"; \
+	if [ -n "$$failed" ]; then echo "test-python FAIL:$$failed"; exit 1; fi
 
 .PHONY: test-ruby
 test-ruby: build-ruby ruby-language-signature
@@ -703,8 +718,12 @@ test-php:
 
 .PHONY: test-java
 test-java: build-java
-	mvn test -q -f implementations/java/provekit-lift-java-core/pom.xml
-	mvn test -q -f implementations/java/pom.xml -pl provekit-realize-java-core -am
+	@failed=""; \
+	mvn test -q -f implementations/java/provekit-lift-java-core/pom.xml \
+	  || failed="$$failed provekit-lift-java-core"; \
+	mvn test -q -f implementations/java/pom.xml -pl provekit-realize-java-core -am \
+	  || failed="$$failed provekit-realize-java-core"; \
+	if [ -n "$$failed" ]; then echo "test-java FAIL:$$failed"; exit 1; fi
 
 .PHONY: test-swift
 test-swift: build-swift
@@ -740,10 +759,23 @@ build-zig:
 
 # NOTE: test-swift is intentionally excluded from test-all: it requires a
 # macOS host with the Swift toolchain. Use `make test-swift` on macOS.
+#
+# test-all is NON-FAIL-FAST: every suite runs regardless of prior failures.
+# Failures are collected and reported as a summary at the end.
 .PHONY: test-all
-test-all: test-rust test-go test-ts test-csharp test-python test-ruby test-php test-java test-c
-	@echo ""
-	@echo "==== test-all: PASS ===="
+test-all:
+	@failed=""; \
+	for s in test-rust test-go test-ts test-csharp test-python test-ruby test-php test-java test-c; do \
+	  echo ""; \
+	  echo "==== $$s ===="; \
+	  $(MAKE) $$s || failed="$$failed $$s"; \
+	done; \
+	echo ""; \
+	if [ -n "$$failed" ]; then \
+	  echo "==== test-all FAIL:$$failed ===="; \
+	  exit 1; \
+	fi; \
+	echo "==== test-all: PASS ===="
 
 # --- CI alias ----------------------------------------------------------------
 
