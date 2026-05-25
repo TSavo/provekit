@@ -12,15 +12,28 @@ declare the same concept names; the substrate recognizes the cluster by structur
 - 45 `library-sugar-binding-entry` records (concept name, loss dimensions, optional observed_dimension)
 - 10 `refusal-memento` records (refused boundaries with reasons)
 
+## Cardinality-split query concepts (#1468)
+
+`concept:sql-query` is split by result cardinality into the global Phase-0
+catalog concepts. This shim maps by what each helper actually returns: every
+query helper hands back a raw `java.sql.ResultSet` from `executeQuery`, which is
+a lazy single-pass cursor the caller walks via `.next()`, so `queryRow`,
+`stmtQuery`, `stmtQueryMap`, and `stmtQueryRow` all bind
+`concept:sql-query-iterate` (`SqlRowCursor`). No helper materializes a list
+(`-all`) or returns a single row or null (`-row`); the `*Row` method names mirror
+rusqlite's surface naming but the JDBC helper returns the cursor, not the first
+row. `stmtExists` returns a boolean (a cardinality projection) and keeps the flat
+`concept:sql-query`; additive coexistence with the pre-split concept is intended.
+
 ## Concept alignment with provekit-shim-rusqlite
 
 | Section | Concepts covered |
 |---------|-----------------|
 | A. Connection lifecycle | `concept:sql-connection-open`, `concept:sql-connection-close` |
 | A'. DataSource pooling | `concept:sql-connection-pool-acquire` (N=1 carrier) |
-| B. Connection-level execution | `concept:sql-execute`, `concept:sql-query` |
+| B. Connection-level execution | `concept:sql-execute`, `concept:sql-query-iterate` |
 | C. Preparation | `concept:sql-prepare`, `concept:sql-prepare-cached` |
-| D. Statement execution | `concept:sql-execute`, `concept:sql-query`, `concept:insert-and-get-id` |
+| D. Statement execution | `concept:sql-execute`, `concept:sql-query-iterate`, `concept:sql-query`, `concept:insert-and-get-id` |
 | D'. Batch execute | `concept:sql-batch-execute` (N=1 carrier) |
 | E. Transactions | `concept:sql-transaction-begin`, `concept:sql-transaction-commit`, `concept:sql-transaction-rollback`, `concept:sql-savepoint` |
 | E'. Isolation level | `concept:sql-transaction-isolation-level` (N=1 carrier) |

@@ -380,6 +380,94 @@ fn read_provides_concepts_from_manifest_source(
 /// envelope(s) or a specific `.proof` file. cmd_materialize uses it to lift
 /// the shim's `library-sugar-binding-entry` records and feed them over RPC
 /// (the `.proof`-load path). `None` ↔ no pointer declared → disk fallback.
+/// Ask the realize kit for the body-template entries it resolved from its own
+/// package manager (e.g. the TypeScript kit reads the shim `.proof` out of
+/// `node_modules`). The kit returns the entries; the substrate content-addresses
+/// them with the universal sorted-JCS scheme. This is the resolution path for
+/// languages whose dependency graph is owned by the kit, not declared via a
+/// `sugar_proof` pointer in the manifest.
+///
+/// Returns the entries array on success. Returns Ok(empty) when no realize
+/// candidate matches `(target_lang, library_tag)` or the kit does not implement
+/// the method (so the caller can fall through to other resolution paths).
+pub fn body_template_entries_via_rpc(
+    workspace_root: &Path,
+    target_lang: &str,
+    library_tag: &str,
+) -> Result<Vec<Value>, String> {
+    let candidates = registry_realize_candidates(workspace_root, target_lang)?;
+    let Some(cand) = candidates.iter().find(|c| c.tag == library_tag) else {
+        return Ok(Vec::new());
+    };
+    let cmd_spec = &cand.command;
+    if cmd_spec.argv.is_empty() {
+        return Ok(Vec::new());
+    }
+    let mut command = Command::new(&cmd_spec.argv[0]);
+    if cmd_spec.argv.len() > 1 {
+        command.args(&cmd_spec.argv[1..]);
+    }
+    if let Some(wd) = &cmd_spec.working_dir {
+        command.current_dir(wd);
+    }
+    command.stdin(Stdio::piped());
+    command.stdout(Stdio::piped());
+    command.stderr(Stdio::null());
+
+    let mut child = command
+        .spawn()
+        .map_err(|e| format!("spawn realize kit for body_template_entries: {e}"))?;
+
+    let req = json!({
+        "jsonrpc": "2.0",
+        "id": 1,
+        "method": "provekit.plugin.body_template_entries",
+        "params": {},
+    });
+    {
+        let stdin = child
+            .stdin
+            .as_mut()
+            .ok_or("realize kit stdin unavailable".to_string())?;
+        let req_str = serde_json::to_string(&req).expect("serialize body_template_entries request");
+        stdin
+            .write_all(req_str.as_bytes())
+            .and_then(|()| stdin.write_all(b"\n"))
+            .map_err(|e| format!("write body_template_entries request: {e}"))?;
+    }
+
+    let stdout = child
+        .stdout
+        .take()
+        .ok_or("realize kit stdout unavailable".to_string())?;
+    let mut reader = BufReader::new(stdout);
+    let mut line = String::new();
+    reader
+        .read_line(&mut line)
+        .map_err(|e| format!("read body_template_entries response: {e}"))?;
+    let _ = child.kill();
+    let _ = child.wait();
+
+    let v: Value = serde_json::from_str(line.trim()).map_err(|e| {
+        format!("body_template_entries response not valid JSON: {e}; raw={}", line.trim())
+    })?;
+    if let Some(err) = v.get("error") {
+        // METHOD_NOT_FOUND (-32601) means this kit does not implement the
+        // method: fall through (empty) rather than failing the dispatch.
+        if err.get("code").and_then(Value::as_i64) == Some(-32601) {
+            return Ok(Vec::new());
+        }
+        return Err(format!("realize kit body_template_entries error: {err}"));
+    }
+    let entries = v
+        .get("result")
+        .and_then(|r| r.get("entries"))
+        .and_then(Value::as_array)
+        .cloned()
+        .unwrap_or_default();
+    Ok(entries)
+}
+
 pub fn sugar_proof_for_realize(
     workspace_root: &Path,
     target_lang: &str,

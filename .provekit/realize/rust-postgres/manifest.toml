@@ -1,17 +1,28 @@
 # PEP 1.7.0 realize plugin manifest for Rust + postgres (postgres-rs driver).
 # Reuses the workspace's existing provekit-realize-rust binary; concept
-# routing for postgres comes from
-# menagerie/rust-language-signature/specs/body-templates/rust-canonical-bodies-postgres.json.
-# Closes the manifest gap surfaced during the #1364 rust kit audit:
-# the body-templates JSON existed but no realize manifest pointed at
-# it, so target_language=rust + library_tag=postgres dispatch had no
-# entry in the registry.
+# routing for postgres comes from the shim's signed .proof envelope,
+# consumed over RPC via the `.proof`-load-via-RPC enabler (named by
+# `sugar_proof` below).
 name = "rust-realize-postgres"
 library_tag = "postgres"
 family = "concept:family:sql"
 library_version = "0.19"
-# #1364 / #1355: per-kit concept coverage. Sourced from
-# menagerie/rust-language-signature/specs/body-templates/rust-canonical-bodies-postgres.json.
-provides_concepts = ["concept:sql-connection-close", "concept:sql-connection-open", "concept:sql-execute", "concept:sql-prepare", "concept:sql-query", "concept:sql-transaction-begin", "concept:sql-transaction-commit", "concept:sql-transaction-rollback"]
+# #1364 / #1355 / #1468: per-kit concept coverage. Sourced from the postgres
+# shim's signed .proof (named by `sugar_proof` below).
+# After the cardinality split (#1468): client.query -> Vec<Row> materialized
+# -> concept:sql-query-all; client.query_one -> exactly one Row
+# -> concept:sql-query-row. This shim binds no -iterate (no query_raw/portal
+# surface in v0.1), so concept:sql-query-iterate is left unbound. The flat
+# concept:sql-query no longer appears: both methods carry a cardinality.
+provides_concepts = ["concept:sql-connection-close", "concept:sql-connection-open", "concept:sql-execute", "concept:sql-prepare", "concept:sql-query-all", "concept:sql-query-row", "concept:sql-transaction-begin", "concept:sql-transaction-commit", "concept:sql-transaction-rollback"]
+# `.proof`-load-via-RPC: the AUTHORITY for this kit's emission bodies is the
+# postgres shim's @sugar bind source (examples/provekit-shim-postgres/src/lib.rs,
+# library = "postgres"), lifted into its signed .proof. The pointer names the
+# shim project dir; cmd_materialize globs its *.proof, extracts the
+# library-sugar-binding-entry records for tag `postgres`, and feeds them to the
+# realize plugin over RPC (RealizeRequest.body_templates). The on-disk
+# rust-canonical-bodies-postgres.json is no longer needed (deleted). Mirrors
+# the python-sqlite3 / java-sqlite-jdbc manifests (#1463 / #1458).
+sugar_proof = "examples/provekit-shim-postgres"
 command = ["implementations/rust/target/debug/provekit-realize-rust", "--rpc"]
 working_dir = "."

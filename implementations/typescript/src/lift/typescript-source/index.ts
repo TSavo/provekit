@@ -59,6 +59,7 @@ export interface TypeScriptLibrarySugarBindingEntry {
     file: string;
     span: { start_line: number; start_col: number; end_line: number; end_col: number };
     source_cid: string;
+    body_text: string;
   };
 }
 
@@ -372,6 +373,15 @@ function libraryBindingEntryForFunction(
 
   const span = locatorForNode(node, sourceFile);
   const spanText = sourceFile.getFullText().slice(node.getStart(sourceFile), node.end);
+  // Substrate-honest body capture (mirrors the Java lifter): the
+  // `@sugar.bind(...)` decorator + signature + braces are presentation/sugar.
+  // The lifter has already read the decorator (concept/library/family/version)
+  // and the signature (param_names/param_types/return_type) into typed fields.
+  // body_text carries only the remaining substance — the statements between the
+  // function block's outermost `{` and matching `}`, with original indentation
+  // preserved (the realizer does its own indentation pass). When no block body
+  // is present, body_text is empty and the entry contributes no template.
+  const bodyText = extractFunctionBodyStatements(body, sourceFile);
   const entry: TypeScriptLibrarySugarBindingEntry = {
     kind: "library-sugar-binding-entry",
     target_language: "typescript",
@@ -392,6 +402,7 @@ function libraryBindingEntryForFunction(
       file: modulePath,
       span,
       source_cid: computeCid(Buffer.from(spanText, "utf8")),
+      body_text: bodyText,
     },
   };
   if (binding.observed_dimension !== null) entry.observed_dimension = binding.observed_dimension;
@@ -402,6 +413,70 @@ function libraryBindingEntryForFunction(
   if (binding.family !== null) (entry as unknown as Record<string, unknown>).family = binding.family;
   if (binding.version !== null) (entry as unknown as Record<string, unknown>).library_version = binding.version;
   return entry;
+}
+
+/**
+ * Extract only the statements inside a function's block body — the text between
+ * the block's outermost `{` and matching `}`, dedented to column 0. The
+ * decorator + signature + braces are sugar already captured as typed fields;
+ * body_text carries what the function DOES. Returns "" when there is no block
+ * body (so the binding entry contributes no emission template).
+ *
+ * Dedent rationale: the shim source indents method bodies (e.g. 2 spaces inside
+ * the function block). That source-level indentation is presentation, not
+ * substance — the realizer's functionSource / emission template owns body
+ * indentation and the materialize indent pass adds the carrier's column on top.
+ * Capturing body_text at column 0 keeps it byte-equal to the canonical
+ * de-indented emission template the central body-templates JSON shipped before
+ * it was deleted, so realized output is indented exactly once (not once per
+ * source-nesting level). Without this, a 2-space carrier produced a 6-space body
+ * instead of the expected 4.
+ */
+function extractFunctionBodyStatements(
+  body: ts.Block | undefined,
+  sourceFile: ts.SourceFile,
+): string {
+  if (!body || !ts.isBlock(body)) return "";
+  const full = sourceFile.getFullText();
+  // body.getStart()/getEnd() bound the block including its braces; slice the
+  // interior. getStart() points at the `{`, getEnd() one past the `}`.
+  const interiorStart = body.getStart(sourceFile) + 1;
+  const interiorEnd = body.getEnd() - 1;
+  if (interiorEnd <= interiorStart) return "";
+  // Strip a single leading newline (after `{`) and trailing whitespace before
+  // `}` so the captured text is the statement block without the brace lines.
+  let text = full.slice(interiorStart, interiorEnd);
+  text = text.replace(/^\r?\n/, "").replace(/\s+$/, "");
+  return dedentCommonIndent(text);
+}
+
+/**
+ * Strip the longest whitespace prefix shared by every non-blank line. Blank
+ * lines are ignored when computing the common prefix and are left untouched.
+ * The common prefix is matched character-for-character (tabs and spaces
+ * literal), so mixed indentation degrades gracefully to a shorter prefix.
+ */
+function dedentCommonIndent(text: string): string {
+  const lines = text.split("\n");
+  let common: string | null = null;
+  for (const line of lines) {
+    if (line.trim() === "") continue;
+    const indent = line.slice(0, line.length - line.trimStart().length);
+    if (common === null) {
+      common = indent;
+      continue;
+    }
+    let i = 0;
+    const max = Math.min(common.length, indent.length);
+    while (i < max && common[i] === indent[i]) i += 1;
+    common = common.slice(0, i);
+    if (common === "") break;
+  }
+  if (!common) return text;
+  const prefix = common;
+  return lines
+    .map((line) => (line.startsWith(prefix) ? line.slice(prefix.length) : line))
+    .join("\n");
 }
 
 function sugarBindingArgs(node: ts.FunctionDeclaration): {

@@ -8,7 +8,18 @@ PKG_SRC = ROOT / "implementations/python/provekit-realize-python-aiosqlite/src"
 if str(PKG_SRC) not in sys.path:
     sys.path.insert(0, str(PKG_SRC))
 
-from provekit_realize_python_aiosqlite.realizer import MissingTemplateError, emit_stub
+import json
+
+from provekit_realize_python_aiosqlite.realizer import (
+    MissingTemplateError,
+    body_template_for,
+    current_body_templates,
+    emit_stub,
+)
+
+# `disk_fixture` is provided by tests/conftest.py: it points PROVEKIT_REPO_ROOT
+# at a temp tree carrying a minimal canonical-bodies-aiosqlite.json so the
+# disk-fallback invariants stay covered after the shipped JSON's deletion.
 
 
 SQL_QUERY_NTT = {
@@ -32,7 +43,7 @@ SQL_QUERY_NTT = {
 }
 
 
-def test_sql_query_uses_aiosqlite_execute() -> None:
+def test_sql_query_uses_aiosqlite_execute(disk_fixture) -> None:
     result = emit_stub(
         function="select_rows",
         params=["sql", "args"],
@@ -50,7 +61,7 @@ def test_sql_query_uses_aiosqlite_execute() -> None:
     assert result["extension"] == "py"
 
 
-def test_sql_query_uses_named_term_tree_args_shape() -> None:
+def test_sql_query_uses_named_term_tree_args_shape(disk_fixture) -> None:
     result = emit_stub(
         function="get_user_by_id",
         params=["id"],
@@ -69,7 +80,80 @@ def test_sql_query_uses_named_term_tree_args_shape() -> None:
     assert result["extension"] == "py"
 
 
-def test_sql_query_without_named_term_tree_uses_param_types_fallback() -> None:
+# ---------------------------------------------------------------------------
+# `.proof`-load-via-RPC (#1468, fan-out off canonical-bodies-aiosqlite.json).
+# When cmd_materialize lifts the aiosqlite shim's signed binding entries and
+# feeds them over RPC, the kit PREFERS them over its on-disk cache. Mirrors the
+# python-sqlite3 kit (#1463) + the core kit + Java #1458.
+# ---------------------------------------------------------------------------
+
+_RPC_SQL_QUERY_OVERRIDE = json.dumps(
+    [
+        {
+            "concept_name": "concept:sql-query",
+            "emission_template": {
+                "kind": "verbatim",
+                "template": "return await db.execute(${param0}, ${param1})  # rpc",
+            },
+            "signature_guard": {"min_params": 2, "max_params": 2},
+            "target_library_tag": "aiosqlite",
+        }
+    ]
+)
+
+
+def test_rpc_body_template_prefers_proof_over_disk(disk_fixture) -> None:
+    disk_body = body_template_for(
+        "concept:sql-query", ["sql", "args"], ["str", "list[object]"], "list[object]"
+    )
+    assert disk_body == (
+        "async with db.execute(sql, tuple(args)) as cursor:\n"
+        "    return await cursor.fetchall()"
+    )
+    token = current_body_templates.set(_RPC_SQL_QUERY_OVERRIDE)
+    try:
+        rpc_body = body_template_for(
+            "concept:sql-query", ["sql", "args"], ["str", "list[object]"], "list[object]"
+        )
+    finally:
+        current_body_templates.reset(token)
+    assert rpc_body == "return await db.execute(sql, args)  # rpc"
+    # No leakage after reset: back to the disk-fixture body.
+    assert body_template_for(
+        "concept:sql-query", ["sql", "args"], ["str", "list[object]"], "list[object]"
+    ) == (
+        "async with db.execute(sql, tuple(args)) as cursor:\n"
+        "    return await cursor.fetchall()"
+    )
+
+
+def test_rpc_body_template_empty_falls_through_to_disk(disk_fixture) -> None:
+    assert current_body_templates.get() == ""
+    body = body_template_for(
+        "concept:sql-query", ["sql", "args"], ["str", "list[object]"], "list[object]"
+    )
+    assert body == (
+        "async with db.execute(sql, tuple(args)) as cursor:\n"
+        "    return await cursor.fetchall()"
+    )
+
+
+def test_rpc_body_template_unrelated_concept_does_not_shadow_disk(
+    disk_fixture,
+) -> None:
+    # RPC override for sql-query must not shadow disk entries for other concepts.
+    token = current_body_templates.set(_RPC_SQL_QUERY_OVERRIDE)
+    try:
+        close_body = body_template_for(
+            "concept:sql-connection-close", ["conn"], ["object"], "None"
+        )
+    finally:
+        current_body_templates.reset(token)
+    assert close_body is not None
+    assert "close" in close_body
+
+
+def test_sql_query_without_named_term_tree_uses_param_types_fallback(disk_fixture) -> None:
     try:
         emit_stub("get_user_by_id", ["id"], ["int"], "User", "concept:sql-query")
     except MissingTemplateError as exc:

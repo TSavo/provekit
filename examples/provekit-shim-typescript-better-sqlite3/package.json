@@ -1,6 +1,6 @@
 {
-  "name": "@provekit-shim/typescript-better-sqlite3",
-  "version": "0.1.0",
+  "name": "provekit-shim-better-sqlite3",
+  "version": "0.1.4",
   "description": "ProvekIt vendored boundary namespace for TypeScript better-sqlite3 substrate-honest sugar bindings.",
   "license": "Apache-2.0",
   "type": "module",

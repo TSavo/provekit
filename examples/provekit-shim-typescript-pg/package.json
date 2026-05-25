@@ -1,0 +1,26 @@
+{
+  "name": "provekit-shim-pg",
+  "version": "0.1.1",
+  "description": "ProvekIt vendored boundary namespace for TypeScript node-pg (PostgreSQL) substrate-honest sugar bindings.",
+  "license": "Apache-2.0",
+  "type": "module",
+  "files": [
+    "src/",
+    "provekit.proof",
+    ".provekit/config.toml"
+  ],
+  "dependencies": {
+    "pg": "^8.16.3",
+    "provekit": "file:../.."
+  },
+  "devDependencies": {
+    "@types/pg": "^8.11.10",
+    "typescript": "^6.0.2"
+  },
+  "provekit": {
+    "proof": "provekit.proof",
+    "libraryTag": "pg",
+    "targetLanguage": "typescript",
+    "comment": "Hint only — the trust root is the .proof file at package root."
+  }
+}

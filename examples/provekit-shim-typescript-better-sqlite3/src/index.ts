@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 //
-// @provekit-shim/typescript-better-sqlite3: substrate-honest concept
-// bindings for the synchronous better-sqlite3 Node driver.
+// provekit-shim-better-sqlite3: substrate-honest concept bindings for the
+// synchronous better-sqlite3 Node driver.
 //
 // Paper 24 section 3 ("After Vendoring"): libraries ship their own sugar.
 // This shim is the TypeScript analogue of provekit-shim-rusqlite. The
@@ -10,14 +10,56 @@
 // shared `provekit mint --library-bindings` path packages those entries
 // into the package-root `provekit.proof` envelope.
 //
-// Sugar bindings: 44 (sections A-L)
-// Refusals: 10 (section M)
-// Total envelope members: 54
+// CARDINALITY-SPLIT QUERY CONCEPTS (#1468)
+// ----------------------------------------
+// A different post-condition is a different contract, so the connection-level
+// query bindings cite the GLOBAL cardinality concepts (Phase 0 catalog), not a
+// flat concept:sql-query:
+//
+//   * .get(...)     -> concept:sql-query-row      (at most one row or null)
+//   * .all(...)     -> concept:sql-query-all      (fully-materialized array)
+//   * .iterate(...) -> concept:sql-query-iterate  (lazy single-pass cursor)
+//
+// This shim's connection-level surface exposes .get and .all, so it binds
+// concept:sql-query-row and concept:sql-query-all. There is no connection-level
+// .iterate method, so concept:sql-query-iterate is left unbound here (the
+// prepared-statement-level stmtIterate is concept:sql-stmt-query, distinct).
+//
+// MULTIPLE SUGARS PER CONCEPT
+// ---------------------------
+// Sugar format is taste; a concept can carry multiple bindings. For each
+// connection-level concept this shim ships BOTH alternative surfaces:
+//
+//   * receiver-as-param (arity-3): `queryAll(db, sql, params)` — the db is
+//     an explicit operand. Body: `db.prepare(sql).all(params)`.
+//   * receiver-free (arity-2): `queryAllFree(sql, args)` — the db is a FREE
+//     name in scope (ambient `declare const db`), only the genuine operands
+//     are parameters. Body: `db.prepare(sql).all(args)`.
+//
+// Both realize the same contract. The materialize matcher selects by the
+// consumer carrier's shape: a `(sql, args)` carrier matches the arity-2
+// receiver-free binding; a `(db, sql, params)` carrier matches the arity-3
+// one. The arity barrier is the disambiguator.
+//
+// Prepared-statement-level operations are a DISTINCT concept
+// (`concept:sql-stmt-*`): they act on an already-prepared Statement, not on
+// the connection, so they never collide with the connection-level arity-2
+// bindings.
+//
+// The lifter rewrites parameter names to `${param0}`/`${param1}`/... but
+// leaves free receiver names (`db`, `stmt`, `result`) literal. This file is
+// a SPEC, never executed; the `declare const` receivers are ambient.
 
 import Database from "better-sqlite3";
 import { sugar } from "provekit";
 
 export type Params = readonly unknown[] | Record<string, unknown>;
+
+// Ambient receivers: free names the receiver-free bodies reference. Never
+// executed; ambient declarations typecheck without a runtime value.
+declare const db: Database.Database;
+declare const stmt: Database.Statement;
+declare const result: Database.RunResult;
 
 // ============================================================
 // A. Connection management
@@ -66,6 +108,7 @@ export function close(db: Database.Database): void {
 
 // ============================================================
 // B. Statement execution at connection level
+//    Each concept ships arity-3 (receiver-as-param) + arity-2 (receiver-free).
 // ============================================================
 
 @sugar.bind({
@@ -83,6 +126,16 @@ export function execute(db: Database.Database, sql: string, params: Params = [])
   library: "better-sqlite3",
   family: "concept:family:sql",
   version: "12.9.0",
+})
+export function executeFree(sql: string, args: Params = []): Database.RunResult {
+  return db.prepare(sql).run(args);
+}
+
+@sugar.bind({
+  concept: "concept:sql-execute",
+  library: "better-sqlite3",
+  family: "concept:family:sql",
+  version: "12.9.0",
   loss: ["multi-statement-support"],
 })
 export function executeBatch(db: Database.Database, sql: string): void {
@@ -90,7 +143,7 @@ export function executeBatch(db: Database.Database, sql: string): void {
 }
 
 @sugar.bind({
-  concept: "concept:sql-query",
+  concept: "concept:sql-query-row",
   library: "better-sqlite3",
   family: "concept:family:sql",
   version: "12.9.0",
@@ -100,13 +153,33 @@ export function queryRow(db: Database.Database, sql: string, params: Params = []
 }
 
 @sugar.bind({
-  concept: "concept:sql-query",
+  concept: "concept:sql-query-all",
   library: "better-sqlite3",
   family: "concept:family:sql",
   version: "12.9.0",
 })
 export function queryAll(db: Database.Database, sql: string, params: Params = []): unknown[] {
   return db.prepare(sql).all(params);
+}
+
+@sugar.bind({
+  concept: "concept:sql-query-all",
+  library: "better-sqlite3",
+  family: "concept:family:sql",
+  version: "12.9.0",
+})
+export function queryAllFree(sql: string, args: Params = []): unknown[] {
+  return db.prepare(sql).all(args);
+}
+
+@sugar.bind({
+  concept: "concept:sql-query-row",
+  library: "better-sqlite3",
+  family: "concept:family:sql",
+  version: "12.9.0",
+})
+export function queryRowFree(sql: string, args: Params = []): unknown {
+  return db.prepare(sql).get(args);
 }
 
 // ============================================================
@@ -135,11 +208,14 @@ export function stmtBind(stmt: Database.Statement, ...args: unknown[]): Database
 }
 
 // ============================================================
-// D. Statement execution (prepared statement level)
+// D. Statement execution (prepared-statement level).
+//    DISTINCT concept (concept:sql-stmt-*): operates on a prepared
+//    Statement, not on the connection. No arity-2 collision with the
+//    connection-level concepts above.
 // ============================================================
 
 @sugar.bind({
-  concept: "concept:sql-execute",
+  concept: "concept:sql-stmt-execute",
   library: "better-sqlite3",
   family: "concept:family:sql",
   version: "12.9.0",
@@ -149,7 +225,7 @@ export function stmtRun(stmt: Database.Statement, params: Params = []): Database
 }
 
 @sugar.bind({
-  concept: "concept:sql-query",
+  concept: "concept:sql-stmt-query",
   library: "better-sqlite3",
   family: "concept:family:sql",
   version: "12.9.0",
@@ -159,7 +235,7 @@ export function stmtAll(stmt: Database.Statement, params: Params = []): unknown[
 }
 
 @sugar.bind({
-  concept: "concept:sql-query",
+  concept: "concept:sql-stmt-query",
   library: "better-sqlite3",
   family: "concept:family:sql",
   version: "12.9.0",
@@ -169,7 +245,7 @@ export function stmtGet(stmt: Database.Statement, params: Params = []): unknown 
 }
 
 @sugar.bind({
-  concept: "concept:sql-query",
+  concept: "concept:sql-stmt-query",
   library: "better-sqlite3",
   family: "concept:family:sql",
   version: "12.9.0",
@@ -227,11 +303,11 @@ export function transactionExclusive<T>(db: Database.Database, body: () => T): T
 }
 
 // ============================================================
-// F. Row reading modes
+// F. Row reading modes (prepared-statement level)
 // ============================================================
 
 @sugar.bind({
-  concept: "concept:sql-query",
+  concept: "concept:sql-stmt-query",
   library: "better-sqlite3",
   family: "concept:family:sql",
   version: "12.9.0",
@@ -242,7 +318,7 @@ export function rowByIndex(stmt: Database.Statement, params: Params = []): unkno
 }
 
 @sugar.bind({
-  concept: "concept:sql-query",
+  concept: "concept:sql-stmt-query",
   library: "better-sqlite3",
   family: "concept:family:sql",
   version: "12.9.0",
@@ -337,7 +413,7 @@ export function dbName(db: Database.Database): string {
 }
 
 // ============================================================
-// I. Statement metadata
+// I. Statement metadata (prepared-statement level)
 // ============================================================
 
 @sugar.bind({

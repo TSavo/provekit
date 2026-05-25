@@ -5,13 +5,11 @@
 #
 # Sugar lane: the TypeScript source lifter (typescript-source/bin.ts)
 # walks @sugar.bind / @sugar.refuse decorators on the shim's own src.
-#
-# Contract lane: the TS umbrella (src/lift/cli.ts) dispatches the 5
-# TypeScript adapters (zod, fast-check, class-validator, vitest-tests,
-# provekit-annotations) against the cargo-equivalent: the pnpm-resolved
-# better-sqlite3 package. emit = "ir-document" puts the umbrella into
-# composable mode so its mementos merge with the sugar lane at
-# cmd_mint's envelope-mint stage.
+# This is the sole lane: the shim's `.proof` is purely the sugar-binding +
+# refusal members (47 + 10 in the shipped envelope). There is no contract
+# lane — no `typescript-contracts` lift manifest exists, and every prior
+# minted `.proof` carried zero contract members, so a declared-but-unmanifested
+# `ts-contracts` plugin only broke `mint` in a clean checkout.
 
 [[plugins]]
 name = "ts-sugar"
@@ -21,9 +19,3 @@ surface = "typescript-bind"
 # and refusal-memento. Declare it here so this plugin gets the right
 # layer regardless of the global CLI flag.
 layer = "library-bindings"
-
-[[plugins]]
-name = "ts-contracts"
-surface = "typescript-contracts"
-workspace_override = "/Users/tsavo/provekit/node_modules/.pnpm/better-sqlite3@12.9.0/node_modules/better-sqlite3"
-emit = "ir-document"

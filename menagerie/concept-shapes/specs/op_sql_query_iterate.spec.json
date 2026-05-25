@@ -1,0 +1,75 @@
+{
+  "effects": {
+    "effects": [
+      {
+        "kind": "effect-signature",
+        "name": "Async"
+      },
+      {
+        "kind": "effect-signature",
+        "name": "IO"
+      }
+    ]
+  },
+  "fn_name": "concept:sql-query-iterate",
+  "formal_sorts": [
+    {
+      "args": [],
+      "kind": "ctor",
+      "name": "Sql"
+    },
+    {
+      "args": [],
+      "kind": "ctor",
+      "name": "SqlArgs"
+    }
+  ],
+  "formals": [
+    "sql",
+    "args"
+  ],
+  "kind": "algorithm",
+  "loss_dimensions": [
+    "row-order",
+    "sync-vs-async",
+    "transaction-isolation"
+  ],
+  "post": {
+    "arity": [
+      "Sql",
+      "SqlArgs"
+    ],
+    "arity_shape": {
+      "kind": "named",
+      "slots": [
+        {
+          "name": "sql"
+        },
+        {
+          "name": "args"
+        }
+      ]
+    },
+    "cardinality": "all",
+    "cursor_lifetime_bound": true,
+    "kind": "operation-contract",
+    "materialization": "lazy-single-pass",
+    "operator": "sql-query-iterate",
+    "result": "SqlRowCursor",
+    "row_shape_sketch": {
+      "cursor_sort": "SqlRowCursor",
+      "row_sort": "SqlRow"
+    },
+    "wp_note": "Executes a parameterized SQL read operation and returns a lazy single-pass cursor over the matching rows. Sql is the parameterized query string. SqlArgs carries positional or named parameters. SqlRowCursor is a lazy, not-materialized, consume-once cursor whose validity is bound to the cursor lifetime: rows are produced on demand and cannot be re-read or indexed. Returning a lazy single-pass cursor rather than a materialized row set is the post-condition of this concept, not a realization loss. Implementation-defined row order in the absence of an ORDER BY clause, transaction isolation, and sync versus async behavior are realization loss dimensions."
+  },
+  "pre": {
+    "args": [],
+    "kind": "atomic",
+    "name": "true"
+  },
+  "return_sort": {
+    "args": [],
+    "kind": "ctor",
+    "name": "SqlRowCursor"
+  }
+}

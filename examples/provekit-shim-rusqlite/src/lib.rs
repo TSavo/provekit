@@ -109,7 +109,7 @@ pub fn execute_batch(conn: &Connection, sql: &str) -> Result<()> {
 }
 
 #[provekit::sugar(
-    concept = "concept:sql-query",
+    concept = "concept:sql-query-row",
     library = "rusqlite",
     family = "concept:family:sql",
     version = "0.39.0",
@@ -125,7 +125,7 @@ pub fn query_row<T, P: Params, F: FnOnce(&Row<'_>) -> Result<T>>(
 }
 
 #[provekit::sugar(
-    concept = "concept:sql-query",
+    concept = "concept:sql-query-row",
     library = "rusqlite",
     family = "concept:family:sql",
     version = "0.39.0",
@@ -201,7 +201,7 @@ pub fn stmt_execute<P: Params>(stmt: &mut Statement<'_>, params: P) -> Result<us
 }
 
 #[provekit::sugar(
-    concept = "concept:sql-query",
+    concept = "concept:sql-query-iterate",
     library = "rusqlite",
     family = "concept:family:sql",
     version = "0.39.0",
@@ -215,7 +215,7 @@ pub fn stmt_query<'stmt, P: Params>(
 }
 
 #[provekit::sugar(
-    concept = "concept:sql-query",
+    concept = "concept:sql-query-iterate",
     library = "rusqlite",
     family = "concept:family:sql",
     version = "0.39.0",
@@ -234,7 +234,7 @@ where
 }
 
 #[provekit::sugar(
-    concept = "concept:sql-query",
+    concept = "concept:sql-query-iterate",
     library = "rusqlite",
     family = "concept:family:sql",
     version = "0.39.0",
@@ -254,7 +254,7 @@ where
 }
 
 #[provekit::sugar(
-    concept = "concept:sql-query",
+    concept = "concept:sql-query-row",
     library = "rusqlite",
     family = "concept:family:sql",
     version = "0.39.0",

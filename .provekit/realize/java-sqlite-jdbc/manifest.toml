@@ -8,10 +8,13 @@ name = "java-realize-sqlite-jdbc"
 library_tag = "sqlite-jdbc"
 family = "concept:family:sql"
 library_version = "3.45.3.0"
-# #1364 / #1355: per-kit concept coverage (22 concepts). Concept names aligned
-# with provekit-shim-rusqlite for cross-library cluster membership (per the
-# sqlite-jdbc shim's pom.xml description).
-provides_concepts = ["concept:contract-observation", "concept:insert-and-get-id", "concept:sql-autocommit-control", "concept:sql-batch-execute", "concept:sql-busy-timeout", "concept:sql-catalog-reflection", "concept:sql-changes-count", "concept:sql-connection-close", "concept:sql-connection-open", "concept:sql-connection-pool-acquire", "concept:sql-cursor-fetch-size", "concept:sql-execute", "concept:sql-prepare", "concept:sql-prepare-cached", "concept:sql-query", "concept:sql-result-metadata", "concept:sql-row-get-column", "concept:sql-savepoint", "concept:sql-transaction-begin", "concept:sql-transaction-commit", "concept:sql-transaction-isolation-level", "concept:sql-transaction-rollback"]
+# #1364 / #1355: per-kit concept coverage. Concept names aligned with
+# provekit-shim-rusqlite for cross-library cluster membership (per the
+# sqlite-jdbc shim's pom.xml description). #1468: the connection-/statement-level
+# query helpers return a raw java.sql.ResultSet (a lazy single-pass cursor the
+# caller walks), so they bind concept:sql-query-iterate; concept:sql-query is
+# retained for stmtExists (boolean projection). Both coexist additively.
+provides_concepts = ["concept:contract-observation", "concept:insert-and-get-id", "concept:sql-autocommit-control", "concept:sql-batch-execute", "concept:sql-busy-timeout", "concept:sql-catalog-reflection", "concept:sql-changes-count", "concept:sql-connection-close", "concept:sql-connection-open", "concept:sql-connection-pool-acquire", "concept:sql-cursor-fetch-size", "concept:sql-execute", "concept:sql-prepare", "concept:sql-prepare-cached", "concept:sql-query", "concept:sql-query-iterate", "concept:sql-result-metadata", "concept:sql-row-get-column", "concept:sql-savepoint", "concept:sql-transaction-begin", "concept:sql-transaction-commit", "concept:sql-transaction-isolation-level", "concept:sql-transaction-rollback"]
 # `.proof`-load-via-RPC: AUTHORITY is the sqlite-jdbc shim's @ProveKitSugar
 # source (SqliteJdbcShim.java, library = "sqlite-jdbc"), lifted into its signed
 # .proof. cmd_materialize globs this dir's *.proof, extracts the

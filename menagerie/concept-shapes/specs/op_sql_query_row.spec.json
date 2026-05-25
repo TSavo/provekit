@@ -1,0 +1,73 @@
+{
+  "effects": {
+    "effects": [
+      {
+        "kind": "effect-signature",
+        "name": "Async"
+      },
+      {
+        "kind": "effect-signature",
+        "name": "IO"
+      }
+    ]
+  },
+  "fn_name": "concept:sql-query-row",
+  "formal_sorts": [
+    {
+      "args": [],
+      "kind": "ctor",
+      "name": "Sql"
+    },
+    {
+      "args": [],
+      "kind": "ctor",
+      "name": "SqlArgs"
+    }
+  ],
+  "formals": [
+    "sql",
+    "args"
+  ],
+  "kind": "algorithm",
+  "loss_dimensions": [
+    "row-order",
+    "sync-vs-async",
+    "transaction-isolation"
+  ],
+  "post": {
+    "arity": [
+      "Sql",
+      "SqlArgs"
+    ],
+    "arity_shape": {
+      "kind": "named",
+      "slots": [
+        {
+          "name": "sql"
+        },
+        {
+          "name": "args"
+        }
+      ]
+    },
+    "cardinality": "at-most-one",
+    "kind": "operation-contract",
+    "operator": "sql-query-row",
+    "result": "Optional<SqlRow>",
+    "row_shape_sketch": {
+      "result_sort": "Optional<SqlRow>",
+      "row_sort": "SqlRow"
+    },
+    "wp_note": "Executes a parameterized SQL read operation and returns at most one row. Sql is the parameterized query string. SqlArgs carries positional or named parameters. Optional<SqlRow> is present (one row) when the query matches at least one row and absent (null) otherwise; the result cardinality is at most one (a single row or nothing), not a row set. Returning at most one row is the post-condition of this concept, not a realization loss. Implementation-defined row order in the absence of an ORDER BY clause, transaction isolation, and sync versus async behavior are realization loss dimensions."
+  },
+  "pre": {
+    "args": [],
+    "kind": "atomic",
+    "name": "true"
+  },
+  "return_sort": {
+    "args": [],
+    "kind": "ctor",
+    "name": "Optional<SqlRow>"
+  }
+}

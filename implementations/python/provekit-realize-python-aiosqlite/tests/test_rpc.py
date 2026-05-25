@@ -33,7 +33,7 @@ SQL_QUERY_NTT = {
 }
 
 
-def test_rpc_invoke_renders_aiosqlite_body() -> None:
+def test_rpc_invoke_renders_aiosqlite_body(disk_fixture) -> None:
     response = dispatch(
         {
             "jsonrpc": "2.0",
@@ -54,7 +54,7 @@ def test_rpc_invoke_renders_aiosqlite_body() -> None:
     assert "async with db.execute" in response["result"]["source"]
 
 
-def test_rpc_invoke_threads_named_term_tree_for_template_lookup() -> None:
+def test_rpc_invoke_threads_named_term_tree_for_template_lookup(disk_fixture) -> None:
     response = dispatch(
         {
             "jsonrpc": "2.0",

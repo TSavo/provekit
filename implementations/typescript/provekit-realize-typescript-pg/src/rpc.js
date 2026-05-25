@@ -1,6 +1,7 @@
 const readline = require("node:readline");
 
-const { emitStub } = require("./realizer");
+const realizer = require("./realizer");
+const { emitStub } = realizer;
 const { declaration: platformSemanticsDeclaration } = require("./platform_semantics");
 
 function runRpc() {
@@ -44,6 +45,19 @@ function dispatch(request) {
   if (method === "provekit.plugin.platform_semantics") {
     const decl = platformSemanticsDeclaration();
     return { jsonrpc: "2.0", id: msgId, result: { tags: decl.tags, dimension_values: decl.dimension_values, op_aliases: {} } };
+  }
+  if (method === "provekit.plugin.body_template_entries") {
+    // The kit resolved the shim .proof from node_modules and built the template
+    // entries. It hands them back so the substrate can content-address them with
+    // the canonical sorted-JCS scheme (the same cid_for_json algebra every
+    // language uses). The kit does NOT compute the CID itself — the address
+    // space is universal and owned by the substrate.
+    const proofPath = realizer.getProofPath ? realizer.getProofPath() : null;
+    if (!proofPath) {
+      return errorResponse(msgId, 1404, "SHIM_NOT_FOUND: provekit-shim-pg not installed in node_modules");
+    }
+    const entries = realizer.shimProofEntries ? realizer.shimProofEntries() : [];
+    return { jsonrpc: "2.0", id: msgId, result: { entries, proof_path: proofPath } };
   }
   if (method === "provekit.plugin.shutdown") {
     return { jsonrpc: "2.0", id: msgId, result: null };

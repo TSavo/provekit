@@ -215,11 +215,11 @@ fn concept_carrier_lines(indent: &str) -> String {
 }
 
 fn concept_payload_json() -> &'static str {
-    "{\"artifact_kind\":\"provekit-concept-citation-comment-sugar\",\"concept_name\":\"concept:sql-query\",\"function\":\"selectRows\",\"params\":[\"sql\",\"args\"],\"param_types\":[\"string\",\"unknown[]\"],\"return_type\":\"unknown[]\",\"named_term_tree\":{\"conceptName\":\"concept:sql-query\",\"args\":[{\"sort\":\"Sql\",\"source\":\"sql\"},{\"sort\":\"SqlArgs\",\"source\":\"args\"}]}}"
+    "{\"artifact_kind\":\"provekit-concept-citation-comment-sugar\",\"concept_name\":\"concept:sql-query-all\",\"function\":\"selectRows\",\"params\":[\"sql\",\"args\"],\"param_types\":[\"string\",\"unknown[]\"],\"return_type\":\"unknown[]\",\"named_term_tree\":{\"conceptName\":\"concept:sql-query-all\",\"args\":[{\"sort\":\"Sql\",\"source\":\"sql\"},{\"sort\":\"SqlArgs\",\"source\":\"args\"}]}}"
 }
 
 fn family_sql_payload_json() -> &'static str {
-    "{\"artifact_kind\":\"provekit-concept-citation-comment-sugar\",\"concept_name\":\"concept:sql-query\",\"family\":\"concept:family:sql\",\"function\":\"selectRows\",\"params\":[\"sql\",\"args\"],\"param_types\":[\"string\",\"unknown[]\"],\"return_type\":\"unknown[]\",\"named_term_tree\":{\"conceptName\":\"concept:sql-query\",\"args\":[{\"sort\":\"Sql\",\"source\":\"sql\"},{\"sort\":\"SqlArgs\",\"source\":\"args\"}]}}"
+    "{\"artifact_kind\":\"provekit-concept-citation-comment-sugar\",\"concept_name\":\"concept:sql-query-all\",\"family\":\"concept:family:sql\",\"function\":\"selectRows\",\"params\":[\"sql\",\"args\"],\"param_types\":[\"string\",\"unknown[]\"],\"return_type\":\"unknown[]\",\"named_term_tree\":{\"conceptName\":\"concept:sql-query-all\",\"args\":[{\"sort\":\"Sql\",\"source\":\"sql\"},{\"sort\":\"SqlArgs\",\"source\":\"args\"}]}}"
 }
 
 fn concept_payload_cid() -> String {
@@ -871,7 +871,7 @@ for line in sys.stdin:
         &fake_realize,
         "better-sqlite3",
         Some("concept:family:sql"),
-        &["concept:sql-query"],
+        &["concept:sql-query-all"],
     );
     install_python_script_manifest_with_metadata(
         workspace.path(),
@@ -879,7 +879,7 @@ for line in sys.stdin:
         &fake_realize,
         "pg",
         Some("concept:family:sql"),
-        &["concept:sql-query"],
+        &["concept:sql-query-all"],
     );
 
     let output = Command::new(env!("CARGO_BIN_EXE_provekit"))
