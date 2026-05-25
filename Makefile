@@ -189,6 +189,15 @@ build-go:
 .PHONY: build-ts
 build-ts:
 	pnpm install --frozen-lockfile
+	# Each TS realize kit resolves its shim .proof from its OWN node_modules
+	# (file: dep on the example shim) and needs @ipld/dag-cbor + @noble/hashes
+	# for the CBOR decode. The root install does not provision these per-kit
+	# deps (the kits are npm package-lock.json based, outside the pnpm root),
+	# so install each kit explicitly. Without this the kit RPC returns
+	# SHIM_NOT_FOUND and SQL/migrate materialize tests refuse.
+	npm --prefix implementations/typescript/provekit-realize-typescript-core ci
+	npm --prefix implementations/typescript/provekit-realize-typescript-better-sqlite3 ci
+	npm --prefix implementations/typescript/provekit-realize-typescript-pg ci
 
 .PHONY: build-csharp
 build-csharp:

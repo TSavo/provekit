@@ -131,7 +131,12 @@ fn sql_query_realize_request() -> RealizeRequest {
         params: vec!["sql".to_string(), "args".to_string()],
         param_types: vec!["string".to_string(), "unknown[]".to_string()],
         return_type: "unknown[]".to_string(),
-        concept_name: "concept:sql-query".to_string(),
+        // Post-cardinality-split: a row-returning query (.all()/pool.query, an
+        // array result) is concept:sql-query-all. Flat concept:sql-query is
+        // retained only for boolean projections (stmtExists-shaped), which the
+        // SQL shims no longer bind. Citing the flat concept here yields a stub
+        // from both kits (no binding) — the cardinality-correct concept is -all.
+        concept_name: "concept:sql-query-all".to_string(),
         named_term_tree: None,
         term_shape: None,
         operand_bindings: Vec::new(),
