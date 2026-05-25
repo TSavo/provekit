@@ -211,6 +211,7 @@ jobs:
             maven \
             nlohmann-json3-dev \
             php-cli \
+            libsqlite3-dev \
             sqlite3 \
             unzip \
             z3
