@@ -9,8 +9,8 @@
 // status is v0 loudly-bounded-lossy, fresh-target hermetic, Branch 2 mode.
 // See docs/incidents/2026-05-14-trinity-baseline-diagnosis.md and closure PRs
 // #860, #861, #862, #863. The trinity gate is the PR #861 hermetic fixture plus
-// the v0 lossy expectations in trinity_roundtrip_test.rs; Branch 1 still needs
-// Java and Python lift fixture wiring.
+// the retired v0 lossy trinity expectations; Branch 1 still needs Java and
+// Python lift fixture wiring.
 //
 // The bind path uses Term::Unit (no term graph yet), so every function
 // becomes a compilable stub: a final class wrapping a static method that
@@ -25,8 +25,7 @@
 // stub source MUST be identical whether produced by the Rust path or the
 // Java plugin path.
 //
-// Constraint: does NOT modify trinity_roundtrip_test.rs or its fixtures.
-// Does NOT remove cmd_transport.rs Java match arms.
+// Constraint: does NOT remove cmd_transport.rs Java match arms.
 
 use std::path::PathBuf;
 use std::process::Command;

@@ -59,7 +59,7 @@ public final class RpcServer {
         + "\"target_language\":\"java\""
         + "}";
 
-    static final String KIND = "realize";
+    static final String KIND = "emit";
     static final boolean CRITICAL = false;
     static final String VERSION = "0.1.0";
     static final List<String> PROTOCOL_VERSIONS = List.of("pep/1.7.0");
@@ -79,8 +79,8 @@ public final class RpcServer {
      * rust canonicalizer) and asserts equality.
      */
     static final String PLUGIN_CID =
-        "blake3-512:b58c3b05c9922848fa235bd93f914a0158780db406484a9d3d5a32836f"
-        + "a93b4d53f52eeebea270062dcc2163905a0a76c113f1d72229d935cf5dc3b517625820";
+        "blake3-512:396cd754d1db439a02e715f0eae10cbdebbfb0e284e5f2a8762fd713b234"
+        + "eaa7383b06bc2e651921a3447fd2fa7a676d30a1b6c3309cf44772b641a763e810a9";
 
     private final BufferedReader in = new BufferedReader(new InputStreamReader(System.in));
     private final PrintWriter out = new PrintWriter(System.out, true);

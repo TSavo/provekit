@@ -794,9 +794,10 @@ fn materialize_rust_reqwest_example_uses_rust_library_shim() {
 #[test]
 fn materialize_explicit_target_strips_redundant_language_prefix_from_library() {
     // N1 regression: --target python --library python-requests previously produced
-    // kit_name lower-python-python-requests, which no realize plugin matches.
+    // a duplicated python-python-requests realization surface, which no
+    // manifest matches.
     // After the fix, resolve_library_surface strips the "python-" prefix and
-    // produces kit_name lower-python-requests, matching the installed plugin.
+    // resolves the python-requests surface, matching the installed plugin.
     let workspace = tempfile::tempdir().expect("tempdir");
     let Some(src_dir) = write_python_requests_project_fixture(workspace.path()) else {
         eprintln!(

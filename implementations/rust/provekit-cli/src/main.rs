@@ -26,6 +26,7 @@ mod cmd_catalog;
 mod cmd_ci;
 mod cmd_compose;
 mod cmd_dump;
+mod cmd_emit;
 mod cmd_exam;
 mod cmd_fix;
 mod cmd_hash;
@@ -33,7 +34,6 @@ mod cmd_implicate;
 mod cmd_init;
 mod cmd_lift;
 mod cmd_link;
-mod cmd_lower;
 mod cmd_materialize;
 mod cmd_mint;
 mod cmd_must;
@@ -142,8 +142,8 @@ enum Cmd {
     AgentLift(cmd_lift::AgentLiftArgs),
     /// Dispatch the lift-plugin protocol: spawn the configured plugin, write its `.proof`.
     Mint(cmd_mint::MintArgs),
-    /// Lower witness plans, or IR-JSON formulas from stdin to solver dialects.
-    Lower(cmd_lower::LowerArgs),
+    /// Emit target/framework test artifacts from neutral contract predicates.
+    Emit(cmd_emit::EmitArgs),
     /// Translate an English description to a verified ProvekIt contract via the configured agent.
     Must(cmd_must::MustArgs),
     /// Hand the configured agent a bug; verify a fix in a sandbox; report.
@@ -432,7 +432,7 @@ fn main() -> ExitCode {
         Cmd::Lift(a) => cmd_lift::run(a),
         Cmd::AgentLift(a) => cmd_lift::run_agent(a),
         Cmd::Mint(a) => cmd_mint::run(a),
-        Cmd::Lower(a) => cmd_lower::run(a),
+        Cmd::Emit(a) => cmd_emit::run(a),
         Cmd::Must(a) => cmd_must::run(a),
         Cmd::Fix(a) => cmd_fix::run(a),
         Cmd::Witness(a) => cmd_witness::run(a),

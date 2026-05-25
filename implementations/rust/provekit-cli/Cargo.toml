@@ -51,18 +51,3 @@ base64 = { workspace = true }
 provekit-linker = { path = "../provekit-linker" }
 serial_test = "3"
 tempfile = "3"
-
-[features]
-# Trinity composition test census (closes #1073).
-#
-# Gates the slow-test lane that exercises real subprocess transports for the
-# federation-level seam tests in `tests/trinity_composition_census.rs`. The
-# default `cargo test` invocation skips this lane; CI runs it explicitly in a
-# dedicated `trinity-composition-census` job per A5 transport policy.
-#
-#   cargo test --test trinity_composition_census --features slow-tests
-slow-tests = []
-
-[[test]]
-name = "trinity_citation_comments_exhibit"
-required-features = ["slow-tests"]

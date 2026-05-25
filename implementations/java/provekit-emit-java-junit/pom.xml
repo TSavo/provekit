@@ -14,7 +14,7 @@
     <!--
       PR-6 / issue #1402: provekit-emit-java-junit.
 
-      A PEP 1.7.0 realize-plugin (java) that takes a contract (its neutral
+      A PEP 1.7.0 emit-plugin (java) that takes a contract (its neutral
       predicates + the function signature) and emits a JUnit5 test class
       whose assertions verify the contract's predicates.
 

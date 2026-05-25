@@ -45,6 +45,7 @@ class JUnitEmitterTest {
         assertTrue(src.contains("@Test"), src);
         assertTrue(src.contains("assertTrue(x >= lo);"), src);
         assertTrue(src.contains("assertTrue(x <= hi);"), src);
+        assertEquals("ClampContractTest.java", e.path());
         assertEquals(List.of("ge", "le"), e.emittedPredicates());
         assertTrue(e.unsupportedPredicates().isEmpty());
         assertTrue(e.isComplete());
@@ -91,5 +92,7 @@ class JUnitEmitterTest {
         String json = emitter.emit(plan).toJson();
         Jcs.Json parsed = Jcs.parse(json);
         assertTrue(parsed instanceof Jcs.Obj, json);
+        assertEquals("FContractTest.java", ((Jcs.Obj) parsed).stringFieldOrNull("path"));
+        assertEquals("java", ((Jcs.Obj) parsed).stringFieldOrNull("extension"));
     }
 }

@@ -915,7 +915,7 @@ fn mint_from_ir_document(
     let default_signer_seed: Ed25519Seed = FOUNDATION_V0_SEED;
     let produced_at = "2026-05-03T18:00:00Z".to_string();
     let witness_cids_by_contract =
-        lower_witnesses_by_contract(witnesses, project_root, out_dir, quiet)?;
+        emit_witnesses_by_contract(witnesses, project_root, out_dir, quiet)?;
 
     if let Some(authorities) = authorities {
         for authority in authorities {
@@ -1370,8 +1370,7 @@ fn project_body_templates_for_sugar_bindings(ir: &[Value]) -> Result<(), String>
         // directly. Projecting a JSON for those kits would re-introduce the
         // central registry the kit-resolution model removed.
         if lang == "typescript"
-            || (lang == "python"
-                && matches!(libtag.as_str(), "sqlite3" | "aiosqlite" | "requests"))
+            || (lang == "python" && matches!(libtag.as_str(), "sqlite3" | "aiosqlite" | "requests"))
         {
             continue;
         }
@@ -1660,7 +1659,7 @@ fn string_array(value: &Value, field: &str, context: &str) -> Result<Vec<String>
         .collect()
 }
 
-fn lower_witnesses_by_contract(
+fn emit_witnesses_by_contract(
     witnesses: Option<&Vec<Value>>,
     project_root: &Path,
     out_dir: &Path,
@@ -1672,13 +1671,13 @@ fn lower_witnesses_by_contract(
     };
     for witness in witnesses {
         let attach_to = required_str(witness, "attachTo", "witness requirement")?;
-        let lowered =
-            crate::cmd_lower::lower_witness_requirement(project_root, witness, out_dir, quiet)
+        let emitted =
+            crate::cmd_emit::emit_witness_requirement(project_root, witness, out_dir, quiet)
                 .map_err(|e| format!("ORP witness failed: {attach_to}\n{e}"))?;
         by_contract
             .entry(attach_to.to_string())
             .or_default()
-            .push(lowered.filename_cid);
+            .push(emitted.filename_cid);
     }
     Ok(by_contract)
 }

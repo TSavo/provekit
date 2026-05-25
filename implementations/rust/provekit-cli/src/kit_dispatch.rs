@@ -6,7 +6,7 @@
 // neither command has any language-specific code, no `if source_lang ==
 // "rust"` and no `TargetStyle::*` arms.
 //
-// Three surfaces:
+// Four surfaces:
 //
 //   1. `dispatch_bind_lift(workspace_root, source_lang)`
 //      Resolves a `kind = "lift"` plugin for `source_lang` via convention
@@ -32,13 +32,19 @@
 //      the validated ExamManifestMemento. If no plugin manifest exists, the
 //      compiled-in default ExamManifestKit loads a local path or catalog CID.
 //
+//   4. `dispatch_emit(workspace_root, target_lang, framework, plan)`
+//      Resolves a `kind = "emit"` plugin by `.provekit/emit/<surface>/manifest.toml`,
+//      where surfaces are target/framework packages such as `go-testing`.
+//      Invokes `provekit.plugin.invoke` with the neutral EmitPlan. The kit owns
+//      all target/framework syntax; the CLI owns only dispatch/composition.
+//
 // Kit unavailability is a `kit-plugin-unavailable` gap, not a hidden error.
 // Per Supra omnia, rectum the dispatcher refuses loudly with a gap record
 // the caller turns into a `GapRecord` and propagates downstream.
 
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 use std::io::{BufRead, BufReader, Write};
 use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
@@ -75,7 +81,7 @@ impl RealizeTransport for DispatchRealizeTransport {
 }
 
 const REGISTRY_SEALED_AT: &str = "1970-01-01T00:00:00.000Z";
-const REGISTRY_MANIFEST_KINDS: &[&str] = &["lift", "realize", "exam-manifest"];
+const REGISTRY_MANIFEST_KINDS: &[&str] = &["lift", "realize", "emit", "exam-manifest"];
 
 static RUN_PLUGIN_REGISTRIES: OnceLock<Mutex<BTreeMap<PathBuf, RunPluginRegistry>>> =
     OnceLock::new();
@@ -182,6 +188,7 @@ fn build_run_plugin_registry(workspace_root: &Path) -> Result<RunPluginRegistry,
 
 fn scan_manifest_plugins(workspace_root: &Path) -> Result<Vec<ManifestPluginRegistration>, String> {
     let mut plugins = Vec::new();
+    let configured_emit_surfaces = configured_emit_surface_names(workspace_root);
     for kind in REGISTRY_MANIFEST_KINDS {
         let kind_dir = workspace_root.join(".provekit").join(kind);
         let Ok(entries) = std::fs::read_dir(&kind_dir) else {
@@ -200,6 +207,9 @@ fn scan_manifest_plugins(workspace_root: &Path) -> Result<Vec<ManifestPluginRegi
             .collect::<Vec<_>>();
         surfaces.sort_by(|a, b| a.0.cmp(&b.0));
         for (surface, path) in surfaces {
+            if *kind == "emit" && !configured_emit_surfaces.contains(&surface) {
+                continue;
+            }
             let manifest_path = path.join("manifest.toml");
             if !manifest_path.exists() {
                 continue;
@@ -1669,6 +1679,285 @@ fn invoke_realize(
     })
 }
 
+// Emit dispatch (PEP 1.7.0 kind = "emit", method `provekit.plugin.invoke`)
+// ============================================================================
+
+/// Result of dispatching to an emit kit. The raw kit result is intentionally
+/// preserved: emitter packages own their result schema beyond the common
+/// `{source, extension, emitted_artifact_cid, ...}` fields consumed by the CLI.
+#[derive(Debug, Clone)]
+pub struct EmitDispatchResult {
+    pub surface: String,
+    pub source: String,
+    pub result: Value,
+}
+
+#[derive(Debug, Clone)]
+struct EmitCandidate {
+    surface: String,
+    command: ResolvedCommand,
+    source: String,
+}
+
+/// Dispatch a neutral EmitPlan to a target/framework emitter kit.
+///
+/// This is deliberately not a Go/Java/Python parser. The substrate resolves an
+/// emit manifest and sends JSON to the kit; the kit owns framework syntax and
+/// target-language source generation.
+pub fn dispatch_emit(
+    workspace_root: &Path,
+    target_lang: &str,
+    framework: &str,
+    plan: &Value,
+) -> Result<EmitDispatchResult, KitUnavailable> {
+    let candidate = resolve_emit_command(workspace_root, target_lang, framework)?;
+    invoke_emit(target_lang, framework, &candidate, plan).map_err(|detail| KitUnavailable {
+        kit_kind: "emit",
+        language: target_lang.to_string(),
+        detail,
+    })
+}
+
+fn resolve_emit_command(
+    workspace_root: &Path,
+    target_lang: &str,
+    framework: &str,
+) -> Result<EmitCandidate, KitUnavailable> {
+    let registry_candidates = registry_emit_candidates(workspace_root, target_lang, framework)
+        .map_err(|detail| KitUnavailable {
+            kit_kind: "emit",
+            language: target_lang.to_string(),
+            detail,
+        })?;
+    if let Some(candidate) = select_emit_candidate(&registry_candidates, target_lang, framework) {
+        return Ok(candidate);
+    }
+
+    record_fallback_diagnostic("emit", &format!("{target_lang}-{framework}"));
+    let live_candidates =
+        project_emit_candidates(workspace_root, target_lang, framework).map_err(|detail| {
+            KitUnavailable {
+                kit_kind: "emit",
+                language: target_lang.to_string(),
+                detail,
+            }
+        })?;
+    if let Some(candidate) = select_emit_candidate(&live_candidates, target_lang, framework) {
+        return Ok(candidate);
+    }
+
+    let registered = live_candidates
+        .iter()
+        .chain(registry_candidates.iter())
+        .map(|candidate| format!("{} from {}", candidate.surface, candidate.source))
+        .collect::<Vec<_>>();
+    let registered = if registered.is_empty() {
+        "none".to_string()
+    } else {
+        registered.join(", ")
+    };
+    Err(KitUnavailable {
+        kit_kind: "emit",
+        language: target_lang.to_string(),
+        detail: format!(
+            "no emit plugin for target `{target_lang}` and framework `{framework}`. \
+             expected a project [[plugins]] registration in .provekit/config.toml \
+             and a .provekit/emit/{target_lang}-{framework}/manifest.toml. \
+             registered: {registered}"
+        ),
+    })
+}
+
+fn registry_emit_candidates(
+    workspace_root: &Path,
+    target_lang: &str,
+    framework: &str,
+) -> Result<Vec<EmitCandidate>, String> {
+    let configured = configured_emit_surfaces(workspace_root, target_lang, framework);
+    if configured.is_empty() {
+        return Ok(Vec::new());
+    }
+    let registry = run_plugin_registry_for_project(workspace_root)?;
+    let mut candidates = registry
+        .plugins
+        .iter()
+        .filter(|plugin| registry_authorizes_plugin(&registry, plugin))
+        .filter(|plugin| plugin.kind == "emit")
+        .filter(|plugin| configured.contains(&plugin.surface))
+        .filter(|plugin| emit_surface_matches(&plugin.surface, target_lang, framework))
+        .map(|plugin| EmitCandidate {
+            surface: plugin.surface.clone(),
+            command: resolved_command_from_manifest(workspace_root, &plugin.parsed),
+            source: plugin.source.clone(),
+        })
+        .collect::<Vec<_>>();
+    candidates.sort_by(|a, b| a.surface.cmp(&b.surface).then(a.source.cmp(&b.source)));
+    Ok(candidates)
+}
+
+fn project_emit_candidates(
+    workspace_root: &Path,
+    target_lang: &str,
+    framework: &str,
+) -> Result<Vec<EmitCandidate>, String> {
+    let configured = configured_emit_surfaces(workspace_root, target_lang, framework);
+    if configured.is_empty() {
+        return Ok(Vec::new());
+    }
+
+    let mut out = Vec::new();
+    for surface in configured {
+        let path = workspace_root.join(".provekit").join("emit").join(&surface);
+        let manifest = path.join("manifest.toml");
+        if !manifest.exists() {
+            continue;
+        }
+        let parsed = parse_manifest(&manifest)?;
+        out.push(EmitCandidate {
+            surface,
+            command: resolved_command_from_manifest(workspace_root, &parsed),
+            source: manifest.display().to_string(),
+        });
+    }
+    Ok(out)
+}
+
+fn configured_emit_surface_names(workspace_root: &Path) -> BTreeSet<String> {
+    read_project_config(workspace_root)
+        .plugins
+        .into_iter()
+        .filter_map(|plugin| {
+            let surface = plugin.surface.trim().to_string();
+            (!surface.is_empty()).then_some(surface)
+        })
+        .collect()
+}
+
+fn configured_emit_surfaces(
+    workspace_root: &Path,
+    target_lang: &str,
+    framework: &str,
+) -> Vec<String> {
+    let exact_surface = format!("{target_lang}-{framework}");
+    let mut surfaces = read_project_config(workspace_root)
+        .plugins
+        .into_iter()
+        .filter_map(|plugin| {
+            let surface = plugin.surface.trim().to_string();
+            if surface.is_empty() || !emit_surface_matches(&surface, target_lang, framework) {
+                return None;
+            }
+            if let Some(emit) = plugin.emit.as_deref() {
+                let emit = emit.trim();
+                if emit != framework && emit != exact_surface && emit != surface {
+                    return None;
+                }
+            }
+            Some(surface)
+        })
+        .collect::<Vec<_>>();
+    surfaces.sort();
+    surfaces.dedup();
+    surfaces
+}
+
+fn select_emit_candidate(
+    candidates: &[EmitCandidate],
+    target_lang: &str,
+    framework: &str,
+) -> Option<EmitCandidate> {
+    let exact_surface = format!("{target_lang}-{framework}");
+    candidates
+        .iter()
+        .find(|candidate| candidate.surface == exact_surface)
+        .cloned()
+        .or_else(|| {
+            if candidates.len() == 1 {
+                candidates.first().cloned()
+            } else {
+                None
+            }
+        })
+}
+
+fn emit_surface_matches(surface: &str, target_lang: &str, framework: &str) -> bool {
+    if framework.is_empty() {
+        return surface == target_lang;
+    }
+    surface == format!("{target_lang}-{framework}")
+}
+
+fn invoke_emit(
+    target_lang: &str,
+    framework: &str,
+    candidate: &EmitCandidate,
+    plan: &Value,
+) -> Result<EmitDispatchResult, String> {
+    if candidate.command.argv.is_empty() {
+        return Err("empty command".to_string());
+    }
+    let mut command = Command::new(&candidate.command.argv[0]);
+    if candidate.command.argv.len() > 1 {
+        command.args(&candidate.command.argv[1..]);
+    }
+    if !candidate.command.argv.iter().any(|arg| arg == "--rpc") {
+        command.arg("--rpc");
+    }
+    if let Some(wd) = &candidate.command.working_dir {
+        command.current_dir(wd);
+    }
+    command.stdin(Stdio::piped());
+    command.stdout(Stdio::piped());
+    command.stderr(Stdio::null());
+
+    let mut child = command
+        .spawn()
+        .map_err(|e| format!("spawn emit kit: {e}"))?;
+    let mut stdin = child
+        .stdin
+        .take()
+        .ok_or_else(|| "emit kit stdin unavailable".to_string())?;
+    let stdout = child
+        .stdout
+        .take()
+        .ok_or_else(|| "emit kit stdout unavailable".to_string())?;
+    let mut reader = BufReader::new(stdout);
+
+    let req = json!({
+        "jsonrpc": "2.0",
+        "id": 1,
+        "method": "provekit.plugin.invoke",
+        "params": plan,
+    });
+    writeln!(stdin, "{req}").map_err(|e| format!("write emit request: {e}"))?;
+    let result = read_response(&mut reader, 1).map_err(|e| {
+        format!(
+            "emit kit `{}` for {target_lang}/{framework}: {e}",
+            candidate.surface
+        )
+    })?;
+
+    let shutdown = json!({
+        "jsonrpc": "2.0",
+        "id": 2,
+        "method": "provekit.plugin.shutdown",
+    });
+    let _ = writeln!(stdin, "{shutdown}");
+    drop(stdin);
+    let _ = child.wait();
+
+    let source = result
+        .get("source")
+        .and_then(Value::as_str)
+        .ok_or_else(|| "emit response missing result.source".to_string())?
+        .to_string();
+    Ok(EmitDispatchResult {
+        surface: candidate.surface.clone(),
+        source,
+        result,
+    })
+}
+
 /// #1375 Milestone C: one file in a target-owned compilation-unit emission.
 #[derive(Debug, Clone)]
 pub struct AssembledFile {
@@ -2282,48 +2571,59 @@ fn validate_exam_manifest_memento(manifest: &ExamManifestMemento) -> Result<(), 
 }
 
 // ============================================================================
-// Lower witness dispatch (ORP witness lowerer, legacy method `realize`)
+// Emit witness dispatch (ORP witness emitter)
 // ============================================================================
 
-pub fn dispatch_lower_witness(
+pub fn dispatch_emit_witness(
     workspace_root: &Path,
     surface: &str,
     plan: &Value,
 ) -> Result<Value, String> {
-    let resolved = resolve_lower_command(workspace_root, surface)?;
-    rpc_lower_witness(workspace_root, surface, &resolved, plan)
+    let resolved = resolve_emit_surface_command(workspace_root, surface)?;
+    rpc_emit_witness(workspace_root, surface, &resolved, plan)
 }
 
-fn resolve_lower_command(workspace_root: &Path, surface: &str) -> Result<ResolvedCommand, String> {
+fn resolve_emit_surface_command(
+    workspace_root: &Path,
+    surface: &str,
+) -> Result<ResolvedCommand, String> {
+    let configured = configured_emit_surface_names(workspace_root);
+    if !configured.contains(surface) {
+        return Err(format!(
+            "no emit plugin registration for surface `{surface}` in .provekit/config.toml"
+        ));
+    }
+
+    let registry = run_plugin_registry_for_project(workspace_root)?;
+    if let Some(plugin) = registry
+        .plugins
+        .iter()
+        .filter(|plugin| registry_authorizes_plugin(&registry, plugin))
+        .find(|plugin| plugin.kind == "emit" && plugin.surface == surface)
+    {
+        return Ok(resolved_command_from_manifest(
+            workspace_root,
+            &plugin.parsed,
+        ));
+    }
+
+    record_fallback_diagnostic("emit", surface);
     let manifest = workspace_root
         .join(".provekit")
-        .join("lower")
+        .join("emit")
         .join(surface)
         .join("manifest.toml");
     if !manifest.exists() {
         return Err(format!(
-            "no lower plugin for surface `{surface}`; expected {}",
+            "no emit plugin for surface `{surface}`; expected {}",
             manifest.display()
         ));
     }
     let parsed = parse_manifest(&manifest)?;
-    let working_dir = parsed
-        .working_dir
-        .map(|wd| {
-            if wd.is_absolute() {
-                wd
-            } else {
-                workspace_root.join(wd)
-            }
-        })
-        .or_else(|| Some(workspace_root.to_path_buf()));
-    Ok(ResolvedCommand {
-        argv: parsed.command,
-        working_dir,
-    })
+    Ok(resolved_command_from_manifest(workspace_root, &parsed))
 }
 
-fn rpc_lower_witness(
+fn rpc_emit_witness(
     workspace_root: &Path,
     surface: &str,
     cmd_spec: &ResolvedCommand,
@@ -2348,15 +2648,15 @@ fn rpc_lower_witness(
 
     let mut child = command
         .spawn()
-        .map_err(|e| format!("spawn lower kit: {e}"))?;
+        .map_err(|e| format!("spawn emit kit: {e}"))?;
     let mut stdin = child
         .stdin
         .take()
-        .ok_or("lower kit stdin unavailable".to_string())?;
+        .ok_or("emit kit stdin unavailable".to_string())?;
     let stdout = child
         .stdout
         .take()
-        .ok_or("lower kit stdout unavailable".to_string())?;
+        .ok_or("emit kit stdout unavailable".to_string())?;
     let stderr = child.stderr.take();
     let stderr_handle = stderr.map(|mut h| {
         std::thread::spawn(move || {
@@ -2367,53 +2667,22 @@ fn rpc_lower_witness(
     });
     let mut reader = BufReader::new(stdout);
 
-    let init_req = json!({
+    let emit_req = json!({
         "jsonrpc": "2.0",
         "id": 1,
-        "method": "initialize",
-        "params": {
-            "client": {"name": "provekit-cli/lower", "version": env!("CARGO_PKG_VERSION")},
-            "protocol_version": "provekit-orp/1",
-            "workspace_root": workspace_root.display().to_string(),
-            "config_path": ".provekit/config.toml"
-        }
-    });
-    writeln!(stdin, "{init_req}").map_err(|e| format!("write lower initialize: {e}"))?;
-    let init_response = read_response(&mut reader, 1);
-    if let Err(message) = &init_response {
-        let _ = writeln!(
-            stdin,
-            "{{\"jsonrpc\":\"2.0\",\"id\":3,\"method\":\"shutdown\"}}"
-        );
-        drop(stdin);
-        let _ = child.wait();
-        let stderr_text = stderr_handle
-            .and_then(|h| h.join().ok())
-            .unwrap_or_default();
-        return Err(if stderr_text.is_empty() {
-            message.clone()
-        } else {
-            format!("{message}\nlower kit stderr:\n{stderr_text}")
-        });
-    }
-    let _ = init_response;
-
-    let lower_req = json!({
-        "jsonrpc": "2.0",
-        "id": 2,
-        "method": "realize",
+        "method": "provekit.plugin.invoke",
         "params": {
             "surface": surface,
             "workspace_root": workspace_root.display().to_string(),
             "plan": plan
         }
     });
-    writeln!(stdin, "{lower_req}").map_err(|e| format!("write lower realize: {e}"))?;
-    let response = read_response(&mut reader, 2);
+    writeln!(stdin, "{emit_req}").map_err(|e| format!("write emit witness request: {e}"))?;
+    let response = read_response(&mut reader, 1);
     if let Err(message) = &response {
         let _ = writeln!(
             stdin,
-            "{{\"jsonrpc\":\"2.0\",\"id\":3,\"method\":\"shutdown\"}}"
+            "{{\"jsonrpc\":\"2.0\",\"id\":2,\"method\":\"provekit.plugin.shutdown\"}}"
         );
         drop(stdin);
         let _ = child.wait();
@@ -2423,15 +2692,15 @@ fn rpc_lower_witness(
         return Err(if stderr_text.is_empty() {
             message.clone()
         } else {
-            format!("{message}\nlower kit stderr:\n{stderr_text}")
+            format!("{message}\nemit kit stderr:\n{stderr_text}")
         });
     }
     let response = response?;
 
     let shutdown_req = json!({
         "jsonrpc": "2.0",
-        "id": 3,
-        "method": "shutdown"
+        "id": 2,
+        "method": "provekit.plugin.shutdown"
     });
     let _ = writeln!(stdin, "{shutdown_req}");
     drop(stdin);
