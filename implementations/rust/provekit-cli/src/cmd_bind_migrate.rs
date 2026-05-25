@@ -32,7 +32,18 @@ use crate::{EXIT_OK, EXIT_USER_ERROR};
 const ASYNC_EFFECT: &str = "async";
 const SYNC_EFFECT: &str = "sync";
 const FIXTURE_STATE_CID: &str = "blake3-512:295e0fd280088fc1e5e00d7bade11a2bf850c932180622e28f2fc92e64f97cd5bd757a73acf07f888b7c523e8efb65d8f0d01d50bc02740e5d771e750485d8f4";
-const SQL_QUERY_CONCEPT_CID: &str = "blake3-512:dd0429a4d4276c076f5dde08a993a046afa15dd36433b1d89c4bc18831f63733788abef283ffb78b2b9f88c607593741367a35ebcbd36a88132c06d6ff233ed1";
+// #1468: the flat `concept:sql-query` was split by result cardinality into
+// three concepts. The SQL shims (better-sqlite3, rusqlite, postgres,
+// python-sqlite3, java-sqlite-jdbc) now realize the cardinality concepts, NOT
+// flat `concept:sql-query`, so the migrate read path recognizes by SQL method:
+//   `.get(...)`     -> concept:sql-query-row      (at most one row or null)
+//   `.all(...)`     -> concept:sql-query-all      (fully-materialized array)
+//   `.iterate(...)` -> concept:sql-query-iterate  (lazy single-pass cursor)
+// Each CID is the catalog `algorithms/` entry committed on this branch, minted
+// from its AlgorithmMemento via JCS+blake3-512.
+const SQL_QUERY_ROW_CONCEPT_CID: &str = "blake3-512:85bec43676485ce0fbb309e1bf25d7bca99b7eb0369c491586577e2aeb93087f563b42f67158b9c89e254e07297992618697e5a732892d6271e704bb6ae42715";
+const SQL_QUERY_ALL_CONCEPT_CID: &str = "blake3-512:b7f773eaf90c6f8d8d7a932f3c455a7c8671e34ff6bc232ceeed9aa7f8520a661789bc6a5eaef8d69fe4dc4ec39673d3a7b7155f6aa3993f4982d6eda32a293b";
+const SQL_QUERY_ITERATE_CONCEPT_CID: &str = "blake3-512:f9043593be99dec834efc313e6217751296d71db1fbb8ca11bc576434c4d4e8f91fdff25e6727a8dba0a2632ad1bff0d342204de3bab298944f43f7c5ec55cf5";
 const SQL_EXECUTE_CONCEPT_CID: &str = "blake3-512:1dcfe69eb5a7c6719d3faf2f4d073dfe81f37a4d930a37b7a535aa3de9eae7dc30965bf6d8fa451a9cb97608335a844f619adb4589d0a5e882b30fa98d60b3a9";
 // CID for concept:insert-and-get-id, minted from its AlgorithmMemento via JCS+blake3-512.
 // Characterizes INSERT callsites that capture the newly inserted row id via the
@@ -104,8 +115,28 @@ fn run_inner(args: BindArgs) -> Result<(), String> {
 
     let source_binding_cid = body_template_cid(&repo_root, library_from)?;
     let target_binding_cid = body_template_cid(&repo_root, library_to)?;
-    probe_realize_binding(&repo_root, &source_lang, &source_tag, "concept:sql-query")?;
-    probe_realize_binding(&repo_root, &target_lang, &target_tag, "concept:sql-query")?;
+    // #1468: probe the result-cardinality read concepts actually recognized at
+    // the callsites (the shims realize `concept:sql-query-{row,all,iterate}`,
+    // not flat `concept:sql-query`). A better-sqlite3 `.get()` callsite
+    // (`sql-query-row`) federates to the python/pg `sql-query-row` binding via
+    // the cardinality hub, so we probe the SAME recognized concept on both
+    // source and target. Distinct read concepts are deduped so each is probed
+    // once per side.
+    let mut read_concepts: Vec<&'static str> = Vec::new();
+    for callsite in &sql_callsites {
+        let concept = concept_name_for_cid(&callsite.concept_cid)?;
+        if matches!(
+            concept,
+            "concept:sql-query-row" | "concept:sql-query-all" | "concept:sql-query-iterate"
+        ) && !read_concepts.contains(&concept)
+        {
+            read_concepts.push(concept);
+        }
+    }
+    for concept in &read_concepts {
+        probe_realize_binding(&repo_root, &source_lang, &source_tag, concept)?;
+        probe_realize_binding(&repo_root, &target_lang, &target_tag, concept)?;
+    }
     probe_realize_binding(&repo_root, &source_lang, &source_tag, "concept:sql-execute")?;
     probe_realize_binding(&repo_root, &target_lang, &target_tag, "concept:sql-execute")?;
 
@@ -527,6 +558,34 @@ fn find_matching_brace(source: &str, open: usize) -> Option<usize> {
     None
 }
 
+/// Classify a better-sqlite3 read callsite by result cardinality (#1468).
+///
+/// The read method invoked on the prepared statement is the cardinality
+/// witness: `.get(...)` returns at most one row (`concept:sql-query-row`),
+/// `.all(...)` materializes the full row set into an array
+/// (`concept:sql-query-all`), and `.iterate(...)` yields a lazy single-pass
+/// cursor (`concept:sql-query-iterate`). Returns the concept name and its
+/// catalog-algorithm CID. Refuses loudly when a read callsite uses none of the
+/// recognized methods rather than silently defaulting, so an unrecognized read
+/// surface is a loud bound, not a mislabeled concept.
+fn sql_read_cardinality(
+    body: &str,
+    function: &str,
+) -> Result<(&'static str, &'static str), String> {
+    if body.contains(".iterate(") {
+        Ok(("concept:sql-query-iterate", SQL_QUERY_ITERATE_CONCEPT_CID))
+    } else if body.contains(".all(") {
+        Ok(("concept:sql-query-all", SQL_QUERY_ALL_CONCEPT_CID))
+    } else if body.contains(".get(") {
+        Ok(("concept:sql-query-row", SQL_QUERY_ROW_CONCEPT_CID))
+    } else {
+        Err(format!(
+            "{function} is a SQL read callsite (no .run()) but uses no recognized \
+             read method (.get / .all / .iterate); cannot assign a result-cardinality concept"
+        ))
+    }
+}
+
 fn extract_sql_callsites(
     source: &str,
     functions: &[TsFunction],
@@ -548,19 +607,31 @@ fn extract_sql_callsites(
         // Pattern: the callsite body contains the `.lastInsertRowid` property access, which
         // is how better-sqlite3 exposes the newly inserted row id from stmt.run().
         let has_last_insert_rowid = function.body.contains(".lastInsertRowid");
+        // #1468: read callsites carry the result-cardinality concept, not the
+        // flat `concept:sql-query` (which the shims no longer realize). The
+        // better-sqlite3 read method at the callsite IS the cardinality witness:
+        //   `.get(...)`     -> concept:sql-query-row      (Optional<SqlRow>)
+        //   `.all(...)`     -> concept:sql-query-all      (materialized array)
+        //   `.iterate(...)` -> concept:sql-query-iterate  (lazy cursor)
+        let read_cardinality = if !is_execute {
+            Some(sql_read_cardinality(&function.body, &function.name)?)
+        } else {
+            None
+        };
         let concept_name = if is_execute && has_last_insert_rowid {
             "concept:insert-and-get-id"
         } else if is_execute {
             "concept:sql-execute"
         } else {
-            "concept:sql-query"
+            // Safe: `read_cardinality` is `Some` whenever `!is_execute`.
+            read_cardinality.expect("read callsite must resolve a cardinality").0
         };
         let concept_cid = if is_execute && has_last_insert_rowid {
             SQL_INSERT_AND_GET_ID_CONCEPT_CID
         } else if is_execute {
             SQL_EXECUTE_CONCEPT_CID
         } else {
-            SQL_QUERY_CONCEPT_CID
+            read_cardinality.expect("read callsite must resolve a cardinality").1
         };
         let sql = extract_prepare_sql(&function.body, local_prepare, &function.name)?;
         let sample_args = extract_sample_args(function, &function.body)?;
@@ -1689,7 +1760,9 @@ fn target_function_name(source_name: &str, target_surface: TargetSurface) -> Str
 
 fn concept_name_for_cid(cid: &str) -> Result<&'static str, String> {
     match cid {
-        SQL_QUERY_CONCEPT_CID => Ok("concept:sql-query"),
+        SQL_QUERY_ROW_CONCEPT_CID => Ok("concept:sql-query-row"),
+        SQL_QUERY_ALL_CONCEPT_CID => Ok("concept:sql-query-all"),
+        SQL_QUERY_ITERATE_CONCEPT_CID => Ok("concept:sql-query-iterate"),
         SQL_EXECUTE_CONCEPT_CID => Ok("concept:sql-execute"),
         SQL_INSERT_AND_GET_ID_CONCEPT_CID => Ok("concept:insert-and-get-id"),
         _ => Err(format!("unsupported SQL concept CID {cid}")),
@@ -2786,7 +2859,7 @@ pub struct MigrateKit {
 #[allow(dead_code)] // Phase D scaffolding; fields are read by Phase E receipt-assembly.
 #[derive(Debug, Clone)]
 pub(crate) struct ObservedEffectDelta {
-    /// The carrier's `concept_name` (e.g., `"concept:sql-query"`).
+    /// The carrier's `concept_name` (e.g., `"concept:sql-query-row"`).
     concept_name: String,
     /// The function name captured in the carrier (the consumer-signed
     /// site label). Used to key the function-effect graph.
@@ -3883,9 +3956,14 @@ mod tests {
         );
     }
 
-    // Discrimination: extract_sql_callsites assigns concept:sql-query for read callsites.
+    // #1468 result-cardinality recognition. The flat `concept:sql-query` was
+    // split into three by result cardinality; extract_sql_callsites assigns the
+    // cardinality concept by the SQL read method at the callsite. One block of
+    // three assertions per variant (positive + discrimination + structural).
+
+    // .get( -> concept:sql-query-row (at most one row or null).
     #[test]
-    fn extract_sql_callsites_assigns_sql_query_for_get_callsite() {
+    fn extract_sql_callsites_assigns_sql_query_row_for_get_callsite() {
         // Use userId (ends with "id") so extract_sample_args resolves to fixture 1.
         let body = concat!(
             "const stmt = db.prepare('SELECT * FROM users WHERE id = ?');\n",
@@ -3900,10 +3978,21 @@ mod tests {
         assert_eq!(callsites.len(), 1, "expected exactly one SQL callsite");
         let site = &callsites[0];
 
+        // Positive: .get( is the at-most-one-row cardinality.
         assert_eq!(
-            site.concept_cid, SQL_QUERY_CONCEPT_CID,
-            ".get( callsite must be concept:sql-query"
+            site.concept_cid, SQL_QUERY_ROW_CONCEPT_CID,
+            ".get( callsite must be concept:sql-query-row"
         );
+        // Discrimination: must NOT be the other read cardinalities.
+        assert_ne!(
+            site.concept_cid, SQL_QUERY_ALL_CONCEPT_CID,
+            ".get( callsite must NOT be concept:sql-query-all"
+        );
+        assert_ne!(
+            site.concept_cid, SQL_QUERY_ITERATE_CONCEPT_CID,
+            ".get( callsite must NOT be concept:sql-query-iterate"
+        );
+        // Structural: must NOT be an execute concept (read, not write).
         assert_ne!(
             site.concept_cid, SQL_EXECUTE_CONCEPT_CID,
             ".get( callsite must NOT be concept:sql-execute"
@@ -3911,6 +4000,101 @@ mod tests {
         assert_ne!(
             site.concept_cid, SQL_INSERT_AND_GET_ID_CONCEPT_CID,
             ".get( callsite must NOT be concept:insert-and-get-id"
+        );
+    }
+
+    // .all( -> concept:sql-query-all (fully-materialized array).
+    #[test]
+    fn extract_sql_callsites_assigns_sql_query_all_for_all_callsite() {
+        let body = concat!(
+            "const stmt = db.prepare('SELECT * FROM users WHERE id = ?');\n",
+            "return stmt.all(userId);\n"
+        );
+        let source = body;
+        let functions = vec![ts_function_with_body("listUsers", body, 0)];
+
+        let callsites =
+            extract_sql_callsites(source, &functions).expect("extract_sql_callsites must succeed");
+
+        assert_eq!(callsites.len(), 1, "expected exactly one SQL callsite");
+        let site = &callsites[0];
+
+        // Positive: .all( materializes the full row set.
+        assert_eq!(
+            site.concept_cid, SQL_QUERY_ALL_CONCEPT_CID,
+            ".all( callsite must be concept:sql-query-all"
+        );
+        // Discrimination: must NOT be the other read cardinalities.
+        assert_ne!(
+            site.concept_cid, SQL_QUERY_ROW_CONCEPT_CID,
+            ".all( callsite must NOT be concept:sql-query-row"
+        );
+        assert_ne!(
+            site.concept_cid, SQL_QUERY_ITERATE_CONCEPT_CID,
+            ".all( callsite must NOT be concept:sql-query-iterate"
+        );
+        // Structural: must NOT be an execute concept.
+        assert_ne!(
+            site.concept_cid, SQL_EXECUTE_CONCEPT_CID,
+            ".all( callsite must NOT be concept:sql-execute"
+        );
+    }
+
+    // .iterate( -> concept:sql-query-iterate (lazy single-pass cursor).
+    #[test]
+    fn extract_sql_callsites_assigns_sql_query_iterate_for_iterate_callsite() {
+        let body = concat!(
+            "const stmt = db.prepare('SELECT * FROM users WHERE id = ?');\n",
+            "for (const row of stmt.iterate(userId)) { yield row; }\n"
+        );
+        let source = body;
+        let functions = vec![ts_function_with_body("streamUsers", body, 0)];
+
+        let callsites =
+            extract_sql_callsites(source, &functions).expect("extract_sql_callsites must succeed");
+
+        assert_eq!(callsites.len(), 1, "expected exactly one SQL callsite");
+        let site = &callsites[0];
+
+        // Positive: .iterate( is the lazy cursor cardinality.
+        assert_eq!(
+            site.concept_cid, SQL_QUERY_ITERATE_CONCEPT_CID,
+            ".iterate( callsite must be concept:sql-query-iterate"
+        );
+        // Discrimination: must NOT be the other read cardinalities. Note .iterate
+        // is checked before .all/.get precisely so a body that also mentions one
+        // of those does not mislabel the cursor as a materialized set.
+        assert_ne!(
+            site.concept_cid, SQL_QUERY_ROW_CONCEPT_CID,
+            ".iterate( callsite must NOT be concept:sql-query-row"
+        );
+        assert_ne!(
+            site.concept_cid, SQL_QUERY_ALL_CONCEPT_CID,
+            ".iterate( callsite must NOT be concept:sql-query-all"
+        );
+        // Structural: must NOT be an execute concept.
+        assert_ne!(
+            site.concept_cid, SQL_EXECUTE_CONCEPT_CID,
+            ".iterate( callsite must NOT be concept:sql-execute"
+        );
+    }
+
+    // Refusal: a read callsite (no .run()) that uses no recognized read method
+    // is a loud bound, not a silently-defaulted concept.
+    #[test]
+    fn extract_sql_callsites_refuses_read_callsite_with_no_recognized_method() {
+        let body = concat!(
+            "const stmt = db.prepare('SELECT * FROM users WHERE id = ?');\n",
+            "return stmt.pluck().get;\n"
+        );
+        let source = body;
+        let functions = vec![ts_function_with_body("oddRead", body, 0)];
+
+        let err = extract_sql_callsites(source, &functions)
+            .expect_err("read callsite with no .get/.all/.iterate must refuse");
+        assert!(
+            err.contains("no recognized read method"),
+            "refusal must name the missing read method, got: {err}"
         );
     }
 
@@ -4006,7 +4190,7 @@ mod tests {
             "params": ["sql", "args"],
             "paramTypes": ["string", "unknown[]"],
             "returnType": "unknown[]",
-            "conceptName": "concept:sql-query",
+            "conceptName": "concept:sql-query-row",
         });
         crate::cmd_materialize::attach_body_templates_from_shim_proof(
             &mut spec, &repo, "java", "sqlite-jdbc",
@@ -4115,7 +4299,8 @@ mod tests {
                 param_types_py: vec!["int"],
                 return_type_ts: "User",
                 return_type_py: "User",
-                concept_name: "concept:sql-query",
+                // .fetchone() / single-row return -> at-most-one-row cardinality.
+                concept_name: "concept:sql-query-row",
                 sql: "SELECT id, name, email FROM users WHERE id = ?",
                 expected_ts_pg: "const result = await pool.query<User>(\"SELECT id, name, email FROM users WHERE id = $1\", [id]); const row = result.rows[0]; if (!row) { throw new Error(`missing user ${id}`); } return row;",
                 expected_python_sqlite3: "row = db.execute(\"SELECT id, name, email FROM users WHERE id = ?\", (id,)).fetchone() user = _row_to_user(row) if user is None: raise RuntimeError(f\"missing user {id}\") return user",
@@ -4129,7 +4314,8 @@ mod tests {
                 param_types_py: vec![],
                 return_type_ts: "User[]",
                 return_type_py: "list[User]",
-                concept_name: "concept:sql-query",
+                // .fetchall() / array return -> materialized row-set cardinality.
+                concept_name: "concept:sql-query-all",
                 sql: "SELECT id, name, email FROM users ORDER BY id",
                 expected_ts_pg: "const result = await pool.query<User>(\"SELECT id, name, email FROM users ORDER BY id\", []); return result.rows;",
                 expected_python_sqlite3: "rows = db.execute(\"SELECT id, name, email FROM users ORDER BY id\").fetchall() return [{...} for row in rows]",
@@ -4143,7 +4329,8 @@ mod tests {
                 param_types_py: vec![],
                 return_type_ts: "number",
                 return_type_py: "int",
-                concept_name: "concept:sql-query",
+                // .fetchone() / single scalar row -> at-most-one-row cardinality.
+                concept_name: "concept:sql-query-row",
                 sql: "SELECT count(*) AS count FROM users",
                 expected_ts_pg: "const result = await pool.query<{ count: number | string }>(\"SELECT count(*) AS count FROM users\", []); return Number(result.rows[0]?.count ?? 0);",
                 expected_python_sqlite3: "row = db.execute(\"SELECT count(*) AS count FROM users\").fetchone() return int(row[\"count\"] if row is not None else 0)",
@@ -4244,7 +4431,9 @@ mod tests {
 
     fn harness_concept_cid(concept_name: &str) -> &'static str {
         match concept_name {
-            "concept:sql-query" => SQL_QUERY_CONCEPT_CID,
+            "concept:sql-query-row" => SQL_QUERY_ROW_CONCEPT_CID,
+            "concept:sql-query-all" => SQL_QUERY_ALL_CONCEPT_CID,
+            "concept:sql-query-iterate" => SQL_QUERY_ITERATE_CONCEPT_CID,
             "concept:sql-execute" => SQL_EXECUTE_CONCEPT_CID,
             "concept:insert-and-get-id" => SQL_INSERT_AND_GET_ID_CONCEPT_CID,
             _ => panic!("unsupported harness concept {concept_name}"),
