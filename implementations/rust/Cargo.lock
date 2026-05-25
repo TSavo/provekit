@@ -2384,8 +2384,12 @@ dependencies = [
  "provekit-canonicalizer",
  "provekit-ir-types",
  "provekit-proof-envelope",
+ "provekit-shim-blake3-rust",
  "provekit-shim-postgres",
+ "provekit-shim-rfc8785-jcs-rust",
  "provekit-shim-rusqlite",
+ "provekit-shim-serde-json-rust",
+ "provekit-shim-stdio-rust",
  "serde",
  "serde_json",
 ]
@@ -2405,6 +2409,14 @@ dependencies = [
 ]
 
 [[package]]
+name = "provekit-shim-blake3-rust"
+version = "0.1.0"
+dependencies = [
+ "blake3",
+ "provekit-sugar",
+]
+
+[[package]]
 name = "provekit-shim-postgres"
 version = "0.1.0"
 dependencies = [
@@ -2413,11 +2425,34 @@ dependencies = [
 ]
 
 [[package]]
+name = "provekit-shim-rfc8785-jcs-rust"
+version = "0.1.0"
+dependencies = [
+ "provekit-sugar",
+ "serde_json",
+]
+
+[[package]]
 name = "provekit-shim-rusqlite"
 version = "0.1.0"
 dependencies = [
  "provekit-sugar",
  "rusqlite",
+]
+
+[[package]]
+name = "provekit-shim-serde-json-rust"
+version = "0.1.0"
+dependencies = [
+ "provekit-sugar",
+ "serde_json",
+]
+
+[[package]]
+name = "provekit-shim-stdio-rust"
+version = "0.1.0"
+dependencies = [
+ "provekit-sugar",
 ]
 
 [[package]]

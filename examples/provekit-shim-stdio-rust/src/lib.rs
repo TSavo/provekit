@@ -11,6 +11,10 @@
 
 use std::io::{self, BufRead, Write};
 
+pub const PROVEKIT_PROOF_BYTES: &[u8] = include_bytes!(
+    "../blake3-512:21e934c5a28085fba31d0ff154fdf737c50a7ef58fdd6b5650c1276f37e9b3b1060c1b60d76da69a935e0470b17036e03222abe28c84bff51c95e3315bcede17.proof"
+);
+
 /// `concept:stdio-read-line` — std::io's sugar. Reads one line from
 /// stdin (without the trailing newline). Returns `None` at EOF.
 #[provekit::sugar(

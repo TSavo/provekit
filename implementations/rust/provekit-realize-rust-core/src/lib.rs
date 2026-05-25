@@ -2907,17 +2907,58 @@ fn shim_template_entry_values(library_tag: &str) -> Vec<Value> {
             let mut entries = BTreeMap::new();
             entries.insert(
                 "postgres".to_string(),
-                entries_from_shim_proof(provekit_shim_postgres::PROVEKIT_PROOF_BYTES, "postgres"),
+                entries_from_shim_proof_tags(
+                    provekit_shim_postgres::PROVEKIT_PROOF_BYTES,
+                    &["postgres"],
+                ),
             );
             entries.insert(
                 "rusqlite".to_string(),
-                entries_from_shim_proof(provekit_shim_rusqlite::PROVEKIT_PROOF_BYTES, "rusqlite"),
+                entries_from_shim_proof_tags(
+                    provekit_shim_rusqlite::PROVEKIT_PROOF_BYTES,
+                    &["rusqlite"],
+                ),
+            );
+            entries.insert(
+                "provekit-shim-stdio-rust".to_string(),
+                entries_from_shim_proof_tags(
+                    provekit_shim_stdio_rust::PROVEKIT_PROOF_BYTES,
+                    &["std::io"],
+                ),
+            );
+            entries.insert(
+                "provekit-shim-serde-json-rust".to_string(),
+                entries_from_shim_proof_tags(
+                    provekit_shim_serde_json_rust::PROVEKIT_PROOF_BYTES,
+                    &["serde_json"],
+                ),
+            );
+            entries.insert(
+                "provekit-shim-blake3-rust".to_string(),
+                entries_from_shim_proof_tags(
+                    provekit_shim_blake3_rust::PROVEKIT_PROOF_BYTES,
+                    &["blake3"],
+                ),
+            );
+            entries.insert(
+                "provekit-shim-rfc8785-jcs-rust".to_string(),
+                entries_from_shim_proof_tags(
+                    provekit_shim_rfc8785_jcs_rust::PROVEKIT_PROOF_BYTES,
+                    &["serde_json", "provekit-shim-rfc8785-jcs-rust"],
+                ),
             );
             entries
         })
         .get(library_tag)
         .cloned()
         .unwrap_or_default()
+}
+
+fn entries_from_shim_proof_tags(bytes: &[u8], library_tags: &[&str]) -> Vec<Value> {
+    library_tags
+        .iter()
+        .flat_map(|tag| entries_from_shim_proof(bytes, tag))
+        .collect()
 }
 
 fn entries_from_shim_proof(bytes: &[u8], library_tag: &str) -> Vec<Value> {

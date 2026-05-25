@@ -605,6 +605,13 @@ fn resolved_command_from_manifest(
     workspace_root: &Path,
     parsed: &ParsedManifest,
 ) -> ResolvedCommand {
+    let mut argv = parsed.command.clone();
+    if let Some(program) = argv.first_mut() {
+        let path = Path::new(program);
+        if path.is_relative() && path.components().count() > 1 {
+            *program = workspace_root.join(path).to_string_lossy().into_owned();
+        }
+    }
     let working_dir = parsed
         .working_dir
         .clone()
@@ -616,10 +623,7 @@ fn resolved_command_from_manifest(
             }
         })
         .or_else(|| Some(workspace_root.to_path_buf()));
-    ResolvedCommand {
-        argv: parsed.command.clone(),
-        working_dir,
-    }
+    ResolvedCommand { argv, working_dir }
 }
 
 fn record_fallback_diagnostic(kind: &str, surface: &str) {

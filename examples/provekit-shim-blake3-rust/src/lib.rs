@@ -15,6 +15,10 @@
 
 pub use blake3::Hasher;
 
+pub const PROVEKIT_PROOF_BYTES: &[u8] = include_bytes!(
+    "../blake3-512:61d854968e099ae91e905e11e807a3a6d17b4ff3b42a905c605ce4803729e1926a60d6cb87022dd7f46e742f774a096adb58eeebe80671a2c8152abc4670fd2d.proof"
+);
+
 /// `concept:blake3-512-of` — bytes to 64-byte BLAKE3-XOF digest.
 /// blake3's sugar. The canonical content-addressing primitive.
 #[provekit::sugar(
