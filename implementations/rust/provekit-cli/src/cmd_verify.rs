@@ -137,7 +137,8 @@ fn decode_seed_hex(hex: &str) -> Result<[u8; 32], String> {
 pub struct VerifyArgs {
     /// Kit to verify (rust, go, cpp, ts, java, python, ...). Resolves to
     /// the kit's project root; its `.provekit/` catalog carries the
-    /// lifted contract claims. Conflicts with `--project`.
+    /// lifted contract claims. Conflicts with `--project`. May also be
+    /// an explicit path when the value contains a path separator.
     #[arg(conflicts_with = "project")]
     pub kit: Option<String>,
 
@@ -156,6 +157,22 @@ pub struct VerifyArgs {
     /// `<project>/.provekit/witnesses`.
     #[arg(long = "emit-witnesses")]
     pub emit_witnesses: Option<PathBuf>,
+
+    /// Require that a concept has reached the empirically-witnessed
+    /// promotion tier. When set, the standard solver-dispatch flow is
+    /// bypassed; instead the project's promotion catalog is queried.
+    #[arg(long = "require-empirically-witnessed")]
+    pub require_empirically_witnessed: Option<String>,
+
+    /// Fixture-state CID for tier queries such as
+    /// `--require-empirically-witnessed`.
+    #[arg(long = "require-fixture")]
+    pub require_fixture: Option<String>,
+
+    /// Consensus policy JSON used to evaluate a required empirical
+    /// witness vector (required with `--require-empirically-witnessed`).
+    #[arg(long = "consensus-policy", requires = "require_empirically_witnessed")]
+    pub consensus_policy: Option<PathBuf>,
 
     #[command(flatten)]
     pub out: crate::OutputFlags,
@@ -212,20 +229,39 @@ struct ClaimResult {
 }
 
 pub fn run(args: VerifyArgs) -> u8 {
+    // Early dispatch: --require-empirically-witnessed bypasses the
+    // standard solver-dispatch flow and queries the promotion catalog.
+    if args.require_empirically_witnessed.is_some() {
+        return run_empirically_witnessed_gate(&args);
+    }
+
     // Resolve the project root: a named kit, an explicit --project, or
     // the current directory.
     let project_root: PathBuf = if let Some(kit) = &args.kit {
         match cmd_mint::resolve_kit(kit) {
             Some((path, _surface, _lang)) => path,
             None => {
-                let known: Vec<&str> = cmd_mint::KIT_TABLE.iter().map(|(a, _, _, _)| *a).collect();
-                eprintln!(
-                    "{}: unknown kit `{}`; known kits: {}",
-                    "error".red().bold(),
-                    kit,
-                    known.join(", ")
-                );
-                return EXIT_USER_ERROR;
+                // If the value looks like a path (contains a separator
+                // or is `.`/`..`), treat it as an explicit project root
+                // rather than a kit name.
+                let p = PathBuf::from(kit);
+                if kit.contains(std::path::MAIN_SEPARATOR)
+                    || kit.starts_with('/')
+                    || kit.starts_with('.')
+                    || p.is_absolute()
+                {
+                    p
+                } else {
+                    let known: Vec<&str> =
+                        cmd_mint::KIT_TABLE.iter().map(|(a, _, _, _)| *a).collect();
+                    eprintln!(
+                        "{}: unknown kit `{}`; known kits: {}",
+                        "error".red().bold(),
+                        kit,
+                        known.join(", ")
+                    );
+                    return EXIT_USER_ERROR;
+                }
             }
         }
     } else {
@@ -890,5 +926,125 @@ mod tests {
         assert_eq!(decode_seed_hex(&format!("0x{hex}")).unwrap(), [0xabu8; 32]);
         assert!(decode_seed_hex("dead").is_err());
         assert!(decode_seed_hex(&"zz".repeat(32)).is_err());
+    }
+}
+
+/// Gate: query the promotion catalog to confirm a concept has reached
+/// the empirically-witnessed promotion tier.
+///
+/// This is the `verify`-side counterpart of the same gate that lives on
+/// `prove --require-empirically-witnessed`.  The gate performs no
+/// solver dispatch and mints no witnesses; it is a pure query against
+/// the project's `.provekit/promotions` catalog.
+fn run_empirically_witnessed_gate(args: &VerifyArgs) -> u8 {
+    let concept = match args.require_empirically_witnessed.as_deref() {
+        Some(concept) if !concept.trim().is_empty() => concept,
+        _ => {
+            eprintln!(
+                "{}: --require-empirically-witnessed requires a concept",
+                "error".red().bold()
+            );
+            return EXIT_USER_ERROR;
+        }
+    };
+    let fixture = match args.require_fixture.as_deref() {
+        Some(fixture) if !fixture.trim().is_empty() => fixture,
+        _ => {
+            eprintln!(
+                "{}: --require-fixture is required with --require-empirically-witnessed",
+                "error".red().bold()
+            );
+            return EXIT_USER_ERROR;
+        }
+    };
+
+    // Resolve the project root from --project, a path-like positional,
+    // or the current directory.
+    let project_root: PathBuf = if let Some(p) = &args.project {
+        p.clone()
+    } else if let Some(kit) = &args.kit {
+        // Accept an explicit path passed as the positional argument.
+        let p = PathBuf::from(kit);
+        if p.is_absolute() || kit.contains(std::path::MAIN_SEPARATOR) || kit.starts_with('.') {
+            p
+        } else {
+            // Treat a bare kit name as a project path of last resort;
+            // the caller is responsible for passing a valid directory.
+            PathBuf::from(kit)
+        }
+    } else {
+        PathBuf::from(".")
+    };
+
+    if !project_root.exists() {
+        eprintln!(
+            "{}: project root does not exist: {}",
+            "error".red().bold(),
+            project_root.display()
+        );
+        return EXIT_USER_ERROR;
+    }
+
+    let policy_path = match args.consensus_policy.as_ref() {
+        Some(path) => path,
+        None => {
+            eprintln!(
+                "{}: --consensus-policy is required with --require-empirically-witnessed",
+                "error".red().bold()
+            );
+            return EXIT_USER_ERROR;
+        }
+    };
+    let policy = match crate::promotion_query::load_consensus_policy(policy_path) {
+        Ok(policy) => policy,
+        Err(err) => {
+            eprintln!("{}: {err}", "error".red().bold());
+            return EXIT_USER_ERROR;
+        }
+    };
+
+    match crate::promotion_query::query_consensus_vector_for_policy(
+        &project_root,
+        &[],
+        concept,
+        fixture,
+        &policy,
+    ) {
+        Ok(Some(hit)) => {
+            let report =
+                crate::promotion_query::status_json(concept, fixture, &hit, Some(&policy));
+            let ok = report["ok"].as_bool().unwrap_or(false);
+            if args.out.json {
+                println!("{}", serde_json::to_string_pretty(&report).unwrap());
+            } else if !args.out.quiet {
+                println!(
+                    "verify empirically-witnessed: {}",
+                    if ok { "accepted" } else { "rejected" }
+                );
+                println!("  concept: {concept}");
+                println!("  fixture: {fixture}");
+                println!("  promoted_op: {}", hit.status.key.promoted_op);
+                println!("  decisions: {}", hit.status.decision_cids.len());
+            }
+            if ok {
+                EXIT_OK
+            } else {
+                EXIT_VERIFY_FAIL
+            }
+        }
+        Ok(None) => {
+            let report = crate::promotion_query::missing_json(concept, fixture);
+            if args.out.json {
+                println!("{}", serde_json::to_string_pretty(&report).unwrap());
+            } else if !args.out.quiet {
+                println!("verify empirically-witnessed: rejected");
+                println!("  reason: required promotion was not found");
+            }
+            EXIT_VERIFY_FAIL
+        }
+        Err(err) => {
+            eprintln!("{}: {err}", "error".red().bold());
+            EXIT_USER_ERROR
+        }
     }
 }
