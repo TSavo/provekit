@@ -68,7 +68,7 @@ RUBY ?= $(shell for p in /usr/local/opt/ruby/bin/ruby /opt/homebrew/opt/ruby/bin
 PYTHON ?= $(shell command -v python3 || echo python3)
 PIP ?= pip3 --python $(PYTHON)
 MVN ?= mvn
-LOCAL_BIN ?= /private/tmp/provekit-local-bin
+LOCAL_BIN ?= /tmp/provekit-local-bin
 JAVA_HOME ?= $(shell for d in /usr/local/opt/openjdk /opt/homebrew/opt/openjdk; do if [ -x "$$d/bin/java" ]; then echo "$$d"; exit; fi; done)
 export JAVA_HOME
 ifeq ($(strip $(JAVA_HOME)),)
