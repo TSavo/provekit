@@ -20,13 +20,13 @@ from provekit_realize_python_sqlite3.realizer import (
 # The kit resolves its shim proof from the installed/importable shim package.
 
 
-def test_sql_query_uses_sqlite3_execute(disk_fixture) -> None:
+def test_sql_query_all_uses_sqlite3_execute(disk_fixture) -> None:
     result = emit_stub(
         function="select_rows",
         params=["sql", "args"],
         param_types=["str", "list[object]"],
         return_type="list[object]",
-        concept_name="concept:sql-query",
+        concept_name="concept:sql-query-all",
     )
 
     assert result["source"] == (
@@ -38,9 +38,9 @@ def test_sql_query_uses_sqlite3_execute(disk_fixture) -> None:
     assert result["extension"] == "py"
 
 
-def test_sql_query_self_resolves_from_shim_proof(disk_fixture) -> None:
+def test_sql_query_all_self_resolves_from_shim_proof(disk_fixture) -> None:
     body = body_template_for(
-        "concept:sql-query", ["sql", "args"], ["str", "list[object]"], "list[object]"
+        "concept:sql-query-all", ["sql", "args"], ["str", "list[object]"], "list[object]"
     )
     assert body == "cursor = db.execute(sql, tuple(args))\nreturn cursor.fetchall()"
 
