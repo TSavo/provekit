@@ -153,3 +153,10 @@ implementations/ruby/ext/provekit_blake3/blake3_portable.c
 implementations/ruby/ext/provekit_blake3/blake3_dispatch.c
 implementations/ruby/ext/provekit_blake3/blake3.h
 implementations/ruby/ext/provekit_blake3/blake3_impl.h
+
+# Local dev clones / git worktrees, never intended as submodules (no .gitmodules
+# entry ever existed). Both were accidentally committed as gitlinks in 226913c60,
+# which broke `git submodule` during CI checkout. Gitlinks removed; ignore the
+# on-disk dirs so they don't reappear as untracked.
+/provekit-warnings/
+/provekit-worktrees/
