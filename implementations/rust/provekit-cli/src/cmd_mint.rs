@@ -1011,9 +1011,8 @@ fn mint_from_ir_document(
         // `body_discharge::CatalogResolver` can resolve the body-obligation.
         // Non-function `contract` decls have no formals; the vecs stay empty
         // and the minted bytes are unchanged.
-        let formals: Vec<String> = decl
-            .get("formals")
-            .and_then(|v| v.as_array())
+        let formals_json = decl.get("formals").and_then(|v| v.as_array());
+        let formals: Vec<String> = formals_json
             .map(|arr| {
                 arr.iter()
                     .filter_map(|v| v.as_str().map(|s| s.to_string()))
@@ -1027,14 +1026,16 @@ fn mint_from_ir_document(
             .map(|arr| arr.iter().map(json_to_cvalue).collect())
             .unwrap_or_default();
         // A bridge is written only when this contract is a body-bearing
-        // function target: it carries a `post` AND formals (the resolver
-        // needs both). The bridge's `sourceSymbol` is the function's bare
-        // name as it appears in harvested call ctors. For a v1 function
-        // contract the harvested ctor uses the bare ident, so prefer the
-        // explicit `bridgeSourceSymbol` if the lifter set one, else the
-        // function's simple name.
+        // function target: it carries a `post` AND an explicit `formals`
+        // field. Presence is the marker, not non-emptiness: zero-arg
+        // functions carry `formals: []` and are still body-bearing. The
+        // bridge's `sourceSymbol` is the function's bare name as it appears
+        // in harvested call ctors. For a v1 function contract the harvested
+        // ctor uses the bare ident, so prefer the explicit
+        // `bridgeSourceSymbol` if the lifter set one, else the function's
+        // simple name.
         let bridge_source_symbol: Option<String> =
-            if kind == "function-contract" && post.is_some() && !formals.is_empty() {
+            if kind == "function-contract" && post.is_some() && formals_json.is_some() {
                 Some(
                     decl.get("bridgeSourceSymbol")
                         .and_then(|v| v.as_str())
@@ -1058,6 +1059,8 @@ fn mint_from_ir_document(
         if let Some(authority) = authority {
             input_cids.push(authority.cid.clone());
         }
+        let emit_empty_formals =
+            kind == "function-contract" && formals_json.is_some() && formals.is_empty();
         let signer_seed = authority
             .map(|authority| authority.seed)
             .unwrap_or(default_signer_seed);
@@ -1081,6 +1084,7 @@ fn mint_from_ir_document(
             },
             signer_seed,
             formals,
+            emit_empty_formals,
             formal_sorts,
         };
 

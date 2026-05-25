@@ -127,6 +127,7 @@ fn run() -> Result<(), String> {
     for d in &decls {
         let args = MintContractArgs {
             formals: Vec::new(),
+            emit_empty_formals: false,
             formal_sorts: Vec::new(),
             contract_name: d.name.clone(),
             pre: d.pre.as_deref().map(formula_to_value),

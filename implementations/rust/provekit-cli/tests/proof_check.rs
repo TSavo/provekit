@@ -42,6 +42,7 @@ fn fixture_proof_file_with_metadata(
     let declared_at = "2026-05-06T00:00:00.000Z";
     let member = mint_contract(&MintContractArgs {
         formals: Vec::new(),
+        emit_empty_formals: false,
         formal_sorts: Vec::new(),
         contract_name: declaration.name.clone(),
         pre: declaration.pre.as_deref().map(formula_to_value),

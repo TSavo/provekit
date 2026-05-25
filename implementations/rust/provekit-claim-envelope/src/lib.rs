@@ -252,6 +252,12 @@ pub struct MintContractArgs {
     /// cross-language refinement targets); the field is then omitted from
     /// the header so those mementos keep their current bytes/CIDs.
     pub formals: Vec<String>,
+    /// Emit `formals: []` (and `formalSorts: []`) when the vector is
+    /// empty. Presence is load-bearing for zero-arg body-derived
+    /// op-contracts: absent `formals` means "not body-derived", while
+    /// present empty `formals` means "body-bearing function with no
+    /// parameters".
+    pub emit_empty_formals: bool,
     /// Sorts of the formals, parallel to `formals`. Carried alongside
     /// `formals` so the resolver can name the value slots; omitted from the
     /// header when empty.
@@ -373,9 +379,10 @@ pub fn contract_cid(args: &MintContractArgs) -> String {
     // Body-derived op-contracts carry their formals as part of contract
     // identity: two functions with the same `post` but different formal
     // names are different contracts (the resolver substitutes by formal
-    // name). Omitted when empty so non-function contracts keep their
+    // name). Omitted when empty unless `emit_empty_formals` marks the
+    // zero-arg body-derived case, so non-function contracts keep their
     // existing content CIDs unchanged.
-    if !args.formals.is_empty() {
+    if !args.formals.is_empty() || args.emit_empty_formals {
         let formals_arr: Vec<Arc<Value>> = args
             .formals
             .iter()
@@ -383,7 +390,7 @@ pub fn contract_cid(args: &MintContractArgs) -> String {
             .collect();
         kvs.push(("formals".into(), Value::array(formals_arr)));
     }
-    if !args.formal_sorts.is_empty() {
+    if !args.formal_sorts.is_empty() || args.emit_empty_formals {
         kvs.push((
             "formalSorts".into(),
             Value::array(args.formal_sorts.clone()),
@@ -480,9 +487,10 @@ pub fn mint_contract(args: &MintContractArgs) -> Result<MintedEnvelope, ClaimEnv
     // Body-derived op-contract slots: `formals` (+ `formalSorts`) ride in
     // the header so `body_discharge::CatalogResolver` (which reads the
     // header via `memento_body` for v1.2-layered mementos) can project them
-    // into `OpContractInfo` value slots. Omitted when empty so non-function
-    // contracts are byte-identical to their pre-#1436 form.
-    if !args.formals.is_empty() {
+    // into `OpContractInfo` value slots. Omitted when empty unless
+    // `emit_empty_formals` marks a zero-arg body-derived op-contract, so
+    // non-function contracts are byte-identical to their pre-#1436 form.
+    if !args.formals.is_empty() || args.emit_empty_formals {
         let formals_arr: Vec<Arc<Value>> = args
             .formals
             .iter()
@@ -490,7 +498,7 @@ pub fn mint_contract(args: &MintContractArgs) -> Result<MintedEnvelope, ClaimEnv
             .collect();
         kind_specific.push(("formals".into(), Value::array(formals_arr)));
     }
-    if !args.formal_sorts.is_empty() {
+    if !args.formal_sorts.is_empty() || args.emit_empty_formals {
         kind_specific.push((
             "formalSorts".into(),
             Value::array(args.formal_sorts.clone()),
@@ -1036,6 +1044,7 @@ mod tests {
     fn empty_contract_rejected() {
         let args = MintContractArgs {
             formals: Vec::new(),
+            emit_empty_formals: false,
             formal_sorts: Vec::new(),
             contract_name: "x".into(),
             pre: None,
@@ -1080,6 +1089,7 @@ mod tests {
         ]);
         let args = MintContractArgs {
             formals: Vec::new(),
+            emit_empty_formals: false,
             formal_sorts: Vec::new(),
             contract_name: "parseInt".into(),
             pre: Some(pre),
@@ -1109,6 +1119,7 @@ mod tests {
         ]);
         let args = MintContractArgs {
             formals: Vec::new(),
+            emit_empty_formals: false,
             formal_sorts: Vec::new(),
             contract_name: "checked_add_u8.postcondition".into(),
             pre: None,

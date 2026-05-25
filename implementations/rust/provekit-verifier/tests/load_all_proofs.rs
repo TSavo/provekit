@@ -50,6 +50,7 @@ fn publish_parseint_proof(dir: &Path) -> String {
     for d in &decls {
         let args = MintContractArgs {
             formals: Vec::new(),
+            emit_empty_formals: false,
             formal_sorts: Vec::new(),
             contract_name: d.name.clone(),
             pre: d.pre.as_deref().map(formula_to_value),
@@ -273,6 +274,7 @@ fn multiple_proofs_in_one_dir_all_loaded() {
     for d in &decls {
         let args = MintContractArgs {
             formals: Vec::new(),
+            emit_empty_formals: false,
             formal_sorts: Vec::new(),
             contract_name: d.name.clone(),
             pre: d.pre.as_deref().map(formula_to_value),

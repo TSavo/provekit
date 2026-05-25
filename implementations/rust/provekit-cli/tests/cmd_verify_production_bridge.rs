@@ -115,20 +115,58 @@ fn ir_document(body_factor: i64) -> Json {
     })
 }
 
+/// Build the zero-arg `ir-document` variant: a body-derived
+/// `function-contract` for `answer()` plus a harvested source assertion
+/// carrying `assert_eq!(answer(), 42)`. This is the empty-formals corner of
+/// the same production bridge-writer seam: zero parameters still means
+/// body-bearing, so mint must promote it into a bridge member.
+fn zero_arg_ir_document(body_value: i64) -> Json {
+    json!({
+        "kind": "ir-document",
+        "diagnostics": [],
+        "ir": [
+            {
+                "kind": "function-contract",
+                "fn_name": "answer",
+                "formals": [],
+                "formalSorts": [],
+                "returnSort": {"kind": "primitive", "name": "Int"},
+                "outBinding": "result",
+                "post": {
+                    "kind": "atomic", "name": "=",
+                    "args": [
+                        {"kind": "var", "name": "result"},
+                        int_const(body_value)
+                    ]
+                }
+            },
+            {
+                "kind": "contract",
+                "symbol": "answer_test",
+                "outBinding": "out",
+                "inv": {
+                    "kind": "atomic", "name": "=",
+                    "args": [
+                        {"kind": "ctor", "name": "answer", "args": []},
+                        int_const(42)
+                    ]
+                }
+            }
+        ]
+    })
+}
+
 /// Generate a mock lift-plugin RPC: a POSIX shell script that speaks the
 /// newline-delimited JSON-RPC `LiftPluginKit` drives. It replies to
 /// `initialize` (id 1) and `lift` (id 2, result = the ir-document), then
 /// exits on `shutdown`. The ir-document is baked into the script body so
 /// the lifter is fully self-contained.
-fn write_mock_lifter(project: &Path, surface: &str, body_factor: i64) -> PathBuf {
+fn write_mock_lifter_with_ir(project: &Path, surface: &str, ir_doc: Json) -> PathBuf {
     let lift_dir = project.join(".provekit").join("lift").join(surface);
     fs::create_dir_all(&lift_dir).expect("mkdir lift surface dir");
 
     // The lift `result` is the ir-document. Embed it as a single JSON line.
-    let ir_doc = ir_document(body_factor);
-    let result_line = serde_json::to_string(&ir_doc).expect("serialize ir-document");
-
-    // The mock RPC: read each JSON-RPC line; on `initialize` emit an
+    // The mock RPC reads each JSON-RPC line; on `initialize` emit an
     // initialize result, on `lift` emit the ir-document result, on
     // `shutdown` exit. Newline-delimited, exactly what `read_response`
     // parses (one JSON object per line, matching the request `id`).
@@ -143,8 +181,6 @@ fn write_mock_lifter(project: &Path, surface: &str, body_factor: i64) -> PathBuf
     lift_obj.insert("result".into(), ir_doc.clone());
     let lift_line = serde_json::to_string(&Json::Object(lift_obj)).expect("serialize lift result");
     let init_line = serde_json::to_string(&init_result).expect("serialize init result");
-    // result_line retained for clarity of intent; lift_line is what we emit.
-    let _ = result_line;
 
     let script = format!(
         r#"#!/bin/sh
@@ -190,7 +226,7 @@ done
 /// Build a project whose lift produces the body-derived double contract,
 /// run the REAL `provekit mint` CLI, and return (project_dir, proof_path).
 /// `body_factor` is the body multiplier (2 = honest, 3 = broken).
-fn mint_double_project(suffix: &str, body_factor: i64) -> (PathBuf, PathBuf) {
+fn mint_project_from_ir(suffix: &str, ir_doc: Json) -> (PathBuf, PathBuf) {
     let surface = "mock";
     let project = unique_dir(suffix);
     fs::create_dir_all(project.join(".provekit")).expect("mkdir .provekit");
@@ -212,7 +248,7 @@ fn mint_double_project(suffix: &str, body_factor: i64) -> (PathBuf, PathBuf) {
         ),
     )
     .expect("write config.toml");
-    write_mock_lifter(&project, surface, body_factor);
+    write_mock_lifter_with_ir(&project, surface, ir_doc);
 
     let out = Command::new(provekit_bin())
         .arg("mint")
@@ -239,6 +275,10 @@ fn mint_double_project(suffix: &str, body_factor: i64) -> (PathBuf, PathBuf) {
         .find(|p| p.extension().map(|x| x == "proof").unwrap_or(false))
         .unwrap_or_else(|| panic!("mint must write a .proof into {}", project.display()));
     (project, proof)
+}
+
+fn mint_double_project(suffix: &str, body_factor: i64) -> (PathBuf, PathBuf) {
+    mint_project_from_ir(suffix, ir_document(body_factor))
 }
 
 /// Load the tool-minted bundle through the verifier's stage-1 loader. The
@@ -319,6 +359,66 @@ fn mint_auto_writes_body_discharge_bridge() {
         provekit_verifier::types::memento_body_field(target, "post").is_some(),
         "op-contract must carry the body-derived post"
     );
+
+    let _ = fs::remove_dir_all(&project);
+}
+
+/// Empty `formals` is still body-bearing. The production bridge writer must
+/// promote a zero-arg `function-contract` into the same bridge index that
+/// `enumerate_callsites` uses; otherwise verify reports `totalClaims: 0`
+/// for a real harvested `answer()` assertion.
+#[test]
+fn mint_auto_writes_zero_arg_body_discharge_bridge() {
+    let (project, _proof) = mint_project_from_ir("zeroarg-bridge", zero_arg_ir_document(42));
+    let pool = pool_of_project(&project);
+
+    let bridge = pool.bridges_by_symbol.get("answer").unwrap_or_else(|| {
+        panic!(
+            "mint must auto-write + index a bridge with sourceSymbol=answer; indexed symbols: {:?}",
+            pool.bridges_by_symbol.keys().collect::<Vec<_>>()
+        )
+    });
+
+    let target_cid = provekit_verifier::types::memento_body_field(bridge, "targetContractCid")
+        .and_then(|v| v.as_str())
+        .expect("bridge must carry targetContractCid")
+        .to_string();
+    let target = pool.mementos.get(&target_cid).unwrap_or_else(|| {
+        panic!(
+            "bridge.targetContractCid {target_cid} must resolve to a member; member CIDs: {:?}",
+            pool.mementos.keys().collect::<Vec<_>>()
+        )
+    });
+    let formals = provekit_verifier::types::memento_body_field(target, "formals")
+        .and_then(|v| v.as_array())
+        .expect("zero-arg op-contract must carry an explicit formals array");
+    assert!(
+        formals.is_empty(),
+        "zero-arg op-contract formals must stay empty; got {formals:?}"
+    );
+    assert!(
+        provekit_verifier::types::memento_body_field(target, "post").is_some(),
+        "zero-arg op-contract must carry the body-derived post"
+    );
+
+    if z3_available() {
+        let witnesses = project.join("witnesses-out");
+        let (receipt, code) = run_verify_json_with_code(&project, &witnesses);
+        assert_eq!(
+            receipt["totalClaims"], 1,
+            "zero-arg harvested answer() assertion must enumerate; receipt: {receipt}"
+        );
+        let claim = &receipt["claims"].as_array().expect("claims")[0];
+        assert_eq!(
+            claim["pass"], true,
+            "answer()==42 must discharge through zero-arg body; claim: {claim}"
+        );
+        assert_eq!(claim["status"], "discharged", "claim: {claim}");
+        assert_eq!(receipt["ok"], true, "receipt: {receipt}");
+        assert_eq!(code, 0, "zero-arg positive run exits clean; got {code}");
+    } else {
+        eprintln!("z3 not on PATH: skipping zero-arg production-bridge verify assertion");
+    }
 
     let _ = fs::remove_dir_all(&project);
 }
