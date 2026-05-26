@@ -120,6 +120,7 @@ public class LiftHandler {
             fileDecls.addAll(productionWalk.declarations());
             implications.addAll(productionWalk.implications());
             decls.addAll(mergeDeclsBySymbol(fileDecls));
+            decls.addAll(VerifyLift.lift(cu, path.getFileName().toString()));
 
             // Build contract index from accumulated decls so far (including this file).
             // We use all decls accumulated up to this point; for single-file fixtures
