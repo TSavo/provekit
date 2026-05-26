@@ -1,23 +1,11 @@
 // SPDX-License-Identifier: Apache-2.0
 //
-// Project / user configuration for the agent-driven subcommands.
+// Project / user configuration for lift-plugin, solver, and
+// materialization routing.
 //
-// Two parallel declarative concerns, both written by `provekit init`
-// and both edited by the user. ProvekIt does not auto-detect either:
-//
-//   1. **Authoring surface**: which annotation library the agent
-//      should target ("ts-zod", "rust-contracts-crate", "default", ...).
-//   2. **Agent backend**: which coding-agent drives the work
-//      ("claude-code", "openai", "stub", ...).
-//
-// Resolution order for both is identical:
-//
-//   - CLI flag (`--surface`, `--agent`): one-shot override.
-//   - Project per-command override   `[authoring.must]`, `[agent.must]`.
-//   - Project default                `[authoring]`,        `[agent]`.
-//   - User per-command override      (in `~/.config/provekit/config.toml`).
-//   - User default                   (in same).
-//   - Bundled fallback (none for surface; "stub" for agent).
+// ProvekIt does not auto-detect the authoring surface. Projects and
+// users can set a default `[authoring] surface = ...`, and lift can
+// override it with `[authoring.lift] surface = ...`.
 //
 // Same shape as `.npmrc` / `.cargo/config.toml`: declarative files
 // at known paths. The user is in charge.
@@ -99,17 +87,7 @@ pub struct ProjectConfig {
     pub plugins: Vec<PluginEntry>,
 
     pub surface_default: Option<String>,
-    pub surface_must: Option<String>,
     pub surface_lift: Option<String>,
-    pub surface_fix: Option<String>,
-
-    pub agent_default: Option<String>,
-    pub agent_must: Option<String>,
-    pub agent_lift: Option<String>,
-    pub agent_fix: Option<String>,
-
-    pub agent_model: Option<String>,
-    pub agent_api_key_env: Option<String>,
 
     /// Solver configuration. v1 captures the shape; the verifier
     /// itself still runs Z3 only. Future work routes through this.
@@ -135,22 +113,10 @@ pub struct ProjectConfig {
 impl ProjectConfig {
     pub fn surface_for(&self, cmd: &str) -> Option<String> {
         let per_cmd = match cmd {
-            "must" => &self.surface_must,
-            "lift" => &self.surface_lift,
-            "fix" => &self.surface_fix,
-            _ => &None,
+            "lift" => self.surface_lift.clone(),
+            _ => None,
         };
-        per_cmd.clone().or_else(|| self.surface_default.clone())
-    }
-
-    pub fn agent_for(&self, cmd: &str) -> Option<String> {
-        let per_cmd = match cmd {
-            "must" => &self.agent_must,
-            "lift" => &self.agent_lift,
-            "fix" => &self.agent_fix,
-            _ => &None,
-        };
-        per_cmd.clone().or_else(|| self.agent_default.clone())
+        per_cmd.or_else(|| self.surface_default.clone())
     }
 
     pub fn path_for(&self, cmd: &str) -> Option<String> {
@@ -237,15 +203,7 @@ fn parse_config(text: &str) -> ProjectConfig {
         match (section.as_deref(), key) {
             (None, "exam_manifest_cid") => cfg.exam_manifest_cid = Some(val),
             (Some("authoring"), "surface") => cfg.surface_default = Some(val),
-            (Some("authoring.must"), "surface") => cfg.surface_must = Some(val),
             (Some("authoring.lift"), "surface") => cfg.surface_lift = Some(val),
-            (Some("authoring.fix"), "surface") => cfg.surface_fix = Some(val),
-            (Some("agent"), "backend") => cfg.agent_default = Some(val),
-            (Some("agent.must"), "backend") => cfg.agent_must = Some(val),
-            (Some("agent.lift"), "backend") => cfg.agent_lift = Some(val),
-            (Some("agent.fix"), "backend") => cfg.agent_fix = Some(val),
-            (Some("agent"), "model") => cfg.agent_model = Some(val),
-            (Some("agent"), "api_key_env") => cfg.agent_api_key_env = Some(val),
             (Some("solvers"), "default") => cfg.solver_default = Some(val),
             (Some("solvers"), "chain") => {
                 cfg.solver_chain = parse_string_array(&val);
@@ -335,19 +293,6 @@ fn strip_comment(s: &str) -> &str {
     }
 }
 
-/// Merge: `project` wins over `user`. Either side's `None` falls
-/// through; both `None` becomes `None`.
-#[allow(dead_code)] // public API; consumed by `provekit init` interactive flow (TODO: wire up)
-pub fn merged_for_command(
-    project: &ProjectConfig,
-    user: &ProjectConfig,
-    cmd: &str,
-) -> (Option<String>, Option<String>) {
-    let surface = project.surface_for(cmd).or_else(|| user.surface_for(cmd));
-    let agent = project.agent_for(cmd).or_else(|| user.agent_for(cmd));
-    (surface, agent)
-}
-
 /// Surface menu shown by `provekit init`.
 #[allow(dead_code)] // public API; menu data for `provekit init` interactive flow (TODO: wire up)
 pub const KNOWN_SURFACES: &[&str] = &[
@@ -390,21 +335,9 @@ pub const KNOWN_SURFACES: &[&str] = &[
     "evm-bytecode",
 ];
 
-/// Agent menu shown by `provekit init`.
-#[allow(dead_code)] // public API; menu data for `provekit init` interactive flow (TODO: wire up)
-pub const KNOWN_AGENTS: &[&str] = &[
-    "stub",
-    "claude-code",
-    "openai",
-    "opencode",
-    "codex",
-    "ollama",
-];
-
 /// Solver menu shown by `provekit init`. v1 ships with single-solver
 /// support (Z3); the chain / portfolio / consensus modes are
-/// captured in the config schema but not yet implemented in the
-/// verifier (TODO: see protocol/specs/2026-04-30-agent-plugin-protocol.md).
+/// captured in the config schema but not yet implemented in the verifier.
 #[allow(dead_code)] // public API; menu data for `provekit init` interactive flow (TODO: wire up)
 pub const KNOWN_SOLVERS: &[&str] = &["z3", "cvc5", "bitwuzla", "yices2", "mathsat"];
 
@@ -460,35 +393,14 @@ family = "concept:family:hash"
     #[test]
     fn parses_surface_default() {
         let cfg = parse_config("[authoring]\nsurface = \"ts-zod\"\n");
-        assert_eq!(cfg.surface_for("must").as_deref(), Some("ts-zod"));
+        assert_eq!(cfg.surface_for("lift").as_deref(), Some("ts-zod"));
     }
 
     #[test]
-    fn parses_agent_default_and_per_command() {
-        let raw = "
-        [agent]
-        backend = \"claude-code\"
-        model = \"claude-opus-4-7\"
-        api_key_env = \"ANTHROPIC_API_KEY\"
-        [agent.fix]
-        backend = \"stub\"
-        ";
-        let cfg = parse_config(raw);
-        assert_eq!(cfg.agent_for("must").as_deref(), Some("claude-code"));
-        assert_eq!(cfg.agent_for("lift").as_deref(), Some("claude-code"));
-        assert_eq!(cfg.agent_for("fix").as_deref(), Some("stub"));
-        assert_eq!(cfg.agent_model.as_deref(), Some("claude-opus-4-7"));
-        assert_eq!(cfg.agent_api_key_env.as_deref(), Some("ANTHROPIC_API_KEY"));
-    }
-
-    #[test]
-    fn project_overrides_user_via_merge() {
-        let project = parse_config("[agent]\nbackend = \"openai\"\n");
-        let user =
-            parse_config("[authoring]\nsurface = \"ts-zod\"\n[agent]\nbackend = \"claude-code\"\n");
-        let (surface, agent) = merged_for_command(&project, &user, "must");
-        assert_eq!(agent.as_deref(), Some("openai"));
-        assert_eq!(surface.as_deref(), Some("ts-zod"));
+    fn lift_surface_overrides_default() {
+        let cfg =
+            parse_config("[authoring]\nsurface = \"ts-zod\"\n[authoring.lift]\nsurface = \"rust\"");
+        assert_eq!(cfg.surface_for("lift").as_deref(), Some("rust"));
     }
 
     #[test]
@@ -500,7 +412,7 @@ family = "concept:family:hash"
         surface = \"kani\"  # trailing
         ";
         let cfg = parse_config(raw);
-        assert_eq!(cfg.surface_for("must").as_deref(), Some("kani"));
+        assert_eq!(cfg.surface_for("lift").as_deref(), Some("kani"));
     }
 
     #[test]
@@ -519,7 +431,6 @@ family = "concept:family:hash"
         let _ = std::fs::remove_file(&p);
         let cfg = read_config_file(&p);
         assert!(cfg.surface_default.is_none());
-        assert!(cfg.agent_default.is_none());
     }
 
     #[test]
@@ -534,7 +445,5 @@ family = "concept:family:hash"
         assert!(KNOWN_SURFACES.contains(&"zig-source"));
         assert!(KNOWN_SURFACES.contains(&"clr-bytecode"));
         assert!(KNOWN_SURFACES.contains(&"evm-bytecode"));
-        assert!(KNOWN_AGENTS.contains(&"stub"));
-        assert!(KNOWN_AGENTS.contains(&"claude-code"));
     }
 }

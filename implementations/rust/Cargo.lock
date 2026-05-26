@@ -1277,6 +1277,7 @@ dependencies = [
  "provekit-canonicalizer",
  "provekit-ir-types",
  "provekit-proof-envelope",
+ "provekit-realize-rust-core",
  "serde",
  "serde_json",
  "thiserror 1.0.69",
@@ -1287,14 +1288,6 @@ name = "libprovekit-rpc"
 version = "0.1.0"
 dependencies = [
  "blake3",
- "serde_json",
-]
-
-[[package]]
-name = "libprovekit-rpc-cross-platform"
-version = "0.1.0"
-dependencies = [
- "provekit-sugar",
  "serde_json",
 ]
 
@@ -1313,6 +1306,7 @@ version = "0.37.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "b1f111c8c41e7c61a49cd34e44c7619462967221a6443b0ec299e0ac30cfb9b1"
 dependencies = [
+ "cc",
  "pkg-config",
  "vcpkg",
 ]
@@ -1756,39 +1750,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "provekit-agent"
-version = "0.1.0"
-dependencies = [
- "provekit-canonicalizer",
- "provekit-claim-envelope",
- "provekit-ir-symbolic",
- "provekit-proof-envelope",
- "serde",
- "serde_json",
- "thiserror 1.0.69",
-]
-
-[[package]]
-name = "provekit-agent-claude-code"
-version = "0.1.0"
-dependencies = [
- "provekit-agent",
- "serde",
- "serde_json",
- "thiserror 1.0.69",
-]
-
-[[package]]
-name = "provekit-agent-openai"
-version = "0.1.0"
-dependencies = [
- "provekit-agent",
- "serde",
- "serde_json",
- "thiserror 1.0.69",
-]
-
-[[package]]
 name = "provekit-baseline-rust-std"
 version = "0.1.0"
 dependencies = [
@@ -1894,7 +1855,6 @@ dependencies = [
  "clap",
  "libprovekit",
  "owo-colors",
- "provekit-agent",
  "provekit-canonicalizer",
  "provekit-claim-envelope",
  "provekit-ir-compiler",
