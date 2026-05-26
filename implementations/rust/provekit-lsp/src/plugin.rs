@@ -34,7 +34,6 @@ pub struct LanguagePlugin {
     stdout: BufReader<ChildStdout>,
     _child: Child,
     next_id: i64,
-    supports_analyze_document: bool,
 }
 
 impl std::fmt::Debug for LanguagePlugin {
@@ -183,7 +182,6 @@ impl LanguagePlugin {
             stdout: BufReader::new(stdout),
             _child: child,
             next_id: 1,
-            supports_analyze_document: false,
         };
 
         plugin.handshake()?;
@@ -204,15 +202,11 @@ impl LanguagePlugin {
         if resp.get("error").is_some() {
             return Err(format!("plugin `{}` initialize failed: {resp}", self.name));
         }
-        self.supports_analyze_document = initialize_supports_analyze_document(&resp);
         Ok(())
     }
 
     /// Parse a file and return annotations.
     pub fn parse(&mut self, uri: &str, text: &str) -> Result<SourceAnnotations, String> {
-        if self.supports_analyze_document {
-            return self.analyze_document(uri, text);
-        }
         let req = json!({
             "jsonrpc": "2.0",
             "id": self.next_id(),
@@ -231,35 +225,6 @@ impl LanguagePlugin {
             .cloned()
             .ok_or("parse response missing result")?;
         parse_plugin_annotations(&result)
-    }
-
-    /// Analyze a file through the shared LSP kit route and adapt entries to
-    /// the coordinator's legacy annotation cache. The normalized analysis
-    /// remains kit-owned; this adapter only preserves the existing editor UI
-    /// path while the coordinator migrates off parseFile/parse.
-    pub fn analyze_document(&mut self, uri: &str, text: &str) -> Result<SourceAnnotations, String> {
-        let req = json!({
-            "jsonrpc": "2.0",
-            "id": self.next_id(),
-            "method": "analyzeDocument",
-            "params": {
-                "uri": uri,
-                "file": uri,
-                "text": text,
-            }
-        });
-        let resp = self.exchange(&req)?;
-        if let Some(err) = resp.get("error") {
-            return Err(format!(
-                "plugin `{}` analyzeDocument error: {err}",
-                self.name
-            ));
-        }
-        let result = resp
-            .get("result")
-            .cloned()
-            .ok_or("analyzeDocument response missing result")?;
-        parse_lsp_document_analysis(&result)
     }
 
     /// Shut down the plugin gracefully.
@@ -301,36 +266,6 @@ impl LanguagePlugin {
         self.next_id += 1;
         id
     }
-}
-
-fn initialize_supports_analyze_document(resp: &Value) -> bool {
-    let Some(result) = resp.get("result") else {
-        return false;
-    };
-    if result
-        .get("protocol_version")
-        .and_then(|v| v.as_str())
-        .is_some_and(|v| v == "provekit-lsp-shared/1")
-    {
-        return true;
-    }
-    let Some(caps) = result.get("capabilities") else {
-        return false;
-    };
-    if caps
-        .get("analyzeDocument")
-        .and_then(|v| v.as_bool())
-        .unwrap_or(false)
-    {
-        return true;
-    }
-    caps.get("methods")
-        .and_then(|v| v.as_array())
-        .is_some_and(|methods| {
-            methods
-                .iter()
-                .any(|method| method.as_str() == Some("analyzeDocument"))
-        })
 }
 
 /// Parse annotations from a plugin's JSON-RPC response.
@@ -378,68 +313,6 @@ fn parse_plugin_annotations(value: &Value) -> Result<SourceAnnotations, String> 
     Ok(SourceAnnotations { annotations })
 }
 
-fn parse_lsp_document_analysis(value: &Value) -> Result<SourceAnnotations, String> {
-    if value.get("kind").and_then(|v| v.as_str()) != Some("lsp-document-analysis") {
-        return Err(
-            "expected `kind = lsp-document-analysis` in analyzeDocument response".to_string(),
-        );
-    }
-    let arr = value
-        .get("entries")
-        .and_then(|v| v.as_array())
-        .ok_or("expected `entries` array in lsp-document-analysis response")?;
-
-    let mut annotations = Vec::new();
-    for item in arr {
-        let entry_kind = item.get("kind").and_then(|v| v.as_str()).unwrap_or("");
-        let function_name = item
-            .get("fn_name")
-            .or_else(|| item.get("function_name"))
-            .and_then(|v| v.as_str())
-            .unwrap_or("")
-            .to_string();
-        if function_name.is_empty() {
-            continue;
-        }
-
-        let annotation_kind = match entry_kind {
-            "concept-site" => match item.get("site_kind").and_then(|v| v.as_str()) {
-                Some("sugar") => AnnotationKind::Verify,
-                Some("boundary") => AnnotationKind::Contract,
-                _ => AnnotationKind::Contract,
-            },
-            "function-contract-site" | "contract" => AnnotationKind::Contract,
-            _ => continue,
-        };
-        let target_cid = item
-            .get("target_cid")
-            .or_else(|| item.get("targetContractCid"))
-            .and_then(|v| v.as_str())
-            .map(|s| s.to_string());
-        let range = parse_shared_source_range(item.get("source_range"))
-            .or_else(|| Some(parse_range(item.get("range"))))
-            .unwrap_or(Range {
-                start: Position {
-                    line: 0,
-                    character: 0,
-                },
-                end: Position {
-                    line: 0,
-                    character: 0,
-                },
-            });
-
-        annotations.push(Annotation {
-            function_name,
-            kind: annotation_kind,
-            target_cid,
-            range,
-        });
-    }
-
-    Ok(SourceAnnotations { annotations })
-}
-
 fn parse_range(value: Option<&Value>) -> Range {
     let default = Range {
         start: Position {
@@ -467,68 +340,6 @@ fn parse_position(value: &Value) -> Option<Position> {
     let line = value.get("line")?.as_u64()? as u32;
     let character = value.get("character")?.as_u64()? as u32;
     Some(Position { line, character })
-}
-
-fn parse_shared_source_range(value: Option<&Value>) -> Option<Range> {
-    let v = value?;
-    let start = parse_shared_position(v.get("start")?)?;
-    let end = parse_shared_position(v.get("end")?)?;
-    Some(Range { start, end })
-}
-
-fn parse_shared_position(value: &Value) -> Option<Position> {
-    let line = value.get("line")?.as_u64()?;
-    let column = value
-        .get("column")
-        .or_else(|| value.get("col"))
-        .or_else(|| value.get("character"))?
-        .as_u64()?;
-    Some(Position {
-        line: line.saturating_sub(1) as u32,
-        character: column as u32,
-    })
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-    use serde_json::json;
-
-    #[test]
-    fn initialize_detects_shared_analyze_document() {
-        let resp = json!({
-            "result": {
-                "protocol_version": "provekit-lsp-shared/1",
-                "capabilities": {"methods": ["initialize", "analyzeDocument"]}
-            }
-        });
-        assert!(initialize_supports_analyze_document(&resp));
-    }
-
-    #[test]
-    fn parses_shared_lsp_document_analysis_entries() {
-        let value = json!({
-            "kind": "lsp-document-analysis",
-            "entries": [{
-                "kind": "concept-site",
-                "site_kind": "sugar",
-                "fn_name": "Identity",
-                "source_range": {
-                    "kind": "source-range",
-                    "start": {"line": 4, "column": 0},
-                    "end": {"line": 6, "column": 1}
-                }
-            }]
-        });
-
-        let parsed = parse_lsp_document_analysis(&value).expect("analysis parsed");
-        assert_eq!(parsed.annotations.len(), 1);
-        let ann = &parsed.annotations[0];
-        assert_eq!(ann.function_name, "Identity");
-        assert!(matches!(ann.kind, AnnotationKind::Verify));
-        assert_eq!(ann.range.start.line, 3);
-        assert_eq!(ann.range.start.character, 0);
-    }
 }
 
 /// Convenience: try to load a plugin for a language config.
