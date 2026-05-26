@@ -49,6 +49,7 @@ members = [
     "provekit-lift-native-surfaces",
     "provekit-linker",
     "provekit-lsp",
+    "provekit-lsp-protocol-catalog",
     "provekit-lsp-rust",
     "provekit-build",
     "provekit-agent",

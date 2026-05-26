@@ -2,7 +2,9 @@
 
 **Version:** v0.1.0
 **Date:** 2026-05-25
-**Status:** design proposal for review. Not cataloged yet.
+**Status:** cataloged by `protocol/catalogs/provekit-lsp-shared-1.catalog.json`
+with `protocol_catalog_cid =
+blake3-512:0e3905c2a7a098cd538b9669428a7dffd2b84ba8ccf8fde3724fe2ab61fd3fbc1e1a616a6b20b6817464cdc50c466b5497d4ac2e2dc34c3c15f05535b463643c`.
 **Author:** T Savo
 **Companion specs:** [Linker Daemon Protocol](2026-05-04-linker-daemon-protocol.md), [Bridge Linkage Protocol](2026-05-03-bridge-linkage-protocol.md), [Lift Plugin Protocol](2026-04-30-lift-plugin-protocol.md), [Plugin Extension Protocol](2026-05-12-plugin-protocol.md), [Bind-IR Lift-Result Shape](2026-05-13-bind-ir-lift-result.md), [Body Template Memento](2026-05-13-body-template-memento.md), [Concept Hub Abstraction Layer](2026-05-15-concept-hub-abstraction-layer.md)
 
