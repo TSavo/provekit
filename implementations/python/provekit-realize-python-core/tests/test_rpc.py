@@ -191,6 +191,7 @@ def test_rpc_body_template_entries_returns_core_template_entries() -> None:
 
 
 def test_rpc_body_template_entries_reports_missing_core_resource(monkeypatch) -> None:
+    monkeypatch.setattr(realizer, "_package_body_template_resource", lambda _relative: None)
     monkeypatch.setattr(realizer, "_find_repo_file", lambda _relative: None)
 
     response = dispatch(
