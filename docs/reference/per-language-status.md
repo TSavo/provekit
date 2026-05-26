@@ -55,7 +55,7 @@ All listed kits now carry CICP vector checks or equivalent language-library cove
 
 | Language    | Kit | Libs | Lift adapters                                           | Decorator macros        | Embedded verifier | CLI                  | LSP Plugin           |
 |-------------|-----|------|---------------------------------------------------------|--------------------------|-------------------|----------------------|----------------------|
-| Rust        | `+` | `+`  | `+ proptest, contracts, kani, prusti` ; `o creusot, flux`          | `+ provekit-macros`      | `+`               | `+ provekit (canonical)` | `~ legacy parse; see audit` |
+| Rust        | `+` | `+`  | `+ proptest, contracts, kani, prusti` ; `o creusot, flux`          | `+ provekit-macros`      | `+`               | `+ provekit (canonical)` | `+`                  |
 | TypeScript  | `+` | `+`  | `+ zod, class-validator, fast-check` ; `~ io-ts, valibot, ajv`     | `~`                      | `+`               | `~ (use Rust CLI)`   | `+`                  |
 | Go          | `+` | `+`  | `+ go-playground/validator` ; `~ ozzo-validation`       | `~`                      | `+`               | `~ (use Rust CLI)`   | `+`                  |
 | C++         | `+` | `+`  | `+ [[expects:]]/[[ensures:]] (C++26)` ; `o assert.h`    | `~ (C++26 contracts)`    | `+`               | `~ (use Rust CLI)`   | `+`                  |
@@ -129,8 +129,6 @@ Column meanings:
 **Embedded verifier:** Yes. `provekit_verifier::run(project_root)` returns a `HandshakeReport` synchronously.
 
 **CLI:** `provekit` is the canonical Rust CLI for protocol v1.6.3. Subcommands include `prove`, `proof`, `protocol`, `package inspect`, `ci`, `verify`, `verify-protocol`, `version`, `init`, `mint`, `lift`, `dump`, `hash`, `ask`, `search`, and `implicate`. Bug Zoo is repo-owned machinery under `menagerie/bug-zoo/`, not a public `provekit` subcommand. Distributed from source today with `cargo install --path implementations/rust/provekit-cli`; crates.io publishing remains future work.
-
-**LSP Plugin:** Partial relative to the shared LSP protocol. The current Rust helper owns Rust parsing/lift work but still speaks the legacy `parse` route; the rebaseline target is `initialize -> analyzeDocument -> lsp-document-analysis`. See [`2026-05-25-rust-lsp-shared-protocol-rebaseline.md`](../audits/2026-05-25-rust-lsp-shared-protocol-rebaseline.md).
 
 ## TypeScript
 
