@@ -105,7 +105,7 @@ help:
 	@echo ""
 	@echo "Per-kit conformance gate (C1-C8 lift-plugin-protocol verifiers):"
 	@echo "  make prove-all      all 12 Linux kits (swift excluded: macOS-only)"
-	@echo "  make prove-rust  prove-go  prove-cpp  prove-ts  prove-csharp  prove-clr-bytecode  prove-evm-bytecode"
+	@echo "  make prove-rust  prove-go  prove-cpp  prove-ts  prove-csharp  prove-clr-bytecode"
 	@echo "  make prove-java  prove-python  prove-ruby  prove-zig  prove-c"
 	@echo "  make prove-swift    macOS-only"
 	@echo ""
@@ -519,11 +519,6 @@ prove-clr-bytecode: build-rust build-csharp
 	@echo ">> proving clr-bytecode lift-plugin-protocol conformance (C1-C8)"
 	$(PROVEKIT) prove --kit=clr-bytecode
 
-.PHONY: prove-evm-bytecode
-prove-evm-bytecode: build-rust
-	@echo ">> proving evm-bytecode lift-plugin-protocol conformance (C1-C8)"
-	$(PROVEKIT) prove --kit=evm-bytecode
-
 # macOS-only: requires Swift toolchain.
 .PHONY: prove-swift
 prove-swift: build-rust-cli build-swift
@@ -559,7 +554,7 @@ prove-c: build-rust build-c build-c-self-contracts
 # Kits without a wired lifter exit 2 (user error); all 12 targets are listed
 # so CI reports which need follow-up. prove-swift runs separately on macos-latest.
 .PHONY: prove-all
-prove-all: prove-rust prove-go prove-cpp prove-ts prove-csharp prove-clr-bytecode prove-evm-bytecode prove-java prove-python prove-ruby prove-zig prove-c
+prove-all: prove-rust prove-go prove-cpp prove-ts prove-csharp prove-clr-bytecode prove-java prove-python prove-ruby prove-zig prove-c
 	@echo ""
 	@echo "==== prove-all: complete ===="
 

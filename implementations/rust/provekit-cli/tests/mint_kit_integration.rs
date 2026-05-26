@@ -283,36 +283,6 @@ fn build_clr_lifter() {
     );
 }
 
-fn write_evm_smoke_program(root: &Path) -> PathBuf {
-    let project_dir = root
-        .join("implementations")
-        .join("rust")
-        .join("evm-bytecode-smoke");
-    std::fs::create_dir_all(&project_dir).expect("create EVM smoke dir");
-    let path = project_dir.join("add.evm");
-    std::fs::write(&path, "PUSH1 0x01\nPUSH1 0x02\nADD\nSTOP\n").expect("write EVM smoke bytecode");
-    path
-}
-
-fn build_evm_lifter() {
-    let workspace = canonical_repo_root().join("implementations").join("rust");
-    let build = Command::new("cargo")
-        .arg("build")
-        .arg("--release")
-        .arg("-p")
-        .arg("provekit-lift-evm-bytecode")
-        .env_remove("CARGO_TARGET_DIR")
-        .current_dir(&workspace)
-        .output()
-        .expect("spawn cargo build for EVM lifter");
-    assert!(
-        build.status.success(),
-        "cargo build failed for EVM lifter\nstdout:\n{}\nstderr:\n{}",
-        String::from_utf8_lossy(&build.stdout),
-        String::from_utf8_lossy(&build.stderr)
-    );
-}
-
 /// Read the attestation JSON from `<root>/.provekit/self-contracts-attestations/<lang>.json`.
 fn read_attestation(root: &Path, lang: &str) -> serde_json::Value {
     let path = root
@@ -397,7 +367,6 @@ const KITS_WITH_LIFTERS: &[&str] = &[
     "ts",
     "csharp",
     "clr-bytecode",
-    "evm-bytecode",
     "swift",
     "java",
     "python",
@@ -602,34 +571,6 @@ fn clr_bytecode_kit_round_trips_dotnet_built_assembly_through_cli_mint() {
     assert_ne!(
         cset, EMPTY_SET_CID,
         "clr-bytecode must lift the dotnet-built assembly into real contracts"
-    );
-}
-
-#[test]
-#[serial(mint_kit_files)]
-fn evm_bytecode_kit_round_trips_stack_program_through_cli_mint() {
-    build_evm_lifter();
-
-    let scratch = ScratchRepo::new();
-    let root = scratch.root();
-    let _program = write_evm_smoke_program(root);
-
-    let (ok, stdout, stderr) = run_mint(root, "evm-bytecode");
-    assert!(
-        ok,
-        "evm-bytecode mint failed\nstdout:\n{stdout}\nstderr:\n{stderr}"
-    );
-    assert!(
-        stdout.contains("contractSetCid:"),
-        "evm-bytecode stdout must contain contractSetCid\nstdout:\n{stdout}"
-    );
-
-    let attest = read_attestation(root, "evm-bytecode");
-    assert_attestation_structure(&attest, "evm-bytecode");
-    let cset = attest["contractSetCid"].as_str().unwrap();
-    assert_ne!(
-        cset, EMPTY_SET_CID,
-        "evm-bytecode must lift the stack program into a real contract"
     );
 }
 

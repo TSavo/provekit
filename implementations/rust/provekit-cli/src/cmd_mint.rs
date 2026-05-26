@@ -94,7 +94,6 @@ const SELF_CONTRACTS_DECLARED_AT: &str = "2026-05-05T18:00:00Z";
 ///   `ts`     → project dir `typescript`,  surface `typescript`,             lang `ts`
 ///   `csharp` → project dir `csharp`,      surface `csharp`,                 lang `csharp`
 ///   `clr-bytecode` → project dir `csharp`, surface `clr-bytecode`,           lang `clr-bytecode`
-///   `evm-bytecode` → project dir `rust`,  surface `evm-bytecode`,            lang `evm-bytecode`
 ///   `rust`   → project dir `rust`,        surface `rust`,                    lang `rust`
 ///   `go`     → project dir `go`,          surface `go-self-contracts`,      lang `go`
 ///
@@ -110,7 +109,6 @@ pub(crate) const KIT_TABLE: &[(&str, &str, &str, &str)] = &[
     ("ts", "typescript", "typescript-self-contracts", "ts"),
     ("csharp", "csharp", "csharp", "csharp"),
     ("clr-bytecode", "csharp", "clr-bytecode", "clr-bytecode"),
-    ("evm-bytecode", "rust", "evm-bytecode", "evm-bytecode"),
     ("swift", "swift", "swift-self-contracts", "swift"),
     ("java", "java", "java-self-contracts", "java"),
     ("python", "python", "python-self-contracts", "python"),
@@ -1846,7 +1844,7 @@ pub struct MintArgs {
     pub project: Option<PathBuf>,
     /// Kit shortcut: maps `<kit>` to `implementations/<kit>`.
     /// Equivalent to `--project implementations/<kit>`.
-    /// Known kits: rust, go, cpp, ts, csharp, clr-bytecode, evm-bytecode, swift, java, python, ruby, zig, c, php.
+    /// Known kits: rust, go, cpp, ts, csharp, clr-bytecode, swift, java, python, ruby, zig, c, php.
     #[arg(long, conflicts_with = "project")]
     pub kit: Option<String>,
     /// Override the authoring surface (otherwise read from config or derived from --kit).
@@ -2322,7 +2320,6 @@ mod tests {
             "ts",
             "csharp",
             "clr-bytecode",
-            "evm-bytecode",
             "swift",
             "java",
             "python",

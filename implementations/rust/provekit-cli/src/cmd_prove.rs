@@ -1407,7 +1407,6 @@ mod tests {
             "ts",
             "csharp",
             "clr-bytecode",
-            "evm-bytecode",
             "swift",
             "java",
             "python",

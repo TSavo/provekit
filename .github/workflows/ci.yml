@@ -468,7 +468,6 @@ jobs:
           - ts
           - csharp
           - clr-bytecode
-          - evm-bytecode
           - java
           - python
           - ruby
