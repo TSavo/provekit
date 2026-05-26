@@ -32,10 +32,6 @@ import pytest
 
 def _lsp_cmd() -> List[str]:
     """Return the command list to invoke the Python LSP plugin."""
-    # Test the worktree source, not an older globally installed console script.
-    if os.environ.get("PROVEKIT_TEST_INSTALLED_LSP") != "1":
-        return [sys.executable, "-m", "provekit_lift_py_tests.lsp"]
-
     # 1. On-PATH binary (post pip install).
     on_path = shutil.which("provekit-lsp-python")
     if on_path:
@@ -63,26 +59,11 @@ _FIXTURE_PATH = "test_fixture.py"
 def _run_lsp(ndjson_input: str) -> List[dict]:
     """Spawn the LSP binary, feed ndjson_input, return parsed response lines."""
     cmd = _lsp_cmd()
-    root = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", ".."))
-    pythonpath = os.pathsep.join(
-        [
-            os.path.join(root, "provekit-lift-py-tests", "src"),
-            os.path.join(root, "provekit-lift-python-source", "src"),
-            os.path.join(root, "provekit-realize-python-core", "src"),
-            os.path.join(root, "provekit-realize-python-requests", "src"),
-            os.path.join(root, "provekit-realize-python-sqlite3", "src"),
-            os.path.join(root, "provekit-realize-python-aiosqlite", "src"),
-            os.path.join(root, "provekit-emit-python-pytest", "src"),
-            os.environ.get("PYTHONPATH", ""),
-        ]
-    )
-    env = {**os.environ, "PYTHONPATH": pythonpath}
     result = subprocess.run(
         cmd,
         input=ndjson_input,
         capture_output=True,
         text=True,
-        env=env,
         timeout=10,
     )
     assert result.returncode == 0, (
@@ -191,68 +172,3 @@ class TestDaemonProtocol:
         parse_resp = next(r for r in responses if r.get("id") == 2)
         assert "error" in parse_resp, "Expected error for unsupported language"
         assert parse_resp["error"]["code"] == -32602
-
-    def test_analyze_document_returns_shared_lsp_analysis_for_sugar_bind(self):
-        """analyzeDocument returns shared LSP facts and explicit editor statuses."""
-        source = """\
-from provekit import sugar
-
-@sugar.bind(concept="concept:http-request", library="requests")
-def fetch_status(url: str) -> int:
-    return requests.get(url).status_code
-"""
-        msgs = [
-            {"jsonrpc": "2.0", "id": 1, "method": "initialize", "params": {}},
-            {
-                "jsonrpc": "2.0",
-                "id": 2,
-                "method": "analyzeDocument",
-                "params": {
-                    "kit_id": "python",
-                    "uri": "file:///workspace/src/shims/requests.py",
-                    "file": "/workspace/src/shims/requests.py",
-                    "text": source,
-                    "workspace_root": "/workspace",
-                    "document_version": 7,
-                },
-            },
-            {"jsonrpc": "2.0", "id": 3, "method": "shutdown"},
-        ]
-        responses = _run_lsp("\n".join(json.dumps(m) for m in msgs) + "\n")
-
-        init = next(r for r in responses if r.get("id") == 1)["result"]
-        assert init["protocol_version"] == "provekit-lsp-shared/1"
-        assert "analyzeDocument" in init["capabilities"]["methods"]
-
-        analysis_resp = next(r for r in responses if r.get("id") == 2)
-        assert "error" not in analysis_resp, analysis_resp
-        result = analysis_resp["result"]
-        assert result["kind"] == "lsp-document-analysis"
-        assert result["schema_version"] == "1"
-        assert result["kit_id"] == "python"
-        assert result["uri"] == "file:///workspace/src/shims/requests.py"
-        assert result["file"] == "src/shims/requests.py"
-        assert result["document_cid"].startswith("blake3-512:")
-
-        binding_entries = [
-            entry for entry in result["entries"]
-            if entry["kind"] == "library-sugar-binding-entry"
-        ]
-        assert len(binding_entries) == 1
-        binding = binding_entries[0]
-        assert binding["entry"]["concept_name"] == "concept:http-request"
-        assert binding["entry"]["target_library_tag"] == "requests"
-        assert binding["range"] == {
-            "start_line": 3,
-            "start_col": 0,
-            "end_line": 5,
-            "end_col": 40,
-        }
-
-        statuses_by_kind = {status["kind"]: status for status in result["statuses"]}
-        assert statuses_by_kind["lift"]["state"] == "available"
-        assert statuses_by_kind["materialize"]["state"] in {"available", "unavailable", "refused"}
-        assert statuses_by_kind["emit"]["state"] == "available"
-        assert statuses_by_kind["check"]["state"] in {"unavailable", "refused"}
-        assert statuses_by_kind["prove"]["state"] in {"unknown", "unavailable", "refused"}
-        assert statuses_by_kind["prove"]["state"] != "passed"

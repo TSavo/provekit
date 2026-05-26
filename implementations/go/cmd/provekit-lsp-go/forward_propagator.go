@@ -9,6 +9,8 @@ import (
 	canonicalizer "github.com/tsavo/provekit/go/provekit-ir-symbolic/canonicalizer"
 )
 
+const protocolCatalogCID = "blake3-512:52bdb2be4b381cec2aff95db7755c84184878b45cd91882d262114a1abd2dd513f9ef3b250fb87093316fd0fcb48e4b97e109d463e57df5bda6aac0b1c719a0f"
+
 type Post struct {
 	Constraints []string
 	IsTop       bool

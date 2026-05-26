@@ -99,9 +99,9 @@ fn initialize_returns_capabilities() {
         result.get("version").and_then(|v| v.as_str()).is_some(),
         "missing version: {result}"
     );
-    let caps = result["capabilities"]["methods"]
+    let caps = result["capabilities"]
         .as_array()
-        .unwrap_or_else(|| panic!("missing capabilities methods array: {result}"));
+        .unwrap_or_else(|| panic!("missing capabilities array: {result}"));
     assert!(
         caps.iter().any(|c| c.as_str() == Some("parse")),
         "capabilities must include 'parse': {caps:?}"
@@ -228,10 +228,7 @@ fn parse_floor_fixture_emits_forward_propagation_diagnostic() {
     let diagnostic = &diagnostics[0];
     assert_eq!(diagnostic["severity"].as_i64(), Some(1));
     assert_eq!(diagnostic["source"].as_str(), Some("provekit"));
-    assert_eq!(
-        diagnostic["code"].as_str(),
-        Some("provekit.lsp.implication_failed")
-    );
+    assert_eq!(diagnostic["code"].as_str(), Some("implication-failed"));
     assert_eq!(
         diagnostic["data"]["kind"].as_str(),
         Some("provekit.lsp.implication_failed")

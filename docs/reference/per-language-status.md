@@ -55,13 +55,13 @@ All listed kits now carry CICP vector checks or equivalent language-library cove
 
 | Language    | Kit | Libs | Lift adapters                                           | Decorator macros        | Embedded verifier | CLI                  | LSP Plugin           |
 |-------------|-----|------|---------------------------------------------------------|--------------------------|-------------------|----------------------|----------------------|
-| Rust        | `+` | `+`  | `+ proptest, contracts, kani, prusti` ; `o creusot, flux`          | `+ provekit-macros`      | `+`               | `+ provekit (canonical)` | `~ legacy parse; see audit` |
+| Rust        | `+` | `+`  | `+ proptest, contracts, kani, prusti` ; `o creusot, flux`          | `+ provekit-macros`      | `+`               | `+ provekit (canonical)` | `+`                  |
 | TypeScript  | `+` | `+`  | `+ zod, class-validator, fast-check` ; `~ io-ts, valibot, ajv`     | `~`                      | `+`               | `~ (use Rust CLI)`   | `+`                  |
 | Go          | `+` | `+`  | `+ go-playground/validator` ; `~ ozzo-validation`       | `~`                      | `+`               | `~ (use Rust CLI)`   | `+`                  |
 | C++         | `+` | `+`  | `+ [[expects:]]/[[ensures:]] (C++26)` ; `o assert.h`    | `~ (C++26 contracts)`    | `+`               | `~ (use Rust CLI)`   | `+`                  |
 | C           | `+` | `~`  | `~`                                                     | `~`                      | `~`               | `~ (use Rust CLI)`   | `+`                  |
 | Zig         | `+` | `~`  | `+ provekit-lift-zig (comment annotations)`             | `~`                      | `+`               | `~ (use Rust CLI)`   | `+`                  |
-| Python      | `+` | `+`  | `+ pydantic` ; `~ deal, hypothesis` ; `~ icontract, attrs`   | `+`                      | `+`               | `~ (use Rust CLI)`   | `~ legacy parse/lift; see audit` |
+| Python      | `+` | `+`  | `+ pydantic` ; `~ deal, hypothesis` ; `~ icontract, attrs`   | `+`                      | `+`               | `~ (use Rust CLI)`   | `+`                  |
 | Java / JVM  | `+` | `+`  | `+ Bean Validation, JML, Spring Web, Cofoja`            | `~`                      | `~`               | `~ (use Rust CLI)`   | `~`                  |
 | Ruby        | `+` | `~`  | `+ active_model, dry-validation, rspec`                 | `-`                      | `~`               | `~ (use Rust CLI)`   | `+`                  |
 | C#          | `+` | `+`  | `+ DataAnnotations, Linq`                               | `+ .NET attrs`           | `+`               | `~ (use Rust CLI)`   | `+`                  |
@@ -130,8 +130,6 @@ Column meanings:
 
 **CLI:** `provekit` is the canonical Rust CLI for protocol v1.6.3. Subcommands include `prove`, `proof`, `protocol`, `package inspect`, `ci`, `verify`, `verify-protocol`, `version`, `init`, `mint`, `lift`, `dump`, `hash`, `ask`, `search`, and `implicate`. Bug Zoo is repo-owned machinery under `menagerie/bug-zoo/`, not a public `provekit` subcommand. Distributed from source today with `cargo install --path implementations/rust/provekit-cli`; crates.io publishing remains future work.
 
-**LSP Plugin:** Partial relative to the shared LSP protocol. The current Rust helper owns Rust parsing/lift work but still speaks the legacy `parse` route; the rebaseline target is `initialize -> analyzeDocument -> lsp-document-analysis`. See [`2026-05-25-rust-lsp-shared-protocol-rebaseline.md`](../audits/2026-05-25-rust-lsp-shared-protocol-rebaseline.md).
-
 ## TypeScript
 
 **Kit:** Shipping in the current v1.6.3 tree. The TypeScript kit emits the same canonical IR a Rust kit emits for the same proposition; cross-language conformance is direct.
@@ -173,7 +171,7 @@ Column meanings:
 
 **CLI:** Deferred. Use the Rust CLI.
 
-**LSP Plugin:** Legacy helper present. `provekit-lsp-go` implements the older ProvekIt NDJSON helper shape with `initialize`, `parse`, and `shutdown`; it is not yet rebaselined to the shared `initialize` -> `analyzeDocument` -> `lsp-document-analysis` protocol. See [Go LSP shared protocol rebaseline](../audits/2026-05-25-go-lsp-shared-protocol-rebaseline.md).
+**LSP Plugin:** Yes. `provekit-lsp-go` implements the ProvekIt NDJSON LSP plugin protocol with `initialize`, `parse`, and `shutdown`. Scans Go source for `//provekit:` annotations.
 
 ## C++
 
@@ -218,7 +216,7 @@ Column meanings:
 
 **CLI:** Deferred. Use the Rust CLI.
 
-**LSP Plugin:** Partial relative to the shared LSP protocol. `provekit.lsp` owns Python parsing/lift work and still speaks the legacy `initialize`/`parse`/`lift` helper shape; the rebaseline target is `initialize` -> `analyzeDocument` -> `lsp-document-analysis`. See [Python LSP shared protocol rebaseline](../audits/2026-05-25-python-lsp-shared-protocol-rebaseline.md).
+**LSP Plugin:** Yes. `provekit.lsp` implements the ProvekIt LSP plugin protocol (NDJSON over stdio) with `initialize`, `parse`, and `shutdown` methods.
 
 ## Java / JVM
 

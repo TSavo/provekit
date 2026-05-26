@@ -392,7 +392,7 @@ impl ForwardPropagator {
             range,
             severity: 1,
             source: "provekit".into(),
-            code: "provekit.lsp.implication_failed".into(),
+            code: "implication-failed".into(),
             message: "callee precondition not established at this callsite".into(),
             data: DiagnosticData {
                 schema_version: 1,
