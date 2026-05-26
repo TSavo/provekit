@@ -688,14 +688,11 @@ fn kit_shortcut_and_project_flag_are_equivalent() {
         .output()
         .expect("spawn provekit --kit=rust");
 
-    // Via --project (must use rust-self-contracts surface to match --kit=rust;
-    // issue #176 Tier 1: --kit=rust routes to rust-self-contracts, not rust)
+    // Via --project: the rust project config selects the same native rust surface.
     let proj_out = Command::new(&bin)
         .arg("mint")
         .arg("--project")
         .arg("implementations/rust")
-        .arg("--surface")
-        .arg("rust-self-contracts")
         .arg("--quiet")
         .arg("--no-attest")
         .current_dir(root)
@@ -769,32 +766,29 @@ fn go_kit_pins_expected_contract_set_cid() {
 }
 
 // ---------------------------------------------------------------------------
-// Test 7: rust kit contractSetCid is pinned to the canonical self-contracts CID
-//         (issue #176 Tier 1 regression gate, PR #183)
+// Test 7: rust kit contractSetCid is pinned to the canonical native-lift CID
 // ---------------------------------------------------------------------------
 
-/// Pinned contractSetCid produced by `--kit=rust` after routing to the full
-/// `rust-self-contracts` surface (mint-self-contracts binary, 18 slabs,
-/// 113 contracts as of the protocol-bridge dogfood). Any change to this value
-/// means either the surface wiring changed or the canonical Rust
-/// self-contract surface changed -- both require explicit review and
-/// re-pinning.
+/// Pinned contractSetCid produced by `--kit=rust` after routing to the native
+/// Rust workspace lifter. Any change to this value means either the surface
+/// wiring changed or the canonical Rust lift output changed -- both require
+/// explicit review and re-pinning.
 ///
-/// This constant must be updated whenever the canonical self-contracts slab is
+/// This constant must be updated whenever the canonical native lift output is
 /// intentionally changed. It MUST NOT be the empty-set CID (d53d18c2...) or
-/// the generic workspace-lifter CID (ca9638b4...). It is deliberately NOT the
-/// lift-plugin protocol contract-set CID below; this pin covers the whole Rust
-/// kit surface, including but not limited to protocol contracts.
+/// the deleted `.invariant.rs` orchestrator CID (3b41145b...). It is
+/// deliberately NOT the lift-plugin protocol contract-set CID below; this pin
+/// covers the whole Rust kit surface lifted from native source and tests.
 #[cfg(target_os = "linux")]
-const RUST_KIT_FULL_SELF_CONTRACT_SURFACE_CID: &str =
-    "blake3-512:3b41145bf3516b8dd901012a95ceca18f0198eef778ac024ad368a7b856f8f0832791032344ceb588fa65ce80cff942e1ec9c2e354d9b1e5dd6d59d81c524ee6";
+const RUST_KIT_NATIVE_LIFT_CONTRACT_SET_CID: &str =
+    "blake3-512:e6c68587427f5cf4efb2690a8f12031c725de2d8eb117806d195b3664a5866dfad8e30fe5dbaa8762a86f9425211addc0be8d55de666506f5bfa6806c764566a";
 
-/// macOS currently emits the same full Rust self-contract surface CID as Linux.
+/// macOS currently emits the same native Rust lift CID as Linux.
 /// The pin remains explicit so host drift stays loud instead of silently
 /// weakening the canonical Linux gate.
 #[cfg(not(target_os = "linux"))]
-const RUST_KIT_FULL_SELF_CONTRACT_SURFACE_CID: &str =
-    "blake3-512:3b41145bf3516b8dd901012a95ceca18f0198eef778ac024ad368a7b856f8f0832791032344ceb588fa65ce80cff942e1ec9c2e354d9b1e5dd6d59d81c524ee6";
+const RUST_KIT_NATIVE_LIFT_CONTRACT_SET_CID: &str =
+    "blake3-512:e6c68587427f5cf4efb2690a8f12031c725de2d8eb117806d195b3664a5866dfad8e30fe5dbaa8762a86f9425211addc0be8d55de666506f5bfa6806c764566a";
 
 /// Pinned contractSetCid produced by `--kit=cpp` after routing to the
 /// `cpp-self-contracts` surface (mint_cpp_self_contracts binary, canonical
@@ -817,9 +811,9 @@ fn rust_kit_contract_set_cid_is_pinned_to_self_contracts_canonical() {
     let (ok, _, stderr) = run_mint(root, "rust");
     if !ok {
         eprintln!(
-            "rust kit: mint failed (mint-self-contracts may not be built)\n  stderr: {stderr}"
+            "rust kit: mint failed (native rust lifter may not be built)\n  stderr: {stderr}"
         );
-        // Skip rather than fail: binary may not be built in this environment.
+        // Skip rather than fail: lifter may not be available in this environment.
         return;
     }
 
@@ -828,31 +822,28 @@ fn rust_kit_contract_set_cid_is_pinned_to_self_contracts_canonical() {
         .as_str()
         .expect("contractSetCid must be string");
 
-    // Skip the pinning assertion if the lifter binary isn't built: when
+    // Skip the pinning assertion if the lifter binary isn't available: when
     // the dispatcher hits ENOENT on spawn it returns ok=true with the
     // empty-set CID. Panic in CI (missing binary there is a CI config bug).
     if cset == EMPTY_SET_CID {
         panic_if_empty_set_cid_in_ci("rust");
-        eprintln!(
-            "rust kit: mint-self-contracts binary not built locally -- skipping pinning assertion"
-        );
+        eprintln!("rust kit: lifter not available locally -- skipping pinning assertion");
         return;
     }
 
-    // Pinned value: must match the canonical self-contracts CID.
+    // Pinned value: must match the canonical native-lift CID.
     assert_eq!(
-        cset, RUST_KIT_FULL_SELF_CONTRACT_SURFACE_CID,
-        "rust kit contractSetCid diverged from the pinned canonical self-contracts CID.\n\
-         This is the issue #176 Tier 1 regression gate.\n\
-         If the self-contracts changed intentionally, update RUST_KIT_FULL_SELF_CONTRACT_SURFACE_CID.\n\
+        cset, RUST_KIT_NATIVE_LIFT_CONTRACT_SET_CID,
+        "rust kit contractSetCid diverged from the pinned canonical native-lift CID.\n\
+         If the native lift output changed intentionally, update RUST_KIT_NATIVE_LIFT_CONTRACT_SET_CID.\n\
          Current: {cset}\n\
-         Pinned:  {RUST_KIT_FULL_SELF_CONTRACT_SURFACE_CID}"
+         Pinned:  {RUST_KIT_NATIVE_LIFT_CONTRACT_SET_CID}"
     );
 
     // Belt-and-suspenders: must NOT be the empty-set sentinel.
     assert_ne!(
         cset, EMPTY_SET_CID,
-        "rust kit must not produce the empty-set CID: the self-contracts binary is missing or broken"
+        "rust kit must not produce the empty-set CID: the native lifter is missing or broken"
     );
 
     eprintln!("rust kit pinned contractSetCid confirmed: {cset}");
@@ -878,8 +869,8 @@ fn lift_plugin_protocol_contract_set_cid_is_pinned_separately_from_rust_surface(
         provekit_self_contracts::ACCEPTED_LIFT_PLUGIN_PROTOCOL_CONTRACT_SET_CID
     );
     assert_ne!(
-        cset, RUST_KIT_FULL_SELF_CONTRACT_SURFACE_CID,
-        "protocol contract-set CID must stay distinct from the full Rust self-contract surface CID"
+        cset, RUST_KIT_NATIVE_LIFT_CONTRACT_SET_CID,
+        "protocol contract-set CID must stay distinct from the full Rust native-lift surface CID"
     );
 }
 

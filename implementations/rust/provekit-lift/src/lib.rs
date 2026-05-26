@@ -857,7 +857,10 @@ fn run_rpc_mode() -> i32 {
         let method = req.get("method").and_then(|v| v.as_str()).unwrap_or("");
         match method {
             "initialize" => {
-                let resp = serde_json::json!({"jsonrpc":"2.0","id":id,"result":{"name":"provekit-lift","version":"1.0","capabilities":[]}});
+                // C1-C8 lift-plugin-protocol conformance: initialize MUST carry a
+                // string `protocol_version` (C1) and `capabilities.authoring_surfaces`
+                // as a non-empty array (C2/C4). The rust kit serves the `rust` surface.
+                let resp = serde_json::json!({"jsonrpc":"2.0","id":id,"result":{"name":"provekit-lift","version":"1.0","protocol_version":"pep/1.7.0","capabilities":{"authoring_surfaces":["rust"],"ir_version":"v1.1.0"}}});
                 let _ = writeln!(stdout, "{resp}");
             }
             "lift" => {

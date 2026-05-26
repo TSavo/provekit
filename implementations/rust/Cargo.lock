@@ -2365,13 +2365,11 @@ dependencies = [
 name = "provekit-self-contracts"
 version = "0.1.0"
 dependencies = [
- "base64",
  "proptest",
  "provekit-canonicalizer",
  "provekit-claim-envelope",
  "provekit-ir-symbolic",
  "provekit-proof-envelope",
- "provekit-verifier",
  "serde_json",
 ]
 
