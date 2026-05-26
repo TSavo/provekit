@@ -99,9 +99,9 @@ fn initialize_returns_capabilities() {
         result.get("version").and_then(|v| v.as_str()).is_some(),
         "missing version: {result}"
     );
-    let caps = result["capabilities"]
+    let caps = result["capabilities"]["methods"]
         .as_array()
-        .unwrap_or_else(|| panic!("missing capabilities array: {result}"));
+        .unwrap_or_else(|| panic!("missing capabilities methods array: {result}"));
     assert!(
         caps.iter().any(|c| c.as_str() == Some("parse")),
         "capabilities must include 'parse': {caps:?}"

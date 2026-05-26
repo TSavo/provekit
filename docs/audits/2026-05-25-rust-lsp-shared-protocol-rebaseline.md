@@ -3,7 +3,9 @@
 Date: 2026-05-25
 Scope: #1503, reconciles #313 under #1486
 Authority: `protocol/specs/2026-05-25-lsp-shared-protocol.md`, including the #1520 boundary tightening.
-Mode: documentation/audit only. No implementation was changed.
+Mode: audit plus first Rust helper implementation slice. PR #1507 now contains
+code for the Rust kit `initialize -> analyzeDocument -> lsp-document-analysis`
+route in `implementations/rust/provekit-lsp-rust`.
 
 ## Ruling
 
@@ -31,7 +33,7 @@ linkerd the Rust parser.
 | Surface | Code path | Current status | Shared-protocol verdict |
 |---|---|---|---|
 | Shared protocol authority | `protocol/specs/2026-05-25-lsp-shared-protocol.md` | Current. Defines `provekit-lsp-shared/1`, `initialize`, `analyzeDocument`, `kind = "lsp-document-analysis"`, stable `provekit.lsp.*` diagnostic codes, statuses, project pins, and coordinator/linkerd prohibitions. | Fixed authority for #1503. |
-| Rust kit LSP helper | `implementations/rust/provekit-lsp-rust/src/main.rs` | Kit-owned Rust parser/lifter. Parses live text with `syn`, runs Rust lift adapters, and returns `declarations`, `warnings`, and legacy `diagnostics` from method `parse`. | Keep as the owner, but rebaseline to `initialize -> analyzeDocument -> lsp-document-analysis`. Legacy `parse` can remain only as a projection of `analyzeDocument`. |
+| Rust kit LSP helper | `implementations/rust/provekit-lsp-rust/src/main.rs` | Kit-owned Rust parser/lifter. Parses live text with `syn`, runs Rust lift adapters, returns the shared `lsp-document-analysis` envelope from `analyzeDocument`, and keeps legacy `parse` as a projection of the same analysis core. Materialize/emit/check/prove are explicit `unknown` kit statuses until backend status RPCs are wired. | First #1503 implementation slice is present. Remaining work is richer normalized entries, real backend status RPCs, coordinator consumption, and linkerd adapter tightening. |
 | Rust kit forward-propagator | `implementations/rust/provekit-lsp-rust/src/forward_propagator.rs`, `implementations/rust/provekit-lsp-rust/tests/forward_propagator.rs` | Demo/floor implementation for old #313. It uses a small statement IR and a synthetic `checkPositive` scanner. Diagnostics use old code `implication-failed` while `data.kind` uses `provekit.lsp.implication_failed`. | Child work under #313. It is a diagnostic producer under shared LSP, not the whole LSP. It must consume normalized Rust kit facts and emit stable `provekit.lsp.implication_failed`. |
 | Tower LSP coordinator | `implementations/rust/provekit-lsp/src/main.rs`, `implementations/rust/provekit-lsp/src/config.rs` | Advertises editor LSP capabilities and has per-plugin and daemon modes. It also has `LanguageHandle::BuiltinRust`, default `parser = "builtin:rust"`, and falls back to `parser::parse_rust_source` for `.rs` files. | Non-conforming production path. The coordinator must route Rust documents to the Rust kit helper and preserve returned ranges; it must not parse Rust source. |
 | Coordinator built-in Rust parser | `implementations/rust/provekit-lsp/src/parser.rs` | Uses `syn` in the coordinator to extract `#[provekit::implement]`, `#[provekit::contract]`, and `#[provekit::verify]` annotations. | Stale. Move this ownership behind the Rust kit helper or remove the production route. |
@@ -62,7 +64,8 @@ linkerd the Rust parser.
    - Modify: `implementations/rust/provekit-lsp-rust/src/main.rs`
    - Create or modify tests: `implementations/rust/provekit-lsp-rust/tests/shared_protocol.rs`
    - Work: add shared `initialize` metadata, `analyzeDocument`, `document_cid`, `protocol_catalog_cid`, `kind = "lsp-document-analysis"`, and deterministic response ordering.
-   - Acceptance: a fixture drives `initialize -> analyzeDocument` over NDJSON and asserts `kit_id = "rust"`, `kind = "lsp-document-analysis"`, nonempty `document_cid`, stable diagnostic codes, and source ranges inside the submitted text.
+   - Status: implemented as the first thin route in PR #1507. The route wraps Rust lift output, Rust-owned sugar/test sites, normalized diagnostics, source ranges, and explicit kit status placeholders.
+   - Acceptance: a fixture drives `initialize -> analyzeDocument` over NDJSON and asserts `kit_id = "rust"`, `kind = "lsp-document-analysis"`, nonempty `document_cid`, stable diagnostic codes, source ranges inside the submitted text, and materialize/emit/check/prove status rows.
 
 2. **Legacy parse projection**
    - Modify: `implementations/rust/provekit-lsp-rust/src/main.rs`
