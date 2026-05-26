@@ -6,10 +6,10 @@ This page maps the post-v1.6 protocol/tooling surface. It separates cataloged pr
 
 | Item | Value |
 |---|---|
-| Catalog version | `v1.6.5-2026-05-26` |
-| Catalog CID | `blake3-512:42ab046d530993a039cb6f78d8edb20b9e5f001f96182e57890379ccf9dbc9233430159724422ba4b91f783953f3e0ef3f8d56d4c112085904e8b08fbfce02d0` |
+| Catalog version | `v1.6.6-2026-05-26` |
+| Catalog CID | `blake3-512:809ed1ebd538f206beb9df6de712f502fbcd310ee52d76c34afecec6455259d49cd7d288eb761d5aac9ebbd3643ae4dfe09bc9c7f2aea23e57720df6085c6640` |
 | Catalog file | [../../protocol/specs/2026-04-30-protocol-catalog.json](../../protocol/specs/2026-04-30-protocol-catalog.json) |
-| Signed attestation | [../../.provekit/catalog-signatures/v1.6.5.json](../../.provekit/catalog-signatures/v1.6.5.json) |
+| Signed attestation | [../../.provekit/catalog-signatures/v1.6.6.json](../../.provekit/catalog-signatures/v1.6.6.json) |
 
 ## Cataloged Extensions
 

@@ -18,7 +18,6 @@ use std::process::ExitCode;
 
 use clap::{Parser, Subcommand, ValueEnum};
 
-mod cmd_agent;
 mod cmd_ask;
 mod cmd_bind;
 mod cmd_bind_migrate;
@@ -27,7 +26,6 @@ mod cmd_compose;
 mod cmd_dump;
 mod cmd_emit;
 mod cmd_exam;
-mod cmd_fix;
 mod cmd_hash;
 mod cmd_implicate;
 mod cmd_init;
@@ -35,7 +33,6 @@ mod cmd_lift;
 mod cmd_link;
 mod cmd_materialize;
 mod cmd_mint;
-mod cmd_must;
 mod cmd_package;
 mod cmd_plugin;
 mod cmd_proof;
@@ -51,7 +48,6 @@ mod kit_dispatch;
 mod lift_plugin;
 mod project_config;
 mod promotion_query;
-mod prompts;
 mod protocol;
 mod report_fmt;
 mod sort_morphism_catalog;
@@ -135,21 +131,13 @@ enum Cmd {
     Init(InitArgs),
     /// Print directions for the lift adapter (TS only in v1.0; planned for v1.2.0).
     Lift(LiftArgs),
-    /// Run the LLM-assisted lift loop on a source file.
-    AgentLift(cmd_lift::AgentLiftArgs),
     /// Dispatch the lift-plugin protocol: spawn the configured plugin, write its `.proof`.
     Mint(cmd_mint::MintArgs),
     /// Emit target/framework test artifacts from neutral contract predicates.
     Emit(cmd_emit::EmitArgs),
-    /// Translate an English description to a verified ProvekIt contract via the configured agent.
-    Must(cmd_must::MustArgs),
-    /// Hand the configured agent a bug; verify a fix in a sandbox; report.
-    Fix(cmd_fix::FixArgs),
     /// Mint a witness: prove a new property from an existing contract,
     /// extending the proof lattice. Anyone can mint witnesses.
     Witness(WitnessArgs),
-    /// List or describe installed agent plugins.
-    Agent(cmd_agent::AgentArgs),
     /// Confirm the local install conforms to the expected protocol-catalog CID.
     VerifyProtocol(VerifyProtocolArgs),
     /// Print CLI version and the protocol catalog CID it declares conformance to.
@@ -426,13 +414,9 @@ fn main() -> ExitCode {
         Cmd::Hash(a) => cmd_hash::run(a),
         Cmd::Init(a) => cmd_init::run(a),
         Cmd::Lift(a) => cmd_lift::run(a),
-        Cmd::AgentLift(a) => cmd_lift::run_agent(a),
         Cmd::Mint(a) => cmd_mint::run(a),
         Cmd::Emit(a) => cmd_emit::run(a),
-        Cmd::Must(a) => cmd_must::run(a),
-        Cmd::Fix(a) => cmd_fix::run(a),
         Cmd::Witness(a) => cmd_witness::run(a),
-        Cmd::Agent(a) => cmd_agent::run(a),
         Cmd::VerifyProtocol(a) => cmd_verify_protocol::run(a),
         Cmd::Version(a) => cmd_version::run(a),
         Cmd::Link(a) => cmd_link::run(a),

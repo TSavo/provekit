@@ -22,7 +22,6 @@ provekit-proof-envelope = { path = "../provekit-proof-envelope" }
 provekit-claim-envelope = { path = "../provekit-claim-envelope" }
 provekit-ir-symbolic = { path = "../provekit-ir-symbolic" }
 provekit-verifier = { path = "../provekit-verifier" }
-provekit-agent = { path = "../provekit-agent" }
 provekit-lift = { path = "../provekit-lift" }
 provekit-linker = { path = "../provekit-linker" }
 provekit-mint-amp = { path = "../provekit-mint-amp" }

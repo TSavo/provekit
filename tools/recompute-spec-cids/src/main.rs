@@ -2,7 +2,7 @@
 //
 // recompute-spec-cids
 //
-// Catalog freeze tool (current target: v1.6.4). Computes BLAKE3-512 CIDs for every protocol
+// Catalog freeze tool (current target: v1.6.6). Computes BLAKE3-512 CIDs for every protocol
 // spec file listed in `protocol/specs/2026-04-30-protocol-catalog.json`,
 // substitutes them into the catalog (replacing `RECOMPUTE-AFTER-*`
 // placeholders), then computes the catalog's own CID as
@@ -87,10 +87,6 @@ const SPEC_MAP: &[(&str, &str)] = &[
     (
         "protocol-catalog-format",
         "2026-04-30-protocol-catalog-format.md",
-    ),
-    (
-        "agent-plugin-protocol",
-        "2026-04-30-agent-plugin-protocol.md",
     ),
     ("ir-compiler-protocol", "2026-04-30-ir-compiler-protocol.md"),
     (
@@ -301,7 +297,7 @@ fn run(write: bool) -> Result<(), String> {
     }
 
     // 7. Report.
-    println!("# Protocol catalog freeze (v1.6.4)");
+    println!("# Protocol catalog freeze (v1.6.6)");
     println!();
     println!("Catalog file:    {}", catalog_path.display());
     println!("Catalog CID:     {}", catalog_cid);
