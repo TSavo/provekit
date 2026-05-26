@@ -14,11 +14,11 @@ use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
 type Result<T> = std::result::Result<T, String>;
 
-const EXPECTED_CATALOG_VERSION: &str = "v1.6.4-2026-05-09";
+const EXPECTED_CATALOG_VERSION: &str = "v1.6.5-2026-05-26";
 const EXPECTED_CATALOG_CID: &str = concat!(
     "blake3-512:",
-    "09ccf7b1464622eceb4ac0e9bae3b435ba92d87c19e89f93724e6be75f4afce9",
-    "eb3dedb7b8ebe2536de054143efefcb3cb622e6e5b4140bb26e6156a9bc9adf3"
+    "42ab046d530993a039cb6f78d8edb20b9e5f001f96182e57890379ccf9dbc923",
+    "3430159724422ba4b91f783953f3e0ef3f8d56d4c112085904e8b08fbfce02d0"
 );
 const EMPTY_CONTRACT_SET_CID: &str = concat!(
     "blake3-512:",

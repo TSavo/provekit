@@ -107,14 +107,13 @@ The attacker then has only visible choices:
 | Keep the old contract set and lie about behavior | green | ORP lowerer refuses or emits a counterexample instead of a witness `.proof` |
 | Weaken the contract set to match the new behavior | green | `oldSet subset newSet` fails for the claimed compatible update |
 | Substitute bytes after admission | maybe green if metadata is replayed | observed `binaryCid` differs from the admitted artifact |
-| Reuse old CI evidence | maybe green if job name passes | CICP input-closure CID differs from the accepted result witness |
 | Change policy or signer assumptions | usually invisible | `policyCid` or authority memento changes |
 
 This is the rails metaphor. Admission is not one lock. It is a vector of
 independently addressable tripwires:
 
 ```text
-(contractSetCid, witnessCid, binaryCid, ciInputClosureCid, policyCid)
+(contractSetCid, witnessCid, binaryCid, policyCid)
 ```
 
 Pinning any vector gives an alarm bell on that rail. Pinning the full vector
@@ -146,7 +145,7 @@ The runner follows the Bridgeworks pattern: it shells through the Rust
 `provekit` CLI for every evidentiary step. The destination owns exhibit
 orchestration and fixture expectations. The CLI owns package identity
 inspection, ProofIR validation, contract-set checks, ORP lowering, witness
-minting, `.proof` bytes, binary CID checks, and CICP checks.
+minting, `.proof` bytes, and binary CID checks.
 
 If a walkthrough script has to call `npm`, `slsa-verifier`, `in-toto-verify`,
 `sha512sum`, or a local helper directly to prove the central claim, the exhibit
@@ -165,7 +164,6 @@ Every green or red result in this destination must have a receipt:
 | ORP lower witness receipt | the host artifact satisfies one demanded contract under an accepted lowerer |
 | ORP lower refusal receipt | the host artifact cannot satisfy a demanded contract and carries a counterexample when available |
 | binary identity receipt | the observed bytes match the admitted `binaryCid` |
-| CICP result/reuse receipt | CI evidence applies to this exact source, lockfile, toolchain, policy, catalog, and witness input closure |
 | policy admission receipt | the verifier accepted the signers, lowerers, witnesses, and transition rules |
 
 No generated witness source should be checked in as evidence. Lowered witnesses

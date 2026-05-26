@@ -71,10 +71,9 @@ bundle exec provekit-lift-ruby
 provekit prove
 ```
 
-## 6. Wire your IDE and CI
+## 6. Wire your IDE
 
 - **IDE:** install the LSP plugin (`bin/provekit-lsp-ruby`). See [docs/how-to/ide-integration/](../how-to/ide-integration/).
-- **CI:** see [content-addressed CI](../how-to/content-addressed-ci.md).
 
 ## What's next
 

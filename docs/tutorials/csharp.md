@@ -61,10 +61,9 @@ provekit-lift-cs
 provekit prove
 ```
 
-## 6. Wire your IDE and CI
+## 6. Wire your IDE
 
 - **IDE:** install the LSP plugin (`Provekit.Lsp.Plugin`). See [docs/how-to/ide-integration/](../how-to/ide-integration/).
-- **CI:** see [content-addressed CI](../how-to/content-addressed-ci.md).
 
 ## What's next
 

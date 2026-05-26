@@ -16,7 +16,7 @@ Install once; then three commands. Sixty-four bytes of comparison per call site.
 
 A library publishes signed contract mementos along with its bytes. A consumer's verifier loads the mementos, walks every call site in the consumer's code, and runs a three-tier handshake: hash equality (free), cached implication memento (one signature verification), Z3 fallback (once per novel pair, mints the result for everyone else).
 
-The same graph carries non-callsite claims too: a protocol catalog transition admitted by PEP, a proof-file consumer admitted by proof-protocol fixtures, a CI result bound to a CICP blast radius, or a generated dropper transform accepted only after re-lift.
+The same graph carries non-callsite claims too: a protocol catalog transition admitted by PEP, a proof-file consumer admitted by proof-protocol fixtures, or a generated dropper transform accepted only after re-lift.
 
 `memcmp(local, expected, 64) == 0` is the protocol. The whole stack of human-published verified knowledge, at the average case, collapses to one CPU instruction.
 
@@ -48,15 +48,14 @@ There is no central authority that decides what a protocol version means. The by
 
 ## What ships
 
-- A canonical Rust CLI: `provekit`. Subcommands include `prove`, `verify-protocol`, `proof`, `protocol`, `ci`, `mint`, `dump`, `hash`, `ask`, `search`, `implicate`. Bug Zoo is checked by the self-contained runner under `menagerie/bug-zoo/`.
+- A canonical Rust CLI: `provekit`. Subcommands include `prove`, `verify-protocol`, `proof`, `protocol`, `mint`, `dump`, `hash`, `ask`, `search`, `implicate`. Bug Zoo is checked by the self-contained runner under `menagerie/bug-zoo/`.
 - A Rust workspace of libraries: `provekit-canonicalizer`, `provekit-claim-envelope`, `provekit-proof-envelope`, `provekit-ir-symbolic`, `provekit-verifier`, `provekit-macros`, `provekit-lift`, `provekit-lift-proptest`, `provekit-lift-contracts`.
-- Per-language kits, verifier libs, lift adapters, CICP vector checks, and self-contract attestations.
-- A protocol catalog at `protocol/specs/2026-04-30-protocol-catalog.json`, protocol extension specs, proof-protocol fixtures, CICP vectors, and PEP evolution witnesses.
+- Per-language kits, verifier libs, lift adapters, and self-contract attestations.
+- A protocol catalog at `protocol/specs/2026-04-30-protocol-catalog.json`, protocol extension specs, proof-protocol fixtures, and PEP evolution witnesses.
 
 ## What is active now
 
 - PEP: protocol catalog evolution as signed, content-addressed data.
-- CICP: CI results bound to source/protocol/toolchain/config/witness closures.
 - Proof protocol: `.proof` consumer conformance fixtures and witnesses.
 - Bug Zoo: executable specimens with exhibit equivalence, scoped composition checks, and fixed-pair receipts.
 - GCP/TDP/ORP/CBP/FRP draft specs: extension bodies, grammar conformance, realizers, checker bytecode, and fix receipts.

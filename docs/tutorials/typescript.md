@@ -60,10 +60,9 @@ provekit prove
 
 The handshake walks the catalog, runs the three tiers, and reports the discharge breakdown. See the [Rust tutorial step 4](rust.md#step-4-verify) for the output shape; it is identical regardless of which kit produced the catalog.
 
-## 6. Wire your IDE and CI
+## 6. Wire your IDE
 
 - **IDE:** the TypeScript LSP plugin is planned. Until then, no in-editor squigglies. The `npx provekit-lift` + `provekit prove` cycle is the loop today.
-- **CI:** see [docs/how-to/content-addressed-ci.md](../how-to/content-addressed-ci.md) for the current supply-chain admission surface.
 
 ## What's next
 

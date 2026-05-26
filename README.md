@@ -192,22 +192,20 @@ content-addressed federable mementos.
 | **Extend it / build a kit** | [docs/contributing/](docs/contributing/) |
 | **Read the spec** | [docs/papers/02-bluepaper.md](docs/papers/02-bluepaper.md) |
 | **Understand the new protocol/tooling surface** | [docs/reference/protocol-extensions.md](docs/reference/protocol-extensions.md) |
-| **Bind CI results to supply-chain inputs** | [docs/how-to/content-addressed-ci.md](docs/how-to/content-addressed-ci.md) |
 | **Compare to other tools** | [docs/explanation/compared-to/](docs/explanation/compared-to/) |
 
-For more entry points (per-language tutorials, IDE integration, publishing a `.proof`, CICP, Bug Zoo, protocol extensions, threat model, and spec CIDs), see [docs/index.md](docs/index.md).
+For more entry points (per-language tutorials, IDE integration, publishing a `.proof`, Bug Zoo, protocol extensions, threat model, and spec CIDs), see [docs/index.md](docs/index.md).
 
 ## Status
 
-- **Protocol catalog**: v1.6.2 (patch over v1.6.1; catalogs the Content-Addressed CI Protocol as an extension-only protocol)
+- **Protocol catalog**: v1.6.2
 - **Catalog CID**: `blake3-512:52bdb2be4b381cec2aff95db7755c84184878b45cd91882d262114a1abd2dd513f9ef3b250fb87093316fd0fcb48e4b97e109d463e57df5bda6aac0b1c719a0f`
 - **Canonical implementation**: Rust, built from this repository with `cargo install --path implementations/rust/provekit-cli`
 - **Conforming implementations**: Rust, TypeScript, Python, Java, C#, Ruby, Zig, Go, C++, Swift, C, PHP. Coverage varies; see [docs/reference/per-language-status.md](docs/reference/per-language-status.md).
 - **Protocol evolution**: PEP dogfoods catalog transitions as signed, content-addressed body-claims under `protocol/evolution/v1.6.1/` and `protocol/evolution/v1.6.2/`.
-- **Content-addressed CI**: CICP binds CI results to exact source, protocol catalog, kit/toolchain, config, and accepted witness inputs. Reuse is allowed only when that closure is byte-identical.
 - **Bug Zoo**: the self-contained `menagerie/bug-zoo/` runner checks lab, exhibit, fixed, link, equivalence, and composition receipts for checked-in specimens. Wild sightings are metadata only until real upstream specimens are pinned and wired into the runner.
 - **Menagerie**: [menagerie/](menagerie/) is the executable map of proof workflows. Bug Zoo is the runnable destination today; Hashbound Mainline, Supply Chain Rails, Bridgeworks, Protocol Switchyard, and Change Station name the next routes.
-- **Conformance gate**: catalog CIDs, proof-protocol fixtures, CICP vectors, self-contract attestations, and per-kit tests must agree before CI is green.
+- **Conformance gate**: catalog CIDs, proof-protocol fixtures, self-contract attestations, and per-kit tests must agree before CI is green.
 
 The protocol is content-addressed end to end. Each version's canonical name is its own catalog hash. Anyone with the spec bytes can verify that label locally. No central party decides what a version means; the bytes do.
 
@@ -314,7 +312,7 @@ The core binary is:
 cargo install --path implementations/rust/provekit-cli
 ```
 
-`provekit verify-protocol` confirms the local install conforms to the expected protocol catalog CID. `cargo provekit-lift` walks the workspace, runs every registered lift adapter, and emits a `.proof` catalog of signed contract mementos. `provekit prove` runs the three-tier handshake and reports the discharge breakdown. `provekit proof`, `provekit protocol`, and `provekit ci` cover proof-file conformance, PEP transitions, and CICP supply-chain admission. Bug Zoo specimens are checked by the repo-owned runner under `menagerie/bug-zoo/`. Any of these can fail closed; none requires the network.
+`provekit verify-protocol` confirms the local install conforms to the expected protocol catalog CID. `cargo provekit-lift` walks the workspace, runs every registered lift adapter, and emits a `.proof` catalog of signed contract mementos. `provekit prove` runs the three-tier handshake and reports the discharge breakdown. `provekit proof` and `provekit protocol` cover proof-file conformance and PEP transitions. Bug Zoo specimens are checked by the repo-owned runner under `menagerie/bug-zoo/`. Any of these can fail closed; none requires the network.
 
 For other host languages, see the polyglot-stack tutorial above. The Rust CLI is the canonical implementation; non-Rust kits use it for verification today.
 

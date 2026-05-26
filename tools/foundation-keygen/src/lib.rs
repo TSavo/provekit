@@ -110,6 +110,14 @@ pub const V1_6_3_DECLARED_AT: &str = "2026-05-09T00:00:00Z";
 /// semantics, or cross-kit conformance fixture semantics.
 pub const V1_6_4_DECLARED_AT: &str = "2026-05-09T12:00:00Z";
 
+/// Pinned `declaredAt` for v1.6.5. Patch bump: WITHDRAWS the
+/// content-addressed-ci-protocol (CICP) draft extension and re-syncs the
+/// embedded catalog to the current spec CIDs (the shipped v1.6.4 catalog
+/// carried stale agent-plugin/lift-plugin CIDs). No core verifier
+/// behavior, ProofIR grammar, canonicalization, proof-file format,
+/// all-layer lift output, or cross-kit conformance fixture changes.
+pub const V1_6_5_DECLARED_AT: &str = "2026-05-26T00:00:00Z";
+
 /// Catalog file path, resolved relative to this crate's manifest dir.
 pub fn catalog_path() -> PathBuf {
     repo_root().join("protocol/specs/2026-04-30-protocol-catalog.json")
@@ -736,6 +744,7 @@ mod tests {
             V1_6_2_DECLARED_AT,
             V1_6_3_DECLARED_AT,
             V1_6_4_DECLARED_AT,
+            V1_6_5_DECLARED_AT,
             SELF_CONTRACTS_DECLARED_AT_V1_3_1,
             SELF_CONTRACTS_DECLARED_AT_V1_6_0,
         ];

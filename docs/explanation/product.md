@@ -6,7 +6,7 @@ ProvekIt is a toolchain for proving content-addressed claims. It defines four co
 
 Those pieces compose into proofchains: portable, locally verifiable chains of signed, content-addressed evidence for logically true claims. A blockchain carries state transitions; a proofchain carries formal proofs. The chain exists so a verifier can re-check why a claim is true under explicit policy.
 
-Software correctness across domains is the center use case: language to language, package to package, protocol version to protocol version, CI result to supply-chain input closure, and generated repair to re-lifted proof. Cross-platform contract correctness is one expression of that larger pattern.
+Software correctness across domains is the center use case: language to language, package to package, protocol version to protocol version, and generated repair to re-lifted proof. Cross-platform contract correctness is one expression of that larger pattern.
 
 Verification reduces to hash comparison. When the publisher's post-condition and the consumer's pre-condition canonicalize to identical bytes, the call site is discharged for free. When they don't, a signed implication memento may exist that bridges them; the verifier checks the signature once and discharges every call site that shares the same `(post, pre)` pair. When neither path applies, Z3 runs once per novel pair, mints the result as a fresh implication memento, and every future verifier hits the cached path.
 
@@ -14,7 +14,7 @@ ProvekIt is shipped as a canonical Rust CLI (`provekit`) plus per-language libra
 
 ## Who it's for
 
-Five audiences, in order of immediate fit:
+Four audiences, in order of immediate fit:
 
 **Library authors who want their behavioral guarantees to ship.** Today, a Rust crate that uses `proptest` invariants or `contracts` pre/post-conditions communicates those guarantees to whoever reads the crate's source. ProvekIt's lift adapter promotes the existing annotations to signed contract mementos that ship in a `.proof` catalog alongside the crate's bytes. Downstream consumers verify against the mementos without ever running the original test suite or invoking the original solver. The author's annotations stay where they are; the verification is now portable.
 
@@ -22,15 +22,13 @@ Five audiences, in order of immediate fit:
 
 **Build-tool maintainers and language teams.** Per-language kits emit canonical IR. Per-language libs verify. The Rust CLI is one shipping implementation; alternative CLIs in any language are conforming as long as they accept the v1.6.2 catalog CID. The protocol is the contract; implementations are interchangeable.
 
-**Supply-chain and CI owners.** CICP turns a CI result into a claim about exact source, protocol catalog, kit/toolchain, config, and accepted witness inputs. A cached or reused result is admissible only when the current blast-radius CID matches a reviewed accepted witness.
-
 **Protocol and tooling authors.** PEP, GCP, TDP, ORP, CBP, and proof-protocol conformance let ProvekIt prove protocol/tooling claims with the same content-addressed graph used for application contracts.
 
 ## What ProvekIt replaces
 
 Nothing. ProvekIt does not replace `cargo test`, `npm test`, `go test`, or any other test runner. It does not replace `clippy`, `eslint`, `golangci-lint`, or any other linter. It does not replace Kani, Prusti, F\*, Dafny, TLA+, or any other formal verifier.
 
-ProvekIt replaces the absence of a portable, signed, composable substrate underneath those tools. Today, when `proptest` finds an invariant, that invariant lives in the test runner's output; nothing else can use it. When Kani proves a property, that property lives in Kani's output; nothing downstream can carry it forward. When CI goes green, the result usually does not name the exact proof/toolchain/input closure that made it meaningful. ProvekIt is the missing layer: lift the existing tool's output into a signed memento, address it by content, publish it in a `.proof` or extension witness, and the next tool in the pipeline sees a cached fact instead of a fresh problem.
+ProvekIt replaces the absence of a portable, signed, composable substrate underneath those tools. Today, when `proptest` finds an invariant, that invariant lives in the test runner's output; nothing else can use it. When Kani proves a property, that property lives in Kani's output; nothing downstream can carry it forward. ProvekIt is the missing layer: lift the existing tool's output into a signed memento, address it by content, publish it in a `.proof` or extension witness, and the next tool in the pipeline sees a cached fact instead of a fresh problem.
 
 ## What ProvekIt complements
 

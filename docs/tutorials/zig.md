@@ -48,10 +48,9 @@ The Zig kit emits JCS canonical IR using `std.crypto.blake3` natively, producing
 provekit prove
 ```
 
-## 6. Wire your IDE and CI
+## 6. Wire your IDE
 
 - **IDE:** install the LSP plugin (`provekit-lift-zig --rpc` implements the NDJSON LSP plugin protocol). See [docs/how-to/ide-integration/](../how-to/ide-integration/).
-- **CI:** see [content-addressed CI](../how-to/content-addressed-ci.md).
 
 ## What's next
 

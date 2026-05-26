@@ -83,17 +83,29 @@ fn unique_dir(suffix: &str) -> PathBuf {
 }
 
 fn build_python_lift_verify() -> PathBuf {
+    use std::io::Write as _;
+    use std::sync::atomic::{AtomicU64, Ordering};
+    // Unique per call: parallel tests in this binary share one process id, so a
+    // pid-keyed path collides (ETXTBSY when one execs while another writes).
+    static SEQ: AtomicU64 = AtomicU64::new(0);
     let src = python_lift_src();
     let script = std::env::temp_dir().join(format!(
-        "provekit-lift-python-verify-div-{}.sh",
-        std::process::id()
+        "provekit-lift-python-verify-div-{}-{}.sh",
+        std::process::id(),
+        SEQ.fetch_add(1, Ordering::Relaxed)
     ));
     let body = format!(
         "#!/bin/sh\nexec python3 -c \"import sys; sys.path.insert(0, '{}'); \
          from provekit_lift_python_source.verify_rpc import run_rpc; run_rpc()\"\n",
         src.display()
     );
-    fs::write(&script, body).expect("write python lift wrapper");
+    // sync_all + drop writer fd before chmod/spawn so exec never sees an open writer.
+    {
+        let mut f = fs::File::create(&script).expect("create python lift wrapper");
+        f.write_all(body.as_bytes())
+            .expect("write python lift wrapper");
+        f.sync_all().expect("sync python lift wrapper");
+    }
     #[cfg(unix)]
     {
         use std::os::unix::fs::PermissionsExt;

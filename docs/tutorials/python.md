@@ -73,10 +73,9 @@ provekit prove
 
 Same handshake, same discharge breakdown shape as the [Rust tutorial step 4](rust.md#step-4-verify).
 
-## 6. Wire your IDE and CI
+## 6. Wire your IDE
 
 - **IDE:** install the LSP plugin. See [docs/how-to/ide-integration/](../how-to/ide-integration/) for editor-specific wire-up. The plugin implements the ProvekIt NDJSON LSP plugin protocol.
-- **CI:** see [content-addressed CI](../how-to/content-addressed-ci.md).
 
 ## What's next
 

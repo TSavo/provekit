@@ -40,11 +40,6 @@ Total items audited: 1109
 
 ### unsupported-literal (160 items)
 
-- `libprovekit::ci::check_ci_body`
-- `libprovekit::ci::ci_job_result_name`
-- `libprovekit::ci::impl CIBlastRadius::validate`
-- `libprovekit::ci::impl CIImpactBodyClaim::validate`
-- `libprovekit::ci::impl CIJobResultBodyClaim::validate`
 
 ### unsupported-value-closure (46 items)
 
@@ -56,11 +51,6 @@ Total items audited: 1109
 
 ### unsupported-stmt-method-call (34 items)
 
-- `libprovekit::ci::insert_many`
-- `libprovekit::ci::insert_required`
-- `libprovekit::ci::require_cid_field`
-- `libprovekit::ci::require_cid_vec`
-- `libprovekit::ci::require_input_cids_close`
 
 ### unsupported-let-pattern (27 items)
 
@@ -72,10 +62,6 @@ Total items audited: 1109
 
 ### unsupported-stmt-call (25 items)
 
-- `libprovekit::ci::impl CIBlastRadiusInput::build`
-- `libprovekit::ci::impl CIImpactInput::build`
-- `libprovekit::ci::impl CIJobResultInput::build`
-- `libprovekit::ci::impl CIReuseInput::build`
 - `libprovekit::desugar::impl DesugaringSet::non_core_ops`
 
 ### block-without-tail (17 items)
@@ -157,34 +143,20 @@ Total items audited: 1109
 
 ### procedural-macro (249 items)
 
-- `libprovekit::ci::admit_identical_reuse`
-- `libprovekit::ci::cid_set`
-- `libprovekit::ci::impl CIBlastRadius::cid`
-- `libprovekit::ci::impl CIImpactBodyClaim::cid`
-- `libprovekit::ci::impl CIJobResultBodyClaim::cid`
 
 ### ffi-call-unresolved-effect (204 items)
 
 - `libprovekit::canonical::json_cid`
 - `libprovekit::canonical::json_jcs`
 - `libprovekit::canonical::serializable_cid`
-- `libprovekit::ci::admit_identical_reuse`
-- `libprovekit::ci::cid_set`
 
 ### return-type-user-defined (131 items)
 
-- `libprovekit::ci::cid_set`
-- `libprovekit::ci::impl Default for CINondeterminism::default`
-- `libprovekit::ci::message`
 - `libprovekit::compose::build_memento_value`
 - `libprovekit::compose::cid_of_value`
 
 ### trait-path-truncated (106 items)
 
-- `libprovekit::ci::admit_identical_reuse`
-- `libprovekit::ci::cid_set`
-- `libprovekit::ci::impl Default for CINondeterminism::default`
-- `libprovekit::ci::message`
 - `libprovekit::compose::domain_claim_fcm_tests::bare_fcm_error_is_deterministic`
 
 ### return-type-result (65 items)
@@ -192,15 +164,9 @@ Total items audited: 1109
 - `libprovekit::canonical::json_cid`
 - `libprovekit::canonical::json_jcs`
 - `libprovekit::canonical::serializable_cid`
-- `libprovekit::ci::admit_identical_reuse`
-- `libprovekit::ci::impl CIBlastRadius::cid`
 
 ### Expr::Macro (25 items)
 
-- `libprovekit::ci::admit_identical_reuse`
-- `libprovekit::ci::require_equal`
-- `libprovekit::ci::require_nonempty`
-- `libprovekit::ci::require_one_of`
 - `libprovekit::compose::effect_args_json`
 
 ### vec-macro-desugared-to-array (17 items)
@@ -237,16 +203,12 @@ Total items audited: 1109
 
 ### type-inference-assumed-bool (11 items)
 
-- `libprovekit::ci::require_nonempty`
-- `libprovekit::ci::require_one_of`
 - `libprovekit::compose::impl Locus::is_unknown`
 - `libprovekit::desugar::match_lhs`
 - `libprovekit::ffi::pk_composition_result_body_jcs`
 
 ### type-inference-assumed-int (10 items)
 
-- `libprovekit::ci::admit_identical_reuse`
-- `libprovekit::ci::require_equal`
 - `libprovekit::compose::impl Locus::is_unknown`
 - `libprovekit::types::slot_evaluation_is_default`
 - `libprovekit::types::slot_sort_is_default`
@@ -277,7 +239,6 @@ Total items audited: 1109
 
 ### return-type-vec (1 items)
 
-- `libprovekit::ci::sorted_unique`
 
 ## Recommended residual sub-issues
 

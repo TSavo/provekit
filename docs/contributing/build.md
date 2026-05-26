@@ -2,7 +2,7 @@
 
 ProvekIt is a multi-language polyglot. The main implementations today: Rust, Go, C++, TypeScript, C#, Python, Java, Ruby, Zig, Swift, C, PHP. The default local conformance gate uses the Linux profile: every non-Swift peer mints its own self-contracts under the foundation key, and every minted catalog must match the pinned content-addressed CID before that local gate is green. Swift is checked by the macOS profile in CI.
 
-The contract is the top-level [`Makefile`](../../Makefile). If `make ci` is green, the Linux profile's self-contracts, catalog hash, proof-protocol fixtures, CICP vectors, and Linux native test aggregate passed on that host. The CI workflow at [`.github/workflows/ci.yml`](../../.github/workflows/ci.yml) runs that Linux path and adds macOS Swift plus per-kit `provekit prove --kit=<kit>` verifier jobs.
+The contract is the top-level [`Makefile`](../../Makefile). If `make ci` is green, the Linux profile's self-contracts, catalog hash, proof-protocol fixtures, and Linux native test aggregate passed on that host. The CI workflow at [`.github/workflows/ci.yml`](../../.github/workflows/ci.yml) runs that Linux path and adds macOS Swift plus per-kit `provekit prove --kit=<kit>` verifier jobs.
 
 ## Make targets
 
@@ -12,7 +12,6 @@ make ci            # Linux-profile gate (conformance + Linux native test aggrega
 make conformance   # catalog + protocol + N mints match pinned CIDs
 make all-mint      # run all mint commands; print CIDs
 make test-all      # run the Linux native test aggregate
-provekit ci ...    # CICP supply-chain admission and result witnesses
 cargo run --manifest-path menagerie/bug-zoo/Cargo.toml -- --all
                    # Bug Zoo lab/exhibit/fixed/link/composition checks
 make clean         # remove all build artifacts
@@ -85,8 +84,6 @@ The conformance gate is the heart of the polyglot story. Every implementation mi
 Additional protocol/tooling checks now run in CI:
 
 - **Proof protocol conformance.** `.proof` fixtures under `protocol/conformance/proof-protocol/` are checked by `provekit proof`.
-- **CICP vector conformance.** Every language library that emits CICP bodies must derive the same golden-vector CIDs in `protocol/conformance/cicp/`.
-- **CICP supply-chain admission.** The GitHub workflow computes kit blast radii, tries reuse only against checked-in accepted witnesses, and uploads candidate result witnesses for review when reuse is refused.
 - **Bug Zoo.** `cargo run --manifest-path menagerie/bug-zoo/Cargo.toml -- --all` verifies exhibit ProofIR equivalence, scoped proof receipts, polyglot link-bundle receipts, and fixed-pair closure for checked-in specimens.
 
 If you are adding a new implementation, see [porting-to-a-new-language.md](porting-to-a-new-language.md) for how the conformance harness picks up your kit.

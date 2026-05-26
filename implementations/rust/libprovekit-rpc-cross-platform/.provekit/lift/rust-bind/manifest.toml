@@ -1,3 +1,0 @@
-name = "rust-bind-lift"
-command = ["../target/debug/provekit-walk-rpc", "--rpc"]
-working_dir = "."

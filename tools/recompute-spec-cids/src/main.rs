@@ -124,10 +124,6 @@ const SPEC_MAP: &[(&str, &str)] = &[
         "2026-05-07-protocol-evolution-protocol.md",
     ),
     (
-        "content-addressed-ci-protocol",
-        "2026-05-07-content-addressed-ci-protocol.md",
-    ),
-    (
         "pattern-predicate-protocol",
         "2026-05-09-pattern-predicate-protocol.md",
     ),

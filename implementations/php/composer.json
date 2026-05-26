@@ -22,7 +22,6 @@
         "mint": "php provekit-self-contracts/cmd/mint-php-self-contracts/main.php",
         "mint-rpc": "php provekit-self-contracts/cmd/mint-php-self-contracts/rpc.php --rpc",
         "test": [
-            "php tests/cicp_conformance.php",
             "php provekit-lift/tests/ForwardPropagatorTest.php",
             "php provekit-lift-php-source/tests/PhpSourceLifterTest.php"
         ]

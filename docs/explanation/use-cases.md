@@ -1,6 +1,6 @@
 # ProvekIt Use Cases
 
-ProvekIt is a toolchain for proving content-addressed claims. A claim can be about source behavior, protocol evolution, a CI result, a proof-file parser, a generated transform, or a supply-chain artifact. The shape stays the same:
+ProvekIt is a toolchain for proving content-addressed claims. A claim can be about source behavior, protocol evolution, a proof-file parser, a generated transform, or a supply-chain artifact. The shape stays the same:
 
 1. identify the proposition;
 2. canonicalize it;
@@ -17,8 +17,6 @@ The important point is not "cross-language" by itself. The point is domain cross
 ## Supply-Chain Integrity
 
 The `.proof` bundle is a signed, content-addressed statement about what an artifact claims, which bytes those claims bind to, and which witnesses support them. Ranked pins such as `(contractCid, witnessCid, binaryCid)` let consumers distinguish contract content, evidence, and compiled artifact bytes instead of collapsing them into one honor-system label.
-
-CICP extends that posture into CI. A CI result is not "green" in the abstract. It is a claim over an exact blast radius: source closure, protocol catalog CID, kit/toolchain identity, config, inputs, and accepted witness roots. If a dependency, compiler, lifter, catalog, workflow, or proof input changes, the blast radius changes and the old result no longer applies.
 
 ## Protocol Evolution
 
