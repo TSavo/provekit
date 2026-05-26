@@ -46,7 +46,7 @@ jobs:
 
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
 
       # ---------------------------------------------------------------
       # Toolchain setup (parallelizable from GH's perspective; ordered
@@ -60,7 +60,7 @@ jobs:
 
       - name: Restore Rust target dirs
         if: github.event_name == 'pull_request'
-        uses: actions/cache/restore@v4
+        uses: actions/cache/restore@v5
         with:
           path: |
             ~/.cargo/registry
@@ -75,7 +75,7 @@ jobs:
 
       - name: Cache Rust target dirs
         if: github.event_name != 'pull_request'
-        uses: actions/cache@v4
+        uses: actions/cache@v5
         with:
           path: |
             ~/.cargo/registry
@@ -89,7 +89,7 @@ jobs:
             ${{ runner.os }}-cargo-
 
       - name: Set up Go 1.22
-        uses: actions/setup-go@v5
+        uses: actions/setup-go@v6
         with:
           go-version: '1.22'
           cache: true
@@ -99,7 +99,7 @@ jobs:
             implementations/go/provekit-lift-go-tests/go.sum
 
       - name: Set up .NET 10 (preview)
-        uses: actions/setup-dotnet@v4
+        uses: actions/setup-dotnet@v5
         with:
           # net10.0 is pre-stable; setup-dotnet@v4 needs an explicit quality
           # tag plus the major version. The 'preview' channel resolves to
@@ -108,12 +108,12 @@ jobs:
           dotnet-quality: 'preview'
 
       - name: Set up pnpm
-        uses: pnpm/action-setup@v4
+        uses: pnpm/action-setup@v6
         with:
           version: '10.33.0'
 
       - name: Set up Node 22
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@v6
         with:
           # NOT Node 25; @ipld/dag-cbor ESM-only + tsx CJS bridge fights
           # on Node 25 (see the broken bin/provekit*.cjs launchers). The
@@ -131,7 +131,7 @@ jobs:
         run: pnpm install --frozen-lockfile
 
       - name: Set up Python 3.12
-        uses: actions/setup-python@v5
+        uses: actions/setup-python@v6
         with:
           python-version: '3.12'
           cache: 'pip'
@@ -164,7 +164,7 @@ jobs:
         # LTS and forward-compatible with source level 17.
         # cache: maven caches ~/.m2/repository so subsequent runs skip
         # the multi-hundred-MB dependency download.
-        uses: actions/setup-java@v4
+        uses: actions/setup-java@v5
         with:
           distribution: temurin
           java-version: '21'
@@ -331,7 +331,7 @@ jobs:
 
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
 
       - name: Set up Rust (stable)
         # mint-swift depends on the release provekit CLI plus the
@@ -344,7 +344,7 @@ jobs:
         # macOS here so the namespace is distinct (no collision with the
         # Linux cargo cache). PRs restore only so post-job cache upload cannot
         # turn successful verification into a timeout failure.
-        uses: actions/cache/restore@v4
+        uses: actions/cache/restore@v5
         with:
           path: |
             ~/.cargo/registry
@@ -361,7 +361,7 @@ jobs:
         # macOS here so the namespace is distinct (no collision with the
         # Linux cargo cache). Cold-start without this is ~5-7 minutes of
         # crate compilation; with the cache, sub-minute restore.
-        uses: actions/cache@v4
+        uses: actions/cache@v5
         with:
           path: |
             ~/.cargo/registry
@@ -379,7 +379,7 @@ jobs:
       # only on push so a PR's post-job upload can't time the job out (same
       # discipline as the cargo cache above).
       - name: Restore SwiftPM build
-        uses: actions/cache/restore@v4
+        uses: actions/cache/restore@v5
         with:
           path: implementations/swift/.build
           key: ${{ runner.os }}-swiftpm-${{ hashFiles('implementations/swift/Package.resolved') }}
@@ -388,7 +388,7 @@ jobs:
 
       - name: Save SwiftPM build
         if: github.event_name != 'pull_request'
-        uses: actions/cache@v4
+        uses: actions/cache@v5
         with:
           path: implementations/swift/.build
           key: ${{ runner.os }}-swiftpm-${{ hashFiles('implementations/swift/Package.resolved') }}
@@ -470,14 +470,14 @@ jobs:
 
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
 
       - name: Set up Rust (stable)
         uses: dtolnay/rust-toolchain@stable
 
       - name: Restore Rust target dirs
         if: github.event_name == 'pull_request'
-        uses: actions/cache/restore@v4
+        uses: actions/cache/restore@v5
         with:
           path: |
             ~/.cargo/registry
@@ -491,7 +491,7 @@ jobs:
 
       - name: Cache Rust target dirs
         if: github.event_name != 'pull_request'
-        uses: actions/cache@v4
+        uses: actions/cache@v5
         with:
           path: |
             ~/.cargo/registry
@@ -505,7 +505,7 @@ jobs:
 
       - name: Set up Go 1.22
         if: matrix.kit == 'go'
-        uses: actions/setup-go@v5
+        uses: actions/setup-go@v6
         with:
           go-version: '1.22'
           cache: true
@@ -516,27 +516,27 @@ jobs:
 
       - name: Set up .NET 10 (preview)
         if: matrix.kit == 'csharp' || matrix.kit == 'clr-bytecode'
-        uses: actions/setup-dotnet@v4
+        uses: actions/setup-dotnet@v5
         with:
           dotnet-version: '10.0.x'
           dotnet-quality: 'preview'
 
       - name: Set up pnpm
         if: matrix.kit == 'ts'
-        uses: pnpm/action-setup@v4
+        uses: pnpm/action-setup@v6
         with:
           version: '10.33.0'
 
       - name: Set up Node 22
         if: matrix.kit == 'ts'
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@v6
         with:
           node-version: '22'
           cache: 'pnpm'
 
       - name: Set up Python 3.12
         if: matrix.kit == 'python'
-        uses: actions/setup-python@v5
+        uses: actions/setup-python@v6
         with:
           python-version: '3.12'
           cache: 'pip'
@@ -568,7 +568,7 @@ jobs:
 
       - name: Set up Java (java)
         if: matrix.kit == 'java'
-        uses: actions/setup-java@v4
+        uses: actions/setup-java@v5
         with:
           java-version: '21'
           distribution: 'temurin'
@@ -615,14 +615,14 @@ jobs:
 
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
 
       - name: Set up Rust (stable)
         uses: dtolnay/rust-toolchain@stable
 
       - name: Restore Rust target dirs
         if: github.event_name == 'pull_request'
-        uses: actions/cache/restore@v4
+        uses: actions/cache/restore@v5
         with:
           path: |
             ~/.cargo/registry
@@ -636,7 +636,7 @@ jobs:
 
       - name: Cache Rust target dirs
         if: github.event_name != 'pull_request'
-        uses: actions/cache@v4
+        uses: actions/cache@v5
         with:
           path: |
             ~/.cargo/registry
@@ -652,7 +652,7 @@ jobs:
       # conformance-macos-swift job for the rationale; cold SwiftPM compile
       # was the ~15-min tax on this job.
       - name: Restore SwiftPM build
-        uses: actions/cache/restore@v4
+        uses: actions/cache/restore@v5
         with:
           path: implementations/swift/.build
           key: ${{ runner.os }}-swiftpm-${{ hashFiles('implementations/swift/Package.resolved') }}
@@ -661,7 +661,7 @@ jobs:
 
       - name: Save SwiftPM build
         if: github.event_name != 'pull_request'
-        uses: actions/cache@v4
+        uses: actions/cache@v5
         with:
           path: implementations/swift/.build
           key: ${{ runner.os }}-swiftpm-${{ hashFiles('implementations/swift/Package.resolved') }}
@@ -676,7 +676,7 @@ jobs:
 
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
 
       - name: Lint blake3-512 CID literals under protocol/specs
         run: |
