@@ -2,7 +2,7 @@ name = "swift-self-contracts"
 version = "1.0.0"
 protocol_version = "pep/1.7.0"
 kind = "lift"
-command = [".build/release/mint-swift-self-contracts"]
+command = [".build/debug/mint-swift-self-contracts"]
 working_dir = "."
 
 [capabilities]
