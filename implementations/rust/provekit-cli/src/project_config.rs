@@ -332,7 +332,6 @@ pub const KNOWN_SURFACES: &[&str] = &[
     "clr-bytecode",
     "swift-source",
     "zig-source",
-    "evm-bytecode",
 ];
 
 /// Solver menu shown by `provekit init`. v1 ships with single-solver
@@ -444,6 +443,5 @@ family = "concept:family:hash"
         assert!(KNOWN_SURFACES.contains(&"swift-source"));
         assert!(KNOWN_SURFACES.contains(&"zig-source"));
         assert!(KNOWN_SURFACES.contains(&"clr-bytecode"));
-        assert!(KNOWN_SURFACES.contains(&"evm-bytecode"));
     }
 }

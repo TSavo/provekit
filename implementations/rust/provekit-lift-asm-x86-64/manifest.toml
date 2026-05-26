@@ -1,9 +1,0 @@
-name = "provekit-lift-asm-x86-64"
-version = "0.1.0"
-protocol_version = "pep/1.7.0"
-command = ["provekit-lift-asm-x86-64", "--rpc"]
-
-[capabilities]
-authoring_surfaces = ["x86-64:sysv"]
-ir_version = "v1.1.0"
-emits_signed_mementos = false
