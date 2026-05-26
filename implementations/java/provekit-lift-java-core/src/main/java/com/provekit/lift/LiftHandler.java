@@ -70,17 +70,29 @@ public class LiftHandler {
     }
 
     public String lift(String workspace, String surface) {
-        List<ContractDecl> decls = new ArrayList<>();
+        return lift(workspace, surface, "ir-document");
+    }
+
+    public String lift(String workspace, String surface, String emitMode) {
+        List<ContractDecl> accumulatedDecls = new ArrayList<>();
         List<CallEdgeDecl> callEdges = new ArrayList<>();
         List<ImplicationDecl> implications = new ArrayList<>();
         Path root = Paths.get(workspace);
-        try {
-            Files.walk(root)
+        try (var paths = Files.walk(root)) {
+            paths
                 .filter(p -> p.toString().endsWith(".java"))
-                .forEach(p -> scanFile(p, decls, callEdges, implications));
+                .sorted(Comparator.comparing(Path::toString))
+                .forEach(p -> scanFile(
+                    p,
+                    accumulatedDecls,
+                    callEdges,
+                    implications,
+                    "ir-document".equals(emitMode)
+                ));
         } catch (IOException e) {
             System.err.println("Walk error: " + e.getMessage());
         }
+        List<ContractDecl> decls = mergeDeclsBySymbol(accumulatedDecls);
 
         StringBuilder ir = new StringBuilder();
         ir.append("{\"kind\":\"ir-document\",\"ir\":[");
@@ -106,7 +118,8 @@ public class LiftHandler {
             Path path,
             List<ContractDecl> decls,
             List<CallEdgeDecl> callEdges,
-            List<ImplicationDecl> implications) {
+            List<ImplicationDecl> implications,
+            boolean emitVerifyContracts) {
         try {
             String source = Files.readString(path);
             ParseResult<CompilationUnit> result = new JavaParser().parse(source);
@@ -119,8 +132,10 @@ public class LiftHandler {
             ProductionWalk.Result productionWalk = ProductionWalk.lift(cu, path.getFileName().toString());
             fileDecls.addAll(productionWalk.declarations());
             implications.addAll(productionWalk.implications());
+            if (emitVerifyContracts) {
+                fileDecls.addAll(VerifyLift.lift(cu, path.getFileName().toString()));
+            }
             decls.addAll(mergeDeclsBySymbol(fileDecls));
-            decls.addAll(VerifyLift.lift(cu, path.getFileName().toString()));
 
             // Build contract index from accumulated decls so far (including this file).
             // We use all decls accumulated up to this point; for single-file fixtures
@@ -156,6 +171,9 @@ public class LiftHandler {
     }
 
     private static ContractDecl copyDecl(ContractDecl decl) {
+        if (isRawJsonDecl(decl)) {
+            return decl;
+        }
         return new ContractDecl(
             decl.symbol,
             new ArrayList<>(decl.preconditions),
@@ -165,6 +183,9 @@ public class LiftHandler {
     }
 
     private static ContractDecl mergeDecl(ContractDecl left, ContractDecl right) {
+        if (isRawJsonDecl(left) || isRawJsonDecl(right)) {
+            return mergePossiblyRawDecl(left, right);
+        }
         List<String> pres = new ArrayList<>(left.preconditions);
         List<String> posts = new ArrayList<>(left.postconditions);
         List<String> invs = new ArrayList<>(left.invariants);
@@ -172,6 +193,23 @@ public class LiftHandler {
         appendUnique(posts, right.postconditions);
         appendUnique(invs, right.invariants);
         return new ContractDecl(left.symbol, pres, posts, invs);
+    }
+
+    private static boolean isRawJsonDecl(ContractDecl decl) {
+        return decl.getClass() != ContractDecl.class;
+    }
+
+    private static ContractDecl mergePossiblyRawDecl(ContractDecl left, ContractDecl right) {
+        if (left.toJson().equals(right.toJson())) {
+            return left;
+        }
+        if (isRawJsonDecl(left)) {
+            return left;
+        }
+        if (isRawJsonDecl(right)) {
+            return right;
+        }
+        return mergeDecl(left, right);
     }
 
     private static void appendUnique(List<String> target, List<String> additions) {

@@ -5,6 +5,7 @@ import java.nio.file.*;
 import java.util.*;
 import com.github.javaparser.*;
 import com.github.javaparser.ast.*;
+import com.provekit.ir.Jcs;
 
 public class RpcServer {
     private final BufferedReader in = new BufferedReader(new InputStreamReader(System.in));
@@ -41,7 +42,8 @@ public class RpcServer {
                     // workspace_root and surface are short paths/identifiers without embedded quotes.
                     String workspace = extractStringField(line, "workspace_root");
                     String surface = extractStringField(line, "surface");
-                    sendResponse(id, liftHandler.lift(workspace, surface));
+                    String emitMode = extractEmitMode(line);
+                    sendResponse(id, liftHandler.lift(workspace, surface, emitMode));
                 }
                 case "shutdown" -> {
                     sendResponse(id, "null");
@@ -159,6 +161,23 @@ public class RpcServer {
         if (q1 < 0) return ".";
         int q2 = json.indexOf('"', q1 + 1);
         return json.substring(q1 + 1, q2);
+    }
+
+    static String extractEmitMode(String json) {
+        try {
+            Jcs.Json doc = Jcs.parse(json);
+            if (doc instanceof Jcs.Obj obj
+                    && obj.get("params") instanceof Jcs.Obj params
+                    && params.get("options") instanceof Jcs.Obj options) {
+                String emit = options.stringFieldOrNull("emit");
+                if (emit != null && !emit.isBlank()) {
+                    return emit;
+                }
+            }
+        } catch (RuntimeException ignored) {
+            // Fall through to the protocol default below; parse errors are handled elsewhere.
+        }
+        return "proof-envelope";
     }
 
     static String escape(String s) {

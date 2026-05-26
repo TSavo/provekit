@@ -185,6 +185,11 @@ fn stage_java_project(suffix: &str, lift: &JavaLiftCommand, body_factor: i64) ->
     let config = r#"[authoring]
 surface = "java"
 
+[[plugins]]
+name = "java-contracts"
+surface = "java"
+emit = "ir-document"
+
 [solvers]
 default = "z3"
 
