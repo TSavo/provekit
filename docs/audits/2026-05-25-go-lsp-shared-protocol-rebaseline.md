@@ -6,9 +6,11 @@ Authority: `protocol/specs/2026-05-25-lsp-shared-protocol.md`
 
 Related issues: #1502, #314, #1486
 
-Scope: documentation and audit only. This note classifies the current Go LSP
-surfaces against the shared LSP protocol after the #1520 boundary tightening. It
-does not implement the shared helper or change any coordinator code.
+Scope: audit plus first implementation slice. This note classifies the current
+Go LSP surfaces against the shared LSP protocol after the #1520 boundary
+tightening. PR #1506 now also adds the Go-kit `analyzeDocument` route in
+`implementations/go/cmd/provekit-lsp-go/main.go`; the remaining tasks below are
+the follow-on parity work, not a substitute for code.
 
 ## Boundary ruling
 
@@ -35,7 +37,7 @@ shape. Linkerd must not become a Go parser.
 
 | Surface | Current code path | Status vs shared LSP | Notes |
 |---|---|---|---|
-| Legacy Go LSP helper | `implementations/go/cmd/provekit-lsp-go/main.go` | Current legacy, stale target | Speaks NDJSON `initialize`, `parse`, `shutdown`. `parse` returns `declarations`, `callEdges`, `diagnostics`, `contractCids`, and `warnings`, not `kind = "lsp-document-analysis"`. |
+| Go LSP helper | `implementations/go/cmd/provekit-lsp-go/main.go` | First shared slice implemented | Speaks NDJSON `initialize`, legacy `parse`, shared `analyzeDocument`, and `shutdown`. `analyzeDocument` returns `kind = "lsp-document-analysis"` with Go-owned ranges, entries, diagnostics, and explicit statuses. |
 | Legacy Go LSP parsing | `implementations/go/cmd/provekit-lsp-go/main.go` functions `walkSource`, `walkCallEdges`, `scanAnnotations`, `findAheadFnSignature` | Go-owned but stale envelope | Uses Go-owned `go/parser`, `go/token`, `go/ast`, and line scanning. This is correctly kit-owned, but entries do not carry shared `source-range` wrappers. |
 | Legacy forward propagation | `implementations/go/cmd/provekit-lsp-go/forward_propagator.go` | Demo-only child producer | Implements the older #314 floor around `checkPositive`. It emits LSP-shaped diagnostics with top-level code `implication-failed`; the shared code is `provekit.lsp.implication_failed`. Forward propagation remains child diagnostic work, not the whole LSP. |
 | Go lift helper | `implementations/go/provekit-lift-go/rpc.go`, `implementations/go/provekit-lift-go/lift.go` | Useful owner, missing LSP wrapper | Speaks `initialize`, `lift`, `compile`, `shutdown` and returns `kind = "ir-document"`. It already owns Go parsing with `parser.ParseFile(..., parser.ParseComments)`, type info, diagnostics, refusals, and `SourceUnit` data. It should be wrapped for `analyzeDocument` rather than forked. |
@@ -49,10 +51,10 @@ shape. Linkerd must not become a Go parser.
 
 ## Shared protocol gaps for Go
 
-1. **Shared method set.** `implementations/go/cmd/provekit-lsp-go/main.go` does
-   not expose `analyzeDocument`, does not return `protocol_version =
-   "provekit-lsp-shared/1"` from `initialize`, and does not return `kind =
-   "lsp-document-analysis"`.
+1. **Shared method set.** Implemented in PR #1506: `initialize` advertises
+   `protocol_version = "provekit-lsp-shared/1"`, `kit_id = "go"`, and
+   `analyzeDocument`; `analyzeDocument` returns `kind =
+   "lsp-document-analysis"`. Remaining work is coordinator/linkerd consumption.
 
 2. **Entry envelope.** The legacy `parse` result returns raw `declarations` and
    `callEdges`. The shared result needs `entries` containing
@@ -65,11 +67,11 @@ shape. Linkerd must not become a Go parser.
    positions. Go must compute ranges from the submitted document snapshot and
    preserve them through entries, diagnostics, and statuses.
 
-4. **Annotation model.** The LSP helper's `scanAnnotations` recognizes older
-   comments. Shared Go LSP must use the current Go kit authoring parser in
-   `implementations/go/provekit-lift-go/annotation.go` for
-   `//provekit:boundary(...)` and `//provekit:sugar(...)`, or explicitly
-   report a legacy-surface diagnostic when it sees an older comment.
+4. **Annotation model.** Implemented for `analyzeDocument`: the shared route
+   delegates to `provekit-lift-go` with `AnnotatedOnly` and emits
+   `provekit.lsp.lift_gap` for old `//provekit:contract` /
+   `//provekit:implement` comments. The legacy `parse` method still preserves
+   its old behavior for migration clients.
 
 5. **Diagnostic codes.** Forward propagation must emit the stable shared code
    `provekit.lsp.implication_failed`. Parse errors, lift gaps, materialize
@@ -118,15 +120,15 @@ Files:
 
 Acceptance:
 
-- `initialize` returns `protocol_version = "provekit-lsp-shared/1"` and
+- Done in PR #1506: `initialize` returns `protocol_version = "provekit-lsp-shared/1"` and
   `kit_id = "go"` while preserving migration support for legacy clients.
-- `analyzeDocument` accepts `kit_id`, `uri`, `file`, `text`,
+- Done in PR #1506: `analyzeDocument` accepts `kit_id`, `uri`, `file`, `text`,
   `document_version`, `workspace_root`, `accepted_protocol_catalog_cids`, and
   `policy_cids`.
-- The result has `kind = "lsp-document-analysis"`, `schema_version = "1"`,
+- Done in PR #1506: The result has `kind = "lsp-document-analysis"`, `schema_version = "1"`,
   `kit_id = "go"`, `uri`, `file`, `document_cid`,
   `protocol_catalog_cid`, `entries`, `diagnostics`, `statuses`, and `project`.
-- The adapter delegates Go parsing to `provekit-lift-go` code or a lossless
+- Done in PR #1506: The adapter delegates Go parsing to `provekit-lift-go` code or a lossless
   wrapper around it. It does not add a second source walker in coordinator or
   linkerd code.
 - Focused test: `cd implementations/go && go test ./cmd/provekit-lsp-go`.
