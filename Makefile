@@ -305,14 +305,14 @@ build-swift:
 .PHONY: mint-rust
 mint-rust: build-rust
 	@echo ">> minting rust self-contracts"
-	@mint_out=$$($(PROVEKIT) mint --kit=rust --quiet); \
+	@mint_out=$$($(PROVEKIT) mint --project implementations/rust --quiet); \
 	cid=$$(echo "$$mint_out" | head -1); \
 	cset=$$(echo "$$mint_out" | grep '^contractSetCid:' | sed 's/^contractSetCid: //'); \
 	echo "  cid:            $$cid"; \
 	echo "  contractSetCid: $$cset"; \
 	$(VERIFY_SELF_CONTRACTS) $(SELF_CONTRACTS_ATTEST_DIR)/rust.json "$$cset" || \
 		(echo "FAIL: rust self-contracts attestation rejected; re-mint and commit:" && \
-		 echo "      $(PROVEKIT) mint --kit=rust" && exit 1)
+		 echo "      $(PROVEKIT) mint --project implementations/rust" && exit 1)
 
 .PHONY: mint-go
 mint-go: build-rust build-go

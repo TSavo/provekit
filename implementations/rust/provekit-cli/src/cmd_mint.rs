@@ -95,21 +95,16 @@ const SELF_CONTRACTS_DECLARED_AT: &str = "2026-05-05T18:00:00Z";
 ///   `csharp` → project dir `csharp`,      surface `csharp`,                 lang `csharp`
 ///   `clr-bytecode` → project dir `csharp`, surface `clr-bytecode`,           lang `clr-bytecode`
 ///   `evm-bytecode` → project dir `rust`,  surface `evm-bytecode`,            lang `evm-bytecode`
-///   `rust`   → project dir `rust`,        surface `rust-self-contracts`,    lang `rust`
+///   `rust`   → project dir `rust`,        surface `rust`,                    lang `rust`
 ///   `go`     → project dir `go`,          surface `go-self-contracts`,      lang `go`
 ///
-/// `--kit=rust` and `--kit=go` route to their self-contracts surfaces (which
-/// invoke the slab-walking mint binaries) rather than the generic
-/// workspace lifters (`provekit-lift` for rust, the test-fixture lifter for go).
-/// Without this, `make mint-rust` / `make mint-go` walk the wrong source and
-/// produce content-empty CIDs. The `--project=implementations/<lang>
-/// --surface=<lang>` form still reaches the workspace/test-fixture lifters
-/// for tooling that needs them.
-/// Fix: issue #176 Tier 1, option (c): route every kit to its
-/// self-contracts lifter (PR #180 for go, PR #183 for rust).
+/// `--kit=rust` now routes to the same native Rust workspace lifter selected
+/// by `implementations/rust/.provekit/config.toml`. Other kits may still map
+/// to explicit self-contract surfaces when their canonical contracts come from
+/// language-specific mint binaries.
 pub(crate) const KIT_TABLE: &[(&str, &str, &str, &str)] = &[
     // (kit_alias, project_subdir, lift_surface,           lang_key)
-    ("rust", "rust", "rust-self-contracts", "rust"),
+    ("rust", "rust", "rust", "rust"),
     ("go", "go", "go-self-contracts", "go"),
     ("cpp", "cpp", "cpp-self-contracts", "cpp"),
     ("ts", "typescript", "typescript-self-contracts", "ts"),
@@ -2312,12 +2307,9 @@ mod tests {
 
     #[test]
     fn resolve_kit_rust_maps_to_rust_dir() {
-        // Issue #176 Tier 1: rust kit maps to rust-self-contracts surface so the
-        // attestation reflects the canonical self-contracts slab, not the generic
-        // workspace lifter.
         let (path, surface, lang) = resolve_kit("rust").expect("rust must resolve");
         assert_eq!(path, PathBuf::from("implementations/rust"));
-        assert_eq!(surface, "rust-self-contracts");
+        assert_eq!(surface, "rust");
         assert_eq!(lang, "rust");
     }
 
@@ -2404,7 +2396,7 @@ mod tests {
     fn mint_input_is_a_composed_path() {
         let input = mint_input(
             std::path::Path::new("."),
-            "rust-self-contracts",
+            "rust",
             std::path::Path::new("out"),
             true,
             false,
@@ -2415,7 +2407,7 @@ mod tests {
 
         let lift = path.step("lift").expect("lift algebra step");
         let mint = path.step("mint").expect("mint algebra step");
-        assert_eq!(lift.kit, "lift-plugin:rust-self-contracts");
+        assert_eq!(lift.kit, "lift-plugin:rust");
         assert_eq!(mint.kit, "provekit-mint");
         assert_eq!(lift.inputs.len(), 1);
         assert_eq!(mint.inputs.len(), 1);

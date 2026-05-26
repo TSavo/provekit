@@ -1328,12 +1328,11 @@ mod tests {
     }
 
     #[test]
-    fn resolve_kit_rust_resolves_to_self_contracts_surface() {
-        // After #325: prove's resolve_kit must agree with mint's KIT_TABLE,
-        // which routes rust to the rust-self-contracts surface.
+    fn resolve_kit_rust_resolves_to_native_lifter_surface() {
+        // Prove's resolve_kit must agree with mint's KIT_TABLE.
         let (path, surface) = resolve_kit("rust").expect("rust must resolve");
         assert_eq!(path, PathBuf::from("implementations/rust"));
-        assert_eq!(surface, "rust-self-contracts");
+        assert_eq!(surface, "rust");
     }
 
     #[test]
