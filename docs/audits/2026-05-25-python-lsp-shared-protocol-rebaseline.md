@@ -6,9 +6,11 @@ Authority: `protocol/specs/2026-05-25-lsp-shared-protocol.md`
 
 Related issues: #1501, #1486, #308, #664, #1489, #1491
 
-Scope: documentation and audit only. This note classifies the current Python
-LSP and lift surfaces against the shared LSP protocol after the #1520 boundary
-tightening. It does not implement the shared helper.
+Scope: Python LSP rebaseline plus the first Python-kit implementation slice.
+This note classifies the current Python LSP and lift surfaces against the
+shared LSP protocol after the #1520 boundary tightening. PR #1505 now adds the
+thin Python-owned `initialize -> analyzeDocument -> lsp-document-analysis`
+route in code; the remaining sections track what is still not implemented.
 
 ## Boundary ruling
 
@@ -34,7 +36,7 @@ kit. The kit speaks RPC and returns normalized data.
 
 | Surface | Current code path | Status vs shared LSP | Notes |
 |---|---|---|---|
-| Legacy Python LSP helper | `implementations/python/provekit-lift-py-tests/src/provekit_lift_py_tests/lsp.py` | Current owner, stale protocol | Speaks `initialize`, `parse`, `lift`, `shutdown` and reports `protocol_version = "provekit-lift/1"`. It returns declarations, call edges, warnings, and implication records, not `kind = "lsp-document-analysis"`. |
+| Python LSP helper | `implementations/python/provekit-lift-py-tests/src/provekit_lift_py_tests/lsp.py` | First shared route implemented | Speaks `initialize`, `analyzeDocument`, `parse`, `lift`, `shutdown` and now reports `protocol_version = "provekit-lsp-shared/1"` while retaining the legacy methods. `analyzeDocument` returns `kind = "lsp-document-analysis"` with normalized entries, diagnostics, ranges, and status facts. |
 | Python source lift kit | `implementations/python/provekit-lift-python-source/src/provekit_lift_python_source/rpc.py` | Useful kit-owned lift surface, not LSP-shaped | Speaks `initialize`, `lift`, `compile`, `shutdown`; `lift` returns `kind = "ir-document"` with IR, diagnostics, opacity report, and refusals. This is a good implementation source for `analyzeDocument`, but it is not yet the shared LSP method. |
 | Python bind lift kit | `implementations/python/provekit-lift-python-source/src/provekit_lift_python_source/bind_rpc.py` | Useful normalized binding surface, not LSP-shaped | Speaks `pep/1.7.0` and returns `ir-document` entries. It owns `@sugar.bind` parsing via Python code and should remain kit-owned. |
 | Forward propagation demo | `implementations/python/provekit_lsp/forward_propagator.py`, `docs/research/2026-05-05-python-lsp-forward-propagator.md` | Demo-only diagnostic producer | Uses a tiny string-constraint model and old `implication-failed` code. It is not the Python LSP architecture; it should become one producer that consumes normalized `lsp-document-analysis` facts. |
@@ -47,19 +49,19 @@ kit. The kit speaks RPC and returns normalized data.
 
 | Feature | Current Python state | Shared LSP target |
 |---|---|---|
-| Lift from source | Partial. Python helpers parse Python source and emit normalized IR, but not the shared LSP shape with ranges. | `analyzeDocument` returns `lsp-document-analysis.entries` for contracts, sugar bindings, call edges, proof/concept sites, and ranges. |
-| Materialize from sugar at boundary | Partial outside LSP. Realizer kits exist; LSP does not expose materialize availability/refusal. | Kit status helper reports per-site materialize state and refusals from Python-owned logic. |
-| Emit | Partial outside LSP. Pytest emitter exists. | Kit status helper reports pytest emit availability and produced/checked state; coordinator only displays normalized status. |
-| Check | Missing as shared LSP status. | Python kit owns pytest/runtime check semantics and returns normalized check status over RPC. |
-| Prove | Partial outside LSP. CLI verifier can consume normalized data; LSP does not map nonzero proof receipts back to Python ranges. | Coordinator merges verifier receipts for real nonzero claims; `totalClaims: 0` is not displayed as proof success. |
+| Lift from source | First shared route implemented. Python helpers parse Python source and `analyzeDocument` wraps existing lift/bind results into `lsp-document-analysis.entries` with source ranges where current Python lifters expose them. | Extend ranges beyond current whole-document fallbacks for every contract, pytest assertion, concept site, and call edge. |
+| Materialize from sugar at boundary | Thin LSP status implemented. `analyzeDocument` probes Python realizer RPC availability and reports available/refused/unavailable rather than pretending success. | Add per-site materialize state/refusals for requested target/library tuples. |
+| Emit | Thin LSP status implemented. `analyzeDocument` probes the Python pytest emitter RPC and reports availability. | Add per-site produced/checked state and diagnostics once the Python emit/check helper has that RPC. |
+| Check | Placeholder status implemented. The Python helper reports unavailable/refused because no pytest check-status RPC exists yet. | Python kit owns pytest/runtime check semantics and returns normalized check status over RPC. |
+| Prove | Placeholder status implemented. The Python helper reports `unknown` unless a real nonzero proof receipt is supplied; it does not display zero-claim success. | Coordinator merges verifier receipts for real nonzero claims; `totalClaims: 0` is not displayed as proof success. |
 | Forward propagation | Demo-only. | Diagnostic producer over normalized analysis facts with stable `provekit.lsp.*` codes. |
 
 ## Child implementation gaps
 
-1. **Python shared helper method**
+1. **Python shared helper method** -- IMPLEMENTED FIRST SLICE
    - Modify: `implementations/python/provekit-lift-py-tests/src/provekit_lift_py_tests/lsp.py` or add a thin Python helper beside `provekit-lift-python-source`.
    - Work: expose `protocol_version = "provekit-lsp-shared/1"` and `analyzeDocument`.
-   - Acceptance: request returns `kind = "lsp-document-analysis"` with `kit_id = "python"` and no coordinator-side Python parsing.
+   - Acceptance: request returns `kind = "lsp-document-analysis"` with `kit_id = "python"` and no coordinator-side Python parsing. Covered by `implementations/python/provekit-lift-py-tests/tests/test_daemon_protocol.py`.
 
 2. **Source ranges for Python facts**
    - Modify: Python lift/bind/layer2 walkers.
