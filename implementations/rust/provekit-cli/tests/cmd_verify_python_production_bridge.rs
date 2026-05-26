@@ -96,17 +96,32 @@ fn unique_dir(suffix: &str) -> PathBuf {
 /// Go test compiles a Go binary; Python is interpreted, so the analog is a
 /// stable wrapper invoking `python3 -c "...; run_rpc()"`.
 fn build_python_lift_verify() -> PathBuf {
+    use std::io::Write as _;
+    use std::sync::atomic::{AtomicU64, Ordering};
+    // Unique per call: cargo runs the tests in this binary as parallel threads
+    // of ONE process, so a `process::id()`-keyed path is SHARED across them.
+    // One test exec'ing the wrapper while another truncates it for write =>
+    // ETXTBSY (os error 26). An atomic counter gives each call its own path.
+    static SEQ: AtomicU64 = AtomicU64::new(0);
     let src = python_lift_src();
     let script = std::env::temp_dir().join(format!(
-        "provekit-lift-python-verify-{}.sh",
-        std::process::id()
+        "provekit-lift-python-verify-{}-{}.sh",
+        std::process::id(),
+        SEQ.fetch_add(1, Ordering::Relaxed)
     ));
     let body = format!(
         "#!/bin/sh\nexec python3 -c \"import sys; sys.path.insert(0, '{}'); \
          from provekit_lift_python_source.verify_rpc import run_rpc; run_rpc()\"\n",
         src.display()
     );
-    fs::write(&script, body).expect("write python lift wrapper");
+    // sync_all + drop the writer fd BEFORE chmod/spawn so `exec` never sees an
+    // open writer (the second half of the ETXTBSY guard; see cli_surface.rs).
+    {
+        let mut f = fs::File::create(&script).expect("create python lift wrapper");
+        f.write_all(body.as_bytes())
+            .expect("write python lift wrapper");
+        f.sync_all().expect("sync python lift wrapper");
+    }
     #[cfg(unix)]
     {
         use std::os::unix::fs::PermissionsExt;
