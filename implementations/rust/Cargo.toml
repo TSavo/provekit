@@ -51,7 +51,6 @@ members = [
     "provekit-lsp-protocol-catalog",
     "provekit-lsp-rust",
     "provekit-build",
-    "provekit-showcase",
     "examples/build_script_demo",
     "provekit-linkerd",
     "provekit-baseline-std",
