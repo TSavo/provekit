@@ -173,7 +173,7 @@ Column meanings:
 
 **CLI:** Deferred. Use the Rust CLI.
 
-**LSP Plugin:** Yes. `provekit-lsp-go` implements the ProvekIt NDJSON LSP plugin protocol with `initialize`, `parse`, and `shutdown`. Scans Go source for `//provekit:` annotations.
+**LSP Plugin:** Legacy helper present. `provekit-lsp-go` implements the older ProvekIt NDJSON helper shape with `initialize`, `parse`, and `shutdown`; it is not yet rebaselined to the shared `initialize` -> `analyzeDocument` -> `lsp-document-analysis` protocol. See [Go LSP shared protocol rebaseline](../audits/2026-05-25-go-lsp-shared-protocol-rebaseline.md).
 
 ## C++
 

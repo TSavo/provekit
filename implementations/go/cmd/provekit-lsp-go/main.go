@@ -4,12 +4,12 @@
 //
 //	{"jsonrpc":"2.0","id":1,"method":"initialize","params":{}}
 //	{"jsonrpc":"2.0","id":2,"method":"parse","params":{"path":"...","source":"..."}}
+//	{"jsonrpc":"2.0","id":3,"method":"analyzeDocument","params":{"uri":"...","file":"...","text":"..."}}
 //	{"jsonrpc":"2.0","id":3,"method":"shutdown"}
 //
-// For parse, scans the source for //provekit: annotations and
-// go-playground/validator struct tags, lifts to canonical IR,
-// and returns JCS declarations JSON alongside call-edge mementos
-// per protocol/specs/2026-05-03-bridge-linkage-protocol.md §1 R1.
+// The legacy parse method is still available for old clients. The shared LSP
+// method is analyzeDocument, which returns a lsp-document-analysis envelope and
+// keeps Go source parsing inside this Go kit helper.
 package main
 
 import (
@@ -20,12 +20,14 @@ import (
 	"go/parser"
 	"go/token"
 	"os"
+	"path/filepath"
 	"reflect"
 	"strconv"
 	"strings"
 
 	canonicalizer "github.com/tsavo/provekit/go/provekit-ir-symbolic/canonicalizer"
 	ir "github.com/tsavo/provekit/go/provekit-ir-symbolic/ir"
+	liftgo "github.com/tsavo/provekit/go/provekit-lift-go"
 	validator "github.com/tsavo/provekit/go/provekit-lift-go-validator"
 )
 
@@ -41,6 +43,17 @@ type parseParams struct {
 	Source string `json:"source"`
 }
 
+type analyzeDocumentParams struct {
+	KitID                       string   `json:"kit_id"`
+	URI                         string   `json:"uri"`
+	File                        string   `json:"file"`
+	Text                        string   `json:"text"`
+	DocumentVersion             any      `json:"document_version,omitempty"`
+	WorkspaceRoot               string   `json:"workspace_root,omitempty"`
+	AcceptedProtocolCatalogCids []string `json:"accepted_protocol_catalog_cids,omitempty"`
+	PolicyCids                  []string `json:"policy_cids,omitempty"`
+}
+
 type rpcResponse struct {
 	JSONRPC string      `json:"jsonrpc"`
 	ID      interface{} `json:"id"`
@@ -54,9 +67,11 @@ type rpcError struct {
 }
 
 type initializeResult struct {
-	Name         string   `json:"name"`
-	Version      string   `json:"version"`
-	Capabilities []string `json:"capabilities"`
+	Name            string      `json:"name"`
+	Version         string      `json:"version"`
+	ProtocolVersion string      `json:"protocol_version"`
+	KitID           string      `json:"kit_id"`
+	Capabilities    interface{} `json:"capabilities"`
 }
 
 type parseResult struct {
@@ -65,6 +80,110 @@ type parseResult struct {
 	Diagnostics  []LSPDiagnostic   `json:"diagnostics"`
 	ContractCids map[string]string `json:"contractCids,omitempty"`
 	Warnings     []interface{}     `json:"warnings"`
+}
+
+type sharedPosition struct {
+	Line   int `json:"line"`
+	Column int `json:"column"`
+}
+
+type sharedSourceRange struct {
+	Kind  string         `json:"kind"`
+	File  string         `json:"file,omitempty"`
+	Start sharedPosition `json:"start"`
+	End   sharedPosition `json:"end"`
+}
+
+type sharedDiagnostic struct {
+	Kind        string             `json:"kind"`
+	Code        string             `json:"code"`
+	Severity    string             `json:"severity"`
+	Message     string             `json:"message"`
+	Source      string             `json:"source"`
+	SourceRange *sharedSourceRange `json:"source_range,omitempty"`
+}
+
+type sharedStatus struct {
+	Kind        string             `json:"kind"`
+	Surface     string             `json:"surface"`
+	State       string             `json:"state"`
+	Message     string             `json:"message"`
+	Source      string             `json:"source"`
+	SourceRange *sharedSourceRange `json:"source_range,omitempty"`
+}
+
+type lspDocumentAnalysis struct {
+	Kind               string             `json:"kind"`
+	SchemaVersion      string             `json:"schema_version"`
+	KitID              string             `json:"kit_id"`
+	URI                string             `json:"uri"`
+	File               string             `json:"file"`
+	DocumentVersion    any                `json:"document_version,omitempty"`
+	DocumentCID        string             `json:"document_cid"`
+	ProtocolCatalogCID string             `json:"protocol_catalog_cid"`
+	Entries            []map[string]any   `json:"entries"`
+	Diagnostics        []sharedDiagnostic `json:"diagnostics"`
+	Statuses           []sharedStatus     `json:"statuses"`
+	Project            map[string]any     `json:"project"`
+}
+
+const sharedProtocolCatalogPath = "protocol/catalogs/provekit-lsp-shared-1.catalog.json"
+
+var protocolCatalogCID = mustComputeProtocolCatalogCID()
+
+func mustComputeProtocolCatalogCID() string {
+	cid, err := computeProtocolCatalogCID()
+	if err != nil {
+		panic(err)
+	}
+	return cid
+}
+
+func computeProtocolCatalogCID() (string, error) {
+	catalogBytes, err := readRepoRelativeFile(sharedProtocolCatalogPath)
+	if err != nil {
+		return "", err
+	}
+
+	var catalog any
+	if err := json.Unmarshal(catalogBytes, &catalog); err != nil {
+		return "", fmt.Errorf("parse protocol catalog %s: %w", sharedProtocolCatalogPath, err)
+	}
+
+	canonicalBytes, err := canonicalizer.EncodeJCS(catalog)
+	if err != nil {
+		return "", fmt.Errorf("canonicalize protocol catalog %s: %w", sharedProtocolCatalogPath, err)
+	}
+	return canonicalizer.ComputeCID(canonicalBytes), nil
+}
+
+func readRepoRelativeFile(rel string) ([]byte, error) {
+	if bytes, err := os.ReadFile(rel); err == nil {
+		return bytes, nil
+	} else if !os.IsNotExist(err) {
+		return nil, fmt.Errorf("read %s: %w", rel, err)
+	}
+
+	cwd, err := os.Getwd()
+	if err != nil {
+		return nil, fmt.Errorf("get working directory: %w", err)
+	}
+	for dir := cwd; ; {
+		candidate := filepath.Join(dir, rel)
+		if bytes, err := os.ReadFile(candidate); err == nil {
+			return bytes, nil
+		} else if !os.IsNotExist(err) {
+			return nil, fmt.Errorf("read %s: %w", candidate, err)
+		}
+
+		parent := filepath.Dir(dir)
+		if parent == dir {
+			break
+		}
+		dir = parent
+	}
+
+	return nil, fmt.Errorf("read %s: not found from %s or ancestor directories", rel, cwd)
 }
 
 func main() {
@@ -89,6 +208,8 @@ func handleRequest(line string) bool {
 		handleInit(req.ID)
 	case "parse":
 		handleParse(req.ID, req.Params)
+	case "analyzeDocument":
+		handleAnalyzeDocument(req.ID, req.Params)
 	case "shutdown":
 		handleShutdown(req.ID)
 		return false
@@ -100,10 +221,280 @@ func handleRequest(line string) bool {
 
 func handleInit(id interface{}) {
 	send(id, initializeResult{
-		Name:         "provekit-lsp-go",
-		Version:      "0.1.0",
-		Capabilities: []string{"parse"},
+		Name:            "provekit-lsp-go",
+		Version:         "0.1.0",
+		ProtocolVersion: "provekit-lsp-shared/1",
+		KitID:           "go",
+		Capabilities: map[string]any{
+			"methods":        []string{"parse", "analyzeDocument", "shutdown"},
+			"legacy_methods": []string{"parse"},
+			"authoring_surfaces": []string{
+				"go-source",
+				"//provekit:boundary",
+				"//provekit:sugar",
+			},
+			"status_surfaces": []string{"lift", "materialize", "emit", "check", "prove"},
+		},
 	})
+}
+
+func handleAnalyzeDocument(id interface{}, paramsRaw json.RawMessage) {
+	var params analyzeDocumentParams
+	if err := json.Unmarshal(paramsRaw, &params); err != nil {
+		sendError(id, -32602, "invalid params")
+		return
+	}
+	if params.KitID != "" && params.KitID != "go" {
+		sendError(id, -32602, fmt.Sprintf("wrong kit_id for provekit-lsp-go: %s", params.KitID))
+		return
+	}
+	if params.File == "" {
+		params.File = params.URI
+	}
+
+	analysis, err := analyzeDocument(params)
+	if err != nil {
+		sendError(id, -32603, err.Error())
+		return
+	}
+	send(id, analysis)
+}
+
+func analyzeDocument(params analyzeDocumentParams) (lspDocumentAnalysis, error) {
+	path := params.File
+	if path == "" {
+		path = "document.go"
+	}
+
+	lifted, liftErr := liftgo.LiftSourceWithOptions("lsp/document", path, []byte(params.Text), liftgo.LiftOptions{
+		NormalizeCoreArith: true,
+		AnnotatedOnly:      true,
+	})
+	rangeIndex, parseDiagnostics := sourceRangeIndex(path, params.Text)
+
+	entries := make([]map[string]any, 0, len(lifted.Contracts)+len(lifted.Annotations))
+	statuses := []sharedStatus{}
+	diagnostics := append([]sharedDiagnostic{}, parseDiagnostics...)
+
+	for _, contract := range lifted.Contracts {
+		rng := rangeIndex[shortFuncName(contract.FnName)]
+		entry := map[string]any{
+			"kind":         "function-contract-site",
+			"fn_name":      contract.FnName,
+			"contract":     contract,
+			"source_range": rng,
+		}
+		entries = append(entries, entry)
+	}
+
+	for fnName, ann := range lifted.Annotations {
+		short := shortFuncName(fnName)
+		rng := rangeIndex[short]
+		entry := map[string]any{
+			"kind":         "concept-site",
+			"site_kind":    string(ann.Kind),
+			"fn_name":      fnName,
+			"concept_name": ann.Concept,
+			"raw":          ann.Raw,
+			"source_range": rng,
+		}
+		if ann.Library != "" {
+			entry["target_library_tag"] = ann.Library
+		}
+		if ann.Version != "" {
+			entry["library_version"] = ann.Version
+		}
+		if ann.Family != "" {
+			entry["family"] = ann.Family
+		}
+		entries = append(entries, entry)
+		statuses = append(statuses, statusesForAnnotation(rng, ann)...)
+	}
+
+	if liftErr != nil {
+		diagnostics = append(diagnostics, sharedDiagnostic{
+			Kind:     "diagnostic",
+			Code:     "provekit.lsp.parse_error",
+			Severity: "error",
+			Source:   "provekit-lsp-go",
+			Message:  liftErr.Error(),
+		})
+	}
+	for _, d := range lifted.Diagnostics {
+		diagnostics = append(diagnostics, sharedDiagnostic{
+			Kind:     "diagnostic",
+			Code:     "provekit.lsp.lift_gap",
+			Severity: "warning",
+			Source:   "provekit-lsp-go",
+			Message:  d.Message,
+		})
+	}
+	for _, refusal := range lifted.Refusals {
+		var rng *sharedSourceRange
+		if refusal.Function != "" {
+			if found, ok := rangeIndex[shortFuncName(refusal.Function)]; ok {
+				rng = found
+			}
+		}
+		diagnostics = append(diagnostics, sharedDiagnostic{
+			Kind:        "diagnostic",
+			Code:        "provekit.lsp.lift_gap",
+			Severity:    "warning",
+			Source:      "provekit-lsp-go",
+			Message:     refusal.Reason,
+			SourceRange: rng,
+		})
+	}
+	diagnostics = append(diagnostics, legacyDirectiveDiagnostics(path, params.Text)...)
+
+	return lspDocumentAnalysis{
+		Kind:               "lsp-document-analysis",
+		SchemaVersion:      "1",
+		KitID:              "go",
+		URI:                params.URI,
+		File:               path,
+		DocumentVersion:    params.DocumentVersion,
+		DocumentCID:        canonicalizer.ComputeCID([]byte(params.Text)),
+		ProtocolCatalogCID: protocolCatalogCID,
+		Entries:            entries,
+		Diagnostics:        diagnostics,
+		Statuses:           statuses,
+		Project: map[string]any{
+			"workspace_root": params.WorkspaceRoot,
+		},
+	}, nil
+}
+
+func statusesForAnnotation(rng *sharedSourceRange, ann *liftgo.Annotation) []sharedStatus {
+	materializeState := "unknown"
+	materializeMessage := "Go materialize status requires provekit-realize-go-core RPC for this exact package/library route"
+	if ann.Kind == liftgo.AnnotationSugar && ann.Library != "" {
+		materializeState = "available"
+		materializeMessage = "Go sugar site has a target library tag; realization still belongs to provekit-realize-go-core"
+	}
+	return []sharedStatus{
+		{
+			Kind:        "status",
+			Surface:     "lift",
+			State:       "available",
+			Source:      "provekit-lsp-go",
+			Message:     "Go source site was lifted into a shared LSP concept entry",
+			SourceRange: rng,
+		},
+		{
+			Kind:        "status",
+			Surface:     "materialize",
+			State:       materializeState,
+			Source:      "provekit-lsp-go",
+			Message:     materializeMessage,
+			SourceRange: rng,
+		},
+		{
+			Kind:        "status",
+			Surface:     "emit",
+			State:       "available",
+			Source:      "provekit-lsp-go",
+			Message:     "Go testing emission is handled by the Go emit kit, not by the LSP coordinator",
+			SourceRange: rng,
+		},
+		{
+			Kind:        "status",
+			Surface:     "check",
+			State:       "unknown",
+			Source:      "provekit-lsp-go",
+			Message:     "No Go-owned normalized check-status receipt is attached to this document analysis",
+			SourceRange: rng,
+		},
+		{
+			Kind:        "status",
+			Surface:     "prove",
+			State:       "unknown",
+			Source:      "provekit-lsp-go",
+			Message:     "No non-vacuous proof receipt is attached; the coordinator must not report totalClaims=0 as green",
+			SourceRange: rng,
+		},
+	}
+}
+
+func sourceRangeIndex(path, src string) (map[string]*sharedSourceRange, []sharedDiagnostic) {
+	fset := token.NewFileSet()
+	file, err := parser.ParseFile(fset, path, src, parser.ParseComments)
+	if err != nil {
+		return map[string]*sharedSourceRange{}, []sharedDiagnostic{{
+			Kind:     "diagnostic",
+			Code:     "provekit.lsp.parse_error",
+			Severity: "error",
+			Source:   "provekit-lsp-go",
+			Message:  err.Error(),
+		}}
+	}
+	out := map[string]*sharedSourceRange{}
+	for _, decl := range file.Decls {
+		fn, ok := decl.(*ast.FuncDecl)
+		if !ok {
+			continue
+		}
+		start := fset.Position(fn.Pos())
+		end := fset.Position(fn.End())
+		rng := &sharedSourceRange{
+			Kind: "source-range",
+			File: path,
+			Start: sharedPosition{
+				Line:   start.Line,
+				Column: maxInt(0, start.Column-1),
+			},
+			End: sharedPosition{
+				Line:   end.Line,
+				Column: maxInt(0, end.Column-1),
+			},
+		}
+		out[fn.Name.Name] = rng
+	}
+	return out, nil
+}
+
+func legacyDirectiveDiagnostics(path, src string) []sharedDiagnostic {
+	var diagnostics []sharedDiagnostic
+	for i, line := range strings.Split(src, "\n") {
+		trimmed := strings.TrimSpace(line)
+		if trimmed != "//provekit:contract" && !strings.HasPrefix(trimmed, "//provekit:contract ") &&
+			trimmed != "//provekit:implement" && !strings.HasPrefix(trimmed, "//provekit:implement ") {
+			continue
+		}
+		startColumn := strings.Index(line, "//provekit:")
+		if startColumn < 0 {
+			startColumn = 0
+		}
+		rng := &sharedSourceRange{
+			Kind:  "source-range",
+			File:  path,
+			Start: sharedPosition{Line: i + 1, Column: startColumn},
+			End:   sharedPosition{Line: i + 1, Column: startColumn + len(strings.TrimSpace(line))},
+		}
+		diagnostics = append(diagnostics, sharedDiagnostic{
+			Kind:        "diagnostic",
+			Code:        "provekit.lsp.lift_gap",
+			Severity:    "warning",
+			Source:      "provekit-lsp-go",
+			Message:     "legacy Go LSP directive is not the current Go authoring surface; use //provekit:boundary(...) or //provekit:sugar(...)",
+			SourceRange: rng,
+		})
+	}
+	return diagnostics
+}
+
+func shortFuncName(name string) string {
+	if idx := strings.LastIndex(name, "."); idx >= 0 && idx+1 < len(name) {
+		return name[idx+1:]
+	}
+	return name
+}
+
+func maxInt(a, b int) int {
+	if a > b {
+		return a
+	}
+	return b
 }
 
 func handleParse(id interface{}, paramsRaw json.RawMessage) {
