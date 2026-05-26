@@ -20,6 +20,7 @@ import (
 	"go/parser"
 	"go/token"
 	"os"
+	"path/filepath"
 	"reflect"
 	"strconv"
 	"strings"
@@ -126,6 +127,65 @@ type lspDocumentAnalysis struct {
 	Project            map[string]any     `json:"project"`
 }
 
+const sharedProtocolCatalogPath = "protocol/catalogs/provekit-lsp-shared-1.catalog.json"
+
+var protocolCatalogCID = mustComputeProtocolCatalogCID()
+
+func mustComputeProtocolCatalogCID() string {
+	cid, err := computeProtocolCatalogCID()
+	if err != nil {
+		panic(err)
+	}
+	return cid
+}
+
+func computeProtocolCatalogCID() (string, error) {
+	catalogBytes, err := readRepoRelativeFile(sharedProtocolCatalogPath)
+	if err != nil {
+		return "", err
+	}
+
+	var catalog any
+	if err := json.Unmarshal(catalogBytes, &catalog); err != nil {
+		return "", fmt.Errorf("parse protocol catalog %s: %w", sharedProtocolCatalogPath, err)
+	}
+
+	canonicalBytes, err := canonicalizer.EncodeJCS(catalog)
+	if err != nil {
+		return "", fmt.Errorf("canonicalize protocol catalog %s: %w", sharedProtocolCatalogPath, err)
+	}
+	return canonicalizer.ComputeCID(canonicalBytes), nil
+}
+
+func readRepoRelativeFile(rel string) ([]byte, error) {
+	if bytes, err := os.ReadFile(rel); err == nil {
+		return bytes, nil
+	} else if !os.IsNotExist(err) {
+		return nil, fmt.Errorf("read %s: %w", rel, err)
+	}
+
+	cwd, err := os.Getwd()
+	if err != nil {
+		return nil, fmt.Errorf("get working directory: %w", err)
+	}
+	for dir := cwd; ; {
+		candidate := filepath.Join(dir, rel)
+		if bytes, err := os.ReadFile(candidate); err == nil {
+			return bytes, nil
+		} else if !os.IsNotExist(err) {
+			return nil, fmt.Errorf("read %s: %w", candidate, err)
+		}
+
+		parent := filepath.Dir(dir)
+		if parent == dir {
+			break
+		}
+		dir = parent
+	}
+
+	return nil, fmt.Errorf("read %s: not found from %s or ancestor directories", rel, cwd)
+}
+
 func main() {
 	scanner := bufio.NewScanner(os.Stdin)
 	for scanner.Scan() {
@@ -173,7 +233,7 @@ func handleInit(id interface{}) {
 				"//provekit:boundary",
 				"//provekit:sugar",
 			},
-			"status_surfaces": []string{"materialize", "emit", "check", "prove"},
+			"status_surfaces": []string{"lift", "materialize", "emit", "check", "prove"},
 		},
 	})
 }
@@ -313,6 +373,14 @@ func statusesForAnnotation(rng *sharedSourceRange, ann *liftgo.Annotation) []sha
 		materializeMessage = "Go sugar site has a target library tag; realization still belongs to provekit-realize-go-core"
 	}
 	return []sharedStatus{
+		{
+			Kind:        "status",
+			Surface:     "lift",
+			State:       "available",
+			Source:      "provekit-lsp-go",
+			Message:     "Go source site was lifted into a shared LSP concept entry",
+			SourceRange: rng,
+		},
 		{
 			Kind:        "status",
 			Surface:     "materialize",
