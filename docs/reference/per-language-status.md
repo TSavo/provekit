@@ -61,7 +61,7 @@ All listed kits now carry CICP vector checks or equivalent language-library cove
 | C++         | `+` | `+`  | `+ [[expects:]]/[[ensures:]] (C++26)` ; `o assert.h`    | `~ (C++26 contracts)`    | `+`               | `~ (use Rust CLI)`   | `+`                  |
 | C           | `+` | `~`  | `~`                                                     | `~`                      | `~`               | `~ (use Rust CLI)`   | `+`                  |
 | Zig         | `+` | `~`  | `+ provekit-lift-zig (comment annotations)`             | `~`                      | `+`               | `~ (use Rust CLI)`   | `+`                  |
-| Python      | `+` | `+`  | `+ pydantic` ; `~ deal, hypothesis` ; `~ icontract, attrs`   | `+`                      | `+`               | `~ (use Rust CLI)`   | `+`                  |
+| Python      | `+` | `+`  | `+ pydantic` ; `~ deal, hypothesis` ; `~ icontract, attrs`   | `+`                      | `+`               | `~ (use Rust CLI)`   | `~ legacy parse/lift; see audit` |
 | Java / JVM  | `+` | `+`  | `+ Bean Validation, JML, Spring Web, Cofoja`            | `~`                      | `~`               | `~ (use Rust CLI)`   | `~`                  |
 | Ruby        | `+` | `~`  | `+ active_model, dry-validation, rspec`                 | `-`                      | `~`               | `~ (use Rust CLI)`   | `+`                  |
 | C#          | `+` | `+`  | `+ DataAnnotations, Linq`                               | `+ .NET attrs`           | `+`               | `~ (use Rust CLI)`   | `+`                  |
@@ -218,7 +218,7 @@ Column meanings:
 
 **CLI:** Deferred. Use the Rust CLI.
 
-**LSP Plugin:** Yes. `provekit.lsp` implements the ProvekIt LSP plugin protocol (NDJSON over stdio) with `initialize`, `parse`, and `shutdown` methods.
+**LSP Plugin:** Partial relative to the shared LSP protocol. `provekit.lsp` owns Python parsing/lift work and still speaks the legacy `initialize`/`parse`/`lift` helper shape; the rebaseline target is `initialize` -> `analyzeDocument` -> `lsp-document-analysis`. See [Python LSP shared protocol rebaseline](../audits/2026-05-25-python-lsp-shared-protocol-rebaseline.md).
 
 ## Java / JVM
 
