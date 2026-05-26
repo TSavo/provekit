@@ -273,7 +273,7 @@ fn initialize_result() -> Value {
         "version": env!("CARGO_PKG_VERSION"),
             "protocol_version": "pep/1.7.0",
             "capabilities": {
-                "authoring_surfaces": ["rust", "rust-bind"],
+                "authoring_surfaces": ["rust", "rust-bind", "rust-walk-contracts"],
             "ir_version": "bind-ir/2.0.0",
             "emits_signed_mementos": false
         }
@@ -281,6 +281,10 @@ fn initialize_result() -> Value {
 }
 
 fn bind_lift(params: &Value) -> Result<Value, String> {
+    if lift_emit_mode(params) == Some("ir-document") {
+        return function_contract_lift(params);
+    }
+
     let workspace_root = params
         .get("workspace_root")
         .and_then(|v| v.as_str())
@@ -798,6 +802,119 @@ fn bind_lift(params: &Value) -> Result<Value, String> {
     }))
 }
 
+fn lift_emit_mode(params: &Value) -> Option<&str> {
+    params
+        .get("options")
+        .and_then(|options| options.get("emit"))
+        .and_then(|value| value.as_str())
+}
+
+fn function_contract_lift(params: &Value) -> Result<Value, String> {
+    let workspace_root = params
+        .get("workspace_root")
+        .and_then(|v| v.as_str())
+        .ok_or("missing `workspace_root`")?;
+    let source_paths: Vec<String> = params
+        .get("source_paths")
+        .and_then(|v| v.as_array())
+        .map(|arr| {
+            arr.iter()
+                .filter_map(|v| v.as_str().map(|s| s.to_string()))
+                .collect()
+        })
+        .unwrap_or_else(|| vec![".".to_string()]);
+
+    let root = PathBuf::from(workspace_root);
+    let mut entries: Vec<Value> = Vec::new();
+    let mut diagnostics: Vec<Value> = Vec::new();
+    let mut visited: std::collections::BTreeSet<PathBuf> = Default::default();
+
+    for scan_root in lift_scan_roots(&root, &source_paths) {
+        let src_dir = scan_root.join("src");
+        let walk_root: &Path = if src_dir.is_dir() {
+            &src_dir
+        } else {
+            scan_root.as_path()
+        };
+        collect_rs_files(walk_root, &mut visited);
+        if walk_root != scan_root.as_path() {
+            collect_rs_files_shallow(scan_root.as_path(), &mut visited);
+        }
+    }
+
+    for path in &visited {
+        let src = match std::fs::read_to_string(path) {
+            Ok(s) => s,
+            Err(e) => {
+                diagnostics.push(cited_diagnostic(
+                    "read-error",
+                    path.display().to_string(),
+                    e.to_string(),
+                    "morphism",
+                    "concept:source-unit",
+                    "rust",
+                ));
+                continue;
+            }
+        };
+        let file = match syn::parse_file(&src) {
+            Ok(f) => f,
+            Err(e) => {
+                diagnostics.push(cited_diagnostic(
+                    "parse-error",
+                    path.display().to_string(),
+                    e.to_string(),
+                    "morphism",
+                    "concept:source-unit",
+                    "rust",
+                ));
+                continue;
+            }
+        };
+        let rel = path
+            .strip_prefix(&root)
+            .unwrap_or(path)
+            .display()
+            .to_string()
+            .replace('\\', "/");
+
+        for target in collect_function_contract_targets(&file) {
+            let contract =
+                build_function_contract_with_file(&target.item_fn, None, Some(rel.as_str()));
+            let mut entry: Value =
+                serde_json::from_slice(&contract.canonical_bytes).map_err(|e| e.to_string())?;
+            entry["name"] = json!(target.fn_name.clone());
+            entry["fn_name"] = json!(target.fn_name.clone());
+            entry["bridgeSourceSymbol"] = json!(target.source_name.clone());
+            entries.push(entry);
+        }
+    }
+
+    Ok(json!({
+        "kind": "ir-document",
+        "ir": entries,
+        "diagnostics": diagnostics,
+        "refusals": [],
+    }))
+}
+
+fn lift_scan_roots(root: &Path, source_paths: &[String]) -> Vec<PathBuf> {
+    if source_paths.is_empty() {
+        return vec![root.to_path_buf()];
+    }
+    source_paths
+        .iter()
+        .map(|p| {
+            let candidate = root.join(p);
+            if candidate.is_dir() {
+                candidate
+            } else {
+                root.to_path_buf()
+            }
+        })
+        .collect()
+}
+
 fn cited_diagnostic(
     kind: &str,
     path: String,
@@ -844,6 +961,13 @@ struct BindLiftTarget {
 }
 
 #[derive(Debug, Clone)]
+struct FunctionContractLiftTarget {
+    fn_name: String,
+    source_name: String,
+    item_fn: syn::ItemFn,
+}
+
+#[derive(Debug, Clone)]
 struct SugarTarget {
     concept: String,
     library: String,
@@ -874,6 +998,93 @@ fn collect_bind_lift_targets_with_source(file: &syn::File, source: &str) -> Vec<
     let mut targets = Vec::new();
     collect_bind_lift_targets_in_items(&file.items, source, &mut targets);
     targets
+}
+
+fn collect_function_contract_targets(file: &syn::File) -> Vec<FunctionContractLiftTarget> {
+    let mut targets = Vec::new();
+    collect_function_contract_targets_in_items(&file.items, false, &mut targets);
+    targets
+}
+
+fn collect_function_contract_targets_in_items(
+    items: &[syn::Item],
+    in_test_context: bool,
+    targets: &mut Vec<FunctionContractLiftTarget>,
+) {
+    for item in items {
+        match item {
+            syn::Item::Fn(item_fn) => {
+                if in_test_context || is_rust_test_fn(item_fn) {
+                    continue;
+                }
+                let fn_name = item_fn.sig.ident.to_string();
+                targets.push(FunctionContractLiftTarget {
+                    source_name: fn_name.clone(),
+                    fn_name,
+                    item_fn: item_fn.clone(),
+                });
+            }
+            syn::Item::Impl(impl_block) => {
+                if in_test_context || attrs_include_cfg_test(&impl_block.attrs) {
+                    continue;
+                }
+                let Some(qualifier) = impl_function_qualifier(impl_block) else {
+                    continue;
+                };
+                for impl_item in &impl_block.items {
+                    let syn::ImplItem::Fn(method) = impl_item else {
+                        continue;
+                    };
+                    let item_fn = item_fn_from_impl_method(method);
+                    if !is_liftable_impl_method(impl_block, method) || is_rust_test_fn(&item_fn) {
+                        continue;
+                    }
+                    let source_name = method.sig.ident.to_string();
+                    targets.push(FunctionContractLiftTarget {
+                        fn_name: format!("{qualifier}::{source_name}"),
+                        source_name,
+                        item_fn,
+                    });
+                }
+            }
+            syn::Item::Mod(module) => {
+                let nested_test_context = in_test_context || attrs_include_cfg_test(&module.attrs);
+                if let Some((_, nested_items)) = &module.content {
+                    collect_function_contract_targets_in_items(
+                        nested_items,
+                        nested_test_context,
+                        targets,
+                    );
+                }
+            }
+            _ => {}
+        }
+    }
+}
+
+fn is_rust_test_fn(item_fn: &syn::ItemFn) -> bool {
+    item_fn.attrs.iter().any(|attr| {
+        let path = attr
+            .path()
+            .segments
+            .iter()
+            .map(|segment| segment.ident.to_string())
+            .collect::<Vec<_>>()
+            .join("::");
+        matches!(path.as_str(), "test" | "tokio::test" | "async_std::test")
+            || is_cfg_test_attr(attr)
+    })
+}
+
+fn attrs_include_cfg_test(attrs: &[syn::Attribute]) -> bool {
+    attrs.iter().any(is_cfg_test_attr)
+}
+
+fn is_cfg_test_attr(attr: &syn::Attribute) -> bool {
+    let syn::Meta::List(meta) = &attr.meta else {
+        return false;
+    };
+    attr.path().is_ident("cfg") && meta.tokens.to_string().trim() == "test"
 }
 
 fn collect_bind_lift_targets_in_items(
