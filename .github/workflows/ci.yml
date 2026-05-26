@@ -375,6 +375,27 @@ jobs:
           restore-keys: |
             ${{ runner.os }}-cargo-
 
+      # The macOS swift jobs were cold-compiling SwiftPM from scratch every
+      # run (~15 min) because NOTHING cached `.build` — only cargo was cached
+      # (wrong language). Restore the SwiftPM build dir always (incl. PRs) so
+      # source-only changes recompile incrementally off a warm `.build`; save
+      # only on push so a PR's post-job upload can't time the job out (same
+      # discipline as the cargo cache above).
+      - name: Restore SwiftPM build
+        uses: actions/cache/restore@v4
+        with:
+          path: implementations/swift/.build
+          key: ${{ runner.os }}-swiftpm-${{ hashFiles('implementations/swift/Package.resolved') }}
+          restore-keys: |
+            ${{ runner.os }}-swiftpm-
+
+      - name: Save SwiftPM build
+        if: github.event_name != 'pull_request'
+        uses: actions/cache@v4
+        with:
+          path: implementations/swift/.build
+          key: ${{ runner.os }}-swiftpm-${{ hashFiles('implementations/swift/Package.resolved') }}
+
       - name: Verify swift toolchain
         # macOS GitHub-hosted runners ship the swift toolchain
         # pre-installed (Xcode command-line tools). No setup-swift action
@@ -735,6 +756,24 @@ jobs:
           key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock') }}
           restore-keys: |
             ${{ runner.os }}-cargo-
+
+      # Cache SwiftPM `.build` (restore always, save on push) — see the
+      # conformance-macos-swift job for the rationale; cold SwiftPM compile
+      # was the ~15-min tax on this job.
+      - name: Restore SwiftPM build
+        uses: actions/cache/restore@v4
+        with:
+          path: implementations/swift/.build
+          key: ${{ runner.os }}-swiftpm-${{ hashFiles('implementations/swift/Package.resolved') }}
+          restore-keys: |
+            ${{ runner.os }}-swiftpm-
+
+      - name: Save SwiftPM build
+        if: github.event_name != 'pull_request'
+        uses: actions/cache@v4
+        with:
+          path: implementations/swift/.build
+          key: ${{ runner.os }}-swiftpm-${{ hashFiles('implementations/swift/Package.resolved') }}
 
       - name: CICP shadow blast radius (swift)
         run: |
