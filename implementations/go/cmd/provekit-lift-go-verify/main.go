@@ -36,6 +36,9 @@ import (
 	"bufio"
 	"encoding/json"
 	"fmt"
+	"go/ast"
+	"go/parser"
+	"go/token"
 	"io"
 	"os"
 	"path/filepath"
@@ -180,8 +183,8 @@ func handleLift(id json.RawMessage, raw json.RawMessage) any {
 //     it does not double-mint the contracts the go-contracts surface emits.
 //   - modeContracts (go-contracts): body-derived function-contracts (gated on
 //     the annotation) + harvested callsites.
-//   - modeBare (standalone `go` surface): function-contracts for ALL functions
-//     + harvested callsites (the existing production-bridge behavior).
+//   - modeBare (standalone `go` surface): function-contracts for ALL functions,
+//     plus harvested callsites (the existing production-bridge behavior).
 func liftWorkspace(root string, mode liftMode) ([]any, []map[string]any, error) {
 	var irItems []any
 	var diagnostics []map[string]any
@@ -435,32 +438,25 @@ func signatureShapeCID(name string, formals, paramTypes []string, returnType str
 	return cidOf([]byte(b.String()))
 }
 
-// extractGoFuncBody returns the text between the outermost `{` and matching
-// `}` of `func <name>(...)`, mirroring rust's `sugar_body_source` body_text.
-// Best-effort brace matching (does not parse strings/comments); sufficient for
-// the simple annotated bodies the authoring surface targets.
+// extractGoFuncBody returns the trimmed source text between the parser-owned
+// outer function body braces, mirroring rust's `sugar_body_source` body_text.
 func extractGoFuncBody(src, name string) string {
-	marker := "func " + name + "("
-	idx := strings.Index(src, marker)
-	if idx < 0 {
+	fset := token.NewFileSet()
+	file, err := parser.ParseFile(fset, "", src, parser.ParseComments)
+	if err != nil {
 		return ""
 	}
-	open := strings.IndexByte(src[idx:], '{')
-	if open < 0 {
-		return ""
-	}
-	open += idx
-	depth := 0
-	for i := open; i < len(src); i++ {
-		switch src[i] {
-		case '{':
-			depth++
-		case '}':
-			depth--
-			if depth == 0 {
-				return strings.TrimSpace(src[open+1 : i])
-			}
+	for _, decl := range file.Decls {
+		fn, ok := decl.(*ast.FuncDecl)
+		if !ok || fn.Name.Name != name || fn.Body == nil {
+			continue
 		}
+		open := fset.PositionFor(fn.Body.Lbrace, false).Offset
+		close := fset.PositionFor(fn.Body.Rbrace, false).Offset
+		if open < 0 || close < 0 || open >= close || close > len(src) {
+			return ""
+		}
+		return strings.TrimSpace(src[open+1 : close])
 	}
 	return ""
 }

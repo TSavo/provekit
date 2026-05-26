@@ -3,6 +3,10 @@
 This page is the short operational reference for kit-local editor helpers.
 The shared editor protocol is defined in
 [`2026-05-25-lsp-shared-protocol.md`](../../protocol/specs/2026-05-25-lsp-shared-protocol.md).
+Its canonical machine-readable catalog is
+[`protocol/catalogs/provekit-lsp-shared-1.catalog.json`](../../protocol/catalogs/provekit-lsp-shared-1.catalog.json),
+whose `protocol_catalog_cid` is
+`blake3-512:0e3905c2a7a098cd538b9669428a7dffd2b84ba8ccf8fde3724fe2ab61fd3fbc1e1a616a6b20b6817464cdc50c466b5497d4ac2e2dc34c3c15f05535b463643c`.
 
 ProvekIt editor plugins speak a small line-delimited JSON protocol to kit-local helpers. The editor owns Language Server Protocol wiring; the helper owns ProvekIt parsing, lifting, and handshake checks.
 

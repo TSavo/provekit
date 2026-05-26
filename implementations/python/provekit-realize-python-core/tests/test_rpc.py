@@ -8,6 +8,7 @@ PKG_SRC = ROOT / "implementations/python/provekit-realize-python-core/src"
 if str(PKG_SRC) not in sys.path:
     sys.path.insert(0, str(PKG_SRC))
 
+from provekit_realize_python_core import realizer
 from provekit_realize_python_core.rpc import dispatch
 
 
@@ -154,6 +155,68 @@ def test_plugin_invoke_threads_named_term_tree() -> None:
             "source": "def compose_tree(value):\n    return value\n    return value\n",
             "is_stub": False,
             "extension": "py",
+        },
+    }
+
+
+def test_rpc_body_template_entries_returns_core_template_entries() -> None:
+    response = dispatch(
+        {
+            "jsonrpc": "2.0",
+            "id": 4,
+            "method": "provekit.plugin.body_template_entries",
+            "params": {"target_library_tag": "urllib"},
+        }
+    )
+
+    assert response["jsonrpc"] == "2.0"
+    assert response["id"] == 4
+    result = response["result"]
+    assert result["template_authority"] == realizer.KIT_ID
+    entries = result["entries"]
+    assert entries
+    assert {entry["target_library_tag"] for entry in entries} == {"urllib"}
+    concepts = {entry["concept_name"] for entry in entries}
+    assert "identity" in concepts
+    assert "http-request" in concepts
+    assert "concept:blake3-512-of" not in concepts
+
+    identity = next(entry for entry in entries if entry["concept_name"] == "identity")
+    assert identity == {
+        "concept_name": "identity",
+        "emission_template": {"kind": "verbatim", "template": "return ${param0}"},
+        "signature_guard": {"min_params": 1, "max_params": 1},
+        "target_library_tag": "urllib",
+    }
+
+
+def test_rpc_body_template_entries_reports_missing_core_resource(monkeypatch) -> None:
+    monkeypatch.setattr(realizer, "_package_body_template_resource", lambda _relative: None)
+    monkeypatch.setattr(realizer, "_find_repo_file", lambda _relative: None)
+
+    response = dispatch(
+        {
+            "jsonrpc": "2.0",
+            "id": 5,
+            "method": "provekit.plugin.body_template_entries",
+            "params": {"target_library_tag": "urllib"},
+        }
+    )
+
+    assert response == {
+        "jsonrpc": "2.0",
+        "id": 5,
+        "error": {
+            "code": 1404,
+            "message": (
+                "BODY_TEMPLATE_RESOURCE_NOT_FOUND: provekit-realize-python-core "
+                "could not resolve body-template resources for target_library_tag=urllib"
+            ),
+            "data": {
+                "template_authority": realizer.KIT_ID,
+                "target_library_tag": "urllib",
+                "missing_resources": [str(realizer.BODY_TEMPLATE_REL)],
+            },
         },
     }
 

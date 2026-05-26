@@ -2300,6 +2300,14 @@ dependencies = [
 ]
 
 [[package]]
+name = "provekit-lsp-protocol-catalog"
+version = "0.1.0"
+dependencies = [
+ "provekit-canonicalizer",
+ "serde_json",
+]
+
+[[package]]
 name = "provekit-lsp-rust"
 version = "0.1.0"
 dependencies = [

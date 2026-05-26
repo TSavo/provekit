@@ -1,0 +1,26 @@
+# ProvekIt project config for the Rust end-to-end production bridge example.
+#
+# `rust-walk-contracts` emits body-derived function-contracts from real Rust
+# source via provekit-walk-rpc. `rust-tests` emits harvested #[test] assertions
+# via provekit-lift's Rust test adapters. Mint merges both normalized
+# ir-document responses and auto-writes the bridge.
+[[plugins]]
+name = "rust-walk-contracts"
+surface = "rust-walk-contracts"
+emit = "ir-document"
+
+[[plugins]]
+name = "rust-tests"
+surface = "rust-tests"
+emit = "ir-document"
+
+[solvers]
+default = "z3"
+
+[solvers.dispatch]
+linear_arithmetic = "z3"
+default = "z3"
+
+[solvers.z3]
+binary = "z3"
+flags = ["-smt2", "-in"]

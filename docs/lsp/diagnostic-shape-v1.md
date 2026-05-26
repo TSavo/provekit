@@ -8,7 +8,7 @@ The check is:
 current_post implies callee_pre
 ```
 
-When the verifier rejects that implication, the LSP plugin emits one `implication-failed` diagnostic at the callsite.
+When the verifier rejects that implication, the LSP plugin emits one `provekit.lsp.implication_failed` diagnostic at the callsite.
 
 ## Scope
 
@@ -24,7 +24,7 @@ Forward-propagation precondition failures always use:
 |---|---|
 | `severity` | `1` |
 | `source` | `"provekit"` |
-| `code` | `"implication-failed"` |
+| `code` | `"provekit.lsp.implication_failed"` |
 
 Severity `1` is the LSP Error severity.
 
@@ -34,7 +34,7 @@ The diagnostic MUST preserve the v1.6.2 CID separation:
 
 | Field | Meaning |
 |---|---|
-| `protocol_catalog_cid` | The active protocol catalog CID. For the current tree this is v1.6.2. |
+| `protocol_catalog_cid` | The active shared LSP protocol catalog CID from `protocol/catalogs/provekit-lsp-shared-1.catalog.json`. |
 | `baseline_catalog_cid` | The CID of the verified `.proof` baseline catalog artifact used for lookup. This is the artifact CID, not a friendly filename. |
 | `baseline_contract_set_cid` | The signer-independent content set CID for the baseline contracts, when present or derivable. |
 | `baseline_index_cid` | The CID of the LSP callsite index artifact described in [callsite-resolution-v1.md](callsite-resolution-v1.md). |
@@ -58,7 +58,7 @@ The LSP diagnostic object is:
   },
   "severity": 1,
   "source": "provekit",
-  "code": "implication-failed",
+  "code": "provekit.lsp.implication_failed",
   "message": "callee precondition not established at this callsite",
   "data": {
     "schema_version": 1,
@@ -77,7 +77,7 @@ The LSP diagnostic object is:
     "baseline_catalog_cid": "blake3-512:...",
     "baseline_contract_set_cid": "blake3-512:...",
     "baseline_index_cid": "blake3-512:...",
-    "protocol_catalog_cid": "blake3-512:52bdb2be4b381cec2aff95db7755c84184878b45cd91882d262114a1abd2dd513f9ef3b250fb87093316fd0fcb48e4b97e109d463e57df5bda6aac0b1c719a0f"
+    "protocol_catalog_cid": "blake3-512:0e3905c2a7a098cd538b9669428a7dffd2b84ba8ccf8fde3724fe2ab61fd3fbc1e1a616a6b20b6817464cdc50c466b5497d4ac2e2dc34c3c15f05535b463643c"
   }
 }
 ```
@@ -99,7 +99,7 @@ An LSP plugin emits this diagnostic only when all of the following hold:
 
 If the accumulated post is `top`, the plugin suppresses this diagnostic. The floor spec treats `top` as a loss of precision, not as a user-visible contract violation.
 
-If lookup, verification, or trust-policy evaluation fails before the implication query can run, the plugin emits a more specific ProvekIt diagnostic code instead of `implication-failed`.
+If lookup, verification, or trust-policy evaluation fails before the implication query can run, the plugin emits a more specific ProvekIt diagnostic code instead of `provekit.lsp.implication_failed`.
 
 ## Hover Content
 
