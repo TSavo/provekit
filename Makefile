@@ -265,8 +265,16 @@ build-ruby:
 	cd implementations/ruby && $(RUBY) -S bundle exec $(RUBY) -Ilib -e 'require "provekit"; abort unless Provekit::Blake3.hex("provekit").start_with?("blake3-512:")'
 
 .PHONY: build-swift
+# Debug, not release. ~90% of this build is the swift-syntax dependency (the
+# Swift parser the source lifter needs), and compiling it with full release
+# optimization is most of the multi-minute tax. Debug is safe here: minted
+# CIDs are content-addressed (JCS+blake3 over contract data), so binary
+# optimization level cannot change them, and CI fixtures are tiny so lifter
+# runtime perf is irrelevant. Override with `SWIFT_BUILD_CONFIG=release` if a
+# release artifact is ever needed.
+SWIFT_BUILD_CONFIG ?= debug
 build-swift:
-	cd implementations/swift && swift build -c release
+	cd implementations/swift && swift build -c $(SWIFT_BUILD_CONFIG)
 
 # --- Mint targets ------------------------------------------------------------
 
