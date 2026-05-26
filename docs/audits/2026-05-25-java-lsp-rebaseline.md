@@ -4,7 +4,9 @@ Date: 2026-05-25
 Issues: #1500, #1486
 Authority: `protocol/specs/2026-05-25-lsp-shared-protocol.md` plus the
 boundary tightening merged in #1520.
-Mode: documentation/audit only. No runtime implementation is changed here.
+Mode: audit plus first implementation slice. This PR adds the Java-owned
+`analyzeDocument` adapter on `provekit-lift-java-source` while preserving the
+existing PEP 1.7 `lift` route.
 
 ## 1. Boundary Ruling
 
@@ -33,8 +35,8 @@ coordinator body-template projection is part of this Java LSP slice.
 
 | Surface | Current state | Evidence | Shared LSP fit |
 |---|---|---|---|
-| Java bind lift RPC | Current lift helper, not an LSP helper | `implementations/java/provekit-lift-java-source/src/main/java/com/provekit/lift/java_source/BindRpcServer.java` speaks `initialize`, `lift`, `shutdown` and returns a PEP 1.7 `ir-document`. | Useful delegate for `analyzeDocument`; missing `provekit-lsp-shared/1`, document CID, normalized `entries`, LSP diagnostics, statuses, and optional project state. |
-| Java bind source walker | Current kit-owned Java parser/range source | `JavaBindLifter.java` uses the javac compiler API, emits `bind-lift-entry`, concept citations, `library-sugar-binding-entry`, diagnostics, method line data, and `body_source.span` for sugar entries. | Best input for shared LSP entries. Needs an adapter that wraps each current payload as `{kind, entry, range}` and fills missing ranges from kit-owned positions. |
+| Java bind lift RPC | Current lift helper and shared-LSP adapter | `implementations/java/provekit-lift-java-source/src/main/java/com/provekit/lift/java_source/BindRpcServer.java` now speaks PEP 1.7 `lift` and shared `analyzeDocument`. | First shared adapter slice is implemented: `initialize` can advertise `provekit-lsp-shared/1`, and `analyzeDocument` returns document CID, wrapped entries, normalized diagnostics, and explicit status rows. |
+| Java bind source walker | Current kit-owned Java parser/range source | `JavaBindLifter.java` uses the javac compiler API, emits `bind-lift-entry`, concept citations, `library-sugar-binding-entry`, diagnostics, method line data, and `body_source.span` for sugar entries. | Shared adapter wraps each current payload as `{kind, entry, range}`; sugar entries reuse `body_source.span`, and fallback bind entries use Java-owned `fn_line`. |
 | Java source-unit lifter | Current but not editor-shaped | `JavaSourceLifter.java` uses javac source positions, emits `function-contract` mementos, refusals, line-local locus, and parse diagnostics. | Useful for `concept-site`, `proof-site`, or lift-gap diagnostics where bind lift cannot classify a source site. Missing shared range shape and stable `provekit.lsp.*` codes. |
 | Java legacy parse RPC | Stale/demo-only for shared LSP | `implementations/java/provekit-lift-java-core/src/main/java/com/provekit/lift/RpcServer.java` names itself `provekit-lsp-java`, exposes `parse` and `lift`, and returns `{declarations, callEdges, implications, warnings}` through `LiftHandler.parseSource`. | May remain a migration adapter, but it is not the target. It does not implement `analyzeDocument`, does not return `lsp-document-analysis`, and its warning/diagnostic shape is not shared LSP. |
 | Java framework extractors | Current kit-owned semantics | `implementations/java/provekit-lift-java-{bean-validation,junit,jpa,hibernate,spring-web,spring-security,swagger,cofoja}/` provide Java/framework-specific extractors behind Java kit code. | Must remain below the Java helper boundary. Coordinator/linkerd must consume their normalized output only. |
@@ -114,13 +116,14 @@ Files:
   Java source walker unless a later design proves that necessary.
 
 Acceptance:
+- Implemented in this PR for `BindRpcServer`.
 - `initialize` returns `protocol_version = "provekit-lsp-shared/1"`,
   `kit_id = "java"`, Java source surfaces, supported entry kinds, diagnostic
   codes, and status kinds.
 - `analyzeDocument` accepts `{kit_id, uri, file, text, document_version,
   workspace_root, accepted_protocol_catalog_cids, policy_cids}`.
 - The result kind is exactly `lsp-document-analysis`.
-- Unit tests drive NDJSON over stdio and assert the shared shape.
+- Unit tests drive the JSON-RPC handler and assert the shared shape.
 
 ### J-LSP-2: Emit Java-Owned Source Ranges For Every Normalized Entry
 
@@ -199,16 +202,18 @@ Acceptance:
 
 For #1500, the Java LSP state is:
 
-- `lift`: partial/current. Java owns parsers and lifters, but shared LSP entry
-  wrapping and full ranges are missing.
+- `lift`: current. Java owns parsers and lifters; this PR adds shared LSP
+  entry wrapping for current bind/sugar output.
 - `materialize`: partial. Java realization exists, but editor status reporting
-  is not exposed through shared LSP.
+  is currently exposed as explicit `unknown` status, not fake success.
 - `emit/check`: partial. Java JUnit emit exists, but coordinator-safe status RPC
-  is missing.
+  is currently exposed as explicit `unknown` status, not coordinator inference.
 - `prove`: partial. Proof status must be surfaced as non-vacuous shared LSP
-  status/diagnostics; no Java LSP path does that today.
-- `LSP`: stale/demo-only. Current Java-facing LSP surfaces are legacy `parse`
-  adapters or research notes, not the shared `analyzeDocument` protocol.
+  status/diagnostics; this PR reports `unknown` so total-claims-zero cannot
+  masquerade as success.
+- `LSP`: first shared route implemented. Legacy `parse` adapters still exist
+  elsewhere, but Java bind source now has `initialize -> analyzeDocument ->
+  lsp-document-analysis`.
 
 For #1486, this audit preserves the parity tracker invariant: Java kit owns
 Java language/package/test semantics; coordinator/linkerd consume normalized
