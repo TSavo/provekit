@@ -334,9 +334,8 @@ jobs:
         uses: actions/checkout@v4
 
       - name: Set up Rust (stable)
-        # mint-swift depends on build-rust (the orchestrator binary
-        # provekit-cli is the dispatcher invoked via the lift-plugin-protocol
-        # RPC against mint-swift-self-contracts).
+        # mint-swift depends on the release provekit CLI plus the
+        # self-contract verifier; it must not build the whole Rust workspace.
         uses: dtolnay/rust-toolchain@stable
 
       - name: Restore Rust target dirs
@@ -351,7 +350,6 @@ jobs:
             ~/.cargo/registry
             ~/.cargo/git
             implementations/rust/target
-            tools/recompute-spec-cids/target
             tools/foundation-keygen/target
           key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock') }}
           restore-keys: |
@@ -369,7 +367,6 @@ jobs:
             ~/.cargo/registry
             ~/.cargo/git
             implementations/rust/target
-            tools/recompute-spec-cids/target
             tools/foundation-keygen/target
           key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock') }}
           restore-keys: |
@@ -408,10 +405,14 @@ jobs:
       - name: make help (sanity)
         run: make help
 
+      - name: check macOS Swift Rust build scope
+        run: make check-macos-swift-rust-scope
+
       - name: make mint-swift
-        # End-to-end: build-rust + build-swift, then dispatch mint --kit=swift
-        # to the swift orchestrator (mint-swift-self-contracts --rpc), and
-        # verify the resulting contractSetCid matches the pinned envelope at
+        # End-to-end: build the release provekit CLI + verifier + Swift slab,
+        # then dispatch mint --kit=swift to the swift orchestrator
+        # (mint-swift-self-contracts --rpc), and verify the resulting
+        # contractSetCid matches the pinned envelope at
         # provenance/self-contracts-attest/swift.json. Failure here means the
         # swift kit's emission has drifted relative to the rest of the
         # protocol (or the swift slab itself has changed) and is a hard stop.
