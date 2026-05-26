@@ -382,16 +382,23 @@ jobs:
         uses: actions/cache/restore@v5
         with:
           path: implementations/swift/.build
-          key: ${{ runner.os }}-swiftpm-${{ hashFiles('implementations/swift/Package.resolved') }}
+          key: ${{ runner.os }}-${{ runner.name }}-swiftpm-${{ hashFiles('implementations/swift/Package.resolved') }}
           restore-keys: |
-            ${{ runner.os }}-swiftpm-
+            ${{ runner.os }}-${{ runner.name }}-swiftpm-
 
       - name: Save SwiftPM build
-        if: github.event_name != 'pull_request'
+        # Per-runner key (includes runner.name): a runner only ever restores a
+        # .build it built itself, so clang's ModuleCache .pcm files — which
+        # embed the absolute build path — never get restored onto a runner with
+        # a different _work path (the prove-swift cross-runner failure). Save on
+        # PRs too (not just push): main-push dispatches to one runner per event,
+        # so without PR-save the other runner would be permanently cold. With
+        # the per-runner key, only the first PR on each runner pays the upload;
+        # the rest cache-hit and skip.
         uses: actions/cache@v5
         with:
           path: implementations/swift/.build
-          key: ${{ runner.os }}-swiftpm-${{ hashFiles('implementations/swift/Package.resolved') }}
+          key: ${{ runner.os }}-${{ runner.name }}-swiftpm-${{ hashFiles('implementations/swift/Package.resolved') }}
 
       - name: Verify swift toolchain
         # macOS GitHub-hosted runners ship the swift toolchain
@@ -610,7 +617,11 @@ jobs:
     name: "prove-swift (C1-C8 conformance, macOS)"
     # Self-hosted Mac runner (issue #305).
     runs-on: [self-hosted, macOS, X64]
-    timeout-minutes: 20
+    # 35 (was 20): the per-runner SwiftPM cache key means the first PR on each
+    # runner cold-compiles swift-syntax (~15 min) on top of the rust CLI build
+    # before there's a warm .build to restore. Headroom so that first cold run
+    # reports green instead of clipping at the deadline.
+    timeout-minutes: 35
     needs: conformance
 
     steps:
@@ -655,16 +666,23 @@ jobs:
         uses: actions/cache/restore@v5
         with:
           path: implementations/swift/.build
-          key: ${{ runner.os }}-swiftpm-${{ hashFiles('implementations/swift/Package.resolved') }}
+          key: ${{ runner.os }}-${{ runner.name }}-swiftpm-${{ hashFiles('implementations/swift/Package.resolved') }}
           restore-keys: |
-            ${{ runner.os }}-swiftpm-
+            ${{ runner.os }}-${{ runner.name }}-swiftpm-
 
       - name: Save SwiftPM build
-        if: github.event_name != 'pull_request'
+        # Per-runner key (includes runner.name): a runner only ever restores a
+        # .build it built itself, so clang's ModuleCache .pcm files — which
+        # embed the absolute build path — never get restored onto a runner with
+        # a different _work path (the prove-swift cross-runner failure). Save on
+        # PRs too (not just push): main-push dispatches to one runner per event,
+        # so without PR-save the other runner would be permanently cold. With
+        # the per-runner key, only the first PR on each runner pays the upload;
+        # the rest cache-hit and skip.
         uses: actions/cache@v5
         with:
           path: implementations/swift/.build
-          key: ${{ runner.os }}-swiftpm-${{ hashFiles('implementations/swift/Package.resolved') }}
+          key: ${{ runner.os }}-${{ runner.name }}-swiftpm-${{ hashFiles('implementations/swift/Package.resolved') }}
 
       - name: prove-swift
         run: make prove-swift
