@@ -169,7 +169,12 @@ public final class JavaBindLifter {
             return;
         }
         for (Diagnostic<?> d : dc.getDiagnostics()) {
-            diagnostics.add(diag(d.getKind().name().toLowerCase(Locale.ROOT), d.getMessage(Locale.ROOT)));
+            diagnostics.add(diag(
+                d.getKind().name().toLowerCase(Locale.ROOT),
+                d.getMessage(Locale.ROOT),
+                d.getLineNumber(),
+                d.getColumnNumber()
+            ));
         }
         Trees trees = Trees.instance(task);
         for (CompilationUnitTree unit : units) {
@@ -278,10 +283,34 @@ public final class JavaBindLifter {
             if (method.getName().contentEquals("<init>")) return null;
 
             String fnName = method.getName().toString();
-            int line = (int) trees.getSourcePositions().getStartPosition(
+            long methodStartOffset = trees.getSourcePositions().getStartPosition(
                 path.getCompilationUnit(), method);
-            // Translate offset to 1-based line number.
-            int fnLine = lineOf(source, line);
+            long methodEndOffset = trees.getSourcePositions().getEndPosition(
+                path.getCompilationUnit(), method);
+            int methodStartLine = methodStartOffset >= 0 && methodStartOffset <= Integer.MAX_VALUE
+                ? lineOf(source, (int) methodStartOffset)
+                : 1;
+            int methodEndLine = methodEndOffset >= 0 && methodEndOffset <= Integer.MAX_VALUE
+                ? lineOf(source, (int) methodEndOffset)
+                : methodStartLine;
+            int methodStartCol = methodStartOffset >= 0 && methodStartOffset <= Integer.MAX_VALUE
+                ? columnOf(source, (int) methodStartOffset)
+                : 0;
+            int methodEndCol = methodEndOffset >= 0 && methodEndOffset <= Integer.MAX_VALUE
+                ? columnOf(source, (int) methodEndOffset)
+                : lineLength(source, methodStartLine);
+            if (methodEndLine < methodStartLine) methodEndLine = methodStartLine;
+            if (methodEndLine == methodStartLine && methodEndCol < methodStartCol) {
+                methodEndCol = methodStartCol;
+            }
+            // Translate javac offsets to the existing 1-based declaration line.
+            int fnLine = methodStartLine;
+            Jcs.Obj methodSourceRange = Jcs.object(
+                "end_col", Jcs.integer(methodEndCol),
+                "end_line", Jcs.integer(methodEndLine),
+                "start_col", Jcs.integer(methodStartCol),
+                "start_line", Jcs.integer(methodStartLine)
+            );
 
             // Param names + types from the AST (not the resolved element, which
             // is more robust to attribution failures).
@@ -353,6 +382,7 @@ public final class JavaBindLifter {
                 "param_names", Jcs.array(paramNames),
                 "param_types", Jcs.array(paramTypes),
                 "return_type", Jcs.string(returnType),
+                "source_range", methodSourceRange,
                 "source_function_name", Jcs.string(fnName),
                 "term_shape", termShape,
                 "term_shape_cid", Jcs.string(termShapeCid),
@@ -375,23 +405,6 @@ public final class JavaBindLifter {
                     "return_type", Jcs.string(returnType)
                 );
                 String signatureShapeCid = Jcs.cid(signatureShape);
-
-                long methodStartOffset = trees.getSourcePositions().getStartPosition(
-                    path.getCompilationUnit(), method);
-                long methodEndOffset = trees.getSourcePositions().getEndPosition(
-                    path.getCompilationUnit(), method);
-                int methodStartLine = methodStartOffset >= 0 && methodStartOffset <= Integer.MAX_VALUE
-                    ? lineOf(source, (int) methodStartOffset)
-                    : fnLine;
-                int methodEndLine = methodEndOffset >= 0 && methodEndOffset <= Integer.MAX_VALUE
-                    ? lineOf(source, (int) methodEndOffset)
-                    : fnLine;
-                int methodStartCol = methodStartOffset >= 0 && methodStartOffset <= Integer.MAX_VALUE
-                    ? columnOf(source, (int) methodStartOffset)
-                    : 0;
-                int methodEndCol = methodEndOffset >= 0 && methodEndOffset <= Integer.MAX_VALUE
-                    ? columnOf(source, (int) methodEndOffset)
-                    : 0;
 
                 String[] srcLines = source.split("\n", -1);
                 int startIdx = Math.max(0, methodStartLine - 1);
@@ -2094,6 +2107,21 @@ public final class JavaBindLifter {
         return col;
     }
 
+    private static int lineLength(String source, int oneBasedLine) {
+        int currentLine = 1;
+        int length = 0;
+        for (int i = 0; i < source.length(); i++) {
+            char ch = source.charAt(i);
+            if (currentLine == oneBasedLine) {
+                if (ch == '\n') return length;
+                length++;
+            } else if (ch == '\n') {
+                currentLine++;
+            }
+        }
+        return currentLine == oneBasedLine ? length : 0;
+    }
+
     private static String typeName(TypeMirror t) {
         if (t == null) return "?";
         if (t.getKind() == TypeKind.VOID) return "()";
@@ -2102,6 +2130,22 @@ public final class JavaBindLifter {
 
     private static Jcs.Obj diag(String kind, String message) {
         return Jcs.object("kind", Jcs.string(kind), "message", Jcs.string(message));
+    }
+
+    private static Jcs.Obj diag(String kind, String message, long line, long oneBasedColumn) {
+        List<Object> fields = new ArrayList<>(List.of(
+            "kind", Jcs.string(kind),
+            "message", Jcs.string(message)
+        ));
+        if (line > 0) {
+            fields.add("line");
+            fields.add(Jcs.integer(line));
+        }
+        if (oneBasedColumn > 0) {
+            fields.add("col");
+            fields.add(Jcs.integer(oneBasedColumn - 1));
+        }
+        return Jcs.object(fields.toArray());
     }
 
     private static Jcs.Obj withField(Jcs.Obj base, String key, Jcs.Json value) {
