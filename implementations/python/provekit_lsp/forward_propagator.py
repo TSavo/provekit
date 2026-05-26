@@ -44,7 +44,7 @@ class ForwardPropagator:
         for c in current_post.constraints:
             if c not in callee_pre.constraints:
                 return DiagnosticResult(
-                    code="provekit.lsp.implication_failed",
+                    code="implication-failed",
                     message=f"post does not imply callee pre: {' && '.join(callee_pre.constraints)}",
                 )
         return None
