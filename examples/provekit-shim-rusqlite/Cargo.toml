@@ -9,7 +9,12 @@ keywords = ["sqlite", "rusqlite", "provekit", "proofchain", "boundary-realizatio
 categories = ["database"]
 
 [dependencies]
-rusqlite = "0.39"
+# `bundled`: compile SQLite from the amalgamation and link it statically, so
+# the build never depends on a system `libsqlite3.so` being discoverable by the
+# linker. The self-hosted runner fleet is heterogeneous (lld doesn't always get
+# `/usr/lib/x86_64-linux-gnu` on its search path), which intermittently broke
+# `-lsqlite3` resolution in build-rust. Bundled makes the build runner-independent.
+rusqlite = { version = "0.39", features = ["bundled"] }
 provekit = { package = "provekit-sugar", path = "../../implementations/rust/provekit-sugar" }
 
 [dev-dependencies]

@@ -10,4 +10,5 @@ name = "rusqlite-demo"
 path = "src/main.rs"
 
 [dependencies]
-rusqlite = "0.39"
+# bundled: static SQLite, no system libsqlite3.so link dependency (runner-independent).
+rusqlite = { version = "0.39", features = ["bundled"] }
