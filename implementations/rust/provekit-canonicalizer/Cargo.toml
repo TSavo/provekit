@@ -6,6 +6,10 @@ license.workspace = true
 authors.workspace = true
 description = "ProvekIt: JCS-JSON encoder (RFC 8785) + BLAKE3-512 self-identifying hash helper."
 
+[features]
+default = []
+pure-blake3 = ["blake3/pure"]
+
 [dependencies]
 blake3 = { workspace = true }
 hex = { workspace = true }
