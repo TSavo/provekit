@@ -10,7 +10,7 @@ ProvekIt diagnostic codes are stable handles for verifier, lift, bridge, and ext
 | `PROVEKIT_E004` | Protocol catalog mismatch. | Run `provekit verify-protocol` and check whether a PEP transition is admitted. |
 | `PROVEKIT_E005` | Canonicalization mismatch. | Compare canonical bytes before hashing; do not compare host-language structures. |
 | `PROVEKIT_E006` | Bridge target mismatch. | Confirm source CID, target CID, and accepted implication witness. |
-| `PROVEKIT_E007` | Extension body rejected. | Validate the CICP, GCP, ORP, CBP, FRP, or PEP body with the relevant checker. |
+| `PROVEKIT_E007` | Extension body rejected. | Validate the GCP, ORP, CBP, FRP, or PEP body with the relevant checker. |
 | `PROVEKIT_W001` | Solver fallback required or timed out. | Add a cached implication witness or simplify the lifted obligation. |
 | `PROVEKIT_I001` | Contract lifted successfully. | Informational; no action needed. |
 | `PROVEKIT_H001` | Suggested bridge, lift, or annotation improvement. | Optional editor hint. |

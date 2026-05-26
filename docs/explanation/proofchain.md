@@ -8,8 +8,7 @@ witnesses, and decide whether the claim holds under their policy.
 
 ProvekIt already builds proofchains. The term names the high-level primitive
 formed by the existing pieces: ProofIR claims, signed mementos, `.proof`
-bundles, implication witnesses, bridge attestations, CICP result witnesses,
-and verifier policy.
+bundles, implication witnesses, bridge attestations, and verifier policy.
 
 ## The Payload
 
@@ -36,10 +35,10 @@ signatures, and deterministic local verification. The payload is different.
 
 ProofIR and lifters/lowerers make that closure cross boundaries. A lifter turns
 a host artifact into canonical claims; a lowerer or adapter maps admitted
-claims back into local obligations, generated repairs, protocol migrations, CI
-closures, or package boundaries. Once lifted, a Rust postcondition, a
-TypeScript precondition, a protocol invariant, and a CI witness can occupy the
-same logical address space. The proofchain head carries their transitive
+claims back into local obligations, generated repairs, protocol migrations, or
+package boundaries. Once lifted, a Rust postcondition, a TypeScript
+precondition, and a protocol invariant can occupy the same logical address
+space. The proofchain head carries their transitive
 implications together.
 
 ## What It Contains
@@ -51,9 +50,9 @@ existing ProvekIt artifacts already form.
 |---|---|
 | Claim | Canonical ProofIR or protocol claim bytes |
 | Identity | BLAKE3-512 CIDs over canonical bytes |
-| Evidence step | Witness, implication memento, bridge memento, or CI result witness |
+| Evidence step | Witness, implication memento, or bridge memento |
 | Signature | Ed25519 attestation over canonical claim or envelope bytes |
-| Transport | `.proof` bundle, checked-in CICP witness, or protocol evolution artifact |
+| Transport | `.proof` bundle or protocol evolution artifact |
 | Acceptance | Verifier policy, catalog CID, and fail-closed checks |
 
 The `.proof` file remains the portable container format. A memento remains the

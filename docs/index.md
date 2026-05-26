@@ -2,7 +2,7 @@
 
 ProvekIt is a toolchain for proving content-addressed claims.
 
-The center use case is software correctness across domains: language to language, package to package, protocol version to protocol version, CI result to supply-chain input closure, and generated repair to re-lifted proof. Cross-platform contract correctness is one expression of that. The common shape is simple: canonicalize a proposition, name it by CID, name the evidence by CID, sign the edge, and fail closed when the graph does not carry the claim.
+The center use case is software correctness across domains: language to language, package to package, protocol version to protocol version, and generated repair to re-lifted proof. Cross-platform contract correctness is one expression of that. The common shape is simple: canonicalize a proposition, name it by CID, name the evidence by CID, sign the edge, and fail closed when the graph does not carry the claim.
 
 That linked evidence object is a proofchain: a locally verifiable chain of signed, content-addressed evidence for logically true claims.
 
@@ -45,8 +45,8 @@ Current catalog CID: `blake3-512:dd0cc79889ee67d2594f5cfa20a191bafed15196fb2c503
 | Zig | [tutorials/zig.md](tutorials/zig.md) | kit and comment-based lift |
 | Go | [tutorials/go.md](tutorials/go.md) | kit and validator lift |
 | C++ | [tutorials/cpp.md](tutorials/cpp.md) | kit and C++ contracts lift |
-| Swift | [tutorials/swift.md](tutorials/swift.md) | kit and CICP conformance |
-| C | [tutorials/c.md](tutorials/c.md) | kit and CICP conformance |
+| Swift | [tutorials/swift.md](tutorials/swift.md) | kit conformance |
+| C | [tutorials/c.md](tutorials/c.md) | kit conformance |
 | A polyglot stack | [tutorials/polyglot-stack.md](tutorials/polyglot-stack.md) | cross-domain boundary equivalence |
 
 See [reference/per-language-status.md](reference/per-language-status.md) for the live matrix.
@@ -57,7 +57,6 @@ See [reference/per-language-status.md](reference/per-language-status.md) for the
 |---|---|
 | Publish a `.proof` artifact | [how-to/publishing-a-proof.md](how-to/publishing-a-proof.md) |
 | Bridge claims across languages or domains | [how-to/cross-domain-bridges.md](how-to/cross-domain-bridges.md) |
-| Bind CI results to supply-chain inputs | [how-to/content-addressed-ci.md](how-to/content-addressed-ci.md) |
 | Run Bug Zoo specimens | [how-to/bug-zoo.md](how-to/bug-zoo.md) |
 | Debug a failed verifier or IDE handshake | [how-to/debugging-a-failed-handshake.md](how-to/debugging-a-failed-handshake.md) |
 | Integrate an IDE | [how-to/ide-integration/overview.md](how-to/ide-integration/overview.md) |
@@ -70,14 +69,12 @@ See [reference/per-language-status.md](reference/per-language-status.md) for the
 |---|---|
 | Protocol catalog | [../protocol/specs/2026-04-30-protocol-catalog.json](../protocol/specs/2026-04-30-protocol-catalog.json) |
 | Protocol Evolution Protocol (PEP) | [../protocol/specs/2026-05-07-protocol-evolution-protocol.md](../protocol/specs/2026-05-07-protocol-evolution-protocol.md) |
-| Content-Addressed CI Protocol (CICP) | [../protocol/specs/2026-05-07-content-addressed-ci-protocol.md](../protocol/specs/2026-05-07-content-addressed-ci-protocol.md) |
 | Grammar Conformance Protocol (GCP) | [../protocol/specs/2026-05-06-grammar-conformance-protocol.md](../protocol/specs/2026-05-06-grammar-conformance-protocol.md) |
 | Truth Discharge Protocol (TDP) | [../protocol/specs/2026-05-06-truth-discharge-protocol.md](../protocol/specs/2026-05-06-truth-discharge-protocol.md) |
 | Obligation Realizer Protocol (ORP) | [../protocol/specs/2026-05-06-obligation-realizer-protocol.md](../protocol/specs/2026-05-06-obligation-realizer-protocol.md) |
 | Checker Bytecode Protocol (CBP) | [../protocol/specs/2026-05-06-checker-bytecode-protocol.md](../protocol/specs/2026-05-06-checker-bytecode-protocol.md) |
 | Fix Receipt Protocol (FRP) | [../protocol/specs/2026-05-06-fix-receipt-protocol.md](../protocol/specs/2026-05-06-fix-receipt-protocol.md) |
 | Proof protocol fixtures | [../protocol/conformance/proof-protocol/README.md](../protocol/conformance/proof-protocol/README.md) |
-| CICP vectors | [../protocol/conformance/cicp/README.md](../protocol/conformance/cicp/README.md) |
 | PEP dogfood transitions | [../protocol/evolution/README.md](../protocol/evolution/README.md) |
 
 ## Concepts

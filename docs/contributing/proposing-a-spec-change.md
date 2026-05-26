@@ -14,7 +14,7 @@ The specs at `protocol/specs/` cover:
 - The lattice tractability theorem.
 - The signatures and non-repudiation spec.
 - The kit standard.
-- Extension protocols such as PEP, CICP, GCP, TDP, ORP, CBP, and FRP.
+- Extension protocols such as PEP, GCP, TDP, ORP, CBP, and FRP.
 - Reference contract registries, prover backend interfaces, and other claim families as they become cataloged.
 
 A change to any of these is a spec change. Common triggers:
@@ -24,7 +24,7 @@ A change to any of these is a spec change. Common triggers:
 3. **A clarification is needed.** A spec is ambiguous and two implementations diverged; the spec needs to disambiguate.
 4. **A bug fix.** The spec says something incorrect (rare but real).
 5. **A new bridge anchor.** The reference-contracts library wants to add `ref-uuid-v1` or similar.
-6. **A new extension body convention.** A protocol/tooling surface needs a signed claim family, such as a CI blast radius, grammar conformance claim, realizer output, or proof-file conformance witness.
+6. **A new extension body convention.** A protocol/tooling surface needs a signed claim family, such as a grammar conformance claim, realizer output, or proof-file conformance witness.
 
 ## Before proposing
 
@@ -79,7 +79,7 @@ Who is going to do the work? Concretely:
 - Lift adapter updates.
 - Tutorial and reference doc updates.
 - PEP transition body/witness under `protocol/evolution/<version>/` if the catalog changes.
-- CICP/proof-protocol/Bug Zoo vector updates if the new claim family affects CI, `.proof`, or realizer behavior.
+- Proof-protocol/Bug Zoo vector updates if the new claim family affects `.proof` or realizer behavior.
 
 Most spec proposals fail because they have no adoption plan. Whoever proposes a change generally takes responsibility for shepherding the change through. Maintainers can help, but you're driving.
 

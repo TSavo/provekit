@@ -40,7 +40,6 @@ cargo run --release --manifest-path tools/recompute-spec-cids/Cargo.toml -- --ve
 | Contract set extension | `blake3-512:839e82096d04b1241ffa1f6158fcea6bfeb78f3836664a66a13ff11b3cde58d72e6c85bfc619ba1341f13b8375f655bdf5582b0eac91d27648f0048bee8f9867` |
 | Version chains pinning | `blake3-512:281bf014f6f0ebc9a5d455329ee033ff8b7ee85e001bcbdcb45a62c14e43855892c46462789ccb74961859e708eae70829fdf736798c17f59f0239ef78dd7e45` |
 | Protocol Evolution Protocol (PEP) | `blake3-512:d8827f89df20e5be38c4d5de851fe4e55420dcd6cacfd9b98f458c53e64e6ba07349e29f8da2fbab6cb7195b297c3704a70f489c020e3f55c96ef702c4a09949` |
-| Content-Addressed CI Protocol (CICP) | `blake3-512:4b63e8c58d59b54272407b624b67578b7e1a8fdeb71d41c7d5e18d3bd6d668e7f77c8e2b9a68a10d3732dda40baf66db27f87ab10cbdb1d52e857bcbb7d3ec47` |
 | Lift Plugin Protocol | `blake3-512:f2b856a8010b0f95cdd9961e0c367b003b1de7be39b6668db7f96cfe884a99f153609a846be39ad4a4f40a3bb778fecf2b0e24908b94411f32be165473045055` |
 
 ## v1.6.3 changes (patch over v1.6.2)
@@ -51,14 +50,6 @@ One extension-surface re-bake; no core verifier, ProofIR grammar, canonicalizati
 - `provekit package inspect` is specified as a client command over `pep/1.7.0`: it dispatches to the configured lifter and requires a `package-inspection-document`.
 - Package inspection now has named rails for package artifact bytes, CI input closure, release contract sets, conventional receipts, admission hints, and shipped `.proof` files.
 - The PEP transition is recorded under [`../../protocol/evolution/v1.6.3/`](../../protocol/evolution/v1.6.3/), with a `ProtocolEvolutionBodyClaim` and TDP-shaped witness.
-
-## v1.6.2 changes (patch over v1.6.1)
-
-One cataloged extension-only addition; no core verifier, ProofIR grammar, canonicalization, proof-file, or cross-language semantic obligation changed. v1.6.1 mementos, fixtures, `.proof` bundles, and kit conformance obligations remain valid forever against the bytes they were minted for.
-
-- **`content-addressed-ci-protocol`** added as a draft extension protocol for CI blast-radius bodies, job-result witnesses, reuse witnesses, and impact witnesses.
-- CICP makes CI results supply-chain claims: a result is tied to the exact source, protocol catalog, kit/toolchain, config, and witness input closure. Reuse is only an admissible consequence when that closure is byte-identical to a reviewed accepted result witness.
-- The PEP transition is recorded under [`../../protocol/evolution/v1.6.2/`](../../protocol/evolution/v1.6.2/), with a `ProtocolEvolutionBodyClaim` and TDP-shaped witness.
 
 ## v1.6.1 changes (patch over v1.6.0)
 

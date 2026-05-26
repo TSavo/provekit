@@ -4,10 +4,10 @@ The matrix of what's shipping, what's planned, and what's under evaluation acros
 
 The current status has two layers:
 
-- **Active conformance surface:** protocol catalog verification, proof-protocol fixtures, CICP golden vectors, self-contract attestations, lift-plugin-protocol C1-C8 checks, and language-native tests.
+- **Active conformance surface:** protocol catalog verification, proof-protocol fixtures, self-contract attestations, lift-plugin-protocol C1-C8 checks, and language-native tests.
 - **Historical bridge-compatibility appendix:** older substrate-layering and bridge-target migration state. That appendix remains below for compatibility context only; the current protocol catalog is v1.6.3.
 
-For the spec-by-spec list see [`cids.md`](cids.md). For PEP, CICP, GCP, ORP, CBP, proof protocol, and Bug Zoo surfaces see [`protocol-extensions.md`](protocol-extensions.md).
+For the spec-by-spec list see [`cids.md`](cids.md). For PEP, GCP, ORP, CBP, proof protocol, and Bug Zoo surfaces see [`protocol-extensions.md`](protocol-extensions.md).
 
 ## Component glossary
 
@@ -26,30 +26,9 @@ Legend: `+` shipping in the current v1.6.3 tree, `~` planned or partial, `o` und
 |---|---|
 | Protocol catalog | `+` v1.6.3 catalog CID verified by `tools/recompute-spec-cids/` and `provekit verify-protocol --signed` |
 | PEP | `+` v1.6.1, v1.6.2, and v1.6.3 dogfood transitions checked in under `protocol/evolution/` |
-| CICP | `+` Rust reference checker plus cross-language golden vectors in `protocol/conformance/cicp/` |
 | Proof protocol | `+` `.proof` fixture corpus and Rust proof-conformance checker under `provekit proof` |
-| CICP CI admission | `+` GitHub Actions computes blast radii, admits exact-closure reuse, and uploads candidate result witnesses |
 | Bug Zoo | `+` the self-contained `menagerie/bug-zoo/` runner verifies Java, TypeScript, and C# null-boundary exhibits, Java value-scope JUnit/Spring exhibits, and a Rust<->Go polyglot link-obligation exhibit with fixed-pair receipts |
 | ORP droppers/realizers | `~` proof-plan and language-dropper projections are draft extension surfaces; broader per-language realizer coverage is emerging |
-
-## CICP Golden-Vector Coverage
-
-All listed kits now carry CICP vector checks or equivalent language-library coverage:
-
-| Language | CICP vector status |
-|---|---|
-| Rust | `+` `libprovekit` reference checker and tests |
-| TypeScript | `+` canonicalizer conformance test |
-| Python | `+` pytest conformance test |
-| Java / JVM | `+` Maven conformance test |
-| C# | `+` test suite conformance |
-| Ruby | `+` minitest conformance |
-| Zig | `+` Zig test conformance |
-| Go | `+` canonicalizer conformance test |
-| C++ | `+` canonicalizer conformance test |
-| Swift | `+` Swift package conformance |
-| C | `+` C test runner conformance |
-| PHP | `+` PHP conformance test |
 
 ## Matrix
 

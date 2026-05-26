@@ -8,7 +8,7 @@ A walk-through of the protocol's mechanics in roughly fifteen minutes. This docu
 
 ProvekIt is not only a library you call. It is a pipeline for proving content-addressed claims. Data flows in one direction: grammar or source surface -> canonical claim -> CID -> signed evidence -> proof bundle or extension witness -> verification.
 
-For application correctness, the source surface is a host-language contract idiom. For protocol evolution, the source surface is a catalog diff and policy. For CICP, it is a CI blast-radius closure. For Bug Zoo droppers, it is a proof plan, language projection, transformed artifact, post-lift ProofIR, and fix receipt.
+For application correctness, the source surface is a host-language contract idiom. For protocol evolution, the source surface is a catalog diff and policy. For Bug Zoo droppers, it is a proof plan, language projection, transformed artifact, post-lift ProofIR, and fix receipt.
 
 ### Stage 1: CDDL (the single source of truth)
 
@@ -164,8 +164,7 @@ The IR is language-agnostic. A Rust kit, a TypeScript kit, and a Go kit all emit
 The handshake at Tier 1 sees them as identical. A TypeScript consumer of a Rust library has the same Tier-1 discharge fraction as a Rust consumer would. Cross-domain verification works because all kits bridge to the same reference contracts.
 
 The same principle applies beyond language boundaries. PEP bridges protocol
-catalog versions. CICP binds CI results to supply-chain input closures. GCP
-witnesses extension body grammar conformance. ORP and Bug Zoo droppers accept
+catalog versions. GCP witnesses extension body grammar conformance. ORP and Bug Zoo droppers accept
 generated host artifacts only after re-lift proves closure. These are all
 domain crossings over the same signed CID graph.
 

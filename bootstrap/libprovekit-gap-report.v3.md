@@ -40,15 +40,9 @@ Total items audited: 1109
 
 ### unsupported-literal (163 items)
 
-- `libprovekit::ci::check_ci_body`
-- `libprovekit::ci::ci_job_result_name`
-- `libprovekit::ci::impl CIBlastRadius::validate`
-- `libprovekit::ci::impl CIBlastRadiusInput::build`
-- `libprovekit::ci::impl CIImpactBodyClaim::validate`
 
 ### unsupported-value-if (32 items)
 
-- `libprovekit::ci::require_input_cids_close`
 - `libprovekit::compose::compose_chain_contracts_internal`
 - `libprovekit::compose::composition_error_to_refusal`
 - `libprovekit::compose::impl EffectSet::check_opacity_effects`
@@ -144,13 +138,9 @@ Total items audited: 1109
 - `libprovekit::canonical::json_jcs`
 - `libprovekit::canonical::serializable_cid`
 - `libprovekit::canonical::serializable_jcs`
-- `libprovekit::ci::admit_identical_reuse`
 
 ### return-type-user-defined (150 items)
 
-- `libprovekit::ci::cid_set`
-- `libprovekit::ci::impl Default for CINondeterminism::default`
-- `libprovekit::ci::message`
 - `libprovekit::compose::aliasing_mementos_to_value`
 - `libprovekit::compose::build_memento_value`
 
@@ -160,20 +150,13 @@ Total items audited: 1109
 - `libprovekit::canonical::json_jcs`
 - `libprovekit::canonical::serializable_cid`
 - `libprovekit::canonical::serializable_jcs`
-- `libprovekit::ci::admit_identical_reuse`
 
 ### macro-not-expanded (58 items)
 
 - `libprovekit::canonical::serializable_jcs`
-- `libprovekit::ci::admit_identical_reuse`
-- `libprovekit::ci::require_cid_field`
-- `libprovekit::ci::require_cid_vec`
-- `libprovekit::ci::require_equal`
 
 ### trait-path-truncated (42 items)
 
-- `libprovekit::ci::admit_identical_reuse`
-- `libprovekit::ci::impl Default for CINondeterminism::default`
 - `libprovekit::compose::domain_claim_fcm_tests::unbound_contract_display_is_informative`
 - `libprovekit::compose::impl TryFrom<&FunctionContractMemento> for provekit_ir_types :: DomainClaim::try_from`
 - `libprovekit::primitives::compose_verdict`
@@ -196,8 +179,6 @@ Total items audited: 1109
 
 ### type-inference-assumed-int (21 items)
 
-- `libprovekit::ci::admit_identical_reuse`
-- `libprovekit::ci::require_equal`
 - `libprovekit::compose::impl Locus::is_unknown`
 - `libprovekit::types::impl Path::step`
 - `libprovekit::types::impl PathDocument::materialized_inputs`
@@ -212,10 +193,6 @@ Total items audited: 1109
 
 ### type-inference-assumed-bool (17 items)
 
-- `libprovekit::ci::require_cid_field`
-- `libprovekit::ci::require_cid_vec`
-- `libprovekit::ci::require_nonempty`
-- `libprovekit::ci::require_one_of`
 - `libprovekit::compose::impl Locus::is_unknown`
 
 ### return-type-byte-vec (14 items)
@@ -252,7 +229,6 @@ Total items audited: 1109
 
 ### return-type-vec (2 items)
 
-- `libprovekit::ci::sorted_unique`
 - `libprovekit::promotion_decision_registry::payload_string_array`
 
 ## Recommended residual sub-issues

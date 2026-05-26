@@ -16,13 +16,7 @@ A handshake fails when the verifier cannot carry a claim from a producer postcon
    provekit proof inspect path/to/artifact.proof
    ```
 
-3. Recompute the relevant body CID if the failing surface is an extension body:
-
-   ```sh
-   provekit ci check --body path/to/body.json
-   ```
-
-4. Compare the consumer precondition CID, producer postcondition CID, and any bridge target CID. A one-byte canonicalization drift is a different claim.
+3. Compare the consumer precondition CID, producer postcondition CID, and any bridge target CID. A one-byte canonicalization drift is a different claim.
 
 ## Common Causes
 
@@ -34,7 +28,7 @@ A handshake fails when the verifier cannot carry a claim from a producer postcon
 
 **Missing bridge.** The producer and consumer claims may both be valid but not connected. Add or accept a bridge from the source claim to the target reference contract.
 
-**Unaccepted extension witness.** CICP, GCP, ORP, CBP, and FRP bodies are claims, not magic privileges. Policy-aware tooling must verify and admit the body before it is part of the graph.
+**Unaccepted extension witness.** GCP, ORP, CBP, and FRP bodies are claims, not magic privileges. Policy-aware tooling must verify and admit the body before it is part of the graph.
 
 ## IDE Symptoms
 

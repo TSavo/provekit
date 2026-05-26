@@ -78,10 +78,9 @@ provekit prove
 
 Same handshake, same discharge shape as the [Rust tutorial step 4](rust.md#step-4-verify).
 
-## 6. Wire your IDE and CI
+## 6. Wire your IDE
 
 - **IDE:** the JVM LSP plugin is planned. Until then, no in-editor squigglies.
-- **CI:** see [docs/how-to/content-addressed-ci.md](../how-to/content-addressed-ci.md).
 
 ## Cross-domain equivalence
 

@@ -42,10 +42,9 @@ let cid = try IR.canonicalize(formula).hash()
 provekit prove
 ```
 
-## 6. Wire your IDE and CI
+## 6. Wire your IDE
 
 - **IDE:** Swift LSP plugin planned.
-- **CI:** see [content-addressed CI](../how-to/content-addressed-ci.md).
 
 ## What's next
 

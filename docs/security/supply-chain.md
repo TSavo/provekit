@@ -2,8 +2,6 @@
 
 ProvekIt's `.proof` bundle is the supply-chain artifact. Under v1.4 and later, the supply-chain anchor is the **rank-3 consumer pin** `(contractCid, witnessCid, binaryCid)`, not a single CID. Each axis catches a distinct attack class; the combination closes the supply-chain perimeter at a level single-axis pinning cannot.
 
-CICP extends that posture into CI. A CI result is not trusted because a workflow badge is green or a cache key matched. It is trusted only when the result witness names the exact source, protocol catalog, kit/toolchain, config, and witness input closure it covers.
-
 This doc walks through the supply-chain attack scenarios and what the protocol does (and doesn't) defend against.
 
 > See [`multi-dimensional-pinning.md`](multi-dimensional-pinning.md) for the architectural foundation and [`../papers/03-substrate-not-blockchain.md`](../papers/03-substrate-not-blockchain.md) §11 through §12 for the manifesto-level framing of address-as-vector-space and rank-N pinning.
@@ -50,12 +48,6 @@ This means an attacker cannot satisfy the consumer's contract on the B side whil
 ### Signed evidence
 
 When Tier 3 fires, the implication memento is signed by the prover. A user investigating "how was this discharged?" can audit the evidence offline.
-
-### Content-addressed CI admission
-
-CICP turns CI into a signed input-closure claim. The blast-radius CID changes when source files, protocol catalog, kit/toolchain identity, config, accepted witnesses, or other load-bearing inputs change. That catches a different class of supply-chain drift than `binaryCid`: the pipeline cannot silently reuse an old "green" result after a relevant proof, toolchain, or protocol input changes.
-
-Reuse is intentionally subordinate to admission. `provekit ci reuse` can only emit a reuse witness after it validates the current blast-radius body against a checked-in accepted `CIJobResultBodyClaim`.
 
 ## What ProvekIt does NOT provide at the supply-chain layer
 
@@ -106,14 +98,14 @@ ProvekIt is one layer. A robust supply-chain posture combines:
 | TLS in transit | Confidentiality + integrity at the network layer |
 | Sigstore / Fulcio | Identity-rooted signing (OIDC certificates) |
 | in-toto / SLSA | Build provenance (where the binary was built, by what, from what source) |
-| ProvekIt | Behavioral contracts, binary CID pinning, proof witnesses, CICP CI input-closure admission |
+| ProvekIt | Behavioral contracts, binary CID pinning, proof witnesses |
 | Reproducible builds | Verifiable that source compiles to the binary |
 | Multi-maintainer review | Human-layer integrity |
 | SBOM (CycloneDX / SPDX) | Inventory of what's in the build |
 
 Each addresses a different failure mode. ProvekIt specifically covers behavioral verification + binary integrity. Sigstore + in-toto + reproducible builds covers identity + build provenance. SBOM covers inventory.
 
-The combinations: Sigstore-signed `.proof` files, with in-toto attestations for the build, reproducible binaries pinned via `binaryCid`, behavioral contracts verified at Tier 1, and CICP result witnesses tying CI status to exact proof/toolchain/input closure.
+The combinations: Sigstore-signed `.proof` files, with in-toto attestations for the build, reproducible binaries pinned via `binaryCid`, and behavioral contracts verified at Tier 1.
 
 ## Practical posture
 
@@ -132,14 +124,12 @@ For high-stakes projects:
 8. **Require reproducible builds** so the binary CID is independently checkable.
 9. **Run independent verification** on a periodic schedule.
 10. **Monitor for key compromise**; rotate aggressively.
-11. **Review CICP candidate result witnesses** before accepting them into `.provekit/ci/accepted`.
-
 For ecosystem-level participants:
 
-12. **Publish `.proof` files** alongside packages. Even partial coverage is better than nothing.
-13. **Contribute to public implication servers** so the lattice grows.
-14. **Curate reference contracts** for your domain.
-15. **Document threat models** so consumers know what your `.proof` does and doesn't claim.
+11. **Publish `.proof` files** alongside packages. Even partial coverage is better than nothing.
+12. **Contribute to public implication servers** so the lattice grows.
+13. **Curate reference contracts** for your domain.
+14. **Document threat models** so consumers know what your `.proof` does and doesn't claim.
 
 ## What ProvekIt's role becomes at scale
 
@@ -148,7 +138,6 @@ As the ecosystem matures, ProvekIt's role in supply-chain security is:
 - **At fetch time**: content-addressing detects tampering in transit and at the registry.
 - **At verify time**: contracts and bridges detect behavioral substitution.
 - **At build time**: `binaryCid` detects binary substitution.
-- **At CI admission time**: CICP detects drift in source, protocol, toolchain, config, and proof inputs before an old result can stand in for a new closure.
 - **At runtime** (kit-dependent): kit guards detect monkey-patching.
 
 The protocol's structure is "every step is content-addressed and signed." This makes the supply chain auditable end to end, mathematically rather than by human inspection.

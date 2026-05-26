@@ -50,10 +50,9 @@ In v1.1, author directly through the kit's IR API. See [implementations/go/prove
 provekit prove
 ```
 
-## 6. Wire your IDE and CI
+## 6. Wire your IDE
 
 - **IDE:** Go LSP plugin planned.
-- **CI:** see [docs/how-to/content-addressed-ci.md](../how-to/content-addressed-ci.md).
 
 ## What's next
 

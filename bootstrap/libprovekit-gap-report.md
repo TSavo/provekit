@@ -41,34 +41,18 @@ Total items audited: 1109
 ### unsupported-return-type (267 items)
 
 - `libprovekit::canonical::json_to_cvalue`
-- `libprovekit::ci::ci_job_result_name`
-- `libprovekit::ci::cid_set`
-- `libprovekit::ci::impl CIBlastRadius::cid`
-- `libprovekit::ci::impl CIImpactBodyClaim::cid`
 
 ### let-binding (175 items)
 
 - `libprovekit::canonical::is_blake3_512_cid`
 - `libprovekit::canonical::json_cid`
 - `libprovekit::canonical::json_jcs`
-- `libprovekit::ci::check_ci_body`
-- `libprovekit::ci::impl CIBlastRadiusInput::build`
 
 ### term-emitter-unsupported (64 items)
 
-- `libprovekit::ci::admit_identical_reuse`
-- `libprovekit::ci::impl CIBlastRadius::validate`
-- `libprovekit::ci::impl CIImpactBodyClaim::validate`
-- `libprovekit::ci::impl CIJobResultBodyClaim::validate`
-- `libprovekit::ci::impl CIReuseBodyClaim::validate`
 
 ### ffi-call (44 items)
 
-- `libprovekit::ci::insert_many`
-- `libprovekit::ci::insert_required`
-- `libprovekit::ci::require_cid_field`
-- `libprovekit::ci::require_nonempty`
-- `libprovekit::ci::require_one_of`
 
 ### complex-generic (25 items)
 
@@ -96,11 +80,6 @@ Total items audited: 1109
 
 ### procedural-macro (254 items)
 
-- `libprovekit::ci::CIJobResult`
-- `libprovekit::ci::CINondeterminismMode`
-- `libprovekit::ci::CIReuseReason`
-- `libprovekit::ci::CIBlastRadius`
-- `libprovekit::ci::CIBlastRadiusInput`
 
 ### trait-path-truncated (33 items)
 
