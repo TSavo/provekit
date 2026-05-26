@@ -18,7 +18,6 @@ crate-type = ["lib", "cdylib", "staticlib"]
 provekit-canonicalizer = { path = "../provekit-canonicalizer" }
 provekit-proof-envelope = { path = "../provekit-proof-envelope" }
 provekit-ir-types = { path = "../provekit-ir-types" }
-provekit-realize-rust-core = { path = "../provekit-realize-rust-core" }
 serde = { workspace = true }
 serde_json = { workspace = true }
 thiserror = { workspace = true }

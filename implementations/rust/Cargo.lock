@@ -1277,7 +1277,6 @@ dependencies = [
  "provekit-canonicalizer",
  "provekit-ir-types",
  "provekit-proof-envelope",
- "provekit-realize-rust-core",
  "serde",
  "serde_json",
  "thiserror 1.0.69",

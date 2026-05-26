@@ -172,6 +172,50 @@ build-rust:
 	cargo build --release --manifest-path tools/recompute-spec-cids/Cargo.toml
 	cargo build --release --manifest-path tools/foundation-keygen/Cargo.toml
 
+.PHONY: build-rust-cli
+build-rust-cli:
+	cargo build --release --manifest-path implementations/rust/Cargo.toml -p provekit-cli
+
+.PHONY: build-rust-self-contract-verifier
+build-rust-self-contract-verifier:
+	cargo build --release --manifest-path tools/foundation-keygen/Cargo.toml --bin verify-self-contracts
+
+.PHONY: build-rust-mint-tools
+build-rust-mint-tools: build-rust-cli build-rust-self-contract-verifier
+
+.PHONY: check-macos-swift-rust-scope
+check-macos-swift-rust-scope:
+	@mint_dry="$$( $(MAKE) --no-print-directory -n mint-swift )"; \
+	prove_dry="$$( $(MAKE) --no-print-directory -n prove-swift )"; \
+	cli_tree="$$(cargo tree --manifest-path implementations/rust/Cargo.toml -p provekit-cli --edges normal,build --depth 4)"; \
+	cli_cmd='cargo build --release --manifest-path implementations/rust/Cargo.toml -p provekit-cli'; \
+	verifier_cmd='cargo build --release --manifest-path tools/foundation-keygen/Cargo.toml --bin verify-self-contracts'; \
+	full_workspace_cmd='cargo build --release --manifest-path implementations/rust/Cargo.toml'; \
+	echo "$$mint_dry" | grep -F -- "$$cli_cmd" >/dev/null || \
+		(echo "FAIL: mint-swift must build only the provekit CLI, not the full Rust workspace" && exit 1); \
+	echo "$$mint_dry" | grep -F -- "$$verifier_cmd" >/dev/null || \
+		(echo "FAIL: mint-swift must build the self-contract verifier it invokes" && exit 1); \
+	echo "$$prove_dry" | grep -F -- "$$cli_cmd" >/dev/null || \
+		(echo "FAIL: prove-swift must build only the provekit CLI, not the full Rust workspace" && exit 1); \
+	if echo "$$mint_dry" | grep -F -x -- "$$full_workspace_cmd" >/dev/null; then \
+		echo "FAIL: mint-swift still pulls the full Rust workspace"; exit 1; \
+	fi; \
+	if echo "$$prove_dry" | grep -F -x -- "$$full_workspace_cmd" >/dev/null; then \
+		echo "FAIL: prove-swift still pulls the full Rust workspace"; exit 1; \
+	fi; \
+	if echo "$$mint_dry" | grep -F -- 'tools/recompute-spec-cids/Cargo.toml' >/dev/null; then \
+		echo "FAIL: mint-swift must not build recompute-spec-cids"; exit 1; \
+	fi; \
+	if echo "$$cli_tree" | grep -F -- 'provekit-realize-rust-core' >/dev/null; then \
+		echo "FAIL: provekit-cli must not pull the Rust realize kit into macOS Swift mint builds"; exit 1; \
+	fi; \
+	if echo "$$cli_tree" | grep -F -- '/examples/provekit-shim-' >/dev/null; then \
+		echo "FAIL: provekit-cli must not pull Rust shim example crates into macOS Swift mint builds"; exit 1; \
+	fi; \
+	if echo "$$cli_tree" | grep -E 'smoke-test-e2e|provekit-bridgeworks|provekit-supply-chain-rails|provekit-protocol-switchyard|bug-zoo' >/dev/null; then \
+		echo "FAIL: provekit-cli must not pull menagerie crates into macOS Swift mint builds"; exit 1; \
+	fi
+
 .PHONY: build-cpp
 build-cpp:
 	tools/build-cpp-self-contracts.sh --build-only
@@ -350,7 +394,7 @@ mint-csharp: build-rust
 # NOTE: mint-swift requires a macOS host with the Swift toolchain.
 # Excluded from all-mint (Linux/CI). Use `make mint-swift` on macOS.
 .PHONY: mint-swift
-mint-swift: build-rust build-swift
+mint-swift: build-rust-mint-tools build-swift
 	@echo ">> minting swift self-contracts"
 	@mint_out=$$($(PROVEKIT) mint --kit=swift --quiet); \
 	cid=$$(echo "$$mint_out" | head -1); \
@@ -511,7 +555,7 @@ prove-evm-bytecode: build-rust
 
 # macOS-only: requires Swift toolchain.
 .PHONY: prove-swift
-prove-swift: build-rust build-swift
+prove-swift: build-rust-cli build-swift
 	@echo ">> proving swift lift-plugin-protocol conformance (C1-C8)"
 	$(PROVEKIT) prove --kit=swift
 
