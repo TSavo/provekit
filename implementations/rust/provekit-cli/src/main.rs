@@ -23,7 +23,6 @@ mod cmd_ask;
 mod cmd_bind;
 mod cmd_bind_migrate;
 mod cmd_catalog;
-mod cmd_ci;
 mod cmd_compose;
 mod cmd_dump;
 mod cmd_emit;
@@ -114,8 +113,6 @@ enum Cmd {
     Protocol(cmd_protocol::ProtocolArgs),
     /// Inspect package artifacts and supply-chain receipt inputs.
     Package(cmd_package::PackageArgs),
-    /// Check content-addressed CI protocol artifacts.
-    Ci(cmd_ci::CiArgs),
     /// Verify a kit end-to-end: lift its contract claims, discharge each
     /// via the solver-dispatch table, mint a signed witness citing the
     /// discharging solver, and emit a per-claim verification receipt.
@@ -422,7 +419,6 @@ fn main() -> ExitCode {
         Cmd::Proof(a) => cmd_proof::run(a),
         Cmd::Protocol(a) => cmd_protocol::run(a),
         Cmd::Package(a) => cmd_package::run(a),
-        Cmd::Ci(a) => cmd_ci::run(a),
         Cmd::Ask(a) => cmd_ask::run(a),
         Cmd::Search(a) => cmd_search::run(a),
         Cmd::Implicate(a) | Cmd::Imp(a) => cmd_implicate::run(a),
