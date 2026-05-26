@@ -36,7 +36,13 @@ jobs:
     # macOS runner registered for #305 will pick up this Linux-only job
     # (apt-get) and fail.
     runs-on: [self-hosted, Linux, X64]
-    timeout-minutes: 30
+    # `make conformance` + `make test-all` run right up against ~30 min, leaving
+    # no room for teardown (the Rust-target cache save on push, or even the
+    # toolchain Post-steps on PRs) -> the job's last step gets clipped and the
+    # whole job is marked `cancelled`/fail despite both substantive steps
+    # passing. 45 (matching the macOS-swift conformance job) gives teardown
+    # headroom so a green run reports green.
+    timeout-minutes: 45
 
     steps:
       - name: Checkout
