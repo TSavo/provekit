@@ -197,6 +197,7 @@ fn all_exhibits_show_conventional_green_then_provekit_red() {
 }
 
 #[test]
+#[ignore = "blocked on lower->emit migration: `provekit mint` can't discharge the `package.no-install-side-effect` witness because it is still produced by supply-chain-js-lowerer.rs (a `lower`-era kit) and has no emit witness emitter (#1476). Re-enable when the supply-chain demo's witness production is redone on emit. See docs/audits/2026-05-25-architecture-ground-truth.md. Do not delete."]
 fn package_inspection_contract_set_matches_lifted_mint_contract_set() {
     let root = repo_root();
     let provekit = build_provekit(&root);

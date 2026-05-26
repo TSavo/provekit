@@ -5,6 +5,7 @@ import os
 import re
 from dataclasses import dataclass, field
 from functools import lru_cache
+from importlib import resources as importlib_resources
 from pathlib import Path
 from typing import Any
 
@@ -26,6 +27,7 @@ BLAKE3_BODY_TEMPLATE_REL = Path(
 PLACEHOLDER_RE = re.compile(r"\$\{[^}]+\}")
 CID_RE = re.compile(r"^blake3-512:[0-9a-f]{128}$")
 KIT_ID = "provekit-realize-python-core@0.1.0"
+DEFAULT_LIBRARY_TAG = "urllib"
 DEFAULT_KIT_CID = "blake3-512:" + blake3.blake3(KIT_ID.encode("utf-8")).digest(
     length=64
 ).hex()
@@ -41,6 +43,7 @@ DEFAULT_CONCEPT_POLICY_CID = "blake3-512:" + blake3.blake3(
 DEFAULT_CONCEPT_SUGAR_DICT_CID = "blake3-512:" + blake3.blake3(
     b"provekit-realize-python-core/concept-citation-comment-sugar-v1"
 ).digest(length=64).hex()
+BODY_TEMPLATE_RESOURCE_DIR = "body_templates"
 
 
 @dataclass(frozen=True)
@@ -53,6 +56,7 @@ class BodyTemplateEntry:
     requires_param_types: tuple[str, ...] | None
     requires_return_type: str | None
     loss_record_contribution: dict[str, Any] | None = None
+    target_library_tag: str | None = None
 
 
 @dataclass(frozen=True)
@@ -86,6 +90,17 @@ class MissingTemplateError(Exception):
     def __init__(self, entries: tuple[MissingTemplateEntry, ...]):
         super().__init__("missing body-template entry")
         self.entries = entries
+
+
+class BodyTemplateResourceError(Exception):
+    def __init__(self, target_library_tag: str, missing_resources: tuple[str, ...]):
+        super().__init__(
+            "BODY_TEMPLATE_RESOURCE_NOT_FOUND: provekit-realize-python-core "
+            "could not resolve body-template resources for "
+            f"target_library_tag={target_library_tag}"
+        )
+        self.target_library_tag = target_library_tag
+        self.missing_resources = missing_resources
 
 
 class OperandBindingMisalignmentError(Exception):
@@ -2367,6 +2382,28 @@ def entries() -> tuple[BodyTemplateEntry, ...]:
     return _disk_entries()
 
 
+def body_template_entries_for_library_tag(
+    target_library_tag: str | None,
+) -> tuple[BodyTemplateEntry, ...]:
+    tag = target_library_tag or DEFAULT_LIBRARY_TAG
+    relatives = _body_template_relatives_for_library_tag(tag)
+    if not relatives:
+        return ()
+    return _entries_from_required_files(relatives, tag)
+
+
+def _body_template_relatives_for_library_tag(tag: str) -> tuple[Path, ...]:
+    if tag == DEFAULT_LIBRARY_TAG:
+        return (BODY_TEMPLATE_REL,)
+    if tag == "rust-runtime":
+        return (RUST_RUNTIME_BODY_TEMPLATE_REL,)
+    if tag == "blake3":
+        return (BLAKE3_BODY_TEMPLATE_REL,)
+    if tag == "libprovekit":
+        return (LIBPROVEKIT_BODY_TEMPLATE_REL,)
+    return ()
+
+
 @lru_cache(maxsize=1)
 def _disk_entries() -> tuple[BodyTemplateEntry, ...]:
     return _entries_from_files(
@@ -2386,17 +2423,69 @@ def _entries_from_files(relatives: tuple[Path, ...]) -> tuple[BodyTemplateEntry,
     return tuple(out)
 
 
-def _entries_from_file(relative: Path) -> tuple[BodyTemplateEntry, ...]:
+def _entries_from_required_files(
+    relatives: tuple[Path, ...],
+    target_library_tag: str,
+) -> tuple[BodyTemplateEntry, ...]:
+    out: list[BodyTemplateEntry] = []
+    missing: list[str] = []
+    for relative in relatives:
+        raw = _read_body_template_resource(relative)
+        if raw is None:
+            missing.append(str(relative))
+            continue
+        out.extend(_entries_from_raw(raw, target_library_tag))
+    if missing:
+        raise BodyTemplateResourceError(target_library_tag, tuple(missing))
+    return tuple(out)
+
+
+def _entries_from_file(
+    relative: Path,
+    default_library_tag: str | None = None,
+) -> tuple[BodyTemplateEntry, ...]:
+    raw = _read_body_template_resource(relative)
+    if raw is None:
+        return ()
+    return _entries_from_raw(raw, default_library_tag)
+
+
+def _read_body_template_resource(relative: Path) -> str | None:
+    package_resource = _package_body_template_resource(relative)
+    if package_resource is not None:
+        return package_resource.read_text(encoding="utf-8")
     path = _find_repo_file(relative)
     if path is None:
-        return ()
-    raw = path.read_text(encoding="utf-8")
+        return None
+    return path.read_text(encoding="utf-8")
+
+
+def _package_body_template_resource(relative: Path) -> Any | None:
+    try:
+        resource = importlib_resources.files(__package__).joinpath(
+            BODY_TEMPLATE_RESOURCE_DIR,
+            relative.name,
+        )
+    except (ModuleNotFoundError, TypeError):
+        return None
+    if resource.is_file():
+        return resource
+    return None
+
+
+def _entries_from_raw(
+    raw: str,
+    default_library_tag: str | None = None,
+) -> tuple[BodyTemplateEntry, ...]:
     root = json.loads(raw)
     content = root.get("header", {}).get("content", {})
-    return _parse_entry_array(content.get("entries", []))
+    return _parse_entry_array(content.get("entries", []), default_library_tag)
 
 
-def _parse_entry_array(items: Any) -> tuple[BodyTemplateEntry, ...]:
+def _parse_entry_array(
+    items: Any,
+    default_library_tag: str | None = None,
+) -> tuple[BodyTemplateEntry, ...]:
     if not isinstance(items, list):
         return ()
     out: list[BodyTemplateEntry] = []
@@ -2413,6 +2502,7 @@ def _parse_entry_array(items: Any) -> tuple[BodyTemplateEntry, ...]:
         template_kind = template.get("kind")
         template_text = template.get("template")
         loss_record_contribution = item.get("loss_record_contribution")
+        target_library_tag = item.get("target_library_tag")
         if not isinstance(concept_name, str):
             continue
         if not isinstance(template_kind, str) or not isinstance(template_text, str):
@@ -2434,6 +2524,9 @@ def _parse_entry_array(items: Any) -> tuple[BodyTemplateEntry, ...]:
                 loss_record_contribution=loss_record_contribution
                 if isinstance(loss_record_contribution, dict)
                 else None,
+                target_library_tag=target_library_tag
+                if isinstance(target_library_tag, str)
+                else default_library_tag,
             )
         )
     return tuple(out)

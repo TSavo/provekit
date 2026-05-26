@@ -273,7 +273,7 @@ fn initialize_result() -> Value {
         "version": env!("CARGO_PKG_VERSION"),
             "protocol_version": "pep/1.7.0",
             "capabilities": {
-                "authoring_surfaces": ["rust", "rust-bind"],
+                "authoring_surfaces": ["rust", "rust-bind", "rust-walk-contracts"],
             "ir_version": "bind-ir/2.0.0",
             "emits_signed_mementos": false
         }
@@ -281,6 +281,10 @@ fn initialize_result() -> Value {
 }
 
 fn bind_lift(params: &Value) -> Result<Value, String> {
+    if lift_emit_mode(params) == Some("ir-document") {
+        return function_contract_lift(params);
+    }
+
     let workspace_root = params
         .get("workspace_root")
         .and_then(|v| v.as_str())
@@ -798,6 +802,119 @@ fn bind_lift(params: &Value) -> Result<Value, String> {
     }))
 }
 
+fn lift_emit_mode(params: &Value) -> Option<&str> {
+    params
+        .get("options")
+        .and_then(|options| options.get("emit"))
+        .and_then(|value| value.as_str())
+}
+
+fn function_contract_lift(params: &Value) -> Result<Value, String> {
+    let workspace_root = params
+        .get("workspace_root")
+        .and_then(|v| v.as_str())
+        .ok_or("missing `workspace_root`")?;
+    let source_paths: Vec<String> = params
+        .get("source_paths")
+        .and_then(|v| v.as_array())
+        .map(|arr| {
+            arr.iter()
+                .filter_map(|v| v.as_str().map(|s| s.to_string()))
+                .collect()
+        })
+        .unwrap_or_else(|| vec![".".to_string()]);
+
+    let root = PathBuf::from(workspace_root);
+    let mut entries: Vec<Value> = Vec::new();
+    let mut diagnostics: Vec<Value> = Vec::new();
+    let mut visited: std::collections::BTreeSet<PathBuf> = Default::default();
+
+    for scan_root in lift_scan_roots(&root, &source_paths) {
+        let src_dir = scan_root.join("src");
+        let walk_root: &Path = if src_dir.is_dir() {
+            &src_dir
+        } else {
+            scan_root.as_path()
+        };
+        collect_rs_files(walk_root, &mut visited);
+        if walk_root != scan_root.as_path() {
+            collect_rs_files_shallow(scan_root.as_path(), &mut visited);
+        }
+    }
+
+    for path in &visited {
+        let src = match std::fs::read_to_string(path) {
+            Ok(s) => s,
+            Err(e) => {
+                diagnostics.push(cited_diagnostic(
+                    "read-error",
+                    path.display().to_string(),
+                    e.to_string(),
+                    "morphism",
+                    "concept:source-unit",
+                    "rust",
+                ));
+                continue;
+            }
+        };
+        let file = match syn::parse_file(&src) {
+            Ok(f) => f,
+            Err(e) => {
+                diagnostics.push(cited_diagnostic(
+                    "parse-error",
+                    path.display().to_string(),
+                    e.to_string(),
+                    "morphism",
+                    "concept:source-unit",
+                    "rust",
+                ));
+                continue;
+            }
+        };
+        let rel = path
+            .strip_prefix(&root)
+            .unwrap_or(path)
+            .display()
+            .to_string()
+            .replace('\\', "/");
+
+        for target in collect_function_contract_targets(&file) {
+            let contract =
+                build_function_contract_with_file(&target.item_fn, None, Some(rel.as_str()));
+            let mut entry: Value =
+                serde_json::from_slice(&contract.canonical_bytes).map_err(|e| e.to_string())?;
+            entry["name"] = json!(target.fn_name.clone());
+            entry["fn_name"] = json!(target.fn_name.clone());
+            entry["bridgeSourceSymbol"] = json!(target.source_name.clone());
+            entries.push(entry);
+        }
+    }
+
+    Ok(json!({
+        "kind": "ir-document",
+        "ir": entries,
+        "diagnostics": diagnostics,
+        "refusals": [],
+    }))
+}
+
+fn lift_scan_roots(root: &Path, source_paths: &[String]) -> Vec<PathBuf> {
+    if source_paths.is_empty() {
+        return vec![root.to_path_buf()];
+    }
+    source_paths
+        .iter()
+        .map(|p| {
+            let candidate = root.join(p);
+            if candidate.is_dir() {
+                candidate
+            } else {
+                root.to_path_buf()
+            }
+        })
+        .collect()
+}
+
 fn cited_diagnostic(
     kind: &str,
     path: String,
@@ -844,6 +961,13 @@ struct BindLiftTarget {
 }
 
 #[derive(Debug, Clone)]
+struct FunctionContractLiftTarget {
+    fn_name: String,
+    source_name: String,
+    item_fn: syn::ItemFn,
+}
+
+#[derive(Debug, Clone)]
 struct SugarTarget {
     concept: String,
     library: String,
@@ -874,6 +998,93 @@ fn collect_bind_lift_targets_with_source(file: &syn::File, source: &str) -> Vec<
     let mut targets = Vec::new();
     collect_bind_lift_targets_in_items(&file.items, source, &mut targets);
     targets
+}
+
+fn collect_function_contract_targets(file: &syn::File) -> Vec<FunctionContractLiftTarget> {
+    let mut targets = Vec::new();
+    collect_function_contract_targets_in_items(&file.items, false, &mut targets);
+    targets
+}
+
+fn collect_function_contract_targets_in_items(
+    items: &[syn::Item],
+    in_test_context: bool,
+    targets: &mut Vec<FunctionContractLiftTarget>,
+) {
+    for item in items {
+        match item {
+            syn::Item::Fn(item_fn) => {
+                if in_test_context || is_rust_test_fn(item_fn) {
+                    continue;
+                }
+                let fn_name = item_fn.sig.ident.to_string();
+                targets.push(FunctionContractLiftTarget {
+                    source_name: fn_name.clone(),
+                    fn_name,
+                    item_fn: item_fn.clone(),
+                });
+            }
+            syn::Item::Impl(impl_block) => {
+                if in_test_context || attrs_include_cfg_test(&impl_block.attrs) {
+                    continue;
+                }
+                let Some(qualifier) = impl_function_qualifier(impl_block) else {
+                    continue;
+                };
+                for impl_item in &impl_block.items {
+                    let syn::ImplItem::Fn(method) = impl_item else {
+                        continue;
+                    };
+                    let item_fn = item_fn_from_impl_method(method);
+                    if !is_liftable_impl_method(impl_block, method) || is_rust_test_fn(&item_fn) {
+                        continue;
+                    }
+                    let source_name = method.sig.ident.to_string();
+                    targets.push(FunctionContractLiftTarget {
+                        fn_name: format!("{qualifier}::{source_name}"),
+                        source_name,
+                        item_fn,
+                    });
+                }
+            }
+            syn::Item::Mod(module) => {
+                let nested_test_context = in_test_context || attrs_include_cfg_test(&module.attrs);
+                if let Some((_, nested_items)) = &module.content {
+                    collect_function_contract_targets_in_items(
+                        nested_items,
+                        nested_test_context,
+                        targets,
+                    );
+                }
+            }
+            _ => {}
+        }
+    }
+}
+
+fn is_rust_test_fn(item_fn: &syn::ItemFn) -> bool {
+    item_fn.attrs.iter().any(|attr| {
+        let path = attr
+            .path()
+            .segments
+            .iter()
+            .map(|segment| segment.ident.to_string())
+            .collect::<Vec<_>>()
+            .join("::");
+        matches!(path.as_str(), "test" | "tokio::test" | "async_std::test")
+            || is_cfg_test_attr(attr)
+    })
+}
+
+fn attrs_include_cfg_test(attrs: &[syn::Attribute]) -> bool {
+    attrs.iter().any(is_cfg_test_attr)
+}
+
+fn is_cfg_test_attr(attr: &syn::Attribute) -> bool {
+    let syn::Meta::List(meta) = &attr.meta else {
+        return false;
+    };
+    attr.path().is_ident("cfg") && meta.tokens.to_string().trim() == "test"
 }
 
 fn collect_bind_lift_targets_in_items(
@@ -2055,18 +2266,11 @@ fn sugar_type_surface(ty: &syn::Type) -> String {
 
 fn sugar_body_source(rel: &str, src: &str, item_fn: &syn::ItemFn) -> Value {
     let start = item_fn.sig.fn_token.span.start();
-    let end = item_fn.block.span().end();
-    let lines: Vec<&str> = src.lines().collect();
-    let span_text = if start.line > 0 && end.line >= start.line && end.line <= lines.len() {
-        lines[start.line - 1..end.line].join("\n") + "\n"
-    } else {
-        String::new()
-    };
-    // Extract just the body block (between the outermost `{` and matching
-    // `}`) so cmd_mint can project a substrate-honest body-templates JSON
-    // from the envelope without re-reading source files at mint time. The
-    // full span_text is still hashed for `source_cid`.
-    let body_block = extract_block_body(&span_text);
+    let end = item_fn.block.brace_token.span.close().end();
+    let body_text = block_inner_source(src, &item_fn.block)
+        .map(str::trim)
+        .unwrap_or_default()
+        .to_string();
     json!({
         "file": rel,
         "span": {
@@ -2075,41 +2279,59 @@ fn sugar_body_source(rel: &str, src: &str, item_fn: &syn::ItemFn) -> Value {
             "end_line": end.line,
             "end_col": end.column,
         },
-        "source_cid": blake3_512_of(span_text.as_bytes()),
-        "body_text": body_block,
+        "source_cid": blake3_512_of(body_text.as_bytes()),
+        "body_text": body_text,
     })
 }
 
-/// Extract the contents between the outermost `{` and matching `}` of a
-/// function span. Returns the trimmed inner block. The matching tracks
-/// nested braces but does not parse strings or comments; the shim's
-/// wrapper-fn bodies are short and balanced, so simple matching suffices.
-fn extract_block_body(span_text: &str) -> String {
-    let bytes = span_text.as_bytes();
-    let mut start: Option<usize> = None;
-    let mut depth: i32 = 0;
-    let mut end: Option<usize> = None;
-    for (i, &b) in bytes.iter().enumerate() {
-        match b {
-            b'{' => {
-                if start.is_none() {
-                    start = Some(i + 1);
-                }
-                depth += 1;
-            }
-            b'}' => {
-                depth -= 1;
-                if depth == 0 {
-                    end = Some(i);
-                    break;
-                }
-            }
-            _ => {}
+fn block_inner_source<'a>(src: &'a str, block: &syn::Block) -> Option<&'a str> {
+    let open_end = block.brace_token.span.open().end();
+    let close_start = block.brace_token.span.close().start();
+    source_slice_between(src, open_end, close_start)
+}
+
+fn source_slice_between(
+    src: &str,
+    start: proc_macro2::LineColumn,
+    end: proc_macro2::LineColumn,
+) -> Option<&str> {
+    let start = line_column_to_byte_offset(src, start)?;
+    let end = line_column_to_byte_offset(src, end)?;
+    if start <= end {
+        src.get(start..end)
+    } else {
+        None
+    }
+}
+
+fn line_column_to_byte_offset(src: &str, loc: proc_macro2::LineColumn) -> Option<usize> {
+    if loc.line == 0 {
+        return None;
+    }
+
+    let mut line_starts = vec![0usize];
+    for (idx, byte) in src.bytes().enumerate() {
+        if byte == b'\n' {
+            line_starts.push(idx + 1);
         }
     }
-    match (start, end) {
-        (Some(s), Some(e)) if e >= s => span_text[s..e].trim().to_string(),
-        _ => String::new(),
+
+    let line_start = *line_starts.get(loc.line - 1)?;
+    let line_end = line_starts
+        .get(loc.line)
+        .copied()
+        .map(|next_start| next_start.saturating_sub(1))
+        .unwrap_or(src.len());
+    let line = src.get(line_start..line_end)?;
+
+    if loc.column == 0 {
+        return Some(line_start);
+    }
+
+    match line.char_indices().nth(loc.column) {
+        Some((offset, _)) => Some(line_start + offset),
+        None if line.chars().count() == loc.column => Some(line_end),
+        None => None,
     }
 }
 
@@ -2134,7 +2356,7 @@ fn comment_shapes_for_fn_source(src: &str, fn_name: &str) -> Vec<Arc<CValue>> {
     let Some(body) = function_body_source(src, fn_name) else {
         return Vec::new();
     };
-    comment_surfaces_in_source(body)
+    comment_surfaces_in_source(&body)
         .into_iter()
         .filter_map(|surface| comment_shape(&surface))
         .collect()
@@ -2155,35 +2377,24 @@ fn comment_shape(surface: &str) -> Option<Arc<CValue>> {
     ]))
 }
 
-fn function_body_source<'a>(src: &'a str, fn_name: &str) -> Option<&'a str> {
-    let start = src.find(&format!("fn {fn_name}"))?;
-    let open = src[start..].find('{')? + start;
-    let close = matching_brace(src, open)?;
-    src.get(open + 1..close)
+fn function_body_source(src: &str, fn_name: &str) -> Option<String> {
+    let file = syn::parse_file(src).ok()?;
+    let item_fn = find_item_fn_by_name(&file.items, fn_name)?;
+    block_inner_source(src, &item_fn.block).map(str::to_string)
 }
 
-fn matching_brace(src: &str, open: usize) -> Option<usize> {
-    let bytes = src.as_bytes();
-    let mut depth = 0usize;
-    let mut i = open;
-    while i < bytes.len() {
-        match bytes[i] {
-            b'{' => {
-                depth += 1;
-                i += 1;
-            }
-            b'}' => {
-                depth = depth.checked_sub(1)?;
-                if depth == 0 {
-                    return Some(i);
+fn find_item_fn_by_name<'a>(items: &'a [syn::Item], fn_name: &str) -> Option<&'a syn::ItemFn> {
+    for item in items {
+        match item {
+            syn::Item::Fn(item_fn) if item_fn.sig.ident == fn_name => return Some(item_fn),
+            syn::Item::Mod(item_mod) => {
+                if let Some((_, nested_items)) = &item_mod.content {
+                    if let Some(item_fn) = find_item_fn_by_name(nested_items, fn_name) {
+                        return Some(item_fn);
+                    }
                 }
-                i += 1;
             }
-            b'"' => i = skip_quoted(bytes, i, b'"'),
-            b'\'' => i = skip_quoted(bytes, i, b'\''),
-            b'/' if bytes.get(i + 1) == Some(&b'/') => i = skip_line_comment(bytes, i),
-            b'/' if bytes.get(i + 1) == Some(&b'*') => i = skip_block_comment(bytes, i),
-            _ => i += 1,
+            _ => {}
         }
     }
     None
@@ -4115,6 +4326,59 @@ async fn fetch_status(url: String) -> i64 {
         let _ = fs::remove_dir_all(root);
     }
 
+    #[test]
+    fn sugar_body_text_uses_rust_block_span_for_braces_inside_tokens() {
+        let src = r####"
+#[provekit::sugar(concept = "concept:http-request", library = "reqwest")]
+async fn render(url: String) -> String {
+    let normal = "}";
+    let raw = r###"raw } braces { stay"###;
+    // comment with } before the real block end
+    let macro_value = format!("literal }} and {}", url);
+    let nested = {
+        let inner = "{";
+        inner.len()
+    };
+    let future = async {
+        let block = unsafe { normal.len() + raw.len() };
+        block + nested
+    };
+    format!("{normal}:{raw}:{macro_value}:{}", future.await)
+}
+"####;
+        let entry = single_sugar_entry_for_source("sugar_body_span_braces", src);
+        let body_text = entry["body_source"]["body_text"]
+            .as_str()
+            .expect("body_text string");
+        let expected = r####"let normal = "}";
+    let raw = r###"raw } braces { stay"###;
+    // comment with } before the real block end
+    let macro_value = format!("literal }} and {}", url);
+    let nested = {
+        let inner = "{";
+        inner.len()
+    };
+    let future = async {
+        let block = unsafe { normal.len() + raw.len() };
+        block + nested
+    };
+    format!("{normal}:{raw}:{macro_value}:{}", future.await)"####;
+
+        assert_eq!(body_text, expected);
+        assert_eq!(
+            entry["body_source"]["source_cid"],
+            blake3_512_of(expected.as_bytes())
+        );
+        assert!(
+            !body_text.contains("async fn render"),
+            "body_text must not include the function signature: {body_text}"
+        );
+        assert!(
+            !body_text.contains("#[provekit::sugar"),
+            "body_text must not include the sugar attribute: {body_text}"
+        );
+    }
+
     // ---------------------------------------------------------------------
     // #1357 / #1355: family + version axes on @sugar / @boundary annotations
     // ---------------------------------------------------------------------
@@ -5454,6 +5718,28 @@ pub fn bitwise_not() -> i64 {
             .expect("ir array")
             .first()
             .expect("single entry")
+            .clone();
+        let _ = fs::remove_dir_all(root);
+        entry
+    }
+
+    fn single_sugar_entry_for_source(name: &str, source: &str) -> Value {
+        let root = temp_workspace(name);
+        let src_dir = root.join("src");
+        fs::create_dir_all(&src_dir).expect("create src dir");
+        fs::write(src_dir.join("lib.rs"), source).expect("write source");
+
+        let out = bind_lift(&json!({
+            "workspace_root": root.to_string_lossy(),
+            "source_paths": ["."]
+        }))
+        .expect("bind lift should succeed");
+        let entry = out["ir"]
+            .as_array()
+            .expect("ir array")
+            .iter()
+            .find(|entry| entry["kind"] == "library-sugar-binding-entry")
+            .expect("single sugar entry")
             .clone();
         let _ = fs::remove_dir_all(root);
         entry
