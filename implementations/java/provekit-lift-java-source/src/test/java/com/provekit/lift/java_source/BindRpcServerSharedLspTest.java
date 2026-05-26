@@ -9,6 +9,9 @@ import com.provekit.ir.Jcs;
 import org.junit.jupiter.api.Test;
 
 class BindRpcServerSharedLspTest {
+    private static final String SHARED_CATALOG_CID =
+        "blake3-512:0e3905c2a7a098cd538b9669428a7dffd2b84ba8ccf8fde3724fe2ab61fd3fbc1e1a616a6b20b6817464cdc50c466b5497d4ac2e2dc34c3c15f05535b463643c";
+
     @Test
     void initializeAdvertisesSharedLspAnalyzeDocument() {
         Jcs.Obj request = Jcs.object(
@@ -23,9 +26,11 @@ class BindRpcServerSharedLspTest {
         Jcs.Obj capabilities = result.objectField("capabilities");
 
         assertEquals("provekit-lsp-shared/1", result.stringField("protocol_version"));
+        assertEquals(SHARED_CATALOG_CID, result.stringField("protocol_catalog_cid"));
         assertEquals("java", result.stringField("kit_id"));
         assertArrayContains(capabilities.arrayField("methods"), "analyzeDocument");
         assertArrayContains(capabilities.arrayField("entry_kinds"), "library-sugar-binding-entry");
+        assertArrayContains(capabilities.arrayField("diagnostic_codes"), "provekit.lsp.implication_failed");
         assertArrayContains(capabilities.arrayField("status_kinds"), "materialize");
     }
 
@@ -60,6 +65,7 @@ class BindRpcServerSharedLspTest {
         assertEquals("java", result.stringField("kit_id"));
         assertEquals("src/main/java/p/C.java", result.stringField("file"));
         assertTrue(result.stringField("document_cid").startsWith("blake3-512:"));
+        assertEquals(SHARED_CATALOG_CID, result.stringField("protocol_catalog_cid"));
 
         Jcs.Arr entries = result.arrayField("entries");
         assertFalse(entries.isEmpty(), Jcs.encode(result));
@@ -69,8 +75,15 @@ class BindRpcServerSharedLspTest {
         assertEquals("java", sugarEntry.stringField("kit_id"));
         assertTrue(numberField(sugarEntry.objectField("range"), "start_line") > 0);
         assertEquals("library-sugar-binding-entry", sugarEntry.objectField("entry").stringField("kind"));
+        Jcs.Obj bindEntry = firstEntryOfKind(entries, "bind-lift-entry");
+        assertNotNull(bindEntry, Jcs.encode(result));
+        Jcs.Obj bindRange = bindEntry.objectField("range");
+        assertTrue(numberField(bindRange, "end_line") >= numberField(bindRange, "start_line"));
+        assertTrue(numberField(bindRange, "end_col") >= 0);
+        assertTrue(numberField(bindRange, "start_col") >= 0);
 
         Jcs.Arr statuses = result.arrayField("statuses");
+        assertStatusPresent(statuses, "lift");
         assertStatusPresent(statuses, "materialize");
         assertStatusPresent(statuses, "emit");
         assertStatusPresent(statuses, "check");
@@ -109,6 +122,8 @@ class BindRpcServerSharedLspTest {
     private static void assertStatusPresent(Jcs.Arr statuses, String kind) {
         for (Jcs.Json statusJson : statuses.values()) {
             if (statusJson instanceof Jcs.Obj status && kind.equals(status.stringFieldOrNull("kind"))) {
+                assertNotNull(status.get("range"), Jcs.encode(status));
+                assertNotNull(status.get("state"), Jcs.encode(status));
                 return;
             }
         }
