@@ -1,6 +1,1 @@
 package(default_visibility = ["//visibility:public"])
-
-filegroup(
-    name = "cicp_vectors",
-    srcs = glob(["cicp/*.json"]),
-)
