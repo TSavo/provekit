@@ -699,7 +699,12 @@ fn contract_content_cid_from_memento(envelope: &JsonValue) -> Result<String> {
             CValue::string(out_binding.to_string()),
         ),
     ];
-    for key in ["pre", "post", "inv"] {
+    // Body-derived op-contracts fold `formals`/`formalSorts` into contract
+    // identity (see provekit_claim_envelope::contract_cid -- two functions with
+    // the same post but different formal names are different contracts). The
+    // mint emits those keys into the memento exactly when it included them in
+    // the content CID, so the verifier mirrors that by keying on presence.
+    for key in ["pre", "post", "inv", "formals", "formalSorts"] {
         if let Some(value) = body.get(key) {
             entries.push((key.to_string(), json_to_cvalue(value)));
         }
