@@ -115,7 +115,7 @@ fn all_specimens_reports_current_shapes() {
     let reports = report["reports"].as_array().expect("reports is an array");
     assert_eq!(
         reports.len(),
-        4,
+        5,
         "bug zoo reports the current shape species"
     );
     assert!(

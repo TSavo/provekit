@@ -1,0 +1,1 @@
+BZ-DETERMINISM-001 fixed: canonical encoding established; the consumer obligation discharges.

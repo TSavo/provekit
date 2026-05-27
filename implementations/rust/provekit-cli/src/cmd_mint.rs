@@ -970,6 +970,7 @@ fn mint_from_ir_document(
             .get("name")
             .or_else(|| decl.get("symbol"))
             .or_else(|| decl.get("fn_name"))
+            .or_else(|| decl.get("fnName"))
             .and_then(|v| v.as_str())
             .unwrap_or("unnamed")
             .to_string();

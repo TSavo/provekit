@@ -1,0 +1,1 @@
+{"kind":"sat-witness","assignment":{"value":-1,"result":-1},"note":"value=-1 -> result=-1 satisfies post(serialize) but violates canonical (result<0)"}
