@@ -18,14 +18,11 @@ use std::process::ExitCode;
 
 use clap::{Parser, Subcommand, ValueEnum};
 
-mod cmd_ask;
 mod cmd_bind;
 mod cmd_bind_migrate;
-mod cmd_catalog;
 mod cmd_compose;
 mod cmd_dump;
 mod cmd_emit;
-mod cmd_exam;
 mod cmd_hash;
 mod cmd_implicate;
 mod cmd_init;
@@ -38,7 +35,6 @@ mod cmd_plugin;
 mod cmd_proof;
 mod cmd_protocol;
 mod cmd_prove;
-mod cmd_search;
 mod cmd_transport;
 mod cmd_verify;
 mod cmd_verify_protocol;
@@ -115,10 +111,6 @@ enum Cmd {
     /// This is the real GATE verb (#1405); distinct from `prove` (the
     /// six-stage prover / `--kit` lift-plugin conformance gate).
     Verify(cmd_verify::VerifyArgs),
-    /// Look up a formula by content. Parses an IR-JSON formula file, hashes it, reports the CID.
-    Ask(AskArgs),
-    /// Search proof catalogs by content hash.
-    Search(SearchArgs),
     /// Mint an implication memento (antecedent CID -> consequent CID) via Z3.
     Implicate(ImplicateArgs),
     /// Short alias for `implicate`.
@@ -159,11 +151,6 @@ enum Cmd {
     Bind(cmd_bind::BindArgs),
     /// Materialize concept-citation carriers into library-bound source via substrate realize kits.
     Materialize(cmd_materialize::MaterializeArgs),
-    /// Load and inspect substrate exam manifests.
-    Exam(cmd_exam::ExamArgs),
-    /// Browse the contract catalog: list/show/realizations/filter concept hubs.
-    /// READ-ONLY query surface over menagerie/concept-shapes/catalog.
-    Catalog(cmd_catalog::CatalogArgs),
 }
 
 #[derive(Parser, Debug, Clone)]
@@ -224,32 +211,6 @@ pub enum ProveTarget {
     Coq,
     Tptp,
     Vampire,
-}
-
-#[derive(Parser, Debug, Clone)]
-pub struct AskArgs {
-    /// Path to an IR-JSON formula file. Use `-` for stdin.
-    pub formula: PathBuf,
-    /// Project root to search. Defaults to current directory.
-    #[arg(long)]
-    pub project: Option<PathBuf>,
-    #[command(flatten)]
-    pub out: OutputFlags,
-}
-
-#[derive(Parser, Debug, Clone)]
-pub struct SearchArgs {
-    /// Search formulas appearing in the consequent slot of implications.
-    #[arg(long, conflicts_with = "antecedent")]
-    pub consequent: Option<PathBuf>,
-    /// Search formulas appearing in the antecedent slot of implications.
-    #[arg(long, conflicts_with = "consequent")]
-    pub antecedent: Option<PathBuf>,
-    /// Project root to search. Defaults to current directory.
-    #[arg(long)]
-    pub project: Option<PathBuf>,
-    #[command(flatten)]
-    pub out: OutputFlags,
 }
 
 #[derive(Parser, Debug, Clone)]
@@ -407,8 +368,6 @@ fn main() -> ExitCode {
         Cmd::Proof(a) => cmd_proof::run(a),
         Cmd::Protocol(a) => cmd_protocol::run(a),
         Cmd::Package(a) => cmd_package::run(a),
-        Cmd::Ask(a) => cmd_ask::run(a),
-        Cmd::Search(a) => cmd_search::run(a),
         Cmd::Implicate(a) | Cmd::Imp(a) => cmd_implicate::run(a),
         Cmd::Dump(a) => cmd_dump::run(a),
         Cmd::Hash(a) => cmd_hash::run(a),
@@ -424,8 +383,6 @@ fn main() -> ExitCode {
         Cmd::Compose(a) => cmd_compose::run(a),
         Cmd::Bind(a) => cmd_bind::run(a),
         Cmd::Materialize(a) => cmd_materialize::run(a),
-        Cmd::Exam(a) => cmd_exam::run(a),
-        Cmd::Catalog(a) => cmd_catalog::run(a),
     };
     ExitCode::from(code)
 }
