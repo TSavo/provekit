@@ -19,7 +19,6 @@ use std::process::ExitCode;
 use clap::{Parser, Subcommand, ValueEnum};
 
 mod cmd_bind;
-mod cmd_bind_migrate;
 mod cmd_compose;
 mod cmd_dump;
 mod cmd_emit;
@@ -35,7 +34,6 @@ mod cmd_plugin;
 mod cmd_proof;
 mod cmd_protocol;
 mod cmd_prove;
-mod cmd_transport;
 mod cmd_verify;
 mod cmd_verify_protocol;
 mod cmd_version;
@@ -137,10 +135,6 @@ enum Cmd {
     /// Linker pass: derive bridges from (contracts ∪ call-edges), emit LinkBundle.
     /// Per spec protocol/specs/2026-05-03-bridge-linkage-protocol.md R2-R5.
     Link(LinkArgs),
-    /// Transport an accepted source program through the concept hub to a target algebra/source.
-    Transport(cmd_transport::TransportArgs),
-    /// Alias for `transport` when the intent is a source-language port.
-    Migrate(cmd_transport::TransportArgs),
     /// JSON-RPC subprocess transport for the canonical compose primitive.
     /// Per spec protocol/specs/2026-05-09-contract-composition-protocol.md §6.3.
     /// Reads JSON-RPC requests on stdin, writes responses on stdout.
@@ -379,7 +373,6 @@ fn main() -> ExitCode {
         Cmd::VerifyProtocol(a) => cmd_verify_protocol::run(a),
         Cmd::Version(a) => cmd_version::run(a),
         Cmd::Link(a) => cmd_link::run(a),
-        Cmd::Transport(a) | Cmd::Migrate(a) => cmd_transport::run(a),
         Cmd::Compose(a) => cmd_compose::run(a),
         Cmd::Bind(a) => cmd_bind::run(a),
         Cmd::Materialize(a) => cmd_materialize::run(a),
