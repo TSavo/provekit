@@ -28,12 +28,12 @@ pub fn emit_term(term: &Term) -> String {
         }
         Term::Ctor { name, args, .. } => {
             if args.is_empty() {
-                return name.clone();
+                return smt_quote(name);
             };
             let args_str = args.iter();
             let args_str = args_str.map(emit_term);
             let args_str: Vec<String> = args_str.collect();
-            format!("({} {})", name, args_str.join(" "))
+            format!("({} {})", smt_quote(name), args_str.join(" "))
         }
         Term::Lambda {
             param_name,
@@ -55,12 +55,12 @@ pub fn emit_term(term: &Term) -> String {
         }
         Term::Ctor { name, args } => {
             if args.is_empty() {
-                return name.clone();
+                return smt_quote(name);
             };
             let args_str = args.iter();
             let args_str = args_str.map(emit_term);
             let args_str: Vec<String> = args_str.collect();
-            format!("({} {})", name, args_str.join(" "))
+            format!("({} {})", smt_quote(name), args_str.join(" "))
         }
         Term::Lambda {
             param_name,
@@ -212,6 +212,24 @@ fn emit_const_value(value: &serde_json::Value, _sort_name: &str) -> String {
         }
         serde_json::Value::String(s) => format!("\"{}\"", s),
         _ => "0".to_string(),
+    }
+}
+
+// smt_quote renders a name as an SMT-LIB symbol, quoting with |...| when it is
+// not a valid simple symbol (e.g. lifted ctor names like `go:call`, which
+// contain ':' -- an unquoted ':' is a syntax error z3 rejects). Applied
+// consistently at ctor applications and their declare-fun, so the symbol
+// matches. NOTE: mirror this in tools/generate-from-cddl.py on regeneration.
+fn smt_quote(name: &str) -> String {
+    let simple = !name.is_empty()
+        && !name.chars().next().is_some_and(|c| c.is_ascii_digit())
+        && name
+            .chars()
+            .all(|c| c.is_ascii_alphanumeric() || "~!@$%^&*_-+=<>.?/".contains(c));
+    if simple {
+        name.to_string()
+    } else {
+        format!("|{}|", name)
     }
 }
 
@@ -714,7 +732,7 @@ pub fn compile_asserted_formula(formula: &Formula) -> CompiledFormula {
     for (name, signature) in ctor_decls.iter() {
         preamble.push_str(&format!(
             "(declare-fun {} ({}) {})\n",
-            name,
+            smt_quote(name),
             signature.args.join(" "),
             signature.ret
         ));
