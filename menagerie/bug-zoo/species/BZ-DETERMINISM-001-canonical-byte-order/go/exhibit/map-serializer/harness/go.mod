@@ -1,2 +1,2 @@
 module bzdeterminism/exhibit
-go 1.23
+go 1.22
