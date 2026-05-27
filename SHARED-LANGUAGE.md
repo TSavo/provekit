@@ -97,6 +97,62 @@ vocabulary (first-order logic) is **universal**: the same for the poem and the k
 language is possible or needed. **The substrate formalizes nothing about the world and can
 still prove things about all of it.**
 
+## Implication — the composition operator of the contract algebra
+
+A contract is a pre/post over a sugar. Composing two operations — `A(B())`, B produces, A
+consumes — is licensed by **exactly one** proof obligation:
+
+```
+post(B) → pre(A)
+```
+
+The producer's postcondition implies the consumer's precondition. **That arrow is an
+implication** — the trinity's third element, the thing `cmd_implicate` mints. (`a | b` and
+`A(b())` collapse to the same invariant: *post of whoever runs first → pre of whoever runs
+next*; direction follows the data, not the parentheses.)
+
+This is **Hoare's rule of composition**, content-addressed:
+
+```
+{P} B {Q}     {Q} A {R}
+───────────────────────
+     {P} B;A {R}
+```
+
+The meeting condition `Q` — where B's post must discharge A's pre — *is* the implication.
+Sequential composition is sound iff that edge holds.
+
+So the **trinity {terms, contracts, implications} is a graph:**
+- **terms** = the operations — the **nodes**.
+- **contracts** = pre/post obligations on each — the **node labels**.
+- **implications** = `post → pre` — the **edges** that compose them.
+
+Implications are the **durable** layer: a proven `P → Q` is a reusable edge — a lemma. Terms
+and contracts are local; the edges between them are the composable, federatable,
+content-addressed proof. Mint an implication once, compose with it forever.
+
+## Composition & contradiction — why the AST-composition machinery is the spine
+
+The three facts are one coin:
+- **Composition over AST trees** = laying the `post → pre` edges along the call structure.
+  You compose over the tree because the call graph *is* the composition order — it tells you
+  whose post meets whose pre. (`libprovekit::compose` + the AST composition in
+  `core/source_transform.rs` / `core/bind.rs`.)
+- **Contradiction = a failed edge.** `post(B) ∧ ¬pre(A)` is SAT ⟹ the composition is unsound
+  ⟹ **refuse**. Detecting a contradiction *is* finding a composition implication that does
+  not hold. No composition → no conjunction for the solver → no contradiction → the **refuse**
+  arm of the trichotomy has nothing to fire on. **Composition is upstream of *supra omnia,
+  rectum*** — cut it and you remove the substrate's ability to say no.
+- **A whole program verifies by discharging every edge,** grounded in `true`: the base
+  precondition is ⊤ (the empty conjunction, `EMPTY_SET_CID`); every call adds one `post → pre`
+  edge up the graph to the top-level postcondition. The proofchain `k(I)=t` is a DAG of
+  implications rooted at ⊤.
+
+Plainly: **a bug is a missing edge; a contradiction is a present-but-false edge; correct
+software is a graph of contracts whose every composition edge discharges, rooted in `true`.**
+This is why the promotion/consensus apparatus is severable cruft but the composition machinery
+is not: composition is how contracts compose, which is how contradiction is solved.
+
 ## Kit
 
 A kit is a **language-specific implementation of these ideas**. The **Java kit**:
