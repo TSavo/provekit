@@ -36,8 +36,9 @@ pub mod walks;
 
 pub use crate::exam_manifest::ExamManifestKit;
 pub use bind::{
-    bind_result_payload, bind_term_document, concept_bind_result_cid, named_term_document_cid,
-    named_term_document_from_bind_payload, strip_realize_sidecar_from_lift_term,
+    bind_result_payload, bind_term_document, concept_bind_result_cid, grammar_op_cid,
+    named_term_document_cid, named_term_document_from_bind_payload,
+    strip_realize_sidecar_from_lift_term,
     BindContractWitness, BindError, BindKit, BindLiftEntry, BindOptions, CandidateCluster,
     CandidateClusterManifest, NamedTerm, NamedTermDocument, NamedTermTree, NamedWitness,
 };

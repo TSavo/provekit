@@ -567,6 +567,14 @@ pub fn concept_bind_result_cid() -> Cid {
         .expect("concept:bind-result is a language primitive")
 }
 
+/// Resolve a grammar primitive's address from the code shape-authority. `Some`
+/// iff `name` is a language primitive (op-application / seq / ite / bind-result);
+/// the address is `json_cid` of its pinned shape, computed, never frozen.
+/// Consumers derive handles from this; they never store a copy.
+pub fn grammar_op_cid(name: &str) -> Option<Cid> {
+    ConceptOpCatalog.cid(name)
+}
+
 pub fn bind_result_payload(
     original_term: Term,
     named: &NamedTermDocument,
