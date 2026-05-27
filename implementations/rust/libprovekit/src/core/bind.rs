@@ -1860,28 +1860,17 @@ impl Catalog {
 }
 
 fn seed_catalog() -> Catalog {
-    let mut entries = Vec::new();
-    if let Some(root) = find_concept_shapes_root() {
-        entries.extend(load_catalog_abstractions(&root));
-        entries.extend(load_catalog_specs(&root));
+    // The catalog is the signature of witnesses having witnessed. At t=0,
+    // before any witness has witnessed, it is EMPTY. There is no seed: a
+    // hand-assembled initial population is the lie -- concepts named/classified
+    // by fiat instead of accreted from witnessing. Concept naming falls back to
+    // UNNAMED until a real witness promotes a concept in. (The former
+    // `legacy_classification_entries` carried empty `shape_cid`s -- not even
+    // content-addressed, pure fiction -- and the on-disk concept-shapes load
+    // was hand-authored, UNSIGNED_DEV_ONLY mementos. Both gone.)
+    Catalog {
+        entries: Vec::new(),
     }
-    entries.extend(legacy_classification_entries());
-    Catalog { entries }
-}
-
-fn legacy_classification_entries() -> Vec<CatalogEntry> {
-    vec![
-        CatalogEntry {
-            name: "concept:retry-with-bounded-attempts".to_string(),
-            shape_cid: String::new(),
-            classification: "retry-loop",
-        },
-        CatalogEntry {
-            name: "concept:guard-then-commit".to_string(),
-            shape_cid: String::new(),
-            classification: "guard-then-commit",
-        },
-    ]
 }
 
 fn find_concept_shapes_root() -> Option<PathBuf> {
@@ -1903,122 +1892,6 @@ fn find_concept_shapes_root() -> Option<PathBuf> {
     None
 }
 
-fn load_catalog_abstractions(concept_shapes_root: &Path) -> Vec<CatalogEntry> {
-    let dir = concept_shapes_root.join("catalog").join("abstractions");
-    catalog_json_files(&dir, ".json")
-        .into_iter()
-        .filter_map(|path| load_catalog_abstraction(&path))
-        .collect()
-}
-
-fn load_catalog_abstraction(path: &Path) -> Option<CatalogEntry> {
-    let doc = read_json_file(path)?;
-    let name = doc
-        .get("memento")
-        .and_then(|memento| memento.get("operator"))
-        .and_then(Json::as_str)?
-        .to_string();
-    let shape_cid = doc
-        .get("cid")
-        .and_then(Json::as_str)
-        .map(str::to_string)
-        .or_else(|| shape_cid_from_abstraction_filename(path))?;
-    Some(CatalogEntry {
-        name,
-        shape_cid,
-        classification: "catalog-shape",
-    })
-}
-
-fn load_catalog_specs(concept_shapes_root: &Path) -> Vec<CatalogEntry> {
-    let dir = concept_shapes_root.join("specs");
-    catalog_json_files(&dir, ".spec.json")
-        .into_iter()
-        .flat_map(|path| load_catalog_spec(&path))
-        .collect()
-}
-
-fn load_catalog_spec(path: &Path) -> Vec<CatalogEntry> {
-    let Some(doc) = read_json_file(path) else {
-        return Vec::new();
-    };
-    let Some(name) = doc
-        .get("fn_name")
-        .and_then(Json::as_str)
-        .map(str::to_string)
-    else {
-        return Vec::new();
-    };
-    let mut entries = Vec::new();
-    if let Ok(shape_cid) = crate::canonical::json_cid(&doc) {
-        entries.push(CatalogEntry {
-            name: name.clone(),
-            shape_cid,
-            classification: "catalog-shape",
-        });
-    }
-    if name.starts_with("concept:") {
-        if let Some(operator) = doc
-            .get("post")
-            .and_then(|post| post.get("operator"))
-            .and_then(Json::as_str)
-            .map(|operator| operator.replace('_', "-"))
-        {
-            if let Ok(shape_cid) = crate::canonical::json_cid(&operation_lookup_shape(&operator)) {
-                entries.push(CatalogEntry {
-                    name,
-                    shape_cid,
-                    classification: "catalog-shape",
-                });
-            }
-        }
-    }
-    entries
-}
-
-fn catalog_json_files(dir: &Path, suffix: &str) -> Vec<PathBuf> {
-    if !dir.is_dir() {
-        return Vec::new();
-    }
-    let mut paths = Vec::new();
-    collect_catalog_json_files(dir, suffix, &mut paths);
-    paths.sort();
-    paths
-}
-
-fn collect_catalog_json_files(dir: &Path, suffix: &str, out: &mut Vec<PathBuf>) {
-    let Ok(entries) = std::fs::read_dir(dir) else {
-        return;
-    };
-    for entry in entries.filter_map(Result::ok) {
-        let path = entry.path();
-        let Ok(file_type) = entry.file_type() else {
-            continue;
-        };
-        if file_type.is_dir() {
-            collect_catalog_json_files(&path, suffix, out);
-        } else if file_type.is_file()
-            && path
-                .file_name()
-                .and_then(|name| name.to_str())
-                .is_some_and(|name| name.ends_with(suffix))
-        {
-            out.push(path);
-        }
-    }
-}
-
-fn read_json_file(path: &Path) -> Option<Json> {
-    let bytes = std::fs::read(path).ok()?;
-    serde_json::from_slice(&bytes).ok()
-}
-
-fn shape_cid_from_abstraction_filename(path: &Path) -> Option<String> {
-    let file_name = path.file_name()?.to_str()?;
-    let (_, cid_hex_with_suffix) = file_name.split_once(".blake3-512:")?;
-    let cid_hex = cid_hex_with_suffix.strip_suffix(".json")?;
-    Some(format!("blake3-512:{cid_hex}"))
-}
 
 fn primitive_sort(name: &str) -> Sort {
     Sort::Primitive {
@@ -2406,122 +2279,5 @@ mod tests {
         );
     }
 
-    #[test]
-    fn seed_catalog_loads_real_concept_shape_catalog() {
-        let catalog = seed_catalog();
-        assert!(
-            catalog.entries.len() > 10,
-            "catalog should load real concept-shape entries, got {}",
-            catalog.entries.len()
-        );
-        assert!(
-            catalog
-                .entries
-                .iter()
-                .any(|entry| entry.name == "concept:identity"),
-            "catalog should include concept:identity"
-        );
-        assert!(
-            catalog
-                .entries
-                .iter()
-                .any(|entry| entry.name == "concept:new"),
-            "catalog should include algorithm-tier concept:new"
-        );
-    }
 
-    #[test]
-    fn catalog_matches_loaded_shape_cid_before_legacy_classification() {
-        let catalog = seed_catalog();
-        let identity_shape_cid = "blake3-512:6920f6e26184ca316f3dce6c02690b515c11b3d96d3b476bb5abe67cb55e1885031484c3add8a5f26b630e305ad3fe41eed10acca2e141898f9d6629c278867f";
-        let unknown_shape = TermShape::from_kit(
-            json!({
-                "kind": "body",
-                "stmts": []
-            }),
-            identity_shape_cid.to_string(),
-        );
-        let matched = catalog
-            .match_shape(identity_shape_cid, &unknown_shape)
-            .expect("identity CID should match before classify fallback");
-        assert_eq!(matched.name, "concept:identity");
-    }
-
-    #[test]
-    fn bind_names_blake3_512_of_operations_from_catalog() {
-        let term = json!({
-            "kind": "ir-document",
-            "sourceLanguage": "rust",
-            "workspaceRoot": "/tmp/provekit-bind-test",
-            "ir": [{
-                "kind": "bind-lift-entry",
-                "file": "implementations/rust/provekit-canonicalizer/src/hash.rs",
-                "fn_name": "blake3_512_of",
-                "param_names": ["bytes"],
-                "param_types": ["& [u8]"],
-                "return_type": "String",
-                "term_shape": {
-                    "kind": "body",
-                    "stmts": [
-                        {"kind": "let"},
-                        {"kind": "call"},
-                        {"kind": "let"},
-                        {"kind": "call"},
-                        {"kind": "let"},
-                        {"kind": "let"},
-                        {"kind": "call"},
-                        {"kind": "call"},
-                        {"kind": "opaque"}
-                    ]
-                },
-                "witnesses": []
-            }]
-        });
-
-        let named = bind_term_document(
-            &term,
-            &BindOptions {
-                lang: "rust".to_string(),
-                exam_manifest: None,
-            },
-        )
-        .expect("bind succeeds");
-        let named_json = serde_json::to_value(&named).expect("named term serializes");
-        let tree = named_json["terms"][0]
-            .get("namedTermTree")
-            .expect("operation-level named term tree is emitted");
-        let nested_names = serde_json::to_string(tree).expect("tree stringifies");
-        let mut operation_concepts = Vec::new();
-        collect_tree_concept_names(tree, &mut operation_concepts);
-        operation_concepts.sort();
-        operation_concepts.dedup();
-        eprintln!(
-            "operation-level matches for blake3_512_of: {}",
-            operation_concepts.join(", ")
-        );
-
-        assert!(
-            nested_names.contains("\"conceptName\":\"concept:call\""),
-            "blake3_512_of call operations should match catalog concept:call; tree={nested_names}"
-        );
-        assert!(
-            tree.get("args")
-                .and_then(Json::as_array)
-                .is_some_and(|args| !args.is_empty()),
-            "operation tree should retain recursive children; tree={tree}"
-        );
-    }
-
-    fn collect_tree_concept_names(tree: &Json, out: &mut Vec<String>) {
-        if let Some(name) = tree.get("conceptName").and_then(Json::as_str) {
-            if name.starts_with("concept:") {
-                out.push(name.to_string());
-            }
-        }
-        if let Some(args) = tree.get("args").and_then(Json::as_array) {
-            for arg in args {
-                collect_tree_concept_names(arg, out);
-            }
-        }
-    }
 }
