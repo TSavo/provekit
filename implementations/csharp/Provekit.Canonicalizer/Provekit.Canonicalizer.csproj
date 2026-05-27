@@ -13,9 +13,4 @@
     <PackageReference Include="Blake3" Version="1.1.0" />
   </ItemGroup>
 
-  <!-- Sidecar invariant files compile into Provekit.SelfContracts, not the lib. -->
-  <ItemGroup>
-    <Compile Remove="**/*.invariant.cs" />
-  </ItemGroup>
-
 </Project>

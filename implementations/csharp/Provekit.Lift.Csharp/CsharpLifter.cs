@@ -68,36 +68,13 @@ public class CsharpLifter
             result.Diagnostics.Add(Diag("error", $"read {path}: {ex.Message}"));
             return;
         }
-        var declCount = result.Declarations.Count;
+        // Lift only the per-method witness contracts, matching every other kit
+        // (php/go/rust/...). The previous `<source-unit:{path}>` wrapper embedded
+        // the whole file text plus an ABSOLUTE path into a content-addressed
+        // contract -- two determinism leaks (path differs Mac/Linux; the embedded
+        // text drifted the kit-hashed CID vs the verifier re-derivation). No other
+        // kit emits a source-unit contract and none consume `csharp:source-unit`.
         LiftSource(source, path, result);
-        if (result.Declarations.Count == declCount) return;
-        var sourceUnit = new JsonObject
-        {
-            ["kind"] = "function-contract",
-            ["schemaVersion"] = "1",
-            ["fnName"] = $"<source-unit:{path}>",
-            ["formals"] = new JsonArray(),
-            ["formalSorts"] = new JsonArray(),
-            ["returnSort"] = PrimSort("Int"),
-            ["pre"] = TrueFormula(),
-            ["post"] = EqFormula(VarTerm("return_value"),
-                Ctor("csharp:source-unit", StrConst(source), WrapSeq(result.Declarations, declCount))),
-            ["bodyCid"] = null,
-            ["effects"] = new JsonArray(),
-            ["locus"] = new JsonObject { ["file"] = path, ["line"] = 1, ["col"] = 1 },
-            ["autoMintedMementos"] = new JsonArray(),
-        };
-        result.Declarations.Insert(declCount, sourceUnit);
-    }
-
-    private static JsonObject WrapSeq(List<JsonObject> decls, int start)
-    {
-        var contracts = decls.Skip(start).Select(d => d["post"]?["args"]?[1]).Where(n => n is not null).ToList();
-        if (contracts.Count == 0) return Skip();
-        var result = contracts[0]!.AsObject();
-        for (int i = 1; i < contracts.Count; i++)
-            result = Ctor("csharp:seq", result, contracts[i]!.AsObject());
-        return result;
     }
 
     private static JsonObject Ctor(string name, params JsonObject[] args) => new()

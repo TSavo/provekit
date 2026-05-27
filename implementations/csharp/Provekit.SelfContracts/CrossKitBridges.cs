@@ -156,7 +156,7 @@ public static class CrossKitBridges
     /// lift plugin satisfies rust's <contract name>" using the same
     /// kit-defined named-ctor / paired-equality shape as the rust slab.
     ///
-    /// Wired into <c>Program.RegisterAll()</c> so the contracts flow into
+    /// Wired into <c>Program</c>'s native self-contract document so the contracts flow into
     /// the C# self-contracts bundle. The bundle CID will drift after this
     /// PR lands; the C# attestation is re-signed as a follow-up.
     /// </summary>

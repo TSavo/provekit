@@ -15,9 +15,4 @@
     <ProjectReference Include="..\Provekit.ProofEnvelope\Provekit.ProofEnvelope.csproj" />
   </ItemGroup>
 
-  <!-- Sidecar invariant files compile into Provekit.SelfContracts, not the lib. -->
-  <ItemGroup>
-    <Compile Remove="**/*.invariant.cs" />
-  </ItemGroup>
-
 </Project>

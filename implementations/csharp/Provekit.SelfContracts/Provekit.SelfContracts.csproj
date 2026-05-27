@@ -15,22 +15,7 @@
     <ProjectReference Include="..\Provekit.IR\Provekit.IR.csproj" />
     <ProjectReference Include="..\Provekit.ClaimEnvelope\Provekit.ClaimEnvelope.csproj" />
     <ProjectReference Include="..\Provekit.ProofEnvelope\Provekit.ProofEnvelope.csproj" />
-  </ItemGroup>
-
-  <!-- Pull in every sidecar .invariant.cs file across the four lib projects. -->
-  <ItemGroup>
-    <Compile Include="..\Provekit.Canonicalizer\*.invariant.cs">
-      <Link>Invariants\Canonicalizer\%(Filename)%(Extension)</Link>
-    </Compile>
-    <Compile Include="..\Provekit.IR\*.invariant.cs">
-      <Link>Invariants\IR\%(Filename)%(Extension)</Link>
-    </Compile>
-    <Compile Include="..\Provekit.ClaimEnvelope\*.invariant.cs">
-      <Link>Invariants\ClaimEnvelope\%(Filename)%(Extension)</Link>
-    </Compile>
-    <Compile Include="..\Provekit.ProofEnvelope\*.invariant.cs">
-      <Link>Invariants\ProofEnvelope\%(Filename)%(Extension)</Link>
-    </Compile>
+    <ProjectReference Include="..\Provekit.Lift.Csharp\Provekit.Lift.Csharp.csproj" />
   </ItemGroup>
 
 </Project>
