@@ -197,3 +197,26 @@ Consequences:
   passing test could not reach.
 - It is the **admission filter above the (species × domains) matrix**: a candidate that a
   unit test would catch is rejected, no matter how real the bug.
+
+## Methodology: white-room construction (why the zoo is falsifiable)
+
+Species are **constructed in a white room**, not harvested from real codebases: you author
+BOTH the bug AND the genuine tests that fail to observe it, in a minimal self-contained
+specimen. This is not a convenience — it is what makes the claim **falsifiable**.
+
+Every real-world bug corpus (Defects4J et al.) dies on the unanswerable counterfactual:
+"would a test have caught it?" White-room construction kills the ambiguity — you EXHIBIT the
+actual test, green, with the bug present. The specimen IS the proof. "Tests of this class
+miss this bug" stops being an assertion and becomes a thing you can run.
+
+So a species is a **hand-built minimal counterexample to 'tests catch bugs'**: a
+`(genuine test passes, bug present, lift sees the seam)` triple, in a clean room with
+nothing else in it.
+
+**The one discipline that keeps it honest — non-negotiable:** the `lab` test must be the
+**IDIOMATIC** test — the one a competent engineer actually writes — NOT a strawman. If the
+test is deliberately weak, the specimen proves nothing. The force comes from the test being
+the *natural* one whose blindness to the seam is **structural, not contrived**. (Determinism:
+`parse(serialize(x)) == x` is THE test anyone writes for a serializer, and it is blind to
+byte-order by construction.) Gold standard for picking a species: choose the bug whose
+idiomatic test is *architecturally incapable* of seeing the edge.
