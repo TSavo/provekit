@@ -148,6 +148,7 @@ public class CsharpLifter
             "LiftAssembly", new[] { tree }, References(),
             new CSharpCompilationOptions(OutputKind.DynamicallyLinkedLibrary));
         var model = compilation.GetSemanticModel(tree);
+        var emittedMethods = new List<CsharpFunctionContractWalker.MethodBinding>();
 
         foreach (var method in tree.GetRoot().DescendantNodes().OfType<MethodDeclarationSyntax>())
         {
@@ -174,6 +175,7 @@ public class CsharpLifter
                     var docId = symbol.GetDocumentationCommentId() ?? "M:?";
                     contract["fnName"] = JsonValue.Create(docId);
                     result.Declarations.Add(contract);
+                    emittedMethods.Add(new CsharpFunctionContractWalker.MethodBinding(method, symbol, contract));
                 }
             }
             catch (Exception ex)
@@ -186,6 +188,8 @@ public class CsharpLifter
                 });
             }
         }
+
+        CsharpFunctionContractWalker.Apply(emittedMethods, model, path, result);
     }
 
     private static List<MetadataReference>? _cachedRefs;
@@ -212,6 +216,7 @@ public class CsharpLifter
 public class LiftResult
 {
     public List<JsonObject> Declarations { get; set; } = new();
+    public List<JsonObject> CallEdges { get; set; } = new();
     public List<JsonObject> Diagnostics { get; set; } = new();
     public List<JsonObject> OpacityReport { get; set; } = new();
     public List<Refusal> Refusals { get; set; } = new();
