@@ -1,0 +1,79 @@
+# Bug Zoo — the bug-class taxonomy (design thinking, recorded)
+
+> Recorded 2026-05-27 (T + Claude). The mistake we kept making was not writing
+> the thinking down. This is the *why* behind which species the zoo should hold.
+
+## Organizing principle
+
+A bug is a **missing or false composition edge**: `post(producer) ⊬ pre(consumer)`.
+So a **bug class is not a category — it is a KIND OF OBLIGATION a value carries
+across a boundary**, i.e. an *axis* along which a value-at-a-composition-edge can
+be constrained. Enumerate the axes and you have enumerated the classes.
+
+Each class is **portable**: the same missing-edge shape recurs in every language.
+That portability is the whole reason a *zoo* exists — the substrate claim is that
+bug classes are universal, so one proof shape (the lifted contract + its edge)
+covers them all.
+
+## The obligation families (the carving that holds at the joints)
+
+Seven families, each constraining the value-at-the-boundary along one dimension:
+
+1. **Data** — the value's own properties (the "what is it" axis). Members:
+   - Presence (optional/null vs required): `maybe_null → non_null`
+   - Value domain (range/sign/enum membership): off-by-one, bounds, bad enum.
+     *Includes arithmetic* (overflow = result ∉ type domain; div-by-zero = divisor ∉ {x≠0}) —
+     a named instance, distinctive for machine width/precision, not a separate family.
+   - Type / shape conformance (structure matches expected schema): parse, deserialize, cast, dynamic-shape.
+2. **Resource** — the value is a non-copyable resource (the "who/when may hold it" axis; linear/affine). Members:
+   - Aliasing & ownership (borrow/move, shared-mutable, use-after-move).
+   - Lifetime (acquire/release, use-after-free, leak).
+3. **Temporal** — operations over time. Members:
+   - Ordering / protocol / typestate (sequential: init-before-use, lock-before-access).
+   - Concurrency (parallel: data races, happens-before).
+4. **Effect** — what *using* the value does (the "what happens" axis): purity vs hidden IO/throw/mutation/async (async contagion, unchecked exceptions); idempotence.
+5. **Flow** — where the value may travel (taint, bidirectional): integrity (untrusted → trusted sink = injection: SQLi/XSS/path) and confidentiality (secret → untrusted sink = leak).
+6. **Translation** — meaning preserved across representations (the federation axis): cross-language equivalence, encoding round-trip/canonical form (`encode∘decode = id`), version drift.
+7. **Computation-property** — does the computation itself behave:
+   - **Determinism / reproducibility** — same input → same output; no clock/address/iteration-order nondeterminism. *The most ProvekIt-native obligation*: content-addressing is meaningless without it; "one source lifted to two CIDs" is the canonical substrate bug.
+   - Termination / progress (liveness).
+   - (Authorization / capability — the caller holds the right — sits here or as a Data precondition.)
+
+## "Ten bug classes" = the ten highest-value portable members
+
+A curated subset across the families, biased toward what's portable and what the
+substrate cares about most. Candidate ten:
+1. Presence (Data)
+2. Value domain incl. arithmetic (Data)
+3. Type/shape conformance (Data)
+4. Aliasing & ownership (Resource)
+5. Resource lifetime (Resource)
+6. Ordering / protocol / typestate (Temporal)
+7. Concurrency / data-race (Temporal)
+8. Effect & purity (Effect)
+9. Information flow / taint — injection + leakage (Flow)
+10. Cross-representation equivalence + round-trip (Translation)
+   — with **Determinism / reproducibility (Computation-property)** as the eleventh that
+   arguably outranks several above, because the whole CID-addressed substrate rests on it.
+
+## Current coverage (5 species) and the build list
+
+| Class | Species | Status |
+|-------|---------|--------|
+| Presence (Data) | BZ-SHAPE-005 null-boundary-equivalence | DONE |
+| Value domain (Data) | BZ-SHAPE-006 value-scope-escape | DONE |
+| Aliasing (Resource) | BZ-OWNERSHIP-001 borrowed-pages-as-scratch | DONE |
+| Equivalence (Translation) | BZ-COMPOSITION-001 cross-language-equivalence | DONE |
+| (polyglot-link *mechanism*) | BZ-SHAPE-007 polyglot-link-obligation | DONE (the cross-kit edge itself, instantiates Translation) |
+
+**Uncovered (the build list — each uncovered family/member is the next species):**
+- Type/shape conformance (Data) — parse/deserialize/cast
+- Resource lifetime (Resource) — acquire/release, use-after-free, leak
+- Ordering/protocol (Temporal) — typestate
+- Concurrency (Temporal) — data race
+- Effect & purity (Effect) — async contagion, unchecked throw
+- Flow / taint (Flow) — injection + leakage
+- **Determinism / reproducibility (Computation-property)** — nondeterministic lift/mint
+
+The `BZ-SHAPE-001..004` numbering gap and the single-entry kingdoms are the
+fossil record of a larger original design; the survivors are the five above.
