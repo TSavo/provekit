@@ -1,9 +1,0 @@
-{
-  "kind": "language_signature",
-  "fn_name": "c:c11",
-  "sorts": ["sort_c_int.spec.json", "sort_c_bool.spec.json"],
-  "operations": ["algorithm_branch_on_nonzero.spec.json"],
-  "equations": ["equation_c_branch_identity.spec.json"],
-  "effect_signatures": ["effect_signature_c_control.spec.json"],
-  "body_cid": "blake3-512:dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd"
-}

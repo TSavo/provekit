@@ -1,9 +1,0 @@
-{
-  "kind": "effect_signature",
-  "fn_name": "c:control-effects:c11",
-  "sorts": ["sort_c_bool.spec.json"],
-  "operations": [],
-  "equations": [],
-  "effect_signatures": [],
-  "body_cid": "blake3-512:cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc"
-}
