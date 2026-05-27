@@ -34,7 +34,7 @@ pub struct BindArgs {
     #[arg(short = 'o', long = "output")]
     pub output: Option<PathBuf>,
 
-    /// Legacy migration root. Kept for cmd_bind_migrate compatibility.
+    /// Project root used to resolve the exam manifest plugin. Defaults to cwd.
     #[arg(long, alias = "project", default_value = ".")]
     pub root: PathBuf,
 
@@ -66,45 +66,9 @@ pub struct BindArgs {
     #[arg(long)]
     pub target_language: Option<String>,
 
-    /// Source library surface for migration rewrite.
-    #[arg(long)]
-    pub library_from: Option<String>,
-
-    /// Target library surface for migration rewrite.
-    #[arg(long)]
-    pub library_to: Option<String>,
-
-    /// Scope migration effect propagation to one triggering callsite CID.
-    #[arg(long)]
-    pub focus: Option<String>,
-
-    /// Source directory for migration rewrite.
-    #[arg(long)]
-    pub source_dir: Option<PathBuf>,
-
-    /// Output directory for migration rewrite.
-    #[arg(long)]
-    pub out_dir: Option<PathBuf>,
-
-    /// Receipt path for migration rewrite.
-    #[arg(long)]
-    pub receipt: Option<PathBuf>,
-
-    /// Fixture sqlite database for row-shape witnesses during migration.
-    #[arg(long)]
-    pub witness_fixture: Option<PathBuf>,
-
-    /// Write migrated source to out-dir. Without this flag the migration path is a dry run.
-    #[arg(long)]
-    pub write: bool,
-
     /// Suppress non-error diagnostics.
     #[arg(long)]
     pub quiet: bool,
-
-    /// PEP 1.7.0 plugin flags retained only for migration compatibility.
-    #[command(flatten)]
-    pub plugins: crate::PluginFlags,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -146,10 +110,6 @@ fn parse_mode(s: &str) -> Result<RuntimeMode, String> {
 }
 
 pub fn run(args: BindArgs) -> u8 {
-    if is_migration_request(&args) {
-        return crate::cmd_bind_migrate::run(args);
-    }
-
     let raw = match read_input(args.input.as_ref()) {
         Ok(raw) => raw,
         Err(error) => {
@@ -273,17 +233,6 @@ impl std::fmt::Display for BindCliError {
             Self::Failed(message) => f.write_str(message),
         }
     }
-}
-
-fn is_migration_request(args: &BindArgs) -> bool {
-    args.library_from.is_some()
-        || args.library_to.is_some()
-        || args.focus.is_some()
-        || args.source_dir.is_some()
-        || args.out_dir.is_some()
-        || args.receipt.is_some()
-        || args.witness_fixture.is_some()
-        || args.write
 }
 
 fn read_input(path: Option<&PathBuf>) -> Result<Vec<u8>, String> {
