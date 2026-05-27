@@ -137,9 +137,36 @@ static std::string current_working_dir() {
     return std::string(buf);
 }
 
+static bool file_exists(const std::string& path) {
+    std::ifstream f(path);
+    return static_cast<bool>(f);
+}
+
+static std::string parent_dir(const std::string& path) {
+    if (path.empty() || path == "/") return "";
+    size_t end = path.find_last_not_of('/');
+    if (end == std::string::npos) return "";
+    size_t slash = path.find_last_of('/', end);
+    if (slash == std::string::npos) return "";
+    if (slash == 0) return "/";
+    return path.substr(0, slash);
+}
+
+static bool looks_like_workspace_root(const std::string& path) {
+    return file_exists(path + "/tools/build-cpp-lift.sh") &&
+           file_exists(path + "/implementations/cpp/provekit-self-contracts/native/cpp_kit_self_contracts.cpp");
+}
+
 static std::string workspace_root() {
     const char* from_env = std::getenv("PROVEKIT_WORKSPACE_ROOT");
     if (from_env && *from_env) return std::string(from_env);
+
+    std::string candidate = current_working_dir();
+    while (!candidate.empty()) {
+        if (looks_like_workspace_root(candidate)) return candidate;
+        candidate = parent_dir(candidate);
+    }
+
     return current_working_dir();
 }
 
