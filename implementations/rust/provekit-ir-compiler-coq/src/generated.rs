@@ -32,6 +32,11 @@ pub fn emit_term(term: &Term) -> String {
             let args_str = args.iter();
             let args_str = args_str.map(emit_term);
             let args_str: Vec<String> = args_str.collect();
+            if let Some(op) = coq_binop(name) {
+                if args_str.len() == 2 {
+                    return format!("({} {} {})", args_str[0], op, args_str[1]);
+                }
+            }
             format!("({} {})", coq_ident(name), args_str.join(" "))
         }
         Term::Lambda {
@@ -59,6 +64,11 @@ pub fn emit_term(term: &Term) -> String {
             let args_str = args.iter();
             let args_str = args_str.map(emit_term);
             let args_str: Vec<String> = args_str.collect();
+            if let Some(op) = coq_binop(name) {
+                if args_str.len() == 2 {
+                    return format!("({} {} {})", args_str[0], op, args_str[1]);
+                }
+            }
             format!("({} {})", coq_ident(name), args_str.join(" "))
         }
         Term::Lambda {
@@ -261,6 +271,21 @@ fn sort_to_coq_paren(sort: &Sort) -> String {
 // `go:slice-literal` contain ':' and '-', which Coq rejects. Replacing them
 // with '_' is applied consistently at both the `Parameter` declaration and
 // every use, so the symbol still matches.
+// coq_binop maps a term-level comparison ctor to its Coq Z bool operator
+// (Z.ltb/Z.leb/Z.gtb/Z.geb/Z.eqb under `Open Scope Z`). These ctors return
+// bool in the IR (they are compared against bool consts), so they must emit
+// the boolean comparison `<?`/`<=?`/etc., not be sanitized to `_`. Both
+// ASCII (`<=`) and the Unicode relational forms (`≤`,`≥`) are accepted.
+fn coq_binop(name: &str) -> Option<&'static str> {
+    match name {
+        "<" => Some("<?"),
+        ">" => Some(">?"),
+        "<=" | "\u{2264}" => Some("<=?"),
+        ">=" | "\u{2265}" => Some(">=?"),
+        "=" => Some("=?"),
+        _ => None,
+    }
+}
 fn coq_ident(name: &str) -> String {
     name.chars()
         .map(|c| {
@@ -312,9 +337,19 @@ pub fn compile_formula(formula: &Formula) -> (String, String, Vec<FreeVar>) {
     body.push_str("\nGoal ");
     body.push_str(&emit_formula(formula));
     body.push_str(".\n");
-    body.push_str("Proof.\n  intuition.\n  admit.\nQed.\n");
+    // `lia` (with Zify) discharges linear integer-arithmetic and bool-comparison
+    // goals (Z.ltb/Z.leb/Z.eqb). `intros` first so any implication antecedents
+    // become hypotheses. A real proof closed by `Qed` is the soundness gate: Coq
+    // rejects an incomplete proof at `Qed`, so a clean exit means the goal holds.
+    // Goals outside linear arithmetic make `lia` fail -> coqc exits non-zero ->
+    // the seat reports Undecidable (Coq is a prover, not a model-finder).
+    body.push_str("Proof.\n  intros.\n  lia.\nQed.\n");
+    // Open Z scope LAST so it dominates: these obligations are arithmetic/bool,
+    // so the integer notations (`<?`, literals, `=`) must resolve in Z, not
+    // string. Opening string first keeps string literals available without
+    // shadowing the arithmetic operators the proofs depend on.
     let preamble =
-        "Require Import ZArith String List.\nOpen Scope Z.\nOpen Scope string.\n\n".to_string();
+        "Require Import ZArith String List Lia.\nOpen Scope string.\nOpen Scope Z.\n\n".to_string();
     let free_vars_vec = free_vars
         .into_iter()
         .map(|(name, sort)| FreeVar { name, sort });
