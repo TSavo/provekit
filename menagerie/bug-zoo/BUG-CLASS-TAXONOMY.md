@@ -102,3 +102,67 @@ universality claim.
 "Complete zoo" = every portable class (the taxonomy above) × ≥2 domains, each
 domain-pair lifting to the byte-identical edge. The surviving 5 species each already
 span ≥2 domains; the build list is the uncovered axes, each needing its ≥2-domain set.
+
+## The canonical ten (locked) + the meta-class
+
+Ten obligation-axis bug classes, plus ONE meta-class that is the proof mechanism
+(not a competitor for a slot):
+
+| # | Class | Family | Status |
+|---|-------|--------|--------|
+| 1 | Presence (optional/null → required) | Data | DONE BZ-SHAPE-005 |
+| 2 | Value domain (range/sign/enum; incl. arithmetic overflow/div-zero) | Data | DONE BZ-SHAPE-006 |
+| 3 | Shape / parse (dynamic structure conformance: deserialize/cast/schema) | Data | gap |
+| 4 | Aliasing & ownership (borrow/move/shared-mutable) | Resource | DONE BZ-OWNERSHIP-001 |
+| 5 | Resource lifetime (acquire/release, use-after-free, leak) | Resource | gap |
+| 6 | Ordering / protocol / typestate (sequence, init-before-use, lock-before-access) | Temporal | gap |
+| 7 | Concurrency / data-race (happens-before, interleaving) | Temporal | gap |
+| 8 | Effect & purity (declared vs actual IO/throw/async/mutation; async contagion) | Effect | gap |
+| 9 | Information flow / taint (injection: untrusted→trusted; leakage: secret→untrusted) | Flow | gap |
+| 10 | Determinism / reproducibility (same input→same output; no clock/addr/order nondeterminism) | Computation-property | gap |
+
+**Meta-class — Translation / equivalence.** NOT class #11. It is the obligation that
+the SAME class lifts to the SAME edge across domains — the proof axis the whole matrix
+runs on (encode/decode round-trip and version-drift live here too). BZ-COMPOSITION-001
+demonstrates it standalone; BZ-SHAPE-007 polyglot-link is its FFI MECHANISM, not a sixth
+ordinary class. Every species' cross-domain edge-CID coincidence IS this meta-class at work.
+
+Coverage: 3/10 classes built + meta-class proven. Build list (7): shape/parse, lifetime,
+ordering, concurrency, effect, taint, determinism. (Termination + authorization noted but
+cut from the ten: liveness is rarer; authorization folds into Presence/Value as a capability
+precondition.)
+
+## Species template (anatomy)
+
+A species IS a named missing edge, exhibited across >=2 domains in four states:
+
+```
+BZ-<CLASS>-NNN-<slug>/
+  README.md          - the class + the edge in ProofIR (e.g. maybe_null(x) |-/- non_null(x))
+  <domain-A>/        # >=2 domains required (rust/, java/, typescript/, ...)
+    lab/             - host-language tooling ONLY; bug ships GREEN under ordinary checks (real + uncaught)
+    exhibit/         - native contract surface added; ProvekIt lifts -> reports the MISSING edge (RED)
+    fixed/           - source closes the edge; ProvekIt re-lifts -> edge DISCHARGES (GREEN)
+    refused/         - malformed/over-claimed input; ProvekIt correctly REFUSES (safety/Oracle: never false-greens)
+  <domain-B>/        # same four states, second language/surface
+  expected/          - PINNED receipts: the lifted edge's ProofIR CID, byte-IDENTICAL across domains
+```
+
+Two load-bearing invariants:
+- **The four states are the truth table of the edge:** lab (invisible to the language) ->
+  exhibit (ProvekIt sees the missing edge) -> fixed (edge discharges) -> refused (won't fake
+  green). lab + refused keep it honest: without lab, "ProvekIt caught it" is unfalsifiable;
+  without refused, green is cheap.
+- **The cross-domain edge CID must coincide** - that pinned identity in expected/ IS the
+  meta-class (Translation) operating inside every species. A species is not "done" until
+  >=2 domains lift to the SAME edge CID.
+
+So the matrix is precise: ROWS = the ten classes, COLUMNS = domains, each CELL = a
+{lab, exhibit, fixed, refused} quad, ROW-INVARIANT = one identical edge CID across columns.
+
+## Build order (suggested)
+
+Determinism (10) first — most ProvekIt-native (content-addressing rests on it; we trip its
+checks constantly), then effect/purity (8), taint (9), lifetime (5), concurrency (7),
+ordering (6), shape/parse (3). Each new species: name the edge, pick >=2 domains, build the
+four states, pin the identical cross-domain edge CID.
