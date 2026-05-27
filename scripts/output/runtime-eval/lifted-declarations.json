@@ -1,308 +1,511 @@
-[
-  {
-    "kind": "property",
-    "name": "parseInt > canReturnZero",
-    "formula": {
-      "kind": "exists",
-      "sort": {
+{
+  "declarations": [
+    {
+      "schemaVersion": "1",
+      "kind": "function-contract",
+      "fnName": "scripts/cross-language-demo/runtime-eval/native-source.ts:<source-unit>",
+      "formals": [],
+      "formalSorts": [],
+      "returnSort": {
         "kind": "primitive",
-        "name": "String"
+        "name": "Unit"
       },
-      "predicate": {
-        "kind": "lambda",
-        "varName": "_x0",
-        "sort": {
-          "kind": "primitive",
-          "name": "String"
-        },
-        "body": {
-          "kind": "atomic",
-          "predicate": "=",
-          "args": [
-            {
-              "kind": "ctor",
-              "name": "parseInt",
-              "args": [
-                {
-                  "kind": "var",
-                  "name": "_x0",
-                  "sort": {
-                    "kind": "primitive",
-                    "name": "String"
-                  }
-                }
-              ],
-              "sort": {
-                "kind": "primitive",
-                "name": "Int"
-              }
-            },
-            {
-              "kind": "const",
-              "value": 0,
-              "sort": {
-                "kind": "primitive",
-                "name": "Int"
-              }
-            }
-          ]
-        }
-      }
-    }
-  },
-  {
-    "kind": "property",
-    "name": "parseInt > canReturnPositive",
-    "formula": {
-      "kind": "exists",
-      "sort": {
-        "kind": "primitive",
-        "name": "String"
+      "pre": {
+        "kind": "atomic",
+        "name": "true",
+        "args": []
       },
-      "predicate": {
-        "kind": "lambda",
-        "varName": "_x1",
-        "sort": {
-          "kind": "primitive",
-          "name": "String"
-        },
-        "body": {
-          "kind": "atomic",
-          "predicate": ">",
-          "args": [
-            {
-              "kind": "ctor",
-              "name": "parseInt",
-              "args": [
-                {
-                  "kind": "var",
-                  "name": "_x1",
-                  "sort": {
-                    "kind": "primitive",
-                    "name": "String"
-                  }
-                }
-              ],
-              "sort": {
-                "kind": "primitive",
-                "name": "Int"
-              }
-            },
-            {
-              "kind": "const",
-              "value": 0,
-              "sort": {
-                "kind": "primitive",
-                "name": "Int"
-              }
-            }
-          ]
-        }
-      }
-    }
-  },
-  {
-    "kind": "property",
-    "name": "parseInt > canReturnNegative",
-    "formula": {
-      "kind": "exists",
-      "sort": {
-        "kind": "primitive",
-        "name": "String"
-      },
-      "predicate": {
-        "kind": "lambda",
-        "varName": "_x2",
-        "sort": {
-          "kind": "primitive",
-          "name": "String"
-        },
-        "body": {
-          "kind": "atomic",
-          "predicate": "<",
-          "args": [
-            {
-              "kind": "ctor",
-              "name": "parseInt",
-              "args": [
-                {
-                  "kind": "var",
-                  "name": "_x2",
-                  "sort": {
-                    "kind": "primitive",
-                    "name": "String"
-                  }
-                }
-              ],
-              "sort": {
-                "kind": "primitive",
-                "name": "Int"
-              }
-            },
-            {
-              "kind": "const",
-              "value": 0,
-              "sort": {
-                "kind": "primitive",
-                "name": "Int"
-              }
-            }
-          ]
-        }
-      }
-    }
-  },
-  {
-    "kind": "property",
-    "name": "parseInt > non-negative integer round-trip > zero",
-    "formula": {
-      "kind": "atomic",
-      "predicate": "=",
-      "args": [
-        {
-          "kind": "ctor",
-          "name": "parseInt",
-          "args": [
-            {
-              "kind": "const",
-              "value": "0",
-              "sort": {
-                "kind": "primitive",
-                "name": "String"
-              }
-            }
-          ],
-          "sort": {
-            "kind": "primitive",
-            "name": "Int"
-          }
-        },
-        {
-          "kind": "const",
-          "value": 0,
-          "sort": {
-            "kind": "primitive",
-            "name": "Int"
-          }
-        }
-      ]
-    }
-  },
-  {
-    "kind": "property",
-    "name": "parseInt > non-negative integer round-trip > idempotent on small positive integers",
-    "formula": {
-      "kind": "forall",
-      "sort": {
-        "kind": "primitive",
-        "name": "Int"
-      },
-      "predicate": {
-        "kind": "lambda",
-        "varName": "_x3",
-        "sort": {
-          "kind": "primitive",
-          "name": "Int"
-        },
-        "body": {
-          "kind": "implies",
-          "antecedent": {
-            "kind": "atomic",
-            "predicate": "≥",
+      "post": {
+        "kind": "atomic",
+        "name": "=",
+        "args": [
+          {
+            "kind": "var",
+            "name": "return_value"
+          },
+          {
+            "kind": "ctor",
+            "name": "ts:source-unit",
             "args": [
               {
-                "kind": "var",
-                "name": "_x3",
+                "kind": "const",
+                "value": "/**\n * Native TypeScript source for the runtime-eval lifting demo.\n *\n * ProvekIt lifts this file directly. There is no sibling contract file: the\n * function bodies are the native surface from which function-contract\n * mementos are derived.\n */\n\nexport function parseIntOrZero(input: string): number {\n  const parsed = Number.parseInt(input, 10);\n  if (Number.isNaN(parsed)) {\n    return 0;\n  }\n  return parsed;\n}\n\nexport function absoluteValue(x: number): number {\n  return Math.abs(x);\n}\n",
                 "sort": {
                   "kind": "primitive",
-                  "name": "Int"
+                  "name": "String"
                 }
               },
               {
-                "kind": "const",
-                "value": 0,
-                "sort": {
-                  "kind": "primitive",
-                  "name": "Int"
-                }
+                "kind": "ctor",
+                "name": "ts:seq",
+                "args": [
+                  {
+                    "kind": "ctor",
+                    "name": "ts:seq",
+                    "args": [
+                      {
+                        "kind": "ctor",
+                        "name": "ts:seq",
+                        "args": [
+                          {
+                            "kind": "ctor",
+                            "name": "ts:decl",
+                            "args": [
+                              {
+                                "kind": "const",
+                                "value": "parsed",
+                                "sort": {
+                                  "kind": "primitive",
+                                  "name": "String"
+                                }
+                              },
+                              {
+                                "kind": "ctor",
+                                "name": "ts:call",
+                                "args": [
+                                  {
+                                    "kind": "ctor",
+                                    "name": "ts:member",
+                                    "args": [
+                                      {
+                                        "kind": "var",
+                                        "name": "Number"
+                                      },
+                                      {
+                                        "kind": "const",
+                                        "value": "parseInt",
+                                        "sort": {
+                                          "kind": "primitive",
+                                          "name": "String"
+                                        }
+                                      }
+                                    ]
+                                  },
+                                  {
+                                    "kind": "ctor",
+                                    "name": "ts:args",
+                                    "args": [
+                                      {
+                                        "kind": "var",
+                                        "name": "input"
+                                      },
+                                      {
+                                        "kind": "const",
+                                        "value": 10,
+                                        "sort": {
+                                          "kind": "primitive",
+                                          "name": "Number"
+                                        }
+                                      }
+                                    ]
+                                  }
+                                ]
+                              }
+                            ]
+                          }
+                        ]
+                      },
+                      {
+                        "kind": "ctor",
+                        "name": "ts:if",
+                        "args": [
+                          {
+                            "kind": "ctor",
+                            "name": "ts:call",
+                            "args": [
+                              {
+                                "kind": "ctor",
+                                "name": "ts:member",
+                                "args": [
+                                  {
+                                    "kind": "var",
+                                    "name": "Number"
+                                  },
+                                  {
+                                    "kind": "const",
+                                    "value": "isNaN",
+                                    "sort": {
+                                      "kind": "primitive",
+                                      "name": "String"
+                                    }
+                                  }
+                                ]
+                              },
+                              {
+                                "kind": "ctor",
+                                "name": "ts:args",
+                                "args": [
+                                  {
+                                    "kind": "var",
+                                    "name": "parsed"
+                                  }
+                                ]
+                              }
+                            ]
+                          },
+                          {
+                            "kind": "ctor",
+                            "name": "ts:seq",
+                            "args": [
+                              {
+                                "kind": "ctor",
+                                "name": "ts:return",
+                                "args": [
+                                  {
+                                    "kind": "const",
+                                    "value": 0,
+                                    "sort": {
+                                      "kind": "primitive",
+                                      "name": "Number"
+                                    }
+                                  }
+                                ]
+                              }
+                            ]
+                          },
+                          {
+                            "kind": "ctor",
+                            "name": "ts:seq",
+                            "args": []
+                          }
+                        ]
+                      },
+                      {
+                        "kind": "ctor",
+                        "name": "ts:return",
+                        "args": [
+                          {
+                            "kind": "var",
+                            "name": "parsed"
+                          }
+                        ]
+                      }
+                    ]
+                  },
+                  {
+                    "kind": "ctor",
+                    "name": "ts:call",
+                    "args": [
+                      {
+                        "kind": "ctor",
+                        "name": "ts:member",
+                        "args": [
+                          {
+                            "kind": "var",
+                            "name": "Math"
+                          },
+                          {
+                            "kind": "const",
+                            "value": "abs",
+                            "sort": {
+                              "kind": "primitive",
+                              "name": "String"
+                            }
+                          }
+                        ]
+                      },
+                      {
+                        "kind": "ctor",
+                        "name": "ts:args",
+                        "args": [
+                          {
+                            "kind": "var",
+                            "name": "x"
+                          }
+                        ]
+                      }
+                    ]
+                  }
+                ]
               }
             ]
+          }
+        ]
+      },
+      "bodyCid": null,
+      "effects": [],
+      "locus": {
+        "file": "scripts/cross-language-demo/runtime-eval/native-source.ts",
+        "line": 1,
+        "col": 1
+      },
+      "autoMintedMementos": []
+    },
+    {
+      "schemaVersion": "1",
+      "kind": "function-contract",
+      "fnName": "scripts/cross-language-demo/runtime-eval/native-source.ts:parseIntOrZero",
+      "formals": [
+        "input"
+      ],
+      "formalSorts": [
+        {
+          "kind": "primitive",
+          "name": "String"
+        }
+      ],
+      "returnSort": {
+        "kind": "primitive",
+        "name": "Number"
+      },
+      "pre": {
+        "kind": "atomic",
+        "name": "true",
+        "args": []
+      },
+      "post": {
+        "kind": "atomic",
+        "name": "=",
+        "args": [
+          {
+            "kind": "var",
+            "name": "return_value"
           },
-          "consequent": {
-            "kind": "atomic",
-            "predicate": "≥",
+          {
+            "kind": "ctor",
+            "name": "ts:seq",
             "args": [
               {
                 "kind": "ctor",
-                "name": "parseInt",
+                "name": "ts:seq",
                 "args": [
                   {
+                    "kind": "ctor",
+                    "name": "ts:decl",
+                    "args": [
+                      {
+                        "kind": "const",
+                        "value": "parsed",
+                        "sort": {
+                          "kind": "primitive",
+                          "name": "String"
+                        }
+                      },
+                      {
+                        "kind": "ctor",
+                        "name": "ts:call",
+                        "args": [
+                          {
+                            "kind": "ctor",
+                            "name": "ts:member",
+                            "args": [
+                              {
+                                "kind": "var",
+                                "name": "Number"
+                              },
+                              {
+                                "kind": "const",
+                                "value": "parseInt",
+                                "sort": {
+                                  "kind": "primitive",
+                                  "name": "String"
+                                }
+                              }
+                            ]
+                          },
+                          {
+                            "kind": "ctor",
+                            "name": "ts:args",
+                            "args": [
+                              {
+                                "kind": "var",
+                                "name": "input"
+                              },
+                              {
+                                "kind": "const",
+                                "value": 10,
+                                "sort": {
+                                  "kind": "primitive",
+                                  "name": "Number"
+                                }
+                              }
+                            ]
+                          }
+                        ]
+                      }
+                    ]
+                  }
+                ]
+              },
+              {
+                "kind": "ctor",
+                "name": "ts:if",
+                "args": [
+                  {
+                    "kind": "ctor",
+                    "name": "ts:call",
+                    "args": [
+                      {
+                        "kind": "ctor",
+                        "name": "ts:member",
+                        "args": [
+                          {
+                            "kind": "var",
+                            "name": "Number"
+                          },
+                          {
+                            "kind": "const",
+                            "value": "isNaN",
+                            "sort": {
+                              "kind": "primitive",
+                              "name": "String"
+                            }
+                          }
+                        ]
+                      },
+                      {
+                        "kind": "ctor",
+                        "name": "ts:args",
+                        "args": [
+                          {
+                            "kind": "var",
+                            "name": "parsed"
+                          }
+                        ]
+                      }
+                    ]
+                  },
+                  {
+                    "kind": "ctor",
+                    "name": "ts:seq",
+                    "args": [
+                      {
+                        "kind": "ctor",
+                        "name": "ts:return",
+                        "args": [
+                          {
+                            "kind": "const",
+                            "value": 0,
+                            "sort": {
+                              "kind": "primitive",
+                              "name": "Number"
+                            }
+                          }
+                        ]
+                      }
+                    ]
+                  },
+                  {
+                    "kind": "ctor",
+                    "name": "ts:seq",
+                    "args": []
+                  }
+                ]
+              },
+              {
+                "kind": "ctor",
+                "name": "ts:return",
+                "args": [
+                  {
+                    "kind": "var",
+                    "name": "parsed"
+                  }
+                ]
+              }
+            ]
+          }
+        ]
+      },
+      "bodyCid": null,
+      "effects": [
+        {
+          "kind": "unresolved_call",
+          "name": "Number.isNaN"
+        },
+        {
+          "kind": "unresolved_call",
+          "name": "Number.parseInt"
+        }
+      ],
+      "locus": {
+        "file": "scripts/cross-language-demo/runtime-eval/native-source.ts",
+        "line": 9,
+        "col": 1
+      },
+      "autoMintedMementos": []
+    },
+    {
+      "schemaVersion": "1",
+      "kind": "function-contract",
+      "fnName": "scripts/cross-language-demo/runtime-eval/native-source.ts:absoluteValue",
+      "formals": [
+        "x"
+      ],
+      "formalSorts": [
+        {
+          "kind": "primitive",
+          "name": "Number"
+        }
+      ],
+      "returnSort": {
+        "kind": "primitive",
+        "name": "Number"
+      },
+      "pre": {
+        "kind": "atomic",
+        "name": "true",
+        "args": []
+      },
+      "post": {
+        "kind": "atomic",
+        "name": "=",
+        "args": [
+          {
+            "kind": "var",
+            "name": "return_value"
+          },
+          {
+            "kind": "ctor",
+            "name": "ts:call",
+            "args": [
+              {
+                "kind": "ctor",
+                "name": "ts:member",
+                "args": [
+                  {
+                    "kind": "var",
+                    "name": "Math"
+                  },
+                  {
                     "kind": "const",
-                    "value": "...",
+                    "value": "abs",
                     "sort": {
                       "kind": "primitive",
                       "name": "String"
                     }
                   }
-                ],
-                "sort": {
-                  "kind": "primitive",
-                  "name": "Int"
-                }
+                ]
               },
               {
-                "kind": "const",
-                "value": 0,
-                "sort": {
-                  "kind": "primitive",
-                  "name": "Int"
-                }
+                "kind": "ctor",
+                "name": "ts:args",
+                "args": [
+                  {
+                    "kind": "var",
+                    "name": "x"
+                  }
+                ]
               }
             ]
           }
-        }
-      }
-    }
-  },
-  {
-    "kind": "property",
-    "name": "Math.abs > non-negative output",
-    "formula": {
-      "kind": "forall",
-      "sort": {
-        "kind": "primitive",
-        "name": "Int"
+        ]
       },
-      "predicate": {
-        "kind": "lambda",
-        "varName": "_x4",
-        "sort": {
-          "kind": "primitive",
-          "name": "Int"
-        },
-        "body": {
-          "kind": "atomic",
-          "predicate": "≥",
-          "args": [
-            {
-              "kind": "const",
-              "value": 0,
-              "sort": {
-                "kind": "primitive",
-                "name": "Int"
-              }
-            },
-            {
-              "kind": "const",
-              "value": 0,
-              "sort": {
-                "kind": "primitive",
-                "name": "Int"
-              }
-            }
-          ]
+      "bodyCid": null,
+      "effects": [
+        {
+          "kind": "unresolved_call",
+          "name": "Math.abs"
         }
-      }
+      ],
+      "locus": {
+        "file": "scripts/cross-language-demo/runtime-eval/native-source.ts",
+        "line": 17,
+        "col": 1
+      },
+      "autoMintedMementos": []
     }
-  }
-]
+  ],
+  "diagnostics": [],
+  "opacityReport": [],
+  "refusals": []
+}

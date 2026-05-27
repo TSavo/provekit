@@ -1,4 +1,8 @@
 // C++ consumer of the C++ divide library: direct call.
+//
+// Native source contract surface:
+// - the guard establishes the library precondition
+// - the C++ lifter derives the wrapper obligation from this function body
 
 #include "divide.h"
 #include <stdexcept>

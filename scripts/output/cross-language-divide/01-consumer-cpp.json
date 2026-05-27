@@ -1,21 +1,20 @@
 {
   "schemaVersion": "1",
   "bindingHash": "0c8da9971057c4f1",
-  "propertyHash": "a0761924418042cd",
+  "propertyHash": "blake3-512:56b208ef6adcd5cc7405226e52183687455d26edede0d0dc7a4f7484028ae632df5a27ebd6c9610dd0a299c4a8c287796a5d88fd83ce781fbf1d9099a1d0a985",
   "verdict": "holds",
   "producedBy": "cpp-kit-demo@0.0.1",
   "producedAt": "1970-01-01T00:00:00.000Z",
   "inputCids": [
-    "955a580b755c85a2fb8915ec24f90456"
+    "blake3-512:fbc5ffc5715963df72c39a2ec489bcd1f3e25982a79ca169cffce20364628e612c63c6d7db420bf7be20f543569b18ededac3bd07e45152c1c106c6d1c157d88"
   ],
   "evidence": {
     "kind": "legacy-witness",
-    "schema": "0000000000000000b0000000000000b0",
     "body": {
-      "rawWitness": "{\"kind\":\"forall\",\"sort\":{\"kind\":\"primitive\",\"name\":\"Int\"},\"predicate\":{\"kind\":\"lambda\",\"varName\":\"_x8\",\"sort\":{\"kind\":\"primitive\",\"name\":\"Int\"},\"body\":{\"kind\":\"forall\",\"sort\":{\"kind\":\"primitive\",\"name\":\"Int\"},\"predicate\":{\"kind\":\"lambda\",\"varName\":\"_x9\",\"sort\":{\"kind\":\"primitive\",\"name\":\"Int\"},\"body\":{\"kind\":\"implies\",\"antecedent\":{\"kind\":\"atomic\",\"predicate\":\"≠\",\"args\":[{\"kind\":\"var\",\"name\":\"_x9\",\"sort\":{\"kind\":\"primitive\",\"name\":\"Int\"}},{\"kind\":\"const\",\"value\":0,\"sort\":{\"kind\":\"primitive\",\"name\":\"Int\"}}]},\"consequent\":{\"kind\":\"atomic\",\"predicate\":\"is-defined\",\"args\":[{\"kind\":\"ctor\",\"name\":\"safe_divide\",\"args\":[{\"kind\":\"var\",\"name\":\"_x8\",\"sort\":{\"kind\":\"primitive\",\"name\":\"Int\"}},{\"kind\":\"var\",\"name\":\"_x9\",\"sort\":{\"kind\":\"primitive\",\"name\":\"Int\"}}],\"sort\":{\"kind\":\"primitive\",\"name\":\"Int\"}}]}}}}}}",
+      "rawWitness": "{\"kind\":\"forall\",\"name\":\"_x8\",\"sort\":{\"kind\":\"primitive\",\"name\":\"Int\"},\"body\":{\"kind\":\"forall\",\"name\":\"_x9\",\"sort\":{\"kind\":\"primitive\",\"name\":\"Int\"},\"body\":{\"kind\":\"implies\",\"operands\":[{\"kind\":\"atomic\",\"name\":\"≠\",\"args\":[{\"kind\":\"var\",\"name\":\"_x9\"},{\"kind\":\"const\",\"value\":0,\"sort\":{\"kind\":\"primitive\",\"name\":\"Int\"}}]},{\"kind\":\"atomic\",\"name\":\"is-defined\",\"args\":[{\"kind\":\"ctor\",\"name\":\"safe_divide\",\"args\":[{\"kind\":\"var\",\"name\":\"_x8\"},{\"kind\":\"var\",\"name\":\"_x9\"}]}]}]}}}",
       "legacyProducerId": "cpp-kit-demo@0.0.1"
     }
   },
-  "producerSignature": "VahagTee6WEV7OBbL1+/VLDmbghdcPcfKTCUGo1q+AjSI1cCqD1bnAs7DEMg5NND8cOT5aUdlLOR8O9STIQMDA==",
-  "cid": "b38f8cd456e5a6b442c48aeb8d97ea26"
+  "producerSignature": "ed25519:wQfxNaTVQr516GHoVi63DvBb7C5c1sPSL8/g6HG+NsyZJEm/NLdrBRDDmI3Ag5eFUbipOiQZKeEodJ7mMn1WBw==",
+  "cid": "blake3-512:7a38850f1d801b145736e5a1588fbfd5aaa490c1d19ea71ed22c1160815a0879ef15b06f44ddf5c234ae33ef165facb4b8d104f3a2a033581ee00192f895b2d7"
 }

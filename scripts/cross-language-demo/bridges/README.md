@@ -4,10 +4,10 @@
 
 ## What this demonstrates
 
-The TS-kit's `parseInt.invariant.ts` doesn't have to redefine parseInt's
-contract. It can BRIDGE from the TS surface symbol to V8's published
-contract. V8's contract bridges to ECMA-262. ECMA-262 bridges to IEEE
-754. IEEE 754 bridges to hardware FPU verification artifacts.
+The TS kit does not redefine `parseInt` in a hand-authored contract
+file. Its native bridge source can point the TS surface symbol at V8's
+published contract. V8's contract bridges to ECMA-262. ECMA-262 bridges
+to IEEE 754. IEEE 754 bridges to hardware FPU verification artifacts.
 
 Each bridge is a small content-addressed memento. Each declares "this
 surface is the realization of that deeper contract." The bridges are
@@ -57,29 +57,30 @@ A regulated bank's compliance audit might traverse all the way to
 hardware (chain attested end-to-end). A hobbyist's commit gate stops
 at the TS-kit bridge (trust V8). Same primitive, different walk depths.
 
-## Why parseInt.invariant.ts changes shape
+## Why the parseInt bridge changes shape
 
-Before bridges: parseInt.invariant.ts had to define every property
-about parseInt directly: ~17 properties, ~120 lines of TS-IR-language.
+Before bridges: the TS kit had to define every property about parseInt
+directly: ~17 properties, ~120 lines of authoring surface.
 
-After bridges: parseInt.invariant.ts is a 3-line bridge:
+After bridges: the TS kit emits a bridge memento from native bridge
+source:
 
-```ts
-import { property, bridge } from "provekit/ir";
-
-property("parseIntBridgesV8",
-  bridge("global.parseInt", "v8::parseInt@12.4")
-);
+```json
+{
+  "kind": "bridge",
+  "sourceSymbol": "global.parseInt",
+  "sourceLayer": "TS-kit@1.0",
+  "targetLayer": "V8@12.4 parseInt"
+}
 ```
 
 The deep contract is V8's job. The TS-kit just bridges. The contract
 WORK was done once by V8's maintainers; we compose by hash; consumers
 inherit the chain.
 
-**parseInt.invariant.ts as a 3-line file collapses 122 lines of
-redundant work into a hash reference.** Same pattern for every
-runtime built-in. The kit's catalog is mostly bridges: small,
-referencing the canonical layers.
+**The parseInt bridge collapses redundant work into a hash reference.**
+Same pattern for every runtime built-in. The kit's catalog is mostly
+bridges: small, referencing the canonical layers.
 
 ## What changed in the framework
 

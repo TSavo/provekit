@@ -1,7 +1,7 @@
 {
   "schemaVersion": "1",
-  "bindingHash": "cb911a00dbb8a77f",
-  "propertyHash": "c5e91d59119002de",
+  "bindingHash": "blake3-512:b7dc86fd911b2f542ef750e47576d8439d39124b23cff7732c533c8a63bff6d0262049c0b962babf7a3024b4cb8be2fcd3c8e4005180b1b29752aeb1b159eaf9",
+  "propertyHash": "blake3-512:13f2ae00b02e73c0d08d08be257aeae97392fd32c5ebfea58f99416454ebc1395cdf17871e2815c1da6154cdf0e7db1470e26ebfbd93747a7cf35508dcf462f4",
   "verdict": "holds",
   "producedBy": "ts-kit@1.0",
   "producedAt": "1970-01-01T00:00:00.000Z",
@@ -10,7 +10,7 @@
   ],
   "evidence": {
     "kind": "bridge",
-    "schema": "0000000000000000c0000000000000c0",
+    "schema": "blake3-512:000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000c0",
     "body": {
       "sourceSymbol": "String.prototype.length",
       "sourceLayer": "ts-kit@1.0",
@@ -18,6 +18,6 @@
       "targetLayer": "ECMA-262 String.prototype.length"
     }
   },
-  "producerSignature": "sx85UOO7tGDve5pKzg2e3ut2B65TAJBkaYeLXoqhysxwrLJ1A8q6k5WSh1MiWMH3XmmsoQm8lQnRAHd6ls6GAg==",
-  "cid": "bb561e0528937a0ba54da5b9c3f07faa"
+  "producerSignature": "ed25519:EICepR0lVlLXcsPgn0rKlZMKNhYGvwKiVmX0fWY/zXxtBA1DGnPwXKM3LSbkDz2ZqMnG1QNix8cwjOqeOKVHBQ==",
+  "cid": "blake3-512:d0c801190fab6bec22d141d050217ed09119b7397d41cb6a5bf6e444694538f41f48fa4f9142325c8e35c719b56c0208d151dc31264815783867a8895a81614e"
 }

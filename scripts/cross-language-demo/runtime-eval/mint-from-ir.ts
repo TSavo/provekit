@@ -1,12 +1,12 @@
 /**
  * Mint from IR: the end-to-end pipeline.
  *
- *   parseInt.invariant.ts (symbolic primitives)
- *      ↓ import inside beginCollecting()
- *   Declaration[] (in-memory IR)
- *      ↓ canonicalize each property's formula
- *   propertyHash per declaration
- *      ↓ mintMemento / mintBridge
+ *   native-source.ts (ordinary TypeScript)
+ *      ↓ TypeScript source lifter
+ *   FunctionContractMemento[] (in-memory IR)
+ *      ↓ hash each function-contract memento
+ *   contract CID per declaration
+ *      ↓ mintMemento
  *   Signed mementos (per declaration)
  *      ↓ mintMemento with all CIDs in inputCids
  *   Catalog root memento
@@ -18,24 +18,26 @@
  * Run: npx tsx scripts/cross-language-demo/runtime-eval/mint-from-ir.ts
  */
 
-import { writeFileSync, mkdirSync, existsSync } from "node:fs";
+import { writeFileSync, mkdirSync, existsSync, readFileSync } from "node:fs";
 import { join, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
 import { createHash } from "node:crypto";
-import { generateKeypair } from "../../../src/producerKeys/index.js";
-import { propertyHashFromFormula } from "../../../src/canonicalizer/index.js";
+import { generateKeypair } from "../../../implementations/typescript/src/producerKeys/index.js";
 import {
   mintMemento,
-  mintBridge,
-  mintLegacyWitness,
   VARIANT_SCHEMA_CIDS,
-} from "../../../src/claimEnvelope/index.js";
-import type { ClaimEnvelope } from "../../../src/claimEnvelope/types.js";
-import { beginCollecting } from "../../../src/ir/symbolic/index.js";
+} from "../../../implementations/typescript/src/claimEnvelope/index.js";
+import type { ClaimEnvelope } from "../../../implementations/typescript/src/claimEnvelope/types.js";
+import {
+  functionContractCid,
+  liftTypeScriptSourceText,
+} from "../../../implementations/typescript/src/lift/typescript-source/index.js";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const OUTPUT_DIR = join(__dirname, "..", "..", "output", "minted-from-ir");
 const PER_DECL_DIR = join(OUTPUT_DIR, "declarations");
+const SOURCE_PATH = "scripts/cross-language-demo/runtime-eval/native-source.ts";
+const SOURCE_FILE = join(__dirname, "native-source.ts");
 if (!existsSync(PER_DECL_DIR)) mkdirSync(PER_DECL_DIR, { recursive: true });
 
 const KIT_NAME = "@provekit/proofs/ts-types";
@@ -60,73 +62,55 @@ async function main(): Promise<void> {
   console.log();
 
   // -------------------------------------------------------------------------
-  // Step 1: run the invariant file → collect IR declarations
+  // Step 1: lift the native source file -> collect function contracts
   // -------------------------------------------------------------------------
 
-  console.log("Step 1: Run the invariant file inside beginCollecting()");
-  const finish = beginCollecting();
-  await import("./parseInt.invariant.js");
-  const declarations = finish();
-  console.log(`  ${declarations.length} declarations collected`);
+  console.log("Step 1: Lift the native TypeScript source file");
+  const sourceText = readFileSync(SOURCE_FILE, "utf8");
+  const liftResult = liftTypeScriptSourceText(sourceText, SOURCE_PATH);
+  if (liftResult.refusals.length > 0) {
+    throw new Error(`native source lift refused ${liftResult.refusals.length} item(s)`);
+  }
+  const declarations = liftResult.declarations;
+  console.log(`  ${declarations.length} function-contract declaration(s) collected`);
   console.log();
 
   // -------------------------------------------------------------------------
   // Step 2: per declaration, canonicalize → propertyHash → mint memento
   // -------------------------------------------------------------------------
 
-  console.log("Step 2: Canonicalize each property's formula and mint a memento");
+  console.log("Step 2: Hash each function-contract memento and mint an envelope");
   const mementos: ClaimEnvelope[] = [];
 
   for (const decl of declarations) {
-    let memento: ClaimEnvelope;
+    const contractCid = functionContractCid(decl);
+    const bindingHash = hash16(`${KIT_NAME}:${decl.fnName}`);
 
-    if (decl.kind === "property") {
-      const propertyHash = propertyHashFromFormula(decl.formula);
-      const bindingHash = hash16(`${KIT_NAME}:${decl.name}`);
-
-      memento = mintMemento({
-        bindingHash,
-        propertyHash,
-        verdict: "holds",
-        producedBy: PRODUCER_ID,
-        producedAt: EPOCH,
-        inputCids: [],
-        evidence: {
-          kind: "legacy-witness",
-          schema: VARIANT_SCHEMA_CIDS["legacy-witness"]!,
-          body: {
-            rawWitness: JSON.stringify(decl.formula),
-            legacyProducerId: PRODUCER_ID,
-          },
+    const memento = mintMemento({
+      bindingHash,
+      propertyHash: contractCid,
+      verdict: "holds",
+      producedBy: PRODUCER_ID,
+      producedAt: EPOCH,
+      inputCids: [],
+      evidence: {
+        kind: "legacy-witness",
+        schema: VARIANT_SCHEMA_CIDS["legacy-witness"]!,
+        body: {
+          rawWitness: JSON.stringify(decl),
+          legacyProducerId: PRODUCER_ID,
         },
-        privateKey: keypair.privateKey,
-      });
+      },
+      privateKey: keypair.privateKey,
+    });
 
-      console.log(
-        `  property ${decl.name.padEnd(60)}  propertyHash: ${propertyHash}`,
-      );
-    } else {
-      memento = mintBridge({
-        bindingHash: hash16(`${KIT_NAME}:bridge:${decl.name}`),
-        propertyHash: hash16(`bridge:${decl.sourceSymbol}`),
-        producedBy: PRODUCER_ID,
-        producedAt: EPOCH,
-        privateKey: keypair.privateKey,
-        sourceSymbol: decl.sourceSymbol,
-        sourceLayer: decl.sourceLayer,
-        targetContractCid: decl.targetContractCid,
-        targetLayer: decl.targetLayer,
-        ...(decl.notes !== undefined ? { notes: decl.notes } : {}),
-      });
-
-      console.log(
-        `  bridge   ${decl.name.padEnd(60)}  → ${decl.targetLayer}`,
-      );
-    }
+    console.log(
+      `  contract ${decl.fnName.padEnd(74)} contractCid: ${contractCid}`,
+    );
 
     mementos.push(memento);
     writeFileSync(
-      join(PER_DECL_DIR, `${safeName(decl.name)}.json`),
+      join(PER_DECL_DIR, `${safeName(decl.fnName)}.json`),
       JSON.stringify(memento, null, 2),
     );
   }
@@ -139,22 +123,29 @@ async function main(): Promise<void> {
   console.log("Step 3: Compose all memento CIDs into a catalog root");
   const inputCids = mementos.map((m) => m.cid).sort();
 
-  const catalogRoot = mintLegacyWitness({
+  const catalogRoot = mintMemento({
     bindingHash: hash16(`${KIT_NAME}@${KIT_VERSION}`),
     propertyHash: hash16(`catalog-root:${KIT_NAME}@${KIT_VERSION}`),
     verdict: "holds",
     producedBy: PRODUCER_ID,
     producedAt: EPOCH,
     inputCids,
+    evidence: {
+      kind: "legacy-witness",
+      schema: VARIANT_SCHEMA_CIDS["legacy-witness"]!,
+      body: {
+        rawWitness: JSON.stringify({
+          kind: "kit-catalog-root",
+          kitName: KIT_NAME,
+          kitVersion: KIT_VERSION,
+          memberCount: inputCids.length,
+          sourceFile: SOURCE_PATH,
+          construction: "lift-from-native-source",
+        }),
+        legacyProducerId: PRODUCER_ID,
+      },
+    },
     privateKey: keypair.privateKey,
-    rawWitness: JSON.stringify({
-      kind: "kit-catalog-root",
-      kitName: KIT_NAME,
-      kitVersion: KIT_VERSION,
-      memberCount: inputCids.length,
-      sourceFile: "parseInt.invariant.ts",
-      construction: "mint-from-ir",
-    }),
   });
 
   writeFileSync(
@@ -188,8 +179,8 @@ async function main(): Promise<void> {
       catalogPath: ".provekit/ts-kit-catalog.json",
       kitVersion: PRODUCER_ID,
       publicKey: publicKeyB64,
-      sourceFile: "parseInt.invariant.ts",
-      construction: "mint-from-ir",
+      sourceFile: SOURCE_PATH,
+      construction: "lift-from-native-source",
     },
   };
 
@@ -214,12 +205,12 @@ async function main(): Promise<void> {
   console.log(`    declarations/*.json      (${mementos.length} per-declaration mementos)`);
   console.log();
   console.log("End-to-end:");
-  console.log(`  source file → lift (run + collect) → mint → catalog`);
+  console.log(`  source file → lift → mint → catalog`);
   console.log(`  ${declarations.length} declarations × 1 memento each + 1 catalog root`);
   console.log(`  proofHash = ${catalogRoot.cid}`);
   console.log();
   console.log("This is the kit author's publishing pipeline. Run it on the");
-  console.log("kit's invariant source files; out comes the catalog + the");
+  console.log("kit's native source files; out comes the catalog + the");
   console.log("proofHash to put in package.json. Consumers install the");
   console.log("package; their proofkit reads provekit.proofHash; they have");
   console.log("the kit's full memento set locally.");

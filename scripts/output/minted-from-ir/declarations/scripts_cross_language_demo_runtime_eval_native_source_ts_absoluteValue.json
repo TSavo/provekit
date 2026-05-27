@@ -1,0 +1,18 @@
+{
+  "schemaVersion": "1",
+  "bindingHash": "081c831563252ba0",
+  "propertyHash": "blake3-512:2d1e41ebe04d5fb0332c440d01ea89241d472a525d73a5191428ed7f75b4d762471267a72e304b20234057c9a66fd14bd4aac1ac1f753fb711feef524635a2e6",
+  "verdict": "holds",
+  "producedBy": "ts-kit@1.0",
+  "producedAt": "1970-01-01T00:00:00.000Z",
+  "inputCids": [],
+  "evidence": {
+    "kind": "legacy-witness",
+    "body": {
+      "rawWitness": "{\"schemaVersion\":\"1\",\"kind\":\"function-contract\",\"fnName\":\"scripts/cross-language-demo/runtime-eval/native-source.ts:absoluteValue\",\"formals\":[\"x\"],\"formalSorts\":[{\"kind\":\"primitive\",\"name\":\"Number\"}],\"returnSort\":{\"kind\":\"primitive\",\"name\":\"Number\"},\"pre\":{\"kind\":\"atomic\",\"name\":\"true\",\"args\":[]},\"post\":{\"kind\":\"atomic\",\"name\":\"=\",\"args\":[{\"kind\":\"var\",\"name\":\"return_value\"},{\"kind\":\"ctor\",\"name\":\"ts:call\",\"args\":[{\"kind\":\"ctor\",\"name\":\"ts:member\",\"args\":[{\"kind\":\"var\",\"name\":\"Math\"},{\"kind\":\"const\",\"value\":\"abs\",\"sort\":{\"kind\":\"primitive\",\"name\":\"String\"}}]},{\"kind\":\"ctor\",\"name\":\"ts:args\",\"args\":[{\"kind\":\"var\",\"name\":\"x\"}]}]}]},\"bodyCid\":null,\"effects\":[{\"kind\":\"unresolved_call\",\"name\":\"Math.abs\"}],\"locus\":{\"file\":\"scripts/cross-language-demo/runtime-eval/native-source.ts\",\"line\":17,\"col\":1},\"autoMintedMementos\":[]}",
+      "legacyProducerId": "ts-kit@1.0"
+    }
+  },
+  "producerSignature": "ed25519:Iz9q3ldnqwyEcvp9zOWgGFbwQKEkA/V/cTr763e2bQVqSzRGN8s2aOPKWPd+KL+TPb/HMRHTL02EygtKdYN4DA==",
+  "cid": "blake3-512:ca9ae1b2d6c723d6a592d2999e75213695509a5c41131a299cb4743f5c0700106d4ebbc5f40f85a7bea9d8b3699978bbb0e33cd9aaca58406a45ad3d1005aeaf"
+}

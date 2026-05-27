@@ -2,6 +2,11 @@
 //
 // In a real project, this would be loaded via N-API or wasm-bindgen.
 // For the demo, the import is illustrative.
+//
+// Native source contract surface:
+// - the denominator guard is ordinary TypeScript
+// - the TS source lifter derives the wrapper's function-contract memento
+//   from this function body, with no sibling contract file
 
 import { divide } from "@cpp-libs/divide";  // illustrative import
 

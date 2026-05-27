@@ -6,20 +6,19 @@
   "producedBy": "framework-composer@0.0.1",
   "producedAt": "1970-01-01T00:00:00.000Z",
   "inputCids": [
-    "2a81e9481ef29df219d7d9100db55f39",
-    "35281e7faa7fac1a35374005b9aff22b",
-    "955a580b755c85a2fb8915ec24f90456",
-    "ab31be903137674318aba1ba41346768",
-    "b38f8cd456e5a6b442c48aeb8d97ea26"
+    "blake3-512:34eadc17d43f76cba095d1bbc82a107141fb96c2672f9f5de9b341349a85dcb2647a673abb79786da7942a9bf604a9fc1cfc660b2edafb3dfc71107a14f61e39",
+    "blake3-512:78ce8d8dba59044ebfd455f5f83a56c441278b590363aba1ab3938ff25e78a7e81b3c870d69b8c683004cc928041b5b250ebe3511fa7e59518ea3b06f5b485e7",
+    "blake3-512:7a38850f1d801b145736e5a1588fbfd5aaa490c1d19ea71ed22c1160815a0879ef15b06f44ddf5c234ae33ef165facb4b8d104f3a2a033581ee00192f895b2d7",
+    "blake3-512:82f6e718ac6459a5fa1484485652ccc861763a21fc6578b77bd495d8d49ba28836d93a1885793bc7cd3f9c17dca4c5fc42ac7d556926256fe8fdcf3d1041825d",
+    "blake3-512:fbc5ffc5715963df72c39a2ec489bcd1f3e25982a79ca169cffce20364628e612c63c6d7db420bf7be20f543569b18ededac3bd07e45152c1c106c6d1c157d88"
   ],
   "evidence": {
     "kind": "legacy-witness",
-    "schema": "0000000000000000b0000000000000b0",
     "body": {
-      "rawWitness": "{\"claim\":\"All four consumers safely use the C++ divide library\",\"libraryContract\":\"955a580b755c85a2fb8915ec24f90456\",\"consumers\":[{\"cid\":\"35281e7faa7fac1a35374005b9aff22b\",\"producedBy\":\"ts-kit-demo@0.0.1\"},{\"cid\":\"ab31be903137674318aba1ba41346768\",\"producedBy\":\"rust-kit-demo@0.0.1\"},{\"cid\":\"2a81e9481ef29df219d7d9100db55f39\",\"producedBy\":\"go-kit-demo@0.0.1\"},{\"cid\":\"b38f8cd456e5a6b442c48aeb8d97ea26\",\"producedBy\":\"cpp-kit-demo@0.0.1\"}]}",
+      "rawWitness": "{\"claim\":\"All four consumers safely use the C++ divide library\",\"libraryContract\":\"blake3-512:fbc5ffc5715963df72c39a2ec489bcd1f3e25982a79ca169cffce20364628e612c63c6d7db420bf7be20f543569b18ededac3bd07e45152c1c106c6d1c157d88\",\"consumers\":[{\"cid\":\"blake3-512:82f6e718ac6459a5fa1484485652ccc861763a21fc6578b77bd495d8d49ba28836d93a1885793bc7cd3f9c17dca4c5fc42ac7d556926256fe8fdcf3d1041825d\",\"producedBy\":\"ts-kit-demo@0.0.1\"},{\"cid\":\"blake3-512:34eadc17d43f76cba095d1bbc82a107141fb96c2672f9f5de9b341349a85dcb2647a673abb79786da7942a9bf604a9fc1cfc660b2edafb3dfc71107a14f61e39\",\"producedBy\":\"rust-kit-demo@0.0.1\"},{\"cid\":\"blake3-512:78ce8d8dba59044ebfd455f5f83a56c441278b590363aba1ab3938ff25e78a7e81b3c870d69b8c683004cc928041b5b250ebe3511fa7e59518ea3b06f5b485e7\",\"producedBy\":\"go-kit-demo@0.0.1\"},{\"cid\":\"blake3-512:7a38850f1d801b145736e5a1588fbfd5aaa490c1d19ea71ed22c1160815a0879ef15b06f44ddf5c234ae33ef165facb4b8d104f3a2a033581ee00192f895b2d7\",\"producedBy\":\"cpp-kit-demo@0.0.1\"}]}",
       "legacyProducerId": "framework-composer@0.0.1"
     }
   },
-  "producerSignature": "pEVwIQftOi4U8/IdvqP0CVCZ1cINuLD+eLLI/ZCIysTNvwbYFbY5Fy303z5bRG2OpaDaFvFTn1JywU2RP3ocDQ==",
-  "cid": "5711249f2d65e980a2f577f554ab93c3"
+  "producerSignature": "ed25519:tybLnO/5hfqAZiIMPXHoZa2nTs9URzDaJgJpcTfgI0PnZQdZbfE/3oIf/CMo5A/XbXV/5mYQWPIA0DAy7GN4Ag==",
+  "cid": "blake3-512:11c2f726610506587120c78988edc4afd8552c922d65616896bc9b85a94013ed7d792ebf8bba772e593afd00096b81a350732841b50398bb6bbbff8efb67af94"
 }

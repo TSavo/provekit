@@ -1,11 +1,11 @@
 /**
  * Layered bridges demo: the DAG forms via bridge mementos.
  *
- * Premise: a TS user calls parseInt. The TS-kit's `parseInt.invariant.ts`
- * doesn't redefine parseInt's contract: it BRIDGES from the TS surface
- * symbol to V8's published parseInt contract. V8's contract bridges to
- * ECMA-262's spec leaf. ECMA-262's spec leaf bridges to IEEE 754. IEEE
- * 754 bridges to a hardware FPU verification artifact.
+ * Premise: a TS user calls parseInt. The TS kit does not redefine
+ * parseInt's contract in a hand-authored file: it BRIDGES from the TS
+ * surface symbol to V8's published parseInt contract. V8's contract
+ * bridges to ECMA-262's spec leaf. ECMA-262's spec leaf bridges to
+ * IEEE 754. IEEE 754 bridges to a hardware FPU verification artifact.
  *
  * Each bridge is a small content-addressed memento. Each declares
  * "this surface is the realization of that deeper contract." The
@@ -18,27 +18,27 @@
  *   - All signatures verify
  *   - The chain is durable, content-addressed, signed
  *
- * This demonstrates: parseInt.invariant.ts as a THIN BRIDGE, not as a
- * redefinition. The actual contract lives at the canonical layer; the
- * TS file is a 3-line reference.
+ * This demonstrates: parseInt as a THIN BRIDGE, not as a redefinition.
+ * The actual contract lives at the canonical layer; the TS kit emits a
+ * bridge memento derived from its native bridge source.
  */
 
 import { writeFileSync, mkdirSync, existsSync } from "node:fs";
 import { join, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
 import { createHash } from "node:crypto";
-import { generateKeypair } from "../../../src/producerKeys/index.js";
+import { generateKeypair } from "../../../implementations/typescript/src/producerKeys/index.js";
 import {
   signEnvelope,
   computeEnvelopeCid,
   verifyEnvelopeSignature,
   VARIANT_SCHEMA_CIDS,
-} from "../../../src/claimEnvelope/index.js";
+} from "../../../implementations/typescript/src/claimEnvelope/index.js";
 import type {
   ClaimEnvelope,
   BridgeEvidence,
   LegacyWitnessEvidence,
-} from "../../../src/claimEnvelope/types.js";
+} from "../../../implementations/typescript/src/claimEnvelope/types.js";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const OUTPUT_DIR = join(__dirname, "..", "..", "output", "layered-bridges");
@@ -199,9 +199,9 @@ console.log(`  cid: ${layer3_v8.cid}`);
 console.log();
 
 // ---------------------------------------------------------------------------
-// LAYER 2: TS-kit bridge: parseInt.invariant.ts
+// LAYER 2: TS-kit bridge for parseInt
 // ---------------------------------------------------------------------------
-console.log("Layer 2: TS-kit bridge (parseInt.invariant.ts: bridges to V8)");
+console.log("Layer 2: TS-kit bridge (global.parseInt bridges to V8)");
 
 const layer2_tsKit = mintBridgeMemento({
   bindingHash: hash16("ts-kit:global.parseInt"),
@@ -211,7 +211,7 @@ const layer2_tsKit = mintBridgeMemento({
   sourceLayer: "TS-kit@1.0 (TypeScript surface for V8)",
   targetContractCid: layer3_v8.cid,
   targetLayer: "V8@12.4",
-  notes: "TS surface symbol is the JS-side projection of V8's C++ parseInt. The TS-kit's catalog file is a 3-line bridge, not a redefinition.",
+  notes: "TS surface symbol is the JS-side projection of V8's C++ parseInt. The TS kit emits a bridge memento, not a redefinition.",
 });
 console.log(`  cid: ${layer2_tsKit.cid}`);
 console.log();
@@ -299,7 +299,7 @@ console.log();
 console.log("DONE.");
 console.log();
 console.log("What this proves:");
-console.log("  - parseInt.invariant.ts as a THIN BRIDGE (not a redefinition)");
+console.log("  - parseInt as a THIN BRIDGE (not a redefinition)");
 console.log("  - The DAG forms via bridge mementos linking layers");
 console.log("  - User code → TS-kit → V8 → ECMA-262 → IEEE 754 → hardware");
 console.log("  - Each layer's contract published once; consumers reference by hash");

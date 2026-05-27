@@ -46,8 +46,8 @@ import { createPublicKey } from "node:crypto";
 import {
   verifyEnvelopeSignature,
   computeEnvelopeCid,
-} from "../../../src/claimEnvelope/index.js";
-import type { ClaimEnvelope } from "../../../src/claimEnvelope/types.js";
+} from "../../../implementations/typescript/src/claimEnvelope/index.js";
+import type { ClaimEnvelope } from "../../../implementations/typescript/src/claimEnvelope/types.js";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const SIMULATED_INSTALL_DIR = join(__dirname, "..", "..", "output", "ts-kit-catalog");
@@ -194,7 +194,7 @@ console.log();
 //
 // This memento records the local proofkit's verification of the kit
 // install. It is itself a leaf in the consumer's local DAG; downstream
-// composition (consumer's own .invariant.ts files referencing kit
+// composition (consumer's own native-source contracts referencing kit
 // symbols) will reference it.
 // ---------------------------------------------------------------------------
 

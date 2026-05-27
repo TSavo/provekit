@@ -440,9 +440,10 @@ consistently.
 
 ## What this changes about the catalog work
 
-The TS-kit's `parseInt.invariant.ts` files are not documentation. They
-are the seed mementos of the global proof DAG. Their hashes will appear
-in the inputCids of millions of downstream mementos forever.
+The TS kit's built-in catalog entries are not documentation. They are
+seed mementos of the global proof DAG, lifted from native source/proofs
+or bridged to lower-layer contracts. Their hashes will appear in the
+inputCids of millions of downstream mementos forever.
 
 Build the catalog FIRST. The lifter is plumbing; the catalog is the
 genesis block.
@@ -1193,8 +1194,9 @@ universal claim envelope.
   lifter that implements it, when written, is decorative.
 - The 700+-line `2026-04-29-correctness-is-a-hash.md` spec is durable.
   The CLI that implements `provekit prove` is decorative.
-- The catalog seeds (`parseInt.invariant.ts`, `Math.invariant.ts`) are
-  durable. They are the genesis-block mementos of the global proof DAG.
+- The catalog seeds are durable only when backed by native source/proofs
+  or bridge mementos. They are the genesis-block mementos of the global
+  proof DAG.
 - The TypeScript implementations in `src/canonicalizer/`, `src/ir/`,
   `src/claimEnvelope/`, `src/producerKeys/` are decorative. They prove
   the spec is operational. Future implementations replace them.

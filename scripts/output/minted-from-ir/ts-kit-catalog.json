@@ -6,21 +6,17 @@
   "producedBy": "ts-kit@1.0",
   "producedAt": "1970-01-01T00:00:00.000Z",
   "inputCids": [
-    "88c3c2d69395067f6697710a36cf63b7",
-    "ac685ef42f915d1d32650847848ddcc8",
-    "d1273b181009b809f33eb7536ef271ac",
-    "d3173537baadedf908cc6774c509b5e6",
-    "ddd678a1f2e3bf1fb288483fcbd0fdf0",
-    "e08898c12ffa519cfb9f39a872baf5a8"
+    "blake3-512:58e1fb6475bb32abd2a71d4810d577de1d8df6685148c401f1023ead1e9942a3d17d718e59aed69bf16040213f4b21ecfc67fc1532df13917c80d4e5a1bf87b3",
+    "blake3-512:9c4ed29e835c14470e8071b5a781eaae7721957f3d7c79517a32d149f94baf9a1b60c6132107b29bb38c0b1b4a1f962d3eddd0871d9ced3fc37e507259c774ea",
+    "blake3-512:ca9ae1b2d6c723d6a592d2999e75213695509a5c41131a299cb4743f5c0700106d4ebbc5f40f85a7bea9d8b3699978bbb0e33cd9aaca58406a45ad3d1005aeaf"
   ],
   "evidence": {
     "kind": "legacy-witness",
-    "schema": "0000000000000000b0000000000000b0",
     "body": {
-      "rawWitness": "{\"kind\":\"kit-catalog-root\",\"kitName\":\"@provekit/proofs/ts-types\",\"kitVersion\":\"1.0.0\",\"memberCount\":6,\"sourceFile\":\"parseInt.invariant.ts\",\"construction\":\"mint-from-ir\"}",
+      "rawWitness": "{\"kind\":\"kit-catalog-root\",\"kitName\":\"@provekit/proofs/ts-types\",\"kitVersion\":\"1.0.0\",\"memberCount\":3,\"sourceFile\":\"scripts/cross-language-demo/runtime-eval/native-source.ts\",\"construction\":\"lift-from-native-source\"}",
       "legacyProducerId": "ts-kit@1.0"
     }
   },
-  "producerSignature": "dy2ufpR1gSlC4mKr9y7EmSgJrCNnHj46If9f5L03OwqTIKSL/R3tSzUNzImCUXBjFf8VHQoOV3Ac5993p7QmBA==",
-  "cid": "6972629c3cca28aea4cfd40e14fb25cf"
+  "producerSignature": "ed25519:3tCy0C8xlpEh8izpoEbm0UQPw6ZV4X+hUormGZnCJS5D7daTW8UyX+rOATe1Tn5pV7K/lLEhWFPiY6hsgdm2DA==",
+  "cid": "blake3-512:a7e3988e0a06f62d5f246e76509d7811be9ca37f3c129041ba41bc2ca9063e124bf2f857403a48a19e95e3fb8b62d09d605923821a43eccccfb251e260df5d6d"
 }

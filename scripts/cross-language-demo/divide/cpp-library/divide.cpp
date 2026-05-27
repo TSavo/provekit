@@ -9,9 +9,9 @@
 
 extern "C" {
 
-// The function under contract.
-// Precondition: d != 0
-// Postcondition: returns n / d (integer division)
+// Native source contract surface:
+// - the guard establishes d != 0 before division
+// - the return expression is the postcondition the C++ source lifter projects
 int divide(int n, int d) {
     if (d == 0) {
         throw std::runtime_error("denominator must not be zero");

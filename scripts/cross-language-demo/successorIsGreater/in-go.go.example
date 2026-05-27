@@ -1,0 +1,31 @@
+// Cross-language demo: Go native source form.
+//
+// The Go surface is ordinary source plus a native test. A Go lifter can promote
+// the quick.Check property into the same canonical obligation.
+
+package successor
+
+import (
+    "math"
+    "testing"
+    "testing/quick"
+)
+
+func Successor(x int64) int64 {
+    if x == math.MaxInt64 {
+        panic("successor is defined below MaxInt64")
+    }
+    return x + 1
+}
+
+func TestSuccessorIsGreater(t *testing.T) {
+    property := func(x int64) bool {
+        if x == math.MaxInt64 {
+            return true
+        }
+        return Successor(x) > x
+    }
+    if err := quick.Check(property, nil); err != nil {
+        t.Fatal(err)
+    }
+}

@@ -6,19 +6,19 @@
   "producedBy": "ecma-international@2024",
   "producedAt": "1970-01-01T00:00:00.000Z",
   "inputCids": [
-    "1d3ee0889814410d307fc0e683aa3ac8"
+    "blake3-512:225bfda40c5c122fbbc88398273a182b40c0c81378a5e2d49a35151497ba62a8b5410d8fef5a4c8e69cca45d8771063dea969d43f3208cff62cf79680415eb7d"
   ],
   "evidence": {
     "kind": "bridge",
-    "schema": "0000000000000000c0000000000000c0",
+    "schema": "blake3-512:000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000c0",
     "body": {
       "sourceSymbol": "parseInt",
       "sourceLayer": "ECMA-262:2024 §7.1.4.1",
-      "targetContractCid": "1d3ee0889814410d307fc0e683aa3ac8",
+      "targetContractCid": "blake3-512:225bfda40c5c122fbbc88398273a182b40c0c81378a5e2d49a35151497ba62a8b5410d8fef5a4c8e69cca45d8771063dea969d43f3208cff62cf79680415eb7d",
       "targetLayer": "IEEE 754 integer conversion semantics",
       "notes": "ECMA-262 specifies parseInt's behavior; grounded in IEEE 754 for numeric edge cases"
     }
   },
-  "producerSignature": "WIPUuQztXdjgvjRr1oa01ghOk5/MjkA21WCBTsT57muSPmMRdWk+r164L03yTZJCZd1HUWwxxNufMF24YpCvCg==",
-  "cid": "dd656a82ebfa373344449dce2af3d664"
+  "producerSignature": "ed25519:OHr/xIVeFjNQoUhk04jip9v+JmhsbL528p7c9Gxni13yS4W+DrxlBj1T/z2BiM/CcKsnVTHLl5xT7Xax8cOCAQ==",
+  "cid": "blake3-512:80f807cd5c32ed034fb94f4f9d0e82161c66f4abc1105ae3bec7eb6398dcc5f2b45ff15848c6105bfda67bddc862dbeee3d3275fea273166303a418d1235fec3"
 }

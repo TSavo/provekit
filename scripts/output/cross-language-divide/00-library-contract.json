@@ -1,19 +1,18 @@
 {
   "schemaVersion": "1",
   "bindingHash": "756cc7fb03949943",
-  "propertyHash": "16bfe84f690ee50e",
+  "propertyHash": "blake3-512:56e70751cf2b3975eeb1897127594268780dfb15ffbb2966db4ddefde7b20974e4a198a0c1fed6e4676a822588301a167c758f16d02f22943655ac318e936a83",
   "verdict": "holds",
   "producedBy": "cpp-kit-demo@0.0.1",
   "producedAt": "1970-01-01T00:00:00.000Z",
   "inputCids": [],
   "evidence": {
     "kind": "legacy-witness",
-    "schema": "0000000000000000b0000000000000b0",
     "body": {
-      "rawWitness": "{\"kind\":\"forall\",\"sort\":{\"kind\":\"primitive\",\"name\":\"Int\"},\"predicate\":{\"kind\":\"lambda\",\"varName\":\"_x0\",\"sort\":{\"kind\":\"primitive\",\"name\":\"Int\"},\"body\":{\"kind\":\"forall\",\"sort\":{\"kind\":\"primitive\",\"name\":\"Int\"},\"predicate\":{\"kind\":\"lambda\",\"varName\":\"_x1\",\"sort\":{\"kind\":\"primitive\",\"name\":\"Int\"},\"body\":{\"kind\":\"implies\",\"antecedent\":{\"kind\":\"atomic\",\"predicate\":\"≠\",\"args\":[{\"kind\":\"var\",\"name\":\"_x1\",\"sort\":{\"kind\":\"primitive\",\"name\":\"Int\"}},{\"kind\":\"const\",\"value\":0,\"sort\":{\"kind\":\"primitive\",\"name\":\"Int\"}}]},\"consequent\":{\"kind\":\"atomic\",\"predicate\":\"isFinite\",\"args\":[{\"kind\":\"ctor\",\"name\":\"divide\",\"args\":[{\"kind\":\"var\",\"name\":\"_x0\",\"sort\":{\"kind\":\"primitive\",\"name\":\"Int\"}},{\"kind\":\"var\",\"name\":\"_x1\",\"sort\":{\"kind\":\"primitive\",\"name\":\"Int\"}}],\"sort\":{\"kind\":\"primitive\",\"name\":\"Int\"}}]}}}}}}",
+      "rawWitness": "{\"kind\":\"forall\",\"name\":\"_x0\",\"sort\":{\"kind\":\"primitive\",\"name\":\"Int\"},\"body\":{\"kind\":\"forall\",\"name\":\"_x1\",\"sort\":{\"kind\":\"primitive\",\"name\":\"Int\"},\"body\":{\"kind\":\"implies\",\"operands\":[{\"kind\":\"atomic\",\"name\":\"≠\",\"args\":[{\"kind\":\"var\",\"name\":\"_x1\"},{\"kind\":\"const\",\"value\":0,\"sort\":{\"kind\":\"primitive\",\"name\":\"Int\"}}]},{\"kind\":\"atomic\",\"name\":\"isFinite\",\"args\":[{\"kind\":\"ctor\",\"name\":\"divide\",\"args\":[{\"kind\":\"var\",\"name\":\"_x0\"},{\"kind\":\"var\",\"name\":\"_x1\"}]}]}]}}}",
       "legacyProducerId": "cpp-kit-demo@0.0.1"
     }
   },
-  "producerSignature": "jF5Kz28SLSCy4oz5vMrg9FrOKXADHEuFVLJTW6AYTE9fvcjhwnD3pl0uqrDNY3baiBzADTzg0M5ZuWlxmDgFDA==",
-  "cid": "955a580b755c85a2fb8915ec24f90456"
+  "producerSignature": "ed25519:7MLmWjN0MWo6IL2CBYWejl/EOrftkZAJKirWeg65iePA5+zNkq6t8rcwjykGAhTnWSyS23DtwYa6+0BYl+2wBg==",
+  "cid": "blake3-512:fbc5ffc5715963df72c39a2ec489bcd1f3e25982a79ca169cffce20364628e612c63c6d7db420bf7be20f543569b18ededac3bd07e45152c1c106c6d1c157d88"
 }
