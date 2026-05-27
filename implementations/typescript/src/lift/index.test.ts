@@ -136,13 +136,6 @@ describe("lift / fixture end-to-end", () => {
     expect(verified.catalog).not.toBeNull();
     expect(verified.catalog!.members.size).toBe(out.minted.memberCount);
   });
-
-  it("CLI runs end-to-end on the fixture directory", async () => {
-    const { runCli, parseCliArgs } = await import("./cli.js");
-    const td = tempDir();
-    const exitCode = runCli(parseCliArgs([FIXTURE_DIR, "--out", td, "--quiet"]));
-    expect(exitCode).toBe(0);
-  });
 });
 
 describe("lift / dedup", () => {
