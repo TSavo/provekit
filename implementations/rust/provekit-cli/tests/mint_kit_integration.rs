@@ -741,7 +741,7 @@ const RUST_KIT_NATIVE_LIFT_CONTRACT_SET_CID: &str =
 /// the `contractSetCid` field in `.provekit/self-contracts-attestations/cpp.json`.
 /// Fix: issue #203.
 const CPP_KIT_CANONICAL_CONTRACT_SET_CID: &str =
-    "blake3-512:0e17f718740e9e22b0897d1f7c2ee42a61b65b0d65379024465b38441e232c25b28eb8bf8a425a8770b68614a95510fd84e5ff23b5b028751ae9acb0ffe62d5e";
+    "blake3-512:925ae3f3d7d4b37eff8ab95cdca93cb3950c433c3629141ac6530018fb68c3e3e9edb9a2e4d2ac00d02acbc3c96fedfa3491b31c68753ef3c2dd51dd3db134ed";
 
 #[test]
 #[serial(mint_kit_files)]
