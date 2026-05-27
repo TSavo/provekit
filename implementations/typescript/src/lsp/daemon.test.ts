@@ -24,15 +24,17 @@ import { tmpdir } from "node:os";
 // Helpers
 // ---------------------------------------------------------------------------
 
-// Resolve tsx/cli the same way the bin launchers do: works with pnpm's
-// node_modules/.pnpm symlink layout without needing an explicit repo root path.
+// Resolve tsx through Node's import hook instead of tsx/cli. The cli path
+// creates an IPC socket, which fails under the macOS sandbox used by local
+// agent runs; `node --import tsx` loads the same TS entrypoint without that
+// side channel.
 // eslint-disable-next-line @typescript-eslint/no-require-imports
-const TSX_CLI: string = require.resolve("tsx/cli");
+const TSX_REGISTER: string = require.resolve("tsx");
 const DAEMON_ENTRY = resolve(__dirname, "daemon-entry.ts");
 
 /** Spawn the daemon, feed ndjson, return parsed response lines. */
 function runLsp(ndjsonInput: string): Record<string, unknown>[] {
-  const result = spawnSync(process.execPath, [TSX_CLI, DAEMON_ENTRY], {
+  const result = spawnSync(process.execPath, ["--import", TSX_REGISTER, DAEMON_ENTRY], {
     input: ndjsonInput,
     encoding: "utf8",
     timeout: 30000,

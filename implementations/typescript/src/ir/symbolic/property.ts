@@ -4,7 +4,7 @@
  *
  * The user's invariant file imports `contract` / `must` / `bridge` from
  * this module. When the file runs (e.g.,
- * `await import("./parseInt.invariant.ts")`), each call adds an entry to
+ * `await import("./user-invariants.invariant.ts")`), each call adds an entry to
  * the active collector. The lifter then reads the collector's contents.
  *
  * No tsc compiler API. No AST walking. The user's code RUNS to produce IR.

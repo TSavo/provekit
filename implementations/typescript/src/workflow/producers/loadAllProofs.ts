@@ -155,7 +155,7 @@ export function makeLoadAllProofsStage(
  * scoped packages one level deep). Excludes nested node_modules to
  * avoid combinatorial walks.
  */
-function enumerateProofFiles(projectRoot: string): string[] {
+export function enumerateProofFiles(projectRoot: string): string[] {
   const out: string[] = [];
 
   // Project root's own *.proof files.

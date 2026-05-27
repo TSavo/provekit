@@ -6,13 +6,55 @@
 // documents it as such.
 
 import { describe, expect, it } from "vitest";
-import { mkdtempSync, rmSync, statSync } from "node:fs";
+import { mkdtempSync, readdirSync, rmSync, statSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
 import { runMintSelfContracts } from "./mint-ts-self-contracts.mjs";
 
+function findInvariantTargets(root: string): string[] {
+  const out: string[] = [];
+  const walk = (dir: string): void => {
+    for (const entry of readdirSync(dir, { withFileTypes: true })) {
+      const path = join(dir, entry.name);
+      const normalized = path.replace(/\\/g, "/");
+      if (
+        normalized.includes("/scripts/cross-language-demo/") ||
+        normalized.includes("/protocol/specs/") ||
+        normalized.includes("/src/workflow/") &&
+          normalized.includes("/__fixtures__/")
+      ) {
+        continue;
+      }
+      if (entry.isDirectory()) {
+        walk(path);
+      } else if (entry.isFile() && /\.invariant\.(ts|mjs)$/.test(entry.name)) {
+        out.push(normalized);
+      }
+    }
+  };
+  walk(root);
+  return out.sort();
+}
+
 describe("ts-self-contracts: mint orchestrator", () => {
+  it("lifts native self-contract sources instead of .invariant slabs", () => {
+    const dir = mkdtempSync(join(tmpdir(), "ts-self-native-"));
+    try {
+      const result = runMintSelfContracts(dir);
+
+      expect(result.sourceMode).toBe("native-lift");
+      expect(result.perSourceCounts.length).toBeGreaterThan(0);
+      for (const source of result.perSourceCounts) {
+        expect(source.path).toBeTruthy();
+        expect(source.path).not.toMatch(/\.invariant\.(ts|mjs)$/);
+      }
+      expect(findInvariantTargets("implementations/typescript")).toEqual([]);
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
   it("mints the catalog deterministically and prints the CID", () => {
     const dirA = mkdtempSync(join(tmpdir(), "ts-self-A-"));
     const dirB = mkdtempSync(join(tmpdir(), "ts-self-B-"));
@@ -59,9 +101,9 @@ describe("ts-self-contracts: mint orchestrator", () => {
       expect(stat.size).toBe(b.bytesLen);
       expect(stat.size).toBeGreaterThan(0);
 
-      // Each slab authored at least one contract: no zero-contract files.
+      // Each native source authored at least one contract: no zero-contract files.
       for (const { label, count } of b.perSourceCounts) {
-        expect(count, `slab ${label}`).toBeGreaterThan(0);
+        expect(count, `source ${label}`).toBeGreaterThan(0);
       }
     } finally {
       rmSync(dirA, { recursive: true, force: true });

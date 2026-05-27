@@ -3,13 +3,12 @@
 //
 // mint-ts-self-contracts: TypeScript peer-implementation orchestrator.
 //
-// 1. Walks every .invariant.ts file in implementations/typescript/src/
-//    (one per public-API source file).
-// 2. For each slab: beginCollecting() -> import slab -> finish().
-// 3. Mints each contract as a signed memento under the foundation key
-//    (test seed [0x42; 32]) and bundles into a single .proof envelope
+// 1. Lifts the TypeScript kit's native self-contract sources through the
+//    existing provekit-lift adapters (vitest and fast-check).
+// 2. Mints each lifted contract as a signed memento under the foundation
+//    key (test seed [0x42; 32]) and bundles into a single .proof envelope
 //    whose filename IS its CID.
-// 4. Mints twice into separate output directories and asserts byte-
+// 3. Mints twice into separate output directories and asserts byte-
 //    deterministic CIDs.
 //
 // The repo's other tsx-driven binaries (`bin/provekit.cjs`,
@@ -24,241 +23,149 @@
 // catalog CID + determinism status.
 
 import { mkdirSync, writeFileSync, rmSync } from "node:fs";
-import { join } from "node:path";
+import { join, resolve } from "node:path";
 
-import { mintContract } from "../claimEnvelope/mint.js";
 import { contractCidFromArgs, computeContractSetCid } from "../claimEnvelope/cid.js";
-import { buildProofEnvelope } from "../proofEnvelope/index.js";
-import { generateKeypair } from "../producerKeys/index.js";
-import { computeCid } from "../canonicalizer/hash.js";
 import {
-  beginCollecting,
-  _resetCollector,
-  type Declaration,
-  type ContractDeclaration,
-} from "../ir/symbolic/property.js";
-
-import { invariants as hashInvariants } from "../canonicalizer/hash.invariant.js";
-import { invariants as jcsInvariants } from "../canonicalizer/jcs.invariant.js";
-import { invariants as propertyHashInvariants } from "../canonicalizer/propertyHash.invariant.js";
-import { invariants as claimEnvelopeMintInvariants } from "../claimEnvelope/mint.invariant.js";
-import { invariants as claimEnvelopeSignInvariants } from "../claimEnvelope/sign.invariant.js";
-import { invariants as claimEnvelopeCidInvariants } from "../claimEnvelope/cid.invariant.js";
-import { invariants as proofEnvelopeInvariants } from "../proofEnvelope/index.invariant.js";
-import { invariants as verifierInvariants } from "../verifier/index.invariant.js";
-import { invariants as verifierBridgeInvariants } from "../verifier/bridgeEnforcement.invariant.js";
-import { invariants as proofResolverInvariants } from "../proofResolver/index.invariant.js";
-import { invariants as liftInvariants } from "../lift/index.invariant.js";
-import { invariants as zodAdapterInvariants } from "../lift/adapters/zod.invariant.js";
-import { invariants as vitestTestsAdapterInvariants } from "../lift/adapters/vitest-tests.invariant.js";
-import { invariants as crossKitBridgesInvariants } from "../lift/cross-kit-bridges.invariant.js";
+  defaultLiftOptions,
+  liftPath,
+  mintProof,
+  type AdapterWarning,
+  type ContractDecl,
+  type LiftReport,
+} from "../lift/index.js";
 
 export const PRODUCED_BY = "@provekit/ts-self-contracts@1.0";
 export const DECLARED_AT = "2026-04-30T18:00:00.000Z";
 
-export interface InvariantSource {
+export interface NativeSelfContractSource {
   label: string;
   path: string;
-  fn: () => void;
 }
 
-const SLABS: InvariantSource[] = [
-  {
-    label: "hash",
-    path: "implementations/typescript/src/canonicalizer/hash.ts",
-    fn: hashInvariants,
-  },
-  {
-    label: "jcs",
-    path: "implementations/typescript/src/canonicalizer/jcs.ts",
-    fn: jcsInvariants,
-  },
-  {
-    label: "propertyHash",
-    path: "implementations/typescript/src/canonicalizer/canonicalize.ts",
-    fn: propertyHashInvariants,
-  },
-  {
-    label: "claim-mint",
-    path: "implementations/typescript/src/claimEnvelope/mint.ts",
-    fn: claimEnvelopeMintInvariants,
-  },
-  {
-    label: "claim-sign",
-    path: "implementations/typescript/src/claimEnvelope/sign.ts",
-    fn: claimEnvelopeSignInvariants,
-  },
-  {
-    label: "claim-cid",
-    path: "implementations/typescript/src/claimEnvelope/cid.ts",
-    fn: claimEnvelopeCidInvariants,
-  },
-  {
-    label: "proof-envelope",
-    path: "implementations/typescript/src/proofEnvelope/index.ts",
-    fn: proofEnvelopeInvariants,
-  },
-  {
-    label: "verifier",
-    path: "implementations/typescript/src/verifier/index.ts",
-    fn: verifierInvariants,
-  },
-  {
-    label: "verifier-bridge",
-    path: "implementations/typescript/src/verifier/bridgeEnforcement.ts",
-    fn: verifierBridgeInvariants,
-  },
-  {
-    label: "proof-resolver",
-    path: "implementations/typescript/src/proofResolver/index.ts",
-    fn: proofResolverInvariants,
-  },
-  {
-    label: "lift",
-    path: "implementations/typescript/src/lift/index.ts",
-    fn: liftInvariants,
-  },
-  {
-    label: "lift-zod",
-    path: "implementations/typescript/src/lift/adapters/zod.ts",
-    fn: zodAdapterInvariants,
-  },
-  {
-    label: "lift-vitest-tests",
-    path: "implementations/typescript/src/lift/adapters/vitest-tests.ts",
-    fn: vitestTestsAdapterInvariants,
-  },
+const SELF_CONTRACT_SOURCES: NativeSelfContractSource[] = [
   {
     label: "cross-kit-bridges",
-    path: "implementations/typescript/src/lift/cross-kit-bridges.ts",
-    fn: crossKitBridgesInvariants,
+    path: "implementations/typescript/src/lift/cross-kit-bridges.self-contracts.test.ts",
+  },
+  {
+    label: "typescript-kit",
+    path: "implementations/typescript/src/self-contracts/typescript-kit.self-contracts.test.ts",
   },
 ];
 
-interface AuthoredSlab {
-  source: InvariantSource;
-  contracts: ContractDeclaration[];
+interface LiftedSource {
+  source: NativeSelfContractSource;
+  report: LiftReport;
+  contracts: ContractDecl[];
 }
 
-function authorAllInvariants(): AuthoredSlab[] {
-  const slabs: AuthoredSlab[] = [];
-  for (const src of SLABS) {
-    _resetCollector();
-    const finish = beginCollecting();
-    src.fn();
-    const decls: Declaration[] = finish();
-    const contracts = decls.filter(
-      (d): d is ContractDeclaration => d.kind === "contract",
-    );
-    slabs.push({ source: src, contracts });
+function liftAllNativeSelfContracts(): LiftedSource[] {
+  const lifted: LiftedSource[] = [];
+  for (const source of SELF_CONTRACT_SOURCES) {
+    const report = liftPath(resolve(source.path));
+    const warnings = adapterWarnings(report);
+    if (report.parseErrors.length > 0) {
+      const first = report.parseErrors[0]!;
+      throw new Error(`native self-contract parse error in ${first.path}: ${first.message}`);
+    }
+    if (warnings.length > 0) {
+      const first = warnings[0]!;
+      throw new Error(
+        `native self-contract skipped by ${first.adapter} in ${first.sourcePath}: ` +
+          `${first.itemName}: ${first.reason}`,
+      );
+    }
+    if (report.decls.length === 0) {
+      throw new Error(`native self-contract source emitted zero contracts: ${source.path}`);
+    }
+    lifted.push({ source, report, contracts: report.decls });
   }
-  return slabs;
+  return lifted;
+}
+
+function adapterWarnings(report: LiftReport): AdapterWarning[] {
+  return report.adapterReports.flatMap((adapter) => adapter.warnings);
+}
+
+function contractSetCidFor(decls: ContractDecl[]): string {
+  const contentCids = decls.map((d) =>
+    contractCidFromArgs({
+      producedBy: PRODUCED_BY,
+      producedAt: DECLARED_AT,
+      privateKey: Buffer.alloc(0),
+      contractName: d.name,
+      outBinding: d.outBinding,
+      ...(d.pre !== undefined ? { pre: d.pre } : {}),
+      ...(d.post !== undefined ? { post: d.post } : {}),
+      ...(d.inv !== undefined ? { inv: d.inv } : {}),
+      authoring: {
+        producerKind: "lift",
+        lifter: "typescript-kit.self-contracts",
+        evidence:
+          d.adapter === "fast-check" || d.adapter === "vitest-tests"
+            ? "tests"
+            : "types",
+      },
+    }),
+  );
+  return computeContractSetCid(contentCids);
 }
 
 export interface MintResult {
+  sourceMode: "native-lift";
   cid: string;
   contractSetCid: string;
   bytesLen: number;
   path: string;
   memberCount: number;
   totalContracts: number;
-  perSourceCounts: { label: string; count: number }[];
+  perSourceCounts: { label: string; path: string; count: number }[];
 }
 
 /**
- * Mint all 14 .invariant.ts slabs as signed mementos, register no
- * bridges (TS dogfood's symbolic surface has no closed-loop bridge to
- * register the way Rust's parse_formula does), bundle into a `.proof`,
- * write to `<outDir>/<full-cid>.proof`, return the result.
+ * Lift the native TS self-contract sources, mint them as signed mementos,
+ * bundle into a `.proof`, write to `<outDir>/<full-cid>.proof`, return the
+ * result.
  */
 export function runMintSelfContracts(outDir: string): MintResult {
   mkdirSync(outDir, { recursive: true });
 
-  // Reset cross-run state every mint pass: quantifier counter and any
-  // active collector. Without this, run B's `_x0/_x1` quantifier-bound
-  // names diverge from run A's because the counter is process-global.
-  _resetCollector();
-
-  const slabs = authorAllInvariants();
-
-  // Foundation key: identical to Rust's [0x42; 32] test seed. Same key
-  // means same signature for the same canonical-encoded payload across
-  // peer impls (where the hashed bytes themselves match across impls).
-  const seed = Buffer.alloc(32, 0x42);
-  const { privateKey, publicKey } = generateKeypair({ seed });
-
-  const members = new Map();
-  const seenNames = new Set<string>();
-  const perSourceCounts: { label: string; count: number }[] = [];
-  let total = 0;
-  const contentCids: string[] = [];
-
-  for (const slab of slabs) {
+  const lifted = liftAllNativeSelfContracts();
+  const decls = lifted.flatMap((source) => source.contracts);
+  const perSourceCounts: { label: string; path: string; count: number }[] = [];
+  for (const source of lifted) {
     perSourceCounts.push({
-      label: slab.source.label,
-      count: slab.contracts.length,
+      label: source.source.label,
+      path: source.source.path,
+      count: source.contracts.length,
     });
-    total += slab.contracts.length;
-    for (const d of slab.contracts) {
-      if (seenNames.has(d.name)) {
-        throw new Error(
-          `duplicate contract name \`${d.name}\` across .invariant.ts files`,
-        );
-      }
-      seenNames.add(d.name);
-
-      const mintArgs = {
-        producedBy: PRODUCED_BY,
-        producedAt: DECLARED_AT,
-        privateKey,
-        contractName: d.name,
-        outBinding: d.outBinding,
-        ...(d.pre !== undefined ? { pre: d.pre } : {}),
-        ...(d.post !== undefined ? { post: d.post } : {}),
-        ...(d.inv !== undefined ? { inv: d.inv } : {}),
-        authoring: {
-          producerKind: "kit-author" as const,
-          author: PRODUCED_BY,
-          note: `self-contract from ${slab.source.path}`,
-        },
-      };
-      // Compute signer-independent content CID BEFORE minting (spec #94).
-      const contentCid = contractCidFromArgs(mintArgs);
-      contentCids.push(contentCid);
-
-      const env = mintContract(mintArgs);
-      members.set(env.cid, env);
-    }
   }
 
-  // Signer CID: BLAKE3-512 over the SPKI-DER pubkey bytes. Matches the
-  // TS kit's existing convention (lift/index.ts ships the same shape).
-  const pubDer = publicKey.export({ type: "spki", format: "der" }) as Buffer;
-  const signerCid = computeCid(pubDer);
+  const minted = mintProof(decls, defaultLiftOptions({
+    producedBy: PRODUCED_BY,
+    producedAt: DECLARED_AT,
+    catalogName: "@provekit/ts-self-contracts",
+    catalogVersion: "1.0.0",
+    lifter: "typescript-kit.self-contracts",
+    quiet: true,
+  }));
 
-  const built = buildProofEnvelope({
-    name: "@provekit/ts-self-contracts",
-    version: "1.0.0",
-    members,
-    signerCid,
-    signerPrivateKey: privateKey,
-    declaredAt: DECLARED_AT,
-  });
-
-  if (!built.cid.startsWith("blake3-512:")) {
+  if (!minted.cid.startsWith("blake3-512:")) {
     throw new Error("internal: cid missing blake3-512 prefix");
   }
-  const contractSetCid = computeContractSetCid(contentCids);
-  const path = join(outDir, `${built.cid}.proof`);
-  writeFileSync(path, Buffer.from(built.bytes));
+  const contractSetCid = contractSetCidFor(decls);
+  const path = join(outDir, `${minted.cid}.proof`);
+  writeFileSync(path, Buffer.from(minted.bytes));
 
   return {
-    cid: built.cid,
+    sourceMode: "native-lift",
+    cid: minted.cid,
     contractSetCid,
-    bytesLen: built.bytes.length,
+    bytesLen: minted.bytes.length,
     path,
-    memberCount: members.size,
-    totalContracts: total,
+    memberCount: minted.memberCount,
+    totalContracts: decls.length,
     perSourceCounts,
   };
 }
