@@ -1,15 +1,13 @@
 package codec
 
-// CanonicalByteOrder reports whether b is in canonical (sorted) order.
-func CanonicalByteOrder(b []byte) bool { return len(b) < 2 || b[0] <= b[1] }
+// Serialize emits an encoding in source order: it may be non-canonical.
+func Serialize(value int) int { return value }
 
-// Serialize emits the two bytes in argument order: valid, NOT canonicalized.
-func Serialize(hi byte, lo byte) []byte { return []byte{hi, lo} }
-
-// ContentAddress requires canonical byte order (its guard is the precondition).
-func ContentAddress(b []byte) int {
-	if !CanonicalByteOrder(b) {
-		panic("content address requires canonical byte order")
+// ContentAddress requires a canonical (non-negative) encoding; the guard is the
+// precondition. Lifts to pre = NOT(encoding < 0).
+func ContentAddress(encoding int) int {
+	if encoding < 0 {
+		panic("content address requires a canonical encoding")
 	}
-	return len(b)
+	return encoding
 }

@@ -10,7 +10,9 @@ import (
 	"go/printer"
 	"go/token"
 	"go/types"
+	"os"
 	"path/filepath"
+	"sort"
 	"strconv"
 	"strings"
 
@@ -1287,6 +1289,34 @@ func isIOCall(name string) bool {
 		strings.HasPrefix(name, "io.")
 }
 
+// goSourceFiles expands a source path to the Go files to lift: a file yields
+// itself; a directory yields its non-test *.go files (sorted, for stable
+// output). `provekit mint --project <dir>` hands the lifter the project
+// directory, so the lifter must walk it rather than try to read a dir as a file.
+func goSourceFiles(path string) ([]string, error) {
+	info, err := os.Stat(path)
+	if err != nil {
+		return nil, err
+	}
+	if !info.IsDir() {
+		return []string{path}, nil
+	}
+	entries, err := os.ReadDir(path)
+	if err != nil {
+		return nil, err
+	}
+	var files []string
+	for _, e := range entries {
+		name := e.Name()
+		if e.IsDir() || !strings.HasSuffix(name, ".go") || strings.HasSuffix(name, "_test.go") {
+			continue
+		}
+		files = append(files, filepath.Join(path, name))
+	}
+	sort.Strings(files)
+	return files, nil
+}
+
 func LiftPaths(workspaceRoot string, sourcePaths []string) (LiftResult, error) {
 	return LiftPathsWithOptions(workspaceRoot, sourcePaths, LiftOptions{})
 }
@@ -1301,17 +1331,29 @@ func LiftPathsCore(workspaceRoot string, sourcePaths []string) (LiftResult, erro
 func LiftPathsWithOptions(workspaceRoot string, sourcePaths []string, opts LiftOptions) (LiftResult, error) {
 	modulePath := modulePathFor(workspaceRoot)
 	var merged LiftResult
+	var files []string
 	for _, sourcePath := range sourcePaths {
 		path := sourcePath
 		if !filepath.IsAbs(path) {
 			path = filepath.Join(workspaceRoot, sourcePath)
 		}
+		expanded, err := goSourceFiles(path)
+		if err != nil {
+			return LiftResult{}, err
+		}
+		files = append(files, expanded...)
+	}
+	for _, path := range files {
 		bytes, err := readFile(path)
 		if err != nil {
 			return LiftResult{}, err
 		}
+		rel := path
+		if r, relErr := filepath.Rel(workspaceRoot, path); relErr == nil {
+			rel = r
+		}
 		pkgPath := packagePathFor(modulePath, workspaceRoot, path)
-		lifted, err := LiftSourceWithOptions(pkgPath, sourcePath, bytes, opts)
+		lifted, err := LiftSourceWithOptions(pkgPath, rel, bytes, opts)
 		if err != nil {
 			return LiftResult{}, err
 		}

@@ -1,0 +1,326 @@
+[
+  {
+    "autoMintedMementos": [],
+    "bodyCid": "blake3-512:efd9ec66f12a10e3edab383ea427f7a1f368cc76fc7dfd6559642996715210714b473fb3be49e0538faf6b926d8d9dd40faaf952bab667305c6eb8799f14578b",
+    "effects": [],
+    "fnName": "bzdeterminism/exhibit.Serialize",
+    "formalSorts": [
+      {
+        "kind": "primitive",
+        "name": "Int"
+      }
+    ],
+    "formals": [
+      "value"
+    ],
+    "kind": "function-contract",
+    "locus": {
+      "file": "codec.go",
+      "line": 3,
+      "col": 6
+    },
+    "post": {
+      "args": [
+        {
+          "kind": "var",
+          "name": "result"
+        },
+        {
+          "kind": "var",
+          "name": "value"
+        }
+      ],
+      "kind": "atomic",
+      "name": "="
+    },
+    "pre": {
+      "args": [],
+      "kind": "atomic",
+      "name": "true"
+    },
+    "returnSort": {
+      "kind": "primitive",
+      "name": "Int"
+    },
+    "schemaVersion": "1"
+  },
+  {
+    "autoMintedMementos": [],
+    "bodyCid": "blake3-512:be3357cf8f8174ae95c0d86f49287282df0ce86400d8e70770afff821aac9bd2ee552ae5c347bf59051d05f1cd8aea1adb17d01107db0178f339284ac0674b82",
+    "effects": [
+      {
+        "kind": "panics"
+      }
+    ],
+    "fnName": "bzdeterminism/exhibit.ContentAddress",
+    "formalSorts": [
+      {
+        "kind": "primitive",
+        "name": "Int"
+      }
+    ],
+    "formals": [
+      "encoding"
+    ],
+    "kind": "function-contract",
+    "locus": {
+      "file": "codec.go",
+      "line": 5,
+      "col": 6
+    },
+    "post": {
+      "args": [
+        {
+          "kind": "var",
+          "name": "result"
+        },
+        {
+          "kind": "var",
+          "name": "encoding"
+        }
+      ],
+      "kind": "atomic",
+      "name": "="
+    },
+    "pre": {
+      "args": [
+        {
+          "args": [
+            {
+              "kind": "var",
+              "name": "encoding"
+            },
+            {
+              "kind": "const",
+              "sort": {
+                "kind": "primitive",
+                "name": "Int"
+              },
+              "value": 0
+            }
+          ],
+          "kind": "ctor",
+          "name": "<"
+        },
+        {
+          "kind": "const",
+          "sort": {
+            "kind": "primitive",
+            "name": "Bool"
+          },
+          "value": false
+        }
+      ],
+      "kind": "atomic",
+      "name": "="
+    },
+    "returnSort": {
+      "kind": "primitive",
+      "name": "Int"
+    },
+    "schemaVersion": "1"
+  },
+  {
+    "autoMintedMementos": [],
+    "bodyCid": "blake3-512:f944e9fe2bb84bb80eca0defe7de6157f16aeda3428af7e25791d6f2fc9647a0b8a7886533adc55e1e2efcdce2433405a30806573a0f09db9bc9a14eb38952df",
+    "effects": [],
+    "fnName": "bzdeterminism/exhibit.AddressOf",
+    "formalSorts": [
+      {
+        "kind": "primitive",
+        "name": "Int"
+      }
+    ],
+    "formals": [
+      "value"
+    ],
+    "kind": "function-contract",
+    "locus": {
+      "file": "codec.go",
+      "line": 14,
+      "col": 6
+    },
+    "post": {
+      "args": [
+        {
+          "kind": "var",
+          "name": "result"
+        },
+        {
+          "args": [
+            {
+              "kind": "const",
+              "sort": {
+                "kind": "primitive",
+                "name": "String"
+              },
+              "value": "bzdeterminism/exhibit.ContentAddress"
+            },
+            {
+              "args": [
+                {
+                  "kind": "const",
+                  "sort": {
+                    "kind": "primitive",
+                    "name": "String"
+                  },
+                  "value": "bzdeterminism/exhibit.Serialize"
+                },
+                {
+                  "kind": "var",
+                  "name": "value"
+                }
+              ],
+              "kind": "ctor",
+              "name": "go:call"
+            }
+          ],
+          "kind": "ctor",
+          "name": "go:call"
+        }
+      ],
+      "kind": "atomic",
+      "name": "="
+    },
+    "pre": {
+      "args": [],
+      "kind": "atomic",
+      "name": "true"
+    },
+    "returnSort": {
+      "kind": "primitive",
+      "name": "Int"
+    },
+    "schemaVersion": "1"
+  },
+  {
+    "kind": "go-source-unit",
+    "schemaVersion": "1",
+    "source": "codec.go",
+    "sourceCid": "blake3-512:d7a89cbc31276123582e9538b00d18074f9cb21538143d7679c63b005453cbbb6156e4a0050b227be6d290596fcf2a0b320a8249362cbf3748dd96f8f24f9844",
+    "signature": "0.1.0-draft",
+    "term": {
+      "args": [
+        {
+          "encoding": "hex",
+          "kind": "bytes",
+          "value": "7061636b61676520636f6465630a0a66756e632053657269616c697a652876616c756520696e742920696e74207b2072657475726e2076616c7565207d0a0a66756e6320436f6e74656e744164647265737328656e636f64696e6720696e742920696e74207b0a09696620656e636f64696e67203c2030207b0a090970616e69632822636f6e74656e74206164647265737320726571756972657320612063616e6f6e6963616c20656e636f64696e6722290a097d0a0972657475726e20656e636f64696e670a7d0a0a2f2f205365616d3a2070726f6475636572206f757470757420666c6f777320696e746f2074686520636f6e73756d65722077686f73652063616e6f6e6963616c20707265636f6e646974696f6e2069740a2f2f20646f6573206e6f742065737461626c6973682e0a66756e6320416464726573734f662876616c756520696e742920696e74207b2072657475726e20436f6e74656e74416464726573732853657269616c697a652876616c75652929207d0a"
+        },
+        {
+          "args": [
+            {
+              "args": [
+                {
+                  "args": [
+                    {
+                      "kind": "var",
+                      "name": "value"
+                    }
+                  ],
+                  "kind": "op",
+                  "name": "go:return"
+                },
+                {
+                  "args": [
+                    {
+                      "args": [
+                        {
+                          "args": null,
+                          "kind": "op",
+                          "name": "go:skip"
+                        },
+                        {
+                          "args": [
+                            {
+                              "kind": "var",
+                              "name": "encoding"
+                            },
+                            {
+                              "kind": "literal",
+                              "value": 0
+                            }
+                          ],
+                          "kind": "op",
+                          "name": "<"
+                        },
+                        {
+                          "args": [
+                            {
+                              "kind": "identifier",
+                              "name": "panic"
+                            },
+                            {
+                              "kind": "literal",
+                              "value": "content address requires a canonical encoding"
+                            }
+                          ],
+                          "kind": "op",
+                          "name": "go:call"
+                        },
+                        {
+                          "args": null,
+                          "kind": "op",
+                          "name": "go:skip"
+                        }
+                      ],
+                      "kind": "op",
+                      "name": "go:if"
+                    },
+                    {
+                      "args": [
+                        {
+                          "kind": "var",
+                          "name": "encoding"
+                        }
+                      ],
+                      "kind": "op",
+                      "name": "go:return"
+                    }
+                  ],
+                  "kind": "op",
+                  "name": "go:seq"
+                }
+              ],
+              "kind": "op",
+              "name": "go:seq"
+            },
+            {
+              "args": [
+                {
+                  "args": [
+                    {
+                      "kind": "identifier",
+                      "name": "bzdeterminism/exhibit.ContentAddress"
+                    },
+                    {
+                      "args": [
+                        {
+                          "kind": "identifier",
+                          "name": "bzdeterminism/exhibit.Serialize"
+                        },
+                        {
+                          "kind": "var",
+                          "name": "value"
+                        }
+                      ],
+                      "kind": "op",
+                      "name": "go:call"
+                    }
+                  ],
+                  "kind": "op",
+                  "name": "go:call"
+                }
+              ],
+              "kind": "op",
+              "name": "go:return"
+            }
+          ],
+          "kind": "op",
+          "name": "go:seq"
+        }
+      ],
+      "kind": "op",
+      "name": "go:source-unit"
+    }
+  }
+]
