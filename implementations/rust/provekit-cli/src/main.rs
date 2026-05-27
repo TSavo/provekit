@@ -42,7 +42,6 @@ mod witness_ingest;
 mod kit_dispatch;
 mod lift_plugin;
 mod project_config;
-mod promotion_query;
 mod protocol;
 mod report_fmt;
 mod sort_morphism_catalog;
