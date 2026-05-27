@@ -115,16 +115,16 @@ pub fn compile_to_parts(ir: &Json) -> Result<CompiledFormula, CompileError> {
 
     let mut binders = Vec::new();
     for (name, ty) in &ctx.type_params {
-        binders.push(format!("({name} : {ty})"));
+        binders.push(format!("({} : {ty})", lean_ident(name)));
     }
     for (name, sig) in &ctx.functions {
-        binders.push(format!("({name} : {})", sig.as_lean_type()));
+        binders.push(format!("({} : {})", lean_ident(name), sig.as_lean_type()));
     }
     for (name, sig) in &ctx.predicates {
-        binders.push(format!("({name} : {})", sig.as_lean_type()));
+        binders.push(format!("({} : {})", lean_ident(name), sig.as_lean_type()));
     }
     for (name, sort) in &ctx.free_vars {
-        binders.push(format!("({name} : {sort})"));
+        binders.push(format!("({} : {sort})", lean_ident(name)));
     }
 
     let theorem_head = if binders.is_empty() {
