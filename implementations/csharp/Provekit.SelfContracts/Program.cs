@@ -2,10 +2,10 @@
 //
 // Provekit.SelfContracts: the C# peer self-contracts orchestrator.
 //
-// Walks every *.invariant.cs file's Register() entrypoint, mints all
-// collected contracts as signed mementos, bundles into a `.proof` whose
-// filename IS its catalog CID, asserts byte-determinism by minting twice
-// into separate output dirs.
+// Lifts native C# self-contract witness sources, mints the resulting
+// function-contract declarations as signed mementos, bundles into a
+// `.proof` whose filename IS its catalog CID, and asserts byte-determinism
+// by minting twice into separate output dirs.
 //
 // Mirrors:
 //   implementations/rust/provekit-self-contracts/src/lib.rs
@@ -20,15 +20,16 @@
 // catalog (v1.1.0) and verifies under the same foundation key as the
 // Rust / Go / C++ / TS peers.
 
-using System.Text;
 using System.Text.Json;
 using System.Text.Json.Nodes;
 
 using Provekit.Canonicalizer;
 using Provekit.ClaimEnvelope;
 using Provekit.IR;
+using Provekit.Lift.Csharp;
 using Provekit.ProofEnvelope;
 using Provekit.SelfContracts.Invariants;
+using CValue = Provekit.Canonicalizer.Value;
 
 namespace Provekit.SelfContracts;
 
@@ -40,6 +41,24 @@ public static class Program
     public const string ProducedBy = "csharp-kit@1.0";
     public const string CatalogName = "@provekit/csharp-self-contracts";
     public const string CatalogVersion = "1.0.0";
+    private static readonly string[] NativeContractSourcePaths =
+    [
+        "Provekit.Canonicalizer/Hash.Contracts.cs",
+        "Provekit.Canonicalizer/Jcs.Contracts.cs",
+        "Provekit.Canonicalizer/Value.Contracts.cs",
+        "Provekit.IR/Sort.Contracts.cs",
+        "Provekit.IR/Term.Contracts.cs",
+        "Provekit.IR/Formula.Contracts.cs",
+        "Provekit.IR/Predicates.Contracts.cs",
+        "Provekit.IR/Quantifiers.Contracts.cs",
+        "Provekit.IR/Collector.Contracts.cs",
+        "Provekit.IR/Serialize.Contracts.cs",
+        "Provekit.ClaimEnvelope/Authoring.Contracts.cs",
+        "Provekit.ClaimEnvelope/Mint.Contracts.cs",
+        "Provekit.ProofEnvelope/Cbor.Contracts.cs",
+        "Provekit.ProofEnvelope/Sign.Contracts.cs",
+        "Provekit.ProofEnvelope/Proof.Contracts.cs",
+    ];
 
     public static int Main(string[] args)
     {
@@ -78,7 +97,7 @@ public static class Program
         }
         Console.WriteLine("  determinism check:  OK (two runs produced identical CIDs)");
         Console.WriteLine();
-        Console.WriteLine($"== done. C# self-application: live ({contractCount} contracts across {fileCount} .invariant.cs files). ==");
+        Console.WriteLine($"== done. C# self-application: live ({contractCount} contracts across {fileCount} native C# sources). ==");
         return 0;
     }
 
@@ -122,7 +141,7 @@ public static class Program
                         {
                             ["authoring_surfaces"] = new JsonArray { "csharp" },
                             ["ir_version"] = "v1.1.0",
-                            ["emits_signed_mementos"] = true,
+                            ["emits_signed_mementos"] = false,
                         }
                     });
                     break;
@@ -130,27 +149,17 @@ public static class Program
                 case "lift":
                     try
                     {
-                        var tmpDir = Path.Combine(Path.GetTempPath(), $"provekit-csharp-rpc-{Guid.NewGuid()}");
-                        Directory.CreateDirectory(tmpDir);
-                        try
+                        var paramsObj = req["params"] as JsonObject;
+                        var workspaceRoot = paramsObj?["workspace_root"]?.GetValue<string>() ?? FindCsharpWorkspaceRoot();
+                        var document = LiftNativeContractDocument(workspaceRoot);
+                        WriteResponse(id, new JsonObject
                         {
-                            var (cid, contractSetCid, _, _) = MintOneRun(tmpDir, verbose: false);
-                            var proofPath = Path.Combine(tmpDir, $"{cid}.proof");
-                            var bytes = File.ReadAllBytes(proofPath);
-                            var b64 = Convert.ToBase64String(bytes);
-                            WriteResponse(id, new JsonObject
-                            {
-                                ["kind"] = "proof-envelope",
-                                ["filename_cid"] = cid,
-                                ["contract_set_cid"] = contractSetCid,
-                                ["bytes_base64"] = b64,
-                                ["diagnostics"] = new JsonArray(),
-                            });
-                        }
-                        finally
-                        {
-                            try { Directory.Delete(tmpDir, recursive: true); } catch { }
-                        }
+                            ["kind"] = "ir-document",
+                            ["ir"] = JsonSerializer.SerializeToNode(document.Declarations),
+                            ["callEdges"] = JsonSerializer.SerializeToNode(document.CallEdges),
+                            ["diagnostics"] = JsonSerializer.SerializeToNode(document.Diagnostics),
+                            ["refusals"] = JsonSerializer.SerializeToNode(document.Refusals),
+                        });
                     }
                     catch (Exception ex)
                     {
@@ -198,18 +207,17 @@ public static class Program
     /// <summary>
     /// One full author + mint + bundle pass. Returns the catalog CID
     /// (also used as the .proof filename), the contractSetCid (spec #94),
-    /// the number of contracts, and the number of invariant files registered.
+    /// the number of contracts, and the number of native source files lifted.
     /// </summary>
     public static (string Cid, string ContractSetCid, int ContractCount, int FileCount) MintOneRun(string outDir, bool verbose)
     {
-        // 1. Register every .invariant.cs module.
-        Collector.BeginCollecting();
-        var fileCount = RegisterAll();
-        var contractDecls = Collector.Finish();
+        // 1. Lift every native C# self-contract witness source.
+        var document = LiftNativeContractDocument(FindCsharpWorkspaceRoot());
+        var contractDecls = document.Declarations;
 
         if (verbose)
         {
-            Console.WriteLine($"authored {contractDecls.Count} contracts across {fileCount} .invariant.cs files");
+            Console.WriteLine($"lifted {contractDecls.Count} contracts across {document.SourceFileCount} native C# sources");
         }
 
         // 2. Mint each as a signed ClaimEnvelope under the foundation key.
@@ -221,11 +229,11 @@ public static class Program
         {
             var args = new MintContractArgs
             {
-                ContractName = d.Name,
-                Pre = d.Pre is null ? null : Serialize.FormulaToValue(d.Pre),
-                Post = d.Post is null ? null : Serialize.FormulaToValue(d.Post),
-                Inv = d.Inv is null ? null : Serialize.FormulaToValue(d.Inv),
-                OutBinding = d.OutBinding,
+                ContractName = ContractName(d),
+                Pre = FormulaValue(d, "pre"),
+                Post = FormulaValue(d, "post"),
+                Inv = FormulaValue(d, "inv"),
+                OutBinding = d["outBinding"]?.GetValue<string>() ?? "out",
                 ProducedBy = ProducedBy,
                 ProducedAt = DeclaredAt,
                 InputCids = Array.Empty<string>(),
@@ -271,46 +279,107 @@ public static class Program
             Console.WriteLine($"  .proof file:        {outPath}");
         }
 
-        return (built.Cid, contractSetCid, contractDecls.Count, fileCount);
+        return (built.Cid, contractSetCid, contractDecls.Count, document.SourceFileCount);
     }
 
-    /// <summary>
-    /// Call every static invariant Register() entrypoint. Returns the
-    /// count of files registered (one per invariant slab).
-    ///
-    /// Order is alphabetical by slab name to match the cross-language
-    /// peers' registration order semantics; the protocol bytes don't
-    /// depend on registration order (members are keyed by CID), but
-    /// keeping it stable aids diffing.
-    /// </summary>
-    private static int RegisterAll()
+    private sealed record NativeContractDocument(
+        List<JsonObject> Declarations,
+        List<JsonObject> CallEdges,
+        List<JsonObject> Diagnostics,
+        List<Refusal> Refusals,
+        int SourceFileCount);
+
+    private static NativeContractDocument LiftNativeContractDocument(string workspaceRoot)
     {
-        // Provekit.Canonicalizer (3 slabs)
-        HashInvariants.Register();
-        JcsInvariants.Register();
-        ValueInvariants.Register();
+        var lifter = new CsharpLifter();
+        var result = lifter.LiftPaths(workspaceRoot, NativeContractSourcePaths.ToList());
+        var declarations = result.Declarations
+            .Select(NormalizeFunctionContractName)
+            .ToList();
+        declarations.AddRange(CrossKitBridgeContracts());
 
-        // Provekit.IR (7 slabs)
-        SortInvariants.Register();
-        TermInvariants.Register();
-        FormulaInvariants.Register();
-        PredicatesInvariants.Register();
-        QuantifiersInvariants.Register();
-        CollectorInvariants.Register();
-        SerializeInvariants.Register();
+        return new NativeContractDocument(
+            declarations,
+            result.CallEdges,
+            result.Diagnostics,
+            result.Refusals,
+            NativeContractSourcePaths.Length + 1);
+    }
 
-        // Provekit.ClaimEnvelope (2 slabs)
-        AuthoringInvariants.Register();
-        MintInvariants.Register();
+    private static JsonObject NormalizeFunctionContractName(JsonObject declaration)
+    {
+        var clone = declaration.DeepClone().AsObject();
+        if (clone["kind"]?.GetValue<string>() == "function-contract"
+            && clone["name"] is null
+            && clone["fnName"] is not null)
+        {
+            clone["name"] = clone["fnName"]!.DeepClone();
+        }
+        return clone;
+    }
 
-        // Provekit.ProofEnvelope (3 slabs)
-        CborInvariants.Register();
-        SignInvariants.Register();
-        ProofInvariants.Register();
-
-        // Cross-kit bridges (Phase 2: lift-plugin protocol counterparts).
+    private static List<JsonObject> CrossKitBridgeContracts()
+    {
+        Collector.BeginCollecting();
         CrossKitBridges.Register();
+        var contracts = Collector.Finish();
+        var json = Serialize.MarshalDeclarations(contracts);
+        return JsonNode.Parse(json)!.AsArray()
+            .Select(node => node!.AsObject())
+            .ToList();
+    }
 
-        return 16;
+    private static string ContractName(JsonObject declaration) =>
+        declaration["name"]?.GetValue<string>()
+        ?? declaration["fnName"]?.GetValue<string>()
+        ?? declaration["symbol"]?.GetValue<string>()
+        ?? "unnamed";
+
+    private static CValue? FormulaValue(JsonObject declaration, string key) =>
+        declaration[key] is JsonNode node ? JsonToValue(node) : null;
+
+    private static CValue JsonToValue(JsonNode? node)
+    {
+        if (node is null) return CValue.Null;
+        if (node is JsonObject obj)
+        {
+            return CValue.Object(obj.Select(pair =>
+                new KeyValuePair<string, CValue>(pair.Key, JsonToValue(pair.Value))).ToArray());
+        }
+        if (node is JsonArray arr)
+        {
+            return CValue.Array(arr.Select(JsonToValue).ToArray());
+        }
+        var value = node.AsValue();
+        if (value.TryGetValue<string>(out var s)) return CValue.String(s);
+        if (value.TryGetValue<bool>(out var b)) return CValue.Boolean(b);
+        if (value.TryGetValue<long>(out var l)) return CValue.Integer(l);
+        if (value.TryGetValue<int>(out var i)) return CValue.Integer(i);
+        if (value.TryGetValue<uint>(out var u)) return CValue.Integer(u);
+        if (value.TryGetValue<ulong>(out var ul)) return CValue.Integer(unchecked((long)ul));
+        if (value.TryGetValue<double>(out var d)) return CValue.Integer((long)d);
+        return CValue.String(node.ToJsonString());
+    }
+
+    private static string FindCsharpWorkspaceRoot()
+    {
+        foreach (var start in new[] { Directory.GetCurrentDirectory(), AppContext.BaseDirectory })
+        {
+            var dir = new DirectoryInfo(start);
+            while (dir is not null)
+            {
+                if (File.Exists(Path.Combine(dir.FullName, NativeContractSourcePaths[0])))
+                {
+                    return dir.FullName;
+                }
+                var nested = Path.Combine(dir.FullName, "implementations", "csharp");
+                if (File.Exists(Path.Combine(nested, NativeContractSourcePaths[0])))
+                {
+                    return nested;
+                }
+                dir = dir.Parent;
+            }
+        }
+        throw new DirectoryNotFoundException("could not locate implementations/csharp workspace root");
     }
 }
