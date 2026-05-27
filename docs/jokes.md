@@ -12,12 +12,12 @@ A content-addressed record of jokes that survived review. **Each is pinned. Do n
 printf '%s' '<the quoted punchline>' | b3sum --length 64
 ```
 
-And the file declares its **own** identity — the conjunction of all ten:
+And the file declares its **own** identity — the conjunction of all eleven:
 
-**`contractSetCid · blake3-512:55081bdbdd853ee592a88d0dcc3820da9c87c626e08b5b173672952370cf96c015216ba6e05678912aca07b0ee7df4e8426e0b2731fc5d55d2b626dd94dc218d`**
+**`contractSetCid · blake3-512:60ebba108e9b0e5f7eb7e1a3c9990add29e3e00c72956758d10d5c798da01c86885c7aba208a1f9a0d90e7ece09384a82b7d0fe92aef7f651e53728584a47140`**
 
 ```
-# blake3-512 over the ten member pin hexes, sorted lexicographically, \n-joined, no trailing newline:
+# blake3-512 over the eleven member pin hexes, sorted lexicographically, \n-joined, no trailing newline:
 printf '%s' "$(printf '%s\n' <each member hex> | sort)" | b3sum --length 64
 ```
 
@@ -138,3 +138,22 @@ And it scales by *non-negotiation*: N×M says every new language costs a transla
 Tonight's commit literally titled **"lower dies emit lives."** A −2,914-line PR whose thesis is that the cleanest code is the code a correct boundary lets you delete. Bridgeworks demoed lowering; we put it on `#[ignore]` instead of deleting it, because — and this is the whole bit — _ignore, not delete._
 
 > `pin · blake3-512:a10d287bd90afe2ed13987c2e46bf3bf7d2b3eff25967603d55984d8253d81e47dead162391f6bcb581d0fa62613e3cd775cf5c8c62c274d18c94500c9c5f89b` _(of "lower dies emit lives")_
+
+---
+
+## We broke blake3 — 2026-05-27
+
+**T:** *"We broke blake3!!!! Ha.... if only."*
+
+The bug that earned this file an entry by being *about* this file. While building **BZ-DETERMINISM-001** — the reference species for *map-serialization byte-instability*, i.e. the determinism bug — the determinism **conformance gate** went red on the determinism **kit's** own self-contracts. A determinism bug, in the determinism kit, caught by the determinism gate, found while building the determinism exhibit. Yo dawg.
+
+The CIDs disagreed: `got ≠ want`. The tempting read is the one T deflated in the same breath —
+
+> **"It's never blake3. It's always your bytes."**
+> `pin · blake3-512:1124745e0fdcc074d293be208cfc6a876deeee24ef051454962882e2a9b35a880afbc2b3539e0cd2d8b2e53591075d3a706c384893224e6baf01c51fb2cf2684`
+
+blake3 is a pure function: same input, same digest, every time, every platform — that's the whole job. So `got ≠ want` isn't evidence the hash broke; it's *proof* the inputs differed. The famous battle-tested library is never the bug. The bug is always your own canonicalization handing it two different byte streams and acting surprised. ("It's not DNS. It's always DNS." — same shape, fewer outages.)
+
+**The cut under the cut:** what actually differed was the **verifier hashing fewer fields than the mint** — the cross-kit gate re-derived the contract CID over `{name, outBinding, pre, post, inv}` while the authoritative mint folds `formals` into contract identity. So the gate wasn't checking what it claimed to verify. Its own lab coat. And it caught a *real* determinism leak anyway — an absolute path (`/Users/tsavo/...`) smuggled into a content-addressed contract. The imposter-syndrome gate asked *"am I really checking the bytes, or trust-me-bro wearing a lab coat?"*, found the answer was **both**, and threw up on the bar regardless. A gate that doubts itself catches the bug even when it's the one wearing the coat.
+
+_(See: [imposter syndrome], the lab-coat family, and the entire evening of 2026-05-27.)_
