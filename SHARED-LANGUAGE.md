@@ -159,7 +159,9 @@ The rust CLI must stay **language-agnostic** yet compose **every** language's ca
 resolution splits call-edge *extraction* (per-lifter, language-specific) from call-edge
 *composition + discharge* (rust CLI, language-blind).
 
-**Every lifter must express, in universal ProofIR (they do today):**
+**Every lifter must express, in universal ProofIR — and all 10 kits do today** (audited
+2026-05-27: java, rust, python, go, cpp, csharp, ruby, swift, zig, c each emit both the
+pre/post interface and call-edges; none is a bare-proposition emitter)**:**
 1. The contract as **pre/post over the operation's symbol** — the typed interface, so the
    substrate can align one op's output to the next op's input. *Java today:*
    `ContractDecl { symbol, preconditions, postconditions, invariants }` →
@@ -174,6 +176,9 @@ resolution splits call-edge *extraction* (per-lifter, language-specific) from ca
 Call-edge **extraction is necessarily per-lifter** (it requires parsing the source language's
 AST) and **all lifters must do it.** A lifter that emits a bare proposition with no interface
 and no edges has produced a contract that cannot compose — composability is the whole game.
+(The 2026-05-27 audit is a **presence** check — the interface + call-edge machinery exists in
+all 10 kits. Byte-identical cross-language composition round-trip is a separate conformance
+run, not asserted here.)
 
 **The rust CLI stays language-agnostic** because all of the above crosses the RPC line as
 **uniform ProofIR** — contracts + `post → pre` implications. The CLI composes and discharges
