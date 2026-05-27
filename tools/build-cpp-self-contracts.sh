@@ -1,10 +1,10 @@
 #!/bin/sh
 # Build + run the C++ peer self-contracts orchestrator.
 #
-# Mirrors the Rust orchestrator (mint-self-contracts): walks every
-# .invariant.cpp file by linking its registrar, mints all collected
-# contracts under the foundation key, bundles into a deterministic
-# .proof, asserts byte-determinism by minting twice.
+# Mirrors the Rust orchestrator (mint-self-contracts): lifts native C++
+# assertion surfaces with provekit-lift-cpp, mints the lifted contracts
+# under the foundation key, bundles into a deterministic .proof, and
+# asserts byte-determinism by minting twice.
 #
 # Prereqs:
 #   - openssl@3 (libcrypto)
@@ -120,6 +120,11 @@ B3_FLAGS="-DBLAKE3_NO_AVX2 -DBLAKE3_NO_AVX512 -DBLAKE3_NO_SSE2 -DBLAKE3_NO_SSE41
 CC="${CC:-clang}"
 CXX="${CXX:-clang++}"
 
+# The self-contract orchestrator shells out to the existing native C++ lifter
+# at runtime. Build it first so direct script invocations have the same path
+# the orchestrator uses.
+"$WORKSPACE/tools/build-cpp-lift.sh" >/dev/null
+
 # Compile vendored BLAKE3 .c sources to objects first; clang++ refuses to
 # compile C with -std=c++17. Place objects in a tempdir; cleaned on exit.
 B3_OBJ_DIR="$(mktemp -d -t b3-obj.XXXXXX)"
@@ -149,17 +154,6 @@ done
     "$CPP/proof-envelope/proof_envelope.cpp" \
     "$CPP/claim-envelope/mint.cpp" \
     "$CPP/claim-envelope/value_from_kit.cpp" \
-    "$CPP/canonicalizer/jcs.invariant.cpp" \
-    "$CPP/canonicalizer/hash.invariant.cpp" \
-    "$CPP/canonicalizer/property_hash.invariant.cpp" \
-    "$CPP/proof-envelope/cbor.invariant.cpp" \
-    "$CPP/proof-envelope/sign_ed25519.invariant.cpp" \
-    "$CPP/proof-envelope/proof_envelope.invariant.cpp" \
-    "$CPP/claim-envelope/mint.invariant.cpp" \
-    "$CPP/verifier/load_all_proofs.invariant.cpp" \
-    "$CPP/verifier/enumerate_callsites.invariant.cpp" \
-    "$CPP/verifier/resolve_target.invariant.cpp" \
-    "$CPP/verifier/instantiate.invariant.cpp" \
     "$WORKSPACE/implementations/cpp/provekit-self-contracts/cross_kit_bridges.cpp" \
     "$WORKSPACE/implementations/cpp/provekit-self-contracts/mint_cpp_self_contracts.cpp" \
     -lcrypto \
@@ -170,4 +164,4 @@ if [ "$BUILD_ONLY" = "1" ]; then
     exit 0
 fi
 
-"$OUT_BIN" "$OUT_DIR"
+PROVEKIT_WORKSPACE_ROOT="$WORKSPACE" "$OUT_BIN" "$OUT_DIR"

@@ -5,8 +5,8 @@
  * implementations/c/provekit-self-contracts/src/ and the matching
  * include/provekit/self_contracts.h.
  *
- * Mirrors the cross-kit pattern (java JavaKitInvariants.java, csharp
- * .invariant.cs, cpp .invariant.cpp): IR cannot model collision
+ * Mirrors the cross-kit pattern across peer self-contract bundles: IR
+ * cannot model collision
  * resistance / signature soundness, but it CAN say things like "output
  * length is exactly N", "function is deterministic", "self-identifying
  * prefix is N chars".

@@ -2,10 +2,10 @@
 //
 // mint_cpp_self_contracts: the C++ peer self-contracts orchestrator.
 //
-// Walks every .invariant.cpp file in the C++ workspace by calling its
-// extern "C" registrar, mints all collected contracts as signed
-// mementos, bundles into a `.proof` whose filename IS its catalog CID,
-// asserts byte-determinism by minting twice into separate output dirs.
+// Runs the existing C++ native lifter over the kit's native self-contract
+// assertion surface, mints the lifted contracts as signed mementos, bundles
+// them into a `.proof` whose filename IS its catalog CID, and asserts
+// byte-determinism by minting twice into separate output dirs.
 //
 // Mirrors implementations/rust/provekit-self-contracts/src/bin/mint-self-contracts.rs.
 //
@@ -27,15 +27,19 @@
 #include "provekit/proof-envelope/sign_ed25519.hpp"
 
 #include <algorithm>
+#include <cerrno>
 #include <cstdio>
 #include <cstdlib>
 #include <fstream>
 #include <iostream>
 #include <map>
+#include <stdexcept>
 #include <sstream>
 #include <string>
 #include <vector>
 #include <unistd.h>
+
+#include <nlohmann/json.hpp>
 
 using namespace provekit::ir;
 using ::provekit::claim_envelope::MintContractArgs;
@@ -51,6 +55,7 @@ using ::provekit::canonicalizer::compute_cid;
 using ::provekit::canonicalizer::encode_jcs;
 using ::provekit::canonicalizer::Value;
 using ::provekit::canonicalizer::ValuePtr;
+using Json = nlohmann::json;
 
 // Compute the signer-independent contractCid for a contract.
 // Per spec 2026-05-03-contract-cid-vs-attestation-cid.md §1:
@@ -80,21 +85,128 @@ static std::string compute_contract_set_cid(std::vector<std::string> cids) {
     return compute_cid(encode_jcs(arr));
 }
 
-// Each .invariant.cpp file defines an extern "C" registrar that calls
-// must()/contract() to push ContractDecls into the kit-side collector.
-// Declare them here; link order is per the build script.
+struct LiftedContractDecl {
+    std::string name;
+    ValuePtr pre;
+    ValuePtr post;
+    ValuePtr inv;
+    std::string out_binding;
+};
+
+static ValuePtr json_to_value(const Json& j) {
+    if (j.is_null()) return Value::null_value();
+    if (j.is_boolean()) return Value::boolean(j.get<bool>());
+    if (j.is_number_integer()) return Value::integer(j.get<int64_t>());
+    if (j.is_number_unsigned()) return Value::integer(static_cast<int64_t>(j.get<uint64_t>()));
+    if (j.is_string()) return Value::string(j.get<std::string>());
+    if (j.is_array()) {
+        std::vector<ValuePtr> elems;
+        elems.reserve(j.size());
+        for (const auto& item : j) elems.push_back(json_to_value(item));
+        return Value::array(std::move(elems));
+    }
+    if (j.is_object()) {
+        std::vector<std::pair<std::string, ValuePtr>> kvs;
+        kvs.reserve(j.size());
+        for (auto it = j.begin(); it != j.end(); ++it) {
+            kvs.emplace_back(it.key(), json_to_value(it.value()));
+        }
+        return Value::object(std::move(kvs));
+    }
+    throw std::runtime_error("unsupported JSON value in lifted contract");
+}
+
+static std::string shell_quote(const std::string& s) {
+    std::string out = "'";
+    for (char c : s) {
+        if (c == '\'') {
+            out += "'\\''";
+        } else {
+            out.push_back(c);
+        }
+    }
+    out.push_back('\'');
+    return out;
+}
+
+static std::string current_working_dir() {
+    char buf[4096];
+    if (!getcwd(buf, sizeof(buf))) {
+        throw std::runtime_error("getcwd failed");
+    }
+    return std::string(buf);
+}
+
+static std::string workspace_root() {
+    const char* from_env = std::getenv("PROVEKIT_WORKSPACE_ROOT");
+    if (from_env && *from_env) return std::string(from_env);
+    return current_working_dir();
+}
+
+static std::string read_text_file_or_die(const std::string& path) {
+    std::ifstream in(path, std::ios::binary);
+    if (!in) {
+        throw std::runtime_error("cannot read " + path);
+    }
+    std::ostringstream buf;
+    buf << in.rdbuf();
+    return buf.str();
+}
+
+static std::vector<LiftedContractDecl> load_native_lifted_contracts(const std::string& root) {
+    char tmpl[] = "/tmp/provekit-cpp-native-lift-XXXXXX";
+    char* tmp = mkdtemp(tmpl);
+    if (!tmp) {
+        throw std::runtime_error("mkdtemp failed while lifting native C++ self-contracts");
+    }
+    const std::string tmp_dir(tmp);
+    const std::string lifter = root + "/implementations/cpp/target/provekit-lift-cpp";
+    const std::string native_dir =
+        root + "/implementations/cpp/provekit-self-contracts/native";
+    const std::string cmd =
+        shell_quote(lifter) + " --workspace " + shell_quote(native_dir) +
+        " -o " + shell_quote(tmp_dir) + " >/dev/null";
+    if (std::system(cmd.c_str()) != 0) {
+        std::system(("rm -rf " + shell_quote(tmp_dir)).c_str());
+        throw std::runtime_error("provekit-lift-cpp failed while lifting native self-contracts");
+    }
+
+    const std::string json_text = read_text_file_or_die(tmp_dir + "/lifted.json");
+    std::system(("rm -rf " + shell_quote(tmp_dir)).c_str());
+
+    Json parsed = Json::parse(json_text);
+    if (!parsed.is_array()) {
+        throw std::runtime_error("provekit-lift-cpp lifted.json is not an array");
+    }
+
+    std::vector<LiftedContractDecl> out;
+    for (const auto& item : parsed) {
+        if (!item.is_object()) continue;
+        if (item.value("kind", "") != "contract") continue;
+        LiftedContractDecl d;
+        d.name = item.value("name", "");
+        d.out_binding = item.value("outBinding", "out");
+        if (d.name.empty()) {
+            throw std::runtime_error("lifted contract missing name");
+        }
+        if (item.contains("pre")) d.pre = json_to_value(item.at("pre"));
+        if (item.contains("post")) d.post = json_to_value(item.at("post"));
+        if (item.contains("inv")) d.inv = json_to_value(item.at("inv"));
+        if (!d.pre && !d.post && !d.inv) {
+            throw std::runtime_error("lifted contract `" + d.name + "` has no formula");
+        }
+        out.push_back(std::move(d));
+    }
+    if (out.empty()) {
+        throw std::runtime_error("native C++ self-contract lift produced zero contracts");
+    }
+    return out;
+}
+
+// Cross-kit bridge counterparts still use the kit collector until the bridge
+// bundle has a native lifted surface. The C++ kit self-contract obligations
+// themselves are loaded from provekit-lift-cpp output below.
 extern "C" {
-    void jcs_invariants();
-    void hash_invariants();
-    void property_hash_invariants();
-    void cbor_invariants();
-    void sign_invariants();
-    void proof_envelope_invariants();
-    void mint_invariants();
-    void load_all_proofs_invariants();
-    void enumerate_callsites_invariants();
-    void resolve_target_invariants();
-    void instantiate_invariants();
     void cross_kit_bridges_invariants();
 }
 
@@ -103,27 +215,23 @@ struct MintOneRunResult {
     std::string contract_set_cid;
 };
 
-static MintOneRunResult mint_one_run(const std::string& out_dir, bool verbose) {
-    // 1. Author every .invariant.cpp module via its registrar.
+static MintOneRunResult mint_one_run(const std::string& out_dir,
+                                     bool verbose,
+                                     const std::string& root) {
+    // 1. Lift the native C++ self-contract surface, then add bridge
+    // counterparts still owned by the collector-backed bridge module.
+    const auto lifted_contracts = load_native_lifted_contracts(root);
+
     reset_collector();
     begin_collecting();
-    jcs_invariants();
-    hash_invariants();
-    property_hash_invariants();
-    cbor_invariants();
-    sign_invariants();
-    proof_envelope_invariants();
-    mint_invariants();
-    load_all_proofs_invariants();
-    enumerate_callsites_invariants();
-    resolve_target_invariants();
-    instantiate_invariants();
     cross_kit_bridges_invariants();
-    auto contract_decls = finish();
+    auto bridge_counterpart_decls = finish();
 
     if (verbose) {
-        std::printf("authored %zu contracts across 12 .invariant.cpp slabs\n",
-                    contract_decls.size());
+        std::printf("lifted %zu native contracts from C++ assertion surfaces\n",
+                    lifted_contracts.size());
+        std::printf("authored %zu bridge counterpart contracts\n",
+                    bridge_counterpart_decls.size());
     }
 
     // 2. Mint each as a signed ClaimEnvelope under the foundation key.
@@ -135,7 +243,30 @@ static MintOneRunResult mint_one_run(const std::string& out_dir, bool verbose) {
 
     std::map<std::string, std::vector<uint8_t>> members;
     std::vector<std::string> content_cids;
-    for (const auto& d : contract_decls) {
+
+    auto mint_one_contract = [&](const MintContractArgs& args) {
+        content_cids.push_back(contract_cid_from_args(args));
+        auto minted = mint_contract(args);
+        members[minted.cid] = minted.canonical_bytes;
+    };
+
+    for (const auto& d : lifted_contracts) {
+        MintContractArgs args{};
+        args.contract_name = d.name;
+        args.pre = d.pre;
+        args.post = d.post;
+        args.inv = d.inv;
+        args.out_binding = d.out_binding;
+        args.produced_by = produced_by;
+        args.produced_at = declared_at;
+        args.input_cids = {};
+        args.authoring_kind = AuthoringKind::Lift;
+        args.authoring_lift = {"provekit-lift-cpp@0.1.0", "tests", ""};
+        args.signer_seed = signer_seed;
+        mint_one_contract(args);
+    }
+
+    for (const auto& d : bridge_counterpart_decls) {
         MintContractArgs args{};
         args.contract_name = d.name;
         if (d.pre) args.pre = formula_to_value(*d.pre);
@@ -148,10 +279,7 @@ static MintOneRunResult mint_one_run(const std::string& out_dir, bool verbose) {
         args.authoring_kind = AuthoringKind::KitAuthor;
         args.authoring_kit_author = AuthoringKitAuthor{produced_by, ""};
         args.signer_seed = signer_seed;
-        // Compute signer-independent content CID BEFORE minting (spec #94).
-        content_cids.push_back(contract_cid_from_args(args));
-        auto minted = mint_contract(args);
-        members[minted.cid] = minted.canonical_bytes;
+        mint_one_contract(args);
     }
 
     // 3. Bundle the catalog into a deterministic-CBOR .proof.
@@ -332,7 +460,7 @@ static void run_rpc_mode() {
                 continue;
             }
             const std::string tmp_dir(tmp);
-            const auto run_result = mint_one_run(tmp_dir, /*verbose=*/false);
+            const auto run_result = mint_one_run(tmp_dir, /*verbose=*/false, workspace_root());
             const std::string& cid = run_result.bundle_cid;
             const std::string& cset_cid = run_result.contract_set_cid;
             const std::string proof_path = tmp_dir + "/" + cid + ".proof";
@@ -384,12 +512,13 @@ int main(int argc, char* argv[]) {
     }
 
     const std::string out_dir = (argc >= 2) ? argv[1] : ".";
+    const std::string root = workspace_root();
 
     std::printf("== ProvekIt C++ self-contracts orchestrator ==\n\n");
     std::printf("output dir: %s\n\n", out_dir.c_str());
 
     std::printf("== mint #1 ==\n");
-    const auto run1 = mint_one_run(out_dir, /*verbose=*/true);
+    const auto run1 = mint_one_run(out_dir, /*verbose=*/true, root);
 
     // Determinism check: mint twice into separate output dirs and
     // assert byte-equality. The .proof filename IS the catalog CID;
@@ -400,7 +529,7 @@ int main(int argc, char* argv[]) {
         return 1;
     }
     std::printf("\n== mint #2 (determinism check) ==\n");
-    const auto run2 = mint_one_run(out_dir2, /*verbose=*/false);
+    const auto run2 = mint_one_run(out_dir2, /*verbose=*/false, root);
     if (run1.bundle_cid != run2.bundle_cid || run1.contract_set_cid != run2.contract_set_cid) {
         std::fprintf(stderr,
                      "DETERMINISM FAILURE:\n  run 1 cid:            %s\n  run 2 cid:            %s\n"
