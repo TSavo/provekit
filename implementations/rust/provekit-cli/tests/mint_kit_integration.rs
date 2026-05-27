@@ -831,7 +831,7 @@ fn lift_plugin_protocol_contract_set_cid_is_pinned_separately_from_rust_surface(
 ///   `implementations/typescript/.provekit/lift/typescript-self-contracts/manifest.toml`
 /// which spawns: `node --experimental-require-module src/bin/mint-ts-self-contracts-rpc.cjs`
 const TS_CONTRACT_SET_CID: &str =
-    "blake3-512:5a45314fdfb0fa1357a78a3f5c22e794fcbc10d3e649c39989710887eb742a6610861b9ab5c9e941ab01bc4357f5671a61c9d8a1d431dff8da3b6280a66d0d6a";
+    "blake3-512:90f626ab63a1b94204d4754b4328e8736ba64a62c6f334b77b8494ee91a4c8549339e06f6ee7c4c8bc8e2155a7254c306c715b32ced3c19d6bb4e1abcd6c29a4";
 
 #[test]
 #[serial(mint_kit_files)]
