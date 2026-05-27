@@ -742,7 +742,7 @@ func (l *lifter) liftExpr(expr ast.Expr) (exprResult, error) {
 		sort := irSort(l.info.Types[e].Type)
 		return exprResult{term: ir.MakeCtor("go:index", []ir.IrTerm{base.term, index.term}, sort), alg: op("go:index", base.alg, index.alg), sort: sort}, nil
 	case *ast.CompositeLit:
-		return exprResult{}, errAt(e.Pos(), "composite literals are not modeled")
+		return l.liftCompositeLit(e)
 	case *ast.FuncLit:
 		return exprResult{}, errAt(e.Pos(), "function literals are not modeled")
 	case *ast.ChanType:
@@ -794,6 +794,37 @@ func (l *lifter) liftCall(call *ast.CallExpr) (exprResult, error) {
 	alg := op("go:call", append([]any{map[string]any{"kind": "identifier", "name": calleeName}}, algArgs...)...)
 	sort := irSort(l.info.Types[call].Type)
 	return exprResult{term: ir.MakeCtor("go:call", termArgs, sort), alg: alg, sort: sort}, nil
+}
+
+// liftCompositeLit models unkeyed slice/array literals (`[]T{e0, e1, …}`):
+// elements lift positionally into a `go:slice-literal` ctor. Struct, map, and
+// keyed literals stay unmodeled — their shape isn't represented in the IR, and
+// inventing one would be a lossy lift dressed as exact. This is enough to lift
+// a serializer that emits bytes in a given (non-canonical) order, which a
+// consumer's canonical-order precondition does not discharge.
+func (l *lifter) liftCompositeLit(e *ast.CompositeLit) (exprResult, error) {
+	if _, isArray := e.Type.(*ast.ArrayType); !isArray {
+		return exprResult{}, errAt(e.Pos(), "only slice/array composite literals are modeled")
+	}
+	var elemTerms []ir.IrTerm
+	var elemAlgs []any
+	for _, elt := range e.Elts {
+		if _, keyed := elt.(*ast.KeyValueExpr); keyed {
+			return exprResult{}, errAt(e.Pos(), "keyed composite literals are not modeled")
+		}
+		lifted, err := l.liftExpr(elt)
+		if err != nil {
+			return exprResult{}, err
+		}
+		elemTerms = append(elemTerms, lifted.term)
+		elemAlgs = append(elemAlgs, lifted.alg)
+	}
+	sort := irSort(l.info.Types[e].Type)
+	return exprResult{
+		term: ir.MakeCtor("go:slice-literal", elemTerms, sort),
+		alg:  op("go:slice-literal", elemAlgs...),
+		sort: sort,
+	}, nil
 }
 
 func (l *lifter) liftTarget(expr ast.Expr) (any, error) {
