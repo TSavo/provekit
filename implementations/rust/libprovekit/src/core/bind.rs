@@ -4,9 +4,8 @@ use std::collections::{BTreeMap, BTreeSet};
 
 use provekit_canonicalizer::blake3_512_of;
 use provekit_ir_types::{
-    ExamManifestMemento, GapKind, IrFormula, IrTerm, OptionStatus, PromotionDecisionEnvelope,
-    PromotionDecisionHeader, PromotionDecisionMemento, PromotionDecisionMetadata, PromotionGate,
-    PromotionResult, ResolutionOption, ResolutionOptionKind, Sort, TransportGapMemento,
+    ExamManifestMemento, GapKind, IrFormula, IrTerm, OptionStatus, ResolutionOption,
+    ResolutionOptionKind, Sort, TransportGapMemento,
 };
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value as Json};
@@ -236,8 +235,6 @@ pub struct NamedTermDocument {
     #[serde(default, rename = "gapRecords", skip_serializing_if = "Vec::is_empty")]
     pub gap_records: Vec<Json>,
     pub kind: String,
-    #[serde(rename = "promotionDecisionMementos")]
-    pub promotion_decision_mementos: Vec<PromotionDecisionMemento>,
     #[serde(rename = "schemaVersion")]
     pub schema_version: String,
     #[serde(rename = "sourceLanguage")]
@@ -417,7 +414,6 @@ pub fn bind_term_document(
     let catalog = seed_catalog();
     let mut seen_names: BTreeSet<String> = BTreeSet::new();
     let mut terms = Vec::with_capacity(entries.len());
-    let mut decisions = Vec::new();
     let mut gap_records = Vec::new();
     let mut operation_namer = UnnamedConceptNamer::default();
     for (idx, entry) in entries.into_iter().enumerate() {
@@ -431,15 +427,8 @@ pub fn bind_term_document(
         };
         let site_memento_cid = site_cid(&entry, &name, &term_shape_cid)?;
         let witnesses = named_witnesses(&entry);
-        let promoted_cid = blake3_512_of(format!("provekit-bind/promoted/{name}").as_bytes());
         let named_term_tree =
             named_operation_tree(&entry.term_shape, &catalog, &mut operation_namer)?;
-        decisions.extend(promotion_decisions(
-            &term_shape_cid,
-            &promoted_cid,
-            &site_memento_cid,
-            &witnesses,
-        )?);
         if witnesses.is_empty() {
             gap_records.push(wp_rule_synthesis_gap_record(
                 &source_language,
@@ -494,7 +483,6 @@ pub fn bind_term_document(
         candidate_cluster_manifest,
         gap_records,
         kind: "named-term-document".to_string(),
-        promotion_decision_mementos: decisions,
         schema_version: "1".to_string(),
         source_language,
         terms,
@@ -1571,8 +1559,6 @@ fn document_metadata_value(named: &NamedTermDocument) -> Result<Json, BindError>
         "candidateClusterManifest": serde_json::to_value(&named.candidate_cluster_manifest)
             .map_err(|error| BindError::Failed(format!("serialize candidate cluster manifest: {error}")))?,
         "kind": named.kind.clone(),
-        "promotionDecisionMementos": serde_json::to_value(&named.promotion_decision_mementos)
-            .map_err(|error| BindError::Failed(format!("serialize promotion decisions: {error}")))?,
         "schemaVersion": named.schema_version.clone(),
         "sourceLanguage": named.source_language.clone(),
         "workspaceRoot": named.workspace_root.clone(),
@@ -1621,13 +1607,6 @@ fn named_term_document_from_op_tree(term: &Term) -> Result<NamedTermDocument, Bi
     let document = first.1.get("document").ok_or_else(|| {
         BindError::Failed("named-term citation missing document metadata".to_string())
     })?;
-    let promotion_decision_mementos = document
-        .get("promotionDecisionMementos")
-        .cloned()
-        .map(serde_json::from_value)
-        .transpose()
-        .map_err(|error| BindError::Failed(format!("parse promotion decisions: {error}")))?
-        .unwrap_or_default();
     let gap_records = document
         .get("gapRecords")
         .cloned()
@@ -1662,7 +1641,6 @@ fn named_term_document_from_op_tree(term: &Term) -> Result<NamedTermDocument, Bi
             .and_then(Json::as_str)
             .unwrap_or("named-term-document")
             .to_string(),
-        promotion_decision_mementos,
         schema_version: document
             .get("schemaVersion")
             .and_then(Json::as_str)
@@ -1730,64 +1708,6 @@ fn site_cid(_entry: &BindLiftEntry, name: &str, term_shape_cid: &str) -> Result<
         "termShapeCid": term_shape_cid,
     });
     crate::canonical::json_cid(&value).map_err(|e| BindError::Failed(e.to_string()))
-}
-
-fn promotion_decisions(
-    candidate_cid: &str,
-    promoted_cid: &str,
-    site_memento_cid: &str,
-    witnesses: &[NamedWitness],
-) -> Result<Vec<PromotionDecisionMemento>, BindError> {
-    witnesses
-        .iter()
-        .enumerate()
-        .map(|(idx, witness)| {
-            let evidence_cid = crate::canonical::json_cid(&json!({
-                "predicate": witness.predicate,
-                "predicateText": witness.predicate_text,
-                "role": witness.role,
-                "siteMementoCid": site_memento_cid,
-                "sourceKind": witness.source_kind,
-            }))
-            .map_err(|e| BindError::Failed(e.to_string()))?;
-            let mut decision = PromotionDecisionMemento {
-                envelope: PromotionDecisionEnvelope {
-                    declared_at: "2026-05-15T00:00:00.000Z".to_string(),
-                    signature: String::new(),
-                    signer: "builtin:provekit-bind".to_string(),
-                },
-                header: PromotionDecisionHeader {
-                    candidate_cid: candidate_cid.to_string(),
-                    cid: String::new(),
-                    decider_cid: "builtin:provekit-bind".to_string(),
-                    decision_payload: json!({
-                        "evidence_count": 1,
-                        "ordinal": idx,
-                        "result": "admitted"
-                    }),
-                    evidence_cids: vec![evidence_cid],
-                    gate: PromotionGate::Proof,
-                    kind: "promotion-decision".to_string(),
-                    policy_cid: "builtin:provekit-bind/default-policy".to_string(),
-                    promoted_cid: promoted_cid.to_string(),
-                    result: PromotionResult::Admitted,
-                    schema_version: "1".to_string(),
-                },
-                metadata: PromotionDecisionMetadata {
-                    counterexample_cids: None,
-                    note: Some("bind admitted lifted evidence into named term".to_string()),
-                    source_url: None,
-                },
-            };
-            decision.header.cid = decision
-                .recompute_header_cid()
-                .map_err(|err| BindError::Failed(err.to_string()))?;
-            decision
-                .validate()
-                .map_err(|err| BindError::Failed(err.to_string()))?;
-            Ok(decision)
-        })
-        .collect()
 }
 
 fn wp_rule_synthesis_gap_record(
@@ -2076,7 +1996,6 @@ mod tests {
         assert_eq!(named.kind, "named-term-document");
         assert_eq!(named.terms[0].concept_name, "concept:demo");
         assert_eq!(named.terms[0].function, "f");
-        assert_eq!(named.promotion_decision_mementos.len(), 1);
     }
 
     #[test]
@@ -2236,7 +2155,6 @@ mod tests {
                 candidate_cluster_manifest: CandidateClusterManifest::default(),
                 gap_records: vec![],
                 kind: "named-term-document".to_string(),
-                promotion_decision_mementos: vec![],
                 schema_version: "1".to_string(),
                 source_language: "rust".to_string(),
                 terms: vec![NamedTerm {
@@ -2280,7 +2198,6 @@ mod tests {
             candidate_cluster_manifest: CandidateClusterManifest::default(),
             gap_records: vec![],
             kind: "named-term-document".to_string(),
-            promotion_decision_mementos: vec![],
             schema_version: "1".to_string(),
             source_language: "rust".to_string(),
             terms: vec![NamedTerm {
