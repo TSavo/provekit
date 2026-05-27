@@ -745,7 +745,7 @@ fn mint_verification_witness(
     Ok(cid)
 }
 
-fn jcs_of_json(v: &Json) -> Result<String, String> {
+pub(crate) fn jcs_of_json(v: &Json) -> Result<String, String> {
     let canonical = json_to_canonical(v)?;
     Ok(encode_jcs(&canonical))
 }
