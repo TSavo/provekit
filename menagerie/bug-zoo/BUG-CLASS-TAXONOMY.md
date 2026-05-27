@@ -166,3 +166,34 @@ Determinism (10) first — most ProvekIt-native (content-addressing rests on it;
 checks constantly), then effect/purity (8), taint (9), lifetime (5), concurrency (7),
 ordering (6), shape/parse (3). Each new species: name the edge, pick >=2 domains, build the
 four states, pin the identical cross-domain edge CID.
+
+## THE ADMISSION CRITERION (primary — read before everything above)
+
+A bug earns a zoo species ONLY if it is **a bug for which a contract/unit-test was
+genuinely written, the test PASSED (green), the bug was still present, and it became
+visible only after lifting to ProofIR.** "A bug ProvekIt catches" is not enough — a bug
+a unit test would have caught adds nothing. The zoo is *only* the bugs that hide where
+tests structurally cannot look.
+
+**Why a written test passes while the bug lives (the mechanism = the whole model):**
+a unit test is **local** — it checks one unit at sample points. The bug is not in a unit;
+it is in the **composition edge** `post(producer) ⊬ pre(consumer)` — the SEAM between
+units. Each side passes its own test (producer produces what it produces; consumer handles
+what it's given); neither can see the seam **by construction**, because the edge only
+exists when you compose them, and no per-unit test composes. Lifting both contracts to
+ProofIR and composing makes that edge a first-class checkable object — so the missing
+implication finally shows.
+
+This IS the value proposition, stated honestly: **ProvekIt catches the seam bugs that pass
+every local test.** (cf. tonight's spine: implication is the composition operator; a bug is
+a missing edge; tests cover points, lifting covers the universal edge; the bug lives in the
+gap between point-coverage and the universal.)
+
+Consequences:
+- It sharpens `lab`: it must carry **passing tests**, not merely "compiles green." The
+  good-faith test that misses the bug is the point — without a green test present,
+  "ProvekIt found it" is unfalsifiable theater.
+- It sharpens `exhibit`: it is the **lift-and-compose** that surfaces the seam edge the
+  passing test could not reach.
+- It is the **admission filter above the (species × domains) matrix**: a candidate that a
+  unit test would catch is rejected, no matter how real the bug.
