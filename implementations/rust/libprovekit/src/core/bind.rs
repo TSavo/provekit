@@ -20,7 +20,6 @@ use super::types::{
 };
 
 const CONCEPT_BIND_RESULT: &str = "concept:bind-result";
-const CONCEPT_BIND_RESULT_CID: &str = "blake3-512:22dcd7895fd7abee9d9f34893b5ab9513b4801c0244a64e7a8c5180bba313f3b116d045b0aa3377f39bd892e020a1bd99d4bc60547b11fd7131fbe2f7e33dd75";
 const CONCEPT_OP_APPLICATION: &str = "concept:op-application";
 const CONCEPT_SEQ: &str = "concept:seq";
 
@@ -560,7 +559,12 @@ fn bind_payload_wire_named_term_document(named: &NamedTermDocument) -> NamedTerm
 }
 
 pub fn concept_bind_result_cid() -> Cid {
-    Cid::try_from(CONCEPT_BIND_RESULT_CID).expect("concept:bind-result CID is pinned")
+    // Computed from the pinned SHAPE, never a pinned hash. The address is
+    // whatever json_cid(grammar_op_shape) produces, by construction -- there is
+    // no magic-number literal to drift from its preimage.
+    ConceptOpCatalog
+        .cid(CONCEPT_BIND_RESULT)
+        .expect("concept:bind-result is a language primitive")
 }
 
 pub fn bind_result_payload(
