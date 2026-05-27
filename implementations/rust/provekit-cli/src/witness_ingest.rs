@@ -36,6 +36,10 @@ pub struct WitnessContents {
     pub sample_count: u64,
     /// The raw witness artifact, verbatim (any shape).
     pub measurements: Json,
+    /// When the observation was made (RFC3339), as reported by the observer/
+    /// runner. Part of the observation, not fabricated by the converter: the
+    /// same observation observed at the same time is the same witness.
+    pub observed_at: String,
     /// Observed result: "pass" | "fail" | "inconclusive".
     pub outcome: String,
 }
@@ -49,47 +53,37 @@ pub fn ingest_witness(
     contents: &WitnessContents,
     signer_seed: &[u8; 32],
 ) -> Result<WitnessMemento, String> {
-    let observed_at =
-        chrono::Utc::now().to_rfc3339_opts(chrono::SecondsFormat::Millis, true);
-
-    // The observation = WHAT is attested. The CID is its address; the
-    // attestation layer (signed_by, signature) is NOT part of the preimage.
-    let observation = json!({
-        "kind": "witness",
-        "schemaVersion": "1",
-        "witness_for": contents.witness_for,
-        "subject": contents.subject,
-        "fixture_state_cid": contents.fixture_state_cid,
-        "observed_at": observed_at,
-        "sample_count": contents.sample_count,
-        "measurements": contents.measurements,
-        "outcome": contents.outcome,
-    });
-    let observation_jcs = crate::cmd_verify::jcs_of_json(&observation)?;
-    let cid = blake3_512_of(observation_jcs.as_bytes());
-
-    // HOW it is attested: ed25519 over the WHAT's bytes. The mechanism is the
-    // attestor's choice, layered over the address, not baked into it.
     let signed_by = ed25519_pubkey_string(signer_seed);
-    let signature = ed25519_sign_string(signer_seed, observation_jcs.as_bytes());
 
-    let witness = WitnessMemento {
+    // Build the witness, then compute its CID exactly as validate() will: via
+    // recompute_cid, which addresses the observation and excludes the
+    // attestation layer (cid / signed_by / signature). Deriving the CID through
+    // the same function that checks it makes cid == recompute_cid true by
+    // construction -- no hand-rolled preimage that can drift from the canonical
+    // serialization.
+    let mut witness = WitnessMemento {
         kind: "witness".to_string(),
         schema_version: "1".to_string(),
         witness_for: contents.witness_for.clone(),
         subject: contents.subject.clone(),
         fixture_state_cid: contents.fixture_state_cid.clone(),
-        observed_at,
+        observed_at: contents.observed_at.clone(),
         sample_count: contents.sample_count,
         measurements: contents.measurements.clone(),
         outcome: contents.outcome.clone(),
         signed_by: Some(signed_by),
-        signature: Some(signature),
-        cid,
+        signature: None,
+        cid: String::new(),
     };
+    let cid = witness.recompute_cid().map_err(|e| e.to_string())?;
 
-    // The CID must address this exact content; validate() recomputes it over
-    // the observation (excluding the attestation layer) and rejects a mismatch.
+    // HOW it is attested: ed25519 over the address (the WHAT). The mechanism is
+    // the attestor's, layered over the CID, not baked into it.
+    let signature = ed25519_sign_string(signer_seed, cid.as_bytes());
+    witness.cid = cid;
+    witness.signature = Some(signature);
+
+    // cid == recompute_cid by construction; validate() also checks field shape.
     witness.validate().map_err(|e| e.to_string())?;
     Ok(witness)
 }
@@ -111,6 +105,7 @@ mod tests {
                 "stdout": "2+2=4",
                 "assertions": [{"name": "adds", "passed": true}]
             }),
+            observed_at: "2026-05-27T00:00:00.000Z".to_string(),
             outcome: "pass".to_string(),
         };
         let witness = ingest_witness(&contents, &[7u8; 32]).expect("ingest");
