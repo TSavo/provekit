@@ -24,7 +24,6 @@ provekit-ir-symbolic = { path = "../provekit-ir-symbolic" }
 provekit-verifier = { path = "../provekit-verifier" }
 provekit-lift = { path = "../provekit-lift" }
 provekit-linker = { path = "../provekit-linker" }
-provekit-mint-amp = { path = "../provekit-mint-amp" }
 provekit-self-contracts = { path = "../provekit-self-contracts" }
 libprovekit = { path = "../libprovekit" }
 provekit-ir-types = { path = "../provekit-ir-types" }
