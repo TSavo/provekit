@@ -157,7 +157,7 @@ public static class RpcServer
             {
                 ["kind"] = "ir-document",
                 ["ir"] = JsonSerializer.SerializeToNode(result.Declarations),
-                ["callEdges"] = new JsonArray(),
+                ["callEdges"] = JsonSerializer.SerializeToNode(result.CallEdges),
                 ["diagnostics"] = JsonSerializer.SerializeToNode(result.Diagnostics),
                 ["opacityReport"] = JsonSerializer.SerializeToNode(result.OpacityReport),
                 ["refusals"] = JsonSerializer.SerializeToNode(result.Refusals),

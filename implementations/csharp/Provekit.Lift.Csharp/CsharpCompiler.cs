@@ -59,6 +59,9 @@ public class CsharpCompiler
             case "csharp:return":
                 EmitReturn(args);
                 break;
+            case "csharp:throw":
+                EmitThrow(args);
+                break;
             case "csharp:break":
                 _lines.Add($"{Indent()}break;");
                 break;
@@ -163,6 +166,17 @@ public class CsharpCompiler
         if (args is null || args.Count < 1) return;
         var expr = EmitExpr(args[0]);
         _lines.Add($"{Indent()}return ({expr});");
+    }
+
+    private void EmitThrow(JsonArray? args)
+    {
+        if (args is null || args.Count < 1)
+        {
+            _lines.Add($"{Indent()}throw new System.Exception();");
+            return;
+        }
+        var expr = EmitExpr(args[0]);
+        _lines.Add($"{Indent()}throw ({expr});");
     }
 
     private void EmitDecl(JsonArray? args)
@@ -290,6 +304,8 @@ public class CsharpCompiler
                 return "";
             case "csharp:return":
                 return $"return ({EmitExpr(args?[0])})";
+            case "csharp:throw":
+                return $"throw ({EmitExpr(args?[0])})";
             case "csharp:while":
             case "csharp:for":
             case "csharp:foreach":

@@ -35,7 +35,10 @@ public class ContractEmitter
 
         var parameters = _method.ParameterList.Parameters;
         var formals = parameters.Select(p => p.Identifier.Text).ToList();
-        var formalSorts = parameters.Select(_ => PrimSort("Int")).ToList();
+        var formalSorts = parameters
+            .Select(p => SortFromType((_model.GetDeclaredSymbol(p) as IParameterSymbol)?.Type))
+            .ToList();
+        var returnSort = SortFromType((_model.GetDeclaredSymbol(_method) as IMethodSymbol)?.ReturnType);
 
         var line = _method.GetLocation().GetLineSpan().StartLinePosition.Line + 1;
 
@@ -46,7 +49,7 @@ public class ContractEmitter
             ["fnName"] = _method.Identifier.Text,
             ["formals"] = JsonSerializer.SerializeToNode(formals),
             ["formalSorts"] = JsonSerializer.SerializeToNode(formalSorts),
-            ["returnSort"] = PrimSort("Int"),
+            ["returnSort"] = returnSort,
             ["pre"] = TrueFormula(),
             ["post"] = EqFormula(VarTerm("return_value"), postValue),
             ["bodyCid"] = null,
@@ -77,6 +80,15 @@ public class ContractEmitter
                 if (ret.Expression is null) return Ctor("csharp:return", Unit());
                 var expr = EmitExpression(ret.Expression);
                 return Ctor("csharp:return", expr);
+            }
+
+            case ThrowStatementSyntax throwStmt:
+            {
+                AddPanicEffect();
+                var expr = throwStmt.Expression is not null
+                    ? EmitExpression(throwStmt.Expression)
+                    : Unit();
+                return Ctor("csharp:throw", expr);
             }
 
             case LocalDeclarationStatementSyntax local:
@@ -374,6 +386,26 @@ public class ContractEmitter
         ["kind"] = "primitive", ["name"] = name
     };
 
+    private static JsonObject SortFromType(ITypeSymbol? type)
+    {
+        if (type is null) return PrimSort("Int");
+        return type.SpecialType switch
+        {
+            SpecialType.System_Boolean => PrimSort("Bool"),
+            SpecialType.System_String => PrimSort("String"),
+            SpecialType.System_Byte
+                or SpecialType.System_SByte
+                or SpecialType.System_Int16
+                or SpecialType.System_UInt16
+                or SpecialType.System_Int32
+                or SpecialType.System_UInt32
+                or SpecialType.System_Int64
+                or SpecialType.System_UInt64 => PrimSort("Int"),
+            SpecialType.System_Void => PrimSort("Unit"),
+            _ => PrimSort("Ref"),
+        };
+    }
+
     private static JsonObject TrueFormula() => new()
     {
         ["kind"] = "atomic", ["name"] = "true", ["args"] = new JsonArray()
@@ -406,6 +438,12 @@ public class ContractEmitter
         var cid = $"blake3-512:{hex}";
         if (_seenEffects.Add($"loop:{cid}"))
             _effects.Add(new JsonObject { ["kind"] = "opaque_loop", ["loopCid"] = cid });
+    }
+
+    private void AddPanicEffect()
+    {
+        if (_seenEffects.Add("panics"))
+            _effects.Add(new JsonObject { ["kind"] = "panics" });
     }
 
     private static List<JsonObject> SortEffects(List<JsonObject> effects)

@@ -149,4 +149,114 @@ static int Mul(int x, int y) { return x * y; }
         Assert.NotEmpty(result.Refusals);
         Assert.Equal("unsupported-return-sort", result.Refusals[0].Kind);
     }
+
+    [Fact]
+    public void GuardThrowIsLiftedAsMethodPrecondition()
+    {
+        var lifter = new CsharpLifter();
+        var result = new LiftResult();
+        var source = @"
+using System;
+class C {
+static int Inner(int y) {
+    if (y < 5) throw new ArgumentOutOfRangeException(nameof(y));
+    return y;
+}
+}";
+
+        lifter.LiftSource(source, "test.cs", result);
+
+        var contract = Assert.Single(result.Declarations,
+            d => d["fnName"]?.GetValue<string>() == "M:C.Inner(System.Int32)");
+        var pre = contract["pre"]!;
+        var preJson = pre.ToJsonString();
+        AssertGtePredicate(preJson);
+        Assert.Contains("\"name\":\"y\"", preJson);
+        Assert.Contains("\"value\":5", preJson);
+    }
+
+    [Fact]
+    public void ComposeCallsitePreSubstitutesFormalToActual()
+    {
+        var lifter = new CsharpLifter();
+        var result = new LiftResult();
+        var source = @"
+using System;
+class C {
+static int Inner(int y) {
+    if (y < 5) throw new ArgumentOutOfRangeException(nameof(y));
+    return y;
+}
+static int Outer(int x) {
+    return Inner(x);
+}
+}";
+
+        lifter.LiftSource(source, "test.cs", result);
+
+        var outer = Assert.Single(result.Declarations,
+            d => d["fnName"]?.GetValue<string>() == "M:C.Outer(System.Int32)");
+        var outerPreJson = outer["pre"]!.ToJsonString();
+        AssertGtePredicate(outerPreJson);
+        Assert.Contains("\"name\":\"x\"", outerPreJson);
+        Assert.Contains("\"value\":5", outerPreJson);
+        Assert.DoesNotContain("\"name\":\"y\"", outerPreJson);
+
+        var callsite = Assert.Single(result.Declarations,
+            d => d["fnName"]?.GetValue<string>()?.Contains("::callsite-pre@", StringComparison.Ordinal) == true);
+        var callsitePreJson = callsite["pre"]!.ToJsonString();
+        Assert.Contains("\"kind\":\"forall\"", callsitePreJson);
+        Assert.Contains("\"kind\":\"implies\"", callsitePreJson);
+        Assert.Contains("\"name\":\"x\"", callsitePreJson);
+        Assert.DoesNotContain("\"name\":\"y\"", callsitePreJson);
+
+        Assert.Single(result.CallEdges);
+        Assert.Equal("call-edge", result.CallEdges[0]["kind"]?.GetValue<string>());
+        Assert.Equal("M:C.Inner(System.Int32)", result.CallEdges[0]["targetSymbol"]?.GetValue<string>());
+    }
+
+    [Fact]
+    public void ProofEnvelopeSignSourceEmitsGuardedCallsiteImplication()
+    {
+        var lifter = new CsharpLifter();
+        var result = new LiftResult();
+        var path = "implementations/csharp/Provekit.ProofEnvelope/Sign.cs";
+        var source = File.ReadAllText(FindRepoFile(path));
+
+        lifter.LiftSource(source, path, result);
+
+        var callsite = Assert.Single(result.Declarations,
+            d =>
+            {
+                var name = d["fnName"]?.GetValue<string>() ?? "";
+                return name.Contains("Ed25519SignString", StringComparison.Ordinal)
+                       && name.Contains("Ed25519SignWithSeed", StringComparison.Ordinal)
+                       && name.Contains("::callsite-pre@", StringComparison.Ordinal);
+            });
+        var preJson = callsite["pre"]!.ToJsonString();
+        Assert.Contains("\"kind\":\"forall\"", preJson);
+        Assert.Contains("\"kind\":\"implies\"", preJson);
+        Assert.Contains("\"value\":32", preJson);
+        Assert.Contains("\"value\":\"Length\"", preJson);
+    }
+
+    private static string FindRepoFile(string relativePath)
+    {
+        var dir = new DirectoryInfo(Directory.GetCurrentDirectory());
+        while (dir is not null)
+        {
+            var candidate = Path.Combine(dir.FullName, relativePath);
+            if (File.Exists(candidate)) return candidate;
+            dir = dir.Parent;
+        }
+        throw new FileNotFoundException($"Could not locate {relativePath}");
+    }
+
+    private static void AssertGtePredicate(string json)
+    {
+        Assert.True(
+            json.Contains("\"name\":\"≥\"", StringComparison.Ordinal)
+            || json.Contains("\"name\":\"\\u2265\"", StringComparison.Ordinal),
+            $"expected ≥ predicate in {json}");
+    }
 }
