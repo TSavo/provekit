@@ -233,6 +233,31 @@ impl Solver for LeanSubprocessSolver {
         }
 
         let project_dir = self.project_dir(&tmp_dir);
+
+        // Degrade gracefully when the configured lake project is not
+        // provisioned. `lake env lean` runs with `current_dir(project_dir)`;
+        // if that directory is absent the spawn fails with a bare ENOENT that
+        // misleadingly reads "spawn lake: No such file or directory". Detect
+        // it here and return a clear, actionable Undecidable instead: the lean
+        // seat is wired but its mathlib project has not been built. This keeps
+        // first-wins working (the seat lights up the moment the project exists)
+        // without crashing or emitting a confusing error.
+        if !project_dir.exists() {
+            let _ = std::fs::remove_dir_all(&tmp_dir);
+            return SolveResult {
+                verdict: ObligationVerdict::Undecidable,
+                solver_name: self.name.clone(),
+                solver_version: self.version.clone(),
+                error: format!(
+                    "lean: lake project {} is not provisioned (run `lake exe cache get` there, or unset lake_project to run lean standalone)",
+                    project_dir.display()
+                ),
+                solver_stdout: String::new(),
+                wall_clock: started.elapsed(),
+                timed_out: false,
+            };
+        }
+
         let lean_version = self.lean_version(&project_dir);
         let mathlib_commit = Self::mathlib_commit_from_project(&project_dir);
 
