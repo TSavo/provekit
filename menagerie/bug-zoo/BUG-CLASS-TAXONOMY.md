@@ -220,3 +220,26 @@ the *natural* one whose blindness to the seam is **structural, not contrived**. 
 `parse(serialize(x)) == x` is THE test anyone writes for a serializer, and it is blind to
 byte-order by construction.) Gold standard for picking a species: choose the bug whose
 idiomatic test is *architecturally incapable* of seeing the edge.
+
+## THE PITCH (what the whole thing is for)
+
+**Add correctness to the code you already have. No change needed.**
+
+It works for exactly one reason: the obligations are ALREADY in your code — your tests, your
+types, your `assert`s, your `@NotNull`s, your schemas. ProvekIt **lifts** them; it never asks
+you to **author** anything. This is the inversion (formalize the obligation, never the subject)
+cashed out at the value-proposition level: don't touch your code; we read what's there, compose
+it, and catch the seam bugs your local tests can't see.
+
+Precision this forces on the template: `exhibit` does NOT *add* a contract surface — it **lifts
+the surface the code already carries**. The `lab → exhibit` transition is "same source, now
+lifted." That is "no change needed" made literal: between a shipping bug and a caught bug, the
+only thing that changed is that you pointed ProvekIt at it.
+
+The two efforts unify under this pitch:
+- **Eliminating the `.invariant` DSL** makes the pitch TRUE: a DSL is "change your code to add
+  our contracts" — the opposite of the pitch. Lifting from native is what lets us say "no change."
+- **The bug zoo** makes the pitch FALSIFIABLE: each species is a runnable demo — ordinary code +
+  its ordinary passing test → lift, zero edits → ProvekIt catches the seam. The green test sits
+  right next to the bug it couldn't see. That is also why `lab`'s test MUST be idiomatic: the
+  demo only lands if it's the test the customer already wrote.
