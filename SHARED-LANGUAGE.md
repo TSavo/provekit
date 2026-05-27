@@ -153,6 +153,38 @@ software is a graph of contracts whose every composition edge discharges, rooted
 This is why the promotion/consensus apparatus is severable cruft but the composition machinery
 is not: composition is how contracts compose, which is how contradiction is solved.
 
+## Where composition lives — per-language extraction, language-agnostic discharge
+
+The rust CLI must stay **language-agnostic** yet compose **every** language's call graph. The
+resolution splits call-edge *extraction* (per-lifter, language-specific) from call-edge
+*composition + discharge* (rust CLI, language-blind).
+
+**Every lifter must express, in universal ProofIR (they do today):**
+1. The contract as **pre/post over the operation's symbol** — the typed interface, so the
+   substrate can align one op's output to the next op's input. *Java today:*
+   `ContractDecl { symbol, preconditions, postconditions, invariants }` →
+   `{"precondition": …, "postcondition": …}` (`provekit-lift-java-core/ContractDecl.java`).
+2. The **call-edges of its own language's call graph** — because only the java lifter can parse
+   java, only the python lifter python. *Java today:* `ProductionWalk` finds each callee's
+   callsites in each caller and, per hit, `substituteVar(callee.precondition,
+   callee.formals[i], actualArg[i])` — i.e. `post → pre` **with variables aligned to the actual
+   call** — emitting the implication (`provekit-lift-java-core/ProductionWalk.java`,
+   `provekit-lift-java-junit`).
+
+Call-edge **extraction is necessarily per-lifter** (it requires parsing the source language's
+AST) and **all lifters must do it.** A lifter that emits a bare proposition with no interface
+and no edges has produced a contract that cannot compose — composability is the whole game.
+
+**The rust CLI stays language-agnostic** because all of the above crosses the RPC line as
+**uniform ProofIR** — contracts + `post → pre` implications. The CLI composes and discharges
+the graph (`provekit-linker`: `bindings = f(contracts ∪ call-edges)`; `libprovekit::compose`;
+the solver) without ever knowing the source language. It "deals with all languages' call
+edges" precisely because, by the time they reach it, they are no longer java/python/rust ASTs
+but the one content-addressed implication form. **Language-specific parsing stops at the
+lifter; everything above the RPC line is the universal graph of edges.** This is the founding
+rule cashed out: *computation over data belongs in rust, post-RPC* — the lifter extracts
+(language-bound), the CLI computes (language-blind).
+
 ## Kit
 
 A kit is a **language-specific implementation of these ideas**. The **Java kit**:
