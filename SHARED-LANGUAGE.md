@@ -54,6 +54,49 @@ A contract is a **ProofIR first-order logic**. It's **tied to a specific sugar**
 - So: **library authors declare "sugar x gets contract y."**
 - Users get **red squigglies when they violate a contract at compile time.**
 
+**Why it's tied to the sugar (the contractual reading).** A contract is *contractual*:
+a **binding, dischargeable obligation**. `verify` **discharges** it (satisfies the
+obligation); the solver is the discharge engine. Sugar is *that which is under contract* —
+the subject the obligation is about. So sugar and contract are not independent payloads;
+they are a **bound pair**: sugar is the subject, the contract is the encumbrance it carries.
+That is **why** they co-travel — `lift` produces both, `lower` carries both, the contract
+propagates with the sugar to the boundary. It isn't a mechanism choice: **sugar is never
+naked.** A sugar without its contract is just a call; the contract is the lien that makes it
+accountable, and you can't take the subject free of the obligation. A **boundary is where a
+contracted sugar comes due** — which is exactly where the squigglies fire.
+
+This also sharpens [concept equivalence](#concept-equivalence--vendors-call): a concept
+clusters sugars; the federation question is just *"are these sugars under the **same**
+contract?"* — bearing the same obligation. The vendor rules whether two encumbrances are
+one encumbrance.
+
+## Sugar
+
+Sugar is **that which is under contract** — the arbitrary subject an obligation rides on.
+The asymmetry with the contract is the load-bearing fact of the whole substrate:
+
+- **ProofIR (the contract) is uniform.** *Always* first-order logic. One form in every
+  domain — finite, dischargeable, **federatable across domains**, composing in the same
+  solver whether it governs crypto or a tax rule. The logic never varies.
+- **Sugar is unconstrained.** It is *literally anything*: a function, a poem, a Wikipedia
+  article, an entire Rust codebase. Content-addressed but **uninterpreted** — the carrier
+  has no required shape because the world has no required shape.
+
+What the separation buys: **you can place a dischargeable obligation on something you can
+never formalize.** ProvekIt models *nothing* about the subject — the sugar stays itself,
+opaque — and the only formal object is the obligation on it. **Law over subject.** Federation
+across domains then falls out for free: because every contract is FOL, the sugar's wildness
+never touches the logic; the domain lives entirely in the sugar and the sugar never enters
+the solver. The logic layer is **domain-blind by construction.**
+
+This is the deepest reason there is **no bespoke contract language** (see
+[`project_provekit_no_bespoke_contract_language`]): you were never meant to formalize the
+subject. `.invariant` tried to author the sugar into a formal intermediate. The truth is the
+inverse — leave the subject arbitrary, lift only the obligation, and the one formal
+vocabulary (first-order logic) is **universal**: the same for the poem and the kernel. No new
+language is possible or needed. **The substrate formalizes nothing about the world and can
+still prove things about all of it.**
+
 ## Kit
 
 A kit is a **language-specific implementation of these ideas**. The **Java kit**:
