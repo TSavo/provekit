@@ -23,7 +23,8 @@
 // catalog CID + determinism status.
 
 import { mkdirSync, writeFileSync, rmSync } from "node:fs";
-import { join, resolve } from "node:path";
+import { dirname, join, resolve } from "node:path";
+import { fileURLToPath } from "node:url";
 
 import { contractCidFromArgs, computeContractSetCid } from "../claimEnvelope/cid.js";
 import {
@@ -37,6 +38,7 @@ import {
 
 export const PRODUCED_BY = "@provekit/ts-self-contracts@1.0";
 export const DECLARED_AT = "2026-04-30T18:00:00.000Z";
+const KIT_ROOT = resolve(dirname(fileURLToPath(import.meta.url)), "../..");
 
 export interface NativeSelfContractSource {
   label: string;
@@ -46,11 +48,11 @@ export interface NativeSelfContractSource {
 const SELF_CONTRACT_SOURCES: NativeSelfContractSource[] = [
   {
     label: "cross-kit-bridges",
-    path: "implementations/typescript/src/lift/cross-kit-bridges.self-contracts.test.ts",
+    path: "src/lift/cross-kit-bridges.self-contracts.test.ts",
   },
   {
     label: "typescript-kit",
-    path: "implementations/typescript/src/self-contracts/typescript-kit.self-contracts.test.ts",
+    path: "src/self-contracts/typescript-kit.self-contracts.test.ts",
   },
 ];
 
@@ -63,7 +65,7 @@ interface LiftedSource {
 function liftAllNativeSelfContracts(): LiftedSource[] {
   const lifted: LiftedSource[] = [];
   for (const source of SELF_CONTRACT_SOURCES) {
-    const report = liftPath(resolve(source.path));
+    const report = liftPath(resolve(KIT_ROOT, source.path));
     const warnings = adapterWarnings(report);
     if (report.parseErrors.length > 0) {
       const first = report.parseErrors[0]!;
