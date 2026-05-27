@@ -1,21 +1,20 @@
 {
   "schemaVersion": "1",
   "bindingHash": "cf85dec3d6aaee8e",
-  "propertyHash": "a0761924418042cd",
+  "propertyHash": "blake3-512:56b208ef6adcd5cc7405226e52183687455d26edede0d0dc7a4f7484028ae632df5a27ebd6c9610dd0a299c4a8c287796a5d88fd83ce781fbf1d9099a1d0a985",
   "verdict": "holds",
   "producedBy": "rust-kit-demo@0.0.1",
   "producedAt": "1970-01-01T00:00:00.000Z",
   "inputCids": [
-    "955a580b755c85a2fb8915ec24f90456"
+    "blake3-512:fbc5ffc5715963df72c39a2ec489bcd1f3e25982a79ca169cffce20364628e612c63c6d7db420bf7be20f543569b18ededac3bd07e45152c1c106c6d1c157d88"
   ],
   "evidence": {
     "kind": "legacy-witness",
-    "schema": "0000000000000000b0000000000000b0",
     "body": {
-      "rawWitness": "{\"kind\":\"forall\",\"sort\":{\"kind\":\"primitive\",\"name\":\"Int\"},\"predicate\":{\"kind\":\"lambda\",\"varName\":\"_x4\",\"sort\":{\"kind\":\"primitive\",\"name\":\"Int\"},\"body\":{\"kind\":\"forall\",\"sort\":{\"kind\":\"primitive\",\"name\":\"Int\"},\"predicate\":{\"kind\":\"lambda\",\"varName\":\"_x5\",\"sort\":{\"kind\":\"primitive\",\"name\":\"Int\"},\"body\":{\"kind\":\"implies\",\"antecedent\":{\"kind\":\"atomic\",\"predicate\":\"≠\",\"args\":[{\"kind\":\"var\",\"name\":\"_x5\",\"sort\":{\"kind\":\"primitive\",\"name\":\"Int\"}},{\"kind\":\"const\",\"value\":0,\"sort\":{\"kind\":\"primitive\",\"name\":\"Int\"}}]},\"consequent\":{\"kind\":\"atomic\",\"predicate\":\"is-defined\",\"args\":[{\"kind\":\"ctor\",\"name\":\"safe_divide\",\"args\":[{\"kind\":\"var\",\"name\":\"_x4\",\"sort\":{\"kind\":\"primitive\",\"name\":\"Int\"}},{\"kind\":\"var\",\"name\":\"_x5\",\"sort\":{\"kind\":\"primitive\",\"name\":\"Int\"}}],\"sort\":{\"kind\":\"primitive\",\"name\":\"Int\"}}]}}}}}}",
+      "rawWitness": "{\"kind\":\"forall\",\"name\":\"_x4\",\"sort\":{\"kind\":\"primitive\",\"name\":\"Int\"},\"body\":{\"kind\":\"forall\",\"name\":\"_x5\",\"sort\":{\"kind\":\"primitive\",\"name\":\"Int\"},\"body\":{\"kind\":\"implies\",\"operands\":[{\"kind\":\"atomic\",\"name\":\"≠\",\"args\":[{\"kind\":\"var\",\"name\":\"_x5\"},{\"kind\":\"const\",\"value\":0,\"sort\":{\"kind\":\"primitive\",\"name\":\"Int\"}}]},{\"kind\":\"atomic\",\"name\":\"is-defined\",\"args\":[{\"kind\":\"ctor\",\"name\":\"safe_divide\",\"args\":[{\"kind\":\"var\",\"name\":\"_x4\"},{\"kind\":\"var\",\"name\":\"_x5\"}]}]}]}}}",
       "legacyProducerId": "rust-kit-demo@0.0.1"
     }
   },
-  "producerSignature": "gTpF4l2clHg7y6eX/4vYvg+U1qpDHmmANhAgqlJQATABsFWRvxK53o2TmGtMpQ+DompzvTF9+m88qu/ktfg1AA==",
-  "cid": "ab31be903137674318aba1ba41346768"
+  "producerSignature": "ed25519:Ks++hfD/TJckC5LivTtunaBI3t5NOfgaf+N1CSaFp/E/ZHtyi8bgIBdzEzQ2h+B97PJnn+1htWjst3ayhPnzBQ==",
+  "cid": "blake3-512:34eadc17d43f76cba095d1bbc82a107141fb96c2672f9f5de9b341349a85dcb2647a673abb79786da7942a9bf604a9fc1cfc660b2edafb3dfc71107a14f61e39"
 }

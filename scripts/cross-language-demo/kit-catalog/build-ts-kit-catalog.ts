@@ -42,13 +42,13 @@ import { writeFileSync, mkdirSync, existsSync } from "node:fs";
 import { join, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
 import { createHash } from "node:crypto";
-import { generateKeypair } from "../../../src/producerKeys/index.js";
+import { generateKeypair } from "../../../implementations/typescript/src/producerKeys/index.js";
 import {
   mintBridge,
   mintMemento,
   VARIANT_SCHEMA_CIDS,
-} from "../../../src/claimEnvelope/index.js";
-import type { ClaimEnvelope } from "../../../src/claimEnvelope/types.js";
+} from "../../../implementations/typescript/src/claimEnvelope/index.js";
+import type { ClaimEnvelope } from "../../../implementations/typescript/src/claimEnvelope/types.js";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const OUTPUT_DIR = join(__dirname, "..", "..", "output", "ts-kit-catalog");

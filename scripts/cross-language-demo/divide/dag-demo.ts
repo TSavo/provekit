@@ -7,10 +7,10 @@
  * What this script demonstrates:
  * 1. The library's contract has a propertyHash H_divide. The hash is
  *    derived from canonicalizing the IR formula representing the
- *    contract: independent of the host language the contract was
+ *    native-source contract: independent of the host language the contract was
  *    authored in.
- * 2. Each consumer's invariant file describes its OWN code's behavior.
- *    Each consumer's invariant has its own propertyHash. Each consumer's
+ * 2. Each consumer's native wrapper describes its OWN code's behavior.
+ *    Each consumer's lifted contract has its own propertyHash. Each consumer's
  *    inputCids INCLUDE H_divide.
  * 3. A composite root memento composes all four consumers' mementos.
  *    The DAG has one shared leaf (H_divide) and four branches (one per
@@ -23,7 +23,7 @@
  * Rust / Go / C++ kits don't yet exist as code. For each non-TS
  * consumer, this script hand-constructs the equivalent IrFormula in
  * TypeScript: representing what the corresponding kit's lifter would
- * produce given the surface form in `<consumer>/usage.invariant.<lang>.example`.
+ * produce given the native source form in `<consumer>/usage.<lang>.example`.
  *
  * The IrFormula is the SAME shape across all four. The canonicalizer
  * is the SAME. The propertyHash is byte-identical. That is the
@@ -39,16 +39,16 @@ import {
   implies,
   type IrFormula,
   type IrTerm,
-} from "../../../src/ir/index.js";
-import { propertyHashFromFormula } from "../../../src/canonicalizer/index.js";
-import { generateKeypair, signMemento } from "../../../src/producerKeys/index.js";
+} from "../../../implementations/typescript/src/ir/index.js";
+import { propertyHashFromFormula } from "../../../implementations/typescript/src/canonicalizer/index.js";
+import { generateKeypair } from "../../../implementations/typescript/src/producerKeys/index.js";
 import {
   signEnvelope,
   computeEnvelopeCid,
   verifyEnvelopeSignature,
   VARIANT_SCHEMA_CIDS,
-} from "../../../src/claimEnvelope/index.js";
-import type { ClaimEnvelope } from "../../../src/claimEnvelope/types.js";
+} from "../../../implementations/typescript/src/claimEnvelope/index.js";
+import type { ClaimEnvelope } from "../../../implementations/typescript/src/claimEnvelope/types.js";
 import { createHash } from "node:crypto";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
@@ -72,8 +72,8 @@ function buildLibraryContract(): IrFormula {
   return forAll(Int, (n: IrTerm) =>
     forAll(Int, (d: IrTerm) =>
       implies(
-        { kind: "atomic", predicate: "≠", args: [d, { kind: "const", value: 0, sort: { kind: "primitive", name: "Int" } }] },
-        { kind: "atomic", predicate: "isFinite", args: [{ kind: "ctor", name: "divide", args: [n, d], sort: { kind: "primitive", name: "Int" } }] },
+        { kind: "atomic", name: "≠", args: [d, { kind: "const", value: 0, sort: Int }] },
+        { kind: "atomic", name: "isFinite", args: [{ kind: "ctor", name: "divide", args: [n, d] }] },
       ),
     ),
   );
@@ -82,22 +82,22 @@ function buildLibraryContract(): IrFormula {
 // ---------------------------------------------------------------------------
 // CONSUMER INVARIANTS
 //
-// Each consumer's invariant says "my wrapper guards d != 0 before calling
+// Each consumer's lifted source contract says "my wrapper guards d != 0 before calling
 // the library." The wrapper's function name differs per language
 // (safeDivide / safe_divide / SafeDivide); the FOL structure is identical.
 //
-// In a real cross-language deployment, each kit's lifter produces THIS
-// IrFormula for its respective `usage.invariant.<lang>` file. Here we
+// In a real cross-language deployment, each kit's native-source lifter produces THIS
+// IrFormula for its respective `usage.<lang>` file. Here we
 // hand-construct each one to demonstrate that the canonical form is
 // language-independent.
 // ---------------------------------------------------------------------------
 
-function buildConsumerInvariant(wrapperName: string): IrFormula {
+function buildConsumerContract(wrapperName: string): IrFormula {
   return forAll(Int, (n: IrTerm) =>
     forAll(Int, (d: IrTerm) =>
       implies(
-        { kind: "atomic", predicate: "≠", args: [d, { kind: "const", value: 0, sort: { kind: "primitive", name: "Int" } }] },
-        { kind: "atomic", predicate: "is-defined", args: [{ kind: "ctor", name: wrapperName, args: [n, d], sort: { kind: "primitive", name: "Int" } }] },
+        { kind: "atomic", name: "≠", args: [d, { kind: "const", value: 0, sort: Int }] },
+        { kind: "atomic", name: "is-defined", args: [{ kind: "ctor", name: wrapperName, args: [n, d] }] },
       ),
     ),
   );
@@ -183,7 +183,7 @@ const libraryEnvelope = mintMemento(
 console.log(`  cid:          ${libraryEnvelope.cid}`);
 console.log();
 
-// 2. Each consumer's invariant: same structural form, language-specific
+// 2. Each consumer's native source contract: same structural form, language-specific
 //    wrapper name. The canonical FOL is identical; the propertyHash is
 //    derived from the canonical FOL; therefore the propertyHash is the
 //    same across all four consumers IF they describe the same contract.
@@ -196,12 +196,12 @@ const CONSUMERS = [
   { lang: "cpp",  wrapperName: "safe_divide",  producerId: "cpp-kit-demo@0.0.1" },
 ];
 
-console.log("Step 2: Four consumers, four invariants: different surfaces, same FOL structure");
+console.log("Step 2: Four consumers, four native source contracts: different surfaces, same FOL structure");
 
 const consumerEnvelopes: ClaimEnvelope[] = [];
 for (const consumer of CONSUMERS) {
-  const invariant = buildConsumerInvariant(consumer.wrapperName);
-  const propertyHash = propertyHashFromFormula(invariant);
+  const contract = buildConsumerContract(consumer.wrapperName);
+  const propertyHash = propertyHashFromFormula(contract);
   const bindingHash = hash16(`consumer:${consumer.lang}:${consumer.wrapperName}`);
 
   const env = mintMemento(
@@ -210,7 +210,7 @@ for (const consumer of CONSUMERS) {
       propertyHash,
       producedBy: consumer.producerId,
       inputCids: [libraryEnvelope.cid],
-      rawWitness: JSON.stringify(invariant),
+      rawWitness: JSON.stringify(contract),
     }),
     keypair,
   );

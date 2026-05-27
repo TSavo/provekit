@@ -8,12 +8,11 @@
   "inputCids": [],
   "evidence": {
     "kind": "legacy-witness",
-    "schema": "0000000000000000b0000000000000b0",
     "body": {
       "rawWitness": "{\"chip\":\"Intel i7-13700K\",\"verifiedSubset\":\"IEEE 754 binary64 add/sub/mul/div\",\"methodology\":\"TCAD simulation + Forte formal verification\"}",
       "legacyProducerId": "intel-formal-verification@2024.1"
     }
   },
-  "producerSignature": "UDVqXCimiFmRyr+vIh00Ggv6zykgoIVs0fvbIhnPws/RW5hx/66eH3LIw9F4b52fvZS1N7QAqptHYPLNN8s9Bw==",
-  "cid": "ce358633fac81409523d9fce0294d4e4"
+  "producerSignature": "ed25519:WLIipqKZsoC25Pqw8w/10vakSrjqo0RLo2/ZLwBvBp/f0Jdvk/bVYDuDe7tyCbOgfAUJ4WlUUQHkNp/lCW/mBQ==",
+  "cid": "blake3-512:55f2512c8a3031fe4d0f306ad0ac4f274a6358a429aba1d6c5bd5c30320674ec5452951995b3157f0f74cd94f8528fea949628f6f94b30b4bf13e518fb81093b"
 }

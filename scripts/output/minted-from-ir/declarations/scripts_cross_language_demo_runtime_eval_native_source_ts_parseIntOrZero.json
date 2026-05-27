@@ -1,0 +1,18 @@
+{
+  "schemaVersion": "1",
+  "bindingHash": "a3c22898219a9f7f",
+  "propertyHash": "blake3-512:888af4e35f2befc56690cdd28a77593a1c849fcc88c59dabb81e2249d8687e6473e0a7dbba477d5b737a6003701b25ceef386260af8a5f7b9177d4e5c60c7a49",
+  "verdict": "holds",
+  "producedBy": "ts-kit@1.0",
+  "producedAt": "1970-01-01T00:00:00.000Z",
+  "inputCids": [],
+  "evidence": {
+    "kind": "legacy-witness",
+    "body": {
+      "rawWitness": "{\"schemaVersion\":\"1\",\"kind\":\"function-contract\",\"fnName\":\"scripts/cross-language-demo/runtime-eval/native-source.ts:parseIntOrZero\",\"formals\":[\"input\"],\"formalSorts\":[{\"kind\":\"primitive\",\"name\":\"String\"}],\"returnSort\":{\"kind\":\"primitive\",\"name\":\"Number\"},\"pre\":{\"kind\":\"atomic\",\"name\":\"true\",\"args\":[]},\"post\":{\"kind\":\"atomic\",\"name\":\"=\",\"args\":[{\"kind\":\"var\",\"name\":\"return_value\"},{\"kind\":\"ctor\",\"name\":\"ts:seq\",\"args\":[{\"kind\":\"ctor\",\"name\":\"ts:seq\",\"args\":[{\"kind\":\"ctor\",\"name\":\"ts:decl\",\"args\":[{\"kind\":\"const\",\"value\":\"parsed\",\"sort\":{\"kind\":\"primitive\",\"name\":\"String\"}},{\"kind\":\"ctor\",\"name\":\"ts:call\",\"args\":[{\"kind\":\"ctor\",\"name\":\"ts:member\",\"args\":[{\"kind\":\"var\",\"name\":\"Number\"},{\"kind\":\"const\",\"value\":\"parseInt\",\"sort\":{\"kind\":\"primitive\",\"name\":\"String\"}}]},{\"kind\":\"ctor\",\"name\":\"ts:args\",\"args\":[{\"kind\":\"var\",\"name\":\"input\"},{\"kind\":\"const\",\"value\":10,\"sort\":{\"kind\":\"primitive\",\"name\":\"Number\"}}]}]}]}]},{\"kind\":\"ctor\",\"name\":\"ts:if\",\"args\":[{\"kind\":\"ctor\",\"name\":\"ts:call\",\"args\":[{\"kind\":\"ctor\",\"name\":\"ts:member\",\"args\":[{\"kind\":\"var\",\"name\":\"Number\"},{\"kind\":\"const\",\"value\":\"isNaN\",\"sort\":{\"kind\":\"primitive\",\"name\":\"String\"}}]},{\"kind\":\"ctor\",\"name\":\"ts:args\",\"args\":[{\"kind\":\"var\",\"name\":\"parsed\"}]}]},{\"kind\":\"ctor\",\"name\":\"ts:seq\",\"args\":[{\"kind\":\"ctor\",\"name\":\"ts:return\",\"args\":[{\"kind\":\"const\",\"value\":0,\"sort\":{\"kind\":\"primitive\",\"name\":\"Number\"}}]}]},{\"kind\":\"ctor\",\"name\":\"ts:seq\",\"args\":[]}]},{\"kind\":\"ctor\",\"name\":\"ts:return\",\"args\":[{\"kind\":\"var\",\"name\":\"parsed\"}]}]}]},\"bodyCid\":null,\"effects\":[{\"kind\":\"unresolved_call\",\"name\":\"Number.isNaN\"},{\"kind\":\"unresolved_call\",\"name\":\"Number.parseInt\"}],\"locus\":{\"file\":\"scripts/cross-language-demo/runtime-eval/native-source.ts\",\"line\":9,\"col\":1},\"autoMintedMementos\":[]}",
+      "legacyProducerId": "ts-kit@1.0"
+    }
+  },
+  "producerSignature": "ed25519:C0M/L0LQFGrcqBB0YOyI0G8c9tBaa+sIrekHWYYx05Xktv7FwQjuEAreLdqDBTaqiaJo9+0NmQ3dnngazpM8Dg==",
+  "cid": "blake3-512:58e1fb6475bb32abd2a71d4810d577de1d8df6685148c401f1023ead1e9942a3d17d718e59aed69bf16040213f4b21ecfc67fc1532df13917c80d4e5a1bf87b3"
+}

@@ -1,21 +1,20 @@
 {
   "schemaVersion": "1",
   "bindingHash": "524e51d5dffd38aa",
-  "propertyHash": "3ee1b732d6e26169",
+  "propertyHash": "blake3-512:147d576e5d4413e8ce2acaddcbc9fb37f33e2126f3329c60f58416defddfa507eab2b95c44455a9c801ee17db161cf164638754d64a53207431eeef7d6cb38f0",
   "verdict": "holds",
   "producedBy": "ts-kit-demo@0.0.1",
   "producedAt": "1970-01-01T00:00:00.000Z",
   "inputCids": [
-    "955a580b755c85a2fb8915ec24f90456"
+    "blake3-512:fbc5ffc5715963df72c39a2ec489bcd1f3e25982a79ca169cffce20364628e612c63c6d7db420bf7be20f543569b18ededac3bd07e45152c1c106c6d1c157d88"
   ],
   "evidence": {
     "kind": "legacy-witness",
-    "schema": "0000000000000000b0000000000000b0",
     "body": {
-      "rawWitness": "{\"kind\":\"forall\",\"sort\":{\"kind\":\"primitive\",\"name\":\"Int\"},\"predicate\":{\"kind\":\"lambda\",\"varName\":\"_x2\",\"sort\":{\"kind\":\"primitive\",\"name\":\"Int\"},\"body\":{\"kind\":\"forall\",\"sort\":{\"kind\":\"primitive\",\"name\":\"Int\"},\"predicate\":{\"kind\":\"lambda\",\"varName\":\"_x3\",\"sort\":{\"kind\":\"primitive\",\"name\":\"Int\"},\"body\":{\"kind\":\"implies\",\"antecedent\":{\"kind\":\"atomic\",\"predicate\":\"≠\",\"args\":[{\"kind\":\"var\",\"name\":\"_x3\",\"sort\":{\"kind\":\"primitive\",\"name\":\"Int\"}},{\"kind\":\"const\",\"value\":0,\"sort\":{\"kind\":\"primitive\",\"name\":\"Int\"}}]},\"consequent\":{\"kind\":\"atomic\",\"predicate\":\"is-defined\",\"args\":[{\"kind\":\"ctor\",\"name\":\"safeDivide\",\"args\":[{\"kind\":\"var\",\"name\":\"_x2\",\"sort\":{\"kind\":\"primitive\",\"name\":\"Int\"}},{\"kind\":\"var\",\"name\":\"_x3\",\"sort\":{\"kind\":\"primitive\",\"name\":\"Int\"}}],\"sort\":{\"kind\":\"primitive\",\"name\":\"Int\"}}]}}}}}}",
+      "rawWitness": "{\"kind\":\"forall\",\"name\":\"_x2\",\"sort\":{\"kind\":\"primitive\",\"name\":\"Int\"},\"body\":{\"kind\":\"forall\",\"name\":\"_x3\",\"sort\":{\"kind\":\"primitive\",\"name\":\"Int\"},\"body\":{\"kind\":\"implies\",\"operands\":[{\"kind\":\"atomic\",\"name\":\"≠\",\"args\":[{\"kind\":\"var\",\"name\":\"_x3\"},{\"kind\":\"const\",\"value\":0,\"sort\":{\"kind\":\"primitive\",\"name\":\"Int\"}}]},{\"kind\":\"atomic\",\"name\":\"is-defined\",\"args\":[{\"kind\":\"ctor\",\"name\":\"safeDivide\",\"args\":[{\"kind\":\"var\",\"name\":\"_x2\"},{\"kind\":\"var\",\"name\":\"_x3\"}]}]}]}}}",
       "legacyProducerId": "ts-kit-demo@0.0.1"
     }
   },
-  "producerSignature": "5sLveCZMLv60LpU76z6SmnaEH8d9JgNrp/RCoEGQUSSk0iAXklkyNleC3+vFlk22hMerDOz5bfXS2Hp3nuDGDw==",
-  "cid": "35281e7faa7fac1a35374005b9aff22b"
+  "producerSignature": "ed25519:tn4dmGFAgi69Fy8rvkj4kzYmWrTPftrRj+Mg70AeUS7Kee2WjrGMqV0ob12CCjnZVXLgVHCzwVtCfrjq8B4SBA==",
+  "cid": "blake3-512:82f6e718ac6459a5fa1484485652ccc861763a21fc6578b77bd495d8d49ba28836d93a1885793bc7cd3f9c17dca4c5fc42ac7d556926256fe8fdcf3d1041825d"
 }

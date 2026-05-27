@@ -3,8 +3,8 @@
  *
  * The architectural claim being demonstrated:
  *
- *   "An LLM (or human) wrote a divide function with a shitty invariant
- *    six months ago: 'denominator must be non-zero.' All existing
+ *   "An LLM (or human) wrote a divide function with a weak native-source
+ *    contract six months ago: 'denominator must be non-zero.' All existing
  *    callers passed checked values; verification held.
  *
  *    Today, an LLM adds a new code path that calls divide(x, parseInt(args[1])).
@@ -16,10 +16,10 @@
  *
  *    The composition produces a counterexample: args[1] = '0' satisfies
  *    parseInt-can-return-zero AND violates divide-requires-d-nonzero.
- *    Verdict: violated. Commit rejected. The shitty 6-month-old
- *    invariant caught the bug.
+ *    Verdict: violated. Commit rejected. The weak 6-month-old
+ *    contract caught the bug.
  *
- *    No new invariant was authored. Existing invariants caught the new
+ *    No new contract was authored. Existing contracts caught the new
  *    code path. Software ages backwards."
  *
  * This script mints the mementos that record this story as durable,
@@ -36,14 +36,14 @@ import { writeFileSync, mkdirSync, existsSync } from "node:fs";
 import { join, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
 import { createHash } from "node:crypto";
-import { generateKeypair } from "../../../src/producerKeys/index.js";
+import { generateKeypair } from "../../../implementations/typescript/src/producerKeys/index.js";
 import {
   mintMemento,
   mintBridge,
   mintAndVerifyMemento,
   VARIANT_SCHEMA_CIDS,
-} from "../../../src/claimEnvelope/index.js";
-import type { ClaimEnvelope } from "../../../src/claimEnvelope/types.js";
+} from "../../../implementations/typescript/src/claimEnvelope/index.js";
+import type { ClaimEnvelope } from "../../../implementations/typescript/src/claimEnvelope/types.js";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const OUTPUT_DIR = join(__dirname, "..", "..", "output", "counterexample");
@@ -62,10 +62,10 @@ console.log("=".repeat(70));
 console.log();
 
 // ---------------------------------------------------------------------------
-// SETUP: six months ago, an LLM wrote divide() and an invariant
+// SETUP: six months ago, an LLM wrote divide() and a native-source contract
 // ---------------------------------------------------------------------------
 
-console.log("[t-6mo] An LLM wrote divide() and a shitty invariant");
+console.log("[t-6mo] An LLM wrote divide() and a weak native-source contract");
 console.log();
 
 const divideContractMemento = mintAndVerifyMemento(
@@ -82,7 +82,7 @@ const divideContractMemento = mintAndVerifyMemento(
       body: {
         rawWitness: JSON.stringify({
           claim: "forall n: Int, d: Int. d != 0 -> isFinite(divide(n, d))",
-          source: "src/math.invariant.ts",
+          source: "src/math.ts",
         }),
         legacyProducerId: "llm-author@gpt-3.5",
       },
@@ -92,7 +92,7 @@ const divideContractMemento = mintAndVerifyMemento(
   keypair.publicKey,
 );
 
-console.log(`  invariant memento minted:`);
+console.log(`  contract memento minted:`);
 console.log(`    bindingHash:  ${divideContractMemento.bindingHash}  (src/math.ts:divide)`);
 console.log(`    propertyHash: ${divideContractMemento.propertyHash}  (divideRequiresNonZeroDenominator)`);
 console.log(`    verdict:      ${divideContractMemento.verdict}`);
@@ -211,7 +211,7 @@ const counterexample = {
 const counterexampleMemento = mintAndVerifyMemento(
   {
     bindingHash: hash16("user-project:src/cli/configure.ts:5:10:violation"),
-    propertyHash: hash16("divideRequiresNonZeroDenominator"),  // SAME hash as the original invariant!
+    propertyHash: hash16("divideRequiresNonZeroDenominator"),  // SAME hash as the original contract!
     verdict: "violated",
     producedBy: "smt-solver@z3-4.13",
     producedAt: EPOCH,
@@ -239,7 +239,7 @@ const counterexampleMemento = mintAndVerifyMemento(
 
 console.log(`  COUNTEREXAMPLE memento (verdict: violated):`);
 console.log(`    cid:          ${counterexampleMemento.cid}`);
-console.log(`    propertyHash: ${counterexampleMemento.propertyHash}  ← SAME as original invariant`);
+console.log(`    propertyHash: ${counterexampleMemento.propertyHash}  ← SAME as original contract`);
 console.log(`    verdict:      violated`);
 console.log(`    counterexample:`);
 console.log(`      args[1] = '0'`);
@@ -258,7 +258,7 @@ console.log("    Property `divideRequiresNonZeroDenominator` violated at");
 console.log("      src/cli/configure.ts:5:10");
 console.log("    Counterexample: args[1] = '0' → parseInt('0') = 0 →");
 console.log("      divide(amount, 0) violates d !== 0");
-console.log("    Invariant declared at src/math.invariant.ts (six months ago)");
+console.log("    Contract lifted from src/math.ts (six months ago)");
 console.log();
 console.log("  Suggested fixes:");
 console.log("    1. Add a guard at the callsite:");
@@ -266,8 +266,8 @@ console.log("       if (divisor === 0) throw new Error('args[1] cannot be 0');")
 console.log("    2. Strengthen the precondition (validate args at function entry)");
 console.log("    3. Modify divide to be total over zero (return sentinel)");
 console.log();
-console.log("  The shitty 6-month-old invariant caught the bug.");
-console.log("  No new invariant was authored.");
+console.log("  The weak 6-month-old contract caught the bug.");
+console.log("  No new contract was authored.");
 console.log("  Software ages backwards.");
 console.log();
 

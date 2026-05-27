@@ -8,12 +8,11 @@
   "inputCids": [],
   "evidence": {
     "kind": "legacy-witness",
-    "schema": "0000000000000000b0000000000000b0",
     "body": {
       "rawWitness": "{\"claim\":\"exists s: String. parseInt(s) === 0\",\"witness\":{\"input\":\"\\\"0\\\"\",\"output\":0}}",
       "legacyProducerId": "v8-team@12.4"
     }
   },
-  "producerSignature": "uyY4D6Hus2wg4GjkoTVhF75csM18tAx7kCuiSlSal8RIZimMa8Gw4WY3Sox3wBoD/FRwRA3ogd599/o6XtKQBA==",
-  "cid": "dd2f25f7e1496ee52514bc4721e99357"
+  "producerSignature": "ed25519:K3qpFhu0BP1XM02s5l7XWkJ3YlYb8OSvLm+hSYaMGAZn1WI27wPAjcwn3qNkHKJvO8s+YLFm76EvtC3Fo/xFAA==",
+  "cid": "blake3-512:b39a0b7fa4f44eeaebb7bdb7c8fd2f30e524885bda0db5365746de1c08ceda6d978388d51a2b1017a89b16e6dd1bae8c966ac08c7de25219eaeda0a719fcf4f0"
 }

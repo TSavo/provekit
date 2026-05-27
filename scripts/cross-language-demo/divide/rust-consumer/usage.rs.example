@@ -1,4 +1,9 @@
 // Rust consumer of the C++ divide library, via FFI.
+//
+// Native source contract surface:
+// - the Result error branch establishes the non-zero precondition
+// - a Rust lifter reads the function body and existing native assertions or
+//   contracts attributes when present; no sibling DSL file is needed
 
 use std::error::Error;
 

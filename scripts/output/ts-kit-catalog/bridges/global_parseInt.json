@@ -1,7 +1,7 @@
 {
   "schemaVersion": "1",
-  "bindingHash": "0348a344a809c90c",
-  "propertyHash": "7dbddd1939ba70f2",
+  "bindingHash": "blake3-512:05a0314fcbdab9f7f2f28fd3d9d50bfafdf29516462de9533f81fddc98d9ab0f155e412ac895d64ac5d6f2a2107e5af231b4cd9b6c69b809209128ca88b585ee",
+  "propertyHash": "blake3-512:dac3075cc07908ec23e233c57835a6f16a4baa5ab4b6e20cafbd2a66d8996e4e0922a6a97ba281fde119865dab15f8f84baf3dc16df2aa7271ec48bb9f880415",
   "verdict": "holds",
   "producedBy": "ts-kit@1.0",
   "producedAt": "1970-01-01T00:00:00.000Z",
@@ -10,7 +10,7 @@
   ],
   "evidence": {
     "kind": "bridge",
-    "schema": "0000000000000000c0000000000000c0",
+    "schema": "blake3-512:000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000c0",
     "body": {
       "sourceSymbol": "global.parseInt",
       "sourceLayer": "ts-kit@1.0",
@@ -19,6 +19,6 @@
       "notes": "Bridges to V8's published parseInt contract"
     }
   },
-  "producerSignature": "3ATJ2oN/Q7ByIbnrMFZOtMwJhMXdQ524/q0yvBZU8dDRjAU9LIrFEybU1JMB0vMbJ1vsnmQpZOGONWdv2jA8CA==",
-  "cid": "b9096cb45e90a417ba483f4f2498810d"
+  "producerSignature": "ed25519:SD6HH/b0W1doufeKsV7ltPyXE4OqV7dIFbePVp0tTh6JtNbPUCmsyNxAY523Fib/YO9bRuTmpBjLq2tQ0YNzBA==",
+  "cid": "blake3-512:98618528acee9d30b038dc391167e2f3fe04406c2e03cb3a8b14b847dcc23c05fc38e528581f65e2d4894e5adc96ae4236a7eb08f3589b148d76303ad3667c2b"
 }

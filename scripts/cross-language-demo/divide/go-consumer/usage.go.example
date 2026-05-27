@@ -1,4 +1,8 @@
 // Go consumer of the C++ divide library, via cgo.
+//
+// Native source contract surface:
+// - the error branch establishes the non-zero precondition
+// - a Go lifter promotes the function body and native tests to contracts
 
 package divide_consumer
 

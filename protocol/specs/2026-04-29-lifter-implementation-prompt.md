@@ -12,8 +12,8 @@ produces canonical `IrFormula` values from in-subset TypeScript expressions.
 
 Without the lifter:
 - `.invariant.ts` files are markdown — they don't produce verification artifacts
-- The catalog seeds (`protocol/specs/builtins-catalog/parseInt.invariant.ts`,
-  `Math.invariant.ts`) cannot be loaded by anything
+- The retired catalog seed examples under `protocol/specs/builtins-catalog/`
+  cannot stand in for native-source proof bundles
 - User invariants cannot be verified
 - `provekit prove` and `provekit generate` cannot be built
 - The framework remains theoretical
@@ -51,14 +51,13 @@ In order. One-line rationale per file:
    input. The lifter's output flows directly into this. Sanity-check that the
    shapes line up.
 
-6. **`protocol/specs/builtins-catalog/parseInt.invariant.ts`** — the worked
-   example. The lifter MUST be able to consume this file and produce the
-   expected IrFormula values for each property declaration. Use it as the
-   primary fixture for tests.
+6. **`protocol/specs/builtins-catalog/README.md`** — built-in catalog policy.
+   Built-ins must be lifted from native source/proofs or bridged to lower-layer
+   contracts, not hand-authored in repo-local catalog files.
 
-7. **`protocol/specs/builtins-catalog/Math.invariant.ts`** — second fixture.
-   Demonstrates `forAll`, `exists`, `implies`, member access, registry calls
-   (`Math.abs`, `Number.isInteger`).
+7. **Native-source fixture in the implementation under test** — use a real
+   source file or native test fixture owned by the kit implementation, not a
+   deleted catalog-format example.
 
 8. **`src/ir/property.ts`** — current `property()` builder. The spec describes
    a SURFACE form `property(name, formula)`; the current library has a different
@@ -275,9 +274,8 @@ otherwise, diagnostic.
 In `src/ir/lift/index.ts`, expose the public API. Add a fixture-based
 integration test that:
 
-1. Constructs a `tsc.Program` from a temporary directory containing a copy
-   of `protocol/specs/builtins-catalog/parseInt.invariant.ts` (or use that file
-   directly via project root configuration).
+1. Constructs a `tsc.Program` from a temporary directory containing a native
+   TypeScript source fixture or native bridge-source fixture.
 2. Calls `liftProject(program)`.
 3. Asserts:
    - At least 17 `LiftedProperty` entries exist (matches parseInt's catalog)
@@ -449,17 +447,14 @@ These are non-obvious from the spec but matter:
    tuples, or read from a JSON manifest). Future work expands the registry;
    make extension trivial.
 
-7. **The catalog files at `protocol/specs/builtins-catalog/` use the SURFACE form.**
-   They will not type-check against the current `provekit/ir` library because
-   they use `provekit/ir`'s SPEC'D surface API, not its existing builder API.
-   This is expected. The lifter you're building is what makes them lift-able.
-   Don't try to make them type-check against the current library; that
-   contradicts the spec.
+7. **The catalog docs at `protocol/specs/builtins-catalog/` no longer carry
+   source fixtures.** Built-in entries must be native-source proof bundles or
+   bridge mementos owned by the kit implementation. Do not recreate the retired
+   hand-authored catalog files as test inputs.
 
-8. **Test fixtures should NOT be the catalog files directly.** Copy minimal
-   versions into `src/ir/lift/__fixtures__/` for testing. The catalog files
-   at `protocol/specs/builtins-catalog/` are spec artifacts; they shouldn't be
-   coupled to the lifter's test suite (different change cadence).
+8. **Test fixtures should be native implementation fixtures.** Put minimal
+   versions in the implementation's fixture tree and lift them through the same
+   native path the kit will use in production.
 
 9. **`registry calls` lift to atomic predicates.** `Math.abs(x)` lifts to
    `{ kind: "atomic", predicate: "Math.abs", args: [lift(x)] }`. The atom's

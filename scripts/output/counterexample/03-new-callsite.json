@@ -6,17 +6,16 @@
   "producedBy": "ts-lifter@1.0",
   "producedAt": "1970-01-01T00:00:00.000Z",
   "inputCids": [
-    "612cdd5316358938e463e39611f9a534",
-    "a688ae14755a1d1077cc16e665f64bc9"
+    "blake3-512:0696fd52d21a13d667408c49c36576ea2406577252b04f216a173f125ab19dbd3dd007d265ff0e29954b5524d4d4d5c816372e18354c69087c40859974db3f29",
+    "blake3-512:9c38524a5fc17651ae0334d2b3159a7c6dba26060168268e410e338151379dda52cb0a3f580401a644028a29e94d799625ab350394db79ff2d017885dc6241f4"
   ],
   "evidence": {
     "kind": "legacy-witness",
-    "schema": "0000000000000000b0000000000000b0",
     "body": {
       "rawWitness": "{\"source\":\"src/cli/configure.ts:5:10\",\"code\":\"const divisor = parseInt(args[1]);\\n const result = divide(amount, divisor);\",\"analysis\":\"callsite combines parseInt's symbolic-range (includes 0) with divide's precondition (d !== 0). Verdict pending solver dispatch.\"}",
       "legacyProducerId": "ts-lifter@1.0"
     }
   },
-  "producerSignature": "E5WDurwHv1ixsQcAsH84mEoE7i8PjBBu6RBKQdEJ3OUALNjMyQKXNMgo9q2kUDTQtA3YSj8PyAKAcxW/uSmGCQ==",
-  "cid": "6929f209386b736a0d2f30efb397edc6"
+  "producerSignature": "ed25519:hWYoDNKbxpi4F0lDI5rGLzAONoFTMi1vydpjKk26WiHQGSpF/5IHBOqLfP3BIF3HJjN0hQbbyOCB7p2GtKPiBA==",
+  "cid": "blake3-512:161fce03523350befdb82e1a207092295cf47b5a36162deb83786760f599e4ea501407833cc7842986d6b785308df80a4767c6e03ffd5151377ea012fc8e1973"
 }

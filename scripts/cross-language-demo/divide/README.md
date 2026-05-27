@@ -4,24 +4,25 @@
 
 ## What this demonstrates
 
-The C++ library `divide(n, d)` has a published contract:
-"divideRequiresNonZeroDenominator." That contract has a propertyHash: `16bfe84f690ee50e` in the demo run. The hash is deterministic from
-the canonical FOL form, independent of which language authored the
-contract.
+The C++ library `divide(n, d)` has a published contract derived from
+its native source: "divideRequiresNonZeroDenominator." That contract has
+a propertyHash: `16bfe84f690ee50e` in the demo run. The hash is
+deterministic from the canonical FOL form, independent of which
+language authored the contract.
 
 Four language consumers each wrap `divide` with their own guard:
 
 | Language | Wrapper name | Surface form |
 |---|---|---|
-| TypeScript | `safeDivide` | `usage.ts` + `usage.invariant.ts` |
-| Rust | `safe_divide` | `usage.rs.example` + `usage.invariant.rs.example` |
-| Go | `SafeDivide` | `usage.go.example` + `usage.invariant.go.example` |
-| C++ | `safe_divide` | `usage.cpp.example` + `usage.invariant.cpp.example` |
+| TypeScript | `safeDivide` | `usage.ts` |
+| Rust | `safe_divide` | `usage.rs.example` |
+| Go | `SafeDivide` | `usage.go.example` |
+| C++ | `safe_divide` | `usage.cpp.example` |
 
-Each consumer's invariant says "my wrapper uphlds the precondition
-d != 0 before calling divide." Each consumer mints a memento with
-`inputCids` that includes the library's CID: this composes the
-consumer's verification AGAINST the library's contract.
+Each consumer's native wrapper establishes "my wrapper upholds the
+precondition d != 0 before calling divide." Each consumer mints a
+memento with `inputCids` that includes the library's CID: this composes
+the consumer's verification AGAINST the library's contract.
 
 A root memento composes all four consumer mementos plus the library
 contract. The DAG has the shape:
@@ -92,12 +93,9 @@ them; they only care about the FOL bytes.
   signatures round-trip through `verifyEnvelopeSignature`
 
 **Stub (until corresponding kits ship):**
-- The Rust kit's lifter: Rust's `usage.invariant.rs.example` describes
-  the surface a Rust kit would consume
-- The Go kit's lifter: same
-- The C++ kit's lifter: same
-- The library's `usage.invariant.cpp.example`: the C++ kit doesn't
-  exist; the file documents the surface form
+- The Rust kit's native-source lifter for this exact FFI example
+- The Go kit's native-source lifter for this exact cgo example
+- The C++ kit's native-source lifter for this exact library/wrapper pair
 
 For each stub kit, this demo HAND-CONSTRUCTS the equivalent IrFormula
 in TypeScript representing what that kit's lifter would produce.
