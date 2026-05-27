@@ -27,12 +27,12 @@ pub fn emit_term(term: &Term) -> String {
         }
         Term::Ctor { name, args, .. } => {
             if args.is_empty() {
-                return name.clone();
+                return coq_ident(name);
             };
             let args_str = args.iter();
             let args_str = args_str.map(emit_term);
             let args_str: Vec<String> = args_str.collect();
-            format!("({} {})", name, args_str.join(" "))
+            format!("({} {})", coq_ident(name), args_str.join(" "))
         }
         Term::Lambda {
             param_name,
@@ -54,12 +54,12 @@ pub fn emit_term(term: &Term) -> String {
         }
         Term::Ctor { name, args } => {
             if args.is_empty() {
-                return name.clone();
+                return coq_ident(name);
             };
             let args_str = args.iter();
             let args_str = args_str.map(emit_term);
             let args_str: Vec<String> = args_str.collect();
-            format!("({} {})", name, args_str.join(" "))
+            format!("({} {})", coq_ident(name), args_str.join(" "))
         }
         Term::Lambda {
             param_name,
@@ -95,7 +95,7 @@ pub fn emit_formula(formula: &Formula) -> String {
                 "\u{2260}" => format!("({} <> {})", args_str[0].clone(), args_str[1].clone()),
                 "true" => "True".to_string(),
                 "false" => "False".to_string(),
-                _ => format!("{} {}", name, args_str.join(" ")),
+                _ => format!("{} {}", coq_ident(name), args_str.join(" ")),
             }
         }
         Formula::And { operands } => {
@@ -256,6 +256,23 @@ fn sort_to_coq_paren(sort: &Sort) -> String {
         Sort::Primitive { .. } | Sort::Float { .. } | Sort::Region { .. } => sort_to_coq(sort),
     }
 }
+// coq_ident sanitizes a name into a valid Coq identifier: Coq identifiers
+// allow letters, digits, '_' and '\''; lifted ctor names like `go:call` /
+// `go:slice-literal` contain ':' and '-', which Coq rejects. Replacing them
+// with '_' is applied consistently at both the `Parameter` declaration and
+// every use, so the symbol still matches.
+fn coq_ident(name: &str) -> String {
+    name.chars()
+        .map(|c| {
+            if c.is_ascii_alphanumeric() || c == '_' || c == '\'' {
+                c
+            } else {
+                '_'
+            }
+        })
+        .collect()
+}
+
 fn emit_const_value(value: &serde_json::Value, _sort_name: &str) -> String {
     match value {
         serde_json::Value::Number(n) => {
@@ -290,7 +307,7 @@ pub fn compile_formula(formula: &Formula) -> (String, String, Vec<FreeVar>) {
             "Bool" => "bool",
             _ => "Z",
         };
-        body.push_str(&format!("Parameter {} : {}.\n", name, coq_sort));
+        body.push_str(&format!("Parameter {} : {}.\n", coq_ident(name), coq_sort));
     }
     body.push_str("\nGoal ");
     body.push_str(&emit_formula(formula));
