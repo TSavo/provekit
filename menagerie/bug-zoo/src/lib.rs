@@ -175,6 +175,119 @@ struct Composition {
     checks: Vec<CompositionCheck>,
 }
 
+#[derive(Debug, Clone, Copy)]
+struct ZooProofIrLiftContract<'a> {
+    accepted_exhibit_lift: bool,
+    accepted_fixed_lift: bool,
+    exhibit_proof_ir_cid: &'a str,
+    exhibit_proof_ir_json_cid: &'a str,
+    fixed_proof_ir_cid: &'a str,
+    fixed_proof_ir_json_cid: &'a str,
+}
+
+#[derive(Debug, Clone, Copy)]
+struct ZooProofIrDocument<'a> {
+    json_cid: &'a str,
+}
+
+#[allow(non_snake_case)]
+impl<'a> ZooProofIrLiftContract<'a> {
+    fn accepted_exhibit(proof_ir_cid: &'a str, proof_ir_json_cid: &'a str) -> Self {
+        Self {
+            accepted_exhibit_lift: true,
+            accepted_fixed_lift: false,
+            exhibit_proof_ir_cid: proof_ir_cid,
+            exhibit_proof_ir_json_cid: proof_ir_json_cid,
+            fixed_proof_ir_cid: "",
+            fixed_proof_ir_json_cid: "",
+        }
+    }
+
+    fn accepted_fixed(proof_ir_cid: &'a str, proof_ir_json_cid: &'a str) -> Self {
+        Self {
+            accepted_exhibit_lift: false,
+            accepted_fixed_lift: true,
+            exhibit_proof_ir_cid: "",
+            exhibit_proof_ir_json_cid: "",
+            fixed_proof_ir_cid: proof_ir_cid,
+            fixed_proof_ir_json_cid: proof_ir_json_cid,
+        }
+    }
+
+    fn acceptedExhibitLift(&self) -> bool {
+        self.accepted_exhibit_lift
+    }
+
+    fn acceptedFixedLift(&self) -> bool {
+        self.accepted_fixed_lift
+    }
+
+    fn exhibitProofIrCid(&self) -> &'a str {
+        self.exhibit_proof_ir_cid
+    }
+
+    fn exhibitProofIr(&self) -> ZooProofIrDocument<'a> {
+        ZooProofIrDocument {
+            json_cid: self.exhibit_proof_ir_json_cid,
+        }
+    }
+
+    fn fixedProofIrCid(&self) -> &'a str {
+        self.fixed_proof_ir_cid
+    }
+
+    fn fixedProofIr(&self) -> ZooProofIrDocument<'a> {
+        ZooProofIrDocument {
+            json_cid: self.fixed_proof_ir_json_cid,
+        }
+    }
+}
+
+impl<'a> ZooProofIrDocument<'a> {
+    fn json_document_cid(&self) -> &'a str {
+        self.json_cid
+    }
+}
+
+#[derive(Debug, Clone, Copy)]
+struct ZooDiagnosticContract {
+    accepted_fixed_diagnostic: bool,
+    missing_edge_absent: bool,
+}
+
+#[allow(non_snake_case)]
+impl ZooDiagnosticContract {
+    fn accepted_fixed(diagnostic: &str, missing_edge: &str) -> Self {
+        Self {
+            accepted_fixed_diagnostic: true,
+            missing_edge_absent: !diagnostic.contains(missing_edge),
+        }
+    }
+
+    fn acceptedFixedDiagnostic(&self) -> bool {
+        self.accepted_fixed_diagnostic
+    }
+
+    fn missingEdgeAbsent(&self) -> bool {
+        self.missing_edge_absent
+    }
+}
+
+#[allow(non_snake_case)]
+fn zoo_exhibit_proofir_cid_is_derived(lift: &ZooProofIrLiftContract<'_>) {
+    assert!(lift.exhibitProofIrCid() == lift.exhibitProofIr().json_document_cid());
+}
+
+#[allow(non_snake_case)]
+fn zoo_fixed_proofir_cid_is_derived(lift: &ZooProofIrLiftContract<'_>) {
+    assert!(lift.fixedProofIrCid() == lift.fixedProofIr().json_document_cid());
+}
+
+#[allow(non_snake_case)]
+fn zoo_fixed_diagnostic_has_no_missing_edge(diagnostic: &ZooDiagnosticContract) {
+    assert!(diagnostic.missingEdgeAbsent() == true);
+}
+
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
 struct CompositionCheck {
@@ -411,6 +524,11 @@ fn check_specimen(specimen_dir: &Path, quiet: bool) -> Result<Value, ZooError> {
                     language.id, exhibit.id
                 )));
             }
+            let exhibit_lift_contract =
+                ZooProofIrLiftContract::accepted_exhibit(&lifted_cid, &lifted_cid);
+            if exhibit_lift_contract.acceptedExhibitLift() == true {
+                zoo_exhibit_proofir_cid_is_derived(&exhibit_lift_contract);
+            }
 
             let diagnostic_path = specimen_dir.join(&exhibit.diagnostic_file);
             let diag = std::fs::read_to_string(&diagnostic_path).map_err(|e| {
@@ -478,6 +596,11 @@ fn check_specimen(specimen_dir: &Path, quiet: bool) -> Result<Value, ZooError> {
                     "language `{}` fixed `{}` ProofIR CID mismatch: lifted {fixed_lifted_cid}, expected {fixed_expected_cid}",
                     language.id, exhibit.id
                 )));
+            }
+            let fixed_lift_contract =
+                ZooProofIrLiftContract::accepted_fixed(&fixed_lifted_cid, &fixed_lifted_cid);
+            if fixed_lift_contract.acceptedFixedLift() == true {
+                zoo_fixed_proofir_cid_is_derived(&fixed_lift_contract);
             }
 
             let fixed_diagnostic_path = specimen_dir.join(&fixed.diagnostic_file);
@@ -1279,6 +1402,11 @@ fn expect_green_diagnostic(
     exhibit_id: &str,
 ) -> Result<(), String> {
     if !diagnostic.contains(&predicates.missing_edge) {
+        let diagnostic_contract =
+            ZooDiagnosticContract::accepted_fixed(diagnostic, &predicates.missing_edge);
+        if diagnostic_contract.acceptedFixedDiagnostic() == true {
+            zoo_fixed_diagnostic_has_no_missing_edge(&diagnostic_contract);
+        }
         return Ok(());
     }
     Err(format!(
