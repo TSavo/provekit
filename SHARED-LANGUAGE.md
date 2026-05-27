@@ -9,6 +9,32 @@ Lift has **two parts**:
 1. It lifts **contracts** into **ProofIR**.
 2. It lifts **sugar** into **body_text**.
 
+## Lower — the mirror of Lift
+
+Lower is the inverse of lift, and it has the **same two parts**:
+1. It lowers a **contract** into a native artifact — a test, a gate, an annotation.
+   (This is what we used to call **emit**.)
+2. It lowers **sugar** into native source at a boundary — a library call.
+   (This is what we used to call **materialize**.)
+
+So the translation surface is a **2×2, not three verbs**:
+
+|                       | contract | sugar |
+|-----------------------|----------|-------|
+| **in**  (native → IR) | lift     | lift  |
+| **out** (IR → native) | lower    | lower |
+
+`emit` and `materialize` were never two concepts — they are the **contract-facet** and the
+**sugar-facet** of `lower`, exactly as contract-lifting and sugar-lifting are the two facets
+of `lift`. `migrate`/`transport` were a *third* egress name for the same act ("migration is
+materialize wearing a lab coat") — `lift` then `lower` into another library. The verb is
+`lower`; the rest was sprawl.
+
+Naming: **lift ⇄ lower** is the canonical compiler dual (raise to IR / descend to target),
+a symmetric pair in both grammar and meaning — unlike "realize," which names an outcome, not
+a direction. **"Realize" is reserved for the kit operation that *performs* a lower over RPC:**
+lower is what you ask for; realize is the kit doing it for one language.
+
 ## Boundary
 
 A boundary is a **realization site of a sugar**. It's a **client of a library**.
@@ -42,24 +68,26 @@ A kit is a **language-specific implementation of these ideas**. The **Java kit**
 Whether several sugars sharing a concept mean the *same* FOL is **entirely the vendor's
 decision. ProvekIt sets nothing.** (Mechanism: three-axis pinning — below.)
 
-## Emitter
+## Emitter — the contract-facet of lower
 
 Turns ProofIR (a contract) into a concrete native artifact — a JUnit test, a Spring
 annotation, a gate that throws, etc. A kit hosts **many** emitters; **which to emit is a
 kit-time decision and you can invoke many** (one contract → stub + test + annotation +
 gate, all at once). Inverse of the lift-from-native-test path: the emitter writes the
 contract OUT as a test/annotation; lift reads it back IN.
+(In the 2×2 above this is **lower(contract)**; **lower(sugar)** is the materializer.)
 
-## The lift/emit asymmetry (load-bearing)
+## The lift/lower asymmetry (load-bearing)
 
-- **Emit is plural** (a relation): one contract → N faithful native forms, simultaneously.
-  Safe, because every form is a *projection* of the one truth; none can contradict it.
+- **Lower is plural** (a relation): one contract/sugar → N faithful native forms,
+  simultaneously. Safe, because every form is a *projection* of the one truth; none can
+  contradict it.
 - **Lift is singular** (a function): one surface → exactly one contract. Forced by
   content-addressing — if a surface could lift two ways, the ingested truth is ambiguous,
   the CID is unstable, pinning is meaningless, federation collapses. Two parties lifting
   the same surface MUST get the same contract.
 - Plainly: **truth has one source but many expressions.** Lifting establishes truth (must
-  be a function); emitting expresses truth (may be a relation).
+  be a function); lowering expresses truth (may be a relation).
 - Refinement: a kit may have *many lifters* (one per distinct surface — tests, proptest,
   bean-validation, JML, …); the rule is per-surface determinism (one surface → one
   contract). Multiple surfaces on the same code each lift once and **compose/conjoin**.
@@ -125,12 +153,57 @@ registry of vendor content — the substrate's own ledger of how its rules chang
 - Re-signing it on a protocol change (e.g. tonight's `agent-plugin-protocol` de-list) is
   legitimate record-keeping, NOT feeding the fiction. Keep the artifact; fix the name.
 
+## Everything is config — lift/lower dispatch to a plugin roster
+
+The substrate ships **two translation verbs** and **no hardcoded translators**. Which
+lifters and lowerers run is declared in `config.toml` (today: `.provekit/lift/*/manifest.toml`,
+each a `command` that spawns a kit over RPC).
+- Want to lift contracts from a new idiom? Add a **contract-lifter** to config.
+- Want to lift sugar? Add a **sugar-lifter**. Same on lower.
+`contract` vs `sugar` is a **plugin role declared in config**, never a verb. The substrate
+(rust, post-RPC) is language-blind: it runs `lift`/`lower` and routes to whatever the roster
+declares. **The kit roster *is* config.toml.**
+
+Lift was already config-driven (the lift manifests). The disease was that **lower never got
+the same treatment** — so it grew hardcoded verbs (`emit`, `materialize`, `transport`,
+`migrate`) instead of a config roster. Every egress verb cut in the 2026-05 cleanup was a
+lowerer that should have been a config line.
+
+## Composition — the Unix nature
+
+The verbs are **single-purpose and compositional**, Unix-style, and the **pipe is the
+content-addressed `.proof`** (and the IR/contract stream under it):
+- `lift` writes IR; `mint` **tastes that IR** and writes a signed `.proof`; `verify`
+  **discharges the contracts the lifter loaded** and writes verdicts + a witness; `lower`
+  reads the same IR and writes native.
+- No verb reaches into another — they **meet at the artifact**. Content-addressing is what
+  makes the pipe trustworthy: the IR `mint` tasted is provably the IR `lift` produced,
+  because the CID says so. **Unix pipes with integrity welded in.**
+
+This is why most "new verbs" are a mistake — **a composition frozen into a primitive:**
+- `migrate` = `lift | lower`-to-another-library.
+- `transport` = `migrate` with paperwork = still `lift | lower`.
+- `exam` = `verify`'s output, re-read.
+- `catalog` = `union(.proof)` — a reduction, not a command.
+
+Ship orthogonal primitives; let the `.proof` be the pipe; anything that looks like a new
+verb is almost always two old verbs and a config line. (`compose` survives the cull
+precisely because it is **not** a composition — it's a genuine `libprovekit` primitive the
+pipe exposes.)
+
 ## CLI
 
-The CLI is the **orchestration**.
-- It talks **RPC to the kits**, and handles **all computation over the data**.
-- The kits do things like **resolve the `.proof` file in jar files or pip packages** and
-  feed the **rust CLI** through a **common RPC layer**.
-- **All kits speak one RPC language.**
+A **small set of composable verbs over content-addressed artifacts**, Unix-natured:
+- **Translation:** `lift`, `lower` — two verbs, dispatching to a config-declared plugin
+  roster over RPC. The substrate is language-blind; **all kits speak one RPC language**; the
+  kits resolve their own `.proof` (jar / pip / cargo / classloader) and feed the rust CLI.
+- **Substrate algebra (the trinity):** `mint`, `verify`, `witness`, `implicate` over
+  {terms, contracts, implications} — not native↔native translation; the substrate's own
+  operations, composing through the same `.proof` currency.
+- The CLI handles **all computation over the data**; kits do language-specific work behind
+  the RPC line.
+
+Anything beyond these that looks like a verb is a frozen composition (above) and belongs as
+a pipeline + config, not a command.
 
 _(awaiting next term)_
