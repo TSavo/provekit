@@ -330,7 +330,7 @@ function stripAssertWrapper(line: string): string {
   return m ? m[1] : line;
 }
 
-function classifyVerdict(
+export function classifyVerdict(
   ab: SolverProbeVerdict,
   ba: SolverProbeVerdict,
 ): ImplicationVerdict {

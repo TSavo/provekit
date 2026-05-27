@@ -41,6 +41,74 @@ import {
 // ---------------------------------------------------------------------------
 
 const FIXTURE_DIR = path.join(__dirname, "__fixtures__");
+const PARSE_INT_FIXTURE_SOURCE = `
+import { property, forAll, exists, implies } from "provekit/ir";
+import type { Int, StringSort } from "provekit/sorts";
+
+property(
+  "parseIntCanReturnZero",
+  exists<StringSort>((s) => parseInt(s) === 0),
+);
+
+property(
+  "parseIntCanReturnNaN",
+  exists<StringSort>((s) => Number.isNaN(parseInt(s))),
+);
+
+property(
+  "parseIntCanReturnPositiveInteger",
+  exists<StringSort>((s) => parseInt(s) > 0),
+);
+
+property("parseIntZeroStringIsZero", parseInt("0") === 0);
+
+property("parseIntEmptyStringIsNaN", Number.isNaN(parseInt("")));
+
+property(
+  "parseIntReturnsIntOrNaN",
+  forAll<StringSort>(
+    (s) => Number.isInteger(parseInt(s)) || Number.isNaN(parseInt(s)),
+  ),
+);
+
+property(
+  "parseIntIsDeterministic",
+  forAll<StringSort>((s) => parseInt(s) === parseInt(s)),
+);
+
+property(
+  "parseIntPreservesNonNegativeIntegers",
+  forAll<Int>((n) => implies(n >= 0, parseInt(String(n)) === n)),
+);
+`;
+const MATH_FIXTURE_SOURCE = `
+import { property, forAll, implies } from "provekit/ir";
+import type { Int, Real } from "provekit/sorts";
+
+property("Math.abs.returnsNonNegative", forAll<Real>((x) => Math.abs(x) >= 0));
+
+property(
+  "Math.abs.preservesMagnitude",
+  forAll<Real>((x) => Math.abs(x) === Math.abs(-x)),
+);
+
+property(
+  "Math.abs.identityOnNonNegative",
+  forAll<Real>((x) => implies(x >= 0, Math.abs(x) === x)),
+);
+
+property("Math.abs.zeroFixedPoint", Math.abs(0) === 0);
+
+property(
+  "Math.max.commutative",
+  forAll<Real>((a) => forAll<Real>((b) => Math.max(a, b) === Math.max(b, a))),
+);
+
+property(
+  "Math.floor.idempotentOnIntegers",
+  forAll<Int>((n) => Math.floor(n) === n),
+);
+`;
 
 function buildProgram(files: Record<string, string>): ts.Program {
   const fileMap = new Map<string, string>();
@@ -498,8 +566,8 @@ describe("rejection cases", () => {
 
 describe("integration: parseInt fixture", () => {
   it("lifts every property without unliftable diagnostics", () => {
-    const filePath = fixtureFile("parseInt.invariant.ts");
-    const src = fs.readFileSync(filePath, "utf8");
+    const filePath = path.join(FIXTURE_DIR, "inline-parse-probe.invariant.ts");
+    const src = PARSE_INT_FIXTURE_SOURCE;
     const program = buildProgram({ [filePath]: src });
     const result = liftProject(program);
 
@@ -533,8 +601,8 @@ describe("integration: parseInt fixture", () => {
   });
 
   it("each formula has a non-empty IR shape", () => {
-    const filePath = fixtureFile("parseInt.invariant.ts");
-    const src = fs.readFileSync(filePath, "utf8");
+    const filePath = path.join(FIXTURE_DIR, "inline-parse-probe.invariant.ts");
+    const src = PARSE_INT_FIXTURE_SOURCE;
     const program = buildProgram({ [filePath]: src });
     const result = liftProject(program);
     for (const p of result.properties) {
@@ -552,8 +620,8 @@ describe("integration: parseInt fixture", () => {
 
 describe("integration: Math fixture", () => {
   it("lifts every property cleanly", () => {
-    const filePath = fixtureFile("Math.invariant.ts");
-    const src = fs.readFileSync(filePath, "utf8");
+    const filePath = path.join(FIXTURE_DIR, "inline-math-probe.invariant.ts");
+    const src = MATH_FIXTURE_SOURCE;
     const program = buildProgram({ [filePath]: src });
     const result = liftProject(program);
     const unliftMsgs = diagMessages(result.diagnostics).filter(

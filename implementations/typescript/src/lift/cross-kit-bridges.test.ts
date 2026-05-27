@@ -7,8 +7,8 @@
 // `implementations/rust/provekit-self-contracts/src/lift_plugin_protocol.rs`),
 // this test:
 //
-//   1. Re-runs the sibling `cross-kit-bridges.invariant.ts` slab to
-//      capture the 10 counterpart `ContractDeclaration`s.
+//   1. Lifts the sibling native self-contract source to capture the 10
+//      counterpart `ContractDecl`s.
 //   2. Mints each counterpart via `mintContract` with the same producedBy
 //      / producedAt / signing key the orchestrator uses, yielding the
 //      ENVELOPE CID that will land in the ts self-contracts bundle.
@@ -27,20 +27,15 @@
 
 import { describe, expect, it } from "vitest";
 
-import {
-  beginCollecting,
-  _resetCollector,
-  type ContractDeclaration,
-  type BridgeDeclaration,
-  type Declaration,
-} from "../ir/symbolic/property.js";
+import { join } from "node:path";
+import { type BridgeDeclaration } from "../ir/symbolic/property.js";
 import { canonicalEncode } from "../claimEnvelope/canonicalize.js";
 import { computeCid } from "../canonicalizer/hash.js";
 import { mintContract } from "../claimEnvelope/mint.js";
 import { generateKeypair } from "../producerKeys/index.js";
+import { liftPath, type ContractDecl } from "./index.js";
 
 import {
-  invariants as crossKitBridgesInvariants,
   RUST_LIFT_PLUGIN_CONTRACT_CIDS,
   RUST_KIT_LAYER,
   TS_KIT_LAYER,
@@ -48,7 +43,7 @@ import {
   PHASE_2_BRIDGE_NOTES,
   counterpartContractName,
   bridgeName,
-} from "./cross-kit-bridges.invariant.js";
+} from "./cross-kit-bridges.js";
 import {
   PRODUCED_BY,
   DECLARED_AT,
@@ -57,49 +52,49 @@ import {
 // ---------------------------------------------------------------------------
 // Pinned counterpart envelope CIDs (10, one per Rust lift_plugin_protocol
 // contract). These are the CIDs the ts self-contracts bundle WILL contain
-// once the cross-kit-bridges slab is wired in (commit body cites the new
+// once the native cross-kit bridge source is wired in (commit body cites the new
 // bundle CID for `make mint-ts`).
 // ---------------------------------------------------------------------------
 const PINNED_COUNTERPART_CIDS: ReadonlyMap<string, string> = new Map([
   [
     "ts_lift_plugin_initialize_protocol_version_match",
-    "blake3-512:4dc1d7f681f936bc56a04a364a09319adae3d0c143c391395d2d28ca8cd3533d890d4f1a1c0551b5e3748b6245a9fd5791dcdc193fcc7109ebd9efc7d3a3e9c5",
+    "blake3-512:fec8afef5376e2e1507f2043389c74fb38729c67dc7d98697b33ad82a156165af22a33a18cb7b7f52fbaaefd81af85787107b8ccfbf2e8169ed209bc7a4770df",
   ],
   [
     "ts_lift_plugin_initialize_capabilities_authoring_surfaces_nonempty",
-    "blake3-512:67389b3a5300286d9fdf9dfc674f51352ff071b6c0af1443edd45cd6b4e444d89ce9b6a207e21803eb0fb945b14080aaf35321e2f47a0a52782b110fa37cc111",
+    "blake3-512:a81ea865fedba115cc101b6db3d2540ed194bbea0f325bbbca2c91c0901c68d45b7139c957fa92869092ab47e4ea7b4270bb7906f74c08dbf1b2f96eab23e135",
   ],
   [
     "ts_lift_plugin_initialize_capabilities_ir_version_starts_with_v",
-    "blake3-512:3e44dd76904de2d152c99e5b6975b4f43dd6deee6a5de0ae083dc0f427ee3be9d287f6030aef578ba044291765bc8dee25871df2bf5d1708ab0dca95467f050d",
+    "blake3-512:656f116bcde496705e1e987e86a1c186d9ae5a0dc8c1cba314056aaf2c27eb90293857878b5d61971ce67d05f915c6aac2034ddfe359e599226431da06e0280f",
   ],
   [
     "ts_lift_plugin_lift_request_surface_is_string",
-    "blake3-512:19998ebf887b19a24bb3c14e4e9aa36c10ef2b0c4f02b16b0ca42ccd3a58baf118ea35f4ea1749a19a5ece58a0818008e68acc97a50282f44b5ef362af5e4c78",
+    "blake3-512:d322597fa7cff04a313cc6af97b1b73005e27fd197ffe6b09a2f2c351136668260b22715911104460cd24a3b925e188a7d2db85a2420aecdeebaca7d6a59588e",
   ],
   [
     "ts_lift_plugin_lift_request_source_paths_nonempty",
-    "blake3-512:2d13d33c5a2d748e71eab103357f79f4afe5648eaef6ce083b96ca9f9ba1819b0bbc79edee27ed57e277f7e2cdf4129030990e54c668e5639e8ea48f9024a1e0",
+    "blake3-512:dc3d900100fa1167796d1c8649009252d065109994364a9f9bc2fb8b1cb86a6e628d6242ac8c52da5c27805480587956a95edad77d5696196a72206fd25140d2",
   ],
   [
     "ts_lift_plugin_lift_request_source_paths_each_nonempty",
-    "blake3-512:e2c45ccc34809a042a23473b1dd21df931423833295c63c0e153a6ac0dab15f4d7e6d697b623c14c84edfdb9fac7cf67c6e8ca85764eee7834cd52e45867d689",
+    "blake3-512:aab9f9f05eafb4e567fcea296c9e8c9a69e05881309d5d40c3bcab04ce46c72bb238287f77dcd3e062e5d6044d8451211f2d8391a778eebee572d2580365b16a",
   ],
   [
     "ts_lift_plugin_lift_request_surface_in_capabilities",
-    "blake3-512:8e8a355fefd51e7d658e6aeb3c26101c1ccb4c901a682ed8cd53a224fee77e7394d6c80e05effcdd8408e1e51187830b1c1d08322a77b7831676b480477d553d",
+    "blake3-512:720bf5f495aa0fe16bba4f6a59d986c8b2069b382f18fb3931b3d6d82f7342d3dcd756b70921fa53a7ef717cc868a640d2b6f20ba657ee55f2fba546b04ad17c",
   ],
   [
     "ts_lift_plugin_lift_response_kind_in_set",
-    "blake3-512:8cec4d85e981ba1a0af34ba1cc633a756c64682010723c9d773c512c8c8b0e948ff03e47aaf0ee08aa16962af5e0454be3df311aa0ab988779b7d50e4f528ff7",
+    "blake3-512:8ba0855515ae7fb1bb2b02f1218c78a819bf93cd8788cf2cb08cb106144b973bd978d1c24ed1ec4cc34d53d12961438e2da180f7f274f8099ed8882165ca5673",
   ],
   [
     "ts_lift_plugin_lift_response_ir_document_array",
-    "blake3-512:f1b9528a392a4c9f2358214bb3600f7c5665ddcab007888f53db69145edb2d1897f4c95dcd90c01eb8b2aa4dfb1b9e16e7edf573911263675576307ac62b1b00",
+    "blake3-512:d546bb33ee1edbe06554427c5620d2b5e01636dcd354992b685a103baf6b7fd0d213f2c907b3a60d8074cdf9f6fdfced1962ff7a0906640dbce980701a774665",
   ],
   [
     "ts_lift_plugin_diagnostic_field_is_array",
-    "blake3-512:dec16ad4a6ce72026364d6f7453c5b090486d5bb6c65ee5698657b49bf6caf9f743e63a5f8a58dc7bf7fc09d22f43c54735e25fbe39a4714624bb6d7ba23c283",
+    "blake3-512:64bc969749ad9a802b89876751f1def2f01a6bd26cc59cf3e02dcffa97998f382ab16f31b4b16be15ab85b9c17147852cf08af3d8cb8fc8fec2c996d9b71257d",
   ],
 ]);
 
@@ -111,43 +106,43 @@ const PINNED_COUNTERPART_CIDS: ReadonlyMap<string, string> = new Map([
 const PINNED_BRIDGE_CIDS: ReadonlyMap<string, string> = new Map([
   [
     "bridge_to_lift_plugin_initialize_protocol_version_match",
-    "blake3-512:f1b22667687c179adc1be8731f2096a5b197023be1081fb3bb3ca9528c867dd81374c0a04006c81b60e1ef378ebfb4294483fbd024f17ae9b9e1fc72c166745d",
+    "blake3-512:8fc7bfa5d9959bdc92661feb473dbdb6621e65e4f320c1c76e1a5fcb20277b61d9e6141197216365521b6f12eedcf993fbbb91ce607160477b89a69ff25e6948",
   ],
   [
     "bridge_to_lift_plugin_initialize_capabilities_authoring_surfaces_nonempty",
-    "blake3-512:65ba953c63b98a83a1fb670a35e5b02f3fa57421898fde2ab63912994850564ebd1f605d5515cf508843a2d19217de0059c0dbccc726d3eda0a5f56f951bf83f",
+    "blake3-512:a30449b6134bf120abf29b39d9292d09b83da5a6508bedb22817e3561d9c93b78ab77aac82654f84aa74385b7a6a1d545cb5c0508fc2567cc29cc76d66c89f14",
   ],
   [
     "bridge_to_lift_plugin_initialize_capabilities_ir_version_starts_with_v",
-    "blake3-512:4facd5bf5f854511287b07074863c074b7615d0090ff175aa4327e2029ada01c6890efa86065e33eada15df7b53bab2fcd6e7b2ac006e2f35ed596f1f87a3e3a",
+    "blake3-512:ef17f3a438dc25fa5cfedf8770b6920d0e9665d1afc7c23f9c8f1308c26c31af1e0aad7ab4214def21c2c4e28e3f3e9a00ed3394c12c8b16a322227c1b8b5fd2",
   ],
   [
     "bridge_to_lift_plugin_lift_request_surface_is_string",
-    "blake3-512:150385a77549be3cfca758670450c678768be44dd39813e9712d9703ec4753cd2bcda4dc32c5acbf1fca2aece9954a77e5e2812ebc2807a7a839b55e7a8c2c08",
+    "blake3-512:00a9eedd3467504539a17383945ee7a9d193a090c0d4c180e8893a27fe2b9e34a4ed45ff74f99e655737f7b670fd38aed58222f7c1855dc121f0201306f1dd9a",
   ],
   [
     "bridge_to_lift_plugin_lift_request_source_paths_nonempty",
-    "blake3-512:72f29af7b43a26e035ae4655582164e02c346c8f5dd8c1e0c628b0444c838d26f00f38f02567571eef742b924b5814a5a0d3d12c9df9d9e893e1d5aab8175d86",
+    "blake3-512:52d9594711c9b979c10f08b8dd66fb36b9799d279ece75b0ef46f868cf4b9cb57ef72f538acbaafa30744d58bad7a30286fc6807a6c459344fcfe01db8bb1492",
   ],
   [
     "bridge_to_lift_plugin_lift_request_source_paths_each_nonempty",
-    "blake3-512:e744a961423ae416283b010c6e5b502327bdf5353ecbbef74919745fba924db54d7df6b8c11b84aa26692386912976f590ec24ac9d46d4737b60e851c50de7ba",
+    "blake3-512:016ed28b1aef22e48d73e729746ea447ad4e7a8de1ecb6de6ab546da0a7b841efc45a81a5459176ce35b50f5b8a0315b06e83ec8ddc6d42a136b1ef0fb4f98e2",
   ],
   [
     "bridge_to_lift_plugin_lift_request_surface_in_capabilities",
-    "blake3-512:422f55e5850c948ba48084a3345e66dd0226abb1745b83c1225106c08b91657dc6517a29a881f8dab53f80dabd4008b94eaf5c3cf67ab82539beab3a15c8fa1a",
+    "blake3-512:2111197b5ed52d05ddccfb761b246488409cf5449890aba5cc4feef82989d9fb3e6cfac72a69c07dbff44e81e8e4f8c169d861d881557b8842a116c046624f67",
   ],
   [
     "bridge_to_lift_plugin_lift_response_kind_in_set",
-    "blake3-512:987cc215b870be26ab3e3518f6010751955edb8947b0fabd4bd5a8891d509efa1200210f636d28cf9e73b13ab1a9fcc8c66e1d32c537eb31b9198f2ecbaa64a0",
+    "blake3-512:1676585b87a6135ad88edfe0bb530e43263078477a5cd3e0a9218284bbfe39923e81eada6187e0c5c1d8237788710148c1d6ce3be152e2928f4a97d572061dd0",
   ],
   [
     "bridge_to_lift_plugin_lift_response_ir_document_array",
-    "blake3-512:2a61099df72b0727f4923cf37d474fc4e1f222d6ac6f4eb4094b18bf16d681b4c658e9ccb513c5490076b63c6408f11c288657ba03e147c73bba4b8337fdb029",
+    "blake3-512:fab8777cdd76ff0a690223355c8c6cc442a3313751ebbeb9eb1c7d61164120d531db9b116693d0949b02e5ab789f5015b995231eaafc9bfc09b762c5116c57fb",
   ],
   [
     "bridge_to_lift_plugin_diagnostic_field_is_array",
-    "blake3-512:3bae049f63073dadfbd9d699cc77842aa811b8093951c73968ea9d357a115d91017dc0cabb9efce1a0cc967c07f808d1648206f8fb5e9dc9333583138993f61a",
+    "blake3-512:6ce5854b8b34c60ffb1cdf6ee3fabad37e675b5d4deb28f2492703f9fb2bb6d65da93bd775605765c5aa5eff68fc4f1e42b8de09565763742904960c4b2d3c98",
   ],
 ]);
 
@@ -155,14 +150,12 @@ const PINNED_BRIDGE_CIDS: ReadonlyMap<string, string> = new Map([
 // Helpers
 // ---------------------------------------------------------------------------
 
-function collectCounterpartContracts(): ContractDeclaration[] {
-  _resetCollector();
-  const finish = beginCollecting();
-  crossKitBridgesInvariants();
-  const decls: Declaration[] = finish();
-  return decls.filter(
-    (d): d is ContractDeclaration => d.kind === "contract",
+function collectCounterpartContracts(): ContractDecl[] {
+  const sourcePath = join(__dirname, "cross-kit-bridges.self-contracts.test.ts");
+  const expectedNames = new Set(
+    Array.from(RUST_LIFT_PLUGIN_CONTRACT_CIDS.keys()).map(counterpartContractName),
   );
+  return liftPath(sourcePath).decls.filter((d) => expectedNames.has(d.name));
 }
 
 function buildBridgeDeclaration(
@@ -294,7 +287,7 @@ describe("cross-kit bridges: lift-plugin-protocol (Phase 2)", () => {
 
   it("each bridge points at the correct Rust source CID", () => {
     // Sanity: the Rust source CID stays in lock-step with the imported
-    // RUST_LIFT_PLUGIN_CONTRACT_CIDS map. If this fails the slab's
+    // RUST_LIFT_PLUGIN_CONTRACT_CIDS map. If this fails the native source's
     // imported map drifted from what we built bridges against.
     const counterparts = collectCounterpartContracts();
     const { privateKey } = getSigningKey();
