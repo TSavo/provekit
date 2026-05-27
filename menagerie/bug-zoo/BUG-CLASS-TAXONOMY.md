@@ -77,3 +77,28 @@ substrate cares about most. Candidate ten:
 
 The `BZ-SHAPE-001..004` numbering gap and the single-entry kingdoms are the
 fossil record of a larger original design; the survivors are the five above.
+
+## The goal: a (species × domains) matrix
+
+The zoo's purpose is to **exhibit every portable bug-class species across ≥2 domains**
+(language surfaces / kits). "More than one domain" does three jobs:
+
+1. **Demonstration** — the same missing-edge shape recurring across languages is what
+   makes it a *class* (universal), not a per-language quirk. (SHAPE-005 in Java
+   `@NotNull`/Spring + TS zod/class-validator + C# DataAnnotations/LINQ.)
+2. **Admission filter** — a class EARNS a species only if exhibitable across ≥2 domains.
+   Single-language-only = a quirk, not a substrate-level bug class. Multi-domain is the
+   criterion for being a class at all.
+3. **Proof, not assertion** — the exhibits must **lift to the same obligation/edge**
+   (CID-equivalent), so portability is *proven* by the lifted contracts coinciding. And
+   that coincidence IS bug class #10 (Translation / cross-representation equivalence) —
+   so the zoo's master claim ("bug classes are portable") is itself one of its own
+   species. The zoo proves portability using the portability obligation. (Load-bearing.)
+
+Corollary: strength is **monotonic in domains** — 2 domains is the minimum to claim
+"portable"; each additional language that lifts to the *same* edge strengthens the
+universality claim.
+
+"Complete zoo" = every portable class (the taxonomy above) × ≥2 domains, each
+domain-pair lifting to the byte-identical edge. The surviving 5 species each already
+span ≥2 domains; the build list is the uncovered axes, each needing its ≥2-domain set.
