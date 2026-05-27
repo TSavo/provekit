@@ -1,7 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 
 use std::collections::{BTreeMap, BTreeSet};
-use std::path::{Path, PathBuf};
 
 use provekit_canonicalizer::blake3_512_of;
 use provekit_ir_types::{
@@ -13,7 +12,6 @@ use serde::{Deserialize, Serialize};
 use serde_json::{json, Value as Json};
 use thiserror::Error;
 
-use crate::proofir_bridge::CatalogIndex;
 
 use super::primitives::address;
 use super::traits::{Kit, KitError};
@@ -1235,49 +1233,115 @@ fn named_witness(role: &str, predicate_text: &str, source_kind: &str) -> NamedWi
     }
 }
 
-struct ConceptOpCatalog {
-    index: CatalogIndex,
-}
+// Grammar lives in CODE, pinned by SHAPE, never on disk. An IR grammar
+// primitive (op-application / seq / ite / bind-result) is the LANGUAGE, not a
+// promoted concept -- and a thing is one or the other, never both. So its
+// identity is the `json_cid` of its pure, name-free, positional structural
+// shape, computed here from a shape compiled into the binary. There is no disk
+// load, no catalog, and no `required_cid` that can fail on an empty catalog:
+// the language is always present because it is the code.
+struct ConceptOpCatalog;
 
 impl ConceptOpCatalog {
     fn load() -> Result<Self, BindError> {
-        let root = find_concept_shapes_root().ok_or_else(|| {
-            BindError::Failed("concept-shapes catalog root not found".to_string())
-        })?;
-        let index = CatalogIndex::from_catalog_root(root.join("catalog"))
-            .map_err(|error| BindError::Failed(format!("load concept-shapes catalog: {error}")))?;
-        Ok(Self { index })
+        Ok(Self)
     }
 
     fn required_cid(&self, name: &str) -> Result<Cid, BindError> {
-        self.cid(name).ok_or_else(|| {
-            BindError::Failed(format!(
-                "concept op `{name}` missing from concept-shapes catalog"
-            ))
-        })
+        self.cid(name)
+            .ok_or_else(|| BindError::Failed(format!("`{name}` is not a language primitive")))
     }
 
     fn cid(&self, name: &str) -> Option<Cid> {
-        self.index
-            .op_definition_cid(name)
-            .and_then(|cid| Cid::try_from(cid).ok())
+        let shape = grammar_op_shape(name)?;
+        let cid = crate::canonical::json_cid(&shape).ok()?;
+        Cid::try_from(cid.as_str()).ok()
     }
 
     fn resolved_name_and_cid(&self, name: &str) -> Result<(String, Cid), BindError> {
         if let Some(cid) = self.cid(name) {
             return Ok((name.to_string(), cid));
         }
-        if !name.starts_with("concept:") {
-            let concept_name = format!("concept:{name}");
-            if let Some(cid) = self.cid(&concept_name) {
-                return Ok((concept_name, cid));
-            }
-        }
+        // Not a language primitive: an unwitnessed concept resolves to the
+        // grammar floor -- the generic op-application -- rather than fabricating
+        // a name. (Once promotion-by-witnessing lands, a witnessed concept
+        // carries its own address here.)
         Ok((
             CONCEPT_OP_APPLICATION.to_string(),
             self.required_cid(CONCEPT_OP_APPLICATION)?,
         ))
     }
+}
+
+/// The pure, name-free, positional structural shape of an IR grammar primitive.
+/// Grammar is the language: pinned by shape in code, addressed by `json_cid` of
+/// this shape. `fn_name`, `operator`, formal parameter names, `wp_note` prose,
+/// and the memento envelope are all sugar and are ABSENT FROM THE PREIMAGE BY
+/// CONSTRUCTION -- born pure, never stripped. Slot references are positional.
+fn grammar_op_shape(name: &str) -> Option<Json> {
+    use serde_json::json;
+    let sort = |n: &str| json!({ "kind": "ctor", "name": n, "args": [] });
+    let slot = |i: usize| json!({ "kind": "slot", "index": i });
+    let pre = json!({ "kind": "atomic", "name": "true", "args": [] });
+    let shape = match name {
+        CONCEPT_OP_APPLICATION => json!({
+            "kind": "grammar-op",
+            "formalSorts": [sort("Cid"), sort("List<Term>")],
+            "returnSort": sort("Term"),
+            "pre": pre,
+            "post": {
+                "arity": ["Cid", "List<Term>"],
+                "result": "Term",
+                "slotTerms": [slot(0), slot(1)]
+            },
+            "effects": []
+        }),
+        CONCEPT_SEQ => json!({
+            "kind": "grammar-op",
+            "formalSorts": [sort("Stmt"), sort("Stmt")],
+            "returnSort": sort("Stmt"),
+            "pre": pre,
+            "post": {
+                "arity": ["Stmt", "Stmt"],
+                "result": "Stmt",
+                "wpRule": {
+                    "kind": "apply",
+                    "fn": "wp_slot_0",
+                    "args": [{
+                        "kind": "apply",
+                        "fn": "wp_slot_1",
+                        "args": [{ "kind": "var", "name": "Q" }]
+                    }]
+                }
+            },
+            "effects": [{ "kind": "effect-polymorphic", "rule": "union(slot_0.effects, slot_1.effects)" }]
+        }),
+        "concept:ite" => json!({
+            "kind": "grammar-op",
+            "formalSorts": [sort("Bool"), sort("Expr"), sort("Expr")],
+            "returnSort": sort("Expr"),
+            "pre": pre,
+            "post": {
+                "arity": ["Bool", "Expr", "Expr"],
+                "result": "Expr"
+            },
+            "effects": [{ "kind": "effect-polymorphic", "rule": "union branch value effects" }]
+        }),
+        CONCEPT_BIND_RESULT => json!({
+            "kind": "grammar-op",
+            "formalSorts": [sort("Term"), sort("Term")],
+            "returnSort": sort("BoundTerm"),
+            "pre": pre,
+            "post": {
+                "arity": ["Term", "Term"],
+                "result": "BoundTerm",
+                "slotTerms": [slot(0), slot(1)]
+            },
+            "effects": []
+        }),
+        _ => return None,
+    };
+    Some(shape)
 }
 
 fn named_term_document_op_tree(
@@ -1871,25 +1935,6 @@ fn seed_catalog() -> Catalog {
     Catalog {
         entries: Vec::new(),
     }
-}
-
-fn find_concept_shapes_root() -> Option<PathBuf> {
-    let mut starts = Vec::new();
-    if let Ok(cwd) = std::env::current_dir() {
-        starts.push(cwd);
-    }
-    if let Some(manifest_dir) = option_env!("CARGO_MANIFEST_DIR") {
-        starts.push(PathBuf::from(manifest_dir));
-    }
-    for start in starts {
-        for ancestor in start.ancestors() {
-            let candidate = ancestor.join("menagerie").join("concept-shapes");
-            if candidate.is_dir() {
-                return Some(candidate);
-            }
-        }
-    }
-    None
 }
 
 
