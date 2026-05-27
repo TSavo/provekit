@@ -316,7 +316,7 @@ func liftFunc(fset *token.FileSet, file *ast.File, pkg *types.Package, info *typ
 	if err != nil {
 		return FunctionContract{}, nil, refuse("unsupported-syntax", errPos(err, fn.Pos()), err.Error())
 	}
-	pre, err := formulaValue(ir.And())
+	pre, err := formulaValue(l.liftLeadingGuardPreconditions(fn.Body.List))
 	if err != nil {
 		return FunctionContract{}, nil, refuse("internal-error", fn.Pos(), err.Error())
 	}
@@ -351,6 +351,66 @@ func liftFunc(fset *token.FileSet, file *ast.File, pkg *types.Package, info *typ
 		SchemaVersion:      "1",
 	}
 	return contract, body.term, nil
+}
+
+// liftLeadingGuardPreconditions lifts a function's leading defensive guards
+// (`if <cond> { panic(...) }`) into a precondition. A guard panics when <cond>
+// holds, so the caller's obligation to avoid the panic is ¬<cond>. This brings
+// the Go production lifter to parity with the Rust (lift_function_precondition)
+// and C# (LiftMethodPrecondition) walkers; without it every function lifted
+// `pre = true`, so a consumer's defensive contract was invisible at call sites.
+// Scans only leading guards and stops at the first non-guard statement, so it
+// never fabricates a precondition from arbitrary control flow.
+func (l *lifter) liftLeadingGuardPreconditions(stmts []ast.Stmt) ir.IrFormula {
+	var atoms []ir.IrFormula
+	for _, stmt := range stmts {
+		ifStmt, ok := stmt.(*ast.IfStmt)
+		if !ok || ifStmt.Init != nil || ifStmt.Else != nil || !isPanicOnlyBlock(ifStmt.Body) {
+			break
+		}
+		atom, ok := l.guardPreconditionAtom(ifStmt.Cond)
+		if !ok {
+			break
+		}
+		atoms = append(atoms, atom)
+	}
+	return ir.And(atoms...)
+}
+
+// guardPreconditionAtom lifts ¬cond as a precondition atom. `if !P { panic }`
+// lifts to the clean `P == true`; a bare `if cond { panic }` lifts to
+// `cond == false`. Returns false when the condition is not liftable, so the
+// caller refuses to invent a precondition rather than emit a wrong one.
+func (l *lifter) guardPreconditionAtom(cond ast.Expr) (ir.IrFormula, bool) {
+	if unary, ok := cond.(*ast.UnaryExpr); ok && unary.Op == token.NOT {
+		inner, err := l.liftExpr(unary.X)
+		if err != nil {
+			return nil, false
+		}
+		return ir.Eq(inner.term, ir.BoolConst(true)), true
+	}
+	lifted, err := l.liftExpr(cond)
+	if err != nil {
+		return nil, false
+	}
+	return ir.Eq(lifted.term, ir.BoolConst(false)), true
+}
+
+// isPanicOnlyBlock reports whether a block is exactly `{ panic(...) }`.
+func isPanicOnlyBlock(b *ast.BlockStmt) bool {
+	if b == nil || len(b.List) != 1 {
+		return false
+	}
+	exprStmt, ok := b.List[0].(*ast.ExprStmt)
+	if !ok {
+		return false
+	}
+	call, ok := exprStmt.X.(*ast.CallExpr)
+	if !ok {
+		return false
+	}
+	ident, ok := call.Fun.(*ast.Ident)
+	return ok && ident.Name == "panic"
 }
 
 func extractFormals(info *types.Info, fn *ast.FuncDecl) ([]string, []any, map[types.Object]bool, error) {
