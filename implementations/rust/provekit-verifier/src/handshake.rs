@@ -159,14 +159,14 @@ fn wrap_post_forall(post: Json, producer_body: &Json) -> Json {
     if post.get("kind").and_then(|v| v.as_str()) == Some("forall") {
         return post;
     }
-    // The producer's formal sort is already canonical (`Int` for integers);
-    // bind the carrier `result` with it, defaulting to `Int` when absent.
-    let sort = producer_body
-        .get("formalSorts")
-        .and_then(|v| v.as_array())
-        .and_then(|a| a.first())
-        .cloned()
-        .unwrap_or_else(|| serde_json::json!({"kind": "primitive", "name": "Int"}));
+    // The carrier `result` is the producer's RETURN value, not a parameter, so
+    // its sort is NOT `formalSorts[i]` (those model parameter sorts, paired
+    // with `formals`). The verifier reasons in LIA; bind the carrier as the
+    // canonical `Int`, matching `build_implication_obligation`'s default. A
+    // non-Int return would need the contract's return sort, which the memento
+    // does not expose separately today.
+    let _ = producer_body;
+    let sort = serde_json::json!({"kind": "primitive", "name": "Int"});
     serde_json::json!({"kind": "forall", "name": "result", "sort": sort, "body": post})
 }
 

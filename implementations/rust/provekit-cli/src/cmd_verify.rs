@@ -697,25 +697,13 @@ fn mint_verification_witness(
 
     // Build the content over which the CID + signature are computed.
     // (Mirrors the WitnessMemento envelope/header convention: the CID is
-    // blake3-512 of the JCS of the signable content; the signature is
-    // over the same bytes.)
-    let signable = json!({
-        "kind": "witness",
-        "schemaVersion": "1",
-        "witness_for": cs.property_cid,
-        "subject": cs.bridge_target_cid,
-        "fixture_state_cid": obligation_cid,
-        "observed_at": observed_at,
-        "sample_count": 1,
-        "measurements": measurements,
-        "outcome": "pass",
-        "signed_by": pubkey,
-    });
-    let signable_jcs = jcs_of_json(&signable)?;
-    let cid = blake3_512_of(signable_jcs.as_bytes());
-    let signature = ed25519_sign_string(signer_seed, signable_jcs.as_bytes());
-
-    let witness = provekit_ir_types::WitnessMemento {
+    // signed_by/signature are the HOW (attestation), EXCLUDED from the CID
+    // preimage per WitnessMemento::recompute_cid. Mirror witness_ingest: build
+    // the memento with signer set + empty signature, derive the CID from the
+    // canonical observation bytes, then sign the CID (the address of the WHAT).
+    // Both witness-mint paths now share one scheme: same observation => same
+    // CID regardless of who attests, and the signature attests that CID.
+    let mut witness = provekit_ir_types::WitnessMemento {
         kind: "witness".to_string(),
         schema_version: "1".to_string(),
         witness_for: cs.property_cid.clone(),
@@ -726,9 +714,12 @@ fn mint_verification_witness(
         measurements,
         outcome: "pass".to_string(),
         signed_by: Some(pubkey),
-        signature: Some(signature),
-        cid: cid.clone(),
+        signature: None,
+        cid: String::new(),
     };
+    let cid = witness.recompute_cid().map_err(|e| e.to_string())?;
+    witness.signature = Some(ed25519_sign_string(signer_seed, cid.as_bytes()));
+    witness.cid = cid.clone();
 
     let bytes =
         serde_json::to_string_pretty(&witness).map_err(|e| format!("serialize witness: {e}"))?;

@@ -300,9 +300,13 @@ impl MementoPool {
         // precondition self-discharge merely because the callee DECLARES it
         // (the missing-edge hole; see `precondition_is_obligation_not_verified_fact`).
         // Established facts: a function's `postHash`/`invHash` (guarantees on
-        // return / always), and a proven implication's `consequentHash`
-        // (gated by its implication memento via `verify_implication`).
-        for field in &["postHash", "invHash", "consequentHash"] {
+        // return / always). NOT `consequentHash`: an implication's consequent
+        // `Q` holds only GIVEN its antecedent `P`, so indexing it would make
+        // Tier 0 `verify(Q)` treat a conditional as unconditional -- the same
+        // category error as `preHash`/`antecedentHash`. Proven implications
+        // discharge via `verify_implication`/`can_implies`, which scan
+        // implication mementos directly and don't need the consequent here.
+        for field in &["postHash", "invHash"] {
             if let Some(hash) = memento_body_field(&envelope, field).and_then(|v| v.as_str()) {
                 self.formula_to_memento
                     .insert(hash.to_string(), memento_cid.clone());
