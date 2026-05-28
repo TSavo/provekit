@@ -210,10 +210,22 @@ pub fn run(args: RecognizeArgs) -> u8 {
             );
         }
         if let Some(path) = &written_proof {
+            // One bridge + one implication contract per tag with a
+            // function_name (the bridge falls back to its sibling
+            // contract when no shim contract matches by ctor name).
+            let bridge_count = tags
+                .iter()
+                .filter(|t| {
+                    t.get("function_name")
+                        .and_then(|v| v.as_str())
+                        .is_some_and(|s| !s.is_empty())
+                })
+                .count();
             println!(
-                "{}: minted {} bridge(s) into {}",
+                "{}: minted {} bridge(s) + {} implication contract(s) into {}",
                 "write".green().bold(),
-                tags.iter().filter(|t| !t["contract_cid"].is_null()).count(),
+                bridge_count,
+                bridge_count,
                 path.display()
             );
         }
@@ -321,18 +333,34 @@ fn recognize_implication_body(tag: &Value) -> Option<Value> {
 }
 
 /// Mint a `.proof` envelope containing one bridge memento + one
-/// implication contract memento per recognize tag with a non-null
-/// contract_cid. Written under `<project>/.provekit/recognize/<cid>.proof`.
-/// Returns the path when members are minted; Ok(None) when no tags
-/// carried emit-able material.
+/// implication contract memento per recognize tag. Written under
+/// `<project>/.provekit/recognize/<cid>.proof`.
 ///
-/// Why two members per tag (bridge + contract):
-///   - The bridge memento is the RESOLVE half: sourceSymbol -> vendor
-///     contract_cid. enumerate_callsites looks it up by name.
-///   - The contract memento is the ENUMERATE half: its formula contains
-///     a ctor term named after the user's function. enumerate_callsites
-///     walks contract formulas, finds the ctor, looks up the bridge by
-///     name, emits a CallSite. Same shape lift+test produces.
+/// Two members per tag (bridge + contract):
+///   - The contract memento is the ENUMERATE half: its post atomic
+///     contains a ctor term named after the user's function.
+///     enumerate_callsites walks contract formulas, finds the ctor,
+///     looks up the bridge by name, emits a CallSite.
+///   - The bridge memento is the RESOLVE half: sourceSymbol →
+///     targetContractCid. The discharger resolves through the bridge
+///     to a contract memento and composes pre/post.
+///
+/// Bridge target resolution order:
+///   1. The tag's contract_cid if it cites a contract that exists in
+///      the loaded shim .proof's (via the ctor-name index in the
+///      binding loader). This is the production linkage when shims
+///      mint contracts covering their sugar functions.
+///   2. Fallback to the recognize-emitted SIBLING contract (the one
+///      this same call just minted). Self-resolution keeps the loop
+///      closed even when the shim mints no contract for that function —
+///      the verdict is `discharged: vacuous` against the trivial
+///      identity post the recognize lane emits.
+///
+/// The fallback isn't a hack; it's the lift-equivalent of "if there's
+/// no upstream contract, the test author's own assertion is the
+/// contract." Recognize's claim is "I see this user function
+/// alpha-matches the sugar shape" — that IS a claim, content-addressed,
+/// signed, and admissible by the substrate.
 fn emit_bridge_envelope(
     project_root: &Path,
     tags: &[Value],
@@ -340,19 +368,50 @@ fn emit_bridge_envelope(
 ) -> Result<Option<std::path::PathBuf>, String> {
     let proof_dir = project_root.join(".provekit").join("recognize");
     let mut members: BTreeMap<String, Vec<u8>> = BTreeMap::new();
+    // First pass: mint each tag's implication contract so we know its
+    // CID. Build a map from function_name -> recognize-contract CID for
+    // bridge fallback resolution.
+    let mut sibling_contract_by_function: std::collections::HashMap<String, String> =
+        std::collections::HashMap::new();
     for tag in tags {
-        // Resolve half: bridge memento.
-        if let Some(body) = recognize_bridge_body(tag, target_language) {
-            let envelope = json!({ "evidence": { "kind": "bridge", "body": body } });
-            let (cid, bytes) = flat_member_canonical(&envelope)?;
-            members.entry(cid).or_insert(bytes);
-        }
-        // Enumerate half: contract memento whose formula names the callsite.
         if let Some(body) = recognize_implication_body(tag) {
             let envelope = json!({ "evidence": { "kind": "contract", "body": body } });
             let (cid, bytes) = flat_member_canonical(&envelope)?;
-            members.entry(cid).or_insert(bytes);
+            members.entry(cid.clone()).or_insert(bytes);
+            if let Some(fn_name) = tag.get("function_name").and_then(|v| v.as_str()) {
+                sibling_contract_by_function.insert(fn_name.to_string(), cid);
+            }
         }
+    }
+    // Second pass: mint the bridge memento for each tag with
+    // targetContractCid resolved against the production binding's
+    // contract_cid first (shim-minted contracts), falling back to the
+    // sibling recognize-emitted contract from pass 1.
+    for tag in tags {
+        let function_name = match tag.get("function_name").and_then(|v| v.as_str()) {
+            Some(s) if !s.is_empty() => s,
+            _ => continue,
+        };
+        // Resolve target: shim's contract_cid (set by the binding loader
+        // via ctor-name index) if it differs from the sugar entry's own
+        // signature_shape_cid fallback; otherwise the sibling contract.
+        let target_cid = tag
+            .get("contract_cid")
+            .and_then(|v| v.as_str())
+            .filter(|s| !s.is_empty())
+            .map(|s| s.to_string())
+            .or_else(|| sibling_contract_by_function.get(function_name).cloned());
+        let Some(target_cid) = target_cid else {
+            continue;
+        };
+        let body = recognize_bridge_body_with_target(
+            tag,
+            target_language,
+            &target_cid,
+        );
+        let envelope = json!({ "evidence": { "kind": "bridge", "body": body } });
+        let (cid, bytes) = flat_member_canonical(&envelope)?;
+        members.entry(cid).or_insert(bytes);
     }
     if members.is_empty() {
         return Ok(None);
@@ -374,6 +433,50 @@ fn emit_bridge_envelope(
     std::fs::write(&path, &proof.bytes)
         .map_err(|e| format!("write {}: {e}", path.display()))?;
     Ok(Some(path))
+}
+
+/// Variant of recognize_bridge_body that takes an explicit
+/// targetContractCid instead of reading the tag's contract_cid. Lets
+/// us route bridges to a sibling contract when the shim doesn't
+/// publish one covering the matched function.
+fn recognize_bridge_body_with_target(
+    tag: &Value,
+    target_language: &str,
+    target_cid: &str,
+) -> Value {
+    let function_name = tag
+        .get("function_name")
+        .and_then(|v| v.as_str())
+        .unwrap_or("")
+        .to_string();
+    let library_tag = tag
+        .get("library_tag")
+        .and_then(|v| v.as_str())
+        .unwrap_or(target_language)
+        .to_string();
+    let header = BridgeHeaderV14 {
+        schema_version: "1".to_string(),
+        kind: "bridge".to_string(),
+        name: format!("recognize:{}:{}", target_language, function_name),
+        source_symbol: function_name,
+        source_layer: target_language.to_string(),
+        source_contract_cid: target_cid.to_string(),
+        target: BridgeTarget::Contract {
+            cid: target_cid.to_string(),
+        },
+    };
+    let mut value = serde_json::to_value(header).expect("BridgeHeaderV14 serializes");
+    if let Value::Object(map) = &mut value {
+        map.insert(
+            "targetContractCid".to_string(),
+            Value::String(target_cid.to_string()),
+        );
+        map.insert(
+            "targetLayer".to_string(),
+            Value::String(library_tag),
+        );
+    }
+    value
 }
 
 fn flat_member_canonical(envelope: &Value) -> Result<(String, Vec<u8>), String> {
@@ -631,12 +734,16 @@ fn load_binding_templates_from_proof(path: &Path) -> Result<Vec<Value>, String> 
             .and_then(|v| v.as_str())
             .unwrap_or("")
             .to_string();
-        // Resolve contract_cid in priority order:
+        // Resolve contract_cid: only an actual contract memento counts.
         //   1. explicit contract_cid field on the sugar entry (rare)
         //   2. matching contract memento via ctor-name index (the
-        //      production linkage the shim mint actually uses)
-        //   3. signature_shape_cid fallback
-        //   4. the sugar entry's own CID (last resort)
+        //      production linkage the shim mint actually uses).
+        // If neither is found, contract_cid stays NULL — the bridge
+        // emission then falls back to recognize's own sibling contract
+        // (the implication memento it mints alongside each bridge).
+        // This is the substrate-honest path: a bridge resolves to a
+        // contract memento and nothing else; signature_shape_cid and
+        // sugar-entry-CID are neither.
         let contract_cid = record
             .get("contract_cid")
             .filter(|v| !v.is_null())
@@ -646,19 +753,8 @@ fn load_binding_templates_from_proof(path: &Path) -> Result<Vec<Value>, String> 
                     .get(&function_name)
                     .map(|c| Value::String(c.clone()))
             })
-            .or_else(|| {
-                record
-                    .get("signature_shape_cid")
-                    .filter(|v| !v.is_null())
-                    .cloned()
-            })
-            .unwrap_or_else(|| {
-                if cid_key.is_empty() {
-                    Value::Null
-                } else {
-                    Value::String(cid_key.clone())
-                }
-            });
+            .unwrap_or(Value::Null);
+        let _ = cid_key; // intentionally unused: sugar entry CID is not a contract
         let entry = json!({
             "concept_name": record.get("concept_name").cloned().unwrap_or(Value::Null),
             "library_tag": record.get("target_library_tag").cloned().unwrap_or(Value::Null),
