@@ -34,11 +34,9 @@ package main
 
 import (
 	"bufio"
+	"bytes"
 	"encoding/json"
 	"fmt"
-	"go/ast"
-	"go/parser"
-	"go/token"
 	"io"
 	"os"
 	"path/filepath"
@@ -277,7 +275,15 @@ func liftWorkspace(root string, mode liftMode) ([]any, []map[string]any, error) 
 				}
 				paramTypes := goParamTypes(fc)
 				returnType := goReturnType(fc)
-				bodyText := extractGoFuncBody(string(src), bareSymbol(fc.FnName))
+				bodySource, ok, bodyErr := liftgo.SugarBodySourceForFunc(rel, src, bareSymbol(fc.FnName))
+				if bodyErr != nil {
+					diagnostics = append(diagnostics, map[string]any{"path": rel, "message": bodyErr.Error()})
+					continue
+				}
+				if !ok {
+					diagnostics = append(diagnostics, map[string]any{"path": rel, "message": fmt.Sprintf("missing body source for %s", fc.FnName)})
+					continue
+				}
 				entry := map[string]any{
 					"kind":                 "library-sugar-binding-entry",
 					"target_language":      "go",
@@ -291,11 +297,7 @@ func liftWorkspace(root string, mode liftMode) ([]any, []map[string]any, error) 
 					"return_type":          returnType,
 					"visibility":           "",
 					"signature_shape_cid":  signatureShapeCID(bareSymbol(fc.FnName), fc.Formals, paramTypes, returnType),
-					"body_source": map[string]any{
-						"file":       rel,
-						"source_cid": cidOf([]byte(bodyText)),
-						"body_text":  bodyText,
-					},
+					"body_source":          bodySource,
 				}
 				if ann.Family != "" {
 					entry["family"] = ann.Family
@@ -441,24 +443,11 @@ func signatureShapeCID(name string, formals, paramTypes []string, returnType str
 // extractGoFuncBody returns the trimmed source text between the parser-owned
 // outer function body braces, mirroring rust's `sugar_body_source` body_text.
 func extractGoFuncBody(src, name string) string {
-	fset := token.NewFileSet()
-	file, err := parser.ParseFile(fset, "", src, parser.ParseComments)
-	if err != nil {
+	body, ok, err := liftgo.GoFuncBodyText([]byte(src), name)
+	if err != nil || !ok {
 		return ""
 	}
-	for _, decl := range file.Decls {
-		fn, ok := decl.(*ast.FuncDecl)
-		if !ok || fn.Name.Name != name || fn.Body == nil {
-			continue
-		}
-		open := fset.PositionFor(fn.Body.Lbrace, false).Offset
-		close := fset.PositionFor(fn.Body.Rbrace, false).Offset
-		if open < 0 || close < 0 || open >= close || close > len(src) {
-			return ""
-		}
-		return strings.TrimSpace(src[open+1 : close])
-	}
-	return ""
+	return strings.TrimSpace(body)
 }
 
 func relPath(root, path string) string {
@@ -489,10 +478,15 @@ func idValue(id json.RawMessage) any {
 }
 
 func writeJSON(w io.Writer, v any) {
-	b, err := json.Marshal(v)
-	if err != nil {
+	var buf bytes.Buffer
+	enc := json.NewEncoder(&buf)
+	enc.SetEscapeHTML(false)
+	if err := enc.Encode(v); err != nil {
 		fmt.Fprintf(w, `{"jsonrpc":"2.0","id":null,"error":{"code":-32603,"message":%q}}`+"\n", err.Error())
 		return
 	}
-	fmt.Fprintln(w, string(b))
+	if b := buf.Bytes(); len(b) > 0 && b[len(b)-1] == '\n' {
+		buf.Truncate(len(b) - 1)
+	}
+	fmt.Fprintln(w, buf.String())
 }

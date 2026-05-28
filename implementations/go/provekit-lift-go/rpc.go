@@ -66,6 +66,8 @@ func RunRPCWithDefault(stdin io.Reader, stdout io.Writer, defaultOpts LiftOption
 			writeRPC(stdout, handleLift(req.ID, req.Params, defaultOpts))
 		case "compile":
 			writeRPC(stdout, handleCompile(req.ID, req.Params))
+		case "provekit.plugin.recognize":
+			writeRPC(stdout, handleRecognize(req.ID, req.Params))
 		case "shutdown":
 			writeRPC(stdout, successResponse(req.ID, nil))
 			return nil
@@ -110,6 +112,20 @@ func handleLift(id json.RawMessage, raw json.RawMessage, defaultOpts LiftOptions
 		"opacityReport": []any{},
 		"refusals":      result.Refusals,
 	})
+}
+
+func handleRecognize(id json.RawMessage, raw json.RawMessage) any {
+	var params RecognizeParams
+	if len(raw) > 0 {
+		if err := json.Unmarshal(raw, &params); err != nil {
+			return errorResponse(id, -32602, "invalid recognize params")
+		}
+	}
+	result, err := RecognizeImpl(params)
+	if err != nil {
+		return errorResponse(id, -32602, err.Error())
+	}
+	return successResponse(id, result)
 }
 
 func handleCompile(id json.RawMessage, raw json.RawMessage) any {
