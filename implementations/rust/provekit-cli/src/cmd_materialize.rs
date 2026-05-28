@@ -18,6 +18,11 @@ use libprovekit::core::{
 // `transform_source_text` + the `SiteTransformKit` trait (#1337).
 pub(crate) use libprovekit::core::source_transform::*;
 use owo_colors::OwoColorize;
+use provekit_canonicalizer::{blake3_512_of, encode_jcs, Value as CanonicalValue};
+use provekit_ir_types::{BridgeHeaderV14, BridgeTarget};
+use provekit_proof_envelope::{
+    build_proof_envelope, ed25519_pubkey_string, Ed25519Seed, ProofEnvelopeInput,
+};
 use serde_json::Value as Json;
 use walkdir::WalkDir;
 
@@ -25,6 +30,9 @@ use crate::kit_dispatch::{
     provides_concepts_for_realize, scope_bringings_for_realize, DispatchRealizeTransport,
 };
 use crate::{OutputFlags, EXIT_OK, EXIT_USER_ERROR, EXIT_VERIFY_FAIL};
+
+const MATERIALIZE_BRIDGE_DECLARED_AT: &str = "2026-05-27T00:00:00.000Z";
+const MATERIALIZE_BRIDGE_SIGNER_SEED: Ed25519Seed = [0x6d; 32];
 
 /// #1361 follow-up: `family=library` pair from --family-library clap arg.
 #[derive(Debug, Clone)]
@@ -249,6 +257,13 @@ pub fn run(args: MaterializeArgs) -> u8 {
     } else if let Err(error) = print_dry_run(&files) {
         eprintln!("{}: {error}", "error".red().bold());
         return EXIT_USER_ERROR;
+    }
+
+    if args.write || args.out_dir.is_some() {
+        if let Err(error) = sync_materialize_bridge_proof(&project_root, &files) {
+            eprintln!("{}: {error}", "error".red().bold());
+            return EXIT_USER_ERROR;
+        }
     }
 
     // Phase E (`#1339`): emit a per-file SourceTransformReceipt summary so
@@ -1908,12 +1923,14 @@ impl SiteTransformKit for MaterializeKit<'_> {
             Ok(SiteOutcome::LoudlyLossy {
                 body: realized.source,
                 binding_cid,
+                contract_cid: realized.contract_cid,
                 declared_loss: extract_loss_dims(&realized.observed_loss_record),
             })
         } else {
             Ok(SiteOutcome::Materialize {
                 body: realized.source,
                 binding_cid,
+                contract_cid: realized.contract_cid,
                 loss_record: realized.observed_loss_record,
             })
         }
@@ -2126,4 +2143,133 @@ fn write_out_dir(out_dir: &Path, files: &[MaterializedFile]) -> Result<(), Strin
             .map_err(|error| format!("write {}: {error}", target.display()))?;
     }
     Ok(())
+}
+
+fn sync_materialize_bridge_proof(
+    project_root: &Path,
+    files: &[MaterializedFile],
+) -> Result<Option<PathBuf>, String> {
+    let proof_dir = project_root.join(".provekit").join("materialize");
+    if proof_dir.exists() {
+        for entry in std::fs::read_dir(&proof_dir)
+            .map_err(|error| format!("read {}: {error}", proof_dir.display()))?
+        {
+            let entry = entry.map_err(|error| format!("read {}: {error}", proof_dir.display()))?;
+            let path = entry.path();
+            if path.extension().and_then(|ext| ext.to_str()) == Some("proof") {
+                std::fs::remove_file(&path)
+                    .map_err(|error| format!("remove stale {}: {error}", path.display()))?;
+            }
+        }
+    }
+
+    let mut members = BTreeMap::new();
+    for file in files {
+        for site in &file.receipt.site_witnesses {
+            let Some(contract_cid) = site.contract_cid.as_deref() else {
+                continue;
+            };
+            let body = materialize_bridge_body(&file.receipt, site, contract_cid);
+            let envelope = serde_json::json!({
+                "evidence": {
+                    "kind": "bridge",
+                    "body": body,
+                }
+            });
+            let (cid, bytes) = flat_member(&envelope)?;
+            members.entry(cid).or_insert(bytes);
+        }
+    }
+
+    if members.is_empty() {
+        return Ok(None);
+    }
+
+    std::fs::create_dir_all(&proof_dir)
+        .map_err(|error| format!("create {}: {error}", proof_dir.display()))?;
+    let signer = ed25519_pubkey_string(&MATERIALIZE_BRIDGE_SIGNER_SEED);
+    let proof = build_proof_envelope(&ProofEnvelopeInput {
+        name: "@provekit/materialize-bridges".to_string(),
+        version: "0.1.0".to_string(),
+        binary_cid: None,
+        metadata: None,
+        members,
+        signer_cid: signer,
+        signer_seed: MATERIALIZE_BRIDGE_SIGNER_SEED,
+        declared_at: MATERIALIZE_BRIDGE_DECLARED_AT.to_string(),
+    });
+    let path = proof_dir.join(format!("{}.proof", proof.cid));
+    std::fs::write(&path, &proof.bytes)
+        .map_err(|error| format!("write {}: {error}", path.display()))?;
+    Ok(Some(path))
+}
+
+fn materialize_bridge_body(
+    receipt: &SourceTransformReceipt,
+    site: &SiteWitness,
+    contract_cid: &str,
+) -> Json {
+    let target_layer = if receipt.target_library.is_empty() {
+        receipt.target_language.as_str()
+    } else {
+        receipt.target_library.as_str()
+    };
+    let header = BridgeHeaderV14 {
+        schema_version: "1".to_string(),
+        kind: "bridge".to_string(),
+        name: format!(
+            "materialize:{}:{}",
+            receipt.target_language, site.function_name
+        ),
+        source_symbol: site.function_name.clone(),
+        source_layer: receipt.source_language.clone(),
+        source_contract_cid: contract_cid.to_string(),
+        target: BridgeTarget::Contract {
+            cid: contract_cid.to_string(),
+        },
+    };
+    let mut value = serde_json::to_value(header).expect("BridgeHeaderV14 serializes");
+    if let Json::Object(map) = &mut value {
+        map.insert(
+            "targetContractCid".to_string(),
+            Json::String(contract_cid.to_string()),
+        );
+        map.insert(
+            "targetLayer".to_string(),
+            Json::String(target_layer.to_string()),
+        );
+    }
+    value
+}
+
+fn flat_member(envelope: &Json) -> Result<(String, Vec<u8>), String> {
+    let canonical = canonical_json(envelope)?;
+    let cid = blake3_512_of(canonical.as_bytes());
+    Ok((cid, canonical.into_bytes()))
+}
+
+fn canonical_json(value: &Json) -> Result<String, String> {
+    let canonical = canonical_value(value)?;
+    Ok(encode_jcs(canonical.as_ref()))
+}
+
+fn canonical_value(value: &Json) -> Result<std::sync::Arc<CanonicalValue>, String> {
+    match value {
+        Json::Null => Ok(CanonicalValue::null()),
+        Json::Bool(value) => Ok(CanonicalValue::boolean(*value)),
+        Json::Number(value) => value.as_i64().map(CanonicalValue::integer).ok_or_else(|| {
+            format!("materialize bridge proof contains non-integer number `{value}`")
+        }),
+        Json::String(value) => Ok(CanonicalValue::string(value)),
+        Json::Array(values) => values
+            .iter()
+            .map(canonical_value)
+            .collect::<Result<Vec<_>, _>>()
+            .map(CanonicalValue::array),
+        Json::Object(entries) => entries
+            .iter()
+            .map(|(key, value)| canonical_value(value).map(|value| (key.clone(), value)))
+            .collect::<Result<Vec<_>, _>>()
+            .map(CanonicalValue::object),
+    }
 }

@@ -1668,6 +1668,7 @@ fn invoke_realize(
         source,
         is_stub,
         emitted_artifact_cid,
+        contract_cid: None,
         observed_loss_record,
         used_sugars,
         observation_wrapper_emission_record,
