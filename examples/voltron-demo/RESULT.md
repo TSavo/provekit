@@ -98,6 +98,54 @@ equality after alpha-equivalence on parameter names. The lifter writes
 recognizer reads them back and matches. Cycle invariance over the
 sugar binding.
 
+### End-to-end discharge — recognize tags drive callsite enumeration AND resolve to shim contracts
+
+`recognize --write` mints both halves of the obligation: bridge
+mementos (sourceSymbol → vendor contract_cid) AND contract mementos
+(post atomic with `ctor(name=function_name)`). Bridges link via a
+ctor-name index over the loaded shim `.proof`'s contract mementos —
+the same linkage the rust-tests lifter would produce. With the shim
+`.proof`'s staged into the demo's pool:
+
+```
+$ provekit prove examples/voltron-demo
+
+  total callsites: 6
+  discharged:      2    ← was 0; the Voltron loop closes
+  violations:      4
+
+  [discharged] json_parse  (rust → serde_json)
+      reason: vacuous: no precondition on target (publisher post-only)
+  [discharged] json_parse  (rust → serde_json)
+      reason: vacuous: no precondition on target (publisher post-only)
+  [undecidable] sql_execute     bridge target CID not in pool
+  [undecidable] open_in_memory  bridge target CID not in pool
+  [undecidable] sql_query_row   bridge target CID not in pool
+  [undecidable] json_serialize  bridge target CID not in pool
+```
+
+**The two `json_parse` discharges are the full Voltron loop running.**
+Recognize tagged the site; emitted contract memento with `ctor(name="json_parse")`;
+enumerate_callsites walked it; resolved via the recognize-emitted
+bridge; the bridge's targetContractCid pointed at the serde-json
+shim's actual contract memento (the round-trip witness
+`unwrap(json_parse(s)) = original`); the discharger composed and
+returned `discharged: vacuous`. The substrate computed it — no
+hand-waving.
+
+The 4 `undecidable`s are substrate-side ground truth, not a recognize
+bug. The rusqlite shim mints 54 members (sugar entries + refusals)
+but ZERO contract mementos — its source has no test-witness
+assertions the rust-contracts lifter could lift. The serde-json shim
+has exactly one contract memento (the json_parse round-trip), which is
+why json_parse discharges and json_serialize doesn't.
+
+This is exactly the gap [#1580](https://github.com/TSavo/provekit/issues/1580)
+catalogs: shims must mint contract mementos covering every sugar
+function for the discharge to land. With those contracts present, the
+recognize-emitted bridges resolve and the remaining 4 undecidables
+become discharged (or refused with real witnesses).
+
 ### Mint + prove (also wired up tonight)
 
 `.provekit/config.toml` declares `rust-sugar` + `rust-contracts` lift
