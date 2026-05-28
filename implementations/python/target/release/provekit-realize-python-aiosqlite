@@ -1,3 +1,8 @@
 #!/bin/bash
+# Set PYTHONPATH to include both the kit and the shim source dirs so the
+# kit's `find_spec('provekit_shim_python_aiosqlite')` resolves without needing
+# pip install. This lets the integration tests run from a fresh checkout.
 DIR="$(cd "$(dirname "$0")/../.." && pwd)"
-PYTHONPATH="$DIR/provekit-realize-python-aiosqlite/src:$PYTHONPATH" exec python3 -m provekit_realize_python_aiosqlite "$@"
+REPO="$(cd "$DIR/../.." && pwd)"
+PYTHONPATH="$DIR/provekit-realize-python-aiosqlite/src:$REPO/examples/provekit-shim-python-aiosqlite:$PYTHONPATH" \
+  exec python3 -m provekit_realize_python_aiosqlite "$@"

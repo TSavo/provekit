@@ -1,3 +1,8 @@
 #!/bin/bash
+# Set PYTHONPATH to include both the kit and the shim source dirs so the
+# kit's `find_spec('provekit_shim_python_sqlite3')` resolves without needing
+# pip install. This lets the integration tests run from a fresh checkout.
 DIR="$(cd "$(dirname "$0")/../.." && pwd)"
-PYTHONPATH="$DIR/provekit-realize-python-sqlite3/src:$PYTHONPATH" exec python3 -m provekit_realize_python_sqlite3 "$@"
+REPO="$(cd "$DIR/../.." && pwd)"
+PYTHONPATH="$DIR/provekit-realize-python-sqlite3/src:$REPO/examples/provekit-shim-python-sqlite3:$PYTHONPATH" \
+  exec python3 -m provekit_realize_python_sqlite3 "$@"
