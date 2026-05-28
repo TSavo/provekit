@@ -2,12 +2,23 @@ package com.provekit.realize;
 
 import com.provekit.ir.Blake3;
 import java.io.BufferedReader;
+import java.io.File;
 import java.io.IOException;
 import java.io.InputStreamReader;
 import java.io.PrintWriter;
 import java.nio.charset.StandardCharsets;
+import java.nio.file.Files;
+import java.nio.file.Path;
+import java.nio.file.Paths;
 import java.util.ArrayList;
+import java.util.Comparator;
+import java.util.LinkedHashSet;
 import java.util.List;
+import java.util.TreeSet;
+import java.util.jar.JarFile;
+import java.util.regex.Pattern;
+import java.util.stream.Collectors;
+import java.util.stream.Stream;
 
 public final class RpcServer {
     // PEP 1.7.0 sugar plugin CID for java-canonical.
@@ -15,6 +26,8 @@ public final class RpcServer {
     // Update this value if java-canonical.json content changes.
     static final String PLUGIN_CID =
         "blake3-512:b7ad1160f00d892d310fb33ac3372a4ebb2f89fec563cab1719e7006ab3d7593aae2162b882aedbec1b97e44957240b3c7e8ab1675456f0539c4ad3f45d22a7b";
+    private static final Pattern DEPENDENCY_PROOF_NAME =
+        Pattern.compile("blake3-512:[0-9a-fA-F]{128}\\.proof");
 
     private final BufferedReader in = new BufferedReader(new InputStreamReader(System.in));
     private final PrintWriter out = new PrintWriter(System.out, true);
@@ -68,8 +81,12 @@ public final class RpcServer {
                     sendResponse(id, resultObj);
                 }
                 case "provekit.plugin.resolve_dependency_proofs" -> {
-                    System.err.println("provekit-realize-java-core: resolve_dependency_proofs not yet implemented for java; returning empty proof_paths");
-                    sendResponse(id, "{\"proof_paths\":[]}");
+                    try {
+                        sendResponse(id, handleResolveDependencyProofs(line));
+                    } catch (Exception e) {
+                        String message = e.getMessage() != null ? e.getMessage() : e.getClass().getName();
+                        sendError(id, -32030, "RESOLVE_DEPENDENCY_PROOFS_FAILED: " + message);
+                    }
                 }
                 case "provekit.plugin.shutdown" -> {
                     sendResponse(id, "null");
@@ -91,6 +108,133 @@ public final class RpcServer {
         } catch (Exception e) {
             sendError(id, -32000, e.getMessage() != null ? e.getMessage() : e.getClass().getName());
         }
+    }
+
+    private String handleResolveDependencyProofs(String line) throws IOException, InterruptedException {
+        String paramsObj = JsonUtil.extractParamsObject(line);
+        String projectRootRaw = JsonUtil.decodeJsonStringField(paramsObj, "project_root");
+        if (projectRootRaw == null || projectRootRaw.isBlank()) {
+            projectRootRaw = JsonUtil.decodeJsonStringField(paramsObj, "projectRoot");
+        }
+        Path projectRoot = projectRootRaw == null || projectRootRaw.isBlank()
+            ? Paths.get("").toAbsolutePath().normalize()
+            : Paths.get(projectRootRaw).toAbsolutePath().normalize();
+        List<Path> classpath = mavenDependencyClasspath(projectRoot);
+        List<Path> proofs = collectDependencyProofPaths(classpath);
+
+        StringBuilder out = new StringBuilder("{\"proof_paths\":[");
+        for (int i = 0; i < proofs.size(); i++) {
+            if (i > 0) out.append(',');
+            out.append(JsonUtil.quoted(proofs.get(i).toString()));
+        }
+        out.append("]}");
+        return out.toString();
+    }
+
+    private static List<Path> mavenDependencyClasspath(Path projectRoot)
+            throws IOException, InterruptedException {
+        Path pom = projectRoot.resolve("pom.xml");
+        if (!Files.isRegularFile(pom)) return List.of();
+
+        Path output = Files.createTempFile("provekit-java-dependency-classpath-", ".txt");
+        try {
+            ProcessBuilder builder = new ProcessBuilder(
+                "mvn",
+                "-q",
+                "-B",
+                "-ntp",
+                "-f",
+                pom.toString(),
+                "dependency:build-classpath",
+                "-Dmdep.outputFile=" + output
+            );
+            builder.directory(projectRoot.toFile());
+            builder.redirectErrorStream(true);
+            Process process = builder.start();
+            String log;
+            try (BufferedReader reader = new BufferedReader(new InputStreamReader(
+                    process.getInputStream(), StandardCharsets.UTF_8))) {
+                log = reader.lines().collect(Collectors.joining("\n"));
+            }
+            int status = process.waitFor();
+            if (status != 0) {
+                String suffix = log.isBlank() ? "" : ": " + log.trim();
+                throw new IOException("mvn dependency:build-classpath failed with exit " + status + suffix);
+            }
+            if (!Files.isRegularFile(output)) return List.of();
+            return parseClasspath(Files.readString(output, StandardCharsets.UTF_8));
+        } finally {
+            try {
+                Files.deleteIfExists(output);
+            } catch (IOException ignored) {
+                // Temp-file cleanup is best-effort.
+            }
+        }
+    }
+
+    private static List<Path> parseClasspath(String classpath) {
+        if (classpath == null || classpath.isBlank()) return List.of();
+        LinkedHashSet<Path> roots = new LinkedHashSet<>();
+        for (String part : classpath.trim().split(Pattern.quote(File.pathSeparator))) {
+            if (part == null || part.isBlank()) continue;
+            roots.add(Paths.get(part).toAbsolutePath().normalize());
+        }
+        return List.copyOf(roots);
+    }
+
+    private static List<Path> collectDependencyProofPaths(List<Path> classpath) throws IOException {
+        TreeSet<Path> proofs = new TreeSet<>(Comparator.comparing(Path::toString));
+        Path extractedRoot = null;
+        int jarIndex = 0;
+        for (Path root : classpath) {
+            if (Files.isDirectory(root)) {
+                collectDirectoryProofPaths(root, proofs);
+            } else if (Files.isRegularFile(root) && root.getFileName().toString().endsWith(".jar")) {
+                if (extractedRoot == null) {
+                    extractedRoot = Files.createTempDirectory("provekit-java-dependency-proofs-");
+                }
+                collectJarProofPaths(root, extractedRoot.resolve(Integer.toString(jarIndex++)), proofs);
+            }
+        }
+        return List.copyOf(proofs);
+    }
+
+    private static void collectDirectoryProofPaths(Path root, TreeSet<Path> proofs) throws IOException {
+        try (Stream<Path> paths = Files.walk(root)) {
+            paths
+                .filter(Files::isRegularFile)
+                .filter(path -> isDependencyProofName(path.getFileName().toString()))
+                .map(path -> path.toAbsolutePath().normalize())
+                .forEach(proofs::add);
+        }
+    }
+
+    private static void collectJarProofPaths(Path jar, Path extractedRoot, TreeSet<Path> proofs)
+            throws IOException {
+        Files.createDirectories(extractedRoot);
+        try (JarFile jarFile = new JarFile(jar.toFile())) {
+            var entries = jarFile.entries();
+            while (entries.hasMoreElements()) {
+                var entry = entries.nextElement();
+                if (entry.isDirectory()) continue;
+                String fileName = jarEntryFileName(entry.getName());
+                if (!isDependencyProofName(fileName)) continue;
+                Path out = extractedRoot.resolve(fileName).toAbsolutePath().normalize();
+                try (var in = jarFile.getInputStream(entry)) {
+                    Files.copy(in, out, java.nio.file.StandardCopyOption.REPLACE_EXISTING);
+                }
+                proofs.add(out);
+            }
+        }
+    }
+
+    private static String jarEntryFileName(String entryName) {
+        int slash = entryName.lastIndexOf('/');
+        return slash >= 0 ? entryName.substring(slash + 1) : entryName;
+    }
+
+    private static boolean isDependencyProofName(String fileName) {
+        return fileName != null && DEPENDENCY_PROOF_NAME.matcher(fileName).matches();
     }
 
     /**
