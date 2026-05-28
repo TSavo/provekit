@@ -22,9 +22,10 @@ use std::process::{Command, Stdio};
 use std::collections::BTreeMap;
 
 use clap::Parser;
+use libprovekit::core::emit_obligation::{
+    build_bridge_body, build_implication_contract_body, member_envelope_canonical,
+};
 use owo_colors::OwoColorize;
-use provekit_canonicalizer::{blake3_512_of, encode_jcs, Value as CanonicalValue};
-use provekit_ir_types::{BridgeHeaderV14, BridgeTarget};
 use provekit_proof_envelope::cbor_decode::{decode as cbor_decode, CborValue};
 use provekit_proof_envelope::{
     build_proof_envelope, ed25519_pubkey_string, Ed25519Seed, ProofEnvelopeInput,
@@ -234,102 +235,46 @@ pub fn run(args: RecognizeArgs) -> u8 {
     EXIT_OK
 }
 
-/// Build the materialize-shape bridge body from a recognize tag. The
-/// shape is identical to cmd_materialize's `materialize_bridge_body`
-/// so the verifier and prove machinery treat recognize-authored bridges
-/// the same as materialize-authored ones. The signer identity differs
-/// (RECOGNIZE_BRIDGE_SIGNER_SEED vs MATERIALIZE_BRIDGE_SIGNER_SEED) so
-/// provenance is auditable.
-fn recognize_bridge_body(tag: &Value, target_language: &str) -> Option<Value> {
-    let contract_cid = tag.get("contract_cid").and_then(|v| v.as_str())?;
-    if contract_cid.is_empty() {
-        return None;
-    }
-    let function_name = tag
-        .get("function_name")
-        .and_then(|v| v.as_str())
-        .unwrap_or("")
-        .to_string();
-    let library_tag = tag
-        .get("library_tag")
-        .and_then(|v| v.as_str())
-        .unwrap_or(target_language)
-        .to_string();
-    let header = BridgeHeaderV14 {
-        schema_version: "1".to_string(),
-        kind: "bridge".to_string(),
-        name: format!("recognize:{}:{}", target_language, function_name),
-        source_symbol: function_name,
-        source_layer: target_language.to_string(),
-        source_contract_cid: contract_cid.to_string(),
-        target: BridgeTarget::Contract {
-            cid: contract_cid.to_string(),
-        },
-    };
-    let mut value = serde_json::to_value(header).ok()?;
-    if let Value::Object(map) = &mut value {
-        map.insert(
-            "targetContractCid".to_string(),
-            Value::String(contract_cid.to_string()),
-        );
-        map.insert(
-            "targetLayer".to_string(),
-            Value::String(library_tag),
-        );
-    }
-    Some(value)
-}
+// recognize_bridge_body was removed (#1579). The single-target form is
+// no longer needed since the emit_bridge_envelope path always uses
+// recognize_bridge_body_with_target with either a shim-matched
+// contract CID or a sibling implication-contract CID. Both go through
+// the shared libprovekit::core::emit_obligation::build_bridge_body.
 
-/// Build the implication contract memento for a recognize tag. This is
-/// the lift-shape memento that drives `enumerate_callsites`: a `contract`
-/// kind with a `post` atomic carrying a `ctor` term whose `name` matches
-/// the tag's `function_name`. The verifier's enumerate_callsites walks
-/// every contract's pre/post/inv looking for ctor terms whose name
-/// matches a bridge's sourceSymbol; this contract makes the tag's
-/// callsite enumerable. Together with the bridge, the discharger:
-///   1. Enumerates the call from this contract's ctor term.
-///   2. Resolves it to the vendor contract via the sibling bridge memento.
-///   3. Discharges (or refuses) per the standard composition rule.
-///
-/// The same emission shape the rust-tests lifter would produce, only
-/// authored by the recognize lane instead of the test-body walker.
+/// Build the implication contract memento for a recognize tag.
+/// Delegates to libprovekit's shared `build_implication_contract_body`
+/// (the same function the materialize and rust-tests lift lanes will
+/// eventually call). Per #1579: one canonical authoring path for the
+/// substrate's implication-contract shape across all verbs.
 fn recognize_implication_body(tag: &Value) -> Option<Value> {
     let function_name = tag.get("function_name").and_then(|v| v.as_str())?;
     if function_name.is_empty() {
         return None;
     }
-    let concept_name = tag
-        .get("concept_name")
-        .and_then(|v| v.as_str())
-        .unwrap_or("")
-        .to_string();
-    // Args: one var per param_binding (lift-side records actual user-
-    // spelling identifiers; the substrate normalizes via canonical CID).
-    let mut arg_terms: Vec<Value> = Vec::new();
-    if let Some(bindings) = tag.get("param_bindings").and_then(|v| v.as_array()) {
-        for b in bindings {
-            let source_text = b
-                .get("source_text")
-                .and_then(|v| v.as_str())
-                .unwrap_or("_")
-                .to_string();
-            arg_terms.push(json!({ "kind": "var", "name": source_text }));
-        }
-    }
-    let ctor = json!({
-        "kind": "ctor",
-        "name": function_name,
-        "args": arg_terms,
-    });
-    let post = json!({
-        "kind": "atomic",
-        "args": [ctor],
-    });
-    Some(json!({
-        "contractName": format!("recognize-callsite:{function_name}"),
-        "post": post,
-        "concept_name": concept_name,
-    }))
+    let concept_name = tag.get("concept_name").and_then(|v| v.as_str());
+    // Collect param source-text strings into Vec<String> so we can hand
+    // out &str references to the shared builder.
+    let param_texts: Vec<String> = tag
+        .get("param_bindings")
+        .and_then(|v| v.as_array())
+        .map(|arr| {
+            arr.iter()
+                .map(|b| {
+                    b.get("source_text")
+                        .and_then(|v| v.as_str())
+                        .unwrap_or("_")
+                        .to_string()
+                })
+                .collect()
+        })
+        .unwrap_or_default();
+    let param_refs: Vec<&str> = param_texts.iter().map(|s| s.as_str()).collect();
+    Some(build_implication_contract_body(
+        "recognize",
+        function_name,
+        concept_name,
+        &param_refs,
+    ))
 }
 
 /// Mint a `.proof` envelope containing one bridge memento + one
@@ -375,8 +320,7 @@ fn emit_bridge_envelope(
         std::collections::HashMap::new();
     for tag in tags {
         if let Some(body) = recognize_implication_body(tag) {
-            let envelope = json!({ "evidence": { "kind": "contract", "body": body } });
-            let (cid, bytes) = flat_member_canonical(&envelope)?;
+            let (cid, bytes) = member_envelope_canonical("contract", &body)?;
             members.entry(cid.clone()).or_insert(bytes);
             if let Some(fn_name) = tag.get("function_name").and_then(|v| v.as_str()) {
                 sibling_contract_by_function.insert(fn_name.to_string(), cid);
@@ -409,8 +353,7 @@ fn emit_bridge_envelope(
             target_language,
             &target_cid,
         );
-        let envelope = json!({ "evidence": { "kind": "bridge", "body": body } });
-        let (cid, bytes) = flat_member_canonical(&envelope)?;
+        let (cid, bytes) = member_envelope_canonical("bridge", &body)?;
         members.entry(cid).or_insert(bytes);
     }
     if members.is_empty() {
@@ -436,9 +379,9 @@ fn emit_bridge_envelope(
 }
 
 /// Variant of recognize_bridge_body that takes an explicit
-/// targetContractCid instead of reading the tag's contract_cid. Lets
-/// us route bridges to a sibling contract when the shim doesn't
-/// publish one covering the matched function.
+/// targetContractCid. Delegates to libprovekit's shared
+/// `build_bridge_body` so cmd_materialize and the rust-tests lifter
+/// produce byte-identical bridge bodies for the same inputs (#1579).
 fn recognize_bridge_body_with_target(
     tag: &Value,
     target_language: &str,
@@ -447,66 +390,23 @@ fn recognize_bridge_body_with_target(
     let function_name = tag
         .get("function_name")
         .and_then(|v| v.as_str())
-        .unwrap_or("")
-        .to_string();
+        .unwrap_or("");
     let library_tag = tag
         .get("library_tag")
         .and_then(|v| v.as_str())
-        .unwrap_or(target_language)
-        .to_string();
-    let header = BridgeHeaderV14 {
-        schema_version: "1".to_string(),
-        kind: "bridge".to_string(),
-        name: format!("recognize:{}:{}", target_language, function_name),
-        source_symbol: function_name,
-        source_layer: target_language.to_string(),
-        source_contract_cid: target_cid.to_string(),
-        target: BridgeTarget::Contract {
-            cid: target_cid.to_string(),
-        },
-    };
-    let mut value = serde_json::to_value(header).expect("BridgeHeaderV14 serializes");
-    if let Value::Object(map) = &mut value {
-        map.insert(
-            "targetContractCid".to_string(),
-            Value::String(target_cid.to_string()),
-        );
-        map.insert(
-            "targetLayer".to_string(),
-            Value::String(library_tag),
-        );
-    }
-    value
+        .unwrap_or(target_language);
+    build_bridge_body(
+        "recognize",
+        function_name,
+        target_language,
+        library_tag,
+        target_cid,
+    )
 }
 
-fn flat_member_canonical(envelope: &Value) -> Result<(String, Vec<u8>), String> {
-    let canonical = canonical_value_of_json(envelope)?;
-    let bytes = encode_jcs(canonical.as_ref());
-    let cid = blake3_512_of(bytes.as_bytes());
-    Ok((cid, bytes.into_bytes()))
-}
-
-fn canonical_value_of_json(value: &Value) -> Result<std::sync::Arc<CanonicalValue>, String> {
-    match value {
-        Value::Null => Ok(CanonicalValue::null()),
-        Value::Bool(b) => Ok(CanonicalValue::boolean(*b)),
-        Value::Number(n) => n
-            .as_i64()
-            .map(CanonicalValue::integer)
-            .ok_or_else(|| format!("recognize bridge contains non-integer number `{n}`")),
-        Value::String(s) => Ok(CanonicalValue::string(s)),
-        Value::Array(values) => values
-            .iter()
-            .map(canonical_value_of_json)
-            .collect::<Result<Vec<_>, _>>()
-            .map(CanonicalValue::array),
-        Value::Object(entries) => entries
-            .iter()
-            .map(|(k, v)| canonical_value_of_json(v).map(|v| (k.clone(), v)))
-            .collect::<Result<Vec<_>, _>>()
-            .map(CanonicalValue::object),
-    }
-}
+// flat_member_canonical + canonical_value_of_json were moved to
+// libprovekit::core::emit_obligation as member_envelope_canonical +
+// canonical_value_of_json (#1579). cmd_recognize now imports them.
 
 /// Manifest discovery: project-local then user-global. Mirrors lift_plugin's
 /// `find_manifest` (which is module-private). Kept local here so recognize
@@ -978,17 +878,21 @@ working_dir = "."
     }
 
     #[test]
-    fn load_binding_falls_back_to_signature_shape_cid_when_no_contract_cid() {
+    fn load_binding_leaves_contract_cid_null_when_no_ctor_match() {
         // Sugar entries from real shims don't carry an explicit
-        // contract_cid (the contract memento is minted separately);
-        // they DO carry signature_shape_cid as their identity anchor.
-        // The loader must surface that as the bridge's contract_cid
-        // fallback so recognize can emit bridges.
+        // contract_cid. The loader resolves contract_cid via the
+        // ctor-name index across the envelope's contract mementos. If
+        // no contract memento references the sugar's source_function_name
+        // via a ctor term, contract_cid stays NULL — the
+        // emit_bridge_envelope path then falls back to the sibling
+        // implication contract (substrate-honest: only an actual
+        // contract memento counts; signature_shape_cid is not a contract).
         let env = json!({
             "members": [{
                 "kind": "library-sugar-binding-entry",
                 "concept_name": "concept:json-parse",
                 "target_library_tag": "shim",
+                "source_function_name": "json_parse",
                 "signature_shape_cid": "blake3-512:sig",
                 "body_source": {
                     "ast_template": {"kind": "block"},
@@ -998,13 +902,20 @@ working_dir = "."
             }]
         });
         let tmp = std::env::temp_dir().join(format!(
-            "provekit-recognize-test-sigfallback-{}",
+            "provekit-recognize-test-nullfallback-{}",
             std::process::id()
         ));
         std::fs::write(&tmp, env.to_string()).unwrap();
         let entries = load_binding_templates_from_proof(&tmp).expect("load");
         assert_eq!(entries.len(), 1);
-        assert_eq!(entries[0]["contract_cid"], "blake3-512:sig");
+        // contract_cid stays null — no contract memento matched.
+        // signature_shape_cid is NOT a contract memento and must not
+        // bleed into the bridge target field.
+        assert!(
+            entries[0]["contract_cid"].is_null(),
+            "contract_cid must be null when no ctor-name match: {:?}",
+            entries[0]["contract_cid"]
+        );
         std::fs::remove_file(&tmp).ok();
     }
 

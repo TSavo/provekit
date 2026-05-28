@@ -19,6 +19,7 @@
 //! `sign`.
 
 pub mod bind;
+pub mod emit_obligation;
 pub mod lift_plugin;
 pub mod lower_plugin;
 pub mod path_executor;
