@@ -298,6 +298,125 @@ extract formulas for rewriting or reinterpret package-manager metadata.
 
 Graceful close. After this, an `stdio:` plugin SHOULD exit zero on stdin EOF; an HTTP plugin MAY ignore the call.
 
+#### §4.2.5 `provekit.plugin.recognize`
+
+Kit-owned source-level recognition: given user source files in the kit's
+target language, the kit identifies sites whose structural shape matches
+its published sugar binding templates and returns tags. The substrate
+MUST NOT inspect language-native AST shapes directly; each language kit
+owns its own AST machinery and reports tags in a language-blind form.
+
+This is the reverse direction of `materialize`. Where `materialize` reads
+a boundary citation in source and writes the kit's sugar body, `recognize`
+reads idiomatic user code and writes the boundary citations that would
+have been present had the user authored them by hand. The same
+`ast_template` artifact a kit emits at lift time (see the bind-IR
+lift result spec) is the matchable template here.
+
+Request:
+```json
+{
+  "jsonrpc": "2.0",
+  "id": 5,
+  "method": "provekit.plugin.recognize",
+  "params": {
+    "project_root": "/absolute/project/root",
+    "source_paths": ["src/lib.rs", "src/ingest.rs"],
+    "binding_templates": [
+      {
+        "concept_name": "concept:json-parse",
+        "library_tag": "provekit-shim-serde-json-rust",
+        "family": "concept:family:json",
+        "ast_template": { "kind": "block", "stmts": [ /* … */ ] },
+        "template_cid": "blake3-512:<hex>",
+        "param_names": ["s"],
+        "param_types": ["&str"],
+        "return_type": "Result<Value, String>",
+        "contract_cid": "blake3-512:<hex>"
+      }
+    ]
+  }
+}
+```
+
+`binding_templates` is the set of sugar templates the runtime has
+gathered from the loaded `.proof` envelopes for this language. The kit
+matches its native AST shape against each template's `ast_template`
+under alpha-equivalence on `param_ref` markers. The substrate does not
+construct or interpret these templates; it only forwards them.
+
+Response (success):
+```json
+{
+  "jsonrpc": "2.0",
+  "id": 5,
+  "result": {
+    "tags": [
+      {
+        "file": "src/ingest.rs",
+        "span": {
+          "start_line": 14,
+          "start_col": 4,
+          "end_line": 14,
+          "end_col": 49
+        },
+        "concept_name": "concept:json-parse",
+        "library_tag": "provekit-shim-serde-json-rust",
+        "family": "concept:family:json",
+        "template_cid": "blake3-512:<hex>",
+        "contract_cid": "blake3-512:<hex>",
+        "match_tier": "exact",
+        "param_bindings": [
+          { "index": 1, "source_text": "input" }
+        ]
+      }
+    ]
+  }
+}
+```
+
+`tags[].match_tier` MUST be one of `"exact"`, `"structural"`,
+`"probable"`, or `"refused"`. Tiers correspond to the recognition
+strength:
+
+- **`exact`** — the user's source matches the template byte-for-byte
+  after alpha-equivalence on `param_ref` markers. Highest confidence;
+  the substrate emits a bridge equivalent to an explicit user-authored
+  carrier comment.
+- **`structural`** — the user's source matches the template's AST shape
+  but with idiomatic syntactic variation (block wrapping, intermediate
+  temp names, try-operator vs explicit match). Substrate may still
+  emit a bridge but records the structural-match flag in the receipt.
+- **`probable`** — the user's source resembles the template at the call
+  shape but a discriminating detail diverges (callee path, arity, or
+  type slot). Substrate records the probable tag but DOES NOT emit a
+  bridge without explicit user confirmation (per Supra omnia, rectum).
+- **`refused`** — the kit considered a site, found a near-match, but
+  refused to claim it. The refusal lands in the receipt with a
+  `would_close_with_concept` field.
+
+`param_bindings` maps the template's `param_ref` indices back to the
+literal source text at the user's call site. The substrate uses this
+to record what concrete arguments the recognized site passed, so the
+discharger can reason about the user's actual pre/post values.
+
+The substrate MAY repeat the request across multiple kits and union the
+returned tag sets by `(file, span)` tuple. Where two kits both produce
+`exact` tags for the same span, the family-library routing override
+(§4.2.x, materialize) governs which family wins; without an override,
+the more-specific concept wins; without specificity, the substrate
+refuses to emit a tag and records both candidates with a counter-claim
+list.
+
+Implementations MAY return an empty `tags` array. Implementations MUST
+NOT return tags for spans outside the supplied `source_paths`.
+
+The substrate MUST recompute every returned tag's `template_cid` against
+the supplied `binding_templates` (and refuse mismatches as protocol
+violations). The kit's only role is structural pattern matching against
+its language's AST; cross-tag composition, family-library disambiguation,
+and bridge emission all stay substrate-side.
+
 ### §4.3 Error model on the wire
 
 JSON-RPC errors per RFC 7065. The runtime treats any error response from `describe` as a failure to load (§8). The runtime treats any non-JSON output on stdout from an `stdio:` plugin as a refuse.
