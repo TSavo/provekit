@@ -980,9 +980,11 @@ pub fn build_receipt(
 /// (Phase E `#1339`). The fixed-point propagate loop is preserved; the only
 /// difference from `transform_source_text` is that the refuse leg no longer
 /// shortcuts to `Err`. The substrate honesty contract (trichotomy)
-/// holds: a refused site emits no body into the rewritten source, so the
-/// stub block is dropped; downstream tooling must read the receipt to learn
-/// the refusal landed.
+/// holds: a refused site **leaves the carrier comment + stub function intact
+/// in the rewritten source** so another library's materialize pass can pick
+/// the boundary up (substrate gap #84: multi-library, multi-file consumers
+/// need refused = no-op on the source, not destructive). Downstream tooling
+/// reads the receipt to learn which refusals landed.
 pub fn transform_source_text_collecting_refusals(
     source: &str,
     kit: &dyn SiteTransformKit,
@@ -1029,9 +1031,11 @@ pub fn transform_source_text_collecting_refusals(
 
 /// Single-pass variant that collects refusals rather than aborting. Shares
 /// the splice/indent machinery with `transform_source_text_one_pass`; the
-/// only behavioral fork is the refuse leg, which here emits no body to the
-/// output (the carrier-plus-stub region is removed) and pushes the outcome
-/// onto the returned list.
+/// only behavioral fork is the refuse leg, which here emits the carrier
+/// comment + stub region verbatim into the output (so a different library
+/// pass can pick the refused boundary up) and pushes the Refuse outcome
+/// onto the returned list. Substrate gap #84: multi-library, multi-file
+/// consumers need refused = no-op on source, not destructive drop.
 fn transform_source_text_one_pass_collecting_refusals(
     source: &str,
     kit: &dyn SiteTransformKit,
@@ -1066,22 +1070,32 @@ fn transform_source_text_one_pass_collecting_refusals(
             }
             let outcome = kit.transform_site(&carrier)?;
 
-            let body_opt: Option<&str> = match &outcome {
-                SiteOutcome::Materialize { body, .. } => Some(body.as_str()),
-                SiteOutcome::LoudlyLossy { body, .. } => Some(body.as_str()),
-                SiteOutcome::Refuse { .. } => None,
-            };
-
-            if let Some(body) = body_opt {
-                let emitted = if let Some(stub) = stub_block.signature_and_close.as_ref() {
-                    splice_realized_body_into_stub_signature(stub, body)
-                } else {
-                    body.to_string()
-                };
-                let indented = indent_realized_source(&emitted, indent);
-                out.push_str(&indented);
-                if !indented.ends_with('\n') {
-                    out.push('\n');
+            match &outcome {
+                SiteOutcome::Materialize { body, .. }
+                | SiteOutcome::LoudlyLossy { body, .. } => {
+                    let emitted = if let Some(stub) = stub_block.signature_and_close.as_ref() {
+                        splice_realized_body_into_stub_signature(stub, body.as_str())
+                    } else {
+                        body.to_string()
+                    };
+                    let indented = indent_realized_source(&emitted, indent);
+                    out.push_str(&indented);
+                    if !indented.ends_with('\n') {
+                        out.push('\n');
+                    }
+                }
+                SiteOutcome::Refuse { .. } => {
+                    // Substrate gap #84: leave the carrier comment + stub
+                    // intact verbatim so another library's materialize pass
+                    // (or a --family-library route to a different vendor)
+                    // can pick this boundary up. The Refuse outcome still
+                    // lands in the receipt so the user can see what was
+                    // not filled, but the source file is untouched at this
+                    // site — multi-library and multi-vendor consumers
+                    // depend on this no-op invariant.
+                    for original_line in &lines[line_start..(line_start + consumed)] {
+                        out.push_str(original_line);
+                    }
                 }
             }
             let line_end_exclusive = line_start + consumed;
@@ -1991,6 +2005,120 @@ fn after() {}\n";
         assert_eq!(
             receipt.refusal_mementos[0].would_close_with_concept,
             "concept:demo"
+        );
+    }
+
+    #[test]
+    fn refused_site_leaves_carrier_and_stub_intact_in_rewritten_source() {
+        // Substrate gap #84 regression: a refused boundary MUST preserve
+        // its carrier comment + stub function verbatim in the rewritten
+        // source so a different library's materialize pass can pick it
+        // up. Multi-library and multi-vendor consumers depend on this
+        // no-op invariant — refused-destroys-stub broke them.
+
+        struct RefuseAllKit;
+        impl SiteTransformKit for RefuseAllKit {
+            fn target_language(&self) -> &str {
+                "rust"
+            }
+            fn transform_site(&self, _carrier: &CarrierComment) -> Result<SiteOutcome, String> {
+                Ok(SiteOutcome::Refuse {
+                    reason: "library X does not provide this concept".to_string(),
+                    would_close_with_concept: "concept:elsewhere".to_string(),
+                })
+            }
+        }
+
+        let carrier_line = "// provekit-concept: {\"concept_name\":\"c:x\",\"function\":\"f\",\"params\":[],\"param_types\":[],\"return_type\":\"i64\"}\n";
+        let stub = "pub fn f() -> i64 {\n    unimplemented!()\n}\n";
+        let source = format!("{carrier_line}{stub}");
+
+        let (rewritten, sites_and_outcomes) =
+            transform_source_text_collecting_refusals(&source, &RefuseAllKit)
+                .expect("refuse-only kit must not error");
+
+        // Receipt records the refusal as a first-class outcome.
+        assert_eq!(sites_and_outcomes.len(), 1);
+        assert!(matches!(
+            sites_and_outcomes[0].1,
+            SiteOutcome::Refuse { .. }
+        ));
+
+        // The carrier comment is preserved so another library pass can find it.
+        assert!(
+            rewritten.contains("// provekit-concept:"),
+            "carrier comment must survive a Refuse (gap #84): {rewritten}"
+        );
+        // The stub function signature is preserved so the next pass has
+        // somewhere to splice into.
+        assert!(
+            rewritten.contains("pub fn f() -> i64"),
+            "stub signature must survive a Refuse (gap #84): {rewritten}"
+        );
+        // The stub body is preserved verbatim (no silent partial drop).
+        assert!(
+            rewritten.contains("unimplemented!()"),
+            "stub body must survive a Refuse (gap #84): {rewritten}"
+        );
+    }
+
+    #[test]
+    fn mixed_outcomes_only_rewrite_resolved_sites_keep_refused_intact() {
+        // Substrate gap #84: in a file containing BOTH a resolvable
+        // boundary AND a refused boundary, only the resolved one gets
+        // its stub spliced; the refused one stays verbatim. This is the
+        // multi-library invariant the voltron-demo depends on.
+
+        struct OneResolvesOneRefuses;
+        impl SiteTransformKit for OneResolvesOneRefuses {
+            fn target_language(&self) -> &str {
+                "rust"
+            }
+            fn transform_site(&self, carrier: &CarrierComment) -> Result<SiteOutcome, String> {
+                if carrier.function == "resolves" {
+                    Ok(SiteOutcome::Materialize {
+                        body: "{ 42 }".to_string(),
+                        binding_cid: "cid:resolves".to_string(),
+                        contract_cid: None,
+                        loss_record: json!([]),
+                    })
+                } else {
+                    Ok(SiteOutcome::Refuse {
+                        reason: "different library".to_string(),
+                        would_close_with_concept: "concept:elsewhere".to_string(),
+                    })
+                }
+            }
+        }
+
+        let source = "\
+// provekit-concept: {\"concept_name\":\"c:a\",\"function\":\"resolves\",\"params\":[],\"param_types\":[],\"return_type\":\"i64\"}
+pub fn resolves() -> i64 {
+    unimplemented!()
+}
+// provekit-concept: {\"concept_name\":\"c:b\",\"function\":\"refused\",\"params\":[],\"param_types\":[],\"return_type\":\"i64\"}
+pub fn refused() -> i64 {
+    unimplemented!()
+}
+";
+        let (rewritten, outcomes) =
+            transform_source_text_collecting_refusals(source, &OneResolvesOneRefuses)
+                .expect("mixed transform");
+
+        assert_eq!(outcomes.len(), 2);
+
+        // Resolved site: body was spliced (the `{ 42 }` shows up, the
+        // unimplemented placeholder is gone for THIS function only).
+        assert!(rewritten.contains("42"), "resolved body should be spliced");
+
+        // Refused site: full carrier + stub preserved verbatim.
+        assert!(
+            rewritten.contains("\"function\":\"refused\""),
+            "refused carrier must survive: {rewritten}"
+        );
+        assert!(
+            rewritten.contains("pub fn refused() -> i64"),
+            "refused stub signature must survive: {rewritten}"
         );
     }
 }
