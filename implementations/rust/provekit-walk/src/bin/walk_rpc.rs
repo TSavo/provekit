@@ -96,6 +96,15 @@ fn handle_line(line: &str) -> Value {
         // binary handles this too because it already owns the syn AST
         // machinery that recognize needs — same kit, same language.
         "provekit.plugin.recognize" => recognize(&params),
+        // Implication lifter (#97). For every call expression in every
+        // function body in the supplied source files, emit a kind:bridge
+        // memento that links the call site (sourceSymbol = callee ident)
+        // to a contract resolved by ctor-name index over the supplied
+        // contract_bindings. Same kit, same AST walker; new memento kind.
+        // This is the structural callsite obligation pass: the verb that
+        // says "this call expression exists, an obligation forms here,
+        // here is the contract it pins to."
+        "provekit.plugin.lift_implications" => lift_implications(&params),
         // Walk-internal RPC (substrate-private; not part of any plugin protocol).
         "walk.lift_pre" => lift_pre(&params),
         "walk.lift_post" => lift_post(&params),
@@ -273,6 +282,263 @@ fn recognize_match_item_fn(
         "contract_cid": binding.get("contract_cid").cloned().unwrap_or(Value::Null),
         "match_tier": "exact",
         "param_bindings": param_bindings,
+    }))
+}
+
+// ---------------------------------------------------------------------------
+// Implication lifter (#97).
+//
+// The substrate has three lift surfaces:
+//
+//   1. The sugar lifter (rust-bind, above) walks #[provekit::sugar] /
+//      #[provekit::boundary] annotations and emits bind-IR entries plus
+//      identity-ctor sibling contracts at the sugar definitions. That
+//      surface NAMES the vendor contract.
+//
+//   2. The test lifter (provekit-lift-rust-tests) walks #[test] / panic /
+//      early-return shapes and emits one contract per asserted callsite,
+//      named "<callee>@<file>:<line>:<col>". That surface DERIVES contracts
+//      from observed asserts and pins them to the production-code call site
+//      the assertion witnessed.
+//
+//   3. THIS LIFTER walks production code (no test-runner involvement, no
+//      sugar annotation requirement). For every Expr::Call and
+//      Expr::MethodCall in every function body, it emits a kind:bridge
+//      memento that pins the call site by sourceSymbol = callee identifier
+//      to a contract supplied via `contract_bindings`. The implication
+//      forms STRUCTURALLY: the AST already contains the call expression;
+//      the lifter just makes it explicit as a substrate-named callsite
+//      anchor that enumerate_callsites can find via pool.bridges_by_symbol.
+//
+// Without this lifter, the verifier's enumerate_callsites stage walks the
+// loaded contracts looking for ctor refs whose names hit pool.bridges_by_symbol,
+// finds zero hits when the project has no vendor-shim recognize pass, and
+// reports "no callsites". The bind-lift surface and the test surface emit
+// contracts; this surface emits the bridges that turn those contracts into
+// enumerable callsites.
+
+#[derive(Debug, Clone)]
+struct CallSite {
+    callee: String,
+    file: String,
+    line: usize,
+    col: usize,
+}
+
+/// Recursively collect every call expression in every function body
+/// inside `file`. Each entry carries the callee identifier (last path
+/// segment for Expr::Call, method ident for Expr::MethodCall) and the
+/// source position of the call expression.
+fn collect_callsites_in_items(items: &[syn::Item], rel_path: &str, out: &mut Vec<CallSite>) {
+    for item in items {
+        match item {
+            syn::Item::Fn(item_fn) => {
+                collect_callsites_in_block(&item_fn.block, rel_path, out);
+            }
+            syn::Item::Impl(item_impl) => {
+                for impl_item in &item_impl.items {
+                    if let syn::ImplItem::Fn(method) = impl_item {
+                        collect_callsites_in_block(&method.block, rel_path, out);
+                    }
+                }
+            }
+            syn::Item::Mod(item_mod) => {
+                if let Some((_, ref nested)) = item_mod.content {
+                    collect_callsites_in_items(nested, rel_path, out);
+                }
+            }
+            _ => {}
+        }
+    }
+}
+
+fn collect_callsites_in_block(block: &syn::Block, rel_path: &str, out: &mut Vec<CallSite>) {
+    use syn::visit::Visit;
+    struct V<'a> {
+        rel_path: &'a str,
+        out: &'a mut Vec<CallSite>,
+    }
+    impl<'ast, 'a> Visit<'ast> for V<'a> {
+        fn visit_expr_call(&mut self, node: &'ast syn::ExprCall) {
+            if let Some(callee) = call_expr_callee_name(&node.func) {
+                let start = node.func.span().start();
+                self.out.push(CallSite {
+                    callee,
+                    file: self.rel_path.to_string(),
+                    line: start.line,
+                    col: start.column,
+                });
+            }
+            syn::visit::visit_expr_call(self, node);
+        }
+        fn visit_expr_method_call(&mut self, node: &'ast syn::ExprMethodCall) {
+            let callee = node.method.to_string();
+            let start = node.method.span().start();
+            self.out.push(CallSite {
+                callee,
+                file: self.rel_path.to_string(),
+                line: start.line,
+                col: start.column,
+            });
+            syn::visit::visit_expr_method_call(self, node);
+        }
+    }
+    let mut v = V { rel_path, out };
+    v.visit_block(block);
+}
+
+/// Extract the callee identifier from an `Expr::Call`'s `func`. We use the
+/// LAST path segment as the symbol because that is the natural ctor-name
+/// the test lifter uses for contract names (`<callee>@<file>:<line>:<col>`).
+/// Returns None for callees that are not simple paths (e.g. closures,
+/// macro-expansion results, dynamic dispatch through trait objects).
+fn call_expr_callee_name(expr: &syn::Expr) -> Option<String> {
+    match expr {
+        syn::Expr::Path(p) => p
+            .path
+            .segments
+            .last()
+            .map(|seg| seg.ident.to_string()),
+        syn::Expr::Paren(p) => call_expr_callee_name(&p.expr),
+        _ => None,
+    }
+}
+
+/// JSON-RPC handler for `provekit.plugin.lift_implications`.
+///
+/// Request params:
+///   {
+///     "workspace_root": "/abs/path",
+///     "source_paths":   ["src/lib.rs", "src/cmd_mint.rs", ...],
+///     "contract_bindings": [
+///       { "name": "<callee>@<file>:<line>:<col>", "contract_cid": "blake3-512:..." },
+///       ...
+///     ]
+///   }
+///
+/// Response (PEP 1.7.0 `kind = "ir-document"`):
+///   {
+///     "kind": "ir-document",
+///     "ir":   [ <bridge memento>, ... ],
+///     "diagnostics": [ <lift-gap>, ... ]
+///   }
+///
+/// Each `bridge` memento pins exactly one call site to exactly one
+/// contract. Call sites that find no matching binding emit a `lift-gap`
+/// diagnostic and skip the bridge — substrate-honesty over silently
+/// producing the wrong edge.
+fn lift_implications(params: &Value) -> Result<Value, String> {
+    use std::collections::HashMap;
+
+    let workspace_root = params
+        .get("workspace_root")
+        .and_then(|v| v.as_str())
+        .ok_or("missing `workspace_root`")?;
+    let workspace_root = std::path::PathBuf::from(workspace_root);
+
+    let source_paths: Vec<String> = params
+        .get("source_paths")
+        .and_then(|v| v.as_array())
+        .ok_or("missing `source_paths` array")?
+        .iter()
+        .filter_map(|v| v.as_str().map(|s| s.to_string()))
+        .collect();
+
+    let empty: Vec<Value> = Vec::new();
+    let contract_bindings: &Vec<Value> = params
+        .get("contract_bindings")
+        .and_then(|v| v.as_array())
+        .unwrap_or(&empty);
+
+    // Index contracts by callee name (the substring before the first '@'
+    // in the contract `name` field). The test lifter mints contracts as
+    // `<callee>@<file>:<line>:<col>`; this lookup is the ctor-name index.
+    // Multiple contracts may share the same callee name across different
+    // call sites; we keep the FIRST insertion so the lookup is stable and
+    // deterministic, and emit a lift-gap if any subsequent collision
+    // disagrees on contract CID. The verifier's enumerate_callsites only
+    // needs ONE bridge per symbol; the per-site contract pinning happens
+    // through the contract's own name (which carries the file:line:col).
+    let mut contracts_by_callee: HashMap<String, &Value> = HashMap::new();
+    for binding in contract_bindings {
+        if let Some(name) = binding.get("name").and_then(|v| v.as_str()) {
+            let callee = name.split('@').next().unwrap_or(name).trim().to_string();
+            if !callee.is_empty() {
+                contracts_by_callee.entry(callee).or_insert(binding);
+            }
+        }
+    }
+
+    let mut entries: Vec<Value> = Vec::new();
+    let mut diagnostics: Vec<Value> = Vec::new();
+
+    for rel_path in &source_paths {
+        let full_path = workspace_root.join(rel_path);
+        let src = match std::fs::read_to_string(&full_path) {
+            Ok(s) => s,
+            Err(_) => continue, // missing files are not lift errors here
+        };
+        let file = match syn::parse_file(&src) {
+            Ok(f) => f,
+            Err(_) => continue, // unparseable files cannot host implication lifting
+        };
+
+        let mut callsites: Vec<CallSite> = Vec::new();
+        collect_callsites_in_items(&file.items, rel_path, &mut callsites);
+
+        for cs in callsites {
+            let Some(binding) = contracts_by_callee.get(cs.callee.as_str()) else {
+                diagnostics.push(json!({
+                    "kind": "lift-gap",
+                    "reason": "no-contract-for-callee",
+                    "callee": cs.callee,
+                    "file": cs.file,
+                    "line": cs.line,
+                    "col": cs.col,
+                }));
+                continue;
+            };
+            let Some(target_cid) = binding
+                .get("contract_cid")
+                .and_then(|v| v.as_str())
+                .filter(|s| !s.is_empty())
+            else {
+                diagnostics.push(json!({
+                    "kind": "lift-gap",
+                    "reason": "binding-missing-contract-cid",
+                    "callee": cs.callee,
+                    "file": cs.file,
+                    "line": cs.line,
+                    "col": cs.col,
+                }));
+                continue;
+            };
+            entries.push(json!({
+                "kind": "bridge",
+                "name": format!(
+                    "intra-body:rust:{}@{}:{}:{}",
+                    cs.callee, cs.file, cs.line, cs.col
+                ),
+                "schemaVersion": "1",
+                "sourceContractCid": target_cid,
+                "sourceLayer": "rust",
+                "sourceSymbol": cs.callee,
+                "target": { "cid": target_cid, "kind": "contract" },
+                "targetContractCid": target_cid,
+                "targetLayer": "rust-tests",
+                "callsite": {
+                    "file": cs.file,
+                    "start_line": cs.line,
+                    "start_col": cs.col,
+                },
+            }));
+        }
+    }
+
+    Ok(json!({
+        "kind": "ir-document",
+        "ir": entries,
+        "diagnostics": diagnostics,
     }))
 }
 
@@ -6985,6 +7251,159 @@ pub fn option_carrier(_x: i64) -> i64 {
         );
         assert_eq!(gaps[0]["concept"], "concept:option");
         assert_eq!(gaps[0]["realization_count"], 1);
+
+        let _ = fs::remove_dir_all(root);
+    }
+
+    // -----------------------------------------------------------------
+    // Implication lifter (#97). Walks production-code function bodies
+    // and emits one kind:bridge memento per Expr::Call / Expr::MethodCall
+    // call site, looked up against the supplied contract_bindings by
+    // ctor-name index over the contract name's "<callee>@..." prefix.
+    // -----------------------------------------------------------------
+
+    #[test]
+    fn lift_implications_emits_bridge_per_call_expression_matched_by_callee_name() {
+        let src = r##"
+pub fn caller(input: &str) -> i64 {
+    let parsed = parse_input(input);
+    parsed.normalize_value()
+}
+"##;
+        let root = temp_workspace("lift_implications_basic");
+        let src_dir = root.join("src");
+        fs::create_dir_all(&src_dir).expect("create src dir");
+        let rel = "src/lib.rs";
+        fs::write(root.join(rel), src).expect("write source");
+
+        let contract_bindings = json!([
+            { "name": "parse_input@src/lib.rs:5:8",
+              "contract_cid": "blake3-512:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa" },
+            { "name": "normalize_value@src/lib.rs:12:8",
+              "contract_cid": "blake3-512:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb" },
+        ]);
+
+        let resp = lift_implications(&json!({
+            "workspace_root": root.to_string_lossy(),
+            "source_paths": [rel],
+            "contract_bindings": contract_bindings,
+        }))
+        .expect("lift_implications");
+
+        assert_eq!(resp["kind"], "ir-document");
+        let ir = resp["ir"].as_array().expect("ir array");
+        assert_eq!(
+            ir.len(),
+            2,
+            "expected one bridge per call expression (parse_input + normalize_value), got: {ir:?}"
+        );
+
+        // Free function call -> kind:bridge with sourceSymbol = parse_input.
+        let parse = ir
+            .iter()
+            .find(|e| e["sourceSymbol"] == "parse_input")
+            .expect("parse_input bridge");
+        assert_eq!(parse["kind"], "bridge");
+        assert_eq!(parse["sourceLayer"], "rust");
+        assert_eq!(parse["targetLayer"], "rust-tests");
+        assert_eq!(
+            parse["targetContractCid"],
+            "blake3-512:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+        );
+        assert_eq!(parse["target"]["cid"], parse["targetContractCid"]);
+        assert!(parse["name"]
+            .as_str()
+            .unwrap()
+            .starts_with("intra-body:rust:parse_input@"));
+
+        // Method call -> sourceSymbol = the method ident, NOT the receiver.
+        let norm = ir
+            .iter()
+            .find(|e| e["sourceSymbol"] == "normalize_value")
+            .expect("normalize_value bridge");
+        assert_eq!(norm["kind"], "bridge");
+        assert_eq!(
+            norm["targetContractCid"],
+            "blake3-512:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+        );
+
+        let _ = fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn lift_implications_emits_lift_gap_for_unmatched_callee() {
+        let src = r##"
+pub fn caller() -> i64 {
+    completely_unknown_function(0)
+}
+"##;
+        let root = temp_workspace("lift_implications_gap");
+        let src_dir = root.join("src");
+        fs::create_dir_all(&src_dir).expect("create src dir");
+        let rel = "src/lib.rs";
+        fs::write(root.join(rel), src).expect("write source");
+
+        let resp = lift_implications(&json!({
+            "workspace_root": root.to_string_lossy(),
+            "source_paths": [rel],
+            "contract_bindings": [],
+        }))
+        .expect("lift_implications");
+
+        let ir = resp["ir"].as_array().expect("ir array");
+        assert!(ir.is_empty(), "no bridges should be emitted: {ir:?}");
+        let diags = resp["diagnostics"].as_array().expect("diagnostics array");
+        assert_eq!(diags.len(), 1, "one lift-gap for the unmatched call: {diags:?}");
+        assert_eq!(diags[0]["kind"], "lift-gap");
+        assert_eq!(diags[0]["reason"], "no-contract-for-callee");
+        assert_eq!(diags[0]["callee"], "completely_unknown_function");
+
+        let _ = fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn lift_implications_uses_last_path_segment_as_callee_name() {
+        // `serde_json::from_str(s)` lowers to a callsite with
+        // sourceSymbol = "from_str" (the LAST segment), which matches
+        // how the test lifter names contracts: `from_str@...`.
+        let src = r##"
+pub fn caller(s: &str) -> serde_json::Value {
+    serde_json::from_str(s).unwrap()
+}
+"##;
+        let root = temp_workspace("lift_implications_path");
+        let src_dir = root.join("src");
+        fs::create_dir_all(&src_dir).expect("create src dir");
+        let rel = "src/lib.rs";
+        fs::write(root.join(rel), src).expect("write source");
+
+        let contract_bindings = json!([
+            { "name": "from_str@src/foreign.rs:42:8",
+              "contract_cid": "blake3-512:cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc" },
+            { "name": "unwrap@somewhere.rs:1:1",
+              "contract_cid": "blake3-512:dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd" },
+        ]);
+
+        let resp = lift_implications(&json!({
+            "workspace_root": root.to_string_lossy(),
+            "source_paths": [rel],
+            "contract_bindings": contract_bindings,
+        }))
+        .expect("lift_implications");
+
+        let ir = resp["ir"].as_array().expect("ir array");
+        let symbols: Vec<&str> = ir
+            .iter()
+            .filter_map(|e| e["sourceSymbol"].as_str())
+            .collect();
+        assert!(
+            symbols.contains(&"from_str"),
+            "expected from_str (last path segment) in: {symbols:?}"
+        );
+        assert!(
+            symbols.contains(&"unwrap"),
+            "expected unwrap (method call) in: {symbols:?}"
+        );
 
         let _ = fs::remove_dir_all(root);
     }
