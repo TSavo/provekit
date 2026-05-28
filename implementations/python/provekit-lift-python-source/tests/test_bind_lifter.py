@@ -35,6 +35,11 @@ def _cid(ch: str) -> str:
     return "blake3-512:" + ch * 128
 
 
+def _template_cid_of_json(value: object) -> str:
+    encoded = json.dumps(value, separators=(",", ":"), sort_keys=False).encode("utf-8")
+    return blake3_512_of(encoded)
+
+
 def _formula_gte_x_zero() -> dict:
     return {
         "args": [
@@ -235,8 +240,14 @@ def test_library_bindings_layer_lifts_requests_shim_from_real_python_source() ->
         "end_line": 8,
         "end_col": 31,
     }
-    expected_span = "".join(source.splitlines(keepends=True)[4:8])
-    assert body_source["source_cid"] == blake3_512_of(expected_span.encode("utf-8"))
+    assert body_source["source_cid"] == blake3_512_of(
+        body_source["body_text"].encode("utf-8")
+    )
+    assert body_source["ast_template"]["kind"] == "block"
+    assert body_source["template_cid"] == _template_cid_of_json(
+        body_source["ast_template"]
+    )
+    assert body_source["param_names"] == ["url"]
 
 
 # -----------------------------------------------------------------
@@ -1305,3 +1316,254 @@ def test_sugar_bind_body_text_is_populated_in_body_source() -> None:
     assert "conn.close()" in body_text, (
         "body_text should contain the function body"
     )
+
+
+def _single_sugar_entry(source: str) -> dict:
+    result = lift_source(source, "shim.py", layer="library-bindings")
+    assert result.diagnostics == []
+    assert len(result.ir) == 1
+    return result.ir[0]
+
+
+def _binding_template(entry: dict, contract_ch: str = "c") -> dict:
+    return {
+        "concept_name": entry["concept_name"],
+        "library_tag": entry["target_library_tag"],
+        "family": entry.get("family"),
+        "ast_template": entry["body_source"]["ast_template"],
+        "template_cid": entry["body_source"]["template_cid"],
+        "param_names": entry["body_source"]["param_names"],
+        "contract_cid": _cid(contract_ch),
+    }
+
+
+def test_sugar_body_emits_ast_template_alongside_body_text() -> None:
+    source = (
+        "from provekit import sugar\n"
+        "import json\n"
+        "\n"
+        "@sugar.bind(concept=\"concept:json-parse\", library=\"json\")\n"
+        "def json_parse(payload):\n"
+        "    return json.loads(payload)\n"
+    )
+
+    entry = _single_sugar_entry(source)
+    body_source = entry["body_source"]
+
+    assert "body_text" in body_source
+    assert "ast_template" in body_source
+    assert body_source["param_names"] == ["payload"]
+    template = body_source["ast_template"]
+    assert template == {
+        "kind": "block",
+        "stmts": [
+            {
+                "kind": "expr_stmt",
+                "expr": {
+                    "kind": "return",
+                    "expr": {
+                        "kind": "method_call",
+                        "receiver": {"kind": "ident", "name": "json"},
+                        "method": "loads",
+                        "args": [{"kind": "param_ref", "index": 1}],
+                    },
+                },
+                "trailing_semi": False,
+            }
+        ],
+    }
+    assert body_source["template_cid"] == _template_cid_of_json(template)
+
+
+def test_sugar_body_alpha_equivalence_collapses_to_same_cid() -> None:
+    src_a = (
+        "from provekit import sugar\n"
+        "\n"
+        "@sugar.bind(concept=\"concept:json-parse\", library=\"json-a\")\n"
+        "def json_parse(payload):\n"
+        "    return json.loads(payload)\n"
+    )
+    src_b = (
+        "from provekit import sugar\n"
+        "\n"
+        "@sugar.bind(concept=\"concept:json-parse\", library=\"json-b\")\n"
+        "def json_parse(raw_text):\n"
+        "    return json.loads(raw_text)\n"
+    )
+
+    entry_a = _single_sugar_entry(src_a)
+    entry_b = _single_sugar_entry(src_b)
+
+    assert entry_a["body_source"]["ast_template"] == entry_b["body_source"]["ast_template"]
+    assert entry_a["body_source"]["template_cid"] == entry_b["body_source"]["template_cid"]
+    assert entry_a["body_source"]["body_text"] != entry_b["body_source"]["body_text"]
+    assert entry_a["body_source"]["source_cid"] != entry_b["body_source"]["source_cid"]
+
+
+def test_sugar_body_param_name_swap_canonicalizes() -> None:
+    src_a = (
+        "from provekit import sugar\n"
+        "\n"
+        "@sugar.bind(concept=\"concept:call\", library=\"lib-a\")\n"
+        "def f(a, b):\n"
+        "    return g(a, b)\n"
+    )
+    src_b = (
+        "from provekit import sugar\n"
+        "\n"
+        "@sugar.bind(concept=\"concept:call\", library=\"lib-b\")\n"
+        "def f(x, y):\n"
+        "    return g(x, y)\n"
+    )
+
+    entry_a = _single_sugar_entry(src_a)
+    entry_b = _single_sugar_entry(src_b)
+
+    assert entry_a["body_source"]["template_cid"] == entry_b["body_source"]["template_cid"]
+
+
+def test_recognize_emits_exact_tag_for_alpha_equivalent_user_function(tmp_path: Path) -> None:
+    sugar_source = (
+        "from provekit import sugar\n"
+        "import requests\n"
+        "\n"
+        "@sugar.bind(\n"
+        "    concept=\"concept:http-request\",\n"
+        "    library=\"provekit-shim-python-requests\",\n"
+        "    family=\"concept:family:http\",\n"
+        ")\n"
+        "def fetch(url, headers):\n"
+        "    return requests.get(url, headers=headers)\n"
+    )
+    sugar_entry = _single_sugar_entry(sugar_source)
+    user_rel = "src/lib.py"
+    user_file = tmp_path / user_rel
+    user_file.parent.mkdir()
+    user_file.write_text(
+        "import requests\n"
+        "\n"
+        "def fetch_url(u, h):\n"
+        "    return requests.get(u, headers=h)\n",
+        encoding="utf-8",
+    )
+
+    response = dispatch(
+        {
+            "jsonrpc": "2.0",
+            "id": 41,
+            "method": "provekit.plugin.recognize",
+            "params": {
+                "project_root": str(tmp_path),
+                "source_paths": [user_rel],
+                "binding_templates": [_binding_template(sugar_entry)],
+            },
+        }
+    )
+
+    assert "error" not in response
+    tags = response["result"]["tags"]
+    assert len(tags) == 1
+    tag = tags[0]
+    assert tag["file"] == user_rel
+    assert tag["function_name"] == "fetch_url"
+    assert tag["concept_name"] == "concept:http-request"
+    assert tag["library_tag"] == "provekit-shim-python-requests"
+    assert tag["family"] == "concept:family:http"
+    assert tag["template_cid"] == sugar_entry["body_source"]["template_cid"]
+    assert tag["contract_cid"] == _cid("c")
+    assert tag["match_tier"] == "exact"
+    assert tag["param_bindings"] == [
+        {"index": 1, "source_text": "u"},
+        {"index": 2, "source_text": "h"},
+    ]
+
+
+def test_recognize_returns_empty_tags_for_non_matching_source(tmp_path: Path) -> None:
+    sugar_entry = _single_sugar_entry(
+        "from provekit import sugar\n"
+        "import json\n"
+        "\n"
+        "@sugar.bind(concept=\"concept:json-parse\", library=\"json\")\n"
+        "def json_parse(payload):\n"
+        "    return json.loads(payload)\n"
+    )
+    user_rel = "src/lib.py"
+    user_file = tmp_path / user_rel
+    user_file.parent.mkdir()
+    user_file.write_text(
+        "def json_parse(payload):\n"
+        "    return completely_different_function(payload)\n",
+        encoding="utf-8",
+    )
+
+    response = dispatch(
+        {
+            "jsonrpc": "2.0",
+            "id": 42,
+            "method": "provekit.plugin.recognize",
+            "params": {
+                "project_root": str(tmp_path),
+                "source_paths": [user_rel],
+                "binding_templates": [_binding_template(sugar_entry, "d")],
+            },
+        }
+    )
+
+    assert response["result"]["tags"] == []
+
+
+def test_recognize_routes_multiple_bindings_per_call_site_pool(tmp_path: Path) -> None:
+    json_entry = _single_sugar_entry(
+        "from provekit import sugar\n"
+        "import json\n"
+        "\n"
+        "@sugar.bind(concept=\"concept:json-parse\", library=\"json-lib\")\n"
+        "def json_parse(payload):\n"
+        "    return json.loads(payload)\n"
+    )
+    sql_entry = _single_sugar_entry(
+        "from provekit import sugar\n"
+        "\n"
+        "@sugar.bind(concept=\"concept:sql-execute\", library=\"sql-lib\")\n"
+        "def sql_execute(conn, sql, args):\n"
+        "    return conn.execute(sql, args)\n"
+    )
+    user_rel = "src/lib.py"
+    user_file = tmp_path / user_rel
+    user_file.parent.mkdir()
+    user_file.write_text(
+        "import json\n"
+        "\n"
+        "def parse(input_text):\n"
+        "    return json.loads(input_text)\n"
+        "\n"
+        "class Store:\n"
+        "    def write(self, c, q, p):\n"
+        "        def nested(conn, sql_text, params):\n"
+        "            return conn.execute(sql_text, params)\n"
+        "        return nested(c, q, p)\n",
+        encoding="utf-8",
+    )
+
+    response = dispatch(
+        {
+            "jsonrpc": "2.0",
+            "id": 43,
+            "method": "provekit.plugin.recognize",
+            "params": {
+                "project_root": str(tmp_path),
+                "source_paths": [user_rel],
+                "binding_templates": [
+                    _binding_template(json_entry, "a"),
+                    _binding_template(sql_entry, "b"),
+                ],
+            },
+        }
+    )
+
+    tags = response["result"]["tags"]
+    assert len(tags) == 2
+    by_concept = {tag["concept_name"]: tag for tag in tags}
+    assert by_concept["concept:json-parse"]["library_tag"] == "json-lib"
+    assert by_concept["concept:sql-execute"]["library_tag"] == "sql-lib"
+    assert by_concept["concept:sql-execute"]["function_name"] == "nested"
