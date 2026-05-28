@@ -320,6 +320,7 @@ fn run() -> Result<(), String> {
         mint_producer_id: Some("rust-verifier@1.0".into()),
         solvers_config: None,
         extra_projects: Vec::new(),
+        extra_proof_files: Vec::new(),
     };
     let runner = Runner::new(cfg);
     let (report, stats) = runner.run_with_tiers();

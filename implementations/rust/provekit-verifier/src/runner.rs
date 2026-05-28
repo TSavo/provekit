@@ -88,6 +88,10 @@ pub struct RunnerConfig {
     /// also be loaded (e.g., OpenAPI spec project for cross-kit
     /// verification).
     pub extra_projects: Vec<PathBuf>,
+    /// Additional individual .proof files resolved by kit-owned package
+    /// managers. These are still loaded by content address; the verifier
+    /// never interprets the package graph that surfaced them.
+    pub extra_proof_files: Vec<PathBuf>,
 }
 
 /// Per-solver telemetry, surfaced in the report alongside the legacy
@@ -182,6 +186,7 @@ impl Runner {
             let extra_pool = load_all_proofs::run(extra);
             pool.merge(extra_pool);
         }
+        load_all_proofs::load_files_into_pool(&self.cfg.extra_proof_files, &mut pool);
         let loaded_cids = sorted_keys(&pool.mementos);
         let load_diagnostics: Vec<Json> = pool
             .load_errors
@@ -386,6 +391,7 @@ impl Runner {
             let extra_pool = load_all_proofs::run(extra);
             pool.merge(extra_pool);
         }
+        load_all_proofs::load_files_into_pool(&self.cfg.extra_proof_files, &mut pool);
 
         // Load and process call edges
         let call_edges = call_edge_loader::load_call_edge_files(&self.cfg.project_root);
@@ -501,7 +507,12 @@ impl Runner {
     }
 
     pub fn run_load_and_enumerate(&self) -> (MementoPool, Vec<CallSite>) {
-        let pool = load_all_proofs::run(&self.cfg.project_root);
+        let mut pool = load_all_proofs::run(&self.cfg.project_root);
+        for extra in &self.cfg.extra_projects {
+            let extra_pool = load_all_proofs::run(extra);
+            pool.merge(extra_pool);
+        }
+        load_all_proofs::load_files_into_pool(&self.cfg.extra_proof_files, &mut pool);
         let cs = enumerate_callsites::run(&pool);
         (pool, cs)
     }
@@ -705,6 +716,9 @@ fn discover_input_artifact_cids(cfg: &RunnerConfig) -> BTreeSet<String> {
     for extra in &cfg.extra_projects {
         collect_proof_file_cids(extra, &mut cids);
     }
+    for proof_file in &cfg.extra_proof_files {
+        collect_one_proof_file_cid(proof_file, &mut cids);
+    }
     cids
 }
 
@@ -726,6 +740,15 @@ fn collect_proof_file_cids(root: &Path, out: &mut BTreeSet<String>) {
         if let Ok(bytes) = std::fs::read(entry.path()) {
             out.insert(provekit_canonicalizer::blake3_512_of(&bytes));
         }
+    }
+}
+
+fn collect_one_proof_file_cid(path: &Path, out: &mut BTreeSet<String>) {
+    if path.extension().and_then(|s| s.to_str()) != Some("proof") {
+        return;
+    }
+    if let Ok(bytes) = std::fs::read(path) {
+        out.insert(provekit_canonicalizer::blake3_512_of(&bytes));
     }
 }
 

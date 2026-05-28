@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"os"
 )
 
 type rpcRequest struct {
@@ -33,6 +34,9 @@ func RunRPC(stdin io.Reader, stdout io.Writer) error {
 		switch req.Method {
 		case "provekit.plugin.invoke":
 			writeJSON(stdout, handleInvoke(req.ID, req.Params))
+		case "provekit.plugin.resolve_dependency_proofs":
+			fmt.Fprintln(os.Stderr, "provekit-realize-go-core: resolve_dependency_proofs not yet implemented for go; returning empty proof_paths")
+			writeJSON(stdout, successResponse(req.ID, map[string]any{"proof_paths": []string{}}))
 		case "provekit.plugin.shutdown":
 			writeJSON(stdout, successResponse(req.ID, nil))
 			return nil

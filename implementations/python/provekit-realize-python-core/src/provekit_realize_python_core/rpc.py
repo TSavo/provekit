@@ -97,6 +97,12 @@ def dispatch(request: dict[str, Any]) -> dict[str, Any]:
                 "template_authority": realizer.KIT_ID,
             },
         }
+    if method == "provekit.plugin.resolve_dependency_proofs":
+        print(
+            "provekit-realize-python-core: resolve_dependency_proofs not yet implemented for python; returning empty proof_paths",
+            file=sys.stderr,
+        )
+        return {"jsonrpc": "2.0", "id": msg_id, "result": {"proof_paths": []}}
     if method == "provekit.plugin.shutdown":
         return {"jsonrpc": "2.0", "id": msg_id, "result": None}
     return _error(msg_id, -32601, f"METHOD_NOT_FOUND: {method}")

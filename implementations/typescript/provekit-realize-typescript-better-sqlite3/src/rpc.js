@@ -59,6 +59,10 @@ function dispatch(request) {
     const entries = realizer.shimProofEntries ? realizer.shimProofEntries() : [];
     return { jsonrpc: "2.0", id: msgId, result: { entries, proof_path: proofPath } };
   }
+  if (method === "provekit.plugin.resolve_dependency_proofs") {
+    console.error("provekit-realize-typescript-better-sqlite3: resolve_dependency_proofs not yet implemented for typescript; returning empty proof_paths");
+    return { jsonrpc: "2.0", id: msgId, result: { proof_paths: [] } };
+  }
   if (method === "provekit.plugin.shutdown") {
     return { jsonrpc: "2.0", id: msgId, result: null };
   }

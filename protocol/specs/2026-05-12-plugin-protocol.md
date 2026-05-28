@@ -256,7 +256,45 @@ Request:
 }
 ```
 
-#### §4.2.3 `provekit.plugin.shutdown`
+#### §4.2.3 `provekit.plugin.resolve_dependency_proofs`
+
+Kit-owned package-manager proof resolution. The runtime calls this method before
+verification pool assembly. The substrate MUST NOT inspect cargo metadata,
+classpath entries, node_modules, sys.path, or any other platform dependency
+graph directly; it passes the project root to configured kits and unions the
+returned `.proof` bundles by CID.
+
+Request:
+```json
+{
+  "jsonrpc": "2.0",
+  "id": 3,
+  "method": "provekit.plugin.resolve_dependency_proofs",
+  "params": {
+    "project_root": "/absolute/project/root"
+  }
+}
+```
+
+Response (success):
+```json
+{
+  "jsonrpc": "2.0",
+  "id": 3,
+  "result": {
+    "proof_paths": ["/absolute/vendor/package/blake3-512:<hex>.proof"]
+  }
+}
+```
+
+`proof_paths` entries MUST name `.proof` bundle files. Implementations MAY
+return an empty array when the language kit has no implementation yet, but MUST
+log that language-specific dependency proof resolution is not implemented. The
+runtime MUST treat the returned bundles as opaque content-addressed proof files:
+load by bytes, recompute bundle and member CIDs, and union members. It MUST NOT
+extract formulas for rewriting or reinterpret package-manager metadata.
+
+#### §4.2.4 `provekit.plugin.shutdown`
 
 Graceful close. After this, an `stdio:` plugin SHOULD exit zero on stdin EOF; an HTTP plugin MAY ignore the call.
 
