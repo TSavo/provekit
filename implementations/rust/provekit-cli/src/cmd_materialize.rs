@@ -2150,19 +2150,18 @@ fn sync_materialize_bridge_proof(
     files: &[MaterializedFile],
 ) -> Result<Option<PathBuf>, String> {
     let proof_dir = project_root.join(".provekit").join("materialize");
-    if proof_dir.exists() {
-        for entry in std::fs::read_dir(&proof_dir)
-            .map_err(|error| format!("read {}: {error}", proof_dir.display()))?
-        {
-            let entry = entry.map_err(|error| format!("read {}: {error}", proof_dir.display()))?;
-            let path = entry.path();
-            if path.extension().and_then(|ext| ext.to_str()) == Some("proof") {
-                std::fs::remove_file(&path)
-                    .map_err(|error| format!("remove stale {}: {error}", path.display()))?;
-            }
-        }
-    }
 
+    // NO global cleanup. The prior behavior wiped EVERY existing `.proof` in
+    // this dir before rebuilding from just THIS invocation's files — which
+    // silently deleted bridges emitted by earlier (or wider-scope) materialize
+    // runs, so `prove` stopped enforcing already-adopted vendor contracts
+    // after any partial scan (Codex P1 on #1566). Now: leave existing
+    // envelopes in place and just write THIS invocation's envelope. The
+    // verifier walks `.provekit/` and unions all bridge members across
+    // envelopes; the filename stays content-addressed (`<cid>.proof`) so
+    // idempotent re-runs overwrite themselves in place. Stale orphan
+    // envelopes (whose members no longer correspond to any live source) are
+    // a hygiene concern for a future garbage-collect verb, not data loss.
     let mut members = BTreeMap::new();
     for file in files {
         for site in &file.receipt.site_witnesses {
