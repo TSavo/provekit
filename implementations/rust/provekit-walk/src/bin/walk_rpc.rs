@@ -92,6 +92,10 @@ fn handle_line(line: &str) -> Value {
         "initialize" => Ok(initialize_result()),
         "lift" => bind_lift(&params),
         "shutdown" => Ok(Value::Null),
+        // Recognizer foundation (#81, #82) per protocol §4.2.5. The lift
+        // binary handles this too because it already owns the syn AST
+        // machinery that recognize needs — same kit, same language.
+        "provekit.plugin.recognize" => recognize(&params),
         // Walk-internal RPC (substrate-private; not part of any plugin protocol).
         "walk.lift_pre" => lift_pre(&params),
         "walk.lift_post" => lift_post(&params),
@@ -114,6 +118,161 @@ fn handle_line(line: &str) -> Value {
             "id": id,
         }),
     }
+}
+
+/// Recognizer foundation (#81, #82) per protocol §4.2.5.
+///
+/// Walk user source files, compute their function bodies' identifier-
+/// canonical AST templates with the same `block_to_ast_template` the
+/// sugar lifter uses, and match by `template_cid` against the request's
+/// `binding_templates`. An exact CID match means the user's function
+/// body IS the shim's sugar body (modulo whitespace + alpha-equivalence
+/// on params) — tier `exact`. Tiers `structural`, `probable`, `refused`
+/// are reserved for follow-up tier-2/3 work.
+///
+/// The kit owns the AST machinery; the substrate sees only the tag set.
+/// This is the language-blind invariant: the substrate forwards
+/// `binding_templates` opaquely and collects tags opaquely; only the
+/// kit reads or writes syn shapes.
+fn recognize(params: &Value) -> Result<Value, String> {
+    use std::collections::HashMap;
+
+    let project_root = params
+        .get("project_root")
+        .and_then(|v| v.as_str())
+        .ok_or("missing `project_root`")?;
+    let project_root = std::path::PathBuf::from(project_root);
+
+    let source_paths: Vec<String> = params
+        .get("source_paths")
+        .and_then(|v| v.as_array())
+        .ok_or("missing `source_paths` array")?
+        .iter()
+        .filter_map(|v| v.as_str().map(|s| s.to_string()))
+        .collect();
+
+    let empty: Vec<Value> = Vec::new();
+    let binding_templates: &Vec<Value> = params
+        .get("binding_templates")
+        .and_then(|v| v.as_array())
+        .unwrap_or(&empty);
+
+    // Index bindings by template_cid for O(1) lookup. The kit reads the
+    // template_cid the lifter emitted (or, equivalently, recomputes it
+    // from the supplied ast_template; we trust the supplied value because
+    // the substrate's §4.2.5 contract requires it to verify the CID).
+    let mut bindings_by_cid: HashMap<String, &Value> = HashMap::new();
+    for binding in binding_templates {
+        if let Some(cid) = binding.get("template_cid").and_then(|v| v.as_str()) {
+            bindings_by_cid.insert(cid.to_string(), binding);
+        }
+    }
+
+    let mut tags: Vec<Value> = Vec::new();
+
+    for rel_path in &source_paths {
+        let full_path = project_root.join(rel_path);
+        let src = match std::fs::read_to_string(&full_path) {
+            Ok(s) => s,
+            Err(_) => continue, // missing files are not errors at the recognize layer
+        };
+        let file = match syn::parse_file(&src) {
+            Ok(f) => f,
+            Err(_) => continue, // unparseable files cannot host AST recognition
+        };
+
+        recognize_walk_items(
+            &file.items,
+            rel_path,
+            &bindings_by_cid,
+            &mut tags,
+        );
+    }
+
+    Ok(json!({ "tags": tags }))
+}
+
+/// Recursively visit items + nested modules, collecting recognize tags.
+fn recognize_walk_items(
+    items: &[syn::Item],
+    rel_path: &str,
+    bindings_by_cid: &std::collections::HashMap<String, &Value>,
+    tags: &mut Vec<Value>,
+) {
+    for item in items {
+        match item {
+            syn::Item::Fn(item_fn) => {
+                if let Some(tag) =
+                    recognize_match_item_fn(item_fn, rel_path, bindings_by_cid)
+                {
+                    tags.push(tag);
+                }
+            }
+            syn::Item::Mod(item_mod) => {
+                if let Some((_, ref nested)) = item_mod.content {
+                    recognize_walk_items(nested, rel_path, bindings_by_cid, tags);
+                }
+            }
+            _ => {}
+        }
+    }
+}
+
+/// Compute the candidate's identifier-canonical AST template and look it
+/// up in `bindings_by_cid`. Returns a tag JSON if matched at tier `exact`.
+fn recognize_match_item_fn(
+    item_fn: &syn::ItemFn,
+    rel_path: &str,
+    bindings_by_cid: &std::collections::HashMap<String, &Value>,
+) -> Option<Value> {
+    let param_names: Vec<String> = item_fn
+        .sig
+        .inputs
+        .iter()
+        .filter_map(|arg| match arg {
+            syn::FnArg::Typed(pat_ty) => match &*pat_ty.pat {
+                syn::Pat::Ident(pid) => Some(pid.ident.to_string()),
+                _ => None,
+            },
+            syn::FnArg::Receiver(_) => None,
+        })
+        .collect();
+
+    let candidate_template = block_to_ast_template(&item_fn.block, &param_names);
+    let candidate_cid = blake3_512_of(candidate_template.to_string().as_bytes());
+
+    let binding = bindings_by_cid.get(&candidate_cid)?;
+
+    let start = item_fn.sig.fn_token.span.start();
+    let end = item_fn.block.brace_token.span.close().end();
+
+    let param_bindings: Vec<Value> = param_names
+        .iter()
+        .enumerate()
+        .map(|(i, n)| {
+            json!({
+                "index": i + 1,
+                "source_text": n,
+            })
+        })
+        .collect();
+
+    Some(json!({
+        "file": rel_path,
+        "span": {
+            "start_line": start.line,
+            "start_col": start.column,
+            "end_line": end.line,
+            "end_col": end.column,
+        },
+        "concept_name": binding.get("concept_name").cloned().unwrap_or(Value::Null),
+        "library_tag": binding.get("library_tag").cloned().unwrap_or(Value::Null),
+        "family": binding.get("family").cloned().unwrap_or(Value::Null),
+        "template_cid": candidate_cid,
+        "contract_cid": binding.get("contract_cid").cloned().unwrap_or(Value::Null),
+        "match_tier": "exact",
+        "param_bindings": param_bindings,
+    }))
 }
 
 fn lift_pre(params: &Value) -> Result<Value, String> {
@@ -4686,6 +4845,179 @@ pub fn op(alpha: &i64, beta: &i64) -> i64 {
             entry_a["body_source"]["source_cid"],
             entry_b["body_source"]["source_cid"]
         );
+    }
+
+    // ---------------------------------------------------------------------
+    // Recognizer foundation Phase C (#81, #82, #86): the provekit.plugin.recognize
+    // RPC handler. Walks user source, matches function bodies' identifier-
+    // canonical templates against supplied binding_templates by template_cid,
+    // emits tier-`exact` tags for matches. Tier-1 = exact-cid match.
+    // ---------------------------------------------------------------------
+
+    #[test]
+    fn recognize_emits_exact_tag_for_alpha_equivalent_user_function() {
+        // The shim's sugar (what would land in the .proof envelope):
+        let sugar_src = r##"
+#[provekit::sugar(concept = "concept:json-parse", library = "provekit-shim-serde-json-rust")]
+pub fn json_parse(s: &str) -> i64 {
+    serde_json::from_str(s)
+}
+"##;
+        let sugar_entry = single_sugar_entry_for_source("recognize_sugar_src", sugar_src);
+        let binding_template = json!({
+            "concept_name": sugar_entry["concept_name"],
+            "library_tag": sugar_entry["target_library_tag"],
+            "family": sugar_entry.get("family").cloned().unwrap_or(Value::Null),
+            "ast_template": sugar_entry["body_source"]["ast_template"],
+            "template_cid": sugar_entry["body_source"]["template_cid"],
+            "param_names": sugar_entry["body_source"]["param_names"],
+            "contract_cid": "blake3-512:cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc"
+        });
+
+        // The user's function — alpha-equivalent (different param name).
+        let user_src = r##"
+pub fn json_parse(input: &str) -> Result<serde_json::Value, String> {
+    serde_json::from_str(input)
+}
+"##;
+        let root = temp_workspace("recognize_user_src");
+        let src_dir = root.join("src");
+        fs::create_dir_all(&src_dir).expect("create src dir");
+        let user_rel = "src/lib.rs";
+        fs::write(root.join(user_rel), user_src).expect("write user source");
+
+        let resp = recognize(&json!({
+            "project_root": root.to_string_lossy(),
+            "source_paths": [user_rel],
+            "binding_templates": [binding_template],
+        }))
+        .expect("recognize should succeed");
+
+        let tags = resp["tags"].as_array().expect("tags array");
+        assert_eq!(tags.len(), 1, "alpha-equivalent body must match: {tags:?}");
+        let tag = &tags[0];
+        assert_eq!(tag["concept_name"], "concept:json-parse");
+        assert_eq!(tag["library_tag"], "provekit-shim-serde-json-rust");
+        assert_eq!(tag["match_tier"], "exact");
+        assert_eq!(tag["file"], user_rel);
+        // param_bindings reflects the USER's spelling (input), not the sugar's (s).
+        let bindings = tag["param_bindings"].as_array().expect("param_bindings");
+        assert_eq!(bindings.len(), 1);
+        assert_eq!(bindings[0]["index"], 1);
+        assert_eq!(bindings[0]["source_text"], "input");
+
+        let _ = fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn recognize_returns_empty_tags_for_non_matching_source() {
+        let sugar_src = r##"
+#[provekit::sugar(concept = "concept:json-parse", library = "provekit-shim-serde-json-rust")]
+pub fn json_parse(s: &str) -> i64 {
+    serde_json::from_str(s)
+}
+"##;
+        let sugar_entry = single_sugar_entry_for_source("recognize_neg_sugar", sugar_src);
+        let binding_template = json!({
+            "concept_name": sugar_entry["concept_name"],
+            "library_tag": sugar_entry["target_library_tag"],
+            "ast_template": sugar_entry["body_source"]["ast_template"],
+            "template_cid": sugar_entry["body_source"]["template_cid"],
+            "contract_cid": "blake3-512:dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd"
+        });
+
+        // User's function is structurally DIFFERENT — calls a different function.
+        let user_src = r##"
+pub fn json_parse(s: &str) -> i64 {
+    completely_different_function(s)
+}
+"##;
+        let root = temp_workspace("recognize_neg_user");
+        let src_dir = root.join("src");
+        fs::create_dir_all(&src_dir).expect("create src dir");
+        let user_rel = "src/lib.rs";
+        fs::write(root.join(user_rel), user_src).expect("write user source");
+
+        let resp = recognize(&json!({
+            "project_root": root.to_string_lossy(),
+            "source_paths": [user_rel],
+            "binding_templates": [binding_template],
+        }))
+        .expect("recognize should succeed");
+
+        let tags = resp["tags"].as_array().expect("tags array");
+        assert!(tags.is_empty(), "non-matching source must produce no tags: {tags:?}");
+
+        let _ = fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn recognize_routes_multiple_bindings_per_call_site_pool() {
+        // Two binding templates (json + sql shapes). User source contains
+        // one match for each. Recognize emits two tags.
+        let json_sugar = r##"
+#[provekit::sugar(concept = "concept:json-parse", library = "json-lib")]
+pub fn json_parse(s: &str) -> i64 {
+    serde_json::from_str(s)
+}
+"##;
+        let sql_sugar = r##"
+#[provekit::sugar(concept = "concept:sql-execute", library = "sql-lib")]
+pub fn sql_execute(conn: &i64, sql: &str, args: &i64) -> i64 {
+    conn.execute(sql, args)
+}
+"##;
+        let json_entry = single_sugar_entry_for_source("recognize_multi_json", json_sugar);
+        let sql_entry = single_sugar_entry_for_source("recognize_multi_sql", sql_sugar);
+        let bindings = json!([
+            {
+                "concept_name": json_entry["concept_name"],
+                "library_tag": json_entry["target_library_tag"],
+                "ast_template": json_entry["body_source"]["ast_template"],
+                "template_cid": json_entry["body_source"]["template_cid"],
+                "contract_cid": "blake3-512:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+            },
+            {
+                "concept_name": sql_entry["concept_name"],
+                "library_tag": sql_entry["target_library_tag"],
+                "ast_template": sql_entry["body_source"]["ast_template"],
+                "template_cid": sql_entry["body_source"]["template_cid"],
+                "contract_cid": "blake3-512:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+            }
+        ]);
+
+        let user_src = r##"
+pub fn json_parse(input: &str) -> i64 {
+    serde_json::from_str(input)
+}
+
+pub fn sql_execute(c: &i64, q: &str, p: &i64) -> i64 {
+    c.execute(q, p)
+}
+"##;
+        let root = temp_workspace("recognize_multi_user");
+        let src_dir = root.join("src");
+        fs::create_dir_all(&src_dir).expect("create src dir");
+        let user_rel = "src/lib.rs";
+        fs::write(root.join(user_rel), user_src).expect("write user source");
+
+        let resp = recognize(&json!({
+            "project_root": root.to_string_lossy(),
+            "source_paths": [user_rel],
+            "binding_templates": bindings,
+        }))
+        .expect("recognize");
+
+        let tags = resp["tags"].as_array().expect("tags array");
+        assert_eq!(tags.len(), 2, "expected 2 tags (json + sql): {tags:?}");
+        let concepts: Vec<&str> = tags
+            .iter()
+            .filter_map(|t| t["concept_name"].as_str())
+            .collect();
+        assert!(concepts.contains(&"concept:json-parse"));
+        assert!(concepts.contains(&"concept:sql-execute"));
+
+        let _ = fs::remove_dir_all(root);
     }
 
     #[test]
