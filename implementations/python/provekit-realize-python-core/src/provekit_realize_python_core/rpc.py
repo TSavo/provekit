@@ -1,14 +1,12 @@
 from __future__ import annotations
 
+from fnmatch import fnmatch
+from importlib import metadata as importlib_metadata
 import json
+from pathlib import Path
 import sys
 import traceback
 from typing import Any
-
-from .literal_encoding import answers as _literal_encoding_answers
-from .platform_semantics import declaration as _platform_semantics_declaration
-from . import realizer
-from .realizer import BodyTemplateResourceError, MissingTemplateError, emit_stub
 
 
 def run_rpc() -> None:
@@ -41,12 +39,18 @@ def dispatch(request: dict[str, Any]) -> dict[str, Any]:
         params = {}
 
     if method == "provekit.plugin.platform_semantics":
+        from .platform_semantics import declaration as _platform_semantics_declaration
+
         return {"jsonrpc": "2.0", "id": msg_id, "result": _platform_semantics_declaration()}
     if method == "provekit.plugin.literal_encoding_answers":
+        from .literal_encoding import answers as _literal_encoding_answers
+
         return {"jsonrpc": "2.0", "id": msg_id, "result": {"answers": _literal_encoding_answers()}}
     if method == "provekit.plugin.invoke":
         if not isinstance(params, dict):
             return _error(msg_id, -32602, "INVALID_PARAMS: params must be an object")
+        from .realizer import MissingTemplateError
+
         try:
             result = _emit_one(params)
         except MissingTemplateError as exc:
@@ -58,6 +62,8 @@ def dispatch(request: dict[str, Any]) -> dict[str, Any]:
         functions = params.get("functions")
         if not isinstance(functions, list):
             return _error(msg_id, -32602, "INVALID_PARAMS: functions must be an array")
+        from .realizer import MissingTemplateError
+
         results: list[dict[str, Any]] = []
         missing = []
         for item in functions:
@@ -85,6 +91,9 @@ def dispatch(request: dict[str, Any]) -> dict[str, Any]:
         target_library_tag = params.get("target_library_tag")
         if not isinstance(target_library_tag, str):
             target_library_tag = None
+        from . import realizer
+        from .realizer import BodyTemplateResourceError
+
         try:
             entries = realizer.body_template_entries_for_library_tag(target_library_tag)
         except BodyTemplateResourceError as exc:
@@ -98,17 +107,21 @@ def dispatch(request: dict[str, Any]) -> dict[str, Any]:
             },
         }
     if method == "provekit.plugin.resolve_dependency_proofs":
-        print(
-            "provekit-realize-python-core: resolve_dependency_proofs not yet implemented for python; returning empty proof_paths",
-            file=sys.stderr,
-        )
-        return {"jsonrpc": "2.0", "id": msg_id, "result": {"proof_paths": []}}
+        if not isinstance(params, dict):
+            return _error(msg_id, -32602, "INVALID_PARAMS: params must be an object")
+        return {
+            "jsonrpc": "2.0",
+            "id": msg_id,
+            "result": {"proof_paths": _resolve_dependency_proof_paths()},
+        }
     if method == "provekit.plugin.shutdown":
         return {"jsonrpc": "2.0", "id": msg_id, "result": None}
     return _error(msg_id, -32601, f"METHOD_NOT_FOUND: {method}")
 
 
 def _emit_one(params: dict[str, Any]) -> dict[str, Any]:
+    from .realizer import emit_stub
+
     return emit_stub(
         function=str(params.get("function", "")),
         params=_string_list(params.get("params")),
@@ -155,7 +168,19 @@ def _annotation_enabled(params: dict[str, Any]) -> bool:
     return params.get("annotate") is True
 
 
-def _body_template_entry_json(entry: realizer.BodyTemplateEntry) -> dict[str, Any]:
+def _resolve_dependency_proof_paths() -> list[str]:
+    proof_paths: set[str] = set()
+    for dist in importlib_metadata.distributions():
+        for file in dist.files or ():
+            if not fnmatch(Path(str(file)).name, "blake3-512:*.proof"):
+                continue
+            path = Path(dist.locate_file(file)).resolve()
+            if path.is_file():
+                proof_paths.add(str(path))
+    return sorted(proof_paths)
+
+
+def _body_template_entry_json(entry: Any) -> dict[str, Any]:
     guard: dict[str, Any] = {}
     if entry.min_params is not None:
         guard["min_params"] = entry.min_params
@@ -204,6 +229,8 @@ def _body_template_resource_error(
     msg_id: Any,
     exc: BodyTemplateResourceError,
 ) -> dict[str, Any]:
+    from . import realizer
+
     return {
         "jsonrpc": "2.0",
         "id": msg_id,
