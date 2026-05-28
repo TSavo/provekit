@@ -121,7 +121,7 @@ pub fn prepare(client: &mut Client, sql: &str) -> Result<Statement, postgres::Er
     version = "0.19",
     loss = ["sync-vs-async", "isolation-level-default"],
 )]
-pub fn transaction(client: &mut Client) -> Result<Transaction, postgres::Error> {
+pub fn transaction(client: &mut Client) -> Result<Transaction<'_>, postgres::Error> {
     client.transaction()
 }
 

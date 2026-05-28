@@ -1188,10 +1188,6 @@ struct RefuseTarget {
     would_close_with_cluster: String,
 }
 
-fn collect_bind_lift_targets(file: &syn::File) -> Vec<BindLiftTarget> {
-    collect_bind_lift_targets_with_source(file, "")
-}
-
 fn collect_bind_lift_targets_with_source(file: &syn::File, source: &str) -> Vec<BindLiftTarget> {
     let mut targets = Vec::new();
     collect_bind_lift_targets_in_items(&file.items, source, &mut targets);
@@ -2865,20 +2861,12 @@ fn skip_quoted(bytes: &[u8], start: usize, quote: u8) -> usize {
     bytes.len()
 }
 
-fn skip_line_comment(bytes: &[u8], start: usize) -> usize {
-    line_comment_end(bytes, start)
-}
-
 fn line_comment_end(bytes: &[u8], start: usize) -> usize {
     let mut i = start + 2;
     while i < bytes.len() && bytes[i] != b'\n' {
         i += 1;
     }
     i
-}
-
-fn skip_block_comment(bytes: &[u8], start: usize) -> usize {
-    block_comment_end(bytes, start)
 }
 
 fn block_comment_end(bytes: &[u8], start: usize) -> usize {
@@ -4117,40 +4105,6 @@ fn unary_operator_concept_name(
         syn::UnOp::Neg(_) => Some("concept:neg"),
         _ => None,
     }
-}
-
-/// Pretty-print a `syn::Expr` via prettyplease by wrapping it in a dummy fn,
-/// formatting the resulting `syn::File`, and extracting the body. This is
-/// the byte-exact source-form reproduction used by Expr::Match and other
-/// shapes that aren't structurally lifted in the substrate primitives.
-/// Outer-scope identifier references inside the expression survive because
-/// they're textual; the materialized boundary stub's surrounding scope
-/// must provide them by name (which is what `let` bindings emitted by
-/// earlier seq children give us).
-fn pretty_print_expr(expr: &syn::Expr) -> String {
-    use quote::quote;
-    let wrapped = quote! {
-        fn __provekit_pp() { #expr }
-    };
-    let Ok(file) = syn::parse2::<syn::File>(wrapped) else {
-        return String::new();
-    };
-    let formatted = prettyplease::unparse(&file);
-    // Extract the body between `fn __provekit_pp() {` and the matching `}`,
-    // then strip the 4-space indent prettyplease added.
-    let Some(open) = formatted.find('{') else {
-        return formatted;
-    };
-    let body_start = open + 1;
-    let Some(close) = formatted.rfind('}') else {
-        return formatted;
-    };
-    let inner = formatted[body_start..close].trim_matches('\n');
-    inner
-        .lines()
-        .map(|l| l.strip_prefix("    ").unwrap_or(l))
-        .collect::<Vec<_>>()
-        .join("\n")
 }
 
 /// Canonical-spacing format for proc_macro2::TokenStream::to_string() output.
@@ -6210,7 +6164,7 @@ pub fn bitwise_not() -> i64 {
         .expect("write value.rs fixture");
         let file = syn::parse_file(include_str!("../../../provekit-canonicalizer/src/value.rs"))
             .expect("value fixture parses");
-        let target_names = collect_bind_lift_targets(&file)
+        let target_names = collect_bind_lift_targets_with_source(&file, "")
             .into_iter()
             .map(|target| target.fn_name)
             .collect::<Vec<_>>();
