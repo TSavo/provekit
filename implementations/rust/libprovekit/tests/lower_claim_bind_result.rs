@@ -9,8 +9,8 @@ use libprovekit::compose::{
 use libprovekit::core::lower_plugin::realize_spec_from_named_term;
 use libprovekit::core::{
     address, concept_bind_result_cid, named_term_document_from_bind_payload, BindKit, BindOptions,
-    Cid, DomainClaim, DomainKind, Input, Kit, LowerKit, RealizeRequest, RealizeTransport,
-    RealizedSource, Term, Verdict,
+    Cid, DomainClaim, DomainKind, Input, Kit, LowerKit, RealizeContractPayload, RealizeRequest,
+    RealizeTransport, RealizedSource, Term, Verdict,
 };
 use provekit_ir_types::{IrFormula, Sort};
 use serde_json::{json, Value};
@@ -316,6 +316,53 @@ fn term_const_claim_fast_path_is_preserved() {
     assert_eq!(requests.len(), 1);
     assert_eq!(requests[0].function, "const_path");
     assert_eq!(requests[0].concept_name, "concept:const-path");
+}
+
+#[test]
+fn lower_realize_claim_payload_carries_request_contract_cid() {
+    let contract_cid = valid_cid('f');
+    let spec = json!({
+        "kind": "RealizeRequest",
+        "function": "contract_path",
+        "params": ["x"],
+        "paramTypes": ["int"],
+        "returnType": "int",
+        "conceptName": "concept:contract-path",
+        "termShapeCid": parse_cid('c'),
+        "contract": RealizeContractPayload {
+            concept_site_cid: valid_cid('1'),
+            object_fcm_cid: valid_cid('2'),
+            local_contract_cid: contract_cid.clone(),
+            origin: "test".to_string(),
+            discharge_verdict: "accepted".to_string(),
+            witnesses: vec![],
+        }
+    });
+    let transport = CapturingTransport::default();
+    let lower = LowerKit::new(
+        PathBuf::from("/tmp/provekit-lower-contract-cid-test"),
+        "python".to_string(),
+        None,
+        transport.clone(),
+    );
+
+    let claim = lower
+        .transform(&Input::Spec(spec))
+        .expect("lower claim succeeds");
+    let realized = LowerKit::<CapturingTransport>::realized_source_from_claim(&claim)
+        .expect("realized payload decodes");
+
+    assert_eq!(
+        realized.contract_cid.as_deref(),
+        Some(contract_cid.as_str())
+    );
+    assert!(
+        claim
+            .artifacts
+            .iter()
+            .any(|artifact| artifact.to_string() == contract_cid),
+        "lower claim artifacts must retain the carried contract CID"
+    );
 }
 
 #[test]

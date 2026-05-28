@@ -1,11 +1,15 @@
 // SPDX-License-Identifier: Apache-2.0
 
+use std::collections::BTreeMap;
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::process::Command;
 use std::sync::Arc;
 
 use provekit_canonicalizer::{blake3_512_of, encode_jcs, Value as CanonicalValue};
+use provekit_proof_envelope::{
+    build_proof_envelope, ed25519_pubkey_string, Ed25519Seed, ProofEnvelopeInput,
+};
 use serde_json::Value as Json;
 
 fn repo_root() -> PathBuf {
@@ -230,6 +234,139 @@ fn payload_cid(payload: &str) -> String {
     let json: Json = serde_json::from_str(payload).expect("payload json parses");
     let canonical = canonical_value_from_json(&json);
     blake3_512_of(encode_jcs(canonical.as_ref()).as_bytes())
+}
+
+fn flat_member(mut env: Json) -> (String, Vec<u8>) {
+    if let Json::Object(map) = &mut env {
+        map.remove("cid");
+        map.remove("producerSignature");
+    }
+    let canonical = encode_jcs(canonical_value_from_json(&env).as_ref());
+    let cid = blake3_512_of(canonical.as_bytes());
+    (cid, canonical.into_bytes())
+}
+
+fn int_const(value: i64) -> Json {
+    serde_json::json!({
+        "kind": "const",
+        "value": value,
+        "sort": {"kind": "primitive", "name": "Int"},
+    })
+}
+
+fn publish_materialize_contract_fixture(project: &Path, boundary_fn: &str) -> String {
+    let proof_dir = project.join(".provekit");
+    fs::create_dir_all(&proof_dir).expect("create .provekit");
+    let mut members = BTreeMap::new();
+
+    let target_env = serde_json::json!({
+        "evidence": {
+            "kind": "contract",
+            "body": {
+                "contractName": format!("{boundary_fn}_vendor_contract"),
+                "pre": {
+                    "kind": "forall",
+                    "name": "x",
+                    "sort": {"kind": "primitive", "name": "Int"},
+                    "body": {
+                        "kind": "atomic",
+                        "name": ">",
+                        "args": [
+                            {"kind": "var", "name": "x"},
+                            int_const(0),
+                        ],
+                    },
+                },
+            },
+        },
+    });
+    let (target_cid, target_bytes) = flat_member(target_env);
+    members.insert(target_cid.clone(), target_bytes);
+
+    let source_env = serde_json::json!({
+        "evidence": {
+            "kind": "contract",
+            "body": {
+                "contractName": "materialized_boundary_consumer",
+                "post": {
+                    "kind": "atomic",
+                    "name": "=",
+                    "args": [
+                        {"kind": "var", "name": "out"},
+                        {"kind": "ctor", "name": boundary_fn, "args": [int_const(0)]},
+                    ],
+                },
+            },
+        },
+    });
+    let (source_cid, source_bytes) = flat_member(source_env);
+    members.insert(source_cid, source_bytes);
+
+    let signer_seed: Ed25519Seed = [0x42; 32];
+    let proof = build_proof_envelope(&ProofEnvelopeInput {
+        name: "@test/materialize-contract-fixture".to_string(),
+        version: "1.0.0".to_string(),
+        binary_cid: None,
+        metadata: None,
+        members,
+        signer_cid: ed25519_pubkey_string(&signer_seed),
+        signer_seed,
+        declared_at: "2026-05-27T00:00:00.000Z".to_string(),
+    });
+    fs::write(proof_dir.join(format!("{}.proof", proof.cid)), &proof.bytes).expect("write proof");
+    target_cid
+}
+
+fn write_contract_materialize_source(src_dir: &Path, contract_cid: &str) -> PathBuf {
+    let source_path = src_dir.join("lib.rs");
+    let payload = serde_json::json!({
+        "artifact_kind": "provekit-concept-citation-comment-sugar",
+        "concept_name": "concept:must-be-positive",
+        "function": "must_be_positive",
+        "params": ["x"],
+        "param_types": ["i64"],
+        "return_type": "i64",
+        "contract": {
+            "concept_site_cid": format!("blake3-512:{}", "1".repeat(128)),
+            "object_fcm_cid": format!("blake3-512:{}", "2".repeat(128)),
+            "local_contract_cid": contract_cid,
+            "origin": "vendor-fixture",
+            "discharge_verdict": "accepted",
+            "witnesses": [],
+        },
+    });
+    let payload = serde_json::to_string(&payload).expect("payload serializes");
+    fs::write(
+        &source_path,
+        format!(
+            "{}pub fn must_be_positive(x: i64) -> i64 {{\n    0\n}}\n",
+            carrier_lines("//", "", &payload)
+        ),
+    )
+    .expect("write contract materialize source");
+    source_path
+}
+
+fn z3_available() -> bool {
+    Command::new("z3")
+        .arg("--version")
+        .output()
+        .map(|output| output.status.success())
+        .unwrap_or(false)
+}
+
+fn run_verify_json_with_code(project: &Path) -> (Json, i32) {
+    let out = Command::new(env!("CARGO_BIN_EXE_provekit"))
+        .arg("verify")
+        .arg("--project")
+        .arg(project)
+        .arg("--json")
+        .output()
+        .expect("spawn provekit verify");
+    let stdout = String::from_utf8_lossy(&out.stdout);
+    let receipt = serde_json::from_str(&stdout)
+        .unwrap_or_else(|error| panic!("verify JSON parse failed: {error}\nstdout: {stdout}"));
+    (receipt, out.status.code().unwrap_or(-1))
 }
 
 fn http_payload_json(function: &str, param_type: &str, return_type: &str) -> String {
@@ -477,6 +614,134 @@ fn materialize_write_rewrites_source_file_in_place_and_reports_summary() {
         !rewritten.contains("provekit-concept-payload-cid:"),
         "write mode should remove payload CID carrier comments:\n{rewritten}"
     );
+}
+
+#[test]
+fn materialize_write_emits_contract_bridge_that_verify_refuses_on_violation() {
+    if !z3_available() {
+        eprintln!("z3 not on PATH: skipping materialize contract bridge e2e");
+        return;
+    }
+
+    let workspace = tempfile::tempdir().expect("tempdir");
+    let src_dir = workspace.path().join("src");
+    fs::create_dir_all(&src_dir).expect("create src dir");
+    fs::write(
+        workspace.path().join("Cargo.toml"),
+        "[package]\nname = \"materialize-contract-bridge\"\nversion = \"0.0.0\"\nedition = \"2021\"\n",
+    )
+    .expect("write cargo marker");
+
+    let vendor_contract_cid =
+        publish_materialize_contract_fixture(workspace.path(), "must_be_positive");
+    let source_path = write_contract_materialize_source(&src_dir, &vendor_contract_cid);
+
+    let fake_realize = workspace.path().join("fake_realize_contract.py");
+    fs::write(
+        &fake_realize,
+        r#"import json, sys
+for line in sys.stdin:
+    request = json.loads(line)
+    print(json.dumps({
+        "jsonrpc": "2.0",
+        "id": request.get("id"),
+        "result": {
+            "source": "fn must_be_positive(x: i64) -> i64 { x }",
+            "is_stub": False,
+            "extension": "rs",
+            "emitted_artifact_cid": "blake3-512:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+        }
+    }), flush=True)
+"#,
+    )
+    .expect("write fake realize contract script");
+    install_python_script_manifest_with_metadata(
+        workspace.path(),
+        "rust-vendor",
+        &fake_realize,
+        "vendor",
+        None,
+        &["concept:must-be-positive"],
+    );
+
+    let (before, before_code) = run_verify_json_with_code(workspace.path());
+    assert_eq!(
+        before_code, 0,
+        "pre-materialize verify should be empty: {before}"
+    );
+    assert_eq!(
+        before["totalClaims"], 0,
+        "without the materialize bridge the boundary call should not enumerate: {before}"
+    );
+
+    let output = Command::new(env!("CARGO_BIN_EXE_provekit"))
+        .arg("materialize")
+        .arg("--target")
+        .arg("rust")
+        .arg("--library")
+        .arg("vendor")
+        .arg("--source-dir")
+        .arg(&src_dir)
+        .arg("--project")
+        .arg(workspace.path())
+        .arg("--write")
+        .output()
+        .expect("spawn provekit materialize --write");
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(
+        output.status.success(),
+        "materialize --write should succeed\nstdout:\n{stdout}\nstderr:\n{stderr}"
+    );
+
+    let rewritten = fs::read_to_string(&source_path).expect("read rewritten source");
+    assert!(
+        rewritten.contains("pub fn must_be_positive(x: i64) -> i64"),
+        "materialize should preserve the boundary signature:\n{rewritten}"
+    );
+
+    let pool = provekit_verifier::load_all_proofs::run(workspace.path());
+    assert!(
+        pool.load_errors.is_empty(),
+        "materialize bridge proof should load cleanly: {:?}",
+        pool.load_errors
+    );
+    let bridge = pool
+        .bridges_by_symbol
+        .get("must_be_positive")
+        .unwrap_or_else(|| {
+            panic!(
+                "materialize must write a bridge for the boundary; indexed symbols: {:?}",
+                pool.bridges_by_symbol.keys().collect::<Vec<_>>()
+            )
+        });
+    let body = provekit_verifier::types::memento_body(bridge).expect("bridge body");
+    assert_eq!(
+        body.get("sourceContractCid").and_then(Json::as_str),
+        Some(vendor_contract_cid.as_str())
+    );
+    assert_eq!(
+        body.get("targetContractCid").and_then(Json::as_str),
+        Some(vendor_contract_cid.as_str())
+    );
+    assert_eq!(
+        body.pointer("/target/cid").and_then(Json::as_str),
+        Some(vendor_contract_cid.as_str())
+    );
+    assert!(
+        pool.mementos.contains_key(&vendor_contract_cid),
+        "bridge target must resolve to the vendor contract memento"
+    );
+
+    let (after, after_code) = run_verify_json_with_code(workspace.path());
+    assert_eq!(
+        after_code, 1,
+        "violating materialized boundary must be refused\nreceipt: {after}"
+    );
+    assert_eq!(after["totalClaims"], 1, "receipt: {after}");
+    let claim = &after["claims"].as_array().expect("claims")[0];
+    assert_eq!(claim["status"], "unsatisfied", "claim: {claim}");
+    assert_eq!(claim["pass"], false, "claim: {claim}");
 }
 
 #[test]

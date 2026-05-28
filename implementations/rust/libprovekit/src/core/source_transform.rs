@@ -320,6 +320,7 @@ pub enum SiteOutcome {
     Materialize {
         body: String,
         binding_cid: String,
+        contract_cid: Option<String>,
         loss_record: Json,
     },
 
@@ -329,6 +330,7 @@ pub enum SiteOutcome {
     LoudlyLossy {
         body: String,
         binding_cid: String,
+        contract_cid: Option<String>,
         declared_loss: Vec<String>,
     },
 
@@ -850,6 +852,8 @@ pub struct AggregateSummary {
 pub struct SiteWitness {
     pub source_binding_cid: Option<String>,
     pub target_binding_cid: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub contract_cid: Option<String>,
     pub concept_name: String,
     pub function_name: String,
     pub outcome_kind: OutcomeKind,
@@ -901,11 +905,16 @@ pub fn build_receipt(
             .clone()
             .unwrap_or_else(|| site.carrier.function.clone());
         match outcome {
-            SiteOutcome::Materialize { binding_cid, .. } => {
+            SiteOutcome::Materialize {
+                binding_cid,
+                contract_cid,
+                ..
+            } => {
                 aggregate_summary.exact += 1;
                 site_witnesses.push(SiteWitness {
                     source_binding_cid: source_lib.map(|_| String::new()),
                     target_binding_cid: binding_cid.clone(),
+                    contract_cid: contract_cid.clone(),
                     concept_name,
                     function_name,
                     outcome_kind: OutcomeKind::Exact,
@@ -913,6 +922,7 @@ pub fn build_receipt(
             }
             SiteOutcome::LoudlyLossy {
                 binding_cid,
+                contract_cid,
                 declared_loss,
                 ..
             } => {
@@ -924,6 +934,7 @@ pub fn build_receipt(
                 site_witnesses.push(SiteWitness {
                     source_binding_cid: source_lib.map(|_| String::new()),
                     target_binding_cid: binding_cid.clone(),
+                    contract_cid: contract_cid.clone(),
                     concept_name,
                     function_name,
                     outcome_kind: OutcomeKind::LoudlyLossy,
@@ -942,6 +953,7 @@ pub fn build_receipt(
                 site_witnesses.push(SiteWitness {
                     source_binding_cid: source_lib.map(|_| String::new()),
                     target_binding_cid: String::new(),
+                    contract_cid: None,
                     concept_name,
                     function_name,
                     outcome_kind: OutcomeKind::Refused,
@@ -1677,6 +1689,7 @@ pub fn h(_bytes: &[u8]) -> i64 {
             Ok(SiteOutcome::Materialize {
                 body: self.body.clone(),
                 binding_cid: self.binding_cid.clone(),
+                contract_cid: None,
                 loss_record: json!([]),
             })
         }
@@ -1772,6 +1785,7 @@ fn after() {}\n";
                     carrier.function, carrier.concept_name
                 ),
                 binding_cid: "cid:mock".to_string(),
+                contract_cid: None,
                 loss_record: json!([]),
             })
         }
@@ -1830,6 +1844,7 @@ fn after() {}\n";
             Ok(SiteOutcome::Materialize {
                 body: format!("fn {}() {{}}", carrier.function),
                 binding_cid: "cid:divergent".to_string(),
+                contract_cid: None,
                 loss_record: json!([]),
             })
         }
@@ -1915,6 +1930,7 @@ fn after() {}\n";
                 Ok(SiteOutcome::Materialize {
                     body: "fn do_thing(x: u32) -> u32 {\n    x\n}".to_string(),
                     binding_cid: "cid:mock".to_string(),
+                    contract_cid: None,
                     loss_record: json!([]),
                 })
             }
@@ -1942,11 +1958,13 @@ fn after() {}\n";
                     "exact" => Ok(SiteOutcome::Materialize {
                         body: "fn exact() {}".to_string(),
                         binding_cid: "cid:exact".to_string(),
+                        contract_cid: None,
                         loss_record: json!([]),
                     }),
                     "lossy" => Ok(SiteOutcome::LoudlyLossy {
                         body: "fn lossy() {}".to_string(),
                         binding_cid: "cid:lossy".to_string(),
+                        contract_cid: None,
                         declared_loss: vec!["dim:overflow".to_string()],
                     }),
                     _ => Ok(SiteOutcome::Refuse {

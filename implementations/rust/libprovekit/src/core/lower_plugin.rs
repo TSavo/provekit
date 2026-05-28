@@ -521,6 +521,8 @@ pub struct RealizedSource {
     pub source: String,
     pub is_stub: bool,
     pub emitted_artifact_cid: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub contract_cid: Option<String>,
     pub observed_loss_record: Value,
     pub used_sugars: Vec<Value>,
     pub observation_wrapper_emission_record: Option<Value>,
@@ -1395,7 +1397,12 @@ pub fn request_from_spec(spec: &Value) -> Result<RealizeRequest, String> {
     })
 }
 
-fn claim_from_realized(invocation: RealizeInvocation, realized: RealizedSource) -> DomainClaim {
+fn claim_from_realized(invocation: RealizeInvocation, mut realized: RealizedSource) -> DomainClaim {
+    realized.contract_cid = invocation
+        .request
+        .contract
+        .as_ref()
+        .map(|contract| contract.local_contract_cid.clone());
     let response_term = realized_source_term(&realized);
     let response_cid = address(&response_term);
     let to = realized
@@ -1420,6 +1427,13 @@ fn claim_from_realized(invocation: RealizeInvocation, realized: RealizedSource) 
             .filter_map(|cid| Cid::parse(cid.as_str()).ok()),
     );
     artifacts.extend(realized.used_sugars.iter().filter_map(cid_from_used_sugar));
+    if let Some(contract_cid) = realized
+        .contract_cid
+        .as_deref()
+        .and_then(|cid| Cid::parse(cid).ok())
+    {
+        artifacts.push(contract_cid);
+    }
     if let Some(loss_cid) = loss_record_cid(&realized.observed_loss_record) {
         artifacts.push(loss_cid);
     }

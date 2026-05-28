@@ -24,7 +24,7 @@
 //! Every substrate operation is a kit. Every kit is a path step. Every
 //! transformation is a chain. The CLI is N projections over one engine.
 
-use provekit_ir_types::Sort;
+use provekit_ir_types::{BridgeHeaderV14, BridgeTarget, Sort};
 use serde_json::{json, Value};
 
 use super::primitives::address;
@@ -34,8 +34,8 @@ use super::source_transform::{
 };
 use super::traits::{Kit, KitError};
 use super::types::{
-    any_sort, formula_true, memento_from_parts, Cid, Dialect, DomainClaim, DomainKind, Input, Term,
-    Verdict,
+    any_sort, formula_true, memento_from_parts, Cid, Contract, Dialect, DomainClaim, DomainKind,
+    Input, Term, Verdict,
 };
 
 /// Wire-stable schema name advertised in the [`Term::Const`] payload's
@@ -207,7 +207,7 @@ fn claim_from_receipt<K: SiteTransformKit>(
 ) -> DomainClaim {
     let payload_value = json!({
         "rewritten": rewritten,
-        "receipt": receipt,
+        "receipt": &receipt,
     });
     let payload = Term::Const {
         value: payload_value,
@@ -216,22 +216,43 @@ fn claim_from_receipt<K: SiteTransformKit>(
         },
     };
     let to = address(&payload);
-    let contract = memento_from_parts(
-        format!(
-            "source_transform:{source_lang}->{}:{target_library}",
-            kit.target_language()
-        ),
-        Vec::new(),
-        Vec::new(),
-        any_sort(),
-        formula_true(),
-        formula_true(),
-        Some(to.to_string()),
+    let contract_name = format!(
+        "source_transform:{source_lang}->{}:{target_library}",
+        kit.target_language()
     );
+    let contract = bridge_contract_from_receipt(
+        &receipt,
+        source_lang,
+        &contract_name,
+        kit.target_language(),
+        target_library,
+    )
+    .unwrap_or_else(|| {
+        memento_from_parts(
+            contract_name,
+            Vec::new(),
+            Vec::new(),
+            any_sort(),
+            formula_true(),
+            formula_true(),
+            Some(to.to_string()),
+        )
+    });
+    let mut artifacts = vec![to.clone()];
+    if let Ok(contract_cid) = Cid::parse(contract.cid.clone()) {
+        artifacts.push(contract_cid);
+    }
+    artifacts.extend(receipt.site_witnesses.iter().filter_map(|site| {
+        site.contract_cid
+            .as_deref()
+            .and_then(|contract_cid| Cid::parse(contract_cid).ok())
+    }));
+    artifacts.sort();
+    artifacts.dedup();
     DomainClaim {
         domain: DomainKind::Other("source-transform".to_string()),
         contract,
-        artifacts: vec![to.clone()],
+        artifacts,
         from: vec![from_cid],
         premises: Vec::new(),
         to,
@@ -240,6 +261,63 @@ fn claim_from_receipt<K: SiteTransformKit>(
         verdict: Verdict::Unresolved,
         attestation: None,
     }
+}
+
+fn bridge_contract_from_receipt(
+    receipt: &SourceTransformReceipt,
+    source_layer: &str,
+    contract_name: &str,
+    target_language: &str,
+    target_library: &str,
+) -> Option<Contract> {
+    let site = receipt
+        .site_witnesses
+        .iter()
+        .find(|site| site.contract_cid.is_some())?;
+    let source_contract_cid = site.contract_cid.as_ref()?.clone();
+    let header = BridgeHeaderV14 {
+        schema_version: "1".to_string(),
+        kind: "bridge".to_string(),
+        name: format!(
+            "{contract_name}:{}",
+            if site.function_name.is_empty() {
+                "boundary"
+            } else {
+                site.function_name.as_str()
+            }
+        ),
+        source_symbol: site.function_name.clone(),
+        source_layer: source_layer.to_string(),
+        source_contract_cid: source_contract_cid.clone(),
+        target: BridgeTarget::Contract {
+            cid: source_contract_cid.clone(),
+        },
+    };
+    let mut value = serde_json::to_value(&header).expect("bridge header serializes");
+    if let Value::Object(map) = &mut value {
+        map.insert(
+            "targetContractCid".to_string(),
+            Value::String(source_contract_cid.clone()),
+        );
+        map.insert(
+            "targetLayer".to_string(),
+            Value::String(target_library.to_string()),
+        );
+    }
+    let canonical = crate::canonical::json_jcs(&value).expect("bridge header canonicalizes");
+    let cid = crate::canonical::json_cid(&value).expect("bridge header CIDs");
+    let mut contract = memento_from_parts(
+        format!("{contract_name}:{target_language}:{target_library}"),
+        Vec::new(),
+        Vec::new(),
+        any_sort(),
+        formula_true(),
+        formula_true(),
+        None,
+    );
+    contract.canonical_bytes = canonical.into_bytes();
+    contract.cid = cid;
+    Some(contract)
 }
 
 /// Decode the structured payload from a source-transform claim. Companion
@@ -300,6 +378,7 @@ mod tests {
     struct MockKit {
         target_language: String,
         call_count: AtomicUsize,
+        contract_cid: Option<String>,
     }
 
     impl MockKit {
@@ -307,6 +386,15 @@ mod tests {
             Self {
                 target_language: "rust".to_string(),
                 call_count: AtomicUsize::new(0),
+                contract_cid: None,
+            }
+        }
+
+        fn with_contract_cid(contract_cid: impl Into<String>) -> Self {
+            Self {
+                target_language: "rust".to_string(),
+                call_count: AtomicUsize::new(0),
+                contract_cid: Some(contract_cid.into()),
             }
         }
     }
@@ -321,6 +409,7 @@ mod tests {
             Ok(SiteOutcome::Materialize {
                 body: format!("fn {}() {{ /* mocked */ }}", carrier.function),
                 binding_cid: "blake3:mock-binding".to_string(),
+                contract_cid: self.contract_cid.clone(),
                 loss_record: Value::Null,
             })
         }
@@ -359,6 +448,43 @@ mod tests {
         assert_eq!(receipt.target_language, "rust");
         assert_eq!(receipt.target_library, "rusqlite");
         assert!(receipt.source_library.is_none());
+    }
+
+    #[test]
+    fn adapter_transform_emits_bridge_for_materialized_vendor_contract() {
+        let vendor_contract_cid = format!("blake3-512:{}", "a".repeat(128));
+        let kit = MockKit::with_contract_cid(vendor_contract_cid.clone());
+        let adapter = SourceTransformAdapter::new(kit, "rust", None, "vendor-lib");
+        let input = Input::Spec(json!({ "source": one_carrier_source() }));
+
+        let claim = adapter
+            .transform(&input)
+            .expect("adapter transform succeeds on a contract-bearing materialize site");
+        let contract_value: Value = serde_json::from_slice(&claim.contract.canonical_bytes)
+            .expect("source-transform contract slot carries bridge JSON");
+
+        assert_eq!(contract_value["schemaVersion"], "1");
+        assert_eq!(contract_value["kind"], "bridge");
+        assert_eq!(contract_value["sourceSymbol"], "phase_h_demo");
+        assert_eq!(
+            contract_value["sourceContractCid"],
+            Value::String(vendor_contract_cid.clone())
+        );
+        assert_eq!(
+            contract_value["target"],
+            json!({
+                "kind": "contract",
+                "cid": vendor_contract_cid,
+            })
+        );
+        assert_eq!(
+            contract_value["targetContractCid"],
+            Value::String(vendor_contract_cid.clone())
+        );
+        assert!(
+            contract_value.get("pre").is_none() && contract_value.get("post").is_none(),
+            "contract-bearing materialize must emit a bridge, not mint a true->true memento: {contract_value}"
+        );
     }
 
     #[test]
