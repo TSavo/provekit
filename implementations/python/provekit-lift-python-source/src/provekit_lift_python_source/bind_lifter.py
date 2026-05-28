@@ -13,7 +13,8 @@ from provekit_lift_py_tests.canonicalizer import blake3_512_of, encode_jcs
 from provekit_lift_py_tests.decorators import _parse_expr_string
 from provekit_lift_py_tests.ir import formula_to_value
 
-from .canonical import cid_of_json
+from .ast_template import function_body_template, function_param_names
+from .canonical import cid_of_json, template_cid_of_json
 
 Json = Any
 CID_RE = re.compile(r"^blake3-512:[0-9a-f]{128}$")
@@ -451,17 +452,20 @@ def _body_source_locator(
         start_col = 0
     end_line = node.end_lineno or node.lineno
     end_col = node.end_col_offset or 0
-    span_text = "".join(source_lines[start_line - 1 : end_line])
     body_text = _extract_body_text(node, source_lines)
+    ast_template = function_body_template(node)
     result: Json = {
         "file": rel_path,
-        "source_cid": blake3_512_of(span_text.encode("utf-8")),
+        "source_cid": blake3_512_of(body_text.encode("utf-8")),
         "span": {
             "start_line": start_line,
             "start_col": start_col,
             "end_line": end_line,
             "end_col": end_col,
         },
+        "ast_template": ast_template,
+        "template_cid": template_cid_of_json(ast_template),
+        "param_names": function_param_names(node),
     }
     if body_text:
         result["body_text"] = body_text

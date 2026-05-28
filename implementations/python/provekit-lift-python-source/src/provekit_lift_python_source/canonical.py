@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 from typing import Any
 
 from provekit_lift_py_tests.canonicalizer import (
@@ -22,6 +23,15 @@ def canonical_json_bytes(value: Any) -> bytes:
 
 def cid_of_json(value: Any) -> str:
     return blake3_512_of(canonical_json_bytes(value))
+
+
+def template_json_bytes(value: Any) -> bytes:
+    """Compact serde_json::Value::to_string style bytes for recognize templates."""
+    return json.dumps(value, separators=(",", ":"), sort_keys=False).encode("utf-8")
+
+
+def template_cid_of_json(value: Any) -> str:
+    return blake3_512_of(template_json_bytes(value))
 
 
 def _json_to_value(value: Any) -> Value:

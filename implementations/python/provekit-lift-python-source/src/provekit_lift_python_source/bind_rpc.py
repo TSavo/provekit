@@ -1,12 +1,16 @@
 from __future__ import annotations
 
 import argparse
+import ast
 import json
+from pathlib import Path
 import sys
 import traceback
 from typing import Any
 
+from .ast_template import function_body_template, function_param_names
 from .bind_lifter import lift_paths
+from .canonical import template_cid_of_json
 
 VERSION = "0.1.0"
 
@@ -48,6 +52,12 @@ def dispatch(request: dict[str, Any]) -> dict[str, Any]:
         return {"jsonrpc": "2.0", "id": msg_id, "result": initialize_result()}
     if method == "lift":
         return _lift(msg_id, params)
+    if method == "provekit.plugin.recognize":
+        return {
+            "jsonrpc": "2.0",
+            "id": msg_id,
+            "result": recognize_impl(params),
+        }
     if method == "shutdown":
         return {"jsonrpc": "2.0", "id": msg_id, "result": None}
     return _error(msg_id, -32601, f"METHOD_NOT_FOUND: {method}")
@@ -76,6 +86,141 @@ def _lift(msg_id: Any, params: dict[str, Any]) -> dict[str, Any]:
             "diagnostics": result.diagnostics,
         },
     }
+
+
+def recognize_impl(params: dict[str, Any]) -> dict[str, Any]:
+    project_root = params.get("project_root")
+    if not isinstance(project_root, str) or not project_root:
+        raise ValueError("missing `project_root`")
+    source_paths = params.get("source_paths")
+    if not isinstance(source_paths, list):
+        raise ValueError("missing `source_paths` array")
+    binding_templates_value = params.get("binding_templates")
+    binding_templates = (
+        binding_templates_value if isinstance(binding_templates_value, list) else []
+    )
+
+    bindings_by_cid: dict[str, dict[str, Any]] = {}
+    for binding in binding_templates:
+        if not isinstance(binding, dict):
+            continue
+        cid = binding.get("template_cid")
+        if isinstance(cid, str) and cid:
+            bindings_by_cid[cid] = binding
+
+    root = Path(project_root).resolve()
+    tags: list[dict[str, Any]] = []
+    for rel_path, full_path in _iter_requested_python_files(root, source_paths):
+        try:
+            source = full_path.read_text(encoding="utf-8")
+        except OSError:
+            continue
+        try:
+            tree = ast.parse(source, filename=rel_path)
+        except SyntaxError:
+            continue
+        for node in _iter_candidate_functions(tree):
+            tag = _recognize_function(rel_path, node, bindings_by_cid)
+            if tag is not None:
+                tags.append(tag)
+    return {"tags": tags}
+
+
+def _recognize_function(
+    rel_path: str,
+    node: ast.FunctionDef | ast.AsyncFunctionDef,
+    bindings_by_cid: dict[str, dict[str, Any]],
+) -> dict[str, Any] | None:
+    candidate_template = function_body_template(node)
+    candidate_cid = template_cid_of_json(candidate_template)
+    binding = bindings_by_cid.get(candidate_cid)
+    if binding is None:
+        return None
+
+    param_names = function_param_names(node)
+    return {
+        "file": rel_path,
+        "span": {
+            "start_line": node.lineno,
+            "start_col": node.col_offset,
+            "end_line": node.end_lineno or node.lineno,
+            "end_col": node.end_col_offset or 0,
+        },
+        "function_name": node.name,
+        "concept_name": binding.get("concept_name"),
+        "library_tag": binding.get("library_tag"),
+        "family": binding.get("family"),
+        "template_cid": candidate_cid,
+        "contract_cid": binding.get("contract_cid"),
+        "match_tier": "exact",
+        "param_bindings": [
+            {"index": index + 1, "source_text": name}
+            for index, name in enumerate(param_names)
+        ],
+    }
+
+
+def _iter_candidate_functions(
+    tree: ast.AST,
+) -> list[ast.FunctionDef | ast.AsyncFunctionDef]:
+    candidates: list[ast.FunctionDef | ast.AsyncFunctionDef] = []
+
+    class Visitor(ast.NodeVisitor):
+        def visit_FunctionDef(self, node: ast.FunctionDef) -> None:
+            candidates.append(node)
+            self.generic_visit(node)
+
+        def visit_AsyncFunctionDef(self, node: ast.AsyncFunctionDef) -> None:
+            candidates.append(node)
+            self.generic_visit(node)
+
+    Visitor().visit(tree)
+    return candidates
+
+
+def _iter_requested_python_files(
+    root: Path,
+    source_paths: list[Any],
+) -> list[tuple[str, Path]]:
+    files: list[tuple[str, Path]] = []
+    seen: set[Path] = set()
+    for item in source_paths:
+        rel = str(item)
+        if not rel:
+            continue
+        matches = _expand_source_path(root, rel)
+        for full_path in matches:
+            try:
+                resolved = full_path.resolve()
+            except OSError:
+                continue
+            if resolved in seen or not _is_relative_to(resolved, root):
+                continue
+            if not resolved.is_file() or resolved.suffix != ".py":
+                continue
+            seen.add(resolved)
+            display = resolved.relative_to(root).as_posix()
+            files.append((display, resolved))
+    return files
+
+
+def _expand_source_path(root: Path, rel: str) -> list[Path]:
+    if any(ch in rel for ch in "*?[]"):
+        return sorted(root.glob(rel))
+    full = Path(rel)
+    if not full.is_absolute():
+        full = root / full
+    if full.is_dir():
+        return sorted(full.rglob("*.py"))
+    return [full]
+
+
+def _is_relative_to(path: Path, root: Path) -> bool:
+    try:
+        path.relative_to(root)
+        return True
+    except ValueError:
+        return False
 
 
 def _send(obj: dict[str, Any]) -> None:
