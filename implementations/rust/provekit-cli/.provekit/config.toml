@@ -1,0 +1,30 @@
+# SPDX-License-Identifier: Apache-2.0
+#
+# provekit-cli self-application config.
+#
+# This is the substrate proving itself: provekit-cli is the program;
+# its #[test] functions are the contracts. The lift surfaces below
+# pull both the bind-IR shape (callsites + sugar) and the contracts
+# shape (asserts in tests + panic/early-return shapes in production
+# functions) so the same six-stage prover that backs `provekit prove`
+# on any user project can discharge obligations against the cli's
+# own behavior.
+#
+# Mirrors the two-surface pattern from examples/voltron-demo/.provekit/
+# (rust-bind + rust-contracts) but at the actual CLI crate root.
+
+[[plugins]]
+name = "rust-bind"
+surface = "rust-bind"
+layer = "library-bindings"
+
+[[plugins]]
+name = "rust-contracts"
+surface = "rust-contracts"
+emit = "ir-document"
+
+[platform_profile]
+language = "rust"
+family = "concept:family:provekit"
+library = "provekit-cli"
+version = "0.4.0"
