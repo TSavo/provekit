@@ -1,5 +1,6 @@
 const readline = require("node:readline");
 
+const { resolveDependencyProofPaths } = require("./dependency_proofs");
 const { emitStub } = require("./realizer");
 const { answers: literalEncodingAnswers } = require("./literal_encoding");
 const { declaration: platformSemanticsDeclaration } = require("./platform_semantics");
@@ -50,8 +51,21 @@ function dispatch(request) {
     return { jsonrpc: "2.0", id: msgId, result: { answers: literalEncodingAnswers() } };
   }
   if (method === "provekit.plugin.resolve_dependency_proofs") {
-    console.error("provekit-realize-typescript-core: resolve_dependency_proofs not yet implemented for typescript; returning empty proof_paths");
-    return { jsonrpc: "2.0", id: msgId, result: { proof_paths: [] } };
+    let projectRoot = process.cwd();
+    if (typeof params.project_root === "string") {
+      projectRoot = params.project_root;
+    } else if (typeof params.projectRoot === "string") {
+      projectRoot = params.projectRoot;
+    }
+    try {
+      return {
+        jsonrpc: "2.0",
+        id: msgId,
+        result: { proof_paths: resolveDependencyProofPaths(projectRoot) },
+      };
+    } catch (error) {
+      return errorResponse(msgId, -32030, `RESOLVE_DEPENDENCY_PROOFS_FAILED: ${error.message}`);
+    }
   }
   if (method === "provekit.plugin.shutdown") {
     return { jsonrpc: "2.0", id: msgId, result: null };
