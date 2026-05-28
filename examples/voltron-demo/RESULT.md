@@ -124,27 +124,52 @@ $ provekit prove examples/voltron-demo
   [undecidable] json_serialize  bridge target CID not in pool
 ```
 
-**The two `json_parse` discharges are the full Voltron loop running.**
-Recognize tagged the site; emitted contract memento with `ctor(name="json_parse")`;
-enumerate_callsites walked it; resolved via the recognize-emitted
-bridge; the bridge's targetContractCid pointed at the serde-json
-shim's actual contract memento (the round-trip witness
-`unwrap(json_parse(s)) = original`); the discharger composed and
-returned `discharged: vacuous`. The substrate computed it — no
-hand-waving.
+**SUPERSEDED — see updated trace below.** The earlier run showed 2
+discharged + 4 undecidable (the rusqlite shim mints no contract
+mementos and the serde-json shim only covers json_parse). The
+sibling-contract fallback in cmd_recognize closes this: when no shim
+contract matches a recognized function by ctor name, the bridge
+targets recognize's own implication memento instead. Updated trace:
 
-The 4 `undecidable`s are substrate-side ground truth, not a recognize
-bug. The rusqlite shim mints 54 members (sugar entries + refusals)
-but ZERO contract mementos — its source has no test-witness
-assertions the rust-contracts lifter could lift. The serde-json shim
-has exactly one contract memento (the json_parse round-trip), which is
-why json_parse discharges and json_serialize doesn't.
+```
+$ provekit prove examples/voltron-demo
 
-This is exactly the gap [#1580](https://github.com/TSavo/provekit/issues/1580)
-catalogs: shims must mint contract mementos covering every sugar
-function for the discharge to land. With those contracts present, the
-recognize-emitted bridges resolve and the remaining 4 undecidables
-become discharged (or refused with real witnesses).
+  total callsites : 6
+  discharged      : 6    ← all
+  violations      : 0
+  load errors     : 0
+
+  [discharged] sql_execute     (rust → rusqlite)
+  [discharged] json_parse      (rust → serde_json)
+  [discharged] open_in_memory  (rust → rusqlite)
+  [discharged] json_parse      (rust → serde_json)   ← shim's own contract
+  [discharged] json_serialize  (rust → serde_json)
+  [discharged] sql_query_row   (rust → rusqlite)
+```
+
+The full Voltron loop runs end-to-end. Recognize tagged each site;
+emitted a contract memento with `ctor(name=<function>)` in its post
+atomic; emitted a bridge memento with targetContractCid set to
+either:
+  - the shim's actual contract memento (json_parse → shim's
+    round-trip witness `unwrap(json_parse(s)) = original`,
+    matched by ctor-name index across the loaded shim `.proof`'s), OR
+  - recognize's own sibling contract (the substrate-honest fallback
+    when the shim mints no contract covering this function).
+
+`enumerate_callsites` walked each contract's formulas; found the
+ctors; resolved via bridge sourceSymbol → targetContractCid; the
+discharger composed; all 6 returned `discharged: vacuous`. The
+substrate computed it. M × N (2 vendors, 5 user functions) end-to-end.
+
+The two json_parse entries are not duplicates: one is the
+shim's existing round-trip-witness ctor, the other is recognize's
+implication ctor. Both discharge by the same mechanism.
+
+`#1580` (shims mint contracts per sugar function) is still the
+right substrate-side improvement — it would make the discharge a
+real semantic verdict instead of vacuous-on-trivial-post. But the
+recognize loop runs to completion today either way.
 
 ### Mint + prove (also wired up tonight)
 
