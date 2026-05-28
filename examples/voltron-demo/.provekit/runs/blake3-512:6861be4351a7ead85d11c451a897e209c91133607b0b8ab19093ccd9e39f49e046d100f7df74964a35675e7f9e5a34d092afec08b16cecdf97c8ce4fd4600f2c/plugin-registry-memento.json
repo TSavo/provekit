@@ -1,0 +1,41 @@
+{
+  "envelope": {
+    "declaredAt": "1970-01-01T00:00:00.000Z",
+    "signature": "ed25519:AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA",
+    "signer": "ed25519:AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA="
+  },
+  "header": {
+    "built_in_count": 0,
+    "cid": "blake3-512:6861be4351a7ead85d11c451a897e209c91133607b0b8ab19093ccd9e39f49e046d100f7df74964a35675e7f9e5a34d092afec08b16cecdf97c8ce4fd4600f2c",
+    "exam_manifest_cid": "blake3-512:b38426ba10ee3a6c28e9e32cae9aa65cfb5b750950464d1e67e9d669956bd40288d25c247d0ec2d638fd63e2d235d944f419055c0374c78488b4be98da040451",
+    "failures": [],
+    "kind": "plugin-registry",
+    "load_order": [
+      {
+        "cid": "blake3-512:999b46b7656943d36a134f886afc336f2fa4844c240b3a4c209de790d399e0fea8ce77ff01abb754b4118e0e7ae4b4ddb0eab6d8d546128689d9d8f1ae94a73d",
+        "kind": "lift",
+        "source": ".provekit/lift/rust-bind/manifest.toml"
+      },
+      {
+        "cid": "blake3-512:0d3ae26b1162a993869f5c4b0ef60b3b6678d7253c7c25a890b77997f6b4bff155b70e83c8767805742516bcdd3a105d4f8c583e1c9f2df491cecede5c831dca",
+        "kind": "lift",
+        "source": ".provekit/lift/rust-contracts/manifest.toml"
+      }
+    ],
+    "loaded": [
+      {
+        "cid": "blake3-512:0d3ae26b1162a993869f5c4b0ef60b3b6678d7253c7c25a890b77997f6b4bff155b70e83c8767805742516bcdd3a105d4f8c583e1c9f2df491cecede5c831dca",
+        "kind": "lift"
+      },
+      {
+        "cid": "blake3-512:999b46b7656943d36a134f886afc336f2fa4844c240b3a4c209de790d399e0fea8ce77ff01abb754b4118e0e7ae4b4ddb0eab6d8d546128689d9d8f1ae94a73d",
+        "kind": "lift"
+      }
+    ],
+    "runtime_protocol_versions": [
+      "pep/1.7.0"
+    ],
+    "schemaVersion": "1",
+    "sealed_at": "1970-01-01T00:00:00.000Z"
+  }
+}

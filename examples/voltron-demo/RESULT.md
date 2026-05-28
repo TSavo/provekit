@@ -66,25 +66,53 @@ the payload feeds `rusqlite`'s INSERT, then `rusqlite`'s SELECT feeds
 `serde_json::from_str` back to a `Value`, and the spine prints the
 final `age=30` from the round-tripped JSON.
 
-### Mint + prove (Phase-2 polish remaining)
+### Mint + prove (also wired up tonight)
 
-`.provekit/config.toml` is in place declaring `rust-sugar` +
-`rust-contracts` lift surfaces. `provekit mint --project .` dispatches
-correctly but currently warns that the lifter binary at
-`implementations/rust/target/debug/provekit-walk-rpc` is not found —
-the manifest's relative path resolves against the demo's project root,
-not the workspace root. Two tracked resolutions:
+`.provekit/config.toml` declares `rust-sugar` + `rust-contracts` lift
+surfaces. Per-project lift manifests at `.provekit/lift/rust-bind/`
+and `.provekit/lift/rust-contracts/` mirror the
+`provekit-shim-blake3-rust` pattern: `command = ["../../implementations/
+rust/target/debug/<binary>", "--rpc"]` with `working_dir = "."`. The
+relative path resolves from the demo's project root up two levels to
+the workspace root, finding the shared lifter binaries.
 
-  - Demo carries a project-local manifest override pointing at the
-    workspace binary path (simple; small follow-up commit).
-  - Substrate teaches the plugin loader to walk up from the project
-    root to find workspace-level binaries (broader fix; helps every
-    consumer crate that lives inside a monorepo).
+```
+$ provekit mint /Users/tsavo/provekit/examples/voltron-demo
+config: 2 plugin(s) declared: rust-sugar, rust-contracts
+dispatch: surface=rust-bind plugin=rust-bind-lift ok
+dispatch: surface=rust-contracts plugin=rust-contracts-lift ok
+  catalog CID:     blake3-512:016f3412…
+  contractSetCid:  blake3-512:6c248fb7…
+  proof bytes:     7676
+  .proof file:     blake3-512:016f3412….proof
 
-Either path is mechanical. Tonight's stop point is here so the green
-binary + tests can land on the PR as durable proof-of-spine, and the
-mint+prove polish doesn't conflate with the substrate fix already in
-flight (#1572).
+$ provekit prove /Users/tsavo/provekit/examples/voltron-demo
+ProvekIt verifier report
+  total callsites: 0
+  discharged:      0
+  violations:      0
+  load errors:     0
+```
+
+`total callsites: 0` is expected for the current committed source:
+the demo is in its **post-materialize** state (carrier comments were
+stripped when materialize filled the stub bodies). The lift sees plain
+functions and finds no boundary citations to emit bridges for. To
+populate the bridge set, run mint against the **pre-materialize**
+source (committed as the first commit on this branch, `9eb3ebf4a`)
+where the carrier comments + `unimplemented!()` stubs are present;
+then materialize to fill bodies; then build + test as today.
+
+The full M × N composition with three `.proof`s in the pool also
+requires the rust kit's `resolve_dependency_proofs` to find the shim
+crates' `.proof`s in cargo metadata. Today voltron-demo depends on
+`rusqlite` and `serde_json` directly (the post-materialize bodies call
+them); to surface the shim contracts into the pool, the demo would
+depend on `provekit-shim-rusqlite` and `provekit-shim-serde-json-rust`
+instead (they re-export the underlying crates plus carry the signed
+`.proof` envelopes). This is the canonical Voltron-time consumer
+shape; deferred as a small follow-up so the demo's current commit
+captures the substrate plumbing without growing scope.
 
 ## Gaps exposed
 
