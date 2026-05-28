@@ -43,7 +43,6 @@ pub struct SortMorphismCatalog {
 struct SortMorphismEntry {
     source_language_signature_cid: String,
     source_sort_cid: String,
-    target_language_signature_cid: String,
     target_sort_cid: String,
     direction: String,
     precision_loss: String,
@@ -59,7 +58,6 @@ struct SortMorphismFile {
 struct SortMorphismHeader {
     source_language_signature_cid: String,
     source_sort_cid: String,
-    target_language_signature_cid: String,
     target_sort_cid: String,
     direction: String,
     precision_loss: String,
@@ -133,7 +131,6 @@ impl SortMorphismCatalog {
             entries.push(SortMorphismEntry {
                 source_language_signature_cid: parsed.header.source_language_signature_cid,
                 source_sort_cid: parsed.header.source_sort_cid,
-                target_language_signature_cid: parsed.header.target_language_signature_cid,
                 target_sort_cid: parsed.header.target_sort_cid,
                 direction: parsed.header.direction,
                 precision_loss: parsed.header.precision_loss,

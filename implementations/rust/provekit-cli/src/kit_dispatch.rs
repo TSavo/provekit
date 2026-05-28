@@ -1,22 +1,14 @@
 // SPDX-License-Identifier: Apache-2.0
 //
-// Kit-agnostic dispatcher for the eight-verb bind pipeline and the realize
-// surface. cmd_bind and cmd_transport call into here to invoke per-language
-// lift and realize plugins via PEP 1.7.0 (`2026-05-12-plugin-protocol.md`);
-// neither command has any language-specific code, no `if source_lang ==
-// "rust"` and no `TargetStyle::*` arms.
+// Kit-agnostic dispatcher for the realize / emit / exam-manifest surfaces.
+// cmd_materialize / cmd_emit / cmd_bind call into here to invoke per-language
+// plugins via PEP 1.7.0 (`2026-05-12-plugin-protocol.md`); none of those
+// commands carry language-specific code, no `if source_lang == "rust"` and
+// no `TargetStyle::*` arms.
 //
-// Four surfaces:
+// Three surfaces:
 //
-//   1. `dispatch_bind_lift(workspace_root, source_lang)`
-//      Resolves a `kind = "lift"` plugin for `source_lang` via convention
-//      (`.provekit/lift/<lang>/manifest.toml`, then a workspace built-in
-//      under `implementations/<lang>/`, then PATH). Invokes the
-//      legacy-retained `initialize` / `lift` / `shutdown` JSON-RPC shape
-//      and decodes `ir-document.ir[]` into `BindLiftEntry` records per
-//      `2026-05-13-bind-ir-lift-result.md`.
-//
-//   2. `dispatch_realize(target_lang, library_tag, request)`
+//   1. `dispatch_realize(target_lang, library_tag, request)`
 //      Resolves a `kind = "realize"` (sugar/body-template) plugin for
 //      `(target_lang, library_tag.unwrap_or("default"))` via convention
 //      (`.provekit/realize/<surface>/manifest.toml` or a built-in path; the
@@ -32,7 +24,7 @@
 //      the validated ExamManifestMemento. If no plugin manifest exists, the
 //      compiled-in default ExamManifestKit loads a local path or catalog CID.
 //
-//   4. `dispatch_emit(workspace_root, target_lang, framework, plan)`
+//   3. `dispatch_emit(workspace_root, target_lang, framework, plan)`
 //      Resolves a `kind = "emit"` plugin by `.provekit/emit/<surface>/manifest.toml`,
 //      where surfaces are target/framework packages such as `go-testing`.
 //      Invokes `provekit.plugin.invoke` with the neutral EmitPlan. The kit owns
@@ -42,7 +34,6 @@
 // Per Supra omnia, rectum the dispatcher refuses loudly with a gap record
 // the caller turns into a `GapRecord` and propagates downstream.
 
-use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
 use std::collections::{BTreeMap, BTreeSet};
 use std::io::{BufRead, BufReader, Write};
@@ -53,7 +44,7 @@ use std::sync::{Mutex, OnceLock};
 #[allow(unused_imports)]
 pub use libprovekit::core::RealizeContractWitness;
 use libprovekit::core::RealizeTransport;
-pub use libprovekit::core::{RealizeContractPayload, RealizeRequest, RealizedSource};
+pub use libprovekit::core::{RealizeRequest, RealizedSource};
 use libprovekit::ExamManifestKit;
 use provekit_canonicalizer::blake3_512_of;
 use provekit_ir_types::{Cid, ExamManifestMemento};
@@ -317,27 +308,6 @@ fn registry_authorizes_plugin(
         })
 }
 
-fn registry_lift_command(
-    workspace_root: &Path,
-    source_lang: &str,
-) -> Result<Option<(String, ResolvedCommand)>, String> {
-    let registry = run_plugin_registry_for_project(workspace_root)?;
-    for surface in [&format!("{source_lang}-bind"), source_lang] {
-        if let Some(plugin) = registry
-            .plugins
-            .iter()
-            .filter(|plugin| registry_authorizes_plugin(&registry, plugin))
-            .find(|plugin| plugin.kind == "lift" && plugin.surface == surface)
-        {
-            return Ok(Some((
-                plugin.surface.clone(),
-                resolved_command_from_manifest(workspace_root, &plugin.parsed),
-            )));
-        }
-    }
-    Ok(None)
-}
-
 /// #1364 / #1355: Return the explicit concept-coverage declaration of
 /// the realize manifest matching `(target_lang, library_tag)`. cmd_materialize
 /// can defensively refuse-loudly when a consumer @boundary asks for a
@@ -379,98 +349,6 @@ fn read_provides_concepts_from_manifest_source(workspace_root: &Path, source: &s
         Ok(parsed) => parsed.provides_concepts,
         Err(_) => Vec::new(),
     }
-}
-
-/// Ask the realize kit for the body-template entries it resolved from its own
-/// package manager (e.g. the TypeScript kit reads the shim `.proof` out of
-/// `node_modules`). The kit returns the entries; the substrate content-addresses
-/// them with the universal sorted-JCS scheme. This is the resolution path for
-/// languages whose dependency graph is owned by the kit.
-///
-/// Returns the entries array on success. Returns Ok(empty) when no realize
-/// candidate matches `(target_lang, library_tag)` or the kit does not implement
-/// the method (so the caller can fall through to other resolution paths).
-pub fn body_template_entries_via_rpc(
-    workspace_root: &Path,
-    target_lang: &str,
-    library_tag: &str,
-) -> Result<Vec<Value>, String> {
-    let candidates = registry_realize_candidates(workspace_root, target_lang)?;
-    let Some(cand) = candidates.iter().find(|c| c.tag == library_tag) else {
-        return Ok(Vec::new());
-    };
-    let cmd_spec = &cand.command;
-    if cmd_spec.argv.is_empty() {
-        return Ok(Vec::new());
-    }
-    let mut command = Command::new(&cmd_spec.argv[0]);
-    if cmd_spec.argv.len() > 1 {
-        command.args(&cmd_spec.argv[1..]);
-    }
-    if let Some(wd) = &cmd_spec.working_dir {
-        command.current_dir(wd);
-    }
-    command.stdin(Stdio::piped());
-    command.stdout(Stdio::piped());
-    command.stderr(Stdio::null());
-
-    let mut child = command
-        .spawn()
-        .map_err(|e| format!("spawn realize kit for body_template_entries: {e}"))?;
-
-    let req = json!({
-        "jsonrpc": "2.0",
-        "id": 1,
-        "method": "provekit.plugin.body_template_entries",
-        "params": {
-            "target_library_tag": library_tag,
-        },
-    });
-    {
-        let stdin = child
-            .stdin
-            .as_mut()
-            .ok_or("realize kit stdin unavailable".to_string())?;
-        let req_str = serde_json::to_string(&req).expect("serialize body_template_entries request");
-        stdin
-            .write_all(req_str.as_bytes())
-            .and_then(|()| stdin.write_all(b"\n"))
-            .map_err(|e| format!("write body_template_entries request: {e}"))?;
-    }
-
-    let stdout = child
-        .stdout
-        .take()
-        .ok_or("realize kit stdout unavailable".to_string())?;
-    let mut reader = BufReader::new(stdout);
-    let mut line = String::new();
-    reader
-        .read_line(&mut line)
-        .map_err(|e| format!("read body_template_entries response: {e}"))?;
-    let _ = child.kill();
-    let _ = child.wait();
-
-    let v: Value = serde_json::from_str(line.trim()).map_err(|e| {
-        format!(
-            "body_template_entries response not valid JSON: {e}; raw={}",
-            line.trim()
-        )
-    })?;
-    if let Some(err) = v.get("error") {
-        // METHOD_NOT_FOUND (-32601) means this kit does not implement the
-        // method: fall through (empty) rather than failing the dispatch.
-        if err.get("code").and_then(Value::as_i64) == Some(-32601) {
-            return Ok(Vec::new());
-        }
-        return Err(format!("realize kit body_template_entries error: {err}"));
-    }
-    let entries = v
-        .get("result")
-        .and_then(|r| r.get("entries"))
-        .and_then(Value::as_array)
-        .cloned()
-        .unwrap_or_default();
-    Ok(entries)
 }
 
 /// Ask every configured kit plugin for dependency `.proof` files resolved from
@@ -833,81 +711,10 @@ fn record_fallback_diagnostic(kind: &str, surface: &str) {
         .push(message);
 }
 
-// ============================================================================
-// Bind lift dispatch (PEP 1.7.0 kind = "lift", legacy-retained method `lift`)
-// ============================================================================
-
-/// One bind-IR lift entry produced by a lift plugin per
-/// `2026-05-13-bind-ir-lift-result.md` §1.1. The `term_shape` field is opaque
-/// here; cmd_bind clusters on `term_shape_cid` and consults the catalog
-/// downstream.
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct BindLiftEntry {
-    #[serde(default)]
-    pub kind: String,
-    pub file: String,
-    pub fn_name: String,
-    #[serde(default)]
-    pub fn_line: u64,
-    #[serde(default)]
-    pub attr_pre: Option<String>,
-    #[serde(default)]
-    pub attr_post: Option<String>,
-    #[serde(default)]
-    pub concept_annotation: Option<String>,
-    #[serde(default)]
-    pub param_names: Vec<String>,
-    #[serde(default)]
-    pub param_types: Vec<String>,
-    #[serde(default)]
-    pub return_type: String,
-    #[serde(default)]
-    pub term_shape: Value,
-    #[serde(default)]
-    pub term_shape_cid: String,
-    #[serde(default)]
-    pub witnesses: Vec<BindContractWitness>,
-}
-
-/// One contract witness carried by a bind lift entry.
-///
-/// `source_kind` intentionally reuses the existing `EvidenceMemento`
-/// vocabulary (`annotation`, `test-assertion`, `type-signature`, `docstring`,
-/// `native-surface`, ...). cmd_bind promotes these entries directly into
-/// `EvidenceMemento`s instead of maintaining a parallel bind-only taxonomy.
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct BindContractWitness {
-    #[serde(default)]
-    pub role: String,
-    #[serde(default)]
-    pub predicate: Option<Value>,
-    #[serde(default)]
-    pub predicate_text: Option<String>,
-    #[serde(default)]
-    pub source_kind: String,
-    #[serde(default)]
-    pub confidence_basis_points: Option<u16>,
-    #[serde(default)]
-    pub line: Option<u64>,
-    #[serde(default)]
-    pub col: Option<u64>,
-    #[serde(default)]
-    pub extension_fields: BTreeMap<String, Value>,
-}
-
-/// Result of `dispatch_bind_lift`. Carries the lift entries plus any
-/// diagnostics the kit emitted (`ir-document.diagnostics[]`).
-#[derive(Debug, Clone)]
-#[allow(dead_code)]
-pub struct BindLiftResult {
-    pub entries: Vec<BindLiftEntry>,
-    pub diagnostics: Vec<Value>,
-}
-
-/// Refusal raised when a lift kit cannot be reached. The caller MUST emit a
-/// `kit-plugin-unavailable` gap record and proceed (loudly-bounded-lossy)
-/// per `body-template-memento.md` §5 and `2026-05-13-bind-ir-lift-result.md`
-/// §5.
+/// Refusal raised when a kit (realize, emit, exam-manifest) cannot be reached
+/// or returns an unusable response. Callers turn this into a
+/// `kit-plugin-unavailable` gap record and proceed loudly-bounded-lossy per
+/// `body-template-memento.md` §5.
 #[derive(Debug)]
 pub struct KitUnavailable {
     pub kit_kind: &'static str,
@@ -925,181 +732,10 @@ impl std::fmt::Display for KitUnavailable {
     }
 }
 
-/// Probe whether a bind-lift kit is resolvable for `source_lang` without
-/// actually invoking it. Cheap substrate-availability check for callers
-/// that want to refuse loudly before doing heavy work.
-///
-/// Returns `Ok(())` if the resolution chain (manifest, env-var, built-in
-/// convention, PATH) can locate a kit binary. Returns `Err(KitUnavailable)`
-/// otherwise. Per the substrate-uniform pattern, callers MUST NOT
-/// hardcode language-presence checks; they consult this probe instead.
-pub fn bind_lift_kit_available(
-    workspace_root: &Path,
-    source_lang: &str,
-) -> Result<(), KitUnavailable> {
-    resolve_lift_command(workspace_root, source_lang).map(|_| ())
-}
-
-/// Dispatch the bind-lift surface for `source_lang` and decode the response.
-///
-/// Resolution order:
-///   1. `<workspace_root>/.provekit/lift/<source_lang>-bind/manifest.toml`
-///   2. `<workspace_root>/.provekit/lift/<source_lang>/manifest.toml`
-///   3. Built-in for the language (workspace-relative compile-time path,
-///      env-var-overridable per `PROVEKIT_BIND_LIFT_<LANG>_BIN`).
-///   4. `provekit-bind-lift-<source_lang>` on PATH.
-///
-/// Returns `Err(KitUnavailable)` when none of the above resolve.
-pub fn dispatch_bind_lift(
-    workspace_root: &Path,
-    source_lang: &str,
-) -> Result<BindLiftResult, KitUnavailable> {
-    let command = resolve_lift_command(workspace_root, source_lang)?;
-    let response = rpc_lift(workspace_root, source_lang, &command).map_err(|e| KitUnavailable {
-        kit_kind: "lift",
-        language: source_lang.to_string(),
-        detail: e,
-    })?;
-    decode_bind_lift_response(response).map_err(|e| KitUnavailable {
-        kit_kind: "lift",
-        language: source_lang.to_string(),
-        detail: e,
-    })
-}
-
-fn resolve_lift_command(
-    workspace_root: &Path,
-    source_lang: &str,
-) -> Result<ResolvedCommand, KitUnavailable> {
-    match registry_lift_command(workspace_root, source_lang) {
-        Ok(Some((_surface, command))) => return Ok(command),
-        Ok(None) => record_fallback_diagnostic("lift", &format!("{source_lang}-bind")),
-        Err(detail) => {
-            return Err(KitUnavailable {
-                kit_kind: "lift",
-                language: source_lang.to_string(),
-                detail,
-            })
-        }
-    }
-
-    // 1 + 2: project-local manifest under .provekit/lift/<surface>/manifest.toml.
-    for surface in [&format!("{source_lang}-bind"), source_lang] {
-        let manifest = workspace_root
-            .join(".provekit")
-            .join("lift")
-            .join(surface)
-            .join("manifest.toml");
-        if manifest.exists() {
-            if let Ok(parsed) = parse_manifest(&manifest) {
-                return Ok(resolved_command_from_manifest(workspace_root, &parsed));
-            }
-        }
-    }
-
-    // 3: env-var override.
-    let env_var = format!("PROVEKIT_BIND_LIFT_{}_BIN", source_lang.to_uppercase());
-    if let Ok(bin) = std::env::var(&env_var) {
-        return Ok(ResolvedCommand {
-            argv: vec![bin, "--rpc".to_string()],
-            working_dir: Some(workspace_root.to_path_buf()),
-        });
-    }
-
-    // 4: built-in convention for known kits. These resolve relative to the
-    // workspace root and are not language knowledge in cmd_bind; they are
-    // the byte-stable substrate convention "per-language kit lives under
-    // implementations/<lang>/". The dispatcher consults the FILESYSTEM, not
-    // a hard-coded language list.
-    for candidate in builtin_lift_candidates(workspace_root, source_lang) {
-        if candidate.exists() {
-            return Ok(ResolvedCommand {
-                argv: vec![candidate.display().to_string(), "--rpc".to_string()],
-                working_dir: Some(workspace_root.to_path_buf()),
-            });
-        }
-    }
-
-    // 5: PATH probe.
-    let bin = format!("provekit-bind-lift-{source_lang}");
-    if which_on_path(&bin).is_some() {
-        return Ok(ResolvedCommand {
-            argv: vec![bin, "--rpc".to_string()],
-            working_dir: Some(workspace_root.to_path_buf()),
-        });
-    }
-
-    Err(KitUnavailable {
-        kit_kind: "lift",
-        language: source_lang.to_string(),
-        detail: format!(
-            "no manifest at .provekit/lift/{source_lang}-bind/ or .provekit/lift/{source_lang}/, \
-             no env {env_var}, no built-in binary under implementations/{source_lang}/, \
-             no `provekit-bind-lift-{source_lang}` on PATH"
-        ),
-    })
-}
-
-/// Substrate-convention built-in binaries per language. Each row is a
-/// workspace-relative path; the dispatcher tries them in order and picks
-/// the first that exists on disk. This list MUST stay tiny: it is NOT
-/// language knowledge in the CLI core. It is the wiring that lets the
-/// substrate's standard kit layout (`implementations/<lang>/...`) be
-/// discovered without the operator hand-rolling a manifest. Any kit not
-/// listed here is still resolvable via a manifest or via PATH; this is
-/// best-effort discovery, not policy.
-fn builtin_lift_candidates(workspace_root: &Path, source_lang: &str) -> Vec<PathBuf> {
-    let mut out = Vec::new();
-    let impl_dir = workspace_root.join("implementations").join(source_lang);
-    // Rust convention: the provekit-walk-rpc binary speaks `initialize`/`lift`
-    // returning bind-IR per `2026-05-13-bind-ir-lift-result.md`.
-    out.push(impl_dir.join("target/release/provekit-walk-rpc"));
-    out.push(impl_dir.join("target/debug/provekit-walk-rpc"));
-    // Per-language conventional name as a fallback (each kit's Makefile
-    // installs the binary under target/{release,debug}/...).
-    out.push(
-        impl_dir
-            .join("target/release")
-            .join(format!("provekit-bind-lift-{source_lang}")),
-    );
-    out.push(
-        impl_dir
-            .join("target/debug")
-            .join(format!("provekit-bind-lift-{source_lang}")),
-    );
-    // Sibling-of-current-executable convention: when `provekit` is launched
-    // from a cargo target dir, kit binaries live next to it. This lets
-    // `cargo test` and `cargo run` resolve built-in kits without an
-    // env-var override or a manifest at the workspace_root (often a
-    // tempdir under tests). The convention is `provekit-bind-lift-<lang>`
-    // for every language. The Rust kit ships an alias bin under that name
-    // (see provekit-walk/Cargo.toml) in addition to its legacy
-    // `provekit-walk-rpc` name.
-    if let Ok(current) = std::env::current_exe() {
-        if let Some(parent) = current.parent() {
-            out.push(parent.join(format!("provekit-bind-lift-{source_lang}")));
-        }
-    }
-    out
-}
-
-fn which_on_path(bin: &str) -> Option<PathBuf> {
-    std::env::var_os("PATH").and_then(|paths| {
-        std::env::split_paths(&paths).find_map(|dir| {
-            let candidate = dir.join(bin);
-            if candidate.is_file() {
-                Some(candidate)
-            } else {
-                None
-            }
-        })
-    })
-}
-
 #[derive(Debug, Clone)]
-struct ResolvedCommand {
-    argv: Vec<String>,
-    working_dir: Option<PathBuf>,
+pub(crate) struct ResolvedCommand {
+    pub(crate) argv: Vec<String>,
+    pub(crate) working_dir: Option<PathBuf>,
 }
 
 #[derive(Debug, Clone)]
@@ -1277,83 +913,6 @@ fn validate_library_tag(tag: &str) -> Result<(), &'static str> {
     Ok(())
 }
 
-fn rpc_lift(
-    workspace_root: &Path,
-    source_lang: &str,
-    cmd_spec: &ResolvedCommand,
-) -> Result<Value, String> {
-    if cmd_spec.argv.is_empty() {
-        return Err("empty command".to_string());
-    }
-    let mut command = Command::new(&cmd_spec.argv[0]);
-    if cmd_spec.argv.len() > 1 {
-        command.args(&cmd_spec.argv[1..]);
-    }
-    if !cmd_spec.argv.iter().any(|a| a == "--rpc") {
-        command.arg("--rpc");
-    }
-    if let Some(wd) = &cmd_spec.working_dir {
-        command.current_dir(wd);
-    }
-    command.stdin(Stdio::piped());
-    command.stdout(Stdio::piped());
-    command.stderr(Stdio::null());
-
-    let mut child = command
-        .spawn()
-        .map_err(|e| format!("spawn lift kit: {e}"))?;
-    let mut stdin = child
-        .stdin
-        .take()
-        .ok_or("lift kit stdin unavailable".to_string())?;
-    let stdout = child
-        .stdout
-        .take()
-        .ok_or("lift kit stdout unavailable".to_string())?;
-    let mut reader = BufReader::new(stdout);
-
-    // initialize
-    let init_req = json!({
-        "jsonrpc": "2.0",
-        "id": 1,
-        "method": "initialize",
-        "params": {
-            "client": {"name": "provekit-cli/bind", "version": env!("CARGO_PKG_VERSION")},
-            "protocol_version": "pep/1.7.0",
-            "workspace_root": workspace_root.display().to_string(),
-            "config_path": ".provekit/config.toml"
-        }
-    });
-    writeln!(stdin, "{init_req}").map_err(|e| format!("write initialize: {e}"))?;
-    let _ = read_response(&mut reader, 1)?;
-
-    // lift
-    let lift_req = json!({
-        "jsonrpc": "2.0",
-        "id": 2,
-        "method": "lift",
-        "params": {
-            "surface": source_lang,
-            "workspace_root": workspace_root.display().to_string(),
-            "source_paths": ["."],
-            "options": { "layer": "all" }
-        }
-    });
-    writeln!(stdin, "{lift_req}").map_err(|e| format!("write lift: {e}"))?;
-    let response = read_response(&mut reader, 2)?;
-
-    // shutdown (best-effort)
-    let shutdown_req = json!({
-        "jsonrpc": "2.0",
-        "id": 3,
-        "method": "shutdown"
-    });
-    let _ = writeln!(stdin, "{shutdown_req}");
-    drop(stdin);
-    let _ = child.wait();
-    Ok(response)
-}
-
 fn read_response(reader: &mut impl BufRead, id: i64) -> Result<Value, String> {
     let mut line = String::new();
     let n = reader
@@ -1376,45 +935,6 @@ fn read_response(reader: &mut impl BufRead, id: i64) -> Result<Value, String> {
         .get("result")
         .cloned()
         .ok_or_else(|| "response missing `result`".to_string())
-}
-
-fn decode_bind_lift_response(response: Value) -> Result<BindLiftResult, String> {
-    let kind = response.get("kind").and_then(Value::as_str).unwrap_or("");
-    if kind != "ir-document" {
-        return Err(format!(
-            "expected `kind = \"ir-document\"`, got `{kind}` (lift kit returned the wrong shape; \
-             bind expects bind-IR per 2026-05-13-bind-ir-lift-result.md)"
-        ));
-    }
-    let ir = response
-        .get("ir")
-        .and_then(Value::as_array)
-        .ok_or_else(|| "ir-document missing `ir` array".to_string())?;
-    let mut entries: Vec<BindLiftEntry> = Vec::new();
-    for v in ir {
-        let entry_kind = v.get("kind").and_then(Value::as_str).unwrap_or("");
-        if entry_kind != "bind-lift-entry" {
-            continue;
-        }
-        match serde_json::from_value::<BindLiftEntry>(v.clone()) {
-            Ok(e) => entries.push(e),
-            Err(err) => {
-                eprintln!(
-                    "bind-lift: skipping malformed entry: {err} raw={}",
-                    serde_json::to_string(v).unwrap_or_default()
-                );
-            }
-        }
-    }
-    let diagnostics: Vec<Value> = response
-        .get("diagnostics")
-        .and_then(Value::as_array)
-        .cloned()
-        .unwrap_or_default();
-    Ok(BindLiftResult {
-        entries,
-        diagnostics,
-    })
 }
 
 // ============================================================================
@@ -2920,55 +2440,6 @@ fn extension_from_convention(lang: &str) -> String {
     lang.to_string()
 }
 
-// ============================================================================
-// Language detection (filesystem-level, NOT language semantics)
-// ============================================================================
-
-/// Probe the workspace for any source language a registered lift kit can
-/// handle. Returns the first kit whose manifest resolves successfully.
-/// This is a FILESYSTEM probe, not a hard-coded extension list.
-#[allow(dead_code)]
-pub fn detect_lift_language(workspace_root: &Path) -> Option<String> {
-    // 1. Scan .provekit/lift/*/manifest.toml, the operator's declared kits.
-    let lift_dir = workspace_root.join(".provekit").join("lift");
-    if let Ok(entries) = std::fs::read_dir(&lift_dir) {
-        for entry in entries.flatten() {
-            let path = entry.path();
-            if path.is_dir() {
-                let manifest = path.join("manifest.toml");
-                if manifest.exists() {
-                    if let Some(name) = path.file_name().and_then(|n| n.to_str()) {
-                        let lang = name.trim_end_matches("-bind").to_string();
-                        return Some(lang);
-                    }
-                }
-            }
-        }
-    }
-    // 2. Scan implementations/*/ for built-in kits.
-    let impl_dir = workspace_root.join("implementations");
-    if let Ok(entries) = std::fs::read_dir(&impl_dir) {
-        for entry in entries.flatten() {
-            let path = entry.path();
-            if !path.is_dir() {
-                continue;
-            }
-            let lang = match path.file_name().and_then(|n| n.to_str()) {
-                Some(s) => s.to_string(),
-                None => continue,
-            };
-            if !builtin_lift_candidates(workspace_root, &lang)
-                .iter()
-                .any(|p| p.exists())
-            {
-                continue;
-            }
-            return Some(lang);
-        }
-    }
-    None
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -3346,21 +2817,4 @@ command = ["/bin/true"]
         assert!(validate_library_tag("1requests").is_err());
     }
 
-    /// Probe behavior for an unknown source language. With no manifest,
-    /// no env-var override, no built-in entry, and no PATH binary, the
-    /// resolver must return KitUnavailable. This is the substrate-uniform
-    /// substitute (per #1230 D6-D) for the previously hardcoded
-    /// `source_lang != "typescript"` check in cmd_bind_migrate.
-    #[test]
-    fn bind_lift_kit_available_refuses_unknown_language() {
-        let tempdir = tempfile::tempdir().expect("tempdir");
-        let result = bind_lift_kit_available(tempdir.path(), "definitely_not_a_real_lang_xyz");
-        assert!(
-            result.is_err(),
-            "unknown language must produce KitUnavailable, got Ok"
-        );
-        let err = result.unwrap_err();
-        assert_eq!(err.kit_kind, "lift");
-        assert_eq!(err.language, "definitely_not_a_real_lang_xyz");
-    }
 }

@@ -466,7 +466,6 @@ struct ShapeLoweringContext {
     operand_bindings: BTreeMap<Vec<usize>, String>,
     defined_symbols: BTreeSet<String>,
     next_leaf: usize,
-    next_temp: usize,
     last_assigned_symbol: Option<String>,
 }
 
@@ -484,7 +483,6 @@ impl ShapeLoweringContext {
             operand_bindings: operand_binding_map(operand_bindings),
             defined_symbols: params.iter().cloned().collect(),
             next_leaf: 0,
-            next_temp: 0,
             last_assigned_symbol: None,
         }
     }
@@ -498,12 +496,6 @@ impl ShapeLoweringContext {
     fn fallback_leaf(&mut self) -> Option<ShapeExpression> {
         self.next_leaf += 1;
         None
-    }
-
-    fn temp_name(&mut self) -> String {
-        let name = format!("__provekit_v{}", self.next_temp);
-        self.next_temp += 1;
-        name
     }
 }
 
@@ -1596,7 +1588,9 @@ fn term_shape_leaf_expression(
     // kind:"mutability"  → "mut" or "" inside concept:ref
     // kind:"symbol"      → identifier binding (closure param, wildcard "_",
     //                      match-arm pattern text, etc.)
-    // Return the text verbatim — NOT through literal_term which would quote it.
+    // Return the text verbatim — these aren't Value-typed literals and must
+    // NOT pass through literal_term_with_width_and_radix (which would quote
+    // strings and stamp integer widths).
     if let Some(kind) = shape.get("kind").and_then(Value::as_str) {
         if kind == "path" || kind == "method" || kind == "mutability" || kind == "symbol" {
             if let Some(text) = shape.get("text").and_then(Value::as_str) {
@@ -1743,12 +1737,11 @@ fn lower_block_or_expr(
 }
 
 /// Lower a concept:literal value to a rust source-spelling, including the
-/// integer width suffix when present. Replaces source_text-based reconstruction
-/// (which leaked kit-internal source into substrate state).
-fn literal_term_with_width(value: &Value, integer_width: Option<&str>) -> ShapeExpression {
-    literal_term_with_width_and_radix(value, integer_width, None)
-}
-
+/// integer width suffix when present and source radix when declared. The
+/// width arg re-attaches the integer type suffix (`i32` / `u8` / ...) so
+/// substrate state never depends on kit-internal source text; the radix arg
+/// preserves the lifter's record of how the literal was written so the
+/// round-trip is byte-identical (`0x0F` not `15`).
 fn literal_term_with_width_and_radix(
     value: &Value,
     integer_width: Option<&str>,
@@ -1818,27 +1811,6 @@ fn literal_term_with_width_and_radix(
                 type_name: "&str".to_string(),
             }
         }
-        _ => ShapeExpression {
-            text: "()".to_string(),
-            type_name: "()".to_string(),
-        },
-    }
-}
-
-fn literal_term(value: &Value) -> ShapeExpression {
-    match value {
-        Value::Bool(value) => ShapeExpression {
-            text: value.to_string(),
-            type_name: "bool".to_string(),
-        },
-        Value::Number(value) => ShapeExpression {
-            text: value.to_string(),
-            type_name: "i64".to_string(),
-        },
-        Value::String(value) => ShapeExpression {
-            text: format!("{:?}.to_string()", value),
-            type_name: "String".to_string(),
-        },
         _ => ShapeExpression {
             text: "()".to_string(),
             type_name: "()".to_string(),
