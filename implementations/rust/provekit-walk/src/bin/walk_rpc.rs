@@ -265,6 +265,7 @@ fn recognize_match_item_fn(
             "end_line": end.line,
             "end_col": end.column,
         },
+        "function_name": item_fn.sig.ident.to_string(),
         "concept_name": binding.get("concept_name").cloned().unwrap_or(Value::Null),
         "library_tag": binding.get("library_tag").cloned().unwrap_or(Value::Null),
         "family": binding.get("family").cloned().unwrap_or(Value::Null),
