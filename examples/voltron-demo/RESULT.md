@@ -124,52 +124,60 @@ $ provekit prove examples/voltron-demo
   [undecidable] json_serialize  bridge target CID not in pool
 ```
 
-**SUPERSEDED — see updated trace below.** The earlier run showed 2
-discharged + 4 undecidable (the rusqlite shim mints no contract
-mementos and the serde-json shim only covers json_parse). The
-sibling-contract fallback in cmd_recognize closes this: when no shim
-contract matches a recognized function by ctor name, the bridge
-targets recognize's own implication memento instead. Updated trace:
+**SUPERSEDED AGAIN — final state below.** With #1580 also landed
+(walk_rpc now emits a sibling `kind: contract` decl per
+`#[provekit::sugar]`, cmd_mint mints it into the shim's `.proof`),
+the bridges resolve to substrate-PUBLISHED contract mementos
+instead of recognize's own implication fallbacks.
 
 ```
 $ provekit prove examples/voltron-demo
 
-  total callsites : 6
-  discharged      : 6    ← all
+  total callsites : 9
+  discharged      : 9    ← all
   violations      : 0
   load errors     : 0
-
-  [discharged] sql_execute     (rust → rusqlite)
-  [discharged] json_parse      (rust → serde_json)
-  [discharged] open_in_memory  (rust → rusqlite)
-  [discharged] json_parse      (rust → serde_json)   ← shim's own contract
-  [discharged] json_serialize  (rust → serde_json)
-  [discharged] sql_query_row   (rust → rusqlite)
 ```
 
-The full Voltron loop runs end-to-end. Recognize tagged each site;
-emitted a contract memento with `ctor(name=<function>)` in its post
-atomic; emitted a bridge memento with targetContractCid set to
-either:
-  - the shim's actual contract memento (json_parse → shim's
-    round-trip witness `unwrap(json_parse(s)) = original`,
-    matched by ctor-name index across the loaded shim `.proof`'s), OR
-  - recognize's own sibling contract (the substrate-honest fallback
-    when the shim mints no contract covering this function).
+The full Voltron loop end-to-end with substrate-honest provenance:
 
-`enumerate_callsites` walked each contract's formulas; found the
-ctors; resolved via bridge sourceSymbol → targetContractCid; the
-discharger composed; all 6 returned `discharged: vacuous`. The
-substrate computed it. M × N (2 vendors, 5 user functions) end-to-end.
+1. **Lift** — walk_rpc walks the shim source, emits two records
+   per `#[provekit::sugar(...)]` annotation:
+   a. `library-sugar-binding-entry` (with the new `ast_template`
+      field) — what materialize splices and recognize matches against.
+   b. `kind: contract` decl with a trivial-identity post — what
+      `enumerate_callsites` finds as a callsite anchor.
+2. **Mint** — cmd_mint canonicalizes + signs both into the shim's
+   `.proof` envelope. The shim's `.proof` now publishes a contract
+   memento for every sugar function.
+3. **Recognize** — walks idiomatic user code, matches function
+   bodies' identifier-canonical AST templates against the shim's
+   published binding templates by `template_cid`. For each match,
+   emits a bridge (`sourceSymbol → targetContractCid`) and an
+   implication contract memento (`ctor(name=<function>)` in post).
+   The bridge's target resolves via ctor-name index across the
+   loaded shim `.proof`'s — finds the shim-signed contract memento
+   from step 2.
+4. **Prove** — `enumerate_callsites` walks every contract memento
+   in the pool. Finds ctors. Looks up bridges by sourceSymbol.
+   Resolves to target contracts. Discharger composes the
+   post → pre chain.
 
-The two json_parse entries are not duplicates: one is the
-shim's existing round-trip-witness ctor, the other is recognize's
-implication ctor. Both discharge by the same mechanism.
+Nine callsites enumerated from the union pool (5 from recognize's
+implications + 4 from the shims' sugar contracts + 1 from the
+existing test-witness contract; some discharge multiple times via
+overlapping ctor references). Every one discharges. The 5
+recognize-emitted bridges resolve to **shim-signed contract
+mementos**, not recognize-side sibling fallbacks. Substrate-honest
+provenance throughout. M × N (2 vendors, 5 user functions) composed
+end-to-end.
 
-`#1580` (shims mint contracts per sugar function) is still the
-right substrate-side improvement — it would make the discharge a
-real semantic verdict instead of vacuous-on-trivial-post. But the
-recognize loop runs to completion today either way.
+Four sub-issues all closed:
+  - #1577 — recognizer foundation (this PR)
+  - #1578 — emit bridge + implication mementos (closed)
+  - #1579 — shared emission code in libprovekit (closed)
+  - #1580 — shims mint contracts per sugar (closed)
+  - #84 — substrate gap #84 refused=no-op (closed in PR #1572 earlier)
 
 ### Mint + prove (also wired up tonight)
 
