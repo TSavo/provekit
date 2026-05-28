@@ -4,5 +4,6 @@ Cargo.lock
 # ignore generated artifacts.
 .provekit/realize
 .provekit/cache
+.provekit/runs
 .provekit/self-contracts-attestations
 *.proof
