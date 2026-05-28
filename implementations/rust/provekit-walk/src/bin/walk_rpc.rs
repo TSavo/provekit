@@ -2271,6 +2271,27 @@ fn sugar_body_source(rel: &str, src: &str, item_fn: &syn::ItemFn) -> Value {
         .map(str::trim)
         .unwrap_or_default()
         .to_string();
+    // Phase 2 / Recognizer foundation (#81, #82): emit an identifier-canonical
+    // AST template alongside the body text. Same source-pass produces both:
+    // body_text drives `materialize` (the splice-in form), ast_template
+    // drives `recognize` (the structural pattern match against user code).
+    // Identifier canonicalization replaces the sugar's named params with
+    // $1, $2, … positional markers so user variants (`conn.execute(sql,args)`
+    // vs `c.execute(s,a)`) match the same template after alpha-equivalence.
+    let param_names: Vec<String> = item_fn
+        .sig
+        .inputs
+        .iter()
+        .filter_map(|arg| match arg {
+            syn::FnArg::Typed(pat_ty) => match &*pat_ty.pat {
+                syn::Pat::Ident(pid) => Some(pid.ident.to_string()),
+                _ => None,
+            },
+            syn::FnArg::Receiver(_) => None,
+        })
+        .collect();
+    let ast_template = block_to_ast_template(&item_fn.block, &param_names);
+    let template_text = ast_template.to_string();
     json!({
         "file": rel,
         "span": {
@@ -2281,7 +2302,188 @@ fn sugar_body_source(rel: &str, src: &str, item_fn: &syn::ItemFn) -> Value {
         },
         "source_cid": blake3_512_of(body_text.as_bytes()),
         "body_text": body_text,
+        "ast_template": ast_template,
+        "template_cid": blake3_512_of(template_text.as_bytes()),
+        "param_names": param_names,
     })
+}
+
+/// Identifier-canonical AST template serializer for the Recognizer
+/// foundation (#81, #82). Walks a `syn::Block` and emits a structured JSON
+/// tree where each node is `{kind, ...}`. Sugar param names are replaced
+/// with `$1`, `$2`, … so user-code variants alpha-equivalent to the sugar
+/// match the same template.
+///
+/// The format is intentionally a small union over the syn variants that
+/// actually show up in sugar bodies (calls, method calls, paths, refs,
+/// ?, blocks, literals, identifiers). Unhandled variants fall through to
+/// `{kind: "other", variant: "<name>"}` catch-all so the template is
+/// never lossy in a way that drops a node — only in a way that opaqueifies
+/// the variant. The recognizer then refuses any candidate site containing
+/// an opaqued node.
+fn block_to_ast_template(block: &syn::Block, params: &[String]) -> Value {
+    let stmts: Vec<Value> = block
+        .stmts
+        .iter()
+        .map(|stmt| stmt_to_template(stmt, params))
+        .collect();
+    json!({ "kind": "block", "stmts": stmts })
+}
+
+fn stmt_to_template(stmt: &syn::Stmt, params: &[String]) -> Value {
+    use syn::Stmt;
+    match stmt {
+        Stmt::Local(local) => {
+            let pat = pat_to_template(&local.pat, params);
+            let init = local
+                .init
+                .as_ref()
+                .map(|init| expr_to_template(&init.expr, params))
+                .unwrap_or(Value::Null);
+            json!({ "kind": "let", "pat": pat, "init": init })
+        }
+        Stmt::Item(_) => json!({ "kind": "item" }),
+        Stmt::Expr(expr, semi) => {
+            let inner = expr_to_template(expr, params);
+            let trailing = semi.is_some();
+            json!({ "kind": "expr_stmt", "expr": inner, "trailing_semi": trailing })
+        }
+        Stmt::Macro(m) => {
+            let path = path_to_template(&m.mac.path);
+            json!({ "kind": "macro_stmt", "path": path })
+        }
+    }
+}
+
+fn expr_to_template(expr: &syn::Expr, params: &[String]) -> Value {
+    use syn::Expr;
+    match expr {
+        Expr::Call(c) => {
+            let func = expr_to_template(&c.func, params);
+            let args: Vec<Value> =
+                c.args.iter().map(|a| expr_to_template(a, params)).collect();
+            json!({ "kind": "call", "func": func, "args": args })
+        }
+        Expr::MethodCall(m) => {
+            let receiver = expr_to_template(&m.receiver, params);
+            let method = m.method.to_string();
+            let args: Vec<Value> =
+                m.args.iter().map(|a| expr_to_template(a, params)).collect();
+            json!({
+                "kind": "method_call",
+                "receiver": receiver,
+                "method": method,
+                "args": args,
+            })
+        }
+        Expr::Path(p) => {
+            let segs: Vec<String> =
+                p.path.segments.iter().map(|s| s.ident.to_string()).collect();
+            if segs.len() == 1 {
+                if let Some(idx) = params.iter().position(|n| n == &segs[0]) {
+                    return json!({ "kind": "param_ref", "index": idx + 1 });
+                }
+                return json!({ "kind": "ident", "name": segs[0] });
+            }
+            json!({ "kind": "path", "segments": segs })
+        }
+        Expr::Lit(l) => lit_to_template(&l.lit),
+        Expr::Reference(r) => {
+            let inner = expr_to_template(&r.expr, params);
+            json!({ "kind": "ref", "mutability": r.mutability.is_some(), "expr": inner })
+        }
+        Expr::Try(t) => {
+            let inner = expr_to_template(&t.expr, params);
+            json!({ "kind": "try", "expr": inner })
+        }
+        Expr::Block(b) => block_to_ast_template(&b.block, params),
+        Expr::Paren(p) => expr_to_template(&p.expr, params),
+        Expr::Tuple(t) => {
+            let elems: Vec<Value> =
+                t.elems.iter().map(|e| expr_to_template(e, params)).collect();
+            json!({ "kind": "tuple", "elems": elems })
+        }
+        Expr::Array(a) => {
+            let elems: Vec<Value> =
+                a.elems.iter().map(|e| expr_to_template(e, params)).collect();
+            json!({ "kind": "array", "elems": elems })
+        }
+        Expr::Closure(_) => json!({ "kind": "closure" }),
+        Expr::Match(_) => json!({ "kind": "match" }),
+        Expr::If(_) => json!({ "kind": "if" }),
+        Expr::Return(r) => {
+            let inner = r
+                .expr
+                .as_ref()
+                .map(|e| expr_to_template(e, params))
+                .unwrap_or(Value::Null);
+            json!({ "kind": "return", "expr": inner })
+        }
+        Expr::Binary(b) => {
+            let left = expr_to_template(&b.left, params);
+            let right = expr_to_template(&b.right, params);
+            let op = format!("{:?}", b.op);
+            json!({ "kind": "binary", "op": op, "left": left, "right": right })
+        }
+        Expr::Unary(u) => {
+            let inner = expr_to_template(&u.expr, params);
+            let op = format!("{:?}", u.op);
+            json!({ "kind": "unary", "op": op, "expr": inner })
+        }
+        Expr::Field(f) => {
+            let base = expr_to_template(&f.base, params);
+            let member = match &f.member {
+                syn::Member::Named(n) => n.to_string(),
+                syn::Member::Unnamed(u) => u.index.to_string(),
+            };
+            json!({ "kind": "field", "base": base, "member": member })
+        }
+        Expr::Macro(m) => {
+            let path = path_to_template(&m.mac.path);
+            json!({ "kind": "macro", "path": path })
+        }
+        other => json!({
+            "kind": "other",
+            "variant": format!("{:?}", std::mem::discriminant(other)),
+        }),
+    }
+}
+
+fn pat_to_template(pat: &syn::Pat, params: &[String]) -> Value {
+    use syn::Pat;
+    match pat {
+        Pat::Ident(pi) => {
+            let name = pi.ident.to_string();
+            if let Some(idx) = params.iter().position(|n| n == &name) {
+                json!({ "kind": "param_ref", "index": idx + 1 })
+            } else {
+                json!({ "kind": "binding", "name": name })
+            }
+        }
+        Pat::Wild(_) => json!({ "kind": "wildcard" }),
+        Pat::Tuple(t) => {
+            let elems: Vec<Value> =
+                t.elems.iter().map(|p| pat_to_template(p, params)).collect();
+            json!({ "kind": "pat_tuple", "elems": elems })
+        }
+        _ => json!({ "kind": "pat_other" }),
+    }
+}
+
+fn path_to_template(path: &syn::Path) -> Value {
+    let segs: Vec<String> = path.segments.iter().map(|s| s.ident.to_string()).collect();
+    json!({ "segments": segs })
+}
+
+fn lit_to_template(lit: &syn::Lit) -> Value {
+    match lit {
+        syn::Lit::Str(s) => json!({ "kind": "lit_str", "value": s.value() }),
+        syn::Lit::Int(i) => json!({ "kind": "lit_int", "value": i.base10_digits() }),
+        syn::Lit::Bool(b) => json!({ "kind": "lit_bool", "value": b.value }),
+        syn::Lit::Char(c) => json!({ "kind": "lit_char", "value": c.value().to_string() }),
+        syn::Lit::Float(f) => json!({ "kind": "lit_float", "value": f.base10_digits() }),
+        _ => json!({ "kind": "lit_other" }),
+    }
 }
 
 fn block_inner_source<'a>(src: &'a str, block: &syn::Block) -> Option<&'a str> {
@@ -4377,6 +4579,135 @@ async fn render(url: String) -> String {
             !body_text.contains("#[provekit::sugar"),
             "body_text must not include the sugar attribute: {body_text}"
         );
+    }
+
+    // ---------------------------------------------------------------------
+    // Recognizer foundation (#81 / #82): identifier-canonical AST template
+    // alongside body_text. Same source-pass extracts both; the .proof
+    // envelope carries body_text (for materialize) AND ast_template (for
+    // recognize). Param names canonicalize to $1, $2 positional markers so
+    // user-code variants alpha-equivalent to the sugar match the same
+    // template. T's directive: keep both in the lifter's output.
+    // ---------------------------------------------------------------------
+
+    #[test]
+    fn sugar_body_emits_ast_template_alongside_body_text() {
+        let src = r##"
+#[provekit::sugar(concept = "concept:json-parse", library = "serde_json")]
+pub fn json_parse(s: &str) -> i64 {
+    serde_json::from_str(s)
+}
+"##;
+        let entry = single_sugar_entry_for_source("sugar_ast_template_basic", src);
+        let template = &entry["body_source"]["ast_template"];
+        assert_eq!(template["kind"], "block");
+        let stmts = template["stmts"].as_array().expect("stmts array");
+        assert_eq!(stmts.len(), 1, "one statement in body");
+        let stmt = &stmts[0];
+        assert_eq!(stmt["kind"], "expr_stmt");
+        let call = &stmt["expr"];
+        assert_eq!(call["kind"], "call");
+        assert_eq!(call["func"]["kind"], "path");
+        assert_eq!(
+            call["func"]["segments"],
+            json!(["serde_json", "from_str"])
+        );
+        // Param `s` canonicalized to $1.
+        let args = call["args"].as_array().expect("args array");
+        assert_eq!(args.len(), 1);
+        assert_eq!(args[0]["kind"], "param_ref");
+        assert_eq!(args[0]["index"], 1);
+    }
+
+    #[test]
+    fn sugar_body_template_canonicalizes_multiple_params_positionally() {
+        let src = r##"
+#[provekit::sugar(concept = "concept:sql-execute", library = "rusqlite")]
+pub fn execute(conn: &i64, sql: &str, args: &i64) -> i64 {
+    conn.execute(sql, args)
+}
+"##;
+        let entry = single_sugar_entry_for_source("sugar_ast_template_params", src);
+        let template = &entry["body_source"]["ast_template"];
+        let stmt = &template["stmts"][0];
+        let mc = &stmt["expr"];
+        assert_eq!(mc["kind"], "method_call");
+        // Receiver is param #1 (conn).
+        assert_eq!(mc["receiver"]["kind"], "param_ref");
+        assert_eq!(mc["receiver"]["index"], 1);
+        assert_eq!(mc["method"], "execute");
+        // Args are $2 (sql) and $3 (args).
+        let mc_args = mc["args"].as_array().expect("mc args");
+        assert_eq!(mc_args.len(), 2);
+        assert_eq!(mc_args[0]["kind"], "param_ref");
+        assert_eq!(mc_args[0]["index"], 2);
+        assert_eq!(mc_args[1]["kind"], "param_ref");
+        assert_eq!(mc_args[1]["index"], 3);
+    }
+
+    #[test]
+    fn sugar_body_template_cid_is_stable_under_param_renaming() {
+        // Canonical templates with $1/$2 must be byte-identical for two
+        // sugar functions that differ only in their parameter names.
+        let src_a = r##"
+#[provekit::sugar(concept = "concept:noop", library = "ka")]
+pub fn op(x: &i64, y: &i64) -> i64 {
+    x.add(y)
+}
+"##;
+        let src_b = r##"
+#[provekit::sugar(concept = "concept:noop", library = "kb")]
+pub fn op(alpha: &i64, beta: &i64) -> i64 {
+    alpha.add(beta)
+}
+"##;
+        let entry_a = single_sugar_entry_for_source("sugar_ast_template_alpha_a", src_a);
+        let entry_b = single_sugar_entry_for_source("sugar_ast_template_alpha_b", src_b);
+        let tpl_a = entry_a["body_source"]["ast_template"].to_string();
+        let tpl_b = entry_b["body_source"]["ast_template"].to_string();
+        assert_eq!(
+            tpl_a, tpl_b,
+            "alpha-equivalent sugars must produce byte-identical templates\nA: {tpl_a}\nB: {tpl_b}"
+        );
+        assert_eq!(
+            entry_a["body_source"]["template_cid"],
+            entry_b["body_source"]["template_cid"],
+            "template_cid must match across alpha-equivalent sugars"
+        );
+        // But body_text and source_cid DIFFER (they include the original
+        // parameter spellings). That asymmetry is intentional: body_text
+        // drives materialize (verbatim splice), ast_template drives
+        // recognize (canonical structural match).
+        assert_ne!(
+            entry_a["body_source"]["body_text"],
+            entry_b["body_source"]["body_text"]
+        );
+        assert_ne!(
+            entry_a["body_source"]["source_cid"],
+            entry_b["body_source"]["source_cid"]
+        );
+    }
+
+    #[test]
+    fn sugar_body_emits_param_names_list_for_recognize_binding() {
+        // The recognize side needs the original param names to bind the
+        // template's $N markers back to the user's actual variables at
+        // tag emission time. The lifter exposes them as a separate field.
+        let src = r##"
+#[provekit::sugar(concept = "concept:sql-query-row", library = "rusqlite")]
+pub fn query_row(conn: &i64, sql: &str, params: &i64, mapper: &i64) -> i64 {
+    conn.query_row(sql, params, mapper)
+}
+"##;
+        let entry = single_sugar_entry_for_source("sugar_ast_template_paramnames", src);
+        let names = entry["body_source"]["param_names"]
+            .as_array()
+            .expect("param_names array");
+        assert_eq!(names.len(), 4);
+        assert_eq!(names[0], "conn");
+        assert_eq!(names[1], "sql");
+        assert_eq!(names[2], "params");
+        assert_eq!(names[3], "mapper");
     }
 
     // ---------------------------------------------------------------------
