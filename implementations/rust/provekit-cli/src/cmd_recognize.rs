@@ -21,6 +21,7 @@ use std::process::{Command, Stdio};
 
 use clap::Parser;
 use owo_colors::OwoColorize;
+use provekit_proof_envelope::cbor_decode::{decode as cbor_decode, CborValue};
 use serde_json::{json, Value};
 
 use crate::{OutputFlags, EXIT_OK, EXIT_USER_ERROR, EXIT_VERIFY_FAIL};
@@ -291,17 +292,27 @@ fn invoke_plugin(
 /// shape the recognize RPC expects.
 fn load_binding_templates_from_proof(path: &Path) -> Result<Vec<Value>, String> {
     let bytes = std::fs::read(path).map_err(|e| format!("read .proof: {e}"))?;
-    // The .proof envelope is JCS-canonical JSON (the trinity envelope from the
-    // proof-envelope spec). Parse with serde_json.
-    let env: Value = serde_json::from_slice(&bytes).map_err(|e| format!("parse .proof: {e}"))?;
+    // The .proof envelope is CBOR-encoded (proof-envelope canonical wire
+    // form per the trinity envelope spec). Decode + convert to JSON for the
+    // member-walking helpers below.
+    let env = if bytes.first().map(|b| *b as char) == Some('{') {
+        // Some test fixtures and legacy tools emit JSON-encoded .proof; tolerate.
+        serde_json::from_slice::<Value>(&bytes)
+            .map_err(|e| format!("parse .proof (JSON fallback): {e}"))?
+    } else {
+        let cbor = cbor_decode(&bytes).map_err(|e| format!("decode .proof CBOR: {e}"))?;
+        cbor_to_json(&cbor)
+    };
 
-    // Walk the envelope's member set for `library-sugar-binding-entry`
-    // records. The envelope's structure puts members under `members[]`
-    // (proof-envelope canonical) or `ir[]` (lift response shape) depending
-    // on the producer. Handle both.
+    // Walk the envelope's member set. The proof-envelope canonical shape
+    // wraps each member as `{body: <decl>, header: {...}, schemaVersion}`,
+    // and `members` may be either a CID-keyed map (.proof on disk) or an
+    // array (lift response). collect_member_records normalizes that;
+    // unwrap_envelope then peels the body wrapping if present.
     let mut out: Vec<Value> = Vec::new();
-    let candidates: Vec<&Value> = collect_member_records(&env);
-    for record in candidates {
+    let candidates: Vec<Value> = collect_member_records(&env);
+    for raw in &candidates {
+        let record = unwrap_envelope(raw);
         if record.get("kind").and_then(|v| v.as_str()) != Some("library-sugar-binding-entry") {
             continue;
         }
@@ -335,23 +346,115 @@ fn load_binding_templates_from_proof(path: &Path) -> Result<Vec<Value>, String> 
     Ok(out)
 }
 
+/// Peel the proof-envelope wrapping (`{body, header, schemaVersion}`) and
+/// return a reference to the inner decl. If the value doesn't look like an
+/// envelope, return it as-is. The recognize-side never reads header fields
+/// — those are signature/integrity concerns owned by the verifier.
+fn unwrap_envelope(v: &Value) -> &Value {
+    if let Some(body) = v.get("body") {
+        if v.get("schemaVersion").is_some() || v.get("header").is_some() {
+            return body;
+        }
+    }
+    v
+}
+
+/// Convert a CBOR value into serde_json::Value. The trinity envelope's
+/// catalog + members are pure data shapes (no floats, no negative ints —
+/// those are rejected at decode time per the deterministic encoding
+/// rules), so the mapping is clean: Uint→Number, Tstr→String, Array→Array,
+/// Map→Object. Bstr is base64-encoded into a String so members carrying
+/// embedded byte payloads survive the round trip (rare in sugar binding
+/// entries, which are text-shaped).
+fn cbor_to_json(v: &CborValue) -> Value {
+    match v {
+        CborValue::Uint(n) => json!(*n),
+        CborValue::Tstr(s) => Value::String(s.clone()),
+        CborValue::Bstr(b) => {
+            // Sugar-binding entries don't typically carry bstr, but cover
+            // the case: hex-encode so the JSON consumer can read it. This
+            // is asymmetric with the canonical decoder (which keeps bytes)
+            // but the recognize side only reads tstr/array/map shapes anyway.
+            let hex: String = b
+                .iter()
+                .map(|byte| format!("{:02x}", byte))
+                .collect();
+            Value::String(hex)
+        }
+        CborValue::Array(items) => {
+            Value::Array(items.iter().map(cbor_to_json).collect())
+        }
+        CborValue::Map(m) => Value::Object(
+            m.iter()
+                .map(|(k, v)| (k.clone(), cbor_to_json(v)))
+                .collect(),
+        ),
+    }
+}
+
 /// Collect every JSON object that could be a member record. Walks the
 /// envelope at the canonical roots: `members` (proof-envelope shape) and
-/// `ir` (lift response shape). Best-effort; harmless when a key is absent.
-/// Returns a stable order: members first, then ir.
-fn collect_member_records(env: &Value) -> Vec<&Value> {
-    let mut out: Vec<&Value> = Vec::new();
-    if let Some(arr) = env.get("members").and_then(|v| v.as_array()) {
-        for v in arr {
-            out.push(v);
+/// `ir` (lift response shape, always an array). Best-effort; harmless when
+/// a key is absent.
+///
+/// Crucial detail about the .proof catalog layout: each member's value
+/// is the CBOR-canonical bytes of the member envelope, stored as a Bstr.
+/// We re-decode those bytes here so callers see the structured envelope
+/// rather than an opaque hex blob. (The hex form is what cbor_to_json
+/// would emit for a Bstr; we want the structured form instead.)
+fn collect_member_records(env: &Value) -> Vec<Value> {
+    let mut out: Vec<Value> = Vec::new();
+    if let Some(members) = env.get("members") {
+        match members {
+            Value::Array(arr) => {
+                for v in arr {
+                    out.push(decode_embedded_member_if_hex(v));
+                }
+            }
+            Value::Object(map) => {
+                for (_cid, v) in map {
+                    out.push(decode_embedded_member_if_hex(v));
+                }
+            }
+            _ => {}
         }
     }
     if let Some(arr) = env.get("ir").and_then(|v| v.as_array()) {
         for v in arr {
-            out.push(v);
+            out.push(v.clone());
         }
     }
     out
+}
+
+/// If `v` is a hex-string (a Bstr round-tripped through cbor_to_json),
+/// decode the hex back to bytes and parse them as JCS-canonical JSON to
+/// recover the structured envelope. The proof-envelope catalog stores
+/// each member as opaque JCS-JSON bytes keyed by CID (per cmd_mint's
+/// `mint_library_sugar_binding_entry` -> `encode_jcs(envelope)` flow);
+/// this peels that wrapping for the recognize-side reader.
+fn decode_embedded_member_if_hex(v: &Value) -> Value {
+    let s = match v.as_str() {
+        Some(s) => s,
+        None => return v.clone(),
+    };
+    // Hex if every char is ASCII hex AND length is even.
+    if s.len() % 2 != 0 || !s.chars().all(|c| c.is_ascii_hexdigit()) {
+        return v.clone();
+    }
+    let bytes: Result<Vec<u8>, _> = (0..s.len())
+        .step_by(2)
+        .map(|i| u8::from_str_radix(&s[i..i + 2], 16))
+        .collect();
+    let bytes = match bytes {
+        Ok(b) => b,
+        Err(_) => return v.clone(),
+    };
+    // The embedded bytes are JCS-canonical JSON. Parse them as such.
+    match serde_json::from_slice::<Value>(&bytes) {
+        Ok(j) => j,
+        Err(_) => v.clone(),
+    }
 }
 
 #[cfg(test)]
