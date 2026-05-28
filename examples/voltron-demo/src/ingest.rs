@@ -11,19 +11,15 @@ use serde_json::Value;
 // =============================================================================
 // Boundary: concept:json-parse  →  provekit-shim-serde-json-rust
 // =============================================================================
-// provekit-concept: {"artifact_kind":"provekit-concept-citation-comment-sugar","concept_name":"concept:json-parse","function":"json_parse","params":["s"],"param_types":["&str"],"return_type":"Result<Value, String>","named_term_tree":{"conceptName":"concept:json-parse","args":[{"sort":"String","source":"s"}]}}
-// provekit-concept-payload-cid: blake3-512:b125fd410270356ee10240c89d210bce6100f6a5d4f9b9ca4ee41038987ebf35e53ddf498d159f6e7b9786a30cbb8de814d4276d826d616414a9809a74b2da71
-pub fn json_parse(_s: &str) -> Result<Value, String> {
-    unimplemented!("provekit materialize fills this from provekit-shim-serde-json-rust")
+pub fn json_parse(s: &str) -> Result<Value, String> {
+    serde_json::from_str(s).map_err(|e| e.to_string())
 }
 
 // =============================================================================
 // Boundary: concept:json-serialize  →  provekit-shim-serde-json-rust
 // =============================================================================
-// provekit-concept: {"artifact_kind":"provekit-concept-citation-comment-sugar","concept_name":"concept:json-serialize","function":"json_serialize","params":["v"],"param_types":["&Value"],"return_type":"Result<String, String>","named_term_tree":{"conceptName":"concept:json-serialize","args":[{"sort":"JsonValue","source":"v"}]}}
-// provekit-concept-payload-cid: blake3-512:426611e74cea5236b5d4e45f41184a77c33615cee99700b1b237361557fb8093bd7d1462a8bdc9d6f379eb9e79ea01bb6c5be4f70d6062447158919eb85365f1
-pub fn json_serialize(_v: &Value) -> Result<String, String> {
-    unimplemented!("provekit materialize fills this from provekit-shim-serde-json-rust")
+pub fn json_serialize(v: &Value) -> Result<String, String> {
+    serde_json::to_string(v).map_err(|e| e.to_string())
 }
 
 // =============================================================================
