@@ -66,6 +66,38 @@ the payload feeds `rusqlite`'s INSERT, then `rusqlite`'s SELECT feeds
 `serde_json::from_str` back to a `Value`, and the spine prints the
 final `age=30` from the round-tripped JSON.
 
+### Recognizer pilot — Voltron from the recognize side (overnight)
+
+The full Recognizer foundation lives in `feat/recognizer-foundation`
+(PR pending). With both shim `.proof`s as bindings, `provekit recognize`
+derives the same five boundary tags the explicit-carrier-comment path
+produces — Phase 2 parity proven, on the real demo:
+
+```
+$ provekit recognize \
+    --project /…/examples/voltron-demo \
+    --source src/lib.rs --source src/ingest.rs \
+    --source src/persist.rs --source src/report.rs \
+    --binding /…/provekit-shim-serde-json-rust/blake3-512:….proof \
+    --binding /…/provekit-shim-rusqlite/blake3-512:….proof
+
+dispatch: surface=`rust-bind` bindings=46 sources=4
+recognize: 5 tag(s) emitted
+  [0] concept:json-parse           @ src/ingest.rs:14 (exact)
+  [1] concept:json-serialize       @ src/ingest.rs:21 (exact)
+  [2] concept:sql-connection-open  @ src/persist.rs:16 (exact)
+  [3] concept:sql-execute          @ src/persist.rs:23 (exact)
+  [4] concept:sql-query-row        @ src/persist.rs:39 (exact)
+```
+
+Five tags from idiomatic user-code function bodies, derived purely from
+the shims' published sugar templates. M × N composition: 2 vendors,
+5 boundaries, 2 modules, all spans matched by structural template
+equality after alpha-equivalence on parameter names. The lifter writes
+`ast_template` + `template_cid` into the `.proof` at mint time; the
+recognizer reads them back and matches. Cycle invariance over the
+sugar binding.
+
 ### Mint + prove (also wired up tonight)
 
 `.provekit/config.toml` declares `rust-sugar` + `rust-contracts` lift
