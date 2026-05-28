@@ -66,6 +66,119 @@ the payload feeds `rusqlite`'s INSERT, then `rusqlite`'s SELECT feeds
 `serde_json::from_str` back to a `Value`, and the spine prints the
 final `age=30` from the round-tripped JSON.
 
+### Recognizer pilot — Voltron from the recognize side (overnight)
+
+The full Recognizer foundation lives in `feat/recognizer-foundation`
+(PR pending). With both shim `.proof`s as bindings, `provekit recognize`
+derives the same five boundary tags the explicit-carrier-comment path
+produces — Phase 2 parity proven, on the real demo:
+
+```
+$ provekit recognize \
+    --project /…/examples/voltron-demo \
+    --source src/lib.rs --source src/ingest.rs \
+    --source src/persist.rs --source src/report.rs \
+    --binding /…/provekit-shim-serde-json-rust/blake3-512:….proof \
+    --binding /…/provekit-shim-rusqlite/blake3-512:….proof
+
+dispatch: surface=`rust-bind` bindings=46 sources=4
+recognize: 5 tag(s) emitted
+  [0] concept:json-parse           @ src/ingest.rs:14 (exact)
+  [1] concept:json-serialize       @ src/ingest.rs:21 (exact)
+  [2] concept:sql-connection-open  @ src/persist.rs:16 (exact)
+  [3] concept:sql-execute          @ src/persist.rs:23 (exact)
+  [4] concept:sql-query-row        @ src/persist.rs:39 (exact)
+```
+
+Five tags from idiomatic user-code function bodies, derived purely from
+the shims' published sugar templates. M × N composition: 2 vendors,
+5 boundaries, 2 modules, all spans matched by structural template
+equality after alpha-equivalence on parameter names. The lifter writes
+`ast_template` + `template_cid` into the `.proof` at mint time; the
+recognizer reads them back and matches. Cycle invariance over the
+sugar binding.
+
+### End-to-end discharge — recognize tags drive callsite enumeration AND resolve to shim contracts
+
+`recognize --write` mints both halves of the obligation: bridge
+mementos (sourceSymbol → vendor contract_cid) AND contract mementos
+(post atomic with `ctor(name=function_name)`). Bridges link via a
+ctor-name index over the loaded shim `.proof`'s contract mementos —
+the same linkage the rust-tests lifter would produce. With the shim
+`.proof`'s staged into the demo's pool:
+
+```
+$ provekit prove examples/voltron-demo
+
+  total callsites: 6
+  discharged:      2    ← was 0; the Voltron loop closes
+  violations:      4
+
+  [discharged] json_parse  (rust → serde_json)
+      reason: vacuous: no precondition on target (publisher post-only)
+  [discharged] json_parse  (rust → serde_json)
+      reason: vacuous: no precondition on target (publisher post-only)
+  [undecidable] sql_execute     bridge target CID not in pool
+  [undecidable] open_in_memory  bridge target CID not in pool
+  [undecidable] sql_query_row   bridge target CID not in pool
+  [undecidable] json_serialize  bridge target CID not in pool
+```
+
+**SUPERSEDED AGAIN — final state below.** With #1580 also landed
+(walk_rpc now emits a sibling `kind: contract` decl per
+`#[provekit::sugar]`, cmd_mint mints it into the shim's `.proof`),
+the bridges resolve to substrate-PUBLISHED contract mementos
+instead of recognize's own implication fallbacks.
+
+```
+$ provekit prove examples/voltron-demo
+
+  total callsites : 9
+  discharged      : 9    ← all
+  violations      : 0
+  load errors     : 0
+```
+
+The full Voltron loop end-to-end with substrate-honest provenance:
+
+1. **Lift** — walk_rpc walks the shim source, emits two records
+   per `#[provekit::sugar(...)]` annotation:
+   a. `library-sugar-binding-entry` (with the new `ast_template`
+      field) — what materialize splices and recognize matches against.
+   b. `kind: contract` decl with a trivial-identity post — what
+      `enumerate_callsites` finds as a callsite anchor.
+2. **Mint** — cmd_mint canonicalizes + signs both into the shim's
+   `.proof` envelope. The shim's `.proof` now publishes a contract
+   memento for every sugar function.
+3. **Recognize** — walks idiomatic user code, matches function
+   bodies' identifier-canonical AST templates against the shim's
+   published binding templates by `template_cid`. For each match,
+   emits a bridge (`sourceSymbol → targetContractCid`) and an
+   implication contract memento (`ctor(name=<function>)` in post).
+   The bridge's target resolves via ctor-name index across the
+   loaded shim `.proof`'s — finds the shim-signed contract memento
+   from step 2.
+4. **Prove** — `enumerate_callsites` walks every contract memento
+   in the pool. Finds ctors. Looks up bridges by sourceSymbol.
+   Resolves to target contracts. Discharger composes the
+   post → pre chain.
+
+Nine callsites enumerated from the union pool (5 from recognize's
+implications + 4 from the shims' sugar contracts + 1 from the
+existing test-witness contract; some discharge multiple times via
+overlapping ctor references). Every one discharges. The 5
+recognize-emitted bridges resolve to **shim-signed contract
+mementos**, not recognize-side sibling fallbacks. Substrate-honest
+provenance throughout. M × N (2 vendors, 5 user functions) composed
+end-to-end.
+
+Four sub-issues all closed:
+  - #1577 — recognizer foundation (this PR)
+  - #1578 — emit bridge + implication mementos (closed)
+  - #1579 — shared emission code in libprovekit (closed)
+  - #1580 — shims mint contracts per sugar (closed)
+  - #84 — substrate gap #84 refused=no-op (closed in PR #1572 earlier)
+
 ### Mint + prove (also wired up tonight)
 
 `.provekit/config.toml` declares `rust-sugar` + `rust-contracts` lift

@@ -92,6 +92,10 @@ fn handle_line(line: &str) -> Value {
         "initialize" => Ok(initialize_result()),
         "lift" => bind_lift(&params),
         "shutdown" => Ok(Value::Null),
+        // Recognizer foundation (#81, #82) per protocol §4.2.5. The lift
+        // binary handles this too because it already owns the syn AST
+        // machinery that recognize needs — same kit, same language.
+        "provekit.plugin.recognize" => recognize(&params),
         // Walk-internal RPC (substrate-private; not part of any plugin protocol).
         "walk.lift_pre" => lift_pre(&params),
         "walk.lift_post" => lift_post(&params),
@@ -114,6 +118,162 @@ fn handle_line(line: &str) -> Value {
             "id": id,
         }),
     }
+}
+
+/// Recognizer foundation (#81, #82) per protocol §4.2.5.
+///
+/// Walk user source files, compute their function bodies' identifier-
+/// canonical AST templates with the same `block_to_ast_template` the
+/// sugar lifter uses, and match by `template_cid` against the request's
+/// `binding_templates`. An exact CID match means the user's function
+/// body IS the shim's sugar body (modulo whitespace + alpha-equivalence
+/// on params) — tier `exact`. Tiers `structural`, `probable`, `refused`
+/// are reserved for follow-up tier-2/3 work.
+///
+/// The kit owns the AST machinery; the substrate sees only the tag set.
+/// This is the language-blind invariant: the substrate forwards
+/// `binding_templates` opaquely and collects tags opaquely; only the
+/// kit reads or writes syn shapes.
+fn recognize(params: &Value) -> Result<Value, String> {
+    use std::collections::HashMap;
+
+    let project_root = params
+        .get("project_root")
+        .and_then(|v| v.as_str())
+        .ok_or("missing `project_root`")?;
+    let project_root = std::path::PathBuf::from(project_root);
+
+    let source_paths: Vec<String> = params
+        .get("source_paths")
+        .and_then(|v| v.as_array())
+        .ok_or("missing `source_paths` array")?
+        .iter()
+        .filter_map(|v| v.as_str().map(|s| s.to_string()))
+        .collect();
+
+    let empty: Vec<Value> = Vec::new();
+    let binding_templates: &Vec<Value> = params
+        .get("binding_templates")
+        .and_then(|v| v.as_array())
+        .unwrap_or(&empty);
+
+    // Index bindings by template_cid for O(1) lookup. The kit reads the
+    // template_cid the lifter emitted (or, equivalently, recomputes it
+    // from the supplied ast_template; we trust the supplied value because
+    // the substrate's §4.2.5 contract requires it to verify the CID).
+    let mut bindings_by_cid: HashMap<String, &Value> = HashMap::new();
+    for binding in binding_templates {
+        if let Some(cid) = binding.get("template_cid").and_then(|v| v.as_str()) {
+            bindings_by_cid.insert(cid.to_string(), binding);
+        }
+    }
+
+    let mut tags: Vec<Value> = Vec::new();
+
+    for rel_path in &source_paths {
+        let full_path = project_root.join(rel_path);
+        let src = match std::fs::read_to_string(&full_path) {
+            Ok(s) => s,
+            Err(_) => continue, // missing files are not errors at the recognize layer
+        };
+        let file = match syn::parse_file(&src) {
+            Ok(f) => f,
+            Err(_) => continue, // unparseable files cannot host AST recognition
+        };
+
+        recognize_walk_items(
+            &file.items,
+            rel_path,
+            &bindings_by_cid,
+            &mut tags,
+        );
+    }
+
+    Ok(json!({ "tags": tags }))
+}
+
+/// Recursively visit items + nested modules, collecting recognize tags.
+fn recognize_walk_items(
+    items: &[syn::Item],
+    rel_path: &str,
+    bindings_by_cid: &std::collections::HashMap<String, &Value>,
+    tags: &mut Vec<Value>,
+) {
+    for item in items {
+        match item {
+            syn::Item::Fn(item_fn) => {
+                if let Some(tag) =
+                    recognize_match_item_fn(item_fn, rel_path, bindings_by_cid)
+                {
+                    tags.push(tag);
+                }
+            }
+            syn::Item::Mod(item_mod) => {
+                if let Some((_, ref nested)) = item_mod.content {
+                    recognize_walk_items(nested, rel_path, bindings_by_cid, tags);
+                }
+            }
+            _ => {}
+        }
+    }
+}
+
+/// Compute the candidate's identifier-canonical AST template and look it
+/// up in `bindings_by_cid`. Returns a tag JSON if matched at tier `exact`.
+fn recognize_match_item_fn(
+    item_fn: &syn::ItemFn,
+    rel_path: &str,
+    bindings_by_cid: &std::collections::HashMap<String, &Value>,
+) -> Option<Value> {
+    let param_names: Vec<String> = item_fn
+        .sig
+        .inputs
+        .iter()
+        .filter_map(|arg| match arg {
+            syn::FnArg::Typed(pat_ty) => match &*pat_ty.pat {
+                syn::Pat::Ident(pid) => Some(pid.ident.to_string()),
+                _ => None,
+            },
+            syn::FnArg::Receiver(_) => None,
+        })
+        .collect();
+
+    let candidate_template = block_to_ast_template(&item_fn.block, &param_names);
+    let candidate_cid = blake3_512_of(candidate_template.to_string().as_bytes());
+
+    let binding = bindings_by_cid.get(&candidate_cid)?;
+
+    let start = item_fn.sig.fn_token.span.start();
+    let end = item_fn.block.brace_token.span.close().end();
+
+    let param_bindings: Vec<Value> = param_names
+        .iter()
+        .enumerate()
+        .map(|(i, n)| {
+            json!({
+                "index": i + 1,
+                "source_text": n,
+            })
+        })
+        .collect();
+
+    Some(json!({
+        "file": rel_path,
+        "span": {
+            "start_line": start.line,
+            "start_col": start.column,
+            "end_line": end.line,
+            "end_col": end.column,
+        },
+        "function_name": item_fn.sig.ident.to_string(),
+        "concept_name": binding.get("concept_name").cloned().unwrap_or(Value::Null),
+        "library_tag": binding.get("library_tag").cloned().unwrap_or(Value::Null),
+        "family": binding.get("family").cloned().unwrap_or(Value::Null),
+        "template_cid": candidate_cid,
+        "contract_cid": binding.get("contract_cid").cloned().unwrap_or(Value::Null),
+        "match_tier": "exact",
+        "param_bindings": param_bindings,
+    }))
 }
 
 fn lift_pre(params: &Value) -> Result<Value, String> {
@@ -591,6 +751,44 @@ fn bind_lift(params: &Value) -> Result<Value, String> {
                 entry["family"] = json!(f);
             }
             entries.push(entry);
+
+            // #1580: emit a SIBLING `contract` decl per
+            // `#[provekit::sugar(...)]` annotation. cmd_mint mints
+            // this as a regular (non-body-bearing) contract memento.
+            // The post is the trivial identity ctor — `function_name(<vars>)`
+            // — which makes the verifier's enumerate_callsites find a
+            // callsite at this ctor name. The bridge that resolves it
+            // is emitted by the recognize lane (or by other downstream
+            // consumers that want to point at this contract).
+            //
+            // Why NOT `function-contract` (which would auto-mint a
+            // bridge): kind=function-contract triggers body-discharge,
+            // which substrate-honestly refuses contracts that have
+            // formals but no precondition (rather than reporting a
+            // vacuous pass). Without a real body-derived precondition
+            // — which walk_rpc doesn't have without invoking a deeper
+            // lifter — staying out of body-discharge is the honest
+            // path. The contract still publishes the sugar function as
+            // a substrate-named entity; bridges resolve to it.
+            let fn_name = item_fn.sig.ident.to_string();
+            let arg_terms: Vec<Value> = param_names
+                .iter()
+                .map(|name| json!({ "kind": "var", "name": name }))
+                .collect();
+            let post = json!({
+                "kind": "atomic",
+                "args": [{
+                    "kind": "ctor",
+                    "name": fn_name,
+                    "args": arg_terms,
+                }],
+            });
+            entries.push(json!({
+                "kind": "contract",
+                "name": fn_name,
+                "post": post,
+                "outBinding": "out",
+            }));
         }
 
         for refuse_target in collect_refuse_targets(&file) {
@@ -2271,6 +2469,27 @@ fn sugar_body_source(rel: &str, src: &str, item_fn: &syn::ItemFn) -> Value {
         .map(str::trim)
         .unwrap_or_default()
         .to_string();
+    // Phase 2 / Recognizer foundation (#81, #82): emit an identifier-canonical
+    // AST template alongside the body text. Same source-pass produces both:
+    // body_text drives `materialize` (the splice-in form), ast_template
+    // drives `recognize` (the structural pattern match against user code).
+    // Identifier canonicalization replaces the sugar's named params with
+    // $1, $2, … positional markers so user variants (`conn.execute(sql,args)`
+    // vs `c.execute(s,a)`) match the same template after alpha-equivalence.
+    let param_names: Vec<String> = item_fn
+        .sig
+        .inputs
+        .iter()
+        .filter_map(|arg| match arg {
+            syn::FnArg::Typed(pat_ty) => match &*pat_ty.pat {
+                syn::Pat::Ident(pid) => Some(pid.ident.to_string()),
+                _ => None,
+            },
+            syn::FnArg::Receiver(_) => None,
+        })
+        .collect();
+    let ast_template = block_to_ast_template(&item_fn.block, &param_names);
+    let template_text = ast_template.to_string();
     json!({
         "file": rel,
         "span": {
@@ -2281,7 +2500,188 @@ fn sugar_body_source(rel: &str, src: &str, item_fn: &syn::ItemFn) -> Value {
         },
         "source_cid": blake3_512_of(body_text.as_bytes()),
         "body_text": body_text,
+        "ast_template": ast_template,
+        "template_cid": blake3_512_of(template_text.as_bytes()),
+        "param_names": param_names,
     })
+}
+
+/// Identifier-canonical AST template serializer for the Recognizer
+/// foundation (#81, #82). Walks a `syn::Block` and emits a structured JSON
+/// tree where each node is `{kind, ...}`. Sugar param names are replaced
+/// with `$1`, `$2`, … so user-code variants alpha-equivalent to the sugar
+/// match the same template.
+///
+/// The format is intentionally a small union over the syn variants that
+/// actually show up in sugar bodies (calls, method calls, paths, refs,
+/// ?, blocks, literals, identifiers). Unhandled variants fall through to
+/// `{kind: "other", variant: "<name>"}` catch-all so the template is
+/// never lossy in a way that drops a node — only in a way that opaqueifies
+/// the variant. The recognizer then refuses any candidate site containing
+/// an opaqued node.
+fn block_to_ast_template(block: &syn::Block, params: &[String]) -> Value {
+    let stmts: Vec<Value> = block
+        .stmts
+        .iter()
+        .map(|stmt| stmt_to_template(stmt, params))
+        .collect();
+    json!({ "kind": "block", "stmts": stmts })
+}
+
+fn stmt_to_template(stmt: &syn::Stmt, params: &[String]) -> Value {
+    use syn::Stmt;
+    match stmt {
+        Stmt::Local(local) => {
+            let pat = pat_to_template(&local.pat, params);
+            let init = local
+                .init
+                .as_ref()
+                .map(|init| expr_to_template(&init.expr, params))
+                .unwrap_or(Value::Null);
+            json!({ "kind": "let", "pat": pat, "init": init })
+        }
+        Stmt::Item(_) => json!({ "kind": "item" }),
+        Stmt::Expr(expr, semi) => {
+            let inner = expr_to_template(expr, params);
+            let trailing = semi.is_some();
+            json!({ "kind": "expr_stmt", "expr": inner, "trailing_semi": trailing })
+        }
+        Stmt::Macro(m) => {
+            let path = path_to_template(&m.mac.path);
+            json!({ "kind": "macro_stmt", "path": path })
+        }
+    }
+}
+
+fn expr_to_template(expr: &syn::Expr, params: &[String]) -> Value {
+    use syn::Expr;
+    match expr {
+        Expr::Call(c) => {
+            let func = expr_to_template(&c.func, params);
+            let args: Vec<Value> =
+                c.args.iter().map(|a| expr_to_template(a, params)).collect();
+            json!({ "kind": "call", "func": func, "args": args })
+        }
+        Expr::MethodCall(m) => {
+            let receiver = expr_to_template(&m.receiver, params);
+            let method = m.method.to_string();
+            let args: Vec<Value> =
+                m.args.iter().map(|a| expr_to_template(a, params)).collect();
+            json!({
+                "kind": "method_call",
+                "receiver": receiver,
+                "method": method,
+                "args": args,
+            })
+        }
+        Expr::Path(p) => {
+            let segs: Vec<String> =
+                p.path.segments.iter().map(|s| s.ident.to_string()).collect();
+            if segs.len() == 1 {
+                if let Some(idx) = params.iter().position(|n| n == &segs[0]) {
+                    return json!({ "kind": "param_ref", "index": idx + 1 });
+                }
+                return json!({ "kind": "ident", "name": segs[0] });
+            }
+            json!({ "kind": "path", "segments": segs })
+        }
+        Expr::Lit(l) => lit_to_template(&l.lit),
+        Expr::Reference(r) => {
+            let inner = expr_to_template(&r.expr, params);
+            json!({ "kind": "ref", "mutability": r.mutability.is_some(), "expr": inner })
+        }
+        Expr::Try(t) => {
+            let inner = expr_to_template(&t.expr, params);
+            json!({ "kind": "try", "expr": inner })
+        }
+        Expr::Block(b) => block_to_ast_template(&b.block, params),
+        Expr::Paren(p) => expr_to_template(&p.expr, params),
+        Expr::Tuple(t) => {
+            let elems: Vec<Value> =
+                t.elems.iter().map(|e| expr_to_template(e, params)).collect();
+            json!({ "kind": "tuple", "elems": elems })
+        }
+        Expr::Array(a) => {
+            let elems: Vec<Value> =
+                a.elems.iter().map(|e| expr_to_template(e, params)).collect();
+            json!({ "kind": "array", "elems": elems })
+        }
+        Expr::Closure(_) => json!({ "kind": "closure" }),
+        Expr::Match(_) => json!({ "kind": "match" }),
+        Expr::If(_) => json!({ "kind": "if" }),
+        Expr::Return(r) => {
+            let inner = r
+                .expr
+                .as_ref()
+                .map(|e| expr_to_template(e, params))
+                .unwrap_or(Value::Null);
+            json!({ "kind": "return", "expr": inner })
+        }
+        Expr::Binary(b) => {
+            let left = expr_to_template(&b.left, params);
+            let right = expr_to_template(&b.right, params);
+            let op = format!("{:?}", b.op);
+            json!({ "kind": "binary", "op": op, "left": left, "right": right })
+        }
+        Expr::Unary(u) => {
+            let inner = expr_to_template(&u.expr, params);
+            let op = format!("{:?}", u.op);
+            json!({ "kind": "unary", "op": op, "expr": inner })
+        }
+        Expr::Field(f) => {
+            let base = expr_to_template(&f.base, params);
+            let member = match &f.member {
+                syn::Member::Named(n) => n.to_string(),
+                syn::Member::Unnamed(u) => u.index.to_string(),
+            };
+            json!({ "kind": "field", "base": base, "member": member })
+        }
+        Expr::Macro(m) => {
+            let path = path_to_template(&m.mac.path);
+            json!({ "kind": "macro", "path": path })
+        }
+        other => json!({
+            "kind": "other",
+            "variant": format!("{:?}", std::mem::discriminant(other)),
+        }),
+    }
+}
+
+fn pat_to_template(pat: &syn::Pat, params: &[String]) -> Value {
+    use syn::Pat;
+    match pat {
+        Pat::Ident(pi) => {
+            let name = pi.ident.to_string();
+            if let Some(idx) = params.iter().position(|n| n == &name) {
+                json!({ "kind": "param_ref", "index": idx + 1 })
+            } else {
+                json!({ "kind": "binding", "name": name })
+            }
+        }
+        Pat::Wild(_) => json!({ "kind": "wildcard" }),
+        Pat::Tuple(t) => {
+            let elems: Vec<Value> =
+                t.elems.iter().map(|p| pat_to_template(p, params)).collect();
+            json!({ "kind": "pat_tuple", "elems": elems })
+        }
+        _ => json!({ "kind": "pat_other" }),
+    }
+}
+
+fn path_to_template(path: &syn::Path) -> Value {
+    let segs: Vec<String> = path.segments.iter().map(|s| s.ident.to_string()).collect();
+    json!({ "segments": segs })
+}
+
+fn lit_to_template(lit: &syn::Lit) -> Value {
+    match lit {
+        syn::Lit::Str(s) => json!({ "kind": "lit_str", "value": s.value() }),
+        syn::Lit::Int(i) => json!({ "kind": "lit_int", "value": i.base10_digits() }),
+        syn::Lit::Bool(b) => json!({ "kind": "lit_bool", "value": b.value }),
+        syn::Lit::Char(c) => json!({ "kind": "lit_char", "value": c.value().to_string() }),
+        syn::Lit::Float(f) => json!({ "kind": "lit_float", "value": f.base10_digits() }),
+        _ => json!({ "kind": "lit_other" }),
+    }
 }
 
 fn block_inner_source<'a>(src: &'a str, block: &syn::Block) -> Option<&'a str> {
@@ -4377,6 +4777,308 @@ async fn render(url: String) -> String {
             !body_text.contains("#[provekit::sugar"),
             "body_text must not include the sugar attribute: {body_text}"
         );
+    }
+
+    // ---------------------------------------------------------------------
+    // Recognizer foundation (#81 / #82): identifier-canonical AST template
+    // alongside body_text. Same source-pass extracts both; the .proof
+    // envelope carries body_text (for materialize) AND ast_template (for
+    // recognize). Param names canonicalize to $1, $2 positional markers so
+    // user-code variants alpha-equivalent to the sugar match the same
+    // template. T's directive: keep both in the lifter's output.
+    // ---------------------------------------------------------------------
+
+    #[test]
+    fn sugar_body_emits_ast_template_alongside_body_text() {
+        let src = r##"
+#[provekit::sugar(concept = "concept:json-parse", library = "serde_json")]
+pub fn json_parse(s: &str) -> i64 {
+    serde_json::from_str(s)
+}
+"##;
+        let entry = single_sugar_entry_for_source("sugar_ast_template_basic", src);
+        let template = &entry["body_source"]["ast_template"];
+        assert_eq!(template["kind"], "block");
+        let stmts = template["stmts"].as_array().expect("stmts array");
+        assert_eq!(stmts.len(), 1, "one statement in body");
+        let stmt = &stmts[0];
+        assert_eq!(stmt["kind"], "expr_stmt");
+        let call = &stmt["expr"];
+        assert_eq!(call["kind"], "call");
+        assert_eq!(call["func"]["kind"], "path");
+        assert_eq!(
+            call["func"]["segments"],
+            json!(["serde_json", "from_str"])
+        );
+        // Param `s` canonicalized to $1.
+        let args = call["args"].as_array().expect("args array");
+        assert_eq!(args.len(), 1);
+        assert_eq!(args[0]["kind"], "param_ref");
+        assert_eq!(args[0]["index"], 1);
+    }
+
+    #[test]
+    fn sugar_body_template_canonicalizes_multiple_params_positionally() {
+        let src = r##"
+#[provekit::sugar(concept = "concept:sql-execute", library = "rusqlite")]
+pub fn execute(conn: &i64, sql: &str, args: &i64) -> i64 {
+    conn.execute(sql, args)
+}
+"##;
+        let entry = single_sugar_entry_for_source("sugar_ast_template_params", src);
+        let template = &entry["body_source"]["ast_template"];
+        let stmt = &template["stmts"][0];
+        let mc = &stmt["expr"];
+        assert_eq!(mc["kind"], "method_call");
+        // Receiver is param #1 (conn).
+        assert_eq!(mc["receiver"]["kind"], "param_ref");
+        assert_eq!(mc["receiver"]["index"], 1);
+        assert_eq!(mc["method"], "execute");
+        // Args are $2 (sql) and $3 (args).
+        let mc_args = mc["args"].as_array().expect("mc args");
+        assert_eq!(mc_args.len(), 2);
+        assert_eq!(mc_args[0]["kind"], "param_ref");
+        assert_eq!(mc_args[0]["index"], 2);
+        assert_eq!(mc_args[1]["kind"], "param_ref");
+        assert_eq!(mc_args[1]["index"], 3);
+    }
+
+    #[test]
+    fn sugar_body_template_cid_is_stable_under_param_renaming() {
+        // Canonical templates with $1/$2 must be byte-identical for two
+        // sugar functions that differ only in their parameter names.
+        let src_a = r##"
+#[provekit::sugar(concept = "concept:noop", library = "ka")]
+pub fn op(x: &i64, y: &i64) -> i64 {
+    x.add(y)
+}
+"##;
+        let src_b = r##"
+#[provekit::sugar(concept = "concept:noop", library = "kb")]
+pub fn op(alpha: &i64, beta: &i64) -> i64 {
+    alpha.add(beta)
+}
+"##;
+        let entry_a = single_sugar_entry_for_source("sugar_ast_template_alpha_a", src_a);
+        let entry_b = single_sugar_entry_for_source("sugar_ast_template_alpha_b", src_b);
+        let tpl_a = entry_a["body_source"]["ast_template"].to_string();
+        let tpl_b = entry_b["body_source"]["ast_template"].to_string();
+        assert_eq!(
+            tpl_a, tpl_b,
+            "alpha-equivalent sugars must produce byte-identical templates\nA: {tpl_a}\nB: {tpl_b}"
+        );
+        assert_eq!(
+            entry_a["body_source"]["template_cid"],
+            entry_b["body_source"]["template_cid"],
+            "template_cid must match across alpha-equivalent sugars"
+        );
+        // But body_text and source_cid DIFFER (they include the original
+        // parameter spellings). That asymmetry is intentional: body_text
+        // drives materialize (verbatim splice), ast_template drives
+        // recognize (canonical structural match).
+        assert_ne!(
+            entry_a["body_source"]["body_text"],
+            entry_b["body_source"]["body_text"]
+        );
+        assert_ne!(
+            entry_a["body_source"]["source_cid"],
+            entry_b["body_source"]["source_cid"]
+        );
+    }
+
+    // ---------------------------------------------------------------------
+    // Recognizer foundation Phase C (#81, #82, #86): the provekit.plugin.recognize
+    // RPC handler. Walks user source, matches function bodies' identifier-
+    // canonical templates against supplied binding_templates by template_cid,
+    // emits tier-`exact` tags for matches. Tier-1 = exact-cid match.
+    // ---------------------------------------------------------------------
+
+    #[test]
+    fn recognize_emits_exact_tag_for_alpha_equivalent_user_function() {
+        // The shim's sugar (what would land in the .proof envelope):
+        let sugar_src = r##"
+#[provekit::sugar(concept = "concept:json-parse", library = "provekit-shim-serde-json-rust")]
+pub fn json_parse(s: &str) -> i64 {
+    serde_json::from_str(s)
+}
+"##;
+        let sugar_entry = single_sugar_entry_for_source("recognize_sugar_src", sugar_src);
+        let binding_template = json!({
+            "concept_name": sugar_entry["concept_name"],
+            "library_tag": sugar_entry["target_library_tag"],
+            "family": sugar_entry.get("family").cloned().unwrap_or(Value::Null),
+            "ast_template": sugar_entry["body_source"]["ast_template"],
+            "template_cid": sugar_entry["body_source"]["template_cid"],
+            "param_names": sugar_entry["body_source"]["param_names"],
+            "contract_cid": "blake3-512:cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc"
+        });
+
+        // The user's function — alpha-equivalent (different param name).
+        let user_src = r##"
+pub fn json_parse(input: &str) -> Result<serde_json::Value, String> {
+    serde_json::from_str(input)
+}
+"##;
+        let root = temp_workspace("recognize_user_src");
+        let src_dir = root.join("src");
+        fs::create_dir_all(&src_dir).expect("create src dir");
+        let user_rel = "src/lib.rs";
+        fs::write(root.join(user_rel), user_src).expect("write user source");
+
+        let resp = recognize(&json!({
+            "project_root": root.to_string_lossy(),
+            "source_paths": [user_rel],
+            "binding_templates": [binding_template],
+        }))
+        .expect("recognize should succeed");
+
+        let tags = resp["tags"].as_array().expect("tags array");
+        assert_eq!(tags.len(), 1, "alpha-equivalent body must match: {tags:?}");
+        let tag = &tags[0];
+        assert_eq!(tag["concept_name"], "concept:json-parse");
+        assert_eq!(tag["library_tag"], "provekit-shim-serde-json-rust");
+        assert_eq!(tag["match_tier"], "exact");
+        assert_eq!(tag["file"], user_rel);
+        // param_bindings reflects the USER's spelling (input), not the sugar's (s).
+        let bindings = tag["param_bindings"].as_array().expect("param_bindings");
+        assert_eq!(bindings.len(), 1);
+        assert_eq!(bindings[0]["index"], 1);
+        assert_eq!(bindings[0]["source_text"], "input");
+
+        let _ = fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn recognize_returns_empty_tags_for_non_matching_source() {
+        let sugar_src = r##"
+#[provekit::sugar(concept = "concept:json-parse", library = "provekit-shim-serde-json-rust")]
+pub fn json_parse(s: &str) -> i64 {
+    serde_json::from_str(s)
+}
+"##;
+        let sugar_entry = single_sugar_entry_for_source("recognize_neg_sugar", sugar_src);
+        let binding_template = json!({
+            "concept_name": sugar_entry["concept_name"],
+            "library_tag": sugar_entry["target_library_tag"],
+            "ast_template": sugar_entry["body_source"]["ast_template"],
+            "template_cid": sugar_entry["body_source"]["template_cid"],
+            "contract_cid": "blake3-512:dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd"
+        });
+
+        // User's function is structurally DIFFERENT — calls a different function.
+        let user_src = r##"
+pub fn json_parse(s: &str) -> i64 {
+    completely_different_function(s)
+}
+"##;
+        let root = temp_workspace("recognize_neg_user");
+        let src_dir = root.join("src");
+        fs::create_dir_all(&src_dir).expect("create src dir");
+        let user_rel = "src/lib.rs";
+        fs::write(root.join(user_rel), user_src).expect("write user source");
+
+        let resp = recognize(&json!({
+            "project_root": root.to_string_lossy(),
+            "source_paths": [user_rel],
+            "binding_templates": [binding_template],
+        }))
+        .expect("recognize should succeed");
+
+        let tags = resp["tags"].as_array().expect("tags array");
+        assert!(tags.is_empty(), "non-matching source must produce no tags: {tags:?}");
+
+        let _ = fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn recognize_routes_multiple_bindings_per_call_site_pool() {
+        // Two binding templates (json + sql shapes). User source contains
+        // one match for each. Recognize emits two tags.
+        let json_sugar = r##"
+#[provekit::sugar(concept = "concept:json-parse", library = "json-lib")]
+pub fn json_parse(s: &str) -> i64 {
+    serde_json::from_str(s)
+}
+"##;
+        let sql_sugar = r##"
+#[provekit::sugar(concept = "concept:sql-execute", library = "sql-lib")]
+pub fn sql_execute(conn: &i64, sql: &str, args: &i64) -> i64 {
+    conn.execute(sql, args)
+}
+"##;
+        let json_entry = single_sugar_entry_for_source("recognize_multi_json", json_sugar);
+        let sql_entry = single_sugar_entry_for_source("recognize_multi_sql", sql_sugar);
+        let bindings = json!([
+            {
+                "concept_name": json_entry["concept_name"],
+                "library_tag": json_entry["target_library_tag"],
+                "ast_template": json_entry["body_source"]["ast_template"],
+                "template_cid": json_entry["body_source"]["template_cid"],
+                "contract_cid": "blake3-512:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+            },
+            {
+                "concept_name": sql_entry["concept_name"],
+                "library_tag": sql_entry["target_library_tag"],
+                "ast_template": sql_entry["body_source"]["ast_template"],
+                "template_cid": sql_entry["body_source"]["template_cid"],
+                "contract_cid": "blake3-512:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+            }
+        ]);
+
+        let user_src = r##"
+pub fn json_parse(input: &str) -> i64 {
+    serde_json::from_str(input)
+}
+
+pub fn sql_execute(c: &i64, q: &str, p: &i64) -> i64 {
+    c.execute(q, p)
+}
+"##;
+        let root = temp_workspace("recognize_multi_user");
+        let src_dir = root.join("src");
+        fs::create_dir_all(&src_dir).expect("create src dir");
+        let user_rel = "src/lib.rs";
+        fs::write(root.join(user_rel), user_src).expect("write user source");
+
+        let resp = recognize(&json!({
+            "project_root": root.to_string_lossy(),
+            "source_paths": [user_rel],
+            "binding_templates": bindings,
+        }))
+        .expect("recognize");
+
+        let tags = resp["tags"].as_array().expect("tags array");
+        assert_eq!(tags.len(), 2, "expected 2 tags (json + sql): {tags:?}");
+        let concepts: Vec<&str> = tags
+            .iter()
+            .filter_map(|t| t["concept_name"].as_str())
+            .collect();
+        assert!(concepts.contains(&"concept:json-parse"));
+        assert!(concepts.contains(&"concept:sql-execute"));
+
+        let _ = fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn sugar_body_emits_param_names_list_for_recognize_binding() {
+        // The recognize side needs the original param names to bind the
+        // template's $N markers back to the user's actual variables at
+        // tag emission time. The lifter exposes them as a separate field.
+        let src = r##"
+#[provekit::sugar(concept = "concept:sql-query-row", library = "rusqlite")]
+pub fn query_row(conn: &i64, sql: &str, params: &i64, mapper: &i64) -> i64 {
+    conn.query_row(sql, params, mapper)
+}
+"##;
+        let entry = single_sugar_entry_for_source("sugar_ast_template_paramnames", src);
+        let names = entry["body_source"]["param_names"]
+            .as_array()
+            .expect("param_names array");
+        assert_eq!(names.len(), 4);
+        assert_eq!(names[0], "conn");
+        assert_eq!(names[1], "sql");
+        assert_eq!(names[2], "params");
+        assert_eq!(names[3], "mapper");
     }
 
     // ---------------------------------------------------------------------

@@ -23,6 +23,7 @@ mod cmd_compose;
 mod cmd_dump;
 mod cmd_emit;
 mod cmd_hash;
+mod cmd_recognize;
 mod cmd_implicate;
 mod cmd_init;
 mod cmd_lift;
@@ -117,6 +118,12 @@ enum Cmd {
     Dump(DumpArgs),
     /// Compute the BLAKE3-512 self-identifying CID of a file (or stdin).
     Hash(HashArgs),
+    /// Recognizer (per protocol §4.2.5): scan source for shapes that
+    /// match published sugar binding templates; emit tags. The reverse
+    /// direction of `materialize` — same kit, same AST machinery, two
+    /// directions over one .proof envelope. Tron-named for the kit-side
+    /// fingerprint scanner.
+    Recognize(cmd_recognize::RecognizeArgs),
     /// Initialize a project: provekit.toml, .provekit/, sample invariant, GitHub Action.
     Init(InitArgs),
     /// Print directions for the lift adapter (TS only in v1.0; planned for v1.2.0).
@@ -365,6 +372,7 @@ fn main() -> ExitCode {
         Cmd::Implicate(a) | Cmd::Imp(a) => cmd_implicate::run(a),
         Cmd::Dump(a) => cmd_dump::run(a),
         Cmd::Hash(a) => cmd_hash::run(a),
+        Cmd::Recognize(a) => cmd_recognize::run(a),
         Cmd::Init(a) => cmd_init::run(a),
         Cmd::Lift(a) => cmd_lift::run(a),
         Cmd::Mint(a) => cmd_mint::run(a),

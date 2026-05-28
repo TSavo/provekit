@@ -8,6 +8,7 @@ use std::io::Write;
 use std::path::{Path, PathBuf};
 
 use clap::Parser;
+use libprovekit::core::emit_obligation::{build_bridge_body, member_envelope_canonical};
 use libprovekit::core::{
     execute_path, HashMapInputCatalog, Input, KitRegistry, LowerKit, Path as CorePath, PathAlgebra,
     RealizedSource, Verb,
@@ -18,8 +19,6 @@ use libprovekit::core::{
 // `transform_source_text` + the `SiteTransformKit` trait (#1337).
 pub(crate) use libprovekit::core::source_transform::*;
 use owo_colors::OwoColorize;
-use provekit_canonicalizer::{blake3_512_of, encode_jcs, Value as CanonicalValue};
-use provekit_ir_types::{BridgeHeaderV14, BridgeTarget};
 use provekit_proof_envelope::{
     build_proof_envelope, ed25519_pubkey_string, Ed25519Seed, ProofEnvelopeInput,
 };
@@ -2168,14 +2167,19 @@ fn sync_materialize_bridge_proof(
             let Some(contract_cid) = site.contract_cid.as_deref() else {
                 continue;
             };
-            let body = materialize_bridge_body(&file.receipt, site, contract_cid);
-            let envelope = serde_json::json!({
-                "evidence": {
-                    "kind": "bridge",
-                    "body": body,
-                }
-            });
-            let (cid, bytes) = flat_member(&envelope)?;
+            let target_layer = if file.receipt.target_library.is_empty() {
+                file.receipt.target_language.as_str()
+            } else {
+                file.receipt.target_library.as_str()
+            };
+            let body = build_bridge_body(
+                "materialize",
+                &site.function_name,
+                &file.receipt.source_language,
+                target_layer,
+                contract_cid,
+            );
+            let (cid, bytes) = member_envelope_canonical("bridge", &body)?;
             members.entry(cid).or_insert(bytes);
         }
     }
@@ -2203,72 +2207,7 @@ fn sync_materialize_bridge_proof(
     Ok(Some(path))
 }
 
-fn materialize_bridge_body(
-    receipt: &SourceTransformReceipt,
-    site: &SiteWitness,
-    contract_cid: &str,
-) -> Json {
-    let target_layer = if receipt.target_library.is_empty() {
-        receipt.target_language.as_str()
-    } else {
-        receipt.target_library.as_str()
-    };
-    let header = BridgeHeaderV14 {
-        schema_version: "1".to_string(),
-        kind: "bridge".to_string(),
-        name: format!(
-            "materialize:{}:{}",
-            receipt.target_language, site.function_name
-        ),
-        source_symbol: site.function_name.clone(),
-        source_layer: receipt.source_language.clone(),
-        source_contract_cid: contract_cid.to_string(),
-        target: BridgeTarget::Contract {
-            cid: contract_cid.to_string(),
-        },
-    };
-    let mut value = serde_json::to_value(header).expect("BridgeHeaderV14 serializes");
-    if let Json::Object(map) = &mut value {
-        map.insert(
-            "targetContractCid".to_string(),
-            Json::String(contract_cid.to_string()),
-        );
-        map.insert(
-            "targetLayer".to_string(),
-            Json::String(target_layer.to_string()),
-        );
-    }
-    value
-}
-
-fn flat_member(envelope: &Json) -> Result<(String, Vec<u8>), String> {
-    let canonical = canonical_json(envelope)?;
-    let cid = blake3_512_of(canonical.as_bytes());
-    Ok((cid, canonical.into_bytes()))
-}
-
-fn canonical_json(value: &Json) -> Result<String, String> {
-    let canonical = canonical_value(value)?;
-    Ok(encode_jcs(canonical.as_ref()))
-}
-
-fn canonical_value(value: &Json) -> Result<std::sync::Arc<CanonicalValue>, String> {
-    match value {
-        Json::Null => Ok(CanonicalValue::null()),
-        Json::Bool(value) => Ok(CanonicalValue::boolean(*value)),
-        Json::Number(value) => value.as_i64().map(CanonicalValue::integer).ok_or_else(|| {
-            format!("materialize bridge proof contains non-integer number `{value}`")
-        }),
-        Json::String(value) => Ok(CanonicalValue::string(value)),
-        Json::Array(values) => values
-            .iter()
-            .map(canonical_value)
-            .collect::<Result<Vec<_>, _>>()
-            .map(CanonicalValue::array),
-        Json::Object(entries) => entries
-            .iter()
-            .map(|(key, value)| canonical_value(value).map(|value| (key.clone(), value)))
-            .collect::<Result<Vec<_>, _>>()
-            .map(CanonicalValue::object),
-    }
-}
+// materialize_bridge_body / flat_member / canonical_json / canonical_value
+// were moved to libprovekit::core::emit_obligation as build_bridge_body
+// + member_envelope_canonical (#1579). cmd_materialize now imports them
+// and shares one canonical authoring path with cmd_recognize.
