@@ -20,6 +20,7 @@
 package com.provekit.lift.java_source;
 
 import com.provekit.ir.Jcs;
+import com.provekit.lift.JavaAstTemplates;
 import com.sun.source.tree.AnnotationTree;
 import com.sun.source.tree.AssignmentTree;
 import com.sun.source.tree.BinaryTree;
@@ -413,6 +414,8 @@ public final class JavaBindLifter {
                 // param_types, return_type). body_text carries only the
                 // remaining substance — what the function actually DOES.
                 String bodyOnly = extractMethodBodyStatements(spanText.toString());
+                JavaAstTemplates.TemplateInfo bodyTemplate =
+                    JavaAstTemplates.fromMethodSource(spanText.toString());
 
                 // #41: prepend file-level imports as a comment so the realize
                 // plugin's FQN-extracting regex picks them up. The comment is
@@ -431,15 +434,20 @@ public final class JavaBindLifter {
                 }
 
                 Jcs.Obj bodySource = Jcs.object(
+                    "ast_template", bodyTemplate.astTemplate(),
                     "body_text", Jcs.string(bodyOnly),
                     "file", Jcs.string(rel),
+                    "param_names", Jcs.array(
+                        bodyTemplate.paramNames().stream().map(Jcs::string).toList()
+                    ),
                     "source_cid", Jcs.string(sourceCid),
                     "span", Jcs.object(
                         "end_col", Jcs.integer(methodEndCol),
                         "end_line", Jcs.integer(methodEndLine),
                         "start_col", Jcs.integer(methodStartCol),
                         "start_line", Jcs.integer(methodStartLine)
-                    )
+                    ),
+                    "template_cid", Jcs.string(bodyTemplate.templateCid())
                 );
 
                 // #1369 parametric content-addressing: accumulator for composite

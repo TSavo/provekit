@@ -114,12 +114,13 @@ public final class Jcs {
         }
     }
 
-    public sealed interface Json permits Null, Bool, Num, Str, Arr, Obj {}
+    public sealed interface Json permits Null, Bool, Num, Str, Arr, Obj, Raw {}
 
     public record Null() implements Json {}
     public record Bool(boolean value) implements Json {}
     public record Num(long value) implements Json {}
     public record Str(String value) implements Json {}
+    public record Raw(String json, Json parsed) implements Json {}
 
     public record Arr(List<Json> values) implements Json {
         public Arr {
@@ -175,13 +176,13 @@ public final class Jcs {
         }
 
         public Obj objectField(String key) {
-            Json value = get(key);
+            Json value = unwrapRaw(get(key));
             if (value instanceof Obj o) return o;
             throw new IllegalArgumentException("field is not an object: " + key);
         }
 
         public Arr arrayField(String key) {
-            Json value = get(key);
+            Json value = unwrapRaw(get(key));
             if (value instanceof Arr a) return a;
             throw new IllegalArgumentException("field is not an array: " + key);
         }
@@ -201,6 +202,10 @@ public final class Jcs {
 
     public static Str string(String value) {
         return new Str(value);
+    }
+
+    public static Raw raw(String json, Json parsed) {
+        return new Raw(json, parsed);
     }
 
     public static Arr array(Json... values) {
@@ -244,7 +249,9 @@ public final class Jcs {
 
     /** Encode {@code value} to a JCS-canonical UTF-8 string. */
     public static String encode(Json value) {
-        return encode(toValue(value));
+        StringBuilder sb = new StringBuilder();
+        encodeJson(value, sb);
+        return sb.toString();
     }
 
     /** Encode {@code value} to JCS-canonical UTF-8 bytes. */
@@ -328,8 +335,57 @@ public final class Jcs {
                 entries.put(field.key(), toValue(field.value()));
             }
             return Value.object(entries);
+        } else if (value instanceof Raw r && r.parsed() != null) {
+            return toValue(r.parsed());
         }
         throw new IllegalArgumentException("unknown JSON value");
+    }
+
+    private static Json unwrapRaw(Json value) {
+        if (value instanceof Raw r && r.parsed() != null) return r.parsed();
+        return value;
+    }
+
+    private static void encodeJson(Json value, StringBuilder out) {
+        if (value instanceof Raw r) {
+            out.append(r.json());
+        } else if (value instanceof Null) {
+            out.append("null");
+        } else if (value instanceof Bool b) {
+            out.append(b.value() ? "true" : "false");
+        } else if (value instanceof Num n) {
+            out.append(java.lang.Long.toString(n.value()));
+        } else if (value instanceof Str s) {
+            encodeString(s.value(), out);
+        } else if (value instanceof Arr a) {
+            out.append('[');
+            boolean first = true;
+            for (Json item : a.values()) {
+                if (!first) out.append(',');
+                first = false;
+                encodeJson(item, out);
+            }
+            out.append(']');
+        } else if (value instanceof Obj o) {
+            LinkedHashMap<String, Json> entries = new LinkedHashMap<>();
+            for (Field field : o.fields()) {
+                entries.put(field.key(), field.value());
+            }
+            List<String> keys = new ArrayList<>(entries.keySet());
+            Collections.sort(keys, Jcs::compareCodePoints);
+            out.append('{');
+            boolean first = true;
+            for (String key : keys) {
+                if (!first) out.append(',');
+                first = false;
+                encodeString(key, out);
+                out.append(':');
+                encodeJson(entries.get(key), out);
+            }
+            out.append('}');
+        } else {
+            throw new IllegalArgumentException("unknown JSON value");
+        }
     }
 
     private static int compareCodePoints(String a, String b) {
@@ -418,7 +474,16 @@ public final class Jcs {
             if (input.charAt(pos) == '-') pos++;
             while (!isEof() && Character.isDigit(input.charAt(pos))) pos++;
             if (!isEof() && (input.charAt(pos) == '.' || input.charAt(pos) == 'e' || input.charAt(pos) == 'E')) {
-                throw error("JCS helper only accepts integer JSON numbers");
+                if (!isEof() && input.charAt(pos) == '.') {
+                    pos++;
+                    while (!isEof() && Character.isDigit(input.charAt(pos))) pos++;
+                }
+                if (!isEof() && (input.charAt(pos) == 'e' || input.charAt(pos) == 'E')) {
+                    pos++;
+                    if (!isEof() && (input.charAt(pos) == '+' || input.charAt(pos) == '-')) pos++;
+                    while (!isEof() && Character.isDigit(input.charAt(pos))) pos++;
+                }
+                return raw(input.substring(start, pos), null);
             }
             return integer(Long.parseLong(input.substring(start, pos)));
         }
