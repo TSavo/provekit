@@ -5,11 +5,104 @@ import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
+import com.provekit.ir.Blake3;
 import com.provekit.ir.Jcs;
+import com.provekit.lift.JavaAstTemplates;
+import java.nio.charset.StandardCharsets;
 import java.util.List;
 import org.junit.jupiter.api.Test;
 
 class JavaSugarBindingLifterTest {
+    @Test
+    void sugarBodyEmitsAstTemplateAlongsideBodyText() {
+        String source = """
+            package p;
+            class C {
+              @ProveKitSugar(concept = "concept:http-request", library = "java-net-http")
+              Object fetchUrl(String url, Headers headers) {
+                return client.execute(url, headers);
+              }
+            }
+            """;
+
+        JavaBindLifter.Result result = new JavaBindLifter().liftPathsFromSource("C.java", source);
+
+        Jcs.Obj bodySource = ((Jcs.Obj) sugarEntries(result).get(0)).objectField("body_source");
+        assertNotNull(bodySource.get("body_text"), "body_source.body_text must remain present");
+        assertNotNull(bodySource.get("ast_template"), "body_source.ast_template must be present");
+        assertNotNull(bodySource.get("template_cid"), "body_source.template_cid must be present");
+        assertNotNull(bodySource.get("param_names"), "body_source.param_names must be present");
+
+        String expectedTemplate = """
+            {"kind":"block","stmts":[{"kind":"return","expr":{"kind":"method_call","receiver":{"kind":"ident","name":"client"},"method":"execute","args":[{"kind":"param_ref","index":1},{"kind":"param_ref","index":2}]}}]}
+            """.trim();
+        assertEquals(expectedTemplate, JavaAstTemplates.compactJson(bodySource.get("ast_template")));
+        assertEquals(
+            Blake3.blake3_512(expectedTemplate.getBytes(StandardCharsets.UTF_8)),
+            bodySource.stringField("template_cid")
+        );
+        assertEquals("url", bodySource.arrayField("param_names").stringAt(0).value());
+        assertEquals("headers", bodySource.arrayField("param_names").stringAt(1).value());
+
+        String wire = Jcs.encode(result.toJson());
+        assertTrue(
+            wire.contains("\"ast_template\":" + expectedTemplate),
+            "wire JSON must preserve template key order for the hashed ast_template: " + wire
+        );
+    }
+
+    @Test
+    void sugarBodyAlphaEquivalenceCollapsesToSameCid() {
+        String source = """
+            package p;
+            class C {
+              @ProveKitSugar(concept = "concept:http-request", library = "java-net-http")
+              Object fetchA(String url, Headers headers) {
+                return client.execute(url, headers);
+              }
+
+              @ProveKitSugar(concept = "concept:http-request", library = "java-net-http")
+              Object fetchB(String u, Headers h) {
+                return client.execute(u, h);
+              }
+            }
+            """;
+
+        List<Jcs.Json> entries = sugarEntries(new JavaBindLifter().liftPathsFromSource("C.java", source));
+
+        Jcs.Obj bodyA = ((Jcs.Obj) entries.get(0)).objectField("body_source");
+        Jcs.Obj bodyB = ((Jcs.Obj) entries.get(1)).objectField("body_source");
+        assertEquals(bodyA.stringField("template_cid"), bodyB.stringField("template_cid"));
+        assertEquals(
+            JavaAstTemplates.compactJson(bodyA.get("ast_template")),
+            JavaAstTemplates.compactJson(bodyB.get("ast_template"))
+        );
+    }
+
+    @Test
+    void sugarBodyParamNameSwapCanonicalizes() {
+        String source = """
+            package p;
+            class C {
+              @ProveKitSugar(concept = "concept:call-g", library = "test")
+              int f(int a, int b) {
+                return g(a, b);
+              }
+
+              @ProveKitSugar(concept = "concept:call-g", library = "test")
+              int h(int x, int y) {
+                return g(x, y);
+              }
+            }
+            """;
+
+        List<Jcs.Json> entries = sugarEntries(new JavaBindLifter().liftPathsFromSource("C.java", source));
+
+        Jcs.Obj bodyA = ((Jcs.Obj) entries.get(0)).objectField("body_source");
+        Jcs.Obj bodyB = ((Jcs.Obj) entries.get(1)).objectField("body_source");
+        assertEquals(bodyA.stringField("template_cid"), bodyB.stringField("template_cid"));
+    }
+
     @Test
     void annotatedMethodEmitsLibrarySugarBindingEntry() {
         String source = """

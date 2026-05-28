@@ -45,6 +45,14 @@ public class RpcServer {
                     String emitMode = extractEmitMode(line);
                     sendResponse(id, liftHandler.lift(workspace, surface, emitMode));
                 }
+                case "provekit.plugin.recognize" -> {
+                    Jcs.Json doc = Jcs.parse(line);
+                    if (!(doc instanceof Jcs.Obj obj) || !(obj.get("params") instanceof Jcs.Obj params)) {
+                        sendError(id, -32602, "missing params object");
+                    } else {
+                        sendResponse(id, Jcs.encode(RecognizeHandler.recognizeImpl(params)));
+                    }
+                }
                 case "shutdown" -> {
                     sendResponse(id, "null");
                     System.exit(0);
