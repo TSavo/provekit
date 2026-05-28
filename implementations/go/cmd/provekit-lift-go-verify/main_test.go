@@ -1,10 +1,14 @@
 package main
 
 import (
+	"bytes"
+	"encoding/json"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
+
+	liftgo "github.com/tsavo/provekit/go/provekit-lift-go"
 )
 
 func TestExtractGoFuncBodyUsesGoSyntaxPositions(t *testing.T) {
@@ -111,10 +115,11 @@ func Double(x int) int {
 	}
 
 	entry := findBindingEntry(t, ir, "Double")
-	bodySource, ok := entry["body_source"].(map[string]any)
+	bodyStruct, ok := entry["body_source"].(liftgo.SugarBodySource)
 	if !ok {
-		t.Fatalf("body_source = %#v, want object", entry["body_source"])
+		t.Fatalf("body_source = %#v, want liftgo.SugarBodySource", entry["body_source"])
 	}
+	bodySource := objectFromJSON(t, entry["body_source"])
 	bodyText, ok := bodySource["body_text"].(string)
 	if !ok {
 		t.Fatalf("body_text = %#v, want string", bodySource["body_text"])
@@ -128,6 +133,42 @@ func Double(x int) int {
 	if bodySource["source_cid"] != cidOf([]byte(bodyText)) {
 		t.Fatalf("source_cid = %#v, want cid of body_text", bodySource["source_cid"])
 	}
+	if _, ok := bodySource["span"].(map[string]any); !ok {
+		t.Fatalf("span = %#v, want object", bodySource["span"])
+	}
+	template := bodySource["ast_template"]
+	templateObj := objectFromJSON(t, template)
+	if templateObj["kind"] != "block" {
+		t.Fatalf("ast_template.kind = %#v, want block", templateObj["kind"])
+	}
+	paramNames, ok := bodySource["param_names"].([]any)
+	if !ok || len(paramNames) != 1 || paramNames[0] != "x" {
+		t.Fatalf("param_names = %#v, want [x]", bodySource["param_names"])
+	}
+	templateBytes := compactJSONNoHTML(t, bodyStruct.ASTTemplate)
+	if bodySource["template_cid"] != cidOf(templateBytes) {
+		t.Fatalf("template_cid = %#v, want cid of %s", bodySource["template_cid"], templateBytes)
+	}
+}
+
+func objectFromJSON(t *testing.T, v any) map[string]any {
+	t.Helper()
+	var out map[string]any
+	if err := json.Unmarshal(compactJSONNoHTML(t, v), &out); err != nil {
+		t.Fatalf("unmarshal object from %#v: %v", v, err)
+	}
+	return out
+}
+
+func compactJSONNoHTML(t *testing.T, v any) []byte {
+	t.Helper()
+	var buf bytes.Buffer
+	enc := json.NewEncoder(&buf)
+	enc.SetEscapeHTML(false)
+	if err := enc.Encode(v); err != nil {
+		t.Fatalf("marshal: %v", err)
+	}
+	return bytes.TrimSuffix(buf.Bytes(), []byte("\n"))
 }
 
 func findBindingEntry(t *testing.T, ir []any, sourceName string) map[string]any {
