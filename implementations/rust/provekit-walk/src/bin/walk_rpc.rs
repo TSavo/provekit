@@ -751,6 +751,44 @@ fn bind_lift(params: &Value) -> Result<Value, String> {
                 entry["family"] = json!(f);
             }
             entries.push(entry);
+
+            // #1580: emit a SIBLING `contract` decl per
+            // `#[provekit::sugar(...)]` annotation. cmd_mint mints
+            // this as a regular (non-body-bearing) contract memento.
+            // The post is the trivial identity ctor — `function_name(<vars>)`
+            // — which makes the verifier's enumerate_callsites find a
+            // callsite at this ctor name. The bridge that resolves it
+            // is emitted by the recognize lane (or by other downstream
+            // consumers that want to point at this contract).
+            //
+            // Why NOT `function-contract` (which would auto-mint a
+            // bridge): kind=function-contract triggers body-discharge,
+            // which substrate-honestly refuses contracts that have
+            // formals but no precondition (rather than reporting a
+            // vacuous pass). Without a real body-derived precondition
+            // — which walk_rpc doesn't have without invoking a deeper
+            // lifter — staying out of body-discharge is the honest
+            // path. The contract still publishes the sugar function as
+            // a substrate-named entity; bridges resolve to it.
+            let fn_name = item_fn.sig.ident.to_string();
+            let arg_terms: Vec<Value> = param_names
+                .iter()
+                .map(|name| json!({ "kind": "var", "name": name }))
+                .collect();
+            let post = json!({
+                "kind": "atomic",
+                "args": [{
+                    "kind": "ctor",
+                    "name": fn_name,
+                    "args": arg_terms,
+                }],
+            });
+            entries.push(json!({
+                "kind": "contract",
+                "name": fn_name,
+                "post": post,
+                "outBinding": "out",
+            }));
         }
 
         for refuse_target in collect_refuse_targets(&file) {
