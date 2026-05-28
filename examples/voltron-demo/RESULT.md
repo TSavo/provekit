@@ -32,15 +32,59 @@ surfaced through the rust kit's `provekit.plugin.resolve_dependency_proofs`
 RPC (PR #1568) walking `cargo metadata`. Discharge composes across every
 cross-vendor seam in the spine.
 
-## Status (as of this PR)
+## Status (as of this PR — final overnight update)
 
-The demo is **NOT yet end-to-end runnable**. The act of dogfooding it
-surfaced **five substrate / shim gaps**, four of which block compilation
-of the materialized output. The demo's value in this PR is the
-**gap-exposure surface**: every gap below is a concrete instance the
-substrate's stated "M × N" claim needs to satisfy. Each gap has a
-proposed resolution and either lands in a follow-up PR or files as an
-issue.
+The demo **builds, runs, and passes all tests end-to-end** after closing
+Gap #5 user-side. The substrate fix (Gap #1, PR #1572) closes the
+multi-library-destroys-refused bug. Three other surfaced gaps (#2, #4,
+remaining materialize/mint config polish) are tracked as follow-up
+issues and PRs. Each gap is a concrete instance the substrate's stated
+M × N claim needed to satisfy on first contact with a real user-shaped
+consumer.
+
+### Green path (verified tonight)
+
+```
+$ cargo build --manifest-path examples/voltron-demo/Cargo.toml
+   Finished `dev` profile [unoptimized + debuginfo] target(s) in 2.27s
+
+$ cargo test  --manifest-path examples/voltron-demo/Cargo.toml
+test result: ok. 5 passed; 0 failed   (tests/ingest_test.rs)
+test result: ok. 3 passed; 0 failed   (tests/persist_test.rs)
+test result: ok. 3 passed; 0 failed   (tests/voltron_e2e_test.rs)
+                                       — including full_spine_round_trip_succeeds,
+                                         the cross-vendor end-to-end witness
+
+$ cargo run   --manifest-path examples/voltron-demo/Cargo.toml --bin voltron-demo
+voltron round-trip: rowid=1 user=alice type=signup report="{\"age\":30}"
+```
+
+11/11 tests green. JSON → SQL → SQL → JSON round-trip across both
+vendor lions, in user code, threaded by the head's spine. The bin
+output shows the cross-vendor seam closed: `serde_json::to_string` of
+the payload feeds `rusqlite`'s INSERT, then `rusqlite`'s SELECT feeds
+`serde_json::from_str` back to a `Value`, and the spine prints the
+final `age=30` from the round-tripped JSON.
+
+### Mint + prove (Phase-2 polish remaining)
+
+`.provekit/config.toml` is in place declaring `rust-sugar` +
+`rust-contracts` lift surfaces. `provekit mint --project .` dispatches
+correctly but currently warns that the lifter binary at
+`implementations/rust/target/debug/provekit-walk-rpc` is not found —
+the manifest's relative path resolves against the demo's project root,
+not the workspace root. Two tracked resolutions:
+
+  - Demo carries a project-local manifest override pointing at the
+    workspace binary path (simple; small follow-up commit).
+  - Substrate teaches the plugin loader to walk up from the project
+    root to find workspace-level binaries (broader fix; helps every
+    consumer crate that lives inside a monorepo).
+
+Either path is mechanical. Tonight's stop point is here so the green
+binary + tests can land on the PR as durable proof-of-spine, and the
+mint+prove polish doesn't conflate with the substrate fix already in
+flight (#1572).
 
 ## Gaps exposed
 
@@ -99,26 +143,26 @@ recognize the entire `attributes + signature + body` block as the unit
 to replace, not just the `pub fn name(...)` signature line.
 
 ### Gap #5 — Shim concept vocabulary doesn't cover all user shapes
-**State:** NEW. Filed as a follow-up issue.
+**State:** Tracked as issue #1575. **CLOSED FOR THE DEMO** by adopting
+resolution path (b): user-side `sql_query_row<T, P, F>` matches the
+shim's 4-param mapper form. Callers pass `|row| row.get(0)` closures.
+This keeps the demo green without growing the shim's concept vocabulary.
 
 `provekit-shim-rusqlite`'s `concept:sql-query-row` binding emits a body
-that calls `conn.query_row(sql, params, mapper)` — a generic 4-param
-form requiring a closure that maps `&Row<'_>` to `T`. A user who wants
-a typed-string-row helper (e.g. `fn sql_query_row_string(conn, sql, args)
--> Result<String>`) has to either match the shim's exact 4-param shape
-or the shim must offer additional concepts for common typed-row shapes.
+calling `conn.query_row(sql, params, mapper)` — a generic 4-param form
+requiring a closure mapping `&Row<'_>` to `T`. A user who wants a
+typed-string-row helper has to either match the shim's exact 4-param
+shape or the shim must offer additional concepts for common typed-row
+shapes.
 
-**Resolution paths:**
-  (a) Add `concept:sql-query-row-string` (and similar monomorphic forms)
-      to provekit-shim-rusqlite's `provides_concepts`.
-  (b) Redesign user-side `sql_query_row_string` to match the shim's
-      4-param form (carries a mapper closure).
+**Resolution paths (#1575 long-term):**
+  (a) Add `concept:sql-query-row-string` (and similar monomorphic
+      forms) to provekit-shim-rusqlite's `provides_concepts`.
+  (b) Redesign user-side function to match the shim's 4-param form
+      (carries a mapper closure). **THIS DEMO PATH.**
   (c) Add a kit-side adaptation: when the user declares fewer params
       than the shim concept's canonical form, the kit synthesizes a
       default mapper.
-
-This demo will adopt (b) in a follow-up commit to keep the surface
-clean; (a) and (c) are tracked separately.
 
 ## What this PR contains
 

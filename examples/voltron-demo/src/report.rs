@@ -1,14 +1,14 @@
 // SPDX-License-Identifier: Apache-2.0
 //
 // report.rs — the cross-vendor seam, in user code. Owns no vendor
-// boundaries itself. Uses persist::sql_query_row_string (SQL vendor) to
-// read a row, then ingest::json_parse (JSON vendor) to re-decode the
+// boundaries itself. Uses persist::sql_query_row (SQL vendor) to read
+// row fields, then ingest::json_parse (JSON vendor) to re-decode the
 // payload column. This is precisely the seam where one vendor's post
 // (SQL row text) must establish another vendor's pre (JSON parseable
 // string) for the spine to discharge.
 
 use crate::ingest::json_parse;
-use crate::persist::sql_query_row_string;
+use crate::persist::sql_query_row;
 use rusqlite::Connection;
 
 #[derive(Debug, Clone, PartialEq)]
@@ -35,23 +35,25 @@ pub fn compose_report(conn: &Connection, rowid: i64) -> Result<Report, String> {
     if rowid <= 0 {
         return Err("report: rowid must be positive".into());
     }
-    let rowid_param: &dyn rusqlite::ToSql = &rowid;
-    let event_type = sql_query_row_string(
+    let event_type: String = sql_query_row(
         conn,
         "SELECT type FROM events WHERE id = ?1",
-        &[rowid_param],
+        [&rowid as &dyn rusqlite::ToSql],
+        |row| row.get(0),
     )
     .map_err(|e| format!("report: query type: {e}"))?;
-    let user = sql_query_row_string(
+    let user: String = sql_query_row(
         conn,
         "SELECT user FROM events WHERE id = ?1",
-        &[rowid_param],
+        [&rowid as &dyn rusqlite::ToSql],
+        |row| row.get(0),
     )
     .map_err(|e| format!("report: query user: {e}"))?;
-    let payload_text = sql_query_row_string(
+    let payload_text: String = sql_query_row(
         conn,
         "SELECT payload FROM events WHERE id = ?1",
-        &[rowid_param],
+        [&rowid as &dyn rusqlite::ToSql],
+        |row| row.get(0),
     )
     .map_err(|e| format!("report: query payload: {e}"))?;
     // Cross-vendor seam: SQL string → JSON Value

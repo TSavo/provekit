@@ -30,14 +30,18 @@ pub fn sql_execute(
 
 // =============================================================================
 // Boundary: concept:sql-query-row  →  provekit-shim-rusqlite
-// (typed as String; persist's row-shape post → report's json-parse pre)
+//
+// Matches the rusqlite shim's 4-param mapper form (Gap #5 user-side
+// adoption per issue #1575). The user passes a closure mapping
+// &Row<'_> -> Result<T>; persist's typed-row post → report's typed-input
+// pre at the cross-vendor seam.
 // =============================================================================
-pub fn sql_query_row_string(
-    conn: &Connection,
-    sql: &str,
-    args: &[&dyn rusqlite::ToSql],
-) -> rusqlite::Result<String> {
-    conn.query_row(sql, args)
+pub fn sql_query_row<T, P, F>(conn: &Connection, sql: &str, params: P, mapper: F) -> rusqlite::Result<T>
+where
+    P: rusqlite::Params,
+    F: FnOnce(&rusqlite::Row<'_>) -> rusqlite::Result<T>,
+{
+    conn.query_row(sql, params, mapper)
 }
 
 // =============================================================================
@@ -78,10 +82,7 @@ pub fn insert_event(conn: &Connection, event: &ValidEvent) -> rusqlite::Result<i
         "INSERT INTO events (type, user, payload) VALUES (?1, ?2, ?3)",
         &[event_type, user, payload],
     )?;
-    let rowid_str = sql_query_row_string(conn, "SELECT last_insert_rowid()", &[])?;
-    let rowid: i64 = rowid_str
-        .parse()
-        .map_err(|_| rusqlite::Error::InvalidQuery)?;
+    let rowid: i64 = sql_query_row(conn, "SELECT last_insert_rowid()", [], |row| row.get(0))?;
     if rowid <= 0 {
         panic!("persist: SQL INTEGER PRIMARY KEY post violated — rowid <= 0");
     }
