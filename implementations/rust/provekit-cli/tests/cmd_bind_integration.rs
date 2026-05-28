@@ -125,7 +125,7 @@ fn assert_success(label: &str, output: &std::process::Output) {
 }
 
 #[test]
-fn bind_from_stdin_emits_named_term_document_with_promotion_decisions() {
+fn bind_from_stdin_emits_named_term_document_without_promotion() {
     let mut child = Command::new(provekit_bin())
         .arg("bind")
         .stdin(Stdio::piped())
@@ -162,9 +162,12 @@ fn bind_from_stdin_emits_named_term_document_with_promotion_decisions() {
         named["terms"][0]["witnesses"][0]["predicateText"],
         "out == balance + amount"
     );
-    assert_eq!(
-        named["promotionDecisionMementos"][0]["header"]["kind"],
-        "promotion-decision"
+    // Promotion was torn out of the bind/verify pipeline; bind must NOT emit
+    // promotion-decision mementos anymore. Guard the teardown.
+    assert!(
+        named["promotionDecisionMementos"].is_null(),
+        "promotion teardown: bind must not emit promotion-decision mementos, got {:?}",
+        named["promotionDecisionMementos"]
     );
 }
 

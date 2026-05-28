@@ -10,6 +10,8 @@
 // `targetProofCid`. See protocol/specs/2026-04-30-ir-formal-grammar.md
 // § "Bridge target pinning: the shim-poisoning vector".
 
+use serde_json::{json, Value as Json};
+
 use crate::types::{memento_body, memento_kind, CallSite, MementoPool, ResolvedProperty};
 
 pub fn run(cs: &CallSite, pool: &MementoPool) -> Result<ResolvedProperty, String> {
@@ -64,7 +66,15 @@ pub fn run(cs: &CallSite, pool: &MementoPool) -> Result<ResolvedProperty, String
         }
     }
 
-    let ir_formula = body.get("pre").cloned();
+    // A body-derived contract emits its precondition as a BARE predicate over
+    // a named formal (e.g. `encoding >= 0`). The discharge stages
+    // (`instantiate`, `build_implication_obligation`) require it quantified, so
+    // the actual passed at the callsite can be substituted for the formal.
+    // Synthesize `forall (formal). pre` here from the contract's own
+    // `formals`/`formalSorts`. Single-formal: the callsite model tracks a
+    // single arg term, so we bind the first formal. An already-quantified pre
+    // (hand-built bundles) passes through untouched.
+    let ir_formula = body.get("pre").cloned().map(|pre| wrap_pre_forall(pre, body));
     // A target carrying a `formals` array is a body-derived op-contract
     // (body-bearing). The caller must NOT vacuous-pass such a target if its
     // obligation was not reduced + discharged; it must refuse. Surface the
@@ -83,4 +93,32 @@ pub fn run(cs: &CallSite, pool: &MementoPool) -> Result<ResolvedProperty, String
         ir_kit_version: String::new(),
         target_is_body_bearing,
     })
+}
+
+/// Wrap a bare precondition formula in `forall (firstFormal: sort). pre` so the
+/// discharge stages can substitute the callsite's actual for the formal. If the
+/// pre is already a `forall`, or the contract carries no `formals`, it is
+/// returned unchanged (no double-wrap; nothing to quantify).
+fn wrap_pre_forall(pre: Json, body: &Json) -> Json {
+    if pre.get("kind").and_then(|v| v.as_str()) == Some("forall") {
+        return pre;
+    }
+    let Some(name) = body
+        .get("formals")
+        .and_then(|v| v.as_array())
+        .and_then(|a| a.first())
+        .and_then(|v| v.as_str())
+    else {
+        return pre;
+    };
+    // The formal's sort is already canonical (the lifter emits the canonical
+    // primitive set; integers are `Int`). Use it directly; default to `Int`
+    // when a contract omits formalSorts.
+    let sort = body
+        .get("formalSorts")
+        .and_then(|v| v.as_array())
+        .and_then(|a| a.first())
+        .cloned()
+        .unwrap_or_else(|| json!({"kind": "primitive", "name": "Int"}));
+    json!({"kind": "forall", "name": name, "sort": sort, "body": pre})
 }

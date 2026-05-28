@@ -959,22 +959,24 @@ mod tests {
         assert_eq!(
             ast.formal_sorts,
             vec![
+                // Integers canonicalize to `Int` (width is a refinement, not a
+                // sort); `&[u32]` -> `Ref<Slice<Int>>`, `usize` -> `Int`.
                 Sort::Primitive {
-                    name: "Ref<Slice<U32>>".to_string()
+                    name: "Ref<Slice<Int>>".to_string()
                 },
                 Sort::Primitive {
-                    name: "Usize".to_string()
+                    name: "Int".to_string()
                 },
             ],
-            "formal_sorts must be [Ref<Slice<U32>>, Usize]: {:?}",
+            "formal_sorts must be [Ref<Slice<Int>>, Int]: {:?}",
             ast.formal_sorts
         );
         assert_eq!(
             ast.return_sort,
             Sort::Primitive {
-                name: "U32".to_string()
+                name: "Int".to_string()
             },
-            "return_sort must be U32: {:?}",
+            "return_sort must be Int (u32 canonicalizes to Int): {:?}",
             ast.return_sort
         );
     }

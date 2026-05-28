@@ -6340,7 +6340,14 @@ impl LanguageTransitionMemento {
 
 impl WitnessMemento {
     pub fn recompute_cid(&self) -> Result<String, MigrationReceiptError> {
-        migration_cid_without_keys(self, &["cid"])
+        // The CID addresses WHAT is attested -- the observation (subject,
+        // fixture, measurements, outcome). It is not the substrate's job to say
+        // HOW it is attested: the signer identity and the signature bytes are
+        // the attestation layer, excluded from the preimage. The same
+        // observation attested by a different key is the SAME CID (same WHAT),
+        // a different attestation. (Excluding only "cid" was a bug: it baked
+        // the HOW into the WHAT and made a self-consistent CID impossible.)
+        migration_cid_without_keys(self, &["cid", "signed_by", "signature"])
     }
 
     pub fn validate(&self) -> Result<(), MigrationReceiptError> {

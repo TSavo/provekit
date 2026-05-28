@@ -487,9 +487,6 @@ pub fn run(args: ProveArgs) -> u8 {
         return run_target(&args.project, &args.output, target);
     }
 
-    if args.require_empirically_witnessed.is_some() {
-        return run_empirically_witnessed_gate(&args);
-    }
 
     if args.artifact.is_some() || args.proof.is_some() || args.policy.is_some() {
         return run_admission_gate(&args);
@@ -691,99 +688,6 @@ fn solver_text(formula: &Value, target: ProveTarget) -> Result<String, String> {
                     text
                 })
                 .map_err(|error| error.to_string())
-        }
-    }
-}
-
-fn run_empirically_witnessed_gate(args: &ProveArgs) -> u8 {
-    let concept = match args.require_empirically_witnessed.as_deref() {
-        Some(concept) if !concept.trim().is_empty() => concept,
-        _ => {
-            eprintln!(
-                "{}: --require-empirically-witnessed requires a concept",
-                "error".red().bold()
-            );
-            return crate::EXIT_USER_ERROR;
-        }
-    };
-    let fixture = match args.require_fixture.as_deref() {
-        Some(fixture) if !fixture.trim().is_empty() => fixture,
-        _ => {
-            eprintln!(
-                "{}: --require-fixture is required with --require-empirically-witnessed",
-                "error".red().bold()
-            );
-            return crate::EXIT_USER_ERROR;
-        }
-    };
-    let project_root: PathBuf = args.project.clone().unwrap_or_else(|| PathBuf::from("."));
-    if !project_root.exists() {
-        eprintln!(
-            "{}: project root does not exist: {}",
-            "error".red().bold(),
-            project_root.display()
-        );
-        return crate::EXIT_USER_ERROR;
-    }
-    let policy_path = match args.consensus_policy.as_ref() {
-        Some(path) => path,
-        None => {
-            eprintln!(
-                "{}: --consensus-policy is required with --require-empirically-witnessed",
-                "error".red().bold()
-            );
-            return crate::EXIT_USER_ERROR;
-        }
-    };
-    let policy = match crate::promotion_query::load_consensus_policy(policy_path) {
-        Ok(policy) => policy,
-        Err(err) => {
-            eprintln!("{}: {err}", "error".red().bold());
-            return crate::EXIT_USER_ERROR;
-        }
-    };
-
-    match crate::promotion_query::query_consensus_vector_for_policy(
-        &project_root,
-        &args.with.iter().map(PathBuf::from).collect::<Vec<_>>(),
-        concept,
-        fixture,
-        &policy,
-    ) {
-        Ok(Some(hit)) => {
-            let report = crate::promotion_query::status_json(concept, fixture, &hit, Some(&policy));
-            let ok = report["ok"].as_bool().unwrap_or(false);
-            if args.out.json {
-                println!("{}", serde_json::to_string_pretty(&report).unwrap());
-            } else if !args.out.quiet {
-                println!(
-                    "verify empirically-witnessed: {}",
-                    if ok { "accepted" } else { "rejected" }
-                );
-                println!("  concept: {concept}");
-                println!("  fixture: {fixture}");
-                println!("  promoted_op: {}", hit.status.key.promoted_op);
-                println!("  decisions: {}", hit.status.decision_cids.len());
-            }
-            if ok {
-                crate::EXIT_OK
-            } else {
-                crate::EXIT_VERIFY_FAIL
-            }
-        }
-        Ok(None) => {
-            let report = crate::promotion_query::missing_json(concept, fixture);
-            if args.out.json {
-                println!("{}", serde_json::to_string_pretty(&report).unwrap());
-            } else if !args.out.quiet {
-                println!("verify empirically-witnessed: rejected");
-                println!("  reason: required promotion was not found");
-            }
-            crate::EXIT_VERIFY_FAIL
-        }
-        Err(err) => {
-            eprintln!("{}: {err}", "error".red().bold());
-            crate::EXIT_USER_ERROR
         }
     }
 }

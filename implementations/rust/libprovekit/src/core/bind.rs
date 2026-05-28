@@ -1,19 +1,16 @@
 // SPDX-License-Identifier: Apache-2.0
 
 use std::collections::{BTreeMap, BTreeSet};
-use std::path::{Path, PathBuf};
 
 use provekit_canonicalizer::blake3_512_of;
 use provekit_ir_types::{
-    ExamManifestMemento, GapKind, IrFormula, IrTerm, OptionStatus, PromotionDecisionEnvelope,
-    PromotionDecisionHeader, PromotionDecisionMemento, PromotionDecisionMetadata, PromotionGate,
-    PromotionResult, ResolutionOption, ResolutionOptionKind, Sort, TransportGapMemento,
+    ExamManifestMemento, GapKind, IrFormula, IrTerm, OptionStatus, ResolutionOption,
+    ResolutionOptionKind, Sort, TransportGapMemento,
 };
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value as Json};
 use thiserror::Error;
 
-use crate::proofir_bridge::CatalogIndex;
 
 use super::primitives::address;
 use super::traits::{Kit, KitError};
@@ -22,7 +19,6 @@ use super::types::{
 };
 
 const CONCEPT_BIND_RESULT: &str = "concept:bind-result";
-const CONCEPT_BIND_RESULT_CID: &str = "blake3-512:22dcd7895fd7abee9d9f34893b5ab9513b4801c0244a64e7a8c5180bba313f3b116d045b0aa3377f39bd892e020a1bd99d4bc60547b11fd7131fbe2f7e33dd75";
 const CONCEPT_OP_APPLICATION: &str = "concept:op-application";
 const CONCEPT_SEQ: &str = "concept:seq";
 
@@ -239,8 +235,6 @@ pub struct NamedTermDocument {
     #[serde(default, rename = "gapRecords", skip_serializing_if = "Vec::is_empty")]
     pub gap_records: Vec<Json>,
     pub kind: String,
-    #[serde(rename = "promotionDecisionMementos")]
-    pub promotion_decision_mementos: Vec<PromotionDecisionMemento>,
     #[serde(rename = "schemaVersion")]
     pub schema_version: String,
     #[serde(rename = "sourceLanguage")]
@@ -420,7 +414,6 @@ pub fn bind_term_document(
     let catalog = seed_catalog();
     let mut seen_names: BTreeSet<String> = BTreeSet::new();
     let mut terms = Vec::with_capacity(entries.len());
-    let mut decisions = Vec::new();
     let mut gap_records = Vec::new();
     let mut operation_namer = UnnamedConceptNamer::default();
     for (idx, entry) in entries.into_iter().enumerate() {
@@ -434,15 +427,8 @@ pub fn bind_term_document(
         };
         let site_memento_cid = site_cid(&entry, &name, &term_shape_cid)?;
         let witnesses = named_witnesses(&entry);
-        let promoted_cid = blake3_512_of(format!("provekit-bind/promoted/{name}").as_bytes());
         let named_term_tree =
             named_operation_tree(&entry.term_shape, &catalog, &mut operation_namer)?;
-        decisions.extend(promotion_decisions(
-            &term_shape_cid,
-            &promoted_cid,
-            &site_memento_cid,
-            &witnesses,
-        )?);
         if witnesses.is_empty() {
             gap_records.push(wp_rule_synthesis_gap_record(
                 &source_language,
@@ -497,7 +483,6 @@ pub fn bind_term_document(
         candidate_cluster_manifest,
         gap_records,
         kind: "named-term-document".to_string(),
-        promotion_decision_mementos: decisions,
         schema_version: "1".to_string(),
         source_language,
         terms,
@@ -562,7 +547,20 @@ fn bind_payload_wire_named_term_document(named: &NamedTermDocument) -> NamedTerm
 }
 
 pub fn concept_bind_result_cid() -> Cid {
-    Cid::try_from(CONCEPT_BIND_RESULT_CID).expect("concept:bind-result CID is pinned")
+    // Computed from the pinned SHAPE, never a pinned hash. The address is
+    // whatever json_cid(grammar_op_shape) produces, by construction -- there is
+    // no magic-number literal to drift from its preimage.
+    ConceptOpCatalog
+        .cid(CONCEPT_BIND_RESULT)
+        .expect("concept:bind-result is a language primitive")
+}
+
+/// Resolve a grammar primitive's address from the code shape-authority. `Some`
+/// iff `name` is a language primitive (op-application / seq / ite / bind-result);
+/// the address is `json_cid` of its pinned shape, computed, never frozen.
+/// Consumers derive handles from this; they never store a copy.
+pub fn grammar_op_cid(name: &str) -> Option<Cid> {
+    ConceptOpCatalog.cid(name)
 }
 
 pub fn bind_result_payload(
@@ -1235,49 +1233,115 @@ fn named_witness(role: &str, predicate_text: &str, source_kind: &str) -> NamedWi
     }
 }
 
-struct ConceptOpCatalog {
-    index: CatalogIndex,
-}
+// Grammar lives in CODE, pinned by SHAPE, never on disk. An IR grammar
+// primitive (op-application / seq / ite / bind-result) is the LANGUAGE, not a
+// promoted concept -- and a thing is one or the other, never both. So its
+// identity is the `json_cid` of its pure, name-free, positional structural
+// shape, computed here from a shape compiled into the binary. There is no disk
+// load, no catalog, and no `required_cid` that can fail on an empty catalog:
+// the language is always present because it is the code.
+struct ConceptOpCatalog;
 
 impl ConceptOpCatalog {
     fn load() -> Result<Self, BindError> {
-        let root = find_concept_shapes_root().ok_or_else(|| {
-            BindError::Failed("concept-shapes catalog root not found".to_string())
-        })?;
-        let index = CatalogIndex::from_catalog_root(root.join("catalog"))
-            .map_err(|error| BindError::Failed(format!("load concept-shapes catalog: {error}")))?;
-        Ok(Self { index })
+        Ok(Self)
     }
 
     fn required_cid(&self, name: &str) -> Result<Cid, BindError> {
-        self.cid(name).ok_or_else(|| {
-            BindError::Failed(format!(
-                "concept op `{name}` missing from concept-shapes catalog"
-            ))
-        })
+        self.cid(name)
+            .ok_or_else(|| BindError::Failed(format!("`{name}` is not a language primitive")))
     }
 
     fn cid(&self, name: &str) -> Option<Cid> {
-        self.index
-            .op_definition_cid(name)
-            .and_then(|cid| Cid::try_from(cid).ok())
+        let shape = grammar_op_shape(name)?;
+        let cid = crate::canonical::json_cid(&shape).ok()?;
+        Cid::try_from(cid.as_str()).ok()
     }
 
     fn resolved_name_and_cid(&self, name: &str) -> Result<(String, Cid), BindError> {
         if let Some(cid) = self.cid(name) {
             return Ok((name.to_string(), cid));
         }
-        if !name.starts_with("concept:") {
-            let concept_name = format!("concept:{name}");
-            if let Some(cid) = self.cid(&concept_name) {
-                return Ok((concept_name, cid));
-            }
-        }
+        // Not a language primitive: an unwitnessed concept resolves to the
+        // grammar floor -- the generic op-application -- rather than fabricating
+        // a name. (Once promotion-by-witnessing lands, a witnessed concept
+        // carries its own address here.)
         Ok((
             CONCEPT_OP_APPLICATION.to_string(),
             self.required_cid(CONCEPT_OP_APPLICATION)?,
         ))
     }
+}
+
+/// The pure, name-free, positional structural shape of an IR grammar primitive.
+/// Grammar is the language: pinned by shape in code, addressed by `json_cid` of
+/// this shape. `fn_name`, `operator`, formal parameter names, `wp_note` prose,
+/// and the memento envelope are all sugar and are ABSENT FROM THE PREIMAGE BY
+/// CONSTRUCTION -- born pure, never stripped. Slot references are positional.
+fn grammar_op_shape(name: &str) -> Option<Json> {
+    use serde_json::json;
+    let sort = |n: &str| json!({ "kind": "ctor", "name": n, "args": [] });
+    let slot = |i: usize| json!({ "kind": "slot", "index": i });
+    let pre = json!({ "kind": "atomic", "name": "true", "args": [] });
+    let shape = match name {
+        CONCEPT_OP_APPLICATION => json!({
+            "kind": "grammar-op",
+            "formalSorts": [sort("Cid"), sort("List<Term>")],
+            "returnSort": sort("Term"),
+            "pre": pre,
+            "post": {
+                "arity": ["Cid", "List<Term>"],
+                "result": "Term",
+                "slotTerms": [slot(0), slot(1)]
+            },
+            "effects": []
+        }),
+        CONCEPT_SEQ => json!({
+            "kind": "grammar-op",
+            "formalSorts": [sort("Stmt"), sort("Stmt")],
+            "returnSort": sort("Stmt"),
+            "pre": pre,
+            "post": {
+                "arity": ["Stmt", "Stmt"],
+                "result": "Stmt",
+                "wpRule": {
+                    "kind": "apply",
+                    "fn": "wp_slot_0",
+                    "args": [{
+                        "kind": "apply",
+                        "fn": "wp_slot_1",
+                        "args": [{ "kind": "var", "name": "Q" }]
+                    }]
+                }
+            },
+            "effects": [{ "kind": "effect-polymorphic", "rule": "union(slot_0.effects, slot_1.effects)" }]
+        }),
+        "concept:ite" => json!({
+            "kind": "grammar-op",
+            "formalSorts": [sort("Bool"), sort("Expr"), sort("Expr")],
+            "returnSort": sort("Expr"),
+            "pre": pre,
+            "post": {
+                "arity": ["Bool", "Expr", "Expr"],
+                "result": "Expr"
+            },
+            "effects": [{ "kind": "effect-polymorphic", "rule": "union branch value effects" }]
+        }),
+        CONCEPT_BIND_RESULT => json!({
+            "kind": "grammar-op",
+            "formalSorts": [sort("Term"), sort("Term")],
+            "returnSort": sort("BoundTerm"),
+            "pre": pre,
+            "post": {
+                "arity": ["Term", "Term"],
+                "result": "BoundTerm",
+                "slotTerms": [slot(0), slot(1)]
+            },
+            "effects": []
+        }),
+        _ => return None,
+    };
+    Some(shape)
 }
 
 fn named_term_document_op_tree(
@@ -1495,8 +1559,6 @@ fn document_metadata_value(named: &NamedTermDocument) -> Result<Json, BindError>
         "candidateClusterManifest": serde_json::to_value(&named.candidate_cluster_manifest)
             .map_err(|error| BindError::Failed(format!("serialize candidate cluster manifest: {error}")))?,
         "kind": named.kind.clone(),
-        "promotionDecisionMementos": serde_json::to_value(&named.promotion_decision_mementos)
-            .map_err(|error| BindError::Failed(format!("serialize promotion decisions: {error}")))?,
         "schemaVersion": named.schema_version.clone(),
         "sourceLanguage": named.source_language.clone(),
         "workspaceRoot": named.workspace_root.clone(),
@@ -1545,13 +1607,6 @@ fn named_term_document_from_op_tree(term: &Term) -> Result<NamedTermDocument, Bi
     let document = first.1.get("document").ok_or_else(|| {
         BindError::Failed("named-term citation missing document metadata".to_string())
     })?;
-    let promotion_decision_mementos = document
-        .get("promotionDecisionMementos")
-        .cloned()
-        .map(serde_json::from_value)
-        .transpose()
-        .map_err(|error| BindError::Failed(format!("parse promotion decisions: {error}")))?
-        .unwrap_or_default();
     let gap_records = document
         .get("gapRecords")
         .cloned()
@@ -1586,7 +1641,6 @@ fn named_term_document_from_op_tree(term: &Term) -> Result<NamedTermDocument, Bi
             .and_then(Json::as_str)
             .unwrap_or("named-term-document")
             .to_string(),
-        promotion_decision_mementos,
         schema_version: document
             .get("schemaVersion")
             .and_then(Json::as_str)
@@ -1654,64 +1708,6 @@ fn site_cid(_entry: &BindLiftEntry, name: &str, term_shape_cid: &str) -> Result<
         "termShapeCid": term_shape_cid,
     });
     crate::canonical::json_cid(&value).map_err(|e| BindError::Failed(e.to_string()))
-}
-
-fn promotion_decisions(
-    candidate_cid: &str,
-    promoted_cid: &str,
-    site_memento_cid: &str,
-    witnesses: &[NamedWitness],
-) -> Result<Vec<PromotionDecisionMemento>, BindError> {
-    witnesses
-        .iter()
-        .enumerate()
-        .map(|(idx, witness)| {
-            let evidence_cid = crate::canonical::json_cid(&json!({
-                "predicate": witness.predicate,
-                "predicateText": witness.predicate_text,
-                "role": witness.role,
-                "siteMementoCid": site_memento_cid,
-                "sourceKind": witness.source_kind,
-            }))
-            .map_err(|e| BindError::Failed(e.to_string()))?;
-            let mut decision = PromotionDecisionMemento {
-                envelope: PromotionDecisionEnvelope {
-                    declared_at: "2026-05-15T00:00:00.000Z".to_string(),
-                    signature: String::new(),
-                    signer: "builtin:provekit-bind".to_string(),
-                },
-                header: PromotionDecisionHeader {
-                    candidate_cid: candidate_cid.to_string(),
-                    cid: String::new(),
-                    decider_cid: "builtin:provekit-bind".to_string(),
-                    decision_payload: json!({
-                        "evidence_count": 1,
-                        "ordinal": idx,
-                        "result": "admitted"
-                    }),
-                    evidence_cids: vec![evidence_cid],
-                    gate: PromotionGate::Proof,
-                    kind: "promotion-decision".to_string(),
-                    policy_cid: "builtin:provekit-bind/default-policy".to_string(),
-                    promoted_cid: promoted_cid.to_string(),
-                    result: PromotionResult::Admitted,
-                    schema_version: "1".to_string(),
-                },
-                metadata: PromotionDecisionMetadata {
-                    counterexample_cids: None,
-                    note: Some("bind admitted lifted evidence into named term".to_string()),
-                    source_url: None,
-                },
-            };
-            decision.header.cid = decision
-                .recompute_header_cid()
-                .map_err(|err| BindError::Failed(err.to_string()))?;
-            decision
-                .validate()
-                .map_err(|err| BindError::Failed(err.to_string()))?;
-            Ok(decision)
-        })
-        .collect()
 }
 
 fn wp_rule_synthesis_gap_record(
@@ -1860,165 +1856,19 @@ impl Catalog {
 }
 
 fn seed_catalog() -> Catalog {
-    let mut entries = Vec::new();
-    if let Some(root) = find_concept_shapes_root() {
-        entries.extend(load_catalog_abstractions(&root));
-        entries.extend(load_catalog_specs(&root));
-    }
-    entries.extend(legacy_classification_entries());
-    Catalog { entries }
-}
-
-fn legacy_classification_entries() -> Vec<CatalogEntry> {
-    vec![
-        CatalogEntry {
-            name: "concept:retry-with-bounded-attempts".to_string(),
-            shape_cid: String::new(),
-            classification: "retry-loop",
-        },
-        CatalogEntry {
-            name: "concept:guard-then-commit".to_string(),
-            shape_cid: String::new(),
-            classification: "guard-then-commit",
-        },
-    ]
-}
-
-fn find_concept_shapes_root() -> Option<PathBuf> {
-    let mut starts = Vec::new();
-    if let Ok(cwd) = std::env::current_dir() {
-        starts.push(cwd);
-    }
-    if let Some(manifest_dir) = option_env!("CARGO_MANIFEST_DIR") {
-        starts.push(PathBuf::from(manifest_dir));
-    }
-    for start in starts {
-        for ancestor in start.ancestors() {
-            let candidate = ancestor.join("menagerie").join("concept-shapes");
-            if candidate.is_dir() {
-                return Some(candidate);
-            }
-        }
-    }
-    None
-}
-
-fn load_catalog_abstractions(concept_shapes_root: &Path) -> Vec<CatalogEntry> {
-    let dir = concept_shapes_root.join("catalog").join("abstractions");
-    catalog_json_files(&dir, ".json")
-        .into_iter()
-        .filter_map(|path| load_catalog_abstraction(&path))
-        .collect()
-}
-
-fn load_catalog_abstraction(path: &Path) -> Option<CatalogEntry> {
-    let doc = read_json_file(path)?;
-    let name = doc
-        .get("memento")
-        .and_then(|memento| memento.get("operator"))
-        .and_then(Json::as_str)?
-        .to_string();
-    let shape_cid = doc
-        .get("cid")
-        .and_then(Json::as_str)
-        .map(str::to_string)
-        .or_else(|| shape_cid_from_abstraction_filename(path))?;
-    Some(CatalogEntry {
-        name,
-        shape_cid,
-        classification: "catalog-shape",
-    })
-}
-
-fn load_catalog_specs(concept_shapes_root: &Path) -> Vec<CatalogEntry> {
-    let dir = concept_shapes_root.join("specs");
-    catalog_json_files(&dir, ".spec.json")
-        .into_iter()
-        .flat_map(|path| load_catalog_spec(&path))
-        .collect()
-}
-
-fn load_catalog_spec(path: &Path) -> Vec<CatalogEntry> {
-    let Some(doc) = read_json_file(path) else {
-        return Vec::new();
-    };
-    let Some(name) = doc
-        .get("fn_name")
-        .and_then(Json::as_str)
-        .map(str::to_string)
-    else {
-        return Vec::new();
-    };
-    let mut entries = Vec::new();
-    if let Ok(shape_cid) = crate::canonical::json_cid(&doc) {
-        entries.push(CatalogEntry {
-            name: name.clone(),
-            shape_cid,
-            classification: "catalog-shape",
-        });
-    }
-    if name.starts_with("concept:") {
-        if let Some(operator) = doc
-            .get("post")
-            .and_then(|post| post.get("operator"))
-            .and_then(Json::as_str)
-            .map(|operator| operator.replace('_', "-"))
-        {
-            if let Ok(shape_cid) = crate::canonical::json_cid(&operation_lookup_shape(&operator)) {
-                entries.push(CatalogEntry {
-                    name,
-                    shape_cid,
-                    classification: "catalog-shape",
-                });
-            }
-        }
-    }
-    entries
-}
-
-fn catalog_json_files(dir: &Path, suffix: &str) -> Vec<PathBuf> {
-    if !dir.is_dir() {
-        return Vec::new();
-    }
-    let mut paths = Vec::new();
-    collect_catalog_json_files(dir, suffix, &mut paths);
-    paths.sort();
-    paths
-}
-
-fn collect_catalog_json_files(dir: &Path, suffix: &str, out: &mut Vec<PathBuf>) {
-    let Ok(entries) = std::fs::read_dir(dir) else {
-        return;
-    };
-    for entry in entries.filter_map(Result::ok) {
-        let path = entry.path();
-        let Ok(file_type) = entry.file_type() else {
-            continue;
-        };
-        if file_type.is_dir() {
-            collect_catalog_json_files(&path, suffix, out);
-        } else if file_type.is_file()
-            && path
-                .file_name()
-                .and_then(|name| name.to_str())
-                .is_some_and(|name| name.ends_with(suffix))
-        {
-            out.push(path);
-        }
+    // The catalog is the signature of witnesses having witnessed. At t=0,
+    // before any witness has witnessed, it is EMPTY. There is no seed: a
+    // hand-assembled initial population is the lie -- concepts named/classified
+    // by fiat instead of accreted from witnessing. Concept naming falls back to
+    // UNNAMED until a real witness promotes a concept in. (The former
+    // `legacy_classification_entries` carried empty `shape_cid`s -- not even
+    // content-addressed, pure fiction -- and the on-disk concept-shapes load
+    // was hand-authored, UNSIGNED_DEV_ONLY mementos. Both gone.)
+    Catalog {
+        entries: Vec::new(),
     }
 }
 
-fn read_json_file(path: &Path) -> Option<Json> {
-    let bytes = std::fs::read(path).ok()?;
-    serde_json::from_slice(&bytes).ok()
-}
-
-fn shape_cid_from_abstraction_filename(path: &Path) -> Option<String> {
-    let file_name = path.file_name()?.to_str()?;
-    let (_, cid_hex_with_suffix) = file_name.split_once(".blake3-512:")?;
-    let cid_hex = cid_hex_with_suffix.strip_suffix(".json")?;
-    Some(format!("blake3-512:{cid_hex}"))
-}
 
 fn primitive_sort(name: &str) -> Sort {
     Sort::Primitive {
@@ -2146,7 +1996,6 @@ mod tests {
         assert_eq!(named.kind, "named-term-document");
         assert_eq!(named.terms[0].concept_name, "concept:demo");
         assert_eq!(named.terms[0].function, "f");
-        assert_eq!(named.promotion_decision_mementos.len(), 1);
     }
 
     #[test]
@@ -2306,7 +2155,6 @@ mod tests {
                 candidate_cluster_manifest: CandidateClusterManifest::default(),
                 gap_records: vec![],
                 kind: "named-term-document".to_string(),
-                promotion_decision_mementos: vec![],
                 schema_version: "1".to_string(),
                 source_language: "rust".to_string(),
                 terms: vec![NamedTerm {
@@ -2350,7 +2198,6 @@ mod tests {
             candidate_cluster_manifest: CandidateClusterManifest::default(),
             gap_records: vec![],
             kind: "named-term-document".to_string(),
-            promotion_decision_mementos: vec![],
             schema_version: "1".to_string(),
             source_language: "rust".to_string(),
             terms: vec![NamedTerm {
@@ -2406,122 +2253,5 @@ mod tests {
         );
     }
 
-    #[test]
-    fn seed_catalog_loads_real_concept_shape_catalog() {
-        let catalog = seed_catalog();
-        assert!(
-            catalog.entries.len() > 10,
-            "catalog should load real concept-shape entries, got {}",
-            catalog.entries.len()
-        );
-        assert!(
-            catalog
-                .entries
-                .iter()
-                .any(|entry| entry.name == "concept:identity"),
-            "catalog should include concept:identity"
-        );
-        assert!(
-            catalog
-                .entries
-                .iter()
-                .any(|entry| entry.name == "concept:new"),
-            "catalog should include algorithm-tier concept:new"
-        );
-    }
 
-    #[test]
-    fn catalog_matches_loaded_shape_cid_before_legacy_classification() {
-        let catalog = seed_catalog();
-        let identity_shape_cid = "blake3-512:6920f6e26184ca316f3dce6c02690b515c11b3d96d3b476bb5abe67cb55e1885031484c3add8a5f26b630e305ad3fe41eed10acca2e141898f9d6629c278867f";
-        let unknown_shape = TermShape::from_kit(
-            json!({
-                "kind": "body",
-                "stmts": []
-            }),
-            identity_shape_cid.to_string(),
-        );
-        let matched = catalog
-            .match_shape(identity_shape_cid, &unknown_shape)
-            .expect("identity CID should match before classify fallback");
-        assert_eq!(matched.name, "concept:identity");
-    }
-
-    #[test]
-    fn bind_names_blake3_512_of_operations_from_catalog() {
-        let term = json!({
-            "kind": "ir-document",
-            "sourceLanguage": "rust",
-            "workspaceRoot": "/tmp/provekit-bind-test",
-            "ir": [{
-                "kind": "bind-lift-entry",
-                "file": "implementations/rust/provekit-canonicalizer/src/hash.rs",
-                "fn_name": "blake3_512_of",
-                "param_names": ["bytes"],
-                "param_types": ["& [u8]"],
-                "return_type": "String",
-                "term_shape": {
-                    "kind": "body",
-                    "stmts": [
-                        {"kind": "let"},
-                        {"kind": "call"},
-                        {"kind": "let"},
-                        {"kind": "call"},
-                        {"kind": "let"},
-                        {"kind": "let"},
-                        {"kind": "call"},
-                        {"kind": "call"},
-                        {"kind": "opaque"}
-                    ]
-                },
-                "witnesses": []
-            }]
-        });
-
-        let named = bind_term_document(
-            &term,
-            &BindOptions {
-                lang: "rust".to_string(),
-                exam_manifest: None,
-            },
-        )
-        .expect("bind succeeds");
-        let named_json = serde_json::to_value(&named).expect("named term serializes");
-        let tree = named_json["terms"][0]
-            .get("namedTermTree")
-            .expect("operation-level named term tree is emitted");
-        let nested_names = serde_json::to_string(tree).expect("tree stringifies");
-        let mut operation_concepts = Vec::new();
-        collect_tree_concept_names(tree, &mut operation_concepts);
-        operation_concepts.sort();
-        operation_concepts.dedup();
-        eprintln!(
-            "operation-level matches for blake3_512_of: {}",
-            operation_concepts.join(", ")
-        );
-
-        assert!(
-            nested_names.contains("\"conceptName\":\"concept:call\""),
-            "blake3_512_of call operations should match catalog concept:call; tree={nested_names}"
-        );
-        assert!(
-            tree.get("args")
-                .and_then(Json::as_array)
-                .is_some_and(|args| !args.is_empty()),
-            "operation tree should retain recursive children; tree={tree}"
-        );
-    }
-
-    fn collect_tree_concept_names(tree: &Json, out: &mut Vec<String>) {
-        if let Some(name) = tree.get("conceptName").and_then(Json::as_str) {
-            if name.starts_with("concept:") {
-                out.push(name.to_string());
-            }
-        }
-        if let Some(args) = tree.get("args").and_then(Json::as_array) {
-            for arg in args {
-                collect_tree_concept_names(arg, out);
-            }
-        }
-    }
 }

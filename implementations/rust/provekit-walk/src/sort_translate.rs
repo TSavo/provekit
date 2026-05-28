@@ -210,18 +210,17 @@ fn path_sort_name(p: &syn::TypePath) -> String {
 /// to using the ident as a user-defined type sort name.
 fn primitive_sort_name(ident: &str) -> Option<&'static str> {
     Some(match ident {
-        "u8" => "U8",
-        "u16" => "U16",
-        "u32" => "U32",
-        "u64" => "U64",
-        "u128" => "U128",
-        "usize" => "Usize",
-        "i8" => "I8",
-        "i16" => "I16",
-        "i32" => "I32",
-        "i64" => "I64",
-        "i128" => "I128",
-        "isize" => "Isize",
+        // Integer types canonicalize to the spec's `Int`. Per
+        // canonicalization-grammar.md §5 the canonical primitive set is a
+        // fixed {Bool, Int, Real, String, Ref, ...}; width (`u32` vs `u64`) is
+        // NOT a sort distinction. Width is a range refinement -- sidecar to the
+        // contract -- and the SOURCE type system already owns width and
+        // narrowing (a `u64 -> u32` truncation is a compile error, not our
+        // job). Collapsing to `Int` is what lets a Rust `i64` contract
+        // federate (share CIDs) with a Java `long` contract over the same
+        // canonical `Int`, and keeps the solver in LIA.
+        "u8" | "u16" | "u32" | "u64" | "u128" | "usize" | "i8" | "i16" | "i32" | "i64"
+        | "i128" | "isize" => "Int",
         "f32" => "F32",
         "f64" => "F64",
         "bool" => "Bool",
@@ -474,29 +473,14 @@ fn charon_literal_sort_name(lit: &serde_json::Value) -> String {
     }
 
     // Object: {"Literal": {"UInt": "U32"}} or {"Literal": {"SInt": "I8"}}
-    // or {"Literal": {"Float": "F32"}}
+    // or {"Literal": {"Float": "F32"}}. Integer widths canonicalize to `Int`
+    // (see primitive_sort_name): width is a refinement, not a sort. Keeps the
+    // syn and Charon paths in agreement on canonical `Int`.
     if let Some(obj) = lit.as_object() {
-        if let Some(uint) = obj.get("UInt").and_then(|v| v.as_str()) {
-            return match uint {
-                "U8" => "U8".to_string(),
-                "U16" => "U16".to_string(),
-                "U32" => "U32".to_string(),
-                "U64" => "U64".to_string(),
-                "U128" => "U128".to_string(),
-                "Usize" => "Usize".to_string(),
-                _ => uint.to_string(),
-            };
-        }
-        if let Some(sint) = obj.get("SInt").and_then(|v| v.as_str()) {
-            return match sint {
-                "I8" => "I8".to_string(),
-                "I16" => "I16".to_string(),
-                "I32" => "I32".to_string(),
-                "I64" => "I64".to_string(),
-                "I128" => "I128".to_string(),
-                "Isize" => "Isize".to_string(),
-                _ => sint.to_string(),
-            };
+        if obj.get("UInt").and_then(|v| v.as_str()).is_some()
+            || obj.get("SInt").and_then(|v| v.as_str()).is_some()
+        {
+            return "Int".to_string();
         }
         if let Some(float) = obj.get("Float").and_then(|v| v.as_str()) {
             return match float {
@@ -646,16 +630,23 @@ mod tests {
     }
 
     #[test]
-    fn u32_and_u64_are_distinct() {
-        let a = syn_type_to_sort(&parse_ty("u32"));
-        let b = syn_type_to_sort(&parse_ty("u64"));
-        assert_ne!(a, b);
+    fn integer_widths_canonicalize_to_int() {
+        // Width is a refinement, not a sort: every integer width collapses to
+        // the canonical `Int` (canonicalization-grammar §5). `u32`/`u64`/`i8`
+        // are the SAME sort; their distinction lives in the contract's range
+        // refinement, not the sort name. This is the deliberate reversal of
+        // the old width-distinct "Option A".
+        let int = Sort::Primitive { name: "Int".to_string() };
+        for ty in ["u8", "u16", "u32", "u64", "u128", "usize", "i8", "i16", "i32", "i64", "i128", "isize"] {
+            assert_eq!(syn_type_to_sort(&parse_ty(ty)), int, "`{ty}` must canonicalize to Int");
+        }
     }
 
     #[test]
-    fn i8_and_u8_are_distinct() {
+    fn int_and_bool_are_distinct() {
+        // Integers collapse to Int, but Int and Bool stay distinct sorts.
         let a = syn_type_to_sort(&parse_ty("i8"));
-        let b = syn_type_to_sort(&parse_ty("u8"));
+        let b = syn_type_to_sort(&parse_ty("bool"));
         assert_ne!(a, b);
     }
 
@@ -676,7 +667,7 @@ mod tests {
         assert_eq!(
             slice_sort,
             Sort::Primitive {
-                name: "Slice<U32>".to_string()
+                name: "Slice<Int>".to_string()
             }
         );
     }
@@ -687,7 +678,7 @@ mod tests {
         assert_eq!(
             ty,
             Sort::Primitive {
-                name: "Ref<Slice<U32>>".to_string()
+                name: "Ref<Slice<Int>>".to_string()
             }
         );
     }

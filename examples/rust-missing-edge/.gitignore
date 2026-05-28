@@ -1,0 +1,4 @@
+/.provekit/proofs/
+/.provekit/runs/
+/target/
+/Cargo.lock

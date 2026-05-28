@@ -244,11 +244,6 @@ struct ClaimResult {
 }
 
 pub fn run(args: VerifyArgs) -> u8 {
-    // Early dispatch: --require-empirically-witnessed bypasses the
-    // standard solver-dispatch flow and queries the promotion catalog.
-    if args.require_empirically_witnessed.is_some() {
-        return run_empirically_witnessed_gate(&args);
-    }
 
     // Early dispatch: the supply-chain admission gate. When any of
     // --artifact / --proof / --policy is given, verify a package release
@@ -702,25 +697,13 @@ fn mint_verification_witness(
 
     // Build the content over which the CID + signature are computed.
     // (Mirrors the WitnessMemento envelope/header convention: the CID is
-    // blake3-512 of the JCS of the signable content; the signature is
-    // over the same bytes.)
-    let signable = json!({
-        "kind": "witness",
-        "schemaVersion": "1",
-        "witness_for": cs.property_cid,
-        "subject": cs.bridge_target_cid,
-        "fixture_state_cid": obligation_cid,
-        "observed_at": observed_at,
-        "sample_count": 1,
-        "measurements": measurements,
-        "outcome": "pass",
-        "signed_by": pubkey,
-    });
-    let signable_jcs = jcs_of_json(&signable)?;
-    let cid = blake3_512_of(signable_jcs.as_bytes());
-    let signature = ed25519_sign_string(signer_seed, signable_jcs.as_bytes());
-
-    let witness = provekit_ir_types::WitnessMemento {
+    // signed_by/signature are the HOW (attestation), EXCLUDED from the CID
+    // preimage per WitnessMemento::recompute_cid. Mirror witness_ingest: build
+    // the memento with signer set + empty signature, derive the CID from the
+    // canonical observation bytes, then sign the CID (the address of the WHAT).
+    // Both witness-mint paths now share one scheme: same observation => same
+    // CID regardless of who attests, and the signature attests that CID.
+    let mut witness = provekit_ir_types::WitnessMemento {
         kind: "witness".to_string(),
         schema_version: "1".to_string(),
         witness_for: cs.property_cid.clone(),
@@ -731,9 +714,12 @@ fn mint_verification_witness(
         measurements,
         outcome: "pass".to_string(),
         signed_by: Some(pubkey),
-        signature: Some(signature),
-        cid: cid.clone(),
+        signature: None,
+        cid: String::new(),
     };
+    let cid = witness.recompute_cid().map_err(|e| e.to_string())?;
+    witness.signature = Some(ed25519_sign_string(signer_seed, cid.as_bytes()));
+    witness.cid = cid.clone();
 
     let bytes =
         serde_json::to_string_pretty(&witness).map_err(|e| format!("serialize witness: {e}"))?;
@@ -745,7 +731,7 @@ fn mint_verification_witness(
     Ok(cid)
 }
 
-fn jcs_of_json(v: &Json) -> Result<String, String> {
+pub(crate) fn jcs_of_json(v: &Json) -> Result<String, String> {
     let canonical = json_to_canonical(v)?;
     Ok(encode_jcs(&canonical))
 }
@@ -964,121 +950,3 @@ mod tests {
     }
 }
 
-/// Gate: query the promotion catalog to confirm a concept has reached
-/// the empirically-witnessed promotion tier.
-///
-/// This is the `verify`-side counterpart of the same gate that lives on
-/// `prove --require-empirically-witnessed`.  The gate performs no
-/// solver dispatch and mints no witnesses; it is a pure query against
-/// the project's `.provekit/promotions` catalog.
-fn run_empirically_witnessed_gate(args: &VerifyArgs) -> u8 {
-    let concept = match args.require_empirically_witnessed.as_deref() {
-        Some(concept) if !concept.trim().is_empty() => concept,
-        _ => {
-            eprintln!(
-                "{}: --require-empirically-witnessed requires a concept",
-                "error".red().bold()
-            );
-            return EXIT_USER_ERROR;
-        }
-    };
-    let fixture = match args.require_fixture.as_deref() {
-        Some(fixture) if !fixture.trim().is_empty() => fixture,
-        _ => {
-            eprintln!(
-                "{}: --require-fixture is required with --require-empirically-witnessed",
-                "error".red().bold()
-            );
-            return EXIT_USER_ERROR;
-        }
-    };
-
-    // Resolve the project root from --project, a path-like positional,
-    // or the current directory.
-    let project_root: PathBuf = if let Some(p) = &args.project {
-        p.clone()
-    } else if let Some(kit) = &args.kit {
-        // Accept an explicit path passed as the positional argument.
-        let p = PathBuf::from(kit);
-        if p.is_absolute() || kit.contains(std::path::MAIN_SEPARATOR) || kit.starts_with('.') {
-            p
-        } else {
-            // Treat a bare kit name as a project path of last resort;
-            // the caller is responsible for passing a valid directory.
-            PathBuf::from(kit)
-        }
-    } else {
-        PathBuf::from(".")
-    };
-
-    if !project_root.exists() {
-        eprintln!(
-            "{}: project root does not exist: {}",
-            "error".red().bold(),
-            project_root.display()
-        );
-        return EXIT_USER_ERROR;
-    }
-
-    let policy_path = match args.consensus_policy.as_ref() {
-        Some(path) => path,
-        None => {
-            eprintln!(
-                "{}: --consensus-policy is required with --require-empirically-witnessed",
-                "error".red().bold()
-            );
-            return EXIT_USER_ERROR;
-        }
-    };
-    let policy = match crate::promotion_query::load_consensus_policy(policy_path) {
-        Ok(policy) => policy,
-        Err(err) => {
-            eprintln!("{}: {err}", "error".red().bold());
-            return EXIT_USER_ERROR;
-        }
-    };
-
-    match crate::promotion_query::query_consensus_vector_for_policy(
-        &project_root,
-        &[],
-        concept,
-        fixture,
-        &policy,
-    ) {
-        Ok(Some(hit)) => {
-            let report = crate::promotion_query::status_json(concept, fixture, &hit, Some(&policy));
-            let ok = report["ok"].as_bool().unwrap_or(false);
-            if args.out.json {
-                println!("{}", serde_json::to_string_pretty(&report).unwrap());
-            } else if !args.out.quiet {
-                println!(
-                    "verify empirically-witnessed: {}",
-                    if ok { "accepted" } else { "rejected" }
-                );
-                println!("  concept: {concept}");
-                println!("  fixture: {fixture}");
-                println!("  promoted_op: {}", hit.status.key.promoted_op);
-                println!("  decisions: {}", hit.status.decision_cids.len());
-            }
-            if ok {
-                EXIT_OK
-            } else {
-                EXIT_VERIFY_FAIL
-            }
-        }
-        Ok(None) => {
-            let report = crate::promotion_query::missing_json(concept, fixture);
-            if args.out.json {
-                println!("{}", serde_json::to_string_pretty(&report).unwrap());
-            } else if !args.out.quiet {
-                println!("verify empirically-witnessed: rejected");
-                println!("  reason: required promotion was not found");
-            }
-            EXIT_VERIFY_FAIL
-        }
-        Err(err) => {
-            eprintln!("{}: {err}", "error".red().bold());
-            EXIT_USER_ERROR
-        }
-    }
-}

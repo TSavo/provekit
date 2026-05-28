@@ -184,12 +184,10 @@ impl MementoPool {
     /// This is the core of bridge enforcement: "does the publisher's
     /// post imply the consumer's pre?"
     pub fn verify_implication(&self, antecedent_cid: &str, consequent_cid: &str) -> Option<&Json> {
-        // Direct lookup: find a memento that indexes both hashes
-        // and is an implication evidence kind.
-        let _ant_memento = self.verify_by_hash(antecedent_cid)?;
-        let _con_memento = self.verify_by_hash(consequent_cid)?;
-
-        // Scan for implication mementos that link these two.
+        // The proof of `P → Q` is the implication memento that links them, not
+        // the presence of P or Q in `formula_to_memento`. (P, the antecedent,
+        // is no longer indexed there at all -- it is an assumption, not a
+        // fact.) Scan for an implication memento with these exact endpoints.
         // Shape-agnostic: under v1.2 these references live in the
         // metadata; under v1.1 they live in evidence.body.
         for envelope in self.mementos.values() {
@@ -294,19 +292,21 @@ impl MementoPool {
     /// The .proof protocol IS the cache: storing a memento IS caching
     /// the verification result.
     pub fn insert(&mut self, memento_cid: String, envelope: Json) {
-        // Index by the formula hashes referenced in the body. Layout
-        // depends on shape; `memento_body_field` papers over the cut.
-        // Contract: preHash/postHash/invHash (in metadata under v1.2,
-        //           in evidence.body under v1.1).
-        // Implication: antecedentHash/consequentHash (in header under
-        //           v1.2, in evidence.body under v1.1).
-        for field in &[
-            "preHash",
-            "postHash",
-            "invHash",
-            "antecedentHash",
-            "consequentHash",
-        ] {
+        // Index ONLY the formula hashes that name an ESTABLISHED FACT into
+        // `formula_to_memento` -- the map Tier 0 (`verify`) trusts as "this
+        // formula is proven true". A precondition (`preHash`) and an
+        // implication antecedent (`antecedentHash`) are OBLIGATIONS /
+        // ASSUMPTIONS, not facts: indexing them let a callsite's consumer
+        // precondition self-discharge merely because the callee DECLARES it
+        // (the missing-edge hole; see `precondition_is_obligation_not_verified_fact`).
+        // Established facts: a function's `postHash`/`invHash` (guarantees on
+        // return / always). NOT `consequentHash`: an implication's consequent
+        // `Q` holds only GIVEN its antecedent `P`, so indexing it would make
+        // Tier 0 `verify(Q)` treat a conditional as unconditional -- the same
+        // category error as `preHash`/`antecedentHash`. Proven implications
+        // discharge via `verify_implication`/`can_implies`, which scan
+        // implication mementos directly and don't need the consequent here.
+        for field in &["postHash", "invHash"] {
             if let Some(hash) = memento_body_field(&envelope, field).and_then(|v| v.as_str()) {
                 self.formula_to_memento
                     .insert(hash.to_string(), memento_cid.clone());
@@ -941,4 +941,63 @@ mod tests {
         assert_eq!(v.invariant, "state >= 0");
         assert_eq!(v.function_cid, fc);
     }
+
+    // ---- A precondition is an obligation, not a verified fact ----
+
+    fn make_contract_memento(cid: &str, name: &str, pre: &Json, post: &Json) -> Json {
+        // v1.1 flat shape: evidence.kind="contract", derived hashes in body.
+        json!({
+            "cid": cid,
+            "evidence": {
+                "kind": "contract",
+                "body": {
+                    "contractName": name,
+                    "pre": pre,
+                    "post": post,
+                    "preHash": compute_formula_cid(pre),
+                    "postHash": compute_formula_cid(post),
+                }
+            }
+        })
+    }
+
+    #[test]
+    fn precondition_is_obligation_not_verified_fact() {
+        // The missing-edge hole: indexing a contract's preHash into the
+        // "verified formulas" map (formula_to_memento) makes Tier 0
+        // `pool.verify(consumer_pre)` self-discharge — a callsite's consumer
+        // precondition is satisfied merely by the callee DECLARING it. A
+        // precondition is an obligation to discharge, never an established
+        // fact. Only the post (and inv) are guarantees.
+        let mut pool = MementoPool::default();
+        let pre = json!({
+            "kind": "atomic", "pred": "ge",
+            "args": [{"kind":"var","name":"encoding"}, {"kind":"const","value":0}]
+        });
+        let post = json!({
+            "kind": "atomic", "pred": "eq",
+            "args": [{"kind":"var","name":"result"}, {"kind":"var","name":"value"}]
+        });
+        let m_cid =
+            "blake3-512:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+                .to_string();
+        pool.insert(
+            m_cid.clone(),
+            make_contract_memento(&m_cid, "content_address", &pre, &post),
+        );
+
+        // A postcondition IS an established fact (the function guarantees it).
+        assert!(
+            pool.verify(&post).is_some(),
+            "a contract's post must remain a verified fact"
+        );
+
+        // A bare precondition must NOT count as verified — else any callsite's
+        // consumer pre self-discharges at Tier 0 and the missing edge hides.
+        assert!(
+            pool.verify(&pre).is_none(),
+            "a contract's bare pre must NOT be treated as a verified fact"
+        );
+    }
+
 }

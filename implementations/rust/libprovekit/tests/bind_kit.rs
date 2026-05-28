@@ -3,10 +3,10 @@
 use std::path::PathBuf;
 
 use libprovekit::core::{
-    address, bind_term_document, concept_bind_result_cid, named_term_document_from_bind_payload,
-    strip_realize_sidecar_from_lift_term, BindKit, BindOptions, Input, Kit, Term,
+    address, bind_term_document, concept_bind_result_cid, grammar_op_cid,
+    named_term_document_from_bind_payload, strip_realize_sidecar_from_lift_term, BindKit,
+    BindOptions, Input, Kit, Term,
 };
-use libprovekit::proofir_bridge::CatalogIndex;
 use provekit_ir_types::{ExamManifestMemento, Sort};
 use serde_json::{json, Value};
 
@@ -27,10 +27,6 @@ fn repo_root() -> PathBuf {
         .to_path_buf()
 }
 
-fn concept_catalog() -> CatalogIndex {
-    CatalogIndex::from_catalog_root(repo_root().join("menagerie/concept-shapes/catalog"))
-        .expect("concept-shapes catalog loads")
-}
 
 fn v1_1_exam_manifest() -> ExamManifestMemento {
     libprovekit::exam_manifest::load_default_exam_manifest().expect("v1.1 exam manifest loads")
@@ -194,15 +190,19 @@ fn bind_kit_transform_emits_bind_result_op_tree() {
         payload.walk().count() >= 2,
         "bind output should expose operation nodes to Term::walk"
     );
-    let catalog = concept_catalog();
+    // Every op CID in the bind payload must be the CODE shape-authority's
+    // computed address for its op name: no dangling/fabricated CIDs, and no
+    // dependency on the (deleted) on-disk concept catalog. The vector is the
+    // incident of the shape; we check it derives from the authority, not that
+    // it equals a frozen number.
     let unresolved = payload
         .walk()
-        .filter(|node| catalog.get(node.op_cid.as_str()).is_none())
+        .filter(|node| grammar_op_cid(node.op_name).as_ref() != Some(node.op_cid))
         .map(|node| (node.op_name.to_string(), node.op_cid.to_string()))
         .collect::<Vec<_>>();
     assert!(
         unresolved.is_empty(),
-        "every bind payload op CID should resolve in the concept catalog: {unresolved:?}"
+        "every bind payload op CID must be the shape-authority's address for its op name: {unresolved:?}"
     );
     let recovered =
         named_term_document_from_bind_payload(payload).expect("bind payload recovers named terms");

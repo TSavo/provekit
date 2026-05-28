@@ -651,6 +651,30 @@ fn lift_expr_to_term_inner(expr: &Expr, ctx: &mut LiftCtx) -> Option<IrTerm> {
                 None
             }
         }
+        Expr::Call(call) => {
+            // Plain function call `f(args)`. Lift to a ctor named by the
+            // callee's bare symbol (the last path segment) so the call tree
+            // SURVIVES into the contract formula. This is the keystone: the
+            // ctor name matches the callee's auto-minted bridge `sourceSymbol`,
+            // so `enumerate_callsites` finds the seam, `resolve_target` pulls
+            // the callee's precondition, and the runner discharges
+            // `producer_post -> callee_pre`. Without this arm the call tree
+            // vanished and the postcondition collapsed to a vacuous `true` --
+            // the missing edge was invisible to the solver. Mirrors the
+            // `Expr::MethodCall` arm. Language-blind once emitted: the catch
+            // lives in the verifier, below the source language.
+            let Expr::Path(syn::ExprPath { path, .. }) = &*call.func else {
+                // Calls through a non-path callee (closure value, fn pointer
+                // in a local, etc.) have no stable bridge symbol to name.
+                return None;
+            };
+            let callee = path.segments.last()?.ident.to_string();
+            let mut args = Vec::with_capacity(call.args.len());
+            for a in &call.args {
+                args.push(lift_expr_to_term_inner(a, ctx)?);
+            }
+            Some(IrTerm::Ctor { name: callee, args })
+        }
         Expr::If(_) | Expr::Match(_) | Expr::Block(_) => {
             // Conditional / match / block expressions don't lift to a
             // single canonical IR term in the MVP — they would need a
@@ -1191,6 +1215,36 @@ mod tests {
     }
 
     // ---- bug-fix regression tests ----
+
+    #[test]
+    fn call_expr_body_lifts_call_tree_into_postcondition() {
+        // A function whose body is a nested call must derive a post that
+        // CONTAINS the call tree as ctor terms. Otherwise the callees are
+        // invisible to `enumerate_callsites` and the missing-edge seam can
+        // never be discharged (it was the false-green hole: this collapsed to
+        // a vacuous `true` because `Expr::Call` had no lift arm).
+        let item_fn = parse_fn(
+            r#"
+            fn address_of(value: i64) -> i64 {
+                content_address(serialize(value))
+            }
+        "#,
+        );
+        let post = lift_function_postcondition(&item_fn);
+        let json = serde_json::to_string(post.as_formula()).unwrap();
+        assert!(
+            json.contains("\"result\""),
+            "post must derive result = <body>: {json}"
+        );
+        assert!(
+            json.contains("content_address"),
+            "post must contain the outer call ctor `content_address`: {json}"
+        );
+        assert!(
+            json.contains("serialize"),
+            "post must contain the nested call ctor `serialize`: {json}"
+        );
+    }
 
     #[test]
     fn debug_assert_not_lifted_to_postcondition() {

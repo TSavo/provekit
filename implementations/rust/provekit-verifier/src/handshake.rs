@@ -128,16 +128,46 @@ pub fn locate_producer_post(
     }
     let inner_name = arg.get("name").and_then(|v| v.as_str())?;
     let producer_bridge = bridges_by_symbol.get(inner_name)?;
-    let target_cid = producer_bridge
-        .pointer("/evidence/body/targetContractCid")
-        .and_then(|v| v.as_str())?;
+    // Shape-agnostic: production mint emits v1.2-layered mementos (fields on
+    // `header`); only v1.1-flat carries them on `evidence.body`. Reading the
+    // flat path alone meant the producer post never resolved for harvested
+    // calls, so the callsite fell through to the bare `instantiate` form
+    // instead of the real `producer_post -> consumer_pre` implication.
+    let bridge_body = crate::types::memento_body(producer_bridge)?;
+    let target_cid = bridge_body.get("targetContractCid").and_then(|v| v.as_str())?;
     let producer_contract = pool_mementos.get(target_cid)?;
-    let post = producer_contract
-        .pointer("/evidence/body/post")
+    let producer_body = crate::types::memento_body(producer_contract)?;
+    let post = producer_body
+        .get("post")
         .filter(|v| v.is_object())
         .cloned()?;
+    // The post relates the producer's output to its inputs via the carrier
+    // variable `result` (e.g. `result == value`). Quantify over that carrier
+    // so `build_implication_obligation` can unify it with the consumer's
+    // formal: `forall _h0. producer_post[result:=_h0] -> consumer_pre[formal:=_h0]`.
+    // Already-quantified posts pass through untouched.
+    let post = wrap_post_forall(post, producer_body);
     let post_hash = formula_hash(&post);
     Some((post, post_hash))
+}
+
+/// Wrap a bare producer post in `forall result. post`, binding the output
+/// carrier variable `result`. Sort is taken from the producer's first formal
+/// sort (its return width in the single-formal model) or `Int`. An
+/// already-quantified post passes through untouched.
+fn wrap_post_forall(post: Json, producer_body: &Json) -> Json {
+    if post.get("kind").and_then(|v| v.as_str()) == Some("forall") {
+        return post;
+    }
+    // The carrier `result` is the producer's RETURN value, not a parameter, so
+    // its sort is NOT `formalSorts[i]` (those model parameter sorts, paired
+    // with `formals`). The verifier reasons in LIA; bind the carrier as the
+    // canonical `Int`, matching `build_implication_obligation`'s default. A
+    // non-Int return would need the contract's return sort, which the memento
+    // does not expose separately today.
+    let _ = producer_body;
+    let sort = serde_json::json!({"kind": "primitive", "name": "Int"});
+    serde_json::json!({"kind": "forall", "name": "result", "sort": sort, "body": post})
 }
 
 /// Tier 1: literal equality of canonical hashes.
