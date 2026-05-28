@@ -557,14 +557,54 @@ fn load_binding_templates_from_proof(path: &Path) -> Result<Vec<Value>, String> 
         cbor_to_json(&cbor)
     };
 
-    // Walk the envelope's member set. The proof-envelope canonical shape
-    // wraps each member as `{body: <decl>, header: {...}, schemaVersion}`,
-    // and `members` may be either a CID-keyed map (.proof on disk) or an
-    // array (lift response). collect_member_records normalizes that and
-    // returns the (cid, value) pair; unwrap_envelope then peels the body
-    // wrapping if present.
-    let mut out: Vec<Value> = Vec::new();
+    // First pass: walk all members, build an index from ctor function
+    // names to the CIDs of contract mementos whose formulas reference
+    // that ctor. The linkage between a sugar binding and its contract
+    // memento is BY CTOR NAME (the shim mints contract witnesses whose
+    // inv/pre/post formulas contain `ctor(name="<source_function_name>")`
+    // terms, e.g. `unwrap(json_parse(s)) = original`); the bridge then
+    // resolves to that contract memento and the discharger composes.
     let candidates: Vec<(String, Value)> = collect_member_records(&env);
+    let mut contract_by_function: std::collections::HashMap<String, String> =
+        std::collections::HashMap::new();
+    for (cid_key, raw) in &candidates {
+        let record = unwrap_envelope(raw);
+        // Contract mementos can be wrapped in either an "evidence" shape
+        // (body / kind both nested) or have `kind` at the top of `header`
+        // (the layered v1.2 envelope shape). Try both.
+        let is_contract = record
+            .get("kind")
+            .and_then(|v| v.as_str())
+            .map(|k| k == "contract")
+            .unwrap_or_else(|| {
+                record
+                    .pointer("/header/kind")
+                    .and_then(|v| v.as_str())
+                    == Some("contract")
+            });
+        if !is_contract {
+            continue;
+        }
+        if cid_key.is_empty() {
+            continue;
+        }
+        // Walk every formula slot looking for ctor names. The shim's
+        // contracts live under `header` in the layered shape.
+        let formula_root = record.get("header").unwrap_or(record);
+        for slot in ["pre", "post", "inv"] {
+            if let Some(f) = formula_root.get(slot) {
+                collect_ctor_names(f, &mut |name| {
+                    contract_by_function
+                        .entry(name.to_string())
+                        .or_insert_with(|| cid_key.clone());
+                });
+            }
+        }
+    }
+
+    // Second pass: emit sugar binding templates with contract_cid
+    // resolved via the function-name index.
+    let mut out: Vec<Value> = Vec::new();
     for (cid_key, raw) in &candidates {
         let record = unwrap_envelope(raw);
         if record.get("kind").and_then(|v| v.as_str()) != Some("library-sugar-binding-entry") {
@@ -576,7 +616,7 @@ fn load_binding_templates_from_proof(path: &Path) -> Result<Vec<Value>, String> 
         };
         let template = match body.get("ast_template") {
             Some(t) if !t.is_null() => t.clone(),
-            _ => continue, // skip entries minted before ast_template existed
+            _ => continue,
         };
         let template_cid = body
             .get("template_cid")
@@ -586,18 +626,26 @@ fn load_binding_templates_from_proof(path: &Path) -> Result<Vec<Value>, String> 
             .get("param_names")
             .cloned()
             .unwrap_or(Value::Null);
-        // contract_cid resolution: prefer the binding's explicit
-        // contract_cid (vendor minted a separate contract memento and
-        // linked it); fall back to signature_shape_cid (the binding's
-        // own signature-shape anchor); finally fall back to the member's
-        // CID-key (the sugar entry's content address — the bridge says
-        // "this user function alpha-matches this sugar binding"). All
-        // three are content-addressed; the discharger composes against
-        // whichever the bridge cites.
+        let function_name = record
+            .get("source_function_name")
+            .and_then(|v| v.as_str())
+            .unwrap_or("")
+            .to_string();
+        // Resolve contract_cid in priority order:
+        //   1. explicit contract_cid field on the sugar entry (rare)
+        //   2. matching contract memento via ctor-name index (the
+        //      production linkage the shim mint actually uses)
+        //   3. signature_shape_cid fallback
+        //   4. the sugar entry's own CID (last resort)
         let contract_cid = record
             .get("contract_cid")
             .filter(|v| !v.is_null())
             .cloned()
+            .or_else(|| {
+                contract_by_function
+                    .get(&function_name)
+                    .map(|c| Value::String(c.clone()))
+            })
             .or_else(|| {
                 record
                     .get("signature_shape_cid")
@@ -619,10 +667,40 @@ fn load_binding_templates_from_proof(path: &Path) -> Result<Vec<Value>, String> 
             "template_cid": template_cid,
             "param_names": param_names,
             "contract_cid": contract_cid,
+            "source_function_name": function_name,
         });
         out.push(entry);
     }
     Ok(out)
+}
+
+/// Recursively walk a formula/term tree invoking `on_name` for every
+/// ctor term encountered. The discharger looks for ctor terms whose
+/// name matches a bridge sourceSymbol to enumerate callsites; here we
+/// use the same walk to find which contract memento "is about" a given
+/// function (because its formulas reference that function's ctor).
+fn collect_ctor_names<F: FnMut(&str)>(node: &Value, on_name: &mut F) {
+    if !node.is_object() {
+        return;
+    }
+    if node.get("kind").and_then(|v| v.as_str()) == Some("ctor") {
+        if let Some(name) = node.get("name").and_then(|v| v.as_str()) {
+            on_name(name);
+        }
+    }
+    if let Some(args) = node.get("args").and_then(|v| v.as_array()) {
+        for a in args {
+            collect_ctor_names(a, on_name);
+        }
+    }
+    if let Some(ops) = node.get("operands").and_then(|v| v.as_array()) {
+        for o in ops {
+            collect_ctor_names(o, on_name);
+        }
+    }
+    if let Some(body) = node.get("body") {
+        collect_ctor_names(body, on_name);
+    }
 }
 
 /// Peel the proof-envelope wrapping (`{body, header, schemaVersion}`) and
