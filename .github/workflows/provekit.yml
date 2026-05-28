@@ -22,5 +22,11 @@ jobs:
         run: pnpm install
       - name: Run tests
         run: pnpm test
-      - name: ProvekIt verify
-        run: npx provekit verify --ci
+      # `ProvekIt verify` removed 2026-05-28: this package's package.json
+      # declares only `provekit-lsp-ts` as a bin, no `provekit` bin, so
+      # `npx provekit verify --ci` resolved to a published version that
+      # then spawned `provekit-lsp-ts` from PATH (where no symlink exists
+      # in CI). Net: exit 127 every run since 2026-05-07. A red gate is
+      # not a gate. The cross-language conformance gate carries the
+      # actual self-prove signal; re-add a working step when there's
+      # a real verify command that doesn't shell out via npx-into-registry.
