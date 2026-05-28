@@ -268,10 +268,71 @@ fn recognize_bridge_body(tag: &Value, target_language: &str) -> Option<Value> {
     Some(value)
 }
 
-/// Mint a `.proof` envelope containing one bridge memento per
-/// recognize tag with a non-null contract_cid. Written under
-/// `<project>/.provekit/recognize/<cid>.proof`. Returns the path
-/// when bridges are minted; Ok(None) when no tags carried contract_cids.
+/// Build the implication contract memento for a recognize tag. This is
+/// the lift-shape memento that drives `enumerate_callsites`: a `contract`
+/// kind with a `post` atomic carrying a `ctor` term whose `name` matches
+/// the tag's `function_name`. The verifier's enumerate_callsites walks
+/// every contract's pre/post/inv looking for ctor terms whose name
+/// matches a bridge's sourceSymbol; this contract makes the tag's
+/// callsite enumerable. Together with the bridge, the discharger:
+///   1. Enumerates the call from this contract's ctor term.
+///   2. Resolves it to the vendor contract via the sibling bridge memento.
+///   3. Discharges (or refuses) per the standard composition rule.
+///
+/// The same emission shape the rust-tests lifter would produce, only
+/// authored by the recognize lane instead of the test-body walker.
+fn recognize_implication_body(tag: &Value) -> Option<Value> {
+    let function_name = tag.get("function_name").and_then(|v| v.as_str())?;
+    if function_name.is_empty() {
+        return None;
+    }
+    let concept_name = tag
+        .get("concept_name")
+        .and_then(|v| v.as_str())
+        .unwrap_or("")
+        .to_string();
+    // Args: one var per param_binding (lift-side records actual user-
+    // spelling identifiers; the substrate normalizes via canonical CID).
+    let mut arg_terms: Vec<Value> = Vec::new();
+    if let Some(bindings) = tag.get("param_bindings").and_then(|v| v.as_array()) {
+        for b in bindings {
+            let source_text = b
+                .get("source_text")
+                .and_then(|v| v.as_str())
+                .unwrap_or("_")
+                .to_string();
+            arg_terms.push(json!({ "kind": "var", "name": source_text }));
+        }
+    }
+    let ctor = json!({
+        "kind": "ctor",
+        "name": function_name,
+        "args": arg_terms,
+    });
+    let post = json!({
+        "kind": "atomic",
+        "args": [ctor],
+    });
+    Some(json!({
+        "contractName": format!("recognize-callsite:{function_name}"),
+        "post": post,
+        "concept_name": concept_name,
+    }))
+}
+
+/// Mint a `.proof` envelope containing one bridge memento + one
+/// implication contract memento per recognize tag with a non-null
+/// contract_cid. Written under `<project>/.provekit/recognize/<cid>.proof`.
+/// Returns the path when members are minted; Ok(None) when no tags
+/// carried emit-able material.
+///
+/// Why two members per tag (bridge + contract):
+///   - The bridge memento is the RESOLVE half: sourceSymbol -> vendor
+///     contract_cid. enumerate_callsites looks it up by name.
+///   - The contract memento is the ENUMERATE half: its formula contains
+///     a ctor term named after the user's function. enumerate_callsites
+///     walks contract formulas, finds the ctor, looks up the bridge by
+///     name, emits a CallSite. Same shape lift+test produces.
 fn emit_bridge_envelope(
     project_root: &Path,
     tags: &[Value],
@@ -280,12 +341,18 @@ fn emit_bridge_envelope(
     let proof_dir = project_root.join(".provekit").join("recognize");
     let mut members: BTreeMap<String, Vec<u8>> = BTreeMap::new();
     for tag in tags {
-        let Some(body) = recognize_bridge_body(tag, target_language) else {
-            continue;
-        };
-        let envelope = json!({ "evidence": { "kind": "bridge", "body": body } });
-        let (cid, bytes) = flat_member_canonical(&envelope)?;
-        members.entry(cid).or_insert(bytes);
+        // Resolve half: bridge memento.
+        if let Some(body) = recognize_bridge_body(tag, target_language) {
+            let envelope = json!({ "evidence": { "kind": "bridge", "body": body } });
+            let (cid, bytes) = flat_member_canonical(&envelope)?;
+            members.entry(cid).or_insert(bytes);
+        }
+        // Enumerate half: contract memento whose formula names the callsite.
+        if let Some(body) = recognize_implication_body(tag) {
+            let envelope = json!({ "evidence": { "kind": "contract", "body": body } });
+            let (cid, bytes) = flat_member_canonical(&envelope)?;
+            members.entry(cid).or_insert(bytes);
+        }
     }
     if members.is_empty() {
         return Ok(None);
