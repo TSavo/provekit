@@ -2306,6 +2306,100 @@ fn op_concept_name(op_definition_cid: &str) -> String {
     }
 }
 
+fn resolve_dependency_proof_paths(project_root: &Path) -> Result<Vec<PathBuf>, String> {
+    let manifest_path = project_root.join("Cargo.toml");
+    if !manifest_path.is_file() {
+        return Ok(Vec::new());
+    }
+
+    let output = std::process::Command::new("cargo")
+        .arg("metadata")
+        .arg("--format-version")
+        .arg("1")
+        .arg("--manifest-path")
+        .arg(&manifest_path)
+        .current_dir(project_root)
+        .output()
+        .map_err(|error| format!("spawn cargo metadata: {error}"))?;
+    if !output.status.success() {
+        return Err(format!(
+            "cargo metadata failed: {}",
+            String::from_utf8_lossy(&output.stderr).trim()
+        ));
+    }
+    let metadata: Value = serde_json::from_slice(&output.stdout)
+        .map_err(|error| format!("parse cargo metadata JSON: {error}"))?;
+
+    let workspace_members = metadata
+        .get("workspace_members")
+        .and_then(Value::as_array)
+        .map(|members| {
+            members
+                .iter()
+                .filter_map(Value::as_str)
+                .map(str::to_string)
+                .collect::<BTreeSet<_>>()
+        })
+        .unwrap_or_default();
+    let reachable = metadata
+        .get("resolve")
+        .and_then(|resolve| resolve.get("nodes"))
+        .and_then(Value::as_array)
+        .map(|nodes| {
+            nodes
+                .iter()
+                .filter_map(|node| node.get("id").and_then(Value::as_str))
+                .map(str::to_string)
+                .collect::<BTreeSet<_>>()
+        })
+        .unwrap_or_default();
+
+    let mut proof_paths = BTreeSet::new();
+    let Some(packages) = metadata.get("packages").and_then(Value::as_array) else {
+        return Ok(Vec::new());
+    };
+    for package in packages {
+        let Some(package_id) = package.get("id").and_then(Value::as_str) else {
+            continue;
+        };
+        if workspace_members.contains(package_id) {
+            continue;
+        }
+        if !reachable.is_empty() && !reachable.contains(package_id) {
+            continue;
+        }
+        let Some(manifest_path) = package.get("manifest_path").and_then(Value::as_str) else {
+            continue;
+        };
+        let Some(package_dir) = Path::new(manifest_path).parent() else {
+            continue;
+        };
+        collect_package_proof_files(package_dir, &mut proof_paths);
+    }
+
+    Ok(proof_paths.into_iter().collect())
+}
+
+fn collect_package_proof_files(package_dir: &Path, proof_paths: &mut BTreeSet<PathBuf>) {
+    let Ok(entries) = std::fs::read_dir(package_dir) else {
+        return;
+    };
+    for entry in entries.flatten() {
+        let path = entry.path();
+        let file_name = path.file_name().and_then(|s| s.to_str()).unwrap_or("");
+        if file_name == "target" || file_name == ".git" {
+            continue;
+        }
+        if path.is_dir() {
+            collect_package_proof_files(&path, proof_paths);
+            continue;
+        }
+        if path.extension().and_then(|s| s.to_str()) == Some("proof") {
+            proof_paths.insert(path);
+        }
+    }
+}
+
 pub fn dispatch(request: &Value) -> Value {
     let id = request.get("id").cloned().unwrap_or(Value::Null);
     let method = request.get("method").and_then(Value::as_str).unwrap_or("");
@@ -2324,6 +2418,36 @@ pub fn dispatch(request: &Value) -> Value {
                 }
             }
         }),
+        "provekit.plugin.resolve_dependency_proofs" => {
+            let params = request
+                .get("params")
+                .and_then(Value::as_object)
+                .cloned()
+                .unwrap_or_default();
+            let project_root = params
+                .get("project_root")
+                .or_else(|| params.get("projectRoot"))
+                .and_then(Value::as_str)
+                .map(PathBuf::from)
+                .unwrap_or_else(|| std::env::current_dir().unwrap_or_else(|_| PathBuf::from(".")));
+            match resolve_dependency_proof_paths(&project_root) {
+                Ok(paths) => serde_json::json!({
+                    "jsonrpc": "2.0",
+                    "id": id,
+                    "result": {
+                        "proof_paths": paths
+                            .iter()
+                            .map(|path| path.display().to_string())
+                            .collect::<Vec<_>>()
+                    }
+                }),
+                Err(resolve_error) => error(
+                    id,
+                    -32030,
+                    &format!("RESOLVE_DEPENDENCY_PROOFS_FAILED: {resolve_error}"),
+                ),
+            }
+        }
         "provekit.plugin.body_template_entries" => {
             let params = request
                 .get("params")
@@ -4413,6 +4537,7 @@ fn find_repo_file(relative: &Path) -> Option<PathBuf> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::fs;
     use std::path::PathBuf;
 
     /// Catalog-driven dispatch (#1391): the realizations catalog at
@@ -4453,6 +4578,69 @@ mod tests {
 
     fn strings(items: &[&str]) -> Vec<String> {
         items.iter().map(|item| item.to_string()).collect()
+    }
+
+    #[test]
+    fn resolve_dependency_proofs_returns_proofs_from_resolved_path_dependencies() {
+        let root = temp_operator_root("rust_dep_proofs");
+        let user = root.join("user");
+        let vendor = root.join("vendor_positive");
+        fs::create_dir_all(user.join("src")).expect("create user src");
+        fs::create_dir_all(vendor.join("src")).expect("create vendor src");
+        fs::write(
+            user.join("Cargo.toml"),
+            format!(
+                "[package]\nname = \"user_project\"\nversion = \"0.1.0\"\nedition = \"2021\"\n\n[dependencies]\nvendor_positive = {{ path = \"{}\" }}\n",
+                vendor.display()
+            ),
+        )
+        .expect("write user Cargo.toml");
+        fs::write(
+            user.join("src/lib.rs"),
+            "pub fn call() -> i64 { vendor_positive::id(-1) }\n",
+        )
+        .expect("write user lib");
+        fs::write(
+            vendor.join("Cargo.toml"),
+            "[package]\nname = \"vendor_positive\"\nversion = \"0.1.0\"\nedition = \"2021\"\n",
+        )
+        .expect("write vendor Cargo.toml");
+        fs::write(
+            vendor.join("src/lib.rs"),
+            "pub fn id(x: i64) -> i64 { x }\n",
+        )
+        .expect("write vendor lib");
+        let proof_path = vendor.join(
+            "blake3-512:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa.proof",
+        );
+        fs::write(&proof_path, b"synthetic proof path fixture").expect("write vendor proof");
+
+        let response = dispatch(&serde_json::json!({
+            "jsonrpc": "2.0",
+            "id": 9,
+            "method": "provekit.plugin.resolve_dependency_proofs",
+            "params": {
+                "project_root": user,
+            }
+        }));
+
+        assert!(
+            response.get("error").is_none(),
+            "resolver must be implemented by the Rust kit; got {response}"
+        );
+        let paths = response
+            .pointer("/result/proof_paths")
+            .and_then(Value::as_array)
+            .cloned()
+            .unwrap_or_default();
+        assert!(
+            paths
+                .iter()
+                .any(|path| path.as_str() == Some(proof_path.to_str().unwrap())),
+            "expected dependency proof path {} in response {response}",
+            proof_path.display()
+        );
+        let _ = fs::remove_dir_all(root);
     }
 
     fn resolved_return_call_new_with_literal_args(args: Vec<Value>) -> Value {

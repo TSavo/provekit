@@ -1898,6 +1898,9 @@ static int run_rpc(const char *argv0) {
             handle_invoke(id, line, end, &catalog);
         } else if (strcmp(method, "provekit.plugin.platform_semantics") == 0) {
             handle_platform_semantics(id);
+        } else if (strcmp(method, "provekit.plugin.resolve_dependency_proofs") == 0) {
+            fprintf(stderr, "provekit-realize-c-core: resolve_dependency_proofs not yet implemented for c; returning empty proof_paths\n");
+            send_result(id, "{\"proof_paths\":[]}");
         } else if (strcmp(method, "shutdown") == 0 ||
                    strcmp(method, "provekit.plugin.shutdown") == 0) {
             send_result(id, "null");

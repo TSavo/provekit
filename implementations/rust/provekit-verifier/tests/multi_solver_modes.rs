@@ -285,6 +285,7 @@ binary = "stub:unsat"
             .unwrap(),
         ),
         extra_projects: Vec::new(),
+        extra_proof_files: Vec::new(),
     };
     let runner = Runner::new(cfg);
     let (report, stats) = runner.run_with_tiers();

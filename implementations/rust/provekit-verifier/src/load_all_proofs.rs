@@ -31,15 +31,34 @@ const SIG_TAG_PREFIX: &str = "ed25519:";
 pub fn run(project_root: &Path) -> MementoPool {
     let mut pool = MementoPool::default();
     for path in enumerate_proof_files(project_root) {
-        match load_one(&path, &mut pool) {
-            Ok(()) => {}
-            Err(e) => pool.load_errors.push(LoadError {
-                proof_path: path.display().to_string(),
-                reason: format!("read/decode: {e}"),
-            }),
-        }
+        load_path_into_pool(&path, &mut pool);
     }
     pool
+}
+
+pub fn run_with_files(project_root: &Path, proof_files: &[PathBuf]) -> MementoPool {
+    let mut pool = run(project_root);
+    load_files_into_pool(proof_files, &mut pool);
+    pool
+}
+
+pub fn load_files_into_pool(proof_files: &[PathBuf], pool: &mut MementoPool) {
+    let mut proof_files = proof_files.to_vec();
+    proof_files.sort();
+    proof_files.dedup();
+    for path in proof_files {
+        load_path_into_pool(&path, pool);
+    }
+}
+
+fn load_path_into_pool(path: &Path, pool: &mut MementoPool) {
+    match load_one(path, pool) {
+        Ok(()) => {}
+        Err(e) => pool.load_errors.push(LoadError {
+            proof_path: path.display().to_string(),
+            reason: format!("read/decode: {e}"),
+        }),
+    }
 }
 
 fn enumerate_proof_files(project_root: &Path) -> Vec<PathBuf> {

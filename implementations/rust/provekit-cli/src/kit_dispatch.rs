@@ -473,6 +473,192 @@ pub fn body_template_entries_via_rpc(
     Ok(entries)
 }
 
+/// Ask every configured kit plugin for dependency `.proof` files resolved from
+/// the project's package-manager graph. The substrate stays language-blind:
+/// this function only iterates configured plugin commands, invokes the common
+/// RPC verb, and returns proof file paths for the verifier to content-address.
+pub fn dependency_proof_paths_via_rpc(workspace_root: &Path) -> Result<Vec<PathBuf>, String> {
+    let registry = run_plugin_registry_for_project(workspace_root)?;
+    let mut commands: BTreeMap<String, ResolvedCommand> = BTreeMap::new();
+    for plugin in registry
+        .plugins
+        .iter()
+        .filter(|plugin| registry_authorizes_plugin(&registry, plugin))
+    {
+        let command = resolved_command_from_manifest(workspace_root, &plugin.parsed);
+        if command.argv.is_empty() {
+            continue;
+        }
+        commands
+            .entry(command_key(&command))
+            .or_insert_with(|| command);
+    }
+
+    let mut proof_paths = BTreeSet::new();
+    for command in commands.values() {
+        let Some(paths) = dependency_proof_paths_for_command(workspace_root, command)? else {
+            continue;
+        };
+        for path in paths {
+            proof_paths.insert(path);
+        }
+    }
+    Ok(proof_paths.into_iter().collect())
+}
+
+fn command_key(command: &ResolvedCommand) -> String {
+    format!("{:?}\u{0}{:?}", command.argv, command.working_dir)
+}
+
+fn dependency_proof_paths_for_command(
+    workspace_root: &Path,
+    cmd_spec: &ResolvedCommand,
+) -> Result<Option<Vec<PathBuf>>, String> {
+    let mut command = Command::new(&cmd_spec.argv[0]);
+    if cmd_spec.argv.len() > 1 {
+        command.args(&cmd_spec.argv[1..]);
+    }
+    if !cmd_spec.argv.iter().any(|a| a == "--rpc") {
+        command.arg("--rpc");
+    }
+    if let Some(wd) = &cmd_spec.working_dir {
+        command.current_dir(wd);
+    }
+    command.stdin(Stdio::piped());
+    command.stdout(Stdio::piped());
+    command.stderr(Stdio::inherit());
+
+    let mut child = match command.spawn() {
+        Ok(child) => child,
+        Err(error) => {
+            record_dependency_proof_diagnostic(format!(
+                "dependency proof resolver unavailable for {:?}: {error}",
+                cmd_spec.argv
+            ));
+            return Ok(None);
+        }
+    };
+    let mut stdin = child
+        .stdin
+        .take()
+        .ok_or("dependency proof kit stdin unavailable".to_string())?;
+    let stdout = child
+        .stdout
+        .take()
+        .ok_or("dependency proof kit stdout unavailable".to_string())?;
+    let mut reader = BufReader::new(stdout);
+
+    let req = json!({
+        "jsonrpc": "2.0",
+        "id": 1,
+        "method": "provekit.plugin.resolve_dependency_proofs",
+        "params": {
+            "project_root": workspace_root.display().to_string(),
+        },
+    });
+    writeln!(stdin, "{req}").map_err(|e| format!("write resolve_dependency_proofs: {e}"))?;
+
+    let mut line = String::new();
+    reader
+        .read_line(&mut line)
+        .map_err(|e| format!("read resolve_dependency_proofs response: {e}"))?;
+
+    let shutdown = json!({
+        "jsonrpc": "2.0",
+        "id": 2,
+        "method": "provekit.plugin.shutdown",
+    });
+    let _ = writeln!(stdin, "{shutdown}");
+    drop(stdin);
+    let _ = child.wait();
+
+    if line.trim().is_empty() {
+        record_dependency_proof_diagnostic(format!(
+            "dependency proof resolver {:?} closed without a response",
+            cmd_spec.argv
+        ));
+        return Ok(None);
+    }
+
+    let response: Value = serde_json::from_str(line.trim()).map_err(|e| {
+        format!(
+            "resolve_dependency_proofs response not valid JSON: {e}; raw={}",
+            line.trim()
+        )
+    })?;
+    if let Some(error) = response.get("error") {
+        if error.get("code").and_then(Value::as_i64) == Some(-32601) {
+            record_dependency_proof_diagnostic(format!(
+                "dependency proof resolver {:?} does not implement provekit.plugin.resolve_dependency_proofs",
+                cmd_spec.argv
+            ));
+            return Ok(None);
+        }
+        return Err(format!("dependency proof resolver error: {error}"));
+    }
+
+    let paths = response
+        .get("result")
+        .and_then(|result| {
+            result
+                .get("proof_paths")
+                .or_else(|| result.get("proofPaths"))
+                .or_else(|| result.get("paths"))
+        })
+        .and_then(Value::as_array)
+        .cloned()
+        .unwrap_or_default();
+    let mut out = Vec::new();
+    for path in paths {
+        let Some(path) = path.as_str() else {
+            record_dependency_proof_diagnostic(format!(
+                "dependency proof resolver {:?} returned a non-string path: {path}",
+                cmd_spec.argv
+            ));
+            continue;
+        };
+        if let Some(path) = normalize_dependency_proof_path(workspace_root, path) {
+            out.push(path);
+        }
+    }
+    out.sort();
+    out.dedup();
+    Ok(Some(out))
+}
+
+fn normalize_dependency_proof_path(workspace_root: &Path, path: &str) -> Option<PathBuf> {
+    let path = PathBuf::from(path);
+    let resolved = if path.is_absolute() {
+        path
+    } else {
+        workspace_root.join(path)
+    };
+    if resolved.extension().and_then(|s| s.to_str()) != Some("proof") {
+        record_dependency_proof_diagnostic(format!(
+            "dependency proof resolver returned non-.proof path {}; skipping",
+            resolved.display()
+        ));
+        return None;
+    }
+    if !resolved.is_file() {
+        record_dependency_proof_diagnostic(format!(
+            "dependency proof resolver returned missing path {}; skipping",
+            resolved.display()
+        ));
+        return None;
+    }
+    Some(resolved)
+}
+
+fn record_dependency_proof_diagnostic(message: String) {
+    eprintln!("{message}");
+    KIT_DISPATCH_DIAGNOSTICS
+        .get_or_init(|| Mutex::new(Vec::new()))
+        .lock()
+        .expect("diagnostics lock")
+        .push(message);
+}
+
 /// #1360 / #1355: Return the per-target scope-bringings declared by
 /// the realize manifest matching `(target_lang, library_tag)`. cmd_materialize
 /// collects these across all materialized sites in a consumer file and

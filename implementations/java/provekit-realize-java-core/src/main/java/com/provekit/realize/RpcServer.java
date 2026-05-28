@@ -67,6 +67,10 @@ public final class RpcServer {
                     String resultObj = handleAssemble(line);
                     sendResponse(id, resultObj);
                 }
+                case "provekit.plugin.resolve_dependency_proofs" -> {
+                    System.err.println("provekit-realize-java-core: resolve_dependency_proofs not yet implemented for java; returning empty proof_paths");
+                    sendResponse(id, "{\"proof_paths\":[]}");
+                }
                 case "provekit.plugin.shutdown" -> {
                     sendResponse(id, "null");
                     System.exit(0);

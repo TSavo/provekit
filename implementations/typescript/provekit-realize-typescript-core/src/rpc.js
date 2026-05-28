@@ -49,6 +49,10 @@ function dispatch(request) {
   if (method === "provekit.plugin.literal_encoding_answers") {
     return { jsonrpc: "2.0", id: msgId, result: { answers: literalEncodingAnswers() } };
   }
+  if (method === "provekit.plugin.resolve_dependency_proofs") {
+    console.error("provekit-realize-typescript-core: resolve_dependency_proofs not yet implemented for typescript; returning empty proof_paths");
+    return { jsonrpc: "2.0", id: msgId, result: { proof_paths: [] } };
+  }
   if (method === "provekit.plugin.shutdown") {
     return { jsonrpc: "2.0", id: msgId, result: null };
   }

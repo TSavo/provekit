@@ -487,7 +487,6 @@ pub fn run(args: ProveArgs) -> u8 {
         return run_target(&args.project, &args.output, target);
     }
 
-
     if args.artifact.is_some() || args.proof.is_some() || args.policy.is_some() {
         return run_admission_gate(&args);
     }
@@ -545,10 +544,23 @@ pub fn run(args: ProveArgs) -> u8 {
         }
     }
 
+    let dependency_proof_files =
+        match crate::kit_dispatch::dependency_proof_paths_via_rpc(&project_root) {
+            Ok(paths) => paths,
+            Err(error) => {
+                eprintln!(
+                    "{}: dependency proof resolution skipped: {error}",
+                    "warning".yellow().bold()
+                );
+                Vec::new()
+            }
+        };
+
     let cfg = RunnerConfig {
         project_root: project_root.clone(),
         z3_path: args.z3,
         extra_projects,
+        extra_proof_files: dependency_proof_files,
         ..Default::default()
     };
     let runner = Runner::new(cfg);
