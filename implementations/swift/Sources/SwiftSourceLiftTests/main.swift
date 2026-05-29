@@ -19,6 +19,8 @@ struct SwiftSourceLiftTests {
             ("recognize returns no tags for non-match", testRecognizeReturnsNoTagsForNonMatch),
             ("recognize routes multiple bindings", testRecognizeRoutesMultipleBindings),
             ("recognize paths self-resolves sugar templates", testRecognizePathsSelfResolvesSugarTemplates),
+            ("recognize RPC self-resolves sugar templates", testRecognizeRPCSelfResolvesSugarTemplates),
+            ("recognize RPC returns no tags for non-match", testRecognizeRPCReturnsNoTagsForNonMatch),
         ]
 
         var failures: [String] = []
@@ -209,6 +211,84 @@ private func testRecognizePathsSelfResolvesSugarTemplates() throws {
     try expect(tag["function_name"] as? String == "getStatus", "wrong function: \(tag)")
     try expect(tag["concept_name"] as? String == "concept:http-request", "wrong concept: \(tag)")
     try expect(tag["library_tag"] as? String == "urlsession", "wrong library: \(tag)")
+}
+
+private func testRecognizeRPCSelfResolvesSugarTemplates() throws {
+    let root = try temporarySwiftRecognitionProject(
+        clientSource: """
+        func getStatus(_ endpoint: String) -> Int {
+            return send(endpoint)
+        }
+        """
+    )
+    defer { try? FileManager.default.removeItem(at: root) }
+
+    let response = SwiftSourceRPC.handle([
+        "jsonrpc": "2.0",
+        "id": 1,
+        "method": "provekit.plugin.recognize",
+        "params": [
+            "project_root": root.path,
+            "source_paths": ["Shim.swift", "Client.swift"],
+        ],
+    ])
+    let tags = try rpcTags(response)
+
+    try expect(tags.count == 1, "expected one RPC tag, got \(tags.count)")
+    let tag = try require(tags.first, "missing RPC tag")
+    try expect(tag["file"] as? String == "Client.swift", "wrong RPC file: \(tag)")
+    try expect(tag["function_name"] as? String == "getStatus", "wrong RPC function: \(tag)")
+    try expect(tag["concept_name"] as? String == "concept:http-request", "wrong RPC concept: \(tag)")
+    try expect(tag["library_tag"] as? String == "urlsession", "wrong RPC library: \(tag)")
+}
+
+private func testRecognizeRPCReturnsNoTagsForNonMatch() throws {
+    let root = try temporarySwiftRecognitionProject(
+        clientSource: """
+        func getStatus(_ endpoint: String) -> Int {
+            return 200
+        }
+        """
+    )
+    defer { try? FileManager.default.removeItem(at: root) }
+
+    let response = SwiftSourceRPC.handle([
+        "jsonrpc": "2.0",
+        "id": 1,
+        "method": "provekit.plugin.recognize",
+        "params": [
+            "project_root": root.path,
+            "source_paths": ["Shim.swift", "Client.swift"],
+        ],
+    ])
+    let tags = try rpcTags(response)
+
+    try expect(tags.isEmpty, "expected no RPC tags, got \(tags.count)")
+}
+
+private func temporarySwiftRecognitionProject(clientSource: String) throws -> URL {
+    let root = try FileManager.default.url(
+        for: .itemReplacementDirectory,
+        in: .userDomainMask,
+        appropriateFor: URL(fileURLWithPath: NSTemporaryDirectory()),
+        create: true
+    )
+    try """
+    @ProveKitSugar(concept: "concept:http-request", library: "urlsession", family: "concept:family:http")
+    func fetch(_ url: String) -> Int {
+        return send(url)
+    }
+    """.write(to: root.appendingPathComponent("Shim.swift"), atomically: true, encoding: .utf8)
+    try clientSource.write(to: root.appendingPathComponent("Client.swift"), atomically: true, encoding: .utf8)
+    return root
+}
+
+private func rpcTags(_ response: [String: Any]) throws -> [[String: Any]] {
+    if let error = response["error"] {
+        throw TestFailure(message: "unexpected RPC error: \(error)")
+    }
+    let result = try require(response["result"] as? [String: Any], "missing RPC result")
+    return try require(result["tags"] as? [[String: Any]], "missing RPC tags")
 }
 
 private func sugarBodySource(_ source: String) throws -> [String: Any] {

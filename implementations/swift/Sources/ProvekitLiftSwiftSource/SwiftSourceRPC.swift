@@ -21,6 +21,16 @@ public enum SwiftSourceRPC {
         ]
     }
 
+    public static func handle(_ request: [String: Any]) -> [String: Any] {
+        do {
+            return try dispatch(request)
+        } catch let error as SwiftSourceRPCExit {
+            return error.response
+        } catch {
+            return errorResponse(id: request["id"], code: -32603, message: String(describing: error))
+        }
+    }
+
     public static func run() {
         while let line = readLine(strippingNewline: true) {
             let trimmed = line.trimmingCharacters(in: .whitespacesAndNewlines)
