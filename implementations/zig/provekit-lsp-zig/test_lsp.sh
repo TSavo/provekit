@@ -7,7 +7,7 @@
 #      capabilities=["parse"]
 #   2. parse response contains declarations array, callEdges array, warnings array
 #   3. declarations is non-empty (at least one contract lifted from fixture)
-#   4. callEdges is empty array []
+#   4. callEdges contains a canonical call edge with callSiteLocus
 #   5. shutdown response result is null
 #
 # Usage: sh test_lsp.sh [path-to-binary]
@@ -55,9 +55,9 @@ assert_not_contains() {
     fi
 }
 
-# Fixture: a tiny Zig source with one native function body.
+# Fixture: a tiny Zig source with two native function bodies and one call site.
 INIT='{"jsonrpc":"2.0","id":1,"method":"initialize","params":{}}'
-PARSE='{"jsonrpc":"2.0","id":2,"method":"parse","params":{"path":"fixture.zig","source":"pub fn myFn(x: i64) i64 { return x; }"}}'
+PARSE='{"jsonrpc":"2.0","id":2,"method":"parse","params":{"path":"fixture.zig","source":"pub fn add(x: i64) i64 { return x; }\n\npub fn myFn(x: i64) i64 { return add(x); }"}}'
 SHUTDOWN='{"jsonrpc":"2.0","id":3,"method":"shutdown","params":{}}'
 
 INPUT="$(printf '%s\n%s\n%s\n' "$INIT" "$PARSE" "$SHUTDOWN")"
@@ -76,7 +76,9 @@ assert_not_contains "no error"        "$INIT_RESP"     '"error"'
 
 echo "=== parse ==="
 assert_contains "declarations field"  "$PARSE_RESP"    '"declarations":'
-assert_contains "callEdges field"     "$PARSE_RESP"    '"callEdges":[]'
+assert_contains "callEdges target"    "$PARSE_RESP"    '"targetSymbol":"zig-kit:add"'
+assert_contains "callEdges source"    "$PARSE_RESP"    '"sourceContractCid":"pending-zig:myFn"'
+assert_contains "callEdges locus"     "$PARSE_RESP"    '"callSiteLocus":{'
 assert_contains "warnings field"      "$PARSE_RESP"    '"warnings":[]'
 assert_contains "at least one decl"   "$PARSE_RESP"    '"kind":"function-contract"'
 assert_contains "contract name"       "$PARSE_RESP"    '"fnName":"fixture.zig.myFn"'
