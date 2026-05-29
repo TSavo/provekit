@@ -1,0 +1,13 @@
+name = "java-implications"
+version = "0.1.0"
+protocol_version = "pep/1.7.0"
+kind = "lift"
+command = ["java", "-jar", "provekit-lift-java-core/target/provekit-lsp-java.jar", "--rpc"]
+working_dir = "."
+method = "provekit.plugin.lift_implications"
+phase = "consumer"
+
+[capabilities]
+authoring_surfaces = ["java-implications"]
+ir_version = "v1.1.0"
+emits_signed_mementos = false

@@ -53,6 +53,14 @@ public class RpcServer {
                         sendResponse(id, Jcs.encode(RecognizeHandler.recognizeImpl(params)));
                     }
                 }
+                case "provekit.plugin.lift_implications" -> {
+                    Jcs.Json doc = Jcs.parse(line);
+                    if (!(doc instanceof Jcs.Obj obj) || !(obj.get("params") instanceof Jcs.Obj params)) {
+                        sendError(id, -32602, "missing params object");
+                    } else {
+                        sendResponse(id, Jcs.encode(JavaImplicationLifter.lift(params)));
+                    }
+                }
                 case "shutdown" -> {
                     sendResponse(id, "null");
                     System.exit(0);
@@ -65,7 +73,7 @@ public class RpcServer {
     }
 
     private String initResult() {
-        return "{\"name\":\"provekit-lsp-java\",\"version\":\"0.1.0\",\"capabilities\":[\"parse\"]}";
+        return "{\"name\":\"provekit-lsp-java\",\"version\":\"0.1.0\",\"capabilities\":[\"parse\",\"provekit.plugin.lift_implications\"]}";
     }
 
     private void sendResponse(String id, String result) {
