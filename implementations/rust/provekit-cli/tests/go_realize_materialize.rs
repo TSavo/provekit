@@ -25,9 +25,7 @@ use std::process::Command;
 use std::sync::Arc;
 
 use provekit_canonicalizer::{blake3_512_of, encode_jcs, Value as CanonicalValue};
-use provekit_cli::kit_dispatch::{
-    dependency_proof_paths_via_rpc, dispatch_realize, RealizeRequest,
-};
+use provekit_cli::kit_dispatch::{dependency_proofs_via_rpc, dispatch_realize, RealizeRequest};
 use provekit_proof_envelope::{
     build_proof_envelope, ed25519_pubkey_string, Ed25519Seed, ProofEnvelopeInput,
 };
@@ -373,21 +371,22 @@ fn go_dependency_proofs_are_resolved_by_configured_go_kit() {
     let proof_name = "blake3-512:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa.proof";
     let expected = write_go_dependency_with_proof(workspace.path(), proof_name);
 
-    let paths = dependency_proof_paths_via_rpc(workspace.path())
+    let proofs = dependency_proofs_via_rpc(workspace.path())
         .expect("CLI must ask the configured Go kit over RPC for dependency proofs");
 
     assert_eq!(
-        paths.len(),
+        proofs.len(),
         1,
         "dependency proof resolution must be kit-owned and config/manifest-driven"
     );
+    let expected_bytes = fs::read(&expected).expect("read expected dependency proof");
     assert_eq!(
-        paths[0].file_name(),
-        expected.file_name(),
-        "resolved proof must preserve the content-addressed proof filename"
+        blake3_512_of(&proofs[0].bytes),
+        blake3_512_of(&expected_bytes),
+        "resolved proof must preserve content-addressed proof bytes"
     );
-    assert_ne!(
-        paths[0], expected,
+    assert!(
+        proofs[0].label != expected.display().to_string(),
         "the Go kit must not hand the CLI a Go module-internal proof path"
     );
 }

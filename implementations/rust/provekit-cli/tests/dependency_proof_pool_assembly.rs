@@ -9,6 +9,7 @@ use std::collections::BTreeMap;
 use std::fs;
 use std::path::{Path, PathBuf};
 
+use base64::{engine::general_purpose::STANDARD as BASE64, Engine as _};
 use provekit_canonicalizer::{blake3_512_of, encode_jcs};
 use provekit_proof_envelope::{
     build_proof_envelope, ed25519_pubkey_string, Ed25519Seed, ProofEnvelopeInput,
@@ -87,7 +88,7 @@ fn write_proof(dir: &Path, name: &str, members: BTreeMap<String, Vec<u8>>) -> St
     built.cid
 }
 
-fn publish_vendor_positive_contract(vendor_dir: &Path) -> (String, String, PathBuf) {
+fn publish_vendor_positive_contract(vendor_dir: &Path) -> (String, String, PathBuf, Vec<u8>) {
     let target_env = json!({
         "evidence": {
             "kind": "contract",
@@ -113,7 +114,8 @@ fn publish_vendor_positive_contract(vendor_dir: &Path) -> (String, String, PathB
         .map(|entry| entry.path())
         .find(|path| path.extension().and_then(|s| s.to_str()) == Some("proof"))
         .expect("vendor proof exists");
-    (target_cid, bundle_cid, proof_path)
+    let proof_bytes = fs::read(&proof_path).expect("read vendor proof bytes");
+    (target_cid, bundle_cid, proof_path, proof_bytes)
 }
 
 fn publish_user_bridge(project_dir: &Path, target_cid: &str, target_bundle_cid: &str) {
@@ -254,13 +256,14 @@ fn publish_contradictory_implication_project() -> PathBuf {
     project
 }
 
-fn install_dependency_proof_stub(project_dir: &Path, proof_path: &Path) {
+fn install_dependency_proof_stub(project_dir: &Path, proof_cid: &str, proof_bytes: &[u8]) {
     let bin = project_dir.join("resolve-deps-stub.sh");
+    let proof_bytes_base64 = BASE64.encode(proof_bytes);
     fs::write(
         &bin,
         format!(
-            "#!/bin/sh\nwhile IFS= read -r line; do\n  case \"$line\" in\n    *resolve_dependency_proofs*) echo '{{\"jsonrpc\":\"2.0\",\"id\":1,\"result\":{{\"proof_paths\":[\"{}\"]}}}}' ;;\n    *shutdown*) echo '{{\"jsonrpc\":\"2.0\",\"id\":2,\"result\":null}}'; exit 0 ;;\n    *) echo '{{\"jsonrpc\":\"2.0\",\"id\":1,\"result\":{{}}}}' ;;\n  esac\ndone\n",
-            proof_path.display()
+            "#!/bin/sh\nwhile IFS= read -r line; do\n  case \"$line\" in\n    *resolve_dependency_proofs*) echo '{{\"jsonrpc\":\"2.0\",\"id\":1,\"result\":{{\"proofs\":[{{\"cid\":\"{}\",\"bytes_base64\":\"{}\",\"source\":\"stub-package-proof\"}}]}}}}' ;;\n    *shutdown*) echo '{{\"jsonrpc\":\"2.0\",\"id\":2,\"result\":null}}'; exit 0 ;;\n    *) echo '{{\"jsonrpc\":\"2.0\",\"id\":1,\"result\":{{}}}}' ;;\n  esac\ndone\n",
+            proof_cid, proof_bytes_base64
         ),
     )
     .expect("write stub");
@@ -291,17 +294,23 @@ fn dependency_rpc_union_makes_vendor_contract_reachable() {
     let project = root.join("user");
     let vendor = root.join("vendor");
     fs::create_dir_all(project.join(".provekit")).expect("mkdir project");
-    let (target_cid, bundle_cid, proof_path) = publish_vendor_positive_contract(&vendor);
+    let (target_cid, bundle_cid, proof_path, proof_bytes) =
+        publish_vendor_positive_contract(&vendor);
     publish_user_bridge(&project, &target_cid, &bundle_cid);
-    install_dependency_proof_stub(&project, &proof_path);
+    install_dependency_proof_stub(&project, &bundle_cid, &proof_bytes);
+    fs::remove_file(&proof_path).expect("remove dependency proof path after kit reads it");
 
-    let dependency_proofs = provekit_cli::kit_dispatch::dependency_proof_paths_via_rpc(&project)
+    let dependency_proofs = provekit_cli::kit_dispatch::dependency_proofs_via_rpc(&project)
         .expect("resolve dependency proofs");
-    assert_eq!(dependency_proofs, vec![proof_path.clone()]);
+    assert_eq!(dependency_proofs.len(), 1);
+    assert_eq!(
+        dependency_proofs[0].expected_cid.as_deref(),
+        Some(bundle_cid.as_str())
+    );
 
     let runner = Runner::new(RunnerConfig {
         project_root: project.clone(),
-        extra_proof_files: dependency_proofs,
+        extra_proofs: dependency_proofs,
         ..Default::default()
     });
     let (pool, _callsites) = runner.run_load_and_enumerate();
@@ -323,9 +332,11 @@ fn voltron_pool_refuses_cross_dependency_violation() {
     let project = root.join("user");
     let vendor = root.join("vendor");
     fs::create_dir_all(project.join(".provekit")).expect("mkdir project");
-    let (target_cid, bundle_cid, proof_path) = publish_vendor_positive_contract(&vendor);
+    let (target_cid, bundle_cid, proof_path, proof_bytes) =
+        publish_vendor_positive_contract(&vendor);
     publish_user_bridge(&project, &target_cid, &bundle_cid);
-    install_dependency_proof_stub(&project, &proof_path);
+    install_dependency_proof_stub(&project, &bundle_cid, &proof_bytes);
+    fs::remove_file(&proof_path).expect("remove dependency proof path after kit reads it");
 
     let output = std::process::Command::new(env!("CARGO_BIN_EXE_provekit"))
         .arg("prove")

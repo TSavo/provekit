@@ -106,11 +106,13 @@ def dispatch(request: dict[str, Any]) -> dict[str, Any]:
             },
         }
     if method == "provekit.plugin.resolve_dependency_proofs":
-        print(
-            "provekit-realize-python-aiosqlite: resolve_dependency_proofs not yet implemented for python; returning empty proof_paths",
-            file=sys.stderr,
-        )
-        return {"jsonrpc": "2.0", "id": msg_id, "result": {"proof_paths": []}}
+        from provekit_realize_python_core.rpc import _resolve_dependency_proofs
+
+        return {
+            "jsonrpc": "2.0",
+            "id": msg_id,
+            "result": {"proofs": _resolve_dependency_proofs()},
+        }
     if method == "provekit.plugin.shutdown":
         return {"jsonrpc": "2.0", "id": msg_id, "result": None}
     return _error(msg_id, -32601, f"METHOD_NOT_FOUND: {method}")

@@ -262,7 +262,7 @@ Kit-owned package-manager proof resolution. The runtime calls this method before
 verification pool assembly. The substrate MUST NOT inspect cargo metadata,
 classpath entries, node_modules, sys.path, or any other platform dependency
 graph directly; it passes the project root to configured kits and unions the
-returned `.proof` bundles by CID.
+returned proof catalog bytes by CID.
 
 Request:
 ```json
@@ -282,17 +282,25 @@ Response (success):
   "jsonrpc": "2.0",
   "id": 3,
   "result": {
-    "proof_paths": ["/absolute/vendor/package/blake3-512:<hex>.proof"]
+    "proofs": [
+      {
+        "cid": "blake3-512:<hex>",
+        "bytes_base64": "<standard-base64-proof-catalog-bytes>",
+        "source": "diagnostic-kit-owned-label"
+      }
+    ]
   }
 }
 ```
 
-`proof_paths` entries MUST name `.proof` bundle files. Implementations MAY
-return an empty array when the language kit has no implementation yet, but MUST
-log that language-specific dependency proof resolution is not implemented. The
-runtime MUST treat the returned bundles as opaque content-addressed proof files:
-load by bytes, recompute bundle and member CIDs, and union members. It MUST NOT
-extract formulas for rewriting or reinterpret package-manager metadata.
+`proofs` entries MUST carry opaque `.proof` catalog bytes in `bytes_base64`.
+`cid`, when present, MUST match the content CID of those bytes. `source` is a
+diagnostic label only and MUST NOT be treated as filesystem or package-manager
+authority. Implementations MAY return an empty array when the language kit has
+no implementation yet, but MUST log that language-specific dependency proof
+resolution is not implemented. The runtime MUST load by bytes, recompute bundle
+and member CIDs, and union members. It MUST NOT extract formulas for rewriting,
+follow kit-supplied `.proof` paths, or reinterpret package-manager metadata.
 
 #### §4.2.4 `provekit.plugin.shutdown`
 

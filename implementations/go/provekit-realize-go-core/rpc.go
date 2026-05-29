@@ -3,6 +3,7 @@ package realizego
 import (
 	"bufio"
 	"bytes"
+	"encoding/base64"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -115,11 +116,11 @@ func handleResolveDependencyProofs(id json.RawMessage, raw json.RawMessage) any 
 	if params == nil {
 		params = map[string]any{}
 	}
-	paths, err := resolveDependencyProofPaths(projectRootFromParams(params))
+	proofs, err := resolveDependencyProofs(projectRootFromParams(params))
 	if err != nil {
 		return errorResponse(id, -32030, "RESOLVE_DEPENDENCY_PROOFS_FAILED: "+err.Error())
 	}
-	return successResponse(id, map[string]any{"proof_paths": paths})
+	return successResponse(id, map[string]any{"proofs": proofs})
 }
 
 func handleCheck(id json.RawMessage, raw json.RawMessage) any {
@@ -157,7 +158,33 @@ type listedGoModule struct {
 	Replace *listedGoModule `json:"Replace"`
 }
 
+type dependencyProof struct {
+	CID         string `json:"cid"`
+	BytesBase64 string `json:"bytes_base64"`
+	Source      string `json:"source"`
+}
+
 var dependencyProofName = regexp.MustCompile(`^blake3-512:[0-9a-f]{128}\.proof$`)
+
+func resolveDependencyProofs(projectRoot string) ([]dependencyProof, error) {
+	paths, err := resolveDependencyProofPaths(projectRoot)
+	if err != nil {
+		return nil, err
+	}
+	proofs := make([]dependencyProof, 0, len(paths))
+	for _, path := range paths {
+		bytes, err := os.ReadFile(path)
+		if err != nil {
+			return nil, err
+		}
+		proofs = append(proofs, dependencyProof{
+			CID:         strings.TrimSuffix(filepath.Base(path), ".proof"),
+			BytesBase64: base64.StdEncoding.EncodeToString(bytes),
+			Source:      "go-module:" + filepath.Base(path),
+		})
+	}
+	return proofs, nil
+}
 
 func resolveDependencyProofPaths(projectRoot string) ([]string, error) {
 	root := strings.TrimSpace(projectRoot)
@@ -221,7 +248,7 @@ func resolveDependencyProofPaths(projectRoot string) ([]string, error) {
 		originals = append(originals, proof)
 	}
 	sort.Strings(originals)
-	return copyProofsToTemp(originals)
+	return originals, nil
 }
 
 func effectiveModuleDir(module listedGoModule) string {
@@ -268,46 +295,6 @@ func collectProofPaths(root string, proofs map[string]struct{}) error {
 		proofs[filepath.Clean(abs)] = struct{}{}
 		return nil
 	})
-}
-
-func copyProofsToTemp(paths []string) ([]string, error) {
-	if len(paths) == 0 {
-		return []string{}, nil
-	}
-	root, err := os.MkdirTemp("", "provekit-go-dependency-proofs-")
-	if err != nil {
-		return nil, err
-	}
-	out := make([]string, 0, len(paths))
-	for i, path := range paths {
-		dir := filepath.Join(root, fmt.Sprintf("%04d", i))
-		if err := os.MkdirAll(dir, 0o755); err != nil {
-			return nil, err
-		}
-		dst := filepath.Join(dir, filepath.Base(path))
-		if err := copyFile(path, dst); err != nil {
-			return nil, err
-		}
-		out = append(out, dst)
-	}
-	return out, nil
-}
-
-func copyFile(src, dst string) error {
-	in, err := os.Open(src)
-	if err != nil {
-		return err
-	}
-	defer in.Close()
-	out, err := os.Create(dst)
-	if err != nil {
-		return err
-	}
-	if _, err := io.Copy(out, in); err != nil {
-		_ = out.Close()
-		return err
-	}
-	return out.Close()
 }
 
 func asMissing(err error, target **MissingTemplateError) bool {

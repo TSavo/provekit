@@ -544,23 +544,22 @@ pub fn run(args: ProveArgs) -> u8 {
         }
     }
 
-    let dependency_proof_files =
-        match crate::kit_dispatch::dependency_proof_paths_via_rpc(&project_root) {
-            Ok(paths) => paths,
-            Err(error) => {
-                eprintln!(
-                    "{}: dependency proof resolution skipped: {error}",
-                    "warning".yellow().bold()
-                );
-                Vec::new()
-            }
-        };
+    let dependency_proofs = match crate::kit_dispatch::dependency_proofs_via_rpc(&project_root) {
+        Ok(proofs) => proofs,
+        Err(error) => {
+            eprintln!(
+                "{}: dependency proof resolution skipped: {error}",
+                "warning".yellow().bold()
+            );
+            Vec::new()
+        }
+    };
 
     let cfg = RunnerConfig {
         project_root: project_root.clone(),
         z3_path: args.z3,
         extra_projects,
-        extra_proof_files: dependency_proof_files,
+        extra_proofs: dependency_proofs,
         ..Default::default()
     };
     let runner = Runner::new(cfg);

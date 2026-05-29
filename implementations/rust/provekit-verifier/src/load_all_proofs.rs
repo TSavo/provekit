@@ -28,6 +28,13 @@ use crate::types::{LoadError, MementoPool};
 const HASH_TAG_PREFIX: &str = "blake3-512:";
 const SIG_TAG_PREFIX: &str = "ed25519:";
 
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ProofBytes {
+    pub label: String,
+    pub expected_cid: Option<String>,
+    pub bytes: Vec<u8>,
+}
+
 pub fn run(project_root: &Path) -> MementoPool {
     let mut pool = MementoPool::default();
     for path in enumerate_proof_files(project_root) {
@@ -48,6 +55,23 @@ pub fn load_files_into_pool(proof_files: &[PathBuf], pool: &mut MementoPool) {
     proof_files.dedup();
     for path in proof_files {
         load_path_into_pool(&path, pool);
+    }
+}
+
+pub fn load_proof_bytes_into_pool(proofs: &[ProofBytes], pool: &mut MementoPool) {
+    let mut proofs = proofs.to_vec();
+    proofs.sort_by(|a, b| {
+        (a.expected_cid.as_deref(), a.label.as_str())
+            .cmp(&(b.expected_cid.as_deref(), b.label.as_str()))
+    });
+    proofs.dedup_by(|a, b| a.expected_cid == b.expected_cid && a.bytes == b.bytes);
+    for proof in proofs {
+        load_bytes_into_pool(
+            &proof.label,
+            proof.expected_cid.as_deref(),
+            &proof.bytes,
+            pool,
+        );
     }
 }
 
@@ -84,6 +108,7 @@ fn enumerate_proof_files(project_root: &Path) -> Vec<PathBuf> {
 
 fn load_one(path: &Path, pool: &mut MementoPool) -> Result<(), Box<dyn std::error::Error>> {
     let bytes = std::fs::read(path)?;
+    let source_label = path.display().to_string();
 
     // Rule 1: filename CID matches content (trust root).
     let filename = path
@@ -100,7 +125,7 @@ fn load_one(path: &Path, pool: &mut MementoPool) -> Result<(), Box<dyn std::erro
     let hex_only = filename_hex.chars().all(|c| c.is_ascii_hexdigit());
     if hex_only && filename_hex.len() == 128 && filename_hex != derived_hex {
         pool.load_errors.push(LoadError {
-            proof_path: path.display().to_string(),
+            proof_path: source_label,
             reason: format!(
                 "rule 1 (trust root): filename CID {filename_hex} != content hash {derived_hex}"
             ),
@@ -113,7 +138,7 @@ fn load_one(path: &Path, pool: &mut MementoPool) -> Result<(), Box<dyn std::erro
     // it must be blake3-512.)
     if !hex_only && !filename_hex.is_empty() {
         pool.load_errors.push(LoadError {
-            proof_path: path.display().to_string(),
+            proof_path: source_label,
             reason: format!(
                 "rule 1: filename '{filename}' has non-hex stem; v1.1.0 requires `blake3-512:`"
             ),
@@ -121,7 +146,43 @@ fn load_one(path: &Path, pool: &mut MementoPool) -> Result<(), Box<dyn std::erro
         return Ok(());
     }
 
-    let catalog = decode(&bytes)?;
+    load_catalog_bytes(path.display().to_string(), None, &bytes, pool)
+}
+
+fn load_bytes_into_pool(
+    source_label: &str,
+    expected_cid: Option<&str>,
+    bytes: &[u8],
+    pool: &mut MementoPool,
+) {
+    if let Err(e) = load_catalog_bytes(source_label.to_string(), expected_cid, bytes, pool) {
+        pool.load_errors.push(LoadError {
+            proof_path: source_label.to_string(),
+            reason: format!("read/decode: {e}"),
+        });
+    }
+}
+
+fn load_catalog_bytes(
+    source_label: String,
+    expected_cid: Option<&str>,
+    bytes: &[u8],
+    pool: &mut MementoPool,
+) -> Result<(), Box<dyn std::error::Error>> {
+    let derived_full = blake3_512_of(bytes);
+    if let Some(expected_cid) = expected_cid {
+        if expected_cid != derived_full {
+            pool.load_errors.push(LoadError {
+                proof_path: source_label,
+                reason: format!(
+                    "rule 1 (trust root): expected proof CID {expected_cid} != content hash {derived_full}"
+                ),
+            });
+            return Ok(());
+        }
+    }
+
+    let catalog = decode(bytes)?;
     let m_root = catalog.as_map().ok_or("catalog is not a map")?.clone();
 
     let members = m_root
@@ -132,7 +193,7 @@ fn load_one(path: &Path, pool: &mut MementoPool) -> Result<(), Box<dyn std::erro
     for (cid, val) in members_map {
         if !cid.starts_with(HASH_TAG_PREFIX) {
             pool.load_errors.push(LoadError {
-                proof_path: path.display().to_string(),
+                proof_path: source_label.clone(),
                 reason: format!(
                     "member {cid}: unsupported hash tag; v1.1.0 requires `{HASH_TAG_PREFIX}`"
                 ),
@@ -143,7 +204,7 @@ fn load_one(path: &Path, pool: &mut MementoPool) -> Result<(), Box<dyn std::erro
             Some(b) => b,
             None => {
                 pool.load_errors.push(LoadError {
-                    proof_path: path.display().to_string(),
+                    proof_path: source_label.clone(),
                     reason: format!("member {cid}: value is not bstr"),
                 });
                 continue;
@@ -154,7 +215,7 @@ fn load_one(path: &Path, pool: &mut MementoPool) -> Result<(), Box<dyn std::erro
             Ok(v) => v,
             Err(e) => {
                 pool.load_errors.push(LoadError {
-                    proof_path: path.display().to_string(),
+                    proof_path: source_label.clone(),
                     reason: format!("member {cid}: JSON parse: {e}"),
                 });
                 continue;
@@ -170,7 +231,7 @@ fn load_one(path: &Path, pool: &mut MementoPool) -> Result<(), Box<dyn std::erro
         if let Some(sig) = sig_str_opt {
             if !sig.starts_with(SIG_TAG_PREFIX) {
                 pool.load_errors.push(LoadError {
-                    proof_path: path.display().to_string(),
+                    proof_path: source_label.clone(),
                     reason: format!(
                         "member {cid}: unsupported signature tag; v1.1.0 requires `{SIG_TAG_PREFIX}`"
                     ),
@@ -184,7 +245,7 @@ fn load_one(path: &Path, pool: &mut MementoPool) -> Result<(), Box<dyn std::erro
         let derived = compute_member_cid(&env);
         if derived != *cid {
             pool.load_errors.push(LoadError {
-                proof_path: path.display().to_string(),
+                proof_path: source_label.clone(),
                 reason: format!("rule 2: member {cid} derives to {derived}"),
             });
             continue;

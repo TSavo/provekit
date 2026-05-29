@@ -34,6 +34,7 @@
 // Per Supra omnia, rectum the dispatcher refuses loudly with a gap record
 // the caller turns into a `GapRecord` and propagates downstream.
 
+use base64::{engine::general_purpose::STANDARD as BASE64, Engine as _};
 use serde_json::{json, Value};
 use std::collections::{BTreeMap, BTreeSet};
 use std::io::{BufRead, BufReader, Write};
@@ -52,6 +53,7 @@ use provekit_plugin_loader::{
     cid::compute_plugin_cid, write_plugin_registry_memento, PluginEnvelope, PluginHeader,
     PluginMemento, PluginMetadata, PluginRegistry, PluginRegistryMemento,
 };
+use provekit_verifier::load_all_proofs::ProofBytes;
 
 use crate::project_config::read_project_config;
 
@@ -351,11 +353,11 @@ fn read_provides_concepts_from_manifest_source(workspace_root: &Path, source: &s
     }
 }
 
-/// Ask every configured kit plugin for dependency `.proof` files resolved from
+/// Ask every configured kit plugin for dependency proof catalogs resolved from
 /// the project's package-manager graph. The substrate stays language-blind:
-/// this function only iterates configured plugin commands, invokes the common
-/// RPC verb, and returns proof file paths for the verifier to content-address.
-pub fn dependency_proof_paths_via_rpc(workspace_root: &Path) -> Result<Vec<PathBuf>, String> {
+/// this function only iterates configured plugin commands and consumes proof
+/// bytes over RPC. The CLI never follows package-system `.proof` paths.
+pub fn dependency_proofs_via_rpc(workspace_root: &Path) -> Result<Vec<ProofBytes>, String> {
     let registry = run_plugin_registry_for_project(workspace_root)?;
     let mut commands: BTreeMap<String, ResolvedCommand> = BTreeMap::new();
     for plugin in registry
@@ -372,26 +374,29 @@ pub fn dependency_proof_paths_via_rpc(workspace_root: &Path) -> Result<Vec<PathB
             .or_insert_with(|| command);
     }
 
-    let mut proof_paths = BTreeSet::new();
+    let mut proofs = Vec::new();
     for command in commands.values() {
-        let Some(paths) = dependency_proof_paths_for_command(workspace_root, command)? else {
+        let Some(mut resolved) = dependency_proofs_for_command(workspace_root, command)? else {
             continue;
         };
-        for path in paths {
-            proof_paths.insert(path);
-        }
+        proofs.append(&mut resolved);
     }
-    Ok(proof_paths.into_iter().collect())
+    proofs.sort_by(|a, b| {
+        (a.expected_cid.as_deref(), a.label.as_str())
+            .cmp(&(b.expected_cid.as_deref(), b.label.as_str()))
+    });
+    proofs.dedup_by(|a, b| a.expected_cid == b.expected_cid && a.bytes == b.bytes);
+    Ok(proofs)
 }
 
 fn command_key(command: &ResolvedCommand) -> String {
     format!("{:?}\u{0}{:?}", command.argv, command.working_dir)
 }
 
-fn dependency_proof_paths_for_command(
+fn dependency_proofs_for_command(
     workspace_root: &Path,
     cmd_spec: &ResolvedCommand,
-) -> Result<Option<Vec<PathBuf>>, String> {
+) -> Result<Option<Vec<ProofBytes>>, String> {
     let mut command = Command::new(&cmd_spec.argv[0]);
     if cmd_spec.argv.len() > 1 {
         command.args(&cmd_spec.argv[1..]);
@@ -475,57 +480,95 @@ fn dependency_proof_paths_for_command(
         return Err(format!("dependency proof resolver error: {error}"));
     }
 
-    let paths = response
-        .get("result")
-        .and_then(|result| {
-            result
-                .get("proof_paths")
-                .or_else(|| result.get("proofPaths"))
-                .or_else(|| result.get("paths"))
-        })
+    let result = response.get("result").cloned().unwrap_or(Value::Null);
+    let proofs = result
+        .get("proofs")
+        .or_else(|| result.get("proofs_base64"))
+        .or_else(|| result.get("proofBytes"))
         .and_then(Value::as_array)
         .cloned()
         .unwrap_or_default();
     let mut out = Vec::new();
-    for path in paths {
-        let Some(path) = path.as_str() else {
-            record_dependency_proof_diagnostic(format!(
-                "dependency proof resolver {:?} returned a non-string path: {path}",
-                cmd_spec.argv
-            ));
-            continue;
-        };
-        if let Some(path) = normalize_dependency_proof_path(workspace_root, path) {
-            out.push(path);
+    for proof in proofs {
+        match decode_dependency_proof_entry(cmd_spec, &proof) {
+            Some(decoded) => out.push(decoded),
+            None => continue,
         }
     }
-    out.sort();
-    out.dedup();
+
+    let legacy_paths = result
+        .get("proof_paths")
+        .or_else(|| result.get("proofPaths"))
+        .or_else(|| result.get("paths"))
+        .and_then(Value::as_array)
+        .map(Vec::len)
+        .unwrap_or(0);
+    if legacy_paths > 0 {
+        record_dependency_proof_diagnostic(format!(
+            "dependency proof resolver {:?} returned legacy proof_paths; ignoring paths because package proof bytes must cross RPC",
+            cmd_spec.argv
+        ));
+    }
+
+    out.sort_by(|a, b| {
+        (a.expected_cid.as_deref(), a.label.as_str())
+            .cmp(&(b.expected_cid.as_deref(), b.label.as_str()))
+    });
+    out.dedup_by(|a, b| a.expected_cid == b.expected_cid && a.bytes == b.bytes);
     Ok(Some(out))
 }
 
-fn normalize_dependency_proof_path(workspace_root: &Path, path: &str) -> Option<PathBuf> {
-    let path = PathBuf::from(path);
-    let resolved = if path.is_absolute() {
-        path
-    } else {
-        workspace_root.join(path)
+fn decode_dependency_proof_entry(cmd_spec: &ResolvedCommand, proof: &Value) -> Option<ProofBytes> {
+    let Some(object) = proof.as_object() else {
+        record_dependency_proof_diagnostic(format!(
+            "dependency proof resolver {:?} returned a non-object proof entry: {proof}",
+            cmd_spec.argv
+        ));
+        return None;
     };
-    if resolved.extension().and_then(|s| s.to_str()) != Some("proof") {
+    let expected_cid = object
+        .get("cid")
+        .or_else(|| object.get("proof_cid"))
+        .or_else(|| object.get("proofCid"))
+        .and_then(Value::as_str)
+        .filter(|s| !s.is_empty())
+        .map(str::to_string);
+    let Some(bytes_base64) = object
+        .get("bytes_base64")
+        .or_else(|| object.get("bytesBase64"))
+        .and_then(Value::as_str)
+    else {
         record_dependency_proof_diagnostic(format!(
-            "dependency proof resolver returned non-.proof path {}; skipping",
-            resolved.display()
+            "dependency proof resolver {:?} returned a proof entry without bytes_base64: {proof}",
+            cmd_spec.argv
         ));
         return None;
-    }
-    if !resolved.is_file() {
-        record_dependency_proof_diagnostic(format!(
-            "dependency proof resolver returned missing path {}; skipping",
-            resolved.display()
-        ));
-        return None;
-    }
-    Some(resolved)
+    };
+    let bytes = match BASE64.decode(bytes_base64) {
+        Ok(bytes) => bytes,
+        Err(error) => {
+            record_dependency_proof_diagnostic(format!(
+                "dependency proof resolver {:?} returned invalid bytes_base64: {error}",
+                cmd_spec.argv
+            ));
+            return None;
+        }
+    };
+    let derived_cid = blake3_512_of(&bytes);
+    let label = object
+        .get("source")
+        .or_else(|| object.get("label"))
+        .and_then(Value::as_str)
+        .filter(|s| !s.is_empty())
+        .map(str::to_string)
+        .or_else(|| expected_cid.clone())
+        .unwrap_or(derived_cid);
+
+    Some(ProofBytes {
+        label,
+        expected_cid,
+        bytes,
+    })
 }
 
 fn record_dependency_proof_diagnostic(message: String) {

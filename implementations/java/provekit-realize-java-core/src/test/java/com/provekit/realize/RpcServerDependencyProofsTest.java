@@ -14,6 +14,7 @@ import java.lang.reflect.Method;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.util.Base64;
 import java.util.HashSet;
 import java.util.Set;
 import java.util.jar.JarEntry;
@@ -55,18 +56,26 @@ public class RpcServerDependencyProofsTest {
 
         Jcs.Obj doc = (Jcs.Obj) Jcs.parse(response);
         assertNull(doc.get("error"), "resolve_dependency_proofs must not error: " + response);
-        Jcs.Arr paths = doc.objectField("result").arrayField("proof_paths");
-        assertEquals(2, paths.values().size(), "expected both dependency proofs: " + response);
+        Jcs.Arr proofs = doc.objectField("result").arrayField("proofs");
+        assertEquals(2, proofs.values().size(), "expected both dependency proofs: " + response);
 
-        Set<String> names = new HashSet<>();
-        for (Jcs.Json item : paths.values()) {
-            assertInstanceOf(Jcs.Str.class, item, "proof path must be a JSON string");
-            Path path = Path.of(((Jcs.Str) item).value());
-            assertTrue(path.isAbsolute(), "proof path must be absolute: " + path);
-            assertTrue(Files.isRegularFile(path), "proof path must be readable: " + path);
-            names.add(path.getFileName().toString());
+        Set<String> cids = new HashSet<>();
+        Set<String> contents = new HashSet<>();
+        for (Jcs.Json item : proofs.values()) {
+            Jcs.Obj proof = assertInstanceOf(Jcs.Obj.class, item, "proof must be a JSON object");
+            cids.add(proof.stringField("cid"));
+            contents.add(new String(
+                Base64.getDecoder().decode(proof.stringField("bytes_base64")),
+                StandardCharsets.UTF_8
+            ));
+            String source = proof.stringField("source");
+            assertTrue(
+                source.startsWith("java-jar:"),
+                "source must be a diagnostic label, not a filesystem authority: " + source
+            );
         }
-        assertEquals(Set.of(PROOF_A, PROOF_B), names);
+        assertEquals(Set.of(stripProof(PROOF_A), stripProof(PROOF_B)), cids);
+        assertEquals(Set.of("proof-one", "proof-two"), contents);
     }
 
     @Test
@@ -86,8 +95,12 @@ public class RpcServerDependencyProofsTest {
 
         Jcs.Obj doc = (Jcs.Obj) Jcs.parse(response);
         assertNull(doc.get("error"), "resolve_dependency_proofs must not error: " + response);
-        Jcs.Arr paths = doc.objectField("result").arrayField("proof_paths");
-        assertTrue(paths.values().isEmpty(), "expected no dependency proofs: " + response);
+        Jcs.Arr proofs = doc.objectField("result").arrayField("proofs");
+        assertTrue(proofs.values().isEmpty(), "expected no dependency proofs: " + response);
+    }
+
+    private static String stripProof(String name) {
+        return name.substring(0, name.length() - ".proof".length());
     }
 
     private Path writeJar(String name, String entryName, String content) throws Exception {

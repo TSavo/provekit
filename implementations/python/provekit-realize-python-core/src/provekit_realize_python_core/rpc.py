@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import base64
 from fnmatch import fnmatch
 from importlib import metadata as importlib_metadata
 import json
@@ -125,7 +126,7 @@ def dispatch(request: dict[str, Any]) -> dict[str, Any]:
         return {
             "jsonrpc": "2.0",
             "id": msg_id,
-            "result": {"proof_paths": _resolve_dependency_proof_paths()},
+            "result": {"proofs": _resolve_dependency_proofs()},
         }
     if method == "provekit.plugin.check":
         if not isinstance(params, dict):
@@ -195,6 +196,21 @@ def _resolve_dependency_proof_paths() -> list[str]:
             if path.is_file():
                 proof_paths.add(str(path))
     return sorted(proof_paths)
+
+
+def _resolve_dependency_proofs() -> list[dict[str, str]]:
+    proofs: list[dict[str, str]] = []
+    for path_text in _resolve_dependency_proof_paths():
+        path = Path(path_text)
+        proof_bytes = path.read_bytes()
+        proofs.append(
+            {
+                "cid": path.name.removesuffix(".proof"),
+                "bytes_base64": base64.b64encode(proof_bytes).decode("ascii"),
+                "source": f"python-distribution:{path.name}",
+            }
+        )
+    return proofs
 
 
 def _check_materialized(params: dict[str, Any]) -> dict[str, Any]:

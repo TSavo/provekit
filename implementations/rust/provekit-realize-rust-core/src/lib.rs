@@ -4,6 +4,7 @@ use std::collections::{BTreeMap, BTreeSet};
 use std::path::{Path, PathBuf};
 use std::sync::OnceLock;
 
+use base64::{engine::general_purpose::STANDARD as BASE64, Engine as _};
 use provekit_canonicalizer::{blake3_512_of, encode_jcs, Value as CValue};
 use provekit_ir_types::realization_tags::tag_sugar_carrier;
 use serde_json::{json, Value};
@@ -2372,6 +2373,15 @@ fn collect_package_proof_files(package_dir: &Path, proof_paths: &mut BTreeSet<Pa
     }
 }
 
+fn dependency_proof_json(path: &Path) -> Option<Value> {
+    let bytes = std::fs::read(path).ok()?;
+    Some(json!({
+        "cid": blake3_512_of(&bytes),
+        "bytes_base64": BASE64.encode(bytes),
+        "source": path.display().to_string()
+    }))
+}
+
 pub fn dispatch(request: &Value) -> Value {
     let id = request.get("id").cloned().unwrap_or(Value::Null);
     let method = request.get("method").and_then(Value::as_str).unwrap_or("");
@@ -2407,9 +2417,9 @@ pub fn dispatch(request: &Value) -> Value {
                     "jsonrpc": "2.0",
                     "id": id,
                     "result": {
-                        "proof_paths": paths
+                        "proofs": paths
                             .iter()
-                            .map(|path| path.display().to_string())
+                            .filter_map(|path| dependency_proof_json(path))
                             .collect::<Vec<_>>()
                     }
                 }),
@@ -4715,16 +4725,18 @@ mod tests {
             response.get("error").is_none(),
             "resolver must be implemented by the Rust kit; got {response}"
         );
-        let paths = response
-            .pointer("/result/proof_paths")
+        let proofs = response
+            .pointer("/result/proofs")
             .and_then(Value::as_array)
             .cloned()
             .unwrap_or_default();
         assert!(
-            paths
+            proofs
                 .iter()
-                .any(|path| path.as_str() == Some(proof_path.to_str().unwrap())),
-            "expected dependency proof path {} in response {response}",
+                .any(|proof| proof.get("source").and_then(Value::as_str)
+                    == Some(proof_path.to_str().unwrap())
+                    && proof.get("bytes_base64").and_then(Value::as_str).is_some()),
+            "expected dependency proof bytes sourced from {} in response {response}",
             proof_path.display()
         );
         let _ = fs::remove_dir_all(root);
