@@ -40,6 +40,8 @@ func RunRPC(stdin io.Reader, stdout io.Writer) error {
 		switch req.Method {
 		case "provekit.plugin.invoke":
 			writeJSON(stdout, handleInvoke(req.ID, req.Params))
+		case "provekit.plugin.assemble":
+			writeJSON(stdout, handleAssemble(req.ID, req.Params))
 		case "provekit.plugin.resolve_dependency_proofs":
 			writeJSON(stdout, handleResolveDependencyProofs(req.ID, req.Params))
 		case "provekit.plugin.body_template_entries":
