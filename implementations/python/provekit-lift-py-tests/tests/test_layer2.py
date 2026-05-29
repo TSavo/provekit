@@ -186,6 +186,47 @@ def test_pattern3_unittest_assertEqual_recognized():
     assert out.decls[0].name == "test_three"
 
 
+def test_pattern3_plain_unittest_testcase_assertions_lift_to_contract_atoms():
+    out = _lift("""
+        import unittest
+
+        class ParserTest(unittest.TestCase):
+            def test_native_assertions(self):
+                self.assertEqual(parse_int("42"), 42)
+                self.assertNotEqual(parse_int("0"), 1)
+                self.assertTrue(parse_int("5") > 0)
+                self.assertIsNone(maybe_none())
+                self.assertIsNotNone(maybe_value())
+    """)
+    assert out.characterization_lifted == 1, f"warnings: {out.warnings}"
+    assert out.decls[0].name == "test_native_assertions"
+    inv = out.decls[0].inv
+    assert isinstance(inv, _Connective)
+    assert inv.kind == "and"
+    atoms = list(inv.operands)
+    assert len(atoms) == 5
+    assert [atom.name for atom in atoms] == ["=", "≠", ">", "=", "≠"]
+    none_atoms = [
+        atom
+        for atom in atoms
+        if atom.name in {"=", "≠"} and isinstance(atom.args[1], _Ctor)
+    ]
+    assert [atom.args[1].name for atom in none_atoms] == ["None", "None"]
+
+
+def test_unittest_unsupported_assertion_warns_without_fake_contract():
+    out = _lift("""
+        import unittest
+
+        class RegexTest(unittest.TestCase):
+            def test_regex(self):
+                self.assertRegex("abc", "a.*")
+    """)
+    assert out.lifted == 0
+    assert "test_regex" in out.claimed_tests
+    assert any("assertRegex" in w.reason and "lift-gap" in w.reason for w in out.warnings)
+
+
 # --- Pattern 4: parametrize ---------------------------------------------
 
 

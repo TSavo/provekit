@@ -59,12 +59,17 @@ _FIXTURE_PATH = "test_fixture.py"
 def _run_lsp(ndjson_input: str) -> List[dict]:
     """Spawn the LSP binary, feed ndjson_input, return parsed response lines."""
     cmd = _lsp_cmd()
+    src_dir = os.path.normpath(os.path.join(os.path.dirname(__file__), "..", "src"))
+    env = os.environ.copy()
+    existing = env.get("PYTHONPATH")
+    env["PYTHONPATH"] = src_dir if not existing else os.pathsep.join([src_dir, existing])
     result = subprocess.run(
         cmd,
         input=ndjson_input,
         capture_output=True,
         text=True,
         timeout=10,
+        env=env,
     )
     assert result.returncode == 0, (
         f"LSP binary exited {result.returncode}; stderr: {result.stderr!r}"
@@ -172,3 +177,55 @@ class TestDaemonProtocol:
         parse_resp = next(r for r in responses if r.get("id") == 2)
         assert "error" in parse_resp, "Expected error for unsupported language"
         assert parse_resp["error"]["code"] == -32602
+
+    def test_parse_plain_unittest_testcase_assertions_as_normalized_contract(self):
+        """Plain unittest.TestCase assertions lift through RPC as one contract."""
+        source = """\
+import unittest
+
+class ParserTest(unittest.TestCase):
+    def test_native_assertions(self):
+        self.assertEqual(parse_int("42"), 42)
+        self.assertNotEqual(parse_int("0"), 1)
+        self.assertTrue(parse_int("5") > 0)
+        self.assertIsNone(maybe_none())
+        self.assertIsNotNone(maybe_value())
+"""
+        responses = _run_lsp(_build_session(source=source, path="test_parser.py"))
+        parse_resp = next(r for r in responses if r.get("id") == 2)
+        assert "error" not in parse_resp, f"parse returned error: {parse_resp}"
+        decls = parse_resp["result"]["declarations"]
+        assert len(decls) == 1
+        decl = decls[0]
+        assert decl["kind"] == "contract"
+        assert decl["name"] == "test_native_assertions"
+        inv = decl["inv"]
+        assert inv["kind"] == "and"
+        assert [op["name"] for op in inv["operands"]] == ["=", "≠", ">", "=", "≠"]
+        none_atoms = [
+            op for op in inv["operands"]
+            if op["name"] in {"=", "≠"}
+            and len(op["args"]) == 2
+            and op["args"][1].get("kind") == "ctor"
+            and op["args"][1].get("name") == "None"
+        ]
+        assert len(none_atoms) == 2
+
+    def test_parse_unsupported_unittest_assertion_reports_lift_gap_warning(self):
+        """Unsupported unittest forms report a gap and do not mint a contract."""
+        source = """\
+import unittest
+
+class RegexTest(unittest.TestCase):
+    def test_regex(self):
+        self.assertRegex("abc", "a.*")
+"""
+        responses = _run_lsp(_build_session(source=source, path="test_regex.py"))
+        parse_resp = next(r for r in responses if r.get("id") == 2)
+        assert "error" not in parse_resp, f"parse returned error: {parse_resp}"
+        result = parse_resp["result"]
+        assert result["declarations"] == []
+        assert any(
+            "assertRegex" in warning["reason"] and "lift-gap" in warning["reason"]
+            for warning in result["warnings"]
+        )
