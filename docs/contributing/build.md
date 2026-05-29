@@ -83,7 +83,7 @@ The conformance gate is the heart of the polyglot story. Every implementation mi
 
 Additional protocol/tooling checks now run in CI:
 
-- **Proof protocol conformance.** `.proof` fixtures under `protocol/conformance/proof-protocol/` are checked by `provekit proof`.
+- **Proof protocol conformance.** `.proof` fixtures under `protocol/conformance/proof-protocol/` are checked by the current verification gates.
 - **Bug Zoo.** `cargo run --manifest-path menagerie/bug-zoo/Cargo.toml -- --all` verifies exhibit ProofIR equivalence, scoped proof receipts, polyglot link-bundle receipts, and fixed-pair closure for checked-in specimens.
 
 If you are adding a new implementation, see [porting-to-a-new-language.md](porting-to-a-new-language.md) for how the conformance harness picks up your kit.

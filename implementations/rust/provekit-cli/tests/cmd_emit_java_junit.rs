@@ -175,7 +175,7 @@ fn emit_java_junit_dispatches_real_emitter_and_maven_checks_output() {
             "params": ["a", "b"],
             "param_types": ["int", "int"],
             "predicates": [{
-                "kind": "op",
+                "kind": "atomic",
                 "name": "concept:eq",
                 "args": [
                     {"kind": "const", "value": 2, "sort": {"kind": "primitive", "name": "Int"}},

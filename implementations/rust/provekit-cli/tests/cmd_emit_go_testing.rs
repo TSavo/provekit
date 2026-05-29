@@ -117,7 +117,7 @@ fn emit_go_testing_dispatches_manifest_writes_artifact_and_compile_checks() {
             "param_types": ["int"],
             "return_type": "int",
             "predicates": [{
-                "kind": "op",
+                "kind": "atomic",
                 "name": "concept:eq",
                 "args": [
                     {"kind": "var", "name": "x"},

@@ -25,15 +25,12 @@
 //     non-empty-paths invariant (most lifters walk their own working
 //     directory regardless of source_paths).
 
-use std::collections::HashMap;
-use std::io::{BufRead, BufReader, Read, Write};
+use std::io::{BufRead, BufReader, Write};
 use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
 
-use libprovekit::core::{named_term_document_from_bind_payload, Term};
 use owo_colors::OwoColorize;
 use provekit_canonicalizer::blake3_512_of;
-use provekit_ir_compiler::IrCompiler;
 use serde_json::{json, Value};
 
 use provekit_self_contracts::lift_plugin_protocol::{
@@ -42,12 +39,11 @@ use provekit_self_contracts::lift_plugin_protocol::{
     verify_c5_response_kind_matches_layer, verify_c6_ir_document_array,
     verify_c7_diagnostics_field_is_array, verify_c8_call_edge_stream_present,
 };
-use provekit_verifier::solvers::{registry, run_plan, SolverHandle, SolverPlan, SolversConfig};
-use provekit_verifier::{ObligationVerdict, Runner, RunnerConfig};
+use provekit_verifier::{Runner, RunnerConfig};
 
 use crate::project_config::read_project_config;
 use crate::report_fmt;
-use crate::{ProveArgs, ProveTarget};
+use crate::ProveArgs;
 
 // Surface + binary resolution lives in `cmd_mint`. The conformance gate must
 // dispatch to the SAME (project, surface, lifter binary) tuple that `mint`
@@ -483,10 +479,6 @@ fn run_kit(kit: &str, quiet: bool, json_out: bool) -> u8 {
 // ---------------------------------------------------------------------------
 
 pub fn run(args: ProveArgs) -> u8 {
-    if let Some(target) = args.target {
-        return run_target(&args.project, &args.output, target);
-    }
-
     if args.artifact.is_some() || args.proof.is_some() || args.policy.is_some() {
         return run_admission_gate(&args);
     }
@@ -494,17 +486,6 @@ pub fn run(args: ProveArgs) -> u8 {
     // When --kit is given, run the conformance gate.
     if let Some(kit) = &args.kit {
         return run_kit(kit, args.out.quiet, args.out.json);
-    }
-
-    if let Some(formula) = &args.formula {
-        let project_root: PathBuf = args.project.clone().unwrap_or_else(|| PathBuf::from("."));
-        return run_formula_gate(
-            &project_root,
-            formula,
-            &args.z3,
-            args.out.quiet,
-            args.out.json,
-        );
     }
 
     // Otherwise, run the six-stage verifier pipeline.
@@ -586,121 +567,6 @@ pub fn run(args: ProveArgs) -> u8 {
     }
 
     report_fmt::report_exit_code(&report)
-}
-
-fn run_target(input: &Option<PathBuf>, output: &Option<PathBuf>, target: ProveTarget) -> u8 {
-    let raw = match read_target_input(input.as_ref()) {
-        Ok(raw) => raw,
-        Err(error) => {
-            eprintln!("{}: {error}", "error".red().bold());
-            return crate::EXIT_USER_ERROR;
-        }
-    };
-    let document: Value = match serde_json::from_slice(&raw) {
-        Ok(value) => value,
-        Err(error) => {
-            eprintln!("{}: parse target input JSON: {error}", "error".red().bold());
-            return crate::EXIT_USER_ERROR;
-        }
-    };
-    let formula = match target_formula(&document) {
-        Ok(formula) => formula,
-        Err(error) => {
-            eprintln!("{}: {error}", "error".red().bold());
-            return crate::EXIT_USER_ERROR;
-        }
-    };
-    let text = match solver_text(&formula, target) {
-        Ok(text) => text,
-        Err(error) => {
-            eprintln!("{}: prove target: {error}", "error".red().bold());
-            return crate::EXIT_USER_ERROR;
-        }
-    };
-    if let Err(error) = write_target_output(output.as_ref(), text.as_bytes()) {
-        eprintln!("{}: {error}", "error".red().bold());
-        return crate::EXIT_USER_ERROR;
-    }
-    crate::EXIT_OK
-}
-
-fn read_target_input(path: Option<&PathBuf>) -> Result<Vec<u8>, String> {
-    match path {
-        Some(path) if path.as_os_str() != "-" => {
-            std::fs::read(path).map_err(|e| format!("read {}: {e}", path.display()))
-        }
-        _ => {
-            let mut bytes = Vec::new();
-            std::io::stdin()
-                .read_to_end(&mut bytes)
-                .map_err(|e| format!("read stdin: {e}"))?;
-            Ok(bytes)
-        }
-    }
-}
-
-fn write_target_output(path: Option<&PathBuf>, bytes: &[u8]) -> Result<(), String> {
-    match path {
-        Some(path) if path.as_os_str() != "-" => {
-            std::fs::write(path, bytes).map_err(|e| format!("write {}: {e}", path.display()))
-        }
-        _ => {
-            let mut stdout = std::io::stdout().lock();
-            stdout
-                .write_all(bytes)
-                .map_err(|e| format!("write stdout: {e}"))
-        }
-    }
-}
-
-fn target_formula(document: &Value) -> Result<Value, String> {
-    let named_document =
-        if document.get("kind").and_then(Value::as_str) == Some("named-term-document") {
-            Some(document.clone())
-        } else {
-            serde_json::from_value::<Term>(document.clone())
-                .ok()
-                .and_then(|payload| named_term_document_from_bind_payload(&payload).ok())
-                .map(|named| serde_json::to_value(named).expect("named term serializes"))
-        };
-
-    if let Some(named_document) = named_document {
-        let terms = named_document
-            .get("terms")
-            .and_then(Value::as_array)
-            .ok_or_else(|| "named-term document missing terms array".to_string())?;
-        for term in terms {
-            if let Some(witnesses) = term.get("witnesses").and_then(Value::as_array) {
-                if let Some(predicate) = witnesses
-                    .iter()
-                    .find_map(|witness| witness.get("predicate").cloned())
-                {
-                    return Ok(predicate);
-                }
-            }
-        }
-        return Err("named-term document has no witness predicate to prove".to_string());
-    }
-    Ok(document.clone())
-}
-
-fn solver_text(formula: &Value, target: ProveTarget) -> Result<String, String> {
-    match target {
-        ProveTarget::SmtLib | ProveTarget::Tptp | ProveTarget::Vampire => {
-            provekit_ir_compiler_smt_lib::emit_asserted(formula)
-        }
-        ProveTarget::Coq => {
-            let compiler = provekit_ir_compiler_coq::CoqCompiler::new();
-            compiler
-                .compile(formula, provekit_ir_compiler_coq::DIALECT)
-                .map(|compiled| {
-                    let mut text = compiled.preamble;
-                    text.push_str(&compiled.body);
-                    text
-                })
-                .map_err(|error| error.to_string())
-        }
-    }
 }
 
 fn run_admission_gate(args: &ProveArgs) -> u8 {
@@ -845,165 +711,6 @@ fn read_json_value(path: &Path) -> Result<Value, String> {
     let text =
         std::fs::read_to_string(path).map_err(|e| format!("read {}: {e}", path.display()))?;
     serde_json::from_str(&text).map_err(|e| format!("parse {}: {e}", path.display()))
-}
-
-fn run_formula_gate(
-    project_root: &Path,
-    formula_path: &Path,
-    z3_path: &str,
-    quiet: bool,
-    json_out: bool,
-) -> u8 {
-    let started = std::time::Instant::now();
-    trace_log(format!(
-        "prove formula start project={} formula={}",
-        project_root.display(),
-        formula_path.display()
-    ));
-    if !project_root.exists() {
-        eprintln!(
-            "{}: project root does not exist: {}",
-            "error".red().bold(),
-            project_root.display()
-        );
-        return crate::EXIT_USER_ERROR;
-    }
-
-    let formula = match read_formula_json(formula_path) {
-        Ok(formula) => formula,
-        Err(error) => {
-            eprintln!("{}: {error}", "error".red().bold());
-            return crate::EXIT_USER_ERROR;
-        }
-    };
-    trace_log(format!(
-        "prove formula parsed formula={} elapsed={:?}",
-        formula_path.display(),
-        started.elapsed()
-    ));
-
-    let smt = match provekit_verifier::smt_emitter::emit(&formula) {
-        Ok(smt) => smt,
-        Err(error) => {
-            eprintln!("{}: SMT emission failed: {error}", "error".red().bold());
-            return crate::EXIT_SOLVER_FAIL;
-        }
-    };
-    trace_log(format!(
-        "prove formula emitted SMT formula={} elapsed={:?}",
-        formula_path.display(),
-        started.elapsed()
-    ));
-
-    let cfg = RunnerConfig {
-        project_root: project_root.to_path_buf(),
-        z3_path: z3_path.to_string(),
-        ..Default::default()
-    };
-    let (plan, registry) = build_formula_plan_and_registry(&cfg);
-    trace_log(format!(
-        "prove formula run solver plan formula={} elapsed={:?}",
-        formula_path.display(),
-        started.elapsed()
-    ));
-    let (verdict, reason, invocations) = run_plan(&plan, &registry, &smt, Some(&formula));
-    trace_log(format!(
-        "prove formula solver verdict={} formula={} elapsed={:?}",
-        verdict.as_str(),
-        formula_path.display(),
-        started.elapsed()
-    ));
-
-    if json_out {
-        let solver_invocations: Vec<Value> = invocations
-            .iter()
-            .map(|invocation| {
-                json!({
-                    "authoritative": invocation.authoritative,
-                    "solver": invocation.result.solver_name,
-                    "version": invocation.result.solver_version,
-                    "status": invocation.result.verdict.as_str(),
-                    "timedOut": invocation.result.timed_out,
-                    "error": invocation.result.error,
-                    "stdout": invocation.result.solver_stdout,
-                    "wallClockMs": invocation.result.wall_clock.as_millis(),
-                })
-            })
-            .collect();
-        let out = json!({
-            "kind": "formula-obligation",
-            "ok": verdict == ObligationVerdict::Discharged,
-            "status": verdict.as_str(),
-            "reason": reason,
-            "solverInvocations": solver_invocations,
-        });
-        match serde_json::to_string_pretty(&out) {
-            Ok(s) => println!("{s}"),
-            Err(error) => {
-                eprintln!("{}: serialize JSON: {error}", "error".red().bold());
-                return crate::EXIT_USER_ERROR;
-            }
-        }
-    } else if !quiet {
-        let status = match verdict {
-            ObligationVerdict::Discharged => "discharged".green().to_string(),
-            ObligationVerdict::Unsatisfied => "unsatisfied".red().to_string(),
-            ObligationVerdict::Undecidable => "undecidable".yellow().to_string(),
-            ObligationVerdict::Disagreement => "disagreement".yellow().to_string(),
-        };
-        println!("{}", "ProvekIt formula obligation".bold());
-        println!("  status : {status}");
-        println!("  reason : {reason}");
-    }
-
-    match verdict {
-        ObligationVerdict::Discharged => crate::EXIT_OK,
-        ObligationVerdict::Unsatisfied => crate::EXIT_VERIFY_FAIL,
-        ObligationVerdict::Undecidable | ObligationVerdict::Disagreement => crate::EXIT_SOLVER_FAIL,
-    }
-}
-
-fn trace_enabled() -> bool {
-    std::env::var_os("PROVEKIT_CLI_TRACE").is_some()
-}
-
-fn trace_log(message: impl std::fmt::Display) {
-    if trace_enabled() {
-        eprintln!("provekit trace: {message}");
-    }
-}
-
-fn build_formula_plan_and_registry(
-    cfg: &RunnerConfig,
-) -> (SolverPlan, HashMap<String, SolverHandle>) {
-    if let Some(sc) = &cfg.solvers_config {
-        return (SolverPlan::from_config(sc), registry::build(sc));
-    }
-    if let Ok(Some(sc)) = SolversConfig::load(&cfg.project_root) {
-        return (SolverPlan::from_config(&sc), registry::build(&sc));
-    }
-    let z3 = if cfg.z3_path.is_empty() {
-        "z3".to_string()
-    } else {
-        cfg.z3_path.clone()
-    };
-    (
-        SolverPlan::Single("z3".into()),
-        registry::build_default_z3(&z3),
-    )
-}
-
-fn read_formula_json(path: &Path) -> Result<Value, String> {
-    let text = if path.as_os_str() == "-" {
-        let mut buf = String::new();
-        let mut stdin = std::io::stdin();
-        std::io::Read::read_to_string(&mut stdin, &mut buf)
-            .map_err(|e| format!("read formula from stdin: {e}"))?;
-        buf
-    } else {
-        std::fs::read_to_string(path).map_err(|e| format!("read {}: {e}", path.display()))?
-    };
-    serde_json::from_str(&text).map_err(|e| format!("parse formula JSON: {e}"))
 }
 
 // ---------------------------------------------------------------------------

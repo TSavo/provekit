@@ -90,7 +90,7 @@ That is the supply-chain move:
 
 ```text
 native evidence -> kit lift/materialize -> ProofIR or protocol claim
-               -> signed memento -> .proof DAG -> provekit proof computation
+               -> signed memento -> .proof DAG -> provekit prove/verify
 ```
 
 ## What The CLI Does
@@ -105,7 +105,6 @@ proof and protocol surfaces such as:
   status.
 - `provekit verify`: verify a kit end to end by lifting contract claims,
   discharging each claim, and emitting per-claim receipts.
-- `provekit proof`: hash, inspect, check, and witness `.proof` conformance.
 - `provekit protocol`: work with protocol catalog evolution artifacts.
 - `provekit materialize`: route concept or boundary carriers through native
   realize kits and emit admitted source plus proof receipts.

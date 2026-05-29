@@ -116,7 +116,7 @@ fn emit_typescript_vitest_dispatches_real_emitter_and_vitest_checks_output() {
             "param_types": ["number"],
             "return_type": "number",
             "predicates": [{
-                "kind": "op",
+                "kind": "atomic",
                 "name": "concept:eq",
                 "args": [
                     {"kind": "const", "value": 2, "sort": {"kind": "primitive", "name": "Int"}},

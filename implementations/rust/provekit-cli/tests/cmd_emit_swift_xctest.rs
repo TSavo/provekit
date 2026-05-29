@@ -140,7 +140,7 @@ fn emit_swift_xctest_dispatches_real_emitter_and_swift_parse_checks_output() {
             "params": ["a", "b"],
             "param_types": ["Int", "Int"],
             "predicates": [{
-                "kind": "op",
+                "kind": "atomic",
                 "name": "concept:eq",
                 "args": [
                     {"kind": "const", "value": 2, "sort": {"kind": "primitive", "name": "Int"}},

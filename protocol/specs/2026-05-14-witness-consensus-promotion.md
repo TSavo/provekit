@@ -10,18 +10,15 @@
 
 The output is not a new receipt family. It is a `PromotionDecisionMemento` with `gate = "threshold"` and `result = "admitted"` when the configured policy admits the witness set.
 
-## CLI Shape
+## Operational Shape
 
-```sh
-provekit witness consensus \
-  --concept concept:sql-query \
-  --require-fixture blake3-512:<fixture> \
-  --min-witnesses 4 \
-  --catalog <file-or-dir> \
-  --emit promotion-receipt.proof
-```
+There is no public `provekit witness` command. Promotion is substrate computation
+over already minted `WitnessMemento` data and belongs in the language-blind CLI,
+but it must be exposed through a current gate command such as `prove`/`verify` or
+a future dedicated promotion command. It must not read raw user-authored ProofIR
+formula files.
 
-`--catalog` MAY be repeated. Each path is walked recursively. Consumers admit standalone `WitnessMemento` JSON files and migration receipts containing `witnesses[]`.
+Catalog inputs MAY be repeated. Each path is walked recursively. Consumers admit standalone `WitnessMemento` JSON files and migration receipts containing `witnesses[]`.
 
 ## Selection
 

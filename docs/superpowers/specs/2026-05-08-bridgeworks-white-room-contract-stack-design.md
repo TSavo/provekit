@@ -104,7 +104,7 @@ The first runner should:
 
 1. load the exhibit manifest;
 2. call `provekit mint` for the exhibit's lift surface;
-3. call `provekit proof inspect` on the emitted `.proof`;
+3. call `provekit prove` against the emitted project proof graph;
 4. compare the observed claim and implication receipts with expected fixtures;
 5. emit a compressed top-level receipt for the checked-add postcondition;
 6. run mutation cases that fail closed when any layer weakens or drops an

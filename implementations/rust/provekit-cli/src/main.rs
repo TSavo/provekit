@@ -16,7 +16,7 @@
 use std::path::PathBuf;
 use std::process::ExitCode;
 
-use clap::{Parser, Subcommand, ValueEnum};
+use clap::{Parser, Subcommand};
 
 mod cmd_bind;
 mod cmd_compose;
@@ -31,14 +31,12 @@ mod cmd_materialize;
 mod cmd_mint;
 mod cmd_package;
 mod cmd_plugin;
-mod cmd_proof;
 mod cmd_protocol;
 mod cmd_prove;
 mod cmd_recognize;
 mod cmd_verify;
 mod cmd_verify_protocol;
 mod cmd_version;
-mod cmd_witness;
 mod kit_dispatch;
 mod lift_plugin;
 mod project_config;
@@ -97,8 +95,6 @@ pub use cmd_plugin::PluginFlags;
 enum Cmd {
     /// Run the six-stage verifier: load proofs, enumerate callsites, solve obligations, report.
     Prove(ProveArgs),
-    /// Work with .proof artifacts: hash, inspect, check conformance.
-    Proof(cmd_proof::ProofArgs),
     /// Work with protocol catalog evolution artifacts.
     Protocol(cmd_protocol::ProtocolArgs),
     /// Inspect package artifacts and supply-chain receipt inputs.
@@ -131,9 +127,6 @@ enum Cmd {
     Mint(cmd_mint::MintArgs),
     /// Emit target/framework test artifacts from neutral contract predicates.
     Emit(cmd_emit::EmitArgs),
-    /// Mint a witness: prove a new property from an existing contract,
-    /// extending the proof lattice. Anyone can mint witnesses.
-    Witness(WitnessArgs),
     /// Confirm the local install conforms to the expected protocol-catalog CID.
     VerifyProtocol(VerifyProtocolArgs),
     /// Print CLI version and the protocol catalog CID it declares conformance to.
@@ -157,11 +150,6 @@ enum Cmd {
 pub struct ProveArgs {
     /// Project root to scan for .proof files. Defaults to the current directory.
     pub project: Option<PathBuf>,
-    /// Prove one IR-JSON formula directly. The formula is valid when the solver
-    /// reports UNSAT for its negation; invalid formulas exit with verification
-    /// failure and report the counterexample status.
-    #[arg(long, conflicts_with = "kit")]
-    pub formula: Option<PathBuf>,
     /// Path to z3 binary (default: "z3" on PATH).
     #[arg(long, default_value = "z3")]
     pub z3: String,
@@ -191,26 +179,12 @@ pub struct ProveArgs {
     /// Known kits: rust, go, cpp, ts, csharp, clr-bytecode, evm-bytecode, swift, java, python, ruby, zig, c, php.
     #[arg(long, conflicts_with = "project")]
     pub kit: Option<String>,
-    /// Emit solver input for a named term or IR formula.
-    #[arg(long, value_enum)]
-    pub target: Option<ProveTarget>,
-    /// Output file for `--target`. Writes stdout when omitted or `-`.
-    #[arg(short = 'o', long = "output")]
-    pub output: Option<PathBuf>,
     #[command(flatten)]
     pub out: OutputFlags,
     /// Additional project directories whose .proof files should also be loaded
     /// (e.g., an OpenAPI spec project for cross-kit verification).
     #[arg(long = "with", num_args = 0..)]
     pub with: Vec<String>,
-}
-
-#[derive(Debug, Clone, Copy, ValueEnum)]
-pub enum ProveTarget {
-    SmtLib,
-    Coq,
-    Tptp,
-    Vampire,
 }
 
 #[derive(Parser, Debug, Clone)]
@@ -294,42 +268,6 @@ pub struct VerifyProtocolArgs {
 }
 
 #[derive(Parser, Debug, Clone)]
-pub struct WitnessArgs {
-    /// Legacy witness contract CID, or the mode name `consensus`.
-    pub command_or_contract: String,
-    /// Legacy path to an IR-JSON formula file representing the property to prove.
-    /// Use `-` for stdin. Not used by `witness consensus`.
-    pub property: Option<PathBuf>,
-    /// Concept identifier required by `witness consensus`.
-    #[arg(long)]
-    pub concept: Option<String>,
-    /// Fixture-state CID required for consensus.
-    #[arg(long = "require-fixture")]
-    pub require_fixture: Option<String>,
-    /// Minimum passing witnesses required before evaluating consensus.
-    /// This is a cardinality floor, not the admission policy.
-    #[arg(long = "min-witnesses", default_value_t = 1)]
-    pub min_witnesses: usize,
-    /// Consensus policy JSON used to decide whether the observed vector admits promotion.
-    #[arg(long = "consensus-policy")]
-    pub consensus_policy: Option<PathBuf>,
-    /// File or directory to scan for WitnessMementos or migration receipts.
-    #[arg(long = "catalog")]
-    pub catalogs: Vec<PathBuf>,
-    /// Path where the PromotionDecisionMemento should be written.
-    #[arg(long)]
-    pub emit: Option<PathBuf>,
-    /// Project root to load the contract from. Defaults to current directory.
-    #[arg(long)]
-    pub project: Option<PathBuf>,
-    /// Path to z3 binary (default: "z3" on PATH).
-    #[arg(long, default_value = "z3")]
-    pub z3: String,
-    #[command(flatten)]
-    pub out: OutputFlags,
-}
-
-#[derive(Parser, Debug, Clone)]
 pub struct VersionArgs {
     #[command(subcommand)]
     pub cmd: Option<cmd_version::VersionCmd>,
@@ -365,7 +303,6 @@ fn main() -> ExitCode {
     let code = match cli.cmd {
         Cmd::Prove(a) => cmd_prove::run(a),
         Cmd::Verify(a) => cmd_verify::run(a),
-        Cmd::Proof(a) => cmd_proof::run(a),
         Cmd::Protocol(a) => cmd_protocol::run(a),
         Cmd::Package(a) => cmd_package::run(a),
         Cmd::Implicate(a) | Cmd::Imp(a) => cmd_implicate::run(a),
@@ -376,7 +313,6 @@ fn main() -> ExitCode {
         Cmd::Lift(a) => cmd_lift::run(a),
         Cmd::Mint(a) => cmd_mint::run(a),
         Cmd::Emit(a) => cmd_emit::run(a),
-        Cmd::Witness(a) => cmd_witness::run(a),
         Cmd::VerifyProtocol(a) => cmd_verify_protocol::run(a),
         Cmd::Version(a) => cmd_version::run(a),
         Cmd::Link(a) => cmd_link::run(a),

@@ -23,5 +23,5 @@ Current corpus:
 
 The protocol `.proof` carries the fixture manifest in signed metadata under
 `provekit.proofProtocol.fixtures.v0`. Core verification treats metadata as
-signed bytes, not normative execution logic; `provekit proof implements`
+signed bytes, not normative execution logic. A current proof-verification gate
 interprets this manifest under policy.

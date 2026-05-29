@@ -314,7 +314,7 @@ The substrate's three primitives, sign and hash and reference, are agnostic to r
 
 If you accept this framing, the developer move is direct: stop asking "which chain do I publish to?" and start asking "what discipline am I asserting on the bodies I sign?"
 
-`provekit witness` is the operational surface. You build a binary, hash it, mint a `.proof` bundle whose `binaryCid` pins the artifact and whose discharges carry whatever evidence your discipline requires, then sign and ship the pair. The verifier hashes what it received, looks up the bundle, walks the chain under its policy, emits a report. The report is itself a memento another verifier can take as evidence.
+Witness minting is the operational surface. You build a binary, hash it, mint a `.proof` bundle whose `binaryCid` pins the artifact and whose discharges carry whatever evidence your discipline requires, then sign and ship the pair. The verifier hashes what it received, looks up the bundle, walks the chain under its policy, emits a report. The report is itself a memento another verifier can take as evidence.
 
 You do not need a chain to do this. You do not need a network to do this. You need a producer key, a body discipline, and a consumer who agrees to walk your chain under their policy. The four invariants do the rest.
 

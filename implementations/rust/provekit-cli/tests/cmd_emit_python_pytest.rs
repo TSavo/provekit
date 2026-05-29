@@ -97,7 +97,7 @@ fn emit_python_pytest_dispatches_real_emitter_and_pytest_checks_output() {
             "params": ["a", "b"],
             "param_types": ["int", "int"],
             "predicates": [{
-                "kind": "op",
+                "kind": "atomic",
                 "name": "concept:eq",
                 "args": [
                     {"kind": "const", "value": 2, "sort": {"kind": "primitive", "name": "Int"}},

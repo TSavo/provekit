@@ -119,7 +119,7 @@ fn emit_go_testify_dispatches_separate_emitter_and_compile_checks() {
             "param_types": ["int"],
             "return_type": "int",
             "predicates": [{
-                "kind": "op",
+                "kind": "atomic",
                 "name": "concept:eq",
                 "args": [
                     {"kind": "var", "name": "x"},
