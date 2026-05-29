@@ -52,35 +52,45 @@ fn build_rust_lifter_bins() {
             .expect("provekit bin parent")
             .to_path_buf();
         let build_release = bin_dir.file_name().and_then(|name| name.to_str()) == Some("release");
-        for (package, bin) in [
-            ("provekit-walk", "provekit-walk-rpc"),
-            ("provekit-lift", "provekit-lift"),
-        ] {
-            let mut args = vec!["build", "-p", package, "--bin", bin];
-            if build_release {
-                args.push("--release");
+        let mut profiles = vec![false];
+        if build_release {
+            profiles.push(true);
+        }
+        for release in profiles {
+            for (package, bin) in [
+                ("provekit-walk", "provekit-walk-rpc"),
+                ("provekit-lift", "provekit-lift"),
+            ] {
+                let mut args = vec!["build", "-p", package, "--bin", bin];
+                if release {
+                    args.push("--release");
+                }
+                let output = Command::new("cargo")
+                    .current_dir(&workspace)
+                    .args(args)
+                    .output()
+                    .unwrap_or_else(|e| panic!("spawn cargo build -p {package} --bin {bin}: {e}"));
+                assert!(
+                    output.status.success(),
+                    "cargo build -p {package} --bin {bin}{} failed\n  stdout: {}\n  stderr: {}",
+                    if release { " --release" } else { "" },
+                    String::from_utf8_lossy(&output.stdout),
+                    String::from_utf8_lossy(&output.stderr)
+                );
             }
-            let output = Command::new("cargo")
-                .current_dir(&workspace)
-                .args(args)
-                .output()
-                .unwrap_or_else(|e| panic!("spawn cargo build -p {package} --bin {bin}: {e}"));
-            assert!(
-                output.status.success(),
-                "cargo build -p {package} --bin {bin} failed\n  stdout: {}\n  stderr: {}",
-                String::from_utf8_lossy(&output.stdout),
-                String::from_utf8_lossy(&output.stderr)
-            );
         }
 
-        let walk_rpc = bin_dir.join("provekit-walk-rpc");
-        let lift = bin_dir.join("provekit-lift");
-        assert!(
-            walk_rpc.exists(),
-            "cargo build produced no {}",
-            walk_rpc.display()
-        );
-        assert!(lift.exists(), "cargo build produced no {}", lift.display());
+        let debug_bin_dir = workspace.join("target").join("debug");
+        for bin_dir in [debug_bin_dir, bin_dir] {
+            let walk_rpc = bin_dir.join("provekit-walk-rpc");
+            let lift = bin_dir.join("provekit-lift");
+            assert!(
+                walk_rpc.exists(),
+                "cargo build produced no {}",
+                walk_rpc.display()
+            );
+            assert!(lift.exists(), "cargo build produced no {}", lift.display());
+        }
     });
 }
 
