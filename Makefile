@@ -757,6 +757,9 @@ cross-language-proof-parity: build-java build-ts build-zig build-scala cross-lan
 	cargo test --release --manifest-path implementations/rust/Cargo.toml \
 		-p provekit-cli --test cmd_verify_zig_production_bridge \
 		zig_production_path_double_discharges_and_mints_witness
+	cargo test --release --manifest-path implementations/rust/Cargo.toml \
+		-p provekit-cli --test cmd_verify_scala_production_bridge \
+		scala_production_path_double_discharges_and_mints_witness
 	@echo "--- contradiction parity ---"
 	cargo test --release --manifest-path implementations/rust/Cargo.toml \
 		-p provekit-cli --test cmd_verify_java_production_bridge \
@@ -776,6 +779,9 @@ cross-language-proof-parity: build-java build-ts build-zig build-scala cross-lan
 	cargo test --release --manifest-path implementations/rust/Cargo.toml \
 		-p provekit-cli --test cmd_verify_zig_production_bridge \
 		zig_production_path_refuses_planted_contradictory_implication
+	cargo test --release --manifest-path implementations/rust/Cargo.toml \
+		-p provekit-cli --test cmd_verify_scala_production_bridge \
+		scala_production_path_refuses_planted_contradictory_implication
 	@echo "==== cross-language-proof-parity: PASS ===="
 
 .PHONY: bootstrap-self-contracts

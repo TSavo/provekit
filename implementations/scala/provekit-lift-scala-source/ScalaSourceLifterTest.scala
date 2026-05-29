@@ -278,6 +278,116 @@ final class ScalaSourceLifterTest extends munit.FunSuite:
     assertEquals(routed("concept:sql-execute"), "RunQuery")
     assert(response.tags.forall(_.matchTier == "exact"))
 
+  test("verify layer lifts Scala function bodies to body-bearing function contracts"):
+    val result = ScalaSourceLifter.liftSource(
+      """package app
+        |
+        |def double(x: Int): Int = x * 2
+        |""".stripMargin,
+      "Double.scala",
+      layer = "verify",
+    )
+
+    assertEquals(result.diagnostics, Seq.empty)
+    assertEquals(result.ir.length, 1)
+    val contract = result.ir.head.obj
+    assertEquals(contract("kind").str, "function-contract")
+    assertEquals(contract("fnName").str, "double")
+    assertEquals(contract("bridgeSourceSymbol").str, "double")
+    assertEquals(jsonStrings(contract("formals")), Seq("x"))
+    assertEquals(contract("formalSorts")(0)("name").str, "Int")
+    val post = contract("post").obj
+    assertEquals(post("name").str, "=")
+    assertEquals(post("args")(0)("name").str, "result")
+    val body = post("args")(1).obj
+    assertEquals(body("kind").str, "ctor")
+    assertEquals(body("name").str, "*")
+    assertEquals(body("args")(0)("name").str, "x")
+    assertEquals(body("args")(1)("value").num.toInt, 2)
+
+  test("tests layer lifts ScalaTest assert callsites to source contracts"):
+    val result = ScalaSourceLifter.liftSource(
+      """package app
+        |
+        |import org.scalatest.funsuite.AnyFunSuite
+        |
+        |final class DoubleSpec extends AnyFunSuite {
+        |  test("double three is six") {
+        |    assert(double(3) == 6)
+        |  }
+        |}
+        |""".stripMargin,
+      "DoubleSpec.scala",
+      layer = "tests",
+    )
+
+    assertEquals(result.diagnostics, Seq.empty)
+    assertEquals(result.ir.length, 1)
+    val contract = result.ir.head.obj
+    assertEquals(contract("kind").str, "contract")
+    assertEquals(contract("name").str, "double three is six::0")
+    val inv = contract("inv").obj
+    assertEquals(inv("kind").str, "atomic")
+    assertEquals(inv("name").str, "=")
+    val call = inv("args")(0).obj
+    assertEquals(call("kind").str, "ctor")
+    assertEquals(call("name").str, "double")
+    assertEquals(call("args")(0)("value").num.toInt, 3)
+    assertEquals(inv("args")(1)("value").num.toInt, 6)
+
+  test("rpc lift dispatch honors Scala parity layers through options"):
+    val root = Files.createTempDirectory("provekit-scala-rpc-layers-")
+    val sourceRel = Path.of("Double.scala")
+    val testRel = Path.of("DoubleSpec.scala")
+    write(root.resolve(sourceRel),
+      """package app
+        |
+        |def double(x: Int): Int = x * 2
+        |""".stripMargin,
+    )
+    write(root.resolve(testRel),
+      """package app
+        |
+        |import org.scalatest.funsuite.AnyFunSuite
+        |
+        |final class DoubleSpec extends AnyFunSuite {
+        |  test("double three is six") {
+        |    assert(double(3) == 6)
+        |  }
+        |}
+        |""".stripMargin,
+    )
+
+    val sourceResponse = ScalaSourceRpc.dispatch(
+      ujson.Obj(
+        "jsonrpc" -> "2.0",
+        "id" -> 11,
+        "method" -> "lift",
+        "params" -> ujson.Obj(
+          "workspace_root" -> root.toString,
+          "source_paths" -> ujson.Arr(sourceRel.toString),
+          "options" -> ujson.Obj("layer" -> "verify"),
+        ),
+      ),
+    )
+    val testResponse = ScalaSourceRpc.dispatch(
+      ujson.Obj(
+        "jsonrpc" -> "2.0",
+        "id" -> 12,
+        "method" -> "lift",
+        "params" -> ujson.Obj(
+          "workspace_root" -> root.toString,
+          "source_paths" -> ujson.Arr(testRel.toString),
+          "options" -> ujson.Obj("layer" -> "tests"),
+        ),
+      ),
+    )
+
+    assert(!sourceResponse.obj.contains("error"))
+    assert(!testResponse.obj.contains("error"))
+    assertEquals(sourceResponse("result")("ir").arr.head("kind").str, "function-contract")
+    assertEquals(testResponse("result")("ir").arr.head("kind").str, "contract")
+
   private def mustSugarBodySource(source: String, functionName: String): ujson.Obj =
     val result = ScalaSourceLifter.liftSource(source, "shim.scala", layer = "library-bindings")
     assertEquals(result.diagnostics, Seq.empty)
