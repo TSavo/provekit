@@ -5,9 +5,11 @@ import (
 	"encoding/json"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/tsavo/provekit/go/provekit-ir-symbolic/canonicalizer"
+	"github.com/tsavo/provekit/go/provekit-ir-symbolic/proof_envelope"
 )
 
 func TestSugarBodyEmitsAstTemplateAlongsideBodyText(t *testing.T) {
@@ -75,6 +77,12 @@ func Fetch(addr string, hdrs Header) Response {
 `)
 	bodyA := mustSugarBodySource(t, "a.go", srcA, "Fetch")
 	bodyB := mustSugarBodySource(t, "b.go", srcB, "Fetch")
+	if bodyA.BodyText != "return http.Get(url, headers)" {
+		t.Fatalf("body_text A = %q, want verbatim original parameter spelling", bodyA.BodyText)
+	}
+	if bodyB.BodyText != "return http.Get(addr, hdrs)" {
+		t.Fatalf("body_text B = %q, want verbatim renamed parameter spelling", bodyB.BodyText)
+	}
 	if !bytes.Equal(compactJSON(t, bodyA.ASTTemplate), compactJSON(t, bodyB.ASTTemplate)) {
 		t.Fatalf("alpha-equivalent templates diverged:\nA: %s\nB: %s", compactJSON(t, bodyA.ASTTemplate), compactJSON(t, bodyB.ASTTemplate))
 	}
@@ -180,6 +188,81 @@ func FetchURL(u string, h Header) Response {
 	}
 }
 
+func TestRecognizeRPCUsesGoKitOwnedTemplatesWithoutBindingTemplates(t *testing.T) {
+	binding := mustBindingTemplate(t, "concept:http-request", "provekit-shim-go-stdlib-http", "concept:family:http", `package shim
+
+func Fetch(url string, headers Header) Response {
+	return http.Get(url, headers)
+}
+`, "Fetch")
+
+	for _, tt := range []struct {
+		name     string
+		source   string
+		wantTags int
+	}{
+		{
+			name: "matching body",
+			source: `package handlers
+
+func FetchURL(u string, h Header) Response {
+	return http.Get(u, h)
+}
+`,
+			wantTags: 1,
+		},
+		{
+			name: "non-matching body",
+			source: `package handlers
+
+func FetchURL(u string, h Header) Response {
+	return completelyDifferent(u, h)
+}
+`,
+			wantTags: 0,
+		},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			root := t.TempDir()
+			writeRecognizeProofBackedGoDependency(t, root, binding)
+			rel := filepath.Join("pkg", "handlers", "fetch.go")
+			writeFile(t, filepath.Join(root, rel), tt.source)
+
+			stdin := strings.NewReader(`{"jsonrpc":"2.0","id":1,"method":"provekit.plugin.recognize","params":{"project_root":` + strconvQuote(root) + `,"source_paths":[` + strconvQuote(rel) + `]}}` + "\n")
+			var stdout bytes.Buffer
+			if err := RunRPC(stdin, &stdout); err != nil {
+				t.Fatalf("RunRPC: %v", err)
+			}
+
+			var response map[string]any
+			if err := json.Unmarshal(bytes.TrimSpace(stdout.Bytes()), &response); err != nil {
+				t.Fatalf("response JSON parses: %v\nstdout: %s", err, stdout.String())
+			}
+			if response["error"] != nil {
+				t.Fatalf("recognize RPC returned error: %v", response["error"])
+			}
+			result := response["result"].(map[string]any)
+			tags := result["tags"].([]any)
+			if len(tags) != tt.wantTags {
+				t.Fatalf("tags = %#v, want %d", tags, tt.wantTags)
+			}
+			if tt.wantTags == 0 {
+				return
+			}
+			tag := tags[0].(map[string]any)
+			if tag["concept_name"] != binding.ConceptName || tag["library_tag"] != binding.LibraryTag {
+				t.Fatalf("tag axes = %#v", tag)
+			}
+			if tag["template_cid"] != binding.TemplateCID || tag["contract_cid"] != binding.ContractCID {
+				t.Fatalf("tag cids = %#v", tag)
+			}
+			if tag["match_tier"] != "exact" {
+				t.Fatalf("match_tier = %#v", tag["match_tier"])
+			}
+		})
+	}
+}
+
 func TestRecognizeRoutesMultipleBindingsPerCallSitePool(t *testing.T) {
 	httpBinding := mustBindingTemplate(t, "concept:http-request", "http-lib", "concept:family:http", `package shim
 
@@ -230,6 +313,64 @@ func RunQuery(db DB, query string, params Args) Result {
 	if seen["concept:sql-execute"] != "RunQuery" {
 		t.Fatalf("sql binding routed to %#v", seen["concept:sql-execute"])
 	}
+}
+
+func writeRecognizeProofBackedGoDependency(t *testing.T, project string, binding BindingTemplate) string {
+	t.Helper()
+	member := map[string]any{
+		"body": map[string]any{
+			"kind":                 "library-sugar-binding-entry",
+			"concept_name":         binding.ConceptName,
+			"source_function_name": "Fetch",
+			"target_language":      "go",
+			"target_library_tag":   binding.LibraryTag,
+			"family":               binding.Family,
+			"param_names":          binding.ParamNames,
+			"param_types":          []string{"string", "Header"},
+			"return_type":          "Response",
+			"body_source": map[string]any{
+				"body_text":    "return http.Get(url, headers)",
+				"ast_template": binding.ASTTemplate,
+				"template_cid": binding.TemplateCID,
+				"param_names":  binding.ParamNames,
+			},
+			"contract_cid": binding.ContractCID,
+		},
+	}
+	memberBytes, err := marshalJSONNoHTML(member)
+	if err != nil {
+		t.Fatalf("marshal member: %v", err)
+	}
+	var seed [32]byte
+	for i := range seed {
+		seed[i] = 0x42
+	}
+	out, err := proof_envelope.NewBuilder().Build(&proof_envelope.Input{
+		Name:       "@test/go-recognize-proof-backed",
+		Version:    "0.0.0",
+		Members:    map[string][]byte{"blake3-512:" + strings.Repeat("b", 128): memberBytes},
+		SignerCID:  "blake3-512:" + strings.Repeat("c", 128),
+		SignerSeed: seed,
+		DeclaredAt: "2026-05-29T00:00:00.000Z",
+	})
+	if err != nil {
+		t.Fatalf("build proof envelope: %v", err)
+	}
+	dep := filepath.Join(project, "dep")
+	proofPath := filepath.Join(dep, "META-INF", "provekit", out.FilenameCID+".proof")
+	if err := os.MkdirAll(filepath.Dir(proofPath), 0o755); err != nil {
+		t.Fatalf("mkdir dependency proof dir: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(dep, "go.mod"), []byte("module example.com/proofdep\n\ngo 1.22\n"), 0o644); err != nil {
+		t.Fatalf("write dep go.mod: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(project, "go.mod"), []byte("module example.com/app\n\ngo 1.22\n\nrequire example.com/proofdep v0.0.0\nreplace example.com/proofdep => ./dep\n"), 0o644); err != nil {
+		t.Fatalf("write project go.mod: %v", err)
+	}
+	if err := os.WriteFile(proofPath, out.Bytes, 0o644); err != nil {
+		t.Fatalf("write proof: %v", err)
+	}
+	return proofPath
 }
 
 func mustSugarBodySource(t *testing.T, path string, src []byte, fn string) SugarBodySource {
