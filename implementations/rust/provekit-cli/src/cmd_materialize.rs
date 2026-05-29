@@ -1255,12 +1255,9 @@ fn resolve_library_surface(
     if let Some((language, tag)) = resolve_registered_library_surface(project_root, library)? {
         return Ok((language, Some(tag)));
     }
-    let language = detect_project_language(project_root).ok_or_else(|| {
-        format!(
-            "could not infer target language for library `{library}`; pass --target=<language> or use a language-prefixed library surface"
-        )
-    })?;
-    Ok((language, Some(library.to_string())))
+    Err(format!(
+        "could not infer target language for library `{library}` from registered realize manifests; pass --target=<language> or register .provekit/realize/<surface>/manifest.toml"
+    ))
 }
 
 fn resolve_registered_library_surface(
@@ -1309,22 +1306,6 @@ fn realize_tag_exists(project_root: &Path, target_lang: &str, library_tag: &str)
     registry_realize_candidates(project_root, target_lang)
         .map(|cands| cands.iter().any(|c| c.tag == library_tag))
         .unwrap_or(false)
-}
-
-fn detect_project_language(project_root: &Path) -> Option<String> {
-    let markers = [
-        ("package.json", "typescript"),
-        ("Cargo.toml", "rust"),
-        ("pyproject.toml", "python"),
-        ("requirements.txt", "python"),
-        ("pom.xml", "java"),
-        ("build.gradle", "java"),
-        ("build.gradle.kts", "java"),
-    ];
-    markers
-        .iter()
-        .find(|(marker, _)| project_root.join(marker).exists())
-        .map(|(_, language)| (*language).to_string())
 }
 
 fn materialize_source_dir(

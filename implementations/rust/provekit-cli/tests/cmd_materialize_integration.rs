@@ -1125,6 +1125,41 @@ fn materialize_no_carriers_reports_zero_without_printing_dry_run_source() {
 }
 
 #[test]
+fn materialize_without_target_or_registered_manifest_refuses_project_marker_inference() {
+    let workspace = tempfile::tempdir().expect("tempdir");
+    fs::write(
+        workspace.path().join("Cargo.toml"),
+        "[package]\nname = \"marker-only\"\nversion = \"0.0.0\"\nedition = \"2021\"\n",
+    )
+    .expect("write rust project marker");
+    let src_dir = workspace.path().join("src");
+    fs::create_dir_all(&src_dir).expect("create src dir");
+    let _source_path = write_no_carrier_source(&src_dir);
+
+    let output = Command::new(env!("CARGO_BIN_EXE_provekit"))
+        .arg("materialize")
+        .arg("--library")
+        .arg("reqwest")
+        .arg("--source-dir")
+        .arg(&src_dir)
+        .arg("--project")
+        .arg(workspace.path())
+        .output()
+        .expect("spawn provekit materialize");
+
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(
+        !output.status.success(),
+        "marker-only materialize must not infer a target without a registered realize manifest\nstdout:\n{stdout}\nstderr:\n{stderr}"
+    );
+    assert!(
+        stderr.contains("could not infer target language for library `reqwest`"),
+        "error should require explicit target or manifest-backed dispatch:\n{stderr}"
+    );
+}
+
+#[test]
 fn materialize_python_requests_example_uses_python_library_shim() {
     let workspace = tempfile::tempdir().expect("tempdir");
     let Some(src_dir) = write_python_requests_project_fixture(workspace.path()) else {
