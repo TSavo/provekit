@@ -18,6 +18,7 @@
 // The concept is `identity` -- a real cross-language concept (also in Python's
 // canonical-bodies), realized in Go as `return x`. Requires `go` on PATH.
 
+use std::collections::BTreeMap;
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::process::Command;
@@ -26,6 +27,9 @@ use std::sync::Arc;
 use provekit_canonicalizer::{blake3_512_of, encode_jcs, Value as CanonicalValue};
 use provekit_cli::kit_dispatch::{
     dependency_proof_paths_via_rpc, dispatch_realize, RealizeRequest,
+};
+use provekit_proof_envelope::{
+    build_proof_envelope, ed25519_pubkey_string, Ed25519Seed, ProofEnvelopeInput,
 };
 use serde_json::Value as Json;
 
@@ -131,6 +135,12 @@ fn identity_payload_json(function: &str) -> String {
     )
 }
 
+fn proof_backed_payload_json(function: &str) -> String {
+    format!(
+        "{{\"artifact_kind\":\"provekit-concept-citation-comment-sugar\",\"concept_name\":\"concept:go-proof-backed\",\"function\":\"{function}\",\"params\":[\"x\"],\"param_types\":[\"int\"],\"return_type\":\"int\"}}"
+    )
+}
+
 fn payload_cid(payload: &str) -> String {
     let json: Json = serde_json::from_str(payload).expect("payload json parses");
     let canonical = canonical_value_from_json(&json);
@@ -170,6 +180,95 @@ fn write_go_identity_carrier(src_dir: &Path) -> PathBuf {
     source
 }
 
+fn write_go_proof_backed_carrier(src_dir: &Path) -> PathBuf {
+    let payload = proof_backed_payload_json("AddFortyOne");
+    let source = src_dir.join("add_forty_one.go");
+    fs::write(
+        &source,
+        format!(
+            "package sample\n\n// provekit-concept: {payload}\n// provekit-concept-payload-cid: {}\n",
+            payload_cid(&payload)
+        ),
+    )
+    .expect("write go proof-backed carrier source");
+    source
+}
+
+fn write_external_go_dependency_with_proof_backed_body(project: &Path) -> PathBuf {
+    write_external_go_dependency_with_body(
+        project,
+        "concept:go-proof-backed",
+        "value",
+        "return value + 41",
+    )
+}
+
+fn write_external_go_dependency_with_identity_body(project: &Path) -> PathBuf {
+    write_external_go_dependency_with_body(project, "identity", "x", "return x")
+}
+
+fn write_external_go_dependency_with_body(
+    project: &Path,
+    concept_name: &str,
+    param_name: &str,
+    body_text: &str,
+) -> PathBuf {
+    let dep = unique_dir("go-proof-backed-dep");
+    let proof_dir = dep.join("META-INF").join("provekit");
+    fs::create_dir_all(&proof_dir).expect("mkdir dependency proof dir");
+    fs::write(
+        dep.join("go.mod"),
+        "module example.com/proofdep\n\ngo 1.22\n",
+    )
+    .expect("write dep go.mod");
+
+    let member = serde_json::json!({
+        "body": {
+            "kind": "library-sugar-binding-entry",
+            "concept_name": concept_name,
+            "source_function_name": "ProofBacked",
+            "target_language": "go",
+            "target_library_tag": "go",
+            "param_names": [param_name],
+            "param_types": ["int"],
+            "return_type": "int",
+            "body_source": {
+                "body_text": body_text
+            },
+            "loss_record_contribution": {
+                "form": "literal",
+                "value": {"entries": []}
+            }
+        }
+    });
+    let member_bytes = serde_json::to_vec(&member).expect("member json");
+    let mut members = BTreeMap::new();
+    members.insert(format!("blake3-512:{}", "b".repeat(128)), member_bytes);
+    let signer_seed: Ed25519Seed = [0x42; 32];
+    let proof = build_proof_envelope(&ProofEnvelopeInput {
+        name: "@test/go-proof-backed".to_string(),
+        version: "0.0.0".to_string(),
+        binary_cid: None,
+        metadata: None,
+        members,
+        signer_cid: ed25519_pubkey_string(&signer_seed),
+        signer_seed,
+        declared_at: "2026-05-29T00:00:00.000Z".to_string(),
+    });
+    let proof_path = proof_dir.join(format!("{}.proof", proof.cid));
+    fs::write(&proof_path, proof.bytes).expect("write proof-backed Go proof");
+
+    fs::write(
+        project.join("go.mod"),
+        format!(
+            "module example.com/app\n\ngo 1.22\n\nrequire example.com/proofdep v0.0.0\nreplace example.com/proofdep => {}\n",
+            dep.display()
+        ),
+    )
+    .expect("write project go.mod");
+    proof_path
+}
+
 fn identity_request() -> RealizeRequest {
     RealizeRequest {
         function: "Id".to_string(),
@@ -199,6 +298,67 @@ fn identity_request() -> RealizeRequest {
         function_return_types: std::collections::BTreeMap::new(),
         doc_lines: Vec::new(),
     }
+}
+
+#[test]
+fn go_materialize_uses_body_template_from_go_module_proof() {
+    if !go_available() {
+        eprintln!("go not on PATH: skipping go proof-backed materialize CLI test");
+        return;
+    }
+    let bin = build_go_realize();
+    let workspace = tempfile::tempdir().expect("tempdir");
+    install_go_realize_manifest(workspace.path(), &bin);
+    let proof_path = write_external_go_dependency_with_proof_backed_body(workspace.path());
+    assert!(
+        !proof_path.starts_with(workspace.path()),
+        "fixture must keep the shim .proof outside the CLI project root"
+    );
+
+    let src_dir = workspace.path().join("src");
+    fs::create_dir_all(&src_dir).expect("mkdir src");
+    write_go_proof_backed_carrier(&src_dir);
+
+    let out_dir = workspace.path().join("materialized");
+    fs::create_dir_all(&out_dir).expect("mkdir out");
+    fs::write(
+        out_dir.join("go.mod"),
+        "module example.com/provekit_go_materialized\n\ngo 1.22\n",
+    )
+    .expect("write output go.mod");
+
+    let output = Command::new(env!("CARGO_BIN_EXE_provekit"))
+        .arg("materialize")
+        .arg("--target")
+        .arg("go")
+        .arg("--library")
+        .arg("go")
+        .arg("--source-dir")
+        .arg(&src_dir)
+        .arg("--project")
+        .arg(workspace.path())
+        .arg("--out-dir")
+        .arg(&out_dir)
+        .arg("--compile-check")
+        .output()
+        .expect("spawn provekit materialize for proof-backed Go");
+
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(
+        output.status.success(),
+        "Go materialize must load body templates through the Go kit's module proof resolver\nstdout:\n{stdout}\nstderr:\n{stderr}"
+    );
+    let emitted = fs::read_to_string(out_dir.join("add_forty_one.go"))
+        .expect("read materialized proof-backed Go");
+    assert!(
+        emitted.contains("func AddFortyOne(x int) int"),
+        "materialized Go should contain realized function signature:\n{emitted}"
+    );
+    assert!(
+        emitted.contains("return x + 41"),
+        "materialized Go body must come from the dependency .proof, not the inline identity table:\n{emitted}"
+    );
 }
 
 #[test]
@@ -244,6 +404,7 @@ fn go_materialize_cli_rewrites_carrier_and_asks_go_kit_to_compile_check() {
     let bin = build_go_realize();
     let workspace = tempfile::tempdir().expect("tempdir");
     install_go_realize_manifest(workspace.path(), &bin);
+    write_external_go_dependency_with_identity_body(workspace.path());
     let src_dir = workspace.path().join("src");
     fs::create_dir_all(&src_dir).expect("mkdir src");
     write_go_identity_carrier(&src_dir);
@@ -309,6 +470,7 @@ fn go_realize_shim_materializes_compilable_go_for_identity() {
     let bin = build_go_realize();
     let workspace = unique_dir("ws");
     install_go_realize_manifest(&workspace, &bin);
+    write_external_go_dependency_with_identity_body(&workspace);
 
     let realized = dispatch_realize(&workspace, "go", None, &identity_request())
         .expect("go realize shim must materialize the identity concept");
@@ -369,6 +531,7 @@ fn go_realize_shim_refuses_unsupported_concept() {
     let bin = build_go_realize();
     let workspace = unique_dir("refuse");
     install_go_realize_manifest(&workspace, &bin);
+    write_external_go_dependency_with_identity_body(&workspace);
 
     let mut req = identity_request();
     req.concept_name = "concept:unsupported-go-thing".to_string();
