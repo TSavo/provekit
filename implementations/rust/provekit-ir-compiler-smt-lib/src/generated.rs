@@ -86,7 +86,11 @@ pub fn emit_term(term: &Term) -> String {
 /// where reason_code is Some if the sort was opaque.
 fn emit_sort_with_reason(sort: &Sort) -> (String, Option<String>) {
     match sort {
-        Sort::Primitive { name } => (name.clone(), None),
+        Sort::Primitive { name } if is_supported_smt_primitive_sort(name) => (name.clone(), None),
+        Sort::Primitive { name } => (
+            "Int".to_string(),
+            Some(format!("opaque_primitive_sort:{name}")),
+        ),
         Sort::Function { .. } => (
             "Int".to_string(),
             Some("predicate_quantification".to_string()),
@@ -101,6 +105,10 @@ fn emit_sort_with_reason(sort: &Sort) -> (String, Option<String>) {
             Some("other:RegionSort pre-resolved in composition".to_string()),
         ),
     }
+}
+
+fn is_supported_smt_primitive_sort(name: &str) -> bool {
+    matches!(name, "Int" | "Bool" | "Real" | "String")
 }
 
 pub fn emit_sort(sort: &Sort) -> String {
@@ -141,8 +149,8 @@ pub fn emit_formula(formula: &Formula) -> String {
             let (sort_str, reason) = emit_sort_with_reason(sort);
             let body_str = emit_formula(body);
             if let Some(_r) = reason {
-                // Quantifier over opaque sort: assert true as placeholder
-                return "(true)".to_string();
+                // Quantifier over opaque sort: assert SMT-LIB truth as placeholder.
+                return "true".to_string();
             }
             format!("(forall (({} {})) {})", name, sort_str, body_str)
         }
@@ -150,7 +158,7 @@ pub fn emit_formula(formula: &Formula) -> String {
             let (sort_str, reason) = emit_sort_with_reason(sort);
             let body_str = emit_formula(body);
             if let Some(_r) = reason {
-                return "(true)".to_string();
+                return "true".to_string();
             }
             format!("(exists (({} {})) {})", name, sort_str, body_str)
         }
@@ -162,7 +170,7 @@ pub fn emit_formula(formula: &Formula) -> String {
             let (sort_str, reason) = emit_sort_with_reason(sort);
             let body_str = emit_formula(body);
             if let Some(_r) = reason {
-                return "(true)".to_string();
+                return "true".to_string();
             }
             let var_y = format!("{}_y", var_name);
             let body_y = body_str.replace(var_name, &var_y);
@@ -322,7 +330,7 @@ fn emit_formula_with_opacities(formula: &Formula, opacities: &mut Vec<OpacityEnt
                     position_cid: cid,
                     reason_code,
                 });
-                "(true)".to_string()
+                "true".to_string()
             } else {
                 let sort_str = emit_sort(sort);
                 let body_str = emit_formula_with_opacities(body, opacities);
@@ -338,7 +346,7 @@ fn emit_formula_with_opacities(formula: &Formula, opacities: &mut Vec<OpacityEnt
                     position_cid: cid,
                     reason_code,
                 });
-                "(true)".to_string()
+                "true".to_string()
             } else {
                 let sort_str = emit_sort(sort);
                 let body_str = emit_formula_with_opacities(body, opacities);
@@ -358,7 +366,7 @@ fn emit_formula_with_opacities(formula: &Formula, opacities: &mut Vec<OpacityEnt
                     position_cid: cid,
                     reason_code,
                 });
-                "(true)".to_string()
+                "true".to_string()
             } else {
                 let sort_str = emit_sort(sort);
                 let body_str = emit_formula_with_opacities(body, opacities);

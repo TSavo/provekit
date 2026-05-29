@@ -22,6 +22,11 @@ surface = "rust-contracts"
 emit = "ir-document"
 
 [[plugins]]
+name = "rust-walk-contracts"
+surface = "rust-walk-contracts"
+emit = "ir-document"
+
+[[plugins]]
 name = "rust-implications"
 surface = "rust-implications"
 
