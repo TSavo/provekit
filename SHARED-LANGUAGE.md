@@ -319,7 +319,6 @@ content-addressed `.proof`** (and the IR/contract stream under it):
 This is why most "new verbs" are a mistake — **a composition frozen into a primitive:**
 - `migrate` = `lift | lower`-to-another-library.
 - `transport` = `migrate` with paperwork = still `lift | lower`.
-- `exam` = `verify`'s output, re-read.
 - `catalog` = `union(.proof)` — a reduction, not a command.
 
 Ship orthogonal primitives; let the `.proof` be the pipe; anything that looks like a new

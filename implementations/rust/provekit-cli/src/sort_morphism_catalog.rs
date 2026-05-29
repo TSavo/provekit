@@ -3,10 +3,10 @@
 // Catalog-query helper for composing sort morphisms across kits.
 //
 // Per the substrate-honest cross-language model (#1361 chunk 2 part B,
-// 2026-05-21 discussion): the exam-declared morphisms in
-// menagerie/concept-shapes/catalog/algorithms/sort-morphism:*.json ARE
-// the primitive-translation layer. To translate a parameter type from
-// source-lang to target-lang, the substrate composes via concept-hub:
+// 2026-05-21 discussion): catalogued sort morphisms are the
+// primitive-translation layer. To translate a parameter type from
+// source-lang to target-lang, the substrate composes through the canonical
+// sort catalog:
 //
 //   source-lang-sort → concept-hub-sort → target-lang-sort
 //

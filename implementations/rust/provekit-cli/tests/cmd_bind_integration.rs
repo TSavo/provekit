@@ -104,17 +104,6 @@ fn cluster_cardinality_term_document() -> &'static [u8] {
 }"#
 }
 
-fn repo_root() -> PathBuf {
-    PathBuf::from(env!("CARGO_MANIFEST_DIR"))
-        .parent()
-        .unwrap()
-        .parent()
-        .unwrap()
-        .parent()
-        .unwrap()
-        .to_path_buf()
-}
-
 fn assert_success(label: &str, output: &std::process::Output) {
     assert!(
         output.status.success(),
@@ -266,17 +255,9 @@ fn bind_does_not_require_or_invoke_language_lower_plugins() {
 }
 
 #[test]
-fn bind_cli_cites_v1_1_exam_question_for_wp_rule_refusal() {
-    let root = repo_root();
-    let manifest = root
-        .join("menagerie/concept-shapes/exams")
-        .join("v1.1.blake3-512:b38426ba10ee3a6c28e9e32cae9aa65cfb5b750950464d1e67e9d669956bd40288d25c247d0ec2d638fd63e2d235d944f419055c0374c78488b4be98da040451.json");
+fn bind_cli_emits_wp_rule_refusal_gap() {
     let mut child = Command::new(provekit_bin())
         .arg("bind")
-        .arg("--project")
-        .arg(&root)
-        .arg("--exam-manifest")
-        .arg(&manifest)
         .stdin(Stdio::piped())
         .stdout(Stdio::piped())
         .stderr(Stdio::piped())
@@ -289,7 +270,7 @@ fn bind_cli_cites_v1_1_exam_question_for_wp_rule_refusal() {
         .write_all(witnessless_add_term_document())
         .expect("write term");
     let output = child.wait_with_output().expect("wait bind");
-    assert_success("bind stdin with exam manifest", &output);
+    assert_success("bind stdin", &output);
 
     let payload: Term = serde_json::from_slice(&output.stdout).expect("bind payload parses");
     let named =
@@ -298,12 +279,4 @@ fn bind_cli_cites_v1_1_exam_question_for_wp_rule_refusal() {
     let gap = named["gapRecords"][0].as_object().expect("gap object");
 
     assert_eq!(gap["target_concept_op"], "concept:add");
-    assert_eq!(
-        gap["exam_manifest_cid"],
-        "blake3-512:b38426ba10ee3a6c28e9e32cae9aa65cfb5b750950464d1e67e9d669956bd40288d25c247d0ec2d638fd63e2d235d944f419055c0374c78488b4be98da040451"
-    );
-    assert!(gap["exam_question_cid"]
-        .as_str()
-        .expect("exam question cid")
-        .starts_with("blake3-512:"));
 }

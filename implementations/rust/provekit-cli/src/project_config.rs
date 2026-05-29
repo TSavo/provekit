@@ -95,8 +95,6 @@ pub struct PlatformProfile {
 
 #[derive(Debug, Clone, Default)]
 pub struct ProjectConfig {
-    pub exam_manifest_cid: Option<String>,
-
     /// Project's declared lift plugins, in array-of-tables form
     /// (`[[plugins]]` in TOML). Empty if the project still uses the
     /// legacy single-surface `[authoring] surface = ...` form.
@@ -217,7 +215,6 @@ fn parse_config(text: &str) -> ProjectConfig {
         let key = line[..eq].trim();
         let val = line[eq + 1..].trim().trim_matches('"').to_string();
         match (section.as_deref(), key) {
-            (None, "exam_manifest_cid") => cfg.exam_manifest_cid = Some(val),
             (Some("authoring"), "surface") => cfg.surface_default = Some(val),
             (Some("authoring.lift"), "surface") => cfg.surface_lift = Some(val),
             (Some("solvers"), "default") => cfg.solver_default = Some(val),

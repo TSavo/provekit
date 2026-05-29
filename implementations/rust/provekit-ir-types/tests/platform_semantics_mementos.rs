@@ -86,9 +86,8 @@ fn platform_semantic_tag_round_trips_and_recomputes_cid() {
 const SORT_INT_CID: &str = "blake3-512:30ffc51350121a7172f3e4064a33c45bbd345756979fccff6875cd2ab33e4964d098a99df80cfbdf1ec1a0738c5ac3476f0ff8f75589ea511d1acd82c74ecd58";
 
 /// LiteralEncodingMemento round-trips through JCS and recomputes its own
-/// CID. Per #1262, this is the kit-minted answer to a `literal-encoding`
-/// exam question: for (language, sort), what concept:literal node does the
-/// kit's bind-lift emit for a representative source-language literal?
+/// CID. Per #1262, this records what concept:literal node the kit's bind-lift
+/// emits for a representative source-language literal.
 #[test]
 fn literal_encoding_memento_round_trips_and_recomputes_cid() {
     let memento = LiteralEncodingMemento::new(

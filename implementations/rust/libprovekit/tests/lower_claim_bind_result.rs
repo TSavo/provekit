@@ -195,7 +195,6 @@ fn bind_claim() -> DomainClaim {
     };
     BindKit::new(BindOptions {
         lang: "rust".to_string(),
-        exam_manifest: None,
     })
     .transform(&Input::Term(input_term))
     .expect("bind kit transforms term input")

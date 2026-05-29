@@ -37,8 +37,8 @@ use std::sync::Arc;
 use provekit_canonicalizer::{blake3_512_of, encode_jcs, Value};
 use provekit_claim_envelope::{mint_contract, Authoring, MintContractArgs};
 use provekit_ir_types::{
-    CodeSite, CodeSiteSpan, ConceptSiteMemento, ConceptSiteProvenance, Discharge,
-    ExamManifestMemento, IrFormula, LossRecord,
+    CodeSite, CodeSiteSpan, ConceptSiteMemento, ConceptSiteProvenance, Discharge, IrFormula,
+    LossRecord,
 };
 use provekit_proof_envelope::Ed25519Seed;
 
@@ -52,10 +52,6 @@ mod synthesize;
 mod test_lift;
 
 use algebra::{FormulaShape, TermShape};
-
-const EXAM_MANIFEST_JSON: &str = include_str!(
-    "../../../concept-shapes/exams/v1.1.blake3-512:b38426ba10ee3a6c28e9e32cae9aa65cfb5b750950464d1e67e9d669956bd40288d25c247d0ec2d638fd63e2d235d944f419055c0374c78488b4be98da040451.json"
-);
 
 fn main() {
     let fixture_dir = locate_fixture_dir();
@@ -294,7 +290,6 @@ fn run_pass(source_root: &Path, pass_id: u32, read_concept_comments: bool) -> Pa
 
     let artifacts_dir = source_root.join("artifacts");
     let _ = fs::create_dir_all(&artifacts_dir);
-    let exam_manifest: Option<ExamManifestMemento> = serde_json::from_str(EXAM_MANIFEST_JSON).ok();
 
     let signer_seed: Ed25519Seed = [0x42; 32];
 
@@ -415,7 +410,6 @@ fn run_pass(source_root: &Path, pass_id: u32, read_concept_comments: bool) -> Pa
                     &shape_cid,
                     &target_concept,
                     "rust",
-                    exam_manifest.as_ref(),
                 ) {
                     if let Ok(bytes) = serde_json::to_vec_pretty(&gap) {
                         let _ = fs::write(

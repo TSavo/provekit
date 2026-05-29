@@ -91,9 +91,7 @@ it("double three is six", () => {
         .expect("mkdir typescript-vitest-tests manifest dir");
     fs::write(
         provekit.join("config.toml"),
-        "exam_manifest_cid = \"blake3-512:00000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000\"\n\
-         \n\
-         [[plugins]]\n\
+        "[[plugins]]\n\
          name = \"typescript-source\"\n\
          surface = \"typescript-source\"\n\
          layer = \"verify\"\n\

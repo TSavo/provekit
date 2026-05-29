@@ -34,8 +34,6 @@ use provekit_plugin_loader::{
     PluginRegistryMemento,
 };
 
-use crate::kit_dispatch::{configured_exam_manifest_cid, DEFAULT_EXAM_MANIFEST_CID};
-
 /// PEP 1.7.0 plugin flags (§7).  Flatten into any subcommand that consumes
 /// the plugin registry:
 ///   ```ignore
@@ -289,26 +287,20 @@ impl PluginFlags {
         &self,
         sealed_at: &str,
     ) -> Result<PluginRegistryMemento, PluginLoadRefusal> {
-        self.build_registry_with_exam_manifest_cid(sealed_at, DEFAULT_EXAM_MANIFEST_CID.to_string())
+        self.build_registry_inner(sealed_at)
     }
 
-    /// Same as `build_registry`, but resolves the exam manifest CID from
-    /// `.provekit/config.toml` before sealing the registry.
     pub fn build_registry_for_project(
         &self,
-        project_root: &Path,
+        _project_root: &Path,
         sealed_at: &str,
     ) -> Result<PluginRegistryMemento, PluginLoadRefusal> {
-        self.build_registry_with_exam_manifest_cid(
-            sealed_at,
-            configured_exam_manifest_cid(project_root),
-        )
+        self.build_registry_inner(sealed_at)
     }
 
-    fn build_registry_with_exam_manifest_cid(
+    fn build_registry_inner(
         &self,
         sealed_at: &str,
-        exam_manifest_cid: String,
     ) -> Result<PluginRegistryMemento, PluginLoadRefusal> {
         let mut registry = PluginRegistry::new();
 
@@ -372,11 +364,7 @@ impl PluginFlags {
             // Register any default plugins here once the substrate ships them.
         }
 
-        let memento = registry.emit_registry_memento_with_exam_manifest(
-            sealed_at,
-            Some(exam_manifest_cid),
-            None,
-        );
+        let memento = registry.emit_registry_memento(sealed_at);
 
         // Write registry memento to disk if requested (§7).
         if let Some(ref out_path) = self.plugin_registry_out {

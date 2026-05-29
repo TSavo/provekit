@@ -146,13 +146,6 @@ pub fn compute_registry_cid(header: &PluginRegistryMementoHeader) -> String {
         "built_in_count",
         Value::integer(header.built_in_count as i64),
     )];
-    if let Some(cid) = &header.exam_manifest_cid {
-        fields.push(("exam_manifest_cid", Value::string(cid.clone())));
-    }
-    if let Some(cids) = &header.exam_manifest_set {
-        let cids_v: Vec<Arc<Value>> = cids.iter().map(|cid| Value::string(cid.clone())).collect();
-        fields.push(("exam_manifest_set", Value::array(cids_v)));
-    }
     fields.extend([
         ("failures", Value::array(failures_v)),
         ("kind", Value::string("plugin-registry".to_string())),

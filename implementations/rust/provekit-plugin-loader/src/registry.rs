@@ -33,19 +33,12 @@ use crate::types::{
 
 /// The header of a `PluginRegistryMemento` (§9.1).
 ///
-/// JCS key order: built_in_count, cid, exam_manifest_cid,
-///                exam_manifest_set, failures, kind, load_order,
+/// JCS key order: built_in_count, cid, failures, kind, load_order,
 ///                loaded, runtime_protocol_versions, schemaVersion, sealed_at
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub struct PluginRegistryMementoHeader {
     pub built_in_count: usize,
     pub cid: String,
-    /// ExamManifestMemento CID the run was sealed against.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub exam_manifest_cid: Option<String>,
-    /// Optional set of exam manifests admitted by this run.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub exam_manifest_set: Option<Vec<String>>,
     /// CIDs of PluginLoadFailureMementos minted during this run.
     pub failures: Vec<String>,
     pub kind: String,
@@ -176,16 +169,6 @@ impl PluginRegistry {
     /// `signer_stub` is a placeholder envelope; full signing is out-of-scope
     /// for PEP 1.7.0 skeleton (§12).
     pub fn emit_registry_memento(&self, sealed_at: &str) -> PluginRegistryMemento {
-        self.emit_registry_memento_with_exam_manifest(sealed_at, None, None)
-    }
-
-    /// Seal the registry and include exam manifest compatibility fields.
-    pub fn emit_registry_memento_with_exam_manifest(
-        &self,
-        sealed_at: &str,
-        exam_manifest_cid: Option<String>,
-        exam_manifest_set: Option<Vec<String>>,
-    ) -> PluginRegistryMemento {
         use crate::loader::RUNTIME_PROTOCOL_VERSIONS;
 
         let failure_cids: Vec<String> =
@@ -220,22 +203,10 @@ impl PluginRegistry {
             .map(|s| s.to_string())
             .collect();
 
-        let exam_manifest_set = exam_manifest_set.and_then(|mut cids| {
-            cids.sort();
-            cids.dedup();
-            if cids.is_empty() {
-                None
-            } else {
-                Some(cids)
-            }
-        });
-
         // Build header without CID first (CID is computed over it).
         let mut header = PluginRegistryMementoHeader {
             built_in_count: self.builtin_count,
             cid: String::new(), // will be filled in below
-            exam_manifest_cid,
-            exam_manifest_set,
             failures: failure_cids,
             kind: "plugin-registry".to_string(),
             load_order,

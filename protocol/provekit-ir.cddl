@@ -476,11 +476,7 @@ loss-record = LossRecord
 ; when a comparison is possible; it is absent only when neither an after_spec
 ; nor a concept_spec is available at gap-emit time.
 ;
-; Amendment 3: `exam_manifest_cid` and `exam_question_cid` are optional
-; citation fields. Emitters populate both when a gap answers a question in the
-; loaded exam manifest. Existing uncited gap records remain valid.
-;
-; All three mementos are JCS-canonical (BTreeMap key order = alphabetical),
+; These mementos are JCS-canonical (BTreeMap key order = alphabetical),
 ; BLAKE3-512-hashed, and live in menagerie/concept-shapes/gaps/.
 ;
 ; ----------------------------------------------------------------
@@ -563,14 +559,11 @@ resolution-option = {
 ; ----------------------------------------------------------------
 ;
 ; Locked key order (alphabetical):
-;   ? exam_manifest_cid, ? exam_question_cid, fn_name, gap_kind,
-;   kind, ? reason, ? reason_note, resolution_options, schema_version,
-;   ? signature, source_lang, source_op_cid, target_concept_op,
-;   ? target_op_cid
+;   fn_name, gap_kind, kind, ? reason, ? reason_note, resolution_options,
+;   schema_version, ? signature, source_lang, source_op_cid,
+;   target_concept_op, ? target_op_cid
 
 TransportGapMemento = {
-  ? exam_manifest_cid: cid,              ; the exam manifest version cited by this refusal
-  ? exam_question_cid: cid,              ; the specific exam question this refusal answers
   fn_name:           tstr,                ; e.g. "gap:python:add:to:concept:add"
   gap_kind:          gap-kind,
   kind:              "TransportGapMemento",

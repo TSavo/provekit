@@ -20,7 +20,6 @@ use owo_colors::OwoColorize;
 use provekit_ir_types::{CompositionRefusalMemento, Sort};
 use serde_json::Value as Json;
 
-use crate::kit_dispatch::dispatch_exam_manifest;
 use crate::{EXIT_OK, EXIT_USER_ERROR};
 
 #[derive(Parser, Debug, Clone)]
@@ -32,21 +31,9 @@ pub struct BindArgs {
     #[arg(short = 'o', long = "output")]
     pub output: Option<PathBuf>,
 
-    /// Project root used to resolve the exam manifest plugin. Defaults to cwd.
-    #[arg(long, alias = "project", default_value = ".")]
-    pub root: PathBuf,
-
     /// Source language hint for diagnostics and named-term metadata.
     #[arg(long, default_value = "auto")]
     pub lang: String,
-
-    /// Exam manifest path or CID used to cite bind refusal gap records.
-    #[arg(long)]
-    pub exam_manifest: Option<String>,
-
-    /// Exam-manifest plugin name. Falls back to the built-in loader when absent.
-    #[arg(long, default_value = "default")]
-    pub exam_manifest_plugin: String,
 
     /// Legacy threshold hint. No effect in the four-verb model.
     #[arg(long, default_value = "1")]
@@ -155,14 +142,6 @@ pub fn run(args: BindArgs) -> u8 {
 }
 
 fn run_bind_path(term_json: Json, args: &BindArgs) -> Result<Json, BindCliError> {
-    let exam_manifest = args
-        .exam_manifest
-        .as_deref()
-        .map(|target| {
-            dispatch_exam_manifest(&args.root, &args.exam_manifest_plugin, target)
-                .map_err(|error| BindCliError::Failed(error.to_string()))
-        })
-        .transpose()?;
     let term = Term::Const {
         value: term_json,
         sort: Sort::Primitive {
@@ -186,7 +165,6 @@ fn run_bind_path(term_json: Json, args: &BindArgs) -> Result<Json, BindCliError>
         "bind-default",
         BindKit::new(BindOptions {
             lang: args.lang.clone(),
-            exam_manifest,
         }),
         ConformanceDeclaration::NonCarrier {
             reason: "transforms Input::Term to NamedTerm DomainClaim; emits no target source",

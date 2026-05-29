@@ -117,14 +117,6 @@ impl KitRegistry {
         );
     }
 
-    /// Register the built-in ExamManifestKit under the public exam-manifest selector.
-    pub fn register_exam_manifest(&mut self) {
-        self.register(
-            "exam-manifest",
-            crate::exam_manifest::ExamManifestKit::new(),
-            crate::exam_manifest::ExamManifestKit::CONFORMANCE,
-        );
-    }
 }
 
 /// Executed path output with terminal and per-step inspection accessors.

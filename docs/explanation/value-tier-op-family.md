@@ -66,10 +66,10 @@ JSON properties of the leaf node. The substrate sees a single concrete
 value with a single canonical sort. The kit's SortAdmission tag on
 `concept:literal` declares that Rust admits `concept:Int` at this position.
 
-Per-platform realization: Rust kit's `SortMorphismMemento` exam answer maps
-substrate-canonical `concept:Int` to Rust-native `i32` / `i64` / etc. The
-concept:literal node carries only the substrate-canonical sort; the kit's
-exam answer carries the language-specific realization.
+Per-platform realization: Rust kit metadata maps substrate-canonical
+`concept:Int` to Rust-native `i32` / `i64` / etc. The concept:literal node
+carries only the substrate-canonical sort; the kit metadata carries the
+language-specific realization.
 
 ## Worked example 2: quantum superposition
 
@@ -340,10 +340,9 @@ When filing a new kit for a new platform:
    kit's `PlatformSemanticsDeclaration`. Use kit-minted open-keyed
    dimension names per
    `docs/plans/2026-05-18-dimension-naming-conventions.md`.
-4. Answer the per-language exam questions
-   (`sort-classification` for each substrate-canonical sort your
-   architecture admits; new `literal-encoding`-style answers if needed for
-   your value-tier ops).
+4. Publish per-language sort metadata for each substrate-canonical sort your
+   architecture admits, plus `literal-encoding`-style metadata when needed
+   for your value-tier ops.
 5. If your platform's control flow is genuinely non-call-graph (dataflow,
    cellular, neuromorphic, combinator), file a ruling defining a
    domain-specific propagation primitive. The substrate's protocol admits
