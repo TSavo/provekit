@@ -8,11 +8,15 @@
 #include <algorithm>
 #include <cctype>
 #include <cerrno>
+#include <cstdint>
 #include <cstdlib>
+#include <cstring>
+#include <filesystem>
 #include <fstream>
 #include <functional>
 #include <iostream>
 #include <map>
+#include <optional>
 #include <set>
 #include <sstream>
 #include <stdexcept>
@@ -78,6 +82,15 @@ ValuePtr locus_value(const std::string& file, int line, int col) {
     return obj({{"col", intv(col)}, {"file", strv(file)}, {"line", intv(line)}});
 }
 
+ValuePtr span_value(const SourceSpan& span) {
+    return obj({
+        {"end_col", intv(span.end_col)},
+        {"end_line", intv(span.end_line)},
+        {"start_col", intv(span.start_col)},
+        {"start_line", intv(span.start_line)},
+    });
+}
+
 ValuePtr empty_array() { return arr({}); }
 
 ValuePtr get_field(const ValuePtr& value, const std::string& key) {
@@ -126,6 +139,36 @@ SourceLoc cursor_loc(CXCursor cursor) {
     unsigned column = 0;
     clang_getExpansionLocation(location, nullptr, &line, &column, nullptr);
     return {static_cast<int>(line), static_cast<int>(column)};
+}
+
+SourceSpan cursor_span(CXCursor cursor) {
+    CXSourceRange range = clang_getCursorExtent(cursor);
+    CXSourceLocation start = clang_getRangeStart(range);
+    CXSourceLocation end = clang_getRangeEnd(range);
+    unsigned start_line = 0;
+    unsigned start_column = 0;
+    unsigned end_line = 0;
+    unsigned end_column = 0;
+    clang_getExpansionLocation(start, nullptr, &start_line, &start_column, nullptr);
+    clang_getExpansionLocation(end, nullptr, &end_line, &end_column, nullptr);
+    return {
+        static_cast<int>(start_line),
+        start_column > 0 ? static_cast<int>(start_column - 1) : 0,
+        static_cast<int>(end_line),
+        static_cast<int>(end_column),
+    };
+}
+
+std::optional<std::pair<unsigned, unsigned>> cursor_offsets(CXCursor cursor) {
+    CXSourceRange range = clang_getCursorExtent(cursor);
+    CXSourceLocation start = clang_getRangeStart(range);
+    CXSourceLocation end = clang_getRangeEnd(range);
+    unsigned start_offset = 0;
+    unsigned end_offset = 0;
+    clang_getExpansionLocation(start, nullptr, nullptr, nullptr, &start_offset);
+    clang_getExpansionLocation(end, nullptr, nullptr, nullptr, &end_offset);
+    if (end_offset < start_offset) return std::nullopt;
+    return std::make_pair(start_offset, end_offset);
 }
 
 bool from_main_file(CXCursor cursor) {
@@ -184,6 +227,14 @@ std::string normalize_source_text(std::string text) {
         }
     }
     return out;
+}
+
+std::string trim_ws(const std::string& text) {
+    size_t start = 0;
+    while (start < text.size() && std::isspace(static_cast<unsigned char>(text[start]))) ++start;
+    size_t end = text.size();
+    while (end > start && std::isspace(static_cast<unsigned char>(text[end - 1]))) --end;
+    return text.substr(start, end - start);
 }
 
 std::string qualified_name(CXCursor cursor) {
@@ -936,12 +987,93 @@ void collect_known(CXCursor root, CollectContext& ctx) {
         &ctx);
 }
 
-ValuePtr function_contract(CXCursor fn, LiftContext& ctx, ValuePtr body_term, ValuePtr post_term, const std::vector<std::string>& formals, const std::vector<ValuePtr>& formal_sorts, ValuePtr return_sort) {
+ValuePtr template_with_param_refs(const ValuePtr& value, const std::map<std::string, int>& param_index) {
+    if (!value) return nullv();
+    switch (value->kind()) {
+        case ValueKind::Null:
+            return nullv();
+        case ValueKind::Bool:
+            return boolv(value->as_bool());
+        case ValueKind::Integer:
+            return intv(value->as_int());
+        case ValueKind::String:
+            return strv(value->as_string());
+        case ValueKind::Array: {
+            std::vector<ValuePtr> items;
+            for (const auto& item : value->as_array()) items.push_back(template_with_param_refs(item, param_index));
+            return arr(items);
+        }
+        case ValueKind::Object: {
+            std::string kind = get_string(get_field(value, "kind"));
+            if (kind == "var") {
+                std::string name = get_string(get_field(value, "name"));
+                auto it = param_index.find(name);
+                if (it != param_index.end()) {
+                    return obj({{"index", intv(it->second)}, {"kind", strv("param_ref")}});
+                }
+            }
+            std::vector<std::pair<std::string, ValuePtr>> fields;
+            for (const auto& [key, child] : value->as_object()) {
+                fields.push_back({key, template_with_param_refs(child, param_index)});
+            }
+            return obj(fields);
+        }
+    }
+    return nullv();
+}
+
+ValuePtr ast_template_for_body(const ValuePtr& body_term, const std::vector<std::string>& formals) {
+    std::map<std::string, int> param_index;
+    for (size_t i = 0; i < formals.size(); ++i) {
+        param_index.emplace(formals[i], static_cast<int>(i + 1));
+    }
+    return template_with_param_refs(body_term, param_index);
+}
+
+std::string body_text_from_compound(CXCursor body, const std::string& source) {
+    auto offsets = cursor_offsets(body);
+    if (!offsets) return trim_ws(cursor_source(body));
+    size_t start = offsets->first;
+    size_t end = offsets->second;
+    if (start > source.size()) return "";
+    if (end > source.size()) end = source.size();
+    if (end < start) return "";
+    std::string extent = source.substr(start, end - start);
+    size_t open = extent.find('{');
+    size_t close = extent.rfind('}');
+    if (open != std::string::npos && close != std::string::npos && close > open) {
+        return trim_ws(extent.substr(open + 1, close - open - 1));
+    }
+    return trim_ws(extent);
+}
+
+ValuePtr body_source_value(CXCursor body,
+                           const std::string& path,
+                           const std::string& source,
+                           const ValuePtr& body_term,
+                           const std::vector<std::string>& formals) {
+    ValuePtr ast_template = ast_template_for_body(body_term, formals);
+    std::string body_text = body_text_from_compound(body, source);
+    std::vector<ValuePtr> param_names;
+    for (const auto& formal : formals) param_names.push_back(strv(formal));
+    return obj({
+        {"ast_template", ast_template},
+        {"body_text", strv(body_text)},
+        {"file", strv(path)},
+        {"param_names", arr(param_names)},
+        {"source_cid", strv(canonicalizer::compute_cid(body_text))},
+        {"span", span_value(cursor_span(body))},
+        {"template_cid", strv(cid_of_value(ast_template))},
+    });
+}
+
+ValuePtr function_contract(CXCursor fn, LiftContext& ctx, ValuePtr body_term, ValuePtr post_term, ValuePtr body_source, const std::vector<std::string>& formals, const std::vector<ValuePtr>& formal_sorts, ValuePtr return_sort) {
     SourceLoc loc = cursor_loc(fn);
     std::string body_cid = cid_of_value(body_term);
     return obj({
         {"autoMintedMementos", empty_array()},
         {"bodyCid", strv(body_cid)},
+        {"body_source", std::move(body_source)},
         {"effects", arr(ctx.effects.values())},
         {"fnName", strv(ctx.function_name)},
         {"formalSorts", arr(formal_sorts)},
@@ -1002,7 +1134,7 @@ bool unsupported_function_shape(CXCursor fn, std::string& reason) {
     return false;
 }
 
-void lift_function(CXCursor fn, const CollectContext& collected, const std::string& path, std::vector<ValuePtr>& declarations, std::vector<ValuePtr>& body_terms, std::vector<Refusal>& refusals) {
+void lift_function(CXCursor fn, const CollectContext& collected, const std::string& path, const std::string& source, std::vector<ValuePtr>& declarations, std::vector<ValuePtr>& body_terms, std::vector<Refusal>& refusals) {
     std::string fn_name = stable_function_name(fn);
     std::string shape_reason;
     if (unsupported_function_shape(fn, shape_reason)) {
@@ -1054,7 +1186,8 @@ void lift_function(CXCursor fn, const CollectContext& collected, const std::stri
             return;
         }
         ValuePtr post = lifted.has_return ? lifted.return_term : unit_const();
-        declarations.push_back(function_contract(fn, ctx, lifted.term, post, formals, formal_sorts, prim_sort(sort_name_for_type(ret))));
+        ValuePtr body_source = body_source_value(body, path, source, lifted.term, formals);
+        declarations.push_back(function_contract(fn, ctx, lifted.term, post, body_source, formals, formal_sorts, prim_sort(sort_name_for_type(ret))));
         body_terms.push_back(lifted.term);
     } catch (const Unsupported& u) {
         refusals.push_back({u.kind, fn_name, u.line, u.what()});
@@ -1066,6 +1199,7 @@ void lift_function(CXCursor fn, const CollectContext& collected, const std::stri
 struct LiftVisitContext {
     const CollectContext* collected = nullptr;
     std::string path;
+    std::string source;
     std::vector<ValuePtr>* declarations = nullptr;
     std::vector<ValuePtr>* body_terms = nullptr;
     std::vector<Refusal>* refusals = nullptr;
@@ -1087,7 +1221,7 @@ void lift_translation_unit(CXCursor root, LiftVisitContext& ctx) {
                 return CXChildVisit_Continue;
             }
             if (is_function_cursor(kind) && clang_isCursorDefinition(cursor)) {
-                lift_function(cursor, *ctx->collected, ctx->path, *ctx->declarations, *ctx->body_terms, *ctx->refusals);
+                lift_function(cursor, *ctx->collected, ctx->path, ctx->source, *ctx->declarations, *ctx->body_terms, *ctx->refusals);
                 return CXChildVisit_Continue;
             }
             return CXChildVisit_Recurse;
@@ -1334,6 +1468,7 @@ LiftResult lift_source(const std::string& path, const std::string& source) {
     LiftVisitContext ctx;
     ctx.collected = &collected;
     ctx.path = path;
+    ctx.source = source;
     ctx.declarations = &function_decls;
     ctx.body_terms = &body_terms;
     ctx.refusals = &result.refusals;
@@ -1611,7 +1746,356 @@ std::vector<std::string> source_paths_from_params(const ValuePtr& params) {
     return paths;
 }
 
+std::vector<std::string> string_array_field(const ValuePtr& value, const std::string& key) {
+    std::vector<std::string> out;
+    auto node = get_field(value, key);
+    if (!node || node->kind() != ValueKind::Array) return out;
+    for (const auto& item : node->as_array()) out.push_back(get_string(item));
+    return out;
+}
+
+SourceSpan span_from_value(const ValuePtr& value) {
+    if (!value || value->kind() != ValueKind::Object) return {};
+    return {
+        static_cast<int>(get_field(value, "start_line") && get_field(value, "start_line")->kind() == ValueKind::Integer ? get_field(value, "start_line")->as_int() : 0),
+        static_cast<int>(get_field(value, "start_col") && get_field(value, "start_col")->kind() == ValueKind::Integer ? get_field(value, "start_col")->as_int() : 0),
+        static_cast<int>(get_field(value, "end_line") && get_field(value, "end_line")->kind() == ValueKind::Integer ? get_field(value, "end_line")->as_int() : 0),
+        static_cast<int>(get_field(value, "end_col") && get_field(value, "end_col")->kind() == ValueKind::Integer ? get_field(value, "end_col")->as_int() : 0),
+    };
+}
+
+ValuePtr unwrap_envelope_value(const ValuePtr& value) {
+    if (!value || value->kind() != ValueKind::Object) return value;
+    ValuePtr body = get_field(value, "body");
+    if (body && (get_field(value, "schemaVersion") || get_field(value, "header") || get_field(value, "envelope"))) {
+        return body;
+    }
+    return value;
+}
+
+void collect_templates_from_record(const ValuePtr& raw, std::vector<BindingTemplate>& out) {
+    ValuePtr record = unwrap_envelope_value(raw);
+    if (!record || record->kind() != ValueKind::Object) return;
+    if (get_string(get_field(record, "kind")) != "library-sugar-binding-entry") return;
+    std::string target_language = get_string(get_field(record, "target_language"));
+    if (!target_language.empty() && target_language != "cpp" && target_language != "cpp-source") return;
+
+    ValuePtr body_source = get_field(record, "body_source");
+    if (!body_source || body_source->kind() != ValueKind::Object) return;
+    ValuePtr ast_template = get_field(body_source, "ast_template");
+    if (!ast_template) ast_template = get_field(body_source, "tree");
+    if (!ast_template) return;
+
+    BindingTemplate binding;
+    binding.concept_name = get_string(get_field(record, "concept_name"));
+    binding.library_tag = get_string(get_field(record, "target_library_tag"), get_string(get_field(record, "library_tag")));
+    binding.family = get_field(record, "family") ? get_field(record, "family") : nullv();
+    binding.ast_template = ast_template;
+    binding.template_cid = get_string(get_field(body_source, "template_cid"));
+    if (binding.template_cid.empty()) binding.template_cid = cid_of_value(ast_template);
+    binding.param_names = string_array_field(body_source, "param_names");
+    if (binding.param_names.empty()) binding.param_names = string_array_field(record, "param_names");
+    binding.contract_cid = get_string(get_field(record, "contract_cid"));
+    binding.source_function_name = get_string(get_field(record, "source_function_name"));
+    if (!binding.template_cid.empty()) out.push_back(std::move(binding));
+}
+
+void collect_templates_from_value(const ValuePtr& root, std::vector<BindingTemplate>& out) {
+    if (!root) return;
+    collect_templates_from_record(root, out);
+    ValuePtr members = get_field(root, "members");
+    if (members && members->kind() == ValueKind::Array) {
+        for (const auto& item : members->as_array()) collect_templates_from_record(item, out);
+    } else if (members && members->kind() == ValueKind::Object) {
+        for (const auto& [_, item] : members->as_object()) collect_templates_from_record(item, out);
+    }
+    ValuePtr ir = get_field(root, "ir");
+    if (ir && ir->kind() == ValueKind::Array) {
+        for (const auto& item : ir->as_array()) collect_templates_from_record(item, out);
+    }
+}
+
+struct CborNode {
+    enum class Kind { Uint, Tstr, Bstr, Array, Map } kind = Kind::Uint;
+    uint64_t uint_value = 0;
+    std::string text;
+    std::vector<uint8_t> bytes;
+    std::vector<CborNode> array;
+    std::map<std::string, CborNode> map;
+};
+
+class CborReader {
+   public:
+    explicit CborReader(const std::string& bytes)
+        : data_(reinterpret_cast<const uint8_t*>(bytes.data())), size_(bytes.size()) {}
+
+    CborNode read() { return read_value(); }
+
+   private:
+    void read_head(uint8_t& major, uint64_t& arg) {
+        if (pos_ >= size_) throw std::runtime_error("CBOR decode: unexpected EOF");
+        uint8_t first = data_[pos_++];
+        major = first >> 5;
+        uint8_t info = first & 0x1f;
+        if (info < 24) {
+            arg = info;
+        } else if (info == 24) {
+            if (pos_ + 1 > size_) throw std::runtime_error("CBOR decode: truncated u8");
+            arg = data_[pos_++];
+        } else if (info == 25) {
+            if (pos_ + 2 > size_) throw std::runtime_error("CBOR decode: truncated u16");
+            arg = (uint64_t(data_[pos_]) << 8) | uint64_t(data_[pos_ + 1]);
+            pos_ += 2;
+        } else if (info == 26) {
+            if (pos_ + 4 > size_) throw std::runtime_error("CBOR decode: truncated u32");
+            arg = (uint64_t(data_[pos_]) << 24) | (uint64_t(data_[pos_ + 1]) << 16) |
+                  (uint64_t(data_[pos_ + 2]) << 8) | uint64_t(data_[pos_ + 3]);
+            pos_ += 4;
+        } else if (info == 27) {
+            if (pos_ + 8 > size_) throw std::runtime_error("CBOR decode: truncated u64");
+            arg = 0;
+            for (int i = 0; i < 8; ++i) arg = (arg << 8) | uint64_t(data_[pos_ + i]);
+            pos_ += 8;
+        } else {
+            throw std::runtime_error("CBOR decode: indefinite-length item not supported");
+        }
+    }
+
+    CborNode read_value() {
+        uint8_t major = 0;
+        uint64_t arg = 0;
+        read_head(major, arg);
+        CborNode node;
+        if (major == 0) {
+            node.kind = CborNode::Kind::Uint;
+            node.uint_value = arg;
+            return node;
+        }
+        if (major == 2 || major == 3) {
+            if (pos_ + arg > size_) throw std::runtime_error("CBOR decode: byte/text string exceeds remaining");
+            if (major == 2) {
+                node.kind = CborNode::Kind::Bstr;
+                node.bytes.assign(data_ + pos_, data_ + pos_ + arg);
+            } else {
+                node.kind = CborNode::Kind::Tstr;
+                node.text.assign(reinterpret_cast<const char*>(data_ + pos_), static_cast<size_t>(arg));
+            }
+            pos_ += static_cast<size_t>(arg);
+            return node;
+        }
+        if (major == 4) {
+            node.kind = CborNode::Kind::Array;
+            for (uint64_t i = 0; i < arg; ++i) node.array.push_back(read_value());
+            return node;
+        }
+        if (major == 5) {
+            node.kind = CborNode::Kind::Map;
+            for (uint64_t i = 0; i < arg; ++i) {
+                CborNode key = read_value();
+                if (key.kind != CborNode::Kind::Tstr) throw std::runtime_error("CBOR decode: map key is not text");
+                node.map.emplace(key.text, read_value());
+            }
+            return node;
+        }
+        throw std::runtime_error("CBOR decode: unsupported major type " + std::to_string(major));
+    }
+
+    const uint8_t* data_;
+    size_t size_ = 0;
+    size_t pos_ = 0;
+};
+
+void collect_templates_from_member_bytes(const std::vector<uint8_t>& bytes, std::vector<BindingTemplate>& out) {
+    std::string text(reinterpret_cast<const char*>(bytes.data()), bytes.size());
+    collect_templates_from_value(JsonParser(text).parse(), out);
+}
+
+void collect_templates_from_cbor_catalog(const std::string& bytes, std::vector<BindingTemplate>& out) {
+    CborNode root = CborReader(bytes).read();
+    if (root.kind != CborNode::Kind::Map) return;
+    auto it = root.map.find("members");
+    if (it == root.map.end()) return;
+    const CborNode& members = it->second;
+    if (members.kind == CborNode::Kind::Map) {
+        for (const auto& [_, member] : members.map) {
+            if (member.kind == CborNode::Kind::Bstr) collect_templates_from_member_bytes(member.bytes, out);
+        }
+    } else if (members.kind == CborNode::Kind::Array) {
+        for (const auto& member : members.array) {
+            if (member.kind == CborNode::Kind::Bstr) collect_templates_from_member_bytes(member.bytes, out);
+        }
+    }
+}
+
+std::string read_binary_file(const std::filesystem::path& path) {
+    std::ifstream in(path, std::ios::binary);
+    if (!in) throw std::runtime_error("cannot open " + path.string());
+    std::ostringstream buf;
+    buf << in.rdbuf();
+    return buf.str();
+}
+
+void append_proofs_in_dir(const std::filesystem::path& dir, bool recursive, std::vector<std::filesystem::path>& out) {
+    std::error_code ec;
+    if (!std::filesystem::exists(dir, ec) || !std::filesystem::is_directory(dir, ec)) return;
+    if (recursive) {
+        for (const auto& entry : std::filesystem::recursive_directory_iterator(dir, ec)) {
+            if (ec) break;
+            if (entry.is_regular_file(ec) && entry.path().extension() == ".proof") out.push_back(entry.path());
+        }
+    } else {
+        for (const auto& entry : std::filesystem::directory_iterator(dir, ec)) {
+            if (ec) break;
+            if (entry.is_regular_file(ec) && entry.path().extension() == ".proof") out.push_back(entry.path());
+        }
+    }
+}
+
+std::vector<std::filesystem::path> enumerate_recognizer_proofs(const std::string& project_root) {
+    std::vector<std::filesystem::path> out;
+    std::filesystem::path root(project_root.empty() ? "." : project_root);
+    append_proofs_in_dir(root, false, out);
+    append_proofs_in_dir(root / ".provekit", true, out);
+    std::error_code ec;
+    if (std::filesystem::exists(root, ec) && std::filesystem::is_directory(root, ec)) {
+        for (const auto& entry : std::filesystem::directory_iterator(root, ec)) {
+            if (ec) break;
+            if (entry.is_directory(ec) && entry.path().filename() != ".git" && entry.path().filename() != ".provekit") {
+                append_proofs_in_dir(entry.path(), false, out);
+            }
+        }
+    }
+    return out;
+}
+
+std::vector<BindingTemplate> load_binding_templates_from_project(const std::string& project_root, std::vector<ValuePtr>& diagnostics) {
+    std::vector<BindingTemplate> bindings;
+    for (const auto& proof_path : enumerate_recognizer_proofs(project_root)) {
+        try {
+            std::string bytes = read_binary_file(proof_path);
+            size_t first = bytes.find_first_not_of(" \t\r\n");
+            if (first != std::string::npos && (bytes[first] == '{' || bytes[first] == '[')) {
+                collect_templates_from_value(JsonParser(bytes).parse(), bindings);
+            } else {
+                collect_templates_from_cbor_catalog(bytes, bindings);
+            }
+        } catch (const std::exception& ex) {
+            diagnostics.push_back(obj({
+                {"message", strv("recognize proof load skipped " + proof_path.string() + ": " + ex.what())},
+                {"severity", strv("warning")},
+            }));
+        }
+    }
+    return bindings;
+}
+
+ValuePtr family_or_null(const ValuePtr& family) { return family ? family : nullv(); }
+
+ValuePtr recognize_tag_value(const RecognizeTag& tag) {
+    std::vector<ValuePtr> param_bindings;
+    for (const auto& binding : tag.param_bindings) {
+        param_bindings.push_back(obj({{"index", intv(binding.index)}, {"source_text", strv(binding.source_text)}}));
+    }
+    return obj({
+        {"concept_name", strv(tag.concept_name)},
+        {"contract_cid", tag.contract_cid.empty() ? nullv() : strv(tag.contract_cid)},
+        {"family", family_or_null(tag.family)},
+        {"file", strv(tag.file)},
+        {"function_name", strv(tag.function_name)},
+        {"library_tag", strv(tag.library_tag)},
+        {"match_tier", strv(tag.match_tier)},
+        {"param_bindings", arr(param_bindings)},
+        {"span", span_value(tag.span)},
+        {"template_cid", strv(tag.template_cid)},
+    });
+}
+
+ValuePtr recognize_result_value(const RecognizeResult& result) {
+    std::vector<ValuePtr> tags;
+    for (const auto& tag : result.tags) tags.push_back(recognize_tag_value(tag));
+    std::vector<ValuePtr> refusals;
+    for (const auto& r : result.refusals) {
+        std::vector<std::pair<std::string, ValuePtr>> fields{{"kind", strv(r.kind)}, {"reason", strv(r.reason)}};
+        if (!r.function.empty()) fields.push_back({"function", strv(r.function)});
+        if (r.line > 0) fields.push_back({"line", intv(r.line)});
+        refusals.push_back(obj(fields));
+    }
+    return obj({{"diagnostics", arr(result.diagnostics)}, {"refusals", arr(refusals)}, {"tags", arr(tags)}});
+}
+
 }  // namespace
+
+std::string recognize_result_json(const RecognizeResult& result) {
+    return canonical_bytes(recognize_result_value(result));
+}
+
+RecognizeResult recognize_source(const std::string& path, const std::string& source, const std::vector<BindingTemplate>& bindings) {
+    RecognizeResult result;
+    std::map<std::string, BindingTemplate> bindings_by_cid;
+    for (const auto& binding : bindings) {
+        if (!binding.template_cid.empty()) bindings_by_cid[binding.template_cid] = binding;
+    }
+
+    LiftResult lifted = lift_source(path, source);
+    result.diagnostics.insert(result.diagnostics.end(), lifted.diagnostics.begin(), lifted.diagnostics.end());
+    result.refusals.insert(result.refusals.end(), lifted.refusals.begin(), lifted.refusals.end());
+
+    for (const auto& decl : lifted.declarations) {
+        if (get_string(get_field(decl, "kind")) != "function-contract") continue;
+        std::string function_name = get_string(get_field(decl, "fnName"));
+        if (function_name.find("<source-unit:") != std::string::npos) continue;
+        ValuePtr body_source = get_field(decl, "body_source");
+        if (!body_source) continue;
+        std::string template_cid = get_string(get_field(body_source, "template_cid"));
+        auto binding_it = bindings_by_cid.find(template_cid);
+        if (binding_it == bindings_by_cid.end()) continue;
+        const BindingTemplate& binding = binding_it->second;
+
+        std::vector<ParamBinding> param_bindings;
+        std::vector<std::string> param_names = string_array_field(body_source, "param_names");
+        for (size_t i = 0; i < param_names.size(); ++i) {
+            param_bindings.push_back({static_cast<int>(i + 1), param_names[i]});
+        }
+
+        result.tags.push_back({
+            path,
+            span_from_value(get_field(body_source, "span")),
+            function_name,
+            binding.concept_name,
+            binding.library_tag,
+            family_or_null(binding.family),
+            template_cid,
+            binding.contract_cid,
+            "exact",
+            param_bindings,
+        });
+    }
+    return result;
+}
+
+RecognizeResult recognize_paths(const std::string& project_root, const std::vector<std::string>& source_paths) {
+    RecognizeResult aggregate;
+    std::vector<ValuePtr> diagnostics;
+    std::vector<BindingTemplate> bindings = load_binding_templates_from_project(project_root, diagnostics);
+    aggregate.diagnostics.insert(aggregate.diagnostics.end(), diagnostics.begin(), diagnostics.end());
+
+    for (const auto& rel : source_paths) {
+        std::filesystem::path path(rel);
+        if (!path.is_absolute()) path = std::filesystem::path(project_root.empty() ? "." : project_root) / rel;
+        std::ifstream in(path, std::ios::binary);
+        if (!in) {
+            aggregate.diagnostics.push_back(obj({{"message", strv("recognize source path not found: " + path.string())}, {"severity", strv("warning")}}));
+            continue;
+        }
+        std::ostringstream buf;
+        buf << in.rdbuf();
+        RecognizeResult one = recognize_source(rel, buf.str(), bindings);
+        aggregate.tags.insert(aggregate.tags.end(), one.tags.begin(), one.tags.end());
+        aggregate.refusals.insert(aggregate.refusals.end(), one.refusals.begin(), one.refusals.end());
+        aggregate.diagnostics.insert(aggregate.diagnostics.end(), one.diagnostics.begin(), one.diagnostics.end());
+    }
+    return aggregate;
+}
 
 int run_rpc() {
     std::string line;
@@ -1647,6 +2131,17 @@ int run_rpc() {
                 }
                 std::string body = compile_ir_document(ir->as_array());
                 std::cout << response(id, obj({{"body", strv(body)}, {"kind", strv("compiled-formula")}})) << "\n";
+            } else if (method == "provekit.plugin.recognize" || method == "recognize") {
+                ValuePtr params = get_field(req, "params");
+                std::vector<std::string> paths = source_paths_from_params(params);
+                if (paths.empty()) {
+                    std::cout << error_response(id, -32602, "source_paths must be a non-empty array of strings") << "\n";
+                    continue;
+                }
+                std::string root = get_string(get_field(params, "project_root"));
+                if (root.empty()) root = get_string(get_field(params, "workspace_root"), ".");
+                RecognizeResult recognized = recognize_paths(root, paths);
+                std::cout << response(id, recognize_result_value(recognized)) << "\n";
             } else if (method == "shutdown") {
                 std::cout << response(id, nullptr) << "\n";
                 return 0;
