@@ -101,13 +101,9 @@ function recognize_rpc(mixed $id, array $params): array
         is_array($params['source_paths'] ?? null) ? $params['source_paths'] : [],
         static fn(mixed $path): bool => is_string($path)
     ));
-    $bindingTemplates = array_values(array_filter(
-        is_array($params['binding_templates'] ?? null) ? $params['binding_templates'] : [],
-        static fn(mixed $binding): bool => is_array($binding)
-    ));
 
     try {
-        return success_response($id, (new PhpSourceRecognizer())->recognizePaths($projectRoot, $sourcePaths, $bindingTemplates));
+        return success_response($id, (new PhpSourceRecognizer())->recognizePaths($projectRoot, $sourcePaths, []));
     } catch (\InvalidArgumentException $e) {
         return error_response($id, -32602, $e->getMessage());
     }

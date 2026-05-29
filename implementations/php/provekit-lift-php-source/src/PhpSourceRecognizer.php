@@ -20,7 +20,10 @@ final class PhpSourceRecognizer
             throw new \InvalidArgumentException('project_root not found: ' . $projectRoot);
         }
 
-        $bindings = array_values(array_filter($bindingTemplates, static fn(mixed $binding): bool => is_array($binding)));
+        $bindings = array_merge(
+            $this->loadProjectBindingTemplates($root),
+            array_values(array_filter($bindingTemplates, static fn(mixed $binding): bool => is_array($binding)))
+        );
         $tags = [];
         $lifter = new PhpSourceLifter();
 
@@ -59,6 +62,104 @@ final class PhpSourceRecognizer
         }
 
         return ['tags' => $tags];
+    }
+
+    /**
+     * @return array<int, array>
+     */
+    private function loadProjectBindingTemplates(string $root): array
+    {
+        $templates = [];
+        foreach ($this->projectTemplatePaths($root) as $path) {
+            if (!is_file($path)) {
+                continue;
+            }
+            $raw = file_get_contents($path);
+            if ($raw === false) {
+                continue;
+            }
+            try {
+                $decoded = json_decode($raw, true, 512, JSON_THROW_ON_ERROR);
+            } catch (\JsonException) {
+                continue;
+            }
+            if (is_array($decoded)) {
+                array_push($templates, ...$this->bindingTemplatesFromDecodedProjectData($decoded));
+            }
+        }
+        return $templates;
+    }
+
+    /**
+     * @return array<int, string>
+     */
+    private function projectTemplatePaths(string $root): array
+    {
+        return [
+            $root . '/.provekit/lift/php-source/recognize-templates.json',
+            $root . '/.provekit/lift/php-source/binding-templates.json',
+        ];
+    }
+
+    /**
+     * @return array<int, array>
+     */
+    private function bindingTemplatesFromDecodedProjectData(array $decoded): array
+    {
+        if (array_is_list($decoded)) {
+            return array_values(array_filter($decoded, static fn(mixed $binding): bool => is_array($binding)));
+        }
+
+        $templates = [];
+        if (is_array($decoded['binding_templates'] ?? null)) {
+            array_push($templates, ...array_values(array_filter(
+                $decoded['binding_templates'],
+                static fn(mixed $binding): bool => is_array($binding)
+            )));
+        }
+        if (is_array($decoded['members'] ?? null)) {
+            foreach ($decoded['members'] as $member) {
+                if (!is_array($member)) {
+                    continue;
+                }
+                $template = $this->bindingTemplateFromProofMember($member);
+                if ($template !== null) {
+                    $templates[] = $template;
+                }
+            }
+        }
+        return $templates;
+    }
+
+    private function bindingTemplateFromProofMember(array $member): ?array
+    {
+        $record = $this->unwrapEnvelope($member);
+        if (($record['kind'] ?? null) !== 'library-sugar-binding-entry') {
+            return null;
+        }
+        $bodySource = is_array($record['body_source'] ?? null) ? $record['body_source'] : [];
+        if (!array_key_exists('ast_template', $bodySource) || !is_string($bodySource['template_cid'] ?? null)) {
+            return null;
+        }
+
+        return [
+            'concept_name' => $record['concept_name'] ?? null,
+            'library_tag' => $record['target_library_tag'] ?? ($record['library_tag'] ?? null),
+            'family' => $record['family'] ?? null,
+            'ast_template' => $bodySource['ast_template'],
+            'template_cid' => $bodySource['template_cid'],
+            'param_names' => $bodySource['param_names'] ?? null,
+            'contract_cid' => $record['contract_cid'] ?? null,
+            'source_function_name' => $record['source_function_name'] ?? null,
+        ];
+    }
+
+    private function unwrapEnvelope(array $value): array
+    {
+        if (is_array($value['body'] ?? null) && (array_key_exists('schemaVersion', $value) || array_key_exists('header', $value))) {
+            return $value['body'];
+        }
+        return $value;
     }
 
     /**

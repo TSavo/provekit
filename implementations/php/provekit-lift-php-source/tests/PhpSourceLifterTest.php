@@ -113,6 +113,30 @@ function binding_from_contract(array $contract, array $overrides = []): array
     ], $overrides);
 }
 
+function write_project_recognize_templates(string $root, array $bindings): void
+{
+    $dir = $root . '/.provekit/lift/php-source';
+    if (!mkdir($dir, 0777, true) && !is_dir($dir)) {
+        fail_test('failed to create project template dir ' . $dir);
+    }
+    $members = array_map(static fn(array $binding): array => [
+        'kind' => 'library-sugar-binding-entry',
+        'concept_name' => $binding['concept_name'],
+        'target_library_tag' => $binding['library_tag'],
+        'family' => $binding['family'],
+        'body_source' => [
+            'ast_template' => $binding['ast_template'],
+            'template_cid' => $binding['template_cid'],
+            'param_names' => $binding['param_names'],
+        ],
+        'contract_cid' => $binding['contract_cid'],
+    ], $bindings);
+    file_put_contents(
+        $dir . '/recognize-templates.json',
+        json_encode(['members' => $members], JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE)
+    );
+}
+
 function test_lift_emits_source_unit_php_ops_and_unique_names(): void
 {
     $source = <<<'PHP'
@@ -416,7 +440,7 @@ PHP);
     }
 }
 
-function test_recognizer_rpc_dispatch_accepts_provekit_plugin_recognize(): void
+function test_recognizer_rpc_uses_project_owned_templates_without_forwarded_bindings(): void
 {
     $sugar = <<<'PHP'
 <?php
@@ -430,6 +454,7 @@ PHP;
 
     $root = temp_dir('recognize-rpc');
     try {
+        write_project_recognize_templates($root, [$binding]);
         mkdir($root . '/src');
         file_put_contents($root . '/src/app.php', <<<'PHP'
 <?php
@@ -445,7 +470,6 @@ PHP);
             'params' => [
                 'project_root' => $root,
                 'source_paths' => ['src/app.php'],
-                'binding_templates' => [$binding],
             ],
         ]);
         assert_same(99, $response['id'], 'rpc id preserved');
