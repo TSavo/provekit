@@ -22,6 +22,8 @@
 //   assert_eq!(<lhs>, <rhs>)         -> atomic eq
 //   assert_ne!(<lhs>, <rhs>)         -> atomic ne
 //   assert!(<lhs> <binop> <rhs>)     -> atomic comparison
+//   assert!(<bool-expr>)             -> atomic eq against True
+//   assert!(!<bool-expr>)            -> atomic eq against False
 //   assert_matches!(<lhs>, <pat>)    -> atomic eq against ctor-of-lit
 //                                       (only the trivial `Ok(42)` /
 //                                       `Err(_)` shape; deeper patterns
@@ -731,6 +733,7 @@ fn collect_expr_callsites(
             collect_expr_callsites(&b.left, bindings, out, substitutions);
             collect_expr_callsites(&b.right, bindings, out, substitutions);
         }
+        syn::Expr::Unary(u) => collect_expr_callsites(&u.expr, bindings, out, substitutions),
         syn::Expr::Paren(p) => collect_expr_callsites(&p.expr, bindings, out, substitutions),
         syn::Expr::Reference(r) => collect_expr_callsites(&r.expr, bindings, out, substitutions),
         syn::Expr::Cast(c) => collect_expr_callsites(&c.expr, bindings, out, substitutions),
@@ -1149,8 +1152,22 @@ fn translate_bool_expr(expr: &syn::Expr) -> Result<Rc<Formula>, String> {
             }
         }
         syn::Expr::Paren(p) => translate_bool_expr(&p.expr),
-        _ => Err("assert! body must be a comparison expression".into()),
+        syn::Expr::Unary(u) if matches!(u.op, syn::UnOp::Not(_)) => {
+            let term = translate_term(&u.expr)?;
+            Ok(eq(term, bool_ctor(false)))
+        }
+        _ => {
+            let term = translate_term(expr)?;
+            Ok(eq(term, bool_ctor(true)))
+        }
     }
+}
+
+fn bool_ctor(value: bool) -> Rc<Term> {
+    Rc::new(Term::Ctor {
+        name: if value { "True" } else { "False" }.into(),
+        args: vec![],
+    })
 }
 
 /// Term translation. Whitelist (v0.5):
@@ -1217,11 +1234,7 @@ fn translate_term(expr: &syn::Expr) -> Result<Rc<Term>, String> {
                 }))
             }
             syn::Lit::Bool(lb) => {
-                let name = if lb.value { "True" } else { "False" };
-                Ok(Rc::new(Term::Ctor {
-                    name: name.into(),
-                    args: vec![],
-                }))
+                Ok(bool_ctor(lb.value))
             }
             _ => Err(
                 "only integer, string, byte-string, and bool literals are liftable in v0.5".into(),
@@ -1525,6 +1538,56 @@ mod tests {
         let out = lift_file(&f, "t.rs");
         assert_eq!(out.lifted, 1, "warnings: {:?}", out.warnings);
         assert_callsite_name(&out.decls[0].name, "some_value");
+    }
+
+    #[test]
+    fn lifts_assert_bool_method_call_as_true() {
+        let src = r#"
+            #[test]
+            fn option_is_some() {
+                assert!(Some(1).is_some());
+            }
+        "#;
+        let f = parse(src);
+        let out = lift_file(&f, "t.rs");
+        assert_eq!(out.lifted, 1, "warnings: {:?}", out.warnings);
+        assert_callsite_name(&out.decls[0].name, "is_some");
+        let inv = out.decls[0].inv.as_ref().expect("inv");
+        match &**inv {
+            Formula::Atomic { name, args } if name == "=" && args.len() == 2 => match &*args[1] {
+                Term::Ctor { name, args } => {
+                    assert_eq!(name, "True");
+                    assert!(args.is_empty());
+                }
+                other => panic!("expected True ctor, got {other:?}"),
+            },
+            other => panic!("expected atomic =, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn lifts_negated_assert_bool_method_call_as_false() {
+        let src = r#"
+            #[test]
+            fn option_not_none() {
+                assert!(!Some(1).is_none());
+            }
+        "#;
+        let f = parse(src);
+        let out = lift_file(&f, "t.rs");
+        assert_eq!(out.lifted, 1, "warnings: {:?}", out.warnings);
+        assert_callsite_name(&out.decls[0].name, "is_none");
+        let inv = out.decls[0].inv.as_ref().expect("inv");
+        match &**inv {
+            Formula::Atomic { name, args } if name == "=" && args.len() == 2 => match &*args[1] {
+                Term::Ctor { name, args } => {
+                    assert_eq!(name, "False");
+                    assert!(args.is_empty());
+                }
+                other => panic!("expected False ctor, got {other:?}"),
+            },
+            other => panic!("expected atomic =, got {other:?}"),
+        }
     }
 
     #[test]
