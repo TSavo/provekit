@@ -438,6 +438,155 @@ done
 }
 
 #[test]
+fn mint_conjoins_producer_contracts_and_consumer_bridges_in_one_proof() {
+    let dir = tempfile::tempdir().expect("create tempdir");
+    let project = dir.path().join("project");
+    let producer_manifest = project.join(".provekit/lift/producer");
+    let consumer_manifest = project.join(".provekit/lift/consumer");
+    let out_dir = dir.path().join("out");
+    fs::create_dir_all(&producer_manifest).expect("create producer manifest dir");
+    fs::create_dir_all(&consumer_manifest).expect("create consumer manifest dir");
+    fs::write(
+        project.join(".provekit/config.toml"),
+        r#"[[plugins]]
+name = "producer"
+surface = "producer"
+emit = "ir-document"
+
+[[plugins]]
+name = "consumer"
+surface = "consumer"
+"#,
+    )
+    .expect("write project config");
+
+    let producer = dir.path().join("producer.sh");
+    write_executable(
+        &producer,
+        r#"#!/usr/bin/env bash
+set -euo pipefail
+while IFS= read -r line; do
+  if [[ "$line" == *'"method":"initialize"'* ]]; then
+    printf '%s\n' '{"jsonrpc":"2.0","id":1,"result":{"name":"producer","protocol_version":"pep/1.7.0","capabilities":{}}}'
+  elif [[ "$line" == *'"method":"lift"'* ]]; then
+    printf '%s\n' '{"jsonrpc":"2.0","id":2,"result":{"kind":"ir-document","ir":[{"kind":"contract","name":"callee@src/lib.rs:1:1","outBinding":"out","post":{"kind":"atomic","name":"producer_post","args":[]}}],"diagnostics":[]}}'
+  elif [[ "$line" == *'"method":"shutdown"'* ]]; then
+    printf '%s\n' '{"jsonrpc":"2.0","id":3,"result":null}'
+    exit 0
+  fi
+done
+"#,
+    );
+
+    let consumer = dir.path().join("consumer.sh");
+    write_executable(
+        &consumer,
+        r#"#!/usr/bin/env bash
+set -euo pipefail
+while IFS= read -r line; do
+  if [[ "$line" == *'"method":"initialize"'* ]]; then
+    printf '%s\n' '{"jsonrpc":"2.0","id":1,"result":{"name":"consumer","protocol_version":"pep/1.7.0","capabilities":{}}}'
+  elif [[ "$line" == *'"method":"lift"'* ]]; then
+    printf 'consumer must be dispatched via lift_implications, not lift: %s\n' "$line" >&2
+    exit 44
+  elif [[ "$line" == *'"method":"provekit.plugin.lift_implications"'* ]]; then
+    if [[ "$line" != *'"contract_bindings"'* || "$line" != *'"name":"callee@src/lib.rs:1:1"'* ]]; then
+      printf 'consumer did not receive producer contract_bindings: %s\n' "$line" >&2
+      exit 45
+    fi
+    cid="${line#*\"contract_cid\":\"}"
+    cid="${cid%%\"*}"
+    if [[ "$cid" != blake3-512:* ]]; then
+      printf 'consumer received invalid contract cid: %s\n' "$line" >&2
+      exit 46
+    fi
+    printf '{"jsonrpc":"2.0","id":2,"result":{"kind":"ir-document","ir":[{"kind":"bridge","name":"intra-body:rust:callee@src/lib.rs:2:4","schemaVersion":"1","sourceContractCid":"%s","sourceLayer":"rust","sourceSymbol":"callee","target":{"cid":"%s","kind":"contract"},"targetContractCid":"%s","targetLayer":"rust-tests"}],"diagnostics":[]}}\n' "$cid" "$cid" "$cid"
+  elif [[ "$line" == *'"method":"shutdown"'* ]]; then
+    printf '%s\n' '{"jsonrpc":"2.0","id":3,"result":null}'
+    exit 0
+  fi
+done
+"#,
+    );
+
+    fs::write(
+        producer_manifest.join("manifest.toml"),
+        format!(
+            "name = \"producer\"\ncommand = [\"{}\"]\n",
+            producer.display()
+        ),
+    )
+    .expect("write producer manifest");
+    fs::write(
+        consumer_manifest.join("manifest.toml"),
+        format!(
+            "name = \"consumer\"\ncommand = [\"{}\"]\nmethod = \"provekit.plugin.lift_implications\"\nphase = \"consumer\"\n",
+            consumer.display()
+        ),
+    )
+    .expect("write consumer manifest");
+
+    let output = output_retrying_etxtbsy(
+        Command::new(provekit_bin())
+            .arg("mint")
+            .arg("--project")
+            .arg(&project)
+            .arg("--out")
+            .arg(&out_dir)
+            .arg("--no-attest")
+            .arg("--json")
+            .arg("--quiet"),
+    );
+
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(
+        output.status.success(),
+        "mint conjoin should run producers, forward contract_bindings to consumers, and emit one proof\nstdout:\n{stdout}\nstderr:\n{stderr}"
+    );
+
+    let proof_files: Vec<PathBuf> = fs::read_dir(&out_dir)
+        .expect("read out dir")
+        .filter_map(|entry| {
+            let path = entry.expect("out dir entry").path();
+            (path.extension().and_then(|s| s.to_str()) == Some("proof")).then_some(path)
+        })
+        .collect();
+    assert_eq!(
+        proof_files.len(),
+        1,
+        "producer + consumer conjoin must write one proof, got {proof_files:?}"
+    );
+
+    let pool = provekit_verifier::load_all_proofs::run_with_files(
+        Path::new("/no-such-project"),
+        &proof_files,
+    );
+    assert!(
+        pool.load_errors.is_empty(),
+        "conjoined proof must load cleanly: {:?}",
+        pool.load_errors
+    );
+    let bridge = pool.bridges_by_symbol.get("callee").unwrap_or_else(|| {
+        panic!(
+            "consumer bridge should be indexed by sourceSymbol=callee; got {:?}",
+            pool.bridges_by_symbol.keys().collect::<Vec<_>>()
+        )
+    });
+    let target_cid = provekit_verifier::types::memento_body_field(bridge, "targetContractCid")
+        .and_then(|v| v.as_str())
+        .expect("bridge targetContractCid");
+    let target = pool
+        .mementos
+        .get(target_cid)
+        .unwrap_or_else(|| panic!("bridge target cid {target_cid} must resolve in same proof"));
+    assert_eq!(
+        provekit_verifier::types::memento_kind(target).as_deref(),
+        Some("contract")
+    );
+}
+
+#[test]
 fn mint_uses_path_document_from_project_config() {
     let dir = tempfile::tempdir().expect("create tempdir");
     let project = dir.path().join("project");

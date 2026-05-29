@@ -153,6 +153,20 @@ struct PerPluginDispatch {
     response: Value,
 }
 
+#[derive(Debug, Clone)]
+struct PreparedLiftStep {
+    surface: String,
+    lift_request: Value,
+}
+
+#[derive(Debug, Clone)]
+struct MintedIrDocument {
+    bytes: Vec<u8>,
+    filename_cid: String,
+    contract_set_cid: String,
+    contract_bindings: Vec<Value>,
+}
+
 /// Merge N per-plugin lift responses into one canonical `kind:
 /// "ir-document"` value. The union concatenates each plugin's `ir`
 /// array; diagnostics likewise. Every plugin in a multi-plugin path
@@ -298,64 +312,43 @@ impl MintKit {
             .and_then(Value::as_bool)
             .unwrap_or(false);
 
-        // Per-plugin dispatch. Each lift step contributes its own
-        // lift_request (workspace_root, surface, options) and its own
-        // RPC dispatch. Responses are accumulated and (when N > 1)
-        // merged into a single canonical ir-document before being
-        // minted into ONE envelope by the existing minter.
-        let mut per_plugin: Vec<PerPluginDispatch> = Vec::with_capacity(lift_steps.len());
-        let mut combined_lift_claim: Option<DomainClaim> = None;
+        // Prepare lift steps, then phase them. Producer surfaces emit
+        // contracts/sugars; consumer surfaces, such as rust-implications,
+        // depend on the producers' minted contract CIDs and must run second.
+        let mut producer_steps: Vec<PreparedLiftStep> = Vec::new();
+        let mut consumer_steps: Vec<PreparedLiftStep> = Vec::new();
         let mut surface_for_session: Option<String> = None;
         for lift_step in &lift_steps {
             let lift_request = self.path_step_spec(lift_step, "mint path lift step")?;
             let surface = required_str(&lift_request, "surface", "mint path lift step")
                 .map_err(KitError::Transformation)?
                 .to_string();
-            // Reconstruct the per-plugin LiftPluginOptions from the
-            // lift_request. workspace_override is carried in
-            // `options.workspaceOverride` (set by build_lift_params on
-            // initial construction). Restoring it lets dispatch_lift's
-            // internal build_lift_params re-derive the same
-            // workspace_root the plugin originally received, while
-            // find_manifest correctly uses project_root_for_manifests
-            // for the .provekit/ lookup.
-            let lift_options = LiftPluginOptions {
-                identify_only: lift_request
-                    .get("options")
-                    .and_then(|options| options.get("identifyOnly"))
-                    .and_then(Value::as_bool)
-                    .unwrap_or(false),
-                library_bindings: lift_request
-                    .get("options")
-                    .and_then(|options| options.get("layer"))
-                    .and_then(Value::as_str)
-                    .is_some_and(|layer| layer == "library-bindings"),
-                workspace_override: lift_request
-                    .get("options")
-                    .and_then(|options| options.get("workspaceOverride"))
-                    .and_then(Value::as_str)
-                    .map(|s| s.to_string()),
-                emit: lift_request
-                    .get("options")
-                    .and_then(|options| options.get("emit"))
-                    .and_then(Value::as_str)
-                    .map(|s| s.to_string()),
-                layer: lift_request
-                    .get("options")
-                    .and_then(|options| options.get("layer"))
-                    .and_then(Value::as_str)
-                    .map(|s| s.to_string()),
-            };
-
-            // The first lift step's surface becomes the session's
-            // canonical (used for the self-contracts attestation file).
             if surface_for_session.is_none() {
                 surface_for_session = Some(surface.clone());
             }
+            let prepared = PreparedLiftStep {
+                surface,
+                lift_request,
+            };
+            if lift_plugin::surface_phase(&project_root_for_manifests, &prepared.surface)
+                == "consumer"
+            {
+                consumer_steps.push(prepared);
+            } else {
+                producer_steps.push(prepared);
+            }
+        }
 
+        let mut per_plugin: Vec<PerPluginDispatch> = Vec::with_capacity(lift_steps.len());
+        let mut producer_responses: Vec<PerPluginDispatch> =
+            Vec::with_capacity(producer_steps.len());
+        let mut combined_lift_claim: Option<DomainClaim> = None;
+
+        for step in &producer_steps {
+            let lift_options = lift_options_from_request(&step.lift_request, Vec::new());
             let session = match lift_plugin::dispatch_lift(
                 &project_root_for_manifests,
-                &surface,
+                &step.surface,
                 lift_options,
                 quiet,
             ) {
@@ -384,7 +377,7 @@ impl MintKit {
                     return Ok(MintSession {
                         claim,
                         result,
-                        surface,
+                        surface: step.surface.clone(),
                         out_dir,
                     });
                 }
@@ -404,7 +397,81 @@ impl MintKit {
             if combined_lift_claim.is_none() {
                 combined_lift_claim = Some(session.claim);
             }
-            per_plugin.push(PerPluginDispatch { surface, response });
+            let dispatched = PerPluginDispatch {
+                surface: step.surface.clone(),
+                response,
+            };
+            producer_responses.push(dispatched.clone());
+            per_plugin.push(dispatched);
+        }
+
+        let contract_bindings = if consumer_steps.is_empty() {
+            Vec::new()
+        } else {
+            contract_bindings_from_producer_responses(
+                &producer_responses,
+                &project_root_for_manifests,
+                &out_dir,
+                quiet,
+            )
+            .map_err(KitError::Transformation)?
+        };
+
+        for step in &consumer_steps {
+            let lift_options =
+                lift_options_from_request(&step.lift_request, contract_bindings.clone());
+            let session = match lift_plugin::dispatch_lift(
+                &project_root_for_manifests,
+                &step.surface,
+                lift_options,
+                quiet,
+            ) {
+                Ok(session) => session,
+                Err(LiftPluginError::MissingBinary { binary }) => {
+                    if !quiet {
+                        println!(
+                            "{}: lifter binary `{}` not found: producing empty-set attestation",
+                            "warn".yellow().bold(),
+                            binary
+                        );
+                    }
+                    let empty_cid = compute_contract_set_cid(vec![]);
+                    let result = DispatchResult {
+                        filename_cid: String::new(),
+                        contract_set_cid: empty_cid,
+                        bytes_written: 0,
+                        proof_file: None,
+                        lift_result: json!({
+                            "kind": "empty-set",
+                            "reason": "lifter binary not found",
+                            "binary": binary,
+                        }),
+                    };
+                    let claim = mint_result_claim(input, None, &result)?;
+                    return Ok(MintSession {
+                        claim,
+                        result,
+                        surface: step.surface.clone(),
+                        out_dir,
+                    });
+                }
+                Err(LiftPluginError::Refused(refusal)) => {
+                    return Err(KitError::Transformation(format!(
+                        "{}: {}",
+                        refusal.header.failure_kind, refusal.header.failure_detail
+                    )))
+                }
+                Err(LiftPluginError::Failed(error)) => return Err(KitError::Transformation(error)),
+            };
+
+            let response = session.response().clone();
+            if combined_lift_claim.is_none() {
+                combined_lift_claim = Some(session.claim);
+            }
+            per_plugin.push(PerPluginDispatch {
+                surface: step.surface.clone(),
+                response,
+            });
         }
 
         let merged_lift_response = if per_plugin.len() == 1 {
@@ -454,6 +521,82 @@ impl MintKit {
             }),
         }
     }
+}
+
+fn lift_options_from_request(
+    lift_request: &Value,
+    contract_bindings: Vec<Value>,
+) -> LiftPluginOptions {
+    LiftPluginOptions {
+        identify_only: lift_request
+            .get("options")
+            .and_then(|options| options.get("identifyOnly"))
+            .and_then(Value::as_bool)
+            .unwrap_or(false),
+        library_bindings: lift_request
+            .get("options")
+            .and_then(|options| options.get("layer"))
+            .and_then(Value::as_str)
+            .is_some_and(|layer| layer == "library-bindings"),
+        workspace_override: lift_request
+            .get("options")
+            .and_then(|options| options.get("workspaceOverride"))
+            .and_then(Value::as_str)
+            .map(|s| s.to_string()),
+        emit: lift_request
+            .get("options")
+            .and_then(|options| options.get("emit"))
+            .and_then(Value::as_str)
+            .map(|s| s.to_string()),
+        layer: lift_request
+            .get("options")
+            .and_then(|options| options.get("layer"))
+            .and_then(Value::as_str)
+            .map(|s| s.to_string()),
+        contract_bindings,
+    }
+}
+
+fn contract_bindings_from_producer_responses(
+    producer_responses: &[PerPluginDispatch],
+    project_root: &Path,
+    out_dir: &Path,
+    quiet: bool,
+) -> Result<Vec<Value>, String> {
+    if producer_responses.is_empty() {
+        return Ok(Vec::new());
+    }
+    let lift_response = if producer_responses.len() == 1 {
+        producer_responses[0].response.clone()
+    } else {
+        merge_ir_document_responses(producer_responses.to_vec())?
+    };
+    let kind = lift_response
+        .get("kind")
+        .and_then(|v| v.as_str())
+        .ok_or("producer lift response missing `kind` field")?;
+    if kind != "ir-document" {
+        return Err(format!(
+            "consumer lift surfaces require producer ir-documents; producer response kind was `{kind}`"
+        ));
+    }
+    let ir = lift_response
+        .get("ir")
+        .and_then(|v| v.as_array())
+        .ok_or("producer ir-document response missing `ir` array")?;
+    let authorities = lift_response.get("authorities").and_then(|v| v.as_array());
+    let implications = lift_response.get("implications").and_then(|v| v.as_array());
+    let witnesses = lift_response.get("witnesses").and_then(|v| v.as_array());
+    Ok(mint_ir_document(
+        ir,
+        authorities,
+        implications,
+        witnesses,
+        project_root,
+        out_dir,
+        quiet,
+    )?
+    .contract_bindings)
 }
 
 impl Kit for MintKit {
@@ -595,6 +738,7 @@ fn mint_input_multi(
                 workspace_override: plugin.workspace_override.clone(),
                 emit: plugin.emit.clone(),
                 layer: plugin.layer.clone(),
+                contract_bindings: Vec::new(),
             },
         ));
         let lift_input_cid = address(&lift_input);
@@ -713,7 +857,7 @@ fn mint_lift_response(
             let authorities = lift_resp.get("authorities").and_then(|v| v.as_array());
             let implications = lift_resp.get("implications").and_then(|v| v.as_array());
             let witnesses = lift_resp.get("witnesses").and_then(|v| v.as_array());
-            let (bytes, filename_cid, contract_set_cid) = mint_from_ir_document(
+            let minted = mint_ir_document(
                 ir,
                 authorities,
                 implications,
@@ -725,8 +869,8 @@ fn mint_lift_response(
 
             std::fs::create_dir_all(out_dir)
                 .map_err(|e| format!("mkdir {}: {e}", out_dir.display()))?;
-            let out_path = out_dir.join(format!("{filename_cid}.proof"));
-            std::fs::write(&out_path, &bytes)
+            let out_path = out_dir.join(format!("{}.proof", minted.filename_cid));
+            std::fs::write(&out_path, &minted.bytes)
                 .map_err(|e| format!("write {}: {e}", out_path.display()))?;
 
             if !quiet {
@@ -743,9 +887,9 @@ fn mint_lift_response(
             }
 
             Ok(DispatchResult {
-                filename_cid,
-                contract_set_cid,
-                bytes_written: bytes.len(),
+                filename_cid: minted.filename_cid,
+                contract_set_cid: minted.contract_set_cid,
+                bytes_written: minted.bytes.len(),
                 proof_file: Some(out_path),
                 lift_result: lift_resp,
             })
@@ -863,6 +1007,47 @@ pub(crate) fn stamp_platform_profile(
     }
 }
 
+fn mint_bridge_from_decl(
+    decl: &Value,
+    produced_at: &str,
+    signer_seed: Ed25519Seed,
+) -> Result<(String, Vec<u8>), String> {
+    let source_symbol = decl
+        .get("sourceSymbol")
+        .and_then(|v| v.as_str())
+        .filter(|s| !s.is_empty())
+        .ok_or("bridge ir entry missing `sourceSymbol`")?;
+    let target_contract_cid = decl
+        .get("targetContractCid")
+        .or_else(|| decl.get("sourceContractCid"))
+        .or_else(|| decl.pointer("/target/cid"))
+        .and_then(|v| v.as_str())
+        .filter(|s| !s.is_empty())
+        .ok_or("bridge ir entry missing `targetContractCid`")?;
+    let source_layer = decl
+        .get("sourceLayer")
+        .and_then(|v| v.as_str())
+        .unwrap_or("source");
+    let target_layer = decl
+        .get("targetLayer")
+        .and_then(|v| v.as_str())
+        .unwrap_or("kit");
+    let bridge = mint_bridge(&MintBridgeArgs {
+        produced_by: "provekit-cli".to_string(),
+        produced_at: produced_at.to_string(),
+        source_symbol: source_symbol.to_string(),
+        source_layer: source_layer.to_string(),
+        target_contract_cid: target_contract_cid.to_string(),
+        target_layer: target_layer.to_string(),
+        ir_arg_sorts: vec![],
+        ir_return_sort: String::new(),
+        notes: "implication-lifted callsite bridge".to_string(),
+        signer_seed,
+    });
+    Ok((bridge.cid, bridge.canonical_bytes))
+}
+
+#[cfg(test)]
 fn mint_from_ir_document(
     ir: &[Value],
     authorities: Option<&Vec<Value>>,
@@ -872,6 +1057,27 @@ fn mint_from_ir_document(
     out_dir: &Path,
     quiet: bool,
 ) -> Result<(Vec<u8>, String, String), String> {
+    let minted = mint_ir_document(
+        ir,
+        authorities,
+        implications,
+        witnesses,
+        project_root,
+        out_dir,
+        quiet,
+    )?;
+    Ok((minted.bytes, minted.filename_cid, minted.contract_set_cid))
+}
+
+fn mint_ir_document(
+    ir: &[Value],
+    authorities: Option<&Vec<Value>>,
+    implications: Option<&Vec<Value>>,
+    witnesses: Option<&Vec<Value>>,
+    project_root: &Path,
+    out_dir: &Path,
+    quiet: bool,
+) -> Result<MintedIrDocument, String> {
     use std::collections::BTreeMap;
 
     #[derive(Clone)]
@@ -1157,6 +1363,11 @@ fn mint_from_ir_document(
                     let (cid, bytes) = mint_realization_memento(decl)?;
                     members.entry(cid).or_insert(bytes);
                 }
+                Some("bridge") => {
+                    let (cid, bytes) =
+                        mint_bridge_from_decl(decl, &produced_at, default_signer_seed)?;
+                    members.entry(cid).or_insert(bytes);
+                }
                 _ => {}
             }
         }
@@ -1173,6 +1384,11 @@ fn mint_from_ir_document(
                 }
                 Some("realization-memento") => {
                     let (cid, bytes) = mint_realization_memento(decl)?;
+                    members.entry(cid).or_insert(bytes);
+                }
+                Some("bridge") => {
+                    let (cid, bytes) =
+                        mint_bridge_from_decl(decl, &produced_at, default_signer_seed)?;
                     members.entry(cid).or_insert(bytes);
                 }
                 _ => {}
@@ -1264,6 +1480,15 @@ fn mint_from_ir_document(
     }
 
     let contract_set_cid = compute_contract_set_cid(content_cids);
+    let contract_bindings: Vec<Value> = contracts_by_name
+        .iter()
+        .map(|(name, contract)| {
+            json!({
+                "name": name,
+                "contract_cid": contract.attestation_cid.clone(),
+            })
+        })
+        .collect();
 
     let (proof_signer, proof_signer_seed) = if let Some(authority) = proof_authority {
         (authority.cid, authority.seed)
@@ -1287,7 +1512,12 @@ fn mint_from_ir_document(
 
     let built = build_proof_envelope(&proof_input);
 
-    Ok((built.bytes, built.cid, contract_set_cid))
+    Ok(MintedIrDocument {
+        bytes: built.bytes,
+        filename_cid: built.cid,
+        contract_set_cid,
+        contract_bindings,
+    })
 }
 
 fn mint_library_sugar_binding_entry(decl: &Value) -> Result<(String, Vec<u8>), String> {
@@ -2483,6 +2713,69 @@ mod tests {
 
         assert_eq!(contract_count, 2);
         assert_eq!(implication_count, 1);
+    }
+
+    #[test]
+    fn mint_from_ir_document_mints_explicit_bridge_entries() {
+        let target_cid = "blake3-512:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa";
+        let ir = vec![
+            json!({
+                "kind": "contract",
+                "name": "callee@src/lib.rs:1:1",
+                "outBinding": "out",
+                "post": {"kind": "atomic", "name": "producer_post", "args": []}
+            }),
+            json!({
+                "kind": "bridge",
+                "name": "intra-body:rust:callee@src/lib.rs:2:4",
+                "schemaVersion": "1",
+                "sourceContractCid": target_cid,
+                "sourceLayer": "rust",
+                "sourceSymbol": "callee",
+                "target": {"cid": target_cid, "kind": "contract"},
+                "targetContractCid": target_cid,
+                "targetLayer": "rust-tests"
+            }),
+        ];
+
+        let (bytes, _, _) =
+            mint_from_ir_document(&ir, None, None, None, Path::new("."), Path::new("."), true)
+                .expect("mint contract plus explicit bridge");
+        let catalog = provekit_verifier::cbor_decode::decode(&bytes).expect("decode proof");
+        let members = catalog
+            .as_map()
+            .and_then(|m| m.get("members"))
+            .and_then(|v| v.as_map())
+            .expect("proof members");
+
+        let mut contract_count = 0;
+        let mut bridge_count = 0;
+        for member in members.values() {
+            let bytes = member.as_bstr().expect("member bytes");
+            let envelope: Value = serde_json::from_slice(bytes).expect("member JSON");
+            match envelope.pointer("/header/kind").and_then(|v| v.as_str()) {
+                Some("contract") => contract_count += 1,
+                Some("bridge") => {
+                    bridge_count += 1;
+                    assert_eq!(
+                        envelope
+                            .pointer("/header/targetContractCid")
+                            .and_then(|v| v.as_str()),
+                        Some(target_cid)
+                    );
+                    assert_eq!(
+                        envelope
+                            .pointer("/header/sourceSymbol")
+                            .and_then(|v| v.as_str()),
+                        Some("callee")
+                    );
+                }
+                other => panic!("unexpected member kind {other:?}"),
+            }
+        }
+
+        assert_eq!(contract_count, 1);
+        assert_eq!(bridge_count, 1);
     }
 
     #[test]

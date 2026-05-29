@@ -24,6 +24,14 @@ pub(crate) struct LiftPluginManifest {
     pub name: String,
     pub command: Vec<String>,
     pub working_dir: Option<PathBuf>,
+    /// Optional JSON-RPC method override. Defaults to `lift`.
+    /// Used by a kit binary that owns several lift surfaces, such as
+    /// Rust's `provekit.plugin.lift_implications` consumer surface.
+    pub method: Option<String>,
+    /// Optional lift phase. Defaults to producer. `consumer` surfaces are
+    /// run after producers with producer contract CIDs forwarded as
+    /// top-level `contract_bindings`.
+    pub phase: Option<String>,
 }
 
 #[derive(Debug, Clone)]
@@ -62,6 +70,9 @@ pub struct LiftPluginOptions {
     /// "library-bindings"), so per-plugin config can request the
     /// appropriate layer regardless of the global CLI flag.
     pub layer: Option<String>,
+    /// Contract bindings forwarded to implication consumer surfaces. Each
+    /// entry is `{ "name": <contract name>, "contract_cid": <attestation cid> }`.
+    pub contract_bindings: Vec<Value>,
 }
 
 #[derive(Debug, Clone)]
@@ -124,11 +135,14 @@ pub(crate) fn dispatch_lift(
     }
 
     let lift_params = build_lift_params(project_root, surface, options);
-    let kit = LiftPluginKit::new(
+    let mut kit = LiftPluginKit::new(
         surface,
         manifest.command.clone(),
         resolved_working_dir(project_root, &manifest),
     );
+    if let Some(method) = manifest.method.as_deref() {
+        kit = kit.with_method(method);
+    }
     trace_log(format!("lift kit parse surface={surface}"));
     let core_session = kit.parse_session(&Input::Spec(lift_params.clone()))?;
     trace_log(format!(
@@ -281,6 +295,8 @@ fn parse_manifest(path: &Path) -> Result<LiftPluginManifest, String> {
         name: String::new(),
         command: Vec::new(),
         working_dir: None,
+        method: None,
+        phase: None,
     };
     for line in text.lines() {
         let line = match line.find('#') {
@@ -297,6 +313,18 @@ fn parse_manifest(path: &Path) -> Result<LiftPluginManifest, String> {
         match key {
             "name" => manifest.name = val.trim_matches('"').to_string(),
             "working_dir" => manifest.working_dir = Some(PathBuf::from(val.trim_matches('"'))),
+            "method" => {
+                let method = val.trim_matches('"').to_string();
+                manifest.method = if method.is_empty() {
+                    None
+                } else {
+                    Some(method)
+                };
+            }
+            "phase" => {
+                let phase = val.trim_matches('"').to_string();
+                manifest.phase = if phase.is_empty() { None } else { Some(phase) };
+            }
             "command" => {
                 let inner = val.trim_matches(|c| c == '[' || c == ']');
                 manifest.command = inner
@@ -312,6 +340,14 @@ fn parse_manifest(path: &Path) -> Result<LiftPluginManifest, String> {
         return Err(format!("manifest {} has no `command`", path.display()));
     }
     Ok(manifest)
+}
+
+pub(crate) fn surface_phase(project_root: &Path, surface: &str) -> String {
+    find_manifest(project_root, surface)
+        .ok()
+        .and_then(|manifest| manifest.phase)
+        .filter(|phase| phase == "consumer")
+        .unwrap_or_else(|| "producer".to_string())
 }
 
 fn find_manifest(project_root: &Path, surface: &str) -> Result<LiftPluginManifest, String> {
@@ -392,13 +428,17 @@ pub fn build_lift_params(project_root: &Path, surface: &str, options: LiftPlugin
     if let Some(override_path) = options.workspace_override.as_deref() {
         options_obj["workspaceOverride"] = json!(override_path);
     }
-    json!({
+    let mut params = json!({
         "surface": surface,
         "workspace_root": workspace_root,
         "config_path": ".provekit/config.toml",
         "source_paths": ["."],
         "options": options_obj,
-    })
+    });
+    if !options.contract_bindings.is_empty() {
+        params["contract_bindings"] = Value::Array(options.contract_bindings.clone());
+    }
+    params
 }
 
 fn trace_enabled() -> bool {
