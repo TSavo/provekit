@@ -294,6 +294,49 @@ fn provekit_cli_does_not_expose_legacy_link_subcommand() {
 }
 
 #[test]
+fn materialize_does_not_expose_source_lang_discovery_mode() {
+    let help = Command::new(provekit_bin())
+        .arg("materialize")
+        .arg("--help")
+        .output()
+        .expect("spawn provekit materialize --help");
+    let stdout = String::from_utf8_lossy(&help.stdout);
+    let stderr = String::from_utf8_lossy(&help.stderr);
+    assert!(
+        help.status.success(),
+        "provekit materialize --help failed\nstdout:\n{stdout}\nstderr:\n{stderr}"
+    );
+    assert!(
+        !stdout.contains("--source-lang"),
+        "`materialize --source-lang` is the legacy CLI-side cross-language discovery mode; source language discovery must be kit-owned over RPC\nstdout:\n{stdout}"
+    );
+
+    let rejected = Command::new(provekit_bin())
+        .arg("materialize")
+        .arg("--library")
+        .arg("python-requests")
+        .arg("--source-dir")
+        .arg(".")
+        .arg("--target")
+        .arg("python")
+        .arg("--source-lang")
+        .arg("rust")
+        .output()
+        .expect("spawn provekit materialize --source-lang");
+    let stderr = String::from_utf8_lossy(&rejected.stderr);
+    assert!(
+        !rejected.status.success(),
+        "`provekit materialize --source-lang` must be rejected at the CLI boundary"
+    );
+    assert!(
+        stderr.contains("unexpected argument")
+            || stderr.contains("unrecognized")
+            || stderr.contains("unknown"),
+        "stderr should reject --source-lang at clap boundary\n{stderr}"
+    );
+}
+
+#[test]
 fn lift_identify_only_delegates_from_project_config() {
     let root = repo_root();
     let output = Command::new(provekit_bin())
