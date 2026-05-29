@@ -204,6 +204,38 @@ public class LspDaemonProtocolTests
     }
 
     [Fact]
+    public async Task Parse_EmitsSameLanguageCallEdgeLocus()
+    {
+        const string source =
+            "public class C {\n" +
+            "  //provekit:contract\n" +
+            "  public static int AddOne(int x) { return x + 1; }\n" +
+            "  //provekit:contract\n" +
+            "  public static int CallAddOne(int x) { return AddOne(x); }\n" +
+            "}\n";
+
+        var responses = await RunLsp(BuildSession(source, "call-edge.cs"));
+        var parseResp = FindById(responses, 2);
+
+        Assert.False(parseResp.TryGetProperty("error", out _),
+            $"parse returned error: {parseResp}");
+        Assert.True(parseResp.TryGetProperty("result", out var result));
+
+        var callEdges = result.GetProperty("callEdges").EnumerateArray().ToList();
+        var edge = Assert.Single(callEdges,
+            e => e.GetProperty("targetSymbol").GetString() == "csharp-kit:AddOne");
+
+        Assert.Equal("call-edge", edge.GetProperty("kind").GetString());
+        Assert.StartsWith("blake3-512:", edge.GetProperty("sourceContractCid").GetString());
+        Assert.StartsWith("blake3-512:", edge.GetProperty("targetContractCid").GetString());
+
+        var locus = edge.GetProperty("callSiteLocus");
+        Assert.Equal("call-edge.cs", locus.GetProperty("file").GetString());
+        Assert.Equal(5, locus.GetProperty("line").GetInt32());
+        Assert.True(locus.GetProperty("column").GetInt32() > 0);
+    }
+
+    [Fact]
     public async Task Parse_WarningsIsArray()
     {
         var responses = await RunLsp(BuildSession());
