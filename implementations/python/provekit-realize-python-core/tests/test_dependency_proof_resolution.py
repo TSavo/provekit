@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import base64
 import json
 import os
 import subprocess
@@ -31,13 +32,14 @@ def test_resolve_dependency_proofs_returns_installed_distribution_proofs(tmp_pat
     )
 
     assert "error" not in response, response
-    proof_paths = response["result"]["proof_paths"]
-    assert set(proof_paths) == {str(first_proof), str(second_proof)}
-    for proof_path in proof_paths:
-        path = Path(proof_path)
-        assert path.is_absolute()
-        assert path.is_file()
-        assert path.read_text(encoding="utf-8").startswith("synthetic proof for")
+    proofs = response["result"]["proofs"]
+    got_by_cid = {proof["cid"]: proof for proof in proofs}
+    for path in [first_proof, second_proof]:
+        assert path is not None
+        cid = path.name.removesuffix(".proof")
+        proof = got_by_cid[cid]
+        assert base64.b64decode(proof["bytes_base64"]) == path.read_bytes()
+        assert proof["source"] == f"python-distribution:{path.name}"
 
 
 def test_resolve_dependency_proofs_returns_empty_array_without_distribution_proofs(
@@ -62,7 +64,7 @@ def test_resolve_dependency_proofs_returns_empty_array_without_distribution_proo
     assert response == {
         "jsonrpc": "2.0",
         "id": 4,
-        "result": {"proof_paths": []},
+        "result": {"proofs": []},
     }
 
 

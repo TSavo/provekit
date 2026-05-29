@@ -22,6 +22,17 @@ function resolveDependencyProofPaths(projectRoot) {
   return Array.from(proofPaths).sort();
 }
 
+function resolveDependencyProofs(projectRoot) {
+  return resolveDependencyProofPaths(projectRoot).map((proofPath) => {
+    const fileName = path.basename(proofPath);
+    return {
+      cid: fileName.replace(/\.proof$/, ""),
+      bytes_base64: fs.readFileSync(proofPath).toString("base64"),
+      source: `typescript-package:${fileName}`,
+    };
+  });
+}
+
 function walkNodeModules(nodeModulesDir, state) {
   const realNodeModules = realDirectoryPath(nodeModulesDir);
   if (realNodeModules === null || state.visitedNodeModules.has(realNodeModules)) return;
@@ -103,5 +114,6 @@ function realDirectoryPath(candidate) {
 }
 
 module.exports = {
+  resolveDependencyProofs,
   resolveDependencyProofPaths,
 };

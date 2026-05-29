@@ -2,6 +2,7 @@ package realizego
 
 import (
 	"bytes"
+	"encoding/base64"
 	"encoding/json"
 	"go/parser"
 	"go/token"
@@ -211,22 +212,19 @@ func TestResolveDependencyProofsReturnsProofsFromGoModuleDependencies(t *testing
 		t.Fatalf("resolve_dependency_proofs returned error: %#v", response["error"])
 	}
 	result := response["result"].(map[string]any)
-	paths := result["proof_paths"].([]any)
-	if len(paths) != 1 {
-		t.Fatalf("proof_paths len = %d, want 1; response=%s", len(paths), stdout.String())
+	proofs := result["proofs"].([]any)
+	if len(proofs) != 1 {
+		t.Fatalf("proofs len = %d, want 1; response=%s", len(proofs), stdout.String())
 	}
-	got := paths[0].(string)
-	if !filepath.IsAbs(got) {
-		t.Fatalf("proof path must be absolute: %s", got)
+	got := proofs[0].(map[string]any)
+	if got["cid"] != strings.TrimSuffix(proofName, ".proof") {
+		t.Fatalf("proof cid = %q, want %q", got["cid"], strings.TrimSuffix(proofName, ".proof"))
 	}
-	if filepath.Base(got) != proofName {
-		t.Fatalf("proof basename = %q, want %q", filepath.Base(got), proofName)
+	if got["bytes_base64"] != base64.StdEncoding.EncodeToString([]byte("proof bytes")) {
+		t.Fatalf("proof bytes_base64 not returned: %#v", got)
 	}
-	if got == proofPath {
-		t.Fatalf("resolver must not hand the CLI a Go module-internal proof path: %s", got)
-	}
-	if _, err := os.Stat(got); err != nil {
-		t.Fatalf("proof path must exist: %v", err)
+	if got["source"] == proofPath {
+		t.Fatalf("resolver must not hand the CLI a Go module-internal proof path: %s", got["source"])
 	}
 }
 

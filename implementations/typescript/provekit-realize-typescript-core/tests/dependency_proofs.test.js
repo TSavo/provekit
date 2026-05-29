@@ -85,11 +85,16 @@ test("resolve_dependency_proofs returns absolute readable proofs from node_modul
     assert.equal(response.jsonrpc, "2.0");
     assert.equal(response.id, 7);
     assert.equal(response.error, undefined);
-    const proofPaths = response.result.proof_paths.toSorted();
-    assert.deepEqual(proofPaths, [proofOne, proofTwo].toSorted());
-    for (const proofPath of proofPaths) {
-      assert.equal(path.isAbsolute(proofPath), true);
-      assert.equal(fs.statSync(proofPath).isFile(), true);
+    const proofs = response.result.proofs.toSorted((a, b) => a.cid.localeCompare(b.cid));
+    assert.deepEqual(
+      proofs.map((proof) => proof.cid),
+      [`blake3-512:${"a".repeat(128)}`, `blake3-512:${"b".repeat(128)}`],
+    );
+    for (const proof of proofs) {
+      assert.equal(Buffer.from(proof.bytes_base64, "base64").toString("utf8"), "synthetic dependency proof\n");
+      assert.equal(proof.source.startsWith("typescript-package:"), true);
+      assert.notEqual(proof.source, proofOne);
+      assert.notEqual(proof.source, proofTwo);
     }
   } finally {
     fs.rmSync(projectRoot, { recursive: true, force: true });
@@ -106,7 +111,7 @@ test("resolve_dependency_proofs returns an empty array when dependencies have no
     assert.equal(response.jsonrpc, "2.0");
     assert.equal(response.id, 7);
     assert.equal(response.error, undefined);
-    assert.deepEqual(response.result.proof_paths, []);
+    assert.deepEqual(response.result.proofs, []);
   } finally {
     fs.rmSync(projectRoot, { recursive: true, force: true });
   }

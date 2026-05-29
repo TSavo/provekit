@@ -3,6 +3,7 @@ const readline = require("node:readline");
 const realizer = require("./realizer");
 const { emitStub } = realizer;
 const { declaration: platformSemanticsDeclaration } = require("./platform_semantics");
+const { resolveDependencyProofs } = require("../../provekit-realize-typescript-core/src/dependency_proofs");
 
 function runRpc() {
   const rl = readline.createInterface({ input: process.stdin, output: process.stdout, terminal: false });
@@ -60,8 +61,7 @@ function dispatch(request) {
     return { jsonrpc: "2.0", id: msgId, result: { entries, proof_path: proofPath } };
   }
   if (method === "provekit.plugin.resolve_dependency_proofs") {
-    console.error("provekit-realize-typescript-better-sqlite3: resolve_dependency_proofs not yet implemented for typescript; returning empty proof_paths");
-    return { jsonrpc: "2.0", id: msgId, result: { proof_paths: [] } };
+    return { jsonrpc: "2.0", id: msgId, result: { proofs: resolveDependencyProofs(params.project_root) } };
   }
   if (method === "provekit.plugin.shutdown") {
     return { jsonrpc: "2.0", id: msgId, result: null };

@@ -33,7 +33,8 @@ use crate::solvers::{
 };
 use crate::types::{CallSite, MementoPool, ObligationVerdict, Report};
 use crate::{
-    body_discharge, call_edge_loader, enumerate_callsites, instantiate, load_all_proofs,
+    body_discharge, call_edge_loader, enumerate_callsites, instantiate,
+    load_all_proofs::{self, ProofBytes},
     report as report_stage, resolve_target, smt_emitter,
 };
 
@@ -92,6 +93,9 @@ pub struct RunnerConfig {
     /// managers. These are still loaded by content address; the verifier
     /// never interprets the package graph that surfaced them.
     pub extra_proof_files: Vec<PathBuf>,
+    /// Additional proof catalogs carried over kit RPC. Package managers and
+    /// archive layouts stay kit-owned; the verifier consumes bytes only.
+    pub extra_proofs: Vec<ProofBytes>,
 }
 
 /// Per-solver telemetry, surfaced in the report alongside the legacy
@@ -187,6 +191,7 @@ impl Runner {
             pool.merge(extra_pool);
         }
         load_all_proofs::load_files_into_pool(&self.cfg.extra_proof_files, &mut pool);
+        load_all_proofs::load_proof_bytes_into_pool(&self.cfg.extra_proofs, &mut pool);
         let loaded_cids = sorted_keys(&pool.mementos);
         let load_diagnostics: Vec<Json> = pool
             .load_errors
@@ -392,6 +397,7 @@ impl Runner {
             pool.merge(extra_pool);
         }
         load_all_proofs::load_files_into_pool(&self.cfg.extra_proof_files, &mut pool);
+        load_all_proofs::load_proof_bytes_into_pool(&self.cfg.extra_proofs, &mut pool);
 
         // Load and process call edges
         let call_edges = call_edge_loader::load_call_edge_files(&self.cfg.project_root);
@@ -513,6 +519,7 @@ impl Runner {
             pool.merge(extra_pool);
         }
         load_all_proofs::load_files_into_pool(&self.cfg.extra_proof_files, &mut pool);
+        load_all_proofs::load_proof_bytes_into_pool(&self.cfg.extra_proofs, &mut pool);
         let cs = enumerate_callsites::run(&pool);
         (pool, cs)
     }
@@ -718,6 +725,9 @@ fn discover_input_artifact_cids(cfg: &RunnerConfig) -> BTreeSet<String> {
     }
     for proof_file in &cfg.extra_proof_files {
         collect_one_proof_file_cid(proof_file, &mut cids);
+    }
+    for proof in &cfg.extra_proofs {
+        cids.insert(provekit_canonicalizer::blake3_512_of(&proof.bytes));
     }
     cids
 }

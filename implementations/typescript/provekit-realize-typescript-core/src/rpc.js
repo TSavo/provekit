@@ -1,6 +1,6 @@
 const readline = require("node:readline");
 
-const { resolveDependencyProofPaths } = require("./dependency_proofs");
+const { resolveDependencyProofs } = require("./dependency_proofs");
 const { emitStub } = require("./realizer");
 const { answers: literalEncodingAnswers } = require("./literal_encoding");
 const { declaration: platformSemanticsDeclaration } = require("./platform_semantics");
@@ -61,7 +61,7 @@ function dispatch(request) {
       return {
         jsonrpc: "2.0",
         id: msgId,
-        result: { proof_paths: resolveDependencyProofPaths(projectRoot) },
+        result: { proofs: resolveDependencyProofs(projectRoot) },
       };
     } catch (error) {
       return errorResponse(msgId, -32030, `RESOLVE_DEPENDENCY_PROOFS_FAILED: ${error.message}`);

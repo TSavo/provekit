@@ -15,6 +15,7 @@ name = "provekit-realize-rust"
 path = "src/main.rs"
 
 [dependencies]
+base64 = { workspace = true }
 provekit-canonicalizer = { path = "../provekit-canonicalizer" }
 provekit-ir-types = { path = "../provekit-ir-types" }
 provekit-proof-envelope = { path = "../provekit-proof-envelope" }

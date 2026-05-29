@@ -11,9 +11,11 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
 import java.util.ArrayList;
+import java.util.Base64;
 import java.util.Comparator;
 import java.util.LinkedHashSet;
 import java.util.List;
+import java.util.Objects;
 import java.util.TreeSet;
 import java.util.jar.JarFile;
 import java.util.regex.Pattern;
@@ -124,12 +126,19 @@ public final class RpcServer {
             ? Paths.get("").toAbsolutePath().normalize()
             : Paths.get(projectRootRaw).toAbsolutePath().normalize();
         List<Path> classpath = mavenDependencyClasspath(projectRoot);
-        List<Path> proofs = collectDependencyProofPaths(classpath);
+        List<DependencyProof> proofs = collectDependencyProofs(classpath);
 
-        StringBuilder out = new StringBuilder("{\"proof_paths\":[");
+        StringBuilder out = new StringBuilder("{\"proofs\":[");
         for (int i = 0; i < proofs.size(); i++) {
             if (i > 0) out.append(',');
-            out.append(JsonUtil.quoted(proofs.get(i).toString()));
+            DependencyProof proof = proofs.get(i);
+            out.append("{\"cid\":")
+                .append(JsonUtil.quoted(proof.cid))
+                .append(",\"bytes_base64\":")
+                .append(JsonUtil.quoted(Base64.getEncoder().encodeToString(proof.bytes)))
+                .append(",\"source\":")
+                .append(JsonUtil.quoted(proof.source))
+                .append('}');
         }
         out.append("]}");
         return out.toString();
@@ -186,36 +195,40 @@ public final class RpcServer {
         return List.copyOf(roots);
     }
 
-    private static List<Path> collectDependencyProofPaths(List<Path> classpath) throws IOException {
-        TreeSet<Path> proofs = new TreeSet<>(Comparator.comparing(Path::toString));
-        Path extractedRoot = null;
-        int jarIndex = 0;
+    private static List<DependencyProof> collectDependencyProofs(List<Path> classpath) throws IOException {
+        TreeSet<DependencyProof> proofs = new TreeSet<>(Comparator.comparing(DependencyProof::sortKey));
         for (Path root : classpath) {
             if (Files.isDirectory(root)) {
-                collectDirectoryProofPaths(root, proofs);
+                collectDirectoryProofs(root, proofs);
             } else if (Files.isRegularFile(root) && root.getFileName().toString().endsWith(".jar")) {
-                if (extractedRoot == null) {
-                    extractedRoot = Files.createTempDirectory("provekit-java-dependency-proofs-");
-                }
-                collectJarProofPaths(root, extractedRoot.resolve(Integer.toString(jarIndex++)), proofs);
+                collectJarProofs(root, proofs);
             }
         }
         return List.copyOf(proofs);
     }
 
-    private static void collectDirectoryProofPaths(Path root, TreeSet<Path> proofs) throws IOException {
+    private static void collectDirectoryProofs(Path root, TreeSet<DependencyProof> proofs) throws IOException {
         try (Stream<Path> paths = Files.walk(root)) {
             paths
                 .filter(Files::isRegularFile)
                 .filter(path -> isDependencyProofName(path.getFileName().toString()))
-                .map(path -> path.toAbsolutePath().normalize())
+                .map(path -> {
+                    try {
+                        return DependencyProof.fromBytes(
+                            path.getFileName().toString(),
+                            Files.readAllBytes(path),
+                            "java-classpath:" + path.getFileName()
+                        );
+                    } catch (IOException e) {
+                        return null;
+                    }
+                })
+                .filter(Objects::nonNull)
                 .forEach(proofs::add);
         }
     }
 
-    private static void collectJarProofPaths(Path jar, Path extractedRoot, TreeSet<Path> proofs)
-            throws IOException {
-        Files.createDirectories(extractedRoot);
+    private static void collectJarProofs(Path jar, TreeSet<DependencyProof> proofs) throws IOException {
         try (JarFile jarFile = new JarFile(jar.toFile())) {
             var entries = jarFile.entries();
             while (entries.hasMoreElements()) {
@@ -223,11 +236,13 @@ public final class RpcServer {
                 if (entry.isDirectory()) continue;
                 String fileName = jarEntryFileName(entry.getName());
                 if (!isDependencyProofName(fileName)) continue;
-                Path out = extractedRoot.resolve(fileName).toAbsolutePath().normalize();
                 try (var in = jarFile.getInputStream(entry)) {
-                    Files.copy(in, out, java.nio.file.StandardCopyOption.REPLACE_EXISTING);
+                    proofs.add(DependencyProof.fromBytes(
+                        fileName,
+                        in.readAllBytes(),
+                        "java-jar:" + jar.getFileName() + "!/" + entry.getName()
+                    ));
                 }
-                proofs.add(out);
             }
         }
     }
@@ -239,6 +254,16 @@ public final class RpcServer {
 
     private static boolean isDependencyProofName(String fileName) {
         return fileName != null && DEPENDENCY_PROOF_NAME.matcher(fileName).matches();
+    }
+
+    private record DependencyProof(String cid, byte[] bytes, String source) {
+        static DependencyProof fromBytes(String fileName, byte[] bytes, String source) {
+            return new DependencyProof(fileName.substring(0, fileName.length() - ".proof".length()), bytes, source);
+        }
+
+        String sortKey() {
+            return cid + "\u0000" + source;
+        }
     }
 
     /**
