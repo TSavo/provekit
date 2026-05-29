@@ -158,14 +158,14 @@ All 26 remaining `cmd_*.rs` files audited. Categories: **(a)** thin composition 
 | `cmd_must.rs` | (c) | Agent-driven English-to-contract translation. Substrate-orthogonal. |
 | `cmd_package.rs` | (a) | Supply-chain receipt helpers. Related to D13a shim distribution but no reinvention. |
 | `cmd_plugin.rs` | (a) | PEP 1.7.0 plugin flag plumbing. |
-| `cmd_proof.rs` | (a) | Proof artifact workflow. |
+| `cmd_proof.rs` | retired | Legacy proof-conformance command family; project verification gates now own proof checks. |
 | `cmd_protocol.rs` | (c) | Protocol catalog evolution. Substrate-orthogonal. |
 | `cmd_prove.rs` | (a) | Six-stage pipeline + lift-plugin conformance gate. |
 | `cmd_search.rs` | (c) | Pattern search. Substrate-orthogonal. |
 | `cmd_transport.rs` | (a) | Cross-language transport via substrate primitives. Lang alias table (`cmd_transport.rs:377-385`: `py` → `python`, `ts` → `typescript`) is normalization not reinvention. |
 | `cmd_verify_protocol.rs` | (a) | Catalog verification. |
 | `cmd_version.rs` | (c) | Version info. Substrate-orthogonal. |
-| `cmd_witness.rs` | (a) | Mints witness memento via substrate primitive. |
+| `cmd_witness.rs` | retired | Legacy manual ProofIR property route. Witness minting now lives behind verified `prove`/`verify`/`emit` flows, not a public raw-IR command. |
 
 **Summary:** of 27 commands (including `cmd_bind_migrate`), 1 has substantive reinventions (already tracked); 12 are thin compositions or substrate-only primitives; 14 are off-critical-path for the Trinity demo work. The substrate is largely coherent at the workflow layer; the reinventions cluster in `cmd_bind_migrate.rs`. No additional issues filed from this triage — #1226-#1230 capture the dissolution work.
 

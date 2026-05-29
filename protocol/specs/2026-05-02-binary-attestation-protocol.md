@@ -117,18 +117,18 @@ Three architectural consequences:
 
 **INVARIANT (monotonicity):** A bundle minted at time `t` attesting to `bcid` REMAINS valid at time `t' > t` as long as its signature verifies. Future bundles do NOT invalidate past bundles. The verification surface accretes; it does not replace.
 
-## §7. Connection to `provekit witness`
+## §7. Connection to witness minting
 
-The `provekit witness` command (added at commit `2c27c6b`, "permissionless proof lattice extension") is the operational realization of monotonic envelope accretion. Given a binary at `bcid` and a set of discharge mementos under a chosen signer's key, `provekit witness` produces a new bundle attesting to that `bcid`.
+Witness minting is the operational realization of monotonic envelope accretion. Given a binary at `bcid` and a set of discharge mementos under a chosen signer's key, the verifier/emitter path produces a new bundle attesting to that `bcid`. This is not a public raw-IR `provekit witness` command.
 
-This spec normatively documents what that command produces. The command's input contract:
+This spec normatively documents what that witness-minting flow produces. The input contract:
 - A binary file path (or `bcid` directly, if the consumer already has it).
 - A set of discharges to include (per §2 step 3).
 - A signer key (foundation, producer, third party, etc.).
 
 Output: a `.proof` file at `<bcid>.proof` (or a name suffixed by signer if the consumer keeps multiple bundles per binary).
 
-**INVARIANT (witness command shape):** `provekit witness` MUST NOT alter the binary. It MUST NOT mutate any existing bundle. Each invocation produces ONE new bundle; existing bundles remain bit-for-bit unchanged.
+**INVARIANT (witness mint shape):** witness minting MUST NOT alter the binary. It MUST NOT mutate any existing bundle. Each invocation produces ONE new bundle; existing bundles remain bit-for-bit unchanged.
 
 ## §8. Re-signing semantics
 
@@ -171,7 +171,7 @@ Three patterns are forbidden by this spec's design.
 This spec is satisfied by:
 
 - A reference verifier implementation that performs steps 1-5 of §4 end-to-end on the host platforms ProvekIt targets.
-- `provekit witness` produces bundles whose shape conforms to §2 and whose lifecycle conforms to §8.
+- Witness minting produces bundles whose shape conforms to §2 and whose lifecycle conforms to §8.
 - Integration tests cover:
   - The §4 happy path: a binary at `bcid`, a bundle at `<bcid>.proof`, a successful verdict.
   - The §9 pattern 3 negative path: a bundle whose `binaryCid` is altered post-signing; verifier rejects despite valid signature.

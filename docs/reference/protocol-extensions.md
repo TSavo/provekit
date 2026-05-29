@@ -36,7 +36,6 @@ These are protocol working notes in `protocol/specs/`. They are content-addresse
 
 | Command | Purpose | Primary docs |
 |---|---|---|
-| `provekit proof hash/inspect/check/implements/mint-protocol` | Proof-file hashing, inspection, conformance, implementation witnesses, and fixture corpus minting. | [../../protocol/conformance/proof-protocol/README.md](../../protocol/conformance/proof-protocol/README.md) |
 | `provekit protocol evolve/check-evolution` | Emit or verify PEP body/witness artifacts for catalog transitions. | [../../protocol/evolution/v1.6.4/README.md](../../protocol/evolution/v1.6.4/README.md) |
 | `provekit package inspect` | Dispatch to the configured lifter with `options.layer = "identify-only"` and require a `package-inspection-document`. | [../../protocol/specs/2026-04-30-lift-plugin-protocol.md](../../protocol/specs/2026-04-30-lift-plugin-protocol.md) |
 | `cargo run --manifest-path menagerie/bug-zoo/Cargo.toml -- [--all]` | Run self-contained Bug Zoo specimens through host checks, exhibits, link exhibits, fixed pairs, equivalence checks, and scoped composition checks. | [../how-to/bug-zoo.md](../how-to/bug-zoo.md) |

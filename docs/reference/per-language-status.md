@@ -26,7 +26,7 @@ Legend: `+` shipping in the current v1.6.3 tree, `~` planned or partial, `o` und
 |---|---|
 | Protocol catalog | `+` v1.6.3 catalog CID verified by `tools/recompute-spec-cids/` and `provekit verify-protocol --signed` |
 | PEP | `+` v1.6.1, v1.6.2, and v1.6.3 dogfood transitions checked in under `protocol/evolution/` |
-| Proof protocol | `+` `.proof` fixture corpus and Rust proof-conformance checker under `provekit proof` |
+| Proof protocol | `+` `.proof` fixture corpus and proof-conformance checking behind current verification gates |
 | Bug Zoo | `+` the self-contained `menagerie/bug-zoo/` runner verifies Java, TypeScript, and C# null-boundary exhibits, Java value-scope JUnit/Spring exhibits, and a Rust<->Go polyglot link-obligation exhibit with fixed-pair receipts |
 | ORP droppers/realizers | `~` proof-plan and language-dropper projections are draft extension surfaces; broader per-language realizer coverage is emerging |
 

@@ -103,7 +103,7 @@ fn emit_scala_scalatest_dispatches_real_emitter_and_scala_cli_checks_output() {
             "params": ["x"],
             "param_types": ["Int"],
             "predicates": [{
-                "kind": "op",
+                "kind": "atomic",
                 "name": "concept:eq",
                 "args": [
                     {"kind": "const", "value": 2, "sort": {"kind": "primitive", "name": "Int"}},

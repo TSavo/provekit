@@ -210,7 +210,7 @@ cargo run --manifest-path implementations/rust/provekit-cli/Cargo.toml -- \
 
 4. parse the JSON report;
 5. verify the `.proof` file exists;
-6. invoke `provekit proof inspect <file>.proof --json`;
+6. invoke `provekit dump <file>.proof --json`;
 7. compare the observed proof CID, contractSetCid, and named implication edges to expected fixtures;
 8. run mutation cases and require refusal.
 
@@ -430,7 +430,7 @@ cargo run --manifest-path implementations/rust/provekit-cli/Cargo.toml -- \
   --json
 ```
 
-Then run `provekit proof inspect` through the Rust CLI on the emitted proof file and save the JSON fixture.
+Then run `provekit dump` through the Rust CLI on the emitted proof file and save the JSON fixture.
 
 - [ ] **Step 2: Pin runner expectations**
 
@@ -441,7 +441,7 @@ The smoke test should compare:
 - 8 contract mementos;
 - 7 implication mementos;
 - all implication members have exactly two input CIDs;
-- proof inspect passes existing `.proof` conformance checks.
+- project verification passes existing `.proof` conformance checks.
 
 - [ ] **Step 3: Commit**
 

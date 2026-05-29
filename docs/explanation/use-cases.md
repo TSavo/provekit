@@ -26,7 +26,7 @@ This keeps protocol governance inside the same substrate as everything else. Cor
 
 ## Proof-File Conformance
 
-The `.proof` format is itself a protocol surface. `provekit proof check` validates proof-file structure and can emit a witness-shaped result. `provekit proof implements` can witness that a program implements the proof-protocol consumer surface against the checked-in fixture corpus.
+The `.proof` format is itself a protocol surface. Conformance belongs behind the same current proof/verification gates as other substrate checks; the Rust CLI no longer exposes a separate manual `.proof` file inspection command.
 
 This is ProvekIt proving a parser/consumer claim rather than an application contract.
 
