@@ -54,7 +54,7 @@ public struct LiftedDeclaration: Sendable {
 
 /// A call-edge object in parse-protocol wire shape.
 public struct LiftedCallEdge: Sendable {
-    public let sourceContractCid: String  // placeholder: empty when CID unknown
+    public let sourceContractCid: String  // concrete CID, or pending-swift:<caller> before hashing
     public let targetSymbol: String
     public let callSiteLocus: CallSiteLocus
 
@@ -137,11 +137,10 @@ public enum SwiftLifter {
         )
         callVisitor.walk(sourceFile)
 
-        // Deduplicate call edges by (targetSymbol, line, column): mirrors v0
-        // behavior so the wire shape is byte-identical for the same input.
+        // Deduplicate call edges by source, target, and call-site position.
         var seen = Set<String>()
         let uniqueEdges = callVisitor.callEdges.filter { edge in
-            let key = "\(edge.targetSymbol):\(edge.callSiteLocus.line):\(edge.callSiteLocus.column)"
+            let key = "\(edge.sourceContractCid):\(edge.targetSymbol):\(edge.callSiteLocus.line):\(edge.callSiteLocus.column)"
             return seen.insert(key).inserted
         }
 
@@ -184,6 +183,7 @@ private final class CallEdgeVisitor: SyntaxVisitor {
     private let declaredNames: Set<String>
     private let path: String
     private let locationConverter: SourceLocationConverter
+    private var declarationStack: [String] = []
 
     init(
         viewMode: SyntaxTreeViewMode,
@@ -195,6 +195,29 @@ private final class CallEdgeVisitor: SyntaxVisitor {
         self.path = path
         self.locationConverter = locationConverter
         super.init(viewMode: viewMode)
+    }
+
+    override func visit(_ node: FunctionDeclSyntax) -> SyntaxVisitorContinueKind {
+        let name = node.name.text
+        if !name.isEmpty {
+            declarationStack.append(name)
+        }
+        return .visitChildren
+    }
+
+    override func visitPost(_ node: FunctionDeclSyntax) {
+        if !node.name.text.isEmpty {
+            _ = declarationStack.popLast()
+        }
+    }
+
+    override func visit(_ node: InitializerDeclSyntax) -> SyntaxVisitorContinueKind {
+        declarationStack.append("init")
+        return .visitChildren
+    }
+
+    override func visitPost(_ node: InitializerDeclSyntax) {
+        _ = declarationStack.popLast()
     }
 
     override func visit(_ node: FunctionCallExprSyntax) -> SyntaxVisitorContinueKind {
@@ -215,6 +238,9 @@ private final class CallEdgeVisitor: SyntaxVisitor {
         guard let name = calleeName, declaredNames.contains(name) else {
             return .visitChildren
         }
+        guard let callerName = declarationStack.last else {
+            return .visitChildren
+        }
 
         // SourceLocationConverter gives us 1-based line and 1-based column;
         // the regex-v0 lifter emitted 1-based line and 0-based UTF-16 column
@@ -227,8 +253,8 @@ private final class CallEdgeVisitor: SyntaxVisitor {
         let column = max(0, location.column - 1)
 
         callEdges.append(LiftedCallEdge(
-            sourceContractCid: "",
-            targetSymbol: name,
+            sourceContractCid: "pending-swift:\(callerName)",
+            targetSymbol: "swift-kit:\(name)",
             callSiteLocus: CallSiteLocus(file: path, line: line, column: column)
         ))
         return .visitChildren

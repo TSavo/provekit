@@ -75,10 +75,13 @@ test("lifter extracts call edge from fixture (2 funcs, 1 call)") {
     let result = SwiftLifter.lift(source: source, path: "fixture.swift")
     let declOk = result.declarations.count == 2
     let edgeOk = result.callEdges.count >= 1
-    let symbolOk = result.callEdges.contains { $0.targetSymbol == "add" }
+    let symbolOk = result.callEdges.contains {
+        $0.sourceContractCid == "pending-swift:compute" &&
+        $0.targetSymbol == "swift-kit:add"
+    }
     return assert(declOk, "Expected 2 decls, got \(result.declarations.count)") &&
            assert(edgeOk, "Expected >=1 call edge, got \(result.callEdges.count)") &&
-           assert(symbolOk, "Expected call edge to 'add'")
+           assert(symbolOk, "Expected call edge from compute to swift-kit:add")
 }
 
 test("declaration wire shape has correct fields") {
@@ -259,11 +262,16 @@ if let binaryPath = findLSPBinary() {
         let decls = result["declarations"] as? [[String: Any]]
         let edges = result["callEdges"] as? [[String: Any]]
         let warnings = result["warnings"]
+        let edgeOk = edges?.contains {
+            $0["sourceContractCid"] as? String == "pending-swift:compute" &&
+            $0["targetSymbol"] as? String == "swift-kit:add"
+        } ?? false
 
         return assert(decls != nil, "declarations not an array of objects") &&
                assert((decls?.count ?? 0) == 2, "Expected 2 decls, got \(decls?.count ?? -1)") &&
                assert(edges != nil, "callEdges not an array of objects") &&
                assert((edges?.count ?? 0) >= 1, "Expected >=1 call edge, got \(edges?.count ?? -1)") &&
+               assert(edgeOk, "Expected call edge from compute to swift-kit:add") &&
                assert(warnings != nil, "warnings field missing")
     }
 
