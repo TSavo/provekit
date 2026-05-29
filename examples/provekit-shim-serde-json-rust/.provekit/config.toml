@@ -8,6 +8,10 @@ name = "rust-contracts"
 surface = "rust-contracts"
 emit = "ir-document"
 
+[[plugins]]
+name = "rust-implications"
+surface = "rust-implications"
+
 [platform_profile]
 language = "rust"
 family = "concept:family:json"

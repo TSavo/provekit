@@ -16,6 +16,10 @@ name = "rust-contracts"
 surface = "rust-contracts"
 emit = "ir-document"
 
+[[plugins]]
+name = "rust-implications"
+surface = "rust-implications"
+
 # #1358 / #1355: substrate platform_profile — the five-axis realization
 # tuple this shim mints against. Materialize/migrate dispatch resolves
 # consumer @boundary requests against this profile. Per-@sugar annotations
