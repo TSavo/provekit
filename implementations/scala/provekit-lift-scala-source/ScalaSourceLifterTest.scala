@@ -96,20 +96,16 @@ final class ScalaSourceLifterTest extends munit.FunSuite:
     assertEquals(tag.matchTier, "exact")
     assertEquals(tag.paramBindings.map(_.sourceText), Seq("u", "h"))
 
-  test("rpc recognize dispatch emits exact tags from binding templates"):
-    val binding = mustBindingTemplate(
-      concept = "concept:http-request",
-      library = "provekit-shim-scala-http",
-      family = "concept:family:http",
-      source =
-        """package shim
-          |
-          |@sugar.bind(concept = "concept:http-request", library = "provekit-shim-scala-http", family = "concept:family:http")
-          |def Fetch(url: String, headers: Header): Response = http.get(url, headers)
-          |""".stripMargin,
-      functionName = "Fetch",
-    )
+  test("rpc recognize dispatch self-resolves exact tags from sugar templates"):
     val root = Files.createTempDirectory("provekit-scala-recognize-rpc-")
+    val shim = Path.of("Shim.scala")
+    write(root.resolve(shim),
+      """package shim
+        |
+        |@sugar.bind(concept = "concept:http-request", library = "provekit-shim-scala-http", family = "concept:family:http")
+        |def Fetch(url: String, headers: Header): Response = http.get(url, headers)
+        |""".stripMargin,
+    )
     val rel = Path.of("Fetch.scala")
     write(root.resolve(rel),
       """package app
@@ -125,8 +121,7 @@ final class ScalaSourceLifterTest extends munit.FunSuite:
         "method" -> "provekit.plugin.recognize",
         "params" -> ujson.Obj(
           "project_root" -> root.toString,
-          "source_paths" -> ujson.Arr(rel.toString),
-          "binding_templates" -> ujson.Arr(bindingTemplateJson(binding)),
+          "source_paths" -> ujson.Arr(shim.toString, rel.toString),
         ),
       ),
     )

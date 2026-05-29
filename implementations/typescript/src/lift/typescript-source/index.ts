@@ -100,6 +100,8 @@ export interface TypeScriptBindingTemplate {
 export interface TypeScriptRecognizeParams {
   project_root: string;
   source_paths: string[];
+  /// Direct templates are kept for focused kit tests. The manifest/RPC path
+  /// resolves templates inside the kit from project source/proof context.
   binding_templates?: TypeScriptBindingTemplate[];
 }
 
@@ -245,8 +247,16 @@ export function liftTypeScriptLibraryBindingsPaths(
 export function recognizeTypeScriptSources(params: TypeScriptRecognizeParams): TypeScriptRecognizeResponse {
   if (!params.project_root) throw new Error("missing `project_root`");
   if (!Array.isArray(params.source_paths)) throw new Error("missing `source_paths` array");
-  const bindingsByCid = bindingTemplatesByCid(params.binding_templates ?? []);
   const root = resolve(params.project_root);
+  const suppliedTemplates = params.binding_templates ?? [];
+  const selfResolvedBindings = suppliedTemplates.length > 0
+    ? []
+    : liftTypeScriptLibraryBindingsPaths(root, params.source_paths).libraryBindings;
+  const sugarTemplateFiles = new Set(selfResolvedBindings.map((entry) => entry.body_source.file));
+  const templatePool = suppliedTemplates.length > 0
+    ? suppliedTemplates
+    : selfResolvedBindings.map(bindingTemplateFromSugarEntry);
+  const bindingsByCid = bindingTemplatesByCid(templatePool);
   const tags: TypeScriptRecognizeTag[] = [];
 
   for (const sourcePath of params.source_paths) {
@@ -257,11 +267,24 @@ export function recognizeTypeScriptSources(params: TypeScriptRecognizeParams): T
     for (const file of files.sort()) {
       const sourceText = readFileSync(file, "utf8");
       const relPath = normalizePath(relative(root, file));
+      if (sugarTemplateFiles.has(relPath)) continue;
       tags.push(...recognizeTypeScriptSourcesText(sourceText, relPath, [...bindingsByCid.values()]).tags);
     }
   }
 
   return { tags };
+}
+
+function bindingTemplateFromSugarEntry(entry: TypeScriptLibrarySugarBindingEntry): TypeScriptBindingTemplate {
+  return {
+    concept_name: entry.concept_name,
+    library_tag: entry.target_library_tag,
+    family: (entry as unknown as { family?: unknown }).family,
+    ast_template: entry.body_source.ast_template,
+    template_cid: entry.body_source.template_cid,
+    param_names: entry.body_source.param_names,
+    contract_cid: (entry as unknown as { contract_cid?: unknown }).contract_cid ?? null,
+  };
 }
 
 export function recognizeTypeScriptSourcesText(
@@ -299,9 +322,22 @@ function bindingTemplatesByCid(bindingTemplates: readonly TypeScriptBindingTempl
 }
 
 function isRecognizableFunctionLike(node: ts.Node): node is RecognizableFunctionLike {
+  if (ts.canHaveDecorators(node) && (ts.getDecorators(node) ?? []).some(isSugarBindDecorator)) {
+    return false;
+  }
   if (ts.isFunctionDeclaration(node)) return !!node.name && !!node.body;
   if (ts.isMethodDeclaration(node)) return !!methodNameText(node.name) && !!node.body;
   return false;
+}
+
+function isSugarBindDecorator(decorator: ts.Decorator): boolean {
+  const expr = decorator.expression;
+  if (!ts.isCallExpression(expr)) return false;
+  const callee = expr.expression;
+  return ts.isPropertyAccessExpression(callee)
+    && callee.name.text === "bind"
+    && ts.isIdentifier(callee.expression)
+    && callee.expression.text === "sugar";
 }
 
 function recognizeFunctionLike(

@@ -236,6 +236,44 @@ export function query(conn: Database, statement: string, values: unknown[]): Res
     expect(response.tags.every((tag: any) => tag.match_tier === "exact")).toBe(true);
   });
 
+  it("recognize RPC path self-resolves TypeScript sugar templates from source", () => {
+    const root = tempDir("provekit-ts-recognize-self-");
+    writeFileSync(
+      join(root, "shim.ts"),
+      `
+import { sugar } from "provekit";
+
+@sugar.bind({ concept: "concept:http-request", library: "fetch-lib", family: "concept:family:http" })
+function fetchUrl(url: string, headers: Headers): Response {
+  return client.execute(url, headers);
+}
+`,
+    );
+    writeFileSync(
+      join(root, "user.ts"),
+      `
+export function send(uri: string, h: Headers): Response {
+  return client.execute(uri, h);
+}
+`,
+    );
+
+    const response = (typeScriptSource as Record<string, any>).recognizeTypeScriptSources({
+      project_root: root,
+      source_paths: ["shim.ts", "user.ts"],
+    });
+
+    expect(response.tags).toHaveLength(1);
+    expect(response.tags[0]).toMatchObject({
+      file: "user.ts",
+      function_name: "send",
+      concept_name: "concept:http-request",
+      library_tag: "fetch-lib",
+      family: "concept:family:http",
+      match_tier: "exact",
+    });
+  });
+
   // -----------------------------------------------------------------
   // #1357 / #1355: family + version axes on @sugar.bind decorators.
   // Parallel to walk_rpc's rust-side tests. Both fields are optional;

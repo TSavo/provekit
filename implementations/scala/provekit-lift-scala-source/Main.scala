@@ -46,6 +46,7 @@ final case class RecognizeParams(
     projectRoot: String,
     sourcePaths: Seq[String],
     bindingTemplates: Seq[BindingTemplate],
+    templateSourceFiles: Set[String] = Set.empty,
 )
 
 final case class ParamBinding(index: Int, sourceText: String):
@@ -244,16 +245,17 @@ object ScalaRecognizer:
       val relPath =
         try root.relativize(path).toString.replace('\\', '/')
         catch case _: IllegalArgumentException => path.toString
-      val source =
-        try Some(Files.readString(path, StandardCharsets.UTF_8))
-        catch case _: Exception => None
-      source.foreach { text =>
-        dialects.Scala3(Input.VirtualFile(relPath, text)).parse[Source] match
-          case Parsed.Success(tree) =>
-            for defn <- ScalaTrees.definitions(tree) do
-              recognizeDef(relPath, defn, bindingsByCid).foreach(tags += _)
-          case _: Parsed.Error => ()
-      }
+      if !params.templateSourceFiles.contains(relPath) then
+        val source =
+          try Some(Files.readString(path, StandardCharsets.UTF_8))
+          catch case _: Exception => None
+        source.foreach { text =>
+          dialects.Scala3(Input.VirtualFile(relPath, text)).parse[Source] match
+            case Parsed.Success(tree) =>
+              for defn <- ScalaTrees.definitions(tree) do
+                recognizeDef(relPath, defn, bindingsByCid).foreach(tags += _)
+            case _: Parsed.Error => ()
+        }
     RecognizeResponse(tags.toSeq)
 
   private def recognizeDef(
@@ -538,13 +540,29 @@ object ScalaSourceRpc:
     ScalaRecognizer.recognize(parseRecognizeParams(params)).toJson
 
   private def parseRecognizeParams(params: ujson.Value): RecognizeParams =
+    val projectRoot = stringAt(params, "project_root")
+    val sourcePaths = stringArray(params.obj.getOrElse("source_paths", ujson.Arr()))
+    val suppliedTemplates = params.obj
+      .get("binding_templates")
+      .collect { case arr: ujson.Arr => arr.value.collect { case obj: ujson.Obj => parseBindingTemplate(obj) }.toSeq }
+      .getOrElse(Seq.empty)
+    val selfResolved = if suppliedTemplates.nonEmpty then Seq.empty else
+      ScalaSourceLifter
+        .liftPaths(projectRoot, sourcePaths, "library-bindings")
+        .ir
+        .collect { case obj: ujson.Obj => obj }
+    val selfResolvedTemplates = selfResolved.map(parseSugarBindingTemplate)
+    val templateFiles = selfResolved.flatMap { entry =>
+      entry.obj
+        .get("body_source")
+        .collect { case body: ujson.Obj => stringAt(body, "file") }
+        .filter(_.nonEmpty)
+    }.toSet
     RecognizeParams(
-      projectRoot = stringAt(params, "project_root"),
-      sourcePaths = stringArray(params.obj.getOrElse("source_paths", ujson.Arr())),
-      bindingTemplates = params.obj
-        .get("binding_templates")
-        .collect { case arr: ujson.Arr => arr.value.collect { case obj: ujson.Obj => parseBindingTemplate(obj) }.toSeq }
-        .getOrElse(Seq.empty),
+      projectRoot = projectRoot,
+      sourcePaths = sourcePaths,
+      bindingTemplates = if suppliedTemplates.nonEmpty then suppliedTemplates else selfResolvedTemplates,
+      templateSourceFiles = templateFiles,
     )
 
   private def parseBindingTemplate(obj: ujson.Obj): BindingTemplate =
@@ -555,6 +573,18 @@ object ScalaSourceRpc:
       astTemplate = obj.obj.getOrElse("ast_template", ujson.Null),
       templateCid = stringAt(obj, "template_cid"),
       paramNames = stringArray(obj.obj.getOrElse("param_names", ujson.Arr())),
+      contractCid = stringAt(obj, "contract_cid"),
+    )
+
+  private def parseSugarBindingTemplate(obj: ujson.Obj): BindingTemplate =
+    val body = obj.obj.get("body_source").collect { case body: ujson.Obj => body }.getOrElse(ujson.Obj())
+    BindingTemplate(
+      conceptName = stringAt(obj, "concept_name"),
+      libraryTag = firstString(obj, "library_tag", "target_library_tag").getOrElse(""),
+      family = obj.obj.get("family"),
+      astTemplate = body.obj.getOrElse("ast_template", ujson.Null),
+      templateCid = stringAt(body, "template_cid"),
+      paramNames = stringArray(body.obj.getOrElse("param_names", ujson.Arr())),
       contractCid = stringAt(obj, "contract_cid"),
     )
 

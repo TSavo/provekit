@@ -109,12 +109,10 @@ public enum SwiftSourceRPC {
             return errorResponse(id: id, code: -32602, message: "source_paths must be an array")
         }
         let sourcePaths = sourcePathsAny.compactMap { $0 as? String }.filter { !$0.isEmpty }
-        let bindingValues = params["binding_templates"] as? [Any] ?? []
-        let bindings = try bindingValues.map(SwiftSourceIR.canonical(from:))
         let tags = SwiftSourceLifter.recognizePaths(
             workspaceRoot: workspaceRoot,
             sourcePaths: sourcePaths,
-            bindingTemplates: bindings
+            bindingTemplates: []
         )
         return response(id: id, result: [
             "tags": tags.map(SwiftSourceIR.anyValue),

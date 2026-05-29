@@ -735,6 +735,7 @@ cross-language-proof-parity: build-java build-ts build-zig build-scala cross-lan
 		-p provekit-walk --bin provekit-walk-rpc \
 		recognize -- --nocapture
 	pnpm vitest run implementations/typescript/src/lift/typescript-source/index.test.ts
+	make test-swift-source-lift
 	(cd implementations/zig/provekit-lift-zig-source && zig build test)
 	$(SCALA_CLI) test implementations/scala/provekit-lift-scala-source --server=false
 	@echo "--- prove parity ---"

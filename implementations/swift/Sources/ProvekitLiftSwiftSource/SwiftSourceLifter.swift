@@ -252,6 +252,15 @@ public enum SwiftSourceLifter {
         sourcePaths: [String],
         bindingTemplates: [JcsCanonical]
     ) -> [JcsCanonical] {
+        let selfResolvedEntries = bindingTemplates.isEmpty
+            ? liftLibraryBindingsPaths(workspaceRoot: workspaceRoot, sourcePaths: sourcePaths).ir
+            : []
+        let resolvedTemplates = bindingTemplates.isEmpty
+            ? selfResolvedEntries.compactMap(bindingTemplateFromSugarEntry)
+            : bindingTemplates
+        let templateFiles = Set(selfResolvedEntries.compactMap { entry -> String? in
+            jcsField("body_source", in: entry).objectFields?["file"]?.stringValue
+        })
         let root = URL(fileURLWithPath: workspaceRoot.isEmpty ? "." : workspaceRoot).standardizedFileURL
         let rootPath = root.path
         let fileManager = FileManager.default
@@ -285,18 +294,38 @@ public enum SwiftSourceLifter {
             }
 
             for file in files {
+                let displayPath = relativePath(file, root: rootPath)
+                if templateFiles.contains(displayPath) {
+                    continue
+                }
                 guard let source = try? String(contentsOfFile: file, encoding: .utf8) else {
                     continue
                 }
                 tags.append(contentsOf: recognizeSource(
                     source,
-                    path: relativePath(file, root: rootPath),
-                    bindingTemplates: bindingTemplates
+                    path: displayPath,
+                    bindingTemplates: resolvedTemplates
                 ))
             }
         }
         return tags
     }
+}
+
+private func bindingTemplateFromSugarEntry(_ entry: JcsCanonical) -> JcsCanonical? {
+    guard let body = jcsField("body_source", in: entry).objectFields else {
+        return nil
+    }
+    let fields: [(String, JcsCanonical)] = [
+        ("ast_template", body["ast_template"] ?? .null),
+        ("concept_name", jcsField("concept_name", in: entry)),
+        ("contract_cid", jcsField("contract_cid", in: entry)),
+        ("family", jcsField("family", in: entry)),
+        ("library_tag", jcsField("target_library_tag", in: entry)),
+        ("param_names", body["param_names"] ?? .array([])),
+        ("template_cid", body["template_cid"] ?? .string("")),
+    ]
+    return .object(fields)
 }
 
 private struct SwiftSugarBindingAnnotation {
@@ -673,6 +702,13 @@ private extension JcsCanonical {
             return value
         }
         return nil
+    }
+
+    var objectFields: [String: JcsCanonical]? {
+        guard case .object(let pairs) = self else {
+            return nil
+        }
+        return Dictionary(uniqueKeysWithValues: pairs)
     }
 }
 

@@ -18,6 +18,7 @@ struct SwiftSourceLiftTests {
             ("recognize emits exact tag", testRecognizeEmitsExactTag),
             ("recognize returns no tags for non-match", testRecognizeReturnsNoTagsForNonMatch),
             ("recognize routes multiple bindings", testRecognizeRoutesMultipleBindings),
+            ("recognize paths self-resolves sugar templates", testRecognizePathsSelfResolvesSugarTemplates),
         ]
 
         var failures: [String] = []
@@ -174,6 +175,40 @@ private func testRecognizeRoutesMultipleBindings() throws {
 
     let concepts = Set(try tags.map { try require(object($0)["concept_name"] as? String, "missing concept") })
     try expect(concepts == ["concept:http-request", "concept:sql-execute"], "wrong concepts: \(concepts)")
+}
+
+private func testRecognizePathsSelfResolvesSugarTemplates() throws {
+    let root = try FileManager.default.url(
+        for: .itemReplacementDirectory,
+        in: .userDomainMask,
+        appropriateFor: URL(fileURLWithPath: NSTemporaryDirectory()),
+        create: true
+    )
+    defer { try? FileManager.default.removeItem(at: root) }
+    try """
+    @ProveKitSugar(concept: "concept:http-request", library: "urlsession", family: "concept:family:http")
+    func fetch(_ url: String) -> Int {
+        return send(url)
+    }
+    """.write(to: root.appendingPathComponent("Shim.swift"), atomically: true, encoding: .utf8)
+    try """
+    func getStatus(_ endpoint: String) -> Int {
+        return send(endpoint)
+    }
+    """.write(to: root.appendingPathComponent("Client.swift"), atomically: true, encoding: .utf8)
+
+    let tags = SwiftSourceLifter.recognizePaths(
+        workspaceRoot: root.path,
+        sourcePaths: ["Shim.swift", "Client.swift"],
+        bindingTemplates: []
+    )
+
+    try expect(tags.count == 1, "expected one self-resolved tag, got \(tags.count)")
+    let tag = try object(tags[0])
+    try expect(tag["file"] as? String == "Client.swift", "wrong file: \(tag)")
+    try expect(tag["function_name"] as? String == "getStatus", "wrong function: \(tag)")
+    try expect(tag["concept_name"] as? String == "concept:http-request", "wrong concept: \(tag)")
+    try expect(tag["library_tag"] as? String == "urlsession", "wrong library: \(tag)")
 }
 
 private func sugarBodySource(_ source: String) throws -> [String: Any] {
