@@ -1252,21 +1252,8 @@ fn resolve_library_surface(
         }
         return Ok((target.to_string(), Some(tag.to_string())));
     }
-    for language in ["typescript", "python", "rust", "java"] {
-        // Same manifest-aware preference as the `--target` arm: a tag that
-        // literally starts with `{language}-` (e.g. `java-io`) must not be
-        // truncated when it names a real manifest.
-        if library.starts_with(&format!("{language}-"))
-            && realize_tag_exists(project_root, language, library)
-        {
-            return Ok((language.to_string(), Some(library.to_string())));
-        }
-        if let Some(tag) = library.strip_prefix(&format!("{language}-")) {
-            if tag.is_empty() {
-                return Err(format!("library surface `{library}` has empty library tag"));
-            }
-            return Ok((language.to_string(), Some(tag.to_string())));
-        }
+    if let Some((language, tag)) = resolve_registered_library_surface(project_root, library)? {
+        return Ok((language, Some(tag)));
     }
     let language = detect_project_language(project_root).ok_or_else(|| {
         format!(
@@ -1274,6 +1261,43 @@ fn resolve_library_surface(
         )
     })?;
     Ok((language, Some(library.to_string())))
+}
+
+fn resolve_registered_library_surface(
+    project_root: &Path,
+    library: &str,
+) -> Result<Option<(String, String)>, String> {
+    use crate::kit_dispatch::registry_realize_language_candidates;
+
+    let candidates = registry_realize_language_candidates(project_root)?;
+    let mut matches = candidates
+        .into_iter()
+        .filter_map(|candidate| {
+            let prefixed = format!("{}-{}", candidate.language, candidate.tag);
+            if candidate.tag == library || prefixed == library {
+                Some((candidate.language, candidate.tag, candidate.source))
+            } else {
+                None
+            }
+        })
+        .collect::<Vec<_>>();
+    matches.sort();
+    matches.dedup();
+
+    match matches.as_slice() {
+        [] => Ok(None),
+        [(language, tag, _source)] => Ok(Some((language.clone(), tag.clone()))),
+        _ => {
+            let registered = matches
+                .iter()
+                .map(|(language, tag, source)| format!("{language}/{tag} from {source}"))
+                .collect::<Vec<_>>()
+                .join(", ");
+            Err(format!(
+                "ambiguous target language for library `{library}`; pass --target=<language>. registered matches: {registered}"
+            ))
+        }
+    }
 }
 
 /// True when a realize manifest registered for `target_lang` declares exactly
