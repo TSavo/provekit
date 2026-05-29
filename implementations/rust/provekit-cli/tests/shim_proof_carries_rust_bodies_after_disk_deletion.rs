@@ -17,6 +17,7 @@ const DELETED_ORPHAN_CACHES: &[&str] = &[
     "rust-canonical-bodies-serde_json.json",
     "rust-canonical-bodies-blake3.json",
     "rust-canonical-bodies-std::io.json",
+    "rust-canonical-bodies-reqwest.json",
     "rust-canonical-bodies-libprovekit-rpc-cross-platform.json",
 ];
 
