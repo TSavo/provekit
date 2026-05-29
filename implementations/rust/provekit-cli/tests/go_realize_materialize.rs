@@ -24,7 +24,9 @@ use std::process::Command;
 use std::sync::Arc;
 
 use provekit_canonicalizer::{blake3_512_of, encode_jcs, Value as CanonicalValue};
-use provekit_cli::kit_dispatch::{dispatch_realize, RealizeRequest};
+use provekit_cli::kit_dispatch::{
+    dependency_proof_paths_via_rpc, dispatch_realize, RealizeRequest,
+};
 use serde_json::Value as Json;
 
 fn repo_root() -> PathBuf {
@@ -105,6 +107,24 @@ fn install_go_realize_manifest(root: &Path, bin: &Path) {
     fs::write(manifest, text).expect("write manifest");
 }
 
+fn write_go_dependency_with_proof(project: &Path, proof_name: &str) -> PathBuf {
+    let dep = project.join("dep");
+    let proof = dep.join("META-INF").join("provekit").join(proof_name);
+    fs::create_dir_all(proof.parent().unwrap()).expect("mkdir dependency proof dir");
+    fs::write(
+        dep.join("go.mod"),
+        "module example.com/proofdep\n\ngo 1.22\n",
+    )
+    .expect("write dep go.mod");
+    fs::write(&proof, "proof bytes").expect("write dependency proof");
+    fs::write(
+        project.join("go.mod"),
+        "module example.com/app\n\ngo 1.22\n\nrequire example.com/proofdep v0.0.0\nreplace example.com/proofdep => ./dep\n",
+    )
+    .expect("write project go.mod");
+    proof
+}
+
 fn identity_payload_json(function: &str) -> String {
     format!(
         "{{\"artifact_kind\":\"provekit-concept-citation-comment-sugar\",\"concept_name\":\"identity\",\"function\":\"{function}\",\"params\":[\"x\"],\"param_types\":[\"int\"],\"return_type\":\"int\"}}"
@@ -179,6 +199,28 @@ fn identity_request() -> RealizeRequest {
         function_return_types: std::collections::BTreeMap::new(),
         doc_lines: Vec::new(),
     }
+}
+
+#[test]
+fn go_dependency_proofs_are_resolved_by_configured_go_kit() {
+    if !go_available() {
+        eprintln!("go not on PATH: skipping Go dependency proof resolver test");
+        return;
+    }
+    let bin = build_go_realize();
+    let workspace = tempfile::tempdir().expect("tempdir");
+    install_go_realize_manifest(workspace.path(), &bin);
+    let proof_name = "blake3-512:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa.proof";
+    let expected = write_go_dependency_with_proof(workspace.path(), proof_name);
+
+    let paths = dependency_proof_paths_via_rpc(workspace.path())
+        .expect("CLI must ask the configured Go kit over RPC for dependency proofs");
+
+    assert_eq!(
+        paths,
+        vec![expected],
+        "dependency proof resolution must be kit-owned and config/manifest-driven"
+    );
 }
 
 /// Full CLI path: `provekit materialize` reads Go carrier comments, dispatches
