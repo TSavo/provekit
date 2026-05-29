@@ -741,6 +741,7 @@ fn mint_input(
 ) -> MintPathInput {
     let entry = PluginEntry {
         name: None,
+        kind: Some("lift".to_string()),
         surface: surface.to_string(),
         workspace_override: None,
         emit: None,
@@ -1990,10 +1991,18 @@ pub fn run(args: MintArgs) -> u8 {
 
     let session = if let Some(path_file) = configured_path {
         dispatch_path(&project_root, Path::new(&path_file))
-    } else if args.surface.is_none() && derived_surface.is_none() && !project_cfg.plugins.is_empty()
+    } else if args.surface.is_none()
+        && derived_surface.is_none()
+        && project_cfg.plugins.iter().any(PluginEntry::is_lift_plugin)
     {
-        // Multi-plugin path: config.toml declared `[[plugins]]` and the
-        // user didn't override with a single `--surface` or `--kit`.
+        let lift_plugins = project_cfg
+            .plugins
+            .iter()
+            .filter(|plugin| plugin.is_lift_plugin())
+            .cloned()
+            .collect::<Vec<_>>();
+        // Multi-plugin path: config.toml declared lift `[[plugins]]` and
+        // the user didn't override with a single `--surface` or `--kit`.
         // Build a fan-in path with one lift step per declared plugin and
         // one terminal mint step depending on all of them. The path
         // executor walks each plugin's k(I)=t independently; mint merges
@@ -2002,9 +2011,8 @@ pub fn run(args: MintArgs) -> u8 {
             println!(
                 "{}: {} plugin(s) declared: {}",
                 "config".green().bold(),
-                project_cfg.plugins.len(),
-                project_cfg
-                    .plugins
+                lift_plugins.len(),
+                lift_plugins
                     .iter()
                     .map(|p| p.display_name().to_string())
                     .collect::<Vec<_>>()
@@ -2014,7 +2022,7 @@ pub fn run(args: MintArgs) -> u8 {
         let out_dir = args.out.clone().unwrap_or_else(|| project_root.clone());
         dispatch_multi(
             &project_root,
-            &project_cfg.plugins,
+            &lift_plugins,
             &out_dir,
             args.flags.quiet,
             args.library_bindings,
