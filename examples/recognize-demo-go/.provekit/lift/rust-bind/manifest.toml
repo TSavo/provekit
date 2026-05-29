@@ -1,0 +1,6 @@
+# Compatibility alias for the current `provekit recognize` default surface.
+# The demo's real surface is go-bind; this lets the documented command run
+# without patching the CLI default in this PR.
+name = "go-bind-lift"
+command = ["go", "run", ".provekit/lift/go-bind/go-bind-rpc.go"]
+working_dir = "."
