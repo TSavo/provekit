@@ -47,35 +47,50 @@ fn build_rust_lifter_bins() {
     static BUILT: OnceLock<()> = OnceLock::new();
     BUILT.get_or_init(|| {
         let workspace = rust_workspace_root();
-        for (package, bin) in [
-            ("provekit-walk", "provekit-walk-rpc"),
-            ("provekit-lift", "provekit-lift"),
-        ] {
-            let output = Command::new("cargo")
-                .current_dir(&workspace)
-                .args(["build", "-p", package, "--bin", bin])
-                .output()
-                .unwrap_or_else(|e| panic!("spawn cargo build -p {package} --bin {bin}: {e}"));
-            assert!(
-                output.status.success(),
-                "cargo build -p {package} --bin {bin} failed\n  stdout: {}\n  stderr: {}",
-                String::from_utf8_lossy(&output.stdout),
-                String::from_utf8_lossy(&output.stderr)
-            );
-        }
-
         let bin_dir = provekit_bin()
             .parent()
             .expect("provekit bin parent")
             .to_path_buf();
-        let walk_rpc = bin_dir.join("provekit-walk-rpc");
-        let lift = bin_dir.join("provekit-lift");
-        assert!(
-            walk_rpc.exists(),
-            "cargo build produced no {}",
-            walk_rpc.display()
-        );
-        assert!(lift.exists(), "cargo build produced no {}", lift.display());
+        let build_release = bin_dir.file_name().and_then(|name| name.to_str()) == Some("release");
+        let mut profiles = vec![false];
+        if build_release {
+            profiles.push(true);
+        }
+        for release in profiles {
+            for (package, bin) in [
+                ("provekit-walk", "provekit-walk-rpc"),
+                ("provekit-lift", "provekit-lift"),
+            ] {
+                let mut args = vec!["build", "-p", package, "--bin", bin];
+                if release {
+                    args.push("--release");
+                }
+                let output = Command::new("cargo")
+                    .current_dir(&workspace)
+                    .args(args)
+                    .output()
+                    .unwrap_or_else(|e| panic!("spawn cargo build -p {package} --bin {bin}: {e}"));
+                assert!(
+                    output.status.success(),
+                    "cargo build -p {package} --bin {bin}{} failed\n  stdout: {}\n  stderr: {}",
+                    if release { " --release" } else { "" },
+                    String::from_utf8_lossy(&output.stdout),
+                    String::from_utf8_lossy(&output.stderr)
+                );
+            }
+        }
+
+        let debug_bin_dir = workspace.join("target").join("debug");
+        for bin_dir in [debug_bin_dir, bin_dir] {
+            let walk_rpc = bin_dir.join("provekit-walk-rpc");
+            let lift = bin_dir.join("provekit-lift");
+            assert!(
+                walk_rpc.exists(),
+                "cargo build produced no {}",
+                walk_rpc.display()
+            );
+            assert!(lift.exists(), "cargo build produced no {}", lift.display());
+        }
     });
 }
 
@@ -110,6 +125,22 @@ fn run_mint(project: &Path, out_dir: &Path) {
     );
 }
 
+fn load_proof_pool_from_out_dir(out_dir: &Path) -> provekit_verifier::types::MementoPool {
+    let proof_files: Vec<PathBuf> = fs::read_dir(out_dir)
+        .expect("read out dir")
+        .filter_map(|entry| {
+            let path = entry.expect("out dir entry").path();
+            (path.extension().and_then(|s| s.to_str()) == Some("proof")).then_some(path)
+        })
+        .collect();
+    assert!(
+        !proof_files.is_empty(),
+        "mint should write at least one .proof into {}",
+        out_dir.display()
+    );
+    provekit_verifier::load_all_proofs::run_with_files(Path::new("/no-such-project"), &proof_files)
+}
+
 fn run_prove_json(out_dir: &Path) -> (Json, i32) {
     let output = Command::new(provekit_bin())
         .arg("prove")
@@ -130,6 +161,33 @@ fn json_contains_str(value: &Json, needle: &str) -> bool {
         Json::Object(map) => map.values().any(|v| json_contains_str(v, needle)),
         _ => false,
     }
+}
+
+fn pool_contains_contract_inv(
+    pool: &provekit_verifier::types::MementoPool,
+    name_prefix: &str,
+    needle: &str,
+) -> bool {
+    pool.name_to_cid.iter().any(|(name, cid)| {
+        name.starts_with(name_prefix)
+            && pool
+                .mementos
+                .get(cid)
+                .and_then(|memento| provekit_verifier::types::memento_body_field(memento, "inv"))
+                .is_some_and(|inv| json_contains_str(inv, needle))
+    })
+}
+
+fn assert_pool_contains_contract_inv(
+    pool: &provekit_verifier::types::MementoPool,
+    name_prefix: &str,
+    needle: &str,
+) {
+    assert!(
+        pool_contains_contract_inv(pool, name_prefix, needle),
+        "missing contract `{name_prefix}...` with invariant mentioning `{needle}`; indexed contracts: {:?}",
+        pool.name_to_cid.keys().collect::<Vec<_>>()
+    );
 }
 
 fn int_sort() -> Json {
@@ -374,6 +432,53 @@ fn voltron_demo_surfaces_nonvacuous_implication_refusals() {
 }
 
 #[test]
+fn rust_stdlib_checked_config_lifts_constructor_algebra_from_unit_tests() {
+    build_rust_lifter_bins();
+
+    let repo = repo_root();
+    let project = repo.join("examples/provekit-shim-rust-std");
+    let out_dir = unique_dir("rust-std-shim");
+    run_mint(&project, &out_dir);
+
+    let pool = load_proof_pool_from_out_dir(&out_dir);
+    assert!(
+        pool.load_errors.is_empty(),
+        "stdlib shim proof bundle must load cleanly: {:?}",
+        pool.load_errors
+    );
+
+    for (name_prefix, expected_ctor) in [
+        ("Some@src/lib.rs:", "Option::Some"),
+        ("Ok@src/lib.rs:", "Result::Ok"),
+        ("Err@src/lib.rs:", "Result::Err"),
+        ("is_some@src/lib.rs:", "True"),
+        ("is_none@src/lib.rs:", "False"),
+        ("unwrap@src/lib.rs:", "Some"),
+        ("unwrap@src/lib.rs:", "Ok"),
+        ("unwrap_err@src/lib.rs:", "Err"),
+        ("unwrap_or@src/lib.rs:", "Option::None"),
+        ("unwrap_or@src/lib.rs:", "Err"),
+        ("map@src/lib.rs:", "plus_one"),
+        ("and_then@src/lib.rs:", "some_plus_one"),
+        ("ok_or@src/lib.rs:", "Result::Ok"),
+        ("ok_or@src/lib.rs:", "Result::Err"),
+        ("is_ok@src/lib.rs:", "True"),
+        ("is_ok@src/lib.rs:", "False"),
+        ("is_err@src/lib.rs:", "True"),
+        ("is_err@src/lib.rs:", "False"),
+        ("map_err@src/lib.rs:", "tag_error"),
+        ("ok@src/lib.rs:", "Option::Some"),
+        ("ok@src/lib.rs:", "Option::None"),
+        ("err@src/lib.rs:", "Option::Some"),
+        ("err@src/lib.rs:", "Option::None"),
+    ] {
+        assert_pool_contains_contract_inv(&pool, name_prefix, expected_ctor);
+    }
+
+    let _ = fs::remove_dir_all(out_dir);
+}
+
+#[test]
 fn rust_stdlib_shim_closes_option_result_constructor_lift_gaps() {
     build_rust_lifter_bins();
 
@@ -421,6 +526,7 @@ edition = "2021"
         .expect("provekit bin parent")
         .to_path_buf();
     let walk_rpc = bin_dir.join("provekit-walk-rpc");
+    let lift = bin_dir.join("provekit-lift");
     fs::write(
         provekit.join("config.toml"),
         format!(
@@ -445,7 +551,7 @@ surface = "rust-implications"
             .join("manifest.toml"),
         format!(
             "name = \"rust-stdlib-contracts\"\ncommand = [\"{}\", \"--rpc\"]\nworking_dir = \".\"\n",
-            walk_rpc.display()
+            lift.display()
         ),
     )
     .expect("write rust-stdlib-contracts manifest");
@@ -486,17 +592,7 @@ surface = "rust-implications"
         "stdlib shim should close constructor lift-gaps, not report them: {report}"
     );
 
-    let proof_files: Vec<PathBuf> = fs::read_dir(&out_dir)
-        .expect("read out dir")
-        .filter_map(|entry| {
-            let path = entry.expect("out dir entry").path();
-            (path.extension().and_then(|s| s.to_str()) == Some("proof")).then_some(path)
-        })
-        .collect();
-    let pool = provekit_verifier::load_all_proofs::run_with_files(
-        Path::new("/no-such-project"),
-        &proof_files,
-    );
+    let pool = load_proof_pool_from_out_dir(&out_dir);
     assert!(
         pool.load_errors.is_empty(),
         "stdlib shim proof bundle must load cleanly: {:?}",
@@ -520,6 +616,18 @@ surface = "rust-implications"
             provekit_verifier::types::memento_kind(target).as_deref(),
             Some("contract"),
             "bridge target for `{symbol}` must be a contract"
+        );
+        let expected_ctor = match symbol {
+            "Some" => "Option::Some",
+            "Ok" => "Result::Ok",
+            "Err" => "Result::Err",
+            other => panic!("unexpected stdlib constructor symbol `{other}`"),
+        };
+        let inv = provekit_verifier::types::memento_body_field(target, "inv")
+            .unwrap_or_else(|| panic!("bridge target for `{symbol}` must carry a test-lifted inv"));
+        assert!(
+            json_contains_str(inv, expected_ctor),
+            "bridge target for `{symbol}` must come from the std shim unit-test algebra and mention `{expected_ctor}`; target: {target}"
         );
     }
 
