@@ -24,7 +24,6 @@ use std::fmt;
 
 use super::traits::Catalog;
 use super::types::{domain_claim_from_canonical_bytes, Cid, DomainClaim, Term};
-use provekit_ir_types::ExamManifestMemento;
 
 /// Structural reason a premise walk failed.
 ///
@@ -281,10 +280,6 @@ fn walk_inner(
 /// catalog's hub view.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct HubMissingNode {
-    /// CID of the exam manifest cited by this refusal, when it maps to one.
-    pub exam_manifest_cid: Option<String>,
-    /// CID of the specific exam question cited by this refusal, when it maps to one.
-    pub exam_question_cid: Option<String>,
     /// The operation CID that was absent from the catalog.
     pub node_op_cid: Cid,
     /// Slot path from the root term to the offending operation node, in the
@@ -311,43 +306,15 @@ impl std::error::Error for HubMissingNode {}
 /// the offending op CID and its term position. Constants, vars, and unit
 /// nodes are skipped because they carry no operation CID.
 pub fn assert_concept_tier(term: &Term, catalog: &dyn Catalog) -> Result<(), HubMissingNode> {
-    assert_concept_tier_with_exam_manifest(term, catalog, "unknown", None)
-}
-
-pub fn assert_concept_tier_with_exam_manifest(
-    term: &Term,
-    catalog: &dyn Catalog,
-    source_lang: &str,
-    manifest: Option<&ExamManifestMemento>,
-) -> Result<(), HubMissingNode> {
     for node in term.walk() {
         if !catalog.contains(node.op_cid) {
-            let concept = normalize_concept_name(node.op_name);
-            let (exam_question_cid, exam_manifest_cid) =
-                crate::exam_manifest::exam_question_citation(
-                    manifest,
-                    "morphism",
-                    &concept,
-                    source_lang,
-                    "concept-tier",
-                );
             return Err(HubMissingNode {
-                exam_manifest_cid,
-                exam_question_cid,
                 node_op_cid: node.op_cid.clone(),
                 term_position: node.term_position.clone(),
             });
         }
     }
     Ok(())
-}
-
-fn normalize_concept_name(name: &str) -> String {
-    if name.starts_with("concept:") {
-        name.to_string()
-    } else {
-        format!("concept:{name}")
-    }
 }
 
 #[cfg(test)]
@@ -760,80 +727,4 @@ mod tests {
         assert_eq!(err.term_position, vec![1]);
     }
 
-    #[test]
-    fn assert_concept_tier_gap_cites_v1_1_exam_question_when_op_is_absent() {
-        let manifest =
-            crate::exam_manifest::load_default_exam_manifest().expect("v1.1 manifest loads");
-        let missing_cid = address(&"op:add-missing");
-        let catalog = HashMapCatalog::default();
-        let term = make_op("add", missing_cid.clone(), vec![const_leaf()]);
-
-        let err = assert_concept_tier_with_exam_manifest(&term, &catalog, "rust", Some(&manifest))
-            .expect_err("missing concept-tier op must be refused");
-
-        let expected = crate::exam_manifest::exam_question_cid_for(
-            &manifest,
-            "morphism",
-            "concept:add",
-            "rust",
-        )
-        .expect("lookup succeeds")
-        .expect("add/rust question exists");
-        assert_eq!(err.node_op_cid, missing_cid);
-        assert_eq!(
-            err.exam_manifest_cid.as_deref(),
-            Some(manifest.header.cid.as_str())
-        );
-        assert_eq!(err.exam_question_cid.as_deref(), Some(expected.as_str()));
-    }
-
-    #[test]
-    fn assert_concept_tier_gap_does_not_fire_when_op_is_catalogued() {
-        let manifest =
-            crate::exam_manifest::load_default_exam_manifest().expect("v1.1 manifest loads");
-        let add_cid = address(&"op:add-present-for-citation");
-        let mut catalog = HashMapCatalog::default();
-        catalog.put(add_cid.clone(), b"add-op".to_vec());
-        let term = make_op("add", add_cid, vec![const_leaf()]);
-
-        assert_concept_tier_with_exam_manifest(&term, &catalog, "rust", Some(&manifest))
-            .expect("catalogued op is concept-tier");
-    }
-
-    #[test]
-    fn assert_concept_tier_gap_cites_exact_question_not_related_concept() {
-        let manifest =
-            crate::exam_manifest::load_default_exam_manifest().expect("v1.1 manifest loads");
-        let missing_cid = address(&"op:sub-missing");
-        let catalog = HashMapCatalog::default();
-        let term = make_op("sub", missing_cid, vec![const_leaf()]);
-
-        let err = assert_concept_tier_with_exam_manifest(&term, &catalog, "rust", Some(&manifest))
-            .expect_err("missing concept-tier op must be refused");
-
-        let sub_question = crate::exam_manifest::exam_question_cid_for(
-            &manifest,
-            "morphism",
-            "concept:sub",
-            "rust",
-        )
-        .expect("lookup succeeds")
-        .expect("sub/rust question exists");
-        let add_question = crate::exam_manifest::exam_question_cid_for(
-            &manifest,
-            "morphism",
-            "concept:add",
-            "rust",
-        )
-        .expect("lookup succeeds")
-        .expect("add/rust question exists");
-        assert_eq!(
-            err.exam_question_cid.as_deref(),
-            Some(sub_question.as_str())
-        );
-        assert_ne!(
-            err.exam_question_cid.as_deref(),
-            Some(add_question.as_str())
-        );
-    }
 }

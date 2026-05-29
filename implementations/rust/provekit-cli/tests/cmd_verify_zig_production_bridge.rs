@@ -98,9 +98,7 @@ test "double three is six" {{
     }
     fs::write(
         provekit.join("config.toml"),
-        "exam_manifest_cid = \"blake3-512:00000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000\"\n\
-         \n\
-         [[plugins]]\n\
+        "[[plugins]]\n\
          name = \"zig-source\"\n\
          surface = \"zig-source\"\n\
          layer = \"verify\"\n\

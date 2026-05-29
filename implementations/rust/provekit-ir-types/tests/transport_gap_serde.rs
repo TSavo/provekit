@@ -16,13 +16,10 @@
 //
 // Byte-exact CID pinning (if any) belongs in provekit-claim-envelope/tests/.
 
-use std::collections::BTreeMap;
-
 use provekit_ir_types::{
-    DivergentSemanticsTag, FieldDelta, GapKind, GapReason, IrFormula, IrTerm, LossRecord,
-    LossSeverity, LossSeverityLevel, LossyHomomorphismObligation, LossyMorphismMemento,
-    OptionStatus, PartialHomomorphismObligation, PartialMorphismMemento, ResolutionOption,
-    ResolutionOptionKind, TransportGapMemento,
+    DivergentSemanticsTag, FieldDelta, GapKind, GapReason, IrFormula, LossSeverityLevel,
+    LossyMorphismMemento, OptionStatus, PartialMorphismMemento, ResolutionOptionKind,
+    TransportGapMemento,
 };
 
 // ================================================================
@@ -85,8 +82,6 @@ fn python_add_gap_deserializes_from_spec_shape() {
         ResolutionOptionKind::AcceptPermanent
     );
     assert_eq!(m.resolution_options[1].status, OptionStatus::Deferred);
-    assert!(m.exam_manifest_cid.is_none());
-    assert!(m.exam_question_cid.is_none());
     assert!(m.signature.is_none());
 }
 
@@ -155,50 +150,6 @@ fn no_such_concept_op_omits_target_op_cid_when_none() {
         v.get("target_op_cid").is_none(),
         "target_op_cid must be absent in serialized JSON when None"
     );
-    assert!(
-        v.get("exam_manifest_cid").is_none(),
-        "exam_manifest_cid must be absent in serialized JSON when None"
-    );
-    assert!(
-        v.get("exam_question_cid").is_none(),
-        "exam_question_cid must be absent in serialized JSON when None"
-    );
-}
-
-#[test]
-fn gap_exam_question_citation_fields_round_trip() {
-    let raw = r#"{
-  "exam_manifest_cid": "blake3-512:11111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111",
-  "exam_question_cid": "blake3-512:22222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222",
-  "fn_name": "gap:rust:add:to:concept:add",
-  "gap_kind": "wp-rule-mismatch",
-  "kind": "TransportGapMemento",
-  "resolution_options": [
-    {
-      "option_kind": "accept-permanent",
-      "status": "deferred",
-      "tradeoff": "bind refused to synthesize a wp_rule without evidence"
-    }
-  ],
-  "schema_version": "1",
-  "source_lang": "rust",
-  "source_op_cid": "blake3-512:33333333333333333333333333333333333333333333333333333333333333333333333333333333333333333333333333333333333333333333333333333333",
-  "target_concept_op": "concept:add"
-}"#;
-
-    let m: TransportGapMemento = serde_json::from_str(raw).expect("parse cited gap");
-    assert_eq!(
-        m.exam_manifest_cid.as_deref(),
-        Some("blake3-512:11111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111")
-    );
-    assert_eq!(
-        m.exam_question_cid.as_deref(),
-        Some("blake3-512:22222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222")
-    );
-
-    let serialized = serde_json::to_string(&m).expect("serialize");
-    let reparsed: TransportGapMemento = serde_json::from_str(&serialized).expect("re-parse");
-    assert_eq!(m, reparsed);
 }
 
 // ================================================================

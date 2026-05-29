@@ -77,9 +77,7 @@ fn install_emit_registration(project: &Path, java_bin: &Path, jar: &Path) {
     fs::create_dir_all(&provekit_dir).expect("mkdir .provekit");
     fs::write(
         provekit_dir.join("config.toml"),
-        "exam_manifest_cid = \"blake3-512:00000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000\"\n\
-         \n\
-         [[plugins]]\n\
+        "[[plugins]]\n\
          name = \"java-testng\"\n\
          surface = \"java-testng\"\n\
          emit = \"testng\"\n",

@@ -4,8 +4,8 @@ use std::collections::{BTreeMap, BTreeSet};
 
 use provekit_canonicalizer::blake3_512_of;
 use provekit_ir_types::{
-    ExamManifestMemento, GapKind, IrFormula, IrTerm, OptionStatus, ResolutionOption,
-    ResolutionOptionKind, Sort, TransportGapMemento,
+    GapKind, IrFormula, IrTerm, OptionStatus, ResolutionOption, ResolutionOptionKind, Sort,
+    TransportGapMemento,
 };
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value as Json};
@@ -27,15 +27,12 @@ const CONCEPT_SEQ: &str = "concept:seq";
 pub struct BindOptions {
     /// Source language hint for diagnostics and named-term metadata.
     pub lang: String,
-    /// Optional exam manifest used to cite refusal questions in gap records.
-    pub exam_manifest: Option<ExamManifestMemento>,
 }
 
 impl Default for BindOptions {
     fn default() -> Self {
         Self {
             lang: "auto".to_string(),
-            exam_manifest: None,
         }
     }
 }
@@ -434,7 +431,6 @@ pub fn bind_term_document(
                 &source_language,
                 &term_shape_cid,
                 &concept_name,
-                options.exam_manifest.as_ref(),
             )?);
         }
         let fn_name = entry.fn_name;
@@ -1714,19 +1710,9 @@ fn wp_rule_synthesis_gap_record(
     source_lang: &str,
     source_op_cid: &str,
     concept_name: &str,
-    exam_manifest: Option<&ExamManifestMemento>,
 ) -> Result<Json, BindError> {
     let target_concept_op = normalize_concept_name(concept_name);
-    let (exam_question_cid, exam_manifest_cid) = crate::exam_manifest::exam_question_citation(
-        exam_manifest,
-        "morphism",
-        &target_concept_op,
-        source_lang,
-        "bind",
-    );
     let gap = TransportGapMemento {
-        exam_manifest_cid,
-        exam_question_cid,
         fn_name: format!(
             "gap:{}:bind:to:{}:wp-rule",
             source_lang,
@@ -1989,7 +1975,6 @@ mod tests {
             &term,
             &BindOptions {
                 lang: "rust".to_string(),
-                exam_manifest: None,
             },
         )
         .expect("bind succeeds");
@@ -2035,7 +2020,6 @@ mod tests {
             });
             BindKit::new(BindOptions {
                 lang: "rust".to_string(),
-                exam_manifest: None,
             })
             .bind_term_from_input(&input)
             .expect("bind succeeds")
@@ -2100,7 +2084,6 @@ mod tests {
 
         let kit = BindKit::new(BindOptions {
             lang: "rust".to_string(),
-            exam_manifest: None,
         });
 
         let add_claim = kit

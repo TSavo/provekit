@@ -35,7 +35,6 @@ pub mod types;
 pub mod verbs;
 pub mod walks;
 
-pub use crate::exam_manifest::ExamManifestKit;
 pub use bind::{
     bind_result_payload, bind_term_document, concept_bind_result_cid, grammar_op_cid,
     named_term_document_cid, named_term_document_from_bind_payload,
@@ -73,6 +72,6 @@ pub use types::{
 };
 pub use verbs::{cross_compile, link, prove, realize, transform, verify};
 pub use walks::{
-    assert_concept_tier, assert_concept_tier_with_exam_manifest, walk_premises_to_root,
-    walk_premises_to_root_with_failure_steps, ChainBreak, ChainWalkFailure, HubMissingNode,
+    assert_concept_tier, walk_premises_to_root, walk_premises_to_root_with_failure_steps,
+    ChainBreak, ChainWalkFailure, HubMissingNode,
 };

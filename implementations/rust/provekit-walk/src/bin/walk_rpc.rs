@@ -26,7 +26,7 @@ use std::sync::{Arc, OnceLock};
 
 use base64::Engine;
 use provekit_canonicalizer::{blake3_512_of, encode_jcs, Value as CValue};
-use provekit_ir_types::{EvidenceMemento, ExamManifestMemento, IrFormula, IrTerm, SourceKind};
+use provekit_ir_types::{EvidenceMemento, IrFormula, IrTerm, SourceKind};
 use provekit_lift_contracts::lift_file_with_docstring_evidence;
 use provekit_walk::emit::{
     rust_function_term_json_for_file, shadow_proof_ir_cid, shadow_to_proof_ir,
@@ -40,7 +40,6 @@ use syn::spanned::Spanned;
 
 const CONCEPT_SHAPES_CATALOG_INDEX_JSON: &str =
     include_str!("../../../../../menagerie/concept-shapes/catalog/index.json");
-const EXAM_MANIFEST_CID: &str = libprovekit::exam_manifest::DEFAULT_EXAM_MANIFEST_CID;
 const SORT_BOOL_CID: &str = "blake3-512:0ee13bf3fd6b7ecfbee72dfbfc18a7c0ea7f1663de6cca43cefb36f5b4c03665452646094a7c296e819e75d683c6ce4821f3d7db3c3c78ae97f2d4e3451d2074";
 const SORT_BYTES_CID: &str = "blake3-512:7116ef6e62e6739b213a8394f975a53c771b89f08c36d27143827acfcfebc0e39e5b82c530be668c3cfd5ec6966ccaa42930b37fdb1f4ac25652a970be10fb6b";
 const SORT_FLOAT_CID: &str = "blake3-512:b979e70c4d5e53d9bdf13d6f08330be3c5b0714b8c770d69bbd05946b86c36df5274be8145a2683cc29c278155c9c1ee65b6897913524eecb9e4c89c71862f57";
@@ -48,7 +47,6 @@ const SORT_INT_CID: &str = "blake3-512:30ffc51350121a7172f3e4064a33c45bbd3457569
 const SORT_STRING_CID: &str = "blake3-512:be8721d24849feb74c4721520bdba02d352a94f49253a627cd509127472aa1c47cbe99cb705cac4159b5365abcce0c9aaa4901fe67630827deb6be1f9daeea10";
 
 static CONCEPT_OP_CIDS: OnceLock<BTreeMap<String, String>> = OnceLock::new();
-static EXAM_MANIFEST: OnceLock<Option<ExamManifestMemento>> = OnceLock::new();
 
 fn main() -> io::Result<()> {
     let stdin = io::stdin();
@@ -764,13 +762,10 @@ fn bind_lift(params: &Value) -> Result<Value, String> {
         let src = match std::fs::read_to_string(path) {
             Ok(s) => s,
             Err(e) => {
-                diagnostics.push(cited_diagnostic(
+                diagnostics.push(diagnostic(
                     "read-error",
                     path.display().to_string(),
                     e.to_string(),
-                    "morphism",
-                    "concept:source-unit",
-                    "rust",
                 ));
                 continue;
             }
@@ -778,13 +773,10 @@ fn bind_lift(params: &Value) -> Result<Value, String> {
         let file = match syn::parse_file(&src) {
             Ok(f) => f,
             Err(e) => {
-                diagnostics.push(cited_diagnostic(
+                diagnostics.push(diagnostic(
                     "parse-error",
                     path.display().to_string(),
                     e.to_string(),
-                    "morphism",
-                    "concept:source-unit",
-                    "rust",
                 ));
                 continue;
             }
@@ -1309,13 +1301,10 @@ fn function_contract_lift(params: &Value) -> Result<Value, String> {
         let src = match std::fs::read_to_string(path) {
             Ok(s) => s,
             Err(e) => {
-                diagnostics.push(cited_diagnostic(
+                diagnostics.push(diagnostic(
                     "read-error",
                     path.display().to_string(),
                     e.to_string(),
-                    "morphism",
-                    "concept:source-unit",
-                    "rust",
                 ));
                 continue;
             }
@@ -1323,13 +1312,10 @@ fn function_contract_lift(params: &Value) -> Result<Value, String> {
         let file = match syn::parse_file(&src) {
             Ok(f) => f,
             Err(e) => {
-                diagnostics.push(cited_diagnostic(
+                diagnostics.push(diagnostic(
                     "parse-error",
                     path.display().to_string(),
                     e.to_string(),
-                    "morphism",
-                    "concept:source-unit",
-                    "rust",
                 ));
                 continue;
             }
@@ -1378,40 +1364,15 @@ fn lift_scan_roots(root: &Path, source_paths: &[String]) -> Vec<PathBuf> {
         .collect()
 }
 
-fn cited_diagnostic(
+fn diagnostic(
     kind: &str,
     path: String,
     detail: String,
-    question_kind: &str,
-    concept: &str,
-    language: &str,
 ) -> Value {
-    let mut diagnostic = json!({
+    json!({
         "kind": kind,
         "path": path,
         "detail": detail,
-    });
-    if let Some(question_cid) = exam_question_cid_for(question_kind, concept, language) {
-        diagnostic["exam_manifest_cid"] = json!(EXAM_MANIFEST_CID);
-        diagnostic["exam_question_cid"] = json!(question_cid);
-    } else {
-        diagnostic["exam_citation_diagnostic"] = json!({
-            "kind": "exam-question-citation-missing",
-            "question_kind": question_kind,
-            "concept": concept,
-            "language": language,
-        });
-    }
-    diagnostic
-}
-
-fn exam_question_cid_for(kind: &str, concept: &str, language: &str) -> Option<String> {
-    let manifest =
-        EXAM_MANIFEST.get_or_init(|| libprovekit::exam_manifest::load_default_exam_manifest().ok());
-    manifest.as_ref().and_then(|manifest| {
-        libprovekit::exam_manifest::exam_question_cid_for(manifest, kind, concept, language)
-            .ok()
-            .flatten()
     })
 }
 
@@ -6712,26 +6673,6 @@ pub fn bitwise_not() -> i64 {
     }
 
     #[test]
-    fn rust_lifter_parse_refusal_cites_v1_1_exam_question() {
-        let dir = rust_lifter_parse_refusal_workspace("cites");
-
-        let result = bind_lift(&json!({
-            "workspace_root": dir,
-            "source_paths": ["."]
-        }))
-        .expect("bind lift returns document");
-        let diagnostic = result["diagnostics"][0]
-            .as_object()
-            .expect("diagnostic object");
-        let expected = exam_question_cid_for("morphism", "concept:source-unit", "rust")
-            .expect("source-unit rust question exists");
-
-        assert_eq!(diagnostic["kind"], "parse-error");
-        assert_eq!(diagnostic["exam_manifest_cid"], EXAM_MANIFEST_CID);
-        assert_eq!(diagnostic["exam_question_cid"], expected);
-    }
-
-    #[test]
     fn rust_lifter_parse_refusal_does_not_fire_read_error_variant() {
         let dir = rust_lifter_parse_refusal_workspace("discrim");
 
@@ -6749,27 +6690,9 @@ pub fn bitwise_not() -> i64 {
             .all(|item| item["kind"] != "read-error"));
     }
 
-    #[test]
-    fn rust_lifter_parse_refusal_cites_source_unit_not_related_add() {
-        let dir = rust_lifter_parse_refusal_workspace("structural");
-
-        let result = bind_lift(&json!({
-            "workspace_root": dir,
-            "source_paths": ["."]
-        }))
-        .expect("bind lift returns document");
-        let refusal_cid = result["diagnostics"][0]["exam_question_cid"]
-            .as_str()
-            .expect("exam question cid");
-        let related =
-            exam_question_cid_for("morphism", "concept:add", "rust").expect("add rust exists");
-
-        assert_ne!(refusal_cid, related);
-    }
-
     fn rust_lifter_parse_refusal_workspace(label: &str) -> PathBuf {
         let unique = format!(
-            "provekit-walk-citation-{}-{}",
+            "provekit-walk-parse-refusal-{}-{}",
             label,
             std::time::SystemTime::now()
                 .duration_since(std::time::UNIX_EPOCH)

@@ -560,9 +560,8 @@ cid = "blake3-512:" ++ hex(BLAKE3-512(cid_input))
 At run start, after all `--plugin` flags are processed and all built-ins are loaded (modulo §7 suppressions), the runtime SEALS the registry into a `PluginRegistryMemento`:
 
 ```cddl
-; Locked JCS key order: built_in_count, cid, exam_manifest_cid,
-; exam_manifest_set, failures, kind, load_order, loaded,
-; runtime_protocol_versions, schemaVersion, sealed_at
+; Locked JCS key order: built_in_count, cid, failures, kind,
+; load_order, loaded, runtime_protocol_versions, schemaVersion, sealed_at
 plugin-registry-memento = {
   envelope: {
     declaredAt: iso8601,
@@ -572,8 +571,6 @@ plugin-registry-memento = {
   header: {
     built_in_count:            uint,                         ; how many entries in load_order are built-ins
     cid:                       cid,                          ; DERIVED -- see §9.3
-    ? exam_manifest_cid:       cid,                          ; OPTIONAL in v1 amendment, REQUIRED in PEP v2
-    ? exam_manifest_set:       [* cid],                      ; OPTIONAL multiple admitted exam manifests
     failures:                  [* cid],                      ; PluginLoadFailureMemento CIDs, in load-attempt order
     kind:                      "plugin-registry",
     load_order:                [* { kind: plugin-kind, cid: cid, source: tstr } ],
@@ -588,8 +585,6 @@ plugin-registry-memento = {
 
 `load_order` preserves CLI order plus built-ins-at-end (§7); `loaded` is the same set sorted by CID (for content-addressing). Both fields are part of the CID; reordering CLI flags changes `load_order` bytes and rolls the registry CID, which rolls every downstream consumer that cited this registry. That is correct: a different load order is a different run.
 
-v1.0.0 of the exam-manifest amendment keeps both `exam_manifest_cid` and `exam_manifest_set` OPTIONAL for backward compatibility with already sealed registries. New v1 producers SHOULD populate `exam_manifest_cid` with the configured exam manifest CID or the runtime's shipped default manifest CID. PEP v2 will make `exam_manifest_cid` REQUIRED. `exam_manifest_set` remains OPTIONAL and is present only when a run intentionally admits more than one exam manifest.
-
 ### §9.2 Duplicate-CID collision rule
 
 Two plugins of the same `(kind, cid)` slot is a no-op (the second registration is silently dropped; the first wins). Two plugins of the same `kind` with DIFFERENT CIDs are BOTH registered; tie-breaking among them is kind-specific (consumer specs define it).
@@ -601,8 +596,6 @@ Two DIFFERENT plugin mementos asserting the same `(kind, cid)` are impossible by
 ```
 cid_input = JCS({
   "built_in_count":            <built_in_count>,
-  "exam_manifest_cid":         <exam_manifest_cid if present>,
-  "exam_manifest_set":         <exam_manifest_set if present>,
   "failures":                  <failures>,
   "kind":                      "plugin-registry",
   "load_order":                <load_order>,
@@ -614,48 +607,21 @@ cid_input = JCS({
 cid = "blake3-512:" ++ hex(BLAKE3-512(cid_input))
 ```
 
-`exam_manifest_cid` and `exam_manifest_set` are omitted from `cid_input` when absent. This preserves legacy registry CIDs while making any newly sealed registry that declares an exam manifest content-distinct.
-
 ### §9.4 Provenance propagation
 
 Any pipeline-output memento produced by a run MUST cite the `PluginRegistryMemento.cid` in its provenance. Concretely, every output memento's `provenance_cid` chain MUST resolve to a `ProvenanceMemento` whose `inputs` array contains the registry CID. This is the audit trail: a verifier can re-derive any output by replaying the exact plugin set the run used.
 
-## §10. Federation handshake
+## §10. Federation mechanics
 
-### §10.1 Exam manifest compatibility
-
-Two `PluginRegistryMemento`s federate if either:
-
-- `exam_manifest_cid` is byte-equal between them, establishing a shared exam vocabulary.
-- There exists a `cross-exam-translation-memento` declaring a per-question mapping between the two manifests. This translation memento is future work and outside v1.
-
-Otherwise the runtime MUST refuse at the federation boundary with `refused_reason: "exam-manifest-mismatch"` and both manifest CIDs in the refusal payload:
-
-```cddl
-exam-manifest-mismatch-refusal = {
-  refused_reason:      "exam-manifest-mismatch",
-  local_manifest_cid:  cid,
-  remote_manifest_cid: cid
-}
-```
-
-During the v1 transition, a registry that omits `exam_manifest_cid` is a legacy registry. A runtime MAY interpret a missing value as its shipped default exam manifest CID for compatibility. PEP v2 removes this ambiguity by requiring `exam_manifest_cid`.
-
-### §10.2 Multiple admitted manifests
-
-If `exam_manifest_set` is present, it names the complete set of exam manifests the run admits. Federation MAY proceed when the two admitted sets share at least one CID. If no CID overlaps and no `cross-exam-translation-memento` exists, the runtime MUST refuse with `exam-manifest-mismatch` using each side's primary `exam_manifest_cid` in the payload.
-
-## §11. Federation mechanics
-
-### §11.1 No central registry required
+### §10.1 No central registry required
 
 Plugins are content-addressed. A consumer references a plugin by CID (or by the kind plus a selection predicate the consumer spec defines). No directory service is required; a `PluginRegistryMemento` published alongside a `.proof` carries enough information for any verifier to fetch and re-load every plugin the run used (modulo plugin availability at the verifier's location, which is an out-of-protocol concern handled by the same content-addressed-storage mechanisms the rest of the substrate uses).
 
-### §11.2 Plugin dependencies
+### §10.2 Plugin dependencies
 
 A plugin's `content` payload MAY reference OTHER plugin CIDs (e.g., a sugar dict that depends on a particular lifter producing specific term-CIDs). The reference is content-addressed; the dependency graph is auditable. v1.0.0 of this protocol does NOT define an automatic dependency-resolution mechanism; consumer specs MAY require the runtime to refuse if a referenced dependency is not present in the registry.
 
-### §11.3 Future discovery service
+### §10.3 Future discovery service
 
 A federated discovery service (e.g., a content-addressed plugin index) is anticipated but is OUT OF SCOPE for v1.0.0. The CLI flag surface (§7) is the v1.0.0 interface. A future spec MAY define a discovery protocol on top of this base.
 

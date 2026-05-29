@@ -8,11 +8,10 @@ lifters) saw a stale view while the filesystem-walking catalog verb (PR-10)
 was correct.
 
 This script walks the catalog kind-directories and rebuilds their entries
-from the content-addressed filenames, while PRESERVING any pre-existing
-index entries that do NOT live under a known catalog kind-directory (the
-exam-manifest entry whose `path` points outside `catalog/` and is resolved
-by kit_dispatch's exam-manifest lookup). It does not invent a `kind`: the
-kind is derived from the directory name via KIND_BY_DIR.
+from the content-addressed filenames, while preserving any pre-existing
+index entries that do not live under a known catalog kind-directory. It does
+not invent a `kind`: the kind is derived from the directory name via
+KIND_BY_DIR.
 
 `kit-source-aliases/` is intentionally NOT indexed (it has never appeared in
 index.json); expanding the index's kind-set is out of scope for #1435.
@@ -107,8 +106,8 @@ def main() -> int:
             }
 
     # 2. Preserve pre-existing entries whose path is NOT under a rebuilt
-    #    kind-directory (e.g. the exam-manifest entry at exams/...). These are
-    #    resolved by other code paths and must not be dropped.
+    #    kind-directory. These are resolved by other code paths and must not
+    #    be dropped.
     for cid, meta in old_entries.items():
         path = meta.get("path", "")
         top = path.split("/", 1)[0] if path else ""

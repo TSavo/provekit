@@ -77,10 +77,6 @@ class JavaSourceLifterTest {
         JavaSourceLifter.Refusal refusal = result.refusals().get(0);
         assertEquals("C.f(int)", refusal.function());
         assertTrue(refusal.reason().contains("LAMBDA"), refusal.toString());
-        assertEquals(
-            JavaSourceLifter.examQuestionCidFor("sort-classification", "concept:Term", "java").orElseThrow(),
-            refusal.examQuestionCid());
-        assertEquals(JavaSourceLifter.EXAM_MANIFEST_CID, refusal.examManifestCid());
         assertEquals(0, result.declarations().stream()
             .map(Jcs.Obj.class::cast)
             .filter(o -> "C.f(int)".equals(o.stringField("fnName")))
@@ -105,28 +101,6 @@ class JavaSourceLifterTest {
         assertEquals(1, result.refusals().size());
         assertEquals("C.f(int)", result.refusals().get(0).function());
         assertFalse(result.refusals().stream().anyMatch(r -> "unsupported-return-sort".equals(r.kind())));
-    }
-
-    @Test
-    void unsupportedLambdaRefusalCitesTermQuestionNotRelatedSort() {
-        String source = """
-            import java.util.function.IntUnaryOperator;
-            class C {
-              int f(int x) {
-                IntUnaryOperator op = y -> y + 1;
-                return op.applyAsInt(x);
-              }
-            }
-            """;
-
-        JavaSourceLifter.LiftResult result = new JavaSourceLifter().liftSource("C.java", source);
-
-        String refusalCid = result.refusals().get(0).examQuestionCid();
-        String related = JavaSourceLifter.examQuestionCidFor(
-            "sort-classification",
-            "concept:Formula",
-            "java").orElseThrow();
-        assertFalse(refusalCid.equals(related));
     }
 
     @Test

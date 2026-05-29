@@ -63,8 +63,6 @@ A `TransportGapMemento` records: operation `<lang>:op` (a CID) does not have an 
 transport-gap-memento = {
   schema_version:    "1",
   kind:              "TransportGapMemento",
-  ? exam_manifest_cid: cid,                  ; OPTIONAL; the exam manifest version whose question is cited
-  ? exam_question_cid: cid,                  ; OPTIONAL; the specific exam question this refusal answers
   fn_name:           tstr,                   ; canonical name, e.g. "gap:python:add:to:concept:add"
   source_op_cid:     cid,                    ; the lifter-emitted <lang>:op contract memento
   target_op_cid:     cid,                    ; the concept:op hub contract memento (or null when the gap is "no target op")
@@ -138,12 +136,6 @@ option-status = "recommended"      ; the generator's suggestion
 The `gap-reason` `*_delta` fields mirror exactly what `mint_language_morphisms.py`'s `diff_reason()` already computes: `formal_sorts` first, then `pre`, then `return_sort` / `effects`, then `post.wp` (post-WPF: `wp_rule`), then `post.arity_shape`. The generator already has the structured comparison; this spec moves it from a `json.dumps`-into-a-prose-sentence into the memento's `reason` field.
 
 The memento is JCS-canonical, BLAKE3-512-hashed, signed with the foundation v0 key (or a delegated project key when a project records a `chosen` / `rejected` status), and lives in the catalog alongside the morphisms it concerns (§4).
-
-### §1.1.1 Exam-question citations
-
-`TransportGapMemento` may carry two optional citation fields: `exam_question_cid` and `exam_manifest_cid`. They connect a refusal to the exam-administration substrate without changing the meaning of the gap. Existing gap records that omit both fields remain valid. New emitters populate both fields when the refusal answers a question in the loaded exam manifest. The question CID is the BLAKE3-512 CID of the canonical JSON bytes of the matched question entry, and the manifest CID is the CID of the manifest version that supplied that question.
-
-The lookup key is the refusal's question `kind`, target `concept:*`, and language-bearing parameter. `morphism` uses `from_language`; `boundary-realization` uses `target_language`; `concept-realization`, `effect-classification`, and `sort-classification` use `language`. Legacy v1 manifests retain the earlier `realization`, `effect`, and `sort` names with the same language keys. If no manifest question matches, the emitter omits both fields and logs a diagnostic that the gap is outside the exam vocabulary. Consumers must treat missing citation fields as an uncited gap, not as a parse error.
 
 ### §1.2 `PartialMorphismMemento`
 

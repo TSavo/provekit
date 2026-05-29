@@ -574,11 +574,9 @@ public final class JavaBindLifter {
         if (stmt instanceof com.sun.source.tree.BreakTree || stmt instanceof com.sun.source.tree.ContinueTree) {
             return operatorShapeResult("concept:skip", List.of());
         }
-        // Structural loop lifts — the lifter emits the canonical substrate
-        // operator CID; how java REALIZES each operator (back to java syntax)
-        // is an exam question the java kit answers via RealizationMementos.
-        // Operators: concept:while (cond, body), concept:for (init, cond, step,
-        // body), concept:for-each (var, iterable, body).
+        // Structural loop lifts use canonical substrate operator CIDs:
+        // concept:while (cond, body), concept:for (init, cond, step, body),
+        // and concept:for-each (var, iterable, body).
         if (stmt instanceof WhileLoopTree t) {
             return operatorShapeResult("concept:while",
                 List.of(shapeOfExpression(t.getCondition()), shapeOfStatement(t.getStatement())));

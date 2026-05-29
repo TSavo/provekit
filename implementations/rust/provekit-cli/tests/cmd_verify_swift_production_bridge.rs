@@ -125,9 +125,7 @@ final class MathTests: XCTestCase {
     }
     fs::write(
         provekit.join("config.toml"),
-        "exam_manifest_cid = \"blake3-512:00000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000\"\n\
-         \n\
-         [[plugins]]\n\
+        "[[plugins]]\n\
          name = \"swift-source\"\n\
          surface = \"swift-source\"\n\
          layer = \"verify\"\n\

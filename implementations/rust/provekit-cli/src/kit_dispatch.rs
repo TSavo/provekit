@@ -1,12 +1,12 @@
 // SPDX-License-Identifier: Apache-2.0
 //
-// Kit-agnostic dispatcher for the realize / emit / exam-manifest surfaces.
+// Kit-agnostic dispatcher for the realize / emit surfaces.
 // cmd_materialize / cmd_emit / cmd_bind call into here to invoke per-language
 // plugins via PEP 1.7.0 (`2026-05-12-plugin-protocol.md`); none of those
 // commands carry language-specific code, no `if source_lang == "rust"` and
 // no `TargetStyle::*` arms.
 //
-// Three surfaces:
+// Dispatch surfaces:
 //
 //   1. `dispatch_realize(target_lang, library_tag, request)`
 //      Resolves a `kind = "realize"` (sugar/body-template) plugin for
@@ -17,14 +17,7 @@
 //      Invokes the PEP 1.7.0 `provekit.plugin.invoke` method and returns
 //      `{ source, is_stub }`.
 //
-//   3. `dispatch_exam_manifest(workspace_root, plugin_name, path_or_cid)`
-//      Resolves a `kind = "exam-manifest"` plugin via convention
-//      (`.provekit/exam-manifest/<name>/manifest.toml`, then user config).
-//      Invokes `provekit.plugin.invoke` with `{path}` or `{cid}` and returns
-//      the validated ExamManifestMemento. If no plugin manifest exists, the
-//      compiled-in default ExamManifestKit loads a local path or catalog CID.
-//
-//   3. `dispatch_emit(workspace_root, target_lang, framework, plan)`
+//   2. `dispatch_emit(workspace_root, target_lang, framework, plan)`
 //      Resolves a `kind = "emit"` plugin by `.provekit/emit/<surface>/manifest.toml`,
 //      where surfaces are target/framework packages such as `go-testing`.
 //      Invokes `provekit.plugin.invoke` with the neutral EmitPlan. The kit owns
@@ -46,9 +39,7 @@ use std::sync::{Mutex, OnceLock};
 pub use libprovekit::core::RealizeContractWitness;
 use libprovekit::core::RealizeTransport;
 pub use libprovekit::core::{RealizeRequest, RealizedSource};
-use libprovekit::ExamManifestKit;
 use provekit_canonicalizer::blake3_512_of;
-use provekit_ir_types::{Cid, ExamManifestMemento};
 use provekit_plugin_loader::{
     cid::compute_plugin_cid, write_plugin_registry_memento, PluginEnvelope, PluginHeader,
     PluginMemento, PluginMetadata, PluginRegistry, PluginRegistryMemento,
@@ -74,7 +65,8 @@ impl RealizeTransport for DispatchRealizeTransport {
 }
 
 const REGISTRY_SEALED_AT: &str = "1970-01-01T00:00:00.000Z";
-const REGISTRY_MANIFEST_KINDS: &[&str] = &["lift", "realize", "emit", "exam-manifest"];
+const REGISTRY_MANIFEST_KINDS: &[&str] = &["lift", "realize", "emit"];
+const PEP_1_7_0: &str = "pep/1.7.0";
 
 static RUN_PLUGIN_REGISTRIES: OnceLock<Mutex<BTreeMap<PathBuf, RunPluginRegistry>>> =
     OnceLock::new();
@@ -99,7 +91,6 @@ struct ManifestPluginRegistration {
     kind: String,
     surface: String,
     source: String,
-    manifest_path: PathBuf,
     parsed: ParsedManifest,
     memento: PluginMemento,
 }
@@ -166,11 +157,7 @@ fn build_run_plugin_registry(workspace_root: &Path) -> Result<RunPluginRegistry,
             .register(plugin.memento.clone(), &plugin.source)
             .map_err(|error| format!("register {}: {error}", plugin.source))?;
     }
-    let memento = registry.emit_registry_memento_with_exam_manifest(
-        REGISTRY_SEALED_AT,
-        Some(configured_exam_manifest_cid(workspace_root)),
-        None,
-    );
+    let memento = registry.emit_registry_memento(REGISTRY_SEALED_AT);
     let path = write_plugin_registry_memento(workspace_root, &memento)
         .map_err(|error| format!("write sealed PluginRegistryMemento: {error}"))?;
     Ok(RunPluginRegistry {
@@ -221,7 +208,6 @@ fn scan_manifest_plugins(workspace_root: &Path) -> Result<Vec<ManifestPluginRegi
                 kind: (*kind).to_string(),
                 surface,
                 source,
-                manifest_path,
                 parsed,
                 memento,
             });
@@ -262,7 +248,6 @@ fn manifest_plugin_memento(
         "working_dir": working_dir,
         "library_tag": parsed.library_tag.clone(),
         "capability_kind": parsed.capability_kind.clone(),
-        "exam_manifest_schema_version": parsed.exam_manifest_schema_version.clone(),
         "workspace_relative": manifest_path.starts_with(workspace_root),
     });
     let mut protocol_versions = parsed.protocol_versions.clone();
@@ -755,26 +740,6 @@ fn infer_realize_language_from_surface(surface: &str) -> Option<String> {
     )
 }
 
-fn registry_exam_manifest_command(
-    workspace_root: &Path,
-    plugin_name: &str,
-) -> Result<Option<ResolvedCommand>, String> {
-    let registry = run_plugin_registry_for_project(workspace_root)?;
-    let Some(plugin) = registry
-        .plugins
-        .iter()
-        .filter(|plugin| registry_authorizes_plugin(&registry, plugin))
-        .find(|plugin| plugin.kind == EXAM_MANIFEST_KIND && plugin.surface == plugin_name)
-    else {
-        return Ok(None);
-    };
-    validate_exam_manifest_plugin_manifest(&plugin.manifest_path, &plugin.parsed)?;
-    Ok(Some(resolved_command_from_manifest(
-        workspace_root,
-        &plugin.parsed,
-    )))
-}
-
 fn resolved_command_from_manifest(
     workspace_root: &Path,
     parsed: &ParsedManifest,
@@ -811,7 +776,7 @@ fn record_fallback_diagnostic(kind: &str, surface: &str) {
         .push(message);
 }
 
-/// Refusal raised when a kit (realize, emit, exam-manifest) cannot be reached
+/// Refusal raised when a kit cannot be reached.
 /// or returns an unusable response. Callers turn this into a
 /// `kit-plugin-unavailable` gap record and proceed loudly-bounded-lossy per
 /// `body-template-memento.md` §5.
@@ -872,7 +837,6 @@ struct ParsedManifest {
     provides_concepts: Vec<String>,
     protocol_versions: Vec<String>,
     capability_kind: Option<String>,
-    exam_manifest_schema_version: Option<String>,
 }
 
 fn parse_manifest(path: &Path) -> Result<ParsedManifest, String> {
@@ -888,7 +852,6 @@ fn parse_manifest(path: &Path) -> Result<ParsedManifest, String> {
     let mut provides_concepts: Vec<String> = Vec::new();
     let mut protocol_versions: Vec<String> = Vec::new();
     let mut capability_kind: Option<String> = None;
-    let mut exam_manifest_schema_version: Option<String> = None;
     let mut section = String::new();
     for line in text.lines() {
         let line = match line.find('#') {
@@ -932,9 +895,6 @@ fn parse_manifest(path: &Path) -> Result<ParsedManifest, String> {
             ("", "provides_concepts") => provides_concepts = parse_toml_string_array(val),
             ("", "command") => command = parse_toml_string_array(val),
             ("capabilities", "kind") => capability_kind = Some(val.trim_matches('"').to_string()),
-            ("capabilities", "exam_manifest_schema_version") => {
-                exam_manifest_schema_version = Some(val.trim_matches('"').to_string())
-            }
             _ => {}
         }
     }
@@ -952,7 +912,6 @@ fn parse_manifest(path: &Path) -> Result<ParsedManifest, String> {
         provides_concepts,
         protocol_versions,
         capability_kind,
-        exam_manifest_schema_version,
     })
 }
 
@@ -2105,449 +2064,6 @@ pub fn dispatch_materialize_check(
 // not the kit-agnostic dispatcher's job. The dispatcher does not know that
 // "java" is a runtime invocation; it just executes whatever the kit's
 // manifest declares as its launcher.
-
-// ============================================================================
-// Exam manifest dispatch (PEP 1.7.0 kind = "exam-manifest")
-// ============================================================================
-
-const EXAM_MANIFEST_KIND: &str = "exam-manifest";
-const EXAM_MANIFEST_SCHEMA_VERSION: &str = "provekit-exam-manifest/v1.1";
-const EXAM_MANIFEST_SCHEMA_VERSION_V1: &str = "provekit-exam-manifest/v1";
-const PEP_1_7_0: &str = "pep/1.7.0";
-pub const DEFAULT_EXAM_MANIFEST_CID: &str = "blake3-512:b38426ba10ee3a6c28e9e32cae9aa65cfb5b750950464d1e67e9d669956bd40288d25c247d0ec2d638fd63e2d235d944f419055c0374c78488b4be98da040451";
-#[allow(dead_code)]
-pub const EXAM_MANIFEST_MISMATCH_REASON: &str = "exam-manifest-mismatch";
-
-#[allow(dead_code)]
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub enum KitDispatchError {
-    ExamManifestMismatch {
-        local_manifest_cid: Cid,
-        remote_manifest_cid: Cid,
-    },
-}
-
-#[allow(dead_code)]
-impl KitDispatchError {
-    pub fn refused_reason(&self) -> &'static str {
-        match self {
-            Self::ExamManifestMismatch { .. } => EXAM_MANIFEST_MISMATCH_REASON,
-        }
-    }
-
-    pub fn refusal_payload(&self) -> Value {
-        match self {
-            Self::ExamManifestMismatch {
-                local_manifest_cid,
-                remote_manifest_cid,
-            } => json!({
-                "refused_reason": EXAM_MANIFEST_MISMATCH_REASON,
-                "local_manifest_cid": local_manifest_cid,
-                "remote_manifest_cid": remote_manifest_cid,
-            }),
-        }
-    }
-}
-
-impl std::fmt::Display for KitDispatchError {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        match self {
-            Self::ExamManifestMismatch {
-                local_manifest_cid,
-                remote_manifest_cid,
-            } => write!(
-                f,
-                "{}: local_manifest_cid={}, remote_manifest_cid={}",
-                EXAM_MANIFEST_MISMATCH_REASON, local_manifest_cid, remote_manifest_cid
-            ),
-        }
-    }
-}
-
-impl std::error::Error for KitDispatchError {}
-
-pub fn configured_exam_manifest_cid(project_root: &Path) -> Cid {
-    read_project_config(project_root)
-        .exam_manifest_cid
-        .filter(|cid| !cid.trim().is_empty())
-        .unwrap_or_else(|| DEFAULT_EXAM_MANIFEST_CID.to_string())
-}
-
-#[allow(dead_code)]
-pub fn seal_plugin_registry_for_project(
-    registry: &PluginRegistry,
-    project_root: &Path,
-    sealed_at: &str,
-) -> PluginRegistryMemento {
-    registry.emit_registry_memento_with_exam_manifest(
-        sealed_at,
-        Some(configured_exam_manifest_cid(project_root)),
-        None,
-    )
-}
-
-#[allow(dead_code)]
-pub fn federate_plugin_registries(
-    local: &PluginRegistryMemento,
-    remote: &PluginRegistryMemento,
-) -> Result<(), KitDispatchError> {
-    if local.header.cid == remote.header.cid {
-        return Ok(());
-    }
-
-    let local_cids = registry_exam_manifest_cids(local);
-    let remote_cids = registry_exam_manifest_cids(remote);
-    if local_cids.iter().any(|cid| remote_cids.contains(cid)) {
-        return Ok(());
-    }
-
-    Err(KitDispatchError::ExamManifestMismatch {
-        local_manifest_cid: registry_primary_exam_manifest_cid(local),
-        remote_manifest_cid: registry_primary_exam_manifest_cid(remote),
-    })
-}
-
-#[allow(dead_code)]
-fn registry_exam_manifest_cids(registry: &PluginRegistryMemento) -> Vec<Cid> {
-    let mut cids = registry
-        .header
-        .exam_manifest_set
-        .clone()
-        .unwrap_or_default();
-    if let Some(cid) = &registry.header.exam_manifest_cid {
-        cids.push(cid.clone());
-    }
-    if cids.is_empty() {
-        cids.push(DEFAULT_EXAM_MANIFEST_CID.to_string());
-    }
-    cids.sort();
-    cids.dedup();
-    cids
-}
-
-#[allow(dead_code)]
-fn registry_primary_exam_manifest_cid(registry: &PluginRegistryMemento) -> Cid {
-    registry
-        .header
-        .exam_manifest_cid
-        .clone()
-        .unwrap_or_else(|| DEFAULT_EXAM_MANIFEST_CID.to_string())
-}
-
-pub fn dispatch_exam_manifest(
-    workspace_root: &Path,
-    plugin_name: &str,
-    path_or_cid: &str,
-) -> Result<ExamManifestMemento, KitUnavailable> {
-    if let Some(path) = plugin_name.strip_prefix("builtin-path:") {
-        return load_builtin_exam_manifest(workspace_root, path).map_err(|detail| KitUnavailable {
-            kit_kind: EXAM_MANIFEST_KIND,
-            language: "builtin".to_string(),
-            detail,
-        });
-    }
-
-    match resolve_exam_manifest_command(workspace_root, plugin_name) {
-        Ok(Some(resolved)) => {
-            invoke_exam_manifest(&resolved, path_or_cid).map_err(|detail| KitUnavailable {
-                kit_kind: EXAM_MANIFEST_KIND,
-                language: plugin_name.to_string(),
-                detail,
-            })
-        }
-        Ok(None) => load_builtin_exam_manifest(workspace_root, path_or_cid).map_err(|detail| {
-            KitUnavailable {
-                kit_kind: EXAM_MANIFEST_KIND,
-                language: plugin_name.to_string(),
-                detail,
-            }
-        }),
-        Err(error) => Err(error),
-    }
-}
-
-fn resolve_exam_manifest_command(
-    workspace_root: &Path,
-    plugin_name: &str,
-) -> Result<Option<ResolvedCommand>, KitUnavailable> {
-    match registry_exam_manifest_command(workspace_root, plugin_name) {
-        Ok(Some(command)) => return Ok(Some(command)),
-        Ok(None) => record_fallback_diagnostic(EXAM_MANIFEST_KIND, plugin_name),
-        Err(detail) => {
-            return Err(KitUnavailable {
-                kit_kind: EXAM_MANIFEST_KIND,
-                language: plugin_name.to_string(),
-                detail,
-            })
-        }
-    }
-
-    let project_manifest = workspace_root
-        .join(".provekit")
-        .join(EXAM_MANIFEST_KIND)
-        .join(plugin_name)
-        .join("manifest.toml");
-    let user_manifest = std::env::var_os("HOME").map(|home| {
-        PathBuf::from(home)
-            .join(".config")
-            .join("provekit")
-            .join(EXAM_MANIFEST_KIND)
-            .join(plugin_name)
-            .join("manifest.toml")
-    });
-
-    let manifest = if project_manifest.exists() {
-        Some(project_manifest)
-    } else {
-        user_manifest.filter(|path| path.exists())
-    };
-    let Some(manifest) = manifest else {
-        return Ok(None);
-    };
-
-    let parsed = parse_manifest(&manifest).map_err(|detail| KitUnavailable {
-        kit_kind: EXAM_MANIFEST_KIND,
-        language: plugin_name.to_string(),
-        detail,
-    })?;
-    validate_exam_manifest_plugin_manifest(&manifest, &parsed).map_err(|detail| {
-        KitUnavailable {
-            kit_kind: EXAM_MANIFEST_KIND,
-            language: plugin_name.to_string(),
-            detail,
-        }
-    })?;
-    Ok(Some(resolved_command_from_manifest(
-        workspace_root,
-        &parsed,
-    )))
-}
-
-fn validate_exam_manifest_plugin_manifest(
-    manifest: &Path,
-    parsed: &ParsedManifest,
-) -> Result<(), String> {
-    if !parsed
-        .protocol_versions
-        .iter()
-        .any(|version| version == PEP_1_7_0)
-    {
-        return Err(format!(
-            "manifest {} must declare protocol_versions = [\"{}\"]",
-            manifest.display(),
-            PEP_1_7_0
-        ));
-    }
-    if parsed.capability_kind.as_deref() != Some(EXAM_MANIFEST_KIND) {
-        return Err(format!(
-            "manifest {} must declare [capabilities].kind = \"{}\"",
-            manifest.display(),
-            EXAM_MANIFEST_KIND
-        ));
-    }
-    if parsed.exam_manifest_schema_version.as_deref() != Some(EXAM_MANIFEST_SCHEMA_VERSION)
-        && parsed.exam_manifest_schema_version.as_deref() != Some(EXAM_MANIFEST_SCHEMA_VERSION_V1)
-    {
-        return Err(format!(
-            "manifest {} must declare [capabilities].exam_manifest_schema_version = \"{}\" or \"{}\"",
-            manifest.display(),
-            EXAM_MANIFEST_SCHEMA_VERSION,
-            EXAM_MANIFEST_SCHEMA_VERSION_V1
-        ));
-    }
-    Ok(())
-}
-
-fn invoke_exam_manifest(
-    cmd_spec: &ResolvedCommand,
-    path_or_cid: &str,
-) -> Result<ExamManifestMemento, String> {
-    if cmd_spec.argv.is_empty() {
-        return Err("empty command".to_string());
-    }
-    let mut command = Command::new(&cmd_spec.argv[0]);
-    if cmd_spec.argv.len() > 1 {
-        command.args(&cmd_spec.argv[1..]);
-    }
-    if let Some(wd) = &cmd_spec.working_dir {
-        command.current_dir(wd);
-    }
-    command.stdin(Stdio::piped());
-    command.stdout(Stdio::piped());
-    command.stderr(Stdio::null());
-
-    let mut child = command
-        .spawn()
-        .map_err(|error| format!("spawn exam-manifest kit: {error}"))?;
-    let req = json!({
-        "jsonrpc": "2.0",
-        "id": 1,
-        "method": "provekit.plugin.invoke",
-        "params": exam_manifest_request_params(path_or_cid)?,
-    });
-
-    {
-        let stdin = child
-            .stdin
-            .as_mut()
-            .ok_or("exam-manifest kit stdin unavailable".to_string())?;
-        let req_str = serde_json::to_string(&req).expect("serialize exam-manifest request");
-        stdin
-            .write_all(req_str.as_bytes())
-            .and_then(|()| stdin.write_all(b"\n"))
-            .map_err(|error| format!("write exam-manifest request: {error}"))?;
-    }
-
-    let stdout = child
-        .stdout
-        .take()
-        .ok_or("exam-manifest kit stdout unavailable".to_string())?;
-    let mut reader = BufReader::new(stdout);
-    let mut line = String::new();
-    reader
-        .read_line(&mut line)
-        .map_err(|error| format!("read exam-manifest response: {error}"))?;
-    let _ = child.kill();
-    let _ = child.wait();
-
-    let value: Value = serde_json::from_str(line.trim()).map_err(|error| {
-        format!(
-            "exam-manifest response not valid JSON: {error}; raw={}",
-            line.trim()
-        )
-    })?;
-    if let Some(error) = value.get("error") {
-        return Err(format!("exam-manifest kit error: {error}"));
-    }
-    let result = value
-        .get("result")
-        .cloned()
-        .ok_or_else(|| format!("exam-manifest response missing result; raw={}", line.trim()))?;
-    let manifest: ExamManifestMemento = serde_json::from_value(result)
-        .map_err(|error| format!("decode ExamManifestMemento: {error}"))?;
-    validate_exam_manifest_memento(&manifest)?;
-    Ok(manifest)
-}
-
-fn exam_manifest_request_params(path_or_cid: &str) -> Result<Value, String> {
-    if path_or_cid.is_empty() {
-        return Err("exam manifest target is empty".to_string());
-    }
-    if path_or_cid.starts_with("blake3-512:") {
-        Ok(json!({ "cid": path_or_cid }))
-    } else {
-        Ok(json!({ "path": path_or_cid }))
-    }
-}
-
-fn load_builtin_exam_manifest(
-    workspace_root: &Path,
-    path_or_cid: &str,
-) -> Result<ExamManifestMemento, String> {
-    let target = path_or_cid
-        .strip_prefix("builtin-path:")
-        .unwrap_or(path_or_cid);
-    let path = if target.starts_with("blake3-512:") {
-        find_exam_manifest_cid(workspace_root, target)?
-    } else {
-        resolve_workspace_path(workspace_root, target)
-    };
-    ExamManifestKit::new()
-        .load_path(&path)
-        .map_err(|error| error.to_string())
-}
-
-fn resolve_workspace_path(workspace_root: &Path, raw: &str) -> PathBuf {
-    let path = PathBuf::from(raw);
-    if path.is_absolute() {
-        path
-    } else {
-        workspace_root.join(path)
-    }
-}
-
-fn find_exam_manifest_cid(workspace_root: &Path, cid: &str) -> Result<PathBuf, String> {
-    let roots = [
-        workspace_root.join("catalog"),
-        workspace_root.join(".provekit").join("catalog"),
-        workspace_root.to_path_buf(),
-    ];
-    for root in roots {
-        let index = root.join("index.json");
-        if index.exists() {
-            if let Some(path) = exam_manifest_path_from_index(&root, &index, cid)? {
-                return Ok(path);
-            }
-        }
-        let exams = root.join("exams");
-        if exams.is_dir() {
-            for entry in std::fs::read_dir(&exams)
-                .map_err(|error| format!("read {}: {error}", exams.display()))?
-            {
-                let entry =
-                    entry.map_err(|error| format!("read {} entry: {error}", exams.display()))?;
-                let path = entry.path();
-                if path.extension().and_then(|ext| ext.to_str()) != Some("json") {
-                    continue;
-                }
-                if let Ok(manifest) = ExamManifestKit::new().load_path(&path) {
-                    if manifest.header.cid == cid {
-                        return Ok(path);
-                    }
-                }
-            }
-        }
-    }
-    Err(format!(
-        "exam manifest CID {cid} not found in catalog/index.json or exams/"
-    ))
-}
-
-fn exam_manifest_path_from_index(
-    catalog_root: &Path,
-    index: &Path,
-    cid: &str,
-) -> Result<Option<PathBuf>, String> {
-    let raw = std::fs::read_to_string(index)
-        .map_err(|error| format!("read {}: {error}", index.display()))?;
-    let value: Value = serde_json::from_str(&raw)
-        .map_err(|error| format!("parse {}: {error}", index.display()))?;
-    let Some(entry) = value
-        .get("entries")
-        .and_then(Value::as_object)
-        .and_then(|entries| entries.get(cid))
-    else {
-        return Ok(None);
-    };
-    let kind = entry.get("kind").and_then(Value::as_str).unwrap_or("");
-    if kind != "exam" {
-        return Err(format!(
-            "catalog entry {cid} in {} has kind `{kind}`, expected `exam`",
-            index.display()
-        ));
-    }
-    let path = entry
-        .get("path")
-        .and_then(Value::as_str)
-        .ok_or_else(|| format!("catalog entry {cid} in {} missing path", index.display()))?;
-    Ok(Some(catalog_root.join(path)))
-}
-
-fn validate_exam_manifest_memento(manifest: &ExamManifestMemento) -> Result<(), String> {
-    manifest
-        .validate()
-        .map_err(|error| format!("validate ExamManifestMemento: {error}"))?;
-    let recomputed = manifest
-        .recompute_header_cid()
-        .map_err(|error| format!("recompute ExamManifestMemento CID: {error}"))?;
-    if recomputed != manifest.header.cid {
-        return Err(format!(
-            "ExamManifestMemento header.cid mismatch: declared {}, recomputed {}",
-            manifest.header.cid, recomputed
-        ));
-    }
-    Ok(())
-}
 
 // ============================================================================
 // Emit witness dispatch (ORP witness emitter)
