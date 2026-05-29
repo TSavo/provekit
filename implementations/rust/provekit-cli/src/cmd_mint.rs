@@ -826,19 +826,7 @@ fn mint_lift_response(
             std::fs::write(&out_path, &bytes)
                 .map_err(|e| format!("write {}: {e}", out_path.display()))?;
 
-            if !quiet {
-                for d in lift_resp
-                    .get("diagnostics")
-                    .and_then(|v| v.as_array())
-                    .into_iter()
-                    .flatten()
-                {
-                    let s = d.as_str().unwrap_or("");
-                    if !s.is_empty() {
-                        println!("{}: {s}", "note".dimmed());
-                    }
-                }
-            }
+            print_lift_diagnostics(&lift_resp, quiet);
 
             Ok(DispatchResult {
                 filename_cid,
@@ -873,18 +861,7 @@ fn mint_lift_response(
             std::fs::write(&out_path, &minted.bytes)
                 .map_err(|e| format!("write {}: {e}", out_path.display()))?;
 
-            if !quiet {
-                let diags = lift_resp.get("diagnostics").and_then(|v| v.as_array());
-
-                if let Some(diags) = diags {
-                    for d in diags {
-                        let s = d.as_str().unwrap_or("");
-                        if !s.is_empty() {
-                            println!("{}: {s}", "note".dimmed());
-                        }
-                    }
-                }
-            }
+            print_lift_diagnostics(&lift_resp, quiet);
 
             Ok(DispatchResult {
                 filename_cid: minted.filename_cid,
@@ -910,6 +887,59 @@ fn redact_lift_result(mut lift_resp: Value) -> Value {
         }
     }
     lift_resp
+}
+
+fn print_lift_diagnostics(lift_resp: &Value, quiet: bool) {
+    if quiet {
+        return;
+    }
+    let Some(diags) = lift_resp.get("diagnostics").and_then(|v| v.as_array()) else {
+        return;
+    };
+    for diagnostic in diags {
+        if let Some(rendered) = render_lift_diagnostic(diagnostic) {
+            println!("{}: {rendered}", "note".dimmed());
+        }
+    }
+}
+
+fn render_lift_diagnostic(diagnostic: &Value) -> Option<String> {
+    if let Some(s) = diagnostic.as_str().filter(|s| !s.is_empty()) {
+        return Some(s.to_string());
+    }
+    let Some(obj) = diagnostic.as_object() else {
+        return None;
+    };
+    let kind = obj
+        .get("kind")
+        .and_then(|v| v.as_str())
+        .unwrap_or("diagnostic");
+    let mut rendered = kind.to_string();
+    if let Some(reason) = obj.get("reason").and_then(|v| v.as_str()) {
+        rendered.push_str(": ");
+        rendered.push_str(reason);
+    }
+    if let Some(callee) = obj.get("callee").and_then(|v| v.as_str()) {
+        rendered.push_str(": ");
+        rendered.push_str(callee);
+    }
+    if let Some(file) = obj.get("file").and_then(|v| v.as_str()) {
+        rendered.push_str(" at ");
+        rendered.push_str(file);
+        if let Some(line) = obj.get("line").and_then(|v| v.as_i64()) {
+            rendered.push(':');
+            rendered.push_str(&line.to_string());
+            if let Some(col) = obj.get("col").and_then(|v| v.as_i64()) {
+                rendered.push(':');
+                rendered.push_str(&col.to_string());
+            }
+        }
+    }
+    if rendered == "diagnostic" {
+        serde_json::to_string(diagnostic).ok()
+    } else {
+        Some(rendered)
+    }
 }
 
 fn mint_result_claim(

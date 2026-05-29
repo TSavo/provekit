@@ -587,6 +587,114 @@ done
 }
 
 #[test]
+fn mint_surfaces_structured_lift_gap_diagnostics_from_consumer_surfaces() {
+    let dir = tempfile::tempdir().expect("create tempdir");
+    let project = dir.path().join("project");
+    let producer_manifest = project.join(".provekit/lift/producer");
+    let consumer_manifest = project.join(".provekit/lift/consumer");
+    let out_dir = dir.path().join("out");
+    fs::create_dir_all(&producer_manifest).expect("create producer manifest dir");
+    fs::create_dir_all(&consumer_manifest).expect("create consumer manifest dir");
+    fs::create_dir_all(project.join("src")).expect("create src dir");
+    fs::write(
+        project.join("src/lib.rs"),
+        "pub fn caller() -> Option<i32> { Some(1) }\n",
+    )
+    .expect("write source");
+    fs::write(
+        project.join(".provekit/config.toml"),
+        r#"[[plugins]]
+name = "producer"
+surface = "producer"
+emit = "ir-document"
+
+[[plugins]]
+name = "consumer"
+surface = "consumer"
+"#,
+    )
+    .expect("write project config");
+
+    let producer = dir.path().join("producer.sh");
+    write_executable(
+        &producer,
+        r#"#!/usr/bin/env bash
+set -euo pipefail
+while IFS= read -r line; do
+  if [[ "$line" == *'"method":"initialize"'* ]]; then
+    printf '%s\n' '{"jsonrpc":"2.0","id":1,"result":{"name":"producer","protocol_version":"pep/1.7.0","capabilities":{}}}'
+  elif [[ "$line" == *'"method":"lift"'* ]]; then
+    printf '%s\n' '{"jsonrpc":"2.0","id":2,"result":{"kind":"ir-document","ir":[{"kind":"contract","name":"caller@src/lib.rs:1:1","outBinding":"out","post":{"kind":"atomic","name":"caller_post","args":[]}}],"diagnostics":[]}}'
+  elif [[ "$line" == *'"method":"shutdown"'* ]]; then
+    printf '%s\n' '{"jsonrpc":"2.0","id":3,"result":null}'
+    exit 0
+  fi
+done
+"#,
+    );
+
+    let consumer = dir.path().join("consumer.sh");
+    write_executable(
+        &consumer,
+        r#"#!/usr/bin/env bash
+set -euo pipefail
+while IFS= read -r line; do
+  if [[ "$line" == *'"method":"initialize"'* ]]; then
+    printf '%s\n' '{"jsonrpc":"2.0","id":1,"result":{"name":"consumer","protocol_version":"pep/1.7.0","capabilities":{}}}'
+  elif [[ "$line" == *'"method":"provekit.plugin.lift_implications"'* ]]; then
+    printf '%s\n' '{"jsonrpc":"2.0","id":2,"result":{"kind":"ir-document","ir":[],"diagnostics":[{"kind":"lift-gap","reason":"no-contract-for-callee","callee":"Some","file":"src/lib.rs","line":1,"col":34}]}}'
+  elif [[ "$line" == *'"method":"shutdown"'* ]]; then
+    printf '%s\n' '{"jsonrpc":"2.0","id":3,"result":null}'
+    exit 0
+  fi
+done
+"#,
+    );
+
+    fs::write(
+        producer_manifest.join("manifest.toml"),
+        format!(
+            "name = \"producer\"\ncommand = [\"{}\"]\n",
+            producer.display()
+        ),
+    )
+    .expect("write producer manifest");
+    fs::write(
+        consumer_manifest.join("manifest.toml"),
+        format!(
+            "name = \"consumer\"\ncommand = [\"{}\"]\nmethod = \"provekit.plugin.lift_implications\"\nphase = \"consumer\"\n",
+            consumer.display()
+        ),
+    )
+    .expect("write consumer manifest");
+
+    let output = output_retrying_etxtbsy(
+        Command::new(provekit_bin())
+            .arg("mint")
+            .arg("--project")
+            .arg(&project)
+            .arg("--out")
+            .arg(&out_dir)
+            .arg("--no-attest"),
+    );
+
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(
+        output.status.success(),
+        "mint should succeed while surfacing non-fatal lift gaps\nstdout:\n{stdout}\nstderr:\n{stderr}"
+    );
+    assert!(
+        stdout.contains("lift-gap") && stdout.contains("no-contract-for-callee"),
+        "structured lift-gap diagnostic should be visible in mint output\nstdout:\n{stdout}"
+    );
+    assert!(
+        stdout.contains("Some") && stdout.contains("src/lib.rs:1:34"),
+        "diagnostic should name the uncovered Rust callee and locus\nstdout:\n{stdout}"
+    );
+}
+
+#[test]
 fn mint_uses_path_document_from_project_config() {
     let dir = tempfile::tempdir().expect("create tempdir");
     let project = dir.path().join("project");
