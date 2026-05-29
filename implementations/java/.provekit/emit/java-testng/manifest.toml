@@ -1,0 +1,6 @@
+name = "java-testng"
+version = "0.1.0"
+protocol_versions = ["pep/1.7.0"]
+kind = "emit"
+command = ["java", "-jar", "provekit-emit-java-testng/target/provekit-emit-java-testng.jar", "--rpc"]
+working_dir = "."
