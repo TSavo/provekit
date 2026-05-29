@@ -14,6 +14,7 @@ import {
   liftTypeScriptSourcePaths,
   liftTypeScriptSourceText,
 } from "./index.js";
+import * as typeScriptSource from "./index.js";
 
 function tempDir(prefix = "provekit-ts-source-"): string {
   return mkdtempSync(join(tmpdir(), prefix));
@@ -63,13 +64,182 @@ function selectRows(db: Database.Database, sql: string, args: unknown[]) {
     expect(binding.body_source.span).toEqual({ start_line: 5, start_col: 0, end_line: 8, end_col: 1 });
     const expectedSpan = source.split(/(?<=\n)/).slice(4, 8).join("").replace(/\n$/, "");
     expect(binding.body_source.source_cid).toBe(computeCid(Buffer.from(expectedSpan, "utf8")));
+    expect(binding.body_source.body_text).toBe("return db.prepare(sql).all(args);");
+    expect(binding.body_source.param_names).toEqual(["db", "sql", "args"]);
+    expect(binding.body_source.ast_template).toMatchObject({
+      kind: "block",
+      stmts: [
+        {
+          kind: "return",
+          expr: {
+            kind: "method_call",
+            method: "all",
+            args: [{ kind: "param_ref", index: 3 }],
+          },
+        },
+      ],
+    });
+    expect(binding.body_source.template_cid).toBe(canonicalCid(binding.body_source.ast_template));
     expect(canonicalJsonString(binding)).not.toContain("emission_template");
+  });
+
+  it("sugar body template cid is stable under parameter renaming", () => {
+    const sourceA = `
+import { sugar } from "provekit";
+
+@sugar.bind({ concept: "concept:http-request", library: "fetch-lib" })
+function fetchUrl(url: string, headers: Headers): Response {
+  return client.execute(url, headers);
+}
+`;
+    const sourceB = `
+import { sugar } from "provekit";
+
+@sugar.bind({ concept: "concept:http-request", library: "fetch-lib" })
+function fetchUrl(uri: string, h: Headers): Response {
+  return client.execute(uri, h);
+}
+`;
+
+    const bodyA = liftTypeScriptLibraryBindingsText(sourceA, "src/a.ts").libraryBindings[0]!.body_source;
+    const bodyB = liftTypeScriptLibraryBindingsText(sourceB, "src/b.ts").libraryBindings[0]!.body_source;
+
+    expect(bodyA.ast_template).toEqual(bodyB.ast_template);
+    expect(bodyA.template_cid).toBe(bodyB.template_cid);
+    expect(bodyA.source_cid).not.toBe(bodyB.source_cid);
+  });
+
+  it("recognizes exact alpha-equivalent TypeScript source from binding templates", () => {
+    const shim = `
+import { sugar } from "provekit";
+
+@sugar.bind({ concept: "concept:http-request", library: "fetch-lib", family: "concept:family:http" })
+function fetchUrl(url: string, headers: Headers): Response {
+  return client.execute(url, headers);
+}
+`;
+    const user = `
+export function send(uri: string, h: Headers): Response {
+  return client.execute(uri, h);
+}
+`;
+    const sugarEntry = liftTypeScriptLibraryBindingsText(shim, "src/shim.ts").libraryBindings[0]!;
+    const recognize = (typeScriptSource as Record<string, any>).recognizeTypeScriptSourcesText;
+
+    expect(typeof recognize).toBe("function");
+    const response = recognize(user, "src/user.ts", [
+      {
+        concept_name: sugarEntry.concept_name,
+        library_tag: sugarEntry.target_library_tag,
+        family: "concept:family:http",
+        ast_template: sugarEntry.body_source.ast_template,
+        template_cid: sugarEntry.body_source.template_cid,
+        param_names: sugarEntry.body_source.param_names,
+        contract_cid: "blake3-512:cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+      },
+    ]);
+
+    expect(response.tags).toHaveLength(1);
+    expect(response.tags[0]).toMatchObject({
+      file: "src/user.ts",
+      function_name: "send",
+      concept_name: "concept:http-request",
+      library_tag: "fetch-lib",
+      family: "concept:family:http",
+      template_cid: sugarEntry.body_source.template_cid,
+      match_tier: "exact",
+      param_bindings: [
+        { index: 1, source_text: "uri" },
+        { index: 2, source_text: "h" },
+      ],
+    });
+  });
+
+  it("returns no recognize tags for non-matching TypeScript source", () => {
+    const shim = `
+import { sugar } from "provekit";
+
+@sugar.bind({ concept: "concept:http-request", library: "fetch-lib" })
+function fetchUrl(url: string, headers: Headers): Response {
+  return client.execute(url, headers);
+}
+`;
+    const user = `
+export function send(uri: string, h: Headers): Response {
+  return other.execute(uri, h);
+}
+`;
+    const sugarEntry = liftTypeScriptLibraryBindingsText(shim, "src/shim.ts").libraryBindings[0]!;
+    const recognize = (typeScriptSource as Record<string, any>).recognizeTypeScriptSourcesText;
+
+    expect(typeof recognize).toBe("function");
+    expect(
+      recognize(user, "src/user.ts", [
+        {
+          concept_name: sugarEntry.concept_name,
+          library_tag: sugarEntry.target_library_tag,
+          ast_template: sugarEntry.body_source.ast_template,
+          template_cid: sugarEntry.body_source.template_cid,
+          param_names: sugarEntry.body_source.param_names,
+          contract_cid: null,
+        },
+      ]).tags,
+    ).toEqual([]);
+  });
+
+  it("routes multiple TypeScript binding templates by template cid", () => {
+    const shim = `
+import { sugar } from "provekit";
+
+@sugar.bind({ concept: "concept:http-request", library: "fetch-lib", family: "concept:family:http" })
+function fetchUrl(url: string, headers: Headers): Response {
+  return client.execute(url, headers);
+}
+
+@sugar.bind({ concept: "concept:sql-execute", library: "sql-lib", family: "concept:family:sql" })
+function runSql(db: Database, sql: string, args: unknown[]): Result {
+  return db.execute(sql, args);
+}
+`;
+    const user = `
+export function send(uri: string, h: Headers): Response {
+  return client.execute(uri, h);
+}
+
+export function query(conn: Database, statement: string, values: unknown[]): Result {
+  return conn.execute(statement, values);
+}
+`;
+    const entries = liftTypeScriptLibraryBindingsText(shim, "src/shim.ts").libraryBindings;
+    const recognize = (typeScriptSource as Record<string, any>).recognizeTypeScriptSourcesText;
+
+    expect(typeof recognize).toBe("function");
+    const response = recognize(
+      user,
+      "src/user.ts",
+      entries.map((entry) => ({
+        concept_name: entry.concept_name,
+        library_tag: entry.target_library_tag,
+        family: (entry as any).family,
+        ast_template: entry.body_source.ast_template,
+        template_cid: entry.body_source.template_cid,
+        param_names: entry.body_source.param_names,
+        contract_cid: `${entry.concept_name}:contract`,
+      })),
+    );
+
+    expect(response.tags).toHaveLength(2);
+    expect(Object.fromEntries(response.tags.map((tag: any) => [tag.concept_name, tag.function_name]))).toEqual({
+      "concept:http-request": "send",
+      "concept:sql-execute": "query",
+    });
+    expect(response.tags.every((tag: any) => tag.match_tier === "exact")).toBe(true);
   });
 
   // -----------------------------------------------------------------
   // #1357 / #1355: family + version axes on @sugar.bind decorators.
   // Parallel to walk_rpc's rust-side tests. Both fields are optional;
-  // absent on decorator ↔ absent in emitted JSON.
+  // absent on decorator means absent in emitted JSON.
   // -----------------------------------------------------------------
 
   it("lifts family + library_version when present on @sugar.bind", () => {

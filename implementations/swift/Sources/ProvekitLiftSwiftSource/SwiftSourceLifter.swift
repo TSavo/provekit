@@ -121,6 +121,559 @@ public enum SwiftSourceLifter {
         }
         return result
     }
+
+    public static func liftLibraryBindingsSource(_ source: String, path: String) -> SwiftSourceLiftResult {
+        let sourceFile = Parser.parse(source: source)
+        let converter = SourceLocationConverter(fileName: path, tree: sourceFile)
+        let collector = SwiftSugarFunctionCollector()
+        collector.walk(sourceFile)
+
+        var result = SwiftSourceLiftResult()
+        for function in collector.functions {
+            guard let entry = SwiftSugarBindingEntryBuilder.entry(
+                for: function,
+                sourcePath: path,
+                converter: converter
+            ) else {
+                continue
+            }
+            result.ir.append(entry)
+        }
+        return result
+    }
+
+    public static func liftLibraryBindingsPaths(workspaceRoot: String, sourcePaths: [String]) -> SwiftSourceLiftResult {
+        var result = SwiftSourceLiftResult()
+        let root = URL(fileURLWithPath: workspaceRoot.isEmpty ? "." : workspaceRoot).standardizedFileURL
+        let rootPath = root.path
+        let fileManager = FileManager.default
+
+        for requested in sourcePaths.isEmpty ? ["."] : sourcePaths {
+            let requestedURL = URL(fileURLWithPath: requested, relativeTo: root).standardizedFileURL
+            let fullPath = requestedURL.path
+            guard isPath(fullPath, inside: rootPath) else {
+                result.refusals.append(SwiftSourceIR.refusal(
+                    kind: "path-traversal",
+                    function: nil,
+                    line: nil,
+                    reason: "path '\(requested)' escapes workspace root '\(rootPath)'"
+                ))
+                continue
+            }
+
+            var isDirectory: ObjCBool = false
+            guard fileManager.fileExists(atPath: fullPath, isDirectory: &isDirectory) else {
+                result.diagnostics.append(.object([
+                    ("severity", .string("warning")),
+                    ("message", .string("path not found: \(fullPath)")),
+                ]))
+                continue
+            }
+
+            let files: [String]
+            if isDirectory.boolValue {
+                let enumerator = fileManager.enumerator(atPath: fullPath)
+                files = (enumerator?.compactMap { item -> String? in
+                    guard let rel = item as? String, rel.hasSuffix(".swift") else {
+                        return nil
+                    }
+                    return URL(fileURLWithPath: rel, relativeTo: requestedURL).standardizedFileURL.path
+                } ?? []).sorted()
+            } else if fullPath.hasSuffix(".swift") {
+                files = [fullPath]
+            } else {
+                files = []
+            }
+
+            for file in files {
+                do {
+                    let source = try String(contentsOfFile: file, encoding: .utf8)
+                    let displayPath = relativePath(file, root: rootPath)
+                    let fileResult = liftLibraryBindingsSource(source, path: displayPath)
+                    result.ir.append(contentsOf: fileResult.ir)
+                    result.diagnostics.append(contentsOf: fileResult.diagnostics)
+                    result.opacityReport.append(contentsOf: fileResult.opacityReport)
+                    result.refusals.append(contentsOf: fileResult.refusals)
+                } catch {
+                    result.refusals.append(SwiftSourceIR.refusal(
+                        kind: "io-error",
+                        function: nil,
+                        line: nil,
+                        reason: "cannot read '\(file)': \(error)"
+                    ))
+                }
+            }
+        }
+        return result
+    }
+
+    public static func recognizeSource(
+        _ source: String,
+        path: String,
+        bindingTemplates: [JcsCanonical]
+    ) -> [JcsCanonical] {
+        let sourceFile = Parser.parse(source: source)
+        let converter = SourceLocationConverter(fileName: path, tree: sourceFile)
+        let collector = SwiftSugarFunctionCollector()
+        collector.walk(sourceFile)
+
+        var bindingsByCID: [String: JcsCanonical] = [:]
+        for binding in bindingTemplates {
+            guard let cid = jcsField("template_cid", in: binding).stringValue, !cid.isEmpty else {
+                continue
+            }
+            bindingsByCID[cid] = binding
+        }
+
+        var tags: [JcsCanonical] = []
+        for function in collector.functions {
+            guard let body = function.body else {
+                continue
+            }
+            let paramNames = swiftParamNames(function)
+            let template = SwiftAstTemplateBuilder(paramNames: paramNames).block(body)
+            let templateCID = computeJcsCid(template)
+            guard let binding = bindingsByCID[templateCID] else {
+                continue
+            }
+            tags.append(SwiftSugarBindingEntryBuilder.recognizeTag(
+                function: function,
+                sourcePath: path,
+                converter: converter,
+                templateCID: templateCID,
+                binding: binding
+            ))
+        }
+        return tags
+    }
+
+    public static func recognizePaths(
+        workspaceRoot: String,
+        sourcePaths: [String],
+        bindingTemplates: [JcsCanonical]
+    ) -> [JcsCanonical] {
+        let root = URL(fileURLWithPath: workspaceRoot.isEmpty ? "." : workspaceRoot).standardizedFileURL
+        let rootPath = root.path
+        let fileManager = FileManager.default
+        var tags: [JcsCanonical] = []
+
+        for requested in sourcePaths.isEmpty ? ["."] : sourcePaths {
+            let requestedURL = URL(fileURLWithPath: requested, relativeTo: root).standardizedFileURL
+            let fullPath = requestedURL.path
+            guard isPath(fullPath, inside: rootPath) else {
+                continue
+            }
+
+            var isDirectory: ObjCBool = false
+            guard fileManager.fileExists(atPath: fullPath, isDirectory: &isDirectory) else {
+                continue
+            }
+
+            let files: [String]
+            if isDirectory.boolValue {
+                let enumerator = fileManager.enumerator(atPath: fullPath)
+                files = (enumerator?.compactMap { item -> String? in
+                    guard let rel = item as? String, rel.hasSuffix(".swift") else {
+                        return nil
+                    }
+                    return URL(fileURLWithPath: rel, relativeTo: requestedURL).standardizedFileURL.path
+                } ?? []).sorted()
+            } else if fullPath.hasSuffix(".swift") {
+                files = [fullPath]
+            } else {
+                files = []
+            }
+
+            for file in files {
+                guard let source = try? String(contentsOfFile: file, encoding: .utf8) else {
+                    continue
+                }
+                tags.append(contentsOf: recognizeSource(
+                    source,
+                    path: relativePath(file, root: rootPath),
+                    bindingTemplates: bindingTemplates
+                ))
+            }
+        }
+        return tags
+    }
+}
+
+private struct SwiftSugarBindingAnnotation {
+    let concept: String
+    let library: String
+    let family: String?
+    let version: String?
+}
+
+private final class SwiftSugarFunctionCollector: SyntaxVisitor {
+    var functions: [FunctionDeclSyntax] = []
+
+    init() {
+        super.init(viewMode: .sourceAccurate)
+    }
+
+    override func visit(_ node: FunctionDeclSyntax) -> SyntaxVisitorContinueKind {
+        functions.append(node)
+        return .skipChildren
+    }
+}
+
+private enum SwiftSugarBindingEntryBuilder {
+    static func entry(
+        for function: FunctionDeclSyntax,
+        sourcePath: String,
+        converter: SourceLocationConverter
+    ) -> JcsCanonical? {
+        guard let annotation = sugarAnnotation(function), let body = function.body else {
+            return nil
+        }
+        let paramNames = swiftParamNames(function)
+        let paramTypes = swiftParamTypes(function)
+        let returnType = cleanTypeName(function.signature.returnClause?.type.description ?? "Void")
+        let signatureShape = JcsCanonical.object([
+            ("param_names", .array(paramNames.map(JcsCanonical.string))),
+            ("param_types", .array(paramTypes.map(JcsCanonical.string))),
+            ("return_type", .string(returnType)),
+        ])
+        let bodyText = swiftBodyText(body)
+        let template = SwiftAstTemplateBuilder(paramNames: paramNames).block(body)
+        let span = swiftSpan(function, converter: converter)
+        let bodySource = JcsCanonical.object([
+            ("ast_template", template),
+            ("body_text", .string(bodyText)),
+            ("file", .string(sourcePath)),
+            ("param_names", .array(paramNames.map(JcsCanonical.string))),
+            ("source_cid", .string(Blake3.hex(Data(bodyText.utf8)))),
+            ("span", span),
+            ("template_cid", .string(computeJcsCid(template))),
+        ])
+
+        var fields: [(String, JcsCanonical)] = [
+            ("body_source", bodySource),
+            ("concept_name", .string(annotation.concept)),
+            ("kind", .string("library-sugar-binding-entry")),
+            ("loss_record_contribution", .object([
+                ("form", .string("literal")),
+                ("value", .object([("entries", .array([]))])),
+            ])),
+            ("param_names", .array(paramNames.map(JcsCanonical.string))),
+            ("param_types", .array(paramTypes.map(JcsCanonical.string))),
+            ("return_type", .string(returnType)),
+            ("signature_shape_cid", .string(computeJcsCid(signatureShape))),
+            ("source_function_name", .string(function.name.text)),
+            ("target_language", .string("swift")),
+            ("target_library_tag", .string(annotation.library)),
+            ("term_shape", .null),
+            ("term_shape_cid", .null),
+        ]
+        if let family = annotation.family {
+            fields.append(("family", .string(family)))
+        }
+        if let version = annotation.version {
+            fields.append(("library_version", .string(version)))
+        }
+        return .object(fields)
+    }
+
+    static func recognizeTag(
+        function: FunctionDeclSyntax,
+        sourcePath: String,
+        converter: SourceLocationConverter,
+        templateCID: String,
+        binding: JcsCanonical
+    ) -> JcsCanonical {
+        let paramNames = swiftParamNames(function)
+        let paramBindings = paramNames.enumerated().map { index, name in
+            JcsCanonical.object([
+                ("index", .int(Int64(index + 1))),
+                ("source_text", .string(name)),
+            ])
+        }
+        return .object([
+            ("concept_name", jcsField("concept_name", in: binding)),
+            ("contract_cid", jcsField("contract_cid", in: binding)),
+            ("family", jcsField("family", in: binding)),
+            ("file", .string(sourcePath)),
+            ("function_name", .string(function.name.text)),
+            ("library_tag", jcsField("library_tag", in: binding)),
+            ("match_tier", .string("exact")),
+            ("param_bindings", .array(paramBindings)),
+            ("span", swiftSpan(function, converter: converter)),
+            ("template_cid", .string(templateCID)),
+        ])
+    }
+}
+
+private struct SwiftAstTemplateBuilder {
+    let paramNames: [String]
+
+    func block(_ block: CodeBlockSyntax) -> JcsCanonical {
+        .object([
+            ("kind", .string("block")),
+            ("stmts", .array(block.statements.map(codeBlockItem))),
+        ])
+    }
+
+    private func codeBlockItem(_ item: CodeBlockItemSyntax) -> JcsCanonical {
+        switch item.item {
+        case .decl(let decl):
+            if let variable = decl.as(VariableDeclSyntax.self) {
+                return variableDecl(variable)
+            }
+            return other("decl", decl)
+        case .stmt(let stmt):
+            if let ret = stmt.as(ReturnStmtSyntax.self) {
+                return .object([
+                    ("kind", .string("return")),
+                    ("expr", ret.expression.map(expression) ?? .null),
+                ])
+            }
+            return other("stmt", stmt)
+        case .expr(let expr):
+            return .object([
+                ("kind", .string("expr_stmt")),
+                ("expr", expression(expr)),
+                ("trailing_semi", .bool(false)),
+            ])
+        }
+    }
+
+    private func variableDecl(_ node: VariableDeclSyntax) -> JcsCanonical {
+        let bindings = node.bindings.map { binding -> JcsCanonical in
+            .object([
+                ("kind", .string("let")),
+                ("pat", pattern(binding.pattern)),
+                ("init", binding.initializer.map { expression($0.value) } ?? .null),
+            ])
+        }
+        if bindings.count == 1 {
+            return bindings[0]
+        }
+        return .object([
+            ("kind", .string("decl_group")),
+            ("decls", .array(bindings)),
+        ])
+    }
+
+    private func expression(_ expr: ExprSyntax) -> JcsCanonical {
+        if let ref = expr.as(DeclReferenceExprSyntax.self) {
+            let name = ref.baseName.text
+            if let index = paramNames.firstIndex(of: name) {
+                return .object([
+                    ("kind", .string("param_ref")),
+                    ("index", .int(Int64(index + 1))),
+                ])
+            }
+            return .object([
+                ("kind", .string("ident")),
+                ("name", .string(name)),
+            ])
+        }
+        if let call = expr.as(FunctionCallExprSyntax.self) {
+            return functionCall(call)
+        }
+        if let member = expr.as(MemberAccessExprSyntax.self) {
+            return memberAccess(member)
+        }
+        if let literal = expr.as(IntegerLiteralExprSyntax.self) {
+            return .object([
+                ("kind", .string("lit")),
+                ("ty", .string("int")),
+                ("value", .string(literal.literal.text.replacingOccurrences(of: "_", with: ""))),
+            ])
+        }
+        if let literal = expr.as(BooleanLiteralExprSyntax.self) {
+            return .object([
+                ("kind", .string("lit")),
+                ("ty", .string("bool")),
+                ("value", .bool(literal.literal.text == "true")),
+            ])
+        }
+        if let literal = expr.as(StringLiteralExprSyntax.self) {
+            return .object([
+                ("kind", .string("lit")),
+                ("ty", .string("string")),
+                ("value", .string(literal.description.trimmingCharacters(in: .whitespacesAndNewlines))),
+            ])
+        }
+        if let sequence = expr.as(SequenceExprSyntax.self) {
+            return sequenceExpr(sequence)
+        }
+        if let tuple = expr.as(TupleExprSyntax.self), tuple.elements.count == 1, let first = tuple.elements.first {
+            return expression(first.expression)
+        }
+        return other("expr", expr)
+    }
+
+    private func functionCall(_ node: FunctionCallExprSyntax) -> JcsCanonical {
+        let args = node.arguments.map { expression($0.expression) }
+        if let member = node.calledExpression.as(MemberAccessExprSyntax.self), let base = member.base {
+            return .object([
+                ("kind", .string("method_call")),
+                ("receiver", expression(base)),
+                ("method", .string(member.declName.baseName.text)),
+                ("args", .array(args)),
+            ])
+        }
+        return .object([
+            ("kind", .string("call")),
+            ("func", expression(node.calledExpression)),
+            ("args", .array(args)),
+        ])
+    }
+
+    private func memberAccess(_ node: MemberAccessExprSyntax) -> JcsCanonical {
+        .object([
+            ("kind", .string("member")),
+            ("base", node.base.map(expression) ?? .null),
+            ("field", .string(node.declName.baseName.text)),
+        ])
+    }
+
+    private func sequenceExpr(_ node: SequenceExprSyntax) -> JcsCanonical {
+        let elements = Array(node.elements)
+        if elements.count == 3 {
+            return .object([
+                ("kind", .string("binary")),
+                ("op", .string(elements[1].description.trimmingCharacters(in: .whitespacesAndNewlines))),
+                ("left", expression(elements[0])),
+                ("right", expression(elements[2])),
+            ])
+        }
+        return other("sequence", node)
+    }
+
+    private func pattern(_ pattern: PatternSyntax) -> JcsCanonical {
+        if let ident = pattern.as(IdentifierPatternSyntax.self) {
+            return .object([
+                ("kind", .string("binding")),
+                ("name", .string(ident.identifier.text)),
+            ])
+        }
+        if pattern.is(WildcardPatternSyntax.self) {
+            return .object([("kind", .string("wildcard"))])
+        }
+        return other("pattern", pattern)
+    }
+
+    private func other<T: SyntaxProtocol>(_ kind: String, _ node: T) -> JcsCanonical {
+        .object([
+            ("kind", .string("other")),
+            ("variant", .string(kind)),
+            ("text", .string(node.description.trimmingCharacters(in: .whitespacesAndNewlines))),
+        ])
+    }
+}
+
+private func sugarAnnotation(_ function: FunctionDeclSyntax) -> SwiftSugarBindingAnnotation? {
+    let attributes = function.attributes.description
+    guard attributes.contains("ProveKitSugar") else {
+        return nil
+    }
+    guard let concept = quotedArgument("concept", in: attributes),
+          let library = quotedArgument("library", in: attributes)
+    else {
+        return nil
+    }
+    return SwiftSugarBindingAnnotation(
+        concept: concept,
+        library: library,
+        family: quotedArgument("family", in: attributes),
+        version: quotedArgument("version", in: attributes)
+    )
+}
+
+private func quotedArgument(_ name: String, in text: String) -> String? {
+    guard let label = text.range(of: "\(name):") else {
+        return nil
+    }
+    let rest = text[label.upperBound...]
+    guard let open = rest.firstIndex(of: "\"") else {
+        return nil
+    }
+    let afterOpen = rest.index(after: open)
+    guard let close = rest[afterOpen...].firstIndex(of: "\"") else {
+        return nil
+    }
+    return String(rest[afterOpen..<close])
+}
+
+private func swiftParamNames(_ node: FunctionDeclSyntax) -> [String] {
+    node.signature.parameterClause.parameters.map { parameter in
+        if let second = parameter.secondName {
+            return second.text
+        }
+        return parameter.firstName.text == "_" ? "_" : parameter.firstName.text
+    }
+}
+
+private func swiftParamTypes(_ node: FunctionDeclSyntax) -> [String] {
+    node.signature.parameterClause.parameters.map { parameter in
+        cleanTypeName(parameter.type.description)
+    }
+}
+
+private func swiftSpan(_ node: FunctionDeclSyntax, converter: SourceLocationConverter) -> JcsCanonical {
+    let start = node.startLocation(converter: converter)
+    let end = node.endLocation(converter: converter)
+    return .object([
+        ("end_col", .int(Int64(max(0, end.column)))),
+        ("end_line", .int(Int64(end.line))),
+        ("start_col", .int(Int64(max(0, start.column)))),
+        ("start_line", .int(Int64(start.line))),
+    ])
+}
+
+private func swiftBodyText(_ body: CodeBlockSyntax) -> String {
+    var text = body.description
+    if let open = text.firstIndex(of: "{"), let close = text.lastIndex(of: "}"), open < close {
+        text = String(text[text.index(after: open)..<close])
+    }
+    text = text.replacingOccurrences(of: #"^\r?\n"#, with: "", options: .regularExpression)
+    text = text.replacingOccurrences(of: #"\s+$"#, with: "", options: .regularExpression)
+    return dedentCommonIndent(text)
+}
+
+private func dedentCommonIndent(_ text: String) -> String {
+    let lines = text.split(separator: "\n", omittingEmptySubsequences: false).map(String.init)
+    let indents = lines
+        .filter { !$0.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }
+        .map { line -> String in
+            String(line.prefix { $0 == " " || $0 == "\t" })
+        }
+    guard let shortest = indents.min(by: { $0.count < $1.count }), !shortest.isEmpty else {
+        return text
+    }
+    let common = indents.reduce(shortest) { prefix, indent in
+        var out = prefix
+        while !indent.hasPrefix(out), !out.isEmpty {
+            out.removeLast()
+        }
+        return out
+    }
+    guard !common.isEmpty else {
+        return text
+    }
+    return lines.map { line in
+        line.hasPrefix(common) ? String(line.dropFirst(common.count)) : line
+    }.joined(separator: "\n")
+}
+
+private func jcsField(_ name: String, in object: JcsCanonical) -> JcsCanonical {
+    guard case .object(let pairs) = object else {
+        return .null
+    }
+    return pairs.first(where: { $0.0 == name })?.1 ?? .null
+}
+
+private extension JcsCanonical {
+    var stringValue: String? {
+        if case .string(let value) = self {
+            return value
+        }
+        return nil
+    }
 }
 
 private struct SwiftFunctionInfo {
