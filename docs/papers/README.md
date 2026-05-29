@@ -4,13 +4,25 @@ This directory contains paper-grade arguments. These are not docs (how to use th
 
 Each paper is intended to be cite-able in academic and industry contexts.
 
+Read the papers as arguments, not as a promise that every described route is
+fully shipped in the current tree. The current product surface is narrower and
+more concrete: kits lift existing language-native evidence into ProofIR or
+protocol claims, the CLI computes over normalized `.proof` data, and the
+content-addressed DAG lets prior contracts and proofs be reused by CID when the
+same commitments appear again. Semantic proving still happens when claims are
+minted, changed, or newly composed.
+
+For the current operator-facing map, start with
+[../explanation/product.md](../explanation/product.md) and
+[../explanation/architecture.md](../explanation/architecture.md).
+
 ## Index
 
 The papers are an inductive ladder. Paper 1 is the pitch, paper 2 is the formal spec, and papers 3 through 23 are the After-X rungs: given what the prior paper established, here is what changes. Read them in order, because later rungs assume the framing earlier ones built.
 
 1. **[The Whitepaper](01-whitepaper.md)**: Executive summary. What ProvekIt is, why it matters, who it is for, the trojan horse, the cypherpunk lineage. The trust-depth knob; the three-CLI surface; the install path. The shortest path from "I have heard of this" to "I understand the move."
 
-2. **[The Bluepaper](02-bluepaper.md)**: Formal protocol specification. Theorem statements with proofs; the canonical IR grammar in EBNF; the constant-size verification theorem with hypotheses H1-H5; the `memcmp` line shown verbatim; the cryptographic-minimum claim; every spec referenced by content hash. Closes with a runnable verification: compute the catalog CID locally, and the bluepaper has just verified its own authority. The paper is a formal baseline; the current v1.6.3 catalog and extension CIDs live in [../reference/cids.md](../reference/cids.md) and [../reference/protocol-extensions.md](../reference/protocol-extensions.md).
+2. **[The Bluepaper](02-bluepaper.md)**: Formal protocol specification. Theorem statements with proofs; the canonical IR grammar in EBNF; the constant-size verification theorem with hypotheses H1-H5; the `memcmp` line shown verbatim; the cryptographic-minimum claim; every spec referenced by content hash. Closes with a runnable verification: compute the catalog CID locally, and the bluepaper has just verified its own authority. The paper is a formal baseline; the current CLI catalog and extension CIDs live in [../reference/cids.md](../reference/cids.md) and [../reference/protocol-extensions.md](../reference/protocol-extensions.md).
 
 3. **[After Bluepapers: Substrate, Not Blockchain](03-substrate-not-blockchain.md)**: The proofchain/blockchain adjacency argument. Contains the formal lemma that proof validity does not require distributed consensus, while distributed timestamp-server claims do. Also covers §10 closure-by-composition, §11 the address as multi-dimensional, and §12 the pin as a tuple. The four pinning dimensions (`contractCid` / `contractSetCid` / `attestationCid` / bundle file CID), each a different content projection. The rank-N tuple discipline: a pin must match the rank of the assertion it attests; collapsing a rank-2 relation into rank-1 leaks the discarded axis as drift. This is the architectural foundation the v1.4 specs operationalize.
 

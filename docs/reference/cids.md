@@ -1,6 +1,8 @@
-# Spec CIDs at HEAD
+# Spec CIDs
 
-Every spec in ProvekIt is content-addressed by BLAKE3-512. This page lists the canonical CIDs at HEAD (protocol v1.6.3). Verify the local install conforms via `provekit verify-protocol`.
+Every spec in ProvekIt is content-addressed by BLAKE3-512. Verify the local
+install conforms to the protocol catalog embedded in the CLI via
+`provekit verify-protocol`.
 
 ## Two hashing rules
 
@@ -16,11 +18,14 @@ cargo run --release --manifest-path tools/recompute-spec-cids/Cargo.toml -- --ve
 
 `--verify` reads every spec in raw bytes, hashes each, then reads the catalog, JCS-canonicalizes it, hashes that, and compares all values. Exit 0 iff every value matches.
 
-## Pinned CIDs (v1.6.3)
+## Pinned CIDs
 
 | Document | CID |
 |---|---|
-| **Protocol catalog (v1.6.3)** | `blake3-512:dd0cc79889ee67d2594f5cfa20a191bafed15196fb2c5036f85deced7cd976055ae93825edebc10812b6fcf3c6ccf274fbc1137f32705aa0dc5938dc5825e31d` |
+| **Protocol catalog (v1.6.6, current CLI)** | `blake3-512:809ed1ebd538f206beb9df6de712f502fbcd310ee52d76c34afecec6455259d49cd7d288eb761d5aac9ebbd3643ae4dfe09bc9c7f2aea23e57720df6085c6640` |
+| Protocol catalog (v1.6.5, historical) | `blake3-512:42ab046d530993a039cb6f78d8edb20b9e5f001f96182e57890379ccf9dbc9233430159724422ba4b91f783953f3e0ef3f8d56d4c112085904e8b08fbfce02d0` |
+| Protocol catalog (v1.6.4, historical) | `blake3-512:09ccf7b1464622eceb4ac0e9bae3b435ba92d87c19e89f93724e6be75f4afce9eb3dedb7b8ebe2536de054143efefcb3cb622e6e5b4140bb26e6156a9bc9adf3` |
+| Protocol catalog (v1.6.3, historical) | `blake3-512:dd0cc79889ee67d2594f5cfa20a191bafed15196fb2c5036f85deced7cd976055ae93825edebc10812b6fcf3c6ccf274fbc1137f32705aa0dc5938dc5825e31d` |
 | Protocol catalog (v1.6.2, historical) | `blake3-512:52bdb2be4b381cec2aff95db7755c84184878b45cd91882d262114a1abd2dd513f9ef3b250fb87093316fd0fcb48e4b97e109d463e57df5bda6aac0b1c719a0f` |
 | Protocol catalog (v1.6.1, historical) | `blake3-512:fa1fbf90b7f092b732cd2b088d12210befe304065acbe0f9640785a911dd917f1c49fb90d1ff4dcd1861310cf739350ef60b46f1b54be0ea54ccb09d0c1b76f0` |
 | Protocol catalog (v1.6.0, historical) | `blake3-512:ce04a40534986a95362d5f130fd3a1a667b7a157f0554f262af11ec7a2ac8e8b80f56c36cca93d7a180535eedc99949d760fce6ab63c405de8837fa20f00e781` |
@@ -41,6 +46,11 @@ cargo run --release --manifest-path tools/recompute-spec-cids/Cargo.toml -- --ve
 | Version chains pinning | `blake3-512:281bf014f6f0ebc9a5d455329ee033ff8b7ee85e001bcbdcb45a62c14e43855892c46462789ccb74961859e708eae70829fdf736798c17f59f0239ef78dd7e45` |
 | Protocol Evolution Protocol (PEP) | `blake3-512:d8827f89df20e5be38c4d5de851fe4e55420dcd6cacfd9b98f458c53e64e6ba07349e29f8da2fbab6cb7195b297c3704a70f489c020e3f55c96ef702c4a09949` |
 | Lift Plugin Protocol | `blake3-512:f2b856a8010b0f95cdd9961e0c367b003b1de7be39b6668db7f96cfe884a99f153609a846be39ad4a4f40a3bb778fecf2b0e24908b94411f32be165473045055` |
+
+The detailed property list below was originally written for v1.6.3 and still
+records the stable core CIDs used by the current catalog. The current CLI's
+authoritative answer is the embedded catalog checked by `provekit verify-protocol`;
+historical signatures live under `.provekit/catalog-signatures/`.
 
 ## v1.6.3 changes (patch over v1.6.2)
 
@@ -100,7 +110,7 @@ The v1.4.0 bump is additive over v1.3.1. New specs published with v1.4.0:
 - `bundle-attestation-protocol` (`2026-05-02-bundle-attestation-protocol.md`)
 - `opacity-manifest-grammar` (`2026-05-02-opacity-manifest-grammar.md`)
 
-The full list of v1.6.3 spec CIDs is in `protocol/specs/2026-04-30-protocol-catalog.json`. Recompute locally to verify.
+The full list of current spec CIDs is in `protocol/specs/2026-04-30-protocol-catalog.json`. Recompute locally to verify.
 
 ## Per-kit self-contract attestations
 
@@ -116,7 +126,13 @@ Two runs producing the same CID is the framework verifying its own canonicalizat
 
 ## Bluepaper recursive-verification
 
-The protocol catalog's CID is the protocol version. Verifying the catalog is the act of running the protocol; running the protocol verifies the catalog. There is no external authority. The bluepaper at [`../papers/02-bluepaper.md`](../papers/02-bluepaper.md) closes with this recursive verification recipe. Run `--verify`. If the computed catalog CID matches `dd0cc798...825e31d` (v1.6.3), `52bdb2be...719a0f` (v1.6.2), `fa1fbf90...1b76f0` (v1.6.1), `ce04a405...00e781` (v1.6.0), `540e8c1f...ee1843` (v1.5.0), `dc2f42ff...1dc641` (v1.4.1), or `b0f2030d...60f52f` (v1.4.0, historical), the bluepaper has just verified its own authority over the bytes you have.
+The protocol catalog's CID is the protocol version. Verifying the catalog is the
+act of running the protocol; running the protocol verifies the catalog. There is
+no external authority. The bluepaper at
+[`../papers/02-bluepaper.md`](../papers/02-bluepaper.md) closes with this
+recursive verification recipe. Run `--verify`. If the computed catalog CID
+matches one of the current or historical catalog CIDs listed above, the
+bluepaper has just verified its own authority over the bytes you have.
 
 ## Read next
 

@@ -1,14 +1,28 @@
 # ProvekIt documentation
 
-ProvekIt is a toolchain for proving content-addressed claims.
+ProvekIt is a proof supply chain for existing software ecosystems.
 
-The center use case is software correctness across domains: language to language, package to package, protocol version to protocol version, and generated repair to re-lifted proof. Cross-platform contract correctness is one expression of that. The common shape is simple: canonicalize a proposition, name it by CID, name the evidence by CID, sign the edge, and fail closed when the graph does not carry the claim.
+It turns language-native evidence, including tests, assertions, contracts,
+schemas, validators, framework annotations, and boundary/library sugar, into
+portable ProofIR or protocol claims. Kits own the language and package-manager
+details. The CLI stays language-agnostic: it loads `.proof` artifacts, speaks
+RPC to kits, composes normalized claims, emits proof bundles, and proves the
+assembled obligations.
 
-That linked evidence object is a proofchain: a locally verifiable chain of signed, content-addressed evidence for logically true claims.
+The center use case is assembled correctness. Two packages can each pass their
+own checks and still make contradictory claims when used together. ProvekIt
+makes those claims meet in one content-addressed `.proof` DAG and fails closed
+when the graph cannot carry the composed claim.
 
-Current protocol catalog: **v1.6.3**
+A proofchain is the linked evidence object formed by that DAG: canonical claims,
+CIDs, signatures, witnesses, attestations, and verifier policy. Previously
+minted commitments can often be rechecked cheaply by CID equality and signature
+verification, while semantic proving still happens when a claim is minted,
+changed, or newly composed.
 
-Current catalog CID: `blake3-512:dd0cc79889ee67d2594f5cfa20a191bafed15196fb2c5036f85deced7cd976055ae93825edebc10812b6fcf3c6ccf274fbc1137f32705aa0dc5938dc5825e31d`
+The canonical CLI embeds its current protocol catalog. Verify your local binary
+with `provekit verify-protocol`; see [reference/cids.md](reference/cids.md) for
+spec CID background.
 
 ## References
 
@@ -28,6 +42,7 @@ Current catalog CID: `blake3-512:dd0cc79889ee67d2594f5cfa20a191bafed15196fb2c503
 | Install and run the verifier | [quickstart-end-user.md](quickstart-end-user.md) |
 | Build or extend a kit | [quickstart-extender.md](quickstart-extender.md) |
 | Understand the broad use cases | [explanation/use-cases.md](explanation/use-cases.md) |
+| Understand the product surface | [explanation/product.md](explanation/product.md) |
 | Understand the architecture | [explanation/architecture.md](explanation/architecture.md) |
 | Read the protocol/tooling extension map | [reference/protocol-extensions.md](reference/protocol-extensions.md) |
 | Look up current CIDs | [reference/cids.md](reference/cids.md) |
@@ -87,6 +102,7 @@ See [reference/per-language-status.md](reference/per-language-status.md) for the
 | Why lift, do not author? | [explanation/lift-not-author.md](explanation/lift-not-author.md) |
 | Why is provability monotonic? | [explanation/monotonic-provability.md](explanation/monotonic-provability.md) |
 | How do we know two `if`s in different languages are the same construct? | [explanation/cross-language-equivalence.md](explanation/cross-language-equivalence.md) |
+| How do kits and the CLI divide responsibility? | [explanation/architecture.md](explanation/architecture.md) |
 | What is out of scope? | [explanation/boundaries.md](explanation/boundaries.md) |
 | What is the product surface? | [explanation/product.md](explanation/product.md) |
 | What is the short pitch? | [explanation/pitch.md](explanation/pitch.md) |
