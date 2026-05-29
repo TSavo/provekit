@@ -48,6 +48,18 @@ def dispatch(request: dict[str, Any]) -> dict[str, Any]:
         except MissingTemplateError as exc:
             return _missing_template_error(msg_id, exc)
         return {"jsonrpc": "2.0", "id": msg_id, "result": result}
+    if method == "provekit.plugin.assemble":
+        if not isinstance(params, dict):
+            return _error(msg_id, -32602, "INVALID_PARAMS: params must be an object")
+        from provekit_realize_python_core.assemble import assemble_response
+
+        try:
+            result = assemble_response(params)
+        except ValueError as exc:
+            return _error(msg_id, -32040, f"ASSEMBLE_FAILED: {exc}")
+        except SyntaxError as exc:
+            return _error(msg_id, -32040, f"ASSEMBLE_FAILED: {exc}")
+        return {"jsonrpc": "2.0", "id": msg_id, "result": result}
     if method == "provekit.plugin.emit_module":
         if not isinstance(params, dict):
             return _error(msg_id, -32602, "INVALID_PARAMS: params must be an object")

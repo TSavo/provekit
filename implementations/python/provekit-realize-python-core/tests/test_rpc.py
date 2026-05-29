@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import py_compile
 import sys
 from pathlib import Path
 
@@ -219,6 +220,47 @@ def test_rpc_body_template_entries_reports_missing_core_resource(monkeypatch) ->
             },
         },
     }
+
+
+def test_rpc_assemble_returns_compileable_python_module(tmp_path: Path) -> None:
+    response = dispatch(
+        {
+            "jsonrpc": "2.0",
+            "id": 6,
+            "method": "provekit.plugin.assemble",
+            "params": {
+                "target_lang": "python",
+                "file_basename": "client",
+                "fragments": [
+                    {
+                        "concept_name": "concept:http-request",
+                        "source": (
+                            "def fetch_status(url):\n"
+                            "    return requests.get(url).status_code\n"
+                        ),
+                        "imports": ["requests"],
+                        "helpers": ["DEFAULT_TIMEOUT = 30"],
+                    }
+                ],
+            },
+        }
+    )
+
+    assert "error" not in response
+    result = response["result"]
+    assert result["compile_classpath"] == []
+    assert len(result["files"]) == 1
+    file = result["files"][0]
+    assert file["path"] == "client.py"
+    content = file["content"]
+    assert "import requests" in content
+    assert "DEFAULT_TIMEOUT = 30" in content
+    assert "def fetch_status(url):" in content
+    assert "return requests.get(url).status_code" in content
+
+    module = tmp_path / "client.py"
+    module.write_text(content, encoding="utf-8")
+    py_compile.compile(str(module), doraise=True)
 
 
 def test_emit_module_returns_all_missing_template_errors() -> None:

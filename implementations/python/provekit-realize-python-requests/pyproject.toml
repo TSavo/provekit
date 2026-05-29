@@ -7,7 +7,7 @@ name = "provekit-realize-python-requests"
 version = "0.1.0"
 description = "PEP 1.7.0 Python requests realize kit for ProvekIt bind canonical output"
 requires-python = ">=3.11"
-dependencies = ["cbor2>=5.4", "provekit-shim-python-requests"]
+dependencies = ["cbor2>=5.4", "provekit-realize-python-core>=0.1.0", "provekit-shim-python-requests"]
 
 [project.scripts]
 provekit-realize-python-requests = "provekit_realize_python_requests.__main__:main"
