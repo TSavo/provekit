@@ -33,8 +33,8 @@ use crate::solvers::{
 };
 use crate::types::{CallSite, MementoPool, ObligationVerdict, Report};
 use crate::{
-    call_edge_loader, enumerate_callsites, instantiate, load_all_proofs, report as report_stage,
-    resolve_target, smt_emitter,
+    body_discharge, call_edge_loader, enumerate_callsites, instantiate, load_all_proofs,
+    report as report_stage, resolve_target, smt_emitter,
 };
 
 pub const VERIFIER_STAGE_VOCABULARY: &[&str] = &[
@@ -844,6 +844,45 @@ fn work_one(
     invs_sink: &Mutex<Vec<SolverInvocation>>,
     minted_sink: &Mutex<Vec<(String, Json)>>,
 ) -> (CallSite, ObligationVerdict, String) {
+    match body_discharge::extract_body_obligation(cs, pool) {
+        Ok(Some(body_discharge::BodyObligation::Reduced(reduced))) => {
+            let smt = match smt_emitter::emit(&reduced) {
+                Ok(s) => s,
+                Err(e) => {
+                    n_residue.fetch_add(1, Ordering::Relaxed);
+                    return (
+                        cs.clone(),
+                        ObligationVerdict::Undecidable,
+                        format!("smt-emit: {e}"),
+                    );
+                }
+            };
+            let (verdict, reason, invs) = run_plan(plan, registry, &smt, Some(&reduced));
+            n_invoc.fetch_add(invs.len(), Ordering::Relaxed);
+            if verdict == ObligationVerdict::Discharged {
+                n_solved.fetch_add(1, Ordering::Relaxed);
+            } else if verdict == ObligationVerdict::Disagreement {
+                n_disagree.fetch_add(1, Ordering::Relaxed);
+                n_residue.fetch_add(1, Ordering::Relaxed);
+            } else {
+                n_residue.fetch_add(1, Ordering::Relaxed);
+            }
+            if let Ok(mut g) = invs_sink.lock() {
+                g.extend(invs);
+            }
+            return (cs.clone(), verdict, reason);
+        }
+        Ok(None) => {}
+        Err(e) => {
+            n_residue.fetch_add(1, Ordering::Relaxed);
+            return (
+                cs.clone(),
+                ObligationVerdict::Undecidable,
+                format!("body-discharge: {e}"),
+            );
+        }
+    }
+
     let resolved = match resolve_target::run(cs, pool) {
         Ok(r) => r,
         Err(e) => {

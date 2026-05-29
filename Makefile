@@ -706,6 +706,19 @@ cross-language-proof-parity: build-java cross-language-proof-parity-python-env
 	cargo test --release --manifest-path implementations/rust/Cargo.toml \
 		-p provekit-cli --test cmd_verify_rust_production_bridge \
 		rust_production_path_double_discharges_and_mints_witness
+	@echo "--- contradiction parity ---"
+	cargo test --release --manifest-path implementations/rust/Cargo.toml \
+		-p provekit-cli --test cmd_verify_java_production_bridge \
+		java_production_path_refuses_planted_contradictory_implication
+	cargo test --release --manifest-path implementations/rust/Cargo.toml \
+		-p provekit-cli --test cmd_verify_go_production_bridge \
+		go_production_path_refuses_planted_contradictory_implication
+	PYTHON=$(PARITY_PYTHON) PATH=$(PARITY_PYTHON_BIN):$(PATH) cargo test --release --manifest-path implementations/rust/Cargo.toml \
+		-p provekit-cli --test cmd_verify_python_production_bridge \
+		python_production_path_refuses_planted_contradictory_implication
+	cargo test --release --manifest-path implementations/rust/Cargo.toml \
+		-p provekit-cli --test cmd_verify_rust_production_bridge \
+		rust_production_path_refuses_planted_contradictory_implication
 	@echo "==== cross-language-proof-parity: PASS ===="
 
 .PHONY: bootstrap-self-contracts

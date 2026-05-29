@@ -21,6 +21,9 @@ use std::sync::OnceLock;
 
 use serde_json::Value as Json;
 
+#[path = "support/contradiction.rs"]
+mod contradiction;
+
 struct RustLifterBins {
     walk_rpc: PathBuf,
     lift: PathBuf,
@@ -351,6 +354,38 @@ fn rust_production_path_broken_body_fails_unsatisfied_no_witness() {
     eprintln!(
         "RUST_PRODUCTION_NEGATIVE_EXIT_CODE={code} STATUS={}",
         claim["status"]
+    );
+
+    let _ = fs::remove_dir_all(&project);
+}
+
+#[test]
+fn rust_production_path_refuses_planted_contradictory_implication() {
+    if !z3_available() {
+        eprintln!("z3 not on PATH: skipping rust contradictory-implication test");
+        return;
+    }
+    let project = stage_rust_project("contradiction", 2);
+    run_mint(&project);
+
+    let (green, green_code) = contradiction::run_prove_json_with_code(&provekit_bin(), &project);
+    assert_eq!(
+        green_code, 0,
+        "base Rust project must prove before planting contradiction; report: {green}"
+    );
+    assert_eq!(green["totalCallsites"], 1, "green report: {green}");
+
+    contradiction::plant_contradictory_implication_proof(
+        &project.join(".provekit"),
+        "rust",
+        "rust-tests",
+        "rust_parity",
+    );
+    let (red, red_code) = contradiction::run_prove_json_with_code(&provekit_bin(), &project);
+    contradiction::assert_prove_refuses_contradiction(
+        &red,
+        red_code,
+        "rust_parity_requires_positive",
     );
 
     let _ = fs::remove_dir_all(&project);
