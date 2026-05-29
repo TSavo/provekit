@@ -1,0 +1,12 @@
+[authoring]
+surface = "python-bind"
+
+[solvers]
+default = "z3"
+
+[solvers.dispatch]
+default = "z3"
+
+[solvers.z3]
+binary = "z3"
+flags = ["-smt2", "-in"]
