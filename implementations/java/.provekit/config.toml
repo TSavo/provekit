@@ -1,7 +1,19 @@
 exam_manifest_cid = "blake3-512:00000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000"
 
+[authoring]
+surface = "java-source"
+
+[authoring.lift]
+surface = "java-testng"
+
 [[plugins]]
-name = "java-testng"
+name = "java-testng-emitter"
 kind = "emit"
 surface = "java-testng"
 emit = "testng"
+
+[[plugins]]
+name = "java-testng-lifter"
+kind = "lift"
+surface = "java-testng"
+emit = "ir-document"
