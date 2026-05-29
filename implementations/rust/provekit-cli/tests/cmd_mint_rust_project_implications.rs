@@ -123,6 +123,15 @@ fn run_prove_json(out_dir: &Path) -> (Json, i32) {
     (report, output.status.code().unwrap_or(-1))
 }
 
+fn json_contains_str(value: &Json, needle: &str) -> bool {
+    match value {
+        Json::String(s) => s == needle,
+        Json::Array(values) => values.iter().any(|v| json_contains_str(v, needle)),
+        Json::Object(map) => map.values().any(|v| json_contains_str(v, needle)),
+        _ => false,
+    }
+}
+
 fn int_sort() -> Json {
     json!({"kind": "primitive", "name": "Int"})
 }
@@ -293,6 +302,7 @@ fn configured_rust_shims_emit_nonvacuous_implication_claims() {
         "examples/provekit-shim-postgres",
         "examples/provekit-shim-rfc8785-jcs-rust",
         "examples/provekit-shim-rusqlite",
+        "examples/provekit-shim-rust-std",
         "examples/provekit-shim-serde-json-rust",
     ] {
         let project = repo.join(project_rel);
@@ -360,6 +370,160 @@ fn voltron_demo_surfaces_nonvacuous_implication_refusals() {
         }),
         "Voltron must surface the body-discharge refusal for insert_event; report: {report}"
     );
+    let _ = fs::remove_dir_all(out_dir);
+}
+
+#[test]
+fn rust_stdlib_shim_closes_option_result_constructor_lift_gaps() {
+    build_rust_lifter_bins();
+
+    let repo = repo_root();
+    let shim = repo.join("examples/provekit-shim-rust-std");
+    assert!(
+        shim.join("Cargo.toml").exists(),
+        "Rust stdlib lift-gaps must close through a real shim package at {}",
+        shim.display()
+    );
+
+    let project = unique_dir("rust-std-consumer");
+    let out_dir = unique_dir("rust-std-out");
+    fs::create_dir_all(project.join("src")).expect("mkdir src");
+    fs::write(
+        project.join("Cargo.toml"),
+        r#"[package]
+name = "rust-std-consumer"
+version = "0.1.0"
+edition = "2021"
+"#,
+    )
+    .expect("write Cargo.toml");
+    fs::write(
+        project.join("src/lib.rs"),
+        r#"pub fn parse_flag(flag: bool) -> Result<Option<i32>, &'static str> {
+    if flag {
+        Ok(Some(1))
+    } else {
+        Err("disabled")
+    }
+}
+"#,
+    )
+    .expect("write src/lib.rs");
+
+    let provekit = project.join(".provekit");
+    fs::create_dir_all(provekit.join("lift").join("rust-stdlib-contracts"))
+        .expect("mkdir rust-stdlib-contracts manifest dir");
+    fs::create_dir_all(provekit.join("lift").join("rust-implications"))
+        .expect("mkdir rust-implications manifest dir");
+
+    let bin_dir = provekit_bin()
+        .parent()
+        .expect("provekit bin parent")
+        .to_path_buf();
+    let walk_rpc = bin_dir.join("provekit-walk-rpc");
+    fs::write(
+        provekit.join("config.toml"),
+        format!(
+            r#"[[plugins]]
+name = "rust-stdlib-contracts"
+surface = "rust-stdlib-contracts"
+workspace_override = "{}"
+emit = "ir-document"
+
+[[plugins]]
+name = "rust-implications"
+surface = "rust-implications"
+"#,
+            shim.display()
+        ),
+    )
+    .expect("write config.toml");
+    fs::write(
+        provekit
+            .join("lift")
+            .join("rust-stdlib-contracts")
+            .join("manifest.toml"),
+        format!(
+            "name = \"rust-stdlib-contracts\"\ncommand = [\"{}\", \"--rpc\"]\nworking_dir = \".\"\n",
+            walk_rpc.display()
+        ),
+    )
+    .expect("write rust-stdlib-contracts manifest");
+    fs::write(
+        provekit
+            .join("lift")
+            .join("rust-implications")
+            .join("manifest.toml"),
+        format!(
+            "name = \"rust-implications\"\ncommand = [\"{}\", \"--rpc\"]\nworking_dir = \".\"\nmethod = \"provekit.plugin.lift_implications\"\nphase = \"consumer\"\n",
+            walk_rpc.display()
+        ),
+    )
+    .expect("write rust-implications manifest");
+
+    let output = Command::new(provekit_bin())
+        .arg("mint")
+        .arg("--project")
+        .arg(&project)
+        .arg("--out")
+        .arg(&out_dir)
+        .arg("--no-attest")
+        .arg("--quiet")
+        .arg("--json")
+        .output()
+        .expect("spawn provekit mint");
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(
+        output.status.success(),
+        "stdlib shim mint should succeed\nstdout:\n{stdout}\nstderr:\n{stderr}"
+    );
+    let report: Json = serde_json::from_str(&stdout)
+        .unwrap_or_else(|e| panic!("mint JSON parse failed: {e}\nstdout: {stdout}"));
+    assert!(
+        !json_contains_str(&report["lift"], "lift-gap")
+            && !json_contains_str(&report["lift"], "no-contract-for-callee"),
+        "stdlib shim should close constructor lift-gaps, not report them: {report}"
+    );
+
+    let proof_files: Vec<PathBuf> = fs::read_dir(&out_dir)
+        .expect("read out dir")
+        .filter_map(|entry| {
+            let path = entry.expect("out dir entry").path();
+            (path.extension().and_then(|s| s.to_str()) == Some("proof")).then_some(path)
+        })
+        .collect();
+    let pool = provekit_verifier::load_all_proofs::run_with_files(
+        Path::new("/no-such-project"),
+        &proof_files,
+    );
+    assert!(
+        pool.load_errors.is_empty(),
+        "stdlib shim proof bundle must load cleanly: {:?}",
+        pool.load_errors
+    );
+    for symbol in ["Some", "Ok", "Err"] {
+        let bridge = pool.bridges_by_symbol.get(symbol).unwrap_or_else(|| {
+            panic!(
+                "stdlib constructor `{symbol}` should have an implication bridge; indexed: {:?}",
+                pool.bridges_by_symbol.keys().collect::<Vec<_>>()
+            )
+        });
+        let target_cid = provekit_verifier::types::memento_body_field(bridge, "targetContractCid")
+            .and_then(|v| v.as_str())
+            .expect("bridge targetContractCid");
+        let target = pool
+            .mementos
+            .get(target_cid)
+            .unwrap_or_else(|| panic!("bridge target cid {target_cid} must resolve"));
+        assert_eq!(
+            provekit_verifier::types::memento_kind(target).as_deref(),
+            Some("contract"),
+            "bridge target for `{symbol}` must be a contract"
+        );
+    }
+
+    let _ = fs::remove_dir_all(project);
     let _ = fs::remove_dir_all(out_dir);
 }
 

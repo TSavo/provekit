@@ -1,0 +1,65 @@
+{
+  "header": {
+    "cid": "blake3-512:ac34ec5ee9d60d1fa4ba0b227c8ea65a40d465dec41c77087de7b5100012652234a0a967df36a126ccae9bb63251fbd69cca45224fad357cf43b5f0a78d7a072",
+    "content": {
+      "target_language": "rust",
+      "template_name": "rust-canonical-bodies-std",
+      "entries": [
+        {
+          "concept_name": "library:rust-option-some",
+          "emission_template": {
+            "kind": "verbatim",
+            "template": "Option::Some(${param0})"
+          },
+          "loss_record_contribution": {
+            "form": "literal",
+            "value": {
+              "entries": []
+            }
+          },
+          "signature_guard": {
+            "min_params": 1,
+            "max_params": 1
+          },
+          "target_library_tag": "std"
+        },
+        {
+          "concept_name": "library:rust-result-ok",
+          "emission_template": {
+            "kind": "verbatim",
+            "template": "Result::Ok(${param0})"
+          },
+          "loss_record_contribution": {
+            "form": "literal",
+            "value": {
+              "entries": []
+            }
+          },
+          "signature_guard": {
+            "min_params": 1,
+            "max_params": 1
+          },
+          "target_library_tag": "std"
+        },
+        {
+          "concept_name": "library:rust-result-err",
+          "emission_template": {
+            "kind": "verbatim",
+            "template": "Result::Err(${param0})"
+          },
+          "loss_record_contribution": {
+            "form": "literal",
+            "value": {
+              "entries": []
+            }
+          },
+          "signature_guard": {
+            "min_params": 1,
+            "max_params": 1
+          },
+          "target_library_tag": "std"
+        }
+      ]
+    }
+  }
+}
