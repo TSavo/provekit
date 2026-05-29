@@ -90,7 +90,10 @@ pub fn run(args: RecognizeArgs) -> u8 {
         }
     };
 
-    let surface = args.surface.clone().unwrap_or_else(|| "rust-bind".to_string());
+    let surface = args
+        .surface
+        .clone()
+        .unwrap_or_else(|| "rust-bind".to_string());
     let manifest = match find_plugin_manifest(&project_root, &surface) {
         Ok(m) => m,
         Err(e) => {
@@ -188,15 +191,24 @@ pub fn run(args: RecognizeArgs) -> u8 {
                 .map(|p| Value::String(p.display().to_string()))
                 .unwrap_or(Value::Null),
         });
-        println!("{}", serde_json::to_string_pretty(&out).unwrap_or_else(|_| out.to_string()));
+        println!(
+            "{}",
+            serde_json::to_string_pretty(&out).unwrap_or_else(|_| out.to_string())
+        );
     } else {
         println!("recognize: {} tag(s) emitted", tags.len());
         for (idx, tag) in tags.iter().enumerate() {
-            let concept = tag.get("concept_name").and_then(|v| v.as_str()).unwrap_or("?");
+            let concept = tag
+                .get("concept_name")
+                .and_then(|v| v.as_str())
+                .unwrap_or("?");
             let file = tag.get("file").and_then(|v| v.as_str()).unwrap_or("?");
             let span = tag.get("span").cloned().unwrap_or(Value::Null);
             let start_line = span.get("start_line").and_then(|v| v.as_u64()).unwrap_or(0);
-            let tier = tag.get("match_tier").and_then(|v| v.as_str()).unwrap_or("?");
+            let tier = tag
+                .get("match_tier")
+                .and_then(|v| v.as_str())
+                .unwrap_or("?");
             let fn_name = tag
                 .get("function_name")
                 .and_then(|v| v.as_str())
@@ -348,11 +360,7 @@ fn emit_bridge_envelope(
         let Some(target_cid) = target_cid else {
             continue;
         };
-        let body = recognize_bridge_body_with_target(
-            tag,
-            target_language,
-            &target_cid,
-        );
+        let body = recognize_bridge_body_with_target(tag, target_language, &target_cid);
         let (cid, bytes) = member_envelope_canonical("bridge", &body)?;
         members.entry(cid).or_insert(bytes);
     }
@@ -373,8 +381,7 @@ fn emit_bridge_envelope(
         declared_at: RECOGNIZE_BRIDGE_DECLARED_AT.to_string(),
     });
     let path = proof_dir.join(format!("{}.proof", proof.cid));
-    std::fs::write(&path, &proof.bytes)
-        .map_err(|e| format!("write {}: {e}", path.display()))?;
+    std::fs::write(&path, &proof.bytes).map_err(|e| format!("write {}: {e}", path.display()))?;
     Ok(Some(path))
 }
 
@@ -467,7 +474,10 @@ fn parse_manifest(path: &Path) -> Result<PluginManifest, String> {
     if command.is_empty() {
         return Err(format!("manifest {} declares no command", path.display()));
     }
-    Ok(PluginManifest { command, working_dir })
+    Ok(PluginManifest {
+        command,
+        working_dir,
+    })
 }
 
 fn parse_toml_string_array(text: &str) -> Vec<PathBuf> {
@@ -580,10 +590,7 @@ fn load_binding_templates_from_proof(path: &Path) -> Result<Vec<Value>, String> 
             .and_then(|v| v.as_str())
             .map(|k| k == "contract")
             .unwrap_or_else(|| {
-                record
-                    .pointer("/header/kind")
-                    .and_then(|v| v.as_str())
-                    == Some("contract")
+                record.pointer("/header/kind").and_then(|v| v.as_str()) == Some("contract")
             });
         if !is_contract {
             continue;
@@ -621,14 +628,8 @@ fn load_binding_templates_from_proof(path: &Path) -> Result<Vec<Value>, String> 
             Some(t) if !t.is_null() => t.clone(),
             _ => continue,
         };
-        let template_cid = body
-            .get("template_cid")
-            .cloned()
-            .unwrap_or(Value::Null);
-        let param_names = body
-            .get("param_names")
-            .cloned()
-            .unwrap_or(Value::Null);
+        let template_cid = body.get("template_cid").cloned().unwrap_or(Value::Null);
+        let param_names = body.get("param_names").cloned().unwrap_or(Value::Null);
         let function_name = record
             .get("source_function_name")
             .and_then(|v| v.as_str())
@@ -728,15 +729,10 @@ fn cbor_to_json(v: &CborValue) -> Value {
             // the case: hex-encode so the JSON consumer can read it. This
             // is asymmetric with the canonical decoder (which keeps bytes)
             // but the recognize side only reads tstr/array/map shapes anyway.
-            let hex: String = b
-                .iter()
-                .map(|byte| format!("{:02x}", byte))
-                .collect();
+            let hex: String = b.iter().map(|byte| format!("{:02x}", byte)).collect();
             Value::String(hex)
         }
-        CborValue::Array(items) => {
-            Value::Array(items.iter().map(cbor_to_json).collect())
-        }
+        CborValue::Array(items) => Value::Array(items.iter().map(cbor_to_json).collect()),
         CborValue::Map(m) => Value::Object(
             m.iter()
                 .map(|(k, v)| (k.clone(), cbor_to_json(v)))
@@ -867,10 +863,7 @@ working_dir = "."
         let entries = load_binding_templates_from_proof(&tmp).expect("load");
         assert_eq!(entries.len(), 1);
         assert_eq!(entries[0]["concept_name"], "concept:json-parse");
-        assert_eq!(
-            entries[0]["library_tag"],
-            "provekit-shim-serde-json-rust"
-        );
+        assert_eq!(entries[0]["library_tag"], "provekit-shim-serde-json-rust");
         assert_eq!(entries[0]["template_cid"], "blake3-512:abc");
         // explicit contract_cid honored when present
         assert_eq!(entries[0]["contract_cid"], "blake3-512:def");
@@ -941,7 +934,10 @@ working_dir = "."
         ));
         std::fs::write(&tmp, env.to_string()).unwrap();
         let entries = load_binding_templates_from_proof(&tmp).expect("load");
-        assert!(entries.is_empty(), "legacy entries without ast_template skipped");
+        assert!(
+            entries.is_empty(),
+            "legacy entries without ast_template skipped"
+        );
         std::fs::remove_file(&tmp).ok();
     }
 }

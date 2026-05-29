@@ -244,7 +244,6 @@ struct ClaimResult {
 }
 
 pub fn run(args: VerifyArgs) -> u8 {
-
     // Early dispatch: the supply-chain admission gate. When any of
     // --artifact / --proof / --policy is given, verify a package release
     // receipt (binaryCid / policyCid match) rather than running the
@@ -949,4 +948,3 @@ mod tests {
         assert!(decode_seed_hex(&"zz".repeat(32)).is_err());
     }
 }
-

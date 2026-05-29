@@ -999,5 +999,4 @@ mod tests {
             "a contract's bare pre must NOT be treated as a verified fact"
         );
     }
-
 }
