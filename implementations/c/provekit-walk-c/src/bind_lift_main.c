@@ -31,6 +31,19 @@ typedef struct {
 } StringArray;
 
 typedef struct {
+    char *template_cid;
+    char *concept_name_json;
+    char *library_tag_json;
+    char *family_json;
+    char *contract_cid_json;
+} BindingTemplate;
+
+typedef struct {
+    BindingTemplate *items;
+    size_t len;
+} BindingList;
+
+typedef struct {
     Buf ir;
     Buf concept_citations;
     Buf diagnostics;
@@ -651,6 +664,8 @@ static int json_extract_param_str_array(const char *json, const char *field, Str
     return json_extract_str_array_at(json_find_params_value(json, field), out);
 }
 
+static char *json_extract_raw(const char *json, const char *field);
+
 static void string_array_free(StringArray *arr) {
     if (arr == NULL) return;
     for (size_t i = 0; i < arr->len; i++) {
@@ -659,6 +674,122 @@ static void string_array_free(StringArray *arr) {
     free(arr->items);
     arr->items = NULL;
     arr->len = 0;
+}
+
+static void binding_template_free(BindingTemplate *binding) {
+    if (binding == NULL) return;
+    free(binding->template_cid);
+    free(binding->concept_name_json);
+    free(binding->library_tag_json);
+    free(binding->family_json);
+    free(binding->contract_cid_json);
+    memset(binding, 0, sizeof(*binding));
+}
+
+static void binding_list_free(BindingList *list) {
+    if (list == NULL) return;
+    for (size_t i = 0; i < list->len; i++) {
+        binding_template_free(&list->items[i]);
+    }
+    free(list->items);
+    list->items = NULL;
+    list->len = 0;
+}
+
+static int binding_list_push_take(BindingList *list, BindingTemplate *binding) {
+    BindingTemplate *next = realloc(list->items, sizeof(*list->items) * (list->len + 1));
+
+    if (next == NULL) {
+        binding_template_free(binding);
+        return -1;
+    }
+    list->items = next;
+    list->items[list->len++] = *binding;
+    memset(binding, 0, sizeof(*binding));
+    return 0;
+}
+
+static int parse_binding_templates_at(const char *p, BindingList *out) {
+    memset(out, 0, sizeof(*out));
+    if (p == NULL) {
+        return 0;
+    }
+    json_skip_ws(&p);
+    if (*p != '[') {
+        return -1;
+    }
+    p++;
+    json_skip_ws(&p);
+    if (*p == ']') {
+        return 0;
+    }
+    for (;;) {
+        const char *start;
+        const char *end;
+        char *raw;
+        BindingTemplate binding;
+
+        memset(&binding, 0, sizeof(binding));
+        json_skip_ws(&p);
+        start = p;
+        if (!json_parse_value(&p)) {
+            binding_list_free(out);
+            return -1;
+        }
+        end = p;
+        if (*start == '{') {
+            raw = copy_n(start, (size_t)(end - start));
+            if (raw == NULL) {
+                binding_list_free(out);
+                return -1;
+            }
+            binding.template_cid = json_extract_str(raw, "template_cid");
+            if (binding.template_cid != NULL && binding.template_cid[0] != '\0') {
+                binding.concept_name_json = json_extract_raw(raw, "concept_name");
+                binding.library_tag_json = json_extract_raw(raw, "library_tag");
+                binding.family_json = json_extract_raw(raw, "family");
+                binding.contract_cid_json = json_extract_raw(raw, "contract_cid");
+                if (binding.concept_name_json == NULL) binding.concept_name_json = copy_string("null");
+                if (binding.library_tag_json == NULL) binding.library_tag_json = copy_string("null");
+                if (binding.family_json == NULL) binding.family_json = copy_string("null");
+                if (binding.contract_cid_json == NULL) binding.contract_cid_json = copy_string("null");
+                if (binding.concept_name_json == NULL || binding.library_tag_json == NULL ||
+                    binding.family_json == NULL || binding.contract_cid_json == NULL ||
+                    binding_list_push_take(out, &binding) != 0) {
+                    free(raw);
+                    binding_template_free(&binding);
+                    binding_list_free(out);
+                    return -1;
+                }
+            }
+            binding_template_free(&binding);
+            free(raw);
+        }
+        json_skip_ws(&p);
+        if (*p == ']') {
+            return 0;
+        }
+        if (*p != ',') {
+            binding_list_free(out);
+            return -1;
+        }
+        p++;
+    }
+}
+
+static int json_extract_param_binding_templates(const char *json, BindingList *out) {
+    return parse_binding_templates_at(json_find_params_value(json, "binding_templates"), out);
+}
+
+static const BindingTemplate *binding_for_template_cid(const BindingList *list, const char *cid) {
+    if (list == NULL || cid == NULL) return NULL;
+    for (size_t i = 0; i < list->len; i++) {
+        if (list->items[i].template_cid != NULL &&
+            strcmp(list->items[i].template_cid, cid) == 0) {
+            return &list->items[i];
+        }
+    }
+    return NULL;
 }
 
 static int has_suffix(const char *s, const char *suffix) {
@@ -1488,6 +1619,523 @@ static char *cx_string_copy(CXString s) {
     return out;
 }
 
+static int collect_param_names(CXCursor function_cursor, StringArray *out) {
+    int n = clang_Cursor_getNumArguments(function_cursor);
+
+    memset(out, 0, sizeof(*out));
+    if (n < 0) n = 0;
+    for (int i = 0; i < n; i++) {
+        CXCursor arg = clang_Cursor_getArgument(function_cursor, (unsigned)i);
+        char fallback[32];
+        char *name = cx_string_copy(clang_getCursorSpelling(arg));
+
+        if (name == NULL) {
+            string_array_free(out);
+            return -1;
+        }
+        if (name[0] == '\0') {
+            free(name);
+            (void)snprintf(fallback, sizeof(fallback), "__arg%d", i);
+            name = copy_string(fallback);
+            if (name == NULL) {
+                string_array_free(out);
+                return -1;
+            }
+        }
+        if (string_array_push_take(out, name) != 0) {
+            string_array_free(out);
+            return -1;
+        }
+    }
+    return 0;
+}
+
+static int param_index_for_name(const StringArray *params, const char *name) {
+    if (params == NULL || name == NULL || name[0] == '\0') return 0;
+    for (size_t i = 0; i < params->len; i++) {
+        if (params->items[i] != NULL && strcmp(params->items[i], name) == 0) {
+            return (int)i + 1;
+        }
+    }
+    return 0;
+}
+
+static int cursor_extent_offsets(CXCursor cursor, unsigned *start_out, unsigned *end_out) {
+    CXSourceRange range = clang_getCursorExtent(cursor);
+    CXSourceLocation start_loc = clang_getRangeStart(range);
+    CXSourceLocation end_loc = clang_getRangeEnd(range);
+    unsigned start = 0;
+    unsigned end = 0;
+
+    clang_getFileLocation(start_loc, NULL, NULL, NULL, &start);
+    clang_getFileLocation(end_loc, NULL, NULL, NULL, &end);
+    if (end < start) return -1;
+    *start_out = start;
+    *end_out = end;
+    return 0;
+}
+
+static char *trim_copy(const char *s, size_t len);
+
+static char *cursor_source_text(CXCursor cursor, const char *source) {
+    unsigned start = 0;
+    unsigned end = 0;
+    size_t source_len = strlen(source == NULL ? "" : source);
+
+    if (source == NULL || cursor_extent_offsets(cursor, &start, &end) != 0) {
+        return copy_string("");
+    }
+    if ((size_t)start > source_len) start = (unsigned)source_len;
+    if ((size_t)end > source_len) end = (unsigned)source_len;
+    if (end < start) end = start;
+    return trim_copy(source + start, (size_t)(end - start));
+}
+
+static char *cursor_kind_name(CXCursor cursor) {
+    return cx_string_copy(clang_getCursorKindSpelling(clang_getCursorKind(cursor)));
+}
+
+static int append_span_object(Buf *b, CXCursor cursor) {
+    CXSourceRange range = clang_getCursorExtent(cursor);
+    CXSourceLocation start_loc = clang_getRangeStart(range);
+    CXSourceLocation end_loc = clang_getRangeEnd(range);
+    unsigned start_line = 1;
+    unsigned start_col = 1;
+    unsigned end_line = 1;
+    unsigned end_col = 1;
+
+    clang_getSpellingLocation(start_loc, NULL, &start_line, &start_col, NULL);
+    clang_getSpellingLocation(end_loc, NULL, &end_line, &end_col, NULL);
+    if (start_col > 0) start_col--;
+    if (end_col > 0) end_col--;
+    return buf_append(b, "{\"start_line\":") == 0 &&
+        buf_append_uint(b, start_line) == 0 &&
+        buf_append(b, ",\"start_col\":") == 0 &&
+        buf_append_uint(b, start_col) == 0 &&
+        buf_append(b, ",\"end_line\":") == 0 &&
+        buf_append_uint(b, end_line) == 0 &&
+        buf_append(b, ",\"end_col\":") == 0 &&
+        buf_append_uint(b, end_col) == 0 &&
+        buf_append_char(b, '}') == 0 ? 0 : -1;
+}
+
+static char *template_of_expr(CXCursor cursor, const StringArray *params, const char *source);
+static char *template_of_stmt(CXCursor cursor, const StringArray *params, const char *source);
+static char *operator_token(CXCursor cursor, int mode_binary);
+static enum CXChildVisitResult body_finder(CXCursor cursor, CXCursor parent, CXClientData data);
+
+static char *template_other(CXCursor cursor) {
+    char *variant = cursor_kind_name(cursor);
+    Buf b;
+    char *out;
+
+    if (variant == NULL) return NULL;
+    buf_init(&b);
+    if (b.data == NULL) {
+        free(variant);
+        return NULL;
+    }
+    if (buf_append(&b, "{\"kind\":\"other\",\"variant\":") != 0 ||
+        buf_append_json_string(&b, variant) != 0 ||
+        buf_append_char(&b, '}') != 0) {
+        free(variant);
+        buf_free(&b);
+        return NULL;
+    }
+    free(variant);
+    out = buf_take(&b);
+    buf_free(&b);
+    return out;
+}
+
+static char *template_simple(const char *kind) {
+    Buf b;
+    char *out;
+
+    buf_init(&b);
+    if (b.data == NULL) return NULL;
+    if (buf_append(&b, "{\"kind\":") != 0 ||
+        buf_append_json_string(&b, kind) != 0 ||
+        buf_append_char(&b, '}') != 0) {
+        buf_free(&b);
+        return NULL;
+    }
+    out = buf_take(&b);
+    buf_free(&b);
+    return out;
+}
+
+static char *template_decl_ref(CXCursor cursor, const StringArray *params) {
+    char *name = cx_string_copy(clang_getCursorSpelling(cursor));
+    int index = param_index_for_name(params, name);
+    Buf b;
+    char *out;
+
+    if (name == NULL) return NULL;
+    buf_init(&b);
+    if (b.data == NULL) {
+        free(name);
+        return NULL;
+    }
+    if (index > 0) {
+        if (buf_append(&b, "{\"index\":") != 0 ||
+            buf_append_uint(&b, (unsigned)index) != 0 ||
+            buf_append(&b, ",\"kind\":\"param_ref\"}") != 0) {
+            free(name);
+            buf_free(&b);
+            return NULL;
+        }
+    } else {
+        if (buf_append(&b, "{\"kind\":\"ident\",\"name\":") != 0 ||
+            buf_append_json_string(&b, name) != 0 ||
+            buf_append_char(&b, '}') != 0) {
+            free(name);
+            buf_free(&b);
+            return NULL;
+        }
+    }
+    free(name);
+    out = buf_take(&b);
+    buf_free(&b);
+    return out;
+}
+
+static char *template_literal(CXCursor cursor, const char *source, const char *kind) {
+    char *text = cursor_source_text(cursor, source);
+    Buf b;
+    char *out;
+
+    if (text == NULL) return NULL;
+    buf_init(&b);
+    if (b.data == NULL) {
+        free(text);
+        return NULL;
+    }
+    if (buf_append(&b, "{\"kind\":\"literal\",\"literal_kind\":") != 0 ||
+        buf_append_json_string(&b, kind) != 0 ||
+        buf_append(&b, ",\"text\":") != 0 ||
+        buf_append_json_string(&b, text) != 0 ||
+        buf_append_char(&b, '}') != 0) {
+        free(text);
+        buf_free(&b);
+        return NULL;
+    }
+    free(text);
+    out = buf_take(&b);
+    buf_free(&b);
+    return out;
+}
+
+static char *template_unwrap_expr(CXCursor cursor, const StringArray *params, const char *source) {
+    CXCursor child;
+
+    if (get_nth_child(cursor, 0, &child)) {
+        return template_of_expr(child, params, source);
+    }
+    return template_other(cursor);
+}
+
+static char *template_call(CXCursor cursor, const StringArray *params, const char *source) {
+    CursorList children = {0};
+    char *func = NULL;
+    Buf b;
+    char *out = NULL;
+
+    if (cursor_children(cursor, &children) != 0) return template_other(cursor);
+    func = children.len > 0 ? template_of_expr(children.items[0], params, source) : template_simple("unknown");
+    if (func == NULL) goto done_no_buf;
+    buf_init(&b);
+    if (b.data == NULL) goto done_no_buf;
+    if (buf_append(&b, "{\"args\":[") != 0) goto done;
+    for (size_t i = 1; i < children.len; i++) {
+        char *arg = template_of_expr(children.items[i], params, source);
+
+        if (arg == NULL) goto done;
+        if (i > 1 && buf_append_char(&b, ',') != 0) {
+            free(arg);
+            goto done;
+        }
+        if (buf_append(&b, arg) != 0) {
+            free(arg);
+            goto done;
+        }
+        free(arg);
+    }
+    if (buf_append(&b, "],\"func\":") != 0 ||
+        buf_append(&b, func) != 0 ||
+        buf_append(&b, ",\"kind\":\"call\"}") != 0) {
+        goto done;
+    }
+    out = buf_take(&b);
+
+done:
+    buf_free(&b);
+done_no_buf:
+    free(func);
+    cursor_list_free(&children);
+    return out == NULL ? template_other(cursor) : out;
+}
+
+static char *template_binary(CXCursor cursor, const StringArray *params, const char *source) {
+    CursorList children = {0};
+    char *op = NULL;
+    char *left = NULL;
+    char *right = NULL;
+    Buf b;
+    char *out = NULL;
+
+    if (cursor_children(cursor, &children) != 0) return template_other(cursor);
+    op = operator_token(cursor, 1);
+    left = children.len > 0 ? template_of_expr(children.items[0], params, source) : template_simple("missing");
+    right = children.len > 1 ? template_of_expr(children.items[1], params, source) : template_simple("missing");
+    if (op == NULL || left == NULL || right == NULL) goto done_no_buf;
+    buf_init(&b);
+    if (b.data == NULL) goto done_no_buf;
+    if (buf_append(&b, "{\"kind\":\"binary\",\"left\":") != 0 ||
+        buf_append(&b, left) != 0 ||
+        buf_append(&b, ",\"op\":") != 0 ||
+        buf_append_json_string(&b, op) != 0 ||
+        buf_append(&b, ",\"right\":") != 0 ||
+        buf_append(&b, right) != 0 ||
+        buf_append_char(&b, '}') != 0) {
+        goto done;
+    }
+    out = buf_take(&b);
+
+done:
+    buf_free(&b);
+done_no_buf:
+    free(op);
+    free(left);
+    free(right);
+    cursor_list_free(&children);
+    return out == NULL ? template_other(cursor) : out;
+}
+
+static char *template_unary(CXCursor cursor, const StringArray *params, const char *source) {
+    char *op = operator_token(cursor, 0);
+    char *expr = NULL;
+    CXCursor child;
+    Buf b;
+    char *out = NULL;
+
+    if (get_nth_child(cursor, 0, &child)) {
+        expr = template_of_expr(child, params, source);
+    } else {
+        expr = template_simple("missing");
+    }
+    if (op == NULL || expr == NULL) goto done_no_buf;
+    buf_init(&b);
+    if (b.data == NULL) goto done_no_buf;
+    if (buf_append(&b, "{\"expr\":") != 0 ||
+        buf_append(&b, expr) != 0 ||
+        buf_append(&b, ",\"kind\":\"unary\",\"op\":") != 0 ||
+        buf_append_json_string(&b, op) != 0 ||
+        buf_append_char(&b, '}') != 0) {
+        goto done;
+    }
+    out = buf_take(&b);
+
+done:
+    buf_free(&b);
+done_no_buf:
+    free(op);
+    free(expr);
+    return out == NULL ? template_other(cursor) : out;
+}
+
+static char *template_array_subscript(CXCursor cursor, const StringArray *params, const char *source) {
+    CursorList children = {0};
+    char *base = NULL;
+    char *index = NULL;
+    Buf b;
+    char *out = NULL;
+
+    if (cursor_children(cursor, &children) != 0) return template_other(cursor);
+    base = children.len > 0 ? template_of_expr(children.items[0], params, source) : template_simple("missing");
+    index = children.len > 1 ? template_of_expr(children.items[1], params, source) : template_simple("missing");
+    if (base == NULL || index == NULL) goto done_no_buf;
+    buf_init(&b);
+    if (b.data == NULL) goto done_no_buf;
+    if (buf_append(&b, "{\"base\":") != 0 ||
+        buf_append(&b, base) != 0 ||
+        buf_append(&b, ",\"index\":") != 0 ||
+        buf_append(&b, index) != 0 ||
+        buf_append(&b, ",\"kind\":\"subscript\"}") != 0) {
+        goto done;
+    }
+    out = buf_take(&b);
+
+done:
+    buf_free(&b);
+done_no_buf:
+    free(base);
+    free(index);
+    cursor_list_free(&children);
+    return out == NULL ? template_other(cursor) : out;
+}
+
+static char *template_block(CXCursor cursor, const StringArray *params, const char *source) {
+    CursorList children = {0};
+    Buf b;
+    char *out = NULL;
+
+    if (cursor_children(cursor, &children) != 0) return template_other(cursor);
+    buf_init(&b);
+    if (b.data == NULL) goto done;
+    if (buf_append(&b, "{\"kind\":\"block\",\"stmts\":[") != 0) goto done;
+    for (size_t i = 0; i < children.len; i++) {
+        char *child = template_of_stmt(children.items[i], params, source);
+
+        if (child == NULL) goto done;
+        if (i > 0 && buf_append_char(&b, ',') != 0) {
+            free(child);
+            goto done;
+        }
+        if (buf_append(&b, child) != 0) {
+            free(child);
+            goto done;
+        }
+        free(child);
+    }
+    if (buf_append(&b, "]}") != 0) goto done;
+    out = buf_take(&b);
+
+done:
+    cursor_list_free(&children);
+    buf_free(&b);
+    return out == NULL ? template_other(cursor) : out;
+}
+
+static char *template_return(CXCursor cursor, const StringArray *params, const char *source) {
+    CXCursor expr_cursor;
+    char *expr = NULL;
+    Buf b;
+    char *out = NULL;
+
+    if (get_nth_child(cursor, 0, &expr_cursor)) {
+        expr = template_of_expr(expr_cursor, params, source);
+    } else {
+        expr = copy_string("null");
+    }
+    if (expr == NULL) goto done_no_buf;
+    buf_init(&b);
+    if (b.data == NULL) goto done_no_buf;
+    if (buf_append(&b, "{\"expr\":") != 0 ||
+        buf_append(&b, expr) != 0 ||
+        buf_append(&b, ",\"kind\":\"return\"}") != 0) {
+        goto done;
+    }
+    out = buf_take(&b);
+
+done:
+    buf_free(&b);
+done_no_buf:
+    free(expr);
+    return out == NULL ? template_other(cursor) : out;
+}
+
+static char *template_of_expr(CXCursor cursor, const StringArray *params, const char *source) {
+    enum CXCursorKind kind = clang_getCursorKind(cursor);
+
+    switch (kind) {
+    case CXCursor_UnexposedExpr:
+    case CXCursor_ParenExpr:
+        return template_unwrap_expr(cursor, params, source);
+    case CXCursor_DeclRefExpr:
+        return template_decl_ref(cursor, params);
+    case CXCursor_CallExpr:
+        return template_call(cursor, params, source);
+    case CXCursor_BinaryOperator:
+    case CXCursor_CompoundAssignOperator:
+        return template_binary(cursor, params, source);
+    case CXCursor_UnaryOperator:
+        return template_unary(cursor, params, source);
+    case CXCursor_ArraySubscriptExpr:
+        return template_array_subscript(cursor, params, source);
+    case CXCursor_IntegerLiteral:
+        return template_literal(cursor, source, "integer");
+    case CXCursor_FloatingLiteral:
+        return template_literal(cursor, source, "float");
+    case CXCursor_StringLiteral:
+        return template_literal(cursor, source, "string");
+    case CXCursor_CharacterLiteral:
+        return template_literal(cursor, source, "char");
+    default:
+        if (clang_isStatement(kind)) {
+            return template_of_stmt(cursor, params, source);
+        }
+        return template_other(cursor);
+    }
+}
+
+static char *template_of_stmt(CXCursor cursor, const StringArray *params, const char *source) {
+    enum CXCursorKind kind = clang_getCursorKind(cursor);
+
+    switch (kind) {
+    case CXCursor_CompoundStmt:
+        return template_block(cursor, params, source);
+    case CXCursor_ReturnStmt:
+        return template_return(cursor, params, source);
+    case CXCursor_NullStmt:
+        return template_simple("empty");
+    case CXCursor_DeclStmt:
+    case CXCursor_VarDecl:
+        return template_simple("let");
+    case CXCursor_BinaryOperator:
+    case CXCursor_CompoundAssignOperator:
+    case CXCursor_CallExpr:
+    case CXCursor_UnexposedExpr:
+    case CXCursor_ParenExpr:
+    case CXCursor_DeclRefExpr:
+    case CXCursor_UnaryOperator:
+        return template_of_expr(cursor, params, source);
+    default:
+        if (clang_isExpression(kind)) {
+            return template_of_expr(cursor, params, source);
+        }
+        return template_other(cursor);
+    }
+}
+
+static char *body_text_for_function(CXCursor function_cursor, const char *source) {
+    CXCursor body = clang_getNullCursor();
+    unsigned start = 0;
+    unsigned end = 0;
+    size_t source_len = strlen(source == NULL ? "" : source);
+    const char *open;
+    const char *close;
+
+    if (source == NULL) return copy_string("");
+    (void)clang_visitChildren(function_cursor, body_finder, &body);
+    if (clang_Cursor_isNull(body) || cursor_extent_offsets(body, &start, &end) != 0) {
+        return copy_string("");
+    }
+    if ((size_t)start > source_len) start = (unsigned)source_len;
+    if ((size_t)end > source_len) end = (unsigned)source_len;
+    if (end < start) end = start;
+    open = memchr(source + start, '{', (size_t)(end - start));
+    if (open == NULL) return copy_string("");
+    close = source + end;
+    while (close > open && close[-1] != '}') {
+        close--;
+    }
+    if (close <= open || close[-1] != '}') {
+        return copy_string("");
+    }
+    return trim_copy(open + 1, (size_t)((close - 1) - (open + 1)));
+}
+
+static char *ast_template_for_function(CXCursor function_cursor, const StringArray *params, const char *source) {
+    CXCursor body = clang_getNullCursor();
+
+    (void)clang_visitChildren(function_cursor, body_finder, &body);
+    if (clang_Cursor_isNull(body)) {
+        return copy_string("{\"kind\":\"block\",\"stmts\":[]}");
+    }
+    return template_block(body, params, source);
+}
+
 static char *shape_simple(const char *kind) {
     Buf b;
     char *out;
@@ -2081,12 +2729,17 @@ static int emit_function_entry(FileLiftCtx *ctx, CXCursor cursor) {
     char *fn_name = cx_string_copy(clang_getCursorSpelling(cursor));
     CXSourceLocation loc = clang_getCursorLocation(cursor);
     unsigned line = 1;
+    StringArray param_names = {0};
     Buf names;
     Buf types;
     Buf entry;
     char *return_type = NULL;
     char *term_shape = NULL;
     char *term_shape_cid = NULL;
+    char *body_text = NULL;
+    char *body_source_cid = NULL;
+    char *ast_template = NULL;
+    char *template_cid = NULL;
     FunctionAnnotations ann;
     int ok;
 
@@ -2104,8 +2757,17 @@ static int emit_function_entry(FileLiftCtx *ctx, CXCursor cursor) {
         buf_free(&entry);
         return -1;
     }
+    if (collect_param_names(cursor, &param_names) != 0) {
+        free(fn_name);
+        string_array_free(&param_names);
+        buf_free(&names);
+        buf_free(&types);
+        buf_free(&entry);
+        return -1;
+    }
     if (append_param_arrays(&names, &types, cursor) != 0) {
         free(fn_name);
+        string_array_free(&param_names);
         buf_free(&names);
         buf_free(&types);
         buf_free(&entry);
@@ -2116,13 +2778,24 @@ static int emit_function_entry(FileLiftCtx *ctx, CXCursor cursor) {
     return_type = result_type.kind == CXType_Void ? copy_string("()") : normalized_type_spelling(result_type);
     term_shape = shape_of_function(cursor);
     term_shape_cid = term_shape == NULL ? NULL : cid_for_bytes(term_shape, strlen(term_shape));
+    body_text = body_text_for_function(cursor, ctx->source);
+    body_source_cid = body_text == NULL ? NULL : cid_for_bytes(body_text, strlen(body_text));
+    ast_template = ast_template_for_function(cursor, &param_names, ctx->source);
+    template_cid = ast_template == NULL ? NULL : cid_for_bytes(ast_template, strlen(ast_template));
     ann = extract_annotations(ctx->source, (int)line);
-    if (return_type == NULL || term_shape == NULL || term_shape_cid == NULL) {
+    if (return_type == NULL || term_shape == NULL || term_shape_cid == NULL ||
+        body_text == NULL || body_source_cid == NULL ||
+        ast_template == NULL || template_cid == NULL) {
         free(fn_name);
         free(return_type);
         free(term_shape);
         free(term_shape_cid);
+        free(body_text);
+        free(body_source_cid);
+        free(ast_template);
+        free(template_cid);
         annotations_free(&ann);
+        string_array_free(&param_names);
         buf_free(&names);
         buf_free(&types);
         buf_free(&entry);
@@ -2154,6 +2827,21 @@ static int emit_function_entry(FileLiftCtx *ctx, CXCursor cursor) {
         buf_append(&entry, term_shape) == 0 &&
         buf_append(&entry, ",\"term_shape_cid\":") == 0 &&
         buf_append_json_string(&entry, term_shape_cid) == 0 &&
+        buf_append(&entry, ",\"body_source\":{\"ast_template\":") == 0 &&
+        buf_append(&entry, ast_template) == 0 &&
+        buf_append(&entry, ",\"body_text\":") == 0 &&
+        buf_append_json_string(&entry, body_text) == 0 &&
+        buf_append(&entry, ",\"file\":") == 0 &&
+        buf_append_json_string(&entry, ctx->rel) == 0 &&
+        buf_append(&entry, ",\"param_names\":") == 0 &&
+        buf_append(&entry, names.data) == 0 &&
+        buf_append(&entry, ",\"source_cid\":") == 0 &&
+        buf_append_json_string(&entry, body_source_cid) == 0 &&
+        buf_append(&entry, ",\"span\":") == 0 &&
+        append_span_object(&entry, cursor) == 0 &&
+        buf_append(&entry, ",\"template_cid\":") == 0 &&
+        buf_append_json_string(&entry, template_cid) == 0 &&
+        buf_append_char(&entry, '}') == 0 &&
         buf_append_char(&entry, '}') == 0;
 
     if (!ok || acc_append_json_item(&ctx->acc->ir, &ctx->acc->ir_count, entry.data) != 0) {
@@ -2161,7 +2849,12 @@ static int emit_function_entry(FileLiftCtx *ctx, CXCursor cursor) {
         free(return_type);
         free(term_shape);
         free(term_shape_cid);
+        free(body_text);
+        free(body_source_cid);
+        free(ast_template);
+        free(template_cid);
         annotations_free(&ann);
+        string_array_free(&param_names);
         buf_free(&names);
         buf_free(&types);
         buf_free(&entry);
@@ -2172,7 +2865,12 @@ static int emit_function_entry(FileLiftCtx *ctx, CXCursor cursor) {
     free(return_type);
     free(term_shape);
     free(term_shape_cid);
+    free(body_text);
+    free(body_source_cid);
+    free(ast_template);
+    free(template_cid);
     annotations_free(&ann);
+    string_array_free(&param_names);
     buf_free(&names);
     buf_free(&types);
     buf_free(&entry);
@@ -2233,6 +2931,160 @@ static CXTranslationUnit parse_unit(
         unit = NULL;
     }
     return unit;
+}
+
+typedef struct {
+    const char *rel;
+    const char *source;
+    const BindingList *bindings;
+    Buf *tags;
+    size_t *tag_count;
+    int failed;
+} RecognizeCtx;
+
+static int append_param_bindings(Buf *b, const StringArray *params) {
+    if (buf_append_char(b, '[') != 0) return -1;
+    if (params != NULL) {
+        for (size_t i = 0; i < params->len; i++) {
+            if (i > 0 && buf_append_char(b, ',') != 0) return -1;
+            if (buf_append(b, "{\"index\":") != 0 ||
+                buf_append_uint(b, (unsigned)i + 1u) != 0 ||
+                buf_append(b, ",\"source_text\":") != 0 ||
+                buf_append_json_string(b, params->items[i]) != 0 ||
+                buf_append_char(b, '}') != 0) {
+                return -1;
+            }
+        }
+    }
+    return buf_append_char(b, ']');
+}
+
+static int append_recognize_tag(
+    RecognizeCtx *ctx,
+    CXCursor cursor,
+    const char *fn_name,
+    const StringArray *params,
+    const char *template_cid,
+    const BindingTemplate *binding
+) {
+    Buf tag;
+    int ok;
+
+    buf_init(&tag);
+    if (tag.data == NULL) return -1;
+    ok = buf_append(&tag, "{\"concept_name\":") == 0 &&
+        buf_append(&tag, binding->concept_name_json) == 0 &&
+        buf_append(&tag, ",\"contract_cid\":") == 0 &&
+        buf_append(&tag, binding->contract_cid_json) == 0 &&
+        buf_append(&tag, ",\"family\":") == 0 &&
+        buf_append(&tag, binding->family_json) == 0 &&
+        buf_append(&tag, ",\"file\":") == 0 &&
+        buf_append_json_string(&tag, ctx->rel) == 0 &&
+        buf_append(&tag, ",\"function_name\":") == 0 &&
+        buf_append_json_string(&tag, fn_name) == 0 &&
+        buf_append(&tag, ",\"library_tag\":") == 0 &&
+        buf_append(&tag, binding->library_tag_json) == 0 &&
+        buf_append(&tag, ",\"match_tier\":\"exact\",\"param_bindings\":") == 0 &&
+        append_param_bindings(&tag, params) == 0 &&
+        buf_append(&tag, ",\"span\":") == 0 &&
+        append_span_object(&tag, cursor) == 0 &&
+        buf_append(&tag, ",\"template_cid\":") == 0 &&
+        buf_append_json_string(&tag, template_cid) == 0 &&
+        buf_append_char(&tag, '}') == 0;
+    if (!ok || acc_append_json_item(ctx->tags, ctx->tag_count, tag.data) != 0) {
+        buf_free(&tag);
+        return -1;
+    }
+    buf_free(&tag);
+    return 0;
+}
+
+static int recognize_function(RecognizeCtx *ctx, CXCursor cursor) {
+    char *fn_name = cx_string_copy(clang_getCursorSpelling(cursor));
+    StringArray params = {0};
+    char *template_json = NULL;
+    char *template_cid = NULL;
+    const BindingTemplate *binding;
+    int rc = 0;
+
+    if (fn_name == NULL) return -1;
+    if (collect_param_names(cursor, &params) != 0) {
+        free(fn_name);
+        return -1;
+    }
+    template_json = ast_template_for_function(cursor, &params, ctx->source);
+    template_cid = template_json == NULL ? NULL : cid_for_bytes(template_json, strlen(template_json));
+    if (template_json == NULL || template_cid == NULL) {
+        rc = -1;
+        goto done;
+    }
+    binding = binding_for_template_cid(ctx->bindings, template_cid);
+    if (binding != NULL) {
+        rc = append_recognize_tag(ctx, cursor, fn_name, &params, template_cid, binding);
+    }
+
+done:
+    free(fn_name);
+    string_array_free(&params);
+    free(template_json);
+    free(template_cid);
+    return rc;
+}
+
+static enum CXChildVisitResult recognize_visit_function(CXCursor cursor, CXCursor parent, CXClientData data) {
+    RecognizeCtx *ctx = (RecognizeCtx *)data;
+
+    (void)parent;
+    if (ctx->failed || !clang_Location_isFromMainFile(clang_getCursorLocation(cursor))) {
+        return CXChildVisit_Continue;
+    }
+    if (clang_getCursorKind(cursor) == CXCursor_FunctionDecl &&
+        clang_isCursorDefinition(cursor) != 0) {
+        if (recognize_function(ctx, cursor) != 0) {
+            ctx->failed = 1;
+            return CXChildVisit_Break;
+        }
+        return CXChildVisit_Continue;
+    }
+    return CXChildVisit_Recurse;
+}
+
+static int recognize_one_file(
+    const char *project_root,
+    const char *rel,
+    const char *path,
+    const BindingList *bindings,
+    Buf *tags,
+    size_t *tag_count
+) {
+    char *source = read_file(path);
+    CXIndex index = NULL;
+    CXTranslationUnit unit;
+    RecognizeCtx ctx;
+
+    (void)project_root;
+    if (source == NULL) {
+        return 0;
+    }
+    unit = parse_unit(path, source, NULL, &index);
+    if (unit == NULL) {
+        free(source);
+        if (index != NULL) clang_disposeIndex(index);
+        return 0;
+    }
+
+    memset(&ctx, 0, sizeof(ctx));
+    ctx.rel = rel;
+    ctx.source = source;
+    ctx.bindings = bindings;
+    ctx.tags = tags;
+    ctx.tag_count = tag_count;
+    (void)clang_visitChildren(clang_getTranslationUnitCursor(unit), recognize_visit_function, &ctx);
+
+    clang_disposeTranslationUnit(unit);
+    clang_disposeIndex(index);
+    free(source);
+    return ctx.failed ? -1 : 0;
 }
 
 static int lift_one_file(
@@ -2315,6 +3167,23 @@ static int lift_one_file(
     rc = acc_add_diagnostic(acc, "unavailable", rel, "libclang support is not enabled");
     free(rel);
     return rc;
+}
+
+static int recognize_one_file(
+    const char *project_root,
+    const char *rel,
+    const char *path,
+    const BindingList *bindings,
+    Buf *tags,
+    size_t *tag_count
+) {
+    (void)project_root;
+    (void)rel;
+    (void)path;
+    (void)bindings;
+    (void)tags;
+    (void)tag_count;
+    return -2;
 }
 
 #endif
@@ -2501,6 +3370,102 @@ static void handle_lift(const char *id, const char *line) {
     string_array_free(&clang_args);
 }
 
+static void handle_recognize(const char *id, const char *line) {
+    char *project_root = json_extract_param_str(line, "project_root");
+    StringArray source_paths = {0};
+    BindingList bindings = {0};
+    Buf tags;
+    Buf result;
+    size_t tag_count = 0;
+
+    if (project_root == NULL || project_root[0] == '\0') {
+        free(project_root);
+        send_error(id, -32602, "missing `project_root`");
+        return;
+    }
+    if (json_extract_param_str_array(line, "source_paths", &source_paths) != 0) {
+        free(project_root);
+        string_array_free(&source_paths);
+        send_error(id, -32602, "source_paths must be an array of strings");
+        return;
+    }
+    if (json_extract_param_binding_templates(line, &bindings) != 0) {
+        free(project_root);
+        string_array_free(&source_paths);
+        binding_list_free(&bindings);
+        send_error(id, -32602, "binding_templates must be an array of objects");
+        return;
+    }
+
+    buf_init(&tags);
+    if (tags.data == NULL) {
+        free(project_root);
+        string_array_free(&source_paths);
+        binding_list_free(&bindings);
+        send_error(id, -32603, "out of memory");
+        return;
+    }
+
+    for (size_t i = 0; i < source_paths.len; i++) {
+        char *resolved = resolve_source_path(project_root, source_paths.items[i]);
+        int rc;
+
+        if (resolved == NULL) {
+            buf_free(&tags);
+            free(project_root);
+            string_array_free(&source_paths);
+            binding_list_free(&bindings);
+            send_error(id, -32603, "out of memory");
+            return;
+        }
+        rc = recognize_one_file(
+            project_root,
+            source_paths.items[i],
+            resolved,
+            &bindings,
+            &tags,
+            &tag_count);
+        free(resolved);
+        if (rc == -2) {
+            buf_free(&tags);
+            free(project_root);
+            string_array_free(&source_paths);
+            binding_list_free(&bindings);
+            send_error(id, -32603, "recognize: libclang support is not enabled");
+            return;
+        }
+        if (rc != 0) {
+            buf_free(&tags);
+            free(project_root);
+            string_array_free(&source_paths);
+            binding_list_free(&bindings);
+            send_error(id, -32603, "recognize failed");
+            return;
+        }
+    }
+
+    buf_init(&result);
+    if (result.data == NULL ||
+        buf_append(&result, "{\"tags\":[") != 0 ||
+        buf_append(&result, tags.data == NULL ? "" : tags.data) != 0 ||
+        buf_append(&result, "]}") != 0) {
+        buf_free(&result);
+        buf_free(&tags);
+        free(project_root);
+        string_array_free(&source_paths);
+        binding_list_free(&bindings);
+        send_error(id, -32603, "out of memory");
+        return;
+    }
+    send_response(id, result.data);
+
+    buf_free(&result);
+    buf_free(&tags);
+    free(project_root);
+    string_array_free(&source_paths);
+    binding_list_free(&bindings);
+}
+
 int main(int argc, char **argv) {
     char *line = NULL;
     size_t line_cap = 0;
@@ -2530,6 +3495,8 @@ int main(int argc, char **argv) {
             handle_initialize(id);
         } else if (strcmp(method, "lift") == 0) {
             handle_lift(id, line);
+        } else if (strcmp(method, "provekit.plugin.recognize") == 0) {
+            handle_recognize(id, line);
         } else if (strcmp(method, "shutdown") == 0) {
             send_response(id, "null");
             free(method);
