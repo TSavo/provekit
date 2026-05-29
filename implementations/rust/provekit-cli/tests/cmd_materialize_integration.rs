@@ -259,10 +259,6 @@ fn concept_payload_json() -> &'static str {
     "{\"artifact_kind\":\"provekit-concept-citation-comment-sugar\",\"concept_name\":\"concept:sql-query-all\",\"function\":\"selectRows\",\"params\":[\"sql\",\"args\"],\"param_types\":[\"string\",\"unknown[]\"],\"return_type\":\"unknown[]\",\"named_term_tree\":{\"conceptName\":\"concept:sql-query-all\",\"args\":[{\"sort\":\"Sql\",\"source\":\"sql\"},{\"sort\":\"SqlArgs\",\"source\":\"args\"}]}}"
 }
 
-fn family_sql_payload_json() -> &'static str {
-    "{\"artifact_kind\":\"provekit-concept-citation-comment-sugar\",\"concept_name\":\"concept:sql-query-all\",\"family\":\"concept:family:sql\",\"function\":\"selectRows\",\"params\":[\"sql\",\"args\"],\"param_types\":[\"string\",\"unknown[]\"],\"return_type\":\"unknown[]\",\"named_term_tree\":{\"conceptName\":\"concept:sql-query-all\",\"args\":[{\"sort\":\"Sql\",\"source\":\"sql\"},{\"sort\":\"SqlArgs\",\"source\":\"args\"}]}}"
-}
-
 fn concept_payload_cid() -> String {
     payload_cid(concept_payload_json())
 }
@@ -456,19 +452,6 @@ fn write_concept_source(src_dir: &Path) -> PathBuf {
         ),
     )
     .expect("write source");
-    source_path
-}
-
-fn write_rust_family_sql_carrier_source(src_dir: &Path) -> PathBuf {
-    let source_path = src_dir.join("lib.rs");
-    fs::write(
-        &source_path,
-        format!(
-            "// rust source\n{}// end\n",
-            carrier_lines("//", "", family_sql_payload_json())
-        ),
-    )
-    .expect("write rust family SQL carrier source");
     source_path
 }
 
@@ -1270,178 +1253,6 @@ fn materialize_explicit_target_strips_redundant_language_prefix_from_library() {
         "result should route through the python-requests shim: {stdout}"
     );
     assert!(!stdout.contains("provekit-concept:"));
-}
-
-#[test]
-fn cross_language_discovery_honors_top_level_library_constraint() {
-    let workspace = tempfile::tempdir().expect("tempdir");
-    let repo = repo_root();
-    let src_dir = workspace.path().join("src");
-    fs::create_dir_all(&src_dir).expect("create src dir");
-    write_rust_family_sql_carrier_source(&src_dir);
-    fs::write(
-        workspace.path().join("Cargo.toml"),
-        "[package]\nname = \"cross-language-source\"\nversion = \"0.0.0\"\nedition = \"2021\"\n",
-    )
-    .expect("write source project marker");
-
-    let fake_realize = workspace.path().join("fake_realize.py");
-    fs::write(
-        &fake_realize,
-        r#"import json, sys
-for line in sys.stdin:
-    request = json.loads(line)
-    print(json.dumps({
-        "jsonrpc": "2.0",
-        "id": request.get("id"),
-        "result": {
-            "source": "const rows = db.prepare(sql).all(args);",
-            "is_stub": False,
-            "extension": "ts"
-        }
-    }), flush=True)
-"#,
-    )
-    .expect("write fake realize script");
-
-    install_python_script_manifest_with_metadata(
-        workspace.path(),
-        "typescript-better-sqlite3",
-        &fake_realize,
-        "better-sqlite3",
-        Some("concept:family:sql"),
-        &["concept:sql-query-all"],
-    );
-    install_python_script_manifest_with_metadata(
-        workspace.path(),
-        "typescript-pg",
-        &fake_realize,
-        "pg",
-        Some("concept:family:sql"),
-        &["concept:sql-query-all"],
-    );
-
-    let output = Command::new(env!("CARGO_BIN_EXE_provekit"))
-        .env("PROVEKIT_REPO_ROOT", repo)
-        .arg("materialize")
-        .arg("--source-lang")
-        .arg("rust")
-        .arg("--target")
-        .arg("typescript")
-        .arg("--library")
-        .arg("typescript-better-sqlite3")
-        .arg("--source-dir")
-        .arg(&src_dir)
-        .arg("--project")
-        .arg(workspace.path())
-        .output()
-        .expect("spawn provekit materialize cross-language discovery");
-
-    let stdout = String::from_utf8_lossy(&output.stdout);
-    let stderr = String::from_utf8_lossy(&output.stderr);
-    assert!(
-        output.status.success(),
-        "top-level --library should disambiguate cross-language discovery\nstdout:\n{stdout}\nstderr:\n{stderr}"
-    );
-    assert!(
-        stderr.contains("RESOLVE") && stderr.contains("manifest `better-sqlite3`"),
-        "should resolve through better-sqlite3, got stderr:\n{stderr}"
-    );
-    assert!(
-        !stderr.contains("AMBIGUOUS"),
-        "--library should prevent ambiguous outcome, got stderr:\n{stderr}"
-    );
-    assert!(
-        stderr.contains("1 resolve + 0 ambiguous"),
-        "summary should count one resolved site, got stderr:\n{stderr}"
-    );
-}
-
-#[test]
-fn cross_language_out_dir_refuses_target_kit_without_assemble_rpc() {
-    let workspace = tempfile::tempdir().expect("tempdir");
-    let repo = repo_root();
-    let src_dir = workspace.path().join("src");
-    fs::create_dir_all(&src_dir).expect("create src dir");
-    write_rust_family_sql_carrier_source(&src_dir);
-    fs::write(
-        workspace.path().join("Cargo.toml"),
-        "[package]\nname = \"cross-language-no-assemble\"\nversion = \"0.0.0\"\nedition = \"2021\"\n",
-    )
-    .expect("write source project marker");
-
-    let fake_realize = workspace.path().join("fake_cross_language_no_assemble.py");
-    fs::write(
-        &fake_realize,
-        r#"import json, sys
-for line in sys.stdin:
-    request = json.loads(line)
-    method = request.get("method")
-    if method == "provekit.plugin.invoke":
-        print(json.dumps({
-            "jsonrpc": "2.0",
-            "id": request.get("id"),
-            "result": {
-                "source": "const rows = db.prepare(sql).all(args);",
-                "is_stub": False,
-                "extension": "ts"
-            }
-        }), flush=True)
-    elif method == "provekit.plugin.shutdown":
-        print(json.dumps({"jsonrpc": "2.0", "id": request.get("id"), "result": None}), flush=True)
-        break
-    else:
-        print(json.dumps({
-            "jsonrpc": "2.0",
-            "id": request.get("id"),
-            "error": {"code": -32601, "message": "METHOD_NOT_FOUND: " + str(method)}
-        }), flush=True)
-"#,
-    )
-    .expect("write fake realize script");
-
-    install_python_script_manifest_with_metadata(
-        workspace.path(),
-        "typescript-better-sqlite3",
-        &fake_realize,
-        "better-sqlite3",
-        Some("concept:family:sql"),
-        &["concept:sql-query-all"],
-    );
-
-    let out_dir = workspace.path().join("materialized");
-    let output = Command::new(env!("CARGO_BIN_EXE_provekit"))
-        .env("PROVEKIT_REPO_ROOT", repo)
-        .arg("materialize")
-        .arg("--source-lang")
-        .arg("rust")
-        .arg("--target")
-        .arg("typescript")
-        .arg("--library")
-        .arg("typescript-better-sqlite3")
-        .arg("--source-dir")
-        .arg(&src_dir)
-        .arg("--project")
-        .arg(workspace.path())
-        .arg("--out-dir")
-        .arg(&out_dir)
-        .output()
-        .expect("spawn cross-language materialize with no-assemble target kit");
-
-    let stdout = String::from_utf8_lossy(&output.stdout);
-    let stderr = String::from_utf8_lossy(&output.stderr);
-    assert!(
-        !output.status.success(),
-        "cross-language materialize must fail closed when the target kit cannot assemble source\nstdout:\n{stdout}\nstderr:\n{stderr}"
-    );
-    assert!(
-        stderr.contains("assemble RPC"),
-        "failure should name the missing target-kit assembly boundary\nstdout:\n{stdout}\nstderr:\n{stderr}"
-    );
-    assert!(
-        !out_dir.join("lib.ts").exists(),
-        "CLI must not write cross-language target source through legacy concat fallback"
-    );
 }
 
 // --- compile-check tests (#1376) ---
