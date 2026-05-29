@@ -33,6 +33,9 @@
 //          Uses a fixture binary on PATH so the test is not coupled to the
 //          developer machine's Python package installation state.
 //
+// Test 11: parseFile(kit="php", ...) dispatches to the php lifter and returns
+//          a result with a diagnostics array when provekit-lsp-php is on PATH.
+//
 // These tests communicate with the daemon over its Unix socket.
 
 use std::io::{BufRead, BufReader, Write};
@@ -137,6 +140,47 @@ fn binary_path(name: &str) -> Option<PathBuf> {
         }
     }
     None
+}
+
+fn install_fixture_php_lsp() {
+    let dir = std::env::temp_dir().join(format!(
+        "provekit-linkerd-php-fixture-{}",
+        std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map(|d| d.subsec_nanos())
+            .unwrap_or(0)
+    ));
+    std::fs::create_dir_all(&dir).expect("create php fixture dir");
+
+    let binary = dir.join("provekit-lsp-php");
+    std::fs::write(
+        &binary,
+        r#"#!/bin/sh
+while IFS= read -r line; do
+  case "$line" in
+    *'"method":"initialize"'*|*'"method": "initialize"'*)
+      printf '%s\n' '{"jsonrpc":"2.0","id":1,"result":{"name":"fixture-php","protocol_version":"provekit-lift/1"}}'
+      ;;
+    *'"method":"parse"'*|*'"method": "parse"'*)
+      printf '%s\n' '{"jsonrpc":"2.0","id":2,"result":{"declarations":[{"kind":"contract","name":"add_numbers","outBinding":"out","post":{"kind":"atomic","name":"true","args":[]}}],"callEdges":[],"diagnostics":[]}}'
+      ;;
+    *'"method":"shutdown"'*|*'"method": "shutdown"'*)
+      printf '%s\n' '{"jsonrpc":"2.0","id":3,"result":null}'
+      exit 0
+      ;;
+  esac
+done
+"#,
+    )
+    .expect("write php fixture lsp");
+    let mut permissions = std::fs::metadata(&binary)
+        .expect("stat php fixture lsp")
+        .permissions();
+    permissions.set_mode(0o755);
+    std::fs::set_permissions(&binary, permissions).expect("chmod php fixture lsp");
+
+    let current_path = std::env::var("PATH").unwrap_or_default();
+    std::env::set_var("PATH", format!("{}:{current_path}", dir.display()));
 }
 
 fn rpc_binary_accepts_initialize(name: &str, args: &[&str]) -> Result<PathBuf, String> {
@@ -999,4 +1043,63 @@ def test_positive():
     child.wait().ok();
     std::fs::remove_file(&sock).ok();
     std::fs::remove_dir_all(fixture_bin_dir).ok();
+}
+
+// -------------------------------------------------------------------
+// Test 11: php kit dispatch returns diagnostics when provekit-lsp-php is on PATH.
+// -------------------------------------------------------------------
+
+/// Test 11: parseFile with kit="php" dispatches to the php lifter.
+///
+/// Installs a fixture `provekit-lsp-php` binary on PATH for this process so the
+/// assertion covers linkerd's kit dispatch contract, independent of local PHP
+/// package installation state.
+#[test]
+fn test11_php_kit_dispatch() {
+    install_fixture_php_lsp();
+
+    let sock = unique_sock_path("t11");
+    let _ = std::fs::remove_file(&sock);
+
+    let mut child = spawn_daemon(&sock);
+
+    assert!(
+        wait_for_socket(&sock, Duration::from_secs(5)),
+        "daemon socket did not appear"
+    );
+
+    let php_source = r#"<?php
+// @provekit-contract
+function add_numbers(int $a, int $b): int {
+    return $a + $b;
+}
+"#;
+
+    let req = serde_json::json!({
+        "jsonrpc": "2.0",
+        "id": 1,
+        "method": "parseFile",
+        "params": {
+            "kitId": "php",
+            "file": "/tmp/test_add.php",
+            "source": php_source
+        }
+    });
+
+    let resp = send_recv(&sock, &req);
+
+    assert!(
+        resp.get("error").is_none(),
+        "php kit parseFile returned unexpected error: {:?}",
+        resp
+    );
+    assert!(
+        resp["result"]["diagnostics"].is_array(),
+        "php kit parseFile result must have diagnostics array: {:?}",
+        resp
+    );
+
+    shutdown(&sock);
+    child.wait().ok();
+    std::fs::remove_file(&sock).ok();
 }

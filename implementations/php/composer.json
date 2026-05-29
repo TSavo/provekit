@@ -2,6 +2,7 @@
     "name": "provekit/php-kit",
     "description": "Provekit PHP kit — IR library + self-contracts lifter",
     "type": "project",
+    "bin": ["bin/provekit-lsp-php"],
     "autoload": {
         "psr-4": {
             "Provekit\\Ir\\": "provekit-ir-symbolic/src/Ir/",
