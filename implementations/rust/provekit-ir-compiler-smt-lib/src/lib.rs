@@ -202,7 +202,8 @@ mod tests {
             result.opacity_manifest.opacities[0].reason_code,
             "predicate_quantification"
         );
-        assert!(result.body.contains("(true)"));
+        assert!(result.body.contains("(assert (not true))"));
+        assert!(!result.body.contains("(true)"));
     }
 
     #[test]
@@ -220,7 +221,8 @@ mod tests {
             result.opacity_manifest.opacities[0].reason_code,
             "dependent_type"
         );
-        assert!(result.body.contains("(true)"));
+        assert!(result.body.contains("(assert (not true))"));
+        assert!(!result.body.contains("(true)"));
     }
 
     #[test]
@@ -238,6 +240,32 @@ mod tests {
         let result = compile_to_parts(&ir).expect("compile succeeds");
         assert!(result.opacity_manifest.opacities.is_empty());
         assert!(result.body.contains("(forall ((x Int))"));
+    }
+
+    #[test]
+    fn opaque_primitive_sort_quantifier_emits_opacity_entry() {
+        // Rust source sorts such as `Ref<Connection>` are valid IR
+        // primitive-sort labels for identity, but not SMT-LIB builtin sorts.
+        // The SMT backend must not emit them raw.
+        let ir = serde_json::json!({
+            "kind": "forall",
+            "name": "conn",
+            "sort": { "kind": "primitive", "name": "Ref<Connection>" },
+            "body": { "kind": "atomic", "name": "true", "args": [] }
+        });
+        let result = compile_to_parts(&ir).expect("compile succeeds");
+        assert_eq!(result.opacity_manifest.opacities.len(), 1);
+        assert_eq!(
+            result.opacity_manifest.opacities[0].reason_code,
+            "opaque_primitive_sort:Ref<Connection>"
+        );
+        assert!(
+            !result.body.contains("Ref<Connection>"),
+            "opaque Rust source sort must not be emitted as raw SMT-LIB: {}",
+            result.body
+        );
+        assert!(result.body.contains("(assert (not true))"));
+        assert!(!result.body.contains("(true)"));
     }
 
     #[test]

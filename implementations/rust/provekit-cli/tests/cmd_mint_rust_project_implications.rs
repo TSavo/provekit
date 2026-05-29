@@ -158,3 +158,33 @@ fn configured_rust_shims_emit_nonvacuous_implication_claims() {
         let _ = fs::remove_dir_all(out_dir);
     }
 }
+
+#[test]
+fn voltron_demo_emits_nonvacuous_green_implication_claims() {
+    if !z3_available() {
+        eprintln!("z3 not on PATH: skipping Voltron implication proof");
+        return;
+    }
+    build_rust_lifter_bins();
+
+    let repo = repo_root();
+    let project = repo.join("examples/voltron-demo");
+    let out_dir = unique_dir("voltron-demo");
+    run_mint(&project, &out_dir);
+    let (report, code) = run_prove_json(&out_dir);
+    assert_eq!(
+        code, 0,
+        "Voltron should prove cleanly once body contracts and implication bridges align; report: {report}"
+    );
+    let total = report["totalCallsites"].as_u64().unwrap_or(0);
+    assert!(
+        total > 0,
+        "Voltron must not prove vacuously; report: {report}"
+    );
+    assert_eq!(report["violations"], 0, "Voltron report: {report}");
+    assert_eq!(
+        report["discharged"], report["totalCallsites"],
+        "Voltron report: {report}"
+    );
+    let _ = fs::remove_dir_all(out_dir);
+}
