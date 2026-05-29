@@ -2,9 +2,11 @@ package emitgotesting
 
 import (
 	"bufio"
+	"bytes"
 	"encoding/json"
 	"fmt"
 	"io"
+	"os/exec"
 )
 
 func Dispatch(request map[string]any) map[string]any {
@@ -25,10 +27,45 @@ func Dispatch(request map[string]any) map[string]any {
 		}
 		emission := Emit(EmitPlanFromParams(obj))
 		return success(id, emissionToMap(emission))
+	case "provekit.plugin.check":
+		obj, ok := params.(map[string]any)
+		if !ok {
+			return failure(id, -32602, "INVALID_PARAMS: params must be an object")
+		}
+		outDir := firstString(obj["out_dir"], obj["outDir"])
+		if outDir == "" {
+			return failure(id, -32602, "INVALID_PARAMS: missing out_dir")
+		}
+		return success(id, Check(outDir))
 	case "provekit.plugin.shutdown":
 		return success(id, nil)
 	default:
 		return failure(id, -32601, fmt.Sprintf("METHOD_NOT_FOUND: %s", method))
+	}
+}
+
+func Check(outDir string) map[string]any {
+	cmd := exec.Command("go", "test", "./...")
+	cmd.Dir = outDir
+	var stdout bytes.Buffer
+	var stderr bytes.Buffer
+	cmd.Stdout = &stdout
+	cmd.Stderr = &stderr
+	err := cmd.Run()
+	exitCode := 0
+	if err != nil {
+		exitCode = 1
+		if exitErr, ok := err.(*exec.ExitError); ok {
+			exitCode = exitErr.ExitCode()
+		}
+	}
+	return map[string]any{
+		"ok":       err == nil,
+		"command":  "go test ./...",
+		"cwd":      outDir,
+		"stdout":   stdout.String(),
+		"stderr":   stderr.String(),
+		"exitCode": exitCode,
 	}
 }
 

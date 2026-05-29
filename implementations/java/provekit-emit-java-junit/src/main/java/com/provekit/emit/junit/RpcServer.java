@@ -1,13 +1,19 @@
 package com.provekit.emit.junit;
 
 import java.io.BufferedReader;
+import java.io.File;
 import java.io.IOException;
+import java.io.InputStream;
 import java.io.InputStreamReader;
 import java.io.PrintWriter;
+import java.io.UncheckedIOException;
+import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.CompletionException;
 
 import com.provekit.ir.Blake3;
 import com.provekit.ir.Jcs;
@@ -126,6 +132,7 @@ public final class RpcServer {
                     JUnitEmitter.Emission emission = emitter.emit(plan);
                     sendResponse(id, emission.toJson());
                 }
+                case "provekit.plugin.check" -> sendResponse(id, checkResult(params));
                 case "provekit.plugin.shutdown" -> {
                     sendResponse(id, "null");
                     System.exit(0);
@@ -207,6 +214,69 @@ public final class RpcServer {
         for (var e : fields.entrySet()) fieldList.add(new Jcs.Field(e.getKey(), e.getValue()));
         Jcs.Obj input = new Jcs.Obj(fieldList);
         return Blake3.blake3_512(Jcs.encodeUtf8(input));
+    }
+
+    private String checkResult(String paramsJson) throws IOException, InterruptedException {
+        Jcs.Json parsed = Jcs.parse(paramsJson);
+        if (!(parsed instanceof Jcs.Obj obj)) {
+            throw new IllegalArgumentException("params must be an object");
+        }
+        String outDir = obj.stringFieldOrNull("out_dir");
+        if (outDir == null || outDir.isBlank()) {
+            throw new IllegalArgumentException("missing out_dir");
+        }
+        File projectRoot = findAncestorFile(new File(outDir), "pom.xml");
+        if (projectRoot == null) {
+            throw new IllegalArgumentException(
+                "junit5 check requires a pom.xml at or above " + outDir);
+        }
+
+        Process process = new ProcessBuilder("mvn", "-q", "test")
+            .directory(projectRoot)
+            .start();
+        CompletableFuture<byte[]> stdoutFuture = readAllBytesAsync(process.getInputStream());
+        CompletableFuture<byte[]> stderrFuture = readAllBytesAsync(process.getErrorStream());
+        int exitCode = process.waitFor();
+        byte[] stdout = joinBytes(stdoutFuture);
+        byte[] stderr = joinBytes(stderrFuture);
+
+        Jcs.Obj result = Jcs.object(
+            "ok", Jcs.bool(exitCode == 0),
+            "command", Jcs.string("mvn -q test"),
+            "cwd", Jcs.string(projectRoot.getPath()),
+            "stdout", Jcs.string(new String(stdout, StandardCharsets.UTF_8)),
+            "stderr", Jcs.string(new String(stderr, StandardCharsets.UTF_8)),
+            "exitCode", Jcs.integer(exitCode)
+        );
+        return Jcs.encode(result);
+    }
+
+    private static CompletableFuture<byte[]> readAllBytesAsync(InputStream stream) {
+        return CompletableFuture.supplyAsync(() -> {
+            try {
+                return stream.readAllBytes();
+            } catch (IOException e) {
+                throw new UncheckedIOException(e);
+            }
+        });
+    }
+
+    private static byte[] joinBytes(CompletableFuture<byte[]> future) throws IOException {
+        try {
+            return future.join();
+        } catch (CompletionException e) {
+            if (e.getCause() instanceof UncheckedIOException io) throw io.getCause();
+            throw e;
+        }
+    }
+
+    private static File findAncestorFile(File start, String filename) {
+        File cursor = start;
+        while (cursor != null) {
+            if (new File(cursor, filename).exists()) return cursor;
+            cursor = cursor.getParentFile();
+        }
+        return null;
     }
 
     private void sendResponse(String id, String result) {

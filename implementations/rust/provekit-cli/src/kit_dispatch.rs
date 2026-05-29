@@ -1425,6 +1425,35 @@ pub fn dispatch_emit(
     })
 }
 
+/// Ask the same configured emit kit to validate the emitted artifact using
+/// its native ecosystem. The CLI supplies paths and normalized context over
+/// RPC; the selected kit owns every target-language and framework decision.
+pub fn dispatch_emit_check(
+    workspace_root: &Path,
+    target_lang: &str,
+    framework: &str,
+    plan: &Value,
+    out_dir: &Path,
+    artifact_path: &Path,
+    emit_result: &Value,
+) -> Result<Value, KitUnavailable> {
+    let candidate = resolve_emit_command(workspace_root, target_lang, framework)?;
+    invoke_emit_check(
+        target_lang,
+        framework,
+        &candidate,
+        plan,
+        out_dir,
+        artifact_path,
+        emit_result,
+    )
+    .map_err(|detail| KitUnavailable {
+        kit_kind: "emit",
+        language: target_lang.to_string(),
+        detail,
+    })
+}
+
 fn resolve_emit_command(
     workspace_root: &Path,
     target_lang: &str,
@@ -1663,6 +1692,76 @@ fn invoke_emit(
         source,
         result,
     })
+}
+
+fn invoke_emit_check(
+    target_lang: &str,
+    framework: &str,
+    candidate: &EmitCandidate,
+    plan: &Value,
+    out_dir: &Path,
+    artifact_path: &Path,
+    emit_result: &Value,
+) -> Result<Value, String> {
+    if candidate.command.argv.is_empty() {
+        return Err("empty command".to_string());
+    }
+    let mut command = Command::new(&candidate.command.argv[0]);
+    if candidate.command.argv.len() > 1 {
+        command.args(&candidate.command.argv[1..]);
+    }
+    if !candidate.command.argv.iter().any(|arg| arg == "--rpc") {
+        command.arg("--rpc");
+    }
+    if let Some(wd) = &candidate.command.working_dir {
+        command.current_dir(wd);
+    }
+    command.stdin(Stdio::piped());
+    command.stdout(Stdio::piped());
+    command.stderr(Stdio::null());
+
+    let mut child = command
+        .spawn()
+        .map_err(|e| format!("spawn emit kit check: {e}"))?;
+    let mut stdin = child
+        .stdin
+        .take()
+        .ok_or_else(|| "emit kit stdin unavailable".to_string())?;
+    let stdout = child
+        .stdout
+        .take()
+        .ok_or_else(|| "emit kit stdout unavailable".to_string())?;
+    let mut reader = BufReader::new(stdout);
+
+    let req = json!({
+        "jsonrpc": "2.0",
+        "id": 1,
+        "method": "provekit.plugin.check",
+        "params": {
+            "plan": plan,
+            "out_dir": out_dir,
+            "artifact_path": artifact_path,
+            "emit_result": emit_result,
+        },
+    });
+    writeln!(stdin, "{req}").map_err(|e| format!("write emit check request: {e}"))?;
+    let result = read_response(&mut reader, 1).map_err(|e| {
+        format!(
+            "emit kit `{}` check for {target_lang}/{framework}: {e}",
+            candidate.surface
+        )
+    })?;
+
+    let shutdown = json!({
+        "jsonrpc": "2.0",
+        "id": 2,
+        "method": "provekit.plugin.shutdown",
+    });
+    let _ = writeln!(stdin, "{shutdown}");
+    drop(stdin);
+    let _ = child.wait();
+
+    Ok(result)
 }
 
 /// #1375 Milestone C: one file in a target-owned compilation-unit emission.
@@ -2816,5 +2915,4 @@ command = ["/bin/true"]
         assert!(validate_library_tag("urllib.request").is_err());
         assert!(validate_library_tag("1requests").is_err());
     }
-
 }

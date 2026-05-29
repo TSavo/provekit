@@ -1,13 +1,12 @@
 // SPDX-License-Identifier: Apache-2.0
 //
 // `provekit emit`: dispatch neutral contract predicates to a target test
-// emitter kit. The target kit owns framework syntax; the CLI only resolves
-// the manifest, invokes the kit, writes the emitted artifact, and optionally
-// asks the target toolchain to check it.
+// emitter kit. The target kit owns framework syntax and native check
+// semantics; the CLI only resolves the manifest, invokes the kit, and writes
+// the emitted artifact.
 
 use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
-use std::process::Command;
 use std::sync::Arc;
 
 use clap::Parser;
@@ -20,7 +19,7 @@ use provekit_proof_envelope::{
     build_proof_envelope, ed25519_pubkey_string, Ed25519Seed, ProofEnvelopeInput,
 };
 
-use crate::kit_dispatch::{dispatch_emit, dispatch_emit_witness};
+use crate::kit_dispatch::{dispatch_emit, dispatch_emit_check, dispatch_emit_witness};
 use crate::{OutputFlags, EXIT_OK, EXIT_USER_ERROR, EXIT_VERIFY_FAIL};
 
 const DEFAULT_WITNESS_PRODUCED_AT: &str = "2026-05-08T00:00:00Z";
@@ -47,9 +46,8 @@ pub struct EmitArgs {
     /// Directory where the emitted artifact should be written.
     #[arg(long = "out-dir")]
     pub out_dir: PathBuf,
-    /// After writing the artifact, invoke the target language's test/build checker.
-    /// Supported today: go (`go test ./...`), java (`mvn -q test`),
-    /// and python (`python -m pytest`).
+    /// After writing the artifact, ask the selected emit kit to run its
+    /// native compile/test check over the emitted project.
     #[arg(long = "compile-check")]
     pub compile_check: bool,
     #[command(flatten)]
@@ -149,8 +147,27 @@ pub fn run(args: EmitArgs) -> u8 {
     };
 
     let compile = if args.compile_check {
-        match compile_check(&args.target, &args.out_dir) {
-            Ok(report) => Some(report),
+        match dispatch_emit_check(
+            &project_root,
+            &args.target,
+            &args.framework,
+            &plan,
+            &args.out_dir,
+            &artifact_path,
+            &emitted.result,
+        ) {
+            Ok(report) if report.get("ok").and_then(Json::as_bool).unwrap_or(false) => Some(report),
+            Ok(report) => {
+                emit_receipt(
+                    args.out.json,
+                    false,
+                    &args,
+                    &emitted,
+                    &artifact_path,
+                    Some(report),
+                );
+                return EXIT_VERIFY_FAIL;
+            }
             Err(error) => {
                 emit_receipt(
                     args.out.json,
@@ -158,7 +175,7 @@ pub fn run(args: EmitArgs) -> u8 {
                     &args,
                     &emitted,
                     &artifact_path,
-                    Some(json!({"ok": false, "error": error})),
+                    Some(json!({"ok": false, "error": error.to_string()})),
                 );
                 return EXIT_VERIFY_FAIL;
             }
@@ -239,99 +256,6 @@ fn default_artifact_path(target: &str, framework: &str, result: &Json) -> PathBu
         .filter(|s| !s.is_empty())
         .unwrap_or(target);
     PathBuf::from(format!("provekit_emitted.{extension}"))
-}
-
-fn compile_check(target: &str, out_dir: &Path) -> Result<Json, String> {
-    match target {
-        "go" => {
-            let output = Command::new("go")
-                .current_dir(out_dir)
-                .args(["test", "./..."])
-                .output()
-                .map_err(|e| format!("spawn go test: {e}"))?;
-            if output.status.success() {
-                Ok(json!({
-                    "ok": true,
-                    "command": "go test ./...",
-                    "stdout": String::from_utf8_lossy(&output.stdout),
-                    "stderr": String::from_utf8_lossy(&output.stderr),
-                }))
-            } else {
-                Err(format!(
-                    "go test ./... failed\nstdout:\n{}\nstderr:\n{}",
-                    String::from_utf8_lossy(&output.stdout),
-                    String::from_utf8_lossy(&output.stderr)
-                ))
-            }
-        }
-        "java" => {
-            let project_root = find_ancestor_file(out_dir, "pom.xml").ok_or_else(|| {
-                format!(
-                    "java compile-check requires a pom.xml at or above {}",
-                    out_dir.display()
-                )
-            })?;
-            let output = Command::new("mvn")
-                .current_dir(&project_root)
-                .args(["-q", "test"])
-                .output()
-                .map_err(|e| format!("spawn mvn test: {e}"))?;
-            if output.status.success() {
-                Ok(json!({
-                    "ok": true,
-                    "command": "mvn -q test",
-                    "cwd": project_root,
-                    "stdout": String::from_utf8_lossy(&output.stdout),
-                    "stderr": String::from_utf8_lossy(&output.stderr),
-                }))
-            } else {
-                Err(format!(
-                    "mvn -q test failed in {}\nstdout:\n{}\nstderr:\n{}",
-                    project_root.display(),
-                    String::from_utf8_lossy(&output.stdout),
-                    String::from_utf8_lossy(&output.stderr)
-                ))
-            }
-        }
-        "python" => {
-            let python = std::env::var("PYTHON").unwrap_or_else(|_| "python3".to_string());
-            let output = Command::new(&python)
-                .current_dir(out_dir)
-                .args(["-m", "pytest", ".", "-q"])
-                .output()
-                .map_err(|e| format!("spawn python pytest: {e}"))?;
-            if output.status.success() {
-                Ok(json!({
-                    "ok": true,
-                    "command": format!("{python} -m pytest . -q"),
-                    "cwd": out_dir,
-                    "stdout": String::from_utf8_lossy(&output.stdout),
-                    "stderr": String::from_utf8_lossy(&output.stderr),
-                }))
-            } else {
-                Err(format!(
-                    "{python} -m pytest . -q failed in {}\nstdout:\n{}\nstderr:\n{}",
-                    out_dir.display(),
-                    String::from_utf8_lossy(&output.stdout),
-                    String::from_utf8_lossy(&output.stderr)
-                ))
-            }
-        }
-        other => Err(format!(
-            "compile-check is not implemented for target `{other}`"
-        )),
-    }
-}
-
-fn find_ancestor_file(start: &Path, filename: &str) -> Option<PathBuf> {
-    let mut cursor = Some(start);
-    while let Some(path) = cursor {
-        if path.join(filename).exists() {
-            return Some(path.to_path_buf());
-        }
-        cursor = path.parent();
-    }
-    None
 }
 
 fn emit_receipt(
