@@ -80,6 +80,10 @@ public final class RpcServer {
                     String resultObj = handleAssemble(line);
                     sendResponse(id, resultObj);
                 }
+                case "provekit.plugin.check" -> {
+                    String resultObj = handleCheck(line);
+                    sendResponse(id, resultObj);
+                }
                 case "provekit.plugin.resolve_dependency_proofs" -> {
                     try {
                         sendResponse(id, handleResolveDependencyProofs(line));
@@ -414,11 +418,73 @@ public final class RpcServer {
     }
 
     /**
+     * Kit-owned materialize compile check. The CLI supplies the output
+     * directory and kit-produced compile metadata; Java owns javac invocation.
+     */
+    private String handleCheck(String line) {
+        String paramsObj = JsonUtil.extractParamsObject(line);
+        String outDirRaw = JsonUtil.decodeJsonStringField(paramsObj, "out_dir");
+        if (outDirRaw == null || outDirRaw.isBlank()) {
+            return "{\"ok\":false,\"command\":\"javac\",\"stderr\":\"missing out_dir\"}";
+        }
+        Path outDir = Paths.get(outDirRaw);
+        List<Path> javaFiles = new ArrayList<>();
+        try (Stream<Path> walk = Files.walk(outDir)) {
+            javaFiles = walk
+                .filter(Files::isRegularFile)
+                .filter(path -> path.getFileName().toString().endsWith(".java"))
+                .sorted()
+                .toList();
+        } catch (IOException e) {
+            return "{\"ok\":false,\"command\":\"javac\",\"stderr\":"
+                + JsonUtil.quoted("walk " + outDir + ": " + e.getMessage())
+                + "}";
+        }
+        if (javaFiles.isEmpty()) {
+            return "{\"ok\":true,\"command\":\"javac\",\"checked_files\":[]}";
+        }
+
+        List<String> argv = new ArrayList<>();
+        argv.add("javac");
+        List<String> classpath = JsonUtil.decodeJsonStringArray(paramsObj, "compile_classpath");
+        if (!classpath.isEmpty()) {
+            argv.add("-cp");
+            argv.add(String.join(File.pathSeparator, classpath));
+        }
+        for (Path file : javaFiles) {
+            argv.add(file.toString());
+        }
+
+        ProcessBuilder pb = new ProcessBuilder(argv);
+        pb.redirectErrorStream(true);
+        try {
+            Process process = pb.start();
+            byte[] outputBytes = process.getInputStream().readAllBytes();
+            int code = process.waitFor();
+            String outputText = new String(outputBytes, StandardCharsets.UTF_8);
+            return "{\"ok\":" + (code == 0)
+                + ",\"command\":\"javac\""
+                + ",\"exit_code\":" + code
+                + ",\"checked_files\":" + jsonStringArray(javaFiles.stream().map(Path::toString).toList())
+                + ",\"stdout\":\"\""
+                + ",\"stderr\":" + JsonUtil.quoted(outputText)
+                + "}";
+        } catch (IOException e) {
+            return "{\"ok\":false,\"command\":\"javac\",\"stderr\":"
+                + JsonUtil.quoted(e.getMessage() == null ? e.getClass().getName() : e.getMessage())
+                + "}";
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+            return "{\"ok\":false,\"command\":\"javac\",\"stderr\":\"interrupted\"}";
+        }
+    }
+
+    /**
      * #1388: scan ~/.m2/repository/<group>/<artifact>/ for the most-recent
      * version's JAR and add it to the classpath set. Picks the
      * lexicographically-latest version directory. Silent on absence — the
-     * substrate's compile-check will surface missing JARs as
-     * package-not-found errors.
+     * kit-owned compile check will surface missing JARs as package-not-found
+     * errors.
      */
     private static void scanMavenJars(
             java.nio.file.Path m2Root,
@@ -445,6 +511,16 @@ public final class RpcServer {
         } catch (Exception ignored) {
             // Best-effort: missing dep manifests as javac error downstream.
         }
+    }
+
+    private static String jsonStringArray(List<String> values) {
+        StringBuilder out = new StringBuilder("[");
+        for (int i = 0; i < values.size(); i++) {
+            if (i > 0) out.append(',');
+            out.append(JsonUtil.quoted(values.get(i)));
+        }
+        out.append(']');
+        return out.toString();
     }
 
     /** PascalCase from snake-case or kebab-case file basename. */

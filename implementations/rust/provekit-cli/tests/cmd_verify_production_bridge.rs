@@ -230,14 +230,11 @@ fn mint_project_from_ir(suffix: &str, ir_doc: Json) -> (PathBuf, PathBuf) {
     let surface = "mock";
     let project = unique_dir(suffix);
     fs::create_dir_all(project.join(".provekit")).expect("mkdir .provekit");
-    // A real kit's config.toml declares its lift surface AND its solver
-    // plan. Both are exercised: mint reads `[authoring]`, verify reads
-    // `[solvers]`. Without an explicit `[solvers]` block the presence of a
-    // config.toml still makes `SolversConfig::load` return `Some(default)`,
-    // which registers no z3; so a faithful kit config names z3 for the
-    // linear-arithmetic class the body-obligation falls into. The
-    // `-smt2 -in` flags mirror `registry::build_default_z3`; keep in sync if
-    // that fallback changes.
+    // A real kit's config.toml declares its lift surface and may declare its
+    // solver plan. This fixture keeps an explicit z3 plan so the production
+    // bridge test exercises configured solver dispatch. The `-smt2 -in` flags
+    // mirror `registry::build_default_z3`; keep in sync if that fallback
+    // changes.
     fs::write(
         project.join(".provekit").join("config.toml"),
         format!(

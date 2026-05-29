@@ -289,6 +289,12 @@ jobs:
         # the PR is not mergeable.
         run: make conformance
 
+      - name: make cross-language-proof-parity
+        # Single acceptance shape for the product spine: Java, Go, Python, and
+        # Rust must each cover emit, materialize, and prove through
+        # config/manifest/RPC-dispatched kits.
+        run: make cross-language-proof-parity
+
       - name: make test-all
         # Per-language native test suites. test-rust runs the Rust
         # workspace + the two tools crates; test-go iterates the three

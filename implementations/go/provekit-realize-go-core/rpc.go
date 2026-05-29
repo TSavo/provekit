@@ -6,6 +6,8 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"os/exec"
+	"path/filepath"
 )
 
 type rpcRequest struct {
@@ -37,6 +39,8 @@ func RunRPC(stdin io.Reader, stdout io.Writer) error {
 		case "provekit.plugin.resolve_dependency_proofs":
 			fmt.Fprintln(os.Stderr, "provekit-realize-go-core: resolve_dependency_proofs not yet implemented for go; returning empty proof_paths")
 			writeJSON(stdout, successResponse(req.ID, map[string]any{"proof_paths": []string{}}))
+		case "provekit.plugin.check":
+			writeJSON(stdout, handleCheck(req.ID, req.Params))
 		case "provekit.plugin.shutdown":
 			writeJSON(stdout, successResponse(req.ID, nil))
 			return nil
@@ -72,6 +76,34 @@ func handleInvoke(id json.RawMessage, raw json.RawMessage) any {
 		return errorResponse(id, -32603, err.Error())
 	}
 	return successResponse(id, realized)
+}
+
+func handleCheck(id json.RawMessage, raw json.RawMessage) any {
+	var params map[string]any
+	if len(raw) > 0 {
+		if err := json.Unmarshal(raw, &params); err != nil {
+			return errorResponse(id, -32602, fmt.Sprintf("INVALID_PARAMS: %v", err))
+		}
+	}
+	if params == nil {
+		params = map[string]any{}
+	}
+	outDir, _ := params["out_dir"].(string)
+	if outDir == "" {
+		return successResponse(id, map[string]any{"ok": false, "command": "go test ./...", "stderr": "missing out_dir"})
+	}
+	cmd := exec.Command("go", "test", "./...")
+	cmd.Dir = filepath.Clean(outDir)
+	output, err := cmd.CombinedOutput()
+	report := map[string]any{
+		"ok":      err == nil,
+		"command": "go test ./...",
+		"stderr":  string(output),
+	}
+	if err != nil {
+		report["error"] = err.Error()
+	}
+	return successResponse(id, report)
 }
 
 func asMissing(err error, target **MissingTemplateError) bool {

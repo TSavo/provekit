@@ -156,7 +156,13 @@ impl SolversConfig {
         }
         let body =
             std::fs::read_to_string(&path).map_err(|e| format!("read {}: {e}", path.display()))?;
-        Self::from_toml(&body).map(Some)
+        #[derive(Deserialize)]
+        struct Outer {
+            #[serde(default)]
+            solvers: Option<SolversConfig>,
+        }
+        let outer: Outer = toml::from_str(&body).map_err(|e| format!("parse toml: {e}"))?;
+        Ok(outer.solvers)
     }
 
     pub fn from_toml(body: &str) -> Result<Self, String> {
@@ -293,5 +299,29 @@ default = "z3"
             SolverPlan::Single(n) => assert_eq!(n, "z3"),
             _ => panic!("expected Single z3 fallback"),
         }
+    }
+
+    #[test]
+    fn load_without_solvers_table_returns_none() {
+        let root = std::env::temp_dir().join(format!(
+            "provekit-solvers-config-{}-{}",
+            std::process::id(),
+            "no-solvers"
+        ));
+        let provekit_dir = root.join(".provekit");
+        std::fs::create_dir_all(&provekit_dir).expect("create .provekit");
+        std::fs::write(
+            provekit_dir.join("config.toml"),
+            "[authoring]\nsurface = \"rust\"\n",
+        )
+        .expect("write config");
+
+        let loaded = SolversConfig::load(&root).expect("load config");
+        let _ = std::fs::remove_dir_all(&root);
+
+        assert!(
+            loaded.is_none(),
+            "a project config without [solvers] must fall back to the default z3 registry"
+        );
     }
 }

@@ -6,6 +6,11 @@ license.workspace = true
 authors.workspace = true
 description = "ProvekIt lift adapter: walk #[test] / #[tokio::test] functions and lift each assert_eq!/assert_ne!/assert! invocation to its own point-specific ContractDecl."
 
+[lib]
+# This crate has no doctest examples; the full release workspace run only
+# builds an empty rustdoc harness, which can fail while relinking workspace rlibs.
+doctest = false
+
 [dependencies]
 provekit-ir-symbolic = { path = "../provekit-ir-symbolic" }
 provekit-ir-types = { path = "../provekit-ir-types" }

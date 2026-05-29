@@ -2625,12 +2625,120 @@ pub fn dispatch(request: &Value) -> Value {
                 }
             })
         }
+        "provekit.plugin.check" => {
+            let params = request
+                .get("params")
+                .and_then(Value::as_object)
+                .cloned()
+                .unwrap_or_default();
+            serde_json::json!({
+                "jsonrpc": "2.0",
+                "id": id,
+                "result": check_materialized(&params),
+            })
+        }
         "shutdown" | "provekit.plugin.shutdown" => serde_json::json!({
             "jsonrpc": "2.0",
             "id": id,
             "result": null
         }),
         _ => error(id, -32601, &format!("METHOD_NOT_FOUND: {method}")),
+    }
+}
+
+fn check_materialized(params: &serde_json::Map<String, Value>) -> Value {
+    let out_dir = params
+        .get("out_dir")
+        .or_else(|| params.get("outDir"))
+        .and_then(Value::as_str)
+        .unwrap_or("");
+    if out_dir.is_empty() {
+        return json!({
+            "ok": false,
+            "command": "cargo check",
+            "stderr": "missing out_dir",
+        });
+    }
+    let out_dir = PathBuf::from(out_dir);
+    if out_dir.join("Cargo.toml").is_file() {
+        let mut cmd = std::process::Command::new("cargo");
+        cmd.arg("check").current_dir(&out_dir);
+        return command_report("cargo check", cmd);
+    }
+    let mut rs_files = Vec::new();
+    collect_rs_files(&out_dir, &mut rs_files);
+    if rs_files.is_empty() {
+        return json!({
+            "ok": true,
+            "command": "rustc",
+            "checked_files": [],
+        });
+    }
+    let mut stdout = String::new();
+    let mut stderr = String::new();
+    let mut ok = true;
+    for file in &rs_files {
+        let mut cmd = std::process::Command::new("rustc");
+        cmd.args(["--crate-type", "lib", "--edition", "2021"])
+            .arg(file);
+        match cmd.output() {
+            Ok(output) => {
+                ok &= output.status.success();
+                stdout.push_str(&String::from_utf8_lossy(&output.stdout));
+                stderr.push_str(&String::from_utf8_lossy(&output.stderr));
+            }
+            Err(error) => {
+                ok = false;
+                stderr.push_str(&error.to_string());
+            }
+        }
+    }
+    json!({
+        "ok": ok,
+        "command": "rustc",
+        "checked_files": rs_files
+            .iter()
+            .map(|path| path.display().to_string())
+            .collect::<Vec<_>>(),
+        "stdout": stdout,
+        "stderr": stderr,
+    })
+}
+
+fn command_report(command: &str, mut cmd: std::process::Command) -> Value {
+    match cmd.output() {
+        Ok(output) => json!({
+            "ok": output.status.success(),
+            "command": command,
+            "exit_code": output.status.code(),
+            "stdout": String::from_utf8_lossy(&output.stdout).to_string(),
+            "stderr": String::from_utf8_lossy(&output.stderr).to_string(),
+        }),
+        Err(error) => json!({
+            "ok": false,
+            "command": command,
+            "stderr": error.to_string(),
+        }),
+    }
+}
+
+fn collect_rs_files(dir: &Path, out: &mut Vec<PathBuf>) {
+    let Ok(entries) = std::fs::read_dir(dir) else {
+        return;
+    };
+    for entry in entries.flatten() {
+        let path = entry.path();
+        if path.is_dir() {
+            let Some(name) = path.file_name().and_then(|s| s.to_str()) else {
+                continue;
+            };
+            if name == "target" || name == ".git" {
+                continue;
+            }
+            collect_rs_files(&path, out);
+        } else if path.extension().and_then(|s| s.to_str()) == Some("rs") {
+            out.push(path);
+        }
     }
 }
 
@@ -4612,6 +4720,33 @@ mod tests {
             "expected dependency proof path {} in response {response}",
             proof_path.display()
         );
+        let _ = fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn plugin_check_runs_cargo_check() {
+        let root = temp_operator_root("rust_materialize_check");
+        fs::write(
+            root.join("Cargo.toml"),
+            "[package]\nname = \"rust_materialize_check\"\nversion = \"0.1.0\"\nedition = \"2021\"\n",
+        )
+        .expect("write Cargo.toml");
+        fs::create_dir_all(root.join("src")).expect("create src");
+        fs::write(root.join("src/lib.rs"), "pub fn ok() -> i64 { 1 }\n").expect("write lib.rs");
+
+        let response = dispatch(&serde_json::json!({
+            "jsonrpc": "2.0",
+            "id": 12,
+            "method": "provekit.plugin.check",
+            "params": {
+                "kind": "materialize",
+                "out_dir": root.display().to_string(),
+            }
+        }));
+
+        assert_eq!(response["id"], 12);
+        assert_eq!(response["result"]["ok"], true, "response: {response}");
+        assert_eq!(response["result"]["command"], "cargo check");
         let _ = fs::remove_dir_all(root);
     }
 

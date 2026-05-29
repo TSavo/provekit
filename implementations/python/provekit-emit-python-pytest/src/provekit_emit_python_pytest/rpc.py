@@ -20,6 +20,8 @@ predicate -> assertion table plus a test-module shell.
 from __future__ import annotations
 
 import json
+import os
+import subprocess
 import sys
 import traceback
 from typing import Any
@@ -68,10 +70,38 @@ def dispatch(request: dict[str, Any]) -> dict[str, Any]:
         emission = emit(plan)
         return {"jsonrpc": "2.0", "id": msg_id, "result": emission.to_json()}
 
+    if method == "provekit.plugin.check":
+        if not isinstance(params, dict):
+            return _error(msg_id, -32602, "INVALID_PARAMS: params must be an object")
+        out_dir = params.get("out_dir")
+        if not isinstance(out_dir, str) or not out_dir:
+            return _error(msg_id, -32602, "INVALID_PARAMS: missing out_dir")
+        return {"jsonrpc": "2.0", "id": msg_id, "result": _check_pytest(out_dir)}
+
     if method == "provekit.plugin.shutdown":
         return {"jsonrpc": "2.0", "id": msg_id, "result": None}
 
     return _error(msg_id, -32601, f"METHOD_NOT_FOUND: {method}")
+
+
+def _check_pytest(out_dir: str) -> dict[str, Any]:
+    python = os.environ.get("PYTHON") or sys.executable or "python3"
+    completed = subprocess.run(
+        [python, "-m", "pytest", ".", "-q"],
+        cwd=out_dir,
+        text=True,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        check=False,
+    )
+    return {
+        "ok": completed.returncode == 0,
+        "command": f"{python} -m pytest . -q",
+        "cwd": out_dir,
+        "stdout": completed.stdout,
+        "stderr": completed.stderr,
+        "exitCode": completed.returncode,
+    }
 
 
 def _send(obj: dict[str, Any]) -> None:

@@ -1425,6 +1425,35 @@ pub fn dispatch_emit(
     })
 }
 
+/// Ask the same configured emit kit to validate the emitted artifact using
+/// its native ecosystem. The CLI supplies paths and normalized context over
+/// RPC; the selected kit owns every target-language and framework decision.
+pub fn dispatch_emit_check(
+    workspace_root: &Path,
+    target_lang: &str,
+    framework: &str,
+    plan: &Value,
+    out_dir: &Path,
+    artifact_path: &Path,
+    emit_result: &Value,
+) -> Result<Value, KitUnavailable> {
+    let candidate = resolve_emit_command(workspace_root, target_lang, framework)?;
+    invoke_emit_check(
+        target_lang,
+        framework,
+        &candidate,
+        plan,
+        out_dir,
+        artifact_path,
+        emit_result,
+    )
+    .map_err(|detail| KitUnavailable {
+        kit_kind: "emit",
+        language: target_lang.to_string(),
+        detail,
+    })
+}
+
 fn resolve_emit_command(
     workspace_root: &Path,
     target_lang: &str,
@@ -1665,6 +1694,76 @@ fn invoke_emit(
     })
 }
 
+fn invoke_emit_check(
+    target_lang: &str,
+    framework: &str,
+    candidate: &EmitCandidate,
+    plan: &Value,
+    out_dir: &Path,
+    artifact_path: &Path,
+    emit_result: &Value,
+) -> Result<Value, String> {
+    if candidate.command.argv.is_empty() {
+        return Err("empty command".to_string());
+    }
+    let mut command = Command::new(&candidate.command.argv[0]);
+    if candidate.command.argv.len() > 1 {
+        command.args(&candidate.command.argv[1..]);
+    }
+    if !candidate.command.argv.iter().any(|arg| arg == "--rpc") {
+        command.arg("--rpc");
+    }
+    if let Some(wd) = &candidate.command.working_dir {
+        command.current_dir(wd);
+    }
+    command.stdin(Stdio::piped());
+    command.stdout(Stdio::piped());
+    command.stderr(Stdio::null());
+
+    let mut child = command
+        .spawn()
+        .map_err(|e| format!("spawn emit kit check: {e}"))?;
+    let mut stdin = child
+        .stdin
+        .take()
+        .ok_or_else(|| "emit kit stdin unavailable".to_string())?;
+    let stdout = child
+        .stdout
+        .take()
+        .ok_or_else(|| "emit kit stdout unavailable".to_string())?;
+    let mut reader = BufReader::new(stdout);
+
+    let req = json!({
+        "jsonrpc": "2.0",
+        "id": 1,
+        "method": "provekit.plugin.check",
+        "params": {
+            "plan": plan,
+            "out_dir": out_dir,
+            "artifact_path": artifact_path,
+            "emit_result": emit_result,
+        },
+    });
+    writeln!(stdin, "{req}").map_err(|e| format!("write emit check request: {e}"))?;
+    let result = read_response(&mut reader, 1).map_err(|e| {
+        format!(
+            "emit kit `{}` check for {target_lang}/{framework}: {e}",
+            candidate.surface
+        )
+    })?;
+
+    let shutdown = json!({
+        "jsonrpc": "2.0",
+        "id": 2,
+        "method": "provekit.plugin.shutdown",
+    });
+    let _ = writeln!(stdin, "{shutdown}");
+    drop(stdin);
+    let _ = child.wait();
+
+    Ok(result)
+}
+
 /// #1375 Milestone C: one file in a target-owned compilation-unit emission.
 #[derive(Debug, Clone)]
 pub struct AssembledFile {
@@ -1674,7 +1773,8 @@ pub struct AssembledFile {
 
 /// #1388: result of an assemble RPC call. Carries the emitted files AND
 /// the classpath the kit declares the materialized code needs to compile.
-/// Substrate aggregates classpaths across kits and passes to javac via -cp.
+/// The CLI aggregates this kit-owned metadata and passes it back to the
+/// selected kit for materialize checks.
 #[derive(Debug, Clone, Default)]
 pub struct AssembleResult {
     pub files: Vec<AssembledFile>,
@@ -1826,6 +1926,76 @@ pub fn dispatch_assemble(
         files: out,
         compile_classpath,
     })
+}
+
+/// Ask the selected realize kit to check materialized output. The CLI owns
+/// dispatch only; compiler/test/build semantics stay behind the kit RPC seam.
+pub fn dispatch_materialize_check(
+    workspace_root: &Path,
+    target_lang: &str,
+    library_tag: Option<&str>,
+    out_dir: &Path,
+    compile_classpath: &[String],
+) -> Result<Value, String> {
+    let resolved = resolve_realize_command(workspace_root, target_lang, library_tag, None, None)
+        .map_err(|e| e.detail)?;
+    if resolved.argv.is_empty() {
+        return Err("empty command".to_string());
+    }
+    let mut command = Command::new(&resolved.argv[0]);
+    if resolved.argv.len() > 1 {
+        command.args(&resolved.argv[1..]);
+    }
+    if let Some(wd) = &resolved.working_dir {
+        command.current_dir(wd);
+    }
+    command.stdin(Stdio::piped());
+    command.stdout(Stdio::piped());
+    command.stderr(Stdio::null());
+
+    let mut child = command
+        .spawn()
+        .map_err(|e| format!("spawn materialize check kit: {e}"))?;
+    let mut stdin = child
+        .stdin
+        .take()
+        .ok_or_else(|| "materialize check kit stdin unavailable".to_string())?;
+    let stdout = child
+        .stdout
+        .take()
+        .ok_or_else(|| "materialize check kit stdout unavailable".to_string())?;
+    let mut reader = BufReader::new(stdout);
+
+    let req = json!({
+        "jsonrpc": "2.0",
+        "id": 1,
+        "method": "provekit.plugin.check",
+        "params": {
+            "kind": "materialize",
+            "target_lang": target_lang,
+            "target_library_tag": library_tag.unwrap_or(DEFAULT_LIBRARY_TAG),
+            "out_dir": out_dir,
+            "compile_classpath": compile_classpath,
+        },
+    });
+    writeln!(stdin, "{req}").map_err(|e| format!("write materialize check request: {e}"))?;
+    let result = read_response(&mut reader, 1).map_err(|e| {
+        format!(
+            "materialize check kit for {target_lang}/{}: {e}",
+            library_tag.unwrap_or(DEFAULT_LIBRARY_TAG)
+        )
+    })?;
+
+    let shutdown = json!({
+        "jsonrpc": "2.0",
+        "id": 2,
+        "method": "provekit.plugin.shutdown",
+    });
+    let _ = writeln!(stdin, "{shutdown}");
+    drop(stdin);
+    let _ = child.wait();
+
+    Ok(result)
 }
 
 // Per #1270 Tier 1.4: configure_java_runtime + java_home_from_maven removed.
@@ -2816,5 +2986,4 @@ command = ["/bin/true"]
         assert!(validate_library_tag("urllib.request").is_err());
         assert!(validate_library_tag("1requests").is_err());
     }
-
 }

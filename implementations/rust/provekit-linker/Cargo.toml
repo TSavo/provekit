@@ -9,6 +9,9 @@ description = "Pure linker algebra for ProvekIt: derives bridges from (contracts
 [lib]
 name = "provekit_linker"
 path = "src/lib.rs"
+# This crate has no doctest examples; the full release workspace run only
+# builds an empty rustdoc harness, which can fail while relinking workspace rlibs.
+doctest = false
 
 [dependencies]
 provekit-canonicalizer = { path = "../provekit-canonicalizer" }

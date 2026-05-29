@@ -168,6 +168,46 @@ def test_emit_module_returns_all_missing_template_errors() -> None:
     }
 
 
+def test_plugin_check_runs_python_compile(tmp_path: Path) -> None:
+    source = tmp_path / "client.py"
+    source.write_text("def fetch_status(url):\n    return 200\n", encoding="utf-8")
+
+    response = dispatch(
+        {
+            "jsonrpc": "2.0",
+            "id": 9,
+            "method": "provekit.plugin.check",
+            "params": {"kind": "materialize", "out_dir": str(tmp_path)},
+        }
+    )
+
+    assert response["jsonrpc"] == "2.0"
+    assert response["id"] == 9
+    assert response["result"]["ok"] is True
+    assert response["result"]["command"] == "python -m py_compile"
+    assert str(source) in response["result"]["checked_files"]
+
+
+def test_plugin_check_reports_python_compile_failure(tmp_path: Path) -> None:
+    source = tmp_path / "bad_client.py"
+    source.write_text("def fetch_status(\n    return 200\n", encoding="utf-8")
+
+    response = dispatch(
+        {
+            "jsonrpc": "2.0",
+            "id": 10,
+            "method": "provekit.plugin.check",
+            "params": {"kind": "materialize", "out_dir": str(tmp_path)},
+        }
+    )
+
+    assert response["jsonrpc"] == "2.0"
+    assert response["id"] == 10
+    assert response["result"]["ok"] is False
+    assert response["result"]["command"] == "python -m py_compile"
+    assert str(source) in response["result"]["stderr"]
+
+
 def test_rpc_error_for_unknown_method_is_json_serializable() -> None:
     response = dispatch({"jsonrpc": "2.0", "id": 2, "method": "missing"})
 

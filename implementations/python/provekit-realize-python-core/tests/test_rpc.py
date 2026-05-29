@@ -272,6 +272,46 @@ def test_emit_module_returns_all_missing_template_errors() -> None:
     }
 
 
+def test_plugin_check_runs_python_compile(tmp_path: Path) -> None:
+    source = tmp_path / "sample.py"
+    source.write_text("def ok():\n    return 1\n", encoding="utf-8")
+
+    response = dispatch(
+        {
+            "jsonrpc": "2.0",
+            "id": 11,
+            "method": "provekit.plugin.check",
+            "params": {"kind": "materialize", "out_dir": str(tmp_path)},
+        }
+    )
+
+    assert response["jsonrpc"] == "2.0"
+    assert response["id"] == 11
+    assert response["result"]["ok"] is True
+    assert response["result"]["command"] == "python -m py_compile"
+    assert str(source) in response["result"]["checked_files"]
+
+
+def test_plugin_check_reports_python_compile_failure(tmp_path: Path) -> None:
+    source = tmp_path / "bad.py"
+    source.write_text("def bad(\n    return 1\n", encoding="utf-8")
+
+    response = dispatch(
+        {
+            "jsonrpc": "2.0",
+            "id": 12,
+            "method": "provekit.plugin.check",
+            "params": {"kind": "materialize", "out_dir": str(tmp_path)},
+        }
+    )
+
+    assert response["jsonrpc"] == "2.0"
+    assert response["id"] == 12
+    assert response["result"]["ok"] is False
+    assert response["result"]["command"] == "python -m py_compile"
+    assert str(source) in response["result"]["stderr"]
+
+
 def test_plugin_shutdown_returns_null() -> None:
     response = dispatch(
         {

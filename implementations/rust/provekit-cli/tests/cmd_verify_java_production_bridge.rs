@@ -16,6 +16,9 @@ use std::time::{Duration, Instant};
 
 use serde_json::Value as Json;
 
+#[path = "support/contradiction.rs"]
+mod contradiction;
+
 fn provekit_bin() -> PathBuf {
     PathBuf::from(env!("CARGO_BIN_EXE_provekit"))
 }
@@ -501,6 +504,41 @@ fn java_production_path_broken_body_fails_unsatisfied_no_witness() {
     eprintln!(
         "JAVA_PRODUCTION_NEGATIVE_EXIT_CODE={code} STATUS={}",
         claim["status"]
+    );
+
+    let _ = fs::remove_dir_all(&project);
+}
+
+#[test]
+fn java_production_path_refuses_planted_contradictory_implication() {
+    let Some(lift) = java_lift_command() else {
+        return;
+    };
+    if !z3_available() {
+        eprintln!("z3 not on PATH: skipping java contradictory-implication test");
+        return;
+    }
+    let project = stage_java_project("contradiction", &lift, 2);
+    run_mint(&project);
+
+    let (green, green_code) = contradiction::run_prove_json_with_code(&provekit_bin(), &project);
+    assert_eq!(
+        green_code, 0,
+        "base Java project must prove before planting contradiction; report: {green}"
+    );
+    assert_eq!(green["totalCallsites"], 1, "green report: {green}");
+
+    contradiction::plant_contradictory_implication_proof(
+        &project.join(".provekit"),
+        "java",
+        "java-tests",
+        "java_parity",
+    );
+    let (red, red_code) = contradiction::run_prove_json_with_code(&provekit_bin(), &project);
+    contradiction::assert_prove_refuses_contradiction(
+        &red,
+        red_code,
+        "java_parity_requires_positive",
     );
 
     let _ = fs::remove_dir_all(&project);

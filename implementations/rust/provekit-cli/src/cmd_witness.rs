@@ -23,7 +23,6 @@ use serde_json::Value as Json;
 use crate::{EXIT_OK, EXIT_SOLVER_FAIL, EXIT_USER_ERROR, EXIT_VERIFY_FAIL};
 
 pub fn run(args: crate::WitnessArgs) -> u8 {
-
     let project_root = args
         .project
         .clone()

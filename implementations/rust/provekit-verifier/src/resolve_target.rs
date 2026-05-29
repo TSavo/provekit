@@ -74,7 +74,10 @@ pub fn run(cs: &CallSite, pool: &MementoPool) -> Result<ResolvedProperty, String
     // `formals`/`formalSorts`. Single-formal: the callsite model tracks a
     // single arg term, so we bind the first formal. An already-quantified pre
     // (hand-built bundles) passes through untouched.
-    let ir_formula = body.get("pre").cloned().map(|pre| wrap_pre_forall(pre, body));
+    let ir_formula = body
+        .get("pre")
+        .cloned()
+        .map(|pre| wrap_pre_forall(pre, body));
     // A target carrying a `formals` array is a body-derived op-contract
     // (body-bearing). The caller must NOT vacuous-pass such a target if its
     // obligation was not reduced + discharged; it must refuse. Surface the

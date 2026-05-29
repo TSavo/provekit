@@ -26,7 +26,8 @@ use serde_json::Value as Json;
 use walkdir::WalkDir;
 
 use crate::kit_dispatch::{
-    provides_concepts_for_realize, scope_bringings_for_realize, DispatchRealizeTransport,
+    dispatch_materialize_check, provides_concepts_for_realize, scope_bringings_for_realize,
+    DispatchRealizeTransport,
 };
 use crate::{OutputFlags, EXIT_OK, EXIT_USER_ERROR, EXIT_VERIFY_FAIL};
 
@@ -97,10 +98,9 @@ pub struct MaterializeArgs {
     /// Write materialized files under this directory, preserving paths relative to --source-dir.
     #[arg(long = "out-dir", conflicts_with = "write")]
     pub out_dir: Option<PathBuf>,
-    /// After emitting files (requires --out-dir), invoke the target language's compiler over
-    /// the output directory. Non-zero compiler exit causes `materialize` to return exit code 1.
-    /// Supported targets: java (javac), rust (cargo check / rustc), python (py_compile), typescript (tsc).
-    /// Unsupported targets produce a warning and exit 0. Off by default.
+    /// After emitting files (requires --out-dir), ask the selected realize kit
+    /// to run its native check over the output directory. Non-zero kit verdict
+    /// causes `materialize` to return exit code 1. Off by default.
     #[arg(long = "compile-check", requires = "out_dir")]
     pub compile_check: bool,
     #[command(flatten)]
@@ -214,12 +214,13 @@ pub fn run(args: MaterializeArgs) -> u8 {
     }
 
     if let Some(out_dir) = args.out_dir.as_ref() {
-        // The compilation unit is assembled BY THE LANGUAGE KIT over RPC
+        // The compilation unit is assembled and checked BY THE LANGUAGE KIT over RPC
         // (imports, helper hoisting, package, class wrapping are the kit's
         // job; the substrate holds no language syntax). When the kit supports
         // the assemble RPC, route every file's fragments through it and write
-        // back what the kit returns, then compile-check with the kit-declared
-        // classpath. When the kit does NOT implement assemble, fall back to
+        // back what the kit returns, then ask the kit to run any native
+        // compile/test check with the kit-declared metadata. When the kit does
+        // NOT implement assemble, fall back to
         // writing the in-place-rewritten content (kits not yet on the assemble
         // protocol keep working unchanged).
         match emit_out_dir_via_kit_assemble(
@@ -241,7 +242,13 @@ pub fn run(args: MaterializeArgs) -> u8 {
                     return EXIT_USER_ERROR;
                 }
                 if args.compile_check {
-                    let check_result = run_compile_check(&target_lang, out_dir);
+                    let check_result = run_materialize_check(
+                        &project_root,
+                        &target_lang,
+                        library_tag.as_deref(),
+                        out_dir,
+                        &[],
+                    );
                     if check_result != EXIT_OK {
                         return check_result;
                     }
@@ -1049,8 +1056,8 @@ fn run_cross_language_discovery(
         }
         let ext = target_lang_file_extension(target_lang);
         let mut files_written = 0usize;
-        // #1388: aggregate kit-declared classpath entries across all files
-        // so the substrate's --compile-check can pass them to javac.
+        // #1388: aggregate kit-declared compile metadata across all files so
+        // --compile-check can pass it back to the same kit over RPC.
         let mut aggregated_classpath: std::collections::BTreeSet<String> =
             std::collections::BTreeSet::new();
         for (source_path, file) in &emitted {
@@ -1165,11 +1172,14 @@ fn run_cross_language_discovery(
             out_dir_path.display()
         );
         if compile_check {
-            // #1388: pass kit-aggregated classpath so javac can find the
-            // dependency JARs the materialized code references.
             let classpath: Vec<String> = aggregated_classpath.iter().cloned().collect();
-            let check_result =
-                run_compile_check_with_classpath(target_lang, out_dir_path, &classpath);
+            let check_result = run_materialize_check(
+                project_root,
+                target_lang,
+                target_library_tag,
+                out_dir_path,
+                &classpath,
+            );
             if check_result != EXIT_OK {
                 return check_result;
             }
@@ -1190,184 +1200,58 @@ fn run_cross_language_discovery(
     }
 }
 
-/// Invoke the target language's compiler over `out_dir`. Captures stderr and
-/// prints it on non-zero exit. Returns EXIT_VERIFY_FAIL on compiler error,
-/// EXIT_OK on success or for unsupported languages (which get a warning).
-///
-/// Supported targets:
-/// - `java`: `javac <all .java files recursively under out_dir>`
-/// - `rust`: `cargo check` if a Cargo.toml is present, else `rustc --crate-type lib` per .rs file
-/// - `python`: `python3 -m py_compile <all .py files>`
-/// - `typescript`: `tsc --noEmit <all .ts/.tsx files>`
-/// - others: warns and returns EXIT_OK
-fn run_compile_check(target_lang: &str, out_dir: &Path) -> u8 {
-    run_compile_check_with_classpath(target_lang, out_dir, &[])
-}
-
-/// #1388: variant that passes a kit-declared classpath to the compiler.
-/// For java, that means `javac -cp <colon-joined classpath>`. Other languages
-/// ignore the classpath today (cargo + python use project-managed deps).
-fn run_compile_check_with_classpath(target_lang: &str, out_dir: &Path, classpath: &[String]) -> u8 {
-    use std::process::Command;
-
+fn run_materialize_check(
+    project_root: &Path,
+    target_lang: &str,
+    library_tag: Option<&str>,
+    out_dir: &Path,
+    compile_classpath: &[String],
+) -> u8 {
     eprintln!(
-        "{} compile-check: running {} compiler over {}",
+        "{} compile-check: asking {} kit over RPC for {}",
         "materialize".cyan().bold(),
         target_lang,
         out_dir.display()
     );
-
-    match target_lang {
-        "java" => {
-            let java_files = collect_files_by_ext(out_dir, "java");
-            if java_files.is_empty() {
+    match dispatch_materialize_check(
+        project_root,
+        target_lang,
+        library_tag,
+        out_dir,
+        compile_classpath,
+    ) {
+        Ok(report) => {
+            let ok = report.get("ok").and_then(Json::as_bool).unwrap_or(false);
+            let command = report
+                .get("command")
+                .and_then(Json::as_str)
+                .unwrap_or("kit materialize check");
+            if ok {
                 eprintln!(
-                    "{}: compile-check: no .java files found under {}",
-                    "warn".yellow().bold(),
-                    out_dir.display()
-                );
-                return EXIT_OK;
-            }
-            let mut cmd = Command::new("javac");
-            if !classpath.is_empty() {
-                let sep = if cfg!(windows) { ";" } else { ":" };
-                let cp_str = classpath.join(sep);
-                cmd.arg("-cp").arg(&cp_str);
-            }
-            cmd.args(&java_files);
-            run_compiler_command(&mut cmd, "javac")
-        }
-        "rust" => {
-            let cargo_toml = out_dir.join("Cargo.toml");
-            if cargo_toml.is_file() {
-                let mut cmd = Command::new("cargo");
-                cmd.arg("check").current_dir(out_dir);
-                run_compiler_command(&mut cmd, "cargo check")
-            } else {
-                let rs_files = collect_files_by_ext(out_dir, "rs");
-                if rs_files.is_empty() {
-                    eprintln!(
-                        "{}: compile-check: no .rs files found under {}",
-                        "warn".yellow().bold(),
-                        out_dir.display()
-                    );
-                    return EXIT_OK;
-                }
-                let mut any_fail = false;
-                for file in &rs_files {
-                    let mut cmd = Command::new("rustc");
-                    cmd.args(["--crate-type", "lib", "--edition", "2021"])
-                        .arg(file);
-                    if run_compiler_command(&mut cmd, "rustc") != EXIT_OK {
-                        any_fail = true;
-                    }
-                }
-                if any_fail {
-                    EXIT_VERIFY_FAIL
-                } else {
-                    EXIT_OK
-                }
-            }
-        }
-        "python" => {
-            let py_files = collect_files_by_ext(out_dir, "py");
-            if py_files.is_empty() {
-                eprintln!(
-                    "{}: compile-check: no .py files found under {}",
-                    "warn".yellow().bold(),
-                    out_dir.display()
-                );
-                return EXIT_OK;
-            }
-            let mut cmd = Command::new("python3");
-            cmd.arg("-m").arg("py_compile").args(&py_files);
-            run_compiler_command(&mut cmd, "python3 -m py_compile")
-        }
-        "typescript" => {
-            let ts_files: Vec<PathBuf> = {
-                let mut v = collect_files_by_ext(out_dir, "ts");
-                v.extend(collect_files_by_ext(out_dir, "tsx"));
-                v
-            };
-            if ts_files.is_empty() {
-                eprintln!(
-                    "{}: compile-check: no .ts/.tsx files found under {}",
-                    "warn".yellow().bold(),
-                    out_dir.display()
-                );
-                return EXIT_OK;
-            }
-            let mut cmd = Command::new("tsc");
-            cmd.arg("--noEmit").args(&ts_files);
-            run_compiler_command(&mut cmd, "tsc --noEmit")
-        }
-        other => {
-            eprintln!(
-                "{}: compile-check is not supported for target `{other}`; skipping (exit 0)",
-                "warn".yellow().bold()
-            );
-            EXIT_OK
-        }
-    }
-}
-
-/// Run a compiler Command, capture stdout+stderr, print stderr on non-zero exit,
-/// and return EXIT_VERIFY_FAIL on failure or EXIT_OK on success.
-fn run_compiler_command(cmd: &mut std::process::Command, label: &str) -> u8 {
-    match cmd.output() {
-        Err(err) => {
-            eprintln!(
-                "{}: compile-check: failed to invoke {label}: {err}",
-                "error".red().bold()
-            );
-            EXIT_VERIFY_FAIL
-        }
-        Ok(output) => {
-            if output.status.success() {
-                eprintln!(
-                    "{} compile-check: {label} passed",
+                    "{} compile-check: {command} passed",
                     "materialize".green().bold()
                 );
                 EXIT_OK
             } else {
-                eprintln!(
-                    "{}: compile-check: {label} failed (exit {})",
-                    "error".red().bold(),
-                    output
-                        .status
-                        .code()
-                        .map(|c| c.to_string())
-                        .unwrap_or_else(|| "signal".to_string())
-                );
-                let stderr = String::from_utf8_lossy(&output.stderr);
-                if !stderr.is_empty() {
-                    eprintln!("{}", stderr);
+                eprintln!("{}: compile-check: {command} failed", "error".red().bold());
+                if let Some(stderr) = report.get("stderr").and_then(Json::as_str) {
+                    if !stderr.is_empty() {
+                        eprintln!("{stderr}");
+                    }
                 }
-                let stdout = String::from_utf8_lossy(&output.stdout);
-                if !stdout.is_empty() {
-                    eprintln!("{}", stdout);
+                if let Some(stdout) = report.get("stdout").and_then(Json::as_str) {
+                    if !stdout.is_empty() {
+                        eprintln!("{stdout}");
+                    }
                 }
                 EXIT_VERIFY_FAIL
             }
         }
+        Err(error) => {
+            eprintln!("{}: compile-check: {error}", "error".red().bold());
+            EXIT_VERIFY_FAIL
+        }
     }
-}
-
-/// Recursively collect all files with the given extension under `dir`.
-/// Uses WalkDir (already a dependency) to avoid shell globbing.
-fn collect_files_by_ext(dir: &Path, ext: &str) -> Vec<PathBuf> {
-    WalkDir::new(dir)
-        .into_iter()
-        .flatten()
-        .filter_map(|entry| {
-            let path = entry.into_path();
-            if path.is_file() && path.extension().and_then(|e| e.to_str()) == Some(ext) {
-                Some(path)
-            } else {
-                None
-            }
-        })
-        .collect()
 }
 
 /// Parse the carrier's raw_payload JSON and return the family field if
@@ -1585,7 +1469,7 @@ fn materialize_source_dir(
 fn is_supported_source_file(path: &Path) -> bool {
     matches!(
         path.extension().and_then(|ext| ext.to_str()),
-        Some("ts" | "tsx" | "js" | "jsx" | "py" | "rs" | "java")
+        Some("ts" | "tsx" | "js" | "jsx" | "py" | "rs" | "java" | "go")
     )
 }
 
@@ -1989,7 +1873,7 @@ fn write_in_place(files: &[MaterializedFile]) -> Result<(), String> {
 /// Outcome of attempting kit-owned assembly for `--out-dir`.
 enum EmitOutcome {
     /// The kit assembled (one or more files); inner is the compile-check exit
-    /// code (EXIT_OK when --compile-check is off or javac passed).
+    /// code (EXIT_OK when --compile-check is off or the kit check passed).
     Assembled(u8),
     /// The kit does not implement the assemble RPC; caller falls back to the
     /// legacy in-place-rewrite write path (back-compat for not-yet-migrated kits).
@@ -1998,10 +1882,10 @@ enum EmitOutcome {
 
 /// Route each materialized file's fragments through the LANGUAGE KIT's
 /// assemble RPC and write back what the kit returns, then (optionally)
-/// compile-check with the kit-declared classpath. This is the ONLY assembly
-/// path — the substrate never bakes language syntax. Same-language and
-/// cross-language both land here; source-lang == target-lang changes the lift,
-/// not who assembles.
+/// ask the same kit to compile-check with its declared metadata. This is the
+/// ONLY assembly/check path — the substrate never bakes language syntax or
+/// compiler semantics. Same-language and cross-language both land here;
+/// source-lang == target-lang changes the lift, not who assembles/checks.
 ///
 /// Returns `KitDoesNotAssemble` when the kit replies method-not-found on the
 /// FIRST file with fragments, so the caller can fall back to the legacy
@@ -2125,7 +2009,8 @@ fn emit_out_dir_via_kit_assemble(
 
     if compile_check {
         let classpath: Vec<String> = aggregated_classpath.iter().cloned().collect();
-        let code = run_compile_check_with_classpath(target_lang, out_dir, &classpath);
+        let code =
+            run_materialize_check(project_root, target_lang, library_tag, out_dir, &classpath);
         return EmitOutcome::Assembled(code);
     }
     EmitOutcome::Assembled(EXIT_OK)

@@ -530,6 +530,12 @@ function proofFileCid(proofPath) {
  * could not) supply resolution paths.
  */
 function resolveShimProofPath(packageName, resolveFromPaths) {
+  // File dependencies are commonly symlinked under node_modules. Newer Node
+  // resolves symlinks to their real path, but ProveKit wants the package-owned
+  // path the kit actually resolved through.
+  const directResolved = firstExistingShimProof(packageName, resolveFromPaths);
+  if (directResolved !== null) return directResolved;
+
   // Primary: ask Node to resolve the shipped proof the same way it resolves
   // any package subpath. `provekit.proof` is exported via the package `files`
   // array, so `require.resolve("<pkg>/provekit.proof")` lands on it.
@@ -565,6 +571,20 @@ function resolveShimProofPath(packageName, resolveFromPaths) {
   }
   const seen = new Set();
   for (const base of bases) {
+    const candidate = base.endsWith("node_modules")
+      ? path.join(base, packageName, "provekit.proof")
+      : path.join(base, "node_modules", packageName, "provekit.proof");
+    if (seen.has(candidate)) continue;
+    seen.add(candidate);
+    if (fs.existsSync(candidate)) return candidate;
+  }
+  return null;
+}
+
+function firstExistingShimProof(packageName, resolveFromPaths) {
+  if (!Array.isArray(resolveFromPaths)) return null;
+  const seen = new Set();
+  for (const base of resolveFromPaths) {
     const candidate = base.endsWith("node_modules")
       ? path.join(base, packageName, "provekit.proof")
       : path.join(base, "node_modules", packageName, "provekit.proof");

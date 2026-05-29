@@ -42,6 +42,7 @@
 
 use provekit_ir_types::{IrFormula, IrTerm};
 use serde::{Deserialize, Serialize};
+use serde_json::Value;
 
 /// The function signature a contract's predicates are about. Variables in the
 /// predicates that match a formal parameter render as that parameter's name;
@@ -82,6 +83,17 @@ pub struct EmittedTest {
     pub name: String,
     /// The single assertion statement (e.g. `assert_eq!(a, b);`).
     pub assertion: String,
+}
+
+/// Result of asking this Rust emitter kit to check the emitted Cargo project.
+#[derive(Debug, Clone)]
+pub struct CheckReport {
+    pub ok: bool,
+    pub command: String,
+    pub cwd: String,
+    pub stdout: String,
+    pub stderr: String,
+    pub exit_code: i32,
 }
 
 // ---------------------------------------------------------------------------
@@ -404,12 +416,47 @@ pub fn emit_test_module(sig: &FunctionSignature, predicates: &[IrFormula]) -> Em
     }
 }
 
+/// Run the native Rust check for an emitted cargo-test artifact. This is kit
+/// logic, not CLI logic: the Rust emitter owns the fact that cargo-test
+/// artifacts are validated with `cargo test`.
+pub fn check_emitted_project(out_dir: &str) -> Result<CheckReport, String> {
+    let out_path = std::path::PathBuf::from(out_dir);
+    let cargo_root = find_ancestor_file(&out_path, "Cargo.toml").ok_or_else(|| {
+        format!(
+            "rust cargo-test check requires a Cargo.toml at or above {}",
+            out_path.display()
+        )
+    })?;
+    let output = std::process::Command::new("cargo")
+        .current_dir(&cargo_root)
+        .args(["test", "--quiet"])
+        .output()
+        .map_err(|e| format!("spawn cargo test: {e}"))?;
+    Ok(CheckReport {
+        ok: output.status.success(),
+        command: "cargo test --quiet".to_string(),
+        cwd: cargo_root.display().to_string(),
+        stdout: String::from_utf8_lossy(&output.stdout).to_string(),
+        stderr: String::from_utf8_lossy(&output.stderr).to_string(),
+        exit_code: output.status.code().unwrap_or(-1),
+    })
+}
+
+fn find_ancestor_file(start: &std::path::Path, filename: &str) -> Option<std::path::PathBuf> {
+    let mut cursor = Some(start);
+    while let Some(path) = cursor {
+        if path.join(filename).exists() {
+            return Some(path.to_path_buf());
+        }
+        cursor = path.parent();
+    }
+    None
+}
+
 // ---------------------------------------------------------------------------
 // PEP 1.7.0 realize-plugin RPC server (matches the rust kit conventions:
 // `initialize` / `provekit.plugin.invoke` / `shutdown`, JSON-RPC over stdio).
 // ---------------------------------------------------------------------------
-
-use serde_json::Value;
 
 fn error(id: Value, code: i64, message: &str) -> Value {
     serde_json::json!({
@@ -496,6 +543,29 @@ pub fn dispatch(request: &Value) -> Value {
                     "is_stub": false
                 }
             })
+        }
+        "provekit.plugin.check" => {
+            let Some(params) = request.get("params").and_then(Value::as_object) else {
+                return error(id, -32602, "INVALID_PARAMS: params must be an object");
+            };
+            let Some(out_dir) = params.get("out_dir").and_then(Value::as_str) else {
+                return error(id, -32602, "INVALID_PARAMS: missing out_dir");
+            };
+            match check_emitted_project(out_dir) {
+                Ok(report) => serde_json::json!({
+                    "jsonrpc": "2.0",
+                    "id": id,
+                    "result": {
+                        "ok": report.ok,
+                        "command": report.command,
+                        "cwd": report.cwd,
+                        "stdout": report.stdout,
+                        "stderr": report.stderr,
+                        "exitCode": report.exit_code,
+                    }
+                }),
+                Err(e) => error(id, -32603, &e),
+            }
         }
         "shutdown" | "provekit.plugin.shutdown" => serde_json::json!({
             "jsonrpc": "2.0",

@@ -9,6 +9,9 @@ description = "ProvekIt lift toolchain: walk a Rust workspace, run all registere
 [lib]
 name = "provekit_lift"
 path = "src/lib.rs"
+# This crate has no doctest examples; the full release workspace run only
+# builds an empty rustdoc harness, which can fail while relinking workspace rlibs.
+doctest = false
 
 # `cargo provekit-lift` invokes the binary named `cargo-provekit-lift`,
 # which Cargo resolves on PATH. We also publish a plain `provekit-lift`
