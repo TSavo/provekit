@@ -112,10 +112,10 @@ pub fn print_report_pretty(r: &Report, quiet: bool) {
     }
 }
 
-/// Decide an exit code from a report. Discharged or empty -> success;
-/// any violation or load error -> verification failure (exit 1).
+/// Decide an exit code from a proof report. A load-bearing `prove` run must
+/// have checked at least one callsite; zero-callsite reports are vacuous.
 pub fn report_exit_code(r: &Report) -> u8 {
-    if r.violations > 0 || !r.load_errors.is_empty() {
+    if r.violations > 0 || !r.load_errors.is_empty() || r.total_callsites == 0 {
         crate::EXIT_VERIFY_FAIL
     } else {
         crate::EXIT_OK
@@ -128,9 +128,9 @@ mod tests {
     use provekit_verifier::Report;
 
     #[test]
-    fn empty_report_is_clean() {
+    fn empty_report_is_not_a_successful_proof() {
         let r = Report::default();
-        assert_eq!(report_exit_code(&r), crate::EXIT_OK);
+        assert_eq!(report_exit_code(&r), crate::EXIT_VERIFY_FAIL);
         let j = report_to_json(&r);
         assert_eq!(j["totalCallsites"], 0);
         assert_eq!(j["violations"], 0);
