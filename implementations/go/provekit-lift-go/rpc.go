@@ -64,6 +64,8 @@ func RunRPCWithDefault(stdin io.Reader, stdout io.Writer, defaultOpts LiftOption
 			writeRPC(stdout, successResponse(req.ID, InitializeResult()))
 		case "lift":
 			writeRPC(stdout, handleLift(req.ID, req.Params, defaultOpts))
+		case "provekit.plugin.lift_implications":
+			writeRPC(stdout, handleLiftImplications(req.ID, req.Params))
 		case "compile":
 			writeRPC(stdout, handleCompile(req.ID, req.Params))
 		case "provekit.plugin.recognize":
@@ -76,6 +78,20 @@ func RunRPCWithDefault(stdin io.Reader, stdout io.Writer, defaultOpts LiftOption
 		}
 	}
 	return scanner.Err()
+}
+
+func handleLiftImplications(id json.RawMessage, raw json.RawMessage) any {
+	var params ImplicationParams
+	if len(raw) > 0 {
+		if err := json.Unmarshal(raw, &params); err != nil {
+			return errorResponse(id, -32602, "invalid lift_implications params")
+		}
+	}
+	result, err := LiftImplications(params)
+	if err != nil {
+		return errorResponse(id, -32603, fmt.Sprintf("Lift implications failed: %v", err))
+	}
+	return successResponse(id, result)
 }
 
 func handleLift(id json.RawMessage, raw json.RawMessage, defaultOpts LiftOptions) any {
