@@ -175,6 +175,31 @@ class TestDaemonProtocol < Minitest::Test
     refute edge.key?("callSiteColumn"), "legacy flat callSiteColumn must not be emitted"
   end
 
+  def test_parse_emits_same_language_call_edge_locus
+    source = <<~RUBY
+      # provekit: contract
+      def add(value)
+        value
+      end
+      # provekit: contract
+      def compute(value)
+        add(value)
+      end
+    RUBY
+    responses = run_lsp(build_session(source: source, path: "fixture.rb"))
+    parse_resp = responses.find { |r| r["id"] == 2 }
+    assert parse_resp, "Expected id 2 not found. Available ids: #{responses.map { |r| r['id'] }}"
+    refute_includes parse_resp, "error",
+                    "parse returned error: #{parse_resp.inspect}"
+
+    edges = parse_resp["result"]["callEdges"]
+    assert edges.any? { |edge|
+      edge["sourceContractCid"] == "pending-ruby:compute" &&
+        edge["targetSymbol"] == "ruby-kit:add" &&
+        edge["callSiteLocus"] == { "column" => 2, "file" => "fixture.rb", "line" => 7 }
+    }, "expected compute -> ruby-kit:add call edge, got: #{edges.inspect}"
+  end
+
   def test_declarations_contain_contracts
     responses = run_lsp(build_session)
     parse_resp = responses.find { |r| r["id"] == 2 }
