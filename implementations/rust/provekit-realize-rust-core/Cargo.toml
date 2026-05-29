@@ -21,6 +21,7 @@ provekit-proof-envelope = { path = "../provekit-proof-envelope" }
 provekit-shim-blake3-rust = { path = "../../../examples/provekit-shim-blake3-rust" }
 provekit-shim-postgres = { path = "../../../examples/provekit-shim-postgres" }
 provekit-shim-rfc8785-jcs-rust = { path = "../../../examples/provekit-shim-rfc8785-jcs-rust" }
+provekit-shim-reqwest-rust = { path = "../../../examples/provekit-shim-reqwest-rust" }
 provekit-shim-rusqlite = { path = "../../../examples/provekit-shim-rusqlite" }
 provekit-shim-serde-json-rust = { path = "../../../examples/provekit-shim-serde-json-rust" }
 provekit-shim-stdio-rust = { path = "../../../examples/provekit-shim-stdio-rust" }

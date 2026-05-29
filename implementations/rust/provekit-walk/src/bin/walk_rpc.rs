@@ -2110,6 +2110,13 @@ fn body_template_entries(
     language: &str,
     library_tag: &str,
 ) -> Result<Vec<BodyTemplateCallEntry>, String> {
+    if language == "rust" {
+        let entries = rust_kit_body_template_entries(library_tag);
+        if !entries.is_empty() {
+            return Ok(entries);
+        }
+    }
+
     let rel = PathBuf::from("menagerie")
         .join(format!("{language}-language-signature"))
         .join("specs")
@@ -2127,28 +2134,51 @@ fn body_template_entries(
         .ok_or_else(|| format!("{} missing /header/content/entries", path.display()))?;
     Ok(entries
         .iter()
-        .filter_map(|entry| {
-            let concept_name = entry.get("concept_name")?.as_str()?.to_string();
-            let emission_template = entry
-                .get("emission_template")?
-                .get("template")?
-                .as_str()?
-                .to_string();
-            let guard = entry.get("signature_guard");
-            Some(BodyTemplateCallEntry {
-                concept_name,
-                emission_template,
-                min_params: guard
-                    .and_then(|g| g.get("min_params"))
-                    .and_then(Value::as_u64)
-                    .map(|n| n as usize),
-                max_params: guard
-                    .and_then(|g| g.get("max_params"))
-                    .and_then(Value::as_u64)
-                    .map(|n| n as usize),
-            })
-        })
+        .filter_map(body_template_call_entry_from_json)
         .collect())
+}
+
+fn rust_kit_body_template_entries(library_tag: &str) -> Vec<BodyTemplateCallEntry> {
+    let response = provekit_realize_rust_core::dispatch(&json!({
+        "jsonrpc": "2.0",
+        "id": 1,
+        "method": "provekit.plugin.body_template_entries",
+        "params": {
+            "target_library_tag": library_tag,
+        }
+    }));
+    response
+        .pointer("/result/entries")
+        .and_then(Value::as_array)
+        .map(|entries| {
+            entries
+                .iter()
+                .filter_map(body_template_call_entry_from_json)
+                .collect()
+        })
+        .unwrap_or_default()
+}
+
+fn body_template_call_entry_from_json(entry: &Value) -> Option<BodyTemplateCallEntry> {
+    let concept_name = entry.get("concept_name")?.as_str()?.to_string();
+    let emission_template = entry
+        .get("emission_template")?
+        .get("template")?
+        .as_str()?
+        .to_string();
+    let guard = entry.get("signature_guard");
+    Some(BodyTemplateCallEntry {
+        concept_name,
+        emission_template,
+        min_params: guard
+            .and_then(|g| g.get("min_params"))
+            .and_then(Value::as_u64)
+            .map(|n| n as usize),
+        max_params: guard
+            .and_then(|g| g.get("max_params"))
+            .and_then(Value::as_u64)
+            .map(|n| n as usize),
+    })
 }
 
 fn concept_shape_cid(workspace_root: &Path, concept_name: &str) -> Result<String, String> {
@@ -5603,45 +5633,13 @@ fn missing_concept(url: String) -> i64 { 0 }
 "#,
         )
         .expect("write library bindings");
-        let template_dir = root
-            .join("menagerie")
-            .join("rust-language-signature")
-            .join("specs")
-            .join("body-templates");
-        fs::create_dir_all(&template_dir).expect("create body-template dir");
-        fs::write(
-            template_dir.join("rust-canonical-bodies-reqwest.json"),
-            r#"{
-  "header": {
-    "content": {
-      "entries": [
-        {
-          "concept_name": "concept:http-request",
-          "emission_template": {
-            "kind": "verbatim",
-            "template": "return reqwest::blocking::get(${param0});"
-          },
-          "signature_guard": {
-            "min_params": 1,
-            "max_params": 1
-          }
-        }
-      ],
-      "target_language": "rust",
-      "template_name": "rust-canonical-bodies-reqwest"
-    }
-  }
-}
-"#,
-        )
-        .expect("write body template");
         let src_dir = root.join("src");
         fs::create_dir_all(&src_dir).expect("create src dir");
         fs::write(
             src_dir.join("lib.rs"),
             r#"
 pub fn fetch_status(url: &str) -> i64 {
-    reqwest::blocking::get(url)
+    reqwest::get(url)
 }
 "#,
         )

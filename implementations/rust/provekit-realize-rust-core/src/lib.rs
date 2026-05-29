@@ -3081,6 +3081,13 @@ fn shim_template_entry_values(library_tag: &str) -> Vec<Value> {
                 ),
             );
             entries.insert(
+                "reqwest".to_string(),
+                entries_from_shim_proof_tags(
+                    provekit_shim_reqwest_rust::PROVEKIT_PROOF_BYTES,
+                    &["reqwest"],
+                ),
+            );
+            entries.insert(
                 "provekit-shim-rfc8785-jcs-rust".to_string(),
                 entries_from_shim_proof_tags(
                     provekit_shim_rfc8785_jcs_rust::PROVEKIT_PROOF_BYTES,
@@ -4721,6 +4728,37 @@ mod tests {
             proof_path.display()
         );
         let _ = fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn body_template_entries_exposes_reqwest_from_shim_proof() {
+        let response = dispatch(&serde_json::json!({
+            "jsonrpc": "2.0",
+            "id": 13,
+            "method": "provekit.plugin.body_template_entries",
+            "params": {
+                "target_library_tag": "reqwest",
+            }
+        }));
+
+        assert!(
+            response.get("error").is_none(),
+            "body_template_entries must be served by the Rust kit; got {response}"
+        );
+        let entries = response
+            .pointer("/result/entries")
+            .and_then(Value::as_array)
+            .expect("entries array");
+        assert!(
+            entries.iter().any(|entry| {
+                entry.get("concept_name").and_then(Value::as_str) == Some("concept:http-request")
+                    && entry
+                        .pointer("/emission_template/template")
+                        .and_then(Value::as_str)
+                        .is_some_and(|template| template.contains("reqwest::get(${param0})"))
+            }),
+            "reqwest body templates must come from kit-resolved shim proof entries: {entries:#?}"
+        );
     }
 
     #[test]
