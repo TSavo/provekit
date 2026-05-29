@@ -462,6 +462,64 @@ fn go_materialize_cli_rewrites_carrier_and_asks_go_kit_to_compile_check() {
     );
 }
 
+#[test]
+fn go_materialize_infers_target_from_registered_go_manifest() {
+    if !go_available() {
+        eprintln!("go not on PATH: skipping go manifest-inference materialize test");
+        return;
+    }
+    let bin = build_go_realize();
+    let workspace = tempfile::tempdir().expect("tempdir");
+    install_go_realize_manifest(workspace.path(), &bin);
+    write_external_go_dependency_with_identity_body(workspace.path());
+    let src_dir = workspace.path().join("src");
+    fs::create_dir_all(&src_dir).expect("mkdir src");
+    write_go_identity_carrier(&src_dir);
+
+    let out_dir = workspace.path().join("materialized");
+    fs::create_dir_all(&out_dir).expect("mkdir out");
+    fs::write(
+        out_dir.join("go.mod"),
+        "module example.com/provekit_go_materialized\n\ngo 1.22\n",
+    )
+    .expect("write output go.mod");
+
+    let output = Command::new(env!("CARGO_BIN_EXE_provekit"))
+        .arg("materialize")
+        .arg("--library")
+        .arg("go")
+        .arg("--source-dir")
+        .arg(&src_dir)
+        .arg("--project")
+        .arg(workspace.path())
+        .arg("--out-dir")
+        .arg(&out_dir)
+        .arg("--compile-check")
+        .output()
+        .expect("spawn provekit materialize for inferred Go target");
+
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(
+        output.status.success(),
+        "Go materialize should infer target from the registered Go manifest, without --target\nstdout:\n{stdout}\nstderr:\n{stderr}"
+    );
+    assert!(
+        stderr.contains("assembled by go kit via RPC"),
+        "inferred Go materialize must still assemble through the Go kit\nstderr:\n{stderr}"
+    );
+    assert!(
+        stderr.contains("compile-check: go test ./... passed"),
+        "inferred Go materialize must still ask the Go kit to run its native check\nstderr:\n{stderr}"
+    );
+
+    let emitted = fs::read_to_string(out_dir.join("id.go")).expect("read materialized Go");
+    assert!(
+        emitted.contains("func Id(x int) int") && emitted.contains("return x"),
+        "materialized Go should contain the Go kit's realized identity body:\n{emitted}"
+    );
+}
+
 /// The shim supplies REAL Go sugar (`func Id(x int) int { return x }`),
 /// dispatched through the substrate realize protocol, and that Go compiles.
 #[test]

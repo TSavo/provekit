@@ -698,6 +698,63 @@ pub(crate) fn registry_realize_candidates(
     Ok(candidates)
 }
 
+#[allow(dead_code)] // used by the CLI binary's cmd_materialize module; lib target exposes kit_dispatch alone
+#[derive(Debug, Clone, Eq, PartialEq)]
+pub(crate) struct RealizeLanguageCandidate {
+    pub(crate) language: String,
+    pub(crate) tag: String,
+    pub(crate) source: String,
+}
+
+#[allow(dead_code)] // used by the CLI binary's cmd_materialize module; lib target exposes kit_dispatch alone
+pub(crate) fn registry_realize_language_candidates(
+    workspace_root: &Path,
+) -> Result<Vec<RealizeLanguageCandidate>, String> {
+    let registry = run_plugin_registry_for_project(workspace_root)?;
+    let mut candidates = registry
+        .plugins
+        .iter()
+        .filter(|plugin| registry_authorizes_plugin(&registry, plugin))
+        .filter(|plugin| plugin.kind == "realize")
+        .filter_map(|plugin| {
+            let tag = plugin
+                .parsed
+                .library_tag
+                .clone()
+                .unwrap_or_else(|| DEFAULT_LIBRARY_TAG.to_string());
+            let language = infer_realize_language_from_surface(&plugin.surface)?;
+            Some(RealizeLanguageCandidate {
+                language,
+                tag,
+                source: plugin.source.clone(),
+            })
+        })
+        .collect::<Vec<_>>();
+    candidates.sort_by(|a, b| {
+        a.language
+            .cmp(&b.language)
+            .then(a.tag.cmp(&b.tag))
+            .then(a.source.cmp(&b.source))
+    });
+    candidates.dedup();
+    Ok(candidates)
+}
+
+#[allow(dead_code)] // used by the CLI binary's cmd_materialize module; lib target exposes kit_dispatch alone
+fn infer_realize_language_from_surface(surface: &str) -> Option<String> {
+    let surface = surface.trim();
+    if surface.is_empty() {
+        return None;
+    }
+    Some(
+        surface
+            .split_once('-')
+            .map(|(language, _)| language)
+            .unwrap_or(surface)
+            .to_string(),
+    )
+}
+
 fn registry_exam_manifest_command(
     workspace_root: &Path,
     plugin_name: &str,
