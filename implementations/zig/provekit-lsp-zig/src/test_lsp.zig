@@ -4,7 +4,7 @@
 // by calling the same parsing helpers used in main.zig.
 
 const std = @import("std");
-const lift = @import("provekit-lift-zig");
+const lift = @import("provekit-lift-zig-source");
 
 // ---------------------------------------------------------------------------
 // Helpers re-exported from main.zig logic (duplicated for test isolation).
@@ -132,16 +132,16 @@ test "initialize response shape" {
 }
 
 test "parse response includes declarations callEdges warnings" {
-    // Simulate parse of a fixture .zig file with a contract annotation.
     const alloc = std.testing.allocator;
-    const fixture_source = "//provekit:contract\nfn myFn(x: i32) void { _ = x; }";
+    const fixture_source = "pub fn myFn(x: i64) i64 { return x; }";
 
-    const decls = try lift.liftToDecls(alloc, fixture_source);
-    defer alloc.free(decls);
+    var arena = std.heap.ArenaAllocator.init(alloc);
+    defer arena.deinit();
+    const lifted = try lift.liftSource(arena.allocator(), fixture_source, "fixture.zig");
 
-    try std.testing.expect(decls.len == 1);
+    try std.testing.expect(lifted.declarations.len >= 1);
 
-    const decls_json = try std.json.Stringify.valueAlloc(alloc, decls, .{ .whitespace = .minified });
+    const decls_json = try std.json.Stringify.valueAlloc(alloc, lifted.declarations, .{ .whitespace = .minified });
     defer alloc.free(decls_json);
 
     const response = try std.fmt.allocPrint(
@@ -154,44 +154,38 @@ test "parse response includes declarations callEdges warnings" {
     try std.testing.expect(std.mem.indexOf(u8, response, "\"declarations\"") != null);
     try std.testing.expect(std.mem.indexOf(u8, response, "\"callEdges\":[]") != null);
     try std.testing.expect(std.mem.indexOf(u8, response, "\"warnings\":[]") != null);
-    try std.testing.expect(std.mem.indexOf(u8, response, "\"kind\":\"contract\"") != null);
+    try std.testing.expect(std.mem.indexOf(u8, response, "\"kind\":\"function-contract\"") != null);
 }
 
 test "parse empty source returns empty declarations" {
     const alloc = std.testing.allocator;
 
-    const decls = try lift.liftToDecls(alloc, "");
-    defer alloc.free(decls);
+    var arena = std.heap.ArenaAllocator.init(alloc);
+    defer arena.deinit();
+    const lifted = try lift.liftSource(arena.allocator(), "", "empty.zig");
 
-    try std.testing.expectEqual(@as(usize, 0), decls.len);
+    try std.testing.expectEqual(@as(usize, 0), lifted.declarations.len);
 
-    const decls_json = try std.json.Stringify.valueAlloc(alloc, decls, .{ .whitespace = .minified });
+    const decls_json = try std.json.Stringify.valueAlloc(alloc, lifted.declarations, .{ .whitespace = .minified });
     defer alloc.free(decls_json);
 
     try std.testing.expectEqualStrings("[]", decls_json);
 }
 
-test "parse fixture zig file with implement annotation" {
+test "parse fixture zig file with function body" {
     const alloc = std.testing.allocator;
     const fixture =
-        \\//provekit:implement blake3-512:deadbeef
-        \\fn bridgeFn(x: i32) i32 {
-        \\    return x;
+        \\pub fn bridgeFn(x: i32) i32 {
+        \\    return x + 1;
         \\}
     ;
 
-    const decls = try lift.liftToDecls(alloc, fixture);
-    defer alloc.free(decls);
+    var arena = std.heap.ArenaAllocator.init(alloc);
+    defer arena.deinit();
+    const lifted = try lift.liftSource(arena.allocator(), fixture, "fixture.zig");
 
-    try std.testing.expectEqual(@as(usize, 1), decls.len);
-    switch (decls[0]) {
-        .bridge => |b| {
-            try std.testing.expectEqualStrings("bridgeFn", b.name);
-            try std.testing.expectEqualStrings("blake3-512:deadbeef", b.target_contract_cid);
-            try std.testing.expectEqualStrings("zig", b.source_layer);
-        },
-        else => return error.WrongKind,
-    }
+    try std.testing.expectEqual(@as(usize, 2), lifted.declarations.len);
+    try std.testing.expectEqualStrings("fixture.zig.bridgeFn", lifted.declarations[1].fn_name);
 }
 
 test "shutdown response is null result" {

@@ -219,10 +219,9 @@ pub fn run(args: MaterializeArgs) -> u8 {
         // job; the substrate holds no language syntax). When the kit supports
         // the assemble RPC, route every file's fragments through it and write
         // back what the kit returns, then ask the kit to run any native
-        // compile/test check with the kit-declared metadata. When the kit does
-        // NOT implement assemble, fall back to
-        // writing the in-place-rewritten content (kits not yet on the assemble
-        // protocol keep working unchanged).
+        // compile/test check with the kit-declared metadata. If the selected
+        // kit does not implement assemble, fail closed: target-language source
+        // assembly is kit-owned, not a CLI fallback surface.
         match emit_out_dir_via_kit_assemble(
             &project_root,
             &target_lang,
@@ -234,24 +233,6 @@ pub fn run(args: MaterializeArgs) -> u8 {
             EmitOutcome::Assembled(code) => {
                 if code != EXIT_OK {
                     return code;
-                }
-            }
-            EmitOutcome::KitDoesNotAssemble => {
-                if let Err(error) = write_out_dir(out_dir, &files) {
-                    eprintln!("{}: {error}", "error".red().bold());
-                    return EXIT_USER_ERROR;
-                }
-                if args.compile_check {
-                    let check_result = run_materialize_check(
-                        &project_root,
-                        &target_lang,
-                        library_tag.as_deref(),
-                        out_dir,
-                        &[],
-                    );
-                    if check_result != EXIT_OK {
-                        return check_result;
-                    }
                 }
             }
         }
@@ -329,84 +310,12 @@ struct EmittedFile {
     /// Each entry is the realize-fragment JSON shape (source + imports +
     /// helpers + dependencies + diagnostics + compile_unit_requirements +
     /// concept_name) that the target kit's assembler consumes to produce
-    /// a compilation unit. Substrate keeps these alongside the legacy
-    /// bodies+imports so it can fall back to concatenation if the kit
-    /// doesn't implement the assemble RPC.
+    /// a compilation unit. Substrate keeps these so the selected kit owns
+    /// target-source assembly.
     fragments: Vec<serde_json::Value>,
     /// Target manifest used for this file's emission (kept so the
     /// substrate knows which kit to call for assemble).
     target_manifest: Option<String>,
-}
-
-/// Map a target language to a file extension. Substrate-honest fallback
-/// "txt" for unknown languages (no per-lang knowledge encoded beyond the
-/// declared extension; the kit could declare this in its manifest in a
-/// follow-up substrate-mint).
-fn target_lang_file_extension(target_lang: &str) -> &'static str {
-    match target_lang {
-        "rust" => "rs",
-        "python" => "py",
-        "typescript" => "ts",
-        "java" => "java",
-        "c" => "c",
-        "csharp" => "cs",
-        "go" => "go",
-        "php" => "php",
-        "ruby" => "rb",
-        "zig" => "zig",
-        _ => "txt",
-    }
-}
-
-/// #1374: wrap fragment-declared FQN imports as the target language's
-/// import-statement syntax. Stops here on substrate-side idiom — the rest
-/// (package declaration, class wrapping, helper placement) is Milestone C
-/// (target-owned assembly). Languages without a standard import-block
-/// syntax (or unsupported) get a comment-listing of the FQNs so the
-/// information isn't lost.
-fn format_imports_for(target_lang: &str, imports: &std::collections::BTreeSet<String>) -> String {
-    if imports.is_empty() {
-        return String::new();
-    }
-    let lines: Vec<String> = match target_lang {
-        "java" => imports.iter().map(|fqn| format!("import {fqn};")).collect(),
-        "python" => imports
-            .iter()
-            .map(|fqn| {
-                // Python convention: `import pkg.mod` for module-paths,
-                // `from pkg.mod import Name` when the FQN ends in a Class.
-                // Substrate-honest minimum: if the last segment starts with
-                // an uppercase letter, emit `from ... import Name`; else
-                // emit `import ...`.
-                let mut parts: Vec<&str> = fqn.split('.').collect();
-                if let Some(last) = parts.last().copied() {
-                    if last.chars().next().is_some_and(|c| c.is_ascii_uppercase())
-                        && parts.len() > 1
-                    {
-                        parts.pop();
-                        return format!("from {} import {}", parts.join("."), last);
-                    }
-                }
-                format!("import {}", fqn)
-            })
-            .collect(),
-        "rust" => imports.iter().map(|fqn| format!("use {fqn};")).collect(),
-        "typescript" => imports
-            .iter()
-            .map(|fqn| {
-                // TS imports require explicit named-bindings + module specifier;
-                // a bare FQN can't unambiguously become either ESM or CJS.
-                // Surface as a TODO comment until Milestone C's target-kit
-                // assembler decides.
-                format!("// TODO(#1375 assembly): import binding for `{}`", fqn)
-            })
-            .collect(),
-        _ => imports
-            .iter()
-            .map(|fqn| format!("// fragment import: {}", fqn))
-            .collect(),
-    };
-    lines.join("\n")
 }
 
 /// Discrimated outcome of a cross-language discovery realize-probe.
@@ -1054,7 +963,6 @@ fn run_cross_language_discovery(
             );
             return EXIT_USER_ERROR;
         }
-        let ext = target_lang_file_extension(target_lang);
         let mut files_written = 0usize;
         // #1388: aggregate kit-declared compile metadata across all files so
         // --compile-check can pass it back to the same kit over RPC.
@@ -1064,107 +972,75 @@ fn run_cross_language_discovery(
             if file.bodies.is_empty() {
                 continue;
             }
-            // Preserve source-relative directory structure so two source
-            // files with the same basename in different directories (e.g.
-            // src/lib.rs vs tests/lib.rs, or pkg_a/foo.rs vs pkg_b/foo.rs)
-            // don't silently overwrite each other in --out-dir.
             let rel = source_path.strip_prefix(source_dir).unwrap_or(source_path);
-            let rel_with_ext = rel.with_extension(ext);
-            let out_path = out_dir_path.join(&rel_with_ext);
-            if let Some(parent) = out_path.parent() {
-                if let Err(err) = std::fs::create_dir_all(parent) {
-                    eprintln!(
-                        "{}: failed to create out-dir subpath {}: {err}",
-                        "error".red().bold(),
-                        parent.display()
-                    );
-                    return EXIT_USER_ERROR;
-                }
-            }
             // #1375 Milestone C: route compilation-unit assembly to the
             // target kit. The kit decides file layout, package, imports,
-            // class wrapping. Fall back to substrate-side legacy concat
-            // when the kit doesn't implement assemble (method-not-found).
+            // and class/module wrapping. Missing assembly is a boundary
+            // failure, not permission for the CLI to bake target syntax.
             let file_basename = rel.file_stem().and_then(|s| s.to_str()).unwrap_or("lib");
             let fragments_json =
                 serde_json::to_string(&file.fragments).unwrap_or_else(|_| "[]".to_string());
-            let mut wrote_assembled = false;
-            if let Some(manifest) = file.target_manifest.as_deref() {
-                use crate::kit_dispatch::{dispatch_assemble, AssembleError};
-                match dispatch_assemble(
-                    project_root,
-                    target_lang,
-                    Some(manifest),
-                    &fragments_json,
-                    file_basename,
-                    None,
-                ) {
-                    Ok(assembled_result) => {
-                        for af in &assembled_result.files {
-                            let assembled_path = out_dir_path.join(&af.path);
-                            if let Some(parent) = assembled_path.parent() {
-                                let _ = std::fs::create_dir_all(parent);
-                            }
-                            if let Err(err) = std::fs::write(&assembled_path, &af.content) {
-                                eprintln!(
-                                    "{}: failed to write {}: {err}",
-                                    "error".red().bold(),
-                                    assembled_path.display()
-                                );
-                                return EXIT_USER_ERROR;
-                            }
+            let Some(manifest) = file.target_manifest.as_deref() else {
+                eprintln!(
+                    "{}: no target manifest available to assemble {} via kit RPC",
+                    "error".red().bold(),
+                    rel.display()
+                );
+                return EXIT_VERIFY_FAIL;
+            };
+            use crate::kit_dispatch::{dispatch_assemble, AssembleError};
+            match dispatch_assemble(
+                project_root,
+                target_lang,
+                Some(manifest),
+                &fragments_json,
+                file_basename,
+                None,
+            ) {
+                Ok(assembled_result) => {
+                    for af in &assembled_result.files {
+                        let assembled_path = out_dir_path.join(&af.path);
+                        if let Some(parent) = assembled_path.parent() {
+                            let _ = std::fs::create_dir_all(parent);
+                        }
+                        if let Err(err) = std::fs::write(&assembled_path, &af.content) {
                             eprintln!(
-                                "  {} wrote {} (target-owned assembly via {} kit)",
-                                "EMIT".green().bold(),
-                                assembled_path.display(),
-                                target_lang,
+                                "{}: failed to write {}: {err}",
+                                "error".red().bold(),
+                                assembled_path.display()
                             );
-                            files_written += 1;
+                            return EXIT_USER_ERROR;
                         }
-                        // #1388: collect kit-declared classpath entries.
-                        for cp in &assembled_result.compile_classpath {
-                            aggregated_classpath.insert(cp.clone());
-                        }
-                        wrote_assembled = true;
-                    }
-                    Err(AssembleError::MethodNotSupported) => {
-                        // Legacy kit — fall through to substrate concat.
-                    }
-                    Err(AssembleError::Failed(err)) => {
                         eprintln!(
-                            "  {}: target-kit assemble failed (falling back to legacy concat): {err}",
-                            "WARN".yellow().bold(),
+                            "  {} wrote {} (target-owned assembly via {} kit)",
+                            "EMIT".green().bold(),
+                            assembled_path.display(),
+                            target_lang,
                         );
+                        files_written += 1;
+                    }
+                    // #1388: collect kit-declared classpath entries.
+                    for cp in &assembled_result.compile_classpath {
+                        aggregated_classpath.insert(cp.clone());
                     }
                 }
+                Err(AssembleError::MethodNotSupported) => {
+                    eprintln!(
+                        "{}: selected {target_lang} kit must implement assemble RPC for --out-dir materialize; refusing CLI-side target assembly for {}",
+                        "error".red().bold(),
+                        rel.display()
+                    );
+                    return EXIT_VERIFY_FAIL;
+                }
+                Err(AssembleError::Failed(err)) => {
+                    eprintln!(
+                        "{}: target-kit assemble failed for {}: {err}",
+                        "error".red().bold(),
+                        rel.display()
+                    );
+                    return EXIT_VERIFY_FAIL;
+                }
             }
-            if wrote_assembled {
-                continue;
-            }
-            // Legacy concat path (substrate bakes language syntax).
-            let imports_block = format_imports_for(target_lang, &file.imports);
-            let bodies_block = file.bodies.join("\n\n");
-            let content = if imports_block.is_empty() {
-                format!("{bodies_block}\n")
-            } else {
-                format!("{imports_block}\n\n{bodies_block}\n")
-            };
-            if let Err(err) = std::fs::write(&out_path, content) {
-                eprintln!(
-                    "{}: failed to write {}: {err}",
-                    "error".red().bold(),
-                    out_path.display()
-                );
-                return EXIT_USER_ERROR;
-            }
-            eprintln!(
-                "  {} wrote {} ({} bodies, {} imports)",
-                "EMIT".green().bold(),
-                out_path.display(),
-                file.bodies.len(),
-                file.imports.len()
-            );
-            files_written += 1;
         }
         eprintln!(
             "{} cross-language emission: {files_written} file(s) written to {}",
@@ -1875,9 +1751,6 @@ enum EmitOutcome {
     /// The kit assembled (one or more files); inner is the compile-check exit
     /// code (EXIT_OK when --compile-check is off or the kit check passed).
     Assembled(u8),
-    /// The kit does not implement the assemble RPC; caller falls back to the
-    /// legacy in-place-rewrite write path (back-compat for not-yet-migrated kits).
-    KitDoesNotAssemble,
 }
 
 /// Route each materialized file's fragments through the LANGUAGE KIT's
@@ -1887,9 +1760,6 @@ enum EmitOutcome {
 /// compiler semantics. Same-language and cross-language both land here;
 /// source-lang == target-lang changes the lift, not who assembles/checks.
 ///
-/// Returns `KitDoesNotAssemble` when the kit replies method-not-found on the
-/// FIRST file with fragments, so the caller can fall back to the legacy
-/// carrier-rewrite write path for kits not yet on the assemble protocol.
 fn emit_out_dir_via_kit_assemble(
     project_root: &Path,
     target_lang: &str,
@@ -1911,8 +1781,6 @@ fn emit_out_dir_via_kit_assemble(
 
     let mut aggregated_classpath: std::collections::BTreeSet<String> =
         std::collections::BTreeSet::new();
-    let mut wrote_any = false;
-
     for file in files {
         // Files with no realizable fragments (refuse-only) have nothing for
         // the kit to assemble; preserve the in-place-rewritten content so the
@@ -1975,22 +1843,14 @@ fn emit_out_dir_via_kit_assemble(
                         out_path.display(),
                         target_lang,
                     );
-                    wrote_any = true;
                 }
                 for cp in &assembled.compile_classpath {
                     aggregated_classpath.insert(cp.clone());
                 }
             }
             Err(AssembleError::MethodNotSupported) => {
-                // Kit predates the assemble protocol. If we haven't written
-                // anything yet, signal fallback to the legacy write path.
-                if !wrote_any {
-                    return EmitOutcome::KitDoesNotAssemble;
-                }
-                // Mixed-capability shouldn't happen within one (lang, library);
-                // surface it loudly rather than silently dropping the file.
                 eprintln!(
-                    "{}: kit for {target_lang} stopped supporting assemble mid-run for {}",
+                    "{}: selected {target_lang} kit must implement assemble RPC for --out-dir materialize; refusing CLI-side target assembly for {}",
                     "error".red().bold(),
                     file.relative_path.display()
                 );
@@ -2014,19 +1874,6 @@ fn emit_out_dir_via_kit_assemble(
         return EmitOutcome::Assembled(code);
     }
     EmitOutcome::Assembled(EXIT_OK)
-}
-
-fn write_out_dir(out_dir: &Path, files: &[MaterializedFile]) -> Result<(), String> {
-    for file in files {
-        let target = out_dir.join(&file.relative_path);
-        if let Some(parent) = target.parent() {
-            std::fs::create_dir_all(parent)
-                .map_err(|error| format!("create {}: {error}", parent.display()))?;
-        }
-        std::fs::write(&target, &file.content)
-            .map_err(|error| format!("write {}: {error}", target.display()))?;
-    }
-    Ok(())
 }
 
 fn sync_materialize_bridge_proof(

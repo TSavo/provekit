@@ -55,9 +55,9 @@ assert_not_contains() {
     fi
 }
 
-# Fixture: a tiny Zig source with one //provekit:contract annotation.
+# Fixture: a tiny Zig source with one native function body.
 INIT='{"jsonrpc":"2.0","id":1,"method":"initialize","params":{}}'
-PARSE='{"jsonrpc":"2.0","id":2,"method":"parse","params":{"path":"fixture.zig","source":"//provekit:contract\nfn myFn(x: i32) void { _ = x; }"}}'
+PARSE='{"jsonrpc":"2.0","id":2,"method":"parse","params":{"path":"fixture.zig","source":"pub fn myFn(x: i64) i64 { return x; }"}}'
 SHUTDOWN='{"jsonrpc":"2.0","id":3,"method":"shutdown","params":{}}'
 
 INPUT="$(printf '%s\n%s\n%s\n' "$INIT" "$PARSE" "$SHUTDOWN")"
@@ -78,8 +78,8 @@ echo "=== parse ==="
 assert_contains "declarations field"  "$PARSE_RESP"    '"declarations":'
 assert_contains "callEdges field"     "$PARSE_RESP"    '"callEdges":[]'
 assert_contains "warnings field"      "$PARSE_RESP"    '"warnings":[]'
-assert_contains "at least one decl"   "$PARSE_RESP"    '"kind":"contract"'
-assert_contains "contract name"       "$PARSE_RESP"    '"name":"myFn"'
+assert_contains "at least one decl"   "$PARSE_RESP"    '"kind":"function-contract"'
+assert_contains "contract name"       "$PARSE_RESP"    '"fnName":"fixture.zig.myFn"'
 assert_not_contains "no error"        "$PARSE_RESP"    '"error"'
 
 echo "=== shutdown ==="

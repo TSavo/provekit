@@ -14,8 +14,7 @@
 // Binary name expected by consumers: provekit-lsp-zig
 
 const std = @import("std");
-const lift = @import("provekit-lift-zig");
-const provekit = @import("provekit-ir");
+const lift = @import("provekit-lift-zig-source");
 
 const Io = std.Io;
 
@@ -101,19 +100,18 @@ fn handleParse(
     id: []const u8,
     writer: *Io.Writer,
 ) !void {
-    // Extract "source" field value: naive string extraction.
-    // The source is a JSON string with escape sequences.  We unescape only the
-    // common cases (\n, \t, \\, \") since we only need to scan for annotations.
     const source_raw = extractJsonStringField(line, "source") orelse "";
     const source = try unescapeJsonString(alloc, source_raw);
     defer alloc.free(source);
+    const path_raw = extractJsonStringField(line, "path") orelse "input.zig";
+    const path = try unescapeJsonString(alloc, path_raw);
+    defer alloc.free(path);
 
-    // Lift to IR declarations via the lift module.
-    const decls = try lift.liftToDecls(alloc, source);
-    defer alloc.free(decls);
+    var arena = std.heap.ArenaAllocator.init(alloc);
+    defer arena.deinit();
+    const lifted = try lift.liftSource(arena.allocator(), source, path);
 
-    // Serialize declarations as a JSON array.
-    const decls_json = try std.json.Stringify.valueAlloc(alloc, decls, .{ .whitespace = .minified });
+    const decls_json = try std.json.Stringify.valueAlloc(alloc, lifted.declarations, .{ .whitespace = .minified });
     defer alloc.free(decls_json);
 
     // callEdges: zig kit emits empty array (no cross-kit call tracking yet).

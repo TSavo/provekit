@@ -1,23 +1,10 @@
-// provekit-lift-zig/src/lift.zig
+// provekit-lift-zig-tests/src/lift.zig
 //
-// Pure parsing logic: no IO.  Imported by provekit-lift-zig (the CLI binary)
-// and by provekit-lsp-zig (the LSP plugin).
+// Pure parsing logic for native Zig unit tests and callsite implications.
+// It does not lift provekit comment annotations or expose direct IR authoring.
 
 const std = @import("std");
 const provekit = @import("provekit-ir");
-
-pub const Annotation = struct {
-    function_name: []const u8,
-    kind: Kind,
-    target_cid: ?[]const u8 = null,
-    line: usize,
-
-    pub const Kind = enum {
-        contract,
-        implement,
-        verify,
-    };
-};
 
 pub const ImplicationDecl = struct {
     name: []const u8,
@@ -53,138 +40,9 @@ pub const LiftOutput = struct {
     implications: []ImplicationDecl,
 };
 
-/// Parse provekit annotations from Zig source text.
-/// Caller owns the returned slice; call `alloc.free(slice)` when done.
-pub fn parseAnnotations(alloc: std.mem.Allocator, text: []const u8) ![]Annotation {
-    var annotations: std.ArrayList(Annotation) = .empty;
-    errdefer annotations.deinit(alloc);
-
-    var lines = std.mem.splitScalar(u8, text, '\n');
-    var line_num: usize = 0;
-    while (lines.next()) |line| : (line_num += 1) {
-        const trimmed = std.mem.trim(u8, line, " \t");
-
-        if (std.mem.startsWith(u8, trimmed, "//provekit:implement ")) {
-            const cid = std.mem.trim(u8, trimmed[20..], " \t");
-            const fn_name = findAheadFnName(text, line_num);
-            try annotations.append(alloc, .{
-                .function_name = fn_name,
-                .kind = .implement,
-                .target_cid = cid,
-                .line = line_num,
-            });
-        } else if (std.mem.startsWith(u8, trimmed, "//provekit:contract")) {
-            const fn_name = findAheadFnName(text, line_num);
-            try annotations.append(alloc, .{
-                .function_name = fn_name,
-                .kind = .contract,
-                .line = line_num,
-            });
-        } else if (std.mem.startsWith(u8, trimmed, "//provekit:verify")) {
-            const fn_name = findAheadFnName(text, line_num);
-            try annotations.append(alloc, .{
-                .function_name = fn_name,
-                .kind = .verify,
-                .line = line_num,
-            });
-        }
-    }
-
-    return annotations.toOwnedSlice(alloc);
-}
-
-fn findAheadFnName(text: []const u8, start_line: usize) []const u8 {
-    var lines = std.mem.splitScalar(u8, text, '\n');
-    var current: usize = 0;
-    // Recognize Zig function prefixes (review feedback: PR #165 / CodeRabbit):
-    // bare `fn`, `pub fn`, `export fn`, `extern fn`, `inline fn`, plus
-    // combinations such as `pub export fn`, `pub extern fn`, `pub inline fn`.
-    // Strip leading visibility/linkage qualifiers until we find `fn `.
-    const qualifiers = [_][]const u8{ "pub", "export", "extern", "inline", "noinline", "comptime" };
-    while (lines.next()) |line| : (current += 1) {
-        if (current <= start_line) continue;
-        if (current > start_line + 10) break;
-
-        var trimmed = std.mem.trim(u8, line, " \t");
-        // Strip qualifiers iteratively. Each pass strips one qualifier (or an
-        // `extern "C"`-style calling-convention quoted string) so combinations
-        // like `pub extern "C" fn` are handled.
-        var stripped = true;
-        while (stripped) {
-            stripped = false;
-            for (qualifiers) |q| {
-                if (trimmed.len > q.len and
-                    std.mem.startsWith(u8, trimmed, q) and
-                    (trimmed[q.len] == ' ' or trimmed[q.len] == '\t'))
-                {
-                    trimmed = std.mem.trimStart(u8, trimmed[q.len..], " \t");
-                    stripped = true;
-                    break;
-                }
-            }
-            // Tolerate `extern "C"` calling-convention spec.
-            if (trimmed.len > 0 and trimmed[0] == '"') {
-                if (std.mem.indexOfScalar(u8, trimmed[1..], '"')) |close_idx| {
-                    const after = trimmed[1 + close_idx + 1 ..];
-                    trimmed = std.mem.trimStart(u8, after, " \t");
-                    stripped = true;
-                }
-            }
-        }
-        if (std.mem.startsWith(u8, trimmed, "fn ")) {
-            const after = trimmed[3..];
-            const end = std.mem.indexOfAny(u8, after, " (\n") orelse after.len;
-            return after[0..end];
-        }
-    }
-    return "unknown";
-}
-
-/// Lift annotations from source text into a slice of provekit IR declarations.
-/// Caller owns the returned slice.
-pub fn liftToDecls(alloc: std.mem.Allocator, text: []const u8) ![]provekit.Decl {
-    const anns = try parseAnnotations(alloc, text);
-    defer alloc.free(anns);
-
-    var decls: std.ArrayList(provekit.Decl) = .empty;
-    errdefer decls.deinit(alloc);
-
-    for (anns) |ann| {
-        switch (ann.kind) {
-            .contract => {
-                const post_args = [_]provekit.Term{};
-                const post = provekit.Atomic("true", &post_args);
-                try decls.append(alloc, .{ .contract = .{
-                    .name = ann.function_name,
-                    .post = post,
-                } });
-            },
-            .implement => {
-                if (ann.target_cid) |cid| {
-                    try decls.append(alloc, .{ .bridge = .{
-                        .name = ann.function_name,
-                        .source_symbol = ann.function_name,
-                        .source_layer = "zig",
-                        .source_contract_cid = "",
-                        .target_contract_cid = cid,
-                        .target_proof_cid = "",
-                        .target_layer = "rust",
-                    } });
-                }
-            },
-            .verify => {},
-        }
-    }
-
-    return decls.toOwnedSlice(alloc);
-}
-
 pub fn liftSource(alloc: std.mem.Allocator, text: []const u8, source_file: []const u8) !LiftOutput {
     var declarations: std.ArrayList(provekit.Decl) = .empty;
     var implications: std.ArrayList(ImplicationDecl) = .empty;
-
-    const annotation_decls = try liftToDecls(alloc, text);
-    for (annotation_decls) |decl| try declarations.append(alloc, decl);
 
     var functions: std.ArrayList(FunctionDef) = .empty;
     var tests: std.ArrayList(TestBlock) = .empty;
@@ -630,8 +488,11 @@ fn appendTestValueScope(
 ) !void {
     const facts_name = try uniqueName(alloc, used_names, try std.fmt.allocPrint(alloc, "{s}::facts", .{call.base}));
     const assertion_name = try uniqueName(alloc, used_names, try std.fmt.allocPrint(alloc, "{s}::assertion", .{call.base}));
-    const fact_args = try termArgs(alloc, .{ provekit.Var(call.local), call.term });
-    const facts = provekit.Atomic("=", fact_args);
+    // The value-scope antecedent is implication evidence, not a separate
+    // body-discharge obligation. Keep the actual function call in the
+    // assertion contract; otherwise verify enumerates both `actual = f(x)`
+    // and `f(x) = expected`, and the former is a false universal claim.
+    const facts = provekit.Atomic("true", &.{});
     try declarations.append(alloc, .{ .contract = .{ .name = facts_name, .inv = facts } });
     try declarations.append(alloc, .{ .contract = .{ .name = assertion_name, .inv = assertion } });
     try implications.append(alloc, .{
@@ -914,71 +775,6 @@ fn containsName(names: []const []const u8, needle: []const u8) bool {
     return false;
 }
 
-test "parseAnnotations finds contract" {
-    const alloc = std.testing.allocator;
-    const src =
-        \\//provekit:contract
-        \\fn myFn(x: i32) void {
-        \\    _ = x;
-        \\}
-    ;
-    const anns = try parseAnnotations(alloc, src);
-    defer alloc.free(anns);
-    try std.testing.expectEqual(@as(usize, 1), anns.len);
-    try std.testing.expectEqual(Annotation.Kind.contract, anns[0].kind);
-    try std.testing.expectEqualStrings("myFn", anns[0].function_name);
-}
-
-test "parseAnnotations finds implement" {
-    const alloc = std.testing.allocator;
-    const src =
-        \\//provekit:implement blake3-512:abc123
-        \\fn bridge(x: i32) void {
-        \\    _ = x;
-        \\}
-    ;
-    const anns = try parseAnnotations(alloc, src);
-    defer alloc.free(anns);
-    try std.testing.expectEqual(@as(usize, 1), anns.len);
-    try std.testing.expectEqual(Annotation.Kind.implement, anns[0].kind);
-    try std.testing.expectEqualStrings("blake3-512:abc123", anns[0].target_cid.?);
-}
-
-test "parseAnnotations finds verify" {
-    const alloc = std.testing.allocator;
-    const src =
-        \\//provekit:verify
-        \\fn checkFn() void {}
-    ;
-    const anns = try parseAnnotations(alloc, src);
-    defer alloc.free(anns);
-    try std.testing.expectEqual(@as(usize, 1), anns.len);
-    try std.testing.expectEqual(Annotation.Kind.verify, anns[0].kind);
-    try std.testing.expectEqualStrings("checkFn", anns[0].function_name);
-}
-
-test "parseAnnotations empty source" {
-    const alloc = std.testing.allocator;
-    const anns = try parseAnnotations(alloc, "");
-    defer alloc.free(anns);
-    try std.testing.expectEqual(@as(usize, 0), anns.len);
-}
-
-test "liftToDecls contract produces IR" {
-    const alloc = std.testing.allocator;
-    const src =
-        \\//provekit:contract
-        \\fn myFn() void {}
-    ;
-    const decls = try liftToDecls(alloc, src);
-    defer alloc.free(decls);
-    try std.testing.expectEqual(@as(usize, 1), decls.len);
-    switch (decls[0]) {
-        .contract => |c| try std.testing.expectEqualStrings("myFn", c.name),
-        else => return error.WrongKind,
-    }
-}
-
 test "liftSource walks production callsite preconditions back to entry" {
     var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
     defer arena.deinit();
@@ -1081,6 +877,10 @@ test "liftSource shows production composes while Zig unit tests conflict" {
     try std.testing.expectEqual(@as(usize, 2), assertion_count);
     try std.testing.expectEqual(@as(usize, 1), eq_count);
     try std.testing.expectEqual(@as(usize, 1), neq_count);
+    const facts = findContractWithSuffix(out.declarations, "::facts") orelse return error.MissingFactsContract;
+    const facts_json = try provekit.jcsStringify(alloc, facts.inv.?);
+    try std.testing.expect(std.mem.indexOf(u8, facts_json, "\"name\":\"checked\"") == null);
+    try std.testing.expect(std.mem.indexOf(u8, facts_json, "\"name\":\"true\"") != null);
 
     try std.testing.expectEqual(@as(usize, 3), countImplicationsByProver(out.implications, "zig-wp-walk"));
     try std.testing.expectEqual(@as(usize, 2), countImplicationsByProver(out.implications, "zig-test-value-scope"));
@@ -1117,69 +917,4 @@ fn countImplicationsByProver(implications: []const ImplicationDecl, prover: []co
         if (std.mem.eql(u8, imp.prover, prover)) count += 1;
     }
     return count;
-}
-
-// Zig function-prefix coverage (review feedback: PR #165 / CodeRabbit).
-// findAheadFnName must handle visibility/linkage qualifiers preceding `fn`.
-
-test "parseAnnotations finds pub fn" {
-    const alloc = std.testing.allocator;
-    const src =
-        \\//provekit:contract
-        \\pub fn pubFn(x: i32) void {
-        \\    _ = x;
-        \\}
-    ;
-    const anns = try parseAnnotations(alloc, src);
-    defer alloc.free(anns);
-    try std.testing.expectEqual(@as(usize, 1), anns.len);
-    try std.testing.expectEqualStrings("pubFn", anns[0].function_name);
-}
-
-test "parseAnnotations finds export fn" {
-    const alloc = std.testing.allocator;
-    const src =
-        \\//provekit:contract
-        \\export fn exportedFn() void {}
-    ;
-    const anns = try parseAnnotations(alloc, src);
-    defer alloc.free(anns);
-    try std.testing.expectEqual(@as(usize, 1), anns.len);
-    try std.testing.expectEqualStrings("exportedFn", anns[0].function_name);
-}
-
-test "parseAnnotations finds extern fn" {
-    const alloc = std.testing.allocator;
-    const src =
-        \\//provekit:contract
-        \\extern fn externFn() void;
-    ;
-    const anns = try parseAnnotations(alloc, src);
-    defer alloc.free(anns);
-    try std.testing.expectEqual(@as(usize, 1), anns.len);
-    try std.testing.expectEqualStrings("externFn", anns[0].function_name);
-}
-
-test "parseAnnotations finds inline fn" {
-    const alloc = std.testing.allocator;
-    const src =
-        \\//provekit:contract
-        \\inline fn inlinedFn() void {}
-    ;
-    const anns = try parseAnnotations(alloc, src);
-    defer alloc.free(anns);
-    try std.testing.expectEqual(@as(usize, 1), anns.len);
-    try std.testing.expectEqualStrings("inlinedFn", anns[0].function_name);
-}
-
-test "parseAnnotations finds pub extern \"C\" fn" {
-    const alloc = std.testing.allocator;
-    const src =
-        \\//provekit:contract
-        \\pub extern "C" fn cAbiFn() void;
-    ;
-    const anns = try parseAnnotations(alloc, src);
-    defer alloc.free(anns);
-    try std.testing.expectEqual(@as(usize, 1), anns.len);
-    try std.testing.expectEqualStrings("cAbiFn", anns[0].function_name);
 }

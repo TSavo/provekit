@@ -80,6 +80,29 @@ test("rpc body_template_entries returns shim-resolved entries", () => {
   assert.ok(resp.result.proof_path.includes("node_modules"), "proof_path must be in node_modules");
 });
 
+test("rpc assemble returns TypeScript compilation unit", () => {
+  const resp = dispatch({
+    id: 2,
+    method: "provekit.plugin.assemble",
+    params: {
+      file_basename: "queries",
+      fragments: [
+        {
+          source: "async function selectRows(pool, sql, args) {\n  return await pool.query(sql, args);\n}\n",
+          helpers: ["const DEFAULT_LIMIT = 100;"],
+        },
+      ],
+    },
+  });
+
+  assert.ok(!resp.error, `unexpected error: ${JSON.stringify(resp.error)}`);
+  assert.deepEqual(resp.result.compile_classpath, []);
+  assert.equal(resp.result.files.length, 1);
+  assert.equal(resp.result.files[0].path, "queries.ts");
+  assert.match(resp.result.files[0].content, /const DEFAULT_LIMIT = 100;/);
+  assert.match(resp.result.files[0].content, /async function selectRows/);
+});
+
 // NTT source substitution: 2-param NTT picks the migrate sql-query-all binding
 test("rpc forwards named term tree sources to pg template substitution", () => {
   const response = dispatch({

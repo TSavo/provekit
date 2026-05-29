@@ -1,14 +1,12 @@
 const std = @import("std");
-const lift = @import("provekit-lift-zig");
+const lift = @import("provekit-lift-zig-tests");
 const provekit = @import("provekit-ir");
 
-// ProvekIt Lift Tool for Zig
+// ProvekIt Zig test/implication lifter.
 //
-// Scans Zig source files for provekit annotations and emits JCS canonical IR.
-//
-// Usage:
-//   provekit-lift-zig --workspace ./src --output ./target/provekit/
-//   provekit-lift-zig --rpc              (NDJSON JSON-RPC plugin mode)
+// Scans native `std.testing` unit tests and production callsites and emits
+// canonical IR over the lift-plugin RPC seam. It intentionally does not expose
+// a standalone IR-authoring mode.
 
 const Io = std.Io;
 const Dir = std.Io.Dir;
@@ -55,18 +53,13 @@ fn handleLine(
 
     if (std.mem.indexOf(u8, line, "\"initialize\"") != null) {
         try writer.print(
-            "{{\"jsonrpc\":\"2.0\",\"id\":{s},\"result\":{{\"name\":\"provekit-lift-zig\",\"version\":\"0.1.0\",\"capabilities\":[\"parse\",\"lift\"]}}}}\n",
+            "{{\"jsonrpc\":\"2.0\",\"id\":{s},\"result\":{{\"name\":\"provekit-lift-zig-tests\",\"version\":\"0.1.0\",\"protocol_version\":\"pep/1.7.0\",\"capabilities\":{{\"authoring_surfaces\":[\"zig-tests\",\"zig-implications\"],\"emits_signed_mementos\":false,\"ir_version\":\"v1.1.0\"}}}}}}\n",
             .{id},
         );
         return true;
     }
 
-    if (std.mem.indexOf(u8, line, "\"parse\"") != null) {
-        try handleParse(alloc, line, id, writer);
-        return true;
-    }
-
-    if (std.mem.indexOf(u8, line, "\"lift\"") != null) {
+    if (std.mem.indexOf(u8, line, "\"lift\"") != null or std.mem.indexOf(u8, line, "\"provekit.plugin.lift_implications\"") != null) {
         try handleLift(alloc, io, line, id, writer);
         return true;
     }
@@ -87,40 +80,6 @@ fn handleLine(
     return true;
 }
 
-fn handleParse(
-    alloc: std.mem.Allocator,
-    line: []const u8,
-    id: []const u8,
-    writer: *Io.Writer,
-) !void {
-    // Extract "source" field value: naive string extraction.
-    const source_raw = extractJsonStringField(line, "source") orelse "";
-    const source = try unescapeJsonString(alloc, source_raw);
-    defer alloc.free(source);
-    const path_raw = extractJsonStringField(line, "path") orelse "input.zig";
-    const path = try unescapeJsonString(alloc, path_raw);
-    defer alloc.free(path);
-
-    var arena = std.heap.ArenaAllocator.init(alloc);
-    defer arena.deinit();
-    const arena_alloc = arena.allocator();
-
-    const lifted = try lift.liftSource(arena_alloc, source, sourceFileName(path));
-
-    // Serialize declarations as a JSON array.
-    const decls_json = try std.json.Stringify.valueAlloc(alloc, lifted.declarations, .{ .whitespace = .minified });
-    defer alloc.free(decls_json);
-    const implications_json = try std.json.Stringify.valueAlloc(alloc, lifted.implications, .{ .whitespace = .minified });
-    defer alloc.free(implications_json);
-
-    // callEdges: zig kit emits empty array (no cross-kit call tracking yet).
-    // warnings: empty.
-    try writer.print(
-        "{{\"jsonrpc\":\"2.0\",\"id\":{s},\"result\":{{\"declarations\":{s},\"callEdges\":[],\"implications\":{s},\"warnings\":[]}}}}\n",
-        .{ id, decls_json, implications_json },
-    );
-}
-
 fn handleLift(
     alloc: std.mem.Allocator,
     io: Io,
@@ -138,6 +97,10 @@ fn handleLift(
 
     var declarations: std.ArrayList(provekit.Decl) = .empty;
     var implications: std.ArrayList(lift.ImplicationDecl) = .empty;
+    const implications_only =
+        std.mem.indexOf(u8, line, "\"provekit.plugin.lift_implications\"") != null or
+        std.mem.indexOf(u8, line, "\"surface\":\"zig-implications\"") != null or
+        std.mem.indexOf(u8, line, "\"layer\":\"implications\"") != null;
 
     var dir = try Dir.openDir(Dir.cwd(), io, workspace, .{ .iterate = true });
     defer dir.close(io);
@@ -151,7 +114,9 @@ fn handleLift(
 
         const file_text = try Dir.readFileAlloc(entry.dir, io, entry.basename, arena_alloc, .unlimited);
         const lifted = try lift.liftSource(arena_alloc, file_text, entry.basename);
-        for (lifted.declarations) |decl| try declarations.append(arena_alloc, decl);
+        if (!implications_only) {
+            for (lifted.declarations) |decl| try declarations.append(arena_alloc, decl);
+        }
         for (lifted.implications) |implication| try implications.append(arena_alloc, implication);
     }
 
@@ -166,54 +131,6 @@ fn handleLift(
         "{{\"jsonrpc\":\"2.0\",\"id\":{s},\"result\":{{\"kind\":\"ir-document\",\"ir\":{s},\"implications\":{s},\"diagnostics\":[]}}}}\n",
         .{ id, decls_json, implications_json },
     );
-}
-
-fn sourceFileName(path: []const u8) []const u8 {
-    if (std.mem.lastIndexOfAny(u8, path, "/\\")) |idx| {
-        return path[idx + 1 ..];
-    }
-    return path;
-}
-
-fn runStandaloneMode(alloc: std.mem.Allocator, io: Io, workspace_path: []const u8, output_path: []const u8) !void {
-    var decls: std.ArrayList(provekit.Decl) = .empty;
-    defer decls.deinit(alloc);
-
-    var dir = try Dir.openDir(Dir.cwd(), io, workspace_path, .{ .iterate = true });
-    defer dir.close(io);
-
-    var walker = try dir.walk(alloc);
-    defer walker.deinit();
-
-    while (try walker.next(io)) |entry| {
-        if (entry.kind != .file) continue;
-        if (!std.mem.endsWith(u8, entry.basename, ".zig")) continue;
-
-        const file_text = try Dir.readFileAlloc(entry.dir, io, entry.basename, alloc, .unlimited);
-        defer alloc.free(file_text);
-
-        const file_decls = try lift.liftToDecls(alloc, file_text);
-        defer alloc.free(file_decls);
-
-        for (file_decls) |decl| {
-            try decls.append(alloc, decl);
-        }
-    }
-
-    const decls_slice = try decls.toOwnedSlice(alloc);
-    defer alloc.free(decls_slice);
-
-    const jcs = try provekit.jcsStringify(alloc, decls_slice);
-    defer alloc.free(jcs);
-
-    try Dir.createDirPath(Dir.cwd(), io, output_path);
-    const out_path = try std.fs.path.join(alloc, &.{ output_path, "lifted.json" });
-    defer alloc.free(out_path);
-    const out_file = try Dir.createFile(Dir.cwd(), io, out_path, .{});
-    defer out_file.close(io);
-    try Io.File.writeStreamingAll(out_file, io, jcs);
-
-    std.debug.print("Wrote {d} declarations to {s}\n", .{ decls_slice.len, out_path });
 }
 
 /// Extract the raw JSON "id" value token from a NDJSON line.
@@ -280,26 +197,19 @@ pub fn main(init: std.process.Init) !void {
     const args = try init.minimal.args.toSlice(init.arena.allocator());
 
     var rpc_mode = false;
-    var workspace: ?[]const u8 = null;
-    var output: ?[]const u8 = null;
 
     var i: usize = 1;
     while (i < args.len) : (i += 1) {
         const arg = args[i];
         if (std.mem.eql(u8, arg, "--rpc")) {
             rpc_mode = true;
-        } else if (std.mem.eql(u8, arg, "--workspace")) {
-            i += 1;
-            if (i < args.len) workspace = args[i];
-        } else if (std.mem.eql(u8, arg, "--output")) {
-            i += 1;
-            if (i < args.len) output = args[i];
         }
     }
 
     if (rpc_mode) {
         try runRpcMode(alloc, io);
     } else {
-        try runStandaloneMode(alloc, io, workspace orelse ".", output orelse "./target/provekit");
+        std.debug.print("usage: provekit-lift-zig-tests --rpc\n", .{});
+        std.process.exit(1);
     }
 }

@@ -11,7 +11,8 @@
 #   make help: print this help
 #   make ci: Linux-profile gate (catalog + protocol + live mints + tests)
 #   make conformance: catalog + protocol + live mint CIDs + self-contract tests
-#   make cross-language-proof-parity: Java/Go/Python/Rust emit + materialize + prove gate
+#   make cross-language-proof-parity: Java/Go/Python/Rust emit + materialize + prove gate,
+#                                      plus TypeScript kit-owned materialize coverage
 #   make all-mint: run all 11 Linux-profile mint commands; print CIDs
 #   make bootstrap-self-contracts: re-sign attestations from live artifacts
 #   make test-all: run the Linux native test aggregate
@@ -87,6 +88,7 @@ help:
 	@echo "  make conformance    catalog + protocol + 11 mint CIDs + self-contract tests"
 	@echo "  make cross-language-proof-parity"
 	@echo "                       Java/Go/Python/Rust emit + materialize + prove gate"
+	@echo "                       plus TypeScript kit-owned materialize coverage"
 	@echo "  make all-mint       11 mint commands (Swift excluded: macOS-only, use mint-swift)"
 	@echo "  make bug-zoo        replay executable bug specimens through source-routed CLI"
 	@echo "  make bootstrap-self-contracts"
@@ -217,6 +219,7 @@ build-ts:
 	# deps (the kits are npm package-lock.json based, outside the pnpm root),
 	# so install each kit explicitly. Without this the kit RPC returns
 	# SHIM_NOT_FOUND and SQL/migrate materialize tests refuse.
+	npm --prefix implementations/typescript/provekit-emit-typescript-vitest ci
 	npm --prefix implementations/typescript/provekit-realize-typescript-core ci
 	npm --prefix implementations/typescript/provekit-realize-typescript-better-sqlite3 ci
 	npm --prefix implementations/typescript/provekit-realize-typescript-pg ci
@@ -664,8 +667,8 @@ cross-language-proof-parity-python-env:
 		-e implementations/python/provekit-realize-python-requests
 
 .PHONY: cross-language-proof-parity
-cross-language-proof-parity: build-java cross-language-proof-parity-python-env
-	@echo "=== Cross-language proof parity: emit/materialize/prove for Java, Go, Python, Rust ==="
+cross-language-proof-parity: build-java build-ts build-zig cross-language-proof-parity-python-env
+	@echo "=== Cross-language proof parity: emit/materialize/prove for Java, Go, Python, Rust, TypeScript, Zig ==="
 	cargo build --manifest-path implementations/rust/Cargo.toml \
 		-p provekit-realize-rust-core --bin provekit-realize-rust
 	@echo "--- emit parity ---"
@@ -684,6 +687,9 @@ cross-language-proof-parity: build-java cross-language-proof-parity-python-env
 	cargo test --release --manifest-path implementations/rust/Cargo.toml \
 		-p provekit-cli --test cmd_emit_rust_cargo_test \
 		emit_rust_cargo_test_dispatches_real_emitter_and_cargo_checks_output
+	cargo test --release --manifest-path implementations/rust/Cargo.toml \
+		-p provekit-cli --test cmd_emit_typescript_vitest \
+		emit_typescript_vitest_dispatches_real_emitter_and_vitest_checks_output
 	@echo "--- materialize parity ---"
 	cargo test --release --manifest-path implementations/rust/Cargo.toml \
 		-p provekit-cli --test cmd_materialize_proof_load \
@@ -694,6 +700,9 @@ cross-language-proof-parity: build-java cross-language-proof-parity-python-env
 	PATH=$(PARITY_PYTHON_BIN):$(PATH) cargo test --release --manifest-path implementations/rust/Cargo.toml \
 		-p provekit-cli --test cmd_materialize_integration \
 		compile_check_passes_for_valid_python_materialized_output
+	cargo test --release --manifest-path implementations/rust/Cargo.toml \
+		-p provekit-cli --test cmd_materialize_integration \
+		materialize_out_dir_writes_materialized_copy_and_leaves_source_unchanged
 	cargo test --release --manifest-path implementations/rust/Cargo.toml \
 		-p provekit-cli --test cmd_materialize_integration \
 		materialize_rust_reqwest_example_uses_rust_library_shim
@@ -710,6 +719,12 @@ cross-language-proof-parity: build-java cross-language-proof-parity-python-env
 	cargo test --release --manifest-path implementations/rust/Cargo.toml \
 		-p provekit-cli --test cmd_verify_rust_production_bridge \
 		rust_production_path_double_discharges_and_mints_witness
+	cargo test --release --manifest-path implementations/rust/Cargo.toml \
+		-p provekit-cli --test cmd_verify_typescript_production_bridge \
+		typescript_production_path_double_discharges_and_mints_witness
+	cargo test --release --manifest-path implementations/rust/Cargo.toml \
+		-p provekit-cli --test cmd_verify_zig_production_bridge \
+		zig_production_path_double_discharges_and_mints_witness
 	@echo "--- contradiction parity ---"
 	cargo test --release --manifest-path implementations/rust/Cargo.toml \
 		-p provekit-cli --test cmd_verify_java_production_bridge \
@@ -723,6 +738,12 @@ cross-language-proof-parity: build-java cross-language-proof-parity-python-env
 	cargo test --release --manifest-path implementations/rust/Cargo.toml \
 		-p provekit-cli --test cmd_verify_rust_production_bridge \
 		rust_production_path_refuses_planted_contradictory_implication
+	cargo test --release --manifest-path implementations/rust/Cargo.toml \
+		-p provekit-cli --test cmd_verify_typescript_production_bridge \
+		typescript_production_path_refuses_planted_contradictory_implication
+	cargo test --release --manifest-path implementations/rust/Cargo.toml \
+		-p provekit-cli --test cmd_verify_zig_production_bridge \
+		zig_production_path_refuses_planted_contradictory_implication
 	@echo "==== cross-language-proof-parity: PASS ===="
 
 .PHONY: bootstrap-self-contracts
@@ -893,11 +914,11 @@ test-zig:
 	cd implementations/zig/provekit-ir && zig build test
 	cd implementations/zig/provekit-self-contracts && zig build test
 	@echo "test-zig: native substrate (jcs + cbor + ed25519 + envelopes) verified"
-	cd implementations/zig/provekit-lift-zig && zig build test
-	cd implementations/zig/provekit-lift-zig && zig build
+	cd implementations/zig/provekit-lift-zig-tests && zig build test
+	cd implementations/zig/provekit-lift-zig-tests && zig build
 	cd implementations/zig/provekit-lift-zig-source && zig build test
 	cd implementations/zig/provekit-lift-zig-source && zig build
-	@echo "test-zig: lift-zig and lift-zig-source binary builds verified"
+	@echo "test-zig: lift-zig-tests and lift-zig-source binary builds verified"
 	cd implementations/zig/provekit-lsp-zig && zig build test
 	cd implementations/zig/provekit-lsp-zig && zig build
 	@echo "test-zig: LSP lifecycle integration test"
@@ -907,7 +928,7 @@ test-zig:
 build-zig:
 	cd implementations/zig/provekit-ir && zig build
 	cd implementations/zig/provekit-self-contracts && zig build
-	cd implementations/zig/provekit-lift-zig && zig build
+	cd implementations/zig/provekit-lift-zig-tests && zig build
 	cd implementations/zig/provekit-lift-zig-source && zig build
 	cd implementations/zig/provekit-lsp-zig && zig build
 	cd implementations/zig/provekit-proof-envelope-zig && zig build

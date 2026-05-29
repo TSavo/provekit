@@ -65,6 +65,29 @@ test("rpc body_template_entries returns shim-resolved entries", () => {
   assert.ok(resp.result.proof_path.includes("node_modules"), "proof_path must be in node_modules");
 });
 
+test("rpc assemble returns TypeScript compilation unit", () => {
+  const resp = dispatch({
+    id: 2,
+    method: "provekit.plugin.assemble",
+    params: {
+      file_basename: "queries",
+      fragments: [
+        {
+          source: "function selectRows(db, sql, args) {\n  return db.prepare(sql).all(args);\n}\n",
+          helpers: ["const DEFAULT_LIMIT = 100;"],
+        },
+      ],
+    },
+  });
+
+  assert.ok(!resp.error, `unexpected error: ${JSON.stringify(resp.error)}`);
+  assert.deepEqual(resp.result.compile_classpath, []);
+  assert.equal(resp.result.files.length, 1);
+  assert.equal(resp.result.files[0].path, "queries.ts");
+  assert.match(resp.result.files[0].content, /const DEFAULT_LIMIT = 100;/);
+  assert.match(resp.result.files[0].content, /function selectRows/);
+});
+
 // NTT source substitution: 2-param NTT picks stmt-based binding from shim
 test("rpc forwards named term tree sources to better-sqlite3 template substitution", () => {
   const response = dispatch({
@@ -104,4 +127,3 @@ test("rpc forwards named term tree sources to better-sqlite3 template substituti
   // The NTT source for the sql arg is inlined as the statement.
   assert.match(response.result.source, /"SELECT id FROM users WHERE id = \?"/);
 });
-

@@ -10,9 +10,8 @@ pub fn build(b: *std.Build) void {
         .optimize = optimize,
     });
 
-    // Reuse the pure parse module from provekit-lift-zig.
     const lift_mod = b.createModule(.{
-        .root_source_file = b.path("../provekit-lift-zig/src/lift.zig"),
+        .root_source_file = b.path("../provekit-lift-zig-source/src/lift.zig"),
         .target = target,
         .optimize = optimize,
         .imports = &.{
@@ -26,7 +25,7 @@ pub fn build(b: *std.Build) void {
         .optimize = optimize,
         .imports = &.{
             .{ .name = "provekit-ir", .module = provekit_ir },
-            .{ .name = "provekit-lift-zig", .module = lift_mod },
+            .{ .name = "provekit-lift-zig-source", .module = lift_mod },
         },
     });
 
@@ -51,7 +50,7 @@ pub fn build(b: *std.Build) void {
         .optimize = optimize,
         .imports = &.{
             .{ .name = "provekit-ir", .module = provekit_ir },
-            .{ .name = "provekit-lift-zig", .module = lift_mod },
+            .{ .name = "provekit-lift-zig-source", .module = lift_mod },
         },
     });
 
