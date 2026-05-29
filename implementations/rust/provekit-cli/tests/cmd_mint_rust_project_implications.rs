@@ -4,12 +4,17 @@
 // Rust contracts; their project configs must include the consumer
 // implication surface so prove is not vacuous.
 
+use std::collections::BTreeMap;
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::process::Command;
 use std::sync::OnceLock;
 
-use serde_json::Value as Json;
+use provekit_canonicalizer::{blake3_512_of, encode_jcs};
+use provekit_proof_envelope::{
+    build_proof_envelope, ed25519_pubkey_string, Ed25519Seed, ProofEnvelopeInput,
+};
+use serde_json::{json, Value as Json};
 
 fn provekit_bin() -> PathBuf {
     PathBuf::from(env!("CARGO_BIN_EXE_provekit"))
@@ -118,6 +123,162 @@ fn run_prove_json(out_dir: &Path) -> (Json, i32) {
     (report, output.status.code().unwrap_or(-1))
 }
 
+fn int_sort() -> Json {
+    json!({"kind": "primitive", "name": "Int"})
+}
+
+fn int_const(n: i64) -> Json {
+    json!({"kind": "const", "value": n, "sort": int_sort()})
+}
+
+fn var(name: &str) -> Json {
+    json!({"kind": "var", "name": name})
+}
+
+fn json_to_canonical_jcs(j: &Json) -> String {
+    fn to_cv(j: &Json) -> std::sync::Arc<provekit_canonicalizer::Value> {
+        use provekit_canonicalizer::Value as CV;
+        match j {
+            Json::Null => CV::null(),
+            Json::Bool(b) => CV::boolean(*b),
+            Json::Number(n) => CV::integer(n.as_i64().unwrap_or(0)),
+            Json::String(s) => CV::string(s.clone()),
+            Json::Array(items) => CV::array(items.iter().map(to_cv).collect()),
+            Json::Object(map) => CV::object(
+                map.iter()
+                    .map(|(k, v)| (k.clone(), to_cv(v)))
+                    .collect::<Vec<_>>(),
+            ),
+        }
+    }
+    encode_jcs(&to_cv(j))
+}
+
+fn flat_member(mut env: Json) -> (String, Vec<u8>) {
+    if let Json::Object(map) = &mut env {
+        map.remove("cid");
+        map.remove("producerSignature");
+    }
+    let canonical = json_to_canonical_jcs(&env);
+    let cid = blake3_512_of(canonical.as_bytes());
+    (cid, canonical.into_bytes())
+}
+
+fn write_proof(dir: &Path, name: &str, members: BTreeMap<String, Vec<u8>>) -> String {
+    fs::create_dir_all(dir).expect("mkdir proof dir");
+    let signer_seed: Ed25519Seed = [0x51u8; 32];
+    let signer_pubkey = ed25519_pubkey_string(&signer_seed);
+    let signer_cid = blake3_512_of(signer_pubkey.as_bytes());
+    let built = build_proof_envelope(&ProofEnvelopeInput {
+        name: name.to_string(),
+        version: "1.0.0".into(),
+        binary_cid: None,
+        metadata: None,
+        members,
+        signer_cid,
+        signer_seed,
+        declared_at: "2026-05-29T00:00:00.000Z".into(),
+    });
+    let hex = built.cid.strip_prefix("blake3-512:").unwrap();
+    fs::write(dir.join(format!("{hex}.proof")), &built.bytes).expect("write proof");
+    built.cid
+}
+
+fn plant_contradictory_implication_proof(proof_dir: &Path) {
+    let producer_env = json!({
+        "evidence": {
+            "kind": "contract",
+            "body": {
+                "contractName": "provekit_self_produces_zero",
+                "post": {
+                    "kind": "atomic",
+                    "name": "=",
+                    "args": [var("result"), int_const(0)]
+                }
+            }
+        }
+    });
+    let (producer_cid, producer_bytes) = flat_member(producer_env);
+
+    let consumer_env = json!({
+        "evidence": {
+            "kind": "contract",
+            "body": {
+                "contractName": "provekit_self_requires_positive",
+                "formals": ["x"],
+                "formalSorts": [int_sort()],
+                "pre": {
+                    "kind": "atomic",
+                    "name": ">",
+                    "args": [var("x"), int_const(0)]
+                }
+            }
+        }
+    });
+    let (consumer_cid, consumer_bytes) = flat_member(consumer_env);
+
+    let source_env = json!({
+        "evidence": {
+            "kind": "contract",
+            "body": {
+                "contractName": "provekit_self_contradictory_callsite",
+                "inv": {
+                    "kind": "atomic",
+                    "name": "observed",
+                    "args": [{
+                        "kind": "ctor",
+                        "name": "provekit_self_requires_positive",
+                        "args": [{
+                            "kind": "ctor",
+                            "name": "provekit_self_produces_zero",
+                            "args": []
+                        }]
+                    }]
+                }
+            }
+        }
+    });
+    let (source_cid, source_bytes) = flat_member(source_env);
+
+    let producer_bridge_env = json!({
+        "evidence": {
+            "kind": "bridge",
+            "body": {
+                "sourceSymbol": "provekit_self_produces_zero",
+                "sourceLayer": "rust",
+                "targetContractCid": producer_cid,
+                "targetLayer": "rust-tests"
+            }
+        }
+    });
+    let (producer_bridge_cid, producer_bridge_bytes) = flat_member(producer_bridge_env);
+
+    let consumer_bridge_env = json!({
+        "evidence": {
+            "kind": "bridge",
+            "body": {
+                "sourceSymbol": "provekit_self_requires_positive",
+                "sourceLayer": "rust",
+                "targetContractCid": consumer_cid,
+                "targetLayer": "rust-tests"
+            }
+        }
+    });
+    let (consumer_bridge_cid, consumer_bridge_bytes) = flat_member(consumer_bridge_env);
+
+    let mut members = BTreeMap::new();
+    members.insert(producer_cid, producer_bytes);
+    members.insert(consumer_cid, consumer_bytes);
+    members.insert(source_cid, source_bytes);
+    members.insert(producer_bridge_cid, producer_bridge_bytes);
+    members.insert(consumer_bridge_cid, consumer_bridge_bytes);
+    write_proof(
+        proof_dir,
+        "@provekit/self-contradictory-implication",
+        members,
+    );
+}
+
 #[test]
 fn configured_rust_shims_emit_nonvacuous_implication_claims() {
     if !z3_available() {
@@ -185,6 +346,60 @@ fn voltron_demo_emits_nonvacuous_green_implication_claims() {
     assert_eq!(
         report["discharged"], report["totalCallsites"],
         "Voltron report: {report}"
+    );
+    let _ = fs::remove_dir_all(out_dir);
+}
+
+#[test]
+fn provekit_cli_self_application_proves_green_then_refuses_planted_contradiction() {
+    if !z3_available() {
+        eprintln!("z3 not on PATH: skipping provekit-cli self-application proof");
+        return;
+    }
+    build_rust_lifter_bins();
+
+    let repo = repo_root();
+    let project = repo.join("implementations/rust/provekit-cli");
+    let out_dir = unique_dir("provekit-cli");
+    run_mint(&project, &out_dir);
+    let (report, code) = run_prove_json(&out_dir);
+    assert_eq!(
+        code, 0,
+        "provekit-cli should prove cleanly through its checked-in .provekit config; report: {report}"
+    );
+    let total = report["totalCallsites"].as_u64().unwrap_or(0);
+    assert!(
+        total > 0,
+        "provekit-cli must not prove itself vacuously; report: {report}"
+    );
+    assert_eq!(report["violations"], 0, "provekit-cli report: {report}");
+    assert_eq!(
+        report["discharged"], report["totalCallsites"],
+        "provekit-cli report: {report}"
+    );
+    plant_contradictory_implication_proof(&out_dir);
+
+    let (report, code) = run_prove_json(&out_dir);
+    assert_eq!(
+        code, 1,
+        "a planted contradictory implication must make the self proof fail; report: {report}"
+    );
+    assert!(
+        report["totalCallsites"].as_u64().unwrap_or(0) > 0,
+        "contradiction test must not be vacuous; report: {report}"
+    );
+    assert!(
+        report["violations"].as_u64().unwrap_or(0) > 0,
+        "contradictory implication must report a violation; report: {report}"
+    );
+    assert!(
+        report["rows"]
+            .as_array()
+            .expect("rows")
+            .iter()
+            .any(|row| row["bridge"] == "provekit_self_requires_positive"
+                && row["status"] == "unsatisfied"),
+        "provekit_self_requires_positive(provekit_self_produces_zero()) must be unsatisfied; report: {report}"
     );
     let _ = fs::remove_dir_all(out_dir);
 }
