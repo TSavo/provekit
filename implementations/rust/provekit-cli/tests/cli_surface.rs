@@ -257,6 +257,43 @@ fn provekit_cli_does_not_expose_legacy_proof_artifact_subcommand() {
 }
 
 #[test]
+fn provekit_cli_does_not_expose_legacy_link_subcommand() {
+    let help = Command::new(provekit_bin())
+        .arg("--help")
+        .output()
+        .expect("spawn provekit --help");
+    let stdout = String::from_utf8_lossy(&help.stdout);
+    let stderr = String::from_utf8_lossy(&help.stderr);
+    assert!(
+        help.status.success(),
+        "provekit --help failed\nstdout:\n{stdout}\nstderr:\n{stderr}"
+    );
+    assert!(
+        !stdout
+            .lines()
+            .any(|line| line.trim_start().starts_with("link ")),
+        "`provekit link` is the legacy Rust/Go-specific implication linker and must stay retired; implications now lift through project-registered kits and compose in mint/prove\nstdout:\n{stdout}"
+    );
+
+    let rejected = Command::new(provekit_bin())
+        .arg("link")
+        .arg("project")
+        .output()
+        .expect("spawn provekit link");
+    let stderr = String::from_utf8_lossy(&rejected.stderr);
+    assert!(
+        !rejected.status.success(),
+        "`provekit link` must be rejected at the CLI boundary"
+    );
+    assert!(
+        stderr.contains("unrecognized subcommand")
+            || stderr.contains("unknown")
+            || stderr.contains("invalid value"),
+        "stderr should reject legacy link at clap boundary\n{stderr}"
+    );
+}
+
+#[test]
 fn lift_identify_only_delegates_from_project_config() {
     let root = repo_root();
     let output = Command::new(provekit_bin())
