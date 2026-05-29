@@ -47,6 +47,10 @@ cat > "$FIXTURE" << 'EOF'
 function add_numbers(int $a, int $b): int {
     return $a + $b;
 }
+// @provekit-contract
+function compute_total(int $a, int $b): int {
+    return add_numbers($a, $b);
+}
 EOF
 
 printf "Running provekit-lsp-php integration tests...\n"
@@ -97,6 +101,11 @@ PARSE2=$(printf '%s\n' "$PARSE_RESPONSES" | sed -n '2p')
 
 check "T12 parse: declarations key"    "$PARSE2" '"declarations":'
 check "T13 parse: contract add_numbers" "$PARSE2" '"name":"add_numbers"'
+check "T14 parse: call edge source"    "$PARSE2" '"sourceContractCid":"pending-php:compute_total"'
+check "T15 parse: call edge target"    "$PARSE2" '"targetSymbol":"php-kit:add_numbers"'
+check "T16 parse: call edge locus file" "$PARSE2" '"file":"fixture.php"'
+check "T17 parse: call edge locus line" "$PARSE2" '"line":8'
+check "T18 parse: call edge locus column" "$PARSE2" '"column":11'
 
 # Cleanup
 rm -rf "$TMPDIR_PATH"
