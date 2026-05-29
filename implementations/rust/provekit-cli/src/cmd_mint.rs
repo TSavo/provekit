@@ -182,7 +182,12 @@ struct MintedIrDocument {
 fn merge_ir_document_responses(per_plugin: Vec<PerPluginDispatch>) -> Result<Value, String> {
     let mut merged_ir: Vec<Value> = Vec::new();
     let mut merged_diagnostics: Vec<Value> = Vec::new();
+    let mut merged_implications: Vec<Value> = Vec::new();
+    let mut merged_authorities: Vec<Value> = Vec::new();
+    let mut merged_witnesses: Vec<Value> = Vec::new();
     let mut seen_names: std::collections::HashSet<String> = std::collections::HashSet::new();
+    let mut seen_implications: std::collections::HashSet<String> = std::collections::HashSet::new();
+    let mut seen_authorities: std::collections::HashSet<String> = std::collections::HashSet::new();
     for entry in per_plugin {
         let kind = entry
             .response
@@ -219,12 +224,53 @@ fn merge_ir_document_responses(per_plugin: Vec<PerPluginDispatch>) -> Result<Val
         if let Some(arr) = entry.response.get("diagnostics").and_then(|v| v.as_array()) {
             merged_diagnostics.extend(arr.iter().cloned());
         }
+        if let Some(arr) = entry
+            .response
+            .get("implications")
+            .and_then(|v| v.as_array())
+        {
+            for item in arr {
+                let key = item
+                    .get("name")
+                    .and_then(|v| v.as_str())
+                    .unwrap_or("")
+                    .to_string();
+                if key.is_empty() || seen_implications.insert(key) {
+                    merged_implications.push(item.clone());
+                }
+            }
+        }
+        if let Some(arr) = entry.response.get("authorities").and_then(|v| v.as_array()) {
+            for item in arr {
+                let key = item
+                    .get("id")
+                    .and_then(|v| v.as_str())
+                    .unwrap_or("")
+                    .to_string();
+                if key.is_empty() || seen_authorities.insert(key) {
+                    merged_authorities.push(item.clone());
+                }
+            }
+        }
+        if let Some(arr) = entry.response.get("witnesses").and_then(|v| v.as_array()) {
+            merged_witnesses.extend(arr.iter().cloned());
+        }
     }
-    Ok(json!({
+    let mut merged = json!({
         "kind": "ir-document",
         "ir": merged_ir,
         "diagnostics": merged_diagnostics,
-    }))
+    });
+    if !merged_implications.is_empty() {
+        merged["implications"] = Value::Array(merged_implications);
+    }
+    if !merged_authorities.is_empty() {
+        merged["authorities"] = Value::Array(merged_authorities);
+    }
+    if !merged_witnesses.is_empty() {
+        merged["witnesses"] = Value::Array(merged_witnesses);
+    }
+    Ok(merged)
 }
 
 #[derive(Debug, Clone, Default)]
@@ -2524,6 +2570,50 @@ mod tests {
 
         assert_eq!(contract_count, 2);
         assert_eq!(implication_count, 1);
+    }
+
+    #[test]
+    fn merge_ir_document_responses_preserves_implications_from_lifters() {
+        let merged = merge_ir_document_responses(vec![
+            PerPluginDispatch {
+                surface: "zig-tests".to_string(),
+                response: json!({
+                    "kind": "ir-document",
+                    "ir": [{
+                        "kind": "contract",
+                        "name": "zig.assertion",
+                        "inv": {"kind": "atomic", "name": "=", "args": []}
+                    }],
+                    "diagnostics": []
+                }),
+            },
+            PerPluginDispatch {
+                surface: "zig-implications".to_string(),
+                response: json!({
+                    "kind": "ir-document",
+                    "ir": [],
+                    "implications": [{
+                        "name": "zig.assertion.scope",
+                        "antecedent": "zig.assertion",
+                        "consequent": "zig.assertion",
+                        "antecedentSlot": "inv",
+                        "consequentSlot": "inv"
+                    }],
+                    "diagnostics": []
+                }),
+            },
+        ])
+        .expect("merge ir-documents");
+
+        assert_eq!(merged["ir"].as_array().expect("ir").len(), 1);
+        assert_eq!(
+            merged["implications"]
+                .as_array()
+                .expect("implications")
+                .len(),
+            1,
+            "merged ir-document must keep implication-lifter output: {merged}"
+        );
     }
 
     #[test]

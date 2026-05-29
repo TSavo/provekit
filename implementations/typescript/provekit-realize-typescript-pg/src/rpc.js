@@ -4,6 +4,7 @@ const realizer = require("./realizer");
 const { emitStub } = realizer;
 const { declaration: platformSemanticsDeclaration } = require("./platform_semantics");
 const { resolveDependencyProofs } = require("../../provekit-realize-typescript-core/src/dependency_proofs");
+const { assembleResponse } = require("../../provekit-realize-typescript-core/src/assemble");
 
 function runRpc() {
   const rl = readline.createInterface({ input: process.stdin, output: process.stdout, terminal: false });
@@ -59,6 +60,13 @@ function dispatch(request) {
     }
     const entries = realizer.shimProofEntries ? realizer.shimProofEntries() : [];
     return { jsonrpc: "2.0", id: msgId, result: { entries, proof_path: proofPath } };
+  }
+  if (method === "provekit.plugin.assemble") {
+    try {
+      return { jsonrpc: "2.0", id: msgId, result: assembleResponse(params) };
+    } catch (error) {
+      return errorResponse(msgId, -32040, `ASSEMBLE_FAILED: ${error.message}`);
+    }
   }
   if (method === "provekit.plugin.resolve_dependency_proofs") {
     return { jsonrpc: "2.0", id: msgId, result: { proofs: resolveDependencyProofs(params.project_root) } };

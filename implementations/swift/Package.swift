@@ -36,6 +36,7 @@ let package = Package(
         .executable(name: "provekit-lsp-swift", targets: ["ProveKitLSPSwift"]),
         .executable(name: "mint-swift-self-contracts", targets: ["MintSwiftSelfContracts"]),
         .executable(name: "provekit-lift-swift-source", targets: ["ProvekitLiftSwiftSourceCLI"]),
+        .executable(name: "provekit-emit-swift-xctest", targets: ["ProvekitEmitSwiftXCTest"]),
         .executable(name: "test-swift-lsp", targets: ["LSPTests"]),
         .executable(name: "test-swift-crypto", targets: ["CryptoTests"]),
     ],
@@ -141,6 +142,10 @@ let package = Package(
         .executableTarget(
             name: "ProvekitLiftSwiftSourceCLI",
             dependencies: ["ProvekitLiftSwiftSource"]
+        ),
+        .executableTarget(
+            name: "ProvekitEmitSwiftXCTest",
+            dependencies: ["ProvekitCrypto"]
         ),
         // LSPTests: standalone integration test runner (no XCTest/Testing dep needed).
         // `swift run test-swift-lsp` returns exit 0 on pass, non-zero on fail.

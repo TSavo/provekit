@@ -78,6 +78,7 @@ fn handleLift(alloc: std.mem.Allocator, io: Io, line: []const u8, id: []const u8
 
     var declarations: std.ArrayList(lift.FunctionContract) = .empty;
     var refusals: std.ArrayList(lift.Refusal) = .empty;
+    const verify_layer = std.mem.indexOf(u8, line, "\"layer\":\"verify\"") != null;
 
     if (extractJsonStringField(line, "source")) |source_raw| {
         const source = try unescapeJsonString(arena_alloc, source_raw);
@@ -96,15 +97,13 @@ fn handleLift(alloc: std.mem.Allocator, io: Io, line: []const u8, id: []const u8
         }
         var dir = try Io.Dir.openDir(Io.Dir.cwd(), io, workspace, .{ .iterate = true });
         defer dir.close(io);
-        for (paths) |rel| {
-            const file_text = Io.Dir.readFileAlloc(dir, io, rel, arena_alloc, .unlimited) catch |err| {
-                try refusals.append(arena_alloc, .{ .kind = "io-error", .function = null, .line = 0, .reason = try std.fmt.allocPrint(arena_alloc, "read {s}: {t}", .{ rel, err }) });
-                continue;
-            };
-            const out = try lift.liftSource(arena_alloc, file_text, rel);
-            for (out.declarations) |decl| try declarations.append(arena_alloc, decl);
-            for (out.refusals) |refusal| try refusals.append(arena_alloc, refusal);
-        }
+        for (paths) |rel| try liftPath(arena_alloc, io, dir, rel, &declarations, &refusals);
+    }
+
+    if (verify_layer) {
+        const verify_declarations = try lift.verifyContracts(arena_alloc, declarations.items);
+        declarations.clearRetainingCapacity();
+        for (verify_declarations) |decl| try declarations.append(arena_alloc, decl);
     }
 
     const decls_json = try std.json.Stringify.valueAlloc(alloc, declarations.items, .{ .whitespace = .minified });
@@ -112,6 +111,47 @@ fn handleLift(alloc: std.mem.Allocator, io: Io, line: []const u8, id: []const u8
     const refusals_json = try std.json.Stringify.valueAlloc(alloc, refusals.items, .{ .whitespace = .minified });
     defer alloc.free(refusals_json);
     try writer.print("{{\"jsonrpc\":\"2.0\",\"id\":{s},\"result\":{{\"kind\":\"ir-document\",\"ir\":{s},\"callEdges\":[],\"diagnostics\":[],\"opacityReport\":[],\"refusals\":{s}}}}}\n", .{ id, decls_json, refusals_json });
+}
+
+fn liftPath(
+    alloc: std.mem.Allocator,
+    io: Io,
+    root: Io.Dir,
+    rel: []const u8,
+    declarations: *std.ArrayList(lift.FunctionContract),
+    refusals: *std.ArrayList(lift.Refusal),
+) !void {
+    const file_text = Io.Dir.readFileAlloc(root, io, rel, alloc, .unlimited) catch |err| switch (err) {
+        error.IsDir => {
+            var subdir = Io.Dir.openDir(root, io, rel, .{ .iterate = true }) catch |open_err| {
+                try refusals.append(alloc, .{ .kind = "io-error", .function = null, .line = 0, .reason = try std.fmt.allocPrint(alloc, "open {s}: {t}", .{ rel, open_err }) });
+                return;
+            };
+            defer subdir.close(io);
+            var walker = try subdir.walk(alloc);
+            defer walker.deinit();
+            while (try walker.next(io)) |entry| {
+                if (entry.kind != .file) continue;
+                if (!std.mem.endsWith(u8, entry.basename, ".zig")) continue;
+                const text = Io.Dir.readFileAlloc(entry.dir, io, entry.basename, alloc, .unlimited) catch |read_err| {
+                    try refusals.append(alloc, .{ .kind = "io-error", .function = null, .line = 0, .reason = try std.fmt.allocPrint(alloc, "read {s}: {t}", .{ entry.path, read_err }) });
+                    continue;
+                };
+                const path = if (std.mem.eql(u8, rel, ".")) entry.path else try std.fmt.allocPrint(alloc, "{s}/{s}", .{ rel, entry.path });
+                const out = try lift.liftSource(alloc, text, path);
+                for (out.declarations) |decl| try declarations.append(alloc, decl);
+                for (out.refusals) |refusal| try refusals.append(alloc, refusal);
+            }
+            return;
+        },
+        else => {
+            try refusals.append(alloc, .{ .kind = "io-error", .function = null, .line = 0, .reason = try std.fmt.allocPrint(alloc, "read {s}: {t}", .{ rel, err }) });
+            return;
+        },
+    };
+    const out = try lift.liftSource(alloc, file_text, rel);
+    for (out.declarations) |decl| try declarations.append(alloc, decl);
+    for (out.refusals) |refusal| try refusals.append(alloc, refusal);
 }
 
 fn extractId(line: []const u8) []const u8 {

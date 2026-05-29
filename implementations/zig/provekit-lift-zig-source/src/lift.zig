@@ -139,6 +139,7 @@ pub const Effect = union(enum) {
 
 pub const FunctionContract = struct {
     fn_name: []const u8,
+    bridge_source_symbol: ?[]const u8 = null,
     formals: []const []const u8,
     formal_sorts: []const provekit.Sort,
     return_sort: provekit.Sort,
@@ -160,6 +161,10 @@ pub const FunctionContract = struct {
         try jws.endArray();
         try jws.objectField("bodyCid");
         if (self.body_cid) |cid| try jws.write(cid) else try jws.write(null);
+        if (self.bridge_source_symbol) |symbol| {
+            try jws.objectField("bridgeSourceSymbol");
+            try jws.write(symbol);
+        }
         try jws.objectField("effects");
         try jws.write(self.effects);
         try jws.objectField("fnName");
@@ -806,6 +811,117 @@ pub fn liftSource(alloc: std.mem.Allocator, source: []const u8, path: []const u8
     return lifter.lift();
 }
 
+pub fn verifyContracts(alloc: std.mem.Allocator, declarations: []const FunctionContract) ![]FunctionContract {
+    var out: std.ArrayList(FunctionContract) = .empty;
+    for (declarations) |decl| {
+        if (std.mem.startsWith(u8, decl.fn_name, "<source-unit:")) continue;
+        try out.append(alloc, try verifyContract(alloc, decl));
+    }
+    return out.toOwnedSlice(alloc);
+}
+
+fn verifyContract(alloc: std.mem.Allocator, decl: FunctionContract) !FunctionContract {
+    var out = decl;
+    out.bridge_source_symbol = try bareSymbol(alloc, decl.fn_name);
+    out.pre = try normalizeFormulaForVerify(alloc, decl.pre);
+    out.post = try normalizePostForVerify(alloc, decl.post);
+    out.body_term = try normalizeTermForVerify(alloc, decl.body_term);
+    return out;
+}
+
+fn normalizePostForVerify(alloc: std.mem.Allocator, formula: provekit.Formula) !provekit.Formula {
+    return switch (formula) {
+        .atomic => |a| blk: {
+            if (std.mem.eql(u8, a.name, "=") and a.args.len == 2) {
+                const args = try termArgs(alloc, .{
+                    provekit.Var("result"),
+                    try normalizeTermForVerify(alloc, unwrapReturn(a.args[1])),
+                });
+                break :blk provekit.Atomic("=", args);
+            }
+            break :blk try normalizeFormulaForVerify(alloc, formula);
+        },
+        else => try normalizeFormulaForVerify(alloc, formula),
+    };
+}
+
+fn normalizeFormulaForVerify(alloc: std.mem.Allocator, formula: provekit.Formula) anyerror!provekit.Formula {
+    return switch (formula) {
+        .atomic => |a| provekit.Atomic(normalizeAtomicName(a.name), try normalizeTermSliceForVerify(alloc, a.args)),
+        .connective => |c| .{ .connective = .{
+            .kind = c.kind,
+            .operands = try normalizeFormulaSliceForVerify(alloc, c.operands),
+        } },
+        .quantifier => |q| blk: {
+            const body = try alloc.create(provekit.Formula);
+            body.* = try normalizeFormulaForVerify(alloc, q.body.*);
+            break :blk .{ .quantifier = .{
+                .kind = q.kind,
+                .name = q.name,
+                .sort = q.sort,
+                .body = body,
+            } };
+        },
+    };
+}
+
+fn normalizeFormulaSliceForVerify(alloc: std.mem.Allocator, formulas: []const provekit.Formula) ![]const provekit.Formula {
+    var out = try alloc.alloc(provekit.Formula, formulas.len);
+    for (formulas, 0..) |formula, i| out[i] = try normalizeFormulaForVerify(alloc, formula);
+    return out;
+}
+
+fn normalizeTermSliceForVerify(alloc: std.mem.Allocator, terms: []const provekit.Term) ![]const provekit.Term {
+    var out = try alloc.alloc(provekit.Term, terms.len);
+    for (terms, 0..) |term, i| out[i] = try normalizeTermForVerify(alloc, term);
+    return out;
+}
+
+fn normalizeTermForVerify(alloc: std.mem.Allocator, term: provekit.Term) anyerror!provekit.Term {
+    return switch (term) {
+        .var_term => |v| if (std.mem.eql(u8, v.name, "return_value")) provekit.Var("result") else term,
+        .const_term => term,
+        .ctor_term => |c| blk: {
+            if (std.mem.eql(u8, c.name, "zig:return")) {
+                break :blk try normalizeTermForVerify(alloc, unwrapReturn(term));
+            }
+            break :blk provekit.Ctor(normalizeCtorName(c.name), try normalizeTermSliceForVerify(alloc, c.args));
+        },
+    };
+}
+
+fn unwrapReturn(term: provekit.Term) provekit.Term {
+    return switch (term) {
+        .ctor_term => |c| if (std.mem.eql(u8, c.name, "zig:return") and c.args.len == 1) c.args[0] else term,
+        else => term,
+    };
+}
+
+fn normalizeCtorName(name: []const u8) []const u8 {
+    if (std.mem.eql(u8, name, "zig:add")) return "+";
+    if (std.mem.eql(u8, name, "zig:sub")) return "-";
+    if (std.mem.eql(u8, name, "zig:mul")) return "*";
+    if (std.mem.eql(u8, name, "zig:div")) return "/";
+    if (std.mem.eql(u8, name, "zig:mod")) return "mod";
+    return name;
+}
+
+fn normalizeAtomicName(name: []const u8) []const u8 {
+    if (std.mem.eql(u8, name, "zig:eq")) return "=";
+    if (std.mem.eql(u8, name, "zig:ne")) return "!=";
+    if (std.mem.eql(u8, name, "zig:lt")) return "<";
+    if (std.mem.eql(u8, name, "zig:le")) return "<=";
+    if (std.mem.eql(u8, name, "zig:gt")) return ">";
+    if (std.mem.eql(u8, name, "zig:ge")) return ">=";
+    return name;
+}
+
+fn bareSymbol(alloc: std.mem.Allocator, fn_name: []const u8) ![]const u8 {
+    const without_params = if (std.mem.indexOfScalar(u8, fn_name, '(')) |idx| fn_name[0..idx] else fn_name;
+    const after_dot = if (std.mem.lastIndexOfScalar(u8, without_params, '.')) |idx| without_params[idx + 1 ..] else without_params;
+    return try alloc.dupe(u8, after_dot);
+}
+
 pub fn canonicalTermBytes(alloc: std.mem.Allocator, term: provekit.Term) ![]u8 {
     return provekit.jcsStringify(alloc, term);
 }
@@ -1109,6 +1225,30 @@ test "lifts primitive add function into zig-prefixed source unit and contract" {
     const source_unit_json = try provekit.jcsStringify(alloc, out.declarations[0]);
     try std.testing.expect(std.mem.indexOf(u8, source_unit_json, "\"name\":\"zig:source-unit\"") != null);
     try std.testing.expect(std.mem.indexOf(u8, source_unit_json, "\"name\":\"zig:add\"") != null);
+}
+
+test "verify contracts normalize result variable return wrapper arithmetic op and bridge symbol" {
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+    const alloc = arena.allocator();
+
+    const src =
+        \\pub fn double(x: i64) i64 {
+        \\    return x * 2;
+        \\}
+        \\
+    ;
+
+    const out = try liftSource(alloc, src, "math.zig");
+    const verify = try verifyContracts(alloc, out.declarations);
+    try std.testing.expectEqual(@as(usize, 1), verify.len);
+    try std.testing.expectEqualStrings("double", verify[0].bridge_source_symbol.?);
+
+    const json = try provekit.jcsStringify(alloc, verify[0]);
+    try std.testing.expect(std.mem.indexOf(u8, json, "\"name\":\"result\"") != null);
+    try std.testing.expect(std.mem.indexOf(u8, json, "\"name\":\"*\"") != null);
+    try std.testing.expect(std.mem.indexOf(u8, json, "\"name\":\"zig:return\"") == null);
+    try std.testing.expect(std.mem.indexOf(u8, json, "\"bridgeSourceSymbol\":\"double\"") != null);
 }
 
 test "refuses unhandled switch without emitting unknown operation" {

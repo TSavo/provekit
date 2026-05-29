@@ -618,6 +618,42 @@ for line in sys.stdin:
     .expect("write fake materialize check kit");
 }
 
+fn write_materialize_no_assemble_rpc_kit(path: &Path) {
+    fs::write(
+        path,
+        r#"import json
+import sys
+
+for line in sys.stdin:
+    request = json.loads(line)
+    msg_id = request.get("id")
+    method = request.get("method")
+    if method == "provekit.plugin.invoke":
+        print(json.dumps({
+            "jsonrpc": "2.0",
+            "id": msg_id,
+            "result": {
+                "source": "def fetch_status(url):\n    return 200\n",
+                "is_stub": False,
+                "extension": "py",
+                "imports": [],
+                "emitted_artifact_cid": "blake3-512:dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd"
+            }
+        }), flush=True)
+    elif method == "provekit.plugin.shutdown":
+        print(json.dumps({"jsonrpc": "2.0", "id": msg_id, "result": None}), flush=True)
+        break
+    else:
+        print(json.dumps({
+            "jsonrpc": "2.0",
+            "id": msg_id,
+            "error": {"code": -32601, "message": "METHOD_NOT_FOUND: " + str(method)}
+        }), flush=True)
+"#,
+    )
+    .expect("write fake no-assemble materialize kit");
+}
+
 fn write_rust_http_request_source(src_dir: &Path) -> PathBuf {
     let source_path = src_dir.join("lib.rs");
     let payload = http_payload_json("fetch_status", "&str", "i64");
@@ -1286,6 +1322,93 @@ for line in sys.stdin:
     );
 }
 
+#[test]
+fn cross_language_out_dir_refuses_target_kit_without_assemble_rpc() {
+    let workspace = tempfile::tempdir().expect("tempdir");
+    let repo = repo_root();
+    let src_dir = workspace.path().join("src");
+    fs::create_dir_all(&src_dir).expect("create src dir");
+    write_rust_family_sql_carrier_source(&src_dir);
+    fs::write(
+        workspace.path().join("Cargo.toml"),
+        "[package]\nname = \"cross-language-no-assemble\"\nversion = \"0.0.0\"\nedition = \"2021\"\n",
+    )
+    .expect("write source project marker");
+
+    let fake_realize = workspace.path().join("fake_cross_language_no_assemble.py");
+    fs::write(
+        &fake_realize,
+        r#"import json, sys
+for line in sys.stdin:
+    request = json.loads(line)
+    method = request.get("method")
+    if method == "provekit.plugin.invoke":
+        print(json.dumps({
+            "jsonrpc": "2.0",
+            "id": request.get("id"),
+            "result": {
+                "source": "const rows = db.prepare(sql).all(args);",
+                "is_stub": False,
+                "extension": "ts"
+            }
+        }), flush=True)
+    elif method == "provekit.plugin.shutdown":
+        print(json.dumps({"jsonrpc": "2.0", "id": request.get("id"), "result": None}), flush=True)
+        break
+    else:
+        print(json.dumps({
+            "jsonrpc": "2.0",
+            "id": request.get("id"),
+            "error": {"code": -32601, "message": "METHOD_NOT_FOUND: " + str(method)}
+        }), flush=True)
+"#,
+    )
+    .expect("write fake realize script");
+
+    install_python_script_manifest_with_metadata(
+        workspace.path(),
+        "typescript-better-sqlite3",
+        &fake_realize,
+        "better-sqlite3",
+        Some("concept:family:sql"),
+        &["concept:sql-query-all"],
+    );
+
+    let out_dir = workspace.path().join("materialized");
+    let output = Command::new(env!("CARGO_BIN_EXE_provekit"))
+        .env("PROVEKIT_REPO_ROOT", repo)
+        .arg("materialize")
+        .arg("--source-lang")
+        .arg("rust")
+        .arg("--target")
+        .arg("typescript")
+        .arg("--library")
+        .arg("typescript-better-sqlite3")
+        .arg("--source-dir")
+        .arg(&src_dir)
+        .arg("--project")
+        .arg(workspace.path())
+        .arg("--out-dir")
+        .arg(&out_dir)
+        .output()
+        .expect("spawn cross-language materialize with no-assemble target kit");
+
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(
+        !output.status.success(),
+        "cross-language materialize must fail closed when the target kit cannot assemble source\nstdout:\n{stdout}\nstderr:\n{stderr}"
+    );
+    assert!(
+        stderr.contains("assemble RPC"),
+        "failure should name the missing target-kit assembly boundary\nstdout:\n{stdout}\nstderr:\n{stderr}"
+    );
+    assert!(
+        !out_dir.join("lib.ts").exists(),
+        "CLI must not write cross-language target source through legacy concat fallback"
+    );
+}
+
 // --- compile-check tests (#1376) ---
 
 /// --compile-check without --out-dir must be rejected by clap (requires = "out_dir").
@@ -1425,5 +1548,60 @@ fn materialize_compile_check_dispatches_to_realize_kit() {
     assert!(
         marker_body.contains("kit-owned-classpath"),
         "compile-check RPC must receive kit-owned assemble metadata: {marker_body}"
+    );
+}
+
+#[test]
+fn materialize_out_dir_refuses_selected_kit_without_assemble_rpc() {
+    let workspace = tempfile::tempdir().expect("tempdir");
+    let src_dir = workspace.path().join("src");
+    fs::create_dir_all(&src_dir).expect("create src dir");
+    fs::write(
+        workspace.path().join("pyproject.toml"),
+        "[project]\nname = \"materialize-no-assemble\"\nversion = \"0.0.0\"\n",
+    )
+    .expect("write project marker");
+    write_python_http_request_source(&src_dir);
+
+    let fake_kit = workspace.path().join("fake_materialize_no_assemble_kit.py");
+    write_materialize_no_assemble_rpc_kit(&fake_kit);
+    install_python_script_manifest_with_metadata(
+        workspace.path(),
+        "python-no-assemble",
+        &fake_kit,
+        "no-assemble",
+        None,
+        &["concept:http-request"],
+    );
+
+    let out_dir = workspace.path().join("materialized");
+    let output = Command::new(env!("CARGO_BIN_EXE_provekit"))
+        .arg("materialize")
+        .arg("--target")
+        .arg("python")
+        .arg("--library")
+        .arg("no-assemble")
+        .arg("--source-dir")
+        .arg(&src_dir)
+        .arg("--project")
+        .arg(workspace.path())
+        .arg("--out-dir")
+        .arg(&out_dir)
+        .output()
+        .expect("spawn provekit materialize with no-assemble kit");
+
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(
+        !output.status.success(),
+        "materialize must fail closed when the selected kit cannot assemble target source\nstdout:\n{stdout}\nstderr:\n{stderr}"
+    );
+    assert!(
+        stderr.contains("assemble RPC"),
+        "failure should name the missing kit assembly boundary\nstdout:\n{stdout}\nstderr:\n{stderr}"
+    );
+    assert!(
+        !out_dir.join("client.py").exists(),
+        "CLI must not write target source through legacy fallback when kit assembly is missing"
     );
 }

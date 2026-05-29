@@ -1,6 +1,7 @@
 const readline = require("node:readline");
 
 const { resolveDependencyProofs } = require("./dependency_proofs");
+const { assembleResponse } = require("./assemble");
 const { emitStub } = require("./realizer");
 const { answers: literalEncodingAnswers } = require("./literal_encoding");
 const { declaration: platformSemanticsDeclaration } = require("./platform_semantics");
@@ -49,6 +50,13 @@ function dispatch(request) {
   }
   if (method === "provekit.plugin.literal_encoding_answers") {
     return { jsonrpc: "2.0", id: msgId, result: { answers: literalEncodingAnswers() } };
+  }
+  if (method === "provekit.plugin.assemble") {
+    try {
+      return { jsonrpc: "2.0", id: msgId, result: assembleResponse(params) };
+    } catch (error) {
+      return errorResponse(msgId, -32040, `ASSEMBLE_FAILED: ${error.message}`);
+    }
   }
   if (method === "provekit.plugin.resolve_dependency_proofs") {
     let projectRoot = process.cwd();

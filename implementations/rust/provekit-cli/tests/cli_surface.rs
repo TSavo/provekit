@@ -1198,24 +1198,24 @@ test "checked does not return 42" {
     fs::write(
         project.path().join(".provekit/config.toml"),
         r#"[authoring.lift]
-surface = "zig"
+surface = "zig-tests"
 "#,
     )
     .expect("write config");
-    let shim = project.path().join("zig-lift.sh");
+    let shim = project.path().join("zig-tests-lift.sh");
     write_executable(
         &shim,
         &format!(
             "#!/usr/bin/env sh\nmkdir -p '{0}/.zig-global-cache' '{0}/.zig-local-cache'\nexport ZIG_GLOBAL_CACHE_DIR='{0}/.zig-global-cache'\nexport ZIG_LOCAL_CACHE_DIR='{0}/.zig-local-cache'\ncd '{1}'\nexec zig build run -- \"$@\"\n",
             project.path().display(),
-            root.join("implementations/zig/provekit-lift-zig").display()
+            root.join("implementations/zig/provekit-lift-zig-tests").display()
         ),
     );
-    let manifest_dir = project.path().join(".provekit/lift/zig");
+    let manifest_dir = project.path().join(".provekit/lift/zig-tests");
     fs::create_dir_all(&manifest_dir).expect("create manifest dir");
     fs::write(
         manifest_dir.join("manifest.toml"),
-        "name = \"zig-lift\"\ncommand = [\"./zig-lift.sh\", \"--rpc\"]\nworking_dir = \".\"\n",
+        "name = \"zig-tests\"\ncommand = [\"./zig-tests-lift.sh\", \"--rpc\"]\nworking_dir = \".\"\n",
     )
     .expect("write manifest");
 

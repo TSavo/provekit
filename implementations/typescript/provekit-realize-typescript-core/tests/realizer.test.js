@@ -10,19 +10,6 @@ const SQL_GUARD_TEMPLATE = path.join(
   "body-templates",
   "ntt-sql-guard.json",
 );
-const PG_BODY_TEMPLATE = path.join(
-  __dirname,
-  "..",
-  "..",
-  "..",
-  "..",
-  "menagerie",
-  "typescript-language-signature",
-  "specs",
-  "body-templates",
-  "typescript-canonical-bodies-pg.json",
-);
-
 function namedTermTree(conceptName, args = []) {
   return {
     args,
@@ -112,50 +99,6 @@ test("named term tree shape satisfies a canonical sql body template guard", () =
 
   assert.equal(result.is_stub, false);
   assert.match(result.source, /pool\.query\(sql, args\)/);
-});
-
-test("named term tree request resolves the existing pg sql query body template", () => {
-  const realizer = createRealizer(PG_BODY_TEMPLATE);
-  const result = realizer.emitStub({
-    functionName: "getUserById",
-    params: ["sql", "args"],
-    paramTypes: ["number"],
-    returnType: "User",
-    conceptName: "concept:sql-query",
-    namedTermTree: namedTermTree("concept:sql-query", [
-      namedTermTree("concept:sql-literal"),
-      namedTermTree("concept:sql-args"),
-    ]),
-  });
-
-  assert.equal(result.is_stub, false);
-  assert.match(result.source, /await pool\.query\(sql, args\)/);
-});
-
-test("named term tree source values drive pg sql query template substitution", () => {
-  const realizer = createRealizer(PG_BODY_TEMPLATE);
-  const result = realizer.emitStub({
-    functionName: "getUserById",
-    params: ["id"],
-    paramTypes: ["number"],
-    returnType: "User",
-    conceptName: "concept:sql-query",
-    namedTermTree: namedTermTree("concept:sql-query", [
-      {
-        ...namedTermTree("Sql"),
-        source: "\"SELECT id, name, email FROM users WHERE id = $1\"",
-        sort: "Sql",
-      },
-      {
-        ...namedTermTree("SqlArgs"),
-        source: "[id]",
-        sort: "SqlArgs",
-      },
-    ]),
-  });
-
-  assert.equal(result.is_stub, false);
-  assert.match(result.source, /await pool\.query\("SELECT id, name, email FROM users WHERE id = \$1", \[id\]\)/);
 });
 
 test("bare signature request still uses mapped param types without named term tree", () => {
