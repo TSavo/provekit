@@ -94,15 +94,27 @@ let unknownMethodResponses: Record<string, unknown>[] = [];
 let unsupportedLanguageResponses: Record<string, unknown>[] = [];
 let zodResponses2: Record<string, unknown>[] = [];   // second run for determinism
 let liftResponses: Record<string, unknown>[] = [];
+let callEdgeResponses: Record<string, unknown>[] = [];
 
 // Per-suite vitest timeout. Each individual test just reads cached data.
 const SUITE_TIMEOUT_MS = 60_000;
+
+const CALL_EDGE_FIXTURE_SOURCE = `
+function add(x: number): number {
+  return x;
+}
+
+function myFn(x: number): number {
+  return add(x);
+}
+`.trim();
 
 describe("daemon protocol conformance (provekit-lsp-ts)", () => {
   beforeAll(() => {
     zodResponses = runLsp(buildSession(ZOD_FIXTURE_SOURCE, ZOD_FIXTURE_PATH));
     emptyResponses = runLsp(buildSession("// no contracts here\n", "empty.ts"));
     zodResponses2 = runLsp(buildSession(ZOD_FIXTURE_SOURCE, ZOD_FIXTURE_PATH));
+    callEdgeResponses = runLsp(buildSession(CALL_EDGE_FIXTURE_SOURCE, "call-edge.ts"));
 
     // Write the Zod fixture to a temp file for the lift test.
     const tmpFixtureDir = resolve(tmpdir(), `pk-lsp-ts-test-${Date.now()}`);
@@ -184,6 +196,26 @@ describe("daemon protocol conformance (provekit-lsp-ts)", () => {
     const parseResp = zodResponses.find((r) => r.id === 2);
     const result = parseResp!.result as Record<string, unknown>;
     expect(Array.isArray(result.callEdges)).toBe(true);
+  });
+
+  it("parse: callEdges include TypeScript call-site locus", () => {
+    const parseResp = callEdgeResponses.find((r) => r.id === 2);
+    expect(parseResp).toBeDefined();
+    expect(parseResp!.error).toBeUndefined();
+
+    const result = parseResp!.result as Record<string, unknown>;
+    const callEdges = result.callEdges as Record<string, unknown>[];
+    expect(Array.isArray(callEdges)).toBe(true);
+
+    const edge = callEdges.find((candidate) => candidate.targetSymbol === "ts-kit:add");
+    expect(edge).toBeDefined();
+    expect(edge!.sourceContractCid).toBe("pending-ts:myFn");
+    expect(edge!.kind).toBe("call-edge");
+
+    const locus = edge!.callSiteLocus as Record<string, unknown>;
+    expect(locus.file).toBe("call-edge.ts");
+    expect(locus.line).toBe(6);
+    expect(typeof locus.col).toBe("number");
   });
 
   it("parse: zod fixture produces at least one declaration with kind == contract", () => {
