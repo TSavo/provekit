@@ -56,6 +56,9 @@ class TestRubySourceLift < Minitest::Test
 
     add_one = contract(result.ir, "M::C#add_one")
     assert_equal ["x"], add_one["formals"]
+    assert_equal "y = x + K\nreturn y", add_one["body_source"]["body_text"]
+    assert_equal "ruby:block", add_one["body_source"]["ast_template"]["kind"]
+    assert_match(/\Ablake3-512:[0-9a-f]{128}\z/, add_one["body_source"]["template_cid"])
     assert_equal [{ "kind" => "reads", "target" => "K" }], add_one["effects"]
     assert_equal ["ruby:seq", "ruby:assign", "ruby:add", "ruby:const", "ruby:return"], ctor_names(add_one["post"]["args"][1])
 

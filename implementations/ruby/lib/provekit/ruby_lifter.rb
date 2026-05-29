@@ -2,6 +2,7 @@ require "json"
 require "ripper"
 require "provekit/ir"
 require "provekit/blake3"
+require "provekit/ruby_ast_template"
 
 module Provekit
   class RubyLifter
@@ -12,7 +13,7 @@ module Provekit
       sexp = Ripper.sexp(source)
       comments = comment_roles(source)
       sigs = sorbet_sigs(source)
-      methods = method_regions(source)
+      methods = Provekit::RubyAstTemplate.extract_methods(source, path)
       declarations = []
 
       methods.each do |method_info|
@@ -43,7 +44,8 @@ module Provekit
             "effects" => effects,
             "values" => bindings,
             "ordering" => ordering
-          })
+          }),
+          "body_source" => method_info[:body_source]
         }
         contract.delete("pre") unless contract["pre"]
         contract.delete("post") unless contract["post"]
@@ -188,6 +190,11 @@ module Provekit
       copy = Marshal.load(Marshal.dump(contract))
       copy.delete("contract_cid")
       copy.dig("evidence")&.delete("path")
+      if (body_source = copy["body_source"])
+        body_source.delete("file")
+        body_source.delete("span")
+        body_source.delete("source_cid")
+      end
       copy
     end
   end
