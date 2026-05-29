@@ -1,10 +1,14 @@
 from __future__ import annotations
 
 import json
+import py_compile
 import sys
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[4]
+CORE_SRC = ROOT / "implementations/python/provekit-realize-python-core/src"
+if str(CORE_SRC) not in sys.path:
+    sys.path.insert(0, str(CORE_SRC))
 PKG_SRC = ROOT / "implementations/python/provekit-realize-python-requests/src"
 if str(PKG_SRC) not in sys.path:
     sys.path.insert(0, str(PKG_SRC))
@@ -81,6 +85,47 @@ def test_rpc_body_template_entries_returns_shim_proof_entries() -> None:
     concepts = {entry["concept_name"] for entry in response["result"]["entries"]}
     assert "concept:http-request" in concepts
     assert "concept:http-response" in concepts
+
+
+def test_rpc_assemble_returns_compileable_python_module(tmp_path: Path) -> None:
+    response = dispatch(
+        {
+            "jsonrpc": "2.0",
+            "id": 6,
+            "method": "provekit.plugin.assemble",
+            "params": {
+                "target_lang": "python",
+                "file_basename": "client",
+                "fragments": [
+                    {
+                        "concept_name": "concept:http-request",
+                        "source": (
+                            "def fetch_status(url):\n"
+                            "    return requests.get(url).status_code\n"
+                        ),
+                        "imports": ["requests"],
+                        "helpers": ["DEFAULT_TIMEOUT = 30"],
+                    }
+                ],
+            },
+        }
+    )
+
+    assert "error" not in response
+    result = response["result"]
+    assert result["compile_classpath"] == []
+    assert len(result["files"]) == 1
+    file = result["files"][0]
+    assert file["path"] == "client.py"
+    content = file["content"]
+    assert "import requests" in content
+    assert "DEFAULT_TIMEOUT = 30" in content
+    assert "def fetch_status(url):" in content
+    assert "return requests.get(url).status_code" in content
+
+    module = tmp_path / "client.py"
+    module.write_text(content, encoding="utf-8")
+    py_compile.compile(str(module), doraise=True)
 
 
 def test_plugin_invoke_returns_structured_missing_template_error() -> None:

@@ -198,15 +198,20 @@ fn write_python_requests_project_fixture(workspace: &Path) -> Option<PathBuf> {
         .join("python")
         .join("provekit-realize-python-requests")
         .join("src");
+    let core_src = repo
+        .join("implementations")
+        .join("python")
+        .join("provekit-realize-python-core")
+        .join("src");
     let shim_src = repo.join("examples").join("provekit-shim-python-requests");
-    if !package_src.is_dir() || !shim_src.is_dir() {
+    if !package_src.is_dir() || !core_src.is_dir() || !shim_src.is_dir() {
         return None;
     }
     install_python_module_manifest(
         workspace,
         "python-requests",
         "provekit_realize_python_requests",
-        &[package_src, shim_src],
+        &[core_src, package_src, shim_src],
         "python-realize-requests",
         "requests",
     );
@@ -1353,6 +1358,10 @@ fn compile_check_passes_for_valid_python_materialized_output() {
     assert!(
         stderr.contains("compile-check: python -m py_compile passed"),
         "stderr should confirm the python kit check passed\nstderr:\n{stderr}"
+    );
+    assert!(
+        stderr.contains("assembled by python kit via RPC"),
+        "Python materialize must use the configured Python kit for assembly, not legacy concat fallback\nstderr:\n{stderr}"
     );
     let emitted = fs::read_to_string(out_dir.join("client.py")).expect("read emitted python");
     assert!(

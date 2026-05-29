@@ -1,10 +1,14 @@
 from __future__ import annotations
 
 import json
+import py_compile
 import sys
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[4]
+CORE_SRC = ROOT / "implementations/python/provekit-realize-python-core/src"
+if str(CORE_SRC) not in sys.path:
+    sys.path.insert(0, str(CORE_SRC))
 PKG_SRC = ROOT / "implementations/python/provekit-realize-python-aiosqlite/src"
 if str(PKG_SRC) not in sys.path:
     sys.path.insert(0, str(PKG_SRC))
@@ -31,6 +35,44 @@ SQL_QUERY_ALL_NTT = {
         },
     ],
 }
+
+
+def test_rpc_assemble_returns_compileable_python_module(tmp_path: Path) -> None:
+    response = dispatch(
+        {
+            "jsonrpc": "2.0",
+            "id": 6,
+            "method": "provekit.plugin.assemble",
+            "params": {
+                "target_lang": "python",
+                "file_basename": "queries",
+                "fragments": [
+                    {
+                        "concept_name": "concept:sql-query-all",
+                        "source": (
+                            "async def select_rows(db, sql, args):\n"
+                            "    async with db.execute(sql, tuple(args)) as cursor:\n"
+                            "        return await cursor.fetchall()\n"
+                        ),
+                        "imports": ["aiosqlite"],
+                        "helpers": ["DEFAULT_LIMIT = 100"],
+                    }
+                ],
+            },
+        }
+    )
+
+    assert "error" not in response
+    file = response["result"]["files"][0]
+    assert file["path"] == "queries.py"
+    content = file["content"]
+    assert "import aiosqlite" in content
+    assert "DEFAULT_LIMIT = 100" in content
+    assert "async def select_rows(db, sql, args):" in content
+
+    module = tmp_path / "queries.py"
+    module.write_text(content, encoding="utf-8")
+    py_compile.compile(str(module), doraise=True)
 
 
 def test_rpc_invoke_renders_aiosqlite_query_all_body(disk_fixture) -> None:

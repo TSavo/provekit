@@ -660,6 +660,7 @@ cross-language-proof-parity-python-env:
 		-e examples/provekit-shim-python-requests \
 		-e implementations/python/provekit-emit-python-pytest \
 		-e implementations/python/provekit-lift-py-tests \
+		-e implementations/python/provekit-realize-python-core \
 		-e implementations/python/provekit-realize-python-requests
 
 .PHONY: cross-language-proof-parity
@@ -846,17 +847,17 @@ test-python: build-python
 	(cd implementations/python/provekit-realize-python-sqlite3 && \
 		python3 -m venv .venv && \
 		. .venv/bin/activate && \
-		python -m pip install --quiet -e ../../../examples/provekit-shim-python-sqlite3 -e . pytest && \
+		python -m pip install --quiet -e ../provekit-realize-python-core -e ../../../examples/provekit-shim-python-sqlite3 -e . pytest && \
 		pytest) || failed="$$failed provekit-realize-python-sqlite3"; \
 	(cd implementations/python/provekit-realize-python-aiosqlite && \
 		python3 -m venv .venv && \
 		. .venv/bin/activate && \
-		python -m pip install --quiet -e ../../../examples/provekit-shim-python-aiosqlite -e . pytest && \
+		python -m pip install --quiet -e ../provekit-realize-python-core -e ../../../examples/provekit-shim-python-aiosqlite -e . pytest && \
 		pytest) || failed="$$failed provekit-realize-python-aiosqlite"; \
 	(cd implementations/python/provekit-realize-python-requests && \
 		python3 -m venv .venv && \
 		. .venv/bin/activate && \
-		python -m pip install --quiet -e ../../../examples/provekit-shim-python-requests -e . pytest && \
+		python -m pip install --quiet -e ../provekit-realize-python-core -e ../../../examples/provekit-shim-python-requests -e . pytest && \
 		pytest) || failed="$$failed provekit-realize-python-requests"; \
 	if [ -n "$$failed" ]; then echo "test-python FAIL:$$failed"; exit 1; fi
 
