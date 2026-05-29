@@ -17,3 +17,15 @@ name = "java-testng-lifter"
 kind = "lift"
 surface = "java-testng"
 emit = "ir-document"
+
+[[plugins]]
+name = "java-assertj-emitter"
+kind = "emit"
+surface = "java-assertj"
+emit = "assertj"
+
+[[plugins]]
+name = "java-assertj-lifter"
+kind = "lift"
+surface = "java-assertj"
+emit = "ir-document"
