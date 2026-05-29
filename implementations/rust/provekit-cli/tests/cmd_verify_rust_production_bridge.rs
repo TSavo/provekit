@@ -59,13 +59,22 @@ fn build_rust_lifter_bins() -> &'static RustLifterBins {
     static BINS: OnceLock<RustLifterBins> = OnceLock::new();
     BINS.get_or_init(|| {
         let workspace = rust_workspace_root();
+        let bin_dir = provekit_bin()
+            .parent()
+            .expect("provekit bin parent")
+            .to_path_buf();
+        let release_profile = bin_dir.file_name().and_then(|name| name.to_str()) == Some("release");
         for (package, bin) in [
             ("provekit-walk", "provekit-walk-rpc"),
             ("provekit-lift", "provekit-lift"),
         ] {
+            let mut args = vec!["build", "-p", package, "--bin", bin];
+            if release_profile {
+                args.push("--release");
+            }
             let output = Command::new("cargo")
                 .current_dir(&workspace)
-                .args(["build", "-p", package, "--bin", bin])
+                .args(args)
                 .output()
                 .unwrap_or_else(|e| panic!("spawn cargo build -p {package} --bin {bin}: {e}"));
             assert!(
@@ -76,10 +85,6 @@ fn build_rust_lifter_bins() -> &'static RustLifterBins {
             );
         }
 
-        let bin_dir = provekit_bin()
-            .parent()
-            .expect("provekit bin parent")
-            .to_path_buf();
         let walk_rpc = bin_dir.join("provekit-walk-rpc");
         let lift = bin_dir.join("provekit-lift");
         assert!(

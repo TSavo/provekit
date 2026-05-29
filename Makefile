@@ -11,6 +11,7 @@
 #   make help: print this help
 #   make ci: Linux-profile gate (catalog + protocol + live mints + tests)
 #   make conformance: catalog + protocol + live mint CIDs + self-contract tests
+#   make cross-language-proof-parity: Java/Go/Python/Rust emit + materialize + prove gate
 #   make all-mint: run all 11 Linux-profile mint commands; print CIDs
 #   make bootstrap-self-contracts: re-sign attestations from live artifacts
 #   make test-all: run the Linux native test aggregate
@@ -66,6 +67,9 @@ PYTHON ?= $(shell command -v python3 || echo python3)
 PIP ?= pip3 --python $(PYTHON)
 MVN ?= mvn
 LOCAL_BIN ?= /tmp/provekit-local-bin
+PARITY_PYTHON_VENV ?= /tmp/provekit-cross-language-parity-python
+PARITY_PYTHON_BIN := $(PARITY_PYTHON_VENV)/bin
+PARITY_PYTHON := $(PARITY_PYTHON_BIN)/python
 JAVA_HOME ?= $(shell for d in /usr/local/opt/openjdk /opt/homebrew/opt/openjdk; do if [ -x "$$d/bin/java" ]; then echo "$$d"; exit; fi; done)
 export JAVA_HOME
 ifeq ($(strip $(JAVA_HOME)),)
@@ -81,6 +85,8 @@ help:
 	@echo "Mainline:"
 	@echo "  make ci             Linux-profile gate (conformance + test-all)"
 	@echo "  make conformance    catalog + protocol + 11 mint CIDs + self-contract tests"
+	@echo "  make cross-language-proof-parity"
+	@echo "                       Java/Go/Python/Rust emit + materialize + prove gate"
 	@echo "  make all-mint       11 mint commands (Swift excluded: macOS-only, use mint-swift)"
 	@echo "  make bug-zoo        replay executable bug specimens through source-routed CLI"
 	@echo "  make bootstrap-self-contracts"
@@ -645,6 +651,63 @@ cross-kit-conformance:
 	cargo run --release --manifest-path tools/cross-kit-conformance/Cargo.toml -- \
 		--profile $(CONFORMANCE_PROFILE) --jobs $(CONFORMANCE_JOBS)
 
+.PHONY: cross-language-proof-parity-python-env
+cross-language-proof-parity-python-env:
+	$(PYTHON) -m venv $(PARITY_PYTHON_VENV)
+	$(PARITY_PYTHON) -m pip install --quiet --upgrade pip
+	$(PARITY_PYTHON) -m pip install --quiet \
+		pytest \
+		-e examples/provekit-shim-python-requests \
+		-e implementations/python/provekit-emit-python-pytest \
+		-e implementations/python/provekit-lift-py-tests \
+		-e implementations/python/provekit-realize-python-requests
+
+.PHONY: cross-language-proof-parity
+cross-language-proof-parity: build-java cross-language-proof-parity-python-env
+	@echo "=== Cross-language proof parity: emit/materialize/prove for Java, Go, Python, Rust ==="
+	cargo build --manifest-path implementations/rust/Cargo.toml \
+		-p provekit-realize-rust-core --bin provekit-realize-rust
+	@echo "--- emit parity ---"
+	cargo test --release --manifest-path implementations/rust/Cargo.toml \
+		-p provekit-cli --test cmd_emit_java_junit \
+		emit_java_junit_dispatches_real_emitter_and_maven_checks_output
+	cargo test --release --manifest-path implementations/rust/Cargo.toml \
+		-p provekit-cli --test cmd_emit_go_testing \
+		emit_go_testing_dispatches_manifest_writes_artifact_and_compile_checks
+	PYTHON=$(PARITY_PYTHON) PATH=$(PARITY_PYTHON_BIN):$(PATH) cargo test --release --manifest-path implementations/rust/Cargo.toml \
+		-p provekit-cli --test cmd_emit_python_pytest \
+		emit_python_pytest_dispatches_real_emitter_and_pytest_checks_output
+	cargo test --release --manifest-path implementations/rust/Cargo.toml \
+		-p provekit-cli --test cmd_emit_rust_cargo_test \
+		emit_rust_cargo_test_dispatches_real_emitter_and_cargo_checks_output
+	@echo "--- materialize parity ---"
+	cargo test --release --manifest-path implementations/rust/Cargo.toml \
+		-p provekit-cli --test cmd_materialize_proof_load \
+		materialize_json_client_jackson_loads_from_proof_and_compiles
+	cargo test --release --manifest-path implementations/rust/Cargo.toml \
+		-p provekit-cli --test go_realize_materialize \
+		go_materialize_cli_rewrites_carrier_and_asks_go_kit_to_compile_check
+	PATH=$(PARITY_PYTHON_BIN):$(PATH) cargo test --release --manifest-path implementations/rust/Cargo.toml \
+		-p provekit-cli --test cmd_materialize_integration \
+		compile_check_passes_for_valid_python_materialized_output
+	cargo test --release --manifest-path implementations/rust/Cargo.toml \
+		-p provekit-cli --test cmd_materialize_integration \
+		materialize_rust_reqwest_example_uses_rust_library_shim
+	@echo "--- prove parity ---"
+	cargo test --release --manifest-path implementations/rust/Cargo.toml \
+		-p provekit-cli --test cmd_verify_java_production_bridge \
+		java_production_path_assertion_discharges_and_mints_witness
+	cargo test --release --manifest-path implementations/rust/Cargo.toml \
+		-p provekit-cli --test cmd_verify_go_production_bridge \
+		go_production_path_double_discharges_and_mints_witness
+	PYTHON=$(PARITY_PYTHON) PATH=$(PARITY_PYTHON_BIN):$(PATH) cargo test --release --manifest-path implementations/rust/Cargo.toml \
+		-p provekit-cli --test cmd_verify_python_production_bridge \
+		python_production_path_double_discharges_and_mints_witness
+	cargo test --release --manifest-path implementations/rust/Cargo.toml \
+		-p provekit-cli --test cmd_verify_rust_production_bridge \
+		rust_production_path_double_discharges_and_mints_witness
+	@echo "==== cross-language-proof-parity: PASS ===="
+
 .PHONY: bootstrap-self-contracts
 bootstrap-self-contracts:
 	@echo "=== Bootstrap self-contract attestations from live kit artifacts ==="
@@ -856,7 +919,7 @@ test-all:
 # --- CI alias ----------------------------------------------------------------
 
 .PHONY: ci
-ci: conformance test-all
+ci: conformance cross-language-proof-parity test-all
 	@echo ""
 	@echo "==== ci: PASS ===="
 

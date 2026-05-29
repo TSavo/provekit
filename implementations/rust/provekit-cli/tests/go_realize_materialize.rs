@@ -21,8 +21,11 @@
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::process::Command;
+use std::sync::Arc;
 
+use provekit_canonicalizer::{blake3_512_of, encode_jcs, Value as CanonicalValue};
 use provekit_cli::kit_dispatch::{dispatch_realize, RealizeRequest};
+use serde_json::Value as Json;
 
 fn repo_root() -> PathBuf {
     PathBuf::from(env!("CARGO_MANIFEST_DIR"))
@@ -93,13 +96,58 @@ fn install_go_realize_manifest(root: &Path, bin: &Path) {
         .join("manifest.toml");
     fs::create_dir_all(manifest.parent().unwrap()).expect("mkdir manifest dir");
     let text = format!(
-        "name = \"go-realize\"\ncommand = [\"{}\", \"--rpc\"]\nworking_dir = \".\"\n",
+        "name = \"go-realize\"\nlibrary_tag = \"go\"\ncommand = [\"{}\", \"--rpc\"]\nworking_dir = \".\"\n",
         bin.display()
             .to_string()
             .replace('\\', "\\\\")
             .replace('"', "\\\"")
     );
     fs::write(manifest, text).expect("write manifest");
+}
+
+fn identity_payload_json(function: &str) -> String {
+    format!(
+        "{{\"artifact_kind\":\"provekit-concept-citation-comment-sugar\",\"concept_name\":\"identity\",\"function\":\"{function}\",\"params\":[\"x\"],\"param_types\":[\"int\"],\"return_type\":\"int\"}}"
+    )
+}
+
+fn payload_cid(payload: &str) -> String {
+    let json: Json = serde_json::from_str(payload).expect("payload json parses");
+    let canonical = canonical_value_from_json(&json);
+    blake3_512_of(encode_jcs(canonical.as_ref()).as_bytes())
+}
+
+fn canonical_value_from_json(value: &Json) -> Arc<CanonicalValue> {
+    match value {
+        Json::Null => CanonicalValue::null(),
+        Json::Bool(value) => CanonicalValue::boolean(*value),
+        Json::Number(value) => {
+            CanonicalValue::integer(value.as_i64().expect("test JSON uses integers only"))
+        }
+        Json::String(value) => CanonicalValue::string(value),
+        Json::Array(values) => {
+            CanonicalValue::array(values.iter().map(canonical_value_from_json).collect())
+        }
+        Json::Object(entries) => CanonicalValue::object(
+            entries
+                .iter()
+                .map(|(key, value)| (key.clone(), canonical_value_from_json(value))),
+        ),
+    }
+}
+
+fn write_go_identity_carrier(src_dir: &Path) -> PathBuf {
+    let payload = identity_payload_json("Id");
+    let source = src_dir.join("id.go");
+    fs::write(
+        &source,
+        format!(
+            "package sample\n\n// provekit-concept: {payload}\n// provekit-concept-payload-cid: {}\n",
+            payload_cid(&payload)
+        ),
+    )
+    .expect("write go carrier source");
+    source
 }
 
 fn identity_request() -> RealizeRequest {
@@ -131,6 +179,72 @@ fn identity_request() -> RealizeRequest {
         function_return_types: std::collections::BTreeMap::new(),
         doc_lines: Vec::new(),
     }
+}
+
+/// Full CLI path: `provekit materialize` reads Go carrier comments, dispatches
+/// the concept to the Go realize kit over RPC, writes materialized Go under
+/// --out-dir, and asks the same Go kit to run its native check.
+#[test]
+fn go_materialize_cli_rewrites_carrier_and_asks_go_kit_to_compile_check() {
+    if !go_available() {
+        eprintln!("go not on PATH: skipping go materialize CLI test");
+        return;
+    }
+    let bin = build_go_realize();
+    let workspace = tempfile::tempdir().expect("tempdir");
+    install_go_realize_manifest(workspace.path(), &bin);
+    let src_dir = workspace.path().join("src");
+    fs::create_dir_all(&src_dir).expect("mkdir src");
+    write_go_identity_carrier(&src_dir);
+
+    let out_dir = workspace.path().join("materialized");
+    fs::create_dir_all(&out_dir).expect("mkdir out");
+    fs::write(
+        out_dir.join("go.mod"),
+        "module example.com/provekit_go_materialized\n\ngo 1.22\n",
+    )
+    .expect("write output go.mod");
+
+    let output = Command::new(env!("CARGO_BIN_EXE_provekit"))
+        .arg("materialize")
+        .arg("--target")
+        .arg("go")
+        .arg("--library")
+        .arg("go")
+        .arg("--source-dir")
+        .arg(&src_dir)
+        .arg("--project")
+        .arg(workspace.path())
+        .arg("--out-dir")
+        .arg(&out_dir)
+        .arg("--compile-check")
+        .output()
+        .expect("spawn provekit materialize for Go");
+
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(
+        output.status.success(),
+        "Go materialize CLI path should succeed\nstdout:\n{stdout}\nstderr:\n{stderr}"
+    );
+    assert!(
+        stderr.contains("compile-check: go test ./... passed"),
+        "Go materialize must ask the Go kit to run its native check\nstderr:\n{stderr}"
+    );
+
+    let emitted = fs::read_to_string(out_dir.join("id.go")).expect("read materialized Go");
+    assert!(
+        emitted.contains("func Id(x int) int"),
+        "materialized Go should contain realized function signature:\n{emitted}"
+    );
+    assert!(
+        emitted.contains("return x"),
+        "materialized Go should contain identity body:\n{emitted}"
+    );
+    assert!(
+        !emitted.contains("provekit-concept:"),
+        "materialized Go must remove the carrier comments:\n{emitted}"
+    );
 }
 
 /// The shim supplies REAL Go sugar (`func Id(x int) int { return x }`),

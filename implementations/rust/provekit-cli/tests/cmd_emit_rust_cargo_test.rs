@@ -23,15 +23,28 @@ fn repo_root() -> PathBuf {
 
 fn build_rust_cargo_test_emitter() -> PathBuf {
     let rust_root = repo_root().join("implementations").join("rust");
+    let expected_bin = provekit_bin()
+        .parent()
+        .expect("provekit bin parent")
+        .join("provekit-emit-rust-cargo-test");
+    let mut args = vec![
+        "build",
+        "-p",
+        "provekit-emit-rust-cargo-test",
+        "--bin",
+        "provekit-emit-rust-cargo-test",
+    ];
+    if expected_bin
+        .parent()
+        .and_then(|parent| parent.file_name())
+        .and_then(|name| name.to_str())
+        == Some("release")
+    {
+        args.push("--release");
+    }
     let built = Command::new("cargo")
         .current_dir(&rust_root)
-        .args([
-            "build",
-            "-p",
-            "provekit-emit-rust-cargo-test",
-            "--bin",
-            "provekit-emit-rust-cargo-test",
-        ])
+        .args(args)
         .output()
         .expect("spawn cargo build provekit-emit-rust-cargo-test");
     assert!(
@@ -40,12 +53,12 @@ fn build_rust_cargo_test_emitter() -> PathBuf {
         String::from_utf8_lossy(&built.stdout),
         String::from_utf8_lossy(&built.stderr)
     );
-    let bin = provekit_bin()
-        .parent()
-        .expect("provekit bin parent")
-        .join("provekit-emit-rust-cargo-test");
-    assert!(bin.exists(), "missing emitter binary {}", bin.display());
-    bin
+    assert!(
+        expected_bin.exists(),
+        "missing emitter binary {}",
+        expected_bin.display()
+    );
+    expected_bin
 }
 
 fn install_emit_registration(project: &Path, emitter: &Path) {

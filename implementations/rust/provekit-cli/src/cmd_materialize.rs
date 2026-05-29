@@ -1469,7 +1469,7 @@ fn materialize_source_dir(
 fn is_supported_source_file(path: &Path) -> bool {
     matches!(
         path.extension().and_then(|ext| ext.to_str()),
-        Some("ts" | "tsx" | "js" | "jsx" | "py" | "rs" | "java")
+        Some("ts" | "tsx" | "js" | "jsx" | "py" | "rs" | "java" | "go")
     )
 }
 
