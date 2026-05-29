@@ -118,7 +118,8 @@ What it means concretely:
 
 Tomorrow's lattice has all of today's pairs plus new ones. A codebase running tomorrow's verifier hits Tier 1 on more pairs than today's verifier.
 
-Verification cost decreases over time, asymptotically approaching the structural minimum (one CPU instruction per call site, the Tier 1 hot path).
+Verification cost can decrease over time as more obligations hit prior CIDs or
+cached implication mementos instead of requiring new semantic proof.
 
 This is the inverse of conventional software, where dependencies get harder to reason about as the dependency tree grows. With ProvekIt, the dependency tree's verification cost decreases as the lattice grows. The codebase ages "backwards" in the sense that older codebases are harder to verify (less lattice support) than newer ones.
 

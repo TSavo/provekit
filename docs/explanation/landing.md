@@ -1,6 +1,7 @@
-# ProvekIt: prove software correctness across domains by comparing 64 bytes
+# ProvekIt: a proof supply chain for existing software
 
-Modern dependency stacks, protocol stacks, and CI supply chains are deep. ProvekIt collapses their load-bearing claims to content-addressed evidence.
+Modern dependency stacks, protocol stacks, and CI supply chains are deep.
+ProvekIt turns their load-bearing claims into content-addressed proof data.
 
 ```bash
 cargo install --path implementations/rust/provekit-cli
@@ -10,45 +11,73 @@ cargo provekit-lift
 provekit prove
 ```
 
-Install once; then three commands. Sixty-four bytes of comparison per call site. One CPU instruction per discharge.
+Install once; then start lifting native evidence into `.proof` artifacts and
+proving assembled obligations.
 
 ## What it does
 
-A library publishes signed contract mementos along with its bytes. A consumer's verifier loads the mementos, walks every call site in the consumer's code, and runs a three-tier handshake: hash equality (free), cached implication memento (one signature verification), Z3 fallback (once per novel pair, mints the result for everyone else).
+A library publishes signed contract mementos along with its bytes. A consumer's
+verifier loads the mementos, asks kits to resolve dependency `.proof` artifacts,
+walks the consumer obligations, and runs a tiered proof path: CID equality,
+cached implication memento, then semantic proving for genuinely new or changed
+obligations.
 
 The same graph carries non-callsite claims too: a protocol catalog transition admitted by PEP, a proof-file consumer admitted by proof-protocol fixtures, or a generated dropper transform accepted only after re-lift.
 
-`memcmp(local, expected, 64) == 0` is the protocol. The whole stack of human-published verified knowledge, at the average case, collapses to one CPU instruction.
+CID equality is the cheapest path, not the whole protocol. The point is
+amortization: proof work that was already minted can be reused by content
+identity; new semantic obligations still need proof.
 
 ## Why it works
 
 Verification at supply-chain scale has the same shape as currency, source history, content distribution, and the addressable web. Each was once thought to need a central authority. Each turned out to admit a content-addressed protocol with no central party. Bitcoin proved you can mint trust without a mint. Git proved a content-addressed graph holds a software project's full history. BitTorrent proved a swarm can distribute petabytes without a server. IPFS proved that "the address is the content" generalizes.
 
-ProvekIt is one more application of the same primitive. The "registry" is the BLAKE3-512 hashspace. There is no master copy. There is no service that mediates membership. There is no party whose downtime stops the protocol. The protocol asks no one's permission to publish; it provides bytes that verify themselves.
+ProvekIt is one more application of the same primitive. The "registry" is the
+BLAKE3-512 hashspace plus local policy over signed proof data. There is no
+master copy. There is no service that mediates membership. There is no party
+whose downtime stops the protocol. The protocol asks no one's permission to
+publish; it provides bytes that verify themselves.
 
 ## Lift, don't author
 
 Every annotation library in wide deployment already contains specifications. `proptest` invariants. `contracts` pre/post-conditions. `kani` proofs. `prusti` annotations. `pydantic` schemas. `zod` validators. `class-validator` decorators. `bean-validation` annotations. JML predicates. `go-playground/validator` tags. Each is a spec the codebase already maintains.
 
-ProvekIt does not compete with these libraries. It sits beneath them. Whatever annotation library a codebase already uses, the lift adapter promotes those annotations to content-addressed signed contract mementos, with no rewrites and no parallel spec to maintain. Authoring stays where the developer already is. Verification moves underneath.
+ProvekIt does not compete with these libraries. It sits beneath them. Whatever
+annotation library a codebase already uses, the lift adapter promotes the
+recognized annotations to content-addressed signed contract mementos, with no
+rewrites and no parallel spec to maintain. Authoring stays where the developer
+already is. Verification moves underneath.
 
-The adapter surface covers Rust, TypeScript, Python, Java, Go, C#, Ruby, Zig, C++, C, Swift, and PHP at different depths. The pattern is uniform: walk the idiom, emit canonical IR or an extension body, mint a signed memento, and verify the claim by CID.
+The adapter surface covers Rust, TypeScript, Python, Java, Go, C#, Ruby, Zig,
+C++, C, Swift, and PHP at different depths. The pattern is uniform: walk the
+idiom, emit canonical IR or an extension body, mint a signed memento, and verify
+or compose the claim by CID and proof evidence.
 
-## The protocol is its hash
+## The protocol is content-addressed
 
-v1.6.2 is shorthand. The canonical name of v1.6.2 is
+The CLI declares conformance to an embedded protocol catalog CID. Current
+binaries verify that embedded catalog with:
 
+```bash
+provekit verify-protocol
 ```
-blake3-512:52bdb2be4b381cec2aff95db7755c84184878b45cd91882d262114a1abd2dd513f9ef3b250fb87093316fd0fcb48e4b97e109d463e57df5bda6aac0b1c719a0f
+
+The repository also ships a reference CID checker at `tools/recompute-spec-cids/`:
+
+```bash
+cargo run --release --manifest-path tools/recompute-spec-cids/Cargo.toml -- --verify
 ```
 
-the BLAKE3-512 hash of the JCS-canonical form of the protocol catalog. Anyone with the spec bytes can re-derive the CID locally. The repository ships a reference implementation at `tools/recompute-spec-cids/`; `cargo run --release --manifest-path tools/recompute-spec-cids/Cargo.toml -- --verify` re-derives every CID and fails on any drift.
+That command re-derives catalog and spec CIDs and fails on drift.
 
 There is no central authority that decides what a protocol version means. The bytes do.
 
 ## What ships
 
-- A canonical Rust CLI: `provekit`. Subcommands include `prove`, `verify-protocol`, `proof`, `protocol`, `mint`, `dump`, `hash`, `ask`, `search`, `implicate`. Bug Zoo is checked by the self-contained runner under `menagerie/bug-zoo/`.
+- A canonical Rust CLI: `provekit`. Subcommands include `prove`,
+  `verify-protocol`, `proof`, `protocol`, `mint`, `dump`, `hash`, `implicate`,
+  `link`, `compose`, `emit`, `materialize`, and kit-oriented gates. Bug Zoo is
+  checked by the self-contained runner under `menagerie/bug-zoo/`.
 - A Rust workspace of libraries: `provekit-canonicalizer`, `provekit-claim-envelope`, `provekit-proof-envelope`, `provekit-ir-symbolic`, `provekit-verifier`, `provekit-macros`, `provekit-lift`, `provekit-lift-proptest`, `provekit-lift-contracts`.
 - Per-language kits, verifier libs, lift adapters, and self-contract attestations.
 - A protocol catalog at `protocol/specs/2026-04-30-protocol-catalog.json`, protocol extension specs, proof-protocol fixtures, and PEP evolution witnesses.

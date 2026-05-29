@@ -51,7 +51,8 @@ discharged by cache:      6    (13%)
 discharged by solver:     1    (2%)
 ```
 
-The protocol's promise, "one CPU instruction per call site for the common case", manifests at this stage. Tier 1 is the hot path; Tier 3 is rare.
+The protocol's amortization goal manifests at this stage. Tier 1 CID equality
+is the hot path; Tier 3 semantic proving is rare.
 
 ## The bootstrap challenge
 

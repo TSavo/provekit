@@ -1,325 +1,198 @@
-# ProvekIt: Prove `k(I)=t`
+# ProvekIt
 
-> *Supra omnia, rectum.*
->: T
+ProvekIt is a proof supply chain for software that already exists.
 
-## ProvekIt makes software age backwards.
+It does not ask every team to rewrite code in a proof language. It takes the
+evidence teams already maintain in their native ecosystems, including tests,
+assertions, contracts, schemas, validators, framework annotations, and
+boundary/library sugar, and turns that evidence into portable ProofIR claims.
+Those claims are packaged as signed, content-addressed `.proof` artifacts that
+other packages, tools, and languages can verify without trusting the original
+test runner or re-running the original proof every time.
 
-For 70 years, code has rotted. Every line written makes the next line harder. Every system grows brittle as it grows. Every legacy codebase is a debt that compounds. The industry's working assumption is that software ages forward, toward more debt, more bugs, less certainty.
+The important failure mode is composition. A package can pass its tests, another
+package can pass its tests, and the assembled system can still contain
+contradictory behavioral claims. ProvekIt makes those claims meet in one proof
+graph. The CLI conjoins and composes normalized claims, proves the obligations
+it can prove, and reports proof violations or unresolved residue where the
+assembled claims do not fit together.
 
-ProvekIt inverts the curve.
+## The Shape
 
-Here is the mechanism. ProvekIt lifts your existing codebase, in whatever language it is written in, into a provably correct intermediate representation. It marries that IR with the implications of every concept the code expresses. Then it rewrites the code in a way that proves each concept is well-behaved.
+ProvekIt has two deliberately separate responsibilities.
 
-What ProvekIt finds, it tells you. There are two kinds of finding.
+**Kits own language reality.** A kit knows the language, package manager,
+compiler, test framework, annotation library, and ecosystem conventions. A Rust
+kit can walk Rust tests and contracts. A Java kit can read Bean Validation, JML,
+Spring, JUnit, and Maven-shaped package data. A TypeScript kit can read Zod,
+class-validator, fast-check, and npm-shaped package data. Kits lift native
+evidence into ProofIR or protocol claims, materialize admitted claims back into
+native source when a workflow calls for it, and resolve dependency `.proof`
+artifacts through the package manager and filesystem rules of their ecosystem.
 
-The first is the bug. The substrate proves that a piece of code violates the contract of the concept it claims to implement. Every static analyzer finds bugs. ProvekIt finds them more rigorously, but bug-finding is table stakes.
+**The CLI owns proof computation over normalized data.** The `provekit` CLI is
+language-agnostic. It loads `.proof` artifacts, speaks RPC to configured kits,
+normalizes claims, composes implications, checks proof-file conformance, emits
+proof bundles, and proves obligations. The CLI should not need to know what a
+Maven classifier, npm workspace, Rust proc macro, or Spring annotation means.
+The kit translates those surfaces to proof data; the CLI computes over the
+proof data.
 
-The second is the gap. The substrate identifies regions of your codebase where the *behavior itself is not specified*. Not "this code is wrong" but "this code has no defined notion of right." These are the regions where future bugs live. No test will ever exercise them, because no one has framed what the test should check. Heartbleed was a gap. Log4Shell was a gap. SolarWinds was a gap. CrowdStrike was a gap. Every catastrophic outage in the last decade traces to a gap, not a bug. ProvekIt is the first system that surfaces gaps as a first-class artifact, content-addressed and signed.
+That boundary is the product. ProvekIt is not "a better Rust verifier" or "a
+new test runner." It is the place where language-native evidence becomes a
+portable claim that can survive package boundaries.
 
-Here is the architectural claim. ProvekIt collapses software's quadratic-complexity accident. For 70 years, software has been O(N²) at every scale, because every relationship between languages, libraries, tests, docs, codebases, and tools required bespoke pairwise work. ProvekIt makes it linear. M+N where it was M×N. That is not a productivity improvement, it is a topology change.
+## Why It Matters
 
-The mechanism is one fact: concepts have contracts attached. Once a concept is named and content-addressed in a universal address space, every relationship in software passes through that concept's identity instead of through bespoke pairs. The catalog of named concepts with attached contracts grows as codebases lift through the substrate. The catalog is the moat. It cannot be reimplemented; it can only be accumulated.
+Software supply chains already contain evidence, but the evidence is trapped in
+local tools.
 
-The longer ProvekIt runs against your codebase, the more provable your existing code becomes, without you rewriting a line. New concepts get named. Old code re-lifts under richer contracts. Tomorrow's substrate proves more of yesterday's code.
+- A passing test suite says something true about one package at one time.
+- A contract annotation says something true in one language's syntax.
+- A schema validator says something true at one boundary.
+- A formal verifier says something true in one proof system.
+- A CI run says something true about one input closure.
 
-**Software ages backwards.**
+ProvekIt gives those results a common substrate. Once a kit lifts the evidence
+to canonical ProofIR or a protocol claim, the claim has stable bytes, a CID, a
+signature, and a place in a `.proof` DAG. A downstream verifier can compare the
+claim by CID, check a signed implication, compose it with other claims, or run a
+semantic prover when a new obligation actually needs proof.
 
-The 70-year accident of software's quadratic complexity ends when contracts attach to concepts. That is not hyperbole. That is what the topology says.
+This distinction matters:
 
----
+- Previously minted, unchanged commitments can often be verified cheaply by CID
+  equality, signature checks, and graph walking.
+- Semantic proving still happens when claims are minted, changed, or newly
+  composed in a way the DAG does not already justify.
+- ProvekIt does not make all proving constant-time. It amortizes expensive proof
+  work by making prior commitments content-addressed and reusable.
 
-ProvekIt is the geometry of how lossy abstract interpretations compose
-into a sound joint inference over a content-addressed federated substrate.
+The result is a proof supply chain over existing package ecosystems. Package
+authors keep their normal tools. Consumers get portable claims about the code
+they assemble.
 
-The name is literal: **Prove `k(I)=t`**. ProvekIt is a general-purpose framework
-for proving that a transformation `k`, applied to an input `I` from some domain,
-produces the formal correctness representation `t`.
+## The `.proof` DAG
 
-`k` can be a compiler, lifter, verifier, policy projector, protocol checker,
-CI closure mapper, schema extractor, or repair transform. `I` can be source
-code, annotations, tests, schemas, build inputs, proof files, package metadata,
-or any other domain artifact. `t` is the canonical truth object the artifact is
-supposed to yield: formal, content-addressed, signable, comparable, and
-verifiable.
+A `.proof` artifact is a signed, content-addressed bundle of proof data. It can
+contain contract mementos, implication witnesses, bridge attestations,
+proof-file conformance witnesses, materialization receipts, package inspection
+claims, and policy-relevant metadata.
 
-ProvekIt does not ask you to trust the artifact. It asks for signed,
-content-addressed evidence that applying `k` to `I` produces `t`, then fails
-closed when the graph does not carry the claim.
+The graph is a DAG because every claim names the exact content it depends on:
+contract CIDs, attestation CIDs, contract-set CIDs, proof-bundle CIDs, binary
+CIDs, and protocol catalog CIDs. Old facts remain true about the old bytes that
+minted them. When code or claims change, new CIDs appear. Nothing needs a
+central invalidation service; unchanged commitments remain checkable by content
+identity.
 
-That linked evidence object is a **proofchain**: a locally verifiable chain of
-signed, content-addressed evidence for logically true claims. A blockchain
-carries state transitions; a proofchain carries formal proofs. Proof validity
-does not need a global ledger because the object of verification is the
-evidence itself.
-
-Modern software already depends on `k(I)=t` claims everywhere. A compiler says
-source becomes a binary. A type checker says a program inhabits a type. A CI run
-says a precise closure of inputs produced a result. A schema says a payload has a
-shape. A repair tool says a patch closes a defect.
-
-Most of those claims are trusted because a tool said so, a log existed, a check
-passed once, or a convention held locally. They do not travel cleanly across
-languages, repositories, build systems, package ecosystems, generated code, and
-time. The claim falls out of the place where it was made, and the next domain
-has to trust it again from scratch.
-
-Every test you have ever written is already a contribution to such a substrate.
-Every type annotation, every assertion, every kernel-doc comment, every
-OpenAPI schema, every Coq proof, every static-analyzer rule, every property
-test: each one is a `k_i` that projects some lossy view of the same code into
-its domain's expressible facts. They had nowhere to settle but their own
-isolated checker. ProvekIt is the place where they conjoin. The substrate is
-their joint inference: strictly more constraining than any single `k_i`,
-content-addressed, federated across languages, monotonic under addition.
-
-That is the thing software has never had: **a place where claims about behavior
-settle once and apply everywhere.**
-
-ProvekIt makes those claims first-class. The input, transformation, formal
-truth object, evidence, and proof edge become content-addressed artifacts. They
-can be signed, compared, composed, replayed, rejected, and carried across domain
-boundaries without asking the next tool to inherit the previous tool's trust.
-
-## The Correctness Stack
-
-ProvekIt has three layers:
-
-1. **Projection.** Native adapters apply `k` to domain artifacts `I`: source,
-   annotations, tests, schemas, CI inputs, protocol files, package metadata, or
-   generated repairs.
-2. **Truth.** The result `t` is canonicalized into a formal claim object with
-   stable bytes, stable CIDs, and explicit provenance.
-3. **Proof.** The verifier decides whether the graph carries the required edge:
-   an obligation is discharged, a missing implication is exposed, or a claimed
-   closure is rejected.
-
-That is the substrate. Software correctness stops being a local tool result and
-becomes a portable, checkable relationship between domain evidence and formal
-truth.
-
-**Artifacts become accountable.** Code is one implementation of a claim, not the
-claim itself. Refactoring, generated code, and AI-produced repairs can be judged
-by the formal truth they preserve or fail to preserve.
-
-**Domains compose.** A language contract, package policy, protocol conformance
-claim, CI result, proof file, and repair witness can all live in the same graph
-when they reduce to content-addressed truth objects.
-
-**Correctness fails closed.** If the graph cannot prove the edge, the claim does
-not travel. That is how bug classes become missing obligations instead of local
-runtime surprises.
-
-## Canonical Truth
-
-Different domains need different projections, but the output of a projection
-has to become something the rest of the graph can reason about. In this repo,
-the central truth format is ProofIR.
-
-ProofIR is not a universal language for re-expressing every implementation
-detail of every programming language. It is a canonical language for claim
-boundaries: preconditions, postconditions, invariants, protocol obligations,
-value predicates, resource states, signer claims, CI blast radii, grammar
-conformance claims, realizer outputs, and the implication edges that connect
-them.
-
-That is why a Spring annotation, a Zod validator, an OpenAPI schema, a Rust type
-invariant, and a ProvekIt-native contract can all collapse to the same canonical
-predicate when they assert the same boundary fact. The host-language texture can
-be discarded; the obligation survives.
-
-Once projected into ProofIR, a boundary is comparable, solvable, translatable,
-content-addressable, and signable. It has canonical bytes and a CID. It can be
-carried across languages, repositories, package ecosystems, commits, and time.
-The contracts were often already in your code; ProvekIt turns them into
-accountable edges the rest of the graph must satisfy.
-
-## Federation by Construction
-
-A substrate that promises portable correctness has to answer how it scales
-without drowning. Every prior framework that tried to cover many languages,
-many checkers, many proof obligations, and many target runtimes ran into the
-same wall: each new dimension multiplied the surface that had to be built,
-audited, and trusted. M sources times N targets times K checkers times L
-sugars is unbounded. ProvekIt is structured so that wall is never met.
-
-Each semantic axis collapses through the same hub topology. Languages do not
-translate to each other; they translate to and from canonical operation CIDs.
-Lifters do not bind to specific provers; they emit ProofIR and the discharge
-portfolio chooses. Loss functions do not bind to specific transports; they
-rank candidate transformations by content-addressed loss records. The cost of
-extending the substrate is linear in the number of plugged-in components, not
-quadratic in the number of pairs they could connect.
-
-| Axis | What plugs in |
-| --- | --- |
-| Source languages | Lifters that emit terms over canonical operation CIDs |
-| Target runtimes | Realizers that consume terms and emit per-target source |
-| Sugar dictionaries | JSON files or JSON-RPC plugins per host idiom (Spring, JML, JUnit, ...) |
-| Loss functions | JSON files or JSON-RPC plugins that rank candidate transformations |
-| Discharge backends | Solver portfolios that close obligations into signed receipts |
-| Effect signatures | Catalogs that name the side effects an op is permitted to admit |
-| Concept catalogs | Federated stores of canonical operation and abstraction CIDs |
-
-Every plug is content-addressed. Every plug is byte-deterministic. The
-`provekit` binary is the protocol implementation; the protocol is the set of
-plugins currently loaded; the loaded set is itself a content-addressed object
-any audit can replay. Two installations that load the same plugin set produce
-the same receipts. Two installations that load different plugin sets disagree
-by exactly the loss records their plugins emit, and the disagreement is itself
-addressable.
-
-The substrate grows by being used. A new sugar dictionary published as a JSON
-file becomes a citable artifact the moment something runs against it. A new
-lifter for an unsupported language extends coverage the moment it discharges
-its first obligation cleanly. A new loss function published with a fidelity
-receipt becomes a lens any caller can adopt. The hub is the public good and
-the spokes are the contributions; use is publication.
-
-That externalization is tracked end to end in [#732](https://github.com/TSavo/provekit/issues/732),
-which enumerates the surfaces being moved out of the binary and into
-content-addressed federable mementos.
-
-## I want to...
-
-| | |
-| --- | --- |
-| **Use the CLI** | [docs/quickstart-end-user.md](docs/quickstart-end-user.md) to install and run `provekit`; [docs/reference/protocol-extensions.md#tool-surfaces](docs/reference/protocol-extensions.md#tool-surfaces) for the command surface |
-| **See a bug class map to an addressable shape CID across languages** | [docs/explanation/bug-zoo.md](docs/explanation/bug-zoo.md); run `cargo run --manifest-path menagerie/bug-zoo/Cargo.toml -- --all` |
-| **See supported languages and kit coverage** | [docs/reference/per-language-status.md](docs/reference/per-language-status.md) |
-| **Understand the move** | [docs/papers/](docs/papers/): recommended order: paper 03 → 06 → 02 |
-| **Understand proofchains** | [docs/explanation/proofchain.md](docs/explanation/proofchain.md) |
-| **Extend it / build a kit** | [docs/contributing/](docs/contributing/) |
-| **Read the spec** | [docs/papers/02-bluepaper.md](docs/papers/02-bluepaper.md) |
-| **Understand the new protocol/tooling surface** | [docs/reference/protocol-extensions.md](docs/reference/protocol-extensions.md) |
-| **Compare to other tools** | [docs/explanation/compared-to/](docs/explanation/compared-to/) |
-
-For more entry points (per-language tutorials, IDE integration, publishing a `.proof`, Bug Zoo, protocol extensions, threat model, and spec CIDs), see [docs/index.md](docs/index.md).
-
-## Status
-
-- **Protocol catalog**: v1.6.2
-- **Catalog CID**: `blake3-512:52bdb2be4b381cec2aff95db7755c84184878b45cd91882d262114a1abd2dd513f9ef3b250fb87093316fd0fcb48e4b97e109d463e57df5bda6aac0b1c719a0f`
-- **Canonical implementation**: Rust, built from this repository with `cargo install --path implementations/rust/provekit-cli`
-- **Conforming implementations**: Rust, TypeScript, Python, Java, C#, Ruby, Zig, Go, C++, Swift, C, PHP. Coverage varies; see [docs/reference/per-language-status.md](docs/reference/per-language-status.md).
-- **Protocol evolution**: PEP dogfoods catalog transitions as signed, content-addressed body-claims under `protocol/evolution/v1.6.1/` and `protocol/evolution/v1.6.2/`.
-- **Bug Zoo**: the self-contained `menagerie/bug-zoo/` runner checks lab, exhibit, fixed, link, equivalence, and composition receipts for checked-in specimens. Wild sightings are metadata only until real upstream specimens are pinned and wired into the runner.
-- **Menagerie**: [menagerie/](menagerie/) is the executable map of proof workflows. Bug Zoo is the runnable destination today; Hashbound Mainline, Supply Chain Rails, Bridgeworks, Protocol Switchyard, and Change Station name the next routes.
-- **Conformance gate**: catalog CIDs, proof-protocol fixtures, self-contract attestations, and per-kit tests must agree before CI is green.
-
-The protocol is content-addressed end to end. Each version's canonical name is its own catalog hash. Anyone with the spec bytes can verify that label locally. No central party decides what a version means; the bytes do.
-
-## Bug Zoo
-
-Bug Zoo is the executable lab for the claim above. Each specimen runs in an
-isolated host-language environment, uses that language's own compiler/kit to
-map source to canonical truth, then checks that the expected shape CID or
-boundary receipt CID is addressable from that projection. The normal proof gate
-for projects is `provekit prove`; Bug Zoo owns the fixture orchestration under
-`menagerie/bug-zoo/` and routes lift, link, and proof work through the Rust CLI.
-It is the first runnable destination in the broader [Menagerie](menagerie/),
-where workflows like Hashbound Mainline, Supply Chain Rails, Bridgeworks,
-Protocol Switchyard, and Change Station can share the same proof-carrying
-shape.
-
-The zoo is organized by species, not by language. A species directory owns a
-`specimen.yaml` manifest, then each language under that species carries the same
-lifecycle:
-
-- `lab/`: ordinary host code that passes native checks while the bug class is
-  still latent. It has no ProvekIt workflow.
-- `exhibit/<surface>/`: a native contract surface that lifts or links to the
-  missing edge and yields the red `provekit prove` or `provekit link` signal.
-- `fixed/<surface>/`: the paired source with that boundary closed, re-run
-  through the same surface to yield the green `provekit prove` or
-  `provekit link` signal.
-- `wild/`: optional real upstream sightings pinned by advisory, commit, path,
-  and evidence. No checked-in wild specimens are executed today; current
-  `wildSightings` entries are reported as metadata.
-
-In shorthand:
+That is the supply-chain move:
 
 ```text
-k_lang(I) = t
+native evidence -> kit lift/materialize -> ProofIR or protocol claim
+               -> signed memento -> .proof DAG -> provekit proof computation
 ```
 
-`k_lang` is the language compiler as a ProvekIt kit/lifter, `I` is the source,
-and `t` is the canonical truth object: a ProofIR shape CID for claim
-boundaries, or a LinkBundle receipt CID for cross-kit bridge derivations.
-Different languages can disagree in syntax, runtime behavior, and exception
-type while their native evidence maps homomorphically to the same addressable
-shape.
+## What The CLI Does
 
-Each native surface maps through a structure-preserving homomorphism into the
-correctness object; the proof layer checks whether the mapped obligation
-commutes with equivalent surfaces or closes under the fixed witness.
+The canonical CLI is the Rust `provekit` binary. Current subcommands include
+proof and protocol surfaces such as:
 
-The current null-boundary receipts show Java, TypeScript, and C# lifting the same
-missing edge:
+- `provekit mint`: dispatch configured lift plugins and write `.proof`
+  artifacts.
+- `provekit prove`: load `.proof` artifacts, resolve dependency proofs through
+  kits, enumerate obligations, compose/conjoin claims, and report discharge
+  status.
+- `provekit verify`: verify a kit end to end by lifting contract claims,
+  discharging each claim, and emitting per-claim receipts.
+- `provekit proof`: hash, inspect, check, and witness `.proof` conformance.
+- `provekit protocol`: work with protocol catalog evolution artifacts.
+- `provekit materialize`: route concept or boundary carriers through native
+  realize kits and emit admitted source plus proof receipts.
+- `provekit link` and `provekit compose`: derive and compose cross-contract
+  bridges.
+- `provekit verify-protocol`: confirm the local binary conforms to its embedded
+  protocol catalog CID.
 
-```text
-maybe_null(name) => non_null(name)
-```
-
-to the same ProofIR CID:
-
-```text
-blake3-512:0d611d8478a205ff040e7d0bcf6c21b12051340ecc5f00c3953af632b23fc01e069b4ad8a8699869163e135b9fde85792eba6acc54cd75cb3d3cc6a40a99ded4
-```
-
-They also run the red/green proof obligations through the Rust CLI: lab null is
-rejected against each lifted non-null requirement, and each fixed surface
-discharges the paired non-null implication with `provekit prove --formula`.
-
-Bug Zoo also carries value-scope escape as `BZ-SHAPE-006`: Java JUnit and Spring
-exhibits both witness a point value, and the runner invokes
-`provekit prove --formula` to produce the red signal when 42 fails a `>= 43`
-requirement and the green signal when the fixed surface witnesses 43.
-
-`BZ-SHAPE-007` carries the polyglot link-obligation specimen: a Go cgo caller
-invokes a Rust callee whose native contract requires a stricter input. The zoo
-routes the fixture through `provekit link`; the exhibit produces an
-`unprovable-obligation` link-bundle receipt, and the fixed pair links clean.
-
-Read [docs/explanation/bug-zoo.md](docs/explanation/bug-zoo.md), or run:
-
-```sh
-cargo run --manifest-path menagerie/bug-zoo/Cargo.toml -- --all
-```
-
-| Kit | Self-contracts | Lift-plugin-protocol bridges | LSP plugin |
-|---|---|---|---|
-| Rust | full conformance | full (source of truth) | shipping |
-| Go | full conformance | in progress | planned |
-| C# | full conformance | not started | shipping |
-| Ruby | in progress | not started | shipping |
-| Zig | in progress | not started | shipping |
-| Python | full conformance | in progress | shipping |
-| TypeScript | full conformance | in progress | planned |
-| C++ | full conformance | not started | planned |
-| Java | full conformance | not started | planned |
-| Swift | full conformance | not started | planned |
-| C | full conformance | not started | planned |
-| PHP | in progress | not started | planned |
+The command surface keeps moving as protocol work lands. Use `provekit --help`
+and [docs/reference/per-language-status.md](docs/reference/per-language-status.md)
+for the current matrix.
 
 ## Install
 
-This project is **build-from-source only**. Crates.io publishing is on the roadmap; until then see [docs/quickstart-end-user.md](docs/quickstart-end-user.md) for build instructions.
-
-The core binary is:
+This repository is build-from-source today. Crates.io publishing is still future
+work. The current install path is:
 
 ```sh
 cargo install --path implementations/rust/provekit-cli
 ```
 
-`provekit verify-protocol` confirms the local install conforms to the expected protocol catalog CID. `cargo provekit-lift` walks the workspace, runs every registered lift adapter, and emits a `.proof` catalog of signed contract mementos. `provekit prove` runs the three-tier handshake and reports the discharge breakdown. `provekit proof` and `provekit protocol` cover proof-file conformance and PEP transitions. Bug Zoo specimens are checked by the repo-owned runner under `menagerie/bug-zoo/`. Any of these can fail closed; none requires the network.
+Verify the installed CLI's embedded protocol catalog:
 
-For other host languages, see the polyglot-stack tutorial above. The Rust CLI is the canonical implementation; non-Rust kits use it for verification today.
+```sh
+provekit verify-protocol
+```
 
-## Building from source
+For project setup and first runs, start with
+[docs/quickstart-end-user.md](docs/quickstart-end-user.md). If you are working
+on ProvekIt itself, see [docs/contributing/build.md](docs/contributing/build.md)
+for the polyglot Make targets, system dependencies, and per-implementation build
+commands.
 
-If you are working on ProvekIt itself (kit, lift adapter, prover backend, spec change), see [docs/contributing/build.md](docs/contributing/build.md) for the polyglot Make targets, system dependencies, and per-implementation build commands. The default `make ci` gate covers the Linux conformance profile plus the Linux native test aggregate; the full GitHub workflow adds macOS Swift and per-kit verifier jobs.
+## Current Status
+
+- **Canonical implementation:** the Rust CLI in
+  `implementations/rust/provekit-cli`.
+- **Current CLI protocol catalog:** v1.6.6, embedded in the CLI and verified by
+  `provekit verify-protocol`.
+- **Supported ecosystem surface:** Rust, TypeScript, Python, Java, C#, Ruby,
+  Zig, Go, C++, Swift, C, and PHP have varying kit, library, lift-adapter,
+  embedded-verifier, and LSP coverage. See
+  [docs/reference/per-language-status.md](docs/reference/per-language-status.md).
+- **Proof artifacts:** `.proof` envelopes, signed mementos, contract CIDs,
+  attestation CIDs, contract-set CIDs, and protocol catalog CIDs are the durable
+  units.
+- **Executable exhibits:** [menagerie/bug-zoo/](menagerie/bug-zoo/) runs checked
+  specimens that show native checks passing while lifted cross-package or
+  cross-language obligations fail until the missing edge is closed.
+- **Self-application:** the CLI can mint proof data from its own assertions and
+  tests; see
+  [docs/self-application/2026-05-28-snake-eats-tail.md](docs/self-application/2026-05-28-snake-eats-tail.md).
+
+## Start Here
+
+| Goal | Read |
+|---|---|
+| Install and run the CLI | [docs/quickstart-end-user.md](docs/quickstart-end-user.md) |
+| Understand the product surface | [docs/explanation/product.md](docs/explanation/product.md) |
+| Understand the architecture | [docs/explanation/architecture.md](docs/explanation/architecture.md) |
+| Understand `.proof` and proofchains | [docs/explanation/proofchain.md](docs/explanation/proofchain.md) |
+| See kit and language coverage | [docs/reference/per-language-status.md](docs/reference/per-language-status.md) |
+| Publish a `.proof` artifact | [docs/how-to/publishing-a-proof.md](docs/how-to/publishing-a-proof.md) |
+| Build or extend a kit | [docs/quickstart-extender.md](docs/quickstart-extender.md) |
+| Compare to other tools | [docs/explanation/compared-to/](docs/explanation/compared-to/) |
+| Read the paper ladder | [docs/papers/README.md](docs/papers/README.md) |
+
+For the full docs map, see [docs/index.md](docs/index.md).
+
+## What ProvekIt Is Not
+
+ProvekIt is not a replacement for tests. Tests remain the source of much of the
+evidence that kits lift.
+
+ProvekIt is not a replacement for Kani, Prusti, Coq, Lean, F*, Dafny, TLA+, Z3,
+or other verification tools. Those tools can produce evidence; ProvekIt gives
+that evidence a portable content-addressed supply chain.
+
+ProvekIt is not a central registry. `.proof` artifacts verify from their bytes,
+CIDs, signatures, witnesses, and local policy. A server may index proof data for
+convenience, but it is not the authority.
+
+ProvekIt is not a promise that any current kit sees every useful contract in a
+codebase. Adapter coverage is empirical. Unknown, unsupported, or lossy
+surfaces must be reported honestly as residue, loss, or refusal.
 
 ## License
 
-Source files use SPDX headers where present. A repository-level license file has not been added yet.
+Source files use SPDX headers where present. A repository-level license file has
+not been added yet.

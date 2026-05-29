@@ -113,7 +113,7 @@ A consumer in JavaScript imports a Python ML library that calls `int(input_strin
 
 The JavaScript consumer's verifier sees the call site (Python's `int(...)`) and does the handshake:
 
-1. **Tier 1**: does the JavaScript consumer's pre-condition (whatever it is, at the call site) match the canonical IR for `ref-parseInt-v1`? If yes, hash equality discharges. Free.
+1. **Tier 1**: does the JavaScript consumer's pre-condition (whatever it is, at the call site) match the canonical IR for `ref-parseInt-v1`? If yes, hash equality discharges without theorem proving.
 2. **Tier 2**: if no exact hash match, is there a cached implication memento for `(consumer-pre, ref-parseInt-v1)`? If yes, signature check discharges.
 3. **Tier 3**: solver fallback. Z3 invoked once per genuinely-novel pair.
 
@@ -121,7 +121,10 @@ Most consumers' pre-conditions for `parseInt`-style calls match `ref-parseInt-v1
 
 The protocol walks: consumer's pre-condition → ref-parseInt-v1 ← Python's source contract. The Python bridge's evidence (showing Python's contract implies the reference) was minted once, by the Python kit author, and is cached forever. The JavaScript consumer doesn't re-derive it.
 
-The JavaScript consumer's verification is one CPU instruction: `memcmp` of the consumer's pre-CID against the reference contract's CID. The Python implementation's correctness, verified once by the Python kit author against `ref-parseInt-v1`, is now JavaScript consumers' verification result for free.
+The JavaScript consumer's Tier 1 identity check is just CID equality. The Python
+implementation's bridge to `ref-parseInt-v1`, verified once by the Python kit
+author and admitted by local policy, can now be reused by JavaScript consumers
+without re-deriving the Python proof.
 
 ## Why this works
 

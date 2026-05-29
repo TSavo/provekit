@@ -2,143 +2,158 @@
 
 ## What ProvekIt is
 
-ProvekIt is a toolchain for proving content-addressed claims. It defines four core things: a canonical IR for claim boundaries, a signed memento envelope wrapping claims with provenance, a published `.proof` catalog of mementos addressed by CID, and a handshake algorithm that verifies a consumer's obligations against a publisher's evidence in time decoupled from the size of the dependency graph.
+ProvekIt is a proof supply chain for code and packages that already exist.
 
-Those pieces compose into proofchains: portable, locally verifiable chains of signed, content-addressed evidence for logically true claims. A blockchain carries state transitions; a proofchain carries formal proofs. The chain exists so a verifier can re-check why a claim is true under explicit policy.
+Most projects already contain evidence about behavior: tests, assertions,
+contracts, schemas, validators, type annotations, framework annotations, package
+metadata, CI results, and proof-tool output. Today that evidence usually stays
+inside one language, one test runner, one repository, or one build. ProvekIt
+promotes it into portable ProofIR or protocol claims, wraps those claims in
+signed mementos, and distributes them as content-addressed `.proof` artifacts.
 
-Software correctness across domains is the center use case: language to language, package to package, protocol version to protocol version, and generated repair to re-lifted proof. Cross-platform contract correctness is one expression of that larger pattern.
+The product has two main actors:
 
-Verification reduces to hash comparison. When the publisher's post-condition and the consumer's pre-condition canonicalize to identical bytes, the call site is discharged for free. When they don't, a signed implication memento may exist that bridges them; the verifier checks the signature once and discharges every call site that shares the same `(post, pre)` pair. When neither path applies, Z3 runs once per novel pair, mints the result as a fresh implication memento, and every future verifier hits the cached path.
+- **Kits** know native ecosystems. They lift language-native evidence into
+  ProofIR or protocol claims, materialize admitted claims back into native
+  source when needed, and resolve dependency `.proof` artifacts through the
+  package manager and filesystem rules of their ecosystem.
+- **The CLI** computes over normalized proof data. It loads `.proof` artifacts,
+  speaks RPC to kits, conjoins and composes claims, checks conformance, emits
+  proof bundles, and proves obligations. It should not need to know Maven, npm,
+  Cargo, Spring, Zod, JML, or Rust proc-macro semantics directly.
 
-ProvekIt is shipped as a canonical Rust CLI (`provekit`) plus per-language libraries and kits. The protocol version is itself a CID: v1.6.2 is shorthand for `blake3-512:52bdb2be4b381cec2aff95db7755c84184878b45cd91882d262114a1abd2dd513f9ef3b250fb87093316fd0fcb48e4b97e109d463e57df5bda6aac0b1c719a0f`. Anyone with the spec bytes can verify that label locally.
+That is the important boundary. ProvekIt is not a verifier for one language and
+not another test runner. It is a substrate where claims from many local tools
+can be compared, composed, signed, and rejected when they contradict.
 
-## Who it's for
+## The game changer
 
-Four audiences, in order of immediate fit:
+Local success does not imply assembled success.
 
-**Library authors who want their behavioral guarantees to ship.** Today, a Rust crate that uses `proptest` invariants or `contracts` pre/post-conditions communicates those guarantees to whoever reads the crate's source. ProvekIt's lift adapter promotes the existing annotations to signed contract mementos that ship in a `.proof` catalog alongside the crate's bytes. Downstream consumers verify against the mementos without ever running the original test suite or invoking the original solver. The author's annotations stay where they are; the verification is now portable.
+A library can pass its tests. A consumer can pass its tests. A shim can pass its
+smoke suite. The system assembled from those parts can still make inconsistent
+claims: a callee publishes a weaker postcondition than the caller requires, two
+packages disagree about a boundary value, a generated bridge drops a condition,
+or a dependency update changes a contract set while the application still
+expects the old one.
 
-**Application teams that depend on libraries they did not write.** A consumer's verifier walks the dependency tree, loads every `.proof` it finds, and discharges call sites against the cached contract mementos. The Tier-1 hash-discharge fraction is the headline metric: a high fraction means the consumer's expectations and the library's guarantees agree on shape. A low fraction means there is real work to do, and the work is the residue, not the average case. The verifier's cost is decoupled from the depth of the dependency tree.
+ProvekIt makes the claims fight together. It lifts the local evidence into a
+shared proof graph, composes the claims, and reports proof violations or
+unresolved residue when the graph cannot justify the assembled system.
 
-**Build-tool maintainers and language teams.** Per-language kits emit canonical IR. Per-language libs verify. The Rust CLI is one shipping implementation; alternative CLIs in any language are conforming as long as they accept the v1.6.2 catalog CID. The protocol is the contract; implementations are interchangeable.
+That makes ProvekIt a supply-chain tool as much as a verification tool. The
+question is not only "did this package pass its own checks?" The question is
+"do the claims this package ships still hold when combined with the claims its
+consumers, dependencies, bridges, and generated artifacts rely on?"
 
-**Protocol and tooling authors.** PEP, GCP, TDP, ORP, CBP, and proof-protocol conformance let ProvekIt prove protocol/tooling claims with the same content-addressed graph used for application contracts.
+## `.proof` artifacts
+
+A `.proof` artifact is a signed, content-addressed bundle of proof data. It can
+contain contract mementos, implication witnesses, bridge attestations,
+proof-file conformance witnesses, materialization receipts, package inspection
+claims, and policy-relevant metadata.
+
+Those artifacts form a DAG. Nodes and edges are named by content: contract CIDs,
+attestation CIDs, contract-set CIDs, proof-bundle CIDs, binary CIDs, and protocol
+catalog CIDs. If bytes change, the CID changes. Old mementos remain true about
+the old bytes, but they do not silently apply to the new bytes.
+
+This is where the cost model comes from:
+
+- If a prior commitment is unchanged, a verifier may discharge work by CID
+  equality, signature verification, and graph walking.
+- If a signed implication already exists for a pair of claims, the verifier can
+  reuse that implication instead of re-solving it.
+- If a claim is new, changed, or newly composed in a way the DAG does not
+  already justify, semantic proving still has to happen.
+
+So the honest statement is not "all proving is O(1)." Expensive proof work can
+be done once and then reused by content identity. New semantic work still costs
+what it costs.
+
+## Who it is for
+
+**Library authors** can publish behavioral claims alongside package bytes. Their
+tests, assertions, validators, contracts, and proof-tool outputs stay in the
+native source. A kit lifts those surfaces and emits `.proof` artifacts.
+
+**Application teams** can verify the claims that dependencies ship instead of
+trusting a package because its upstream CI was green once. The verifier reports
+which obligations discharged by equality, which used cached implications, which
+needed proving, and which failed or remained unsupported.
+
+**Kit authors** build the ecosystem-specific side: native syntax walking,
+package proof resolution, framework sugar, diagnostic translation, and
+materialization into the host language.
+
+**Protocol and tooling authors** use the same substrate for claims that are not
+ordinary function contracts: proof-file conformance, protocol catalog evolution,
+CI input closure, generated repair closure, package inspection, and
+materialization receipts.
 
 ## What ProvekIt replaces
 
-Nothing. ProvekIt does not replace `cargo test`, `npm test`, `go test`, or any other test runner. It does not replace `clippy`, `eslint`, `golangci-lint`, or any other linter. It does not replace Kani, Prusti, F\*, Dafny, TLA+, or any other formal verifier.
+ProvekIt replaces the missing portable layer under existing tools.
 
-ProvekIt replaces the absence of a portable, signed, composable substrate underneath those tools. Today, when `proptest` finds an invariant, that invariant lives in the test runner's output; nothing else can use it. When Kani proves a property, that property lives in Kani's output; nothing downstream can carry it forward. ProvekIt is the missing layer: lift the existing tool's output into a signed memento, address it by content, publish it in a `.proof` or extension witness, and the next tool in the pipeline sees a cached fact instead of a fresh problem.
-
-## What ProvekIt complements
-
-This list is comprehensive on purpose. ProvekIt sits beneath every annotation library; it does not compete with any of them. Adoption pattern is uniform: the lift adapter walks the source library's annotations, emits canonical IR, mints a signed contract memento, and publishes.
-
-**Rust:**
-- `proptest` (lift adapter shipping in v1.1)
-- `contracts` (lift adapter shipping in v1.1)
-- `kani`, `prusti`
-- `creusot`, `flux` (lift adapters under evaluation)
-- `quickcheck` (idiom maps to `proptest` adapter shape)
-
-**TypeScript / JavaScript:**
-- `zod`, `class-validator`, `fast-check`
-- `io-ts`, `runtypes`, `valibot`, `ajv` schemas (planned)
-- TypeScript's own type system (the `ts-types-proof` lib lifts type annotations)
-
-**Python:**
-- `pydantic`, `attrs`, `dataclasses-json` schemas
-- `deal`, `hypothesis`, `icontract` (planned)
-- `mypy` and `pyright` annotations (planned)
-
-**Java / JVM:**
-- Bean Validation (`jakarta.validation`, `javax.validation`)
-- JML, Cofoja (planned)
-- KeY-style annotations, OpenJML (planned)
-
-**Go:**
-- `go-playground/validator`
-- `ozzo-validation`, `validator.v9` (planned)
-- Build-tag-based assertions (planned)
-
-**C++:**
-- C++26 contract attributes `[[expects:]]`, `[[ensures:]]` (kit shipping; lift adapter planned)
-- `assert.h` patterns (planned)
-- Boost.Hana and Boost.Contract (under evaluation)
-
-The pattern is uniform across host languages. Whatever annotation library a codebase already uses, ProvekIt promotes those annotations to content-addressed signed contracts, with no rewrites and no parallel spec to maintain.
+It does not replace `cargo test`, `npm test`, `go test`, JUnit, pytest, Kani,
+Prusti, Coq, Lean, F*, Dafny, TLA+, Z3, schema validators, or static analyzers.
+Those tools remain the source of evidence. ProvekIt gives their claims stable
+bytes, CIDs, signatures, and a proof graph where downstream consumers can reuse
+or reject them.
 
 ## What ProvekIt is not
 
-ProvekIt is not a soundness-certified compliance tool. If a regulator requires output from Coq, Isabelle, F\*, or another tool whose own correctness is itself certified, those tools remain the right choice. ProvekIt's correctness rests on (a) BLAKE3-512 collision resistance, (b) Ed25519 unforgeability, (c) the underlying solver's correctness on the IR fragment used, and (d) the per-language lift adapter's faithful translation of the source library's idiom. Each of these is an honest assumption; none of them produces a regulator-accepted certificate.
+ProvekIt is not a soundness-certified compliance product. If a deployment
+requires a regulator-recognized proof artifact from Coq, Isabelle, F*, or a
+specific certified toolchain, that toolchain remains the authority.
 
-ProvekIt is not a replacement for runtime testing. Tests cover concrete inputs; contracts cover the input domain. A high Tier-1 hash-discharge fraction is a strong signal that contracts compose, but adapter coverage is empirical; the per-language lift adapter only sees what it knows how to walk. Anything outside the adapter's idiom remains as untouched as it was before ProvekIt arrived.
+ProvekIt is not a substitute for runtime testing. Tests are often the evidence
+that gets lifted. Adapter coverage is empirical, and each kit only sees the
+idioms it knows how to walk.
 
-ProvekIt is not a database. There is no central registry, no service to call, no party that decides what counts as a valid contract. The protocol asks no one's permission to publish; it provides bytes that verify themselves. The implication server, if one exists, is a passive indexer over published `.proof` files, not an authority.
+ProvekIt is not a central registry. A `.proof` artifact verifies from its bytes,
+CIDs, signatures, witnesses, and local policy. A server can index proof data for
+discovery, but the server is not the source of truth.
 
-ProvekIt is not a coding-agent guardrail or an LLM proof harness. The protocol does not invoke an LLM at any step. The Rust CLI invokes Z3 at Tier 3 of the handshake, and only there. Cache hits at Tier 1 and Tier 2 are network-free, solver-free, and constant-time per call site.
+ProvekIt is not a promise that every boundary can be materialized exactly.
+Materialization can produce exact output, bounded lossy output with an explicit
+loss record, or refusal. Silent loss is the forbidden case.
 
 ## Adoption surfaces
 
-ProvekIt has three adoption paths.
-
-**1. Library author publishes a `.proof` alongside their crate.**
+The current source-built CLI is:
 
 ```bash
 cargo install --path implementations/rust/provekit-cli
-cd my-crate
-cargo provekit-lift   # walks proptest! and #[contracts::ensures] annotations
-                      # emits target/.proof
-provekit prove        # local verification of the catalog
+provekit verify-protocol
 ```
 
-The `.proof` is a signed catalog of contract mementos. Ship it alongside the crate's bytes (in `target/release/` or in the published crate, depending on the publisher's policy). Consumers find it during their own verifier walk.
-
-**2. Application team verifies a dependency tree at build time.**
+A project that declares lift plugins can mint proof data:
 
 ```bash
-cd my-app
-provekit prove
+provekit mint --project .
 ```
 
-The verifier walks `<projectRoot>` and the dependency tree's `.proof` files, indexes the memento pool, runs the handshake at every call site, and reports the discharge breakdown. Exit code is 0 (everything discharged), 1 (violations or unresolved residue), 2 (user error), or 3 (solver unavailable / timeout).
+A consumer can run the proof gate over local and dependency `.proof` artifacts:
 
-**3. Build-script integration (planned).**
-
-```rust
-// build.rs
-fn main() {
-    provekit_build::verify_or_fail();
-}
+```bash
+provekit prove .
 ```
 
-Contract violations become compile-time errors in the same stream as type errors. ProvekIt is the proof gate, enforced at the same boundary as the type system.
-
-## Configuration
-
-A repository declares its conformance via a `provekit.config.yaml` at the project root:
-
-```yaml
-protocol:
-  cid: blake3-512:52bdb2be4b381cec2aff95db7755c84184878b45cd91882d262114a1abd2dd513f9ef3b250fb87093316fd0fcb48e4b97e109d463e57df5bda6aac0b1c719a0f
-  version: v1.6.2
-
-publish:
-  implications:
-    target: project    # one of: local, project, registry
-```
-
-The conformance CID is the protocol version. An implementation that declares a different CID is a different protocol; implementations may declare multiple CIDs to support cross-version operation.
+The exact plugin manifests, kit coverage, and package-manager proof resolution
+depend on the host ecosystem. Start with
+[../quickstart-end-user.md](../quickstart-end-user.md) to run the CLI and
+[../quickstart-extender.md](../quickstart-extender.md) to build or extend a kit.
 
 ## What you actually get
 
-You don't get "mathematical certainty that your code is correct." You get:
-
-- A signed `.proof` catalog of contract mementos that ships with your library.
-- A proofchain that carries the claims, witnesses, attestations, and policy context needed to verify the result locally.
-- A verifier that walks consumer call sites and reports the hash-discharge fraction.
-- A growing lattice of cached implication mementos that amortize solver cost across the ecosystem.
-- A per-call-site report identifying the residue that genuinely needs your attention.
-- A protocol that does not require permission, does not need invalidation, does not call home, and does not depend on any party but the bytes you and your peers published.
-
-The proof gate fits underneath the tools your team already runs. The compounding value comes from adoption: every published `.proof` raises the Tier-1 discharge fraction for everyone who consumes the library. Software ages backwards.
+- A way to turn existing native evidence into portable ProofIR or protocol
+  claims.
+- Signed `.proof` artifacts that carry those claims by content identity.
+- A language-agnostic CLI that composes and proves normalized proof data.
+- Kit-owned integration with language syntax, libraries, package managers, and
+  materialization surfaces.
+- Reports that distinguish proved obligations, cached commitments, violations,
+  unsupported residue, bounded loss, and refusal.
+- A proof supply chain that runs over existing ecosystems instead of replacing
+  them.
