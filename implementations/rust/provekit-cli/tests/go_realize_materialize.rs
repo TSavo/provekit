@@ -443,6 +443,10 @@ fn go_materialize_cli_rewrites_carrier_and_asks_go_kit_to_compile_check() {
         stderr.contains("compile-check: go test ./... passed"),
         "Go materialize must ask the Go kit to run its native check\nstderr:\n{stderr}"
     );
+    assert!(
+        stderr.contains("assembled by go kit via RPC"),
+        "Go materialize must use the configured Go kit for assembly, not legacy concat fallback\nstderr:\n{stderr}"
+    );
 
     let emitted = fs::read_to_string(out_dir.join("id.go")).expect("read materialized Go");
     assert!(

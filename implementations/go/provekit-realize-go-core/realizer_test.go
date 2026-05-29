@@ -3,6 +3,8 @@ package realizego
 import (
 	"bytes"
 	"encoding/json"
+	"go/parser"
+	"go/token"
 	"os"
 	"path/filepath"
 	"strings"
@@ -111,6 +113,69 @@ func TestPluginCheckRunsGoTest(t *testing.T) {
 	}
 	if result["command"] != "go test ./..." {
 		t.Fatalf("command = %#v", result["command"])
+	}
+}
+
+func TestPluginAssembleReturnsFormattedGoFiles(t *testing.T) {
+	params := map[string]any{
+		"target_lang":   "go",
+		"file_basename": "id",
+		"package_hint":  "sample",
+		"fragments": []map[string]any{
+			{
+				"concept_name": "identity",
+				"source":       "func Label(x int) string {\nreturn fmt.Sprint(x)\n}",
+				"imports":      []string{"fmt"},
+				"helpers":      []string{"const helperValue = 1"},
+			},
+		},
+	}
+	req := map[string]any{
+		"jsonrpc": "2.0",
+		"id":      17,
+		"method":  "provekit.plugin.assemble",
+		"params":  params,
+	}
+	raw, err := json.Marshal(req)
+	if err != nil {
+		t.Fatalf("marshal assemble request: %v", err)
+	}
+
+	var stdout bytes.Buffer
+	if err := RunRPC(bytes.NewReader(append(raw, '\n')), &stdout); err != nil {
+		t.Fatalf("RunRPC: %v", err)
+	}
+
+	var response map[string]any
+	if err := json.Unmarshal(bytes.TrimSpace(stdout.Bytes()), &response); err != nil {
+		t.Fatalf("parse response %q: %v", stdout.String(), err)
+	}
+	if response["error"] != nil {
+		t.Fatalf("assemble returned error: %#v", response["error"])
+	}
+	result := response["result"].(map[string]any)
+	files := result["files"].([]any)
+	if len(files) != 1 {
+		t.Fatalf("files len = %d, want 1; response=%s", len(files), stdout.String())
+	}
+	file := files[0].(map[string]any)
+	if file["path"] != "id.go" {
+		t.Fatalf("assembled path = %#v, want id.go", file["path"])
+	}
+	content := file["content"].(string)
+	if _, err := parser.ParseFile(token.NewFileSet(), "id.go", content, parser.AllErrors); err != nil {
+		t.Fatalf("assembled content must parse as Go: %v\n%s", err, content)
+	}
+	for _, want := range []string{
+		"package sample",
+		"import \"fmt\"",
+		"const helperValue = 1",
+		"func Label(x int) string",
+		"return fmt.Sprint(x)",
+	} {
+		if !strings.Contains(content, want) {
+			t.Fatalf("assembled content missing %q:\n%s", want, content)
+		}
 	}
 }
 
