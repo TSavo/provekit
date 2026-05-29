@@ -109,7 +109,7 @@ func InitializeResult() InitResult {
 		Version:         Version,
 		ProtocolVersion: "provekit-lift/1",
 		Capabilities: Capabilities{
-			AuthoringSurfaces:   []string{"go-source"},
+			AuthoringSurfaces:   []string{"go-source", "go-implications"},
 			IRVersion:           IRVersion,
 			EmitsSignedMementos: false,
 		},

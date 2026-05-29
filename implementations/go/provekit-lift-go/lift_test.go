@@ -231,7 +231,9 @@ func TestInitializeReportsDraftVersionAndCapabilities(t *testing.T) {
 	if result.Capabilities.EmitsSignedMementos {
 		t.Fatal("source lifter must not claim signed mementos")
 	}
-	if len(result.Capabilities.AuthoringSurfaces) != 1 || result.Capabilities.AuthoringSurfaces[0] != "go-source" {
+	if len(result.Capabilities.AuthoringSurfaces) != 2 ||
+		result.Capabilities.AuthoringSurfaces[0] != "go-source" ||
+		result.Capabilities.AuthoringSurfaces[1] != "go-implications" {
 		t.Fatalf("authoring surfaces = %+v", result.Capabilities.AuthoringSurfaces)
 	}
 }
