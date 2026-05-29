@@ -100,7 +100,7 @@ final class PhpSourceLifter
         }
 
         $bodyTerms = [];
-        $this->walkTopLevel($stmts, '', [], $path, $result, $bodyTerms);
+        $this->walkTopLevel($stmts, '', [], $path, $source, $result, $bodyTerms);
         array_unshift($result['ir'], source_unit_contract($path, $source, fold_seq($bodyTerms)));
         return $result;
     }
@@ -110,18 +110,18 @@ final class PhpSourceLifter
      * @param array<int, string> $classStack
      * @param array<int, array> $bodyTerms
      */
-    private function walkTopLevel(array $stmts, string $namespace, array $classStack, string $path, array &$result, array &$bodyTerms): void
+    private function walkTopLevel(array $stmts, string $namespace, array $classStack, string $path, string $source, array &$result, array &$bodyTerms): void
     {
         foreach ($stmts as $stmt) {
             if ($stmt instanceof \PhpParser\Node\Stmt\Namespace_) {
                 $nextNamespace = $stmt->name !== null ? $stmt->name->toString() : '';
-                $this->walkTopLevel($stmt->stmts, $nextNamespace, $classStack, $path, $result, $bodyTerms);
+                $this->walkTopLevel($stmt->stmts, $nextNamespace, $classStack, $path, $source, $result, $bodyTerms);
                 continue;
             }
 
             if ($stmt instanceof \PhpParser\Node\Stmt\Function_) {
                 $fnName = $this->qualifyFunctionName($namespace, $stmt->name->toString());
-                $this->liftFunctionNode($stmt, $fnName, $path, $result, $bodyTerms, false);
+                $this->liftFunctionNode($stmt, $fnName, $path, $source, $result, $bodyTerms, false);
                 continue;
             }
 
@@ -136,7 +136,7 @@ final class PhpSourceLifter
                     if ($member instanceof \PhpParser\Node\Stmt\ClassMethod) {
                         $qualifiedClass = $this->qualifyFunctionName($namespace, implode('\\', $nextStack));
                         $fnName = $qualifiedClass . '::' . $member->name->toString();
-                        $this->liftFunctionNode($member, $fnName, $path, $result, $bodyTerms, true);
+                        $this->liftFunctionNode($member, $fnName, $path, $source, $result, $bodyTerms, true);
                     } elseif ($member instanceof \PhpParser\Node\Stmt\TraitUse) {
                         $this->addRefusal($result, 'unhandled-syntax', $this->qualifyFunctionName($namespace, $className), $member->getStartLine(), 'TraitUse is not supported');
                     } else {
@@ -168,7 +168,7 @@ final class PhpSourceLifter
     /**
      * @param array<int, array> $bodyTerms
      */
-    private function liftFunctionNode(object $node, string $fnName, string $path, array &$result, array &$bodyTerms, bool $method): void
+    private function liftFunctionNode(object $node, string $fnName, string $path, string $source, array &$result, array &$bodyTerms, bool $method): void
     {
         if ($method && str_starts_with($this->nodeName($node), '__')) {
             $this->addRefusal($result, 'unsupported-function-shape', $fnName, $node->getStartLine(), 'magic methods are not supported');
@@ -212,8 +212,40 @@ final class PhpSourceLifter
             return;
         }
 
-        $result['ir'][] = function_contract($fnName, $formals, $body, $effects->all(), $path, $node->getStartLine());
+        $bodySource = body_source_payload(
+            $path,
+            $this->bodyTextForNode($source, $node),
+            $body,
+            $formals,
+            $node->getStartLine(),
+            method_exists($node, 'getEndLine') ? $node->getEndLine() : null
+        );
+        $result['ir'][] = function_contract($fnName, $formals, $body, $effects->all(), $path, $node->getStartLine(), $bodySource);
         $bodyTerms[] = $body;
+    }
+
+    private function bodyTextForNode(string $source, object $node): string
+    {
+        $start = method_exists($node, 'getStartFilePos') ? $node->getStartFilePos() : -1;
+        $end = method_exists($node, 'getEndFilePos') ? $node->getEndFilePos() : -1;
+        if (is_int($start) && is_int($end) && $start >= 0 && $end >= $start) {
+            $open = strpos($source, '{', $start);
+            if ($open !== false && $open <= $end) {
+                $close = $this->matchingBrace($source, $open);
+                if ($close !== null && $close <= $end) {
+                    return substr($source, $open + 1, $close - $open - 1);
+                }
+            }
+        }
+
+        $name = $this->nodeName($node);
+        $line = method_exists($node, 'getStartLine') ? $node->getStartLine() : null;
+        foreach ($this->extractFunctionBlocks($source) as $function) {
+            if ($function['name'] === $name && ($line === null || $function['line'] === $line)) {
+                return $function['body'];
+            }
+        }
+        return '';
     }
 
     /**
@@ -754,7 +786,15 @@ final class PhpSourceLifter
             $this->addRefusal($result, $e->kind, $fnName, $e->sourceLine, $e->getMessage());
             return;
         }
-        $result['ir'][] = function_contract($fnName, $function['params'], $body, $effects->all(), $path, $function['line']);
+        $result['ir'][] = function_contract(
+            $fnName,
+            $function['params'],
+            $body,
+            $effects->all(),
+            $path,
+            $function['line'],
+            body_source_payload($path, $function['body'], $body, $function['params'], $function['line'])
+        );
         $bodyTerms[] = $body;
     }
 

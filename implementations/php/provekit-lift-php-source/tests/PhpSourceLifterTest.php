@@ -7,6 +7,8 @@ require_once __DIR__ . '/../src/bootstrap.php';
 use ProvekIt\Canonicalizer\Jcs;
 use ProvekIt\LiftPhpSource\PhpSourceCompiler;
 use ProvekIt\LiftPhpSource\PhpSourceLifter;
+use ProvekIt\LiftPhpSource\PhpSourceRecognizer;
+use function ProvekIt\LiftPhpSource\dispatch_rpc;
 use function ProvekIt\LiftPhpSource\initialize_result;
 
 function fail_test(string $message): never
@@ -26,6 +28,13 @@ function assert_same(mixed $expected, mixed $actual, string $message): void
 {
     if ($expected !== $actual) {
         fail_test($message . ' expected=' . var_export($expected, true) . ' actual=' . var_export($actual, true));
+    }
+}
+
+function assert_has_key(string $key, array $actual, string $message): void
+{
+    if (!array_key_exists($key, $actual)) {
+        fail_test($message . ' missing key=' . $key . ' actual=' . var_export($actual, true));
     }
 }
 
@@ -63,6 +72,45 @@ function ctor_names(mixed $node): array
         }
     }
     return $names;
+}
+
+function temp_dir(string $name): string
+{
+    $base = sys_get_temp_dir() . DIRECTORY_SEPARATOR . 'provekit-php-' . $name . '-' . bin2hex(random_bytes(4));
+    if (!mkdir($base, 0777, true) && !is_dir($base)) {
+        fail_test('failed to create temp dir ' . $base);
+    }
+    return $base;
+}
+
+function remove_tree(string $path): void
+{
+    if (!is_dir($path)) {
+        return;
+    }
+    $it = new RecursiveIteratorIterator(
+        new RecursiveDirectoryIterator($path, FilesystemIterator::SKIP_DOTS),
+        RecursiveIteratorIterator::CHILD_FIRST
+    );
+    foreach ($it as $file) {
+        $file->isDir() ? rmdir($file->getPathname()) : unlink($file->getPathname());
+    }
+    rmdir($path);
+}
+
+function binding_from_contract(array $contract, array $overrides = []): array
+{
+    $bodySource = $contract['body_source'] ?? null;
+    assert_true(is_array($bodySource), 'contract carries body_source');
+    return array_merge([
+        'concept_name' => 'concept:php-arithmetic',
+        'library_tag' => 'provekit-php-arithmetic',
+        'family' => 'concept:family:arithmetic',
+        'ast_template' => $bodySource['ast_template'],
+        'template_cid' => $bodySource['template_cid'],
+        'param_names' => $bodySource['param_names'],
+        'contract_cid' => 'blake3-512:' . str_repeat('c', 128),
+    ], $overrides);
 }
 
 function test_lift_emits_source_unit_php_ops_and_unique_names(): void
@@ -107,6 +155,35 @@ PHP;
         assert_true(str_starts_with($name, 'php:'), 'all operation CIDs use php: namespace');
         assert_true(!in_array($name, ['php:unknown', 'php:binop', 'php:skip'], true), 'forbidden catch-all op absent');
     }
+}
+
+function test_lift_function_entries_emit_body_source_text_ast_template_and_cid(): void
+{
+    $source = <<<'PHP'
+<?php
+function add($x, $y) {
+    $z = $x + $y;
+    return $z;
+}
+PHP;
+
+    $result = (new PhpSourceLifter())->liftSource($source, 'src/add.php');
+
+    assert_same([], $result['refusals'], 'add fixture should lift');
+    $add = contract($result['ir'], 'add');
+    assert_has_key('body_source', $add, 'function entry carries body_source');
+    $bodySource = $add['body_source'];
+    assert_same('src/add.php', $bodySource['file'], 'body_source file');
+    assert_true(str_contains($bodySource['body_text'], '$z = $x + $y;'), 'body_text carries assignment source');
+    assert_true(str_contains($bodySource['body_text'], 'return $z;'), 'body_text carries return source');
+    assert_true(!str_contains($bodySource['body_text'], 'function add'), 'body_text is body-only source');
+    assert_same(['x', 'y'], $bodySource['param_names'], 'body_source param names');
+    assert_has_key('ast_template', $bodySource, 'body_source carries ast_template');
+    assert_matches('/^blake3-512:[0-9a-f]{128}$/', $bodySource['template_cid'], 'body_source template cid');
+    $canonical = Jcs::encode($bodySource['ast_template']);
+    assert_true(str_contains($canonical, '"kind":"param_ref"'), 'ast_template normalizes formal params');
+    assert_true(str_contains($canonical, '"index":1'), 'ast_template contains first param marker');
+    assert_true(str_contains($canonical, '"index":2'), 'ast_template contains second param marker');
 }
 
 function test_refuses_unhandled_syntax_without_unknown_ops(): void
@@ -266,6 +343,117 @@ PHP;
         str_contains($compiled, '$b = 1') || str_contains($compiled, '($b = 1)'),
         'compiled PHP contains nested assignment expression; got: ' . $compiled
     );
+}
+
+function test_recognizer_emits_exact_tag_for_alpha_equivalent_sugar_body(): void
+{
+    $sugar = <<<'PHP'
+<?php
+function sugar_add($x) {
+    return $x + 1;
+}
+PHP;
+    $sugarResult = (new PhpSourceLifter())->liftSource($sugar, 'src/sugar.php');
+    assert_same([], $sugarResult['refusals'], 'sugar fixture should lift');
+    $binding = binding_from_contract(contract($sugarResult['ir'], 'sugar_add'));
+
+    $root = temp_dir('recognize-alpha');
+    try {
+        mkdir($root . '/src');
+        file_put_contents($root . '/src/app.php', <<<'PHP'
+<?php
+function user_add($input) {
+    return $input + 1;
+}
+PHP);
+
+        $response = (new PhpSourceRecognizer())->recognizePaths($root, ['src/app.php'], [$binding]);
+        $tags = $response['tags'];
+        assert_same(1, count($tags), 'alpha-equivalent body should produce one tag');
+        $tag = $tags[0];
+        assert_same('src/app.php', $tag['file'], 'tag file');
+        assert_same('user_add', $tag['function_name'], 'tag function name');
+        assert_same('concept:php-arithmetic', $tag['concept_name'], 'tag concept');
+        assert_same('provekit-php-arithmetic', $tag['library_tag'], 'tag library');
+        assert_same('concept:family:arithmetic', $tag['family'], 'tag family');
+        assert_same($binding['template_cid'], $tag['template_cid'], 'tag template cid');
+        assert_same($binding['contract_cid'], $tag['contract_cid'], 'tag contract cid');
+        assert_same('exact', $tag['match_tier'], 'tag match tier');
+        assert_same([['index' => 1, 'source_text' => 'input']], $tag['param_bindings'], 'tag binds user param spelling');
+        assert_same(2, $tag['span']['start_line'], 'tag span start line');
+        assert_true($tag['span']['end_line'] >= 4, 'tag span end line');
+    } finally {
+        remove_tree($root);
+    }
+}
+
+function test_recognizer_returns_empty_tags_for_different_body(): void
+{
+    $sugar = <<<'PHP'
+<?php
+function sugar_add($x) {
+    return $x + 1;
+}
+PHP;
+    $sugarResult = (new PhpSourceLifter())->liftSource($sugar, 'src/sugar.php');
+    assert_same([], $sugarResult['refusals'], 'sugar fixture should lift');
+    $binding = binding_from_contract(contract($sugarResult['ir'], 'sugar_add'));
+
+    $root = temp_dir('recognize-negative');
+    try {
+        mkdir($root . '/src');
+        file_put_contents($root . '/src/app.php', <<<'PHP'
+<?php
+function user_sub($x) {
+    return $x - 1;
+}
+PHP);
+
+        $response = (new PhpSourceRecognizer())->recognizePaths($root, ['src/app.php'], [$binding]);
+        assert_same([], $response['tags'], 'different body should not match');
+    } finally {
+        remove_tree($root);
+    }
+}
+
+function test_recognizer_rpc_dispatch_accepts_provekit_plugin_recognize(): void
+{
+    $sugar = <<<'PHP'
+<?php
+function sugar_add($x) {
+    return $x + 1;
+}
+PHP;
+    $sugarResult = (new PhpSourceLifter())->liftSource($sugar, 'src/sugar.php');
+    assert_same([], $sugarResult['refusals'], 'sugar fixture should lift');
+    $binding = binding_from_contract(contract($sugarResult['ir'], 'sugar_add'));
+
+    $root = temp_dir('recognize-rpc');
+    try {
+        mkdir($root . '/src');
+        file_put_contents($root . '/src/app.php', <<<'PHP'
+<?php
+function user_add($x) {
+    return $x + 1;
+}
+PHP);
+
+        $response = dispatch_rpc([
+            'jsonrpc' => '2.0',
+            'id' => 99,
+            'method' => 'provekit.plugin.recognize',
+            'params' => [
+                'project_root' => $root,
+                'source_paths' => ['src/app.php'],
+                'binding_templates' => [$binding],
+            ],
+        ]);
+        assert_same(99, $response['id'], 'rpc id preserved');
+        assert_has_key('result', $response, 'recognize rpc success response');
+        assert_same(1, count($response['result']['tags']), 'recognize rpc emits tag');
+    } finally {
+        remove_tree($root);
+    }
 }
 
 $tests = array_filter(
