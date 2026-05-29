@@ -246,10 +246,7 @@ fn write_emitted_source(
     Ok(full)
 }
 
-fn default_artifact_path(target: &str, framework: &str, result: &Json) -> PathBuf {
-    if target == "go" && framework == "testing" {
-        return PathBuf::from("provekit_emitted_test.go");
-    }
+fn default_artifact_path(target: &str, _framework: &str, result: &Json) -> PathBuf {
     let extension = result
         .get("extension")
         .and_then(Json::as_str)
@@ -598,5 +595,12 @@ mod tests {
         assert_eq!(plan["mode"], "attest");
         assert_eq!(plan["obligation"]["name"], "checked_add_u8.postcondition");
         assert_eq!(plan["policyCid"], "builtin:bridgeworks.checked-add-u8");
+    }
+
+    #[test]
+    fn default_artifact_path_is_not_language_framework_special_cased() {
+        let path = default_artifact_path("go", "testing", &json!({}));
+
+        assert_eq!(path, PathBuf::from("provekit_emitted.go"));
     }
 }

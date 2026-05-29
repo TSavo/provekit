@@ -682,6 +682,9 @@ cross-language-proof-parity: build-java build-ts build-zig build-scala cross-lan
 		-p provekit-cli --test cmd_emit_java_junit \
 		emit_java_junit_dispatches_real_emitter_and_maven_checks_output
 	cargo test --release --manifest-path implementations/rust/Cargo.toml \
+		-p provekit-cli --test cmd_emit_java_testng \
+		emit_java_testng_dispatches_real_emitter_and_maven_checks_output
+	cargo test --release --manifest-path implementations/rust/Cargo.toml \
 		-p provekit-cli --test cmd_emit_go_testing \
 		emit_go_testing_dispatches_manifest_writes_artifact_and_compile_checks
 	cargo test --release --manifest-path implementations/rust/Cargo.toml \
