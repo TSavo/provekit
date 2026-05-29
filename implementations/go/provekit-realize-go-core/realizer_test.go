@@ -140,6 +140,9 @@ func TestResolveDependencyProofsReturnsProofsFromGoModuleDependencies(t *testing
 	if filepath.Base(got) != proofName {
 		t.Fatalf("proof basename = %q, want %q", filepath.Base(got), proofName)
 	}
+	if got == proofPath {
+		t.Fatalf("resolver must not hand the CLI a Go module-internal proof path: %s", got)
+	}
 	if _, err := os.Stat(got); err != nil {
 		t.Fatalf("proof path must exist: %v", err)
 	}

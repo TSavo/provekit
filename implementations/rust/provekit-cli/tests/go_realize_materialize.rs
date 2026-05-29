@@ -217,9 +217,18 @@ fn go_dependency_proofs_are_resolved_by_configured_go_kit() {
         .expect("CLI must ask the configured Go kit over RPC for dependency proofs");
 
     assert_eq!(
-        paths,
-        vec![expected],
+        paths.len(),
+        1,
         "dependency proof resolution must be kit-owned and config/manifest-driven"
+    );
+    assert_eq!(
+        paths[0].file_name(),
+        expected.file_name(),
+        "resolved proof must preserve the content-addressed proof filename"
+    );
+    assert_ne!(
+        paths[0], expected,
+        "the Go kit must not hand the CLI a Go module-internal proof path"
     );
 }
 

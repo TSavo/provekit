@@ -196,12 +196,12 @@ func resolveDependencyProofPaths(projectRoot string) ([]string, error) {
 		}
 	}
 
-	out := make([]string, 0, len(proofs))
+	originals := make([]string, 0, len(proofs))
 	for proof := range proofs {
-		out = append(out, proof)
+		originals = append(originals, proof)
 	}
-	sort.Strings(out)
-	return out, nil
+	sort.Strings(originals)
+	return copyProofsToTemp(originals)
 }
 
 func effectiveModuleDir(module listedGoModule) string {
@@ -248,6 +248,46 @@ func collectProofPaths(root string, proofs map[string]struct{}) error {
 		proofs[filepath.Clean(abs)] = struct{}{}
 		return nil
 	})
+}
+
+func copyProofsToTemp(paths []string) ([]string, error) {
+	if len(paths) == 0 {
+		return []string{}, nil
+	}
+	root, err := os.MkdirTemp("", "provekit-go-dependency-proofs-")
+	if err != nil {
+		return nil, err
+	}
+	out := make([]string, 0, len(paths))
+	for i, path := range paths {
+		dir := filepath.Join(root, fmt.Sprintf("%04d", i))
+		if err := os.MkdirAll(dir, 0o755); err != nil {
+			return nil, err
+		}
+		dst := filepath.Join(dir, filepath.Base(path))
+		if err := copyFile(path, dst); err != nil {
+			return nil, err
+		}
+		out = append(out, dst)
+	}
+	return out, nil
+}
+
+func copyFile(src, dst string) error {
+	in, err := os.Open(src)
+	if err != nil {
+		return err
+	}
+	defer in.Close()
+	out, err := os.Create(dst)
+	if err != nil {
+		return err
+	}
+	if _, err := io.Copy(out, in); err != nil {
+		_ = out.Close()
+		return err
+	}
+	return out.Close()
 }
 
 func asMissing(err error, target **MissingTemplateError) bool {
