@@ -81,16 +81,24 @@ fn handleLift(alloc: std.mem.Allocator, io: Io, line: []const u8, id: []const u8
     const arena_alloc = arena.allocator();
 
     var declarations: std.ArrayList(lift.FunctionContract) = .empty;
+    var library_bindings: std.ArrayList(lift.LibrarySugarBindingEntry) = .empty;
     var refusals: std.ArrayList(lift.Refusal) = .empty;
     const verify_layer = std.mem.indexOf(u8, line, "\"layer\":\"verify\"") != null;
+    const library_bindings_layer = std.mem.indexOf(u8, line, "\"layer\":\"library-bindings\"") != null;
 
     if (extractJsonStringField(line, "source")) |source_raw| {
         const source = try unescapeJsonString(arena_alloc, source_raw);
         const path_raw = extractJsonStringField(line, "path") orelse "input.zig";
         const path = try unescapeJsonString(arena_alloc, path_raw);
-        const out = try lift.liftSource(arena_alloc, source, path);
-        for (out.declarations) |decl| try declarations.append(arena_alloc, decl);
-        for (out.refusals) |refusal| try refusals.append(arena_alloc, refusal);
+        if (library_bindings_layer) {
+            const out = try lift.liftLibraryBindingsSource(arena_alloc, source, path);
+            for (out.library_bindings) |entry| try library_bindings.append(arena_alloc, entry);
+            for (out.refusals) |refusal| try refusals.append(arena_alloc, refusal);
+        } else {
+            const out = try lift.liftSource(arena_alloc, source, path);
+            for (out.declarations) |decl| try declarations.append(arena_alloc, decl);
+            for (out.refusals) |refusal| try refusals.append(arena_alloc, refusal);
+        }
     } else {
         const workspace_raw = extractJsonStringField(line, "workspace_root") orelse ".";
         const workspace = try unescapeJsonString(arena_alloc, workspace_raw);
@@ -99,9 +107,15 @@ fn handleLift(alloc: std.mem.Allocator, io: Io, line: []const u8, id: []const u8
             try writer.print("{{\"jsonrpc\":\"2.0\",\"id\":{s},\"error\":{{\"code\":-32602,\"message\":\"source_paths required\"}}}}\n", .{id});
             return;
         }
-        var dir = try Io.Dir.openDir(Io.Dir.cwd(), io, workspace, .{ .iterate = true });
-        defer dir.close(io);
-        for (paths) |rel| try liftPath(arena_alloc, io, dir, rel, &declarations, &refusals);
+        if (library_bindings_layer) {
+            const out = try lift.liftLibraryBindingsPaths(arena_alloc, io, workspace, paths);
+            for (out.library_bindings) |entry| try library_bindings.append(arena_alloc, entry);
+            for (out.refusals) |refusal| try refusals.append(arena_alloc, refusal);
+        } else {
+            var dir = try Io.Dir.openDir(Io.Dir.cwd(), io, workspace, .{ .iterate = true });
+            defer dir.close(io);
+            for (paths) |rel| try liftPath(arena_alloc, io, dir, rel, &declarations, &refusals);
+        }
     }
 
     if (verify_layer) {
@@ -110,11 +124,14 @@ fn handleLift(alloc: std.mem.Allocator, io: Io, line: []const u8, id: []const u8
         for (verify_declarations) |decl| try declarations.append(arena_alloc, decl);
     }
 
-    const decls_json = try std.json.Stringify.valueAlloc(alloc, declarations.items, .{ .whitespace = .minified });
-    defer alloc.free(decls_json);
+    const ir_json = if (library_bindings_layer)
+        try std.json.Stringify.valueAlloc(alloc, library_bindings.items, .{ .whitespace = .minified })
+    else
+        try std.json.Stringify.valueAlloc(alloc, declarations.items, .{ .whitespace = .minified });
+    defer alloc.free(ir_json);
     const refusals_json = try std.json.Stringify.valueAlloc(alloc, refusals.items, .{ .whitespace = .minified });
     defer alloc.free(refusals_json);
-    try writer.print("{{\"jsonrpc\":\"2.0\",\"id\":{s},\"result\":{{\"kind\":\"ir-document\",\"ir\":{s},\"callEdges\":[],\"diagnostics\":[],\"opacityReport\":[],\"refusals\":{s}}}}}\n", .{ id, decls_json, refusals_json });
+    try writer.print("{{\"jsonrpc\":\"2.0\",\"id\":{s},\"result\":{{\"kind\":\"ir-document\",\"ir\":{s},\"callEdges\":[],\"diagnostics\":[],\"opacityReport\":[],\"refusals\":{s}}}}}\n", .{ id, ir_json, refusals_json });
 }
 
 const RecognizeWireRequest = struct {

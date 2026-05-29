@@ -35,6 +35,11 @@ pub const LiftOutput = struct {
     refusals: []Refusal,
 };
 
+pub const LibraryBindingsOutput = struct {
+    library_bindings: []LibrarySugarBindingEntry,
+    refusals: []Refusal,
+};
+
 const Locus = struct {
     file: []const u8,
     line: usize,
@@ -356,6 +361,96 @@ pub const SugarBodySource = struct {
     ast_template: SugarAstTemplate,
     template_cid: []const u8,
     param_names: []const []const u8,
+};
+
+const SignatureShape = struct {
+    param_names: []const []const u8,
+    param_types: []const []const u8,
+    return_type: []const u8,
+
+    pub fn jsonStringify(self: SignatureShape, jws: anytype) !void {
+        try jws.beginObject();
+        try jws.objectField("param_names");
+        try jws.write(self.param_names);
+        try jws.objectField("param_types");
+        try jws.write(self.param_types);
+        try jws.objectField("return_type");
+        try jws.write(self.return_type);
+        try jws.endObject();
+    }
+};
+
+pub const LossRecordContribution = struct {
+    pub fn jsonStringify(_: LossRecordContribution, jws: anytype) !void {
+        try jws.beginObject();
+        try jws.objectField("form");
+        try jws.write("literal");
+        try jws.objectField("value");
+        try jws.beginObject();
+        try jws.objectField("entries");
+        try jws.beginArray();
+        try jws.endArray();
+        try jws.endObject();
+        try jws.endObject();
+    }
+};
+
+pub const LibrarySugarBindingEntry = struct {
+    kind: []const u8 = "library-sugar-binding-entry",
+    target_language: []const u8 = "zig",
+    target_library_tag: []const u8,
+    concept_name: []const u8,
+    source_function_name: []const u8,
+    param_names: []const []const u8,
+    param_types: []const []const u8,
+    return_type: []const u8,
+    term_shape: ?provekit.Term = null,
+    term_shape_cid: ?[]const u8 = null,
+    signature_shape_cid: []const u8,
+    loss_record_contribution: LossRecordContribution = .{},
+    family: ?[]const u8 = null,
+    body_source: SugarBodySource,
+
+    pub fn jsonStringify(self: LibrarySugarBindingEntry, jws: anytype) !void {
+        try jws.beginObject();
+        try jws.objectField("body_source");
+        try jws.write(self.body_source);
+        try jws.objectField("concept_name");
+        try jws.write(self.concept_name);
+        if (self.family) |family| {
+            try jws.objectField("family");
+            try jws.write(family);
+        }
+        try jws.objectField("kind");
+        try jws.write(self.kind);
+        try jws.objectField("loss_record_contribution");
+        try jws.write(self.loss_record_contribution);
+        try jws.objectField("param_names");
+        try jws.write(self.param_names);
+        try jws.objectField("param_types");
+        try jws.write(self.param_types);
+        try jws.objectField("return_type");
+        try jws.write(self.return_type);
+        try jws.objectField("signature_shape_cid");
+        try jws.write(self.signature_shape_cid);
+        try jws.objectField("source_function_name");
+        try jws.write(self.source_function_name);
+        try jws.objectField("target_language");
+        try jws.write(self.target_language);
+        try jws.objectField("target_library_tag");
+        try jws.write(self.target_library_tag);
+        try jws.objectField("term_shape");
+        if (self.term_shape) |term| try jws.write(term) else try jws.write(null);
+        try jws.objectField("term_shape_cid");
+        if (self.term_shape_cid) |cid| try jws.write(cid) else try jws.write(null);
+        try jws.endObject();
+    }
+};
+
+const SugarBinding = struct {
+    concept_name: []const u8,
+    target_library_tag: []const u8,
+    family: ?[]const u8 = null,
 };
 
 pub const BindingTemplate = struct {
@@ -1013,6 +1108,101 @@ pub fn liftSource(alloc: std.mem.Allocator, source: []const u8, path: []const u8
     return lifter.lift();
 }
 
+pub fn liftLibraryBindingsSource(alloc: std.mem.Allocator, source: []const u8, path: []const u8) !LibraryBindingsOutput {
+    const path_owned = try alloc.dupe(u8, path);
+    const source_z = try alloc.allocSentinel(u8, source.len, 0);
+    @memcpy(source_z[0..source.len], source);
+    var tree = try Ast.parse(alloc, source_z, .zig);
+    defer tree.deinit(alloc);
+
+    var refusals: std.ArrayList(Refusal) = .empty;
+    if (tree.errors.len > 0) {
+        for (tree.errors) |parse_error| {
+            const loc = tree.tokenLocation(0, parse_error.token);
+            const reason = try std.fmt.allocPrint(alloc, "parse error: {s}", .{@tagName(parse_error.tag)});
+            try refusals.append(alloc, .{ .kind = "parse-error", .function = null, .line = loc.line + 1, .reason = reason });
+        }
+        return .{ .library_bindings = &.{}, .refusals = try refusals.toOwnedSlice(alloc) };
+    }
+
+    var functions: std.ArrayList(Node.Index) = .empty;
+    const roots = tree.rootDecls();
+    for (roots) |decl| try collectFunctionNodes(alloc, &tree, decl, &functions);
+
+    var entries: std.ArrayList(LibrarySugarBindingEntry) = .empty;
+    for (functions.items) |fn_node| {
+        const binding = try sugarBindingForFunction(alloc, &tree, source_z[0..source.len], fn_node) orelse continue;
+        try entries.append(alloc, try librarySugarBindingEntry(alloc, &tree, path_owned, fn_node, binding));
+    }
+
+    return .{
+        .library_bindings = try entries.toOwnedSlice(alloc),
+        .refusals = try refusals.toOwnedSlice(alloc),
+    };
+}
+
+pub fn liftLibraryBindingsPaths(
+    alloc: std.mem.Allocator,
+    io: std.Io,
+    project_root: []const u8,
+    source_paths: []const []const u8,
+) !LibraryBindingsOutput {
+    var entries: std.ArrayList(LibrarySugarBindingEntry) = .empty;
+    var refusals: std.ArrayList(Refusal) = .empty;
+    var root = try std.Io.Dir.openDir(std.Io.Dir.cwd(), io, project_root, .{ .iterate = true });
+    defer root.close(io);
+
+    for (source_paths) |rel_path| {
+        try liftLibraryBindingsPath(alloc, io, root, rel_path, &entries, &refusals);
+    }
+
+    return .{
+        .library_bindings = try entries.toOwnedSlice(alloc),
+        .refusals = try refusals.toOwnedSlice(alloc),
+    };
+}
+
+fn liftLibraryBindingsPath(
+    alloc: std.mem.Allocator,
+    io: std.Io,
+    root: std.Io.Dir,
+    rel_path: []const u8,
+    entries: *std.ArrayList(LibrarySugarBindingEntry),
+    refusals: *std.ArrayList(Refusal),
+) !void {
+    const source = std.Io.Dir.readFileAlloc(root, io, rel_path, alloc, .unlimited) catch |err| switch (err) {
+        error.IsDir => {
+            var subdir = std.Io.Dir.openDir(root, io, rel_path, .{ .iterate = true }) catch |open_err| {
+                try refusals.append(alloc, .{ .kind = "io-error", .function = null, .line = 0, .reason = try std.fmt.allocPrint(alloc, "open {s}: {t}", .{ rel_path, open_err }) });
+                return;
+            };
+            defer subdir.close(io);
+            var walker = try subdir.walk(alloc);
+            defer walker.deinit();
+            while (try walker.next(io)) |entry| {
+                if (entry.kind != .file) continue;
+                if (!std.mem.endsWith(u8, entry.basename, ".zig")) continue;
+                const text = std.Io.Dir.readFileAlloc(entry.dir, io, entry.basename, alloc, .unlimited) catch |read_err| {
+                    try refusals.append(alloc, .{ .kind = "io-error", .function = null, .line = 0, .reason = try std.fmt.allocPrint(alloc, "read {s}: {t}", .{ entry.path, read_err }) });
+                    continue;
+                };
+                const path = if (std.mem.eql(u8, rel_path, ".")) entry.path else try std.fmt.allocPrint(alloc, "{s}/{s}", .{ rel_path, entry.path });
+                const lifted = try liftLibraryBindingsSource(alloc, text, path);
+                for (lifted.library_bindings) |binding| try entries.append(alloc, binding);
+                for (lifted.refusals) |refusal| try refusals.append(alloc, refusal);
+            }
+            return;
+        },
+        else => {
+            try refusals.append(alloc, .{ .kind = "io-error", .function = null, .line = 0, .reason = try std.fmt.allocPrint(alloc, "read {s}: {t}", .{ rel_path, err }) });
+            return;
+        },
+    };
+    const lifted = try liftLibraryBindingsSource(alloc, source, rel_path);
+    for (lifted.library_bindings) |binding| try entries.append(alloc, binding);
+    for (lifted.refusals) |refusal| try refusals.append(alloc, refusal);
+}
+
 pub fn sugarBodySourceForFunc(
     alloc: std.mem.Allocator,
     source: []const u8,
@@ -1037,13 +1227,66 @@ pub fn recognizeSourcePaths(
     bindings: []const BindingTemplate,
 ) !RecognizeResponse {
     var tags: std.ArrayList(RecognizeTag) = .empty;
-    var root = try std.Io.Dir.openDir(std.Io.Dir.cwd(), io, project_root, .{});
+    var self_resolved_bindings: std.ArrayList(BindingTemplate) = .empty;
+    var template_files: std.ArrayList([]const u8) = .empty;
+    var effective_bindings = bindings;
+    if (bindings.len == 0) {
+        const lifted = try liftLibraryBindingsPaths(alloc, io, project_root, source_paths);
+        for (lifted.library_bindings) |entry| {
+            try self_resolved_bindings.append(alloc, bindingTemplateFromSugarEntry(entry));
+            try appendUniqueString(alloc, &template_files, entry.body_source.file);
+        }
+        effective_bindings = self_resolved_bindings.items;
+    }
+
+    var root = try std.Io.Dir.openDir(std.Io.Dir.cwd(), io, project_root, .{ .iterate = true });
     defer root.close(io);
     for (source_paths) |rel_path| {
-        const source = std.Io.Dir.readFileAlloc(root, io, rel_path, alloc, .unlimited) catch continue;
-        try recognizeSource(alloc, rel_path, source, bindings, &tags);
+        try recognizePath(alloc, io, root, rel_path, effective_bindings, template_files.items, &tags);
     }
     return .{ .tags = try tags.toOwnedSlice(alloc) };
+}
+
+fn bindingTemplateFromSugarEntry(entry: LibrarySugarBindingEntry) BindingTemplate {
+    return .{
+        .concept_name = entry.concept_name,
+        .library_tag = entry.target_library_tag,
+        .family = entry.family,
+        .ast_template = entry.body_source.ast_template,
+        .template_cid = entry.body_source.template_cid,
+        .param_names = entry.body_source.param_names,
+    };
+}
+
+fn recognizePath(
+    alloc: std.mem.Allocator,
+    io: std.Io,
+    root: std.Io.Dir,
+    rel_path: []const u8,
+    bindings: []const BindingTemplate,
+    skip_files: []const []const u8,
+    tags: *std.ArrayList(RecognizeTag),
+) !void {
+    const source = std.Io.Dir.readFileAlloc(root, io, rel_path, alloc, .unlimited) catch |err| switch (err) {
+        error.IsDir => {
+            var subdir = std.Io.Dir.openDir(root, io, rel_path, .{ .iterate = true }) catch return;
+            defer subdir.close(io);
+            var walker = try subdir.walk(alloc);
+            defer walker.deinit();
+            while (try walker.next(io)) |entry| {
+                if (entry.kind != .file) continue;
+                if (!std.mem.endsWith(u8, entry.basename, ".zig")) continue;
+                const path = if (std.mem.eql(u8, rel_path, ".")) entry.path else try std.fmt.allocPrint(alloc, "{s}/{s}", .{ rel_path, entry.path });
+                if (containsString(skip_files, path)) continue;
+                const text = std.Io.Dir.readFileAlloc(entry.dir, io, entry.basename, alloc, .unlimited) catch continue;
+                try recognizeSource(alloc, path, text, bindings, tags);
+            }
+            return;
+        },
+        else => return,
+    };
+    if (containsString(skip_files, rel_path)) return;
+    try recognizeSource(alloc, rel_path, source, bindings, tags);
 }
 
 pub fn recognizeSourceText(
@@ -1268,6 +1511,91 @@ const TemplateBuilder = struct {
     }
 };
 
+fn librarySugarBindingEntry(
+    alloc: std.mem.Allocator,
+    tree: *const Ast,
+    path: []const u8,
+    fn_node: Node.Index,
+    binding: SugarBinding,
+) !LibrarySugarBindingEntry {
+    const body_source = try sugarBodySourceForNode(alloc, tree, path, fn_node);
+    const param_types = try functionParamTypes(alloc, tree, fn_node);
+    const return_type = try functionReturnType(alloc, tree, fn_node);
+    const signature_shape = SignatureShape{
+        .param_names = body_source.param_names,
+        .param_types = param_types,
+        .return_type = return_type,
+    };
+    const signature_bytes = try provekit.jcsStringify(alloc, signature_shape);
+    return .{
+        .target_library_tag = binding.target_library_tag,
+        .concept_name = binding.concept_name,
+        .source_function_name = try alloc.dupe(u8, functionName(tree, fn_node) orelse ""),
+        .param_names = body_source.param_names,
+        .param_types = param_types,
+        .return_type = return_type,
+        .signature_shape_cid = try provekit.jcsHash(alloc, signature_bytes),
+        .family = binding.family,
+        .body_source = body_source,
+    };
+}
+
+fn sugarBindingForFunction(
+    alloc: std.mem.Allocator,
+    tree: *const Ast,
+    source: []const u8,
+    fn_node: Node.Index,
+) !?SugarBinding {
+    const token_start = tree.tokenStart(tree.nodeMainToken(fn_node));
+    const line_start = if (std.mem.lastIndexOfScalar(u8, source[0..token_start], '\n')) |idx| idx + 1 else 0;
+    const line = previousNonEmptyLine(source, line_start) orelse return null;
+    const prefix = "//provekit:sugar.bind";
+    if (!std.mem.startsWith(u8, line, prefix)) return null;
+    const rest = std.mem.trim(u8, line[prefix.len..], " \t");
+    const concept = try parseSugarField(alloc, rest, "concept") orelse return null;
+    const library = try parseSugarField(alloc, rest, "library") orelse return null;
+    return .{
+        .concept_name = concept,
+        .target_library_tag = library,
+        .family = try parseSugarField(alloc, rest, "family"),
+    };
+}
+
+fn previousNonEmptyLine(source: []const u8, before: usize) ?[]const u8 {
+    var end = @min(before, source.len);
+    while (end > 0) {
+        while (end > 0 and (source[end - 1] == '\n' or source[end - 1] == '\r')) end -= 1;
+        const start = if (std.mem.lastIndexOfScalar(u8, source[0..end], '\n')) |idx| idx + 1 else 0;
+        const line = std.mem.trim(u8, source[start..end], " \t\r\n");
+        if (line.len > 0) return line;
+        if (start == 0) return null;
+        end = start - 1;
+    }
+    return null;
+}
+
+fn parseSugarField(alloc: std.mem.Allocator, text: []const u8, key: []const u8) !?[]const u8 {
+    var pattern_buf: [64]u8 = undefined;
+    const pattern = std.fmt.bufPrint(&pattern_buf, "{s}=", .{key}) catch return null;
+    const pos = std.mem.indexOf(u8, text, pattern) orelse return null;
+    var value = text[pos + pattern.len ..];
+    value = std.mem.trim(u8, value, " \t");
+    if (value.len == 0) return null;
+    if (value[0] == '"') {
+        var i: usize = 1;
+        while (i < value.len) : (i += 1) {
+            if (value[i] == '"' and value[i - 1] != '\\') {
+                return try alloc.dupe(u8, value[1..i]);
+            }
+        }
+        return null;
+    }
+    var end: usize = 0;
+    while (end < value.len and value[end] != ' ' and value[end] != '\t' and value[end] != ',') : (end += 1) {}
+    if (end == 0) return null;
+    return try alloc.dupe(u8, value[0..end]);
+}
+
 fn findFunctionByName(tree: *const Ast, fn_name: []const u8) ?Node.Index {
     const roots = tree.rootDecls();
     for (roots) |decl| {
@@ -1338,6 +1666,27 @@ fn functionParamNames(alloc: std.mem.Allocator, tree: *const Ast, fn_node: Node.
         if (param.name_token) |tok| try names.append(alloc, tree.tokenSlice(tok));
     }
     return names.toOwnedSlice(alloc);
+}
+
+fn functionParamTypes(alloc: std.mem.Allocator, tree: *const Ast, fn_node: Node.Index) ![]const []const u8 {
+    var buffer: [1]Node.Index = undefined;
+    const proto_node = tree.nodeData(fn_node).node_and_node[0];
+    const proto = tree.fullFnProto(&buffer, proto_node) orelse return &.{};
+    var types: std.ArrayList([]const u8) = .empty;
+    var it = proto.iterate(tree);
+    while (it.next()) |param| {
+        const type_node = param.type_expr orelse continue;
+        try types.append(alloc, try alloc.dupe(u8, std.mem.trim(u8, tree.getNodeSource(type_node), " \t\r\n")));
+    }
+    return types.toOwnedSlice(alloc);
+}
+
+fn functionReturnType(alloc: std.mem.Allocator, tree: *const Ast, fn_node: Node.Index) ![]const u8 {
+    var buffer: [1]Node.Index = undefined;
+    const proto_node = tree.nodeData(fn_node).node_and_node[0];
+    const proto = tree.fullFnProto(&buffer, proto_node) orelse return "";
+    const return_type = proto.ast.return_type.unwrap() orelse return "";
+    return try alloc.dupe(u8, std.mem.trim(u8, tree.getNodeSource(return_type), " \t\r\n"));
 }
 
 fn functionSpan(tree: *const Ast, fn_node: Node.Index) SourceSpan {
@@ -2125,6 +2474,37 @@ test "sugar body emits ast template alongside body text" {
     try std.testing.expect(std.mem.indexOf(u8, template_json, "\"kind\":\"param_ref\"") != null);
 }
 
+test "zig sugar binding entry emits body text and ast template" {
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+    const alloc = arena.allocator();
+
+    const src =
+        \\//provekit:sugar.bind concept="concept:http-request" library="provekit-shim-zig-http" family="concept:family:http"
+        \\pub fn fetch(url: []const u8, headers: []const u8) i32 {
+        \\    return http.get(url, headers);
+        \\}
+        \\
+    ;
+
+    const output = try liftLibraryBindingsSource(alloc, src, "shim.zig");
+    try std.testing.expectEqual(@as(usize, 1), output.library_bindings.len);
+    const entry = output.library_bindings[0];
+    try std.testing.expectEqualStrings("library-sugar-binding-entry", entry.kind);
+    try std.testing.expectEqualStrings("zig", entry.target_language);
+    try std.testing.expectEqualStrings("concept:http-request", entry.concept_name);
+    try std.testing.expectEqualStrings("provekit-shim-zig-http", entry.target_library_tag);
+    try std.testing.expectEqualStrings("concept:family:http", entry.family.?);
+    try std.testing.expectEqualStrings("fetch", entry.source_function_name);
+    try std.testing.expectEqualStrings("return http.get(url, headers);", entry.body_source.body_text);
+    try std.testing.expectEqualStrings("url", entry.body_source.param_names[0]);
+    try std.testing.expectEqualStrings("headers", entry.body_source.param_names[1]);
+
+    const template_json = try provekit.jcsStringify(alloc, entry.body_source.ast_template);
+    try std.testing.expect(std.mem.indexOf(u8, template_json, "\"kind\":\"method_call\"") != null);
+    try std.testing.expect(std.mem.indexOf(u8, template_json, "\"kind\":\"param_ref\"") != null);
+}
+
 test "sugar body template cid is stable under parameter renaming" {
     var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
     defer arena.deinit();
@@ -2148,6 +2528,35 @@ test "sugar body template cid is stable under parameter renaming" {
     try std.testing.expectEqualStrings(body_a.template_cid, body_b.template_cid);
     try std.testing.expect(!std.mem.eql(u8, body_a.body_text, body_b.body_text));
     try std.testing.expect(!std.mem.eql(u8, body_a.source_cid, body_b.source_cid));
+}
+
+test "zig sugar binding ast template is alpha stable while body text stays verbatim" {
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+    const alloc = arena.allocator();
+
+    const src_a =
+        \\//provekit:sugar.bind concept="concept:http-request" library="provekit-shim-zig-http"
+        \\pub fn fetch(url: []const u8, headers: []const u8) i32 {
+        \\    return http.get(url, headers);
+        \\}
+        \\
+    ;
+    const src_b =
+        \\//provekit:sugar.bind concept="concept:http-request" library="provekit-shim-zig-http"
+        \\pub fn fetch(uri: []const u8, hdrs: []const u8) i32 {
+        \\    return http.get(uri, hdrs);
+        \\}
+        \\
+    ;
+
+    const entry_a = (try liftLibraryBindingsSource(alloc, src_a, "a.zig")).library_bindings[0];
+    const entry_b = (try liftLibraryBindingsSource(alloc, src_b, "b.zig")).library_bindings[0];
+    const template_a = try provekit.jcsStringify(alloc, entry_a.body_source.ast_template);
+    const template_b = try provekit.jcsStringify(alloc, entry_b.body_source.ast_template);
+    try std.testing.expectEqualStrings(template_a, template_b);
+    try std.testing.expectEqualStrings(entry_a.body_source.template_cid, entry_b.body_source.template_cid);
+    try std.testing.expect(!std.mem.eql(u8, entry_a.body_source.body_text, entry_b.body_source.body_text));
 }
 
 test "recognize emits exact tag for alpha-equivalent user function" {
@@ -2195,6 +2604,53 @@ test "recognize emits exact tag for alpha-equivalent user function" {
     try std.testing.expectEqualStrings("hdrs", tag.param_bindings[1].source_text);
 }
 
+test "recognize source paths self resolves zig sugar templates without supplied bindings" {
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+    const alloc = arena.allocator();
+    const io = std.testing.io;
+
+    var tmp = std.testing.tmpDir(.{});
+    defer tmp.cleanup();
+    try tmp.dir.writeFile(io, .{
+        .sub_path = "shim.zig",
+        .data =
+        \\//provekit:sugar.bind concept="concept:http-request" library="provekit-shim-zig-http" family="concept:family:http"
+        \\pub fn fetch(url: []const u8, headers: []const u8) i32 {
+        \\    return http.get(url, headers);
+        \\}
+        \\
+        ,
+    });
+    try tmp.dir.writeFile(io, .{
+        .sub_path = "client.zig",
+        .data =
+        \\pub fn fetchUrl(uri: []const u8, hdrs: []const u8) i32 {
+        \\    return http.get(uri, hdrs);
+        \\}
+        \\
+        ,
+    });
+
+    const project_root = try std.fmt.allocPrint(alloc, ".zig-cache/tmp/{s}", .{tmp.sub_path});
+    const response = try recognizeSourcePaths(
+        alloc,
+        io,
+        project_root,
+        &.{ "shim.zig", "client.zig" },
+        &.{},
+    );
+    try std.testing.expectEqual(@as(usize, 1), response.tags.len);
+    const tag = response.tags[0];
+    try std.testing.expectEqualStrings("client.zig", tag.file);
+    try std.testing.expectEqualStrings("fetchUrl", tag.function_name);
+    try std.testing.expectEqualStrings("concept:http-request", tag.concept_name.?);
+    try std.testing.expectEqualStrings("provekit-shim-zig-http", tag.library_tag.?);
+    try std.testing.expectEqualStrings("concept:family:http", tag.family.?);
+    try std.testing.expectEqualStrings("uri", tag.param_bindings[0].source_text);
+    try std.testing.expectEqualStrings("hdrs", tag.param_bindings[1].source_text);
+}
+
 test "recognize returns empty tags for non matching source" {
     var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
     defer arena.deinit();
@@ -2224,6 +2680,45 @@ test "recognize returns empty tags for non matching source" {
         \\
     ,
         &.{binding},
+    );
+    try std.testing.expectEqual(@as(usize, 0), response.tags.len);
+}
+
+test "recognize source paths self resolved templates reject non matching zig source" {
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+    const alloc = arena.allocator();
+    const io = std.testing.io;
+
+    var tmp = std.testing.tmpDir(.{});
+    defer tmp.cleanup();
+    try tmp.dir.writeFile(io, .{
+        .sub_path = "shim.zig",
+        .data =
+        \\//provekit:sugar.bind concept="concept:http-request" library="provekit-shim-zig-http"
+        \\pub fn fetch(url: []const u8, headers: []const u8) i32 {
+        \\    return http.get(url, headers);
+        \\}
+        \\
+        ,
+    });
+    try tmp.dir.writeFile(io, .{
+        .sub_path = "client.zig",
+        .data =
+        \\pub fn fetchUrl(uri: []const u8, hdrs: []const u8) i32 {
+        \\    return other.get(uri, hdrs);
+        \\}
+        \\
+        ,
+    });
+
+    const project_root = try std.fmt.allocPrint(alloc, ".zig-cache/tmp/{s}", .{tmp.sub_path});
+    const response = try recognizeSourcePaths(
+        alloc,
+        io,
+        project_root,
+        &.{ "shim.zig", "client.zig" },
+        &.{},
     );
     try std.testing.expectEqual(@as(usize, 0), response.tags.len);
 }
