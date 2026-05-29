@@ -125,6 +125,35 @@ class TestDaemonProtocol:
             f"{result['callEdges']!r}"
         )
 
+    def test_parse_emits_same_language_call_edge_locus(self):
+        """Decorated Python functions emit same-kit call edges at call sites."""
+        source = """\
+from provekit_lift_py_tests.decorators import contract
+
+@contract(pre="x >= 0")
+def add(x: int) -> int:
+    return x
+
+@contract(post="out >= 0")
+def compute(x: int) -> int:
+    return add(x)
+"""
+        responses = _run_lsp(_build_session(source=source, path="fixture.py"))
+        parse_resp = next(r for r in responses if r.get("id") == 2)
+        assert "error" not in parse_resp, f"parse returned error: {parse_resp}"
+        edges = parse_resp["result"]["callEdges"]
+        assert any(
+            edge.get("targetSymbol") == "python-kit:add"
+            and isinstance(edge.get("sourceContractCid"), str)
+            and edge["sourceContractCid"].startswith("blake3-512:")
+            and edge.get("callSiteLocus") == {
+                "column": 11,
+                "file": "fixture.py",
+                "line": 9,
+            }
+            for edge in edges
+        ), f"expected compute -> python-kit:add call edge, got {edges!r}"
+
     def test_declarations_contain_contracts(self):
         """With a contract-bearing fixture, each declaration has kind=='contract'."""
         responses = _run_lsp(_build_session())

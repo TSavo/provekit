@@ -25,12 +25,17 @@ from typing import Any, Dict, List, Optional
 from .ir import (
     ContractDecl,
     BridgeDecl,
+    CallEdgeDecl,
+    Locus,
+    atomic,
+    make_var,
     contract_decl_to_value,
     declarations_to_value,
     call_edges_to_value,
     formula_to_value,
 )
 from .canonicalizer import encode_jcs, jcs_hash
+from .canonicalizer import vobj, vstr
 from .layer2 import lift_file_layer2
 from .walk import lift_production_walk
 from .decorators import collect_module
@@ -113,7 +118,10 @@ def _lift_source(path: str, source: str) -> Dict[str, Any]:
     # Try to load the source as a module to collect @provekit.contract
     # decorators. This only works when the source is importable; for
     # standalone files we skip this path.
-    # TODO: use importlib.util to load from source string.
+    try:
+        decls.extend(_try_lift_decorated_contracts(source))
+    except Exception:
+        pass
 
     # Pydantic lift: if the file defines BaseModel subclasses, walk them.
     # We do this by exec-ing the source in a clean namespace and
@@ -129,12 +137,13 @@ def _lift_source(path: str, source: str) -> Dict[str, Any]:
     contract_index: Dict[str, str] = {}
     for d in decls:
         if isinstance(d, ContractDecl):
-            cid = jcs_hash(contract_decl_to_value(d))
+            cid = _linkerd_contract_cid(d)
             contract_index[d.name] = cid
 
     # Emit ctypes call-edge stream per spec #114 R1.
     ctypes_result = resolve_ctypes_calls(source, path, contract_index)
-    call_edges = ctypes_result.call_edges
+    same_kit_edges = _resolve_same_kit_calls(source, path, contract_index)
+    call_edges = ctypes_result.call_edges + same_kit_edges
     call_edges_value = call_edges_to_value(call_edges)
     call_edges_array = json.loads(encode_jcs(call_edges_value))
 
@@ -310,6 +319,90 @@ def _call_callee_name(node: ast.AST) -> Optional[str]:
     return None
 
 
+def _contract_index_with_simple_names(contract_index: Dict[str, str]) -> Dict[str, str]:
+    out = dict(contract_index)
+    for name, cid in contract_index.items():
+        simple = name.rsplit(".", 1)[-1]
+        if simple:
+            out.setdefault(simple, cid)
+    return out
+
+
+def _linkerd_contract_cid(decl: ContractDecl) -> str:
+    pairs = [
+        ("name", vstr(decl.name)),
+        ("outBinding", vstr(decl.out_binding)),
+    ]
+    if decl.pre is not None:
+        pairs.append(("pre", formula_to_value(decl.pre)))
+    if decl.post is not None:
+        pairs.append(("post", formula_to_value(decl.post)))
+    if decl.inv is not None:
+        pairs.append(("inv", formula_to_value(decl.inv)))
+    return jcs_hash(vobj(pairs))
+
+
+def _resolve_same_kit_calls(
+    source: str,
+    path: str,
+    contract_index: Dict[str, str],
+) -> List[CallEdgeDecl]:
+    try:
+        tree = ast.parse(source, filename=path)
+    except SyntaxError:
+        return []
+
+    contracts_by_name = _contract_index_with_simple_names(contract_index)
+    if not contracts_by_name:
+        return []
+
+    edges: List[CallEdgeDecl] = []
+    seen: set[tuple[str, str, int, int]] = set()
+
+    class SameKitCallVisitor(ast.NodeVisitor):
+        def __init__(self) -> None:
+            self.function_stack: List[str] = []
+
+        def visit_FunctionDef(self, node: ast.FunctionDef) -> None:
+            self.function_stack.append(node.name)
+            self.generic_visit(node)
+            self.function_stack.pop()
+
+        def visit_AsyncFunctionDef(self, node: ast.AsyncFunctionDef) -> None:
+            self.function_stack.append(node.name)
+            self.generic_visit(node)
+            self.function_stack.pop()
+
+        def visit_Call(self, node: ast.Call) -> None:
+            if self.function_stack:
+                caller = self.function_stack[-1]
+                source_cid = contracts_by_name.get(caller)
+                callee = _call_callee_name(node.func)
+                if source_cid and callee and callee in contracts_by_name:
+                    line = getattr(node, "lineno", 1)
+                    column = getattr(node, "col_offset", 0)
+                    target_symbol = f"python-kit:{callee}"
+                    key = (source_cid, target_symbol, line, column)
+                    if key not in seen:
+                        seen.add(key)
+                        edges.append(
+                            CallEdgeDecl(
+                                source_contract_cid=source_cid,
+                                target_contract_cid=None,
+                                target_symbol=target_symbol,
+                                call_site_locus=Locus(file=path, line=line, column=column),
+                                evidence_term=atomic(
+                                    "call-site-obligation",
+                                    [make_var(caller)],
+                                ),
+                            )
+                        )
+            self.generic_visit(node)
+
+    SameKitCallVisitor().visit(tree)
+    return edges
+
+
 def _collect_python_callsites(source: str, source_path: str) -> List[Dict[str, Any]]:
     tree = ast.parse(source, filename=source_path)
     callsites: List[Dict[str, Any]] = []
@@ -483,6 +576,17 @@ def _try_lift_pydantic(source: str) -> List[ContractDecl]:
         if isinstance(obj, type) and hasattr(obj, "model_fields"):
             decls.extend(lift_pydantic_model(obj))
     return decls
+
+
+def _try_lift_decorated_contracts(source: str) -> List[ContractDecl]:
+    """Exec the source in an isolated namespace and collect @contract metadata."""
+    import types
+
+    namespace: dict = {"__name__": "_provekit_lsp_source"}
+    exec(source, namespace)
+    module = types.ModuleType("_provekit_lsp_source")
+    module.__dict__.update(namespace)
+    return collect_module(module)
 
 
 def handle_shutdown(msg_id: Any) -> None:
