@@ -83,16 +83,14 @@ enum LanguageHandle {
 /// ```json
 /// {
 ///   "kind":              "linker-error",
-///   "errorKind":         "unresolved-symbol" | "unprovable-obligation",
+///   "errorKind":         "unresolved-symbol" | "unprovable-obligation" | "implication-unprovable" | "implication-undecidable",
 ///   "targetSymbol":      "<string>",
 ///   "sourceContractCid": "<string>",
 ///   "reason":            "<string>",
-///   "file":              "<string | null>"
+///   "file":              "<string | null>",
+///   "callSiteLocus":     {"file": "<string>", "line": 1, "column": 0}
 /// }
 /// ```
-///
-/// Note: no per-line locus data in this daemon MVP.  Diagnostics are attached
-/// at (0,0) until `LinkerError` gains locus propagation upstream.
 #[derive(Debug, serde::Deserialize)]
 struct DaemonDiagnostic {
     /// Discriminator for the linker-error category; maps to LSP severity.
@@ -104,33 +102,27 @@ struct DaemonDiagnostic {
     /// Human-readable explanation from the linker.
     #[serde(default)]
     reason: String,
+    /// Original kit-owned callsite locus. The LSP adapter only translates
+    /// source coordinates; it does not interpret host-language syntax.
+    #[serde(rename = "callSiteLocus", default)]
+    call_site_locus: Option<serde_json::Value>,
 }
 
 /// Convert a single daemon `DaemonDiagnostic` into an LSP `Diagnostic`.
-///
-/// Range is (0,0)..(0,1): whole-file marker: because the daemon MVP does
-/// not yet propagate call-site locus from `LinkerCallEdge` into `LinkerError`.
-/// Once that propagation is added upstream, this function should read locus
-/// fields and produce a precise range.
 fn daemon_diag_to_lsp(d: &DaemonDiagnostic) -> Diagnostic {
-    let range = Range {
-        start: Position {
-            line: 0,
-            character: 0,
-        },
-        end: Position {
-            line: 0,
-            character: 1,
-        },
-    };
+    let range = locus_to_lsp_range(d.call_site_locus.as_ref());
     let severity = match d.error_kind.as_str() {
-        "unprovable-obligation" => Some(DiagnosticSeverity::ERROR),
-        "unresolved-symbol" => Some(DiagnosticSeverity::WARNING),
+        "implication-unprovable" | "unprovable-obligation" => Some(DiagnosticSeverity::ERROR),
+        "unresolved-symbol" | "implication-undecidable" => Some(DiagnosticSeverity::WARNING),
         _ => Some(DiagnosticSeverity::INFORMATION),
     };
     let message = match d.error_kind.as_str() {
-        "unprovable-obligation" => format!(
+        "implication-unprovable" | "unprovable-obligation" => format!(
             "cannot verify {}'s precondition; postcondition at call site does not establish it ({})",
+            d.target_symbol, d.reason
+        ),
+        "implication-undecidable" => format!(
+            "cannot prove {}'s precondition from this call site ({})",
             d.target_symbol, d.reason
         ),
         "unresolved-symbol" => format!(
@@ -142,10 +134,75 @@ fn daemon_diag_to_lsp(d: &DaemonDiagnostic) -> Diagnostic {
     Diagnostic {
         range,
         severity,
-        code: Some(NumberOrString::String(format!("provekit:{}", d.error_kind))),
+        code: Some(NumberOrString::String(
+            diagnostic_code(&d.error_kind).to_string(),
+        )),
         source: Some("provekit".to_string()),
         message,
         ..Default::default()
+    }
+}
+
+fn file_start_range() -> Range {
+    Range {
+        start: Position {
+            line: 0,
+            character: 0,
+        },
+        end: Position {
+            line: 0,
+            character: 1,
+        },
+    }
+}
+
+fn locus_to_lsp_range(locus: Option<&serde_json::Value>) -> Range {
+    let Some(locus) = locus else {
+        return file_start_range();
+    };
+
+    let Some(line) = json_u32(locus, "line") else {
+        return file_start_range();
+    };
+    let Some(column) = json_u32(locus, "column").or_else(|| json_u32(locus, "col")) else {
+        return file_start_range();
+    };
+
+    let start_line = line.saturating_sub(1);
+    let start = Position {
+        line: start_line,
+        character: column,
+    };
+
+    let end_line = json_u32(locus, "endLine")
+        .map(|n| n.saturating_sub(1))
+        .unwrap_or(start_line);
+    let mut end_character = json_u32(locus, "endColumn")
+        .or_else(|| json_u32(locus, "endCol"))
+        .unwrap_or(column.saturating_add(1));
+    if end_line == start_line && end_character <= column {
+        end_character = column.saturating_add(1);
+    }
+
+    Range {
+        start,
+        end: Position {
+            line: end_line,
+            character: end_character,
+        },
+    }
+}
+
+fn json_u32(value: &serde_json::Value, key: &str) -> Option<u32> {
+    value.get(key)?.as_u64().and_then(|n| u32::try_from(n).ok())
+}
+
+fn diagnostic_code(error_kind: &str) -> &'static str {
+    match error_kind {
+        "implication-unprovable" | "unprovable-obligation" => "provekit.lsp.implication_failed",
+        "unresolved-symbol" => "provekit.lsp.unresolved_symbol",
+        "implication-undecidable" => "provekit.lsp.unprovable_obligation",
+        _ => "provekit.lsp.unprovable_obligation",
     }
 }
 
@@ -627,7 +684,49 @@ mod tests {
             error_kind: error_kind.to_string(),
             target_symbol: target_symbol.to_string(),
             reason: reason.to_string(),
+            call_site_locus: None,
         }
+    }
+
+    fn make_diag_with_locus(
+        error_kind: &str,
+        target_symbol: &str,
+        reason: &str,
+        locus: serde_json::Value,
+    ) -> DaemonDiagnostic {
+        DaemonDiagnostic {
+            error_kind: error_kind.to_string(),
+            target_symbol: target_symbol.to_string(),
+            reason: reason.to_string(),
+            call_site_locus: Some(locus),
+        }
+    }
+
+    #[test]
+    fn callsite_locus_maps_to_lsp_range() {
+        let d = make_diag_with_locus(
+            "implication-unprovable",
+            "checkPositive",
+            "solver found a counterexample",
+            serde_json::json!({
+                "file": "/tmp/caller.rs",
+                "line": 20,
+                "column": 17,
+            }),
+        );
+        let lsp = daemon_diag_to_lsp(&d);
+
+        assert_eq!(lsp.severity, Some(DiagnosticSeverity::ERROR));
+        assert_eq!(lsp.range.start.line, 19);
+        assert_eq!(lsp.range.start.character, 17);
+        assert_eq!(lsp.range.end.line, 19);
+        assert_eq!(lsp.range.end.character, 18);
+        assert_eq!(
+            lsp.code,
+            Some(NumberOrString::String(
+                "provekit.lsp.implication_failed".to_string()
+            ))
+        );
     }
 
     #[test]
@@ -643,7 +742,7 @@ mod tests {
         assert_eq!(
             lsp.code,
             Some(NumberOrString::String(
-                "provekit:unprovable-obligation".to_string()
+                "provekit.lsp.implication_failed".to_string()
             ))
         );
         assert_eq!(lsp.source, Some("provekit".to_string()));
@@ -673,7 +772,7 @@ mod tests {
         assert_eq!(
             lsp.code,
             Some(NumberOrString::String(
-                "provekit:unresolved-symbol".to_string()
+                "provekit.lsp.unresolved_symbol".to_string()
             ))
         );
         assert_eq!(lsp.source, Some("provekit".to_string()));
@@ -698,7 +797,7 @@ mod tests {
         assert_eq!(
             lsp.code,
             Some(NumberOrString::String(
-                "provekit:some-future-kind".to_string()
+                "provekit.lsp.unprovable_obligation".to_string()
             ))
         );
         assert_eq!(lsp.source, Some("provekit".to_string()));
