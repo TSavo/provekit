@@ -709,6 +709,26 @@ static int binding_list_push_take(BindingList *list, BindingTemplate *binding) {
     return 0;
 }
 
+static int binding_list_extend_take(BindingList *dst, BindingList *src) {
+    BindingTemplate *next;
+
+    if (src == NULL || src->len == 0) {
+        return 0;
+    }
+    next = realloc(dst->items, sizeof(*dst->items) * (dst->len + src->len));
+    if (next == NULL) {
+        binding_list_free(src);
+        return -1;
+    }
+    dst->items = next;
+    memcpy(dst->items + dst->len, src->items, sizeof(*src->items) * src->len);
+    dst->len += src->len;
+    free(src->items);
+    src->items = NULL;
+    src->len = 0;
+    return 0;
+}
+
 static int parse_binding_templates_at(const char *p, BindingList *out) {
     memset(out, 0, sizeof(*out));
     if (p == NULL) {
@@ -775,6 +795,29 @@ static int parse_binding_templates_at(const char *p, BindingList *out) {
         }
         p++;
     }
+}
+
+static int parse_binding_templates_document(const char *json, BindingList *out) {
+    const char *p = json == NULL ? "" : json;
+
+    json_skip_ws(&p);
+    if (*p == '[') {
+        return parse_binding_templates_at(p, out);
+    }
+    if (*p == '{') {
+        const char *templates = json_find_object_value(p, "binding_templates");
+
+        if (templates == NULL) {
+            templates = json_find_object_value(p, "templates");
+        }
+        if (templates == NULL) {
+            memset(out, 0, sizeof(*out));
+            return 0;
+        }
+        return parse_binding_templates_at(templates, out);
+    }
+    memset(out, 0, sizeof(*out));
+    return -1;
 }
 
 static int json_extract_param_binding_templates(const char *json, BindingList *out) {
@@ -883,6 +926,45 @@ static char *read_file(const char *path) {
     data[len] = '\0';
     fclose(f);
     return data;
+}
+
+static int load_binding_template_file(const char *path, BindingList *bindings) {
+    char *raw = read_file(path);
+    BindingList loaded = {0};
+    int rc;
+
+    if (raw == NULL) {
+        return 0;
+    }
+    rc = parse_binding_templates_document(raw, &loaded);
+    free(raw);
+    if (rc != 0) {
+        binding_list_free(&loaded);
+        return -1;
+    }
+    return binding_list_extend_take(bindings, &loaded);
+}
+
+static int load_project_binding_templates(const char *project_root, BindingList *bindings) {
+    static const char *const rels[] = {
+        ".provekit/lift/c-bind/templates.json",
+        ".provekit/recognize/c-bind/templates.json",
+    };
+
+    for (size_t i = 0; i < sizeof(rels) / sizeof(rels[0]); i++) {
+        char *path = join_path(project_root, rels[i]);
+        int rc;
+
+        if (path == NULL) {
+            return -1;
+        }
+        rc = load_binding_template_file(path, bindings);
+        free(path);
+        if (rc != 0) {
+            return rc;
+        }
+    }
+    return 0;
 }
 
 static void acc_init(LiftAccumulator *acc) {
@@ -3394,6 +3476,13 @@ static void handle_recognize(const char *id, const char *line) {
         string_array_free(&source_paths);
         binding_list_free(&bindings);
         send_error(id, -32602, "binding_templates must be an array of objects");
+        return;
+    }
+    if (load_project_binding_templates(project_root, &bindings) != 0) {
+        free(project_root);
+        string_array_free(&source_paths);
+        binding_list_free(&bindings);
+        send_error(id, -32603, "recognize: failed to load C bind template catalog");
         return;
     }
 

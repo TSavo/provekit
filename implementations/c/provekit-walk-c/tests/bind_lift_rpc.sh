@@ -124,6 +124,21 @@ def recognize(root, rel, bindings):
     return responses[0]["result"]
 
 
+def recognize_from_project(root, rel):
+    responses = rpc([
+        {
+            "jsonrpc": "2.0",
+            "id": 12,
+            "method": "provekit.plugin.recognize",
+            "params": {"project_root": str(root), "source_paths": [rel]},
+        },
+        {"jsonrpc": "2.0", "id": 13, "method": "shutdown", "params": {}},
+    ])
+    if "error" in responses[0]:
+        raise AssertionError(responses[0]["error"])
+    return responses[0]["result"]
+
+
 with tempfile.TemporaryDirectory(prefix="provekit-c-recognize-") as tmp:
     root = Path(tmp)
     (root / "shim.c").write_text(
@@ -182,6 +197,12 @@ int wrap_identity(int value) {
     assert tag["contract_cid"] == CONTRACT_CID
     assert tag["param_bindings"] == [{"index": 1, "source_text": "value"}]
     assert tag["span"]["start_line"] == 1
+
+    catalog = root / ".provekit" / "lift" / "c-bind" / "templates.json"
+    catalog.parent.mkdir(parents=True)
+    catalog.write_text(json.dumps({"binding_templates": [binding]}, separators=(",", ":")), encoding="utf-8")
+    project_owned = recognize_from_project(root, "user.c")
+    assert project_owned["tags"] == tags
 
     (root / "different.c").write_text(
         """int user_identity(int value) {
