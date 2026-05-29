@@ -321,7 +321,7 @@ fn configured_rust_shims_emit_nonvacuous_implication_claims() {
 }
 
 #[test]
-fn voltron_demo_emits_nonvacuous_green_implication_claims() {
+fn voltron_demo_surfaces_nonvacuous_implication_refusals() {
     if !z3_available() {
         eprintln!("z3 not on PATH: skipping Voltron implication proof");
         return;
@@ -334,18 +334,31 @@ fn voltron_demo_emits_nonvacuous_green_implication_claims() {
     run_mint(&project, &out_dir);
     let (report, code) = run_prove_json(&out_dir);
     assert_eq!(
-        code, 0,
-        "Voltron should prove cleanly once body contracts and implication bridges align; report: {report}"
+        code, 1,
+        "Voltron has body-bearing implication claims that must refuse instead of passing vacuously; report: {report}"
     );
     let total = report["totalCallsites"].as_u64().unwrap_or(0);
     assert!(
         total > 0,
         "Voltron must not prove vacuously; report: {report}"
     );
-    assert_eq!(report["violations"], 0, "Voltron report: {report}");
+    assert!(
+        report["violations"].as_u64().unwrap_or(0) > 0,
+        "Voltron must surface non-discharged claims; report: {report}"
+    );
     assert_eq!(
-        report["discharged"], report["totalCallsites"],
-        "Voltron report: {report}"
+        report["discharged"], 0,
+        "Voltron must not sign witnesses for refused claims; report: {report}"
+    );
+    let rows = report["rows"].as_array().expect("rows");
+    assert!(
+        rows.iter().any(|row| {
+            row["bridge"] == "insert_event"
+                && row["reason"].as_str().is_some_and(|reason| {
+                    reason.contains("body-discharge") && reason.contains("refuse")
+                })
+        }),
+        "Voltron must surface the body-discharge refusal for insert_event; report: {report}"
     );
     let _ = fs::remove_dir_all(out_dir);
 }
