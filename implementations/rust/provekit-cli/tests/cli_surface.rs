@@ -621,6 +621,79 @@ done
 }
 
 #[test]
+fn mint_ignores_emit_only_plugin_registrations() {
+    let dir = tempfile::tempdir().expect("create tempdir");
+    let project = dir.path().join("project");
+    let lift_manifest = project.join(".provekit/lift/test-lift");
+    let out_dir = dir.path().join("out");
+    fs::create_dir_all(&lift_manifest).expect("create lift manifest dir");
+    fs::write(
+        project.join(".provekit/config.toml"),
+        r#"[[plugins]]
+name = "java-testng-emitter"
+kind = "emit"
+surface = "java-testng"
+emit = "testng"
+
+[[plugins]]
+name = "test-lift"
+kind = "lift"
+surface = "test-lift"
+emit = "ir-document"
+"#,
+    )
+    .expect("write project config");
+
+    let plugin = dir.path().join("test-lift.sh");
+    write_executable(
+        &plugin,
+        r#"#!/usr/bin/env bash
+set -euo pipefail
+while IFS= read -r line; do
+  if [[ "$line" == *'"method":"initialize"'* ]]; then
+    printf '%s\n' '{"jsonrpc":"2.0","id":1,"result":{"name":"test-lift","protocol_version":"pep/1.7.0","capabilities":{}}}'
+  elif [[ "$line" == *'"method":"lift"'* ]]; then
+    printf '%s\n' '{"jsonrpc":"2.0","id":2,"result":{"kind":"ir-document","ir":[{"kind":"contract","name":"demo.contract","outBinding":"out","post":{"kind":"atomic","name":"demo_true","args":[]}}],"diagnostics":[]}}'
+  elif [[ "$line" == *'"method":"shutdown"'* ]]; then
+    printf '%s\n' '{"jsonrpc":"2.0","id":3,"result":null}'
+    exit 0
+  fi
+done
+"#,
+    );
+    fs::write(
+        lift_manifest.join("manifest.toml"),
+        format!(
+            "name = \"test-lift\"\ncommand = [\"{}\"]\n",
+            plugin.display()
+        ),
+    )
+    .expect("write lift manifest");
+
+    let output = output_retrying_etxtbsy(
+        Command::new(provekit_bin())
+            .arg("mint")
+            .arg("--project")
+            .arg(&project)
+            .arg("--out")
+            .arg(&out_dir)
+            .arg("--no-attest")
+            .arg("--json")
+            .arg("--quiet"),
+    );
+
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(
+        output.status.success(),
+        "mint should ignore kind=emit registrations instead of resolving .provekit/lift/java-testng\nstdout:\n{stdout}\nstderr:\n{stderr}"
+    );
+    let report: serde_json::Value = serde_json::from_str(&stdout).expect("mint JSON parses");
+    assert_eq!(report["surface"], "test-lift");
+    assert_eq!(report["lift"]["kind"], "ir-document");
+}
+
+#[test]
 fn mint_surfaces_structured_lift_gap_diagnostics_from_consumer_surfaces() {
     let dir = tempfile::tempdir().expect("create tempdir");
     let project = dir.path().join("project");

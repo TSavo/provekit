@@ -2,5 +2,6 @@ exam_manifest_cid = "blake3-512:000000000000000000000000000000000000000000000000
 
 [[plugins]]
 name = "java-testng"
+kind = "emit"
 surface = "java-testng"
 emit = "testng"

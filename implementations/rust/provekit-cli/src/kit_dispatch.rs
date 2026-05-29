@@ -1662,6 +1662,7 @@ fn configured_emit_surface_names(workspace_root: &Path) -> BTreeSet<String> {
     read_project_config(workspace_root)
         .plugins
         .into_iter()
+        .filter(|plugin| plugin.is_emit_plugin())
         .filter_map(|plugin| {
             let surface = plugin.surface.trim().to_string();
             (!surface.is_empty()).then_some(surface)
@@ -1678,6 +1679,7 @@ fn configured_emit_surfaces(
     let mut surfaces = read_project_config(workspace_root)
         .plugins
         .into_iter()
+        .filter(|plugin| plugin.is_emit_plugin())
         .filter_map(|plugin| {
             let surface = plugin.surface.trim().to_string();
             if surface.is_empty() || !emit_surface_matches(&surface, target_lang, framework) {

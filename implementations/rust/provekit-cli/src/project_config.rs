@@ -14,17 +14,19 @@ use std::path::{Path, PathBuf};
 
 /// One entry in `.provekit/config.toml`'s `[[plugins]]` array.
 ///
-/// Each entry declares one lift plugin this project enables. cmd_mint
-/// reads the full list and dispatches each plugin via its manifest at
-/// `.provekit/lift/<surface>/manifest.toml`, then merges all
-/// ir-documents into one envelope. The substrate's "config-driven
-/// multi-plugin orchestration" pattern: the user declares which kits
-/// are active; the CLI invokes them.
+/// Each entry declares one project-enabled plugin. `kind = "lift"` routes
+/// to `.provekit/lift/<surface>/manifest.toml`; `kind = "emit"` routes
+/// to `.provekit/emit/<surface>/manifest.toml`. Omitted kind preserves
+/// legacy dual-use registrations.
 #[derive(Debug, Clone, Default)]
 pub struct PluginEntry {
     /// Human label for diagnostics. Optional; falls back to `surface`.
     pub name: Option<String>,
-    /// Lift surface — resolves to `.provekit/lift/<surface>/manifest.toml`.
+    /// Plugin role in the project registry. Explicit values are
+    /// "lift" and "emit"; absent means legacy dual-use registration.
+    pub kind: Option<String>,
+    /// Plugin surface. The command decides whether this resolves under
+    /// `.provekit/lift` or `.provekit/emit` from `kind`.
     pub surface: String,
     /// Optional absolute path the plugin should treat as its
     /// `workspace_root`. Use case: a shim that lifts from a
@@ -51,6 +53,20 @@ pub struct PluginEntry {
 impl PluginEntry {
     pub fn display_name(&self) -> &str {
         self.name.as_deref().unwrap_or(self.surface.as_str())
+    }
+
+    pub fn is_lift_plugin(&self) -> bool {
+        self.kind
+            .as_deref()
+            .map(|kind| kind.eq_ignore_ascii_case("lift"))
+            .unwrap_or(true)
+    }
+
+    pub fn is_emit_plugin(&self) -> bool {
+        self.kind
+            .as_deref()
+            .map(|kind| kind.eq_ignore_ascii_case("emit"))
+            .unwrap_or(true)
     }
 }
 
@@ -242,6 +258,11 @@ fn parse_config(text: &str) -> ProjectConfig {
                     entry.name = Some(val);
                 }
             }
+            (Some("plugins.entry"), "kind") => {
+                if let Some(entry) = current_plugin.as_mut() {
+                    entry.kind = Some(val);
+                }
+            }
             (Some("plugins.entry"), "surface") => {
                 if let Some(entry) = current_plugin.as_mut() {
                     entry.surface = val;
@@ -422,6 +443,29 @@ family = "concept:family:hash"
             Some(".provekit/paths/mint.json")
         );
         assert_eq!(cfg.path_for("prove"), None);
+    }
+
+    #[test]
+    fn parses_plugin_kind_for_dispatch_filtering() {
+        let cfg = parse_config(
+            r#"[[plugins]]
+name = "java-testng-emitter"
+kind = "emit"
+surface = "java-testng"
+emit = "testng"
+
+[[plugins]]
+name = "java-testng-lifter"
+kind = "lift"
+surface = "java-testng"
+emit = "ir-document"
+"#,
+        );
+        assert_eq!(cfg.plugins.len(), 2);
+        assert!(cfg.plugins[0].is_emit_plugin());
+        assert!(!cfg.plugins[0].is_lift_plugin());
+        assert!(cfg.plugins[1].is_lift_plugin());
+        assert!(!cfg.plugins[1].is_emit_plugin());
     }
 
     #[test]
