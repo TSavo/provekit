@@ -13,8 +13,10 @@
 # become enumerable callsites.
 #
 # Same binary as rust-bind / rust-contracts (provekit-walk-rpc owns the
-# syn AST machinery for all three rust lift lanes). The kit dispatches
-# to `provekit.plugin.lift_implications` for this surface.
+# syn AST machinery for all three rust lift lanes). The `method` field
+# tells mint to call the implication lift route instead of the default `lift`.
 name = "rust-implications-lift"
 command = ["../target/debug/provekit-walk-rpc", "--rpc"]
 working_dir = "."
+method = "provekit.plugin.lift_implications"
+phase = "consumer"

@@ -472,8 +472,7 @@ fn lift_implications(params: &Value) -> Result<Value, String> {
     let mut entries: Vec<Value> = Vec::new();
     let mut diagnostics: Vec<Value> = Vec::new();
 
-    for rel_path in &source_paths {
-        let full_path = workspace_root.join(rel_path);
+    for (rel_path, full_path) in resolve_rs_source_files(&workspace_root, &source_paths) {
         let src = match std::fs::read_to_string(&full_path) {
             Ok(s) => s,
             Err(_) => continue, // missing files are not lift errors here
@@ -484,7 +483,7 @@ fn lift_implications(params: &Value) -> Result<Value, String> {
         };
 
         let mut callsites: Vec<CallSite> = Vec::new();
-        collect_callsites_in_items(&file.items, rel_path, &mut callsites);
+        collect_callsites_in_items(&file.items, &rel_path, &mut callsites);
 
         for cs in callsites {
             let Some(binding) = contracts_by_callee.get(cs.callee.as_str()) else {
@@ -2526,6 +2525,53 @@ fn ir_term_to_text(term: &IrTerm) -> String {
             format!("let {bindings} in {}", ir_term_to_text(body))
         }
     }
+}
+
+fn resolve_rs_source_files(
+    workspace_root: &Path,
+    source_paths: &[String],
+) -> Vec<(String, PathBuf)> {
+    let mut visited: std::collections::BTreeSet<PathBuf> = Default::default();
+    let scan_roots: Vec<PathBuf> = if source_paths.is_empty() {
+        vec![workspace_root.to_path_buf()]
+    } else {
+        source_paths
+            .iter()
+            .map(|p| workspace_root.join(p))
+            .collect()
+    };
+    for scan_root in &scan_roots {
+        if scan_root.is_file() {
+            if scan_root.extension().map(|x| x == "rs").unwrap_or(false) {
+                visited.insert(scan_root.clone());
+            }
+            continue;
+        }
+        if !scan_root.is_dir() {
+            continue;
+        }
+        let src_dir = scan_root.join("src");
+        let walk_root: &Path = if src_dir.is_dir() {
+            &src_dir
+        } else {
+            scan_root
+        };
+        collect_rs_files(walk_root, &mut visited);
+        if walk_root != scan_root.as_path() {
+            collect_rs_files_shallow(scan_root, &mut visited);
+        }
+    }
+    visited
+        .into_iter()
+        .map(|abs| {
+            let rel = abs
+                .strip_prefix(workspace_root)
+                .unwrap_or(&abs)
+                .to_string_lossy()
+                .to_string();
+            (rel, abs)
+        })
+        .collect()
 }
 
 fn collect_rs_files(dir: &Path, visited: &mut std::collections::BTreeSet<PathBuf>) {
@@ -7325,6 +7371,80 @@ pub fn caller(input: &str) -> i64 {
         assert_eq!(
             norm["targetContractCid"],
             "blake3-512:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+        );
+
+        let _ = fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn lift_implications_scans_src_when_source_path_is_project_root() {
+        let src = r##"
+pub fn caller(input: &str) -> i64 {
+    parse_input(input)
+}
+"##;
+        let root = temp_workspace("lift_implications_project_root");
+        let src_dir = root.join("src");
+        fs::create_dir_all(&src_dir).expect("create src dir");
+        fs::write(src_dir.join("lib.rs"), src).expect("write source");
+
+        let contract_bindings = json!([
+            { "name": "parse_input@src/lib.rs:5:8",
+              "contract_cid": "blake3-512:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa" },
+        ]);
+
+        let resp = lift_implications(&json!({
+            "workspace_root": root.to_string_lossy(),
+            "source_paths": ["."],
+            "contract_bindings": contract_bindings,
+        }))
+        .expect("lift_implications");
+
+        let ir = resp["ir"].as_array().expect("ir array");
+        assert!(
+            ir.iter()
+                .any(|entry| entry["sourceSymbol"] == "parse_input"),
+            "mint sends source_paths=[\".\"], so implication lift must scan src/: {ir:?}"
+        );
+
+        let _ = fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn rpc_dispatches_provekit_plugin_lift_implications_method() {
+        let src = r##"
+pub fn caller(input: &str) -> i64 {
+    parse_input(input)
+}
+"##;
+        let root = temp_workspace("lift_implications_rpc_method");
+        let src_dir = root.join("src");
+        fs::create_dir_all(&src_dir).expect("create src dir");
+        fs::write(src_dir.join("lib.rs"), src).expect("write source");
+
+        let response = handle_line(&json!({
+            "jsonrpc": "2.0",
+            "id": 2,
+            "method": "provekit.plugin.lift_implications",
+            "params": {
+                "workspace_root": root.to_string_lossy(),
+                "source_paths": ["."],
+                "contract_bindings": [{
+                    "name": "parse_input@src/lib.rs:5:8",
+                    "contract_cid": "blake3-512:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+                }],
+            }
+        }).to_string());
+
+        assert!(
+            response.get("error").is_none(),
+            "RPC method table must expose provekit.plugin.lift_implications: {response}"
+        );
+        let ir = response["result"]["ir"].as_array().expect("ir array");
+        assert!(
+            ir.iter()
+                .any(|entry| entry["sourceSymbol"] == "parse_input"),
+            "RPC implication route should return bridge IR: {response}"
         );
 
         let _ = fs::remove_dir_all(root);

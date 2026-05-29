@@ -158,6 +158,102 @@ fn publish_user_bridge(project_dir: &Path, target_cid: &str, target_bundle_cid: 
     );
 }
 
+fn publish_contradictory_implication_project() -> PathBuf {
+    let project = unique_dir("contradictory-implication");
+    let proof_dir = project.join(".provekit");
+    fs::create_dir_all(&proof_dir).expect("mkdir proof dir");
+
+    let producer_env = json!({
+        "evidence": {
+            "kind": "contract",
+            "body": {
+                "contractName": "produce_zero",
+                "post": {
+                    "kind": "atomic",
+                    "name": "=",
+                    "args": [var("result"), int_const(0)]
+                }
+            }
+        }
+    });
+    let (producer_cid, producer_bytes) = flat_member(producer_env);
+
+    let consumer_env = json!({
+        "evidence": {
+            "kind": "contract",
+            "body": {
+                "contractName": "requires_positive",
+                "formals": ["x"],
+                "formalSorts": [int_sort()],
+                "pre": {
+                    "kind": "atomic",
+                    "name": ">",
+                    "args": [var("x"), int_const(0)]
+                }
+            }
+        }
+    });
+    let (consumer_cid, consumer_bytes) = flat_member(consumer_env);
+
+    let source_env = json!({
+        "evidence": {
+            "kind": "contract",
+            "body": {
+                "contractName": "contradictory_callsite",
+                "inv": {
+                    "kind": "atomic",
+                    "name": "observed",
+                    "args": [{
+                        "kind": "ctor",
+                        "name": "requires_positive",
+                        "args": [{
+                            "kind": "ctor",
+                            "name": "produce_zero",
+                            "args": []
+                        }]
+                    }]
+                }
+            }
+        }
+    });
+    let (source_cid, source_bytes) = flat_member(source_env);
+
+    let producer_bridge_env = json!({
+        "evidence": {
+            "kind": "bridge",
+            "body": {
+                "sourceSymbol": "produce_zero",
+                "sourceLayer": "rust",
+                "targetContractCid": producer_cid,
+                "targetLayer": "rust-tests"
+            }
+        }
+    });
+    let (producer_bridge_cid, producer_bridge_bytes) = flat_member(producer_bridge_env);
+
+    let consumer_bridge_env = json!({
+        "evidence": {
+            "kind": "bridge",
+            "body": {
+                "sourceSymbol": "requires_positive",
+                "sourceLayer": "rust",
+                "targetContractCid": consumer_cid,
+                "targetLayer": "rust-tests"
+            }
+        }
+    });
+    let (consumer_bridge_cid, consumer_bridge_bytes) = flat_member(consumer_bridge_env);
+
+    let mut members = BTreeMap::new();
+    members.insert(producer_cid, producer_bytes);
+    members.insert(consumer_cid, consumer_bytes);
+    members.insert(source_cid, source_bytes);
+    members.insert(producer_bridge_cid, producer_bridge_bytes);
+    members.insert(consumer_bridge_cid, consumer_bridge_bytes);
+    write_proof(&proof_dir, "@test/contradictory-implication", members);
+    project
+}
+
 fn install_dependency_proof_stub(project_dir: &Path, proof_path: &Path) {
     let bin = project_dir.join("resolve-deps-stub.sh");
     fs::write(
@@ -247,4 +343,46 @@ fn voltron_pool_refuses_cross_dependency_violation() {
         String::from_utf8_lossy(&output.stderr)
     );
     let _ = fs::remove_dir_all(root);
+}
+
+#[test]
+fn prove_reports_violation_for_contradictory_implication() {
+    if !z3_available() {
+        eprintln!("SKIP prove_reports_violation_for_contradictory_implication: z3 not on PATH");
+        return;
+    }
+
+    let project = publish_contradictory_implication_project();
+    let output = std::process::Command::new(env!("CARGO_BIN_EXE_provekit"))
+        .arg("prove")
+        .arg(&project)
+        .arg("--z3")
+        .arg("z3")
+        .arg("--json")
+        .output()
+        .expect("run provekit prove");
+
+    assert_eq!(
+        output.status.code(),
+        Some(1),
+        "contradictory implication must be a proof violation\nstdout:\n{}\nstderr:\n{}",
+        String::from_utf8_lossy(&output.stdout),
+        String::from_utf8_lossy(&output.stderr)
+    );
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    let report: Json =
+        serde_json::from_str(&stdout).unwrap_or_else(|e| panic!("parse prove JSON: {e}\n{stdout}"));
+    assert_eq!(report["violations"], 1, "report: {report}");
+    assert!(
+        report["rows"]
+            .as_array()
+            .expect("rows")
+            .iter()
+            .any(|row| row["bridge"] == "requires_positive"
+                && row["status"] == "unsatisfied"
+                && row["reason"].as_str().unwrap_or("").contains("sat")),
+        "requires_positive(produce_zero()) should violate `produce_zero.post -> requires_positive.pre`: {report}"
+    );
+
+    let _ = fs::remove_dir_all(project);
 }

@@ -27,6 +27,7 @@ pub struct LiftPluginKit {
     surface: String,
     command: Vec<String>,
     working_dir: Option<PathBuf>,
+    lift_method: String,
 }
 
 /// Source-shaped Lift Kit adapter over the existing lift-plugin transport.
@@ -47,7 +48,22 @@ impl LiftPluginKit {
             surface: surface.into(),
             command,
             working_dir,
+            lift_method: "lift".to_string(),
         }
+    }
+
+    /// Override the JSON-RPC method used for the lift request. The default
+    /// method remains `lift`; multi-surface kits can expose a second route
+    /// such as `provekit.plugin.lift_implications` while keeping the same
+    /// transport.
+    pub fn with_method(mut self, method: impl Into<String>) -> Self {
+        let method = method.into();
+        self.lift_method = if method.is_empty() {
+            "lift".to_string()
+        } else {
+            method
+        };
+        self
     }
 
     /// Run the plugin transport and retain protocol metadata.
@@ -174,7 +190,7 @@ impl LiftPluginKit {
         let lift_req = json!({
             "jsonrpc": "2.0",
             "id": 2,
-            "method": "lift",
+            "method": self.lift_method,
             "params": lift_params
         });
         writeln!(stdin, "{lift_req}")
