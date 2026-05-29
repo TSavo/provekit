@@ -1773,7 +1773,8 @@ pub struct AssembledFile {
 
 /// #1388: result of an assemble RPC call. Carries the emitted files AND
 /// the classpath the kit declares the materialized code needs to compile.
-/// Substrate aggregates classpaths across kits and passes to javac via -cp.
+/// The CLI aggregates this kit-owned metadata and passes it back to the
+/// selected kit for materialize checks.
 #[derive(Debug, Clone, Default)]
 pub struct AssembleResult {
     pub files: Vec<AssembledFile>,
@@ -1925,6 +1926,76 @@ pub fn dispatch_assemble(
         files: out,
         compile_classpath,
     })
+}
+
+/// Ask the selected realize kit to check materialized output. The CLI owns
+/// dispatch only; compiler/test/build semantics stay behind the kit RPC seam.
+pub fn dispatch_materialize_check(
+    workspace_root: &Path,
+    target_lang: &str,
+    library_tag: Option<&str>,
+    out_dir: &Path,
+    compile_classpath: &[String],
+) -> Result<Value, String> {
+    let resolved = resolve_realize_command(workspace_root, target_lang, library_tag, None, None)
+        .map_err(|e| e.detail)?;
+    if resolved.argv.is_empty() {
+        return Err("empty command".to_string());
+    }
+    let mut command = Command::new(&resolved.argv[0]);
+    if resolved.argv.len() > 1 {
+        command.args(&resolved.argv[1..]);
+    }
+    if let Some(wd) = &resolved.working_dir {
+        command.current_dir(wd);
+    }
+    command.stdin(Stdio::piped());
+    command.stdout(Stdio::piped());
+    command.stderr(Stdio::null());
+
+    let mut child = command
+        .spawn()
+        .map_err(|e| format!("spawn materialize check kit: {e}"))?;
+    let mut stdin = child
+        .stdin
+        .take()
+        .ok_or_else(|| "materialize check kit stdin unavailable".to_string())?;
+    let stdout = child
+        .stdout
+        .take()
+        .ok_or_else(|| "materialize check kit stdout unavailable".to_string())?;
+    let mut reader = BufReader::new(stdout);
+
+    let req = json!({
+        "jsonrpc": "2.0",
+        "id": 1,
+        "method": "provekit.plugin.check",
+        "params": {
+            "kind": "materialize",
+            "target_lang": target_lang,
+            "target_library_tag": library_tag.unwrap_or(DEFAULT_LIBRARY_TAG),
+            "out_dir": out_dir,
+            "compile_classpath": compile_classpath,
+        },
+    });
+    writeln!(stdin, "{req}").map_err(|e| format!("write materialize check request: {e}"))?;
+    let result = read_response(&mut reader, 1).map_err(|e| {
+        format!(
+            "materialize check kit for {target_lang}/{}: {e}",
+            library_tag.unwrap_or(DEFAULT_LIBRARY_TAG)
+        )
+    })?;
+
+    let shutdown = json!({
+        "jsonrpc": "2.0",
+        "id": 2,
+        "method": "provekit.plugin.shutdown",
+    });
+    let _ = writeln!(stdin, "{shutdown}");
+    drop(stdin);
+    let _ = child.wait();
+
+    Ok(result)
 }
 
 // Per #1270 Tier 1.4: configure_java_runtime + java_home_from_maven removed.

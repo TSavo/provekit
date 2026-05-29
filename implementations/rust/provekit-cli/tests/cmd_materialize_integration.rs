@@ -140,6 +140,37 @@ fn install_binary_manifest(
     fs::write(manifest, manifest_text).expect("write manifest");
 }
 
+fn install_python_module_manifest(
+    root: &Path,
+    surface: &str,
+    module: &str,
+    pythonpath: &[PathBuf],
+    manifest_name: &str,
+    library_tag: &str,
+) {
+    let manifest = root
+        .join(".provekit")
+        .join("realize")
+        .join(surface)
+        .join("manifest.toml");
+    fs::create_dir_all(manifest.parent().expect("manifest path has parent"))
+        .expect("create manifest dir");
+    let pythonpath = pythonpath
+        .iter()
+        .map(|path| path.display().to_string())
+        .collect::<Vec<_>>()
+        .join(":")
+        .replace('\\', "\\\\")
+        .replace('"', "\\\"");
+    let manifest_text = format!(
+        "name = \"{manifest_name}\"\n\
+         library_tag = \"{library_tag}\"\n\
+         command = [\"env\", \"PYTHONPATH={pythonpath}\", \"python3\", \"-m\", \"{module}\", \"--rpc\"]\n\
+         working_dir = \".\"\n",
+    );
+    fs::write(manifest, manifest_text).expect("write manifest");
+}
+
 fn write_typescript_project_fixture(workspace: &Path) -> PathBuf {
     let repo = repo_root();
     install_node_manifest(
@@ -162,19 +193,20 @@ fn write_typescript_project_fixture(workspace: &Path) -> PathBuf {
 
 fn write_python_requests_project_fixture(workspace: &Path) -> Option<PathBuf> {
     let repo = repo_root();
-    let binary = repo
+    let package_src = repo
         .join("implementations")
         .join("python")
-        .join("target")
-        .join("release")
-        .join("provekit-realize-python-requests");
-    if !binary.exists() {
+        .join("provekit-realize-python-requests")
+        .join("src");
+    let shim_src = repo.join("examples").join("provekit-shim-python-requests");
+    if !package_src.is_dir() || !shim_src.is_dir() {
         return None;
     }
-    install_binary_manifest(
+    install_python_module_manifest(
         workspace,
         "python-requests",
-        &binary,
+        "provekit_realize_python_requests",
+        &[package_src, shim_src],
         "python-realize-requests",
         "requests",
     );
@@ -514,6 +546,71 @@ fn write_python_http_request_source(src_dir: &Path) -> PathBuf {
     )
     .expect("write python HTTP source");
     source_path
+}
+
+fn write_materialize_check_rpc_kit(path: &Path) {
+    fs::write(
+        path,
+        r#"import json
+import pathlib
+import sys
+
+for line in sys.stdin:
+    request = json.loads(line)
+    msg_id = request.get("id")
+    method = request.get("method")
+    if method == "provekit.plugin.invoke":
+        print(json.dumps({
+            "jsonrpc": "2.0",
+            "id": msg_id,
+            "result": {
+                "source": "def fetch_status(url):\n    return 200\n",
+                "is_stub": False,
+                "extension": "py",
+                "imports": [],
+                "emitted_artifact_cid": "blake3-512:cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc"
+            }
+        }), flush=True)
+    elif method == "provekit.plugin.assemble":
+        print(json.dumps({
+            "jsonrpc": "2.0",
+            "id": msg_id,
+            "result": {
+                "files": [{
+                    "path": "client.py",
+                    "content": "def fetch_status(url):\n    return 200\n"
+                }],
+                "compile_classpath": ["kit-owned-classpath"]
+            }
+        }), flush=True)
+    elif method == "provekit.plugin.check":
+        params = request.get("params") or {}
+        out_dir = pathlib.Path(params["out_dir"])
+        (out_dir / "checked-by-materialize-kit.txt").write_text(
+            json.dumps(params, sort_keys=True),
+            encoding="utf-8",
+        )
+        print(json.dumps({
+            "jsonrpc": "2.0",
+            "id": msg_id,
+            "result": {
+                "ok": True,
+                "command": "fake materialize kit check",
+                "classpath": params.get("compile_classpath", [])
+            }
+        }), flush=True)
+    elif method == "provekit.plugin.shutdown":
+        print(json.dumps({"jsonrpc": "2.0", "id": msg_id, "result": None}), flush=True)
+        break
+    else:
+        print(json.dumps({
+            "jsonrpc": "2.0",
+            "id": msg_id,
+            "error": {"code": -32601, "message": "METHOD_NOT_FOUND: " + str(method)}
+        }), flush=True)
+"#,
+    )
+    .expect("write fake materialize check kit");
 }
 
 fn write_rust_http_request_source(src_dir: &Path) -> PathBuf {
@@ -1217,7 +1314,7 @@ fn compile_check_without_out_dir_is_user_error() {
 }
 
 /// End-to-end: materialize python with --out-dir + --compile-check.
-/// `python3 -m py_compile` over the emitted file must pass → exit 0.
+/// The python realize kit owns the native py_compile check over the emitted file.
 #[test]
 fn compile_check_passes_for_valid_python_materialized_output() {
     let workspace = tempfile::tempdir().expect("tempdir");
@@ -1254,8 +1351,8 @@ fn compile_check_passes_for_valid_python_materialized_output() {
         "--compile-check over valid python output should exit 0\nstdout:\n{stdout}\nstderr:\n{stderr}"
     );
     assert!(
-        stderr.contains("compile-check: python3 -m py_compile passed"),
-        "stderr should confirm py_compile passed\nstderr:\n{stderr}"
+        stderr.contains("compile-check: python -m py_compile passed"),
+        "stderr should confirm the python kit check passed\nstderr:\n{stderr}"
     );
     let emitted = fs::read_to_string(out_dir.join("client.py")).expect("read emitted python");
     assert!(
@@ -1264,23 +1361,60 @@ fn compile_check_passes_for_valid_python_materialized_output() {
     );
 }
 
-/// Negative test: confirms python3 -m py_compile actually rejects bad python
-/// (so the compile-check gate would fire if materialize emitted bad output).
 #[test]
-fn compile_check_python_gate_fails_on_syntax_error() {
-    let bad_dir = tempfile::tempdir().expect("tempdir");
-    let bad_py = bad_dir.path().join("bad.py");
-    fs::write(&bad_py, "def foo(\n    x = 42\n    return x\n").expect("write bad.py");
+fn materialize_compile_check_dispatches_to_realize_kit() {
+    let workspace = tempfile::tempdir().expect("tempdir");
+    let src_dir = workspace.path().join("src");
+    fs::create_dir_all(&src_dir).expect("create src dir");
+    fs::write(
+        workspace.path().join("pyproject.toml"),
+        "[project]\nname = \"materialize-check-rpc\"\nversion = \"0.0.0\"\n",
+    )
+    .expect("write project marker");
+    write_python_http_request_source(&src_dir);
 
-    let check = Command::new("python3")
-        .arg("-m")
-        .arg("py_compile")
-        .arg(&bad_py)
+    let fake_kit = workspace.path().join("fake_materialize_check_kit.py");
+    write_materialize_check_rpc_kit(&fake_kit);
+    install_python_script_manifest_with_metadata(
+        workspace.path(),
+        "python-rpc-check",
+        &fake_kit,
+        "rpc-check",
+        None,
+        &["concept:http-request"],
+    );
+
+    let out_dir = workspace.path().join("materialized");
+    let output = Command::new(env!("CARGO_BIN_EXE_provekit"))
+        .arg("materialize")
+        .arg("--target")
+        .arg("python")
+        .arg("--library")
+        .arg("rpc-check")
+        .arg("--source-dir")
+        .arg(&src_dir)
+        .arg("--project")
+        .arg(workspace.path())
+        .arg("--out-dir")
+        .arg(&out_dir)
+        .arg("--compile-check")
         .output()
-        .expect("spawn python3 -m py_compile");
+        .expect("spawn provekit materialize --compile-check");
 
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    let stderr = String::from_utf8_lossy(&output.stderr);
     assert!(
-        !check.status.success(),
-        "python3 -m py_compile must reject syntactically broken python (gate must be live)"
+        output.status.success(),
+        "materialize compile-check should succeed via kit RPC\nstdout:\n{stdout}\nstderr:\n{stderr}"
+    );
+    let marker = out_dir.join("checked-by-materialize-kit.txt");
+    assert!(
+        marker.exists(),
+        "compile-check must be executed by the selected realize kit over RPC; marker missing\nstdout:\n{stdout}\nstderr:\n{stderr}"
+    );
+    let marker_body = fs::read_to_string(&marker).expect("read kit marker");
+    assert!(
+        marker_body.contains("kit-owned-classpath"),
+        "compile-check RPC must receive kit-owned assemble metadata: {marker_body}"
     );
 }

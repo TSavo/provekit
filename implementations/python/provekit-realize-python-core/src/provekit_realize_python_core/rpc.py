@@ -4,6 +4,7 @@ from fnmatch import fnmatch
 from importlib import metadata as importlib_metadata
 import json
 from pathlib import Path
+import py_compile
 import sys
 import traceback
 from typing import Any
@@ -114,6 +115,10 @@ def dispatch(request: dict[str, Any]) -> dict[str, Any]:
             "id": msg_id,
             "result": {"proof_paths": _resolve_dependency_proof_paths()},
         }
+    if method == "provekit.plugin.check":
+        if not isinstance(params, dict):
+            return _error(msg_id, -32602, "INVALID_PARAMS: params must be an object")
+        return {"jsonrpc": "2.0", "id": msg_id, "result": _check_materialized(params)}
     if method == "provekit.plugin.shutdown":
         return {"jsonrpc": "2.0", "id": msg_id, "result": None}
     return _error(msg_id, -32601, f"METHOD_NOT_FOUND: {method}")
@@ -178,6 +183,23 @@ def _resolve_dependency_proof_paths() -> list[str]:
             if path.is_file():
                 proof_paths.add(str(path))
     return sorted(proof_paths)
+
+
+def _check_materialized(params: dict[str, Any]) -> dict[str, Any]:
+    out_dir = Path(str(params.get("out_dir", "")))
+    py_files = sorted(path for path in out_dir.rglob("*.py") if path.is_file())
+    errors: list[str] = []
+    for path in py_files:
+        try:
+            py_compile.compile(str(path), doraise=True)
+        except py_compile.PyCompileError as exc:
+            errors.append(str(exc))
+    return {
+        "ok": not errors,
+        "command": "python -m py_compile",
+        "checked_files": [str(path) for path in py_files],
+        "stderr": "\n".join(errors),
+    }
 
 
 def _body_template_entry_json(entry: Any) -> dict[str, Any]:

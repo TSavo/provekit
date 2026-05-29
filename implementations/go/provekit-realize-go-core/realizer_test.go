@@ -1,6 +1,9 @@
 package realizego
 
 import (
+	"encoding/json"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 )
@@ -67,5 +70,28 @@ func TestSubstitutePositional(t *testing.T) {
 	}
 	if out != "return value" {
 		t.Fatalf("substitute = %q, want `return value`", out)
+	}
+}
+
+func TestPluginCheckRunsGoTest(t *testing.T) {
+	dir := t.TempDir()
+	if err := os.WriteFile(filepath.Join(dir, "go.mod"), []byte("module example.com/check\n\ngo 1.22\n"), 0o644); err != nil {
+		t.Fatalf("write go.mod: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, "check_test.go"), []byte("package check\n\nimport \"testing\"\n\nfunc TestOK(t *testing.T) {}\n"), 0o644); err != nil {
+		t.Fatalf("write check_test.go: %v", err)
+	}
+
+	response := handleCheck(json.RawMessage(`12`), []byte(`{"out_dir":"`+dir+`"}`))
+	envelope, ok := response.(map[string]any)
+	if !ok {
+		t.Fatalf("response type = %T", response)
+	}
+	result := envelope["result"].(map[string]any)
+	if result["ok"] != true {
+		t.Fatalf("go check should pass: %#v", result)
+	}
+	if result["command"] != "go test ./..." {
+		t.Fatalf("command = %#v", result["command"])
 	}
 }
