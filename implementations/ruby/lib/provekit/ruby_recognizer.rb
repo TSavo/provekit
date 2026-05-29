@@ -1,6 +1,7 @@
 require "pathname"
 
 require "provekit/ruby_ast_template"
+require "provekit/sugar_dict"
 
 module Provekit
   module RubyRecognizer
@@ -39,7 +40,9 @@ module Provekit
     end
 
     def recognize_text(source, file = "source.rb", binding_templates = [])
-      bindings = binding_templates_by_cid(binding_templates)
+      templates = Array(binding_templates)
+      templates = default_binding_templates if templates.empty?
+      bindings = binding_templates_by_cid(templates)
       tags = []
 
       RubyAstTemplate.extract_methods(source, file).each do |method_info|
@@ -65,6 +68,24 @@ module Provekit
       end
 
       { "tags" => tags }
+    end
+
+    def default_binding_templates
+      Provekit::SugarDict.patterns.each_with_object([]) do |pattern, out|
+        body = pattern[:body_source]
+        next unless body && body["ast_template"] && body["template_cid"]
+
+        out << {
+          "concept_name" => pattern[:proofir],
+          "library_tag" => pattern[:cid],
+          "family" => "provekit:sugar:ruby",
+          "ast_template" => body["ast_template"],
+          "template_cid" => body["template_cid"],
+          "param_names" => body["param_names"],
+          "contract_cid" => nil,
+          "source_function_name" => pattern[:role],
+        }
+      end
     end
 
     def binding_templates_by_cid(binding_templates)

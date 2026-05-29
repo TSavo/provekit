@@ -6,6 +6,7 @@ require "fileutils"
 require "provekit/lift/ruby_source"
 require "provekit/ruby_lifter"
 require "provekit/ruby_recognizer"
+require "provekit/sugars/sorbet_sigs"
 
 describe Provekit::RubyRecognizer do
   def binding_from(source, concept = "concept:http-request")
@@ -66,18 +67,12 @@ describe Provekit::RubyRecognizer do
     expect(response["tags"]).to eq([])
   end
 
-  it "supports provekit.plugin.recognize on the Ruby source RPC surface" do
-    shim = <<~RUBY
-      def fetch_url(url, headers)
-        client.execute(url, headers)
-      end
-    RUBY
-
+  it "resolves Ruby-owned sugar templates on the RPC recognize path" do
     Dir.mktmpdir("provekit-ruby-recognize") do |root|
       FileUtils.mkdir_p(File.join(root, "src"))
       File.write(File.join(root, "src", "user.rb"), <<~RUBY)
-        def send_request(uri, h)
-          client.execute(uri, h)
+        def require_name(name)
+          T.must(name)
         end
       RUBY
 
@@ -87,13 +82,16 @@ describe Provekit::RubyRecognizer do
         "method" => "provekit.plugin.recognize",
         "params" => {
           "project_root" => root,
-          "source_paths" => ["src/user.rb"],
-          "binding_templates" => [binding_from(shim)]
+          "source_paths" => ["src/user.rb"]
         }
       )
 
       expect(response["result"]["tags"].length).to eq(1)
-      expect(response["result"]["tags"].first["function_name"]).to eq("send_request")
+      tag = response["result"]["tags"].first
+      expect(tag["function_name"]).to eq("require_name")
+      expect(tag["concept_name"]).to eq("forall x. eq(x, nil) => false")
+      expect(tag["library_tag"]).to eq(Provekit::Sugars::SorbetSigs::CID)
+      expect(tag["template_cid"].start_with?("blake3-512:")).to eq(true)
     end
   end
 end
