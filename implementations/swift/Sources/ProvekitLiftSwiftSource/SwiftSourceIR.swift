@@ -209,6 +209,152 @@ public enum SwiftSourceIR {
         return postArgs[1]
     }
 
+    public static func verifyFacingResult(_ result: SwiftSourceLiftResult) -> SwiftSourceLiftResult {
+        var out = result
+        out.ir = result.ir.compactMap(verifyFacingContract)
+        return out
+    }
+
+    private static func verifyFacingContract(_ contract: JcsCanonical) -> JcsCanonical? {
+        guard field("kind", in: contract).stringValue == "function-contract" else {
+            return contract
+        }
+        let fnName = field("fnName", in: contract).stringValue ?? ""
+        if fnName.hasPrefix("<source-unit:") {
+            return nil
+        }
+
+        guard case .object(let pairs) = contract else {
+            return contract
+        }
+        var rewritten: [(String, JcsCanonical)] = []
+        var sawBridgeSourceSymbol = false
+        for (key, value) in pairs {
+            switch key {
+            case "pre":
+                rewritten.append((key, normalizeFormulaForVerify(value)))
+            case "post":
+                rewritten.append((key, normalizeFormulaForVerify(value)))
+            case "bridgeSourceSymbol":
+                sawBridgeSourceSymbol = true
+                rewritten.append((key, .string(simpleFunctionSymbol(fnName))))
+            default:
+                rewritten.append((key, value))
+            }
+        }
+        if !sawBridgeSourceSymbol {
+            rewritten.append(("bridgeSourceSymbol", .string(simpleFunctionSymbol(fnName))))
+        }
+        return .object(rewritten)
+    }
+
+    private static func normalizeFormulaForVerify(_ formula: JcsCanonical) -> JcsCanonical {
+        guard case .object(let pairs) = formula,
+              let kind = pairs.first(where: { $0.0 == "kind" })?.1.stringValue
+        else {
+            return formula
+        }
+
+        switch kind {
+        case "atomic":
+            return .object(pairs.map { key, value in
+                if key == "name", let name = value.stringValue {
+                    return (key, .string(normalizeAtomicName(name)))
+                }
+                if key == "args", case .array(let args) = value {
+                    return (key, .array(args.map(normalizeTermForVerify)))
+                }
+                return (key, value)
+            })
+        case "and", "or", "not", "implies":
+            return .object(pairs.map { key, value in
+                if key == "operands", case .array(let operands) = value {
+                    return (key, .array(operands.map(normalizeFormulaForVerify)))
+                }
+                return (key, value)
+            })
+        case "forall", "exists":
+            return .object(pairs.map { key, value in
+                if key == "body" {
+                    return (key, normalizeFormulaForVerify(value))
+                }
+                return (key, value)
+            })
+        default:
+            return formula
+        }
+    }
+
+    private static func normalizeTermForVerify(_ term: JcsCanonical) -> JcsCanonical {
+        guard case .object(let pairs) = term,
+              let kind = pairs.first(where: { $0.0 == "kind" })?.1.stringValue
+        else {
+            return term
+        }
+
+        switch kind {
+        case "var":
+            return .object(pairs.map { key, value in
+                if key == "name", value.stringValue == "return_value" {
+                    return (key, .string("result"))
+                }
+                return (key, value)
+            })
+        case "const":
+            return term
+        case "ctor":
+            let name = field("name", in: term).stringValue ?? ""
+            let args = field("args", in: term).arrayValue ?? []
+            if name == "swift:return", args.count == 1 {
+                return normalizeTermForVerify(args[0])
+            }
+            return .object(pairs.map { key, value in
+                if key == "name", let name = value.stringValue {
+                    return (key, .string(normalizeCtorName(name)))
+                }
+                if key == "args", case .array(let args) = value {
+                    return (key, .array(args.map(normalizeTermForVerify)))
+                }
+                return (key, value)
+            })
+        default:
+            return term
+        }
+    }
+
+    private static func normalizeCtorName(_ name: String) -> String {
+        switch name {
+        case "swift:add": return "+"
+        case "swift:sub": return "-"
+        case "swift:mul": return "*"
+        default: return name
+        }
+    }
+
+    private static func normalizeAtomicName(_ name: String) -> String {
+        switch name {
+        case "swift:eq": return "="
+        case "swift:ne": return "≠"
+        case "swift:lt": return "<"
+        case "swift:le": return "≤"
+        case "swift:gt": return ">"
+        case "swift:ge": return "≥"
+        default: return name
+        }
+    }
+
+    private static func simpleFunctionSymbol(_ fnName: String) -> String {
+        let withoutParams = fnName.split(separator: "(", maxSplits: 1).first.map(String.init) ?? fnName
+        return withoutParams.split(separator: ".").last.map(String.init) ?? withoutParams
+    }
+
+    private static func field(_ name: String, in object: JcsCanonical) -> JcsCanonical {
+        guard case .object(let pairs) = object else {
+            return .null
+        }
+        return pairs.first(where: { $0.0 == name })?.1 ?? .null
+    }
+
     public static func canonicalBytes(_ value: JcsCanonical) -> Data {
         JcsCanonicalizer.encode(value)
     }
@@ -274,6 +420,22 @@ public enum SwiftSourceIR {
             ("sort", primitiveSort(sort)),
             ("value", value),
         ])
+    }
+}
+
+private extension JcsCanonical {
+    var stringValue: String? {
+        if case .string(let value) = self {
+            return value
+        }
+        return nil
+    }
+
+    var arrayValue: [JcsCanonical]? {
+        if case .array(let values) = self {
+            return values
+        }
+        return nil
     }
 }
 

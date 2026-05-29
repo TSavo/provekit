@@ -83,7 +83,10 @@ public enum SwiftSourceRPC {
             return errorResponse(id: id, code: -32602, message: "source_paths must contain strings")
         }
         let workspaceRoot = params["workspace_root"] as? String ?? "."
-        let result = SwiftSourceLifter.liftPaths(workspaceRoot: workspaceRoot, sourcePaths: sourcePaths)
+        var result = SwiftSourceLifter.liftPaths(workspaceRoot: workspaceRoot, sourcePaths: sourcePaths)
+        if requestedVerifyLayer(params) {
+            result = SwiftSourceIR.verifyFacingResult(result)
+        }
 
         return response(id: id, result: [
             "kind": "ir-document",
@@ -93,6 +96,13 @@ public enum SwiftSourceRPC {
             "opacityReport": result.opacityReport.map(SwiftSourceIR.anyValue),
             "refusals": result.refusals.map(SwiftSourceIR.anyValue),
         ])
+    }
+
+    private static func requestedVerifyLayer(_ params: [String: Any]) -> Bool {
+        guard let options = params["options"] as? [String: Any] else {
+            return false
+        }
+        return options["layer"] as? String == "verify"
     }
 
     private static func compile(id: Any, params: [String: Any]) throws -> [String: Any] {
@@ -137,8 +147,7 @@ public enum SwiftSourceRPC {
 
     private static func write(_ object: [String: Any]) {
         guard JSONSerialization.isValidJSONObject(object),
-              let data = try? JSONSerialization.data(withJSONObject: object, options: [.sortedKeys]),
-              let line = String(data: data, encoding: .utf8)
+              let data = try? JSONSerialization.data(withJSONObject: object, options: [.sortedKeys])
         else {
             FileHandle.standardOutput.write(#"{"jsonrpc":"2.0","id":null,"error":{"code":-32603,"message":"SERIALIZE_ERROR"}}"#.data(using: .utf8)!)
             FileHandle.standardOutput.write(Data([0x0A]))
@@ -150,6 +159,6 @@ public enum SwiftSourceRPC {
     }
 }
 
-private struct SwiftSourceRPCExit: Error {
+private struct SwiftSourceRPCExit: Error, @unchecked Sendable {
     let response: [String: Any]
 }
