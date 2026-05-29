@@ -2,12 +2,16 @@ package realizego
 
 import (
 	"bufio"
+	"bytes"
 	"encoding/json"
 	"fmt"
 	"io"
 	"os"
 	"os/exec"
 	"path/filepath"
+	"regexp"
+	"sort"
+	"strings"
 )
 
 type rpcRequest struct {
@@ -37,8 +41,7 @@ func RunRPC(stdin io.Reader, stdout io.Writer) error {
 		case "provekit.plugin.invoke":
 			writeJSON(stdout, handleInvoke(req.ID, req.Params))
 		case "provekit.plugin.resolve_dependency_proofs":
-			fmt.Fprintln(os.Stderr, "provekit-realize-go-core: resolve_dependency_proofs not yet implemented for go; returning empty proof_paths")
-			writeJSON(stdout, successResponse(req.ID, map[string]any{"proof_paths": []string{}}))
+			writeJSON(stdout, handleResolveDependencyProofs(req.ID, req.Params))
 		case "provekit.plugin.check":
 			writeJSON(stdout, handleCheck(req.ID, req.Params))
 		case "provekit.plugin.shutdown":
@@ -78,6 +81,27 @@ func handleInvoke(id json.RawMessage, raw json.RawMessage) any {
 	return successResponse(id, realized)
 }
 
+func handleResolveDependencyProofs(id json.RawMessage, raw json.RawMessage) any {
+	var params map[string]any
+	if len(raw) > 0 {
+		if err := json.Unmarshal(raw, &params); err != nil {
+			return errorResponse(id, -32602, fmt.Sprintf("INVALID_PARAMS: %v", err))
+		}
+	}
+	if params == nil {
+		params = map[string]any{}
+	}
+	projectRoot, _ := params["project_root"].(string)
+	if projectRoot == "" {
+		projectRoot, _ = params["projectRoot"].(string)
+	}
+	paths, err := resolveDependencyProofPaths(projectRoot)
+	if err != nil {
+		return errorResponse(id, -32030, "RESOLVE_DEPENDENCY_PROOFS_FAILED: "+err.Error())
+	}
+	return successResponse(id, map[string]any{"proof_paths": paths})
+}
+
 func handleCheck(id json.RawMessage, raw json.RawMessage) any {
 	var params map[string]any
 	if len(raw) > 0 {
@@ -104,6 +128,166 @@ func handleCheck(id json.RawMessage, raw json.RawMessage) any {
 		report["error"] = err.Error()
 	}
 	return successResponse(id, report)
+}
+
+type listedGoModule struct {
+	Path    string          `json:"Path"`
+	Dir     string          `json:"Dir"`
+	Main    bool            `json:"Main"`
+	Replace *listedGoModule `json:"Replace"`
+}
+
+var dependencyProofName = regexp.MustCompile(`^blake3-512:[0-9a-f]{128}\.proof$`)
+
+func resolveDependencyProofPaths(projectRoot string) ([]string, error) {
+	root := strings.TrimSpace(projectRoot)
+	if root == "" {
+		wd, err := os.Getwd()
+		if err != nil {
+			return nil, err
+		}
+		root = wd
+	}
+	absRoot, err := filepath.Abs(root)
+	if err != nil {
+		return nil, err
+	}
+	absRoot = filepath.Clean(absRoot)
+	if _, err := os.Stat(filepath.Join(absRoot, "go.mod")); err != nil {
+		if os.IsNotExist(err) {
+			return []string{}, nil
+		}
+		return nil, err
+	}
+
+	cmd := exec.Command("go", "list", "-m", "-json", "all")
+	cmd.Dir = absRoot
+	output, err := cmd.CombinedOutput()
+	if err != nil {
+		detail := strings.TrimSpace(string(output))
+		if detail != "" {
+			return nil, fmt.Errorf("go list -m -json all failed: %w: %s", err, detail)
+		}
+		return nil, fmt.Errorf("go list -m -json all failed: %w", err)
+	}
+
+	proofs := map[string]struct{}{}
+	decoder := json.NewDecoder(bytes.NewReader(output))
+	for {
+		var module listedGoModule
+		if err := decoder.Decode(&module); err != nil {
+			if err == io.EOF {
+				break
+			}
+			return nil, fmt.Errorf("decode go list module: %w", err)
+		}
+		if module.Main {
+			continue
+		}
+		dir := effectiveModuleDir(module)
+		if dir == "" {
+			continue
+		}
+		if !filepath.IsAbs(dir) {
+			dir = filepath.Join(absRoot, dir)
+		}
+		if err := collectProofPaths(filepath.Clean(dir), proofs); err != nil {
+			return nil, err
+		}
+	}
+
+	originals := make([]string, 0, len(proofs))
+	for proof := range proofs {
+		originals = append(originals, proof)
+	}
+	sort.Strings(originals)
+	return copyProofsToTemp(originals)
+}
+
+func effectiveModuleDir(module listedGoModule) string {
+	if module.Dir != "" {
+		return module.Dir
+	}
+	if module.Replace != nil {
+		return effectiveModuleDir(*module.Replace)
+	}
+	return ""
+}
+
+func collectProofPaths(root string, proofs map[string]struct{}) error {
+	info, err := os.Stat(root)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return nil
+		}
+		return err
+	}
+	if !info.IsDir() {
+		return nil
+	}
+	return filepath.WalkDir(root, func(path string, entry os.DirEntry, err error) error {
+		if err != nil {
+			return err
+		}
+		if entry.IsDir() {
+			switch entry.Name() {
+			case ".git", "vendor":
+				if path != root {
+					return filepath.SkipDir
+				}
+			}
+			return nil
+		}
+		if !dependencyProofName.MatchString(entry.Name()) {
+			return nil
+		}
+		abs, err := filepath.Abs(path)
+		if err != nil {
+			return err
+		}
+		proofs[filepath.Clean(abs)] = struct{}{}
+		return nil
+	})
+}
+
+func copyProofsToTemp(paths []string) ([]string, error) {
+	if len(paths) == 0 {
+		return []string{}, nil
+	}
+	root, err := os.MkdirTemp("", "provekit-go-dependency-proofs-")
+	if err != nil {
+		return nil, err
+	}
+	out := make([]string, 0, len(paths))
+	for i, path := range paths {
+		dir := filepath.Join(root, fmt.Sprintf("%04d", i))
+		if err := os.MkdirAll(dir, 0o755); err != nil {
+			return nil, err
+		}
+		dst := filepath.Join(dir, filepath.Base(path))
+		if err := copyFile(path, dst); err != nil {
+			return nil, err
+		}
+		out = append(out, dst)
+	}
+	return out, nil
+}
+
+func copyFile(src, dst string) error {
+	in, err := os.Open(src)
+	if err != nil {
+		return err
+	}
+	defer in.Close()
+	out, err := os.Create(dst)
+	if err != nil {
+		return err
+	}
+	if _, err := io.Copy(out, in); err != nil {
+		_ = out.Close()
+		return err
+	}
+	return out.Close()
 }
 
 func asMissing(err error, target **MissingTemplateError) bool {
