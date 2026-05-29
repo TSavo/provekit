@@ -119,6 +119,72 @@ static int Mul(int x, int y) { return x * y; }
     }
 
     [Fact]
+    public void LiftedFunctionContractCarriesMaterializableBodySource()
+    {
+        var lifter = new CsharpLifter();
+        var result = new LiftResult();
+        var source = @"
+class Shim {
+static Response Fetch(string url, Headers headers) {
+    return client.Execute(url, headers);
+}
+}";
+
+        lifter.LiftSource(source, "shim.cs", result);
+
+        var contract = Assert.Single(result.Declarations);
+        var bodySource = Assert.IsType<JsonObject>(contract["body_source"]);
+        Assert.Equal("return client.Execute(url, headers);", bodySource["body_text"]?.GetValue<string>());
+        Assert.Equal("shim.cs", bodySource["file"]?.GetValue<string>());
+        Assert.StartsWith("blake3-512:", bodySource["source_cid"]?.GetValue<string>());
+        Assert.StartsWith("blake3-512:", bodySource["template_cid"]?.GetValue<string>());
+        Assert.Equal(new[] { "url", "headers" }, bodySource["param_names"]!.AsArray().Select(p => p!.GetValue<string>()));
+
+        var template = Assert.IsType<JsonObject>(bodySource["ast_template"]);
+        Assert.Equal("block", template["kind"]?.GetValue<string>());
+        var stmt = Assert.IsType<JsonObject>(template["stmts"]!.AsArray()[0]);
+        Assert.Equal("return", stmt["kind"]?.GetValue<string>());
+        var call = Assert.IsType<JsonObject>(stmt["expr"]);
+        Assert.Equal("method_call", call["kind"]?.GetValue<string>());
+        Assert.Equal("Execute", call["method"]?.GetValue<string>());
+        var args = call["args"]!.AsArray();
+        Assert.Equal("param_ref", args[0]!["kind"]?.GetValue<string>());
+        Assert.Equal(1, args[0]!["index"]?.GetValue<int>());
+        Assert.Equal("param_ref", args[1]!["kind"]?.GetValue<string>());
+        Assert.Equal(2, args[1]!["index"]?.GetValue<int>());
+    }
+
+    [Fact]
+    public void BodyTemplateCidIsStableUnderParameterRenaming()
+    {
+        static JsonObject BodySourceFor(string source)
+        {
+            var lifter = new CsharpLifter();
+            var result = new LiftResult();
+            lifter.LiftSource(source, "shim.cs", result);
+            return Assert.IsType<JsonObject>(Assert.Single(result.Declarations)["body_source"]);
+        }
+
+        var bodyA = BodySourceFor(@"
+class Shim {
+static Response Fetch(string url, Headers headers) {
+    return client.Execute(url, headers);
+}
+}");
+        var bodyB = BodySourceFor(@"
+class Shim {
+static Response Fetch(string uri, Headers h) {
+    return client.Execute(uri, h);
+}
+}");
+
+        Assert.Equal(bodyA["ast_template"]!.ToJsonString(), bodyB["ast_template"]!.ToJsonString());
+        Assert.Equal(bodyA["template_cid"]!.GetValue<string>(), bodyB["template_cid"]!.GetValue<string>());
+        Assert.NotEqual(bodyA["body_text"]!.GetValue<string>(), bodyB["body_text"]!.GetValue<string>());
+        Assert.NotEqual(bodyA["source_cid"]!.GetValue<string>(), bodyB["source_cid"]!.GetValue<string>());
+    }
+
+    [Fact]
     public void CompilerProducesValidCsharpExpression()
     {
         var compiler = new CsharpCompiler();

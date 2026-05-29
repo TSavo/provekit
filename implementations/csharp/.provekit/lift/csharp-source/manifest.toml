@@ -9,3 +9,4 @@ working_dir = "."
 authoring_surfaces = ["csharp-source"]
 ir_version = "v1.1.0"
 emits_signed_mementos = false
+recognize = true

@@ -22,4 +22,5 @@ public sealed record MintedMemento(
     IReadOnlyList<string> InputBindings,
     ContractDecl Contract,
     string IrJson,
-    string SourceSpan);
+    string SourceSpan,
+    LinqBodySource BodySource);

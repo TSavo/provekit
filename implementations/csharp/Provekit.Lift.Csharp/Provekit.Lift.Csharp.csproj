@@ -9,6 +9,7 @@
   </PropertyGroup>
 
   <ItemGroup>
+    <ProjectReference Include="..\Provekit.Canonicalizer\Provekit.Canonicalizer.csproj" />
     <ProjectReference Include="..\Provekit.IR\Provekit.IR.csproj" />
   </ItemGroup>
 

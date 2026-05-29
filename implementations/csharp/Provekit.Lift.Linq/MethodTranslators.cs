@@ -332,7 +332,8 @@ internal static class MethodTranslators
             inputBindings.ToList(),
             contract,
             json,
-            span);
+            span,
+            LinqBodyTemplates.BodySource(op, outBinding));
     }
 }
 
