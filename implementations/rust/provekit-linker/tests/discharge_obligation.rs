@@ -225,8 +225,18 @@ fn logically_incompatible_emits_implication_unprovable() {
         "weak-post case must surface implication-unprovable, got {:?}",
         out.linker_errors[0]
     );
-    assert_eq!(out.linker_errors[0].target_symbol, "rust-kit:callee");
-    assert_eq!(out.linker_errors[0].file.as_deref(), Some("caller.rs"));
+    let err = &out.linker_errors[0];
+    assert_eq!(err.target_symbol, "rust-kit:callee");
+    assert_eq!(err.file.as_deref(), Some("caller.rs"));
+    assert_eq!(
+        err.call_site_locus_json.as_ref(),
+        Some(&json!({
+            "file": "caller.rs",
+            "line": 1,
+            "column": 1
+        })),
+        "solver failure must preserve the callsite locus for LSP diagnostics"
+    );
 }
 
 // -------------------------------------------------------------------
