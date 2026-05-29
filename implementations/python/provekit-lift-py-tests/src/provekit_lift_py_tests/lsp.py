@@ -14,6 +14,7 @@
 
 from __future__ import annotations
 
+import ast
 import json
 import os
 import sys
@@ -277,6 +278,196 @@ def handle_lift(msg_id: Any, params: dict) -> None:
         )
 
 
+def _contract_bindings_by_callee(contract_bindings: List[Any]) -> Dict[str, Dict[str, Any]]:
+    contracts_by_callee: Dict[str, Dict[str, Any]] = {}
+    for binding in contract_bindings:
+        if not isinstance(binding, dict):
+            continue
+        name = binding.get("name")
+        if not isinstance(name, str):
+            continue
+        stem = name.split("@", 1)[0].split("(", 1)[0].strip()
+        if stem:
+            contracts_by_callee.setdefault(stem, binding)
+            simple = stem.rsplit(".", 1)[-1]
+            if simple:
+                contracts_by_callee.setdefault(simple, binding)
+    return contracts_by_callee
+
+
+def _binding_contract_cid(binding: Dict[str, Any]) -> Optional[str]:
+    cid = binding.get("contract_cid", binding.get("contractCid"))
+    if isinstance(cid, str) and cid:
+        return cid
+    return None
+
+
+def _call_callee_name(node: ast.AST) -> Optional[str]:
+    if isinstance(node, ast.Name):
+        return node.id
+    if isinstance(node, ast.Attribute):
+        return node.attr
+    return None
+
+
+def _collect_python_callsites(source: str, source_path: str) -> List[Dict[str, Any]]:
+    tree = ast.parse(source, filename=source_path)
+    callsites: List[Dict[str, Any]] = []
+
+    class FunctionBodyCallVisitor(ast.NodeVisitor):
+        def visit_FunctionDef(self, node: ast.FunctionDef) -> None:
+            for stmt in node.body:
+                self.visit(stmt)
+
+        def visit_AsyncFunctionDef(self, node: ast.AsyncFunctionDef) -> None:
+            for stmt in node.body:
+                self.visit(stmt)
+
+        def visit_Lambda(self, node: ast.Lambda) -> None:
+            self.visit(node.body)
+
+        def visit_Call(self, node: ast.Call) -> None:
+            callee = _call_callee_name(node.func)
+            if callee:
+                callsites.append(
+                    {
+                        "callee": callee,
+                        "file": source_path,
+                        "line": node.lineno,
+                        "col": node.col_offset,
+                    }
+                )
+            self.generic_visit(node)
+
+    FunctionBodyCallVisitor().visit(tree)
+    return callsites
+
+
+def _rel_python_path(workspace_root: str, path: str) -> str:
+    try:
+        rel = os.path.relpath(path, os.path.abspath(workspace_root or "."))
+    except ValueError:
+        rel = path
+    return rel.replace(os.sep, "/")
+
+
+def _lift_implications_result(params: dict) -> Dict[str, Any]:
+    workspace_root = str(params.get("workspace_root", "."))
+    source_paths = params.get("source_paths", ["."])
+    contract_bindings = params.get("contract_bindings", [])
+    if not isinstance(contract_bindings, list):
+        contract_bindings = []
+
+    contracts_by_callee = _contract_bindings_by_callee(contract_bindings)
+    ir: List[Dict[str, Any]] = []
+    diagnostics: List[Dict[str, Any]] = []
+
+    for path in _iter_python_files(workspace_root, source_paths):
+        rel_path = _rel_python_path(workspace_root, path)
+        try:
+            with open(path, "r", encoding="utf-8") as f:
+                source = f.read()
+        except OSError as e:
+            diagnostics.append(
+                {
+                    "kind": "lift-gap",
+                    "reason": f"read-failed: {e}",
+                    "file": rel_path,
+                }
+            )
+            continue
+
+        try:
+            callsites = _collect_python_callsites(source, rel_path)
+        except SyntaxError as e:
+            diagnostics.append(
+                {
+                    "kind": "lift-gap",
+                    "reason": "parse-failed",
+                    "file": rel_path,
+                    "message": str(e),
+                }
+            )
+            continue
+
+        for callsite in callsites:
+            callee = callsite["callee"]
+            binding = contracts_by_callee.get(callee)
+            if binding is None:
+                diagnostics.append(
+                    {
+                        "kind": "lift-gap",
+                        "reason": "no-contract-for-callee",
+                        "callee": callee,
+                        "file": callsite["file"],
+                        "line": callsite["line"],
+                        "col": callsite["col"],
+                    }
+                )
+                continue
+
+            target_cid = _binding_contract_cid(binding)
+            if target_cid is None:
+                diagnostics.append(
+                    {
+                        "kind": "lift-gap",
+                        "reason": "binding-missing-contract-cid",
+                        "callee": callee,
+                        "file": callsite["file"],
+                        "line": callsite["line"],
+                        "col": callsite["col"],
+                    }
+                )
+                continue
+
+            ir.append(
+                {
+                    "kind": "bridge",
+                    "name": (
+                        f"intra-body:python:{callee}@{callsite['file']}:"
+                        f"{callsite['line']}:{callsite['col']}"
+                    ),
+                    "schemaVersion": "1",
+                    "sourceContractCid": target_cid,
+                    "sourceLayer": "python",
+                    "sourceSymbol": callee,
+                    "target": {"cid": target_cid, "kind": "contract"},
+                    "targetContractCid": target_cid,
+                    "targetLayer": "python-tests",
+                    "callsite": {
+                        "file": callsite["file"],
+                        "start_line": callsite["line"],
+                        "start_col": callsite["col"],
+                    },
+                }
+            )
+
+    return {"kind": "ir-document", "ir": ir, "diagnostics": diagnostics}
+
+
+def handle_lift_implications(msg_id: Any, params: dict) -> None:
+    try:
+        _send(
+            {
+                "jsonrpc": "2.0",
+                "id": msg_id,
+                "result": _lift_implications_result(params),
+            }
+        )
+    except Exception as e:
+        _send(
+            {
+                "jsonrpc": "2.0",
+                "id": msg_id,
+                "error": {
+                    "code": -32603,
+                    "message": str(e),
+                    "data": traceback.format_exc(),
+                },
+            }
+        )
+
+
 def _try_lift_pydantic(source: str) -> List[ContractDecl]:
     """Attempt to exec the source and lift any Pydantic BaseModels."""
     try:
@@ -326,6 +517,8 @@ def main() -> None:
             handle_parse(msg_id, params)
         elif method == "lift":
             handle_lift(msg_id, params)
+        elif method == "provekit.plugin.lift_implications":
+            handle_lift_implications(msg_id, params)
         elif method == "shutdown":
             handle_shutdown(msg_id)
         else:
