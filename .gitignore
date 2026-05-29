@@ -5,6 +5,8 @@ dist/
 .worktrees/
 **/.venv/
 **/__pycache__/
+**/.scala-build/
+**/.bsp/
 *.egg-info/
 .understand-anything/
 
