@@ -675,6 +675,9 @@ cross-language-proof-parity: build-java cross-language-proof-parity-python-env
 	cargo test --release --manifest-path implementations/rust/Cargo.toml \
 		-p provekit-cli --test cmd_emit_go_testing \
 		emit_go_testing_dispatches_manifest_writes_artifact_and_compile_checks
+	cargo test --release --manifest-path implementations/rust/Cargo.toml \
+		-p provekit-cli --test cmd_emit_go_testify \
+		emit_go_testify_dispatches_separate_emitter_and_compile_checks
 	PYTHON=$(PARITY_PYTHON) PATH=$(PARITY_PYTHON_BIN):$(PATH) cargo test --release --manifest-path implementations/rust/Cargo.toml \
 		-p provekit-cli --test cmd_emit_python_pytest \
 		emit_python_pytest_dispatches_real_emitter_and_pytest_checks_output
