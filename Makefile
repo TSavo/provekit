@@ -12,7 +12,7 @@
 #   make ci: Linux-profile gate (catalog + protocol + live mints + tests)
 #   make conformance: catalog + protocol + live mint CIDs + self-contract tests
 #   make cross-language-proof-parity: Java/Go/Python/Rust emit + materialize + prove gate,
-#                                      plus TypeScript kit-owned materialize coverage
+#                                      plus TypeScript/Zig/Scala parity lanes
 #   make all-mint: run all 11 Linux-profile mint commands; print CIDs
 #   make bootstrap-self-contracts: re-sign attestations from live artifacts
 #   make test-all: run the Linux native test aggregate
@@ -20,7 +20,7 @@
 # Per-language targets:
 #   make build-rust: cargo build --release for workspace + tools
 #   make build-cpp: vendored-blake3 clang++ build of the C++ orchestrator
-#   make test-rust / test-go / test-ts / test-csharp / test-python / test-ruby / test-php / test-c
+#   make test-rust / test-go / test-ts / test-csharp / test-python / test-ruby / test-php / test-scala / test-c
 #
 # Determinism:
 #   make ci is the local Linux-profile contract. If it's green, the non-Swift
@@ -68,6 +68,7 @@ PYTHON ?= $(shell command -v python3 || echo python3)
 PIP ?= pip3 --python $(PYTHON)
 MVN ?= mvn
 LOCAL_BIN ?= /tmp/provekit-local-bin
+SCALA_CLI ?= scala-cli
 PARITY_PYTHON_VENV ?= /tmp/provekit-cross-language-parity-python
 PARITY_PYTHON_BIN := $(PARITY_PYTHON_VENV)/bin
 PARITY_PYTHON := $(PARITY_PYTHON_BIN)/python
@@ -88,7 +89,7 @@ help:
 	@echo "  make conformance    catalog + protocol + 11 mint CIDs + self-contract tests"
 	@echo "  make cross-language-proof-parity"
 	@echo "                       Java/Go/Python/Rust emit + materialize + prove gate"
-	@echo "                       plus TypeScript kit-owned materialize coverage"
+	@echo "                       plus TypeScript/Zig/Scala parity lanes"
 	@echo "  make all-mint       11 mint commands (Swift excluded: macOS-only, use mint-swift)"
 	@echo "  make bug-zoo        replay executable bug specimens through source-routed CLI"
 	@echo "  make bootstrap-self-contracts"
@@ -97,7 +98,7 @@ help:
 	@echo "  make test-all       language test suites (Swift excluded: macOS-only, use test-swift)"
 	@echo ""
 	@echo "Per-language build:"
-	@echo "  make build-all      build every kit (rust + cpp + go + ts + csharp + java + python + ruby)"
+	@echo "  make build-all      build every kit (rust + cpp + go + ts + csharp + java + python + ruby + scala)"
 	@echo "  make build-rust     cargo build --release (workspace + tools)"
 	@echo "  make build-cpp      clang++ + vendored-blake3"
 	@echo "  make build-go       go build per Go module"
@@ -105,11 +106,12 @@ help:
 	@echo "  make build-python   pip-install Python realize kits and shim packages"
 	@echo "  make build-csharp   dotnet build"
 	@echo "  make build-java     mvn package + install provekit-lsp-java to ~/.local/bin"
+	@echo "  make build-scala    scala-cli compile Scala emit kits"
 	@echo "  make build-c        cc build of C IR, lifters, LSP, and self-contracts"
 	@echo "  make build-swift    swift build -c release"
 	@echo ""
 	@echo "Per-language test:"
-	@echo "  make test-rust  test-go  test-cpp  test-ts  test-csharp  test-python  test-ruby  test-php  test-java  test-c  test-swift"
+	@echo "  make test-rust  test-go  test-cpp  test-ts  test-csharp  test-python  test-ruby  test-php  test-java  test-scala  test-c  test-swift"
 	@echo ""
 	@echo "Per-kit conformance gate (C1-C8 lift-plugin-protocol verifiers):"
 	@echo "  make prove-all      all 12 Linux kits (swift excluded: macOS-only)"
@@ -143,7 +145,7 @@ help:
 # with the Swift toolchain and is not run by Linux CI. Use `make build-swift`
 # directly on macOS.
 .PHONY: build-all
-build-all: build-rust build-cpp build-go build-ts build-csharp build-java build-python build-ruby
+build-all: build-rust build-cpp build-go build-ts build-csharp build-java build-python build-ruby build-scala
 
 .PHONY: build-rust
 build-rust:
@@ -274,6 +276,10 @@ build-python:
 		-e implementations/python/provekit-realize-python-sqlite3 \
 		-e implementations/python/provekit-realize-python-aiosqlite \
 		-e implementations/python/provekit-realize-python-requests
+
+.PHONY: build-scala
+build-scala:
+	$(SCALA_CLI) compile implementations/scala/provekit-emit-scala-scalatest --server=false --scalac-option -deprecation
 
 .PHONY: build-java-self-contracts
 build-java-self-contracts:
@@ -667,8 +673,8 @@ cross-language-proof-parity-python-env:
 		-e implementations/python/provekit-realize-python-requests
 
 .PHONY: cross-language-proof-parity
-cross-language-proof-parity: build-java build-ts build-zig cross-language-proof-parity-python-env
-	@echo "=== Cross-language proof parity: emit/materialize/prove for Java, Go, Python, Rust, TypeScript, Zig ==="
+cross-language-proof-parity: build-java build-ts build-zig build-scala cross-language-proof-parity-python-env
+	@echo "=== Cross-language proof parity: emit/materialize/prove lanes for Java, Go, Python, Rust, TypeScript, Zig, Scala ==="
 	cargo build --manifest-path implementations/rust/Cargo.toml \
 		-p provekit-realize-rust-core --bin provekit-realize-rust
 	@echo "--- emit parity ---"
@@ -690,6 +696,9 @@ cross-language-proof-parity: build-java build-ts build-zig cross-language-proof-
 	cargo test --release --manifest-path implementations/rust/Cargo.toml \
 		-p provekit-cli --test cmd_emit_typescript_vitest \
 		emit_typescript_vitest_dispatches_real_emitter_and_vitest_checks_output
+	cargo test --release --manifest-path implementations/rust/Cargo.toml \
+		-p provekit-cli --test cmd_emit_scala_scalatest \
+		emit_scala_scalatest_dispatches_real_emitter_and_scala_cli_checks_output
 	@echo "--- materialize parity ---"
 	cargo test --release --manifest-path implementations/rust/Cargo.toml \
 		-p provekit-cli --test cmd_materialize_proof_load \
@@ -902,6 +911,12 @@ test-java: build-java
 	  || failed="$$failed provekit-realize-java-core"; \
 	if [ -n "$$failed" ]; then echo "test-java FAIL:$$failed"; exit 1; fi
 
+.PHONY: test-scala
+test-scala: build-scala
+	cargo test --release --manifest-path implementations/rust/Cargo.toml \
+		-p provekit-cli --test cmd_emit_scala_scalatest \
+		emit_scala_scalatest_dispatches_real_emitter_and_scala_cli_checks_output
+
 .PHONY: test-swift
 test-swift: build-swift
 	cd implementations/swift && swift test
@@ -942,7 +957,7 @@ build-zig:
 .PHONY: test-all
 test-all:
 	@failed=""; \
-	for s in test-rust test-go test-ts test-csharp test-python test-ruby test-php test-java test-c; do \
+	for s in test-rust test-go test-ts test-csharp test-python test-ruby test-php test-java test-scala test-c; do \
 	  echo ""; \
 	  echo "==== $$s ===="; \
 	  $(MAKE) $$s || failed="$$failed $$s"; \

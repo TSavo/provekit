@@ -275,6 +275,22 @@ jobs:
         with:
           version: 0.16.0
 
+      - name: Install Scala CLI 1.14.0
+        # Scala emit kits are real Scala/JVM kits invoked over the same
+        # config/manifest/RPC seam as the other languages. Pin the launcher
+        # so the parity gate does not depend on whatever the self-hosted
+        # runner happens to have installed.
+        run: |
+          cd /tmp
+          EXPECTED_SHA="7a55547894ecbc9cbf8682c5b2eb3680df0a305dc490e80a491ab873601baaa7"
+          curl -fsSL --retry 5 -o scala-cli.gz \
+            https://github.com/VirtusLab/scala-cli/releases/download/v1.14.0/scala-cli-x86_64-pc-linux.gz
+          echo "$EXPECTED_SHA  scala-cli.gz" | sha256sum -c -
+          gunzip -f scala-cli.gz
+          chmod 0755 scala-cli
+          sudo mv scala-cli /usr/local/bin/scala-cli
+          scala-cli version
+
       # ---------------------------------------------------------------
       # The gate.
       # ---------------------------------------------------------------
@@ -290,9 +306,9 @@ jobs:
         run: make conformance
 
       - name: make cross-language-proof-parity
-        # Single acceptance shape for the product spine: Java, Go, Python, and
-        # Rust must each cover emit, materialize, and prove through
-        # config/manifest/RPC-dispatched kits.
+        # Single acceptance shape for the product spine: languages advance
+        # through config/manifest/RPC-dispatched emit, materialize, and prove
+        # lanes without moving language semantics into the Rust CLI.
         run: make cross-language-proof-parity
 
       - name: make test-all
