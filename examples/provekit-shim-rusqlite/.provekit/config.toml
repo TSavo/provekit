@@ -1,2 +1,10 @@
 [authoring]
 surface = "rust-bind"
+
+[[plugins]]
+name = "rust-bind"
+surface = "rust-bind"
+
+[[plugins]]
+name = "rust-implications"
+surface = "rust-implications"
