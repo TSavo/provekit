@@ -1,0 +1,17 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "provekit-emit-python-hypothesis"
+version = "0.1.0"
+description = "PEP 1.7.0 Python Hypothesis emitter kit: materializes neutral predicates as native property tests"
+requires-python = ">=3.11"
+dependencies = ["blake3>=1.0.0", "hypothesis>=6.0.0"]
+
+[project.scripts]
+provekit-emit-python-hypothesis = "provekit_emit_python_hypothesis.__main__:main"
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["src"]
