@@ -329,6 +329,20 @@ def _classify_and_lift(
     if _classify_value_scope(body, test_name, source_path, out):
         return
 
+    unsupported_unittest_asserts = _unsupported_unittest_assertions(body)
+    if unsupported_unittest_asserts:
+        out.claimed_tests.add(test_name)
+        out.seen += 1
+        for name in unsupported_unittest_asserts:
+            out.warnings.append(
+                LiftWarning(
+                    source_path,
+                    test_name,
+                    f"layer2 unittest lift-gap: unsupported assertion method `{name}`",
+                )
+            )
+        return
+
     # No Layer 2 pattern claimed it. Leave for Layer 0.
 
 
@@ -349,6 +363,13 @@ _UNITTEST_BINARY_PREDICATES = {
     "assertIsNot": "≠",
 }
 
+_UNITTEST_NONE_PREDICATES = {
+    "assertIsNone": "=",
+    "assertIsNotNone": "≠",
+}
+
+_UNITTEST_TRUTH_PREDICATES = {"assertTrue", "assertFalse"}
+
 
 def _is_assertion_stmt(stmt: ast.stmt) -> bool:
     """Return True iff ``stmt`` looks like a liftable assertion in either
@@ -364,7 +385,9 @@ def _is_assertion_stmt(stmt: ast.stmt) -> bool:
             name = _attr_method_name(call.func)
             if name is not None and name in _UNITTEST_BINARY_PREDICATES:
                 return True
-            if name in ("assertTrue", "assertFalse"):
+            if name is not None and name in _UNITTEST_NONE_PREDICATES:
+                return True
+            if name in _UNITTEST_TRUTH_PREDICATES:
                 return True
     return False
 
@@ -376,6 +399,29 @@ def _attr_method_name(func: ast.expr) -> Optional[str]:
     if isinstance(func, ast.Attribute):
         return func.attr
     return None
+
+
+def _unsupported_unittest_assertions(stmts: Sequence[ast.stmt]) -> List[str]:
+    out: List[str] = []
+    for stmt in stmts:
+        if not isinstance(stmt, ast.Expr):
+            continue
+        call = stmt.value
+        if not isinstance(call, ast.Call):
+            continue
+        name = _attr_method_name(call.func)
+        if name is None:
+            continue
+        if not name.startswith("assert"):
+            continue
+        if (
+            name in _UNITTEST_BINARY_PREDICATES
+            or name in _UNITTEST_NONE_PREDICATES
+            or name in _UNITTEST_TRUTH_PREDICATES
+        ):
+            continue
+        out.append(name)
+    return out
 
 
 # ---------------------------------------------------------------------------
@@ -475,18 +521,33 @@ def _lift_assertion_stmt(stmt: ast.stmt) -> Formula:
             r = _translate_term(call.args[1])
             sym = _UNITTEST_BINARY_PREDICATES[name]
             return atomic(sym, [l, r])
+        if name in _UNITTEST_NONE_PREDICATES:
+            if len(call.args) < 1:
+                raise ValueError(f"{name} expects 1 positional arg")
+            t = _translate_term(call.args[0])
+            return atomic(_UNITTEST_NONE_PREDICATES[name], [t, ctor("None", [])])
         if name == "assertTrue":
             if len(call.args) < 1:
                 raise ValueError("assertTrue expects 1 positional arg")
-            t = _translate_term(call.args[0])
-            return eq(t, bool_const(True))
+            return _translate_truth_assertion(call.args[0], True)
         if name == "assertFalse":
             if len(call.args) < 1:
                 raise ValueError("assertFalse expects 1 positional arg")
-            t = _translate_term(call.args[0])
-            return eq(t, bool_const(False))
+            return _translate_truth_assertion(call.args[0], False)
         raise ValueError(f"unrecognized assertion method: {name!r}")
     raise ValueError("statement is not a liftable assertion")
+
+
+def _translate_truth_assertion(node: ast.expr, expected: bool) -> Formula:
+    try:
+        formula = _translate_bool_expr(node)
+    except ValueError as bool_error:
+        try:
+            t = _translate_term(node)
+        except ValueError:
+            raise bool_error
+        return eq(t, bool_const(expected))
+    return formula if expected else not_(formula)
 
 
 # ---------------------------------------------------------------------------
@@ -1263,7 +1324,9 @@ def _assertion_value_exprs(stmt: ast.stmt) -> List[ast.expr]:
         name = _attr_method_name(stmt.value.func)
         if name in _UNITTEST_BINARY_PREDICATES:
             exprs.extend(stmt.value.args[:2])
-        elif name in ("assertTrue", "assertFalse") and stmt.value.args:
+        elif name in _UNITTEST_NONE_PREDICATES and stmt.value.args:
+            exprs.append(stmt.value.args[0])
+        elif name in _UNITTEST_TRUTH_PREDICATES and stmt.value.args:
             exprs.append(stmt.value.args[0])
     return exprs
 
@@ -1344,6 +1407,11 @@ def _lift_assertion_stmt_scoped(
             l = _translate_term_scoped(call.args[0], scope, call_vars)
             r = _translate_term_scoped(call.args[1], scope, call_vars)
             return atomic(_UNITTEST_BINARY_PREDICATES[name], [l, r])
+        if name in _UNITTEST_NONE_PREDICATES:
+            if len(call.args) < 1:
+                raise ValueError(f"{name} expects 1 positional arg")
+            t = _translate_term_scoped(call.args[0], scope, call_vars)
+            return atomic(_UNITTEST_NONE_PREDICATES[name], [t, ctor("None", [])])
         if name == "assertTrue":
             if len(call.args) < 1:
                 raise ValueError("assertTrue expects 1 positional arg")
