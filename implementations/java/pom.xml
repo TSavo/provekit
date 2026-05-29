@@ -27,6 +27,7 @@
         <module>provekit-lift-java-provekit-native</module>
         <module>provekit-lift-java-junit</module>
         <module>provekit-lift-java-testng</module>
+        <module>provekit-lift-java-assertj</module>
         <module>provekit-lift-java-jml</module>
         <module>provekit-lift-java-cofoja</module>
         <module>provekit-lift-java-spring-web</module>
@@ -39,6 +40,7 @@
         <module>provekit-realize-java-core</module>
         <module>provekit-emit-java-junit</module>
         <module>provekit-emit-java-testng</module>
+        <module>provekit-emit-java-assertj</module>
         <module>provekit-lift-java-integration-tests</module>
     </modules>
 
