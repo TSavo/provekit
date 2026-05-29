@@ -26,6 +26,7 @@
         <module>provekit-lift-java-bean-validation</module>
         <module>provekit-lift-java-provekit-native</module>
         <module>provekit-lift-java-junit</module>
+        <module>provekit-lift-java-testng</module>
         <module>provekit-lift-java-jml</module>
         <module>provekit-lift-java-cofoja</module>
         <module>provekit-lift-java-spring-web</module>
