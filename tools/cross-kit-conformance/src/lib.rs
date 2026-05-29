@@ -1940,8 +1940,12 @@ fn swift_emit_cid(name: &str) -> Result<String> {
     command_stdout(
         &swift_fixture_cmd(name),
         &root.join("implementations/swift"),
-        Duration::from_secs(180),
+        swift_fixture_timeout(),
     )
+}
+
+fn swift_fixture_timeout() -> Duration {
+    Duration::from_secs(600)
 }
 
 fn swift_conformance_cmd(args: &[&str]) -> Vec<String> {
@@ -2722,6 +2726,7 @@ mod tests {
             bootstrap_timeout_for_target("build-swift"),
             Duration::from_secs(1800)
         );
+        assert_eq!(swift_fixture_timeout(), Duration::from_secs(600));
         assert_eq!(
             native.cmd,
             vec!["swift", "run", "-c", "release", "conformance"]
