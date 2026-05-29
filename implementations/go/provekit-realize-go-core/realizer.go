@@ -7,13 +7,9 @@
 // cross-language `concept_name` plus the function signature; this kit returns
 // REAL Go source realizing that concept. Contract in -> Go sugar out.
 //
-// Minimal mirror (this session): ONE concept, `identity`, with its body
-// template inlined here. The PRODUCTION shape (Python pattern) loads templates
-// from a sealed JSON artifact under
-// `menagerie/go-language-signature/specs/body-templates/...`; that, plus the
-// broader concept set (addition, etc.), is deferred follow-up. The emitted
-// source is real Go that `go build`s -- never a stub for the supported
-// concept. Supra omnia, rectum.
+// Body templates come from Go-module-resolved `.proof` catalogs owned by this
+// kit. The Rust CLI dispatches over RPC and never reads Go module proof files
+// or Go package internals directly.
 package realizego
 
 import (
@@ -24,9 +20,9 @@ import (
 // KitID identifies this realize kit in emitted provenance.
 const KitID = "provekit-realize-go-core@0.1.0"
 
-// bodyTemplate is the inline analog of one entry in Python's
-// `python-canonical-bodies.json`: a concept name, a `${paramN}`-placeholder
-// body template, and a signature guard (param-count bounds).
+// bodyTemplate is the kit-internal rendering shape loaded from
+// `library-sugar-binding-entry` proof members: a concept name, a
+// `${paramN}`-placeholder body template, and a signature guard.
 type bodyTemplate struct {
 	conceptName string
 	template    string // Go statement(s); `${paramN}` substituted by argument names.
@@ -34,30 +30,20 @@ type bodyTemplate struct {
 	maxParams   int
 }
 
-// templates is the kit's supported-concept set. One concept for the minimal
-// mirror; adding rows (or loading a sealed JSON template file) is additive.
-var templates = []bodyTemplate{
-	{
-		// `identity`: a cross-language concept (also in Python's
-		// canonical-bodies). Go realization `return x` -- the same shape as
-		// Python's `return ${param0}`.
-		conceptName: "identity",
-		template:    "return ${param0}",
-		minParams:   1,
-		maxParams:   1,
-	},
-}
-
 // RealizeRequest mirrors the fields of the dispatcher's PEP 1.7.0 realize
 // request (libprovekit core::RealizeRequest) this kit consumes. Unused fields
 // are tolerated (the dispatcher serializes the full request).
 type RealizeRequest struct {
-	Function    string   `json:"function"`
-	Params      []string `json:"params"`
-	ParamTypes  []string `json:"param_types"`
-	ReturnType  string   `json:"return_type"`
-	ConceptName string   `json:"concept_name"`
-	Visibility  string   `json:"visibility"`
+	Function              string   `json:"function"`
+	Params                []string `json:"params"`
+	ParamTypes            []string `json:"param_types"`
+	ReturnType            string   `json:"return_type"`
+	ConceptName           string   `json:"concept_name"`
+	Visibility            string   `json:"visibility"`
+	TargetLibraryTag      string   `json:"target_library_tag"`
+	TargetLibraryTagCamel string   `json:"targetLibraryTag"`
+	ProjectRoot           string   `json:"project_root"`
+	ProjectRootCamel      string   `json:"projectRoot"`
 }
 
 // RealizedSource is the `result` of a realize invoke: the native Go sugar.
@@ -86,7 +72,11 @@ func (e *MissingTemplateError) Error() string {
 // function signature. Returns *MissingTemplateError when the concept/signature
 // is uncovered.
 func Realize(req RealizeRequest) (RealizedSource, error) {
-	tpl, ok := lookupTemplate(req.ConceptName, len(req.Params))
+	templates, err := loadBodyTemplatesForProject(req.projectRoot(), req.targetLibraryTag())
+	if err != nil {
+		return RealizedSource{}, err
+	}
+	tpl, ok := lookupTemplate(templates, req.ConceptName, len(req.Params))
 	if !ok {
 		return RealizedSource{}, &MissingTemplateError{
 			ConceptName: req.ConceptName,
@@ -107,7 +97,21 @@ func Realize(req RealizeRequest) (RealizedSource, error) {
 	}, nil
 }
 
-func lookupTemplate(concept string, numParams int) (bodyTemplate, bool) {
+func (r RealizeRequest) targetLibraryTag() string {
+	if r.TargetLibraryTag != "" {
+		return r.TargetLibraryTag
+	}
+	return r.TargetLibraryTagCamel
+}
+
+func (r RealizeRequest) projectRoot() string {
+	if r.ProjectRoot != "" {
+		return r.ProjectRoot
+	}
+	return r.ProjectRootCamel
+}
+
+func lookupTemplate(templates []bodyTemplate, concept string, numParams int) (bodyTemplate, bool) {
 	for _, t := range templates {
 		if t.conceptName != concept {
 			continue

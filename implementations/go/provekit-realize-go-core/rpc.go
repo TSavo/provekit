@@ -42,6 +42,8 @@ func RunRPC(stdin io.Reader, stdout io.Writer) error {
 			writeJSON(stdout, handleInvoke(req.ID, req.Params))
 		case "provekit.plugin.resolve_dependency_proofs":
 			writeJSON(stdout, handleResolveDependencyProofs(req.ID, req.Params))
+		case "provekit.plugin.body_template_entries":
+			writeJSON(stdout, handleBodyTemplateEntries(req.ID, req.Params))
 		case "provekit.plugin.check":
 			writeJSON(stdout, handleCheck(req.ID, req.Params))
 		case "provekit.plugin.shutdown":
@@ -81,6 +83,26 @@ func handleInvoke(id json.RawMessage, raw json.RawMessage) any {
 	return successResponse(id, realized)
 }
 
+func handleBodyTemplateEntries(id json.RawMessage, raw json.RawMessage) any {
+	var params map[string]any
+	if len(raw) > 0 {
+		if err := json.Unmarshal(raw, &params); err != nil {
+			return errorResponse(id, -32602, fmt.Sprintf("INVALID_PARAMS: %v", err))
+		}
+	}
+	if params == nil {
+		params = map[string]any{}
+	}
+	entries, err := loadBodyTemplateEntriesForProject(
+		projectRootFromParams(params),
+		libraryTagFromParams(params),
+	)
+	if err != nil {
+		return errorResponse(id, -32031, "BODY_TEMPLATE_ENTRIES_FAILED: "+err.Error())
+	}
+	return successResponse(id, map[string]any{"entries": entries})
+}
+
 func handleResolveDependencyProofs(id json.RawMessage, raw json.RawMessage) any {
 	var params map[string]any
 	if len(raw) > 0 {
@@ -91,11 +113,7 @@ func handleResolveDependencyProofs(id json.RawMessage, raw json.RawMessage) any 
 	if params == nil {
 		params = map[string]any{}
 	}
-	projectRoot, _ := params["project_root"].(string)
-	if projectRoot == "" {
-		projectRoot, _ = params["projectRoot"].(string)
-	}
-	paths, err := resolveDependencyProofPaths(projectRoot)
+	paths, err := resolveDependencyProofPaths(projectRootFromParams(params))
 	if err != nil {
 		return errorResponse(id, -32030, "RESOLVE_DEPENDENCY_PROOFS_FAILED: "+err.Error())
 	}
