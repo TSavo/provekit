@@ -250,6 +250,7 @@ fn manifest_plugin_memento(
         "working_dir": working_dir,
         "library_tag": parsed.library_tag.clone(),
         "capability_kind": parsed.capability_kind.clone(),
+        "materialize_source": parsed.materialize_source,
         "workspace_relative": manifest_path.starts_with(workspace_root),
     });
     let mut protocol_versions = parsed.protocol_versions.clone();
@@ -679,6 +680,7 @@ pub(crate) fn registry_realize_candidates(
             source: plugin.source.clone(),
             family: plugin.parsed.family.clone(),
             library_version: plugin.parsed.library_version.clone(),
+            materialize_source: plugin.parsed.materialize_source,
         })
         .collect::<Vec<_>>();
     candidates.sort_by(|a, b| a.tag.cmp(&b.tag).then(a.source.cmp(&b.source)));
@@ -839,6 +841,7 @@ struct ParsedManifest {
     provides_concepts: Vec<String>,
     protocol_versions: Vec<String>,
     capability_kind: Option<String>,
+    materialize_source: bool,
 }
 
 fn parse_manifest(path: &Path) -> Result<ParsedManifest, String> {
@@ -854,6 +857,7 @@ fn parse_manifest(path: &Path) -> Result<ParsedManifest, String> {
     let mut provides_concepts: Vec<String> = Vec::new();
     let mut protocol_versions: Vec<String> = Vec::new();
     let mut capability_kind: Option<String> = None;
+    let mut materialize_source = false;
     let mut section = String::new();
     for line in text.lines() {
         let line = match line.find('#') {
@@ -895,8 +899,10 @@ fn parse_manifest(path: &Path) -> Result<ParsedManifest, String> {
             ("", "library_version") => library_version = Some(val.trim_matches('"').to_string()),
             ("", "scope_bringings") => scope_bringings = parse_toml_string_array(val),
             ("", "provides_concepts") => provides_concepts = parse_toml_string_array(val),
+            ("", "materialize_source") => materialize_source = parse_toml_bool(val),
             ("", "command") => command = parse_toml_string_array(val),
             ("capabilities", "kind") => capability_kind = Some(val.trim_matches('"').to_string()),
+            ("capabilities", "materialize_source") => materialize_source = parse_toml_bool(val),
             _ => {}
         }
     }
@@ -914,7 +920,12 @@ fn parse_manifest(path: &Path) -> Result<ParsedManifest, String> {
         provides_concepts,
         protocol_versions,
         capability_kind,
+        materialize_source,
     })
+}
+
+fn parse_toml_bool(value: &str) -> bool {
+    matches!(value.trim(), "true" | "True" | "TRUE")
 }
 
 /// Parse a TOML inline string array like `["a", "b", "c"]`.
@@ -1207,6 +1218,7 @@ pub(crate) struct RealizeCandidate {
     /// to any shim manifest sharing that family.
     pub(crate) family: Option<String>,
     pub(crate) library_version: Option<String>,
+    pub(crate) materialize_source: bool,
 }
 
 /// Live (unsealed) realize candidates: the `.provekit/realize/*/manifest.toml`
@@ -1275,6 +1287,7 @@ fn project_realize_candidates(
         out.push(RealizeCandidate {
             family: parsed.family.clone(),
             library_version: parsed.library_version.clone(),
+            materialize_source: parsed.materialize_source,
             tag: parsed
                 .library_tag
                 .unwrap_or_else(|| DEFAULT_LIBRARY_TAG.to_string()),
@@ -1888,6 +1901,22 @@ pub struct AssembleResult {
     pub compile_classpath: Vec<String>,
 }
 
+/// Result of a kit-owned source materialization pass. The kit owns source
+/// discovery, parsing, and rewrite semantics; the CLI only writes returned
+/// artifacts and computes over the normalized receipt data.
+#[derive(Debug, Clone, Default)]
+pub struct MaterializeSourceResult {
+    pub files: Vec<MaterializeSourceFile>,
+    pub compile_classpath: Vec<String>,
+}
+
+#[derive(Debug, Clone)]
+pub struct MaterializeSourceFile {
+    pub path: PathBuf,
+    pub content: String,
+    pub receipt: Value,
+}
+
 /// Substrate-honest error from dispatch_assemble. Carries a discriminator so
 /// the caller can distinguish "plugin doesn't implement assemble" (fall back
 /// to legacy concat) from "plugin errored" (surface to user).
@@ -1898,6 +1927,183 @@ pub enum AssembleError {
     MethodNotSupported,
     /// Something else broke. Caller should treat as a transport error.
     Failed(String),
+}
+
+#[derive(Debug)]
+pub enum MaterializeSourceError {
+    MethodNotSupported,
+    Failed(String),
+}
+
+/// Ask the selected target kit to own source discovery/parsing/rewrite for
+/// materialize. This is gated by the project registration plus the selected
+/// realize manifest's `materialize_source = true` declaration; without that
+/// manifest capability callers fall back to legacy language-agnostic carrier
+/// handling.
+pub fn dispatch_materialize_source(
+    workspace_root: &Path,
+    target_lang: &str,
+    library_tag: Option<&str>,
+    source_dir: &Path,
+) -> Result<MaterializeSourceResult, MaterializeSourceError> {
+    if configured_realize_surfaces(workspace_root, target_lang).is_empty() {
+        return Err(MaterializeSourceError::Failed(format!(
+            "no realize plugin registration for language `{target_lang}` in .provekit/config.toml"
+        )));
+    }
+    let requested = library_tag.unwrap_or(DEFAULT_LIBRARY_TAG);
+    let candidates = registry_realize_candidates(workspace_root, target_lang)
+        .map_err(MaterializeSourceError::Failed)?;
+    let Some(candidate) = candidates
+        .iter()
+        .find(|candidate| candidate.tag == requested)
+    else {
+        return Err(MaterializeSourceError::MethodNotSupported);
+    };
+    if !candidate.materialize_source {
+        return Err(MaterializeSourceError::MethodNotSupported);
+    }
+    match invoke_materialize_source(
+        target_lang,
+        requested,
+        workspace_root,
+        source_dir,
+        &candidate.command,
+    ) {
+        Err(MaterializeSourceError::MethodNotSupported) => {
+            Err(MaterializeSourceError::Failed(format!(
+                "realize manifest for {target_lang}/{requested} declares materialize_source=true \
+                 but the kit does not implement provekit.plugin.materialize_source"
+            )))
+        }
+        other => other,
+    }
+}
+
+fn invoke_materialize_source(
+    target_lang: &str,
+    library_tag: &str,
+    workspace_root: &Path,
+    source_dir: &Path,
+    cmd_spec: &ResolvedCommand,
+) -> Result<MaterializeSourceResult, MaterializeSourceError> {
+    if cmd_spec.argv.is_empty() {
+        return Err(MaterializeSourceError::Failed("empty command".to_string()));
+    }
+    let mut command = Command::new(&cmd_spec.argv[0]);
+    if cmd_spec.argv.len() > 1 {
+        command.args(&cmd_spec.argv[1..]);
+    }
+    if let Some(wd) = &cmd_spec.working_dir {
+        command.current_dir(wd);
+    }
+    command.stdin(Stdio::piped());
+    command.stdout(Stdio::piped());
+    command.stderr(Stdio::null());
+
+    let mut child = command.spawn().map_err(|e| {
+        MaterializeSourceError::Failed(format!("spawn materialize source kit: {e}"))
+    })?;
+    let mut stdin = child.stdin.take().ok_or_else(|| {
+        MaterializeSourceError::Failed("materialize source kit stdin unavailable".to_string())
+    })?;
+    let stdout = child.stdout.take().ok_or_else(|| {
+        MaterializeSourceError::Failed("materialize source kit stdout unavailable".to_string())
+    })?;
+    let mut reader = BufReader::new(stdout);
+
+    let req = json!({
+        "jsonrpc": "2.0",
+        "id": 1,
+        "method": "provekit.plugin.materialize_source",
+        "params": {
+            "project_root": workspace_root.display().to_string(),
+            "source_dir": source_dir.display().to_string(),
+            "target_lang": target_lang,
+            "target_library_tag": library_tag,
+        },
+    });
+    writeln!(stdin, "{req}").map_err(|e| {
+        MaterializeSourceError::Failed(format!("write materialize source request: {e}"))
+    })?;
+
+    let mut line = String::new();
+    reader.read_line(&mut line).map_err(|e| {
+        MaterializeSourceError::Failed(format!("read materialize source response: {e}"))
+    })?;
+
+    let shutdown = json!({
+        "jsonrpc": "2.0",
+        "id": 2,
+        "method": "provekit.plugin.shutdown",
+    });
+    let _ = writeln!(stdin, "{shutdown}");
+    drop(stdin);
+    let _ = child.wait();
+
+    let v: Value = serde_json::from_str(line.trim()).map_err(|e| {
+        MaterializeSourceError::Failed(format!(
+            "materialize source response not valid JSON: {e}; raw={}",
+            line.trim()
+        ))
+    })?;
+    if let Some(err) = v.get("error") {
+        let code = err.get("code").and_then(Value::as_i64).unwrap_or(0);
+        if code == -32601 {
+            return Err(MaterializeSourceError::MethodNotSupported);
+        }
+        return Err(MaterializeSourceError::Failed(format!(
+            "materialize source kit error: {err}"
+        )));
+    }
+    let result = v.get("result").ok_or_else(|| {
+        MaterializeSourceError::Failed("materialize source response missing result".to_string())
+    })?;
+    parse_materialize_source_result(result)
+}
+
+fn parse_materialize_source_result(
+    result: &Value,
+) -> Result<MaterializeSourceResult, MaterializeSourceError> {
+    let files_arr = result
+        .get("files")
+        .and_then(Value::as_array)
+        .ok_or_else(|| {
+            MaterializeSourceError::Failed(
+                "materialize source response missing result.files".to_string(),
+            )
+        })?;
+    let mut files = Vec::with_capacity(files_arr.len());
+    for file in files_arr {
+        let path = file.get("path").and_then(Value::as_str).ok_or_else(|| {
+            MaterializeSourceError::Failed("materialize source file missing path".to_string())
+        })?;
+        let content = file.get("content").and_then(Value::as_str).ok_or_else(|| {
+            MaterializeSourceError::Failed("materialize source file missing content".to_string())
+        })?;
+        let receipt = file.get("receipt").cloned().ok_or_else(|| {
+            MaterializeSourceError::Failed("materialize source file missing receipt".to_string())
+        })?;
+        files.push(MaterializeSourceFile {
+            path: PathBuf::from(path),
+            content: content.to_string(),
+            receipt,
+        });
+    }
+    let compile_classpath = result
+        .get("compile_classpath")
+        .and_then(Value::as_array)
+        .map(|arr| {
+            arr.iter()
+                .filter_map(Value::as_str)
+                .map(String::from)
+                .collect()
+        })
+        .unwrap_or_default();
+    Ok(MaterializeSourceResult {
+        files,
+        compile_classpath,
+    })
 }
 
 /// #1375 Milestone C: route compilation-unit assembly to the target kit.
@@ -2453,6 +2659,7 @@ command = ["/bin/true"]
             source: format!("test-fixture:{tag}"),
             family: family.map(str::to_string),
             library_version: library_version.map(str::to_string),
+            materialize_source: false,
         }
     }
 

@@ -180,6 +180,73 @@ func TestPluginAssembleReturnsFormattedGoFiles(t *testing.T) {
 	}
 }
 
+func TestPluginMaterializeSourceParsesBoundaryDirective(t *testing.T) {
+	project := t.TempDir()
+	writeProofBackedGoDependency(t, project, "go", "identity", "x", "return x")
+	srcDir := filepath.Join(project, "src")
+	if err := os.MkdirAll(srcDir, 0o755); err != nil {
+		t.Fatalf("mkdir src: %v", err)
+	}
+	sourcePath := filepath.Join(srcDir, "id.go")
+	if err := os.WriteFile(sourcePath, []byte("package sample\n\n//provekit:boundary(concept=\"identity\", library=\"go\")\nfunc Id(x int) int {\n\treturn 0\n}\n"), 0o644); err != nil {
+		t.Fatalf("write source: %v", err)
+	}
+
+	req := map[string]any{
+		"jsonrpc": "2.0",
+		"id":      23,
+		"method":  "provekit.plugin.materialize_source",
+		"params": map[string]any{
+			"project_root":       project,
+			"source_dir":         srcDir,
+			"target_lang":        "go",
+			"target_library_tag": "go",
+		},
+	}
+	raw, err := json.Marshal(req)
+	if err != nil {
+		t.Fatalf("marshal materialize request: %v", err)
+	}
+
+	var stdout bytes.Buffer
+	if err := RunRPC(bytes.NewReader(append(raw, '\n')), &stdout); err != nil {
+		t.Fatalf("RunRPC: %v", err)
+	}
+
+	var response map[string]any
+	if err := json.Unmarshal(bytes.TrimSpace(stdout.Bytes()), &response); err != nil {
+		t.Fatalf("parse response %q: %v", stdout.String(), err)
+	}
+	if response["error"] != nil {
+		t.Fatalf("materialize_source returned error: %#v", response["error"])
+	}
+	result := response["result"].(map[string]any)
+	files := result["files"].([]any)
+	if len(files) != 1 {
+		t.Fatalf("files len = %d, want 1; response=%s", len(files), stdout.String())
+	}
+	file := files[0].(map[string]any)
+	if file["path"] != "id.go" {
+		t.Fatalf("materialized path = %#v, want id.go", file["path"])
+	}
+	content := file["content"].(string)
+	if _, err := parser.ParseFile(token.NewFileSet(), "id.go", content, parser.AllErrors); err != nil {
+		t.Fatalf("materialized Go must parse: %v\n%s", err, content)
+	}
+	for _, want := range []string{
+		"package sample",
+		"func Id(x int) int",
+		"return x",
+	} {
+		if !strings.Contains(content, want) {
+			t.Fatalf("materialized content missing %q:\n%s", want, content)
+		}
+	}
+	if strings.Contains(content, "provekit:boundary") {
+		t.Fatalf("materialized content must not preserve boundary directive:\n%s", content)
+	}
+}
+
 func TestResolveDependencyProofsReturnsProofsFromGoModuleDependencies(t *testing.T) {
 	project := t.TempDir()
 	dep := filepath.Join(project, "dep")

@@ -1,19 +1,11 @@
 // SPDX-License-Identifier: Apache-2.0
 //
 // GO MATERIALIZE/REALIZE gauntlet: a contract is materialized into a Go
-// surface by the Go SHIM that supplies the native Go sugar
-// (provekit-realize-go-core). This is the emit direction's Go peer of
-// provekit-realize-python-core, exercised through the substrate's
-// language-neutral realize dispatch (kit_dispatch::dispatch_realize, PEP
-// 1.7.0 `provekit.plugin.invoke`).
-//
-// HONEST claim (and its boundary): this drives the realize DISPATCH directly
-// (the same code path `provekit materialize` uses to invoke a target kit), NOT
-// the full `provekit materialize` carrier-rewrite pipeline. The latter needs a
-// Go `@sugar`/`@boundary` authoring surface (carrier annotations in source),
-// which is DEFERRED follow-up -- see this file's sibling report. What is proven
-// here: the substrate dispatches a contract's concept to the Go shim, the shim
-// supplies REAL Go sugar, and that sugar `go build`s. Supra omnia, rectum.
+// surface by the Go SHIM that supplies native Go sugar
+// (provekit-realize-go-core). The full CLI path is config/manifest/RPC driven:
+// the Rust CLI selects the registered Go kit, the Go kit parses Go
+// `//provekit:boundary` directives and rewrites Go source, and the CLI writes
+// returned artifacts plus runs kit-owned native checks.
 //
 // The concept is `identity` -- a real cross-language concept (also in Python's
 // canonical-bodies), realized in Go as `return x`. Requires `go` on PATH.
@@ -22,14 +14,12 @@ use std::collections::BTreeMap;
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::process::Command;
-use std::sync::Arc;
 
-use provekit_canonicalizer::{blake3_512_of, encode_jcs, Value as CanonicalValue};
+use provekit_canonicalizer::blake3_512_of;
 use provekit_cli::kit_dispatch::{dependency_proofs_via_rpc, dispatch_realize, RealizeRequest};
 use provekit_proof_envelope::{
     build_proof_envelope, ed25519_pubkey_string, Ed25519Seed, ProofEnvelopeInput,
 };
-use serde_json::Value as Json;
 
 fn repo_root() -> PathBuf {
     PathBuf::from(env!("CARGO_MANIFEST_DIR"))
@@ -100,7 +90,7 @@ fn install_go_realize_manifest(root: &Path, bin: &Path) {
         .join("manifest.toml");
     fs::create_dir_all(manifest.parent().unwrap()).expect("mkdir manifest dir");
     let text = format!(
-        "name = \"go-realize\"\nlibrary_tag = \"go\"\ncommand = [\"{}\", \"--rpc\"]\nworking_dir = \".\"\n",
+        "name = \"go-realize\"\nlibrary_tag = \"go\"\nmaterialize_source = true\ncommand = [\"{}\", \"--rpc\"]\nworking_dir = \".\"\n",
         bin.display()
             .to_string()
             .replace('\\', "\\\\")
@@ -181,68 +171,24 @@ fn write_go_dependency_with_proof(project: &Path, proof_name: &str) -> PathBuf {
     proof
 }
 
-fn identity_payload_json(function: &str) -> String {
-    format!(
-        "{{\"artifact_kind\":\"provekit-concept-citation-comment-sugar\",\"concept_name\":\"identity\",\"function\":\"{function}\",\"params\":[\"x\"],\"param_types\":[\"int\"],\"return_type\":\"int\"}}"
-    )
+fn write_go_boundary_source(src_dir: &Path) -> PathBuf {
+    write_go_boundary_source_for(src_dir, "id.go", "Id", "identity")
 }
 
-fn proof_backed_payload_json(function: &str) -> String {
-    format!(
-        "{{\"artifact_kind\":\"provekit-concept-citation-comment-sugar\",\"concept_name\":\"concept:go-proof-backed\",\"function\":\"{function}\",\"params\":[\"x\"],\"param_types\":[\"int\"],\"return_type\":\"int\"}}"
-    )
-}
-
-fn payload_cid(payload: &str) -> String {
-    let json: Json = serde_json::from_str(payload).expect("payload json parses");
-    let canonical = canonical_value_from_json(&json);
-    blake3_512_of(encode_jcs(canonical.as_ref()).as_bytes())
-}
-
-fn canonical_value_from_json(value: &Json) -> Arc<CanonicalValue> {
-    match value {
-        Json::Null => CanonicalValue::null(),
-        Json::Bool(value) => CanonicalValue::boolean(*value),
-        Json::Number(value) => {
-            CanonicalValue::integer(value.as_i64().expect("test JSON uses integers only"))
-        }
-        Json::String(value) => CanonicalValue::string(value),
-        Json::Array(values) => {
-            CanonicalValue::array(values.iter().map(canonical_value_from_json).collect())
-        }
-        Json::Object(entries) => CanonicalValue::object(
-            entries
-                .iter()
-                .map(|(key, value)| (key.clone(), canonical_value_from_json(value))),
-        ),
-    }
-}
-
-fn write_go_identity_carrier(src_dir: &Path) -> PathBuf {
-    let payload = identity_payload_json("Id");
-    let source = src_dir.join("id.go");
+fn write_go_boundary_source_for(
+    src_dir: &Path,
+    file_name: &str,
+    function: &str,
+    concept: &str,
+) -> PathBuf {
+    let source = src_dir.join(file_name);
     fs::write(
         &source,
         format!(
-            "package sample\n\n// provekit-concept: {payload}\n// provekit-concept-payload-cid: {}\n",
-            payload_cid(&payload)
+            "package sample\n\n//provekit:boundary(concept=\"{concept}\", library=\"go\")\nfunc {function}(x int) int {{\n\treturn 0\n}}\n"
         ),
     )
-    .expect("write go carrier source");
-    source
-}
-
-fn write_go_proof_backed_carrier(src_dir: &Path) -> PathBuf {
-    let payload = proof_backed_payload_json("AddFortyOne");
-    let source = src_dir.join("add_forty_one.go");
-    fs::write(
-        &source,
-        format!(
-            "package sample\n\n// provekit-concept: {payload}\n// provekit-concept-payload-cid: {}\n",
-            payload_cid(&payload)
-        ),
-    )
-    .expect("write go proof-backed carrier source");
+    .expect("write go boundary source");
     source
 }
 
@@ -364,7 +310,7 @@ fn go_materialize_refuses_unconfigured_realize_manifest() {
     write_external_go_dependency_with_identity_body(workspace.path());
     let src_dir = workspace.path().join("src");
     fs::create_dir_all(&src_dir).expect("mkdir src");
-    write_go_identity_carrier(&src_dir);
+    write_go_boundary_source(&src_dir);
 
     let out_dir = workspace.path().join("materialized");
     fs::create_dir_all(&out_dir).expect("mkdir out");
@@ -430,7 +376,7 @@ fn go_materialize_uses_checked_in_go_double_realize_registration() {
     write_external_go_dependency_with_identity_body(workspace.path());
     let src_dir = workspace.path().join("src");
     fs::create_dir_all(&src_dir).expect("mkdir src");
-    write_go_identity_carrier(&src_dir);
+    write_go_boundary_source(&src_dir);
 
     let out_dir = workspace.path().join("materialized");
     fs::create_dir_all(&out_dir).expect("mkdir out");
@@ -463,8 +409,8 @@ fn go_materialize_uses_checked_in_go_double_realize_registration() {
         "checked-in go-double realize registration must drive materialize\nstdout:\n{stdout}\nstderr:\n{stderr}"
     );
     assert!(
-        stderr.contains("assembled by go kit via RPC"),
-        "checked-in Go materialize route must assemble through the Go kit\nstderr:\n{stderr}"
+        stderr.contains("source materialized by go kit via RPC"),
+        "checked-in Go materialize route must parse/rewrite through the Go kit\nstderr:\n{stderr}"
     );
     let emitted = fs::read_to_string(out_dir.join("id.go")).expect("read materialized Go");
     assert!(
@@ -490,7 +436,12 @@ fn go_materialize_uses_body_template_from_go_module_proof() {
 
     let src_dir = workspace.path().join("src");
     fs::create_dir_all(&src_dir).expect("mkdir src");
-    write_go_proof_backed_carrier(&src_dir);
+    write_go_boundary_source_for(
+        &src_dir,
+        "add_forty_one.go",
+        "AddFortyOne",
+        "concept:go-proof-backed",
+    );
 
     let out_dir = workspace.path().join("materialized");
     fs::create_dir_all(&out_dir).expect("mkdir out");
@@ -566,11 +517,11 @@ fn go_dependency_proofs_are_resolved_by_configured_go_kit() {
     );
 }
 
-/// Full CLI path: `provekit materialize` reads Go carrier comments, dispatches
-/// the concept to the Go realize kit over RPC, writes materialized Go under
-/// --out-dir, and asks the same Go kit to run its native check.
+/// Full CLI path: `provekit materialize` asks the configured Go kit to parse
+/// Go boundary directives, writes materialized Go under --out-dir, and asks
+/// the same Go kit to run its native check.
 #[test]
-fn go_materialize_cli_rewrites_carrier_and_asks_go_kit_to_compile_check() {
+fn go_materialize_cli_rewrites_boundary_and_asks_go_kit_to_compile_check() {
     if !go_available() {
         eprintln!("go not on PATH: skipping go materialize CLI test");
         return;
@@ -581,7 +532,7 @@ fn go_materialize_cli_rewrites_carrier_and_asks_go_kit_to_compile_check() {
     write_external_go_dependency_with_identity_body(workspace.path());
     let src_dir = workspace.path().join("src");
     fs::create_dir_all(&src_dir).expect("mkdir src");
-    write_go_identity_carrier(&src_dir);
+    write_go_boundary_source(&src_dir);
 
     let out_dir = workspace.path().join("materialized");
     fs::create_dir_all(&out_dir).expect("mkdir out");
@@ -618,8 +569,8 @@ fn go_materialize_cli_rewrites_carrier_and_asks_go_kit_to_compile_check() {
         "Go materialize must ask the Go kit to run its native check\nstderr:\n{stderr}"
     );
     assert!(
-        stderr.contains("assembled by go kit via RPC"),
-        "Go materialize must use the configured Go kit for assembly, not legacy concat fallback\nstderr:\n{stderr}"
+        stderr.contains("source materialized by go kit via RPC"),
+        "Go materialize must use the configured Go kit for source discovery/transformation\nstderr:\n{stderr}"
     );
 
     let emitted = fs::read_to_string(out_dir.join("id.go")).expect("read materialized Go");
@@ -632,8 +583,93 @@ fn go_materialize_cli_rewrites_carrier_and_asks_go_kit_to_compile_check() {
         "materialized Go should contain identity body:\n{emitted}"
     );
     assert!(
-        !emitted.contains("provekit-concept:"),
-        "materialized Go must remove the carrier comments:\n{emitted}"
+        !emitted.contains("provekit:boundary"),
+        "materialized Go must remove the boundary directive:\n{emitted}"
+    );
+}
+
+#[test]
+fn rust_cli_materialize_scanner_does_not_claim_go_files() {
+    let source = fs::read_to_string(
+        repo_root()
+            .join("implementations")
+            .join("rust")
+            .join("provekit-cli")
+            .join("src")
+            .join("cmd_materialize.rs"),
+    )
+    .expect("read cmd_materialize.rs");
+    assert!(
+        !source.contains(r#"| "go""#) && !source.contains(r#""go" |"#),
+        "Go source discovery/transformation must be kit-owned over RPC, not listed in the CLI's legacy source scanner"
+    );
+}
+
+#[test]
+fn go_materialize_cli_uses_go_kit_to_parse_boundary_directives() {
+    if !go_available() {
+        eprintln!("go not on PATH: skipping go boundary materialize CLI test");
+        return;
+    }
+    let bin = build_go_realize();
+    let workspace = tempfile::tempdir().expect("tempdir");
+    install_go_realize_registration(workspace.path(), &bin);
+    write_external_go_dependency_with_identity_body(workspace.path());
+    let src_dir = workspace.path().join("src");
+    fs::create_dir_all(&src_dir).expect("mkdir src");
+    write_go_boundary_source(&src_dir);
+
+    let out_dir = workspace.path().join("materialized");
+    fs::create_dir_all(&out_dir).expect("mkdir out");
+    fs::write(
+        out_dir.join("go.mod"),
+        "module example.com/provekit_go_materialized\n\ngo 1.22\n",
+    )
+    .expect("write output go.mod");
+
+    let output = Command::new(env!("CARGO_BIN_EXE_provekit"))
+        .arg("materialize")
+        .arg("--target")
+        .arg("go")
+        .arg("--library")
+        .arg("go")
+        .arg("--source-dir")
+        .arg(&src_dir)
+        .arg("--project")
+        .arg(workspace.path())
+        .arg("--out-dir")
+        .arg(&out_dir)
+        .arg("--compile-check")
+        .output()
+        .expect("spawn provekit materialize for Go boundary directive");
+
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(
+        output.status.success(),
+        "Go boundary materialize should be parsed and rewritten by the Go kit over RPC\nstdout:\n{stdout}\nstderr:\n{stderr}"
+    );
+    assert!(
+        stderr.contains("source materialized by go kit via RPC"),
+        "Go source discovery/transformation must be kit-owned, not CLI carrier scanning\nstderr:\n{stderr}"
+    );
+    assert!(
+        stderr.contains("compile-check: go test ./... passed"),
+        "Go materialize must ask the Go kit to run its native check\nstderr:\n{stderr}"
+    );
+
+    let emitted = fs::read_to_string(out_dir.join("id.go")).expect("read materialized Go");
+    assert!(
+        emitted.contains("func Id(x int) int"),
+        "materialized Go should contain realized function signature:\n{emitted}"
+    );
+    assert!(
+        emitted.contains("return x"),
+        "materialized Go body must come from the Go module .proof resolved inside the Go kit:\n{emitted}"
+    );
+    assert!(
+        !emitted.contains("provekit:boundary"),
+        "materialized Go must not preserve the source boundary directive:\n{emitted}"
     );
 }
 
@@ -649,7 +685,7 @@ fn go_materialize_infers_target_from_registered_go_manifest() {
     write_external_go_dependency_with_identity_body(workspace.path());
     let src_dir = workspace.path().join("src");
     fs::create_dir_all(&src_dir).expect("mkdir src");
-    write_go_identity_carrier(&src_dir);
+    write_go_boundary_source(&src_dir);
 
     let out_dir = workspace.path().join("materialized");
     fs::create_dir_all(&out_dir).expect("mkdir out");
@@ -680,8 +716,8 @@ fn go_materialize_infers_target_from_registered_go_manifest() {
         "Go materialize should infer target from the registered Go manifest, without --target\nstdout:\n{stdout}\nstderr:\n{stderr}"
     );
     assert!(
-        stderr.contains("assembled by go kit via RPC"),
-        "inferred Go materialize must still assemble through the Go kit\nstderr:\n{stderr}"
+        stderr.contains("source materialized by go kit via RPC"),
+        "inferred Go materialize must still source-transform through the Go kit\nstderr:\n{stderr}"
     );
     assert!(
         stderr.contains("compile-check: go test ./... passed"),
