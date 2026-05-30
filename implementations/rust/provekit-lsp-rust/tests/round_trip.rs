@@ -99,12 +99,34 @@ fn initialize_returns_capabilities() {
         result.get("version").and_then(|v| v.as_str()).is_some(),
         "missing version: {result}"
     );
+    assert_eq!(
+        result["protocol_version"].as_str(),
+        Some("provekit-lsp-shared/1"),
+        "rust helper must advertise the shared LSP protocol: {result}"
+    );
+    assert_eq!(
+        result["kit_id"].as_str(),
+        Some("rust"),
+        "rust helper must identify its owning kit: {result}"
+    );
     let caps = result["capabilities"]
-        .as_array()
-        .unwrap_or_else(|| panic!("missing capabilities array: {result}"));
+        .as_object()
+        .unwrap_or_else(|| panic!("missing capabilities object: {result}"));
     assert!(
-        caps.iter().any(|c| c.as_str() == Some("parse")),
-        "capabilities must include 'parse': {caps:?}"
+        caps.get("source_surfaces")
+            .and_then(|v| v.as_array())
+            .into_iter()
+            .flatten()
+            .any(|c| c.as_str() == Some("rust-source")),
+        "capabilities must include rust-source: {caps:?}"
+    );
+    assert!(
+        caps.get("diagnostic_codes")
+            .and_then(|v| v.as_array())
+            .into_iter()
+            .flatten()
+            .any(|c| c.as_str() == Some("provekit.lsp.implication_failed")),
+        "capabilities must include the stable implication diagnostic code: {caps:?}"
     );
 
     // Tidy shutdown.
@@ -243,6 +265,101 @@ fn parse_floor_fixture_emits_forward_propagation_diagnostic() {
             .and_then(|items| items.first())
             .and_then(|item| item.as_str()),
         Some("x > 0")
+    );
+
+    let _ = plugin.exchange(&json!({"jsonrpc":"2.0","id":99,"method":"shutdown"}));
+    let _ = plugin.wait_for_exit(Duration::from_secs(10));
+}
+
+#[test]
+fn analyze_document_floor_fixture_emits_shared_callsite_diagnostic() {
+    let fixture_path = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+        .join("../../..")
+        .join("tests/lsp/floor-fixture/rust.rs");
+    let source = std::fs::read_to_string(&fixture_path)
+        .unwrap_or_else(|err| panic!("read fixture {fixture_path:?}: {err}"));
+
+    let mut plugin = Plugin::spawn();
+
+    let _ = plugin.exchange(&json!({
+        "jsonrpc": "2.0",
+        "id": 1,
+        "method": "initialize",
+        "params": {
+            "client": {"name": "provekit-lsp", "version": "0.0.0"},
+            "protocol_version": "provekit-lsp-shared/1"
+        }
+    }));
+
+    let resp = plugin.exchange(&json!({
+        "jsonrpc": "2.0",
+        "id": 2,
+        "method": "analyzeDocument",
+        "params": {
+            "kit_id": "rust",
+            "uri": "file:///project/tests/lsp/floor-fixture/rust.rs",
+            "file": "tests/lsp/floor-fixture/rust.rs",
+            "text": source,
+            "document_version": 42,
+            "workspace_root": "/project",
+            "accepted_protocol_catalog_cids": [],
+            "policy_cids": []
+        }
+    }));
+
+    let result = resp
+        .get("result")
+        .unwrap_or_else(|| panic!("analyzeDocument returned error: {resp}"));
+
+    assert_eq!(result["kind"].as_str(), Some("lsp-document-analysis"));
+    assert_eq!(result["schema_version"].as_str(), Some("1"));
+    assert_eq!(result["kit_id"].as_str(), Some("rust"));
+    assert_eq!(
+        result["uri"].as_str(),
+        Some("file:///project/tests/lsp/floor-fixture/rust.rs")
+    );
+    assert_eq!(
+        result["file"].as_str(),
+        Some("tests/lsp/floor-fixture/rust.rs")
+    );
+    let document_cid = result["document_cid"]
+        .as_str()
+        .unwrap_or_else(|| panic!("missing document CID: {result}"));
+    assert!(
+        document_cid.starts_with("blake3-512:") && document_cid.len() == "blake3-512:".len() + 128,
+        "document CID must be a BLAKE3-512 CID: {document_cid}"
+    );
+    assert!(
+        result["entries"].as_array().is_some(),
+        "entries must be an array: {result}"
+    );
+    assert!(
+        result["statuses"].as_array().is_some(),
+        "statuses must be an array: {result}"
+    );
+    assert!(result["project"].is_null(), "project state must be null: {result}");
+
+    let diagnostics = result["diagnostics"]
+        .as_array()
+        .unwrap_or_else(|| panic!("diagnostics must be an array: {result}"));
+    assert_eq!(
+        diagnostics.len(),
+        1,
+        "only the negative callsite should emit a diagnostic: {diagnostics:#?}"
+    );
+    let diagnostic = &diagnostics[0];
+    assert_eq!(
+        diagnostic["code"].as_str(),
+        Some("provekit.lsp.implication_failed")
+    );
+    assert_eq!(diagnostic["severity"].as_str(), Some("error"));
+    assert_eq!(diagnostic["producer"].as_str(), Some("forward-propagation"));
+    assert_eq!(diagnostic["kit_id"].as_str(), Some("rust"));
+    assert_eq!(diagnostic["range"]["start_line"].as_u64(), Some(20));
+    assert_eq!(diagnostic["range"]["start_col"].as_u64(), Some(17));
+    assert_eq!(
+        diagnostic["data"]["callee"].as_str(),
+        Some("checkPositive")
     );
 
     let _ = plugin.exchange(&json!({"jsonrpc":"2.0","id":99,"method":"shutdown"}));
