@@ -60,11 +60,158 @@ assert all(entry["kind"] == "bind-lift-entry" for entry in entries)
 assert all(entry["term_shape_cid"].startswith("blake3-512:") for entry in entries)
 assert all(len(entry["term_shape_cid"]) == len("blake3-512:") + 128 for entry in entries)
 
+body = entries[0]["body_source"]
+assert body["file"] == "foo.c"
+assert body["body_text"] == "return x;"
+assert body["source_cid"].startswith("blake3-512:")
+assert body["template_cid"].startswith("blake3-512:")
+assert body["param_names"] == ["x"]
+template = body["ast_template"]
+assert template["kind"] == "block"
+ret = template["stmts"][0]
+assert ret["kind"] == "return"
+assert ret["expr"] == {"kind": "param_ref", "index": 1}
+
 wire = json.dumps(doc, sort_keys=True)
 assert "c:" not in wire
 assert "c11:" not in wire
 
 print(json.dumps(doc, sort_keys=True, separators=(",", ":")))
+PY
+
+python3 - "$BIN" <<'PY'
+import json
+import subprocess
+import sys
+import tempfile
+from pathlib import Path
+
+BIN = Path(sys.argv[1])
+CONTRACT_CID = "blake3-512:" + "cc" * 64
+
+
+def rpc(lines):
+    proc = subprocess.run(
+        [str(BIN)],
+        input="\n".join(json.dumps(line, separators=(",", ":")) for line in lines) + "\n",
+        text=True,
+        stdout=subprocess.PIPE,
+        check=True,
+    )
+    return [json.loads(line) for line in proc.stdout.splitlines() if line.strip()]
+
+
+def lift(root, rel):
+    responses = rpc([
+        {"jsonrpc": "2.0", "id": 1, "method": "lift", "params": {"workspace_root": str(root), "source_paths": [rel]}},
+        {"jsonrpc": "2.0", "id": 2, "method": "shutdown", "params": {}},
+    ])
+    return responses[0]["result"]["ir"]
+
+
+def recognize(root, rel, bindings):
+    responses = rpc([
+        {
+            "jsonrpc": "2.0",
+            "id": 10,
+            "method": "provekit.plugin.recognize",
+            "params": {"project_root": str(root), "source_paths": [rel], "binding_templates": bindings},
+        },
+        {"jsonrpc": "2.0", "id": 11, "method": "shutdown", "params": {}},
+    ])
+    if "error" in responses[0]:
+        raise AssertionError(responses[0]["error"])
+    return responses[0]["result"]
+
+
+def recognize_from_project(root, rel):
+    responses = rpc([
+        {
+            "jsonrpc": "2.0",
+            "id": 12,
+            "method": "provekit.plugin.recognize",
+            "params": {"project_root": str(root), "source_paths": [rel]},
+        },
+        {"jsonrpc": "2.0", "id": 13, "method": "shutdown", "params": {}},
+    ])
+    if "error" in responses[0]:
+        raise AssertionError(responses[0]["error"])
+    return responses[0]["result"]
+
+
+with tempfile.TemporaryDirectory(prefix="provekit-c-recognize-") as tmp:
+    root = Path(tmp)
+    (root / "shim.c").write_text(
+        """// concept: identity
+int wrap_identity(int x) {
+    return x;
+}
+""",
+        encoding="utf-8",
+    )
+    sugar = lift(root, "shim.c")[0]
+    body = sugar["body_source"]
+
+    (root / "rename.c").write_text(
+        """// concept: identity
+int wrap_identity(int value) {
+    return value;
+}
+""",
+        encoding="utf-8",
+    )
+    renamed_body = lift(root, "rename.c")[0]["body_source"]
+    assert renamed_body["ast_template"] == body["ast_template"]
+    assert renamed_body["template_cid"] == body["template_cid"]
+    assert renamed_body["body_text"] != body["body_text"]
+    assert renamed_body["source_cid"] != body["source_cid"]
+
+    binding = {
+        "concept_name": "concept:identity",
+        "library_tag": "c-core",
+        "family": "concept:family:identity",
+        "ast_template": body["ast_template"],
+        "template_cid": body["template_cid"],
+        "param_names": body["param_names"],
+        "contract_cid": CONTRACT_CID,
+    }
+
+    (root / "user.c").write_text(
+        """int user_identity(int value) {
+    return value;
+}
+""",
+        encoding="utf-8",
+    )
+    result = recognize(root, "user.c", [binding])
+    tags = result["tags"]
+    assert len(tags) == 1, tags
+    tag = tags[0]
+    assert tag["match_tier"] == "exact"
+    assert tag["file"] == "user.c"
+    assert tag["function_name"] == "user_identity"
+    assert tag["concept_name"] == "concept:identity"
+    assert tag["library_tag"] == "c-core"
+    assert tag["family"] == "concept:family:identity"
+    assert tag["template_cid"] == body["template_cid"]
+    assert tag["contract_cid"] == CONTRACT_CID
+    assert tag["param_bindings"] == [{"index": 1, "source_text": "value"}]
+    assert tag["span"]["start_line"] == 1
+
+    catalog = root / ".provekit" / "lift" / "c-bind" / "templates.json"
+    catalog.parent.mkdir(parents=True)
+    catalog.write_text(json.dumps({"binding_templates": [binding]}, separators=(",", ":")), encoding="utf-8")
+    project_owned = recognize_from_project(root, "user.c")
+    assert project_owned["tags"] == tags
+
+    (root / "different.c").write_text(
+        """int user_identity(int value) {
+    return value + 1;
+}
+""",
+        encoding="utf-8",
+    )
+    assert recognize(root, "different.c", [binding])["tags"] == []
 PY
 
 python3 - "$BIN" "$ROOT" <<'PY'
