@@ -42,6 +42,18 @@ require "materialize_python_requests_example_uses_python_library_shim"
 require "test_resolve_dependency_proofs_returns_distribution_proof_bytes"
 require "materialize_rust_reqwest_example_uses_rust_library_shim"
 
+require "RecognizeHandlerTest,JavaSugarBindingLifterTest"
+require "Test(SugarBody|Recognize)"
+require "go_recognize_write_self_resolves_project_proofs_and_proves"
+require "sugar_body or recognize"
+require "sugar_body -- --nocapture"
+require "recognize -- --nocapture"
+
+require "java_mint_auto_writes_body_discharge_bridge"
+require "go_mint_auto_writes_body_discharge_bridge"
+require "python_mint_auto_writes_body_discharge_bridge"
+require "rust_mint_auto_writes_body_discharge_bridge_from_real_lifters"
+
 require "java_production_path_assertion_discharges_and_mints_witness"
 require "go_production_path_double_discharges_and_mints_witness"
 require "python_production_path_uses_checked_in_python_double_registration"
