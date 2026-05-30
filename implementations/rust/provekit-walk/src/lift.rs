@@ -241,7 +241,14 @@ fn lift_tail_if_to_ite_term(if_expr: &ExprIf, ctx: &mut LiftCtx) -> Option<IrTer
         }
     };
     Some(IrTerm::Ctor {
-        name: "ite".to_string(),
+        // `cf_ite`, not the SMT builtin `ite`: a synthesized control-flow
+        // value over uninterpreted Int-sorted operands. Using the builtin
+        // `ite` makes z3 demand a Bool guard and Bool/typed branches, which
+        // an uninterpreted guard term (`match_guard(..)` : Int) does not
+        // satisfy -- a sort-mismatch error that fails the reflexive
+        // discharge. As a fresh uninterpreted symbol, congruence closes
+        // `cf_ite(g,a,b) == cf_ite(g,a,b)` regardless of operand sorts.
+        name: "cf_ite".to_string(),
         args: vec![cond_term, then_term, else_term],
     })
 }
@@ -283,7 +290,9 @@ fn lift_match_to_ite_term(match_expr: &syn::ExprMatch, ctx: &mut LiftCtx) -> Opt
                 ],
             };
             IrTerm::Ctor {
-                name: "ite".to_string(),
+                // `cf_ite` (uninterpreted), not the builtin `ite`: see the
+                // note in `lift_tail_if_to_ite_term`.
+                name: "cf_ite".to_string(),
                 args: vec![guard, value, acc.expect("non-final arm has an accumulator")],
             }
         });
@@ -329,13 +338,41 @@ fn opaque_token_hash<T: quote::ToTokens>(node: &T) -> String {
     hex.chars().take(16).collect()
 }
 
+/// Map an SMT builtin predicate/connective head to a `cf_`-prefixed
+/// UNINTERPRETED head. `formula_to_term` is used to fold a control-flow
+/// CONDITION into a value term (the guard arg of `cf_ite`). A builtin
+/// like `<` or `and` there would be applied as a Bool-typed term inside
+/// an uninterpreted Int-sorted context, raising an SMT sort mismatch. As
+/// `cf_lt`/`cf_and` it is uninterpreted and discharges by congruence. A
+/// non-builtin head (`is_some`, a method) is already uninterpreted and
+/// passes through unchanged.
+fn cf_head(name: &str) -> String {
+    match name {
+        "=" | "eq" => "cf_eq",
+        "≠" | "ne" | "neq" => "cf_ne",
+        "<" | "lt" => "cf_lt",
+        "≤" | "le" | "lte" => "cf_le",
+        ">" | "gt" => "cf_gt",
+        "≥" | "ge" | "gte" => "cf_ge",
+        "and" => "cf_and",
+        "or" => "cf_or",
+        "not" => "cf_not",
+        "implies" => "cf_implies",
+        other => return other.to_string(),
+    }
+    .to_string()
+}
+
 fn formula_to_term(formula: IrFormula) -> Option<IrTerm> {
     match formula {
-        IrFormula::Atomic { name, args } => Some(IrTerm::Ctor { name, args }),
-        IrFormula::And { operands } => formula_operands_to_term("and", operands),
-        IrFormula::Or { operands } => formula_operands_to_term("or", operands),
-        IrFormula::Not { operands } => formula_operands_to_term("not", operands),
-        IrFormula::Implies { operands } => formula_operands_to_term("implies", operands),
+        IrFormula::Atomic { name, args } => Some(IrTerm::Ctor {
+            name: cf_head(&name),
+            args,
+        }),
+        IrFormula::And { operands } => formula_operands_to_term("cf_and", operands),
+        IrFormula::Or { operands } => formula_operands_to_term("cf_or", operands),
+        IrFormula::Not { operands } => formula_operands_to_term("cf_not", operands),
+        IrFormula::Implies { operands } => formula_operands_to_term("cf_implies", operands),
         IrFormula::Forall { .. } | IrFormula::Exists { .. } | IrFormula::Choice { .. } => None,
         // Substitute and Apply are meta-level; not reducible to a term here.
         IrFormula::Substitute { .. }
@@ -893,18 +930,23 @@ fn lift_expr_to_term_inner(expr: &Expr, ctx: &mut LiftCtx) -> Option<IrTerm> {
                 BinOp::Shr(_) => ">>",
                 // Boolean / relational operators in VALUE position (a
                 // function returning `bool`, e.g. `!x.is_absolute() && ..`,
-                // or `a == b`). Lift to the matching ctor head so the term
-                // survives; it discharges reflexively against the body's
-                // own. The verifier encodes `and`/`or`/`=`/`<`/... as
-                // builtin or uninterpreted symbols.
-                BinOp::And(_) => "and",
-                BinOp::Or(_) => "or",
-                BinOp::Eq(_) => "=",
-                BinOp::Ne(_) => "≠",
-                BinOp::Lt(_) => "<",
-                BinOp::Le(_) => "≤",
-                BinOp::Gt(_) => ">",
-                BinOp::Ge(_) => "≥",
+                // or `a == b`). Lift to a `cf_`-prefixed UNINTERPRETED head
+                // (NOT the SMT builtins `and`/`or`/`=`/`<`): a builtin
+                // demands Bool operands and a Bool result, but these sit
+                // over uninterpreted Int-sorted value terms, so the builtin
+                // raises a sort mismatch and the reflexive discharge fails.
+                // As fresh uninterpreted symbols they discharge by
+                // congruence: `cf_and(a,b) == cf_and(a,b)`. (Builtin
+                // arithmetic comes from a different, substantive path and is
+                // untouched.)
+                BinOp::And(_) => "cf_and",
+                BinOp::Or(_) => "cf_or",
+                BinOp::Eq(_) => "cf_eq",
+                BinOp::Ne(_) => "cf_ne",
+                BinOp::Lt(_) => "cf_lt",
+                BinOp::Le(_) => "cf_le",
+                BinOp::Gt(_) => "cf_gt",
+                BinOp::Ge(_) => "cf_ge",
                 _ => return None,
             };
             let l = lift_expr_to_term_inner(left, ctx)?;
@@ -1191,10 +1233,14 @@ mod tests {
                     name: "result".to_string(),
                 },
                 IrTerm::Ctor {
-                    name: "ite".to_string(),
+                    // Synthesized control-flow heads are `cf_`-prefixed
+                    // (uninterpreted), not the SMT builtins `ite`/`=`, so
+                    // they encode over uninterpreted operands without a
+                    // sort mismatch and discharge reflexively.
+                    name: "cf_ite".to_string(),
                     args: vec![
                         IrTerm::Ctor {
-                            name: "=".to_string(),
+                            name: "cf_eq".to_string(),
                             args: vec![var("x"), const_int(0)],
                         },
                         const_int(-22),
@@ -1681,7 +1727,10 @@ mod tests {
         let eq = result_equation_of(&item_fn);
         assert!(eq.is_some(), "match tail must synthesize a result equation");
         let json = serde_json::to_string(&eq.unwrap()).unwrap();
-        assert!(json.contains("ite"), "match must lift to an ite chain: {json}");
+        assert!(
+            json.contains("cf_ite"),
+            "match must lift to a cf_ite chain: {json}"
+        );
     }
 
     #[test]
