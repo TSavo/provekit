@@ -5,7 +5,7 @@
 //     -> {"jsonrpc":"2.0","id":1,"result":{"name":"provekit-lsp-zig","version":"0.1.0","capabilities":["parse"]}}
 //
 //   {"jsonrpc":"2.0","id":2,"method":"parse","params":{"path":"...","source":"..."}}
-//     -> {"jsonrpc":"2.0","id":2,"result":{"declarations":[...],"callEdges":[],"warnings":[]}}
+//     -> {"jsonrpc":"2.0","id":2,"result":{"declarations":[...],"callEdges":[...],"warnings":[]}}
 //
 //   {"jsonrpc":"2.0","id":3,"method":"shutdown"}
 //     -> {"jsonrpc":"2.0","id":3,"result":null}
@@ -114,12 +114,193 @@ fn handleParse(
     const decls_json = try std.json.Stringify.valueAlloc(alloc, lifted.declarations, .{ .whitespace = .minified });
     defer alloc.free(decls_json);
 
-    // callEdges: zig kit emits empty array (no cross-kit call tracking yet).
-    // warnings: empty.
+    const call_edges_json = try buildCallEdgesJson(alloc, source, path);
+    defer alloc.free(call_edges_json);
+
     try writer.print(
-        "{{\"jsonrpc\":\"2.0\",\"id\":{s},\"result\":{{\"declarations\":{s},\"callEdges\":[],\"warnings\":[]}}}}\n",
-        .{ id, decls_json },
+        "{{\"jsonrpc\":\"2.0\",\"id\":{s},\"result\":{{\"declarations\":{s},\"callEdges\":{s},\"warnings\":[]}}}}\n",
+        .{ id, decls_json, call_edges_json },
     );
+}
+
+const FunctionSpan = struct {
+    name: []const u8,
+    start_line: usize,
+    end_line: usize,
+};
+
+fn buildCallEdgesJson(alloc: std.mem.Allocator, source: []const u8, path: []const u8) ![]u8 {
+    var lines: std.ArrayList([]const u8) = .empty;
+    defer lines.deinit(alloc);
+
+    var line_iter = std.mem.splitScalar(u8, source, '\n');
+    while (line_iter.next()) |line| {
+        try lines.append(alloc, line);
+    }
+
+    const functions = try collectFunctionSpans(alloc, lines.items);
+    defer alloc.free(functions);
+
+    var out: std.ArrayList(u8) = .empty;
+    errdefer out.deinit(alloc);
+
+    try out.append(alloc, '[');
+    var first = true;
+    for (functions) |caller| {
+        var line_index = caller.start_line;
+        while (line_index <= caller.end_line and line_index < lines.items.len) : (line_index += 1) {
+            const line = lines.items[line_index];
+            for (functions) |callee| {
+                if (std.mem.eql(u8, caller.name, callee.name)) continue;
+                const column = findCallColumn(line, callee.name) orelse continue;
+
+                if (!first) try out.append(alloc, ',');
+                first = false;
+                try appendCallEdgeJson(
+                    alloc,
+                    &out,
+                    path,
+                    caller.name,
+                    callee.name,
+                    line_index + 1,
+                    column + 1,
+                );
+            }
+        }
+    }
+    try out.append(alloc, ']');
+
+    return out.toOwnedSlice(alloc);
+}
+
+fn collectFunctionSpans(alloc: std.mem.Allocator, lines: []const []const u8) ![]FunctionSpan {
+    var functions: std.ArrayList(FunctionSpan) = .empty;
+    errdefer functions.deinit(alloc);
+
+    var line_index: usize = 0;
+    while (line_index < lines.len) : (line_index += 1) {
+        const name = parseFunctionName(lines[line_index]) orelse continue;
+        const end_line = findFunctionEndLine(lines, line_index);
+        try functions.append(alloc, .{
+            .name = name,
+            .start_line = line_index,
+            .end_line = end_line,
+        });
+        line_index = end_line;
+    }
+
+    return functions.toOwnedSlice(alloc);
+}
+
+fn parseFunctionName(line: []const u8) ?[]const u8 {
+    var search_from: usize = 0;
+    while (std.mem.indexOfPos(u8, line, search_from, "fn")) |fn_index| {
+        const after_fn = fn_index + 2;
+        const before_ok = fn_index == 0 or !isIdentifierChar(line[fn_index - 1]);
+        const after_ok = after_fn < line.len and isSpace(line[after_fn]);
+        if (!before_ok or !after_ok) {
+            search_from = after_fn;
+            continue;
+        }
+
+        var name_start = after_fn;
+        while (name_start < line.len and isSpace(line[name_start])) : (name_start += 1) {}
+
+        var name_end = name_start;
+        while (name_end < line.len and isIdentifierChar(line[name_end])) : (name_end += 1) {}
+
+        if (name_end > name_start) return line[name_start..name_end];
+        search_from = after_fn;
+    }
+    return null;
+}
+
+fn findFunctionEndLine(lines: []const []const u8, start_line: usize) usize {
+    var depth: isize = 0;
+    var saw_open_brace = false;
+
+    var line_index = start_line;
+    while (line_index < lines.len) : (line_index += 1) {
+        for (lines[line_index]) |ch| {
+            switch (ch) {
+                '{' => {
+                    depth += 1;
+                    saw_open_brace = true;
+                },
+                '}' => depth -= 1,
+                else => {},
+            }
+        }
+        if (saw_open_brace and depth <= 0) return line_index;
+    }
+
+    return start_line;
+}
+
+fn findCallColumn(line: []const u8, callee: []const u8) ?usize {
+    var search_from: usize = 0;
+    while (std.mem.indexOfPos(u8, line, search_from, callee)) |name_index| {
+        const after_name = name_index + callee.len;
+        const before_ok = name_index == 0 or !isIdentifierChar(line[name_index - 1]);
+        const after_name_ok = after_name >= line.len or !isIdentifierChar(line[after_name]);
+        if (before_ok and after_name_ok) {
+            var after_call_name = after_name;
+            while (after_call_name < line.len and isSpace(line[after_call_name])) : (after_call_name += 1) {}
+            if (after_call_name < line.len and line[after_call_name] == '(') return name_index;
+        }
+        search_from = after_name;
+    }
+    return null;
+}
+
+fn appendCallEdgeJson(
+    alloc: std.mem.Allocator,
+    out: *std.ArrayList(u8),
+    path: []const u8,
+    source_name: []const u8,
+    target_name: []const u8,
+    line: usize,
+    column: usize,
+) !void {
+    const source_cid = try std.fmt.allocPrint(alloc, "pending-zig:{s}", .{source_name});
+    defer alloc.free(source_cid);
+    const target_symbol = try std.fmt.allocPrint(alloc, "zig-kit:{s}", .{target_name});
+    defer alloc.free(target_symbol);
+
+    const prefix = try std.fmt.allocPrint(alloc, "{{\"callSiteLocus\":{{\"col\":{d},\"file\":", .{column});
+    defer alloc.free(prefix);
+    try out.appendSlice(alloc, prefix);
+    try appendJsonString(alloc, out, path);
+
+    const middle = try std.fmt.allocPrint(
+        alloc,
+        ",\"line\":{d}}},\"evidenceTerm\":{{\"args\":[],\"kind\":\"atomic\",\"name\":\"call-site-obligation\"}},\"kind\":\"call-edge\",\"schemaVersion\":\"1\",\"sourceContractCid\":",
+        .{line},
+    );
+    defer alloc.free(middle);
+    try out.appendSlice(alloc, middle);
+    try appendJsonString(alloc, out, source_cid);
+
+    try out.appendSlice(alloc, ",\"targetSymbol\":");
+    try appendJsonString(alloc, out, target_symbol);
+    try out.append(alloc, '}');
+}
+
+fn appendJsonString(alloc: std.mem.Allocator, out: *std.ArrayList(u8), value: []const u8) !void {
+    const json = try std.json.Stringify.valueAlloc(alloc, value, .{ .whitespace = .minified });
+    defer alloc.free(json);
+    try out.appendSlice(alloc, json);
+}
+
+fn isSpace(ch: u8) bool {
+    return ch == ' ' or ch == '\t' or ch == '\r';
+}
+
+fn isIdentifierChar(ch: u8) bool {
+    return (ch >= 'a' and ch <= 'z') or
+        (ch >= 'A' and ch <= 'Z') or
+        (ch >= '0' and ch <= '9') or
+        ch == '_';
 }
 
 /// Extract the raw JSON "id" value token from a NDJSON line.
@@ -166,13 +347,34 @@ fn unescapeJsonString(alloc: std.mem.Allocator, raw: []const u8) ![]u8 {
     while (i < raw.len) {
         if (raw[i] == '\\' and i + 1 < raw.len) {
             switch (raw[i + 1]) {
-                'n' => { try out.append(alloc, '\n'); i += 2; },
-                't' => { try out.append(alloc, '\t'); i += 2; },
-                'r' => { try out.append(alloc, '\r'); i += 2; },
-                '"' => { try out.append(alloc, '"'); i += 2; },
-                '\\' => { try out.append(alloc, '\\'); i += 2; },
-                '/' => { try out.append(alloc, '/'); i += 2; },
-                else => { try out.append(alloc, raw[i]); i += 1; },
+                'n' => {
+                    try out.append(alloc, '\n');
+                    i += 2;
+                },
+                't' => {
+                    try out.append(alloc, '\t');
+                    i += 2;
+                },
+                'r' => {
+                    try out.append(alloc, '\r');
+                    i += 2;
+                },
+                '"' => {
+                    try out.append(alloc, '"');
+                    i += 2;
+                },
+                '\\' => {
+                    try out.append(alloc, '\\');
+                    i += 2;
+                },
+                '/' => {
+                    try out.append(alloc, '/');
+                    i += 2;
+                },
+                else => {
+                    try out.append(alloc, raw[i]);
+                    i += 1;
+                },
             }
         } else {
             try out.append(alloc, raw[i]);

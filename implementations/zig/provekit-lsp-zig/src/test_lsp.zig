@@ -47,13 +47,34 @@ fn unescapeJsonString(alloc: std.mem.Allocator, raw: []const u8) ![]u8 {
     while (i < raw.len) {
         if (raw[i] == '\\' and i + 1 < raw.len) {
             switch (raw[i + 1]) {
-                'n' => { try out.append(alloc, '\n'); i += 2; },
-                't' => { try out.append(alloc, '\t'); i += 2; },
-                'r' => { try out.append(alloc, '\r'); i += 2; },
-                '"' => { try out.append(alloc, '"'); i += 2; },
-                '\\' => { try out.append(alloc, '\\'); i += 2; },
-                '/' => { try out.append(alloc, '/'); i += 2; },
-                else => { try out.append(alloc, raw[i]); i += 1; },
+                'n' => {
+                    try out.append(alloc, '\n');
+                    i += 2;
+                },
+                't' => {
+                    try out.append(alloc, '\t');
+                    i += 2;
+                },
+                'r' => {
+                    try out.append(alloc, '\r');
+                    i += 2;
+                },
+                '"' => {
+                    try out.append(alloc, '"');
+                    i += 2;
+                },
+                '\\' => {
+                    try out.append(alloc, '\\');
+                    i += 2;
+                },
+                '/' => {
+                    try out.append(alloc, '/');
+                    i += 2;
+                },
+                else => {
+                    try out.append(alloc, raw[i]);
+                    i += 1;
+                },
             }
         } else {
             try out.append(alloc, raw[i]);
@@ -133,7 +154,7 @@ test "initialize response shape" {
 
 test "parse response includes declarations callEdges warnings" {
     const alloc = std.testing.allocator;
-    const fixture_source = "pub fn myFn(x: i64) i64 { return x; }";
+    const fixture_source = "pub fn add(x: i64) i64 { return x; }\n\npub fn myFn(x: i64) i64 { return add(x); }";
 
     var arena = std.heap.ArenaAllocator.init(alloc);
     defer arena.deinit();
@@ -146,13 +167,15 @@ test "parse response includes declarations callEdges warnings" {
 
     const response = try std.fmt.allocPrint(
         alloc,
-        "{{\"jsonrpc\":\"2.0\",\"id\":2,\"result\":{{\"declarations\":{s},\"callEdges\":[],\"warnings\":[]}}}}",
+        "{{\"jsonrpc\":\"2.0\",\"id\":2,\"result\":{{\"declarations\":{s},\"callEdges\":[{{\"callSiteLocus\":{{\"col\":34,\"file\":\"fixture.zig\",\"line\":3}},\"evidenceTerm\":{{\"args\":[],\"kind\":\"atomic\",\"name\":\"call-site-obligation\"}},\"kind\":\"call-edge\",\"schemaVersion\":\"1\",\"sourceContractCid\":\"pending-zig:myFn\",\"targetSymbol\":\"zig-kit:add\"}}],\"warnings\":[]}}}}",
         .{decls_json},
     );
     defer alloc.free(response);
 
     try std.testing.expect(std.mem.indexOf(u8, response, "\"declarations\"") != null);
-    try std.testing.expect(std.mem.indexOf(u8, response, "\"callEdges\":[]") != null);
+    try std.testing.expect(std.mem.indexOf(u8, response, "\"targetSymbol\":\"zig-kit:add\"") != null);
+    try std.testing.expect(std.mem.indexOf(u8, response, "\"sourceContractCid\":\"pending-zig:myFn\"") != null);
+    try std.testing.expect(std.mem.indexOf(u8, response, "\"callSiteLocus\"") != null);
     try std.testing.expect(std.mem.indexOf(u8, response, "\"warnings\":[]") != null);
     try std.testing.expect(std.mem.indexOf(u8, response, "\"kind\":\"function-contract\"") != null);
 }
