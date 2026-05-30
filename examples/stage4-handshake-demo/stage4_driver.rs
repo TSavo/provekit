@@ -168,6 +168,7 @@ fn run() -> Result<(), String> {
     for d in &parse_kit_decls {
         let m = mint_contract(&MintContractArgs {
             contract_name: d.name.clone(),
+            library: None,
             pre: d.pre.as_deref().map(formula_to_value),
             post: d.post.as_deref().map(formula_to_value),
             inv: d.inv.as_deref().map(formula_to_value),
@@ -268,6 +269,7 @@ fn run() -> Result<(), String> {
     for d in &consumer_decls {
         let m = mint_contract(&MintContractArgs {
             contract_name: d.name.clone(),
+            library: None,
             pre: d.pre.as_deref().map(formula_to_value),
             post: d.post.as_deref().map(formula_to_value),
             inv: d.inv.as_deref().map(formula_to_value),

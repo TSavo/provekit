@@ -135,10 +135,11 @@ fn decode_seed_hex(hex: &str) -> Result<[u8; 32], String> {
 
 #[derive(Parser, Debug, Clone)]
 pub struct VerifyArgs {
-    /// Kit to verify (rust, go, cpp, ts, java, python, ...). Resolves to
-    /// the kit's project root; its `.provekit/` catalog carries the
-    /// lifted contract claims. Conflicts with `--project`. May also be
-    /// an explicit path when the value contains a path separator.
+    /// Configured kit alias to verify. Resolves through project/user
+    /// `[[kits]]` config to the kit's project root; its `.provekit/`
+    /// catalog carries the lifted contract claims. Conflicts with
+    /// `--project`. May also be an explicit path when the value contains
+    /// a path separator.
     #[arg(conflicts_with = "project")]
     pub kit: Option<String>,
 

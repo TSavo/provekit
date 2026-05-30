@@ -69,6 +69,7 @@ fn main() {
         formals: Vec::new(),
         emit_empty_formals: false,
         formal_sorts: Vec::new(),
+        library: None,
         contract_name: "parseInt".into(),
         pre: Some(pre_n_gt_0()),
         post: None,

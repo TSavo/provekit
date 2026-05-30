@@ -39,6 +39,7 @@ fn fixture_proof_bytes() -> (String, Vec<u8>) {
         formals: Vec::new(),
         emit_empty_formals: false,
         formal_sorts: Vec::new(),
+        library: None,
         contract_name: declaration.name.clone(),
         pre: declaration.pre.as_deref().map(formula_to_value),
         post: declaration.post.as_deref().map(formula_to_value),

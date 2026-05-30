@@ -262,6 +262,13 @@ pub struct MintContractArgs {
     /// `formals` so the resolver can name the value slots; omitted from the
     /// header when empty.
     pub formal_sorts: Vec<Arc<Value>>,
+    /// The crate / library this contract belongs to (the project's
+    /// `platform_profile.library`). Carried as a metadata axis so a consumer
+    /// that vendors this proof can tell THIS crate's `foo` from a same-named
+    /// `foo` in another crate (the Tier-1 cross-crate disambiguation). A
+    /// metadata field, not part of the contract CID: it does not change what
+    /// is proven, only how a call site resolves to it. `None` omits the key.
+    pub library: Option<String>,
 }
 
 // =============================================================================
@@ -529,6 +536,11 @@ pub fn mint_contract(args: &MintContractArgs) -> Result<MintedEnvelope, ClaimEnv
     }
     if let Some(inv) = &args.inv {
         metadata_kvs.push(("invHash".into(), Value::string(hash_value(inv))));
+    }
+    if let Some(library) = &args.library {
+        if !library.is_empty() {
+            metadata_kvs.push(("library".into(), Value::string(library.clone())));
+        }
     }
     let metadata = Arc::new(Value::Object(metadata_kvs));
 
@@ -908,6 +920,7 @@ mod tests {
             formals: Vec::new(),
             emit_empty_formals: false,
             formal_sorts: Vec::new(),
+            library: None,
             contract_name: "x".into(),
             pre: None,
             post: None,
@@ -953,6 +966,7 @@ mod tests {
             formals: Vec::new(),
             emit_empty_formals: false,
             formal_sorts: Vec::new(),
+            library: None,
             contract_name: "parseInt".into(),
             pre: Some(pre),
             post: None,
@@ -983,6 +997,7 @@ mod tests {
             formals: Vec::new(),
             emit_empty_formals: false,
             formal_sorts: Vec::new(),
+            library: None,
             contract_name: "checked_add_u8.postcondition".into(),
             pre: None,
             post: Some(post),
