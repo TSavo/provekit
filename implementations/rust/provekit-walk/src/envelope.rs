@@ -150,6 +150,7 @@ pub fn mint_args(
         formals,
         emit_empty_formals: contract.formals.is_empty(),
         formal_sorts,
+        library: None,
     }
 }
 

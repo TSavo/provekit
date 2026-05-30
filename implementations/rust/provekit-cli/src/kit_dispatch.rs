@@ -2428,10 +2428,9 @@ fn realize_request_params(request: &RealizeRequest) -> Value {
 /// realize RPC response. The dispatcher does not enumerate kits.
 ///
 /// Per #1270 Tier 1.3: removed the hardcoded `match` table that listed
-/// "python", "ruby", "typescript", "csharp", "rust" extensions. Built-in
-/// kits (rust, python, typescript) already declare `extension` in their
-/// realize responses, so the table was dead code masking the substrate
-/// violation.
+/// "python", "ruby", "typescript", "csharp", "rust" extensions. Kits that
+/// need non-identity file extensions declare `extension` in their realize
+/// responses, so the table was dead code masking the substrate violation.
 fn extension_from_convention(lang: &str) -> String {
     lang.to_string()
 }

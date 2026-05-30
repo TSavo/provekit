@@ -825,6 +825,7 @@ async fn lift_rust_source(
                 formals: Vec::new(),
                 emit_empty_formals: false,
                 formal_sorts: Vec::new(),
+                library: None,
                 contract_name: decl.name.clone(),
                 pre: pre_v.clone(),
                 post: post_v.clone(),
