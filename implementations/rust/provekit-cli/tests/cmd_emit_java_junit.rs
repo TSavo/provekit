@@ -108,6 +108,72 @@ fn install_emit_registration(project: &Path, java_bin: &Path, jar: &Path) {
     .expect("write emit manifest");
 }
 
+fn copy_dir_recursive(src: &Path, dst: &Path) {
+    fs::create_dir_all(dst).unwrap_or_else(|_| panic!("mkdir {}", dst.display()));
+    for entry in fs::read_dir(src).unwrap_or_else(|_| panic!("read {}", src.display())) {
+        let entry = entry.expect("read dir entry");
+        let src_path = entry.path();
+        let dst_path = dst.join(entry.file_name());
+        if entry.file_type().expect("entry file type").is_dir() {
+            copy_dir_recursive(&src_path, &dst_path);
+        } else {
+            fs::copy(&src_path, &dst_path).unwrap_or_else(|_| {
+                panic!("copy {} -> {}", src_path.display(), dst_path.display())
+            });
+        }
+    }
+}
+
+fn rewrite_java_emit_manifest(manifest: &Path, java_bin: &Path, jar: &Path) {
+    let text = fs::read_to_string(manifest)
+        .unwrap_or_else(|_| panic!("read checked-in manifest {}", manifest.display()));
+    let java = java_bin
+        .display()
+        .to_string()
+        .replace('\\', "\\\\")
+        .replace('"', "\\\"");
+    let jar = jar
+        .display()
+        .to_string()
+        .replace('\\', "\\\\")
+        .replace('"', "\\\"");
+    let rewritten = text
+        .lines()
+        .map(|line| {
+            if line.trim_start().starts_with("command = ") {
+                format!("command = [\"{java}\", \"-jar\", \"{jar}\", \"--rpc\"]")
+            } else {
+                line.to_string()
+            }
+        })
+        .collect::<Vec<_>>()
+        .join("\n");
+    fs::write(manifest, format!("{rewritten}\n"))
+        .unwrap_or_else(|_| panic!("write manifest {}", manifest.display()));
+}
+
+fn write_basic_emit_plan(plan: &Path) {
+    fs::write(
+        plan,
+        serde_json::to_vec_pretty(&serde_json::json!({
+            "contract_id": "concept:eq",
+            "function": "identity",
+            "params": ["a", "b"],
+            "param_types": ["int", "int"],
+            "predicates": [{
+                "kind": "atomic",
+                "name": "concept:eq",
+                "args": [
+                    {"kind": "const", "value": 2, "sort": {"kind": "primitive", "name": "Int"}},
+                    {"kind": "const", "value": 2, "sort": {"kind": "primitive", "name": "Int"}}
+                ]
+            }]
+        }))
+        .expect("encode plan"),
+    )
+    .expect("write plan");
+}
+
 fn write_maven_test_project(out_dir: &Path) {
     fs::create_dir_all(out_dir.join("src/test/java")).expect("mkdir java test tree");
     fs::write(
@@ -224,4 +290,62 @@ fn emit_java_junit_dispatches_real_emitter_and_maven_checks_output() {
         emitted.contains("assertEquals(2, 2);"),
         "emitted:\n{emitted}"
     );
+}
+
+#[test]
+fn emit_java_junit_uses_checked_in_java_double_registration() {
+    let temp = tempfile::tempdir().expect("tempdir");
+    let project = temp.path().join("java-double");
+    let example = repo_root().join("examples").join("java-double");
+    copy_dir_recursive(&example, &project);
+    let out_dir = project.join("src").join("test").join("java");
+    fs::create_dir_all(&out_dir).expect("mkdir java test tree");
+
+    let Some(java_bin) = maven_java_bin() else {
+        eprintln!("skipping: mvn is unavailable or did not report a usable Java home");
+        return;
+    };
+    let jar = build_java_junit_emitter();
+    rewrite_java_emit_manifest(
+        &project
+            .join(".provekit")
+            .join("emit")
+            .join("java-junit5")
+            .join("manifest.toml"),
+        &java_bin,
+        &jar,
+    );
+
+    let plan = project.join("plan.json");
+    write_basic_emit_plan(&plan);
+
+    let output = Command::new(provekit_bin())
+        .arg("emit")
+        .arg("--project")
+        .arg(&project)
+        .arg("--target")
+        .arg("java")
+        .arg("--framework")
+        .arg("junit5")
+        .arg("--plan")
+        .arg(&plan)
+        .arg("--out-dir")
+        .arg(&out_dir)
+        .arg("--compile-check")
+        .arg("--json")
+        .output()
+        .expect("spawn provekit emit java");
+
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(
+        output.status.success(),
+        "checked-in Java fixture registration must drive JUnit emit\nstdout:\n{stdout}\nstderr:\n{stderr}"
+    );
+    let receipt: Value = serde_json::from_str(&stdout).expect("emit stdout is JSON");
+    assert_eq!(receipt["ok"], true, "receipt: {receipt}");
+    assert_eq!(receipt["surface"], "java-junit5", "receipt: {receipt}");
+    assert_eq!(receipt["targetLanguage"], "java", "receipt: {receipt}");
+    assert_eq!(receipt["targetFramework"], "junit5", "receipt: {receipt}");
+    assert_eq!(receipt["isComplete"], true, "receipt: {receipt}");
 }
