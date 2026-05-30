@@ -502,6 +502,13 @@ fn verify_one_claim(
         discharge_method: None,
     };
 
+    // Set when the panic-pre obligation was wrapped under a dominating guard
+    // (`(and guard_facts) => pre`). A discharge of such an obligation is a
+    // proof the call site CANNOT PANIC, tagged `panic-safe` -- a distinct,
+    // substantive category, kept apart from `reflexive` (shallow self-post
+    // tautology) and `solver-substantive` (arithmetic/refinement).
+    let mut panic_guarded = false;
+
     // Body-discharge path (#1440): when the callsite names a callee with a
     // body-derived op-contract AND its harvested assertion has the
     // `=(<call>, <expected>)` shape, reduce the obligation THROUGH the
@@ -557,12 +564,39 @@ fn verify_one_claim(
                 return result;
             };
 
-            match instantiate::run(&resolved, &cs.arg_term) {
+            let instantiated = match instantiate::run(&resolved, &cs.arg_term) {
                 Ok(ob) => ob.ir_formula,
                 Err(e) => {
                     result.reason = format!("instantiate: {e}");
                     return result;
                 }
+            };
+            // PANIC-FREEDOM guard discharge. A panic partial's instantiated pre
+            // (`is_some(recv)`/`is_ok(recv)`/...) is unprovable on its own -- an
+            // uninterpreted predicate over a free term -> the site is honestly
+            // undecidable ("this unwrap is unproven"). When the call is
+            // DOMINATED by the matching guard (a preceding `if recv.is_some()`
+            // lifts it under `cf_ite(is_some(recv), ...)`, threaded into
+            // `cs.guard_facts` by enumerate_callsites), the obligation becomes
+            // `(and guard_facts) => pre`. With guard and pre identical after
+            // substitution, the implication is valid -> PROVABLY panic-safe.
+            // Fail-safe: empty guards keep the bare unprovable pre (undecidable);
+            // an else-branch carries the NEGATED guard (`is_none(recv)`), which
+            // never establishes `is_some(recv)` (also undecidable). No path
+            // marks an unguarded site safe. `panic_guarded` flags the tag below.
+            if cs.guard_facts.is_empty() {
+                instantiated
+            } else {
+                panic_guarded = true;
+                let antecedent = if cs.guard_facts.len() == 1 {
+                    cs.guard_facts[0].clone()
+                } else {
+                    json!({ "kind": "and", "operands": cs.guard_facts.clone() })
+                };
+                json!({
+                    "kind": "implies",
+                    "operands": [antecedent, instantiated],
+                })
             }
         }
         Err(e) => {
@@ -605,11 +639,17 @@ fn verify_one_claim(
     // still discharges (real arithmetic / implication) is
     // `solver-substantive`.
     if verdict == ObligationVerdict::Discharged {
-        result.discharge_method = Some(
+        result.discharge_method = Some(if panic_guarded {
+            // A discharged guarded panic-pre is a proof the call site cannot
+            // panic. Tag it distinctly so the scoreboard never conflates it
+            // with a shallow reflexive self-post or a generic substantive
+            // refinement discharge.
+            "panic-safe".to_string()
+        } else {
             body_discharge::classify_discharge_method(&obligation)
                 .as_str()
-                .to_string(),
-        );
+                .to_string()
+        });
     }
     result.discharging_solver = invs
         .iter()
@@ -788,6 +828,11 @@ fn json_to_canonical(
 struct DischargeSplit {
     reflexive: usize,
     substantive: usize,
+    /// Provably-panic-safe call sites: a panic partial's precondition
+    /// (`is_some`/`is_ok`/bounds) discharged UNDER its dominating guard. This
+    /// is the panic-freedom product metric (K). Kept apart from `reflexive`
+    /// (shallow tautology) and `substantive` (arithmetic/refinement).
+    panic_safe: usize,
     vacuous: usize,
     hash_tier: usize,
     undecidable: usize,
@@ -802,6 +847,7 @@ fn discharge_split(results: &[ClaimResult]) -> DischargeSplit {
         }
         match r.discharge_method.as_deref() {
             Some("reflexive") => s.reflexive += 1,
+            Some("panic-safe") => s.panic_safe += 1,
             Some("solver-substantive") => s.substantive += 1,
             // A discharged claim with no recorded solver method came from
             // a non-solver path: vacuous (no precondition) or a hash-tier
@@ -859,6 +905,7 @@ fn emit_json_receipt(
         // never conflated. The reflexive bucket is sound but shallow.
         "dischargeSplit": {
             "reflexive": split.reflexive,
+            "panicSafe": split.panic_safe,
             "solverSubstantive": split.substantive,
             "vacuous": split.vacuous,
             "hashTier": split.hash_tier,
@@ -910,11 +957,12 @@ fn emit_human_receipt(
     println!();
     let split = discharge_split(results);
     let summary = format!(
-        "{} claims: {} discharged ({} reflexive, {} solver-substantive, {} vacuous, {} hash-tier), \
-         {} failed/undecidable",
+        "{} claims: {} discharged ({} reflexive, {} panic-safe, {} solver-substantive, \
+         {} vacuous, {} hash-tier), {} failed/undecidable",
         results.len(),
         discharged,
         split.reflexive,
+        split.panic_safe,
         split.substantive,
         split.vacuous,
         split.hash_tier,
