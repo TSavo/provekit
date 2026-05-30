@@ -38,6 +38,14 @@ use provekit_walk::{
 use serde_json::{json, Value};
 use syn::spanned::Spanned;
 
+// Tier 2b native semantic oracle (spec 2026-05-30-callee-resolution-tiers §2.T2b).
+// A separate module file driving rust-analyzer over LSP as the Tier-2a fallback
+// for method calls whose receiver crate the syntactic tiers cannot resolve. The
+// oracle is opt-in (PROVEKIT_RESOLVE_ORACLE=rust-analyzer) and refuses (leaves
+// callee_crate = None) when unavailable, so the fast path and CI are unaffected.
+#[path = "../ra_oracle.rs"]
+mod ra_oracle;
+
 const CONCEPT_SHAPES_CATALOG_INDEX_JSON: &str =
     include_str!("../../../../../menagerie/concept-shapes/catalog/index.json");
 const SORT_BOOL_CID: &str = "blake3-512:0ee13bf3fd6b7ecfbee72dfbfc18a7c0ea7f1663de6cca43cefb36f5b4c03665452646094a7c296e819e75d683c6ce4821f3d7db3c3c78ae97f2d4e3451d2074";
@@ -322,6 +330,12 @@ struct CallSite {
     /// intra-crate bare calls resolving as before; a `Some(other)` is what
     /// distinguishes a cross-crate callee from a same-named local one.
     callee_crate: Option<String>,
+    /// `true` for an `Expr::MethodCall` (`x.method()`), `false` for an
+    /// `Expr::Call` (free function / associated function). Only method calls
+    /// whose `callee_crate` stayed `None` after Tier 2a are eligible for the
+    /// Tier 2b semantic-oracle fallback; a `None` on a free call is a glob
+    /// import and must keep its current-crate fallback, never the oracle.
+    is_method: bool,
     file: String,
     line: usize,
     col: usize,
@@ -629,6 +643,7 @@ fn collect_callsites_in_block(
                 self.out.push(CallSite {
                     callee,
                     callee_crate,
+                    is_method: false,
                     file: self.rel_path.to_string(),
                     line: start.line,
                     col: start.column,
@@ -649,6 +664,7 @@ fn collect_callsites_in_block(
                     self.local_type_names,
                     self.current_crate,
                 ),
+                is_method: true,
                 file: self.rel_path.to_string(),
                 line: start.line,
                 col: start.column,
@@ -899,6 +915,50 @@ fn crate_name_for(dir: &Path) -> Option<String> {
 /// contract. Call sites that find no matching binding emit a `lift-gap`
 /// diagnostic and skip the bridge — substrate-honesty over silently
 /// producing the wrong edge.
+///
+/// Tier 2b (§2.T2b): for the still-unresolved method calls in `callsites`
+/// (`is_method && callee_crate.is_none()`), consult the rust-analyzer semantic
+/// oracle in one warm session and stamp the resolved (normalized) crate. Free
+/// calls left `None` by Tier 1 are NOT sent to the oracle: those are glob
+/// imports whose current-crate fallback is intended. The oracle refuses
+/// (leaves `None`) when disabled or unavailable, so this is a pure upgrade over
+/// Tier 2a with no behavior change when off.
+fn resolve_method_calls_via_oracle(
+    workspace_root: &Path,
+    callsites: &mut [(CallSite, PathBuf)],
+) {
+    use ra_oracle::ResolveQuery;
+    // Gather the eligible positions. proc-macro2 spans are 1-based line /
+    // 0-based column; LSP wants 0-based line, 0-based char. The method ident's
+    // span start already points at the ident (not the dot), so the column maps
+    // directly. A line of 0 should never occur for a real call; guard anyway.
+    let mut queries: Vec<ResolveQuery> = Vec::new();
+    for (cs, full_path) in callsites.iter() {
+        if cs.is_method && cs.callee_crate.is_none() && cs.line >= 1 {
+            queries.push(ResolveQuery {
+                abs_path: full_path.clone(),
+                lsp_line: (cs.line - 1) as u32,
+                lsp_col: cs.col as u32,
+            });
+        }
+    }
+    if queries.is_empty() {
+        return;
+    }
+    let resolved = ra_oracle::resolve_batch(workspace_root, &queries);
+    if resolved.is_empty() {
+        return;
+    }
+    for (cs, full_path) in callsites.iter_mut() {
+        if cs.is_method && cs.callee_crate.is_none() && cs.line >= 1 {
+            let key = (full_path.clone(), (cs.line - 1) as u32, cs.col as u32);
+            if let Some(krate) = resolved.get(&key) {
+                cs.callee_crate = Some(krate.clone());
+            }
+        }
+    }
+}
+
 fn lift_implications(params: &Value) -> Result<Value, String> {
     use std::collections::HashMap;
 
@@ -991,6 +1051,13 @@ fn lift_implications(params: &Value) -> Result<Value, String> {
     let mut entries: Vec<Value> = Vec::new();
     let mut diagnostics: Vec<Value> = Vec::new();
 
+    // Collect every call site across every file FIRST, carrying each one's
+    // absolute path. The Tier-1/2a crate is set during collection; the Tier-2b
+    // oracle (if enabled) then resolves the still-unresolved method calls in one
+    // warm rust-analyzer session, before the matcher runs. Collecting up front is
+    // what lets the oracle be spawned + indexed exactly once per lift run rather
+    // than once per call site.
+    let mut all_callsites: Vec<(CallSite, PathBuf)> = Vec::new();
     for (rel_path, full_path) in resolve_rs_source_files(&workspace_root, &source_paths) {
         let src = match std::fs::read_to_string(&full_path) {
             Ok(s) => s,
@@ -1015,8 +1082,22 @@ fn lift_implications(params: &Value) -> Result<Value, String> {
             &current_crate,
             &mut callsites,
         );
-
         for cs in callsites {
+            all_callsites.push((cs, full_path.clone()));
+        }
+    }
+
+    // Tier 2b (§2.T2b): for method calls Tier 2a could not resolve
+    // (`callee_crate == None` AND `is_method`), ask rust-analyzer which crate
+    // the receiver's method resolves into, and stamp the normalized crate. The
+    // oracle is opt-in and refuses when unavailable; a refusal leaves the crate
+    // `None`, which the matcher below treats exactly as before (current-crate
+    // fallback / lift-gap). Tier 1/2a are untouched: only None-on-method sites
+    // are sent to the oracle, so the fast path is never slowed by it.
+    resolve_method_calls_via_oracle(&workspace_root, &mut all_callsites);
+
+    {
+        for (cs, _full_path) in all_callsites {
             // Resolve the call site to a (crate, leaf) key. An unresolved crate
             // (None: a method call, or a glob-imported bare call) defaults to
             // the current crate, preserving the prior intra-crate behavior; a
