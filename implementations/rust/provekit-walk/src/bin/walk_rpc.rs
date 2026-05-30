@@ -1011,6 +1011,18 @@ fn disambiguated_partial_leaf(type_stem: &str, leaf: &str) -> Option<String> {
     Some(partial.to_string())
 }
 
+/// Is `leaf` a PANIC method whose safety depends on a precondition? These bare
+/// leaves must NEVER bridge to a bare `(crate, leaf)` contract: such a shell has
+/// no precondition, so the bridge would vacuous-pass and falsely assert the site
+/// cannot panic. A panic leaf either reaches its type-disambiguated partial
+/// (whose pre IS the panic obligation) or REFUSES (honest unproven). This is the
+/// panic-site half of the refuse-floor. The set mirrors the `(type, leaf)` pairs
+/// in `disambiguated_partial_leaf`; `get`/`unwrap_or` are TOTAL (return Option /
+/// a default, never panic) and are intentionally NOT panic leaves.
+fn is_panic_leaf(leaf: &str) -> bool {
+    matches!(leaf, "unwrap" | "expect" | "unwrap_err")
+}
+
 /// Tier 2b (§2.T2b): for the still-unresolved method calls in `callsites`
 /// (`is_method && callee_crate.is_none()`), consult the rust-analyzer semantic
 /// oracle in one warm session and stamp the resolved (normalized) crate. Free
@@ -1324,8 +1336,47 @@ fn lift_implications(params: &Value) -> Result<Value, String> {
                 let dkey = (resolved_crate.clone(), leaf.clone());
                 contracts_by_key.get(&dkey).copied()
             });
-            let Some(binding) = disambig_binding.or_else(|| contracts_by_key.get(&key).copied())
+            // PANIC-LEAF refuse-floor: a bare `unwrap`/`expect`/`unwrap_err` must
+            // NEVER fall through to a bare `(std, unwrap)` contract. The bare
+            // shell carries no precondition, so bridging to it would produce a
+            // VACUOUS pass on a panic site -- a false "this cannot panic" claim,
+            // the worst refuse-floor breach. For a panic leaf the ONLY acceptable
+            // target is the type-disambiguated partial (whose pre IS the
+            // panic-freedom obligation); if the receiver type did not resolve, or
+            // its partial is absent, REFUSE (emit a lift-gap = honest "unproven"),
+            // never bridge. Total leaves keep the additive bare-leaf fall-through.
+            let is_panic = is_panic_leaf(&cs.callee);
+            let selected = if is_panic {
+                disambig_binding // disambiguate-or-refuse: no bare fall-through
+            } else {
+                disambig_binding.or_else(|| contracts_by_key.get(&key).copied())
+            };
+            let Some(binding) = selected
             else {
+                if is_panic {
+                    debug!(
+                        callee = %cs.callee,
+                        crate_ = %key.0,
+                        disambiguated = ?cs.disambiguated_callee,
+                        file = %cs.file,
+                        line = cs.line,
+                        "lift-gap: panic site unproven (receiver type unresolved or partial absent); \
+                         refusing rather than bridging a bare vacuous unwrap"
+                    );
+                    diagnostics.push(json!({
+                        "kind": "lift-gap",
+                        "reason": "panic-site-unproven",
+                        "detail": "receiver type did not resolve to a known panic partial; \
+                                   a bare unwrap/expect would vacuous-pass, so the site is \
+                                   reported as unproven (cannot show it does not panic)",
+                        "callee": cs.callee,
+                        "calleeCrate": key.0,
+                        "file": cs.file,
+                        "line": cs.line,
+                        "col": cs.col,
+                    }));
+                    continue;
+                }
                 if let Some(ineligible) = ineligible_by_key.get(&key) {
                     debug!(
                         callee = %cs.callee,
