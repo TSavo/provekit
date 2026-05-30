@@ -31,6 +31,20 @@ fn install_node_manifest(root: &Path, surface: &str, script: &Path, library_tag:
     install_node_manifest_with_metadata(root, surface, script, library_tag, None, &[]);
 }
 
+fn append_realize_registration(root: &Path, name: &str, surface: &str) {
+    let provekit_dir = root.join(".provekit");
+    fs::create_dir_all(&provekit_dir).expect("create .provekit dir");
+    let config = provekit_dir.join("config.toml");
+    let mut text = fs::read_to_string(&config).unwrap_or_default();
+    if !text.is_empty() && !text.ends_with('\n') {
+        text.push('\n');
+    }
+    text.push_str(&format!(
+        "\n[[plugins]]\nname = \"{name}\"\nkind = \"realize\"\nsurface = \"{surface}\"\n"
+    ));
+    fs::write(config, text).expect("write realize config registration");
+}
+
 fn install_node_manifest_with_metadata(
     root: &Path,
     surface: &str,
@@ -61,6 +75,7 @@ fn install_node_manifest_with_metadata(
     );
     append_manifest_metadata(&mut manifest_text, family, provides_concepts);
     fs::write(manifest, manifest_text).expect("write manifest");
+    append_realize_registration(root, &format!("typescript-realize-{library_tag}"), surface);
 }
 
 fn append_manifest_metadata(
@@ -110,6 +125,7 @@ fn install_python_script_manifest_with_metadata(
     );
     append_manifest_metadata(&mut manifest_text, family, provides_concepts);
     fs::write(manifest, manifest_text).expect("write manifest");
+    append_realize_registration(root, &format!("python-realize-{library_tag}"), surface);
 }
 
 fn install_binary_manifest(
@@ -138,6 +154,7 @@ fn install_binary_manifest(
          working_dir = \".\"\n",
     );
     fs::write(manifest, manifest_text).expect("write manifest");
+    append_realize_registration(root, manifest_name, surface);
 }
 
 fn install_python_module_manifest(
@@ -169,6 +186,7 @@ fn install_python_module_manifest(
          working_dir = \".\"\n",
     );
     fs::write(manifest, manifest_text).expect("write manifest");
+    append_realize_registration(root, manifest_name, surface);
 }
 
 fn write_typescript_project_fixture(workspace: &Path) -> PathBuf {
@@ -787,12 +805,16 @@ for line in sys.stdin:
 
     let (before, before_code) = run_verify_json_with_code(workspace.path());
     assert_eq!(
-        before_code, 0,
-        "pre-materialize verify should be empty: {before}"
+        before_code, 1,
+        "pre-materialize verify should reject the empty proof as non-success: {before}"
     );
     assert_eq!(
         before["totalClaims"], 0,
         "without the materialize bridge the boundary call should not enumerate: {before}"
+    );
+    assert_eq!(
+        before["ok"], false,
+        "zero-claim verification must not be reported as ok: {before}"
     );
 
     let output = Command::new(env!("CARGO_BIN_EXE_provekit"))

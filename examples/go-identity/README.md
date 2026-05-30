@@ -22,15 +22,18 @@ did not ask for a contract there.
 
 ## The authoring surface (`.provekit/config.toml`)
 
-Two `[[plugins]]`, mirroring rust's `rust-bind` / `rust-contracts`:
+Three `[[plugins]]`, mirroring rust's lift/realize split:
 
 - `go-bind` (`layer = "library-bindings"`) emits the
   `library-sugar-binding-entry` DECLARATION catalog for each annotated function.
 - `go-contracts` (`emit = "ir-document"`) emits the body-derived
   function-contracts + harvested callsites, gated on the declaration.
+- `go-realize` (`kind = "realize"`) materializes the same concept back into
+  native Go sugar through the Go kit.
 
-Both resolve to `provekit-lift-go-verify`, which emits different IR per surface
-(so a function is not minted twice).
+The lift surfaces resolve to `provekit-lift-go-verify`, which emits different
+IR per surface (so a function is not minted twice). The realize surface resolves
+to `provekit-realize-go-core`.
 
 ## The closed loop
 

@@ -10,10 +10,8 @@
 //
 //   1. `dispatch_realize(target_lang, library_tag, request)`
 //      Resolves a `kind = "realize"` (sugar/body-template) plugin for
-//      `(target_lang, library_tag.unwrap_or("default"))` via convention
-//      (`.provekit/realize/<surface>/manifest.toml` or a built-in path; the
-//      Java built-in path is
-//      `implementations/java/provekit-realize-java-core/target/...`).
+//      `(target_lang, library_tag.unwrap_or("default"))` via project
+//      registration plus `.provekit/realize/<surface>/manifest.toml`.
 //      Invokes the PEP 1.7.0 `provekit.plugin.invoke` method and returns
 //      `{ source, is_stub }`.
 //
@@ -169,6 +167,7 @@ fn build_run_plugin_registry(workspace_root: &Path) -> Result<RunPluginRegistry,
 fn scan_manifest_plugins(workspace_root: &Path) -> Result<Vec<ManifestPluginRegistration>, String> {
     let mut plugins = Vec::new();
     let configured_emit_surfaces = configured_emit_surface_names(workspace_root);
+    let configured_realize_surfaces = configured_realize_surface_names(workspace_root);
     for kind in REGISTRY_MANIFEST_KINDS {
         let kind_dir = workspace_root.join(".provekit").join(kind);
         let Ok(entries) = std::fs::read_dir(&kind_dir) else {
@@ -188,6 +187,9 @@ fn scan_manifest_plugins(workspace_root: &Path) -> Result<Vec<ManifestPluginRegi
         surfaces.sort_by(|a, b| a.0.cmp(&b.0));
         for (surface, path) in surfaces {
             if *kind == "emit" && !configured_emit_surfaces.contains(&surface) {
+                continue;
+            }
+            if *kind == "realize" && !configured_realize_surfaces.contains(&surface) {
                 continue;
             }
             let manifest_path = path.join("manifest.toml");
@@ -1057,6 +1059,15 @@ fn resolve_realize_command(
             });
         }
     }
+    if configured_realize_surfaces(workspace_root, target_lang).is_empty() {
+        return Err(KitUnavailable {
+            kit_kind: "realize",
+            language: target_lang.to_string(),
+            detail: format!(
+                "no realize plugin registration for language `{target_lang}` in .provekit/config.toml"
+            ),
+        });
+    }
 
     let requested = library_tag.unwrap_or(DEFAULT_LIBRARY_TAG);
     let registry_candidates =
@@ -1217,6 +1228,10 @@ fn project_realize_candidates(
     workspace_root: &Path,
     target_lang: &str,
 ) -> Result<Vec<RealizeCandidate>, String> {
+    let configured = configured_realize_surfaces(workspace_root, target_lang);
+    if configured.is_empty() {
+        return Ok(Vec::new());
+    }
     let realize_dir = workspace_root.join(".provekit").join("realize");
     let Ok(entries) = std::fs::read_dir(&realize_dir) else {
         return Ok(Vec::new());
@@ -1236,6 +1251,9 @@ fn project_realize_candidates(
 
     let mut out = Vec::new();
     for (surface, path) in surfaces {
+        if !configured.contains(&surface) {
+            continue;
+        }
         if !realize_surface_matches_target(&surface, target_lang) {
             continue;
         }
@@ -1627,6 +1645,34 @@ fn configured_emit_surface_names(workspace_root: &Path) -> BTreeSet<String> {
             (!surface.is_empty()).then_some(surface)
         })
         .collect()
+}
+
+fn configured_realize_surface_names(workspace_root: &Path) -> BTreeSet<String> {
+    read_project_config(workspace_root)
+        .plugins
+        .into_iter()
+        .filter(|plugin| plugin.is_realize_plugin())
+        .filter_map(|plugin| {
+            let surface = plugin.surface.trim().to_string();
+            (!surface.is_empty()).then_some(surface)
+        })
+        .collect()
+}
+
+fn configured_realize_surfaces(workspace_root: &Path, target_lang: &str) -> Vec<String> {
+    let mut surfaces = read_project_config(workspace_root)
+        .plugins
+        .into_iter()
+        .filter(|plugin| plugin.is_realize_plugin())
+        .filter_map(|plugin| {
+            let surface = plugin.surface.trim().to_string();
+            (!surface.is_empty() && realize_surface_matches_target(&surface, target_lang))
+                .then_some(surface)
+        })
+        .collect::<Vec<_>>();
+    surfaces.sort();
+    surfaces.dedup();
+    surfaces
 }
 
 fn configured_emit_surfaces(

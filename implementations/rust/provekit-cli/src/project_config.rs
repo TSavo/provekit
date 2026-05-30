@@ -15,9 +15,10 @@ use std::path::{Path, PathBuf};
 /// One entry in `.provekit/config.toml`'s `[[plugins]]` array.
 ///
 /// Each entry declares one project-enabled plugin. `kind = "lift"` routes
-/// to `.provekit/lift/<surface>/manifest.toml`; `kind = "emit"` routes
+/// to `.provekit/lift/<surface>/manifest.toml`; `kind = "realize"` routes
+/// to `.provekit/realize/<surface>/manifest.toml`; `kind = "emit"` routes
 /// to `.provekit/emit/<surface>/manifest.toml`. Omitted kind preserves
-/// legacy dual-use registrations.
+/// legacy lift/emit dual-use registrations.
 #[derive(Debug, Clone, Default)]
 pub struct PluginEntry {
     /// Human label for diagnostics. Optional; falls back to `surface`.
@@ -67,6 +68,13 @@ impl PluginEntry {
             .as_deref()
             .map(|kind| kind.eq_ignore_ascii_case("emit"))
             .unwrap_or(true)
+    }
+
+    pub fn is_realize_plugin(&self) -> bool {
+        self.kind
+            .as_deref()
+            .map(|kind| kind.eq_ignore_ascii_case("realize"))
+            .unwrap_or(false)
     }
 }
 
@@ -456,13 +464,23 @@ name = "java-testng-lifter"
 kind = "lift"
 surface = "java-testng"
 emit = "ir-document"
+
+[[plugins]]
+name = "java-realize"
+kind = "realize"
+surface = "java"
 "#,
         );
-        assert_eq!(cfg.plugins.len(), 2);
+        assert_eq!(cfg.plugins.len(), 3);
         assert!(cfg.plugins[0].is_emit_plugin());
         assert!(!cfg.plugins[0].is_lift_plugin());
+        assert!(!cfg.plugins[0].is_realize_plugin());
         assert!(cfg.plugins[1].is_lift_plugin());
         assert!(!cfg.plugins[1].is_emit_plugin());
+        assert!(!cfg.plugins[1].is_realize_plugin());
+        assert!(cfg.plugins[2].is_realize_plugin());
+        assert!(!cfg.plugins[2].is_lift_plugin());
+        assert!(!cfg.plugins[2].is_emit_plugin());
     }
 
     #[test]

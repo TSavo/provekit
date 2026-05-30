@@ -83,6 +83,69 @@ fn install_emit_registration(project: &Path, emitter: &Path) {
     .expect("write emit manifest");
 }
 
+fn copy_dir_recursive(src: &Path, dst: &Path) {
+    fs::create_dir_all(dst).unwrap_or_else(|_| panic!("mkdir {}", dst.display()));
+    for entry in fs::read_dir(src).unwrap_or_else(|_| panic!("read {}", src.display())) {
+        let entry = entry.expect("read dir entry");
+        let src_path = entry.path();
+        let dst_path = dst.join(entry.file_name());
+        if entry.file_type().expect("entry file type").is_dir() {
+            copy_dir_recursive(&src_path, &dst_path);
+        } else {
+            fs::copy(&src_path, &dst_path).unwrap_or_else(|_| {
+                panic!("copy {} -> {}", src_path.display(), dst_path.display())
+            });
+        }
+    }
+}
+
+fn rewrite_manifest_command(manifest: &Path, command: &Path) {
+    let text = fs::read_to_string(manifest)
+        .unwrap_or_else(|_| panic!("read checked-in manifest {}", manifest.display()));
+    let escaped = command
+        .display()
+        .to_string()
+        .replace('\\', "\\\\")
+        .replace('"', "\\\"");
+    let rewritten = text
+        .lines()
+        .map(|line| {
+            if line.trim_start().starts_with("command = ") {
+                format!("command = [\"{escaped}\", \"--rpc\"]")
+            } else {
+                line.to_string()
+            }
+        })
+        .collect::<Vec<_>>()
+        .join("\n");
+    fs::write(manifest, format!("{rewritten}\n"))
+        .unwrap_or_else(|_| panic!("write manifest {}", manifest.display()));
+}
+
+fn write_basic_emit_plan(plan: &Path) {
+    fs::write(
+        plan,
+        serde_json::to_vec_pretty(&serde_json::json!({
+            "contract_id": "concept:eq",
+            "package_name": "sample",
+            "function": "Id",
+            "params": ["x"],
+            "param_types": ["int"],
+            "return_type": "int",
+            "predicates": [{
+                "kind": "atomic",
+                "name": "concept:eq",
+                "args": [
+                    {"kind": "var", "name": "x"},
+                    {"kind": "var", "name": "x"}
+                ]
+            }]
+        }))
+        .expect("encode plan"),
+    )
+    .expect("write plan");
+}
+
 #[test]
 fn emit_go_testing_dispatches_manifest_writes_artifact_and_compile_checks() {
     if !go_available() {
@@ -105,27 +168,7 @@ fn emit_go_testing_dispatches_manifest_writes_artifact_and_compile_checks() {
     install_emit_registration(&project, &emitter);
 
     let plan = project.join("plan.json");
-    fs::write(
-        &plan,
-        serde_json::to_vec_pretty(&serde_json::json!({
-            "contract_id": "concept:eq",
-            "package_name": "sample",
-            "function": "Id",
-            "params": ["x"],
-            "param_types": ["int"],
-            "return_type": "int",
-            "predicates": [{
-                "kind": "atomic",
-                "name": "concept:eq",
-                "args": [
-                    {"kind": "var", "name": "x"},
-                    {"kind": "var", "name": "x"}
-                ]
-            }]
-        }))
-        .expect("encode plan"),
-    )
-    .expect("write plan");
+    write_basic_emit_plan(&plan);
 
     let output = Command::new(provekit_bin())
         .arg("emit")
@@ -175,4 +218,69 @@ fn emit_go_testing_dispatches_manifest_writes_artifact_and_compile_checks() {
         !emitted.contains("testify"),
         "stdlib testing emitter must not reference testify:\n{emitted}"
     );
+}
+
+#[test]
+fn emit_go_testing_uses_checked_in_go_double_registration() {
+    if !go_available() {
+        eprintln!("skipping: go not on PATH");
+        return;
+    }
+
+    let temp = tempfile::tempdir().expect("tempdir");
+    let project = temp.path().join("go-double");
+    let out_dir = temp.path().join("out");
+    fs::create_dir_all(&project).expect("mkdir project");
+    fs::create_dir_all(&out_dir).expect("mkdir out");
+    fs::write(
+        out_dir.join("go.mod"),
+        "module example.com/provekit_emit\n\ngo 1.22\n",
+    )
+    .expect("write go.mod");
+
+    let example = repo_root().join("examples").join("go-double");
+    copy_dir_recursive(&example.join(".provekit"), &project.join(".provekit"));
+
+    let emitter = build_go_testing_emitter();
+    rewrite_manifest_command(
+        &project
+            .join(".provekit")
+            .join("emit")
+            .join("go-testing")
+            .join("manifest.toml"),
+        &emitter,
+    );
+
+    let plan = project.join("plan.json");
+    write_basic_emit_plan(&plan);
+
+    let output = Command::new(provekit_bin())
+        .arg("emit")
+        .arg("--project")
+        .arg(&project)
+        .arg("--target")
+        .arg("go")
+        .arg("--framework")
+        .arg("testing")
+        .arg("--plan")
+        .arg(&plan)
+        .arg("--out-dir")
+        .arg(&out_dir)
+        .arg("--compile-check")
+        .arg("--json")
+        .output()
+        .expect("spawn provekit emit");
+
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(
+        output.status.success(),
+        "checked-in Go fixture registration must drive emit\nstdout:\n{stdout}\nstderr:\n{stderr}"
+    );
+    let receipt: Value = serde_json::from_str(&stdout).expect("emit stdout is JSON");
+    assert_eq!(receipt["ok"], true, "receipt: {receipt}");
+    assert_eq!(receipt["surface"], "go-testing", "receipt: {receipt}");
+    assert_eq!(receipt["targetLanguage"], "go", "receipt: {receipt}");
+    assert_eq!(receipt["targetFramework"], "testing", "receipt: {receipt}");
+    assert_eq!(receipt["isComplete"], true, "receipt: {receipt}");
 }
