@@ -1,0 +1,5 @@
+name = "python-realize"
+library_tag = "python"
+protocol_version = "pep/1.7.0"
+command = ["provekit-realize-python", "--rpc"]
+working_dir = "."

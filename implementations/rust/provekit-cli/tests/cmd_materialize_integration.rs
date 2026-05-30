@@ -265,6 +265,52 @@ fn write_rust_reqwest_project_fixture(workspace: &Path) -> Option<PathBuf> {
     Some(src_dir)
 }
 
+fn copy_dir_recursive(src: &Path, dst: &Path) {
+    fs::create_dir_all(dst).unwrap_or_else(|_| panic!("mkdir {}", dst.display()));
+    for entry in fs::read_dir(src).unwrap_or_else(|_| panic!("read {}", src.display())) {
+        let entry = entry.expect("read dir entry");
+        let src_path = entry.path();
+        let dst_path = dst.join(entry.file_name());
+        if entry.file_type().expect("entry file type").is_dir() {
+            copy_dir_recursive(&src_path, &dst_path);
+        } else {
+            fs::copy(&src_path, &dst_path).unwrap_or_else(|_| {
+                panic!("copy {} -> {}", src_path.display(), dst_path.display())
+            });
+        }
+    }
+}
+
+fn rewrite_python_realize_manifest(manifest: &Path) {
+    let core_src = repo_root()
+        .join("implementations")
+        .join("python")
+        .join("provekit-realize-python-core")
+        .join("src");
+    let pythonpath = core_src
+        .display()
+        .to_string()
+        .replace('\\', "\\\\")
+        .replace('"', "\\\"");
+    let text = fs::read_to_string(manifest)
+        .unwrap_or_else(|_| panic!("read checked-in manifest {}", manifest.display()));
+    let rewritten = text
+        .lines()
+        .map(|line| {
+            if line.trim_start().starts_with("command = ") {
+                format!(
+                    "command = [\"env\", \"PYTHONPATH={pythonpath}\", \"python3\", \"-m\", \"provekit_realize_python_core\", \"--rpc\"]"
+                )
+            } else {
+                line.to_string()
+            }
+        })
+        .collect::<Vec<_>>()
+        .join("\n");
+    fs::write(manifest, format!("{rewritten}\n"))
+        .unwrap_or_else(|_| panic!("write manifest {}", manifest.display()));
+}
+
 fn concept_carrier_lines(indent: &str) -> String {
     format!(
         "{indent}// provekit-concept: {}\n{indent}// provekit-concept-payload-cid: {}\n",
@@ -551,6 +597,20 @@ fn write_python_http_request_source(src_dir: &Path) -> PathBuf {
         ),
     )
     .expect("write python HTTP source");
+    source_path
+}
+
+fn write_python_identity_source(src_dir: &Path) -> PathBuf {
+    let source_path = src_dir.join("identity.py");
+    let payload = "{\"artifact_kind\":\"provekit-concept-citation-comment-sugar\",\"concept_name\":\"identity\",\"function\":\"identity_value\",\"params\":[\"x\"],\"param_types\":[\"int\"],\"return_type\":\"int\"}";
+    fs::write(
+        &source_path,
+        format!(
+            "{}def placeholder():\n    pass\n",
+            carrier_lines("#", "", payload)
+        ),
+    )
+    .expect("write python identity source");
     source_path
 }
 
@@ -1197,6 +1257,70 @@ fn materialize_python_requests_example_uses_python_library_shim() {
         "Python requests example should route through the requests shim:\n{stdout}"
     );
     assert!(!stdout.contains("provekit-concept:"));
+}
+
+#[test]
+fn materialize_python_uses_checked_in_python_double_realize_registration() {
+    let workspace = tempfile::tempdir().expect("tempdir");
+    let project = workspace.path().join("python-double");
+    fs::create_dir_all(&project).expect("mkdir project");
+    copy_dir_recursive(
+        &repo_root()
+            .join("examples")
+            .join("python-double")
+            .join(".provekit"),
+        &project.join(".provekit"),
+    );
+    rewrite_python_realize_manifest(
+        &project
+            .join(".provekit")
+            .join("realize")
+            .join("python")
+            .join("manifest.toml"),
+    );
+    fs::write(
+        project.join("pyproject.toml"),
+        "[project]\nname = \"checked-in-python-materialize\"\nversion = \"0.0.0\"\n",
+    )
+    .expect("write pyproject");
+    let src_dir = project.join("src");
+    fs::create_dir_all(&src_dir).expect("mkdir src");
+    write_python_identity_source(&src_dir);
+
+    let out_dir = workspace.path().join("materialized");
+    fs::create_dir_all(&out_dir).expect("mkdir out");
+    let output = Command::new(env!("CARGO_BIN_EXE_provekit"))
+        .arg("materialize")
+        .arg("--target")
+        .arg("python")
+        .arg("--library")
+        .arg("python")
+        .arg("--source-dir")
+        .arg(&src_dir)
+        .arg("--project")
+        .arg(&project)
+        .arg("--out-dir")
+        .arg(&out_dir)
+        .arg("--compile-check")
+        .output()
+        .expect("spawn provekit materialize for checked-in Python fixture");
+
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(
+        output.status.success(),
+        "checked-in Python fixture registration must drive materialize\nstdout:\n{stdout}\nstderr:\n{stderr}"
+    );
+    assert!(
+        stderr.contains("assembled by python kit via RPC"),
+        "Python materialize route must assemble through the Python kit\nstderr:\n{stderr}"
+    );
+    let emitted =
+        fs::read_to_string(out_dir.join("identity.py")).expect("read materialized Python");
+    assert!(
+        emitted.contains("def identity_value(x):") && emitted.contains("return x"),
+        "materialized Python should contain identity body from checked-in registration:\n{emitted}"
+    );
 }
 
 #[test]
