@@ -14,6 +14,12 @@ name = "rust-tests"
 surface = "rust-tests"
 emit = "ir-document"
 
+[[plugins]]
+name = "rust-cargo-test"
+kind = "emit"
+surface = "rust-cargo-test"
+emit = "cargo-test"
+
 [solvers]
 default = "z3"
 

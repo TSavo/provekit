@@ -93,6 +93,70 @@ fn install_emit_registration(project: &Path, emitter: &Path) {
     .expect("write emit manifest");
 }
 
+fn copy_dir_recursive(src: &Path, dst: &Path) {
+    fs::create_dir_all(dst).unwrap_or_else(|_| panic!("mkdir {}", dst.display()));
+    for entry in fs::read_dir(src).unwrap_or_else(|_| panic!("read {}", src.display())) {
+        let entry = entry.expect("read dir entry");
+        let src_path = entry.path();
+        let dst_path = dst.join(entry.file_name());
+        if entry.file_type().expect("entry file type").is_dir() {
+            copy_dir_recursive(&src_path, &dst_path);
+        } else {
+            fs::copy(&src_path, &dst_path).unwrap_or_else(|_| {
+                panic!("copy {} -> {}", src_path.display(), dst_path.display())
+            });
+        }
+    }
+}
+
+fn rewrite_manifest_command(manifest: &Path, command: &Path) {
+    let text = fs::read_to_string(manifest)
+        .unwrap_or_else(|_| panic!("read checked-in manifest {}", manifest.display()));
+    let escaped = command
+        .display()
+        .to_string()
+        .replace('\\', "\\\\")
+        .replace('"', "\\\"");
+    let rewritten = text
+        .lines()
+        .map(|line| {
+            if line.trim_start().starts_with("command = ") {
+                format!("command = [\"{escaped}\", \"--rpc\"]")
+            } else {
+                line.to_string()
+            }
+        })
+        .collect::<Vec<_>>()
+        .join("\n");
+    fs::write(manifest, format!("{rewritten}\n"))
+        .unwrap_or_else(|_| panic!("write manifest {}", manifest.display()));
+}
+
+fn write_double_emit_plan(plan: &Path) {
+    fs::write(
+        plan,
+        serde_json::to_vec_pretty(&serde_json::json!({
+            "contract_id": "concept:eq",
+            "function": "double",
+            "params": ["x"],
+            "param_types": ["i64"],
+            "return_type": "i64",
+            "predicates": [{
+                "kind": "atomic",
+                "name": "=",
+                "args": [
+                    {"kind": "ctor", "name": "double", "args": [
+                        {"kind": "const", "value": 3, "sort": {"kind": "primitive", "name": "i64"}}
+                    ]},
+                    {"kind": "const", "value": 6, "sort": {"kind": "primitive", "name": "i64"}}
+                ]
+            }]
+        }))
+        .expect("encode plan"),
+    )
+    .expect("write plan");
+}
+
 fn write_cargo_test_project(project: &Path) -> PathBuf {
     fs::create_dir_all(project.join("src")).expect("mkdir src");
     fs::write(
@@ -186,4 +250,62 @@ fn emit_rust_cargo_test_dispatches_real_emitter_and_cargo_checks_output() {
         emitted.contains("assert_eq!(add(2, 3), 5);"),
         "emitted:\n{emitted}"
     );
+}
+
+#[test]
+fn emit_rust_cargo_test_uses_checked_in_rust_double_registration() {
+    let temp = tempfile::tempdir().expect("tempdir");
+    let project = temp.path().join("rust-double");
+    copy_dir_recursive(&repo_root().join("examples").join("rust-double"), &project);
+    let manifest = project
+        .join(".provekit")
+        .join("emit")
+        .join("rust-cargo-test")
+        .join("manifest.toml");
+    assert!(
+        manifest.exists(),
+        "checked-in rust-double fixture must register the rust-cargo-test emitter at {}",
+        manifest.display()
+    );
+
+    let emitter = build_rust_cargo_test_emitter();
+    rewrite_manifest_command(&manifest, &emitter);
+    let out_dir = project.join("src");
+
+    let plan = project.join("plan.json");
+    write_double_emit_plan(&plan);
+
+    let output = Command::new(provekit_bin())
+        .arg("emit")
+        .arg("--project")
+        .arg(&project)
+        .arg("--target")
+        .arg("rust")
+        .arg("--framework")
+        .arg("cargo-test")
+        .arg("--plan")
+        .arg(&plan)
+        .arg("--out-dir")
+        .arg(&out_dir)
+        .arg("--compile-check")
+        .arg("--json")
+        .output()
+        .expect("spawn provekit emit rust");
+
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(
+        output.status.success(),
+        "checked-in Rust fixture registration must drive cargo-test emit\nstdout:\n{stdout}\nstderr:\n{stderr}"
+    );
+    let receipt: Value = serde_json::from_str(&stdout).expect("emit stdout is JSON");
+    assert_eq!(receipt["ok"], true, "receipt: {receipt}");
+    assert_eq!(receipt["surface"], "rust-cargo-test", "receipt: {receipt}");
+    assert_eq!(receipt["targetLanguage"], "rust", "receipt: {receipt}");
+    assert_eq!(
+        receipt["targetFramework"], "cargo-test",
+        "receipt: {receipt}"
+    );
+    assert_eq!(receipt["compileCheck"]["ok"], true, "receipt: {receipt}");
+    assert_eq!(receipt["isComplete"], true, "receipt: {receipt}");
 }

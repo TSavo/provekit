@@ -1,0 +1,26 @@
+# ProvekIt project config for the Java emit fixture. Registration is per
+# project: JUnit and TestNG emit surfaces are declared here and resolved
+# through .provekit/<kind>/<surface>/manifest.toml.
+
+[[plugins]]
+name = "java-junit5"
+kind = "emit"
+surface = "java-junit5"
+emit = "junit5"
+
+[[plugins]]
+name = "java-testng"
+kind = "emit"
+surface = "java-testng"
+emit = "testng"
+
+[solvers]
+default = "z3"
+
+[solvers.dispatch]
+linear_arithmetic = "z3"
+default = "z3"
+
+[solvers.z3]
+binary = "z3"
+flags = ["-smt2", "-in"]

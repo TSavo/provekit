@@ -690,10 +690,10 @@ cross-language-proof-parity: build-java cross-language-proof-parity-python-env
 	@echo "--- emit parity ---"
 	cargo test --release --manifest-path implementations/rust/Cargo.toml \
 		-p provekit-cli --test cmd_emit_java_junit \
-		emit_java_junit_dispatches_real_emitter_and_maven_checks_output
+		emit_java_junit_uses_checked_in_java_double_registration
 	cargo test --release --manifest-path implementations/rust/Cargo.toml \
 		-p provekit-cli --test cmd_emit_java_testng \
-		emit_java_testng_dispatches_real_emitter_and_maven_checks_output
+		emit_java_testng_uses_checked_in_java_double_registration
 	cargo test --release --manifest-path implementations/rust/Cargo.toml \
 		-p provekit-cli --test cmd_emit_go_testing \
 		emit_go_testing_uses_checked_in_go_double_registration
@@ -705,7 +705,7 @@ cross-language-proof-parity: build-java cross-language-proof-parity-python-env
 		emit_python_pytest_uses_checked_in_python_double_registration
 	cargo test --release --manifest-path implementations/rust/Cargo.toml \
 		-p provekit-cli --test cmd_emit_rust_cargo_test \
-		emit_rust_cargo_test_dispatches_real_emitter_and_cargo_checks_output
+		emit_rust_cargo_test_uses_checked_in_rust_double_registration
 	@echo "--- materialize parity ---"
 	cargo test --release --manifest-path implementations/rust/Cargo.toml \
 		-p provekit-cli --test cmd_materialize_proof_load \

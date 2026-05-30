@@ -3,7 +3,7 @@ pub fn double(x: i64) -> i64 {
 }
 
 #[cfg(test)]
-mod tests {
+mod native_tests {
     use super::double;
 
     #[test]
@@ -11,3 +11,6 @@ mod tests {
         assert_eq!(double(3), 6);
     }
 }
+
+#[cfg(test)]
+include!("provekit_emitted.rs");
