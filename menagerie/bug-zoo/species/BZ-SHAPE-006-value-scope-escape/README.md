@@ -19,6 +19,6 @@ eq(value, 42) => gte(value, 43)
 ```
 
 The paired fixed surfaces change the witnessed value to 43. The requirement is
-unchanged. Exhibit checks route through `provekit prove --formula` and produce
+unchanged. Exhibit checks route through the ProveKit verifier formula gate and produce
 the red signal; fixed checks route through the same CLI path and produce the
 green signal.

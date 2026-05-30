@@ -6,8 +6,7 @@
 //
 //	kind: "linker-error", errorKind: "unprovable-obligation"
 //
-// Run: provekit link examples/polyglot-rust-go/fixture-fail/
-// Expected: link-bundle.json with 1 linker-error, exit code 1.
+// Expected checked-in receipt: link-bundle.json with 1 linker-error.
 package caller
 
 /*

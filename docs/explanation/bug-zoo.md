@@ -33,14 +33,14 @@ ordinary host code still passes native checks.
    Each exhibit/fixed harness is a tiny ProvekIt project with
    `.provekit/config.toml` selecting a surface and
    `.provekit/lift/<surface>/manifest.toml` naming the native RPC lifter.
-   The zoo invokes `provekit mint` for lift exhibits and `provekit link` for
-   cross-kit link exhibits; the CLI resolves the surface and drives the native
-   lifter or linker.
+   The zoo invokes `provekit mint` for lift exhibits and validates checked-in
+   LinkBundle receipts for historical cross-kit link exhibits; the CLI resolves
+   the surface and drives the native lifter.
 2. **Proof verification.** The normal project gate is `provekit prove`. Bug Zoo
    owns a self-contained runner under `menagerie/bug-zoo/`: it receives canonical Bug Zoo
    ProofIR or LinkBundle output from the CLI result, hashes it, compares it to
    checked-in witness bytes, checks required equivalences across surfaces and
-   languages, and invokes `provekit prove --formula` for scoped implication
+   languages, and invokes the verifier formula gate for scoped implication
    receipts. The exhibit signal is red when the implication is missing; the
    fixed signal is green when the paired source closes it.
 
@@ -60,14 +60,14 @@ The current zoo includes:
 - `BZ-SHAPE-005`: null-boundary equivalence. Java, TypeScript, and C# carry
   different native exhibits that all lift to
   `maybe_null(name) => non_null(name)`, then route red lab-null and green
-  fixed-non-null obligations through `provekit prove --formula`.
+  fixed-non-null obligations through the verifier formula gate.
 - `BZ-SHAPE-006`: value-scope escape. Java carries JUnit and Spring exhibits
   that both witness a point value and prove that `42` must not discharge a
   `>= 43` requirement.
 - `BZ-SHAPE-007`: polyglot link obligation. A Go cgo caller reaches a Rust
-  callee contract; `provekit link` emits the red `unprovable-obligation`
-  LinkBundle when the caller witness cannot satisfy the callee precondition,
-  and the fixed fixture links clean.
+  callee contract; the checked-in LinkBundle records the red
+  `unprovable-obligation` receipt when the caller witness cannot satisfy the
+  callee precondition, and the fixed fixture links clean.
 
 The null-boundary species exposes:
 
@@ -92,7 +92,7 @@ The value-scope species exposes:
 eq(value, 42) => gte(value, 43)
 ```
 
-There the receipt is the `provekit prove --formula` result: exhibit witnesses
+There the receipt is the verifier formula-gate result: exhibit witnesses
 for 42 produce the red signal, while fixed witnesses for 43 produce the green
 signal. The point is that a native value witness is useful evidence only inside
 the value scope it actually observed.

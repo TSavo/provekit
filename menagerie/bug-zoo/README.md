@@ -15,11 +15,11 @@ receipt. The key split is:
    workflow attached;
 2. `exhibit/` and `fixed/` are ProvekIt projects: the Rust CLI invokes the
    native lifter and, when the specimen declares a composition edge, runs
-   `provekit prove --formula`; and
+   the ProveKit verifier formula gate; and
 3. the self-contained Bug Zoo runner verifies that the resulting projection has
    the expected addressable ProofIR shape CID or LinkBundle receipt CID, checks
    any required cross-language equivalences, and routes scoped implication
-   checks through `provekit prove --formula`.
+   checks through the ProveKit verifier formula gate.
 
 The normal project gate is `provekit prove`. Bug Zoo is machinery under
 `menagerie/bug-zoo/`, not a public `provekit` subcommand; when a specimen needs a proof
@@ -108,9 +108,9 @@ that must reject or satisfy a scoped implication. ProofIR exhibit and fixed
 harnesses carry `.provekit/config.toml` and
 `.provekit/lift/<surface>/manifest.toml`; the runner invokes `provekit mint`
 so the CLI, not the zoo, drives the native RPC lifter. Link exhibits invoke
-`provekit link`, letting the Rust CLI derive cross-kit bridges and linker-error
-receipts from the native kit streams. Scoped implications are handed back to
-the CLI with `provekit prove --formula`.
+checked-in LinkBundle receipts for historical cross-kit bridges and linker-error
+receipts. Scoped implications are handed back to the ProveKit verifier formula
+gate.
 
 The repeated `lab/`, `exhibit/`, and `fixed/` code is intentional. Each language
 gets to use its own native surface; the runner only asks whether those surfaces
@@ -131,9 +131,9 @@ host-language implementation detail.
 
 | Species | Languages / surfaces | Missing edge | Receipt |
 |---|---|---|---|
-| `BZ-SHAPE-005` | Java: ProvekIt native `@NotNull`, Spring Web; TypeScript: zod, class-validator; C#: DataAnnotations, `//provekit:` annotations, LINQ | `maybe_null(name) => non_null(name)` | shared boundary CID plus `provekit prove --formula` red/green composition checks |
+| `BZ-SHAPE-005` | Java: ProvekIt native `@NotNull`, Spring Web; TypeScript: zod, class-validator; C#: DataAnnotations, `//provekit:` annotations, LINQ | `maybe_null(name) => non_null(name)` | shared boundary CID plus verifier formula-gate red/green composition checks |
 | `BZ-SHAPE-006` | Java exhibits: JUnit point assertion; Spring `@RequestParam(defaultValue=...)` with Bean Validation | `eq(value, 42) => gte(value, 43)` | surface-specific witness CIDs; the checked property is the failed/satisfied composition edge |
-| `BZ-SHAPE-007` | Rust callee contract plus Go cgo caller | `post_caller => pre_callee` | `provekit link` red/green link-bundle receipts |
+| `BZ-SHAPE-007` | Rust callee contract plus Go cgo caller | `post_caller => pre_callee` | checked-in red/green LinkBundle receipts |
 
 ## Run It
 
@@ -157,9 +157,9 @@ PROVEKIT_BUG_ZOO_TRACE=1 cargo run --manifest-path menagerie/bug-zoo/Cargo.toml 
 ```
 
 Trace output is written to stderr. The zoo logs host checks, `provekit mint`,
-`provekit link`, and `provekit prove --formula` boundaries with elapsed time. It
+checked-in LinkBundle receipt reads, and verifier formula-gate boundaries with elapsed time. It
 also enables `PROVEKIT_CLI_TRACE=1` for spawned CLI work, which prints mint RPC
-milestones for `initialize`, `lift`, and `shutdown` plus CLI-side link progress.
+milestones for `initialize`, `lift`, and `shutdown`.
 The JSON report includes the exact `provekit` command route used for each
 species. By default the runner ignores `PROVEKIT_CLI` and invokes
 `cargo run --manifest-path implementations/rust/provekit-cli/Cargo.toml -- ...`
@@ -179,4 +179,4 @@ dotnet run --project implementations/csharp/Provekit.BugZoo/Provekit.BugZoo.cspr
 The discovery commands prove the language compiler/kit mapped source to an
 addressable canonical object. The `provekit-bug-zoo` runner proves that the
 specimen's native evidence preserves the expected shape under that projection,
-then delegates scoped implication verdicts to `provekit prove --formula`.
+then delegates scoped implication verdicts to the ProveKit verifier formula gate.

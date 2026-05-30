@@ -7,6 +7,8 @@ use std::{env, ffi::OsString};
 
 use provekit_bug_zoo::{run, OutputFlags, ZooArgs};
 
+const FORMULA_PROVER_LABEL: &str = "provekit-verifier formula gate";
+
 fn repo_root() -> PathBuf {
     PathBuf::from(env!("CARGO_MANIFEST_DIR"))
         .parent()
@@ -184,13 +186,13 @@ fn all_specimens_reports_current_shapes() {
     assert!(
         composition.iter().any(|check| check["phase"] == "exhibit"
             && check["provekitSignal"] == "red"
-            && check["provedBy"] == "provekit prove --formula"),
+            && check["provedBy"] == FORMULA_PROVER_LABEL),
         "exhibit checks should carry a red provekit prove signal"
     );
     assert!(
         composition.iter().any(|check| check["phase"] == "fixed"
             && check["provekitSignal"] == "green"
-            && check["provedBy"] == "provekit prove --formula"),
+            && check["provedBy"] == FORMULA_PROVER_LABEL),
         "fixed checks should carry a green provekit prove signal"
     );
 
@@ -246,7 +248,7 @@ fn all_specimens_reports_current_shapes() {
             .iter()
             .any(|check| check["phase"] == "exhibit"
                 && check["provekitSignal"] == "red"
-                && check["provedBy"] == "provekit prove --formula"),
+                && check["provedBy"] == FORMULA_PROVER_LABEL),
         "exhibit check should carry a red provekit prove signal"
     );
     assert!(
@@ -254,7 +256,7 @@ fn all_specimens_reports_current_shapes() {
             .iter()
             .any(|check| check["phase"] == "fixed"
                 && check["provekitSignal"] == "green"
-                && check["provedBy"] == "provekit prove --formula"),
+                && check["provedBy"] == FORMULA_PROVER_LABEL),
         "fixed check should carry a green provekit prove signal"
     );
 }
