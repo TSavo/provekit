@@ -1815,6 +1815,7 @@ dependencies = [
  "provekit-ir-symbolic",
  "provekit-lift",
  "provekit-linker",
+ "provekit-walk",
  "serde",
  "serde_json",
  "tokio",

@@ -40,12 +40,19 @@ use syn::spanned::Spanned;
 use tracing::{debug, info, trace};
 
 // Tier 2b native semantic oracle (spec 2026-05-30-callee-resolution-tiers §2.T2b).
-// A separate module file driving rust-analyzer over LSP as the Tier-2a fallback
-// for method calls whose receiver crate the syntactic tiers cannot resolve. The
-// oracle is opt-in (PROVEKIT_RESOLVE_ORACLE=rust-analyzer) and refuses (leaves
-// callee_crate = None) when unavailable, so the fast path and CI are unaffected.
-#[path = "../ra_oracle.rs"]
-mod ra_oracle;
+// The RA LSP client now lives in the `provekit_walk::ra_oracle` library module so
+// BOTH this per-mint binary AND the resident `provekit-linkerd` daemon import the
+// same framing/quiescence/resolve logic with no copy-paste. This binary no longer
+// COLD-SPAWNS rust-analyzer per mint; it asks the warm resident daemon via
+// `resolveReceiverCrate` (see `resolve_method_calls_via_oracle`). The oracle is
+// opt-in (PROVEKIT_RESOLVE_ORACLE=rust-analyzer) and refuses (leaves
+// callee_crate = None) when the daemon is unreachable or not yet ready, so the
+// fast path and CI are unaffected. The RA LSP client itself lives in
+// `provekit_walk::ra_oracle` and is imported by the daemon, not this binary.
+
+// The daemon client lives alongside this binary (std-only, synchronous NDJSON).
+#[path = "../ra_daemon_client.rs"]
+mod ra_daemon_client;
 
 const CONCEPT_SHAPES_CATALOG_INDEX_JSON: &str =
     include_str!("../../../../../menagerie/concept-shapes/catalog/index.json");
@@ -63,9 +70,9 @@ fn main() -> io::Result<()> {
     // byte-clean. Default level: warn. Set RUST_LOG to override:
     //   RUST_LOG=info  -> phase summaries
     //   RUST_LOG=debug -> per-callsite decisions, per-RPC method
-    //   RUST_LOG=provekit_walk_rpc::ra_oracle=trace -> every RA LSP query
-    // Note: ra_oracle is inlined via #[path], so its event target is
-    // provekit_walk_rpc::ra_oracle (the bin crate), not provekit_walk::ra_oracle.
+    //   RUST_LOG=provekit_walk::ra_oracle=trace -> every RA LSP query
+    // Note: ra_oracle now lives in the provekit_walk library, so its event
+    // target is provekit_walk::ra_oracle.
     tracing_subscriber::fmt()
         .with_writer(std::io::stderr)
         .with_env_filter(
@@ -943,12 +950,23 @@ fn resolve_method_calls_via_oracle(
     workspace_root: &Path,
     callsites: &mut [(CallSite, PathBuf)],
 ) {
-    use ra_oracle::ResolveQuery;
+    use ra_daemon_client::DaemonQuery;
+
+    // Opt-in stays identical to the cold path: a mint with the oracle off must
+    // never spawn or contact the daemon's RA host. When off we leave every
+    // unresolved method call to the syntactic tiers (Tier 1/2a) and return.
+    let oracle_on =
+        std::env::var("PROVEKIT_RESOLVE_ORACLE").unwrap_or_default() == "rust-analyzer";
+    if !oracle_on {
+        debug!("oracle: off (PROVEKIT_RESOLVE_ORACLE != rust-analyzer); leaving method calls to Tier 1/2a");
+        return;
+    }
+
     // Gather the eligible positions. proc-macro2 spans are 1-based line /
     // 0-based column; LSP wants 0-based line, 0-based char. The method ident's
     // span start already points at the ident (not the dot), so the column maps
     // directly. A line of 0 should never occur for a real call; guard anyway.
-    let mut queries: Vec<ResolveQuery> = Vec::new();
+    let mut queries: Vec<DaemonQuery> = Vec::new();
     for (cs, full_path) in callsites.iter() {
         if cs.is_method && cs.callee_crate.is_none() && cs.line >= 1 {
             debug!(
@@ -958,10 +976,10 @@ fn resolve_method_calls_via_oracle(
                 col = cs.col,
                 "oracle query: unresolved method call"
             );
-            queries.push(ResolveQuery {
-                abs_path: full_path.clone(),
-                lsp_line: (cs.line - 1) as u32,
-                lsp_col: cs.col as u32,
+            queries.push(DaemonQuery {
+                file: full_path.to_string_lossy().into_owned(),
+                line: (cs.line - 1) as u32,
+                col: cs.col as u32,
             });
         }
     }
@@ -970,30 +988,39 @@ fn resolve_method_calls_via_oracle(
         debug!("oracle: no unresolved method calls, skipping");
         return;
     }
-    debug!(count = total_queries, "oracle: sending queries to rust-analyzer");
-    let resolved = ra_oracle::resolve_batch(workspace_root, &queries);
+    debug!(
+        count = total_queries,
+        "oracle: asking resident daemon (provekit-linkerd) to resolve method calls"
+    );
+    // The resident warm rust-analyzer indexes the workspace ONCE inside the
+    // daemon and is reused across mints, fronted by a content-addressed cache.
+    // On a cold daemon this returns empty (ready:false) and we refuse to the
+    // syntactic tiers; the next mint resolves warm. NEVER blocks for the index.
+    let resolved = ra_daemon_client::resolve_receiver_crates(workspace_root, &queries);
     let resolved_count = resolved.len();
     let unavailable_count = total_queries - resolved_count;
     if resolved.is_empty() {
-        // Either the oracle was unavailable/disabled (resolve_batch returns empty)
-        // or it ran and all queries refused. Both look the same here; the oracle's
-        // own batch-complete info event carries the breakdown.
         debug!(
             total = total_queries,
-            "oracle: no method calls resolved (oracle off or all queries refused)"
+            "oracle: daemon resolved nothing (cold/not-ready or all refused); \
+             leaving method calls to Tier 1/2a"
         );
         return;
     }
     for (cs, full_path) in callsites.iter_mut() {
         if cs.is_method && cs.callee_crate.is_none() && cs.line >= 1 {
-            let key = (full_path.clone(), (cs.line - 1) as u32, cs.col as u32);
+            let key = (
+                full_path.to_string_lossy().into_owned(),
+                (cs.line - 1) as u32,
+                cs.col as u32,
+            );
             if let Some(krate) = resolved.get(&key) {
                 debug!(
                     callee = %cs.callee,
                     resolved_crate = %krate,
                     file = %full_path.display(),
                     line = cs.line,
-                    "oracle resolved method call"
+                    "oracle resolved method call (resident daemon)"
                 );
                 cs.callee_crate = Some(krate.clone());
             } else {
@@ -1010,7 +1037,7 @@ fn resolve_method_calls_via_oracle(
         resolved = resolved_count,
         total = total_queries,
         unavailable = unavailable_count,
-        "oracle resolved {}/{} method calls ({} refused/unavailable)",
+        "oracle resolved {}/{} method calls via resident daemon ({} refused/unavailable)",
         resolved_count,
         total_queries,
         unavailable_count

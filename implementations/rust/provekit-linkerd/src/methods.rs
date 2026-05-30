@@ -232,6 +232,277 @@ pub fn shutdown_response(id: &Json) -> Json {
 }
 
 // -------------------------------------------------------------------
+// resolveReceiverCrate: Tier 2b callee-resolution against the resident,
+// warm rust-analyzer host, fronted by the content-addressed per-file cache.
+// Specs #1705/#1706/#1707 and 2026-05-30-callee-resolution-tiers §2.T2b.
+// -------------------------------------------------------------------
+//
+// PHASE 2 (receiver TYPE -> disambiguated concept) -- DOCUMENTED TODO.
+//
+// Phase 1 (this code) resolves a method call's receiver-defining CRATE (`std`)
+// and returns it; the lifter then keys the bridge on `(std, <bare_leaf>)`. That
+// is the empirically dominant discharge-blocker: minting the rust-std shim emits
+// `13 bridges, 33 lift-gaps [no-contract-for-callee=33]`. The 33 gaps are
+// `get`/`push`/`trim`/`take`/`expect`/... -- callees for which the shim ALREADY
+// defines a wrapper, but under a DISAMBIGUATED concept name, not the bare leaf:
+//   (Option, unwrap) -> option_unwrap  (Result, unwrap) -> result_unwrap
+//   (Vec/slice, get)  -> slice_get      (Vec, push)      -> vec_push
+//   (str, trim)       -> str_trim       (str, starts_with) -> str_starts_with
+//   (&[&str], join)   -> str_join        (Option, take)   -> option_take
+//   (Option, expect)  -> option_expect
+// The bare leaf `unwrap` names neither Option::unwrap nor Result::unwrap, so the
+// bridge to `(std, unwrap)` matches NOTHING.
+//
+// THE FIX (mechanism, not yet implemented): also capture the receiver's TYPE,
+// then key the bridge on the wrapper's @sugar CONCEPT, which is the canonical
+// cross-impl disambiguation handle the shim already publishes
+// (`concept = "library:rust-slice-get"`, etc.). rust-analyzer gives the type two
+// ways, both already reachable from the warm session in `RaSession`:
+//   (a) `textDocument/hover` on the receiver expression -> the rendered type
+//       (`Option<i32>`, `&[u8]`, `&str`), OR
+//   (b) read the RESOLVED definition's CONTAINER path from the existing
+//       `textDocument/definition` result: `.../core/option.rs` in an `impl
+//       Option` block -> `core::option::Option`. (b) reuses the request Phase 1
+//       already makes, so it is the cheaper extension.
+// Then map `(receiver_type_head, leaf)` -> concept via the table above (the head
+// is `Option`/`Result`/`Vec`/`[T]`/`str`/`&[&str]`), and return the concept
+// alongside the crate:
+//   { resolved: { "<pos>": { "crate": "std", "concept": "library:rust-slice-get" } } }
+// The lifter then prefers `concept` as the bridge key when present, reaching the
+// wrapper's real (often body-bearing) precondition; absent a concept it falls
+// back to today's `(crate, leaf)` key. This is purely additive: the wire shape
+// stays backward-compatible (crate-only string OR {crate, concept} object), no
+// substrate code changes (§2.T2b: the oracle upgrades behind the §1 obligation),
+// and the refuse-floor is unchanged (no type -> no concept -> existing behavior).
+// Expected effect on the shim alone: bridges 13 -> ~46, and the partial wrappers
+// (unwrap/expect) contribute real dischargeable `pre`s.
+//
+// The content-addressed cache already keys on file content + dep-set, so it
+// caches the concept the same way it caches the crate: extend `PosOutcome` from
+// `Crate(String)` to also carry an optional concept. No re-architecture needed.
+
+/// Handle a `resolveReceiverCrate` request.
+///
+/// Params:
+/// ```json
+/// { "workspaceRoot": "/abs/path",
+///   "queries": [ { "file": "/abs/file.rs", "line": <0-based>, "col": <0-based> }, ... ] }
+/// ```
+///
+/// Returns:
+/// ```json
+/// { "resolved": { "<file>:<line>:<col>": "<crate>", ... }, "ready": <bool> }
+/// ```
+///
+/// Resolution path, per query file:
+///   1. CACHE FIRST. Read the file's on-disk bytes, compute the content-address
+///      key (blake3(content) + dep-set CID). A cache HIT is AUTHORITATIVE for
+///      the whole file: its resolved positions go straight into `resolved`, its
+///      recorded refusals stay absent, and the file sends ZERO queries to RA.
+///      This is what delivers "second mint, unchanged file, NO rust-analyzer
+///      spawn" even from a fresh daemon process (#1706 per-file granularity).
+///   2. MISS -> RA, only if the resident session is `Ready`. Each position is
+///      classified resolved / deterministic-refuse / not-ready. Resolved
+///      positions go into `resolved`.
+///   3. WRITE BACK only a file whose EVERY queried position SETTLED (resolved or
+///      deterministic-refuse) from a quiescent session. A file with any
+///      not-ready position is NOT cached (a partial entry would wrongly suppress
+///      RA later). This preserves the refuse-floor across caching.
+///
+/// `ready`: true unless there were cache-miss files that needed RA but the
+/// session was not Ready. A `false` with an empty `resolved` is the cold-daemon
+/// first-mint outcome; the caller refuses to Tier 1/2a and the next mint warms.
+/// Cache hits are returned REGARDLESS of RA phase (advisor reconciliation of the
+/// brief's `ready` rule with the coordinator's cache-hit-no-RA requirement).
+#[instrument(skip(host, cache, cache_path, params))]
+pub async fn handle_resolve_receiver_crate(
+    host: Arc<crate::ra_host::RaHost>,
+    cache: Arc<Mutex<crate::resolve_cache::ResolveCache>>,
+    cache_path: PathBuf,
+    params: &Json,
+    id: &Json,
+) -> Json {
+    use crate::ra_host::{Phase, PosResult};
+    use crate::resolve_cache::{FileResolution, PosOutcome};
+    use provekit_walk::ra_oracle::ResolveQuery;
+    use std::collections::BTreeMap;
+
+    let workspace_root = match params.get("workspaceRoot").and_then(|v| v.as_str()) {
+        Some(w) => PathBuf::from(w),
+        None => return rpc_error(ERR_INVALID_PARAMS, "missing 'workspaceRoot'", id),
+    };
+    let queries = match params.get("queries").and_then(|v| v.as_array()) {
+        Some(q) => q,
+        None => return rpc_error(ERR_INVALID_PARAMS, "missing 'queries' array", id),
+    };
+
+    // Group queries by file. RA is opened per file, and the cache is keyed per
+    // file, so this grouping is the natural unit. Each entry is (line, col).
+    let mut by_file: BTreeMap<String, Vec<(u32, u32)>> = BTreeMap::new();
+    for q in queries {
+        let (Some(file), Some(line), Some(col)) = (
+            q.get("file").and_then(|v| v.as_str()),
+            q.get("line").and_then(|v| v.as_u64()),
+            q.get("col").and_then(|v| v.as_u64()),
+        ) else {
+            continue;
+        };
+        by_file
+            .entry(file.to_string())
+            .or_default()
+            .push((line as u32, col as u32));
+    }
+
+    let dep_cid = crate::resolve_cache::dep_set_cid(&workspace_root);
+
+    let mut resolved: serde_json::Map<String, Json> = serde_json::Map::new();
+    // A file that misses the cache and needs RA goes here; we consult the
+    // session only if it is Ready.
+    let mut needs_ra: Vec<(String, Vec<u8>, Vec<(u32, u32)>)> = Vec::new();
+
+    // -- Pass 1: cache (no RA, regardless of phase). --
+    {
+        let cache_guard = cache.lock().await;
+        for (file, positions) in &by_file {
+            let Ok(content) = std::fs::read(file) else {
+                // Unreadable file: nothing to resolve; skip (refuse).
+                continue;
+            };
+            if let Some(entry) = cache_guard.get(&content, &dep_cid) {
+                // HIT: authoritative for the whole file, zero RA queries.
+                for (line, col) in positions {
+                    let pkey = format!("{line}:{col}");
+                    if let Some(PosOutcome::Crate(krate)) = entry.positions.get(&pkey) {
+                        resolved.insert(format!("{file}:{line}:{col}"), Json::String(krate.clone()));
+                    }
+                    // Refused / absent -> stays unresolved (refuse-floor).
+                }
+            } else {
+                needs_ra.push((file.clone(), content, positions.clone()));
+            }
+        }
+    }
+
+    if needs_ra.is_empty() {
+        // Everything served from cache: ready regardless of RA phase.
+        return rpc_result(
+            serde_json::json!({ "resolved": Json::Object(resolved), "ready": true }),
+            id,
+        );
+    }
+
+    // -- Pass 2: RA, only if the resident session is Ready. --
+    let session = host.session_for(&workspace_root);
+    let phase = session.phase();
+    if phase != Phase::Ready {
+        // Cold/indexing/failed: do NOT block. Return cache hits gathered so far
+        // with ready:false so the caller refuses the RA-needed misses to Tier
+        // 1/2a. The next mint, once the background index settles, warms.
+        return rpc_result(
+            serde_json::json!({ "resolved": Json::Object(resolved), "ready": false }),
+            id,
+        );
+    }
+
+    // Resolve each missing file against the warm session, then cache-write the
+    // files that fully settled.
+    let mut cache_writes: Vec<(Vec<u8>, FileResolution)> = Vec::new();
+    let mut n_resolved = 0usize;
+    let mut n_refused = 0usize;
+    let mut n_not_ready = 0usize;
+    for (file, content, positions) in &needs_ra {
+        // CANONICALIZE the file path for the RA query. A caller may pass a
+        // non-canonical absolute path (e.g. `<root>/./src/lib.rs`): rust-analyzer
+        // keys its analyzed VFS documents by canonical path, and a `file://` URI
+        // with an embedded `/./` resolves to a DIFFERENT, unanalyzed document,
+        // which returns a null definition (a silent refuse for every position in
+        // the file). Canonicalizing here makes the URI match RA's workspace
+        // document so resolution actually lands. The response key stays the
+        // ORIGINAL `file` string so the caller's lookup matches what it sent.
+        let ra_path = std::fs::canonicalize(file).unwrap_or_else(|_| PathBuf::from(file));
+        let ra_queries: Vec<ResolveQuery> = positions
+            .iter()
+            .map(|(line, col)| ResolveQuery {
+                abs_path: ra_path.clone(),
+                lsp_line: *line,
+                lsp_col: *col,
+            })
+            .collect();
+        let results = session.resolve(ra_queries);
+
+        let mut file_res = FileResolution::default();
+        let mut all_settled = true;
+        for ((line, col), r) in positions.iter().zip(results.iter()) {
+            let pkey = format!("{line}:{col}");
+            match r {
+                PosResult::Resolved(krate) => {
+                    resolved.insert(
+                        format!("{file}:{line}:{col}"),
+                        Json::String(krate.clone()),
+                    );
+                    file_res.positions.insert(pkey, PosOutcome::Crate(krate.clone()));
+                    n_resolved += 1;
+                }
+                PosResult::Refused => {
+                    file_res.positions.insert(pkey, PosOutcome::Refused);
+                    n_refused += 1;
+                }
+                PosResult::NotReady => {
+                    // RA still churning on this position: do not cache the file.
+                    all_settled = false;
+                    n_not_ready += 1;
+                }
+            }
+        }
+        // Cache-write only a fully-settled file (every position resolved or
+        // deterministically refused). A partial pass is never cached.
+        if all_settled {
+            cache_writes.push((content.clone(), file_res));
+        }
+    }
+
+    if !cache_writes.is_empty() {
+        let mut cache_guard = cache.lock().await;
+        for (content, file_res) in cache_writes {
+            cache_guard.insert(&content, &dep_cid, file_res);
+        }
+        // Persist the sidecar so a fresh daemon process hits the cache and skips
+        // RA entirely. Best-effort: a write failure does not break correctness
+        // (a cache is never a source of truth).
+        let bytes = cache_guard.to_bytes();
+        let _ = persist_cache_sidecar(&cache_path, &bytes);
+    }
+
+    // `ready` is false if RA churned on any position (not-ready): the caller then
+    // refuses those to Tier 1/2a and the next mint retries. Resolved/refused are
+    // settled outcomes; not-ready means RA could not settle this pass.
+    let ready = n_not_ready == 0;
+    tracing::info!(
+        ra_resolved = n_resolved,
+        ra_refused = n_refused,
+        ra_not_ready = n_not_ready,
+        cache_hits = resolved.len() - n_resolved,
+        ready,
+        "resolveReceiverCrate: RA pass complete"
+    );
+    rpc_result(
+        serde_json::json!({ "resolved": Json::Object(resolved), "ready": ready }),
+        id,
+    )
+}
+
+/// Write the resolve-cache sidecar atomically (write temp + rename) so a reader
+/// (a concurrently spawning daemon) never sees a half-written file.
+fn persist_cache_sidecar(path: &std::path::Path, bytes: &[u8]) -> std::io::Result<()> {
+    if let Some(parent) = path.parent() {
+        std::fs::create_dir_all(parent)?;
+    }
+    let tmp = path.with_extension("tmp");
+    std::fs::write(&tmp, bytes)?;
+    std::fs::rename(&tmp, path)
+}
+
+// -------------------------------------------------------------------
 // Lifter dispatch (kit-specific)
 // -------------------------------------------------------------------
 
