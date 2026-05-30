@@ -108,11 +108,13 @@ sync_file Cargo.toml
 sync_file Cargo.lock
 sync_file rust-toolchain
 sync_file rust-toolchain.toml
-# Repo-root workspace config: the solver-portfolio registry + repo-root mint
-# read `.provekit/config.toml`. Sync the file only -- the sibling `.provekit/`
-# subdirs (cache/, runs/, fuzz-runs/, harvest/, baselines/) are large outputs
-# we deliberately do not ship.
+# Repo-root workspace config and hand-authored plugin manifests. Generated
+# `.provekit/` outputs (runs/, witnesses/, cache/, baselines/, etc.) stay out
+# of the remote copy, but lift/realize manifests are source inputs for CLI
+# dispatch and must travel with bcargo.
 sync_file .provekit/config.toml
+sync_dir .provekit/lift
+sync_dir .provekit/realize
 
 sync_dir implementations/rust
 sync_dir examples

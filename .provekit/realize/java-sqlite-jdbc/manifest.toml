@@ -8,6 +8,9 @@ name = "java-realize-sqlite-jdbc"
 library_tag = "sqlite-jdbc"
 family = "concept:family:sql"
 library_version = "3.45.3.0"
+dependencies = [
+  "org.xerial:sqlite-jdbc:3.45.3.0",
+]
 # #1364 / #1355: per-kit concept coverage. Concept names aligned with
 # provekit-shim-rusqlite for cross-library cluster membership (per the
 # sqlite-jdbc shim's pom.xml description). #1468: the connection-/statement-level
