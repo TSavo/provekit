@@ -1325,18 +1325,6 @@ def _single_sugar_entry(source: str) -> dict:
     return result.ir[0]
 
 
-def _binding_template(entry: dict, contract_ch: str = "c") -> dict:
-    return {
-        "concept_name": entry["concept_name"],
-        "library_tag": entry["target_library_tag"],
-        "family": entry.get("family"),
-        "ast_template": entry["body_source"]["ast_template"],
-        "template_cid": entry["body_source"]["template_cid"],
-        "param_names": entry["body_source"]["param_names"],
-        "contract_cid": _cid(contract_ch),
-    }
-
-
 def test_sugar_body_emits_ast_template_alongside_body_text() -> None:
     source = (
         "from provekit import sugar\n"
@@ -1422,7 +1410,7 @@ def test_sugar_body_param_name_swap_canonicalizes() -> None:
     assert entry_a["body_source"]["template_cid"] == entry_b["body_source"]["template_cid"]
 
 
-def test_recognize_emits_exact_tag_for_alpha_equivalent_user_function(tmp_path: Path) -> None:
+def test_recognize_rpc_self_resolves_sugar_templates_from_python_sources(tmp_path: Path) -> None:
     sugar_source = (
         "from provekit import sugar\n"
         "import requests\n"
@@ -1436,6 +1424,10 @@ def test_recognize_emits_exact_tag_for_alpha_equivalent_user_function(tmp_path: 
         "    return requests.get(url, headers=headers)\n"
     )
     sugar_entry = _single_sugar_entry(sugar_source)
+    shim_rel = "shims/requests.py"
+    shim_file = tmp_path / shim_rel
+    shim_file.parent.mkdir()
+    shim_file.write_text(sugar_source, encoding="utf-8")
     user_rel = "src/lib.py"
     user_file = tmp_path / user_rel
     user_file.parent.mkdir()
@@ -1454,8 +1446,7 @@ def test_recognize_emits_exact_tag_for_alpha_equivalent_user_function(tmp_path: 
             "method": "provekit.plugin.recognize",
             "params": {
                 "project_root": str(tmp_path),
-                "source_paths": [user_rel],
-                "binding_templates": [_binding_template(sugar_entry)],
+                "source_paths": [shim_rel, user_rel],
             },
         }
     )
@@ -1470,7 +1461,7 @@ def test_recognize_emits_exact_tag_for_alpha_equivalent_user_function(tmp_path: 
     assert tag["library_tag"] == "provekit-shim-python-requests"
     assert tag["family"] == "concept:family:http"
     assert tag["template_cid"] == sugar_entry["body_source"]["template_cid"]
-    assert tag["contract_cid"] == _cid("c")
+    assert tag["contract_cid"] is None
     assert tag["match_tier"] == "exact"
     assert tag["param_bindings"] == [
         {"index": 1, "source_text": "u"},
@@ -1479,7 +1470,7 @@ def test_recognize_emits_exact_tag_for_alpha_equivalent_user_function(tmp_path: 
 
 
 def test_recognize_returns_empty_tags_for_non_matching_source(tmp_path: Path) -> None:
-    sugar_entry = _single_sugar_entry(
+    sugar_source = (
         "from provekit import sugar\n"
         "import json\n"
         "\n"
@@ -1487,6 +1478,10 @@ def test_recognize_returns_empty_tags_for_non_matching_source(tmp_path: Path) ->
         "def json_parse(payload):\n"
         "    return json.loads(payload)\n"
     )
+    shim_rel = "shims/json.py"
+    shim_file = tmp_path / shim_rel
+    shim_file.parent.mkdir()
+    shim_file.write_text(sugar_source, encoding="utf-8")
     user_rel = "src/lib.py"
     user_file = tmp_path / user_rel
     user_file.parent.mkdir()
@@ -1503,8 +1498,7 @@ def test_recognize_returns_empty_tags_for_non_matching_source(tmp_path: Path) ->
             "method": "provekit.plugin.recognize",
             "params": {
                 "project_root": str(tmp_path),
-                "source_paths": [user_rel],
-                "binding_templates": [_binding_template(sugar_entry, "d")],
+                "source_paths": [shim_rel, user_rel],
             },
         }
     )
@@ -1513,7 +1507,7 @@ def test_recognize_returns_empty_tags_for_non_matching_source(tmp_path: Path) ->
 
 
 def test_recognize_routes_multiple_bindings_per_call_site_pool(tmp_path: Path) -> None:
-    json_entry = _single_sugar_entry(
+    json_source = (
         "from provekit import sugar\n"
         "import json\n"
         "\n"
@@ -1521,13 +1515,17 @@ def test_recognize_routes_multiple_bindings_per_call_site_pool(tmp_path: Path) -
         "def json_parse(payload):\n"
         "    return json.loads(payload)\n"
     )
-    sql_entry = _single_sugar_entry(
+    sql_source = (
         "from provekit import sugar\n"
         "\n"
         "@sugar.bind(concept=\"concept:sql-execute\", library=\"sql-lib\")\n"
         "def sql_execute(conn, sql, args):\n"
         "    return conn.execute(sql, args)\n"
     )
+    shim_rel = "shims/bindings.py"
+    shim_file = tmp_path / shim_rel
+    shim_file.parent.mkdir()
+    shim_file.write_text(json_source + "\n" + sql_source, encoding="utf-8")
     user_rel = "src/lib.py"
     user_file = tmp_path / user_rel
     user_file.parent.mkdir()
@@ -1552,11 +1550,7 @@ def test_recognize_routes_multiple_bindings_per_call_site_pool(tmp_path: Path) -
             "method": "provekit.plugin.recognize",
             "params": {
                 "project_root": str(tmp_path),
-                "source_paths": [user_rel],
-                "binding_templates": [
-                    _binding_template(json_entry, "a"),
-                    _binding_template(sql_entry, "b"),
-                ],
+                "source_paths": [shim_rel, user_rel],
             },
         }
     )

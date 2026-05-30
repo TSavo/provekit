@@ -95,9 +95,10 @@ def recognize_impl(params: dict[str, Any]) -> dict[str, Any]:
     source_paths = params.get("source_paths")
     if not isinstance(source_paths, list):
         raise ValueError("missing `source_paths` array")
-    binding_templates_value = params.get("binding_templates")
-    binding_templates = (
-        binding_templates_value if isinstance(binding_templates_value, list) else []
+    root = Path(project_root).resolve()
+
+    binding_templates, sugar_template_files = _self_resolved_binding_templates(
+        root, source_paths
     )
 
     bindings_by_cid: dict[str, dict[str, Any]] = {}
@@ -108,9 +109,10 @@ def recognize_impl(params: dict[str, Any]) -> dict[str, Any]:
         if isinstance(cid, str) and cid:
             bindings_by_cid[cid] = binding
 
-    root = Path(project_root).resolve()
     tags: list[dict[str, Any]] = []
     for rel_path, full_path in _iter_requested_python_files(root, source_paths):
+        if rel_path in sugar_template_files:
+            continue
         try:
             source = full_path.read_text(encoding="utf-8")
         except OSError:
@@ -124,6 +126,52 @@ def recognize_impl(params: dict[str, Any]) -> dict[str, Any]:
             if tag is not None:
                 tags.append(tag)
     return {"tags": tags}
+
+
+def _self_resolved_binding_templates(
+    root: Path,
+    source_paths: list[Any],
+) -> tuple[list[dict[str, Any]], set[str]]:
+    result = lift_paths(
+        str(root),
+        [str(path) for path in source_paths],
+        layer="library-bindings",
+    )
+    templates: list[dict[str, Any]] = []
+    sugar_template_files: set[str] = set()
+    for entry in result.ir:
+        if (
+            not isinstance(entry, dict)
+            or entry.get("kind") != "library-sugar-binding-entry"
+        ):
+            continue
+        template = _binding_template_from_sugar_entry(entry)
+        if template is not None:
+            templates.append(template)
+        body_source = entry.get("body_source")
+        file = body_source.get("file") if isinstance(body_source, dict) else None
+        if isinstance(file, str) and file:
+            sugar_template_files.add(file)
+    return templates, sugar_template_files
+
+
+def _binding_template_from_sugar_entry(entry: dict[str, Any]) -> dict[str, Any] | None:
+    body_source = entry.get("body_source")
+    if not isinstance(body_source, dict):
+        return None
+    ast_template = body_source.get("ast_template")
+    template_cid = body_source.get("template_cid")
+    if ast_template is None or not isinstance(template_cid, str) or not template_cid:
+        return None
+    return {
+        "concept_name": entry.get("concept_name"),
+        "library_tag": entry.get("target_library_tag"),
+        "family": entry.get("family"),
+        "ast_template": ast_template,
+        "template_cid": template_cid,
+        "param_names": body_source.get("param_names"),
+        "contract_cid": entry.get("contract_cid"),
+    }
 
 
 def _recognize_function(
