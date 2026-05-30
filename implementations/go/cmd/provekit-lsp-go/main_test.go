@@ -2,6 +2,9 @@ package main
 
 import (
 	"encoding/json"
+	"os"
+	"path/filepath"
+	"runtime"
 	"testing"
 )
 
@@ -39,6 +42,22 @@ func TestHandleInit(t *testing.T) {
 	}
 	if m["version"] != "0.1.0" {
 		t.Errorf("version: got %v", m["version"])
+	}
+	if m["protocol_version"] != "provekit-lsp-shared/1" {
+		t.Errorf("protocol_version: got %v", m["protocol_version"])
+	}
+	if m["kit_id"] != "go" {
+		t.Errorf("kit_id: got %v", m["kit_id"])
+	}
+	caps, ok := m["capabilities"].(map[string]interface{})
+	if !ok {
+		t.Fatalf("capabilities not an object: %T", m["capabilities"])
+	}
+	if !arrayContainsString(caps["source_surfaces"], "go-source") {
+		t.Fatalf("source_surfaces must contain go-source: %#v", caps["source_surfaces"])
+	}
+	if !arrayContainsString(caps["diagnostic_codes"], "provekit.lsp.implication_failed") {
+		t.Fatalf("diagnostic_codes must contain implication failure: %#v", caps["diagnostic_codes"])
 	}
 }
 
@@ -214,10 +233,126 @@ func TestHandleUnknownMethod(t *testing.T) {
 	}
 }
 
+func TestHandleAnalyzeDocumentFloorFixtureSharedDiagnostic(t *testing.T) {
+	_, file, _, ok := runtime.Caller(0)
+	if !ok {
+		t.Fatal("runtime.Caller failed")
+	}
+	root := filepath.Clean(filepath.Join(filepath.Dir(file), "../../../.."))
+	fixture := filepath.Join(root, "tests/lsp/floor-fixture/go.go")
+	source, err := os.ReadFile(fixture)
+	if err != nil {
+		t.Fatalf("read fixture: %v", err)
+	}
+
+	done := capture()
+	params := map[string]interface{}{
+		"kit_id":                         "go",
+		"uri":                            "file:///project/tests/lsp/floor-fixture/go.go",
+		"file":                           "tests/lsp/floor-fixture/go.go",
+		"text":                           string(source),
+		"document_version":               42,
+		"workspace_root":                 "/project",
+		"accepted_protocol_catalog_cids": []interface{}{},
+		"policy_cids":                    []interface{}{},
+	}
+	handleRequest(mustMarshal(rpcRequest{
+		JSONRPC: "2.0",
+		ID:      8.0,
+		Method:  "analyzeDocument",
+		Params:  json.RawMessage(mustMarshal(params)),
+	}))
+	resp := done()
+	if resp.Error != nil {
+		t.Fatalf("analyzeDocument error: %s", resp.Error.Message)
+	}
+
+	m := resultMap(resp)
+	if m["kind"] != "lsp-document-analysis" {
+		t.Fatalf("kind = %v, want lsp-document-analysis", m["kind"])
+	}
+	if m["schema_version"] != "1" {
+		t.Fatalf("schema_version = %v, want 1", m["schema_version"])
+	}
+	if m["kit_id"] != "go" {
+		t.Fatalf("kit_id = %v, want go", m["kit_id"])
+	}
+	if m["uri"] != "file:///project/tests/lsp/floor-fixture/go.go" {
+		t.Fatalf("uri = %v", m["uri"])
+	}
+	if m["file"] != "tests/lsp/floor-fixture/go.go" {
+		t.Fatalf("file = %v", m["file"])
+	}
+	documentCID, ok := m["document_cid"].(string)
+	if !ok || len(documentCID) != len("blake3-512:")+128 || documentCID[:len("blake3-512:")] != "blake3-512:" {
+		t.Fatalf("document_cid = %v, want BLAKE3-512 CID", m["document_cid"])
+	}
+	if _, ok := m["entries"].([]interface{}); !ok {
+		t.Fatalf("entries not an array: %T", m["entries"])
+	}
+	if _, ok := m["statuses"].([]interface{}); !ok {
+		t.Fatalf("statuses not an array: %T", m["statuses"])
+	}
+	if m["project"] != nil {
+		t.Fatalf("project = %v, want nil", m["project"])
+	}
+
+	diagnostics, ok := m["diagnostics"].([]interface{})
+	if !ok {
+		t.Fatalf("diagnostics not an array: %T", m["diagnostics"])
+	}
+	if len(diagnostics) != 1 {
+		t.Fatalf("expected one diagnostic, got %#v", diagnostics)
+	}
+	diagnostic, ok := diagnostics[0].(map[string]interface{})
+	if !ok {
+		t.Fatalf("diagnostic not an object: %T", diagnostics[0])
+	}
+	if diagnostic["code"] != "provekit.lsp.implication_failed" {
+		t.Fatalf("code = %v, want provekit.lsp.implication_failed", diagnostic["code"])
+	}
+	if diagnostic["severity"] != "error" {
+		t.Fatalf("severity = %v, want error", diagnostic["severity"])
+	}
+	if diagnostic["producer"] != "forward-propagation" {
+		t.Fatalf("producer = %v, want forward-propagation", diagnostic["producer"])
+	}
+	if diagnostic["kit_id"] != "go" {
+		t.Fatalf("kit_id = %v, want go", diagnostic["kit_id"])
+	}
+	rng, ok := diagnostic["range"].(map[string]interface{})
+	if !ok {
+		t.Fatalf("range not an object: %T", diagnostic["range"])
+	}
+	if rng["start_line"] != float64(19) || rng["start_col"] != float64(11) {
+		t.Fatalf("range start = %v:%v, want 19:11", rng["start_line"], rng["start_col"])
+	}
+	data, ok := diagnostic["data"].(map[string]interface{})
+	if !ok {
+		t.Fatalf("data not an object: %T", diagnostic["data"])
+	}
+	if data["callee"] != "checkPositive" {
+		t.Fatalf("callee = %v, want checkPositive", data["callee"])
+	}
+}
+
 func mustMarshal(v interface{}) string {
 	b, err := json.Marshal(v)
 	if err != nil {
 		panic(err)
 	}
 	return string(b)
+}
+
+func arrayContainsString(value interface{}, expected string) bool {
+	items, ok := value.([]interface{})
+	if !ok {
+		return false
+	}
+	for _, item := range items {
+		if item == expected {
+			return true
+		}
+	}
+	return false
 }

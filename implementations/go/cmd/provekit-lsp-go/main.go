@@ -4,7 +4,8 @@
 //
 //	{"jsonrpc":"2.0","id":1,"method":"initialize","params":{}}
 //	{"jsonrpc":"2.0","id":2,"method":"parse","params":{"path":"...","source":"..."}}
-//	{"jsonrpc":"2.0","id":3,"method":"shutdown"}
+//	{"jsonrpc":"2.0","id":3,"method":"analyzeDocument","params":{"file":"...","text":"..."}}
+//	{"jsonrpc":"2.0","id":4,"method":"shutdown"}
 //
 // For parse, scans the source for //provekit: annotations and
 // go-playground/validator struct tags, lifts to canonical IR,
@@ -29,6 +30,12 @@ import (
 	validator "github.com/tsavo/provekit/go/provekit-lift-go-validator"
 )
 
+const (
+	goKitID                     = "go"
+	sharedLSPProtocolVersion    = "provekit-lsp-shared/1"
+	sharedLSPProtocolCatalogCID = "blake3-512:0e3905c2a7a098cd538b9669428a7dffd2b84ba8ccf8fde3724fe2ab61fd3fbc1e1a616a6b20b6817464cdc50c466b5497d4ac2e2dc34c3c15f05535b463643c"
+)
+
 type rpcRequest struct {
 	JSONRPC string          `json:"jsonrpc"`
 	ID      interface{}     `json:"id"`
@@ -38,6 +45,15 @@ type rpcRequest struct {
 
 type parseParams struct {
 	Path   string `json:"path"`
+	Source string `json:"source"`
+}
+
+type analyzeDocumentParams struct {
+	KitID  string `json:"kit_id"`
+	URI    string `json:"uri"`
+	File   string `json:"file"`
+	Path   string `json:"path"`
+	Text   string `json:"text"`
 	Source string `json:"source"`
 }
 
@@ -54,9 +70,19 @@ type rpcError struct {
 }
 
 type initializeResult struct {
-	Name         string   `json:"name"`
-	Version      string   `json:"version"`
-	Capabilities []string `json:"capabilities"`
+	Name               string          `json:"name"`
+	Version            string          `json:"version"`
+	ProtocolVersion    string          `json:"protocol_version"`
+	KitID              string          `json:"kit_id"`
+	ProtocolCatalogCID string          `json:"protocol_catalog_cid"`
+	Capabilities       lspCapabilities `json:"capabilities"`
+}
+
+type lspCapabilities struct {
+	SourceSurfaces  []string `json:"source_surfaces"`
+	EntryKinds      []string `json:"entry_kinds"`
+	DiagnosticCodes []string `json:"diagnostic_codes"`
+	StatusKinds     []string `json:"status_kinds"`
 }
 
 type parseResult struct {
@@ -65,6 +91,44 @@ type parseResult struct {
 	Diagnostics  []LSPDiagnostic   `json:"diagnostics"`
 	ContractCids map[string]string `json:"contractCids,omitempty"`
 	Warnings     []interface{}     `json:"warnings"`
+}
+
+type sourceRange struct {
+	StartLine int `json:"start_line"`
+	StartCol  int `json:"start_col"`
+	EndLine   int `json:"end_line"`
+	EndCol    int `json:"end_col"`
+}
+
+type lspDocumentEntry struct {
+	Kind  string      `json:"kind"`
+	Entry interface{} `json:"entry"`
+	Range sourceRange `json:"range"`
+}
+
+type sharedDiagnostic struct {
+	Code               string      `json:"code"`
+	Message            string      `json:"message"`
+	Severity           string      `json:"severity"`
+	Range              sourceRange `json:"range"`
+	Producer           string      `json:"producer"`
+	KitID              string      `json:"kit_id"`
+	ProtocolCatalogCID string      `json:"protocol_catalog_cid"`
+	Data               interface{} `json:"data,omitempty"`
+}
+
+type lspDocumentAnalysisResult struct {
+	Kind               string             `json:"kind"`
+	SchemaVersion      string             `json:"schema_version"`
+	KitID              string             `json:"kit_id"`
+	URI                string             `json:"uri"`
+	File               string             `json:"file"`
+	DocumentCID        string             `json:"document_cid"`
+	ProtocolCatalogCID string             `json:"protocol_catalog_cid"`
+	Entries            []lspDocumentEntry `json:"entries"`
+	Diagnostics        []sharedDiagnostic `json:"diagnostics"`
+	Statuses           []interface{}      `json:"statuses"`
+	Project            interface{}        `json:"project"`
 }
 
 func main() {
@@ -89,6 +153,8 @@ func handleRequest(line string) bool {
 		handleInit(req.ID)
 	case "parse":
 		handleParse(req.ID, req.Params)
+	case "analyzeDocument":
+		handleAnalyzeDocument(req.ID, req.Params)
 	case "shutdown":
 		handleShutdown(req.ID)
 		return false
@@ -100,9 +166,17 @@ func handleRequest(line string) bool {
 
 func handleInit(id interface{}) {
 	send(id, initializeResult{
-		Name:         "provekit-lsp-go",
-		Version:      "0.1.0",
-		Capabilities: []string{"parse"},
+		Name:               "provekit-lsp-go",
+		Version:            "0.1.0",
+		ProtocolVersion:    sharedLSPProtocolVersion,
+		KitID:              goKitID,
+		ProtocolCatalogCID: sharedLSPProtocolCatalogCID,
+		Capabilities: lspCapabilities{
+			SourceSurfaces:  []string{"go-source"},
+			EntryKinds:      []string{"bind-lift-entry", "call-edge"},
+			DiagnosticCodes: []string{"provekit.lsp.parse_error", "provekit.lsp.implication_failed"},
+			StatusKinds:     []string{"materialize", "emit", "check", "prove"},
+		},
 	})
 }
 
@@ -113,23 +187,67 @@ func handleParse(id interface{}, paramsRaw json.RawMessage) {
 		return
 	}
 
+	result, err := buildParseResult(params.Path, params.Source)
+	if err != nil {
+		sendError(id, -32603, err.Error())
+		return
+	}
+	send(id, result)
+}
+
+func handleAnalyzeDocument(id interface{}, paramsRaw json.RawMessage) {
+	var params analyzeDocumentParams
+	if err := json.Unmarshal(paramsRaw, &params); err != nil {
+		sendError(id, -32602, "invalid params")
+		return
+	}
+
+	path := firstNonEmpty(params.File, params.Path, "source.go")
+	source := firstNonEmpty(params.Text, params.Source)
+	uri := params.URI
+	if uri == "" {
+		uri = "file://" + path
+	}
+
+	if _, err := parser.ParseFile(token.NewFileSet(), path, source, parser.ParseComments); err != nil {
+		send(id, makeAnalysisResult(uri, path, source, nil, []sharedDiagnostic{
+			parseErrorDiagnostic(err.Error()),
+		}))
+		return
+	}
+
+	parseResult, err := buildParseResult(path, source)
+	if err != nil {
+		sendError(id, -32603, err.Error())
+		return
+	}
+
+	send(id, makeAnalysisResult(
+		uri,
+		path,
+		source,
+		analysisEntriesFromParseResult(parseResult, wholeDocumentRange(source)),
+		sharedDiagnosticsFromLSP(parseResult.Diagnostics),
+	))
+}
+
+func buildParseResult(path, source string) (parseResult, error) {
 	var decls []ir.Declaration
 	warnings := []interface{}{}
 
 	// Walk source for validator structs
-	validatorDecls := walkSource(params.Source, params.Path)
+	validatorDecls := walkSource(source, path)
 	decls = append(decls, validatorDecls...)
 
 	// Scan for //provekit: annotations
-	annotationDecls := scanAnnotations(params.Source, params.Path)
+	annotationDecls := scanAnnotations(source, path)
 	decls = append(decls, annotationDecls...)
 
 	// Marshal declarations
 	contractCids := buildContractCids(decls)
 	jcs, err := json.Marshal(decls)
 	if err != nil {
-		sendError(id, -32603, fmt.Sprintf("marshal: %v", err))
-		return
+		return parseResult{}, fmt.Errorf("marshal: %v", err)
 	}
 	if len(jcs) == 0 || string(jcs) == "null" {
 		jcs = []byte("[]")
@@ -138,29 +256,171 @@ func handleParse(id interface{}, paramsRaw json.RawMessage) {
 	// Emit call-edge stream per spec #114 R1.
 	// Walk function bodies to find call sites; emit one CallEdgeDeclaration
 	// per call site where the calling function has a known contract.
-	callEdges := walkCallEdges(params.Source, params.Path, decls)
+	callEdges := walkCallEdges(source, path, decls)
 	edgesJSON, err := json.Marshal(callEdges)
 	if err != nil {
-		sendError(id, -32603, fmt.Sprintf("marshal call edges: %v", err))
-		return
+		return parseResult{}, fmt.Errorf("marshal call edges: %v", err)
 	}
 	if len(edgesJSON) == 0 || string(edgesJSON) == "null" {
 		edgesJSON = []byte("[]")
 	}
 
-	diagnostics := FloorV1SeedForwardPropagator().EmitDiagnostics(LowerFloorSource(params.Source))
+	diagnostics := FloorV1SeedForwardPropagator().EmitDiagnostics(LowerFloorSource(source))
 
-	send(id, parseResult{
+	return parseResult{
 		Declarations: jcs,
 		CallEdges:    edgesJSON,
 		Diagnostics:  diagnostics,
 		ContractCids: contractCids,
 		Warnings:     warnings,
-	})
+	}, nil
 }
 
 func handleShutdown(id interface{}) {
 	send(id, nil)
+}
+
+func makeAnalysisResult(
+	uri string,
+	path string,
+	source string,
+	entries []lspDocumentEntry,
+	diagnostics []sharedDiagnostic,
+) lspDocumentAnalysisResult {
+	if entries == nil {
+		entries = []lspDocumentEntry{}
+	}
+	if diagnostics == nil {
+		diagnostics = []sharedDiagnostic{}
+	}
+	return lspDocumentAnalysisResult{
+		Kind:               "lsp-document-analysis",
+		SchemaVersion:      "1",
+		KitID:              goKitID,
+		URI:                uri,
+		File:               path,
+		DocumentCID:        canonicalizer.ComputeCID([]byte(source)),
+		ProtocolCatalogCID: sharedLSPProtocolCatalogCID,
+		Entries:            entries,
+		Diagnostics:        diagnostics,
+		Statuses:           []interface{}{},
+		Project:            nil,
+	}
+}
+
+func analysisEntriesFromParseResult(result parseResult, rng sourceRange) []lspDocumentEntry {
+	entries := []lspDocumentEntry{}
+	appendRawEntries(&entries, "bind-lift-entry", result.Declarations, rng)
+	appendRawEntries(&entries, "call-edge", result.CallEdges, rng)
+	return entries
+}
+
+func appendRawEntries(entries *[]lspDocumentEntry, kind string, raw json.RawMessage, rng sourceRange) {
+	if len(raw) == 0 {
+		return
+	}
+	var values []interface{}
+	if err := json.Unmarshal(raw, &values); err != nil {
+		return
+	}
+	for _, value := range values {
+		*entries = append(*entries, lspDocumentEntry{
+			Kind:  kind,
+			Entry: value,
+			Range: rng,
+		})
+	}
+}
+
+func sharedDiagnosticsFromLSP(diagnostics []LSPDiagnostic) []sharedDiagnostic {
+	shared := make([]sharedDiagnostic, 0, len(diagnostics))
+	for _, diagnostic := range diagnostics {
+		shared = append(shared, sharedDiagnosticFromLSP(diagnostic))
+	}
+	return shared
+}
+
+func sharedDiagnosticFromLSP(diagnostic LSPDiagnostic) sharedDiagnostic {
+	code := diagnostic.Data.Kind
+	if code == "" {
+		code = diagnostic.Code
+	}
+	if code == "" {
+		code = "provekit.lsp.lift_gap"
+	}
+	return sharedDiagnostic{
+		Code:               code,
+		Message:            diagnostic.Message,
+		Severity:           sharedSeverity(diagnostic.Severity),
+		Range:              sourceRangeFromLSPRange(diagnostic.Range),
+		Producer:           "forward-propagation",
+		KitID:              goKitID,
+		ProtocolCatalogCID: sharedLSPProtocolCatalogCID,
+		Data:               diagnostic.Data,
+	}
+}
+
+func parseErrorDiagnostic(message string) sharedDiagnostic {
+	return sharedDiagnostic{
+		Code:               "provekit.lsp.parse_error",
+		Message:            message,
+		Severity:           "error",
+		Range:              sourceRange{StartLine: 1, StartCol: 0, EndLine: 1, EndCol: 0},
+		Producer:           "kit",
+		KitID:              goKitID,
+		ProtocolCatalogCID: sharedLSPProtocolCatalogCID,
+	}
+}
+
+func sharedSeverity(severity int) string {
+	switch severity {
+	case 1:
+		return "error"
+	case 2:
+		return "warning"
+	case 3:
+		return "information"
+	case 4:
+		return "hint"
+	default:
+		return "information"
+	}
+}
+
+func sourceRangeFromLSPRange(rng LSPRange) sourceRange {
+	return sourceRange{
+		StartLine: rng.Start.Line + 1,
+		StartCol:  rng.Start.Character,
+		EndLine:   rng.End.Line + 1,
+		EndCol:    rng.End.Character,
+	}
+}
+
+func wholeDocumentRange(source string) sourceRange {
+	line := 1
+	col := 0
+	for _, r := range source {
+		if r == '\n' {
+			line++
+			col = 0
+			continue
+		}
+		if r > 0xFFFF {
+			col += 2
+		} else {
+			col++
+		}
+	}
+	return sourceRange{StartLine: 1, StartCol: 0, EndLine: line, EndCol: col}
+}
+
+func firstNonEmpty(values ...string) string {
+	for _, value := range values {
+		if value != "" {
+			return value
+		}
+	}
+	return ""
 }
 
 // sendResponse is the response writer. Defaults to writing JSON to stdout.
