@@ -989,6 +989,7 @@ mod tests {
             property_cid: "blake3-512:prop".into(),
             arg_term: None,
             containing_atomic: None,
+            guard_facts: Vec::new(),
         };
         let obligation = json!({"kind":"atomic","name":"true","args":[]});
         let cid = mint_verification_witness(

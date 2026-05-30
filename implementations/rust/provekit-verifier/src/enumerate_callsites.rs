@@ -81,7 +81,10 @@ fn walk_formula(
                     // ctor is found as a direct argument of this atomic,
                     // the body-discharge path needs the whole predicate
                     // (e.g. `=(double(3), 6)`) to derive the postcondition.
-                    walk_term(a, property_name, property_cid, pool, Some(f), out);
+                    // A formula's terms have no dominating control-flow guard
+                    // until a `cf_ite` is descended into, so the path condition
+                    // starts empty here.
+                    walk_term(a, property_name, property_cid, pool, Some(f), &[], out);
                 }
             }
         }
@@ -103,12 +106,52 @@ fn walk_formula(
     }
 }
 
+/// Convert a `cf_ite` GUARD TERM into the atomic-predicate FORMULA it asserts,
+/// when (and only when) its head is a recognized boolean predicate. The lifter
+/// folds a control-flow condition `x.is_some()` into the guard term
+/// `is_some(x)` (`formula_to_term` keeps non-builtin predicate heads unchanged;
+/// see lift.rs `cf_head`). Recovering the atomic lets the verifier discharge a
+/// panic partial's `pre = is_some(recv)` UNDER the guard `is_some(recv)`.
+///
+/// SOUNDNESS: only the closed set of boolean-method predicates the lifter emits
+/// as guards is recognized. A comparison guard (`cf_lt`/`cf_le`/...), a method
+/// guard, or any other head returns `None`: it becomes no usable fact, so the
+/// pre stays unprovable and the site is honestly undecidable. Recognizing a
+/// head we cannot soundly assert would risk a false "cannot panic"; refusing to
+/// recognize one can only UNDER-prove. Fail-safe by construction.
+fn guard_term_to_atomic(t: &Json, negated: bool) -> Option<Json> {
+    if t.get("kind").and_then(|v| v.as_str()) != Some("ctor") {
+        return None;
+    }
+    let head = t.get("name").and_then(|v| v.as_str())?;
+    let args = t.get("args").cloned().unwrap_or_else(|| serde_json::json!([]));
+    // The boolean unary predicates the lifter recognizes as if/match guards.
+    // Their POSITIVE form is the panic-freedom obligation a partial demands
+    // (option_unwrap pre = is_some, result_unwrap pre = is_ok, ...). A negated
+    // guard (the else-branch) flips to the complementary predicate, which never
+    // establishes the partial's pre -- so an else-branch unwrap stays unproven.
+    let atomic_name = match (head, negated) {
+        ("is_some", false) | ("is_none", true) => "is_some",
+        ("is_none", false) | ("is_some", true) => "is_none",
+        ("is_ok", false) | ("is_err", true) => "is_ok",
+        ("is_err", false) | ("is_ok", true) => "is_err",
+        ("is_empty", false) => "is_empty",
+        ("is_empty", true) => return None, // !is_empty has no partial-pre use
+        _ => return None,
+    };
+    Some(serde_json::json!({ "kind": "atomic", "name": atomic_name, "args": args }))
+}
+
 fn walk_term(
     t: &Json,
     property_name: &str,
     property_cid: &str,
     pool: &MementoPool,
     containing_atomic: Option<&Json>,
+    // PANIC-FREEDOM guard context: the atomic-predicate facts that dominate
+    // this position in the lifted caller body, accumulated as `cf_ite`
+    // branches are descended. Empty at the top of a formula.
+    path_cond: &[Json],
     out: &mut Vec<CallSite>,
 ) {
     if !t.is_object() {
@@ -168,15 +211,188 @@ fn walk_term(
                 .and_then(|v| v.as_array())
                 .and_then(|arr| arr.first().cloned()),
             containing_atomic: containing_atomic.cloned(),
+            // Snapshot the dominating guard context for this call site. The
+            // runner discharges a panic partial's `pre` under these facts.
+            guard_facts: path_cond.to_vec(),
         };
         out.push(cs);
     }
     // Descend into the call's arguments. A nested call is no longer a
     // direct argument of `containing_atomic`, so stop threading it: only a
     // call DIRECTLY under an atomic carries that atomic as its `Q` source.
-    if let Some(args) = t.get("args").and_then(|v| v.as_array()) {
-        for a in args {
-            walk_term(a, property_name, property_cid, pool, None, out);
+    //
+    // `cf_ite(cond, then, else)` is the lifted control-flow value (see
+    // walk_rpc `lift_tail_if_to_ite_term` / `lift_match_to_ite_term`): a panic
+    // call nested in `then` is DOMINATED by `cond`, one in `else` by `!cond`.
+    // Push the recovered guard fact onto the path condition for the dominated
+    // branch so the partial's pre can discharge under it. arg0 (the guard term)
+    // carries no guard itself. Any other ctor passes the current path condition
+    // through unchanged (no new control-flow fact is introduced).
+    if name == "cf_ite" {
+        if let Some(args) = t.get("args").and_then(|v| v.as_array()) {
+            let cond = args.first();
+            // arg0: the guard term, evaluated in the enclosing context.
+            if let Some(c) = cond {
+                walk_term(c, property_name, property_cid, pool, None, path_cond, out);
+            }
+            // arg1: the then-branch, dominated by the positive guard.
+            if let Some(then_t) = args.get(1) {
+                let mut then_pc = path_cond.to_vec();
+                if let Some(g) = cond.and_then(|c| guard_term_to_atomic(c, false)) {
+                    then_pc.push(g);
+                }
+                walk_term(then_t, property_name, property_cid, pool, None, &then_pc, out);
+            }
+            // arg2: the else-branch, dominated by the NEGATED guard.
+            if let Some(else_t) = args.get(2) {
+                let mut else_pc = path_cond.to_vec();
+                if let Some(g) = cond.and_then(|c| guard_term_to_atomic(c, true)) {
+                    else_pc.push(g);
+                }
+                walk_term(else_t, property_name, property_cid, pool, None, &else_pc, out);
+            }
         }
+    } else if let Some(args) = t.get("args").and_then(|v| v.as_array()) {
+        for a in args {
+            walk_term(a, property_name, property_cid, pool, None, path_cond, out);
+        }
+    }
+}
+
+#[cfg(test)]
+mod guard_propagation_tests {
+    //! PANIC-FREEDOM guard-context discharge (the soundness-critical step).
+    //! A panic partial (`option_unwrap`, pre = `is_some(recv)`) discharges
+    //! panic-safe ONLY when the call site is dominated by the matching guard.
+    //! These tests pin the three cases at the enumeration boundary, where the
+    //! dominating `cf_ite` condition is threaded into `CallSite::guard_facts`:
+    //!   - guarded then-branch  -> guard_facts = [is_some(recv)]  (=> panic-safe)
+    //!   - bare (no guard)      -> guard_facts = []               (=> undecidable)
+    //!   - else-branch          -> guard_facts = [is_none(recv)]  (=> undecidable)
+    //! The else-branch case is the trap: a positive guard must dominate ONLY the
+    //! then-branch; the else-branch's negated guard never establishes the pre.
+
+    use super::*;
+    use serde_json::json;
+
+    // The receiver term the panic obligation is about (`x` in `x.unwrap()`).
+    fn recv() -> Json {
+        json!({ "kind": "var", "name": "x" })
+    }
+
+    // A panic-partial call term: `option_unwrap(recv)`. Its ctor name matches
+    // the bridge sourceSymbol, so it enumerates as a CallSite.
+    fn unwrap_call() -> Json {
+        json!({ "kind": "ctor", "name": "option_unwrap", "args": [recv()] })
+    }
+
+    // `is_some(recv)` as the lifter folds an `if x.is_some()` condition into a
+    // `cf_ite` guard term (non-builtin head passes through unchanged).
+    fn is_some_guard() -> Json {
+        json!({ "kind": "ctor", "name": "is_some", "args": [recv()] })
+    }
+
+    // Build a pool with a single `option_unwrap` bridge and one contract whose
+    // post is `result == <body>` (the self-post the call term lives in).
+    fn pool_with_post(body_term: Json) -> MementoPool {
+        let mut pool = MementoPool::default();
+        // v1.2-layered bridge: header.kind == "bridge", sourceSymbol on header.
+        let bridge = json!({
+            "envelope": true,
+            "header": {
+                "kind": "bridge",
+                "sourceSymbol": "option_unwrap",
+                "targetContractCid": "blake3-512:target",
+                "sourceLayer": "rust",
+                "targetLayer": "rust-tests",
+            }
+        });
+        pool.bridges_by_symbol
+            .insert("option_unwrap".to_string(), bridge);
+        // v1.2-layered contract whose post nests the call term.
+        let contract = json!({
+            "envelope": true,
+            "header": {
+                "kind": "contract",
+                "contractName": "caller_self_post",
+                "post": {
+                    "kind": "atomic",
+                    "name": "=",
+                    "args": [ { "kind": "var", "name": "result" }, body_term ],
+                }
+            }
+        });
+        pool.mementos
+            .insert("blake3-512:caller".to_string(), contract);
+        pool
+    }
+
+    #[test]
+    fn guarded_then_branch_threads_positive_guard() {
+        // `if x.is_some() { x.unwrap() } else { 0 }`
+        // -> post: result == cf_ite(is_some(x), option_unwrap(x), 0)
+        let body = json!({
+            "kind": "ctor",
+            "name": "cf_ite",
+            "args": [ is_some_guard(), unwrap_call(), { "kind": "lit", "value": 0 } ],
+        });
+        let sites = run(&pool_with_post(body));
+        let call = sites
+            .iter()
+            .find(|cs| cs.bridge_ir_name == "option_unwrap")
+            .expect("the unwrap call must enumerate");
+        assert_eq!(
+            call.guard_facts,
+            vec![json!({ "kind": "atomic", "name": "is_some", "args": [recv()] })],
+            "a then-branch unwrap must carry the positive is_some guard -> panic-safe"
+        );
+    }
+
+    #[test]
+    fn bare_unwrap_has_no_guard() {
+        // `x.unwrap()` with no dominating control flow.
+        // -> post: result == option_unwrap(x)
+        let sites = run(&pool_with_post(unwrap_call()));
+        let call = sites
+            .iter()
+            .find(|cs| cs.bridge_ir_name == "option_unwrap")
+            .expect("the unwrap call must enumerate");
+        assert!(
+            call.guard_facts.is_empty(),
+            "an unguarded unwrap must carry NO guard -> stays undecidable (unproven), \
+             never marked panic-safe: {:?}",
+            call.guard_facts
+        );
+    }
+
+    #[test]
+    fn else_branch_unwrap_carries_negated_guard_not_positive() {
+        // `if x.is_some() { 0 } else { x.unwrap() }`  -- the trap.
+        // -> post: result == cf_ite(is_some(x), 0, option_unwrap(x))
+        // The else-branch unwrap is NOT established by `is_some`; it must carry
+        // the NEGATED guard `is_none(x)`, which never discharges `is_some(x)`.
+        let body = json!({
+            "kind": "ctor",
+            "name": "cf_ite",
+            "args": [ is_some_guard(), { "kind": "lit", "value": 0 }, unwrap_call() ],
+        });
+        let sites = run(&pool_with_post(body));
+        let call = sites
+            .iter()
+            .find(|cs| cs.bridge_ir_name == "option_unwrap")
+            .expect("the unwrap call must enumerate");
+        assert_eq!(
+            call.guard_facts,
+            vec![json!({ "kind": "atomic", "name": "is_none", "args": [recv()] })],
+            "an else-branch unwrap must carry the NEGATED guard (is_none), which does \
+             NOT establish is_some -> stays undecidable, NOT panic-safe"
+        );
+        assert!(
+            !call
+                .guard_facts
+                .iter()
+                .any(|g| g.get("name").and_then(|v| v.as_str()) == Some("is_some")),
+            "the else-branch must never carry the positive is_some guard (the trap)"
+        );
     }
 }

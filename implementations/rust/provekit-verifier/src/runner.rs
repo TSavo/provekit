@@ -1392,7 +1392,34 @@ fn work_one(
                 );
             }
         };
-        smt = match smt_emitter::emit(&ob.ir_formula) {
+        // PANIC-FREEDOM guard discharge. A panic partial's instantiated pre is
+        // `is_some(recv)` (etc.), unprovable on its own (an uninterpreted
+        // predicate over a free term) -> the site is honestly undecidable. But
+        // when the call is DOMINATED by the matching guard (a preceding
+        // `if recv.is_some()` lifts the call under `cf_ite(is_some(recv), ...)`,
+        // and enumerate_callsites threads that fact into `cs.guard_facts`),
+        // the obligation becomes `(and guard_facts) => pre`. With the guard
+        // `is_some(recv)` and pre `is_some(recv)` syntactically identical after
+        // substitution, the implication is valid -> the site is PROVABLY
+        // panic-safe. An unguarded site has empty guard_facts and keeps the
+        // bare (unprovable) pre, so it stays undecidable. An else-branch site
+        // carries the NEGATED guard (`is_none(recv)`), which never establishes
+        // `is_some(recv)`, so it also stays undecidable. This is fail-safe by
+        // construction: no path marks an unguarded site panic-safe.
+        let guarded_formula = if cs.guard_facts.is_empty() {
+            ob.ir_formula.clone()
+        } else {
+            let antecedent = if cs.guard_facts.len() == 1 {
+                cs.guard_facts[0].clone()
+            } else {
+                json!({ "kind": "and", "operands": cs.guard_facts.clone() })
+            };
+            json!({
+                "kind": "implies",
+                "operands": [antecedent, ob.ir_formula.clone()],
+            })
+        };
+        smt = match smt_emitter::emit(&guarded_formula) {
             Ok(s) => s,
             Err(e) => {
                 n_residue.fetch_add(1, Ordering::Relaxed);
@@ -1403,7 +1430,7 @@ fn work_one(
                 );
             }
         };
-        formula_for_dispatch = Some(ob.ir_formula);
+        formula_for_dispatch = Some(guarded_formula);
     }
 
     debug!(
