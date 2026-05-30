@@ -4,7 +4,7 @@
  * Mirrors implementations/python/provekit-lift-py-tests/tests/test_daemon_protocol.py.
  *
  * Asserts:
- *   - initialize responds with protocol_version == "provekit-lift/1" and capabilities object.
+ *   - initialize responds with protocol_version == "provekit-lsp-shared/1" and capabilities object.
  *   - lift returns result.kind == "ir-document" with ir array.
  *   - parse (legacy) returns result.declarations as a JSON array (not a string).
  *   - parse returns result.callEdges as a JSON array.
@@ -72,6 +72,30 @@ function buildLiftSession(workspaceRoot: string, sourcePaths: string[]): string 
   return msgs.map((m) => JSON.stringify(m)).join("\n") + "\n";
 }
 
+/** Build NDJSON for initialize -> analyzeDocument -> shutdown. */
+function buildAnalyzeSession(source: string, path: string): string {
+  const msgs = [
+    { jsonrpc: "2.0", id: 20, method: "initialize", params: {} },
+    {
+      jsonrpc: "2.0",
+      id: 21,
+      method: "analyzeDocument",
+      params: {
+        kit_id: "ts",
+        uri: `file:///project/${path}`,
+        file: path,
+        text: source,
+        document_version: 42,
+        workspace_root: "/project",
+        accepted_protocol_catalog_cids: [],
+        policy_cids: [],
+      },
+    },
+    { jsonrpc: "2.0", id: 22, method: "shutdown" },
+  ];
+  return msgs.map((m) => JSON.stringify(m)).join("\n") + "\n";
+}
+
 // A fixture with a Zod schema to guarantee at least one declaration.
 const ZOD_FIXTURE_SOURCE = `
 import { z } from "zod";
@@ -97,7 +121,8 @@ let liftResponses: Record<string, unknown>[] = [];
 let callEdgeResponses: Record<string, unknown>[] = [];
 
 // Per-suite vitest timeout. Each individual test just reads cached data.
-const SUITE_TIMEOUT_MS = 60_000;
+const SUITE_TIMEOUT_MS = 90_000;
+const DAEMON_TEST_TIMEOUT_MS = 30_000;
 
 const CALL_EDGE_FIXTURE_SOURCE = `
 function add(x: number): number {
@@ -145,23 +170,25 @@ describe("daemon protocol conformance (provekit-lsp-ts)", () => {
     );
   }, SUITE_TIMEOUT_MS);
 
-  it("initialize: name == provekit-lsp-ts and protocol_version == provekit-lift/1", () => {
+  it("initialize: name == provekit-lsp-ts and protocol_version == provekit-lsp-shared/1", () => {
     const initResp = zodResponses.find((r) => r.id === 1);
     expect(initResp).toBeDefined();
     const result = initResp!.result as Record<string, unknown>;
     expect(result.name).toBe("provekit-lsp-ts");
-    expect(result.protocol_version).toBe("provekit-lift/1");
+    expect(result.protocol_version).toBe("provekit-lsp-shared/1");
+    expect(result.kit_id).toBe("ts");
+    expect(typeof result.protocol_catalog_cid).toBe("string");
     const caps = result.capabilities as Record<string, unknown>;
-    expect(Array.isArray(caps.authoring_surfaces)).toBe(true);
-    expect((caps.authoring_surfaces as string[]).includes("typescript-source")).toBe(true);
-    expect(caps.emits_signed_mementos).toBe(false);
+    expect(Array.isArray(caps.source_surfaces)).toBe(true);
+    expect((caps.source_surfaces as string[]).includes("typescript-source")).toBe(true);
+    expect((caps.diagnostic_codes as string[]).includes("provekit.lsp.implication_failed")).toBe(true);
   });
 
   it("lift: kind == ir-document with ir array", () => {
     const initResp = liftResponses.find((r) => r.id === 10);
     expect(initResp).toBeDefined();
     const initResult = initResp!.result as Record<string, unknown>;
-    expect(initResult.protocol_version).toBe("provekit-lift/1");
+    expect(initResult.protocol_version).toBe("provekit-lsp-shared/1");
 
     const liftResp = liftResponses.find((r) => r.id === 11);
     expect(liftResp).toBeDefined();
@@ -262,6 +289,62 @@ describe("daemon protocol conformance (provekit-lsp-ts)", () => {
   });
 });
 
+describe("shared analyzeDocument protocol (provekit-lsp-ts)", () => {
+  it("floor fixture emits shared callsite diagnostic", () => {
+    const source = `
+function checkPositive(x: number): boolean {
+  if (x <= 0) { return false; }
+  return true;
+}
+function callerSatisfiesPre(): boolean {
+  const result = checkPositive(5);
+  return result;
+}
+function callerViolatesPre(): boolean {
+  const result = checkPositive(-1);
+  return result;
+}
+function callerWithLoop(): boolean {
+  for (let i = 0; i < 10; i++) {
+    const result = checkPositive(i);
+    if (!result) { return false; }
+  }
+  return true;
+}
+`.trim();
+    const responses = runLsp(buildAnalyzeSession(source, "floor.ts"));
+    const analyzeResp = responses.find((r) => r.id === 21);
+    expect(analyzeResp).toBeDefined();
+    expect(analyzeResp!.error).toBeUndefined();
+
+    const result = analyzeResp!.result as Record<string, unknown>;
+    expect(result.kind).toBe("lsp-document-analysis");
+    expect(result.schema_version).toBe("1");
+    expect(result.kit_id).toBe("ts");
+    expect(result.uri).toBe("file:///project/floor.ts");
+    expect(result.file).toBe("floor.ts");
+    expect(typeof result.document_cid).toBe("string");
+    expect((result.document_cid as string).startsWith("blake3-512:")).toBe(true);
+    expect((result.document_cid as string).length).toBe("blake3-512:".length + 128);
+    expect(Array.isArray(result.entries)).toBe(true);
+    expect(Array.isArray(result.statuses)).toBe(true);
+    expect((result.statuses as unknown[]).length).toBe(0);
+    expect(result.project).toBeNull();
+
+    const diagnostics = result.diagnostics as Record<string, unknown>[];
+    expect(diagnostics.length).toBe(1);
+    const diagnostic = diagnostics[0];
+    expect(diagnostic.code).toBe("provekit.lsp.implication_failed");
+    expect(diagnostic.severity).toBe("error");
+    expect(diagnostic.producer).toBe("forward-propagation");
+    expect(diagnostic.kit_id).toBe("ts");
+    const range = diagnostic.range as Record<string, number>;
+    expect(range.start_line).toBe(10);
+    expect(range.start_col).toBe(17);
+    expect((diagnostic.data as Record<string, unknown>).callee).toBe("checkPositive");
+  }, DAEMON_TEST_TIMEOUT_MS);
+});
+
 describe("forward-propagator (per #309)", () => {
   const FIXTURE_SATISFIES_PRE = `
 function checkPositive(x: number): boolean {
@@ -303,17 +386,17 @@ function caller(cond: boolean) {
     const resp = runLsp(buildSession(FIXTURE_SATISFIES_PRE, "satisfies.ts"));
     const parseResp = resp.find((r) => r.id === 2);
     expect(parseResp).toBeDefined();
-  });
+  }, DAEMON_TEST_TIMEOUT_MS);
 
   it("callsite violates pre: diagnostic with code provekit.lsp.implication_failed", () => {
     const resp = runLsp(buildSession(FIXTURE_VIOLATES_PRE, "violates.ts"));
     const parseResp = resp.find((r) => r.id === 2);
     expect(parseResp).toBeDefined();
-  });
+  }, DAEMON_TEST_TIMEOUT_MS);
 
   it("branch merge partial satisfaction: diagnostic on join path", () => {
     const resp = runLsp(buildSession(FIXTURE_BRANCH_MERGE, "merge.ts"));
     const parseResp = resp.find((r) => r.id === 2);
     expect(parseResp).toBeDefined();
-  });
+  }, DAEMON_TEST_TIMEOUT_MS);
 });
