@@ -89,6 +89,30 @@ def _build_session(source: str = _FIXTURE_SOURCE, path: str = _FIXTURE_PATH) -> 
     return "\n".join(json.dumps(m) for m in msgs) + "\n"
 
 
+def _build_analyze_session(source: str, path: str, uri: str = "file:///project/test_fixture.py") -> str:
+    """Build NDJSON input for initialize -> analyzeDocument -> shutdown."""
+    msgs = [
+        {"jsonrpc": "2.0", "id": 1, "method": "initialize", "params": {}},
+        {
+            "jsonrpc": "2.0",
+            "id": 2,
+            "method": "analyzeDocument",
+            "params": {
+                "kit_id": "python",
+                "uri": uri,
+                "file": path,
+                "text": source,
+                "document_version": 42,
+                "workspace_root": "/project",
+                "accepted_protocol_catalog_cids": [],
+                "policy_cids": [],
+            },
+        },
+        {"jsonrpc": "2.0", "id": 3, "method": "shutdown"},
+    ]
+    return "\n".join(json.dumps(m) for m in msgs) + "\n"
+
+
 # ---------------------------------------------------------------------------
 # Tests
 # ---------------------------------------------------------------------------
@@ -102,7 +126,10 @@ class TestDaemonProtocol:
         init_resp = next(r for r in responses if r.get("id") == 1)
         result = init_resp["result"]
         assert result["name"] == "provekit-lsp-python"
-        assert "parse" in result["capabilities"]
+        assert result["protocol_version"] == "provekit-lsp-shared/1"
+        assert result["kit_id"] == "python"
+        assert "python-source" in result["capabilities"]["source_surfaces"]
+        assert "provekit.lsp.implication_failed" in result["capabilities"]["diagnostic_codes"]
 
     def test_parse_declarations_is_array(self):
         """parse response: result.declarations is a JSON array, not a string."""
@@ -206,6 +233,47 @@ def compute(x: int) -> int:
         parse_resp = next(r for r in responses if r.get("id") == 2)
         assert "error" in parse_resp, "Expected error for unsupported language"
         assert parse_resp["error"]["code"] == -32602
+
+    def test_analyze_document_floor_fixture_emits_shared_callsite_diagnostic(self):
+        """analyzeDocument returns shared envelope plus call-site diagnostic."""
+        repo_root = os.path.normpath(
+            os.path.join(os.path.dirname(__file__), "../../../..")
+        )
+        fixture = os.path.join(repo_root, "tests/lsp/floor-fixture/python.py")
+        with open(fixture, "r", encoding="utf-8") as f:
+            source = f.read()
+
+        responses = _run_lsp(
+            _build_analyze_session(
+                source=source,
+                path="tests/lsp/floor-fixture/python.py",
+                uri="file:///project/tests/lsp/floor-fixture/python.py",
+            )
+        )
+        analyze_resp = next(r for r in responses if r.get("id") == 2)
+        assert "error" not in analyze_resp, f"analyzeDocument returned error: {analyze_resp}"
+        result = analyze_resp["result"]
+        assert result["kind"] == "lsp-document-analysis"
+        assert result["schema_version"] == "1"
+        assert result["kit_id"] == "python"
+        assert result["uri"] == "file:///project/tests/lsp/floor-fixture/python.py"
+        assert result["file"] == "tests/lsp/floor-fixture/python.py"
+        assert isinstance(result["entries"], list)
+        assert isinstance(result["statuses"], list)
+        assert result["project"] is None
+        assert result["document_cid"].startswith("blake3-512:")
+        assert len(result["document_cid"]) == len("blake3-512:") + 128
+
+        diagnostics = result["diagnostics"]
+        assert len(diagnostics) == 1
+        diagnostic = diagnostics[0]
+        assert diagnostic["code"] == "provekit.lsp.implication_failed"
+        assert diagnostic["severity"] == "error"
+        assert diagnostic["producer"] == "forward-propagation"
+        assert diagnostic["kit_id"] == "python"
+        assert diagnostic["range"]["start_line"] == 17
+        assert diagnostic["range"]["start_col"] == 13
+        assert diagnostic["data"]["callee"] == "checkPositive"
 
     def test_parse_plain_unittest_testcase_assertions_as_normalized_contract(self):
         """Plain unittest.TestCase assertions lift through RPC as one contract."""
