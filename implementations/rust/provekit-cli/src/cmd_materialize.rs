@@ -5,7 +5,7 @@
 
 use std::collections::BTreeMap;
 use std::io::Write;
-use std::path::{Path, PathBuf};
+use std::path::{Component, Path, PathBuf};
 
 use clap::Parser;
 use libprovekit::core::emit_obligation::{build_bridge_body, member_envelope_canonical};
@@ -26,8 +26,8 @@ use serde_json::Value as Json;
 use walkdir::WalkDir;
 
 use crate::kit_dispatch::{
-    dispatch_materialize_check, provides_concepts_for_realize, scope_bringings_for_realize,
-    DispatchRealizeTransport,
+    dispatch_materialize_check, dispatch_materialize_source, provides_concepts_for_realize,
+    scope_bringings_for_realize, DispatchRealizeTransport, MaterializeSourceError,
 };
 use crate::{OutputFlags, EXIT_OK, EXIT_USER_ERROR, EXIT_VERIFY_FAIL};
 
@@ -82,6 +82,10 @@ struct MaterializedFile {
     /// to the assemble RPC as `package_hint` so the kit reproduces it. None
     /// when the source declares none.
     package_hint: Option<String>,
+    /// Kit-owned source materialization can declare native compile metadata
+    /// alongside the returned files. The CLI aggregates this and passes it
+    /// back to the kit check RPC without interpreting it.
+    compile_classpath: Vec<String>,
 }
 
 pub fn run(args: MaterializeArgs) -> u8 {
@@ -118,13 +122,25 @@ pub fn run(args: MaterializeArgs) -> u8 {
             }
         };
 
-    let files = match materialize_source_dir(
+    let files = match materialize_source_dir_via_kit(
         &project_root,
         &args.source_dir,
         &target_lang,
         library_tag.as_deref(),
     ) {
-        Ok(files) => files,
+        Ok(Some(files)) => files,
+        Ok(None) => match materialize_source_dir(
+            &project_root,
+            &args.source_dir,
+            &target_lang,
+            library_tag.as_deref(),
+        ) {
+            Ok(files) => files,
+            Err(error) => {
+                eprintln!("{}: {error}", "error".red().bold());
+                return EXIT_VERIFY_FAIL;
+            }
+        },
         Err(error) => {
             eprintln!("{}: {error}", "error".red().bold());
             return EXIT_VERIFY_FAIL;
@@ -400,15 +416,66 @@ fn materialize_source_dir(
             receipt,
             fragments,
             package_hint,
+            compile_classpath: Vec::new(),
         });
     }
     Ok(files)
 }
 
+fn materialize_source_dir_via_kit(
+    project_root: &Path,
+    source_dir: &Path,
+    target_lang: &str,
+    library_tag: Option<&str>,
+) -> Result<Option<Vec<MaterializedFile>>, String> {
+    let result =
+        match dispatch_materialize_source(project_root, target_lang, library_tag, source_dir) {
+            Ok(result) => result,
+            Err(MaterializeSourceError::MethodNotSupported) => return Ok(None),
+            Err(MaterializeSourceError::Failed(error)) => return Err(error),
+        };
+
+    let mut files = Vec::with_capacity(result.files.len());
+    for file in result.files {
+        if !is_safe_relative_path(&file.path) {
+            return Err(format!(
+                "materialize source kit returned unsafe output path `{}`",
+                file.path.display()
+            ));
+        }
+        let receipt: SourceTransformReceipt = serde_json::from_value(file.receipt)
+            .map_err(|error| format!("decode materialize source receipt: {error}"))?;
+        files.push(MaterializedFile {
+            source_path: source_dir.join(&file.path),
+            relative_path: file.path,
+            content: file.content,
+            receipt,
+            fragments: Vec::new(),
+            package_hint: None,
+            compile_classpath: result.compile_classpath.clone(),
+        });
+    }
+    if !files.is_empty() {
+        eprintln!(
+            "  {} source materialized by {} kit via RPC",
+            "EMIT".green().bold(),
+            target_lang,
+        );
+    }
+    Ok(Some(files))
+}
+
+fn is_safe_relative_path(path: &Path) -> bool {
+    !path.is_absolute()
+        && path
+            .components()
+            .all(|component| matches!(component, Component::Normal(_) | Component::CurDir))
+}
+
 fn is_supported_source_file(path: &Path) -> bool {
     matches!(
         path.extension().and_then(|ext| ext.to_str()),
-        Some("ts" | "tsx" | "js" | "jsx" | "py" | "rs" | "java" | "go")
+        Some("ts" | "tsx" | "js" | "jsx" | "py" | "rs" | "java")
     )
 }
 
@@ -843,6 +910,9 @@ fn emit_out_dir_via_kit_assemble(
     let mut aggregated_classpath: std::collections::BTreeSet<String> =
         std::collections::BTreeSet::new();
     for file in files {
+        for cp in &file.compile_classpath {
+            aggregated_classpath.insert(cp.clone());
+        }
         // Files with no realizable fragments (refuse-only) have nothing for
         // the kit to assemble; preserve the in-place-rewritten content so the
         // refusal markers / untouched source still land in the out-dir.

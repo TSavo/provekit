@@ -67,6 +67,13 @@ func parseFuncAnnotation(fn *ast.FuncDecl) (*Annotation, error) {
 	return nil, nil
 }
 
+// ParseFuncAnnotation exposes the Go-native ProvekIt directive parser to peer
+// Go kits. Source understanding stays in Go code; the Rust CLI consumes only
+// the kit's normalized RPC result.
+func ParseFuncAnnotation(fn *ast.FuncDecl) (*Annotation, error) {
+	return parseFuncAnnotation(fn)
+}
+
 // parseAnnotationDirective parses one `//provekit:<kind>(...)` line.
 func parseAnnotationDirective(text, fnName string) (*Annotation, error) {
 	rest := strings.TrimPrefix(text, annotationPrefix)

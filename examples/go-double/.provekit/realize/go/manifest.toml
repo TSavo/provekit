@@ -12,5 +12,6 @@
 # build-location-agnostic.
 name = "go-realize"
 library_tag = "go"
+materialize_source = true
 command = ["provekit-realize-go", "--rpc"]
 working_dir = "."
