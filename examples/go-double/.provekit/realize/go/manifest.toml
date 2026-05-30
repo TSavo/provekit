@@ -11,5 +11,6 @@
 # this manifest into a tempdir, so the in-repo example stays
 # build-location-agnostic.
 name = "go-realize"
+library_tag = "go"
 command = ["provekit-realize-go", "--rpc"]
 working_dir = "."

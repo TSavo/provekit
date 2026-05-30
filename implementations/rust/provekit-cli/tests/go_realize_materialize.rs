@@ -109,6 +109,60 @@ fn install_go_realize_manifest(root: &Path, bin: &Path) {
     fs::write(manifest, text).expect("write manifest");
 }
 
+fn install_go_realize_registration(root: &Path, bin: &Path) {
+    install_go_realize_manifest(root, bin);
+    fs::create_dir_all(root.join(".provekit")).expect("mkdir .provekit");
+    fs::write(
+        root.join(".provekit").join("config.toml"),
+        r#"[[plugins]]
+name = "go-realize"
+kind = "realize"
+surface = "go"
+
+"#,
+    )
+    .expect("write realize config");
+}
+
+fn copy_dir_recursive(src: &Path, dst: &Path) {
+    fs::create_dir_all(dst).unwrap_or_else(|_| panic!("mkdir {}", dst.display()));
+    for entry in fs::read_dir(src).unwrap_or_else(|_| panic!("read {}", src.display())) {
+        let entry = entry.expect("read dir entry");
+        let src_path = entry.path();
+        let dst_path = dst.join(entry.file_name());
+        if entry.file_type().expect("entry file type").is_dir() {
+            copy_dir_recursive(&src_path, &dst_path);
+        } else {
+            fs::copy(&src_path, &dst_path).unwrap_or_else(|_| {
+                panic!("copy {} -> {}", src_path.display(), dst_path.display())
+            });
+        }
+    }
+}
+
+fn rewrite_manifest_command(manifest: &Path, command: &Path) {
+    let text = fs::read_to_string(manifest)
+        .unwrap_or_else(|_| panic!("read checked-in manifest {}", manifest.display()));
+    let escaped = command
+        .display()
+        .to_string()
+        .replace('\\', "\\\\")
+        .replace('"', "\\\"");
+    let rewritten = text
+        .lines()
+        .map(|line| {
+            if line.trim_start().starts_with("command = ") {
+                format!("command = [\"{escaped}\", \"--rpc\"]")
+            } else {
+                line.to_string()
+            }
+        })
+        .collect::<Vec<_>>()
+        .join("\n");
+    fs::write(manifest, format!("{rewritten}\n"))
+        .unwrap_or_else(|_| panic!("write manifest {}", manifest.display()));
+}
+
 fn write_go_dependency_with_proof(project: &Path, proof_name: &str) -> PathBuf {
     let dep = project.join("dep");
     let proof = dep.join("META-INF").join("provekit").join(proof_name);
@@ -299,6 +353,127 @@ fn identity_request() -> RealizeRequest {
 }
 
 #[test]
+fn go_materialize_refuses_unconfigured_realize_manifest() {
+    if !go_available() {
+        eprintln!("go not on PATH: skipping go manifest registration test");
+        return;
+    }
+    let bin = build_go_realize();
+    let workspace = tempfile::tempdir().expect("tempdir");
+    install_go_realize_manifest(workspace.path(), &bin);
+    write_external_go_dependency_with_identity_body(workspace.path());
+    let src_dir = workspace.path().join("src");
+    fs::create_dir_all(&src_dir).expect("mkdir src");
+    write_go_identity_carrier(&src_dir);
+
+    let out_dir = workspace.path().join("materialized");
+    fs::create_dir_all(&out_dir).expect("mkdir out");
+    fs::write(
+        out_dir.join("go.mod"),
+        "module example.com/provekit_go_materialized\n\ngo 1.22\n",
+    )
+    .expect("write output go.mod");
+
+    let output = Command::new(env!("CARGO_BIN_EXE_provekit"))
+        .arg("materialize")
+        .arg("--target")
+        .arg("go")
+        .arg("--library")
+        .arg("go")
+        .arg("--source-dir")
+        .arg(&src_dir)
+        .arg("--project")
+        .arg(workspace.path())
+        .arg("--out-dir")
+        .arg(&out_dir)
+        .arg("--compile-check")
+        .output()
+        .expect("spawn provekit materialize for unconfigured Go");
+
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(
+        !output.status.success(),
+        "Go materialize must require a project [[plugins]] realize registration, not just a loose manifest\nstdout:\n{stdout}\nstderr:\n{stderr}"
+    );
+    assert!(
+        stderr.contains("no realize plugin registration")
+            || stdout.contains("no realize plugin registration"),
+        "failure should explain the missing config registration\nstdout:\n{stdout}\nstderr:\n{stderr}"
+    );
+}
+
+#[test]
+fn go_materialize_uses_checked_in_go_double_realize_registration() {
+    if !go_available() {
+        eprintln!("go not on PATH: skipping checked-in Go materialize registration test");
+        return;
+    }
+    let bin = build_go_realize();
+    let workspace = tempfile::tempdir().expect("tempdir");
+    copy_dir_recursive(
+        &repo_root()
+            .join("examples")
+            .join("go-double")
+            .join(".provekit"),
+        &workspace.path().join(".provekit"),
+    );
+    rewrite_manifest_command(
+        &workspace
+            .path()
+            .join(".provekit")
+            .join("realize")
+            .join("go")
+            .join("manifest.toml"),
+        &bin,
+    );
+    write_external_go_dependency_with_identity_body(workspace.path());
+    let src_dir = workspace.path().join("src");
+    fs::create_dir_all(&src_dir).expect("mkdir src");
+    write_go_identity_carrier(&src_dir);
+
+    let out_dir = workspace.path().join("materialized");
+    fs::create_dir_all(&out_dir).expect("mkdir out");
+    fs::write(
+        out_dir.join("go.mod"),
+        "module example.com/provekit_go_materialized\n\ngo 1.22\n",
+    )
+    .expect("write output go.mod");
+
+    let output = Command::new(env!("CARGO_BIN_EXE_provekit"))
+        .arg("materialize")
+        .arg("--target")
+        .arg("go")
+        .arg("--library")
+        .arg("go")
+        .arg("--source-dir")
+        .arg(&src_dir)
+        .arg("--project")
+        .arg(workspace.path())
+        .arg("--out-dir")
+        .arg(&out_dir)
+        .arg("--compile-check")
+        .output()
+        .expect("spawn provekit materialize for checked-in Go registration");
+
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(
+        output.status.success(),
+        "checked-in go-double realize registration must drive materialize\nstdout:\n{stdout}\nstderr:\n{stderr}"
+    );
+    assert!(
+        stderr.contains("assembled by go kit via RPC"),
+        "checked-in Go materialize route must assemble through the Go kit\nstderr:\n{stderr}"
+    );
+    let emitted = fs::read_to_string(out_dir.join("id.go")).expect("read materialized Go");
+    assert!(
+        emitted.contains("func Id(x int) int") && emitted.contains("return x"),
+        "materialized Go should contain identity body from checked-in registration:\n{emitted}"
+    );
+}
+
+#[test]
 fn go_materialize_uses_body_template_from_go_module_proof() {
     if !go_available() {
         eprintln!("go not on PATH: skipping go proof-backed materialize CLI test");
@@ -306,7 +481,7 @@ fn go_materialize_uses_body_template_from_go_module_proof() {
     }
     let bin = build_go_realize();
     let workspace = tempfile::tempdir().expect("tempdir");
-    install_go_realize_manifest(workspace.path(), &bin);
+    install_go_realize_registration(workspace.path(), &bin);
     let proof_path = write_external_go_dependency_with_proof_backed_body(workspace.path());
     assert!(
         !proof_path.starts_with(workspace.path()),
@@ -367,7 +542,7 @@ fn go_dependency_proofs_are_resolved_by_configured_go_kit() {
     }
     let bin = build_go_realize();
     let workspace = tempfile::tempdir().expect("tempdir");
-    install_go_realize_manifest(workspace.path(), &bin);
+    install_go_realize_registration(workspace.path(), &bin);
     let proof_name = "blake3-512:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa.proof";
     let expected = write_go_dependency_with_proof(workspace.path(), proof_name);
 
@@ -402,7 +577,7 @@ fn go_materialize_cli_rewrites_carrier_and_asks_go_kit_to_compile_check() {
     }
     let bin = build_go_realize();
     let workspace = tempfile::tempdir().expect("tempdir");
-    install_go_realize_manifest(workspace.path(), &bin);
+    install_go_realize_registration(workspace.path(), &bin);
     write_external_go_dependency_with_identity_body(workspace.path());
     let src_dir = workspace.path().join("src");
     fs::create_dir_all(&src_dir).expect("mkdir src");
@@ -470,7 +645,7 @@ fn go_materialize_infers_target_from_registered_go_manifest() {
     }
     let bin = build_go_realize();
     let workspace = tempfile::tempdir().expect("tempdir");
-    install_go_realize_manifest(workspace.path(), &bin);
+    install_go_realize_registration(workspace.path(), &bin);
     write_external_go_dependency_with_identity_body(workspace.path());
     let src_dir = workspace.path().join("src");
     fs::create_dir_all(&src_dir).expect("mkdir src");
@@ -530,7 +705,7 @@ fn go_realize_shim_materializes_compilable_go_for_identity() {
     }
     let bin = build_go_realize();
     let workspace = unique_dir("ws");
-    install_go_realize_manifest(&workspace, &bin);
+    install_go_realize_registration(&workspace, &bin);
     write_external_go_dependency_with_identity_body(&workspace);
 
     let realized = dispatch_realize(&workspace, "go", None, &identity_request())

@@ -12,13 +12,20 @@
 # function is not minted twice.
 [[plugins]]
 name = "go-sugar"
+kind = "lift"
 surface = "go-bind"
 layer = "library-bindings"
 
 [[plugins]]
 name = "go-contracts"
+kind = "lift"
 surface = "go-contracts"
 emit = "ir-document"
+
+[[plugins]]
+name = "go-realize"
+kind = "realize"
+surface = "go"
 
 [solvers]
 default = "z3"
