@@ -417,28 +417,10 @@ fn publish_materialize_contract_fixture(project: &Path, boundary_fn: &str) -> St
 
 fn write_contract_materialize_source(src_dir: &Path, contract_cid: &str) -> PathBuf {
     let source_path = src_dir.join("lib.rs");
-    let payload = serde_json::json!({
-        "artifact_kind": "provekit-concept-citation-comment-sugar",
-        "concept_name": "concept:must-be-positive",
-        "function": "must_be_positive",
-        "params": ["x"],
-        "param_types": ["i64"],
-        "return_type": "i64",
-        "contract": {
-            "concept_site_cid": format!("blake3-512:{}", "1".repeat(128)),
-            "object_fcm_cid": format!("blake3-512:{}", "2".repeat(128)),
-            "local_contract_cid": contract_cid,
-            "origin": "vendor-fixture",
-            "discharge_verdict": "accepted",
-            "witnesses": [],
-        },
-    });
-    let payload = serde_json::to_string(&payload).expect("payload serializes");
     fs::write(
         &source_path,
         format!(
-            "{}pub fn must_be_positive(x: i64) -> i64 {{\n    0\n}}\n",
-            carrier_lines("//", "", &payload)
+            "#[provekit::boundary(\n    concept = \"identity\",\n    library = \"vendor\",\n    contract_cid = \"{contract_cid}\",\n)]\npub fn must_be_positive(x: i64) -> i64 {{\n    0\n}}\n"
         ),
     )
     .expect("write contract materialize source");
@@ -840,32 +822,24 @@ fn materialize_write_emits_contract_bridge_that_verify_refuses_on_violation() {
         publish_materialize_contract_fixture(workspace.path(), "must_be_positive");
     let source_path = write_contract_materialize_source(&src_dir, &vendor_contract_cid);
 
-    let fake_realize = workspace.path().join("fake_realize_contract.py");
-    fs::write(
-        &fake_realize,
-        r#"import json, sys
-for line in sys.stdin:
-    request = json.loads(line)
-    print(json.dumps({
-        "jsonrpc": "2.0",
-        "id": request.get("id"),
-        "result": {
-            "source": "fn must_be_positive(x: i64) -> i64 { x }",
-            "is_stub": False,
-            "extension": "rs",
-            "emitted_artifact_cid": "blake3-512:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
-        }
-    }), flush=True)
-"#,
-    )
-    .expect("write fake realize contract script");
-    install_python_script_manifest_with_metadata(
+    let rust_realize = repo_root()
+        .join("implementations")
+        .join("rust")
+        .join("target")
+        .join("debug")
+        .join("provekit-realize-rust");
+    if !rust_realize.exists() {
+        eprintln!(
+            "skipping materialize contract bridge e2e: provekit-realize-rust binary is unavailable; build with `cargo build -p provekit-realize-rust-core --bin provekit-realize-rust`"
+        );
+        return;
+    }
+    install_binary_manifest(
         workspace.path(),
         "rust-vendor",
-        &fake_realize,
+        &rust_realize,
+        "rust-realize-vendor",
         "vendor",
-        None,
-        &["concept:must-be-positive"],
     );
 
     let (before, before_code) = run_verify_json_with_code(workspace.path());
@@ -901,11 +875,19 @@ for line in sys.stdin:
         output.status.success(),
         "materialize --write should succeed\nstdout:\n{stdout}\nstderr:\n{stderr}"
     );
+    assert!(
+        stderr.contains("source materialized by rust kit via RPC"),
+        "Rust boundary materialization must be kit-owned over RPC\nstdout:\n{stdout}\nstderr:\n{stderr}"
+    );
 
     let rewritten = fs::read_to_string(&source_path).expect("read rewritten source");
     assert!(
         rewritten.contains("pub fn must_be_positive(x: i64) -> i64"),
         "materialize should preserve the boundary signature:\n{rewritten}"
+    );
+    assert!(
+        !rewritten.contains("provekit::boundary"),
+        "Rust kit materialize_source should consume the boundary attribute:\n{rewritten}"
     );
 
     let pool = provekit_verifier::load_all_proofs::run(workspace.path());

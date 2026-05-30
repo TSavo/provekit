@@ -277,6 +277,11 @@ fn install_dependency_proof_stub(project_dir: &Path, proof_cid: &str, proof_byte
         ),
     )
     .expect("write manifest");
+    fs::write(
+        project_dir.join(".provekit").join("config.toml"),
+        "[[plugins]]\nname = \"rust-dependency-proof-stub\"\nkind = \"realize\"\nsurface = \"rust\"\n",
+    )
+    .expect("write config");
     provekit_cli::kit_dispatch::reset_kit_dispatch_registry_cache_for_tests();
 }
 

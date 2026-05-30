@@ -340,10 +340,15 @@ kit-registry:
       ...
 ```
 
-The framework's `provekit kits list` enumerates known kits. `provekit
-kits install rust` fetches and verifies the rust kit. `provekit
-prove` auto-detects file extensions in the repo and loads the
-appropriate kits.
+The framework does not ship a global kit catalog. Project
+and user configuration register kit aliases and plugin surfaces; manifests
+then describe the RPC command for each surface. A future `provekit kits
+list` command must enumerate configured or discovered entries, not a
+compiled-in language list. `provekit kits install rust` would fetch and
+verify the rust kit, then write project/user config and lock metadata.
+`provekit prove` does not parse source extensions to decide language
+semantics; configured kits parse their own languages and speak RPC to the
+language-agnostic CLI.
 
 A repo can pin specific kit versions in `.provekit/kits.lock`:
 

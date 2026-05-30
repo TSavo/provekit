@@ -213,6 +213,6 @@ fn rust_canonical_bodies_cid_self_consistent() {
         .join("menagerie/rust-language-signature/specs/body-templates/rust-canonical-bodies.json");
     assert_self_consistent(
         path,
-        "blake3-512:29c2a7f4d73c583e30d7ee62a483dc702076488e902a56daa5e50dbf12b8131422a9a6e1c02a6009c12b1e4e4cd30789eee728083bd33753e23145fc6f924afe",
+        "blake3-512:04276b79510b3175da55d856aef8d2dcf3f73676b4a03ff5d45bbb86ab2083f8887431090b5285627fd902ed7fc9ce6bb026ac44cbbc6f41669241158325bef2",
     );
 }

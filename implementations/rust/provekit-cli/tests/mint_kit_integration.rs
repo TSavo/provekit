@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 //
-// mint_kit_integration: integration test for `provekit mint --kit=<kit>`.
+// mint_kit_integration: integration test for `provekit mint --kit=<alias>`.
 //
 // Verifies that the unified mint pipeline:
 //   1. Produces a valid signed attestation JSON for all 11 kits.
@@ -11,12 +11,13 @@
 //   5. Two consecutive mints for the same kit produce byte-identical
 //      attestations (determinism).
 //
-// The test runs `provekit mint --kit=<kit> --quiet` as a subprocess against
+// The test runs `provekit mint --kit=<alias> --quiet` as a subprocess against
 // a per-test scratch repo (issue #218). The scratch repo mirrors the
-// canonical repo layout via top-level symlinks, with a writable
-// `.provekit/self-contracts-attestations/` directory inside the scratch.
-// Mint writes attestations into the scratch, so the canonical working
-// tree stays byte-identical across the entire test run.
+// canonical repo layout via top-level symlinks, copies `.provekit/config.toml`
+// so aliases are project-configured, and keeps a writable
+// `.provekit/self-contracts-attestations/` directory inside the scratch. Mint
+// writes attestations into the scratch, so the canonical working tree stays
+// byte-identical across the entire test run.
 //
 // This test requires:
 //   - The `provekit` binary to be built (release or debug).
@@ -111,6 +112,11 @@ impl ScratchRepo {
             .join("self-contracts-attestations");
         std::fs::create_dir_all(&attest_dir)
             .expect("create scratch .provekit/self-contracts-attestations");
+        std::fs::copy(
+            canonical.join(".provekit").join("config.toml"),
+            scratch_root.join(".provekit").join("config.toml"),
+        )
+        .expect("copy scratch .provekit/config.toml");
 
         // Mirror every kit project dir as a real directory whose entries are
         // symlinks to the canonical kit's entries.
@@ -126,6 +132,7 @@ impl ScratchRepo {
             "ruby",
             "zig",
             "c",
+            "php",
         ];
         let scratch_impls = scratch_root.join("implementations");
         std::fs::create_dir_all(&scratch_impls).expect("create scratch implementations dir");
@@ -184,7 +191,7 @@ fn symlink_contents(src: &Path, dst: &Path) {
     }
 }
 
-/// Run `provekit mint --kit=<kit> --quiet` from `root`.
+/// Run `provekit mint --kit=<alias> --quiet` from `root`.
 /// Returns (exit_status, stdout, stderr).
 fn run_mint(root: &Path, kit: &str) -> (bool, String, String) {
     let bin = provekit_bin();
@@ -200,6 +207,28 @@ fn run_mint(root: &Path, kit: &str) -> (bool, String, String) {
         String::from_utf8_lossy(&out.stdout).to_string(),
         String::from_utf8_lossy(&out.stderr).to_string(),
     )
+}
+
+#[test]
+#[serial(mint_kit_files)]
+fn kit_alias_has_no_builtin_fallback_without_config() {
+    let root = tempfile::Builder::new()
+        .prefix("provekit-no-kit-aliases-")
+        .tempdir()
+        .expect("create tempdir");
+    std::fs::create_dir_all(root.path().join(".provekit/self-contracts-attestations"))
+        .expect("create attestation dir without config");
+
+    let (ok, _stdout, stderr) = run_mint(root.path(), "rust");
+
+    assert!(
+        !ok,
+        "`--kit=rust` unexpectedly succeeded without configured [[kits]]; stderr:\n{stderr}"
+    );
+    assert!(
+        stderr.contains("no kit aliases configured"),
+        "`--kit=rust` must not use a Rust-side built-in fallback when config has no [[kits]]; stderr:\n{stderr}"
+    );
 }
 
 fn write_clr_smoke_project(root: &Path) -> PathBuf {
@@ -342,7 +371,7 @@ fn assert_attestation_structure(v: &serde_json::Value, lang: &str) {
 }
 
 // ---------------------------------------------------------------------------
-// Test 1: All 11 kits produce a structurally valid attestation
+// Test 1: Configured first-party kit aliases produce structurally valid attestations
 // ---------------------------------------------------------------------------
 
 /// Kits with a real lifter binary installed. These kits run lift-protocol RPCs.
@@ -373,6 +402,7 @@ const KITS_WITH_LIFTERS: &[&str] = &[
     "c",
     "ruby",
     "zig",
+    "php",
 ];
 
 /// Kits without a lifter binary yet: produce the empty-set CID because the
@@ -641,6 +671,16 @@ fn kit_shortcut_and_project_flag_are_equivalent() {
         .expect("spawn provekit --project");
 
     if !kit_out.status.success() || !proj_out.status.success() {
+        let kit_stderr = String::from_utf8_lossy(&kit_out.stderr);
+        let proj_stderr = String::from_utf8_lossy(&proj_out.stderr);
+        assert!(
+            !kit_stderr.contains("unknown kit"),
+            "--kit=rust must resolve from scratch .provekit/config.toml; stderr: {kit_stderr}"
+        );
+        assert!(
+            !proj_stderr.contains("unknown kit"),
+            "--project must not enter kit-alias resolution; stderr: {proj_stderr}"
+        );
         eprintln!("rust lifter not available: skipping equivalence test");
         return;
     }
@@ -670,8 +710,8 @@ fn kit_shortcut_and_project_flag_are_equivalent() {
 /// test-fixture lifter) and that the resulting contractSetCid matches the
 /// known-good CID computed from the 11 canonical contracts in the go slab.
 ///
-/// If this test fails with the old empty-set CID (`d53d18c2...`), the KIT_TABLE
-/// routing regression has been reintroduced. If it fails with an unknown CID,
+/// If this test fails with the old empty-set CID (`d53d18c2...`), the configured
+/// kit-alias routing regression has been reintroduced. If it fails with an unknown CID,
 /// the go slab contracts have changed -- update GO_CONTRACT_SET_CID accordingly.
 #[test]
 #[serial(mint_kit_files)]
@@ -823,8 +863,8 @@ fn lift_plugin_protocol_contract_set_cid_is_pinned_separately_from_rust_surface(
 /// `typescript-self-contracts` surface (mint-ts-self-contracts-rpc.cjs,
 /// canonical 14-slab, 69-contract set). Verified by `make mint-ts`.
 ///
-/// If this test fails with the old empty-set CID (`d53d18c2...`), the KIT_TABLE
-/// routing regression has been reintroduced. If it fails with an unknown CID,
+/// If this test fails with the old empty-set CID (`d53d18c2...`), the configured
+/// kit-alias routing regression has been reintroduced. If it fails with an unknown CID,
 /// the TypeScript slab contracts have changed -- update TS_CONTRACT_SET_CID.
 ///
 /// The surface is reached via:
@@ -875,8 +915,8 @@ fn ts_kit_pins_expected_contract_set_cid() {
 /// generic cpp lifter) and that the resulting contractSetCid matches the
 /// known-good CID from the canonical cpp slab.
 ///
-/// If this test fails with the empty-set CID (`d53d18c2...`), the KIT_TABLE
-/// routing regression has been reintroduced. If it fails with an unknown CID,
+/// If this test fails with the empty-set CID (`d53d18c2...`), the configured
+/// kit-alias routing regression has been reintroduced. If it fails with an unknown CID,
 /// the cpp slab contracts have changed -- update CPP_KIT_CANONICAL_CONTRACT_SET_CID.
 #[test]
 #[serial(mint_kit_files)]
@@ -937,7 +977,7 @@ fn cpp_kit_contract_set_cid_is_pinned_to_self_contracts_canonical() {
 /// pinning pattern.
 ///
 /// If this test fails with the old empty-set CID (`d53d18c2...`), the
-/// KIT_TABLE routing regression has been reintroduced. If it fails with
+/// configured kit-alias routing regression has been reintroduced. If it fails with
 /// an unknown CID, the java slab contracts have changed -- update
 /// JAVA_CONTRACT_SET_CID accordingly.
 ///
@@ -1001,8 +1041,8 @@ fn java_kit_pins_expected_contract_set_cid() {
 /// rust/go/cpp/ts kits, this CID is byte-equivalent to what those kits would
 /// produce for the same 11-contract set.
 ///
-/// If this test fails with the old empty-set CID (`d53d18c2...`), the KIT_TABLE
-/// routing regression has been reintroduced. If it fails with an unknown CID,
+/// If this test fails with the old empty-set CID (`d53d18c2...`), the configured
+/// kit-alias routing regression has been reintroduced. If it fails with an unknown CID,
 /// the swift slab contracts have changed -- update SWIFT_CONTRACT_SET_CID.
 ///
 /// macOS-only: the swift release binary requires the swift toolchain.
@@ -1060,7 +1100,7 @@ fn swift_kit_pins_expected_contract_set_cid() {
 /// canonical 5-slab, 15-contract set).
 ///
 /// If this test fails with the old empty-set CID (`d53d18c2...`), the
-/// KIT_TABLE routing regression has been reintroduced. If it fails with an
+/// configured kit-alias routing regression has been reintroduced. If it fails with an
 /// unknown CID, the python slab contracts have changed -- update
 /// PYTHON_CONTRACT_SET_CID accordingly.
 ///
@@ -1125,7 +1165,7 @@ fn python_kit_pins_expected_contract_set_cid() {
 /// pinning pattern.
 ///
 /// If this test fails with the old empty-set CID (`d53d18c2...`), the
-/// KIT_TABLE routing regression has been reintroduced. If it fails with
+/// configured kit-alias routing regression has been reintroduced. If it fails with
 /// an unknown CID, the c slab contracts have changed -- update
 /// C_CONTRACT_SET_CID accordingly.
 ///
@@ -1186,8 +1226,8 @@ fn c_kit_pins_expected_contract_set_cid() {
 /// `ruby-self-contracts` surface (mint-ruby-self-contracts RPC, canonical
 /// 5-slab, 15-contract set). Mirrors the rust/go/cpp/ts pinning pattern.
 ///
-/// If this test fails with the empty-set CID (`d53d18c2...`), the KIT_TABLE
-/// routing regression has been reintroduced. If it fails with an unknown CID,
+/// If this test fails with the empty-set CID (`d53d18c2...`), the configured
+/// kit-alias routing regression has been reintroduced. If it fails with an unknown CID,
 /// the ruby slab contracts have changed -- update RUBY_KIT_CONTRACT_SET_CID.
 const RUBY_KIT_CONTRACT_SET_CID: &str =
     "blake3-512:961be80d8a5ae8f3d8255462fc1845d5b45f30c0b4412c9d8b354078d63096ba363b6ae0dea4f2e35141213dc5c6b855156f434b5620a345bfbc20725bee00ff";
@@ -1242,8 +1282,8 @@ fn ruby_kit_pins_expected_contract_set_cid() {
 /// 14-contract slab across 6 source files: jcs, hash, sign, cbor,
 /// proof-envelope, lift-plugin-protocol).
 ///
-/// If this test fails with the empty-set CID (`d53d18c2...`), the KIT_TABLE
-/// routing regression has been reintroduced. If it fails with an unknown CID,
+/// If this test fails with the empty-set CID (`d53d18c2...`), the configured
+/// kit-alias routing regression has been reintroduced. If it fails with an unknown CID,
 /// the zig slab contracts have changed -- update ZIG_KIT_CANONICAL_CONTRACT_SET_CID.
 const ZIG_KIT_CANONICAL_CONTRACT_SET_CID: &str =
     "blake3-512:405ff171d26342acab133240baeac8774de95f66d03d4748ca9254233e1e143be6a8d2322319da73942650589bf54b2f3ac8875e6e3a34f5cd3699cad20e93e3";
@@ -1302,7 +1342,7 @@ fn zig_kit_contract_set_cid_is_pinned_to_self_contracts_canonical() {
 ///
 /// UPDATE this constant after first successful `make mint-php` run.
 const PHP_KIT_CANONICAL_CONTRACT_SET_CID: &str =
-    "blake3-512:385e617be25516099e61118179fbb200967093448b85629f1cb5b8966dfcc06244cfcb9f59315780114fee7c9c415fcd1465fc8e85e8141d59f6b44a2df4a262";
+    "blake3-512:b15a63b9a56ec19be67bf71ee58969e82a24a5507484e51a137362d0f2e00fe4f406980948a7c3018e463e75b9341815275a29a51273adb512ee4f291351ddf5";
 
 #[test]
 #[serial(mint_kit_files)]

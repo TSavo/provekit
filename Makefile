@@ -309,7 +309,9 @@ build-swift:
 
 # --- Mint targets ------------------------------------------------------------
 
-# Each mint target builds its peer + dispatches via `provekit mint --kit=<kit>`.
+# Each mint target builds its peer + dispatches via a `--kit=<alias>` entry
+# declared in `.provekit/config.toml`. The CLI does not carry a built-in kit
+# list; aliases resolve to project roots and lift manifests from config.
 # The CLI drives the kit's lift-protocol RPC, collects contracts, signs the
 # attestation, and writes it to $(SELF_CONTRACTS_ATTEST_DIR)/<lang>.json.
 # All 11 kits use the same uniform pipeline; no language-native mint binaries.
@@ -492,7 +494,8 @@ all-mint: mint-rust mint-go mint-cpp mint-ts mint-csharp mint-java mint-python m
 #
 # Each `prove-<kit>` target:
 #   1. Builds the kit's lifter binary.
-#   2. Runs `provekit prove --kit=<kit>`, which:
+#   2. Runs `provekit prove --kit=<alias>`, which resolves the alias from
+#      `.provekit/config.toml` and:
 #      - Spawns the kit's lifter via JSON-RPC.
 #      - Drives the initialize -> lift -> shutdown sequence.
 #      - Runs C1-C8 verifiers against the captured RPC messages.

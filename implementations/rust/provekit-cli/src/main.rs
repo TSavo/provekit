@@ -84,8 +84,8 @@ pub struct OutputFlags {
 ///   --sugar <source>             alias for --plugin sugar:<source>
 ///   --loss-fn <source>           alias for --plugin loss-function:<source>
 ///   --lifter <source>            alias for --plugin lift:<source>  (wire kind = "lift")
-///   --no-default-plugins         suppress ALL built-in plugin registration
-///   --no-default-plugin <kind>   suppress built-ins for one kind
+///   --no-default-plugins         legacy no-op; no implicit plugins exist
+///   --no-default-plugin <kind>   legacy no-op; no implicit plugins exist
 ///   --strict-plugins             promote every plugin load failure to a refuse
 ///   --plugin-registry-out <path> write PluginRegistryMemento to <path> after sealing
 pub use cmd_plugin::PluginFlags;
@@ -172,7 +172,7 @@ pub struct ProveArgs {
     /// verifier is bypassed; instead the kit's lifter is spawned via JSON-RPC and
     /// each verifier in `provekit-self-contracts::lift_plugin_protocol` is run
     /// against the captured RPC messages.
-    /// Known kits: rust, go, cpp, ts, csharp, clr-bytecode, evm-bytecode, swift, java, python, ruby, zig, c, php.
+    /// Kit aliases are project/user config entries, not built-in CLI names.
     #[arg(long, conflicts_with = "project")]
     pub kit: Option<String>,
     #[command(flatten)]

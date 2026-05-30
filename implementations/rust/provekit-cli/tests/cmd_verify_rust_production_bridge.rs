@@ -275,6 +275,91 @@ fn rust_mint_auto_writes_body_discharge_bridge_from_real_lifters() {
 }
 
 #[test]
+fn rust_mint_does_not_auto_bridge_body_discharge_ineligible_contract() {
+    let bins = build_rust_lifter_bins();
+    let project = unique_dir("ineligible-field-body");
+
+    fs::write(
+        project.join("Cargo.toml"),
+        r#"[package]
+name = "rust-ineligible-field-body"
+version = "0.1.0"
+edition = "2021"
+"#,
+    )
+    .expect("write Cargo.toml");
+    fs::create_dir_all(project.join("src")).expect("mkdir src");
+    fs::write(
+        project.join("src").join("lib.rs"),
+        r#"pub struct ExitReport {
+    pub code: i64,
+}
+
+pub fn report_exit_code(report: ExitReport) -> i64 {
+    report.code
+}
+"#,
+    )
+    .expect("write src/lib.rs");
+
+    let provekit = project.join(".provekit");
+    fs::create_dir_all(provekit.join("lift").join("rust-walk-contracts"))
+        .expect("mkdir rust-walk-contracts");
+    fs::write(
+        provekit.join("config.toml"),
+        r#"[[plugins]]
+name = "rust-walk-contracts"
+surface = "rust-walk-contracts"
+emit = "ir-document"
+"#,
+    )
+    .expect("write config.toml");
+    fs::write(
+        provekit
+            .join("lift")
+            .join("rust-walk-contracts")
+            .join("manifest.toml"),
+        format!(
+            "name = \"rust-walk-contracts\"\ncommand = [\"{}\", \"--rpc\"]\nworking_dir = \".\"\n",
+            bins.walk_rpc.display()
+        ),
+    )
+    .expect("write rust-walk manifest");
+
+    run_mint(&project);
+
+    let pool = provekit_verifier::load_all_proofs::run(&project);
+    assert!(
+        pool.load_errors.is_empty(),
+        "tool-minted bundle must load cleanly: {:?}",
+        pool.load_errors
+    );
+    assert!(
+        !pool.bridges_by_symbol.contains_key("report_exit_code"),
+        "unsupported Rust field-projection body must not be auto-bridged as body-discharge eligible; indexed bridges: {:?}",
+        pool.bridges_by_symbol.keys().collect::<Vec<_>>()
+    );
+    let contract_cid = pool.name_to_cid.get("report_exit_code").unwrap_or_else(|| {
+        panic!(
+            "function contract should still be minted: {:?}",
+            pool.name_to_cid
+        )
+    });
+    let contract = pool
+        .mementos
+        .get(contract_cid)
+        .expect("contract cid resolves");
+    let post = provekit_verifier::types::memento_body_field(contract, "post")
+        .expect("function contract still carries its body-derived post");
+    assert!(
+        json_contains_str(post, "field"),
+        "ineligible contract should preserve the lifted Rust field term as proof data: {contract}"
+    );
+
+    let _ = fs::remove_dir_all(&project);
+}
+
+#[test]
 fn rust_production_path_double_discharges_and_mints_witness() {
     if !z3_available() {
         eprintln!("z3 not on PATH: skipping rust production-bridge positive test");

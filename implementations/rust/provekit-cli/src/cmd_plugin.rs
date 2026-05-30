@@ -10,8 +10,8 @@
 //   --loss-function <source>     ≡ --plugin loss-function:<source>  (§3.1 spec-canonical alias)
 //   --loss-fn <source>           alias for --loss-function (ergonomic short form)
 //   --lifter <source>            ≡ --plugin lift:<source>   (wire kind = "lift")
-//   --no-default-plugins         suppress ALL built-in registration.
-//   --no-default-plugin <kind>   suppress built-ins for one kind.
+//   --no-default-plugins         legacy no-op; no implicit plugins exist.
+//   --no-default-plugin <kind>   legacy no-op; no implicit plugins exist.
 //   --strict-plugins             promote every plugin load failure to refuse.
 //   --plugin-registry-out <path> write PluginRegistryMemento JSON to <path>.
 //
@@ -19,7 +19,8 @@
 // "https://", or "tcp://" are RPC; everything else is a file path.
 //
 // Flag order is the tie-break order preserved in PluginRegistryMemento.load_order
-// (§9.1).  Built-ins are appended AFTER user flags (§7).
+// (§9.1).  The CLI does not append implicit plugins; configured manifests and
+// explicit RPC/file sources are the registry inputs.
 //
 // B4: CLI flag ORDER is recovered via clap ArgMatches::indices_of so that
 // interleaved --plugin / --sugar / --loss-function / --lifter flags appear in
@@ -66,10 +67,10 @@ pub struct PluginFlags {
     /// Note: the wire `kind` value is `"lift"`, not `"lifter"` (§2.1).
     pub lifter: Vec<String>,
 
-    /// Suppress ALL built-in plugin registration (§7).
+    /// Legacy compatibility no-op: no implicit plugin registration exists.
     pub no_default_plugins: bool,
 
-    /// Suppress built-ins for one kind only (§7).  Repeat for multiple kinds.
+    /// Legacy compatibility no-op: no implicit plugin registration exists.
     pub no_default_plugin: Vec<String>,
 
     /// Promote EVERY plugin load failure to a refuse (overrides individual
@@ -130,12 +131,12 @@ impl clap::Args for PluginFlags {
             .arg(Arg::new("no_default_plugins")
                 .long("no-default-plugins")
                 .action(ArgAction::SetTrue)
-                .help("Suppress ALL built-in plugin registration (§7)"))
+                .help("Legacy compatibility no-op: plugins are manifest/config driven"))
             .arg(Arg::new("no_default_plugin")
                 .long("no-default-plugin")
                 .value_name("KIND")
                 .action(ArgAction::Append)
-                .help("Suppress built-ins for one kind only (§7)"))
+                .help("Legacy compatibility no-op: plugins are manifest/config driven"))
             .arg(Arg::new("strict_plugins")
                 .long("strict-plugins")
                 .action(ArgAction::SetTrue)
@@ -266,7 +267,8 @@ impl clap::FromArgMatches for PluginFlags {
 
 impl PluginFlags {
     /// Return the plugins in their true argv insertion order (§3.2 + §9.1).
-    /// Built-ins are NOT included here; `build_registry` appends them after.
+    /// Implicit plugins are not a registry input; callers must provide explicit
+    /// plugin sources or rely on manifest-scanned project config.
     fn ordered_plugins(&self) -> &[(String, String, String)] {
         &self.ordered
     }
@@ -279,10 +281,9 @@ impl PluginFlags {
     ///
     /// `sealed_at` should be an ISO-8601 UTC timestamp.
     ///
-    /// N2: `--no-default-plugins` and `--no-default-plugin <kind>` are
-    /// consulted before any default plugin registration. In v0, the substrate
-    /// ships zero default plugins, so these flags are parsed without error but
-    /// are no-ops until default plugins exist.
+    /// N2: `--no-default-plugins` and `--no-default-plugin <kind>` are legacy
+    /// compatibility flags. They are parsed without error, but there are no
+    /// implicit plugins for them to suppress.
     pub fn build_registry(
         &self,
         sealed_at: &str,
@@ -353,15 +354,12 @@ impl PluginFlags {
             }
         }
 
-        // N2: default plugin registration goes here in future versions.
-        // --no-default-plugins: skip ALL defaults.
-        // --no-default-plugin <kind>: skip defaults for a specific kind.
-        // v0 ships zero default plugins; the flags are parsed but are no-ops.
+        // N2: legacy compatibility flags. There are no implicit/default
+        // plugins in the CLI registry; config/manifest/RPC is the entrypoint.
         if !self.no_default_plugins {
             for _suppressed_kind in &self.no_default_plugin {
-                // No-op in v0: no defaults to suppress.
+                // No-op: no implicit plugins to suppress.
             }
-            // Register any default plugins here once the substrate ships them.
         }
 
         let memento = registry.emit_registry_memento(sealed_at);

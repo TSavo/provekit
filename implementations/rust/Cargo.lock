@@ -1470,6 +1470,7 @@ version = "0.1.0"
 dependencies = [
  "clap",
  "provekit-canonicalizer",
+ "provekit-verifier",
  "serde",
  "serde_json",
  "serde_yaml",
@@ -1824,17 +1825,12 @@ name = "provekit-lsp"
 version = "0.1.0"
 dependencies = [
  "libc",
- "proc-macro2",
- "provekit-lsp-rust",
- "quote",
  "serde",
  "serde_json",
- "syn",
  "tempfile",
  "tokio",
  "toml 0.8.23",
  "tower-lsp",
- "walkdir",
 ]
 
 [[package]]
@@ -1914,6 +1910,7 @@ name = "provekit-realize-rust-core"
 version = "0.1.0"
 dependencies = [
  "base64",
+ "proc-macro2",
  "provekit-canonicalizer",
  "provekit-ir-types",
  "provekit-proof-envelope",
@@ -1924,8 +1921,10 @@ dependencies = [
  "provekit-shim-rusqlite",
  "provekit-shim-serde-json-rust",
  "provekit-shim-stdio-rust",
+ "quote",
  "serde",
  "serde_json",
+ "syn",
 ]
 
 [[package]]

@@ -189,12 +189,7 @@ fn recognize(params: &Value) -> Result<Value, String> {
             Err(_) => continue, // unparseable files cannot host AST recognition
         };
 
-        recognize_walk_items(
-            &file.items,
-            rel_path,
-            &bindings_by_cid,
-            &mut tags,
-        );
+        recognize_walk_items(&file.items, rel_path, &bindings_by_cid, &mut tags);
     }
 
     Ok(json!({ "tags": tags }))
@@ -210,9 +205,7 @@ fn recognize_walk_items(
     for item in items {
         match item {
             syn::Item::Fn(item_fn) => {
-                if let Some(tag) =
-                    recognize_match_item_fn(item_fn, rel_path, bindings_by_cid)
-                {
+                if let Some(tag) = recognize_match_item_fn(item_fn, rel_path, bindings_by_cid) {
                     tags.push(tag);
                 }
             }
@@ -393,11 +386,7 @@ fn collect_callsites_in_block(block: &syn::Block, rel_path: &str, out: &mut Vec<
 /// macro-expansion results, dynamic dispatch through trait objects).
 fn call_expr_callee_name(expr: &syn::Expr) -> Option<String> {
     match expr {
-        syn::Expr::Path(p) => p
-            .path
-            .segments
-            .last()
-            .map(|seg| seg.ident.to_string()),
+        syn::Expr::Path(p) => p.path.segments.last().map(|seg| seg.ident.to_string()),
         syn::Expr::Paren(p) => call_expr_callee_name(&p.expr),
         _ => None,
     }
@@ -463,10 +452,20 @@ fn lift_implications(params: &Value) -> Result<Value, String> {
     // per symbol; pinning the dischargeable target here is what turns a
     // vacuous pass into a real solver obligation.
     let mut contracts_by_callee: HashMap<String, &Value> = HashMap::new();
+    let mut ineligible_by_callee: HashMap<String, &Value> = HashMap::new();
     for binding in contract_bindings {
         if let Some(name) = binding.get("name").and_then(|v| v.as_str()) {
             let callee = name.split('@').next().unwrap_or(name).trim().to_string();
             if callee.is_empty() {
+                continue;
+            }
+            let body_discharge_eligible = binding
+                .get("bodyDischargeEligible")
+                .or_else(|| binding.get("body_discharge_eligible"))
+                .and_then(|v| v.as_bool())
+                .unwrap_or(true);
+            if !body_discharge_eligible {
+                ineligible_by_callee.insert(callee, binding);
                 continue;
             }
             let is_body_bearing = binding
@@ -509,6 +508,22 @@ fn lift_implications(params: &Value) -> Result<Value, String> {
 
         for cs in callsites {
             let Some(binding) = contracts_by_callee.get(cs.callee.as_str()) else {
+                if let Some(ineligible) = ineligible_by_callee.get(cs.callee.as_str()) {
+                    diagnostics.push(json!({
+                        "kind": "lift-gap",
+                        "reason": "body-discharge-ineligible",
+                        "detail": ineligible
+                            .get("bodyDischargeRefusalReason")
+                            .or_else(|| ineligible.get("body_discharge_refusal_reason"))
+                            .and_then(|v| v.as_str())
+                            .unwrap_or("callee contract is not body-discharge eligible"),
+                        "callee": cs.callee,
+                        "file": cs.file,
+                        "line": cs.line,
+                        "col": cs.col,
+                    }));
+                    continue;
+                }
                 diagnostics.push(json!({
                     "kind": "lift-gap",
                     "reason": "no-contract-for-callee",
@@ -1369,11 +1384,23 @@ fn function_contract_lift(params: &Value) -> Result<Value, String> {
         for target in collect_function_contract_targets(&file) {
             let contract =
                 build_function_contract_with_file(&target.item_fn, None, Some(rel.as_str()));
+            let (body_discharge_eligible, refusal_reason) =
+                body_discharge_eligibility(&contract.post, &contract.formals);
             let mut entry: Value =
                 serde_json::from_slice(&contract.canonical_bytes).map_err(|e| e.to_string())?;
             entry["name"] = json!(target.fn_name.clone());
             entry["fn_name"] = json!(target.fn_name.clone());
             entry["bridgeSourceSymbol"] = json!(target.source_name.clone());
+            entry["bodyDischargeEligible"] = json!(body_discharge_eligible);
+            if let Some(reason) = refusal_reason {
+                entry["bodyDischargeRefusalReason"] = json!(reason.clone());
+                diagnostics.push(json!({
+                    "kind": "body-discharge-gap",
+                    "reason": reason,
+                    "function": target.fn_name,
+                    "file": rel,
+                }));
+            }
             entries.push(entry);
         }
     }
@@ -1384,6 +1411,46 @@ fn function_contract_lift(params: &Value) -> Result<Value, String> {
         "diagnostics": diagnostics,
         "refusals": [],
     }))
+}
+
+fn body_discharge_eligibility(post: &IrFormula, formals: &[String]) -> (bool, Option<String>) {
+    let Some(value_expr) = libprovekit::wp::find_result_equation(post, "result") else {
+        return (false, Some("missing-result-equation".to_string()));
+    };
+    let allowed_vars: BTreeSet<&str> = formals.iter().map(String::as_str).collect();
+    match body_discharge_term_refusal(&value_expr, &allowed_vars) {
+        Some(reason) => (false, Some(reason)),
+        None => (true, None),
+    }
+}
+
+fn body_discharge_term_refusal(term: &IrTerm, allowed_vars: &BTreeSet<&str>) -> Option<String> {
+    match term {
+        IrTerm::Const { .. } => None,
+        IrTerm::Var { name } => {
+            if allowed_vars.contains(name.as_str()) {
+                None
+            } else {
+                Some(format!("unsupported-free-var:{name}"))
+            }
+        }
+        IrTerm::Ctor { name, args } => {
+            if !body_discharge_supported_ctor(name) {
+                return Some(format!("unsupported-term:{name}"));
+            }
+            args.iter()
+                .find_map(|arg| body_discharge_term_refusal(arg, allowed_vars))
+        }
+        IrTerm::Lambda { .. } => Some("unsupported-term:lambda".to_string()),
+        IrTerm::Let { .. } => Some("unsupported-term:let".to_string()),
+    }
+}
+
+fn body_discharge_supported_ctor(name: &str) -> bool {
+    matches!(
+        name,
+        "+" | "-" | "*" | "neg" | "ite" | "=" | "≠" | "<" | "≤" | ">" | "≥" | "and" | "or" | "not"
+    )
 }
 
 fn lift_scan_roots(root: &Path, source_paths: &[String]) -> Vec<PathBuf> {
@@ -1403,11 +1470,7 @@ fn lift_scan_roots(root: &Path, source_paths: &[String]) -> Vec<PathBuf> {
         .collect()
 }
 
-fn diagnostic(
-    kind: &str,
-    path: String,
-    detail: String,
-) -> Value {
+fn diagnostic(kind: &str, path: String, detail: String) -> Value {
     json!({
         "kind": kind,
         "path": path,
@@ -2901,15 +2964,13 @@ fn expr_to_template(expr: &syn::Expr, params: &[String]) -> Value {
     match expr {
         Expr::Call(c) => {
             let func = expr_to_template(&c.func, params);
-            let args: Vec<Value> =
-                c.args.iter().map(|a| expr_to_template(a, params)).collect();
+            let args: Vec<Value> = c.args.iter().map(|a| expr_to_template(a, params)).collect();
             json!({ "kind": "call", "func": func, "args": args })
         }
         Expr::MethodCall(m) => {
             let receiver = expr_to_template(&m.receiver, params);
             let method = m.method.to_string();
-            let args: Vec<Value> =
-                m.args.iter().map(|a| expr_to_template(a, params)).collect();
+            let args: Vec<Value> = m.args.iter().map(|a| expr_to_template(a, params)).collect();
             json!({
                 "kind": "method_call",
                 "receiver": receiver,
@@ -2918,8 +2979,12 @@ fn expr_to_template(expr: &syn::Expr, params: &[String]) -> Value {
             })
         }
         Expr::Path(p) => {
-            let segs: Vec<String> =
-                p.path.segments.iter().map(|s| s.ident.to_string()).collect();
+            let segs: Vec<String> = p
+                .path
+                .segments
+                .iter()
+                .map(|s| s.ident.to_string())
+                .collect();
             if segs.len() == 1 {
                 if let Some(idx) = params.iter().position(|n| n == &segs[0]) {
                     return json!({ "kind": "param_ref", "index": idx + 1 });
@@ -2940,13 +3005,19 @@ fn expr_to_template(expr: &syn::Expr, params: &[String]) -> Value {
         Expr::Block(b) => block_to_ast_template(&b.block, params),
         Expr::Paren(p) => expr_to_template(&p.expr, params),
         Expr::Tuple(t) => {
-            let elems: Vec<Value> =
-                t.elems.iter().map(|e| expr_to_template(e, params)).collect();
+            let elems: Vec<Value> = t
+                .elems
+                .iter()
+                .map(|e| expr_to_template(e, params))
+                .collect();
             json!({ "kind": "tuple", "elems": elems })
         }
         Expr::Array(a) => {
-            let elems: Vec<Value> =
-                a.elems.iter().map(|e| expr_to_template(e, params)).collect();
+            let elems: Vec<Value> = a
+                .elems
+                .iter()
+                .map(|e| expr_to_template(e, params))
+                .collect();
             json!({ "kind": "array", "elems": elems })
         }
         Expr::Closure(_) => json!({ "kind": "closure" }),
@@ -3003,8 +3074,7 @@ fn pat_to_template(pat: &syn::Pat, params: &[String]) -> Value {
         }
         Pat::Wild(_) => json!({ "kind": "wildcard" }),
         Pat::Tuple(t) => {
-            let elems: Vec<Value> =
-                t.elems.iter().map(|p| pat_to_template(p, params)).collect();
+            let elems: Vec<Value> = t.elems.iter().map(|p| pat_to_template(p, params)).collect();
             json!({ "kind": "pat_tuple", "elems": elems })
         }
         _ => json!({ "kind": "pat_other" }),
@@ -5165,10 +5235,7 @@ pub fn json_parse(s: &str) -> i64 {
         let call = &stmt["expr"];
         assert_eq!(call["kind"], "call");
         assert_eq!(call["func"]["kind"], "path");
-        assert_eq!(
-            call["func"]["segments"],
-            json!(["serde_json", "from_str"])
-        );
+        assert_eq!(call["func"]["segments"], json!(["serde_json", "from_str"]));
         // Param `s` canonicalized to $1.
         let args = call["args"].as_array().expect("args array");
         assert_eq!(args.len(), 1);
@@ -5227,8 +5294,7 @@ pub fn op(alpha: &i64, beta: &i64) -> i64 {
             "alpha-equivalent sugars must produce byte-identical templates\nA: {tpl_a}\nB: {tpl_b}"
         );
         assert_eq!(
-            entry_a["body_source"]["template_cid"],
-            entry_b["body_source"]["template_cid"],
+            entry_a["body_source"]["template_cid"], entry_b["body_source"]["template_cid"],
             "template_cid must match across alpha-equivalent sugars"
         );
         // But body_text and source_cid DIFFER (they include the original
@@ -5344,7 +5410,10 @@ pub fn json_parse(s: &str) -> i64 {
         .expect("recognize should succeed");
 
         let tags = resp["tags"].as_array().expect("tags array");
-        assert!(tags.is_empty(), "non-matching source must produce no tags: {tags:?}");
+        assert!(
+            tags.is_empty(),
+            "non-matching source must produce no tags: {tags:?}"
+        );
 
         let _ = fs::remove_dir_all(root);
     }
@@ -7496,7 +7565,11 @@ pub fn caller() -> i64 {
         let ir = resp["ir"].as_array().expect("ir array");
         assert!(ir.is_empty(), "no bridges should be emitted: {ir:?}");
         let diags = resp["diagnostics"].as_array().expect("diagnostics array");
-        assert_eq!(diags.len(), 1, "one lift-gap for the unmatched call: {diags:?}");
+        assert_eq!(
+            diags.len(),
+            1,
+            "one lift-gap for the unmatched call: {diags:?}"
+        );
         assert_eq!(diags[0]["kind"], "lift-gap");
         assert_eq!(diags[0]["reason"], "no-contract-for-callee");
         assert_eq!(diags[0]["callee"], "completely_unknown_function");
@@ -7546,6 +7619,76 @@ pub fn caller(s: &str) -> serde_json::Value {
         assert!(
             symbols.contains(&"unwrap"),
             "expected unwrap (method call) in: {symbols:?}"
+        );
+
+        let _ = fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn function_contract_lift_marks_only_body_discharge_supported_contracts_eligible() {
+        let src = r##"
+pub struct ExitReport {
+    pub code: i64,
+}
+
+pub fn double(x: i64) -> i64 {
+    x * 2
+}
+
+pub fn report_exit_code(report: ExitReport) -> i64 {
+    report.code
+}
+
+pub fn wrap_ok(x: i64) -> Result<i64, ()> {
+    Ok(x)
+}
+"##;
+        let root = temp_workspace("function_contract_body_discharge_eligibility");
+        let src_dir = root.join("src");
+        fs::create_dir_all(&src_dir).expect("create src dir");
+        fs::write(src_dir.join("lib.rs"), src).expect("write source");
+
+        let resp = function_contract_lift(&json!({
+            "workspace_root": root.to_string_lossy(),
+            "source_paths": ["."],
+        }))
+        .expect("function contract lift");
+
+        let ir = resp["ir"].as_array().expect("ir array");
+        let by_name = |name: &str| -> &Value {
+            ir.iter()
+                .find(|entry| entry["name"] == name)
+                .unwrap_or_else(|| panic!("missing lifted function contract `{name}`: {ir:?}"))
+        };
+
+        assert_eq!(
+            by_name("double")["bodyDischargeEligible"],
+            true,
+            "plain arithmetic body should be eligible for current body discharge"
+        );
+        assert_eq!(
+            by_name("report_exit_code")["bodyDischargeEligible"],
+            false,
+            "field projection is Rust-kit-owned sugar that is not yet solver-backed"
+        );
+        assert_eq!(
+            by_name("wrap_ok")["bodyDischargeEligible"],
+            false,
+            "Result::Ok construction needs Rust stdlib algebra before it is body-discharge eligible"
+        );
+        let diagnostics = resp["diagnostics"].as_array().expect("diagnostics array");
+        assert!(
+            diagnostics
+                .iter()
+                .any(|diag| diag["kind"] == "body-discharge-gap"
+                    && diag["function"] == "report_exit_code"),
+            "ineligible contracts must surface a precise kit diagnostic: {diagnostics:?}"
+        );
+        assert!(
+            diagnostics
+                .iter()
+                .any(|diag| diag["kind"] == "body-discharge-gap" && diag["function"] == "wrap_ok"),
+            "ineligible stdlib constructor contract must surface a precise kit diagnostic: {diagnostics:?}"
         );
 
         let _ = fs::remove_dir_all(root);

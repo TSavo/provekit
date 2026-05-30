@@ -2,7 +2,7 @@
 
 Bug Zoo is the executable proof that ProvekIt's bug story is not just a slogan.
 
-A normal bug example shows vulnerable code and a patch. Bug Zoo turns that into a stronger, content-addressed receipt: the lab code passes its ordinary host checks without a ProvekIt workflow, the exhibit surface lifts or links the latent boundary and produces a red `provekit prove` or `provekit link` signal, and the paired fixed artifact is accepted only after the same surface re-runs and produces a green signal.
+A normal bug example shows vulnerable code and a patch. Bug Zoo turns that into a stronger, content-addressed receipt: the lab code passes its ordinary host checks without a ProvekIt workflow, the exhibit surface lifts the latent boundary or validates a checked-in LinkBundle receipt, and the paired fixed artifact is accepted only after the same surface re-runs and produces a green signal.
 
 This matters because it makes software correctness across domains concrete. A Spring annotation, a ProvekIt-native Java contract, a JUnit assertion, a Zod schema, an OpenAPI rule, or a historical OSS patch can all point at the same boundary obligation once lifted. If the boundary is real, its projected shape gets a CID. If a lifter misses it, the specimen fails. If a fixed surface is plausible but does not close the edge, the specimen fails.
 
@@ -32,15 +32,15 @@ maybe_null(name) => non_null(name)
 
 The lab witness for null is not a ProvekIt artifact; it is the bug shape. The
 exhibit/fixed receipt is live: each native surface is lifted with
-`provekit mint`, then the runner asks `provekit prove --formula` to reject the
+`provekit mint`, then the runner asks the verifier formula gate to reject the
 lab null witness against the lifted non-null requirement and to discharge the
 paired fixed non-null witness.
 
-The zoo also carries `BZ-SHAPE-006-value-scope-escape`, where Java has two exhibits under the same specimen: JUnit and Spring. Both witness a point value. The composition receipt is a `provekit prove --formula` result: a witness for 42 does not satisfy a `>= 43` requirement, while both fixed surfaces witness 43 and satisfy it.
+The zoo also carries `BZ-SHAPE-006-value-scope-escape`, where Java has two exhibits under the same specimen: JUnit and Spring. Both witness a point value. The composition receipt is a verifier formula-gate result: a witness for 42 does not satisfy a `>= 43` requirement, while both fixed surfaces witness 43 and satisfy it.
 
 `BZ-SHAPE-007-polyglot-link-obligation` is the polyglot specimen. A Go cgo
-caller reaches a Rust callee with a native precondition, and the runner invokes
-`provekit link` so the Rust CLI derives the cross-kit bridge and link-bundle
+caller reaches a Rust callee with a native precondition, and the runner validates
+the checked-in LinkBundle receipts for the cross-kit bridge and link-bundle
 verdict.
 
 ## Lifecycle
@@ -93,10 +93,9 @@ PROVEKIT_BUG_ZOO_TRACE=1 cargo run --manifest-path menagerie/bug-zoo/Cargo.toml 
 ```
 
 Trace output goes to stderr. It prints each host check, `provekit mint`,
-`provekit link`, and `provekit prove --formula` boundary with elapsed time.
+checked-in LinkBundle receipt read, and verifier formula-gate boundary with elapsed time.
 During mint, the runner also enables `PROVEKIT_CLI_TRACE=1`, so the Rust CLI
-prints RPC milestones for `initialize`, `lift`, and `shutdown`. During link, the
-same trace flag exposes CLI-side link progress.
+prints RPC milestones for `initialize`, `lift`, and `shutdown`.
 
 ## What The Checker Verifies
 
@@ -111,7 +110,7 @@ For each specimen, the self-contained Bug Zoo runner checks:
 - every fixed link exhibit returns a clean LinkBundle whose CID matches the checked-in receipt;
 - fixed diagnostics are clean;
 - required exhibit pairs are boundary-equivalent by ProofIR CID;
-- composition checks invoke `provekit prove --formula` and reject or satisfy scoped implications as declared;
+- composition checks invoke the verifier formula gate and reject or satisfy scoped implications as declared;
 - the expected ProvekIt verification failure is present before closure;
 - the paired fixed surface closes the edge after re-lift or re-link.
 
@@ -130,6 +129,6 @@ The manifest is `specimen.yaml`. Important fields:
 - `languages[].exhibits[]`, each with a harness ProvekIt project, expected ProofIR file, diagnostic file, fixed pair, and lossiness note;
 - `languages[].linkExhibits[]`, each with a harness project, expected LinkBundle file, diagnostic file, optional kit RPC binary, fixed pair, and lossiness note;
 - `languages[].equivalence.required`, naming exhibit pairs that must lift to the same boundary CID;
-- `languages[].composition.checks`, which are the red/green proof obligations routed through `provekit prove --formula`.
+- `languages[].composition.checks`, which are the red/green proof obligations routed through the verifier formula gate.
 
 The root [../../menagerie/bug-zoo/README.md](../../menagerie/bug-zoo/README.md) explains the lifecycle. The worked species live under [../../menagerie/bug-zoo/species/](../../menagerie/bug-zoo/species/).

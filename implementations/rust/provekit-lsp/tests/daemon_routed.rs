@@ -74,6 +74,31 @@ fn unique_snap(label: &str) -> PathBuf {
     ))
 }
 
+fn unique_config(label: &str) -> PathBuf {
+    std::env::temp_dir().join(format!(
+        "provekit-lsp-config-{}-{}.toml",
+        label,
+        std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map(|d| d.subsec_nanos())
+            .unwrap_or(0)
+    ))
+}
+
+fn write_daemon_language_config(label: &str) -> PathBuf {
+    let path = unique_config(label);
+    std::fs::write(
+        &path,
+        r#"
+[[language]]
+name = "rust"
+extensions = [".rs"]
+"#,
+    )
+    .expect("write lsp config");
+    path
+}
+
 // ---------------------------------------------------------------------------
 // Daemon lifecycle helpers
 // ---------------------------------------------------------------------------
@@ -137,32 +162,16 @@ struct LspServer {
 }
 
 impl LspServer {
-    fn spawn_daemon_mode(sock: &PathBuf) -> Self {
-        let mut child = Command::new(lsp_bin())
+    fn spawn_daemon_mode(sock: &PathBuf, config: &PathBuf) -> Self {
+        let mut cmd = Command::new(lsp_bin());
+        cmd.arg("--config")
+            .arg(config)
             .arg("--daemon-socket")
             .arg(sock)
             .stdin(Stdio::piped())
             .stdout(Stdio::piped())
-            .stderr(Stdio::null())
-            .spawn()
-            .expect("spawn provekit-lsp --daemon-socket");
-        let stdin = child.stdin.take().expect("lsp stdin");
-        let stdout = BufReader::new(child.stdout.take().expect("lsp stdout"));
-        Self {
-            child,
-            stdin,
-            stdout,
-            next_id: 1,
-        }
-    }
-
-    fn spawn_default() -> Self {
-        let mut child = Command::new(lsp_bin())
-            .stdin(Stdio::piped())
-            .stdout(Stdio::piped())
-            .stderr(Stdio::null())
-            .spawn()
-            .expect("spawn provekit-lsp");
+            .stderr(Stdio::null());
+        let mut child = cmd.spawn().expect("spawn provekit-lsp --daemon-socket");
         let stdin = child.stdin.take().expect("lsp stdin");
         let stdout = BufReader::new(child.stdout.take().expect("lsp stdout"));
         Self {
@@ -315,6 +324,7 @@ fn daemon_mode_did_open_publishes_diagnostics() {
 
     let sock = unique_sock("dr1");
     let snap = unique_snap("dr1");
+    let config = write_daemon_language_config("dr1");
 
     let mut daemon = spawn_daemon(&sock, &snap, 60_000);
     assert!(
@@ -323,7 +333,7 @@ fn daemon_mode_did_open_publishes_diagnostics() {
         sock.display()
     );
 
-    let mut lsp = LspServer::spawn_daemon_mode(&sock);
+    let mut lsp = LspServer::spawn_daemon_mode(&sock, &config);
     let init_resp = lsp.initialize();
     assert!(
         init_resp.get("result").is_some(),
@@ -370,6 +380,7 @@ fn daemon_mode_did_open_publishes_diagnostics() {
     lsp.kill();
     shutdown_daemon(&sock);
     let _ = daemon.wait();
+    let _ = std::fs::remove_file(config);
 }
 
 // ---------------------------------------------------------------------------
@@ -386,6 +397,7 @@ fn daemon_mode_did_change_clears_stale_diagnostics() {
 
     let sock = unique_sock("dr2");
     let snap = unique_snap("dr2");
+    let config = write_daemon_language_config("dr2");
 
     let mut daemon = spawn_daemon(&sock, &snap, 60_000);
     assert!(
@@ -393,7 +405,7 @@ fn daemon_mode_did_change_clears_stale_diagnostics() {
         "daemon socket not ready"
     );
 
-    let mut lsp = LspServer::spawn_daemon_mode(&sock);
+    let mut lsp = LspServer::spawn_daemon_mode(&sock, &config);
     let _ = lsp.initialize();
     lsp.initialized();
 
@@ -444,6 +456,7 @@ fn daemon_mode_did_change_clears_stale_diagnostics() {
     lsp.kill();
     shutdown_daemon(&sock);
     let _ = daemon.wait();
+    let _ = std::fs::remove_file(config);
 }
 
 // ---------------------------------------------------------------------------
@@ -460,6 +473,7 @@ fn daemon_mode_did_close_clears_diagnostics() {
 
     let sock = unique_sock("dr3");
     let snap = unique_snap("dr3");
+    let config = write_daemon_language_config("dr3");
 
     let mut daemon = spawn_daemon(&sock, &snap, 60_000);
     assert!(
@@ -467,7 +481,7 @@ fn daemon_mode_did_close_clears_diagnostics() {
         "daemon socket not ready"
     );
 
-    let mut lsp = LspServer::spawn_daemon_mode(&sock);
+    let mut lsp = LspServer::spawn_daemon_mode(&sock, &config);
     let _ = lsp.initialize();
     lsp.initialized();
 
@@ -518,6 +532,7 @@ fn daemon_mode_did_close_clears_diagnostics() {
     lsp.kill();
     shutdown_daemon(&sock);
     let _ = daemon.wait();
+    let _ = std::fs::remove_file(config);
 }
 
 // ---------------------------------------------------------------------------

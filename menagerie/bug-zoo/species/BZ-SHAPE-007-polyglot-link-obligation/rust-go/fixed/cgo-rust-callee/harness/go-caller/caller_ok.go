@@ -7,8 +7,7 @@
 // The linker derives the same bridge shape as the failure fixture, then
 // discharges post_caller => pre_callee because both sides are n > 0.
 //
-// Run: provekit link examples/polyglot-rust-go/fixture-ok/
-// Expected: link-bundle.json with 1 bridge, 0 linker-errors, exit code 0.
+// Expected checked-in receipt: link-bundle.json with 1 bridge, 0 linker-errors.
 package caller
 
 /*

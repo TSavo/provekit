@@ -7,6 +7,7 @@ use std::process::{Command, Stdio};
 use std::time::{Instant, SystemTime, UNIX_EPOCH};
 
 use clap::Parser;
+use provekit_verifier::{smt_emitter, ObligationVerdict, SolverPlan};
 use serde::Deserialize;
 use serde_json::{json, Value};
 
@@ -15,6 +16,7 @@ const EXIT_VERIFY_FAIL: u8 = 1;
 const EXIT_USER_ERROR: u8 = 2;
 const PROVEKIT_CLI_ENV: &str = "PROVEKIT_CLI";
 const PROVEKIT_BUG_ZOO_EXTERNAL_CLI_ENV: &str = "PROVEKIT_BUG_ZOO_EXTERNAL_CLI";
+const FORMULA_PROVER_LABEL: &str = "provekit-verifier formula gate";
 
 #[derive(Parser, Debug, Clone, Default)]
 pub struct OutputFlags {
@@ -635,7 +637,7 @@ fn check_specimen(specimen_dir: &Path, quiet: bool) -> Result<Value, ZooError> {
                         language.id, exhibit.id
                     ))
                 })?;
-            let linked = invoke_provekit_cli_link(
+            let linked = read_checked_in_link_bundle(
                 specimen_dir,
                 &exhibit.id,
                 &exhibit.project,
@@ -660,7 +662,7 @@ fn check_specimen(specimen_dir: &Path, quiet: bool) -> Result<Value, ZooError> {
                 || !linked.has_linker_error_kind("unprovable-obligation")
             {
                 return Err(ZooError::verify(format!(
-                    "language `{}` link exhibit `{}` expected provekit link to catch an unprovable obligation, but exit was {} and error kinds were {:?}",
+                    "language `{}` link exhibit `{}` expected checked-in LinkBundle to record an unprovable obligation, but exit was {} and error kinds were {:?}",
                     language.id, exhibit.id, linked.exit_code, linked.error_kinds
                 )));
             }
@@ -694,7 +696,7 @@ fn check_specimen(specimen_dir: &Path, quiet: bool) -> Result<Value, ZooError> {
                 .go_lsp_bin
                 .as_deref()
                 .or(exhibit.go_lsp_bin.as_deref());
-            let fixed_linked = invoke_provekit_cli_link(
+            let fixed_linked = read_checked_in_link_bundle(
                 specimen_dir,
                 &format!("{}-fixed", exhibit.id),
                 &fixed.project,
@@ -717,7 +719,7 @@ fn check_specimen(specimen_dir: &Path, quiet: bool) -> Result<Value, ZooError> {
             }
             if fixed_linked.exit_code != EXIT_OK || fixed_linked.linker_error_count != 0 {
                 return Err(ZooError::verify(format!(
-                    "language `{}` fixed link `{}` expected clean provekit link, but exit was {} with {} linker error(s)",
+                    "language `{}` fixed link `{}` expected clean checked-in LinkBundle, but exit was {} with {} linker error(s)",
                     language.id, exhibit.id, fixed_linked.exit_code, fixed_linked.linker_error_count
                 )));
             }
@@ -1270,7 +1272,7 @@ fn verify_composition_checks(
         }
 
         let formula = scoped_implication_formula(check);
-        let proof = invoke_provekit_cli_formula_gate(specimen_dir, &check.id, &formula)?;
+        let proof = invoke_provekit_formula_gate(specimen_dir, &check.id, &formula)?;
         let diagnostic_path = specimen_dir.join(&check.diagnostic_file);
         let diagnostic = std::fs::read_to_string(&diagnostic_path)
             .map_err(|e| format!("check `{}` diagnostic read failed: {e}", check.id))?;
@@ -1319,7 +1321,7 @@ fn verify_composition_checks(
                 CompositionExpected::Missing => "red",
                 CompositionExpected::Satisfied => "green",
             },
-            "provedBy": "provekit prove --formula",
+            "provedBy": FORMULA_PROVER_LABEL,
             "formula": formula,
         }));
     }
@@ -1516,7 +1518,7 @@ fn invoke_provekit_cli_lift(
     }
 }
 
-fn invoke_provekit_cli_link(
+fn read_checked_in_link_bundle(
     specimen_dir: &Path,
     id: &str,
     project: &Path,
@@ -1535,68 +1537,34 @@ fn invoke_provekit_cli_link(
         }
     }
 
-    let repo_root = find_repo_root(specimen_dir)?;
     let project_path = specimen_dir.join(project);
-    let project_arg = project_path
-        .strip_prefix(&repo_root)
-        .map(Path::to_path_buf)
-        .unwrap_or_else(|_| project_path.clone());
     let bundle_path = project_path.join("link-bundle.json");
-    let original_bundle = std::fs::read(&bundle_path).ok();
-
-    let mut cmd = provekit_cli_command(&repo_root)?;
-    if trace_enabled() {
-        cmd.env("PROVEKIT_CLI_TRACE", "1");
-        cmd.stderr(Stdio::inherit());
-    }
-    cmd.arg("link").arg(&project_arg).current_dir(&repo_root);
-    if let Some(go_lsp_bin) = go_lsp_bin {
-        let go_lsp_path = specimen_dir.join(go_lsp_bin);
-        let go_lsp_path = go_lsp_path.canonicalize().unwrap_or(go_lsp_path);
-        cmd.arg("--go-lsp-bin").arg(go_lsp_path);
-    }
 
     let started = Instant::now();
     trace_log(format!(
-        "provekit link start id={id} project={}",
-        project_arg.display()
+        "bug-zoo link-bundle receipt read start id={id} project={}",
+        project_path.display()
     ));
-    let output = cmd
-        .output()
-        .map_err(|e| format!("spawn provekit link for `{id}`: {e}"))?;
-    trace_log(format!(
-        "provekit link exit id={id} status={} elapsed={:?}",
-        output.status,
-        started.elapsed()
-    ));
-
-    let stdout = String::from_utf8_lossy(&output.stdout);
-    let stderr = String::from_utf8_lossy(&output.stderr);
-    let exit_code = output.status.code().unwrap_or(EXIT_USER_ERROR as i32);
-    if !matches!(exit_code, 0 | 1) {
-        restore_original_bundle(&bundle_path, original_bundle.as_deref());
-        return Err(format!(
-            "provekit link returned unexpected exit {exit_code} for `{id}`\nstdout:\n{stdout}\nstderr:\n{stderr}"
-        ));
-    }
-
     let bundle = read_json(bundle_path.clone()).map_err(|error| {
-        restore_original_bundle(&bundle_path, original_bundle.as_deref());
         format!(
-            "read provekit link bundle for `{id}`: {error}\nstdout:\n{stdout}\nstderr:\n{stderr}"
+            "read checked-in LinkBundle receipt for `{id}` at {}: {error}",
+            bundle_path.display()
         )
     })?;
-    restore_original_bundle(&bundle_path, original_bundle.as_deref());
+    trace_log(format!(
+        "bug-zoo link-bundle receipt read exit id={id} elapsed={:?}",
+        started.elapsed()
+    ));
 
     let cid = bundle
         .get("linkBundleCid")
         .and_then(Value::as_str)
-        .ok_or_else(|| format!("provekit link bundle for `{id}` missing `linkBundleCid`"))?
+        .ok_or_else(|| format!("LinkBundle receipt for `{id}` missing `linkBundleCid`"))?
         .to_string();
     let linker_errors = bundle
         .get("linkerErrors")
         .and_then(Value::as_array)
-        .ok_or_else(|| format!("provekit link bundle for `{id}` missing `linkerErrors` array"))?;
+        .ok_or_else(|| format!("LinkBundle receipt for `{id}` missing `linkerErrors` array"))?;
     let linker_error_count = linker_errors.len();
     let error_kinds = linker_errors
         .iter()
@@ -1605,7 +1573,11 @@ fn invoke_provekit_cli_link(
         .collect::<Vec<_>>();
 
     Ok(LinkRunReport {
-        exit_code: exit_code as u8,
+        exit_code: if linker_error_count == 0 {
+            EXIT_OK
+        } else {
+            EXIT_VERIFY_FAIL
+        },
         bundle,
         cid,
         linker_error_count,
@@ -1613,82 +1585,35 @@ fn invoke_provekit_cli_link(
     })
 }
 
-fn restore_original_bundle(path: &Path, original: Option<&[u8]>) {
-    if let Some(original) = original {
-        let _ = std::fs::write(path, original);
-    } else {
-        let _ = std::fs::remove_file(path);
-    }
-}
-
-fn invoke_provekit_cli_formula_gate(
+fn invoke_provekit_formula_gate(
     specimen_dir: &Path,
     id: &str,
     formula: &Value,
 ) -> Result<FormulaProofReport, String> {
-    let repo_root = find_repo_root(specimen_dir)?;
-    let out_dir = temp_zoo_dir("formula", id)?;
-    std::fs::create_dir_all(&out_dir)
-        .map_err(|e| format!("create formula temp dir {}: {e}", out_dir.display()))?;
-    let formula_path = out_dir.join("obligation.json");
-    let formula_bytes = serde_json::to_vec_pretty(formula)
-        .map_err(|e| format!("serialize formula for `{id}`: {e}"))?;
-    std::fs::write(&formula_path, formula_bytes)
-        .map_err(|e| format!("write formula {}: {e}", formula_path.display()))?;
-
-    let mut cmd = provekit_cli_command(&repo_root)?;
-    if trace_enabled() {
-        cmd.env("PROVEKIT_CLI_TRACE", "1");
-        cmd.stderr(Stdio::inherit());
-    }
-    cmd.arg("prove")
-        .arg("--formula")
-        .arg(&formula_path)
-        .arg("--json")
-        .arg("--quiet")
-        .current_dir(&repo_root);
-
     let started = Instant::now();
     trace_log(format!(
-        "provekit prove --formula start id={id} formula={}",
-        formula_path.display()
+        "provekit-verifier formula gate start id={id} specimen={}",
+        specimen_dir.display()
     ));
-    let output = cmd
-        .output()
-        .map_err(|e| format!("spawn provekit prove --formula for `{id}`: {e}"))?;
+
+    let smt =
+        smt_emitter::emit(formula).map_err(|e| format!("emit SMT-LIB formula for `{id}`: {e}"))?;
+    let plan = SolverPlan::Single("z3".to_string());
+    let registry = provekit_verifier::solvers::registry::build_default_z3("z3");
+    let (verdict, reason, _) = provekit_verifier::run_plan(&plan, &registry, &smt, Some(formula));
     trace_log(format!(
-        "provekit prove --formula exit id={id} status={} elapsed={:?}",
-        output.status,
+        "provekit-verifier formula gate exit id={id} status={} elapsed={:?}",
+        verdict.as_str(),
         started.elapsed()
     ));
-    let _ = std::fs::remove_dir_all(&out_dir);
-
-    let stdout = String::from_utf8_lossy(&output.stdout);
-    let stderr = String::from_utf8_lossy(&output.stderr);
-    let exit_code = output.status.code().unwrap_or(EXIT_USER_ERROR as i32);
-    if !matches!(exit_code, 0 | 1) {
-        return Err(format!(
-            "provekit prove --formula returned unexpected exit {exit_code} for `{id}`\nstdout:\n{stdout}\nstderr:\n{stderr}"
-        ));
-    }
-
-    let report: Value = serde_json::from_str(&stdout).map_err(|e| {
-        format!("parse provekit prove --formula JSON for `{id}`: {e}\nstdout:\n{stdout}\nstderr:\n{stderr}")
-    })?;
-    let status = report
-        .get("status")
-        .and_then(Value::as_str)
-        .ok_or_else(|| format!("provekit prove --formula JSON for `{id}` missing `status`"))?
-        .to_string();
-    let reason = report
-        .get("reason")
-        .and_then(Value::as_str)
-        .unwrap_or("")
-        .to_string();
 
     Ok(FormulaProofReport {
-        exit_code: exit_code as u8,
-        status,
+        exit_code: if verdict == ObligationVerdict::Discharged {
+            EXIT_OK
+        } else {
+            EXIT_VERIFY_FAIL
+        },
+        status: verdict.as_str().to_string(),
         reason,
     })
 }

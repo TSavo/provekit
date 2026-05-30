@@ -36,7 +36,88 @@
 # `provekit_ir_compiler_coq::DIALECT` constant is `"coq"`, so we match
 # the implementation rather than the spec example.
 
-# Project-level kit registry. Runtime realization is manifest/config/RPC driven:
+# Project-level kit aliases. These power `--kit=<alias>` without baking
+# language/package knowledge into the Rust CLI; third-party projects can
+# declare their own aliases the same way.
+[[kits]]
+alias = "rust"
+project = "implementations/rust"
+surface = "rust"
+lang = "rust"
+
+[[kits]]
+alias = "go"
+project = "implementations/go"
+surface = "go-self-contracts"
+lang = "go"
+
+[[kits]]
+alias = "cpp"
+project = "implementations/cpp"
+surface = "cpp-self-contracts"
+lang = "cpp"
+
+[[kits]]
+alias = "ts"
+project = "implementations/typescript"
+surface = "typescript-self-contracts"
+lang = "ts"
+
+[[kits]]
+alias = "csharp"
+project = "implementations/csharp"
+surface = "csharp"
+lang = "csharp"
+
+[[kits]]
+alias = "clr-bytecode"
+project = "implementations/csharp"
+surface = "clr-bytecode"
+lang = "clr-bytecode"
+
+[[kits]]
+alias = "swift"
+project = "implementations/swift"
+surface = "swift-self-contracts"
+lang = "swift"
+
+[[kits]]
+alias = "java"
+project = "implementations/java"
+surface = "java-self-contracts"
+lang = "java"
+
+[[kits]]
+alias = "python"
+project = "implementations/python"
+surface = "python-self-contracts"
+lang = "python"
+
+[[kits]]
+alias = "ruby"
+project = "implementations/ruby"
+surface = "ruby-self-contracts"
+lang = "ruby"
+
+[[kits]]
+alias = "zig"
+project = "implementations/zig"
+surface = "zig-self-contracts"
+lang = "zig"
+
+[[kits]]
+alias = "c"
+project = "implementations/c"
+surface = "c-self-contracts"
+lang = "c"
+
+[[kits]]
+alias = "php"
+project = "implementations/php"
+surface = "php-self-contracts"
+lang = "php"
+
+# Project-level plugin registry. Runtime realization is manifest/config/RPC driven:
 # these entries authorize the checked-in Java realize manifests below
 # `.provekit/realize/*/manifest.toml`; the CLI never reads body-template JSON
 # as materialization authority.

@@ -2824,6 +2824,7 @@ fn materialize_rust_file(
             concept_name: target.concept_name,
             function_name: target.function_name,
             target_binding_cid: binding_cid,
+            contract_cid: target.contract_cid,
             outcome_kind: if loss_dims.is_empty() {
                 "Exact".to_string()
             } else {
@@ -2857,6 +2858,7 @@ fn materialize_rust_file(
 struct MaterializeBoundaryTarget {
     concept_name: String,
     library: String,
+    contract_cid: Option<String>,
     function_name: String,
     params: Vec<String>,
     param_types: Vec<String>,
@@ -2871,6 +2873,7 @@ struct MaterializedRustSite {
     concept_name: String,
     function_name: String,
     target_binding_cid: String,
+    contract_cid: Option<String>,
     outcome_kind: String,
     loss_dims: Vec<String>,
     refusal_reason: Option<String>,
@@ -2882,6 +2885,7 @@ impl MaterializedRustSite {
             concept_name,
             function_name,
             target_binding_cid: String::new(),
+            contract_cid: None,
             outcome_kind: "Refused".to_string(),
             loss_dims: Vec::new(),
             refusal_reason: Some(reason),
@@ -2945,6 +2949,7 @@ fn materialize_boundary_target(
     Some(MaterializeBoundaryTarget {
         concept_name: parsed.concept,
         library: parsed.library,
+        contract_cid: parsed.contract_cid,
         function_name: item_fn.sig.ident.to_string(),
         params,
         param_types,
@@ -2959,6 +2964,7 @@ fn materialize_boundary_target(
 struct ParsedBoundaryAttr {
     concept: String,
     library: String,
+    contract_cid: Option<String>,
 }
 
 fn is_provekit_attr(attr: &syn::Attribute, name: &str) -> bool {
@@ -2976,6 +2982,9 @@ fn parse_boundary_attr(attr: &syn::Attribute) -> Option<ParsedBoundaryAttr> {
     Some(ParsedBoundaryAttr {
         concept,
         library: args.string("library").unwrap_or_default(),
+        contract_cid: args
+            .string("contract_cid")
+            .or_else(|| args.string("local_contract_cid")),
     })
 }
 
@@ -3214,6 +3223,7 @@ fn receipt_for_rust_sites(target_library: &str, sites: &[MaterializedRustSite]) 
             json!({
                 "source_binding_cid": null,
                 "target_binding_cid": site.target_binding_cid,
+                "contract_cid": site.contract_cid,
                 "concept_name": site.concept_name,
                 "function_name": site.function_name,
                 "outcome_kind": site.outcome_kind,
