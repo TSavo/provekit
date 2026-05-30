@@ -45,6 +45,7 @@ const SORT_BYTES_CID: &str = "blake3-512:7116ef6e62e6739b213a8394f975a53c771b89f
 const SORT_FLOAT_CID: &str = "blake3-512:b979e70c4d5e53d9bdf13d6f08330be3c5b0714b8c770d69bbd05946b86c36df5274be8145a2683cc29c278155c9c1ee65b6897913524eecb9e4c89c71862f57";
 const SORT_INT_CID: &str = "blake3-512:30ffc51350121a7172f3e4064a33c45bbd345756979fccff6875cd2ab33e4964d098a99df80cfbdf1ec1a0738c5ac3476f0ff8f75589ea511d1acd82c74ecd58";
 const SORT_STRING_CID: &str = "blake3-512:be8721d24849feb74c4721520bdba02d352a94f49253a627cd509127472aa1c47cbe99cb705cac4159b5365abcce0c9aaa4901fe67630827deb6be1f9daeea10";
+const BODY_TEXT_CANONICALIZATION: &str = "trim-outer-whitespace-v1";
 
 static CONCEPT_OP_CIDS: OnceLock<BTreeMap<String, String>> = OnceLock::new();
 
@@ -2803,7 +2804,7 @@ fn sugar_body_source(rel: &str, src: &str, item_fn: &syn::ItemFn) -> Value {
     let start = item_fn.sig.fn_token.span.start();
     let end = item_fn.block.brace_token.span.close().end();
     let body_text = block_inner_source(src, &item_fn.block)
-        .map(str::trim)
+        .map(canonical_sugar_body_text)
         .unwrap_or_default()
         .to_string();
     // Phase 2 / Recognizer foundation (#81, #82): emit an identifier-canonical
@@ -2837,10 +2838,15 @@ fn sugar_body_source(rel: &str, src: &str, item_fn: &syn::ItemFn) -> Value {
         },
         "source_cid": blake3_512_of(body_text.as_bytes()),
         "body_text": body_text,
+        "body_text_canonicalization": BODY_TEXT_CANONICALIZATION,
         "ast_template": ast_template,
         "template_cid": blake3_512_of(template_text.as_bytes()),
         "param_names": param_names,
     })
+}
+
+fn canonical_sugar_body_text(body: &str) -> &str {
+    body.trim()
 }
 
 /// Identifier-canonical AST template serializer for the Recognizer
@@ -5071,6 +5077,64 @@ async fn render(url: String) -> String {
         assert!(
             !body_text.contains("#[provekit::sugar"),
             "body_text must not include the sugar attribute: {body_text}"
+        );
+    }
+
+    #[test]
+    fn sugar_body_text_uses_byte_offsets_for_unicode_same_line_body() {
+        let src = r#"
+#[provekit::sugar(concept = "concept:unicode", library = "unicode-lib")]
+pub fn snowman() -> &'static str { "☃ } still body" }
+"#;
+        let entry = single_sugar_entry_for_source("sugar_body_unicode_byte_offsets", src);
+        let body_text = entry["body_source"]["body_text"]
+            .as_str()
+            .expect("body_text string");
+        let expected = r#""☃ } still body""#;
+
+        assert_eq!(
+            body_text, expected,
+            "body_text must slice parser span byte offsets exactly"
+        );
+        assert_eq!(
+            entry["body_source"]["source_cid"],
+            blake3_512_of(expected.as_bytes())
+        );
+    }
+
+    #[test]
+    fn sugar_body_source_declares_trimmed_body_canonicalization_for_cid() {
+        let src_a = r#"
+#[provekit::sugar(concept = "concept:canonical-body", library = "test-lib")]
+pub fn canonical_body() -> i64 {
+
+    41 + 1
+
+}
+"#;
+        let src_b = r#"
+#[provekit::sugar(concept = "concept:canonical-body", library = "test-lib")]
+pub fn canonical_body() -> i64 {    41 + 1    }
+"#;
+
+        let entry_a = single_sugar_entry_for_source("sugar_body_canonical_a", src_a);
+        let entry_b = single_sugar_entry_for_source("sugar_body_canonical_b", src_b);
+        let body_source_a = &entry_a["body_source"];
+        let body_source_b = &entry_b["body_source"];
+
+        assert_eq!(
+            body_source_a["body_text_canonicalization"],
+            "trim-outer-whitespace-v1"
+        );
+        assert_eq!(
+            body_source_b["body_text_canonicalization"],
+            "trim-outer-whitespace-v1"
+        );
+        assert_eq!(body_source_a["body_text"], body_source_b["body_text"]);
+        assert_eq!(body_source_a["source_cid"], body_source_b["source_cid"]);
+        assert_eq!(
+            body_source_a["source_cid"],
+            blake3_512_of("41 + 1".as_bytes())
         );
     }
 
