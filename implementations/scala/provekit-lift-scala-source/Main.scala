@@ -134,10 +134,17 @@ object ScalaSourceLifter:
       case Left(diagnostic) => LiftResult(Seq.empty, Seq(diagnostic))
       case Right(parsed) =>
         val emitBindings = layer == "library-bindings" || layer == "all"
-        val ir =
+        val emitVerify = layer == "verify" || layer == "all"
+        val emitTests = layer == "tests" || layer == "all"
+        val ir = Seq(
           if emitBindings then
             ScalaTrees.definitions(parsed.tree).flatMap(defn => libraryBindingEntry(defn, sourcePath))
-          else Seq.empty
+          else Seq.empty,
+          if emitVerify then
+            ScalaTrees.definitions(parsed.tree).flatMap(defn => functionContractEntry(defn, sourcePath))
+          else Seq.empty,
+          if emitTests then testContractEntries(parsed.tree, sourcePath) else Seq.empty,
+        ).flatten
         val callEdges =
           if layer == "all" then ScalaCallEdges.resolve(parsed.tree, sourcePath)
           else Seq.empty
@@ -235,6 +242,52 @@ object ScalaSourceLifter:
       binding.libraryVersion.foreach(value => entry("library_version") = value)
       binding.observedDimension.foreach(value => entry("observed_dimension") = value)
       entry
+    }
+
+  private def functionContractEntry(defn: Defn.Def, sourcePath: String): Option[ujson.Obj] =
+    if sugarBinding(defn).isDefined then None
+    else
+      ScalaFormula.term(defn.body, ScalaTemplate.functionParamNames(defn)).map { bodyTerm =>
+        val formals = ScalaTemplate.functionParamNames(defn)
+        val formalSorts = defn.paramss.flatten.map(param =>
+          ScalaFormula.sort(param.decltpe.map(_.syntax).getOrElse(""))
+        )
+        ujson.Obj(
+          "schemaVersion" -> "1",
+          "kind" -> "function-contract",
+          "fnName" -> defn.name.value,
+          "bridgeSourceSymbol" -> defn.name.value,
+          "formals" -> ujson.Arr.from(formals),
+          "formalSorts" -> ujson.Arr.from(formalSorts),
+          "returnSort" -> ScalaFormula.sort(defn.decltpe.map(_.syntax).getOrElse("")),
+          "pre" -> ScalaFormula.True,
+          "post" -> ujson.Obj(
+            "kind" -> "atomic",
+            "name" -> "=",
+            "args" -> ujson.Arr(ujson.Obj("kind" -> "var", "name" -> "result"), bodyTerm),
+          ),
+          "bodyCid" -> ScalaTemplate.cidOfUtf8(ScalaTemplate.bodyText(defn)),
+          "locus" -> ujson.Obj(
+            "file" -> sourcePath,
+            "line" -> ScalaTrees.span(defn).startLine,
+            "col" -> ScalaTrees.span(defn).startCol,
+          ),
+        )
+      }
+
+  private def testContractEntries(tree: Tree, sourcePath: String): Seq[ujson.Obj] =
+    ScalaTrees.testBlocks(tree).flatMap { case (testName, body) =>
+      ScalaTrees.assertions(body).zipWithIndex.flatMap { case (assertion, index) =>
+        ScalaFormula.assertionFormula(assertion).map { inv =>
+          ujson.Obj(
+            "schemaVersion" -> "1",
+            "kind" -> "contract",
+            "name" -> s"$testName::$index",
+            "outBinding" -> "out",
+            "inv" -> inv,
+          )
+        }
+      }
     }
 
   private def sugarBinding(defn: Defn.Def): Option[SugarBinding] =
@@ -548,9 +601,120 @@ object ScalaTemplate:
       case Term.Name(root) => Some((parts += root).reverse.toSeq)
       case _ => None
 
+object ScalaFormula:
+  val True: ujson.Obj = ujson.Obj("kind" -> "atomic", "name" -> "true", "args" -> ujson.Arr())
+
+  def sort(typeName: String): ujson.Obj =
+    val name = typeName.trim match
+      case "Int" | "Long" | "Short" | "Byte" => "Int"
+      case "Double" | "Float" | "BigDecimal" => "Real"
+      case "Boolean" => "Bool"
+      case "" | "Unit" | "Any" | "Nothing" => "Int"
+      case other => other
+    ujson.Obj("kind" -> "primitive", "name" -> name)
+
+  def assertionFormula(term: Term): Option[ujson.Obj] =
+    term match
+      case Term.Apply(Term.Name("assert"), args) =>
+        args.headOption.flatMap(predicate)
+      case Term.Apply(Term.Select(_, Term.Name("assert")), args) =>
+        args.headOption.flatMap(predicate)
+      case _ => None
+
+  def predicate(term: Term): Option[ujson.Obj] =
+    term match
+      case Term.ApplyInfix(left, Term.Name(op), _, args) if args.length == 1 =>
+        for
+          lhs <- termValue(left, Seq.empty)
+          rhs <- termValue(args.head, Seq.empty)
+          name <- predicateName(op)
+        yield ujson.Obj("kind" -> "atomic", "name" -> name, "args" -> ujson.Arr(lhs, rhs))
+      case Term.Apply(Term.Select(left, Term.Name(op)), args) if args.length == 1 =>
+        for
+          lhs <- termValue(left, Seq.empty)
+          rhs <- termValue(args.head, Seq.empty)
+          name <- predicateName(op)
+        yield ujson.Obj("kind" -> "atomic", "name" -> name, "args" -> ujson.Arr(lhs, rhs))
+      case _ => None
+
+  def term(term: Term, params: Seq[String]): Option[ujson.Value] =
+    termValue(term, params)
+
+  private def termValue(term: Term, params: Seq[String]): Option[ujson.Value] =
+    term match
+      case Term.Block(stats) =>
+        stats.reverse.collectFirst { case t: Term => t }.flatMap(termValue(_, params))
+      case Term.Return(expr) => termValue(expr, params)
+      case Term.ApplyInfix(left, Term.Name(op), _, args) if args.length == 1 =>
+        for
+          lhs <- termValue(left, params)
+          rhs <- termValue(args.head, params)
+          name <- ctorName(op)
+        yield ujson.Obj("kind" -> "ctor", "name" -> name, "args" -> ujson.Arr(lhs, rhs))
+      case Term.Apply(Term.Select(left, Term.Name(op)), args) if args.length == 1 && ctorName(op).isDefined =>
+        for
+          lhs <- termValue(left, params)
+          rhs <- termValue(args.head, params)
+          name <- ctorName(op)
+        yield ujson.Obj("kind" -> "ctor", "name" -> name, "args" -> ujson.Arr(lhs, rhs))
+      case Term.Apply(Term.Name(name), args) =>
+        val rendered = args.map(termValue(_, params))
+        if rendered.exists(_.isEmpty) then None
+        else Some(ujson.Obj("kind" -> "ctor", "name" -> name, "args" -> ujson.Arr.from(rendered.flatten)))
+      case Term.Name(name) => Some(ujson.Obj("kind" -> "var", "name" -> name))
+      case Lit.Int(value) => Some(intConst(value.toLong))
+      case Lit.Long(value) => Some(intConst(value))
+      case Lit.Float(value) => Some(realConst(value.toString.toDouble))
+      case Lit.Double(value) => Some(realConst(value.toString.toDouble))
+      case Lit.Boolean(value) =>
+        Some(ujson.Obj("kind" -> "const", "value" -> value, "sort" -> sort("Boolean")))
+      case Lit.String(value) =>
+        Some(ujson.Obj("kind" -> "const", "value" -> value, "sort" -> sort("String")))
+      case _ => None
+
+  private def predicateName(op: String): Option[String] =
+    op match
+      case "==" => Some("=")
+      case "!=" => Some("!=")
+      case "<" | "<=" | ">" | ">=" => Some(op)
+      case _ => None
+
+  private def ctorName(op: String): Option[String] =
+    op match
+      case "+" | "-" | "*" | "/" | "%" => Some(if op == "%" then "mod" else op)
+      case _ => None
+
+  private def intConst(value: Long): ujson.Obj =
+    ujson.Obj("kind" -> "const", "value" -> ujson.Num(value.toDouble), "sort" -> sort("Int"))
+
+  private def realConst(value: Double): ujson.Obj =
+    ujson.Obj("kind" -> "const", "value" -> ujson.Num(value), "sort" -> sort("Real"))
+
 object ScalaTrees:
   def definitions(tree: Tree): Seq[Defn.Def] =
     tree.collect { case defn: Defn.Def => defn }
+
+  def testBlocks(tree: Tree): Seq[(String, Term)] =
+    tree.collect {
+      case Term.Apply(Term.Apply(Term.Name("test"), firstArgs), secondArgs)
+          if firstArgs.length == 1 && secondArgs.length == 1 =>
+        (firstArgs.head, secondArgs.head)
+      case Term.Apply(Term.Apply(Term.Select(_, Term.Name("test")), firstArgs), secondArgs)
+          if firstArgs.length == 1 && secondArgs.length == 1 =>
+        (firstArgs.head, secondArgs.head)
+      case Term.Apply(Term.Name("test"), args) if args.length >= 2 =>
+        (args.head, args(1))
+      case Term.Apply(Term.Select(_, Term.Name("test")), args) if args.length >= 2 =>
+        (args.head, args(1))
+    }.collect {
+      case (Lit.String(name), body: Term) => (name, body)
+    }
+
+  def assertions(tree: Tree): Seq[Term] =
+    tree.collect {
+      case term @ Term.Apply(Term.Name("assert"), _) => term
+      case term @ Term.Apply(Term.Select(_, Term.Name("assert")), _) => term
+    }
 
   def span(tree: Tree): SourceSpan =
     SourceSpan(
