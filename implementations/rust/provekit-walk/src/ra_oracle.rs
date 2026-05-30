@@ -27,7 +27,7 @@ use std::collections::HashMap;
 use std::io::{BufReader, Read, Write};
 use std::path::{Path, PathBuf};
 use std::process::{Child, ChildStdin, Command, Stdio};
-use std::sync::mpsc::{Receiver, RecvTimeoutError};
+use std::sync::mpsc::Receiver;
 use std::thread::JoinHandle;
 use std::time::{Duration, Instant};
 
@@ -69,17 +69,15 @@ pub struct RaOracle {
 const INDEX_WAIT: Duration = Duration::from_secs(300);
 /// How long to wait for a single `textDocument/definition` response.
 const DEFINITION_WAIT: Duration = Duration::from_secs(30);
-/// rust-analyzer is considered settled once it has emitted no message for this
-/// long. The workspace-load progress phases (fetching, crate-graph, roots
-/// scan, proc-macro load, a second crate-graph + fetch) come in bursts seconds
-/// apart; a gap this large means the burst sequence is over and the index is
-/// stable, so a `definition` answer will not change on a later (warmer) run.
-const QUIESCENCE_GAP: Duration = Duration::from_secs(12);
-/// Bounded secondary safety: after the workspace is settled a `null` definition
-/// is a real refuse, but to absorb any residual lag we retry a null this many
-/// times with a short settle in between before refusing.
-const NULL_RETRIES: usize = 3;
-const NULL_RETRY_SETTLE: Duration = Duration::from_secs(2);
+/// LSP `ContentModified` error code. rust-analyzer returns this for a request
+/// it cannot answer yet because its analysis state changed underneath the
+/// request (i.e. it is still loading/indexing). It is the server's explicit
+/// "not ready, retry" signal, which we use INSTEAD of any wall-clock wait.
+const CONTENT_MODIFIED: i64 = -32801;
+/// How many times to re-ask a `ContentModified`-answered query before giving up
+/// and refusing. With the backoff below this spans up to a couple of minutes of
+/// genuine cold-load churn, while a warm server pays zero retries.
+const NOT_READY_RETRIES: usize = 40;
 
 impl RaOracle {
     /// Start the oracle for `workspace_root`, or return `None` to refuse.
@@ -147,14 +145,12 @@ impl RaOracle {
         // Drain until the initialize response arrives.
         self.wait_for_response(id, INDEX_WAIT)?;
         self.send_notification("initialized", json!({}));
-        // Let rust-analyzer load + index the workspace before we query. There is
-        // no single "indexing complete" token in the bundled analyzer (it emits
-        // fetch / crate-graph / roots-scan / proc-macro phases in bursts), so we
-        // wait for QUIESCENCE: a sustained gap with no server message. Gating on
-        // an early phase `end` (e.g. the first "Roots Scanned") returns control
-        // while the index is still partial, which makes `definition` answers
-        // depend on timing. Quiescence is the determinism guarantee.
-        self.wait_until_quiescent(INDEX_WAIT);
+        // No fixed wait here. Readiness is handled per-query by retrying on the
+        // server's ContentModified ("not ready") signal (see `resolve_crate`),
+        // which is event-driven: a warm server pays nothing and a cold one waits
+        // exactly as long as it reports it is still indexing. A wall-clock
+        // settle here would be both unreliable (no single done-token) and a
+        // fixed tax on every run.
         Some(())
     }
 
@@ -176,24 +172,26 @@ impl RaOracle {
             }),
         );
         self.opened.insert(abs_path.to_path_buf());
-        // Opening a document makes rust-analyzer (re)analyze it, which can emit a
-        // fresh progress burst. Drain to quiescence again so the first query on
-        // this file is asked of a settled index, not a mid-analysis one.
-        self.wait_until_quiescent(INDEX_WAIT);
         Some(())
     }
 
     /// Resolve one query to a definitive crate, or `None` (refuse).
+    ///
+    /// Readiness is EVENT-DRIVEN, not timer-driven. While rust-analyzer is still
+    /// loading/indexing it answers `textDocument/definition` with the LSP
+    /// `ContentModified` error (-32801) meaning "ask again, my state changed
+    /// under you"; a settled server returns a definition (or a real null). We
+    /// retry only on that explicit not-ready signal, with a short backoff, up to
+    /// a bounded number of times. This is what makes the answer reproducible
+    /// across a cold and a warm run WITHOUT paying any fixed wall-clock wait:
+    /// when the index is already warm the first reply is the answer, and when it
+    /// is cold we retry exactly as long as the server says it is still moving.
+    /// A definition / a real null is taken as final; ambiguity and unmappable
+    /// paths are refusals (never retried).
     pub fn resolve_crate(&mut self, q: &ResolveQuery) -> Option<String> {
         self.ensure_open(&q.abs_path)?;
         let uri = path_to_uri(&q.abs_path);
-        // After the workspace is settled, a definitive answer is stable. We
-        // retry only on a `null` result (no definition yet), as bounded
-        // secondary safety against residual lag; a non-null answer is taken as
-        // final, never re-queried (re-querying a non-null could only mask a
-        // genuine refuse). Crate ambiguity / unmappable paths are refusals, not
-        // retried.
-        for attempt in 0..=NULL_RETRIES {
+        for attempt in 0..=NOT_READY_RETRIES {
             let id = self.send_request(
                 "textDocument/definition",
                 json!({
@@ -202,18 +200,27 @@ impl RaOracle {
                 }),
             )?;
             let resp = self.wait_for_response(id, DEFINITION_WAIT)?;
+            // Not-ready signal: rust-analyzer returns ContentModified (-32801)
+            // while its analysis is mid-flight. Back off and re-ask; this is the
+            // server telling us the index moved, not a refuse.
+            let is_content_modified = resp
+                .get("error")
+                .and_then(|e| e.get("code"))
+                .and_then(|c| c.as_i64())
+                == Some(CONTENT_MODIFIED);
+            if is_content_modified {
+                if attempt < NOT_READY_RETRIES {
+                    std::thread::sleep(not_ready_backoff(attempt));
+                    continue;
+                }
+                // Still churning after the budget: deterministic refuse.
+                return None;
+            }
+            // A settled reply (definition, real null, or any other error) is
+            // final. Map it to a crate or refuse.
             let result = resp.get("result").cloned().unwrap_or(Value::Null);
-            // A non-empty result: resolve (or refuse on ambiguity/unmappable).
-            let is_null_or_empty = result.is_null()
-                || result.as_array().map(|a| a.is_empty()).unwrap_or(false);
-            if !is_null_or_empty {
-                return crate_from_definition_result(&result);
-            }
-            if attempt < NULL_RETRIES {
-                std::thread::sleep(NULL_RETRY_SETTLE);
-            }
+            return crate_from_definition_result(&result);
         }
-        // Persistent null after settle + retries: a deterministic refuse.
         None
     }
 
@@ -257,30 +264,14 @@ impl RaOracle {
         }
     }
 
-    /// Block until rust-analyzer has been silent for `QUIESCENCE_GAP`, i.e. the
-    /// workspace-load progress bursts are over and the index is stable, or until
-    /// `timeout` elapses overall. Draining to quiescence (rather than matching a
-    /// specific progress token) is what makes a `definition` answer reproducible:
-    /// every query is asked of the same settled index whether the on-disk cache
-    /// was cold or warm at startup.
-    fn wait_until_quiescent(&mut self, timeout: Duration) {
-        let hard_deadline = Instant::now() + timeout;
-        loop {
-            let until_hard = match hard_deadline.checked_duration_since(Instant::now()) {
-                Some(d) => d,
-                None => return,
-            };
-            let wait = QUIESCENCE_GAP.min(until_hard);
-            match self.rx.recv_timeout(wait) {
-                // Saw a message: not quiet yet, keep draining.
-                Ok(_) => continue,
-                // No message for the full gap: the server has settled.
-                Err(RecvTimeoutError::Timeout) => return,
-                // Channel closed (server died): nothing more will come.
-                Err(RecvTimeoutError::Disconnected) => return,
-            }
-        }
-    }
+}
+
+/// Backoff between `ContentModified` retries: ramp from 250ms to a 3s cap so
+/// early churn re-asks quickly and a long cold load does not spin. With
+/// `NOT_READY_RETRIES` this covers a couple of minutes of genuine indexing.
+fn not_ready_backoff(attempt: usize) -> Duration {
+    let ms = (250u64 * (attempt as u64 + 1)).min(3000);
+    Duration::from_millis(ms)
 }
 
 /// Read one LSP message (framed by Content-Length) from a blocking reader.
