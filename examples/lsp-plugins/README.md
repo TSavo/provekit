@@ -99,14 +99,15 @@ plugin = "go"
 
 Manifests are also searched in `~/.config/provekit/lsp/<name>/manifest.toml` for user-global plugins.
 
-### Option C: Built-in parser (Rust only, for now)
-
 ```toml
 [[language]]
 name = "rust"
 extensions = [".rs"]
-parser = "builtin:rust"
+plugin = "rust"
 ```
+
+The Rust entry is not special. It follows the same manifest-backed plugin route
+as Go, C#, C++, Zig, or any third-party language helper.
 
 ## Examples in this directory
 
@@ -148,7 +149,7 @@ int parse_int(const std::string& s) { ... }
 fn parseInt(s: []const u8) i32 { ... }
 ```
 
-**Rust** (built-in parser uses attributes):
+**Rust plugin** (attributes are ordinary Rust syntax consumed by the plugin):
 ```rust
 #[provekit::implement(target = "bafy...js-parseInt-v24")]
 fn parse_int(s: &str) -> i32 { ... }
