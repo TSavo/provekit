@@ -7,6 +7,13 @@ authors.workspace = true
 description = "Self-contained Bug Zoo runner for executable cross-language bug specimens."
 workspace = "../../implementations/rust"
 
+[lib]
+name = "provekit_bug_zoo"
+path = "src/lib.rs"
+# This crate has no doctest examples; the full release workspace run only
+# builds an empty rustdoc harness, which can fail while relinking workspace rlibs.
+doctest = false
+
 [dependencies]
 clap = { version = "4", features = ["derive"] }
 provekit-canonicalizer = { path = "../../implementations/rust/provekit-canonicalizer" }

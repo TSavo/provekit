@@ -13,6 +13,9 @@ path = "src/main.rs"
 [lib]
 name = "provekit_cli"
 path = "src/lib.rs"
+# This crate has no doctest examples; the full release workspace run only
+# builds an empty rustdoc harness, which can fail while relinking workspace rlibs.
+doctest = false
 
 [dependencies]
 # Workspace-internal libs.
