@@ -53,6 +53,7 @@ public class ContractEmitter
             ["pre"] = TrueFormula(),
             ["post"] = EqFormula(VarTerm("return_value"), postValue),
             ["bodyCid"] = null,
+            ["body_source"] = CsharpAstTemplates.BodySource(_method, _path),
             ["effects"] = JsonSerializer.SerializeToNode(SortEffects(_effects)),
             ["locus"] = new JsonObject { ["file"] = _path, ["line"] = line, ["col"] = 1 },
             ["autoMintedMementos"] = new JsonArray(),

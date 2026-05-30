@@ -60,10 +60,14 @@ public static class RpcServer
             "initialize" => Initialize(id),
             "lift" => LiftRpc(id, request["params"] as JsonObject, lifter),
             "compile" => CompileRpc(id, request["params"] as JsonObject, compiler),
+            "provekit.plugin.recognize" => RecognizeRpc(id, request["params"] as JsonObject),
             "shutdown" => new JsonObject { ["jsonrpc"] = "2.0", ["id"] = id?.DeepClone(), ["result"] = null },
             _ => Error(id, -32601, $"METHOD_NOT_FOUND: {method}"),
         };
     }
+
+    public static JsonObject DispatchForTest(JsonObject request) =>
+        Dispatch(request, new CsharpLifter(), new CsharpCompiler());
 
     private static JsonObject Initialize(JsonNode? id)
     {
@@ -145,6 +149,58 @@ public static class RpcServer
         {
             return Error(id, -32603, ex.Message);
         }
+    }
+
+    private static JsonObject RecognizeRpc(JsonNode? id, JsonObject? paramsObj)
+    {
+        if (paramsObj is null)
+            return Error(id, -32602, "params required");
+
+        var sourcePathsNode = paramsObj["source_paths"];
+        JsonArray? sourcePaths;
+        try { sourcePaths = sourcePathsNode?.AsArray(); } catch { sourcePaths = null; }
+        if (sourcePaths is null || sourcePaths.Count == 0)
+            return Error(id, -32602, "source_paths must be a non-empty array of strings");
+
+        var projectRoot = paramsObj["project_root"]?.GetValue<string>() ?? ".";
+        var paths = sourcePaths.Select(p => p?.GetValue<string>() ?? "")
+            .Where(p => !string.IsNullOrEmpty(p))
+            .ToList();
+        if (paths.Count == 0)
+            return Error(id, -32602, "source_paths must be a non-empty array of strings");
+
+        try
+        {
+            var directTemplates = BindingTemplatesFromParams(paramsObj);
+            var templates = directTemplates.Count > 0
+                ? directTemplates
+                : CsharpBindingTemplateResolver.ResolveFromProject(projectRoot);
+            var result = CsharpRecognizer.RecognizePaths(projectRoot, paths, templates);
+            return new JsonObject
+            {
+                ["jsonrpc"] = "2.0",
+                ["id"] = id?.DeepClone(),
+                ["result"] = result,
+            };
+        }
+        catch (Exception ex)
+        {
+            return Error(id, -32603, ex.Message);
+        }
+    }
+
+    private static IReadOnlyList<JsonObject> BindingTemplatesFromParams(JsonObject paramsObj)
+    {
+        if (paramsObj["binding_templates"] is not JsonArray directTemplates)
+            return Array.Empty<JsonObject>();
+
+        var templates = new List<JsonObject>();
+        foreach (var template in directTemplates)
+        {
+            if (template is JsonObject obj) templates.Add(obj);
+        }
+
+        return templates;
     }
 
     private static JsonObject LiftSuccessResponse(JsonNode? id, LiftResult result)

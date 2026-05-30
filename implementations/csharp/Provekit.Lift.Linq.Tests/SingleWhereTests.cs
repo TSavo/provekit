@@ -9,6 +9,7 @@
 // cross-impl conformance signal.
 
 using System.IO;
+using System.Text.Json.Nodes;
 using Provekit.Lift.Linq;
 using Xunit;
 
@@ -37,6 +38,32 @@ public class SingleWhereTests
         var m = mementoes[0];
         Assert.Equal("positives", m.OutBinding);
         Assert.Equal(new[] { "xs" }, m.InputBindings);
+    }
+
+    [Fact]
+    public void LiftedWhereCarriesMaterializableBodySource()
+    {
+        var src = File.ReadAllText("fixtures/single_where.cs");
+        var lifter = new LinqLifter();
+        var mementoes = lifter.Lift(src);
+
+        var m = Assert.Single(mementoes);
+        var bodySourceProperty = typeof(MintedMemento).GetProperty("BodySource");
+        Assert.NotNull(bodySourceProperty);
+
+        var bodySource = bodySourceProperty!.GetValue(m);
+        Assert.NotNull(bodySource);
+        Assert.Equal("positives = xs.Where(x => x > 0)", bodySource!.GetType().GetProperty("BodyText")?.GetValue(bodySource));
+        Assert.StartsWith("blake3-512:", bodySource.GetType().GetProperty("SourceCid")?.GetValue(bodySource) as string);
+        Assert.StartsWith("blake3-512:", bodySource.GetType().GetProperty("TemplateCid")?.GetValue(bodySource) as string);
+
+        var template = Assert.IsType<JsonObject>(bodySource.GetType().GetProperty("AstTemplate")?.GetValue(bodySource));
+        Assert.Equal("linq_invocation", template["kind"]?.GetValue<string>());
+        Assert.Equal("Where", template["method"]?.GetValue<string>());
+        var predicate = Assert.IsType<JsonObject>(template["predicate"]);
+        Assert.Equal("binary", predicate["kind"]?.GetValue<string>());
+        Assert.Equal(">", predicate["op"]?.GetValue<string>());
+        Assert.Equal("param_ref", predicate["left"]!["kind"]?.GetValue<string>());
     }
 
     [Fact]

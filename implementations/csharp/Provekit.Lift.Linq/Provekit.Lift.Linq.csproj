@@ -13,4 +13,8 @@
     <PackageReference Include="Microsoft.CodeAnalysis.CSharp" Version="4.11.0" />
   </ItemGroup>
 
+  <ItemGroup>
+    <ProjectReference Include="..\Provekit.Canonicalizer\Provekit.Canonicalizer.csproj" />
+  </ItemGroup>
+
 </Project>
