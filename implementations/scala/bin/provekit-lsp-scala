@@ -1,0 +1,18 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+source_path="${BASH_SOURCE[0]}"
+while [ -L "$source_path" ]; do
+  source_dir="$(cd -P "$(dirname "$source_path")" >/dev/null 2>&1 && pwd)"
+  link_target="$(readlink "$source_path")"
+  if [[ "$link_target" == /* ]]; then
+    source_path="$link_target"
+  else
+    source_path="$source_dir/$link_target"
+  fi
+done
+
+script_dir="$(cd -P "$(dirname "$source_path")" >/dev/null 2>&1 && pwd)"
+cd "$script_dir/.."
+
+exec scala-cli run provekit-lift-scala-source --server=false -- --rpc "$@"

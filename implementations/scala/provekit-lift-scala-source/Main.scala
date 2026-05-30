@@ -16,7 +16,11 @@ object Main:
     if args.contains("--rpc") then ScalaSourceRpc.run()
     else System.err.println("provekit-lift-scala-source expects --rpc")
 
-final case class LiftResult(ir: Seq[ujson.Value], diagnostics: Seq[ujson.Value])
+final case class LiftResult(
+    ir: Seq[ujson.Value],
+    diagnostics: Seq[ujson.Value],
+    callEdges: Seq[CallEdgeDecl] = Seq.empty,
+)
 
 final case class SourceSpan(
     startLine: Int,
@@ -52,6 +56,35 @@ final case class RecognizeParams(
 final case class ParamBinding(index: Int, sourceText: String):
   def toJson: ujson.Obj =
     ujson.Obj("index" -> index, "source_text" -> sourceText)
+
+final case class CallSiteLocus(file: String, line: Int, column: Int):
+  def toJson: ujson.Obj =
+    ujson.Obj(
+      "column" -> column,
+      "file" -> file,
+      "line" -> line,
+    )
+
+final case class CallEdgeDecl(
+    sourceContractCid: String,
+    targetContractCid: Option[String],
+    targetSymbol: String,
+    callSiteLocus: CallSiteLocus,
+):
+  def toJson: ujson.Obj =
+    ujson.Obj(
+      "callSiteLocus" -> callSiteLocus.toJson,
+      "evidenceTerm" -> ujson.Obj(
+        "args" -> ujson.Arr(),
+        "kind" -> "atomic",
+        "name" -> "call-site-obligation",
+      ),
+      "kind" -> "call-edge",
+      "schemaVersion" -> "1",
+      "sourceContractCid" -> sourceContractCid,
+      "targetContractCid" -> targetContractCid.map(ujson.Str(_)).getOrElse(ujson.Null),
+      "targetSymbol" -> targetSymbol,
+    )
 
 final case class RecognizeTag(
     file: String,
@@ -105,13 +138,17 @@ object ScalaSourceLifter:
           if emitBindings then
             ScalaTrees.definitions(parsed.tree).flatMap(defn => libraryBindingEntry(defn, sourcePath))
           else Seq.empty
-        LiftResult(ir, parsed.diagnostics)
+        val callEdges =
+          if layer == "all" then ScalaCallEdges.resolve(parsed.tree, sourcePath)
+          else Seq.empty
+        LiftResult(ir, parsed.diagnostics, callEdges)
 
   def liftPaths(workspaceRoot: String, sourcePaths: Seq[String], layer: String = "all"): LiftResult =
     val root = Path.of(if workspaceRoot.nonEmpty then workspaceRoot else ".").toAbsolutePath.normalize()
     val requested = if sourcePaths.nonEmpty then sourcePaths else Seq(".")
     val ir = mutable.ArrayBuffer.empty[ujson.Value]
     val diagnostics = mutable.ArrayBuffer.empty[ujson.Value]
+    val callEdges = mutable.ArrayBuffer.empty[CallEdgeDecl]
     for path <- expandScalaPaths(root, requested) do
       val relPath =
         try root.relativize(path).toString.replace('\\', '/')
@@ -120,13 +157,40 @@ object ScalaSourceLifter:
         val result = liftSource(Files.readString(path, StandardCharsets.UTF_8), relPath, layer)
         ir ++= result.ir
         diagnostics ++= result.diagnostics
+        callEdges ++= result.callEdges
       catch
         case e: Exception =>
           diagnostics += ujson.Obj(
             "kind" -> "io-error",
             "message" -> s"cannot read '$relPath': ${e.getMessage}",
           )
-    LiftResult(ir.toSeq, diagnostics.toSeq)
+    LiftResult(ir.toSeq, diagnostics.toSeq, callEdges.toSeq)
+
+  def parseForLsp(source: String, sourcePath: String): ujson.Obj =
+    parseSource(source, sourcePath) match
+      case Left(diagnostic) =>
+        ujson.Obj(
+          "declarations" -> ujson.Arr(),
+          "callEdges" -> ujson.Arr(),
+          "warnings" -> ujson.Arr(diagnostic),
+        )
+      case Right(parsed) =>
+        val seen = mutable.LinkedHashSet.empty[String]
+        val declarations = ScalaTrees.definitions(parsed.tree).flatMap { defn =>
+          val name = defn.name.value
+          Option.when(name.nonEmpty && seen.add(name)) {
+            ujson.Obj(
+              "kind" -> "contract",
+              "name" -> name,
+              "outBinding" -> "out",
+            )
+          }
+        }
+        ujson.Obj(
+          "declarations" -> ujson.Arr.from(declarations),
+          "callEdges" -> ujson.Arr.from(ScalaCallEdges.resolve(parsed.tree, sourcePath).map(_.toJson)),
+          "warnings" -> ujson.Arr.from(parsed.diagnostics),
+        )
 
   private def libraryBindingEntry(defn: Defn.Def, sourcePath: String): Option[ujson.Obj] =
     sugarBinding(defn).map { binding =>
@@ -294,6 +358,39 @@ object ScalaRecognizer:
       else if Files.isRegularFile(path) && path.toString.endsWith(".scala") then
         seen += path.toAbsolutePath.normalize()
     seen.toSeq
+
+object ScalaCallEdges:
+  def resolve(tree: Source, sourcePath: String): Seq[CallEdgeDecl] =
+    val definitions = ScalaTrees.definitions(tree)
+    val declaredNames = definitions.map(_.name.value).filter(_.nonEmpty).toSet
+    if declaredNames.isEmpty then return Seq.empty
+
+    val edges = mutable.ArrayBuffer.empty[CallEdgeDecl]
+    val seen = mutable.LinkedHashSet.empty[String]
+    for caller <- definitions do
+      val callerName = caller.name.value
+      if callerName.nonEmpty then
+        for call <- caller.body.collect { case apply: Term.Apply => apply } do
+          callTargetName(call).foreach { targetName =>
+            if targetName != callerName && declaredNames.contains(targetName) then
+              val line = call.fun.pos.startLine + 1
+              val column = call.fun.pos.startColumn
+              val key = s"$callerName\u0000$targetName\u0000$line\u0000$column"
+              if seen.add(key) then
+                edges += CallEdgeDecl(
+                  sourceContractCid = s"pending-scala:$callerName",
+                  targetContractCid = None,
+                  targetSymbol = s"scala-kit:$targetName",
+                  callSiteLocus = CallSiteLocus(sourcePath, line, column),
+                )
+          }
+    edges.toSeq
+
+  private def callTargetName(call: Term.Apply): Option[String] =
+    call.fun match
+      case Term.Name(name) => Some(name)
+      case Term.Select(_, Term.Name(name)) => Some(name)
+      case _ => None
 
 object ScalaTemplate:
   def functionParamNames(defn: Defn.Def): Seq[String] =
@@ -495,6 +592,7 @@ object ScalaSourceRpc:
       val result = method match
         case "initialize" | "provekit.plugin.describe" => describe()
         case "lift" => lift(params)
+        case "parse" => parse(params)
         case "provekit.plugin.recognize" => recognize(params)
         case "shutdown" | "provekit.plugin.shutdown" => ujson.Null
         case other => throw RpcFailure(-32601, s"METHOD_NOT_FOUND: $other")
@@ -533,7 +631,17 @@ object ScalaSourceRpc:
     ujson.Obj(
       "kind" -> "ir-document",
       "ir" -> ujson.Arr.from(result.ir),
+      "callEdges" -> ujson.Arr.from(result.callEdges.map(_.toJson)),
       "diagnostics" -> ujson.Arr.from(result.diagnostics),
+    )
+
+  private def parse(params: ujson.Value): ujson.Obj =
+    val language = stringAt(params, "language")
+    if language.nonEmpty && language != "scala" then
+      throw RpcFailure(-32602, s"language '$language' not supported by this plugin")
+    ScalaSourceLifter.parseForLsp(
+      rawStringAt(params, "source"),
+      stringAt(params, "path"),
     )
 
   private def recognize(params: ujson.Value): ujson.Obj =
@@ -605,3 +713,9 @@ private def firstString(value: ujson.Value, fields: String*): Option[String] =
         case ujson.Str(text) if text.trim.nonEmpty => text.trim
       }).headOption
     case _ => None
+
+private def rawStringAt(value: ujson.Value, field: String): String =
+  value match
+    case obj: ujson.Obj =>
+      obj.obj.get(field).collect { case ujson.Str(text) => text }.getOrElse("")
+    case _ => ""

@@ -10,7 +10,7 @@
 //
 // Lifting strategy for parseFile:
 //   For `rust` sources: call `provekit_lift::lift_path` in-process (fast).
-//   For `go`, `csharp`, `ruby`, `java`, `swift`, `ts`, `cpp`, `c`, `zig`, `php`:
+//   For `go`, `csharp`, `ruby`, `java`, `swift`, `ts`, `cpp`, `c`, `zig`, `php`, `scala`:
 //     spawn the kit's LSP plugin binary, send a JSON-RPC `parse` request,
 //     read the `{declarations, callEdges}` response, and map into
 //     `LinkerContract`/`LinkerCallEdge` (see `spawn_kit_lifter`).
@@ -31,6 +31,8 @@
 //     Binary built via `cc -std=c11 -o provekit-lsp-c main.c`.
 //   For `php`: spawn `provekit-lsp-php` (no args: reads stdin directly).
 //     Binary is installed from implementations/php/bin.
+//   For `scala`: spawn `provekit-lsp-scala` (no args: reads stdin directly).
+//     Wrapper lives at implementations/scala/bin/provekit-lsp-scala.
 //
 // Binary discovery order (for subprocess kits):
 //   1. Check PATH for the named binary.
@@ -255,6 +257,7 @@ enum LiftError {
 /// - `cpp`: subprocess `provekit-lsp-cpp` (no args), method `parse`.
 /// - `c`: subprocess `provekit-lsp-c --rpc`, method `parse`.
 /// - `php`: subprocess `provekit-lsp-php` (no args), method `parse`.
+/// - `scala`: subprocess `provekit-lsp-scala` (no args), method `parse`.
 async fn lift_source(
     kit_id: &str,
     file: &str,
@@ -401,8 +404,22 @@ async fn lift_source(
             spawn_kit_lifter(&binary, &[], file, source, "php-kit").await
         }
 
+        "scala" => {
+            let binary = find_binary("provekit-lsp-scala").ok_or_else(|| {
+                LiftError::LifterUnavailable(
+                    "kit 'scala' binary not found on PATH; install via: \
+                     cd implementations/scala && \
+                     chmod +x bin/provekit-lsp-scala && \
+                     ln -sf \"$PWD/bin/provekit-lsp-scala\" ~/.local/bin/provekit-lsp-scala"
+                        .to_string(),
+                )
+            })?;
+            // scala wrapper runs the Scala source daemon in --rpc mode.
+            spawn_kit_lifter(&binary, &[], file, source, "scala-kit").await
+        }
+
         other => Err(LiftError::KitNotInManifest(format!(
-            "unknown kitId '{other}'; valid kits: rust, go, cpp, csharp, python, ruby, swift, ts, zig, java, c, php"
+            "unknown kitId '{other}'; valid kits: rust, go, cpp, csharp, python, ruby, swift, ts, zig, java, c, php, scala"
         ))),
     }
 }

@@ -133,6 +133,77 @@ final class ScalaSourceLifterTest extends munit.FunSuite:
     assertEquals(tags.head("function_name").str, "FetchURL")
     assertEquals(tags.head("match_tier").str, "exact")
 
+  test("rpc lift emits same-language call edge locus"):
+    val root = Files.createTempDirectory("provekit-scala-lsp-calledges-")
+    val rel = Path.of("Calls.scala")
+    write(root.resolve(rel),
+      """package app
+        |
+        |def addOne(x: Int): Int = x + 1
+        |
+        |def callAddOne(x: Int): Int = addOne(x)
+        |""".stripMargin,
+    )
+
+    val response = ScalaSourceRpc.dispatch(
+      ujson.Obj(
+        "jsonrpc" -> "2.0",
+        "id" -> 9,
+        "method" -> "lift",
+        "params" -> ujson.Obj(
+          "workspace_root" -> root.toString,
+          "source_paths" -> ujson.Arr(rel.toString.replace('\\', '/')),
+        ),
+      ),
+    )
+
+    assert(!response.obj.contains("error"), response.render())
+    val callEdges = response("result")("callEdges").arr
+    assertEquals(callEdges.length, 1)
+    val edge = callEdges.head
+    assertEquals(edge("kind").str, "call-edge")
+    assertEquals(edge("schemaVersion").str, "1")
+    assertEquals(edge("sourceContractCid").str, "pending-scala:callAddOne")
+    assert(edge("targetContractCid").isNull)
+    assertEquals(edge("targetSymbol").str, "scala-kit:addOne")
+    assertEquals(edge("evidenceTerm")("name").str, "call-site-obligation")
+    assertEquals(edge("callSiteLocus")("file").str, rel.toString.replace('\\', '/'))
+    assertEquals(edge("callSiteLocus")("line").num.toInt, 5)
+    assert(edge("callSiteLocus")("column").num.toInt > 0)
+
+  test("rpc parse returns declarations and call edges"):
+    val source =
+      """package app
+        |
+        |def addOne(x: Int): Int = x + 1
+        |
+        |def callAddOne(x: Int): Int = addOne(x)
+        |""".stripMargin
+
+    val response = ScalaSourceRpc.dispatch(
+      ujson.Obj(
+        "jsonrpc" -> "2.0",
+        "id" -> 10,
+        "method" -> "parse",
+        "params" -> ujson.Obj(
+          "path" -> "Calls.scala",
+          "source" -> source,
+        ),
+      ),
+    )
+
+    assert(!response.obj.contains("error"), response.render())
+    val result = response("result")
+    val declarations = result("declarations").arr
+    assertEquals(declarations.map(_("name").str).toSet, Set("addOne", "callAddOne"))
+    assert(declarations.forall(_("kind").str == "contract"))
+    assert(declarations.forall(_("outBinding").str == "out"))
+
+    val edge = result("callEdges").arr.head
+    assertEquals(edge("sourceContractCid").str, "pending-scala:callAddOne")
+    assertEquals(edge("targetSymbol").str, "scala-kit:addOne")
+    assertEquals(edge("callSiteLocus")("file").str, "Calls.scala")
+
   test("recognize returns empty tags for non-matching source"):
     val binding = mustBindingTemplate(
       concept = "concept:http-request",
