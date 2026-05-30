@@ -5,7 +5,7 @@ require_once __DIR__ . '/../../provekit-ir-symbolic/src/Canonicalizer/Blake3.php
 
 use ProvekIt\Canonicalizer\Blake3;
 
-const PROVEKIT_LSP_PROTOCOL_CATALOG_CID = 'blake3-512:52bdb2be4b381cec2aff95db7755c84184878b45cd91882d262114a1abd2dd513f9ef3b250fb87093316fd0fcb48e4b97e109d463e57df5bda6aac0b1c719a0f';
+const PROVEKIT_LSP_PROTOCOL_CATALOG_CID = 'blake3-512:0e3905c2a7a098cd538b9669428a7dffd2b84ba8ccf8fde3724fe2ab61fd3fbc1e1a616a6b20b6817464cdc50c466b5497d4ac2e2dc34c3c15f05535b463643c';
 const PROVEKIT_LSP_IMPLICATION_FAILED_CODE = 'provekit.lsp.implication_failed';
 
 final class ForwardPost
