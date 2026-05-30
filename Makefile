@@ -687,13 +687,13 @@ cross-language-proof-parity: build-java build-ts build-zig build-scala cross-lan
 		emit_java_testng_dispatches_real_emitter_and_maven_checks_output
 	cargo test --release --manifest-path implementations/rust/Cargo.toml \
 		-p provekit-cli --test cmd_emit_go_testing \
-		emit_go_testing_dispatches_manifest_writes_artifact_and_compile_checks
+		emit_go_testing_uses_checked_in_go_double_registration
 	cargo test --release --manifest-path implementations/rust/Cargo.toml \
 		-p provekit-cli --test cmd_emit_go_testify \
 		emit_go_testify_dispatches_separate_emitter_and_compile_checks
 	PYTHON=$(PARITY_PYTHON) PATH=$(PARITY_PYTHON_BIN):$(PATH) cargo test --release --manifest-path implementations/rust/Cargo.toml \
 		-p provekit-cli --test cmd_emit_python_pytest \
-		emit_python_pytest_dispatches_real_emitter_and_pytest_checks_output
+		emit_python_pytest_uses_checked_in_python_double_registration
 	cargo test --release --manifest-path implementations/rust/Cargo.toml \
 		-p provekit-cli --test cmd_emit_rust_cargo_test \
 		emit_rust_cargo_test_dispatches_real_emitter_and_cargo_checks_output
@@ -709,10 +709,10 @@ cross-language-proof-parity: build-java build-ts build-zig build-scala cross-lan
 		materialize_json_client_jackson_loads_from_proof_and_compiles
 	cargo test --release --manifest-path implementations/rust/Cargo.toml \
 		-p provekit-cli --test go_realize_materialize \
-		go_materialize_cli_rewrites_carrier_and_asks_go_kit_to_compile_check
+		go_materialize_uses_checked_in_go_double_realize_registration
 	PATH=$(PARITY_PYTHON_BIN):$(PATH) cargo test --release --manifest-path implementations/rust/Cargo.toml \
 		-p provekit-cli --test cmd_materialize_integration \
-		compile_check_passes_for_valid_python_materialized_output
+		materialize_python_uses_checked_in_python_double_realize_registration
 	cargo test --release --manifest-path implementations/rust/Cargo.toml \
 		-p provekit-cli --test cmd_materialize_integration \
 		materialize_out_dir_writes_materialized_copy_and_leaves_source_unchanged
@@ -747,7 +747,7 @@ cross-language-proof-parity: build-java build-ts build-zig build-scala cross-lan
 		go_production_path_double_discharges_and_mints_witness
 	PYTHON=$(PARITY_PYTHON) PATH=$(PARITY_PYTHON_BIN):$(PATH) cargo test --release --manifest-path implementations/rust/Cargo.toml \
 		-p provekit-cli --test cmd_verify_python_production_bridge \
-		python_production_path_double_discharges_and_mints_witness
+		python_production_path_uses_checked_in_python_double_registration
 	cargo test --release --manifest-path implementations/rust/Cargo.toml \
 		-p provekit-cli --test cmd_verify_rust_production_bridge \
 		rust_production_path_double_discharges_and_mints_witness

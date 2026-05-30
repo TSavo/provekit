@@ -176,6 +176,45 @@ fn stage_python_project(suffix: &str, lift_script: &Path, body_factor: i64) -> P
     project
 }
 
+fn copy_dir_recursive(src: &Path, dst: &Path) {
+    fs::create_dir_all(dst).unwrap_or_else(|_| panic!("mkdir {}", dst.display()));
+    for entry in fs::read_dir(src).unwrap_or_else(|_| panic!("read {}", src.display())) {
+        let entry = entry.expect("read dir entry");
+        let src_path = entry.path();
+        let dst_path = dst.join(entry.file_name());
+        if entry.file_type().expect("entry file type").is_dir() {
+            copy_dir_recursive(&src_path, &dst_path);
+        } else {
+            fs::copy(&src_path, &dst_path).unwrap_or_else(|_| {
+                panic!("copy {} -> {}", src_path.display(), dst_path.display())
+            });
+        }
+    }
+}
+
+fn rewrite_manifest_command(manifest: &Path, command: &Path) {
+    let text = fs::read_to_string(manifest)
+        .unwrap_or_else(|_| panic!("read checked-in manifest {}", manifest.display()));
+    let escaped = command
+        .display()
+        .to_string()
+        .replace('\\', "\\\\")
+        .replace('"', "\\\"");
+    let rewritten = text
+        .lines()
+        .map(|line| {
+            if line.trim_start().starts_with("command = ") {
+                format!("command = [\"{escaped}\", \"--rpc\"]")
+            } else {
+                line.to_string()
+            }
+        })
+        .collect::<Vec<_>>()
+        .join("\n");
+    fs::write(manifest, format!("{rewritten}\n"))
+        .unwrap_or_else(|_| panic!("write manifest {}", manifest.display()));
+}
+
 fn run_mint(project: &Path) {
     let out = Command::new(provekit_bin())
         .arg("mint")
@@ -209,6 +248,49 @@ fn run_verify_json_with_code(project: &Path, witness_dir: &Path) -> (Json, i32) 
     let receipt = serde_json::from_str(&stdout)
         .unwrap_or_else(|e| panic!("verify JSON parse failed: {e}\nstdout: {stdout}"));
     (receipt, out.status.code().unwrap_or(-1))
+}
+
+#[test]
+fn python_production_path_uses_checked_in_python_double_registration() {
+    if !python_available() {
+        eprintln!("python3 not on PATH: skipping checked-in python production-bridge test");
+        return;
+    }
+    if !z3_available() {
+        eprintln!("z3 not on PATH: skipping checked-in python production-bridge test");
+        return;
+    }
+    let lift_script = build_python_lift_verify();
+    let project = unique_dir("checked-in-registration");
+    let example = repo_root().join("examples").join("python-double");
+    fs::copy(example.join("double.py"), project.join("double.py")).expect("copy double.py");
+    fs::copy(
+        example.join("test_double.py"),
+        project.join("test_double.py"),
+    )
+    .expect("copy test_double.py");
+    copy_dir_recursive(&example.join(".provekit"), &project.join(".provekit"));
+    rewrite_manifest_command(
+        &project
+            .join(".provekit")
+            .join("lift")
+            .join("python")
+            .join("manifest.toml"),
+        &lift_script,
+    );
+
+    run_mint(&project);
+
+    let witnesses = project.join("witnesses-out");
+    let (receipt, code) = run_verify_json_with_code(&project, &witnesses);
+    assert_eq!(receipt["totalClaims"], 1, "receipt: {receipt}");
+    assert_eq!(receipt["ok"], true, "receipt: {receipt}");
+    assert_eq!(
+        code, 0,
+        "checked-in Python route must prove; receipt: {receipt}"
+    );
+
+    let _ = fs::remove_dir_all(&project);
 }
 
 /// THE bridge-writer assertion (language-neutral, runs without z3): the TOOL
