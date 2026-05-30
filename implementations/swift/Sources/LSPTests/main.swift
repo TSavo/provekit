@@ -36,6 +36,26 @@ func assert(_ condition: Bool, _ message: String = "") -> Bool {
     return condition
 }
 
+func jsonEscaped(_ value: String) -> String {
+    var out = ""
+    for scalar in value.unicodeScalars {
+        switch scalar.value {
+        case 0x22: out += "\\\""
+        case 0x5C: out += "\\\\"
+        case 0x08: out += "\\b"
+        case 0x0C: out += "\\f"
+        case 0x0A: out += "\\n"
+        case 0x0D: out += "\\r"
+        case 0x09: out += "\\t"
+        case 0..<0x20:
+            out += String(format: "\\u%04x", scalar.value)
+        default:
+            out.unicodeScalars.append(scalar)
+        }
+    }
+    return out
+}
+
 // MARK: - Unit tests for SwiftLifter (no subprocess)
 
 test("lifter extracts 2 func declarations") {
@@ -218,9 +238,17 @@ if let binaryPath = findLSPBinary() {
             print("  no result in response: \(String(describing: resp))")
             return false
         }
+        let capabilities = result["capabilities"] as? [String: Any]
+        let sourceSurfaces = capabilities?["source_surfaces"] as? [String]
+        let diagnosticCodes = capabilities?["diagnostic_codes"] as? [String]
+
         return assert(result["name"] as? String == "provekit-lsp-swift", "name=\(String(describing: result["name"]))") &&
                assert(result["version"] as? String == "0.1.0", "version=\(String(describing: result["version"]))") &&
-               assert((result["capabilities"] as? [String]) == ["parse"], "caps=\(String(describing: result["capabilities"]))")
+               assert(result["protocol_version"] as? String == "provekit-lsp-shared/1", "protocol=\(String(describing: result["protocol_version"]))") &&
+               assert(result["kit_id"] as? String == "swift", "kit_id=\(String(describing: result["kit_id"]))") &&
+               assert((result["protocol_catalog_cid"] as? String ?? "").hasPrefix("blake3-512:"), "protocol_catalog_cid=\(String(describing: result["protocol_catalog_cid"]))") &&
+               assert(sourceSurfaces == ["swift-source"], "source_surfaces=\(String(describing: sourceSurfaces))") &&
+               assert(diagnosticCodes?.contains("provekit.lsp.implication_failed") == true, "diagnostic_codes=\(String(describing: diagnosticCodes))")
     }
 
     test("subprocess: parse returns declarations and callEdges as arrays") {
@@ -273,6 +301,84 @@ if let binaryPath = findLSPBinary() {
                assert((edges?.count ?? 0) >= 1, "Expected >=1 call edge, got \(edges?.count ?? -1)") &&
                assert(edgeOk, "Expected call edge from compute to swift-kit:add") &&
                assert(warnings != nil, "warnings field missing")
+    }
+
+    test("subprocess: analyzeDocument returns callsite diagnostic") {
+        let process = Process()
+        process.executableURL = URL(fileURLWithPath: binaryPath)
+        let stdinPipe = Pipe()
+        let stdoutPipe = Pipe()
+        process.standardInput = stdinPipe
+        process.standardOutput = stdoutPipe
+        process.standardError = FileHandle.nullDevice
+
+        do { try process.run() } catch {
+            print("  failed to spawn: \(error)")
+            return false
+        }
+
+        var buf = Data()
+        let wh = stdinPipe.fileHandleForWriting
+        let rh = stdoutPipe.fileHandleForReading
+
+        _ = exchange(writeHandle: wh, readHandle: rh, readBuffer: &buf,
+            #"{"jsonrpc":"2.0","id":1,"method":"initialize","params":{}}"#)
+
+        let source = """
+        // Forward-propagation floor fixture for Swift
+        // Tests: (1) callsite satisfies pre, no diagnostic | (2) callsite violates pre, diagnostic | (3) loop path, top fallback
+
+        func checkPositive(_ x: Int) -> Bool {
+            if x <= 0 { return false }  // pre: x > 0
+            return true
+        }
+
+        func callerSatisfiesPre() -> Bool {
+            let result = checkPositive(5)  // satisfies pre (x=5 > 0)
+            return result
+        }
+
+        func callerViolatesPre() -> Bool {
+            let result = checkPositive(-1)  // violates pre (x=-1 <= 0)
+            return result
+        }
+
+        func callerWithLoop() -> Bool {
+            for i in 0..<10 {
+                let result = checkPositive(i)  // top fallback at loop entry
+                if !result { return false }
+            }
+            return true
+        }
+        """
+        let request = #"{"jsonrpc":"2.0","id":2,"method":"analyzeDocument","params":{"kit_id":"swift","uri":"file:///project/FloorFixture.swift","file":"FloorFixture.swift","text":""# +
+            jsonEscaped(source) +
+            #"","document_version":42,"workspace_root":"/project","accepted_protocol_catalog_cids":[],"policy_cids":[]}}"#
+        let resp = exchange(writeHandle: wh, readHandle: rh, readBuffer: &buf, request)
+
+        wh.write((#"{"jsonrpc":"2.0","id":3,"method":"shutdown"}"# + "\n").data(using: .utf8)!)
+        process.waitUntilExit()
+
+        guard let r = resp, let result = r["result"] as? [String: Any] else {
+            print("  no result in analyze response: \(String(describing: resp))")
+            return false
+        }
+
+        let diagnostics = result["diagnostics"] as? [[String: Any]]
+        let diagnostic = diagnostics?.first
+        let data = diagnostic?["data"] as? [String: Any]
+        let range = diagnostic?["range"] as? [String: Any]
+
+        return assert(result["kind"] as? String == "lsp-document-analysis", "kind=\(String(describing: result["kind"]))") &&
+               assert(result["kit_id"] as? String == "swift", "kit_id=\(String(describing: result["kit_id"]))") &&
+               assert((result["document_cid"] as? String ?? "").hasPrefix("blake3-512:"), "document_cid=\(String(describing: result["document_cid"]))") &&
+               assert(diagnostics?.count == 1, "diagnostics=\(String(describing: diagnostics))") &&
+               assert(diagnostic?["code"] as? String == "provekit.lsp.implication_failed", "code=\(String(describing: diagnostic?["code"]))") &&
+               assert(diagnostic?["severity"] as? String == "error", "severity=\(String(describing: diagnostic?["severity"]))") &&
+               assert(diagnostic?["producer"] as? String == "forward-propagation", "producer=\(String(describing: diagnostic?["producer"]))") &&
+               assert(data?["callee"] as? String == "checkPositive", "callee=\(String(describing: data?["callee"]))") &&
+               assert(range?["start_line"] as? Int == 15, "start_line=\(String(describing: range?["start_line"]))") &&
+               assert(range?["start_col"] as? Int == 17, "start_col=\(String(describing: range?["start_col"]))")
     }
 
     test("subprocess: unknown method returns error") {

@@ -135,7 +135,7 @@ let package = Package(
         ),
         .executableTarget(
             name: "ProveKitLSPSwift",
-            dependencies: ["SwiftLifter"]
+            dependencies: ["SwiftLifter", "ProvekitCrypto"]
         ),
         .executableTarget(
             name: "MintSwiftSelfContracts",
