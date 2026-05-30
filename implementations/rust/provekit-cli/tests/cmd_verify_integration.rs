@@ -225,15 +225,16 @@ fn run_verify_json(project: &Path, witness_dir: &Path) -> Json {
 }
 
 #[test]
-fn verify_empty_catalog_is_clean_and_emits_receipt() {
-    // A project with no .proof claims: verify must emit a receipt with
-    // zero claims and exit clean (nothing to verify, not a failure).
+fn verify_empty_catalog_is_not_a_successful_proof() {
+    // A project with no .proof claims: verify must emit a receipt, but it
+    // must not report a successful proof when it checked zero claims.
     let dir = unique_dir("empty");
     let witnesses = dir.join("w");
-    let receipt = run_verify_json(&dir, &witnesses);
+    let (receipt, code) = run_verify_json_with_code(&dir, &witnesses);
     assert_eq!(receipt["kind"], "verification-receipt");
     assert_eq!(receipt["totalClaims"], 0);
-    assert_eq!(receipt["ok"], true);
+    assert_eq!(receipt["ok"], false);
+    assert_ne!(code, 0, "zero-claim verify must exit nonzero: {receipt}");
     let _ = fs::remove_dir_all(&dir);
 }
 
