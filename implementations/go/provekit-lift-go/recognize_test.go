@@ -256,6 +256,9 @@ func FetchURL(u string, h Header) Response {
 			if tag["template_cid"] != binding.TemplateCID || tag["contract_cid"] != binding.ContractCID {
 				t.Fatalf("tag cids = %#v", tag)
 			}
+			if tag["target_proof_cid"] == "" {
+				t.Fatalf("tag must carry target_proof_cid for bridge pinning: %#v", tag)
+			}
 			if tag["match_tier"] != "exact" {
 				t.Fatalf("match_tier = %#v", tag["match_tier"])
 			}

@@ -45,6 +45,7 @@ func bindingTemplatesFromProof(path string) ([]BindingTemplate, error) {
 	if err != nil {
 		return nil, fmt.Errorf("read Go shim proof %s: %w", path, err)
 	}
+	proofCID := canonicalizer.ComputeCID(bytes)
 	catalog, err := proof_envelope.NewCBORDecoder(bytes).DecodeCatalog()
 	if err != nil {
 		return nil, fmt.Errorf("decode Go shim proof %s: %w", path, err)
@@ -67,7 +68,7 @@ func bindingTemplatesFromProof(path string) ([]BindingTemplate, error) {
 		if rawBody, ok := parsed["body"].(map[string]any); ok {
 			body = rawBody
 		}
-		binding, ok := bindingTemplateFromSugarEntry(body)
+		binding, ok := bindingTemplateFromSugarEntry(body, proofCID)
 		if ok {
 			bindings = append(bindings, binding)
 		}
@@ -75,7 +76,7 @@ func bindingTemplatesFromProof(path string) ([]BindingTemplate, error) {
 	return bindings, nil
 }
 
-func bindingTemplateFromSugarEntry(entry map[string]any) (BindingTemplate, bool) {
+func bindingTemplateFromSugarEntry(entry map[string]any, proofCID string) (BindingTemplate, bool) {
 	if entry["kind"] != "library-sugar-binding-entry" {
 		return BindingTemplate{}, false
 	}
@@ -103,13 +104,14 @@ func bindingTemplateFromSugarEntry(entry map[string]any) (BindingTemplate, bool)
 	}
 	contractCID, _ := entry["contract_cid"].(string)
 	return BindingTemplate{
-		ConceptName: conceptName,
-		LibraryTag:  libraryTag,
-		Family:      entry["family"],
-		ASTTemplate: json.RawMessage(templateBytes),
-		TemplateCID: templateCID,
-		ParamNames:  paramNames,
-		ContractCID: contractCID,
+		ConceptName:    conceptName,
+		LibraryTag:     libraryTag,
+		Family:         entry["family"],
+		ASTTemplate:    json.RawMessage(templateBytes),
+		TemplateCID:    templateCID,
+		ParamNames:     paramNames,
+		ContractCID:    contractCID,
+		TargetProofCID: proofCID,
 	}, true
 }
 
