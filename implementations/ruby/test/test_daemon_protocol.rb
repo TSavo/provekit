@@ -3,7 +3,7 @@
 # Smoke test: protocol conformance of the provekit-lsp-ruby binary.
 #
 # Asserts:
-#   - initialize responds with protocol_version == "provekit-lift/1".
+#   - initialize responds with protocol_version == "provekit-lsp-shared/1".
 #   - lift returns result.kind == "ir-document" with ir array.
 #   - parse (legacy) response has result.declarations as a JSON array, not a string.
 #   - parse response has result.callEdges as a JSON array.
@@ -40,6 +40,34 @@ class TestDaemonProtocol < Minitest::Test
     end
   RUBY
 
+  FLOOR_FIXTURE_SOURCE = <<~RUBY.freeze
+    # provekit: contract
+    def check_positive(x)
+      return false if x <= 0
+      true
+    end
+
+    # provekit: contract
+    def caller_satisfies_pre
+      result = check_positive(5)
+      result
+    end
+
+    # provekit: contract
+    def caller_violates_pre
+      result = check_positive(-1)
+      result
+    end
+
+    def caller_with_loop
+      (0...10).each do |i|
+        result = check_positive(i)
+        return false unless result
+      end
+      true
+    end
+  RUBY
+
   FIXTURE_PATH = "test_fixture.rb".freeze
 
   # Build the NDJSON session input for initialize -> parse -> shutdown.
@@ -49,6 +77,25 @@ class TestDaemonProtocol < Minitest::Test
       { jsonrpc: "2.0", id: 2, method: "parse",
         params: { path: path, source: source }.merge(extra_params) },
       { jsonrpc: "2.0", id: 3, method: "shutdown" },
+    ]
+    msgs.map { |m| JSON.generate(m) }.join("\n") + "\n"
+  end
+
+  def build_analyze_session(source: FLOOR_FIXTURE_SOURCE, path: "floor_fixture.rb")
+    msgs = [
+      { jsonrpc: "2.0", id: 20, method: "initialize", params: {} },
+      { jsonrpc: "2.0", id: 21, method: "analyzeDocument",
+        params: {
+          kit_id: "ruby",
+          uri: "file:///project/#{path}",
+          file: path,
+          text: source,
+          document_version: 42,
+          workspace_root: "/project",
+          accepted_protocol_catalog_cids: [],
+          policy_cids: [],
+        } },
+      { jsonrpc: "2.0", id: 22, method: "shutdown" },
     ]
     msgs.map { |m| JSON.generate(m) }.join("\n") + "\n"
   end
@@ -73,12 +120,42 @@ class TestDaemonProtocol < Minitest::Test
     assert init_resp, "Expected id 1 not found. Available ids: #{responses.map { |r| r['id'] }}"
     result = init_resp["result"]
     assert_equal "provekit-lsp-ruby", result["name"]
-    assert_equal "provekit-lift/1", result["protocol_version"],
-                 "expected protocol_version == 'provekit-lift/1'"
+    assert_equal "provekit-lsp-shared/1", result["protocol_version"],
+                 "expected protocol_version == 'provekit-lsp-shared/1'"
+    assert_equal "ruby", result["kit_id"]
+    assert_match(/\Ablake3-512:[0-9a-f]{128}\z/, result["protocol_catalog_cid"])
     caps = result["capabilities"]
     assert_instance_of Hash, caps, "capabilities should be a Hash"
-    assert_includes caps["authoring_surfaces"], "ruby-source"
-    assert_equal false, caps["emits_signed_mementos"]
+    assert_includes caps["source_surfaces"], "ruby-source"
+    assert_includes caps["diagnostic_codes"], "provekit.lsp.implication_failed"
+  end
+
+  def test_analyze_document_floor_fixture_emits_shared_callsite_diagnostic
+    responses = run_lsp(build_analyze_session)
+    analyze_resp = responses.find { |r| r["id"] == 21 }
+    assert analyze_resp, "Expected analyzeDocument id 21 not found. Available ids: #{responses.map { |r| r['id'] }}"
+    refute analyze_resp["error"], "analyzeDocument returned error: #{analyze_resp.inspect}"
+
+    result = analyze_resp["result"]
+    assert_equal "lsp-document-analysis", result["kind"]
+    assert_equal "1", result["schema_version"]
+    assert_equal "ruby", result["kit_id"]
+    assert_equal "file:///project/floor_fixture.rb", result["uri"]
+    assert_equal "floor_fixture.rb", result["file"]
+    assert_match(/\Ablake3-512:[0-9a-f]{128}\z/, result["document_cid"])
+    assert_instance_of Array, result["entries"]
+    assert_equal [], result["statuses"]
+    assert_nil result["project"]
+
+    diagnostics = result["diagnostics"]
+    assert_equal 1, diagnostics.length, "expected one diagnostic, got: #{diagnostics.inspect}"
+    diagnostic = diagnostics.first
+    assert_equal "provekit.lsp.implication_failed", diagnostic["code"]
+    assert_equal "error", diagnostic["severity"]
+    assert_equal "forward-propagation", diagnostic["producer"]
+    assert_equal "ruby", diagnostic["kit_id"]
+    assert_equal "check_positive", diagnostic.dig("data", "callee")
+    assert_equal({ "start_line" => 15, "start_col" => 11, "end_line" => 15, "end_col" => 25 }, diagnostic["range"])
   end
 
   def test_lift_ir_document_shape

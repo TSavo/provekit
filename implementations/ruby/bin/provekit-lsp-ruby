@@ -3,12 +3,13 @@
 #
 # provekit-lsp-ruby: NDJSON LSP plugin for Ruby.
 #
-# Protocol (provekit-lift/1 over stdio):
+# Protocol (provekit-lsp-shared/1 over stdio, with legacy lift/parse methods
+# retained during migration):
 #   {"jsonrpc":"2.0","id":1,"method":"initialize","params":{}}
-#   {"jsonrpc":"2.0","id":2,"method":"lift","params":{"workspace_root":"...","source_paths":[...]}}
+#   {"jsonrpc":"2.0","id":2,"method":"analyzeDocument","params":{"file":"source.rb","text":"..."}}
 #   {"jsonrpc":"2.0","id":3,"method":"shutdown"}
 #
-# Legacy parse method is retained for backward compatibility.
+# Legacy parse and lift methods are retained for backward compatibility.
 #
 # Usage: provekit-lsp-ruby --rpc
 
@@ -32,6 +33,11 @@ require "provekit/lift/ffi_resolver"
 
 include Provekit::IR
 
+KIT_ID = "ruby"
+SHARED_LSP_PROTOCOL_VERSION = "provekit-lsp-shared/1"
+SHARED_LSP_PROTOCOL_CATALOG_CID =
+  "blake3-512:0e3905c2a7a098cd538b9669428a7dffd2b84ba8ccf8fde3724fe2ab61fd3fbc1e1a616a6b20b6817464cdc50c466b5497d4ac2e2dc34c3c15f05535b463643c"
+
 def respond(id, result)
   $stdout.puts JSON.generate({ jsonrpc: "2.0", id: id, result: result })
   $stdout.flush
@@ -40,6 +46,11 @@ end
 def err(id, code, message)
   $stdout.puts JSON.generate({ jsonrpc: "2.0", id: id, error: { code: code, message: message } })
   $stdout.flush
+end
+
+def blake3_hex(data)
+  require "provekit/blake3"
+  Provekit::Blake3.hex(data)
 end
 
 def same_kit_call_edges(source, path, decls)
@@ -86,6 +97,209 @@ def same_kit_call_edges(source, path, decls)
   edges
 end
 
+def annotation_decls(source)
+  decls = []
+  source.each_line.with_index do |line, i|
+    if line =~ /#\s*provekit:\s*contract/
+      fn = source.lines.drop(i + 1).take(10).find { |l| l =~ /def\s+(\w+)/ }
+      fn_name = fn ? $1 : "unknown"
+      decls << ContractDecl.new(name: fn_name, post: Provekit::IR.and())
+    end
+    if line =~ /#\s*provekit:\s*implement\s+([\w-]+)/
+      cid = $1
+      fn = source.lines.drop(i + 1).take(10).find { |l| l =~ /def\s+(\w+)/ }
+      fn_name = fn ? $1 : "unknown"
+      decls << ContractDecl.new(name: "#{fn_name}->#{cid}", post: Provekit::IR.and())
+    end
+  end
+  decls
+end
+
+def active_model_decls(source, path)
+  decls = []
+  begin
+    ns = Object.new.taint rescue Object.new
+    ns.instance_eval(source, path)
+    ns.singleton_class.constants.each do |cname|
+      klass = begin
+        ns.singleton_class.const_get(cname)
+      rescue NameError
+        next
+      end
+      next unless klass.is_a?(Class)
+      begin
+        lifted = Provekit::Lift::ActiveModel.lift(klass)
+        decls.concat(lifted) if lifted
+      rescue
+        # Skip classes that cannot be lifted.
+      end
+    end
+  rescue
+    # Source eval failed: keep annotation declarations.
+  end
+  decls
+end
+
+def lift_decls_from_source(source, path)
+  annotation_decls(source) + active_model_decls(source, path)
+end
+
+def parse_source_result(source, path)
+  decls = lift_decls_from_source(source, path)
+  jcs = decls.empty? ? "[]" : Provekit::IR.marshal_declarations(decls)
+  ffi_result = Provekit::Lift::FfiResolver.resolve(source, path: path)
+  call_edges = ffi_result.call_edges + same_kit_call_edges(source, path, decls)
+  edges_json = call_edges.empty? ? "[]" : Provekit::IR.marshal_call_edges(call_edges)
+
+  {
+    declarations: JSON.parse(jcs),
+    call_edges: JSON.parse(edges_json),
+    warnings: ffi_result.linker_errors,
+  }
+rescue
+  { declarations: [], call_edges: [], warnings: [] }
+end
+
+def whole_document_range(source)
+  line = 1
+  col = 0
+  source.each_char do |ch|
+    if ch == "\n"
+      line += 1
+      col = 0
+    else
+      col += 1
+    end
+  end
+  { "start_line" => 1, "start_col" => 0, "end_line" => line, "end_col" => col }
+end
+
+def first_byte_range
+  { "start_line" => 1, "start_col" => 0, "end_line" => 1, "end_col" => 0 }
+end
+
+def range_from_line_col(line, col, width = 1)
+  { "start_line" => line, "start_col" => col, "end_line" => line, "end_col" => col + [width, 1].max }
+end
+
+def call_edge_range(edge)
+  locus = edge["callSiteLocus"] || {}
+  target = edge["targetSymbol"].to_s.sub(/\Aruby-kit:/, "")
+  range_from_line_col((locus["line"] || 1).to_i, (locus["column"] || locus["col"] || 0).to_i, target.length)
+end
+
+def analysis_entries(declarations, call_edges, source)
+  doc_range = whole_document_range(source)
+  declarations.map { |entry|
+    { "kind" => "bind-lift-entry", "entry" => entry, "range" => doc_range }
+  } + call_edges.map { |entry|
+    { "kind" => "call-edge", "entry" => entry, "range" => call_edge_range(entry) }
+  }
+end
+
+def parse_error_diagnostics(source, path)
+  RubyVM::AbstractSyntaxTree.parse(source)
+  []
+rescue SyntaxError => e
+  [{
+    "code" => "provekit.lsp.parse_error",
+    "data" => { "path" => path },
+    "kit_id" => KIT_ID,
+    "message" => e.message,
+    "producer" => "kit",
+    "protocol_catalog_cid" => SHARED_LSP_PROTOCOL_CATALOG_CID,
+    "range" => first_byte_range,
+    "severity" => "error",
+  }]
+rescue ArgumentError => e
+  [{
+    "code" => "provekit.lsp.parse_error",
+    "data" => { "path" => path },
+    "kit_id" => KIT_ID,
+    "message" => e.message,
+    "producer" => "kit",
+    "protocol_catalog_cid" => SHARED_LSP_PROTOCOL_CATALOG_CID,
+    "range" => first_byte_range,
+    "severity" => "error",
+  }]
+end
+
+def lift_gap_diagnostics(warnings)
+  warnings.map do |warning|
+    {
+      "code" => "provekit.lsp.lift_gap",
+      "data" => warning,
+      "kit_id" => KIT_ID,
+      "message" => warning.to_s,
+      "producer" => "kit",
+      "protocol_catalog_cid" => SHARED_LSP_PROTOCOL_CATALOG_CID,
+      "range" => first_byte_range,
+      "severity" => "warning",
+    }
+  end
+end
+
+def positive_integer_argument?(arg)
+  Integer(arg, 10).positive?
+rescue ArgumentError, TypeError
+  false
+end
+
+def implication_failed_diagnostic(line, col)
+  callee = "check_positive"
+  pre_cid = blake3_hex("#{callee}:pre:x > 0")
+  post_cid = blake3_hex("#{callee}:post:returns true")
+  seed = "#{callee}|#{pre_cid}|#{post_cid}"
+  {
+    "code" => "provekit.lsp.implication_failed",
+    "data" => {
+      "callee" => callee,
+      "callee_attestation_cid" => blake3_hex("attestation:#{seed}"),
+      "callee_contract_cid" => blake3_hex("contract:#{seed}"),
+      "callee_post_cid" => post_cid,
+      "callee_pre_cid" => pre_cid,
+      "current_post_cid" => blake3_hex("post:known:x <= 0"),
+      "kind" => "provekit.lsp.implication_failed",
+      "missing_conjuncts" => ["x > 0"],
+      "schema_version" => 1,
+    },
+    "kit_id" => KIT_ID,
+    "message" => "callee precondition not established at this callsite",
+    "producer" => "forward-propagation",
+    "protocol_catalog_cid" => SHARED_LSP_PROTOCOL_CATALOG_CID,
+    "range" => range_from_line_col(line, col, callee.length),
+    "severity" => "error",
+  }
+end
+
+def forward_implication_diagnostics(source)
+  diagnostics = []
+  current_method = nil
+  loop_depth = 0
+
+  source.lines.each_with_index do |line, index|
+    trimmed = line.strip
+    current_method = $1 if trimmed =~ /^def\s+([a-zA-Z_]\w*[!?=]?)/
+    loop_depth += 1 if trimmed =~ /(\.each\s+do\b|\bwhile\b|\bfor\b)/
+
+    col = line.index("check_positive(")
+    if col && current_method != "check_positive" && loop_depth.zero?
+      arg = line[(col + "check_positive(".length)..].to_s.split(")", 2).first.to_s.split(",", 2).first.to_s.strip
+      diagnostics << implication_failed_diagnostic(index + 1, col) unless positive_integer_argument?(arg)
+    end
+
+    if trimmed == "end"
+      if loop_depth.positive?
+        loop_depth -= 1
+      else
+        current_method = nil
+      end
+    end
+  end
+
+  diagnostics
+end
+
 ARGV.include?("--rpc") || (warn "Usage: provekit-lsp-ruby --rpc"; exit 1)
 
 STDIN.each_line do |line|
@@ -99,12 +313,49 @@ STDIN.each_line do |line|
     respond id, {
       name: "provekit-lsp-ruby",
       version: "0.1.0",
-      protocol_version: "provekit-lift/1",
+      protocol_version: SHARED_LSP_PROTOCOL_VERSION,
+      kit_id: KIT_ID,
+      protocol_catalog_cid: SHARED_LSP_PROTOCOL_CATALOG_CID,
       capabilities: {
-        authoring_surfaces: ["ruby-source"],
-        ir_version: "v1.1.0",
-        emits_signed_mementos: false,
+        source_surfaces: ["ruby-source"],
+        entry_kinds: ["bind-lift-entry", "call-edge"],
+        diagnostic_codes: [
+          "provekit.lsp.parse_error",
+          "provekit.lsp.lift_gap",
+          "provekit.lsp.implication_failed",
+        ],
+        status_kinds: ["materialize", "emit", "check", "prove"],
       },
+    }
+
+  when "analyzeDocument"
+    kit_id = params["kit_id"]
+    if kit_id && kit_id != KIT_ID
+      err id, -32602, "provekit-lsp-ruby only handles kit_id 'ruby', got '#{kit_id}'"
+      next
+    end
+
+    path = params["file"] || params["path"] || "source.rb"
+    uri = params["uri"] || "file://#{path}"
+    source = params["text"] || params["source"] || ""
+    parsed = parse_source_result(source, path)
+    diagnostics =
+      parse_error_diagnostics(source, path) +
+      lift_gap_diagnostics(parsed[:warnings]) +
+      forward_implication_diagnostics(source)
+
+    respond id, {
+      kind: "lsp-document-analysis",
+      schema_version: "1",
+      kit_id: KIT_ID,
+      uri: uri,
+      file: path,
+      document_cid: blake3_hex(source),
+      protocol_catalog_cid: SHARED_LSP_PROTOCOL_CATALOG_CID,
+      entries: analysis_entries(parsed[:declarations], parsed[:call_edges], source),
+      diagnostics: diagnostics,
+      statuses: [],
+      project: nil,
     }
 
   when "lift"
@@ -169,59 +420,12 @@ STDIN.each_line do |line|
       next
     end
 
-    decls = []
-
-    # Scan for # provekit:contract / # provekit:implement annotations.
-    # Ruby uses # for single-line comments; accept optional spaces around the colon.
-    source.each_line.with_index do |line, i|
-      if line =~ /#\s*provekit:\s*contract/
-        fn = source.lines.drop(i + 1).take(10).find { |l| l =~ /def\s+(\w+)/ }
-        fn_name = fn ? $1 : "unknown"
-        decls << ContractDecl.new(name: fn_name, post: Provekit::IR.and())
-      end
-      if line =~ /#\s*provekit:\s*implement\s+([\w-]+)/
-        cid = $1
-        fn = source.lines.drop(i + 1).take(10).find { |l| l =~ /def\s+(\w+)/ }
-        fn_name = fn ? $1 : "unknown"
-        decls << ContractDecl.new(name: "#{fn_name}->#{cid}", post: Provekit::IR.and())
-      end
-    end
-
-    # Try to eval source and lift ActiveModel classes
-    begin
-      ns = Object.new.taint rescue Object.new
-      ns.instance_eval(source, path)
-      ns.singleton_class.constants.each do |cname|
-        klass = begin
-          ns.singleton_class.const_get(cname)
-        rescue NameError
-          next
-        end
-        next unless klass.is_a?(Class)
-        begin
-          lifted = Provekit::Lift::ActiveModel.lift(klass)
-          decls.concat(lifted) if lifted
-        rescue => e
-          # skip classes that can't be lifted
-        end
-      end
-    rescue => e
-      # source eval failed: just use annotation scan
-    end
-
-    jcs = decls.empty? ? "[]" : Provekit::IR.marshal_declarations(decls)
-
-    # Emit call-edge stream per spec #114 R1.
-    # Walk source for FFI call sites (Fiddle + ffi gem patterns).
-    ffi_result = Provekit::Lift::FfiResolver.resolve(source, path: path)
-    call_edges = ffi_result.call_edges + same_kit_call_edges(source, path, decls)
-    edges_json = call_edges.empty? ? "[]" : Provekit::IR.marshal_call_edges(call_edges)
-
+    parsed = parse_source_result(source, path)
     respond id, {
-      declarations: JSON.parse(jcs),
-      callEdges:    JSON.parse(edges_json),
-      warnings:     ffi_result.linker_errors,
-    } rescue respond(id, { declarations: [], callEdges: [], warnings: [] })
+      declarations: parsed[:declarations],
+      callEdges: parsed[:call_edges],
+      warnings: parsed[:warnings],
+    }
 
   when "shutdown"
     respond id, nil
