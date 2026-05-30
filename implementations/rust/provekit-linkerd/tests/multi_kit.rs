@@ -29,9 +29,14 @@
 // Test 9: parseFile(kit="zig", ...) dispatches to the zig lifter.
 //         Skipped if provekit-lsp-zig is not installed.
 //
+// Test 10: parseFile(kit="python", ...) dispatches to the python lifter.
+//          Uses a fixture binary on PATH so the test is not coupled to the
+//          developer machine's Python package installation state.
+//
 // These tests communicate with the daemon over its Unix socket.
 
 use std::io::{BufRead, BufReader, Write};
+use std::os::unix::fs::PermissionsExt;
 use std::os::unix::net::UnixStream;
 use std::path::PathBuf;
 use std::process::{Child, Command, Stdio};
@@ -216,6 +221,78 @@ fn rpc_binary_accepts_initialize(name: &str, args: &[&str]) -> Result<PathBuf, S
     let _ = child.wait();
 
     Ok(path)
+}
+
+fn install_fixture_python_lsp() -> PathBuf {
+    let bin_dir = std::env::temp_dir().join(format!(
+        "provekit-linkerd-python-bin-{}",
+        std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map(|d| d.subsec_nanos())
+            .unwrap_or(0)
+    ));
+    std::fs::create_dir_all(&bin_dir).expect("create python fixture bin dir");
+    let binary = bin_dir.join("provekit-lsp-python");
+    std::fs::write(
+        &binary,
+        r#"#!/usr/bin/env python3
+import json
+import sys
+
+for line in sys.stdin:
+    if not line.strip():
+        continue
+    request = json.loads(line)
+    method = request.get("method")
+    msg_id = request.get("id")
+    if method == "initialize":
+        response = {
+            "jsonrpc": "2.0",
+            "id": msg_id,
+            "result": {
+                "name": "provekit-lsp-python",
+                "version": "fixture",
+                "capabilities": ["parse"],
+            },
+        }
+    elif method == "parse":
+        response = {
+            "jsonrpc": "2.0",
+            "id": msg_id,
+            "result": {
+                "declarations": [],
+                "callEdges": [],
+                "warnings": [],
+            },
+        }
+    elif method == "shutdown":
+        response = {"jsonrpc": "2.0", "id": msg_id, "result": None}
+        print(json.dumps(response, separators=(",", ":")), flush=True)
+        break
+    else:
+        response = {
+            "jsonrpc": "2.0",
+            "id": msg_id,
+            "error": {"code": -32601, "message": f"unknown method: {method}"},
+        }
+    print(json.dumps(response, separators=(",", ":")), flush=True)
+"#,
+    )
+    .expect("write python fixture lsp");
+    let mut perms = std::fs::metadata(&binary)
+        .expect("stat python fixture lsp")
+        .permissions();
+    perms.set_mode(0o755);
+    std::fs::set_permissions(&binary, perms).expect("chmod python fixture lsp");
+
+    let current_path = std::env::var("PATH").unwrap_or_default();
+    let new_path = if current_path.is_empty() {
+        bin_dir.display().to_string()
+    } else {
+        format!("{}:{}", bin_dir.display(), current_path)
+    };
+    std::env::set_var("PATH", new_path);
+    bin_dir
 }
 
 // -------------------------------------------------------------------
@@ -863,4 +940,63 @@ fn absValue(x: i64) i64 {
     shutdown(&sock);
     child.wait().ok();
     std::fs::remove_file(&sock).ok();
+}
+
+// -------------------------------------------------------------------
+// Test 10: python kit dispatch returns diagnostics when provekit-lsp-python is on PATH.
+// -------------------------------------------------------------------
+
+/// Test 10: parseFile with kit="python" dispatches to the Python lifter.
+///
+/// Unlike the other optional kit-dispatch tests, this test installs a tiny
+/// fixture `provekit-lsp-python` binary on PATH. The regression it pins is
+/// linkerd's dispatch arm: Python must be routed like any other per-language
+/// kit, not rejected inside Rust as unavailable.
+#[test]
+fn test10_python_kit_dispatch() {
+    let fixture_bin_dir = install_fixture_python_lsp();
+
+    let sock = unique_sock_path("t10");
+    let _ = std::fs::remove_file(&sock);
+
+    let mut child = spawn_daemon(&sock);
+
+    assert!(
+        wait_for_socket(&sock, Duration::from_secs(5)),
+        "daemon socket did not appear"
+    );
+
+    let python_source = r#"
+def test_positive():
+    assert 1 > 0
+"#;
+
+    let req = serde_json::json!({
+        "jsonrpc": "2.0",
+        "id": 1,
+        "method": "parseFile",
+        "params": {
+            "kitId": "python",
+            "file": "/tmp/test_positive.py",
+            "source": python_source
+        }
+    });
+
+    let resp = send_recv(&sock, &req);
+
+    assert!(
+        resp.get("error").is_none(),
+        "python kit parseFile returned unexpected error: {:?}",
+        resp
+    );
+    assert!(
+        resp["result"]["diagnostics"].is_array(),
+        "python kit parseFile result must have diagnostics array: {:?}",
+        resp
+    );
+
+    shutdown(&sock);
+    child.wait().ok();
+    std::fs::remove_file(&sock).ok();
+    std::fs::remove_dir_all(fixture_bin_dir).ok();
 }

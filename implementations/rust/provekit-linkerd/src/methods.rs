@@ -16,11 +16,8 @@
 //     `LinkerContract`/`LinkerCallEdge` (see `spawn_kit_lifter`).
 //   For `zig`: spawn `provekit-lsp-zig` (no args: reads stdin directly).
 //     `callEdges` may be omitted from the response and is treated as empty.
-//   For `python`: the LSP module has no installed binary (it's a Python module,
-//     invoked as `python -m provekit_lift_py_tests.lsp`); additionally, its
-//     `declarations` field is a JSON-encoded string rather than a JSON array
-//     (shape divergence from go/csharp/ruby). Documented gap; returns
-//     LifterUnavailable until a proper installed binary ships.
+//   For `python`: spawn `provekit-lsp-python` (no args), method `parse`.
+//     Binary is installed from implementations/python/provekit-lift-py-tests.
 //   For `java`: spawn `provekit-lsp-java --rpc`, same protocol as go/csharp/ruby.
 //     Requires `mvn package` in implementations/java/provekit-lift-java-core first;
 //     returns LifterUnavailable if the binary is not on PATH.
@@ -248,7 +245,7 @@ enum LiftError {
 /// - `ruby`: subprocess `provekit-lsp-ruby --rpc`, method `parse`.
 /// - `zig`: subprocess `provekit-lsp-zig` (no args), method `parse`; `callEdges`
 ///   field may be absent from response and is treated as empty.
-/// - `python`: no installed binary + shape divergence in response. LifterUnavailable.
+/// - `python`: subprocess `provekit-lsp-python` (no args), method `parse`.
 /// - `java`: subprocess `provekit-lsp-java --rpc`, method `parse`; binary must be
 ///   installed via `mvn package` in implementations/java/provekit-lift-java-core.
 /// - `swift`: subprocess `provekit-lsp-swift` (no args), method `parse`.
@@ -309,13 +306,17 @@ async fn lift_source(
             spawn_kit_lifter(&binary, &[], file, source, "zig-kit").await
         }
 
-        "python" => Err(LiftError::LifterUnavailable(
-            "kit 'python' lifter has no installed binary (it ships as a Python module, \
-             not a standalone executable) and its RPC response uses a non-standard \
-             shape (declarations encoded as a JSON string rather than a JSON array). \
-             Gap documented in spec §3 R5 commentary. Follow-up required."
-                .to_string(),
-        )),
+        "python" => {
+            let binary = find_binary("provekit-lsp-python").ok_or_else(|| {
+                LiftError::LifterUnavailable(
+                    "kit 'python' binary not found on PATH; install via: \
+                     cd implementations/python && \
+                     pip install -e provekit-lift-py-tests"
+                        .to_string(),
+                )
+            })?;
+            spawn_kit_lifter(&binary, &[], file, source, "python-kit").await
+        }
 
         "java" => {
             let binary = find_binary("provekit-lsp-java").ok_or_else(|| {
