@@ -755,7 +755,7 @@ cross-language-proof-parity: build-java cross-language-proof-parity-python-env
 	@echo "--- mint parity ---"
 	cargo test --release --manifest-path implementations/rust/Cargo.toml \
 		-p provekit-cli --test cmd_verify_java_production_bridge \
-		java_mint_auto_writes_body_discharge_bridge
+		java_mint_uses_checked_in_java_double_registration
 	cargo test --release --manifest-path implementations/rust/Cargo.toml \
 		-p provekit-cli --test cmd_verify_go_production_bridge \
 		go_mint_auto_writes_body_discharge_bridge
@@ -768,7 +768,7 @@ cross-language-proof-parity: build-java cross-language-proof-parity-python-env
 	@echo "--- prove parity ---"
 	cargo test --release --manifest-path implementations/rust/Cargo.toml \
 		-p provekit-cli --test cmd_verify_java_production_bridge \
-		java_production_path_assertion_discharges_and_mints_witness
+		java_production_path_uses_checked_in_java_double_registration
 	cargo test --release --manifest-path implementations/rust/Cargo.toml \
 		-p provekit-cli --test cmd_verify_go_production_bridge \
 		go_production_path_double_discharges_and_mints_witness
@@ -781,7 +781,7 @@ cross-language-proof-parity: build-java cross-language-proof-parity-python-env
 	@echo "--- contradiction parity ---"
 	cargo test --release --manifest-path implementations/rust/Cargo.toml \
 		-p provekit-cli --test cmd_verify_java_production_bridge \
-		java_production_path_refuses_planted_contradictory_implication
+		java_production_path_checked_in_fixture_refuses_planted_contradictory_implication
 	cargo test --release --manifest-path implementations/rust/Cargo.toml \
 		-p provekit-cli --test cmd_verify_go_production_bridge \
 		go_production_path_refuses_planted_contradictory_implication

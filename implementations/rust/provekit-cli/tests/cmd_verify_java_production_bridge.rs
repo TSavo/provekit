@@ -219,6 +219,68 @@ flags = ["-smt2", "-in"]
     project
 }
 
+fn copy_dir_recursive(src: &Path, dst: &Path) {
+    fs::create_dir_all(dst).unwrap_or_else(|_| panic!("mkdir {}", dst.display()));
+    for entry in fs::read_dir(src).unwrap_or_else(|_| panic!("read {}", src.display())) {
+        let entry = entry.expect("read dir entry");
+        let src_path = entry.path();
+        let dst_path = dst.join(entry.file_name());
+        if entry.file_type().expect("entry file type").is_dir() {
+            copy_dir_recursive(&src_path, &dst_path);
+        } else {
+            fs::copy(&src_path, &dst_path).unwrap_or_else(|_| {
+                panic!("copy {} -> {}", src_path.display(), dst_path.display())
+            });
+        }
+    }
+}
+
+fn rewrite_manifest_command(manifest: &Path, command: &[String]) {
+    let text = fs::read_to_string(manifest)
+        .unwrap_or_else(|_| panic!("read checked-in manifest {}", manifest.display()));
+    let command = toml_string_array(command);
+    let rewritten = text
+        .lines()
+        .map(|line| {
+            if line.trim_start().starts_with("command = ") {
+                format!("command = {command}")
+            } else {
+                line.to_string()
+            }
+        })
+        .collect::<Vec<_>>()
+        .join("\n");
+    fs::write(manifest, format!("{rewritten}\n"))
+        .unwrap_or_else(|_| panic!("write manifest {}", manifest.display()));
+}
+
+fn stage_checked_in_java_double_project(
+    suffix: &str,
+    lift: &JavaLiftCommand,
+    body_factor: i64,
+) -> PathBuf {
+    let project = unique_dir(suffix);
+    copy_dir_recursive(&repo_root().join("examples").join("java-double"), &project);
+    if body_factor != 2 {
+        let app = project.join("App.java");
+        let source = fs::read_to_string(&app).expect("read App.java");
+        fs::write(
+            &app,
+            source.replace("return x * 2;", &format!("return x * {body_factor};")),
+        )
+        .expect("write App.java");
+    }
+    rewrite_manifest_command(
+        &project
+            .join(".provekit")
+            .join("lift")
+            .join("java")
+            .join("manifest.toml"),
+        &lift.command,
+    );
+    project
+}
+
 fn run_mint(project: &Path) {
     let out = Command::new(provekit_bin())
         .arg("mint")
@@ -415,6 +477,46 @@ fn java_mint_auto_writes_body_discharge_bridge() {
 }
 
 #[test]
+fn java_mint_uses_checked_in_java_double_registration() {
+    let Some(lift) = java_lift_command() else {
+        return;
+    };
+    let project = stage_checked_in_java_double_project("checked-in-bridge", &lift, 2);
+    run_mint(&project);
+
+    let pool = provekit_verifier::load_all_proofs::run(&project);
+    assert!(
+        pool.load_errors.is_empty(),
+        "checked-in Java fixture must mint a loadable bundle: {:?}",
+        pool.load_errors
+    );
+    let bridge = pool.bridges_by_symbol.get("twice").unwrap_or_else(|| {
+        panic!(
+            "checked-in Java fixture must auto-write + index a bridge with sourceSymbol=twice; indexed: {:?}",
+            pool.bridges_by_symbol.keys().collect::<Vec<_>>()
+        )
+    });
+    let target_cid = provekit_verifier::types::memento_body_field(bridge, "targetContractCid")
+        .and_then(|v| v.as_str())
+        .expect("bridge must carry targetContractCid")
+        .to_string();
+    let target = pool.mementos.get(&target_cid).unwrap_or_else(|| {
+        panic!("bridge.targetContractCid {target_cid} must resolve to a member")
+    });
+    assert_eq!(
+        provekit_verifier::types::memento_kind(target),
+        Some("contract"),
+        "checked-in Java bridge target must be a contract memento"
+    );
+    assert!(
+        provekit_verifier::types::memento_body_field(target, "post").is_some(),
+        "checked-in Java op-contract must carry the body-derived post"
+    );
+
+    let _ = fs::remove_dir_all(&project);
+}
+
+#[test]
 fn java_production_path_assertion_discharges_and_mints_witness() {
     let Some(lift) = java_lift_command() else {
         return;
@@ -456,6 +558,30 @@ fn java_production_path_assertion_discharges_and_mints_witness() {
 
     assert_eq!(receipt["ok"], true, "receipt: {receipt}");
     assert_eq!(code, 0, "positive run exits clean; got {code}");
+
+    let _ = fs::remove_dir_all(&project);
+}
+
+#[test]
+fn java_production_path_uses_checked_in_java_double_registration() {
+    let Some(lift) = java_lift_command() else {
+        return;
+    };
+    if !z3_available() {
+        eprintln!("z3 not on PATH: skipping checked-in java production-bridge test");
+        return;
+    }
+    let project = stage_checked_in_java_double_project("checked-in-pos", &lift, 2);
+    run_mint(&project);
+
+    let witnesses = project.join("witnesses-out");
+    let (receipt, code) = run_verify_json_with_code(&project, &witnesses);
+    assert_eq!(receipt["totalClaims"], 1, "receipt: {receipt}");
+    assert_eq!(receipt["ok"], true, "receipt: {receipt}");
+    assert_eq!(
+        code, 0,
+        "checked-in Java route must prove; receipt: {receipt}"
+    );
 
     let _ = fs::remove_dir_all(&project);
 }
@@ -504,6 +630,41 @@ fn java_production_path_broken_body_fails_unsatisfied_no_witness() {
     eprintln!(
         "JAVA_PRODUCTION_NEGATIVE_EXIT_CODE={code} STATUS={}",
         claim["status"]
+    );
+
+    let _ = fs::remove_dir_all(&project);
+}
+
+#[test]
+fn java_production_path_checked_in_fixture_refuses_planted_contradictory_implication() {
+    let Some(lift) = java_lift_command() else {
+        return;
+    };
+    if !z3_available() {
+        eprintln!("z3 not on PATH: skipping checked-in java contradictory-implication test");
+        return;
+    }
+    let project = stage_checked_in_java_double_project("checked-in-contradiction", &lift, 2);
+    run_mint(&project);
+
+    let (green, green_code) = contradiction::run_prove_json_with_code(&provekit_bin(), &project);
+    assert_eq!(
+        green_code, 0,
+        "checked-in Java project must prove before planting contradiction; report: {green}"
+    );
+    assert_eq!(green["totalCallsites"], 1, "green report: {green}");
+
+    contradiction::plant_contradictory_implication_proof(
+        &project.join(".provekit"),
+        "java",
+        "java-tests",
+        "java_parity",
+    );
+    let (red, red_code) = contradiction::run_prove_json_with_code(&provekit_bin(), &project);
+    contradiction::assert_prove_refuses_contradiction(
+        &red,
+        red_code,
+        "java_parity_requires_positive",
     );
 
     let _ = fs::remove_dir_all(&project);

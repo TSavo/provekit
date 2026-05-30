@@ -1,5 +1,8 @@
-# Java emit example
+# Java end-to-end example
 
-This fixture registers Java emitters through project config only. The CLI
-selects JUnit5 or TestNG by `--target java --framework ...`; Java framework
-syntax and Maven compile checks remain kit-owned RPC behavior.
+This fixture registers Java lift and emit surfaces through project config only.
+The CLI dispatches through `.provekit/config.toml` and per-surface manifests;
+the Java kits own Java parsing, JUnit/TestNG syntax, and Maven checks.
+
+`App.java` is the production proof fixture: `twice` has the real body and
+`check` contains the plain Java assertion the Java lifter harvests.
