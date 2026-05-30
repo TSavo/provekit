@@ -2251,43 +2251,32 @@ fn function_contract_lift(params: &Value) -> Result<Value, String> {
 }
 
 fn body_discharge_eligibility(post: &IrFormula, formals: &[String]) -> (bool, Option<String>) {
-    let Some(value_expr) = libprovekit::wp::find_result_equation(post, "result") else {
+    // A function's self-derived post is `result == <body tail term>`.
+    // Eligibility now hinges on ONE thing: does that result equation
+    // exist? If it does, the post is dischargeable by REFLEXIVITY: the
+    // verifier's SMT lowering encodes every term head (enum/struct ctors
+    // like `Ok`/`Err`/`Some`/`tuple`, function/method calls, field
+    // projections, `format!`/`json!`/`vec!` macro terms, `ite` from
+    // `match`/`if`) as an uninterpreted function symbol, so `result ==
+    // f(x)` against a body returning `f(x)` lowers to `f(x) == f(x)` and
+    // discharges under any interpretation of `f`. The old whitelist
+    // (`+ - * ... and or not`) is obsolete: it refused 309/310 contracts
+    // here and caused their call sites to be silently dropped. The only
+    // remaining refusal is the honest one: a genuinely unit-returning
+    // function has NO result term, so there is nothing to discharge.
+    //
+    // SOUNDNESS: this is NOT "always eligible -> always pass". The
+    // reflexive encoding only proves `T == T`. If a lifter bug ever
+    // emits `result == Ok(x)` for a body that returns `Err(x)`, the
+    // obligation `Ok(x) == Err(x)` does NOT discharge (z3 refutes it); the
+    // claim stays undecidable. Widening eligibility here cannot launder a
+    // false post past the solver; it only stops dropping call sites whose
+    // obligation the verifier can now honestly encode.
+    if libprovekit::wp::find_result_equation(post, "result").is_none() {
         return (false, Some("missing-result-equation".to_string()));
-    };
-    let allowed_vars: BTreeSet<&str> = formals.iter().map(String::as_str).collect();
-    match body_discharge_term_refusal(&value_expr, &allowed_vars) {
-        Some(reason) => (false, Some(reason)),
-        None => (true, None),
     }
-}
-
-fn body_discharge_term_refusal(term: &IrTerm, allowed_vars: &BTreeSet<&str>) -> Option<String> {
-    match term {
-        IrTerm::Const { .. } => None,
-        IrTerm::Var { name } => {
-            if allowed_vars.contains(name.as_str()) {
-                None
-            } else {
-                Some(format!("unsupported-free-var:{name}"))
-            }
-        }
-        IrTerm::Ctor { name, args } => {
-            if !body_discharge_supported_ctor(name) {
-                return Some(format!("unsupported-term:{name}"));
-            }
-            args.iter()
-                .find_map(|arg| body_discharge_term_refusal(arg, allowed_vars))
-        }
-        IrTerm::Lambda { .. } => Some("unsupported-term:lambda".to_string()),
-        IrTerm::Let { .. } => Some("unsupported-term:let".to_string()),
-    }
-}
-
-fn body_discharge_supported_ctor(name: &str) -> bool {
-    matches!(
-        name,
-        "+" | "-" | "*" | "neg" | "ite" | "=" | "≠" | "<" | "≤" | ">" | "≥" | "and" | "or" | "not"
-    )
+    let _ = formals;
+    (true, None)
 }
 
 fn lift_scan_roots(root: &Path, source_paths: &[String]) -> Vec<PathBuf> {
@@ -8633,7 +8622,15 @@ pub fn caller(s: &str) -> serde_json::Value {
     }
 
     #[test]
-    fn function_contract_lift_marks_only_body_discharge_supported_contracts_eligible() {
+    fn function_contract_lift_marks_value_returning_contracts_reflexively_eligible() {
+        // Post-#1696 reflexive policy: any function with a result equation
+        // (`result == <body term>`) is body-discharge ELIGIBLE, because the
+        // verifier encodes every term head (field projection, `Ok`/`Err`
+        // ctors, calls, ...) as an uninterpreted function symbol and
+        // discharges `f(x) == f(x)` by reflexivity. The ONLY ineligible
+        // case is a genuinely unit-returning function: no result term, so
+        // nothing to discharge. The old whitelist (arithmetic only) is
+        // gone.
         let src = r##"
 pub struct ExitReport {
     pub code: i64,
@@ -8649,6 +8646,10 @@ pub fn report_exit_code(report: ExitReport) -> i64 {
 
 pub fn wrap_ok(x: i64) -> Result<i64, ()> {
     Ok(x)
+}
+
+pub fn record_only(report: ExitReport) {
+    let _ = report.code;
 }
 "##;
         let root = temp_workspace("function_contract_body_discharge_eligibility");
@@ -8672,31 +8673,37 @@ pub fn wrap_ok(x: i64) -> Result<i64, ()> {
         assert_eq!(
             by_name("double")["bodyDischargeEligible"],
             true,
-            "plain arithmetic body should be eligible for current body discharge"
+            "plain arithmetic body is reflexively eligible"
         );
         assert_eq!(
             by_name("report_exit_code")["bodyDischargeEligible"],
-            false,
-            "field projection is Rust-kit-owned sugar that is not yet solver-backed"
+            true,
+            "field projection is reflexively eligible: `field(report, .code) == field(report, .code)`"
         );
         assert_eq!(
             by_name("wrap_ok")["bodyDischargeEligible"],
+            true,
+            "Result::Ok construction is reflexively eligible: `Ok(x) == Ok(x)`"
+        );
+        assert_eq!(
+            by_name("record_only")["bodyDischargeEligible"],
             false,
-            "Result::Ok construction needs Rust stdlib algebra before it is body-discharge eligible"
+            "a genuinely unit-returning function has no result equation; it is honestly ineligible"
         );
         let diagnostics = resp["diagnostics"].as_array().expect("diagnostics array");
         assert!(
             diagnostics
                 .iter()
                 .any(|diag| diag["kind"] == "body-discharge-gap"
-                    && diag["function"] == "report_exit_code"),
-            "ineligible contracts must surface a precise kit diagnostic: {diagnostics:?}"
+                    && diag["function"] == "record_only"),
+            "the unit-returning ineligible contract must surface a precise kit diagnostic: {diagnostics:?}"
         );
         assert!(
-            diagnostics
+            !diagnostics
                 .iter()
-                .any(|diag| diag["kind"] == "body-discharge-gap" && diag["function"] == "wrap_ok"),
-            "ineligible stdlib constructor contract must surface a precise kit diagnostic: {diagnostics:?}"
+                .any(|diag| diag["kind"] == "body-discharge-gap"
+                    && (diag["function"] == "report_exit_code" || diag["function"] == "wrap_ok")),
+            "value-returning contracts must NOT surface a body-discharge gap under the reflexive policy: {diagnostics:?}"
         );
 
         let _ = fs::remove_dir_all(root);

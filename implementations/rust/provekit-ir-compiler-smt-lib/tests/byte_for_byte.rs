@@ -29,9 +29,120 @@ fn legacy_emit(ir_formula: &Json) -> Result<String, String> {
     for (name, srt) in &free_vars {
         out.push_str(&format!("(declare-const {name} {srt})\n"));
     }
+    // Reflexive-discharge encoding (mirrors the production negated path):
+    // every non-builtin ctor head is declared as an uninterpreted fn so
+    // `Ok`/`field`/`method:*`/`sumDebits` render as declared symbols
+    // instead of undeclared-function errors.
+    let mut ctor_decls: BTreeMap<String, (Vec<String>, String)> = BTreeMap::new();
+    legacy_collect_ctor_decls(ir_formula, &mut ctor_decls);
+    for (name, (args, ret)) in &ctor_decls {
+        out.push_str(&format!(
+            "(declare-fun {} ({}) {})\n",
+            legacy_smt_quote(name),
+            args.join(" "),
+            ret
+        ));
+    }
     out.push_str(&format!("(assert (not {body}))\n"));
     out.push_str("(check-sat)\n");
     Ok(out)
+}
+
+/// Render a name as an SMT symbol, quoting with `|...|` when not a simple
+/// symbol. Mirrors production `smt_quote`.
+fn legacy_smt_quote(name: &str) -> String {
+    let simple = !name.is_empty()
+        && !name.chars().next().is_some_and(|c| c.is_ascii_digit())
+        && name
+            .chars()
+            .all(|c| c.is_ascii_alphanumeric() || "~!@$%^&*_-+=<>.?/".contains(c));
+    if simple {
+        name.to_string()
+    } else {
+        format!("|{name}|")
+    }
+}
+
+fn legacy_known_term_sort(t: &Json) -> Option<String> {
+    match t.get("kind").and_then(|v| v.as_str()) {
+        Some("const") => Some(legacy_smt_sort(t.get("sort").unwrap_or(&Json::Null))),
+        Some("var") => Some("Int".to_string()),
+        _ => None,
+    }
+}
+
+fn legacy_expected_atomic_arg_sort(name: &str, args: &[Json]) -> Option<String> {
+    let smt = legacy_smt_atomic_name(name);
+    let smt = match smt {
+        "eq" => "=",
+        "ne" | "neq" => "distinct",
+        "gt" => ">",
+        "gte" => ">=",
+        "lt" => "<",
+        "lte" => "<=",
+        other => other,
+    };
+    if matches!(smt, "=" | "distinct" | "<" | "<=" | ">" | ">=") {
+        return args
+            .iter()
+            .find_map(legacy_known_term_sort)
+            .or_else(|| Some("Int".to_string()));
+    }
+    None
+}
+
+fn legacy_collect_ctor_decls(f: &Json, out: &mut BTreeMap<String, (Vec<String>, String)>) {
+    match f.get("kind").and_then(|v| v.as_str()) {
+        Some("atomic") => {
+            let name = f.get("name").and_then(|v| v.as_str()).unwrap_or_default();
+            let args: Vec<Json> = f
+                .get("args")
+                .and_then(|v| v.as_array())
+                .cloned()
+                .unwrap_or_default();
+            let expected = legacy_expected_atomic_arg_sort(name, &args);
+            for a in &args {
+                legacy_collect_ctor_decls_term(a, expected.as_deref(), out);
+            }
+        }
+        Some("and") | Some("or") | Some("not") | Some("implies") => {
+            if let Some(ops) = f.get("operands").and_then(|v| v.as_array()) {
+                for op in ops {
+                    legacy_collect_ctor_decls(op, out);
+                }
+            }
+        }
+        Some("forall") | Some("exists") | Some("choice") => {
+            if let Some(b) = f.get("body") {
+                legacy_collect_ctor_decls(b, out);
+            }
+        }
+        _ => {}
+    }
+}
+
+fn legacy_collect_ctor_decls_term(
+    t: &Json,
+    expected_ret: Option<&str>,
+    out: &mut BTreeMap<String, (Vec<String>, String)>,
+) {
+    if t.get("kind").and_then(|v| v.as_str()) == Some("ctor") {
+        let name = t.get("name").and_then(|v| v.as_str()).unwrap_or_default();
+        let args: Vec<Json> = t
+            .get("args")
+            .and_then(|v| v.as_array())
+            .cloned()
+            .unwrap_or_default();
+        let arg_sorts: Vec<String> = args
+            .iter()
+            .map(|a| legacy_known_term_sort(a).unwrap_or_else(|| "Int".to_string()))
+            .collect();
+        out.entry(name.to_string())
+            .or_insert_with(|| (arg_sorts.clone(), expected_ret.unwrap_or("Int").to_string()));
+        for (a, s) in args.iter().zip(arg_sorts.iter()) {
+            legacy_collect_ctor_decls_term(a, Some(s), out);
+        }
+    }
 }
 
 fn legacy_emit_term(t: &Json) -> Result<String, String> {

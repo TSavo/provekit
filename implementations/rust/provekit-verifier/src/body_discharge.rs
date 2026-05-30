@@ -259,6 +259,102 @@ pub fn extract_body_obligation(
     }
 }
 
+/// How a DISCHARGED obligation was proven. This is the honesty axis the
+/// reflexive-discharge work introduces: a `result == <body term>`
+/// obligation (the function's self-derived post) reduces, after wp
+/// inlines the body, to `<term> == <term>`, which any solver proves by
+/// reflexivity/congruence WITHOUT understanding the term. Such a discharge
+/// is SOUND but SHALLOW: it proves "the function returns what it returns,"
+/// not anything about behavior. It MUST be counted apart from a discharge
+/// where the solver did substantive work (real arithmetic, a non-trivial
+/// implication). Never conflate the two in a report.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum DischargeMethod {
+    /// Proven by reflexivity/congruence alone: the obligation is a
+    /// conjunction of structurally-identical equalities (`T == T`) over
+    /// uninterpreted terms. Sound but shallow.
+    Reflexive,
+    /// The solver did substantive work: the obligation contains an
+    /// equality whose two sides differ, or an arithmetic/relational atom
+    /// that is not a trivial reflexive identity.
+    Substantive,
+}
+
+impl DischargeMethod {
+    pub fn as_str(&self) -> &'static str {
+        match self {
+            Self::Reflexive => "reflexive",
+            Self::Substantive => "solver-substantive",
+        }
+    }
+}
+
+/// Classify a DISCHARGED obligation as [`DischargeMethod::Reflexive`] or
+/// [`DischargeMethod::Substantive`]. Call ONLY on obligations the solver
+/// returned `Discharged` for; the classification is about HOW it was
+/// proven, not WHETHER.
+///
+/// Reflexive iff every leaf the validity of the obligation rests on is a
+/// structurally-identical equality `=(a, a)` (or a literal `true`). The
+/// moment a leaf is an equality with distinct sides, or any other
+/// relational/arithmetic atom, the proof needed congruence over a real
+/// computation or an SMT theory: that is `Substantive`. Negation and
+/// conjunction/disjunction recurse. This is deliberately conservative:
+/// when in doubt it returns `Substantive`, so the reflexive bucket never
+/// over-claims.
+pub fn classify_discharge_method(obligation: &Json) -> DischargeMethod {
+    if formula_is_reflexive(obligation) {
+        DischargeMethod::Reflexive
+    } else {
+        DischargeMethod::Substantive
+    }
+}
+
+/// True iff this formula's validity rests purely on reflexive equalities
+/// and literal truths. Any equality with structurally-distinct sides, or
+/// any non-`=` relational atom, makes it non-reflexive (the solver did
+/// real work).
+fn formula_is_reflexive(f: &Json) -> bool {
+    let Some(kind) = f.get("kind").and_then(|v| v.as_str()) else {
+        return false;
+    };
+    match kind {
+        "atomic" => {
+            let name = f.get("name").and_then(|v| v.as_str()).unwrap_or("");
+            match name {
+                // The nullary truth literal is reflexively valid.
+                "true" => true,
+                // An equality is reflexive iff its two operands are the
+                // SAME IR term. `Ok(x) == Ok(x)` -> reflexive; `Ok(x) ==
+                // Err(x)` or `*(3,2) == 6` -> not (distinct sides / real
+                // computation).
+                "=" | "eq" => match f.get("args").and_then(|v| v.as_array()) {
+                    Some(args) if args.len() == 2 => args[0] == args[1],
+                    _ => false,
+                },
+                // Any other relational/arithmetic predicate (`<`, `≤`,
+                // `distinct`, an uninterpreted boolean predicate, ...)
+                // needed substantive reasoning.
+                _ => false,
+            }
+        }
+        "and" | "or" => f
+            .get("operands")
+            .and_then(|v| v.as_array())
+            .map(|ops| ops.iter().all(formula_is_reflexive))
+            .unwrap_or(false),
+        "not" => f
+            .get("operands")
+            .and_then(|v| v.as_array())
+            .and_then(|ops| ops.first())
+            .map(formula_is_reflexive)
+            .unwrap_or(false),
+        // Quantifiers / implications / wp-schema nodes: not a reflexive
+        // shape (conservatively substantive).
+        _ => false,
+    }
+}
+
 /// Recognize the `=(<call>, <expected>)` harvested-assertion shape on a
 /// callsite. `<call>` is the ctor whose name == `cs.bridge_ir_name`.
 /// Returns `(call_json, expected_json)` — borrowing from the callsite's
@@ -288,5 +384,79 @@ fn recognize_eq_call(cs: &CallSite) -> Option<(&Json, &Json)> {
         Some((&args[1], &args[0]))
     } else {
         None
+    }
+}
+
+#[cfg(test)]
+mod discharge_method_tests {
+    use super::*;
+    use serde_json::json;
+
+    fn ok_ctor(arg: &str) -> Json {
+        json!({"kind": "ctor", "name": "Ok", "args": [{"kind": "var", "name": arg}]})
+    }
+    fn err_ctor(arg: &str) -> Json {
+        json!({"kind": "ctor", "name": "Err", "args": [{"kind": "var", "name": arg}]})
+    }
+
+    #[test]
+    fn identical_sides_classify_reflexive() {
+        // `Ok(x) == Ok(x)`: the self-derived post against its own body. The
+        // two sides are structurally identical; provable by reflexivity.
+        let ob = json!({"kind": "atomic", "name": "=", "args": [ok_ctor("x"), ok_ctor("x")]});
+        assert_eq!(
+            classify_discharge_method(&ob),
+            DischargeMethod::Reflexive,
+            "T == T must classify reflexive"
+        );
+    }
+
+    #[test]
+    fn distinct_sides_classify_substantive_not_reflexive() {
+        // SOUNDNESS GUARD. `Ok(x) == Err(x)`: a lifter bug emitting a post
+        // that does NOT match the body. The sides differ, so this is NOT
+        // reflexive. (z3 would refute it; here we assert the classifier
+        // refuses to call it reflexive, so it can never be reported as a
+        // shallow-but-fine reflexive discharge.)
+        let ob = json!({"kind": "atomic", "name": "=", "args": [ok_ctor("x"), err_ctor("x")]});
+        assert_eq!(
+            classify_discharge_method(&ob),
+            DischargeMethod::Substantive,
+            "Ok(x) == Err(x) must NOT classify reflexive"
+        );
+    }
+
+    #[test]
+    fn arithmetic_equality_classifies_substantive() {
+        // `*(3, 2) == 6`: a real body-reduced arithmetic obligation. Sides
+        // differ structurally; the solver did substantive work.
+        let ob = json!({"kind": "atomic", "name": "=", "args": [
+            {"kind": "ctor", "name": "*", "args": [
+                {"kind": "const", "value": 3, "sort": {"kind": "primitive", "name": "Int"}},
+                {"kind": "const", "value": 2, "sort": {"kind": "primitive", "name": "Int"}}
+            ]},
+            {"kind": "const", "value": 6, "sort": {"kind": "primitive", "name": "Int"}}
+        ]});
+        assert_eq!(classify_discharge_method(&ob), DischargeMethod::Substantive);
+    }
+
+    #[test]
+    fn conjunction_of_reflexive_equalities_is_reflexive() {
+        let ob = json!({"kind": "and", "operands": [
+            {"kind": "atomic", "name": "=", "args": [ok_ctor("x"), ok_ctor("x")]},
+            {"kind": "atomic", "name": "true", "args": []}
+        ]});
+        assert_eq!(classify_discharge_method(&ob), DischargeMethod::Reflexive);
+    }
+
+    #[test]
+    fn conjunction_with_one_substantive_leaf_is_substantive() {
+        let ob = json!({"kind": "and", "operands": [
+            {"kind": "atomic", "name": "=", "args": [ok_ctor("x"), ok_ctor("x")]},
+            {"kind": "atomic", "name": "<", "args": [
+                {"kind": "var", "name": "a"}, {"kind": "var", "name": "b"}
+            ]}
+        ]});
+        assert_eq!(classify_discharge_method(&ob), DischargeMethod::Substantive);
     }
 }

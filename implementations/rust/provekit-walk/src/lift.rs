@@ -206,17 +206,127 @@ fn lift_tail_expr_to_result_term(expr: &Expr, ctx: &mut LiftCtx) -> Option<IrTer
 }
 
 fn lift_tail_if_to_ite_term(if_expr: &ExprIf, ctx: &mut LiftCtx) -> Option<IrTerm> {
-    let cond = lift_predicate_inner(&if_expr.cond, ctx)?;
-    let cond_term = formula_to_term(cond)?;
-    let then_expr = block_single_tail_expr(&if_expr.then_branch)?;
+    // The condition lifts as a boolean TERM. Prefer the structured
+    // predicate lift (it normalizes comparisons / De Morgan); fall back to
+    // lifting the condition directly as a term (`path.is_absolute()` ->
+    // `method:is_absolute(path)`), so a method-call or other non-whitelist
+    // boolean condition no longer collapses the whole `ite`. The cond term
+    // is uninterpreted; the `ite` still discharges reflexively.
+    let cond_term = match lift_predicate_inner(&if_expr.cond, ctx).and_then(formula_to_term) {
+        Some(t) => t,
+        None => lift_expr_to_term_inner(&if_expr.cond, ctx)?,
+    };
+    // The then-branch value is the block's TAIL expression (last
+    // expr-statement), not necessarily a single-statement block: a
+    // branch may run `let x = ...; x`. Leading statements do not change
+    // the returned value term.
+    let then_expr = block_tail_expr(&if_expr.then_branch)?;
     let then_term = lift_expr_to_term_inner(then_expr, ctx)?;
-    let (_, else_expr) = if_expr.else_branch.as_ref()?;
-    let else_tail = expr_single_tail_expr(else_expr)?;
-    let else_term = lift_expr_to_term_inner(else_tail, ctx)?;
+    let else_term = match if_expr.else_branch.as_ref() {
+        Some((_, else_expr)) => {
+            // `else if ...` nests another `if`; `else { ... }` is a block.
+            // Both reduce through `lift_expr_to_term_inner` (the `If`/`Block`
+            // arms), so stmt-bearing else blocks and else-if chains work.
+            lift_expr_to_term_inner(else_expr, ctx)?
+        }
+        None => {
+            // if-without-else in value position: the implicit else value is
+            // `()`. Model it as an opaque nullary ctor; encoded as an
+            // uninterpreted constant by the verifier, so the synthesized
+            // `ite` still discharges reflexively against the body's own.
+            IrTerm::Ctor {
+                name: "unit".to_string(),
+                args: vec![],
+            }
+        }
+    };
     Some(IrTerm::Ctor {
         name: "ite".to_string(),
         args: vec![cond_term, then_term, else_term],
     })
+}
+
+/// Fold a value-position `match` into a right-nested `ite` chain keyed
+/// by each arm's recognized guard predicate. Arm `i` with pattern-guard
+/// `g_i` and value `v_i` becomes `ite(g_i, v_i, <rest>)`; the final arm
+/// is the chain's tail (no guard needed). A pattern we cannot turn into
+/// a boolean guard is modeled with an opaque `match_arm` guard term so
+/// the chain still forms; the resulting term is uninterpreted but
+/// discharges reflexively against the body's own identical match.
+fn lift_match_to_ite_term(match_expr: &syn::ExprMatch, ctx: &mut LiftCtx) -> Option<IrTerm> {
+    let scrutinee = lift_expr_to_term_inner(&match_expr.expr, ctx)?;
+    let arms = &match_expr.arms;
+    if arms.is_empty() {
+        return None;
+    }
+    // Build from the last arm backwards.
+    let mut acc: Option<IrTerm> = None;
+    for (idx, arm) in arms.iter().enumerate().rev() {
+        let value = lift_expr_to_term_inner(&arm.body, ctx)?;
+        let is_last = idx == arms.len() - 1;
+        acc = Some(if is_last && acc.is_none() {
+            // Final arm: the fall-through value of the chain.
+            value
+        } else {
+            // A guard predicate keyed by this arm's pattern against the
+            // scrutinee. We do not interpret the pattern; we name an
+            // opaque `match_guard(scrutinee, <pattern-hash>)` boolean. The
+            // verifier encodes it as an uninterpreted predicate symbol.
+            let pat_hash = opaque_token_hash(&arm.pat);
+            let guard = IrTerm::Ctor {
+                name: "match_guard".to_string(),
+                args: vec![
+                    scrutinee.clone(),
+                    IrTerm::Var {
+                        name: format!("#pat:{pat_hash}"),
+                    },
+                ],
+            };
+            IrTerm::Ctor {
+                name: "ite".to_string(),
+                args: vec![guard, value, acc.expect("non-final arm has an accumulator")],
+            }
+        });
+    }
+    acc
+}
+
+/// Lift a macro invocation (`json!{...}`, `format!(...)`, `vec![...]`,
+/// ...) to an OPAQUE uninterpreted term keyed by the macro's name plus a
+/// deterministic hash of its token stream. Two identical macro calls
+/// (same name, same tokens) produce the SAME term, so a body returning
+/// `Ok(json!({...}))` and a post derived from that same body yield
+/// `Ok(macro:json!#<h>) == Ok(macro:json!#<h>)`, which discharges by
+/// reflexivity. A DIFFERENT macro call hashes differently and does not
+/// spuriously unify. The argument tokens are not lifted (a macro body is
+/// not Rust expression grammar); the hash is the whole content.
+fn lift_macro_to_opaque_term(mac: &Macro) -> IrTerm {
+    let name = mac
+        .path
+        .segments
+        .last()
+        .map(|s| s.ident.to_string())
+        .unwrap_or_else(|| "macro".to_string());
+    let tok_hash = opaque_token_hash(&mac.tokens);
+    IrTerm::Ctor {
+        name: format!("macro:{name}#{tok_hash}"),
+        args: vec![],
+    }
+}
+
+/// Deterministic short hash of any `ToTokens` node (a macro's token
+/// stream, a match pattern, ...). Stable across runs: the token stream
+/// renders to a canonical string and is blake3-hashed; the first 16 hex
+/// chars key the opaque term. Determinism matters because the SAME
+/// surface node must encode to the SAME symbol on both sides of the
+/// reflexive equality.
+fn opaque_token_hash<T: quote::ToTokens>(node: &T) -> String {
+    let rendered = node.to_token_stream().to_string();
+    let full = provekit_canonicalizer::blake3_512_hex(rendered.as_bytes());
+    // `blake3_512_hex` returns a `blake3-512:<hex>` prefixed string; take
+    // the hex tail and keep it short for readable terms.
+    let hex = full.rsplit(':').next().unwrap_or(&full);
+    hex.chars().take(16).collect()
 }
 
 fn formula_to_term(formula: IrFormula) -> Option<IrTerm> {
@@ -245,17 +355,15 @@ fn formula_operands_to_term(name: &str, operands: Vec<IrFormula>) -> Option<IrTe
     })
 }
 
-fn block_single_tail_expr(block: &syn::Block) -> Option<&Expr> {
-    match block.stmts.as_slice() {
-        [Stmt::Expr(expr, None)] => Some(expr),
+/// The block's value expression: its trailing expr-statement (no
+/// semicolon). Unlike `block_single_tail_expr` this tolerates LEADING
+/// statements (`let x = ...; x`), because they do not change the value
+/// the block evaluates to. Returns `None` for a block whose last
+/// statement is not a tail expression (e.g. ends in a `;` -> unit value).
+fn block_tail_expr(block: &syn::Block) -> Option<&Expr> {
+    match block.stmts.last() {
+        Some(Stmt::Expr(expr, None)) => Some(expr),
         _ => None,
-    }
-}
-
-fn expr_single_tail_expr(expr: &Expr) -> Option<&Expr> {
-    match expr {
-        Expr::Block(block) => block_single_tail_expr(&block.block),
-        other => Some(other),
     }
 }
 
@@ -500,6 +608,20 @@ fn lift_expr_to_term_inner(expr: &Expr, ctx: &mut LiftCtx) -> Option<IrTerm> {
                     name: "Bool".to_string(),
                 },
             }),
+            // A byte literal `b'0'` is its ASCII codepoint; lift as an int
+            // const so byte-arithmetic tails (`byte - b'0'`) and byte match
+            // arms lift instead of collapsing the whole term to None.
+            Lit::Byte(b) => Some(crate::wp::const_int(b.value() as i64)),
+            // A char literal `'a'` is its Unicode scalar value.
+            Lit::Char(c) => Some(crate::wp::const_int(c.value() as i64)),
+            // A string literal lifts to a String const so string-returning
+            // tails (`"const"`) carry a real term.
+            Lit::Str(s) => Some(IrTerm::Const {
+                value: serde_json::Value::String(s.value()),
+                sort: provekit_ir_types::Sort::Primitive {
+                    name: "String".to_string(),
+                },
+            }),
             _ => None,
         },
         Expr::Path(syn::ExprPath { path, .. }) => {
@@ -603,20 +725,23 @@ fn lift_expr_to_term_inner(expr: &Expr, ctx: &mut LiftCtx) -> Option<IrTerm> {
             // this name resolution.
             ctx.push_frame();
             let mut unique_names: Vec<String> = Vec::with_capacity(c.inputs.len());
-            for input in &c.inputs {
+            for (idx, input) in c.inputs.iter().enumerate() {
+                // A closure param's binding NAME. Ident/typed-ident keep
+                // their name. A wildcard `_` or a destructuring pattern
+                // (`|(a, _)| ..`, common in `.map`/`.unwrap_or_else`) binds
+                // a synthetic positional placeholder so the closure lifts
+                // to a lambda instead of collapsing the whole tail to None.
+                // The body references to a destructured name resolve as
+                // free vars (not the placeholder), which is fine under the
+                // reflexive encoding: the lambda term is uninterpreted and
+                // discharges against the body's own identical lambda.
                 let base = match input {
                     syn::Pat::Ident(p) => p.ident.to_string(),
                     syn::Pat::Type(pt) => match &*pt.pat {
                         syn::Pat::Ident(p) => p.ident.to_string(),
-                        _ => {
-                            ctx.pop_frame();
-                            return None;
-                        }
+                        _ => format!("_closure_arg{idx}"),
                     },
-                    _ => {
-                        ctx.pop_frame();
-                        return None;
-                    }
+                    _ => format!("_closure_arg{idx}"),
                 };
                 unique_names.push(ctx.bind(&base));
             }
@@ -675,11 +800,82 @@ fn lift_expr_to_term_inner(expr: &Expr, ctx: &mut LiftCtx) -> Option<IrTerm> {
             }
             Some(IrTerm::Ctor { name: callee, args })
         }
-        Expr::If(_) | Expr::Match(_) | Expr::Block(_) => {
-            // Conditional / match / block expressions don't lift to a
-            // single canonical IR term in the MVP — they would need a
-            // case-analysis ctor. Tagged for future iteration.
-            None
+        Expr::If(if_expr) => {
+            // A value-position `if`. Reuse the tail-if synthesis (it folds
+            // `if c { a } else { b }` into `ite(c, a, b)`, and now also
+            // handles if-without-else and stmt-bearing branch blocks).
+            lift_tail_if_to_ite_term(if_expr, ctx)
+        }
+        Expr::Match(match_expr) => {
+            // A value-position `match`. Fold it into a right-nested `ite`
+            // chain keyed by each arm's recognized guard predicate. Every
+            // arm value lifts (often to an uninterpreted ctor term), so the
+            // whole match becomes one term that discharges reflexively when
+            // it equals the body's own match. See `lift_match_to_ite_term`.
+            lift_match_to_ite_term(match_expr, ctx)
+        }
+        Expr::Block(block_expr) => {
+            // A block expression `{ ...; tail }` lifts to the lift of its
+            // trailing expression (the block's value). Leading statements
+            // do not contribute to the returned value term.
+            let tail = block_expr.block.stmts.last()?;
+            match tail {
+                Stmt::Expr(e, None) => lift_expr_to_term_inner(e, ctx),
+                _ => None,
+            }
+        }
+        Expr::Try(t) => {
+            // The `?` operator: `e?` evaluates `e` and unwraps its `Ok`
+            // (or short-circuits on `Err`). For the returned-value term we
+            // model it as an opaque unary `?` applied to the lifted inner
+            // expression. Encoded as an uninterpreted function symbol by the
+            // verifier, so `?(e) == ?(e)` discharges reflexively. Without
+            // this arm any tail containing `?` collapsed the whole term to
+            // None (mechanism (ii) in the body-discharge diagnostic).
+            let inner = lift_expr_to_term_inner(&t.expr, ctx)?;
+            Some(IrTerm::Ctor {
+                name: "?".to_string(),
+                args: vec![inner],
+            })
+        }
+        Expr::Macro(m) => Some(lift_macro_to_opaque_term(&m.mac)),
+        Expr::Struct(s) => {
+            // A struct literal `Name { f: v, g: w, .. }`. Lift to a ctor
+            // named by the struct path with the field VALUES as args. To
+            // make the term canonical (independent of source field order)
+            // the fields are sorted by name; the field names ride along as
+            // opaque `#field:<name>` markers so two literals with the same
+            // names+values produce the same term (reflexive) and differing
+            // ones do not. A `..rest` base, if present, is appended as its
+            // lifted term. Without this arm `Ok(Report { .. })` collapsed
+            // the whole tail to None.
+            let name = s
+                .path
+                .segments
+                .last()
+                .map(|seg| seg.ident.to_string())
+                .unwrap_or_else(|| "struct".to_string());
+            let mut fields: Vec<(&syn::Member, &Expr)> =
+                s.fields.iter().map(|f| (&f.member, &f.expr)).collect();
+            fields.sort_by_key(|(m, _)| match m {
+                syn::Member::Named(id) => id.to_string(),
+                syn::Member::Unnamed(idx) => format!("{}", idx.index),
+            });
+            let mut args = Vec::with_capacity(fields.len() * 2 + 1);
+            for (member, value) in fields {
+                let fname = match member {
+                    syn::Member::Named(id) => id.to_string(),
+                    syn::Member::Unnamed(idx) => idx.index.to_string(),
+                };
+                args.push(IrTerm::Var {
+                    name: format!("#field:{fname}"),
+                });
+                args.push(lift_expr_to_term_inner(value, ctx)?);
+            }
+            if let Some(rest) = &s.rest {
+                args.push(lift_expr_to_term_inner(rest, ctx)?);
+            }
+            Some(IrTerm::Ctor { name, args })
         }
         Expr::Binary(ExprBinary {
             left, op, right, ..
@@ -695,6 +891,20 @@ fn lift_expr_to_term_inner(expr: &Expr, ctx: &mut LiftCtx) -> Option<IrTerm> {
                 BinOp::BitXor(_) => "^",
                 BinOp::Shl(_) => "<<",
                 BinOp::Shr(_) => ">>",
+                // Boolean / relational operators in VALUE position (a
+                // function returning `bool`, e.g. `!x.is_absolute() && ..`,
+                // or `a == b`). Lift to the matching ctor head so the term
+                // survives; it discharges reflexively against the body's
+                // own. The verifier encodes `and`/`or`/`=`/`<`/... as
+                // builtin or uninterpreted symbols.
+                BinOp::And(_) => "and",
+                BinOp::Or(_) => "or",
+                BinOp::Eq(_) => "=",
+                BinOp::Ne(_) => "≠",
+                BinOp::Lt(_) => "<",
+                BinOp::Le(_) => "≤",
+                BinOp::Gt(_) => ">",
+                BinOp::Ge(_) => "≥",
                 _ => return None,
             };
             let l = lift_expr_to_term_inner(left, ctx)?;
@@ -1394,5 +1604,114 @@ mod tests {
             "if !x.is_some() panic must lift is_some to precondition: {}",
             json
         );
+    }
+
+    /// The post's `result == <value>` equation, or None if the body has
+    /// no result term (genuinely unit-returning).
+    fn result_equation_of(item_fn: &ItemFn) -> Option<IrTerm> {
+        let post = lift_function_postcondition(item_fn);
+        libprovekit::wp::find_result_equation(post.as_formula(), "result")
+    }
+
+    #[test]
+    fn ok_struct_literal_tail_lifts_a_result_equation() {
+        // `Ok(Report { code: 0 })` formerly collapsed to None (the struct
+        // literal child had no lift arm). The new `Expr::Struct` arm lifts
+        // it; the whole tail becomes `Ok(Report(...))`, a `result ==` post
+        // that discharges reflexively.
+        let item_fn = parse_fn(
+            r#"
+            fn make() -> Result<Report, ()> {
+                Ok(Report { code: 0 })
+            }
+        "#,
+        );
+        let eq = result_equation_of(&item_fn);
+        assert!(
+            eq.is_some(),
+            "Ok(StructLiteral{{..}}) tail must synthesize a result equation"
+        );
+        let json = serde_json::to_string(&eq.unwrap()).unwrap();
+        assert!(json.contains("Ok"), "result term must carry the Ok ctor: {json}");
+        assert!(
+            json.contains("Report"),
+            "result term must carry the struct ctor: {json}"
+        );
+    }
+
+    #[test]
+    fn pathbuf_from_format_macro_tail_lifts_a_result_equation() {
+        // `PathBuf::from(format!("{}", x))`: a call whose argument is a
+        // `format!` macro. The macro arm encodes it as an opaque
+        // `macro:format#<hash>` ctor instead of collapsing the whole tail
+        // to None (diagnostic mechanism (ii)).
+        let item_fn = parse_fn(
+            r#"
+            fn p(x: i64) -> String {
+                from(format!("{}", x))
+            }
+        "#,
+        );
+        let eq = result_equation_of(&item_fn);
+        assert!(
+            eq.is_some(),
+            "call wrapping a format! macro must synthesize a result equation"
+        );
+        let json = serde_json::to_string(&eq.unwrap()).unwrap();
+        assert!(
+            json.contains("macro:format#"),
+            "the format! macro must lift to an opaque keyed ctor: {json}"
+        );
+    }
+
+    #[test]
+    fn match_tail_lifts_to_ite_chain_result_equation() {
+        // A value-position `match` now folds to an `ite` chain rather than
+        // collapsing to None (diagnostic mechanism (i)).
+        let item_fn = parse_fn(
+            r#"
+            fn classify(x: i64) -> i64 {
+                match x {
+                    0 => zero(),
+                    _ => other(),
+                }
+            }
+        "#,
+        );
+        let eq = result_equation_of(&item_fn);
+        assert!(eq.is_some(), "match tail must synthesize a result equation");
+        let json = serde_json::to_string(&eq.unwrap()).unwrap();
+        assert!(json.contains("ite"), "match must lift to an ite chain: {json}");
+    }
+
+    #[test]
+    fn try_operator_tail_lifts_a_result_equation() {
+        // `serialize(x)?` (the `?` operator) formerly collapsed the tail.
+        let item_fn = parse_fn(
+            r#"
+            fn t(x: i64) -> Result<i64, ()> {
+                Ok(serialize(x)?)
+            }
+        "#,
+        );
+        let eq = result_equation_of(&item_fn);
+        assert!(eq.is_some(), "tail containing `?` must synthesize a result equation");
+        let json = serde_json::to_string(&eq.unwrap()).unwrap();
+        assert!(json.contains("\"?\""), "`?` must lift to an opaque `?` ctor: {json}");
+    }
+
+    #[test]
+    fn macro_token_hash_is_deterministic_and_distinguishing() {
+        // The SAME macro call (same name + tokens) lifts to the SAME term
+        // (so reflexive equality holds); a DIFFERENT call lifts to a
+        // different term (so distinct calls do not spuriously unify).
+        let a1: syn::Macro = syn::parse_quote!(format!("{}", x));
+        let a2: syn::Macro = syn::parse_quote!(format!("{}", x));
+        let b: syn::Macro = syn::parse_quote!(format!("{}", y));
+        let ta = lift_macro_to_opaque_term(&a1);
+        let ta2 = lift_macro_to_opaque_term(&a2);
+        let tb = lift_macro_to_opaque_term(&b);
+        assert_eq!(ta, ta2, "identical macro calls must lift to the same opaque term");
+        assert_ne!(ta, tb, "different macro calls must lift to different opaque terms");
     }
 }

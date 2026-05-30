@@ -685,6 +685,35 @@ pub fn compile_formula(formula: &Formula) -> CompiledFormula {
     for (name, sort) in free_vars.iter() {
         preamble.push_str(&format!("(declare-const {} {})\n", name, sort));
     }
+    // Declare every non-builtin ctor head as an UNINTERPRETED FUNCTION
+    // symbol (`Ok`, `Err`, `Some`, `field`, `method:foo`, `tuple`,
+    // `json!`-keyed macro terms, ...). This is the reflexive-discharge
+    // encoding: an obligation `result == <body term>` whose body term is a
+    // self-derived enum/struct/call/macro shape lowers to `f(args) ==
+    // f(args)`, which is provable by reflexivity/congruence under ANY
+    // interpretation of `f` (the solver never needs to know what `f`
+    // means). It is SOUND: if the two sides genuinely differ (a lifter bug
+    // emits `result == Ok(x)` for a body returning `Err(x)`), the encoding
+    // yields `Ok(x) == Err(x)`, which z3 refutes (the negation is sat), so
+    // the obligation stays honestly undecidable. The encoding is
+    // self-protecting; it is reflexivity, not blanket-pass.
+    //
+    // The same declarations were already emitted on the asserted path
+    // (`compile_asserted_formula`); they were missing here on the negated
+    // path, which is why the lift-time whitelist had to refuse every
+    // non-arithmetic post term. With declarations present the whitelist is
+    // obsolete: the negated path renders any ctor head as a declared
+    // uninterpreted symbol instead of an undeclared-function error.
+    let mut ctor_decls = BTreeMap::new();
+    collect_ctor_decls_formula(formula, &mut ctor_decls);
+    for (name, signature) in ctor_decls.iter() {
+        preamble.push_str(&format!(
+            "(declare-fun {} ({}) {})\n",
+            smt_quote(name),
+            signature.args.join(" "),
+            signature.ret
+        ));
+    }
     let body = format!("(assert (not {}))\n(check-sat)\n", body_formula);
     let free_vars_vec = free_vars
         .into_iter()
