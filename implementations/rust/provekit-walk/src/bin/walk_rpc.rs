@@ -359,6 +359,17 @@ struct CallSite {
     /// Tier 2b semantic-oracle fallback; a `None` on a free call is a glob
     /// import and must keep its current-crate fallback, never the oracle.
     is_method: bool,
+    /// The disambiguated callee leaf for a panic-relevant call, when the Tier-2b
+    /// oracle resolved the receiver TYPE (not just the crate). For `x.unwrap()`
+    /// on an `Option`, this is `Some("option_unwrap")`: the rust-std shim's
+    /// disambiguated partial whose REAL precondition (`opt.is_some()`) the call
+    /// site must discharge to be proven panic-free. `None` when the receiver type
+    /// was not resolved or the `(type, leaf)` pair is not a known panic partial;
+    /// the matcher then keys on the bare `callee` exactly as before (additive,
+    /// never regressing the total-wrapper bridges). The bridge's `sourceSymbol`
+    /// STAYS the bare `callee` (that is the ctor name in the lifted caller body);
+    /// only the TARGET binding selected changes to the disambiguated partial.
+    disambiguated_callee: Option<String>,
     file: String,
     line: usize,
     col: usize,
@@ -667,6 +678,7 @@ fn collect_callsites_in_block(
                     callee,
                     callee_crate,
                     is_method: false,
+                    disambiguated_callee: None,
                     file: self.rel_path.to_string(),
                     line: start.line,
                     col: start.column,
@@ -688,11 +700,37 @@ fn collect_callsites_in_block(
                     self.current_crate,
                 ),
                 is_method: true,
+                disambiguated_callee: None,
                 file: self.rel_path.to_string(),
                 line: start.line,
                 col: start.column,
             });
             syn::visit::visit_expr_method_call(self, node);
+        }
+        fn visit_expr_index(&mut self, node: &'ast syn::ExprIndex) {
+            // `v[i]` is a PANIC site: indexing out of bounds panics. The term
+            // lift represents it as `Ctor("index", [v, i])`, so the call leaf is
+            // `index` (matching that ctor name as the bridge sourceSymbol). The
+            // rust-std shim publishes no index-bounds partial yet, so this
+            // resolves to no contract and is reported as an HONEST unproven
+            // panic-site (refuse-floor), making `v[i]` visible in the
+            // panic-freedom census instead of silently absent. The locus points
+            // at the indexed expression start (`v` in `v[i]`), where the term's
+            // arg0 (the receiver the bounds obligation is about) lives.
+            let start = node.expr.span().start();
+            self.out.push(CallSite {
+                callee: "index".to_string(),
+                // Receiver-defining crate is not syntactically known; the index
+                // op itself is std. Leave None so it is treated like a method
+                // call for the matcher's current-crate fallback / lift-gap.
+                callee_crate: None,
+                is_method: false,
+                disambiguated_callee: None,
+                file: self.rel_path.to_string(),
+                line: start.line,
+                col: start.column,
+            });
+            syn::visit::visit_expr_index(self, node);
         }
         fn visit_local(&mut self, node: &'ast syn::Local) {
             let explicit = pat_type_crate(
@@ -939,6 +977,40 @@ fn crate_name_for(dir: &Path) -> Option<String> {
 /// diagnostic and skip the bridge — substrate-honesty over silently
 /// producing the wrong edge.
 ///
+/// Map a `(receiver_type_stem, bare_method_leaf)` to the rust-std shim's
+/// DISAMBIGUATED partial-wrapper leaf, or `None` when the pair is not a known
+/// panic partial.
+///
+/// This is the panic-freedom enabler. A bare `unwrap` names neither
+/// `Option::unwrap` nor `Result::unwrap`; the receiver type (from the Tier-2b
+/// oracle's `textDocument/definition` file stem) disambiguates which shim
+/// partial -- and therefore which REAL precondition -- the call site must
+/// discharge to be proven panic-free:
+///   (`option`, `unwrap`)     -> `option_unwrap`     (pre: `opt.is_some()`)
+///   (`result`, `unwrap`)     -> `result_unwrap`     (pre: `result.is_ok()`)
+///   (`option`, `expect`)     -> `option_expect`     (pre: `opt.is_some()`)
+///   (`result`, `unwrap_err`) -> `result_unwrap_err` (pre: `result.is_err()`)
+///
+/// The returned leaf is the shim partial's CONTRACT NAME, which is exactly the
+/// key the binding index uses (`(library, leaf)`), so the matcher can select the
+/// partial's contract as the bridge target. This table is a documented coupling
+/// to the rust-std shim's partial function names (examples/provekit-shim-rust-std);
+/// it is deliberately SMALL and explicit (the panic set), not a generic rule.
+/// `unwrap_or`/`get` etc. are TOTAL (no panic), so they are intentionally absent
+/// and fall through to the bare-leaf key (their existing total-wrapper bridges
+/// are unaffected). Anything not in this table -> `None` -> bare-leaf key
+/// (additive; the refuse-floor and the existing bridges are preserved).
+fn disambiguated_partial_leaf(type_stem: &str, leaf: &str) -> Option<String> {
+    let partial = match (type_stem, leaf) {
+        ("option", "unwrap") => "option_unwrap",
+        ("result", "unwrap") => "result_unwrap",
+        ("option", "expect") => "option_expect",
+        ("result", "unwrap_err") => "result_unwrap_err",
+        _ => return None,
+    };
+    Some(partial.to_string())
+}
+
 /// Tier 2b (§2.T2b): for the still-unresolved method calls in `callsites`
 /// (`is_method && callee_crate.is_none()`), consult the rust-analyzer semantic
 /// oracle in one warm session and stamp the resolved (normalized) crate. Free
@@ -1014,15 +1086,27 @@ fn resolve_method_calls_via_oracle(
                 (cs.line - 1) as u32,
                 cs.col as u32,
             );
-            if let Some(krate) = resolved.get(&key) {
+            if let Some(res) = resolved.get(&key) {
+                // Disambiguate the panic partial from the receiver TYPE stem: an
+                // `unwrap` on `Option` (stem `option`) must discharge against the
+                // shim's `option_unwrap` (pre `opt.is_some()`), not the ambiguous
+                // bare `unwrap`. When the type was not disambiguable, leave the
+                // disambiguated leaf None and key on the bare callee as before.
+                let disambiguated = res
+                    .type_stem
+                    .as_deref()
+                    .and_then(|stem| disambiguated_partial_leaf(stem, &cs.callee));
                 debug!(
                     callee = %cs.callee,
-                    resolved_crate = %krate,
+                    resolved_crate = %res.krate,
+                    type_stem = ?res.type_stem,
+                    disambiguated = ?disambiguated,
                     file = %full_path.display(),
                     line = cs.line,
                     "oracle resolved method call (resident daemon)"
                 );
-                cs.callee_crate = Some(krate.clone());
+                cs.callee_crate = Some(res.krate.clone());
+                cs.disambiguated_callee = disambiguated;
             } else {
                 debug!(
                     callee = %cs.callee,
@@ -1225,8 +1309,23 @@ fn lift_implications(params: &Value) -> Result<Value, String> {
                 .callee_crate
                 .clone()
                 .unwrap_or_else(|| current_crate.clone());
-            let key = (resolved_crate, cs.callee.clone());
-            let Some(binding) = contracts_by_key.get(&key) else {
+            // PANIC-FREEDOM keying: when the Tier-2b oracle disambiguated the
+            // receiver type, prefer the shim's disambiguated partial leaf
+            // (`option_unwrap`), whose contract carries the REAL precondition
+            // (`opt.is_some()`). Discharging that pre at the call site is the
+            // proof the site cannot panic. This is ADDITIVE: we only consult the
+            // disambiguated key when it is set AND a binding exists for it;
+            // otherwise we fall through to the bare-leaf key, so the existing
+            // total-wrapper bridges (`to_string`/`len`/...) are byte-identical.
+            // The bridge's `sourceSymbol` stays the bare `cs.callee` (the ctor
+            // name in the lifted caller body); only the TARGET binding changes.
+            let key = (resolved_crate.clone(), cs.callee.clone());
+            let disambig_binding = cs.disambiguated_callee.as_ref().and_then(|leaf| {
+                let dkey = (resolved_crate.clone(), leaf.clone());
+                contracts_by_key.get(&dkey).copied()
+            });
+            let Some(binding) = disambig_binding.or_else(|| contracts_by_key.get(&key).copied())
+            else {
                 if let Some(ineligible) = ineligible_by_key.get(&key) {
                     debug!(
                         callee = %cs.callee,
@@ -5662,6 +5761,41 @@ mod tests {
     use provekit_ir_types::Sort;
     use std::fs;
     use std::time::{SystemTime, UNIX_EPOCH};
+
+    #[test]
+    fn disambiguated_partial_leaf_maps_panic_set() {
+        // The four panic partials with REAL preconditions.
+        assert_eq!(
+            disambiguated_partial_leaf("option", "unwrap").as_deref(),
+            Some("option_unwrap")
+        );
+        assert_eq!(
+            disambiguated_partial_leaf("result", "unwrap").as_deref(),
+            Some("result_unwrap")
+        );
+        assert_eq!(
+            disambiguated_partial_leaf("option", "expect").as_deref(),
+            Some("option_expect")
+        );
+        assert_eq!(
+            disambiguated_partial_leaf("result", "unwrap_err").as_deref(),
+            Some("result_unwrap_err")
+        );
+    }
+
+    #[test]
+    fn disambiguated_partial_leaf_refuses_non_panic_and_mismatched() {
+        // TOTAL methods are not in the table: they fall through to the bare leaf,
+        // preserving their existing total-wrapper bridges.
+        assert_eq!(disambiguated_partial_leaf("option", "unwrap_or"), None);
+        assert_eq!(disambiguated_partial_leaf("slice", "get"), None);
+        assert_eq!(disambiguated_partial_leaf("str", "len"), None);
+        // A panic leaf on the WRONG type head is refused (no guess): `unwrap_err`
+        // is a Result method, not Option.
+        assert_eq!(disambiguated_partial_leaf("option", "unwrap_err"), None);
+        // Unknown stem -> refuse.
+        assert_eq!(disambiguated_partial_leaf("mystery", "unwrap"), None);
+    }
 
     #[test]
     fn bind_lift_erases_signature_types_from_bind_ir_entries() {

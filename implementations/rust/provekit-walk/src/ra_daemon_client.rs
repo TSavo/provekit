@@ -40,18 +40,29 @@ pub struct DaemonQuery {
     pub col: u32,
 }
 
+/// One resolved position: the receiver-defining crate plus the best-effort
+/// receiver-type stem (`option`/`result`/`slice`/...). The stem is what lets a
+/// panic site key on the rust-std shim's disambiguated partial; `None` when the
+/// crate was definite but the type was not disambiguable (the caller then keeps
+/// the crate and refuses to disambiguate, never guesses).
+#[derive(Debug, Clone)]
+pub struct DaemonResolution {
+    pub krate: String,
+    pub type_stem: Option<String>,
+}
+
 /// Ask the resident daemon to resolve a batch of method-call positions in
-/// `workspace_root` to their receiver-defining crate.
+/// `workspace_root` to their receiver-defining crate AND receiver-type stem.
 ///
-/// Returns a map from `(file, line, col)` to the resolved crate name. Positions
-/// the daemon refuses (or could not service because RA is not yet ready) are
-/// simply ABSENT from the map: the caller treats absence as refusal and falls
-/// back to the syntactic tiers. A daemon that is unreachable or not-ready yields
-/// an empty map without blocking.
+/// Returns a map from `(file, line, col)` to the resolution. Positions the
+/// daemon refuses (or could not service because RA is not yet ready) are simply
+/// ABSENT from the map: the caller treats absence as refusal and falls back to
+/// the syntactic tiers. A daemon that is unreachable or not-ready yields an empty
+/// map without blocking.
 pub fn resolve_receiver_crates(
     workspace_root: &Path,
     queries: &[DaemonQuery],
-) -> HashMap<(String, u32, u32), String> {
+) -> HashMap<(String, u32, u32), DaemonResolution> {
     let mut out = HashMap::new();
     if queries.is_empty() {
         return out;
@@ -125,10 +136,25 @@ pub fn resolve_receiver_crates(
 
     if let Some(map) = resolved_obj {
         for (key, val) in map {
-            // key is "<file>:<line>:<col>"; val is the crate string.
-            let Some(krate) = val.as_str() else { continue };
+            // val is `{ "crate": <str>, "type": <str>|null }` (current shape) or
+            // a bare crate string (backward-compatible). Parse both.
+            let (krate, type_stem) = match val {
+                Json::String(s) => (Some(s.as_str()), None),
+                Json::Object(_) => (
+                    val.get("crate").and_then(|v| v.as_str()),
+                    val.get("type").and_then(|v| v.as_str()).map(str::to_string),
+                ),
+                _ => (None, None),
+            };
+            let Some(krate) = krate else { continue };
             if let Some((file, line, col)) = parse_pos_key(key) {
-                out.insert((file, line, col), krate.to_string());
+                out.insert(
+                    (file, line, col),
+                    DaemonResolution {
+                        krate: krate.to_string(),
+                        type_stem,
+                    },
+                );
             }
         }
     }

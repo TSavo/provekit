@@ -53,8 +53,14 @@ use serde::{Deserialize, Serialize};
 /// One position's resolution outcome inside a file's cache entry.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub enum PosOutcome {
-    /// Resolved to a defining crate.
-    Crate(String),
+    /// Resolved to a defining crate, with the best-effort receiver-type stem
+    /// (None when the crate was definite but the type could not be
+    /// disambiguated). The stem is cached alongside the crate so a cache hit
+    /// reproduces the disambiguated panic-partial selection with no RA spawn.
+    Crate {
+        krate: String,
+        type_stem: Option<String>,
+    },
     /// Deterministically refused (null definition / unmappable / ambiguous).
     /// Recorded so a cache hit reproduces the refusal with no RA spawn.
     Refused,
@@ -219,15 +225,23 @@ mod tests {
     fn hit_is_authoritative_for_whole_file() {
         let mut cache = ResolveCache::new();
         let mut res = FileResolution::default();
-        res.positions
-            .insert("3:7".into(), PosOutcome::Crate("std".into()));
+        res.positions.insert(
+            "3:7".into(),
+            PosOutcome::Crate {
+                krate: "std".into(),
+                type_stem: Some("option".into()),
+            },
+        );
         res.positions.insert("4:1".into(), PosOutcome::Refused);
         cache.insert(b"content", "deps", res);
 
         let hit = cache.get(b"content", "deps").unwrap();
         assert_eq!(
             hit.positions.get("3:7"),
-            Some(&PosOutcome::Crate("std".into()))
+            Some(&PosOutcome::Crate {
+                krate: "std".into(),
+                type_stem: Some("option".into()),
+            })
         );
         assert_eq!(hit.positions.get("4:1"), Some(&PosOutcome::Refused));
         // A different content is a miss.
@@ -238,8 +252,13 @@ mod tests {
     fn roundtrips_through_bytes() {
         let mut cache = ResolveCache::new();
         let mut res = FileResolution::default();
-        res.positions
-            .insert("1:0".into(), PosOutcome::Crate("serde_json".into()));
+        res.positions.insert(
+            "1:0".into(),
+            PosOutcome::Crate {
+                krate: "serde_json".into(),
+                type_stem: None,
+            },
+        );
         cache.insert(b"x", "d", res);
         let bytes = cache.to_bytes();
         let restored = ResolveCache::from_bytes(&bytes);
@@ -250,7 +269,10 @@ mod tests {
                 .unwrap()
                 .positions
                 .get("1:0"),
-            Some(&PosOutcome::Crate("serde_json".into()))
+            Some(&PosOutcome::Crate {
+                krate: "serde_json".into(),
+                type_stem: None,
+            })
         );
     }
 }

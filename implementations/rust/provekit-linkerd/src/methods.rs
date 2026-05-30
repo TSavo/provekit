@@ -291,8 +291,12 @@ pub fn shutdown_response(id: &Json) -> Json {
 ///
 /// Returns:
 /// ```json
-/// { "resolved": { "<file>:<line>:<col>": "<crate>", ... }, "ready": <bool> }
+/// { "resolved": { "<file>:<line>:<col>": { "crate": "<crate>", "type": "<stem>"|null }, ... },
+///   "ready": <bool> }
 /// ```
+/// `type` is the receiver's defining-type stem (`option`/`result`/`slice`/...),
+/// the discriminator that lets a panic site key on the disambiguated rust-std
+/// partial; null when the crate was definite but the type was not disambiguable.
 ///
 /// Resolution path, per query file:
 ///   1. CACHE FIRST. Read the file's on-disk bytes, compute the content-address
@@ -375,8 +379,13 @@ pub async fn handle_resolve_receiver_crate(
                 // HIT: authoritative for the whole file, zero RA queries.
                 for (line, col) in positions {
                     let pkey = format!("{line}:{col}");
-                    if let Some(PosOutcome::Crate(krate)) = entry.positions.get(&pkey) {
-                        resolved.insert(format!("{file}:{line}:{col}"), Json::String(krate.clone()));
+                    if let Some(PosOutcome::Crate { krate, type_stem }) =
+                        entry.positions.get(&pkey)
+                    {
+                        resolved.insert(
+                            format!("{file}:{line}:{col}"),
+                            resolution_value(krate, type_stem.as_deref()),
+                        );
                     }
                     // Refused / absent -> stays unresolved (refuse-floor).
                 }
@@ -438,12 +447,18 @@ pub async fn handle_resolve_receiver_crate(
         for ((line, col), r) in positions.iter().zip(results.iter()) {
             let pkey = format!("{line}:{col}");
             match r {
-                PosResult::Resolved(krate) => {
+                PosResult::Resolved { krate, type_stem } => {
                     resolved.insert(
                         format!("{file}:{line}:{col}"),
-                        Json::String(krate.clone()),
+                        resolution_value(krate, type_stem.as_deref()),
                     );
-                    file_res.positions.insert(pkey, PosOutcome::Crate(krate.clone()));
+                    file_res.positions.insert(
+                        pkey,
+                        PosOutcome::Crate {
+                            krate: krate.clone(),
+                            type_stem: type_stem.clone(),
+                        },
+                    );
                     n_resolved += 1;
                 }
                 PosResult::Refused => {
@@ -492,6 +507,19 @@ pub async fn handle_resolve_receiver_crate(
         serde_json::json!({ "resolved": Json::Object(resolved), "ready": ready }),
         id,
     )
+}
+
+/// Build the wire value for one resolved position: an object
+/// `{ "crate": "<crate>", "type": "<type_stem>"|null }`. The receiver-type stem
+/// is what lets the caller key a panic site (`x.unwrap()`) on the rust-std
+/// shim's disambiguated partial (`option_unwrap`) instead of the ambiguous bare
+/// leaf. `type` is null when the crate was definite but the type could not be
+/// disambiguated; the caller then keeps the crate and refuses to disambiguate.
+fn resolution_value(krate: &str, type_stem: Option<&str>) -> Json {
+    serde_json::json!({
+        "crate": krate,
+        "type": type_stem,
+    })
 }
 
 /// Write the resolve-cache sidecar atomically (write temp + rename) so a reader

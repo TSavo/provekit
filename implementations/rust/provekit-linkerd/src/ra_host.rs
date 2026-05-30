@@ -53,12 +53,21 @@ pub enum Phase {
 }
 
 /// The classified outcome of resolving one position against the warm session.
-///   Resolved(crate) -> a definite crate
-///   Refused          -> deterministic refuse (null/unmappable/ambiguous)
-///   NotReady         -> ContentModified budget exhausted (RA still moving)
+///   Resolved { krate, type_stem } -> a definite crate, plus the best-effort
+///                                    receiver-type stem (None when the type
+///                                    could not be disambiguated). The type stem
+///                                    is what lets a panic-site `x.unwrap()` key
+///                                    on the rust-std shim's disambiguated
+///                                    partial (`option_unwrap`) instead of the
+///                                    ambiguous bare leaf.
+///   Refused  -> deterministic refuse (null/unmappable/ambiguous)
+///   NotReady -> ContentModified budget exhausted (RA still moving)
 #[derive(Debug, Clone)]
 pub enum PosResult {
-    Resolved(String),
+    Resolved {
+        krate: String,
+        type_stem: Option<String>,
+    },
     Refused,
     NotReady,
 }
@@ -168,8 +177,13 @@ fn session_loop(
     while let Ok(cmd) = cmd_rx.recv() {
         let mut results = Vec::with_capacity(cmd.queries.len());
         for q in &cmd.queries {
-            let r = match oracle.resolve_crate_classified(q) {
-                Ok(Some(krate)) => PosResult::Resolved(krate),
+            // Resolve BOTH crate and receiver-type stem in one definition
+            // round-trip; the stem disambiguates the panic partial downstream.
+            let r = match oracle.resolve_typed_classified(q) {
+                Ok(Some(tr)) => PosResult::Resolved {
+                    krate: tr.krate,
+                    type_stem: tr.type_stem,
+                },
                 Ok(None) => PosResult::Refused,
                 Err(()) => PosResult::NotReady,
             };

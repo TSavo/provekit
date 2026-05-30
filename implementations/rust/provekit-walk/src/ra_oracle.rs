@@ -43,6 +43,18 @@ pub struct ResolveQuery {
     pub lsp_col: u32,
 }
 
+/// A resolved method call: the receiver-defining crate (always present when
+/// resolution succeeds) plus the defining TYPE stem (best-effort; the
+/// receiver-type discriminator panic-freedom uses to pick the disambiguated
+/// rust-std shim partial). `type_stem == None` means the crate is known but the
+/// type could not be disambiguated (ambiguous or unmappable stem), so the caller
+/// keeps the crate-only resolution and refuses to disambiguate, never guesses.
+#[derive(Debug, Clone)]
+pub struct TypedResolution {
+    pub krate: String,
+    pub type_stem: Option<String>,
+}
+
 /// The oracle handle: a live rust-analyzer LSP subprocess plus the bookkeeping
 /// to send requests and correlate responses. Dropped (and the child killed) at
 /// the end of one `lift_implications` run.
@@ -441,6 +453,71 @@ impl RaOracle {
     ///   Ok(None)         -> refused: null definition, unmappable, or ambiguous
     ///   Err(())          -> refused: ContentModified budget exhausted (RA not ready)
     pub fn resolve_crate_classified(&mut self, q: &ResolveQuery) -> Result<Option<String>, ()> {
+        let result = match self.definition_result(q)? {
+            Some(r) => r,
+            None => return Ok(None),
+        };
+        let resolved = crate_from_definition_result(&result);
+        match &resolved {
+            Some(krate) => debug!(
+                file = %q.abs_path.display(),
+                line = q.lsp_line, col = q.lsp_col, resolved_crate = %krate,
+                "oracle: resolved method call to crate"
+            ),
+            None => trace!(
+                file = %q.abs_path.display(),
+                line = q.lsp_line, col = q.lsp_col,
+                "oracle: refused (null result, unmappable path, or ambiguous crates)"
+            ),
+        }
+        Ok(resolved)
+    }
+
+    /// Resolve one query to BOTH the defining crate AND the defining type stem,
+    /// from a single `textDocument/definition` request. The type stem is the
+    /// receiver-type discriminator panic-freedom needs (Option vs Result vs
+    /// slice/vec); it disambiguates which rust-std shim partial a call must
+    /// discharge against. Classification mirrors `resolve_crate_classified`:
+    ///   Ok(Some(TypedResolution)) -> crate resolved (stem may still be None if
+    ///                                the stem was ambiguous/unmappable but the
+    ///                                crate was definite; the caller then keeps
+    ///                                the crate but cannot disambiguate the type)
+    ///   Ok(None)                  -> deterministic refuse (null/unmappable/ambiguous)
+    ///   Err(())                   -> not-ready (ContentModified budget exhausted)
+    pub fn resolve_typed_classified(
+        &mut self,
+        q: &ResolveQuery,
+    ) -> Result<Option<TypedResolution>, ()> {
+        let result = match self.definition_result(q)? {
+            Some(r) => r,
+            None => return Ok(None),
+        };
+        let Some(krate) = crate_from_definition_result(&result) else {
+            return Ok(None);
+        };
+        // The type stem is BEST-EFFORT on top of a definite crate: an ambiguous
+        // or unmappable stem leaves `type_stem = None` (the caller keeps the
+        // crate but cannot reach a disambiguated partial), never a wrong stem.
+        let type_stem = type_stem_from_definition_result(&result);
+        debug!(
+            file = %q.abs_path.display(),
+            line = q.lsp_line, col = q.lsp_col,
+            resolved_crate = %krate,
+            type_stem = ?type_stem,
+            "oracle: resolved method call to crate + type stem"
+        );
+        Ok(Some(TypedResolution { krate, type_stem }))
+    }
+
+    /// Send the `textDocument/definition` request for `q`, honouring the
+    /// ContentModified not-ready retry/backoff, and return the raw `result`
+    /// value:
+    ///   Ok(Some(result)) -> a settled definition result (may be null/empty)
+    ///   Ok(None)         -> the request could not even be issued (transport)
+    ///   Err(())          -> not-ready: ContentModified budget exhausted
+    /// Shared by `resolve_crate_classified` and `resolve_typed_classified` so the
+    /// crate and the type stem come from ONE round-trip, never two.
+    fn definition_result(&mut self, q: &ResolveQuery) -> Result<Option<Value>, ()> {
         trace!(
             file = %q.abs_path.display(),
             line = q.lsp_line,
@@ -452,13 +529,6 @@ impl RaOracle {
         }
         let uri = path_to_uri(&q.abs_path);
         for attempt in 0..=NOT_READY_RETRIES {
-            trace!(
-                file = %q.abs_path.display(),
-                line = q.lsp_line,
-                col = q.lsp_col,
-                attempt = attempt,
-                "oracle: sending textDocument/definition request"
-            );
             let Some(id) = self.send_request(
                 "textDocument/definition",
                 json!({
@@ -471,9 +541,6 @@ impl RaOracle {
             let Some(resp) = self.wait_for_response(id, DEFINITION_WAIT) else {
                 return Ok(None);
             };
-            // Not-ready signal: rust-analyzer returns ContentModified (-32801)
-            // while its analysis is mid-flight. Back off and re-ask; this is the
-            // server telling us the index moved, not a refuse.
             let is_content_modified = resp
                 .get("error")
                 .and_then(|e| e.get("code"))
@@ -483,51 +550,22 @@ impl RaOracle {
                 if attempt < NOT_READY_RETRIES {
                     debug!(
                         file = %q.abs_path.display(),
-                        line = q.lsp_line,
-                        col = q.lsp_col,
-                        attempt = attempt,
+                        line = q.lsp_line, col = q.lsp_col, attempt = attempt,
                         retries_remaining = NOT_READY_RETRIES - attempt,
                         "oracle: RA not ready (ContentModified), backing off and retrying"
                     );
                     std::thread::sleep(not_ready_backoff(attempt));
                     continue;
                 }
-                // Still churning after the budget: deterministic refuse (not-ready).
                 warn!(
                     file = %q.abs_path.display(),
-                    line = q.lsp_line,
-                    col = q.lsp_col,
-                    attempts = attempt + 1,
+                    line = q.lsp_line, col = q.lsp_col, attempts = attempt + 1,
                     "oracle: refused after exhausting ContentModified retry budget"
                 );
                 return Err(());
             }
-            // A settled reply (definition, real null, or any other error) is
-            // final. Map it to a crate or refuse.
-            let result = resp.get("result").cloned().unwrap_or(Value::Null);
-            let resolved = crate_from_definition_result(&result);
-            match &resolved {
-                Some(krate) => {
-                    debug!(
-                        file = %q.abs_path.display(),
-                        line = q.lsp_line,
-                        col = q.lsp_col,
-                        resolved_crate = %krate,
-                        "oracle: resolved method call to crate"
-                    );
-                }
-                None => {
-                    trace!(
-                        file = %q.abs_path.display(),
-                        line = q.lsp_line,
-                        col = q.lsp_col,
-                        "oracle: refused (null result, unmappable path, or ambiguous crates)"
-                    );
-                }
-            }
-            return Ok(resolved);
+            return Ok(Some(resp.get("result").cloned().unwrap_or(Value::Null)));
         }
-        // Loop exhausted without ContentModified (shouldn't happen, but be safe).
         Ok(None)
     }
 
@@ -735,6 +773,62 @@ fn crate_from_definition_result(result: &Value) -> Option<String> {
     }
 }
 
+/// Map a `textDocument/definition` result to the defining TYPE stem (the source
+/// file's stem at the definition site), or `None` (refuse). This is the cheap
+/// receiver-type discriminator for panic-freedom: `Option::unwrap` is defined in
+/// `core/src/option.rs` (stem `option`), `Result::unwrap` in `result.rs` (stem
+/// `result`), `[T]::get`/`Vec::get` in `slice/mod.rs` / `vec/mod.rs`. The stem
+/// alone separates the std panic partials (Option vs Result vs slice/vec) with
+/// no `textDocument/hover` round-trip. Refuses (None) on empty, ambiguity across
+/// distinct stems, or any unmappable location, mirroring the crate extractor.
+fn type_stem_from_definition_result(result: &Value) -> Option<String> {
+    let locations: Vec<&Value> = match result {
+        Value::Array(a) => a.iter().collect(),
+        Value::Object(_) => vec![result],
+        _ => return None,
+    };
+    if locations.is_empty() {
+        return None;
+    }
+    let mut stems = std::collections::BTreeSet::new();
+    for loc in locations {
+        let uri = loc
+            .get("uri")
+            .or_else(|| loc.get("targetUri"))
+            .and_then(|v| v.as_str())?;
+        let stem = type_stem_from_uri(uri)?;
+        stems.insert(stem);
+    }
+    if stems.len() == 1 {
+        stems.into_iter().next()
+    } else {
+        // Ambiguous defining type across locations: refuse (no disambiguation).
+        None
+    }
+}
+
+/// The defining type stem from a definition-target URI: the source file stem,
+/// with the parent dir folded in for module files named `mod.rs` (so
+/// `slice/mod.rs` -> `slice`, not the useless `mod`). `None` for an unmappable
+/// path. The stem is a kit-internal disambiguation HANDLE, paired with the leaf
+/// to select the rust-std shim's disambiguated partial (e.g. `(option, unwrap)`
+/// -> `option_unwrap`); the substrate never sees it.
+pub fn type_stem_from_uri(uri: &str) -> Option<String> {
+    let path = uri.strip_prefix("file://").unwrap_or(uri);
+    let file = path.rsplit('/').next()?;
+    let stem = file.strip_suffix(".rs").unwrap_or(file);
+    if stem == "mod" || stem.is_empty() {
+        // A module root (`.../slice/mod.rs`): use the enclosing directory name.
+        let without_file = &path[..path.len() - file.len()];
+        let dir = without_file.trim_end_matches('/').rsplit('/').next()?;
+        if dir.is_empty() {
+            return None;
+        }
+        return Some(dir.to_string());
+    }
+    Some(stem.to_string())
+}
+
 /// Map a definition-target file URI to its defining crate name, or `None` when
 /// the path is outside the known roots (sysroot / cargo registry). A
 /// workspace-local path is intentionally `None`: Tier 2a already resolves the
@@ -900,6 +994,46 @@ mod tests {
         assert_eq!(crate_from_uri(u).as_deref(), Some("alloc"));
         let u2 = "file:///opt/rust/library/core/src/option.rs";
         assert_eq!(crate_from_uri(u2).as_deref(), Some("core"));
+    }
+
+    #[test]
+    fn type_stem_distinguishes_option_result_slice() {
+        // Option::unwrap and Result::unwrap differ ONLY by their defining file
+        // stem; this is the disambiguator panic-freedom rides on.
+        assert_eq!(
+            type_stem_from_uri("file:///opt/rust/library/core/src/option.rs").as_deref(),
+            Some("option")
+        );
+        assert_eq!(
+            type_stem_from_uri("file:///opt/rust/library/core/src/result.rs").as_deref(),
+            Some("result")
+        );
+        // A module root (`slice/mod.rs`) folds to the directory name, not `mod`.
+        assert_eq!(
+            type_stem_from_uri("file:///opt/rust/library/core/src/slice/mod.rs").as_deref(),
+            Some("slice")
+        );
+        assert_eq!(
+            type_stem_from_uri("file:///opt/rust/library/alloc/src/vec/mod.rs").as_deref(),
+            Some("vec")
+        );
+    }
+
+    #[test]
+    fn type_stem_from_definition_result_single_and_ambiguous() {
+        let single = json!([{ "uri": "file:///opt/rust/library/core/src/option.rs", "range": {} }]);
+        assert_eq!(type_stem_from_definition_result(&single).as_deref(), Some("option"));
+        // Two distinct stems -> refuse (no disambiguation).
+        let ambiguous = json!([
+            { "uri": "file:///opt/rust/library/core/src/option.rs", "range": {} },
+            { "uri": "file:///opt/rust/library/core/src/result.rs", "range": {} }
+        ]);
+        assert_eq!(type_stem_from_definition_result(&ambiguous), None);
+        // Empty / null -> refuse.
+        assert_eq!(type_stem_from_definition_result(&json!([])), None);
+        // LocationLink targetUri is read.
+        let link = json!([{ "targetUri": "file:///opt/rust/library/core/src/result.rs", "targetRange": {} }]);
+        assert_eq!(type_stem_from_definition_result(&link).as_deref(), Some("result"));
     }
 
     #[test]
