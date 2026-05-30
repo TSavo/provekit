@@ -7,5 +7,10 @@ library_tag = "jackson"
 family = "concept:family:json"
 library_version = "2.17"
 provides_concepts = ["concept:json-parse", "concept:json-serialize"]
+dependencies = [
+  "com.fasterxml.jackson.core:jackson-databind:2.17.2",
+  "com.fasterxml.jackson.core:jackson-core:2.17.2",
+  "com.fasterxml.jackson.core:jackson-annotations:2.17.2",
+]
 command = ["java", "-jar", "implementations/java/provekit-realize-java-core/target/provekit-realize-java.jar", "--rpc"]
 working_dir = "."

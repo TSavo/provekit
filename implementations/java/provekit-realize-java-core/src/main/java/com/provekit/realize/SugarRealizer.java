@@ -62,13 +62,27 @@ final class SugarRealizer {
             String observedLossRecord,
             String usedSugarsJson,
             String observationWrapperEmissionRecord,
+            /// #1380: structured imports required by this fragment. These
+            /// come from kit-owned body metadata, not body-text comments.
+            List<String> imports,
             /// #1390: static field helpers needed by the body. Empty for
             /// stubs and bodies that don't reference class-level statics.
-            List<String> helpers) {
+            List<String> helpers,
+            /// #1380: build dependencies required by this fragment. The Java
+            /// kit reads these from project realize manifests and returns
+            /// them over RPC; the CLI only transports the normalized data.
+            List<String> dependencies) {
         Realization(String source, boolean isStub, String observedLossRecord,
                    String usedSugarsJson, String observationWrapperEmissionRecord) {
             this(source, isStub, observedLossRecord, usedSugarsJson,
-                 observationWrapperEmissionRecord, List.of());
+                 observationWrapperEmissionRecord, List.of(), List.of(), List.of());
+        }
+
+        Realization(String source, boolean isStub, String observedLossRecord,
+                   String usedSugarsJson, String observationWrapperEmissionRecord,
+                   List<String> helpers) {
+            this(source, isStub, observedLossRecord, usedSugarsJson,
+                 observationWrapperEmissionRecord, List.of(), helpers, List.of());
         }
     }
 
@@ -449,14 +463,18 @@ final class SugarRealizer {
                 + "}\n"
                 + witnessClass;
         // #1390: collect helpers from the matched body-template entry.
+        List<String> fragmentImports = bodyTemplate.map(RenderedBody::imports).orElse(List.of());
         List<String> helpers = bodyTemplate.map(RenderedBody::helpers).orElse(List.of());
+        List<String> dependencies = bodyTemplate.map(RenderedBody::dependencies).orElse(List.of());
         return new Realization(
                 source,
                 isStub,
                 observedLossRecordJson(sugarEmissions, bodyLossRecord),
                 usedSugarsJson(sugarEmissions),
                 observationWrapperEmissionRecord,
-                helpers);
+                fragmentImports,
+                helpers,
+                dependencies);
     }
 
     private static String parameterAnnotations(List<SugarEmission> emissions, String paramName) {
@@ -4096,12 +4114,20 @@ final class SugarRealizer {
             /// for the same concept. Empty string means "library-agnostic"
             /// (legacy catch-all).
             String targetLibraryTag,
+            /// #1380: imports lifted as structured fragment metadata. Older
+            /// shim proofs carried these in marker comments; the Java kit
+            /// strips those comments and returns the data over RPC instead.
+            List<String> fileImports,
             /// #1390: static field helpers lifted from the shim's source file.
             /// Bodies reference these as short-named symbols (e.g.
             /// `MAPPER.readTree(s)`); the assembler hoists them into the
             /// compilation unit before methods. Empty when the shim has no
             /// class-level static fields.
-            List<String> fileHelpers) {}
+            List<String> fileHelpers,
+            /// #1380: package coordinates declared by the chosen realize
+            /// manifest for this library. Assembly uses them to build the
+            /// kit-owned compile classpath.
+            List<String> dependencyCoordinates) {}
 
     private record TemplateCitation(
             String placeholder,
@@ -4109,9 +4135,14 @@ final class SugarRealizer {
             String mode,
             List<String> params) {}
 
-    private record RenderedBody(String body, Jcs.Json lossRecord, List<String> helpers) {
+    private record RenderedBody(
+            String body,
+            Jcs.Json lossRecord,
+            List<String> imports,
+            List<String> helpers,
+            List<String> dependencies) {
         RenderedBody(String body, Jcs.Json lossRecord) {
-            this(body, lossRecord, List.of());
+            this(body, lossRecord, List.of(), List.of(), List.of());
         }
     }
 
@@ -4220,6 +4251,9 @@ final class SugarRealizer {
         }
         String rendered = renderedMaybe.get();
         Jcs.Json lossRecord = entry.lossRecord();
+        List<String> imports = new ArrayList<>(entry.fileImports());
+        List<String> helpers = new ArrayList<>(entry.fileHelpers());
+        List<String> dependencies = new ArrayList<>(entry.dependencyCoordinates());
         for (TemplateCitation citation : entry.citations()) {
             List<String> citationParams = new ArrayList<>();
             for (String rawParam : citation.params()) {
@@ -4243,15 +4277,22 @@ final class SugarRealizer {
             }
             rendered = rendered.replace("${" + citation.placeholder() + "}", citationBody.get().body());
             lossRecord = combineLossRecords(lossRecord, citationBody.get().lossRecord());
+            imports.addAll(citationBody.get().imports());
+            helpers.addAll(citationBody.get().helpers());
+            dependencies.addAll(citationBody.get().dependencies());
         }
         if (rendered.contains("${")) {
             // Unbound placeholder: refuse-match per spec §2.1.
             return Optional.empty();
         }
-        // #1390: attach the matched entry's static field helpers to the
-        // rendered body so emitStubInner / RpcServer can carry them through
-        // to the assembler. Empty when the shim has no class-level statics.
-        return Optional.of(new RenderedBody(rendered, lossRecord, entry.fileHelpers()));
+        // #1380/#1390: attach structured fragment context so emitStubInner /
+        // RpcServer can carry it through to the assembler.
+        return Optional.of(new RenderedBody(
+                rendered,
+                lossRecord,
+                dedupePreserveOrder(imports),
+                dedupePreserveOrder(helpers),
+                dedupePreserveOrder(dependencies)));
     }
 
     private static Optional<String> substituteTemplateBindings(String template, List<String> params) {
@@ -4347,12 +4388,6 @@ final class SugarRealizer {
             guard.append("\"max_params\":").append(entry.maxParams());
         }
         guard.append("}");
-        StringBuilder helpers = new StringBuilder("[");
-        for (int i = 0; i < entry.fileHelpers().size(); i++) {
-            if (i > 0) helpers.append(",");
-            helpers.append(JsonUtil.quoted(entry.fileHelpers().get(i)));
-        }
-        helpers.append("]");
         return "{"
                 + "\"concept_name\":" + JsonUtil.quoted(entry.conceptName()) + ","
                 + "\"emission_template\":{\"kind\":" + JsonUtil.quoted(entry.templateKind())
@@ -4360,7 +4395,9 @@ final class SugarRealizer {
                 + "\"loss_record_contribution\":{\"form\":\"literal\",\"value\":" + Jcs.encode(entry.lossRecord()) + "},"
                 + "\"signature_guard\":" + guard + ","
                 + "\"target_library_tag\":" + JsonUtil.quoted(entry.targetLibraryTag()) + ","
-                + "\"file_helpers\":" + helpers
+                + "\"imports\":" + stringArrayJson(entry.fileImports()) + ","
+                + "\"file_helpers\":" + stringArrayJson(entry.fileHelpers()) + ","
+                + "\"dependencies\":" + stringArrayJson(entry.dependencyCoordinates())
                 + "}";
     }
 
@@ -4421,6 +4458,7 @@ final class SugarRealizer {
         if (!(bodySourceJson instanceof Jcs.Obj bodySource)) return null;
         String bodyText = bodySource.stringFieldOrNull("body_text");
         if (bodyText == null || bodyText.isBlank()) return null;
+        FragmentMetadata fragmentMetadata = extractFragmentMetadata(bodyText);
         List<String> fileHelpers = new ArrayList<>();
         Jcs.Json helpersJson = decl.get("file_helpers");
         if (helpersJson instanceof Jcs.Arr helpersArr) {
@@ -4433,13 +4471,146 @@ final class SugarRealizer {
                 conceptName,
                 null,
                 "verbatim",
-                substituteShimParamsWithPlaceholders(bodyText, paramNames),
+                substituteShimParamsWithPlaceholders(fragmentMetadata.body(), paramNames),
                 List.of(),
                 lossRecordFromBindingEntry(decl),
                 arity,
                 arity,
                 libraryTag,
-                List.copyOf(fileHelpers));
+                fragmentMetadata.imports(),
+                List.copyOf(fileHelpers),
+                mergeStringLists(fragmentMetadata.dependencies(), manifestDependenciesForLibraryTag(libraryTag)));
+    }
+
+    private record FragmentMetadata(String body, List<String> imports, List<String> dependencies) {}
+
+    private static FragmentMetadata extractFragmentMetadata(String bodyText) {
+        List<String> imports = new ArrayList<>();
+        List<String> dependencies = new ArrayList<>();
+        StringBuilder body = new StringBuilder();
+        boolean firstBodyLine = true;
+        for (String line : bodyText.split("\\R", -1)) {
+            String trimmed = line.trim();
+            if (trimmed.startsWith("// __fragment_imports__:")) {
+                imports.addAll(parseFragmentMetadataList(
+                        trimmed.substring("// __fragment_imports__:".length())));
+                continue;
+            }
+            if (trimmed.startsWith("// __fragment_dependencies__:")) {
+                dependencies.addAll(parseFragmentMetadataList(
+                        trimmed.substring("// __fragment_dependencies__:".length())));
+                continue;
+            }
+            if (!firstBodyLine) body.append('\n');
+            body.append(line);
+            firstBodyLine = false;
+        }
+        return new FragmentMetadata(
+                body.toString(),
+                dedupePreserveOrder(imports),
+                dedupePreserveOrder(dependencies));
+    }
+
+    private static List<String> parseFragmentMetadataList(String text) {
+        if (text == null || text.isBlank()) return List.of();
+        List<String> out = new ArrayList<>();
+        for (String part : text.split(",")) {
+            String value = part.trim();
+            if (!value.isEmpty()) out.add(value);
+        }
+        return out;
+    }
+
+    private static final Map<String, List<String>> MANIFEST_DEPENDENCIES_CACHE = new HashMap<>();
+
+    private static List<String> manifestDependenciesForLibraryTag(String libraryTag) {
+        if (libraryTag == null || libraryTag.isBlank()) return List.of();
+        synchronized (MANIFEST_DEPENDENCIES_CACHE) {
+            List<String> cached = MANIFEST_DEPENDENCIES_CACHE.get(libraryTag);
+            if (cached != null) return cached;
+            List<String> loaded = loadManifestDependenciesForLibraryTag(libraryTag);
+            MANIFEST_DEPENDENCIES_CACHE.put(libraryTag, loaded);
+            return loaded;
+        }
+    }
+
+    private static List<String> loadManifestDependenciesForLibraryTag(String libraryTag) {
+        java.nio.file.Path root = workspaceRoot();
+        if (root == null) return List.of();
+        java.nio.file.Path realizeDir = root.resolve(".provekit").resolve("realize");
+        if (!java.nio.file.Files.isDirectory(realizeDir)) return List.of();
+        List<String> out = new ArrayList<>();
+        try (java.util.stream.Stream<java.nio.file.Path> paths = java.nio.file.Files.list(realizeDir)) {
+            for (java.nio.file.Path dir : (Iterable<java.nio.file.Path>) paths::iterator) {
+                java.nio.file.Path manifest = dir.resolve("manifest.toml");
+                if (!java.nio.file.Files.isRegularFile(manifest)) continue;
+                String raw = java.nio.file.Files.readString(manifest, StandardCharsets.UTF_8);
+                if (!libraryTag.equals(tomlStringValue(raw, "library_tag"))) continue;
+                out.addAll(tomlStringArrayValue(raw, "dependencies"));
+            }
+        } catch (IOException ignored) {
+            return List.of();
+        }
+        return dedupePreserveOrder(out);
+    }
+
+    private static java.nio.file.Path workspaceRoot() {
+        java.nio.file.Path cwd = java.nio.file.Paths.get(System.getProperty("user.dir", "."));
+        for (java.nio.file.Path p = cwd; p != null; p = p.getParent()) {
+            if (java.nio.file.Files.isDirectory(p.resolve(".provekit").resolve("realize"))) {
+                return p;
+            }
+        }
+        return null;
+    }
+
+    private static String tomlStringValue(String raw, String key) {
+        Matcher matcher = Pattern.compile("(?m)^\\s*" + Pattern.quote(key) + "\\s*=\\s*\"([^\"]*)\"")
+                .matcher(raw);
+        return matcher.find() ? matcher.group(1) : null;
+    }
+
+    private static List<String> tomlStringArrayValue(String raw, String key) {
+        Matcher matcher = Pattern.compile("(?ms)^\\s*" + Pattern.quote(key) + "\\s*=\\s*\\[(.*?)\\]")
+                .matcher(raw);
+        if (!matcher.find()) return List.of();
+        String body = matcher.group(1);
+        List<String> out = new ArrayList<>();
+        Matcher values = Pattern.compile("\"([^\"]*)\"").matcher(body);
+        while (values.find()) {
+            String value = values.group(1).trim();
+            if (!value.isEmpty()) out.add(value);
+        }
+        return out;
+    }
+
+    private static List<String> mergeStringLists(List<String> first, List<String> second) {
+        List<String> out = new ArrayList<>();
+        if (first != null) out.addAll(first);
+        if (second != null) out.addAll(second);
+        return dedupePreserveOrder(out);
+    }
+
+    private static List<String> dedupePreserveOrder(List<String> values) {
+        if (values == null || values.isEmpty()) return List.of();
+        List<String> out = new ArrayList<>();
+        for (String value : values) {
+            if (value == null || value.isBlank()) continue;
+            if (!out.contains(value)) out.add(value);
+        }
+        return List.copyOf(out);
+    }
+
+    private static String stringArrayJson(List<String> values) {
+        StringBuilder out = new StringBuilder("[");
+        if (values != null) {
+            for (int i = 0; i < values.size(); i++) {
+                if (i > 0) out.append(',');
+                out.append(JsonUtil.quoted(values.get(i)));
+            }
+        }
+        out.append("]");
+        return out.toString();
     }
 
     private static List<String> stringArray(Jcs.Json value) {
@@ -4748,6 +4919,7 @@ final class SugarRealizer {
                 }
                 String entryLibraryTag = itemObj.stringFieldOrNull("target_library_tag");
                 if (entryLibraryTag == null) entryLibraryTag = "";
+                List<String> fileImports = stringArray(itemObj.get("imports"));
                 // #1390: static field helpers lifted from the shim's source.
                 List<String> fileHelpers = new ArrayList<>();
                 Jcs.Json helpersJson = itemObj.get("file_helpers");
@@ -4756,6 +4928,9 @@ final class SugarRealizer {
                         if (v instanceof Jcs.Str s) fileHelpers.add(s.value());
                     }
                 }
+                List<String> dependencyCoordinates = mergeStringLists(
+                        stringArray(itemObj.get("dependencies")),
+                        manifestDependenciesForLibraryTag(entryLibraryTag));
                 out.add(new BodyTemplateEntry(
                         conceptName,
                         mode,
@@ -4766,7 +4941,9 @@ final class SugarRealizer {
                         minParams,
                         maxParams,
                         entryLibraryTag,
-                        fileHelpers));
+                        fileImports,
+                        fileHelpers,
+                        dependencyCoordinates));
             }
             return out;
         } catch (RuntimeException e) {

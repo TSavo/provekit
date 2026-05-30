@@ -320,9 +320,10 @@ public final class RpcServer {
         String packageHint = JsonUtil.decodeJsonStringField(paramsObj, "package_hint");
         String fragmentsJson = JsonUtil.extractArrayField(paramsObj, "fragments");
 
-        // Parse fragments + collect imports/sources/helpers.
+        // Parse fragments + collect imports/sources/helpers/dependencies.
         java.util.TreeSet<String> mergedImports = new java.util.TreeSet<>();
         java.util.LinkedHashSet<String> mergedHelpers = new java.util.LinkedHashSet<>();
+        java.util.LinkedHashSet<String> mergedDependencies = new java.util.LinkedHashSet<>();
         java.util.List<String> bodies = new java.util.ArrayList<>();
         try {
             com.provekit.ir.Jcs.Json doc = com.provekit.ir.Jcs.parse(fragmentsJson);
@@ -346,6 +347,15 @@ public final class RpcServer {
                         for (com.provekit.ir.Jcs.Json v : ha.values()) {
                             if (v instanceof com.provekit.ir.Jcs.Str s) {
                                 mergedHelpers.add(s.value());
+                            }
+                        }
+                    }
+                    // #1380: collect package coordinates from each fragment.
+                    com.provekit.ir.Jcs.Json dependenciesArr = o.get("dependencies");
+                    if (dependenciesArr instanceof com.provekit.ir.Jcs.Arr da) {
+                        for (com.provekit.ir.Jcs.Json v : da.values()) {
+                            if (v instanceof com.provekit.ir.Jcs.Str s) {
+                                mergedDependencies.add(s.value());
                             }
                         }
                     }
@@ -390,17 +400,16 @@ public final class RpcServer {
         }
         out.append("}\n");
 
-        // #1388: emit the kit's runtime classpath so the substrate's
+        // #1388/#1380: emit the kit's runtime classpath so the substrate's
         // --compile-check can invoke javac with the JARs the materialized
         // code references (jackson, bouncycastle, etc.).
         //
         // Sources:
         //   1. The plugin's java.class.path (the realize-java jar with its
         //      shaded dependencies).
-        //   2. Known maven-cached dependency JARs (jackson, bouncycastle)
-        //      that the materialized code references but the realize plugin
-        //      doesn't load itself. Stop-gap until proper Maven-coord
-        //      resolution lands on the substrate side.
+        //   2. Fragment-declared Maven coordinates from the Java kit's
+        //      manifests. The substrate forwards them but does not interpret
+        //      Java package semantics.
         java.util.LinkedHashSet<String> classpath = new java.util.LinkedHashSet<>();
         String javaCp = System.getProperty("java.class.path", "");
         if (!javaCp.isEmpty()) {
@@ -416,13 +425,9 @@ public final class RpcServer {
         String userHome = System.getProperty("user.home", "");
         if (!userHome.isEmpty()) {
             java.nio.file.Path m2 = java.nio.file.Paths.get(userHome, ".m2", "repository");
-            scanMavenJars(m2, "com/fasterxml/jackson/core/jackson-databind", classpath);
-            scanMavenJars(m2, "com/fasterxml/jackson/core/jackson-core", classpath);
-            scanMavenJars(m2, "com/fasterxml/jackson/core/jackson-annotations", classpath);
-            scanMavenJars(m2, "org/bouncycastle/bcprov-jdk18on", classpath);
-            scanMavenJars(m2, "org/bouncycastle/bcprov-jdk15on", classpath);
-            scanMavenJars(m2, "com/google/code/gson/gson", classpath);
-            scanMavenJars(m2, "org/xerial/sqlite-jdbc", classpath);
+            for (String coordinate : mergedDependencies) {
+                scanMavenCoordinateJar(m2, coordinate, classpath);
+            }
         }
         StringBuilder cpJson = new StringBuilder("[");
         boolean first = true;
@@ -439,6 +444,7 @@ public final class RpcServer {
             + "\"path\":" + JsonUtil.quoted(filePath)
             + ",\"content\":" + JsonUtil.quoted(out.toString())
             + "}],\"compile_classpath\":" + cpJson
+            + ",\"dependencies\":" + jsonStringArray(new java.util.ArrayList<>(mergedDependencies))
             + "}";
     }
 
@@ -504,37 +510,23 @@ public final class RpcServer {
         }
     }
 
-    /**
-     * #1388: scan ~/.m2/repository/<group>/<artifact>/ for the most-recent
-     * version's JAR and add it to the classpath set. Picks the
-     * lexicographically-latest version directory. Silent on absence — the
-     * kit-owned compile check will surface missing JARs as package-not-found
-     * errors.
-     */
-    private static void scanMavenJars(
+    private static void scanMavenCoordinateJar(
             java.nio.file.Path m2Root,
-            String artifactDir,
+            String coordinate,
             java.util.Collection<String> classpath) {
         if (m2Root == null || !java.nio.file.Files.isDirectory(m2Root)) return;
-        java.nio.file.Path artifactPath = m2Root.resolve(artifactDir);
-        if (!java.nio.file.Files.isDirectory(artifactPath)) return;
-        try (java.util.stream.Stream<java.nio.file.Path> versions =
-                java.nio.file.Files.list(artifactPath)) {
-            java.util.List<java.nio.file.Path> dirs = versions
-                .filter(java.nio.file.Files::isDirectory)
-                .sorted(java.util.Comparator.reverseOrder())
-                .toList();
-            for (java.nio.file.Path versionDir : dirs) {
-                String artifactBase = artifactDir.substring(artifactDir.lastIndexOf('/') + 1);
-                String jarName = artifactBase + "-" + versionDir.getFileName().toString() + ".jar";
-                java.nio.file.Path jar = versionDir.resolve(jarName);
-                if (java.nio.file.Files.isRegularFile(jar)) {
-                    classpath.add(jar.toAbsolutePath().toString());
-                    return;  // first (latest) match wins
-                }
-            }
-        } catch (Exception ignored) {
-            // Best-effort: missing dep manifests as javac error downstream.
+        if (coordinate == null || coordinate.isBlank()) return;
+        String[] parts = coordinate.split(":");
+        if (parts.length < 3) return;
+        String groupPath = parts[0].replace('.', '/');
+        String artifact = parts[1];
+        String version = parts[2];
+        java.nio.file.Path jar = m2Root.resolve(groupPath)
+                .resolve(artifact)
+                .resolve(version)
+                .resolve(artifact + "-" + version + ".jar");
+        if (java.nio.file.Files.isRegularFile(jar)) {
+            classpath.add(jar.toAbsolutePath().toString());
         }
     }
 
@@ -707,12 +699,12 @@ public final class RpcServer {
         String wrapperRecord = r.observationWrapperEmissionRecord() == null
                 ? ""
                 : ",\"observation_wrapper_emission_record\":" + r.observationWrapperEmissionRecord();
-        // #1374: extract FQN imports from the emitted source. Substrate-side
-        // assembly (Milestone C) deduplicates these and emits the idiomatic
-        // import block for the target language. The body itself can keep
-        // FQN-inline references (compiles either way); the imports field
-        // lets downstream tooling know what the fragment USES.
-        String importsJson = importsFromSource(r.source());
+        // #1380: prefer kit-owned structured import metadata. Keep the
+        // source scan as a legacy fallback for old body-template entries that
+        // still inline FQNs in the body.
+        java.util.TreeSet<String> imports = new java.util.TreeSet<>(r.imports());
+        imports.addAll(importsFromSourceValues(r.source()));
+        String importsJson = jsonStringArray(new java.util.ArrayList<>(imports));
         // #1390: emit helpers as a structured field. The assembler hoists
         // them into the compilation unit before methods.
         StringBuilder helpersJson = new StringBuilder("[");
@@ -723,6 +715,7 @@ public final class RpcServer {
             firstHelper = false;
         }
         helpersJson.append(']');
+        String dependenciesJson = jsonStringArray(r.dependencies());
         return "{\"kind\":\"realization-fragment\""
                 + ",\"source\":" + JsonUtil.quoted(r.source())
                 + ",\"emitted_artifact_cid\":"
@@ -732,6 +725,7 @@ public final class RpcServer {
                 + ",\"used_sugars\":" + r.usedSugarsJson()
                 + ",\"imports\":" + importsJson
                 + ",\"helpers\":" + helpersJson
+                + ",\"dependencies\":" + dependenciesJson
                 + wrapperRecord
                 + "}";
     }
@@ -745,30 +739,22 @@ public final class RpcServer {
      * suffixes (the matcher captures up to the FIRST PascalCase identifier;
      * `JsonNode.NumberType` matches just `JsonNode`).
      *
-     * Returns a JSON array of unique FQN strings sorted lexicographically.
+     * Returns unique FQN strings sorted lexicographically.
      */
-    private static String importsFromSource(String source) {
-        if (source == null || source.isEmpty()) return "[]";
+    private static java.util.List<String> importsFromSourceValues(String source) {
+        java.util.TreeSet<String> imports = new java.util.TreeSet<>();
+        if (source == null || source.isEmpty()) return java.util.List.of();
         java.util.regex.Pattern p = java.util.regex.Pattern.compile(
             "\\b([a-z][a-z0-9_]*(?:\\.[a-z][a-z0-9_]*)+\\.[A-Z][A-Za-z0-9_]*)"
         );
         java.util.regex.Matcher m = p.matcher(source);
-        java.util.TreeSet<String> imports = new java.util.TreeSet<>();
         while (m.find()) {
             String fqn = m.group(1);
             // Skip java.lang.* — implicit in every compilation unit.
             if (fqn.startsWith("java.lang.")) continue;
             imports.add(fqn);
         }
-        StringBuilder sb = new StringBuilder("[");
-        boolean first = true;
-        for (String fqn : imports) {
-            if (!first) sb.append(',');
-            sb.append(JsonUtil.quoted(fqn));
-            first = false;
-        }
-        sb.append(']');
-        return sb.toString();
+        return new java.util.ArrayList<>(imports);
     }
 
     /**

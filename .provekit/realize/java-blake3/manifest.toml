@@ -5,5 +5,8 @@ library_tag = "bouncycastle"
 family = "concept:family:hash"
 library_version = "1.78"
 provides_concepts = ["concept:blake3-512-of"]
+dependencies = [
+  "org.bouncycastle:bcprov-jdk18on:1.81.1",
+]
 command = ["java", "-jar", "implementations/java/provekit-realize-java-core/target/provekit-realize-java.jar", "--rpc"]
 working_dir = "."

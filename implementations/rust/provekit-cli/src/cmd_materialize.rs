@@ -557,9 +557,9 @@ pub struct MaterializeKit<'root> {
     project_root: &'root Path,
     /// Per-site realization fragments, collected during `transform_site`, so
     /// the `--out-dir` path can hand them to the LANGUAGE KIT's assemble RPC
-    /// (which owns imports/helper-hoisting/package/class-wrapping — the
-    /// substrate holds no language syntax). Each entry mirrors the cross-
-    /// language fragment shape `{concept_name, source, imports, helpers}`.
+    /// (which owns imports/helper-hoisting/package/class-wrapping/dependency
+    /// resolution; the substrate holds no language syntax). Each entry mirrors
+    /// the cross-language fragment shape and is transported opaquely.
     /// `Mutex` (not `RefCell`) because `SiteTransformKit: Send + Sync`.
     fragments: std::sync::Mutex<Vec<Json>>,
 }
@@ -691,8 +691,9 @@ impl SiteTransformKit for MaterializeKit<'_> {
         let binding_cid = realized.emitted_artifact_cid.clone().unwrap_or_default();
         // Collect the per-site fragment for the kit's assemble RPC. The kit's
         // assembler peels the wrapper class, dedupes imports, hoists helpers,
-        // and emits the package + compilation unit. The substrate does not
-        // assemble; it just forwards what the realize plugin produced.
+        // resolves package dependencies, and emits the package + compilation
+        // unit. The substrate does not assemble or interpret language/package
+        // semantics; it forwards what the realize plugin produced.
         self.fragments
             .lock()
             .expect("fragments mutex")
@@ -701,6 +702,9 @@ impl SiteTransformKit for MaterializeKit<'_> {
                 "source": realized.source.clone(),
                 "imports": realized.imports.clone(),
                 "helpers": realized.helpers.clone(),
+                "dependencies": realized.dependencies.clone(),
+                "diagnostics": realized.diagnostics.clone(),
+                "compile_unit_requirements": realized.compile_unit_requirements.clone(),
             }));
         if has_loss(&realized.observed_loss_record) {
             Ok(SiteOutcome::LoudlyLossy {

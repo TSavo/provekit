@@ -6,5 +6,10 @@ library_tag = "provekit-rfc8785-jcs-java"
 family = "concept:family:json-canonicalization"
 library_version = "0.1"
 provides_concepts = ["concept:rfc8785-jcs-encode", "concept:rfc8785-jcs-encode-value", "concept:rfc8785-jcs-encode-string"]
+dependencies = [
+  "com.fasterxml.jackson.core:jackson-databind:2.17.2",
+  "com.fasterxml.jackson.core:jackson-core:2.17.2",
+  "com.fasterxml.jackson.core:jackson-annotations:2.17.2",
+]
 command = ["java", "-jar", "implementations/java/provekit-realize-java-core/target/provekit-realize-java.jar", "--rpc"]
 working_dir = "."
