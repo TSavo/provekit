@@ -36,6 +36,45 @@
 # `provekit_ir_compiler_coq::DIALECT` constant is `"coq"`, so we match
 # the implementation rather than the spec example.
 
+# Project-level kit registry. Runtime realization is manifest/config/RPC driven:
+# these entries authorize the checked-in Java realize manifests below
+# `.provekit/realize/*/manifest.toml`; the CLI never reads body-template JSON
+# as materialization authority.
+[[plugins]]
+name = "java-realize"
+kind = "realize"
+surface = "java"
+
+[[plugins]]
+name = "java-realize-stdio"
+kind = "realize"
+surface = "java-stdio"
+
+[[plugins]]
+name = "java-realize-json"
+kind = "realize"
+surface = "java-json"
+
+[[plugins]]
+name = "java-realize-sqlite-jdbc"
+kind = "realize"
+surface = "java-sqlite-jdbc"
+
+[[plugins]]
+name = "java-realize-blake3"
+kind = "realize"
+surface = "java-blake3"
+
+[[plugins]]
+name = "java-realize-gson"
+kind = "realize"
+surface = "java-gson"
+
+[[plugins]]
+name = "java-realize-rfc8785-jcs"
+kind = "realize"
+surface = "java-rfc8785-jcs"
+
 [solvers]
 mode = "first-wins"
 portfolio = ["maude", "z3", "cvc5", "vampire", "coq", "lean"]

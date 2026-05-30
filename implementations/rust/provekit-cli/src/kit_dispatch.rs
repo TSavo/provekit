@@ -1027,9 +1027,9 @@ pub fn dispatch_realize(
         request.library_version.as_deref(),
     )?;
     // Inject the dispatched library_tag into the request so the plugin can
-    // disambiguate body-template entries when multiple libraries ship templates
-    // for the same concept. Without this, the multi-library body-template cache
-    // is load-order-dependent.
+    // disambiguate its own proof/body inventory when multiple libraries ship
+    // realizations for the same concept. The CLI does not inspect or order that
+    // inventory; it only supplies the normalized dispatch axes over RPC.
     let mut request_with_tag = request.clone();
     if request_with_tag.target_library_tag.is_empty() {
         if let Some(tag) = library_tag {
