@@ -12,7 +12,7 @@
  * Wire shape for lift response:
  *   result.kind: "ir-document"
  *   result.ir: JSON array of IR contract objects
- *   result.callEdges: [] (TS lifter cannot compute contract CIDs; follow-up #756)
+ *   result.callEdges: JSON array of call-edge mementos
  *   result.diagnostics: JSON array
  *   result.opacityReport: []
  *   result.refusals: []
@@ -63,6 +63,16 @@ interface ParseParams {
 interface LiftParams {
   workspace_root?: string;
   source_paths?: string[];
+}
+
+interface CallEdgeDecl {
+  callSiteLocus: { file: string; line: number; col: number };
+  evidenceTerm: { kind: "atomic"; name: "call-site-obligation"; args: unknown[] };
+  kind: "call-edge";
+  schemaVersion: "1";
+  sourceContractCid: string;
+  targetContractCid: string | null;
+  targetSymbol: string;
 }
 
 // ---------------------------------------------------------------------------
@@ -156,6 +166,91 @@ function liftSourceToDecls(
   return { decls, warnings };
 }
 
+function buildCallEdges(source: string, path: string): CallEdgeDecl[] {
+  const sf = ts.createSourceFile(path, source, ts.ScriptTarget.ES2022, true);
+  const functionNames = new Set<string>();
+
+  function collectFunctionNames(node: ts.Node): void {
+    const name = functionScopeName(node);
+    if (name) functionNames.add(name);
+    ts.forEachChild(node, collectFunctionNames);
+  }
+  collectFunctionNames(sf);
+
+  const callEdges: CallEdgeDecl[] = [];
+  const functionStack: string[] = [];
+  const seen = new Set<string>();
+
+  function walk(node: ts.Node): void {
+    const scopeName = functionScopeName(node);
+    if (scopeName) {
+      functionStack.push(scopeName);
+      ts.forEachChild(node, walk);
+      functionStack.pop();
+      return;
+    }
+
+    if (ts.isCallExpression(node) && functionStack.length > 0) {
+      const targetName = callTargetName(node.expression);
+      const sourceName = functionStack[functionStack.length - 1];
+      if (targetName && sourceName && targetName !== sourceName && functionNames.has(targetName)) {
+        const pos = sf.getLineAndCharacterOfPosition(node.expression.getStart(sf));
+        const key = `${sourceName}\0${targetName}\0${pos.line}\0${pos.character}`;
+        if (!seen.has(key)) {
+          seen.add(key);
+          callEdges.push({
+            callSiteLocus: {
+              file: path,
+              line: pos.line + 1,
+              col: pos.character,
+            },
+            evidenceTerm: { kind: "atomic", name: "call-site-obligation", args: [] },
+            kind: "call-edge",
+            schemaVersion: "1",
+            sourceContractCid: `pending-ts:${sourceName}`,
+            targetContractCid: null,
+            targetSymbol: `ts-kit:${targetName}`,
+          });
+        }
+      }
+    }
+
+    ts.forEachChild(node, walk);
+  }
+  walk(sf);
+
+  return callEdges;
+}
+
+function functionScopeName(node: ts.Node): string | null {
+  if (ts.isFunctionDeclaration(node) && node.name) {
+    return node.name.text;
+  }
+  if (ts.isFunctionExpression(node) && node.name) {
+    return node.name.text;
+  }
+  if (ts.isFunctionExpression(node) || ts.isArrowFunction(node)) {
+    if (ts.isVariableDeclaration(node.parent) && ts.isIdentifier(node.parent.name)) {
+      return node.parent.name.text;
+    }
+    if (ts.isPropertyAssignment(node.parent) && ts.isIdentifier(node.parent.name)) {
+      return node.parent.name.text;
+    }
+  }
+  if (ts.isMethodDeclaration(node)) {
+    if (ts.isIdentifier(node.name) || ts.isStringLiteral(node.name) || ts.isNumericLiteral(node.name)) {
+      return node.name.text;
+    }
+  }
+  return null;
+}
+
+function callTargetName(expr: ts.Expression): string | null {
+  if (ts.isIdentifier(expr)) return expr.text;
+  if (ts.isPropertyAccessExpression(expr)) return expr.name.text;
+  return null;
+}
+
 function handleLift(id: unknown, params: Record<string, unknown>): void {
   const p = params as unknown as LiftParams;
   const workspaceRoot = p.workspace_root ?? ".";
@@ -169,6 +264,7 @@ function handleLift(id: unknown, params: Record<string, unknown>): void {
   try {
     const ir: ReturnType<typeof contractDeclToWire>[] = [];
     const diagnostics: unknown[] = [];
+    const callEdges: CallEdgeDecl[] = [];
 
     for (const sp of sourcePaths) {
       const fullPath = resolve(workspaceRoot, sp);
@@ -183,12 +279,13 @@ function handleLift(id: unknown, params: Record<string, unknown>): void {
 
       const { decls } = liftSourceToDecls(source, fullPath);
       for (const decl of decls) ir.push(contractDeclToWire(decl));
+      callEdges.push(...buildCallEdges(source, fullPath));
     }
 
     respond(id, {
       kind: "ir-document",
       ir,
-      callEdges: [],
+      callEdges,
       diagnostics,
       opacityReport: [],
       refusals: [],
@@ -214,10 +311,7 @@ function handleParse(id: unknown, params: Record<string, unknown>): void {
 
     // Convert ContractDecl[] to wire-format array.
     const declarations = decls.map(contractDeclToWire);
-
-    // TS lifter does not emit call edges. The linkerd treats absent/empty
-    // callEdges as an empty list (same as the zig lifter).
-    const callEdges: unknown[] = [];
+    const callEdges = buildCallEdges(source, path);
 
     respond(id, { declarations, callEdges, warnings });
   } catch (err) {
