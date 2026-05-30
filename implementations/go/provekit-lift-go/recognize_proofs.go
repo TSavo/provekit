@@ -146,6 +146,9 @@ func resolveDependencyProofPaths(projectRoot string) ([]string, error) {
 	}
 
 	proofs := map[string]struct{}{}
+	if err := collectProjectProofPaths(absRoot, proofs); err != nil {
+		return nil, err
+	}
 	decoder := json.NewDecoder(bytes.NewReader(output))
 	for {
 		var module listedGoModule
@@ -176,6 +179,64 @@ func resolveDependencyProofPaths(projectRoot string) ([]string, error) {
 	}
 	sort.Strings(paths)
 	return paths, nil
+}
+
+func collectProjectProofPaths(root string, proofs map[string]struct{}) error {
+	info, err := os.Stat(root)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return nil
+		}
+		return err
+	}
+	if !info.IsDir() {
+		return nil
+	}
+	return filepath.WalkDir(root, func(path string, entry os.DirEntry, err error) error {
+		if err != nil {
+			return err
+		}
+		if entry.IsDir() {
+			if shouldSkipProjectProofDir(root, path, entry.Name()) {
+				return filepath.SkipDir
+			}
+			return nil
+		}
+		if !dependencyProofName.MatchString(entry.Name()) {
+			return nil
+		}
+		abs, err := filepath.Abs(path)
+		if err != nil {
+			return err
+		}
+		proofs[filepath.Clean(abs)] = struct{}{}
+		return nil
+	})
+}
+
+func shouldSkipProjectProofDir(root, path, name string) bool {
+	if path == root {
+		return false
+	}
+	switch name {
+	case ".git", "node_modules", "target", "vendor":
+		return true
+	}
+	rel, err := filepath.Rel(root, path)
+	if err != nil {
+		return false
+	}
+	rel = filepath.ToSlash(filepath.Clean(rel))
+	switch rel {
+	case ".provekit/materialize",
+		".provekit/proof-runs",
+		".provekit/recognize",
+		".provekit/self-contracts-attestations",
+		".provekit/witnesses":
+		return true
+	default:
+		return false
+	}
 }
 
 func effectiveModuleDir(module listedGoModule) string {

@@ -74,19 +74,18 @@ ok: plugin `provekit-lift-go-verify` ready
 
 ## Recognizer pilot
 
-Current `provekit recognize` defaults to `rust-bind`. This demo includes a
-`rust-bind` manifest alias to the same Go wrapper so the requested command runs
-without changing the CLI default. The actual Go surface manifest is
-`.provekit/lift/go-bind/manifest.toml`.
+`provekit recognize` resolves the recognizer through project config and the
+surface manifest. The demo registers `go-bind` in `.provekit/config.toml` and
+the executable route lives at `.provekit/lift/go-bind/manifest.toml`; the CLI
+does not take or read shim proof paths.
 
 ```text
 $ provekit recognize \
     --project /Users/tsavo/provekit-demo-go/examples/recognize-demo-go \
     --source pkg/ingest/ingest.go \
-    --source pkg/persist/persist.go \
-    --binding /Users/tsavo/provekit-demo-go/examples/recognize-demo-go/internal-shim-stdlib-http/blake3-512:095398490c8c99e21c0db81e954681cd98094d38a2dc2b3f2bfbdb3bf2a85fc41e80534cdbad220878bea4c12cb993bfda918729a30ea7a43b45d8c830b3f075.proof
+    --source pkg/persist/persist.go
 
-dispatch: surface=`rust-bind` bindings=2 sources=2
+dispatch: surface=`go-bind` sources=2
 recognize: 2 tag(s) emitted
   [0] concept:http-get @ pkg/ingest/ingest.go:5 (fn=FetchURL, exact)
   [1] concept:sql-open @ pkg/persist/persist.go:9 (fn=OpenStore, exact)
@@ -108,10 +107,9 @@ $ provekit recognize \
     --target go \
     --project /Users/tsavo/provekit-demo-go/examples/recognize-demo-go \
     --source pkg/ingest/ingest.go \
-    --source pkg/persist/persist.go \
-    --binding /Users/tsavo/provekit-demo-go/examples/recognize-demo-go/internal-shim-stdlib-http/blake3-512:095398490c8c99e21c0db81e954681cd98094d38a2dc2b3f2bfbdb3bf2a85fc41e80534cdbad220878bea4c12cb993bfda918729a30ea7a43b45d8c830b3f075.proof
+    --source pkg/persist/persist.go
 
-dispatch: surface=`rust-bind` bindings=2 sources=2
+dispatch: surface=`go-bind` sources=2
 recognize: 2 tag(s) emitted
   [0] concept:http-get @ pkg/ingest/ingest.go:5 (fn=FetchURL, exact)
   [1] concept:sql-open @ pkg/persist/persist.go:9 (fn=OpenStore, exact)
@@ -122,9 +120,6 @@ The proof pool then discharges the two recognize callsites:
 
 ```text
 $ provekit prove /Users/tsavo/provekit-demo-go/examples/recognize-demo-go
-dependency proof resolver ["go", "run", ".provekit/lift/go-bind/go-bind-rpc.go"] does not implement provekit.plugin.resolve_dependency_proofs
-warning: bridge FetchURL has no targetProofCid; ConsequentBundlePinned not enforced (back-compat path)
-warning: bridge OpenStore has no targetProofCid; ConsequentBundlePinned not enforced (back-compat path)
 ProvekIt verifier report
   total callsites : 2
   discharged      : 2
@@ -137,6 +132,6 @@ ProvekIt verifier report
       reason: vacuous: no precondition on target (publisher post-only)
 ```
 
-The dependency-proof resolver warning is expected for this demo-local Go
-wrapper; the shim proof is supplied explicitly to `recognize`, and
-`recognize --write` emits the bridge/contract proof consumed by `prove`.
+The Go recognizer kit finds the demo-local shim proof from its own project
+semantics and returns tags over RPC. `recognize --write` emits the
+bridge/contract proof consumed by `prove`.
