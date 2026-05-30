@@ -667,6 +667,7 @@ cross-language-proof-parity-python-env:
 	$(PARITY_PYTHON) -m pip install --quiet --upgrade pip
 	$(PARITY_PYTHON) -m pip install --quiet \
 		pytest \
+		-e implementations/python/provekit-lift-py-tests \
 		-e examples/provekit-shim-python-requests \
 		-e implementations/python/provekit-emit-python-pytest \
 		-e implementations/python/provekit-lift-python-source \
@@ -735,7 +736,11 @@ cross-language-proof-parity: build-java build-ts build-zig build-scala cross-lan
 		-p provekit-walk --bin provekit-walk-rpc \
 		recognize -- --nocapture
 	pnpm vitest run implementations/typescript/src/lift/typescript-source/index.test.ts
-	make test-swift-source-lift
+	if command -v swift >/dev/null 2>&1; then \
+		make test-swift-source-lift; \
+	else \
+		echo "swift not found; skipping Linux Swift parity (covered by macOS swift gate)"; \
+	fi
 	(cd implementations/zig/provekit-lift-zig-source && zig build test)
 	$(SCALA_CLI) test implementations/scala/provekit-lift-scala-source --server=false
 	@echo "--- prove parity ---"

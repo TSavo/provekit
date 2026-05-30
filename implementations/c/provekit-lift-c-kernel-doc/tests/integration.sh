@@ -223,14 +223,14 @@ printf '%s\n' "$STRUCTURAL_RESPONSE" | grep -qE '"callEdges":\[\s*\{' || {
     exit 1
 }
 
-printf '%s\n' "$STRUCTURAL_RESPONSE" | grep -q '"callee_name":"helper_inplace"' || {
-    echo "FAIL: callEdges should include helper_inplace callee per pinned schema (caller_function/callee_name/args_json/callsite_*)" >&2
+printf '%s\n' "$STRUCTURAL_RESPONSE" | grep -q '"targetSymbol":"c-kit:helper_inplace"' || {
+    echo "FAIL: callEdges should include helper_inplace callee per shared schema" >&2
     echo "$STRUCTURAL_RESPONSE" >&2
     exit 1
 }
 
-printf '%s\n' "$STRUCTURAL_RESPONSE" | grep -q '"caller_function":"caller_unsafe"' || {
-    echo "FAIL: callEdges should include caller_unsafe as a caller per pinned schema" >&2
+printf '%s\n' "$STRUCTURAL_RESPONSE" | grep -q '"sourceContractCid":"pending-c:caller_unsafe"' || {
+    echo "FAIL: callEdges should include caller_unsafe as a caller per shared schema" >&2
     echo "$STRUCTURAL_RESPONSE" >&2
     exit 1
 }
@@ -243,8 +243,8 @@ printf '%s\n' "$STRUCTURAL_RESPONSE" | grep -q '"caller_function":"caller_unsafe
 if printf '%s\n' "$STRUCTURAL_RESPONSE" | grep -q '"kind":"ast-backend-unavailable"'; then
     echo "info: clang_ast backend unavailable in this build; skipping arg-extraction assertions"
 else
-    printf '%s\n' "$STRUCTURAL_RESPONSE" | grep -qE '"args":\[\{' || {
-        echo "FAIL: callEdges should emit args as a direct JSON array of arg objects (not a quoted string)" >&2
+    printf '%s\n' "$STRUCTURAL_RESPONSE" | grep -qE '"evidenceTerm":\{"args":\[\{' || {
+        echo "FAIL: callEdges should emit args as evidenceTerm.args objects" >&2
         echo "$STRUCTURAL_RESPONSE" >&2
         exit 1
     }
@@ -283,35 +283,35 @@ else
     RECOVERY_REQUEST="{\"jsonrpc\":\"2.0\",\"id\":120,\"method\":\"parse\",\"params\":{\"path\":\"recovery_call.c\",\"parse_backend\":\"clang_ast\",\"source\":\"$RECOVERY_SOURCE\"}}"
     RECOVERY_RESPONSE=$(printf '%s\n' "$RECOVERY_REQUEST" | "$BIN" --rpc)
 
-    CALLBACK_COUNT=$(printf '%s\n' "$RECOVERY_RESPONSE" | grep -o '"callee_name":"target_callback_set"' | wc -l | tr -d '[:space:]')
+    CALLBACK_COUNT=$(printf '%s\n' "$RECOVERY_RESPONSE" | grep -o '"targetSymbol":"c-kit:target_callback_set"' | wc -l | tr -d '[:space:]')
     if [ "$CALLBACK_COUNT" != "1" ]; then
         echo "FAIL: regular CallExpr target_callback_set should be lifted exactly once in recovery fixture (got $CALLBACK_COUNT)" >&2
         echo "$RECOVERY_RESPONSE" >&2
         exit 1
     fi
 
-    INPLACE_COUNT=$(printf '%s\n' "$RECOVERY_RESPONSE" | grep -o '"callee_name":"target_inplace_set"' | wc -l | tr -d '[:space:]')
+    INPLACE_COUNT=$(printf '%s\n' "$RECOVERY_RESPONSE" | grep -o '"targetSymbol":"c-kit:target_inplace_set"' | wc -l | tr -d '[:space:]')
     if [ "$INPLACE_COUNT" != "1" ]; then
         echo "FAIL: RecoveryExpr-wrapped call target_inplace_set must be surfaced exactly once as a callEdge (got $INPLACE_COUNT)" >&2
         echo "$RECOVERY_RESPONSE" >&2
         exit 1
     fi
 
-    NONCALL_REF_COUNT=$(printf '%s\n' "$RECOVERY_RESPONSE" | grep -o '"callee_name":"target_noncall_ref"' | wc -l | tr -d '[:space:]')
+    NONCALL_REF_COUNT=$(printf '%s\n' "$RECOVERY_RESPONSE" | grep -o '"targetSymbol":"c-kit:target_noncall_ref"' | wc -l | tr -d '[:space:]')
     if [ "$NONCALL_REF_COUNT" != "1" ]; then
         echo "FAIL: function references to target_noncall_ref must not be counted as calls; only the real call should surface (got $NONCALL_REF_COUNT)" >&2
         echo "$RECOVERY_RESPONSE" >&2
         exit 1
     fi
 
-    PAREN_CALL_COUNT=$(printf '%s\n' "$RECOVERY_RESPONSE" | grep -o '"callee_name":"target_parenthesized_set"' | wc -l | tr -d '[:space:]')
+    PAREN_CALL_COUNT=$(printf '%s\n' "$RECOVERY_RESPONSE" | grep -o '"targetSymbol":"c-kit:target_parenthesized_set"' | wc -l | tr -d '[:space:]')
     if [ "$PAREN_CALL_COUNT" != "1" ]; then
         echo "FAIL: parenthesized function designator target_parenthesized_set should be lifted exactly once (got $PAREN_CALL_COUNT)" >&2
         echo "$RECOVERY_RESPONSE" >&2
         exit 1
     fi
 
-    DEREF_CALL_COUNT=$(printf '%s\n' "$RECOVERY_RESPONSE" | grep -o '"callee_name":"target_deref_set"' | wc -l | tr -d '[:space:]')
+    DEREF_CALL_COUNT=$(printf '%s\n' "$RECOVERY_RESPONSE" | grep -o '"targetSymbol":"c-kit:target_deref_set"' | wc -l | tr -d '[:space:]')
     if [ "$DEREF_CALL_COUNT" != "1" ]; then
         echo "FAIL: dereferenced function designator target_deref_set should be lifted exactly once (got $DEREF_CALL_COUNT)" >&2
         echo "$RECOVERY_RESPONSE" >&2
