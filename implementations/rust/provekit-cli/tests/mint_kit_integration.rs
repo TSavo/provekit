@@ -219,8 +219,12 @@ fn kit_alias_has_no_builtin_fallback_without_config() {
     std::fs::create_dir_all(root.path().join(".provekit/self-contracts-attestations"))
         .expect("create attestation dir without config");
 
-    let (_ok, _stdout, stderr) = run_mint(root.path(), "rust");
+    let (ok, _stdout, stderr) = run_mint(root.path(), "rust");
 
+    assert!(
+        !ok,
+        "`--kit=rust` unexpectedly succeeded without configured [[kits]]; stderr:\n{stderr}"
+    );
     assert!(
         stderr.contains("no kit aliases configured"),
         "`--kit=rust` must not use a Rust-side built-in fallback when config has no [[kits]]; stderr:\n{stderr}"
