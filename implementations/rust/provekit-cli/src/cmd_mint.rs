@@ -1440,6 +1440,18 @@ fn mint_ir_document(
     let mut content_cids: Vec<String> = Vec::new();
     let default_signer_seed: Ed25519Seed = FOUNDATION_V0_SEED;
     let produced_at = "2026-05-03T18:00:00Z".to_string();
+    // The SEMANTIC library this project's contracts represent, from its
+    // `platform_profile.library`. This is the crate a consumer's call resolves
+    // to: `std` for the rust-std shim, `libprovekit` for libprovekit, the crate
+    // name for an ordinary kit. It is the fallback library tag for every
+    // contract the lifter did not stamp (sugar/test contracts, and any surface
+    // without rust-fn-contracts). Sourcing it here, not from the Cargo package
+    // name, is what lets the shim's std method-call contracts (to_string, len,
+    // ...) carry `std` and match a receiver-typed call resolved to std.
+    let project_library: Option<String> = read_project_config(project_root)
+        .platform_profile
+        .and_then(|p| p.library)
+        .filter(|s| !s.is_empty());
     let witness_cids_by_contract =
         emit_witnesses_by_contract(witnesses, project_root, out_dir, quiet)?;
 
@@ -1608,16 +1620,19 @@ fn mint_ir_document(
             .map(|authority| authority.principal.clone())
             .unwrap_or_else(|| "provekit-cli".to_string());
 
-        // Tier-1 crate tag: the kit (lifter) stamped `library` = the defining
-        // crate's package name on the IR decl. Forward it OPAQUELY onto the
-        // contract memento's metadata so a consumer that vendors this proof can
-        // tell this crate's `foo` from a same-named `foo` elsewhere. The CLI
-        // does not interpret the string; it is the kit's to compute.
+        // Tier-1 crate tag (Tier 2b enabler): a per-contract `library` on the
+        // IR decl wins (a future annotation, or the kit's fn-contract stamp);
+        // otherwise fall back to the project's semantic `platform_profile.library`.
+        // The fallback is what tags the shim's sugar/test contracts with `std`
+        // (the kit never stamps those), so a receiver-typed call resolved to
+        // `std` finds them. Forwarded OPAQUELY onto the contract metadata; the
+        // CLI does not interpret the string.
         let library = decl
             .get("library")
             .and_then(|v| v.as_str())
             .filter(|s| !s.is_empty())
-            .map(|s| s.to_string());
+            .map(|s| s.to_string())
+            .or_else(|| project_library.clone());
 
         let args = MintContractArgs {
             contract_name: name,
