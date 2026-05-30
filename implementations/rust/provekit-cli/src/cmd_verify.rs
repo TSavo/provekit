@@ -319,10 +319,8 @@ pub fn run(args: VerifyArgs) -> u8 {
     let callsites = enumerate_callsites::run(&pool);
 
     if callsites.is_empty() {
-        // No contract claims to discharge. This is not a verification
-        // failure: it is the verb correctly reporting an empty catalog.
-        // (The lifter has not yet written claims, or the kit declares
-        // none.) Surface it loudly so the operator knows to lift first.
+        // No contract claims were discharged. Reporting this as success is a
+        // vacuous green: the run proved nothing.
         let kit_label = args
             .kit
             .clone()
@@ -337,14 +335,14 @@ pub fn run(args: VerifyArgs) -> u8 {
                 "totalClaims": 0,
                 "discharged": 0,
                 "failed": 0,
-                "ok": true,
-                "note": "no contract claims found in catalog; nothing to verify (lift the kit first)",
+                "ok": false,
+                "note": "no contract claims found in catalog; zero-claim verification is not a successful proof",
             });
             println!("{}", serde_json::to_string_pretty(&out).unwrap());
         } else if !quiet {
             println!(
-                "{}: no contract claims found for `{}`; nothing to verify",
-                "verify".yellow().bold(),
+                "{}: no contract claims found for `{}`; zero-claim verification is not a successful proof",
+                "verify".red().bold(),
                 kit_label
             );
             println!(
@@ -352,7 +350,7 @@ pub fn run(args: VerifyArgs) -> u8 {
                 args.kit.as_deref().unwrap_or("<kit>")
             );
         }
-        return EXIT_OK;
+        return EXIT_VERIFY_FAIL;
     }
 
     // Build the solver-dispatch plan + registry. Honor the kit's own
