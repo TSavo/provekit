@@ -7,10 +7,17 @@
 // Mirrors implementations/cpp/.../verifier/enumerate_callsites.cpp.
 
 use serde_json::Value as Json;
+use tracing::{debug, info};
 
 use crate::types::{memento_body, memento_kind, CallSite, MementoPool};
 
 pub fn run(pool: &MementoPool) -> Vec<CallSite> {
+    let _span = tracing::info_span!("enumerate_callsites").entered();
+    info!(
+        mementos = pool.mementos.len(),
+        bridges = pool.bridges_by_symbol.len(),
+        "enumerate_callsites: scanning contracts for callsites"
+    );
     let mut out = Vec::new();
     for (cid, env) in &pool.mementos {
         // Shape-agnostic (matches resolve_target): v1.2-layered contracts
@@ -40,6 +47,19 @@ pub fn run(pool: &MementoPool) -> Vec<CallSite> {
                     walk_formula(f, &property_name, cid, pool, &mut out);
                 }
             }
+        }
+    }
+    info!(callsites = out.len(), "enumerate_callsites: complete");
+    if out.is_empty() {
+        debug!("enumerate_callsites: no callsites found (check that bridges exist in pool)");
+    } else {
+        for cs in &out {
+            debug!(
+                bridge = %cs.bridge_ir_name,
+                property = %cs.property_name,
+                target_cid = %cs.bridge_target_cid,
+                "enumerate_callsites: callsite"
+            );
         }
     }
     out

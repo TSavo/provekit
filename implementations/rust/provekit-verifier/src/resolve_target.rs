@@ -11,15 +11,33 @@
 // § "Bridge target pinning: the shim-poisoning vector".
 
 use serde_json::{json, Value as Json};
+use tracing::{debug, warn};
 
 use crate::types::{memento_body, memento_kind, CallSite, MementoPool, ResolvedProperty};
 
 pub fn run(cs: &CallSite, pool: &MementoPool) -> Result<ResolvedProperty, String> {
+    debug!(
+        bridge = %cs.bridge_ir_name,
+        target_cid = %cs.bridge_target_cid,
+        "resolve_target: resolving bridge target contract"
+    );
     let env = pool
         .mementos
         .get(&cs.bridge_target_cid)
-        .ok_or_else(|| format!("bridge target CID {} not in pool", cs.bridge_target_cid))?;
+        .ok_or_else(|| {
+            warn!(
+                bridge = %cs.bridge_ir_name,
+                target_cid = %cs.bridge_target_cid,
+                "resolve_target: bridge target CID not in pool"
+            );
+            format!("bridge target CID {} not in pool", cs.bridge_target_cid)
+        })?;
     if memento_kind(env) != Some("contract") {
+        warn!(
+            bridge = %cs.bridge_ir_name,
+            target_cid = %cs.bridge_target_cid,
+            "resolve_target: target memento is not a contract"
+        );
         return Err("target memento is not a contract memento".into());
     }
     // Shape-agnostic body: v1.2 layered -> `header`, v1.1 flat -> `evidence.body`.
@@ -40,13 +58,29 @@ pub fn run(cs: &CallSite, pool: &MementoPool) -> Result<ResolvedProperty, String
     // vector".
     match cs.bridge_target_proof_cid.as_deref() {
         Some(expected_bundle) => {
+            debug!(
+                bridge = %cs.bridge_ir_name,
+                pinned_bundle = %expected_bundle,
+                "resolve_target: enforcing ConsequentBundlePinned"
+            );
             let bundle_members = pool.bundle_members.get(expected_bundle).ok_or_else(|| {
+                warn!(
+                    bridge = %cs.bridge_ir_name,
+                    pinned_bundle = %expected_bundle,
+                    "resolve_target: pinned bundle not in pool (BridgeTargetProofCidMismatch)"
+                );
                 format!(
                     "BridgeTargetProofCidMismatch: pinned bundle {} not in pool",
                     expected_bundle
                 )
             })?;
             if !bundle_members.contains(&cs.bridge_target_cid) {
+                warn!(
+                    bridge = %cs.bridge_ir_name,
+                    target_cid = %cs.bridge_target_cid,
+                    pinned_bundle = %expected_bundle,
+                    "resolve_target: pin mismatch: contract not in pinned bundle"
+                );
                 return Err(format!(
                     "BridgeTargetProofCidMismatch: contract {} is not a member of pinned bundle {}",
                     cs.bridge_target_cid, expected_bundle
@@ -109,6 +143,13 @@ pub fn run(cs: &CallSite, pool: &MementoPool) -> Result<ResolvedProperty, String
     // A genuinely non-body-bearing target (e.g. a LIA refinement contract)
     // carries no `formals` key at all, so it stays on the legitimate path.
     let target_is_body_bearing = body.get("formals").and_then(|v| v.as_array()).is_some();
+    debug!(
+        bridge = %cs.bridge_ir_name,
+        target_cid = %cs.bridge_target_cid,
+        body_bearing = target_is_body_bearing,
+        has_pre = ir_formula.is_some(),
+        "resolve_target: accepted"
+    );
     Ok(ResolvedProperty {
         cid: cs.bridge_target_cid.clone(),
         ir_formula,

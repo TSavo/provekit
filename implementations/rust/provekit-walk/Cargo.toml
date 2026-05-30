@@ -42,5 +42,7 @@ provekit-realize-rust-core = { path = "../provekit-realize-rust-core", optional 
 serde_json = { workspace = true }
 base64 = { workspace = true }
 thiserror = { workspace = true }
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 
 [dev-dependencies]

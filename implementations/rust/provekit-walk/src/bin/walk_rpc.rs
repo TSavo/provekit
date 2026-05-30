@@ -37,6 +37,7 @@ use provekit_walk::{
 };
 use serde_json::{json, Value};
 use syn::spanned::Spanned;
+use tracing::{debug, info, trace, warn};
 
 // Tier 2b native semantic oracle (spec 2026-05-30-callee-resolution-tiers §2.T2b).
 // A separate module file driving rust-analyzer over LSP as the Tier-2a fallback
@@ -58,9 +59,22 @@ const BODY_TEXT_CANONICALIZATION: &str = "trim-outer-whitespace-v1";
 static CONCEPT_OP_CIDS: OnceLock<BTreeMap<String, String>> = OnceLock::new();
 
 fn main() -> io::Result<()> {
+    // Logs go to stderr only; stdout is the JSON-RPC channel and must stay
+    // byte-clean. Default level: warn. Set RUST_LOG to override:
+    //   RUST_LOG=info  -> phase summaries
+    //   RUST_LOG=debug -> per-callsite decisions, per-RPC method
+    //   RUST_LOG=provekit_walk_rpc::ra_oracle=trace -> every RA query
+    tracing_subscriber::fmt()
+        .with_writer(std::io::stderr)
+        .with_env_filter(
+            tracing_subscriber::EnvFilter::builder()
+                .with_default_directive(tracing_subscriber::filter::LevelFilter::WARN.into())
+                .from_env_lossy(),
+        )
+        .init();
     let stdin = io::stdin();
     let mut stdout = io::stdout().lock();
-    eprintln!("provekit-walk-rpc listening on stdio (JSON-RPC 2.0, line-delimited)");
+    info!("provekit-walk-rpc listening on stdio (JSON-RPC 2.0, line-delimited)");
     for line in stdin.lock().lines() {
         let line = line?;
         if line.trim().is_empty() {
@@ -935,6 +949,13 @@ fn resolve_method_calls_via_oracle(
     let mut queries: Vec<ResolveQuery> = Vec::new();
     for (cs, full_path) in callsites.iter() {
         if cs.is_method && cs.callee_crate.is_none() && cs.line >= 1 {
+            debug!(
+                callee = %cs.callee,
+                file = %full_path.display(),
+                line = cs.line,
+                col = cs.col,
+                "oracle query: unresolved method call"
+            );
             queries.push(ResolveQuery {
                 abs_path: full_path.clone(),
                 lsp_line: (cs.line - 1) as u32,
@@ -942,21 +963,53 @@ fn resolve_method_calls_via_oracle(
             });
         }
     }
+    let total_queries = queries.len();
     if queries.is_empty() {
+        debug!("oracle: no unresolved method calls, skipping");
         return;
     }
+    debug!(count = total_queries, "oracle: sending queries to rust-analyzer");
     let resolved = ra_oracle::resolve_batch(workspace_root, &queries);
+    let resolved_count = resolved.len();
+    let unavailable_count = total_queries - resolved_count;
     if resolved.is_empty() {
+        warn!(
+            total = total_queries,
+            "oracle: all method-call queries refused (oracle unavailable or not enabled)"
+        );
         return;
     }
     for (cs, full_path) in callsites.iter_mut() {
         if cs.is_method && cs.callee_crate.is_none() && cs.line >= 1 {
             let key = (full_path.clone(), (cs.line - 1) as u32, cs.col as u32);
             if let Some(krate) = resolved.get(&key) {
+                debug!(
+                    callee = %cs.callee,
+                    resolved_crate = %krate,
+                    file = %full_path.display(),
+                    line = cs.line,
+                    "oracle resolved method call"
+                );
                 cs.callee_crate = Some(krate.clone());
+            } else {
+                debug!(
+                    callee = %cs.callee,
+                    file = %full_path.display(),
+                    line = cs.line,
+                    "oracle refused: no resolution for method call"
+                );
             }
         }
     }
+    info!(
+        resolved = resolved_count,
+        total = total_queries,
+        unavailable = unavailable_count,
+        "oracle resolved {}/{} method calls ({} refused/unavailable)",
+        resolved_count,
+        total_queries,
+        unavailable_count
+    );
 }
 
 fn lift_implications(params: &Value) -> Result<Value, String> {
@@ -982,11 +1035,32 @@ fn lift_implications(params: &Value) -> Result<Value, String> {
         .and_then(|v| v.as_array())
         .unwrap_or(&empty);
 
+    let span = tracing::info_span!(
+        "lift_implications",
+        workspace = %workspace_root.display(),
+        source_files = source_paths.len(),
+        contract_bindings = contract_bindings.len(),
+    );
+    let _enter = span.enter();
+
+    info!(
+        source_files = source_paths.len(),
+        contract_bindings = contract_bindings.len(),
+        workspace = %workspace_root.display(),
+        "lift_implications: starting callsite collection"
+    );
+
+    trace!(
+        source_paths = ?source_paths,
+        "lift_implications: source file list"
+    );
+
     // The crate currently being lifted. Producer contracts and intra-crate
     // call sites resolve to this; a dependency call site resolves to its own
     // crate. Reading it from the project Cargo.toml is what lets the matcher
     // tell this crate's `foo` from a same-named dependency `foo` (Tier 1).
     let current_crate = crate_name_for(&workspace_root).unwrap_or_default();
+    debug!(current_crate = %current_crate, "lift_implications: resolved current crate");
 
     // Index contracts by (crate, leaf), not bare leaf. The leaf is the substring
     // before the first '@' in the contract `name` (`<callee>@<file>:<line>:<col>`
@@ -1082,10 +1156,23 @@ fn lift_implications(params: &Value) -> Result<Value, String> {
             &current_crate,
             &mut callsites,
         );
+        let file_callsite_count = callsites.len();
+        if file_callsite_count > 0 {
+            debug!(
+                file = %rel_path,
+                callsites = file_callsite_count,
+                "lift_implications: collected callsites from file"
+            );
+        }
         for cs in callsites {
             all_callsites.push((cs, full_path.clone()));
         }
     }
+
+    info!(
+        total_callsites = all_callsites.len(),
+        "lift_implications: callsite collection complete"
+    );
 
     // Tier 2b (§2.T2b): for method calls Tier 2a could not resolve
     // (`callee_crate == None` AND `is_method`), ask rust-analyzer which crate
@@ -1109,6 +1196,13 @@ fn lift_implications(params: &Value) -> Result<Value, String> {
             let key = (resolved_crate, cs.callee.clone());
             let Some(binding) = contracts_by_key.get(&key) else {
                 if let Some(ineligible) = ineligible_by_key.get(&key) {
+                    debug!(
+                        callee = %cs.callee,
+                        crate_ = %key.0,
+                        file = %cs.file,
+                        line = cs.line,
+                        "lift-gap: body-discharge-ineligible callee"
+                    );
                     diagnostics.push(json!({
                         "kind": "lift-gap",
                         "reason": "body-discharge-ineligible",
@@ -1125,6 +1219,13 @@ fn lift_implications(params: &Value) -> Result<Value, String> {
                     }));
                     continue;
                 }
+                debug!(
+                    callee = %cs.callee,
+                    crate_ = %key.0,
+                    file = %cs.file,
+                    line = cs.line,
+                    "lift-gap: no contract for callee"
+                );
                 diagnostics.push(json!({
                     "kind": "lift-gap",
                     "reason": "no-contract-for-callee",
@@ -1141,6 +1242,12 @@ fn lift_implications(params: &Value) -> Result<Value, String> {
                 .and_then(|v| v.as_str())
                 .filter(|s| !s.is_empty())
             else {
+                debug!(
+                    callee = %cs.callee,
+                    file = %cs.file,
+                    line = cs.line,
+                    "lift-gap: binding missing contract_cid"
+                );
                 diagnostics.push(json!({
                     "kind": "lift-gap",
                     "reason": "binding-missing-contract-cid",
@@ -1151,6 +1258,14 @@ fn lift_implications(params: &Value) -> Result<Value, String> {
                 }));
                 continue;
             };
+            debug!(
+                callee = %cs.callee,
+                crate_ = %key.0,
+                target_cid = %target_cid,
+                file = %cs.file,
+                line = cs.line,
+                "lift_implications: emitting bridge for callsite"
+            );
             // Forward pin: a binding harvested from a dependency proof carries
             // `target_proof_cid` (that proof's bundle CID); stamp it on the
             // bridge so the verifier enforces ConsequentBundlePinned against
@@ -1187,6 +1302,14 @@ fn lift_implications(params: &Value) -> Result<Value, String> {
             entries.push(bridge);
         }
     }
+
+    let bridge_count = entries.len();
+    let gap_count = diagnostics.iter().filter(|d| d.get("kind").and_then(|v| v.as_str()) == Some("lift-gap")).count();
+    info!(
+        bridges_emitted = bridge_count,
+        lift_gaps = gap_count,
+        "lift_implications: complete"
+    );
 
     Ok(json!({
         "kind": "ir-document",

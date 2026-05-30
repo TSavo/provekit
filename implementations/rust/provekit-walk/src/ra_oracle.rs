@@ -32,6 +32,7 @@ use std::thread::JoinHandle;
 use std::time::{Duration, Instant};
 
 use serde_json::{json, Value};
+use tracing::{debug, info, trace, warn};
 
 /// A position to resolve: 0-based LSP line and 0-based character of the method
 /// identifier, in the given absolute file path.
@@ -88,9 +89,27 @@ impl RaOracle {
     pub fn start(workspace_root: &Path) -> Option<RaOracle> {
         let switch = std::env::var("PROVEKIT_RESOLVE_ORACLE").unwrap_or_default();
         if switch != "rust-analyzer" {
+            debug!(
+                PROVEKIT_RESOLVE_ORACLE = %switch,
+                "oracle disabled: PROVEKIT_RESOLVE_ORACLE != \"rust-analyzer\""
+            );
             return None;
         }
-        let bin = locate_rust_analyzer()?;
+        let bin = match locate_rust_analyzer() {
+            Some(b) => {
+                info!(binary = %b.display(), "oracle: rust-analyzer binary located");
+                b
+            }
+            None => {
+                warn!("oracle unavailable: rust-analyzer binary not found (PATH, rustup, PROVEKIT_RUST_ANALYZER)");
+                return None;
+            }
+        };
+        debug!(
+            workspace = %workspace_root.display(),
+            binary = %bin.display(),
+            "oracle: spawning rust-analyzer LSP subprocess"
+        );
         let mut child = Command::new(&bin)
             .current_dir(workspace_root)
             .stdin(Stdio::piped())
@@ -121,10 +140,16 @@ impl RaOracle {
             next_id: 0,
             opened: std::collections::HashSet::new(),
         };
+        debug!("oracle: sending LSP initialize handshake");
         if oracle.initialize().is_none() {
+            warn!("oracle: LSP initialize handshake failed; refusing all queries");
             let _ = oracle.child.kill();
             return None;
         }
+        info!(
+            workspace = %workspace_root.display(),
+            "oracle: rust-analyzer ready"
+        );
         Some(oracle)
     }
 
@@ -229,9 +254,22 @@ impl RaOracle {
     /// A definition / a real null is taken as final; ambiguity and unmappable
     /// paths are refusals (never retried).
     pub fn resolve_crate(&mut self, q: &ResolveQuery) -> Option<String> {
+        trace!(
+            file = %q.abs_path.display(),
+            line = q.lsp_line,
+            col = q.lsp_col,
+            "oracle: resolving method call position via textDocument/definition"
+        );
         self.ensure_open(&q.abs_path)?;
         let uri = path_to_uri(&q.abs_path);
         for attempt in 0..=NOT_READY_RETRIES {
+            trace!(
+                file = %q.abs_path.display(),
+                line = q.lsp_line,
+                col = q.lsp_col,
+                attempt = attempt,
+                "oracle: sending textDocument/definition request"
+            );
             let id = self.send_request(
                 "textDocument/definition",
                 json!({
@@ -250,16 +288,51 @@ impl RaOracle {
                 == Some(CONTENT_MODIFIED);
             if is_content_modified {
                 if attempt < NOT_READY_RETRIES {
+                    debug!(
+                        file = %q.abs_path.display(),
+                        line = q.lsp_line,
+                        col = q.lsp_col,
+                        attempt = attempt,
+                        retries_remaining = NOT_READY_RETRIES - attempt,
+                        "oracle: RA not ready (ContentModified), backing off and retrying"
+                    );
                     std::thread::sleep(not_ready_backoff(attempt));
                     continue;
                 }
                 // Still churning after the budget: deterministic refuse.
+                warn!(
+                    file = %q.abs_path.display(),
+                    line = q.lsp_line,
+                    col = q.lsp_col,
+                    attempts = attempt + 1,
+                    "oracle: refused after exhausting ContentModified retry budget"
+                );
                 return None;
             }
             // A settled reply (definition, real null, or any other error) is
             // final. Map it to a crate or refuse.
             let result = resp.get("result").cloned().unwrap_or(Value::Null);
-            return crate_from_definition_result(&result);
+            let resolved = crate_from_definition_result(&result);
+            match &resolved {
+                Some(krate) => {
+                    debug!(
+                        file = %q.abs_path.display(),
+                        line = q.lsp_line,
+                        col = q.lsp_col,
+                        resolved_crate = %krate,
+                        "oracle: resolved method call to crate"
+                    );
+                }
+                None => {
+                    trace!(
+                        file = %q.abs_path.display(),
+                        line = q.lsp_line,
+                        col = q.lsp_col,
+                        "oracle: refused (null result, unmappable path, or ambiguous crates)"
+                    );
+                }
+            }
+            return resolved;
         }
         None
     }
@@ -267,12 +340,14 @@ impl RaOracle {
     fn send_request(&mut self, method: &str, params: Value) -> Option<i64> {
         self.next_id += 1;
         let id = self.next_id;
+        trace!(method = method, id = id, "oracle: sending LSP request");
         let msg = json!({ "jsonrpc": "2.0", "id": id, "method": method, "params": params });
         self.write_message(&msg)?;
         Some(id)
     }
 
     fn send_notification(&mut self, method: &str, params: Value) {
+        trace!(method = method, "oracle: sending LSP notification");
         let msg = json!({ "jsonrpc": "2.0", "method": method, "params": params });
         let _ = self.write_message(&msg);
     }
@@ -508,14 +583,42 @@ pub fn resolve_batch(
     if queries.is_empty() {
         return out;
     }
+    let total = queries.len();
+    info!(
+        total_queries = total,
+        workspace = %workspace_root.display(),
+        "oracle: starting batch resolution"
+    );
     let Some(mut oracle) = RaOracle::start(workspace_root) else {
+        warn!(
+            total_queries = total,
+            "oracle: start refused (unavailable); all {} method calls remain unresolved",
+            total
+        );
         return out;
     };
+    let not_ready_count = 0usize;
+    let mut refused_count = 0usize;
     for q in queries {
         if let Some(krate) = oracle.resolve_crate(q) {
             out.insert((q.abs_path.clone(), q.lsp_line, q.lsp_col), krate);
+        } else {
+            refused_count += 1;
         }
+        // Count how many queries hit ContentModified budget exhaustion vs other refusals;
+        // tracing events inside resolve_crate carry the detail at debug/warn level.
+        let _ = not_ready_count; // counter reserved for future per-reason breakdown
     }
+    let resolved = out.len();
+    info!(
+        resolved = resolved,
+        total = total,
+        refused = refused_count,
+        "oracle: batch complete: resolved {}/{} method calls ({} refused)",
+        resolved,
+        total,
+        refused_count
+    );
     out
 }
 
