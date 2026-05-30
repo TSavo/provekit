@@ -253,14 +253,28 @@ impl RaOracle {
     /// is cold we retry exactly as long as the server says it is still moving.
     /// A definition / a real null is taken as final; ambiguity and unmappable
     /// paths are refusals (never retried).
+    ///
+    /// Returns `None` on any refusal. Call `resolve_crate_classified` for the
+    /// reason breakdown (used by `resolve_batch` for the N/M/K summary).
     pub fn resolve_crate(&mut self, q: &ResolveQuery) -> Option<String> {
+        self.resolve_crate_classified(q).ok().flatten()
+    }
+
+    /// Like `resolve_crate` but distinguishes the refusal reason so callers
+    /// can produce the N/M/K summary (resolved/total/not-ready).
+    ///   Ok(Some(crate))  -> resolved
+    ///   Ok(None)         -> refused: null definition, unmappable, or ambiguous
+    ///   Err(())          -> refused: ContentModified budget exhausted (RA not ready)
+    pub fn resolve_crate_classified(&mut self, q: &ResolveQuery) -> Result<Option<String>, ()> {
         trace!(
             file = %q.abs_path.display(),
             line = q.lsp_line,
             col = q.lsp_col,
             "oracle: resolving method call position via textDocument/definition"
         );
-        self.ensure_open(&q.abs_path)?;
+        if self.ensure_open(&q.abs_path).is_none() {
+            return Ok(None);
+        }
         let uri = path_to_uri(&q.abs_path);
         for attempt in 0..=NOT_READY_RETRIES {
             trace!(
@@ -270,14 +284,18 @@ impl RaOracle {
                 attempt = attempt,
                 "oracle: sending textDocument/definition request"
             );
-            let id = self.send_request(
+            let Some(id) = self.send_request(
                 "textDocument/definition",
                 json!({
                     "textDocument": { "uri": uri },
                     "position": { "line": q.lsp_line, "character": q.lsp_col },
                 }),
-            )?;
-            let resp = self.wait_for_response(id, DEFINITION_WAIT)?;
+            ) else {
+                return Ok(None);
+            };
+            let Some(resp) = self.wait_for_response(id, DEFINITION_WAIT) else {
+                return Ok(None);
+            };
             // Not-ready signal: rust-analyzer returns ContentModified (-32801)
             // while its analysis is mid-flight. Back off and re-ask; this is the
             // server telling us the index moved, not a refuse.
@@ -299,7 +317,7 @@ impl RaOracle {
                     std::thread::sleep(not_ready_backoff(attempt));
                     continue;
                 }
-                // Still churning after the budget: deterministic refuse.
+                // Still churning after the budget: deterministic refuse (not-ready).
                 warn!(
                     file = %q.abs_path.display(),
                     line = q.lsp_line,
@@ -307,7 +325,7 @@ impl RaOracle {
                     attempts = attempt + 1,
                     "oracle: refused after exhausting ContentModified retry budget"
                 );
-                return None;
+                return Err(());
             }
             // A settled reply (definition, real null, or any other error) is
             // final. Map it to a crate or refuse.
@@ -332,9 +350,10 @@ impl RaOracle {
                     );
                 }
             }
-            return resolved;
+            return Ok(resolved);
         }
-        None
+        // Loop exhausted without ContentModified (shouldn't happen, but be safe).
+        Ok(None)
     }
 
     fn send_request(&mut self, method: &str, params: Value) -> Option<i64> {
@@ -597,27 +616,34 @@ pub fn resolve_batch(
         );
         return out;
     };
-    let not_ready_count = 0usize;
-    let mut refused_count = 0usize;
+    let mut not_ready_count = 0usize;
+    let mut other_refused_count = 0usize;
     for q in queries {
-        if let Some(krate) = oracle.resolve_crate(q) {
-            out.insert((q.abs_path.clone(), q.lsp_line, q.lsp_col), krate);
-        } else {
-            refused_count += 1;
+        match oracle.resolve_crate_classified(q) {
+            Ok(Some(krate)) => {
+                out.insert((q.abs_path.clone(), q.lsp_line, q.lsp_col), krate);
+            }
+            Ok(None) => {
+                other_refused_count += 1;
+            }
+            Err(()) => {
+                not_ready_count += 1;
+            }
         }
-        // Count how many queries hit ContentModified budget exhaustion vs other refusals;
-        // tracing events inside resolve_crate carry the detail at debug/warn level.
-        let _ = not_ready_count; // counter reserved for future per-reason breakdown
     }
     let resolved = out.len();
+    let refused_count = not_ready_count + other_refused_count;
     info!(
         resolved = resolved,
         total = total,
         refused = refused_count,
-        "oracle: batch complete: resolved {}/{} method calls ({} refused)",
+        not_ready = not_ready_count,
+        other_refused = other_refused_count,
+        "oracle: batch complete: resolved {}/{} method calls ({} unavailable: not-ready, {} other refused)",
         resolved,
         total,
-        refused_count
+        not_ready_count,
+        other_refused_count
     );
     out
 }

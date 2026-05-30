@@ -37,7 +37,7 @@ use provekit_walk::{
 };
 use serde_json::{json, Value};
 use syn::spanned::Spanned;
-use tracing::{debug, info, trace, warn};
+use tracing::{debug, info, trace};
 
 // Tier 2b native semantic oracle (spec 2026-05-30-callee-resolution-tiers §2.T2b).
 // A separate module file driving rust-analyzer over LSP as the Tier-2a fallback
@@ -63,7 +63,9 @@ fn main() -> io::Result<()> {
     // byte-clean. Default level: warn. Set RUST_LOG to override:
     //   RUST_LOG=info  -> phase summaries
     //   RUST_LOG=debug -> per-callsite decisions, per-RPC method
-    //   RUST_LOG=provekit_walk_rpc::ra_oracle=trace -> every RA query
+    //   RUST_LOG=provekit_walk_rpc::ra_oracle=trace -> every RA LSP query
+    // Note: ra_oracle is inlined via #[path], so its event target is
+    // provekit_walk_rpc::ra_oracle (the bin crate), not provekit_walk::ra_oracle.
     tracing_subscriber::fmt()
         .with_writer(std::io::stderr)
         .with_env_filter(
@@ -973,9 +975,12 @@ fn resolve_method_calls_via_oracle(
     let resolved_count = resolved.len();
     let unavailable_count = total_queries - resolved_count;
     if resolved.is_empty() {
-        warn!(
+        // Either the oracle was unavailable/disabled (resolve_batch returns empty)
+        // or it ran and all queries refused. Both look the same here; the oracle's
+        // own batch-complete info event carries the breakdown.
+        debug!(
             total = total_queries,
-            "oracle: all method-call queries refused (oracle unavailable or not enabled)"
+            "oracle: no method calls resolved (oracle off or all queries refused)"
         );
         return;
     }
