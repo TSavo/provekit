@@ -1199,48 +1199,70 @@ fn lift_implications(params: &Value) -> Result<Value, String> {
                 .clone()
                 .unwrap_or_else(|| current_crate.clone());
             let key = (resolved_crate, cs.callee.clone());
-            let Some(binding) = contracts_by_key.get(&key) else {
-                if let Some(ineligible) = ineligible_by_key.get(&key) {
-                    debug!(
-                        callee = %cs.callee,
-                        crate_ = %key.0,
-                        file = %cs.file,
-                        line = cs.line,
-                        "lift-gap: body-discharge-ineligible callee"
-                    );
-                    diagnostics.push(json!({
-                        "kind": "lift-gap",
-                        "reason": "body-discharge-ineligible",
-                        "detail": ineligible
-                            .get("bodyDischargeRefusalReason")
-                            .or_else(|| ineligible.get("body_discharge_refusal_reason"))
-                            .and_then(|v| v.as_str())
-                            .unwrap_or("callee contract is not body-discharge eligible"),
-                        "callee": cs.callee,
-                        "calleeCrate": key.0,
-                        "file": cs.file,
-                        "line": cs.line,
-                        "col": cs.col,
-                    }));
-                    continue;
+            // Fix B (#1696): a call site that matched ANY known contract
+            // MUST be emitted as a bridge, never silently dropped. An
+            // eligible callee bridges normally. An INELIGIBLE callee (its
+            // self-derived post has no result equation, e.g. a unit-
+            // returning fn) is no longer `continue`-d away: we record the
+            // lift-gap diagnostic for observability, then STILL bridge to
+            // its contract. At verification the bridge routes to the
+            // honesty boundary (body-bearing-no-pre -> undecidable;
+            // non-body-bearing -> vacuous), so the obligation is honestly
+            // surfaced instead of vanishing unseen. Only a callee with NO
+            // contract at all has nothing to bridge to.
+            let binding = match contracts_by_key.get(&key) {
+                Some(b) => *b,
+                None => {
+                    if let Some(ineligible) = ineligible_by_key.get(&key) {
+                        debug!(
+                            callee = %cs.callee,
+                            crate_ = %key.0,
+                            file = %cs.file,
+                            line = cs.line,
+                            "lift-gap: body-discharge-ineligible callee (bridged anyway, not dropped)"
+                        );
+                        // An INFORMATIONAL note, not a `lift-gap`: the call
+                        // site IS bridged (below), so it is not a gap. We
+                        // surface the body-discharge ineligibility for
+                        // observability but no obligation vanishes.
+                        diagnostics.push(json!({
+                            "kind": "lift-note",
+                            "reason": "body-discharge-ineligible-bridged",
+                            "detail": ineligible
+                                .get("bodyDischargeRefusalReason")
+                                .or_else(|| ineligible.get("body_discharge_refusal_reason"))
+                                .and_then(|v| v.as_str())
+                                .unwrap_or("callee contract is not body-discharge eligible; bridged anyway"),
+                            "callee": cs.callee,
+                            "calleeCrate": key.0,
+                            "file": cs.file,
+                            "line": cs.line,
+                            "col": cs.col,
+                        }));
+                        // Do NOT `continue`: fall through and bridge to the
+                        // ineligible callee's contract. The honesty boundary
+                        // at verification handles it.
+                        *ineligible
+                    } else {
+                        debug!(
+                            callee = %cs.callee,
+                            crate_ = %key.0,
+                            file = %cs.file,
+                            line = cs.line,
+                            "lift-gap: no contract for callee"
+                        );
+                        diagnostics.push(json!({
+                            "kind": "lift-gap",
+                            "reason": "no-contract-for-callee",
+                            "callee": cs.callee,
+                            "calleeCrate": key.0,
+                            "file": cs.file,
+                            "line": cs.line,
+                            "col": cs.col,
+                        }));
+                        continue;
+                    }
                 }
-                debug!(
-                    callee = %cs.callee,
-                    crate_ = %key.0,
-                    file = %cs.file,
-                    line = cs.line,
-                    "lift-gap: no contract for callee"
-                );
-                diagnostics.push(json!({
-                    "kind": "lift-gap",
-                    "reason": "no-contract-for-callee",
-                    "callee": cs.callee,
-                    "calleeCrate": key.0,
-                    "file": cs.file,
-                    "line": cs.line,
-                    "col": cs.col,
-                }));
-                continue;
             };
             let Some(target_cid) = binding
                 .get("contract_cid")
@@ -1346,11 +1368,31 @@ fn lift_implications(params: &Value) -> Result<Value, String> {
     // 582 call sites without a single warning. It must scream.
     let swallowed = *gap_by_reason.get("body-discharge-ineligible").unwrap_or(&0);
     if swallowed > 0 {
+        // INVARIANT VIOLATION (Fix B): a call site that matched a known
+        // contract was dropped. After Fix B this must be 0 -- ineligible
+        // callees are now bridged (recorded as `lift-note`/
+        // `body-discharge-ineligible-bridged`), not dropped. If this fires,
+        // a new drop path was introduced; it must scream.
         warn!(
             swallowed_callsites = swallowed,
-            "lift_implications: {} call sites had a MATCHING contract but were DROPPED as body-discharge-ineligible -> not bridged, not discharged, not refused; {} obligations vanish from verification unseen",
-            swallowed,
+            "lift_implications: {} call sites had a MATCHING contract but were DROPPED as body-discharge-ineligible -> Fix B invariant VIOLATED (these must be bridged, not dropped)",
             swallowed
+        );
+    } else {
+        // Observability: how many ineligible-but-bridged callsites Fix B
+        // rescued from the old silent-drop path.
+        let bridged_ineligible = diagnostics
+            .iter()
+            .filter(|d| {
+                d.get("reason").and_then(|v| v.as_str())
+                    == Some("body-discharge-ineligible-bridged")
+            })
+            .count();
+        info!(
+            swallowed_callsites = 0,
+            bridged_ineligible_callsites = bridged_ineligible,
+            "lift_implications: 0 swallowed call sites (Fix B); {} body-discharge-ineligible call sites bridged to the honesty boundary instead of dropped",
+            bridged_ineligible
         );
     }
 

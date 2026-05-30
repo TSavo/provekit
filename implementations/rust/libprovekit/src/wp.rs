@@ -521,12 +521,36 @@ fn value_expr_of_term<R: OpContractResolver + ?Sized>(
         }),
         Term::Op { name, args, .. } => {
             let Some(contract) = resolver.lookup(name) else {
-                return Err(Refusal::OpaqueCall {
-                    callee: name.clone(),
-                }
-                .into());
+                // No contract for this nested op. This is NOT a refusal in
+                // value position: an enum/struct constructor (`Ok`, `Err`,
+                // `Some`), a `format!`/`json!` macro term, a field
+                // projection (`field`), a method (`method:foo`), or a call
+                // whose callee has no contract is a perfectly good
+                // UNINTERPRETED value. Keep it as the bare constructor
+                // `op(name, <recursed args>)`. The verifier's SMT lowering
+                // declares it as an uninterpreted function symbol, so a
+                // self-derived post `result == Ok(<...>)` against a body
+                // returning `Ok(<...>)` reduces to `Ok(..) == Ok(..)` and
+                // discharges by reflexivity. Refusing here is what forced
+                // every `Ok(macro!)`-shaped body-bearing obligation to
+                // `wp-unresolved-call` undecidable instead of a sound
+                // reflexive discharge.
+                let recursed_args = args
+                    .iter()
+                    .map(|a| value_expr_of_term(a, resolver))
+                    .collect::<Result<Vec<_>, _>>()?;
+                return Ok(IrTerm::Ctor {
+                    name: name.clone(),
+                    args: recursed_args,
+                });
             };
             if let Some(callee) = &contract.unresolved_call {
+                // The contract EXISTS but is explicitly marked an
+                // unresolved call (the lifter could not resolve the callee
+                // at lift time). Honor that as a principled refusal: unlike
+                // the no-contract case above, the lifter asserted this op is
+                // unresolved, which is a different claim than "uninterpreted
+                // constructor."
                 return Err(Refusal::OpaqueCall {
                     callee: callee.clone(),
                 }

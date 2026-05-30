@@ -123,6 +123,13 @@ pub struct TierStats {
     pub discharged_by_cache: usize,
     pub vacuous_discharge: usize,
     pub solved_and_minted: usize,
+    /// Subset of `solved_and_minted` discharged by REFLEXIVITY (`T == T`
+    /// over uninterpreted ctors): sound but shallow (proves the function
+    /// returns what it returns). Reported apart from substantive proofs.
+    pub reflexive_discharge: usize,
+    /// Subset of `solved_and_minted` where the solver did substantive work
+    /// (real arithmetic / implication; the equality's sides differ).
+    pub substantive_discharge: usize,
     pub residue: usize,
     pub violations: usize,
     pub disagreements: usize,
@@ -242,6 +249,8 @@ impl Runner {
         let n_residue = AtomicUsize::new(0);
         let n_disagree = AtomicUsize::new(0);
         let n_invoc = AtomicUsize::new(0);
+        let n_reflexive = AtomicUsize::new(0);
+        let n_substantive = AtomicUsize::new(0);
         let invs_sink: Mutex<Vec<SolverInvocation>> = Mutex::new(vec![]);
         let minted_sink = Mutex::new(Vec::new());
 
@@ -269,6 +278,8 @@ impl Runner {
                     &n_residue,
                     &n_disagree,
                     &n_invoc,
+                    &n_reflexive,
+                    &n_substantive,
                     &invs_sink,
                     &minted_sink,
                 )
@@ -336,6 +347,8 @@ impl Runner {
             discharged_by_hash: n_hash.load(Ordering::Relaxed),
             discharged_by_cache: n_cache.load(Ordering::Relaxed),
             vacuous_discharge: n_vacuous.load(Ordering::Relaxed),
+            reflexive_discharge: n_reflexive.load(Ordering::Relaxed),
+            substantive_discharge: n_substantive.load(Ordering::Relaxed),
             solved_and_minted: n_solved.load(Ordering::Relaxed),
             residue: n_residue.load(Ordering::Relaxed),
             violations,
@@ -443,6 +456,8 @@ impl Runner {
         let n_residue = AtomicUsize::new(0);
         let n_disagree = AtomicUsize::new(0);
         let n_invoc = AtomicUsize::new(0);
+        let n_reflexive = AtomicUsize::new(0);
+        let n_substantive = AtomicUsize::new(0);
 
         // Per-solver telemetry sink. Mutex-guarded; rayon workers append
         // their per-callsite SolverInvocations here.
@@ -469,6 +484,8 @@ impl Runner {
                     &n_residue,
                     &n_disagree,
                     &n_invoc,
+                    &n_reflexive,
+                    &n_substantive,
                     &invs_sink,
                     &minted_sink,
                 )
@@ -516,6 +533,8 @@ impl Runner {
             discharged_by_hash: n_hash.load(Ordering::Relaxed),
             discharged_by_cache: n_cache.load(Ordering::Relaxed),
             vacuous_discharge: n_vacuous.load(Ordering::Relaxed),
+            reflexive_discharge: n_reflexive.load(Ordering::Relaxed),
+            substantive_discharge: n_substantive.load(Ordering::Relaxed),
             solved_and_minted: n_solved.load(Ordering::Relaxed),
             residue: n_residue.load(Ordering::Relaxed),
             violations,
@@ -531,9 +550,13 @@ impl Runner {
                 discharged_by_cache = stats.discharged_by_cache,
                 vacuous = stats.vacuous_discharge,
                 solved = stats.solved_and_minted,
+                reflexive = stats.reflexive_discharge,
+                solver_substantive = stats.substantive_discharge,
                 residue = stats.residue,
                 solver_invocations = stats.solver_invocations,
-                "verifier: proof run complete with VIOLATIONS"
+                "verifier: proof run complete with VIOLATIONS [solved split: {} reflexive, {} solver-substantive]",
+                stats.reflexive_discharge,
+                stats.substantive_discharge
             );
         } else {
             info!(
@@ -542,9 +565,13 @@ impl Runner {
                 discharged_by_cache = stats.discharged_by_cache,
                 vacuous = stats.vacuous_discharge,
                 solved = stats.solved_and_minted,
+                reflexive = stats.reflexive_discharge,
+                solver_substantive = stats.substantive_discharge,
                 residue = stats.residue,
                 solver_invocations = stats.solver_invocations,
-                "verifier: proof run complete, all obligations discharged"
+                "verifier: proof run complete, all obligations discharged [solved split: {} reflexive, {} solver-substantive]",
+                stats.reflexive_discharge,
+                stats.substantive_discharge
             );
         }
         for (solver_name, solver_stats) in &stats.per_solver {
@@ -901,6 +928,8 @@ fn work_one(
     n_residue: &AtomicUsize,
     n_disagree: &AtomicUsize,
     n_invoc: &AtomicUsize,
+    n_reflexive: &AtomicUsize,
+    n_substantive: &AtomicUsize,
     invs_sink: &Mutex<Vec<SolverInvocation>>,
     minted_sink: &Mutex<Vec<(String, Json)>>,
 ) -> (CallSite, ObligationVerdict, String) {
@@ -917,10 +946,27 @@ fn work_one(
                     );
                 }
             };
-            let (verdict, reason, invs) = run_plan(plan, registry, &smt, Some(&reduced));
+            let (verdict, mut reason, invs) = run_plan(plan, registry, &smt, Some(&reduced));
             n_invoc.fetch_add(invs.len(), Ordering::Relaxed);
             if verdict == ObligationVerdict::Discharged {
                 n_solved.fetch_add(1, Ordering::Relaxed);
+                // Tag HOW it discharged: a self-derived post reduces to
+                // `<term> == <term>` and is proven by reflexivity over
+                // uninterpreted ctors (sound but shallow); anything else is
+                // substantive solver work. Counted apart so a reflexive
+                // discharge is never conflated with a meaningful proof. The
+                // method is also stamped on the row reason so the receipt
+                // surfaces the split per-callsite.
+                let method = body_discharge::classify_discharge_method(&reduced);
+                match method {
+                    body_discharge::DischargeMethod::Reflexive => {
+                        n_reflexive.fetch_add(1, Ordering::Relaxed);
+                    }
+                    body_discharge::DischargeMethod::Substantive => {
+                        n_substantive.fetch_add(1, Ordering::Relaxed);
+                    }
+                }
+                reason = format!("[method={}] {reason}", method.as_str());
             } else if verdict == ObligationVerdict::Disagreement {
                 n_disagree.fetch_add(1, Ordering::Relaxed);
                 n_residue.fetch_add(1, Ordering::Relaxed);
