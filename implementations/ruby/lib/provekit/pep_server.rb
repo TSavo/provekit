@@ -1,6 +1,7 @@
 require "json"
 require "provekit/ruby_lifter"
 require "provekit/ruby_realizer"
+require "provekit/ruby_recognizer"
 require "provekit/sugar_dict"
 require "provekit/version"
 
@@ -12,7 +13,7 @@ module Provekit
       "protocol_version" => "provekit-plugin/1.7.0",
       "kit_cid" => "blake3-512:df3bd324caec5f9e818bb2f0a8d44ac923a9136f923a946f525023001637832a21a21ac32145c5c27de71c3f429e9ae6cf2d5f1a163d654df717d620169b9322",
       "language" => "ruby",
-      "supported_verbs" => ["lift_source", "realize_concept"],
+      "supported_verbs" => ["lift_source", "realize_concept", "recognize_source"],
       "supported_sugar_cids" => SugarDict.default_cids,
       "capabilities" => {
         "authoring_surfaces" => ["ruby-source", "ruby-sorbet", "ruby-comments"],
@@ -46,6 +47,8 @@ module Provekit
         write_result(id, MANIFEST)
       when "provekit.plugin.invoke"
         write_result(id, invoke(request["params"] || {}))
+      when "provekit.plugin.recognize"
+        write_result(id, Provekit::RubyRecognizer.recognize(request["params"] || {}))
       when "provekit.plugin.shutdown"
         write_result(id, nil)
         exit 0
@@ -75,6 +78,8 @@ module Provekit
         @lifter.lift_source(payload["source"].to_s, payload["path"] || "source.rb")
       when "realize_concept"
         @realizer.realize(payload["proofir"] || payload["ir"] || {}, payload["plan"] || {})
+      when "recognize_source", "recognize"
+        Provekit::RubyRecognizer.recognize(payload)
       else
         raise ArgumentError, "unsupported verb: #{verb}"
       end

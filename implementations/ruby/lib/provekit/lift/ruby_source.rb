@@ -10,6 +10,8 @@ require "set"
 
 require_relative "../blake3"
 require_relative "../ir"
+require_relative "../ruby_ast_template"
+require_relative "../ruby_recognizer"
 
 module Provekit
   module Lift
@@ -555,6 +557,7 @@ module Provekit
               "authoring_surfaces" => [SURFACE],
               "ir_version" => IR_VERSION,
               "emits_signed_mementos" => false,
+              "recognize" => true,
             },
           }
         end
@@ -593,6 +596,12 @@ module Provekit
             rpc_lift(id, params)
           when "compile"
             rpc_compile(id, params)
+          when "provekit.plugin.recognize"
+            {
+              "jsonrpc" => "2.0",
+              "id" => id,
+              "result" => Provekit::RubyRecognizer.recognize(params),
+            }
           when "shutdown"
             { "jsonrpc" => "2.0", "id" => id, "result" => nil }
           else
@@ -617,6 +626,10 @@ module Provekit
           collector = DefinitionCollector.new
           collector.collect(sexp)
           result.refusals.concat(collector.refusals)
+          body_sources_by_line =
+            Provekit::RubyAstTemplate.extract_methods(source, source_path).each_with_object({}) do |info, out|
+              out[info[:line]] = info[:body_source]
+            end
 
           body_terms = []
           contracts = []
@@ -624,6 +637,7 @@ module Provekit
             contract = lift_function(info, source_path, result)
             next if contract.nil?
 
+            contract["body_source"] = body_sources_by_line[info.line] if body_sources_by_line[info.line]
             body_terms << contract["post"]["args"][1]
             contracts << contract
           end
