@@ -722,15 +722,18 @@ static int pk_c_emit_one_call_edge(
     }
     written = snprintf(NULL,
         0,
-        "{\"caller_function\":\"%s\",\"callee_name\":\"%s\","
-        "\"args\":%s,\"callsite_path\":\"%s\","
-        "\"callsite_line\":%d,\"callsite_column\":%d}",
-        caller,
-        callee,
-        args,
+        "{\"callSiteLocus\":{\"column\":%d,\"file\":\"%s\",\"line\":%d},"
+        "\"evidenceTerm\":{\"args\":%s,\"kind\":\"atomic\","
+        "\"name\":\"call-site-obligation\"},"
+        "\"kind\":\"call-edge\",\"schemaVersion\":\"1\","
+        "\"sourceContractCid\":\"pending-c:%s\","
+        "\"targetSymbol\":\"c-kit:%s\"}",
+        fact->locus.column,
         path,
         fact->locus.line,
-        fact->locus.column);
+        args,
+        caller,
+        callee);
     if (written < 0) {
         free(caller);
         free(callee);
@@ -746,15 +749,18 @@ static int pk_c_emit_one_call_edge(
     }
     (void)snprintf(json,
         (size_t)written + 1,
-        "{\"caller_function\":\"%s\",\"callee_name\":\"%s\","
-        "\"args\":%s,\"callsite_path\":\"%s\","
-        "\"callsite_line\":%d,\"callsite_column\":%d}",
-        caller,
-        callee,
-        args,
+        "{\"callSiteLocus\":{\"column\":%d,\"file\":\"%s\",\"line\":%d},"
+        "\"evidenceTerm\":{\"args\":%s,\"kind\":\"atomic\","
+        "\"name\":\"call-site-obligation\"},"
+        "\"kind\":\"call-edge\",\"schemaVersion\":\"1\","
+        "\"sourceContractCid\":\"pending-c:%s\","
+        "\"targetSymbol\":\"c-kit:%s\"}",
+        fact->locus.column,
         path,
         fact->locus.line,
-        fact->locus.column);
+        args,
+        caller,
+        callee);
     rc = pk_c_lift_result_add_call_edge(result, json);
     free(json);
     free(caller);

@@ -85,14 +85,10 @@ check "T7 parse: contract compute declared" "$LINE2" '"name":"compute"'
 # T8: parse response contains callEdges array
 check "T8 parse: callEdges key present" "$LINE2" '"callEdges":'
 
-# T9: callEdges is emitted as an empty array.
-#
-# The C LSP cannot compute contract CIDs (no JCS encoder + BLAKE3 here), so
-# the canonical IR shape (sourceContractCid, targetContractCid, targetSymbol,
-# callSiteLocus, evidenceTerm) cannot be produced. Until that's wired up,
-# emit []; the legacy {callee, caller, line} shape was silently dropped by
-# the daemon. (Review feedback: PR #165 / Copilot.)
-check "T9 parse: callEdges is empty array" "$LINE2" '"callEdges":[]'
+# T9: parse response contains a canonical call edge for compute -> add.
+check "T9 parse: callEdges includes targetSymbol" "$LINE2" '"targetSymbol":"c-kit:add"'
+check "T9b parse: callEdges includes sourceContractCid" "$LINE2" '"sourceContractCid":"pending-c:compute"'
+check "T9c parse: callEdges includes callSiteLocus" "$LINE2" '"callSiteLocus":{'
 
 # T10: parse response contains diagnostics array
 check "T10 parse: diagnostics key present" "$LINE2" '"diagnostics":'
@@ -137,8 +133,10 @@ check "T17 lift: ir contains add" "$LIFT2" '"name":"add"'
 # T18: lift response ir array contains contract 'compute'
 check "T18 lift: ir contains compute" "$LIFT2" '"name":"compute"'
 
-# T19: lift response callEdges is empty array
-check "T19 lift: callEdges empty" "$LIFT2" '"callEdges":[]'
+# T19: lift response includes the canonical call edge too
+check "T19 lift: callEdges includes targetSymbol" "$LIFT2" '"targetSymbol":"c-kit:add"'
+check "T19b lift: callEdges includes sourceContractCid" "$LIFT2" '"sourceContractCid":"pending-c:compute"'
+check "T19c lift: callEdges includes callSiteLocus" "$LIFT2" '"callSiteLocus":{'
 
 # T20: lift response contains diagnostics array
 check "T20 lift: diagnostics key present" "$LIFT2" '"diagnostics":'

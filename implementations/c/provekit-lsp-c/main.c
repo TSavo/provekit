@@ -326,15 +326,11 @@ static void handle_parse(const char *id, const char *json_line) {
         }
     }
     if (facts->extraction_result) {
-        for (size_t i = 0; i < facts->extraction_result->diagnostics.len; i++) {
-            if (pk_c_lift_result_add_diagnostic(
-                result_obj,
-                facts->extraction_result->diagnostics.items[i]) != 0) {
-                pk_c_source_facts_free(facts);
-                pk_c_lift_result_free(result_obj);
-                send_error(id, -32603, "parse: out of memory");
-                return;
-            }
+        if (pk_c_lift_result_extend(result_obj, facts->extraction_result) != 0) {
+            pk_c_source_facts_free(facts);
+            pk_c_lift_result_free(result_obj);
+            send_error(id, -32603, "parse: out of memory");
+            return;
         }
     }
     pk_c_source_facts_free(facts);
@@ -444,17 +440,13 @@ static char *read_file(const char *path) {
  * opacityReport/refusals pass through as-is. */
 static char *build_ir_document(const pk_c_lift_result *r) {
     /* ir-document shape:
-     * {"kind":"ir-document","ir":[...],"callEdges":[],"diagnostics":[...],"opacityReport":[...],"refusals":[...]}
+     * {"kind":"ir-document","ir":[...],"callEdges":[...],"diagnostics":[...],"opacityReport":[...],"refusals":[...]}
      */
     const char *prefix = "{\"kind\":\"ir-document\",\"ir\":";
     const char *call_edges_key  = ",\"callEdges\":";
     const char *diagnostics_key = ",\"diagnostics\":";
     const char *opacity_key     = ",\"opacityReport\":";
     const char *refusals_key    = ",\"refusals\":";
-
-    /* We borrow the declarations array for "ir". callEdges always empty
-     * (C LSP cannot compute contract CIDs). */
-    const pk_c_json_array empty = {NULL, 0, 0};
 
     size_t len = 0;
     /* Manually sum lengths — mirror pk_c_lift_result_to_json logic */
@@ -466,7 +458,13 @@ static char *build_ir_document(const pk_c_lift_result *r) {
         len += strlen(r->declarations.items[i]);
     }
     len += 1; /* ']' */
-    len += strlen(call_edges_key) + 2; /* "[]" */
+    len += strlen(call_edges_key);
+    len += 1;
+    for (size_t i = 0; i < r->call_edges.len; i++) {
+        if (i > 0) len += 1;
+        len += strlen(r->call_edges.items[i]);
+    }
+    len += 1;
     len += strlen(diagnostics_key);
     len += 1;
     for (size_t i = 0; i < r->diagnostics.len; i++) {
@@ -489,7 +487,6 @@ static char *build_ir_document(const pk_c_lift_result *r) {
     }
     len += 1; /* '}' */
     len += 1; /* NUL */
-    (void)empty;
 
     char *json = (char *)malloc(len);
     if (!json) return NULL;
@@ -506,9 +503,16 @@ static char *build_ir_document(const pk_c_lift_result *r) {
     }
     *dst++ = ']';
 
-    /* callEdges always empty */
+    /* callEdges */
     dst += sprintf(dst, "%s", call_edges_key);
-    *dst++ = '['; *dst++ = ']';
+    *dst++ = '[';
+    for (size_t i = 0; i < r->call_edges.len; i++) {
+        if (i > 0) *dst++ = ',';
+        size_t slen = strlen(r->call_edges.items[i]);
+        memcpy(dst, r->call_edges.items[i], slen);
+        dst += slen;
+    }
+    *dst++ = ']';
 
     /* diagnostics */
     dst += sprintf(dst, "%s", diagnostics_key);
@@ -571,8 +575,10 @@ static int lift_single_path(const char *path, pk_c_lift_result *merged) {
         }
     }
     if (facts->extraction_result) {
-        for (size_t i = 0; i < facts->extraction_result->diagnostics.len; i++) {
-            pk_c_lift_result_add_diagnostic(r, facts->extraction_result->diagnostics.items[i]);
+        if (pk_c_lift_result_extend(r, facts->extraction_result) != 0) {
+            pk_c_lift_result_free(r);
+            pk_c_source_facts_free(facts);
+            return -1;
         }
     }
     pk_c_source_facts_free(facts);
