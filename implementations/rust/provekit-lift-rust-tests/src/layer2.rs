@@ -80,7 +80,8 @@ use provekit_ir_symbolic::{
 
 use crate::{
     callsite_contract_name_pub, is_assertion_macro_pub, lift_assertion_macro_at_callsites_pub,
-    lift_assertion_macro_pub, path_to_string_pub, translate_term_pub, BoundCall, LiftWarning,
+    lift_assertion_macro_pub, lifted_assertion_contract_decl, path_to_string_pub,
+    translate_term_pub, BoundCall, LiftWarning,
 };
 use syn::spanned::Spanned;
 
@@ -416,15 +417,8 @@ fn classify_for_loop(
             body: body_formula,
         });
 
-        out.decls.push(ContractDecl {
-            name: part.name,
-            pre: None,
-            post: None,
-            inv: Some(quantified),
-            out_binding: "out".into(),
-            evidence: None,
-            concept_hint: None,
-        });
+        out.decls
+            .push(lifted_assertion_contract_decl(part.name, quantified));
         out.lifted += 1;
         out.bounded_loop_lifted += 1;
     }
@@ -598,15 +592,8 @@ fn classify_helper_inlining(
         };
         let inlined = subst_var_in_formula(&raw_formula, &helper.param_name, &arg_term);
 
-        out.decls.push(ContractDecl {
-            name: memento_name,
-            pre: None,
-            post: None,
-            inv: Some(inlined),
-            out_binding: "out".into(),
-            evidence: None,
-            concept_hint: None,
-        });
+        out.decls
+            .push(lifted_assertion_contract_decl(memento_name, inlined));
         out.lifted += 1;
         out.helper_inlined_lifted += 1;
     }
@@ -770,15 +757,8 @@ fn classify_characterization(
     }
 
     for part in parts {
-        out.decls.push(ContractDecl {
-            name: part.name,
-            pre: None,
-            post: None,
-            inv: Some(part.formula),
-            out_binding: "out".into(),
-            evidence: None,
-            concept_hint: None,
-        });
+        out.decls
+            .push(lifted_assertion_contract_decl(part.name, part.formula));
         out.lifted += 1;
         out.characterization_lifted += 1;
     }
@@ -827,6 +807,13 @@ mod tests {
         );
     }
 
+    fn postcondition_formula(decl: &ContractDecl) -> &Rc<Formula> {
+        assert!(decl.pre.is_none(), "Layer 2 tests do not synthesize pre");
+        assert!(decl.post.is_some(), "Layer 2 assertions must become post");
+        assert!(decl.inv.is_none(), "Layer 2 assertions must not use inv");
+        decl.post.as_ref().expect("post")
+    }
+
     #[test]
     fn pattern1_bounded_loop_lifts_to_forall_implies() {
         let src = r#"
@@ -843,8 +830,8 @@ mod tests {
         assert_eq!(out.bounded_loop_lifted, 1);
         assert!(out.claimed_tests.contains("squares_are_nonneg"));
         assert_callsite_name(&out.decls[0].name, "square");
-        let inv = out.decls[0].inv.as_ref().unwrap();
-        match &**inv {
+        let post = postcondition_formula(&out.decls[0]);
+        match &**post {
             Formula::Quantifier { kind, name, .. } => {
                 assert_eq!(kind, "forall");
                 assert_eq!(name, "x", "loop var name preserved for stable CID");
@@ -922,10 +909,10 @@ mod tests {
         let out = lift_file_layer2(&f, "t.rs");
         assert_eq!(out.lifted, 2, "warnings: {:?}", out.warnings);
         assert_eq!(out.helper_inlined_lifted, 2);
-        let names: Vec<_> = out.decls.iter().map(|d| d.name.as_str()).collect();
-        assert_eq!(names.len(), 2);
-        for name in names {
-            assert_callsite_name(name, "assert_palindrome");
+        assert_eq!(out.decls.len(), 2);
+        for decl in &out.decls {
+            assert_callsite_name(&decl.name, "assert_palindrome");
+            postcondition_formula(decl);
         }
     }
 
@@ -943,10 +930,10 @@ mod tests {
         let out = lift_file_layer2(&f, "t.rs");
         assert_eq!(out.lifted, 3, "warnings: {:?}", out.warnings);
         assert_eq!(out.characterization_lifted, 3);
-        let names: Vec<_> = out.decls.iter().map(|d| d.name.as_str()).collect();
-        assert_eq!(names.len(), 3);
-        for name in names {
-            assert_callsite_name(name, "f");
+        assert_eq!(out.decls.len(), 3);
+        for decl in &out.decls {
+            assert_callsite_name(&decl.name, "f");
+            postcondition_formula(decl);
         }
     }
 

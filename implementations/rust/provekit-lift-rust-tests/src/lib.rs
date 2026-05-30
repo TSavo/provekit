@@ -67,9 +67,10 @@
 //
 // Each lifted ContractDecl has:
 //   - name           = "<callee>@<file>:<line>:<col>"
-//   - inv            = the lifted atomic Formula (closed; no foralls)
-//   - pre/post       = None
-//   - out_binding    = "out" (unused; provided for ContractDecl shape parity)
+//   - post           = the lifted Formula (closed for point tests, quantified
+//                      for bounded-loop/property-style tests)
+//   - pre/inv        = None
+//   - out_binding    = "out"
 
 use std::collections::{BTreeMap, BTreeSet};
 use std::rc::Rc;
@@ -185,6 +186,18 @@ pub struct AdapterOutput {
     pub seen: usize,
     /// Assertion macros successfully lifted to a ContractDecl.
     pub lifted: usize,
+}
+
+pub(crate) fn lifted_assertion_contract_decl(name: String, formula: Rc<Formula>) -> ContractDecl {
+    ContractDecl {
+        name,
+        pre: None,
+        post: Some(formula),
+        inv: None,
+        out_binding: "out".into(),
+        evidence: None,
+        concept_hint: None,
+    }
 }
 
 /// Walk a parsed `syn::File` for `#[test]` / `#[tokio::test]` functions
@@ -395,15 +408,8 @@ fn visit_test_fn(f: &syn::ItemFn, source_path: &str, out: &mut AdapterOutput) {
         match lift_assertion_macro_at_callsites(mac, source_path, &bindings) {
             Ok(parts) => {
                 for part in parts {
-                    out.decls.push(ContractDecl {
-                        name: part.name,
-                        pre: None,
-                        post: None,
-                        inv: Some(part.formula),
-                        out_binding: "out".into(),
-                        evidence: None,
-                        concept_hint: None,
-                    });
+                    out.decls
+                        .push(lifted_assertion_contract_decl(part.name, part.formula));
                     out.lifted += 1;
                 }
             }
@@ -453,15 +459,10 @@ fn visit_test_fn_with_evidence(
             Ok(parts) => {
                 for part in parts {
                     // Emit ContractDecl (same as the basic path).
-                    out.decls.push(ContractDecl {
-                        name: part.name.clone(),
-                        pre: None,
-                        post: None,
-                        inv: Some(part.formula.clone()),
-                        out_binding: "out".into(),
-                        evidence: None,
-                        concept_hint: None,
-                    });
+                    out.decls.push(lifted_assertion_contract_decl(
+                        part.name.clone(),
+                        part.formula.clone(),
+                    ));
                     out.lifted += 1;
 
                     // Also mint an EvidenceMemento.
@@ -1491,6 +1492,26 @@ mod tests {
         );
     }
 
+    fn assert_promoted_to_postcondition(decl: &ContractDecl) {
+        assert!(
+            decl.pre.is_none(),
+            "unit-test assertions should not synthesize a precondition"
+        );
+        assert!(
+            decl.post.is_some(),
+            "unit-test assertions must become postconditions"
+        );
+        assert!(
+            decl.inv.is_none(),
+            "unit-test assertions must not hide in inv and discharge vacuously"
+        );
+    }
+
+    fn postcondition_formula(decl: &ContractDecl) -> &Rc<Formula> {
+        assert_promoted_to_postcondition(decl);
+        decl.post.as_ref().expect("post")
+    }
+
     #[test]
     fn lifts_simple_assert_eq() {
         let src = r#"
@@ -1503,7 +1524,22 @@ mod tests {
         let out = lift_file(&f, "t.rs");
         assert_eq!(out.lifted, 1, "warnings: {:?}", out.warnings);
         assert_callsite_name(&out.decls[0].name, "parse_int");
-        assert!(out.decls[0].inv.is_some());
+        assert_promoted_to_postcondition(&out.decls[0]);
+    }
+
+    #[test]
+    fn lifts_simple_assert_eq_as_postcondition_not_invariant() {
+        let src = r#"
+            #[test]
+            fn parse_int_42() {
+                assert_eq!(parse_int("42"), 42);
+            }
+        "#;
+        let f = parse(src);
+        let out = lift_file(&f, "t.rs");
+        assert_eq!(out.lifted, 1, "warnings: {:?}", out.warnings);
+        assert_callsite_name(&out.decls[0].name, "parse_int");
+        assert_promoted_to_postcondition(&out.decls[0]);
     }
 
     #[test]
@@ -1552,8 +1588,8 @@ mod tests {
         let out = lift_file(&f, "t.rs");
         assert_eq!(out.lifted, 1, "warnings: {:?}", out.warnings);
         assert_callsite_name(&out.decls[0].name, "is_some");
-        let inv = out.decls[0].inv.as_ref().expect("inv");
-        match &**inv {
+        let post = postcondition_formula(&out.decls[0]);
+        match &**post {
             Formula::Atomic { name, args } if name == "=" && args.len() == 2 => match &*args[1] {
                 Term::Ctor { name, args } => {
                     assert_eq!(name, "True");
@@ -1577,8 +1613,8 @@ mod tests {
         let out = lift_file(&f, "t.rs");
         assert_eq!(out.lifted, 1, "warnings: {:?}", out.warnings);
         assert_callsite_name(&out.decls[0].name, "is_none");
-        let inv = out.decls[0].inv.as_ref().expect("inv");
-        match &**inv {
+        let post = postcondition_formula(&out.decls[0]);
+        match &**post {
             Formula::Atomic { name, args } if name == "=" && args.len() == 2 => match &*args[1] {
                 Term::Ctor { name, args } => {
                     assert_eq!(name, "False");
@@ -1603,8 +1639,8 @@ mod tests {
         let out = lift_file(&f, "t.rs");
         assert_eq!(out.lifted, 1, "warnings: {:?}", out.warnings);
         assert_callsite_name(&out.decls[0].name, "foo");
-        let inv = out.decls[0].inv.as_ref().expect("inv");
-        let lhs = match &**inv {
+        let post = postcondition_formula(&out.decls[0]);
+        let lhs = match &**post {
             Formula::Atomic { name, args } if name == "=" && args.len() == 2 => args[0].clone(),
             other => panic!("expected atomic =, got {other:?}"),
         };
@@ -1666,8 +1702,8 @@ mod tests {
         assert_eq!(out.lifted, 1, "warnings: {:?}", out.warnings);
         assert_callsite_name(&out.decls[0].name, "len");
         // Inspect the IR: the LHS should be Ctor("len", [str_const("foo")]).
-        let inv = out.decls[0].inv.as_ref().expect("inv");
-        let lhs = match &**inv {
+        let post = postcondition_formula(&out.decls[0]);
+        let lhs = match &**post {
             Formula::Atomic { name, args } if name == "=" && args.len() == 2 => args[0].clone(),
             other => panic!("expected atomic =, got {other:?}"),
         };
@@ -1702,8 +1738,8 @@ mod tests {
         let out = lift_file(&f, "t.rs");
         assert_eq!(out.lifted, 1, "warnings: {:?}", out.warnings);
         // Walk the structure.
-        let inv = out.decls[0].inv.as_ref().expect("inv");
-        let lhs = match &**inv {
+        let post = postcondition_formula(&out.decls[0]);
+        let lhs = match &**post {
             Formula::Atomic { name, args } if name == "=" && args.len() == 2 => args[0].clone(),
             other => panic!("expected atomic =, got {other:?}"),
         };
