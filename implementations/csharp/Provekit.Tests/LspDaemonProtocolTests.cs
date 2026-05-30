@@ -3,7 +3,9 @@
 // Integration smoke test: protocol conformance of the provekit-lsp-csharp binary.
 //
 // Asserts:
-//   - The binary responds to initialize with {name, version, capabilities}.
+//   - The binary responds to initialize with the shared LSP protocol shape.
+//   - analyzeDocument returns an lsp-document-analysis envelope.
+//   - The solver-facing diagnostic lands on the broken callsite.
 //   - parse response has result.declarations as a JSON array, not a string.
 //   - parse response has result.callEdges as a JSON array.
 //   - parse response has result.warnings as a JSON array.
@@ -32,6 +34,29 @@ public class LspDaemonProtocolTests
         "public static void ValidateName(string name) {}\n";
 
     private const string FixturePath = "fixture.cs";
+
+    private const string FloorFixtureSource =
+        "public static class FloorFixture {\n" +
+        "  public static bool checkPositive(int x) {\n" +
+        "    if (x <= 0) { return false; }\n" +
+        "    return true;\n" +
+        "  }\n" +
+        "  public static bool CallerSatisfiesPre() {\n" +
+        "    var result = checkPositive(5);\n" +
+        "    return result;\n" +
+        "  }\n" +
+        "  public static bool CallerViolatesPre() {\n" +
+        "    var result = checkPositive(-1);\n" +
+        "    return result;\n" +
+        "  }\n" +
+        "  public static bool CallerWithLoop() {\n" +
+        "    for (var i = 0; i < 10; i++) {\n" +
+        "      var result = checkPositive(i);\n" +
+        "      if (!result) { return false; }\n" +
+        "    }\n" +
+        "    return true;\n" +
+        "  }\n" +
+        "}\n";
 
     // ── Binary resolution ────────────────────────────────────────────────────
 
@@ -115,6 +140,33 @@ public class LspDaemonProtocolTests
         return sb.ToString();
     }
 
+    private static string BuildAnalyzeSession(string source = FloorFixtureSource, string path = "FloorFixture.cs")
+    {
+        var msgs = new object[]
+        {
+            new { jsonrpc = "2.0", id = 1, method = "initialize", @params = new { } },
+            new { jsonrpc = "2.0", id = 2, method = "analyzeDocument",
+                  @params = new
+                  {
+                      kit_id = "csharp",
+                      uri = $"file:///project/{path}",
+                      file = path,
+                      text = source,
+                      document_version = 42,
+                      workspace_root = "/project",
+                      accepted_protocol_catalog_cids = Array.Empty<string>(),
+                      policy_cids = Array.Empty<string>(),
+                  } },
+            new { jsonrpc = "2.0", id = 3, method = "shutdown" },
+        };
+        var sb = new StringBuilder();
+        foreach (var m in msgs)
+        {
+            sb.AppendLine(JsonSerializer.Serialize(m));
+        }
+        return sb.ToString();
+    }
+
     private static async Task<List<JsonDocument>> RunLsp(string ndjson)
     {
         var binary = BinaryPath();
@@ -176,9 +228,51 @@ public class LspDaemonProtocolTests
         Assert.True(initResp.TryGetProperty("result", out var result),
             "initialize response missing 'result'");
         Assert.Equal("provekit-lsp-csharp", result.GetProperty("name").GetString());
+        Assert.Equal("provekit-lsp-shared/1", result.GetProperty("protocol_version").GetString());
+        Assert.Equal("csharp", result.GetProperty("kit_id").GetString());
+        AssertBlake3Cid(result.GetProperty("protocol_catalog_cid").GetString());
         Assert.True(result.TryGetProperty("capabilities", out var caps));
-        var capList = caps.EnumerateArray().Select(c => c.GetString()).ToList();
-        Assert.Contains("parse", capList);
+        Assert.Equal(JsonValueKind.Object, caps.ValueKind);
+        Assert.Contains("csharp-source",
+            caps.GetProperty("source_surfaces").EnumerateArray().Select(c => c.GetString()));
+        Assert.Contains("provekit.lsp.implication_failed",
+            caps.GetProperty("diagnostic_codes").EnumerateArray().Select(c => c.GetString()));
+    }
+
+    [Fact]
+    public async Task AnalyzeDocument_FloorFixtureEmitsSharedCallsiteDiagnostic()
+    {
+        var responses = await RunLsp(BuildAnalyzeSession());
+        var analyzeResp = FindById(responses, 2);
+
+        Assert.False(analyzeResp.TryGetProperty("error", out _),
+            $"analyzeDocument returned error: {analyzeResp}");
+        Assert.True(analyzeResp.TryGetProperty("result", out var result));
+
+        Assert.Equal("lsp-document-analysis", result.GetProperty("kind").GetString());
+        Assert.Equal("1", result.GetProperty("schema_version").GetString());
+        Assert.Equal("csharp", result.GetProperty("kit_id").GetString());
+        Assert.Equal("file:///project/FloorFixture.cs", result.GetProperty("uri").GetString());
+        Assert.Equal("FloorFixture.cs", result.GetProperty("file").GetString());
+        AssertBlake3Cid(result.GetProperty("document_cid").GetString());
+        AssertBlake3Cid(result.GetProperty("protocol_catalog_cid").GetString());
+        Assert.Equal(JsonValueKind.Array, result.GetProperty("entries").ValueKind);
+        Assert.Equal(0, result.GetProperty("statuses").GetArrayLength());
+        Assert.Equal(JsonValueKind.Null, result.GetProperty("project").ValueKind);
+
+        var diagnostics = result.GetProperty("diagnostics").EnumerateArray().ToList();
+        var diagnostic = Assert.Single(diagnostics,
+            d => d.GetProperty("code").GetString() == "provekit.lsp.implication_failed");
+        Assert.Equal("error", diagnostic.GetProperty("severity").GetString());
+        Assert.Equal("forward-propagation", diagnostic.GetProperty("producer").GetString());
+        Assert.Equal("csharp", diagnostic.GetProperty("kit_id").GetString());
+        AssertBlake3Cid(diagnostic.GetProperty("protocol_catalog_cid").GetString());
+
+        var expected = PositionOf(FloorFixtureSource, "checkPositive(-1)");
+        var range = diagnostic.GetProperty("range");
+        Assert.Equal(expected.Line, range.GetProperty("start_line").GetInt32());
+        Assert.Equal(expected.Col, range.GetProperty("start_col").GetInt32());
+        Assert.Equal("checkPositive", diagnostic.GetProperty("data").GetProperty("callee").GetString());
     }
 
     [Fact]
@@ -323,5 +417,39 @@ public class LspDaemonProtocolTests
         var parseResp = FindById(responses, 2);
         Assert.True(parseResp.TryGetProperty("result", out _),
             "Expected result (not error) when extra 'language' param is present");
+    }
+
+    private static (int Line, int Col) PositionOf(string source, string needle)
+    {
+        var offset = source.IndexOf(needle, StringComparison.Ordinal);
+        Assert.True(offset >= 0, $"needle not found: {needle}");
+
+        var line = 1;
+        var col = 0;
+        for (var i = 0; i < offset; i++)
+        {
+            if (source[i] == '\n')
+            {
+                line++;
+                col = 0;
+            }
+            else
+            {
+                col++;
+            }
+        }
+        return (line, col);
+    }
+
+    private static void AssertBlake3Cid(string? value)
+    {
+        Assert.NotNull(value);
+        Assert.StartsWith("blake3-512:", value);
+        Assert.Equal("blake3-512:".Length + 128, value.Length);
+        foreach (var c in value["blake3-512:".Length..])
+        {
+            Assert.True(c is >= '0' and <= '9' or >= 'a' and <= 'f',
+                $"CID contains non-lowercase-hex character: {value}");
+        }
     }
 }
