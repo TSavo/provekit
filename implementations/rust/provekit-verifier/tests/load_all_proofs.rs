@@ -81,6 +81,7 @@ fn publish_parseint_proof(dir: &Path) -> String {
         ir_return_sort: "Int".into(),
         notes: String::new(),
         signer_seed,
+        target_proof_cid: None,
     };
     let bridge = mint_bridge(&bridge_args);
     members.insert(bridge.cid.clone(), bridge.canonical_bytes);

@@ -54,15 +54,34 @@ pub fn run(cs: &CallSite, pool: &MementoPool) -> Result<ResolvedProperty, String
             }
         }
         None => {
-            // Back-compat: legacy bridges that pre-date `targetProofCid`
-            // are loadable but cannot have ConsequentBundlePinned
-            // enforced. New bridges MUST set the field; flag the gap so
-            // operators can see what isn't being checked.
-            eprintln!(
-                "warning: bridge {} has no targetProofCid; \
-                 ConsequentBundlePinned not enforced (back-compat path)",
-                cs.bridge_ir_name
-            );
+            // Self-pinned: a bridge with no `targetProofCid` commits to a
+            // target that is a co-member of its OWN bundle (it was minted
+            // into the same `.proof` as its target, by the same mint run; it
+            // cannot reference its own not-yet-computed bundle CID). Enforce
+            // that co-membership. This is NOT a back-compat escape hatch:
+            // there is no unenforced path. A cross-bundle target that arrives
+            // with no pin (e.g. a same-named dependency contract trying to
+            // pose as the local one) is refused here.
+            let self_bundle = cs.bridge_self_bundle_cid.as_deref().ok_or_else(|| {
+                format!(
+                    "BridgeSelfPinUnresolvable: bridge {} has no targetProofCid and no known \
+                     source bundle, so same-bundle co-membership cannot be enforced",
+                    cs.bridge_ir_name
+                )
+            })?;
+            let bundle_members = pool.bundle_members.get(self_bundle).ok_or_else(|| {
+                format!(
+                    "BridgeSelfPinUnresolvable: self bundle {} of bridge {} not in pool",
+                    self_bundle, cs.bridge_ir_name
+                )
+            })?;
+            if !bundle_members.contains(&cs.bridge_target_cid) {
+                return Err(format!(
+                    "BridgeTargetProofCidMismatch: self-pinned bridge {} target {} is not a \
+                     co-member of its own bundle {}",
+                    cs.bridge_ir_name, cs.bridge_target_cid, self_bundle
+                ));
+            }
         }
     }
 

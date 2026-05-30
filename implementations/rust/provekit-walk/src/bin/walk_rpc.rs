@@ -451,18 +451,41 @@ fn lift_implications(params: &Value) -> Result<Value, String> {
     // Index contracts by callee name (the substring before the first '@'
     // in the contract `name` field). The test lifter mints contracts as
     // `<callee>@<file>:<line>:<col>`; this lookup is the ctor-name index.
-    // Multiple contracts may share the same callee name across different
-    // call sites; we keep the FIRST insertion so the lookup is stable and
-    // deterministic, and emit a lift-gap if any subsequent collision
-    // disagrees on contract CID. The verifier's enumerate_callsites only
-    // needs ONE bridge per symbol; the per-site contract pinning happens
-    // through the contract's own name (which carries the file:line:col).
+    // Multiple contracts may share the same callee name: a production
+    // function-contract (`foo`, carries a derived pre/post -> a call site
+    // has a real obligation) AND one or more test-lifted witnessed facts
+    // (`foo@test.rs:5:8`, carries only `inv` -> nothing a general call site
+    // can discharge against). PREFER the body-bearing contract: a bridge
+    // that targets it makes the call site dischargeable, where a bridge to
+    // the `inv` witness vacuous-passes. Among same-tier bindings the first
+    // wins (stable). The verifier's enumerate_callsites needs one bridge
+    // per symbol; pinning the dischargeable target here is what turns a
+    // vacuous pass into a real solver obligation.
     let mut contracts_by_callee: HashMap<String, &Value> = HashMap::new();
     for binding in contract_bindings {
         if let Some(name) = binding.get("name").and_then(|v| v.as_str()) {
             let callee = name.split('@').next().unwrap_or(name).trim().to_string();
-            if !callee.is_empty() {
-                contracts_by_callee.entry(callee).or_insert(binding);
+            if callee.is_empty() {
+                continue;
+            }
+            let is_body_bearing = binding
+                .get("body_bearing")
+                .and_then(|v| v.as_bool())
+                .unwrap_or(false);
+            match contracts_by_callee.get(callee.as_str()) {
+                None => {
+                    contracts_by_callee.insert(callee, binding);
+                }
+                Some(existing) => {
+                    let existing_body_bearing = existing
+                        .get("body_bearing")
+                        .and_then(|v| v.as_bool())
+                        .unwrap_or(false);
+                    // Upgrade to the body-bearing binding; never downgrade.
+                    if is_body_bearing && !existing_body_bearing {
+                        contracts_by_callee.insert(callee, binding);
+                    }
+                }
             }
         }
     }
@@ -510,7 +533,14 @@ fn lift_implications(params: &Value) -> Result<Value, String> {
                 }));
                 continue;
             };
-            entries.push(json!({
+            // Forward pin: a binding harvested from a dependency proof carries
+            // `target_proof_cid` (that proof's bundle CID); stamp it on the
+            // bridge so the verifier enforces ConsequentBundlePinned against
+            // the dependency bundle. An intra-crate binding has none -> the
+            // field is omitted and the verifier enforces same-bundle
+            // co-membership (self-pinned). This is the only path; there is no
+            // unpinned bridge.
+            let mut bridge = json!({
                 "kind": "bridge",
                 "name": format!(
                     "intra-body:rust:{}@{}:{}:{}",
@@ -528,7 +558,15 @@ fn lift_implications(params: &Value) -> Result<Value, String> {
                     "start_line": cs.line,
                     "start_col": cs.col,
                 },
-            }));
+            });
+            if let Some(tpc) = binding
+                .get("target_proof_cid")
+                .and_then(|v| v.as_str())
+                .filter(|s| !s.is_empty())
+            {
+                bridge["targetProofCid"] = json!(tpc);
+            }
+            entries.push(bridge);
         }
     }
 

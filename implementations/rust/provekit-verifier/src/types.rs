@@ -102,6 +102,11 @@ pub struct MementoPool {
     pub formula_to_memento: BTreeMap<String, String>,
     /// sourceSymbol (IR ctor name) -> bridge envelope JSON.
     pub bridges_by_symbol: BTreeMap<String, Json>,
+    /// sourceSymbol -> the `.proof` bundle CID the bridge memento was loaded
+    /// from. Lets resolve_target enforce the self-pinned (no `targetProofCid`)
+    /// case: the target contract must be a co-member of this bundle. Keyed by
+    /// sourceSymbol to match `bridges_by_symbol` (same last-writer-wins key).
+    pub bridge_self_bundle_by_symbol: BTreeMap<String, String>,
     /// Bundle (.proof file) CID -> set of member CIDs the bundle contained.
     ///
     /// Required to enforce `BridgeDeclaration.ConsequentBundlePinned`
@@ -510,6 +515,9 @@ impl MementoPool {
         for (k, v) in other.bridges_by_symbol {
             self.bridges_by_symbol.entry(k).or_insert(v);
         }
+        for (k, v) in other.bridge_self_bundle_by_symbol {
+            self.bridge_self_bundle_by_symbol.entry(k).or_insert(v);
+        }
         for (k, vs) in other.bundle_members {
             self.bundle_members.entry(k).or_default().extend(vs);
         }
@@ -673,14 +681,19 @@ pub struct CallSite {
     pub bridge_source_layer: String,
     pub bridge_target_layer: String,
     /// Forward pin: the specific `.proof` bundle CID this bridge commits
-    /// to as its consequent. `None` for legacy bridges that pre-date the
-    /// `targetProofCid` field (kept loadable for back-compat; resolve_target
-    /// emits a soft warning since `ConsequentBundlePinned` cannot be
-    /// enforced when the field is absent). For bridges authored against
-    /// the current grammar this MUST be `Some`; see
+    /// to as its consequent (CROSS-bundle target). `None` means the bridge is
+    /// SELF-pinned: its target contract must be a co-member of the bridge's
+    /// own bundle (see `bridge_self_bundle_cid`). Either way the pin is
+    /// enforced; there is no unpinned path. See
     /// `protocol/specs/2026-04-30-ir-formal-grammar.md`
     /// § "Bridge target pinning: the shim-poisoning vector".
     pub bridge_target_proof_cid: Option<String>,
+    /// The `.proof` bundle CID the bridge memento itself was loaded from.
+    /// Used to enforce the self-pinned (`bridge_target_proof_cid == None`)
+    /// case: the target contract must be a co-member of this same bundle.
+    /// `None` only if the bridge memento was not associated with any bundle
+    /// (a hand-built in-memory pool); resolve_target then cannot self-pin.
+    pub bridge_self_bundle_cid: Option<String>,
     pub property_name: String,
     pub property_cid: String,
     pub arg_term: Option<Json>,

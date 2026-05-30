@@ -282,6 +282,12 @@ fn load_catalog_bytes(
             if let Some(sym) = source_symbol {
                 if !sym.is_empty() {
                     pool.bridges_by_symbol.insert(sym.to_string(), env.clone());
+                    // Record the bundle this bridge was loaded from so the
+                    // self-pinned (no targetProofCid) case can be enforced as
+                    // same-bundle co-membership. `derived_full` is this
+                    // `.proof`'s content CID (the bundle CID).
+                    pool.bridge_self_bundle_by_symbol
+                        .insert(sym.to_string(), derived_full.clone());
                 }
             }
         }

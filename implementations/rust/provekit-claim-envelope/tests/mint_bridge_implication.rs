@@ -42,6 +42,7 @@ fn bridge_args() -> MintBridgeArgs {
         ir_return_sort: "Int".into(),
         notes: String::new(),
         signer_seed: seed(),
+        target_proof_cid: None,
     }
 }
 
