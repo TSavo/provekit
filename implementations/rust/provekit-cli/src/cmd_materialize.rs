@@ -27,7 +27,7 @@ use walkdir::WalkDir;
 
 use crate::kit_dispatch::{
     dispatch_materialize_check, dispatch_materialize_source, provides_concepts_for_realize,
-    scope_bringings_for_realize, DispatchRealizeTransport, MaterializeSourceError,
+    DispatchRealizeTransport, MaterializeSourceError,
 };
 use crate::{OutputFlags, EXIT_OK, EXIT_USER_ERROR, EXIT_VERIFY_FAIL};
 
@@ -475,7 +475,7 @@ fn is_safe_relative_path(path: &Path) -> bool {
 fn is_supported_source_file(path: &Path) -> bool {
     matches!(
         path.extension().and_then(|ext| ext.to_str()),
-        Some("ts" | "tsx" | "js" | "jsx" | "py" | "rs" | "java")
+        Some("ts" | "tsx" | "js" | "jsx" | "py" | "java")
     )
 }
 
@@ -502,97 +502,6 @@ fn should_scan_entry(path: &Path) -> bool {
     )
 }
 
-/// #1360 / #1355: Scan a Rust source for `#[provekit::boundary(... library = X ...)]`
-/// attributes and return the unique set of `library` values declared. cmd_materialize
-/// uses these to look up per-target scope_bringings from the realize manifests.
-fn collect_boundary_libraries(raw: &str) -> Vec<String> {
-    let mut libs: Vec<String> = Vec::new();
-    let mut idx = 0;
-    while let Some(start) = raw[idx..].find("#[provekit::boundary") {
-        let abs = idx + start;
-        // Find the closing `)]` (multi-line attribute supported).
-        let Some(close_rel) = raw[abs..].find(")]") else {
-            break;
-        };
-        let attr_text = &raw[abs..abs + close_rel + 2];
-        idx = abs + close_rel + 2;
-        // Extract `library = "..."` from the attribute body.
-        if let Some(lib_pos) = attr_text.find("library = \"") {
-            let after = &attr_text[lib_pos + "library = \"".len()..];
-            if let Some(end) = after.find('"') {
-                let lib = after[..end].to_string();
-                if !libs.iter().any(|existing| existing == &lib) {
-                    libs.push(lib);
-                }
-            }
-        }
-    }
-    libs
-}
-
-/// #1360 / #1355: Splice a list of `use ...;` items into a Rust source.
-/// Inserts after the last existing top-level `use` statement (or at the top
-/// of the file if none). Items that are already present in the source are
-/// skipped (deduplication against existing prelude).
-fn splice_use_items(source: &str, items: &[String]) -> String {
-    if items.is_empty() {
-        return source.to_string();
-    }
-    // Find the last `use ...;` line in the file's prelude (consecutive
-    // use statements at the top, possibly interspersed with comments /
-    // doc strings / blank lines / pub use).
-    let lines: Vec<&str> = source.lines().collect();
-    let mut last_use_idx: Option<usize> = None;
-    for (i, line) in lines.iter().enumerate() {
-        let trimmed = line.trim_start();
-        if trimmed.starts_with("use ") || trimmed.starts_with("pub use ") {
-            last_use_idx = Some(i);
-        }
-    }
-
-    // Deduplicate against existing uses (by exact line match after trim).
-    let existing_uses: std::collections::HashSet<String> = lines
-        .iter()
-        .filter_map(|l| {
-            let t = l.trim();
-            if t.starts_with("use ") || t.starts_with("pub use ") {
-                Some(t.to_string())
-            } else {
-                None
-            }
-        })
-        .collect();
-    let new_items: Vec<&String> = items
-        .iter()
-        .filter(|item| !existing_uses.contains(item.trim()))
-        .collect();
-    if new_items.is_empty() {
-        return source.to_string();
-    }
-
-    let insertion_idx = last_use_idx.map(|i| i + 1).unwrap_or(0);
-    let mut out = Vec::with_capacity(lines.len() + new_items.len());
-    for (i, line) in lines.iter().enumerate() {
-        if i == insertion_idx {
-            for item in &new_items {
-                out.push((*item).clone());
-            }
-        }
-        out.push(line.to_string());
-    }
-    if insertion_idx == lines.len() {
-        for item in &new_items {
-            out.push((*item).clone());
-        }
-    }
-    let mut joined = out.join("\n");
-    // Preserve trailing newline if the input had one.
-    if source.ends_with('\n') && !joined.ends_with('\n') {
-        joined.push('\n');
-    }
-    joined
-}
-
 fn materialize_source_text(
     project_root: &Path,
     target_lang: &str,
@@ -613,21 +522,7 @@ fn materialize_source_text(
     );
     let fragments = kit.take_fragments();
 
-    // #1360 / #1355: collect per-target scope-bringings from each
-    // @boundary site's named library and splice them into the rewritten
-    // file's prelude. Deduplicated against existing `use` items.
-    let libraries = collect_boundary_libraries(raw);
-    let mut bringings: Vec<String> = Vec::new();
-    for lib in &libraries {
-        for bringing in scope_bringings_for_realize(project_root, target_lang, lib) {
-            if !bringings.iter().any(|existing| existing == &bringing) {
-                bringings.push(bringing);
-            }
-        }
-    }
-    let final_source = splice_use_items(&rewritten, &bringings);
-
-    Ok((final_source, receipt, fragments))
+    Ok((rewritten, receipt, fragments))
 }
 
 /// Extract the source-declared package/namespace so the assemble RPC can

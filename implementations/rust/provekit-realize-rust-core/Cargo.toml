@@ -26,5 +26,8 @@ provekit-shim-reqwest-rust = { path = "../../../examples/provekit-shim-reqwest-r
 provekit-shim-rusqlite = { path = "../../../examples/provekit-shim-rusqlite" }
 provekit-shim-serde-json-rust = { path = "../../../examples/provekit-shim-serde-json-rust" }
 provekit-shim-stdio-rust = { path = "../../../examples/provekit-shim-stdio-rust" }
+proc-macro2 = { workspace = true, features = ["span-locations"] }
+quote = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
+syn = { workspace = true }
