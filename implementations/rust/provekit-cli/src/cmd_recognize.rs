@@ -3,11 +3,10 @@
 // `provekit recognize`: kit-owned source-level recognition per protocol §4.2.5.
 //
 // Walks user source files, asks the language kit (via the lift plugin manifest
-// for the requested surface) to match function bodies' identifier-canonical
-// AST templates against supplied `binding_templates`, emits tier-`exact` tags
-// for matches. Bindings come from one or more `.proof` envelopes the caller
-// passes via `--binding`; each envelope is loaded and its
-// `library-sugar-binding-entry` records become recognize-side templates.
+// for the requested surface) to recognize native source against kit-owned sugar
+// templates, and emits tier-`exact` tags for matches. The CLI never reads
+// `.proof` files or manufactures recognizer templates; proof/package/language
+// resolution belongs to the kit behind the RPC seam.
 //
 // This is the Tron-named verb: each kit's recognizer walks the grid for
 // shapes that belong to its system. The substrate stays language-blind; only
@@ -26,7 +25,6 @@ use libprovekit::core::emit_obligation::{
     build_bridge_body, build_implication_contract_body, member_envelope_canonical,
 };
 use owo_colors::OwoColorize;
-use provekit_proof_envelope::cbor_decode::{decode as cbor_decode, CborValue};
 use provekit_proof_envelope::{
     build_proof_envelope, ed25519_pubkey_string, Ed25519Seed, ProofEnvelopeInput,
 };
@@ -52,10 +50,6 @@ pub struct RecognizeArgs {
     /// Repeatable. e.g. `--source src/lib.rs --source src/ingest.rs`.
     #[arg(long = "source")]
     pub source_paths: Vec<String>,
-    /// Paths to `.proof` envelopes that carry the binding templates.
-    /// Repeatable; bindings from all envelopes union into one pool.
-    #[arg(long = "binding")]
-    pub bindings: Vec<PathBuf>,
     /// Lift surface name (default `rust-bind`). Resolves to
     /// `<project>/.provekit/lift/<surface>/manifest.toml`.
     #[arg(long)]
@@ -102,29 +96,11 @@ pub fn run(args: RecognizeArgs) -> u8 {
         }
     };
 
-    // Build the binding_templates pool by loading each .proof envelope and
-    // extracting its library-sugar-binding-entry records.
-    let mut binding_templates: Vec<Value> = Vec::new();
-    for path in &args.bindings {
-        match load_binding_templates_from_proof(path) {
-            Ok(mut entries) => binding_templates.append(&mut entries),
-            Err(e) => {
-                eprintln!(
-                    "{}: load binding `{}`: {e}",
-                    "error".red().bold(),
-                    path.display()
-                );
-                return EXIT_USER_ERROR;
-            }
-        }
-    }
-
     if !args.out.json && !args.out.quiet {
         eprintln!(
-            "{}: surface=`{}` bindings={} sources={}",
+            "{}: surface=`{}` sources={}",
             "dispatch".green().bold(),
             surface,
-            binding_templates.len(),
             args.source_paths.len(),
         );
     }
@@ -137,7 +113,6 @@ pub fn run(args: RecognizeArgs) -> u8 {
         "params": {
             "project_root": project_root.to_string_lossy(),
             "source_paths": args.source_paths,
-            "binding_templates": binding_templates,
         }
     });
 
@@ -304,8 +279,7 @@ fn recognize_implication_body(tag: &Value) -> Option<Value> {
 ///
 /// Bridge target resolution order:
 ///   1. The tag's contract_cid if it cites a contract that exists in
-///      the loaded shim .proof's (via the ctor-name index in the
-///      binding loader). This is the production linkage when shims
+///      a kit-resolved proof source. This is the production linkage when shims
 ///      mint contracts covering their sugar functions.
 ///   2. Fallback to the recognize-emitted SIBLING contract (the one
 ///      this same call just minted). Self-resolution keeps the loop
@@ -348,9 +322,8 @@ fn emit_bridge_envelope(
             Some(s) if !s.is_empty() => s,
             _ => continue,
         };
-        // Resolve target: shim's contract_cid (set by the binding loader
-        // via ctor-name index) if it differs from the sugar entry's own
-        // signature_shape_cid fallback; otherwise the sibling contract.
+        // Resolve target: shim/library contract_cid when the kit supplied one;
+        // otherwise the sibling contract minted by this recognize run.
         let target_cid = tag
             .get("contract_cid")
             .and_then(|v| v.as_str())
@@ -554,258 +527,6 @@ fn invoke_plugin(
     })
 }
 
-/// Load a `.proof` envelope and extract its sugar-binding entries into the
-/// shape the recognize RPC expects.
-fn load_binding_templates_from_proof(path: &Path) -> Result<Vec<Value>, String> {
-    let bytes = std::fs::read(path).map_err(|e| format!("read .proof: {e}"))?;
-    // The .proof envelope is CBOR-encoded (proof-envelope canonical wire
-    // form per the trinity envelope spec). Decode + convert to JSON for the
-    // member-walking helpers below.
-    let env = if bytes.first().map(|b| *b as char) == Some('{') {
-        // Some test fixtures and legacy tools emit JSON-encoded .proof; tolerate.
-        serde_json::from_slice::<Value>(&bytes)
-            .map_err(|e| format!("parse .proof (JSON fallback): {e}"))?
-    } else {
-        let cbor = cbor_decode(&bytes).map_err(|e| format!("decode .proof CBOR: {e}"))?;
-        cbor_to_json(&cbor)
-    };
-
-    // First pass: walk all members, build an index from ctor function
-    // names to the CIDs of contract mementos whose formulas reference
-    // that ctor. The linkage between a sugar binding and its contract
-    // memento is BY CTOR NAME (the shim mints contract witnesses whose
-    // inv/pre/post formulas contain `ctor(name="<source_function_name>")`
-    // terms, e.g. `unwrap(json_parse(s)) = original`); the bridge then
-    // resolves to that contract memento and the discharger composes.
-    let candidates: Vec<(String, Value)> = collect_member_records(&env);
-    let mut contract_by_function: std::collections::HashMap<String, String> =
-        std::collections::HashMap::new();
-    for (cid_key, raw) in &candidates {
-        let record = unwrap_envelope(raw);
-        // Contract mementos can be wrapped in either an "evidence" shape
-        // (body / kind both nested) or have `kind` at the top of `header`
-        // (the layered v1.2 envelope shape). Try both.
-        let is_contract = record
-            .get("kind")
-            .and_then(|v| v.as_str())
-            .map(|k| k == "contract")
-            .unwrap_or_else(|| {
-                record.pointer("/header/kind").and_then(|v| v.as_str()) == Some("contract")
-            });
-        if !is_contract {
-            continue;
-        }
-        if cid_key.is_empty() {
-            continue;
-        }
-        // Walk every formula slot looking for ctor names. The shim's
-        // contracts live under `header` in the layered shape.
-        let formula_root = record.get("header").unwrap_or(record);
-        for slot in ["pre", "post", "inv"] {
-            if let Some(f) = formula_root.get(slot) {
-                collect_ctor_names(f, &mut |name| {
-                    contract_by_function
-                        .entry(name.to_string())
-                        .or_insert_with(|| cid_key.clone());
-                });
-            }
-        }
-    }
-
-    // Second pass: emit sugar binding templates with contract_cid
-    // resolved via the function-name index.
-    let mut out: Vec<Value> = Vec::new();
-    for (cid_key, raw) in &candidates {
-        let record = unwrap_envelope(raw);
-        if record.get("kind").and_then(|v| v.as_str()) != Some("library-sugar-binding-entry") {
-            continue;
-        }
-        let body = match record.get("body_source") {
-            Some(b) => b,
-            None => continue,
-        };
-        let template = match body.get("ast_template") {
-            Some(t) if !t.is_null() => t.clone(),
-            _ => continue,
-        };
-        let template_cid = body.get("template_cid").cloned().unwrap_or(Value::Null);
-        let param_names = body.get("param_names").cloned().unwrap_or(Value::Null);
-        let function_name = record
-            .get("source_function_name")
-            .and_then(|v| v.as_str())
-            .unwrap_or("")
-            .to_string();
-        // Resolve contract_cid: only an actual contract memento counts.
-        //   1. explicit contract_cid field on the sugar entry (rare)
-        //   2. matching contract memento via ctor-name index (the
-        //      production linkage the shim mint actually uses).
-        // If neither is found, contract_cid stays NULL — the bridge
-        // emission then falls back to recognize's own sibling contract
-        // (the implication memento it mints alongside each bridge).
-        // This is the substrate-honest path: a bridge resolves to a
-        // contract memento and nothing else; signature_shape_cid and
-        // sugar-entry-CID are neither.
-        let contract_cid = record
-            .get("contract_cid")
-            .filter(|v| !v.is_null())
-            .cloned()
-            .or_else(|| {
-                contract_by_function
-                    .get(&function_name)
-                    .map(|c| Value::String(c.clone()))
-            })
-            .unwrap_or(Value::Null);
-        let _ = cid_key; // intentionally unused: sugar entry CID is not a contract
-        let entry = json!({
-            "concept_name": record.get("concept_name").cloned().unwrap_or(Value::Null),
-            "library_tag": record.get("target_library_tag").cloned().unwrap_or(Value::Null),
-            "family": record.get("family").cloned().unwrap_or(Value::Null),
-            "ast_template": template,
-            "template_cid": template_cid,
-            "param_names": param_names,
-            "contract_cid": contract_cid,
-            "source_function_name": function_name,
-        });
-        out.push(entry);
-    }
-    Ok(out)
-}
-
-/// Recursively walk a formula/term tree invoking `on_name` for every
-/// ctor term encountered. The discharger looks for ctor terms whose
-/// name matches a bridge sourceSymbol to enumerate callsites; here we
-/// use the same walk to find which contract memento "is about" a given
-/// function (because its formulas reference that function's ctor).
-fn collect_ctor_names<F: FnMut(&str)>(node: &Value, on_name: &mut F) {
-    if !node.is_object() {
-        return;
-    }
-    if node.get("kind").and_then(|v| v.as_str()) == Some("ctor") {
-        if let Some(name) = node.get("name").and_then(|v| v.as_str()) {
-            on_name(name);
-        }
-    }
-    if let Some(args) = node.get("args").and_then(|v| v.as_array()) {
-        for a in args {
-            collect_ctor_names(a, on_name);
-        }
-    }
-    if let Some(ops) = node.get("operands").and_then(|v| v.as_array()) {
-        for o in ops {
-            collect_ctor_names(o, on_name);
-        }
-    }
-    if let Some(body) = node.get("body") {
-        collect_ctor_names(body, on_name);
-    }
-}
-
-/// Peel the proof-envelope wrapping (`{body, header, schemaVersion}`) and
-/// return a reference to the inner decl. If the value doesn't look like an
-/// envelope, return it as-is. The recognize-side never reads header fields
-/// — those are signature/integrity concerns owned by the verifier.
-fn unwrap_envelope(v: &Value) -> &Value {
-    if let Some(body) = v.get("body") {
-        if v.get("schemaVersion").is_some() || v.get("header").is_some() {
-            return body;
-        }
-    }
-    v
-}
-
-/// Convert a CBOR value into serde_json::Value. The trinity envelope's
-/// catalog + members are pure data shapes (no floats, no negative ints —
-/// those are rejected at decode time per the deterministic encoding
-/// rules), so the mapping is clean: Uint→Number, Tstr→String, Array→Array,
-/// Map→Object. Bstr is base64-encoded into a String so members carrying
-/// embedded byte payloads survive the round trip (rare in sugar binding
-/// entries, which are text-shaped).
-fn cbor_to_json(v: &CborValue) -> Value {
-    match v {
-        CborValue::Uint(n) => json!(*n),
-        CborValue::Tstr(s) => Value::String(s.clone()),
-        CborValue::Bstr(b) => {
-            // Sugar-binding entries don't typically carry bstr, but cover
-            // the case: hex-encode so the JSON consumer can read it. This
-            // is asymmetric with the canonical decoder (which keeps bytes)
-            // but the recognize side only reads tstr/array/map shapes anyway.
-            let hex: String = b.iter().map(|byte| format!("{:02x}", byte)).collect();
-            Value::String(hex)
-        }
-        CborValue::Array(items) => Value::Array(items.iter().map(cbor_to_json).collect()),
-        CborValue::Map(m) => Value::Object(
-            m.iter()
-                .map(|(k, v)| (k.clone(), cbor_to_json(v)))
-                .collect(),
-        ),
-    }
-}
-
-/// Collect every JSON object that could be a member record. Walks the
-/// envelope at the canonical roots: `members` (proof-envelope shape) and
-/// `ir` (lift response shape, always an array). Best-effort; harmless when
-/// a key is absent.
-///
-/// Crucial detail about the .proof catalog layout: each member's value
-/// is the CBOR-canonical bytes of the member envelope, stored as a Bstr.
-/// We re-decode those bytes here so callers see the structured envelope
-/// rather than an opaque hex blob. (The hex form is what cbor_to_json
-/// would emit for a Bstr; we want the structured form instead.)
-fn collect_member_records(env: &Value) -> Vec<(String, Value)> {
-    let mut out: Vec<(String, Value)> = Vec::new();
-    if let Some(members) = env.get("members") {
-        match members {
-            Value::Array(arr) => {
-                for v in arr {
-                    out.push((String::new(), decode_embedded_member_if_hex(v)));
-                }
-            }
-            Value::Object(map) => {
-                for (cid, v) in map {
-                    out.push((cid.clone(), decode_embedded_member_if_hex(v)));
-                }
-            }
-            _ => {}
-        }
-    }
-    if let Some(arr) = env.get("ir").and_then(|v| v.as_array()) {
-        for v in arr {
-            out.push((String::new(), v.clone()));
-        }
-    }
-    out
-}
-
-/// If `v` is a hex-string (a Bstr round-tripped through cbor_to_json),
-/// decode the hex back to bytes and parse them as JCS-canonical JSON to
-/// recover the structured envelope. The proof-envelope catalog stores
-/// each member as opaque JCS-JSON bytes keyed by CID (per cmd_mint's
-/// `mint_library_sugar_binding_entry` -> `encode_jcs(envelope)` flow);
-/// this peels that wrapping for the recognize-side reader.
-fn decode_embedded_member_if_hex(v: &Value) -> Value {
-    let s = match v.as_str() {
-        Some(s) => s,
-        None => return v.clone(),
-    };
-    // Hex if every char is ASCII hex AND length is even.
-    if s.len() % 2 != 0 || !s.chars().all(|c| c.is_ascii_hexdigit()) {
-        return v.clone();
-    }
-    let bytes: Result<Vec<u8>, _> = (0..s.len())
-        .step_by(2)
-        .map(|i| u8::from_str_radix(&s[i..i + 2], 16))
-        .collect();
-    let bytes = match bytes {
-        Ok(b) => b,
-        Err(_) => return v.clone(),
-    };
-    // The embedded bytes are JCS-canonical JSON. Parse them as such.
-    match serde_json::from_slice::<Value>(&bytes) {
-        Ok(j) => j,
-        Err(_) => v.clone(),
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -834,110 +555,5 @@ working_dir = "."
         assert_eq!(m.command[1].to_string_lossy(), "--rpc");
         assert_eq!(m.working_dir, Some(PathBuf::from(".")));
         std::fs::remove_dir_all(&tmp).ok();
-    }
-
-    #[test]
-    fn load_binding_extracts_sugar_entries_from_envelope() {
-        let env = json!({
-            "members": [
-                {
-                    "kind": "library-sugar-binding-entry",
-                    "concept_name": "concept:json-parse",
-                    "target_library_tag": "provekit-shim-serde-json-rust",
-                    "family": "concept:family:json",
-                    "body_source": {
-                        "ast_template": {"kind":"block","stmts":[]},
-                        "template_cid": "blake3-512:abc",
-                        "param_names": ["s"],
-                    },
-                    "contract_cid": "blake3-512:def"
-                },
-                { "kind": "something-else" }
-            ]
-        });
-        let tmp = std::env::temp_dir().join(format!(
-            "provekit-recognize-test-binding-{}",
-            std::process::id()
-        ));
-        std::fs::write(&tmp, env.to_string()).unwrap();
-        let entries = load_binding_templates_from_proof(&tmp).expect("load");
-        assert_eq!(entries.len(), 1);
-        assert_eq!(entries[0]["concept_name"], "concept:json-parse");
-        assert_eq!(entries[0]["library_tag"], "provekit-shim-serde-json-rust");
-        assert_eq!(entries[0]["template_cid"], "blake3-512:abc");
-        // explicit contract_cid honored when present
-        assert_eq!(entries[0]["contract_cid"], "blake3-512:def");
-        std::fs::remove_file(&tmp).ok();
-    }
-
-    #[test]
-    fn load_binding_leaves_contract_cid_null_when_no_ctor_match() {
-        // Sugar entries from real shims don't carry an explicit
-        // contract_cid. The loader resolves contract_cid via the
-        // ctor-name index across the envelope's contract mementos. If
-        // no contract memento references the sugar's source_function_name
-        // via a ctor term, contract_cid stays NULL — the
-        // emit_bridge_envelope path then falls back to the sibling
-        // implication contract (substrate-honest: only an actual
-        // contract memento counts; signature_shape_cid is not a contract).
-        let env = json!({
-            "members": [{
-                "kind": "library-sugar-binding-entry",
-                "concept_name": "concept:json-parse",
-                "target_library_tag": "shim",
-                "source_function_name": "json_parse",
-                "signature_shape_cid": "blake3-512:sig",
-                "body_source": {
-                    "ast_template": {"kind": "block"},
-                    "template_cid": "blake3-512:tpl",
-                    "param_names": ["s"]
-                }
-            }]
-        });
-        let tmp = std::env::temp_dir().join(format!(
-            "provekit-recognize-test-nullfallback-{}",
-            std::process::id()
-        ));
-        std::fs::write(&tmp, env.to_string()).unwrap();
-        let entries = load_binding_templates_from_proof(&tmp).expect("load");
-        assert_eq!(entries.len(), 1);
-        // contract_cid stays null — no contract memento matched.
-        // signature_shape_cid is NOT a contract memento and must not
-        // bleed into the bridge target field.
-        assert!(
-            entries[0]["contract_cid"].is_null(),
-            "contract_cid must be null when no ctor-name match: {:?}",
-            entries[0]["contract_cid"]
-        );
-        std::fs::remove_file(&tmp).ok();
-    }
-
-    #[test]
-    fn load_binding_skips_entries_without_ast_template() {
-        // Backward-compat: sugar entries minted before ast_template existed
-        // should be skipped, not error out.
-        let env = json!({
-            "members": [
-                {
-                    "kind": "library-sugar-binding-entry",
-                    "concept_name": "concept:json-parse",
-                    "target_library_tag": "old-shim",
-                    "body_source": {
-                        "body_text": "old body without ast_template",
-                    }
-                }
-            ]
-        });
-        let tmp = std::env::temp_dir().join(format!(
-            "provekit-recognize-test-legacy-{}",
-            std::process::id()
-        ));
-        std::fs::write(&tmp, env.to_string()).unwrap();
-        let entries = load_binding_templates_from_proof(&tmp).expect("load");
-        assert!(
-            entries.is_empty(),
-            "legacy entries without ast_template skipped"
-        );
-        std::fs::remove_file(&tmp).ok();
     }
 }
