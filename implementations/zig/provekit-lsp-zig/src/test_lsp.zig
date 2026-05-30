@@ -141,7 +141,7 @@ test "initialize response shape" {
     const id: []const u8 = "1";
     const response = try std.fmt.allocPrint(
         alloc,
-        "{{\"jsonrpc\":\"2.0\",\"id\":{s},\"result\":{{\"name\":\"provekit-lsp-zig\",\"version\":\"0.1.0\",\"capabilities\":[\"parse\"]}}}}",
+        "{{\"jsonrpc\":\"2.0\",\"id\":{s},\"result\":{{\"name\":\"provekit-lsp-zig\",\"version\":\"0.1.0\",\"protocol_version\":\"provekit-lsp-shared/1\",\"kit_id\":\"zig\",\"protocol_catalog_cid\":\"blake3-512:0e3905c2a7a098cd538b9669428a7dffd2b84ba8ccf8fde3724fe2ab61fd3fbc1e1a616a6b20b6817464cdc50c466b5497d4ac2e2dc34c3c15f05535b463643c\",\"capabilities\":{{\"source_surfaces\":[\"zig-source\"],\"entry_kinds\":[\"bind-lift-entry\",\"call-edge\"],\"diagnostic_codes\":[\"provekit.lsp.parse_error\",\"provekit.lsp.lift_gap\",\"provekit.lsp.implication_failed\"],\"status_kinds\":[\"materialize\",\"emit\",\"check\",\"prove\"]}}}}}}",
         .{id},
     );
     defer alloc.free(response);
@@ -149,7 +149,10 @@ test "initialize response shape" {
     // Verify canonical fields are present.
     try std.testing.expect(std.mem.indexOf(u8, response, "\"name\":\"provekit-lsp-zig\"") != null);
     try std.testing.expect(std.mem.indexOf(u8, response, "\"version\":\"0.1.0\"") != null);
-    try std.testing.expect(std.mem.indexOf(u8, response, "\"capabilities\":[\"parse\"]") != null);
+    try std.testing.expect(std.mem.indexOf(u8, response, "\"protocol_version\":\"provekit-lsp-shared/1\"") != null);
+    try std.testing.expect(std.mem.indexOf(u8, response, "\"kit_id\":\"zig\"") != null);
+    try std.testing.expect(std.mem.indexOf(u8, response, "\"source_surfaces\":[\"zig-source\"]") != null);
+    try std.testing.expect(std.mem.indexOf(u8, response, "\"provekit.lsp.implication_failed\"") != null);
 }
 
 test "parse response includes declarations callEdges warnings" {
