@@ -381,6 +381,21 @@ fn command_key(command: &ResolvedCommand) -> String {
     format!("{:?}\u{0}{:?}", command.argv, command.working_dir)
 }
 
+fn rpc_error_is_method_not_supported(error: &Value, method: &str) -> bool {
+    let code = error.get("code").and_then(Value::as_i64);
+    if code == Some(-32601) {
+        return true;
+    }
+    if code != Some(-32602) {
+        return false;
+    }
+    let Some(message) = error.get("message").and_then(Value::as_str) else {
+        return false;
+    };
+    let message = message.to_ascii_lowercase();
+    message.contains("unknown method") && message.contains(method)
+}
+
 fn dependency_proofs_for_command(
     workspace_root: &Path,
     cmd_spec: &ResolvedCommand,
@@ -458,7 +473,7 @@ fn dependency_proofs_for_command(
         )
     })?;
     if let Some(error) = response.get("error") {
-        if error.get("code").and_then(Value::as_i64) == Some(-32601) {
+        if rpc_error_is_method_not_supported(error, "provekit.plugin.resolve_dependency_proofs") {
             record_dependency_proof_diagnostic(format!(
                 "dependency proof resolver {:?} does not implement provekit.plugin.resolve_dependency_proofs",
                 cmd_spec.argv
@@ -1990,8 +2005,7 @@ fn invoke_materialize_source(
         ))
     })?;
     if let Some(err) = v.get("error") {
-        let code = err.get("code").and_then(Value::as_i64).unwrap_or(0);
-        if code == -32601 {
+        if rpc_error_is_method_not_supported(err, "provekit.plugin.materialize_source") {
             return Err(MaterializeSourceError::MethodNotSupported);
         }
         return Err(MaterializeSourceError::Failed(format!(
@@ -2135,10 +2149,10 @@ pub fn dispatch_assemble(
     let v: Value = serde_json::from_str(line.trim())
         .map_err(|e| AssembleError::Failed(format!("assemble response not valid JSON: {e}")))?;
     if let Some(err) = v.get("error") {
-        // -32601 is JSON-RPC's "method not found" — legacy kits without
-        // the assemble RPC return this. Caller falls back to legacy concat.
-        let code = err.get("code").and_then(Value::as_i64).unwrap_or(0);
-        if code == -32601 {
+        // -32601 is JSON-RPC's "method not found"; some legacy plugins
+        // returned -32602 with an "unknown method" message for the same
+        // optional-method case. Caller falls back to legacy concat.
+        if rpc_error_is_method_not_supported(err, "provekit.plugin.assemble") {
             return Err(AssembleError::MethodNotSupported);
         }
         return Err(AssembleError::Failed(format!("assemble kit error: {err}")));
@@ -2431,6 +2445,22 @@ mod tests {
     // -----------------------------------------------------------------
     // #1359 / #1355: realize manifest gains family + library_version
     // -----------------------------------------------------------------
+
+    #[test]
+    fn optional_rpc_method_refusal_accepts_legacy_unknown_method_error() {
+        assert!(rpc_error_is_method_not_supported(
+            &json!({"code": -32601, "message": "method not found"}),
+            "provekit.plugin.resolve_dependency_proofs"
+        ));
+        assert!(rpc_error_is_method_not_supported(
+            &json!({"code": -32602, "message": "unknown method: provekit.plugin.resolve_dependency_proofs"}),
+            "provekit.plugin.resolve_dependency_proofs"
+        ));
+        assert!(!rpc_error_is_method_not_supported(
+            &json!({"code": -32602, "message": "invalid params"}),
+            "provekit.plugin.resolve_dependency_proofs"
+        ));
+    }
 
     // -----------------------------------------------------------------
     // #1364 / #1355: provides_concepts declaration on realize manifests

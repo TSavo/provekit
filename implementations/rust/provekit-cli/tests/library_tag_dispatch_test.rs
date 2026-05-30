@@ -64,6 +64,7 @@ fn install_manifest(root: &Path, surface: &str, module: &str, library_tag: &str)
         python_bin().replace('\\', "\\\\").replace('"', "\\\""),
     );
     fs::write(manifest, manifest_text).expect("write manifest");
+    register_realize_surface(root, surface);
 }
 
 fn http_request_realize_request() -> RealizeRequest {
@@ -123,6 +124,16 @@ fn install_node_manifest(root: &Path, surface: &str, script: &Path, library_tag:
         script,
     );
     fs::write(manifest, manifest_text).expect("write manifest");
+    register_realize_surface(root, surface);
+}
+
+fn register_realize_surface(root: &Path, surface: &str) {
+    let config = root.join(".provekit").join("config.toml");
+    let mut text = fs::read_to_string(&config).unwrap_or_default();
+    text.push_str(&format!(
+        "[[plugins]]\nname = \"{surface}-realize\"\nkind = \"realize\"\nsurface = \"{surface}\"\n\n"
+    ));
+    fs::write(config, text).expect("write config");
 }
 
 fn sql_query_realize_request() -> RealizeRequest {

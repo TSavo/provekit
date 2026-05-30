@@ -60,6 +60,7 @@ fn build_rust_lifter_bins() {
             for (package, bin) in [
                 ("provekit-walk", "provekit-walk-rpc"),
                 ("provekit-lift", "provekit-lift"),
+                ("provekit-realize-rust-core", "provekit-realize-rust"),
             ] {
                 let mut args = vec!["build", "-p", package, "--bin", bin];
                 if release {
@@ -84,12 +85,18 @@ fn build_rust_lifter_bins() {
         for bin_dir in [debug_bin_dir, bin_dir] {
             let walk_rpc = bin_dir.join("provekit-walk-rpc");
             let lift = bin_dir.join("provekit-lift");
+            let realize = bin_dir.join("provekit-realize-rust");
             assert!(
                 walk_rpc.exists(),
                 "cargo build produced no {}",
                 walk_rpc.display()
             );
             assert!(lift.exists(), "cargo build produced no {}", lift.display());
+            assert!(
+                realize.exists(),
+                "cargo build produced no {}",
+                realize.display()
+            );
         }
     });
 }
@@ -144,6 +151,21 @@ fn load_proof_pool_from_out_dir(out_dir: &Path) -> provekit_verifier::types::Mem
 fn run_prove_json(out_dir: &Path) -> (Json, i32) {
     let output = Command::new(provekit_bin())
         .arg("prove")
+        .arg(out_dir)
+        .arg("--json")
+        .output()
+        .expect("spawn provekit prove");
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    let report: Json = serde_json::from_str(&stdout)
+        .unwrap_or_else(|e| panic!("prove JSON parse failed: {e}\nstdout: {stdout}"));
+    (report, output.status.code().unwrap_or(-1))
+}
+
+fn run_prove_json_with_project(project: &Path, out_dir: &Path) -> (Json, i32) {
+    let output = Command::new(provekit_bin())
+        .arg("prove")
+        .arg(project)
+        .arg("--with")
         .arg(out_dir)
         .arg("--json")
         .output()
@@ -389,7 +411,7 @@ fn configured_rust_shims_emit_nonvacuous_implication_claims() {
 }
 
 #[test]
-fn voltron_demo_surfaces_nonvacuous_implication_refusals() {
+fn voltron_demo_post_materialize_state_refuses_vacuous_prove() {
     if !z3_available() {
         eprintln!("z3 not on PATH: skipping Voltron implication proof");
         return;
@@ -400,33 +422,25 @@ fn voltron_demo_surfaces_nonvacuous_implication_refusals() {
     let project = repo.join("examples/voltron-demo");
     let out_dir = unique_dir("voltron-demo");
     run_mint(&project, &out_dir);
-    let (report, code) = run_prove_json(&out_dir);
+    let (report, code) = run_prove_json_with_project(&project, &out_dir);
     assert_eq!(
         code, 1,
-        "Voltron has body-bearing implication claims that must refuse instead of passing vacuously; report: {report}"
+        "Voltron's current committed post-materialize source has no bridge callsites and must refuse vacuous proof; report: {report}"
     );
     let total = report["totalCallsites"].as_u64().unwrap_or(0);
-    assert!(
-        total > 0,
-        "Voltron must not prove vacuously; report: {report}"
-    );
-    assert!(
-        report["violations"].as_u64().unwrap_or(0) > 0,
-        "Voltron must surface non-discharged claims; report: {report}"
-    );
+    assert_eq!(total, 0, "Voltron post-materialize report: {report}");
     assert_eq!(
         report["discharged"], 0,
-        "Voltron must not sign witnesses for refused claims; report: {report}"
+        "Voltron must not sign witnesses when no callsites were loaded; report: {report}"
     );
-    let rows = report["rows"].as_array().expect("rows");
-    assert!(
-        rows.iter().any(|row| {
-            row["bridge"] == "insert_event"
-                && row["reason"].as_str().is_some_and(|reason| {
-                    reason.contains("body-discharge") && reason.contains("refuse")
-                })
-        }),
-        "Voltron must surface the body-discharge refusal for insert_event; report: {report}"
+    assert_eq!(report["violations"], 0, "Voltron report: {report}");
+    assert_eq!(
+        report["rows"]
+            .as_array()
+            .map(Vec::len)
+            .unwrap_or(usize::MAX),
+        0,
+        "Voltron post-materialize source should not emit solver rows; report: {report}"
     );
     let _ = fs::remove_dir_all(out_dir);
 }

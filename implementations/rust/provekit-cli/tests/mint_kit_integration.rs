@@ -1342,7 +1342,7 @@ fn zig_kit_contract_set_cid_is_pinned_to_self_contracts_canonical() {
 ///
 /// UPDATE this constant after first successful `make mint-php` run.
 const PHP_KIT_CANONICAL_CONTRACT_SET_CID: &str =
-    "blake3-512:385e617be25516099e61118179fbb200967093448b85629f1cb5b8966dfcc06244cfcb9f59315780114fee7c9c415fcd1465fc8e85e8141d59f6b44a2df4a262";
+    "blake3-512:b15a63b9a56ec19be67bf71ee58969e82a24a5507484e51a137362d0f2e00fe4f406980948a7c3018e463e75b9341815275a29a51273adb512ee4f291351ddf5";
 
 #[test]
 #[serial(mint_kit_files)]
