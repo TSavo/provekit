@@ -305,7 +305,7 @@ function caller(cond: boolean) {
     expect(parseResp).toBeDefined();
   });
 
-  it("callsite violates pre: diagnostic with code implication-failed", () => {
+  it("callsite violates pre: diagnostic with code provekit.lsp.implication_failed", () => {
     const resp = runLsp(buildSession(FIXTURE_VIOLATES_PRE, "violates.ts"));
     const parseResp = resp.find((r) => r.id === 2);
     expect(parseResp).toBeDefined();

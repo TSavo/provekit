@@ -26,7 +26,7 @@ function assert_same(mixed $expected, mixed $actual, string $message): void
 function check_positive_entry(): BaselineEntry
 {
     return BaselineEntry::new(
-        'checkPositive',
+        '\\checkPositive',
         ForwardPost::known(['x > 0']),
         ForwardPost::known(['returns true']),
     );
@@ -43,7 +43,7 @@ function consume_return_entry(): BaselineEntry
 
 function call_check_positive(): ForwardStmt
 {
-    return ForwardStmt::call('checkPositive', LspRange::singleLine(4, 12, 25));
+    return ForwardStmt::call('\\checkPositive', LspRange::singleLine(4, 12, 25));
 }
 
 function call_consume_return(): ForwardStmt
@@ -72,10 +72,10 @@ function testCallsiteViolatesPreDiagnosticEmitted(): void
 
     assert_same(1, count($diagnostics), 'violating callsite should emit one diagnostic');
     $diagnostic = $diagnostics[0]->toArray();
-    assert_same('implication-failed', $diagnostic['code'], 'diagnostic code');
+    assert_same('provekit.lsp.implication_failed', $diagnostic['code'], 'diagnostic code');
     assert_same('provekit', $diagnostic['source'], 'diagnostic source');
     assert_same(1, $diagnostic['severity'], 'diagnostic severity');
-    assert_same('checkPositive', $diagnostic['data']['callee'], 'diagnostic callee');
+    assert_same('\\checkPositive', $diagnostic['data']['callee'], 'diagnostic callee');
     assert_same(['x > 0'], $diagnostic['data']['missing_conjuncts'], 'missing conjuncts');
     assert_true(str_starts_with($diagnostic['data']['current_post_cid'], 'blake3-512:'), 'current_post_cid prefix');
     assert_true(str_starts_with($diagnostic['data']['baseline_index_cid'], 'blake3-512:'), 'baseline_index_cid prefix');
@@ -104,7 +104,7 @@ function testTopFallbackSuppressesFalsePositive(): void
         call_check_positive(),
     ]);
 
-    assert_same(0, count($diagnostics), 'top fallback should suppress implication-failed diagnostics');
+    assert_same(0, count($diagnostics), 'top fallback should suppress provekit.lsp.implication_failed diagnostics');
 }
 
 function testFailedPreconditionDoesNotPropagateCalleePostcondition(): void
@@ -117,7 +117,7 @@ function testFailedPreconditionDoesNotPropagateCalleePostcondition(): void
     ]);
 
     assert_same(2, count($diagnostics), 'failed precondition should not add the callee postcondition');
-    assert_same('checkPositive', $diagnostics[0]->toArray()['data']['callee'], 'first diagnostic callee');
+    assert_same('\\checkPositive', $diagnostics[0]->toArray()['data']['callee'], 'first diagnostic callee');
     assert_same('consumeReturn', $diagnostics[1]->toArray()['data']['callee'], 'second diagnostic callee');
 }
 
@@ -243,6 +243,38 @@ PHP;
     assert_same(1, count($diagnostics), 'whitespace before the call paren should still lower checkPositive callsites');
 }
 
+function testLeadingBackslashGlobalCallUsesPhpCanonicalCallee(): void
+{
+    $source = <<<'PHP'
+<?php
+function demo(): void {
+    \checkPositive(-1);
+}
+PHP;
+
+    $diagnostics = ForwardPropagator::floorV1SeedIndex()
+        ->emitDiagnostics(ForwardPropagator::lowerFloorSource($source));
+
+    assert_same(1, count($diagnostics), 'leading-backslash global call should lower to one callsite');
+    assert_same('\\checkPositive', $diagnostics[0]->toArray()['data']['callee'], 'canonical PHP callee');
+    assert_same(4, $diagnostics[0]->toArray()['range']['start']['character'], 'range should start at leading backslash');
+}
+
+function testNamespacedFunctionCallDoesNotResolveAsGlobalSeed(): void
+{
+    $source = <<<'PHP'
+<?php
+function demo(): void {
+    Foo\checkPositive(-1);
+}
+PHP;
+
+    $diagnostics = ForwardPropagator::floorV1SeedIndex()
+        ->emitDiagnostics(ForwardPropagator::lowerFloorSource($source));
+
+    assert_same(0, count($diagnostics), 'namespaced calls should not resolve as global checkPositive');
+}
+
 function testCommonPhpControlBlocksUseTopFallback(): void
 {
     $source = <<<'PHP'
@@ -307,9 +339,48 @@ function testParseFloorFixtureEmitsForwardPropagationDiagnostic(): void
     $diagnostics = $response['result']['diagnostics'] ?? null;
     assert_true(is_array($diagnostics), 'diagnostics field should be an array');
     assert_same(1, count($diagnostics), 'parse fixture should emit one diagnostic');
-    assert_same('implication-failed', $diagnostics[0]['code'], 'parse diagnostic code');
+    assert_same('provekit.lsp.implication_failed', $diagnostics[0]['code'], 'parse diagnostic code');
     assert_same('provekit.lsp.implication_failed', $diagnostics[0]['data']['kind'], 'parse diagnostic kind');
-    assert_same('checkPositive', $diagnostics[0]['data']['callee'], 'parse diagnostic callee');
+    assert_same('\\checkPositive', $diagnostics[0]['data']['callee'], 'parse diagnostic callee');
+}
+
+function testLiftFloorFixtureEmitsForwardPropagationDiagnostic(): void
+{
+    $root = realpath(__DIR__ . '/../../../..');
+    assert_true($root !== false, 'repo root must resolve');
+
+    $cmd = ['php', __DIR__ . '/../src/lspd.php'];
+    $proc = proc_open(
+        $cmd,
+        [0 => ['pipe', 'r'], 1 => ['pipe', 'w'], 2 => ['pipe', 'w']],
+        $pipes,
+        $root,
+    );
+    assert_true(is_resource($proc), 'lspd process should start');
+
+    $request = json_encode([
+        'jsonrpc' => '2.0',
+        'id' => 1,
+        'method' => 'lift',
+        'params' => ['workspace_root' => $root, 'source_paths' => ['tests/lsp/floor-fixture/php.php']],
+    ], JSON_THROW_ON_ERROR);
+    fwrite($pipes[0], $request . "\n");
+    fclose($pipes[0]);
+
+    $line = fgets($pipes[1]);
+    fclose($pipes[1]);
+    $stderr = stream_get_contents($pipes[2]);
+    fclose($pipes[2]);
+    $code = proc_close($proc);
+    assert_same(0, $code, 'lspd process exit code: ' . $stderr);
+    assert_true(is_string($line), 'lspd should emit one response line');
+
+    $response = json_decode(trim($line), true, flags: JSON_THROW_ON_ERROR);
+    $diagnostics = $response['result']['diagnostics'] ?? null;
+    assert_true(is_array($diagnostics), 'lift diagnostics field should be an array');
+    assert_same(1, count($diagnostics), 'lift fixture should emit one forward diagnostic');
+    assert_same('provekit.lsp.implication_failed', $diagnostics[0]['code'], 'lift diagnostic code');
+    assert_same('\\checkPositive', $diagnostics[0]['data']['callee'], 'lift diagnostic callee');
 }
 
 testCallsiteSatisfiesPreNoDiagnostic();
@@ -324,7 +395,10 @@ testCommentsAndStringsDoNotCreateCallsites();
 testCheckPositiveScannerUsesIdentifierBoundaries();
 testCheckPositiveScannerIgnoresQualifiedMemberCalls();
 testCheckPositiveScannerAllowsWhitespaceBeforeParen();
+testLeadingBackslashGlobalCallUsesPhpCanonicalCallee();
+testNamespacedFunctionCallDoesNotResolveAsGlobalSeed();
 testCommonPhpControlBlocksUseTopFallback();
 testParseFloorFixtureEmitsForwardPropagationDiagnostic();
+testLiftFloorFixtureEmitsForwardPropagationDiagnostic();
 
 echo "ForwardPropagatorTest passed\n";

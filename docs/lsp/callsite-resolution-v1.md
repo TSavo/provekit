@@ -112,7 +112,7 @@ The selected entry's `signer` and `signer_role` are copied into the diagnostic p
 | Swift | Type member | `String.count`, `Array.append` |
 | Zig | Module path | `std.mem.copy` |
 
-If a host language parser cannot resolve a dynamic call to one of these forms, the forward propagator uses `top` for that path and suppresses `implication-failed`.
+If a host language parser cannot resolve a dynamic call to one of these forms, the forward propagator uses `top` for that path and suppresses `provekit.lsp.implication_failed`.
 
 ## Performance
 

@@ -295,6 +295,9 @@ while (($line = fgets($stdin)) !== false) {
                     foreach ($scanned['declarations'] as $decl) {
                         $ir[] = $decl;
                     }
+                    foreach (forwardDiagnosticsForSource($source) as $diagnostic) {
+                        $diagnostics[] = $diagnostic;
+                    }
                 }
 
                 send(json_encode([
@@ -327,12 +330,7 @@ while (($line = fgets($stdin)) !== false) {
 
                 // Merge manual call edges with auto-detected ones
                 $allCallEdges = array_merge($scanned['callEdges'], $callEdges);
-                $diagnostics = array_map(
-                    fn(LspDiagnostic $diagnostic): array => $diagnostic->toArray(),
-                    ForwardPropagator::floorV1SeedIndex()->emitDiagnostics(
-                        ForwardPropagator::lowerFloorSource($source)
-                    ),
-                );
+                $diagnostics = forwardDiagnosticsForSource($source);
 
                 send(json_encode([
                     'jsonrpc' => '2.0', 'id' => $id,
@@ -365,3 +363,16 @@ while (($line = fgets($stdin)) !== false) {
 fclose($stdin);
 
 function send(string $json): void { echo $json . "\n"; flush(); }
+
+/**
+ * @return array<int, array<string, mixed>>
+ */
+function forwardDiagnosticsForSource(string $source): array
+{
+    return array_map(
+        fn(LspDiagnostic $diagnostic): array => $diagnostic->toArray(),
+        ForwardPropagator::floorV1SeedIndex()->emitDiagnostics(
+            ForwardPropagator::lowerFloorSource($source)
+        ),
+    );
+}

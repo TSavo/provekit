@@ -49,7 +49,7 @@ public class ForwardPropagator
         {
             if (!calleePre.Constraints.Contains(c))
             {
-                return new DiagnosticResult("implication-failed",
+                return new DiagnosticResult("provekit.lsp.implication_failed",
                     $"post does not imply callee pre: {string.Join(" && ", calleePre.Constraints)}");
             }
         }

@@ -228,7 +228,10 @@ fn parse_floor_fixture_emits_forward_propagation_diagnostic() {
     let diagnostic = &diagnostics[0];
     assert_eq!(diagnostic["severity"].as_i64(), Some(1));
     assert_eq!(diagnostic["source"].as_str(), Some("provekit"));
-    assert_eq!(diagnostic["code"].as_str(), Some("implication-failed"));
+    assert_eq!(
+        diagnostic["code"].as_str(),
+        Some("provekit.lsp.implication_failed")
+    );
     assert_eq!(
         diagnostic["data"]["kind"].as_str(),
         Some("provekit.lsp.implication_failed")

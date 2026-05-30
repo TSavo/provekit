@@ -16,7 +16,7 @@ class ForwardPropagator
 
     current_post[:constraints].each do |c|
       unless callee_pre[:constraints].include?(c)
-        return { code: "implication-failed", message: "post does not imply callee pre: #{callee_pre[:constraints].join(' && ')}" }
+        return { code: "provekit.lsp.implication_failed", message: "post does not imply callee pre: #{callee_pre[:constraints].join(' && ')}" }
       end
     end
     nil
