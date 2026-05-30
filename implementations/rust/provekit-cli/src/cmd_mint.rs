@@ -795,8 +795,13 @@ fn contract_bindings_from_dependency_proofs(project_root: &Path) -> Vec<Value> {
             Some(n) => n.to_string(),
             None => continue,
         };
-        let body_bearing = memento_body_field(env, "preHash").is_some()
-            || memento_body_field(env, "postHash").is_some();
+        let body_discharge_eligible = memento_body_field(env, "bodyDischargeEligible")
+            .or_else(|| memento_body_field(env, "body_discharge_eligible"))
+            .and_then(|v| v.as_bool())
+            .unwrap_or(true);
+        let body_bearing = (memento_body_field(env, "preHash").is_some()
+            || memento_body_field(env, "postHash").is_some())
+            && body_discharge_eligible;
         let bundle = member_to_bundle.get(cid.as_str()).map(|b| b.to_string());
         match by_name.get(&name) {
             // Keep the incumbent when it is already body-bearing, or when the
@@ -1355,6 +1360,8 @@ fn mint_ir_document(
         pre_hash: Option<String>,
         post_hash: Option<String>,
         inv_hash: Option<String>,
+        body_discharge_eligible: bool,
+        body_discharge_refusal_reason: Option<String>,
     }
 
     impl MintedContractRef {
@@ -1487,6 +1494,16 @@ fn mint_ir_document(
             .and_then(|v| v.as_array())
             .map(|arr| arr.iter().map(json_to_cvalue).collect())
             .unwrap_or_default();
+        let body_discharge_eligible = decl
+            .get("bodyDischargeEligible")
+            .or_else(|| decl.get("body_discharge_eligible"))
+            .and_then(|v| v.as_bool())
+            .unwrap_or(true);
+        let body_discharge_refusal_reason = decl
+            .get("bodyDischargeRefusalReason")
+            .or_else(|| decl.get("body_discharge_refusal_reason"))
+            .and_then(|v| v.as_str())
+            .map(|s| s.to_string());
         // A bridge is written only when this contract is a body-bearing
         // function target: it carries a `post` AND an explicit `formals`
         // field. Presence is the marker, not non-emptiness: zero-arg
@@ -1496,17 +1513,20 @@ fn mint_ir_document(
         // ctor uses the bare ident, so prefer the explicit
         // `bridgeSourceSymbol` if the lifter set one, else the function's
         // simple name.
-        let bridge_source_symbol: Option<String> =
-            if kind == "function-contract" && post.is_some() && formals_json.is_some() {
-                Some(
-                    decl.get("bridgeSourceSymbol")
-                        .and_then(|v| v.as_str())
-                        .map(|s| s.to_string())
-                        .unwrap_or_else(|| simple_function_symbol(&name)),
-                )
-            } else {
-                None
-            };
+        let bridge_source_symbol: Option<String> = if kind == "function-contract"
+            && post.is_some()
+            && formals_json.is_some()
+            && body_discharge_eligible
+        {
+            Some(
+                decl.get("bridgeSourceSymbol")
+                    .and_then(|v| v.as_str())
+                    .map(|s| s.to_string())
+                    .unwrap_or_else(|| simple_function_symbol(&name)),
+            )
+        } else {
+            None
+        };
         let authority = optional_str(decl, "authority")
             .map(|authority_id| {
                 authorities_by_id.get(authority_id).ok_or_else(|| {
@@ -1599,6 +1619,8 @@ fn mint_ir_document(
                     pre_hash,
                     post_hash,
                     inv_hash,
+                    body_discharge_eligible,
+                    body_discharge_refusal_reason,
                 },
             )
             .is_some()
@@ -1756,11 +1778,14 @@ fn mint_ir_document(
             // to prove). When BOTH exist for the same callee, the
             // implication lifter prefers the body-bearing one so bridges
             // target the dischargeable contract instead of vacuous-passing.
-            let body_bearing = contract.pre_hash.is_some() || contract.post_hash.is_some();
+            let body_bearing = (contract.pre_hash.is_some() || contract.post_hash.is_some())
+                && contract.body_discharge_eligible;
             json!({
                 "name": name,
                 "contract_cid": contract.attestation_cid.clone(),
                 "body_bearing": body_bearing,
+                "bodyDischargeEligible": contract.body_discharge_eligible,
+                "bodyDischargeRefusalReason": contract.body_discharge_refusal_reason.clone(),
             })
         })
         .collect();
