@@ -13,6 +13,15 @@ fn write_fake_recognizer_project(project: &Path) -> PathBuf {
 
     let manifest_dir = project.join(".provekit/lift/no-proof-reader");
     fs::create_dir_all(&manifest_dir).expect("create manifest dir");
+    fs::write(
+        project.join(".provekit/config.toml"),
+        r#"[[plugins]]
+name = "no-proof-reader"
+surface = "no-proof-reader"
+layer = "library-bindings"
+"#,
+    )
+    .expect("write project config");
 
     let plugin = project.join("fake_recognizer.py");
     fs::write(
@@ -49,6 +58,33 @@ print(json.dumps({
     .expect("write manifest");
 
     captured_request
+}
+
+#[test]
+fn recognize_without_surface_uses_configured_recognizer_plugin() {
+    let project = tempfile::tempdir().expect("tempdir");
+    let captured_request = write_fake_recognizer_project(project.path());
+
+    let output = Command::new(provekit_bin())
+        .arg("recognize")
+        .arg("--project")
+        .arg(project.path())
+        .arg("--source")
+        .arg("src/lib.rs")
+        .arg("--json")
+        .output()
+        .expect("spawn provekit recognize");
+
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(
+        output.status.success(),
+        "recognize should dispatch through the configured recognizer plugin, not a built-in surface\nstdout:\n{stdout}\nstderr:\n{stderr}"
+    );
+    assert!(
+        captured_request.is_file(),
+        "configured recognizer plugin should have received the RPC request"
+    );
 }
 
 #[test]

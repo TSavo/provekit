@@ -4,8 +4,9 @@
 // materialization routing.
 //
 // ProvekIt does not auto-detect the authoring surface. Projects and
-// users can set a default `[authoring] surface = ...`, and lift can
-// override it with `[authoring.lift] surface = ...`.
+// users can set a default `[authoring] surface = ...`, and commands can
+// override it with sections such as `[authoring.lift] surface = ...` or
+// `[authoring.recognize] surface = ...`.
 //
 // Same shape as `.npmrc` / `.cargo/config.toml`: declarative files
 // at known paths. The user is in charge.
@@ -128,6 +129,7 @@ pub struct ProjectConfig {
 
     pub surface_default: Option<String>,
     pub surface_lift: Option<String>,
+    pub surface_recognize: Option<String>,
 
     /// Solver configuration. v1 captures the shape; the verifier
     /// itself still runs Z3 only. Future work routes through this.
@@ -154,6 +156,7 @@ impl ProjectConfig {
     pub fn surface_for(&self, cmd: &str) -> Option<String> {
         let per_cmd = match cmd {
             "lift" => self.surface_lift.clone(),
+            "recognize" => self.surface_recognize.clone(),
             _ => None,
         };
         per_cmd.or_else(|| self.surface_default.clone())
@@ -267,6 +270,7 @@ fn parse_config(text: &str) -> ProjectConfig {
         match (section.as_deref(), key) {
             (Some("authoring"), "surface") => cfg.surface_default = Some(val),
             (Some("authoring.lift"), "surface") => cfg.surface_lift = Some(val),
+            (Some("authoring.recognize"), "surface") => cfg.surface_recognize = Some(val),
             (Some("solvers"), "default") => cfg.solver_default = Some(val),
             (Some("solvers"), "chain") => {
                 cfg.solver_chain = parse_string_array(&val);
@@ -496,6 +500,15 @@ family = "concept:family:hash"
     fn lift_surface_overrides_default() {
         let cfg =
             parse_config("[authoring]\nsurface = \"ts-zod\"\n[authoring.lift]\nsurface = \"rust\"");
+        assert_eq!(cfg.surface_for("lift").as_deref(), Some("rust"));
+    }
+
+    #[test]
+    fn recognize_surface_overrides_default() {
+        let cfg = parse_config(
+            "[authoring]\nsurface = \"rust\"\n[authoring.recognize]\nsurface = \"go-bind\"",
+        );
+        assert_eq!(cfg.surface_for("recognize").as_deref(), Some("go-bind"));
         assert_eq!(cfg.surface_for("lift").as_deref(), Some("rust"));
     }
 

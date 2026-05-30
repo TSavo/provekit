@@ -30,6 +30,7 @@ use provekit_proof_envelope::{
 };
 use serde_json::{json, Value};
 
+use crate::project_config::{read_project_config, read_user_config, PluginEntry, ProjectConfig};
 use crate::{OutputFlags, EXIT_OK, EXIT_USER_ERROR, EXIT_VERIFY_FAIL};
 
 // Distinct signer seed for recognize-emitted bridges. Different from
@@ -50,8 +51,7 @@ pub struct RecognizeArgs {
     /// Repeatable. e.g. `--source src/lib.rs --source src/ingest.rs`.
     #[arg(long = "source")]
     pub source_paths: Vec<String>,
-    /// Lift surface name (default `rust-bind`). Resolves to
-    /// `<project>/.provekit/lift/<surface>/manifest.toml`.
+    /// Lift surface name. If omitted, resolves from project/user config.
     #[arg(long)]
     pub surface: Option<String>,
     /// Mint bridge mementos from recognize tags into the project's
@@ -84,10 +84,13 @@ pub fn run(args: RecognizeArgs) -> u8 {
         }
     };
 
-    let surface = args
-        .surface
-        .clone()
-        .unwrap_or_else(|| "rust-bind".to_string());
+    let surface = match resolve_recognize_surface(args.surface.as_deref(), &project_root) {
+        Ok(surface) => surface,
+        Err(e) => {
+            eprintln!("{}: {e}", "error".red().bold());
+            return EXIT_USER_ERROR;
+        }
+    };
     let manifest = match find_plugin_manifest(&project_root, &surface) {
         Ok(m) => m,
         Err(e) => {
@@ -220,6 +223,81 @@ pub fn run(args: RecognizeArgs) -> u8 {
     }
 
     EXIT_OK
+}
+
+fn resolve_recognize_surface(
+    explicit: Option<&str>,
+    project_root: &Path,
+) -> Result<String, String> {
+    if let Some(surface) = explicit
+        .map(str::trim)
+        .filter(|surface| !surface.is_empty())
+    {
+        return Ok(surface.to_string());
+    }
+
+    let project_cfg = read_project_config(project_root);
+    let user_cfg = read_user_config();
+
+    if let Some(surface) = project_cfg
+        .surface_recognize
+        .clone()
+        .or_else(|| user_cfg.surface_recognize.clone())
+    {
+        return Ok(surface);
+    }
+
+    if let Some(surface) = configured_recognize_surface("project", &project_cfg)? {
+        return Ok(surface);
+    }
+    if let Some(surface) = configured_recognize_surface("user", &user_cfg)? {
+        return Ok(surface);
+    }
+
+    if let Some(surface) = project_cfg
+        .surface_default
+        .clone()
+        .or_else(|| user_cfg.surface_default.clone())
+    {
+        return Ok(surface);
+    }
+
+    Err("no recognize surface configured. Set [authoring.recognize] surface, declare exactly one recognizer [[plugins]] entry with layer = \"library-bindings\", or pass --surface.".to_string())
+}
+
+fn configured_recognize_surface(
+    source: &str,
+    cfg: &ProjectConfig,
+) -> Result<Option<String>, String> {
+    let surfaces = cfg
+        .plugins
+        .iter()
+        .filter(|plugin| plugin_is_recognizer(plugin))
+        .map(|plugin| plugin.surface.trim().to_string())
+        .filter(|surface| !surface.is_empty())
+        .collect::<Vec<_>>();
+    match surfaces.as_slice() {
+        [] => Ok(None),
+        [surface] => Ok(Some(surface.clone())),
+        _ => Err(format!(
+            "multiple {source} recognizer surfaces configured: {}. Pass --surface or set [authoring.recognize] surface.",
+            surfaces.join(", ")
+        )),
+    }
+}
+
+fn plugin_is_recognizer(plugin: &PluginEntry) -> bool {
+    if plugin
+        .kind
+        .as_deref()
+        .is_some_and(|kind| kind.eq_ignore_ascii_case("recognize"))
+    {
+        return true;
+    }
+    plugin.is_lift_plugin()
+        && plugin.layer.as_deref().is_some_and(|layer| {
+            layer.eq_ignore_ascii_case("library-bindings") || layer.eq_ignore_ascii_case("all")
+        })
 }
 
 // recognize_bridge_body was removed (#1579). The single-target form is

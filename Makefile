@@ -729,6 +729,9 @@ cross-language-proof-parity: build-java build-ts build-zig build-scala cross-lan
 		-Dtest=RecognizeHandlerTest,JavaSugarBindingLifterTest test
 	(cd implementations/go/provekit-lift-go && \
 		go test ./... -run 'Test(SugarBody|Recognize)')
+	cargo test --release --manifest-path implementations/rust/Cargo.toml \
+		-p provekit-cli --test cmd_recognize_go_parity \
+		go_recognize_write_self_resolves_project_proofs_and_proves -- --nocapture
 	$(PARITY_PYTHON) -m pytest \
 		implementations/python/provekit-lift-python-source/tests/test_bind_lifter.py \
 		-q -k 'sugar_body or recognize'
