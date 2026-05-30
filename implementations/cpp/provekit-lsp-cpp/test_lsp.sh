@@ -53,7 +53,10 @@ assert_not_contains() {
 TMPDIR_PATH="$(mktemp -d)"
 cat > "$TMPDIR_PATH/fixture.cpp" << 'EOF'
 //provekit:contract
-int compute_sum(int a, int b) { return a + b; }
+int add(int a, int b) { return a + b; }
+
+//provekit:contract
+int compute_sum(int a, int b) { return add(a, b); }
 EOF
 
 echo "=== initialize ==="
@@ -75,19 +78,23 @@ LIFT_RESP=$(printf '%s\n' "$LIFT_OUTPUT" | sed -n '2p')
 assert_contains "kind ir-document"        "$LIFT_RESP" '"kind":"ir-document"'
 assert_contains "ir key"                  "$LIFT_RESP" '"ir":'
 assert_contains "contract compute_sum"    "$LIFT_RESP" '"name":"compute_sum"'
-assert_contains "callEdges empty"         "$LIFT_RESP" '"callEdges":[]'
+assert_contains "callEdges target"        "$LIFT_RESP" '"targetSymbol":"cpp-kit:add"'
+assert_contains "callEdges source"        "$LIFT_RESP" '"sourceContractCid":"pending-cpp:compute_sum"'
+assert_contains "callEdges locus"         "$LIFT_RESP" '"callSiteLocus":{'
 assert_contains "diagnostics key"         "$LIFT_RESP" '"diagnostics":[]'
 assert_not_contains "no error"            "$LIFT_RESP" '"error"'
 
 echo "=== parse (legacy) ==="
 PARSE_INPUT=$(printf '%s\n%s\n%s\n' \
     '{"jsonrpc":"2.0","id":1,"method":"initialize","params":{}}' \
-    '{"jsonrpc":"2.0","id":2,"method":"parse","params":{"path":"fixture.cpp","source":"//provekit:contract\nint compute_sum(int a, int b) { return a + b; }"}}' \
+    '{"jsonrpc":"2.0","id":2,"method":"parse","params":{"path":"fixture.cpp","source":"//provekit:contract\nint add(int a, int b) { return a + b; }\n\n//provekit:contract\nint compute_sum(int a, int b) { return add(a, b); }"}}' \
     '{"jsonrpc":"2.0","id":3,"method":"shutdown"}')
 PARSE_OUTPUT=$(printf '%s\n' "$PARSE_INPUT" | "$BIN")
 PARSE_RESP=$(printf '%s\n' "$PARSE_OUTPUT" | sed -n '2p')
 assert_contains "declarations field"      "$PARSE_RESP" '"declarations":'
-assert_contains "callEdges empty"         "$PARSE_RESP" '"callEdges":[]'
+assert_contains "callEdges target"        "$PARSE_RESP" '"targetSymbol":"cpp-kit:add"'
+assert_contains "callEdges source"        "$PARSE_RESP" '"sourceContractCid":"pending-cpp:compute_sum"'
+assert_contains "callEdges locus"         "$PARSE_RESP" '"callSiteLocus":{'
 assert_contains "at least one decl"       "$PARSE_RESP" '"kind":"contract"'
 assert_contains "contract name"           "$PARSE_RESP" '"name":"compute_sum"'
 assert_not_contains "no error"            "$PARSE_RESP" '"error"'
