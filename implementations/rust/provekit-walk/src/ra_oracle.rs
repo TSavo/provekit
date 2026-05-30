@@ -137,7 +137,12 @@ impl RaOracle {
                 "rootUri": root_uri,
                 "capabilities": {
                     "textDocument": { "definition": { "linkSupport": true } },
-                    "window": { "workDoneProgress": true }
+                    "window": { "workDoneProgress": true },
+                    // Ask rust-analyzer to emit `experimental/serverStatus`
+                    // notifications. They carry `quiescent: true` once the
+                    // workspace is loaded AND indexed, which is the one
+                    // authoritative readiness signal (see wait_until_quiescent).
+                    "experimental": { "serverStatusNotification": true }
                 },
                 "workspaceFolders": [ { "uri": root_uri, "name": "provekit-target" } ],
             }),
@@ -145,13 +150,48 @@ impl RaOracle {
         // Drain until the initialize response arrives.
         self.wait_for_response(id, INDEX_WAIT)?;
         self.send_notification("initialized", json!({}));
-        // No fixed wait here. Readiness is handled per-query by retrying on the
-        // server's ContentModified ("not ready") signal (see `resolve_crate`),
-        // which is event-driven: a warm server pays nothing and a cold one waits
-        // exactly as long as it reports it is still indexing. A wall-clock
-        // settle here would be both unreliable (no single done-token) and a
-        // fixed tax on every run.
+        // Wait ONCE for the workspace to settle before issuing any query. While
+        // rust-analyzer is still loading the sysroot / a dependency it answers
+        // `definition` with a REAL null (no definition yet), not ContentModified,
+        // so the per-query retry below cannot recover it: the call would refuse
+        // permanently. Blocking here on the server's own quiescence signal fixes
+        // that, and is still event-driven (a warm server reports quiescent
+        // immediately, paying nothing). The per-query ContentModified retry
+        // stays as a secondary guard for re-analysis churn mid-batch.
+        self.wait_until_quiescent(INDEX_WAIT);
         Some(())
+    }
+
+    /// Block until rust-analyzer reports it is quiescent (workspace loaded and
+    /// indexed) or `timeout` elapses. RA emits `experimental/serverStatus`
+    /// notifications (enabled by the client capability above) and sets
+    /// `quiescent: true` once analysis has settled. Waiting for this single
+    /// authoritative signal, then batching every query against a settled
+    /// server, is what makes resolution reliable and reproducible: a query
+    /// issued mid-load gets a partial/null answer the retry path cannot recover.
+    /// On timeout we proceed best-effort (resolve what we can rather than refuse
+    /// the whole batch); a warm server returns from the first notification.
+    fn wait_until_quiescent(&mut self, timeout: Duration) {
+        let deadline = Instant::now() + timeout;
+        loop {
+            let Some(remaining) = deadline.checked_duration_since(Instant::now()) else {
+                return;
+            };
+            match self.rx.recv_timeout(remaining) {
+                Ok(msg) => {
+                    if msg.get("method").and_then(|m| m.as_str())
+                        == Some("experimental/serverStatus")
+                        && msg
+                            .pointer("/params/quiescent")
+                            .and_then(|v| v.as_bool())
+                            .unwrap_or(false)
+                    {
+                        return;
+                    }
+                }
+                Err(_) => return,
+            }
+        }
     }
 
     fn ensure_open(&mut self, abs_path: &Path) -> Option<()> {
