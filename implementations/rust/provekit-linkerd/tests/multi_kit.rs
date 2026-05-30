@@ -36,6 +36,10 @@
 // Test 11: parseFile(kit="php", ...) dispatches to the php lifter and returns
 //          a result with a diagnostics array when provekit-lsp-php is on PATH.
 //
+// Test 12: parseFile(kit="scala", ...) is registered in linkerd dispatch.
+//          If provekit-lsp-scala is absent, it must return LifterUnavailable,
+//          not UnknownKit.
+//
 // These tests communicate with the daemon over its Unix socket.
 
 use std::io::{BufRead, BufReader, Write};
@@ -1098,6 +1102,70 @@ function add_numbers(int $a, int $b): int {
         "php kit parseFile result must have diagnostics array: {:?}",
         resp
     );
+
+    shutdown(&sock);
+    child.wait().ok();
+    std::fs::remove_file(&sock).ok();
+}
+
+// -------------------------------------------------------------------
+// Test 12: scala kit dispatch is registered.
+// -------------------------------------------------------------------
+
+/// Test 12: parseFile with kit="scala" must route to the Scala LSP lifter.
+///
+/// This does not require provekit-lsp-scala to be installed. In environments
+/// without the binary, the correct behavior is LifterUnavailable (-33002) with
+/// an install hint. UnknownKit (-33001) means linkerd cannot route Scala at all.
+#[test]
+fn test12_scala_kit_dispatch_registered() {
+    let sock = unique_sock_path("t12");
+    let _ = std::fs::remove_file(&sock);
+
+    let mut child = spawn_daemon(&sock);
+
+    assert!(
+        wait_for_socket(&sock, Duration::from_secs(5)),
+        "daemon socket did not appear"
+    );
+
+    let scala_source = r#"
+def addOne(x: Int): Int = x + 1
+def callAddOne(x: Int): Int = addOne(x)
+"#;
+
+    let req = serde_json::json!({
+        "jsonrpc": "2.0",
+        "id": 1,
+        "method": "parseFile",
+        "params": {
+            "kitId": "scala",
+            "file": "/tmp/Calls.scala",
+            "source": scala_source
+        }
+    });
+
+    let resp = send_recv(&sock, &req);
+
+    if let Some(error) = resp.get("error") {
+        let code = error.get("code").and_then(|c| c.as_i64()).unwrap_or(0);
+        let message = error.get("message").and_then(|m| m.as_str()).unwrap_or("");
+        assert_eq!(
+            code, -33002,
+            "scala kit must be registered; got wrong error: {:?}",
+            resp
+        );
+        assert!(
+            message.contains("provekit-lsp-scala"),
+            "scala LifterUnavailable message should name the expected binary: {message}"
+        );
+    } else {
+        assert!(
+            resp["result"]["diagnostics"].is_array(),
+            "scala kit parseFile result must have diagnostics array: {:?}",
+            resp
+        );
+    }
 
     shutdown(&sock);
     child.wait().ok();
