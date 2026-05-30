@@ -325,6 +325,50 @@ impl Runner {
         }
         report_stage::add_load_errors(&pool.load_errors, &mut report);
 
+        // Self-post pass (THE 309): verify each body-derived contract's OWN
+        // postcondition `post[result := body]`. See `verify_contract_self_posts`.
+        // The Runner's callsite enumeration never touches a contract's own
+        // post, so this is where a body-discharge-eligible contract is
+        // actually verified. Results flow into the same buckets.
+        let self_post_results = verify_contract_self_posts(&pool, &self.plan, &self.registry);
+        for spr in &self_post_results {
+            match spr.verdict {
+                ObligationVerdict::Discharged => {
+                    n_solved.fetch_add(1, Ordering::Relaxed);
+                    match spr.method {
+                        Some(body_discharge::DischargeMethod::Reflexive) => {
+                            n_reflexive.fetch_add(1, Ordering::Relaxed);
+                        }
+                        Some(body_discharge::DischargeMethod::Substantive) => {
+                            n_substantive.fetch_add(1, Ordering::Relaxed);
+                        }
+                        None => {}
+                    }
+                }
+                _ => {
+                    violations += 1;
+                    n_residue.fetch_add(1, Ordering::Relaxed);
+                }
+            }
+            report_stage::add_self_post(&spr.contract_cid, spr.verdict, &spr.reason, &mut report);
+        }
+        info!(
+            self_posts = self_post_results.len(),
+            self_post_reflexive = self_post_results
+                .iter()
+                .filter(|r| r.method == Some(body_discharge::DischargeMethod::Reflexive))
+                .count(),
+            self_post_substantive = self_post_results
+                .iter()
+                .filter(|r| r.method == Some(body_discharge::DischargeMethod::Substantive))
+                .count(),
+            self_post_undecidable = self_post_results
+                .iter()
+                .filter(|r| r.verdict != ObligationVerdict::Discharged)
+                .count(),
+            "verifier: contract self-post pass complete"
+        );
+
         let invs = invs_sink.into_inner().unwrap_or_default();
         let mut per_solver: BTreeMap<String, SolverStats> = BTreeMap::new();
         for inv in &invs {
@@ -509,6 +553,56 @@ impl Runner {
             report_stage::add_callsite(&cs, verdict, &reason, &mut report);
         }
         report_stage::add_load_errors(&pool.load_errors, &mut report);
+
+        // Self-post pass: verify every body-derived contract's OWN
+        // postcondition. A contract carries `post = (result == <body
+        // term>)`; substituting `result := <body term>` yields `<body> ==
+        // <body>` (plus any conjoined entry-precondition, left intact),
+        // which the real encoder + z3 discharge by reflexivity when the
+        // self-post is unconditionally valid. THIS is "the 309": the
+        // Runner's callsite enumeration never touches a contract's own
+        // post, so without this pass a body-discharge-eligible contract is
+        // eligible-but-never-verified. Each result flows into the SAME
+        // reflexive / substantive / residue buckets so the proof-run split
+        // is unified.
+        let self_post_results = verify_contract_self_posts(&pool, plan, registry);
+        for spr in &self_post_results {
+            match spr.verdict {
+                ObligationVerdict::Discharged => {
+                    n_solved.fetch_add(1, Ordering::Relaxed);
+                    match spr.method {
+                        Some(body_discharge::DischargeMethod::Reflexive) => {
+                            n_reflexive.fetch_add(1, Ordering::Relaxed);
+                        }
+                        Some(body_discharge::DischargeMethod::Substantive) => {
+                            n_substantive.fetch_add(1, Ordering::Relaxed);
+                        }
+                        None => {}
+                    }
+                }
+                _ => {
+                    violations += 1;
+                    n_residue.fetch_add(1, Ordering::Relaxed);
+                }
+            }
+            report_stage::add_self_post(&spr.contract_cid, spr.verdict, &spr.reason, &mut report);
+        }
+        info!(
+            self_posts = self_post_results.len(),
+            self_post_reflexive = self_post_results
+                .iter()
+                .filter(|r| r.method == Some(body_discharge::DischargeMethod::Reflexive))
+                .count(),
+            self_post_substantive = self_post_results
+                .iter()
+                .filter(|r| r.method == Some(body_discharge::DischargeMethod::Substantive))
+                .count(),
+            self_post_undecidable = self_post_results
+                .iter()
+                .filter(|r| r.verdict != ObligationVerdict::Discharged)
+                .count(),
+            "verifier: contract self-post pass complete"
+        );
 
         // Aggregate per-solver stats from telemetry sink.
         let invs = invs_sink.into_inner().unwrap_or_default();
@@ -912,6 +1006,87 @@ fn build_plan_and_registry(cfg: &RunnerConfig) -> (SolverPlan, HashMap<String, S
         SolverPlan::Single("z3".into()),
         registry::build_default_z3(&z3),
     )
+}
+
+/// One contract's self-post verification outcome.
+struct SelfPostResult {
+    contract_cid: String,
+    verdict: ObligationVerdict,
+    reason: String,
+    method: Option<body_discharge::DischargeMethod>,
+}
+
+/// Verify each body-derived contract's OWN postcondition. For a contract
+/// with `post = (result == <body>)` (and optionally a conjoined
+/// entry-precondition), the self-post obligation is `post[result :=
+/// <body>]`. The pure `result == body` conjunct becomes `body == body`,
+/// proven by reflexivity over the (uninterpreted) body term; a conjoined
+/// precondition (`x >= 10`) survives and keeps the obligation honest -- it
+/// discharges only if unconditionally valid, otherwise z3 returns sat and
+/// the verdict is undecidable. The substitution is the REAL one (not a
+/// hand-built `v == v`), so the soundness property is exercised on the
+/// real solver path.
+fn verify_contract_self_posts(
+    pool: &MementoPool,
+    plan: &SolverPlan,
+    registry: &HashMap<String, SolverHandle>,
+) -> Vec<SelfPostResult> {
+    use crate::types::{memento_body, memento_kind};
+
+    let contracts: Vec<(&String, &Json)> = pool
+        .mementos
+        .iter()
+        .filter(|(_, env)| memento_kind(env) == Some("contract"))
+        .collect();
+
+    contracts
+        .par_iter()
+        .filter_map(|(cid, env)| {
+            let body = memento_body(env)?;
+            // Body-derived contracts carry `formals` + `post`. A contract
+            // without `post` (or without a result equation) has no
+            // self-post to verify here.
+            let post_json = body.get("post")?;
+            let post: provekit_ir_types::IrFormula =
+                serde_json::from_value(post_json.clone()).ok()?;
+            let value_expr = libprovekit::wp::find_result_equation(&post, "result")?;
+
+            // Self-post obligation: post[result := <body value term>].
+            let obligation_formula =
+                libprovekit::wp::substitute_in_formula(post, "result", &value_expr);
+            let obligation_json = serde_json::to_value(&obligation_formula).ok()?;
+
+            let smt = match smt_emitter::emit(&obligation_json) {
+                Ok(s) => s,
+                Err(e) => {
+                    return Some(SelfPostResult {
+                        contract_cid: (*cid).clone(),
+                        verdict: ObligationVerdict::Undecidable,
+                        reason: format!("self-post smt-emit: {e}"),
+                        method: None,
+                    });
+                }
+            };
+            let (verdict, reason, _invs) =
+                run_plan(plan, registry, &smt, Some(&obligation_json));
+            let method = if verdict == ObligationVerdict::Discharged {
+                let m = body_discharge::classify_discharge_method(&obligation_json);
+                Some(m)
+            } else {
+                None
+            };
+            let tagged_reason = match method {
+                Some(m) => format!("[method={}] self-post: {reason}", m.as_str()),
+                None => format!("self-post: {reason}"),
+            };
+            Some(SelfPostResult {
+                contract_cid: (*cid).clone(),
+                verdict,
+                reason: tagged_reason,
+                method,
+            })
+        })
+        .collect()
 }
 
 #[allow(clippy::too_many_arguments)]

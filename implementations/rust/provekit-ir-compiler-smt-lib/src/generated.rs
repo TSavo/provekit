@@ -13,7 +13,13 @@ use crate::{COMPILER_NAME, COMPILER_VERSION, DIALECT};
 
 pub fn emit_term(term: &Term) -> String {
     match term {
-        Term::Var { name, .. } => name.clone(),
+        // Quote Var names the same way ctor names are quoted: a synthetic
+        // name like `#field:code` or `#pat:<hash>` (introduced by the
+        // struct-literal / match lift) is not a legal simple SMT symbol --
+        // unquoted, z3 reads the leading `#f`/`#p` as a malformed
+        // bit-vector literal. `smt_quote` wraps it in `|...|`; it is a
+        // no-op for ordinary names, so plain identifiers are unchanged.
+        Term::Var { name, .. } => smt_quote(name),
         Term::Const { value, sort, .. } => {
             let sort_name = match sort {
                 Sort::Primitive { name } => name.as_str(),
@@ -43,12 +49,17 @@ pub fn emit_term(term: &Term) -> String {
         } => {
             let sort_str = emit_sort(param_sort);
             let body_str = emit_term(body);
-            format!("(lambda (({} {})) {})", param_name, sort_str, body_str)
+            // Quote the binder name so a unique-renamed param like `e#0`
+            // (the `#N` suffix the lifter's LiftCtx appends) is a legal
+            // SMT symbol `|e#0|` -- and matches the quoted Var reference to
+            // it in the body. Unquoted, z3 reads `#0` as a malformed
+            // bit-vector literal.
+            format!("(lambda (({} {})) {})", smt_quote(param_name), sort_str, body_str)
         }
         Term::Let { bindings, body, .. } => {
             let mut binding_strs = bindings.iter();
             let binding_strs =
-                binding_strs.map(|b| format!("({} {})", b.name, emit_term(&b.bound_term)));
+                binding_strs.map(|b| format!("({} {})", smt_quote(&b.name), emit_term(&b.bound_term)));
             let binding_strs: Vec<String> = binding_strs.collect();
             let body_str = emit_term(body);
             format!("(let ({}) {})", binding_strs.join(" "), body_str)
@@ -69,12 +80,17 @@ pub fn emit_term(term: &Term) -> String {
         } => {
             let sort_str = emit_sort(param_sort);
             let body_str = emit_term(body);
-            format!("(lambda (({} {})) {})", param_name, sort_str, body_str)
+            // Quote the binder name so a unique-renamed param like `e#0`
+            // (the `#N` suffix the lifter's LiftCtx appends) is a legal
+            // SMT symbol `|e#0|` -- and matches the quoted Var reference to
+            // it in the body. Unquoted, z3 reads `#0` as a malformed
+            // bit-vector literal.
+            format!("(lambda (({} {})) {})", smt_quote(param_name), sort_str, body_str)
         }
         Term::Let { bindings, body } => {
             let binding_strs = bindings.iter();
             let binding_strs =
-                binding_strs.map(|b| format!("({} {})", b.name, emit_term(&b.bound_term)));
+                binding_strs.map(|b| format!("({} {})", smt_quote(&b.name), emit_term(&b.bound_term)));
             let binding_strs: Vec<String> = binding_strs.collect();
             let body_str = emit_term(body);
             format!("(let ({}) {})", binding_strs.join(" "), body_str)
@@ -683,7 +699,7 @@ pub fn compile_formula(formula: &Formula) -> CompiledFormula {
         preamble.push_str("(assert (forall ((r Region)) (Outlives static_region r)))\n");
     }
     for (name, sort) in free_vars.iter() {
-        preamble.push_str(&format!("(declare-const {} {})\n", name, sort));
+        preamble.push_str(&format!("(declare-const {} {})\n", smt_quote(name), sort));
     }
     // Declare every non-builtin ctor head as an UNINTERPRETED FUNCTION
     // symbol (`Ok`, `Err`, `Some`, `field`, `method:foo`, `tuple`,
@@ -764,7 +780,7 @@ pub fn compile_asserted_formula(formula: &Formula) -> CompiledFormula {
         preamble.push_str("(assert (forall ((r Region)) (Outlives static_region r)))\n");
     }
     for (name, sort) in free_vars.iter() {
-        preamble.push_str(&format!("(declare-const {} {})\n", name, sort));
+        preamble.push_str(&format!("(declare-const {} {})\n", smt_quote(name), sort));
     }
     for (name, signature) in ctor_decls.iter() {
         preamble.push_str(&format!(
