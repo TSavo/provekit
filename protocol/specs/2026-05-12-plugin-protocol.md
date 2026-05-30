@@ -462,9 +462,9 @@ The CID is determined by the content payload (`content`, `kind`, `critical`, `pr
 
 **INVARIANT (CID-delivery-independence):** For any plugin P, `CID(P-as-file) == CID(P-as-rpc)` if and only if their JCS-canonical header bytes coincide.
 
-### §6.3 Built-in plugins
+### §6.3 No implicit plugins
 
-A runtime MAY compile in default plugins. Such built-ins MUST be content-addressed by the same procedure (§6.1) and MUST appear in the `PluginRegistryMemento` at the same CID a user would compute from the equivalent JSON file. Built-ins are NOT a privileged class; they MUST be enumerable, replaceable, and dischargable along the same surface user-supplied plugins use. A consumer's "the default loss function" reference is to a known CID (see `2026-05-12-loss-function-memento.md` §6 for the canonical default loss function's declared content).
+A runtime MUST NOT compile in or silently append default plugins. Plugin registration is data: config, manifests, and explicit RPC/file sources are the registry inputs. A "default" loss function or other common surface is still a normal plugin entry with a normal manifest/source and a content-addressed CID computed by §6.1. It is not a privileged runtime class.
 
 ## §7. CLI flag conventions
 
@@ -472,12 +472,12 @@ A runtime MAY compile in default plugins. Such built-ins MUST be content-address
 |----------------------------------------|---------------------------------------------------------------------------------------------------------|
 | `--plugin <kind>:<source>`             | Canonical form. Loads one plugin of declared kind from the source.                                      |
 | `--<kind> <source>`                    | Per-kind alias. Desugars to the canonical form. See §3.1.                                               |
-| `--no-default-plugins`                 | Suppresses ALL built-in plugin registration. The user MUST supply every plugin they wish loaded.        |
-| `--no-default-plugin <kind>`           | Suppresses built-ins for one kind only.                                                                 |
+| `--no-default-plugins`                 | Legacy compatibility no-op. No implicit plugins exist.                                                  |
+| `--no-default-plugin <kind>`           | Legacy compatibility no-op. No implicit plugins exist.                                                  |
 | `--strict-plugins`                     | Promotes EVERY plugin load failure to a refuse (overrides individual `critical = false` declarations).  |
 | `--plugin-registry-out <path>`         | After the registry seals (§9), writes the `PluginRegistryMemento` to `<path>`.                          |
 
-Flag order is preserved through to `PluginRegistryMemento.load_order` (§9.1). Built-ins (when not suppressed) are appended AT THE END of the load order array; user flags precede built-ins. Rationale: a user-loaded plugin should beat a built-in in tie-breaks for the same kind, matching the §3.2 "later wins" rule applied to the {user flags} ++ {built-ins} concatenation.
+Flag order is preserved through to `PluginRegistryMemento.load_order` (§9.1). The runtime does not append implicit plugins, so the load order is the order of configured manifest entries and explicit user-provided sources.
 
 ## §8. Error model
 
