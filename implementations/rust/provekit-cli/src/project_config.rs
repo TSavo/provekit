@@ -51,6 +51,19 @@ pub struct PluginEntry {
     pub layer: Option<String>,
 }
 
+/// One project- or user-configured shortcut for `provekit --kit`.
+///
+/// This is deliberately data, not a Rust-side catalog. A kit alias names a
+/// project root plus the lift surface/lang key that should be used when the
+/// shortcut is selected.
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct KitAliasEntry {
+    pub alias: String,
+    pub project: String,
+    pub surface: String,
+    pub lang: String,
+}
+
 impl PluginEntry {
     pub fn display_name(&self) -> &str {
         self.name.as_deref().unwrap_or(self.surface.as_str())
@@ -107,6 +120,11 @@ pub struct ProjectConfig {
     /// (`[[plugins]]` in TOML). Empty if the project still uses the
     /// legacy single-surface `[authoring] surface = ...` form.
     pub plugins: Vec<PluginEntry>,
+
+    /// Project/user configured kit aliases (`[[kits]]`). These power
+    /// `--kit=<alias>` without baking language/package knowledge into
+    /// the Rust CLI.
+    pub kits: Vec<KitAliasEntry>,
 
     pub surface_default: Option<String>,
     pub surface_lift: Option<String>,
@@ -186,6 +204,9 @@ fn parse_config(text: &str) -> ProjectConfig {
     // `[[plugins]]` header or at end-of-file. Stays None while the parser
     // is in any other (single-bracket) section.
     let mut current_plugin: Option<PluginEntry> = None;
+    // In-flight `[[kits]]` entry. Pushed to `cfg.kits` on each new
+    // array-of-tables header or at end-of-file.
+    let mut current_kit: Option<KitAliasEntry> = None;
     for raw_line in text.lines() {
         let line = strip_comment(raw_line).trim();
         if line.is_empty() {
@@ -201,10 +222,22 @@ fn parse_config(text: &str) -> ProjectConfig {
                     cfg.plugins.push(prev);
                 }
             }
+            if let Some(prev) = current_kit.take() {
+                if !prev.alias.is_empty()
+                    && !prev.project.is_empty()
+                    && !prev.surface.is_empty()
+                    && !prev.lang.is_empty()
+                {
+                    cfg.kits.push(prev);
+                }
+            }
             let header = inner.trim().to_lowercase();
             if header == "plugins" {
                 current_plugin = Some(PluginEntry::default());
                 section = Some("plugins.entry".to_string());
+            } else if header == "kits" {
+                current_kit = Some(KitAliasEntry::default());
+                section = Some("kits.entry".to_string());
             } else {
                 section = Some(header);
             }
@@ -214,6 +247,15 @@ fn parse_config(text: &str) -> ProjectConfig {
             if let Some(prev) = current_plugin.take() {
                 if !prev.surface.is_empty() {
                     cfg.plugins.push(prev);
+                }
+            }
+            if let Some(prev) = current_kit.take() {
+                if !prev.alias.is_empty()
+                    && !prev.project.is_empty()
+                    && !prev.surface.is_empty()
+                    && !prev.lang.is_empty()
+                {
+                    cfg.kits.push(prev);
                 }
             }
             section = Some(s.trim().to_lowercase());
@@ -288,6 +330,26 @@ fn parse_config(text: &str) -> ProjectConfig {
                     entry.layer = Some(val);
                 }
             }
+            (Some("kits.entry"), "alias") => {
+                if let Some(entry) = current_kit.as_mut() {
+                    entry.alias = val;
+                }
+            }
+            (Some("kits.entry"), "project") => {
+                if let Some(entry) = current_kit.as_mut() {
+                    entry.project = val;
+                }
+            }
+            (Some("kits.entry"), "surface") => {
+                if let Some(entry) = current_kit.as_mut() {
+                    entry.surface = val;
+                }
+            }
+            (Some("kits.entry"), "lang") => {
+                if let Some(entry) = current_kit.as_mut() {
+                    entry.lang = val;
+                }
+            }
             _ => {}
         }
     }
@@ -295,6 +357,15 @@ fn parse_config(text: &str) -> ProjectConfig {
     if let Some(prev) = current_plugin.take() {
         if !prev.surface.is_empty() {
             cfg.plugins.push(prev);
+        }
+    }
+    if let Some(prev) = current_kit.take() {
+        if !prev.alias.is_empty()
+            && !prev.project.is_empty()
+            && !prev.surface.is_empty()
+            && !prev.lang.is_empty()
+        {
+            cfg.kits.push(prev);
         }
     }
     cfg
@@ -481,6 +552,56 @@ surface = "java"
         assert!(cfg.plugins[2].is_realize_plugin());
         assert!(!cfg.plugins[2].is_lift_plugin());
         assert!(!cfg.plugins[2].is_emit_plugin());
+    }
+
+    #[test]
+    fn parses_kit_alias_entries() {
+        let cfg = parse_config(
+            r#"[[kits]]
+alias = "ts"
+project = "implementations/typescript"
+surface = "typescript-self-contracts"
+lang = "ts"
+
+[[kits]]
+alias = "third-party"
+project = "/opt/provekit/kits/third-party"
+surface = "third-party-surface"
+lang = "third-party"
+"#,
+        );
+
+        assert_eq!(cfg.kits.len(), 2);
+        assert_eq!(cfg.kits[0].alias, "ts");
+        assert_eq!(cfg.kits[0].project, "implementations/typescript");
+        assert_eq!(cfg.kits[0].surface, "typescript-self-contracts");
+        assert_eq!(cfg.kits[0].lang, "ts");
+        assert_eq!(cfg.kits[1].alias, "third-party");
+        assert_eq!(cfg.kits[1].project, "/opt/provekit/kits/third-party");
+        assert_eq!(cfg.kits[1].surface, "third-party-surface");
+        assert_eq!(cfg.kits[1].lang, "third-party");
+    }
+
+    #[test]
+    fn parses_kit_aliases_independently_from_project_plugins() {
+        let cfg = parse_config(
+            r#"[[kits]]
+alias = "java"
+project = "implementations/java"
+surface = "java-testng"
+lang = "java"
+
+[[plugins]]
+name = "java-testng-lifter"
+kind = "lift"
+surface = "java-testng"
+"#,
+        );
+
+        assert_eq!(cfg.kits.len(), 1);
+        assert_eq!(cfg.plugins.len(), 1);
+        assert_eq!(cfg.kits[0].alias, "java");
+        assert_eq!(cfg.plugins[0].surface, "java-testng");
     }
 
     #[test]

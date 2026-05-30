@@ -172,7 +172,7 @@ pub struct ProveArgs {
     /// verifier is bypassed; instead the kit's lifter is spawned via JSON-RPC and
     /// each verifier in `provekit-self-contracts::lift_plugin_protocol` is run
     /// against the captured RPC messages.
-    /// Known kits: rust, go, cpp, ts, csharp, clr-bytecode, evm-bytecode, swift, java, python, ruby, zig, c, php.
+    /// Kit aliases are project/user config entries, not built-in CLI names.
     #[arg(long, conflicts_with = "project")]
     pub kit: Option<String>,
     #[command(flatten)]

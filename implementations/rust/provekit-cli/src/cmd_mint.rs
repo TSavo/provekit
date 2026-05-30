@@ -67,7 +67,9 @@ use provekit_proof_envelope::{
 };
 
 use crate::lift_plugin::{self, LiftPluginError, LiftPluginOptions};
-use crate::project_config::{read_project_config, read_user_config, PluginEntry};
+use crate::project_config::{
+    read_project_config, read_user_config, KitAliasEntry, PluginEntry, ProjectConfig,
+};
 use crate::OutputFlags;
 use crate::{EXIT_OK, EXIT_USER_ERROR, EXIT_VERIFY_FAIL};
 
@@ -82,55 +84,88 @@ const FOUNDATION_V0_SEED: Ed25519Seed = [0x42u8; 32];
 /// unified pipeline. Matches the v1.6.0 catalog declared_at for consistency.
 const SELF_CONTRACTS_DECLARED_AT: &str = "2026-05-05T18:00:00Z";
 
-/// Canonical mapping from `--kit=<name>` to (project_subdir, lift_surface, lang_key).
-///
-/// * `project_subdir`: path segment under `implementations/` (the project root passed to the lifter)
-/// * `lift_surface`: subdirectory name under `.provekit/lift/<surface>/` (the manifest to load)
-/// * `lang_key`: the `lang` field in the signed attestation JSON (and the
-///   key for the `.provekit/self-contracts-attestations/<lang>.json` filename)
-///
-/// Naming diverges for several kits:
-///   `ts`     → project dir `typescript`,  surface `typescript`,             lang `ts`
-///   `csharp` → project dir `csharp`,      surface `csharp`,                 lang `csharp`
-///   `clr-bytecode` → project dir `csharp`, surface `clr-bytecode`,           lang `clr-bytecode`
-///   `rust`   → project dir `rust`,        surface `rust`,                    lang `rust`
-///   `go`     → project dir `go`,          surface `go-self-contracts`,      lang `go`
-///
-/// `--kit=rust` now routes to the same native Rust workspace lifter selected
-/// by `implementations/rust/.provekit/config.toml`. Other kits may still map
-/// to explicit self-contract surfaces when their canonical contracts come from
-/// language-specific mint binaries.
-pub(crate) const KIT_TABLE: &[(&str, &str, &str, &str)] = &[
-    // (kit_alias, project_subdir, lift_surface,           lang_key)
-    ("rust", "rust", "rust", "rust"),
-    ("go", "go", "go-self-contracts", "go"),
-    ("cpp", "cpp", "cpp-self-contracts", "cpp"),
-    ("ts", "typescript", "typescript-self-contracts", "ts"),
-    ("csharp", "csharp", "csharp", "csharp"),
-    ("clr-bytecode", "csharp", "clr-bytecode", "clr-bytecode"),
-    ("swift", "swift", "swift-self-contracts", "swift"),
-    ("java", "java", "java-self-contracts", "java"),
-    ("python", "python", "python-self-contracts", "python"),
-    ("ruby", "ruby", "ruby-self-contracts", "ruby"),
-    ("zig", "zig", "zig-self-contracts", "zig"),
-    ("c", "c", "c-self-contracts", "c"),
-    ("php", "php", "php-self-contracts", "php"),
-];
+/// Result of resolving a project/user configured `--kit=<alias>`.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) struct KitResolution {
+    pub(crate) project_root: PathBuf,
+    pub(crate) surface: String,
+    pub(crate) lang_key: String,
+}
 
-/// Resolve `--kit=<name>` to the canonical project path, lift surface, and lang key.
-/// Returns `(project_path, surface, lang_key)` relative to the CWD at
-/// which `provekit` is invoked (expected to be repo root).
+/// Resolve `--kit=<name>` from project/user config. There is no built-in
+/// kit catalog: a shortcut only exists when `[[kits]]` declares it.
 pub(crate) fn resolve_kit(kit: &str) -> Option<(PathBuf, String, String)> {
-    KIT_TABLE
+    let config_root = std::env::current_dir().unwrap_or_else(|_| PathBuf::from("."));
+    let project_cfg = read_project_config(&config_root);
+    let user_cfg = read_user_config();
+    resolve_kit_from_configs(kit, &config_root, &project_cfg, &user_cfg)
+        .map(|resolved| (resolved.project_root, resolved.surface, resolved.lang_key))
+}
+
+pub(crate) fn resolve_kit_from_configs(
+    kit: &str,
+    config_root: &Path,
+    project_cfg: &ProjectConfig,
+    user_cfg: &ProjectConfig,
+) -> Option<KitResolution> {
+    project_cfg
+        .kits
         .iter()
-        .find(|(alias, _, _, _)| *alias == kit)
-        .map(|(_, subdir, surface, lang)| {
-            (
-                PathBuf::from("implementations").join(subdir),
-                surface.to_string(),
-                lang.to_string(),
-            )
-        })
+        .find(|entry| entry.alias == kit)
+        .or_else(|| user_cfg.kits.iter().find(|entry| entry.alias == kit))
+        .map(|entry| kit_resolution_from_entry(config_root, entry))
+}
+
+pub(crate) fn configured_kit_alias_names() -> Vec<String> {
+    let config_root = std::env::current_dir().unwrap_or_else(|_| PathBuf::from("."));
+    let project_cfg = read_project_config(&config_root);
+    let user_cfg = read_user_config();
+    configured_kit_alias_names_from_configs(&project_cfg, &user_cfg)
+}
+
+pub(crate) fn configured_kit_alias_names_from_configs(
+    project_cfg: &ProjectConfig,
+    user_cfg: &ProjectConfig,
+) -> Vec<String> {
+    let mut names = Vec::new();
+    for entry in project_cfg.kits.iter().chain(user_cfg.kits.iter()) {
+        if !names.iter().any(|name| name == &entry.alias) {
+            names.push(entry.alias.clone());
+        }
+    }
+    names
+}
+
+pub(crate) fn format_unknown_kit_error(kit: &str, aliases: &[String]) -> String {
+    if aliases.is_empty() {
+        format!(
+            "{}: unknown kit `{}`; no kit aliases configured in .provekit/config.toml or user config",
+            "error".red().bold(),
+            kit
+        )
+    } else {
+        format!(
+            "{}: unknown kit `{}`; configured kit aliases: {}",
+            "error".red().bold(),
+            kit,
+            aliases.join(", ")
+        )
+    }
+}
+
+fn kit_resolution_from_entry(config_root: &Path, entry: &KitAliasEntry) -> KitResolution {
+    let configured_project = PathBuf::from(&entry.project);
+    let project_root = if configured_project.is_absolute() {
+        configured_project
+    } else {
+        config_root.join(configured_project)
+    };
+
+    KitResolution {
+        project_root,
+        surface: entry.surface.clone(),
+        lang_key: entry.lang.clone(),
+    }
 }
 
 /// Result of a successful mint transform.
@@ -2093,9 +2128,8 @@ pub struct MintArgs {
     /// Project root containing `.provekit/config.toml`. Defaults to current dir.
     #[arg(long)]
     pub project: Option<PathBuf>,
-    /// Kit shortcut: maps `<kit>` to `implementations/<kit>`.
-    /// Equivalent to `--project implementations/<kit>`.
-    /// Known kits: rust, go, cpp, ts, csharp, clr-bytecode, swift, java, python, ruby, zig, c, php.
+    /// Project-configured kit shortcut from `[[kits]]` in `.provekit/config.toml`
+    /// or user config.
     #[arg(long, conflicts_with = "project")]
     pub kit: Option<String>,
     /// Override the authoring surface (otherwise read from config or derived from --kit).
@@ -2117,16 +2151,19 @@ pub struct MintArgs {
 pub fn run(args: MintArgs) -> u8 {
     // Resolve (project_root, surface, lang_key) from --kit or --project.
     let (project_root, derived_surface, lang_key) = if let Some(kit) = &args.kit {
-        match resolve_kit(kit) {
-            Some((path, surface, lang)) => (path, Some(surface), Some(lang)),
+        let config_root = std::env::current_dir().unwrap_or_else(|_| PathBuf::from("."));
+        let alias_project_cfg = read_project_config(&config_root);
+        let alias_user_cfg = read_user_config();
+        match resolve_kit_from_configs(kit, &config_root, &alias_project_cfg, &alias_user_cfg) {
+            Some(resolved) => (
+                resolved.project_root,
+                Some(resolved.surface),
+                Some(resolved.lang_key),
+            ),
             None => {
-                let known: Vec<&str> = KIT_TABLE.iter().map(|(a, _, _, _)| *a).collect();
-                eprintln!(
-                    "{}: unknown kit `{}`; known kits: {}",
-                    "error".red().bold(),
-                    kit,
-                    known.join(", ")
-                );
+                let aliases =
+                    configured_kit_alias_names_from_configs(&alias_project_cfg, &alias_user_cfg);
+                eprintln!("{}", format_unknown_kit_error(kit, &aliases));
                 return EXIT_USER_ERROR;
             }
         }
@@ -2415,47 +2452,105 @@ mod tests {
     }
 
     #[test]
-    fn resolve_kit_ts_maps_to_typescript_dir() {
-        // Issue #204: ts kit routes to typescript-self-contracts surface (not the
-        // generic workspace lifter) so --kit=ts mints real self-contracts.
-        let (path, surface, lang) = resolve_kit("ts").expect("ts must resolve");
-        assert_eq!(path, PathBuf::from("implementations/typescript"));
-        assert_eq!(surface, "typescript-self-contracts");
-        assert_eq!(lang, "ts");
+    fn resolve_kit_reads_project_config_aliases() {
+        use crate::project_config::{KitAliasEntry, ProjectConfig};
+
+        let project_cfg = ProjectConfig {
+            kits: vec![KitAliasEntry {
+                alias: "ts".to_string(),
+                project: "implementations/typescript".to_string(),
+                surface: "typescript-self-contracts".to_string(),
+                lang: "ts".to_string(),
+            }],
+            ..ProjectConfig::default()
+        };
+        let user_cfg = ProjectConfig::default();
+
+        let resolved =
+            resolve_kit_from_configs("ts", Path::new("/workspace"), &project_cfg, &user_cfg)
+                .expect("configured kit alias must resolve");
+
+        assert_eq!(
+            resolved.project_root,
+            PathBuf::from("/workspace/implementations/typescript")
+        );
+        assert_eq!(resolved.surface, "typescript-self-contracts");
+        assert_eq!(resolved.lang_key, "ts");
     }
 
     #[test]
-    fn resolve_kit_rust_maps_to_rust_dir() {
-        let (path, surface, lang) = resolve_kit("rust").expect("rust must resolve");
-        assert_eq!(path, PathBuf::from("implementations/rust"));
-        assert_eq!(surface, "rust");
-        assert_eq!(lang, "rust");
+    fn resolve_kit_falls_back_to_user_config_aliases() {
+        use crate::project_config::{KitAliasEntry, ProjectConfig};
+
+        let project_cfg = ProjectConfig::default();
+        let user_cfg = ProjectConfig {
+            kits: vec![KitAliasEntry {
+                alias: "external".to_string(),
+                project: "/opt/provekit/external-kit".to_string(),
+                surface: "external-lift".to_string(),
+                lang: "external".to_string(),
+            }],
+            ..ProjectConfig::default()
+        };
+
+        let resolved =
+            resolve_kit_from_configs("external", Path::new("/workspace"), &project_cfg, &user_cfg)
+                .expect("user configured kit alias must resolve");
+
+        assert_eq!(
+            resolved.project_root,
+            PathBuf::from("/opt/provekit/external-kit")
+        );
+        assert_eq!(resolved.surface, "external-lift");
+        assert_eq!(resolved.lang_key, "external");
     }
 
     #[test]
-    fn resolve_kit_all_13_ci_kits() {
-        let kits = [
+    fn resolve_kit_project_config_overrides_user_config_aliases() {
+        use crate::project_config::{KitAliasEntry, ProjectConfig};
+
+        let project_cfg = ProjectConfig {
+            kits: vec![KitAliasEntry {
+                alias: "java".to_string(),
+                project: "implementations/java".to_string(),
+                surface: "java-testng".to_string(),
+                lang: "java".to_string(),
+            }],
+            ..ProjectConfig::default()
+        };
+        let user_cfg = ProjectConfig {
+            kits: vec![KitAliasEntry {
+                alias: "java".to_string(),
+                project: "/opt/provekit/java".to_string(),
+                surface: "java-user".to_string(),
+                lang: "java-user".to_string(),
+            }],
+            ..ProjectConfig::default()
+        };
+
+        let resolved =
+            resolve_kit_from_configs("java", Path::new("/workspace"), &project_cfg, &user_cfg)
+                .expect("project alias must win");
+
+        assert_eq!(
+            resolved.project_root,
+            PathBuf::from("/workspace/implementations/java")
+        );
+        assert_eq!(resolved.surface, "java-testng");
+        assert_eq!(resolved.lang_key, "java");
+    }
+
+    #[test]
+    fn resolve_kit_unknown_returns_none_without_builtin_fallback() {
+        use crate::project_config::ProjectConfig;
+
+        assert!(resolve_kit_from_configs(
             "rust",
-            "go",
-            "cpp",
-            "ts",
-            "csharp",
-            "clr-bytecode",
-            "swift",
-            "java",
-            "python",
-            "ruby",
-            "zig",
-            "c",
-        ];
-        for kit in kits {
-            assert!(resolve_kit(kit).is_some(), "kit `{kit}` must resolve");
-        }
-    }
-
-    #[test]
-    fn resolve_kit_unknown_returns_none() {
-        assert!(resolve_kit("haskell").is_none());
+            Path::new("/workspace"),
+            &ProjectConfig::default(),
+            &ProjectConfig::default()
+        )
+        .is_none());
     }
 
     #[test]

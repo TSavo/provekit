@@ -276,14 +276,8 @@ pub fn run(args: VerifyArgs) -> u8 {
                 {
                     p
                 } else {
-                    let known: Vec<&str> =
-                        cmd_mint::KIT_TABLE.iter().map(|(a, _, _, _)| *a).collect();
-                    eprintln!(
-                        "{}: unknown kit `{}`; known kits: {}",
-                        "error".red().bold(),
-                        kit,
-                        known.join(", ")
-                    );
+                    let aliases = cmd_mint::configured_kit_alias_names();
+                    eprintln!("{}", cmd_mint::format_unknown_kit_error(kit, &aliases));
                     return EXIT_USER_ERROR;
                 }
             }
