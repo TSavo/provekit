@@ -1309,11 +1309,34 @@ fn lift_implications(params: &Value) -> Result<Value, String> {
     }
 
     let bridge_count = entries.len();
-    let gap_count = diagnostics.iter().filter(|d| d.get("kind").and_then(|v| v.as_str()) == Some("lift-gap")).count();
+    let gap_count = diagnostics
+        .iter()
+        .filter(|d| d.get("kind").and_then(|v| v.as_str()) == Some("lift-gap"))
+        .count();
+    // Break the lift-gaps down by reason so the gap between callsites and
+    // emitted bridges is legible: "why did 3000 method calls yield 30 bridges?"
+    // is answered here (no-matching-contract / unresolved-receiver / closure /
+    // macro / binding-missing-contract-cid ...), not left as a bare count.
+    let mut gap_by_reason: std::collections::BTreeMap<&str, usize> = std::collections::BTreeMap::new();
+    for d in &diagnostics {
+        if d.get("kind").and_then(|v| v.as_str()) == Some("lift-gap") {
+            let reason = d.get("reason").and_then(|v| v.as_str()).unwrap_or("unspecified");
+            *gap_by_reason.entry(reason).or_insert(0) += 1;
+        }
+    }
+    let gap_breakdown = gap_by_reason
+        .iter()
+        .map(|(r, n)| format!("{r}={n}"))
+        .collect::<Vec<_>>()
+        .join(", ");
     info!(
         bridges_emitted = bridge_count,
         lift_gaps = gap_count,
-        "lift_implications: complete"
+        gap_breakdown = %gap_breakdown,
+        "lift_implications: complete -> {} bridges emitted, {} lift-gaps [{}]",
+        bridge_count,
+        gap_count,
+        gap_breakdown
     );
 
     Ok(json!({
