@@ -37,7 +37,7 @@ use provekit_walk::{
 };
 use serde_json::{json, Value};
 use syn::spanned::Spanned;
-use tracing::{debug, info, trace};
+use tracing::{debug, info, trace, warn};
 
 // Tier 2b native semantic oracle (spec 2026-05-30-callee-resolution-tiers §2.T2b).
 // A separate module file driving rust-analyzer over LSP as the Tier-2a fallback
@@ -1338,6 +1338,21 @@ fn lift_implications(params: &Value) -> Result<Value, String> {
         gap_count,
         gap_breakdown
     );
+    // LOUD: a call site that matched a known contract but was dropped as
+    // body-discharge-ineligible is the worst failure mode in this pipeline. It
+    // is not bridged, not discharged, and not refused: it simply disappears from
+    // verification, so an obligation we KNOW exists is silently suppressed. That
+    // is exactly the regression that made self-application collapse from 1305 to
+    // 582 call sites without a single warning. It must scream.
+    let swallowed = *gap_by_reason.get("body-discharge-ineligible").unwrap_or(&0);
+    if swallowed > 0 {
+        warn!(
+            swallowed_callsites = swallowed,
+            "lift_implications: {} call sites had a MATCHING contract but were DROPPED as body-discharge-ineligible -> not bridged, not discharged, not refused; {} obligations vanish from verification unseen",
+            swallowed,
+            swallowed
+        );
+    }
 
     Ok(json!({
         "kind": "ir-document",
@@ -2166,6 +2181,65 @@ fn function_contract_lift(params: &Value) -> Result<Value, String> {
             }
             entries.push(entry);
         }
+    }
+
+    // Producer-side visibility. This surface emits the contracts that the
+    // implication matcher later bridges into; a collapse here (e.g. a soundness
+    // gate flipping most contracts to body-discharge-ineligible) was previously
+    // INVISIBLE because nothing logged the eligible-vs-ineligible split. Log it
+    // loudly: N fn-contracts, M body-discharge-eligible, and the refusal reasons
+    // (which ctors the body-discharge spine cannot yet encode) broken down, so a
+    // future regression of this size is loud, not silent.
+    let total_fnc = entries.len();
+    let eligible = entries
+        .iter()
+        .filter(|e| {
+            e.get("bodyDischargeEligible")
+                .and_then(|v| v.as_bool())
+                .unwrap_or(false)
+        })
+        .count();
+    let mut refusal_by_reason: std::collections::BTreeMap<&str, usize> =
+        std::collections::BTreeMap::new();
+    for e in &entries {
+        if let Some(r) = e.get("bodyDischargeRefusalReason").and_then(|v| v.as_str()) {
+            *refusal_by_reason.entry(r).or_insert(0) += 1;
+        }
+    }
+    let refusal_breakdown = refusal_by_reason
+        .iter()
+        .map(|(r, n)| format!("{r}={n}"))
+        .collect::<Vec<_>>()
+        .join(", ");
+    let ineligible = total_fnc - eligible;
+    // LOUD by design. If the body-discharge gate refuses the MAJORITY of a
+    // crate's production contracts, that is either a genuine property of the
+    // code or a regression in the gate/encoding (e.g. #1696 flipping 309/310 to
+    // ineligible). Either way it caps how much the substrate can ever discharge,
+    // so it must not hide in a DEBUG line. WARN with the ctor breakdown that
+    // names exactly what the body-discharge spine cannot encode.
+    if total_fnc > 0 && ineligible * 2 > total_fnc {
+        warn!(
+            fn_contracts = total_fnc,
+            body_discharge_eligible = eligible,
+            body_discharge_ineligible = ineligible,
+            "function_contract_lift: ONLY {}/{} fn-contracts are body-discharge-eligible; {} are REFUSED by the body-discharge spine and cap self-discharge [unencodable post terms: {}]",
+            eligible,
+            total_fnc,
+            ineligible,
+            refusal_breakdown
+        );
+    } else {
+        info!(
+            fn_contracts = total_fnc,
+            body_discharge_eligible = eligible,
+            body_discharge_ineligible = ineligible,
+            "function_contract_lift: {} fn-contracts ({} body-discharge-eligible, {} ineligible) [refusals: {}]",
+            total_fnc,
+            eligible,
+            ineligible,
+            refusal_breakdown
+        );
     }
 
     Ok(json!({
