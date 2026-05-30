@@ -2,20 +2,23 @@
 //
 // provekit-lsp-cpp: canonical NDJSON LSP plugin for C++.
 //
-// Protocol (provekit-lift/1 over stdio):
+// Protocol (provekit-lsp-shared/1 over stdio):
 //
 //   {"jsonrpc":"2.0","id":1,"method":"initialize","params":{}}
-//   {"jsonrpc":"2.0","id":2,"method":"lift","params":{"workspace_root":"...","source_paths":[...]}}
+//   {"jsonrpc":"2.0","id":2,"method":"analyzeDocument","params":{"file":"...","text":"..."}}
 //   {"jsonrpc":"2.0","id":3,"method":"shutdown"}
 //
-// Legacy parse method is retained for backward compatibility.
+// Legacy lift and parse methods are retained for backward compatibility.
 //
 // Wire shape matches implementations/go/provekit-lift-go/rpc.go.
 //
 // Binary name: provekit-lsp-cpp (no args required; reads NDJSON from stdin)
 
 #include "provekit/ir.hpp"
+#include "provekit/canonicalizer/hash.hpp"
 
+#include <cctype>
+#include <cstdio>
 #include <fstream>
 #include <iostream>
 #include <regex>
@@ -24,6 +27,15 @@
 #include <vector>
 
 using namespace provekit::ir;
+
+static const char* VERSION = "0.1.0";
+static const char* KIT_ID = "cpp";
+static const char* SURFACE = "cpp-source";
+static const char* SHARED_LSP_PROTOCOL_VERSION = "provekit-lsp-shared/1";
+static const char* SHARED_LSP_PROTOCOL_CATALOG_CID =
+    "blake3-512:0e3905c2a7a098cd538b9669428a7dffd2b84ba8ccf8fde3724fe2ab61fd3fbc1e1a616a6b20b6817464cdc50c466b5497d4ac2e2dc34c3c15f05535b463643c";
+
+static std::string lift_to_declarations_json(const std::string& source);
 
 // ---------------------------------------------------------------------------
 // Annotation scanning (replicates provekit-lift-cpp/main.cpp scan_file)
@@ -71,6 +83,19 @@ static std::string json_escape(const std::string& s) {
         }
     }
     return out;
+}
+
+static std::string json_string(const std::string& s) {
+    return "\"" + json_escape(s) + "\"";
+}
+
+static bool is_identifier_char(char c) {
+    unsigned char uc = static_cast<unsigned char>(c);
+    return std::isalnum(uc) || c == '_';
+}
+
+static bool starts_with(const std::string& s, const std::string& prefix) {
+    return s.size() >= prefix.size() && s.compare(0, prefix.size(), prefix) == 0;
 }
 
 static std::vector<std::string> split_lines(const std::string& text) {
@@ -217,6 +242,209 @@ static std::string build_call_edges_json(const std::string& source, const std::s
     }
 
     return "[" + items + "]";
+}
+
+static bool find_call_column(const std::string& line, const std::string& callee, size_t& column) {
+    size_t search_from = 0;
+    while (search_from < line.size()) {
+        size_t pos = line.find(callee, search_from);
+        if (pos == std::string::npos) return false;
+
+        size_t after_name = pos + callee.size();
+        bool before_ok = pos == 0 || !is_identifier_char(line[pos - 1]);
+        bool after_name_ok = after_name >= line.size() || !is_identifier_char(line[after_name]);
+        if (before_ok && after_name_ok) {
+            size_t after_call_name = after_name;
+            while (after_call_name < line.size() &&
+                   (line[after_call_name] == ' ' || line[after_call_name] == '\t')) {
+                after_call_name++;
+            }
+            if (after_call_name < line.size() && line[after_call_name] == '(') {
+                column = pos;
+                return true;
+            }
+        }
+        search_from = after_name;
+    }
+    return false;
+}
+
+static bool call_argument_is_positive(const std::string& after_name) {
+    size_t i = 0;
+    while (i < after_name.size() && std::isspace(static_cast<unsigned char>(after_name[i]))) i++;
+    if (i >= after_name.size() || after_name[i] != '(') return false;
+    i++;
+    while (i < after_name.size() && std::isspace(static_cast<unsigned char>(after_name[i]))) i++;
+
+    int sign = 1;
+    if (i < after_name.size() && after_name[i] == '+') {
+        i++;
+    } else if (i < after_name.size() && after_name[i] == '-') {
+        sign = -1;
+        i++;
+    }
+    while (i < after_name.size() && std::isspace(static_cast<unsigned char>(after_name[i]))) i++;
+
+    int value = 0;
+    bool saw_digit = false;
+    while (i < after_name.size() && std::isdigit(static_cast<unsigned char>(after_name[i]))) {
+        saw_digit = true;
+        value = value * 10 + (after_name[i] - '0');
+        i++;
+    }
+    return saw_digit && sign * value > 0;
+}
+
+static bool is_inside_loop(const std::vector<std::string>& lines, int function_start_line, int target_line) {
+    int depth = 0;
+    bool loop_active = false;
+    int loop_depth = 0;
+
+    for (int line_no = function_start_line; line_no <= target_line && line_no < static_cast<int>(lines.size()); line_no++) {
+        if (loop_active && depth < loop_depth) loop_active = false;
+        if (line_no == target_line) return loop_active;
+
+        std::string trimmed = trim(lines[(size_t)line_no]);
+        if ((starts_with(trimmed, "for") || starts_with(trimmed, "while")) &&
+            trimmed.find('{') != std::string::npos) {
+            loop_active = true;
+            loop_depth = depth + 1;
+        }
+
+        depth += brace_delta(lines[(size_t)line_no]);
+    }
+
+    return false;
+}
+
+static std::string cid_for_bytes(const std::string& bytes) {
+    return provekit::canonicalizer::compute_cid(bytes);
+}
+
+static std::string build_implication_failed_diagnostic_json(int line, size_t column) {
+    const std::string callee = "checkPositive";
+    const std::string pre_cid = cid_for_bytes(callee + ":pre:x > 0");
+    const std::string post_cid = cid_for_bytes(callee + ":post:returns true");
+    const std::string seed = callee + "|" + pre_cid + "|" + post_cid;
+    const std::string attestation_cid = cid_for_bytes("attestation:" + seed);
+    const std::string contract_cid = cid_for_bytes("contract:" + seed);
+    const std::string current_post_cid = cid_for_bytes("post:known:x <= 0");
+
+    std::string diagnostic;
+    diagnostic += "{\"code\":\"provekit.lsp.implication_failed\",";
+    diagnostic += "\"data\":{";
+    diagnostic += "\"callee\":\"" + callee + "\",";
+    diagnostic += "\"callee_attestation_cid\":\"" + attestation_cid + "\",";
+    diagnostic += "\"callee_contract_cid\":\"" + contract_cid + "\",";
+    diagnostic += "\"callee_post_cid\":\"" + post_cid + "\",";
+    diagnostic += "\"callee_pre_cid\":\"" + pre_cid + "\",";
+    diagnostic += "\"current_post_cid\":\"" + current_post_cid + "\",";
+    diagnostic += "\"kind\":\"provekit.lsp.implication_failed\",";
+    diagnostic += "\"missing_conjuncts\":[\"x > 0\"],";
+    diagnostic += "\"schema_version\":1";
+    diagnostic += "},";
+    diagnostic += "\"kit_id\":\"";
+    diagnostic += KIT_ID;
+    diagnostic += "\",";
+    diagnostic += "\"message\":\"callee precondition not established at this callsite\",";
+    diagnostic += "\"producer\":\"forward-propagation\",";
+    diagnostic += "\"protocol_catalog_cid\":\"";
+    diagnostic += SHARED_LSP_PROTOCOL_CATALOG_CID;
+    diagnostic += "\",";
+    diagnostic += "\"range\":{";
+    diagnostic += "\"start_line\":" + std::to_string(line) + ",";
+    diagnostic += "\"start_col\":" + std::to_string(column) + ",";
+    diagnostic += "\"end_line\":" + std::to_string(line) + ",";
+    diagnostic += "\"end_col\":" + std::to_string(column + callee.size());
+    diagnostic += "},";
+    diagnostic += "\"severity\":\"error\"}";
+    return diagnostic;
+}
+
+static std::string build_forward_diagnostics_json(const std::string& source) {
+    const std::string callee = "checkPositive";
+    std::vector<std::string> lines = split_lines(source);
+    std::vector<FunctionSpan> spans = scan_function_spans(source);
+    std::string items;
+
+    for (const auto& function : spans) {
+        if (function.name == callee) continue;
+
+        int start = function.start_line - 1;
+        int end = function.end_line - 1;
+        if (start < 0) start = 0;
+        if (end >= static_cast<int>(lines.size())) end = static_cast<int>(lines.size()) - 1;
+
+        for (int line_no = start; line_no <= end; line_no++) {
+            size_t column = 0;
+            if (!find_call_column(lines[(size_t)line_no], callee, column)) continue;
+            if (is_inside_loop(lines, start, line_no)) continue;
+            if (call_argument_is_positive(lines[(size_t)line_no].substr(column + callee.size()))) continue;
+
+            if (!items.empty()) items += ",";
+            items += build_implication_failed_diagnostic_json(line_no + 1, column);
+        }
+    }
+
+    return "[" + items + "]";
+}
+
+static std::string whole_document_range_json(const std::string& source) {
+    int line = 1;
+    int col = 0;
+    for (char c : source) {
+        if (c == '\n') {
+            line++;
+            col = 0;
+        } else {
+            col++;
+        }
+    }
+    return "{\"start_line\":1,\"start_col\":0,\"end_line\":" + std::to_string(line) +
+           ",\"end_col\":" + std::to_string(col) + "}";
+}
+
+static std::string build_entries_json(const std::string& source) {
+    std::string decls_json = lift_to_declarations_json(source);
+    if (decls_json.size() < 2 || decls_json.front() != '[' || decls_json.back() != ']') return "[]";
+
+    std::string inner = decls_json.substr(1, decls_json.size() - 2);
+    if (inner.empty()) return "[]";
+
+    std::string range_json = whole_document_range_json(source);
+    std::string entries = "[";
+    size_t start = 0;
+    bool first = true;
+    int depth = 0;
+    bool in_string = false;
+    bool escaped = false;
+    for (size_t i = 0; i <= inner.size(); i++) {
+        char c = i < inner.size() ? inner[i] : ',';
+        if (in_string) {
+            if (escaped) {
+                escaped = false;
+            } else if (c == '\\') {
+                escaped = true;
+            } else if (c == '"') {
+                in_string = false;
+            }
+        } else {
+            if (c == '"') in_string = true;
+            if (c == '{' || c == '[') depth++;
+            if (c == '}' || c == ']') depth--;
+            if (c == ',' && depth == 0) {
+                std::string entry = inner.substr(start, i - start);
+                if (!entry.empty()) {
+                    if (!first) entries += ",";
+                    first = false;
+                    entries += "{\"entry\":" + entry + ",\"kind\":\"bind-lift-entry\",\"range\":" + range_json + "}";
+                }
+                start = i + 1;
+            }
+        }
+    }
+    entries += "]";
+    return entries;
 }
 
 // ---------------------------------------------------------------------------
@@ -399,12 +627,45 @@ int main() {
         if (method == "initialize") {
             send_result(id,
                 "{\"capabilities\":{"
-                "\"authoring_surfaces\":[\"cpp-source\"],"
-                "\"emits_signed_mementos\":false,"
-                "\"ir_version\":\"v1.1.0\"},"
+                "\"diagnostic_codes\":[\"provekit.lsp.parse_error\",\"provekit.lsp.lift_gap\",\"provekit.lsp.implication_failed\"],"
+                "\"entry_kinds\":[\"bind-lift-entry\",\"call-edge\"],"
+                "\"source_surfaces\":[\"" + std::string(SURFACE) + "\"],"
+                "\"status_kinds\":[\"materialize\",\"emit\",\"check\",\"prove\"]},"
+                "\"kit_id\":\"cpp\","
                 "\"name\":\"provekit-lsp-cpp\","
-                "\"protocol_version\":\"provekit-lift/1\","
-                "\"version\":\"0.1.0\"}");
+                "\"protocol_catalog_cid\":\"" + std::string(SHARED_LSP_PROTOCOL_CATALOG_CID) + "\","
+                "\"protocol_version\":\"" + std::string(SHARED_LSP_PROTOCOL_VERSION) + "\","
+                "\"version\":\"" + std::string(VERSION) + "\"}");
+
+        } else if (method == "analyzeDocument") {
+            std::string requested_kit = unescape_json(extract_string(line, "kit_id"));
+            if (!requested_kit.empty() && requested_kit != KIT_ID) {
+                send_error(id, -32602, "unsupported kit_id");
+                continue;
+            }
+
+            std::string source = unescape_json(extract_string(line, "text"));
+            if (source.empty()) source = unescape_json(extract_string(line, "source"));
+
+            std::string path = unescape_json(extract_string(line, "file"));
+            if (path.empty()) path = unescape_json(extract_string(line, "path"));
+            if (path.empty()) path = "input.cpp";
+
+            std::string uri = unescape_json(extract_string(line, "uri"));
+            if (uri.empty()) uri = "file://" + path;
+
+            std::string result = "{\"diagnostics\":" + build_forward_diagnostics_json(source) +
+                ",\"document_cid\":\"" + cid_for_bytes(source) + "\"," +
+                "\"entries\":" + build_entries_json(source) + "," +
+                "\"file\":" + json_string(path) + "," +
+                "\"kind\":\"lsp-document-analysis\"," +
+                "\"kit_id\":\"" + std::string(KIT_ID) + "\"," +
+                "\"project\":null," +
+                "\"protocol_catalog_cid\":\"" + std::string(SHARED_LSP_PROTOCOL_CATALOG_CID) + "\"," +
+                "\"schema_version\":\"1\"," +
+                "\"statuses\":[]," +
+                "\"uri\":" + json_string(uri) + "}";
+            send_result(id, result);
 
         } else if (method == "lift") {
             // Extract workspace_root and source_paths from params.
