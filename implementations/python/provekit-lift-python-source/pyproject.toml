@@ -11,7 +11,6 @@ requires-python = ">=3.10"
 authors = [{ name = "ProvekIt" }]
 dependencies = [
     "blake3>=0.3.0",
-    "provekit-lift-py-tests @ file:../provekit-lift-py-tests",
 ]
 
 [project.optional-dependencies]

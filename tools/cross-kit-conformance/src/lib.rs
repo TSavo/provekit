@@ -2042,7 +2042,7 @@ fn linux_native_checks() -> Vec<NativeCheck> {
                 "-p".into(),
                 "provekit-claim-envelope".into(),
                 "--test".into(),
-                "bridge_v14_roundtrip".into(),
+                "mint_bridge_implication".into(),
             ],
             cwd: root.clone(),
             timeout: Duration::from_secs(300),
@@ -2616,6 +2616,31 @@ mod tests {
                 "-Dtest=BridgeV14RoundtripTest",
             ]
         );
+    }
+
+    #[test]
+    fn rust_native_test_targets_exist() {
+        let root = repo_root();
+        let test_dir = root.join("implementations/rust/provekit-claim-envelope/tests");
+        for native in linux_native_checks()
+            .into_iter()
+            .filter(|check| check.kit == "rust")
+        {
+            let Some(test_arg) = native.cmd.iter().position(|arg| arg == "--test") else {
+                continue;
+            };
+            let target = native
+                .cmd
+                .get(test_arg + 1)
+                .expect("rust --test must be followed by a target");
+            let test_file = test_dir.join(format!("{target}.rs"));
+            assert!(
+                test_file.exists(),
+                "rust native conformance check '{}' points at missing test target {}",
+                native.name,
+                test_file.display()
+            );
+        }
     }
 
     #[test]
