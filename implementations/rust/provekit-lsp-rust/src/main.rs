@@ -10,7 +10,8 @@
 //
 //   {"jsonrpc":"2.0","id":1,"method":"initialize","params":{}}
 //   {"jsonrpc":"2.0","id":2,"method":"parse","params":{"path":"...","source":"..."}}
-//   {"jsonrpc":"2.0","id":3,"method":"shutdown"}
+//   {"jsonrpc":"2.0","id":3,"method":"analyzeDocument","params":{"file":"...","text":"..."}}
+//   {"jsonrpc":"2.0","id":4,"method":"shutdown"}
 //
 // The `parse` handler parses the source with `syn`, runs all registered
 // lift adapters (proptest, contracts, kani, prusti, rust-tests, etc.),
@@ -56,6 +57,10 @@ use provekit_lift::{
     adapter_prusti, adapter_quickcheck, adapter_rust_tests, adapter_verus,
 };
 use provekit_lsp_rust::forward_propagator::ForwardPropagator;
+
+const KIT_ID: &str = "rust";
+const SHARED_LSP_PROTOCOL_VERSION: &str = "provekit-lsp-shared/1";
+const SHARED_LSP_PROTOCOL_CATALOG_CID: &str = "blake3-512:0e3905c2a7a098cd538b9669428a7dffd2b84ba8ccf8fde3724fe2ab61fd3fbc1e1a616a6b20b6817464cdc50c466b5497d4ac2e2dc34c3c15f05535b463643c";
 
 fn main() {
     // Parse CLI.
@@ -115,9 +120,26 @@ fn main() {
                     "result": {
                         "name": "provekit-lsp-rust",
                         "version": "0.1.0",
-                        "capabilities": ["parse"]
+                        "protocol_version": SHARED_LSP_PROTOCOL_VERSION,
+                        "kit_id": KIT_ID,
+                        "protocol_catalog_cid": SHARED_LSP_PROTOCOL_CATALOG_CID,
+                        "capabilities": {
+                            "source_surfaces": ["rust-source"],
+                            "entry_kinds": ["bind-lift-entry"],
+                            "diagnostic_codes": [
+                                "provekit.lsp.parse_error",
+                                "provekit.lsp.implication_failed"
+                            ],
+                            "status_kinds": ["materialize", "emit", "check", "prove"]
+                        }
                     }
                 });
+                let _ = writeln!(stdout, "{resp}");
+                let _ = stdout.flush();
+            }
+            "analyzeDocument" => {
+                let params = req.get("params").cloned().unwrap_or_default();
+                let resp = handle_analyze_document(id.clone(), params);
                 let _ = writeln!(stdout, "{resp}");
                 let _ = stdout.flush();
             }
@@ -250,6 +272,223 @@ fn project_cid_from_socket(socket_path: &PathBuf) -> String {
     let mut h = DefaultHasher::new();
     socket_path.hash(&mut h);
     format!("{:016x}", h.finish())
+}
+
+fn handle_analyze_document(
+    id: serde_json::Value,
+    params: serde_json::Value,
+) -> serde_json::Value {
+    let file = params
+        .get("file")
+        .or_else(|| params.get("path"))
+        .and_then(|v| v.as_str())
+        .unwrap_or("source.rs");
+    let uri = params
+        .get("uri")
+        .and_then(|v| v.as_str())
+        .map(str::to_owned)
+        .unwrap_or_else(|| format!("file://{file}"));
+    let source = params
+        .get("text")
+        .or_else(|| params.get("source"))
+        .and_then(|v| v.as_str())
+        .unwrap_or("");
+
+    let parse_resp = handle_parse(serde_json::Value::Null, source, file);
+    let result = match parse_resp.get("result") {
+        Some(result) => result,
+        None => {
+            let message = parse_resp
+                .get("error")
+                .and_then(|err| err.get("message"))
+                .and_then(|message| message.as_str())
+                .unwrap_or("rust source parse failed");
+            return analyze_document_response(
+                id,
+                &uri,
+                file,
+                source,
+                Vec::new(),
+                vec![parse_error_diagnostic(message)],
+                Vec::new(),
+            );
+        }
+    };
+
+    let entries = result
+        .get("declarations")
+        .and_then(|v| v.as_array())
+        .into_iter()
+        .flatten()
+        .cloned()
+        .map(|entry| {
+            serde_json::json!({
+                "kind": "bind-lift-entry",
+                "entry": entry,
+                "range": whole_document_range(source)
+            })
+        })
+        .collect();
+
+    let diagnostics = result
+        .get("diagnostics")
+        .and_then(|v| v.as_array())
+        .into_iter()
+        .flatten()
+        .map(shared_diagnostic_from_lsp_diagnostic)
+        .collect();
+
+    analyze_document_response(id, &uri, file, source, entries, diagnostics, Vec::new())
+}
+
+fn analyze_document_response(
+    id: serde_json::Value,
+    uri: &str,
+    file: &str,
+    source: &str,
+    entries: Vec<serde_json::Value>,
+    diagnostics: Vec<serde_json::Value>,
+    statuses: Vec<serde_json::Value>,
+) -> serde_json::Value {
+    serde_json::json!({
+        "jsonrpc": "2.0",
+        "id": id,
+        "result": {
+            "kind": "lsp-document-analysis",
+            "schema_version": "1",
+            "kit_id": KIT_ID,
+            "uri": uri,
+            "file": file,
+            "document_cid": blake3_512_cid(source.as_bytes()),
+            "protocol_catalog_cid": SHARED_LSP_PROTOCOL_CATALOG_CID,
+            "entries": entries,
+            "diagnostics": diagnostics,
+            "statuses": statuses,
+            "project": null
+        }
+    })
+}
+
+fn parse_error_diagnostic(message: &str) -> serde_json::Value {
+    serde_json::json!({
+        "code": "provekit.lsp.parse_error",
+        "message": message,
+        "severity": "error",
+        "range": first_byte_range(),
+        "producer": "kit",
+        "kit_id": KIT_ID,
+        "protocol_catalog_cid": SHARED_LSP_PROTOCOL_CATALOG_CID
+    })
+}
+
+fn shared_diagnostic_from_lsp_diagnostic(diagnostic: &serde_json::Value) -> serde_json::Value {
+    let code = diagnostic
+        .get("data")
+        .and_then(|data| data.get("kind"))
+        .and_then(|kind| kind.as_str())
+        .or_else(|| diagnostic.get("code").and_then(|code| code.as_str()))
+        .unwrap_or("provekit.lsp.lift_gap");
+    let message = diagnostic
+        .get("message")
+        .and_then(|message| message.as_str())
+        .unwrap_or("ProvekIt diagnostic");
+    let severity = diagnostic
+        .get("severity")
+        .and_then(|severity| severity.as_u64())
+        .map(shared_severity)
+        .unwrap_or("information");
+    let range = diagnostic
+        .get("range")
+        .map(lsp_range_to_source_range)
+        .unwrap_or_else(first_byte_range);
+
+    let mut shared = serde_json::json!({
+        "code": code,
+        "message": message,
+        "severity": severity,
+        "range": range,
+        "producer": "forward-propagation",
+        "kit_id": KIT_ID,
+        "protocol_catalog_cid": SHARED_LSP_PROTOCOL_CATALOG_CID
+    });
+    if let Some(data) = diagnostic.get("data") {
+        shared["data"] = data.clone();
+    }
+    shared
+}
+
+fn shared_severity(severity: u64) -> &'static str {
+    match severity {
+        1 => "error",
+        2 => "warning",
+        3 => "information",
+        4 => "hint",
+        _ => "information",
+    }
+}
+
+fn lsp_range_to_source_range(range: &serde_json::Value) -> serde_json::Value {
+    let start = range.get("start").unwrap_or(&serde_json::Value::Null);
+    let end = range.get("end").unwrap_or(&serde_json::Value::Null);
+    let start_line = start.get("line").and_then(|v| v.as_u64()).unwrap_or(0) + 1;
+    let start_col = start
+        .get("character")
+        .and_then(|v| v.as_u64())
+        .unwrap_or(0);
+    let end_line = end.get("line").and_then(|v| v.as_u64()).unwrap_or(0) + 1;
+    let end_col = end
+        .get("character")
+        .and_then(|v| v.as_u64())
+        .unwrap_or(start_col);
+    serde_json::json!({
+        "start_line": start_line,
+        "start_col": start_col,
+        "end_line": end_line,
+        "end_col": end_col
+    })
+}
+
+fn whole_document_range(source: &str) -> serde_json::Value {
+    let mut line = 1u64;
+    let mut col = 0u64;
+    for ch in source.chars() {
+        if ch == '\n' {
+            line += 1;
+            col = 0;
+        } else {
+            col += 1;
+        }
+    }
+    serde_json::json!({
+        "start_line": 1,
+        "start_col": 0,
+        "end_line": line,
+        "end_col": col
+    })
+}
+
+fn first_byte_range() -> serde_json::Value {
+    serde_json::json!({
+        "start_line": 1,
+        "start_col": 0,
+        "end_line": 1,
+        "end_col": 0
+    })
+}
+
+fn blake3_512_cid(bytes: &[u8]) -> String {
+    use std::fmt::Write as _;
+
+    let mut hasher = blake3::Hasher::new();
+    hasher.update(bytes);
+    let mut output = [0u8; 64];
+    hasher.finalize_xof().fill(&mut output);
+
+    let mut cid = String::from("blake3-512:");
+    for byte in output {
+        write!(&mut cid, "{byte:02x}").expect("write to string");
+    }
+    cid
 }
 
 /// Default mode: parse Rust `source` with syn, run the lift adapters, and
