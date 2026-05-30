@@ -131,6 +131,7 @@ pub async fn handle_parse_file(state: Arc<Mutex<ProjectState>>, params: &Json, i
                     "sourceContractCid": e.source_contract_cid,
                     "reason": e.reason,
                     "file": e.file,
+                    "callSiteLocus": e.call_site_locus_json,
                 })
             })
             .collect::<Vec<_>>()

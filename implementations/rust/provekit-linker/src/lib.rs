@@ -129,6 +129,9 @@ pub struct LinkerError {
     /// Source file where the call site is located.  Derived from
     /// `call_site_locus_json.file`; `None` if the locus has no file field.
     pub file: Option<String>,
+    /// Original call-site locus emitted by the owning kit. Used by linkerd/LSP
+    /// to place solver diagnostics at the source call expression.
+    pub call_site_locus_json: Option<Json>,
 }
 
 /// Input bundle for a single `link()` invocation.
@@ -288,6 +291,7 @@ fn derive_link_bundle_inner(
                         edge.target_symbol
                     ),
                     file: locus_file,
+                    call_site_locus_json: Some(edge.call_site_locus_json.clone()),
                 });
             }
             Some(target_cid) => {
@@ -317,6 +321,7 @@ fn derive_link_bundle_inner(
                     plan,
                 ) {
                     err.file = locus_file;
+                    err.call_site_locus_json = Some(edge.call_site_locus_json.clone());
                     linker_errors_out.push(err);
                 }
             }
@@ -515,6 +520,7 @@ fn discharge_obligation(
                     "caller post-condition is absent; cannot discharge `post_caller \u{2283} pre_callee` for target `{target_cid}`"
                 ),
                 file: None, // populated by caller from locus
+                call_site_locus_json: None, // populated by caller from locus
             });
         }
         Some(p) => p,
@@ -557,6 +563,7 @@ fn discharge_obligation(
                     "compile post-implies-pre to SMT-LIB failed for target `{target_cid}`: {e}"
                 ),
                 file: None,
+                call_site_locus_json: None,
             });
         }
     };
@@ -573,6 +580,7 @@ fn discharge_obligation(
                 "solver reports `post_caller \u{2283} pre_callee` is violated for target `{target_cid}`: {reason}"
             ),
             file: None,
+            call_site_locus_json: None,
         }),
         ObligationVerdict::Undecidable | ObligationVerdict::Disagreement => Some(LinkerError {
             kind: "implication-undecidable".into(),
@@ -582,6 +590,7 @@ fn discharge_obligation(
                 "solver could not decide `post_caller \u{2283} pre_callee` for target `{target_cid}`: {reason}"
             ),
             file: None,
+            call_site_locus_json: None,
         }),
     }
 }

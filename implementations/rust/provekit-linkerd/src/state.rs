@@ -173,6 +173,7 @@ impl ProjectState {
                     "sourceContractCid": e.source_contract_cid,
                     "reason": e.reason,
                     "file": e.file,
+                    "callSiteLocus": e.call_site_locus_json,
                 })
             })
             .collect()
@@ -319,6 +320,48 @@ mod tests {
         assert!(state.project_status().is_some());
         state.flush_cache();
         assert!(state.project_status().is_none());
+    }
+
+    #[test]
+    fn diagnostics_for_file_preserve_callsite_locus() {
+        let mut state = ProjectState::new(4);
+        let source_cid = "blake3-512:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa";
+        let locus = serde_json::json!({
+            "file": "/tmp/caller.rs",
+            "line": 7,
+            "column": 13
+        });
+
+        state.update_and_link(
+            "rust",
+            "/tmp/caller.rs",
+            vec![LinkerContract {
+                name: "caller".into(),
+                kit: "rust-kit".into(),
+                contract_cid: source_cid.into(),
+                pre_json: None,
+                post_json: Some(serde_json::json!({
+                    "kind": "atomic",
+                    "name": "true",
+                    "args": []
+                })),
+            }],
+            vec![LinkerCallEdge {
+                source_contract_cid: source_cid.into(),
+                target_contract_cid: None,
+                target_symbol: "rust-kit:missing".into(),
+                call_site_locus_json: locus.clone(),
+                evidence_term_json: serde_json::json!({
+                    "kind": "Atomic",
+                    "name": "obligation",
+                    "args": []
+                }),
+            }],
+        );
+
+        let diagnostics = state.diagnostics_for_file("/tmp/caller.rs");
+        assert_eq!(diagnostics.len(), 1);
+        assert_eq!(diagnostics[0]["callSiteLocus"], locus);
     }
 
     #[test]
