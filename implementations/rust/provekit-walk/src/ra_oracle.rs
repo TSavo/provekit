@@ -26,7 +26,9 @@
 use std::collections::HashMap;
 use std::io::{BufReader, Read, Write};
 use std::path::{Path, PathBuf};
-use std::process::{Child, ChildStdin, ChildStdout, Command, Stdio};
+use std::process::{Child, ChildStdin, Command, Stdio};
+use std::sync::mpsc::{Receiver, RecvTimeoutError};
+use std::thread::JoinHandle;
 use std::time::{Duration, Instant};
 
 use serde_json::{json, Value};
@@ -46,7 +48,16 @@ pub struct ResolveQuery {
 pub struct RaOracle {
     child: Child,
     stdin: ChildStdin,
-    reader: BufReader<ChildStdout>,
+    /// Messages from rust-analyzer, framed and JSON-parsed by a background
+    /// reader thread. A channel (rather than a blocking `BufReader`) is what
+    /// gives us `recv_timeout`, which we need both to bound a response wait and,
+    /// crucially, to detect QUIESCENCE: rust-analyzer answers `definition` from
+    /// whatever index state it has reached, so a query issued mid-load returns a
+    /// DIFFERENT (partial) answer than the same query after the workspace fully
+    /// settles. Determinism therefore requires waiting until the server stops
+    /// emitting progress, not merely until some early phase reports `end`.
+    rx: Receiver<Value>,
+    reader_handle: Option<JoinHandle<()>>,
     root: PathBuf,
     next_id: i64,
     opened: std::collections::HashSet<PathBuf>,
@@ -55,9 +66,20 @@ pub struct RaOracle {
 /// How long to wait for rust-analyzer to finish loading the workspace before
 /// issuing resolution queries. The cold load runs cargo/rustc over the project,
 /// which can take minutes on a large workspace; this is generous on purpose.
-const INDEX_WAIT: Duration = Duration::from_secs(240);
+const INDEX_WAIT: Duration = Duration::from_secs(300);
 /// How long to wait for a single `textDocument/definition` response.
 const DEFINITION_WAIT: Duration = Duration::from_secs(30);
+/// rust-analyzer is considered settled once it has emitted no message for this
+/// long. The workspace-load progress phases (fetching, crate-graph, roots
+/// scan, proc-macro load, a second crate-graph + fetch) come in bursts seconds
+/// apart; a gap this large means the burst sequence is over and the index is
+/// stable, so a `definition` answer will not change on a later (warmer) run.
+const QUIESCENCE_GAP: Duration = Duration::from_secs(12);
+/// Bounded secondary safety: after the workspace is settled a `null` definition
+/// is a real refuse, but to absorb any residual lag we retry a null this many
+/// times with a short settle in between before refusing.
+const NULL_RETRIES: usize = 3;
+const NULL_RETRY_SETTLE: Duration = Duration::from_secs(2);
 
 impl RaOracle {
     /// Start the oracle for `workspace_root`, or return `None` to refuse.
@@ -80,11 +102,23 @@ impl RaOracle {
             .ok()?;
         let stdin = child.stdin.take()?;
         let stdout = child.stdout.take()?;
-        let reader = BufReader::new(stdout);
+        let (tx, rx) = std::sync::mpsc::channel::<Value>();
+        // Background reader: frame and parse every LSP message off stdout into
+        // the channel. It exits when stdout closes (the channel send then errors
+        // on a dropped receiver, which also unblocks it).
+        let reader_handle = std::thread::spawn(move || {
+            let mut reader = BufReader::new(stdout);
+            while let Some(msg) = read_framed_message(&mut reader) {
+                if tx.send(msg).is_err() {
+                    break;
+                }
+            }
+        });
         let mut oracle = RaOracle {
             child,
             stdin,
-            reader,
+            rx,
+            reader_handle: Some(reader_handle),
             root: workspace_root.to_path_buf(),
             next_id: 0,
             opened: std::collections::HashSet::new(),
@@ -113,9 +147,14 @@ impl RaOracle {
         // Drain until the initialize response arrives.
         self.wait_for_response(id, INDEX_WAIT)?;
         self.send_notification("initialized", json!({}));
-        // Let rust-analyzer load + index the workspace before we query. We wait
-        // for an indexing-complete progress signal, or for quiescence.
-        self.wait_until_indexed(INDEX_WAIT);
+        // Let rust-analyzer load + index the workspace before we query. There is
+        // no single "indexing complete" token in the bundled analyzer (it emits
+        // fetch / crate-graph / roots-scan / proc-macro phases in bursts), so we
+        // wait for QUIESCENCE: a sustained gap with no server message. Gating on
+        // an early phase `end` (e.g. the first "Roots Scanned") returns control
+        // while the index is still partial, which makes `definition` answers
+        // depend on timing. Quiescence is the determinism guarantee.
+        self.wait_until_quiescent(INDEX_WAIT);
         Some(())
     }
 
@@ -137,6 +176,10 @@ impl RaOracle {
             }),
         );
         self.opened.insert(abs_path.to_path_buf());
+        // Opening a document makes rust-analyzer (re)analyze it, which can emit a
+        // fresh progress burst. Drain to quiescence again so the first query on
+        // this file is asked of a settled index, not a mid-analysis one.
+        self.wait_until_quiescent(INDEX_WAIT);
         Some(())
     }
 
@@ -144,16 +187,34 @@ impl RaOracle {
     pub fn resolve_crate(&mut self, q: &ResolveQuery) -> Option<String> {
         self.ensure_open(&q.abs_path)?;
         let uri = path_to_uri(&q.abs_path);
-        let id = self.send_request(
-            "textDocument/definition",
-            json!({
-                "textDocument": { "uri": uri },
-                "position": { "line": q.lsp_line, "character": q.lsp_col },
-            }),
-        )?;
-        let resp = self.wait_for_response(id, DEFINITION_WAIT)?;
-        let result = resp.get("result")?;
-        crate_from_definition_result(result)
+        // After the workspace is settled, a definitive answer is stable. We
+        // retry only on a `null` result (no definition yet), as bounded
+        // secondary safety against residual lag; a non-null answer is taken as
+        // final, never re-queried (re-querying a non-null could only mask a
+        // genuine refuse). Crate ambiguity / unmappable paths are refusals, not
+        // retried.
+        for attempt in 0..=NULL_RETRIES {
+            let id = self.send_request(
+                "textDocument/definition",
+                json!({
+                    "textDocument": { "uri": uri },
+                    "position": { "line": q.lsp_line, "character": q.lsp_col },
+                }),
+            )?;
+            let resp = self.wait_for_response(id, DEFINITION_WAIT)?;
+            let result = resp.get("result").cloned().unwrap_or(Value::Null);
+            // A non-empty result: resolve (or refuse on ambiguity/unmappable).
+            let is_null_or_empty = result.is_null()
+                || result.as_array().map(|a| a.is_empty()).unwrap_or(false);
+            if !is_null_or_empty {
+                return crate_from_definition_result(&result);
+            }
+            if attempt < NULL_RETRIES {
+                std::thread::sleep(NULL_RETRY_SETTLE);
+            }
+        }
+        // Persistent null after settle + retries: a deterministic refuse.
+        None
     }
 
     fn send_request(&mut self, method: &str, params: Value) -> Option<i64> {
@@ -177,105 +238,96 @@ impl RaOracle {
         Some(())
     }
 
-    /// Read one LSP message (framed by Content-Length). Returns `None` on EOF or
-    /// a malformed frame.
-    fn read_message(&mut self) -> Option<Value> {
-        // Read headers up to the blank line.
-        let mut header = Vec::new();
-        let mut byte = [0u8; 1];
-        loop {
-            if self.reader.read(&mut byte).ok()? == 0 {
-                return None;
-            }
-            header.push(byte[0]);
-            if header.ends_with(b"\r\n\r\n") {
-                break;
-            }
-            if header.len() > 1 << 16 {
-                return None;
-            }
-        }
-        let header_str = String::from_utf8_lossy(&header);
-        let mut len = 0usize;
-        for line in header_str.split("\r\n") {
-            if let Some(rest) = line
-                .to_ascii_lowercase()
-                .strip_prefix("content-length:")
-            {
-                len = rest.trim().parse().ok()?;
-            }
-        }
-        if len == 0 {
-            return None;
-        }
-        let mut body = vec![0u8; len];
-        self.reader.read_exact(&mut body).ok()?;
-        serde_json::from_slice(&body).ok()
-    }
-
     /// Pump messages until one with `id == want` carrying `result`/`error`, or
     /// until the deadline. Server-to-client requests/notifications are ignored.
     fn wait_for_response(&mut self, want: i64, timeout: Duration) -> Option<Value> {
         let deadline = Instant::now() + timeout;
-        while Instant::now() < deadline {
-            let msg = self.read_message()?;
-            if msg.get("id").and_then(|v| v.as_i64()) == Some(want)
-                && (msg.get("result").is_some() || msg.get("error").is_some())
-            {
-                return Some(msg);
+        loop {
+            let remaining = deadline.checked_duration_since(Instant::now())?;
+            match self.rx.recv_timeout(remaining) {
+                Ok(msg) => {
+                    if msg.get("id").and_then(|v| v.as_i64()) == Some(want)
+                        && (msg.get("result").is_some() || msg.get("error").is_some())
+                    {
+                        return Some(msg);
+                    }
+                }
+                Err(_) => return None,
             }
         }
-        None
     }
 
-    /// Pump progress notifications until rust-analyzer signals that indexing /
-    /// cache priming has ended, or until the deadline. Best-effort: returns once
-    /// an `end` progress for an indexing/caching token is seen.
-    fn wait_until_indexed(&mut self, timeout: Duration) {
-        let deadline = Instant::now() + timeout;
-        while Instant::now() < deadline {
-            let Some(msg) = self.read_message() else {
-                return;
+    /// Block until rust-analyzer has been silent for `QUIESCENCE_GAP`, i.e. the
+    /// workspace-load progress bursts are over and the index is stable, or until
+    /// `timeout` elapses overall. Draining to quiescence (rather than matching a
+    /// specific progress token) is what makes a `definition` answer reproducible:
+    /// every query is asked of the same settled index whether the on-disk cache
+    /// was cold or warm at startup.
+    fn wait_until_quiescent(&mut self, timeout: Duration) {
+        let hard_deadline = Instant::now() + timeout;
+        loop {
+            let until_hard = match hard_deadline.checked_duration_since(Instant::now()) {
+                Some(d) => d,
+                None => return,
             };
-            if msg.get("method").and_then(|v| v.as_str()) == Some("$/progress") {
-                let value = msg.get("params").and_then(|p| p.get("value"));
-                let kind = value
-                    .and_then(|v| v.get("kind"))
-                    .and_then(|v| v.as_str())
-                    .unwrap_or("");
-                let token = msg
-                    .get("params")
-                    .and_then(|p| p.get("token"))
-                    .map(|t| t.to_string())
-                    .unwrap_or_default()
-                    .to_ascii_lowercase();
-                let title = value
-                    .and_then(|v| v.get("title"))
-                    .and_then(|v| v.as_str())
-                    .unwrap_or("")
-                    .to_ascii_lowercase();
-                if kind == "end"
-                    && (token.contains("index")
-                        || token.contains("cache")
-                        || token.contains("roots")
-                        || title.contains("index")
-                        || title.contains("roots scanned")
-                        || title.contains("loading"))
-                {
-                    return;
-                }
+            let wait = QUIESCENCE_GAP.min(until_hard);
+            match self.rx.recv_timeout(wait) {
+                // Saw a message: not quiet yet, keep draining.
+                Ok(_) => continue,
+                // No message for the full gap: the server has settled.
+                Err(RecvTimeoutError::Timeout) => return,
+                // Channel closed (server died): nothing more will come.
+                Err(RecvTimeoutError::Disconnected) => return,
             }
         }
     }
 }
 
+/// Read one LSP message (framed by Content-Length) from a blocking reader.
+/// Returns `None` on EOF or a malformed frame. Runs on the background reader
+/// thread.
+fn read_framed_message<R: Read>(reader: &mut BufReader<R>) -> Option<Value> {
+    let mut header = Vec::new();
+    let mut byte = [0u8; 1];
+    loop {
+        if reader.read(&mut byte).ok()? == 0 {
+            return None;
+        }
+        header.push(byte[0]);
+        if header.ends_with(b"\r\n\r\n") {
+            break;
+        }
+        if header.len() > 1 << 16 {
+            return None;
+        }
+    }
+    let header_str = String::from_utf8_lossy(&header);
+    let mut len = 0usize;
+    for line in header_str.split("\r\n") {
+        if let Some(rest) = line.to_ascii_lowercase().strip_prefix("content-length:") {
+            len = rest.trim().parse().ok()?;
+        }
+    }
+    if len == 0 {
+        return None;
+    }
+    let mut body = vec![0u8; len];
+    reader.read_exact(&mut body).ok()?;
+    serde_json::from_slice(&body).ok()
+}
+
 impl Drop for RaOracle {
     fn drop(&mut self) {
-        // Best-effort graceful shutdown, then kill.
+        // Best-effort graceful shutdown, then kill. Killing the child closes
+        // stdout, which ends the reader thread's loop; join it so no detached
+        // thread outlives the oracle.
         let _ = self.send_request("shutdown", json!(null));
         self.send_notification("exit", json!(null));
         let _ = self.child.kill();
         let _ = self.child.wait();
+        if let Some(handle) = self.reader_handle.take() {
+            let _ = handle.join();
+        }
     }
 }
 
