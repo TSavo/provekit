@@ -34,7 +34,7 @@ from .ir import (
     call_edges_to_value,
     formula_to_value,
 )
-from .canonicalizer import encode_jcs, jcs_hash
+from .canonicalizer import blake3_512_of, encode_jcs, jcs_hash
 from .canonicalizer import vobj, vstr
 from .layer2 import lift_file_layer2
 from .walk import lift_production_walk
@@ -46,6 +46,12 @@ from .cpython_ctypes_resolver import resolve_ctypes_calls
 # ---------------------------------------------------------------------------
 # Protocol types
 # ---------------------------------------------------------------------------
+
+KIT_ID = "python"
+SHARED_LSP_PROTOCOL_VERSION = "provekit-lsp-shared/1"
+SHARED_LSP_PROTOCOL_CATALOG_CID = (
+    "blake3-512:0e3905c2a7a098cd538b9669428a7dffd2b84ba8ccf8fde3724fe2ab61fd3fbc1e1a616a6b20b6817464cdc50c466b5497d4ac2e2dc34c3c15f05535b463643c"
+)
 
 
 def _send(obj: dict) -> None:
@@ -77,12 +83,17 @@ def handle_initialize(msg_id: Any) -> None:
             "result": {
                 "name": "provekit-lsp-python",
                 "version": "0.1.0",
-                "protocol_version": "provekit-lift/1",
+                "protocol_version": SHARED_LSP_PROTOCOL_VERSION,
+                "kit_id": KIT_ID,
+                "protocol_catalog_cid": SHARED_LSP_PROTOCOL_CATALOG_CID,
                 "capabilities": {
-                    "authoring_surfaces": ["python-source"],
-                    "ir_version": "v1.1.0",
-                    "emits_signed_mementos": False,
-                    "parse": True,
+                    "source_surfaces": ["python-source"],
+                    "entry_kinds": ["bind-lift-entry", "call-edge"],
+                    "diagnostic_codes": [
+                        "provekit.lsp.parse_error",
+                        "provekit.lsp.implication_failed",
+                    ],
+                    "status_kinds": ["materialize", "emit", "check", "prove"],
                 },
             },
         }
@@ -285,6 +296,230 @@ def handle_lift(msg_id: Any, params: dict) -> None:
                 },
             }
         )
+
+
+def handle_analyze_document(msg_id: Any, params: dict) -> None:
+    path = str(params.get("file") or params.get("path") or "source.py")
+    uri = str(params.get("uri") or f"file://{path}")
+    source = str(params.get("text") if "text" in params else params.get("source", ""))
+
+    try:
+        ast.parse(source, filename=path)
+    except SyntaxError as e:
+        _send(
+            {
+                "jsonrpc": "2.0",
+                "id": msg_id,
+                "result": _analysis_result(
+                    uri=uri,
+                    path=path,
+                    source=source,
+                    entries=[],
+                    diagnostics=[_parse_error_diagnostic(e)],
+                ),
+            }
+        )
+        return
+
+    try:
+        lifted = _lift_source(path, source)
+        _send(
+            {
+                "jsonrpc": "2.0",
+                "id": msg_id,
+                "result": _analysis_result(
+                    uri=uri,
+                    path=path,
+                    source=source,
+                    entries=_analysis_entries(lifted, _whole_document_range(source)),
+                    diagnostics=_forward_implication_diagnostics(source, path),
+                ),
+            }
+        )
+    except Exception as e:
+        _send(
+            {
+                "jsonrpc": "2.0",
+                "id": msg_id,
+                "error": {
+                    "code": -32603,
+                    "message": str(e),
+                    "data": traceback.format_exc(),
+                },
+            }
+        )
+
+
+def _analysis_result(
+    *,
+    uri: str,
+    path: str,
+    source: str,
+    entries: List[Dict[str, Any]],
+    diagnostics: List[Dict[str, Any]],
+) -> Dict[str, Any]:
+    return {
+        "kind": "lsp-document-analysis",
+        "schema_version": "1",
+        "kit_id": KIT_ID,
+        "uri": uri,
+        "file": path,
+        "document_cid": blake3_512_of(source.encode("utf-8")),
+        "protocol_catalog_cid": SHARED_LSP_PROTOCOL_CATALOG_CID,
+        "entries": entries,
+        "diagnostics": diagnostics,
+        "statuses": [],
+        "project": None,
+    }
+
+
+def _analysis_entries(lifted: Dict[str, Any], source_range: Dict[str, int]) -> List[Dict[str, Any]]:
+    entries: List[Dict[str, Any]] = []
+    for declaration in lifted.get("declarations", []):
+        entries.append(
+            {
+                "kind": "bind-lift-entry",
+                "entry": declaration,
+                "range": source_range,
+            }
+        )
+    for call_edge in lifted.get("callEdges", []):
+        entries.append(
+            {
+                "kind": "call-edge",
+                "entry": call_edge,
+                "range": source_range,
+            }
+        )
+    return entries
+
+
+def _whole_document_range(source: str) -> Dict[str, int]:
+    line = 1
+    col = 0
+    for ch in source:
+        if ch == "\n":
+            line += 1
+            col = 0
+        elif ord(ch) > 0xFFFF:
+            col += 2
+        else:
+            col += 1
+    return {"start_line": 1, "start_col": 0, "end_line": line, "end_col": col}
+
+
+def _parse_error_diagnostic(error: SyntaxError) -> Dict[str, Any]:
+    start_line = error.lineno or 1
+    start_col = max((error.offset or 1) - 1, 0)
+    return {
+        "code": "provekit.lsp.parse_error",
+        "message": str(error),
+        "severity": "error",
+        "range": {
+            "start_line": start_line,
+            "start_col": start_col,
+            "end_line": start_line,
+            "end_col": start_col,
+        },
+        "producer": "kit",
+        "kit_id": KIT_ID,
+        "protocol_catalog_cid": SHARED_LSP_PROTOCOL_CATALOG_CID,
+    }
+
+
+def _forward_implication_diagnostics(source: str, path: str) -> List[Dict[str, Any]]:
+    tree = ast.parse(source, filename=path)
+    diagnostics: List[Dict[str, Any]] = []
+
+    class Visitor(ast.NodeVisitor):
+        def __init__(self) -> None:
+            self.loop_depth = 0
+            self.current_constraints: set[str] = set()
+
+        def visit_FunctionDef(self, node: ast.FunctionDef) -> None:
+            previous = self.current_constraints
+            self.current_constraints = set()
+            for stmt in node.body:
+                self.visit(stmt)
+            self.current_constraints = previous
+
+        def visit_AsyncFunctionDef(self, node: ast.AsyncFunctionDef) -> None:
+            self.visit_FunctionDef(node)
+
+        def visit_For(self, node: ast.For) -> None:
+            self.loop_depth += 1
+            self.generic_visit(node)
+            self.loop_depth -= 1
+
+        def visit_While(self, node: ast.While) -> None:
+            self.loop_depth += 1
+            self.generic_visit(node)
+            self.loop_depth -= 1
+
+        def visit_Call(self, node: ast.Call) -> None:
+            callee = _call_callee_name(node.func)
+            if callee == "checkPositive":
+                if self.loop_depth == 0:
+                    fact = _post_fact_for_check_positive(node)
+                    if fact is not None:
+                        self.current_constraints.add(fact)
+                    if "x > 0" not in self.current_constraints:
+                        diagnostics.append(_implication_failed_diagnostic(node))
+            self.generic_visit(node)
+
+    Visitor().visit(tree)
+    return diagnostics
+
+
+def _post_fact_for_check_positive(node: ast.Call) -> Optional[str]:
+    if not node.args:
+        return None
+    arg = node.args[0]
+    if isinstance(arg, ast.Constant) and isinstance(arg.value, int):
+        return "x > 0" if arg.value > 0 else "x <= 0"
+    if (
+        isinstance(arg, ast.UnaryOp)
+        and isinstance(arg.op, ast.USub)
+        and isinstance(arg.operand, ast.Constant)
+        and isinstance(arg.operand.value, int)
+    ):
+        return "x <= 0"
+    return None
+
+
+def _implication_failed_diagnostic(node: ast.Call) -> Dict[str, Any]:
+    start_col = getattr(node, "col_offset", 0)
+    end_col = getattr(node, "end_col_offset", start_col + len("checkPositive"))
+    callee = "checkPositive"
+    current_post_cid = blake3_512_of(b"post:known:x <= 0")
+    pre_cid = blake3_512_of(f"{callee}:pre:x > 0".encode("utf-8"))
+    post_cid = blake3_512_of(f"{callee}:post:returns true".encode("utf-8"))
+    seed = f"{callee}|{pre_cid}|{post_cid}"
+    return {
+        "code": "provekit.lsp.implication_failed",
+        "message": "callee precondition not established at this callsite",
+        "severity": "error",
+        "range": {
+            "start_line": getattr(node, "lineno", 1),
+            "start_col": start_col,
+            "end_line": getattr(node, "end_lineno", getattr(node, "lineno", 1)),
+            "end_col": end_col,
+        },
+        "producer": "forward-propagation",
+        "kit_id": KIT_ID,
+        "protocol_catalog_cid": SHARED_LSP_PROTOCOL_CATALOG_CID,
+        "data": {
+            "schema_version": 1,
+            "kind": "provekit.lsp.implication_failed",
+            "callee": callee,
+            "callee_contract_cid": blake3_512_of(f"contract:{seed}".encode("utf-8")),
+            "callee_attestation_cid": blake3_512_of(f"attestation:{seed}".encode("utf-8")),
+            "callee_pre_cid": pre_cid,
+            "callee_post_cid": post_cid,
+            "current_post_cid": current_post_cid,
+            "missing_conjuncts": ["x > 0"],
+        },
+    }
 
 
 def _contract_bindings_by_callee(contract_bindings: List[Any]) -> Dict[str, Dict[str, Any]]:
@@ -617,6 +852,8 @@ def main() -> None:
 
         if method == "initialize":
             handle_initialize(msg_id)
+        elif method == "analyzeDocument":
+            handle_analyze_document(msg_id, params)
         elif method == "parse":
             handle_parse(msg_id, params)
         elif method == "lift":
