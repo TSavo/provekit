@@ -10,8 +10,13 @@
   </PropertyGroup>
 
   <ItemGroup>
+    <ProjectReference Include="..\Provekit.Canonicalizer\Provekit.Canonicalizer.csproj" />
     <ProjectReference Include="..\Provekit.IR\Provekit.IR.csproj" />
     <ProjectReference Include="..\Provekit.Lift.Core\Provekit.Lift.Core.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Microsoft.CodeAnalysis.CSharp" Version="4.13.0" />
   </ItemGroup>
 
 </Project>
