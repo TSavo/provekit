@@ -911,6 +911,7 @@ fn sync_materialize_bridge_proof(
     files: &[MaterializedFile],
 ) -> Result<Option<PathBuf>, String> {
     let proof_dir = project_root.join(".provekit").join("materialize");
+    let proof_pool = provekit_verifier::load_all_proofs::run(project_root);
 
     // NO global cleanup. The prior behavior wiped EVERY existing `.proof` in
     // this dir before rebuilding from just THIS invocation's files — which
@@ -941,6 +942,7 @@ fn sync_materialize_bridge_proof(
                 target_layer,
                 contract_cid,
             );
+            let body = with_target_proof_cid(body, &proof_pool, contract_cid)?;
             let (cid, bytes) = member_envelope_canonical("bridge", &body)?;
             members.entry(cid).or_insert(bytes);
         }
@@ -967,6 +969,39 @@ fn sync_materialize_bridge_proof(
     std::fs::write(&path, &proof.bytes)
         .map_err(|error| format!("write {}: {error}", path.display()))?;
     Ok(Some(path))
+}
+
+fn with_target_proof_cid(
+    mut body: Json,
+    pool: &provekit_verifier::types::MementoPool,
+    contract_cid: &str,
+) -> Result<Json, String> {
+    let Some(target) = pool.mementos.get(contract_cid) else {
+        return Err(format!(
+            "materialize bridge target contract `{contract_cid}` is not loaded from any project .proof"
+        ));
+    };
+    if provekit_verifier::types::memento_kind(target) != Some("contract") {
+        return Err(format!(
+            "materialize bridge target `{contract_cid}` is not a contract memento"
+        ));
+    }
+    let Some((bundle_cid, _)) = pool
+        .bundle_members
+        .iter()
+        .find(|(_, members)| members.contains(contract_cid))
+    else {
+        return Err(format!(
+            "materialize bridge target contract `{contract_cid}` has no containing proof bundle"
+        ));
+    };
+    if let Json::Object(map) = &mut body {
+        map.insert(
+            "targetProofCid".to_string(),
+            Json::String(bundle_cid.clone()),
+        );
+    }
+    Ok(body)
 }
 
 // materialize_bridge_body / flat_member / canonical_json / canonical_value
