@@ -9,18 +9,12 @@
 //   cache_dir = ".provekit/cache"
 //
 //   [[language]]
-//   name = "rust"
-//   extensions = [".rs"]
-//   parser = "builtin:rust"
-//
-//   [[language]]
 //   name = "go"
 //   extensions = [".go"]
 //   plugin = "provekit-lsp-go"
 //   plugin_args = ["--rpc"]
 //
-// Built-in parsers are compiled into the main binary.
-// External plugins are spawned as child processes and spoken to via JSON-RPC.
+// Language plugins are spawned as child processes and spoken to via JSON-RPC.
 
 use serde::Deserialize;
 use std::path::Path;
@@ -58,8 +52,6 @@ pub struct LanguagePluginConfig {
     pub name: String,
     #[serde(default)]
     pub extensions: Vec<String>,
-    /// Built-in parser identifier, e.g. "builtin:rust"
-    pub parser: Option<String>,
     /// External plugin binary path or name (looked up in PATH)
     pub plugin: Option<String>,
     #[serde(default)]
@@ -88,7 +80,7 @@ impl Default for LspConfig {
     fn default() -> Self {
         Self {
             server: default_server(),
-            language: default_languages(),
+            language: Vec::new(),
         }
     }
 }
@@ -105,16 +97,6 @@ fn default_backend() -> String {
     "provekit".to_string()
 }
 
-fn default_languages() -> Vec<LanguagePluginConfig> {
-    vec![LanguagePluginConfig {
-        name: "rust".to_string(),
-        extensions: vec![".rs".to_string()],
-        parser: Some("builtin:rust".to_string()),
-        plugin: None,
-        plugin_args: Vec::new(),
-    }]
-}
-
 pub fn load_config(path: impl AsRef<Path>) -> Result<LspConfig, String> {
     let path = path.as_ref();
     if !path.exists() {
@@ -126,4 +108,38 @@ pub fn load_config(path: impl AsRef<Path>) -> Result<LspConfig, String> {
     let config: LspConfig = toml::from_str(&text).map_err(|e| format!("parse config: {}", e))?;
 
     Ok(config)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn default_config_declares_no_language_kits() {
+        let cfg = LspConfig::default();
+
+        assert!(
+            cfg.language.is_empty(),
+            "LSP language kits must be explicitly configured; got defaults: {:?}",
+            cfg.language
+        );
+    }
+
+    #[test]
+    fn language_lookup_comes_from_configured_extensions() {
+        let cfg = LspConfig {
+            language: vec![LanguagePluginConfig {
+                name: "rust".to_string(),
+                extensions: vec![".rs".to_string()],
+                plugin: Some("provekit-lsp-rust".to_string()),
+                plugin_args: Vec::new(),
+            }],
+            ..LspConfig::default()
+        };
+
+        let lang = cfg
+            .for_path(Path::new("src/lib.rs"))
+            .expect("configured extension should resolve");
+        assert_eq!(lang.name, "rust");
+    }
 }

@@ -1,8 +1,8 @@
 // ProvekIt Language Server Protocol implementation.
 //
 // A language-agnostic LSP coordinator. Reads `.provekit/config.toml` to discover
-// language plugins. Routes each source file to the correct parser (built-in or
-// external RPC plugin). Delegates verification to a configurable JSON-RPC backend.
+// language plugins, routes each source file to the configured RPC plugin, and
+// delegates verification to a configurable JSON-RPC backend.
 //
 // ## Modes of operation
 //
@@ -36,10 +36,9 @@
 // the daemon to LSP `Diagnostic` objects and publishes them via
 // `client.publish_diagnostics`.
 //
-// Per-plugin mode and daemon-client mode are mutually exclusive per-file: when
-// daemon mode is active the per-plugin subprocess path is bypassed.  Per-plugin
-// plugins for non-rust kits still work in daemon mode for their own files once
-// those kits gain daemon support; for now the daemon handles `rust` kit only.
+// Per-plugin mode and daemon-client mode are mutually exclusive per-file. When
+// daemon mode is active, the configured language name for the file is sent as
+// the daemon `kitId`; the LSP coordinator does not infer language semantics.
 //
 // Usage: provekit-lsp --daemon-socket /run/user/1000/provekit/linkerd-<cid>.sock
 //
@@ -48,8 +47,13 @@
 // shutdown) are defined in `protocol/specs/2026-05-04-linker-daemon-protocol.md`.
 
 use std::collections::HashMap;
+use std::io::{BufRead, BufReader, Write};
+use std::os::unix::net::UnixStream;
 use std::path::PathBuf;
+use std::process::{Command as ProcessCommand, Stdio};
+use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::Arc;
+use std::time::{Duration, Instant};
 
 use tokio::sync::Mutex;
 use tower_lsp::jsonrpc::Result;
@@ -66,10 +70,11 @@ use config::LspConfig;
 use parser::{Annotation, AnnotationKind, SourceAnnotations};
 use plugin::LanguagePlugin;
 
-/// Per-language plugin handle (built-in or external RPC).
+static NEXT_DAEMON_REQUEST_ID: AtomicU64 = AtomicU64::new(1);
+
+/// Per-language plugin handle.
 #[derive(Debug)]
 enum LanguageHandle {
-    BuiltinRust,
     External(Arc<std::sync::Mutex<LanguagePlugin>>),
 }
 
@@ -206,6 +211,128 @@ fn diagnostic_code(error_kind: &str) -> &'static str {
     }
 }
 
+fn kit_id_for_uri(config: &LspConfig, uri: &Url) -> Option<String> {
+    let path = PathBuf::from(uri.path());
+    config.for_path(&path).map(|lang| lang.name.clone())
+}
+
+fn connect_or_spawn_daemon(
+    socket_path: &std::path::Path,
+    project_cid: &str,
+) -> std::io::Result<UnixStream> {
+    if let Ok(stream) = UnixStream::connect(socket_path) {
+        return Ok(stream);
+    }
+
+    let snap_path = {
+        let mut p = socket_path.to_path_buf();
+        let file_name = p
+            .file_name()
+            .map(|n| n.to_string_lossy().into_owned())
+            .unwrap_or_else(|| "linkerd".to_string());
+        p.set_file_name(format!("{file_name}.snap"));
+        p
+    };
+
+    let _child = ProcessCommand::new("provekit-linkerd")
+        .args([
+            "--socket",
+            &socket_path.to_string_lossy(),
+            "--project-cid",
+            project_cid,
+            "--idle-timeout-ms",
+            "300000",
+            "--snapshot",
+            &snap_path.to_string_lossy(),
+        ])
+        .stdin(Stdio::null())
+        .stdout(Stdio::null())
+        .stderr(Stdio::null())
+        .spawn()
+        .map_err(|e| {
+            std::io::Error::new(
+                std::io::ErrorKind::Other,
+                format!("failed to spawn provekit-linkerd: {e}"),
+            )
+        })?;
+
+    let deadline = Instant::now() + Duration::from_secs(5);
+    loop {
+        std::thread::sleep(Duration::from_millis(50));
+        if let Ok(stream) = UnixStream::connect(socket_path) {
+            return Ok(stream);
+        }
+        if Instant::now() >= deadline {
+            return Err(std::io::Error::new(
+                std::io::ErrorKind::TimedOut,
+                format!(
+                    "provekit-linkerd did not bind socket at {} within 5 s",
+                    socket_path.display()
+                ),
+            ));
+        }
+    }
+}
+
+fn send_parse_file_to_daemon(
+    stream: &mut UnixStream,
+    kit_id: &str,
+    file: &str,
+    source: &str,
+    request_id: u64,
+) -> std::io::Result<Vec<serde_json::Value>> {
+    let req = serde_json::json!({
+        "jsonrpc": "2.0",
+        "id": request_id,
+        "method": "parseFile",
+        "params": {
+            "kitId": kit_id,
+            "file": file,
+            "source": source,
+        }
+    });
+
+    let line = serde_json::to_string(&req).map_err(|e| {
+        std::io::Error::new(std::io::ErrorKind::InvalidData, format!("json encode: {e}"))
+    })?;
+
+    writeln!(stream, "{line}")?;
+    stream.flush()?;
+
+    let mut buf_reader = BufReader::new(stream.try_clone()?);
+    let mut resp_line = String::new();
+    let n = buf_reader.read_line(&mut resp_line)?;
+    if n == 0 {
+        return Err(std::io::Error::new(
+            std::io::ErrorKind::UnexpectedEof,
+            "daemon closed connection without responding",
+        ));
+    }
+
+    let resp: serde_json::Value = serde_json::from_str(resp_line.trim()).map_err(|e| {
+        std::io::Error::new(
+            std::io::ErrorKind::InvalidData,
+            format!("json decode daemon response: {e}"),
+        )
+    })?;
+
+    if let Some(err_obj) = resp.get("error") {
+        return Err(std::io::Error::new(
+            std::io::ErrorKind::Other,
+            format!("daemon returned error: {err_obj}"),
+        ));
+    }
+
+    let diagnostics = resp
+        .get("result")
+        .and_then(|r| r.get("diagnostics"))
+        .and_then(|d| d.as_array())
+        .cloned()
+        .unwrap_or_default();
+
+    Ok(diagnostics)
+}
+
 #[derive(Debug)]
 struct ProvekitLanguageServer {
     client: Client,
@@ -277,14 +404,12 @@ impl LanguageServer for ProvekitLanguageServer {
     async fn shutdown(&self) -> Result<()> {
         // Shut down all external plugins
         let mut plugins = self.plugins.lock().await;
-        for (_name, handle) in plugins.drain() {
-            if let LanguageHandle::External(plugin) = handle {
-                let _ = tokio::task::spawn_blocking(move || {
-                    if let Ok(mut p) = plugin.lock() {
-                        let _ = p.shutdown();
-                    }
-                });
-            }
+        for (_name, LanguageHandle::External(plugin)) in plugins.drain() {
+            let _ = tokio::task::spawn_blocking(move || {
+                if let Ok(mut p) = plugin.lock() {
+                    let _ = p.shutdown();
+                }
+            });
         }
         Ok(())
     }
@@ -419,12 +544,6 @@ impl ProvekitLanguageServer {
     async fn init_plugins(&self, project_root: &std::path::Path) {
         let mut plugins = self.plugins.lock().await;
         for lang in &self.config.language {
-            if lang.parser.as_deref() == Some("builtin:rust")
-                || lang.parser.as_deref() == Some("builtin")
-            {
-                plugins.insert(lang.name.clone(), LanguageHandle::BuiltinRust);
-                continue;
-            }
             if let Some(plugin_name) = &lang.plugin {
                 match plugin::load_plugin(project_root, lang) {
                     Ok(p) => {
@@ -442,6 +561,16 @@ impl ProvekitLanguageServer {
                             .await;
                     }
                 }
+            } else {
+                self.client
+                    .log_message(
+                        MessageType::WARNING,
+                        format!(
+                            "Language `{}` has no LSP plugin configured; skipping",
+                            lang.name
+                        ),
+                    )
+                    .await;
             }
         }
     }
@@ -449,7 +578,21 @@ impl ProvekitLanguageServer {
     async fn update_document(&self, uri: Url, text: String, _lang_id: String) {
         // --- Daemon-client mode: route through provekit-linkerd ---
         if let Some(sock_path) = &self.daemon_socket {
-            self.daemon_routed_parse(uri, text, sock_path.clone()).await;
+            match kit_id_for_uri(&self.config, &uri) {
+                Some(kit_id) => {
+                    self.daemon_routed_parse(uri, text, sock_path.clone(), kit_id)
+                        .await;
+                }
+                None => {
+                    self.client
+                        .log_message(
+                            MessageType::WARNING,
+                            format!("No configured LSP language kit for `{}`", uri.path()),
+                        )
+                        .await;
+                    self.client.publish_diagnostics(uri, vec![], None).await;
+                }
+            }
             return;
         }
 
@@ -463,7 +606,6 @@ impl ProvekitLanguageServer {
             Some(cfg) => {
                 let plugins = self.plugins.lock().await;
                 match plugins.get(&cfg.name) {
-                    Some(LanguageHandle::BuiltinRust) => parser::parse_rust_source(&text),
                     Some(LanguageHandle::External(plugin)) => {
                         let plugin = plugin.clone();
                         let uri_str = uri.to_string();
@@ -512,16 +654,9 @@ impl ProvekitLanguageServer {
                     }
                 }
             }
-            None => {
-                // Unknown file type: try built-in Rust as fallback, or skip
-                if uri.path().ends_with(".rs") {
-                    parser::parse_rust_source(&text)
-                } else {
-                    SourceAnnotations {
-                        annotations: Vec::new(),
-                    }
-                }
-            }
+            None => SourceAnnotations {
+                annotations: Vec::new(),
+            },
         };
 
         // Store parsed annotations
@@ -569,21 +704,25 @@ impl ProvekitLanguageServer {
     /// `parseFile` JSON-RPC, convert the returned diagnostics, and publish
     /// them.  Lazily connects to the daemon socket on first call.
     ///
-    /// Uses `tokio::task::spawn_blocking` because `daemon_client` operations
-    /// (`connect_or_spawn`, `send_parse_file`) are synchronous std I/O.
-    async fn daemon_routed_parse(&self, uri: Url, text: String, sock_path: PathBuf) {
+    /// Uses `tokio::task::spawn_blocking` because the daemon socket protocol
+    /// is synchronous std I/O.
+    async fn daemon_routed_parse(
+        &self,
+        uri: Url,
+        text: String,
+        sock_path: PathBuf,
+        kit_id: String,
+    ) {
         let daemon_stream = self.daemon_stream.clone();
         let client = self.client.clone();
         let file_path = uri.path().to_string();
 
         let result = tokio::task::spawn_blocking(move || {
-            use provekit_lsp_rust::daemon_client;
-
             let mut guard = daemon_stream.blocking_lock();
 
             // Lazy connect / spawn.
             if guard.is_none() {
-                match daemon_client::connect_or_spawn(&sock_path, "provekit-lsp") {
+                match connect_or_spawn_daemon(&sock_path, "provekit-lsp") {
                     Ok(stream) => {
                         *guard = Some(stream);
                     }
@@ -598,7 +737,8 @@ impl ProvekitLanguageServer {
             }
 
             let stream = guard.as_mut().unwrap();
-            daemon_client::send_parse_file(stream, "rust", &file_path, &text, 1).map_err(|e| {
+            let request_id = NEXT_DAEMON_REQUEST_ID.fetch_add(1, Ordering::Relaxed);
+            send_parse_file_to_daemon(stream, &kit_id, &file_path, &text, request_id).map_err(|e| {
                 // Connection may have dropped; clear so we reconnect next time.
                 format!("daemon-client send_parse_file failed: {e}")
             })
@@ -812,6 +952,38 @@ mod tests {
         assert_eq!(lsp.range.start.character, 0);
         assert_eq!(lsp.range.end.line, 0);
         assert_eq!(lsp.range.end.character, 1);
+    }
+
+    #[test]
+    fn daemon_kit_id_resolves_from_language_config() {
+        let cfg = LspConfig {
+            language: vec![config::LanguagePluginConfig {
+                name: "go".to_string(),
+                extensions: vec![".go".to_string()],
+                plugin: None,
+                plugin_args: Vec::new(),
+            }],
+            ..LspConfig::default()
+        };
+
+        let uri = Url::parse("file:///tmp/main.go").expect("valid file uri");
+        assert_eq!(
+            kit_id_for_uri(&cfg, &uri),
+            Some("go".to_string()),
+            "daemon routing must use configured language names, not a built-in rust default"
+        );
+    }
+
+    #[test]
+    fn daemon_kit_id_has_no_extension_fallback() {
+        let cfg = LspConfig::default();
+        let uri = Url::parse("file:///tmp/lib.rs").expect("valid file uri");
+
+        assert_eq!(
+            kit_id_for_uri(&cfg, &uri),
+            None,
+            "without config, even .rs has no implicit kit"
+        );
     }
 }
 
