@@ -12,6 +12,17 @@ emit = "ir-document"
 name = "rust-implications"
 surface = "rust-implications"
 
+# Routes the shim's PARTIAL wrappers (unwrap/expect/get-on-empty/...) through
+# lift_function_precondition so their assert!-derived runtime precondition is
+# published as a real, dischargeable contract `pre` (not post-only). This is
+# what turns a bridge into a partial std method from a vacuous-pass into a real
+# solver obligation. TOTAL wrappers (to_string/len/clone/...) lift pre=true and
+# stay vacuous, which is correct: they are total.
+[[plugins]]
+name = "rust-fn-contracts"
+surface = "rust-fn-contracts"
+emit = "ir-document"
+
 [platform_profile]
 language = "rust"
 family = "concept:family:rust-std"

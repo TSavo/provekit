@@ -141,20 +141,36 @@ impl RaOracle {
             opened: std::collections::HashSet::new(),
         };
         debug!("oracle: sending LSP initialize handshake");
-        if oracle.initialize().is_none() {
-            warn!("oracle: LSP initialize handshake failed; refusing all queries");
-            let _ = oracle.child.kill();
-            return None;
+        let quiesced = match oracle.initialize() {
+            Some(q) => q,
+            None => {
+                warn!("oracle: LSP initialize handshake failed; refusing all queries");
+                let _ = oracle.child.kill();
+                return None;
+            }
+        };
+        if quiesced {
+            info!(
+                workspace = %workspace_root.display(),
+                "oracle: rust-analyzer ready (workspace indexed and quiescent)"
+            );
+        } else {
+            warn!(
+                workspace = %workspace_root.display(),
+                index_wait_s = INDEX_WAIT.as_secs(),
+                "oracle: rust-analyzer NOT quiescent after the index wait; resolving best-effort. \
+                 On a cold/large workspace this yields few or zero resolutions — the fix is a \
+                 resident warm rust-analyzer (provekit-linkerd) that indexes once and stays up."
+            );
         }
-        info!(
-            workspace = %workspace_root.display(),
-            "oracle: rust-analyzer ready"
-        );
         Some(oracle)
     }
 
-    fn initialize(&mut self) -> Option<()> {
+    /// Run the LSP handshake and wait out the initial index. Returns `true` iff
+    /// rust-analyzer reached quiescence (vs. proceeding best-effort on timeout).
+    fn initialize(&mut self) -> Option<bool> {
         let root_uri = path_to_uri(&self.root);
+        debug!(root = %self.root.display(), "oracle: step 1/4 sending LSP initialize request");
         let id = self.send_request(
             "initialize",
             json!({
@@ -174,7 +190,12 @@ impl RaOracle {
         )?;
         // Drain until the initialize response arrives.
         self.wait_for_response(id, INDEX_WAIT)?;
+        debug!("oracle: step 2/4 initialize response received");
         self.send_notification("initialized", json!({}));
+        debug!(
+            "oracle: step 3/4 sent 'initialized'; awaiting workspace load + index \
+             (rust-analyzer progress streams below)"
+        );
         // Wait ONCE for the workspace to settle before issuing any query. While
         // rust-analyzer is still loading the sysroot / a dependency it answers
         // `definition` with a REAL null (no definition yet), not ContentModified,
@@ -183,38 +204,152 @@ impl RaOracle {
         // that, and is still event-driven (a warm server reports quiescent
         // immediately, paying nothing). The per-query ContentModified retry
         // stays as a secondary guard for re-analysis churn mid-batch.
-        self.wait_until_quiescent(INDEX_WAIT);
-        Some(())
+        let quiesced = self.wait_until_quiescent(INDEX_WAIT);
+        debug!(quiesced, "oracle: step 4/4 readiness wait complete");
+        Some(quiesced)
     }
 
     /// Block until rust-analyzer reports it is quiescent (workspace loaded and
-    /// indexed) or `timeout` elapses. RA emits `experimental/serverStatus`
-    /// notifications (enabled by the client capability above) and sets
-    /// `quiescent: true` once analysis has settled. Waiting for this single
-    /// authoritative signal, then batching every query against a settled
-    /// server, is what makes resolution reliable and reproducible: a query
-    /// issued mid-load gets a partial/null answer the retry path cannot recover.
-    /// On timeout we proceed best-effort (resolve what we can rather than refuse
-    /// the whole batch); a warm server returns from the first notification.
-    fn wait_until_quiescent(&mut self, timeout: Duration) {
-        let deadline = Instant::now() + timeout;
+    /// indexed) or `timeout` elapses. Returns `true` iff quiescence was reached.
+    ///
+    /// RA emits `experimental/serverStatus` (enabled by the client capability)
+    /// with `quiescent: true` once analysis settles. A query issued mid-load
+    /// gets a partial/null answer the retry path cannot recover, so we wait for
+    /// that one authoritative signal before batching.
+    ///
+    /// Every step is surfaced so the caller can SEE the index progress rather
+    /// than stare at a silent multi-minute wait: RA's `$/progress`
+    /// (workDoneProgress) stream is logged (begin/end + percentage at INFO/DEBUG),
+    /// `serverStatus` health transitions at INFO, and a 10s heartbeat with
+    /// elapsed time fires even when RA goes quiet mid-index. The return value is
+    /// honest: `false` means we are about to query an unindexed server and
+    /// resolution will be incomplete (the case the resident daemon exists to fix).
+    fn wait_until_quiescent(&mut self, timeout: Duration) -> bool {
+        let start = Instant::now();
+        let deadline = start + timeout;
+        let mut last_heartbeat = start;
+        info!(
+            timeout_s = timeout.as_secs(),
+            "oracle: awaiting rust-analyzer workspace index (progress below)"
+        );
         loop {
             let Some(remaining) = deadline.checked_duration_since(Instant::now()) else {
-                return;
+                warn!(
+                    elapsed_s = start.elapsed().as_secs(),
+                    timeout_s = timeout.as_secs(),
+                    "oracle: rust-analyzer did NOT reach quiescence before timeout; \
+                     proceeding against a partially-indexed server (resolution will be incomplete)"
+                );
+                return false;
             };
-            match self.rx.recv_timeout(remaining) {
+            // Cap the wait so the heartbeat fires even when RA is silent mid-index.
+            let recv_window = remaining.min(Duration::from_secs(5));
+            match self.rx.recv_timeout(recv_window) {
                 Ok(msg) => {
-                    if msg.get("method").and_then(|m| m.as_str())
-                        == Some("experimental/serverStatus")
-                        && msg
-                            .pointer("/params/quiescent")
-                            .and_then(|v| v.as_bool())
-                            .unwrap_or(false)
-                    {
-                        return;
+                    // Keep RA's load unblocked (workDoneProgress/create etc.).
+                    self.respond_if_server_request(&msg);
+                    let method = msg.get("method").and_then(|m| m.as_str()).unwrap_or("");
+                    match method {
+                        "$/progress" => {
+                            let token = msg
+                                .pointer("/params/token")
+                                .map(|v| {
+                                    v.as_str()
+                                        .map(str::to_string)
+                                        .unwrap_or_else(|| v.to_string())
+                                })
+                                .unwrap_or_default();
+                            let kind = msg
+                                .pointer("/params/value/kind")
+                                .and_then(|v| v.as_str())
+                                .unwrap_or("");
+                            let pmsg = msg
+                                .pointer("/params/value/message")
+                                .and_then(|v| v.as_str())
+                                .unwrap_or("");
+                            let title = msg
+                                .pointer("/params/value/title")
+                                .and_then(|v| v.as_str())
+                                .unwrap_or("");
+                            let pct = msg
+                                .pointer("/params/value/percentage")
+                                .and_then(|v| v.as_u64());
+                            let detail = if title.is_empty() { pmsg } else { title };
+                            match kind {
+                                "begin" => info!(
+                                    elapsed_s = start.elapsed().as_secs(),
+                                    "RA index begin: {} {}",
+                                    token,
+                                    detail
+                                ),
+                                "end" => info!(
+                                    elapsed_s = start.elapsed().as_secs(),
+                                    "RA index done:  {} {}",
+                                    token,
+                                    pmsg
+                                ),
+                                _ => match pct {
+                                    Some(p) => debug!(
+                                        elapsed_s = start.elapsed().as_secs(),
+                                        "RA index:       {} {}% {}",
+                                        token,
+                                        p,
+                                        pmsg
+                                    ),
+                                    None => debug!("RA index:       {} {}", token, pmsg),
+                                },
+                            }
+                        }
+                        "experimental/serverStatus" => {
+                            let quiescent = msg
+                                .pointer("/params/quiescent")
+                                .and_then(|v| v.as_bool())
+                                .unwrap_or(false);
+                            let health = msg
+                                .pointer("/params/health")
+                                .and_then(|v| v.as_str())
+                                .unwrap_or("");
+                            let smsg = msg
+                                .pointer("/params/message")
+                                .and_then(|v| v.as_str())
+                                .unwrap_or("");
+                            info!(
+                                quiescent,
+                                health = %health,
+                                elapsed_s = start.elapsed().as_secs(),
+                                "RA serverStatus{}",
+                                if smsg.is_empty() { String::new() } else { format!(": {smsg}") }
+                            );
+                            if quiescent {
+                                info!(
+                                    elapsed_s = start.elapsed().as_secs(),
+                                    "oracle: rust-analyzer quiescent — workspace indexed, ready to resolve"
+                                );
+                                return true;
+                            }
+                        }
+                        other => {
+                            trace!(method = other, "oracle: inbound message (not progress/status)");
+                        }
                     }
                 }
-                Err(_) => return,
+                Err(std::sync::mpsc::RecvTimeoutError::Timeout) => {
+                    if last_heartbeat.elapsed() >= Duration::from_secs(10) {
+                        info!(
+                            elapsed_s = start.elapsed().as_secs(),
+                            timeout_s = timeout.as_secs(),
+                            "oracle: still indexing... (rust-analyzer quiet; waiting for quiescence)"
+                        );
+                        last_heartbeat = Instant::now();
+                    }
+                }
+                Err(std::sync::mpsc::RecvTimeoutError::Disconnected) => {
+                    warn!(
+                        elapsed_s = start.elapsed().as_secs(),
+                        "oracle: rust-analyzer stdout closed during indexing (process died?)"
+                    );
+                    return false;
+                }
             }
         }
     }
@@ -371,6 +506,41 @@ impl RaOracle {
         let _ = self.write_message(&msg);
     }
 
+    /// If `msg` is a server-to-client REQUEST (has both `method` and `id`),
+    /// answer it so rust-analyzer is not left waiting on us. An LSP server can
+    /// block its own workspace-load progress on requests like
+    /// `window/workDoneProgress/create` and `workspace/diagnostic/refresh`; a
+    /// client that drops them on the floor (as the original drain loop did) can
+    /// stall RA indefinitely on a large workspace. Returns true if it answered.
+    ///
+    /// `result: null` is the correct reply for the void-returning requests RA
+    /// sends during load (workDoneProgress/create, diagnostic/refresh,
+    /// registerCapability). `workspace/configuration` expects an array; we hand
+    /// back one null per requested item so RA falls back to its defaults rather
+    /// than erroring.
+    fn respond_if_server_request(&mut self, msg: &Value) -> bool {
+        let (Some(method), Some(id)) = (
+            msg.get("method").and_then(|m| m.as_str()),
+            msg.get("id"),
+        ) else {
+            return false;
+        };
+        let result = if method == "workspace/configuration" {
+            let n = msg
+                .pointer("/params/items")
+                .and_then(|v| v.as_array())
+                .map(|a| a.len())
+                .unwrap_or(1);
+            Value::Array(vec![Value::Null; n.max(1)])
+        } else {
+            Value::Null
+        };
+        trace!(method = method, "oracle: answering RA server->client request");
+        let reply = json!({ "jsonrpc": "2.0", "id": id.clone(), "result": result });
+        let _ = self.write_message(&reply);
+        true
+    }
+
     fn write_message(&mut self, msg: &Value) -> Option<()> {
         let body = serde_json::to_vec(msg).ok()?;
         write!(self.stdin, "Content-Length: {}\r\n\r\n", body.len()).ok()?;
@@ -387,6 +557,8 @@ impl RaOracle {
             let remaining = deadline.checked_duration_since(Instant::now())?;
             match self.rx.recv_timeout(remaining) {
                 Ok(msg) => {
+                    // Keep RA unblocked while we wait for our own response.
+                    self.respond_if_server_request(&msg);
                     if msg.get("id").and_then(|v| v.as_i64()) == Some(want)
                         && (msg.get("result").is_some() || msg.get("error").is_some())
                     {
@@ -609,11 +781,30 @@ pub fn resolve_batch(
         "oracle: starting batch resolution"
     );
     let Some(mut oracle) = RaOracle::start(workspace_root) else {
-        warn!(
-            total_queries = total,
-            "oracle: start refused (unavailable); all {} method calls remain unresolved",
-            total
-        );
+        // start() returns None for two very different reasons. Report them
+        // differently: opt-in-off is the DEFAULT and must stay quiet (a
+        // default-disabled feature crying WARN on every mint is noise that
+        // hides real problems); a missing/broken analyzer when the operator
+        // *did* opt in is a genuine environmental fault worth a WARN. start()
+        // already logs the specific cause (debug "oracle disabled" / warn
+        // "binary not found"); here we classify the batch-level consequence.
+        let opted_in =
+            std::env::var("PROVEKIT_RESOLVE_ORACLE").unwrap_or_default() == "rust-analyzer";
+        if opted_in {
+            warn!(
+                total_queries = total,
+                "oracle: opted in but analyzer unavailable (binary missing or handshake failed); \
+                 all {} method calls left to the syntactic tiers",
+                total
+            );
+        } else {
+            debug!(
+                total_queries = total,
+                "oracle: off (PROVEKIT_RESOLVE_ORACLE != rust-analyzer); \
+                 {} method calls left to the syntactic tiers (Tier 1/2a)",
+                total
+            );
+        }
         return out;
     };
     let mut not_ready_count = 0usize;
@@ -639,7 +830,7 @@ pub fn resolve_batch(
         refused = refused_count,
         not_ready = not_ready_count,
         other_refused = other_refused_count,
-        "oracle: batch complete: resolved {}/{} method calls ({} unavailable: not-ready, {} other refused)",
+        "oracle: batch complete: resolved {}/{} method calls ({} not-ready/churn, {} refused: no definite crate)",
         resolved,
         total,
         not_ready_count,
