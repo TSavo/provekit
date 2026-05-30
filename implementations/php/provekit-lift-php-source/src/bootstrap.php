@@ -14,4 +14,5 @@ require_once __DIR__ . '/Ir.php';
 require_once __DIR__ . '/EffectSet.php';
 require_once __DIR__ . '/PhpSourceCompiler.php';
 require_once __DIR__ . '/PhpSourceLifter.php';
+require_once __DIR__ . '/PhpSourceRecognizer.php';
 require_once __DIR__ . '/Rpc.php';

@@ -51,6 +51,7 @@ function dispatch_rpc(array $request): array
         'initialize' => success_response($id, initialize_result()),
         'lift' => lift_rpc($id, $params),
         'compile' => compile_rpc($id, $params),
+        'provekit.plugin.recognize' => recognize_rpc($id, $params),
         'shutdown' => success_response($id, null),
         default => error_response($id, -32601, 'METHOD_NOT_FOUND: ' . $method),
     };
@@ -88,6 +89,24 @@ function compile_rpc(mixed $id, array $params): array
         return error_response($id, -32602, 'ir must be an array of function-contract mementos');
     }
     return success_response($id, ['kind' => 'compiled-formula', 'body' => (new PhpSourceCompiler())->compileIrDocument($ir)]);
+}
+
+function recognize_rpc(mixed $id, array $params): array
+{
+    $projectRoot = $params['project_root'] ?? null;
+    if (!is_string($projectRoot) || $projectRoot === '') {
+        return error_response($id, -32602, 'project_root must be a non-empty string');
+    }
+    $sourcePaths = array_values(array_filter(
+        is_array($params['source_paths'] ?? null) ? $params['source_paths'] : [],
+        static fn(mixed $path): bool => is_string($path)
+    ));
+
+    try {
+        return success_response($id, (new PhpSourceRecognizer())->recognizePaths($projectRoot, $sourcePaths, []));
+    } catch (\InvalidArgumentException $e) {
+        return error_response($id, -32602, $e->getMessage());
+    }
 }
 
 function success_response(mixed $id, mixed $result): array
