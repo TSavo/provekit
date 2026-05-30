@@ -163,6 +163,37 @@ public class RpcServerParseTest {
     }
 
     @Test
+    public void parseEmitsSameLanguageCallEdgeLocus() throws Exception {
+        String source = """
+            import com.provekit.contract.Requires;
+            public class MathService {
+                @Requires("x >= 0")
+                public int addOne(int x) {
+                    return x + 1;
+                }
+                @Requires("x >= 0")
+                public int callAddOne(int x) {
+                    return addOne(x);
+                }
+            }
+            """;
+        String encodedSource = jsonEncodeString(source);
+        String request = "{\"jsonrpc\":\"2.0\",\"id\":41,\"method\":\"parse\",\"params\":{\"path\":\"/tmp/MathService.java\",\"source\":" + encodedSource + "}}";
+
+        String response = invokeHandle(request);
+
+        assertFalse(response.contains("\"error\""), "Same-language call-edge parse must not error: " + response);
+        assertTrue(response.contains("\"symbol\":\"addOne\""), response);
+        assertTrue(response.contains("\"symbol\":\"callAddOne\""), response);
+        assertTrue(response.contains("\"kind\":\"call-edge\""), "Response must include a call-edge: " + response);
+        assertTrue(response.contains("\"sourceContractCid\":\"blake3-512:"), response);
+        assertTrue(response.contains("\"targetContractCid\":\"blake3-512:"), response);
+        assertTrue(response.contains("\"targetSymbol\":\"java-kit:addOne\""), response);
+        assertTrue(response.contains("\"callSiteLocus\":{\"column\":"), response);
+        assertTrue(response.contains("\"file\":\"/tmp/MathService.java\""), response);
+    }
+
+    @Test
     public void initializeReturnsParseCapability() throws Exception {
         String request = "{\"jsonrpc\":\"2.0\",\"id\":0,\"method\":\"initialize\",\"params\":{}}";
         String response = invokeHandle(request);

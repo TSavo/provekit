@@ -45,6 +45,7 @@ public class LiftHandler {
             implications.addAll(productionWalk.implications());
             decls = mergeDeclsBySymbol(decls);
             Map<String, String> contractIndex = buildContractIndex(decls);
+            callEdges.addAll(JavaCallEdgeResolver.resolve(cu, path, contractIndex));
             callEdges.addAll(JniResolver.resolve(cu, path, contractIndex));
         }
 
@@ -142,7 +143,8 @@ public class LiftHandler {
             // the index is built from the current file's declarations.
             Map<String, String> contractIndex = buildContractIndex(decls);
 
-            // Walk for JNI call edges per spec #114 R1/R3.
+            // Walk for same-language and JNI call edges per spec #114 R1/R3.
+            callEdges.addAll(JavaCallEdgeResolver.resolve(cu, path.toString(), contractIndex));
             List<CallEdgeDecl> jniEdges = JniResolver.resolve(
                 cu, path.toString(), contractIndex);
             callEdges.addAll(jniEdges);
