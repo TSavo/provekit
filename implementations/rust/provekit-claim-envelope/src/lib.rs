@@ -556,6 +556,14 @@ pub struct MintBridgeArgs {
     pub ir_return_sort: String,
     pub notes: String,
     pub signer_seed: Ed25519Seed,
+    /// Forward pin (BridgeDeclaration.ConsequentBundlePinned, NORMATIVE):
+    /// the CID of the `.proof` bundle that is allowed to discharge this
+    /// bridge's target contract. `Some(bundle)` pins a CROSS-bundle target
+    /// (a dependency proof); the verifier refuses any contract member not
+    /// drawn from that bundle. `None` means SELF-pinned: the target must be
+    /// a co-member of this bridge's own bundle. There is no unpinned path;
+    /// `None` is enforced as same-bundle membership, not skipped.
+    pub target_proof_cid: Option<String>,
 }
 
 /// Compute the content CID of a bridge declaration (signer-independent).
@@ -565,7 +573,7 @@ fn bridge_content_cid(args: &MintBridgeArgs) -> String {
         .iter()
         .map(|s| Value::string(s.clone()))
         .collect();
-    let v = Value::object([
+    let mut fields: Vec<(&str, Arc<Value>)> = vec![
         ("sourceSymbol", Value::string(args.source_symbol.clone())),
         ("sourceLayer", Value::string(args.source_layer.clone())),
         (
@@ -575,7 +583,15 @@ fn bridge_content_cid(args: &MintBridgeArgs) -> String {
         ("targetLayer", Value::string(args.target_layer.clone())),
         ("irArgSorts", Value::array(arg_sorts)),
         ("irReturnSort", Value::string(args.ir_return_sort.clone())),
-    ]);
+    ];
+    // The pin is part of bridge identity: a bridge that pins bundle A and one
+    // that pins bundle B (same target contract) are DIFFERENT bridges. Only
+    // emit the key when Some, so a self-pinned (None) bridge's CID is the
+    // pin-free identity. encode_jcs sorts keys, so insertion order is moot.
+    if let Some(ref bundle) = args.target_proof_cid {
+        fields.push(("targetProofCid", Value::string(bundle.clone())));
+    }
+    let v = Value::object(fields);
     blake3_512_of(encode_jcs(&v).as_bytes())
 }
 
@@ -597,7 +613,7 @@ pub fn mint_bridge(args: &MintBridgeArgs) -> MintedEnvelope {
     let property_hash = hash_string(&format!("bridge:{}", args.source_symbol));
 
     let header_cid = bridge_content_cid(args);
-    let kind_specific: Vec<(String, Arc<Value>)> = vec![
+    let mut kind_specific: Vec<(String, Arc<Value>)> = vec![
         (
             "sourceSymbol".into(),
             Value::string(args.source_symbol.clone()),
@@ -627,6 +643,12 @@ pub fn mint_bridge(args: &MintBridgeArgs) -> MintedEnvelope {
             Value::array(vec![Value::string(args.target_contract_cid.clone())]),
         ),
     ];
+    // Forward pin into the body so the verifier (enumerate_callsites ->
+    // resolve_target) can enforce ConsequentBundlePinned. Omitted when None
+    // (self-pinned: the verifier enforces same-bundle co-membership instead).
+    if let Some(ref bundle) = args.target_proof_cid {
+        kind_specific.push(("targetProofCid".into(), Value::string(bundle.clone())));
+    }
 
     let header = build_header("bridge", &header_cid, kind_specific);
 
@@ -643,166 +665,6 @@ pub fn mint_bridge(args: &MintBridgeArgs) -> MintedEnvelope {
         header,
         metadata,
         &args.produced_at,
-        &args.signer_seed,
-        String::new(),
-    )
-}
-
-// =============================================================================
-// mint_bridge_v14 (v1.4 BridgeDeclaration, layered envelope/header/body)
-// =============================================================================
-//
-// Source of truth for the wire shape:
-//   protocol/specs/2026-05-03-bridge-target-dimensionality.md §1.R1-R6
-//   protocol/specs/2026-05-03-substrate-layers-envelope-header-body.md §1, §2
-//   protocol/provekit-ir.cddl  BridgeDeclarationV14
-//
-// Differences from `mint_bridge` (above):
-//   1. Header carries the contract-axis claim only. Witness/binary/
-//      target-layer axes move to the metadata block. (spec §1.R3)
-//   2. `target` is a tagged-union object {kind, cid}, not flat
-//      `targetContractCid` plus `targetLayer`. (spec §1.R1)
-//   3. `schemaVersion` is `"1"` (the v1.4-layered schema version).
-//   4. Metadata fields that are unknown at mint time are OMITTED from
-//      the JCS bytes. They are NOT emitted as `null` and NOT emitted
-//      with placeholder strings. (spec §1.R2)
-//   5. Header fields (sourceSymbol, sourceLayer, sourceContractCid,
-//      target.cid) are substrate-verified content references; the
-//      derived hashes (bindingHash, propertyHash, inputCids,
-//      irArgSorts, irReturnSort, verdict) used by the existing
-//      mint_bridge are kept in the v1.2 (richer) layered shape and do
-//      NOT appear in the v1.4 spec header.
-//
-// Co-existence with `mint_bridge`:
-//   The v1.2-layered `mint_bridge` (schemaVersion="2", richer header)
-//   remains the active path for the existing kit infrastructure. The
-//   v1.4 path is the canonical reference for cross-kit byte-equality
-//   per the substrate-layers / target-dimensionality specs. Both
-//   shapes coexist; v1.1 historical mementos remain valid forever
-//   (spec §4) and are never re-signed.
-
-/// Tagged-union target axis per `2026-05-03-bridge-target-dimensionality.md` §1.R1.
-///
-/// Implementations MUST emit exactly one variant. Implementations MUST NOT
-/// emit a bare string for `target`; the substrate verifier rejects
-/// stringified placeholders (spec §1.R2).
-#[derive(Debug, Clone)]
-pub enum BridgeTargetV14 {
-    /// `{ "kind": "contract", "cid": "<contractCid>" }`
-    /// per `2026-05-03-contract-cid-vs-attestation-cid.md`.
-    Contract { cid: String },
-    /// `{ "kind": "contractSet", "cid": "<contractSetCid>" }`
-    /// per `2026-05-03-contract-set-extension.md`.
-    ContractSet { cid: String },
-}
-
-impl BridgeTargetV14 {
-    fn to_value(&self) -> Arc<Value> {
-        match self {
-            BridgeTargetV14::Contract { cid } => Value::object([
-                ("kind", Value::string("contract")),
-                ("cid", Value::string(cid.clone())),
-            ]),
-            BridgeTargetV14::ContractSet { cid } => Value::object([
-                ("kind", Value::string("contractSet")),
-                ("cid", Value::string(cid.clone())),
-            ]),
-        }
-    }
-}
-
-/// Inputs for `mint_bridge_v14`.
-///
-/// Optional metadata-axis fields are `Option<String>`. `None` means the
-/// field is OMITTED from the JCS bytes. Empty strings ARE distinct from
-/// `None` and would be emitted as `""`; callers SHOULD pass `None` when
-/// the axis is unknown, to satisfy spec §1.R2.
-pub struct MintBridgeV14Args {
-    // ---- header (substrate-verified) ----
-    pub name: String,
-    pub source_symbol: String,
-    pub source_layer: String,
-    pub source_contract_cid: String,
-    pub target: BridgeTargetV14,
-
-    // ---- metadata (optional, opaque to substrate) ----
-    pub target_witness_cid: Option<String>,
-    pub target_binary_cid: Option<String>,
-    pub target_layer: Option<String>,
-    pub target_contract_set_cid: Option<String>,
-    pub produced_by: Option<String>,
-    pub produced_at: Option<String>,
-
-    // ---- envelope inputs ----
-    /// RFC 3339 UTC timestamp for `envelope.declaredAt`.
-    pub declared_at: String,
-    pub signer_seed: Ed25519Seed,
-}
-
-/// Schema version stamp on v1.4 layered bridge headers.
-/// Per `2026-05-03-substrate-layers-envelope-header-body.md` §1.
-pub const BRIDGE_V14_SCHEMA_VERSION: &str = "1";
-
-/// Build the v1.4 header object exactly as specified in
-/// `2026-05-03-bridge-target-dimensionality.md` §1.R3.
-///
-/// Locked key order is by JCS code-point sort at emit time, so this
-/// helper just inserts the canonical 7 fields. The header carries the
-/// contract-axis claim only (spec §1.R3).
-fn build_bridge_header_v14(args: &MintBridgeV14Args) -> Arc<Value> {
-    Value::object([
-        ("schemaVersion", Value::string(BRIDGE_V14_SCHEMA_VERSION)),
-        ("kind", Value::string("bridge")),
-        ("name", Value::string(args.name.clone())),
-        ("sourceSymbol", Value::string(args.source_symbol.clone())),
-        ("sourceLayer", Value::string(args.source_layer.clone())),
-        (
-            "sourceContractCid",
-            Value::string(args.source_contract_cid.clone()),
-        ),
-        ("target", args.target.to_value()),
-    ])
-}
-
-/// Build the v1.4 metadata object. Only `Some(_)` fields are emitted;
-/// `None` fields are OMITTED from JCS bytes per spec §1.R2.
-fn build_bridge_metadata_v14(args: &MintBridgeV14Args) -> Arc<Value> {
-    let mut entries: Vec<(String, Arc<Value>)> = Vec::new();
-    if let Some(ref v) = args.target_witness_cid {
-        entries.push(("targetWitnessCid".into(), Value::string(v.clone())));
-    }
-    if let Some(ref v) = args.target_binary_cid {
-        entries.push(("targetBinaryCid".into(), Value::string(v.clone())));
-    }
-    if let Some(ref v) = args.target_layer {
-        entries.push(("targetLayer".into(), Value::string(v.clone())));
-    }
-    if let Some(ref v) = args.target_contract_set_cid {
-        entries.push(("targetContractSetCid".into(), Value::string(v.clone())));
-    }
-    if let Some(ref v) = args.produced_by {
-        entries.push(("producedBy".into(), Value::string(v.clone())));
-    }
-    if let Some(ref v) = args.produced_at {
-        entries.push(("producedAt".into(), Value::string(v.clone())));
-    }
-    Arc::new(Value::Object(entries))
-}
-
-/// Mint a v1.4 BridgeDeclaration in the layered envelope/header/body
-/// shape. The returned `MintedEnvelope` carries the JCS-canonical bytes
-/// of the full memento and the attestation CID
-/// (= BLAKE3-512(JCS(envelope))).
-///
-/// `contract_cid` on the returned envelope is the empty string;
-/// bridges have no signer-independent contract CID (only contracts do).
-pub fn mint_bridge_v14(args: &MintBridgeV14Args) -> MintedEnvelope {
-    let header = build_bridge_header_v14(args);
-    let metadata = build_bridge_metadata_v14(args);
-    assemble_layered(
-        header,
-        metadata,
-        &args.declared_at,
         &args.signer_seed,
         String::new(),
     )

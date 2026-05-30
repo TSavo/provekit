@@ -1,0 +1,73 @@
+# SPDX-License-Identifier: Apache-2.0
+#
+# libprovekit self-application config (dependency-proof producer).
+#
+# libprovekit is a dependency crate of provekit-cli. Lifting it here produces
+# libprovekit.proof carrying contracts for its production functions. When the
+# cli's verification pool loads this proof, the cli's intra-body bridges to
+# cross-crate callees (libprovekit::core::address, execute_path, ...) resolve
+# to these contracts instead of vacuous-passing. The bridge model, one level
+# up the crate graph: every dependency publishes its contracts, the consumer
+# bridges into them.
+#
+# Producer surfaces only (no rust-implications): this crate's job here is to
+# PUBLISH contracts the cli bridges into. (libprovekit's own internal
+# discharge would add rust-implications, the same way the cli does.)
+
+[[plugins]]
+name = "rust-bind"
+surface = "rust-bind"
+layer = "library-bindings"
+
+[[plugins]]
+name = "rust-contracts"
+surface = "rust-contracts"
+emit = "ir-document"
+
+[[plugins]]
+name = "rust-fn-contracts"
+surface = "rust-fn-contracts"
+emit = "ir-document"
+
+[platform_profile]
+language = "rust"
+family = "concept:family:provekit"
+library = "libprovekit"
+version = "0.1.0"
+
+[solvers]
+mode = "first-wins"
+portfolio = ["z3", "cvc5", "vampire", "coq", "lean"]
+
+[solvers.z3]
+binary = "z3"
+ir_compiler = "smt-lib-v2.6"
+flags = ["-smt2", "-in"]
+timeout_seconds = 30
+version = "4.x"
+
+[solvers.cvc5]
+binary = "cvc5"
+ir_compiler = "smt-lib-v2.6"
+flags = ["--lang=smt2", "--produce-models"]
+timeout_seconds = 30
+version = "1.x"
+
+[solvers.vampire]
+binary = "vampire"
+ir_compiler = "smt-lib-v2.6"
+flags = ["--input_syntax", "smtlib2", "--output_mode", "smtcomp"]
+timeout_seconds = 30
+version = "5.x"
+
+[solvers.coq]
+binary = "coqc"
+ir_compiler = "coq"
+timeout_seconds = 60
+version = "8.x"
+
+[solvers.lean]
+binary = "lake"
+ir_compiler = "lean"
+timeout_seconds = 60
+version = "4.x"

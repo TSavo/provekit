@@ -1,0 +1,147 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+usage() {
+  cat <<'EOF'
+usage: bcargo [cargo args...]
+
+Sync the Rust-facing ProvekIt workspace to battleaxe, then run Cargo there.
+
+Environment:
+  BCARGO_REMOTE_HOST   SSH host alias to use (default: battleaxe)
+  BCARGO_REMOTE_ROOT   Remote scratch root (default: /home/tsavo/remote/provekit-bcargo)
+EOF
+}
+
+if [[ "${1:-}" == "--help" || "${1:-}" == "-h" ]]; then
+  usage
+  exit 0
+fi
+
+repo_root="$(git rev-parse --show-toplevel 2>/dev/null || true)"
+if [[ -z "$repo_root" ]]; then
+  echo "bcargo: must be run from inside a git checkout" >&2
+  exit 2
+fi
+repo_root="$(cd "$repo_root" && pwd -P)"
+local_cwd="$(pwd -P)"
+
+case "$local_cwd" in
+  "$repo_root")
+    rel_cwd=""
+    ;;
+  "$repo_root"/*)
+    rel_cwd="${local_cwd#"$repo_root"/}"
+    ;;
+  *)
+    echo "bcargo: current directory is outside $repo_root" >&2
+    exit 2
+    ;;
+esac
+
+remote_host="${BCARGO_REMOTE_HOST:-battleaxe}"
+remote_root="${BCARGO_REMOTE_ROOT:-/home/tsavo/remote/provekit-bcargo}"
+remote_repo="$remote_root/provekit"
+ssh_bin="${BCARGO_SSH:-ssh}"
+rsync_bin="${BCARGO_RSYNC:-rsync}"
+
+quote_sh() {
+  printf "'"
+  printf "%s" "$1" | sed "s/'/'\\\\''/g"
+  printf "'"
+}
+
+remote_parent() {
+  local path="$1"
+  dirname "$path"
+}
+
+run_ssh() {
+  "$ssh_bin" -o BatchMode=yes "$remote_host" "$@"
+}
+
+exclude_args=(
+  --exclude='target/'
+  --exclude='.git/'
+  --exclude='.jj/'
+  --exclude='.worktrees/'
+  --exclude='.claude/'
+  --exclude='.ruff_cache/'
+  --exclude='.venv-test-rust/'
+  --exclude='.understand-anything/'
+  --exclude='node_modules/'
+  --exclude='bazel-bin'
+  --exclude='bazel-out'
+  --exclude='bazel-provekit'
+  --exclude='bazel-testlogs'
+  --exclude='provekit-warnings/'
+  --exclude='provekit-worktrees/'
+  --exclude='.provekit/runs/'
+  --exclude='.provekit/witnesses/'
+  # NOTE: `.provekit/lift/` is intentionally NOT excluded. Those are the
+  # hand-authored per-project lift manifests (tiny TOMLs naming the plugin
+  # commands) that `provekit mint` needs; excluding them made remote mint
+  # impossible. Only the generated `runs/` and `witnesses/` outputs are skipped.
+)
+
+sync_dir() {
+  local rel_path="$1"
+  local local_path="$repo_root/$rel_path"
+  local remote_path="$remote_repo/$rel_path"
+
+  [[ -d "$local_path" ]] || return 0
+  run_ssh "mkdir -p $(quote_sh "$(remote_parent "$remote_path")")"
+  "$rsync_bin" -az --delete "${exclude_args[@]}" "$local_path/" "$remote_host:$remote_path/"
+}
+
+sync_file() {
+  local rel_path="$1"
+  local local_path="$repo_root/$rel_path"
+  local remote_path="$remote_repo/$rel_path"
+
+  [[ -f "$local_path" ]] || return 0
+  run_ssh "mkdir -p $(quote_sh "$(remote_parent "$remote_path")")"
+  "$rsync_bin" -az "$local_path" "$remote_host:$remote_path"
+}
+
+sync_file Cargo.toml
+sync_file Cargo.lock
+sync_file rust-toolchain
+sync_file rust-toolchain.toml
+# Repo-root workspace config: the solver-portfolio registry + repo-root mint
+# read `.provekit/config.toml`. Sync the file only -- the sibling `.provekit/`
+# subdirs (cache/, runs/, fuzz-runs/, harvest/, baselines/) are large outputs
+# we deliberately do not ship.
+sync_file .provekit/config.toml
+
+sync_dir implementations/rust
+sync_dir examples
+sync_dir menagerie
+sync_dir tools
+sync_dir protocol
+sync_dir scripts
+sync_dir bootstrap
+sync_dir conformance
+sync_dir tests
+
+remote_cwd="$remote_repo"
+if [[ -n "$rel_cwd" ]]; then
+  remote_cwd="$remote_repo/$rel_cwd"
+fi
+
+remote_args=()
+for arg in "$@"; do
+  if [[ "$arg" == "$repo_root" ]]; then
+    arg="$remote_repo"
+  elif [[ "$arg" == "$repo_root"/* ]]; then
+    arg="$remote_repo/${arg#"$repo_root"/}"
+  fi
+  remote_args+=("$(quote_sh "$arg")")
+done
+
+inner="cd $(quote_sh "$remote_cwd") && exec cargo"
+for arg in "${remote_args[@]}"; do
+  inner+=" $arg"
+done
+
+run_ssh "bash -lc $(quote_sh "$inner")"

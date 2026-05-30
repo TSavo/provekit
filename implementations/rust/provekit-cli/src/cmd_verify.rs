@@ -904,6 +904,7 @@ mod tests {
             bridge_source_layer: "rust".into(),
             bridge_target_layer: "concept".into(),
             bridge_target_proof_cid: None,
+            bridge_self_bundle_cid: None,
             property_name: "demo_property".into(),
             property_cid: "blake3-512:prop".into(),
             arg_term: None,

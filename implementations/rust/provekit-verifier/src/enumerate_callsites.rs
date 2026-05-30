@@ -137,6 +137,10 @@ fn walk_term(
                 .unwrap_or_default()
                 .to_string(),
             bridge_target_proof_cid,
+            bridge_self_bundle_cid: pool
+                .bridge_self_bundle_by_symbol
+                .get(&name)
+                .cloned(),
             property_name: property_name.to_string(),
             property_cid: property_cid.to_string(),
             arg_term: t

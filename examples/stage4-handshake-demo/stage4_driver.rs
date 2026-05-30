@@ -199,6 +199,7 @@ fn run() -> Result<(), String> {
         ir_return_sort: "Int".into(),
         notes: String::new(),
         signer_seed: parse_kit_seed,
+        target_proof_cid: None,
     });
     parse_kit_members.insert(
         parse_kit_bridge.cid.clone(),
@@ -321,6 +322,7 @@ fn run() -> Result<(), String> {
         solvers_config: None,
         extra_projects: Vec::new(),
         extra_proof_files: Vec::new(),
+        extra_proofs: Vec::new(),
     };
     let runner = Runner::new(cfg);
     let (report, stats) = runner.run_with_tiers();

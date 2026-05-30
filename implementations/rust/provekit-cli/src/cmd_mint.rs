@@ -454,13 +454,54 @@ impl MintKit {
         let contract_bindings = if consumer_steps.is_empty() {
             Vec::new()
         } else {
-            contract_bindings_from_producer_responses(
+            let mut bindings = contract_bindings_from_producer_responses(
                 &producer_responses,
                 &project_root_for_manifests,
                 &out_dir,
                 quiet,
             )
-            .map_err(KitError::Transformation)?
+            .map_err(KitError::Transformation)?;
+            // Dependency-proof bridging, one level up the crate graph: harvest
+            // contracts published by dependency proofs already in
+            // `.provekit/imports/` (libprovekit, the rust stdlib shim, ...) and
+            // forward them alongside this crate's own producer contracts. The
+            // implication lifter then emits a bridge for each cross-crate /
+            // stdlib call site instead of leaving it a vacuous lift-gap.
+            //
+            // Precedence: an intra-crate contract WINS over a same-named
+            // dependency contract. A bare callee `foo` in this crate's source
+            // resolves to this crate's `foo`, never a dependency's `foo` that
+            // merely shares the name. Dropping the colliding dependency binding
+            // here (rather than forwarding both) is what keeps cross-crate
+            // bridging sound under bare-name matching until qualified-callee
+            // resolution lands; it also removes the duplicate-contract-name
+            // load warnings the verifier would otherwise emit.
+            let intra_names: std::collections::HashSet<String> = bindings
+                .iter()
+                .filter_map(|b| b.get("name").and_then(|v| v.as_str()).map(String::from))
+                .collect();
+            let dep_bindings =
+                contract_bindings_from_dependency_proofs(&project_root_for_manifests);
+            let dep_total = dep_bindings.len();
+            let dep_kept: Vec<Value> = dep_bindings
+                .into_iter()
+                .filter(|b| {
+                    b.get("name")
+                        .and_then(|v| v.as_str())
+                        .map(|n| !intra_names.contains(n))
+                        .unwrap_or(false)
+                })
+                .collect();
+            if !quiet && dep_total > 0 {
+                println!(
+                    "{}: {} dependency contract(s) forwarded for cross-crate bridging, {} dropped (name collides with an intra-crate contract; intra-crate wins)",
+                    "deps".green().bold(),
+                    dep_kept.len(),
+                    dep_total - dep_kept.len()
+                );
+            }
+            bindings.extend(dep_kept);
+            bindings
         };
 
         for step in &consumer_steps {
@@ -643,6 +684,108 @@ fn contract_bindings_from_producer_responses(
         quiet,
     )?
     .contract_bindings)
+}
+
+/// Harvest contract bindings from dependency proofs already loaded under
+/// `<project_root>/.provekit/imports/`. This is the M×N bridge model one
+/// level up the crate graph: a dependency crate (libprovekit, the rust
+/// stdlib shim, ...) publishes its contracts as a `.proof`, the consumer's
+/// pool loads it, and the implication lifter — handed these (name, cid,
+/// body_bearing) bindings alongside the project's own — emits a bridge for
+/// each cross-crate / stdlib call site instead of leaving it a lift-gap that
+/// vacuous-passes. `body_bearing` (carries a `pre` or `post`, not just an
+/// `inv`) lets the lifter prefer a dischargeable dependency contract over a
+/// witnessed-fact one for the same callee. Returns empty when imports/ holds
+/// no dependency proofs.
+fn contract_bindings_from_dependency_proofs(project_root: &Path) -> Vec<Value> {
+    // Scope strictly to declared dependency proofs under `.provekit/imports/`.
+    // (`load_all_proofs::run` recursively walks the WHOLE crate tree, which
+    // would slurp stale proofs under target/, examples/, the crate's own
+    // freshly-minted output, etc. — we want only what the kit author placed
+    // in imports/ as a dependency.)
+    let imports_dir = project_root.join(".provekit").join("imports");
+    let mut proof_files = Vec::new();
+    if let Ok(entries) = std::fs::read_dir(&imports_dir) {
+        for entry in entries.flatten() {
+            let path = entry.path();
+            if path.extension().and_then(|s| s.to_str()) == Some("proof") {
+                proof_files.push(path);
+            }
+        }
+    }
+    if proof_files.is_empty() {
+        return Vec::new();
+    }
+    let mut pool = provekit_verifier::types::MementoPool::default();
+    provekit_verifier::load_all_proofs::load_files_into_pool(&proof_files, &mut pool);
+
+    use provekit_verifier::types::{memento_body_field, memento_kind};
+    // member CID -> the `.proof` bundle CID it was loaded from. This is the
+    // `targetProofCid` a cross-crate bridge must pin so the verifier enforces
+    // ConsequentBundlePinned (the contract member MUST come from THIS bundle,
+    // not a same-named poisoned shim). `bundle_members` is bundleCid ->
+    // {memberCid}; invert it.
+    let mut member_to_bundle: std::collections::BTreeMap<&str, &str> =
+        std::collections::BTreeMap::new();
+    for (bundle, members) in &pool.bundle_members {
+        for m in members {
+            member_to_bundle.insert(m.as_str(), bundle.as_str());
+        }
+    }
+
+    // Iterate mementos directly rather than `pool.name_to_cid`: that index is
+    // first-writer-wins, so when a dependency publishes BOTH a test-lifted
+    // `inv` contract and a body-bearing `pre`/`post` function-contract for the
+    // same name (both land as `kind:"contract"` mementos), the index can pin
+    // the vacuous one. We resolve the same-name collision here in favour of
+    // the body-bearing contract, mirroring the implication lifter's tiebreak,
+    // so cross-crate bridges target a dischargeable contract.
+    //
+    // `contract_cid` is the memento map key = the attestation CID the verifier
+    // indexes `pool.mementos` by, exactly as the intra-crate binding path uses
+    // (see the `contracts_by_name` -> `contract_bindings` map below).
+    let mut by_name: std::collections::BTreeMap<String, (String, bool, Option<String>)> =
+        std::collections::BTreeMap::new();
+    for (cid, env) in &pool.mementos {
+        if memento_kind(env) != Some("contract") {
+            continue;
+        }
+        let name = match env
+            .pointer("/header/contractName")
+            .or_else(|| env.pointer("/header/name"))
+            .or_else(|| env.pointer("/evidence/body/contractName"))
+            .or_else(|| env.pointer("/evidence/body/name"))
+            .and_then(|v| v.as_str())
+        {
+            Some(n) => n.to_string(),
+            None => continue,
+        };
+        let body_bearing = memento_body_field(env, "preHash").is_some()
+            || memento_body_field(env, "postHash").is_some();
+        let bundle = member_to_bundle.get(cid.as_str()).map(|b| b.to_string());
+        match by_name.get(&name) {
+            // Keep the incumbent when it is already body-bearing, or when the
+            // newcomer is not an upgrade (inv-only). Otherwise the newcomer is
+            // a body-bearing upgrade over an inv-only incumbent: take it.
+            Some((_, incumbent_bb, _)) if *incumbent_bb || !body_bearing => {}
+            _ => {
+                by_name.insert(name, (cid.clone(), body_bearing, bundle));
+            }
+        }
+    }
+    by_name
+        .into_iter()
+        .map(|(name, (cid, body_bearing, bundle))| {
+            json!({
+                "name": name,
+                "contract_cid": cid,
+                "body_bearing": body_bearing,
+                // The dependency bundle CID: the bridge pins this so the
+                // verifier resolves the target contract from THIS proof only.
+                "target_proof_cid": bundle,
+            })
+        })
+        .collect()
 }
 
 impl Kit for MintKit {
@@ -1109,6 +1252,13 @@ fn mint_bridge_from_decl(
         .get("targetLayer")
         .and_then(|v| v.as_str())
         .unwrap_or("kit");
+    // Forward pin: a cross-bundle (dependency-proof) target carries its
+    // bundle CID here; an intra-bundle target carries none (self-pinned).
+    let target_proof_cid = decl
+        .get("targetProofCid")
+        .and_then(|v| v.as_str())
+        .filter(|s| !s.is_empty())
+        .map(|s| s.to_string());
     let bridge = mint_bridge(&MintBridgeArgs {
         produced_by: "provekit-cli".to_string(),
         produced_at: produced_at.to_string(),
@@ -1120,6 +1270,7 @@ fn mint_bridge_from_decl(
         ir_return_sort: String::new(),
         notes: "implication-lifted callsite bridge".to_string(),
         signer_seed,
+        target_proof_cid,
     });
     Ok((bridge.cid, bridge.canonical_bytes))
 }
@@ -1394,6 +1545,11 @@ fn mint_ir_document(
                 ir_return_sort: String::new(),
                 notes: "auto-minted body-discharge bridge (PR-23)".to_string(),
                 signer_seed,
+                // Self-pinned: this contract is a co-member of the very bundle
+                // being minted, so there is no external bundle CID to name
+                // (and it can't reference its own not-yet-computed CID). The
+                // verifier enforces same-bundle co-membership for the None case.
+                target_proof_cid: None,
             });
             members
                 .entry(bridge.cid.clone())
@@ -1558,9 +1714,18 @@ fn mint_ir_document(
     let contract_bindings: Vec<Value> = contracts_by_name
         .iter()
         .map(|(name, contract)| {
+            // body_bearing distinguishes a production function-contract
+            // (carries a derived `pre` and/or `post` -> a call site has a
+            // real obligation to discharge) from a test-lifted witnessed
+            // fact (carries only `inv` -> nothing for a general call site
+            // to prove). When BOTH exist for the same callee, the
+            // implication lifter prefers the body-bearing one so bridges
+            // target the dischargeable contract instead of vacuous-passing.
+            let body_bearing = contract.pre_hash.is_some() || contract.post_hash.is_some();
             json!({
                 "name": name,
                 "contract_cid": contract.attestation_cid.clone(),
+                "body_bearing": body_bearing,
             })
         })
         .collect();

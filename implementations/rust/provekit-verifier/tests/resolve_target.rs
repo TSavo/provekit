@@ -10,14 +10,29 @@
 //   - forward pin (BridgeDeclaration.ConsequentBundlePinned): when the
 //     CallSite carries `bridge_target_proof_cid = Some(...)`, the
 //     contract member MUST live in that bundle, else reject
+//   - self pin: when `bridge_target_proof_cid = None`, the target MUST be a
+//     co-member of the bridge's own bundle (`bridge_self_bundle_cid`), else
+//     reject. There is NO unenforced path: every bridge is pinned, either to
+//     a named external bundle (Some) or to its own bundle (None).
 
 use serde_json::{json, Value as Json};
 
 use provekit_verifier::{resolve_target, CallSite, MementoPool};
 
+/// Bundle the basic happy-path tests treat as the bridge's own. Registered
+/// in `pool_with` and pinned by `callsite_targeting` so a no-`targetProofCid`
+/// (self-pinned) callsite resolves against a co-member target.
+const SELF_BUNDLE: &str = "blake3-512:self-bundle-under-test";
+
 fn pool_with(cid: &str, env: Json) -> MementoPool {
     let mut pool = MementoPool::default();
     pool.mementos.insert(cid.into(), env);
+    // Co-member of the self bundle: lets self-pinned callsites resolve.
+    // Some-pin tests add their own bundle_members and pins on top.
+    pool.bundle_members
+        .entry(SELF_BUNDLE.into())
+        .or_default()
+        .insert(cid.into());
     pool
 }
 
@@ -25,6 +40,7 @@ fn callsite_targeting(target_cid: &str) -> CallSite {
     CallSite {
         bridge_ir_name: "parseInt".into(),
         bridge_target_cid: target_cid.into(),
+        bridge_self_bundle_cid: Some(SELF_BUNDLE.into()),
         ..Default::default()
     }
 }
@@ -254,21 +270,99 @@ fn rejects_when_pinned_bundle_is_not_loaded() {
     );
 }
 
-/// Legacy bridge with no `targetProofCid`: cannot enforce
-/// ConsequentBundlePinned, but accept for back-compat (soft warning is
-/// printed to stderr).
+/// Self-pinned bridge (no `targetProofCid`) whose target IS a co-member of
+/// the bridge's own bundle: accept. This is the intra-bundle case (a bridge
+/// minted into the same `.proof` as its target).
 #[test]
-fn accepts_when_target_proof_cid_is_none_back_compat() {
-    let target_cid = "blake3-512:contract-legacy";
-    let pool = pool_with(target_cid, contract_env(trivial_pre()));
+fn accepts_self_pinned_when_target_is_co_member() {
+    let target_cid = "blake3-512:contract-selfpin";
+    let self_bundle = "blake3-512:my-own-bundle";
+
+    let mut pool = MementoPool::default();
+    pool.mementos
+        .insert(target_cid.into(), contract_env(trivial_pre()));
+    pool.bundle_members
+        .entry(self_bundle.into())
+        .or_default()
+        .insert(target_cid.into());
 
     let cs = CallSite {
-        bridge_ir_name: "parseIntLegacy".into(),
+        bridge_ir_name: "selfPinned".into(),
         bridge_target_cid: target_cid.into(),
         bridge_target_proof_cid: None,
+        bridge_self_bundle_cid: Some(self_bundle.into()),
         ..Default::default()
     };
 
-    let r = resolve_target::run(&cs, &pool).expect("legacy bridges must still resolve");
+    let r = resolve_target::run(&cs, &pool).expect("self-pinned co-member must resolve");
     assert_eq!(r.cid, target_cid);
+}
+
+/// Self-pinned bridge whose target is NOT a co-member of its own bundle
+/// (e.g. a same-named contract from a DIFFERENT bundle trying to pose as the
+/// local one): reject. There is no unenforced path for the None case.
+#[test]
+fn rejects_self_pinned_when_target_not_co_member() {
+    let target_cid = "blake3-512:contract-foreign";
+    let self_bundle = "blake3-512:my-own-bundle";
+    let other_bundle = "blake3-512:some-dependency";
+
+    let mut pool = MementoPool::default();
+    pool.mementos
+        .insert(target_cid.into(), contract_env(trivial_pre()));
+    // The target lives only in a DIFFERENT bundle, not the bridge's own.
+    pool.bundle_members
+        .entry(other_bundle.into())
+        .or_default()
+        .insert(target_cid.into());
+    // The self bundle exists but does NOT contain the target.
+    pool.bundle_members.entry(self_bundle.into()).or_default();
+
+    let cs = CallSite {
+        bridge_ir_name: "selfPinnedForeign".into(),
+        bridge_target_cid: target_cid.into(),
+        bridge_target_proof_cid: None,
+        bridge_self_bundle_cid: Some(self_bundle.into()),
+        ..Default::default()
+    };
+
+    let err = format!(
+        "{:?}",
+        resolve_target::run(&cs, &pool).expect_err("must reject foreign self-pin")
+    );
+    assert!(
+        err.contains("BridgeTargetProofCidMismatch"),
+        "expected BridgeTargetProofCidMismatch, got: {err}"
+    );
+}
+
+/// A self-pinned bridge with no known source bundle at all (e.g. a hand-built
+/// in-memory pool that never went through load_all_proofs): unresolvable, so
+/// fail-closed rather than silently skipping the pin.
+#[test]
+fn rejects_self_pinned_when_self_bundle_unknown() {
+    let target_cid = "blake3-512:contract-unbundled";
+    let pool = {
+        let mut p = MementoPool::default();
+        p.mementos
+            .insert(target_cid.into(), contract_env(trivial_pre()));
+        p
+    };
+
+    let cs = CallSite {
+        bridge_ir_name: "noBundle".into(),
+        bridge_target_cid: target_cid.into(),
+        bridge_target_proof_cid: None,
+        bridge_self_bundle_cid: None,
+        ..Default::default()
+    };
+
+    let err = format!(
+        "{:?}",
+        resolve_target::run(&cs, &pool).expect_err("must fail-closed with no source bundle")
+    );
+    assert!(
+        err.contains("BridgeSelfPinUnresolvable"),
+        "expected BridgeSelfPinUnresolvable, got: {err}"
+    );
 }
