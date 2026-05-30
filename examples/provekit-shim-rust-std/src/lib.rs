@@ -43,7 +43,7 @@
 #![allow(non_snake_case)]
 
 pub const PROVEKIT_PROOF_BYTES: &[u8] = include_bytes!(
-    "../blake3-512:bea0fa2554a221ca83c5a166554ae2569d53b43f648ca73b502ba4a546e36e2e37ee2ea29a8cc35915ab1101af8fa4278ead9bf7c96d9aba817ea09d334a97f9.proof"
+    "../blake3-512:1fea8ecbb7b618f8578d49c969bdd65d86fc050d50926f5a8cee1cabf5214fbb643829518dbbc72636c7605542bf79b71415a9491b65e490c4a62c2fafbd4451.proof"
 );
 
 // ---------------------------------------------------------------------------
