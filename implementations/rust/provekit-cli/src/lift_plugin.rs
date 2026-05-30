@@ -441,14 +441,8 @@ pub fn build_lift_params(project_root: &Path, surface: &str, options: LiftPlugin
     params
 }
 
-fn trace_enabled() -> bool {
-    std::env::var_os("PROVEKIT_CLI_TRACE").is_some()
-}
-
 fn trace_log(message: impl std::fmt::Display) {
-    if trace_enabled() {
-        eprintln!("provekit trace: {message}");
-    }
+    tracing::trace!("{}", message);
 }
 
 #[cfg(test)]

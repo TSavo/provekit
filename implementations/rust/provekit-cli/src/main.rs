@@ -282,6 +282,19 @@ pub struct ComposeArgs {
 }
 
 fn main() -> ExitCode {
+    // Structured logging to stderr. Default level: warn, so a bare
+    // `provekit mint`/`prove` run is silent. Override via RUST_LOG:
+    //   RUST_LOG=info   -> pipeline narrative
+    //   RUST_LOG=debug  -> per-item decisions
+    //   RUST_LOG=trace  -> RPC payloads, RA queries
+    tracing_subscriber::fmt()
+        .with_writer(std::io::stderr)
+        .with_env_filter(
+            tracing_subscriber::EnvFilter::builder()
+                .with_default_directive(tracing_subscriber::filter::LevelFilter::WARN.into())
+                .from_env_lossy(),
+        )
+        .init();
     let cli = Cli::parse();
     let code = match cli.cmd {
         Cmd::Prove(a) => cmd_prove::run(a),

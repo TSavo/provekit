@@ -48,6 +48,7 @@ use base64::Engine;
 use clap::Parser;
 use owo_colors::OwoColorize;
 use serde_json::{json, Value};
+use tracing::{debug, info};
 
 use libprovekit::core::{
     address, Boundary, Cid, Dialect, Domain, DomainClaim, DomainKind, FunctionContractDomain,
@@ -527,6 +528,11 @@ impl MintKit {
             let dep_bindings =
                 contract_bindings_from_dependency_proofs(&project_root_for_manifests);
             let dep_total = dep_bindings.len();
+            debug!(
+                dep_total = dep_total,
+                intra_keys = intra_keys.len(),
+                "mint: harvested dependency proof contracts"
+            );
             let dep_kept: Vec<Value> = dep_bindings
                 .into_iter()
                 .filter(|b| {
@@ -541,12 +547,24 @@ impl MintKit {
                     !intra_keys.contains(&(lib, name))
                 })
                 .collect();
+            let dep_dropped = dep_total - dep_kept.len();
+            info!(
+                dep_forwarded = dep_kept.len(),
+                dep_dropped = dep_dropped,
+                "mint: dependency contracts forwarded for cross-crate bridging"
+            );
+            if dep_dropped > 0 {
+                debug!(
+                    dep_dropped = dep_dropped,
+                    "mint: dependency contracts dropped (same crate AND leaf as producer contract)"
+                );
+            }
             if !quiet && dep_total > 0 {
                 println!(
                     "{}: {} dependency contract(s) forwarded for cross-crate bridging, {} dropped (same crate AND leaf as a producer contract)",
                     "deps".green().bold(),
                     dep_kept.len(),
-                    dep_total - dep_kept.len()
+                    dep_dropped
                 );
             }
             bindings.extend(dep_kept);
@@ -556,13 +574,21 @@ impl MintKit {
         for step in &consumer_steps {
             let lift_options =
                 lift_options_from_request(&step.lift_request, contract_bindings.clone());
+            debug!(
+                surface = %step.surface,
+                contract_bindings = contract_bindings.len(),
+                "mint: dispatching lift to surface"
+            );
             let session = match lift_plugin::dispatch_lift(
                 &project_root_for_manifests,
                 &step.surface,
                 lift_options,
                 quiet,
             ) {
-                Ok(session) => session,
+                Ok(session) => {
+                    debug!(surface = %step.surface, "mint: lift dispatch succeeded");
+                    session
+                }
                 Err(LiftPluginError::MissingBinary { binary }) => {
                     if !quiet {
                         println!(
@@ -1132,6 +1158,10 @@ fn mint_lift_response(
             let authorities = lift_resp.get("authorities").and_then(|v| v.as_array());
             let implications = lift_resp.get("implications").and_then(|v| v.as_array());
             let witnesses = lift_resp.get("witnesses").and_then(|v| v.as_array());
+            debug!(
+                ir_entries = ir.len(),
+                "mint: minting ir-document into .proof bundle"
+            );
             let minted = mint_ir_document(
                 ir,
                 authorities,
@@ -1142,11 +1172,18 @@ fn mint_lift_response(
                 quiet,
             )?;
 
+            info!(
+                filename_cid = %minted.filename_cid,
+                contract_set_cid = %minted.contract_set_cid,
+                bytes = minted.bytes.len(),
+                "mint: .proof bundle minted"
+            );
             std::fs::create_dir_all(out_dir)
                 .map_err(|e| format!("mkdir {}: {e}", out_dir.display()))?;
             let out_path = out_dir.join(format!("{}.proof", minted.filename_cid));
             std::fs::write(&out_path, &minted.bytes)
                 .map_err(|e| format!("write {}: {e}", out_path.display()))?;
+            debug!(out_path = %out_path.display(), "mint: .proof file written");
 
             print_lift_diagnostics(&lift_resp, quiet);
 
@@ -2265,6 +2302,12 @@ pub struct MintArgs {
 }
 
 pub fn run(args: MintArgs) -> u8 {
+    let _span = tracing::info_span!("cmd_mint").entered();
+    info!(
+        kit = args.kit.as_deref().unwrap_or("(none)"),
+        surface = args.surface.as_deref().unwrap_or("(none)"),
+        "mint: starting"
+    );
     // Resolve (project_root, surface, lang_key) from --kit or --project.
     let (project_root, derived_surface, lang_key) = if let Some(kit) = &args.kit {
         let config_root = std::env::current_dir().unwrap_or_else(|_| PathBuf::from("."));

@@ -24,6 +24,7 @@ use crate::formula_rewrite;
 use rayon::prelude::*;
 use serde_json::json;
 use serde_json::Value as Json;
+use tracing::{debug, info, warn};
 
 use crate::handshake::{
     formula_hash, implication_property_hash, locate_producer_post, try_tier1, try_tier2,
@@ -388,6 +389,12 @@ impl Runner {
     }
 
     pub fn run_with_tiers(&self) -> (Report, TierStats) {
+        let _span = tracing::info_span!(
+            "verifier",
+            root = %self.cfg.project_root.display()
+        ).entered();
+        info!(root = %self.cfg.project_root.display(), "verifier: starting proof run");
+
         let mut report = Report::default();
         let mut pool = load_all_proofs::run(&self.cfg.project_root);
 
@@ -398,6 +405,12 @@ impl Runner {
         }
         load_all_proofs::load_files_into_pool(&self.cfg.extra_proof_files, &mut pool);
         load_all_proofs::load_proof_bytes_into_pool(&self.cfg.extra_proofs, &mut pool);
+
+        info!(
+            mementos = pool.mementos.len(),
+            load_errors = pool.load_errors.len(),
+            "verifier: proofs loaded"
+        );
 
         // Load and process call edges
         let call_edges = call_edge_loader::load_call_edge_files(&self.cfg.project_root);
@@ -421,6 +434,7 @@ impl Runner {
         }
 
         let callsites = enumerate_callsites::run(&pool);
+        info!(callsites = callsites.len(), "verifier: callsite enumeration complete");
 
         let n_hash = AtomicUsize::new(0);
         let n_cache = AtomicUsize::new(0);
@@ -507,8 +521,44 @@ impl Runner {
             violations,
             disagreements: n_disagree.load(Ordering::Relaxed),
             solver_invocations: n_invoc.load(Ordering::Relaxed),
-            per_solver,
+            per_solver: per_solver.clone(),
         };
+
+        if violations > 0 {
+            warn!(
+                violations = violations,
+                discharged_by_hash = stats.discharged_by_hash,
+                discharged_by_cache = stats.discharged_by_cache,
+                vacuous = stats.vacuous_discharge,
+                solved = stats.solved_and_minted,
+                residue = stats.residue,
+                solver_invocations = stats.solver_invocations,
+                "verifier: proof run complete with VIOLATIONS"
+            );
+        } else {
+            info!(
+                violations = violations,
+                discharged_by_hash = stats.discharged_by_hash,
+                discharged_by_cache = stats.discharged_by_cache,
+                vacuous = stats.vacuous_discharge,
+                solved = stats.solved_and_minted,
+                residue = stats.residue,
+                solver_invocations = stats.solver_invocations,
+                "verifier: proof run complete, all obligations discharged"
+            );
+        }
+        for (solver_name, solver_stats) in &stats.per_solver {
+            debug!(
+                solver = %solver_name,
+                discharged = solver_stats.discharged,
+                unsatisfied = solver_stats.unsatisfied,
+                undecidable = solver_stats.undecidable,
+                timeouts = solver_stats.timeouts,
+                wall_clock_ms = solver_stats.wall_clock.as_millis(),
+                "verifier: per-solver stats"
+            );
+        }
+
         (report, stats)
     }
 
@@ -968,10 +1018,11 @@ fn work_one(
                 .into_iter()
                 .map(|(cid, _)| short(&cid))
                 .collect();
-            eprintln!(
-                "info: formula has {} verified sub-formulas: {}",
-                sub_cids.len(),
-                sub_cids.join(", ")
+            debug!(
+                bridge = %cs.bridge_ir_name,
+                sub_formula_count = sub_cids.len(),
+                sub_cids = %sub_cids.join(", "),
+                "work_one: formula has verified sub-formulas (partial discharge candidate)"
             );
         }
     }
@@ -1134,8 +1185,19 @@ fn work_one(
         formula_for_dispatch = Some(ob.ir_formula);
     }
 
+    debug!(
+        bridge = %cs.bridge_ir_name,
+        "work_one: invoking solver plan (tier 3)"
+    );
     let (verdict, reason, invs) = run_plan(plan, registry, &smt, formula_for_dispatch.as_ref());
 
+    debug!(
+        bridge = %cs.bridge_ir_name,
+        verdict = ?verdict,
+        reason = %reason,
+        solver_invocations = invs.len(),
+        "work_one: solver plan verdict"
+    );
     n_invoc.fetch_add(invs.len(), Ordering::Relaxed);
 
     if verdict == ObligationVerdict::Disagreement {
@@ -1177,7 +1239,7 @@ fn work_one(
                             }
                         }
                         Err(e) => {
-                            eprintln!("warning: mint_and_cache: {e}");
+                            warn!(bridge = %cs.bridge_ir_name, error = %e, "mint_and_cache failed");
                         }
                     }
                 }
