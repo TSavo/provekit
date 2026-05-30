@@ -65,6 +65,16 @@ func RecognizeImpl(params RecognizeParams) (RecognizeResponse, error) {
 		}
 		bindingsByCID[binding.TemplateCID] = binding
 	}
+	kitBindings, err := loadBindingTemplatesForProject(params.ProjectRoot)
+	if err != nil {
+		return RecognizeResponse{}, err
+	}
+	for _, binding := range kitBindings {
+		if binding.TemplateCID == "" {
+			continue
+		}
+		bindingsByCID[binding.TemplateCID] = binding
+	}
 
 	tags := []RecognizeTag{}
 	for _, relPath := range params.SourcePaths {
