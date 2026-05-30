@@ -150,6 +150,7 @@ fn install_binary_manifest(
     let manifest_text = format!(
         "name = \"{manifest_name}\"\n\
          library_tag = \"{library_tag}\"\n\
+         materialize_source = true\n\
          command = [\"{binary}\", \"--rpc\"]\n\
          working_dir = \".\"\n",
     );
@@ -717,13 +718,17 @@ for line in sys.stdin:
 
 fn write_rust_http_request_source(src_dir: &Path) -> PathBuf {
     let source_path = src_dir.join("lib.rs");
-    let payload = http_payload_json("fetch_status", "&str", "i64");
     fs::write(
         &source_path,
-        format!(
-            "// rust materialize example\n{}// end\n",
-            carrier_lines("//", "", &payload)
-        ),
+        r#"
+#[provekit::boundary(
+    concept = "concept:http-request",
+    library = "reqwest",
+)]
+pub async fn fetch_status(url: &str) -> i64 {
+    0
+}
+"#,
     )
     .expect("write rust HTTP source");
     source_path
@@ -1350,12 +1355,16 @@ fn materialize_rust_reqwest_example_uses_rust_library_shim() {
         output.status.success(),
         "Rust reqwest materialize example should succeed\nstdout:\n{stdout}\nstderr:\n{stderr}"
     );
+    assert!(
+        stderr.contains("source materialized by rust kit via RPC"),
+        "Rust source materialize must route through the registered Rust kit\nstderr:\n{stderr}"
+    );
     assert!(stdout.contains("// file: lib.rs"));
     assert!(
         stdout.contains("reqwest::get(url)"),
         "Rust reqwest example should route through the Rust reqwest shim:\n{stdout}"
     );
-    assert!(!stdout.contains("provekit-concept:"));
+    assert!(!stdout.contains("provekit::boundary"));
 }
 
 #[test]

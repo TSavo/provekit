@@ -7,6 +7,7 @@ use std::sync::OnceLock;
 use base64::{engine::general_purpose::STANDARD as BASE64, Engine as _};
 use provekit_canonicalizer::{blake3_512_of, encode_jcs, Value as CValue};
 use provekit_ir_types::realization_tags::tag_sugar_carrier;
+use quote::ToTokens;
 use serde_json::{json, Value};
 
 pub mod platform_semantics;
@@ -2451,6 +2452,25 @@ pub fn dispatch(request: &Value) -> Value {
                 }
             })
         }
+        "provekit.plugin.materialize_source" => {
+            let params = request
+                .get("params")
+                .and_then(Value::as_object)
+                .cloned()
+                .unwrap_or_default();
+            match materialize_source(&params) {
+                Ok(result) => serde_json::json!({
+                    "jsonrpc": "2.0",
+                    "id": id,
+                    "result": result,
+                }),
+                Err(materialize_error) => error(
+                    id,
+                    -32050,
+                    &format!("MATERIALIZE_SOURCE_FAILED: {materialize_error}"),
+                ),
+            }
+        }
         "provekit.plugin.invoke" => {
             let Some(params) = request.get("params").and_then(Value::as_object) else {
                 return error(id, -32602, "INVALID_PARAMS: params must be an object");
@@ -2654,6 +2674,590 @@ pub fn dispatch(request: &Value) -> Value {
         }),
         _ => error(id, -32601, &format!("METHOD_NOT_FOUND: {method}")),
     }
+}
+
+fn materialize_source(params: &serde_json::Map<String, Value>) -> Result<Value, String> {
+    let target_lang = string_param(params, "target_lang", "targetLang").unwrap_or_default();
+    if !target_lang.is_empty() && target_lang != "rust" {
+        return Err(format!(
+            "rust materializer cannot handle target_lang `{target_lang}`"
+        ));
+    }
+
+    let project_root = string_param(params, "project_root", "projectRoot")
+        .map(PathBuf::from)
+        .unwrap_or_else(|| std::env::current_dir().unwrap_or_else(|_| PathBuf::from(".")));
+    let source_dir = string_param(params, "source_dir", "sourceDir")
+        .map(PathBuf::from)
+        .unwrap_or_else(|| project_root.clone());
+    let target_library = string_param(params, "target_library_tag", "targetLibraryTag")
+        .or_else(|| string_param(params, "library_tag", "libraryTag"))
+        .unwrap_or_default();
+
+    let source_dir = absolute_path(&source_dir)?;
+    let project_root = absolute_path(&project_root)?;
+
+    let mut paths = Vec::new();
+    collect_rust_source_files(&source_dir, &mut paths)?;
+    paths.sort();
+
+    let mut files = Vec::new();
+    for path in paths {
+        if let Some(file) =
+            materialize_rust_file(&project_root, &source_dir, &path, &target_library)?
+        {
+            files.push(file);
+        }
+    }
+
+    Ok(json!({
+        "files": files,
+        "compile_classpath": [],
+    }))
+}
+
+fn string_param(
+    params: &serde_json::Map<String, Value>,
+    snake: &str,
+    camel: &str,
+) -> Option<String> {
+    params
+        .get(snake)
+        .or_else(|| params.get(camel))
+        .and_then(Value::as_str)
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+        .map(str::to_string)
+}
+
+fn absolute_path(path: &Path) -> Result<PathBuf, String> {
+    if path.is_absolute() {
+        return Ok(path.to_path_buf());
+    }
+    std::env::current_dir()
+        .map(|cwd| cwd.join(path))
+        .map_err(|error| format!("resolve current dir: {error}"))
+}
+
+fn collect_rust_source_files(dir: &Path, out: &mut Vec<PathBuf>) -> Result<(), String> {
+    let entries =
+        std::fs::read_dir(dir).map_err(|error| format!("read {}: {error}", dir.display()))?;
+    for entry in entries {
+        let entry = entry.map_err(|error| format!("read {} entry: {error}", dir.display()))?;
+        let path = entry.path();
+        let file_name = path
+            .file_name()
+            .and_then(|name| name.to_str())
+            .unwrap_or("");
+        if path.is_dir() {
+            if matches!(file_name, ".git" | "node_modules" | "target" | "vendor") {
+                continue;
+            }
+            collect_rust_source_files(&path, out)?;
+            continue;
+        }
+        if path.extension().and_then(|ext| ext.to_str()) == Some("rs") {
+            out.push(path);
+        }
+    }
+    Ok(())
+}
+
+fn materialize_rust_file(
+    _project_root: &Path,
+    source_dir: &Path,
+    path: &Path,
+    target_library: &str,
+) -> Result<Option<Value>, String> {
+    let raw = std::fs::read_to_string(path)
+        .map_err(|error| format!("read {}: {error}", path.display()))?;
+    let file =
+        syn::parse_file(&raw).map_err(|error| format!("parse {}: {error}", path.display()))?;
+
+    let mut targets = Vec::new();
+    collect_materialize_boundaries(&raw, &file.items, &mut targets);
+    if targets.is_empty() {
+        return Ok(None);
+    }
+
+    let mut edits = Vec::new();
+    let mut sites = Vec::new();
+    for target in targets {
+        let library = if target.library.is_empty() {
+            target_library.to_string()
+        } else {
+            target.library.clone()
+        };
+        if !target_library.is_empty() && library != target_library {
+            continue;
+        }
+
+        let _target_library_guard = TargetLibraryTagGuard::set(&library);
+        let realized = emit_stub(
+            &target.function_name,
+            &target.params,
+            &target.param_types,
+            &target.return_type,
+            &target.concept_name,
+        );
+
+        if realized.is_stub {
+            sites.push(MaterializedRustSite::refused(
+                target.concept_name,
+                target.function_name,
+                format!("realize plugin for rust library `{library}` returned a stub"),
+            ));
+            continue;
+        }
+
+        let realized_block = realized_block_source(&realized.source)?;
+        edits.push(SourceEdit {
+            start: target.body_start,
+            end: target.body_end,
+            text: realized_block,
+        });
+        edits.extend(target.attr_edits);
+
+        let binding_cid = realized.emitted_artifact_cid.clone();
+        let loss_dims = loss_dimensions(&realized.observed_loss_record);
+        sites.push(MaterializedRustSite {
+            concept_name: target.concept_name,
+            function_name: target.function_name,
+            target_binding_cid: binding_cid,
+            outcome_kind: if loss_dims.is_empty() {
+                "Exact".to_string()
+            } else {
+                "LoudlyLossy".to_string()
+            },
+            loss_dims,
+            refusal_reason: None,
+        });
+    }
+
+    if sites.is_empty() {
+        return Ok(None);
+    }
+
+    let rewritten = apply_source_edits(raw.as_bytes(), edits)?;
+    let relative_path = path
+        .strip_prefix(source_dir)
+        .unwrap_or(path)
+        .to_string_lossy()
+        .replace('\\', "/");
+
+    Ok(Some(json!({
+        "path": relative_path,
+        "content": String::from_utf8(rewritten)
+            .map_err(|error| format!("materialized Rust was not UTF-8: {error}"))?,
+        "receipt": receipt_for_rust_sites(target_library, &sites),
+    })))
+}
+
+#[derive(Debug, Clone)]
+struct MaterializeBoundaryTarget {
+    concept_name: String,
+    library: String,
+    function_name: String,
+    params: Vec<String>,
+    param_types: Vec<String>,
+    return_type: String,
+    body_start: usize,
+    body_end: usize,
+    attr_edits: Vec<SourceEdit>,
+}
+
+#[derive(Debug, Clone)]
+struct MaterializedRustSite {
+    concept_name: String,
+    function_name: String,
+    target_binding_cid: String,
+    outcome_kind: String,
+    loss_dims: Vec<String>,
+    refusal_reason: Option<String>,
+}
+
+impl MaterializedRustSite {
+    fn refused(concept_name: String, function_name: String, reason: String) -> Self {
+        Self {
+            concept_name,
+            function_name,
+            target_binding_cid: String::new(),
+            outcome_kind: "Refused".to_string(),
+            loss_dims: Vec::new(),
+            refusal_reason: Some(reason),
+        }
+    }
+}
+
+#[derive(Debug, Clone)]
+struct SourceEdit {
+    start: usize,
+    end: usize,
+    text: String,
+}
+
+fn collect_materialize_boundaries(
+    source: &str,
+    items: &[syn::Item],
+    targets: &mut Vec<MaterializeBoundaryTarget>,
+) {
+    for item in items {
+        match item {
+            syn::Item::Fn(item_fn) => {
+                if let Some(target) = materialize_boundary_target(source, item_fn) {
+                    targets.push(target);
+                }
+            }
+            syn::Item::Mod(module) => {
+                if let Some((_, nested)) = &module.content {
+                    collect_materialize_boundaries(source, nested, targets);
+                }
+            }
+            _ => {}
+        }
+    }
+}
+
+fn materialize_boundary_target(
+    source: &str,
+    item_fn: &syn::ItemFn,
+) -> Option<MaterializeBoundaryTarget> {
+    let mut parsed = None;
+    let mut attr_edits = Vec::new();
+    for attr in &item_fn.attrs {
+        if !is_provekit_attr(attr, "boundary") {
+            continue;
+        }
+        if parsed.is_none() {
+            parsed = parse_boundary_attr(attr);
+        }
+        if let Some(edit) = attr_removal_edit(source, attr) {
+            attr_edits.push(edit);
+        }
+    }
+
+    let parsed = parsed?;
+    let body_start =
+        line_column_to_byte_offset(source, item_fn.block.brace_token.span.open().start())?;
+    let body_end =
+        line_column_to_byte_offset(source, item_fn.block.brace_token.span.close().end())?;
+    let (params, param_types) = function_params(&item_fn.sig);
+    Some(MaterializeBoundaryTarget {
+        concept_name: parsed.concept,
+        library: parsed.library,
+        function_name: item_fn.sig.ident.to_string(),
+        params,
+        param_types,
+        return_type: function_return_type(&item_fn.sig),
+        body_start,
+        body_end,
+        attr_edits,
+    })
+}
+
+#[derive(Debug, Clone)]
+struct ParsedBoundaryAttr {
+    concept: String,
+    library: String,
+}
+
+fn is_provekit_attr(attr: &syn::Attribute, name: &str) -> bool {
+    let segments = attr.path().segments.iter().collect::<Vec<_>>();
+    segments.len() == 2 && segments[0].ident == "provekit" && segments[1].ident == name
+}
+
+fn parse_boundary_attr(attr: &syn::Attribute) -> Option<ParsedBoundaryAttr> {
+    let meta_list = attr.meta.require_list().ok()?;
+    let args = parse_attr_named_args(&meta_list.tokens);
+    let concept = args.string("concept").unwrap_or_default();
+    if concept.is_empty() {
+        return None;
+    }
+    Some(ParsedBoundaryAttr {
+        concept,
+        library: args.string("library").unwrap_or_default(),
+    })
+}
+
+#[derive(Debug, Default)]
+struct ParsedAttrArgs {
+    strings: BTreeMap<String, String>,
+}
+
+impl ParsedAttrArgs {
+    fn string(&self, key: &str) -> Option<String> {
+        self.strings.get(key).cloned()
+    }
+}
+
+fn parse_attr_named_args(tokens: &proc_macro2::TokenStream) -> ParsedAttrArgs {
+    let mut out = ParsedAttrArgs::default();
+    let tokens = tokens.clone().into_iter().collect::<Vec<_>>();
+    let mut i = 0;
+    while i < tokens.len() {
+        let key = match &tokens[i] {
+            proc_macro2::TokenTree::Ident(ident) => ident.to_string(),
+            _ => {
+                i += 1;
+                continue;
+            }
+        };
+        let is_eq = matches!(tokens.get(i + 1), Some(proc_macro2::TokenTree::Punct(p)) if p.as_char() == '=');
+        if !is_eq {
+            i += 1;
+            continue;
+        }
+        if let Some(proc_macro2::TokenTree::Literal(lit)) = tokens.get(i + 2) {
+            if let Some(unquoted) = unquote_string_literal(&lit.to_string()) {
+                out.strings.insert(key, unquoted);
+            }
+            i += 3;
+        } else {
+            i += 1;
+        }
+        if matches!(tokens.get(i), Some(proc_macro2::TokenTree::Punct(p)) if p.as_char() == ',') {
+            i += 1;
+        }
+    }
+    out
+}
+
+fn unquote_string_literal(raw: &str) -> Option<String> {
+    if raw.starts_with('"') && raw.ends_with('"') && raw.len() >= 2 {
+        Some(raw[1..raw.len() - 1].to_string())
+    } else {
+        None
+    }
+}
+
+fn function_params(sig: &syn::Signature) -> (Vec<String>, Vec<String>) {
+    let mut params = Vec::new();
+    let mut param_types = Vec::new();
+    let mut synthetic = 0usize;
+    for input in &sig.inputs {
+        match input {
+            syn::FnArg::Typed(pat_ty) => {
+                let name = match &*pat_ty.pat {
+                    syn::Pat::Ident(ident) => ident.ident.to_string(),
+                    _ => {
+                        let name = format!("p{synthetic}");
+                        synthetic += 1;
+                        name
+                    }
+                };
+                params.push(name);
+                param_types.push(rust_type_surface(&pat_ty.ty));
+            }
+            syn::FnArg::Receiver(_) => {
+                params.push("self".to_string());
+                param_types.push("Self".to_string());
+            }
+        }
+    }
+    (params, param_types)
+}
+
+fn function_return_type(sig: &syn::Signature) -> String {
+    match &sig.output {
+        syn::ReturnType::Default => String::new(),
+        syn::ReturnType::Type(_, ty) => rust_type_surface(ty),
+    }
+}
+
+fn rust_type_surface(ty: &syn::Type) -> String {
+    ty.to_token_stream().to_string().replace(' ', "")
+}
+
+fn attr_removal_edit(source: &str, attr: &syn::Attribute) -> Option<SourceEdit> {
+    let open = line_column_to_byte_offset(source, attr.bracket_token.span.open().start())?;
+    let close = line_column_to_byte_offset(source, attr.bracket_token.span.close().end())?;
+    let bytes = source.as_bytes();
+    let start = line_start_offset(bytes, open);
+    let line_end = line_end_offset(bytes, close);
+    let suffix = source.get(close..line_end).unwrap_or("");
+    let end = if suffix.trim().is_empty() {
+        line_end
+    } else {
+        close
+    };
+    Some(SourceEdit {
+        start,
+        end,
+        text: String::new(),
+    })
+}
+
+fn line_column_to_byte_offset(src: &str, loc: proc_macro2::LineColumn) -> Option<usize> {
+    if loc.line == 0 {
+        return None;
+    }
+
+    let mut line_starts = vec![0usize];
+    for (idx, byte) in src.bytes().enumerate() {
+        if byte == b'\n' {
+            line_starts.push(idx + 1);
+        }
+    }
+
+    let line_start = *line_starts.get(loc.line - 1)?;
+    let line_end = line_starts
+        .get(loc.line)
+        .copied()
+        .map(|next_start| next_start.saturating_sub(1))
+        .unwrap_or(src.len());
+    let line = src.get(line_start..line_end)?;
+
+    if loc.column == 0 {
+        return Some(line_start);
+    }
+
+    match line.char_indices().nth(loc.column) {
+        Some((offset, _)) => Some(line_start + offset),
+        None if line.chars().count() == loc.column => Some(line_end),
+        None => None,
+    }
+}
+
+fn line_start_offset(bytes: &[u8], mut offset: usize) -> usize {
+    while offset > 0 && bytes[offset - 1] != b'\n' {
+        offset -= 1;
+    }
+    offset
+}
+
+fn line_end_offset(bytes: &[u8], mut offset: usize) -> usize {
+    while offset < bytes.len() && bytes[offset] != b'\n' {
+        offset += 1;
+    }
+    if offset < bytes.len() {
+        offset += 1;
+    }
+    offset
+}
+
+fn realized_block_source(source: &str) -> Result<String, String> {
+    let file =
+        syn::parse_file(source).map_err(|error| format!("parse realized Rust source: {error}"))?;
+    for item in file.items {
+        if let syn::Item::Fn(item_fn) = item {
+            let start =
+                line_column_to_byte_offset(source, item_fn.block.brace_token.span.open().start())
+                    .ok_or("realized Rust block start out of range")?;
+            let end =
+                line_column_to_byte_offset(source, item_fn.block.brace_token.span.close().end())
+                    .ok_or("realized Rust block end out of range")?;
+            return source
+                .get(start..end)
+                .map(str::to_string)
+                .ok_or_else(|| "realized Rust block slice out of range".to_string());
+        }
+    }
+    Err("realized Rust source did not contain a function body".to_string())
+}
+
+fn apply_source_edits(source: &[u8], mut edits: Vec<SourceEdit>) -> Result<Vec<u8>, String> {
+    edits.sort_by(|a, b| {
+        if a.start == b.start {
+            b.end.cmp(&a.end)
+        } else {
+            b.start.cmp(&a.start)
+        }
+    });
+
+    let mut out = source.to_vec();
+    let mut last_start = out.len() + 1;
+    for edit in edits {
+        if edit.start > edit.end || edit.end > out.len() {
+            return Err(format!(
+                "invalid source edit range [{}, {})",
+                edit.start, edit.end
+            ));
+        }
+        if edit.end > last_start {
+            return Err("overlapping Rust source edits".to_string());
+        }
+        let mut next = Vec::with_capacity(out.len() - (edit.end - edit.start) + edit.text.len());
+        next.extend_from_slice(&out[..edit.start]);
+        next.extend_from_slice(edit.text.as_bytes());
+        next.extend_from_slice(&out[edit.end..]);
+        out = next;
+        last_start = edit.start;
+    }
+    Ok(out)
+}
+
+fn loss_dimensions(record: &Value) -> Vec<String> {
+    match record {
+        Value::Null => Vec::new(),
+        Value::Object(map) if map.is_empty() => Vec::new(),
+        Value::Object(map) => map.keys().cloned().collect(),
+        other => vec![other.to_string()],
+    }
+}
+
+fn receipt_for_rust_sites(target_library: &str, sites: &[MaterializedRustSite]) -> Value {
+    let exact = sites
+        .iter()
+        .filter(|site| site.outcome_kind == "Exact")
+        .count();
+    let lossy = sites
+        .iter()
+        .filter(|site| site.outcome_kind == "LoudlyLossy")
+        .count();
+    let refused = sites
+        .iter()
+        .filter(|site| site.outcome_kind == "Refused")
+        .count();
+    let site_witnesses = sites
+        .iter()
+        .map(|site| {
+            json!({
+                "source_binding_cid": null,
+                "target_binding_cid": site.target_binding_cid,
+                "concept_name": site.concept_name,
+                "function_name": site.function_name,
+                "outcome_kind": site.outcome_kind,
+            })
+        })
+        .collect::<Vec<_>>();
+    let loss_records = sites
+        .iter()
+        .filter(|site| !site.loss_dims.is_empty())
+        .map(|site| {
+            json!({
+                "concept_name": site.concept_name,
+                "dimensions": site.loss_dims,
+            })
+        })
+        .collect::<Vec<_>>();
+    let refusal_mementos = sites
+        .iter()
+        .filter_map(|site| {
+            site.refusal_reason.as_ref().map(|reason| {
+                json!({
+                    "concept_name": site.concept_name,
+                    "reason": reason,
+                    "would_close_with_concept": site.concept_name,
+                })
+            })
+        })
+        .collect::<Vec<_>>();
+
+    json!({
+        "schema_version": "1",
+        "source_language": "rust",
+        "source_library": null,
+        "target_language": "rust",
+        "target_library": target_library,
+        "aggregate_summary": {
+            "exact": exact,
+            "lossy": lossy,
+            "refused": refused,
+        },
+        "site_witnesses": site_witnesses,
+        "loss_records": loss_records,
+        "refusal_mementos": refusal_mementos,
+    })
 }
 
 fn check_materialized(params: &serde_json::Map<String, Value>) -> Value {

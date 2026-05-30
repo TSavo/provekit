@@ -568,52 +568,6 @@ fn record_dependency_proof_diagnostic(message: String) {
         .push(message);
 }
 
-/// #1360 / #1355: Return the per-target scope-bringings declared by
-/// the realize manifest matching `(target_lang, library_tag)`. cmd_materialize
-/// collects these across all materialized sites in a consumer file and
-/// hoists them into the file's prelude so the spliced bodies compile.
-///
-/// Returns an empty Vec when no manifest matches OR when the matched
-/// manifest declares no `scope_bringings`. This is the substrate-honest
-/// signal for "no scope-bringings needed" (NOT an error condition).
-pub fn scope_bringings_for_realize(
-    workspace_root: &Path,
-    target_lang: &str,
-    library_tag: &str,
-) -> Vec<String> {
-    let Ok(candidates) = registry_realize_candidates(workspace_root, target_lang) else {
-        return Vec::new();
-    };
-    // First try exact library_tag match.
-    for cand in &candidates {
-        if cand.tag == library_tag {
-            // RealizeCandidate.source is the manifest path relative to
-            // workspace_root (`.provekit/realize/<surface>/manifest.toml`)
-            // OR an env-var / built-in / PATH source string. Resolve relative
-            // paths against workspace_root before parsing; non-manifest
-            // sources return empty.
-            return read_scope_bringings_from_manifest_source(workspace_root, &cand.source);
-        }
-    }
-    Vec::new()
-}
-
-fn read_scope_bringings_from_manifest_source(workspace_root: &Path, source: &str) -> Vec<String> {
-    let candidate_path = PathBuf::from(source);
-    let resolved = if candidate_path.is_absolute() {
-        candidate_path
-    } else {
-        workspace_root.join(&candidate_path)
-    };
-    if !resolved.is_file() {
-        return Vec::new();
-    }
-    match parse_manifest(&resolved) {
-        Ok(parsed) => parsed.scope_bringings,
-        Err(_) => Vec::new(),
-    }
-}
-
 /// #1359 / #1355: Find all realize candidates that satisfy a
 /// constraint set `(target_lang, family?, library_tag?, library_version?)`.
 /// Candidates are filtered down progressively:
@@ -823,13 +777,6 @@ struct ParsedManifest {
     /// #1359 / #1355: optional `library_version` pin. Parallel to `family`.
     #[allow(dead_code)]
     library_version: Option<String>,
-    /// #1360 / #1355: per-target scope-bringings the consumer crate needs
-    /// in its prelude when bodies from this realize plugin are spliced.
-    /// E.g. `use std::io::{self, BufRead, Write};` for the rust-stdio
-    /// shim. cmd_materialize collects these across all materialized sites
-    /// and hoists them into the consumer file's `use` section.
-    /// Empty vec when manifest omits the key (back-compat).
-    scope_bringings: Vec<String>,
     /// #1364 / #1355: optional declaration of which concept_names this
     /// realize plugin CAN handle. cmd_materialize can defensively refuse-
     /// loudly when a consumer's @boundary asks for a concept not in the
@@ -853,7 +800,6 @@ fn parse_manifest(path: &Path) -> Result<ParsedManifest, String> {
     let mut library_tag: Option<String> = None;
     let mut family: Option<String> = None;
     let mut library_version: Option<String> = None;
-    let mut scope_bringings: Vec<String> = Vec::new();
     let mut provides_concepts: Vec<String> = Vec::new();
     let mut protocol_versions: Vec<String> = Vec::new();
     let mut capability_kind: Option<String> = None;
@@ -897,7 +843,6 @@ fn parse_manifest(path: &Path) -> Result<ParsedManifest, String> {
             // Parsed but not yet wired into dispatch resolution (that's chunk 2).
             ("", "family") => family = Some(val.trim_matches('"').to_string()),
             ("", "library_version") => library_version = Some(val.trim_matches('"').to_string()),
-            ("", "scope_bringings") => scope_bringings = parse_toml_string_array(val),
             ("", "provides_concepts") => provides_concepts = parse_toml_string_array(val),
             ("", "materialize_source") => materialize_source = parse_toml_bool(val),
             ("", "command") => command = parse_toml_string_array(val),
@@ -916,7 +861,6 @@ fn parse_manifest(path: &Path) -> Result<ParsedManifest, String> {
         library_tag,
         family,
         library_version,
-        scope_bringings,
         provides_concepts,
         protocol_versions,
         capability_kind,
@@ -930,9 +874,7 @@ fn parse_toml_bool(value: &str) -> bool {
 
 /// Parse a TOML inline string array like `["a", "b", "c"]`.
 ///
-/// Quote-aware: commas inside `"..."` are NOT separators (needed for
-/// #1360's `scope_bringings = ["use std::io::{self, BufRead, Write};"]`
-/// where the value contains commas inside the quoted use-statement).
+/// Quote-aware: commas inside `"..."` are NOT separators.
 fn parse_toml_string_array(value: &str) -> Vec<String> {
     let inner = value.trim().trim_matches(|c| c == '[' || c == ']');
     let mut out: Vec<String> = Vec::new();
@@ -2491,13 +2433,6 @@ mod tests {
     // -----------------------------------------------------------------
 
     // -----------------------------------------------------------------
-    // #1360 / #1355: scope_bringings on realize manifest (case-1
-    // effect propagation — use/import items the materialized body needs
-    // in the consumer crate's prelude). Parsed here; cmd_materialize
-    // reads them at splice time and hoists into the target file.
-    // -----------------------------------------------------------------
-
-    // -----------------------------------------------------------------
     // #1364 / #1355: provides_concepts declaration on realize manifests
     // (per-kit concept coverage — chunk 1 plumbs the parse; chunk 2
     // wires defensive checks in cmd_materialize; chunk 3+ populates per
@@ -2546,52 +2481,6 @@ command = ["/bin/true"]
         .expect("write");
         let parsed = parse_manifest(&manifest_path).expect("parse");
         assert!(parsed.provides_concepts.is_empty());
-        let _ = fs::remove_dir_all(&dir);
-    }
-
-    #[test]
-    fn parse_manifest_accepts_scope_bringings_array() {
-        let dir = std::env::temp_dir().join("provekit-test-1360-scope");
-        let _ = fs::remove_dir_all(&dir);
-        fs::create_dir_all(&dir).expect("temp dir");
-        let manifest_path = dir.join("manifest.toml");
-        fs::write(
-            &manifest_path,
-            r#"
-name = "rust-realize-shim-stdio"
-library_tag = "provekit-shim-stdio-rust"
-family = "concept:family:stdio-stream"
-scope_bringings = ["use std::io::{self, BufRead, Write};"]
-command = ["/bin/true"]
-"#,
-        )
-        .expect("write");
-        let parsed = parse_manifest(&manifest_path).expect("parse");
-        assert_eq!(parsed.scope_bringings.len(), 1);
-        assert_eq!(
-            parsed.scope_bringings[0],
-            "use std::io::{self, BufRead, Write};"
-        );
-        let _ = fs::remove_dir_all(&dir);
-    }
-
-    #[test]
-    fn parse_manifest_without_scope_bringings_yields_empty_vec() {
-        let dir = std::env::temp_dir().join("provekit-test-1360-no-scope");
-        let _ = fs::remove_dir_all(&dir);
-        fs::create_dir_all(&dir).expect("temp dir");
-        let manifest_path = dir.join("manifest.toml");
-        fs::write(
-            &manifest_path,
-            r#"
-name = "rust-realize-default"
-library_tag = "default"
-command = ["/bin/true"]
-"#,
-        )
-        .expect("write");
-        let parsed = parse_manifest(&manifest_path).expect("parse");
-        assert!(parsed.scope_bringings.is_empty());
         let _ = fs::remove_dir_all(&dir);
     }
 
