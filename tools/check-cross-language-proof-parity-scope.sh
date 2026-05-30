@@ -43,7 +43,7 @@ require "go_dependency_proofs_are_resolved_by_configured_go_kit"
 require "materialize_python_uses_checked_in_python_double_realize_registration"
 require "materialize_python_requests_example_uses_python_library_shim"
 require "test_resolve_dependency_proofs_returns_distribution_proof_bytes"
-require "materialize_rust_reqwest_example_uses_rust_library_shim"
+require "materialize_rust_reqwest_uses_checked_in_rust_double_realize_registration"
 
 require "RecognizeHandlerTest,JavaSugarBindingLifterTest"
 require "Test(SugarBody|Recognize)"

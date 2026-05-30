@@ -750,7 +750,7 @@ cross-language-proof-parity: build-java cross-language-proof-parity-python-env
 		materialize_out_dir_writes_materialized_copy_and_leaves_source_unchanged
 	$(CARGO) test --release --manifest-path implementations/rust/Cargo.toml \
 		-p provekit-cli --test cmd_materialize_integration \
-		materialize_rust_reqwest_example_uses_rust_library_shim
+		materialize_rust_reqwest_uses_checked_in_rust_double_realize_registration
 	@echo "--- recognizer parity ---"
 	$(MVN) -q -f implementations/java/pom.xml \
 		-pl provekit-lift-java-source -am \
