@@ -503,17 +503,26 @@ impl MintKit {
             // implication lifter then emits a bridge for each cross-crate /
             // stdlib call site instead of leaving it a vacuous lift-gap.
             //
-            // Precedence: an intra-crate contract WINS over a same-named
-            // dependency contract. A bare callee `foo` in this crate's source
-            // resolves to this crate's `foo`, never a dependency's `foo` that
-            // merely shares the name. Dropping the colliding dependency binding
-            // here (rather than forwarding both) is what keeps cross-crate
-            // bridging sound under bare-name matching until qualified-callee
-            // resolution lands; it also removes the duplicate-contract-name
-            // load warnings the verifier would otherwise emit.
-            let intra_names: std::collections::HashSet<String> = bindings
+            // Precedence under (crate, leaf) matching: a dependency's `foo` and
+            // this crate's `foo` are DISTINCT keys (different crate), so both
+            // are forwarded and the implication lifter routes each call site to
+            // the contract in the crate it actually resolved. The only true
+            // duplicate is a dependency contract sharing BOTH library AND leaf
+            // with a producer contract (e.g. vendoring this very crate's own
+            // proof); drop just that, since it would key-collide. This is what
+            // lets the 6 same-leaf-different-crate dependency contracts that the
+            // bare-name filter used to drop be forwarded and bridged correctly.
+            let intra_keys: std::collections::HashSet<(String, String)> = bindings
                 .iter()
-                .filter_map(|b| b.get("name").and_then(|v| v.as_str()).map(String::from))
+                .filter_map(|b| {
+                    let name = b.get("name").and_then(|v| v.as_str())?.to_string();
+                    let lib = b
+                        .get("library")
+                        .and_then(|v| v.as_str())
+                        .unwrap_or_default()
+                        .to_string();
+                    Some((lib, name))
+                })
                 .collect();
             let dep_bindings =
                 contract_bindings_from_dependency_proofs(&project_root_for_manifests);
@@ -521,15 +530,20 @@ impl MintKit {
             let dep_kept: Vec<Value> = dep_bindings
                 .into_iter()
                 .filter(|b| {
-                    b.get("name")
+                    let Some(name) = b.get("name").and_then(|v| v.as_str()).map(String::from) else {
+                        return false;
+                    };
+                    let lib = b
+                        .get("library")
                         .and_then(|v| v.as_str())
-                        .map(|n| !intra_names.contains(n))
-                        .unwrap_or(false)
+                        .unwrap_or_default()
+                        .to_string();
+                    !intra_keys.contains(&(lib, name))
                 })
                 .collect();
             if !quiet && dep_total > 0 {
                 println!(
-                    "{}: {} dependency contract(s) forwarded for cross-crate bridging, {} dropped (name collides with an intra-crate contract; intra-crate wins)",
+                    "{}: {} dependency contract(s) forwarded for cross-crate bridging, {} dropped (same crate AND leaf as a producer contract)",
                     "deps".green().bold(),
                     dep_kept.len(),
                     dep_total - dep_kept.len()
@@ -779,8 +793,14 @@ fn contract_bindings_from_dependency_proofs(project_root: &Path) -> Vec<Value> {
     // `contract_cid` is the memento map key = the attestation CID the verifier
     // indexes `pool.mementos` by, exactly as the intra-crate binding path uses
     // (see the `contracts_by_name` -> `contract_bindings` map below).
-    let mut by_name: std::collections::BTreeMap<String, (String, bool, Option<String>)> =
-        std::collections::BTreeMap::new();
+    // Keyed by (library, leaf), NOT leaf alone: two dependency crates can each
+    // publish a contract with the same leaf (e.g. both have `new`), and Tier-1
+    // matching distinguishes them by crate. Keying by leaf only would collapse
+    // them into one and lose the very disambiguation this exists for.
+    let mut by_key: std::collections::BTreeMap<
+        (Option<String>, String),
+        (String, bool, Option<String>, bool, Option<String>),
+    > = std::collections::BTreeMap::new();
     for (cid, env) in &pool.mementos {
         if memento_kind(env) != Some("contract") {
             continue;
@@ -799,32 +819,69 @@ fn contract_bindings_from_dependency_proofs(project_root: &Path) -> Vec<Value> {
             .or_else(|| memento_body_field(env, "body_discharge_eligible"))
             .and_then(|v| v.as_bool())
             .unwrap_or(true);
+        let body_discharge_refusal_reason =
+            memento_body_field(env, "bodyDischargeRefusalReason")
+                .or_else(|| memento_body_field(env, "body_discharge_refusal_reason"))
+                .and_then(|v| v.as_str())
+                .map(|s| s.to_string());
+        // The dependency crate this contract belongs to (the lifter stamped it
+        // at mint, the CLI forwards it opaquely).
+        let library = memento_body_field(env, "library")
+            .and_then(|v| v.as_str())
+            .filter(|s| !s.is_empty())
+            .map(|s| s.to_string());
         let body_bearing = (memento_body_field(env, "preHash").is_some()
             || memento_body_field(env, "postHash").is_some())
             && body_discharge_eligible;
         let bundle = member_to_bundle.get(cid.as_str()).map(|b| b.to_string());
-        match by_name.get(&name) {
+        let key = (library, name);
+        match by_key.get(&key) {
             // Keep the incumbent when it is already body-bearing, or when the
             // newcomer is not an upgrade (inv-only). Otherwise the newcomer is
             // a body-bearing upgrade over an inv-only incumbent: take it.
-            Some((_, incumbent_bb, _)) if *incumbent_bb || !body_bearing => {}
+            Some((_, incumbent_bb, _, _, _)) if *incumbent_bb || !body_bearing => {}
             _ => {
-                by_name.insert(name, (cid.clone(), body_bearing, bundle));
+                by_key.insert(
+                    key,
+                    (
+                        cid.clone(),
+                        body_bearing,
+                        bundle,
+                        body_discharge_eligible,
+                        body_discharge_refusal_reason,
+                    ),
+                );
             }
         }
     }
-    by_name
+    by_key
         .into_iter()
-        .map(|(name, (cid, body_bearing, bundle))| {
+        .map(
+            |(
+                (library, name),
+                (
+                    cid,
+                    body_bearing,
+                    bundle,
+                    body_discharge_eligible,
+                    body_discharge_refusal_reason,
+                ),
+            )| {
             json!({
                 "name": name,
                 "contract_cid": cid,
                 "body_bearing": body_bearing,
+                "bodyDischargeEligible": body_discharge_eligible,
+                "bodyDischargeRefusalReason": body_discharge_refusal_reason,
                 // The dependency bundle CID: the bridge pins this so the
                 // verifier resolves the target contract from THIS proof only.
                 "target_proof_cid": bundle,
+                // The crate this dependency contract belongs to: the lifter
+                // keys the call site by (crate, leaf) to match it.
+                "library": library,
             })
-        })
+        },
+        )
         .collect()
 }
 
@@ -1362,6 +1419,7 @@ fn mint_ir_document(
         inv_hash: Option<String>,
         body_discharge_eligible: bool,
         body_discharge_refusal_reason: Option<String>,
+        library: Option<String>,
     }
 
     impl MintedContractRef {
@@ -1550,6 +1608,17 @@ fn mint_ir_document(
             .map(|authority| authority.principal.clone())
             .unwrap_or_else(|| "provekit-cli".to_string());
 
+        // Tier-1 crate tag: the kit (lifter) stamped `library` = the defining
+        // crate's package name on the IR decl. Forward it OPAQUELY onto the
+        // contract memento's metadata so a consumer that vendors this proof can
+        // tell this crate's `foo` from a same-named `foo` elsewhere. The CLI
+        // does not interpret the string; it is the kit's to compute.
+        let library = decl
+            .get("library")
+            .and_then(|v| v.as_str())
+            .filter(|s| !s.is_empty())
+            .map(|s| s.to_string());
+
         let args = MintContractArgs {
             contract_name: name,
             pre,
@@ -1568,6 +1637,7 @@ fn mint_ir_document(
             formals,
             emit_empty_formals,
             formal_sorts,
+            library: library.clone(),
         };
 
         let ccid = contract_cid(&args);
@@ -1621,6 +1691,7 @@ fn mint_ir_document(
                     inv_hash,
                     body_discharge_eligible,
                     body_discharge_refusal_reason,
+                    library,
                 },
             )
             .is_some()
@@ -1786,6 +1857,11 @@ fn mint_ir_document(
                 "body_bearing": body_bearing,
                 "bodyDischargeEligible": contract.body_discharge_eligible,
                 "bodyDischargeRefusalReason": contract.body_discharge_refusal_reason.clone(),
+                // Crate tag (Tier 1): lets the implication lifter key this
+                // producer contract by (crate, leaf). Omitted when the lifter
+                // did not stamp one (the matcher then defaults to the current
+                // crate, which is correct for a producer contract).
+                "library": contract.library.clone(),
             })
         })
         .collect();
@@ -2374,6 +2450,16 @@ pub fn run(args: MintArgs) -> u8 {
 mod tests {
     use super::*;
     use crate::project_config::PlatformProfile;
+
+    fn temp_workspace(name: &str) -> PathBuf {
+        let nanos = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .expect("system clock")
+            .as_nanos();
+        let root = std::env::temp_dir().join(format!("{name}_{nanos}"));
+        std::fs::create_dir_all(&root).expect("create temp workspace");
+        root
+    }
 
     // -----------------------------------------------------------------
     // #1358 / #1355: stamp_platform_profile fills absent fields from
@@ -2970,6 +3056,101 @@ mod tests {
 
         assert_eq!(contract_count, 1);
         assert_eq!(bridge_count, 1);
+    }
+
+    #[test]
+    fn mint_ir_document_forwards_contract_library_to_metadata_and_bindings() {
+        let root = temp_workspace("mint_contract_library_forward");
+        let out_dir = root.join("out");
+        std::fs::create_dir_all(&out_dir).expect("create out dir");
+        let ir = vec![json!({
+            "kind": "contract",
+            "name": "qualified.callee",
+            "library": "libprovekit",
+            "outBinding": "out",
+            "post": {"kind": "atomic", "name": "qualified_post", "args": []}
+        })];
+
+        let minted = mint_ir_document(&ir, None, None, None, &root, &out_dir, true)
+            .expect("mint ir-document");
+
+        let binding = minted
+            .contract_bindings
+            .iter()
+            .find(|binding| binding["name"] == "qualified.callee")
+            .expect("producer binding");
+        assert_eq!(binding["library"], "libprovekit");
+
+        let catalog = provekit_verifier::cbor_decode::decode(&minted.bytes).expect("decode proof");
+        let members = catalog
+            .as_map()
+            .and_then(|m| m.get("members"))
+            .and_then(|v| v.as_map())
+            .expect("proof members");
+        let contract = members
+            .values()
+            .filter_map(|member| member.as_bstr())
+            .filter_map(|bytes| serde_json::from_slice::<Value>(bytes).ok())
+            .find(|env| {
+                env.pointer("/header/name")
+                    .or_else(|| env.pointer("/header/contractName"))
+                    .and_then(|v| v.as_str())
+                    == Some("qualified.callee")
+            })
+            .expect("contract envelope");
+        assert_eq!(
+            contract.pointer("/metadata/library").and_then(|v| v.as_str()),
+            Some("libprovekit")
+        );
+
+        let _ = std::fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn dependency_contract_bindings_keep_same_leaf_different_libraries() {
+        let root = temp_workspace("dependency_contract_library_bindings");
+        let imports_dir = root.join(".provekit").join("imports");
+        std::fs::create_dir_all(&imports_dir).expect("create imports dir");
+
+        for library in ["lib_a", "lib_b"] {
+            let ir = vec![json!({
+                "kind": "contract",
+                "name": "same_leaf",
+                "library": library,
+                "outBinding": "out",
+                "post": {"kind": "atomic", "name": "same_leaf_post", "args": []}
+            })];
+            let minted = mint_ir_document(&ir, None, None, None, &root, &root, true)
+                .expect("mint dependency proof");
+            // Name the proof by its content CID (blake3-512:...), as production
+            // `.provekit/imports/` does: the loader rejects non-CID filenames
+            // ("v1.1.0 requires blake3-512:"). Each library yields distinct
+            // bytes -> distinct CID -> a separate proof file.
+            let fname = format!("{}.proof", minted.filename_cid);
+            std::fs::write(imports_dir.join(fname), minted.bytes)
+                .expect("write dependency proof");
+        }
+
+        let mut bindings = contract_bindings_from_dependency_proofs(&root);
+        bindings.sort_by_key(|binding| {
+            binding
+                .get("library")
+                .and_then(|v| v.as_str())
+                .unwrap_or("")
+                .to_string()
+        });
+
+        let libraries: Vec<&str> = bindings
+            .iter()
+            .filter_map(|binding| binding.get("library").and_then(|v| v.as_str()))
+            .collect();
+        assert_eq!(libraries, vec!["lib_a", "lib_b"]);
+        assert_eq!(
+            bindings.iter().filter(|binding| binding["name"] == "same_leaf").count(),
+            2
+        );
+
+        let _ = std::fs::remove_dir_all(root);
     }
 
     #[test]

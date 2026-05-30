@@ -19,7 +19,7 @@
 // and pull back proof.ir bytes ready for the substrate's lift / mint /
 // linker pipeline.
 
-use std::collections::{BTreeMap, BTreeSet};
+use std::collections::{BTreeMap, BTreeSet, HashMap};
 use std::io::{self, BufRead, Write};
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, OnceLock};
@@ -333,8 +333,8 @@ struct CallSite {
 /// roots map to `"crate"` (the current crate). Lets a bare call `address(x)`
 /// recover that it is `libprovekit::address`, robust to internal re-exports
 /// because only the ROOT (not the full module path) is needed to disambiguate.
-fn build_use_crate_map(file: &syn::File) -> std::collections::HashMap<String, String> {
-    let mut map = std::collections::HashMap::new();
+fn build_use_crate_map(file: &syn::File) -> HashMap<String, String> {
+    let mut map = HashMap::new();
     for item in &file.items {
         if let syn::Item::Use(item_use) = item {
             collect_use_tree(&item_use.tree, None, &mut map);
@@ -345,11 +345,7 @@ fn build_use_crate_map(file: &syn::File) -> std::collections::HashMap<String, St
 
 /// Walk a `use` tree, threading the crate root (first path segment) down to
 /// each imported leaf. `root` is `None` until the first `Path` segment fixes it.
-fn collect_use_tree(
-    tree: &syn::UseTree,
-    root: Option<&str>,
-    map: &mut std::collections::HashMap<String, String>,
-) {
+fn collect_use_tree(tree: &syn::UseTree, root: Option<&str>, map: &mut HashMap<String, String>) {
     match tree {
         syn::UseTree::Path(p) => {
             let seg = p.ident.to_string();
@@ -388,20 +384,189 @@ fn collect_use_tree(
     }
 }
 
+fn resolve_path_root_crate(
+    root: &str,
+    use_map: &HashMap<String, String>,
+    current_crate: &str,
+) -> String {
+    if root == "crate" || root == "self" || root == "super" {
+        current_crate.to_string()
+    } else if let Some(mapped) = use_map.get(root) {
+        if mapped == "crate" {
+            current_crate.to_string()
+        } else {
+            normalize_crate_root(mapped)
+        }
+    } else {
+        normalize_crate_root(root)
+    }
+}
+
+fn type_crate_for(
+    ty: &syn::Type,
+    use_map: &HashMap<String, String>,
+    local_type_names: &BTreeSet<String>,
+    current_crate: &str,
+) -> Option<String> {
+    let syn::Type::Path(tp) = ty else {
+        return None;
+    };
+    let segs: Vec<String> = tp
+        .path
+        .segments
+        .iter()
+        .map(|s| s.ident.to_string())
+        .collect();
+    let first = segs.first()?;
+    if segs.len() >= 2 {
+        Some(resolve_path_root_crate(first, use_map, current_crate))
+    } else {
+        use_map
+            .get(first)
+            .map(|root| resolve_path_root_crate(root, use_map, current_crate))
+            .or_else(|| {
+                if !current_crate.is_empty() && local_type_names.contains(first) {
+                    Some(current_crate.to_string())
+                } else {
+                    None
+                }
+            })
+    }
+}
+
+fn collect_local_type_names(file: &syn::File) -> BTreeSet<String> {
+    let mut names = BTreeSet::new();
+    collect_local_type_names_in_items(&file.items, &mut names);
+    names
+}
+
+fn collect_local_type_names_in_items(items: &[syn::Item], names: &mut BTreeSet<String>) {
+    for item in items {
+        match item {
+            syn::Item::Struct(item) => {
+                names.insert(item.ident.to_string());
+            }
+            syn::Item::Enum(item) => {
+                names.insert(item.ident.to_string());
+            }
+            syn::Item::Union(item) => {
+                names.insert(item.ident.to_string());
+            }
+            syn::Item::Type(item) => {
+                names.insert(item.ident.to_string());
+            }
+            syn::Item::Mod(item_mod) => {
+                if let Some((_, ref nested)) = item_mod.content {
+                    collect_local_type_names_in_items(nested, names);
+                }
+            }
+            _ => {}
+        }
+    }
+}
+
+fn function_return_crates(
+    file: &syn::File,
+    use_map: &HashMap<String, String>,
+    local_type_names: &BTreeSet<String>,
+    current_crate: &str,
+) -> HashMap<String, String> {
+    let mut returns = HashMap::new();
+    collect_function_return_crates_in_items(
+        &file.items,
+        use_map,
+        local_type_names,
+        current_crate,
+        &mut returns,
+    );
+    returns
+}
+
+fn collect_function_return_crates_in_items(
+    items: &[syn::Item],
+    use_map: &HashMap<String, String>,
+    local_type_names: &BTreeSet<String>,
+    current_crate: &str,
+    returns: &mut HashMap<String, String>,
+) {
+    for item in items {
+        match item {
+            syn::Item::Fn(item_fn) => {
+                if let Some(krate) = return_type_crate(
+                    &item_fn.sig.output,
+                    use_map,
+                    local_type_names,
+                    current_crate,
+                ) {
+                    returns.insert(item_fn.sig.ident.to_string(), krate);
+                }
+            }
+            syn::Item::Impl(item_impl) => {
+                for impl_item in &item_impl.items {
+                    if let syn::ImplItem::Fn(method) = impl_item {
+                        if let Some(krate) = return_type_crate(
+                            &method.sig.output,
+                            use_map,
+                            local_type_names,
+                            current_crate,
+                        ) {
+                            returns.insert(method.sig.ident.to_string(), krate);
+                        }
+                    }
+                }
+            }
+            syn::Item::Mod(item_mod) => {
+                if let Some((_, ref nested)) = item_mod.content {
+                    collect_function_return_crates_in_items(
+                        nested,
+                        use_map,
+                        local_type_names,
+                        current_crate,
+                        returns,
+                    );
+                }
+            }
+            _ => {}
+        }
+    }
+}
+
+fn return_type_crate(
+    output: &syn::ReturnType,
+    use_map: &HashMap<String, String>,
+    local_type_names: &BTreeSet<String>,
+    current_crate: &str,
+) -> Option<String> {
+    let syn::ReturnType::Type(_, ty) = output else {
+        return None;
+    };
+    type_crate_for(ty, use_map, local_type_names, current_crate)
+}
+
 /// Recursively collect every call expression in every function body inside
 /// `file`. Each entry carries the bare callee leaf, the crate it resolves to
 /// (via the file's `use` map / path qualification), and the source position.
 fn collect_callsites_in_items(
     items: &[syn::Item],
     rel_path: &str,
-    use_map: &std::collections::HashMap<String, String>,
+    use_map: &HashMap<String, String>,
+    fn_return_crates: &HashMap<String, String>,
+    local_type_names: &BTreeSet<String>,
     current_crate: &str,
     out: &mut Vec<CallSite>,
 ) {
     for item in items {
         match item {
             syn::Item::Fn(item_fn) => {
-                collect_callsites_in_block(&item_fn.block, rel_path, use_map, current_crate, out);
+                collect_callsites_in_block(
+                    &item_fn.block,
+                    rel_path,
+                    use_map,
+                    fn_return_crates,
+                    local_type_names,
+                    current_crate,
+                    out,
+                );
             }
             syn::Item::Impl(item_impl) => {
                 for impl_item in &item_impl.items {
@@ -410,6 +575,8 @@ fn collect_callsites_in_items(
                             &method.block,
                             rel_path,
                             use_map,
+                            fn_return_crates,
+                            local_type_names,
                             current_crate,
                             out,
                         );
@@ -418,7 +585,15 @@ fn collect_callsites_in_items(
             }
             syn::Item::Mod(item_mod) => {
                 if let Some((_, ref nested)) = item_mod.content {
-                    collect_callsites_in_items(nested, rel_path, use_map, current_crate, out);
+                    collect_callsites_in_items(
+                        nested,
+                        rel_path,
+                        use_map,
+                        fn_return_crates,
+                        local_type_names,
+                        current_crate,
+                        out,
+                    );
                 }
             }
             _ => {}
@@ -429,15 +604,20 @@ fn collect_callsites_in_items(
 fn collect_callsites_in_block(
     block: &syn::Block,
     rel_path: &str,
-    use_map: &std::collections::HashMap<String, String>,
+    use_map: &HashMap<String, String>,
+    fn_return_crates: &HashMap<String, String>,
+    local_type_names: &BTreeSet<String>,
     current_crate: &str,
     out: &mut Vec<CallSite>,
 ) {
     use syn::visit::Visit;
     struct V<'a> {
         rel_path: &'a str,
-        use_map: &'a std::collections::HashMap<String, String>,
+        use_map: &'a HashMap<String, String>,
+        fn_return_crates: &'a HashMap<String, String>,
+        local_type_names: &'a BTreeSet<String>,
         current_crate: &'a str,
+        local_types: HashMap<String, String>,
         out: &'a mut Vec<CallSite>,
     }
     impl<'ast, 'a> Visit<'ast> for V<'a> {
@@ -457,28 +637,163 @@ fn collect_callsites_in_block(
             syn::visit::visit_expr_call(self, node);
         }
         fn visit_expr_method_call(&mut self, node: &'ast syn::ExprMethodCall) {
-            // Tier 1: method-call receiver crate is unknown without type info
-            // (Tier 2a/2b resolve it). Leave the crate None so the matcher
-            // falls back to the current crate / bare name.
             let callee = node.method.to_string();
             let start = node.method.span().start();
             self.out.push(CallSite {
                 callee,
-                callee_crate: None,
+                callee_crate: receiver_crate_for_expr(
+                    &node.receiver,
+                    &self.local_types,
+                    self.use_map,
+                    self.fn_return_crates,
+                    self.local_type_names,
+                    self.current_crate,
+                ),
                 file: self.rel_path.to_string(),
                 line: start.line,
                 col: start.column,
             });
             syn::visit::visit_expr_method_call(self, node);
         }
+        fn visit_local(&mut self, node: &'ast syn::Local) {
+            let explicit = pat_type_crate(
+                &node.pat,
+                self.use_map,
+                self.local_type_names,
+                self.current_crate,
+            );
+            let inferred = node.init.as_ref().and_then(|init| {
+                self.visit_expr(&init.expr);
+                expr_return_crate(
+                    &init.expr,
+                    self.use_map,
+                    self.fn_return_crates,
+                    self.local_type_names,
+                    self.current_crate,
+                )
+            });
+            if let (Some(name), Some(krate)) = (pat_ident_name(&node.pat), explicit.or(inferred)) {
+                self.local_types.insert(name, krate);
+            }
+        }
     }
     let mut v = V {
         rel_path,
         use_map,
+        fn_return_crates,
+        local_type_names,
         current_crate,
+        local_types: HashMap::new(),
         out,
     };
     v.visit_block(block);
+}
+
+fn pat_ident_name(pat: &syn::Pat) -> Option<String> {
+    match pat {
+        syn::Pat::Ident(ident) => Some(ident.ident.to_string()),
+        syn::Pat::Type(pat_type) => pat_ident_name(&pat_type.pat),
+        _ => None,
+    }
+}
+
+fn pat_type_crate(
+    pat: &syn::Pat,
+    use_map: &HashMap<String, String>,
+    local_type_names: &BTreeSet<String>,
+    current_crate: &str,
+) -> Option<String> {
+    match pat {
+        syn::Pat::Type(pat_type) => {
+            type_crate_for(&pat_type.ty, use_map, local_type_names, current_crate)
+        }
+        _ => None,
+    }
+}
+
+fn receiver_crate_for_expr(
+    expr: &syn::Expr,
+    local_types: &HashMap<String, String>,
+    use_map: &HashMap<String, String>,
+    fn_return_crates: &HashMap<String, String>,
+    local_type_names: &BTreeSet<String>,
+    current_crate: &str,
+) -> Option<String> {
+    match expr {
+        syn::Expr::Path(path) if path.path.segments.len() == 1 => path
+            .path
+            .segments
+            .first()
+            .and_then(|seg| local_types.get(&seg.ident.to_string()).cloned()),
+        syn::Expr::Paren(paren) => receiver_crate_for_expr(
+            &paren.expr,
+            local_types,
+            use_map,
+            fn_return_crates,
+            local_type_names,
+            current_crate,
+        ),
+        _ => expr_return_crate(
+            expr,
+            use_map,
+            fn_return_crates,
+            local_type_names,
+            current_crate,
+        ),
+    }
+}
+
+fn expr_return_crate(
+    expr: &syn::Expr,
+    use_map: &HashMap<String, String>,
+    fn_return_crates: &HashMap<String, String>,
+    local_type_names: &BTreeSet<String>,
+    current_crate: &str,
+) -> Option<String> {
+    match expr {
+        syn::Expr::Call(call) => {
+            if let Some(krate) =
+                associated_type_crate_for_call(&call.func, use_map, local_type_names, current_crate)
+            {
+                return Some(krate);
+            }
+            let (leaf, _) = call_expr_callee(&call.func, use_map, current_crate)?;
+            fn_return_crates.get(&leaf).cloned()
+        }
+        syn::Expr::Paren(paren) => expr_return_crate(
+            &paren.expr,
+            use_map,
+            fn_return_crates,
+            local_type_names,
+            current_crate,
+        ),
+        _ => None,
+    }
+}
+
+fn associated_type_crate_for_call(
+    func: &syn::Expr,
+    use_map: &HashMap<String, String>,
+    local_type_names: &BTreeSet<String>,
+    current_crate: &str,
+) -> Option<String> {
+    let syn::Expr::Path(path) = func else {
+        return None;
+    };
+    if path.path.segments.len() < 2 {
+        return None;
+    }
+    let root = path.path.segments.first()?.ident.to_string();
+    use_map
+        .get(&root)
+        .map(|mapped| resolve_path_root_crate(mapped, use_map, current_crate))
+        .or_else(|| {
+            if !current_crate.is_empty() && local_type_names.contains(&root) {
+                Some(current_crate.to_string())
+            } else {
+                None
+            }
+        })
 }
 
 /// Extract the callee leaf AND its resolved crate from an `Expr::Call`'s
@@ -493,7 +808,7 @@ fn collect_callsites_in_block(
 /// expansions, dynamic dispatch).
 fn call_expr_callee(
     expr: &syn::Expr,
-    use_map: &std::collections::HashMap<String, String>,
+    use_map: &HashMap<String, String>,
     current_crate: &str,
 ) -> Option<(String, Option<String>)> {
     match expr {
@@ -507,11 +822,7 @@ fn call_expr_callee(
             let leaf = segs.last()?.clone();
             let krate = if segs.len() >= 2 {
                 let root = &segs[0];
-                if root == "crate" || root == "self" || root == "super" {
-                    Some(current_crate.to_string())
-                } else {
-                    Some(normalize_crate_root(root))
-                }
+                Some(resolve_path_root_crate(root, use_map, current_crate))
             } else {
                 // Bare call: resolve via the file's `use` map.
                 use_map.get(&leaf).map(|r| {
@@ -691,8 +1002,19 @@ fn lift_implications(params: &Value) -> Result<Value, String> {
         };
 
         let use_map = build_use_crate_map(&file);
+        let local_type_names = collect_local_type_names(&file);
+        let fn_return_crates =
+            function_return_crates(&file, &use_map, &local_type_names, &current_crate);
         let mut callsites: Vec<CallSite> = Vec::new();
-        collect_callsites_in_items(&file.items, &rel_path, &use_map, &current_crate, &mut callsites);
+        collect_callsites_in_items(
+            &file.items,
+            &rel_path,
+            &use_map,
+            &fn_return_crates,
+            &local_type_names,
+            &current_crate,
+            &mut callsites,
+        );
 
         for cs in callsites {
             // Resolve the call site to a (crate, leaf) key. An unresolved crate
@@ -1533,6 +1855,13 @@ fn function_contract_lift(params: &Value) -> Result<Value, String> {
         .unwrap_or_else(|| vec![".".to_string()]);
 
     let root = PathBuf::from(workspace_root);
+    // The crate these contracts belong to (Tier 1): the Cargo package name of
+    // the project being lifted, normalized. Stamped onto every contract so a
+    // consumer that vendors this proof can key a call site by (crate, leaf).
+    // Single-crate self-application projects (the only ones minted today) have
+    // one package per workspace_root; a true multi-crate workspace would need
+    // per-scan-root names, noted as a limitation.
+    let current_crate = crate_name_for(&root).unwrap_or_default();
     let mut entries: Vec<Value> = Vec::new();
     let mut diagnostics: Vec<Value> = Vec::new();
     let mut visited: std::collections::BTreeSet<PathBuf> = Default::default();
@@ -1599,6 +1928,9 @@ fn function_contract_lift(params: &Value) -> Result<Value, String> {
                     "function": target.fn_name,
                     "file": rel,
                 }));
+            }
+            if !current_crate.is_empty() {
+                entry["library"] = json!(current_crate.clone());
             }
             entries.push(entry);
         }
@@ -7668,6 +8000,176 @@ pub fn caller(input: &str) -> i64 {
     }
 
     #[test]
+    fn function_contract_lift_stamps_library_from_cargo_package_name() {
+        let root = temp_workspace("function_contract_library_stamp");
+        let src_dir = root.join("src");
+        fs::create_dir_all(&src_dir).expect("create src dir");
+        fs::write(
+            root.join("Cargo.toml"),
+            r#"
+[package]
+name = "provekit-cli"
+version = "0.1.0"
+edition = "2021"
+"#,
+        )
+        .expect("write Cargo.toml");
+        fs::write(
+            src_dir.join("lib.rs"),
+            r#"
+pub fn identity(value: i64) -> i64 {
+    value
+}
+"#,
+        )
+        .expect("write source");
+
+        let resp = function_contract_lift(&json!({
+            "workspace_root": root.to_string_lossy(),
+            "source_paths": ["."]
+        }))
+        .expect("function contract lift");
+
+        let entries = resp["ir"].as_array().expect("ir array");
+        let entry = entries
+            .iter()
+            .find(|entry| entry["name"] == "identity")
+            .expect("identity function contract");
+        assert_eq!(entry["library"], "provekit_cli");
+
+        let _ = fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn lift_implications_resolves_annotated_method_receiver_to_type_crate() {
+        let src = r##"
+use dep_crate::Widget;
+
+pub fn make_widget() -> Widget {
+    panic!()
+}
+
+pub fn caller() {
+    let widget: Widget = make_widget();
+    widget.run();
+}
+"##;
+        let root = temp_workspace("lift_implications_typed_receiver");
+        let src_dir = root.join("src");
+        fs::create_dir_all(&src_dir).expect("create src dir");
+        fs::write(
+            root.join("Cargo.toml"),
+            r#"
+[package]
+name = "consumer-crate"
+version = "0.1.0"
+edition = "2021"
+"#,
+        )
+        .expect("write Cargo.toml");
+        let rel = "src/lib.rs";
+        fs::write(root.join(rel), src).expect("write source");
+
+        let current_run = "blake3-512:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa";
+        let dep_run = "blake3-512:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb";
+        let contract_bindings = json!([
+            { "name": "make_widget@src/lib.rs:4:1",
+              "library": "consumer_crate",
+              "contract_cid": "blake3-512:cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc" },
+            { "name": "run@src/lib.rs:10:5",
+              "library": "consumer_crate",
+              "contract_cid": current_run },
+            { "name": "run@dep/src/lib.rs:10:5",
+              "library": "dep_crate",
+              "contract_cid": dep_run },
+        ]);
+
+        let resp = lift_implications(&json!({
+            "workspace_root": root.to_string_lossy(),
+            "source_paths": [rel],
+            "contract_bindings": contract_bindings,
+        }))
+        .expect("lift_implications");
+
+        let ir = resp["ir"].as_array().expect("ir array");
+        let run = ir
+            .iter()
+            .find(|entry| entry["sourceSymbol"] == "run")
+            .expect("run bridge");
+        assert_eq!(run["targetContractCid"], dep_run);
+
+        let _ = fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn lift_implications_resolves_inferred_method_receivers_to_type_crate() {
+        let src = r##"
+use dep_crate::Widget;
+
+pub fn make_widget() -> Widget {
+    panic!()
+}
+
+pub fn caller() {
+    let from_return = make_widget();
+    from_return.run();
+
+    let from_ctor = Widget::new();
+    from_ctor.run();
+}
+"##;
+        let root = temp_workspace("lift_implications_inferred_receiver");
+        let src_dir = root.join("src");
+        fs::create_dir_all(&src_dir).expect("create src dir");
+        fs::write(
+            root.join("Cargo.toml"),
+            r#"
+[package]
+name = "consumer-crate"
+version = "0.1.0"
+edition = "2021"
+"#,
+        )
+        .expect("write Cargo.toml");
+        let rel = "src/lib.rs";
+        fs::write(root.join(rel), src).expect("write source");
+
+        let current_run = "blake3-512:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa";
+        let dep_run = "blake3-512:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb";
+        let contract_bindings = json!([
+            { "name": "make_widget@src/lib.rs:4:1",
+              "library": "consumer_crate",
+              "contract_cid": "blake3-512:cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc" },
+            { "name": "new@dep/src/lib.rs:3:1",
+              "library": "dep_crate",
+              "contract_cid": "blake3-512:dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd" },
+            { "name": "run@src/lib.rs:10:5",
+              "library": "consumer_crate",
+              "contract_cid": current_run },
+            { "name": "run@dep/src/lib.rs:10:5",
+              "library": "dep_crate",
+              "contract_cid": dep_run },
+        ]);
+
+        let resp = lift_implications(&json!({
+            "workspace_root": root.to_string_lossy(),
+            "source_paths": [rel],
+            "contract_bindings": contract_bindings,
+        }))
+        .expect("lift_implications");
+
+        let ir = resp["ir"].as_array().expect("ir array");
+        let run_targets: Vec<&str> = ir
+            .iter()
+            .filter(|entry| entry["sourceSymbol"] == "run")
+            .filter_map(|entry| entry["targetContractCid"].as_str())
+            .collect();
+        assert_eq!(run_targets, vec![dep_run, dep_run]);
+
+        let _ = fs::remove_dir_all(root);
+    }
+
+    #[test]
     fn lift_implications_scans_src_when_source_path_is_project_root() {
         let src = r##"
 pub fn caller(input: &str) -> i64 {
@@ -7794,6 +8296,7 @@ pub fn caller(s: &str) -> serde_json::Value {
 
         let contract_bindings = json!([
             { "name": "from_str@src/foreign.rs:42:8",
+              "library": "serde_json",
               "contract_cid": "blake3-512:cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc" },
             { "name": "unwrap@somewhere.rs:1:1",
               "contract_cid": "blake3-512:dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd" },

@@ -102,6 +102,7 @@ fn fixture_args() -> MintContractArgs {
         formals: Vec::new(),
         emit_empty_formals: false,
         formal_sorts: Vec::new(),
+        library: None,
         contract_name: "demo".into(),
         pre: Some(pre_n_gt_0()),
         post: Some(post_out_eq_0()),
