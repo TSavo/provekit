@@ -11,7 +11,7 @@
 #   make help: print this help
 #   make ci: Linux-profile gate (catalog + protocol + live mints + tests)
 #   make conformance: catalog + protocol + live mint CIDs + self-contract tests
-#   make cross-language-proof-parity: Java/Go/Python/Rust emit + materialize + recognize + prove gate
+#   make cross-language-proof-parity: Java/Go/Python/Rust emit + materialize + recognize + mint + prove gate
 #   make cross-language-proof-parity-extra: opt-in TypeScript/Zig/Scala/Swift parity lanes
 #   make all-mint: run all 11 Linux-profile mint commands; print CIDs
 #   make bootstrap-self-contracts: re-sign attestations from live artifacts
@@ -88,7 +88,7 @@ help:
 	@echo "  make ci             Linux-profile gate (conformance + test-all)"
 	@echo "  make conformance    catalog + protocol + 11 mint CIDs + self-contract tests"
 	@echo "  make cross-language-proof-parity"
-	@echo "                       Java/Go/Python/Rust emit + materialize + recognize + prove gate"
+	@echo "                       Java/Go/Python/Rust emit + materialize + recognize + mint + prove gate"
 	@echo "  make cross-language-proof-parity-extra"
 	@echo "                       opt-in TypeScript/Zig/Scala/Swift parity lanes"
 	@echo "  make all-mint       11 mint commands (Swift excluded: macOS-only, use mint-swift)"
@@ -684,7 +684,7 @@ check-cross-language-proof-parity-scope:
 
 .PHONY: cross-language-proof-parity
 cross-language-proof-parity: build-java cross-language-proof-parity-python-env
-	@echo "=== Cross-language proof parity: emit/materialize/recognize/prove lanes for Java, Go, Python, Rust ==="
+	@echo "=== Cross-language proof parity: emit/materialize/recognize/mint/prove lanes for Java, Go, Python, Rust ==="
 	cargo build --manifest-path implementations/rust/Cargo.toml \
 		-p provekit-realize-rust-core --bin provekit-realize-rust
 	@echo "--- emit parity ---"
@@ -752,6 +752,19 @@ cross-language-proof-parity: build-java cross-language-proof-parity-python-env
 	cargo test --release --manifest-path implementations/rust/Cargo.toml \
 		-p provekit-walk --bin provekit-walk-rpc \
 		recognize -- --nocapture
+	@echo "--- mint parity ---"
+	cargo test --release --manifest-path implementations/rust/Cargo.toml \
+		-p provekit-cli --test cmd_verify_java_production_bridge \
+		java_mint_auto_writes_body_discharge_bridge
+	cargo test --release --manifest-path implementations/rust/Cargo.toml \
+		-p provekit-cli --test cmd_verify_go_production_bridge \
+		go_mint_auto_writes_body_discharge_bridge
+	PYTHON=$(PARITY_PYTHON) PATH=$(PARITY_PYTHON_BIN):$(PATH) cargo test --release --manifest-path implementations/rust/Cargo.toml \
+		-p provekit-cli --test cmd_verify_python_production_bridge \
+		python_mint_auto_writes_body_discharge_bridge
+	cargo test --release --manifest-path implementations/rust/Cargo.toml \
+		-p provekit-cli --test cmd_verify_rust_production_bridge \
+		rust_mint_auto_writes_body_discharge_bridge_from_real_lifters
 	@echo "--- prove parity ---"
 	cargo test --release --manifest-path implementations/rust/Cargo.toml \
 		-p provekit-cli --test cmd_verify_java_production_bridge \
