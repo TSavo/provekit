@@ -1483,16 +1483,34 @@ fn lift_implications(params: &Value) -> Result<Value, String> {
             // field is omitted and the verifier enforces same-bundle
             // co-membership (self-pinned). This is the only path; there is no
             // unpinned bridge.
+            //
+            // method: SEAM. The bridge `sourceSymbol` is the verifier's lookup
+            // key (`bridges_by_symbol.get(<ctor name>)`), so it MUST be the
+            // exact ctor name the call appears as in a lifted fn-contract body.
+            // A method call `x.unwrap()` lifts to ctor `method:unwrap` (see
+            // `lift.rs` `Expr::MethodCall` -> `format!("method:{}", m.method)`),
+            // while a free call `foo()` lifts to the bare `foo`. Keying the
+            // bridge on the bare leaf for a method call made
+            // `bridges_by_symbol.get("method:unwrap")` MISS, so the panic bridge
+            // never enumerated. Emit `method:<leaf>` for method callsites; the
+            // verifier matches by this opaque key, with no `method:` stripping or
+            // Rust-method set on the verifier side. Target selection above is
+            // unchanged: it correctly keys `contracts_by_key` on the bare leaf.
+            let source_symbol = if cs.is_method {
+                format!("method:{}", cs.callee)
+            } else {
+                cs.callee.clone()
+            };
             let mut bridge = json!({
                 "kind": "bridge",
                 "name": format!(
                     "intra-body:rust:{}@{}:{}:{}",
-                    cs.callee, cs.file, cs.line, cs.col
+                    source_symbol, cs.file, cs.line, cs.col
                 ),
                 "schemaVersion": "1",
                 "sourceContractCid": target_cid,
                 "sourceLayer": "rust",
-                "sourceSymbol": cs.callee,
+                "sourceSymbol": source_symbol,
                 "target": { "cid": target_cid, "kind": "contract" },
                 "targetContractCid": target_cid,
                 "targetLayer": "rust-tests",
@@ -8540,11 +8558,12 @@ pub fn caller(input: &str) -> i64 {
             .unwrap()
             .starts_with("intra-body:rust:parse_input@"));
 
-        // Method call -> sourceSymbol = the method ident, NOT the receiver.
+        // Method call -> sourceSymbol = `method:<ident>` (matching the lifted
+        // method-call ctor name), NOT the receiver and NOT the bare leaf.
         let norm = ir
             .iter()
-            .find(|e| e["sourceSymbol"] == "normalize_value")
-            .expect("normalize_value bridge");
+            .find(|e| e["sourceSymbol"] == "method:normalize_value")
+            .expect("method:normalize_value bridge");
         assert_eq!(norm["kind"], "bridge");
         assert_eq!(
             norm["targetContractCid"],
@@ -8647,10 +8666,12 @@ edition = "2021"
         .expect("lift_implications");
 
         let ir = resp["ir"].as_array().expect("ir array");
+        // Method call `widget.run()` -> sourceSymbol = `method:run` (the lifted
+        // ctor name); target still resolves on the bare leaf to the dep crate.
         let run = ir
             .iter()
-            .find(|entry| entry["sourceSymbol"] == "run")
-            .expect("run bridge");
+            .find(|entry| entry["sourceSymbol"] == "method:run")
+            .expect("method:run bridge");
         assert_eq!(run["targetContractCid"], dep_run);
 
         let _ = fs::remove_dir_all(root);
@@ -8714,9 +8735,11 @@ edition = "2021"
         .expect("lift_implications");
 
         let ir = resp["ir"].as_array().expect("ir array");
+        // Both are method calls (`from_return.run()`, `from_ctor.run()`) ->
+        // sourceSymbol = `method:run`; targets resolve on the bare leaf.
         let run_targets: Vec<&str> = ir
             .iter()
-            .filter(|entry| entry["sourceSymbol"] == "run")
+            .filter(|entry| entry["sourceSymbol"] == "method:run")
             .filter_map(|entry| entry["targetContractCid"].as_str())
             .collect();
         assert_eq!(run_targets, vec![dep_run, dep_run]);
@@ -8869,13 +8892,23 @@ pub fn caller(s: &str) -> serde_json::Value {
             .iter()
             .filter_map(|e| e["sourceSymbol"].as_str())
             .collect();
+        // Free function call `serde_json::from_str(s)` -> bare last segment as
+        // sourceSymbol (this is what this test pins: last-path-segment naming).
         assert!(
             symbols.contains(&"from_str"),
-            "expected from_str (last path segment) in: {symbols:?}"
+            "expected from_str (last path segment, free call) in: {symbols:?}"
         );
+        // The trailing `.unwrap()` is a method call AND a PANIC leaf. With the
+        // oracle off (no receiver-type disambiguation) the panic refuse-floor
+        // refuses to bridge it -- bridging the bare `(std, unwrap)` shell would
+        // vacuous-pass a "cannot panic" claim. So NO unwrap bridge is emitted,
+        // under either the bare key or the `method:` key. (Pre-existing: this
+        // refusal predates the method: seam; the seam only governs the
+        // sourceSymbol of bridges that ARE emitted, e.g. a non-panic method
+        // call -> `method:<leaf>`.)
         assert!(
-            symbols.contains(&"unwrap"),
-            "expected unwrap (method call) in: {symbols:?}"
+            !symbols.iter().any(|s| *s == "unwrap" || *s == "method:unwrap"),
+            "the panic-leaf unwrap must NOT bridge without disambiguation (refuse-floor): {symbols:?}"
         );
 
         let _ = fs::remove_dir_all(root);

@@ -106,40 +106,29 @@ fn walk_formula(
     }
 }
 
-/// Convert a `cf_ite` GUARD TERM into the atomic-predicate FORMULA it asserts,
-/// when (and only when) its head is a recognized boolean predicate. The lifter
-/// folds a control-flow condition `x.is_some()` into the guard term
-/// `is_some(x)` (`formula_to_term` keeps non-builtin predicate heads unchanged;
-/// see lift.rs `cf_head`). Recovering the atomic lets the verifier discharge a
-/// panic partial's `pre = is_some(recv)` UNDER the guard `is_some(recv)`.
-///
-/// SOUNDNESS: only the closed set of boolean-method predicates the lifter emits
-/// as guards is recognized. A comparison guard (`cf_lt`/`cf_le`/...), a method
-/// guard, or any other head returns `None`: it becomes no usable fact, so the
-/// pre stays unprovable and the site is honestly undecidable. Recognizing a
-/// head we cannot soundly assert would risk a false "cannot panic"; refusing to
-/// recognize one can only UNDER-prove. Fail-safe by construction.
-fn guard_term_to_atomic(t: &Json, negated: bool) -> Option<Json> {
-    if t.get("kind").and_then(|v| v.as_str()) != Some("ctor") {
+/// Convert an OPAQUE `cf_guarded` guard term into the atomic-predicate FORMULA
+/// the verifier threads into the path condition. NAME-BLIND by construction:
+/// it copies the guard ctor's `name` and `args` verbatim into an `atomic` with
+/// NO recognition table and NO complement logic. The Rust kit (the lifter, see
+/// `provekit-walk` `wrap_branch_guard`) has ALREADY resolved which predicate
+/// governs a branch -- the then-branch carries the positive predicate atom
+/// (`is_some(x)`), the else-branch carries the kit-computed complement
+/// (`is_none(x)`). This verifier carries whatever atom the kit emitted; it does
+/// not know Option/Result/collection complementarity, and recognizes no Rust
+/// predicate name. The language-blindness invariant lives or dies here.
+fn guarded_term_to_atomic(guard: &Json) -> Option<Json> {
+    if guard.get("kind").and_then(|v| v.as_str()) != Some("ctor") {
         return None;
     }
-    let head = t.get("name").and_then(|v| v.as_str())?;
-    let args = t.get("args").cloned().unwrap_or_else(|| serde_json::json!([]));
-    // The boolean unary predicates the lifter recognizes as if/match guards.
-    // Their POSITIVE form is the panic-freedom obligation a partial demands
-    // (option_unwrap pre = is_some, result_unwrap pre = is_ok, ...). A negated
-    // guard (the else-branch) flips to the complementary predicate, which never
-    // establishes the partial's pre -- so an else-branch unwrap stays unproven.
-    let atomic_name = match (head, negated) {
-        ("is_some", false) | ("is_none", true) => "is_some",
-        ("is_none", false) | ("is_some", true) => "is_none",
-        ("is_ok", false) | ("is_err", true) => "is_ok",
-        ("is_err", false) | ("is_ok", true) => "is_err",
-        ("is_empty", false) => "is_empty",
-        ("is_empty", true) => return None, // !is_empty has no partial-pre use
-        _ => return None,
-    };
-    Some(serde_json::json!({ "kind": "atomic", "name": atomic_name, "args": args }))
+    let head = guard.get("name").and_then(|v| v.as_str())?;
+    let args = guard
+        .get("args")
+        .cloned()
+        .unwrap_or_else(|| serde_json::json!([]));
+    // Opaque copy: head is carried through unchanged. The verifier asserts no
+    // semantics over it; downstream discharge is purely syntactic (the threaded
+    // atom must match the target contract's instantiated `pre` byte-for-byte).
+    Some(serde_json::json!({ "kind": "atomic", "name": head, "args": args }))
 }
 
 fn walk_term(
@@ -221,35 +210,47 @@ fn walk_term(
     // direct argument of `containing_atomic`, so stop threading it: only a
     // call DIRECTLY under an atomic carries that atomic as its `Q` source.
     //
-    // `cf_ite(cond, then, else)` is the lifted control-flow value (see
-    // walk_rpc `lift_tail_if_to_ite_term` / `lift_match_to_ite_term`): a panic
-    // call nested in `then` is DOMINATED by `cond`, one in `else` by `!cond`.
-    // Push the recovered guard fact onto the path condition for the dominated
-    // branch so the partial's pre can discharge under it. arg0 (the guard term)
-    // carries no guard itself. Any other ctor passes the current path condition
-    // through unchanged (no new control-flow fact is introduced).
-    if name == "cf_ite" {
+    // PANIC-FREEDOM path condition. The guard that dominates a branch is no
+    // longer recovered HERE by recognizing the `cf_ite` condition's head -- the
+    // verifier knows no Rust predicate names. Instead the Rust kit emits the
+    // resolved guard ON the dominated branch as a `cf_guarded(guard, value)`
+    // wrapper (then-branch -> positive predicate, else-branch -> kit-computed
+    // complement; see `provekit-walk` `wrap_branch_guard`). This verifier:
+    //   * `cf_ite(cond, then, else)`: descends all three branches with the
+    //     path condition UNCHANGED. arg0 (the condition) introduces no fact;
+    //     any dominating fact rides on the `cf_guarded` wrapper the kit placed
+    //     around `then`/`else`.
+    //   * `cf_guarded(guard, value)`: copies the OPAQUE guard atom into the
+    //     path condition (name-blind, no complement table) and descends `value`
+    //     under it. A branch the kit did not wrap (unrecognized guard) carries
+    //     no `cf_guarded`, so a partial inside it stays honestly undecidable.
+    //   * any other ctor: descends args with the path condition unchanged.
+    if name == "cf_guarded" {
         if let Some(args) = t.get("args").and_then(|v| v.as_array()) {
-            let cond = args.first();
-            // arg0: the guard term, evaluated in the enclosing context.
-            if let Some(c) = cond {
+            let guard = args.first();
+            let value = args.get(1);
+            let mut branch_pc = path_cond.to_vec();
+            if let Some(g) = guard.and_then(guarded_term_to_atomic) {
+                branch_pc.push(g);
+            }
+            if let Some(v) = value {
+                walk_term(v, property_name, property_cid, pool, None, &branch_pc, out);
+            }
+            // The guard term itself is a predicate over the receiver, not a
+            // call value; do not descend it as a callsite source.
+        }
+    } else if name == "cf_ite" {
+        if let Some(args) = t.get("args").and_then(|v| v.as_array()) {
+            // arg0: the condition term, evaluated in the enclosing context. It
+            // introduces no path fact (the dominating fact rides cf_guarded).
+            if let Some(c) = args.first() {
                 walk_term(c, property_name, property_cid, pool, None, path_cond, out);
             }
-            // arg1: the then-branch, dominated by the positive guard.
-            if let Some(then_t) = args.get(1) {
-                let mut then_pc = path_cond.to_vec();
-                if let Some(g) = cond.and_then(|c| guard_term_to_atomic(c, false)) {
-                    then_pc.push(g);
-                }
-                walk_term(then_t, property_name, property_cid, pool, None, &then_pc, out);
-            }
-            // arg2: the else-branch, dominated by the NEGATED guard.
-            if let Some(else_t) = args.get(2) {
-                let mut else_pc = path_cond.to_vec();
-                if let Some(g) = cond.and_then(|c| guard_term_to_atomic(c, true)) {
-                    else_pc.push(g);
-                }
-                walk_term(else_t, property_name, property_cid, pool, None, &else_pc, out);
+            // arg1 (then) / arg2 (else): descend unchanged. A guarded branch is
+            // a `cf_guarded` wrapper handled above; an unguarded branch carries
+            // the inherited path condition only.
+            for branch in [args.get(1), args.get(2)].into_iter().flatten() {
+                walk_term(branch, property_name, property_cid, pool, None, path_cond, out);
             }
         }
     } else if let Some(args) = t.get("args").and_then(|v| v.as_array()) {
@@ -261,55 +262,64 @@ fn walk_term(
 
 #[cfg(test)]
 mod guard_propagation_tests {
-    //! PANIC-FREEDOM guard-context discharge (the soundness-critical step).
-    //! A panic partial (`option_unwrap`, pre = `is_some(recv)`) discharges
-    //! panic-safe ONLY when the call site is dominated by the matching guard.
-    //! These tests pin the three cases at the enumeration boundary, where the
-    //! dominating `cf_ite` condition is threaded into `CallSite::guard_facts`:
-    //!   - guarded then-branch  -> guard_facts = [is_some(recv)]  (=> panic-safe)
-    //!   - bare (no guard)      -> guard_facts = []               (=> undecidable)
-    //!   - else-branch          -> guard_facts = [is_none(recv)]  (=> undecidable)
-    //! The else-branch case is the trap: a positive guard must dominate ONLY the
-    //! then-branch; the else-branch's negated guard never establishes the pre.
+    //! PANIC-FREEDOM guard-context threading at the enumeration boundary, tested
+    //! WITHOUT any Rust predicate name. The verifier is language-blind: it does
+    //! not know `is_some`'s complement is `is_none`, nor that `option_unwrap`'s
+    //! pre is `is_some`. The Rust kit (`provekit-walk` `wrap_branch_guard`) has
+    //! ALREADY resolved which predicate governs each branch and emitted it as a
+    //! `cf_guarded(guard, value)` wrapper. The verifier's only job is to copy
+    //! whatever OPAQUE atom rides that wrapper into `CallSite::guard_facts`.
+    //!
+    //! So these tests use opaque names (`pred_a`, `pred_b`, `panic_call`) with
+    //! no semantic table behind them:
+    //!   - wrapped call    -> guard_facts = [pred_a(x)]   (the kit's atom, verbatim)
+    //!   - unwrapped call  -> guard_facts = []            (undecidable -- no fact)
+    //!   - cf_ite descent  -> the condition introduces NO fact; only the
+    //!                        cf_guarded wrapper the kit placed carries one.
+    //! The NAMED then->positive / else->complement discrimination is a Rust-kit
+    //! property and is pinned in `provekit-walk`'s lift tests, not here.
 
     use super::*;
     use serde_json::json;
 
-    // The receiver term the panic obligation is about (`x` in `x.unwrap()`).
+    // The receiver term the obligation is about (`x` in `x.panic_call()`).
     fn recv() -> Json {
         json!({ "kind": "var", "name": "x" })
     }
 
-    // A panic-partial call term: `option_unwrap(recv)`. Its ctor name matches
-    // the bridge sourceSymbol, so it enumerates as a CallSite.
-    fn unwrap_call() -> Json {
-        json!({ "kind": "ctor", "name": "option_unwrap", "args": [recv()] })
+    // A panic-partial call term whose ctor name matches the bridge sourceSymbol,
+    // so it enumerates as a CallSite. The name is OPAQUE to the verifier.
+    fn panic_call() -> Json {
+        json!({ "kind": "ctor", "name": "panic_call", "args": [recv()] })
     }
 
-    // `is_some(recv)` as the lifter folds an `if x.is_some()` condition into a
-    // `cf_ite` guard term (non-builtin head passes through unchanged).
-    fn is_some_guard() -> Json {
-        json!({ "kind": "ctor", "name": "is_some", "args": [recv()] })
+    // An OPAQUE guard predicate atom term -- whatever the kit resolved for this
+    // branch. The verifier carries it through with no recognition.
+    fn pred(name: &str) -> Json {
+        json!({ "kind": "ctor", "name": name, "args": [recv()] })
     }
 
-    // Build a pool with a single `option_unwrap` bridge and one contract whose
+    // Wrap a value in the kit's `cf_guarded(guard, value)` carrier.
+    fn cf_guarded(guard: Json, value: Json) -> Json {
+        json!({ "kind": "ctor", "name": "cf_guarded", "args": [guard, value] })
+    }
+
+    // Build a pool with a single `panic_call` bridge and one contract whose
     // post is `result == <body>` (the self-post the call term lives in).
     fn pool_with_post(body_term: Json) -> MementoPool {
         let mut pool = MementoPool::default();
-        // v1.2-layered bridge: header.kind == "bridge", sourceSymbol on header.
         let bridge = json!({
             "envelope": true,
             "header": {
                 "kind": "bridge",
-                "sourceSymbol": "option_unwrap",
+                "sourceSymbol": "panic_call",
                 "targetContractCid": "blake3-512:target",
                 "sourceLayer": "rust",
                 "targetLayer": "rust-tests",
             }
         });
         pool.bridges_by_symbol
-            .insert("option_unwrap".to_string(), bridge);
-        // v1.2-layered contract whose post nests the call term.
+            .insert("panic_call".to_string(), bridge);
         let contract = json!({
             "envelope": true,
             "header": {
@@ -327,72 +337,93 @@ mod guard_propagation_tests {
         pool
     }
 
-    #[test]
-    fn guarded_then_branch_threads_positive_guard() {
-        // `if x.is_some() { x.unwrap() } else { 0 }`
-        // -> post: result == cf_ite(is_some(x), option_unwrap(x), 0)
-        let body = json!({
-            "kind": "ctor",
-            "name": "cf_ite",
-            "args": [ is_some_guard(), unwrap_call(), { "kind": "lit", "value": 0 } ],
-        });
-        let sites = run(&pool_with_post(body));
-        let call = sites
+    fn enumerated_call(sites: &[CallSite]) -> &CallSite {
+        sites
             .iter()
-            .find(|cs| cs.bridge_ir_name == "option_unwrap")
-            .expect("the unwrap call must enumerate");
+            .find(|cs| cs.bridge_ir_name == "panic_call")
+            .expect("the panic call must enumerate")
+    }
+
+    #[test]
+    fn cf_guarded_threads_the_opaque_atom_verbatim() {
+        // The kit wrapped the call: cf_guarded(pred_a(x), panic_call(x)). The
+        // verifier copies `pred_a(x)` into guard_facts as an atomic, byte-blind.
+        let body = cf_guarded(pred("pred_a"), panic_call());
+        let sites = run(&pool_with_post(body));
         assert_eq!(
-            call.guard_facts,
-            vec![json!({ "kind": "atomic", "name": "is_some", "args": [recv()] })],
-            "a then-branch unwrap must carry the positive is_some guard -> panic-safe"
+            enumerated_call(&sites).guard_facts,
+            vec![json!({ "kind": "atomic", "name": "pred_a", "args": [recv()] })],
+            "a cf_guarded-wrapped call must carry the kit's opaque guard atom verbatim"
         );
     }
 
     #[test]
-    fn bare_unwrap_has_no_guard() {
-        // `x.unwrap()` with no dominating control flow.
-        // -> post: result == option_unwrap(x)
-        let sites = run(&pool_with_post(unwrap_call()));
-        let call = sites
-            .iter()
-            .find(|cs| cs.bridge_ir_name == "option_unwrap")
-            .expect("the unwrap call must enumerate");
+    fn unwrapped_call_has_no_guard() {
+        // No cf_guarded wrapper -> no dominating fact -> undecidable.
+        let sites = run(&pool_with_post(panic_call()));
         assert!(
-            call.guard_facts.is_empty(),
-            "an unguarded unwrap must carry NO guard -> stays undecidable (unproven), \
-             never marked panic-safe: {:?}",
-            call.guard_facts
+            enumerated_call(&sites).guard_facts.is_empty(),
+            "an unwrapped call must carry NO guard -> stays undecidable, never panic-safe: {:?}",
+            enumerated_call(&sites).guard_facts
         );
     }
 
     #[test]
-    fn else_branch_unwrap_carries_negated_guard_not_positive() {
-        // `if x.is_some() { 0 } else { x.unwrap() }`  -- the trap.
-        // -> post: result == cf_ite(is_some(x), 0, option_unwrap(x))
-        // The else-branch unwrap is NOT established by `is_some`; it must carry
-        // the NEGATED guard `is_none(x)`, which never discharges `is_some(x)`.
+    fn cf_ite_condition_introduces_no_fact_only_the_wrapper_does() {
+        // cf_ite(cond, cf_guarded(pred_a, panic_call), cf_guarded(pred_b, 0)).
+        // The verifier reads the guard ONLY off the cf_guarded wrapper the kit
+        // placed on the then-branch -- it does NOT derive anything from `cond`.
+        // (cond uses an opaque head; the verifier must not recognize it.)
         let body = json!({
             "kind": "ctor",
             "name": "cf_ite",
-            "args": [ is_some_guard(), { "kind": "lit", "value": 0 }, unwrap_call() ],
+            "args": [
+                pred("some_condition"),
+                cf_guarded(pred("pred_a"), panic_call()),
+                cf_guarded(pred("pred_b"), json!({ "kind": "lit", "value": 0 })),
+            ],
         });
         let sites = run(&pool_with_post(body));
-        let call = sites
-            .iter()
-            .find(|cs| cs.bridge_ir_name == "option_unwrap")
-            .expect("the unwrap call must enumerate");
         assert_eq!(
-            call.guard_facts,
-            vec![json!({ "kind": "atomic", "name": "is_none", "args": [recv()] })],
-            "an else-branch unwrap must carry the NEGATED guard (is_none), which does \
-             NOT establish is_some -> stays undecidable, NOT panic-safe"
+            enumerated_call(&sites).guard_facts,
+            vec![json!({ "kind": "atomic", "name": "pred_a", "args": [recv()] })],
+            "the call must carry ONLY the kit's then-branch wrapper atom, nothing from cond"
         );
+    }
+
+    #[test]
+    fn cf_ite_unwrapped_branch_carries_no_fact() {
+        // An else-branch the kit did NOT wrap (e.g. its complement was not a
+        // partial-pre-establishing predicate): the call there stays unguarded.
+        let body = json!({
+            "kind": "ctor",
+            "name": "cf_ite",
+            "args": [
+                pred("some_condition"),
+                { "kind": "lit", "value": 0 },
+                panic_call(), // bare, no cf_guarded wrapper
+            ],
+        });
+        let sites = run(&pool_with_post(body));
         assert!(
-            !call
-                .guard_facts
-                .iter()
-                .any(|g| g.get("name").and_then(|v| v.as_str()) == Some("is_some")),
-            "the else-branch must never carry the positive is_some guard (the trap)"
+            enumerated_call(&sites).guard_facts.is_empty(),
+            "an unwrapped cf_ite branch must carry no fact -> undecidable"
+        );
+    }
+
+    #[test]
+    fn cf_guarded_with_non_ctor_guard_adds_no_fact() {
+        // Robustness: a malformed guard (not a ctor) yields no atom; the call
+        // descends with the inherited (empty) path condition.
+        let body = json!({
+            "kind": "ctor",
+            "name": "cf_guarded",
+            "args": [ { "kind": "var", "name": "not_a_predicate" }, panic_call() ],
+        });
+        let sites = run(&pool_with_post(body));
+        assert!(
+            enumerated_call(&sites).guard_facts.is_empty(),
+            "a non-ctor guard must add no fact"
         );
     }
 }

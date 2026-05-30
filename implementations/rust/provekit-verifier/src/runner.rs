@@ -1393,19 +1393,20 @@ fn work_one(
             }
         };
         // PANIC-FREEDOM guard discharge. A panic partial's instantiated pre is
-        // `is_some(recv)` (etc.), unprovable on its own (an uninterpreted
-        // predicate over a free term) -> the site is honestly undecidable. But
-        // when the call is DOMINATED by the matching guard (a preceding
-        // `if recv.is_some()` lifts the call under `cf_ite(is_some(recv), ...)`,
-        // and enumerate_callsites threads that fact into `cs.guard_facts`),
-        // the obligation becomes `(and guard_facts) => pre`. With the guard
-        // `is_some(recv)` and pre `is_some(recv)` syntactically identical after
-        // substitution, the implication is valid -> the site is PROVABLY
-        // panic-safe. An unguarded site has empty guard_facts and keeps the
-        // bare (unprovable) pre, so it stays undecidable. An else-branch site
-        // carries the NEGATED guard (`is_none(recv)`), which never establishes
-        // `is_some(recv)`, so it also stays undecidable. This is fail-safe by
-        // construction: no path marks an unguarded site panic-safe.
+        // an uninterpreted predicate over a free term (e.g. `is_some(recv)`),
+        // unprovable on its own -> the site is honestly undecidable. But when
+        // the call is DOMINATED by the matching guard, the Rust KIT has wrapped
+        // the dominated branch in `cf_guarded(<resolved-predicate>, value)` (the
+        // kit, not this verifier, knows which predicate governs a branch), and
+        // enumerate_callsites threads that opaque atom into `cs.guard_facts`.
+        // The obligation becomes `(and guard_facts) => pre`. With the kit's
+        // then-branch guard syntactically identical to the partial's pre after
+        // substitution, the implication is valid -> PROVABLY panic-safe. An
+        // unwrapped site has empty guard_facts and keeps the bare (unprovable)
+        // pre, so it stays undecidable. An else-branch site carries the kit's
+        // COMPLEMENT predicate, which never establishes the positive pre, so it
+        // also stays undecidable. Fail-safe by construction: no path marks an
+        // unguarded site panic-safe. This verifier recognizes no predicate name.
         let guarded_formula = if cs.guard_facts.is_empty() {
             ob.ir_formula.clone()
         } else {
