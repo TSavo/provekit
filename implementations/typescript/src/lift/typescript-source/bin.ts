@@ -5,6 +5,7 @@ import {
   compileTypeScriptSourceIr,
   liftTypeScriptLibraryBindingsPaths,
   liftTypeScriptSourcePaths,
+  recognizeTypeScriptSources,
   type FunctionContractMemento,
 } from "./index.js";
 import { normalizeTypeScriptSourceVerifyDocument } from "./verify.js";
@@ -65,6 +66,8 @@ function dispatch(request: JsonRpcRequest): Record<string, unknown> | null {
       return liftRpc(request);
     case "compile":
       return compileRpc(request);
+    case "provekit.plugin.recognize":
+      return recognizeRpc(request);
     case "shutdown":
       return success(request.id, null);
     default:
@@ -120,6 +123,22 @@ function compileRpc(request: JsonRpcRequest): Record<string, unknown> {
   }
   const body = compileTypeScriptSourceIr(ir as FunctionContractMemento[]);
   return success(request.id, { kind: "compiled-formula", body });
+}
+
+function recognizeRpc(request: JsonRpcRequest): Record<string, unknown> {
+  const params = request.params ?? {};
+  const projectRoot = typeof params.project_root === "string" ? params.project_root : "";
+  const sourcePaths = Array.isArray(params.source_paths)
+    ? params.source_paths.filter((path): path is string => typeof path === "string")
+    : [];
+  try {
+    return success(request.id, recognizeTypeScriptSources({
+      project_root: projectRoot,
+      source_paths: sourcePaths,
+    }));
+  } catch (error) {
+    return errorResponse(request.id ?? null, -32602, (error as Error).message);
+  }
 }
 
 function success(id: unknown, result: unknown): Record<string, unknown> {

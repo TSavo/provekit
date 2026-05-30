@@ -63,6 +63,10 @@ fn handleLine(alloc: std.mem.Allocator, io: Io, line: []const u8, writer: *Io.Wr
         try handleLift(alloc, io, line, id, writer);
         return true;
     }
+    if (std.mem.indexOf(u8, line, "\"provekit.plugin.recognize\"") != null) {
+        try handleRecognize(alloc, io, line, id, writer);
+        return true;
+    }
     if (std.mem.indexOf(u8, line, "\"shutdown\"") != null) {
         try writer.print("{{\"jsonrpc\":\"2.0\",\"id\":{s},\"result\":null}}\n", .{id});
         return false;
@@ -111,6 +115,72 @@ fn handleLift(alloc: std.mem.Allocator, io: Io, line: []const u8, id: []const u8
     const refusals_json = try std.json.Stringify.valueAlloc(alloc, refusals.items, .{ .whitespace = .minified });
     defer alloc.free(refusals_json);
     try writer.print("{{\"jsonrpc\":\"2.0\",\"id\":{s},\"result\":{{\"kind\":\"ir-document\",\"ir\":{s},\"callEdges\":[],\"diagnostics\":[],\"opacityReport\":[],\"refusals\":{s}}}}}\n", .{ id, decls_json, refusals_json });
+}
+
+const RecognizeWireRequest = struct {
+    params: RecognizeWireParams,
+};
+
+const RecognizeWireParams = struct {
+    project_root: []const u8,
+    source_paths: []const []const u8,
+    binding_templates: []const RecognizeWireBinding = &.{},
+};
+
+const RecognizeWireBinding = struct {
+    concept_name: ?[]const u8 = null,
+    library_tag: ?[]const u8 = null,
+    target_library_tag: ?[]const u8 = null,
+    family: ?[]const u8 = null,
+    template_cid: []const u8 = "",
+    param_names: []const []const u8 = &.{},
+    contract_cid: ?[]const u8 = null,
+};
+
+fn handleRecognize(alloc: std.mem.Allocator, io: Io, line: []const u8, id: []const u8, writer: *Io.Writer) !void {
+    var arena = std.heap.ArenaAllocator.init(alloc);
+    defer arena.deinit();
+    const arena_alloc = arena.allocator();
+
+    const parsed = std.json.parseFromSlice(
+        RecognizeWireRequest,
+        arena_alloc,
+        line,
+        .{ .ignore_unknown_fields = true },
+    ) catch |err| {
+        try writer.print("{{\"jsonrpc\":\"2.0\",\"id\":{s},\"error\":{{\"code\":-32602,\"message\":\"invalid recognize params: {t}\"}}}}\n", .{ id, err });
+        return;
+    };
+    defer parsed.deinit();
+
+    var bindings: std.ArrayList(lift.BindingTemplate) = .empty;
+    for (parsed.value.params.binding_templates) |binding| {
+        if (binding.template_cid.len == 0) continue;
+        try bindings.append(arena_alloc, .{
+            .concept_name = binding.concept_name,
+            .library_tag = binding.library_tag,
+            .target_library_tag = binding.target_library_tag,
+            .family = binding.family,
+            .template_cid = binding.template_cid,
+            .param_names = binding.param_names,
+            .contract_cid = binding.contract_cid,
+        });
+    }
+
+    const response = lift.recognizeSourcePaths(
+        arena_alloc,
+        io,
+        parsed.value.params.project_root,
+        parsed.value.params.source_paths,
+        bindings.items,
+    ) catch |err| {
+        try writer.print("{{\"jsonrpc\":\"2.0\",\"id\":{s},\"error\":{{\"code\":-32603,\"message\":\"recognize failed: {t}\"}}}}\n", .{ id, err });
+        return;
+    };
+
+    const tags_json = try std.json.Stringify.valueAlloc(alloc, response.tags, .{ .whitespace = .minified });
+    defer alloc.free(tags_json);
+    try writer.print("{{\"jsonrpc\":\"2.0\",\"id\":{s},\"result\":{{\"tags\":{s}}}}}\n", .{ id, tags_json });
 }
 
 fn liftPath(

@@ -319,7 +319,9 @@ a boundary citation in source and writes the kit's sugar body, `recognize`
 reads idiomatic user code and writes the boundary citations that would
 have been present had the user authored them by hand. The same
 `ast_template` artifact a kit emits at lift time (see the bind-IR
-lift result spec) is the matchable template here.
+lift result spec) is the matchable template here, but the kit owns
+template/proof resolution. The runtime MUST NOT read `.proof` files or
+construct recognizer templates from package-manager paths.
 
 Request:
 ```json
@@ -329,29 +331,16 @@ Request:
   "method": "provekit.plugin.recognize",
   "params": {
     "project_root": "/absolute/project/root",
-    "source_paths": ["src/lib.rs", "src/ingest.rs"],
-    "binding_templates": [
-      {
-        "concept_name": "concept:json-parse",
-        "library_tag": "provekit-shim-serde-json-rust",
-        "family": "concept:family:json",
-        "ast_template": { "kind": "block", "stmts": [ /* … */ ] },
-        "template_cid": "blake3-512:<hex>",
-        "param_names": ["s"],
-        "param_types": ["&str"],
-        "return_type": "Result<Value, String>",
-        "contract_cid": "blake3-512:<hex>"
-      }
-    ]
+    "source_paths": ["src/lib.rs", "src/ingest.rs"]
   }
 }
 ```
 
-`binding_templates` is the set of sugar templates the runtime has
-gathered from the loaded `.proof` envelopes for this language. The kit
-matches its native AST shape against each template's `ast_template`
-under alpha-equivalence on `param_ref` markers. The substrate does not
-construct or interpret these templates; it only forwards them.
+The kit resolves the applicable sugar templates from its own package,
+project, and proof context, then matches its native AST shape against
+each template's `ast_template` under alpha-equivalence on `param_ref`
+markers. The runtime supplies source scope and receives normalized tags;
+it does not construct, forward, or interpret `binding_templates`.
 
 Response (success):
 ```json
@@ -419,10 +408,11 @@ list.
 Implementations MAY return an empty `tags` array. Implementations MUST
 NOT return tags for spans outside the supplied `source_paths`.
 
-The substrate MUST recompute every returned tag's `template_cid` against
-the supplied `binding_templates` (and refuse mismatches as protocol
-violations). The kit's only role is structural pattern matching against
-its language's AST; cross-tag composition, family-library disambiguation,
+The substrate treats returned `template_cid` and `contract_cid` values as
+content-addressed normalized data and composes them language-blindly. The
+kit is responsible for making those CIDs correspond to the sugar templates
+and proof data it resolved. The kit's role is structural pattern matching
+against its language's AST; cross-tag composition, family-library disambiguation,
 and bridge emission all stay substrate-side.
 
 ### §4.3 Error model on the wire

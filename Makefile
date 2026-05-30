@@ -11,7 +11,7 @@
 #   make help: print this help
 #   make ci: Linux-profile gate (catalog + protocol + live mints + tests)
 #   make conformance: catalog + protocol + live mint CIDs + self-contract tests
-#   make cross-language-proof-parity: Java/Go/Python/Rust emit + materialize + prove gate,
+#   make cross-language-proof-parity: Java/Go/Python/Rust emit + materialize + recognize + prove gate,
 #                                      plus TypeScript/Zig/Scala parity lanes
 #   make all-mint: run all 11 Linux-profile mint commands; print CIDs
 #   make bootstrap-self-contracts: re-sign attestations from live artifacts
@@ -280,6 +280,7 @@ build-python:
 .PHONY: build-scala
 build-scala:
 	$(SCALA_CLI) compile implementations/scala/provekit-emit-scala-scalatest --server=false --scalac-option -deprecation
+	$(SCALA_CLI) compile implementations/scala/provekit-lift-scala-source --server=false --scalac-option -deprecation
 
 .PHONY: build-java-self-contracts
 build-java-self-contracts:
@@ -668,13 +669,13 @@ cross-language-proof-parity-python-env:
 		pytest \
 		-e examples/provekit-shim-python-requests \
 		-e implementations/python/provekit-emit-python-pytest \
-		-e implementations/python/provekit-lift-py-tests \
+		-e implementations/python/provekit-lift-python-source \
 		-e implementations/python/provekit-realize-python-core \
 		-e implementations/python/provekit-realize-python-requests
 
 .PHONY: cross-language-proof-parity
 cross-language-proof-parity: build-java build-ts build-zig build-scala cross-language-proof-parity-python-env
-	@echo "=== Cross-language proof parity: emit/materialize/prove lanes for Java, Go, Python, Rust, TypeScript, Zig, Scala ==="
+	@echo "=== Cross-language proof parity: emit/materialize/recognize/prove lanes for Java, Go, Python, Rust, TypeScript, Zig, Scala ==="
 	cargo build --manifest-path implementations/rust/Cargo.toml \
 		-p provekit-realize-rust-core --bin provekit-realize-rust
 	@echo "--- emit parity ---"
@@ -718,6 +719,25 @@ cross-language-proof-parity: build-java build-ts build-zig build-scala cross-lan
 	cargo test --release --manifest-path implementations/rust/Cargo.toml \
 		-p provekit-cli --test cmd_materialize_integration \
 		materialize_rust_reqwest_example_uses_rust_library_shim
+	@echo "--- recognizer parity ---"
+	$(MVN) -q -f implementations/java/pom.xml \
+		-pl provekit-lift-java-source -am \
+		-Dtest=RecognizeHandlerTest,JavaSugarBindingLifterTest test
+	(cd implementations/go/provekit-lift-go && \
+		go test ./... -run 'Test(SugarBody|Recognize)')
+	$(PARITY_PYTHON) -m pytest \
+		implementations/python/provekit-lift-python-source/tests/test_bind_lifter.py \
+		-q -k 'sugar_body or recognize'
+	cargo test --release --manifest-path implementations/rust/Cargo.toml \
+		-p provekit-walk --bin provekit-walk-rpc \
+		sugar_body -- --nocapture
+	cargo test --release --manifest-path implementations/rust/Cargo.toml \
+		-p provekit-walk --bin provekit-walk-rpc \
+		recognize -- --nocapture
+	pnpm vitest run implementations/typescript/src/lift/typescript-source/index.test.ts
+	make test-swift-source-lift
+	(cd implementations/zig/provekit-lift-zig-source && zig build test)
+	$(SCALA_CLI) test implementations/scala/provekit-lift-scala-source --server=false
 	@echo "--- prove parity ---"
 	cargo test --release --manifest-path implementations/rust/Cargo.toml \
 		-p provekit-cli --test cmd_verify_java_production_bridge \
@@ -919,6 +939,7 @@ test-scala: build-scala
 	cargo test --release --manifest-path implementations/rust/Cargo.toml \
 		-p provekit-cli --test cmd_emit_scala_scalatest \
 		emit_scala_scalatest_dispatches_real_emitter_and_scala_cli_checks_output
+	$(SCALA_CLI) test implementations/scala/provekit-lift-scala-source --server=false
 
 .PHONY: test-swift
 test-swift: build-swift
@@ -926,6 +947,10 @@ test-swift: build-swift
 	cd implementations/swift && swift run conformance
 	cd implementations/swift && swift run test-swift-lsp
 	cd implementations/swift && swift run test-swift-crypto
+
+.PHONY: test-swift-source-lift
+test-swift-source-lift: build-swift
+	cd implementations/swift && swift run test-swift-source-lift
 
 .PHONY: test-zig
 test-zig:

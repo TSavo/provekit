@@ -60,6 +60,8 @@ public enum SwiftSourceRPC {
             return try lift(id: id, params: params)
         case "compile":
             return try compile(id: id, params: params)
+        case "provekit.plugin.recognize":
+            return try recognize(id: id, params: params)
         case "shutdown":
             throw SwiftSourceRPCExit(response: response(id: id, result: NSNull()))
         case "exit":
@@ -83,7 +85,10 @@ public enum SwiftSourceRPC {
             return errorResponse(id: id, code: -32602, message: "source_paths must contain strings")
         }
         let workspaceRoot = params["workspace_root"] as? String ?? "."
-        var result = SwiftSourceLifter.liftPaths(workspaceRoot: workspaceRoot, sourcePaths: sourcePaths)
+        let layer = requestedLayer(params)
+        var result = layer == "library-bindings"
+            ? SwiftSourceLifter.liftLibraryBindingsPaths(workspaceRoot: workspaceRoot, sourcePaths: sourcePaths)
+            : SwiftSourceLifter.liftPaths(workspaceRoot: workspaceRoot, sourcePaths: sourcePaths)
         if requestedVerifyLayer(params) {
             result = SwiftSourceIR.verifyFacingResult(result)
         }
@@ -98,11 +103,31 @@ public enum SwiftSourceRPC {
         ])
     }
 
-    private static func requestedVerifyLayer(_ params: [String: Any]) -> Bool {
-        guard let options = params["options"] as? [String: Any] else {
-            return false
+    private static func recognize(id: Any, params: [String: Any]) throws -> [String: Any] {
+        let workspaceRoot = params["project_root"] as? String ?? params["workspace_root"] as? String ?? "."
+        guard let sourcePathsAny = params["source_paths"] as? [Any] else {
+            return errorResponse(id: id, code: -32602, message: "source_paths must be an array")
         }
-        return options["layer"] as? String == "verify"
+        let sourcePaths = sourcePathsAny.compactMap { $0 as? String }.filter { !$0.isEmpty }
+        let tags = SwiftSourceLifter.recognizePaths(
+            workspaceRoot: workspaceRoot,
+            sourcePaths: sourcePaths,
+            bindingTemplates: []
+        )
+        return response(id: id, result: [
+            "tags": tags.map(SwiftSourceIR.anyValue),
+        ])
+    }
+
+    private static func requestedLayer(_ params: [String: Any]) -> String {
+        guard let options = params["options"] as? [String: Any] else {
+            return "all"
+        }
+        return options["layer"] as? String ?? "all"
+    }
+
+    private static func requestedVerifyLayer(_ params: [String: Any]) -> Bool {
+        requestedLayer(params) == "verify"
     }
 
     private static func compile(id: Any, params: [String: Any]) throws -> [String: Any] {

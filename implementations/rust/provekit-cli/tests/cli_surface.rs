@@ -175,6 +175,27 @@ fn prove_cli_does_not_expose_manual_proofir_or_solver_text_flags() {
 }
 
 #[test]
+fn prove_empty_project_is_not_a_successful_proof() {
+    let project = tempfile::tempdir().expect("create tempdir");
+    let output = Command::new(provekit_bin())
+        .arg("prove")
+        .arg(project.path())
+        .arg("--json")
+        .output()
+        .expect("spawn provekit prove empty project");
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    let report: serde_json::Value = serde_json::from_str(&stdout)
+        .unwrap_or_else(|e| panic!("prove JSON parse failed: {e}\nstdout: {stdout}"));
+
+    assert_eq!(report["totalCallsites"], 0, "report: {report}");
+    assert_eq!(report["violations"], 0, "report: {report}");
+    assert!(
+        !output.status.success(),
+        "prove must not report success when it checked zero callsites: {report}"
+    );
+}
+
+#[test]
 fn provekit_cli_does_not_expose_legacy_witness_subcommand() {
     let help = Command::new(provekit_bin())
         .arg("--help")

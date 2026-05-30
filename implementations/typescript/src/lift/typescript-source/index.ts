@@ -60,6 +60,9 @@ export interface TypeScriptLibrarySugarBindingEntry {
     span: { start_line: number; start_col: number; end_line: number; end_col: number };
     source_cid: string;
     body_text: string;
+    ast_template: unknown;
+    template_cid: string;
+    param_names: string[];
   };
 }
 
@@ -82,6 +85,41 @@ export interface TypeScriptSourceLiftResult {
   diagnostics: TypeScriptSourceDiagnostic[];
   opacityReport: unknown[];
   refusals: TypeScriptSourceRefusal[];
+}
+
+export interface TypeScriptBindingTemplate {
+  concept_name?: unknown;
+  library_tag?: unknown;
+  family?: unknown;
+  ast_template?: unknown;
+  template_cid?: unknown;
+  param_names?: unknown;
+  contract_cid?: unknown;
+}
+
+export interface TypeScriptRecognizeParams {
+  project_root: string;
+  source_paths: string[];
+  /// Direct templates are kept for focused kit tests. The manifest/RPC path
+  /// resolves templates inside the kit from project source/proof context.
+  binding_templates?: TypeScriptBindingTemplate[];
+}
+
+export interface TypeScriptRecognizeTag {
+  file: string;
+  span: { start_line: number; start_col: number; end_line: number; end_col: number };
+  function_name: string;
+  concept_name: unknown;
+  library_tag: unknown;
+  family: unknown;
+  template_cid: string;
+  contract_cid: unknown;
+  match_tier: "exact";
+  param_bindings: { index: number; source_text: string }[];
+}
+
+export interface TypeScriptRecognizeResponse {
+  tags: TypeScriptRecognizeTag[];
 }
 
 interface LiftedFunction {
@@ -204,6 +242,134 @@ export function liftTypeScriptLibraryBindingsPaths(
     refusals.push(...lifted.refusals);
   }
   return { declarations: [], diagnostics, opacityReport: [], refusals, libraryBindings, libraryRefusals };
+}
+
+export function recognizeTypeScriptSources(params: TypeScriptRecognizeParams): TypeScriptRecognizeResponse {
+  if (!params.project_root) throw new Error("missing `project_root`");
+  if (!Array.isArray(params.source_paths)) throw new Error("missing `source_paths` array");
+  const root = resolve(params.project_root);
+  const suppliedTemplates = params.binding_templates ?? [];
+  const selfResolvedBindings = suppliedTemplates.length > 0
+    ? []
+    : liftTypeScriptLibraryBindingsPaths(root, params.source_paths).libraryBindings;
+  const sugarTemplateFiles = new Set(selfResolvedBindings.map((entry) => entry.body_source.file));
+  const templatePool = suppliedTemplates.length > 0
+    ? suppliedTemplates
+    : selfResolvedBindings.map(bindingTemplateFromSugarEntry);
+  const bindingsByCid = bindingTemplatesByCid(templatePool);
+  const tags: TypeScriptRecognizeTag[] = [];
+
+  for (const sourcePath of params.source_paths) {
+    const fullPath = resolve(root, sourcePath);
+    if (!isInsideRoot(root, fullPath) || !existsSync(fullPath)) continue;
+    const st = statSync(fullPath);
+    const files = st.isDirectory() ? enumerateSourceFiles(fullPath) : st.isFile() && isSourceFile(fullPath) ? [fullPath] : [];
+    for (const file of files.sort()) {
+      const sourceText = readFileSync(file, "utf8");
+      const relPath = normalizePath(relative(root, file));
+      if (sugarTemplateFiles.has(relPath)) continue;
+      tags.push(...recognizeTypeScriptSourcesText(sourceText, relPath, [...bindingsByCid.values()]).tags);
+    }
+  }
+
+  return { tags };
+}
+
+function bindingTemplateFromSugarEntry(entry: TypeScriptLibrarySugarBindingEntry): TypeScriptBindingTemplate {
+  return {
+    concept_name: entry.concept_name,
+    library_tag: entry.target_library_tag,
+    family: (entry as unknown as { family?: unknown }).family,
+    ast_template: entry.body_source.ast_template,
+    template_cid: entry.body_source.template_cid,
+    param_names: entry.body_source.param_names,
+    contract_cid: (entry as unknown as { contract_cid?: unknown }).contract_cid ?? null,
+  };
+}
+
+export function recognizeTypeScriptSourcesText(
+  sourceText: string,
+  fileName = "input.ts",
+  bindingTemplates: TypeScriptBindingTemplate[] = [],
+): TypeScriptRecognizeResponse {
+  const modulePath = normalizePath(fileName);
+  const sourceFile = ts.createSourceFile(modulePath, sourceText, ts.ScriptTarget.ES2022, true, scriptKind(modulePath));
+  const bindingsByCid = bindingTemplatesByCid(bindingTemplates);
+  const tags: TypeScriptRecognizeTag[] = [];
+
+  const visit = (node: ts.Node): void => {
+    if (isRecognizableFunctionLike(node)) {
+      const tag = recognizeFunctionLike(sourceFile, modulePath, node, bindingsByCid);
+      if (tag) tags.push(tag);
+    }
+    ts.forEachChild(node, visit);
+  };
+  visit(sourceFile);
+
+  return { tags };
+}
+
+type RecognizableFunctionLike = ts.FunctionDeclaration | ts.MethodDeclaration;
+
+function bindingTemplatesByCid(bindingTemplates: readonly TypeScriptBindingTemplate[]): Map<string, TypeScriptBindingTemplate> {
+  const out = new Map<string, TypeScriptBindingTemplate>();
+  for (const binding of bindingTemplates) {
+    if (!binding || typeof binding !== "object") continue;
+    const cid = binding.template_cid;
+    if (typeof cid === "string" && cid.length > 0) out.set(cid, binding);
+  }
+  return out;
+}
+
+function isRecognizableFunctionLike(node: ts.Node): node is RecognizableFunctionLike {
+  if (ts.canHaveDecorators(node) && (ts.getDecorators(node) ?? []).some(isSugarBindDecorator)) {
+    return false;
+  }
+  if (ts.isFunctionDeclaration(node)) return !!node.name && !!node.body;
+  if (ts.isMethodDeclaration(node)) return !!methodNameText(node.name) && !!node.body;
+  return false;
+}
+
+function isSugarBindDecorator(decorator: ts.Decorator): boolean {
+  const expr = decorator.expression;
+  if (!ts.isCallExpression(expr)) return false;
+  const callee = expr.expression;
+  return ts.isPropertyAccessExpression(callee)
+    && callee.name.text === "bind"
+    && ts.isIdentifier(callee.expression)
+    && callee.expression.text === "sugar";
+}
+
+function recognizeFunctionLike(
+  sourceFile: ts.SourceFile,
+  modulePath: string,
+  node: RecognizableFunctionLike,
+  bindingsByCid: ReadonlyMap<string, TypeScriptBindingTemplate>,
+): TypeScriptRecognizeTag | null {
+  if (!node.body) return null;
+  const paramNames = node.parameters.map((param) => parameterName(param));
+  const astTemplate = functionBodyAstTemplate(node.body, paramNames);
+  const templateCid = cidOfValue(astTemplate);
+  const binding = bindingsByCid.get(templateCid);
+  if (!binding) return null;
+
+  return {
+    file: modulePath,
+    span: locatorForNode(node, sourceFile),
+    function_name: recognizableFunctionName(node),
+    concept_name: binding.concept_name ?? null,
+    library_tag: binding.library_tag ?? null,
+    family: binding.family ?? null,
+    template_cid: templateCid,
+    contract_cid: binding.contract_cid ?? null,
+    match_tier: "exact",
+    param_bindings: paramNames.map((name, index) => ({ index: index + 1, source_text: name })),
+  };
+}
+
+function recognizableFunctionName(node: RecognizableFunctionLike): string {
+  if (ts.isFunctionDeclaration(node)) return node.name?.text ?? "";
+  return methodNameText(node.name) ?? "";
 }
 
 export function functionContractCid(contract: FunctionContractMemento): string {
@@ -377,11 +543,12 @@ function libraryBindingEntryForFunction(
   // `@sugar.bind(...)` decorator + signature + braces are presentation/sugar.
   // The lifter has already read the decorator (concept/library/family/version)
   // and the signature (param_names/param_types/return_type) into typed fields.
-  // body_text carries only the remaining substance — the statements between the
+  // body_text carries only the remaining substance: the statements between the
   // function block's outermost `{` and matching `}`, with original indentation
   // preserved (the realizer does its own indentation pass). When no block body
   // is present, body_text is empty and the entry contributes no template.
   const bodyText = extractFunctionBodyStatements(body, sourceFile);
+  const astTemplate = functionBodyAstTemplate(body, paramNames);
   const entry: TypeScriptLibrarySugarBindingEntry = {
     kind: "library-sugar-binding-entry",
     target_language: "typescript",
@@ -403,12 +570,15 @@ function libraryBindingEntryForFunction(
       span,
       source_cid: computeCid(Buffer.from(spanText, "utf8")),
       body_text: bodyText,
+      ast_template: astTemplate,
+      template_cid: cidOfValue(astTemplate),
+      param_names: paramNames,
     },
   };
   if (binding.observed_dimension !== null) entry.observed_dimension = binding.observed_dimension;
   // #1357 / #1355: surface optional family + version pins on the binding
-  // entry. Absent on the @sugar.bind decorator → absent in emitted JSON
-  // (NOT empty strings — null/missing is the substrate signal for
+  // entry. Absent on the @sugar.bind decorator means absent in emitted JSON
+  // (NOT empty strings; null/missing is the substrate signal for
   // "this axis floats"). Parallel to walk_rpc's rust-side emission.
   if (binding.family !== null) (entry as unknown as Record<string, unknown>).family = binding.family;
   if (binding.version !== null) (entry as unknown as Record<string, unknown>).library_version = binding.version;
@@ -416,7 +586,7 @@ function libraryBindingEntryForFunction(
 }
 
 /**
- * Extract only the statements inside a function's block body — the text between
+ * Extract only the statements inside a function's block body: the text between
  * the block's outermost `{` and matching `}`, dedented to column 0. The
  * decorator + signature + braces are sugar already captured as typed fields;
  * body_text carries what the function DOES. Returns "" when there is no block
@@ -424,7 +594,7 @@ function libraryBindingEntryForFunction(
  *
  * Dedent rationale: the shim source indents method bodies (e.g. 2 spaces inside
  * the function block). That source-level indentation is presentation, not
- * substance — the realizer's functionSource / emission template owns body
+ * substance; the realizer's functionSource / emission template owns body
  * indentation and the materialize indent pass adds the carrier's column on top.
  * Capturing body_text at column 0 keeps it byte-equal to the canonical
  * de-indented emission template the central body-templates JSON shipped before
@@ -477,6 +647,236 @@ function dedentCommonIndent(text: string): string {
   return lines
     .map((line) => (line.startsWith(prefix) ? line.slice(prefix.length) : line))
     .join("\n");
+}
+
+function functionBodyAstTemplate(body: ts.Block | undefined, params: readonly string[]): unknown {
+  return {
+    kind: "block",
+    stmts: body ? body.statements.flatMap((stmt) => stmtToAstTemplates(stmt, params)) : [],
+  };
+}
+
+function stmtToAstTemplates(stmt: ts.Statement, params: readonly string[]): unknown[] {
+  if (ts.isVariableStatement(stmt)) {
+    return stmt.declarationList.declarations.map((decl) => ({
+      kind: "let",
+      pat: bindingNameToAstTemplate(decl.name, params),
+      init: decl.initializer ? exprToAstTemplate(decl.initializer, params) : null,
+    }));
+  }
+  if (ts.isExpressionStatement(stmt)) {
+    return [{
+      kind: "expr_stmt",
+      expr: exprToAstTemplate(stmt.expression, params),
+      trailing_semi: true,
+    }];
+  }
+  if (ts.isReturnStatement(stmt)) {
+    return [{
+      kind: "return",
+      expr: stmt.expression ? exprToAstTemplate(stmt.expression, params) : null,
+    }];
+  }
+  if (ts.isBlock(stmt)) {
+    return [functionBodyAstTemplate(stmt, params)];
+  }
+  return [otherAstTemplate(stmt)];
+}
+
+function exprToAstTemplate(expr: ts.Expression, params: readonly string[]): unknown {
+  if (ts.isIdentifier(expr)) return identifierAstTemplate(expr.text, params);
+  if (expr.kind === ts.SyntaxKind.ThisKeyword) return { kind: "ident", name: "this" };
+  if (expr.kind === ts.SyntaxKind.NullKeyword) return { kind: "lit", ty: "null", value: null };
+  if (expr.kind === ts.SyntaxKind.TrueKeyword) return { kind: "lit", ty: "bool", value: true };
+  if (expr.kind === ts.SyntaxKind.FalseKeyword) return { kind: "lit", ty: "bool", value: false };
+  if (ts.isStringLiteralLike(expr)) return { kind: "lit", ty: "str", value: expr.text };
+  if (ts.isNumericLiteral(expr)) return { kind: "lit", ty: "number", value: Number(expr.text) };
+  if (ts.isParenthesizedExpression(expr)) return exprToAstTemplate(expr.expression, params);
+  if (ts.isArrayLiteralExpression(expr)) {
+    return { kind: "array", elems: expr.elements.map((element) => exprToAstTemplate(element as ts.Expression, params)) };
+  }
+  if (ts.isObjectLiteralExpression(expr)) {
+    return {
+      kind: "object",
+      fields: expr.properties.map((prop) => objectPropertyAstTemplate(prop, params)),
+    };
+  }
+  if (ts.isCallExpression(expr)) {
+    const args = expr.arguments.map((arg) => exprToAstTemplate(arg, params));
+    if (ts.isPropertyAccessExpression(expr.expression)) {
+      return {
+        kind: "method_call",
+        receiver: exprToAstTemplate(expr.expression.expression, params),
+        method: expr.expression.name.text,
+        args,
+      };
+    }
+    return {
+      kind: "call",
+      func: exprToAstTemplate(expr.expression, params),
+      args,
+    };
+  }
+  if (ts.isPropertyAccessExpression(expr)) {
+    const field = fieldAstTemplateIfParamRoot(expr, params);
+    if (field) return field;
+    const segments = propertyAccessSegments(expr);
+    return segments ? { kind: "path", segments } : {
+      kind: "field",
+      base: exprToAstTemplate(expr.expression, params),
+      member: expr.name.text,
+    };
+  }
+  if (ts.isElementAccessExpression(expr)) {
+    return {
+      kind: "index",
+      base: exprToAstTemplate(expr.expression, params),
+      index: expr.argumentExpression ? exprToAstTemplate(expr.argumentExpression, params) : null,
+    };
+  }
+  if (ts.isBinaryExpression(expr)) {
+    const op = binaryOpTemplateName(expr.operatorToken.kind);
+    return op
+      ? {
+          kind: "binary",
+          op,
+          left: exprToAstTemplate(expr.left, params),
+          right: exprToAstTemplate(expr.right, params),
+        }
+      : otherAstTemplate(expr);
+  }
+  if (ts.isPrefixUnaryExpression(expr)) {
+    return {
+      kind: "unary",
+      op: ts.SyntaxKind[expr.operator] ?? String(expr.operator),
+      expr: exprToAstTemplate(expr.operand, params),
+    };
+  }
+  if (ts.isAsExpression(expr) || ts.isTypeAssertionExpression(expr) || ts.isNonNullExpression(expr)) {
+    return exprToAstTemplate(expr.expression, params);
+  }
+  return otherAstTemplate(expr);
+}
+
+function objectPropertyAstTemplate(prop: ts.ObjectLiteralElementLike, params: readonly string[]): unknown {
+  if (ts.isPropertyAssignment(prop)) {
+    return {
+      kind: "field",
+      name: propertyNameText(prop.name),
+      value: exprToAstTemplate(prop.initializer, params),
+    };
+  }
+  if (ts.isShorthandPropertyAssignment(prop)) {
+    return {
+      kind: "field",
+      name: prop.name.text,
+      value: identifierAstTemplate(prop.name.text, params),
+    };
+  }
+  return otherAstTemplate(prop);
+}
+
+function bindingNameToAstTemplate(name: ts.BindingName, params: readonly string[]): unknown {
+  if (ts.isIdentifier(name)) {
+    if (paramIndex(name.text, params) > 0) return { kind: "param_ref", index: paramIndex(name.text, params) };
+    return { kind: "binding", name: name.text };
+  }
+  return {
+    kind: "pat_tuple",
+    elems: name.elements.map((element) => {
+      if (ts.isOmittedExpression(element)) return { kind: "wildcard" };
+      return bindingNameToAstTemplate(element.name, params);
+    }),
+  };
+}
+
+function identifierAstTemplate(name: string, params: readonly string[]): unknown {
+  switch (name) {
+    case "undefined":
+      return { kind: "lit", ty: "undefined", value: null };
+    case "NaN":
+    case "Infinity":
+      return { kind: "ident", name };
+    default: {
+      const index = paramIndex(name, params);
+      return index > 0 ? { kind: "param_ref", index } : { kind: "ident", name };
+    }
+  }
+}
+
+function paramIndex(name: string, params: readonly string[]): number {
+  const index = params.indexOf(name);
+  return index < 0 ? 0 : index + 1;
+}
+
+function propertyAccessSegments(expr: ts.PropertyAccessExpression): string[] | null {
+  const segments: string[] = [expr.name.text];
+  let current: ts.Expression = expr.expression;
+  while (ts.isPropertyAccessExpression(current)) {
+    segments.unshift(current.name.text);
+    current = current.expression;
+  }
+  if (ts.isIdentifier(current)) {
+    segments.unshift(current.text);
+    return segments;
+  }
+  if (current.kind === ts.SyntaxKind.ThisKeyword) {
+    segments.unshift("this");
+    return segments;
+  }
+  return null;
+}
+
+function fieldAstTemplateIfParamRoot(expr: ts.PropertyAccessExpression, params: readonly string[]): unknown | null {
+  const members: string[] = [];
+  let current: ts.Expression = expr;
+  while (ts.isPropertyAccessExpression(current)) {
+    members.unshift(current.name.text);
+    current = current.expression;
+  }
+  if (!ts.isIdentifier(current)) return null;
+  const index = paramIndex(current.text, params);
+  if (index === 0) return null;
+  let result: unknown = { kind: "param_ref", index };
+  for (const member of members) {
+    result = { kind: "field", base: result, member };
+  }
+  return result;
+}
+
+function propertyNameText(name: ts.PropertyName): string {
+  if (ts.isIdentifier(name) || ts.isStringLiteral(name) || ts.isNumericLiteral(name)) return name.text;
+  return name.getText();
+}
+
+function binaryOpTemplateName(kind: ts.SyntaxKind): string | null {
+  switch (kind) {
+    case ts.SyntaxKind.PlusToken: return "Add";
+    case ts.SyntaxKind.MinusToken: return "Sub";
+    case ts.SyntaxKind.AsteriskToken: return "Mul";
+    case ts.SyntaxKind.SlashToken: return "Div";
+    case ts.SyntaxKind.PercentToken: return "Rem";
+    case ts.SyntaxKind.AmpersandToken: return "BitAnd";
+    case ts.SyntaxKind.BarToken: return "BitOr";
+    case ts.SyntaxKind.CaretToken: return "BitXor";
+    case ts.SyntaxKind.LessThanLessThanToken: return "Shl";
+    case ts.SyntaxKind.GreaterThanGreaterThanToken: return "Shr";
+    case ts.SyntaxKind.AmpersandAmpersandToken: return "And";
+    case ts.SyntaxKind.BarBarToken: return "Or";
+    case ts.SyntaxKind.EqualsEqualsEqualsToken:
+    case ts.SyntaxKind.EqualsEqualsToken: return "Eq";
+    case ts.SyntaxKind.ExclamationEqualsEqualsToken:
+    case ts.SyntaxKind.ExclamationEqualsToken: return "Ne";
+    case ts.SyntaxKind.LessThanToken: return "Lt";
+    case ts.SyntaxKind.LessThanEqualsToken: return "Le";
+    case ts.SyntaxKind.GreaterThanEqualsToken: return "Ge";
+    case ts.SyntaxKind.GreaterThanToken: return "Gt";
+    default: return null;
+  }
+}
+
+function otherAstTemplate(node: ts.Node): unknown {
+  return { kind: "other", variant: syntaxKindName(node) };
 }
 
 function sugarBindingArgs(node: ts.FunctionDeclaration): {

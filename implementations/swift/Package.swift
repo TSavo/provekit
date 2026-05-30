@@ -36,6 +36,7 @@ let package = Package(
         .executable(name: "provekit-lsp-swift", targets: ["ProveKitLSPSwift"]),
         .executable(name: "mint-swift-self-contracts", targets: ["MintSwiftSelfContracts"]),
         .executable(name: "provekit-lift-swift-source", targets: ["ProvekitLiftSwiftSourceCLI"]),
+        .executable(name: "test-swift-source-lift", targets: ["SwiftSourceLiftTests"]),
         .executable(name: "provekit-lift-swift-xctest-tests", targets: ["ProvekitLiftSwiftXCTestTests"]),
         .executable(name: "provekit-emit-swift-xctest", targets: ["ProvekitEmitSwiftXCTest"]),
         .executable(name: "test-swift-lsp", targets: ["LSPTests"]),
@@ -143,6 +144,10 @@ let package = Package(
         .executableTarget(
             name: "ProvekitLiftSwiftSourceCLI",
             dependencies: ["ProvekitLiftSwiftSource"]
+        ),
+        .executableTarget(
+            name: "SwiftSourceLiftTests",
+            dependencies: ["ProvekitLiftSwiftSource", "ProvekitCrypto"]
         ),
         .executableTarget(
             name: "ProvekitLiftSwiftXCTestTests",
