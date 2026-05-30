@@ -27,7 +27,10 @@ reject() {
   fi
 }
 
+require "Cross-language proof parity: emit/materialize/recognize/mint/prove/contradiction lanes for Java, Go, Python, Rust"
+
 require "emit_java_junit_dispatches_real_emitter_and_maven_checks_output"
+require "emit_java_testng_dispatches_real_emitter_and_maven_checks_output"
 require "emit_go_testing_uses_checked_in_go_double_registration"
 require "emit_go_testify_dispatches_separate_emitter_and_compile_checks"
 require "emit_python_pytest_uses_checked_in_python_double_registration"
