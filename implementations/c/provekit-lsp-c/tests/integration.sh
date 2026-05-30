@@ -4,12 +4,13 @@
 # Integration test for provekit-lsp-c.
 #
 # Spawns the binary, pipes JSON-RPC requests, asserts JSON responses
-# match the expected shape. Fixture: tests/fixtures/two_funcs.c
-# (2 functions, 1 call site).
+# match the expected shape. Fixtures cover legacy parse/lift and shared
+# analyzeDocument diagnostics.
 
 set -e
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+REPO_ROOT="$(cd "$SCRIPT_DIR/../../../.." && pwd)"
 BIN="$SCRIPT_DIR/../provekit-lsp-c"
 
 if [ ! -x "$BIN" ]; then
@@ -20,6 +21,8 @@ fi
 
 FIXTURE="$SCRIPT_DIR/fixtures/two_funcs.c"
 SOURCE=$(cat "$FIXTURE" | sed 's/\\/\\\\/g; s/"/\\"/g; s/$/\\n/' | tr -d '\n' | sed 's/\\n$//')
+FLOOR_FIXTURE="$REPO_ROOT/tests/lsp/floor-fixture/c.c"
+FLOOR_SOURCE=$(cat "$FLOOR_FIXTURE" | sed 's/\\/\\\\/g; s/"/\\"/g; s/$/\\n/' | tr -d '\n' | sed 's/\\n$//')
 
 PASS=0
 FAIL=0
@@ -37,6 +40,22 @@ check() {
         printf "        expected to contain: %s\n" "$must_contain" >&2
         printf "        got: %s\n" "$response" >&2
         FAIL=$((FAIL + 1))
+    fi
+}
+
+check_absent() {
+    local label="$1"
+    local response="$2"
+    local must_not_contain="$3"
+
+    if printf '%s' "$response" | grep -qF "$must_not_contain"; then
+        printf "  FAIL: %s\n" "$label" >&2
+        printf "        should not contain: %s\n" "$must_not_contain" >&2
+        printf "        got: %s\n" "$response" >&2
+        FAIL=$((FAIL + 1))
+    else
+        printf "  PASS: %s\n" "$label"
+        PASS=$((PASS + 1))
     fi
 }
 
@@ -64,11 +83,14 @@ check "T1 initialize: name" "$LINE1" '"name":"provekit-lsp-c"'
 # T2: initialize response contains version
 check "T2 initialize: version" "$LINE1" '"version":"0.1.0"'
 
-# T3: initialize response contains protocol_version
-check "T3 initialize: protocol_version" "$LINE1" '"protocol_version":"provekit-lift/1"'
+# T3: initialize response contains shared protocol_version
+check "T3 initialize: shared protocol_version" "$LINE1" '"protocol_version":"provekit-lsp-shared/1"'
 
-# T3b: initialize response contains authoring_surfaces
-check "T3b initialize: authoring_surfaces c-source" "$LINE1" '"authoring_surfaces":["c-source"]'
+# T3b: initialize response contains shared kit fields
+check "T3b initialize: kit id c" "$LINE1" '"kit_id":"c"'
+check "T3c initialize: protocol catalog cid" "$LINE1" '"protocol_catalog_cid":"blake3-512:'
+check "T3d initialize: source_surfaces c-source" "$LINE1" '"source_surfaces":["c-source"]'
+check "T3e initialize: implication diagnostic code" "$LINE1" '"provekit.lsp.implication_failed"'
 
 # T4: parse response contains declarations array
 check "T4 parse: declarations key present" "$LINE2" '"declarations":'
@@ -118,8 +140,8 @@ LIFT1=$(printf '%s\n' "$LIFT_RESPONSES" | sed -n '1p')
 LIFT2=$(printf '%s\n' "$LIFT_RESPONSES" | sed -n '2p')
 LIFT3=$(printf '%s\n' "$LIFT_RESPONSES" | sed -n '3p')
 
-# T14: lift initialize response contains protocol_version
-check "T14 lift/initialize: protocol_version" "$LIFT1" '"protocol_version":"provekit-lift/1"'
+# T14: lift initialize response contains shared protocol_version
+check "T14 lift/initialize: shared protocol_version" "$LIFT1" '"protocol_version":"provekit-lsp-shared/1"'
 
 # T15: lift response is ir-document
 check "T15 lift: kind ir-document" "$LIFT2" '"kind":"ir-document"'
@@ -149,6 +171,32 @@ check "T22 lift: refusals key present" "$LIFT2" '"refusals":'
 
 # T23: shutdown response contains null result
 check "T23 lift/shutdown: result null" "$LIFT3" '"result":null'
+
+# ---------------------------------------------------------------------------
+# Round 3: analyzeDocument method — floor fixture callsite diagnostic
+# ---------------------------------------------------------------------------
+printf "\n-- analyzeDocument method --\n"
+
+ANALYZE_REQUESTS=$(printf '%s\n%s\n%s\n' \
+    '{"jsonrpc":"2.0","id":20,"method":"initialize","params":{}}' \
+    "{\"jsonrpc\":\"2.0\",\"id\":21,\"method\":\"analyzeDocument\",\"params\":{\"kit_id\":\"c\",\"uri\":\"file:///project/FloorFixture.c\",\"file\":\"FloorFixture.c\",\"text\":\"$FLOOR_SOURCE\",\"document_version\":42,\"workspace_root\":\"/project\",\"accepted_protocol_catalog_cids\":[],\"policy_cids\":[]}}" \
+    '{"jsonrpc":"2.0","id":22,"method":"shutdown"}')
+
+ANALYZE_RESPONSES=$(printf '%s\n' "$ANALYZE_REQUESTS" | "$BIN" --rpc)
+ANALYZE2=$(printf '%s\n' "$ANALYZE_RESPONSES" | sed -n '2p')
+ANALYZE3=$(printf '%s\n' "$ANALYZE_RESPONSES" | sed -n '3p')
+
+check "T24 analyze: analysis kind" "$ANALYZE2" '"kind":"lsp-document-analysis"'
+check "T25 analyze: kit id" "$ANALYZE2" '"kit_id":"c"'
+check "T26 analyze: document cid" "$ANALYZE2" '"document_cid":"blake3-512:'
+check "T27 analyze: diagnostic code" "$ANALYZE2" '"code":"provekit.lsp.implication_failed"'
+check "T28 analyze: diagnostic severity" "$ANALYZE2" '"severity":"error"'
+check "T29 analyze: diagnostic producer" "$ANALYZE2" '"producer":"forward-propagation"'
+check "T30 analyze: diagnostic callee" "$ANALYZE2" '"callee":"checkPositive"'
+check "T31 analyze: diagnostic line" "$ANALYZE2" '"start_line":17'
+check "T32 analyze: diagnostic column" "$ANALYZE2" '"start_col":18'
+check_absent "T33 analyze: no rpc error" "$ANALYZE2" '"error":'
+check "T34 analyze/shutdown: result null" "$ANALYZE3" '"result":null'
 
 printf "\nResults: %d passed, %d failed\n" "$PASS" "$FAIL"
 

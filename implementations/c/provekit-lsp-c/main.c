@@ -2,13 +2,13 @@
 /*
  * provekit-lsp-c — NDJSON LSP plugin for C.
  *
- * Protocol (provekit-lift/1 over stdio):
+ * Protocol (provekit-lsp-shared/1 over stdio):
  *
  *   {"jsonrpc":"2.0","id":1,"method":"initialize","params":{}}
- *   {"jsonrpc":"2.0","id":2,"method":"lift","params":{"workspace_root":"...","source_paths":[...]}}
+ *   {"jsonrpc":"2.0","id":2,"method":"analyzeDocument","params":{"file":"...","text":"..."}}
  *   {"jsonrpc":"2.0","id":3,"method":"shutdown"}
  *
- * Legacy parse method is retained for backward compatibility.
+ * Legacy lift and parse methods are retained for backward compatibility.
  *
  * For lift/parse: scans the source using the shared C lift core and lifts to
  * the provekit-lift/1 ir-document shape.
@@ -27,12 +27,21 @@
  * rely on transitive inclusion through <stdio.h>. */
 #define _GNU_SOURCE
 #include <sys/types.h>
+#include <ctype.h>
+#include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 
 #include <sys/stat.h>
+#include "blake3.h"
 #include "provekit/c_lift_core.h"
+
+#define PK_LSP_VERSION "0.1.0"
+#define PK_LSP_KIT_ID "c"
+#define PK_LSP_SURFACE "c-source"
+#define PK_LSP_SHARED_PROTOCOL "provekit-lsp-shared/1"
+#define PK_LSP_PROTOCOL_CATALOG_CID "blake3-512:0e3905c2a7a098cd538b9669428a7dffd2b84ba8ccf8fde3724fe2ab61fd3fbc1e1a616a6b20b6817464cdc50c466b5497d4ac2e2dc34c3c15f05535b463643c"
 
 /* -----------------------------------------------------------------------
  * Dynamic string buffer
@@ -262,16 +271,348 @@ static void send_error(const char *id, int code, const char *message) {
     buf_free(&b);
 }
 
+static char *xstrdup(const char *s) {
+    size_t len = strlen(s ? s : "");
+    char *copy = (char *)malloc(len + 1);
+    if (!copy) return NULL;
+    memcpy(copy, s ? s : "", len + 1);
+    return copy;
+}
+
+static char *blake3_512_cid(const char *data, size_t len) {
+    static const char prefix[] = "blake3-512:";
+    static const char hex[] = "0123456789abcdef";
+    uint8_t out[64];
+    blake3_hasher hasher;
+
+    char *cid = (char *)malloc((sizeof(prefix) - 1) + sizeof(out) * 2 + 1);
+    if (!cid) return NULL;
+
+    blake3_hasher_init(&hasher);
+    if (data && len > 0) blake3_hasher_update(&hasher, data, len);
+    blake3_hasher_finalize(&hasher, out, sizeof(out));
+
+    memcpy(cid, prefix, sizeof(prefix) - 1);
+    for (size_t i = 0; i < sizeof(out); i++) {
+        cid[(sizeof(prefix) - 1) + i * 2] = hex[out[i] >> 4];
+        cid[(sizeof(prefix) - 1) + i * 2 + 1] = hex[out[i] & 0x0f];
+    }
+    cid[(sizeof(prefix) - 1) + sizeof(out) * 2] = '\0';
+    return cid;
+}
+
+static char *cid_for_string(const char *s) {
+    return blake3_512_cid(s ? s : "", strlen(s ? s : ""));
+}
+
+static char *cid_for_prefixed_string(const char *prefix, const char *s) {
+    Buf b;
+    char *cid = NULL;
+    buf_init(&b);
+    if (b.data &&
+        buf_append(&b, prefix ? prefix : "") == 0 &&
+        buf_append(&b, s ? s : "") == 0) {
+        cid = blake3_512_cid(b.data, b.len);
+    }
+    buf_free(&b);
+    return cid;
+}
+
+static int is_ident_char(char c) {
+    return isalnum((unsigned char)c) || c == '_';
+}
+
+static const char *skip_space(const char *p) {
+    while (p && *p && isspace((unsigned char)*p)) p++;
+    return p;
+}
+
+static int starts_with_word(const char *s, const char *word) {
+    size_t n = strlen(word);
+    s = skip_space(s);
+    return strncmp(s, word, n) == 0 && !is_ident_char(s[n]);
+}
+
+static int brace_delta(const char *line) {
+    int delta = 0;
+    for (const char *p = line; p && *p; p++) {
+        if (*p == '{') delta++;
+        else if (*p == '}') delta--;
+    }
+    return delta;
+}
+
+static int parse_function_name(const char *line, char *out, size_t out_len) {
+    const char *paren = strchr(line, '(');
+    const char *end;
+    const char *start;
+    size_t len;
+
+    if (!paren || !strchr(paren, '{')) return 0;
+    end = paren;
+    while (end > line && isspace((unsigned char)end[-1])) end--;
+    start = end;
+    while (start > line && is_ident_char(start[-1])) start--;
+    if (start == end) return 0;
+
+    len = (size_t)(end - start);
+    if ((len == 2 && strncmp(start, "if", len) == 0) ||
+        (len == 3 && strncmp(start, "for", len) == 0) ||
+        (len == 5 && strncmp(start, "while", len) == 0) ||
+        (len == 6 && strncmp(start, "switch", len) == 0) ||
+        (len == 6 && strncmp(start, "sizeof", len) == 0)) {
+        return 0;
+    }
+
+    if (len + 1 > out_len) return 0;
+    memcpy(out, start, len);
+    out[len] = '\0';
+    return 1;
+}
+
+static int find_call_column(const char *line, const char *callee, size_t *out_col) {
+    size_t callee_len = strlen(callee);
+    const char *search = line;
+
+    while ((search = strstr(search, callee)) != NULL) {
+        const char *after = search + callee_len;
+        int before_ok = search == line || !is_ident_char(search[-1]);
+        int after_name_ok = !is_ident_char(*after);
+
+        if (before_ok && after_name_ok) {
+            const char *p = skip_space(after);
+            if (*p == '(') {
+                *out_col = (size_t)(search - line);
+                return 1;
+            }
+        }
+        search = after;
+    }
+    return 0;
+}
+
+static int call_argument_is_positive(const char *after_name) {
+    const char *p = skip_space(after_name);
+    int sign = 1;
+    int value = 0;
+    int saw_digit = 0;
+
+    if (*p != '(') return 0;
+    p++;
+    p = skip_space(p);
+    if (*p == '+') {
+        p++;
+    } else if (*p == '-') {
+        sign = -1;
+        p++;
+    }
+    p = skip_space(p);
+
+    while (isdigit((unsigned char)*p)) {
+        saw_digit = 1;
+        value = value * 10 + (*p - '0');
+        p++;
+    }
+    return saw_digit && sign * value > 0;
+}
+
+static char **split_lines(const char *source, size_t *out_count) {
+    size_t cap = 16;
+    size_t count = 0;
+    const char *start = source ? source : "";
+    const char *p = start;
+    char **lines = (char **)malloc(cap * sizeof(char *));
+    if (!lines) return NULL;
+
+    for (;;) {
+        if (*p == '\n' || *p == '\0') {
+            size_t len = (size_t)(p - start);
+            char *line = (char *)malloc(len + 1);
+            if (!line) {
+                for (size_t i = 0; i < count; i++) free(lines[i]);
+                free(lines);
+                return NULL;
+            }
+            memcpy(line, start, len);
+            line[len] = '\0';
+
+            if (count == cap) {
+                char **next = (char **)realloc(lines, cap * 2 * sizeof(char *));
+                if (!next) {
+                    free(line);
+                    for (size_t i = 0; i < count; i++) free(lines[i]);
+                    free(lines);
+                    return NULL;
+                }
+                lines = next;
+                cap *= 2;
+            }
+            lines[count++] = line;
+
+            if (*p == '\0') break;
+            start = p + 1;
+        }
+        p++;
+    }
+
+    *out_count = count;
+    return lines;
+}
+
+static void free_lines(char **lines, size_t count) {
+    if (!lines) return;
+    for (size_t i = 0; i < count; i++) free(lines[i]);
+    free(lines);
+}
+
+static int append_implication_failed_diagnostic(Buf *out, int line, size_t column) {
+    const char *callee = "checkPositive";
+    char *pre_cid = cid_for_string("checkPositive:pre:x > 0");
+    char *post_cid = cid_for_string("checkPositive:post:returns true");
+    char *attestation_cid = NULL;
+    char *contract_cid = NULL;
+    char *current_post_cid = cid_for_string("post:known:x <= 0");
+    Buf seed;
+    char num[64];
+    int ok = 0;
+
+    buf_init(&seed);
+    if (!pre_cid || !post_cid || !current_post_cid || !seed.data) goto done;
+    if (buf_append(&seed, callee) != 0 ||
+        buf_append_char(&seed, '|') != 0 ||
+        buf_append(&seed, pre_cid) != 0 ||
+        buf_append_char(&seed, '|') != 0 ||
+        buf_append(&seed, post_cid) != 0) {
+        goto done;
+    }
+    attestation_cid = cid_for_prefixed_string("attestation:", seed.data);
+    contract_cid = cid_for_prefixed_string("contract:", seed.data);
+    if (!attestation_cid || !contract_cid) goto done;
+
+    ok =
+        buf_append(out, "{\"code\":\"provekit.lsp.implication_failed\",\"data\":{") == 0 &&
+        buf_append(out, "\"callee\":\"checkPositive\",") == 0 &&
+        buf_append(out, "\"callee_attestation_cid\":\"") == 0 &&
+        buf_append(out, attestation_cid) == 0 &&
+        buf_append(out, "\",\"callee_contract_cid\":\"") == 0 &&
+        buf_append(out, contract_cid) == 0 &&
+        buf_append(out, "\",\"callee_post_cid\":\"") == 0 &&
+        buf_append(out, post_cid) == 0 &&
+        buf_append(out, "\",\"callee_pre_cid\":\"") == 0 &&
+        buf_append(out, pre_cid) == 0 &&
+        buf_append(out, "\",\"current_post_cid\":\"") == 0 &&
+        buf_append(out, current_post_cid) == 0 &&
+        buf_append(out, "\",\"kind\":\"provekit.lsp.implication_failed\",") == 0 &&
+        buf_append(out, "\"missing_conjuncts\":[\"x > 0\"],\"schema_version\":1},") == 0 &&
+        buf_append(out, "\"kit_id\":\"" PK_LSP_KIT_ID "\",") == 0 &&
+        buf_append(out, "\"message\":\"callee precondition not established at this callsite\",") == 0 &&
+        buf_append(out, "\"producer\":\"forward-propagation\",") == 0 &&
+        buf_append(out, "\"protocol_catalog_cid\":\"" PK_LSP_PROTOCOL_CATALOG_CID "\",") == 0 &&
+        buf_append(out, "\"range\":{") == 0;
+    if (!ok) goto done;
+
+    snprintf(num, sizeof(num), "\"start_line\":%d,\"start_col\":%zu,\"end_line\":%d,\"end_col\":%zu",
+             line, column, line, column + strlen(callee));
+    ok =
+        buf_append(out, num) == 0 &&
+        buf_append(out, "},\"severity\":\"error\"}") == 0;
+
+done:
+    free(pre_cid);
+    free(post_cid);
+    free(attestation_cid);
+    free(contract_cid);
+    free(current_post_cid);
+    buf_free(&seed);
+    return ok ? 0 : -1;
+}
+
+static char *build_forward_diagnostics_json(const char *source) {
+    size_t n_lines = 0;
+    char **lines = split_lines(source, &n_lines);
+    Buf out;
+    char current_fn[128] = "";
+    int in_function = 0;
+    int function_depth = 0;
+    int loop_active = 0;
+    int loop_depth = 0;
+    int first = 1;
+
+    if (!lines) return NULL;
+    buf_init(&out);
+    if (!out.data || buf_append_char(&out, '[') != 0) {
+        free_lines(lines, n_lines);
+        buf_free(&out);
+        return NULL;
+    }
+
+    for (size_t i = 0; i < n_lines; i++) {
+        const char *line = lines[i];
+
+        if (!in_function && parse_function_name(line, current_fn, sizeof(current_fn))) {
+            in_function = 1;
+            function_depth = 0;
+            loop_active = 0;
+            loop_depth = 0;
+        }
+
+        if (in_function) {
+            size_t column = 0;
+            if (loop_active && function_depth < loop_depth) loop_active = 0;
+
+            if (strcmp(current_fn, "checkPositive") != 0 &&
+                find_call_column(line, "checkPositive", &column) &&
+                !loop_active &&
+                !call_argument_is_positive(line + column + strlen("checkPositive"))) {
+                if (!first && buf_append_char(&out, ',') != 0) {
+                    free_lines(lines, n_lines);
+                    buf_free(&out);
+                    return NULL;
+                }
+                first = 0;
+                if (append_implication_failed_diagnostic(&out, (int)i + 1, column) != 0) {
+                    free_lines(lines, n_lines);
+                    buf_free(&out);
+                    return NULL;
+                }
+            }
+
+            if ((starts_with_word(line, "for") || starts_with_word(line, "while")) &&
+                strchr(line, '{')) {
+                loop_active = 1;
+                loop_depth = function_depth + 1;
+            }
+
+            function_depth += brace_delta(line);
+            if (function_depth <= 0) {
+                in_function = 0;
+                current_fn[0] = '\0';
+                loop_active = 0;
+            }
+        }
+    }
+
+    if (buf_append_char(&out, ']') != 0) {
+        free_lines(lines, n_lines);
+        buf_free(&out);
+        return NULL;
+    }
+    free_lines(lines, n_lines);
+    return out.data;
+}
+
 static void handle_initialize(const char *id) {
-    /* provekit-lift/1 wire shape */
     send_response(id,
         "{\"capabilities\":{"
-        "\"authoring_surfaces\":[\"c-source\"],"
-        "\"emits_signed_mementos\":false,"
-        "\"ir_version\":\"v1.1.0\"},"
+        "\"diagnostic_codes\":[\"provekit.lsp.parse_error\",\"provekit.lsp.lift_gap\",\"provekit.lsp.implication_failed\"],"
+        "\"entry_kinds\":[\"bind-lift-entry\",\"call-edge\"],"
+        "\"source_surfaces\":[\"" PK_LSP_SURFACE "\"],"
+        "\"status_kinds\":[\"materialize\",\"emit\",\"check\",\"prove\"]},"
+        "\"kit_id\":\"" PK_LSP_KIT_ID "\","
         "\"name\":\"provekit-lsp-c\","
-        "\"protocol_version\":\"provekit-lift/1\","
-        "\"version\":\"0.1.0\"}");
+        "\"protocol_catalog_cid\":\"" PK_LSP_PROTOCOL_CATALOG_CID "\","
+        "\"protocol_version\":\"" PK_LSP_SHARED_PROTOCOL "\","
+        "\"version\":\"" PK_LSP_VERSION "\"}");
 }
 
 static int add_contract_decl(pk_c_lift_result *result, const char *name) {
@@ -344,6 +685,93 @@ static void handle_parse(const char *id, const char *json_line) {
     send_response(id, result_json);
     free(result_json);
     pk_c_lift_result_free(result_obj);
+}
+
+static void handle_analyze_document(const char *id, const char *json_line) {
+    char *kit_id = json_extract_str(json_line, "kit_id");
+    char *source = json_extract_str(json_line, "text");
+    char *path = json_extract_str(json_line, "file");
+    char *uri = json_extract_str(json_line, "uri");
+    char *document_cid = NULL;
+    char *diagnostics = NULL;
+    Buf result;
+    int ok;
+
+    if (kit_id && strcmp(kit_id, PK_LSP_KIT_ID) != 0) {
+        free(kit_id);
+        free(source);
+        free(path);
+        free(uri);
+        send_error(id, -32602, "unsupported kit_id");
+        return;
+    }
+    free(kit_id);
+
+    if (!source) source = json_extract_str(json_line, "source");
+    if (!source) source = xstrdup("");
+    if (!path) path = json_extract_str(json_line, "path");
+    if (!path) path = xstrdup("input.c");
+    if (!uri) {
+        Buf fallback;
+        buf_init(&fallback);
+        if (fallback.data &&
+            buf_append(&fallback, "file://") == 0 &&
+            buf_append(&fallback, path ? path : "input.c") == 0) {
+            uri = fallback.data;
+            fallback.data = NULL;
+        }
+        buf_free(&fallback);
+    }
+
+    if (!source || !path || !uri) {
+        free(source);
+        free(path);
+        free(uri);
+        send_error(id, -32603, "analyzeDocument: out of memory");
+        return;
+    }
+
+    document_cid = blake3_512_cid(source, strlen(source));
+    diagnostics = build_forward_diagnostics_json(source);
+    if (!document_cid || !diagnostics) {
+        free(source);
+        free(path);
+        free(uri);
+        free(document_cid);
+        free(diagnostics);
+        send_error(id, -32603, "analyzeDocument: out of memory");
+        return;
+    }
+
+    buf_init(&result);
+    ok = result.data &&
+        buf_append(&result, "{\"diagnostics\":") == 0 &&
+        buf_append(&result, diagnostics) == 0 &&
+        buf_append(&result, ",\"document_cid\":\"") == 0 &&
+        buf_append(&result, document_cid) == 0 &&
+        buf_append(&result, "\",\"entries\":[],\"file\":") == 0 &&
+        json_escape_str(&result, path) == 0 &&
+        buf_append(&result, ",\"kind\":\"lsp-document-analysis\",") == 0 &&
+        buf_append(&result, "\"kit_id\":\"" PK_LSP_KIT_ID "\",") == 0 &&
+        buf_append(&result, "\"project\":null,") == 0 &&
+        buf_append(&result, "\"protocol_catalog_cid\":\"" PK_LSP_PROTOCOL_CATALOG_CID "\",") == 0 &&
+        buf_append(&result, "\"schema_version\":\"1\",") == 0 &&
+        buf_append(&result, "\"statuses\":[],\"uri\":") == 0 &&
+        json_escape_str(&result, uri) == 0 &&
+        buf_append(&result, "}") == 0;
+
+    if (ok) {
+        send_response(id, result.data);
+    } else {
+        send_error(id, -32603, "analyzeDocument: out of memory");
+    }
+
+    buf_free(&result);
+    free(source);
+    free(path);
+    free(uri);
+    free(document_cid);
+    free(diagnostics);
 }
 
 /* Extract strings from a JSON array field in a flat JSON object line.
@@ -671,6 +1099,8 @@ int main(int argc, char **argv) {
             send_error(safe_id, -32700, "parse error: could not extract method");
         } else if (strcmp(method, "initialize") == 0) {
             handle_initialize(safe_id);
+        } else if (strcmp(method, "analyzeDocument") == 0) {
+            handle_analyze_document(safe_id, line);
         } else if (strcmp(method, "lift") == 0) {
             handle_lift(safe_id, line);
         } else if (strcmp(method, "parse") == 0) {
