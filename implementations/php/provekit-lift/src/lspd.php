@@ -83,7 +83,7 @@ class AnnotationScanner
                         'sourceContractCid' => 'pending-php:' . $funcName,
                         'targetContractCid' => null,
                         'targetSymbol' => $cid,
-                        'callSiteLocus' => ['file' => $path, 'line' => $i + 1, 'col' => 0],
+                        'callSiteLocus' => ['file' => $path, 'line' => $i + 1, 'column' => 0],
                         'evidenceTerm' => ['kind' => 'atomic', 'name' => 'true', 'args' => []],
                     ];
                 }
@@ -98,7 +98,7 @@ class AnnotationScanner
                         'sourceContractCid' => 'pending-php:' . $funcName,
                         'targetContractCid' => null,
                         'targetSymbol' => $target,
-                        'callSiteLocus' => ['file' => $path, 'line' => $i + 1, 'col' => 0],
+                        'callSiteLocus' => ['file' => $path, 'line' => $i + 1, 'column' => 0],
                         'evidenceTerm' => ['kind' => 'atomic', 'name' => 'true', 'args' => []],
                     ];
                 }
@@ -109,50 +109,127 @@ class AnnotationScanner
     }
 
     /**
-     * Walk function bodies for potential call expressions
-     * (emits call edges for same-kit and cross-kit resolution).
+     * Walk function bodies for same-kit PHP call expressions.
      */
     public static function walkCallEdges(string $source, string $path, array $decls): array
     {
-        $callEdges = [];
-
+        $declaredNames = [];
         foreach ($decls as $decl) {
-            if (($decl['kind'] ?? '') !== 'contract') continue;
-            $name = $decl['name'] ?? '';
-            if (!$name) continue;
+            if (($decl['kind'] ?? '') === 'contract' && !empty($decl['name'])) {
+                $declaredNames[$decl['name']] = true;
+            }
+        }
+        if ($declaredNames === []) {
+            return [];
+        }
 
-            // Find call expressions in the function body: `ClassName::method()`
-            // For same-kit: `$this->otherMethod()`
-            if (preg_match_all('/\$this->(\w+)\(/', $source, $matches)) {
-                foreach ($matches[1] as $called) {
-                    $callEdges[] = [
+        $tokens = token_get_all($source);
+        $callEdges = [];
+        $seen = [];
+        $line = 1;
+        $column = 0;
+        $braceDepth = 0;
+        $pendingFunction = null;
+        $functionStack = [];
+        $declarationNameIndexes = [];
+
+        for ($i = 0; $i < count($tokens); $i++) {
+            $token = $tokens[$i];
+            $text = self::tokenText($token);
+            $startLine = $line;
+            $startColumn = $column;
+
+            if (is_array($token) && $token[0] === T_FUNCTION) {
+                $nameIndex = self::nextNamedFunctionIndex($tokens, $i + 1);
+                if ($nameIndex !== null) {
+                    $pendingFunction = self::tokenText($tokens[$nameIndex]);
+                    $declarationNameIndexes[$nameIndex] = true;
+                }
+            } elseif ($text === '{') {
+                $braceDepth++;
+                if ($pendingFunction !== null) {
+                    $functionStack[] = ['name' => $pendingFunction, 'braceDepth' => $braceDepth];
+                    $pendingFunction = null;
+                }
+            } elseif ($text === '}') {
+                while ($functionStack !== [] && end($functionStack)['braceDepth'] === $braceDepth) {
+                    array_pop($functionStack);
+                }
+                $braceDepth = max(0, $braceDepth - 1);
+            } elseif (
+                is_array($token)
+                && $token[0] === T_STRING
+                && !isset($declarationNameIndexes[$i])
+                && $functionStack !== []
+            ) {
+                $callee = $text;
+                $nextIndex = self::nextNonTriviaIndex($tokens, $i + 1);
+                if (isset($declaredNames[$callee]) && $nextIndex !== null && self::tokenText($tokens[$nextIndex]) === '(') {
+                    $caller = end($functionStack)['name'];
+                    $edge = [
                         'kind' => 'call-edge',
-                        'sourceContractCid' => 'pending-php:' . $name,
+                        'sourceContractCid' => 'pending-php:' . $caller,
                         'targetContractCid' => null,
-                        'targetSymbol' => 'php:' . $called,
-                        'callSiteLocus' => ['file' => $path, 'line' => 0, 'col' => 0],
+                        'targetSymbol' => 'php-kit:' . $callee,
+                        'callSiteLocus' => ['file' => $path, 'line' => $startLine, 'column' => $startColumn],
                         'evidenceTerm' => ['kind' => 'atomic', 'name' => 'true', 'args' => []],
                     ];
+                    $key = $edge['sourceContractCid'] . '|' . $edge['targetSymbol'] . '|' . $startLine . '|' . $startColumn;
+                    if (!isset($seen[$key])) {
+                        $callEdges[] = $edge;
+                        $seen[$key] = true;
+                    }
                 }
             }
 
-            // Cross-kit: `C\function()` → cgo-like resolution
-            if (preg_match_all('/(?:new\s+)?(\w+)\s*\(/', $source, $matches)) {
-                foreach ($matches[1] as $called) {
-                    if (in_array(strtolower($called), ['if', 'for', 'while', 'function', 'return', 'echo', 'new', 'array', 'list'])) continue;
-                    $callEdges[] = [
-                        'kind' => 'call-edge',
-                        'sourceContractCid' => 'pending-php:' . $name,
-                        'targetContractCid' => null,
-                        'targetSymbol' => 'php:' . $called,
-                        'callSiteLocus' => ['file' => $path, 'line' => 0, 'col' => 0],
-                        'evidenceTerm' => ['kind' => 'atomic', 'name' => 'true', 'args' => []],
-                    ];
-                }
-            }
+            self::advancePosition($text, $line, $column);
         }
 
         return $callEdges;
+    }
+
+    private static function tokenText(mixed $token): string
+    {
+        return is_array($token) ? $token[1] : $token;
+    }
+
+    private static function nextNamedFunctionIndex(array $tokens, int $start): ?int
+    {
+        for ($i = $start; $i < count($tokens); $i++) {
+            $token = $tokens[$i];
+            if (self::isTrivia($token) || self::tokenText($token) === '&') {
+                continue;
+            }
+            return is_array($token) && $token[0] === T_STRING ? $i : null;
+        }
+        return null;
+    }
+
+    private static function nextNonTriviaIndex(array $tokens, int $start): ?int
+    {
+        for ($i = $start; $i < count($tokens); $i++) {
+            if (!self::isTrivia($tokens[$i])) {
+                return $i;
+            }
+        }
+        return null;
+    }
+
+    private static function isTrivia(mixed $token): bool
+    {
+        return is_array($token) && in_array($token[0], [T_WHITESPACE, T_COMMENT, T_DOC_COMMENT], true);
+    }
+
+    private static function advancePosition(string $text, int &$line, int &$column): void
+    {
+        for ($i = 0; $i < strlen($text); $i++) {
+            if ($text[$i] === "\n") {
+                $line++;
+                $column = 0;
+            } else {
+                $column++;
+            }
+        }
     }
 }
 

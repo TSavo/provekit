@@ -10,7 +10,7 @@
 //
 // Lifting strategy for parseFile:
 //   For `rust` sources: call `provekit_lift::lift_path` in-process (fast).
-//   For `go`, `csharp`, `ruby`, `java`, `swift`, `ts`, `cpp`, `c`, `zig`:
+//   For `go`, `csharp`, `ruby`, `java`, `swift`, `ts`, `cpp`, `c`, `zig`, `php`:
 //     spawn the kit's LSP plugin binary, send a JSON-RPC `parse` request,
 //     read the `{declarations, callEdges}` response, and map into
 //     `LinkerContract`/`LinkerCallEdge` (see `spawn_kit_lifter`).
@@ -29,6 +29,8 @@
 //     Binary built via `g++ -std=c++17 -o provekit-lsp-cpp main.cpp`.
 //   For `c`: spawn `provekit-lsp-c --rpc` (requires --rpc flag).
 //     Binary built via `cc -std=c11 -o provekit-lsp-c main.c`.
+//   For `php`: spawn `provekit-lsp-php` (no args: reads stdin directly).
+//     Binary is installed from implementations/php/bin.
 //
 // Binary discovery order (for subprocess kits):
 //   1. Check PATH for the named binary.
@@ -252,6 +254,7 @@ enum LiftError {
 /// - `ts`: subprocess `provekit-lsp-ts` (no args), method `parse`.
 /// - `cpp`: subprocess `provekit-lsp-cpp` (no args), method `parse`.
 /// - `c`: subprocess `provekit-lsp-c --rpc`, method `parse`.
+/// - `php`: subprocess `provekit-lsp-php` (no args), method `parse`.
 async fn lift_source(
     kit_id: &str,
     file: &str,
@@ -386,8 +389,20 @@ async fn lift_source(
             spawn_kit_lifter(&binary, &["--rpc"], file, source, "c-kit").await
         }
 
+        "php" => {
+            let binary = find_binary("provekit-lsp-php").ok_or_else(|| {
+                LiftError::LifterUnavailable(
+                    "kit 'php' binary not found on PATH; install via: \
+                     cd implementations/php && composer install && \
+                     cp bin/provekit-lsp-php ~/.local/bin/"
+                        .to_string(),
+                )
+            })?;
+            spawn_kit_lifter(&binary, &[], file, source, "php-kit").await
+        }
+
         other => Err(LiftError::KitNotInManifest(format!(
-            "unknown kitId '{other}'; valid kits: rust, go, cpp, csharp, python, ruby, swift, ts, zig, java, c"
+            "unknown kitId '{other}'; valid kits: rust, go, cpp, csharp, python, ruby, swift, ts, zig, java, c, php"
         ))),
     }
 }
