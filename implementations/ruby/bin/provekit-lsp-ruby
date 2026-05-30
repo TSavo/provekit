@@ -42,6 +42,50 @@ def err(id, code, message)
   $stdout.flush
 end
 
+def same_kit_call_edges(source, path, decls)
+  contract_names = decls
+    .select { |decl| decl.is_a?(ContractDecl) && decl.name && !decl.name.empty? }
+    .map(&:name)
+    .to_set
+  return [] if contract_names.empty?
+
+  begin
+    root = RubyVM::AbstractSyntaxTree.parse(source)
+  rescue SyntaxError, ArgumentError
+    return []
+  end
+
+  ranges = Provekit::Lift::FfiResolver.function_ranges(root)
+  seen = {}
+  edges = []
+
+  Provekit::Lift::FfiResolver.collect_nodes(root, :FCALL, :VCALL).each do |call_node|
+    callee = call_node.children.first.to_s
+    next unless contract_names.include?(callee)
+
+    line = call_node.first_lineno
+    column = call_node.first_column
+    caller = Provekit::Lift::FfiResolver.enclosing_function_name(ranges, line)
+    next unless caller && contract_names.include?(caller)
+
+    key = [caller, callee, line, column]
+    next if seen[key]
+    seen[key] = true
+
+    edges << CallEdgeDecl.new(
+      source_contract_cid: "pending-ruby:#{caller}",
+      target_contract_cid: nil,
+      target_symbol: "ruby-kit:#{callee}",
+      call_site_file: path,
+      call_site_line: line,
+      call_site_column: column,
+      evidence_term: Provekit::IR.atomic("call-site-obligation", Provekit::IR.var(name: caller)),
+    )
+  end
+
+  edges
+end
+
 ARGV.include?("--rpc") || (warn "Usage: provekit-lsp-ruby --rpc"; exit 1)
 
 STDIN.each_line do |line|
@@ -170,7 +214,8 @@ STDIN.each_line do |line|
     # Emit call-edge stream per spec #114 R1.
     # Walk source for FFI call sites (Fiddle + ffi gem patterns).
     ffi_result = Provekit::Lift::FfiResolver.resolve(source, path: path)
-    edges_json = ffi_result.call_edges.empty? ? "[]" : Provekit::IR.marshal_call_edges(ffi_result.call_edges)
+    call_edges = ffi_result.call_edges + same_kit_call_edges(source, path, decls)
+    edges_json = call_edges.empty? ? "[]" : Provekit::IR.marshal_call_edges(call_edges)
 
     respond id, {
       declarations: JSON.parse(jcs),

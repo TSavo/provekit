@@ -28,6 +28,18 @@ class TestDaemonProtocol < Minitest::Test
     end
   RUBY
 
+  FFI_FIXTURE_SOURCE = <<~RUBY.freeze
+    module RustBindings
+      extend FFI::Library
+      ffi_lib 'librust_callee'
+      attach_function :process, [:int], :int
+    end
+    # provekit: contract
+    def caller_fn(value)
+      RustBindings.process(value)
+    end
+  RUBY
+
   FIXTURE_PATH = "test_fixture.rb".freeze
 
   # Build the NDJSON session input for initialize -> parse -> shutdown.
@@ -139,6 +151,53 @@ class TestDaemonProtocol < Minitest::Test
     assert parse_resp, "Expected id 2 not found. Available ids: #{responses.map { |r| r['id'] }}"
     assert_instance_of Array, parse_resp["result"]["callEdges"],
                        "callEdges should be Array, not #{parse_resp["result"]["callEdges"].class}"
+  end
+
+  def test_parse_call_edges_use_canonical_call_site_locus
+    responses = run_lsp(build_session(source: FFI_FIXTURE_SOURCE, path: "ffi_fixture.rb"))
+    parse_resp = responses.find { |r| r["id"] == 2 }
+    assert parse_resp, "Expected id 2 not found. Available ids: #{responses.map { |r| r['id'] }}"
+    refute_includes parse_resp, "error",
+                    "parse returned error: #{parse_resp.inspect}"
+
+    edges = parse_resp["result"]["callEdges"]
+    assert_equal 1, edges.length, "expected one FFI call edge, got: #{edges.inspect}"
+    edge = edges.first
+    locus = edge["callSiteLocus"]
+
+    assert_instance_of Hash, locus, "call edge must include nested callSiteLocus: #{edge.inspect}"
+    assert_equal "ffi_fixture.rb", locus["file"]
+    assert_operator locus["line"], :>, 0
+    assert_operator locus["column"], :>=, 0
+    assert_equal "pending-ruby:caller_fn", edge["sourceContractCid"]
+    refute edge.key?("callSiteFile"), "legacy flat callSiteFile must not be emitted"
+    refute edge.key?("callSiteLine"), "legacy flat callSiteLine must not be emitted"
+    refute edge.key?("callSiteColumn"), "legacy flat callSiteColumn must not be emitted"
+  end
+
+  def test_parse_emits_same_language_call_edge_locus
+    source = <<~RUBY
+      # provekit: contract
+      def add(value)
+        value
+      end
+      # provekit: contract
+      def compute(value)
+        add(value)
+      end
+    RUBY
+    responses = run_lsp(build_session(source: source, path: "fixture.rb"))
+    parse_resp = responses.find { |r| r["id"] == 2 }
+    assert parse_resp, "Expected id 2 not found. Available ids: #{responses.map { |r| r['id'] }}"
+    refute_includes parse_resp, "error",
+                    "parse returned error: #{parse_resp.inspect}"
+
+    edges = parse_resp["result"]["callEdges"]
+    assert edges.any? { |edge|
+      edge["sourceContractCid"] == "pending-ruby:compute" &&
+        edge["targetSymbol"] == "ruby-kit:add" &&
+        edge["callSiteLocus"] == { "column" => 2, "file" => "fixture.rb", "line" => 7 }
+    }, "expected compute -> ruby-kit:add call edge, got: #{edges.inspect}"
   end
 
   def test_declarations_contain_contracts

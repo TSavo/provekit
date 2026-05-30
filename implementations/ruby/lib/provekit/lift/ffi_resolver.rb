@@ -316,6 +316,26 @@ module Provekit
         results
       end
 
+      def self.function_ranges(root)
+        collect_nodes(root, :DEF, :DEFN, :DEFS).map do |def_node|
+          name = def_node.children.first.to_s
+          first_line = def_node.first_lineno
+          last_line = if def_node.respond_to?(:last_lineno)
+                        def_node.last_lineno
+                      else
+                        first_line
+                      end
+          [name, first_line, last_line || first_line]
+        end
+      end
+
+      def self.enclosing_function_name(ranges, line)
+        ranges
+          .select { |_name, first_line, last_line| line >= first_line && line <= last_line }
+          .max_by { |_name, first_line, _last_line| first_line }
+          &.first
+      end
+
       # ── Public API ────────────────────────────────────────────────────────
 
       FfiResolverResult = Struct.new(:call_edges, :linker_errors, keyword_init: true)
@@ -343,6 +363,7 @@ module Provekit
         return FfiResolverResult.new(call_edges: [], linker_errors: []) if bindings.empty?
 
         call_sites = scan_call_sites(root, bindings)
+        ranges = function_ranges(root)
 
         call_edges    = []
         linker_errors = []
@@ -365,8 +386,16 @@ module Provekit
             }
           else
             target_symbol = "#{b.kit}:#{b.native_name}"
+            caller_name = enclosing_function_name(ranges, line)
+            source_contract_cid =
+              if caller_name && contract_index[caller_name]
+                contract_index[caller_name]
+              elsif caller_name
+                "pending-ruby:#{caller_name}"
+              end
+
             call_edges << IR::CallEdgeDecl.new(
-              source_contract_cid: nil,
+              source_contract_cid: source_contract_cid,
               target_contract_cid: nil,
               target_symbol: target_symbol,
               call_site_file: path,

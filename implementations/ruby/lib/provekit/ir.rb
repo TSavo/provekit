@@ -227,9 +227,11 @@ module Provekit
       end
       arr = sorted.map do |e|
         obj = {
-          callSiteColumn: e.call_site_column,
-          callSiteFile:   e.call_site_file,
-          callSiteLine:   e.call_site_line,
+          callSiteLocus:  {
+            column: e.call_site_column,
+            file:   e.call_site_file,
+            line:   e.call_site_line,
+          },
           evidenceTerm:   e.evidence_term,
           kind:           "call-edge",
           schemaVersion:  "1",
