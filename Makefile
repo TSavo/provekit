@@ -11,8 +11,8 @@
 #   make help: print this help
 #   make ci: Linux-profile gate (catalog + protocol + live mints + tests)
 #   make conformance: catalog + protocol + live mint CIDs + self-contract tests
-#   make cross-language-proof-parity: Java/Go/Python/Rust emit + materialize + recognize + prove gate,
-#                                      plus TypeScript/Zig/Scala parity lanes
+#   make cross-language-proof-parity: Java/Go/Python/Rust emit + materialize + recognize + prove gate
+#   make cross-language-proof-parity-extra: opt-in TypeScript/Zig/Scala/Swift parity lanes
 #   make all-mint: run all 11 Linux-profile mint commands; print CIDs
 #   make bootstrap-self-contracts: re-sign attestations from live artifacts
 #   make test-all: run the Linux native test aggregate
@@ -88,8 +88,9 @@ help:
 	@echo "  make ci             Linux-profile gate (conformance + test-all)"
 	@echo "  make conformance    catalog + protocol + 11 mint CIDs + self-contract tests"
 	@echo "  make cross-language-proof-parity"
-	@echo "                       Java/Go/Python/Rust emit + materialize + prove gate"
-	@echo "                       plus TypeScript/Zig/Scala parity lanes"
+	@echo "                       Java/Go/Python/Rust emit + materialize + recognize + prove gate"
+	@echo "  make cross-language-proof-parity-extra"
+	@echo "                       opt-in TypeScript/Zig/Scala/Swift parity lanes"
 	@echo "  make all-mint       11 mint commands (Swift excluded: macOS-only, use mint-swift)"
 	@echo "  make bug-zoo        replay executable bug specimens through source-routed CLI"
 	@echo "  make bootstrap-self-contracts"
@@ -677,9 +678,13 @@ cross-language-proof-parity-python-env:
 		-e implementations/python/provekit-realize-python-core \
 		-e implementations/python/provekit-realize-python-requests
 
+.PHONY: check-cross-language-proof-parity-scope
+check-cross-language-proof-parity-scope:
+	tools/check-cross-language-proof-parity-scope.sh
+
 .PHONY: cross-language-proof-parity
-cross-language-proof-parity: build-java build-ts build-zig build-scala cross-language-proof-parity-python-env
-	@echo "=== Cross-language proof parity: emit/materialize/recognize/prove lanes for Java, Go, Python, Rust, TypeScript, Zig, Scala ==="
+cross-language-proof-parity: build-java cross-language-proof-parity-python-env
+	@echo "=== Cross-language proof parity: emit/materialize/recognize/prove lanes for Java, Go, Python, Rust ==="
 	cargo build --manifest-path implementations/rust/Cargo.toml \
 		-p provekit-realize-rust-core --bin provekit-realize-rust
 	@echo "--- emit parity ---"
@@ -701,12 +706,6 @@ cross-language-proof-parity: build-java build-ts build-zig build-scala cross-lan
 	cargo test --release --manifest-path implementations/rust/Cargo.toml \
 		-p provekit-cli --test cmd_emit_rust_cargo_test \
 		emit_rust_cargo_test_dispatches_real_emitter_and_cargo_checks_output
-	cargo test --release --manifest-path implementations/rust/Cargo.toml \
-		-p provekit-cli --test cmd_emit_typescript_vitest \
-		emit_typescript_vitest_dispatches_real_emitter_and_vitest_checks_output
-	cargo test --release --manifest-path implementations/rust/Cargo.toml \
-		-p provekit-cli --test cmd_emit_scala_scalatest \
-		emit_scala_scalatest_dispatches_real_emitter_and_scala_cli_checks_output
 	@echo "--- materialize parity ---"
 	cargo test --release --manifest-path implementations/rust/Cargo.toml \
 		-p provekit-cli --test cmd_materialize_proof_load \
@@ -714,9 +713,21 @@ cross-language-proof-parity: build-java build-ts build-zig build-scala cross-lan
 	cargo test --release --manifest-path implementations/rust/Cargo.toml \
 		-p provekit-cli --test go_realize_materialize \
 		go_materialize_uses_checked_in_go_double_realize_registration
+	cargo test --release --manifest-path implementations/rust/Cargo.toml \
+		-p provekit-cli --test go_realize_materialize \
+		go_materialize_uses_body_template_from_go_module_proof
+	cargo test --release --manifest-path implementations/rust/Cargo.toml \
+		-p provekit-cli --test go_realize_materialize \
+		go_dependency_proofs_are_resolved_by_configured_go_kit
 	PATH=$(PARITY_PYTHON_BIN):$(PATH) cargo test --release --manifest-path implementations/rust/Cargo.toml \
 		-p provekit-cli --test cmd_materialize_integration \
 		materialize_python_uses_checked_in_python_double_realize_registration
+	PATH=$(PARITY_PYTHON_BIN):$(PATH) cargo test --release --manifest-path implementations/rust/Cargo.toml \
+		-p provekit-cli --test cmd_materialize_integration \
+		materialize_python_requests_example_uses_python_library_shim
+	$(PARITY_PYTHON) -m pytest \
+		implementations/python/provekit-realize-python-requests/tests/test_rpc.py \
+		-q -k test_resolve_dependency_proofs_returns_distribution_proof_bytes
 	cargo test --release --manifest-path implementations/rust/Cargo.toml \
 		-p provekit-cli --test cmd_materialize_integration \
 		materialize_out_dir_writes_materialized_copy_and_leaves_source_unchanged
@@ -741,14 +752,6 @@ cross-language-proof-parity: build-java build-ts build-zig build-scala cross-lan
 	cargo test --release --manifest-path implementations/rust/Cargo.toml \
 		-p provekit-walk --bin provekit-walk-rpc \
 		recognize -- --nocapture
-	pnpm vitest run implementations/typescript/src/lift/typescript-source/index.test.ts
-	if command -v swift >/dev/null 2>&1; then \
-		make test-swift-source-lift; \
-	else \
-		echo "swift not found; skipping Linux Swift parity (covered by macOS swift gate)"; \
-	fi
-	(cd implementations/zig/provekit-lift-zig-source && zig build test)
-	$(SCALA_CLI) test implementations/scala/provekit-lift-scala-source --server=false
 	@echo "--- prove parity ---"
 	cargo test --release --manifest-path implementations/rust/Cargo.toml \
 		-p provekit-cli --test cmd_verify_java_production_bridge \
@@ -762,15 +765,6 @@ cross-language-proof-parity: build-java build-ts build-zig build-scala cross-lan
 	cargo test --release --manifest-path implementations/rust/Cargo.toml \
 		-p provekit-cli --test cmd_verify_rust_production_bridge \
 		rust_production_path_double_discharges_and_mints_witness
-	cargo test --release --manifest-path implementations/rust/Cargo.toml \
-		-p provekit-cli --test cmd_verify_typescript_production_bridge \
-		typescript_production_path_double_discharges_and_mints_witness
-	cargo test --release --manifest-path implementations/rust/Cargo.toml \
-		-p provekit-cli --test cmd_verify_zig_production_bridge \
-		zig_production_path_double_discharges_and_mints_witness
-	cargo test --release --manifest-path implementations/rust/Cargo.toml \
-		-p provekit-cli --test cmd_verify_scala_production_bridge \
-		scala_production_path_double_discharges_and_mints_witness
 	@echo "--- contradiction parity ---"
 	cargo test --release --manifest-path implementations/rust/Cargo.toml \
 		-p provekit-cli --test cmd_verify_java_production_bridge \
@@ -784,6 +778,38 @@ cross-language-proof-parity: build-java build-ts build-zig build-scala cross-lan
 	cargo test --release --manifest-path implementations/rust/Cargo.toml \
 		-p provekit-cli --test cmd_verify_rust_production_bridge \
 		rust_production_path_refuses_planted_contradictory_implication
+	@echo "==== cross-language-proof-parity: PASS ===="
+
+.PHONY: cross-language-proof-parity-extra
+cross-language-proof-parity-extra: build-ts build-zig build-scala
+	@echo "=== Extra proof parity lanes: TypeScript, Zig, Scala, Swift recognizer ==="
+	@echo "--- extra emit parity ---"
+	cargo test --release --manifest-path implementations/rust/Cargo.toml \
+		-p provekit-cli --test cmd_emit_typescript_vitest \
+		emit_typescript_vitest_dispatches_real_emitter_and_vitest_checks_output
+	cargo test --release --manifest-path implementations/rust/Cargo.toml \
+		-p provekit-cli --test cmd_emit_scala_scalatest \
+		emit_scala_scalatest_dispatches_real_emitter_and_scala_cli_checks_output
+	@echo "--- extra recognizer parity ---"
+	pnpm vitest run implementations/typescript/src/lift/typescript-source/index.test.ts
+	if command -v swift >/dev/null 2>&1; then \
+		make test-swift-source-lift; \
+	else \
+		echo "swift not found; skipping Linux Swift parity (covered by macOS swift gate)"; \
+	fi
+	(cd implementations/zig/provekit-lift-zig-source && zig build test)
+	$(SCALA_CLI) test implementations/scala/provekit-lift-scala-source --server=false
+	@echo "--- extra prove parity ---"
+	cargo test --release --manifest-path implementations/rust/Cargo.toml \
+		-p provekit-cli --test cmd_verify_typescript_production_bridge \
+		typescript_production_path_double_discharges_and_mints_witness
+	cargo test --release --manifest-path implementations/rust/Cargo.toml \
+		-p provekit-cli --test cmd_verify_zig_production_bridge \
+		zig_production_path_double_discharges_and_mints_witness
+	cargo test --release --manifest-path implementations/rust/Cargo.toml \
+		-p provekit-cli --test cmd_verify_scala_production_bridge \
+		scala_production_path_double_discharges_and_mints_witness
+	@echo "--- extra contradiction parity ---"
 	cargo test --release --manifest-path implementations/rust/Cargo.toml \
 		-p provekit-cli --test cmd_verify_typescript_production_bridge \
 		typescript_production_path_refuses_planted_contradictory_implication
@@ -793,7 +819,10 @@ cross-language-proof-parity: build-java build-ts build-zig build-scala cross-lan
 	cargo test --release --manifest-path implementations/rust/Cargo.toml \
 		-p provekit-cli --test cmd_verify_scala_production_bridge \
 		scala_production_path_refuses_planted_contradictory_implication
-	@echo "==== cross-language-proof-parity: PASS ===="
+	@echo "==== cross-language-proof-parity-extra: PASS ===="
+
+.PHONY: cross-language-proof-parity-all
+cross-language-proof-parity-all: cross-language-proof-parity cross-language-proof-parity-extra
 
 .PHONY: bootstrap-self-contracts
 bootstrap-self-contracts:
@@ -1017,7 +1046,7 @@ test-all:
 # --- CI alias ----------------------------------------------------------------
 
 .PHONY: ci
-ci: conformance cross-language-proof-parity test-all
+ci: check-cross-language-proof-parity-scope conformance cross-language-proof-parity test-all
 	@echo ""
 	@echo "==== ci: PASS ===="
 
