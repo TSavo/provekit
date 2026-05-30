@@ -29,6 +29,9 @@ tokio = { version = "1", features = ["rt-multi-thread", "net", "io-util", "time"
 tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 anyhow = "1"
+# Walk the workspace .rs tree to fold cross-file source state into the
+# resolution-context cache key (see resolve_cache::resolution_context_cid).
+walkdir = { workspace = true }
 
 [target.'cfg(unix)'.dependencies]
 libc = "0.2"

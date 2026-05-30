@@ -61,7 +61,17 @@ pub struct RaOracle {
     reader_handle: Option<JoinHandle<()>>,
     root: PathBuf,
     next_id: i64,
-    opened: std::collections::HashSet<PathBuf>,
+    /// Files this session has opened in rust-analyzer, mapped to the
+    /// `(content_hash, lsp_version)` they were last synced at. A RESIDENT
+    /// session outlives edits to the workspace, so didOpen-once is unsound: if
+    /// a file changes on disk between mints, RA would keep answering against the
+    /// STALE text it first opened, and that wrong answer could be cached under
+    /// the file's NEW content hash (a wrong edge on edit). Tracking the synced
+    /// content hash lets `ensure_open` send a `textDocument/didChange` with the
+    /// fresh text and a bumped version whenever the on-disk bytes differ, so RA
+    /// always resolves against the current source. (The old per-mint cold-spawn
+    /// path was immune because every mint got a brand-new RA process.)
+    opened: std::collections::HashMap<PathBuf, (u64, i64)>,
 }
 
 /// How long to wait for rust-analyzer to finish loading the workspace before
@@ -138,7 +148,7 @@ impl RaOracle {
             reader_handle: Some(reader_handle),
             root: workspace_root.to_path_buf(),
             next_id: 0,
-            opened: std::collections::HashSet::new(),
+            opened: std::collections::HashMap::new(),
         };
         debug!("oracle: sending LSP initialize handshake");
         let quiesced = match oracle.initialize() {
@@ -354,25 +364,55 @@ impl RaOracle {
         }
     }
 
+    /// Ensure rust-analyzer has the CURRENT on-disk content of `abs_path` open.
+    ///
+    /// First sight of the file: `textDocument/didOpen` at version 1. A later
+    /// call after the file changed on disk: `textDocument/didChange` (full
+    /// replace) at a bumped version, so a RESIDENT session never answers against
+    /// stale text. Unchanged content is a no-op. The content hash is the cheap
+    /// discriminator; on a change we resync before any query so the resolution
+    /// (and anything cached from it) reflects the new source.
     fn ensure_open(&mut self, abs_path: &Path) -> Option<()> {
-        if self.opened.contains(abs_path) {
-            return Some(());
-        }
         let text = std::fs::read_to_string(abs_path).ok()?;
+        let hash = content_hash(text.as_bytes());
         let uri = path_to_uri(abs_path);
-        self.send_notification(
-            "textDocument/didOpen",
-            json!({
-                "textDocument": {
-                    "uri": uri,
-                    "languageId": "rust",
-                    "version": 1,
-                    "text": text,
-                }
-            }),
-        );
-        self.opened.insert(abs_path.to_path_buf());
-        Some(())
+
+        match self.opened.get(abs_path).copied() {
+            Some((prev_hash, _)) if prev_hash == hash => {
+                // Already open with identical content: nothing to sync.
+                Some(())
+            }
+            Some((_, prev_version)) => {
+                // Open but content changed on disk: resync via didChange (full
+                // document replace) at a bumped version.
+                let version = prev_version + 1;
+                self.send_notification(
+                    "textDocument/didChange",
+                    json!({
+                        "textDocument": { "uri": uri, "version": version },
+                        "contentChanges": [ { "text": text } ],
+                    }),
+                );
+                self.opened.insert(abs_path.to_path_buf(), (hash, version));
+                Some(())
+            }
+            None => {
+                // First sight: didOpen at version 1.
+                self.send_notification(
+                    "textDocument/didOpen",
+                    json!({
+                        "textDocument": {
+                            "uri": uri,
+                            "languageId": "rust",
+                            "version": 1,
+                            "text": text,
+                        }
+                    }),
+                );
+                self.opened.insert(abs_path.to_path_buf(), (hash, 1));
+                Some(())
+            }
+        }
     }
 
     /// Resolve one query to a definitive crate, or `None` (refuse).
@@ -755,6 +795,16 @@ pub fn normalize_crate(krate: &str) -> String {
         "core" | "alloc" | "std" | "proc_macro" => "std".to_string(),
         other => other.replace('-', "_"),
     }
+}
+
+/// Cheap content hash for in-session change detection (didOpen vs didChange).
+/// Not content-addressing: it only needs to be stable within one process run to
+/// notice that a file's on-disk bytes differ from what RA currently has open.
+fn content_hash(bytes: &[u8]) -> u64 {
+    use std::hash::{Hash, Hasher};
+    let mut h = std::collections::hash_map::DefaultHasher::new();
+    bytes.hash(&mut h);
+    h.finish()
 }
 
 /// Build the file:// URI for an absolute path (LSP wants forward-slash URIs).

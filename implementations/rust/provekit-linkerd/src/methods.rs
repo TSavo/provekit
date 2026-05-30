@@ -353,7 +353,10 @@ pub async fn handle_resolve_receiver_crate(
             .push((line as u32, col as u32));
     }
 
-    let dep_cid = crate::resolve_cache::dep_set_cid(&workspace_root);
+    // Second key component: everything the resolution depends on beyond each
+    // file's own bytes (dependency lock + the whole workspace .rs tree, so
+    // cross-file type flow cannot produce a stale hit). Computed once per request.
+    let dep_cid = crate::resolve_cache::resolution_context_cid(&workspace_root);
 
     let mut resolved: serde_json::Map<String, Json> = serde_json::Map::new();
     // A file that misses the cache and needs RA goes here; we consult the

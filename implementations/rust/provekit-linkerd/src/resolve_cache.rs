@@ -6,18 +6,34 @@
 // resolution cache with dependency-set granularity), serving #1707.
 //
 // THE INSIGHT (ProvekIt-native, "if you can't content-address it, it doesn't
-// belong"): resolving a method-call position in a file to a crate is
-// DETERMINISTIC given the file's content plus the dependency set. So it is
-// content-addressable. A warm rust-analyzer alone still pays the ~260s index on
-// every COLD daemon start; a content-addressed cache persisted to disk skips
-// rust-analyzer ENTIRELY on unchanged inputs, even from a fresh daemon process.
+// belong"): resolving a method-call position to a crate is DETERMINISTIC given
+// the resolver's full INPUT, so it is content-addressable. A warm rust-analyzer
+// alone still pays the workspace index on every COLD daemon start; a
+// content-addressed cache persisted to disk skips rust-analyzer ENTIRELY when
+// that input is unchanged, even from a fresh daemon process.
 //
-// KEY (#1705): `(blake3(file_content), depSetCid)`. The workspace root scopes
-// the on-disk file. The file-content hash makes editing one file invalidate
-// ONLY that file's entries (#1706 per-file granularity), never the workspace.
-// The dep-set CID (blake3 of Cargo.lock for the MVP) invalidates every file when
-// the dependency graph changes, because a re-export or version bump can move a
-// callee to a different crate.
+// KEY (#1705): `(blake3(file_content), resolutionContextCid)`.
+//
+// HONESTY ABOUT THE INPUT (this is the subtle part, supra omnia rectum). A
+// position's resolution is NOT a pure function of (this file's bytes + the
+// dependency lock). Rust type inference flows ACROSS files: `let c =
+// open_conn(); c.query()` resolves `query` against the type `open_conn` returns,
+// which is declared in ANOTHER file. If that other file changes (e.g. the
+// connection switches sqlite -> postgres, both registry crates), THIS file's
+// bytes and Cargo.lock are unchanged, yet the correct resolution changed. Keying
+// on this file alone would then serve a STALE hit and emit a wrong bridge: the
+// exact cross-library confusion ProvekIt exists to prevent. So a per-file key is
+// UNSOUND on its own.
+//
+// We therefore fold the WHOLE in-workspace source tree into
+// `resolutionContextCid` (blake3 of Cargo.lock plus the sorted hashes of every
+// workspace `.rs` file). Any in-workspace edit changes the context CID and
+// invalidates every file's entry. This is deliberately CONSERVATIVE: it
+// over-invalidates (an edit to an unrelated file also drops the cache) in
+// exchange for soundness (a hit can never reflect stale cross-file type flow).
+// A wrong key only ever causes a MISS (re-ask the warm RA), never a wrong HIT.
+// A precise dependency-set-per-file key (#1706's finest granularity) is a future
+// refinement; the conservative tree hash is the sound MVP.
 //
 // VALUE: the COMPLETE resolution map for that file from one QUIESCENT pass:
 // `{ "<line>:<col>": "<crate>" }`. A position that was resolved appears with its
@@ -110,28 +126,75 @@ impl ResolveCache {
     }
 }
 
-/// Compute the dependency-set CID for a workspace.
+/// Compute the resolution-context CID: the SECOND key component, capturing every
+/// input a position's resolution depends on BEYOND its own file's bytes.
 ///
-/// MVP simplification (documented): blake3 of `Cargo.lock`. The lock file pins
-/// every resolved dependency version, so it invalidates correctly when a dep is
-/// added/removed/bumped, which is exactly when a callee could move to a
-/// different crate. Falls back to a fixed sentinel when no lock file exists
-/// (a workspace with no resolved deps): resolution then depends on content
-/// alone, which is sound for a std-only crate. A richer key (the cargo metadata
-/// graph CID) is a future refinement; the cache stays correct either way
-/// because a wrong key only causes a MISS (re-ask RA), never a wrong hit.
-pub fn dep_set_cid(workspace_root: &Path) -> String {
-    // Search the workspace root and its ancestors for a Cargo.lock (cargo
-    // workspaces keep one lock at the workspace root above member crates).
+/// It folds two things, in this order:
+///   1. The dependency lock (`Cargo.lock`): a re-export or version bump can move
+///      a callee to a different crate, so a dep change must invalidate.
+///   2. A hash of the WHOLE in-workspace `.rs` source tree: rust type inference
+///      flows across files (a receiver's type can be declared in another file),
+///      so an edit to ANY workspace file can change THIS file's correct
+///      resolution. Folding the tree makes any in-workspace edit invalidate
+///      every entry. This is deliberately CONSERVATIVE (over-invalidates) to be
+///      SOUND: a hit can never reflect stale cross-file type flow. A wrong key
+///      only ever causes a MISS (re-ask the warm RA), never a wrong HIT.
+///
+/// Files are visited in sorted path order so the fold is deterministic. The walk
+/// is bounded to `.rs` files and skips `target/` and dotted dirs (build output /
+/// VCS are not resolver inputs). A missing Cargo.lock contributes a sentinel:
+/// resolution then depends on the source tree alone, sound for a std-only crate.
+pub fn resolution_context_cid(workspace_root: &Path) -> String {
+    use walkdir::WalkDir;
+
+    // 1. Dependency lock (search root + ancestors: a cargo workspace keeps one
+    //    lock at the workspace root above member crates).
+    let mut lock_bytes: Vec<u8> = b"no-cargo-lock".to_vec();
     let mut dir = Some(workspace_root);
     while let Some(d) = dir {
         let lock = d.join("Cargo.lock");
         if let Ok(bytes) = std::fs::read(&lock) {
-            return blake3_512_of(&bytes);
+            lock_bytes = bytes;
+            break;
         }
         dir = d.parent();
     }
-    "no-cargo-lock".to_string()
+
+    // 2. Sorted per-file content hashes of the workspace `.rs` tree.
+    let mut file_hashes: Vec<(String, String)> = Vec::new();
+    for entry in WalkDir::new(workspace_root)
+        .into_iter()
+        .filter_entry(|e| {
+            // Skip target/ and dotted dirs (build output, VCS): not resolver
+            // inputs, and target/ can be huge.
+            let name = e.file_name().to_string_lossy();
+            !(e.file_type().is_dir() && (name == "target" || name.starts_with('.')))
+        })
+        .filter_map(Result::ok)
+    {
+        if entry.file_type().is_file()
+            && entry.path().extension().and_then(|s| s.to_str()) == Some("rs")
+        {
+            if let Ok(bytes) = std::fs::read(entry.path()) {
+                file_hashes.push((
+                    entry.path().to_string_lossy().into_owned(),
+                    blake3_512_of(&bytes),
+                ));
+            }
+        }
+    }
+    file_hashes.sort();
+
+    // Fold lock + sorted (path, content-hash) pairs into one CID.
+    let mut acc = String::new();
+    acc.push_str(&blake3_512_of(&lock_bytes));
+    for (path, hash) in &file_hashes {
+        acc.push('\n');
+        acc.push_str(path);
+        acc.push('\0');
+        acc.push_str(hash);
+    }
+    blake3_512_of(acc.as_bytes())
 }
 
 #[cfg(test)]
