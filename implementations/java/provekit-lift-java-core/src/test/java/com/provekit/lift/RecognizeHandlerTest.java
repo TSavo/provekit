@@ -147,6 +147,72 @@ class RecognizeHandlerTest {
         assertTrue(concepts.contains("concept:sql-query"), concepts.toString());
     }
 
+    @Test
+    void recognizeSelfResolvesJavaSugarTemplatesWithoutBindingTemplates() throws Exception {
+        Path root = Files.createTempDirectory("recognize-java-self-templates");
+        String shimRel = "src/main/java/com/example/Shim.java";
+        write(root, shimRel, """
+            package com.example;
+            class Shim {
+              @ProveKitSugar(concept = "concept:http-request", library = "provekit-shim-java-okhttp")
+              Object fetch(String url, Headers headers) {
+                return client.execute(url, headers);
+              }
+            }
+            """);
+        String userRel = "src/main/java/com/example/Handlers.java";
+        write(root, userRel, """
+            package com.example;
+            class Handlers {
+              Object fetchUrl(String u, Headers h) {
+                return client.execute(u, h);
+              }
+            }
+            """);
+
+        Jcs.Obj response = RecognizeHandler.recognizeImpl(paramsWithoutBindings(root, List.of(shimRel, userRel)));
+
+        Jcs.Arr tags = response.arrayField("tags");
+        assertEquals(1, tags.values().size(), Jcs.encode(response));
+        Jcs.Obj tag = tags.objectAt(0);
+        assertEquals(userRel, tag.stringField("file"));
+        assertEquals("fetchUrl", tag.stringField("function_name"));
+        assertEquals("concept:http-request", tag.stringField("concept_name"));
+        assertEquals("provekit-shim-java-okhttp", tag.stringField("library_tag"));
+        assertEquals("exact", tag.stringField("match_tier"));
+        Jcs.Arr paramBindings = tag.arrayField("param_bindings");
+        assertEquals("u", paramBindings.objectAt(0).stringField("source_text"));
+        assertEquals("h", paramBindings.objectAt(1).stringField("source_text"));
+    }
+
+    @Test
+    void recognizeSelfResolvedJavaSugarDoesNotTagNonMatchingSource() throws Exception {
+        Path root = Files.createTempDirectory("recognize-java-self-negative");
+        String shimRel = "src/main/java/com/example/Shim.java";
+        write(root, shimRel, """
+            package com.example;
+            class Shim {
+              @ProveKitSugar(concept = "concept:http-request", library = "provekit-shim-java-okhttp")
+              Object fetch(String url, Headers headers) {
+                return client.execute(url, headers);
+              }
+            }
+            """);
+        String userRel = "src/main/java/com/example/Handlers.java";
+        write(root, userRel, """
+            package com.example;
+            class Handlers {
+              Object fetchUrl(String u, Headers h) {
+                return client.send(u, h);
+              }
+            }
+            """);
+
+        Jcs.Obj response = RecognizeHandler.recognizeImpl(paramsWithoutBindings(root, List.of(shimRel, userRel)));
+
+        assertTrue(response.arrayField("tags").isEmpty(), Jcs.encode(response));
+    }
+
     private static Jcs.Obj binding(
             String conceptName,
             String libraryTag,
@@ -178,6 +244,13 @@ class RecognizeHandlerTest {
             "project_root", Jcs.string(root.toString()),
             "source_paths", Jcs.array(sourcePaths.stream().map(Jcs::string).toList()),
             "binding_templates", Jcs.array(bindings)
+        );
+    }
+
+    private static Jcs.Obj paramsWithoutBindings(Path root, List<String> sourcePaths) {
+        return Jcs.object(
+            "project_root", Jcs.string(root.toString()),
+            "source_paths", Jcs.array(sourcePaths.stream().map(Jcs::string).toList())
         );
     }
 
