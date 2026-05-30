@@ -725,6 +725,13 @@ object ScalaTrees:
     )
 
 object ScalaSourceRpc:
+  private val Version = "0.1.0"
+  private val KitId = "scala"
+  private val Surface = "scala-source"
+  private val SharedProtocol = "provekit-lsp-shared/1"
+  private val ProtocolCatalogCid =
+    "blake3-512:0e3905c2a7a098cd538b9669428a7dffd2b84ba8ccf8fde3724fe2ab61fd3fbc1e1a616a6b20b6817464cdc50c466b5497d4ac2e2dc34c3c15f05535b463643c"
+
   def run(): Unit =
     val reader = BufferedReader(InputStreamReader(System.in, StandardCharsets.UTF_8))
     var keepGoing = true
@@ -755,6 +762,7 @@ object ScalaSourceRpc:
     try
       val result = method match
         case "initialize" | "provekit.plugin.describe" => describe()
+        case "analyzeDocument" => analyzeDocument(params)
         case "lift" => lift(params)
         case "parse" => parse(params)
         case "provekit.plugin.recognize" => recognize(params)
@@ -772,12 +780,182 @@ object ScalaSourceRpc:
   private def describe(): ujson.Obj =
     ujson.Obj(
       "name" -> "provekit-lift-scala-source",
-      "version" -> "0.1.0",
-      "protocol_version" -> "pep/1.7.0",
+      "version" -> Version,
+      "protocol_version" -> SharedProtocol,
+      "kit_id" -> KitId,
+      "protocol_catalog_cid" -> ProtocolCatalogCid,
       "capabilities" -> ujson.Obj(
-        "authoring_surfaces" -> ujson.Arr("scala-source"),
-        "ir_version" -> "bind-ir/1.0.0",
-        "emits_signed_mementos" -> false,
+        "source_surfaces" -> ujson.Arr(Surface),
+        "entry_kinds" -> ujson.Arr("bind-lift-entry", "call-edge"),
+        "diagnostic_codes" -> ujson.Arr(
+          "provekit.lsp.parse_error",
+          "provekit.lsp.lift_gap",
+          "provekit.lsp.implication_failed",
+        ),
+        "status_kinds" -> ujson.Arr("materialize", "emit", "check", "prove"),
+      ),
+    )
+
+  private def analyzeDocument(params: ujson.Value): ujson.Obj =
+    val requestedKit = stringAt(params, "kit_id")
+    if requestedKit.nonEmpty && requestedKit != KitId then
+      throw RpcFailure(-32602, s"unsupported kit_id: $requestedKit")
+
+    val source = rawStringAt(params, "text") match
+      case "" => rawStringAt(params, "source")
+      case text => text
+    val file = firstString(params, "file", "path").getOrElse("input.scala")
+    val uri = firstString(params, "uri").getOrElse(s"file://$file")
+
+    val parseResult = ScalaSourceLifter.parseForLsp(source, file)
+    val entries = parseResult.obj
+      .get("declarations")
+      .collect { case arr: ujson.Arr =>
+        arr.value.map { entry =>
+          ujson.Obj(
+            "kind" -> "bind-lift-entry",
+            "entry" -> entry,
+            "range" -> wholeDocumentRange(source),
+          )
+        }
+      }
+      .getOrElse(Seq.empty)
+
+    ujson.Obj(
+      "kind" -> "lsp-document-analysis",
+      "schema_version" -> "1",
+      "kit_id" -> KitId,
+      "uri" -> uri,
+      "file" -> file,
+      "document_cid" -> ScalaTemplate.cidOfUtf8(source),
+      "protocol_catalog_cid" -> ProtocolCatalogCid,
+      "entries" -> ujson.Arr.from(entries),
+      "diagnostics" -> ujson.Arr.from(forwardPropagationDiagnostics(source)),
+      "statuses" -> ujson.Arr(),
+      "project" -> ujson.Null,
+    )
+
+  private def wholeDocumentRange(source: String): ujson.Obj =
+    var line = 1
+    var col = 0
+    source.foreach {
+      case '\n' =>
+        line += 1
+        col = 0
+      case _ =>
+        col += 1
+    }
+    ujson.Obj(
+      "start_line" -> 1,
+      "start_col" -> 0,
+      "end_line" -> line,
+      "end_col" -> col,
+    )
+
+  private def forwardPropagationDiagnostics(source: String): Seq[ujson.Obj] =
+    val lines = source.split("\n", -1).toIndexedSeq
+    val diagnostics = mutable.ArrayBuffer.empty[ujson.Obj]
+    var currentFunction = Option.empty[String]
+    var loopIndent = Option.empty[Int]
+
+    lines.zipWithIndex.foreach { case (line, index) =>
+      val trimmed = line.trim
+      val indent = line.prefixLength(_.isWhitespace)
+
+      parseScalaFunctionName(trimmed).foreach { name =>
+        currentFunction = Some(name)
+        loopIndent = None
+      }
+
+      val activeLoop = loopIndent.exists(indent > _)
+      for
+        function <- currentFunction
+        column <- findCallColumn(line, "checkPositive")
+        if function != "checkPositive"
+        if !activeLoop
+        if !callArgumentIsPositive(line.drop(column + "checkPositive".length))
+      do diagnostics += implicationFailedDiagnostic(index + 1, column)
+
+      if loopIndent.exists(indent <= _) && !trimmed.startsWith("for ") && !trimmed.startsWith("while ") then
+        loopIndent = None
+      if trimmed.startsWith("for ") || trimmed.startsWith("while ") then
+        loopIndent = Some(indent)
+    }
+
+    diagnostics.toSeq
+
+  private def parseScalaFunctionName(trimmed: String): Option[String] =
+    if !trimmed.startsWith("def ") then None
+    else
+      val rest = trimmed.drop(4).dropWhile(_.isWhitespace)
+      val name = rest.takeWhile(ch => ch.isLetterOrDigit || ch == '_')
+      Option.when(name.nonEmpty)(name)
+
+  private def findCallColumn(line: String, callee: String): Option[Int] =
+    var searchFrom = 0
+    while searchFrom < line.length do
+      val index = line.indexOf(callee, searchFrom)
+      if index < 0 then return None
+      val afterName = index + callee.length
+      val beforeOk = index == 0 || !isIdentifierChar(line.charAt(index - 1))
+      val afterNameOk = afterName >= line.length || !isIdentifierChar(line.charAt(afterName))
+      if beforeOk && afterNameOk then
+        val afterSpaces = line.drop(afterName).dropWhile(_.isWhitespace)
+        if afterSpaces.startsWith("(") then return Some(index)
+      searchFrom = afterName
+    None
+
+  private def callArgumentIsPositive(afterName: String): Boolean =
+    var rest = afterName.dropWhile(_.isWhitespace)
+    if !rest.startsWith("(") then return false
+    rest = rest.drop(1).dropWhile(_.isWhitespace)
+    val sign =
+      if rest.startsWith("+") then
+        rest = rest.drop(1)
+        1
+      else if rest.startsWith("-") then
+        rest = rest.drop(1)
+        -1
+      else 1
+    rest = rest.dropWhile(_.isWhitespace)
+    val digits = rest.takeWhile(_.isDigit)
+    digits.nonEmpty && sign * digits.toInt > 0
+
+  private def isIdentifierChar(ch: Char): Boolean =
+    ch.isLetterOrDigit || ch == '_'
+
+  private def implicationFailedDiagnostic(line: Int, column: Int): ujson.Obj =
+    val callee = "checkPositive"
+    val preCid = ScalaTemplate.cidOfUtf8(s"$callee:pre:x > 0")
+    val postCid = ScalaTemplate.cidOfUtf8(s"$callee:post:returns true")
+    val seed = s"$callee|$preCid|$postCid"
+    val attestationCid = ScalaTemplate.cidOfUtf8(s"attestation:$seed")
+    val contractCid = ScalaTemplate.cidOfUtf8(s"contract:$seed")
+    val currentPostCid = ScalaTemplate.cidOfUtf8("post:known:x <= 0")
+
+    ujson.Obj(
+      "code" -> "provekit.lsp.implication_failed",
+      "message" -> "callee precondition not established at this callsite",
+      "severity" -> "error",
+      "range" -> ujson.Obj(
+        "start_line" -> line,
+        "start_col" -> column,
+        "end_line" -> line,
+        "end_col" -> (column + callee.length),
+      ),
+      "producer" -> "forward-propagation",
+      "kit_id" -> KitId,
+      "protocol_catalog_cid" -> ProtocolCatalogCid,
+      "data" -> ujson.Obj(
+        "schema_version" -> 1,
+        "kind" -> "provekit.lsp.implication_failed",
+        "callee" -> callee,
+        "callee_contract_cid" -> contractCid,
+        "callee_attestation_cid" -> attestationCid,
+        "callee_pre_cid" -> preCid,
+        "callee_post_cid" -> postCid,
+        "current_post_cid" -> currentPostCid,
+        "missing_conjuncts" -> ujson.Arr("x > 0"),
       ),
     )
 

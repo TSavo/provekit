@@ -7,6 +7,85 @@ import java.nio.file.{Files, Path}
 import scala.jdk.CollectionConverters.*
 
 final class ScalaSourceLifterTest extends munit.FunSuite:
+  test("rpc initialize reports shared lsp protocol"):
+    val response = ScalaSourceRpc.dispatch(
+      ujson.Obj(
+        "jsonrpc" -> "2.0",
+        "id" -> 1,
+        "method" -> "initialize",
+        "params" -> ujson.Obj(),
+      ),
+    )
+
+    assert(!response.obj.contains("error"), response.render())
+    val result = response("result")
+    assertEquals(result("name").str, "provekit-lift-scala-source")
+    assertEquals(result("version").str, "0.1.0")
+    assertEquals(result("protocol_version").str, "provekit-lsp-shared/1")
+    assertEquals(result("kit_id").str, "scala")
+    assert(result("protocol_catalog_cid").str.startsWith("blake3-512:"))
+    assertEquals(result("capabilities")("source_surfaces").arr.map(_.str).toSeq, Seq("scala-source"))
+    assert(result("capabilities")("diagnostic_codes").arr.exists(_.str == "provekit.lsp.implication_failed"))
+
+  test("rpc analyzeDocument emits shared callsite diagnostic"):
+    val source =
+      """def checkPositive(x: Int): Boolean =
+        |  if x <= 0 then false else true
+        |
+        |def callerSatisfiesPre(): Boolean =
+        |  val result = checkPositive(5)
+        |  result
+        |
+        |def callerViolatesPre(): Boolean =
+        |  val result = checkPositive(-1)
+        |  result
+        |
+        |def callerWithLoop(): Boolean =
+        |  for i <- 0 until 10 do
+        |    val result = checkPositive(i)
+        |    if !result then false
+        |  true
+        |""".stripMargin
+
+    val response = ScalaSourceRpc.dispatch(
+      ujson.Obj(
+        "jsonrpc" -> "2.0",
+        "id" -> 2,
+        "method" -> "analyzeDocument",
+        "params" -> ujson.Obj(
+          "kit_id" -> "scala",
+          "uri" -> "file:///project/FloorFixture.scala",
+          "file" -> "FloorFixture.scala",
+          "text" -> source,
+          "document_version" -> 42,
+          "workspace_root" -> "/project",
+          "accepted_protocol_catalog_cids" -> ujson.Arr(),
+          "policy_cids" -> ujson.Arr(),
+        ),
+      ),
+    )
+
+    assert(!response.obj.contains("error"), response.render())
+    val result = response("result")
+    assertEquals(result("kind").str, "lsp-document-analysis")
+    assertEquals(result("schema_version").str, "1")
+    assertEquals(result("kit_id").str, "scala")
+    assertEquals(result("uri").str, "file:///project/FloorFixture.scala")
+    assertEquals(result("file").str, "FloorFixture.scala")
+    assert(result("document_cid").str.startsWith("blake3-512:"))
+
+    val diagnostics = result("diagnostics").arr
+    assertEquals(diagnostics.length, 1)
+    val diagnostic = diagnostics.head
+    assertEquals(diagnostic("code").str, "provekit.lsp.implication_failed")
+    assertEquals(diagnostic("severity").str, "error")
+    assertEquals(diagnostic("producer").str, "forward-propagation")
+    assertEquals(diagnostic("kit_id").str, "scala")
+    assertEquals(diagnostic("data")("callee").str, "checkPositive")
+    assertEquals(diagnostic("data")("missing_conjuncts").arr.map(_.str).toSeq, Seq("x > 0"))
+    assertEquals(diagnostic("range")("start_line").num.toInt, 9)
+    assertEquals(diagnostic("range")("start_col").num.toInt, 15)
+
   test("sugar body emits ast_template alongside body_text"):
     val body = mustSugarBodySource(
       """package shim
