@@ -19,13 +19,14 @@ type RecognizeParams struct {
 }
 
 type BindingTemplate struct {
-	ConceptName string          `json:"concept_name"`
-	LibraryTag  string          `json:"library_tag"`
-	Family      any             `json:"family"`
-	ASTTemplate json.RawMessage `json:"ast_template"`
-	TemplateCID string          `json:"template_cid"`
-	ParamNames  []string        `json:"param_names"`
-	ContractCID string          `json:"contract_cid"`
+	ConceptName    string          `json:"concept_name"`
+	LibraryTag     string          `json:"library_tag"`
+	Family         any             `json:"family"`
+	ASTTemplate    json.RawMessage `json:"ast_template"`
+	TemplateCID    string          `json:"template_cid"`
+	ParamNames     []string        `json:"param_names"`
+	ContractCID    string          `json:"contract_cid"`
+	TargetProofCID string          `json:"target_proof_cid"`
 }
 
 type RecognizeResponse struct {
@@ -33,16 +34,17 @@ type RecognizeResponse struct {
 }
 
 type RecognizeTag struct {
-	File          string         `json:"file"`
-	Span          SourceSpan     `json:"span"`
-	FunctionName  string         `json:"function_name"`
-	ConceptName   string         `json:"concept_name"`
-	LibraryTag    string         `json:"library_tag"`
-	Family        any            `json:"family"`
-	TemplateCID   string         `json:"template_cid"`
-	ContractCID   string         `json:"contract_cid"`
-	MatchTier     string         `json:"match_tier"`
-	ParamBindings []ParamBinding `json:"param_bindings"`
+	File           string         `json:"file"`
+	Span           SourceSpan     `json:"span"`
+	FunctionName   string         `json:"function_name"`
+	ConceptName    string         `json:"concept_name"`
+	LibraryTag     string         `json:"library_tag"`
+	Family         any            `json:"family"`
+	TemplateCID    string         `json:"template_cid"`
+	ContractCID    string         `json:"contract_cid"`
+	TargetProofCID string         `json:"target_proof_cid"`
+	MatchTier      string         `json:"match_tier"`
+	ParamBindings  []ParamBinding `json:"param_bindings"`
 }
 
 type ParamBinding struct {
@@ -138,15 +140,16 @@ func recognizeFunc(fset *token.FileSet, relPath string, fn *ast.FuncDecl, bindin
 		})
 	}
 	return RecognizeTag{
-		File:          relPath,
-		Span:          funcSpan(fset, fn),
-		FunctionName:  fn.Name.Name,
-		ConceptName:   binding.ConceptName,
-		LibraryTag:    binding.LibraryTag,
-		Family:        binding.Family,
-		TemplateCID:   templateCID,
-		ContractCID:   binding.ContractCID,
-		MatchTier:     "exact",
-		ParamBindings: paramBindings,
+		File:           relPath,
+		Span:           funcSpan(fset, fn),
+		FunctionName:   fn.Name.Name,
+		ConceptName:    binding.ConceptName,
+		LibraryTag:     binding.LibraryTag,
+		Family:         binding.Family,
+		TemplateCID:    templateCID,
+		ContractCID:    binding.ContractCID,
+		TargetProofCID: binding.TargetProofCID,
+		MatchTier:      "exact",
+		ParamBindings:  paramBindings,
 	}, true, nil
 }

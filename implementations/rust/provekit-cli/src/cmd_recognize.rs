@@ -356,9 +356,9 @@ fn recognize_implication_body(tag: &Value) -> Option<Value> {
 ///     to a contract memento and composes pre/post.
 ///
 /// Bridge target resolution order:
-///   1. The tag's contract_cid if it cites a contract that exists in
-///      a kit-resolved proof source. This is the production linkage when shims
-///      mint contracts covering their sugar functions.
+///   1. The tag's contract_cid + target_proof_cid if it cites a contract that
+///      exists in a kit-resolved proof source. This is the production linkage
+///      when shims mint contracts covering their sugar functions.
 ///   2. Fallback to the recognize-emitted SIBLING contract (the one
 ///      this same call just minted). Self-resolution keeps the loop
 ///      closed even when the shim mints no contract for that function —
@@ -394,24 +394,36 @@ fn emit_bridge_envelope(
     // Second pass: mint the bridge memento for each tag with
     // targetContractCid resolved against the production binding's
     // contract_cid first (shim-minted contracts), falling back to the
-    // sibling recognize-emitted contract from pass 1.
+    // sibling recognize-emitted contract from pass 1. When a kit supplies a
+    // target_proof_cid, carry it into the bridge as targetProofCid; the kit
+    // owns proof/package resolution, the CLI only copies normalized RPC data
+    // into the language-neutral bridge.
     for tag in tags {
         let function_name = match tag.get("function_name").and_then(|v| v.as_str()) {
             Some(s) if !s.is_empty() => s,
             _ => continue,
         };
         // Resolve target: shim/library contract_cid when the kit supplied one;
-        // otherwise the sibling contract minted by this recognize run.
-        let target_cid = tag
+        // otherwise the sibling contract minted by this recognize run. The
+        // targetProofCid pin is valid only for the kit-supplied contract;
+        // sibling fallback is self-pinned by same-bundle co-membership.
+        let tag_contract_cid = tag
             .get("contract_cid")
             .and_then(|v| v.as_str())
             .filter(|s| !s.is_empty())
-            .map(|s| s.to_string())
-            .or_else(|| sibling_contract_by_function.get(function_name).cloned());
+            .map(|s| s.to_string());
+        let target_proof_cid = tag_contract_cid.as_ref().and_then(|_| {
+            tag.get("target_proof_cid")
+                .and_then(|v| v.as_str())
+                .filter(|s| !s.is_empty())
+        });
+        let target_cid =
+            tag_contract_cid.or_else(|| sibling_contract_by_function.get(function_name).cloned());
         let Some(target_cid) = target_cid else {
             continue;
         };
-        let body = recognize_bridge_body_with_target(tag, target_language, &target_cid);
+        let body =
+            recognize_bridge_body_with_target(tag, target_language, &target_cid, target_proof_cid);
         let (cid, bytes) = member_envelope_canonical("bridge", &body)?;
         members.entry(cid).or_insert(bytes);
     }
@@ -444,6 +456,7 @@ fn recognize_bridge_body_with_target(
     tag: &Value,
     target_language: &str,
     target_cid: &str,
+    target_proof_cid: Option<&str>,
 ) -> Value {
     let function_name = tag
         .get("function_name")
@@ -453,13 +466,22 @@ fn recognize_bridge_body_with_target(
         .get("library_tag")
         .and_then(|v| v.as_str())
         .unwrap_or(target_language);
-    build_bridge_body(
+    let mut body = build_bridge_body(
         "recognize",
         function_name,
         target_language,
         library_tag,
         target_cid,
-    )
+    );
+    if let Some(target_proof_cid) = target_proof_cid {
+        if let Value::Object(map) = &mut body {
+            map.insert(
+                "targetProofCid".to_string(),
+                Value::String(target_proof_cid.to_string()),
+            );
+        }
+    }
+    body
 }
 
 // flat_member_canonical + canonical_value_of_json were moved to
