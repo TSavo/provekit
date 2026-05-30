@@ -44,7 +44,7 @@ pub const ForwardPropagator = struct {
             }
             if (!found) {
                 return .{
-                    .code = "implication-failed",
+                    .code = "provekit.lsp.implication_failed",
                     .message = "post does not imply callee pre",
                 };
             }

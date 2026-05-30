@@ -6,6 +6,7 @@ require_once __DIR__ . '/../../provekit-ir-symbolic/src/Canonicalizer/Blake3.php
 use ProvekIt\Canonicalizer\Blake3;
 
 const PROVEKIT_LSP_PROTOCOL_CATALOG_CID = 'blake3-512:52bdb2be4b381cec2aff95db7755c84184878b45cd91882d262114a1abd2dd513f9ef3b250fb87093316fd0fcb48e4b97e109d463e57df5bda6aac0b1c719a0f';
+const PROVEKIT_LSP_IMPLICATION_FAILED_CODE = 'provekit.lsp.implication_failed';
 
 final class ForwardPost
 {
@@ -224,11 +225,11 @@ final class LspDiagnostic
             'range' => $this->range->toArray(),
             'severity' => 1,
             'source' => 'provekit',
-            'code' => 'implication-failed',
+            'code' => PROVEKIT_LSP_IMPLICATION_FAILED_CODE,
             'message' => 'callee precondition not established at this callsite',
             'data' => [
                 'schema_version' => 1,
-                'kind' => 'provekit.lsp.implication_failed',
+                'kind' => PROVEKIT_LSP_IMPLICATION_FAILED_CODE,
                 'callee' => $this->entry->calleeId,
                 'callee_contract_cid' => $this->entry->contractCid,
                 'callee_attestation_cid' => $this->entry->attestationCid,
@@ -264,7 +265,7 @@ final class ForwardPropagator
     {
         return new self([
             BaselineEntry::new(
-                'checkPositive',
+                '\\checkPositive',
                 ForwardPost::known(['x > 0']),
                 ForwardPost::known(['returns true']),
             ),
@@ -380,15 +381,15 @@ final class ForwardPropagator
 
             $calls = self::checkPositiveCalls($scanLine);
             if (!$isFunctionDefinition) {
-                foreach ($calls as [$start, $arg]) {
+                foreach ($calls as [$rangeStart, $nameStart, $arg]) {
                     if ($topBlockDepth !== null || $topSingleStatementPending) {
                         $stmts[] = ForwardStmt::unsupported();
                     } else {
                         $stmts[] = ForwardStmt::assign(self::postForCheckPositiveArg($arg));
                     }
                     $stmts[] = ForwardStmt::call(
-                        'checkPositive',
-                        LspRange::singleLine($lineIdx, $start, $start + strlen('checkPositive')),
+                        '\\checkPositive',
+                        LspRange::singleLine($lineIdx, $rangeStart, $nameStart + strlen('checkPositive')),
                     );
                 }
             }
@@ -451,7 +452,7 @@ final class ForwardPropagator
         return false;
     }
 
-    /** @return array<int, array{0: int, 1: string}> */
+    /** @return array<int, array{0: int, 1: int, 2: string}> */
     private static function checkPositiveCalls(string $line): array
     {
         $calls = [];
@@ -498,7 +499,8 @@ final class ForwardPropagator
             if ($end >= $lineLen || $depth !== 0) {
                 break;
             }
-            $calls[] = [$start, trim(substr($line, $argsStart, $end - $argsStart))];
+            $rangeStart = ($start > 0 && $line[$start - 1] === '\\') ? $start - 1 : $start;
+            $calls[] = [$rangeStart, $start, trim(substr($line, $argsStart, $end - $argsStart))];
             $searchFrom = $end + 1;
         }
         return $calls;
@@ -520,6 +522,9 @@ final class ForwardPropagator
             }
             if ($line[$idx] === ':') {
                 return $idx > 0 && $line[$idx - 1] === ':';
+            }
+            if ($line[$idx] === '\\') {
+                return $idx > 0 && self::isIdentifierByte($line[$idx - 1]);
             }
             return false;
         }

@@ -113,7 +113,7 @@ export class ForwardPropagator {
     );
     if (!implies) {
       return {
-        code: "implication-failed",
+        code: "provekit.lsp.implication_failed",
         message: `post does not imply callee pre: ${callee.pre.constraints.join(" && ")}`,
       };
     }

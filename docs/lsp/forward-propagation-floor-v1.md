@@ -42,7 +42,7 @@ The diagnostic payload MUST carry the v1.6.2 identifiers that let a user or tool
 - `current_post_cid`
 - `signer` and `signer_role`
 
-The plugin MUST suppress `implication-failed` when the accumulated post is `top`.
+The plugin MUST suppress `provekit.lsp.implication_failed` when the accumulated post is `top`.
 
 ## Callsite Resolution
 

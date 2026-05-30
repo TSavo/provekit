@@ -43,7 +43,7 @@ public class ForwardPropagator {
         for constraint in currentPost.constraints {
             if !calleePre.constraints.contains(constraint) {
                 return DiagnosticResult(
-                    code: "implication-failed",
+                    code: "provekit.lsp.implication_failed",
                     message: "post does not imply callee pre: \(calleePre.constraints.joined(separator: " && "))"
                 )
             }

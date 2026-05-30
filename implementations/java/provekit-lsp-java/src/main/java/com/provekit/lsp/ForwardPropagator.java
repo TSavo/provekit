@@ -102,7 +102,7 @@ public class ForwardPropagator {
         if (calleePre == null) return null;
         for (String c : currentPost.constraints) {
             if (!calleePre.constraints.contains(c)) {
-                return new DiagnosticResult("implication-failed",
+                return new DiagnosticResult("provekit.lsp.implication_failed",
                     "post does not imply callee pre: " + String.join(" && ", calleePre.constraints));
             }
         }

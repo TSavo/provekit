@@ -240,7 +240,7 @@ func (p ForwardPropagator) CheckCallsite(calleeID string, currentPost Post, lspR
 		Range:    lspRange,
 		Severity: 1,
 		Source:   "provekit",
-		Code:     "implication-failed",
+		Code:     "provekit.lsp.implication_failed",
 		Message:  "callee precondition not established at this callsite",
 		Data: DiagnosticData{
 			SchemaVersion:          1,

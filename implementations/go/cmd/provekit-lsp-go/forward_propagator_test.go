@@ -68,8 +68,8 @@ func TestCallsiteViolatesPreDiagnosticEmitted(t *testing.T) {
 		t.Fatalf("expected one diagnostic, got %#v", diagnostics)
 	}
 	diagnostic := diagnostics[0]
-	if diagnostic.Code != "implication-failed" {
-		t.Fatalf("code = %q, want implication-failed", diagnostic.Code)
+	if diagnostic.Code != "provekit.lsp.implication_failed" {
+		t.Fatalf("code = %q, want provekit.lsp.implication_failed", diagnostic.Code)
 	}
 	if diagnostic.Source != "provekit" {
 		t.Fatalf("source = %q, want provekit", diagnostic.Source)
@@ -126,7 +126,7 @@ func TestTopFallbackSuppressesFalsePositive(t *testing.T) {
 	diagnostics := propagator.EmitDiagnostics(body)
 
 	if len(diagnostics) != 0 {
-		t.Fatalf("top fallback must suppress implication-failed diagnostics: %#v", diagnostics)
+		t.Fatalf("top fallback must suppress provekit.lsp.implication_failed diagnostics: %#v", diagnostics)
 	}
 }
 
@@ -261,8 +261,8 @@ func TestParseFloorFixtureEmitsForwardPropagationDiagnostic(t *testing.T) {
 	if !ok {
 		t.Fatalf("diagnostic not an object: %T", diagnostics[0])
 	}
-	if diagnostic["code"] != "implication-failed" {
-		t.Fatalf("code = %v, want implication-failed", diagnostic["code"])
+	if diagnostic["code"] != "provekit.lsp.implication_failed" {
+		t.Fatalf("code = %v, want provekit.lsp.implication_failed", diagnostic["code"])
 	}
 	data, ok := diagnostic["data"].(map[string]interface{})
 	if !ok {
