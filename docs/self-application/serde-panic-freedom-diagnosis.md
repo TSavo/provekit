@@ -166,6 +166,50 @@ golden pins just the fixture's sites. Best built WITH the cascade fix so it pins
 meaningful panicSafe>0 delta. Pinning panicSafe=0 now is legitimate scaffolding but
 low-value until the cascade lands.
 
+## COMPLETE MECHANISM (work_one routing, runner.rs ~1412) — two distinct breaks
+
+`work_one` routes on whether the panic arg has a producer:
+
+    if (producer_post, consumer_pre) both Some  -> IMPLICATION branch (~1412):
+        build_implication_obligation(producer_post -> consumer_pre), solve
+    else                                        -> GUARD branch (~1479):
+        instantiate::run(resolved, arg_term) THEN cs.guard_facts discharge
+        (this is where the D-lib callee_post_guard_fact injection from e13763201 lives)
+
+BREAK 1 -- serde / any panic site whose receiver is itself a call:
+  arg = `to_string(v)` HAS a producer (the to_string totality bridge -> post
+  `is_ok(result)`), so `producer_post = Some(is_ok(to_string(v)))` and the site
+  takes the IMPLICATION branch. BUT `consumer_pre` there is the UN-specialized
+  pre `is_ok(formal)` (instantiate only runs in the else branch). z3 sees
+  `is_ok(to_string(v)) -> is_ok(formal)` over disjoint terms -> UNSAT. The D-lib
+  injection never runs for f (f never reaches the else branch).
+
+BREAK 2 -- syntactic guard (panic-freedom-fixture `if opt.is_some(){opt.unwrap()}`):
+  arg = `opt` is a VAR (no producer) -> producer_post None -> takes the GUARD
+  branch. But `cs.guard_facts` is EMPTY: the kit's `cf_guarded(is_some(opt), ...)`
+  wrapper that enumerate_callsites threads into guard_facts (walk_term ~269) is
+  not populating it e2e. Unguarded -> is_some(formal) -> undecidable.
+
+SOUNDNESS-CORE RISK (why this is not a quick patch): the IMPLICATION branch
+(~1412) is SHARED with the non-panic eq-discharge tiers. Specializing
+`consumer_pre` to `arg_term` there perturbs obligation CIDs / hash-tier lookups
+for ALL callsites (the code already warns about this re `instantiate::run`). So
+BREAK 1's fix must specialize ONLY the panic-site implication (or route a
+producer-post panic_site through the guard branch with the D-lib is_ok fact
+instead of the implication branch) without touching the shared non-panic path.
+
+FIX SKETCH (one focused PR, gate on discrimination test f->safe / g->undecidable /
+falsePass=0 on BOTH stage3-serde AND panic-freedom fixtures):
+  1. BREAK 1: for a `panic_site` callsite that has a producer_post, either
+     (a) instantiate consumer_pre to arg_term before building the implication
+     (panic-only, so no shared-path CID drift), or (b) skip the implication
+     branch for panic sites and use the guard branch + D-lib fact.
+  2. BREAK 2: fix cf_guarded -> guard_facts threading so the syntactic-guard
+     panic site is GUARDED e2e (verify enumerate_callsites walk_term ~269
+     actually receives the cf_guarded wrapper from the lifter output).
+  Both lift e2e K together; both are sound-by-construction (specialization +
+  syntactic guard are exact), gated by the discrimination test.
+
 ## Reproduction
 
 Warm-oracle e2e on battleaxe: `/tmp/serde_e2e2.sh` (mints shim-std + shim-serde deps,
