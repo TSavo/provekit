@@ -67,6 +67,7 @@ pub enum PosResult {
     Resolved {
         krate: String,
         type_stem: Option<String>,
+        definition_files: Vec<PathBuf>,
     },
     Refused,
     NotReady,
@@ -138,11 +139,7 @@ fn vec_not_ready(n: usize) -> Vec<PosResult> {
 
 /// The session thread body: start RA (blocking), flip phase, then service
 /// batches until the command channel closes (daemon shutdown).
-fn session_loop(
-    workspace_root: PathBuf,
-    phase: Arc<Mutex<Phase>>,
-    cmd_rx: Receiver<BatchCmd>,
-) {
+fn session_loop(workspace_root: PathBuf, phase: Arc<Mutex<Phase>>, cmd_rx: Receiver<BatchCmd>) {
     info!(
         workspace = %workspace_root.display(),
         "ra-host: starting resident rust-analyzer session (indexing once, in background)"
@@ -183,6 +180,7 @@ fn session_loop(
                 Ok(Some(tr)) => PosResult::Resolved {
                     krate: tr.krate,
                     type_stem: tr.type_stem,
+                    definition_files: tr.definition_files,
                 },
                 Ok(None) => PosResult::Refused,
                 Err(()) => PosResult::NotReady,
@@ -217,8 +215,8 @@ impl RaHost {
     /// Get the session for `workspace_root`, lazily spawning it (non-blocking)
     /// on first use. The returned session may still be `Spawning`.
     pub fn session_for(&self, workspace_root: &Path) -> Arc<RaSession> {
-        let key = std::fs::canonicalize(workspace_root)
-            .unwrap_or_else(|_| workspace_root.to_path_buf());
+        let key =
+            std::fs::canonicalize(workspace_root).unwrap_or_else(|_| workspace_root.to_path_buf());
         let mut sessions = self.sessions.lock().unwrap();
         if let Some(s) = sessions.get(&key) {
             return s.clone();

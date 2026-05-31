@@ -300,16 +300,14 @@ pub fn shutdown_response(id: &Json) -> Json {
 ///
 /// Resolution path, per query file:
 ///   1. CACHE FIRST. Read the file's on-disk bytes, compute the content-address
-///      key (blake3(content) + dep-set CID). A cache HIT is AUTHORITATIVE for
-///      the whole file: its resolved positions go straight into `resolved`, its
-///      recorded refusals stay absent, and the file sends ZERO queries to RA.
-///      This is what delivers "second mint, unchanged file, NO rust-analyzer
-///      spawn" even from a fresh daemon process (#1706 per-file granularity).
-///   2. MISS -> RA, only if the resident session is `Ready`. Each position is
-///      classified resolved / deterministic-refuse / not-ready. Resolved
-///      positions go into `resolved`.
-///   3. WRITE BACK only a file whose EVERY queried position SETTLED (resolved or
-///      deterministic-refuse) from a quiescent session. A file with any
+///      key (blake3(content) + Cargo/toolchain CID). Each cached position then
+///      validates its own dependency set. Valid resolved positions go straight
+///      into `resolved`; valid recorded refusals stay absent; invalid/missing
+///      positions alone go to RA. This is the #1706 granularity boundary.
+///   2. MISS -> RA, only if the resident session is `Ready`. Each missed
+///      position is classified resolved / deterministic-refuse / not-ready.
+///   3. WRITE BACK only the positions that SETTLED (resolved or
+///      deterministic-refuse), merging them into the existing file entry. A
 ///      not-ready position is NOT cached (a partial entry would wrongly suppress
 ///      RA later). This preserves the refuse-floor across caching.
 ///
@@ -327,7 +325,7 @@ pub async fn handle_resolve_receiver_crate(
     id: &Json,
 ) -> Json {
     use crate::ra_host::{Phase, PosResult};
-    use crate::resolve_cache::{FileResolution, PosOutcome};
+    use crate::resolve_cache::{CachedPosition, FileResolution, PosOutcome, ResolutionDeps};
     use provekit_walk::ra_oracle::ResolveQuery;
     use std::collections::BTreeMap;
 
@@ -357,10 +355,9 @@ pub async fn handle_resolve_receiver_crate(
             .push((line as u32, col as u32));
     }
 
-    // Second key component: everything the resolution depends on beyond each
-    // file's own bytes (dependency lock + the whole workspace .rs tree, so
-    // cross-file type flow cannot produce a stale hit). Computed once per request.
-    let dep_cid = crate::resolve_cache::resolution_context_cid(&workspace_root);
+    // Second key component: resolver-global inputs (Cargo.lock + toolchain).
+    // Source sensitivity is checked per position through `ResolutionDeps`.
+    let dep_cid = crate::resolve_cache::base_resolution_context_cid(&workspace_root);
 
     let mut resolved: serde_json::Map<String, Json> = serde_json::Map::new();
     // A file that misses the cache and needs RA goes here; we consult the
@@ -376,18 +373,24 @@ pub async fn handle_resolve_receiver_crate(
                 continue;
             };
             if let Some(entry) = cache_guard.get(&content, &dep_cid) {
-                // HIT: authoritative for the whole file, zero RA queries.
+                let mut missing = Vec::new();
                 for (line, col) in positions {
                     let pkey = format!("{line}:{col}");
-                    if let Some(PosOutcome::Crate { krate, type_stem }) =
-                        entry.positions.get(&pkey)
-                    {
-                        resolved.insert(
-                            format!("{file}:{line}:{col}"),
-                            resolution_value(krate, type_stem.as_deref()),
-                        );
+                    match entry.positions.get(&pkey) {
+                        Some(cached) if cached.deps.validate(&workspace_root) => {
+                            if let PosOutcome::Crate { krate, type_stem } = &cached.outcome {
+                                resolved.insert(
+                                    format!("{file}:{line}:{col}"),
+                                    resolution_value(krate, type_stem.as_deref()),
+                                );
+                            }
+                            // Refused -> stays unresolved (refuse-floor).
+                        }
+                        _ => missing.push((*line, *col)),
                     }
-                    // Refused / absent -> stays unresolved (refuse-floor).
+                }
+                if !missing.is_empty() {
+                    needs_ra.push((file.clone(), content, missing));
                 }
             } else {
                 needs_ra.push((file.clone(), content, positions.clone()));
@@ -447,22 +450,28 @@ pub async fn handle_resolve_receiver_crate(
         for ((line, col), r) in positions.iter().zip(results.iter()) {
             let pkey = format!("{line}:{col}");
             match r {
-                PosResult::Resolved { krate, type_stem } => {
+                PosResult::Resolved {
+                    krate,
+                    type_stem,
+                    definition_files,
+                } => {
                     resolved.insert(
                         format!("{file}:{line}:{col}"),
                         resolution_value(krate, type_stem.as_deref()),
                     );
+                    let deps = ResolutionDeps::from_files(&workspace_root, definition_files)
+                        .unwrap_or_else(|| ResolutionDeps::workspace(&workspace_root));
                     file_res.positions.insert(
                         pkey,
-                        PosOutcome::Crate {
-                            krate: krate.clone(),
-                            type_stem: type_stem.clone(),
-                        },
+                        CachedPosition::resolved(krate, type_stem.as_deref(), deps),
                     );
                     n_resolved += 1;
                 }
                 PosResult::Refused => {
-                    file_res.positions.insert(pkey, PosOutcome::Refused);
+                    file_res.positions.insert(
+                        pkey,
+                        CachedPosition::refused(ResolutionDeps::workspace(&workspace_root)),
+                    );
                     n_refused += 1;
                 }
                 PosResult::NotReady => {
@@ -482,7 +491,7 @@ pub async fn handle_resolve_receiver_crate(
     if !cache_writes.is_empty() {
         let mut cache_guard = cache.lock().await;
         for (content, file_res) in cache_writes {
-            cache_guard.insert(&content, &dep_cid, file_res);
+            cache_guard.merge_insert(&content, &dep_cid, file_res);
         }
         // Persist the sidecar so a fresh daemon process hits the cache and skips
         // RA entirely. Best-effort: a write failure does not break correctness
