@@ -331,13 +331,34 @@ fn extract_formals(item_fn: &ItemFn) -> (Vec<String>, Vec<provekit_ir_types::Sor
     let mut names = Vec::new();
     let mut sorts = Vec::new();
     for input in &item_fn.sig.inputs {
-        if let FnArg::Typed(pt) = input {
-            let name = match &*pt.pat {
-                Pat::Ident(p) => p.ident.to_string(),
-                _ => "<arg>".to_string(),
-            };
-            names.push(name);
-            sorts.push(infer_sort(&pt.ty));
+        match input {
+            // `&self` / `&mut self` / `self` receiver. The body lifter emits
+            // `self` as `Var("self")` (via `Expr::Path` -> `seg.ident.to_string()`
+            // -> `"self"`), so the formal name MUST be `"self"` so that wp
+            // substitutes the call's receiver arg into the right slot.
+            //
+            // Sort: `Sort::Primitive { name: "Self" }` -- the opaque
+            // placeholder used by `type_decl::extract_formals_from_sig` for
+            // the same case. The verifier's SMT emitter treats unrecognized
+            // sorts as uninterpreted, which is correct for `self`: its
+            // field accesses appear as `field(self, .<name>)` ctors that
+            // remain uninterpreted, and an `=` over such a term is reflexive
+            // when both sides carry the same receiver (the principal arity
+            // discharge case).
+            FnArg::Receiver(_) => {
+                names.push("self".to_string());
+                sorts.push(provekit_ir_types::Sort::Primitive {
+                    name: "Self".to_string(),
+                });
+            }
+            FnArg::Typed(pt) => {
+                let name = match &*pt.pat {
+                    Pat::Ident(p) => p.ident.to_string(),
+                    _ => "<arg>".to_string(),
+                };
+                names.push(name);
+                sorts.push(infer_sort(&pt.ty));
+            }
         }
     }
     (names, sorts)
@@ -913,5 +934,305 @@ mod tests {
             "expected PinInvariantNotDischarged for empty invariant, got {:?}",
             result
         );
+    }
+
+    // ---- Arity mismatch fix: extract_formals includes receiver for instance methods ----
+    //
+    // Three tests (positive, discrimination, structural) per the discrimination-tests
+    // protocol (feedback_discrimination_tests_per_variant.md):
+    //
+    //   POSITIVE: a method `fn m(&self, x: u32) -> u32 { ... }` must have
+    //             formals = ["self", "x"] after the fix, enabling wp to bind the
+    //             call's receiver arg to the right slot.
+    //
+    //   DISCRIMINATION: a free function `fn m(x: u32) -> u32 { ... }` (no receiver)
+    //             must still have formals = ["x"] -- the fix must not add a spurious
+    //             "self" formal to non-methods.
+    //
+    //   STRUCTURAL: both &self and &mut self receiver forms must yield
+    //               formal name "self" (matching the body lifter's Var("self")),
+    //               and the sort must be `Sort::Primitive { name: "Self" }`.
+    //
+    // wp-level validation (no-ArityMismatch): using a MapResolver, verify that
+    // wp(m(self_term, x_term), Q) returns Ok (not Err(ArityMismatch)) when the
+    // contract declares slots ["self", "x"] and the call supplies 2 args.
+    // Before the fix, the contract would declare 1 slot ("x"), producing
+    // ArityMismatch for any method call with a receiver.
+
+    #[test]
+    fn positive_method_with_receiver_has_self_as_first_formal() {
+        // `fn m(&self, x: u32) -> u32` -- syn ItemFn can carry a receiver in its
+        // sig.inputs even though it looks like a free function; `extract_formals`
+        // must include "self" as formals[0].
+        let item_fn = parse_fn(
+            r#"
+            fn m(&self, x: u32) -> u32 {
+                x * 2
+            }
+        "#,
+        );
+        let contract = build_function_contract(&item_fn, None);
+        assert_eq!(
+            contract.formals,
+            vec!["self".to_string(), "x".to_string()],
+            "instance method formals must be [self, x]; got {:?}",
+            contract.formals
+        );
+        assert_eq!(
+            contract.formal_sorts.len(),
+            2,
+            "formal_sorts must have 2 entries (Self + u32)"
+        );
+        // Sort for self: Sort::Primitive { name: "Self" } (opaque placeholder).
+        let self_sort = &contract.formal_sorts[0];
+        assert_eq!(
+            serde_json::to_string(self_sort).unwrap(),
+            r#"{"kind":"primitive","name":"Self"}"#,
+            "self sort must be Primitive(Self): {:?}",
+            self_sort
+        );
+    }
+
+    #[test]
+    fn discrimination_free_fn_without_receiver_formals_unchanged() {
+        // SOUNDNESS GUARD. A free function `fn m(x: u32) -> u32` (no &self)
+        // must still yield formals = ["x"] after the fix. The fix must not
+        // add a spurious "self" to non-method functions.
+        //
+        // This is the discrimination test: the positive case above adds "self";
+        // this case must NOT. If both produced ["self", "x"], every free-function
+        // contract would gain an extra slot and every free-function call would
+        // hit ArityMismatch.
+        let item_fn = parse_fn(r#"fn m(x: u32) -> u32 { x * 2 }"#);
+        let contract = build_function_contract(&item_fn, None);
+        assert_eq!(
+            contract.formals,
+            vec!["x".to_string()],
+            "a free function must NOT get a spurious self formal; got {:?}",
+            contract.formals
+        );
+    }
+
+    #[test]
+    fn structural_mut_self_receiver_also_adds_self_formal() {
+        // `fn m(&mut self, x: u32)` -- `&mut self` is a Receiver variant, same
+        // as `&self`. Both must yield formal name "self" and sort Primitive(Self).
+        // The body lifter emits `Var("self")` for both; the formal name must match.
+        let item_fn = parse_fn(
+            r#"
+            fn m(&mut self, x: u32) -> u32 {
+                x + 1
+            }
+        "#,
+        );
+        let contract = build_function_contract(&item_fn, None);
+        assert_eq!(
+            contract.formals,
+            vec!["self".to_string(), "x".to_string()],
+            "&mut self receiver must also be named \"self\" in formals; got {:?}",
+            contract.formals
+        );
+        let self_sort = &contract.formal_sorts[0];
+        assert_eq!(
+            serde_json::to_string(self_sort).unwrap(),
+            r#"{"kind":"primitive","name":"Self"}"#,
+            "&mut self sort must be Primitive(Self): {:?}",
+            self_sort
+        );
+    }
+
+    #[test]
+    fn positive_wp_method_call_does_not_arity_mismatch() {
+        // wp-level check: with a contract declaring slots ["self", "x"] and
+        // a call term with 2 args (receiver, x), wp must succeed.
+        //
+        // Before the fix: extract_formals produced ["x"] -> slots = 1 ->
+        //   wp_op checks 1 != 2 -> ArityMismatch.
+        // After the fix: formals = ["self", "x"] -> slots = 2 -> no mismatch.
+        //
+        // The obligation: `=(method_double(self_term, const_3), const_6)`
+        //   => `wp(call, result==6)` => `6 == 6` (reflexive).
+        // We do NOT run z3 here; we verify the formula shape.
+        // The real z3 discrimination test runs as a full prove on battleaxe.
+        use libprovekit::core::types::{Cid, Term};
+        use libprovekit::wp::{OpContractInfo, OpContractResolver, SlotInfo};
+        use provekit_ir_types::{IrFormula, IrTerm};
+        use std::collections::HashMap;
+
+        struct TestResolver(HashMap<String, OpContractInfo>);
+        impl OpContractResolver for TestResolver {
+            fn lookup(&self, name: &str) -> Option<OpContractInfo> {
+                self.0.get(name).cloned()
+            }
+        }
+
+        let int_sort = || provekit_ir_types::Sort::Primitive { name: "Int".to_string() };
+        // Contract for "method_double" with formals [self, x]:
+        //   post = (result == *(x, 2))
+        // This mirrors what extract_formals produces for `fn method_double(&self, x: i64) -> i64 { x * 2 }`.
+        let mut info = OpContractInfo::new(vec![
+            SlotInfo::value("self"),
+            SlotInfo::value("x"),
+        ]);
+        info.post = Some(IrFormula::Atomic {
+            name: "=".to_string(),
+            args: vec![
+                IrTerm::Var { name: "result".to_string() },
+                IrTerm::Ctor {
+                    name: "*".to_string(),
+                    args: vec![
+                        IrTerm::Var { name: "x".to_string() },
+                        IrTerm::Const { value: serde_json::json!(2), sort: int_sort() },
+                    ],
+                },
+            ],
+        });
+        let mut map = HashMap::new();
+        map.insert("method_double".to_string(), info);
+        let resolver = TestResolver(map);
+
+        // Call term: method_double(self_val, const_3) -- 2 args, receiver first.
+        let call = Term::Op {
+            op_cid: Cid::parse(format!("blake3-512:{}", "0".repeat(128))).unwrap(),
+            name: "method_double".to_string(),
+            args: vec![
+                Term::Var { name: "self_val".to_string() },
+                Term::Const { value: serde_json::json!(3), sort: int_sort() },
+            ],
+        };
+
+        // Q = (result == 6): the expected value is 3 * 2.
+        let q = IrFormula::Atomic {
+            name: "=".to_string(),
+            args: vec![
+                IrTerm::Var { name: "result".to_string() },
+                IrTerm::Const { value: serde_json::json!(6), sort: int_sort() },
+            ],
+        };
+
+        let result = libprovekit::wp::wp(&call, &q, &resolver);
+        assert!(
+            result.is_ok(),
+            "wp must not return ArityMismatch for a 2-slot contract with a 2-arg call; got: {:?}",
+            result
+        );
+
+        // The reduced obligation should be `=(*(3, 2), 6)` -- the receiver `self_val`
+        // was substituted for `self` (no occurrence in the body `x*2`), and `3` for `x`.
+        // Structurally: it must NOT be reflexive (3*2 != 6 structurally) so z3 does
+        // real arithmetic. That's the positive (valid -> discharged) path.
+        let reduced = result.unwrap();
+        let s = serde_json::to_string(&reduced).unwrap();
+        // x was bound to const 3, so the body evaluates to *(3,2); NOT reflexive.
+        assert!(
+            !s.contains("\"self_val\""),
+            "self_val should not appear in the reduced formula (self not in the body): {}",
+            s
+        );
+        assert!(
+            s.contains("\"3\"") || s.contains("3"),
+            "reduced formula must contain the substituted x=3: {}",
+            s
+        );
+    }
+
+    #[test]
+    fn discrimination_wp_method_wrong_body_does_not_reduce_to_valid() {
+        // DISCRIMINATION / SOUNDNESS GUARD. A contract whose post is WRONG
+        // (`result == *(x, 3)` when the body is `x * 2`) must NOT produce
+        // a valid (reflexive) formula -- the obligation =(*(x,3), 6) must
+        // NOT be equal to =(*(x,3), *(x,3)), so it is NOT reflexive and
+        // z3 would find the negation SAT (counterexample) -> unsatisfied.
+        //
+        // This test verifies that:
+        //   a) wp still succeeds (no ArityMismatch, no Refused) -- the contract
+        //      is body-bearing with the right arity.
+        //   b) The reduced formula is NOT reflexive (sides differ: *(3,3) vs 6).
+        //   c) The formula does NOT simplify to `true` or a tautology.
+        //
+        // The real z3 SAT check on the negation is performed by `provekit prove`
+        // in the battleaxe integration run; this test confirms the formula shape
+        // (the pre-condition for z3 to find the counterexample is that the
+        // reduced formula be non-trivial with differing sides).
+        use libprovekit::core::types::{Cid, Term};
+        use libprovekit::wp::{OpContractInfo, OpContractResolver, SlotInfo};
+        use provekit_ir_types::{IrFormula, IrTerm};
+        use std::collections::HashMap;
+
+        struct TestResolver(HashMap<String, OpContractInfo>);
+        impl OpContractResolver for TestResolver {
+            fn lookup(&self, name: &str) -> Option<OpContractInfo> {
+                self.0.get(name).cloned()
+            }
+        }
+
+        let int_sort = || provekit_ir_types::Sort::Primitive { name: "Int".to_string() };
+        // WRONG post: `result == *(x, 3)` (body actually does `x * 2`).
+        let mut info = OpContractInfo::new(vec![
+            SlotInfo::value("self"),
+            SlotInfo::value("x"),
+        ]);
+        info.post = Some(IrFormula::Atomic {
+            name: "=".to_string(),
+            args: vec![
+                IrTerm::Var { name: "result".to_string() },
+                IrTerm::Ctor {
+                    name: "*".to_string(),
+                    args: vec![
+                        IrTerm::Var { name: "x".to_string() },
+                        // WRONG: 3 instead of 2
+                        IrTerm::Const { value: serde_json::json!(3), sort: int_sort() },
+                    ],
+                },
+            ],
+        });
+        let mut map = HashMap::new();
+        map.insert("method_wrong".to_string(), info);
+        let resolver = TestResolver(map);
+
+        let call = Term::Op {
+            op_cid: Cid::parse(format!("blake3-512:{}", "0".repeat(128))).unwrap(),
+            name: "method_wrong".to_string(),
+            args: vec![
+                Term::Var { name: "self_val".to_string() },
+                Term::Const { value: serde_json::json!(3), sort: int_sort() },
+            ],
+        };
+
+        // Q = (result == 6): the "correct" expected value (3 * 2).
+        let q = IrFormula::Atomic {
+            name: "=".to_string(),
+            args: vec![
+                IrTerm::Var { name: "result".to_string() },
+                IrTerm::Const { value: serde_json::json!(6), sort: int_sort() },
+            ],
+        };
+
+        let result = libprovekit::wp::wp(&call, &q, &resolver);
+        assert!(result.is_ok(), "wp must not error even for a wrong post: {:?}", result);
+
+        let reduced = result.unwrap();
+        // The reduced formula should be `=(*(3,3), 6)` -- sides differ structurally.
+        // This is NOT reflexive (9 != 6), so z3 would find SAT on the negation
+        // (the obligation `*(3,3)==6` is false -> negation satisfiable -> unsatisfied).
+        let s = serde_json::to_string(&reduced).unwrap();
+        // Confirm the two sides are structurally different (not identical: that would
+        // mean the wrong post accidentally matched, which is a false-pass risk).
+        match &reduced {
+            IrFormula::Atomic { name, args } if name == "=" && args.len() == 2 => {
+                assert_ne!(
+                    args[0], args[1],
+                    "SOUNDNESS: a WRONG body post must NOT produce a reflexive \
+                     (T == T) reduced formula; sides must differ so z3 can refute: {}",
+                    s
+                );
+            }
+            _ => {
+                panic!(
+                    "expected an = atomic from wp reduction, got: {}",
+                    s
+                );
+            }
+        }
     }
 }
