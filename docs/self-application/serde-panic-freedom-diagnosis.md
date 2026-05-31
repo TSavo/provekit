@@ -133,6 +133,39 @@ manifest's effective `(method, phase)` against that. This is a scoped Phase-0
 (scaffolding) task, independent of the K cascade work, with NO falsePass risk (it is
 a CLI diagnostic).
 
+## SYSTEMIC FINDING: e2e panic discharge is broken for syntactic guards too
+
+The remaining cascade bug is NOT serde/D-lib specific. The canonical
+`examples/panic-freedom-fixture` (`guarded_unwrap`: `if opt.is_some() { opt.unwrap() }`,
+`unguarded_unwrap`: `opt.unwrap()`) is correctly wired (manifest has
+method=lift_implications + phase=consumer), yet its end-to-end `prove` scoreboard is:
+
+    {"panicSafe": 0, "reflexive": 28, "undecidable": 133, "falsePass": 0}
+
+`panicSafe=0` -- the SYNTACTIC-guard case does not discharge panic-safe e2e either.
+So the GOAL's "Mechanism proven on a fixture (guarded->panic-safe; deterministic test
+green)" refers to the UNIT test (a hand-built `CallSite{panic_site:true, guard_facts}`
+in cmd_verify/body_discharge), NOT the mint->prove pipeline. The whole e2e panic
+discharge path (the `work_one` cascade) drops panic callsites before the guard
+discharge for both the syntactic-guard and the D-lib paths. Fixing the cascade
+(see above) should lift BOTH at once -- the fix is not serde-specific.
+
+This is exactly the "green unit test, broken product" gap the three product surfaces
+exist to expose. Update the on-main GOAL "NOW" line: e2e K=0 is systemic, unit-test-only.
+
+## Golden snapshot: design tension (why it is not a clean now-win)
+
+A golden of the panic-freedom scoreboard is GOAL Phase-0, but the clean target is the
+per-site census (`self-check --json`), which is daemon-heavy (warm RA oracle) and not
+CI-portable. The daemon-free alternative (raw `prove` on the fixture) is brittle: the
+aggregate dischargeSplit mixes in shim-std's own callsites (undecidable=133 is mostly
+shim noise) and `prove` rows carry file=None, so the fixture's two functions can't be
+isolated for a stable pin. The robust golden therefore wants either (a) self-check
+gaining a fixture-scoped per-site mode, or (b) prove rows carrying file/line so the
+golden pins just the fixture's sites. Best built WITH the cascade fix so it pins a
+meaningful panicSafe>0 delta. Pinning panicSafe=0 now is legitimate scaffolding but
+low-value until the cascade lands.
+
 ## Reproduction
 
 Warm-oracle e2e on battleaxe: `/tmp/serde_e2e2.sh` (mints shim-std + shim-serde deps,
