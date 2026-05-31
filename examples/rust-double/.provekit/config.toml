@@ -20,6 +20,11 @@ kind = "emit"
 surface = "rust-cargo-test"
 emit = "cargo-test"
 
+[[plugins]]
+name = "rust-realize-reqwest"
+kind = "realize"
+surface = "rust-reqwest"
+
 [solvers]
 default = "z3"
 

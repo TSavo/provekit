@@ -312,6 +312,29 @@ fn rewrite_python_realize_manifest(manifest: &Path) {
         .unwrap_or_else(|_| panic!("write manifest {}", manifest.display()));
 }
 
+fn rewrite_binary_manifest_command(manifest: &Path, binary: &Path) {
+    let text = fs::read_to_string(manifest)
+        .unwrap_or_else(|_| panic!("read checked-in manifest {}", manifest.display()));
+    let binary = binary
+        .display()
+        .to_string()
+        .replace('\\', "\\\\")
+        .replace('"', "\\\"");
+    let rewritten = text
+        .lines()
+        .map(|line| {
+            if line.trim_start().starts_with("command = ") {
+                format!("command = [\"{binary}\", \"--rpc\"]")
+            } else {
+                line.to_string()
+            }
+        })
+        .collect::<Vec<_>>()
+        .join("\n");
+    fs::write(manifest, format!("{rewritten}\n"))
+        .unwrap_or_else(|_| panic!("write manifest {}", manifest.display()));
+}
+
 fn concept_carrier_lines(indent: &str) -> String {
     format!(
         "{indent}// provekit-concept: {}\n{indent}// provekit-concept-payload-cid: {}\n",
@@ -1345,6 +1368,73 @@ fn materialize_rust_reqwest_example_uses_rust_library_shim() {
     assert!(
         stdout.contains("reqwest::get(url)"),
         "Rust reqwest example should route through the Rust reqwest shim:\n{stdout}"
+    );
+    assert!(!stdout.contains("provekit::boundary"));
+}
+
+#[test]
+fn materialize_rust_reqwest_uses_checked_in_rust_double_realize_registration() {
+    let repo = repo_root();
+    let binary = repo
+        .join("implementations")
+        .join("rust")
+        .join("target")
+        .join("debug")
+        .join("provekit-realize-rust");
+    if !binary.exists() {
+        eprintln!("skipping checked-in Rust materialize registration test: provekit-realize-rust binary is unavailable; build with `cargo build -p provekit-realize-rust-core`");
+        return;
+    }
+
+    let workspace = tempfile::tempdir().expect("tempdir");
+    let project = workspace.path().join("rust-double");
+    copy_dir_recursive(
+        &repo.join("examples").join("rust-double").join(".provekit"),
+        &project.join(".provekit"),
+    );
+    rewrite_binary_manifest_command(
+        &project
+            .join(".provekit")
+            .join("realize")
+            .join("rust-reqwest")
+            .join("manifest.toml"),
+        &binary,
+    );
+    fs::write(
+        project.join("Cargo.toml"),
+        "[package]\nname = \"checked-in-rust-materialize\"\nversion = \"0.0.0\"\nedition = \"2021\"\n",
+    )
+    .expect("write Cargo.toml");
+    let src_dir = project.join("src");
+    fs::create_dir_all(&src_dir).expect("mkdir src");
+    write_rust_http_request_source(&src_dir);
+
+    let output = Command::new(env!("CARGO_BIN_EXE_provekit"))
+        .env("PROVEKIT_REPO_ROOT", repo)
+        .arg("materialize")
+        .arg("--library")
+        .arg("rust-reqwest")
+        .arg("--source-dir")
+        .arg(&src_dir)
+        .arg("--project")
+        .arg(&project)
+        .output()
+        .expect("spawn provekit materialize for checked-in Rust reqwest");
+
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(
+        output.status.success(),
+        "checked-in rust-double realize registration must drive materialize\nstdout:\n{stdout}\nstderr:\n{stderr}"
+    );
+    assert!(
+        stderr.contains("source materialized by rust kit via RPC"),
+        "Rust source materialize must route through the checked-in Rust kit\nstderr:\n{stderr}"
+    );
+    assert!(stdout.contains("// file: lib.rs"));
+    assert!(
+        stdout.contains("reqwest::get(url)"),
+        "Rust reqwest materialize should route through the reqwest shim:\n{stdout}"
     );
     assert!(!stdout.contains("provekit::boundary"));
 }
