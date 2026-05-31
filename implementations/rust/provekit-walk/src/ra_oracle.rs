@@ -132,13 +132,28 @@ impl RaOracle {
             binary = %bin.display(),
             "oracle: spawning rust-analyzer LSP subprocess"
         );
-        let mut child = Command::new(&bin)
-            .current_dir(workspace_root)
+        // rust-analyzer shells out `cargo metadata` to load the dependency graph.
+        // If the ambient `cargo` it resolves to is OLDER than the rust-analyzer
+        // binary, that call fails on a flag RA's vintage emits (e.g.
+        // `--lockfile-path`), RA silently resolves NOTHING, yet still reports
+        // `quiescent=true, health=warning`. That is a silent zero-resolution: a
+        // K=0 census that looks honest but is a broken oracle. When RA was located
+        // under a rustup toolchain, pin `CARGO`/`RUSTUP_TOOLCHAIN` to that SAME
+        // toolchain so RA's `cargo metadata` matches its own vintage. Only set
+        // what the caller has not set, so an explicit override always wins.
+        let toolchain_env = rustup_toolchain_env_for(&bin);
+        let mut cmd = Command::new(&bin);
+        cmd.current_dir(workspace_root)
             .stdin(Stdio::piped())
             .stdout(Stdio::piped())
-            .stderr(Stdio::null())
-            .spawn()
-            .ok()?;
+            .stderr(Stdio::null());
+        for (k, v) in &toolchain_env {
+            if std::env::var_os(k).is_none() {
+                info!(key = %k, value = %v, "oracle: pinning RA toolchain env (matches the RA binary)");
+                cmd.env(k, v);
+            }
+        }
+        let mut child = cmd.spawn().ok()?;
         let stdin = child.stdin.take()?;
         let stdout = child.stdout.take()?;
         let (tx, rx) = std::sync::mpsc::channel::<Value>();
@@ -836,6 +851,47 @@ fn locate_rust_analyzer() -> Option<PathBuf> {
         return Some(PathBuf::from("rust-analyzer"));
     }
     None
+}
+
+/// Derive the `CARGO` / `RUSTUP_TOOLCHAIN` env that pins rust-analyzer's
+/// `cargo metadata` shell-out to the SAME rustup toolchain the RA binary lives
+/// in. Returns an empty vec when `bin` is not under a rustup toolchain layout
+/// (a bare `rust-analyzer` on PATH, or a non-rustup install) -- in that case we
+/// leave the ambient env alone and rely on health-signal surfacing if it breaks.
+///
+/// A rustup RA binary is at `<...>/toolchains/<tc>/bin/rust-analyzer`; the
+/// matching cargo is the sibling `<...>/toolchains/<tc>/bin/cargo`.
+fn rustup_toolchain_env_for(bin: &Path) -> Vec<(String, String)> {
+    // bin/ dir, then the toolchain dir, then its parent (must be `toolchains`).
+    let bin_dir = match bin.parent() {
+        Some(d) => d,
+        None => return Vec::new(),
+    };
+    let tc_dir = match bin_dir.parent() {
+        Some(d) => d,
+        None => return Vec::new(),
+    };
+    let is_rustup_layout = tc_dir
+        .parent()
+        .and_then(|p| p.file_name())
+        .map(|n| n == "toolchains")
+        .unwrap_or(false);
+    if !is_rustup_layout {
+        return Vec::new();
+    }
+    let tc_name = match tc_dir.file_name().and_then(|n| n.to_str()) {
+        Some(n) => n.to_string(),
+        None => return Vec::new(),
+    };
+    let mut out = Vec::new();
+    let cargo = bin_dir.join("cargo");
+    if cargo.is_file() {
+        if let Some(c) = cargo.to_str() {
+            out.push(("CARGO".to_string(), c.to_string()));
+        }
+    }
+    out.push(("RUSTUP_TOOLCHAIN".to_string(), tc_name));
+    out
 }
 
 /// Map a `textDocument/definition` result to a single defining crate, or
