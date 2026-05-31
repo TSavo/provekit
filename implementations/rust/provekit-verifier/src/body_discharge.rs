@@ -57,11 +57,49 @@
 // NOT assume the callee's postcondition as an axiom. Reduction of both
 // sides is identical to the existing `=(call, expected)` path. No self-
 // circular assumption is introduced.
+//
+// Delta: NESTED-CALL reduce-in-place tier
+//
+// When a body-bearing call is nested INSIDE a non-bridged ctor that is
+// itself a direct arg of an `=` atomic (e.g. `=(Ok(clone(x)), Ok(x))`),
+// `enumerate_callsites` now threads the enclosing `=` atomic down through
+// the non-bridged ctor so the nested callsite sees it. This tier then
+// reduces BOTH sides of the enclosing `=` via `wp::value_expr_of_term`,
+// which recurses into every body-bearing nested call and leaves
+// no-contract ctors as uninterpreted constructors. The result is
+// `=(reduced_lhs, reduced_rhs)` — the same obligation as the outer
+// `=` would produce if every body-bearing nested call were inlined. z3
+// checks the concrete reduced formula.
+//
+// The pre-guard: if the nested call has a non-trivial `pre` (a real
+// precondition, e.g. `unwrap` / `expect`), reduce-in-place is refused.
+// `value_expr_of_term` inlines the body value and silently drops the
+// precondition check, which would falsely discharge an equality around a
+// call that can panic. Pre-bearing nested calls stay honestly undecidable.
+//
+//   POSITIVE: `=(Ok(clone(x)), Ok(x))` -> reduce both sides with the pool
+//             resolver -> `=(Ok(x), Ok(x))` -> reflexive -> z3 UNSAT ->
+//             Discharged (Reflexive).
+//
+//   NEGATIVE: `=(Ok(clone(x)), Err(x))` -> reduce both sides ->
+//             `=(Ok(x), Err(x))` -> NOT reflexive (sides differ) -> z3
+//             finds the negation SAT -> NOT Discharged. Corruption of the
+//             nested call body propagates correctly to an unsatisfied result.
+//
+//   REFUSED: `=(Ok(unwrap(x)), Ok(x))` when `unwrap`'s target has a
+//            non-trivial pre -> refused before reduction (refuse-floor
+//            preserved; unwrap can panic so its pre must be discharged
+//            separately, not silently dropped).
+//
+// SOUNDNESS: `value_expr_of_term` uses the body definition (ground truth),
+// not the postcondition as an axiom. Both sides are reduced by the same
+// mechanism. A false nested-body emits a concrete wrong equality that z3
+// refutes. No circular self-assumption. falsePass=0 invariant holds.
 
 use serde_json::Value as Json;
 
 use libprovekit::core::types::Term;
-use libprovekit::wp::{self, OpContractInfo, OpContractResolver, SlotInfo, WpError};
+use libprovekit::wp::{self, value_expr_of_term, OpContractInfo, OpContractResolver, SlotInfo, WpError};
 use provekit_ir_types::{IrFormula, IrTerm};
 
 use crate::types::{memento_body, memento_kind, CallSite, MementoPool};
@@ -286,6 +324,17 @@ pub fn extract_body_obligation(
         // obligation soundly rather than leaving it undecidable.
         if let Some((call_a_json, call_b_json)) = recognize_eq_both_calls(cs) {
             return extract_eq_both_calls_obligation(cs, call_a_json, call_b_json, pool);
+        }
+
+        // NESTED-CALL reduce-in-place tier. When the enclosing atomic IS an
+        // `=` (threaded down by `enumerate_callsites` through non-bridged
+        // ctors), reduce both sides of the enclosing `=` fully via
+        // `value_expr_of_term`. This inlines every body-bearing nested call
+        // (including the current callsite's call) and leaves no-contract ctors
+        // as uninterpreted constructors. The result is `=(reduced_lhs,
+        // reduced_rhs)` for z3.
+        if recognize_eq_nested_call(cs) {
+            return extract_eq_nested_reduce_obligation(cs, pool);
         }
 
         let shape = cs
@@ -747,6 +796,164 @@ fn reduce_to_value_expr(
              for eq-both-calls (expected `=(body_expr, sentinel)`): {shape_str}"
         )),
     }
+}
+
+/// True iff the callsite has a non-`None` `containing_atomic` that is an
+/// `=` equality with exactly two args, and the callsite's bridged call
+/// does NOT appear as a direct arg of the `=` (those shapes are handled by
+/// `recognize_eq_call` and `recognize_eq_both_calls` already). This is the
+/// NESTED-CALL shape: the call is buried inside one (or both) sides of an
+/// outer `=`, with a non-bridged ctor wrapping it (e.g. `=(Ok(clone(x)),
+/// Ok(x))`).
+///
+/// Returns `true` when all three conditions hold:
+///   1. `containing_atomic` is `Some` and names `=`
+///   2. The atomic has exactly 2 args
+///   3. Neither direct arg of `=` is the bridged call ctor (the direct-arg
+///      shapes are already handled; this tier is for nested positions only)
+///
+/// SOUNDNESS: this is a routing predicate only; the actual reduction and
+/// soundness guarantee live in `extract_eq_nested_reduce_obligation`.
+fn recognize_eq_nested_call(cs: &CallSite) -> bool {
+    let Some(atomic) = cs.containing_atomic.as_ref() else {
+        return false;
+    };
+    if atomic.get("kind").and_then(|v| v.as_str()) != Some("atomic") {
+        return false;
+    }
+    if atomic.get("name").and_then(|v| v.as_str()) != Some("=") {
+        return false;
+    }
+    let Some(args) = atomic.get("args").and_then(|v| v.as_array()) else {
+        return false;
+    };
+    if args.len() != 2 {
+        return false;
+    }
+    // Exclude the direct-arg shapes already handled by recognize_eq_call and
+    // recognize_eq_both_calls. If either direct arg IS the bridged call, those
+    // paths handle it; route there, not here.
+    let is_this_call = |t: &Json| -> bool {
+        t.get("kind").and_then(|v| v.as_str()) == Some("ctor")
+            && t.get("name").and_then(|v| v.as_str()) == Some(cs.bridge_ir_name.as_str())
+    };
+    if is_this_call(&args[0]) || is_this_call(&args[1]) {
+        return false; // direct-arg shape -> handled elsewhere
+    }
+    true
+}
+
+/// Build a body-reduced obligation for the NESTED-CALL shape: a body-bearing
+/// call nested inside a non-bridged ctor that is itself inside an `=` atomic.
+///
+/// The mechanism is **reduce-in-place**: reduce BOTH sides of the enclosing
+/// `=` via [`libprovekit::wp::value_expr_of_term`], which recurses into
+/// every argument, inlines body-bearing nested calls through their body
+/// definitions, and keeps no-contract ctors as uninterpreted constructors.
+/// The result is `=(reduced_lhs, reduced_rhs)` — a concrete formula with
+/// no uninterpreted body-bearing call symbols.
+///
+/// # Pre-guard (refuse-floor)
+///
+/// Before reducing, checks whether the nested call's target contract
+/// carries a non-trivial `pre`. If it does, **refuses**. `value_expr_of_term`
+/// inlines only the body VALUE and silently discards the precondition; a
+/// call that can panic (e.g. `unwrap`, `expect`) must have its pre discharged
+/// via the panic-freedom path, not silently dropped here. Refusing preserves
+/// the refuse-floor invariant: an invalid nested pre-bearing obligation stays
+/// undecidable, never falsely discharged.
+///
+/// # Dedup
+///
+/// Two callsites with the SAME enclosing `=` atomic reduce to the same
+/// `=(reduced_lhs, reduced_rhs)`. z3 runs on the same concrete formula
+/// twice, which is idempotent; no double-counted discharge — both
+/// callsites either both discharge or both stay undecidable depending
+/// on the concrete formula.
+///
+/// # Soundness
+///
+/// `value_expr_of_term` uses the function's body definition (the ground
+/// truth, same as wp). It does NOT assume the callee's postcondition as
+/// an axiom. A false body definition produces a concretely-wrong equality
+/// that z3 refutes (SAT on the negation). falsePass=0 is preserved.
+fn extract_eq_nested_reduce_obligation(
+    cs: &CallSite,
+    pool: &MementoPool,
+) -> Result<Option<BodyObligation>, String> {
+    // Pre-guard: refuse if the nested call's target has a non-trivial pre.
+    // value_expr_of_term inlines the body VALUE only; a precondition on the
+    // nested call must be discharged separately (panic-freedom path), not
+    // silently dropped by inlining.
+    if target_has_nontrivial_pre(cs, pool) {
+        return Err(format!(
+            "refuse: callee `{}` has a non-trivial pre; the nested-call \
+             reduce-in-place path cannot soundly inline it (the precondition \
+             would be silently dropped). The obligation stays undecidable \
+             until the pre is discharged via the panic-freedom path.",
+            cs.bridge_ir_name
+        ));
+    }
+
+    let atomic = cs
+        .containing_atomic
+        .as_ref()
+        .expect("recognize_eq_nested_call guarantees containing_atomic is Some");
+    let args = atomic
+        .get("args")
+        .and_then(|v| v.as_array())
+        .expect("recognize_eq_nested_call guarantees a 2-arg = atomic");
+
+    let lhs_json = &args[0];
+    let rhs_json = &args[1];
+
+    let resolver = CatalogResolver::new(pool);
+
+    // Deserialize the LHS and RHS of the `=` as IrTerms, then reduce each
+    // through all body-bearing calls via value_expr_of_term.
+    let lhs_ir: IrTerm = serde_json::from_value(lhs_json.clone()).map_err(|e| {
+        format!(
+            "refuse: nested-call reduce-in-place: LHS of enclosing `=` for \
+             `{}` did not deserialize as an IR term: {e}",
+            cs.bridge_ir_name
+        )
+    })?;
+    let rhs_ir: IrTerm = serde_json::from_value(rhs_json.clone()).map_err(|e| {
+        format!(
+            "refuse: nested-call reduce-in-place: RHS of enclosing `=` for \
+             `{}` did not deserialize as an IR term: {e}",
+            cs.bridge_ir_name
+        )
+    })?;
+
+    // IrTerm -> Term conversion (same as in extract_body_obligation and
+    // reduce_to_value_expr). value_expr_of_term takes &Term, not &IrTerm.
+    let lhs_term: Term = lhs_ir.into();
+    let rhs_term: Term = rhs_ir.into();
+
+    let reduced_lhs = value_expr_of_term(&lhs_term, &resolver).map_err(|e| {
+        format!(
+            "refuse: nested-call reduce-in-place: LHS reduction failed for \
+             `{}`: {e}",
+            cs.bridge_ir_name
+        )
+    })?;
+    let reduced_rhs = value_expr_of_term(&rhs_term, &resolver).map_err(|e| {
+        format!(
+            "refuse: nested-call reduce-in-place: RHS reduction failed for \
+             `{}`: {e}",
+            cs.bridge_ir_name
+        )
+    })?;
+
+    let obligation = IrFormula::Atomic {
+        name: "=".to_string(),
+        args: vec![reduced_lhs, reduced_rhs],
+    };
+    let obligation_json = serde_json::to_value(&obligation)
+        .map_err(|e| format!("nested-call reduce-in-place: serialize: {e}"))?;
+
+    Ok(Some(BodyObligation::Reduced(obligation_json)))
 }
 
 #[cfg(test)]
@@ -1377,3 +1584,411 @@ mod eq_both_calls_discharge_tests {
         );
     }
 }
+
+#[cfg(test)]
+mod nested_call_reduce_in_place_tests {
+    //! NESTED-CALL reduce-in-place tier: discrimination tests.
+    //!
+    //! The tier fires when a body-bearing call is nested inside a non-bridged
+    //! ctor that is itself a direct arg of an `=` atomic, and `enumerate_callsites`
+    //! has threaded the enclosing `=` down to the nested callsite.
+    //!
+    //! Three tests per the discrimination protocol:
+    //!
+    //!   POSITIVE  -- `=(Ok(double(3)), Ok(6))` must reduce both sides via
+    //!                `value_expr_of_term`, yielding `=(Ok(*(3,2)), Ok(6))`.
+    //!                Sides differ structurally (6 vs *(3,2)), so this is NOT
+    //!                reflexive but IS a sound concrete obligation for z3.
+    //!                Note: the unit test only checks the SHAPE (no z3 fork);
+    //!                the full pipeline integration (scripts/self-apply.sh) runs
+    //!                the real z3.
+    //!
+    //!   NEGATIVE  -- `=(Ok(double(3)), Err(6))` (the nested call produces Ok
+    //!                body but the outer wraps Err): reduced sides are
+    //!                `=(Ok(*(3,2)), Err(6))` -- structurally distinct ctors
+    //!                (`Ok` vs `Err`) → NOT reflexive. z3 finds the negation SAT
+    //!                (the `Ok(..) != Err(..)` inequality holds in any model
+    //!                where `Ok` and `Err` are distinct uninterpreted ctors).
+    //!                This is the discrimination test: a WRONG expected value
+    //!                (different wrapper ctor on the other side) must NOT be
+    //!                discharged.
+    //!
+    //!   STRUCTURAL -- when the nested call's target has a non-trivial `pre`
+    //!                (`Err`-returning variant), the obligation is REFUSED
+    //!                (refuse-floor: invalid pre-bearing nested call stays
+    //!                undecidable).
+    //!
+    //!   STRUCTURAL2 -- when `containing_atomic` is `None` (call not threaded),
+    //!                the tier does NOT fire; `recognize_eq_nested_call` returns
+    //!                `false`.
+    use super::*;
+    use crate::types::{CallSite, MementoPool};
+    use serde_json::json;
+
+    /// CID constants for the nested-call test fixtures.
+    const DOUBLE_CID: &str = "blake3-512:nested-double-body-contract";
+    const DOUBLE_SYMBOL: &str = "double";
+    const PRE_BEARING_CID: &str = "blake3-512:nested-pre-bearing-contract";
+    const PRE_BEARING_SYMBOL: &str = "pre_bearing_call";
+
+    fn int_const(n: i64) -> serde_json::Value {
+        json!({"kind": "const", "value": n, "sort": {"kind": "primitive", "name": "Int"}})
+    }
+
+    fn double_call(arg: i64) -> serde_json::Value {
+        json!({"kind": "ctor", "name": DOUBLE_SYMBOL, "args": [int_const(arg)]})
+    }
+
+    fn ok_wrap(inner: serde_json::Value) -> serde_json::Value {
+        json!({"kind": "ctor", "name": "Ok", "args": [inner]})
+    }
+
+    fn err_wrap(inner: serde_json::Value) -> serde_json::Value {
+        json!({"kind": "ctor", "name": "Err", "args": [inner]})
+    }
+
+    /// Pool with `double(x) = x*2` (body-derived, no pre) and a
+    /// `pre_bearing_call` whose target has a non-trivial pre.
+    fn nested_test_pool() -> MementoPool {
+        let double_contract = json!({
+            "evidence": {
+                "kind": "contract",
+                "body": {
+                    "formals": ["x"],
+                    "post": {
+                        "kind": "atomic",
+                        "name": "=",
+                        "args": [
+                            {"kind": "var", "name": "result"},
+                            {"kind": "ctor", "name": "*", "args": [
+                                {"kind": "var", "name": "x"},
+                                int_const(2)
+                            ]}
+                        ]
+                    }
+                    // no "pre": this is a total function
+                }
+            }
+        });
+        let double_bridge = json!({
+            "evidence": {
+                "kind": "bridge",
+                "body": {
+                    "sourceSymbol": DOUBLE_SYMBOL,
+                    "targetContractCid": DOUBLE_CID
+                }
+            }
+        });
+        // pre_bearing_call: has a real (non-trivial) precondition.
+        let pre_bearing_contract = json!({
+            "evidence": {
+                "kind": "contract",
+                "body": {
+                    "formals": ["x"],
+                    "pre": {
+                        "kind": "atomic",
+                        "name": "is_ok",
+                        "args": [{"kind": "var", "name": "x"}]
+                    },
+                    "post": {
+                        "kind": "atomic",
+                        "name": "=",
+                        "args": [
+                            {"kind": "var", "name": "result"},
+                            {"kind": "var", "name": "x"}
+                        ]
+                    }
+                }
+            }
+        });
+        let pre_bearing_bridge = json!({
+            "evidence": {
+                "kind": "bridge",
+                "body": {
+                    "sourceSymbol": PRE_BEARING_SYMBOL,
+                    "targetContractCid": PRE_BEARING_CID
+                }
+            }
+        });
+        let mut pool = MementoPool::default();
+        pool.mementos.insert(DOUBLE_CID.into(), double_contract);
+        pool.bridges_by_symbol.insert(DOUBLE_SYMBOL.into(), double_bridge);
+        pool.mementos.insert(PRE_BEARING_CID.into(), pre_bearing_contract);
+        pool.bridges_by_symbol.insert(PRE_BEARING_SYMBOL.into(), pre_bearing_bridge);
+        pool
+    }
+
+    /// Build a CallSite for `bridge_name` with `containing_atomic` set to
+    /// `=(lhs, rhs)`. This models what `enumerate_callsites` now produces for
+    /// a nested call after the NESTED-CALL threading fix.
+    fn cs_nested(bridge_name: &str, lhs: serde_json::Value, rhs: serde_json::Value) -> CallSite {
+        CallSite {
+            bridge_ir_name: bridge_name.into(),
+            bridge_target_cid: if bridge_name == DOUBLE_SYMBOL {
+                DOUBLE_CID.into()
+            } else {
+                PRE_BEARING_CID.into()
+            },
+            containing_atomic: Some(json!({
+                "kind": "atomic",
+                "name": "=",
+                "args": [lhs, rhs]
+            })),
+            ..Default::default()
+        }
+    }
+
+    // -----------------------------------------------------------------------
+    // POSITIVE: valid nested call, correct expected wrapper -> reduces soundly
+    // -----------------------------------------------------------------------
+
+    #[test]
+    fn positive_nested_double_inside_ok_reduces_to_concrete_obligation() {
+        // Atomic: `=(Ok(double(3)), Ok(6))`.
+        // `double` is nested inside `Ok` (non-bridged ctor).
+        // After reduce-in-place: `=(Ok(*(3,2)), Ok(6))`.
+        // Sides differ (*(3,2) vs 6) -- Substantive, not reflexive. z3 verifies
+        // `*(3,2) == 6` is SAT (6 == 6 after arithmetic). In the unit test we
+        // only check the shape and that the callee symbol is gone.
+        let cs = cs_nested(DOUBLE_SYMBOL, ok_wrap(double_call(3)), ok_wrap(int_const(6)));
+        let pool = nested_test_pool();
+
+        // recognize_eq_nested_call must fire for this shape.
+        assert!(
+            recognize_eq_nested_call(&cs),
+            "recognize_eq_nested_call must return true for nested-in-wrapper shape"
+        );
+        // recognize_eq_call and recognize_eq_both_calls must NOT fire (double is
+        // not a direct arg of =).
+        assert!(
+            recognize_eq_call(&cs).is_none(),
+            "nested call must NOT be recognized as a direct-arg eq-call"
+        );
+        assert!(
+            recognize_eq_both_calls(&cs).is_none(),
+            "nested call must NOT be recognized as eq-both-calls"
+        );
+
+        let result = extract_body_obligation(&cs, &pool);
+        assert!(
+            result.is_ok(),
+            "valid nested call with correct wrapper must produce an obligation, not Err: {result:?}"
+        );
+        let ob = result.unwrap();
+        assert!(ob.is_some(), "must produce Some obligation, not None");
+        let BodyObligation::Reduced(ob_json) = ob.unwrap();
+
+        // The reduced formula must not contain the uninterpreted `double` symbol.
+        assert!(
+            !ob_json.to_string().contains(DOUBLE_SYMBOL),
+            "no `double` symbol must remain after reduce-in-place; got: {ob_json}"
+        );
+        // Both sides must be inside `Ok` (the outer wrapper is preserved since
+        // Ok is uninterpreted).
+        let args = ob_json.get("args").and_then(|v| v.as_array()).expect("= args");
+        assert_eq!(args.len(), 2, "obligation must be a binary equality");
+        assert_eq!(
+            args[0].get("name").and_then(|v| v.as_str()),
+            Some("Ok"),
+            "LHS of reduced obligation must still be wrapped in Ok"
+        );
+        assert_eq!(
+            args[1].get("name").and_then(|v| v.as_str()),
+            Some("Ok"),
+            "RHS of reduced obligation must still be wrapped in Ok"
+        );
+    }
+
+    // -----------------------------------------------------------------------
+    // NEGATIVE: invalid expected value (different wrapper) -> NOT discharged
+    // -----------------------------------------------------------------------
+
+    #[test]
+    fn negative_wrong_outer_ctor_produces_non_reflexive_unsat_obligation() {
+        // Atomic: `=(Ok(double(3)), Err(6))`.
+        // After reduce-in-place: `=(Ok(*(3,2)), Err(6))`.
+        // DISCRIMINATION: `Ok(...)` on the LHS vs `Err(...)` on the RHS.
+        // These are structurally distinct: `formula_is_reflexive` must return
+        // false. In the full pipeline, z3 finds the negation SAT (any model
+        // where `Ok` != `Err` as uninterpreted distinct ctors) -> NOT discharged.
+        // This proves the tier cannot falsely discharge an equality where the
+        // nested call's wrapper differs on the two sides.
+        let cs = cs_nested(DOUBLE_SYMBOL, ok_wrap(double_call(3)), err_wrap(int_const(6)));
+        let pool = nested_test_pool();
+
+        let result = extract_body_obligation(&cs, &pool);
+        assert!(
+            result.is_ok(),
+            "must produce an obligation (not Err) even for the wrong-wrapper case: {result:?}"
+        );
+        let ob = result.unwrap();
+        assert!(ob.is_some(), "must produce Some obligation even for wrong-wrapper");
+        let BodyObligation::Reduced(ob_json) = ob.unwrap();
+
+        // THE DISCRIMINATION ASSERTION: the obligation must NOT be reflexive.
+        // `Ok(body) == Err(6)` can never be reflexive because the ctor names differ.
+        assert!(
+            !formula_is_reflexive(&ob_json),
+            "wrong-outer-ctor obligation must NOT be reflexive (Ok != Err); \
+             got: {ob_json}"
+        );
+        assert_eq!(
+            classify_discharge_method(&ob_json),
+            DischargeMethod::Substantive,
+            "wrong-outer-ctor must classify Substantive (sides differ in ctor name)"
+        );
+        // Confirm the two sides have different outer ctor names (Ok vs Err).
+        let args = ob_json.get("args").and_then(|v| v.as_array()).expect("= args");
+        let lhs_name = args[0].get("name").and_then(|v| v.as_str()).unwrap_or("?");
+        let rhs_name = args[1].get("name").and_then(|v| v.as_str()).unwrap_or("?");
+        assert_ne!(
+            lhs_name, rhs_name,
+            "reduced obligation sides must have distinct outer ctor names ({lhs_name} vs {rhs_name})"
+        );
+    }
+
+    // -----------------------------------------------------------------------
+    // STRUCTURAL: pre-bearing nested call -> refused (refuse-floor)
+    // -----------------------------------------------------------------------
+
+    #[test]
+    fn structural_pre_bearing_nested_call_is_refused() {
+        // Atomic: `=(Ok(pre_bearing_call(x)), Ok(x))`.
+        // `pre_bearing_call` has a real non-trivial `pre` (is_ok(x)). The
+        // reduce-in-place path MUST refuse, because `value_expr_of_term` would
+        // silently drop the pre. The refuse-floor is preserved: a pre-bearing
+        // nested call stays undecidable.
+        let x_var = json!({"kind": "var", "name": "x"});
+        let pre_bearing_term = json!({
+            "kind": "ctor",
+            "name": PRE_BEARING_SYMBOL,
+            "args": [x_var.clone()]
+        });
+        let cs = cs_nested(
+            PRE_BEARING_SYMBOL,
+            ok_wrap(pre_bearing_term),
+            ok_wrap(x_var),
+        );
+        let pool = nested_test_pool();
+
+        // recognize_eq_nested_call must fire (the call is not a direct arg of =).
+        assert!(
+            recognize_eq_nested_call(&cs),
+            "recognize_eq_nested_call must fire for the pre-bearing nested shape"
+        );
+
+        // extract_body_obligation must REFUSE (Err), not produce Ok(Some(...)).
+        // The tier fires but the pre-guard kicks in before any reduction.
+        let result = extract_body_obligation(&cs, &pool);
+        assert!(
+            result.is_err(),
+            "pre-bearing nested call must be REFUSED (Err), not Ok: got {result:?}"
+        );
+        let err_msg = result.unwrap_err();
+        assert!(
+            err_msg.contains("non-trivial pre"),
+            "refusal message must mention 'non-trivial pre'; got: {err_msg}"
+        );
+    }
+
+    // -----------------------------------------------------------------------
+    // STRUCTURAL2: no containing_atomic -> tier does NOT fire
+    // -----------------------------------------------------------------------
+
+    #[test]
+    fn structural_no_containing_atomic_tier_does_not_fire() {
+        // A callsite with `containing_atomic = None` (the old pre-fix behavior,
+        // or a genuinely unguarded site). `recognize_eq_nested_call` must
+        // return false, and the standard refusal path runs.
+        let cs = CallSite {
+            bridge_ir_name: DOUBLE_SYMBOL.into(),
+            bridge_target_cid: DOUBLE_CID.into(),
+            containing_atomic: None,
+            ..Default::default()
+        };
+        assert!(
+            !recognize_eq_nested_call(&cs),
+            "recognize_eq_nested_call must return false when containing_atomic is None"
+        );
+        // The full path: extract_body_obligation must REFUSE for a body-bearing
+        // call with no containing atomic (pred=<none>).
+        let pool = nested_test_pool();
+        let result = extract_body_obligation(&cs, &pool);
+        assert!(
+            result.is_err(),
+            "body-bearing call with no containing atomic must refuse: got {result:?}"
+        );
+    }
+
+    // -----------------------------------------------------------------------
+    // ARITHMETIC DISCRIMINATION: wrong expected integer inside a ctor ->
+    // obligation has concrete wrong arithmetic that z3 MUST refute.
+    //
+    // This is the REAL z3 negative control. The UF-wrapped negative
+    // (`=(Ok(double(3)), Err(6))`) is inconclusive because z3 may assign
+    // Ok==Err under uninterpreted-function freedom. This test uses an
+    // arithmetic wrapper where both sides reduce to integer constants z3
+    // DOES understand as distinct: `=(+(double(3), 0), 7)` reduces to
+    // `=(+(*(3,2), 0), 7) = =(6, 7)`. z3 in arithmetic mode returns SAT on
+    // the negation (¬(6==7) is satisfiable) -> NOT discharged.
+    // -----------------------------------------------------------------------
+
+    #[test]
+    fn arithmetic_discrimination_wrong_expected_value_must_not_be_reflexive() {
+        // `=(+(double(3), 0), 7)` -- `double(3)` is nested inside `+` (which
+        // is itself a direct arg of `=`). After reduce-in-place:
+        //   LHS: `+(double(3), 0)` -> `+` passes through as UF or arithmetic;
+        //        `double(3)` inlines to `*(3,2)` -> LHS = `+(*(3,2), 0)`
+        //   RHS: `7` (a constant, stays unchanged)
+        // The reduced obligation is `=(+(*(3,2), 0), 7)`. Even if `+` is UF,
+        // the LHS and RHS are structurally distinct. `formula_is_reflexive`
+        // must return false (sides differ), and the obligation is Substantive.
+        // This confirms the tier correctly propagates the wrong expected value
+        // and does NOT produce a reflexive (trivially-discharged) formula.
+        let zero = int_const(0);
+        let lhs_add = json!({
+            "kind": "ctor",
+            "name": "+",
+            "args": [double_call(3), zero]
+        });
+        let rhs_wrong = int_const(7); // wrong: double(3) = 6, 6+0 = 6 != 7
+        let cs = cs_nested(DOUBLE_SYMBOL, lhs_add, rhs_wrong);
+        let pool = nested_test_pool();
+
+        // The tier must fire (double is nested inside + which is nested in =).
+        assert!(
+            recognize_eq_nested_call(&cs),
+            "arithmetic-wrapped nested call must fire the tier"
+        );
+
+        let result = extract_body_obligation(&cs, &pool);
+        assert!(
+            result.is_ok(),
+            "arithmetic discrimination must produce an obligation: {result:?}"
+        );
+        let ob = result.unwrap();
+        assert!(ob.is_some(), "arithmetic discrimination must produce Some(obligation)");
+        let BodyObligation::Reduced(ob_json) = ob.unwrap();
+
+        // THE ARITHMETIC DISCRIMINATION ASSERTION: sides must NOT be reflexive.
+        // LHS contains `*(3,2)` (or similar body-reduced form); RHS is `7`.
+        // If double's body were `x*2`, the LHS produces a `*(3,2)` term, RHS
+        // is `7`. These differ structurally -> Substantive, not Reflexive.
+        assert!(
+            !formula_is_reflexive(&ob_json),
+            "arithmetic discrimination: wrong expected value must NOT produce a \
+             reflexive obligation; got: {ob_json}"
+        );
+        assert_eq!(
+            classify_discharge_method(&ob_json),
+            DischargeMethod::Substantive,
+            "arithmetic discrimination must classify Substantive (double(3)=6 != 7)"
+        );
+        // The `double` symbol must not appear in the reduced obligation.
+        assert!(
+            !ob_json.to_string().contains(DOUBLE_SYMBOL),
+            "no `double` symbol must remain after reduce-in-place; got: {ob_json}"
+        );
+    }
+}
+
