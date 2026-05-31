@@ -2134,6 +2134,7 @@ fn bind_lift(params: &Value) -> Result<Value, String> {
                 loss,
                 observed_dimension,
                 item_fn,
+                totality_result_ok,
             } = sugar_target;
             // #1396 PR-0: singleton-concept lift-gap validator.  When the
             // @sugar annotation claims a portable `concept:X`, the substrate
@@ -2269,34 +2270,42 @@ fn bind_lift(params: &Value) -> Result<Value, String> {
             // #1580: emit a SIBLING `contract` decl per
             // `#[provekit::sugar(...)]` annotation. cmd_mint mints
             // this as a regular (non-body-bearing) contract memento.
-            // The post is the trivial identity ctor — `function_name(<vars>)`
-            // — which makes the verifier's enumerate_callsites find a
-            // callsite at this ctor name. The bridge that resolves it
-            // is emitted by the recognize lane (or by other downstream
-            // consumers that want to point at this contract).
+            // The post is normally the trivial identity ctor —
+            // `function_name(<vars>)` — which makes the verifier's
+            // enumerate_callsites find a callsite at this ctor name.
             //
-            // Why NOT `function-contract` (which would auto-mint a
-            // bridge): kind=function-contract triggers body-discharge,
-            // which substrate-honestly refuses contracts that have
-            // formals but no precondition (rather than reporting a
-            // vacuous pass). Without a real body-derived precondition
-            // — which walk_rpc doesn't have without invoking a deeper
-            // lifter — staying out of body-discharge is the honest
-            // path. The contract still publishes the sugar function as
-            // a substrate-named entity; bridges resolve to it.
+            // TOTALITY EXCEPTION (Phase-2 Tier D-lib): when the sugar
+            // annotation carries `totality = "result_ok"` and the
+            // return type is Result, the post is the AXIOM `is_ok(result)`.
+            // This is the exact shape callee_post_guard_fact checks
+            // (body_discharge.rs:post_is_is_ok_of_result). With this
+            // post, bridges emitted by the recognize lane discharge the
+            // downstream `.unwrap()` as panic-safe. Sound: only functions
+            // explicitly marked totality get this post; inference from
+            // arg types is rejected (refuse-floor).
             let fn_name = item_fn.sig.ident.to_string();
-            let arg_terms: Vec<Value> = param_names
-                .iter()
-                .map(|name| json!({ "kind": "var", "name": name }))
-                .collect();
-            let post = json!({
-                "kind": "atomic",
-                "args": [{
-                    "kind": "ctor",
-                    "name": fn_name,
-                    "args": arg_terms,
-                }],
-            });
+            let post = if totality_result_ok {
+                // Singleton totality post: is_ok(result).
+                // Shape: {"kind":"atomic","name":"is_ok","args":[{"kind":"var","name":"result"}]}
+                json!({
+                    "kind": "atomic",
+                    "name": "is_ok",
+                    "args": [{ "kind": "var", "name": "result" }],
+                })
+            } else {
+                let arg_terms: Vec<Value> = param_names
+                    .iter()
+                    .map(|name| json!({ "kind": "var", "name": name }))
+                    .collect();
+                json!({
+                    "kind": "atomic",
+                    "args": [{
+                        "kind": "ctor",
+                        "name": fn_name,
+                        "args": arg_terms,
+                    }],
+                })
+            };
             entries.push(json!({
                 "kind": "contract",
                 "name": fn_name,
@@ -2807,6 +2816,10 @@ struct SugarTarget {
     loss: Vec<String>,
     observed_dimension: Option<String>,
     item_fn: syn::ItemFn,
+    /// Phase-2 Tier D-lib: when `totality = "result_ok"` in the sugar attr
+    /// AND the return type is Result, the emitted sibling `kind=contract`
+    /// carries post = `is_ok(result)` instead of the identity ctor post.
+    totality_result_ok: bool,
 }
 
 #[derive(Debug, Clone)]
@@ -2972,6 +2985,9 @@ fn collect_sugar_targets_in_items(items: &[syn::Item], targets: &mut Vec<SugarTa
         match item {
             syn::Item::Fn(item_fn) => {
                 if let Some(parsed) = extract_sugar_attr(item_fn) {
+                    let totality_result_ok =
+                        parsed.totality.as_deref() == Some("result_ok")
+                            && is_result_type_fn(item_fn);
                     targets.push(SugarTarget {
                         concept: parsed.concept,
                         library: parsed.library,
@@ -2980,6 +2996,7 @@ fn collect_sugar_targets_in_items(items: &[syn::Item], targets: &mut Vec<SugarTa
                         loss: parsed.loss,
                         observed_dimension: parsed.observed_dimension,
                         item_fn: item_fn.clone(),
+                        totality_result_ok,
                     });
                 }
             }
@@ -3047,10 +3064,7 @@ fn sugar_declares_totality_result_ok(item_fn: &syn::ItemFn) -> bool {
     }
     // Require a Result return type. A totality label on a non-Result return
     // makes no sense and is rejected loudly here rather than silently mislabeling.
-    matches!(
-        &item_fn.sig.output,
-        syn::ReturnType::Type(_, ty) if is_result_type(ty)
-    )
+    is_result_type_fn(item_fn)
 }
 
 /// True iff a syn Type is `Result<...>` (bare or path-qualified).
@@ -3063,6 +3077,14 @@ fn is_result_type(ty: &syn::Type) -> bool {
         .last()
         .map(|seg| seg.ident == "Result")
         .unwrap_or(false)
+}
+
+/// True iff an ItemFn has a `Result<...>` return type.
+fn is_result_type_fn(item_fn: &syn::ItemFn) -> bool {
+    matches!(
+        &item_fn.sig.output,
+        syn::ReturnType::Type(_, ty) if is_result_type(ty)
+    )
 }
 
 fn extract_sugar_attr(item_fn: &syn::ItemFn) -> Option<SugarAttrParsed> {
