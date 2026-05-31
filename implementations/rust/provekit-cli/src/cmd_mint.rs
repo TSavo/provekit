@@ -215,13 +215,25 @@ struct MintedIrDocument {
 /// a name collision means byte-identical canonical IR, which is
 /// safe to dedup — same identity, same content, same minted memento
 /// downstream. The same primitive `mint_proof` uses internally.
+/// Shape-invariant dedup key for an IR-document entry: the BLAKE3-512 of its
+/// canonical (JCS) content. Two entries collapse iff their CONTENT is identical
+/// -- never merely because they share a `name`. This is the addressing rule of
+/// the whole system: identity is the CID of the shape, names are sugar. Using
+/// the canonical bytes (key-sorted, encoding-normalized) makes the key stable
+/// across surfaces that may serialize the same shape with different key order.
+fn canonical_dedup_key(item: &Value) -> String {
+    let cvalue = json_to_cvalue(item);
+    blake3_512_of(encode_jcs(cvalue.as_ref()).as_bytes())
+}
+
 fn merge_ir_document_responses(per_plugin: Vec<PerPluginDispatch>) -> Result<Value, String> {
     let mut merged_ir: Vec<Value> = Vec::new();
     let mut merged_diagnostics: Vec<Value> = Vec::new();
     let mut merged_implications: Vec<Value> = Vec::new();
     let mut merged_authorities: Vec<Value> = Vec::new();
     let mut merged_witnesses: Vec<Value> = Vec::new();
-    let mut seen_names: std::collections::HashSet<String> = std::collections::HashSet::new();
+    // Content-shape dedup keys (NOT names). See `canonical_dedup_key`.
+    let mut seen_content: std::collections::HashSet<String> = std::collections::HashSet::new();
     let mut seen_implications: std::collections::HashSet<String> = std::collections::HashSet::new();
     let mut seen_authorities: std::collections::HashSet<String> = std::collections::HashSet::new();
     for entry in per_plugin {
@@ -239,21 +251,21 @@ fn merge_ir_document_responses(per_plugin: Vec<PerPluginDispatch>) -> Result<Val
         }
         if let Some(arr) = entry.response.get("ir").and_then(|v| v.as_array()) {
             for item in arr {
-                // Entries with a `name` field are deduped by it
-                // (content-addressed by construction). Entries without
-                // a `name` — refusal-memento, bind-lift-entry — pass
-                // through unfiltered since their identity is structural.
-                let dedup_key: Option<String> = item
-                    .get("name")
-                    .and_then(|v| v.as_str())
-                    .map(|s| s.to_string());
-                match dedup_key {
-                    Some(key) => {
-                        if seen_names.insert(key) {
-                            merged_ir.push(item.clone());
-                        }
-                    }
-                    None => merged_ir.push(item.clone()),
+                // Dedup by CONTENT, never by `name`. Names are sugar: a
+                // contract's identity is its SHAPE, addressed by CID. Two
+                // surfaces can legitimately emit two DIFFERENT-shaped contracts
+                // that happen to share a name -- the rust-bind sugar binding
+                // emits a POST-ONLY `option_unwrap`, while rust-fn-contracts
+                // emits a PRE-BEARING `option_unwrap` (formals + `pre =
+                // is_some(opt)`). Keying dedup on `name` dropped the
+                // pre-bearing one and silently published the post-only shell,
+                // which then vacuous-passed every `unwrap` panic obligation (a
+                // false "cannot panic"). Dedup on the canonical content bytes:
+                // byte-identical entries across surfaces collapse (the real
+                // intent), but distinct shapes both survive regardless of name.
+                let dedup_key = canonical_dedup_key(item);
+                if seen_content.insert(dedup_key) {
+                    merged_ir.push(item.clone());
                 }
             }
         }
@@ -856,28 +868,53 @@ fn contract_bindings_from_dependency_proofs(project_root: &Path) -> Vec<Value> {
             .and_then(|v| v.as_str())
             .filter(|s| !s.is_empty())
             .map(|s| s.to_string());
-        let body_bearing = (memento_body_field(env, "preHash").is_some()
-            || memento_body_field(env, "postHash").is_some())
-            && body_discharge_eligible;
+        let has_pre = memento_body_field(env, "preHash").is_some();
+        let body_bearing =
+            (has_pre || memento_body_field(env, "postHash").is_some()) && body_discharge_eligible;
         let bundle = member_to_bundle.get(cid.as_str()).map(|b| b.to_string());
         let key = (library, name);
-        match by_key.get(&key) {
-            // Keep the incumbent when it is already body-bearing, or when the
-            // newcomer is not an upgrade (inv-only). Otherwise the newcomer is
-            // a body-bearing upgrade over an inv-only incumbent: take it.
-            Some((_, incumbent_bb, _, _, _)) if *incumbent_bb || !body_bearing => {}
-            _ => {
-                by_key.insert(
-                    key,
-                    (
-                        cid.clone(),
-                        body_bearing,
-                        bundle,
-                        body_discharge_eligible,
-                        body_discharge_refusal_reason,
-                    ),
-                );
+        // SELECTION PREFERENCE (most to least preferred), so a call site bridges
+        // to a DISCHARGEABLE target rather than a vacuous-passing shell:
+        //   1. PRE-bearing (carries a `preHash`): the ONLY shape that can prove
+        //      a partial cannot panic. The post-only sugar shape of the same
+        //      name vacuous-passes the obligation (a false "cannot panic"), so a
+        //      pre-bearing newcomer must always WIN over a post-only incumbent.
+        //   2. body-bearing (pre or post) over inv-only.
+        // Names are not identity here -- two shapes share a name (post-only
+        // sugar `option_unwrap` and pre-bearing fn-contract `option_unwrap`)
+        // and we must select the dischargeable one deterministically.
+        let rank = |has_pre: bool, body_bearing: bool| -> u8 {
+            if has_pre {
+                2
+            } else if body_bearing {
+                1
+            } else {
+                0
             }
+        };
+        let new_rank = rank(has_pre, body_bearing);
+        let take = match by_key.get(&key) {
+            None => true,
+            Some((incumbent_cid, incumbent_bb, _, _, _)) => {
+                let incumbent_has_pre = pool
+                    .mementos
+                    .get(incumbent_cid)
+                    .map(|e| memento_body_field(e, "preHash").is_some())
+                    .unwrap_or(false);
+                new_rank > rank(incumbent_has_pre, *incumbent_bb)
+            }
+        };
+        if take {
+            by_key.insert(
+                key,
+                (
+                    cid.clone(),
+                    body_bearing,
+                    bundle,
+                    body_discharge_eligible,
+                    body_discharge_refusal_reason,
+                ),
+            );
         }
     }
     by_key
@@ -1450,6 +1487,7 @@ fn mint_ir_document(
     }
 
     struct MintedContractRef {
+        contract_name: String,
         attestation_cid: String,
         pre_hash: Option<String>,
         post_hash: Option<String>,
@@ -1473,7 +1511,14 @@ fn mint_ir_document(
     let mut members: BTreeMap<String, Vec<u8>> = BTreeMap::new();
     let mut authorities_by_id: BTreeMap<String, AuthorityRef> = BTreeMap::new();
     let mut proof_authority: Option<AuthorityRef> = None;
-    let mut contracts_by_name: BTreeMap<String, MintedContractRef> = BTreeMap::new();
+    // Contracts indexed by their CONTENT CID, never by name. Two distinct
+    // shapes that share a name (post-only sugar `option_unwrap` vs pre-bearing
+    // fn-contract `option_unwrap`) are DIFFERENT contracts with DIFFERENT CIDs;
+    // both must coexist. A name->CIDs index is derived only where a name lookup
+    // is genuinely required (mint-time implication wiring), and it is
+    // multi-valued precisely because a name is not an identity.
+    let mut contracts_by_cid: BTreeMap<String, MintedContractRef> = BTreeMap::new();
+    let mut cids_by_name: BTreeMap<String, Vec<String>> = BTreeMap::new();
     let mut content_cids: Vec<String> = Vec::new();
     let default_signer_seed: Ed25519Seed = FOUNDATION_V0_SEED;
     let produced_at = "2026-05-03T18:00:00Z".to_string();
@@ -1733,22 +1778,26 @@ fn mint_ir_document(
                 .or_insert(bridge.canonical_bytes);
         }
 
-        if contracts_by_name
-            .insert(
-                args.contract_name.clone(),
-                MintedContractRef {
-                    attestation_cid: m.cid.clone(),
-                    pre_hash,
-                    post_hash,
-                    inv_hash,
-                    body_discharge_eligible,
-                    body_discharge_refusal_reason,
-                    library,
-                },
-            )
-            .is_some()
-        {
-            return Err(format!("duplicate contract `{}`", args.contract_name));
+        // Index by CONTENT CID. A re-emission of a byte-identical contract
+        // (same CID) is a genuine no-op dedup, not an error: the merge dedup
+        // already collapses identical shapes, and `members` `or_insert` is
+        // idempotent. Two DIFFERENT shapes sharing a name now both land here
+        // under their distinct CIDs -- which is the whole point.
+        contracts_by_cid
+            .entry(m.cid.clone())
+            .or_insert(MintedContractRef {
+                contract_name: args.contract_name.clone(),
+                attestation_cid: m.cid.clone(),
+                pre_hash,
+                post_hash,
+                inv_hash,
+                body_discharge_eligible,
+                body_discharge_refusal_reason,
+                library,
+            });
+        let name_cids = cids_by_name.entry(args.contract_name.clone()).or_default();
+        if !name_cids.contains(&m.cid) {
+            name_cids.push(m.cid.clone());
         }
 
         members.entry(m.cid.clone()).or_insert(m.canonical_bytes);
@@ -1824,10 +1873,30 @@ fn mint_ir_document(
             let antecedent_slot = optional_str(implication, "antecedentSlot").unwrap_or("post");
             let consequent_slot = optional_str(implication, "consequentSlot").unwrap_or("post");
 
-            let antecedent = contracts_by_name.get(antecedent_name).ok_or_else(|| {
+            // Resolve a contract by name to its CONTENT CID, then index by CID.
+            // A name may now resolve to several distinct shapes; pick the one
+            // that actually carries the slot this implication references (e.g.
+            // a `post`-slot antecedent needs the contract whose CID carries a
+            // post). This keeps name a convenience for authoring while identity
+            // stays the CID. Ambiguity that the slot does not resolve is a hard
+            // error, never a silent pick.
+            let resolve_by_slot = |ref_name: &str, slot: &str| -> Option<&MintedContractRef> {
+                cids_by_name.get(ref_name).and_then(|cids| {
+                    cids.iter()
+                        .filter_map(|cid| contracts_by_cid.get(cid))
+                        .find(|c| c.slot_hash(slot).is_some())
+                        // Fall back to the first shape under this name when the
+                        // slot is absent everywhere (the error is raised below
+                        // on the missing slot, with a clear message).
+                        .or_else(|| {
+                            cids.first().and_then(|cid| contracts_by_cid.get(cid))
+                        })
+                })
+            };
+            let antecedent = resolve_by_slot(antecedent_name, antecedent_slot).ok_or_else(|| {
                 format!("implication `{name}` references missing contract `{antecedent_name}`")
             })?;
-            let consequent = contracts_by_name.get(consequent_name).ok_or_else(|| {
+            let consequent = resolve_by_slot(consequent_name, consequent_slot).ok_or_else(|| {
                 format!("implication `{name}` references missing contract `{consequent_name}`")
             })?;
             let antecedent_hash = antecedent.slot_hash(antecedent_slot).ok_or_else(|| {
@@ -1891,16 +1960,22 @@ fn mint_ir_document(
     }
 
     let contract_set_cid = compute_contract_set_cid(content_cids);
-    let contract_bindings: Vec<Value> = contracts_by_name
-        .iter()
-        .map(|(name, contract)| {
+    let contract_bindings: Vec<Value> = contracts_by_cid
+        .values()
+        .map(|contract| {
+            // One binding per distinct CONTRACT SHAPE (CID), not per name. When
+            // a name has both a post-only sugar shape and a pre-bearing
+            // fn-contract shape, BOTH bindings are emitted here; the implication
+            // lifter's `contracts_by_key` then upgrades to the body-bearing one
+            // (never downgrades), so a call site bridges to the dischargeable
+            // contract instead of vacuous-passing against the post-only shell.
+            //
             // body_bearing distinguishes a production function-contract
             // (carries a derived `pre` and/or `post` -> a call site has a
             // real obligation to discharge) from a test-lifted witnessed
             // fact (carries only `inv` -> nothing for a general call site
-            // to prove). When BOTH exist for the same callee, the
-            // implication lifter prefers the body-bearing one so bridges
-            // target the dischargeable contract instead of vacuous-passing.
+            // to prove).
+            let name = &contract.contract_name;
             let body_bearing = (contract.pre_hash.is_some() || contract.post_hash.is_some())
                 && contract.body_discharge_eligible;
             json!({

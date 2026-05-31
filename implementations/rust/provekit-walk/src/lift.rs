@@ -272,12 +272,23 @@ fn lift_tail_if_to_ite_term(if_expr: &ExprIf, ctx: &mut LiftCtx) -> Option<IrTer
 ///
 /// Returns the guard-predicate HEAD that governs `branch` (then = positive,
 /// else = complement), or `None` when the condition head is not a recognized
-/// unary boolean predicate (a comparison `cf_lt`, a method guard, `cf_and`,
-/// ...). `None` means: emit no guard wrapper -> the branch carries no usable
-/// fact -> a partial inside it stays honestly undecidable. `!is_empty` also
-/// returns `None`: its complement establishes no partial's pre.
+/// unary boolean predicate (a comparison `cf_lt`, a non-predicate method,
+/// `cf_and`, ...). `None` means: emit no guard wrapper -> the branch carries no
+/// usable fact -> a partial inside it stays honestly undecidable. `!is_empty`
+/// also returns `None`: its complement establishes no partial's pre.
+///
+/// NAME NORMALIZATION (load-bearing for discharge). A caller's condition
+/// `opt.is_some()` lifts to the method-call ctor `method:is_some` (see
+/// `Expr::MethodCall` -> `format!("method:{}", ..)`), but the PARTIAL's own
+/// precondition was lifted from `assert!(opt.is_some())` to the BARE predicate
+/// `is_some` (the `assert!` lifter produces bare heads). For the syntactic
+/// discharge `guard => pre` to hold, the guard atom this kit emits must use the
+/// SAME bare head as the partial's pre. So we strip a `method:` prefix on the
+/// condition head and emit the bare predicate name. The verifier never sees
+/// this normalization -- it only threads the resolved bare atom.
 fn branch_guard_head(cond_head: &str, else_branch: bool) -> Option<&'static str> {
-    match (cond_head, else_branch) {
+    let head = cond_head.strip_prefix("method:").unwrap_or(cond_head);
+    match (head, else_branch) {
         ("is_some", false) | ("is_none", true) => Some("is_some"),
         ("is_none", false) | ("is_some", true) => Some("is_none"),
         ("is_ok", false) | ("is_err", true) => Some("is_ok"),
@@ -1852,6 +1863,13 @@ mod tests {
         assert_eq!(branch_guard_head("is_err", false), Some("is_err"));
         assert_eq!(branch_guard_head("is_err", true), Some("is_ok"));
         assert_eq!(branch_guard_head("is_empty", false), Some("is_empty"));
+        // The method-call form `opt.is_some()` lifts to `method:is_some`; it must
+        // normalize to the bare `is_some` that the partial's pre uses, or the
+        // syntactic discharge `guard => pre` never matches.
+        assert_eq!(branch_guard_head("method:is_some", false), Some("is_some"));
+        assert_eq!(branch_guard_head("method:is_some", true), Some("is_none"));
+        assert_eq!(branch_guard_head("method:is_ok", false), Some("is_ok"));
+        assert_eq!(branch_guard_head("method:is_err", true), Some("is_ok"));
     }
 
     #[test]
