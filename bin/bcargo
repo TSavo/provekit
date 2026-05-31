@@ -78,7 +78,14 @@ case "$local_cwd" in
 esac
 
 remote_host="${BCARGO_REMOTE_HOST:-battleaxe}"
-remote_root="${BCARGO_REMOTE_ROOT:-/home/tsavo/remote/provekit-bcargo}"
+# Per-checkout remote root so concurrent worktrees/agents do not clobber each
+# other. All checkouts previously shared one root, and `rsync -az --delete`
+# from one wiped another's source mid-build (stale/false builds, stalls). Derive
+# a stable suffix from the absolute checkout path so each worktree gets its own
+# remote scratch; the shared sccache cache still gives cross-checkout reuse.
+_bcargo_root_tag="$(printf '%s' "$repo_root" | shasum 2>/dev/null | cut -c1-12)"
+_bcargo_root_tag="${_bcargo_root_tag:-default}"
+remote_root="${BCARGO_REMOTE_ROOT:-/home/tsavo/remote/provekit-bcargo-${_bcargo_root_tag}}"
 remote_repo="$remote_root/provekit"
 ssh_bin="${BCARGO_SSH:-ssh}"
 rsync_bin="${BCARGO_RSYNC:-rsync}"
