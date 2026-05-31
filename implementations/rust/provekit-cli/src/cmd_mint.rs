@@ -1702,19 +1702,28 @@ fn mint_ir_document(
             .map(|authority| authority.principal.clone())
             .unwrap_or_else(|| "provekit-cli".to_string());
 
-        // Tier-1 crate tag (Tier 2b enabler): a per-contract `library` on the
-        // IR decl wins (a future annotation, or the kit's fn-contract stamp);
-        // otherwise fall back to the project's semantic `platform_profile.library`.
-        // The fallback is what tags the shim's sugar/test contracts with `std`
-        // (the kit never stamps those), so a receiver-typed call resolved to
-        // `std` finds them. Forwarded OPAQUELY onto the contract metadata; the
-        // CLI does not interpret the string.
-        let library = decl
-            .get("library")
-            .and_then(|v| v.as_str())
-            .filter(|s| !s.is_empty())
-            .map(|s| s.to_string())
-            .or_else(|| project_library.clone());
+        // Tier-1 crate tag (Tier 2b enabler): the SEMANTIC library the kit
+        // declares in `platform_profile.library` WINS. For the rust-std shim
+        // that is `std` -- the crate a consumer's `opt.unwrap()` resolves to,
+        // via the rust-analyzer oracle (`std`), and the key a cross-crate bridge
+        // looks the target up by.
+        //
+        // The kit's rust-fn-contracts surface stamps each contract's `library`
+        // with the CARGO PACKAGE NAME (`provekit_shim_rust_std`), which is NOT
+        // the semantic library. Letting that stamp win split the shim's
+        // `option_unwrap` across two keys: the PRE-bearing fn-contract under
+        // `(provekit_shim_rust_std, option_unwrap)` and the post-only sugar
+        // contract under `(std, option_unwrap)`. A call resolved to `std` then
+        // found ONLY the post-only shell and vacuous-passed. So the declared
+        // semantic library takes precedence; the per-decl stamp is the fallback
+        // for kits that declare no `platform_profile.library`. Forwarded
+        // OPAQUELY onto the contract metadata; the CLI does not interpret it.
+        let library = project_library.clone().or_else(|| {
+            decl.get("library")
+                .and_then(|v| v.as_str())
+                .filter(|s| !s.is_empty())
+                .map(|s| s.to_string())
+        });
 
         let args = MintContractArgs {
             contract_name: name,
