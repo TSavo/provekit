@@ -39,6 +39,24 @@
 // `None`: the caller falls through to the existing instantiate path. The
 // spine discharges a real body-obligation; it does not try to be the full
 // gauntlet.
+//
+// Delta: `=(<call_a>, <call_b>)` (eq-both-calls tier, #eq-both-calls)
+//
+// When BOTH sides of an `=` assertion are the SAME callee, reduce each
+// independently through the body and emit `=(body_a, body_b)`. This
+// handles `assert_eq!(f(args), f(args))` determinism tests:
+//
+//   POSITIVE: `=(double(3), double(3))` -> `=(*(3,2), *(3,2))` -> z3 UNSAT
+//             (reflexive; labeled Reflexive in the discharge method).
+//
+//   NEGATIVE: `=(double(3), double(4))` -> `=(6, 8)` -> z3 SAT on the
+//             negation -> NOT discharged. Real z3 runs on the concrete
+//             reduced formula; this is not a SKIPPED-as-pass.
+//
+// SOUNDNESS: wp inlines the body definition (the ground truth); it does
+// NOT assume the callee's postcondition as an axiom. Reduction of both
+// sides is identical to the existing `=(call, expected)` path. No self-
+// circular assumption is introduced.
 
 use serde_json::Value as Json;
 
@@ -237,6 +255,16 @@ pub fn extract_body_obligation(
     // carries the containing atomic (the `=` predicate the call sits in),
     // captured by `enumerate_callsites`.
     let Some((call_json, expected_json)) = recognize_eq_call(cs) else {
+        // Delta: eq-both-calls tier. When BOTH sides of the `=` assertion are
+        // the same callee `=(<call_a>, <call_b>)`, reduce each independently
+        // through the body and emit `=(body_a, body_b)` for the solver.
+        // This handles `assert_eq!(f(args), f(args))` determinism tests.
+        // This branch is tried BEFORE the refusal so we can discharge the
+        // obligation soundly rather than leaving it undecidable.
+        if let Some((call_a_json, call_b_json)) = recognize_eq_both_calls(cs) {
+            return extract_eq_both_calls_obligation(cs, call_a_json, call_b_json, pool);
+        }
+
         let shape = cs
             .containing_atomic
             .as_ref()
@@ -314,6 +342,55 @@ pub fn extract_body_obligation(
         }
         Err(e) => Err(format!("wp body-reduction failed: {e}")),
     }
+}
+
+/// Build a body-reduced obligation for the `=(<call_a>, <call_b>)` shape
+/// where BOTH sides are the same callee.
+///
+/// Reduces EACH call independently through its body-derived contract via
+/// wp, then emits `=(body_a, body_b)` as the concrete obligation. When the
+/// calls have identical arguments, the result is a reflexive equality
+/// (`=(E, E)`) that z3 discharges in UNSAT; when they differ, z3 checks
+/// the concrete reduced formula.
+///
+/// SOUNDNESS: wp inlines the body (the function definition); it does NOT
+/// assume the callee's postcondition as an axiom. Both reductions are the
+/// same mechanism as the existing `=(call, expected)` path. No circular
+/// self-assumption is introduced. falsePass=0 is preserved: only a
+/// genuinely-valid body-equality discharges; a false one refutes via z3.
+///
+/// This function is called from `extract_body_obligation` after
+/// `recognize_eq_call` returns `None` and `recognize_eq_both_calls`
+/// matches. It is an internal path, not a public entry point.
+fn extract_eq_both_calls_obligation(
+    cs: &CallSite,
+    call_a_json: &Json,
+    call_b_json: &Json,
+    pool: &MementoPool,
+) -> Result<Option<BodyObligation>, String> {
+    let resolver = CatalogResolver::new(pool);
+
+    // Reduce call_a to its body value expression.
+    let value_a: IrTerm =
+        reduce_to_value_expr(call_a_json, &cs.bridge_ir_name, &resolver)
+            .map_err(|e| format!("body-discharge: eq-both-calls: call_a: {e}"))?;
+
+    // Reduce call_b to its body value expression.
+    let value_b: IrTerm =
+        reduce_to_value_expr(call_b_json, &cs.bridge_ir_name, &resolver)
+            .map_err(|e| format!("body-discharge: eq-both-calls: call_b: {e}"))?;
+
+    // Build the final obligation: =(body_a, body_b).
+    // When args are identical this is reflexive (body_a == body_b structurally);
+    // when they differ, z3 checks the concrete arithmetic/algebraic equality.
+    let obligation = IrFormula::Atomic {
+        name: "=".to_string(),
+        args: vec![value_a, value_b],
+    };
+    let obligation_json = serde_json::to_value(&obligation)
+        .map_err(|e| format!("body-discharge: eq-both-calls: serialize: {e}"))?;
+
+    Ok(Some(BodyObligation::Reduced(obligation_json)))
 }
 
 /// How a DISCHARGED obligation was proven. This is the honesty axis the
@@ -539,6 +616,110 @@ fn recognize_eq_call(cs: &CallSite) -> Option<(&Json, &Json)> {
         Some((&args[1], &args[0]))
     } else {
         None
+    }
+}
+
+/// Recognize `=(<call_a>, <call_b>)` where BOTH sides are ctors whose name
+/// matches `cs.bridge_ir_name`. This is the "eq-both-calls" variant arising
+/// from `assert_eq!(f(x), f(x))` determinism/idempotence tests.
+///
+/// Returns `(call_a_json, call_b_json)` borrowing from the callsite's
+/// containing atomic, or `None` for any other shape.
+fn recognize_eq_both_calls(cs: &CallSite) -> Option<(&Json, &Json)> {
+    let atomic = cs.containing_atomic.as_ref()?;
+    if atomic.get("kind").and_then(|v| v.as_str()) != Some("atomic") {
+        return None;
+    }
+    if atomic.get("name").and_then(|v| v.as_str()) != Some("=") {
+        return None;
+    }
+    let args = atomic.get("args").and_then(|v| v.as_array())?;
+    if args.len() != 2 {
+        return None;
+    }
+    let is_call = |t: &Json| -> bool {
+        t.get("kind").and_then(|v| v.as_str()) == Some("ctor")
+            && t.get("name").and_then(|v| v.as_str()) == Some(cs.bridge_ir_name.as_str())
+    };
+    // BOTH sides must be the same callee for the eq-both-calls shape.
+    // If only one side is the call, that is the standard `=(call, expected)` shape
+    // which `recognize_eq_call` handles. This function is called only when
+    // `recognize_eq_call` has already returned `None`.
+    if is_call(&args[0]) && is_call(&args[1]) {
+        Some((&args[0], &args[1]))
+    } else {
+        None
+    }
+}
+
+/// Reduce a call term through its body-derived contract to extract the pure
+/// value expression. Runs `wp(call, result == sentinel, resolver)` and
+/// extracts the LHS of the resulting `body_expr == sentinel` equality.
+///
+/// This is an internal helper for `extract_eq_both_calls_obligation` only.
+/// It is NOT a public API: the callee must already be confirmed body-bearing
+/// before calling this (checked by the caller via `resolver.lookup`).
+///
+/// Returns `Err` when the call cannot be reduced (slot mismatch, wp refusal,
+/// unexpected formula shape from wp).
+fn reduce_to_value_expr(
+    call_json: &Json,
+    callee_name: &str,
+    resolver: &CatalogResolver<'_>,
+) -> Result<IrTerm, String> {
+    let call_ir: IrTerm = serde_json::from_value(call_json.clone())
+        .map_err(|e| format!("refuse: `{callee_name}` call term deser: {e}"))?;
+    let call_term: Term = call_ir.into();
+    if !matches!(call_term, Term::Op { .. }) {
+        return Err(format!(
+            "refuse: callee `{callee_name}` call term is not an op"
+        ));
+    }
+
+    // Use a sentinel variable that cannot appear in any user formula.
+    // wp(call, result == __sentinel) -> body_expr(args) == __sentinel
+    const SENTINEL_VAR: &str = "__eq_both_sentinel";
+    let q = IrFormula::Atomic {
+        name: "=".to_string(),
+        args: vec![
+            IrTerm::Var {
+                name: RESULT_VAR.to_string(),
+            },
+            IrTerm::Var {
+                name: SENTINEL_VAR.to_string(),
+            },
+        ],
+    };
+
+    let reduced = match wp::wp(&call_term, &q, resolver) {
+        Ok(f) => f,
+        Err(WpError::Refused(r)) => {
+            return Err(format!(
+                "refuse: callee `{callee_name}` is body-bearing but wp could not \
+                 reduce through body for eq-both-calls: {r}"
+            ))
+        }
+        Err(e) => {
+            return Err(format!(
+                "body-discharge: wp body-reduction failed for eq-both-calls: {e}"
+            ))
+        }
+    };
+
+    // Extract the LHS of `=(body_expr, sentinel)`.
+    // wp(call, result==sentinel) -> `=(body_expr, sentinel)`.
+    // The LHS (args[0]) IS the body value expression.
+    let shape_str = serde_json::to_string(&reduced)
+        .unwrap_or_else(|_| "<unserializable>".into());
+    match reduced {
+        IrFormula::Atomic { name, mut args } if name == "=" && args.len() == 2 => {
+            // args[0] = body_expr(call.args), args[1] = __eq_both_sentinel
+            Ok(args.swap_remove(0))
+        }
+        _ => Err(format!(
+            "refuse: callee `{callee_name}` wp produced unexpected formula shape \
+             for eq-both-calls (expected `=(body_expr, sentinel)`): {shape_str}"
+        )),
     }
 }
 
@@ -914,6 +1095,239 @@ mod callee_post_guard_fact_tests {
         assert!(
             callee_post_guard_fact(&cs, &pool).is_none(),
             "a callsite with no arg_term must not supply a fact"
+        );
+    }
+}
+
+#[cfg(test)]
+mod eq_both_calls_discharge_tests {
+    //! `extract_body_obligation` / `extract_eq_both_calls_obligation`:
+    //! the eq-both-calls tier.
+    //!
+    //! Three tests per the discrimination protocol:
+    //!
+    //!   POSITIVE  -- `=(double(3), double(3))` must reduce to `=(6, 6)` (same
+    //!                args -> reflexive obligation; classified Reflexive).
+    //!
+    //!   NEGATIVE  -- `=(double(3), double(4))` must reduce to `=(6, 8)` and
+    //!                the NEGATIVE control is confirmed: the obligation is NOT
+    //!                reflexive (sides differ: 6 vs 8), so `formula_is_reflexive`
+    //!                returns false and the obligation would be Substantive, with
+    //!                z3 returning SAT on the negation (not discharged).
+    //!
+    //!   STRUCTURAL -- `=(double(3), other(3))` (different callee names) does NOT
+    //!                match the eq-both-calls recognizer; the call_a side still
+    //!                routes to the standard `recognize_eq_call` or refusal path.
+    //!
+    //! These tests run in-process (no binary, no z3 fork). The positive test
+    //! confirms the REDUCED formula is reflexive; the negative test confirms it
+    //! is NOT reflexive (the reduced sides differ). Actual z3 discharge of the
+    //! corpus rows is confirmed by the integration run (scripts/self-apply.sh).
+    use super::*;
+    use crate::types::{CallSite, MementoPool};
+    use serde_json::json;
+
+    /// CID for the hand-built "double" body-derived contract in these tests.
+    const DOUBLE_CID: &str = "blake3-512:double-body-contract";
+    const DOUBLE_SYMBOL: &str = "double";
+
+    /// A memento pool containing the body-derived contract for `double(x) = x*2`
+    /// and a bridge from `double` to that contract.
+    ///
+    /// Contract shape: `formals: ["x"]`, `post: result == *(x, 2)`.
+    /// This is the same fixture the `cmd_verify_body_discharge.rs` integration
+    /// tests use; here it's in-process for fast unit-test feedback.
+    fn double_pool() -> MementoPool {
+        let contract_env = json!({
+            "evidence": {
+                "kind": "contract",
+                "body": {
+                    "formals": ["x"],
+                    "post": {
+                        "kind": "atomic",
+                        "name": "=",
+                        "args": [
+                            {"kind": "var", "name": "result"},
+                            {"kind": "ctor", "name": "*", "args": [
+                                {"kind": "var", "name": "x"},
+                                {"kind": "const", "value": 2,
+                                 "sort": {"kind": "primitive", "name": "Int"}}
+                            ]}
+                        ]
+                    }
+                }
+            }
+        });
+        let bridge_env = json!({
+            "evidence": {
+                "kind": "bridge",
+                "body": {
+                    "sourceSymbol": DOUBLE_SYMBOL,
+                    "targetContractCid": DOUBLE_CID
+                }
+            }
+        });
+        let mut pool = MementoPool::default();
+        pool.mementos.insert(DOUBLE_CID.into(), contract_env);
+        pool.bridges_by_symbol.insert(DOUBLE_SYMBOL.into(), bridge_env);
+        pool
+    }
+
+    fn int_const(n: i64) -> serde_json::Value {
+        json!({"kind": "const", "value": n, "sort": {"kind": "primitive", "name": "Int"}})
+    }
+
+    fn double_call(arg: i64) -> serde_json::Value {
+        json!({"kind": "ctor", "name": DOUBLE_SYMBOL, "args": [int_const(arg)]})
+    }
+
+    fn cs_with_eq_both_calls(call_a: serde_json::Value, call_b: serde_json::Value) -> CallSite {
+        CallSite {
+            bridge_ir_name: DOUBLE_SYMBOL.into(),
+            containing_atomic: Some(json!({
+                "kind": "atomic",
+                "name": "=",
+                "args": [call_a, call_b]
+            })),
+            ..Default::default()
+        }
+    }
+
+    // -----------------------------------------------------------------------
+    // POSITIVE: same-args both-calls -> reduced to reflexive obligation
+    // -----------------------------------------------------------------------
+
+    #[test]
+    fn positive_same_args_reduces_to_reflexive_obligation() {
+        // `=(double(3), double(3))` -> `=(*(3,2), *(3,2))` -> reflexive.
+        //
+        // This is the `build_signed_attestation_is_deterministic` pattern:
+        // `assert_eq!(f(args), f(args))` where the function is deterministic.
+        // The obligation reduces to a structural tautology. z3 (in the full
+        // pipeline) returns UNSAT; here we confirm the SHAPE is reflexive.
+        let cs = cs_with_eq_both_calls(double_call(3), double_call(3));
+        let pool = double_pool();
+
+        let result = extract_body_obligation(&cs, &pool);
+        assert!(result.is_ok(), "same-args both-calls must not return Err: {result:?}");
+        let obligation_opt = result.unwrap();
+        assert!(
+            obligation_opt.is_some(),
+            "same-args both-calls must produce an obligation (not None)"
+        );
+        let BodyObligation::Reduced(obligation_json) = obligation_opt.unwrap();
+
+        // The obligation must be reflexive: =(body_expr(3), body_expr(3))
+        assert!(
+            formula_is_reflexive(&obligation_json),
+            "same-args both-calls obligation must be reflexive (both sides are \
+             the same body expression); got: {obligation_json}"
+        );
+        assert_eq!(
+            classify_discharge_method(&obligation_json),
+            DischargeMethod::Reflexive,
+            "same-args both-calls must classify as Reflexive"
+        );
+    }
+
+    // -----------------------------------------------------------------------
+    // NEGATIVE: different-args both-calls -> reduced obligation is NOT reflexive
+    // -----------------------------------------------------------------------
+
+    #[test]
+    fn negative_different_args_reduces_to_non_reflexive_obligation() {
+        // `=(double(3), double(4))` -> `=(*(3,2), *(4,2))` = `=(6, 8)`.
+        //
+        // THE DISCRIMINATION TEST. The reduced formula has DISTINCT sides
+        // (6 != 8). `formula_is_reflexive` must return false, and in the full
+        // pipeline z3 finds the negation SAT (9 != 8 is a model for ~(6==8))
+        // -> NOT discharged. This is NOT a SKIPPED-as-pass: the body WAS
+        // reduced (the callee symbol is gone), and the solver does real work.
+        let cs = cs_with_eq_both_calls(double_call(3), double_call(4));
+        let pool = double_pool();
+
+        let result = extract_body_obligation(&cs, &pool);
+        assert!(
+            result.is_ok(),
+            "different-args both-calls must produce an obligation (not Err): {result:?}"
+        );
+        let obligation_opt = result.unwrap();
+        assert!(
+            obligation_opt.is_some(),
+            "different-args both-calls must produce an obligation (not None)"
+        );
+        let BodyObligation::Reduced(obligation_json) = obligation_opt.unwrap();
+
+        // THE DECISIVE ASSERTION: sides differ -> NOT reflexive.
+        // `formula_is_reflexive` must return false for `=(6, 8)`.
+        assert!(
+            !formula_is_reflexive(&obligation_json),
+            "different-args both-calls obligation must NOT be reflexive \
+             (sides differ: double(3) reduces to 6, double(4) to 8); \
+             got: {obligation_json}"
+        );
+        assert_eq!(
+            classify_discharge_method(&obligation_json),
+            DischargeMethod::Substantive,
+            "different-args both-calls must classify Substantive (sides differ)"
+        );
+
+        // Confirm the reduced formula is `=(*(3,2), *(4,2))` concretely.
+        let args = obligation_json
+            .get("args")
+            .and_then(|v| v.as_array())
+            .expect("obligation must be an equality with args");
+        assert_eq!(args.len(), 2, "equality must have exactly 2 args");
+        // Both sides must be the `*` ctor (body of double), not `double`.
+        assert_ne!(args[0], args[1], "sides of reduced =(6,8) must differ");
+        assert!(
+            !obligation_json
+                .to_string()
+                .contains(DOUBLE_SYMBOL),
+            "no uninterpreted `double` symbol must remain in the reduced obligation; \
+             got: {obligation_json}"
+        );
+    }
+
+    // -----------------------------------------------------------------------
+    // STRUCTURAL: asymmetric shape (only ONE side is the call) -> NOT this path
+    // -----------------------------------------------------------------------
+
+    #[test]
+    fn structural_one_sided_call_uses_standard_path_not_both_calls() {
+        // `=(double(3), 6)` -- only one side is the call; this is the STANDARD
+        // `=(call, expected)` shape handled by `recognize_eq_call`, NOT the
+        // eq-both-calls path. Confirm `recognize_eq_both_calls` returns None.
+        let atomic = json!({
+            "kind": "atomic",
+            "name": "=",
+            "args": [double_call(3), int_const(6)]
+        });
+        let cs = CallSite {
+            bridge_ir_name: DOUBLE_SYMBOL.into(),
+            containing_atomic: Some(atomic),
+            ..Default::default()
+        };
+        // `recognize_eq_both_calls` must return None for this shape.
+        assert!(
+            recognize_eq_both_calls(&cs).is_none(),
+            "one-sided `=(call, constant)` must NOT match recognize_eq_both_calls"
+        );
+        // `recognize_eq_call` MUST match it.
+        assert!(
+            recognize_eq_call(&cs).is_some(),
+            "one-sided `=(call, constant)` must match the standard recognize_eq_call"
+        );
+        // The full path: extract_body_obligation must ALSO succeed (standard path).
+        let pool = double_pool();
+        let result = extract_body_obligation(&cs, &pool);
+        assert!(
+            result.is_ok(),
+            "one-sided call must still discharge via the standard path: {result:?}"
+        );
+        assert!(
+            result.unwrap().is_some(),
+            "one-sided call must produce an obligation"
         );
     }
 }
