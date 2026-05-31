@@ -627,6 +627,26 @@ fn collect_ctor_decls_formula(formula: &Formula, out: &mut BTreeMap<String, Ctor
     }
 }
 
+/// True iff `name` is an SMT-LIB theory operator that may appear in TERM
+/// position and MUST stay interpreted -- never declared as an uninterpreted
+/// function. This is the term-position analogue of
+/// `is_builtin_atomic_predicate` (which covers boolean-position builtins).
+///
+/// The set is `+ - *`: the exact arithmetic operators the verifier's solver
+/// dispatcher (`provekit-verifier/src/solvers/dispatch.rs`) classifies as
+/// linear-arithmetic. A Java/Go/... lifter lowers `x * 2` to `ctor("*", ...)`,
+/// so without this guard the honesty-layer ctor-declaration pass emitted
+/// `(declare-fun * (Int Int) Int)`, shadowing the theory and turning a proven
+/// `(= (* 3 2) 6)` obligation `sat` (false counterexample).
+///
+/// Integer `/` and `%` are DELIBERATELY excluded: SMT-LIB Int division/modulo
+/// semantics (Euclidean) differ from source truncation, so leaving them
+/// uninterpreted is the sound choice (the cardinal-sin guard). They keep
+/// getting declared uninterpreted, exactly as before.
+fn is_builtin_term_operator(name: &str) -> bool {
+    matches!(name, "+" | "-" | "*")
+}
+
 fn collect_ctor_decls_term(
     term: &Term,
     expected_ret: Option<&str>,
@@ -638,10 +658,17 @@ fn collect_ctor_decls_term(
                 .iter()
                 .map(|arg| known_term_sort(arg).unwrap_or_else(|| "Int".to_string()))
                 .collect();
-            out.entry(name.clone()).or_insert_with(|| CtorSignature {
-                args: arg_sorts.clone(),
-                ret: expected_ret.unwrap_or("Int").to_string(),
-            });
+            // Arithmetic theory operators stay interpreted: declaring them as
+            // uninterpreted functions would shadow the SMT theory and let the
+            // solver pick a counterexample interpretation. Still recurse into
+            // the arguments so any genuine non-builtin ctor nested underneath
+            // (e.g. `Ok`, `method:foo`) is declared.
+            if !is_builtin_term_operator(name) {
+                out.entry(name.clone()).or_insert_with(|| CtorSignature {
+                    args: arg_sorts.clone(),
+                    ret: expected_ret.unwrap_or("Int").to_string(),
+                });
+            }
             for (arg, arg_sort) in args.iter().zip(arg_sorts.iter()) {
                 collect_ctor_decls_term(arg, Some(arg_sort), out);
             }
