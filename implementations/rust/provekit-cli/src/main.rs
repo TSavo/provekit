@@ -33,6 +33,7 @@ mod cmd_plugin;
 mod cmd_protocol;
 mod cmd_prove;
 mod cmd_recognize;
+mod cmd_self_check;
 mod cmd_verify;
 mod cmd_verify_protocol;
 mod cmd_version;
@@ -94,6 +95,8 @@ pub use cmd_plugin::PluginFlags;
 enum Cmd {
     /// Run the six-stage verifier: load proofs, enumerate callsites, solve obligations, report.
     Prove(ProveArgs),
+    /// Run the deterministic self-application scoreboard.
+    SelfCheck(cmd_self_check::SelfCheckArgs),
     /// Work with protocol catalog evolution artifacts.
     Protocol(cmd_protocol::ProtocolArgs),
     /// Inspect package artifacts and supply-chain receipt inputs.
@@ -298,6 +301,7 @@ fn main() -> ExitCode {
     let cli = Cli::parse();
     let code = match cli.cmd {
         Cmd::Prove(a) => cmd_prove::run(a),
+        Cmd::SelfCheck(a) => cmd_self_check::run(a),
         Cmd::Verify(a) => cmd_verify::run(a),
         Cmd::Protocol(a) => cmd_protocol::run(a),
         Cmd::Package(a) => cmd_package::run(a),

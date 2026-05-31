@@ -171,6 +171,25 @@ fn walk_term(
             .and_then(|v| v.as_str())
             .filter(|s| !s.is_empty())
             .map(|s| s.to_string());
+        let bridge_callsite = bbody.get("callsite");
+        let callsite_file = bridge_callsite
+            .and_then(|v| v.get("file"))
+            .and_then(|v| v.as_str())
+            .filter(|s| !s.is_empty())
+            .map(|s| s.to_string());
+        let callsite_line = bridge_callsite
+            .and_then(|v| v.get("start_line").or_else(|| v.get("line")))
+            .and_then(|v| v.as_u64())
+            .map(|n| n as usize);
+        let callsite_callee = bbody
+            .get("sourceSymbol")
+            .and_then(|v| v.as_str())
+            .filter(|s| !s.is_empty())
+            .map(|s| s.to_string());
+        let panic_site = bridge_callsite
+            .and_then(|v| v.get("panicSite"))
+            .and_then(|v| v.as_bool())
+            .unwrap_or(false);
         let cs = CallSite {
             bridge_ir_name: name.clone(),
             bridge_target_cid: bbody
@@ -189,10 +208,7 @@ fn walk_term(
                 .unwrap_or_default()
                 .to_string(),
             bridge_target_proof_cid,
-            bridge_self_bundle_cid: pool
-                .bridge_self_bundle_by_symbol
-                .get(&name)
-                .cloned(),
+            bridge_self_bundle_cid: pool.bridge_self_bundle_by_symbol.get(&name).cloned(),
             property_name: property_name.to_string(),
             property_cid: property_cid.to_string(),
             arg_term: t
@@ -203,6 +219,10 @@ fn walk_term(
             // Snapshot the dominating guard context for this call site. The
             // runner discharges a panic partial's `pre` under these facts.
             guard_facts: path_cond.to_vec(),
+            file: callsite_file,
+            line: callsite_line,
+            callee: callsite_callee,
+            panic_site,
         };
         out.push(cs);
     }
@@ -250,7 +270,15 @@ fn walk_term(
             // a `cf_guarded` wrapper handled above; an unguarded branch carries
             // the inherited path condition only.
             for branch in [args.get(1), args.get(2)].into_iter().flatten() {
-                walk_term(branch, property_name, property_cid, pool, None, path_cond, out);
+                walk_term(
+                    branch,
+                    property_name,
+                    property_cid,
+                    pool,
+                    None,
+                    path_cond,
+                    out,
+                );
             }
         }
     } else if let Some(args) = t.get("args").and_then(|v| v.as_array()) {

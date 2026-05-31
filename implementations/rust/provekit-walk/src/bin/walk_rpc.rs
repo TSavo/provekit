@@ -596,6 +596,7 @@ fn return_type_crate(
 /// (via the file's `use` map / path qualification), and the source position.
 fn collect_callsites_in_items(
     items: &[syn::Item],
+    in_test_context: bool,
     rel_path: &str,
     use_map: &HashMap<String, String>,
     fn_return_crates: &HashMap<String, String>,
@@ -606,6 +607,9 @@ fn collect_callsites_in_items(
     for item in items {
         match item {
             syn::Item::Fn(item_fn) => {
+                if in_test_context || is_rust_test_fn(item_fn) {
+                    continue;
+                }
                 collect_callsites_in_block(
                     &item_fn.block,
                     rel_path,
@@ -617,8 +621,15 @@ fn collect_callsites_in_items(
                 );
             }
             syn::Item::Impl(item_impl) => {
+                if in_test_context || attrs_include_cfg_test(&item_impl.attrs) {
+                    continue;
+                }
                 for impl_item in &item_impl.items {
                     if let syn::ImplItem::Fn(method) = impl_item {
+                        let item_fn = item_fn_from_impl_method(method);
+                        if is_rust_test_fn(&item_fn) {
+                            continue;
+                        }
                         collect_callsites_in_block(
                             &method.block,
                             rel_path,
@@ -633,8 +644,11 @@ fn collect_callsites_in_items(
             }
             syn::Item::Mod(item_mod) => {
                 if let Some((_, ref nested)) = item_mod.content {
+                    let nested_test_context =
+                        in_test_context || attrs_include_cfg_test(&item_mod.attrs);
                     collect_callsites_in_items(
                         nested,
+                        nested_test_context,
                         rel_path,
                         use_map,
                         fn_return_crates,
@@ -1030,17 +1044,13 @@ fn is_panic_leaf(leaf: &str) -> bool {
 /// imports whose current-crate fallback is intended. The oracle refuses
 /// (leaves `None`) when disabled or unavailable, so this is a pure upgrade over
 /// Tier 2a with no behavior change when off.
-fn resolve_method_calls_via_oracle(
-    workspace_root: &Path,
-    callsites: &mut [(CallSite, PathBuf)],
-) {
+fn resolve_method_calls_via_oracle(workspace_root: &Path, callsites: &mut [(CallSite, PathBuf)]) {
     use ra_daemon_client::DaemonQuery;
 
     // Opt-in stays identical to the cold path: a mint with the oracle off must
     // never spawn or contact the daemon's RA host. When off we leave every
     // unresolved method call to the syntactic tiers (Tier 1/2a) and return.
-    let oracle_on =
-        std::env::var("PROVEKIT_RESOLVE_ORACLE").unwrap_or_default() == "rust-analyzer";
+    let oracle_on = std::env::var("PROVEKIT_RESOLVE_ORACLE").unwrap_or_default() == "rust-analyzer";
     if !oracle_on {
         debug!("oracle: off (PROVEKIT_RESOLVE_ORACLE != rust-analyzer); leaving method calls to Tier 1/2a");
         return;
@@ -1277,6 +1287,7 @@ fn lift_implications(params: &Value) -> Result<Value, String> {
         let mut callsites: Vec<CallSite> = Vec::new();
         collect_callsites_in_items(
             &file.items,
+            false,
             &rel_path,
             &use_map,
             &fn_return_crates,
@@ -1378,6 +1389,7 @@ fn lift_implications(params: &Value) -> Result<Value, String> {
                             "file": cs.file,
                             "line": cs.line,
                             "col": cs.col,
+                            "panicSite": true,
                         }));
                         continue;
                     }
@@ -1518,6 +1530,7 @@ fn lift_implications(params: &Value) -> Result<Value, String> {
                     "file": cs.file,
                     "start_line": cs.line,
                     "start_col": cs.col,
+                    "panicSite": is_panic,
                 },
             });
             if let Some(tpc) = binding
@@ -1540,10 +1553,14 @@ fn lift_implications(params: &Value) -> Result<Value, String> {
     // emitted bridges is legible: "why did 3000 method calls yield 30 bridges?"
     // is answered here (no-matching-contract / unresolved-receiver / closure /
     // macro / binding-missing-contract-cid ...), not left as a bare count.
-    let mut gap_by_reason: std::collections::BTreeMap<&str, usize> = std::collections::BTreeMap::new();
+    let mut gap_by_reason: std::collections::BTreeMap<&str, usize> =
+        std::collections::BTreeMap::new();
     for d in &diagnostics {
         if d.get("kind").and_then(|v| v.as_str()) == Some("lift-gap") {
-            let reason = d.get("reason").and_then(|v| v.as_str()).unwrap_or("unspecified");
+            let reason = d
+                .get("reason")
+                .and_then(|v| v.as_str())
+                .unwrap_or("unspecified");
             *gap_by_reason.entry(reason).or_insert(0) += 1;
         }
     }
@@ -8569,6 +8586,48 @@ pub fn caller(input: &str) -> i64 {
             norm["targetContractCid"],
             "blake3-512:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
         );
+
+        let _ = fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn lift_implications_skips_cfg_test_callsites() {
+        let src = r##"
+pub fn production() -> i64 {
+    parse_input("1")
+}
+
+#[cfg(test)]
+mod tests {
+    #[test]
+    fn unit_test() {
+        parse_input("2").unwrap();
+    }
+}
+"##;
+        let root = temp_workspace("lift_implications_skip_tests");
+        let src_dir = root.join("src");
+        fs::create_dir_all(&src_dir).expect("create src dir");
+        let rel = "src/lib.rs";
+        fs::write(root.join(rel), src).expect("write source");
+
+        let contract_bindings = json!([
+            { "name": "parse_input@src/lib.rs:1:1",
+              "contract_cid": "blake3-512:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa" },
+            { "name": "unwrap@src/lib.rs:1:1",
+              "contract_cid": "blake3-512:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb" },
+        ]);
+
+        let resp = lift_implications(&json!({
+            "workspace_root": root.to_string_lossy(),
+            "source_paths": [rel],
+            "contract_bindings": contract_bindings,
+        }))
+        .expect("lift_implications");
+
+        let ir = resp["ir"].as_array().expect("ir array");
+        assert_eq!(ir.len(), 1, "only production callsites are bridged: {ir:?}");
+        assert_eq!(ir[0]["sourceSymbol"], "parse_input");
 
         let _ = fs::remove_dir_all(root);
     }

@@ -24,6 +24,7 @@ pub fn report_to_json(r: &Report) -> Json {
         "totalCallsites": r.total_callsites,
         "discharged": r.discharged,
         "violations": r.violations,
+        "dischargeSplit": discharge_split_to_json(r),
         "rows": rows,
         "loadErrors": load_errors,
         "callEdges": call_edges,
@@ -40,6 +41,52 @@ fn row_to_json(row: &ReportRow) -> Json {
         "propertyCid": row.callsite.property_cid,
         "status": row.status,
         "reason": row.reason,
+        "dischargeMethod": row.discharge_method,
+        "file": row.callsite.file,
+        "line": row.callsite.line,
+        "callee": row.callsite.callee,
+        "panicSite": row.callsite.panic_site,
+    })
+}
+
+fn discharge_split_to_json(r: &Report) -> Json {
+    let mut panic_safe = 0usize;
+    let mut reflexive = 0usize;
+    let mut solver_substantive = 0usize;
+    let mut vacuous = 0usize;
+    let mut hash_tier = 0usize;
+    let mut undecidable = 0usize;
+    let mut false_pass = 0usize;
+
+    for row in &r.rows {
+        if row.status != "discharged" {
+            undecidable += 1;
+            continue;
+        }
+        let method = row.discharge_method.as_deref();
+        if row.callsite.panic_site && method != Some("panic-safe") {
+            false_pass += 1;
+            continue;
+        }
+        match method {
+            Some("panic-safe") if row.callsite.panic_site => panic_safe += 1,
+            Some("panic-safe") => solver_substantive += 1,
+            Some("reflexive") => reflexive += 1,
+            Some("solver-substantive") => solver_substantive += 1,
+            Some("vacuous") => vacuous += 1,
+            Some("hash-tier") => hash_tier += 1,
+            _ => solver_substantive += 1,
+        }
+    }
+
+    json!({
+        "panicSafe": panic_safe,
+        "reflexive": reflexive,
+        "solverSubstantive": solver_substantive,
+        "vacuous": vacuous,
+        "hashTier": hash_tier,
+        "undecidable": undecidable,
+        "falsePass": false_pass,
     })
 }
 

@@ -718,6 +718,16 @@ pub struct CallSite {
     /// only UNDER-prove (K too low), never mark an unguarded site safe. Does not
     /// participate in any CID.
     pub guard_facts: Vec<Json>,
+    /// Opaque kit-provided source file for observability. The verifier does
+    /// not interpret this path, it only carries it into reports.
+    pub file: Option<String>,
+    /// Opaque kit-provided source line for observability.
+    pub line: Option<usize>,
+    /// Opaque kit-provided callee label for observability.
+    pub callee: Option<String>,
+    /// True when the kit classified this callsite as panic-relevant. The
+    /// verifier and CLI do not derive this from language semantics.
+    pub panic_site: bool,
 }
 
 #[derive(Debug, Default, Clone)]
@@ -775,6 +785,7 @@ pub struct ReportRow {
     pub callsite: CallSite,
     pub status: String,
     pub reason: String,
+    pub discharge_method: Option<String>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
