@@ -6,7 +6,7 @@
 use crate::types::{CallSite, LoadError, ObligationVerdict, Report, ReportRow};
 
 pub fn add_callsite(cs: &CallSite, verdict: ObligationVerdict, reason: &str, r: &mut Report) {
-    add_callsite_with_method(cs, verdict, reason, None, r);
+    add_callsite_with_discharge(cs, verdict, reason, None, None, r);
 }
 
 pub fn add_callsite_with_method(
@@ -16,12 +16,24 @@ pub fn add_callsite_with_method(
     discharge_method: Option<String>,
     r: &mut Report,
 ) {
+    add_callsite_with_discharge(cs, verdict, reason, discharge_method, None, r);
+}
+
+pub fn add_callsite_with_discharge(
+    cs: &CallSite,
+    verdict: ObligationVerdict,
+    reason: &str,
+    discharge_method: Option<String>,
+    body_discharge_tier: Option<String>,
+    r: &mut Report,
+) {
     r.total_callsites += 1;
     r.rows.push(ReportRow {
         callsite: cs.clone(),
         status: verdict.as_str().to_string(),
         reason: reason.to_string(),
         discharge_method,
+        body_discharge_tier,
     });
     if verdict == ObligationVerdict::Discharged {
         r.discharged += 1;
@@ -64,6 +76,7 @@ pub fn add_self_post_with_method(
         status: verdict.as_str().to_string(),
         reason: reason.to_string(),
         discharge_method,
+        body_discharge_tier: None,
     });
     if verdict == ObligationVerdict::Discharged {
         r.discharged += 1;
@@ -99,7 +112,10 @@ mod tests {
 
         // The self-post MUST NOT inflate the call-site count: only the
         // genuine bridge obligation counts as a call site.
-        assert_eq!(r.total_callsites, 1, "self-post must not count as a callsite");
+        assert_eq!(
+            r.total_callsites, 1,
+            "self-post must not count as a callsite"
+        );
         // But it stays visible as a discharged row in the scoreboard.
         assert_eq!(r.discharged, 2, "self-post still counts toward discharged");
         assert_eq!(r.rows.len(), 2, "self-post row must remain visible");
@@ -124,6 +140,9 @@ mod tests {
         // Excluding self-posts from the callsite count must NOT turn a
         // failing self-post into a green run.
         assert_eq!(r.total_callsites, 0, "self-post is not a callsite");
-        assert_eq!(r.violations, 1, "a failing self-post must still fail the run");
+        assert_eq!(
+            r.violations, 1,
+            "a failing self-post must still fail the run"
+        );
     }
 }

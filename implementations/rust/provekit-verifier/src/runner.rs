@@ -317,11 +317,18 @@ impl Runner {
 
         let report_stage_capture = StageCapture::start("report", sorted_keys(&pool.mementos));
         let mut violations = 0usize;
-        for (cs, verdict, reason, method) in per_results {
+        for (cs, verdict, reason, method, body_tier) in per_results {
             if verdict != ObligationVerdict::Discharged {
                 violations += 1;
             }
-            report_stage::add_callsite_with_method(&cs, verdict, &reason, method, &mut report);
+            report_stage::add_callsite_with_discharge(
+                &cs,
+                verdict,
+                &reason,
+                method,
+                body_tier,
+                &mut report,
+            );
         }
         report_stage::add_load_errors(&pool.load_errors, &mut report);
 
@@ -556,11 +563,18 @@ impl Runner {
 
         // Aggregate report rows.
         let mut violations = 0usize;
-        for (cs, verdict, reason, method) in per_results {
+        for (cs, verdict, reason, method, body_tier) in per_results {
             if verdict != ObligationVerdict::Discharged {
                 violations += 1;
             }
-            report_stage::add_callsite_with_method(&cs, verdict, &reason, method, &mut report);
+            report_stage::add_callsite_with_discharge(
+                &cs,
+                verdict,
+                &reason,
+                method,
+                body_tier,
+                &mut report,
+            );
         }
         report_stage::add_load_errors(&pool.load_errors, &mut report);
 
@@ -1032,7 +1046,13 @@ struct SelfPostResult {
     method: Option<body_discharge::DischargeMethod>,
 }
 
-type CallsiteResult = (CallSite, ObligationVerdict, String, Option<String>);
+type CallsiteResult = (
+    CallSite,
+    ObligationVerdict,
+    String,
+    Option<String>,
+    Option<String>,
+);
 
 /// Verify each body-derived contract's OWN postcondition. For a contract
 /// with `post = (result == <body>)` (and optionally a conjoined
@@ -1148,7 +1168,11 @@ fn work_one(
     }
     if !target_has_pre {
         match body_discharge::extract_body_obligation(cs, pool) {
-            Ok(Some(body_discharge::BodyObligation::Reduced(reduced))) => {
+            Ok(Some(body_discharge::BodyObligation::Reduced {
+                formula: reduced,
+                tier,
+            })) => {
+                let body_tier = Some(tier.as_str().to_string());
                 let smt = match smt_emitter::emit(&reduced) {
                     Ok(s) => s,
                     Err(e) => {
@@ -1158,6 +1182,7 @@ fn work_one(
                             ObligationVerdict::Undecidable,
                             format!("smt-emit: {e}"),
                             None,
+                            body_tier,
                         );
                     }
                 };
@@ -1193,7 +1218,7 @@ fn work_one(
                 if let Ok(mut g) = invs_sink.lock() {
                     g.extend(invs);
                 }
-                return (cs.clone(), verdict, reason, discharge_method);
+                return (cs.clone(), verdict, reason, discharge_method, body_tier);
             }
             Ok(None) => {}
             Err(e) => {
@@ -1202,6 +1227,7 @@ fn work_one(
                     cs.clone(),
                     ObligationVerdict::Undecidable,
                     format!("body-discharge: {e}"),
+                    None,
                     None,
                 );
             }
@@ -1216,6 +1242,7 @@ fn work_one(
                 cs.clone(),
                 ObligationVerdict::Undecidable,
                 format!("resolve-target: {e}"),
+                None,
                 None,
             );
         }
@@ -1242,6 +1269,7 @@ fn work_one(
                     cs.bridge_ir_name
                 ),
                 None,
+                None,
             );
         }
         n_vacuous.fetch_add(1, Ordering::Relaxed);
@@ -1250,6 +1278,7 @@ fn work_one(
             ObligationVerdict::Discharged,
             "vacuous: no precondition on target (publisher post-only)".into(),
             Some("vacuous".to_string()),
+            None,
         );
     }
 
@@ -1274,6 +1303,7 @@ fn work_one(
                     short(memento_cid)
                 ),
                 Some("hash-tier".to_string()),
+                None,
             );
         }
 
@@ -1312,6 +1342,7 @@ fn work_one(
                         short(&memento_cid)
                     ),
                     Some("hash-tier".to_string()),
+                    None,
                 );
             }
             crate::types::ImplicationResult::ProvenTransitive { path } => {
@@ -1326,6 +1357,7 @@ fn work_one(
                     ObligationVerdict::Discharged,
                     format!("tier0c: implication proven transitive ({path_str})"),
                     Some("hash-tier".to_string()),
+                    None,
                 );
             }
             crate::types::ImplicationResult::ProvenReflexive => {
@@ -1335,6 +1367,7 @@ fn work_one(
                     ObligationVerdict::Discharged,
                     "tier0c: implication reflexive (post == pre)".into(),
                     Some("hash-tier".to_string()),
+                    None,
                 );
             }
             crate::types::ImplicationResult::Unknown => {}
@@ -1350,6 +1383,7 @@ fn work_one(
                     short(pre_hash)
                 ),
                 Some("hash-tier".to_string()),
+                None,
             );
         }
         if let Some(cache_dir) = &cfg.cache_dir {
@@ -1363,6 +1397,7 @@ fn work_one(
                         short(&impl_cid)
                     ),
                     Some("hash-tier".to_string()),
+                    None,
                 );
             }
         }
@@ -1384,6 +1419,7 @@ fn work_one(
                     ObligationVerdict::Undecidable,
                     format!("build-implication: {e}"),
                     None,
+                    None,
                 );
             }
         };
@@ -1398,6 +1434,7 @@ fn work_one(
                     ObligationVerdict::Discharged,
                     format!("tier3a: tactic discharged ({reason})"),
                     Some("solver-substantive".to_string()),
+                    None,
                 );
             }
             formula_rewrite::TacticResult::Reduced {
@@ -1413,6 +1450,7 @@ fn work_one(
                             cs.clone(),
                             ObligationVerdict::Undecidable,
                             format!("smt-emit: {e}"),
+                            None,
                             None,
                         );
                     }
@@ -1430,6 +1468,7 @@ fn work_one(
                             ObligationVerdict::Undecidable,
                             format!("smt-emit: {e}"),
                             None,
+                            None,
                         );
                     }
                 };
@@ -1446,6 +1485,7 @@ fn work_one(
                     cs.clone(),
                     ObligationVerdict::Undecidable,
                     format!("instantiate: {e}"),
+                    None,
                     None,
                 );
             }
@@ -1527,6 +1567,7 @@ fn work_one(
                     cs.clone(),
                     ObligationVerdict::Undecidable,
                     format!("smt-emit: {e}"),
+                    None,
                     None,
                 );
             }
@@ -1618,7 +1659,7 @@ fn work_one(
         None
     };
 
-    (cs.clone(), verdict, reason, discharge_method)
+    (cs.clone(), verdict, reason, discharge_method, None)
 }
 
 fn short(s: &str) -> String {

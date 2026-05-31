@@ -42,6 +42,7 @@ fn row_to_json(row: &ReportRow) -> Json {
         "status": row.status,
         "reason": row.reason,
         "dischargeMethod": row.discharge_method,
+        "bodyDischargeTier": row.body_discharge_tier,
         "file": row.callsite.file,
         "line": row.callsite.line,
         "callee": row.callsite.callee,
@@ -136,6 +137,9 @@ pub fn print_report_pretty(r: &Report, quiet: bool) {
             if !row.reason.is_empty() {
                 println!("      reason: {}", row.reason);
             }
+            if let Some(tier) = &row.body_discharge_tier {
+                println!("      body tier: {}", tier);
+            }
         }
         if !r.load_errors.is_empty() {
             println!();
@@ -172,7 +176,7 @@ pub fn report_exit_code(r: &Report) -> u8 {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use provekit_verifier::Report;
+    use provekit_verifier::{CallSite, Report, ReportRow};
 
     #[test]
     fn empty_report_is_not_a_successful_proof() {
@@ -198,5 +202,23 @@ mod tests {
             reason: "bogus".into(),
         });
         assert_eq!(report_exit_code(&r), crate::EXIT_VERIFY_FAIL);
+    }
+
+    #[test]
+    fn report_json_includes_body_discharge_tier() {
+        let mut r = Report::default();
+        r.rows.push(ReportRow {
+            callsite: CallSite {
+                bridge_ir_name: "double".into(),
+                ..CallSite::default()
+            },
+            status: "discharged".into(),
+            reason: "ok".into(),
+            discharge_method: Some("reflexive".into()),
+            body_discharge_tier: Some("body-eq-same-callee".into()),
+        });
+
+        let j = report_to_json(&r);
+        assert_eq!(j["rows"][0]["bodyDischargeTier"], "body-eq-same-callee");
     }
 }

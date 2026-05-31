@@ -281,6 +281,10 @@ fn verify_double_body_discharges_and_mints_witness() {
         claim["status"], "discharged",
         "positive body-obligation must be discharged (not undecidable); claim: {claim}"
     );
+    assert_eq!(
+        claim["bodyDischargeTier"], "body-call-expected",
+        "standard body-discharge route must be named in the receipt; claim: {claim}"
+    );
 
     let solver = claim["dischargingSolver"].as_str().unwrap_or("");
     assert!(
@@ -684,6 +688,11 @@ fn verify_double_eq_both_calls_same_args_discharges_reflexive() {
             "eq-both-calls same-args claim[{i}] must classify as reflexive (sides \
              are identical after body reduction); claim: {claim}"
         );
+        assert_eq!(
+            claim["bodyDischargeTier"], "body-eq-same-callee",
+            "eq-both-calls same-args claim[{i}] must report the body route separately \
+             from dischargeMethod; claim: {claim}"
+        );
 
         // A signed witness is minted for a discharged claim.
         assert!(
@@ -749,6 +758,15 @@ fn verify_double_eq_both_calls_different_args_is_unsatisfied() {
         assert_eq!(
             claim["pass"], false,
             "eq-both-calls different-args claim[{i}] must not pass; claim: {claim}"
+        );
+        assert_eq!(
+            claim["bodyDischargeTier"], "body-eq-same-callee",
+            "eq-both-calls different-args claim[{i}] must still report the attempted \
+             body route on a violation; claim: {claim}"
+        );
+        assert!(
+            claim["dischargeMethod"].is_null(),
+            "unsatisfied eq-both-calls claim[{i}] must not claim a proof method; claim: {claim}"
         );
 
         // No witness for a violated claim.

@@ -353,10 +353,12 @@ impl MementoPool {
                     if existing != memento_cid {
                         let new_env = self.mementos.get(&memento_cid);
                         let existing_env = self.mementos.get(&existing);
-                        let new_has_pre =
-                            new_env.and_then(|e| memento_body_field(e, "preHash")).is_some();
-                        let existing_has_pre =
-                            existing_env.and_then(|e| memento_body_field(e, "preHash")).is_some();
+                        let new_has_pre = new_env
+                            .and_then(|e| memento_body_field(e, "preHash"))
+                            .is_some();
+                        let existing_has_pre = existing_env
+                            .and_then(|e| memento_body_field(e, "preHash"))
+                            .is_some();
                         if new_has_pre && !existing_has_pre {
                             // Upgrade: pre-bearing newcomer beats post-only incumbent.
                             self.cid_to_name.remove(&existing);
@@ -807,6 +809,7 @@ pub struct ReportRow {
     pub status: String,
     pub reason: String,
     pub discharge_method: Option<String>,
+    pub body_discharge_tier: Option<String>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
