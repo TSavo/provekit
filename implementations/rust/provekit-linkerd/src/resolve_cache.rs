@@ -12,7 +12,9 @@
 // content-addressed cache persisted to disk skips rust-analyzer ENTIRELY when
 // that input is unchanged, even from a fresh daemon process.
 //
-// KEY (#1705): `(blake3(file_content), resolutionContextCid)`.
+// KEY (#1706): `(blake3(file_content), baseResolutionContextCid)`, where the
+// base context covers Cargo.lock + rust-toolchain only. Source sensitivity lives
+// in each cached position's dependency evidence.
 //
 // HONESTY ABOUT THE INPUT (this is the subtle part, supra omnia rectum). A
 // position's resolution is NOT a pure function of (this file's bytes + the
@@ -25,16 +27,13 @@
 // exact cross-library confusion ProvekIt exists to prevent. So a per-file key is
 // UNSOUND on its own.
 //
-// We therefore fold the WHOLE in-workspace source tree into
-// `resolutionContextCid` (blake3 of Cargo.lock, rust-toolchain[.toml], plus the
-// sorted hashes of every workspace `.rs` file). Any in-workspace edit or
-// toolchain change changes the context CID and invalidates every file's entry.
-// This is deliberately CONSERVATIVE: it over-invalidates (an edit to an
-// unrelated file also drops the cache) in exchange for soundness (a hit can
-// never reflect stale cross-file type flow). A wrong key only ever causes a MISS
-// (re-ask the warm RA), never a wrong HIT. A precise dependency-set-per-file key
-// (#1706's finest granularity) is a future refinement; the conservative tree
-// hash is the sound MVP.
+// The fallback remains the #1705 WHOLE in-workspace source tree context
+// (blake3 of Cargo.lock, rust-toolchain[.toml], plus the sorted hashes of every
+// workspace `.rs` file). #1706 moves that source sensitivity out of the global
+// key and into each cached position: when RA gives us readable definition
+// files, the position records those file CIDs; when it cannot, the position
+// records the coarse workspace context. A wrong/incomplete dependency set only
+// ever causes a MISS (re-ask the warm RA), never a wrong HIT.
 //
 // VALUE: the COMPLETE resolution map for that file from one QUIESCENT pass:
 // `{ "<line>:<col>": "<crate>" }`. A position that was resolved appears with its
@@ -46,7 +45,7 @@
 // RA on a later run). This is what keeps the refuse-floor intact across caching.
 
 use std::collections::BTreeMap;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 
 use provekit_canonicalizer::blake3_512_of;
 use serde::{Deserialize, Serialize};
@@ -67,20 +66,117 @@ pub enum PosOutcome {
     Refused,
 }
 
+/// One cached position plus the dependency evidence that makes the hit valid.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct CachedPosition {
+    pub outcome: PosOutcome,
+    pub deps: ResolutionDeps,
+}
+
+impl CachedPosition {
+    pub fn resolved(krate: &str, type_stem: Option<&str>, deps: ResolutionDeps) -> Self {
+        Self {
+            outcome: PosOutcome::Crate {
+                krate: krate.to_string(),
+                type_stem: type_stem.map(str::to_string),
+            },
+            deps,
+        }
+    }
+
+    pub fn refused(deps: ResolutionDeps) -> Self {
+        Self {
+            outcome: PosOutcome::Refused,
+            deps,
+        }
+    }
+}
+
+/// The dependency evidence for one cached position.
+///
+/// `files` is the precise dependency set for #1706: each path key must still
+/// read to the recorded content CID. `workspace_context_cid` is the conservative
+/// #1705 fallback: when we cannot fully name the files a resolution depends on,
+/// any workspace-source edit invalidates the position instead of serving a
+/// stale answer.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Default)]
+pub struct ResolutionDeps {
+    #[serde(default)]
+    pub files: BTreeMap<String, String>,
+    #[serde(default)]
+    pub workspace_context_cid: Option<String>,
+}
+
+impl ResolutionDeps {
+    pub fn workspace(workspace_root: &Path) -> Self {
+        Self {
+            files: BTreeMap::new(),
+            workspace_context_cid: Some(resolution_context_cid(workspace_root)),
+        }
+    }
+
+    pub fn from_files<'a, I, P>(workspace_root: &Path, paths: I) -> Option<Self>
+    where
+        I: IntoIterator<Item = P>,
+        P: AsRef<Path> + 'a,
+    {
+        let mut files = BTreeMap::new();
+        for path in paths {
+            let path = path.as_ref();
+            let bytes = std::fs::read(path).ok()?;
+            files.insert(
+                dependency_path_key(workspace_root, path),
+                blake3_512_of(&bytes),
+            );
+        }
+        if files.is_empty() {
+            None
+        } else {
+            Some(Self {
+                files,
+                workspace_context_cid: None,
+            })
+        }
+    }
+
+    pub fn validate(&self, workspace_root: &Path) -> bool {
+        if self.files.is_empty() && self.workspace_context_cid.is_none() {
+            return false;
+        }
+        if let Some(expected) = &self.workspace_context_cid {
+            if resolution_context_cid(workspace_root) != *expected {
+                return false;
+            }
+        }
+        for (key, expected) in &self.files {
+            let Some(path) = dependency_path_from_key(workspace_root, key) else {
+                return false;
+            };
+            let Ok(bytes) = std::fs::read(path) else {
+                return false;
+            };
+            if blake3_512_of(&bytes) != *expected {
+                return false;
+            }
+        }
+        true
+    }
+}
+
 /// The cached resolution for one file at one (content, dep-set) state.
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
 pub struct FileResolution {
     /// "<line>:<col>" -> outcome. Complete for the positions queried in the
     /// quiescent pass that produced it.
-    pub positions: BTreeMap<String, PosOutcome>,
+    pub positions: BTreeMap<String, CachedPosition>,
 }
 
 /// The persisted cache: content-address key -> file resolution.
 ///
-/// The key is `"<file_content_blake3>|<dep_set_cid>"`. Two different files with
-/// identical content AND dep-set legitimately share an entry: resolution depends
-/// only on content + deps, not on the path. This is the content-addressing
-/// invariant, not a bug.
+/// The key is `"<file_content_blake3>|<base_context_cid>"`. Two different files
+/// with identical content AND base context legitimately share an entry:
+/// position-level dependency validation decides which stored positions still
+/// hit under the current workspace bytes.
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
 pub struct ResolveCache {
     entries: BTreeMap<String, FileResolution>,
@@ -100,25 +196,41 @@ impl ResolveCache {
         self.entries.is_empty()
     }
 
-    /// Compute the content-address key for a file's bytes under a dep-set CID.
+    /// Compute the content-address key for a file's bytes under a base context.
     pub fn key(file_content: &[u8], dep_set_cid: &str) -> String {
         let content_cid = blake3_512_of(file_content);
         format!("{content_cid}|{dep_set_cid}")
     }
 
-    /// Look up a file's complete resolution by content + dep-set. A hit is
-    /// AUTHORITATIVE for the whole file: every position it carries is final
-    /// (resolved or refused), and the file contributes ZERO queries to RA.
+    /// Look up a file's cached positions by content + base context. Callers must
+    /// validate each `CachedPosition`'s deps before treating that position as a
+    /// hit.
     pub fn get(&self, file_content: &[u8], dep_set_cid: &str) -> Option<&FileResolution> {
         self.entries.get(&Self::key(file_content, dep_set_cid))
     }
 
-    /// Store a file's complete resolution. Only call this with the outcome of a
-    /// QUIESCENT pass in which every queried position settled; never with a
-    /// partial/not-ready result.
+    /// Store a file's complete resolution. Tests use this for full-entry setup;
+    /// production refreshes should prefer `merge_insert`.
+    #[allow(dead_code)]
     pub fn insert(&mut self, file_content: &[u8], dep_set_cid: &str, resolution: FileResolution) {
         self.entries
             .insert(Self::key(file_content, dep_set_cid), resolution);
+    }
+
+    /// Merge a partial refresh into an existing file entry. #1706 refreshes
+    /// only invalid positions, so rewriting the whole file entry would discard
+    /// still-valid positions and force avoidable RA queries later.
+    pub fn merge_insert(
+        &mut self,
+        file_content: &[u8],
+        dep_set_cid: &str,
+        resolution: FileResolution,
+    ) {
+        let entry = self
+            .entries
+            .entry(Self::key(file_content, dep_set_cid))
+            .or_default();
+        entry.positions.extend(resolution.positions);
     }
 
     /// Serialise to bytes for the sidecar.
@@ -131,6 +243,25 @@ impl ResolveCache {
     pub fn from_bytes(bytes: &[u8]) -> Self {
         serde_json::from_slice(bytes).unwrap_or_default()
     }
+}
+
+/// The coarse cache generation key for #1706. It covers resolver-global inputs
+/// shared by every position but deliberately does NOT include workspace source
+/// bytes; source sensitivity now lives in each `CachedPosition`'s deps.
+pub fn base_resolution_context_cid(workspace_root: &Path) -> String {
+    let lock_bytes = read_nearest_ancestor_file(workspace_root, "Cargo.lock")
+        .unwrap_or_else(|| b"no-cargo-lock".to_vec());
+    let toolchain_bytes = read_nearest_ancestor_file(workspace_root, "rust-toolchain.toml")
+        .or_else(|| read_nearest_ancestor_file(workspace_root, "rust-toolchain"))
+        .unwrap_or_else(|| b"no-rust-toolchain".to_vec());
+
+    let mut acc = String::new();
+    acc.push_str("cargo-lock\0");
+    acc.push_str(&blake3_512_of(&lock_bytes));
+    acc.push('\n');
+    acc.push_str("rust-toolchain\0");
+    acc.push_str(&blake3_512_of(&toolchain_bytes));
+    blake3_512_of(acc.as_bytes())
 }
 
 /// Compute the resolution-context CID: the SECOND key component, capturing every
@@ -225,6 +356,25 @@ fn relative_path_key(root: &Path, path: &Path) -> String {
         .replace('\\', "/")
 }
 
+fn dependency_path_key(workspace_root: &Path, path: &Path) -> String {
+    let root =
+        std::fs::canonicalize(workspace_root).unwrap_or_else(|_| workspace_root.to_path_buf());
+    let normalized = std::fs::canonicalize(path).unwrap_or_else(|_| path.to_path_buf());
+    if let Ok(rel) = normalized.strip_prefix(&root) {
+        format!("workspace:{}", rel.to_string_lossy().replace('\\', "/"))
+    } else {
+        format!("file:{}", normalized.to_string_lossy().replace('\\', "/"))
+    }
+}
+
+fn dependency_path_from_key(workspace_root: &Path, key: &str) -> Option<PathBuf> {
+    if let Some(rel) = key.strip_prefix("workspace:") {
+        Some(workspace_root.join(rel))
+    } else {
+        key.strip_prefix("file:").map(PathBuf::from)
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -275,23 +425,30 @@ mod tests {
         let mut res = FileResolution::default();
         res.positions.insert(
             "3:7".into(),
-            PosOutcome::Crate {
-                krate: "std".into(),
-                type_stem: Some("option".into()),
-            },
+            CachedPosition::resolved(
+                "std",
+                Some("option"),
+                ResolutionDeps::workspace(&unique_temp_dir("unused")),
+            ),
         );
-        res.positions.insert("4:1".into(), PosOutcome::Refused);
+        res.positions.insert(
+            "4:1".into(),
+            CachedPosition::refused(ResolutionDeps::workspace(&unique_temp_dir("unused"))),
+        );
         cache.insert(b"content", "deps", res);
 
         let hit = cache.get(b"content", "deps").unwrap();
         assert_eq!(
-            hit.positions.get("3:7"),
+            hit.positions.get("3:7").map(|pos| &pos.outcome),
             Some(&PosOutcome::Crate {
                 krate: "std".into(),
                 type_stem: Some("option".into()),
             })
         );
-        assert_eq!(hit.positions.get("4:1"), Some(&PosOutcome::Refused));
+        assert_eq!(
+            hit.positions.get("4:1").map(|pos| &pos.outcome),
+            Some(&PosOutcome::Refused)
+        );
         // A different content is a miss.
         assert!(cache.get(b"changed", "deps").is_none());
     }
@@ -302,22 +459,137 @@ mod tests {
         let mut res = FileResolution::default();
         res.positions.insert(
             "1:0".into(),
-            PosOutcome::Crate {
-                krate: "serde_json".into(),
-                type_stem: None,
-            },
+            CachedPosition::resolved(
+                "serde_json",
+                None,
+                ResolutionDeps::workspace(&unique_temp_dir("unused")),
+            ),
         );
         cache.insert(b"x", "d", res);
         let bytes = cache.to_bytes();
         let restored = ResolveCache::from_bytes(&bytes);
         assert_eq!(restored.len(), 1);
         assert_eq!(
-            restored.get(b"x", "d").unwrap().positions.get("1:0"),
+            restored
+                .get(b"x", "d")
+                .unwrap()
+                .positions
+                .get("1:0")
+                .map(|pos| &pos.outcome),
             Some(&PosOutcome::Crate {
                 krate: "serde_json".into(),
                 type_stem: None,
             })
         );
+    }
+
+    #[test]
+    fn base_resolution_context_ignores_unrelated_source_edits() {
+        let root = unique_temp_dir("ra-cache-base-context");
+        write_minimal_workspace(&root);
+
+        let before = base_resolution_context_cid(&root);
+        fs::write(
+            root.join("src").join("other.rs"),
+            "pub fn other() -> u32 { 7 }\n",
+        )
+        .expect("write unrelated source");
+        let after = base_resolution_context_cid(&root);
+
+        let _ = fs::remove_dir_all(&root);
+
+        assert_eq!(
+            before, after,
+            "the cache generation key should cover Cargo/toolchain inputs, not every source file"
+        );
+    }
+
+    #[test]
+    fn precise_file_dependencies_validate_independently() {
+        let root = unique_temp_dir("ra-cache-position-deps");
+        write_minimal_workspace(&root);
+        let dep_a = root.join("src").join("dep_a.rs");
+        let dep_b = root.join("src").join("dep_b.rs");
+        fs::write(&dep_a, "pub fn a() {}\n").expect("write dep_a");
+        fs::write(&dep_b, "pub fn b() {}\n").expect("write dep_b");
+
+        let deps_a = ResolutionDeps::from_files(&root, [&dep_a]).expect("deps a");
+        let deps_b = ResolutionDeps::from_files(&root, [&dep_b]).expect("deps b");
+
+        assert!(deps_a.validate(&root), "dep_a starts valid");
+        assert!(deps_b.validate(&root), "dep_b starts valid");
+
+        fs::write(&dep_b, "pub fn b_changed() {}\n").expect("rewrite dep_b");
+
+        assert!(
+            deps_a.validate(&root),
+            "editing dep_b must not invalidate a position that only depends on dep_a"
+        );
+        assert!(
+            !deps_b.validate(&root),
+            "editing dep_b must invalidate positions that named dep_b"
+        );
+
+        let _ = fs::remove_dir_all(&root);
+    }
+
+    #[test]
+    fn merging_partial_refresh_preserves_other_positions() {
+        let root = unique_temp_dir("ra-cache-merge");
+        write_minimal_workspace(&root);
+        let dep_a = root.join("src").join("dep_a.rs");
+        let dep_b = root.join("src").join("dep_b.rs");
+        fs::write(&dep_a, "pub fn a() {}\n").expect("write dep_a");
+        fs::write(&dep_b, "pub fn b() {}\n").expect("write dep_b");
+
+        let base = base_resolution_context_cid(&root);
+        let mut cache = ResolveCache::new();
+        let mut initial = FileResolution::default();
+        initial.positions.insert(
+            "1:1".into(),
+            CachedPosition::resolved(
+                "std",
+                Some("option"),
+                ResolutionDeps::from_files(&root, [&dep_a]).expect("dep a"),
+            ),
+        );
+        initial.positions.insert(
+            "2:1".into(),
+            CachedPosition::refused(ResolutionDeps::from_files(&root, [&dep_b]).expect("dep b")),
+        );
+        cache.insert(b"caller", &base, initial);
+
+        let mut refresh = FileResolution::default();
+        refresh.positions.insert(
+            "2:1".into(),
+            CachedPosition::resolved(
+                "std",
+                Some("result"),
+                ResolutionDeps::from_files(&root, [&dep_b]).expect("dep b refresh"),
+            ),
+        );
+        cache.merge_insert(b"caller", &base, refresh);
+
+        let hit = cache.get(b"caller", &base).expect("merged cache hit");
+        assert_eq!(hit.positions.len(), 2);
+        assert_eq!(
+            hit.positions.get("1:1").map(|pos| &pos.outcome),
+            Some(&PosOutcome::Crate {
+                krate: "std".into(),
+                type_stem: Some("option".into()),
+            }),
+            "partial refresh should not discard an unrelated cached position"
+        );
+        assert_eq!(
+            hit.positions.get("2:1").map(|pos| &pos.outcome),
+            Some(&PosOutcome::Crate {
+                krate: "std".into(),
+                type_stem: Some("result".into()),
+            }),
+            "refreshed position should be updated in place"
+        );
+
+        let _ = fs::remove_dir_all(&root);
     }
 
     #[test]

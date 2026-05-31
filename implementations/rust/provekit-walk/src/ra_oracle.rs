@@ -53,6 +53,7 @@ pub struct ResolveQuery {
 pub struct TypedResolution {
     pub krate: String,
     pub type_stem: Option<String>,
+    pub definition_files: Vec<PathBuf>,
 }
 
 /// The oracle handle: a live rust-analyzer LSP subprocess plus the bookkeeping
@@ -320,23 +321,16 @@ impl RaOracle {
                             match kind {
                                 "begin" => info!(
                                     elapsed_s = start.elapsed().as_secs(),
-                                    "RA index begin: {} {}",
-                                    token,
-                                    detail
+                                    "RA index begin: {} {}", token, detail
                                 ),
                                 "end" => info!(
                                     elapsed_s = start.elapsed().as_secs(),
-                                    "RA index done:  {} {}",
-                                    token,
-                                    pmsg
+                                    "RA index done:  {} {}", token, pmsg
                                 ),
                                 _ => match pct {
                                     Some(p) => debug!(
                                         elapsed_s = start.elapsed().as_secs(),
-                                        "RA index:       {} {}% {}",
-                                        token,
-                                        p,
-                                        pmsg
+                                        "RA index:       {} {}% {}", token, p, pmsg
                                     ),
                                     None => debug!("RA index:       {} {}", token, pmsg),
                                 },
@@ -371,7 +365,10 @@ impl RaOracle {
                             }
                         }
                         other => {
-                            trace!(method = other, "oracle: inbound message (not progress/status)");
+                            trace!(
+                                method = other,
+                                "oracle: inbound message (not progress/status)"
+                            );
                         }
                     }
                 }
@@ -536,6 +533,7 @@ impl RaOracle {
         let type_stem = hover_stem
             .clone()
             .or_else(|| type_stem_from_definition_result(&result));
+        let definition_files = definition_files_from_definition_result(&result);
         debug!(
             file = %q.abs_path.display(),
             line = q.lsp_line, col = q.lsp_col,
@@ -543,9 +541,14 @@ impl RaOracle {
             hover_stem = ?hover_stem,
             type_stem = ?type_stem,
             stem_source = if hover_stem.is_some() { "hover" } else { "definition-file-stem" },
+            definition_files = definition_files.len(),
             "oracle: resolved method call to crate + type stem"
         );
-        Ok(Some(TypedResolution { krate, type_stem }))
+        Ok(Some(TypedResolution {
+            krate,
+            type_stem,
+            definition_files,
+        }))
     }
 
     /// Ask `textDocument/hover` at the method-ident position for the RECEIVER's
@@ -709,10 +712,8 @@ impl RaOracle {
     /// back one null per requested item so RA falls back to its defaults rather
     /// than erroring.
     fn respond_if_server_request(&mut self, msg: &Value) -> bool {
-        let (Some(method), Some(id)) = (
-            msg.get("method").and_then(|m| m.as_str()),
-            msg.get("id"),
-        ) else {
+        let (Some(method), Some(id)) = (msg.get("method").and_then(|m| m.as_str()), msg.get("id"))
+        else {
             return false;
         };
         let result = if method == "workspace/configuration" {
@@ -725,7 +726,10 @@ impl RaOracle {
         } else {
             Value::Null
         };
-        trace!(method = method, "oracle: answering RA server->client request");
+        trace!(
+            method = method,
+            "oracle: answering RA server->client request"
+        );
         let reply = json!({ "jsonrpc": "2.0", "id": id.clone(), "result": result });
         let _ = self.write_message(&reply);
         true
@@ -759,7 +763,6 @@ impl RaOracle {
             }
         }
     }
-
 }
 
 /// Backoff between `ContentModified` retries: ramp from 250ms to a 3s cap so
@@ -960,6 +963,36 @@ fn type_stem_from_definition_result(result: &Value) -> Option<String> {
     }
 }
 
+/// Extract every file URI named by a settled definition result. These files are
+/// the immediate semantic evidence for #1706's per-position cache deps. When no
+/// readable file deps can be built from them, linkerd falls back to the coarse
+/// workspace context instead of serving an unverifiable hit.
+fn definition_files_from_definition_result(result: &Value) -> Vec<PathBuf> {
+    let locations: Vec<&Value> = match result {
+        Value::Array(a) => a.iter().collect(),
+        Value::Object(_) => vec![result],
+        _ => return Vec::new(),
+    };
+    let mut files = std::collections::BTreeSet::new();
+    for loc in locations {
+        let Some(uri) = loc
+            .get("uri")
+            .or_else(|| loc.get("targetUri"))
+            .and_then(|v| v.as_str())
+        else {
+            continue;
+        };
+        if let Some(path) = file_path_from_uri(uri) {
+            files.insert(path);
+        }
+    }
+    files.into_iter().collect()
+}
+
+fn file_path_from_uri(uri: &str) -> Option<PathBuf> {
+    uri.strip_prefix("file://").map(PathBuf::from)
+}
+
 /// The defining type stem from a definition-target URI: the source file stem,
 /// with the parent dir folded in for module files named `mod.rs` (so
 /// `slice/mod.rs` -> `slice`, not the useless `mod`). `None` for an unmappable
@@ -1053,8 +1086,8 @@ pub fn type_stem_from_hover_markdown(markdown: &str) -> Option<String> {
     // type. A leading keyword or a `(` (function signature) means this block is
     // not the receiver type.
     const REJECT_PREFIXES: &[&str] = &[
-        "impl ", "impl<", "fn ", "pub ", "let ", "const ", "static ", "use ",
-        "extern ", "struct ", "enum ", "trait ", "type ", "mod ", "where ",
+        "impl ", "impl<", "fn ", "pub ", "let ", "const ", "static ", "use ", "extern ", "struct ",
+        "enum ", "trait ", "type ", "mod ", "where ",
     ];
     if REJECT_PREFIXES.iter().any(|p| first_line.starts_with(p)) {
         return None;
@@ -1319,7 +1352,10 @@ mod tests {
     #[test]
     fn type_stem_from_definition_result_single_and_ambiguous() {
         let single = json!([{ "uri": "file:///opt/rust/library/core/src/option.rs", "range": {} }]);
-        assert_eq!(type_stem_from_definition_result(&single).as_deref(), Some("option"));
+        assert_eq!(
+            type_stem_from_definition_result(&single).as_deref(),
+            Some("option")
+        );
         // Two distinct stems -> refuse (no disambiguation).
         let ambiguous = json!([
             { "uri": "file:///opt/rust/library/core/src/option.rs", "range": {} },
@@ -1330,7 +1366,26 @@ mod tests {
         assert_eq!(type_stem_from_definition_result(&json!([])), None);
         // LocationLink targetUri is read.
         let link = json!([{ "targetUri": "file:///opt/rust/library/core/src/result.rs", "targetRange": {} }]);
-        assert_eq!(type_stem_from_definition_result(&link).as_deref(), Some("result"));
+        assert_eq!(
+            type_stem_from_definition_result(&link).as_deref(),
+            Some("result")
+        );
+    }
+
+    #[test]
+    fn definition_files_from_definition_result_reads_location_and_locationlink() {
+        let result = json!([
+            { "uri": "file:///opt/rust/library/core/src/option.rs", "range": {} },
+            { "targetUri": "file:///opt/rust/library/core/src/result.rs", "targetRange": {} }
+        ]);
+        let files = definition_files_from_definition_result(&result);
+        assert_eq!(files.len(), 2);
+        assert!(files
+            .iter()
+            .any(|path| path.ends_with("library/core/src/option.rs")));
+        assert!(files
+            .iter()
+            .any(|path| path.ends_with("library/core/src/result.rs")));
     }
 
     // ---- hover type-head parser (the hover panic-leaf disambiguator) ----
@@ -1431,13 +1486,17 @@ mod tests {
         // MarkupContent { kind, value }.
         let mc = json!({ "contents": { "kind": "markdown", "value": "```rust\ncore::option::Option\n```" } });
         assert_eq!(
-            hover_markdown(&mc).and_then(|m| type_stem_from_hover_markdown(&m)).as_deref(),
+            hover_markdown(&mc)
+                .and_then(|m| type_stem_from_hover_markdown(&m))
+                .as_deref(),
             Some("option")
         );
         // Bare MarkedString.
         let bare = json!({ "contents": "```rust\nString\n```" });
         assert_eq!(
-            hover_markdown(&bare).and_then(|m| type_stem_from_hover_markdown(&m)).as_deref(),
+            hover_markdown(&bare)
+                .and_then(|m| type_stem_from_hover_markdown(&m))
+                .as_deref(),
             Some("string")
         );
         // Null hover -> no markdown.
