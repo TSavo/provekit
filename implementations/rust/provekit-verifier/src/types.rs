@@ -102,6 +102,28 @@ pub struct MementoPool {
     pub formula_to_memento: BTreeMap<String, String>,
     /// sourceSymbol (IR ctor name) -> bridge envelope JSON.
     pub bridges_by_symbol: BTreeMap<String, Json>,
+    /// `(bundle_cid, file, line, sourceSymbol)` -> bridge envelope JSON.
+    ///
+    /// Callsite-SCOPED bridge index, populated alongside `bridges_by_symbol`
+    /// for every bridge whose body carries a `callsite` with both a file and a
+    /// line. Where `bridges_by_symbol` is last-writer-wins per bare symbol (so
+    /// two producers sharing a symbol -- e.g. `serde_json::to_string::<Value>`
+    /// with an `is_ok` totality post and the std `to_string` with a body-eq
+    /// post -- collapse to a single slot), this index keeps them distinct by
+    /// the call SITE they were minted at. A panic obligation whose argument is
+    /// itself a call resolves its producer post HERE, scoped to the panic
+    /// site's own `(bundle, file, line)`, so the producer guarantee that
+    /// actually governs THAT call is selected rather than whichever same-symbol
+    /// bridge won the per-symbol slot. The `bundle_cid` component is load-
+    /// bearing for soundness: relative paths like `src/lib.rs` collide across
+    /// crates, so two different crates can both have a `to_string` producer at
+    /// `src/lib.rs:43`; bundle scoping keeps the panic site bound to the
+    /// producer minted in its OWN bundle (bridges are minted in the caller's
+    /// bundle, so the co-located producer bridge is a co-member). First-writer
+    /// wins per full key; a `(bundle,file,line,symbol)` collision would mean
+    /// two same-symbol calls on one source line, which (same bundle => same
+    /// target contract => same post) is a K-completeness edge, not a false-pass.
+    pub bridges_by_callsite: BTreeMap<(String, String, usize, String), Json>,
     /// sourceSymbol -> the `.proof` bundle CID the bridge memento was loaded
     /// from. Lets resolve_target enforce the self-pinned (no `targetProofCid`)
     /// case: the target contract must be a co-member of this bundle. Keyed by
@@ -537,6 +559,9 @@ impl MementoPool {
         }
         for (k, v) in other.bridges_by_symbol {
             self.bridges_by_symbol.entry(k).or_insert(v);
+        }
+        for (k, v) in other.bridges_by_callsite {
+            self.bridges_by_callsite.entry(k).or_insert(v);
         }
         for (k, v) in other.bridge_self_bundle_by_symbol {
             self.bridge_self_bundle_by_symbol.entry(k).or_insert(v);

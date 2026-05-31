@@ -153,6 +153,67 @@ pub fn locate_producer_post(
     Some((post, post_hash))
 }
 
+/// Callsite-SCOPED producer-post resolution for a panic site.
+///
+/// Where `locate_producer_post` keys the producer bridge by bare symbol
+/// (`bridges_by_symbol.get(inner_name)`, last-writer-wins), this resolves the
+/// producer bridge minted at the panic site's OWN `(bundle, file, line)`. Two
+/// producers can share a symbol -- e.g. `serde_json::to_string::<Value>` with a
+/// totality post `is_ok(result)` and the std `to_string` with a body-eq post
+/// `result == to_string(value)` -- and the per-symbol slot keeps only one. A
+/// panic obligation `producer_post -> consumer_pre` built against the wrong one
+/// (body-eq) is unprovable even when the right one (totality) makes it the
+/// reflexive `is_ok(_h0) -> is_ok(_h0)`. Scoping to the call site selects the
+/// producer guarantee that actually governs THIS call.
+///
+/// Soundness / discrimination: the producer bridge is the one the KIT minted at
+/// this exact call (semantics live in the kit, not here). A call the kit could
+/// not give a totality bridge (e.g. `to_string::<MyStruct>`, a generic with no
+/// totality contract) produces NO co-located producer bridge, so this returns
+/// `None`, the obligation falls through to the guard branch, and the site stays
+/// honestly undecidable. There is deliberately NO fallback to the per-symbol
+/// map for panic sites: a same-symbol producer from elsewhere must never
+/// discharge a panic obligation it does not govern. `bundle` is part of the key
+/// because relative paths collide across crates.
+///
+/// Returns `(post_formula, post_hash)` on a co-located hit, else `None`.
+pub fn locate_producer_post_at_callsite(
+    arg_term: &Option<Json>,
+    bundle: &str,
+    file: &str,
+    line: usize,
+    pool_mementos: &std::collections::BTreeMap<String, Json>,
+    bridges_by_callsite: &std::collections::BTreeMap<(String, String, usize, String), Json>,
+) -> Option<(Json, String)> {
+    let arg = arg_term.as_ref()?;
+    if arg.get("kind").and_then(|v| v.as_str()) != Some("ctor") {
+        return None;
+    }
+    let inner_name = arg.get("name").and_then(|v| v.as_str())?;
+    let key = (
+        bundle.to_string(),
+        file.to_string(),
+        line,
+        inner_name.to_string(),
+    );
+    let producer_bridge = bridges_by_callsite.get(&key)?;
+    let bridge_body = crate::types::memento_body(producer_bridge)?;
+    let target_cid = bridge_body
+        .get("targetContractCid")
+        .and_then(|v| v.as_str())?;
+    let producer_contract = pool_mementos.get(target_cid)?;
+    let producer_body = crate::types::memento_body(producer_contract)?;
+    let post = producer_body
+        .get("post")
+        .filter(|v| v.is_object())
+        .cloned()?;
+    // Same carrier-quantification as the symbol path: bind `result` so
+    // `build_implication_obligation` can unify it with the consumer's formal.
+    let post = wrap_post_forall(post, producer_body);
+    let post_hash = formula_hash(&post);
+    Some((post, post_hash))
+}
+
 /// Wrap a bare producer post in `forall result. post`, binding the output
 /// carrier variable `result`. Sort is taken from the producer's first formal
 /// sort (its return width in the single-formal model) or `Int`. An
