@@ -586,6 +586,26 @@ impl RaOracle {
         None
     }
 
+    /// Diagnostic: return the RAW `textDocument/hover` markdown at `q`, before any
+    /// stem parsing. Used by the `hover_probe` bin to SEE what live rust-analyzer
+    /// renders at a method-ident position (the input `type_stem_from_hover_markdown`
+    /// is assumed to receive), rather than trusting synthetic unit-test markdown.
+    /// Not on the resolution hot path; `hover_type_stem` is the production caller.
+    pub fn hover_markdown_raw(&mut self, q: &ResolveQuery) -> Option<String> {
+        self.ensure_open(&q.abs_path)?;
+        let uri = path_to_uri(&q.abs_path);
+        let id = self.send_request(
+            "textDocument/hover",
+            json!({
+                "textDocument": { "uri": uri },
+                "position": { "line": q.lsp_line, "character": q.lsp_col },
+            }),
+        )?;
+        let resp = self.wait_for_response(id, DEFINITION_WAIT)?;
+        let result = resp.get("result")?;
+        hover_markdown(result)
+    }
+
     /// Send the `textDocument/definition` request for `q`, honouring the
     /// ContentModified not-ready retry/backoff, and return the raw `result`
     /// value:

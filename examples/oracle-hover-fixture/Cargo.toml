@@ -1,0 +1,27 @@
+# Standalone fixture for the rust-analyzer hover type-resolution probe.
+#
+# The panic-freedom-fixture uses `Option<i64>` DIRECTLY, so its `.unwrap()`
+# def-jumps cleanly to std's `option.rs` and the OLD definition-file-stem
+# heuristic already resolves it -- a green test there proves nothing about
+# hover. This fixture instead mirrors the real provekit-cli census shape:
+# `serde_json::to_string(&value).unwrap()`, where the `.unwrap()` receiver is a
+# workspace-local expression of std `Result` type. That is the case the hover
+# refinement was built for. Standalone (one crate) so rust-analyzer indexes it
+# in seconds instead of stalling on the monorepo.
+[package]
+name = "oracle-hover-fixture"
+version = "0.0.0"
+edition = "2021"
+publish = false
+
+# Empty [workspace] table: declares this fixture its OWN workspace root so cargo
+# and rust-analyzer do NOT search upward into the provekit monorepo workspace
+# (which is exactly the load that makes RA stall and never quiesce). This is the
+# isolation that lets RA index the fixture in seconds.
+[workspace]
+
+[dependencies]
+serde_json = "1"
+
+[lib]
+path = "src/lib.rs"
