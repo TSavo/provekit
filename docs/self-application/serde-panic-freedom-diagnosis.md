@@ -1,5 +1,54 @@
 # Serde panic-freedom (D-lib) — full diagnosis, 2026-05-31
 
+## HANDOFF — START HERE (ready-to-dispatch, ~1-2 hrs fresh)
+
+State: branch `serde-finish`, clean tree. K (e2e panicSafe) = 0, honestly.
+Root cause LOCATED, verification UNBLOCKED. Everything below is detail; this is the
+executable plan.
+
+THE BUG (single): the panic obligation for `f`'s `serde_json::to_string(v).unwrap()`
+is built as `(producer_post) -> (consumer_pre)`. `consumer_pre = is_ok(_h0)` (correct,
+result_unwrap pre). `producer_post` = the to_string BODY-EQ contract
+`=(_h0, to_string(value))` instead of the serde_json_to_string_value TOTALITY
+`is_ok(_h0)`. So the implication is `(_h0 = to_string(value)) -> is_ok(_h0)` -> z3
+unsat. With the totality post it's `is_ok(_h0) -> is_ok(_h0)` = valid -> panic-safe.
+Cause: `locate_producer_post` (provekit-verifier/src/handshake.rs:120) follows the
+single `bridges_by_symbol[inner_name]` bridge to ONE target contract and takes its
+`post`; the body-eq won the per-symbol slot. Suspect the free call
+`serde_json::to_string` lifts under ctor `method:to_string`, keying the totality
+bridge away from the lookup.
+
+STEP 1 (diagnose, ~20 min, READ-ONLY): on battleaxe, `bash /tmp/serde_e2e2.sh`
+re-mints stage3-serde fresh, then `provekit dump <proof> --json` + a script to print
+EVERY entry of `bridges_by_symbol` (key) and its target contract's `post`. Confirm:
+is there a bridge whose target post is `is_ok(result)` (the totality) for the
+to_string producer, and under which key? (`to_string` vs `method:to_string` vs
+`serde_json_to_string_value`.)
+
+STEP 2 (fix, soundness-adjacent, ONE of):
+  (a) KIT-SIDE (preferred, safer, "semantics in the kit"): if `serde_json::to_string`
+      free call is mis-lifted as `method:to_string`, fix the lifter
+      (provekit-walk/src/bin/walk_rpc.rs visit_expr_call vs visit_expr_method_call)
+      so the free call keys where the totality bridge lives.
+  (b) VERIFIER-SIDE: make `locate_producer_post` prefer, among the producer's
+      bridges/contracts, the one whose post predicate unifies with the consumer
+      pre's predicate family (is_ok) over a structural `=`.
+
+STEP 3 (verify, NOW POSSIBLE — file/line surfaces in rows):
+  `provekit prove examples/stage3-serde-totality-fixture --with <out> --json`
+  REQUIRE: row `file=src/lib.rs line=25` (f) -> status discharged/panicSafe;
+           row `file=src/lib.rs line=38` (g, MyStruct) -> undecidable;
+           global falsePass=0, silentlyDropped=0.
+  ALSO run the panic-freedom-fixture (BREAK 2, syntactic guard) + the full
+  provekit-verifier test suite (`bcargo test -p provekit-verifier`). If g flips or
+  falsePass>0 or any suite test regresses -> REVERT.
+
+DO NOT: rush this exhausted; specialize consumer_pre (empirically wrong, breaks the
+forall build_implication needs); touch the shared non-panic discharge path.
+
+---
+
+
 Goal: f `serde_json::to_string(&Value).unwrap()` → PANIC-SAFE (K=1); g
 `to_string(&MyStruct).unwrap()` → UNDECIDABLE; falsePass=0. Stalled 5 agents.
 
