@@ -72,6 +72,19 @@ SCALA_CLI ?= scala-cli
 PARITY_PYTHON_VENV ?= /tmp/provekit-cross-language-parity-python
 PARITY_PYTHON_BIN := $(PARITY_PYTHON_VENV)/bin
 PARITY_PYTHON := $(PARITY_PYTHON_BIN)/python
+BCARGO ?= $(CURDIR)/bin/bcargo
+CARGO_LOCAL ?= cargo
+ifeq ($(CI),)
+ifeq ($(USE_BCARGO),0)
+CARGO ?= $(CARGO_LOCAL)
+else
+CARGO ?= $(BCARGO)
+endif
+else
+CARGO ?= $(CARGO_LOCAL)
+endif
+BCARGO_ACTIVE := $(filter bcargo,$(notdir $(firstword $(CARGO))))
+CARGO_SYNC_BINS = $(if $(BCARGO_ACTIVE),$(CARGO) $(foreach bin,$(1),--sync-bin $(bin)),$(CARGO))
 JAVA_HOME ?= $(shell for d in /usr/local/opt/openjdk /opt/homebrew/opt/openjdk; do if [ -x "$$d/bin/java" ]; then echo "$$d"; exit; fi; done)
 export JAVA_HOME
 ifeq ($(strip $(JAVA_HOME)),)
@@ -150,17 +163,17 @@ build-all: build-rust build-cpp build-go build-ts build-csharp build-java build-
 
 .PHONY: build-rust
 build-rust:
-	cargo build --release --manifest-path implementations/rust/Cargo.toml
-	cargo build --release --manifest-path tools/recompute-spec-cids/Cargo.toml
-	cargo build --release --manifest-path tools/foundation-keygen/Cargo.toml
+	$(call CARGO_SYNC_BINS,provekit provekit-lift) build --release --manifest-path implementations/rust/Cargo.toml
+	$(CARGO) build --release --manifest-path tools/recompute-spec-cids/Cargo.toml
+	$(call CARGO_SYNC_BINS,verify-self-contracts sign-self-contracts) build --release --manifest-path tools/foundation-keygen/Cargo.toml
 
 .PHONY: build-rust-cli
 build-rust-cli:
-	cargo build --release --manifest-path implementations/rust/Cargo.toml -p provekit-cli
+	$(call CARGO_SYNC_BINS,provekit) build --release --manifest-path implementations/rust/Cargo.toml -p provekit-cli
 
 .PHONY: build-rust-self-contract-verifier
 build-rust-self-contract-verifier:
-	cargo build --release --manifest-path tools/foundation-keygen/Cargo.toml --bin verify-self-contracts
+	$(call CARGO_SYNC_BINS,verify-self-contracts) build --release --manifest-path tools/foundation-keygen/Cargo.toml --bin verify-self-contracts
 
 .PHONY: build-rust-mint-tools
 build-rust-mint-tools: build-rust-cli build-rust-self-contract-verifier
@@ -169,10 +182,10 @@ build-rust-mint-tools: build-rust-cli build-rust-self-contract-verifier
 check-macos-swift-rust-scope:
 	@mint_dry="$$( $(MAKE) --no-print-directory -n mint-swift )"; \
 	prove_dry="$$( $(MAKE) --no-print-directory -n prove-swift )"; \
-	cli_tree="$$(cargo tree --manifest-path implementations/rust/Cargo.toml -p provekit-cli --edges normal,build --depth 4)"; \
-	cli_cmd='cargo build --release --manifest-path implementations/rust/Cargo.toml -p provekit-cli'; \
-	verifier_cmd='cargo build --release --manifest-path tools/foundation-keygen/Cargo.toml --bin verify-self-contracts'; \
-	full_workspace_cmd='cargo build --release --manifest-path implementations/rust/Cargo.toml'; \
+	cli_tree="$$($(CARGO_LOCAL) tree --manifest-path implementations/rust/Cargo.toml -p provekit-cli --edges normal,build --depth 4)"; \
+	cli_cmd='$(call CARGO_SYNC_BINS,provekit) build --release --manifest-path implementations/rust/Cargo.toml -p provekit-cli'; \
+	verifier_cmd='$(call CARGO_SYNC_BINS,verify-self-contracts) build --release --manifest-path tools/foundation-keygen/Cargo.toml --bin verify-self-contracts'; \
+	full_workspace_cmd='$(call CARGO_SYNC_BINS,provekit provekit-lift) build --release --manifest-path implementations/rust/Cargo.toml'; \
 	echo "$$mint_dry" | grep -F -- "$$cli_cmd" >/dev/null || \
 		(echo "FAIL: mint-swift must build only the provekit CLI, not the full Rust workspace" && exit 1); \
 	echo "$$mint_dry" | grep -F -- "$$verifier_cmd" >/dev/null || \
@@ -585,7 +598,7 @@ prove-all: prove-rust prove-go prove-cpp prove-ts prove-csharp prove-clr-bytecod
 # names it literally. Either form is safe; only --write mutates the catalog.
 .PHONY: catalog-verify
 catalog-verify:
-	cargo run --release --manifest-path tools/recompute-spec-cids/Cargo.toml -- --verify
+	$(CARGO) run --release --manifest-path tools/recompute-spec-cids/Cargo.toml -- --verify
 
 .PHONY: c11-cursorkind-check
 c11-cursorkind-check:
@@ -612,13 +625,13 @@ conformance: c11-cursorkind-check catalog-verify protocol-verify all-mint test-m
 .PHONY: test-mint-kit-integration-pins
 test-mint-kit-integration-pins: all-mint
 	@echo "=== mint kit integration pins: rust/cpp CID gates ==="
-	CI=1 cargo test --release --manifest-path implementations/rust/Cargo.toml \
+	CI=1 $(CARGO) test --release --manifest-path implementations/rust/Cargo.toml \
 		-p provekit-cli --test mint_kit_integration \
 		kits_with_real_contracts_produce_nonempty_contract_set
-	CI=1 cargo test --release --manifest-path implementations/rust/Cargo.toml \
+	CI=1 $(CARGO) test --release --manifest-path implementations/rust/Cargo.toml \
 		-p provekit-cli --test mint_kit_integration \
 		rust_kit_contract_set_cid_is_pinned_to_self_contracts_canonical
-	CI=1 cargo test --release --manifest-path implementations/rust/Cargo.toml \
+	CI=1 $(CARGO) test --release --manifest-path implementations/rust/Cargo.toml \
 		-p provekit-cli --test mint_kit_integration \
 		cpp_kit_contract_set_cid_is_pinned_to_self_contracts_canonical
 
@@ -644,7 +657,7 @@ test-self-contracts: test-self-contracts-rust
 
 .PHONY: test-self-contracts-rust
 test-self-contracts-rust:
-	cargo test --release --manifest-path implementations/rust/Cargo.toml \
+	$(CARGO) test --release --manifest-path implementations/rust/Cargo.toml \
 		-p provekit-self-contracts --lib
 
 # --- Cross-kit conformance fixtures ------------------------------------------
@@ -656,13 +669,13 @@ test-self-contracts-rust:
 .PHONY: conformance-region-fixture
 conformance-region-fixture:
 	@echo "=== Region+Dependent byte-pinned fixture ==="
-	@cargo test --release --manifest-path implementations/rust/Cargo.toml \
+	@$(CARGO) test --release --manifest-path implementations/rust/Cargo.toml \
 		-p provekit-canonicalizer --test conformance_region_dependent
 
 .PHONY: cross-kit-conformance
 cross-kit-conformance:
 	@echo "=== Catalog-pinned cross-kit conformance fixtures ==="
-	cargo run --release --manifest-path tools/cross-kit-conformance/Cargo.toml -- \
+	$(CARGO) run --release --manifest-path tools/cross-kit-conformance/Cargo.toml -- \
 		--profile $(CONFORMANCE_PROFILE) --jobs $(CONFORMANCE_JOBS)
 
 .PHONY: cross-language-proof-parity-python-env
@@ -682,56 +695,60 @@ cross-language-proof-parity-python-env:
 check-cross-language-proof-parity-scope:
 	tools/check-cross-language-proof-parity-scope.sh
 
+.PHONY: check-cargo-entrypoint
+check-cargo-entrypoint:
+	tools/check-cargo-entrypoint.sh
+
 .PHONY: cross-language-proof-parity
 cross-language-proof-parity: build-java cross-language-proof-parity-python-env
 	@echo "=== Cross-language proof parity: emit/materialize/recognize/mint/prove/contradiction lanes for Java, Go, Python, Rust ==="
-	cargo build --manifest-path implementations/rust/Cargo.toml \
+	$(CARGO) build --manifest-path implementations/rust/Cargo.toml \
 		-p provekit-realize-rust-core --bin provekit-realize-rust
 	@echo "--- emit parity ---"
-	cargo test --release --manifest-path implementations/rust/Cargo.toml \
+	$(CARGO) test --release --manifest-path implementations/rust/Cargo.toml \
 		-p provekit-cli --test cmd_emit_java_junit \
 		emit_java_junit_uses_checked_in_java_double_registration
-	cargo test --release --manifest-path implementations/rust/Cargo.toml \
+	$(CARGO) test --release --manifest-path implementations/rust/Cargo.toml \
 		-p provekit-cli --test cmd_emit_java_testng \
 		emit_java_testng_uses_checked_in_java_double_registration
-	cargo test --release --manifest-path implementations/rust/Cargo.toml \
+	$(CARGO) test --release --manifest-path implementations/rust/Cargo.toml \
 		-p provekit-cli --test cmd_emit_go_testing \
 		emit_go_testing_uses_checked_in_go_double_registration
-	cargo test --release --manifest-path implementations/rust/Cargo.toml \
+	$(CARGO) test --release --manifest-path implementations/rust/Cargo.toml \
 		-p provekit-cli --test cmd_emit_go_testify \
 		emit_go_testify_dispatches_separate_emitter_and_compile_checks
-	PYTHON=$(PARITY_PYTHON) PATH=$(PARITY_PYTHON_BIN):$(PATH) cargo test --release --manifest-path implementations/rust/Cargo.toml \
+	PYTHON=$(PARITY_PYTHON) PATH=$(PARITY_PYTHON_BIN):$(PATH) $(CARGO) test --release --manifest-path implementations/rust/Cargo.toml \
 		-p provekit-cli --test cmd_emit_python_pytest \
 		emit_python_pytest_uses_checked_in_python_double_registration
-	cargo test --release --manifest-path implementations/rust/Cargo.toml \
+	$(CARGO) test --release --manifest-path implementations/rust/Cargo.toml \
 		-p provekit-cli --test cmd_emit_rust_cargo_test \
 		emit_rust_cargo_test_uses_checked_in_rust_double_registration
 	@echo "--- materialize parity ---"
-	cargo test --release --manifest-path implementations/rust/Cargo.toml \
+	$(CARGO) test --release --manifest-path implementations/rust/Cargo.toml \
 		-p provekit-cli --test cmd_materialize_proof_load \
 		materialize_json_client_jackson_loads_from_proof_and_compiles
-	cargo test --release --manifest-path implementations/rust/Cargo.toml \
+	$(CARGO) test --release --manifest-path implementations/rust/Cargo.toml \
 		-p provekit-cli --test go_realize_materialize \
 		go_materialize_uses_checked_in_go_double_realize_registration
-	cargo test --release --manifest-path implementations/rust/Cargo.toml \
+	$(CARGO) test --release --manifest-path implementations/rust/Cargo.toml \
 		-p provekit-cli --test go_realize_materialize \
 		go_materialize_uses_body_template_from_go_module_proof
-	cargo test --release --manifest-path implementations/rust/Cargo.toml \
+	$(CARGO) test --release --manifest-path implementations/rust/Cargo.toml \
 		-p provekit-cli --test go_realize_materialize \
 		go_dependency_proofs_are_resolved_by_configured_go_kit
-	PATH=$(PARITY_PYTHON_BIN):$(PATH) cargo test --release --manifest-path implementations/rust/Cargo.toml \
+	PATH=$(PARITY_PYTHON_BIN):$(PATH) $(CARGO) test --release --manifest-path implementations/rust/Cargo.toml \
 		-p provekit-cli --test cmd_materialize_integration \
 		materialize_python_uses_checked_in_python_double_realize_registration
-	PATH=$(PARITY_PYTHON_BIN):$(PATH) cargo test --release --manifest-path implementations/rust/Cargo.toml \
+	PATH=$(PARITY_PYTHON_BIN):$(PATH) $(CARGO) test --release --manifest-path implementations/rust/Cargo.toml \
 		-p provekit-cli --test cmd_materialize_integration \
 		materialize_python_requests_example_uses_python_library_shim
 	$(PARITY_PYTHON) -m pytest \
 		implementations/python/provekit-realize-python-requests/tests/test_rpc.py \
 		-q -k test_resolve_dependency_proofs_returns_distribution_proof_bytes
-	cargo test --release --manifest-path implementations/rust/Cargo.toml \
+	$(CARGO) test --release --manifest-path implementations/rust/Cargo.toml \
 		-p provekit-cli --test cmd_materialize_integration \
 		materialize_out_dir_writes_materialized_copy_and_leaves_source_unchanged
-	cargo test --release --manifest-path implementations/rust/Cargo.toml \
+	$(CARGO) test --release --manifest-path implementations/rust/Cargo.toml \
 		-p provekit-cli --test cmd_materialize_integration \
 		materialize_rust_reqwest_example_uses_rust_library_shim
 	@echo "--- recognizer parity ---"
@@ -740,55 +757,55 @@ cross-language-proof-parity: build-java cross-language-proof-parity-python-env
 		-Dtest=RecognizeHandlerTest,JavaSugarBindingLifterTest test
 	(cd implementations/go/provekit-lift-go && \
 		go test ./... -run 'Test(SugarBody|Recognize)')
-	cargo test --release --manifest-path implementations/rust/Cargo.toml \
+	$(CARGO) test --release --manifest-path implementations/rust/Cargo.toml \
 		-p provekit-cli --test cmd_recognize_go_parity \
 		go_recognize_write_self_resolves_project_proofs_and_proves -- --nocapture
 	$(PARITY_PYTHON) -m pytest \
 		implementations/python/provekit-lift-python-source/tests/test_bind_lifter.py \
 		-q -k 'sugar_body or recognize'
-	cargo test --release --manifest-path implementations/rust/Cargo.toml \
+	$(CARGO) test --release --manifest-path implementations/rust/Cargo.toml \
 		-p provekit-walk --bin provekit-walk-rpc \
 		sugar_body -- --nocapture
-	cargo test --release --manifest-path implementations/rust/Cargo.toml \
+	$(CARGO) test --release --manifest-path implementations/rust/Cargo.toml \
 		-p provekit-walk --bin provekit-walk-rpc \
 		recognize -- --nocapture
 	@echo "--- mint parity ---"
-	cargo test --release --manifest-path implementations/rust/Cargo.toml \
+	$(CARGO) test --release --manifest-path implementations/rust/Cargo.toml \
 		-p provekit-cli --test cmd_verify_java_production_bridge \
 		java_mint_uses_checked_in_java_double_registration
-	cargo test --release --manifest-path implementations/rust/Cargo.toml \
+	$(CARGO) test --release --manifest-path implementations/rust/Cargo.toml \
 		-p provekit-cli --test cmd_verify_go_production_bridge \
 		go_mint_auto_writes_body_discharge_bridge
-	PYTHON=$(PARITY_PYTHON) PATH=$(PARITY_PYTHON_BIN):$(PATH) cargo test --release --manifest-path implementations/rust/Cargo.toml \
+	PYTHON=$(PARITY_PYTHON) PATH=$(PARITY_PYTHON_BIN):$(PATH) $(CARGO) test --release --manifest-path implementations/rust/Cargo.toml \
 		-p provekit-cli --test cmd_verify_python_production_bridge \
 		python_mint_auto_writes_body_discharge_bridge
-	cargo test --release --manifest-path implementations/rust/Cargo.toml \
+	$(CARGO) test --release --manifest-path implementations/rust/Cargo.toml \
 		-p provekit-cli --test cmd_verify_rust_production_bridge \
 		rust_mint_auto_writes_body_discharge_bridge_from_real_lifters
 	@echo "--- prove parity ---"
-	cargo test --release --manifest-path implementations/rust/Cargo.toml \
+	$(CARGO) test --release --manifest-path implementations/rust/Cargo.toml \
 		-p provekit-cli --test cmd_verify_java_production_bridge \
 		java_production_path_uses_checked_in_java_double_registration
-	cargo test --release --manifest-path implementations/rust/Cargo.toml \
+	$(CARGO) test --release --manifest-path implementations/rust/Cargo.toml \
 		-p provekit-cli --test cmd_verify_go_production_bridge \
 		go_production_path_double_discharges_and_mints_witness
-	PYTHON=$(PARITY_PYTHON) PATH=$(PARITY_PYTHON_BIN):$(PATH) cargo test --release --manifest-path implementations/rust/Cargo.toml \
+	PYTHON=$(PARITY_PYTHON) PATH=$(PARITY_PYTHON_BIN):$(PATH) $(CARGO) test --release --manifest-path implementations/rust/Cargo.toml \
 		-p provekit-cli --test cmd_verify_python_production_bridge \
 		python_production_path_uses_checked_in_python_double_registration
-	cargo test --release --manifest-path implementations/rust/Cargo.toml \
+	$(CARGO) test --release --manifest-path implementations/rust/Cargo.toml \
 		-p provekit-cli --test cmd_verify_rust_production_bridge \
 		rust_production_path_double_discharges_and_mints_witness
 	@echo "--- contradiction parity ---"
-	cargo test --release --manifest-path implementations/rust/Cargo.toml \
+	$(CARGO) test --release --manifest-path implementations/rust/Cargo.toml \
 		-p provekit-cli --test cmd_verify_java_production_bridge \
 		java_production_path_checked_in_fixture_refuses_planted_contradictory_implication
-	cargo test --release --manifest-path implementations/rust/Cargo.toml \
+	$(CARGO) test --release --manifest-path implementations/rust/Cargo.toml \
 		-p provekit-cli --test cmd_verify_go_production_bridge \
 		go_production_path_refuses_planted_contradictory_implication
-	PYTHON=$(PARITY_PYTHON) PATH=$(PARITY_PYTHON_BIN):$(PATH) cargo test --release --manifest-path implementations/rust/Cargo.toml \
+	PYTHON=$(PARITY_PYTHON) PATH=$(PARITY_PYTHON_BIN):$(PATH) $(CARGO) test --release --manifest-path implementations/rust/Cargo.toml \
 		-p provekit-cli --test cmd_verify_python_production_bridge \
 		python_production_path_refuses_planted_contradictory_implication
-	cargo test --release --manifest-path implementations/rust/Cargo.toml \
+	$(CARGO) test --release --manifest-path implementations/rust/Cargo.toml \
 		-p provekit-cli --test cmd_verify_rust_production_bridge \
 		rust_production_path_refuses_planted_contradictory_implication
 	@echo "==== cross-language-proof-parity: PASS ===="
@@ -797,10 +814,10 @@ cross-language-proof-parity: build-java cross-language-proof-parity-python-env
 cross-language-proof-parity-extra: build-ts build-zig build-scala
 	@echo "=== Extra proof parity lanes: TypeScript, Zig, Scala, Swift recognizer ==="
 	@echo "--- extra emit parity ---"
-	cargo test --release --manifest-path implementations/rust/Cargo.toml \
+	$(CARGO) test --release --manifest-path implementations/rust/Cargo.toml \
 		-p provekit-cli --test cmd_emit_typescript_vitest \
 		emit_typescript_vitest_dispatches_real_emitter_and_vitest_checks_output
-	cargo test --release --manifest-path implementations/rust/Cargo.toml \
+	$(CARGO) test --release --manifest-path implementations/rust/Cargo.toml \
 		-p provekit-cli --test cmd_emit_scala_scalatest \
 		emit_scala_scalatest_dispatches_real_emitter_and_scala_cli_checks_output
 	@echo "--- extra recognizer parity ---"
@@ -813,23 +830,23 @@ cross-language-proof-parity-extra: build-ts build-zig build-scala
 	(cd implementations/zig/provekit-lift-zig-source && zig build test)
 	$(SCALA_CLI) test implementations/scala/provekit-lift-scala-source --server=false
 	@echo "--- extra prove parity ---"
-	cargo test --release --manifest-path implementations/rust/Cargo.toml \
+	$(CARGO) test --release --manifest-path implementations/rust/Cargo.toml \
 		-p provekit-cli --test cmd_verify_typescript_production_bridge \
 		typescript_production_path_double_discharges_and_mints_witness
-	cargo test --release --manifest-path implementations/rust/Cargo.toml \
+	$(CARGO) test --release --manifest-path implementations/rust/Cargo.toml \
 		-p provekit-cli --test cmd_verify_zig_production_bridge \
 		zig_production_path_double_discharges_and_mints_witness
-	cargo test --release --manifest-path implementations/rust/Cargo.toml \
+	$(CARGO) test --release --manifest-path implementations/rust/Cargo.toml \
 		-p provekit-cli --test cmd_verify_scala_production_bridge \
 		scala_production_path_double_discharges_and_mints_witness
 	@echo "--- extra contradiction parity ---"
-	cargo test --release --manifest-path implementations/rust/Cargo.toml \
+	$(CARGO) test --release --manifest-path implementations/rust/Cargo.toml \
 		-p provekit-cli --test cmd_verify_typescript_production_bridge \
 		typescript_production_path_refuses_planted_contradictory_implication
-	cargo test --release --manifest-path implementations/rust/Cargo.toml \
+	$(CARGO) test --release --manifest-path implementations/rust/Cargo.toml \
 		-p provekit-cli --test cmd_verify_zig_production_bridge \
 		zig_production_path_refuses_planted_contradictory_implication
-	cargo test --release --manifest-path implementations/rust/Cargo.toml \
+	$(CARGO) test --release --manifest-path implementations/rust/Cargo.toml \
 		-p provekit-cli --test cmd_verify_scala_production_bridge \
 		scala_production_path_refuses_planted_contradictory_implication
 	@echo "==== cross-language-proof-parity-extra: PASS ===="
@@ -840,7 +857,7 @@ cross-language-proof-parity-all: cross-language-proof-parity cross-language-proo
 .PHONY: bootstrap-self-contracts
 bootstrap-self-contracts:
 	@echo "=== Bootstrap self-contract attestations from live kit artifacts ==="
-	cargo run --release --manifest-path tools/cross-kit-conformance/Cargo.toml -- \
+	$(CARGO) run --release --manifest-path tools/cross-kit-conformance/Cargo.toml -- \
 		--profile $(CONFORMANCE_PROFILE) --jobs $(CONFORMANCE_JOBS) \
 		--bootstrap-self-contract-attestations
 
@@ -865,13 +882,13 @@ test-rust: build-java build-ts build-python
 	# that query the rust kit over RPC would spawn a stale/missing binary and
 	# see empty bindings. Build it first so the kit self-resolves its shim
 	# .proof for the audit.
-	cargo build --manifest-path implementations/rust/Cargo.toml -p provekit-realize-rust-core --bin provekit-realize-rust
+	$(CARGO) build --manifest-path implementations/rust/Cargo.toml -p provekit-realize-rust-core --bin provekit-realize-rust
 	@failed=""; \
-	cargo test --no-fail-fast --release --manifest-path implementations/rust/Cargo.toml \
+	$(CARGO) test --no-fail-fast --release --manifest-path implementations/rust/Cargo.toml \
 	  || failed="$$failed implementations/rust"; \
-	cargo test --no-fail-fast --release --manifest-path tools/recompute-spec-cids/Cargo.toml \
+	$(CARGO) test --no-fail-fast --release --manifest-path tools/recompute-spec-cids/Cargo.toml \
 	  || failed="$$failed tools/recompute-spec-cids"; \
-	cargo test --no-fail-fast --release --manifest-path tools/foundation-keygen/Cargo.toml \
+	$(CARGO) test --no-fail-fast --release --manifest-path tools/foundation-keygen/Cargo.toml \
 	  || failed="$$failed tools/foundation-keygen"; \
 	if [ -n "$$failed" ]; then echo "test-rust FAIL:$$failed"; exit 1; fi
 
@@ -879,7 +896,7 @@ test-rust: build-java build-ts build-python
 bug-zoo:
 	@echo "=== Bug Zoo: live ProvekIt receipts ==="
 	env -u PROVEKIT_CLI -u PROVEKIT_BUG_ZOO_EXTERNAL_CLI \
-		cargo run --manifest-path menagerie/bug-zoo/Cargo.toml -- --all
+		$(CARGO) run --manifest-path menagerie/bug-zoo/Cargo.toml -- --all
 
 .PHONY: python-language-signature
 python-language-signature:
@@ -995,7 +1012,7 @@ test-java: build-java
 
 .PHONY: test-scala
 test-scala: build-scala
-	cargo test --release --manifest-path implementations/rust/Cargo.toml \
+	$(CARGO) test --release --manifest-path implementations/rust/Cargo.toml \
 		-p provekit-cli --test cmd_emit_scala_scalatest \
 		emit_scala_scalatest_dispatches_real_emitter_and_scala_cli_checks_output
 	$(SCALA_CLI) test implementations/scala/provekit-lift-scala-source --server=false
@@ -1059,7 +1076,7 @@ test-all:
 # --- CI alias ----------------------------------------------------------------
 
 .PHONY: ci
-ci: check-cross-language-proof-parity-scope conformance cross-language-proof-parity test-all
+ci: check-cargo-entrypoint check-cross-language-proof-parity-scope conformance cross-language-proof-parity test-all
 	@echo ""
 	@echo "==== ci: PASS ===="
 
@@ -1095,9 +1112,9 @@ self-lift-canonicalizer: build-rust
 
 .PHONY: clean
 clean:
-	cargo clean --manifest-path implementations/rust/Cargo.toml
-	cargo clean --manifest-path tools/recompute-spec-cids/Cargo.toml
-	cargo clean --manifest-path tools/foundation-keygen/Cargo.toml
+	$(CARGO_LOCAL) clean --manifest-path implementations/rust/Cargo.toml
+	$(CARGO_LOCAL) clean --manifest-path tools/recompute-spec-cids/Cargo.toml
+	$(CARGO_LOCAL) clean --manifest-path tools/foundation-keygen/Cargo.toml
 	rm -rf implementations/cpp/target
 	rm -rf implementations/csharp/Provekit.*/bin implementations/csharp/Provekit.*/obj
 	rm -rf node_modules
