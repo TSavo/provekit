@@ -107,8 +107,18 @@ plugin's `provekit.plugin.describe` RPC and cross-check the manifest's effective
 `(method, phase)` against the capabilities the plugin advertises for that surface —
 e.g. "plugin advertises a consumer method for surface S but the manifest runs the
 default producer `lift`" -> WARN/FAIL. A name/heuristic check (e.g. "*-implications")
-would violate language-blindness or over-warn on legitimate producers. This is a
-scoped Phase-0 (scaffolding) task, independent of the K cascade work.
+would violate language-blindness or over-warn on legitimate producers.
+
+CONFIRMED SHAPE: `describe` (walk_rpc `initialize_result`, ~line 2109) today returns
+only `capabilities.authoring_surfaces = ["rust","rust-bind","rust-walk-contracts"]`.
+It does NOT advertise the RPC methods the plugin dispatches (`lift`,
+`provekit.plugin.lift_implications`, `provekit.plugin.recognize`, ...) nor which
+surfaces are consumers. So the work is two-part: (1) extend `describe.capabilities`
+to add e.g. `rpc_methods: [...]` and `consumer_surfaces: ["rust-implications", ...]`
+(plugin self-reports; semantics stay in the kit); (2) `doctor` cross-checks each
+manifest's effective `(method, phase)` against that. This is a scoped Phase-0
+(scaffolding) task, independent of the K cascade work, with NO falsePass risk (it is
+a CLI diagnostic).
 
 ## Reproduction
 
