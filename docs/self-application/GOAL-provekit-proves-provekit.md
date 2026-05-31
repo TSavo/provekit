@@ -40,10 +40,24 @@ honest scoreboard with ZERO silent drops and ZERO false "cannot panic".
   `cmd_verify::tests::guarded_panic_safe_unguarded_undecidable`). The verifier is
   LANGUAGE-BLIND; the rule is generic: "target carries a non-trivial pre ->
   discharge it under the call-site guard facts."
-- On provekit-cli itself: **K = 0 of 37** production unwrap/expect sites, and
-  that is HONEST: 0 are syntactically guarded; they rest on library totality,
-  value construction, and dataflow facts the engine cannot yet see (census
-  below).
+- On provekit-cli itself (2026-05-31, full oracle-engaged `self-check` run, warm
+  `provekit-linkerd` daemon): **K (panicSafe) = 0**, **silentlyDropped = 0**,
+  **falsePass = 0** (both hard invariants HELD). K=0 is HONEST: provekit-cli has
+  ZERO syntactically-guarded panic sites, so the oracle disambiguates each leaf
+  but cannot manufacture a guard. The oracle MATERIALLY improved the census vs
+  the syntactic-only run (catalog `be345b4d` -> `ec72ab4d`):
+  panic-site-unproven 26 -> 12, bridges emitted 1276 -> 2108, no-contract-for-callee
+  4043 -> 3225, undecidable 1948 -> 2160. The 12 residue are all `.expect()`,
+  9 of them `kit_dispatch.rs` Mutex `lock().expect()` (renders `LockResult`, a
+  `Result` alias) = genuine POISONING RESIDUE ("lock is total" would be unsound).
+- PRODUCT-PATH WIRING (operational, not yet a one-command surface): the mint
+  lifter resolves via a RESIDENT `provekit-linkerd` daemon, not a cold per-mint
+  RA. A cold mint finishes before the daemon's ~52s index, so queries refuse and
+  the census is syntactic-only. The oracle-engaged census requires the daemon
+  PRE-WARMED (`PROVEKIT_LINKERD_BIN` set, one warm-up mint, then `self-check`
+  within the 5-min idle window). Folding this warm-up into `self-check`/`doctor`
+  (so `--oracle` guarantees a warm daemon or loudly says it could not) is the
+  remaining Phase-0 wiring.
 - Known debt: #1717 (SMT emitter collapses an opaque-sorted `forall` to literal
   `true` on the negated path = latent false-pass; the panic path routes around
   it). name-in-CID preimage (contradicts names-are-sugar).
