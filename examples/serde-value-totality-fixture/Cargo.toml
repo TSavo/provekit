@@ -1,0 +1,34 @@
+# SPDX-License-Identifier: Apache-2.0
+#
+# serde-value-totality-fixture: standalone fixture demonstrating Phase 2
+# Tier D-lib panic-freedom (the serde_json::Value totality contract).
+#
+# The fixture contains `fn render(v: &serde_json::Value) -> String` which
+# calls `serde_json::to_string(v).unwrap()`. This is the production pattern
+# that Phase 2 Tier D-lib closes: the Value-totality contract on `to_string`
+# supplies `is_ok(result)` as a callee-post guard fact, discharging the
+# `unwrap`'s `is_ok` precondition as PANIC-SAFE without any syntactic guard.
+#
+# NOT a workspace member: ProvekIt lifts the source by parsing, never by
+# compiling it as a workspace crate. The standalone [workspace] table lets
+# rust-analyzer index this crate independently, avoiding the monorepo stall.
+#
+# The deterministic tests (PANIC-SAFE on the Value site + undecidable on the
+# control) live in provekit-cli/src/cmd_verify.rs (where verify_one_claim is
+# accessible), mirroring the panic-freedom-fixture test pattern.
+
+[workspace]
+
+[package]
+name = "provekit-serde-value-totality-fixture"
+version = "0.1.0"
+edition = "2021"
+license = "Apache-2.0"
+publish = false
+description = "ProvekIt Phase 2 Tier D-lib fixture: serde_json::Value totality contract + callee-post discharge."
+
+[lib]
+path = "src/lib.rs"
+
+[dependencies]
+serde_json = "1"

@@ -412,6 +412,104 @@ fn formula_is_reflexive(f: &Json) -> bool {
     }
 }
 
+/// Extract a guard fact from the callee's postcondition.
+///
+/// When a callsite's `arg_term` is a `ctor` (i.e. the argument to the
+/// partial is the RETURN VALUE of another function call), look up that
+/// callee's contract in the pool and check whether its `post` is the
+/// `is_ok(result)` postcondition. If so, return `is_ok(arg_term)` as an
+/// established fact -- the callee's totality contract supplies the fact
+/// that its result is always `Ok`, so the receiving `unwrap()` cannot
+/// panic.
+///
+/// This is the CROSS-FUNCTION-POSTCONDITION-AS-ASSUMABLE-FACT mechanism
+/// (Phase 2 Tier D-lib). It is LANGUAGE-BLIND: it reads the post field as
+/// opaque JSON, recognizes no callee name, no library name, and no
+/// type name. The only structural signal is:
+///
+///   1. `cs.arg_term` is a `ctor` (the arg is a call expression, not a bare var)
+///   2. The ctor name has a bridge in the pool
+///   3. The bridge's target contract has `post = is_ok(result)`
+///      (the strengthened singleton totality post, NOT the generic
+///      `is_ok || is_err` disjunction)
+///
+/// SOUNDNESS: the postcondition is read from a contract in the pool whose
+/// soundness is the contract author's responsibility. This function only
+/// checks structural shape. A false `is_ok` post is a false contract, not
+/// a verifier bug.
+///
+/// DISCRIMINATION: when the bridge target's post is NOT exactly
+/// `is_ok(result)` (e.g. it is the generic `is_ok(result) || is_err(result)`
+/// or any other predicate), this returns `None`. Only the STRENGTHENED
+/// singleton triggers the fact supply.
+///
+/// Returns `Some(is_ok(arg_term))` when all three conditions hold, else `None`.
+pub fn callee_post_guard_fact(cs: &CallSite, pool: &MementoPool) -> Option<Json> {
+    // Condition 1: the arg_term must be a `ctor` (a call expression, not a var).
+    let arg = cs.arg_term.as_ref()?;
+    if arg.get("kind").and_then(|v| v.as_str()) != Some("ctor") {
+        return None;
+    }
+    let ctor_name = arg.get("name").and_then(|v| v.as_str())?;
+
+    // Condition 2: find a bridge for this ctor name and follow it to the target contract.
+    let bridge = pool.bridges_by_symbol.get(ctor_name)?;
+    let target_cid = bridge
+        .get("evidence")
+        .and_then(|e| e.get("body"))
+        .and_then(|b| b.get("targetContractCid"))
+        .or_else(|| bridge.pointer("/header/targetContractCid"))
+        .and_then(|v| v.as_str())?;
+
+    let env = pool.mementos.get(target_cid)?;
+    if memento_kind(env) != Some("contract") {
+        return None;
+    }
+    let body = memento_body(env).filter(|v| v.is_object())?;
+
+    // Condition 3: the contract's `post` is exactly `is_ok(result)`.
+    let post = body.get("post")?;
+    if !post_is_is_ok_of_result(post) {
+        return None;
+    }
+
+    // Supply the fact: `is_ok(arg_term)`. The arg_term (the ctor expression)
+    // is the value whose is_ok status the contract guarantees. This is
+    // structurally identical to what a syntactic `if result.is_ok()` guard
+    // supplies; the discharge engine cannot tell them apart (language-blind).
+    Some(serde_json::json!({
+        "kind": "atomic",
+        "name": "is_ok",
+        "args": [arg.clone()]
+    }))
+}
+
+/// True iff `post` is the singleton totality postcondition `is_ok(result)`.
+///
+/// Shape: `{"kind": "atomic", "name": "is_ok", "args": [{"kind": "var", "name": "result"}]}`.
+///
+/// Recognizes ONLY the strengthened singleton, not the generic
+/// `is_ok(result) || is_err(result)`. This is the soundness boundary for
+/// D-lib: only a contract that explicitly strengthens to ALWAYS-OK carries
+/// this post.
+fn post_is_is_ok_of_result(post: &Json) -> bool {
+    if post.get("kind").and_then(|v| v.as_str()) != Some("atomic") {
+        return false;
+    }
+    if post.get("name").and_then(|v| v.as_str()) != Some("is_ok") {
+        return false;
+    }
+    let args = match post.get("args").and_then(|v| v.as_array()) {
+        Some(a) => a,
+        None => return false,
+    };
+    if args.len() != 1 {
+        return false;
+    }
+    args[0].get("kind").and_then(|v| v.as_str()) == Some("var")
+        && args[0].get("name").and_then(|v| v.as_str()) == Some("result")
+}
+
 /// Recognize the `=(<call>, <expected>)` harvested-assertion shape on a
 /// callsite. `<call>` is the ctor whose name == `cs.bridge_ir_name`.
 /// Returns `(call_json, expected_json)` — borrowing from the callsite's
@@ -605,6 +703,217 @@ mod routing_predicate_tests {
         assert!(
             !target_has_nontrivial_pre(&cs_targeting(cid), &pool_with(cid, bridge_env)),
             "a non-contract memento must never route, even if it carries a `pre`-named field"
+        );
+    }
+}
+
+#[cfg(test)]
+mod callee_post_guard_fact_tests {
+    //! `callee_post_guard_fact`: the D-lib cross-function-postcondition supply.
+    //!
+    //! Three tests per behavior (positive, discrimination, structural), ensuring:
+    //!   - a `ctor` arg_term whose bridge target has `post = is_ok(result)` yields
+    //!     the `is_ok(arg_term)` fact (positive),
+    //!   - a `ctor` whose target has the generic `is_ok || is_err` post does NOT
+    //!     yield a fact (discrimination: only the strengthened singleton fires),
+    //!   - a `var` arg_term (not a call) does NOT yield a fact (structural).
+    use super::*;
+    use crate::types::{CallSite, MementoPool};
+    use serde_json::json;
+
+    // CIDs for hand-built contracts in these tests.
+    const TOTAL_CONTRACT_CID: &str = "blake3-512:serde-value-totality";
+    const GENERIC_CONTRACT_CID: &str = "blake3-512:generic-result-contract";
+    const BRIDGE_SYMBOL: &str = "serde_json_to_string_value";
+    const GENERIC_BRIDGE_SYMBOL: &str = "to_string_generic";
+
+    /// A memento pool with:
+    ///   - a contract with `post = is_ok(result)` (the Value-totality contract)
+    ///   - a bridge from BRIDGE_SYMBOL to that contract
+    fn totality_pool() -> MementoPool {
+        let contract_env = json!({
+            "evidence": {
+                "kind": "contract",
+                "body": {
+                    "post": {
+                        "kind": "atomic",
+                        "name": "is_ok",
+                        "args": [{"kind": "var", "name": "result"}]
+                    }
+                }
+            }
+        });
+        let bridge_env = json!({
+            "evidence": {
+                "kind": "bridge",
+                "body": {
+                    "sourceSymbol": BRIDGE_SYMBOL,
+                    "targetContractCid": TOTAL_CONTRACT_CID
+                }
+            }
+        });
+        let mut pool = MementoPool::default();
+        pool.mementos.insert(TOTAL_CONTRACT_CID.into(), contract_env);
+        pool.bridges_by_symbol.insert(BRIDGE_SYMBOL.into(), bridge_env);
+        pool
+    }
+
+    /// A pool with a GENERIC (non-total) Result contract: post = is_ok || is_err.
+    fn generic_pool() -> MementoPool {
+        let contract_env = json!({
+            "evidence": {
+                "kind": "contract",
+                "body": {
+                    "post": {
+                        "kind": "or",
+                        "operands": [
+                            {"kind": "atomic", "name": "is_ok",
+                             "args": [{"kind": "var", "name": "result"}]},
+                            {"kind": "atomic", "name": "is_err",
+                             "args": [{"kind": "var", "name": "result"}]}
+                        ]
+                    }
+                }
+            }
+        });
+        let bridge_env = json!({
+            "evidence": {
+                "kind": "bridge",
+                "body": {
+                    "sourceSymbol": GENERIC_BRIDGE_SYMBOL,
+                    "targetContractCid": GENERIC_CONTRACT_CID
+                }
+            }
+        });
+        let mut pool = MementoPool::default();
+        pool.mementos.insert(GENERIC_CONTRACT_CID.into(), contract_env);
+        pool.bridges_by_symbol.insert(GENERIC_BRIDGE_SYMBOL.into(), bridge_env);
+        pool
+    }
+
+    /// A callsite whose arg_term is a `ctor` (a function-call expression).
+    fn cs_with_ctor_arg(ctor_name: &str) -> CallSite {
+        CallSite {
+            arg_term: Some(json!({
+                "kind": "ctor",
+                "name": ctor_name,
+                "args": [{"kind": "var", "name": "v"}]
+            })),
+            ..Default::default()
+        }
+    }
+
+    /// A callsite whose arg_term is a `var` (a bare variable, not a call).
+    fn cs_with_var_arg(var_name: &str) -> CallSite {
+        CallSite {
+            arg_term: Some(json!({"kind": "var", "name": var_name})),
+            ..Default::default()
+        }
+    }
+
+    // -----------------------------------------------------------------------
+    // POSITIVE: ctor arg + is_ok post -> supplies is_ok(arg_term) fact
+    // -----------------------------------------------------------------------
+
+    #[test]
+    fn positive_ctor_with_is_ok_post_supplies_fact() {
+        // SOUNDNESS: ctor arg_term + bridge + contract with post = is_ok(result)
+        // -> the function returns `Some(is_ok(arg_term))`.
+        let cs = cs_with_ctor_arg(BRIDGE_SYMBOL);
+        let pool = totality_pool();
+        let fact = callee_post_guard_fact(&cs, &pool);
+        assert!(
+            fact.is_some(),
+            "a ctor arg whose contract has post=is_ok(result) must yield a guard fact"
+        );
+        let fact = fact.unwrap();
+        assert_eq!(
+            fact.get("kind").and_then(|v| v.as_str()),
+            Some("atomic"),
+            "the supplied fact must be an atomic"
+        );
+        assert_eq!(
+            fact.get("name").and_then(|v| v.as_str()),
+            Some("is_ok"),
+            "the supplied fact must be is_ok"
+        );
+        // The arg of is_ok(.) is the whole ctor expression.
+        let fact_args = fact.get("args").and_then(|v| v.as_array()).unwrap();
+        assert_eq!(fact_args.len(), 1);
+        assert_eq!(
+            fact_args[0].get("kind").and_then(|v| v.as_str()),
+            Some("ctor"),
+            "the is_ok fact's arg must be the ctor expression (the whole call)"
+        );
+        assert_eq!(
+            fact_args[0].get("name").and_then(|v| v.as_str()),
+            Some(BRIDGE_SYMBOL),
+            "the ctor name in the fact must match the bridge symbol"
+        );
+    }
+
+    // -----------------------------------------------------------------------
+    // DISCRIMINATION: generic is_ok||is_err post must NOT supply the fact
+    // -----------------------------------------------------------------------
+
+    #[test]
+    fn discrimination_generic_result_post_does_not_supply_fact() {
+        // SOUNDNESS GUARD. A function with the generic `is_ok(result) || is_err(result)`
+        // post is NOT declared total -- the contract says "it returns SOME Result",
+        // not "it always returns Ok". This must NOT supply the is_ok guard fact.
+        //
+        // This is the discrimination test for D-lib's specialization: only the
+        // STRENGTHENED `is_ok(result)` singleton (not the disjunction) fires.
+        // If the generic post leaked, any Result-returning function would falsely
+        // discharge its callee's unwrap as panic-safe.
+        let cs = cs_with_ctor_arg(GENERIC_BRIDGE_SYMBOL);
+        let pool = generic_pool();
+        assert!(
+            callee_post_guard_fact(&cs, &pool).is_none(),
+            "a generic is_ok||is_err post must NOT supply the is_ok guard fact"
+        );
+    }
+
+    // -----------------------------------------------------------------------
+    // STRUCTURAL: non-ctor arg_term (bare var) must not supply a fact
+    // -----------------------------------------------------------------------
+
+    #[test]
+    fn structural_var_arg_does_not_supply_fact() {
+        // A bare variable arg_term (not a call expression) -- the standard case
+        // for a syntactically-guarded unwrap like `if x.is_ok() { x.unwrap() }`.
+        // In that pattern the guard fact comes from the cf_ite guard, not from
+        // the callee. This path must not interfere.
+        let cs = cs_with_var_arg("result");
+        let pool = totality_pool(); // pool has the totality contract, but arg is var
+        assert!(
+            callee_post_guard_fact(&cs, &pool).is_none(),
+            "a var arg_term (not a ctor) must not supply a callee-post guard fact"
+        );
+    }
+
+    #[test]
+    fn structural_no_bridge_for_ctor_returns_none() {
+        // Ctor arg_term but no bridge in the pool for that ctor name.
+        let cs = cs_with_ctor_arg("unknown_callee");
+        let pool = totality_pool(); // bridge is for BRIDGE_SYMBOL, not "unknown_callee"
+        assert!(
+            callee_post_guard_fact(&cs, &pool).is_none(),
+            "a ctor with no bridge in the pool must not supply a fact"
+        );
+    }
+
+    #[test]
+    fn structural_none_arg_term_returns_none() {
+        // No arg_term at all (degenerate callsite).
+        let cs = CallSite {
+            arg_term: None,
+            ..Default::default()
+        };
+        let pool = totality_pool();
+        assert!(
+            callee_post_guard_fact(&cs, &pool).is_none(),
+            "a callsite with no arg_term must not supply a fact"
         );
     }
 }
