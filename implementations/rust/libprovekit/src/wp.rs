@@ -505,7 +505,11 @@ fn wp_op<R: OpContractResolver + ?Sized>(
 /// op's own value-slot args substituted in recursively), or the bare
 /// constructor `op(name, <recursed args>)` when the contract carries no
 /// usable `post`; a `unit` is the `unit` constructor.
-fn value_expr_of_term<R: OpContractResolver + ?Sized>(
+///
+/// `pub` so that `provekit-verifier`'s body-discharge spine can reduce
+/// nested-call terms in the NESTED-CALL tier (reduce-in-place). Treat
+/// this as verifier-internal infrastructure, not a stable public API.
+pub fn value_expr_of_term<R: OpContractResolver + ?Sized>(
     t: &Term,
     resolver: &R,
 ) -> Result<IrTerm, WpError> {

@@ -282,8 +282,24 @@ fn walk_term(
             }
         }
     } else if let Some(args) = t.get("args").and_then(|v| v.as_array()) {
+        // NESTED-CALL threading: when the current ctor has NO bridge (is not
+        // itself a callsite), the enclosing atomic predicate is still the
+        // correct `Q` source for any bridged call nested inside it. Thread
+        // `containing_atomic` through so the inner callsite can use the outer
+        // predicate for the reduce-in-place discharge path.
+        //
+        // When the current ctor IS bridged (it captured the atomic as its own
+        // callsite above), the inner args are sub-obligations of that callee,
+        // not of the outer predicate. Stop threading (pass `None`) to avoid
+        // conflating the outer predicate with a sub-obligation the inner call
+        // is not directly participating in.
+        let inner_atomic = if pool.bridges_by_symbol.contains_key(&name) {
+            None
+        } else {
+            containing_atomic
+        };
         for a in args {
-            walk_term(a, property_name, property_cid, pool, None, path_cond, out);
+            walk_term(a, property_name, property_cid, pool, inner_atomic, path_cond, out);
         }
     }
 }
