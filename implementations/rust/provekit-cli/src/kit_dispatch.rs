@@ -1283,7 +1283,7 @@ fn invoke_realize(
     }
     command.stdin(Stdio::piped());
     command.stdout(Stdio::piped());
-    command.stderr(Stdio::null());
+    command.stderr(if std::env::var("PROVEKIT_PLUGIN_STDERR").as_deref() == Ok("null") { Stdio::null() } else { Stdio::inherit() });
 
     let mut child = command
         .spawn()
@@ -1721,7 +1721,7 @@ fn invoke_emit(
     }
     command.stdin(Stdio::piped());
     command.stdout(Stdio::piped());
-    command.stderr(Stdio::null());
+    command.stderr(if std::env::var("PROVEKIT_PLUGIN_STDERR").as_deref() == Ok("null") { Stdio::null() } else { Stdio::inherit() });
 
     let mut child = command
         .spawn()
@@ -1795,7 +1795,7 @@ fn invoke_emit_check(
     }
     command.stdin(Stdio::piped());
     command.stdout(Stdio::piped());
-    command.stderr(Stdio::null());
+    command.stderr(if std::env::var("PROVEKIT_PLUGIN_STDERR").as_deref() == Ok("null") { Stdio::null() } else { Stdio::inherit() });
 
     let mut child = command
         .spawn()
@@ -1956,7 +1956,7 @@ fn invoke_materialize_source(
     }
     command.stdin(Stdio::piped());
     command.stdout(Stdio::piped());
-    command.stderr(Stdio::null());
+    command.stderr(if std::env::var("PROVEKIT_PLUGIN_STDERR").as_deref() == Ok("null") { Stdio::null() } else { Stdio::inherit() });
 
     let mut child = command.spawn().map_err(|e| {
         MaterializeSourceError::Failed(format!("spawn materialize source kit: {e}"))
@@ -2093,7 +2093,7 @@ pub fn dispatch_assemble(
     }
     command.stdin(Stdio::piped());
     command.stdout(Stdio::piped());
-    command.stderr(Stdio::null());
+    command.stderr(if std::env::var("PROVEKIT_PLUGIN_STDERR").as_deref() == Ok("null") { Stdio::null() } else { Stdio::inherit() });
 
     let mut child = command
         .spawn()
@@ -2220,7 +2220,7 @@ pub fn dispatch_materialize_check(
     }
     command.stdin(Stdio::piped());
     command.stdout(Stdio::piped());
-    command.stderr(Stdio::null());
+    command.stderr(if std::env::var("PROVEKIT_PLUGIN_STDERR").as_deref() == Ok("null") { Stdio::null() } else { Stdio::inherit() });
 
     let mut child = command
         .spawn()

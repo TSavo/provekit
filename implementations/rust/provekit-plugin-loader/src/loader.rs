@@ -103,11 +103,21 @@ fn load_plugin_from_stdio_rpc(cmd_str: &str) -> Result<PluginMemento, LoadError>
         rest_args.split_whitespace().collect()
     };
 
+    // NO-SILENT-FAILURE: a plugin subprocess's stderr carries its diagnostics
+    // (lift gaps, oracle decisions, refusals). Nulling it by default is what hid
+    // a load-bearing bug from five investigations. Inherit by default so plugin
+    // diagnostics reach the operator's tracing stream; set PROVEKIT_PLUGIN_STDERR=null
+    // only to deliberately silence them.
+    let plugin_stderr = if std::env::var("PROVEKIT_PLUGIN_STDERR").as_deref() == Ok("null") {
+        Stdio::null()
+    } else {
+        Stdio::inherit()
+    };
     let mut child = Command::new(bin)
         .args(&args)
         .stdin(Stdio::piped())
         .stdout(Stdio::piped())
-        .stderr(Stdio::null())
+        .stderr(plugin_stderr)
         .spawn()
         .map_err(|e| LoadError::RpcError {
             detail: format!("failed to spawn stdio plugin `{bin}`: {e}"),

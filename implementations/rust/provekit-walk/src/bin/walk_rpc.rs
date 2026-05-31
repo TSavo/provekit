@@ -1315,13 +1315,24 @@ fn resolve_method_calls_via_oracle(
     // Opt-in stays identical to the cold path: a mint with the oracle off must
     // never spawn or contact the daemon's RA host. When off we leave every
     // unresolved method call to the syntactic tiers (Tier 1/2a) and return.
-    let oracle_on = std::env::var("PROVEKIT_RESOLVE_ORACLE").unwrap_or_default() == "rust-analyzer";
+    let raw_oracle_env = std::env::var("PROVEKIT_RESOLVE_ORACLE").unwrap_or_default();
+    let oracle_on = raw_oracle_env == "rust-analyzer";
+    let total_method_calls = callsites.iter().filter(|(cs, _)| cs.is_method).count();
+    info!(
+        oracle_env = %raw_oracle_env,
+        oracle_on,
+        total_callsites = callsites.len(),
+        total_method_calls,
+        linkerd_bin = %std::env::var("PROVEKIT_LINKERD_BIN").unwrap_or_else(|_| "<unset>".into()),
+        linkerd_socket = %std::env::var("PROVEKIT_LINKERD_SOCKET").unwrap_or_else(|_| "<unset>".into()),
+        "ORACLE: resolve_method_calls_via_oracle ENTER"
+    );
     let mut observation = OracleObservation {
         requested: oracle_on,
         ..OracleObservation::default()
     };
     if !oracle_on {
-        debug!("oracle: off (PROVEKIT_RESOLVE_ORACLE != rust-analyzer); leaving method calls to Tier 1/2a");
+        info!(oracle_env = %raw_oracle_env, "ORACLE: OFF (PROVEKIT_RESOLVE_ORACLE != rust-analyzer); leaving method calls to Tier 1/2a -- NO daemon, NO disambiguation");
         return observation;
     }
 
@@ -1331,14 +1342,22 @@ fn resolve_method_calls_via_oracle(
     // directly. A line of 0 should never occur for a real call; guard anyway.
     let mut queries: Vec<DaemonQuery> = Vec::new();
     for (cs, full_path) in callsites.iter() {
-        if cs.is_method && cs.callee_crate.is_none() && cs.line >= 1 {
-            debug!(
-                callee = %cs.callee,
-                file = %full_path.display(),
-                line = cs.line,
-                col = cs.col,
-                "oracle query: unresolved method call"
-            );
+        if !cs.is_method {
+            continue;
+        }
+        let is_candidate = cs.callee_crate.is_none() && cs.line >= 1;
+        info!(
+            callee = %cs.callee,
+            callee_crate = ?cs.callee_crate,
+            disambiguated_callee = ?cs.disambiguated_callee,
+            is_panic_leaf = is_panic_leaf(&cs.callee),
+            file = %full_path.display(),
+            line = cs.line,
+            col = cs.col,
+            is_candidate,
+            "ORACLE: method-call gate -- is_candidate={is_candidate} (candidate iff callee_crate==None). callee_crate already set => oracle SKIPS this site"
+        );
+        if is_candidate {
             queries.push(DaemonQuery {
                 file: full_path.to_string_lossy().into_owned(),
                 line: (cs.line - 1) as u32,
@@ -1349,12 +1368,15 @@ fn resolve_method_calls_via_oracle(
     let total_queries = queries.len();
     observation.attempted = total_queries as u64;
     if queries.is_empty() {
-        debug!("oracle: no unresolved method calls, skipping");
+        info!(
+            total_method_calls,
+            "ORACLE: ZERO candidate queries (every method call already had callee_crate set syntactically) -- daemon will NOT be spawned, NO disambiguation will occur"
+        );
         return observation;
     }
-    debug!(
+    info!(
         count = total_queries,
-        "oracle: asking resident daemon (provekit-linkerd) to resolve method calls"
+        "ORACLE: asking resident daemon (provekit-linkerd) to resolve {total_queries} method calls -- spawning/indexing daemon now"
     );
     // The resident warm rust-analyzer indexes the workspace ONCE inside the
     // daemon and is reused across mints, fronted by a content-addressed cache.
@@ -1648,6 +1670,18 @@ fn lift_implications(params: &Value) -> Result<Value, String> {
                 contracts_by_key.get(&dkey).copied()
             });
             let is_panic = is_panic_leaf(&cs.callee);
+            if is_panic {
+                info!(
+                    callee = %cs.callee,
+                    resolved_crate = %resolved_crate,
+                    disambiguated_callee = ?cs.disambiguated_callee,
+                    disambig_binding_found = disambig_binding.is_some(),
+                    lookup_key = ?cs.disambiguated_callee.as_ref().map(|l| (resolved_crate.clone(), l.clone())),
+                    file = %cs.file,
+                    line = cs.line,
+                    "PANIC-EMIT: panic-leaf site decision -- bridges to disambiguated partial iff disambig_binding_found, else REFUSES (panic-site-unproven)"
+                );
+            }
             // A value-producing select (NOT a let-else): the total-leaf branch must
             // be able to YIELD the ineligible binding for Fix B, which a let-else
             // `else` block (it must diverge) structurally cannot do.

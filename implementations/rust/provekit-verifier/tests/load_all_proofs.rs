@@ -83,6 +83,7 @@ fn publish_parseint_proof(dir: &Path) -> String {
         notes: String::new(),
         signer_seed,
         target_proof_cid: None,
+        callsite: None,
     };
     let bridge = mint_bridge(&bridge_args);
     members.insert(bridge.cid.clone(), bridge.canonical_bytes);

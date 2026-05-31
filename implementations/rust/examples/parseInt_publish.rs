@@ -110,6 +110,7 @@ fn main() -> ExitCode {
         notes: String::new(),
         signer_seed,
         target_proof_cid: None,
+        callsite: None,
     };
     let minted_bridge = mint_bridge(&bridge_args);
     println!("  bridge   minted: parseInt -> CID {}", minted_bridge.cid);

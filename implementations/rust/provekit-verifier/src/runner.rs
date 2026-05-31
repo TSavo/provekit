@@ -26,6 +26,7 @@ use serde_json::json;
 use serde_json::Value as Json;
 use tracing::{debug, info, warn};
 
+use crate::body_discharge::callee_post_guard_fact;
 use crate::handshake::{
     formula_hash, implication_property_hash, locate_producer_post, try_tier1, try_tier2,
 };
@@ -1528,7 +1529,24 @@ fn work_one(
                  `forall`->`true` emitter collapse)"
             );
         }
-        let guarded_formula = if cs.guard_facts.is_empty() {
+        // D-lib (cross-function-postcondition-as-assumable-fact): if the panic
+        // receiver is itself a call whose bridge target carries the strengthened
+        // `is_ok(result)` totality post, inject `is_ok(arg)` as a guard fact.
+        // This is the SAME language-blind mechanism cmd_verify uses; the prove
+        // path (the scoreboard's path) was missing it, so every D-lib panic site
+        // stayed unguarded -> undecidable. callee_post_guard_fact returns None
+        // for a non-total receiver (generic Result), preserving the refuse-floor.
+        let mut all_guard_facts: Vec<Json> = cs.guard_facts.clone();
+        if let Some(callee_fact) = callee_post_guard_fact(cs, pool) {
+            debug!(
+                bridge = %cs.bridge_ir_name,
+                callee_fact = %callee_fact,
+                "work_one: D-lib callee post supplies is_ok guard fact (totality contract on \
+                 the unwrap receiver -> adding is_ok(arg) to guard context)"
+            );
+            all_guard_facts.push(callee_fact);
+        }
+        let guarded_formula = if all_guard_facts.is_empty() {
             info!(
                 bridge = %cs.bridge_ir_name,
                 target_cid = %cs.bridge_target_cid,
@@ -1539,10 +1557,10 @@ fn work_one(
             );
             specialized
         } else {
-            let antecedent = if cs.guard_facts.len() == 1 {
-                cs.guard_facts[0].clone()
+            let antecedent = if all_guard_facts.len() == 1 {
+                all_guard_facts[0].clone()
             } else {
-                json!({ "kind": "and", "operands": cs.guard_facts.clone() })
+                json!({ "kind": "and", "operands": all_guard_facts.clone() })
             };
             let guarded = json!({
                 "kind": "implies",

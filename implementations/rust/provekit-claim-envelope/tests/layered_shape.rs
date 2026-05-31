@@ -316,6 +316,7 @@ fn bridge_memento_has_layered_shape() {
         notes: String::new(),
         signer_seed: seed(),
         target_proof_cid: None,
+        callsite: None,
     };
     let m = mint_bridge(&args);
     let env: Json = serde_json::from_slice(&m.canonical_bytes).expect("json");

@@ -602,33 +602,66 @@ fn formula_is_reflexive(f: &Json) -> bool {
 ///
 /// Returns `Some(is_ok(arg_term))` when all three conditions hold, else `None`.
 pub fn callee_post_guard_fact(cs: &CallSite, pool: &MementoPool) -> Option<Json> {
+    macro_rules! gdbg {
+        ($($a:tt)*) => {
+            tracing::debug!(bridge = %cs.bridge_ir_name, "callee_post_guard_fact: {}", format!($($a)*));
+        };
+    }
     // Condition 1: the arg_term must be a `ctor` (a call expression, not a var).
-    let arg = cs.arg_term.as_ref()?;
+    let Some(arg) = cs.arg_term.as_ref() else {
+        gdbg!("REJECT cond1: no arg_term");
+        return None;
+    };
     if arg.get("kind").and_then(|v| v.as_str()) != Some("ctor") {
+        gdbg!("REJECT cond1: arg_term kind != ctor (kind={:?})", arg.get("kind"));
         return None;
     }
-    let ctor_name = arg.get("name").and_then(|v| v.as_str())?;
+    let Some(ctor_name) = arg.get("name").and_then(|v| v.as_str()) else {
+        gdbg!("REJECT cond1: ctor has no name");
+        return None;
+    };
+    gdbg!("cond1 OK: arg ctor_name={ctor_name}");
 
     // Condition 2: find a bridge for this ctor name and follow it to the target contract.
-    let bridge = pool.bridges_by_symbol.get(ctor_name)?;
-    let target_cid = bridge
+    let Some(bridge) = pool.bridges_by_symbol.get(ctor_name) else {
+        gdbg!("REJECT cond2: no bridge in bridges_by_symbol for ctor_name={ctor_name} (have keys: {:?})",
+            pool.bridges_by_symbol.keys().collect::<Vec<_>>());
+        return None;
+    };
+    let Some(target_cid) = bridge
         .get("evidence")
         .and_then(|e| e.get("body"))
         .and_then(|b| b.get("targetContractCid"))
         .or_else(|| bridge.pointer("/header/targetContractCid"))
-        .and_then(|v| v.as_str())?;
+        .and_then(|v| v.as_str())
+    else {
+        gdbg!("REJECT cond2: bridge for {ctor_name} has no targetContractCid");
+        return None;
+    };
 
-    let env = pool.mementos.get(target_cid)?;
+    let Some(env) = pool.mementos.get(target_cid) else {
+        gdbg!("REJECT cond2: target contract {target_cid} not in pool.mementos");
+        return None;
+    };
     if memento_kind(env) != Some("contract") {
+        gdbg!("REJECT cond2: target {target_cid} kind != contract ({:?})", memento_kind(env));
         return None;
     }
-    let body = memento_body(env).filter(|v| v.is_object())?;
+    let Some(body) = memento_body(env).filter(|v| v.is_object()) else {
+        gdbg!("REJECT cond2: target {target_cid} has no object body");
+        return None;
+    };
 
     // Condition 3: the contract's `post` is exactly `is_ok(result)`.
-    let post = body.get("post")?;
+    let Some(post) = body.get("post") else {
+        gdbg!("REJECT cond3: target contract for {ctor_name} has no post field");
+        return None;
+    };
     if !post_is_is_ok_of_result(post) {
+        gdbg!("REJECT cond3: post is NOT exactly is_ok(result) singleton -> post={post}");
         return None;
     }
+    gdbg!("ACCEPT: supplying is_ok(arg) fact for ctor_name={ctor_name}");
 
     // Supply the fact: `is_ok(arg_term)`. The arg_term (the ctor expression)
     // is the value whose is_ok status the contract guarantees. This is

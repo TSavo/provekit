@@ -7,7 +7,7 @@
 // Mirrors implementations/cpp/.../verifier/enumerate_callsites.cpp.
 
 use serde_json::Value as Json;
-use tracing::{debug, info};
+use tracing::{debug, info, warn};
 
 use crate::types::{memento_body, memento_kind, CallSite, MementoPool};
 
@@ -224,6 +224,27 @@ fn walk_term(
             callee: callsite_callee,
             panic_site,
         };
+        debug!(
+            name = %name,
+            panic_site,
+            callsite_present = bridge_callsite.is_some(),
+            arg_term_kind = ?cs.arg_term.as_ref().and_then(|a| a.get("kind")).and_then(|k| k.as_str()),
+            "enumerate_callsites: enumerated bridge call site"
+        );
+        // NO-SILENT-FAILURE (Phase 0): a `method:`-seam bridge is the protocol's
+        // method-call ctor (language-blind seam from the lift grammar). It MUST
+        // carry call-site provenance; a missing `callsite` field means the mint
+        // dropped it, which silently reads back `panic_site=false` and sends a
+        // real panic leaf to undecidable. Surface it loudly and count it instead
+        // of letting K silently rot. (Function-level bridges have no `method:`
+        // seam, so they do not trip this.)
+        if name.starts_with("method:") && bridge_callsite.is_none() {
+            warn!(
+                bridge = %name,
+                "enumerate_callsites: method-seam bridge has NO callsite provenance -- mint dropped it; \
+                 this panic site will read panic_site=false and stay undecidable (callsite-provenance drop)"
+            );
+        }
         out.push(cs);
     }
     // Descend into the call's arguments. A nested call is no longer a
