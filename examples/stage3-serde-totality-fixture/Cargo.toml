@@ -1,0 +1,21 @@
+# Stage 3 fixture for the serde_json Value totality discharge.
+#
+# Discrimination test:
+#   f(&serde_json::Value) -> should discharge PANIC-SAFE (Value is total)
+#   g(&MyStruct)          -> should stay UNDECIDABLE (struct Serialize may fail)
+#
+# Own [workspace] for RA isolation (fast index, no monorepo stall).
+[package]
+name = "stage3-serde-totality-fixture"
+version = "0.0.0"
+edition = "2021"
+publish = false
+
+[workspace]
+
+[dependencies]
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+
+[lib]
+path = "src/lib.rs"

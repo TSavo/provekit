@@ -1,0 +1,43 @@
+# Stage 3 discrimination fixture for serde_json Value totality.
+#
+# f(&serde_json::Value).unwrap() -> PANIC-SAFE (totality axiom)
+# g(&MyStruct).unwrap()          -> UNDECIDABLE (refuse-floor)
+#
+# The rust-bind surface provides the shim contracts (from .provekit/imports).
+# rust-fn-contracts produces body-bearing contracts for f and g.
+# rust-implications bridges the to_string and .unwrap() call sites.
+[[plugins]]
+name = "rust-bind"
+surface = "rust-bind"
+layer = "library-bindings"
+
+[[plugins]]
+name = "rust-contracts"
+surface = "rust-contracts"
+emit = "ir-document"
+
+[[plugins]]
+name = "rust-fn-contracts"
+surface = "rust-fn-contracts"
+emit = "ir-document"
+
+[[plugins]]
+name = "rust-implications"
+surface = "rust-implications"
+
+[platform_profile]
+language = "rust"
+family = "concept:family:json"
+library = "stage3-serde-totality-fixture"
+version = "0.0.0"
+
+[solvers]
+mode = "first-wins"
+portfolio = ["z3"]
+
+[solvers.z3]
+binary = "z3"
+ir_compiler = "smt-lib-v2.6"
+flags = ["-smt2", "-in"]
+timeout_seconds = 30
+version = "4.x"
