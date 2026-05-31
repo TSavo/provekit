@@ -94,6 +94,22 @@ The reflexive-discharge idea (sound `P -> P` when the producer's post is byte-id
 to the consumer's pre) is still the most promising mechanism; it just has to be wired
 into the path the callsites actually reach.
 
+## Phase-0 gap confirmed: `doctor` does not catch this footgun
+
+`provekit doctor --target <kit>` exists and runs, but its checks are: TOML parse,
+plugin-command binary exists, imports count, oracle reachability. It does NOT catch
+the exact footgun that cost five agents: a `lift` manifest that omits `method` and
+`phase`, so a consumer surface (rust-implications) silently runs the default `lift`
+producer method and the implication lifter never fires.
+
+Catching the OMISSION case soundly AND language-blind needs `doctor` to spawn each
+plugin's `provekit.plugin.describe` RPC and cross-check the manifest's effective
+`(method, phase)` against the capabilities the plugin advertises for that surface —
+e.g. "plugin advertises a consumer method for surface S but the manifest runs the
+default producer `lift`" -> WARN/FAIL. A name/heuristic check (e.g. "*-implications")
+would violate language-blindness or over-warn on legitimate producers. This is a
+scoped Phase-0 (scaffolding) task, independent of the K cascade work.
+
 ## Reproduction
 
 Warm-oracle e2e on battleaxe: `/tmp/serde_e2e2.sh` (mints shim-std + shim-serde deps,
