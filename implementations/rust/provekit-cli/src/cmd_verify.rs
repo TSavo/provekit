@@ -684,7 +684,41 @@ fn verify_one_claim(
                      the opaque-sort `forall`->`true` emitter collapse)"
                 );
             }
-            if cs.guard_facts.is_empty() {
+
+            // D-lib: CALLEE POSTCONDITION AS GUARD FACT (Phase 2 Tier D-lib,
+            // cross-function-postcondition-as-assumable-fact). If the unwrap
+            // receiver is itself a call (a `ctor` arg_term) whose bridge target
+            // contract carries `post = is_ok(result)` (the strengthened totality
+            // postcondition, NOT the generic is_ok||is_err), inject
+            // `is_ok(arg_term)` as an additional guard fact.
+            //
+            // LANGUAGE-BLIND: body_discharge::callee_post_guard_fact reads only
+            // JSON structure, recognizes no callee or library name, no type name.
+            // The `is_ok` singleton post is the sole structural signal.
+            //
+            // ADDITIVE: the supplied fact is appended to any syntactic guard facts
+            // already in cs.guard_facts. The same discharge path fires regardless
+            // of fact source. No special case for the D-lib tier.
+            //
+            // REFUSE-FLOOR PRESERVED: when the callee's contract does NOT carry the
+            // strengthened `is_ok(result)` singleton (e.g. generic T, or any
+            // non-total Result-returner), `callee_post_guard_fact` returns None and
+            // all_guard_facts == cs.guard_facts (unchanged). The unguarded site
+            // stays undecidable; no false pass is introduced.
+            let mut all_guard_facts: Vec<Json> = cs.guard_facts.clone();
+            if let Some(callee_fact) =
+                body_discharge::callee_post_guard_fact(cs, pool)
+            {
+                debug!(
+                    bridge = %cs.bridge_ir_name,
+                    callee_fact = %callee_fact,
+                    "verify_one_claim: D-lib callee post supplies is_ok guard fact \
+                     (totality contract on the unwrap receiver -> adding is_ok(arg) to guard context)"
+                );
+                all_guard_facts.push(callee_fact);
+            }
+
+            if all_guard_facts.is_empty() {
                 info!(
                     bridge = %cs.bridge_ir_name,
                     target_cid = %cs.bridge_target_cid,
@@ -696,10 +730,10 @@ fn verify_one_claim(
                 specialized
             } else {
                 panic_guarded = true;
-                let antecedent = if cs.guard_facts.len() == 1 {
-                    cs.guard_facts[0].clone()
+                let antecedent = if all_guard_facts.len() == 1 {
+                    all_guard_facts[0].clone()
                 } else {
-                    json!({ "kind": "and", "operands": cs.guard_facts.clone() })
+                    json!({ "kind": "and", "operands": all_guard_facts.clone() })
                 };
                 let guarded = json!({
                     "kind": "implies",
@@ -708,7 +742,7 @@ fn verify_one_claim(
                 info!(
                     bridge = %cs.bridge_ir_name,
                     target_cid = %cs.bridge_target_cid,
-                    guard_count = cs.guard_facts.len(),
+                    guard_count = all_guard_facts.len(),
                     antecedent = %antecedent,
                     obligation = %guarded,
                     "verify_one_claim: GUARDED panic site -> `(and guard_facts) => pre` obligation \
@@ -1400,6 +1434,245 @@ mod tests {
             Some("panic-safe"),
             "an unguarded site must never be tagged panic-safe; reason: {}",
             unguarded.reason
+        );
+
+        let _ = std::fs::remove_dir_all(&witness_dir);
+    }
+
+    // -----------------------------------------------------------------------
+    // PHASE 2 TIER D-LIB: callee-post as guard fact (serde_json::Value totality)
+    //
+    // This tests the cross-function-postcondition-as-assumable-fact mechanism:
+    // when the `.unwrap()` receiver is a call (`ctor` arg_term) whose bridge
+    // target contract carries `post = is_ok(result)`, `callee_post_guard_fact`
+    // injects `is_ok(arg_term)` into the guard context, and the existing
+    // `(and guard_facts) => pre` discharge path fires.
+    //
+    // Two sub-tests, one pool:
+    //   VALUE-TOTAL site: ctor arg_term with is_ok post -> PANIC-SAFE.
+    //   GENERIC-RESULT control: ctor arg_term with is_ok||is_err post -> UNDECIDABLE.
+    //
+    // The control directly proves the Value-specialization is real: if the
+    // totality post leaked to the generic contract, the control would flip to
+    // PANIC-SAFE, which would be a false claim.
+    // -----------------------------------------------------------------------
+
+    // CID constants for the D-lib test pool.
+    const DLIB_TOTALITY_CONTRACT_CID: &str = "blake3-512:dlib-totality-contract";
+    const DLIB_RESULT_UNWRAP_CID: &str = "blake3-512:dlib-result-unwrap";
+    const DLIB_GENERIC_CONTRACT_CID: &str = "blake3-512:dlib-generic-result";
+    const DLIB_BUNDLE: &str = "blake3-512:dlib-bundle";
+
+    /// Build the D-lib test pool. Contains:
+    ///   (a) the Value-totality contract: post = is_ok(result), no pre
+    ///   (b) the result_unwrap contract: pre = is_ok(result), body-bearing
+    ///   (c) the generic Result contract: post = is_ok||is_err (NOT total), no pre
+    ///   (d) bridges: serde_json_to_string_value -> (a), to_string_generic -> (c)
+    fn dlib_pool() -> MementoPool {
+        // (a) Value-totality contract: post = is_ok(result), no pre.
+        // This is the D-lib catalog entry. The bridge for to_string_value
+        // points here.
+        let totality_contract = json!({
+            "evidence": {
+                "kind": "contract",
+                "body": {
+                    "post": {
+                        "kind": "atomic",
+                        "name": "is_ok",
+                        "args": [{"kind": "var", "name": "result"}]
+                    }
+                }
+            }
+        });
+
+        // (b) result_unwrap contract: pre = is_ok(result). This is the
+        // result_unwrap partial (same shape as the rust-std shim's
+        // result_unwrap, with an explicit pre for the discharge path).
+        // formalSorts uses a primitive sort so the opaque-forall emitter
+        // path does not collapse it to `true`.
+        let result_unwrap_contract = json!({
+            "evidence": {
+                "kind": "contract",
+                "body": {
+                    "pre": {
+                        "kind": "atomic",
+                        "name": "is_ok",
+                        "args": [{"kind": "var", "name": "result"}]
+                    },
+                    "post": {
+                        "kind": "atomic",
+                        "name": "=",
+                        "args": [
+                            {"kind": "var", "name": "out"},
+                            {"kind": "ctor", "name": "result_unwrap",
+                             "args": [{"kind": "var", "name": "result"}]}
+                        ]
+                    },
+                    "formals": ["result"],
+                    "formalSorts": [{"kind": "primitive", "name": "Result"}]
+                }
+            }
+        });
+
+        // (c) generic Result contract: post = is_ok(result) || is_err(result).
+        // This is NOT a totality contract -- it says the result is some kind
+        // of Result, not specifically Ok. No pre, no formals.
+        let generic_contract = json!({
+            "evidence": {
+                "kind": "contract",
+                "body": {
+                    "post": {
+                        "kind": "or",
+                        "operands": [
+                            {"kind": "atomic", "name": "is_ok",
+                             "args": [{"kind": "var", "name": "result"}]},
+                            {"kind": "atomic", "name": "is_err",
+                             "args": [{"kind": "var", "name": "result"}]}
+                        ]
+                    }
+                }
+            }
+        });
+
+        // (d1) Bridge: serde_json_to_string_value -> totality contract.
+        let totality_bridge = json!({
+            "evidence": {
+                "kind": "bridge",
+                "body": {
+                    "sourceSymbol": "serde_json_to_string_value",
+                    "targetContractCid": DLIB_TOTALITY_CONTRACT_CID
+                }
+            }
+        });
+
+        // (d2) Bridge: to_string_generic -> generic contract.
+        let generic_bridge = json!({
+            "evidence": {
+                "kind": "bridge",
+                "body": {
+                    "sourceSymbol": "to_string_generic",
+                    "targetContractCid": DLIB_GENERIC_CONTRACT_CID
+                }
+            }
+        });
+
+        let mut pool = MementoPool::default();
+        pool.mementos.insert(DLIB_TOTALITY_CONTRACT_CID.into(), totality_contract);
+        pool.mementos.insert(DLIB_RESULT_UNWRAP_CID.into(), result_unwrap_contract);
+        pool.mementos.insert(DLIB_GENERIC_CONTRACT_CID.into(), generic_contract);
+        pool.bridges_by_symbol.insert("serde_json_to_string_value".into(), totality_bridge);
+        pool.bridges_by_symbol.insert("to_string_generic".into(), generic_bridge);
+        pool.bundle_members
+            .entry(DLIB_BUNDLE.into())
+            .or_default()
+            .extend([
+                DLIB_TOTALITY_CONTRACT_CID.to_string(),
+                DLIB_RESULT_UNWRAP_CID.to_string(),
+                DLIB_GENERIC_CONTRACT_CID.to_string(),
+            ]);
+        pool
+    }
+
+    /// Build a callsite for `.unwrap()` on the result of a `ctor` call.
+    /// `callee_ctor_name`: the ctor name in the arg_term (which function
+    /// produced the Result being unwrapped).
+    /// `guard_facts`: any syntactic guard facts (empty for our D-lib test).
+    fn dlib_unwrap_callsite(callee_ctor_name: &str, guard_facts: Vec<Json>) -> provekit_verifier::CallSite {
+        provekit_verifier::CallSite {
+            bridge_ir_name: "result_unwrap".into(),
+            bridge_target_cid: DLIB_RESULT_UNWRAP_CID.into(),
+            bridge_source_layer: "rust".into(),
+            bridge_target_layer: "concept".into(),
+            bridge_target_proof_cid: None,
+            bridge_self_bundle_cid: Some(DLIB_BUNDLE.into()),
+            property_name: "dlib_panic_site".into(),
+            property_cid: "blake3-512:dlib-prop".into(),
+            // The arg_term is the ctor call expression -- the result of calling
+            // `callee_ctor_name(v)` that gets passed to `.unwrap()`.
+            arg_term: Some(json!({
+                "kind": "ctor",
+                "name": callee_ctor_name,
+                "args": [{"kind": "var", "name": "v"}]
+            })),
+            containing_atomic: None,
+            guard_facts,
+            ..Default::default()
+        }
+    }
+
+    #[test]
+    fn dlib_value_totality_discharges_panic_safe_control_stays_undecidable() {
+        // Phase 2 Tier D-lib full-pipeline test. Needs a real z3.
+        //
+        // POSITIVE: `serde_json_to_string_value(v).unwrap()` -- the callee's
+        // contract carries `post = is_ok(result)`. `callee_post_guard_fact`
+        // supplies `is_ok(ctor(...))` as an established fact. The discharge
+        // path fires: `is_ok(ctor(v)) => is_ok(ctor(v))` is a tautology.
+        // Expected: PANIC-SAFE (Discharged, method = panic-safe).
+        //
+        // CONTROL: `to_string_generic(v).unwrap()` -- the callee's contract
+        // carries the generic `is_ok || is_err` post, NOT the singleton `is_ok`.
+        // `callee_post_guard_fact` returns None. No guard -> undecidable.
+        // Expected: NOT Discharged (refuse-floor).
+        let pool = dlib_pool();
+        let no_kit = std::path::Path::new("/nonexistent-dlib-test-kit");
+        let (plan, registry, _) = build_plan_and_registry(no_kit, "z3");
+        let witness_dir = std::env::temp_dir()
+            .join(format!("provekit-dlib-test-{}", std::process::id()));
+        std::fs::create_dir_all(&witness_dir).ok();
+
+        // POSITIVE: Value-totality ctor arg. The callee_post_guard_fact wiring
+        // injects is_ok(serde_json_to_string_value(v)) into guard_facts.
+        let positive = verify_one_claim(
+            &dlib_unwrap_callsite("serde_json_to_string_value", vec![]),
+            &pool,
+            &plan,
+            &registry,
+            &witness_dir,
+            &VERIFY_SIGNER_SEED_DEV,
+            false,
+        );
+        assert_eq!(
+            positive.verdict,
+            ObligationVerdict::Discharged,
+            "D-lib VALUE-TOTAL site: callee post supplies is_ok fact -> must discharge PANIC-SAFE; \
+             reason: {}",
+            positive.reason
+        );
+        assert_eq!(
+            positive.discharge_method.as_deref(),
+            Some("panic-safe"),
+            "D-lib discharge must be tagged `panic-safe` (not reflexive/substantive); \
+             reason: {}",
+            positive.reason
+        );
+
+        // CONTROL: generic is_ok||is_err post -- NOT a totality contract.
+        // callee_post_guard_fact returns None -> no supplemental fact ->
+        // bare is_ok(ctor(v)) over a free v -> unprovable -> UNDECIDABLE.
+        // This is the D-lib refuse-floor: if the is_ok post leaked to the
+        // generic contract, this site would falsely discharge as panic-safe.
+        let control = verify_one_claim(
+            &dlib_unwrap_callsite("to_string_generic", vec![]),
+            &pool,
+            &plan,
+            &registry,
+            &witness_dir,
+            &VERIFY_SIGNER_SEED_DEV,
+            false,
+        );
+        assert_ne!(
+            control.verdict,
+            ObligationVerdict::Discharged,
+            "D-lib CONTROL: generic is_ok||is_err post must NOT supply the totality fact; \
+             site must stay UNDECIDABLE (refuse-floor); got discharged with reason: {}",
+            control.reason
+        );
+        assert_ne!(
+            control.discharge_method.as_deref(),
+            Some("panic-safe"),
+            "D-lib control must never be tagged panic-safe; reason: {}",
+            control.reason
         );
 
         let _ = std::fs::remove_dir_all(&witness_dir);
