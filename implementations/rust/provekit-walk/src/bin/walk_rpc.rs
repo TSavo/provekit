@@ -2113,7 +2113,20 @@ fn initialize_result() -> Value {
             "capabilities": {
                 "authoring_surfaces": ["rust", "rust-bind", "rust-walk-contracts"],
             "ir_version": "bind-ir/2.0.0",
-            "emits_signed_mementos": false
+            "emits_signed_mementos": false,
+            // CONSUMER SURFACES (kit-declared, so `doctor` stays language-blind):
+            // these surfaces MUST run a specific RPC method in the `consumer`
+            // phase or they silently degrade to the default `lift` producer and
+            // their pass never runs (the manifest method/phase footgun that cost
+            // five investigations on 2026-05-31). `doctor` cross-checks each
+            // kit manifest against this so the omission is a loud check, not a
+            // silent empty-set attestation.
+            "consumer_surfaces": {
+                "rust-implications": {
+                    "method": "provekit.plugin.lift_implications",
+                    "phase": "consumer"
+                }
+            }
         }
     })
 }

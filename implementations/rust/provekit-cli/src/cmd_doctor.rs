@@ -289,7 +289,122 @@ pub fn run_checks(kit_dir: &Path) -> Vec<Check> {
         checks.push(oracle_check);
     }
 
+    // --- Check 5: consumer-surface method/phase wiring (HARD).
+    // The manifest method/phase omission footgun: a consumer surface
+    // (e.g. rust-implications) whose manifest omits `method`/`phase` silently
+    // runs the default `lift` PRODUCER method, so its pass never fires and the
+    // mint emits a degenerate attestation with no error. Five investigations
+    // on 2026-05-31 lost a day to exactly this. The plugin SELF-DECLARES which
+    // surfaces are consumers and what (method, phase) they require (via the
+    // `initialize` capabilities) so this stays language-blind: doctor reads the
+    // requirement from the kit's own plugin, not a hard-coded CLI table.
+    for (surface, kind_dir, manifest_path) in &manifest_entries {
+        let check_name = format!("consumer-wiring:{kind_dir}:{surface}");
+        let manifest = match parse_manifest_at(manifest_path) {
+            Ok(m) => m,
+            Err(_) => continue, // already reported by checks 1/2
+        };
+        let resolved_wd = resolved_working_dir_for(kit_dir, &manifest);
+        let consumer_reqs = match plugin_consumer_surfaces(&manifest, resolved_wd.as_deref()) {
+            Ok(c) => c,
+            Err(e) => {
+                checks.push(Check::warn(
+                    &check_name,
+                    format!("could not query plugin capabilities for {surface}: {e}"),
+                ));
+                continue;
+            }
+        };
+        let Some(req) = consumer_reqs.get(surface.as_str()) else {
+            // Not a consumer surface per the plugin: nothing to enforce.
+            continue;
+        };
+        let method_ok = manifest.method.as_deref() == Some(req.0.as_str());
+        let phase_ok = manifest.phase.as_deref() == Some(req.1.as_str());
+        if method_ok && phase_ok {
+            checks.push(Check::pass(
+                &check_name,
+                format!(
+                    "consumer surface {surface} correctly wired (method={}, phase={})",
+                    req.0, req.1
+                ),
+            ));
+        } else {
+            checks.push(Check::fail(
+                &check_name,
+                format!(
+                    "consumer surface {surface} is mis-wired: manifest {} has method={:?} phase={:?} \
+                     but the plugin requires method=\"{}\" phase=\"{}\". Without these the surface \
+                     silently runs the default `lift` producer and its pass never fires (degenerate \
+                     attestation, no error). Add both lines to the manifest.",
+                    manifest_path.display(),
+                    manifest.method,
+                    manifest.phase,
+                    req.0,
+                    req.1,
+                ),
+            ));
+        }
+    }
+
     checks
+}
+
+/// Query a plugin's `initialize` capabilities and return its declared
+/// consumer-surface requirements: `surface -> (required_method, required_phase)`.
+/// Language-blind: the requirement is the PLUGIN's self-declaration, not a CLI
+/// table. Spawns the plugin command, sends one `initialize` JSON-RPC line, reads
+/// one response line, and parses `result.capabilities.consumer_surfaces`.
+fn plugin_consumer_surfaces(
+    manifest: &crate::lift_plugin::LiftPluginManifest,
+    working_dir: Option<&Path>,
+) -> Result<std::collections::HashMap<String, (String, String)>, String> {
+    use std::io::{BufRead, BufReader, Write};
+    use std::process::{Command, Stdio};
+
+    if manifest.command.is_empty() {
+        return Err("manifest declares no command".into());
+    }
+    let mut cmd = Command::new(&manifest.command[0]);
+    cmd.args(&manifest.command[1..]);
+    if let Some(wd) = working_dir {
+        cmd.current_dir(wd);
+    }
+    cmd.stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::null());
+    let mut child = cmd.spawn().map_err(|e| format!("spawn: {e}"))?;
+    {
+        let stdin = child.stdin.as_mut().ok_or("no stdin")?;
+        let req = json!({"jsonrpc":"2.0","id":1,"method":"initialize","params":{}});
+        let mut line = serde_json::to_vec(&req).map_err(|e| e.to_string())?;
+        line.push(b'\n');
+        stdin.write_all(&line).map_err(|e| format!("write: {e}"))?;
+    }
+    let stdout = child.stdout.take().ok_or("no stdout")?;
+    let mut reader = BufReader::new(stdout);
+    let mut resp_line = String::new();
+    reader
+        .read_line(&mut resp_line)
+        .map_err(|e| format!("read: {e}"))?;
+    let _ = child.kill();
+    let _ = child.wait();
+    let resp: Value =
+        serde_json::from_str(resp_line.trim()).map_err(|e| format!("parse response: {e}"))?;
+    let mut out = std::collections::HashMap::new();
+    if let Some(map) = resp
+        .pointer("/result/capabilities/consumer_surfaces")
+        .and_then(|v| v.as_object())
+    {
+        for (surface, req) in map {
+            let method = req.get("method").and_then(|v| v.as_str());
+            let phase = req.get("phase").and_then(|v| v.as_str());
+            if let (Some(m), Some(p)) = (method, phase) {
+                out.insert(surface.clone(), (m.to_string(), p.to_string()));
+            }
+        }
+    }
+    Ok(out)
 }
 
 /// Collect all (surface, kind_dir, manifest_path) triples for declared plugins.

@@ -94,7 +94,20 @@ The reflexive-discharge idea (sound `P -> P` when the producer's post is byte-id
 to the consumer's pre) is still the most promising mechanism; it just has to be wired
 into the path the callsites actually reach.
 
-## Phase-0 gap confirmed: `doctor` does not catch this footgun
+## Phase-0 gap CLOSED: `doctor` now catches this footgun
+
+DONE (committed): `provekit doctor` now HARD-fails (exit 2) when a kit's consumer
+surface is mis-wired. walk_rpc's `initialize` capabilities self-declare
+`consumer_surfaces: { "rust-implications": { method, phase } }` (semantics in the
+kit, so doctor stays language-blind); doctor's Check 5 spawns each plugin, reads
+that, and verifies the manifest's `method`/`phase` match. Verified on
+stage3-serde-totality-fixture: broken manifest (method+phase removed) -> exit 2 with
+"add both lines"; fixed -> exit 0. This catches the exact omission that cost five
+agents a day, BEFORE a silent empty-set attestation.
+
+### Original gap (now closed; kept for context)
+
+## Phase-0 gap was: `doctor` did not catch this footgun
 
 `provekit doctor --target <kit>` exists and runs, but its checks are: TOML parse,
 plugin-command binary exists, imports count, oracle reachability. It does NOT catch
