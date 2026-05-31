@@ -131,6 +131,63 @@ pub fn emit_sort(sort: &Sort) -> String {
     emit_sort_with_reason(sort).0
 }
 
+/// Derive a deterministic, language-blind SMT-LIB sort name for an opaque
+/// sort. Uses the blake3 CID of the serialized sort as the disambiguator so
+/// two distinct opaque sorts always get distinct names, and the same sort
+/// always gets the same name within a compilation unit.
+///
+/// Output format: `S_<first-32-hex-chars-of-CID>`. Prefix ensures the name
+/// starts with a letter (SMT-LIB simple symbol rule). The 32-char CID prefix
+/// gives 128 bits of collision resistance -- more than sufficient for any
+/// realistic formula. The symbol is safe for SMT-LIB simple-symbol syntax
+/// (only [A-Za-z0-9_]).
+fn opaque_sort_smt_name(sort: &Sort) -> String {
+    let serialized = serde_json::to_value(sort).unwrap_or(serde_json::Value::Null);
+    let cid = position_cid_of(&serialized);
+    // Sanitize: keep only alphanumeric and underscore, then prefix with S_.
+    let safe: String = cid
+        .chars()
+        .filter(|c| c.is_ascii_alphanumeric() || *c == '_')
+        .take(32)
+        .collect();
+    format!("S_{}", safe)
+}
+
+/// Walk a formula collecting the SMT sort names for all opaque-sorted
+/// quantifiers (Forall/Exists/Choice) so that `(declare-sort <S> 0)` can be
+/// emitted into the preamble before the body. Each distinct opaque sort name
+/// is stored as a key (value is unused).
+fn collect_opaque_quantifier_sorts_formula(
+    formula: &Formula,
+    out: &mut BTreeMap<String, ()>,
+) {
+    match formula {
+        Formula::Atomic { .. } => {}
+        Formula::And { operands }
+        | Formula::Or { operands }
+        | Formula::Not { operands }
+        | Formula::Implies { operands } => {
+            for o in operands {
+                collect_opaque_quantifier_sorts_formula(o, out);
+            }
+        }
+        Formula::Forall { sort, body, .. }
+        | Formula::Exists { sort, body, .. }
+        | Formula::Choice { sort, body, .. } => {
+            let (_, reason) = emit_sort_with_reason(sort);
+            if reason.is_some() {
+                out.insert(opaque_sort_smt_name(sort), ());
+            }
+            collect_opaque_quantifier_sorts_formula(body, out);
+        }
+        Formula::Substitute { .. } | Formula::Apply { .. } => {}
+        Formula::DivergenceBetween { source, target } => {
+            collect_opaque_quantifier_sorts_formula(source, out);
+            collect_opaque_quantifier_sorts_formula(target, out);
+        }
+    }
+}
+
 pub fn emit_formula(formula: &Formula) -> String {
     match formula {
         Formula::Atomic { name, args } => {
@@ -164,19 +221,25 @@ pub fn emit_formula(formula: &Formula) -> String {
         Formula::Forall { name, sort, body } => {
             let (sort_str, reason) = emit_sort_with_reason(sort);
             let body_str = emit_formula(body);
-            if let Some(_r) = reason {
-                // Quantifier over opaque sort: assert SMT-LIB truth as placeholder.
-                return "true".to_string();
-            }
-            format!("(forall (({} {})) {})", name, sort_str, body_str)
+            // Opaque sort: use the CID-derived uninterpreted sort name declared
+            // in the preamble. Collapsing to `true` is unsound: `forall x:S.
+            // false` would then appear as `true` and pass falsely.
+            let effective_sort = if reason.is_some() {
+                opaque_sort_smt_name(sort)
+            } else {
+                sort_str
+            };
+            format!("(forall (({} {})) {})", name, effective_sort, body_str)
         }
         Formula::Exists { name, sort, body } => {
             let (sort_str, reason) = emit_sort_with_reason(sort);
             let body_str = emit_formula(body);
-            if let Some(_r) = reason {
-                return "true".to_string();
-            }
-            format!("(exists (({} {})) {})", name, sort_str, body_str)
+            let effective_sort = if reason.is_some() {
+                opaque_sort_smt_name(sort)
+            } else {
+                sort_str
+            };
+            format!("(exists (({} {})) {})", name, effective_sort, body_str)
         }
         Formula::Choice {
             var_name,
@@ -185,16 +248,18 @@ pub fn emit_formula(formula: &Formula) -> String {
         } => {
             let (sort_str, reason) = emit_sort_with_reason(sort);
             let body_str = emit_formula(body);
-            if let Some(_r) = reason {
-                return "true".to_string();
-            }
+            let effective_sort = if reason.is_some() {
+                opaque_sort_smt_name(sort)
+            } else {
+                sort_str
+            };
             let var_y = format!("{}_y", var_name);
             let body_y = body_str.replace(var_name, &var_y);
             let unique = format!(
                 "(and {} (forall (({} {})) (=> {} (= {} {}))))",
-                body_str, var_y, sort_str, body_y, var_y, var_name
+                body_str, var_y, effective_sort, body_y, var_y, var_name
             );
-            format!("(exists (({} {})) {})", var_name, sort_str, unique)
+            format!("(exists (({} {})) {})", var_name, effective_sort, unique)
         }
         // wp-rule schema nodes (spec 2026-05-13-wp-as-formula.md §2.3):
         // `substitute` / `apply` appear only inside an unreduced `wp_rule`
@@ -339,35 +404,38 @@ fn emit_formula_with_opacities(formula: &Formula, opacities: &mut Vec<OpacityEnt
         }
         Formula::Forall { name, sort, body } => {
             let (_, reason) = emit_sort_with_reason(sort);
-            if let Some(reason_code) = reason {
+            let effective_sort = if let Some(reason_code) = reason {
+                // Record opacity provenance. Still emit a sound quantifier
+                // using the CID-derived uninterpreted sort name declared in
+                // the preamble. Collapsing to `true` is unsound.
                 let serialized = serde_json::to_value(sort).unwrap_or(serde_json::Value::Null);
                 let cid = position_cid_of(&serialized);
                 opacities.push(OpacityEntry {
                     position_cid: cid,
                     reason_code,
                 });
-                "true".to_string()
+                opaque_sort_smt_name(sort)
             } else {
-                let sort_str = emit_sort(sort);
-                let body_str = emit_formula_with_opacities(body, opacities);
-                format!("(forall (({} {})) {})", name, sort_str, body_str)
-            }
+                emit_sort(sort)
+            };
+            let body_str = emit_formula_with_opacities(body, opacities);
+            format!("(forall (({} {})) {})", name, effective_sort, body_str)
         }
         Formula::Exists { name, sort, body } => {
             let (_, reason) = emit_sort_with_reason(sort);
-            if let Some(reason_code) = reason {
+            let effective_sort = if let Some(reason_code) = reason {
                 let serialized = serde_json::to_value(sort).unwrap_or(serde_json::Value::Null);
                 let cid = position_cid_of(&serialized);
                 opacities.push(OpacityEntry {
                     position_cid: cid,
                     reason_code,
                 });
-                "true".to_string()
+                opaque_sort_smt_name(sort)
             } else {
-                let sort_str = emit_sort(sort);
-                let body_str = emit_formula_with_opacities(body, opacities);
-                format!("(exists (({} {})) {})", name, sort_str, body_str)
-            }
+                emit_sort(sort)
+            };
+            let body_str = emit_formula_with_opacities(body, opacities);
+            format!("(exists (({} {})) {})", name, effective_sort, body_str)
         }
         Formula::Choice {
             var_name,
@@ -375,25 +443,25 @@ fn emit_formula_with_opacities(formula: &Formula, opacities: &mut Vec<OpacityEnt
             body,
         } => {
             let (_, reason) = emit_sort_with_reason(sort);
-            if let Some(reason_code) = reason {
+            let effective_sort = if let Some(reason_code) = reason {
                 let serialized = serde_json::to_value(sort).unwrap_or(serde_json::Value::Null);
                 let cid = position_cid_of(&serialized);
                 opacities.push(OpacityEntry {
                     position_cid: cid,
                     reason_code,
                 });
-                "true".to_string()
+                opaque_sort_smt_name(sort)
             } else {
-                let sort_str = emit_sort(sort);
-                let body_str = emit_formula_with_opacities(body, opacities);
-                let var_y = format!("{}_y", var_name);
-                let body_y = body_str.replace(var_name, &var_y);
-                let unique = format!(
-                    "(and {} (forall (({} {})) (=> {} (= {} {}))))",
-                    body_str, var_y, sort_str, body_y, var_y, var_name
-                );
-                format!("(exists (({} {})) {})", var_name, sort_str, unique)
-            }
+                emit_sort(sort)
+            };
+            let body_str = emit_formula_with_opacities(body, opacities);
+            let var_y = format!("{}_y", var_name);
+            let body_y = body_str.replace(var_name, &var_y);
+            let unique = format!(
+                "(and {} (forall (({} {})) (=> {} (= {} {}))))",
+                body_str, var_y, effective_sort, body_y, var_y, var_name
+            );
+            format!("(exists (({} {})) {})", var_name, effective_sort, unique)
         }
         // wp-rule schema nodes (spec 2026-05-13-wp-as-formula.md §2.3):
         // see the note in `emit_formula`.
@@ -804,6 +872,19 @@ pub fn compile_formula(formula: &Formula) -> CompiledFormula {
         preamble.push_str("(declare-fun static_region () Region)\n");
         preamble.push_str("(assert (forall ((r Region)) (Outlives static_region r)))\n");
     }
+    // Declare every opaque-sorted quantifier sort as an uninterpreted sort.
+    // These are sorts the SMT-LIB backend cannot encode natively (non-builtin
+    // primitive sorts, function sorts, dependent sorts, ...). Rather than
+    // collapsing the quantifier to `true` (which is unsound: `forall x:S.
+    // false` would falsely pass), we model each opaque sort as a fresh
+    // uninterpreted sort via `(declare-sort <S> 0)`. Z3 then reasons over it
+    // under an open-world assumption, which is sound: it can only produce
+    // false-negatives (undecidable), never false-positives (false-pass).
+    let mut opaque_sort_decls: BTreeMap<String, ()> = BTreeMap::new();
+    collect_opaque_quantifier_sorts_formula(formula, &mut opaque_sort_decls);
+    for sort_name in opaque_sort_decls.keys() {
+        preamble.push_str(&format!("(declare-sort {} 0)\n", sort_name));
+    }
     for (name, sort) in free_vars.iter() {
         preamble.push_str(&format!("(declare-const {} {})\n", smt_quote(name), sort));
     }
@@ -901,6 +982,13 @@ pub fn compile_asserted_formula(formula: &Formula) -> CompiledFormula {
         preamble.push_str("(assert (forall ((r1 Region) (r2 Region) (r3 Region)) (=> (and (Outlives r1 r2) (Outlives r2 r3)) (Outlives r1 r3))))\n");
         preamble.push_str("(declare-fun static_region () Region)\n");
         preamble.push_str("(assert (forall ((r Region)) (Outlives static_region r)))\n");
+    }
+    // Declare opaque-sorted quantifier sorts as uninterpreted sorts (see the
+    // matching block in `compile_formula` for full rationale).
+    let mut opaque_sort_decls: BTreeMap<String, ()> = BTreeMap::new();
+    collect_opaque_quantifier_sorts_formula(formula, &mut opaque_sort_decls);
+    for sort_name in opaque_sort_decls.keys() {
+        preamble.push_str(&format!("(declare-sort {} 0)\n", sort_name));
     }
     for (name, sort) in free_vars.iter() {
         preamble.push_str(&format!("(declare-const {} {})\n", smt_quote(name), sort));

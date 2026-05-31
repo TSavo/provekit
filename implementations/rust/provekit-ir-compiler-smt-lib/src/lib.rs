@@ -364,7 +364,9 @@ mod tests {
 
     #[test]
     fn functionsort_quantifier_emits_opacity_entry() {
-        // forall (f: Function) . true: FunctionSort in quantifier
+        // forall (f: Function) . true: FunctionSort in quantifier.
+        // After fix: the quantifier is emitted soundly over a CID-derived
+        // uninterpreted sort instead of collapsing to `true`.
         let ir = serde_json::json!({
             "kind": "forall",
             "name": "f",
@@ -377,13 +379,29 @@ mod tests {
             result.opacity_manifest.opacities[0].reason_code,
             "predicate_quantification"
         );
-        assert!(result.body.contains("(assert (not true))"));
-        assert!(!result.body.contains("(true)"));
+        // Sound encoding: the body now contains a real quantifier, not `true`.
+        assert!(
+            result.body.contains("(assert (not (forall ((f S_"),
+            "must emit sound quantifier, got: {}",
+            result.body
+        );
+        assert!(
+            !result.body.contains("(assert (not true))"),
+            "must not collapse quantifier to true: {}",
+            result.body
+        );
+        // The opaque sort is declared in the preamble, not emitted raw.
+        assert!(
+            result.preamble.contains("(declare-sort S_"),
+            "opaque sort must be declared in preamble: {}",
+            result.preamble
+        );
     }
 
     #[test]
     fn dependent_sort_quantifier_emits_opacity_entry() {
-        // exists (n: Dependent) . true: DependentSort in quantifier
+        // exists (n: Dependent) . true: DependentSort in quantifier.
+        // After fix: emitted soundly over a CID-derived uninterpreted sort.
         let ir = serde_json::json!({
             "kind": "exists",
             "name": "n",
@@ -396,8 +414,17 @@ mod tests {
             result.opacity_manifest.opacities[0].reason_code,
             "dependent_type"
         );
-        assert!(result.body.contains("(assert (not true))"));
-        assert!(!result.body.contains("(true)"));
+        // Sound encoding: real quantifier, not collapsed to `true`.
+        assert!(
+            result.body.contains("(assert (not (exists ((n S_"),
+            "must emit sound existential quantifier, got: {}",
+            result.body
+        );
+        assert!(
+            !result.body.contains("(assert (not true))"),
+            "must not collapse quantifier to true: {}",
+            result.body
+        );
     }
 
     #[test]
@@ -422,6 +449,7 @@ mod tests {
         // Rust source sorts such as `Ref<Connection>` are valid IR
         // primitive-sort labels for identity, but not SMT-LIB builtin sorts.
         // The SMT backend must not emit them raw.
+        // After fix: emitted soundly over a CID-derived uninterpreted sort.
         let ir = serde_json::json!({
             "kind": "forall",
             "name": "conn",
@@ -439,8 +467,23 @@ mod tests {
             "opaque Rust source sort must not be emitted as raw SMT-LIB: {}",
             result.body
         );
-        assert!(result.body.contains("(assert (not true))"));
-        assert!(!result.body.contains("(true)"));
+        // Sound encoding: real quantifier over CID-derived sort, not `true`.
+        assert!(
+            result.body.contains("(assert (not (forall ((conn S_"),
+            "must emit sound quantifier, got: {}",
+            result.body
+        );
+        assert!(
+            !result.body.contains("(assert (not true))"),
+            "must not collapse quantifier to true: {}",
+            result.body
+        );
+        // The opaque sort is declared in the preamble via (declare-sort S_... 0).
+        assert!(
+            result.preamble.contains("(declare-sort S_"),
+            "opaque sort must be declared in preamble: {}",
+            result.preamble
+        );
     }
 
     #[test]
@@ -483,6 +526,90 @@ mod tests {
         assert!(
             cids[0] <= cids[1],
             "opacities must be sorted by positionCid"
+        );
+    }
+
+    // ACCEPTANCE DETECTOR (issue #1717 soundness fix):
+    //
+    // Positive:       forall x:opaque. true  -> DISCHARGED (negation is unsat)
+    // Discrimination: forall x:opaque. false -> NOT DISCHARGED (negation is sat)
+    //
+    // Before the fix both collapsed to `true`, making the negation
+    // `(assert (not true))` which z3 returns `unsat` for -- a false pass.
+    // After the fix the negated `false` case emits:
+    //   `(assert (not (forall ((x S_...)) false)))` == `(assert (exists ((x S_...)) true))`
+    // Over a nonempty uninterpreted sort, z3 returns `sat` -> not discharged.
+    // The `true` body case emits:
+    //   `(assert (not (forall ((x S_...)) true)))` == `(assert (exists ((x S_...)) false))`
+    // which z3 returns `unsat` -> discharged. Both are correct.
+    //
+    // This test HARD-FAILS if z3 is not present (no skip): a skipped solver
+    // test is a false green (per product invariant falsePass=0).
+
+    #[test]
+    fn opaque_sort_forall_true_is_discharged_under_z3() {
+        // POSITIVE case: `forall x:opaque. true` must be discharged (negation unsat).
+        let z3 = which_z3().expect(
+            "z3 must be available for opaque-sort soundness check; \
+             install z3 and re-run (a missing z3 is a false green)"
+        );
+        let ir = serde_json::json!({
+            "kind": "forall",
+            "name": "x",
+            "sort": { "kind": "primitive", "name": "OpaqueT" },
+            "body": { "kind": "atomic", "name": "true", "args": [] }
+        });
+        let result = compile_to_parts(&ir).expect("compile succeeds");
+        // Sanity: check the sound quantifier is present in the body.
+        assert!(
+            result.body.contains("(forall ((x S_"),
+            "must emit real quantifier over opaque sort, got: {}",
+            result.body
+        );
+        let script = format!("{}{}", result.preamble, result.body);
+        let out = run_z3(&z3, &script);
+        assert_eq!(
+            out.trim(),
+            "unsat",
+            "forall x:opaque. true must be discharged (negation unsat); z3 said: {}",
+            out
+        );
+    }
+
+    #[test]
+    fn opaque_sort_forall_false_is_not_discharged_under_z3() {
+        // DISCRIMINATION case: `forall x:opaque. false` must NOT be discharged
+        // (negation sat). Before fix this falsely returned `unsat` (false pass).
+        let z3 = which_z3().expect(
+            "z3 must be available for opaque-sort soundness check; \
+             install z3 and re-run (a missing z3 is a false green)"
+        );
+        let ir = serde_json::json!({
+            "kind": "forall",
+            "name": "x",
+            "sort": { "kind": "primitive", "name": "OpaqueT" },
+            "body": { "kind": "atomic", "name": "false", "args": [] }
+        });
+        let result = compile_to_parts(&ir).expect("compile succeeds");
+        // Sanity: the body must contain the real quantifier, not collapsed true.
+        assert!(
+            result.body.contains("(forall ((x S_"),
+            "must emit real quantifier over opaque sort, got: {}",
+            result.body
+        );
+        assert!(
+            !result.body.contains("(assert (not true))"),
+            "quantifier must not have been collapsed to true: {}",
+            result.body
+        );
+        let script = format!("{}{}", result.preamble, result.body);
+        let out = run_z3(&z3, &script);
+        assert_eq!(
+            out.trim(),
+            "sat",
+            "forall x:opaque. false must NOT be discharged (negation must be sat); \
+             z3 said: {} -- this is the false-pass soundness hole from issue #1717",
+            out
         );
     }
 }
