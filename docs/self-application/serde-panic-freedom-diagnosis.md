@@ -245,6 +245,35 @@ on the unsound collapse and should be updated to expect undecidable (that IS the
 bug being closed). Only AFTER #1717 lands is the K cascade fix safe (BREAK 1
 re-introduces an opaque-sorted forall).
 
+## BREAK 1 fix-target REFINED (empirical: my specialization approach is wrong)
+
+Attempted BREAK 1 as "specialize consumer_pre to the arg in the implication
+branch" -- EMPIRICALLY WRONG. `build_implication_obligation` (runner.rs:1720)
+REQUIRES both post_formula AND pre_formula to be `forall` (errors "pre is not a
+forall" otherwise), renames BOTH bound vars to a shared `_h0`, and emits
+`forall _h0. (post_body[_h0] -> pre_body[_h0])`. Stripping the forall to specialize
+breaks it. And specialization is unnecessary: the builder ALREADY unifies the two
+foralls via `_h0`.
+
+So for f, the obligation SHOULD reduce to `forall _h0. (is_ok(_h0) -> is_ok(_h0))`
+= trivially valid -> discharged. It is UNSATISFIED, which means
+`post_body[_h0] != pre_body[_h0]` after renaming -- the producer post body and the
+consumer pre body are NOT both `is_ok(_h0)`. The bug is therefore in ONE of:
+  (a) `locate_producer_post` shapes the producer post body as something other than
+      `is_ok(<bound>)` (e.g. carries the concrete arg term, or a different
+      predicate/sort), OR
+  (b) the producer-post and consumer-pre forall SORTS differ, so `_h0` is declared
+      at incompatible sorts and `is_ok` is not the same uninterpreted relation, OR
+  (c) the rename (`substitute_formula_pub` with post_name/pre_name -> `_h0`) misses
+      a binder.
+
+NEXT (fresh head): instrument `build_implication_obligation` to log
+`post_body_renamed` and `pre_body_renamed` for a panic site on a CLEANLY re-minted
+stage3-serde proof (the probe must run against the SAME proof the mint produced --
+state drift across runs masked this tonight). The diff between those two bodies IS
+the fix. This is a targeted equality/shape fix in the producer-post construction,
+NOT a specialization and NOT touching the shared non-panic path.
+
 ## Reproduction
 
 Warm-oracle e2e on battleaxe: `/tmp/serde_e2e2.sh` (mints shim-std + shim-serde deps,
