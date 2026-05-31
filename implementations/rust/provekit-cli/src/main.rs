@@ -20,6 +20,7 @@ use clap::{Parser, Subcommand};
 
 mod cmd_bind;
 mod cmd_compose;
+mod cmd_doctor;
 mod cmd_dump;
 mod cmd_emit;
 mod cmd_hash;
@@ -143,6 +144,11 @@ enum Cmd {
     Bind(cmd_bind::BindArgs),
     /// Materialize concept-citation carriers into library-bound source via substrate realize kits.
     Materialize(cmd_materialize::MaterializeArgs),
+    /// Validate a kit's config/manifest wiring before a run. Catches missing
+    /// binaries (the manifest-path footgun) before they silently produce an
+    /// empty-set attestation. Exit 0 on pass (warnings allowed), exit 2 on any
+    /// hard failure (invalid TOML or missing/non-executable binary).
+    Doctor(cmd_doctor::DoctorArgs),
 }
 
 #[derive(Parser, Debug, Clone)]
@@ -318,6 +324,7 @@ fn main() -> ExitCode {
         Cmd::Compose(a) => cmd_compose::run(a),
         Cmd::Bind(a) => cmd_bind::run(a),
         Cmd::Materialize(a) => cmd_materialize::run(a),
+        Cmd::Doctor(a) => cmd_doctor::run(a),
     };
     ExitCode::from(code)
 }
