@@ -31,6 +31,31 @@ honest scoreboard with ZERO silent drops and ZERO false "cannot panic".
 
 ## Where we are (2026-05-31, honest)
 
+- UPDATE (2026-05-31 night): Phase 0 + Phase 1 are DONE; only substantive K remains.
+  - Phase 0 product surfaces all on main: `self-check --json`; `provekit doctor`
+    HARD-fails (exit 2) on the manifest method/phase omission footgun, language-blind
+    via plugin-self-declared `consumer_surfaces` (#1742); golden snapshot wired into
+    CI (`provekit-cli/tests/self_check_golden.rs` runs under `make test-all` ->
+    conformance, pins scoreboard + panicCensus + droppedSites with a readable line
+    diff). No-silent-failure scaffolding: plugin subprocess stderr inherits by default
+    (was the `Stdio::null` that hid a load-bearing bug from five investigations), a
+    counted `warn!` when a method-seam bridge reaches the verifier without callsite
+    provenance, tracing not eprintln.
+  - Phase 1: #1717 is CLOSED (opaque-sorted `forall` encoded soundly by the smt-lib
+    compiler; detector `forall x:opaque. false` is undecidable, not collapsed to true).
+  - The five-agent serde blocker is FIXED (#1742): stage3-serde-totality-fixture's
+    rust-implications manifest was missing `method = lift_implications` + `phase =
+    consumer`, so mint ran the default producer `lift` and the RA-oracle host method
+    never fired. `doctor` now guards against this whole class.
+  - Phase 2 K (serde D-lib) ROOT CAUSE LOCATED + dispatched to an Opus agent (branch
+    `fix/locate-producer-post-totality`): `locate_producer_post` returns the to_string
+    BODY-EQ contract (`=(result, to_string(value))`) instead of the
+    serde_json_to_string_value TOTALITY (`is_ok(result)`), so the panic implication is
+    `(_h0 = to_string(value)) -> is_ok(_h0)` = unsat instead of the reflexive
+    `is_ok(_h0) -> is_ok(_h0)`. Hard gate on the fix: f (src/lib.rs:25) -> panicSafe,
+    g (:38) -> undecidable, falsePass=0, silentlyDropped=0, verifier suite green.
+  - K (panicSafe) still 0, honestly; both hard invariants HELD throughout.
+  Full arc: docs/self-application/serde-panic-freedom-diagnosis.md.
 - Honesty layer on main (#1716): 291/311 body-discharge-eligible (was 1/310),
   0 silently dropped (was 549), reflexive discharges LABELED (never sold as
   proof). The old "211 real-solver" was the pre-gate spine rubber-stamping
