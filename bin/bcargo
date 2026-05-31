@@ -257,9 +257,11 @@ if [[ "$status" -ne 0 ]]; then
   exit "$status"
 fi
 
-for bin in "${sync_bins[@]}"; do
-  remote_bin="$remote_target_dir/$profile/$bin"
-  local_bin="$local_target_dir/$profile/$bin"
-  mkdir -p "$(dirname "$local_bin")"
-  "$rsync_bin" -az "$remote_host:$remote_bin" "$local_bin"
-done
+if ((${#sync_bins[@]} > 0)); then
+  for bin in "${sync_bins[@]}"; do
+    remote_bin="$remote_target_dir/$profile/$bin"
+    local_bin="$local_target_dir/$profile/$bin"
+    mkdir -p "$(dirname "$local_bin")"
+    "$rsync_bin" -az "$remote_host:$remote_bin" "$local_bin"
+  done
+fi

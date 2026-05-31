@@ -26,14 +26,15 @@
 // UNSOUND on its own.
 //
 // We therefore fold the WHOLE in-workspace source tree into
-// `resolutionContextCid` (blake3 of Cargo.lock plus the sorted hashes of every
-// workspace `.rs` file). Any in-workspace edit changes the context CID and
-// invalidates every file's entry. This is deliberately CONSERVATIVE: it
-// over-invalidates (an edit to an unrelated file also drops the cache) in
-// exchange for soundness (a hit can never reflect stale cross-file type flow).
-// A wrong key only ever causes a MISS (re-ask the warm RA), never a wrong HIT.
-// A precise dependency-set-per-file key (#1706's finest granularity) is a future
-// refinement; the conservative tree hash is the sound MVP.
+// `resolutionContextCid` (blake3 of Cargo.lock, rust-toolchain[.toml], plus the
+// sorted hashes of every workspace `.rs` file). Any in-workspace edit or
+// toolchain change changes the context CID and invalidates every file's entry.
+// This is deliberately CONSERVATIVE: it over-invalidates (an edit to an
+// unrelated file also drops the cache) in exchange for soundness (a hit can
+// never reflect stale cross-file type flow). A wrong key only ever causes a MISS
+// (re-ask the warm RA), never a wrong HIT. A precise dependency-set-per-file key
+// (#1706's finest granularity) is a future refinement; the conservative tree
+// hash is the sound MVP.
 //
 // VALUE: the COMPLETE resolution map for that file from one QUIESCENT pass:
 // `{ "<line>:<col>": "<crate>" }`. A position that was resolved appears with its
@@ -135,10 +136,12 @@ impl ResolveCache {
 /// Compute the resolution-context CID: the SECOND key component, capturing every
 /// input a position's resolution depends on BEYOND its own file's bytes.
 ///
-/// It folds two things, in this order:
+/// It folds three things, in this order:
 ///   1. The dependency lock (`Cargo.lock`): a re-export or version bump can move
 ///      a callee to a different crate, so a dep change must invalidate.
-///   2. A hash of the WHOLE in-workspace `.rs` source tree: rust type inference
+///   2. The Rust toolchain pin (`rust-toolchain` or `rust-toolchain.toml`):
+///      sysroot and language semantics can change with the selected toolchain.
+///   3. A hash of the WHOLE in-workspace `.rs` source tree: rust type inference
 ///      flows across files (a receiver's type can be declared in another file),
 ///      so an edit to ANY workspace file can change THIS file's correct
 ///      resolution. Folding the tree makes any in-workspace edit invalidate
@@ -148,25 +151,21 @@ impl ResolveCache {
 ///
 /// Files are visited in sorted path order so the fold is deterministic. The walk
 /// is bounded to `.rs` files and skips `target/` and dotted dirs (build output /
-/// VCS are not resolver inputs). A missing Cargo.lock contributes a sentinel:
-/// resolution then depends on the source tree alone, sound for a std-only crate.
+/// VCS are not resolver inputs). Paths are folded relative to `workspace_root`;
+/// identical bytes in another worktree must produce the same context CID. Missing
+/// Cargo/toolchain files contribute sentinels.
 pub fn resolution_context_cid(workspace_root: &Path) -> String {
     use walkdir::WalkDir;
 
-    // 1. Dependency lock (search root + ancestors: a cargo workspace keeps one
-    //    lock at the workspace root above member crates).
-    let mut lock_bytes: Vec<u8> = b"no-cargo-lock".to_vec();
-    let mut dir = Some(workspace_root);
-    while let Some(d) = dir {
-        let lock = d.join("Cargo.lock");
-        if let Ok(bytes) = std::fs::read(&lock) {
-            lock_bytes = bytes;
-            break;
-        }
-        dir = d.parent();
-    }
+    // Search root + ancestors: a cargo workspace keeps these files at the
+    // workspace root above member crates.
+    let lock_bytes = read_nearest_ancestor_file(workspace_root, "Cargo.lock")
+        .unwrap_or_else(|| b"no-cargo-lock".to_vec());
+    let toolchain_bytes = read_nearest_ancestor_file(workspace_root, "rust-toolchain.toml")
+        .or_else(|| read_nearest_ancestor_file(workspace_root, "rust-toolchain"))
+        .unwrap_or_else(|| b"no-rust-toolchain".to_vec());
 
-    // 2. Sorted per-file content hashes of the workspace `.rs` tree.
+    // Sorted per-file content hashes of the workspace `.rs` tree.
     let mut file_hashes: Vec<(String, String)> = Vec::new();
     for entry in WalkDir::new(workspace_root)
         .into_iter()
@@ -183,7 +182,7 @@ pub fn resolution_context_cid(workspace_root: &Path) -> String {
         {
             if let Ok(bytes) = std::fs::read(entry.path()) {
                 file_hashes.push((
-                    entry.path().to_string_lossy().into_owned(),
+                    relative_path_key(workspace_root, entry.path()),
                     blake3_512_of(&bytes),
                 ));
             }
@@ -193,7 +192,11 @@ pub fn resolution_context_cid(workspace_root: &Path) -> String {
 
     // Fold lock + sorted (path, content-hash) pairs into one CID.
     let mut acc = String::new();
+    acc.push_str("cargo-lock\0");
     acc.push_str(&blake3_512_of(&lock_bytes));
+    acc.push('\n');
+    acc.push_str("rust-toolchain\0");
+    acc.push_str(&blake3_512_of(&toolchain_bytes));
     for (path, hash) in &file_hashes {
         acc.push('\n');
         acc.push_str(path);
@@ -203,9 +206,54 @@ pub fn resolution_context_cid(workspace_root: &Path) -> String {
     blake3_512_of(acc.as_bytes())
 }
 
+fn read_nearest_ancestor_file(start: &Path, name: &str) -> Option<Vec<u8>> {
+    let mut dir = Some(start);
+    while let Some(d) = dir {
+        let path = d.join(name);
+        if let Ok(bytes) = std::fs::read(&path) {
+            return Some(bytes);
+        }
+        dir = d.parent();
+    }
+    None
+}
+
+fn relative_path_key(root: &Path, path: &Path) -> String {
+    path.strip_prefix(root)
+        .unwrap_or(path)
+        .to_string_lossy()
+        .replace('\\', "/")
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::fs;
+    use std::path::{Path, PathBuf};
+    use std::time::{SystemTime, UNIX_EPOCH};
+
+    fn unique_temp_dir(label: &str) -> PathBuf {
+        let nanos = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .expect("clock")
+            .as_nanos();
+        std::env::temp_dir().join(format!("provekit-{label}-{nanos}-{}", std::process::id()))
+    }
+
+    fn write_minimal_workspace(root: &Path) {
+        fs::create_dir_all(root.join("src")).expect("mkdir src");
+        fs::write(root.join("Cargo.lock"), "version = 4\n").expect("write Cargo.lock");
+        fs::write(
+            root.join("rust-toolchain.toml"),
+            "[toolchain]\nchannel = \"stable\"\n",
+        )
+        .expect("write rust-toolchain.toml");
+        fs::write(
+            root.join("src").join("lib.rs"),
+            "pub fn answer() -> u32 { 42 }\n",
+        )
+        .expect("write lib.rs");
+    }
 
     #[test]
     fn key_changes_with_content() {
@@ -264,15 +312,51 @@ mod tests {
         let restored = ResolveCache::from_bytes(&bytes);
         assert_eq!(restored.len(), 1);
         assert_eq!(
-            restored
-                .get(b"x", "d")
-                .unwrap()
-                .positions
-                .get("1:0"),
+            restored.get(b"x", "d").unwrap().positions.get("1:0"),
             Some(&PosOutcome::Crate {
                 krate: "serde_json".into(),
                 type_stem: None,
             })
+        );
+    }
+
+    #[test]
+    fn resolution_context_is_content_addressed_not_worktree_path_addressed() {
+        let root_a = unique_temp_dir("ra-cache-a");
+        let root_b = unique_temp_dir("ra-cache-b");
+        write_minimal_workspace(&root_a);
+        write_minimal_workspace(&root_b);
+
+        let cid_a = resolution_context_cid(&root_a);
+        let cid_b = resolution_context_cid(&root_b);
+
+        let _ = fs::remove_dir_all(&root_a);
+        let _ = fs::remove_dir_all(&root_b);
+
+        assert_eq!(
+            cid_a, cid_b,
+            "identical workspace bytes must produce the same resolution context CID across worktrees"
+        );
+    }
+
+    #[test]
+    fn resolution_context_changes_when_toolchain_changes() {
+        let root = unique_temp_dir("ra-cache-toolchain");
+        write_minimal_workspace(&root);
+
+        let before = resolution_context_cid(&root);
+        fs::write(
+            root.join("rust-toolchain.toml"),
+            "[toolchain]\nchannel = \"nightly\"\n",
+        )
+        .expect("rewrite rust-toolchain.toml");
+        let after = resolution_context_cid(&root);
+
+        let _ = fs::remove_dir_all(&root);
+
+        assert_ne!(
+            before, after,
+            "rust-toolchain changes can affect resolution and must invalidate the cache generation"
         );
     }
 }
