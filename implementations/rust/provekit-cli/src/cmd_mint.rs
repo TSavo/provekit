@@ -189,6 +189,14 @@ struct PerPluginDispatch {
     response: Value,
 }
 
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+struct OracleObservation {
+    requested: bool,
+    reachable: bool,
+    attempted: u64,
+    resolved: u64,
+}
+
 #[derive(Debug, Clone)]
 struct PreparedLiftStep {
     surface: String,
@@ -232,11 +240,18 @@ fn merge_ir_document_responses(per_plugin: Vec<PerPluginDispatch>) -> Result<Val
     let mut merged_implications: Vec<Value> = Vec::new();
     let mut merged_authorities: Vec<Value> = Vec::new();
     let mut merged_witnesses: Vec<Value> = Vec::new();
+    let mut oracle_observation = OracleObservation::default();
     // Content-shape dedup keys (NOT names). See `canonical_dedup_key`.
     let mut seen_content: std::collections::HashSet<String> = std::collections::HashSet::new();
     let mut seen_implications: std::collections::HashSet<String> = std::collections::HashSet::new();
     let mut seen_authorities: std::collections::HashSet<String> = std::collections::HashSet::new();
     for entry in per_plugin {
+        let plugin_oracle = oracle_observation_from_lift(&entry.response);
+        oracle_observation.requested |= plugin_oracle.requested;
+        oracle_observation.reachable |= plugin_oracle.reachable;
+        oracle_observation.attempted += plugin_oracle.attempted;
+        oracle_observation.resolved += plugin_oracle.resolved;
+
         let kind = entry
             .response
             .get("kind")
@@ -304,10 +319,24 @@ fn merge_ir_document_responses(per_plugin: Vec<PerPluginDispatch>) -> Result<Val
             merged_witnesses.extend(arr.iter().cloned());
         }
     }
+    let bridges_emitted = merged_ir
+        .iter()
+        .filter(|entry| entry.get("kind").and_then(|v| v.as_str()) == Some("bridge"))
+        .count() as u64;
+    let lift_gaps = merged_diagnostics
+        .iter()
+        .filter(|entry| entry.get("kind").and_then(|v| v.as_str()) == Some("lift-gap"))
+        .count() as u64;
     let mut merged = json!({
         "kind": "ir-document",
         "ir": merged_ir,
         "diagnostics": merged_diagnostics,
+        "bridges_emitted": bridges_emitted,
+        "lift_gaps": lift_gaps,
+        "oracle_requested": oracle_observation.requested,
+        "oracle_reachable": oracle_observation.reachable,
+        "receivers_attempted": oracle_observation.attempted,
+        "receivers_resolved": oracle_observation.resolved,
     });
     if !merged_implications.is_empty() {
         merged["implications"] = Value::Array(merged_implications);
@@ -319,6 +348,32 @@ fn merge_ir_document_responses(per_plugin: Vec<PerPluginDispatch>) -> Result<Val
         merged["witnesses"] = Value::Array(merged_witnesses);
     }
     Ok(merged)
+}
+
+fn oracle_observation_from_lift(lift: &Value) -> OracleObservation {
+    let nested = lift.get("oracle");
+    OracleObservation {
+        requested: nested
+            .and_then(|v| v.get("requested"))
+            .and_then(Value::as_bool)
+            .or_else(|| lift.get("oracle_requested").and_then(Value::as_bool))
+            .unwrap_or(false),
+        reachable: nested
+            .and_then(|v| v.get("reachable"))
+            .and_then(Value::as_bool)
+            .or_else(|| lift.get("oracle_reachable").and_then(Value::as_bool))
+            .unwrap_or(false),
+        attempted: nested
+            .and_then(|v| v.get("attempted"))
+            .and_then(Value::as_u64)
+            .or_else(|| lift.get("receivers_attempted").and_then(Value::as_u64))
+            .unwrap_or(0),
+        resolved: nested
+            .and_then(|v| v.get("resolved"))
+            .and_then(Value::as_u64)
+            .or_else(|| lift.get("receivers_resolved").and_then(Value::as_u64))
+            .unwrap_or(0),
+    }
 }
 
 #[derive(Debug, Clone, Default)]
@@ -1343,12 +1398,19 @@ fn mint_result_claim(
 }
 
 fn dispatch_result_to_value(result: &DispatchResult) -> Value {
+    let oracle = oracle_observation_from_lift(&result.lift_result);
     json!({
         "kind": "mint-result",
         "filenameCid": result.filename_cid,
         "contractSetCid": result.contract_set_cid,
         "bytesWritten": result.bytes_written,
         "proofFile": result.proof_file.as_ref().map(|path| path.display().to_string()),
+        "oracle": {
+            "requested": oracle.requested,
+            "reachable": oracle.reachable,
+            "attempted": oracle.attempted,
+            "resolved": oracle.resolved,
+        },
         "lift": result.lift_result,
     })
 }
@@ -3134,6 +3196,37 @@ mod tests {
                 .len(),
             1,
             "merged ir-document must keep implication-lifter output: {merged}"
+        );
+    }
+
+    #[test]
+    fn dispatch_result_to_value_propagates_oracle_observation_from_lift() {
+        let result = DispatchResult {
+            filename_cid: "blake3-512:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa".to_string(),
+            contract_set_cid: "blake3-512:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb".to_string(),
+            bytes_written: 42,
+            proof_file: None,
+            lift_result: json!({
+                "kind": "ir-document",
+                "ir": [],
+                "diagnostics": [],
+                "oracle_requested": true,
+                "oracle_reachable": true,
+                "receivers_attempted": 7,
+                "receivers_resolved": 3
+            }),
+        };
+
+        let value = dispatch_result_to_value(&result);
+
+        assert_eq!(
+            value["oracle"],
+            json!({
+                "requested": true,
+                "reachable": true,
+                "attempted": 7,
+                "resolved": 3
+            })
         );
     }
 

@@ -75,6 +75,10 @@ fn self_check_on_rust_std_shim_emits_scoreboard_shape_and_hard_invariants() {
     assert!(scoreboard["lift"]["bodyDischargeIneligible"].is_object());
     assert!(scoreboard["bridges"]["emitted"].is_u64());
     assert!(scoreboard["bridges"]["liftGaps"].is_object());
+    assert_eq!(scoreboard["oracle"]["requested"], false);
+    assert_eq!(scoreboard["oracle"]["engaged"], false);
+    assert_eq!(scoreboard["oracle"]["attempted"], 0);
+    assert_eq!(scoreboard["oracle"]["resolved"], 0);
     assert_eq!(scoreboard["silentlyDropped"], 0);
     assert_eq!(scoreboard["dischargeSplit"]["falsePass"], 0);
     assert!(scoreboard["dischargeSplit"]["panicSafe"].is_u64());
