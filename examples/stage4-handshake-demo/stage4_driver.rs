@@ -201,6 +201,7 @@ fn run() -> Result<(), String> {
         notes: String::new(),
         signer_seed: parse_kit_seed,
         target_proof_cid: None,
+        callsite: None,
     });
     parse_kit_members.insert(
         parse_kit_bridge.cid.clone(),
