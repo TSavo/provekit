@@ -625,3 +625,156 @@ fn verify_zero_arg_body_bearing_non_equation_post_refuses_not_vacuous_pass() {
 
     let _ = fs::remove_dir_all(&project);
 }
+
+/// EQ-BOTH-CALLS POSITIVE (z3-backed): `=(double(3), double(3))` must discharge.
+///
+/// This is the eq-both-calls tier of body discharge. The assertion has BOTH
+/// sides as the same callee: `inv = =(double(3), double(3))`. The spine
+/// reduces EACH call through the body (`double(x)=x*2`), producing the
+/// concrete obligation `=(*(3,2), *(3,2))` = `=(6, 6)`. z3 returns UNSAT
+/// (the obligation holds), the claim is Discharged with method=reflexive,
+/// and a signed witness is minted.
+///
+/// This test closes the z3-reachability question: the new both-calls path
+/// not only produces a reduced formula, but that formula actually reaches
+/// z3 and returns UNSAT. The obligation is NOT silently skipped-as-pass.
+#[test]
+fn verify_double_eq_both_calls_same_args_discharges_reflexive() {
+    if !z3_available() {
+        eprintln!("z3 not on PATH: skipping eq-both-calls positive test");
+        return;
+    }
+    // `=(double(3), double(3))` -- BOTH sides are the same callee with same args.
+    let inv = json!({
+        "kind": "atomic", "name": "=",
+        "args": [
+            {"kind": "ctor", "name": "double", "args": [int_const(3)]},
+            {"kind": "ctor", "name": "double", "args": [int_const(3)]}
+        ]
+    });
+    let project = publish_double_project_with_inv("eq-both-same", 2, inv);
+    let witnesses = project.join("witnesses-out");
+    let (receipt, code) = run_verify_json_with_code(&project, &witnesses);
+
+    // `=(double(3), double(3))` enumerates TWO callsites (one per `double`
+    // ctor in the inv). Each one sees the full `=` atomic as its
+    // `containing_atomic` and is processed by the eq-both-calls path.
+    let claims = receipt["claims"].as_array().expect("claims");
+    assert!(
+        !claims.is_empty(),
+        "eq-both-calls same-args must enumerate at least one claim; receipt: {receipt}"
+    );
+
+    // THE DECISIVE ASSERTION: ALL claims must be DISCHARGED.
+    for (i, claim) in claims.iter().enumerate() {
+        assert_eq!(
+            claim["status"], "discharged",
+            "eq-both-calls same-args claim[{i}] must be DISCHARGED (body reduces \
+             =(6,6) -> UNSAT); claim: {claim}"
+        );
+        assert_eq!(
+            claim["pass"], true,
+            "eq-both-calls same-args claim[{i}] must pass; claim: {claim}"
+        );
+
+        // Method must be reflexive: both sides reduce to the same body expression.
+        let method = claim["dischargeMethod"].as_str().unwrap_or("");
+        assert_eq!(
+            method, "reflexive",
+            "eq-both-calls same-args claim[{i}] must classify as reflexive (sides \
+             are identical after body reduction); claim: {claim}"
+        );
+
+        // A signed witness is minted for a discharged claim.
+        assert!(
+            !claim["witnessCid"].is_null(),
+            "witness must be minted for discharged eq-both-calls claim[{i}]; claim: {claim}"
+        );
+    }
+
+    assert_eq!(receipt["ok"], true);
+    assert_eq!(code, 0, "eq-both-calls same-args must exit 0; got {code}");
+
+    let _ = fs::remove_dir_all(&project);
+}
+
+/// EQ-BOTH-CALLS NEGATIVE (z3-backed): `=(double(3), double(4))` must NOT
+/// discharge.
+///
+/// THE LOAD-BEARING DISCRIMINATION TEST. The assertion `=(double(3), double(4))`
+/// has both sides as the same callee but DIFFERENT args. The spine reduces each
+/// through the body: `=(*(3,2), *(4,2))` = `=(6, 8)`. z3 returns SAT on the
+/// negation (`6 != 8` is satisfiable) -> Unsatisfied, exit 1, NO witness.
+///
+/// This is the negative control the soundness argument requires: if the reduced
+/// formula had stayed uninterpreted or been silently skipped, the obligation
+/// would be Undecidable (not Unsatisfied). Unsatisfied proves z3 ran on the
+/// concrete formula and found a real counterexample. NEVER a false pass.
+#[test]
+fn verify_double_eq_both_calls_different_args_is_unsatisfied() {
+    if !z3_available() {
+        eprintln!("z3 not on PATH: skipping eq-both-calls negative test");
+        return;
+    }
+    // `=(double(3), double(4))` -- same callee, DIFFERENT args.
+    // Body: double(x)=x*2, so this reduces to =(6, 8) -> z3 finds 6!=8 SAT.
+    let inv = json!({
+        "kind": "atomic", "name": "=",
+        "args": [
+            {"kind": "ctor", "name": "double", "args": [int_const(3)]},
+            {"kind": "ctor", "name": "double", "args": [int_const(4)]}
+        ]
+    });
+    let project = publish_double_project_with_inv("eq-both-diff", 2, inv);
+    let witnesses = project.join("witnesses-out");
+    let (receipt, code) = run_verify_json_with_code(&project, &witnesses);
+
+    // `=(double(3), double(4))` also enumerates TWO callsites (one per `double` ctor).
+    // Both must be UNSATISFIED: the first callee `double(3)` is processed by the
+    // eq-both-calls path and produces `=(*(3,2), *(4,2))` = `=(6,8)`. z3 finds
+    // the negation SAT (there exists a model where 6 != 8).
+    let claims = receipt["claims"].as_array().expect("claims");
+    assert!(
+        !claims.is_empty(),
+        "eq-both-calls different-args must enumerate at least one claim; receipt: {receipt}"
+    );
+
+    // THE DECISIVE ASSERTION: ALL claims must be UNSATISFIED (z3 refuted them).
+    for (i, claim) in claims.iter().enumerate() {
+        assert_eq!(
+            claim["status"], "unsatisfied",
+            "eq-both-calls different-args claim[{i}] must be UNSATISFIED (z3 \
+             refutes =(6,8) with SAT on the negation); claim: {claim}"
+        );
+        assert_eq!(
+            claim["pass"], false,
+            "eq-both-calls different-args claim[{i}] must not pass; claim: {claim}"
+        );
+
+        // No witness for a violated claim.
+        assert!(
+            claim["witnessCid"].is_null(),
+            "no witness may be minted for unsatisfied claim[{i}]; claim: {claim}"
+        );
+    }
+
+    let witness_files: Vec<_> = fs::read_dir(&witnesses)
+        .map(|rd| rd.filter_map(|e| e.ok()).collect())
+        .unwrap_or_default();
+    assert!(
+        witness_files.is_empty(),
+        "witness dir must be empty for unsatisfied claims; found {} files",
+        witness_files.len()
+    );
+
+    // Exit 1 = EXIT_VERIFY_FAIL (a hard violation found by z3, not a solver
+    // miss / exit 3). This is the proof that z3 ran and found the counterexample.
+    assert_eq!(
+        code, 1,
+        "different-args eq-both-calls must exit 1 (EXIT_VERIFY_FAIL, z3-counterexample \
+         found for =(6,8)); got {code}"
+    );
+    assert_eq!(receipt["ok"], false);
+
+    let _ = fs::remove_dir_all(&project);
+}
