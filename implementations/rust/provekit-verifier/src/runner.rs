@@ -1108,7 +1108,29 @@ fn work_one(
     invs_sink: &Mutex<Vec<SolverInvocation>>,
     minted_sink: &Mutex<Vec<(String, Json)>>,
 ) -> (CallSite, ObligationVerdict, String) {
-    match body_discharge::extract_body_obligation(cs, pool) {
+    // ROUTING (the call-site-obligation precedence rule, generic + language-blind):
+    // if the resolved TARGET CONTRACT carries a non-trivial `pre` (a real
+    // precondition, not None/true), this call-site obligation is to DISCHARGE
+    // THAT `pre` UNDER THE GUARD CONTEXT (`cs.guard_facts`), and that discharge
+    // takes PRECEDENCE over the reflexive self-post path. So we SKIP
+    // `extract_body_obligation` (which would otherwise reduce the callee's
+    // body-derived self-post to `unwrap(opt) == unwrap(opt)` and discharge it
+    // REFLEXIVELY -- a vacuous pass that, on an UNGUARDED pre-bearing call,
+    // would falsely report "cannot panic"). The reflexive self-post path below
+    // applies ONLY when the target has no pre. The verifier recognizes no
+    // predicate name: the rule keys purely on "target has a non-trivial pre."
+    let target_has_pre = body_discharge::target_has_nontrivial_pre(cs, pool);
+    if target_has_pre {
+        debug!(
+            bridge = %cs.bridge_ir_name,
+            target_cid = %cs.bridge_target_cid,
+            guard_facts = cs.guard_facts.len(),
+            "work_one: target carries a non-trivial pre -> routing to guard-discharge \
+             (precondition under guards), skipping reflexive self-post body-discharge"
+        );
+    }
+    if !target_has_pre {
+        match body_discharge::extract_body_obligation(cs, pool) {
         Ok(Some(body_discharge::BodyObligation::Reduced(reduced))) => {
             let smt = match smt_emitter::emit(&reduced) {
                 Ok(s) => s,
@@ -1161,6 +1183,7 @@ fn work_one(
                 ObligationVerdict::Undecidable,
                 format!("body-discharge: {e}"),
             );
+        }
         }
     }
 
@@ -1407,18 +1430,59 @@ fn work_one(
         // COMPLEMENT predicate, which never establishes the positive pre, so it
         // also stays undecidable. Fail-safe by construction: no path marks an
         // unguarded site panic-safe. This verifier recognizes no predicate name.
+        // CAPTURE / SPECIALIZATION FIX (BOTH panic branches). See the matching
+        // block + full rationale in `cmd_verify::verify_one_claim`. The
+        // call-site obligation is the pre SPECIALIZED to the actual arg
+        // (`pre[formal := arg]`, free vars), never `forall formal. pre`.
+        // `instantiate::run` substitutes the arg but re-wraps in a forall
+        // re-binding the formal, which (1) captures the guard fact's free var on
+        // the GUARDED branch and (2) collapses to the literal `true` on the
+        // UNGUARDED branch when the formal's sort is OPAQUE (the SMT emitter's
+        // opaque-`forall`->`true` opacity), falsely discharging the bare pre.
+        // The forall's body IS the specialized pre; the outer binder is
+        // redundant. Strip it ONCE here, before the guarded/unguarded split.
+        // We do NOT touch `instantiate::run` (shared by the refinement path).
+        let specialized = instantiate::strip_outer_forall(&ob.ir_formula);
+        if specialized != ob.ir_formula {
+            debug!(
+                bridge = %cs.bridge_ir_name,
+                before = %ob.ir_formula,
+                after = %specialized,
+                "work_one: panic obligation: stripped redundant outer forall -> specialized \
+                 pre over the free callsite arg (avoids guard-var capture and the opaque-sort \
+                 `forall`->`true` emitter collapse)"
+            );
+        }
         let guarded_formula = if cs.guard_facts.is_empty() {
-            ob.ir_formula.clone()
+            info!(
+                bridge = %cs.bridge_ir_name,
+                target_cid = %cs.bridge_target_cid,
+                obligation = %specialized,
+                "work_one: UNGUARDED panic site -> bare specialized pre obligation (no guard \
+                 establishes it; the solver must leave it SAT-for-negation -> NOT-discharged: \
+                 the refuse-floor negative control)"
+            );
+            specialized
         } else {
             let antecedent = if cs.guard_facts.len() == 1 {
                 cs.guard_facts[0].clone()
             } else {
                 json!({ "kind": "and", "operands": cs.guard_facts.clone() })
             };
-            json!({
+            let guarded = json!({
                 "kind": "implies",
-                "operands": [antecedent, ob.ir_formula.clone()],
-            })
+                "operands": [antecedent, specialized],
+            });
+            info!(
+                bridge = %cs.bridge_ir_name,
+                target_cid = %cs.bridge_target_cid,
+                guard_count = cs.guard_facts.len(),
+                antecedent = %antecedent,
+                obligation = %guarded,
+                "work_one: GUARDED panic site -> `(and guard_facts) => pre` obligation \
+                 (the guard must establish the pre; expected discharged)"
+            );
+            guarded
         };
         smt = match smt_emitter::emit(&guarded_formula) {
             Ok(s) => s,
