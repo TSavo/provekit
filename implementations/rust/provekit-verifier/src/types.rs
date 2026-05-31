@@ -704,6 +704,20 @@ pub struct CallSite {
     /// atomic with the call replaced by `result`). `None` when the call was
     /// not directly under an atomic. Does not participate in any CID.
     pub containing_atomic: Option<Json>,
+    /// PANIC-FREEDOM guard context: the path conditions (as atomic-predicate
+    /// formulas) that DOMINATE this call site in the lifted caller body. The
+    /// dominating fact is RESOLVED BY THE RUST KIT, not by this verifier: the
+    /// lifter wraps a guarded branch in `cf_guarded(<resolved-predicate>,
+    /// value)` (then-branch -> positive predicate, else-branch -> the kit's
+    /// complement), and `enumerate_callsites` copies that opaque atom into this
+    /// vector verbatim, recognizing no Rust predicate name. The discharge of a
+    /// panic partial's `pre` is performed UNDER these facts: a site dominated by
+    /// the matching guard discharges panic-safe (`guard => pre` is valid), an
+    /// unwrapped site keeps an empty guard set so the bare `pre` is unprovable
+    /// -> honest undecidable. Fail-safe by construction: a missing wrapper can
+    /// only UNDER-prove (K too low), never mark an unguarded site safe. Does not
+    /// participate in any CID.
+    pub guard_facts: Vec<Json>,
 }
 
 #[derive(Debug, Default, Clone)]

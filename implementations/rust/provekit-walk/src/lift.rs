@@ -240,6 +240,16 @@ fn lift_tail_if_to_ite_term(if_expr: &ExprIf, ctx: &mut LiftCtx) -> Option<IrTer
             }
         }
     };
+    // PANIC-FREEDOM guard resolution lives HERE, in the Rust kit. The kit is
+    // the only layer ALLOWED to know that `is_some`'s complement is `is_none`,
+    // that `is_ok`'s is `is_err`, etc. -- this is Rust-std semantics, exactly
+    // as JUnit lives in the Java emitter. The then-branch is dominated by the
+    // POSITIVE guard predicate; the else-branch by its COMPLEMENT. We wrap each
+    // branch value in `cf_guarded(<resolved-predicate-term>, <value>)` so the
+    // language-blind verifier can thread the already-resolved atom into its
+    // path condition without recognizing a single Rust predicate name.
+    let then_term = wrap_branch_guard(&cond_term, false, then_term);
+    let else_term = wrap_branch_guard(&cond_term, true, else_term);
     Some(IrTerm::Ctor {
         // `cf_ite`, not the SMT builtin `ite`: a synthesized control-flow
         // value over uninterpreted Int-sorted operands. Using the builtin
@@ -251,6 +261,75 @@ fn lift_tail_if_to_ite_term(if_expr: &ExprIf, ctx: &mut LiftCtx) -> Option<IrTer
         name: "cf_ite".to_string(),
         args: vec![cond_term, then_term, else_term],
     })
+}
+
+/// The closed set of boolean-predicate guards whose POSITIVE form is a
+/// panic-freedom obligation a Rust-std partial demands, plus each one's
+/// COMPLEMENT. This table is Rust-std semantics and is ALLOWED to live in the
+/// Rust kit (the lifter) -- it is the kit's job to know that the else-branch of
+/// `if opt.is_some()` is governed by `is_none`. The verifier never sees these
+/// names; it only threads whatever resolved atom the kit emits on a branch.
+///
+/// Returns the guard-predicate HEAD that governs `branch` (then = positive,
+/// else = complement), or `None` when the condition head is not a recognized
+/// unary boolean predicate (a comparison `cf_lt`, a non-predicate method,
+/// `cf_and`, ...). `None` means: emit no guard wrapper -> the branch carries no
+/// usable fact -> a partial inside it stays honestly undecidable. `!is_empty`
+/// also returns `None`: its complement establishes no partial's pre.
+///
+/// NAME NORMALIZATION (load-bearing for discharge). A caller's condition
+/// `opt.is_some()` lifts to the method-call ctor `method:is_some` (see
+/// `Expr::MethodCall` -> `format!("method:{}", ..)`), but the PARTIAL's own
+/// precondition was lifted from `assert!(opt.is_some())` to the BARE predicate
+/// `is_some` (the `assert!` lifter produces bare heads). For the syntactic
+/// discharge `guard => pre` to hold, the guard atom this kit emits must use the
+/// SAME bare head as the partial's pre. So we strip a `method:` prefix on the
+/// condition head and emit the bare predicate name. The verifier never sees
+/// this normalization -- it only threads the resolved bare atom.
+fn branch_guard_head(cond_head: &str, else_branch: bool) -> Option<&'static str> {
+    let head = cond_head.strip_prefix("method:").unwrap_or(cond_head);
+    match (head, else_branch) {
+        ("is_some", false) | ("is_none", true) => Some("is_some"),
+        ("is_none", false) | ("is_some", true) => Some("is_none"),
+        ("is_ok", false) | ("is_err", true) => Some("is_ok"),
+        ("is_err", false) | ("is_ok", true) => Some("is_err"),
+        ("is_empty", false) => Some("is_empty"),
+        // `!is_empty` (else of `if c.is_empty()`) establishes no partial pre.
+        ("is_empty", true) => None,
+        _ => None,
+    }
+}
+
+/// Wrap a branch value in `cf_guarded(<resolved-guard-term>, <value>)` when the
+/// dominating condition is a recognized unary boolean predicate. The guard term
+/// reuses the condition's argument terms (the receiver the predicate is about),
+/// so the carried atom (`is_some(x)`) names the SAME term the partial's `pre`
+/// is instantiated over -- the only way the syntactic discharge can match.
+///
+/// SOUNDNESS: only a recognized head is wrapped. An unrecognized condition
+/// (comparison, method, conjunction) leaves the branch value UNCHANGED, so it
+/// carries no fact and a partial inside it stays undecidable. The else-branch
+/// receives the COMPLEMENT predicate, which never establishes the positive
+/// `pre`. No path wraps a branch with a guard that would over-prove. Leaving
+/// the value unchanged when no guard applies also keeps every non-guarded
+/// `cf_ite` byte-identical to before this change (CID stability / reflexive
+/// discharge unperturbed).
+fn wrap_branch_guard(cond_term: &IrTerm, else_branch: bool, value: IrTerm) -> IrTerm {
+    let (head, args) = match &cond_term {
+        IrTerm::Ctor { name, args } => (name.as_str(), args),
+        _ => return value,
+    };
+    let Some(resolved_head) = branch_guard_head(head, else_branch) else {
+        return value;
+    };
+    let guard = IrTerm::Ctor {
+        name: resolved_head.to_string(),
+        args: args.clone(),
+    };
+    IrTerm::Ctor {
+        name: "cf_guarded".to_string(),
+        args: vec![guard, value],
+    }
 }
 
 /// Fold a value-position `match` into a right-nested `ite` chain keyed
@@ -1762,5 +1841,143 @@ mod tests {
         let tb = lift_macro_to_opaque_term(&b);
         assert_eq!(ta, ta2, "identical macro calls must lift to the same opaque term");
         assert_ne!(ta, tb, "different macro calls must lift to different opaque terms");
+    }
+
+    // ---- PANIC-FREEDOM guard resolution lives in the Rust kit ----
+    //
+    // The complement table (`is_some` <-> `is_none`, `is_ok` <-> `is_err`,
+    // `is_empty`) was RELOCATED here from the verifier so the verifier stays
+    // language-blind. These tests pin the Rust-std semantics: the then-branch
+    // carries the POSITIVE predicate, the else-branch the COMPLEMENT, and an
+    // unrecognized guard wraps NOTHING (fail-safe).
+
+    #[test]
+    fn branch_guard_head_then_is_positive_else_is_complement() {
+        // The full complement table, both branches.
+        assert_eq!(branch_guard_head("is_some", false), Some("is_some"));
+        assert_eq!(branch_guard_head("is_some", true), Some("is_none"));
+        assert_eq!(branch_guard_head("is_none", false), Some("is_none"));
+        assert_eq!(branch_guard_head("is_none", true), Some("is_some"));
+        assert_eq!(branch_guard_head("is_ok", false), Some("is_ok"));
+        assert_eq!(branch_guard_head("is_ok", true), Some("is_err"));
+        assert_eq!(branch_guard_head("is_err", false), Some("is_err"));
+        assert_eq!(branch_guard_head("is_err", true), Some("is_ok"));
+        assert_eq!(branch_guard_head("is_empty", false), Some("is_empty"));
+        // The method-call form `opt.is_some()` lifts to `method:is_some`; it must
+        // normalize to the bare `is_some` that the partial's pre uses, or the
+        // syntactic discharge `guard => pre` never matches.
+        assert_eq!(branch_guard_head("method:is_some", false), Some("is_some"));
+        assert_eq!(branch_guard_head("method:is_some", true), Some("is_none"));
+        assert_eq!(branch_guard_head("method:is_ok", false), Some("is_ok"));
+        assert_eq!(branch_guard_head("method:is_err", true), Some("is_ok"));
+    }
+
+    #[test]
+    fn branch_guard_head_refuses_unrecognized_and_negated_is_empty() {
+        // `!is_empty` establishes no partial's pre -> no guard.
+        assert_eq!(branch_guard_head("is_empty", true), None);
+        // Comparisons / conjunctions / method guards are not partial-pre
+        // predicates -> no guard, so a partial inside stays undecidable.
+        assert_eq!(branch_guard_head("cf_lt", false), None);
+        assert_eq!(branch_guard_head("cf_and", false), None);
+        assert_eq!(branch_guard_head("match_guard", false), None);
+        assert_eq!(branch_guard_head("method:is_absolute", false), None);
+    }
+
+    #[test]
+    fn wrap_branch_guard_then_carries_positive_else_carries_complement() {
+        // Condition `is_some(x)`. The then-branch must wrap to
+        // cf_guarded(is_some(x), value); the else-branch to
+        // cf_guarded(is_none(x), value) -- the kit-computed complement.
+        let recv = IrTerm::Var { name: "x".into() };
+        let cond = IrTerm::Ctor {
+            name: "is_some".into(),
+            args: vec![recv.clone()],
+        };
+        let val = || IrTerm::Var { name: "v".into() };
+
+        let then_t = wrap_branch_guard(&cond, false, val());
+        let else_t = wrap_branch_guard(&cond, true, val());
+
+        match &then_t {
+            IrTerm::Ctor { name, args } => {
+                assert_eq!(name, "cf_guarded");
+                match &args[0] {
+                    IrTerm::Ctor { name, args } => {
+                        assert_eq!(name, "is_some", "then-branch carries the POSITIVE predicate");
+                        assert_eq!(args, &vec![recv.clone()], "guard names the receiver term");
+                    }
+                    other => panic!("then guard not a ctor: {other:?}"),
+                }
+            }
+            other => panic!("then not cf_guarded: {other:?}"),
+        }
+        match &else_t {
+            IrTerm::Ctor { name, args } => {
+                assert_eq!(name, "cf_guarded");
+                match &args[0] {
+                    IrTerm::Ctor { name, .. } => assert_eq!(
+                        name, "is_none",
+                        "else-branch carries the COMPLEMENT (the trap: never is_some)"
+                    ),
+                    other => panic!("else guard not a ctor: {other:?}"),
+                }
+            }
+            other => panic!("else not cf_guarded: {other:?}"),
+        }
+    }
+
+    #[test]
+    fn wrap_branch_guard_unrecognized_condition_wraps_nothing() {
+        // A comparison condition (`cf_lt(...)`) is not a partial-pre predicate:
+        // the branch value passes through UNCHANGED (no cf_guarded), so a
+        // partial inside it stays undecidable and the cf_ite is byte-stable.
+        let cond = IrTerm::Ctor {
+            name: "cf_lt".into(),
+            args: vec![IrTerm::Var { name: "x".into() }, const_int(10)],
+        };
+        let val = IrTerm::Var { name: "v".into() };
+        let wrapped = wrap_branch_guard(&cond, false, val.clone());
+        assert_eq!(wrapped, val, "unrecognized guard must wrap nothing");
+        // A method-call condition likewise.
+        let mcond = IrTerm::Ctor {
+            name: "method:is_absolute".into(),
+            args: vec![IrTerm::Var { name: "p".into() }],
+        };
+        assert_eq!(
+            wrap_branch_guard(&mcond, true, val.clone()),
+            val,
+            "a method guard must wrap nothing"
+        );
+    }
+
+    #[test]
+    fn if_is_some_lifts_then_to_cf_guarded_is_some_else_to_is_none() {
+        // End-to-end through the tail-if lifter: an `if opt.is_some()` produces
+        // a cf_ite whose then-branch is cf_guarded(is_some(opt), ..) and whose
+        // else-branch is cf_guarded(is_none(opt), ..).
+        let item_fn = parse_fn(
+            r#"
+            fn f(opt: Option<i64>) -> i64 {
+                if opt.is_some() {
+                    opt.unwrap()
+                } else {
+                    0
+                }
+            }
+        "#,
+        );
+        let eq = result_equation_of(&item_fn).expect("if-tail must synthesize a result equation");
+        let json = serde_json::to_string(&eq).unwrap();
+        assert!(json.contains("cf_ite"), "must lift to a cf_ite: {json}");
+        assert!(
+            json.contains("cf_guarded"),
+            "guarded branches must carry cf_guarded wrappers: {json}"
+        );
+        assert!(json.contains("is_some"), "then-branch guard is is_some: {json}");
+        assert!(
+            json.contains("is_none"),
+            "else-branch guard is the complement is_none: {json}"
+        );
     }
 }

@@ -40,12 +40,19 @@ use syn::spanned::Spanned;
 use tracing::{debug, info, trace, warn};
 
 // Tier 2b native semantic oracle (spec 2026-05-30-callee-resolution-tiers §2.T2b).
-// A separate module file driving rust-analyzer over LSP as the Tier-2a fallback
-// for method calls whose receiver crate the syntactic tiers cannot resolve. The
-// oracle is opt-in (PROVEKIT_RESOLVE_ORACLE=rust-analyzer) and refuses (leaves
-// callee_crate = None) when unavailable, so the fast path and CI are unaffected.
-#[path = "../ra_oracle.rs"]
-mod ra_oracle;
+// The RA LSP client now lives in the `provekit_walk::ra_oracle` library module so
+// BOTH this per-mint binary AND the resident `provekit-linkerd` daemon import the
+// same framing/quiescence/resolve logic with no copy-paste. This binary no longer
+// COLD-SPAWNS rust-analyzer per mint; it asks the warm resident daemon via
+// `resolveReceiverCrate` (see `resolve_method_calls_via_oracle`). The oracle is
+// opt-in (PROVEKIT_RESOLVE_ORACLE=rust-analyzer) and refuses (leaves
+// callee_crate = None) when the daemon is unreachable or not yet ready, so the
+// fast path and CI are unaffected. The RA LSP client itself lives in
+// `provekit_walk::ra_oracle` and is imported by the daemon, not this binary.
+
+// The daemon client lives alongside this binary (std-only, synchronous NDJSON).
+#[path = "../ra_daemon_client.rs"]
+mod ra_daemon_client;
 
 const CONCEPT_SHAPES_CATALOG_INDEX_JSON: &str =
     include_str!("../../../../../menagerie/concept-shapes/catalog/index.json");
@@ -63,9 +70,9 @@ fn main() -> io::Result<()> {
     // byte-clean. Default level: warn. Set RUST_LOG to override:
     //   RUST_LOG=info  -> phase summaries
     //   RUST_LOG=debug -> per-callsite decisions, per-RPC method
-    //   RUST_LOG=provekit_walk_rpc::ra_oracle=trace -> every RA LSP query
-    // Note: ra_oracle is inlined via #[path], so its event target is
-    // provekit_walk_rpc::ra_oracle (the bin crate), not provekit_walk::ra_oracle.
+    //   RUST_LOG=provekit_walk::ra_oracle=trace -> every RA LSP query
+    // Note: ra_oracle now lives in the provekit_walk library, so its event
+    // target is provekit_walk::ra_oracle.
     tracing_subscriber::fmt()
         .with_writer(std::io::stderr)
         .with_env_filter(
@@ -352,6 +359,17 @@ struct CallSite {
     /// Tier 2b semantic-oracle fallback; a `None` on a free call is a glob
     /// import and must keep its current-crate fallback, never the oracle.
     is_method: bool,
+    /// The disambiguated callee leaf for a panic-relevant call, when the Tier-2b
+    /// oracle resolved the receiver TYPE (not just the crate). For `x.unwrap()`
+    /// on an `Option`, this is `Some("option_unwrap")`: the rust-std shim's
+    /// disambiguated partial whose REAL precondition (`opt.is_some()`) the call
+    /// site must discharge to be proven panic-free. `None` when the receiver type
+    /// was not resolved or the `(type, leaf)` pair is not a known panic partial;
+    /// the matcher then keys on the bare `callee` exactly as before (additive,
+    /// never regressing the total-wrapper bridges). The bridge's `sourceSymbol`
+    /// STAYS the bare `callee` (that is the ctor name in the lifted caller body);
+    /// only the TARGET binding selected changes to the disambiguated partial.
+    disambiguated_callee: Option<String>,
     file: String,
     line: usize,
     col: usize,
@@ -660,6 +678,7 @@ fn collect_callsites_in_block(
                     callee,
                     callee_crate,
                     is_method: false,
+                    disambiguated_callee: None,
                     file: self.rel_path.to_string(),
                     line: start.line,
                     col: start.column,
@@ -681,11 +700,37 @@ fn collect_callsites_in_block(
                     self.current_crate,
                 ),
                 is_method: true,
+                disambiguated_callee: None,
                 file: self.rel_path.to_string(),
                 line: start.line,
                 col: start.column,
             });
             syn::visit::visit_expr_method_call(self, node);
+        }
+        fn visit_expr_index(&mut self, node: &'ast syn::ExprIndex) {
+            // `v[i]` is a PANIC site: indexing out of bounds panics. The term
+            // lift represents it as `Ctor("index", [v, i])`, so the call leaf is
+            // `index` (matching that ctor name as the bridge sourceSymbol). The
+            // rust-std shim publishes no index-bounds partial yet, so this
+            // resolves to no contract and is reported as an HONEST unproven
+            // panic-site (refuse-floor), making `v[i]` visible in the
+            // panic-freedom census instead of silently absent. The locus points
+            // at the indexed expression start (`v` in `v[i]`), where the term's
+            // arg0 (the receiver the bounds obligation is about) lives.
+            let start = node.expr.span().start();
+            self.out.push(CallSite {
+                callee: "index".to_string(),
+                // Receiver-defining crate is not syntactically known; the index
+                // op itself is std. Leave None so it is treated like a method
+                // call for the matcher's current-crate fallback / lift-gap.
+                callee_crate: None,
+                is_method: false,
+                disambiguated_callee: None,
+                file: self.rel_path.to_string(),
+                line: start.line,
+                col: start.column,
+            });
+            syn::visit::visit_expr_index(self, node);
         }
         fn visit_local(&mut self, node: &'ast syn::Local) {
             let explicit = pat_type_crate(
@@ -932,6 +977,52 @@ fn crate_name_for(dir: &Path) -> Option<String> {
 /// diagnostic and skip the bridge — substrate-honesty over silently
 /// producing the wrong edge.
 ///
+/// Map a `(receiver_type_stem, bare_method_leaf)` to the rust-std shim's
+/// DISAMBIGUATED partial-wrapper leaf, or `None` when the pair is not a known
+/// panic partial.
+///
+/// This is the panic-freedom enabler. A bare `unwrap` names neither
+/// `Option::unwrap` nor `Result::unwrap`; the receiver type (from the Tier-2b
+/// oracle's `textDocument/definition` file stem) disambiguates which shim
+/// partial -- and therefore which REAL precondition -- the call site must
+/// discharge to be proven panic-free:
+///   (`option`, `unwrap`)     -> `option_unwrap`     (pre: `opt.is_some()`)
+///   (`result`, `unwrap`)     -> `result_unwrap`     (pre: `result.is_ok()`)
+///   (`option`, `expect`)     -> `option_expect`     (pre: `opt.is_some()`)
+///   (`result`, `unwrap_err`) -> `result_unwrap_err` (pre: `result.is_err()`)
+///
+/// The returned leaf is the shim partial's CONTRACT NAME, which is exactly the
+/// key the binding index uses (`(library, leaf)`), so the matcher can select the
+/// partial's contract as the bridge target. This table is a documented coupling
+/// to the rust-std shim's partial function names (examples/provekit-shim-rust-std);
+/// it is deliberately SMALL and explicit (the panic set), not a generic rule.
+/// `unwrap_or`/`get` etc. are TOTAL (no panic), so they are intentionally absent
+/// and fall through to the bare-leaf key (their existing total-wrapper bridges
+/// are unaffected). Anything not in this table -> `None` -> bare-leaf key
+/// (additive; the refuse-floor and the existing bridges are preserved).
+fn disambiguated_partial_leaf(type_stem: &str, leaf: &str) -> Option<String> {
+    let partial = match (type_stem, leaf) {
+        ("option", "unwrap") => "option_unwrap",
+        ("result", "unwrap") => "result_unwrap",
+        ("option", "expect") => "option_expect",
+        ("result", "unwrap_err") => "result_unwrap_err",
+        _ => return None,
+    };
+    Some(partial.to_string())
+}
+
+/// Is `leaf` a PANIC method whose safety depends on a precondition? These bare
+/// leaves must NEVER bridge to a bare `(crate, leaf)` contract: such a shell has
+/// no precondition, so the bridge would vacuous-pass and falsely assert the site
+/// cannot panic. A panic leaf either reaches its type-disambiguated partial
+/// (whose pre IS the panic obligation) or REFUSES (honest unproven). This is the
+/// panic-site half of the refuse-floor. The set mirrors the `(type, leaf)` pairs
+/// in `disambiguated_partial_leaf`; `get`/`unwrap_or` are TOTAL (return Option /
+/// a default, never panic) and are intentionally NOT panic leaves.
+fn is_panic_leaf(leaf: &str) -> bool {
+    matches!(leaf, "unwrap" | "expect" | "unwrap_err")
+}
+
 /// Tier 2b (§2.T2b): for the still-unresolved method calls in `callsites`
 /// (`is_method && callee_crate.is_none()`), consult the rust-analyzer semantic
 /// oracle in one warm session and stamp the resolved (normalized) crate. Free
@@ -943,12 +1034,23 @@ fn resolve_method_calls_via_oracle(
     workspace_root: &Path,
     callsites: &mut [(CallSite, PathBuf)],
 ) {
-    use ra_oracle::ResolveQuery;
+    use ra_daemon_client::DaemonQuery;
+
+    // Opt-in stays identical to the cold path: a mint with the oracle off must
+    // never spawn or contact the daemon's RA host. When off we leave every
+    // unresolved method call to the syntactic tiers (Tier 1/2a) and return.
+    let oracle_on =
+        std::env::var("PROVEKIT_RESOLVE_ORACLE").unwrap_or_default() == "rust-analyzer";
+    if !oracle_on {
+        debug!("oracle: off (PROVEKIT_RESOLVE_ORACLE != rust-analyzer); leaving method calls to Tier 1/2a");
+        return;
+    }
+
     // Gather the eligible positions. proc-macro2 spans are 1-based line /
     // 0-based column; LSP wants 0-based line, 0-based char. The method ident's
     // span start already points at the ident (not the dot), so the column maps
     // directly. A line of 0 should never occur for a real call; guard anyway.
-    let mut queries: Vec<ResolveQuery> = Vec::new();
+    let mut queries: Vec<DaemonQuery> = Vec::new();
     for (cs, full_path) in callsites.iter() {
         if cs.is_method && cs.callee_crate.is_none() && cs.line >= 1 {
             debug!(
@@ -958,10 +1060,10 @@ fn resolve_method_calls_via_oracle(
                 col = cs.col,
                 "oracle query: unresolved method call"
             );
-            queries.push(ResolveQuery {
-                abs_path: full_path.clone(),
-                lsp_line: (cs.line - 1) as u32,
-                lsp_col: cs.col as u32,
+            queries.push(DaemonQuery {
+                file: full_path.to_string_lossy().into_owned(),
+                line: (cs.line - 1) as u32,
+                col: cs.col as u32,
             });
         }
     }
@@ -970,32 +1072,53 @@ fn resolve_method_calls_via_oracle(
         debug!("oracle: no unresolved method calls, skipping");
         return;
     }
-    debug!(count = total_queries, "oracle: sending queries to rust-analyzer");
-    let resolved = ra_oracle::resolve_batch(workspace_root, &queries);
+    debug!(
+        count = total_queries,
+        "oracle: asking resident daemon (provekit-linkerd) to resolve method calls"
+    );
+    // The resident warm rust-analyzer indexes the workspace ONCE inside the
+    // daemon and is reused across mints, fronted by a content-addressed cache.
+    // On a cold daemon this returns empty (ready:false) and we refuse to the
+    // syntactic tiers; the next mint resolves warm. NEVER blocks for the index.
+    let resolved = ra_daemon_client::resolve_receiver_crates(workspace_root, &queries);
     let resolved_count = resolved.len();
     let unavailable_count = total_queries - resolved_count;
     if resolved.is_empty() {
-        // Either the oracle was unavailable/disabled (resolve_batch returns empty)
-        // or it ran and all queries refused. Both look the same here; the oracle's
-        // own batch-complete info event carries the breakdown.
         debug!(
             total = total_queries,
-            "oracle: no method calls resolved (oracle off or all queries refused)"
+            "oracle: daemon resolved nothing (cold/not-ready or all refused); \
+             leaving method calls to Tier 1/2a"
         );
         return;
     }
     for (cs, full_path) in callsites.iter_mut() {
         if cs.is_method && cs.callee_crate.is_none() && cs.line >= 1 {
-            let key = (full_path.clone(), (cs.line - 1) as u32, cs.col as u32);
-            if let Some(krate) = resolved.get(&key) {
+            let key = (
+                full_path.to_string_lossy().into_owned(),
+                (cs.line - 1) as u32,
+                cs.col as u32,
+            );
+            if let Some(res) = resolved.get(&key) {
+                // Disambiguate the panic partial from the receiver TYPE stem: an
+                // `unwrap` on `Option` (stem `option`) must discharge against the
+                // shim's `option_unwrap` (pre `opt.is_some()`), not the ambiguous
+                // bare `unwrap`. When the type was not disambiguable, leave the
+                // disambiguated leaf None and key on the bare callee as before.
+                let disambiguated = res
+                    .type_stem
+                    .as_deref()
+                    .and_then(|stem| disambiguated_partial_leaf(stem, &cs.callee));
                 debug!(
                     callee = %cs.callee,
-                    resolved_crate = %krate,
+                    resolved_crate = %res.krate,
+                    type_stem = ?res.type_stem,
+                    disambiguated = ?disambiguated,
                     file = %full_path.display(),
                     line = cs.line,
-                    "oracle resolved method call"
+                    "oracle resolved method call (resident daemon)"
                 );
-                cs.callee_crate = Some(krate.clone());
+                cs.callee_crate = Some(res.krate.clone());
+                cs.disambiguated_callee = disambiguated;
             } else {
                 debug!(
                     callee = %cs.callee,
@@ -1010,7 +1133,7 @@ fn resolve_method_calls_via_oracle(
         resolved = resolved_count,
         total = total_queries,
         unavailable = unavailable_count,
-        "oracle resolved {}/{} method calls ({} refused/unavailable)",
+        "oracle resolved {}/{} method calls via resident daemon ({} refused/unavailable)",
         resolved_count,
         total_queries,
         unavailable_count
@@ -1198,62 +1321,58 @@ fn lift_implications(params: &Value) -> Result<Value, String> {
                 .callee_crate
                 .clone()
                 .unwrap_or_else(|| current_crate.clone());
-            let key = (resolved_crate, cs.callee.clone());
-            // Fix B (#1696): a call site that matched ANY known contract
-            // MUST be emitted as a bridge, never silently dropped. An
-            // eligible callee bridges normally. An INELIGIBLE callee (its
-            // self-derived post has no result equation, e.g. a unit-
-            // returning fn) is no longer `continue`-d away: we record the
-            // lift-gap diagnostic for observability, then STILL bridge to
-            // its contract. At verification the bridge routes to the
-            // honesty boundary (body-bearing-no-pre -> undecidable;
-            // non-body-bearing -> vacuous), so the obligation is honestly
-            // surfaced instead of vanishing unseen. Only a callee with NO
-            // contract at all has nothing to bridge to.
-            let binding = match contracts_by_key.get(&key) {
-                Some(b) => *b,
-                None => {
-                    if let Some(ineligible) = ineligible_by_key.get(&key) {
+            // CONVERGENCE resolution: receiver-type disambiguation (af65) picks
+            // the right TARGET; the panic-leaf refuse-floor (af65) forbids a bare
+            // vacuous shell on a panic site; Fix B (#1696, HEAD) keeps every
+            // non-panic ineligible callsite ENUMERATED (bridged, never silently
+            // dropped). The three compose because the panic vs total split gates
+            // Fix B's ineligible-bridge structurally: an ineligible bare shell is
+            // bridged only for TOTAL leaves; a panic leaf never reaches
+            // `ineligible_by_key` (which is keyed on the bare `(std, unwrap)` no-pre
+            // shell) and so can never vacuous-pass a "cannot panic" claim.
+            //
+            // PANIC-FREEDOM keying: when the Tier-2b oracle disambiguated the
+            // receiver type, prefer the shim's disambiguated partial leaf
+            // (`option_unwrap`), whose contract carries the REAL precondition
+            // (`opt.is_some()`). Discharging that pre at the call site is the
+            // proof the site cannot panic. The bridge's `sourceSymbol` stays the
+            // bare `cs.callee` (the ctor name in the lifted caller body); only the
+            // TARGET binding changes.
+            let key = (resolved_crate.clone(), cs.callee.clone());
+            let disambig_binding = cs.disambiguated_callee.as_ref().and_then(|leaf| {
+                let dkey = (resolved_crate.clone(), leaf.clone());
+                contracts_by_key.get(&dkey).copied()
+            });
+            let is_panic = is_panic_leaf(&cs.callee);
+            // A value-producing select (NOT a let-else): the total-leaf branch must
+            // be able to YIELD the ineligible binding for Fix B, which a let-else
+            // `else` block (it must diverge) structurally cannot do.
+            let binding = if is_panic {
+                // PANIC-LEAF refuse-floor: disambiguate-or-refuse. The bare
+                // `(std, unwrap)` shell carries no precondition, so bridging to it
+                // would produce a VACUOUS pass on a panic site -- a false "this
+                // cannot panic" claim, the worst refuse-floor breach. The ONLY
+                // acceptable target is the type-disambiguated partial (whose pre IS
+                // the panic-freedom obligation). No bare fall-through, no
+                // ineligible fall-through; an unresolved panic site REFUSES.
+                match disambig_binding {
+                    Some(b) => b,
+                    None => {
                         debug!(
                             callee = %cs.callee,
                             crate_ = %key.0,
+                            disambiguated = ?cs.disambiguated_callee,
                             file = %cs.file,
                             line = cs.line,
-                            "lift-gap: body-discharge-ineligible callee (bridged anyway, not dropped)"
-                        );
-                        // An INFORMATIONAL note, not a `lift-gap`: the call
-                        // site IS bridged (below), so it is not a gap. We
-                        // surface the body-discharge ineligibility for
-                        // observability but no obligation vanishes.
-                        diagnostics.push(json!({
-                            "kind": "lift-note",
-                            "reason": "body-discharge-ineligible-bridged",
-                            "detail": ineligible
-                                .get("bodyDischargeRefusalReason")
-                                .or_else(|| ineligible.get("body_discharge_refusal_reason"))
-                                .and_then(|v| v.as_str())
-                                .unwrap_or("callee contract is not body-discharge eligible; bridged anyway"),
-                            "callee": cs.callee,
-                            "calleeCrate": key.0,
-                            "file": cs.file,
-                            "line": cs.line,
-                            "col": cs.col,
-                        }));
-                        // Do NOT `continue`: fall through and bridge to the
-                        // ineligible callee's contract. The honesty boundary
-                        // at verification handles it.
-                        *ineligible
-                    } else {
-                        debug!(
-                            callee = %cs.callee,
-                            crate_ = %key.0,
-                            file = %cs.file,
-                            line = cs.line,
-                            "lift-gap: no contract for callee"
+                            "lift-gap: panic site unproven (receiver type unresolved or partial absent); \
+                             refusing rather than bridging a bare vacuous unwrap"
                         );
                         diagnostics.push(json!({
                             "kind": "lift-gap",
-                            "reason": "no-contract-for-callee",
+                            "reason": "panic-site-unproven",
+                            "detail": "receiver type did not resolve to a known panic partial; \
+                                       a bare unwrap/expect would vacuous-pass, so the site is \
+                                       reported as unproven (cannot show it does not panic)",
                             "callee": cs.callee,
                             "calleeCrate": key.0,
                             "file": cs.file,
@@ -1262,6 +1381,70 @@ fn lift_implications(params: &Value) -> Result<Value, String> {
                         }));
                         continue;
                     }
+                }
+            } else {
+                // TOTAL leaf: disambiguated partial -> bare eligible -> Fix B
+                // ineligible bridge -> refuse. Fix B (#1696): a call site that
+                // matched ANY known contract MUST be emitted as a bridge, never
+                // silently dropped. An INELIGIBLE callee (its self-derived post has
+                // no result equation) is bridged anyway; at verification the bridge
+                // routes to the honesty boundary, so the obligation is honestly
+                // surfaced instead of vanishing unseen. Only a callee with NO
+                // contract at all has nothing to bridge to.
+                match disambig_binding.or_else(|| contracts_by_key.get(&key).copied()) {
+                    Some(b) => b,
+                    None => match ineligible_by_key.get(&key) {
+                        Some(ineligible) => {
+                            debug!(
+                                callee = %cs.callee,
+                                crate_ = %key.0,
+                                file = %cs.file,
+                                line = cs.line,
+                                "lift-note: body-discharge-ineligible callee (bridged anyway, not dropped)"
+                            );
+                            // An INFORMATIONAL note, not a `lift-gap`: the call site
+                            // IS bridged (below), so it is not a gap. We surface the
+                            // body-discharge ineligibility for observability but no
+                            // obligation vanishes.
+                            diagnostics.push(json!({
+                                "kind": "lift-note",
+                                "reason": "body-discharge-ineligible-bridged",
+                                "detail": ineligible
+                                    .get("bodyDischargeRefusalReason")
+                                    .or_else(|| ineligible.get("body_discharge_refusal_reason"))
+                                    .and_then(|v| v.as_str())
+                                    .unwrap_or("callee contract is not body-discharge eligible; bridged anyway"),
+                                "callee": cs.callee,
+                                "calleeCrate": key.0,
+                                "file": cs.file,
+                                "line": cs.line,
+                                "col": cs.col,
+                            }));
+                            // Do NOT `continue`: fall through and bridge to the
+                            // ineligible callee's contract. The honesty boundary at
+                            // verification handles it.
+                            *ineligible
+                        }
+                        None => {
+                            debug!(
+                                callee = %cs.callee,
+                                crate_ = %key.0,
+                                file = %cs.file,
+                                line = cs.line,
+                                "lift-gap: no contract for callee"
+                            );
+                            diagnostics.push(json!({
+                                "kind": "lift-gap",
+                                "reason": "no-contract-for-callee",
+                                "callee": cs.callee,
+                                "calleeCrate": key.0,
+                                "file": cs.file,
+                                "line": cs.line,
+                                "col": cs.col,
+                            }));
+                            continue;
+                        }
+                    },
                 }
             };
             let Some(target_cid) = binding
@@ -1300,16 +1483,34 @@ fn lift_implications(params: &Value) -> Result<Value, String> {
             // field is omitted and the verifier enforces same-bundle
             // co-membership (self-pinned). This is the only path; there is no
             // unpinned bridge.
+            //
+            // method: SEAM. The bridge `sourceSymbol` is the verifier's lookup
+            // key (`bridges_by_symbol.get(<ctor name>)`), so it MUST be the
+            // exact ctor name the call appears as in a lifted fn-contract body.
+            // A method call `x.unwrap()` lifts to ctor `method:unwrap` (see
+            // `lift.rs` `Expr::MethodCall` -> `format!("method:{}", m.method)`),
+            // while a free call `foo()` lifts to the bare `foo`. Keying the
+            // bridge on the bare leaf for a method call made
+            // `bridges_by_symbol.get("method:unwrap")` MISS, so the panic bridge
+            // never enumerated. Emit `method:<leaf>` for method callsites; the
+            // verifier matches by this opaque key, with no `method:` stripping or
+            // Rust-method set on the verifier side. Target selection above is
+            // unchanged: it correctly keys `contracts_by_key` on the bare leaf.
+            let source_symbol = if cs.is_method {
+                format!("method:{}", cs.callee)
+            } else {
+                cs.callee.clone()
+            };
             let mut bridge = json!({
                 "kind": "bridge",
                 "name": format!(
                     "intra-body:rust:{}@{}:{}:{}",
-                    cs.callee, cs.file, cs.line, cs.col
+                    source_symbol, cs.file, cs.line, cs.col
                 ),
                 "schemaVersion": "1",
                 "sourceContractCid": target_cid,
                 "sourceLayer": "rust",
-                "sourceSymbol": cs.callee,
+                "sourceSymbol": source_symbol,
                 "target": { "cid": target_cid, "kind": "contract" },
                 "targetContractCid": target_cid,
                 "targetLayer": "rust-tests",
@@ -5765,6 +5966,41 @@ mod tests {
     use std::time::{SystemTime, UNIX_EPOCH};
 
     #[test]
+    fn disambiguated_partial_leaf_maps_panic_set() {
+        // The four panic partials with REAL preconditions.
+        assert_eq!(
+            disambiguated_partial_leaf("option", "unwrap").as_deref(),
+            Some("option_unwrap")
+        );
+        assert_eq!(
+            disambiguated_partial_leaf("result", "unwrap").as_deref(),
+            Some("result_unwrap")
+        );
+        assert_eq!(
+            disambiguated_partial_leaf("option", "expect").as_deref(),
+            Some("option_expect")
+        );
+        assert_eq!(
+            disambiguated_partial_leaf("result", "unwrap_err").as_deref(),
+            Some("result_unwrap_err")
+        );
+    }
+
+    #[test]
+    fn disambiguated_partial_leaf_refuses_non_panic_and_mismatched() {
+        // TOTAL methods are not in the table: they fall through to the bare leaf,
+        // preserving their existing total-wrapper bridges.
+        assert_eq!(disambiguated_partial_leaf("option", "unwrap_or"), None);
+        assert_eq!(disambiguated_partial_leaf("slice", "get"), None);
+        assert_eq!(disambiguated_partial_leaf("str", "len"), None);
+        // A panic leaf on the WRONG type head is refused (no guess): `unwrap_err`
+        // is a Result method, not Option.
+        assert_eq!(disambiguated_partial_leaf("option", "unwrap_err"), None);
+        // Unknown stem -> refuse.
+        assert_eq!(disambiguated_partial_leaf("mystery", "unwrap"), None);
+    }
+
+    #[test]
     fn bind_lift_erases_signature_types_from_bind_ir_entries() {
         let root = temp_workspace("bind_lift_type_erasure");
         let src_dir = root.join("src");
@@ -8322,11 +8558,12 @@ pub fn caller(input: &str) -> i64 {
             .unwrap()
             .starts_with("intra-body:rust:parse_input@"));
 
-        // Method call -> sourceSymbol = the method ident, NOT the receiver.
+        // Method call -> sourceSymbol = `method:<ident>` (matching the lifted
+        // method-call ctor name), NOT the receiver and NOT the bare leaf.
         let norm = ir
             .iter()
-            .find(|e| e["sourceSymbol"] == "normalize_value")
-            .expect("normalize_value bridge");
+            .find(|e| e["sourceSymbol"] == "method:normalize_value")
+            .expect("method:normalize_value bridge");
         assert_eq!(norm["kind"], "bridge");
         assert_eq!(
             norm["targetContractCid"],
@@ -8429,10 +8666,12 @@ edition = "2021"
         .expect("lift_implications");
 
         let ir = resp["ir"].as_array().expect("ir array");
+        // Method call `widget.run()` -> sourceSymbol = `method:run` (the lifted
+        // ctor name); target still resolves on the bare leaf to the dep crate.
         let run = ir
             .iter()
-            .find(|entry| entry["sourceSymbol"] == "run")
-            .expect("run bridge");
+            .find(|entry| entry["sourceSymbol"] == "method:run")
+            .expect("method:run bridge");
         assert_eq!(run["targetContractCid"], dep_run);
 
         let _ = fs::remove_dir_all(root);
@@ -8496,9 +8735,11 @@ edition = "2021"
         .expect("lift_implications");
 
         let ir = resp["ir"].as_array().expect("ir array");
+        // Both are method calls (`from_return.run()`, `from_ctor.run()`) ->
+        // sourceSymbol = `method:run`; targets resolve on the bare leaf.
         let run_targets: Vec<&str> = ir
             .iter()
-            .filter(|entry| entry["sourceSymbol"] == "run")
+            .filter(|entry| entry["sourceSymbol"] == "method:run")
             .filter_map(|entry| entry["targetContractCid"].as_str())
             .collect();
         assert_eq!(run_targets, vec![dep_run, dep_run]);
@@ -8651,13 +8892,23 @@ pub fn caller(s: &str) -> serde_json::Value {
             .iter()
             .filter_map(|e| e["sourceSymbol"].as_str())
             .collect();
+        // Free function call `serde_json::from_str(s)` -> bare last segment as
+        // sourceSymbol (this is what this test pins: last-path-segment naming).
         assert!(
             symbols.contains(&"from_str"),
-            "expected from_str (last path segment) in: {symbols:?}"
+            "expected from_str (last path segment, free call) in: {symbols:?}"
         );
+        // The trailing `.unwrap()` is a method call AND a PANIC leaf. With the
+        // oracle off (no receiver-type disambiguation) the panic refuse-floor
+        // refuses to bridge it -- bridging the bare `(std, unwrap)` shell would
+        // vacuous-pass a "cannot panic" claim. So NO unwrap bridge is emitted,
+        // under either the bare key or the `method:` key. (Pre-existing: this
+        // refusal predates the method: seam; the seam only governs the
+        // sourceSymbol of bridges that ARE emitted, e.g. a non-panic method
+        // call -> `method:<leaf>`.)
         assert!(
-            symbols.contains(&"unwrap"),
-            "expected unwrap (method call) in: {symbols:?}"
+            !symbols.iter().any(|s| *s == "unwrap" || *s == "method:unwrap"),
+            "the panic-leaf unwrap must NOT bridge without disambiguation (refuse-floor): {symbols:?}"
         );
 
         let _ = fs::remove_dir_all(root);

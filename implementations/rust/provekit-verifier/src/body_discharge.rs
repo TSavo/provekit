@@ -48,6 +48,63 @@ use provekit_ir_types::{IrFormula, IrTerm};
 
 use crate::types::{memento_body, memento_kind, CallSite, MementoPool};
 
+/// Does the callsite's RESOLVED TARGET CONTRACT carry a non-trivial `pre`
+/// (a real precondition), as opposed to None or the literal-true tautology?
+///
+/// This is the ROUTING PREDICATE for the call-site obligation. It is generic
+/// and LANGUAGE-BLIND: it inspects the contract body's `pre` field as opaque
+/// JSON and recognizes no Rust predicate name (`is_some`/`is_ok`/...), no
+/// callee name (`option_unwrap`/...), and no kit. The contract carrying a real
+/// `pre` is the structural signal that this call-site obligation is to
+/// DISCHARGE THAT `pre` UNDER THE GUARD CONTEXT (`cs.guard_facts`), and that
+/// the discharge MUST take precedence over the reflexive self-post path that
+/// `extract_body_obligation` would otherwise take.
+///
+/// The pre is read from the EXACT contract `resolve_target` resolves
+/// (`cs.bridge_target_cid`), so the routing decision and the subsequent guard
+/// discharge are about the same contract.
+///
+/// "Non-trivial" means: the contract body has a `pre` field AND that pre is
+/// not the literal-true atomic (`{kind:atomic, name:"true"}`). A post-only
+/// sugar contract carries no `pre` -> `false` (stays on the body-discharge
+/// path). A genuinely-total contract carrying `pre = true` (e.g. an
+/// `unwrap_or`) is also `false`: a vacuously-true pre is nothing to discharge,
+/// so rerouting it would only mis-bucket a body-derived discharge. Any missing
+/// or unresolvable contract returns `false`, keeping the no-pre path
+/// byte-identical to its prior behavior.
+///
+/// SOUNDNESS: this predicate only ever DIVERTS a call site away from the
+/// reflexive self-post path TOWARD the guard-discharge path. Diverting toward
+/// the guard path can only UNDER-prove (an unguarded site stays undecidable);
+/// it can never mint a false "cannot panic." The reflexive path is the one
+/// that over-claimed on an unguarded pre-bearing site (the bug this fixes).
+pub fn target_has_nontrivial_pre(cs: &CallSite, pool: &MementoPool) -> bool {
+    let Some(env) = pool.mementos.get(&cs.bridge_target_cid) else {
+        return false;
+    };
+    if memento_kind(env) != Some("contract") {
+        return false;
+    }
+    let Some(body) = memento_body(env).filter(|v| v.is_object()) else {
+        return false;
+    };
+    match body.get("pre") {
+        None => false,
+        Some(pre) => !pre_is_trivial(pre),
+    }
+}
+
+/// True iff `pre` is the trivially-valid precondition: the literal-true
+/// atomic (`{kind:atomic, name:"true"}`) or JSON `null`. A trivial pre is
+/// nothing to discharge and must NOT trigger the guard-discharge route.
+fn pre_is_trivial(pre: &Json) -> bool {
+    if pre.is_null() {
+        return true;
+    }
+    pre.get("kind").and_then(|v| v.as_str()) == Some("atomic")
+        && pre.get("name").and_then(|v| v.as_str()) == Some("true")
+}
+
 /// The variable name the derived postcondition equates the call's result
 /// with. Matches `libprovekit::wp::DEFAULT_RESULT_VAR` and the
 /// body-derived contract's `result = ...` shape.
@@ -458,5 +515,96 @@ mod discharge_method_tests {
             ]}
         ]});
         assert_eq!(classify_discharge_method(&ob), DischargeMethod::Substantive);
+    }
+}
+
+#[cfg(test)]
+mod routing_predicate_tests {
+    //! `target_has_nontrivial_pre`: the call-site-obligation routing rule.
+    //! Three tests per behavior (positive, discrimination, structural), so a
+    //! false positive (rerouting a no-pre target) and a false negative (failing
+    //! to reroute a real pre) are both caught.
+    use super::*;
+    use crate::types::{CallSite, MementoPool};
+    use serde_json::json;
+
+    fn contract_env(body: Json) -> Json {
+        json!({"evidence": {"kind": "contract", "body": body}})
+    }
+
+    fn pool_with(cid: &str, env: Json) -> MementoPool {
+        let mut pool = MementoPool::default();
+        pool.mementos.insert(cid.into(), env);
+        pool
+    }
+
+    fn cs_targeting(cid: &str) -> CallSite {
+        CallSite {
+            bridge_target_cid: cid.into(),
+            ..Default::default()
+        }
+    }
+
+    #[test]
+    fn positive_real_pre_routes_to_guard_discharge() {
+        // A real precondition (`is_some(opt)`) is the structural signal to
+        // discharge the pre under guards.
+        let cid = "blake3-512:has-pre";
+        let env = contract_env(json!({
+            "pre": {"kind": "atomic", "name": "is_some",
+                "args": [{"kind": "var", "name": "opt"}]},
+            "post": {"kind": "atomic", "name": "=", "args": []},
+            "formals": ["opt"]
+        }));
+        assert!(target_has_nontrivial_pre(&cs_targeting(cid), &pool_with(cid, env)));
+    }
+
+    #[test]
+    fn discrimination_post_only_and_true_pre_do_not_route() {
+        // No `pre`: a post-only sugar/body contract stays on body-discharge.
+        let cid = "blake3-512:post-only";
+        let post_only = contract_env(json!({
+            "post": {"kind": "atomic", "name": "=", "args": []},
+            "formals": ["x"]
+        }));
+        assert!(
+            !target_has_nontrivial_pre(&cs_targeting(cid), &pool_with(cid, post_only)),
+            "a post-only contract must NOT reroute"
+        );
+
+        // `pre = true`: trivially valid, nothing to discharge under guards.
+        let true_pre = contract_env(json!({
+            "pre": {"kind": "atomic", "name": "true", "args": []},
+            "formals": ["x"]
+        }));
+        assert!(
+            !target_has_nontrivial_pre(&cs_targeting(cid), &pool_with(cid, true_pre)),
+            "a pre=true contract is trivial and must NOT reroute"
+        );
+
+        // `pre = null`: absent precondition.
+        let null_pre = contract_env(json!({"pre": null, "formals": ["x"]}));
+        assert!(
+            !target_has_nontrivial_pre(&cs_targeting(cid), &pool_with(cid, null_pre)),
+            "a null pre must NOT reroute"
+        );
+    }
+
+    #[test]
+    fn structural_missing_or_non_contract_target_is_false() {
+        // Target CID not in the pool -> false (keeps the no-pre path
+        // byte-identical; never panics looking up a stale bridge).
+        let empty = MementoPool::default();
+        assert!(!target_has_nontrivial_pre(&cs_targeting("blake3-512:absent"), &empty));
+
+        // Target memento is not a contract (e.g. a bridge) -> false.
+        let cid = "blake3-512:not-a-contract";
+        let bridge_env = json!({"evidence": {"kind": "bridge", "body": {
+            "pre": {"kind": "atomic", "name": "is_some",
+                "args": [{"kind": "var", "name": "opt"}]}}}});
+        assert!(
+            !target_has_nontrivial_pre(&cs_targeting(cid), &pool_with(cid, bridge_env)),
+            "a non-contract memento must never route, even if it carries a `pre`-named field"
+        );
     }
 }

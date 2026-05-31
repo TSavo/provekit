@@ -29,8 +29,10 @@ use tracing::{debug, error, info, warn};
 
 use crate::methods::{
     handle_flush_cache, handle_get_diagnostics, handle_parse_file, handle_project_status,
-    rpc_error, shutdown_response, ERR_METHOD_NOT_FOUND,
+    handle_resolve_receiver_crate, rpc_error, shutdown_response, ERR_METHOD_NOT_FOUND,
 };
+use crate::ra_host::RaHost;
+use crate::resolve_cache::ResolveCache;
 use crate::snapshot;
 use crate::state::ProjectState;
 
@@ -76,6 +78,40 @@ pub fn default_snapshot_path(project_cid: &str) -> PathBuf {
         .join("snapshot.bin")
 }
 
+/// Path to the resolve-cache sidecar, derived from the snapshot path: the
+/// snapshot's directory with file name `resolve-cache.json`. Deriving it from
+/// the same per-project snapshot path guarantees that two daemons (or two
+/// successive daemon processes) for the same project share one cache file.
+fn resolve_cache_sidecar_path(snapshot_path: &std::path::Path) -> PathBuf {
+    let mut p = snapshot_path.to_path_buf();
+    p.set_file_name("resolve-cache.json");
+    p
+}
+
+/// Load the persisted resolve cache, or start empty. A cache is never a source
+/// of truth: an unreadable/missing file simply means a cold cache (every lookup
+/// misses and re-asks rust-analyzer), which is always correct.
+fn load_resolve_cache(path: &std::path::Path) -> ResolveCache {
+    match std::fs::read(path) {
+        Ok(bytes) => {
+            let cache = ResolveCache::from_bytes(&bytes);
+            info!(
+                path = %path.display(),
+                entries = cache.len(),
+                "resolve-cache: loaded content-addressed callee-resolution cache"
+            );
+            cache
+        }
+        Err(_) => {
+            info!(
+                path = %path.display(),
+                "resolve-cache: no cache file; starting cold (cache misses re-ask rust-analyzer)"
+            );
+            ResolveCache::new()
+        }
+    }
+}
+
 fn dirs_next_cache_home() -> String {
     // Fallback: ~/.cache on Unix, %LOCALAPPDATA% on Windows.
     if let Some(home) = std::env::var_os("HOME") {
@@ -109,6 +145,17 @@ pub async fn run(config: ServerConfig) -> anyhow::Result<()> {
             Arc::new(Mutex::new(ProjectState::new(config.cache_cap)))
         }
     };
+
+    // Resident rust-analyzer host: one warm session per workspace root, shared
+    // across all clients. Created empty; sessions spawn lazily (non-blocking) on
+    // the first resolveReceiverCrate for a workspace.
+    let ra_host = Arc::new(RaHost::new());
+
+    // Content-addressed callee-resolution cache (#1705/#1706), persisted in a
+    // sidecar next to the snapshot so a FRESH daemon process hits the cache and
+    // skips rust-analyzer entirely on unchanged inputs.
+    let resolve_cache_path = resolve_cache_sidecar_path(&config.snapshot_path);
+    let resolve_cache = Arc::new(Mutex::new(load_resolve_cache(&resolve_cache_path)));
 
     // Remove stale socket if present.
     let _ = std::fs::remove_file(&config.socket_path);
@@ -181,6 +228,9 @@ pub async fn run(config: ServerConfig) -> anyhow::Result<()> {
                         let shutdown_notify = shutdown_notify.clone();
                         let snapshot_path = snapshot_path.clone();
                         let socket_path = socket_path.clone();
+                        let ra_host = ra_host.clone();
+                        let resolve_cache = resolve_cache.clone();
+                        let resolve_cache_path = resolve_cache_path.clone();
 
                         client_count.fetch_add(1, Ordering::SeqCst);
                         tokio::spawn(async move {
@@ -190,6 +240,9 @@ pub async fn run(config: ServerConfig) -> anyhow::Result<()> {
                                 shutdown_notify,
                                 snapshot_path,
                                 socket_path,
+                                ra_host,
+                                resolve_cache,
+                                resolve_cache_path,
                             )
                             .await;
                             client_count.fetch_sub(1, Ordering::SeqCst);
@@ -217,12 +270,16 @@ pub async fn run(config: ServerConfig) -> anyhow::Result<()> {
 }
 
 /// Handle a single client connection: read NDJSON requests, dispatch, write responses.
+#[allow(clippy::too_many_arguments)]
 async fn handle_client(
     stream: UnixStream,
     state: Arc<Mutex<ProjectState>>,
     shutdown_notify: Arc<Notify>,
     snapshot_path: PathBuf,
     _socket_path: PathBuf,
+    ra_host: Arc<RaHost>,
+    resolve_cache: Arc<Mutex<ResolveCache>>,
+    resolve_cache_path: PathBuf,
 ) {
     let (reader_half, mut writer_half) = stream.into_split();
     let mut lines = BufReader::new(reader_half).lines();
@@ -264,6 +321,16 @@ async fn handle_client(
             "getDiagnostics" => handle_get_diagnostics(state.clone(), &params, &id).await,
             "projectStatus" => handle_project_status(state.clone(), &params, &id).await,
             "flushCache" => handle_flush_cache(state.clone(), &params, &id).await,
+            "resolveReceiverCrate" => {
+                handle_resolve_receiver_crate(
+                    ra_host.clone(),
+                    resolve_cache.clone(),
+                    resolve_cache_path.clone(),
+                    &params,
+                    &id,
+                )
+                .await
+            }
             "shutdown" => {
                 // Write snapshot, then signal the accept loop to exit.
                 {

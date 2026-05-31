@@ -59,6 +59,7 @@ use provekit_verifier::{
     SolverPlan, SolversConfig,
 };
 use serde_json::{json, Value as Json};
+use tracing::{debug, info};
 
 use crate::cmd_mint;
 use crate::{EXIT_OK, EXIT_SOLVER_FAIL, EXIT_USER_ERROR, EXIT_VERIFY_FAIL};
@@ -502,6 +503,49 @@ fn verify_one_claim(
         discharge_method: None,
     };
 
+    // Set when the panic-pre obligation was wrapped under a dominating guard
+    // (`(and guard_facts) => pre`). A discharge of such an obligation is a
+    // proof the call site CANNOT PANIC, tagged `panic-safe` -- a distinct,
+    // substantive category, kept apart from `reflexive` (shallow self-post
+    // tautology) and `solver-substantive` (arithmetic/refinement).
+    let mut panic_guarded = false;
+
+    // ROUTING (the call-site-obligation precedence rule, generic + language-blind):
+    // if the resolved TARGET CONTRACT carries a non-trivial `pre` (a real
+    // precondition, not None/true), this call-site obligation is to DISCHARGE
+    // THAT `pre` UNDER THE GUARD CONTEXT (`cs.guard_facts`), and that discharge
+    // takes PRECEDENCE over the reflexive self-post path. We SKIP
+    // `extract_body_obligation` (which would otherwise reduce the callee's
+    // body-derived self-post to `unwrap(opt) == unwrap(opt)` and discharge it
+    // REFLEXIVELY -- a vacuous pass that, on an UNGUARDED pre-bearing call,
+    // would falsely report "cannot panic") by treating the lookup as
+    // `Ok(None)`, which routes straight into the resolve-target + guard-discharge
+    // arm below. The reflexive self-post path applies ONLY when the target has
+    // no pre. The verifier recognizes no predicate name: the rule keys purely
+    // on "target has a non-trivial pre."
+    let target_has_pre = body_discharge::target_has_nontrivial_pre(cs, pool);
+    if target_has_pre {
+        info!(
+            bridge = %cs.bridge_ir_name,
+            target_cid = %cs.bridge_target_cid,
+            guard_facts = cs.guard_facts.len(),
+            "verify_one_claim: target carries a non-trivial pre -> routing to guard-discharge \
+             (discharge the precondition under the guard context); skipping the reflexive \
+             self-post body-discharge path (precedence rule, language-blind)"
+        );
+    } else {
+        debug!(
+            bridge = %cs.bridge_ir_name,
+            target_cid = %cs.bridge_target_cid,
+            "verify_one_claim: target has no non-trivial pre -> body-discharge path (unchanged)"
+        );
+    }
+    let body_discharge_result = if target_has_pre {
+        Ok(None)
+    } else {
+        body_discharge::extract_body_obligation(cs, pool)
+    };
+
     // Body-discharge path (#1440): when the callsite names a callee with a
     // body-derived op-contract AND its harvested assertion has the
     // `=(<call>, <expected>)` shape, reduce the obligation THROUGH the
@@ -511,7 +555,7 @@ fn verify_one_claim(
     // harvested body-obligation into a real, dischargeable / refutable
     // claim. Anything outside the recognized shape falls through to the
     // existing refinement path below.
-    let obligation = match body_discharge::extract_body_obligation(cs, pool) {
+    let obligation = match body_discharge_result {
         Ok(Some(body_discharge::BodyObligation::Reduced(reduced))) => reduced,
         Ok(None) => {
             // Not a body-bearing claim: resolve the target contract's pre
@@ -557,12 +601,120 @@ fn verify_one_claim(
                 return result;
             };
 
-            match instantiate::run(&resolved, &cs.arg_term) {
+            debug!(
+                bridge = %cs.bridge_ir_name,
+                target_cid = %cs.bridge_target_cid,
+                resolved_pre = %resolved.ir_formula.as_ref()
+                    .map(|f| f.to_string()).unwrap_or_else(|| "<none>".into()),
+                arg_term = %cs.arg_term.as_ref()
+                    .map(|a| a.to_string()).unwrap_or_else(|| "<none>".into()),
+                "verify_one_claim: guard-discharge: resolved target pre, about to instantiate \
+                 with the callsite arg"
+            );
+            let instantiated = match instantiate::run(&resolved, &cs.arg_term) {
                 Ok(ob) => ob.ir_formula,
                 Err(e) => {
                     result.reason = format!("instantiate: {e}");
                     return result;
                 }
+            };
+            debug!(
+                bridge = %cs.bridge_ir_name,
+                instantiated_pre = %instantiated,
+                guard_facts = cs.guard_facts.len(),
+                guard_facts_json = %json!(cs.guard_facts),
+                "verify_one_claim: guard-discharge: instantiated pre + guard facts \
+                 (the obligation will be `(and guard_facts) => pre`; an empty guard set \
+                 leaves the bare unprovable pre -> undecidable)"
+            );
+            // PANIC-FREEDOM guard discharge. A panic partial's instantiated pre
+            // (`is_some(recv)`/`is_ok(recv)`/...) is unprovable on its own -- an
+            // uninterpreted predicate over a free term -> the site is honestly
+            // undecidable ("this unwrap is unproven"). When the call is
+            // DOMINATED by the matching guard (a preceding `if recv.is_some()`
+            // lifts it under `cf_ite(is_some(recv), ...)`, threaded into
+            // `cs.guard_facts` by enumerate_callsites), the obligation becomes
+            // `(and guard_facts) => pre`. With guard and pre identical after
+            // substitution, the implication is valid -> PROVABLY panic-safe.
+            // Fail-safe: empty guards keep the bare unprovable pre (undecidable);
+            // an else-branch carries the NEGATED guard (`is_none(recv)`), which
+            // never establishes `is_some(recv)` (also undecidable). No path
+            // marks an unguarded site safe. `panic_guarded` flags the tag below.
+            // CAPTURE / SPECIALIZATION FIX (BOTH panic branches). The call-site
+            // obligation is the pre SPECIALIZED to the actual argument flowing
+            // into the call (`pre[formal := arg]`, with the actual's vars FREE),
+            // never the universal `forall formal. pre`. `instantiate::run`
+            // substitutes the arg into the pre's forall body but then RE-WRAPS
+            // it in a forall re-binding the same formal -- two distinct bugs the
+            // outer binder causes, both fixed by stripping it ONCE here:
+            //   1. GUARDED: the re-bound forall captures the guard fact's free
+            //      var, yielding `is_some(opt_free) => forall opt. is_some(opt)`
+            //      = `P(a) => forall x. P(x)`, which the solver correctly
+            //      refutes -> the guarded site would never discharge.
+            //   2. UNGUARDED: when the formal's sort is OPAQUE (a non-primitive
+            //      Rust sort like `Option<T>`), the SMT emitter collapses the
+            //      whole opaque-sorted `forall` to the literal `true`
+            //      (predicate-quantification opacity in
+            //      `emit_formula_with_opacities`), so the negated obligation is
+            //      `(not true)` = unsat -> the bare unprovable pre is FALSELY
+            //      discharged (a false "cannot panic"). Specializing to the free
+            //      arg yields `is_some(opt)` over a free `opt`, which the solver
+            //      correctly leaves SAT-for-negation -> honestly undecidable.
+            // The forall's BODY is exactly `pre[formal := arg]`; the outer binder
+            // is redundant (vacuous when arg != formal, capturing/opaque-collapsing
+            // when it is). We do NOT touch `instantiate::run` (shared by the
+            // refinement path; changing its output perturbs obligation CIDs /
+            // hash-tier lookups) and we do NOT universalize the guard (asserting
+            // `forall opt. is_some(opt)` as fact would be unsound).
+            //
+            // NOTE (reported debt, not fixed here): the opaque-sorted-`forall` ->
+            // `true` collapse in the SMT emitter is a GENERAL latent false-pass
+            // on the negated/proof path for ANY universally-quantified property
+            // over a non-primitive sort. Stripping removes panic obligations from
+            // that path, but the emitter hole remains for other opaque-quantified
+            // contracts. See the report.
+            let specialized = instantiate::strip_outer_forall(&instantiated);
+            if specialized != instantiated {
+                debug!(
+                    bridge = %cs.bridge_ir_name,
+                    before = %instantiated,
+                    after = %specialized,
+                    "verify_one_claim: panic obligation: stripped redundant outer forall -> \
+                     specialized pre over the free callsite arg (avoids guard-var capture and \
+                     the opaque-sort `forall`->`true` emitter collapse)"
+                );
+            }
+            if cs.guard_facts.is_empty() {
+                info!(
+                    bridge = %cs.bridge_ir_name,
+                    target_cid = %cs.bridge_target_cid,
+                    obligation = %specialized,
+                    "verify_one_claim: UNGUARDED panic site -> bare specialized pre obligation \
+                     (no guard establishes it; the solver must leave it SAT-for-negation -> \
+                     NOT-discharged: this is the refuse-floor negative control)"
+                );
+                specialized
+            } else {
+                panic_guarded = true;
+                let antecedent = if cs.guard_facts.len() == 1 {
+                    cs.guard_facts[0].clone()
+                } else {
+                    json!({ "kind": "and", "operands": cs.guard_facts.clone() })
+                };
+                let guarded = json!({
+                    "kind": "implies",
+                    "operands": [antecedent, specialized],
+                });
+                info!(
+                    bridge = %cs.bridge_ir_name,
+                    target_cid = %cs.bridge_target_cid,
+                    guard_count = cs.guard_facts.len(),
+                    antecedent = %antecedent,
+                    obligation = %guarded,
+                    "verify_one_claim: GUARDED panic site -> `(and guard_facts) => pre` obligation \
+                     (the guard must establish the pre; expected discharged + method=panic-safe)"
+                );
+                guarded
             }
         }
         Err(e) => {
@@ -592,9 +744,25 @@ fn verify_one_claim(
             return result;
         }
     };
+    debug!(
+        bridge = %cs.bridge_ir_name,
+        panic_guarded,
+        obligation_class = %result.obligation_class,
+        routed_solver = %result.routed_solver,
+        smt = %smt,
+        "verify_one_claim: emitted SMT-LIB for the obligation (this is the exact script the \
+         solver checks; for a guarded panic site it must be a valid `P => P` implication)"
+    );
 
     // Dispatch through the solver-dispatch table.
     let (verdict, reason, invs) = run_plan(plan, solver_registry, &smt, Some(&obligation));
+    info!(
+        bridge = %cs.bridge_ir_name,
+        panic_guarded,
+        verdict = %verdict.as_str(),
+        reason = %reason,
+        "verify_one_claim: solver verdict for the panic obligation"
+    );
     result.verdict = verdict;
     result.reason = reason;
     // For a discharged obligation, record HOW it was proven. A
@@ -605,11 +773,17 @@ fn verify_one_claim(
     // still discharges (real arithmetic / implication) is
     // `solver-substantive`.
     if verdict == ObligationVerdict::Discharged {
-        result.discharge_method = Some(
+        result.discharge_method = Some(if panic_guarded {
+            // A discharged guarded panic-pre is a proof the call site cannot
+            // panic. Tag it distinctly so the scoreboard never conflates it
+            // with a shallow reflexive self-post or a generic substantive
+            // refinement discharge.
+            "panic-safe".to_string()
+        } else {
             body_discharge::classify_discharge_method(&obligation)
                 .as_str()
-                .to_string(),
-        );
+                .to_string()
+        });
     }
     result.discharging_solver = invs
         .iter()
@@ -788,6 +962,11 @@ fn json_to_canonical(
 struct DischargeSplit {
     reflexive: usize,
     substantive: usize,
+    /// Provably-panic-safe call sites: a panic partial's precondition
+    /// (`is_some`/`is_ok`/bounds) discharged UNDER its dominating guard. This
+    /// is the panic-freedom product metric (K). Kept apart from `reflexive`
+    /// (shallow tautology) and `substantive` (arithmetic/refinement).
+    panic_safe: usize,
     vacuous: usize,
     hash_tier: usize,
     undecidable: usize,
@@ -802,6 +981,7 @@ fn discharge_split(results: &[ClaimResult]) -> DischargeSplit {
         }
         match r.discharge_method.as_deref() {
             Some("reflexive") => s.reflexive += 1,
+            Some("panic-safe") => s.panic_safe += 1,
             Some("solver-substantive") => s.substantive += 1,
             // A discharged claim with no recorded solver method came from
             // a non-solver path: vacuous (no precondition) or a hash-tier
@@ -859,6 +1039,7 @@ fn emit_json_receipt(
         // never conflated. The reflexive bucket is sound but shallow.
         "dischargeSplit": {
             "reflexive": split.reflexive,
+            "panicSafe": split.panic_safe,
             "solverSubstantive": split.substantive,
             "vacuous": split.vacuous,
             "hashTier": split.hash_tier,
@@ -910,11 +1091,12 @@ fn emit_human_receipt(
     println!();
     let split = discharge_split(results);
     let summary = format!(
-        "{} claims: {} discharged ({} reflexive, {} solver-substantive, {} vacuous, {} hash-tier), \
-         {} failed/undecidable",
+        "{} claims: {} discharged ({} reflexive, {} panic-safe, {} solver-substantive, \
+         {} vacuous, {} hash-tier), {} failed/undecidable",
         results.len(),
         discharged,
         split.reflexive,
+        split.panic_safe,
         split.substantive,
         split.vacuous,
         split.hash_tier,
@@ -989,6 +1171,7 @@ mod tests {
             property_cid: "blake3-512:prop".into(),
             arg_term: None,
             containing_atomic: None,
+            guard_facts: Vec::new(),
         };
         let obligation = json!({"kind":"atomic","name":"true","args":[]});
         let cid = mint_verification_witness(
@@ -1013,6 +1196,202 @@ mod tests {
         assert_eq!(parsed.measurements["signer_attests_authority"], false);
         assert!(parsed.signature.is_some());
         let _ = std::fs::remove_dir_all(&tmp);
+    }
+
+    // -----------------------------------------------------------------------
+    // PANIC-FREEDOM routing (the call-site-obligation precedence rule).
+    //
+    // The trap shape: ONE contract carrying a real `pre` (`is_some(opt)`) AND
+    // `formals` + a body-derived `post` -- i.e. it is BOTH pre-bearing AND
+    // body-bearing. Before the routing fix, `extract_body_obligation` fired
+    // first on this shape and discharged the callee self-post REFLEXIVELY
+    // (`unwrap(opt) == unwrap(opt)`), preempting the precondition. On an
+    // UNGUARDED call that is a false "cannot panic." The fix routes any
+    // pre-bearing target to the guard-discharge path:
+    //   - guarded   (guard_facts = [is_some(opt)]) -> `(is_some(opt) => is_some(opt))`
+    //                valid -> discharged, method = `panic-safe` (NOT reflexive).
+    //   - unguarded (guard_facts = [])             -> bare `is_some(opt)` over a
+    //                free `opt` -> unprovable -> NOT discharged (the negative
+    //                control; never a false pass).
+    // This is the snake-eats-tail proof the mechanism is real and sound.
+    // -----------------------------------------------------------------------
+
+    const PRE_BEARING_BODY_BEARING_CID: &str = "blake3-512:panic-trap-contract";
+    const TRAP_BUNDLE: &str = "blake3-512:panic-trap-bundle";
+
+    /// The trap contract: pre = `is_some(opt)`, plus `formals` + a
+    /// body-derived `post` (so it is body-bearing too). This is the dual-shape
+    /// the routing rule must resolve in favor of the pre.
+    fn panic_trap_pool() -> MementoPool {
+        let pre = json!({"kind": "atomic", "name": "is_some",
+            "args": [{"kind": "var", "name": "opt"}]});
+        let post = json!({"kind": "atomic", "name": "=",
+            "args": [{"kind": "var", "name": "result"},
+                     {"kind": "ctor", "name": "option_unwrap",
+                      "args": [{"kind": "var", "name": "opt"}]}]});
+        let env = json!({
+            "evidence": {
+                "kind": "contract",
+                "body": {
+                    "pre": pre,
+                    "post": post,
+                    "formals": ["opt"],
+                    // OPAQUE Rust source sort (NOT an SMT primitive). This is
+                    // load-bearing for the negative control: it reproduces the
+                    // emitter's opaque-`forall`->`true` collapse, so a
+                    // pre-strip unguarded site FALSELY discharges. With `Int`
+                    // here the bug would be masked (a primitive-sorted forall
+                    // emits faithfully), and the test would pass for the wrong
+                    // reason. The strip fix is what makes the unguarded site
+                    // honestly undecidable; this sort makes the test able to
+                    // catch a regression of it.
+                    "formalSorts": [{"kind": "primitive", "name": "Option<T>"}]
+                }
+            }
+        });
+        let mut pool = MementoPool::default();
+        pool.mementos
+            .insert(PRE_BEARING_BODY_BEARING_CID.into(), env);
+        pool.bundle_members
+            .entry(TRAP_BUNDLE.into())
+            .or_default()
+            .insert(PRE_BEARING_BODY_BEARING_CID.into());
+        pool
+    }
+
+    /// A callsite into the trap contract. `guard_facts` is the only axis that
+    /// differs between the guarded and unguarded sites.
+    fn panic_callsite(guard_facts: Vec<Json>) -> provekit_verifier::CallSite {
+        provekit_verifier::CallSite {
+            bridge_ir_name: "method:unwrap".into(),
+            bridge_target_cid: PRE_BEARING_BODY_BEARING_CID.into(),
+            bridge_source_layer: "rust".into(),
+            bridge_target_layer: "concept".into(),
+            bridge_target_proof_cid: None,
+            bridge_self_bundle_cid: Some(TRAP_BUNDLE.into()),
+            property_name: "panic_site".into(),
+            property_cid: "blake3-512:panic-prop".into(),
+            arg_term: Some(json!({"kind": "var", "name": "opt"})),
+            containing_atomic: None,
+            guard_facts,
+        }
+    }
+
+    fn is_some_guard() -> Json {
+        json!({"kind": "atomic", "name": "is_some",
+            "args": [{"kind": "var", "name": "opt"}]})
+    }
+
+    #[test]
+    fn routing_predicate_fires_on_pre_bearing_target_not_on_post_only_or_true() {
+        let pool = panic_trap_pool();
+        // The trap contract carries a real `pre` -> route to guard-discharge.
+        assert!(
+            body_discharge::target_has_nontrivial_pre(
+                &panic_callsite(vec![]),
+                &pool
+            ),
+            "a contract with pre=is_some(opt) must route to guard-discharge"
+        );
+
+        // A post-only contract (no `pre`) must NOT reroute: stays on the
+        // body-discharge path (the `double()` family is unaffected).
+        let mut post_only = MementoPool::default();
+        post_only.mementos.insert(
+            "blake3-512:post-only".into(),
+            json!({"evidence": {"kind": "contract", "body": {
+                "post": {"kind": "atomic", "name": "=", "args": []},
+                "formals": ["x"]}}}),
+        );
+        let mut cs = panic_callsite(vec![]);
+        cs.bridge_target_cid = "blake3-512:post-only".into();
+        assert!(
+            !body_discharge::target_has_nontrivial_pre(&cs, &post_only),
+            "a post-only (no-pre) contract must stay on the body-discharge path"
+        );
+
+        // A `pre = true` total contract (e.g. unwrap_or) is trivial -> no
+        // reroute (a vacuous pre is nothing to discharge under guards).
+        let mut total = MementoPool::default();
+        total.mementos.insert(
+            "blake3-512:total".into(),
+            json!({"evidence": {"kind": "contract", "body": {
+                "pre": {"kind": "atomic", "name": "true", "args": []},
+                "post": {"kind": "atomic", "name": "=", "args": []},
+                "formals": ["x"]}}}),
+        );
+        cs.bridge_target_cid = "blake3-512:total".into();
+        assert!(
+            !body_discharge::target_has_nontrivial_pre(&cs, &total),
+            "a pre=true contract must NOT reroute (trivial precondition)"
+        );
+    }
+
+    #[test]
+    fn guarded_panic_safe_unguarded_undecidable() {
+        // The whole point (K=1 with the negative control). Needs a real z3.
+        let pool = panic_trap_pool();
+        // No kit config at this path -> the default verify dispatch table over
+        // single-z3 (the real solver discriminates guarded from unguarded).
+        let no_kit = std::path::Path::new("/nonexistent-panic-test-kit");
+        let (plan, registry, _) = build_plan_and_registry(no_kit, "z3");
+        let witness_dir =
+            std::env::temp_dir().join(format!("provekit-panic-test-{}", std::process::id()));
+        std::fs::create_dir_all(&witness_dir).ok();
+
+        // GUARDED: `if opt.is_some() { opt.unwrap() }`. The guard establishes
+        // the partial's pre -> PROVABLY panic-safe.
+        let guarded = verify_one_claim(
+            &panic_callsite(vec![is_some_guard()]),
+            &pool,
+            &plan,
+            &registry,
+            &witness_dir,
+            &VERIFY_SIGNER_SEED_DEV,
+            false,
+        );
+        assert_eq!(
+            guarded.verdict,
+            ObligationVerdict::Discharged,
+            "guarded unwrap must be discharged (the is_some guard discharges the is_some pre); \
+             reason: {}",
+            guarded.reason
+        );
+        assert_eq!(
+            guarded.discharge_method.as_deref(),
+            Some("panic-safe"),
+            "a guarded panic-pre discharge must be tagged `panic-safe`, NOT reflexive/substantive; \
+             reason: {}",
+            guarded.reason
+        );
+
+        // UNGUARDED: bare `opt.unwrap()`. No guard -> bare `is_some(opt)` over a
+        // free `opt` is unprovable -> NEVER discharged. The negative control:
+        // a vacuous/reflexive pass here would be a false "cannot panic".
+        let unguarded = verify_one_claim(
+            &panic_callsite(vec![]),
+            &pool,
+            &plan,
+            &registry,
+            &witness_dir,
+            &VERIFY_SIGNER_SEED_DEV,
+            false,
+        );
+        assert_ne!(
+            unguarded.verdict,
+            ObligationVerdict::Discharged,
+            "REFUSE-FLOOR: an unguarded unwrap into a pre-bearing contract must NEVER be \
+             discharged (no guard establishes the pre); got discharged with reason: {}",
+            unguarded.reason
+        );
+        assert_ne!(
+            unguarded.discharge_method.as_deref(),
+            Some("panic-safe"),
+            "an unguarded site must never be tagged panic-safe; reason: {}",
+            unguarded.reason
+        );
+
+        let _ = std::fs::remove_dir_all(&witness_dir);
     }
 
     #[test]

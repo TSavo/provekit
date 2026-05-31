@@ -219,6 +219,86 @@ mod tests {
         );
     }
 
+    fn atomic(name: &str, args: Vec<serde_json::Value>) -> serde_json::Value {
+        serde_json::json!({"kind": "atomic", "name": name, "args": args})
+    }
+    fn implies(a: serde_json::Value, b: serde_json::Value) -> serde_json::Value {
+        serde_json::json!({"kind": "implies", "operands": [a, b]})
+    }
+
+    #[test]
+    fn non_builtin_atomic_predicate_in_boolean_position_is_declared() {
+        // A user predicate (`is_some`) sitting as a boolean atom in an
+        // implication -- the panic-freedom guard-discharge shape -- must be
+        // declared `(declare-fun is_some (Int) Bool)`. Before the
+        // predicate-decl pass it was left undeclared and z3 rejected the
+        // script with `unknown constant is_some`. This is the COMPLEMENT of the
+        // builtin set, so it is generic and language-blind (no `is_some`
+        // special-casing).
+        let ir = implies(
+            atomic("is_some", vec![var("opt")]),
+            atomic("is_some", vec![var("opt")]),
+        );
+        let parts = compile_to_parts(&ir).expect("compile");
+        assert!(
+            parts.preamble.contains("(declare-fun is_some (Int) Bool)"),
+            "is_some must be declared as a Bool-returning fn: {}",
+            parts.preamble
+        );
+    }
+
+    #[test]
+    fn builtin_atomic_predicates_are_not_declared() {
+        // DISCRIMINATION: builtin/theory predicates (`=`, `<`, ...) must NOT be
+        // declared (they are SMT-LIB primitives). Declaring them would be a
+        // redefinition error.
+        let zero = serde_json::json!({"kind":"const","value":0,
+            "sort":{"kind":"primitive","name":"Int"}});
+        let ir = implies(
+            atomic(">", vec![var("n"), zero]),
+            atomic("=", vec![var("n"), var("n")]),
+        );
+        let parts = compile_to_parts(&ir).expect("compile");
+        assert!(
+            !parts.preamble.contains("(declare-fun = ")
+                && !parts.preamble.contains("(declare-fun > "),
+            "builtin predicates must not be declared: {}",
+            parts.preamble
+        );
+    }
+
+    #[test]
+    fn guarded_pre_implication_discharges_bare_pre_does_not() {
+        // STRUCTURAL end-to-end (panic-freedom soundness). The guard-discharge
+        // obligation `(=> (is_some opt) (is_some opt))` is valid -> negation
+        // unsat -> discharged (panic-safe). The bare unguarded pre `is_some(opt)`
+        // over a free `opt` is NOT valid -> negation sat -> undecidable (the
+        // refuse-floor negative control). With the predicate declared, z3 RUNS
+        // (no `unknown constant` error) and discriminates the two correctly.
+        let Some(z3) = which_z3() else {
+            eprintln!("z3 not found; skipping panic-freedom end-to-end check");
+            return;
+        };
+
+        let guarded = compile_to_parts(&implies(
+            atomic("is_some", vec![var("opt")]),
+            atomic("is_some", vec![var("opt")]),
+        ))
+        .expect("compile guarded");
+        let g_out = run_z3(&z3, &format!("{}{}", guarded.preamble, guarded.body));
+        assert!(
+            g_out.contains("unsat"),
+            "guarded `(=> is_some(opt) is_some(opt))` must be unsat (discharged): {g_out}"
+        );
+
+        let bare = compile_to_parts(&atomic("is_some", vec![var("opt")])).expect("compile bare");
+        let b_out = run_z3(&z3, &format!("{}{}", bare.preamble, bare.body));
+        assert!(
+            b_out.contains("sat") && !b_out.contains("unsat"),
+            "bare unguarded `is_some(opt)` must be sat (NOT discharged): {b_out}"
+        );
+    }
+
     #[test]
     fn reflexive_equality_is_unsat_under_z3_and_distinct_is_sat() {
         // End-to-end soundness check via z3 IF available. `(= (Ok x) (Ok

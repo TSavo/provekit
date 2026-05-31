@@ -47,6 +47,34 @@ pub fn substitute_formula_pub(f: &Json, name: &str, replacement: &Json) -> Json 
     substitute_formula(f, name, replacement)
 }
 
+/// Strip ONE redundant outer `forall` from an already-instantiated
+/// precondition, returning its body.
+///
+/// `instantiate::run` substitutes the call's actual argument into the
+/// resolved pre's forall body and then RE-WRAPS the result in a forall that
+/// re-binds the same formal name. For the panic-freedom GUARD-DISCHARGE
+/// obligation this is variable capture: the guard fact (`is_some(opt)`) has a
+/// FREE `opt`, but the re-wrapped consequent re-binds `opt`, so the implication
+/// becomes `is_some(opt_free) => forall opt_bound. is_some(opt_bound)` =
+/// `P(a) => forall x. P(x)`, which a solver correctly refutes. The correct
+/// call-site obligation is the pre SPECIALIZED to the actual argument
+/// (`pre[formal := arg]`), which is exactly the forall's body. The outer
+/// binder is redundant: vacuous when arg != formal, capturing when arg ==
+/// formal. Dropping it yields the bare specialized pre, so a matching guard
+/// gives the valid `(=> P P)`.
+///
+/// ONLY the panic-guard branch calls this; the normal refinement obligation
+/// keeps the quantified form so its obligation CID / hash-tier lookups are
+/// unchanged. If the formula is not a `forall`, it is returned unchanged.
+pub fn strip_outer_forall(f: &Json) -> Json {
+    if f.get("kind").and_then(|v| v.as_str()) == Some("forall") {
+        if let Some(body) = f.get("body") {
+            return body.clone();
+        }
+    }
+    f.clone()
+}
+
 fn substitute_formula(f: &Json, name: &str, replacement: &Json) -> Json {
     let mut out = f.clone();
     let kind = f.get("kind").and_then(|v| v.as_str()).unwrap_or_default();
@@ -108,4 +136,55 @@ fn substitute_term(t: &Json, name: &str, replacement: &Json) -> Json {
         return out;
     }
     t.clone()
+}
+
+#[cfg(test)]
+mod strip_outer_forall_tests {
+    use super::*;
+    use serde_json::json;
+
+    #[test]
+    fn strips_one_outer_forall_returning_body() {
+        // POSITIVE: a `forall opt. is_some(opt)` specializes to its body
+        // `is_some(opt)` (the panic-pre over the free callsite arg).
+        let f = json!({"kind": "forall", "name": "opt",
+            "sort": {"kind": "primitive", "name": "Option<T>"},
+            "body": {"kind": "atomic", "name": "is_some",
+                "args": [{"kind": "var", "name": "opt"}]}});
+        let stripped = strip_outer_forall(&f);
+        assert_eq!(
+            stripped,
+            json!({"kind": "atomic", "name": "is_some",
+                "args": [{"kind": "var", "name": "opt"}]})
+        );
+    }
+
+    #[test]
+    fn non_forall_is_returned_unchanged() {
+        // DISCRIMINATION: a bare atomic (already specialized) is untouched, so
+        // the strip is a safe no-op on non-quantified obligations.
+        let f = json!({"kind": "atomic", "name": "is_some",
+            "args": [{"kind": "var", "name": "opt"}]});
+        assert_eq!(strip_outer_forall(&f), f);
+        // An implication is likewise unchanged (only the OUTER forall is peeled).
+        let imp = json!({"kind": "implies", "operands": [
+            {"kind": "atomic", "name": "is_some", "args": []},
+            {"kind": "atomic", "name": "is_some", "args": []}]});
+        assert_eq!(strip_outer_forall(&imp), imp);
+    }
+
+    #[test]
+    fn strips_only_the_outermost_forall() {
+        // STRUCTURAL: a nested forall in the body is preserved -- only ONE
+        // outer binder is removed (matching `instantiate::run`'s single
+        // re-wrap).
+        let inner = json!({"kind": "forall", "name": "y",
+            "sort": {"kind": "primitive", "name": "Int"},
+            "body": {"kind": "atomic", "name": "p",
+                "args": [{"kind": "var", "name": "y"}]}});
+        let f = json!({"kind": "forall", "name": "x",
+            "sort": {"kind": "primitive", "name": "Int"},
+            "body": inner.clone()});
+        assert_eq!(strip_outer_forall(&f), inner);
+    }
 }

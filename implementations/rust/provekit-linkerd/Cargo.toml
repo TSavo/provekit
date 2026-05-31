@@ -16,6 +16,11 @@ provekit-lift = { path = "../provekit-lift" }
 provekit-canonicalizer = { path = "../provekit-canonicalizer" }
 provekit-ir-symbolic = { path = "../provekit-ir-symbolic" }
 provekit-claim-envelope = { path = "../provekit-claim-envelope" }
+# Resident rust-analyzer host: import the shared RA LSP client (`ra_oracle`) so
+# the daemon drives the SAME framing/quiescence/resolve logic the per-mint binary
+# used to cold-spawn. `default-features = false` keeps the heavy `rpc`/realize
+# feature out of the daemon; `ra_oracle` needs only serde_json/tracing/std.
+provekit-walk = { path = "../provekit-walk", default-features = false }
 
 serde = { workspace = true }
 serde_json = { workspace = true }
@@ -24,6 +29,9 @@ tokio = { version = "1", features = ["rt-multi-thread", "net", "io-util", "time"
 tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 anyhow = "1"
+# Walk the workspace .rs tree to fold cross-file source state into the
+# resolution-context cache key (see resolve_cache::resolution_context_cid).
+walkdir = { workspace = true }
 
 [target.'cfg(unix)'.dependencies]
 libc = "0.2"

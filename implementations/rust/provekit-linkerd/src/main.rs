@@ -21,6 +21,8 @@
 //   R16: no network listener.
 
 mod methods;
+mod ra_host;
+mod resolve_cache;
 mod server;
 mod snapshot;
 mod state;
@@ -36,7 +38,11 @@ fn main() -> anyhow::Result<()> {
     tracing_subscriber::fmt()
         .with_env_filter(
             tracing_subscriber::EnvFilter::from_default_env()
-                .add_directive("provekit_linkerd=info".parse().unwrap()),
+                .add_directive("provekit_linkerd=info".parse().unwrap())
+                // Surface the resident rust-analyzer host's own index progress
+                // (it lives in provekit_walk::ra_oracle) so an operator watching
+                // the daemon sees the one-time workspace index, not silence.
+                .add_directive("provekit_walk::ra_oracle=info".parse().unwrap()),
         )
         .init();
 

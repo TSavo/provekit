@@ -657,6 +657,85 @@ fn collect_ctor_decls_term(
     }
 }
 
+/// True iff `name` (after `smt_atomic_name` normalization) is an SMT-LIB
+/// builtin/theory predicate that needs no declaration. Everything else is a
+/// user-defined (uninterpreted) predicate symbol -- `is_some`, `is_ok`,
+/// `is_empty`, ... -- that MUST be declared as a Bool-returning function
+/// before it can appear in boolean position. This recognizes no particular
+/// predicate name as special: it is the COMPLEMENT of the builtin set, so it
+/// is generic and language-blind.
+fn is_builtin_atomic_predicate(name: &str) -> bool {
+    matches!(
+        smt_atomic_name(name),
+        // Equality / relational theory predicates.
+        "=" | "distinct" | "<" | "<=" | ">" | ">="
+        // Boolean literals (nullary, emitted verbatim).
+        | "true" | "false"
+        // The lifetime-kernel predicate is declared explicitly in the preamble.
+        | "Outlives"
+    )
+}
+
+/// Collect every NON-BUILTIN atomic predicate that appears in boolean
+/// position, mapped to its declared signature (`(argSorts) Bool`).
+///
+/// This is the predicate analogue of `collect_ctor_decls_formula`: a ctor
+/// (`Ok`, `method:unwrap`) sitting in TERM position is declared as a value
+/// function by that pass, but a PREDICATE (`is_some`) sitting in BOOLEAN
+/// position -- e.g. as the antecedent/consequent of an implication in a
+/// guard-discharge obligation `(=> (is_some opt) (is_some opt))` -- was never
+/// declared, so the solver rejected it with `unknown constant is_some`. Here
+/// we declare it `(declare-fun is_some (<argSorts>) Bool)`. Arg sorts reuse
+/// the same `known_term_sort` heuristic the ctor pass uses (var/ctor -> Int),
+/// matching the `(declare-const opt Int)` the free-var pass already emits, so
+/// applications type-check. A nullary atomic (the boolean literals, or a
+/// 0-ary user predicate constant) is left to the existing handling.
+fn collect_predicate_decls_formula(
+    formula: &Formula,
+    out: &mut BTreeMap<String, CtorSignature>,
+) {
+    match formula {
+        Formula::Atomic { name, args } => {
+            if !args.is_empty() && !is_builtin_atomic_predicate(name) {
+                let arg_sorts: Vec<String> = args
+                    .iter()
+                    .map(|arg| known_term_sort(arg).unwrap_or_else(|| "Int".to_string()))
+                    .collect();
+                out.entry(smt_atomic_name(name).to_string())
+                    .or_insert_with(|| CtorSignature {
+                        args: arg_sorts,
+                        ret: "Bool".to_string(),
+                    });
+            }
+        }
+        Formula::And { operands } | Formula::Or { operands } | Formula::Implies { operands } => {
+            for operand in operands {
+                collect_predicate_decls_formula(operand, out);
+            }
+        }
+        Formula::Not { operands } => {
+            for operand in operands {
+                collect_predicate_decls_formula(operand, out);
+            }
+        }
+        Formula::Forall { body, .. }
+        | Formula::Exists { body, .. }
+        | Formula::Choice { body, .. } => {
+            collect_predicate_decls_formula(body, out);
+        }
+        Formula::Substitute { .. } | Formula::Apply { .. } => {
+            unreachable!(
+                "wp-rule schema node reached the SMT-LIB predicate-decl collector; \
+                 must be reduced via libprovekit::wp first"
+            )
+        }
+        Formula::DivergenceBetween { source, target } => {
+            collect_predicate_decls_formula(source, out);
+            collect_predicate_decls_formula(target, out);
+        }
+    }
+}
+
 pub fn compile_formula(formula: &Formula) -> CompiledFormula {
     let mut free_vars = BTreeMap::new();
     let bound = BTreeSet::new();
@@ -730,6 +809,23 @@ pub fn compile_formula(formula: &Formula) -> CompiledFormula {
             signature.ret
         ));
     }
+    // Declare every non-builtin atomic PREDICATE in boolean position (e.g.
+    // `is_some` in a guard-discharge obligation `(=> (is_some opt) (is_some
+    // opt))`). Skip any name already declared as a value ctor above, so a
+    // symbol used in both term and boolean position is declared exactly once.
+    let mut predicate_decls = BTreeMap::new();
+    collect_predicate_decls_formula(formula, &mut predicate_decls);
+    for (name, signature) in predicate_decls.iter() {
+        if ctor_decls.contains_key(name) {
+            continue;
+        }
+        preamble.push_str(&format!(
+            "(declare-fun {} ({}) {})\n",
+            smt_quote(name),
+            signature.args.join(" "),
+            signature.ret
+        ));
+    }
     let body = format!("(assert (not {}))\n(check-sat)\n", body_formula);
     let free_vars_vec = free_vars
         .into_iter()
@@ -783,6 +879,21 @@ pub fn compile_asserted_formula(formula: &Formula) -> CompiledFormula {
         preamble.push_str(&format!("(declare-const {} {})\n", smt_quote(name), sort));
     }
     for (name, signature) in ctor_decls.iter() {
+        preamble.push_str(&format!(
+            "(declare-fun {} ({}) {})\n",
+            smt_quote(name),
+            signature.args.join(" "),
+            signature.ret
+        ));
+    }
+    // Declare non-builtin atomic predicates in boolean position (see the
+    // matching block in `compile_formula`). Same de-dup against ctor decls.
+    let mut predicate_decls = BTreeMap::new();
+    collect_predicate_decls_formula(formula, &mut predicate_decls);
+    for (name, signature) in predicate_decls.iter() {
+        if ctor_decls.contains_key(name) {
+            continue;
+        }
         preamble.push_str(&format!(
             "(declare-fun {} ({}) {})\n",
             smt_quote(name),
