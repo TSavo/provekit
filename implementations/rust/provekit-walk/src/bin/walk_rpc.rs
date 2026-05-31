@@ -165,18 +165,16 @@ fn handle_line(line: &str) -> Value {
 /// Walk user source files, compute their function bodies' identifier-
 /// canonical AST templates with the same `block_to_ast_template` the
 /// sugar lifter uses, and match by `template_cid` against the request's
-/// `binding_templates`. An exact CID match means the user's function
-/// body IS the shim's sugar body (modulo whitespace + alpha-equivalence
-/// on params) — tier `exact`. Tiers `structural`, `probable`, `refused`
-/// are reserved for follow-up tier-2/3 work.
+/// kit-resolved sugar binding templates. An exact CID match means the
+/// user's function body IS the shim's sugar body (modulo whitespace +
+/// alpha-equivalence on params) — tier `exact`. Tiers `structural`,
+/// `probable`, `refused` are reserved for follow-up tier-2/3 work.
 ///
 /// The kit owns the AST machinery; the substrate sees only the tag set.
-/// This is the language-blind invariant: the substrate forwards
-/// `binding_templates` opaquely and collects tags opaquely; only the
-/// kit reads or writes syn shapes.
+/// This is the language-blind invariant: the substrate sends project source
+/// paths and collects tags opaquely; only the kit reads Rust package proofs
+/// and syn shapes.
 fn recognize(params: &Value) -> Result<Value, String> {
-    use std::collections::HashMap;
-
     let project_root = params
         .get("project_root")
         .and_then(|v| v.as_str())
@@ -191,19 +189,30 @@ fn recognize(params: &Value) -> Result<Value, String> {
         .filter_map(|v| v.as_str().map(|s| s.to_string()))
         .collect();
 
-    let empty: Vec<Value> = Vec::new();
-    let binding_templates: &Vec<Value> = params
-        .get("binding_templates")
-        .and_then(|v| v.as_array())
-        .unwrap_or(&empty);
-
     // Index bindings by template_cid for O(1) lookup. The kit reads the
     // template_cid the lifter emitted (or, equivalently, recomputes it
-    // from the supplied ast_template; we trust the supplied value because
-    // the substrate's §4.2.5 contract requires it to verify the CID).
-    let mut bindings_by_cid: HashMap<String, &Value> = HashMap::new();
-    for binding in binding_templates {
-        if let Some(cid) = binding.get("template_cid").and_then(|v| v.as_str()) {
+    // from the supplied ast_template). `binding_templates` remains accepted
+    // for older direct kit tests, but the CLI does not send it; real template
+    // authority comes from proof catalogs the Rust kit resolves itself.
+    let mut bindings_by_cid: HashMap<String, RecognizeBindingTemplate> = HashMap::new();
+    if let Some(binding_templates) = params.get("binding_templates").and_then(|v| v.as_array()) {
+        for binding in binding_templates {
+            if let Some(cid) = binding.get("template_cid").and_then(|v| v.as_str()) {
+                bindings_by_cid.insert(
+                    cid.to_string(),
+                    RecognizeBindingTemplate {
+                        body: binding.clone(),
+                        target_proof_cid: binding
+                            .get("target_proof_cid")
+                            .and_then(Value::as_str)
+                            .map(str::to_string),
+                    },
+                );
+            }
+        }
+    }
+    for binding in load_binding_templates_for_project(&project_root)? {
+        if let Some(cid) = binding.body.get("template_cid").and_then(|v| v.as_str()) {
             bindings_by_cid.insert(cid.to_string(), binding);
         }
     }
@@ -231,7 +240,7 @@ fn recognize(params: &Value) -> Result<Value, String> {
 fn recognize_walk_items(
     items: &[syn::Item],
     rel_path: &str,
-    bindings_by_cid: &std::collections::HashMap<String, &Value>,
+    bindings_by_cid: &HashMap<String, RecognizeBindingTemplate>,
     tags: &mut Vec<Value>,
 ) {
     for item in items {
@@ -256,7 +265,7 @@ fn recognize_walk_items(
 fn recognize_match_item_fn(
     item_fn: &syn::ItemFn,
     rel_path: &str,
-    bindings_by_cid: &std::collections::HashMap<String, &Value>,
+    bindings_by_cid: &HashMap<String, RecognizeBindingTemplate>,
 ) -> Option<Value> {
     let param_names: Vec<String> = item_fn
         .sig
@@ -275,6 +284,7 @@ fn recognize_match_item_fn(
     let candidate_cid = blake3_512_of(candidate_template.to_string().as_bytes());
 
     let binding = bindings_by_cid.get(&candidate_cid)?;
+    let body = &binding.body;
 
     let start = item_fn.sig.fn_token.span.start();
     let end = item_fn.block.brace_token.span.close().end();
@@ -299,14 +309,221 @@ fn recognize_match_item_fn(
             "end_col": end.column,
         },
         "function_name": item_fn.sig.ident.to_string(),
-        "concept_name": binding.get("concept_name").cloned().unwrap_or(Value::Null),
-        "library_tag": binding.get("library_tag").cloned().unwrap_or(Value::Null),
-        "family": binding.get("family").cloned().unwrap_or(Value::Null),
+        "concept_name": body.get("concept_name").cloned().unwrap_or(Value::Null),
+        "library_tag": body.get("library_tag").cloned().unwrap_or(Value::Null),
+        "family": body.get("family").cloned().unwrap_or(Value::Null),
         "template_cid": candidate_cid,
-        "contract_cid": binding.get("contract_cid").cloned().unwrap_or(Value::Null),
+        "contract_cid": body.get("contract_cid").cloned().unwrap_or(Value::Null),
+        "target_proof_cid": binding
+            .target_proof_cid
+            .as_ref()
+            .map(|cid| Value::String(cid.clone()))
+            .or_else(|| body.get("target_proof_cid").cloned())
+            .unwrap_or(Value::Null),
         "match_tier": "exact",
         "param_bindings": param_bindings,
     }))
+}
+
+#[derive(Debug, Clone)]
+struct RecognizeBindingTemplate {
+    body: Value,
+    target_proof_cid: Option<String>,
+}
+
+fn load_binding_templates_for_project(
+    project_root: &Path,
+) -> Result<Vec<RecognizeBindingTemplate>, String> {
+    let proof_paths = resolve_recognizer_proof_paths(project_root)?;
+    let mut bindings = Vec::new();
+    for path in proof_paths {
+        bindings.extend(binding_templates_from_proof(&path)?);
+    }
+    Ok(bindings)
+}
+
+fn binding_templates_from_proof(path: &Path) -> Result<Vec<RecognizeBindingTemplate>, String> {
+    let bytes = std::fs::read(path)
+        .map_err(|error| format!("read Rust recognizer proof {}: {error}", path.display()))?;
+    let proof_cid = blake3_512_of(&bytes);
+    let catalog = provekit_proof_envelope::cbor_decode(&bytes)
+        .map_err(|error| format!("decode Rust recognizer proof {}: {error}", path.display()))?;
+    let members = catalog
+        .as_map()
+        .and_then(|root| root.get("members"))
+        .and_then(provekit_proof_envelope::CborValue::as_map)
+        .ok_or_else(|| {
+            format!(
+                "decode Rust recognizer proof {}: missing members map",
+                path.display()
+            )
+        })?;
+
+    let mut bindings = Vec::new();
+    for member in members.values() {
+        let Some(member_bytes) = member.as_bstr() else {
+            continue;
+        };
+        let Ok(parsed) = serde_json::from_slice::<Value>(member_bytes) else {
+            continue;
+        };
+        let body = parsed.get("body").unwrap_or(&parsed);
+        if let Some(binding) = binding_template_from_sugar_entry(body, Some(proof_cid.clone())) {
+            bindings.push(binding);
+        }
+    }
+    Ok(bindings)
+}
+
+fn binding_template_from_sugar_entry(
+    entry: &Value,
+    target_proof_cid: Option<String>,
+) -> Option<RecognizeBindingTemplate> {
+    if entry.get("kind").and_then(Value::as_str) != Some("library-sugar-binding-entry") {
+        return None;
+    }
+    let concept_name = entry.get("concept_name").and_then(Value::as_str)?;
+    let library_tag = entry
+        .get("target_library_tag")
+        .or_else(|| entry.get("library_tag"))
+        .cloned()
+        .unwrap_or(Value::Null);
+    let body_source = entry.get("body_source")?;
+    let ast_template = body_source.get("ast_template")?.clone();
+    let template_cid = body_source
+        .get("template_cid")
+        .and_then(Value::as_str)
+        .map(str::to_string)
+        .unwrap_or_else(|| blake3_512_of(ast_template.to_string().as_bytes()));
+    let param_names = body_source
+        .get("param_names")
+        .or_else(|| entry.get("param_names"))
+        .cloned()
+        .unwrap_or_else(|| Value::Array(Vec::new()));
+
+    let mut body = json!({
+        "concept_name": concept_name,
+        "library_tag": library_tag,
+        "family": entry.get("family").cloned().unwrap_or(Value::Null),
+        "ast_template": ast_template,
+        "template_cid": template_cid,
+        "param_names": param_names,
+        "contract_cid": entry.get("contract_cid").cloned().unwrap_or(Value::Null),
+    });
+    if let Some(cid) = &target_proof_cid {
+        body["target_proof_cid"] = Value::String(cid.clone());
+    }
+
+    Some(RecognizeBindingTemplate {
+        body,
+        target_proof_cid,
+    })
+}
+
+fn resolve_recognizer_proof_paths(project_root: &Path) -> Result<Vec<PathBuf>, String> {
+    let mut proof_paths = BTreeSet::new();
+    collect_recognizer_proof_files(
+        &project_root.join(".provekit").join("imports"),
+        &mut proof_paths,
+    );
+    for path in resolve_cargo_dependency_proof_paths(project_root)? {
+        proof_paths.insert(path);
+    }
+    Ok(proof_paths.into_iter().collect())
+}
+
+fn resolve_cargo_dependency_proof_paths(project_root: &Path) -> Result<Vec<PathBuf>, String> {
+    let manifest_path = project_root.join("Cargo.toml");
+    if !manifest_path.is_file() {
+        return Ok(Vec::new());
+    }
+
+    let output = std::process::Command::new("cargo")
+        .arg("metadata")
+        .arg("--format-version")
+        .arg("1")
+        .arg("--manifest-path")
+        .arg(&manifest_path)
+        .current_dir(project_root)
+        .output()
+        .map_err(|error| format!("spawn cargo metadata: {error}"))?;
+    if !output.status.success() {
+        return Err(format!(
+            "cargo metadata failed: {}",
+            String::from_utf8_lossy(&output.stderr).trim()
+        ));
+    }
+    let metadata: Value = serde_json::from_slice(&output.stdout)
+        .map_err(|error| format!("parse cargo metadata JSON: {error}"))?;
+
+    let workspace_members = metadata
+        .get("workspace_members")
+        .and_then(Value::as_array)
+        .map(|members| {
+            members
+                .iter()
+                .filter_map(Value::as_str)
+                .map(str::to_string)
+                .collect::<BTreeSet<_>>()
+        })
+        .unwrap_or_default();
+    let reachable = metadata
+        .get("resolve")
+        .and_then(|resolve| resolve.get("nodes"))
+        .and_then(Value::as_array)
+        .map(|nodes| {
+            nodes
+                .iter()
+                .filter_map(|node| node.get("id").and_then(Value::as_str))
+                .map(str::to_string)
+                .collect::<BTreeSet<_>>()
+        })
+        .unwrap_or_default();
+
+    let mut proof_paths = BTreeSet::new();
+    let Some(packages) = metadata.get("packages").and_then(Value::as_array) else {
+        return Ok(Vec::new());
+    };
+    for package in packages {
+        let Some(package_id) = package.get("id").and_then(Value::as_str) else {
+            continue;
+        };
+        if workspace_members.contains(package_id) {
+            continue;
+        }
+        if !reachable.is_empty() && !reachable.contains(package_id) {
+            continue;
+        }
+        let Some(manifest_path) = package.get("manifest_path").and_then(Value::as_str) else {
+            continue;
+        };
+        let Some(package_dir) = Path::new(manifest_path).parent() else {
+            continue;
+        };
+        collect_recognizer_proof_files(package_dir, &mut proof_paths);
+    }
+
+    Ok(proof_paths.into_iter().collect())
+}
+
+fn collect_recognizer_proof_files(root: &Path, proof_paths: &mut BTreeSet<PathBuf>) {
+    let Ok(entries) = std::fs::read_dir(root) else {
+        return;
+    };
+    for entry in entries.flatten() {
+        let path = entry.path();
+        let file_name = path.file_name().and_then(|s| s.to_str()).unwrap_or("");
+        if path.is_dir() {
+            match file_name {
+                ".git" | "target" | "node_modules" | "vendor" => continue,
+                _ => collect_recognizer_proof_files(&path, proof_paths),
+            }
+            continue;
+        }
+        if path.extension().and_then(|s| s.to_str()) == Some("proof") {
+            proof_paths.insert(path);
+        }
+    }
 }
 
 // ---------------------------------------------------------------------------
@@ -6154,6 +6371,10 @@ mod tests {
     use super::*;
     use libprovekit::core::{bind_result_payload, bind_term_document, BindOptions, Term};
     use provekit_ir_types::Sort;
+    use provekit_proof_envelope::{
+        build_proof_envelope, ed25519_pubkey_string, Ed25519Seed, ProofEnvelopeInput,
+    };
+    use std::collections::BTreeMap;
     use std::fs;
     use std::time::{SystemTime, UNIX_EPOCH};
 
@@ -6665,6 +6886,131 @@ pub fn json_parse(input: &str) -> Result<serde_json::Value, String> {
         assert_eq!(bindings.len(), 1);
         assert_eq!(bindings[0]["index"], 1);
         assert_eq!(bindings[0]["source_text"], "input");
+
+        let _ = fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn recognize_self_resolves_binding_templates_from_imported_proofs() {
+        let sugar_src = r##"
+#[provekit::sugar(concept = "concept:json-parse", library = "provekit-shim-serde-json-rust")]
+pub fn json_parse(s: &str) -> i64 {
+    serde_json::from_str(s)
+}
+"##;
+        let sugar_entry = single_sugar_entry_for_source("recognize_imported_sugar", sugar_src);
+        let contract_cid = "blake3-512:eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee";
+
+        let user_src = r##"
+pub fn json_parse(input: &str) -> Result<serde_json::Value, String> {
+    serde_json::from_str(input)
+}
+"##;
+        let root = temp_workspace("recognize_imported_user");
+        let src_dir = root.join("src");
+        fs::create_dir_all(&src_dir).expect("create src dir");
+        let user_rel = "src/lib.rs";
+        fs::write(root.join(user_rel), user_src).expect("write user source");
+
+        let proof_cid = write_sugar_binding_proof(
+            &root.join(".provekit").join("imports"),
+            sugar_entry,
+            contract_cid,
+            "@test/rust-recognize-imported-shim",
+        );
+
+        let resp = recognize(&json!({
+            "project_root": root.to_string_lossy(),
+            "source_paths": [user_rel],
+        }))
+        .expect("recognize should succeed");
+
+        let tags = resp["tags"].as_array().expect("tags array");
+        assert_eq!(
+            tags.len(),
+            1,
+            "Rust recognizer must self-resolve imported sugar binding proofs without CLI binding_templates: {tags:?}"
+        );
+        let tag = &tags[0];
+        assert_eq!(tag["concept_name"], "concept:json-parse");
+        assert_eq!(tag["library_tag"], "provekit-shim-serde-json-rust");
+        assert_eq!(tag["contract_cid"], contract_cid);
+        assert_eq!(tag["target_proof_cid"], proof_cid);
+
+        let _ = fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn recognize_self_resolves_binding_templates_from_cargo_dependency_proofs() {
+        let sugar_src = r##"
+#[provekit::sugar(concept = "concept:json-parse", library = "provekit-shim-serde-json-rust")]
+pub fn json_parse(s: &str) -> i64 {
+    serde_json::from_str(s)
+}
+"##;
+        let sugar_entry = single_sugar_entry_for_source("recognize_cargo_sugar", sugar_src);
+        let contract_cid = "blake3-512:ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff";
+
+        let root = temp_workspace("recognize_cargo_dependency");
+        let project = root.join("project");
+        let dep = root.join("recognize-shim");
+        fs::create_dir_all(project.join("src")).expect("create project src");
+        fs::create_dir_all(dep.join("src")).expect("create dep src");
+        fs::write(
+            project.join("Cargo.toml"),
+            r#"[package]
+name = "recognize-user"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+recognize-shim = { path = "../recognize-shim" }
+"#,
+        )
+        .expect("write project Cargo.toml");
+        fs::write(
+            dep.join("Cargo.toml"),
+            r#"[package]
+name = "recognize-shim"
+version = "0.1.0"
+edition = "2021"
+"#,
+        )
+        .expect("write dep Cargo.toml");
+        fs::write(dep.join("src").join("lib.rs"), "pub fn marker() {}\n").expect("write dep src");
+        let user_rel = "src/lib.rs";
+        fs::write(
+            project.join(user_rel),
+            r##"
+pub fn json_parse(input: &str) -> Result<serde_json::Value, String> {
+    serde_json::from_str(input)
+}
+"##,
+        )
+        .expect("write user source");
+        let proof_cid = write_sugar_binding_proof(
+            &dep,
+            sugar_entry,
+            contract_cid,
+            "@test/rust-recognize-cargo-shim",
+        );
+
+        let resp = recognize(&json!({
+            "project_root": project.to_string_lossy(),
+            "source_paths": [user_rel],
+        }))
+        .expect("recognize should succeed");
+
+        let tags = resp["tags"].as_array().expect("tags array");
+        assert_eq!(
+            tags.len(),
+            1,
+            "Rust recognizer must resolve package proof templates through Cargo metadata: {tags:?}"
+        );
+        let tag = &tags[0];
+        assert_eq!(tag["concept_name"], "concept:json-parse");
+        assert_eq!(tag["contract_cid"], contract_cid);
+        assert_eq!(tag["target_proof_cid"], proof_cid);
 
         let _ = fs::remove_dir_all(root);
     }
@@ -8094,6 +8440,35 @@ pub fn bitwise_not() -> i64 {
         let root = std::env::temp_dir().join(format!("{name}_{nanos}"));
         fs::create_dir_all(&root).expect("create temp workspace");
         root
+    }
+
+    fn write_sugar_binding_proof(
+        proof_dir: &Path,
+        mut sugar_entry: Value,
+        contract_cid: &str,
+        proof_name: &str,
+    ) -> String {
+        sugar_entry["contract_cid"] = Value::String(contract_cid.to_string());
+        let member = json!({ "body": sugar_entry });
+        let member_bytes = serde_json::to_vec(&member).expect("member json");
+        let member_cid = blake3_512_of(&member_bytes);
+        let mut members = BTreeMap::new();
+        members.insert(member_cid, member_bytes);
+        let signer_seed: Ed25519Seed = [0x91; 32];
+        let proof = build_proof_envelope(&ProofEnvelopeInput {
+            name: proof_name.to_string(),
+            version: "0.1.0".to_string(),
+            binary_cid: None,
+            metadata: None,
+            members,
+            signer_cid: ed25519_pubkey_string(&signer_seed),
+            signer_seed,
+            declared_at: "2026-05-31T00:00:00.000Z".to_string(),
+        });
+        fs::create_dir_all(proof_dir).expect("create proof dir");
+        fs::write(proof_dir.join(format!("{}.proof", proof.cid)), &proof.bytes)
+            .expect("write proof");
+        proof.cid
     }
 
     fn single_entry_for_source(name: &str, source: &str) -> Value {
