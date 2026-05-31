@@ -340,18 +340,39 @@ impl MementoPool {
             if let Some(n) = name {
                 let n = n.to_string();
                 // Detect collisions: same contract name, different CIDs.
-                // Across merged projects this can happen when two
-                // independent kits emit the same contract name. Keep the
-                // first insertion (winner-keeps-it) and surface the
-                // collision in load_errors so the verifier surfaces it.
-                if let Some(existing) = self.name_to_cid.get(&n) {
-                    if existing != &memento_cid {
-                        self.load_errors.push(LoadError {
-                            proof_path: memento_cid.clone(),
-                            reason: format!(
-                                "duplicate contract name `{n}` resolves to two CIDs: {existing} (kept) and {memento_cid} (dropped)"
-                            ),
-                        });
+                // When two surfaces in the same proof emit a contract with the
+                // same name (e.g. rust-bind emits a post-only `option_unwrap`
+                // and rust-fn-contracts emits a pre-bearing `option_unwrap`),
+                // prefer the pre-bearing shape over the post-only shape:
+                // PRE-bearing > body-bearing(post) > inv-only. This mirrors the
+                // dependency-harvest ranking in cmd_mint.rs. Silently upgrade
+                // the index (no LoadError) when the new contract is strictly
+                // more dischargeable than the existing one; report a LoadError
+                // only for genuinely ambiguous same-tier collisions.
+                if let Some(existing) = self.name_to_cid.get(&n).cloned() {
+                    if existing != memento_cid {
+                        let new_env = self.mementos.get(&memento_cid);
+                        let existing_env = self.mementos.get(&existing);
+                        let new_has_pre =
+                            new_env.and_then(|e| memento_body_field(e, "preHash")).is_some();
+                        let existing_has_pre =
+                            existing_env.and_then(|e| memento_body_field(e, "preHash")).is_some();
+                        if new_has_pre && !existing_has_pre {
+                            // Upgrade: pre-bearing newcomer beats post-only incumbent.
+                            self.cid_to_name.remove(&existing);
+                            self.cid_to_name.insert(memento_cid.clone(), n.clone());
+                            self.name_to_cid.insert(n, memento_cid.clone());
+                        } else if !new_has_pre && existing_has_pre {
+                            // Incumbent is already pre-bearing; silently drop the new post-only.
+                        } else {
+                            // Same tier (both pre-bearing or both post-only): genuine collision.
+                            self.load_errors.push(LoadError {
+                                proof_path: memento_cid.clone(),
+                                reason: format!(
+                                    "duplicate contract name `{n}` resolves to two CIDs: {existing} (kept) and {memento_cid} (dropped)"
+                                ),
+                            });
+                        }
                     }
                 } else {
                     self.cid_to_name.insert(memento_cid.clone(), n.clone());
