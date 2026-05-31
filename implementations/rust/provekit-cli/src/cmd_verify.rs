@@ -250,6 +250,11 @@ struct ClaimResult {
     /// discharged). Reported separately so a reflexive discharge is never
     /// conflated with a meaningful proof.
     discharge_method: Option<String>,
+    /// Body-discharge reducer route, when the claim was reduced through a
+    /// callee body before solving. This stays separate from `discharge_method`:
+    /// a route can be visible on a violation, while a method is only a proof
+    /// classification for discharged obligations.
+    body_discharge_tier: Option<String>,
 }
 
 pub fn run(args: VerifyArgs) -> u8 {
@@ -501,6 +506,7 @@ fn verify_one_claim(
         reason: String::new(),
         witness_cid: None,
         discharge_method: None,
+        body_discharge_tier: None,
     };
 
     // Set when the panic-pre obligation was wrapped under a dominating guard
@@ -556,7 +562,10 @@ fn verify_one_claim(
     // claim. Anything outside the recognized shape falls through to the
     // existing refinement path below.
     let obligation = match body_discharge_result {
-        Ok(Some(body_discharge::BodyObligation::Reduced(reduced))) => reduced,
+        Ok(Some(body_discharge::BodyObligation::Reduced { formula, tier })) => {
+            result.body_discharge_tier = Some(tier.as_str().to_string());
+            formula
+        }
         Ok(None) => {
             // Not a body-bearing claim: resolve the target contract's pre
             // and build the refinement obligation, exactly as before.
@@ -706,9 +715,7 @@ fn verify_one_claim(
             // all_guard_facts == cs.guard_facts (unchanged). The unguarded site
             // stays undecidable; no false pass is introduced.
             let mut all_guard_facts: Vec<Json> = cs.guard_facts.clone();
-            if let Some(callee_fact) =
-                body_discharge::callee_post_guard_fact(cs, pool)
-            {
+            if let Some(callee_fact) = body_discharge::callee_post_guard_fact(cs, pool) {
                 debug!(
                     bridge = %cs.bridge_ir_name,
                     callee_fact = %callee_fact,
@@ -1054,6 +1061,7 @@ fn emit_json_receipt(
                 "reason": r.reason,
                 "witnessCid": r.witness_cid,
                 "dischargeMethod": r.discharge_method,
+                "bodyDischargeTier": r.body_discharge_tier,
             })
         })
         .collect();
@@ -1111,9 +1119,14 @@ fn emit_human_receipt(
             .as_deref()
             .map(|m| format!(", method={m}"))
             .unwrap_or_default();
+        let body_tier = r
+            .body_discharge_tier
+            .as_deref()
+            .map(|t| format!(", bodyTier={t}"))
+            .unwrap_or_default();
         println!(
-            "  [{}] {}  (class={}, solver={}{})",
-            status, r.property_name, r.obligation_class, r.discharging_solver, method
+            "  [{}] {}  (class={}, solver={}{}{})",
+            status, r.property_name, r.obligation_class, r.discharging_solver, method, body_tier
         );
         if let Some(cid) = &r.witness_cid {
             println!("        witness: {}", short_cid(cid).dimmed());
@@ -1332,10 +1345,7 @@ mod tests {
         let pool = panic_trap_pool();
         // The trap contract carries a real `pre` -> route to guard-discharge.
         assert!(
-            body_discharge::target_has_nontrivial_pre(
-                &panic_callsite(vec![]),
-                &pool
-            ),
+            body_discharge::target_has_nontrivial_pre(&panic_callsite(vec![]), &pool),
             "a contract with pre=is_some(opt) must route to guard-discharge"
         );
 
@@ -1557,11 +1567,16 @@ mod tests {
         });
 
         let mut pool = MementoPool::default();
-        pool.mementos.insert(DLIB_TOTALITY_CONTRACT_CID.into(), totality_contract);
-        pool.mementos.insert(DLIB_RESULT_UNWRAP_CID.into(), result_unwrap_contract);
-        pool.mementos.insert(DLIB_GENERIC_CONTRACT_CID.into(), generic_contract);
-        pool.bridges_by_symbol.insert("serde_json_to_string_value".into(), totality_bridge);
-        pool.bridges_by_symbol.insert("to_string_generic".into(), generic_bridge);
+        pool.mementos
+            .insert(DLIB_TOTALITY_CONTRACT_CID.into(), totality_contract);
+        pool.mementos
+            .insert(DLIB_RESULT_UNWRAP_CID.into(), result_unwrap_contract);
+        pool.mementos
+            .insert(DLIB_GENERIC_CONTRACT_CID.into(), generic_contract);
+        pool.bridges_by_symbol
+            .insert("serde_json_to_string_value".into(), totality_bridge);
+        pool.bridges_by_symbol
+            .insert("to_string_generic".into(), generic_bridge);
         pool.bundle_members
             .entry(DLIB_BUNDLE.into())
             .or_default()
@@ -1577,7 +1592,10 @@ mod tests {
     /// `callee_ctor_name`: the ctor name in the arg_term (which function
     /// produced the Result being unwrapped).
     /// `guard_facts`: any syntactic guard facts (empty for our D-lib test).
-    fn dlib_unwrap_callsite(callee_ctor_name: &str, guard_facts: Vec<Json>) -> provekit_verifier::CallSite {
+    fn dlib_unwrap_callsite(
+        callee_ctor_name: &str,
+        guard_facts: Vec<Json>,
+    ) -> provekit_verifier::CallSite {
         provekit_verifier::CallSite {
             bridge_ir_name: "result_unwrap".into(),
             bridge_target_cid: DLIB_RESULT_UNWRAP_CID.into(),
@@ -1617,8 +1635,8 @@ mod tests {
         let pool = dlib_pool();
         let no_kit = std::path::Path::new("/nonexistent-dlib-test-kit");
         let (plan, registry, _) = build_plan_and_registry(no_kit, "z3");
-        let witness_dir = std::env::temp_dir()
-            .join(format!("provekit-dlib-test-{}", std::process::id()));
+        let witness_dir =
+            std::env::temp_dir().join(format!("provekit-dlib-test-{}", std::process::id()));
         std::fs::create_dir_all(&witness_dir).ok();
 
         // POSITIVE: Value-totality ctor arg. The callee_post_guard_fact wiring

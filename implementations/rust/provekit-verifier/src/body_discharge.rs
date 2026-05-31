@@ -206,13 +206,36 @@ impl OpContractResolver for CatalogResolver<'_> {
     }
 }
 
-/// The kind of obligation `extract_body_obligation` produced, for the
-/// caller's receipt row.
+/// The body-discharge route that produced an obligation. This is separate from
+/// [`DischargeMethod`]: the route says WHICH reducer path produced the formula;
+/// the method says HOW a discharged formula was proven.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum BodyDischargeTier {
+    /// Standard harvested assertion shape: `=(<call>, <expected>)`.
+    CallExpected,
+    /// Both sides are the same callee: `=(<call_a>, <call_b>)`.
+    EqBothCallsSameCallee,
+}
+
+impl BodyDischargeTier {
+    pub fn as_str(&self) -> &'static str {
+        match self {
+            Self::CallExpected => "body-call-expected",
+            Self::EqBothCallsSameCallee => "body-eq-same-callee",
+        }
+    }
+}
+
+/// The kind of obligation `extract_body_obligation` produced, for the caller's
+/// receipt/report row.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum BodyObligation {
     /// A body-reduced obligation formula, ready for the SMT emitter. The
     /// callee symbol has been inlined; no uninterpreted constant remains.
-    Reduced(Json),
+    Reduced {
+        formula: Json,
+        tier: BodyDischargeTier,
+    },
 }
 
 /// Try to build a body-reduced obligation for a body-bearing callsite.
@@ -325,7 +348,10 @@ pub fn extract_body_obligation(
         Ok(reduced) => {
             let reduced_json = serde_json::to_value(&reduced)
                 .map_err(|e| format!("wp obligation serialize: {e}"))?;
-            Ok(Some(BodyObligation::Reduced(reduced_json)))
+            Ok(Some(BodyObligation::Reduced {
+                formula: reduced_json,
+                tier: BodyDischargeTier::CallExpected,
+            }))
         }
         Err(WpError::Refused(r)) => {
             // The top-level callee resolved (we are past the lookup gate),
@@ -371,14 +397,12 @@ fn extract_eq_both_calls_obligation(
     let resolver = CatalogResolver::new(pool);
 
     // Reduce call_a to its body value expression.
-    let value_a: IrTerm =
-        reduce_to_value_expr(call_a_json, &cs.bridge_ir_name, &resolver)
-            .map_err(|e| format!("body-discharge: eq-both-calls: call_a: {e}"))?;
+    let value_a: IrTerm = reduce_to_value_expr(call_a_json, &cs.bridge_ir_name, &resolver)
+        .map_err(|e| format!("body-discharge: eq-both-calls: call_a: {e}"))?;
 
     // Reduce call_b to its body value expression.
-    let value_b: IrTerm =
-        reduce_to_value_expr(call_b_json, &cs.bridge_ir_name, &resolver)
-            .map_err(|e| format!("body-discharge: eq-both-calls: call_b: {e}"))?;
+    let value_b: IrTerm = reduce_to_value_expr(call_b_json, &cs.bridge_ir_name, &resolver)
+        .map_err(|e| format!("body-discharge: eq-both-calls: call_b: {e}"))?;
 
     // Build the final obligation: =(body_a, body_b).
     // When args are identical this is reflexive (body_a == body_b structurally);
@@ -390,7 +414,10 @@ fn extract_eq_both_calls_obligation(
     let obligation_json = serde_json::to_value(&obligation)
         .map_err(|e| format!("body-discharge: eq-both-calls: serialize: {e}"))?;
 
-    Ok(Some(BodyObligation::Reduced(obligation_json)))
+    Ok(Some(BodyObligation::Reduced {
+        formula: obligation_json,
+        tier: BodyDischargeTier::EqBothCallsSameCallee,
+    }))
 }
 
 /// How a DISCHARGED obligation was proven. This is the honesty axis the
@@ -709,8 +736,7 @@ fn reduce_to_value_expr(
     // Extract the LHS of `=(body_expr, sentinel)`.
     // wp(call, result==sentinel) -> `=(body_expr, sentinel)`.
     // The LHS (args[0]) IS the body value expression.
-    let shape_str = serde_json::to_string(&reduced)
-        .unwrap_or_else(|_| "<unserializable>".into());
+    let shape_str = serde_json::to_string(&reduced).unwrap_or_else(|_| "<unserializable>".into());
     match reduced {
         IrFormula::Atomic { name, mut args } if name == "=" && args.len() == 2 => {
             // args[0] = body_expr(call.args), args[1] = __eq_both_sentinel
@@ -835,7 +861,10 @@ mod routing_predicate_tests {
             "post": {"kind": "atomic", "name": "=", "args": []},
             "formals": ["opt"]
         }));
-        assert!(target_has_nontrivial_pre(&cs_targeting(cid), &pool_with(cid, env)));
+        assert!(target_has_nontrivial_pre(
+            &cs_targeting(cid),
+            &pool_with(cid, env)
+        ));
     }
 
     #[test]
@@ -874,7 +903,10 @@ mod routing_predicate_tests {
         // Target CID not in the pool -> false (keeps the no-pre path
         // byte-identical; never panics looking up a stale bridge).
         let empty = MementoPool::default();
-        assert!(!target_has_nontrivial_pre(&cs_targeting("blake3-512:absent"), &empty));
+        assert!(!target_has_nontrivial_pre(
+            &cs_targeting("blake3-512:absent"),
+            &empty
+        ));
 
         // Target memento is not a contract (e.g. a bridge) -> false.
         let cid = "blake3-512:not-a-contract";
@@ -934,8 +966,10 @@ mod callee_post_guard_fact_tests {
             }
         });
         let mut pool = MementoPool::default();
-        pool.mementos.insert(TOTAL_CONTRACT_CID.into(), contract_env);
-        pool.bridges_by_symbol.insert(BRIDGE_SYMBOL.into(), bridge_env);
+        pool.mementos
+            .insert(TOTAL_CONTRACT_CID.into(), contract_env);
+        pool.bridges_by_symbol
+            .insert(BRIDGE_SYMBOL.into(), bridge_env);
         pool
     }
 
@@ -967,8 +1001,10 @@ mod callee_post_guard_fact_tests {
             }
         });
         let mut pool = MementoPool::default();
-        pool.mementos.insert(GENERIC_CONTRACT_CID.into(), contract_env);
-        pool.bridges_by_symbol.insert(GENERIC_BRIDGE_SYMBOL.into(), bridge_env);
+        pool.mementos
+            .insert(GENERIC_CONTRACT_CID.into(), contract_env);
+        pool.bridges_by_symbol
+            .insert(GENERIC_BRIDGE_SYMBOL.into(), bridge_env);
         pool
     }
 
@@ -1169,7 +1205,8 @@ mod eq_both_calls_discharge_tests {
         });
         let mut pool = MementoPool::default();
         pool.mementos.insert(DOUBLE_CID.into(), contract_env);
-        pool.bridges_by_symbol.insert(DOUBLE_SYMBOL.into(), bridge_env);
+        pool.bridges_by_symbol
+            .insert(DOUBLE_SYMBOL.into(), bridge_env);
         pool
     }
 
@@ -1209,13 +1246,20 @@ mod eq_both_calls_discharge_tests {
         let pool = double_pool();
 
         let result = extract_body_obligation(&cs, &pool);
-        assert!(result.is_ok(), "same-args both-calls must not return Err: {result:?}");
+        assert!(
+            result.is_ok(),
+            "same-args both-calls must not return Err: {result:?}"
+        );
         let obligation_opt = result.unwrap();
         assert!(
             obligation_opt.is_some(),
             "same-args both-calls must produce an obligation (not None)"
         );
-        let BodyObligation::Reduced(obligation_json) = obligation_opt.unwrap();
+        let BodyObligation::Reduced {
+            formula: obligation_json,
+            tier,
+        } = obligation_opt.unwrap();
+        assert_eq!(tier, BodyDischargeTier::EqBothCallsSameCallee);
 
         // The obligation must be reflexive: =(body_expr(3), body_expr(3))
         assert!(
@@ -1256,7 +1300,11 @@ mod eq_both_calls_discharge_tests {
             obligation_opt.is_some(),
             "different-args both-calls must produce an obligation (not None)"
         );
-        let BodyObligation::Reduced(obligation_json) = obligation_opt.unwrap();
+        let BodyObligation::Reduced {
+            formula: obligation_json,
+            tier,
+        } = obligation_opt.unwrap();
+        assert_eq!(tier, BodyDischargeTier::EqBothCallsSameCallee);
 
         // THE DECISIVE ASSERTION: sides differ -> NOT reflexive.
         // `formula_is_reflexive` must return false for `=(6, 8)`.
@@ -1281,9 +1329,7 @@ mod eq_both_calls_discharge_tests {
         // Both sides must be the `*` ctor (body of double), not `double`.
         assert_ne!(args[0], args[1], "sides of reduced =(6,8) must differ");
         assert!(
-            !obligation_json
-                .to_string()
-                .contains(DOUBLE_SYMBOL),
+            !obligation_json.to_string().contains(DOUBLE_SYMBOL),
             "no uninterpreted `double` symbol must remain in the reduced obligation; \
              got: {obligation_json}"
         );
