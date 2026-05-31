@@ -253,6 +253,9 @@ pub enum BodyDischargeTier {
     CallExpected,
     /// Both sides are the same callee: `=(<call_a>, <call_b>)`.
     EqBothCallsSameCallee,
+    /// A call nested inside the obligation (not a direct arg of the `=`),
+    /// reduced in place: `=(<outer(.. nested_call ..)>, <expected>)`.
+    EqNestedCall,
 }
 
 impl BodyDischargeTier {
@@ -260,6 +263,7 @@ impl BodyDischargeTier {
         match self {
             Self::CallExpected => "body-call-expected",
             Self::EqBothCallsSameCallee => "body-eq-same-callee",
+            Self::EqNestedCall => "body-eq-nested-call",
         }
     }
 }
@@ -953,7 +957,10 @@ fn extract_eq_nested_reduce_obligation(
     let obligation_json = serde_json::to_value(&obligation)
         .map_err(|e| format!("nested-call reduce-in-place: serialize: {e}"))?;
 
-    Ok(Some(BodyObligation::Reduced(obligation_json)))
+    Ok(Some(BodyObligation::Reduced {
+        formula: obligation_json,
+        tier: BodyDischargeTier::EqNestedCall,
+    }))
 }
 
 #[cfg(test)]
@@ -1776,7 +1783,7 @@ mod nested_call_reduce_in_place_tests {
         );
         let ob = result.unwrap();
         assert!(ob.is_some(), "must produce Some obligation, not None");
-        let BodyObligation::Reduced(ob_json) = ob.unwrap();
+        let BodyObligation::Reduced { formula: ob_json, .. } = ob.unwrap();
 
         // The reduced formula must not contain the uninterpreted `double` symbol.
         assert!(
@@ -1823,7 +1830,7 @@ mod nested_call_reduce_in_place_tests {
         );
         let ob = result.unwrap();
         assert!(ob.is_some(), "must produce Some obligation even for wrong-wrapper");
-        let BodyObligation::Reduced(ob_json) = ob.unwrap();
+        let BodyObligation::Reduced { formula: ob_json, .. } = ob.unwrap();
 
         // THE DISCRIMINATION ASSERTION: the obligation must NOT be reflexive.
         // `Ok(body) == Err(6)` can never be reflexive because the ctor names differ.
@@ -1968,7 +1975,7 @@ mod nested_call_reduce_in_place_tests {
         );
         let ob = result.unwrap();
         assert!(ob.is_some(), "arithmetic discrimination must produce Some(obligation)");
-        let BodyObligation::Reduced(ob_json) = ob.unwrap();
+        let BodyObligation::Reduced { formula: ob_json, .. } = ob.unwrap();
 
         // THE ARITHMETIC DISCRIMINATION ASSERTION: sides must NOT be reflexive.
         // LHS contains `*(3,2)` (or similar body-reduced form); RHS is `7`.
