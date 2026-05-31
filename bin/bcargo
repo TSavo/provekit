@@ -3,9 +3,14 @@ set -euo pipefail
 
 usage() {
   cat <<'EOF'
-usage: bcargo [cargo args...]
+usage: bcargo [bcargo options] [cargo args...]
 
 Sync the Rust-facing ProvekIt workspace to battleaxe, then run Cargo there.
+
+Options:
+  --sync-bin NAME     After a successful cargo command, copy target/<profile>/NAME
+                      back to the matching local target directory. Repeatable.
+  --sync-bins LIST    Comma-separated form of --sync-bin.
 
 Environment:
   BCARGO_REMOTE_HOST   SSH host alias to use (default: battleaxe)
@@ -17,6 +22,39 @@ if [[ "${1:-}" == "--help" || "${1:-}" == "-h" ]]; then
   usage
   exit 0
 fi
+
+sync_bins=()
+while [[ $# -gt 0 ]]; do
+  case "$1" in
+    --sync-bin)
+      if [[ $# -lt 2 ]]; then
+        echo "bcargo: --sync-bin requires a binary name" >&2
+        exit 2
+      fi
+      sync_bins+=("$2")
+      shift 2
+      ;;
+    --sync-bins)
+      if [[ $# -lt 2 ]]; then
+        echo "bcargo: --sync-bins requires a comma-separated list" >&2
+        exit 2
+      fi
+      IFS=',' read -r -a parsed_sync_bins <<<"$2"
+      for bin in "${parsed_sync_bins[@]}"; do
+        [[ -n "$bin" ]] && sync_bins+=("$bin")
+      done
+      shift 2
+      ;;
+    --)
+      shift
+      break
+      ;;
+    *)
+      break
+      ;;
+  esac
+done
+cargo_args=("$@")
 
 repo_root="$(git rev-parse --show-toplevel 2>/dev/null || true)"
 if [[ -z "$repo_root" ]]; then
@@ -54,6 +92,30 @@ quote_sh() {
 remote_parent() {
   local path="$1"
   dirname "$path"
+}
+
+abs_from_cwd() {
+  local path="$1"
+  if [[ "$path" == /* ]]; then
+    printf '%s\n' "$path"
+  else
+    printf '%s\n' "$local_cwd/$path"
+  fi
+}
+
+remote_for_local_path() {
+  local path="$1"
+  case "$path" in
+    "$repo_root")
+      printf '%s\n' "$remote_repo"
+      ;;
+    "$repo_root"/*)
+      printf '%s/%s\n' "$remote_repo" "${path#"$repo_root"/}"
+      ;;
+    *)
+      printf '%s\n' "$path"
+      ;;
+  esac
 }
 
 run_ssh() {
@@ -131,6 +193,46 @@ if [[ -n "$rel_cwd" ]]; then
   remote_cwd="$remote_repo/$rel_cwd"
 fi
 
+profile="debug"
+manifest_path=""
+target_dir_arg=""
+for ((i = 0; i < ${#cargo_args[@]}; i++)); do
+  arg="${cargo_args[$i]}"
+  case "$arg" in
+    --release)
+      profile="release"
+      ;;
+    --manifest-path)
+      if (( i + 1 < ${#cargo_args[@]} )); then
+        manifest_path="${cargo_args[$((i + 1))]}"
+      fi
+      ;;
+    --manifest-path=*)
+      manifest_path="${arg#--manifest-path=}"
+      ;;
+    --target-dir)
+      if (( i + 1 < ${#cargo_args[@]} )); then
+        target_dir_arg="${cargo_args[$((i + 1))]}"
+      fi
+      ;;
+    --target-dir=*)
+      target_dir_arg="${arg#--target-dir=}"
+      ;;
+  esac
+done
+
+if [[ -n "$target_dir_arg" ]]; then
+  local_target_dir="$(abs_from_cwd "$target_dir_arg")"
+  remote_target_dir="$(remote_for_local_path "$local_target_dir")"
+elif [[ -n "$manifest_path" ]]; then
+  local_manifest_path="$(abs_from_cwd "$manifest_path")"
+  local_target_dir="$(dirname "$local_manifest_path")/target"
+  remote_target_dir="$(remote_for_local_path "$local_target_dir")"
+else
+  local_target_dir="$local_cwd/target"
+  remote_target_dir="$remote_cwd/target"
+fi
+
 remote_args=()
 for arg in "$@"; do
   if [[ "$arg" == "$repo_root" ]]; then
@@ -146,4 +248,18 @@ for arg in "${remote_args[@]}"; do
   inner+=" $arg"
 done
 
+set +e
 run_ssh "bash -lc $(quote_sh "$inner")"
+status=$?
+set -e
+
+if [[ "$status" -ne 0 ]]; then
+  exit "$status"
+fi
+
+for bin in "${sync_bins[@]}"; do
+  remote_bin="$remote_target_dir/$profile/$bin"
+  local_bin="$local_target_dir/$profile/$bin"
+  mkdir -p "$(dirname "$local_bin")"
+  "$rsync_bin" -az "$remote_host:$remote_bin" "$local_bin"
+done
