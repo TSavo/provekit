@@ -288,6 +288,19 @@ fn lift_kit_name(surface: &str) -> String {
     format!("lift-{surface}")
 }
 
+/// Parse a manifest.toml at the given path. Exposed pub(crate) for doctor.
+pub(crate) fn parse_manifest_at(path: &Path) -> Result<LiftPluginManifest, String> {
+    parse_manifest(path)
+}
+
+/// Resolve the plugin working dir relative to the project root. Exposed pub(crate) for doctor.
+pub(crate) fn resolved_working_dir_for(
+    project_root: &Path,
+    manifest: &LiftPluginManifest,
+) -> Option<PathBuf> {
+    resolved_working_dir(project_root, manifest)
+}
+
 fn parse_manifest(path: &Path) -> Result<LiftPluginManifest, String> {
     let text =
         std::fs::read_to_string(path).map_err(|e| format!("read {}: {e}", path.display()))?;
