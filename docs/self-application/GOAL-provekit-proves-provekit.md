@@ -46,9 +46,21 @@ honest scoreboard with ZERO silent drops and ZERO false "cannot panic".
   below).
 - Known debt: #1717 (SMT emitter collapses an opaque-sorted `forall` to literal
   `true` on the negated path = latent false-pass; the panic path routes around
-  it). name-in-CID preimage (contradicts names-are-sugar). monorepo
-  rust-analyzer daemon stall (separate infra bug; fixture isolation is the
-  workaround).
+  it). name-in-CID preimage (contradicts names-are-sugar).
+- RESOLVED (2026-05-31): the "monorepo rust-analyzer never quiesces" stall was
+  NOT a distinct infra bug needing a warm-index daemon. It was a SILENT failure:
+  rust-analyzer shells out `cargo metadata`, and when the ambient cargo is a
+  different vintage than the RA binary that call fails on a flag mismatch (e.g.
+  `--lockfile-path`); RA then resolves NOTHING yet reports `quiescent=true,
+  health=warning` -- a K=0 census that looks honest but is a broken oracle.
+  `ra_oracle` now pins RA's `CARGO`/`RUSTUP_TOOLCHAIN` to the toolchain the RA
+  binary lives in. With the pin, RA indexes the FULL provekit-cli workspace and
+  quiesces `health=ok` in ~52s, resolving real cli method receivers via hover
+  (`serde_json::to_string_pretty(&report).unwrap()` -> `core::result::Result` ->
+  stem `result`). Validated by `provekit-walk`'s `hover_probe` bin against
+  `examples/oracle-hover-fixture` AND against provekit-cli itself. The cli-K
+  FOUNDATION (resolution + leaf disambiguation) is unblocked; the remaining lever
+  to raise K is the Phase 2 reasoning tiers, not infra.
 
 ## The metric (the one number we watch)
 
