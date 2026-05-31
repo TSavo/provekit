@@ -1,10 +1,12 @@
-import { mkdtempSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 
 import { canonicalEncode, canonicalJsonString } from "../../claimEnvelope/canonicalize.js";
 import { computeCid } from "../../canonicalizer/hash.js";
+import { generateKeypair } from "../../producerKeys/index.js";
+import { buildProofEnvelope } from "../../proofEnvelope/index.js";
 import {
   compileTypeScriptSourceBodyIr,
   compileTypeScriptSourceIr,
@@ -26,6 +28,33 @@ function rhs(contract: Record<string, any>): any {
 
 function canonicalCid(value: unknown): string {
   return computeCid(canonicalEncode(value));
+}
+
+function installTypeScriptShimProof(
+  projectRoot: string,
+  packageName: string,
+  members: Map<string, unknown>,
+): { proofCid: string } {
+  const packageRoot = packageName.startsWith("@")
+    ? join(projectRoot, "node_modules", ...packageName.split("/"))
+    : join(projectRoot, "node_modules", packageName);
+  mkdirSync(packageRoot, { recursive: true });
+  const { privateKey, publicKey } = generateKeypair({ seed: Buffer.alloc(32, 0x42) });
+  const signerCid = computeCid(publicKey.export({ type: "spki", format: "der" }));
+  const built = buildProofEnvelope({
+    name: packageName,
+    version: "0.0.0",
+    members: members as any,
+    signerCid,
+    signerPrivateKey: privateKey,
+    declaredAt: "2026-05-31T00:00:00.000Z",
+  });
+  writeFileSync(join(packageRoot, `${built.cid}.proof`), Buffer.from(built.bytes));
+  writeFileSync(
+    join(packageRoot, "package.json"),
+    JSON.stringify({ name: packageName, version: "0.0.0", provekit: { proofHash: built.cid } }, null, 2),
+  );
+  return { proofCid: built.cid };
 }
 
 describe("typescript-source lifter", () => {
@@ -272,6 +301,62 @@ export function send(uri: string, h: Headers): Response {
       family: "concept:family:http",
       match_tier: "exact",
     });
+  });
+
+  it("recognize RPC path self-resolves TypeScript sugar templates from package proofs", () => {
+    const root = tempDir("provekit-ts-recognize-proof-");
+    try {
+      writeFileSync(
+        join(root, "user.ts"),
+        `
+export function send(uri: string, h: Headers): Response {
+  return client.execute(uri, h);
+}
+`,
+      );
+      const shim = `
+import { sugar } from "provekit";
+
+@sugar.bind({ concept: "concept:http-request", library: "fetch-lib", family: "concept:family:http" })
+function fetchUrl(url: string, headers: Headers): Response {
+  return client.execute(url, headers);
+}
+`;
+      const sugarEntry = liftTypeScriptLibraryBindingsText(shim, "src/shim.ts").libraryBindings[0]!;
+      const contractCid = "blake3-512:" + "c".repeat(128);
+      const member = {
+        body: {
+          ...sugarEntry,
+          contract_cid: contractCid,
+        },
+      };
+      const memberCid = computeCid(canonicalEncode(member));
+      const { proofCid } = installTypeScriptShimProof(
+        root,
+        "@provekit/shim-fetch-lib",
+        new Map([[memberCid, member]]),
+      );
+
+      const response = (typeScriptSource as Record<string, any>).recognizeTypeScriptSources({
+        project_root: root,
+        source_paths: ["user.ts"],
+      });
+
+      expect(response.tags).toHaveLength(1);
+      expect(response.tags[0]).toMatchObject({
+        file: "user.ts",
+        function_name: "send",
+        concept_name: "concept:http-request",
+        library_tag: "fetch-lib",
+        family: "concept:family:http",
+        template_cid: sugarEntry.body_source.template_cid,
+        contract_cid: contractCid,
+        target_proof_cid: proofCid,
+        match_tier: "exact",
+      });
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
   });
 
   // -----------------------------------------------------------------

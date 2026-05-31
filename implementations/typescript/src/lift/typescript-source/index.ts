@@ -1,10 +1,11 @@
-import { existsSync, readFileSync, readdirSync, statSync } from "node:fs";
-import { relative, resolve } from "node:path";
+import { existsSync, readFileSync, realpathSync, readdirSync, statSync } from "node:fs";
+import { join, relative, resolve } from "node:path";
 import ts from "typescript";
 
 import { canonicalJsonString } from "../../claimEnvelope/canonicalize.js";
 import { computeCid } from "../../canonicalizer/hash.js";
 import type { IrFormula, IrTerm, Sort, VarTerm } from "../../ir/formulas.js";
+import { decodeProofEnvelope } from "../../proofEnvelope/index.js";
 
 export type TypeScriptSourceEffect =
   | { kind: "reads"; target: string }
@@ -95,6 +96,7 @@ export interface TypeScriptBindingTemplate {
   template_cid?: unknown;
   param_names?: unknown;
   contract_cid?: unknown;
+  target_proof_cid?: unknown;
 }
 
 export interface TypeScriptRecognizeParams {
@@ -114,6 +116,7 @@ export interface TypeScriptRecognizeTag {
   family: unknown;
   template_cid: string;
   contract_cid: unknown;
+  target_proof_cid: unknown;
   match_tier: "exact";
   param_bindings: { index: number; source_text: string }[];
 }
@@ -167,6 +170,7 @@ const SKIP_DIRS = new Set([
   "coverage",
 ]);
 const SOURCE_EXTS = new Set([".ts", ".tsx", ".js", ".jsx", ".mts", ".cts"]);
+const PROOF_FILE_RE = /^blake3-512:[0-9a-f]{128}\.proof$/i;
 
 export function liftTypeScriptSourceText(
   sourceText: string,
@@ -249,13 +253,13 @@ export function recognizeTypeScriptSources(params: TypeScriptRecognizeParams): T
   if (!Array.isArray(params.source_paths)) throw new Error("missing `source_paths` array");
   const root = resolve(params.project_root);
   const suppliedTemplates = params.binding_templates ?? [];
-  const selfResolvedBindings = suppliedTemplates.length > 0
-    ? []
-    : liftTypeScriptLibraryBindingsPaths(root, params.source_paths).libraryBindings;
+  const selfResolvedBindings = liftTypeScriptLibraryBindingsPaths(root, params.source_paths).libraryBindings;
   const sugarTemplateFiles = new Set(selfResolvedBindings.map((entry) => entry.body_source.file));
-  const templatePool = suppliedTemplates.length > 0
-    ? suppliedTemplates
-    : selfResolvedBindings.map(bindingTemplateFromSugarEntry);
+  const templatePool = [
+    ...suppliedTemplates,
+    ...selfResolvedBindings.map(bindingTemplateFromSugarEntry),
+    ...loadBindingTemplatesForProject(root),
+  ];
   const bindingsByCid = bindingTemplatesByCid(templatePool);
   const tags: TypeScriptRecognizeTag[] = [];
 
@@ -284,7 +288,164 @@ function bindingTemplateFromSugarEntry(entry: TypeScriptLibrarySugarBindingEntry
     template_cid: entry.body_source.template_cid,
     param_names: entry.body_source.param_names,
     contract_cid: (entry as unknown as { contract_cid?: unknown }).contract_cid ?? null,
+    target_proof_cid: (entry as unknown as { target_proof_cid?: unknown }).target_proof_cid ?? null,
   };
+}
+
+function loadBindingTemplatesForProject(projectRoot: string): TypeScriptBindingTemplate[] {
+  const templates: TypeScriptBindingTemplate[] = [];
+  for (const proofPath of resolveDependencyProofPaths(projectRoot)) {
+    templates.push(...bindingTemplatesFromProof(proofPath));
+  }
+  return templates;
+}
+
+function bindingTemplatesFromProof(proofPath: string): TypeScriptBindingTemplate[] {
+  const proofBytes = readFileSync(proofPath);
+  const proofCid = computeCid(proofBytes);
+  const catalog = decodeProofEnvelope(new Uint8Array(proofBytes));
+  const templates: TypeScriptBindingTemplate[] = [];
+
+  for (const memberBytes of catalog.members.values()) {
+    let parsed: unknown;
+    try {
+      parsed = JSON.parse(Buffer.from(memberBytes).toString("utf8"));
+    } catch {
+      continue;
+    }
+    const body = isRecord(parsed) && isRecord(parsed.body) ? parsed.body : parsed;
+    const template = bindingTemplateFromProofSugarEntry(body, proofCid);
+    if (template) templates.push(template);
+  }
+
+  return templates;
+}
+
+function bindingTemplateFromProofSugarEntry(raw: unknown, proofCid: string): TypeScriptBindingTemplate | null {
+  if (!isRecord(raw) || raw.kind !== "library-sugar-binding-entry") return null;
+  const targetLanguage = raw.target_language;
+  if (typeof targetLanguage === "string" && targetLanguage !== "typescript") return null;
+  if (typeof raw.concept_name !== "string" || raw.concept_name.length === 0) return null;
+  const bodySource = isRecord(raw.body_source) ? raw.body_source : null;
+  if (!bodySource || bodySource.ast_template === undefined || bodySource.ast_template === null) return null;
+
+  const templateCid = typeof bodySource.template_cid === "string" && bodySource.template_cid.length > 0
+    ? bodySource.template_cid
+    : cidOfValue(bodySource.ast_template);
+
+  return {
+    concept_name: raw.concept_name,
+    library_tag: typeof raw.target_library_tag === "string" ? raw.target_library_tag : null,
+    family: raw.family ?? null,
+    ast_template: bodySource.ast_template,
+    template_cid: templateCid,
+    param_names: stringArray(bodySource.param_names) ?? stringArray(raw.param_names) ?? [],
+    contract_cid: typeof raw.contract_cid === "string" ? raw.contract_cid : null,
+    target_proof_cid: proofCid,
+  };
+}
+
+function resolveDependencyProofPaths(projectRoot: string): string[] {
+  const root = resolve(projectRoot);
+  const proofPaths = new Set<string>();
+  const visitedNodeModules = new Set<string>();
+  const visitedPackages = new Set<string>();
+  walkNodeModules(join(root, "node_modules"), { proofPaths, visitedNodeModules, visitedPackages });
+  return [...proofPaths].sort();
+}
+
+interface DependencyProofWalkState {
+  proofPaths: Set<string>;
+  visitedNodeModules: Set<string>;
+  visitedPackages: Set<string>;
+}
+
+function walkNodeModules(nodeModulesDir: string, state: DependencyProofWalkState): void {
+  const realNodeModules = realDirectoryPath(nodeModulesDir);
+  if (realNodeModules === null || state.visitedNodeModules.has(realNodeModules)) return;
+  state.visitedNodeModules.add(realNodeModules);
+
+  let entries;
+  try {
+    entries = readdirSync(realNodeModules, { withFileTypes: true });
+  } catch {
+    return;
+  }
+
+  for (const entry of entries) {
+    if (entry.name.startsWith(".")) continue;
+    const entryPath = join(realNodeModules, entry.name);
+    if (entry.name.startsWith("@")) {
+      walkScopedPackages(entryPath, state);
+      continue;
+    }
+    collectPackage(entryPath, state);
+  }
+}
+
+function walkScopedPackages(scopeDir: string, state: DependencyProofWalkState): void {
+  const realScopeDir = realDirectoryPath(scopeDir);
+  if (realScopeDir === null) return;
+
+  let entries;
+  try {
+    entries = readdirSync(realScopeDir, { withFileTypes: true });
+  } catch {
+    return;
+  }
+
+  for (const entry of entries) {
+    collectPackage(join(realScopeDir, entry.name), state);
+  }
+}
+
+function collectPackage(packageDir: string, state: DependencyProofWalkState): void {
+  const realPackageDir = realDirectoryPath(packageDir);
+  if (realPackageDir === null || state.visitedPackages.has(realPackageDir)) return;
+  state.visitedPackages.add(realPackageDir);
+
+  collectPackageProofFiles(realPackageDir, state.proofPaths);
+  walkNodeModules(join(realPackageDir, "node_modules"), state);
+}
+
+function collectPackageProofFiles(packageDir: string, proofPaths: Set<string>): void {
+  let entries;
+  try {
+    entries = readdirSync(packageDir, { withFileTypes: true });
+  } catch {
+    return;
+  }
+
+  for (const entry of entries) {
+    const entryPath = join(packageDir, entry.name);
+    if (entry.isDirectory()) {
+      if (entry.name === "node_modules" || entry.name === ".git") continue;
+      collectPackageProofFiles(entryPath, proofPaths);
+      continue;
+    }
+    if (entry.isFile() && PROOF_FILE_RE.test(entry.name)) {
+      proofPaths.add(entryPath);
+    }
+  }
+}
+
+function realDirectoryPath(candidate: string): string | null {
+  try {
+    const realPath = realpathSync(candidate);
+    return statSync(realPath).isDirectory() ? realPath : null;
+  } catch {
+    return null;
+  }
+}
+
+function stringArray(raw: unknown): string[] | null {
+  if (!Array.isArray(raw)) return null;
+  const out = raw.filter((item): item is string => typeof item === "string");
+  return out.length === raw.length ? out : null;
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return value !== null && typeof value === "object" && !Array.isArray(value);
 }
 
 export function recognizeTypeScriptSourcesText(
@@ -362,6 +523,7 @@ function recognizeFunctionLike(
     family: binding.family ?? null,
     template_cid: templateCid,
     contract_cid: binding.contract_cid ?? null,
+    target_proof_cid: binding.target_proof_cid ?? null,
     match_tier: "exact",
     param_bindings: paramNames.map((name, index) => ({ index: index + 1, source_text: name })),
   };
