@@ -132,13 +132,28 @@ impl RaOracle {
             binary = %bin.display(),
             "oracle: spawning rust-analyzer LSP subprocess"
         );
-        let mut child = Command::new(&bin)
-            .current_dir(workspace_root)
+        // rust-analyzer shells out `cargo metadata` to load the dependency graph.
+        // If the ambient `cargo` it resolves to is OLDER than the rust-analyzer
+        // binary, that call fails on a flag RA's vintage emits (e.g.
+        // `--lockfile-path`), RA silently resolves NOTHING, yet still reports
+        // `quiescent=true, health=warning`. That is a silent zero-resolution: a
+        // K=0 census that looks honest but is a broken oracle. When RA was located
+        // under a rustup toolchain, pin `CARGO`/`RUSTUP_TOOLCHAIN` to that SAME
+        // toolchain so RA's `cargo metadata` matches its own vintage. Only set
+        // what the caller has not set, so an explicit override always wins.
+        let toolchain_env = rustup_toolchain_env_for(&bin);
+        let mut cmd = Command::new(&bin);
+        cmd.current_dir(workspace_root)
             .stdin(Stdio::piped())
             .stdout(Stdio::piped())
-            .stderr(Stdio::null())
-            .spawn()
-            .ok()?;
+            .stderr(Stdio::null());
+        for (k, v) in &toolchain_env {
+            if std::env::var_os(k).is_none() {
+                info!(key = %k, value = %v, "oracle: pinning RA toolchain env (matches the RA binary)");
+                cmd.env(k, v);
+            }
+        }
+        let mut child = cmd.spawn().ok()?;
         let stdin = child.stdin.take()?;
         let stdout = child.stdout.take()?;
         let (tx, rx) = std::sync::mpsc::channel::<Value>();
@@ -199,7 +214,12 @@ impl RaOracle {
                 "processId": std::process::id(),
                 "rootUri": root_uri,
                 "capabilities": {
-                    "textDocument": { "definition": { "linkSupport": true } },
+                    "textDocument": {
+                        "definition": { "linkSupport": true },
+                        // Ask for markdown hover so the receiver type renders as a
+                        // fenced ```rust``` block we can parse the type head from.
+                        "hover": { "contentFormat": ["markdown", "plaintext"] }
+                    },
                     "window": { "workDoneProgress": true },
                     // Ask rust-analyzer to emit `experimental/serverStatus`
                     // notifications. They carry `quiescent: true` once the
@@ -498,15 +518,107 @@ impl RaOracle {
         // The type stem is BEST-EFFORT on top of a definite crate: an ambiguous
         // or unmappable stem leaves `type_stem = None` (the caller keeps the
         // crate but cannot reach a disambiguated partial), never a wrong stem.
-        let type_stem = type_stem_from_definition_result(&result);
+        //
+        // PREFER hover for the panic-leaf type stem. `textDocument/hover` at the
+        // method-ident position renders the RECEIVER's own type as text: its first
+        // ```rust``` block is the receiver-type path (e.g. `core::result::Result`,
+        // `core::option::Option`). That gives the receiver TYPE HEAD directly, with
+        // no def-jump-to-a-file heuristic, so it disambiguates the panic partial
+        // even when the definition lands at a workspace-local position (where the
+        // def-file-stem path yields nothing). The definition file-stem
+        // (`type_stem_from_definition_result`) stays as the FALLBACK for the cases
+        // hover refuses, so this is strictly additive: a hover that is empty,
+        // ambiguous, or a signature/binding block (not a bare type path) refuses,
+        // and the caller drops to the def-stem, then to None. An unresolved stem
+        // stays unresolved; we never guess. (The crate still comes from
+        // `definition`; hover only refines the type stem.)
+        let hover_stem = self.hover_type_stem(q);
+        let type_stem = hover_stem
+            .clone()
+            .or_else(|| type_stem_from_definition_result(&result));
         debug!(
             file = %q.abs_path.display(),
             line = q.lsp_line, col = q.lsp_col,
             resolved_crate = %krate,
+            hover_stem = ?hover_stem,
             type_stem = ?type_stem,
+            stem_source = if hover_stem.is_some() { "hover" } else { "definition-file-stem" },
             "oracle: resolved method call to crate + type stem"
         );
         Ok(Some(TypedResolution { krate, type_stem }))
+    }
+
+    /// Ask `textDocument/hover` at the method-ident position for the RECEIVER's
+    /// type stem (`result`/`option`/`slice`/`str`/...), or `None` (refuse).
+    ///
+    /// rust-analyzer's hover at a method-call ident renders the receiver type as
+    /// the FIRST fenced ```rust``` block of the markdown (a bare type path such as
+    /// `core::result::Result` or `core::option::Option`); the method signature and
+    /// docs follow in later blocks. `type_stem_from_hover_markdown` extracts the
+    /// head of that first block (last `::` segment, generics stripped, lowercased).
+    ///
+    /// Soundness: this is BEST-EFFORT and never blocks the crate resolution. Hover
+    /// is a refinement layered on top of the already-settled definition result, so
+    /// a not-ready (ContentModified) hover, a transport failure, an empty/ambiguous
+    /// markdown, or a block that is a signature/binding rather than a bare type
+    /// path all yield `None` (refuse) and the caller falls back to the definition
+    /// file-stem. We never guess a stem from an ambiguous hover.
+    fn hover_type_stem(&mut self, q: &ResolveQuery) -> Option<String> {
+        if self.ensure_open(&q.abs_path).is_none() {
+            return None;
+        }
+        let uri = path_to_uri(&q.abs_path);
+        // Hover refines an already-resolved crate, so it does NOT carry the
+        // ContentModified retry budget the crate path does: if RA answers "not
+        // ready" we simply refuse the stem (the def-stem fallback or `None`
+        // remains). A single ContentModified retry catches a transient churn
+        // without spinning.
+        for attempt in 0..=1 {
+            let id = self.send_request(
+                "textDocument/hover",
+                json!({
+                    "textDocument": { "uri": uri },
+                    "position": { "line": q.lsp_line, "character": q.lsp_col },
+                }),
+            )?;
+            let resp = self.wait_for_response(id, DEFINITION_WAIT)?;
+            let is_content_modified = resp
+                .get("error")
+                .and_then(|e| e.get("code"))
+                .and_then(|c| c.as_i64())
+                == Some(CONTENT_MODIFIED);
+            if is_content_modified {
+                if attempt < 1 {
+                    std::thread::sleep(not_ready_backoff(attempt));
+                    continue;
+                }
+                return None;
+            }
+            let result = resp.get("result")?;
+            let markdown = hover_markdown(result)?;
+            return type_stem_from_hover_markdown(&markdown);
+        }
+        None
+    }
+
+    /// Diagnostic: return the RAW `textDocument/hover` markdown at `q`, before any
+    /// stem parsing. Used by the `hover_probe` bin to SEE what live rust-analyzer
+    /// renders at a method-ident position (the input `type_stem_from_hover_markdown`
+    /// is assumed to receive), rather than trusting synthetic unit-test markdown.
+    /// Not on the resolution hot path; `hover_type_stem` is the production caller.
+    pub fn hover_markdown_raw(&mut self, q: &ResolveQuery) -> Option<String> {
+        self.ensure_open(&q.abs_path)?;
+        let uri = path_to_uri(&q.abs_path);
+        let id = self.send_request(
+            "textDocument/hover",
+            json!({
+                "textDocument": { "uri": uri },
+                "position": { "line": q.lsp_line, "character": q.lsp_col },
+            }),
+        )?;
+        let resp = self.wait_for_response(id, DEFINITION_WAIT)?;
+        let result = resp.get("result")?;
+        hover_markdown(result)
     }
 
     /// Send the `textDocument/definition` request for `q`, honouring the
@@ -741,6 +853,47 @@ fn locate_rust_analyzer() -> Option<PathBuf> {
     None
 }
 
+/// Derive the `CARGO` / `RUSTUP_TOOLCHAIN` env that pins rust-analyzer's
+/// `cargo metadata` shell-out to the SAME rustup toolchain the RA binary lives
+/// in. Returns an empty vec when `bin` is not under a rustup toolchain layout
+/// (a bare `rust-analyzer` on PATH, or a non-rustup install) -- in that case we
+/// leave the ambient env alone and rely on health-signal surfacing if it breaks.
+///
+/// A rustup RA binary is at `<...>/toolchains/<tc>/bin/rust-analyzer`; the
+/// matching cargo is the sibling `<...>/toolchains/<tc>/bin/cargo`.
+fn rustup_toolchain_env_for(bin: &Path) -> Vec<(String, String)> {
+    // bin/ dir, then the toolchain dir, then its parent (must be `toolchains`).
+    let bin_dir = match bin.parent() {
+        Some(d) => d,
+        None => return Vec::new(),
+    };
+    let tc_dir = match bin_dir.parent() {
+        Some(d) => d,
+        None => return Vec::new(),
+    };
+    let is_rustup_layout = tc_dir
+        .parent()
+        .and_then(|p| p.file_name())
+        .map(|n| n == "toolchains")
+        .unwrap_or(false);
+    if !is_rustup_layout {
+        return Vec::new();
+    }
+    let tc_name = match tc_dir.file_name().and_then(|n| n.to_str()) {
+        Some(n) => n.to_string(),
+        None => return Vec::new(),
+    };
+    let mut out = Vec::new();
+    let cargo = bin_dir.join("cargo");
+    if cargo.is_file() {
+        if let Some(c) = cargo.to_str() {
+            out.push(("CARGO".to_string(), c.to_string()));
+        }
+    }
+    out.push(("RUSTUP_TOOLCHAIN".to_string(), tc_name));
+    out
+}
+
 /// Map a `textDocument/definition` result to a single defining crate, or
 /// `None` (refuse). Accepts `Location`, `Location[]`, or `LocationLink[]`.
 /// Refuses on: empty result, any location whose path is unmappable, or more
@@ -827,6 +980,150 @@ pub fn type_stem_from_uri(uri: &str) -> Option<String> {
         return Some(dir.to_string());
     }
     Some(stem.to_string())
+}
+
+/// Extract the markdown text from a `textDocument/hover` result value. rust-
+/// analyzer returns `{ "contents": { "kind": "markdown"|"plaintext", "value":
+/// <str> } }`; older shapes (`MarkedString` as a bare string, or an array) are
+/// tolerated. `None` when there is no string value (null hover / unexpected
+/// shape).
+fn hover_markdown(result: &Value) -> Option<String> {
+    let contents = result.get("contents")?;
+    match contents {
+        // MarkupContent { kind, value }.
+        Value::Object(o) => o.get("value").and_then(|v| v.as_str()).map(str::to_string),
+        // MarkedString as a bare string.
+        Value::String(s) => Some(s.clone()),
+        // MarkedString[]: concatenate any string/`value` members in order.
+        Value::Array(a) => {
+            let mut parts: Vec<String> = Vec::new();
+            for item in a {
+                match item {
+                    Value::String(s) => parts.push(s.clone()),
+                    Value::Object(o) => {
+                        if let Some(v) = o.get("value").and_then(|v| v.as_str()) {
+                            parts.push(v.to_string());
+                        }
+                    }
+                    _ => {}
+                }
+            }
+            if parts.is_empty() {
+                None
+            } else {
+                Some(parts.join("\n"))
+            }
+        }
+        _ => None,
+    }
+}
+
+/// Parse the RECEIVER TYPE STEM from a `textDocument/hover` markdown body, or
+/// `None` (refuse). This is the hover path of the panic-leaf type discriminator:
+/// hover at a method-call ident renders the receiver type as the FIRST fenced
+/// ```rust``` block (a bare type path, e.g. `core::result::Result`); the method
+/// signature and docs follow in later blocks.
+///
+/// Extraction: take the first ```rust``` fenced block; its first non-empty line
+/// is the receiver type. Strip a leading `&`/`&mut `/`*` (a borrowed receiver is
+/// the value's identity for partial selection), drop everything from the first
+/// `<` (the generic args), take the last `::`-separated path segment, and
+/// lowercase it to the stem (`Result` -> `result`, `Option` -> `option`,
+/// `Vec` -> `vec`, `str` -> `str`).
+///
+/// REFUSE (`None`) when:
+///   - there is no ```rust``` block, or it is empty;
+///   - the first line is a SIGNATURE or BINDING, not a bare type path: it begins
+///     with a Rust keyword (`impl`/`fn`/`pub`/`let`/`const`/`static`/`use`/
+///     `extern`/`struct`/`enum`/`trait`/`type`/`mod`/`where`) or contains a `(`
+///     (a function signature). A hover that only renders the method signature
+///     (not the receiver type) would otherwise yield a wrong head. (At the
+///     method-ident position RA renders the receiver type first, so this is the
+///     defensive floor, not the common path.)
+///   - the resulting head is empty.
+/// The head is NOT itself constrained to a known panic type here: the
+/// `(type_stem, leaf)` mapping downstream is the gate that refuses an
+/// out-of-set head. This keeps the parser a pure, total text function.
+pub fn type_stem_from_hover_markdown(markdown: &str) -> Option<String> {
+    // Find the first fenced ```rust ... ``` block.
+    let block = first_rust_fenced_block(markdown)?;
+    let first_line = block.lines().map(str::trim).find(|l| !l.is_empty())?;
+
+    // Reject signature / binding blocks: only a bare type path is a receiver
+    // type. A leading keyword or a `(` (function signature) means this block is
+    // not the receiver type.
+    const REJECT_PREFIXES: &[&str] = &[
+        "impl ", "impl<", "fn ", "pub ", "let ", "const ", "static ", "use ",
+        "extern ", "struct ", "enum ", "trait ", "type ", "mod ", "where ",
+    ];
+    if REJECT_PREFIXES.iter().any(|p| first_line.starts_with(p)) {
+        return None;
+    }
+    if first_line.contains('(') {
+        return None;
+    }
+
+    // Strip a borrow prefix (`&`, `&mut `, `*`): the partial selection is on the
+    // pointee type's stem.
+    let mut ty = first_line.trim();
+    loop {
+        let trimmed = ty
+            .strip_prefix("&mut ")
+            .or_else(|| ty.strip_prefix('&'))
+            .or_else(|| ty.strip_prefix('*'))
+            .map(str::trim_start);
+        match trimmed {
+            Some(t) => ty = t,
+            None => break,
+        }
+    }
+
+    // Drop generic args (everything from the first `<`).
+    let ty = match ty.find('<') {
+        Some(i) => &ty[..i],
+        None => ty,
+    };
+    let ty = ty.trim();
+    if ty.is_empty() {
+        return None;
+    }
+
+    // Take the last `::`-separated path segment and lowercase it.
+    let head = ty.rsplit("::").next()?.trim();
+    if head.is_empty() || head.contains(char::is_whitespace) {
+        return None;
+    }
+    Some(head.to_ascii_lowercase())
+}
+
+/// Return the body of the first fenced ```rust``` (or bare ```` ``` ````) block
+/// in `markdown`, or `None`. We accept an explicit `rust` language tag and also
+/// a bare fence (some hovers omit the tag); a fence tagged with another language
+/// (e.g. ```json``` in docs) is skipped in favour of the first `rust`/untagged
+/// one. The first such block at a method-ident hover is the receiver type.
+fn first_rust_fenced_block(markdown: &str) -> Option<String> {
+    let mut lines = markdown.lines().peekable();
+    while let Some(line) = lines.next() {
+        let trimmed = line.trim_start();
+        if let Some(rest) = trimmed.strip_prefix("```") {
+            let tag = rest.trim();
+            let is_rust_or_bare = tag.is_empty() || tag.eq_ignore_ascii_case("rust");
+            // Collect the block body up to the closing fence regardless, so we
+            // can skip non-rust blocks correctly.
+            let mut body: Vec<&str> = Vec::new();
+            for inner in lines.by_ref() {
+                if inner.trim_start().starts_with("```") {
+                    break;
+                }
+                body.push(inner);
+            }
+            if is_rust_or_bare {
+                return Some(body.join("\n"));
+            }
+            // Otherwise keep scanning for the next fence.
+        }
+    }
+    None
 }
 
 /// Map a definition-target file URI to its defining crate name, or `None` when
@@ -1034,6 +1331,118 @@ mod tests {
         // LocationLink targetUri is read.
         let link = json!([{ "targetUri": "file:///opt/rust/library/core/src/result.rs", "targetRange": {} }]);
         assert_eq!(type_stem_from_definition_result(&link).as_deref(), Some("result"));
+    }
+
+    // ---- hover type-head parser (the hover panic-leaf disambiguator) ----
+
+    /// Build a method-ident hover markdown the way rust-analyzer renders it: the
+    /// receiver type as the FIRST ```rust``` block, then the method signature.
+    fn hover_md(receiver_type_block: &str, signature_block: &str) -> String {
+        format!(
+            "\n```rust\n{receiver_type_block}\n```\n\n```rust\n{signature_block}\n```\n\n---\n\ndocs..."
+        )
+    }
+
+    #[test]
+    fn hover_type_head_parses_result_option_vec_str() {
+        // The receiver-type block RA emits at a method-ident hover (captured from
+        // a real session): a bare fully-qualified type path.
+        assert_eq!(
+            type_stem_from_hover_markdown(&hover_md(
+                "core::result::Result",
+                "impl<T, E> Result<T, E>\npub fn unwrap(self) -> T"
+            ))
+            .as_deref(),
+            Some("result")
+        );
+        assert_eq!(
+            type_stem_from_hover_markdown(&hover_md(
+                "core::option::Option",
+                "impl<T> Option<T>\npub const fn unwrap(self) -> T"
+            ))
+            .as_deref(),
+            Some("option")
+        );
+        // `Vec<T>` head -> `vec` (generics stripped). A non-std-path bare type is
+        // still parsed to its head; the downstream (type, leaf) map is the gate.
+        assert_eq!(
+            type_stem_from_hover_markdown("```rust\nVec<u32>\n```").as_deref(),
+            Some("vec")
+        );
+        // `core::str` (no generic args) -> `str`.
+        assert_eq!(
+            type_stem_from_hover_markdown("```rust\ncore::str\n```").as_deref(),
+            Some("str")
+        );
+        // A borrowed receiver `&str` -> the pointee stem `str`.
+        assert_eq!(
+            type_stem_from_hover_markdown("```rust\n&str\n```").as_deref(),
+            Some("str")
+        );
+        assert_eq!(
+            type_stem_from_hover_markdown("```rust\n&mut Vec<u8>\n```").as_deref(),
+            Some("vec")
+        );
+    }
+
+    #[test]
+    fn hover_type_head_refuses_signature_binding_and_empty() {
+        // A SIGNATURE-only block (no leading receiver-type block): refuse, never
+        // mis-read a fn signature as the receiver type.
+        assert_eq!(
+            type_stem_from_hover_markdown(
+                "```rust\npub fn unwrap(self) -> T\nwhere\n    E: fmt::Debug,\n```"
+            ),
+            None
+        );
+        // An `impl` header is a signature block, not a bare type: refuse.
+        assert_eq!(
+            type_stem_from_hover_markdown("```rust\nimpl<T, E> Result<T, E>\n```"),
+            None
+        );
+        // A `let` binding render (hover at the receiver expression, not the
+        // method): refuse — not a bare type path.
+        assert_eq!(
+            type_stem_from_hover_markdown("```rust\nlet opt: Option<u32>\n```"),
+            None
+        );
+        // No ```rust``` block at all (e.g. an `extern crate serde_json` doc hover
+        // that opens with prose): refuse.
+        assert_eq!(
+            type_stem_from_hover_markdown("# Serde JSON\n\nsome prose, no code fence"),
+            None
+        );
+        // Empty markdown -> refuse.
+        assert_eq!(type_stem_from_hover_markdown(""), None);
+        // An empty ```rust``` block -> refuse.
+        assert_eq!(type_stem_from_hover_markdown("```rust\n\n```"), None);
+    }
+
+    #[test]
+    fn hover_type_head_skips_non_rust_fence_then_reads_rust() {
+        // A leading ```json``` fence (serde docs) must be SKIPPED; the first
+        // ```rust``` block is the receiver type.
+        let md = "```json\n{ \"k\": 1 }\n```\n\n```rust\ncore::result::Result\n```";
+        assert_eq!(type_stem_from_hover_markdown(md).as_deref(), Some("result"));
+    }
+
+    #[test]
+    fn hover_markdown_extracts_value_from_shapes() {
+        // MarkupContent { kind, value }.
+        let mc = json!({ "contents": { "kind": "markdown", "value": "```rust\ncore::option::Option\n```" } });
+        assert_eq!(
+            hover_markdown(&mc).and_then(|m| type_stem_from_hover_markdown(&m)).as_deref(),
+            Some("option")
+        );
+        // Bare MarkedString.
+        let bare = json!({ "contents": "```rust\nString\n```" });
+        assert_eq!(
+            hover_markdown(&bare).and_then(|m| type_stem_from_hover_markdown(&m)).as_deref(),
+            Some("string")
+        );
+        // Null hover -> no markdown.
+        assert_eq!(hover_markdown(&json!({ "contents": Value::Null })), None);
+        assert_eq!(hover_markdown(&json!({})), None);
     }
 
     #[test]
