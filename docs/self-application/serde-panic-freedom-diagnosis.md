@@ -225,6 +225,26 @@ undecidable) or carry the same strip-outer-forall guard. Per the GOAL's Phase-0 
 Phase-1 -> Phase-2 order: close #1717 BEFORE turning K from 0 to N, or risk
 manufacturing the precise false-pass this whole effort exists to prevent.
 
+## #1717 implementation locator (Phase-1, do FIRST)
+
+Site: `implementations/rust/provekit-ir-compiler-smt-lib/src/lib.rs`. Its
+`supported_sorts` are only `Int/Bool/Real/String`; a `forall` quantifying an
+OPAQUE (non-primitive) sort cannot be emitted soundly and currently collapses to
+literal `true` (the latent false-pass: negated obligation `(not true)` = unsat =
+false "cannot panic"). The opacity is already tracked in `OpacityManifest`.
+
+Fix direction is REFUSE (sound-by-construction -- can ONLY remove false-passes,
+never add one, so falsePass=0 is safe): when a `forall` body quantifies an opaque
+sort, do NOT emit `true`; signal UNDECIDABLE. KEY CONSTRAINT: the refuse must
+PROPAGATE emitter->runner as `ObligationVerdict::Undecidable`, not an inline SMT
+`true` -- a local return is insufficient; the emit result type / the runner's
+interpretation of it must carry the refusal. Detector test (from the GOAL):
+`forall x:<opaque>. false` must come out UNDECIDABLE, not discharged.
+Then re-run the verifier suite: any test that flips green->undecidable was relying
+on the unsound collapse and should be updated to expect undecidable (that IS the
+bug being closed). Only AFTER #1717 lands is the K cascade fix safe (BREAK 1
+re-introduces an opaque-sorted forall).
+
 ## Reproduction
 
 Warm-oracle e2e on battleaxe: `/tmp/serde_e2e2.sh` (mints shim-std + shim-serde deps,
