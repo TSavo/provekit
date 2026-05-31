@@ -6,11 +6,22 @@
 use crate::types::{CallSite, LoadError, ObligationVerdict, Report, ReportRow};
 
 pub fn add_callsite(cs: &CallSite, verdict: ObligationVerdict, reason: &str, r: &mut Report) {
+    add_callsite_with_method(cs, verdict, reason, None, r);
+}
+
+pub fn add_callsite_with_method(
+    cs: &CallSite,
+    verdict: ObligationVerdict,
+    reason: &str,
+    discharge_method: Option<String>,
+    r: &mut Report,
+) {
     r.total_callsites += 1;
     r.rows.push(ReportRow {
         callsite: cs.clone(),
         status: verdict.as_str().to_string(),
         reason: reason.to_string(),
+        discharge_method,
     });
     if verdict == ObligationVerdict::Discharged {
         r.discharged += 1;
@@ -25,6 +36,16 @@ pub fn add_callsite(cs: &CallSite, verdict: ObligationVerdict, reason: &str, r: 
 /// contract CID. Counted into the same discharged/violations totals so
 /// the receipt's headline reflects self-posts alongside callsites.
 pub fn add_self_post(contract_cid: &str, verdict: ObligationVerdict, reason: &str, r: &mut Report) {
+    add_self_post_with_method(contract_cid, verdict, reason, None, r);
+}
+
+pub fn add_self_post_with_method(
+    contract_cid: &str,
+    verdict: ObligationVerdict,
+    reason: &str,
+    discharge_method: Option<String>,
+    r: &mut Report,
+) {
     r.total_callsites += 1;
     let cs = CallSite {
         property_name: format!("self-post:{contract_cid}"),
@@ -35,6 +56,7 @@ pub fn add_self_post(contract_cid: &str, verdict: ObligationVerdict, reason: &st
         callsite: cs,
         status: verdict.as_str().to_string(),
         reason: reason.to_string(),
+        discharge_method,
     });
     if verdict == ObligationVerdict::Discharged {
         r.discharged += 1;

@@ -262,7 +262,7 @@ impl Runner {
                 .collect(),
         );
         let fanout_started = iso_now();
-        let per_results: Vec<(CallSite, ObligationVerdict, String)> = callsites
+        let per_results: Vec<CallsiteResult> = callsites
             .par_iter()
             .map(|cs| {
                 work_one(
@@ -317,11 +317,11 @@ impl Runner {
 
         let report_stage_capture = StageCapture::start("report", sorted_keys(&pool.mementos));
         let mut violations = 0usize;
-        for (cs, verdict, reason) in per_results {
+        for (cs, verdict, reason, method) in per_results {
             if verdict != ObligationVerdict::Discharged {
                 violations += 1;
             }
-            report_stage::add_callsite(&cs, verdict, &reason, &mut report);
+            report_stage::add_callsite_with_method(&cs, verdict, &reason, method, &mut report);
         }
         report_stage::add_load_errors(&pool.load_errors, &mut report);
 
@@ -350,7 +350,13 @@ impl Runner {
                     n_residue.fetch_add(1, Ordering::Relaxed);
                 }
             }
-            report_stage::add_self_post(&spr.contract_cid, spr.verdict, &spr.reason, &mut report);
+            report_stage::add_self_post_with_method(
+                &spr.contract_cid,
+                spr.verdict,
+                &spr.reason,
+                spr.method.map(|m| m.as_str().to_string()),
+                &mut report,
+            );
         }
         info!(
             self_posts = self_post_results.len(),
@@ -449,7 +455,8 @@ impl Runner {
         let _span = tracing::info_span!(
             "verifier",
             root = %self.cfg.project_root.display()
-        ).entered();
+        )
+        .entered();
         info!(root = %self.cfg.project_root.display(), "verifier: starting proof run");
 
         let mut report = Report::default();
@@ -491,7 +498,10 @@ impl Runner {
         }
 
         let callsites = enumerate_callsites::run(&pool);
-        info!(callsites = callsites.len(), "verifier: callsite enumeration complete");
+        info!(
+            callsites = callsites.len(),
+            "verifier: callsite enumeration complete"
+        );
 
         let n_hash = AtomicUsize::new(0);
         let n_cache = AtomicUsize::new(0);
@@ -512,7 +522,7 @@ impl Runner {
         let registry = &self.registry;
 
         let minted_sink = Mutex::new(Vec::new());
-        let per_results: Vec<(CallSite, ObligationVerdict, String)> = callsites
+        let per_results: Vec<CallsiteResult> = callsites
             .par_iter()
             .map(|cs| {
                 work_one(
@@ -546,11 +556,11 @@ impl Runner {
 
         // Aggregate report rows.
         let mut violations = 0usize;
-        for (cs, verdict, reason) in per_results {
+        for (cs, verdict, reason, method) in per_results {
             if verdict != ObligationVerdict::Discharged {
                 violations += 1;
             }
-            report_stage::add_callsite(&cs, verdict, &reason, &mut report);
+            report_stage::add_callsite_with_method(&cs, verdict, &reason, method, &mut report);
         }
         report_stage::add_load_errors(&pool.load_errors, &mut report);
 
@@ -585,7 +595,13 @@ impl Runner {
                     n_residue.fetch_add(1, Ordering::Relaxed);
                 }
             }
-            report_stage::add_self_post(&spr.contract_cid, spr.verdict, &spr.reason, &mut report);
+            report_stage::add_self_post_with_method(
+                &spr.contract_cid,
+                spr.verdict,
+                &spr.reason,
+                spr.method.map(|m| m.as_str().to_string()),
+                &mut report,
+            );
         }
         info!(
             self_posts = self_post_results.len(),
@@ -1016,6 +1032,8 @@ struct SelfPostResult {
     method: Option<body_discharge::DischargeMethod>,
 }
 
+type CallsiteResult = (CallSite, ObligationVerdict, String, Option<String>);
+
 /// Verify each body-derived contract's OWN postcondition. For a contract
 /// with `post = (result == <body>)` (and optionally a conjoined
 /// entry-precondition), the self-post obligation is `post[result :=
@@ -1067,8 +1085,7 @@ fn verify_contract_self_posts(
                     });
                 }
             };
-            let (verdict, reason, _invs) =
-                run_plan(plan, registry, &smt, Some(&obligation_json));
+            let (verdict, reason, _invs) = run_plan(plan, registry, &smt, Some(&obligation_json));
             let method = if verdict == ObligationVerdict::Discharged {
                 let m = body_discharge::classify_discharge_method(&obligation_json);
                 Some(m)
@@ -1107,7 +1124,7 @@ fn work_one(
     n_substantive: &AtomicUsize,
     invs_sink: &Mutex<Vec<SolverInvocation>>,
     minted_sink: &Mutex<Vec<(String, Json)>>,
-) -> (CallSite, ObligationVerdict, String) {
+) -> CallsiteResult {
     // ROUTING (the call-site-obligation precedence rule, generic + language-blind):
     // if the resolved TARGET CONTRACT carries a non-trivial `pre` (a real
     // precondition, not None/true), this call-site obligation is to DISCHARGE
@@ -1131,59 +1148,63 @@ fn work_one(
     }
     if !target_has_pre {
         match body_discharge::extract_body_obligation(cs, pool) {
-        Ok(Some(body_discharge::BodyObligation::Reduced(reduced))) => {
-            let smt = match smt_emitter::emit(&reduced) {
-                Ok(s) => s,
-                Err(e) => {
+            Ok(Some(body_discharge::BodyObligation::Reduced(reduced))) => {
+                let smt = match smt_emitter::emit(&reduced) {
+                    Ok(s) => s,
+                    Err(e) => {
+                        n_residue.fetch_add(1, Ordering::Relaxed);
+                        return (
+                            cs.clone(),
+                            ObligationVerdict::Undecidable,
+                            format!("smt-emit: {e}"),
+                            None,
+                        );
+                    }
+                };
+                let (verdict, mut reason, invs) = run_plan(plan, registry, &smt, Some(&reduced));
+                let mut discharge_method = None;
+                n_invoc.fetch_add(invs.len(), Ordering::Relaxed);
+                if verdict == ObligationVerdict::Discharged {
+                    n_solved.fetch_add(1, Ordering::Relaxed);
+                    // Tag HOW it discharged: a self-derived post reduces to
+                    // `<term> == <term>` and is proven by reflexivity over
+                    // uninterpreted ctors (sound but shallow); anything else is
+                    // substantive solver work. Counted apart so a reflexive
+                    // discharge is never conflated with a meaningful proof. The
+                    // method is also stamped on the row reason so the receipt
+                    // surfaces the split per-callsite.
+                    let method = body_discharge::classify_discharge_method(&reduced);
+                    match method {
+                        body_discharge::DischargeMethod::Reflexive => {
+                            n_reflexive.fetch_add(1, Ordering::Relaxed);
+                        }
+                        body_discharge::DischargeMethod::Substantive => {
+                            n_substantive.fetch_add(1, Ordering::Relaxed);
+                        }
+                    }
+                    reason = format!("[method={}] {reason}", method.as_str());
+                    discharge_method = Some(method.as_str().to_string());
+                } else if verdict == ObligationVerdict::Disagreement {
+                    n_disagree.fetch_add(1, Ordering::Relaxed);
                     n_residue.fetch_add(1, Ordering::Relaxed);
-                    return (
-                        cs.clone(),
-                        ObligationVerdict::Undecidable,
-                        format!("smt-emit: {e}"),
-                    );
+                } else {
+                    n_residue.fetch_add(1, Ordering::Relaxed);
                 }
-            };
-            let (verdict, mut reason, invs) = run_plan(plan, registry, &smt, Some(&reduced));
-            n_invoc.fetch_add(invs.len(), Ordering::Relaxed);
-            if verdict == ObligationVerdict::Discharged {
-                n_solved.fetch_add(1, Ordering::Relaxed);
-                // Tag HOW it discharged: a self-derived post reduces to
-                // `<term> == <term>` and is proven by reflexivity over
-                // uninterpreted ctors (sound but shallow); anything else is
-                // substantive solver work. Counted apart so a reflexive
-                // discharge is never conflated with a meaningful proof. The
-                // method is also stamped on the row reason so the receipt
-                // surfaces the split per-callsite.
-                let method = body_discharge::classify_discharge_method(&reduced);
-                match method {
-                    body_discharge::DischargeMethod::Reflexive => {
-                        n_reflexive.fetch_add(1, Ordering::Relaxed);
-                    }
-                    body_discharge::DischargeMethod::Substantive => {
-                        n_substantive.fetch_add(1, Ordering::Relaxed);
-                    }
+                if let Ok(mut g) = invs_sink.lock() {
+                    g.extend(invs);
                 }
-                reason = format!("[method={}] {reason}", method.as_str());
-            } else if verdict == ObligationVerdict::Disagreement {
-                n_disagree.fetch_add(1, Ordering::Relaxed);
-                n_residue.fetch_add(1, Ordering::Relaxed);
-            } else {
-                n_residue.fetch_add(1, Ordering::Relaxed);
+                return (cs.clone(), verdict, reason, discharge_method);
             }
-            if let Ok(mut g) = invs_sink.lock() {
-                g.extend(invs);
+            Ok(None) => {}
+            Err(e) => {
+                n_residue.fetch_add(1, Ordering::Relaxed);
+                return (
+                    cs.clone(),
+                    ObligationVerdict::Undecidable,
+                    format!("body-discharge: {e}"),
+                    None,
+                );
             }
-            return (cs.clone(), verdict, reason);
-        }
-        Ok(None) => {}
-        Err(e) => {
-            n_residue.fetch_add(1, Ordering::Relaxed);
-            return (
-                cs.clone(),
-                ObligationVerdict::Undecidable,
-                format!("body-discharge: {e}"),
-            );
-        }
         }
     }
 
@@ -1195,6 +1216,7 @@ fn work_one(
                 cs.clone(),
                 ObligationVerdict::Undecidable,
                 format!("resolve-target: {e}"),
+                None,
             );
         }
     };
@@ -1219,6 +1241,7 @@ fn work_one(
                      than reporting a vacuous pass",
                     cs.bridge_ir_name
                 ),
+                None,
             );
         }
         n_vacuous.fetch_add(1, Ordering::Relaxed);
@@ -1226,6 +1249,7 @@ fn work_one(
             cs.clone(),
             ObligationVerdict::Discharged,
             "vacuous: no precondition on target (publisher post-only)".into(),
+            Some("vacuous".to_string()),
         );
     }
 
@@ -1249,6 +1273,7 @@ fn work_one(
                     "tier0: memento-is-verification (cid={})",
                     short(memento_cid)
                 ),
+                Some("hash-tier".to_string()),
             );
         }
 
@@ -1286,6 +1311,7 @@ fn work_one(
                         "tier0c: implication proven direct (memento {})",
                         short(&memento_cid)
                     ),
+                    Some("hash-tier".to_string()),
                 );
             }
             crate::types::ImplicationResult::ProvenTransitive { path } => {
@@ -1299,6 +1325,7 @@ fn work_one(
                     cs.clone(),
                     ObligationVerdict::Discharged,
                     format!("tier0c: implication proven transitive ({path_str})"),
+                    Some("hash-tier".to_string()),
                 );
             }
             crate::types::ImplicationResult::ProvenReflexive => {
@@ -1307,6 +1334,7 @@ fn work_one(
                     cs.clone(),
                     ObligationVerdict::Discharged,
                     "tier0c: implication reflexive (post == pre)".into(),
+                    Some("hash-tier".to_string()),
                 );
             }
             crate::types::ImplicationResult::Unknown => {}
@@ -1321,6 +1349,7 @@ fn work_one(
                     "tier1: hash equality (post == pre, hash={})",
                     short(pre_hash)
                 ),
+                Some("hash-tier".to_string()),
             );
         }
         if let Some(cache_dir) = &cfg.cache_dir {
@@ -1333,6 +1362,7 @@ fn work_one(
                         "tier2: cache hit (implication memento {})",
                         short(&impl_cid)
                     ),
+                    Some("hash-tier".to_string()),
                 );
             }
         }
@@ -1353,6 +1383,7 @@ fn work_one(
                     cs.clone(),
                     ObligationVerdict::Undecidable,
                     format!("build-implication: {e}"),
+                    None,
                 );
             }
         };
@@ -1366,6 +1397,7 @@ fn work_one(
                     cs.clone(),
                     ObligationVerdict::Discharged,
                     format!("tier3a: tactic discharged ({reason})"),
+                    Some("solver-substantive".to_string()),
                 );
             }
             formula_rewrite::TacticResult::Reduced {
@@ -1381,6 +1413,7 @@ fn work_one(
                             cs.clone(),
                             ObligationVerdict::Undecidable,
                             format!("smt-emit: {e}"),
+                            None,
                         );
                     }
                 };
@@ -1396,6 +1429,7 @@ fn work_one(
                             cs.clone(),
                             ObligationVerdict::Undecidable,
                             format!("smt-emit: {e}"),
+                            None,
                         );
                     }
                 };
@@ -1412,6 +1446,7 @@ fn work_one(
                     cs.clone(),
                     ObligationVerdict::Undecidable,
                     format!("instantiate: {e}"),
+                    None,
                 );
             }
         };
@@ -1492,6 +1527,7 @@ fn work_one(
                     cs.clone(),
                     ObligationVerdict::Undecidable,
                     format!("smt-emit: {e}"),
+                    None,
                 );
             }
         };
@@ -1572,7 +1608,17 @@ fn work_one(
         g.extend(invs);
     }
 
-    (cs.clone(), verdict, reason)
+    let discharge_method = if verdict == ObligationVerdict::Discharged {
+        if !used_implication_form && cs.panic_site {
+            Some("panic-safe".to_string())
+        } else {
+            Some("solver-substantive".to_string())
+        }
+    } else {
+        None
+    };
+
+    (cs.clone(), verdict, reason, discharge_method)
 }
 
 fn short(s: &str) -> String {

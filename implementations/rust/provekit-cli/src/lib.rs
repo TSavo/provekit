@@ -31,6 +31,7 @@ pub struct OutputFlags {
     pub quiet: bool,
 }
 
+pub mod cmd_self_check;
 pub mod kit_dispatch;
 pub mod project_config;
 pub mod sort_morphism_catalog;
