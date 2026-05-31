@@ -274,6 +274,41 @@ state drift across runs masked this tonight). The diff between those two bodies 
 the fix. This is a targeted equality/shape fix in the producer-post construction,
 NOT a specialization and NOT touching the shared non-panic path.
 
+## ROOT CAUSE LOCATED (build_implication body diff, fresh-mint instrumented)
+
+Instrumented `build_implication_obligation` to log `post_body_renamed` vs
+`pre_body_renamed` on a freshly-minted stage3-serde proof. The non-reflexive diff:
+
+    post_body (producer): =(_h0, ctor "method:to_string"(value))   <- STRUCTURAL EQ
+    pre_body  (consumer): is_ok(_h0)                                <- the unwrap pre
+
+So the implication is `(_h0 = to_string(value)) -> is_ok(_h0)` -- z3 cannot prove
+it. The producer post is the to_string BODY-EQ contract (`result == to_string(value)`,
+a structural identity, useless for panic-freedom), NOT the
+`serde_json_to_string_value` TOTALITY contract (`is_ok(result)`). With the totality
+post the implication would be `is_ok(_h0) -> is_ok(_h0)` = reflexive = DISCHARGED.
+
+ROOT CAUSE: `locate_producer_post` (handshake.rs:120) does
+`bridges_by_symbol.get(inner_name)` -> follows that ONE bridge to its target
+contract and takes `.post`. `bridges_by_symbol` holds ONE bridge per symbol; for
+`method:to_string` the BODY-EQ bridge won over the disambiguated totality bridge,
+so the producer post is the eq, not `is_ok`. (Caveat: the prove was contaminated by
+138 shim callsites; confirm on a fixture-isolated run that this post is f's, and
+note the arg lifted as `method:to_string` -- verify free-call `serde_json::to_string`
+vs method `value.to_string()` lift shape.)
+
+FIX (fresh head, soundness-adjacent, gate on discrimination + verifier suite):
+`locate_producer_post` must prefer the producer contract whose post matches the
+consumer's predicate family (here `is_ok`) -- i.e. the TOTALITY contract -- over a
+structural body-eq. Options: (a) when multiple bridges/contracts exist for the
+producer symbol, select the one whose post predicate unifies with the consumer
+pre's predicate; (b) fix the bridge-collision so the disambiguated totality bridge
+is the one keyed in `bridges_by_symbol` for a panic-relevant producer. g
+(MyStruct) has NO totality contract -> no is_ok producer post -> stays undecidable
+(refuse-floor preserved, falsePass=0). This supersedes the earlier
+"specialize consumer_pre" and "two breaks" framings: the serde break is a single
+producer-contract-selection bug in locate_producer_post.
+
 ## Reproduction
 
 Warm-oracle e2e on battleaxe: `/tmp/serde_e2e2.sh` (mints shim-std + shim-serde deps,
