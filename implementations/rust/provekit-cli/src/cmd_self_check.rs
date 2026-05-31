@@ -40,6 +40,15 @@ struct BridgeScoreboard {
 
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
+struct OracleScoreboard {
+    requested: bool,
+    engaged: bool,
+    attempted: u64,
+    resolved: u64,
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
 struct DischargeSplit {
     panic_safe: usize,
     reflexive: usize,
@@ -75,6 +84,7 @@ struct SelfCheckScoreboard {
     catalog_cid: String,
     lift: LiftScoreboard,
     bridges: BridgeScoreboard,
+    oracle: OracleScoreboard,
     silently_dropped: usize,
     dropped_sites: Vec<Site>,
     discharge_split: DischargeSplit,
@@ -120,6 +130,13 @@ pub fn run(args: SelfCheckArgs) -> u8 {
                         site.file, site.line, site.callee, site.reason
                     );
                 }
+            }
+            if scoreboard.oracle.requested && !scoreboard.oracle.engaged {
+                failed = true;
+                eprintln!(
+                    "self-check --oracle requested but the oracle resolved 0/{} receivers; the census is SYNTACTIC-ONLY (provekit-linkerd unreachable or not warm). Set PROVEKIT_LINKERD_BIN and pre-warm, or run doctor.",
+                    scoreboard.oracle.attempted
+                );
             }
             if failed {
                 crate::EXIT_VERIFY_FAIL
@@ -335,6 +352,7 @@ fn build_scoreboard(
         .get("lift")
         .ok_or("target mint JSON missing lift result")?;
     let (lift, bridges, dropped_sites, unbridged_panic_sites) = lift_scoreboards(lift_json);
+    let oracle = oracle_scoreboard(mint_json);
     let discharge_split = discharge_split(prove_json);
     let panic_census = panic_census(prove_json, unbridged_panic_sites);
     let silently_dropped = dropped_sites.len();
@@ -344,6 +362,7 @@ fn build_scoreboard(
         catalog_cid,
         lift,
         bridges,
+        oracle,
         silently_dropped,
         dropped_sites,
         discharge_split,
@@ -612,6 +631,13 @@ fn emit_scoreboard(scoreboard: &SelfCheckScoreboard, json: bool) {
             format_breakdown(&scoreboard.bridges.lift_gaps)
         );
     }
+    println!(
+        "oracle: requested={}, engaged={}, attempted={}, resolved={}",
+        scoreboard.oracle.requested,
+        scoreboard.oracle.engaged,
+        scoreboard.oracle.attempted,
+        scoreboard.oracle.resolved
+    );
     println!("silentlyDropped: {}", scoreboard.silently_dropped);
     println!(
         "dischargeSplit: panicSafe={}, reflexive={}, vacuous={}, undecidable={}, falsePass={}",
@@ -690,4 +716,91 @@ fn site_cmp(left: &Site, right: &Site) -> std::cmp::Ordering {
 
 fn usize_field(value: &Value, key: &str) -> usize {
     value.get(key).and_then(|v| v.as_u64()).unwrap_or(0) as usize
+}
+
+fn oracle_scoreboard(mint_json: &Value) -> OracleScoreboard {
+    let mint_oracle = mint_json.get("oracle");
+    let lift = mint_json.get("lift");
+    let requested = mint_oracle
+        .and_then(|v| v.get("requested"))
+        .and_then(Value::as_bool)
+        .or_else(|| {
+            lift.and_then(|v| v.get("oracle_requested"))
+                .and_then(Value::as_bool)
+        })
+        .unwrap_or(false);
+    let attempted = mint_oracle
+        .and_then(|v| v.get("attempted"))
+        .and_then(Value::as_u64)
+        .or_else(|| {
+            lift.and_then(|v| v.get("receivers_attempted"))
+                .and_then(Value::as_u64)
+        })
+        .unwrap_or(0);
+    let resolved = mint_oracle
+        .and_then(|v| v.get("resolved"))
+        .and_then(Value::as_u64)
+        .or_else(|| {
+            lift.and_then(|v| v.get("receivers_resolved"))
+                .and_then(Value::as_u64)
+        })
+        .unwrap_or(0);
+    OracleScoreboard {
+        requested,
+        engaged: requested && resolved > 0,
+        attempted,
+        resolved,
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use serde_json::json;
+
+    fn mint_json(requested: bool, attempted: u64, resolved: u64) -> Value {
+        json!({
+            "filenameCid": "blake3-512:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+            "oracle": {
+                "requested": requested,
+                "reachable": resolved > 0,
+                "attempted": attempted,
+                "resolved": resolved
+            },
+            "lift": {
+                "kind": "ir-document",
+                "ir": [],
+                "diagnostics": []
+            }
+        })
+    }
+
+    fn prove_json() -> Value {
+        json!({
+            "rows": []
+        })
+    }
+
+    #[test]
+    fn build_scoreboard_sets_oracle_engaged_from_requested_and_resolved() {
+        let cases = [
+            (false, 0, false),
+            (false, 1, false),
+            (true, 0, false),
+            (true, 1, true),
+        ];
+
+        for (requested, resolved, expected_engaged) in cases {
+            let scoreboard =
+                build_scoreboard("target", &mint_json(requested, 7, resolved), &prove_json())
+                    .expect("scoreboard");
+            assert_eq!(scoreboard.oracle.requested, requested);
+            assert_eq!(scoreboard.oracle.attempted, 7);
+            assert_eq!(scoreboard.oracle.resolved, resolved);
+            assert_eq!(
+                scoreboard.oracle.engaged, expected_engaged,
+                "requested={requested}, resolved={resolved}"
+            );
+        }
+    }
 }

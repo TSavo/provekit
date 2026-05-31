@@ -375,6 +375,14 @@ struct CallSite {
     col: usize,
 }
 
+#[derive(Debug, Clone, Copy, Default)]
+struct OracleObservation {
+    requested: bool,
+    reachable: bool,
+    attempted: u64,
+    resolved: u64,
+}
+
 /// Map of `leaf ident -> crate root` for the `use` imports in one file.
 /// `use libprovekit::core::{address, cid_of_value}` yields
 /// `{address: libprovekit, cid_of_value: libprovekit}`. `crate`/`self`/`super`
@@ -1044,16 +1052,23 @@ fn is_panic_leaf(leaf: &str) -> bool {
 /// imports whose current-crate fallback is intended. The oracle refuses
 /// (leaves `None`) when disabled or unavailable, so this is a pure upgrade over
 /// Tier 2a with no behavior change when off.
-fn resolve_method_calls_via_oracle(workspace_root: &Path, callsites: &mut [(CallSite, PathBuf)]) {
+fn resolve_method_calls_via_oracle(
+    workspace_root: &Path,
+    callsites: &mut [(CallSite, PathBuf)],
+) -> OracleObservation {
     use ra_daemon_client::DaemonQuery;
 
     // Opt-in stays identical to the cold path: a mint with the oracle off must
     // never spawn or contact the daemon's RA host. When off we leave every
     // unresolved method call to the syntactic tiers (Tier 1/2a) and return.
     let oracle_on = std::env::var("PROVEKIT_RESOLVE_ORACLE").unwrap_or_default() == "rust-analyzer";
+    let mut observation = OracleObservation {
+        requested: oracle_on,
+        ..OracleObservation::default()
+    };
     if !oracle_on {
         debug!("oracle: off (PROVEKIT_RESOLVE_ORACLE != rust-analyzer); leaving method calls to Tier 1/2a");
-        return;
+        return observation;
     }
 
     // Gather the eligible positions. proc-macro2 spans are 1-based line /
@@ -1078,9 +1093,10 @@ fn resolve_method_calls_via_oracle(workspace_root: &Path, callsites: &mut [(Call
         }
     }
     let total_queries = queries.len();
+    observation.attempted = total_queries as u64;
     if queries.is_empty() {
         debug!("oracle: no unresolved method calls, skipping");
-        return;
+        return observation;
     }
     debug!(
         count = total_queries,
@@ -1090,8 +1106,11 @@ fn resolve_method_calls_via_oracle(workspace_root: &Path, callsites: &mut [(Call
     // daemon and is reused across mints, fronted by a content-addressed cache.
     // On a cold daemon this returns empty (ready:false) and we refuse to the
     // syntactic tiers; the next mint resolves warm. NEVER blocks for the index.
-    let resolved = ra_daemon_client::resolve_receiver_crates(workspace_root, &queries);
+    let batch = ra_daemon_client::resolve_receiver_crates(workspace_root, &queries);
+    observation.reachable = batch.reachable;
+    let resolved = batch.resolutions;
     let resolved_count = resolved.len();
+    observation.resolved = resolved_count as u64;
     let unavailable_count = total_queries - resolved_count;
     if resolved.is_empty() {
         debug!(
@@ -1099,7 +1118,7 @@ fn resolve_method_calls_via_oracle(workspace_root: &Path, callsites: &mut [(Call
             "oracle: daemon resolved nothing (cold/not-ready or all refused); \
              leaving method calls to Tier 1/2a"
         );
-        return;
+        return observation;
     }
     for (cs, full_path) in callsites.iter_mut() {
         if cs.is_method && cs.callee_crate.is_none() && cs.line >= 1 {
@@ -1148,6 +1167,7 @@ fn resolve_method_calls_via_oracle(workspace_root: &Path, callsites: &mut [(Call
         total_queries,
         unavailable_count
     );
+    observation
 }
 
 fn lift_implications(params: &Value) -> Result<Value, String> {
@@ -1320,7 +1340,7 @@ fn lift_implications(params: &Value) -> Result<Value, String> {
     // `None`, which the matcher below treats exactly as before (current-crate
     // fallback / lift-gap). Tier 1/2a are untouched: only None-on-method sites
     // are sent to the oracle, so the fast path is never slowed by it.
-    resolve_method_calls_via_oracle(&workspace_root, &mut all_callsites);
+    let oracle_observation = resolve_method_calls_via_oracle(&workspace_root, &mut all_callsites);
 
     {
         for (cs, _full_path) in all_callsites {
@@ -1618,6 +1638,12 @@ fn lift_implications(params: &Value) -> Result<Value, String> {
         "kind": "ir-document",
         "ir": entries,
         "diagnostics": diagnostics,
+        "bridges_emitted": bridge_count as u64,
+        "lift_gaps": gap_count as u64,
+        "oracle_requested": oracle_observation.requested,
+        "oracle_reachable": oracle_observation.reachable,
+        "receivers_attempted": oracle_observation.attempted,
+        "receivers_resolved": oracle_observation.resolved,
     }))
 }
 
@@ -8911,6 +8937,10 @@ pub fn caller() -> i64 {
         assert_eq!(diags[0]["kind"], "lift-gap");
         assert_eq!(diags[0]["reason"], "no-contract-for-callee");
         assert_eq!(diags[0]["callee"], "completely_unknown_function");
+        assert!(resp["oracle_requested"].is_boolean());
+        assert_eq!(resp["oracle_reachable"], false);
+        assert_eq!(resp["receivers_attempted"], 0);
+        assert_eq!(resp["receivers_resolved"], 0);
 
         let _ = fs::remove_dir_all(root);
     }

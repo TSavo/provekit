@@ -51,6 +51,12 @@ pub struct DaemonResolution {
     pub type_stem: Option<String>,
 }
 
+#[derive(Debug, Clone, Default)]
+pub struct DaemonResolutionBatch {
+    pub reachable: bool,
+    pub resolutions: HashMap<(String, u32, u32), DaemonResolution>,
+}
+
 /// Ask the resident daemon to resolve a batch of method-call positions in
 /// `workspace_root` to their receiver-defining crate AND receiver-type stem.
 ///
@@ -62,10 +68,10 @@ pub struct DaemonResolution {
 pub fn resolve_receiver_crates(
     workspace_root: &Path,
     queries: &[DaemonQuery],
-) -> HashMap<(String, u32, u32), DaemonResolution> {
-    let mut out = HashMap::new();
+) -> DaemonResolutionBatch {
+    let mut batch = DaemonResolutionBatch::default();
     if queries.is_empty() {
-        return out;
+        return batch;
     }
 
     let project_cid = project_cid_from_workspace(workspace_root);
@@ -82,7 +88,7 @@ pub fn resolve_receiver_crates(
                 "ra-daemon: could not connect/spawn provekit-linkerd; refusing all \
                  method-call resolutions to the syntactic tiers"
             );
-            return out;
+            return batch;
         }
     };
 
@@ -105,13 +111,14 @@ pub fn resolve_receiver_crates(
         Ok(r) => r,
         Err(e) => {
             warn!(error = %e, "ra-daemon: resolveReceiverCrate transport failed; refusing");
-            return out;
+            return batch;
         }
     };
+    batch.reachable = true;
 
     if let Some(err_obj) = resp.get("error") {
         warn!(error = %err_obj, "ra-daemon: daemon returned RPC error; refusing");
-        return out;
+        return batch;
     }
 
     let result = resp.get("result").cloned().unwrap_or(Json::Null);
@@ -131,7 +138,7 @@ pub fn resolve_receiver_crates(
             "ra-daemon: not ready (rust-analyzer still indexing, no cache hits); \
              refusing to the syntactic tiers. The next mint resolves warm."
         );
-        return out;
+        return batch;
     }
 
     if let Some(map) = resolved_obj {
@@ -148,7 +155,7 @@ pub fn resolve_receiver_crates(
             };
             let Some(krate) = krate else { continue };
             if let Some((file, line, col)) = parse_pos_key(key) {
-                out.insert(
+                batch.resolutions.insert(
                     (file, line, col),
                     DaemonResolution {
                         krate: krate.to_string(),
@@ -161,11 +168,11 @@ pub fn resolve_receiver_crates(
 
     info!(
         ready,
-        resolved = out.len(),
+        resolved = batch.resolutions.len(),
         queries = queries.len(),
         "ra-daemon: resolveReceiverCrate complete"
     );
-    out
+    batch
 }
 
 /// Parse a `"<file>:<line>:<col>"` position key back into its parts. The file
