@@ -575,7 +575,7 @@ fn decode_dependency_proof_entry(cmd_spec: &ResolvedCommand, proof: &Value) -> O
 }
 
 fn record_dependency_proof_diagnostic(message: String) {
-    eprintln!("{message}");
+    tracing::warn!("{}", message);
     KIT_DISPATCH_DIAGNOSTICS
         .get_or_init(|| Mutex::new(Vec::new()))
         .lock()
@@ -741,7 +741,7 @@ fn resolved_command_from_manifest(
 fn record_fallback_diagnostic(kind: &str, surface: &str) {
     let message =
         format!("deprecated kit_dispatch filesystem fallback: kind={kind} surface={surface}");
-    eprintln!("{message}");
+    tracing::warn!("{}", message);
     KIT_DISPATCH_DIAGNOSTICS
         .get_or_init(|| Mutex::new(Vec::new()))
         .lock()

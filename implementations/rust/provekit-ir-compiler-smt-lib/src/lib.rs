@@ -187,6 +187,101 @@ pub fn emit_asserted(ir_formula: &Json) -> Result<String, String> {
 mod tests {
     use super::*;
 
+    fn eq(a: serde_json::Value, b: serde_json::Value) -> serde_json::Value {
+        serde_json::json!({"kind": "atomic", "name": "=", "args": [a, b]})
+    }
+    fn ctor(name: &str, args: Vec<serde_json::Value>) -> serde_json::Value {
+        serde_json::json!({"kind": "ctor", "name": name, "args": args})
+    }
+    fn var(name: &str) -> serde_json::Value {
+        serde_json::json!({"kind": "var", "name": name})
+    }
+
+    #[test]
+    fn negated_path_declares_non_builtin_ctors_as_uninterpreted_fns() {
+        // The reflexive-discharge encoding: a non-arithmetic ctor head
+        // (`Ok`) must be DECLARED as an uninterpreted function on the
+        // negated (validity) path, not left undeclared. Before this, the
+        // whitelist had to refuse such terms because the negated path could
+        // not render them.
+        let ir = eq(ctor("Ok", vec![var("x")]), ctor("Ok", vec![var("x")]));
+        let parts = compile_to_parts(&ir).expect("compile");
+        assert!(
+            parts.preamble.contains("(declare-fun Ok ("),
+            "Ok must be declared as an uninterpreted fn on the negated path: {}",
+            parts.preamble
+        );
+        // The body asserts the NEGATION (prove validity via unsat).
+        assert!(
+            parts.body.contains("(assert (not"),
+            "negated path must assert (not ...): {}",
+            parts.body
+        );
+    }
+
+    #[test]
+    fn reflexive_equality_is_unsat_under_z3_and_distinct_is_sat() {
+        // End-to-end soundness check via z3 IF available. `(= (Ok x) (Ok
+        // x))` is valid -> its negation is unsat -> discharged by
+        // congruence over an uninterpreted `Ok`. `(= (Ok x) (Err x))` is
+        // NOT valid -> its negation is sat -> the encoding does NOT
+        // launder a mismatched post. This is the soundness guard for the
+        // encoder: reflexivity, not blanket-pass.
+        let z3 = which_z3();
+        let Some(z3) = z3 else {
+            eprintln!("z3 not found; skipping end-to-end congruence check");
+            return;
+        };
+
+        let reflexive = compile_to_parts(&eq(ctor("Ok", vec![var("x")]), ctor("Ok", vec![var("x")])))
+            .expect("compile reflexive");
+        let r_out = run_z3(&z3, &format!("{}{}", reflexive.preamble, reflexive.body));
+        assert!(
+            r_out.contains("unsat"),
+            "reflexive `Ok(x) == Ok(x)` must be unsat (discharged): {r_out}"
+        );
+
+        let distinct = compile_to_parts(&eq(ctor("Ok", vec![var("x")]), ctor("Err", vec![var("x")])))
+            .expect("compile distinct");
+        let d_out = run_z3(&z3, &format!("{}{}", distinct.preamble, distinct.body));
+        assert!(
+            d_out.contains("sat") && !d_out.contains("unsat"),
+            "distinct `Ok(x) == Err(x)` must be sat (NOT discharged): {d_out}"
+        );
+    }
+
+    fn which_z3() -> Option<String> {
+        for cand in ["z3", "/opt/homebrew/bin/z3", "/usr/local/bin/z3", "/usr/bin/z3"] {
+            if std::process::Command::new(cand)
+                .arg("--version")
+                .output()
+                .map(|o| o.status.success())
+                .unwrap_or(false)
+            {
+                return Some(cand.to_string());
+            }
+        }
+        None
+    }
+
+    fn run_z3(z3: &str, script: &str) -> String {
+        use std::io::Write;
+        let mut child = std::process::Command::new(z3)
+            .args(["-smt2", "-in"])
+            .stdin(std::process::Stdio::piped())
+            .stdout(std::process::Stdio::piped())
+            .spawn()
+            .expect("spawn z3");
+        child
+            .stdin
+            .as_mut()
+            .unwrap()
+            .write_all(script.as_bytes())
+            .unwrap();
+        let out = child.wait_with_output().unwrap();
+        String::from_utf8_lossy(&out.stdout).to_string()
+    }
+
     #[test]
     fn functionsort_quantifier_emits_opacity_entry() {
         // forall (f: Function) . true: FunctionSort in quantifier

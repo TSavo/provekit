@@ -21,6 +21,7 @@ use std::path::{Path, PathBuf};
 
 use provekit_canonicalizer::{blake3_512_of, encode_jcs, Value};
 use serde_json::Value as Json;
+use tracing::{debug, info, warn};
 
 use crate::cbor_decode::decode;
 use crate::types::{LoadError, MementoPool};
@@ -36,9 +37,26 @@ pub struct ProofBytes {
 }
 
 pub fn run(project_root: &Path) -> MementoPool {
+    let _span = tracing::info_span!("load_all_proofs", root = %project_root.display()).entered();
+    info!(root = %project_root.display(), "load_all_proofs: scanning for .proof files");
     let mut pool = MementoPool::default();
     for path in enumerate_proof_files(project_root) {
+        debug!(path = %path.display(), "load_all_proofs: loading .proof file");
         load_path_into_pool(&path, &mut pool);
+    }
+    info!(
+        mementos = pool.mementos.len(),
+        load_errors = pool.load_errors.len(),
+        "load_all_proofs: complete"
+    );
+    if !pool.load_errors.is_empty() {
+        for err in &pool.load_errors {
+            warn!(
+                proof_path = %err.proof_path,
+                reason = %err.reason,
+                "load_all_proofs: load error"
+            );
+        }
     }
     pool
 }

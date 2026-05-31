@@ -242,6 +242,13 @@ struct ClaimResult {
     reason: String,
     /// CID of the signed witness minted for a discharged claim.
     witness_cid: Option<String>,
+    /// For a DISCHARGED claim, HOW it was proven: `reflexive` (sound but
+    /// shallow: `T == T`, the function returns what it returns) vs
+    /// `solver-substantive` (real arithmetic / implication). `None` for a
+    /// claim that did not reach the solver (vacuous / hash-tier / not
+    /// discharged). Reported separately so a reflexive discharge is never
+    /// conflated with a meaningful proof.
+    discharge_method: Option<String>,
 }
 
 pub fn run(args: VerifyArgs) -> u8 {
@@ -492,6 +499,7 @@ fn verify_one_claim(
         verdict: ObligationVerdict::Undecidable,
         reason: String::new(),
         witness_cid: None,
+        discharge_method: None,
     };
 
     // Body-discharge path (#1440): when the callsite names a callee with a
@@ -589,6 +597,20 @@ fn verify_one_claim(
     let (verdict, reason, invs) = run_plan(plan, solver_registry, &smt, Some(&obligation));
     result.verdict = verdict;
     result.reason = reason;
+    // For a discharged obligation, record HOW it was proven. A
+    // self-derived post reduces (after wp inlines the body) to `<term> ==
+    // <term>`, discharged by reflexivity over uninterpreted terms: sound
+    // but shallow. Tag it `reflexive` so the receipt never reports it as a
+    // substantive proof. An obligation whose sides genuinely differ but
+    // still discharges (real arithmetic / implication) is
+    // `solver-substantive`.
+    if verdict == ObligationVerdict::Discharged {
+        result.discharge_method = Some(
+            body_discharge::classify_discharge_method(&obligation)
+                .as_str()
+                .to_string(),
+        );
+    }
     result.discharging_solver = invs
         .iter()
         .find(|i| i.authoritative)
@@ -757,6 +779,45 @@ fn json_to_canonical(
     }
 }
 
+/// The honest discharge split of a claim set. Every claim falls into
+/// exactly one bucket. The two solver-reached discharge methods
+/// (`reflexive`, `substantive`) are kept apart so a shallow `T == T`
+/// proof is never reported as a meaningful one; `vacuous` is a
+/// no-precondition discharge; `undecidable` is everything not discharged.
+#[derive(Debug, Default, Clone, Copy)]
+struct DischargeSplit {
+    reflexive: usize,
+    substantive: usize,
+    vacuous: usize,
+    hash_tier: usize,
+    undecidable: usize,
+}
+
+fn discharge_split(results: &[ClaimResult]) -> DischargeSplit {
+    let mut s = DischargeSplit::default();
+    for r in results {
+        if r.verdict != ObligationVerdict::Discharged {
+            s.undecidable += 1;
+            continue;
+        }
+        match r.discharge_method.as_deref() {
+            Some("reflexive") => s.reflexive += 1,
+            Some("solver-substantive") => s.substantive += 1,
+            // A discharged claim with no recorded solver method came from
+            // a non-solver path: vacuous (no precondition) or a hash-tier
+            // memento-is-verification hit. Distinguish by obligation_class.
+            _ => {
+                if r.obligation_class == "vacuous" {
+                    s.vacuous += 1;
+                } else {
+                    s.hash_tier += 1;
+                }
+            }
+        }
+    }
+    s
+}
+
 fn emit_json_receipt(
     project_root: &std::path::Path,
     kit: &Option<String>,
@@ -778,9 +839,11 @@ fn emit_json_receipt(
                 "pass": r.verdict == ObligationVerdict::Discharged,
                 "reason": r.reason,
                 "witnessCid": r.witness_cid,
+                "dischargeMethod": r.discharge_method,
             })
         })
         .collect();
+    let split = discharge_split(results);
     let out = json!({
         "kind": "verification-receipt",
         "schemaVersion": "1",
@@ -790,6 +853,17 @@ fn emit_json_receipt(
         "totalClaims": results.len(),
         "discharged": discharged,
         "failed": failed,
+        // Honest split of the discharged total. `reflexive` and
+        // `solver-substantive` are the two solver-reached methods;
+        // `vacuous` and `hash` are non-solver discharges; the methods are
+        // never conflated. The reflexive bucket is sound but shallow.
+        "dischargeSplit": {
+            "reflexive": split.reflexive,
+            "solverSubstantive": split.substantive,
+            "vacuous": split.vacuous,
+            "hashTier": split.hash_tier,
+            "undecidable": split.undecidable,
+        },
         "ok": ok,
     });
     match serde_json::to_string_pretty(&out) {
@@ -817,9 +891,14 @@ fn emit_human_receipt(
             ObligationVerdict::Undecidable => "undecidable".yellow().to_string(),
             ObligationVerdict::Disagreement => "disagreement".yellow().to_string(),
         };
+        let method = r
+            .discharge_method
+            .as_deref()
+            .map(|m| format!(", method={m}"))
+            .unwrap_or_default();
         println!(
-            "  [{}] {}  (class={}, solver={})",
-            status, r.property_name, r.obligation_class, r.discharging_solver
+            "  [{}] {}  (class={}, solver={}{})",
+            status, r.property_name, r.obligation_class, r.discharging_solver, method
         );
         if let Some(cid) = &r.witness_cid {
             println!("        witness: {}", short_cid(cid).dimmed());
@@ -829,10 +908,16 @@ fn emit_human_receipt(
         }
     }
     println!();
+    let split = discharge_split(results);
     let summary = format!(
-        "{} claims: {} discharged, {} failed",
+        "{} claims: {} discharged ({} reflexive, {} solver-substantive, {} vacuous, {} hash-tier), \
+         {} failed/undecidable",
         results.len(),
         discharged,
+        split.reflexive,
+        split.substantive,
+        split.vacuous,
+        split.hash_tier,
         failed
     );
     if ok {

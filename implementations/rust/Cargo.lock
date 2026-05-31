@@ -1556,6 +1556,8 @@ dependencies = [
  "syn",
  "tempfile",
  "thiserror 1.0.69",
+ "tracing",
+ "tracing-subscriber",
  "walkdir",
 ]
 
@@ -2028,6 +2030,7 @@ dependencies = [
  "serde_json",
  "thiserror 1.0.69",
  "toml 0.8.23",
+ "tracing",
  "walkdir",
 ]
 
@@ -2049,6 +2052,8 @@ dependencies = [
  "serde_json",
  "syn",
  "thiserror 1.0.69",
+ "tracing",
+ "tracing-subscriber",
 ]
 
 [[package]]

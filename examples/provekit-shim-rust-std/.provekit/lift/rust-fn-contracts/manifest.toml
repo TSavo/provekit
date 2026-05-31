@@ -1,0 +1,29 @@
+# SPDX-License-Identifier: Apache-2.0
+#
+# PEP 1.7.0 `kind = "lift"` plugin manifest for the Rust production
+# function-contract surface.
+#
+# Dispatches walk_rpc's `function_contract_lift` (triggered by the lift
+# request's `emit = "ir-document"`, set on the [[plugins]] entry in
+# config.toml). For every production `fn` in `src/`, walk derives a
+# body-bearing FunctionContractMemento:
+#
+#   formals + formal_sorts   (the body-bearing marker -> substantive
+#                             discharge via extract_body_obligation)
+#   pre  = lift_function_precondition  (entry asserts + guard/panic/early
+#                                       -return conditions; the demands the
+#                                       fn makes on its callers)
+#   post = lift_function_postcondition (body-derived return + surviving
+#                                       entry asserts; the fn's guarantee)
+#
+# These are what make `provekit verify` discharge the CLI's own call sites
+# through z3 instead of vacuous-passing them: a bridge that points an
+# intra-body call at one of these contracts now carries a real obligation
+# (caller must establish the callee's pre; the callee's body must satisfy
+# its derived post).
+#
+# Same walk_rpc binary as rust-bind / rust-implications; the `emit` field
+# on the config entry routes bind_lift to the function-contract path.
+name = "rust-fn-contracts-lift"
+command = ["../../implementations/rust/target/debug/provekit-walk-rpc", "--rpc"]
+working_dir = "."

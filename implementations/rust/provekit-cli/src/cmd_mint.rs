@@ -48,6 +48,7 @@ use base64::Engine;
 use clap::Parser;
 use owo_colors::OwoColorize;
 use serde_json::{json, Value};
+use tracing::{debug, info};
 
 use libprovekit::core::{
     address, Boundary, Cid, Dialect, Domain, DomainClaim, DomainKind, FunctionContractDomain,
@@ -527,6 +528,11 @@ impl MintKit {
             let dep_bindings =
                 contract_bindings_from_dependency_proofs(&project_root_for_manifests);
             let dep_total = dep_bindings.len();
+            debug!(
+                dep_total = dep_total,
+                intra_keys = intra_keys.len(),
+                "mint: harvested dependency proof contracts"
+            );
             let dep_kept: Vec<Value> = dep_bindings
                 .into_iter()
                 .filter(|b| {
@@ -541,12 +547,24 @@ impl MintKit {
                     !intra_keys.contains(&(lib, name))
                 })
                 .collect();
+            let dep_dropped = dep_total - dep_kept.len();
+            info!(
+                dep_forwarded = dep_kept.len(),
+                dep_dropped = dep_dropped,
+                "mint: dependency contracts forwarded for cross-crate bridging"
+            );
+            if dep_dropped > 0 {
+                debug!(
+                    dep_dropped = dep_dropped,
+                    "mint: dependency contracts dropped (same crate AND leaf as producer contract)"
+                );
+            }
             if !quiet && dep_total > 0 {
                 println!(
                     "{}: {} dependency contract(s) forwarded for cross-crate bridging, {} dropped (same crate AND leaf as a producer contract)",
                     "deps".green().bold(),
                     dep_kept.len(),
-                    dep_total - dep_kept.len()
+                    dep_dropped
                 );
             }
             bindings.extend(dep_kept);
@@ -556,13 +574,21 @@ impl MintKit {
         for step in &consumer_steps {
             let lift_options =
                 lift_options_from_request(&step.lift_request, contract_bindings.clone());
+            debug!(
+                surface = %step.surface,
+                contract_bindings = contract_bindings.len(),
+                "mint: dispatching lift to surface"
+            );
             let session = match lift_plugin::dispatch_lift(
                 &project_root_for_manifests,
                 &step.surface,
                 lift_options,
                 quiet,
             ) {
-                Ok(session) => session,
+                Ok(session) => {
+                    debug!(surface = %step.surface, "mint: lift dispatch succeeded");
+                    session
+                }
                 Err(LiftPluginError::MissingBinary { binary }) => {
                     if !quiet {
                         println!(
@@ -1132,6 +1158,10 @@ fn mint_lift_response(
             let authorities = lift_resp.get("authorities").and_then(|v| v.as_array());
             let implications = lift_resp.get("implications").and_then(|v| v.as_array());
             let witnesses = lift_resp.get("witnesses").and_then(|v| v.as_array());
+            debug!(
+                ir_entries = ir.len(),
+                "mint: minting ir-document into .proof bundle"
+            );
             let minted = mint_ir_document(
                 ir,
                 authorities,
@@ -1142,11 +1172,18 @@ fn mint_lift_response(
                 quiet,
             )?;
 
+            info!(
+                filename_cid = %minted.filename_cid,
+                contract_set_cid = %minted.contract_set_cid,
+                bytes = minted.bytes.len(),
+                "mint: .proof bundle minted"
+            );
             std::fs::create_dir_all(out_dir)
                 .map_err(|e| format!("mkdir {}: {e}", out_dir.display()))?;
             let out_path = out_dir.join(format!("{}.proof", minted.filename_cid));
             std::fs::write(&out_path, &minted.bytes)
                 .map_err(|e| format!("write {}: {e}", out_path.display()))?;
+            debug!(out_path = %out_path.display(), "mint: .proof file written");
 
             print_lift_diagnostics(&lift_resp, quiet);
 
@@ -1440,6 +1477,18 @@ fn mint_ir_document(
     let mut content_cids: Vec<String> = Vec::new();
     let default_signer_seed: Ed25519Seed = FOUNDATION_V0_SEED;
     let produced_at = "2026-05-03T18:00:00Z".to_string();
+    // The SEMANTIC library this project's contracts represent, from its
+    // `platform_profile.library`. This is the crate a consumer's call resolves
+    // to: `std` for the rust-std shim, `libprovekit` for libprovekit, the crate
+    // name for an ordinary kit. It is the fallback library tag for every
+    // contract the lifter did not stamp (sugar/test contracts, and any surface
+    // without rust-fn-contracts). Sourcing it here, not from the Cargo package
+    // name, is what lets the shim's std method-call contracts (to_string, len,
+    // ...) carry `std` and match a receiver-typed call resolved to std.
+    let project_library: Option<String> = read_project_config(project_root)
+        .platform_profile
+        .and_then(|p| p.library)
+        .filter(|s| !s.is_empty());
     let witness_cids_by_contract =
         emit_witnesses_by_contract(witnesses, project_root, out_dir, quiet)?;
 
@@ -1608,16 +1657,19 @@ fn mint_ir_document(
             .map(|authority| authority.principal.clone())
             .unwrap_or_else(|| "provekit-cli".to_string());
 
-        // Tier-1 crate tag: the kit (lifter) stamped `library` = the defining
-        // crate's package name on the IR decl. Forward it OPAQUELY onto the
-        // contract memento's metadata so a consumer that vendors this proof can
-        // tell this crate's `foo` from a same-named `foo` elsewhere. The CLI
-        // does not interpret the string; it is the kit's to compute.
+        // Tier-1 crate tag (Tier 2b enabler): a per-contract `library` on the
+        // IR decl wins (a future annotation, or the kit's fn-contract stamp);
+        // otherwise fall back to the project's semantic `platform_profile.library`.
+        // The fallback is what tags the shim's sugar/test contracts with `std`
+        // (the kit never stamps those), so a receiver-typed call resolved to
+        // `std` finds them. Forwarded OPAQUELY onto the contract metadata; the
+        // CLI does not interpret the string.
         let library = decl
             .get("library")
             .and_then(|v| v.as_str())
             .filter(|s| !s.is_empty())
-            .map(|s| s.to_string());
+            .map(|s| s.to_string())
+            .or_else(|| project_library.clone());
 
         let args = MintContractArgs {
             contract_name: name,
@@ -2250,6 +2302,12 @@ pub struct MintArgs {
 }
 
 pub fn run(args: MintArgs) -> u8 {
+    let _span = tracing::info_span!("cmd_mint").entered();
+    info!(
+        kit = args.kit.as_deref().unwrap_or("(none)"),
+        surface = args.surface.as_deref().unwrap_or("(none)"),
+        "mint: starting"
+    );
     // Resolve (project_root, surface, lang_key) from --kit or --project.
     let (project_root, derived_surface, lang_key) = if let Some(kit) = &args.kit {
         let config_root = std::env::current_dir().unwrap_or_else(|_| PathBuf::from("."));

@@ -37,6 +37,15 @@ use provekit_walk::{
 };
 use serde_json::{json, Value};
 use syn::spanned::Spanned;
+use tracing::{debug, info, trace, warn};
+
+// Tier 2b native semantic oracle (spec 2026-05-30-callee-resolution-tiers §2.T2b).
+// A separate module file driving rust-analyzer over LSP as the Tier-2a fallback
+// for method calls whose receiver crate the syntactic tiers cannot resolve. The
+// oracle is opt-in (PROVEKIT_RESOLVE_ORACLE=rust-analyzer) and refuses (leaves
+// callee_crate = None) when unavailable, so the fast path and CI are unaffected.
+#[path = "../ra_oracle.rs"]
+mod ra_oracle;
 
 const CONCEPT_SHAPES_CATALOG_INDEX_JSON: &str =
     include_str!("../../../../../menagerie/concept-shapes/catalog/index.json");
@@ -50,9 +59,24 @@ const BODY_TEXT_CANONICALIZATION: &str = "trim-outer-whitespace-v1";
 static CONCEPT_OP_CIDS: OnceLock<BTreeMap<String, String>> = OnceLock::new();
 
 fn main() -> io::Result<()> {
+    // Logs go to stderr only; stdout is the JSON-RPC channel and must stay
+    // byte-clean. Default level: warn. Set RUST_LOG to override:
+    //   RUST_LOG=info  -> phase summaries
+    //   RUST_LOG=debug -> per-callsite decisions, per-RPC method
+    //   RUST_LOG=provekit_walk_rpc::ra_oracle=trace -> every RA LSP query
+    // Note: ra_oracle is inlined via #[path], so its event target is
+    // provekit_walk_rpc::ra_oracle (the bin crate), not provekit_walk::ra_oracle.
+    tracing_subscriber::fmt()
+        .with_writer(std::io::stderr)
+        .with_env_filter(
+            tracing_subscriber::EnvFilter::builder()
+                .with_default_directive(tracing_subscriber::filter::LevelFilter::WARN.into())
+                .from_env_lossy(),
+        )
+        .init();
     let stdin = io::stdin();
     let mut stdout = io::stdout().lock();
-    eprintln!("provekit-walk-rpc listening on stdio (JSON-RPC 2.0, line-delimited)");
+    info!("provekit-walk-rpc listening on stdio (JSON-RPC 2.0, line-delimited)");
     for line in stdin.lock().lines() {
         let line = line?;
         if line.trim().is_empty() {
@@ -322,6 +346,12 @@ struct CallSite {
     /// intra-crate bare calls resolving as before; a `Some(other)` is what
     /// distinguishes a cross-crate callee from a same-named local one.
     callee_crate: Option<String>,
+    /// `true` for an `Expr::MethodCall` (`x.method()`), `false` for an
+    /// `Expr::Call` (free function / associated function). Only method calls
+    /// whose `callee_crate` stayed `None` after Tier 2a are eligible for the
+    /// Tier 2b semantic-oracle fallback; a `None` on a free call is a glob
+    /// import and must keep its current-crate fallback, never the oracle.
+    is_method: bool,
     file: String,
     line: usize,
     col: usize,
@@ -629,6 +659,7 @@ fn collect_callsites_in_block(
                 self.out.push(CallSite {
                     callee,
                     callee_crate,
+                    is_method: false,
                     file: self.rel_path.to_string(),
                     line: start.line,
                     col: start.column,
@@ -649,6 +680,7 @@ fn collect_callsites_in_block(
                     self.local_type_names,
                     self.current_crate,
                 ),
+                is_method: true,
                 file: self.rel_path.to_string(),
                 line: start.line,
                 col: start.column,
@@ -899,6 +931,92 @@ fn crate_name_for(dir: &Path) -> Option<String> {
 /// contract. Call sites that find no matching binding emit a `lift-gap`
 /// diagnostic and skip the bridge — substrate-honesty over silently
 /// producing the wrong edge.
+///
+/// Tier 2b (§2.T2b): for the still-unresolved method calls in `callsites`
+/// (`is_method && callee_crate.is_none()`), consult the rust-analyzer semantic
+/// oracle in one warm session and stamp the resolved (normalized) crate. Free
+/// calls left `None` by Tier 1 are NOT sent to the oracle: those are glob
+/// imports whose current-crate fallback is intended. The oracle refuses
+/// (leaves `None`) when disabled or unavailable, so this is a pure upgrade over
+/// Tier 2a with no behavior change when off.
+fn resolve_method_calls_via_oracle(
+    workspace_root: &Path,
+    callsites: &mut [(CallSite, PathBuf)],
+) {
+    use ra_oracle::ResolveQuery;
+    // Gather the eligible positions. proc-macro2 spans are 1-based line /
+    // 0-based column; LSP wants 0-based line, 0-based char. The method ident's
+    // span start already points at the ident (not the dot), so the column maps
+    // directly. A line of 0 should never occur for a real call; guard anyway.
+    let mut queries: Vec<ResolveQuery> = Vec::new();
+    for (cs, full_path) in callsites.iter() {
+        if cs.is_method && cs.callee_crate.is_none() && cs.line >= 1 {
+            debug!(
+                callee = %cs.callee,
+                file = %full_path.display(),
+                line = cs.line,
+                col = cs.col,
+                "oracle query: unresolved method call"
+            );
+            queries.push(ResolveQuery {
+                abs_path: full_path.clone(),
+                lsp_line: (cs.line - 1) as u32,
+                lsp_col: cs.col as u32,
+            });
+        }
+    }
+    let total_queries = queries.len();
+    if queries.is_empty() {
+        debug!("oracle: no unresolved method calls, skipping");
+        return;
+    }
+    debug!(count = total_queries, "oracle: sending queries to rust-analyzer");
+    let resolved = ra_oracle::resolve_batch(workspace_root, &queries);
+    let resolved_count = resolved.len();
+    let unavailable_count = total_queries - resolved_count;
+    if resolved.is_empty() {
+        // Either the oracle was unavailable/disabled (resolve_batch returns empty)
+        // or it ran and all queries refused. Both look the same here; the oracle's
+        // own batch-complete info event carries the breakdown.
+        debug!(
+            total = total_queries,
+            "oracle: no method calls resolved (oracle off or all queries refused)"
+        );
+        return;
+    }
+    for (cs, full_path) in callsites.iter_mut() {
+        if cs.is_method && cs.callee_crate.is_none() && cs.line >= 1 {
+            let key = (full_path.clone(), (cs.line - 1) as u32, cs.col as u32);
+            if let Some(krate) = resolved.get(&key) {
+                debug!(
+                    callee = %cs.callee,
+                    resolved_crate = %krate,
+                    file = %full_path.display(),
+                    line = cs.line,
+                    "oracle resolved method call"
+                );
+                cs.callee_crate = Some(krate.clone());
+            } else {
+                debug!(
+                    callee = %cs.callee,
+                    file = %full_path.display(),
+                    line = cs.line,
+                    "oracle refused: no resolution for method call"
+                );
+            }
+        }
+    }
+    info!(
+        resolved = resolved_count,
+        total = total_queries,
+        unavailable = unavailable_count,
+        "oracle resolved {}/{} method calls ({} refused/unavailable)",
+        resolved_count,
+        total_queries,
+        unavailable_count
+    );
+}
+
 fn lift_implications(params: &Value) -> Result<Value, String> {
     use std::collections::HashMap;
 
@@ -922,11 +1040,32 @@ fn lift_implications(params: &Value) -> Result<Value, String> {
         .and_then(|v| v.as_array())
         .unwrap_or(&empty);
 
+    let span = tracing::info_span!(
+        "lift_implications",
+        workspace = %workspace_root.display(),
+        source_files = source_paths.len(),
+        contract_bindings = contract_bindings.len(),
+    );
+    let _enter = span.enter();
+
+    info!(
+        source_files = source_paths.len(),
+        contract_bindings = contract_bindings.len(),
+        workspace = %workspace_root.display(),
+        "lift_implications: starting callsite collection"
+    );
+
+    trace!(
+        source_paths = ?source_paths,
+        "lift_implications: source file list"
+    );
+
     // The crate currently being lifted. Producer contracts and intra-crate
     // call sites resolve to this; a dependency call site resolves to its own
     // crate. Reading it from the project Cargo.toml is what lets the matcher
     // tell this crate's `foo` from a same-named dependency `foo` (Tier 1).
     let current_crate = crate_name_for(&workspace_root).unwrap_or_default();
+    debug!(current_crate = %current_crate, "lift_implications: resolved current crate");
 
     // Index contracts by (crate, leaf), not bare leaf. The leaf is the substring
     // before the first '@' in the contract `name` (`<callee>@<file>:<line>:<col>`
@@ -991,6 +1130,13 @@ fn lift_implications(params: &Value) -> Result<Value, String> {
     let mut entries: Vec<Value> = Vec::new();
     let mut diagnostics: Vec<Value> = Vec::new();
 
+    // Collect every call site across every file FIRST, carrying each one's
+    // absolute path. The Tier-1/2a crate is set during collection; the Tier-2b
+    // oracle (if enabled) then resolves the still-unresolved method calls in one
+    // warm rust-analyzer session, before the matcher runs. Collecting up front is
+    // what lets the oracle be spawned + indexed exactly once per lift run rather
+    // than once per call site.
+    let mut all_callsites: Vec<(CallSite, PathBuf)> = Vec::new();
     for (rel_path, full_path) in resolve_rs_source_files(&workspace_root, &source_paths) {
         let src = match std::fs::read_to_string(&full_path) {
             Ok(s) => s,
@@ -1015,8 +1161,35 @@ fn lift_implications(params: &Value) -> Result<Value, String> {
             &current_crate,
             &mut callsites,
         );
-
+        let file_callsite_count = callsites.len();
+        if file_callsite_count > 0 {
+            debug!(
+                file = %rel_path,
+                callsites = file_callsite_count,
+                "lift_implications: collected callsites from file"
+            );
+        }
         for cs in callsites {
+            all_callsites.push((cs, full_path.clone()));
+        }
+    }
+
+    info!(
+        total_callsites = all_callsites.len(),
+        "lift_implications: callsite collection complete"
+    );
+
+    // Tier 2b (§2.T2b): for method calls Tier 2a could not resolve
+    // (`callee_crate == None` AND `is_method`), ask rust-analyzer which crate
+    // the receiver's method resolves into, and stamp the normalized crate. The
+    // oracle is opt-in and refuses when unavailable; a refusal leaves the crate
+    // `None`, which the matcher below treats exactly as before (current-crate
+    // fallback / lift-gap). Tier 1/2a are untouched: only None-on-method sites
+    // are sent to the oracle, so the fast path is never slowed by it.
+    resolve_method_calls_via_oracle(&workspace_root, &mut all_callsites);
+
+    {
+        for (cs, _full_path) in all_callsites {
             // Resolve the call site to a (crate, leaf) key. An unresolved crate
             // (None: a method call, or a glob-imported bare call) defaults to
             // the current crate, preserving the prior intra-crate behavior; a
@@ -1026,40 +1199,82 @@ fn lift_implications(params: &Value) -> Result<Value, String> {
                 .clone()
                 .unwrap_or_else(|| current_crate.clone());
             let key = (resolved_crate, cs.callee.clone());
-            let Some(binding) = contracts_by_key.get(&key) else {
-                if let Some(ineligible) = ineligible_by_key.get(&key) {
-                    diagnostics.push(json!({
-                        "kind": "lift-gap",
-                        "reason": "body-discharge-ineligible",
-                        "detail": ineligible
-                            .get("bodyDischargeRefusalReason")
-                            .or_else(|| ineligible.get("body_discharge_refusal_reason"))
-                            .and_then(|v| v.as_str())
-                            .unwrap_or("callee contract is not body-discharge eligible"),
-                        "callee": cs.callee,
-                        "calleeCrate": key.0,
-                        "file": cs.file,
-                        "line": cs.line,
-                        "col": cs.col,
-                    }));
-                    continue;
+            // Fix B (#1696): a call site that matched ANY known contract
+            // MUST be emitted as a bridge, never silently dropped. An
+            // eligible callee bridges normally. An INELIGIBLE callee (its
+            // self-derived post has no result equation, e.g. a unit-
+            // returning fn) is no longer `continue`-d away: we record the
+            // lift-gap diagnostic for observability, then STILL bridge to
+            // its contract. At verification the bridge routes to the
+            // honesty boundary (body-bearing-no-pre -> undecidable;
+            // non-body-bearing -> vacuous), so the obligation is honestly
+            // surfaced instead of vanishing unseen. Only a callee with NO
+            // contract at all has nothing to bridge to.
+            let binding = match contracts_by_key.get(&key) {
+                Some(b) => *b,
+                None => {
+                    if let Some(ineligible) = ineligible_by_key.get(&key) {
+                        debug!(
+                            callee = %cs.callee,
+                            crate_ = %key.0,
+                            file = %cs.file,
+                            line = cs.line,
+                            "lift-gap: body-discharge-ineligible callee (bridged anyway, not dropped)"
+                        );
+                        // An INFORMATIONAL note, not a `lift-gap`: the call
+                        // site IS bridged (below), so it is not a gap. We
+                        // surface the body-discharge ineligibility for
+                        // observability but no obligation vanishes.
+                        diagnostics.push(json!({
+                            "kind": "lift-note",
+                            "reason": "body-discharge-ineligible-bridged",
+                            "detail": ineligible
+                                .get("bodyDischargeRefusalReason")
+                                .or_else(|| ineligible.get("body_discharge_refusal_reason"))
+                                .and_then(|v| v.as_str())
+                                .unwrap_or("callee contract is not body-discharge eligible; bridged anyway"),
+                            "callee": cs.callee,
+                            "calleeCrate": key.0,
+                            "file": cs.file,
+                            "line": cs.line,
+                            "col": cs.col,
+                        }));
+                        // Do NOT `continue`: fall through and bridge to the
+                        // ineligible callee's contract. The honesty boundary
+                        // at verification handles it.
+                        *ineligible
+                    } else {
+                        debug!(
+                            callee = %cs.callee,
+                            crate_ = %key.0,
+                            file = %cs.file,
+                            line = cs.line,
+                            "lift-gap: no contract for callee"
+                        );
+                        diagnostics.push(json!({
+                            "kind": "lift-gap",
+                            "reason": "no-contract-for-callee",
+                            "callee": cs.callee,
+                            "calleeCrate": key.0,
+                            "file": cs.file,
+                            "line": cs.line,
+                            "col": cs.col,
+                        }));
+                        continue;
+                    }
                 }
-                diagnostics.push(json!({
-                    "kind": "lift-gap",
-                    "reason": "no-contract-for-callee",
-                    "callee": cs.callee,
-                    "calleeCrate": key.0,
-                    "file": cs.file,
-                    "line": cs.line,
-                    "col": cs.col,
-                }));
-                continue;
             };
             let Some(target_cid) = binding
                 .get("contract_cid")
                 .and_then(|v| v.as_str())
                 .filter(|s| !s.is_empty())
             else {
+                debug!(
+                    callee = %cs.callee,
+                    file = %cs.file,
+                    line = cs.line,
+                    "lift-gap: binding missing contract_cid"
+                );
                 diagnostics.push(json!({
                     "kind": "lift-gap",
                     "reason": "binding-missing-contract-cid",
@@ -1070,6 +1285,14 @@ fn lift_implications(params: &Value) -> Result<Value, String> {
                 }));
                 continue;
             };
+            debug!(
+                callee = %cs.callee,
+                crate_ = %key.0,
+                target_cid = %target_cid,
+                file = %cs.file,
+                line = cs.line,
+                "lift_implications: emitting bridge for callsite"
+            );
             // Forward pin: a binding harvested from a dependency proof carries
             // `target_proof_cid` (that proof's bundle CID); stamp it on the
             // bridge so the verifier enforces ConsequentBundlePinned against
@@ -1105,6 +1328,72 @@ fn lift_implications(params: &Value) -> Result<Value, String> {
             }
             entries.push(bridge);
         }
+    }
+
+    let bridge_count = entries.len();
+    let gap_count = diagnostics
+        .iter()
+        .filter(|d| d.get("kind").and_then(|v| v.as_str()) == Some("lift-gap"))
+        .count();
+    // Break the lift-gaps down by reason so the gap between callsites and
+    // emitted bridges is legible: "why did 3000 method calls yield 30 bridges?"
+    // is answered here (no-matching-contract / unresolved-receiver / closure /
+    // macro / binding-missing-contract-cid ...), not left as a bare count.
+    let mut gap_by_reason: std::collections::BTreeMap<&str, usize> = std::collections::BTreeMap::new();
+    for d in &diagnostics {
+        if d.get("kind").and_then(|v| v.as_str()) == Some("lift-gap") {
+            let reason = d.get("reason").and_then(|v| v.as_str()).unwrap_or("unspecified");
+            *gap_by_reason.entry(reason).or_insert(0) += 1;
+        }
+    }
+    let gap_breakdown = gap_by_reason
+        .iter()
+        .map(|(r, n)| format!("{r}={n}"))
+        .collect::<Vec<_>>()
+        .join(", ");
+    info!(
+        bridges_emitted = bridge_count,
+        lift_gaps = gap_count,
+        gap_breakdown = %gap_breakdown,
+        "lift_implications: complete -> {} bridges emitted, {} lift-gaps [{}]",
+        bridge_count,
+        gap_count,
+        gap_breakdown
+    );
+    // LOUD: a call site that matched a known contract but was dropped as
+    // body-discharge-ineligible is the worst failure mode in this pipeline. It
+    // is not bridged, not discharged, and not refused: it simply disappears from
+    // verification, so an obligation we KNOW exists is silently suppressed. That
+    // is exactly the regression that made self-application collapse from 1305 to
+    // 582 call sites without a single warning. It must scream.
+    let swallowed = *gap_by_reason.get("body-discharge-ineligible").unwrap_or(&0);
+    if swallowed > 0 {
+        // INVARIANT VIOLATION (Fix B): a call site that matched a known
+        // contract was dropped. After Fix B this must be 0 -- ineligible
+        // callees are now bridged (recorded as `lift-note`/
+        // `body-discharge-ineligible-bridged`), not dropped. If this fires,
+        // a new drop path was introduced; it must scream.
+        warn!(
+            swallowed_callsites = swallowed,
+            "lift_implications: {} call sites had a MATCHING contract but were DROPPED as body-discharge-ineligible -> Fix B invariant VIOLATED (these must be bridged, not dropped)",
+            swallowed
+        );
+    } else {
+        // Observability: how many ineligible-but-bridged callsites Fix B
+        // rescued from the old silent-drop path.
+        let bridged_ineligible = diagnostics
+            .iter()
+            .filter(|d| {
+                d.get("reason").and_then(|v| v.as_str())
+                    == Some("body-discharge-ineligible-bridged")
+            })
+            .count();
+        info!(
+            swallowed_callsites = 0,
+            bridged_ineligible_callsites = bridged_ineligible,
+            "lift_implications: 0 swallowed call sites (Fix B); {} body-discharge-ineligible call sites bridged to the honesty boundary instead of dropped",
+            bridged_ineligible
+        );
     }
 
     Ok(json!({
@@ -1936,6 +2225,65 @@ fn function_contract_lift(params: &Value) -> Result<Value, String> {
         }
     }
 
+    // Producer-side visibility. This surface emits the contracts that the
+    // implication matcher later bridges into; a collapse here (e.g. a soundness
+    // gate flipping most contracts to body-discharge-ineligible) was previously
+    // INVISIBLE because nothing logged the eligible-vs-ineligible split. Log it
+    // loudly: N fn-contracts, M body-discharge-eligible, and the refusal reasons
+    // (which ctors the body-discharge spine cannot yet encode) broken down, so a
+    // future regression of this size is loud, not silent.
+    let total_fnc = entries.len();
+    let eligible = entries
+        .iter()
+        .filter(|e| {
+            e.get("bodyDischargeEligible")
+                .and_then(|v| v.as_bool())
+                .unwrap_or(false)
+        })
+        .count();
+    let mut refusal_by_reason: std::collections::BTreeMap<&str, usize> =
+        std::collections::BTreeMap::new();
+    for e in &entries {
+        if let Some(r) = e.get("bodyDischargeRefusalReason").and_then(|v| v.as_str()) {
+            *refusal_by_reason.entry(r).or_insert(0) += 1;
+        }
+    }
+    let refusal_breakdown = refusal_by_reason
+        .iter()
+        .map(|(r, n)| format!("{r}={n}"))
+        .collect::<Vec<_>>()
+        .join(", ");
+    let ineligible = total_fnc - eligible;
+    // LOUD by design. If the body-discharge gate refuses the MAJORITY of a
+    // crate's production contracts, that is either a genuine property of the
+    // code or a regression in the gate/encoding (e.g. #1696 flipping 309/310 to
+    // ineligible). Either way it caps how much the substrate can ever discharge,
+    // so it must not hide in a DEBUG line. WARN with the ctor breakdown that
+    // names exactly what the body-discharge spine cannot encode.
+    if total_fnc > 0 && ineligible * 2 > total_fnc {
+        warn!(
+            fn_contracts = total_fnc,
+            body_discharge_eligible = eligible,
+            body_discharge_ineligible = ineligible,
+            "function_contract_lift: ONLY {}/{} fn-contracts are body-discharge-eligible; {} are REFUSED by the body-discharge spine and cap self-discharge [unencodable post terms: {}]",
+            eligible,
+            total_fnc,
+            ineligible,
+            refusal_breakdown
+        );
+    } else {
+        info!(
+            fn_contracts = total_fnc,
+            body_discharge_eligible = eligible,
+            body_discharge_ineligible = ineligible,
+            "function_contract_lift: {} fn-contracts ({} body-discharge-eligible, {} ineligible) [refusals: {}]",
+            total_fnc,
+            eligible,
+            ineligible,
+            refusal_breakdown
+        );
+    }
+
     Ok(json!({
         "kind": "ir-document",
         "ir": entries,
@@ -1945,43 +2293,32 @@ fn function_contract_lift(params: &Value) -> Result<Value, String> {
 }
 
 fn body_discharge_eligibility(post: &IrFormula, formals: &[String]) -> (bool, Option<String>) {
-    let Some(value_expr) = libprovekit::wp::find_result_equation(post, "result") else {
+    // A function's self-derived post is `result == <body tail term>`.
+    // Eligibility now hinges on ONE thing: does that result equation
+    // exist? If it does, the post is dischargeable by REFLEXIVITY: the
+    // verifier's SMT lowering encodes every term head (enum/struct ctors
+    // like `Ok`/`Err`/`Some`/`tuple`, function/method calls, field
+    // projections, `format!`/`json!`/`vec!` macro terms, `ite` from
+    // `match`/`if`) as an uninterpreted function symbol, so `result ==
+    // f(x)` against a body returning `f(x)` lowers to `f(x) == f(x)` and
+    // discharges under any interpretation of `f`. The old whitelist
+    // (`+ - * ... and or not`) is obsolete: it refused 309/310 contracts
+    // here and caused their call sites to be silently dropped. The only
+    // remaining refusal is the honest one: a genuinely unit-returning
+    // function has NO result term, so there is nothing to discharge.
+    //
+    // SOUNDNESS: this is NOT "always eligible -> always pass". The
+    // reflexive encoding only proves `T == T`. If a lifter bug ever
+    // emits `result == Ok(x)` for a body that returns `Err(x)`, the
+    // obligation `Ok(x) == Err(x)` does NOT discharge (z3 refutes it); the
+    // claim stays undecidable. Widening eligibility here cannot launder a
+    // false post past the solver; it only stops dropping call sites whose
+    // obligation the verifier can now honestly encode.
+    if libprovekit::wp::find_result_equation(post, "result").is_none() {
         return (false, Some("missing-result-equation".to_string()));
-    };
-    let allowed_vars: BTreeSet<&str> = formals.iter().map(String::as_str).collect();
-    match body_discharge_term_refusal(&value_expr, &allowed_vars) {
-        Some(reason) => (false, Some(reason)),
-        None => (true, None),
     }
-}
-
-fn body_discharge_term_refusal(term: &IrTerm, allowed_vars: &BTreeSet<&str>) -> Option<String> {
-    match term {
-        IrTerm::Const { .. } => None,
-        IrTerm::Var { name } => {
-            if allowed_vars.contains(name.as_str()) {
-                None
-            } else {
-                Some(format!("unsupported-free-var:{name}"))
-            }
-        }
-        IrTerm::Ctor { name, args } => {
-            if !body_discharge_supported_ctor(name) {
-                return Some(format!("unsupported-term:{name}"));
-            }
-            args.iter()
-                .find_map(|arg| body_discharge_term_refusal(arg, allowed_vars))
-        }
-        IrTerm::Lambda { .. } => Some("unsupported-term:lambda".to_string()),
-        IrTerm::Let { .. } => Some("unsupported-term:let".to_string()),
-    }
-}
-
-fn body_discharge_supported_ctor(name: &str) -> bool {
-    matches!(
-        name,
-        "+" | "-" | "*" | "neg" | "ite" | "=" | "≠" | "<" | "≤" | ">" | "≥" | "and" | "or" | "not"
-    )
+    let _ = formals;
+    (true, None)
 }
 
 fn lift_scan_roots(root: &Path, source_paths: &[String]) -> Vec<PathBuf> {
@@ -8327,7 +8664,15 @@ pub fn caller(s: &str) -> serde_json::Value {
     }
 
     #[test]
-    fn function_contract_lift_marks_only_body_discharge_supported_contracts_eligible() {
+    fn function_contract_lift_marks_value_returning_contracts_reflexively_eligible() {
+        // Post-#1696 reflexive policy: any function with a result equation
+        // (`result == <body term>`) is body-discharge ELIGIBLE, because the
+        // verifier encodes every term head (field projection, `Ok`/`Err`
+        // ctors, calls, ...) as an uninterpreted function symbol and
+        // discharges `f(x) == f(x)` by reflexivity. The ONLY ineligible
+        // case is a genuinely unit-returning function: no result term, so
+        // nothing to discharge. The old whitelist (arithmetic only) is
+        // gone.
         let src = r##"
 pub struct ExitReport {
     pub code: i64,
@@ -8343,6 +8688,10 @@ pub fn report_exit_code(report: ExitReport) -> i64 {
 
 pub fn wrap_ok(x: i64) -> Result<i64, ()> {
     Ok(x)
+}
+
+pub fn record_only(report: ExitReport) {
+    let _ = report.code;
 }
 "##;
         let root = temp_workspace("function_contract_body_discharge_eligibility");
@@ -8366,31 +8715,37 @@ pub fn wrap_ok(x: i64) -> Result<i64, ()> {
         assert_eq!(
             by_name("double")["bodyDischargeEligible"],
             true,
-            "plain arithmetic body should be eligible for current body discharge"
+            "plain arithmetic body is reflexively eligible"
         );
         assert_eq!(
             by_name("report_exit_code")["bodyDischargeEligible"],
-            false,
-            "field projection is Rust-kit-owned sugar that is not yet solver-backed"
+            true,
+            "field projection is reflexively eligible: `field(report, .code) == field(report, .code)`"
         );
         assert_eq!(
             by_name("wrap_ok")["bodyDischargeEligible"],
+            true,
+            "Result::Ok construction is reflexively eligible: `Ok(x) == Ok(x)`"
+        );
+        assert_eq!(
+            by_name("record_only")["bodyDischargeEligible"],
             false,
-            "Result::Ok construction needs Rust stdlib algebra before it is body-discharge eligible"
+            "a genuinely unit-returning function has no result equation; it is honestly ineligible"
         );
         let diagnostics = resp["diagnostics"].as_array().expect("diagnostics array");
         assert!(
             diagnostics
                 .iter()
                 .any(|diag| diag["kind"] == "body-discharge-gap"
-                    && diag["function"] == "report_exit_code"),
-            "ineligible contracts must surface a precise kit diagnostic: {diagnostics:?}"
+                    && diag["function"] == "record_only"),
+            "the unit-returning ineligible contract must surface a precise kit diagnostic: {diagnostics:?}"
         );
         assert!(
-            diagnostics
+            !diagnostics
                 .iter()
-                .any(|diag| diag["kind"] == "body-discharge-gap" && diag["function"] == "wrap_ok"),
-            "ineligible stdlib constructor contract must surface a precise kit diagnostic: {diagnostics:?}"
+                .any(|diag| diag["kind"] == "body-discharge-gap"
+                    && (diag["function"] == "report_exit_code" || diag["function"] == "wrap_ok")),
+            "value-returning contracts must NOT surface a body-discharge gap under the reflexive policy: {diagnostics:?}"
         );
 
         let _ = fs::remove_dir_all(root);

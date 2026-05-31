@@ -24,6 +24,7 @@ use crate::formula_rewrite;
 use rayon::prelude::*;
 use serde_json::json;
 use serde_json::Value as Json;
+use tracing::{debug, info, warn};
 
 use crate::handshake::{
     formula_hash, implication_property_hash, locate_producer_post, try_tier1, try_tier2,
@@ -122,6 +123,13 @@ pub struct TierStats {
     pub discharged_by_cache: usize,
     pub vacuous_discharge: usize,
     pub solved_and_minted: usize,
+    /// Subset of `solved_and_minted` discharged by REFLEXIVITY (`T == T`
+    /// over uninterpreted ctors): sound but shallow (proves the function
+    /// returns what it returns). Reported apart from substantive proofs.
+    pub reflexive_discharge: usize,
+    /// Subset of `solved_and_minted` where the solver did substantive work
+    /// (real arithmetic / implication; the equality's sides differ).
+    pub substantive_discharge: usize,
     pub residue: usize,
     pub violations: usize,
     pub disagreements: usize,
@@ -241,6 +249,8 @@ impl Runner {
         let n_residue = AtomicUsize::new(0);
         let n_disagree = AtomicUsize::new(0);
         let n_invoc = AtomicUsize::new(0);
+        let n_reflexive = AtomicUsize::new(0);
+        let n_substantive = AtomicUsize::new(0);
         let invs_sink: Mutex<Vec<SolverInvocation>> = Mutex::new(vec![]);
         let minted_sink = Mutex::new(Vec::new());
 
@@ -268,6 +278,8 @@ impl Runner {
                     &n_residue,
                     &n_disagree,
                     &n_invoc,
+                    &n_reflexive,
+                    &n_substantive,
                     &invs_sink,
                     &minted_sink,
                 )
@@ -313,6 +325,50 @@ impl Runner {
         }
         report_stage::add_load_errors(&pool.load_errors, &mut report);
 
+        // Self-post pass (THE 309): verify each body-derived contract's OWN
+        // postcondition `post[result := body]`. See `verify_contract_self_posts`.
+        // The Runner's callsite enumeration never touches a contract's own
+        // post, so this is where a body-discharge-eligible contract is
+        // actually verified. Results flow into the same buckets.
+        let self_post_results = verify_contract_self_posts(&pool, &self.plan, &self.registry);
+        for spr in &self_post_results {
+            match spr.verdict {
+                ObligationVerdict::Discharged => {
+                    n_solved.fetch_add(1, Ordering::Relaxed);
+                    match spr.method {
+                        Some(body_discharge::DischargeMethod::Reflexive) => {
+                            n_reflexive.fetch_add(1, Ordering::Relaxed);
+                        }
+                        Some(body_discharge::DischargeMethod::Substantive) => {
+                            n_substantive.fetch_add(1, Ordering::Relaxed);
+                        }
+                        None => {}
+                    }
+                }
+                _ => {
+                    violations += 1;
+                    n_residue.fetch_add(1, Ordering::Relaxed);
+                }
+            }
+            report_stage::add_self_post(&spr.contract_cid, spr.verdict, &spr.reason, &mut report);
+        }
+        info!(
+            self_posts = self_post_results.len(),
+            self_post_reflexive = self_post_results
+                .iter()
+                .filter(|r| r.method == Some(body_discharge::DischargeMethod::Reflexive))
+                .count(),
+            self_post_substantive = self_post_results
+                .iter()
+                .filter(|r| r.method == Some(body_discharge::DischargeMethod::Substantive))
+                .count(),
+            self_post_undecidable = self_post_results
+                .iter()
+                .filter(|r| r.verdict != ObligationVerdict::Discharged)
+                .count(),
+            "verifier: contract self-post pass complete"
+        );
+
         let invs = invs_sink.into_inner().unwrap_or_default();
         let mut per_solver: BTreeMap<String, SolverStats> = BTreeMap::new();
         for inv in &invs {
@@ -335,6 +391,8 @@ impl Runner {
             discharged_by_hash: n_hash.load(Ordering::Relaxed),
             discharged_by_cache: n_cache.load(Ordering::Relaxed),
             vacuous_discharge: n_vacuous.load(Ordering::Relaxed),
+            reflexive_discharge: n_reflexive.load(Ordering::Relaxed),
+            substantive_discharge: n_substantive.load(Ordering::Relaxed),
             solved_and_minted: n_solved.load(Ordering::Relaxed),
             residue: n_residue.load(Ordering::Relaxed),
             violations,
@@ -388,6 +446,12 @@ impl Runner {
     }
 
     pub fn run_with_tiers(&self) -> (Report, TierStats) {
+        let _span = tracing::info_span!(
+            "verifier",
+            root = %self.cfg.project_root.display()
+        ).entered();
+        info!(root = %self.cfg.project_root.display(), "verifier: starting proof run");
+
         let mut report = Report::default();
         let mut pool = load_all_proofs::run(&self.cfg.project_root);
 
@@ -398,6 +462,12 @@ impl Runner {
         }
         load_all_proofs::load_files_into_pool(&self.cfg.extra_proof_files, &mut pool);
         load_all_proofs::load_proof_bytes_into_pool(&self.cfg.extra_proofs, &mut pool);
+
+        info!(
+            mementos = pool.mementos.len(),
+            load_errors = pool.load_errors.len(),
+            "verifier: proofs loaded"
+        );
 
         // Load and process call edges
         let call_edges = call_edge_loader::load_call_edge_files(&self.cfg.project_root);
@@ -421,6 +491,7 @@ impl Runner {
         }
 
         let callsites = enumerate_callsites::run(&pool);
+        info!(callsites = callsites.len(), "verifier: callsite enumeration complete");
 
         let n_hash = AtomicUsize::new(0);
         let n_cache = AtomicUsize::new(0);
@@ -429,6 +500,8 @@ impl Runner {
         let n_residue = AtomicUsize::new(0);
         let n_disagree = AtomicUsize::new(0);
         let n_invoc = AtomicUsize::new(0);
+        let n_reflexive = AtomicUsize::new(0);
+        let n_substantive = AtomicUsize::new(0);
 
         // Per-solver telemetry sink. Mutex-guarded; rayon workers append
         // their per-callsite SolverInvocations here.
@@ -455,6 +528,8 @@ impl Runner {
                     &n_residue,
                     &n_disagree,
                     &n_invoc,
+                    &n_reflexive,
+                    &n_substantive,
                     &invs_sink,
                     &minted_sink,
                 )
@@ -479,6 +554,56 @@ impl Runner {
         }
         report_stage::add_load_errors(&pool.load_errors, &mut report);
 
+        // Self-post pass: verify every body-derived contract's OWN
+        // postcondition. A contract carries `post = (result == <body
+        // term>)`; substituting `result := <body term>` yields `<body> ==
+        // <body>` (plus any conjoined entry-precondition, left intact),
+        // which the real encoder + z3 discharge by reflexivity when the
+        // self-post is unconditionally valid. THIS is "the 309": the
+        // Runner's callsite enumeration never touches a contract's own
+        // post, so without this pass a body-discharge-eligible contract is
+        // eligible-but-never-verified. Each result flows into the SAME
+        // reflexive / substantive / residue buckets so the proof-run split
+        // is unified.
+        let self_post_results = verify_contract_self_posts(&pool, plan, registry);
+        for spr in &self_post_results {
+            match spr.verdict {
+                ObligationVerdict::Discharged => {
+                    n_solved.fetch_add(1, Ordering::Relaxed);
+                    match spr.method {
+                        Some(body_discharge::DischargeMethod::Reflexive) => {
+                            n_reflexive.fetch_add(1, Ordering::Relaxed);
+                        }
+                        Some(body_discharge::DischargeMethod::Substantive) => {
+                            n_substantive.fetch_add(1, Ordering::Relaxed);
+                        }
+                        None => {}
+                    }
+                }
+                _ => {
+                    violations += 1;
+                    n_residue.fetch_add(1, Ordering::Relaxed);
+                }
+            }
+            report_stage::add_self_post(&spr.contract_cid, spr.verdict, &spr.reason, &mut report);
+        }
+        info!(
+            self_posts = self_post_results.len(),
+            self_post_reflexive = self_post_results
+                .iter()
+                .filter(|r| r.method == Some(body_discharge::DischargeMethod::Reflexive))
+                .count(),
+            self_post_substantive = self_post_results
+                .iter()
+                .filter(|r| r.method == Some(body_discharge::DischargeMethod::Substantive))
+                .count(),
+            self_post_undecidable = self_post_results
+                .iter()
+                .filter(|r| r.verdict != ObligationVerdict::Discharged)
+                .count(),
+            "verifier: contract self-post pass complete"
+        );
+
         // Aggregate per-solver stats from telemetry sink.
         let invs = invs_sink.into_inner().unwrap_or_default();
         let mut per_solver: BTreeMap<String, SolverStats> = BTreeMap::new();
@@ -502,13 +627,59 @@ impl Runner {
             discharged_by_hash: n_hash.load(Ordering::Relaxed),
             discharged_by_cache: n_cache.load(Ordering::Relaxed),
             vacuous_discharge: n_vacuous.load(Ordering::Relaxed),
+            reflexive_discharge: n_reflexive.load(Ordering::Relaxed),
+            substantive_discharge: n_substantive.load(Ordering::Relaxed),
             solved_and_minted: n_solved.load(Ordering::Relaxed),
             residue: n_residue.load(Ordering::Relaxed),
             violations,
             disagreements: n_disagree.load(Ordering::Relaxed),
             solver_invocations: n_invoc.load(Ordering::Relaxed),
-            per_solver,
+            per_solver: per_solver.clone(),
         };
+
+        if violations > 0 {
+            warn!(
+                violations = violations,
+                discharged_by_hash = stats.discharged_by_hash,
+                discharged_by_cache = stats.discharged_by_cache,
+                vacuous = stats.vacuous_discharge,
+                solved = stats.solved_and_minted,
+                reflexive = stats.reflexive_discharge,
+                solver_substantive = stats.substantive_discharge,
+                residue = stats.residue,
+                solver_invocations = stats.solver_invocations,
+                "verifier: proof run complete with VIOLATIONS [solved split: {} reflexive, {} solver-substantive]",
+                stats.reflexive_discharge,
+                stats.substantive_discharge
+            );
+        } else {
+            info!(
+                violations = violations,
+                discharged_by_hash = stats.discharged_by_hash,
+                discharged_by_cache = stats.discharged_by_cache,
+                vacuous = stats.vacuous_discharge,
+                solved = stats.solved_and_minted,
+                reflexive = stats.reflexive_discharge,
+                solver_substantive = stats.substantive_discharge,
+                residue = stats.residue,
+                solver_invocations = stats.solver_invocations,
+                "verifier: proof run complete, all obligations discharged [solved split: {} reflexive, {} solver-substantive]",
+                stats.reflexive_discharge,
+                stats.substantive_discharge
+            );
+        }
+        for (solver_name, solver_stats) in &stats.per_solver {
+            debug!(
+                solver = %solver_name,
+                discharged = solver_stats.discharged,
+                unsatisfied = solver_stats.unsatisfied,
+                undecidable = solver_stats.undecidable,
+                timeouts = solver_stats.timeouts,
+                wall_clock_ms = solver_stats.wall_clock.as_millis(),
+                "verifier: per-solver stats"
+            );
+        }
+
         (report, stats)
     }
 
@@ -837,6 +1008,87 @@ fn build_plan_and_registry(cfg: &RunnerConfig) -> (SolverPlan, HashMap<String, S
     )
 }
 
+/// One contract's self-post verification outcome.
+struct SelfPostResult {
+    contract_cid: String,
+    verdict: ObligationVerdict,
+    reason: String,
+    method: Option<body_discharge::DischargeMethod>,
+}
+
+/// Verify each body-derived contract's OWN postcondition. For a contract
+/// with `post = (result == <body>)` (and optionally a conjoined
+/// entry-precondition), the self-post obligation is `post[result :=
+/// <body>]`. The pure `result == body` conjunct becomes `body == body`,
+/// proven by reflexivity over the (uninterpreted) body term; a conjoined
+/// precondition (`x >= 10`) survives and keeps the obligation honest -- it
+/// discharges only if unconditionally valid, otherwise z3 returns sat and
+/// the verdict is undecidable. The substitution is the REAL one (not a
+/// hand-built `v == v`), so the soundness property is exercised on the
+/// real solver path.
+fn verify_contract_self_posts(
+    pool: &MementoPool,
+    plan: &SolverPlan,
+    registry: &HashMap<String, SolverHandle>,
+) -> Vec<SelfPostResult> {
+    use crate::types::{memento_body, memento_kind};
+
+    let contracts: Vec<(&String, &Json)> = pool
+        .mementos
+        .iter()
+        .filter(|(_, env)| memento_kind(env) == Some("contract"))
+        .collect();
+
+    contracts
+        .par_iter()
+        .filter_map(|(cid, env)| {
+            let body = memento_body(env)?;
+            // Body-derived contracts carry `formals` + `post`. A contract
+            // without `post` (or without a result equation) has no
+            // self-post to verify here.
+            let post_json = body.get("post")?;
+            let post: provekit_ir_types::IrFormula =
+                serde_json::from_value(post_json.clone()).ok()?;
+            let value_expr = libprovekit::wp::find_result_equation(&post, "result")?;
+
+            // Self-post obligation: post[result := <body value term>].
+            let obligation_formula =
+                libprovekit::wp::substitute_in_formula(post, "result", &value_expr);
+            let obligation_json = serde_json::to_value(&obligation_formula).ok()?;
+
+            let smt = match smt_emitter::emit(&obligation_json) {
+                Ok(s) => s,
+                Err(e) => {
+                    return Some(SelfPostResult {
+                        contract_cid: (*cid).clone(),
+                        verdict: ObligationVerdict::Undecidable,
+                        reason: format!("self-post smt-emit: {e}"),
+                        method: None,
+                    });
+                }
+            };
+            let (verdict, reason, _invs) =
+                run_plan(plan, registry, &smt, Some(&obligation_json));
+            let method = if verdict == ObligationVerdict::Discharged {
+                let m = body_discharge::classify_discharge_method(&obligation_json);
+                Some(m)
+            } else {
+                None
+            };
+            let tagged_reason = match method {
+                Some(m) => format!("[method={}] self-post: {reason}", m.as_str()),
+                None => format!("self-post: {reason}"),
+            };
+            Some(SelfPostResult {
+                contract_cid: (*cid).clone(),
+                verdict,
+                reason: tagged_reason,
+                method,
+            })
+        })
+        .collect()
+}
+
 #[allow(clippy::too_many_arguments)]
 fn work_one(
     cs: &CallSite,
@@ -851,6 +1103,8 @@ fn work_one(
     n_residue: &AtomicUsize,
     n_disagree: &AtomicUsize,
     n_invoc: &AtomicUsize,
+    n_reflexive: &AtomicUsize,
+    n_substantive: &AtomicUsize,
     invs_sink: &Mutex<Vec<SolverInvocation>>,
     minted_sink: &Mutex<Vec<(String, Json)>>,
 ) -> (CallSite, ObligationVerdict, String) {
@@ -867,10 +1121,27 @@ fn work_one(
                     );
                 }
             };
-            let (verdict, reason, invs) = run_plan(plan, registry, &smt, Some(&reduced));
+            let (verdict, mut reason, invs) = run_plan(plan, registry, &smt, Some(&reduced));
             n_invoc.fetch_add(invs.len(), Ordering::Relaxed);
             if verdict == ObligationVerdict::Discharged {
                 n_solved.fetch_add(1, Ordering::Relaxed);
+                // Tag HOW it discharged: a self-derived post reduces to
+                // `<term> == <term>` and is proven by reflexivity over
+                // uninterpreted ctors (sound but shallow); anything else is
+                // substantive solver work. Counted apart so a reflexive
+                // discharge is never conflated with a meaningful proof. The
+                // method is also stamped on the row reason so the receipt
+                // surfaces the split per-callsite.
+                let method = body_discharge::classify_discharge_method(&reduced);
+                match method {
+                    body_discharge::DischargeMethod::Reflexive => {
+                        n_reflexive.fetch_add(1, Ordering::Relaxed);
+                    }
+                    body_discharge::DischargeMethod::Substantive => {
+                        n_substantive.fetch_add(1, Ordering::Relaxed);
+                    }
+                }
+                reason = format!("[method={}] {reason}", method.as_str());
             } else if verdict == ObligationVerdict::Disagreement {
                 n_disagree.fetch_add(1, Ordering::Relaxed);
                 n_residue.fetch_add(1, Ordering::Relaxed);
@@ -968,10 +1239,11 @@ fn work_one(
                 .into_iter()
                 .map(|(cid, _)| short(&cid))
                 .collect();
-            eprintln!(
-                "info: formula has {} verified sub-formulas: {}",
-                sub_cids.len(),
-                sub_cids.join(", ")
+            debug!(
+                bridge = %cs.bridge_ir_name,
+                sub_formula_count = sub_cids.len(),
+                sub_cids = %sub_cids.join(", "),
+                "work_one: formula has verified sub-formulas (partial discharge candidate)"
             );
         }
     }
@@ -1134,8 +1406,19 @@ fn work_one(
         formula_for_dispatch = Some(ob.ir_formula);
     }
 
+    debug!(
+        bridge = %cs.bridge_ir_name,
+        "work_one: invoking solver plan (tier 3)"
+    );
     let (verdict, reason, invs) = run_plan(plan, registry, &smt, formula_for_dispatch.as_ref());
 
+    debug!(
+        bridge = %cs.bridge_ir_name,
+        verdict = ?verdict,
+        reason = %reason,
+        solver_invocations = invs.len(),
+        "work_one: solver plan verdict"
+    );
     n_invoc.fetch_add(invs.len(), Ordering::Relaxed);
 
     if verdict == ObligationVerdict::Disagreement {
@@ -1177,7 +1460,7 @@ fn work_one(
                             }
                         }
                         Err(e) => {
-                            eprintln!("warning: mint_and_cache: {e}");
+                            warn!(bridge = %cs.bridge_ir_name, error = %e, "mint_and_cache failed");
                         }
                     }
                 }
