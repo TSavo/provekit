@@ -384,6 +384,12 @@ struct CallSite {
     file: String,
     line: usize,
     col: usize,
+    /// Phase-2 Tier D-lib: for free calls that need arg-type disambiguation
+    /// (e.g. `serde_json::to_string(&v)` where we want to know if `v` is
+    /// `serde_json::Value`), the span-start of the first argument expression.
+    /// `None` when arg-type resolution is not needed for this call.
+    arg0_line: Option<usize>,
+    arg0_col: Option<usize>,
 }
 
 #[derive(Debug, Clone, Copy, Default)]
@@ -707,6 +713,21 @@ fn collect_callsites_in_block(
                 call_expr_callee(&node.func, self.use_map, self.current_crate)
             {
                 let start = node.func.span().start();
+                // Phase-2 Tier D-lib: for serde_json::to_string / to_string_pretty
+                // free calls, track the first arg position for oracle type resolution.
+                // Hovering at the arg's span gives the arg type stem; if stem == "value"
+                // the call targets serde_json::Value (total serialization).
+                let (arg0_line, arg0_col) = if needs_arg_type_resolution(
+                    callee_crate.as_deref(),
+                    &callee,
+                ) {
+                    node.args.first().map(|a| {
+                        let sp = a.span().start();
+                        (sp.line, sp.column)
+                    }).unzip()
+                } else {
+                    (None, None)
+                };
                 self.out.push(CallSite {
                     callee,
                     contract_callee,
@@ -717,6 +738,8 @@ fn collect_callsites_in_block(
                     file: self.rel_path.to_string(),
                     line: start.line,
                     col: start.column,
+                    arg0_line,
+                    arg0_col,
                 });
             } else if is_closure_expr(&node.func) {
                 let start = node.func.span().start();
@@ -730,6 +753,8 @@ fn collect_callsites_in_block(
                     file: self.rel_path.to_string(),
                     line: start.line,
                     col: start.column,
+                    arg0_line: None,
+                    arg0_col: None,
                 });
             } else {
                 let start = node.func.span().start();
@@ -743,6 +768,8 @@ fn collect_callsites_in_block(
                     file: self.rel_path.to_string(),
                     line: start.line,
                     col: start.column,
+                    arg0_line: None,
+                    arg0_col: None,
                 });
             }
             syn::visit::visit_expr_call(self, node);
@@ -778,6 +805,8 @@ fn collect_callsites_in_block(
                 file: self.rel_path.to_string(),
                 line: start.line,
                 col: start.column,
+                arg0_line: None,
+                arg0_col: None,
             });
             syn::visit::visit_expr_method_call(self, node);
         }
@@ -805,6 +834,8 @@ fn collect_callsites_in_block(
                 file: self.rel_path.to_string(),
                 line: start.line,
                 col: start.column,
+                arg0_line: None,
+                arg0_col: None,
             });
             syn::visit::visit_expr_index(self, node);
         }
@@ -866,6 +897,8 @@ fn unsupported_macro_callsite(mac: &syn::Macro, rel_path: &str) -> CallSite {
         file: rel_path.to_string(),
         line: start.line,
         col: start.column,
+        arg0_line: None,
+        arg0_col: None,
     }
 }
 
@@ -1152,6 +1185,42 @@ fn crate_name_for(dir: &Path) -> Option<String> {
 /// and fall through to the bare-leaf key (their existing total-wrapper bridges
 /// are unaffected). Anything not in this table -> `None` -> bare-leaf key
 /// (additive; the refuse-floor and the existing bridges are preserved).
+/// True iff this free call needs arg-type resolution via the oracle.
+/// The set is deliberately narrow: only the serde_json totality wrappers.
+/// A non-Value arg to `serde_json::to_string` must NOT be disambiguated
+/// (it stays `to_string` -> no-contract-for-callee -> honestly undecidable).
+fn needs_arg_type_resolution(callee_crate: Option<&str>, callee: &str) -> bool {
+    callee_crate == Some("serde_json")
+        && matches!(callee, "to_string" | "to_string_pretty")
+}
+
+/// Phase-2 Tier D-lib: when a serde_json free call was resolved by the oracle
+/// to have a `serde_json::Value` first argument (stem == "value"), return the
+/// wrapper function name that carries the totality contract. Any other stem
+/// (or None) returns None, preserving the refuse-floor for non-Value args.
+///
+/// SOUNDNESS: stem "value" is SPECIFIC to `serde_json::Value` in this context
+/// because the oracle hover at the arg position of `serde_json::to_string(&v)`
+/// yields the type path `serde_json::Value`; `type_stem_from_hover_markdown`
+/// strips to the last segment and lowercases it, giving "value". A struct named
+/// `Value` from a DIFFERENT crate cannot appear here: the callee_crate check in
+/// `needs_arg_type_resolution` already confirmed the call is `serde_json::to_string`.
+/// A user-defined `struct Value` in their own crate at a serde_json::to_string
+/// call site would fail to compile unless it implements Serialize, and if it does,
+/// the to_string may still fail (not total). The guard is callee_crate = serde_json
+/// + arg stem = value: together they uniquely identify serde_json::Value calls.
+fn disambiguated_serde_json_value_leaf(callee: &str, arg_type_stem: &str) -> Option<String> {
+    if arg_type_stem != "value" {
+        return None;
+    }
+    let leaf = match callee {
+        "to_string" => "serde_json_to_string_value",
+        "to_string_pretty" => "serde_json_to_string_pretty_value",
+        _ => return None,
+    };
+    Some(leaf.to_string())
+}
+
 fn disambiguated_partial_leaf(type_stem: &str, leaf: &str) -> Option<String> {
     let partial = match (type_stem, leaf) {
         ("option", "unwrap") => "option_unwrap",
@@ -1205,6 +1274,10 @@ fn resolve_method_calls_via_oracle(
     // 0-based column; LSP wants 0-based line, 0-based char. The method ident's
     // span start already points at the ident (not the dot), so the column maps
     // directly. A line of 0 should never occur for a real call; guard anyway.
+    //
+    // Also include arg0 positions for serde_json free calls that need arg-type
+    // resolution (Phase-2 Tier D-lib). These use the same DaemonQuery/hover
+    // mechanism but at the argument's span position instead of the callee ident.
     let mut queries: Vec<DaemonQuery> = Vec::new();
     for (cs, full_path) in callsites.iter() {
         if cs.is_method && cs.callee_crate.is_none() && cs.line >= 1 {
@@ -1221,11 +1294,30 @@ fn resolve_method_calls_via_oracle(
                 col: cs.col as u32,
             });
         }
+        // Phase-2 Tier D-lib: serde_json::to_string/to_string_pretty free calls
+        // that tracked an arg0 position need a separate hover query at that
+        // position to learn whether the arg is serde_json::Value.
+        if let (Some(arg_line), Some(arg_col)) = (cs.arg0_line, cs.arg0_col) {
+            if arg_line >= 1 {
+                debug!(
+                    callee = %cs.callee,
+                    file = %full_path.display(),
+                    arg_line,
+                    arg_col,
+                    "oracle query: serde_json free call arg type"
+                );
+                queries.push(DaemonQuery {
+                    file: full_path.to_string_lossy().into_owned(),
+                    line: (arg_line - 1) as u32,
+                    col: arg_col as u32,
+                });
+            }
+        }
     }
     let total_queries = queries.len();
     observation.attempted = total_queries as u64;
     if queries.is_empty() {
-        debug!("oracle: no unresolved method calls, skipping");
+        debug!("oracle: no unresolved method calls or arg-type queries, skipping");
         return observation;
     }
     debug!(
@@ -1285,6 +1377,44 @@ fn resolve_method_calls_via_oracle(
                     line = cs.line,
                     "oracle refused: no resolution for method call"
                 );
+            }
+        }
+        // Phase-2 Tier D-lib: serde_json free call arg-type resolution.
+        // The arg0 position was queried above; if the oracle resolved it,
+        // use the type stem to disambiguate to the value-totality wrapper.
+        if let (Some(arg_line), Some(arg_col)) = (cs.arg0_line, cs.arg0_col) {
+            if arg_line >= 1 {
+                let arg_key = (
+                    full_path.to_string_lossy().into_owned(),
+                    (arg_line - 1) as u32,
+                    arg_col as u32,
+                );
+                if let Some(res) = resolved.get(&arg_key) {
+                    let disambiguated = res
+                        .type_stem
+                        .as_deref()
+                        .and_then(|stem| disambiguated_serde_json_value_leaf(&cs.callee, stem));
+                    debug!(
+                        callee = %cs.callee,
+                        arg_type_stem = ?res.type_stem,
+                        disambiguated = ?disambiguated,
+                        file = %full_path.display(),
+                        arg_line,
+                        "oracle resolved serde_json free call arg type (resident daemon)"
+                    );
+                    // Only set disambiguated_callee; callee_crate was already
+                    // resolved by Tier 1 path analysis for free calls.
+                    if disambiguated.is_some() {
+                        cs.disambiguated_callee = disambiguated;
+                    }
+                } else {
+                    debug!(
+                        callee = %cs.callee,
+                        file = %full_path.display(),
+                        arg_line,
+                        "oracle refused: no resolution for serde_json arg type; call stays to_string (undecidable)"
+                    );
+                }
             }
         }
     }
