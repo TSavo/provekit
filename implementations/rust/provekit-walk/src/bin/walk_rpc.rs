@@ -35,6 +35,7 @@ use provekit_walk::{
     build_function_contract_with_file, build_shadow_source, lift_function_postcondition,
     lift_function_precondition, CalleeContract,
 };
+use quote::ToTokens;
 use serde_json::{json, Value};
 use syn::spanned::Spanned;
 use tracing::{debug, info, trace, warn};
@@ -345,6 +346,12 @@ struct CallSite {
     /// The bare callee leaf: last path segment for `Expr::Call`, method ident
     /// for `Expr::MethodCall`.
     callee: String,
+    /// The target contract lookup key for this callee. Usually identical to
+    /// `callee`, but carries generic arguments for monomorphized calls
+    /// (`foo::<i64>`) so different instantiations cannot collapse into one
+    /// target binding. This never becomes the bridge `sourceSymbol`; the source
+    /// symbol must stay aligned with the ctor name lifted from the caller body.
+    contract_callee: String,
     /// The crate the callee resolves to (Tier-1 qualification). `Some("std")`,
     /// `Some("libprovekit")`, etc. for a path or use-resolved free function;
     /// `None` when it could not be resolved syntactically (a method call whose
@@ -370,6 +377,10 @@ struct CallSite {
     /// STAYS the bare `callee` (that is the ctor name in the lifted caller body);
     /// only the TARGET binding selected changes to the disambiguated partial.
     disambiguated_callee: Option<String>,
+    /// Some call syntaxes are real callsites, but not yet bridgeable to a
+    /// stable contract key. Keep them in the census as explicit lift gaps
+    /// rather than silently dropping them or guessing a bridge target.
+    unsupported_reason: Option<&'static str>,
     file: String,
     line: usize,
     col: usize,
@@ -692,15 +703,43 @@ fn collect_callsites_in_block(
     }
     impl<'ast, 'a> Visit<'ast> for V<'a> {
         fn visit_expr_call(&mut self, node: &'ast syn::ExprCall) {
-            if let Some((callee, callee_crate)) =
+            if let Some((callee, callee_crate, contract_callee)) =
                 call_expr_callee(&node.func, self.use_map, self.current_crate)
             {
                 let start = node.func.span().start();
                 self.out.push(CallSite {
                     callee,
+                    contract_callee,
                     callee_crate,
                     is_method: false,
                     disambiguated_callee: None,
+                    unsupported_reason: None,
+                    file: self.rel_path.to_string(),
+                    line: start.line,
+                    col: start.column,
+                });
+            } else if is_closure_expr(&node.func) {
+                let start = node.func.span().start();
+                self.out.push(CallSite {
+                    callee: "<closure>".to_string(),
+                    contract_callee: "<closure>".to_string(),
+                    callee_crate: None,
+                    is_method: false,
+                    disambiguated_callee: None,
+                    unsupported_reason: Some("unsupported-closure-invocation"),
+                    file: self.rel_path.to_string(),
+                    line: start.line,
+                    col: start.column,
+                });
+            } else {
+                let start = node.func.span().start();
+                self.out.push(CallSite {
+                    callee: "<dynamic>".to_string(),
+                    contract_callee: "<dynamic>".to_string(),
+                    callee_crate: None,
+                    is_method: false,
+                    disambiguated_callee: None,
+                    unsupported_reason: Some("unsupported-dynamic-callee"),
                     file: self.rel_path.to_string(),
                     line: start.line,
                     col: start.column,
@@ -708,11 +747,23 @@ fn collect_callsites_in_block(
             }
             syn::visit::visit_expr_call(self, node);
         }
+        fn visit_expr_macro(&mut self, node: &'ast syn::ExprMacro) {
+            self.out
+                .push(unsupported_macro_callsite(&node.mac, self.rel_path));
+            syn::visit::visit_expr_macro(self, node);
+        }
+        fn visit_stmt_macro(&mut self, node: &'ast syn::StmtMacro) {
+            self.out
+                .push(unsupported_macro_callsite(&node.mac, self.rel_path));
+            syn::visit::visit_stmt_macro(self, node);
+        }
         fn visit_expr_method_call(&mut self, node: &'ast syn::ExprMethodCall) {
             let callee = node.method.to_string();
+            let contract_callee = callee_with_angle_args(&callee, node.turbofish.as_ref());
             let start = node.method.span().start();
             self.out.push(CallSite {
                 callee,
+                contract_callee,
                 callee_crate: receiver_crate_for_expr(
                     &node.receiver,
                     &self.local_types,
@@ -723,6 +774,7 @@ fn collect_callsites_in_block(
                 ),
                 is_method: true,
                 disambiguated_callee: None,
+                unsupported_reason: None,
                 file: self.rel_path.to_string(),
                 line: start.line,
                 col: start.column,
@@ -742,12 +794,14 @@ fn collect_callsites_in_block(
             let start = node.expr.span().start();
             self.out.push(CallSite {
                 callee: "index".to_string(),
+                contract_callee: "index".to_string(),
                 // Receiver-defining crate is not syntactically known; the index
                 // op itself is std. Leave None so it is treated like a method
                 // call for the matcher's current-crate fallback / lift-gap.
                 callee_crate: None,
                 is_method: false,
                 disambiguated_callee: None,
+                unsupported_reason: None,
                 file: self.rel_path.to_string(),
                 line: start.line,
                 col: start.column,
@@ -786,6 +840,80 @@ fn collect_callsites_in_block(
         out,
     };
     v.visit_block(block);
+}
+
+fn unsupported_macro_callsite(mac: &syn::Macro, rel_path: &str) -> CallSite {
+    let callee = mac
+        .path
+        .segments
+        .last()
+        .map(|seg| format!("{}!", seg.ident))
+        .unwrap_or_else(|| "<macro>!".to_string());
+    let start = mac.path.span().start();
+    CallSite {
+        callee,
+        contract_callee: mac
+            .path
+            .segments
+            .last()
+            .map(path_segment_contract_leaf)
+            .map(|leaf| format!("{leaf}!"))
+            .unwrap_or_else(|| "<macro>!".to_string()),
+        callee_crate: None,
+        is_method: false,
+        disambiguated_callee: None,
+        unsupported_reason: Some("unsupported-macro-callsite"),
+        file: rel_path.to_string(),
+        line: start.line,
+        col: start.column,
+    }
+}
+
+fn path_segment_contract_leaf(segment: &syn::PathSegment) -> String {
+    callee_with_path_args(&segment.ident.to_string(), &segment.arguments)
+}
+
+fn callee_with_path_args(leaf: &str, args: &syn::PathArguments) -> String {
+    match args {
+        syn::PathArguments::AngleBracketed(angle_args) => {
+            callee_with_angle_args(leaf, Some(angle_args))
+        }
+        _ => leaf.to_string(),
+    }
+}
+
+fn callee_with_angle_args(
+    leaf: &str,
+    args: Option<&syn::AngleBracketedGenericArguments>,
+) -> String {
+    let Some(args) = args else {
+        return leaf.to_string();
+    };
+    if args.args.is_empty() {
+        return leaf.to_string();
+    }
+    let rendered_args = args
+        .args
+        .iter()
+        .map(|arg| {
+            arg.to_token_stream()
+                .to_string()
+                .chars()
+                .filter(|ch| !ch.is_whitespace())
+                .collect::<String>()
+        })
+        .collect::<Vec<_>>()
+        .join(",");
+    format!("{leaf}::<{rendered_args}>")
+}
+
+fn is_closure_expr(expr: &syn::Expr) -> bool {
+    match expr {
+        syn::Expr::Closure(_) => true,
+        syn::Expr::Paren(paren) => is_closure_expr(&paren.expr),
+        syn::Expr::Group(group) => is_closure_expr(&group.expr),
+        _ => false,
+    }
 }
 
 fn pat_ident_name(pat: &syn::Pat) -> Option<String> {
@@ -856,7 +984,7 @@ fn expr_return_crate(
             {
                 return Some(krate);
             }
-            let (leaf, _) = call_expr_callee(&call.func, use_map, current_crate)?;
+            let (leaf, _, _) = call_expr_callee(&call.func, use_map, current_crate)?;
             fn_return_crates.get(&leaf).cloned()
         }
         syn::Expr::Paren(paren) => expr_return_crate(
@@ -909,7 +1037,7 @@ fn call_expr_callee(
     expr: &syn::Expr,
     use_map: &HashMap<String, String>,
     current_crate: &str,
-) -> Option<(String, Option<String>)> {
+) -> Option<(String, Option<String>, String)> {
     match expr {
         syn::Expr::Path(p) => {
             let segs: Vec<String> = p
@@ -918,7 +1046,9 @@ fn call_expr_callee(
                 .iter()
                 .map(|s| s.ident.to_string())
                 .collect();
-            let leaf = segs.last()?.clone();
+            let leaf_segment = p.path.segments.last()?;
+            let leaf = leaf_segment.ident.to_string();
+            let contract_leaf = path_segment_contract_leaf(leaf_segment);
             let krate = if segs.len() >= 2 {
                 let root = &segs[0];
                 Some(resolve_path_root_crate(root, use_map, current_crate))
@@ -932,7 +1062,7 @@ fn call_expr_callee(
                     }
                 })
             };
-            Some((leaf, krate))
+            Some((leaf, krate, contract_leaf))
         }
         syn::Expr::Paren(p) => call_expr_callee(&p.expr, use_map, current_crate),
         _ => None,
@@ -1344,6 +1474,25 @@ fn lift_implications(params: &Value) -> Result<Value, String> {
 
     {
         for (cs, _full_path) in all_callsites {
+            if let Some(reason) = cs.unsupported_reason {
+                debug!(
+                    callee = %cs.callee,
+                    reason = %reason,
+                    file = %cs.file,
+                    line = cs.line,
+                    "lift-gap: unsupported implication callee shape"
+                );
+                diagnostics.push(json!({
+                    "kind": "lift-gap",
+                    "category": "implication-callee",
+                    "reason": reason,
+                    "callee": cs.callee,
+                    "file": cs.file,
+                    "line": cs.line,
+                    "col": cs.col,
+                }));
+                continue;
+            }
             // Resolve the call site to a (crate, leaf) key. An unresolved crate
             // (None: a method call, or a glob-imported bare call) defaults to
             // the current crate, preserving the prior intra-crate behavior; a
@@ -1369,7 +1518,7 @@ fn lift_implications(params: &Value) -> Result<Value, String> {
             // proof the site cannot panic. The bridge's `sourceSymbol` stays the
             // bare `cs.callee` (the ctor name in the lifted caller body); only the
             // TARGET binding changes.
-            let key = (resolved_crate.clone(), cs.callee.clone());
+            let key = (resolved_crate.clone(), cs.contract_callee.clone());
             let disambig_binding = cs.disambiguated_callee.as_ref().and_then(|leaf| {
                 let dkey = (resolved_crate.clone(), leaf.clone());
                 contracts_by_key.get(&dkey).copied()
@@ -8946,6 +9095,116 @@ pub fn caller() -> i64 {
     }
 
     #[test]
+    fn lift_implications_emits_lift_gap_for_macro_callsites() {
+        let src = r##"
+pub fn caller() {
+    println!("hello");
+}
+"##;
+        let root = temp_workspace("lift_implications_macro_gap");
+        let src_dir = root.join("src");
+        fs::create_dir_all(&src_dir).expect("create src dir");
+        let rel = "src/lib.rs";
+        fs::write(root.join(rel), src).expect("write source");
+
+        let resp = lift_implications(&json!({
+            "workspace_root": root.to_string_lossy(),
+            "source_paths": [rel],
+            "contract_bindings": [],
+        }))
+        .expect("lift_implications");
+
+        let ir = resp["ir"].as_array().expect("ir array");
+        assert!(
+            ir.is_empty(),
+            "macro calls should not mint guessed bridges: {ir:?}"
+        );
+        let diags = resp["diagnostics"].as_array().expect("diagnostics array");
+        assert_eq!(diags.len(), 1, "one lift-gap for the macro call: {diags:?}");
+        assert_eq!(diags[0]["kind"], "lift-gap");
+        assert_eq!(diags[0]["reason"], "unsupported-macro-callsite");
+        assert_eq!(diags[0]["callee"], "println!");
+
+        let _ = fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn lift_implications_emits_lift_gap_for_closure_invocations() {
+        let src = r##"
+pub fn caller() -> i64 {
+    (|x: i64| x + 1)(41)
+}
+"##;
+        let root = temp_workspace("lift_implications_closure_gap");
+        let src_dir = root.join("src");
+        fs::create_dir_all(&src_dir).expect("create src dir");
+        let rel = "src/lib.rs";
+        fs::write(root.join(rel), src).expect("write source");
+
+        let resp = lift_implications(&json!({
+            "workspace_root": root.to_string_lossy(),
+            "source_paths": [rel],
+            "contract_bindings": [],
+        }))
+        .expect("lift_implications");
+
+        let ir = resp["ir"].as_array().expect("ir array");
+        assert!(
+            ir.is_empty(),
+            "closure invocations should not mint guessed bridges: {ir:?}"
+        );
+        let diags = resp["diagnostics"].as_array().expect("diagnostics array");
+        assert_eq!(
+            diags.len(),
+            1,
+            "one lift-gap for the closure invocation: {diags:?}"
+        );
+        assert_eq!(diags[0]["kind"], "lift-gap");
+        assert_eq!(diags[0]["reason"], "unsupported-closure-invocation");
+        assert_eq!(diags[0]["callee"], "<closure>");
+
+        let _ = fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn lift_implications_emits_lift_gap_for_dynamic_callee_invocations() {
+        let src = r##"
+pub fn caller() -> i64 {
+    (if true { add_one } else { add_two })(41)
+}
+"##;
+        let root = temp_workspace("lift_implications_dynamic_callee_gap");
+        let src_dir = root.join("src");
+        fs::create_dir_all(&src_dir).expect("create src dir");
+        let rel = "src/lib.rs";
+        fs::write(root.join(rel), src).expect("write source");
+
+        let resp = lift_implications(&json!({
+            "workspace_root": root.to_string_lossy(),
+            "source_paths": [rel],
+            "contract_bindings": [],
+        }))
+        .expect("lift_implications");
+
+        let ir = resp["ir"].as_array().expect("ir array");
+        assert!(
+            ir.is_empty(),
+            "dynamic callees should not mint guessed bridges: {ir:?}"
+        );
+        let diags = resp["diagnostics"].as_array().expect("diagnostics array");
+        assert_eq!(
+            diags.len(),
+            1,
+            "one lift-gap for the dynamic callee invocation: {diags:?}"
+        );
+        assert_eq!(diags[0]["kind"], "lift-gap");
+        assert_eq!(diags[0]["reason"], "unsupported-dynamic-callee");
+        assert_eq!(diags[0]["callee"], "<dynamic>");
+
+        let _ = fs::remove_dir_all(root);
+    }
+
+    #[test]
     fn lift_implications_uses_last_path_segment_as_callee_name() {
         // `serde_json::from_str(s)` lowers to a callsite with
         // sourceSymbol = "from_str" (the LAST segment), which matches
@@ -8998,6 +9257,50 @@ pub fn caller(s: &str) -> serde_json::Value {
         assert!(
             !symbols.iter().any(|s| *s == "unwrap" || *s == "method:unwrap"),
             "the panic-leaf unwrap must NOT bridge without disambiguation (refuse-floor): {symbols:?}"
+        );
+
+        let _ = fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn lift_implications_uses_generic_args_for_target_contract_key() {
+        let src = r##"
+pub fn caller(x: i64) -> i64 {
+    identity::<i64>(x)
+}
+"##;
+        let root = temp_workspace("lift_implications_generic_key");
+        let src_dir = root.join("src");
+        fs::create_dir_all(&src_dir).expect("create src dir");
+        let rel = "src/lib.rs";
+        fs::write(root.join(rel), src).expect("write source");
+
+        let expected_cid = "blake3-512:111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111";
+        let wrong_cid = "blake3-512:222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222";
+        let resp = lift_implications(&json!({
+            "workspace_root": root.to_string_lossy(),
+            "source_paths": [rel],
+            "contract_bindings": [
+                { "name": "identity::<String>@src/lib.rs:10:4", "contract_cid": wrong_cid },
+                { "name": "identity::<i64>@src/lib.rs:20:4", "contract_cid": expected_cid }
+            ],
+        }))
+        .expect("lift_implications");
+
+        let ir = resp["ir"].as_array().expect("ir array");
+        assert_eq!(ir.len(), 1, "generic call should emit one bridge: {ir:?}");
+        assert_eq!(
+            ir[0]["sourceSymbol"], "identity",
+            "sourceSymbol must stay the bare ctor name lifted from the caller body"
+        );
+        assert_eq!(
+            ir[0]["targetContractCid"], expected_cid,
+            "target selection must use the concrete generic argument key"
+        );
+        let diags = resp["diagnostics"].as_array().expect("diagnostics array");
+        assert!(
+            diags.is_empty(),
+            "matched generic call should not gap: {diags:?}"
         );
 
         let _ = fs::remove_dir_all(root);
