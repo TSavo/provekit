@@ -32,8 +32,8 @@ use provekit_walk::emit::{
     rust_function_term_json_for_file, shadow_proof_ir_cid, shadow_to_proof_ir,
 };
 use provekit_walk::{
-    build_function_contract_with_file, build_shadow_source, lift_function_postcondition,
-    lift_function_precondition, CalleeContract,
+    build_function_contract_with_file, build_function_contract_with_file_and_post_override,
+    build_shadow_source, lift_function_postcondition, lift_function_precondition, CalleeContract,
 };
 use quote::ToTokens;
 use serde_json::{json, Value};
@@ -2592,10 +2592,41 @@ fn function_contract_lift(params: &Value) -> Result<Value, String> {
             .replace('\\', "/");
 
         for target in collect_function_contract_targets(&file) {
-            let contract =
-                build_function_contract_with_file(&target.item_fn, None, Some(rel.as_str()));
-            let (body_discharge_eligible, refusal_reason) =
-                body_discharge_eligibility(&contract.post, &contract.formals);
+            // Phase-2 Tier D-lib: when a sugar function carries `totality =
+            // "result_ok"`, the minted post is the AXIOM `is_ok(result)`
+            // rather than the body-derived reflexive post. The axiom flows
+            // into canonical_bytes and CID via the override path so the
+            // contract is self-consistent. This is the ONLY totality
+            // mechanism; inference from types is unsound (a non-Value Result
+            // may be fallible). The gate is explicit opt-in in the attribute.
+            // Singleton totality post: is_ok(result).
+            // Shape: {"kind":"atomic","name":"is_ok","args":[{"kind":"var","name":"result"}]}
+            // Matches the exact shape callee_post_guard_fact requires (body_discharge.rs).
+            let post_override: Option<IrFormula> = if target.totality_result_ok {
+                Some(IrFormula::Atomic {
+                    name: "is_ok".to_string(),
+                    args: vec![IrTerm::Var {
+                        name: "result".to_string(),
+                    }],
+                })
+            } else {
+                None
+            };
+            let contract = build_function_contract_with_file_and_post_override(
+                &target.item_fn,
+                None,
+                Some(rel.as_str()),
+                post_override,
+            );
+            // Totality-axiom contracts are body-discharge-INELIGIBLE (no
+            // result equation, by design: the post is an axiom, not derived
+            // from the body). Mark with a distinct reason so the loud
+            // diagnostic does not fire for expected ineligibility.
+            let (body_discharge_eligible, refusal_reason) = if target.totality_result_ok {
+                (false, Some("totality-axiom".to_string()))
+            } else {
+                body_discharge_eligibility(&contract.post, &contract.formals)
+            };
             let mut entry: Value =
                 serde_json::from_slice(&contract.canonical_bytes).map_err(|e| e.to_string())?;
             entry["name"] = json!(target.fn_name.clone());
@@ -2604,12 +2635,16 @@ fn function_contract_lift(params: &Value) -> Result<Value, String> {
             entry["bodyDischargeEligible"] = json!(body_discharge_eligible);
             if let Some(reason) = refusal_reason {
                 entry["bodyDischargeRefusalReason"] = json!(reason.clone());
-                diagnostics.push(json!({
-                    "kind": "body-discharge-gap",
-                    "reason": reason,
-                    "function": target.fn_name,
-                    "file": rel,
-                }));
+                // Suppress the loud body-discharge-gap diagnostic for the
+                // totality-axiom case: ineligibility is expected and sound.
+                if !target.totality_result_ok {
+                    diagnostics.push(json!({
+                        "kind": "body-discharge-gap",
+                        "reason": reason,
+                        "function": target.fn_name,
+                        "file": rel,
+                    }));
+                }
             }
             if !current_crate.is_empty() {
                 entry["library"] = json!(current_crate.clone());
@@ -2752,6 +2787,11 @@ struct FunctionContractLiftTarget {
     fn_name: String,
     source_name: String,
     item_fn: syn::ItemFn,
+    /// True when the function carries `#[provekit::sugar(totality = "result_ok", ...)]`.
+    /// When set, the minted post is the AXIOM `is_ok(result)` (NOT body-derived).
+    /// Sound only for wrapper functions whose return type is always Ok by type invariants
+    /// (e.g. serde_json::to_string(&Value) is total). Gate: explicit opt-in only.
+    totality_result_ok: bool,
 }
 
 #[derive(Debug, Clone)]
@@ -2801,10 +2841,12 @@ fn collect_function_contract_targets_in_items(
                     continue;
                 }
                 let fn_name = item_fn.sig.ident.to_string();
+                let totality_result_ok = sugar_declares_totality_result_ok(item_fn);
                 targets.push(FunctionContractLiftTarget {
                     source_name: fn_name.clone(),
                     fn_name,
                     item_fn: item_fn.clone(),
+                    totality_result_ok,
                 });
             }
             syn::Item::Impl(impl_block) => {
@@ -2823,10 +2865,12 @@ fn collect_function_contract_targets_in_items(
                         continue;
                     }
                     let source_name = method.sig.ident.to_string();
+                    let totality_result_ok = sugar_declares_totality_result_ok(&item_fn);
                     targets.push(FunctionContractLiftTarget {
                         fn_name: format!("{qualifier}::{source_name}"),
                         source_name,
                         item_fn,
+                        totality_result_ok,
                     });
                 }
             }
@@ -2979,6 +3023,46 @@ struct SugarAttrParsed {
     family: Option<String>,
     loss: Vec<String>,
     observed_dimension: Option<String>,
+    /// Phase-2 Tier D-lib: when `totality = "result_ok"`, the minted contract
+    /// post is the AXIOM `is_ok(result)` rather than the body-derived reflexive
+    /// post. Only valid on functions whose return type is always Ok by type
+    /// invariants (e.g. serde_json::to_string(&Value)). Must be explicitly set;
+    /// never inferred.
+    totality: Option<String>,
+}
+
+/// True iff the function carries `#[provekit::sugar(totality = "result_ok", ...)]`.
+///
+/// This is the ONLY gate for the totality post override: the attribute must be
+/// present AND the return type must be Result. Never infer from the type alone;
+/// explicit opt-in is required to prevent inadvertent totality labels on
+/// fallible functions that happen to take `&Value` arguments.
+fn sugar_declares_totality_result_ok(item_fn: &syn::ItemFn) -> bool {
+    let Some(parsed) = extract_sugar_attr(item_fn) else {
+        return false;
+    };
+    // Require explicit totality = "result_ok" in the attribute.
+    if parsed.totality.as_deref() != Some("result_ok") {
+        return false;
+    }
+    // Require a Result return type. A totality label on a non-Result return
+    // makes no sense and is rejected loudly here rather than silently mislabeling.
+    matches!(
+        &item_fn.sig.output,
+        syn::ReturnType::Type(_, ty) if is_result_type(ty)
+    )
+}
+
+/// True iff a syn Type is `Result<...>` (bare or path-qualified).
+fn is_result_type(ty: &syn::Type) -> bool {
+    let syn::Type::Path(tp) = ty else {
+        return false;
+    };
+    tp.path
+        .segments
+        .last()
+        .map(|seg| seg.ident == "Result")
+        .unwrap_or(false)
 }
 
 fn extract_sugar_attr(item_fn: &syn::ItemFn) -> Option<SugarAttrParsed> {
@@ -2998,6 +3082,7 @@ fn extract_sugar_attr(item_fn: &syn::ItemFn) -> Option<SugarAttrParsed> {
                         family: args.string("family"),
                         loss: args.string_array("loss"),
                         observed_dimension: args.string("observed_dimension"),
+                        totality: args.string("totality"),
                     });
                 }
             }

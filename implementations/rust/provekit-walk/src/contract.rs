@@ -16,6 +16,7 @@
 // Memento from a `syn::ItemFn`. AST traversal stays in walk; the algebra
 // lives once, in libprovekit.
 
+use provekit_ir_types::IrFormula;
 use syn::{Expr, ExprUnsafe, FnArg, ItemFn, Pat, Stmt};
 
 // ---- Re-export the canonical algebra and supporting types ----
@@ -51,11 +52,31 @@ pub fn build_function_contract_with_file(
     body_cid: Option<String>,
     file_path: Option<&str>,
 ) -> FunctionContractMemento {
+    build_function_contract_with_file_and_post_override(item_fn, body_cid, file_path, None)
+}
+
+/// Build a FunctionContractMemento with an explicit source file path and an
+/// optional post-condition override.
+///
+/// When `post_override` is `Some(formula)`, the given formula REPLACES the
+/// body-derived post before `build_value` (and therefore before CID
+/// computation). Use this only for SOUND axiom-supplied postconditions (e.g.
+/// a totality contract where the library type guarantees the return is always
+/// Ok). The override flows into `canonical_bytes` and `cid` so every field
+/// remains consistent.
+pub fn build_function_contract_with_file_and_post_override(
+    item_fn: &ItemFn,
+    body_cid: Option<String>,
+    file_path: Option<&str>,
+    post_override: Option<IrFormula>,
+) -> FunctionContractMemento {
     let fn_name = item_fn.sig.ident.to_string();
     let (formals, formal_sorts) = extract_formals(item_fn);
     let return_sort = extract_return_sort(item_fn);
     let pre = crate::lift::lift_function_precondition(item_fn).into_formula();
-    let post = crate::lift::lift_function_postcondition(item_fn).into_formula();
+    let post = post_override.unwrap_or_else(|| {
+        crate::lift::lift_function_postcondition(item_fn).into_formula()
+    });
     let effects = detect_effects(item_fn);
     let locus = crate::locus::from_span(item_fn.sig.ident.span(), file_path);
 

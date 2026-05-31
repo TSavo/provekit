@@ -97,6 +97,7 @@ pub fn json_serialize(v: &Value) -> Result<String, String> {
     version = "1",
     family = "concept:family:json",
     loss = [],
+    totality = "result_ok",
 )]
 pub fn serde_json_to_string_value(v: &Value) -> Result<String, serde_json::Error> {
     // This ALWAYS succeeds for `Value` -- see the soundness argument above.
@@ -120,6 +121,7 @@ pub fn serde_json_to_string_value(v: &Value) -> Result<String, serde_json::Error
     version = "1",
     family = "concept:family:json",
     loss = [],
+    totality = "result_ok",
 )]
 pub fn serde_json_to_string_pretty_value(v: &Value) -> Result<String, serde_json::Error> {
     serde_json::to_string_pretty(v)
