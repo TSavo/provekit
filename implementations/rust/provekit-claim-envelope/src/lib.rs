@@ -576,6 +576,23 @@ pub struct MintBridgeArgs {
     /// a co-member of this bridge's own bundle. There is no unpinned path;
     /// `None` is enforced as same-bundle membership, not skipped.
     pub target_proof_cid: Option<String>,
+    /// Call-site provenance for this bridge, carried verbatim from the lifter's
+    /// bridge declaration. Load-bearing: `panic_site` is how the verifier
+    /// (`enumerate_callsites` -> `cmd_verify`) routes a panic-leaf bridge into
+    /// the panic-safe discharge path. Dropping it (the pre-fix behavior) made
+    /// every minted panic site read back `panic_site=false` and stay
+    /// undecidable. `None` keeps a callsite-less bridge byte-identical to its
+    /// pre-field CID (callsite is NOT part of bridge content identity).
+    pub callsite: Option<BridgeCallsite>,
+}
+
+/// Call-site provenance carried into a bridge memento. Mirrors the lifter's
+/// `callsite` object so the verifier reads back `panicSite`/`file`/`start_line`.
+#[derive(Clone, Debug, Default)]
+pub struct BridgeCallsite {
+    pub panic_site: bool,
+    pub file: Option<String>,
+    pub line: Option<i64>,
 }
 
 /// Compute the content CID of a bridge declaration (signer-independent).
@@ -660,6 +677,22 @@ pub fn mint_bridge(args: &MintBridgeArgs) -> MintedEnvelope {
     // (self-pinned: the verifier enforces same-bundle co-membership instead).
     if let Some(ref bundle) = args.target_proof_cid {
         kind_specific.push(("targetProofCid".into(), Value::string(bundle.clone())));
+    }
+    // Carry the lifter's call-site object so the verifier can read `panicSite`
+    // (the panic-discharge routing flag) plus file/line for the scoreboard.
+    // NOT folded into `bridge_content_cid`: a bridge's identity is its
+    // (sourceSymbol -> targetContract) relationship, invariant across the
+    // distinct call sites that share a symbol.
+    if let Some(ref cs) = args.callsite {
+        let mut cs_fields: Vec<(&str, Arc<Value>)> =
+            vec![("panicSite", Value::boolean(cs.panic_site))];
+        if let Some(ref f) = cs.file {
+            cs_fields.push(("file", Value::string(f.clone())));
+        }
+        if let Some(line) = cs.line {
+            cs_fields.push(("start_line", Value::integer(line)));
+        }
+        kind_specific.push(("callsite".into(), Value::object(cs_fields)));
     }
 
     let header = build_header("bridge", &header_cid, kind_specific);

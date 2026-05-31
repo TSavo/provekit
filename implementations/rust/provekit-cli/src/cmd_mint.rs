@@ -58,7 +58,7 @@ use libprovekit::core::{
 use provekit_canonicalizer::{blake3_512_of, encode_jcs, Value as CValue};
 use provekit_claim_envelope::{
     compute_contract_set_cid, contract_cid, mint_authority, mint_bridge, mint_contract,
-    mint_implication, Authoring, MintAuthorityArgs, MintBridgeArgs, MintContractArgs,
+    mint_implication, Authoring, BridgeCallsite, MintAuthorityArgs, MintBridgeArgs, MintContractArgs,
     MintImplicationArgs,
 };
 use provekit_ir_types::Sort;
@@ -1492,6 +1492,24 @@ fn mint_bridge_from_decl(
         .and_then(|v| v.as_str())
         .filter(|s| !s.is_empty())
         .map(|s| s.to_string());
+    // Carry the lifter's call-site provenance (panicSite/file/line) into the
+    // bridge memento. Without this the verifier reads panic_site=false on every
+    // minted panic leaf and the panic-safe discharge path is never entered.
+    let callsite = decl.get("callsite").map(|cs| BridgeCallsite {
+        panic_site: cs
+            .get("panicSite")
+            .and_then(|v| v.as_bool())
+            .unwrap_or(false),
+        file: cs
+            .get("file")
+            .and_then(|v| v.as_str())
+            .filter(|s| !s.is_empty())
+            .map(|s| s.to_string()),
+        line: cs
+            .get("start_line")
+            .or_else(|| cs.get("line"))
+            .and_then(|v| v.as_i64()),
+    });
     let bridge = mint_bridge(&MintBridgeArgs {
         produced_by: "provekit-cli".to_string(),
         produced_at: produced_at.to_string(),
@@ -1504,6 +1522,7 @@ fn mint_bridge_from_decl(
         notes: "implication-lifted callsite bridge".to_string(),
         signer_seed,
         target_proof_cid,
+        callsite,
     });
     Ok((bridge.cid, bridge.canonical_bytes))
 }
@@ -1843,6 +1862,9 @@ fn mint_ir_document(
                 // (and it can't reference its own not-yet-computed CID). The
                 // verifier enforces same-bundle co-membership for the None case.
                 target_proof_cid: None,
+                // Function-level body-discharge bridge, not a per-call panic
+                // site: no call-site provenance to carry.
+                callsite: None,
             });
             members
                 .entry(bridge.cid.clone())

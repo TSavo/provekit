@@ -42,7 +42,10 @@ pub mod wp;
 pub use canonical::{
     cid_of_value, formula_to_canonical, jcs_bytes_of_value, serde_to_canonical, term_to_canonical,
 };
-pub use contract::{build_function_contract, build_function_contract_with_file};
+pub use contract::{
+    build_function_contract, build_function_contract_with_file,
+    build_function_contract_with_file_and_post_override,
+};
 pub use dropper::{
     detect_gaps, drop_gap, emit_drop, formula_contains_predicate, predicate_var_arg,
     verify_closure, DropFailure, DropTemplate, EmitResult, Gap, NotNullPredicate, NotRenderable,

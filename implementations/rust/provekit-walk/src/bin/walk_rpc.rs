@@ -32,8 +32,8 @@ use provekit_walk::emit::{
     rust_function_term_json_for_file, shadow_proof_ir_cid, shadow_to_proof_ir,
 };
 use provekit_walk::{
-    build_function_contract_with_file, build_shadow_source, lift_function_postcondition,
-    lift_function_precondition, CalleeContract,
+    build_function_contract_with_file, build_function_contract_with_file_and_post_override,
+    build_shadow_source, lift_function_postcondition, lift_function_precondition, CalleeContract,
 };
 use quote::ToTokens;
 use serde_json::{json, Value};
@@ -629,6 +629,8 @@ fn collect_callsites_in_items(
                 if in_test_context || is_rust_test_fn(item_fn) {
                     continue;
                 }
+                let param_type_map =
+                    build_param_type_map(&item_fn.sig, use_map, local_type_names, current_crate);
                 collect_callsites_in_block(
                     &item_fn.block,
                     rel_path,
@@ -636,6 +638,7 @@ fn collect_callsites_in_items(
                     fn_return_crates,
                     local_type_names,
                     current_crate,
+                    &param_type_map,
                     out,
                 );
             }
@@ -649,6 +652,12 @@ fn collect_callsites_in_items(
                         if is_rust_test_fn(&item_fn) {
                             continue;
                         }
+                        let param_type_map = build_param_type_map(
+                            &method.sig,
+                            use_map,
+                            local_type_names,
+                            current_crate,
+                        );
                         collect_callsites_in_block(
                             &method.block,
                             rel_path,
@@ -656,6 +665,7 @@ fn collect_callsites_in_items(
                             fn_return_crates,
                             local_type_names,
                             current_crate,
+                            &param_type_map,
                             out,
                         );
                     }
@@ -689,6 +699,10 @@ fn collect_callsites_in_block(
     fn_return_crates: &HashMap<String, String>,
     local_type_names: &BTreeSet<String>,
     current_crate: &str,
+    // Phase-2 Tier D-lib: param name -> (crate, type_head) for syntactic
+    // serde_json::Value arg-type disambiguation. Built from the enclosing
+    // function's declared parameter types; empty when called outside a fn.
+    param_type_map: &HashMap<String, (String, String)>,
     out: &mut Vec<CallSite>,
 ) {
     use syn::visit::Visit;
@@ -699,6 +713,7 @@ fn collect_callsites_in_block(
         local_type_names: &'a BTreeSet<String>,
         current_crate: &'a str,
         local_types: HashMap<String, String>,
+        param_type_map: &'a HashMap<String, (String, String)>,
         out: &'a mut Vec<CallSite>,
     }
     impl<'ast, 'a> Visit<'ast> for V<'a> {
@@ -707,12 +722,40 @@ fn collect_callsites_in_block(
                 call_expr_callee(&node.func, self.use_map, self.current_crate)
             {
                 let start = node.func.span().start();
+                // Phase-2 Tier D-lib: syntactic arg-type disambiguation for
+                // serde_json::to_string / to_string_pretty free calls.
+                // When the first argument is a simple ident whose declared
+                // parameter type is serde_json::Value (from the enclosing
+                // function's signature), set disambiguated_callee directly
+                // without the oracle. Sound: crate identity (serde_json) AND
+                // type head (Value) must both match the enclosing fn's
+                // explicit type annotation; inference paths leave None.
+                let disambiguated_callee = if needs_arg_type_resolution(
+                    callee_crate.as_deref(),
+                    &callee,
+                ) {
+                    node.args.first().and_then(|a| {
+                        let name = expr_bare_ident_name(a)?;
+                        let (krate, head) = self.param_type_map.get(&name)?;
+                        if krate == "serde_json" && head == "Value" {
+                            Some(if callee == "to_string_pretty" {
+                                "serde_json_to_string_pretty_value".to_string()
+                            } else {
+                                "serde_json_to_string_value".to_string()
+                            })
+                        } else {
+                            None
+                        }
+                    })
+                } else {
+                    None
+                };
                 self.out.push(CallSite {
                     callee,
                     contract_callee,
                     callee_crate,
                     is_method: false,
-                    disambiguated_callee: None,
+                    disambiguated_callee,
                     unsupported_reason: None,
                     file: self.rel_path.to_string(),
                     line: start.line,
@@ -837,6 +880,7 @@ fn collect_callsites_in_block(
         local_type_names,
         current_crate,
         local_types: HashMap::new(),
+        param_type_map,
         out,
     };
     v.visit_block(block);
@@ -1152,6 +1196,86 @@ fn crate_name_for(dir: &Path) -> Option<String> {
 /// and fall through to the bare-leaf key (their existing total-wrapper bridges
 /// are unaffected). Anything not in this table -> `None` -> bare-leaf key
 /// (additive; the refuse-floor and the existing bridges are preserved).
+/// True iff this free call needs arg-type resolution.
+/// The set is deliberately narrow: only the serde_json totality wrappers.
+/// A non-Value arg to `serde_json::to_string` must NOT be disambiguated
+/// (it stays `to_string` -> no-contract-for-callee -> honestly undecidable).
+fn needs_arg_type_resolution(callee_crate: Option<&str>, callee: &str) -> bool {
+    callee_crate == Some("serde_json")
+        && matches!(callee, "to_string" | "to_string_pretty")
+}
+
+/// Extract the bare identifier name from an expression, stripping leading
+/// `&`/`&mut` references. Used to look up a call argument's name in the
+/// enclosing function's parameter type map.
+///
+/// Returns `Some(name)` for `v`, `&v`, `&mut v` where the ident is bare.
+/// Returns `None` for non-ident expressions (method calls, literals, etc.).
+fn expr_bare_ident_name(expr: &syn::Expr) -> Option<String> {
+    match expr {
+        syn::Expr::Path(p) if p.path.segments.len() == 1 => {
+            Some(p.path.segments[0].ident.to_string())
+        }
+        syn::Expr::Reference(r) => expr_bare_ident_name(&r.expr),
+        _ => None,
+    }
+}
+
+/// Build a map from parameter name to `(crate, type_head)` for the given
+/// function signature. Used for syntactic serde_json::Value arg-type
+/// disambiguation without needing the oracle.
+///
+/// For `fn f(v: &serde_json::Value)`, returns `{"v" -> ("serde_json", "Value")}`.
+/// For `fn f(v: &Value)` with `use serde_json::Value` in scope, same result.
+/// For `fn g(s: &MyStruct)`, returns `{"s" -> ("current_crate", "MyStruct")}`.
+/// Non-typed patterns (e.g. destructured) are skipped.
+fn build_param_type_map(
+    sig: &syn::Signature,
+    use_map: &HashMap<String, String>,
+    local_type_names: &BTreeSet<String>,
+    current_crate: &str,
+) -> HashMap<String, (String, String)> {
+    let mut map = HashMap::new();
+    for input in &sig.inputs {
+        let syn::FnArg::Typed(pt) = input else {
+            continue; // skip `self`
+        };
+        let syn::Pat::Ident(pi) = &*pt.pat else {
+            continue; // skip destructured patterns
+        };
+        let name = pi.ident.to_string();
+        let ty = &*pt.ty;
+        // Strip outer & / &mut
+        let inner_ty = match ty {
+            syn::Type::Reference(r) => &*r.elem,
+            other => other,
+        };
+        // Extract the type's (crate, head)
+        if let Some((krate, head)) = type_crate_and_head(inner_ty, use_map, local_type_names, current_crate) {
+            map.insert(name, (krate, head));
+        }
+    }
+    map
+}
+
+/// For a type path, return `(crate, type_head)`. Uses `type_crate_for` for the
+/// crate and extracts the last path segment for the head.
+///
+/// Returns `None` for non-path types or when the crate cannot be determined.
+fn type_crate_and_head(
+    ty: &syn::Type,
+    use_map: &HashMap<String, String>,
+    local_type_names: &BTreeSet<String>,
+    current_crate: &str,
+) -> Option<(String, String)> {
+    let syn::Type::Path(tp) = ty else {
+        return None;
+    };
+    let head = tp.path.segments.last()?.ident.to_string();
+    let krate = type_crate_for(ty, use_map, local_type_names, current_crate)?;
+    Some((krate, head))
+}
+
 fn disambiguated_partial_leaf(type_stem: &str, leaf: &str) -> Option<String> {
     let partial = match (type_stem, leaf) {
         ("option", "unwrap") => "option_unwrap",
@@ -1191,13 +1315,24 @@ fn resolve_method_calls_via_oracle(
     // Opt-in stays identical to the cold path: a mint with the oracle off must
     // never spawn or contact the daemon's RA host. When off we leave every
     // unresolved method call to the syntactic tiers (Tier 1/2a) and return.
-    let oracle_on = std::env::var("PROVEKIT_RESOLVE_ORACLE").unwrap_or_default() == "rust-analyzer";
+    let raw_oracle_env = std::env::var("PROVEKIT_RESOLVE_ORACLE").unwrap_or_default();
+    let oracle_on = raw_oracle_env == "rust-analyzer";
+    let total_method_calls = callsites.iter().filter(|(cs, _)| cs.is_method).count();
+    info!(
+        oracle_env = %raw_oracle_env,
+        oracle_on,
+        total_callsites = callsites.len(),
+        total_method_calls,
+        linkerd_bin = %std::env::var("PROVEKIT_LINKERD_BIN").unwrap_or_else(|_| "<unset>".into()),
+        linkerd_socket = %std::env::var("PROVEKIT_LINKERD_SOCKET").unwrap_or_else(|_| "<unset>".into()),
+        "ORACLE: resolve_method_calls_via_oracle ENTER"
+    );
     let mut observation = OracleObservation {
         requested: oracle_on,
         ..OracleObservation::default()
     };
     if !oracle_on {
-        debug!("oracle: off (PROVEKIT_RESOLVE_ORACLE != rust-analyzer); leaving method calls to Tier 1/2a");
+        info!(oracle_env = %raw_oracle_env, "ORACLE: OFF (PROVEKIT_RESOLVE_ORACLE != rust-analyzer); leaving method calls to Tier 1/2a -- NO daemon, NO disambiguation");
         return observation;
     }
 
@@ -1207,14 +1342,22 @@ fn resolve_method_calls_via_oracle(
     // directly. A line of 0 should never occur for a real call; guard anyway.
     let mut queries: Vec<DaemonQuery> = Vec::new();
     for (cs, full_path) in callsites.iter() {
-        if cs.is_method && cs.callee_crate.is_none() && cs.line >= 1 {
-            debug!(
-                callee = %cs.callee,
-                file = %full_path.display(),
-                line = cs.line,
-                col = cs.col,
-                "oracle query: unresolved method call"
-            );
+        if !cs.is_method {
+            continue;
+        }
+        let is_candidate = cs.callee_crate.is_none() && cs.line >= 1;
+        info!(
+            callee = %cs.callee,
+            callee_crate = ?cs.callee_crate,
+            disambiguated_callee = ?cs.disambiguated_callee,
+            is_panic_leaf = is_panic_leaf(&cs.callee),
+            file = %full_path.display(),
+            line = cs.line,
+            col = cs.col,
+            is_candidate,
+            "ORACLE: method-call gate -- is_candidate={is_candidate} (candidate iff callee_crate==None). callee_crate already set => oracle SKIPS this site"
+        );
+        if is_candidate {
             queries.push(DaemonQuery {
                 file: full_path.to_string_lossy().into_owned(),
                 line: (cs.line - 1) as u32,
@@ -1225,12 +1368,15 @@ fn resolve_method_calls_via_oracle(
     let total_queries = queries.len();
     observation.attempted = total_queries as u64;
     if queries.is_empty() {
-        debug!("oracle: no unresolved method calls, skipping");
+        info!(
+            total_method_calls,
+            "ORACLE: ZERO candidate queries (every method call already had callee_crate set syntactically) -- daemon will NOT be spawned, NO disambiguation will occur"
+        );
         return observation;
     }
-    debug!(
+    info!(
         count = total_queries,
-        "oracle: asking resident daemon (provekit-linkerd) to resolve method calls"
+        "ORACLE: asking resident daemon (provekit-linkerd) to resolve {total_queries} method calls -- spawning/indexing daemon now"
     );
     // The resident warm rust-analyzer indexes the workspace ONCE inside the
     // daemon and is reused across mints, fronted by a content-addressed cache.
@@ -1524,6 +1670,18 @@ fn lift_implications(params: &Value) -> Result<Value, String> {
                 contracts_by_key.get(&dkey).copied()
             });
             let is_panic = is_panic_leaf(&cs.callee);
+            if is_panic {
+                info!(
+                    callee = %cs.callee,
+                    resolved_crate = %resolved_crate,
+                    disambiguated_callee = ?cs.disambiguated_callee,
+                    disambig_binding_found = disambig_binding.is_some(),
+                    lookup_key = ?cs.disambiguated_callee.as_ref().map(|l| (resolved_crate.clone(), l.clone())),
+                    file = %cs.file,
+                    line = cs.line,
+                    "PANIC-EMIT: panic-leaf site decision -- bridges to disambiguated partial iff disambig_binding_found, else REFUSES (panic-site-unproven)"
+                );
+            }
             // A value-producing select (NOT a let-else): the total-leaf branch must
             // be able to YIELD the ineligible binding for Fix B, which a let-else
             // `else` block (it must diverge) structurally cannot do.
@@ -1955,7 +2113,20 @@ fn initialize_result() -> Value {
             "capabilities": {
                 "authoring_surfaces": ["rust", "rust-bind", "rust-walk-contracts"],
             "ir_version": "bind-ir/2.0.0",
-            "emits_signed_mementos": false
+            "emits_signed_mementos": false,
+            // CONSUMER SURFACES (kit-declared, so `doctor` stays language-blind):
+            // these surfaces MUST run a specific RPC method in the `consumer`
+            // phase or they silently degrade to the default `lift` producer and
+            // their pass never runs (the manifest method/phase footgun that cost
+            // five investigations on 2026-05-31). `doctor` cross-checks each
+            // kit manifest against this so the omission is a loud check, not a
+            // silent empty-set attestation.
+            "consumer_surfaces": {
+                "rust-implications": {
+                    "method": "provekit.plugin.lift_implications",
+                    "phase": "consumer"
+                }
+            }
         }
     })
 }
@@ -2134,6 +2305,7 @@ fn bind_lift(params: &Value) -> Result<Value, String> {
                 loss,
                 observed_dimension,
                 item_fn,
+                totality_result_ok,
             } = sugar_target;
             // #1396 PR-0: singleton-concept lift-gap validator.  When the
             // @sugar annotation claims a portable `concept:X`, the substrate
@@ -2269,34 +2441,42 @@ fn bind_lift(params: &Value) -> Result<Value, String> {
             // #1580: emit a SIBLING `contract` decl per
             // `#[provekit::sugar(...)]` annotation. cmd_mint mints
             // this as a regular (non-body-bearing) contract memento.
-            // The post is the trivial identity ctor — `function_name(<vars>)`
-            // — which makes the verifier's enumerate_callsites find a
-            // callsite at this ctor name. The bridge that resolves it
-            // is emitted by the recognize lane (or by other downstream
-            // consumers that want to point at this contract).
+            // The post is normally the trivial identity ctor —
+            // `function_name(<vars>)` — which makes the verifier's
+            // enumerate_callsites find a callsite at this ctor name.
             //
-            // Why NOT `function-contract` (which would auto-mint a
-            // bridge): kind=function-contract triggers body-discharge,
-            // which substrate-honestly refuses contracts that have
-            // formals but no precondition (rather than reporting a
-            // vacuous pass). Without a real body-derived precondition
-            // — which walk_rpc doesn't have without invoking a deeper
-            // lifter — staying out of body-discharge is the honest
-            // path. The contract still publishes the sugar function as
-            // a substrate-named entity; bridges resolve to it.
+            // TOTALITY EXCEPTION (Phase-2 Tier D-lib): when the sugar
+            // annotation carries `totality = "result_ok"` and the
+            // return type is Result, the post is the AXIOM `is_ok(result)`.
+            // This is the exact shape callee_post_guard_fact checks
+            // (body_discharge.rs:post_is_is_ok_of_result). With this
+            // post, bridges emitted by the recognize lane discharge the
+            // downstream `.unwrap()` as panic-safe. Sound: only functions
+            // explicitly marked totality get this post; inference from
+            // arg types is rejected (refuse-floor).
             let fn_name = item_fn.sig.ident.to_string();
-            let arg_terms: Vec<Value> = param_names
-                .iter()
-                .map(|name| json!({ "kind": "var", "name": name }))
-                .collect();
-            let post = json!({
-                "kind": "atomic",
-                "args": [{
-                    "kind": "ctor",
-                    "name": fn_name,
-                    "args": arg_terms,
-                }],
-            });
+            let post = if totality_result_ok {
+                // Singleton totality post: is_ok(result).
+                // Shape: {"kind":"atomic","name":"is_ok","args":[{"kind":"var","name":"result"}]}
+                json!({
+                    "kind": "atomic",
+                    "name": "is_ok",
+                    "args": [{ "kind": "var", "name": "result" }],
+                })
+            } else {
+                let arg_terms: Vec<Value> = param_names
+                    .iter()
+                    .map(|name| json!({ "kind": "var", "name": name }))
+                    .collect();
+                json!({
+                    "kind": "atomic",
+                    "args": [{
+                        "kind": "ctor",
+                        "name": fn_name,
+                        "args": arg_terms,
+                    }],
+                })
+            };
             entries.push(json!({
                 "kind": "contract",
                 "name": fn_name,
@@ -2592,10 +2772,41 @@ fn function_contract_lift(params: &Value) -> Result<Value, String> {
             .replace('\\', "/");
 
         for target in collect_function_contract_targets(&file) {
-            let contract =
-                build_function_contract_with_file(&target.item_fn, None, Some(rel.as_str()));
-            let (body_discharge_eligible, refusal_reason) =
-                body_discharge_eligibility(&contract.post, &contract.formals);
+            // Phase-2 Tier D-lib: when a sugar function carries `totality =
+            // "result_ok"`, the minted post is the AXIOM `is_ok(result)`
+            // rather than the body-derived reflexive post. The axiom flows
+            // into canonical_bytes and CID via the override path so the
+            // contract is self-consistent. This is the ONLY totality
+            // mechanism; inference from types is unsound (a non-Value Result
+            // may be fallible). The gate is explicit opt-in in the attribute.
+            // Singleton totality post: is_ok(result).
+            // Shape: {"kind":"atomic","name":"is_ok","args":[{"kind":"var","name":"result"}]}
+            // Matches the exact shape callee_post_guard_fact requires (body_discharge.rs).
+            let post_override: Option<IrFormula> = if target.totality_result_ok {
+                Some(IrFormula::Atomic {
+                    name: "is_ok".to_string(),
+                    args: vec![IrTerm::Var {
+                        name: "result".to_string(),
+                    }],
+                })
+            } else {
+                None
+            };
+            let contract = build_function_contract_with_file_and_post_override(
+                &target.item_fn,
+                None,
+                Some(rel.as_str()),
+                post_override,
+            );
+            // Totality-axiom contracts are body-discharge-INELIGIBLE (no
+            // result equation, by design: the post is an axiom, not derived
+            // from the body). Mark with a distinct reason so the loud
+            // diagnostic does not fire for expected ineligibility.
+            let (body_discharge_eligible, refusal_reason) = if target.totality_result_ok {
+                (false, Some("totality-axiom".to_string()))
+            } else {
+                body_discharge_eligibility(&contract.post, &contract.formals)
+            };
             let mut entry: Value =
                 serde_json::from_slice(&contract.canonical_bytes).map_err(|e| e.to_string())?;
             entry["name"] = json!(target.fn_name.clone());
@@ -2604,12 +2815,16 @@ fn function_contract_lift(params: &Value) -> Result<Value, String> {
             entry["bodyDischargeEligible"] = json!(body_discharge_eligible);
             if let Some(reason) = refusal_reason {
                 entry["bodyDischargeRefusalReason"] = json!(reason.clone());
-                diagnostics.push(json!({
-                    "kind": "body-discharge-gap",
-                    "reason": reason,
-                    "function": target.fn_name,
-                    "file": rel,
-                }));
+                // Suppress the loud body-discharge-gap diagnostic for the
+                // totality-axiom case: ineligibility is expected and sound.
+                if !target.totality_result_ok {
+                    diagnostics.push(json!({
+                        "kind": "body-discharge-gap",
+                        "reason": reason,
+                        "function": target.fn_name,
+                        "file": rel,
+                    }));
+                }
             }
             if !current_crate.is_empty() {
                 entry["library"] = json!(current_crate.clone());
@@ -2752,6 +2967,11 @@ struct FunctionContractLiftTarget {
     fn_name: String,
     source_name: String,
     item_fn: syn::ItemFn,
+    /// True when the function carries `#[provekit::sugar(totality = "result_ok", ...)]`.
+    /// When set, the minted post is the AXIOM `is_ok(result)` (NOT body-derived).
+    /// Sound only for wrapper functions whose return type is always Ok by type invariants
+    /// (e.g. serde_json::to_string(&Value) is total). Gate: explicit opt-in only.
+    totality_result_ok: bool,
 }
 
 #[derive(Debug, Clone)]
@@ -2767,6 +2987,10 @@ struct SugarTarget {
     loss: Vec<String>,
     observed_dimension: Option<String>,
     item_fn: syn::ItemFn,
+    /// Phase-2 Tier D-lib: when `totality = "result_ok"` in the sugar attr
+    /// AND the return type is Result, the emitted sibling `kind=contract`
+    /// carries post = `is_ok(result)` instead of the identity ctor post.
+    totality_result_ok: bool,
 }
 
 #[derive(Debug, Clone)]
@@ -2801,10 +3025,12 @@ fn collect_function_contract_targets_in_items(
                     continue;
                 }
                 let fn_name = item_fn.sig.ident.to_string();
+                let totality_result_ok = sugar_declares_totality_result_ok(item_fn);
                 targets.push(FunctionContractLiftTarget {
                     source_name: fn_name.clone(),
                     fn_name,
                     item_fn: item_fn.clone(),
+                    totality_result_ok,
                 });
             }
             syn::Item::Impl(impl_block) => {
@@ -2823,10 +3049,12 @@ fn collect_function_contract_targets_in_items(
                         continue;
                     }
                     let source_name = method.sig.ident.to_string();
+                    let totality_result_ok = sugar_declares_totality_result_ok(&item_fn);
                     targets.push(FunctionContractLiftTarget {
                         fn_name: format!("{qualifier}::{source_name}"),
                         source_name,
                         item_fn,
+                        totality_result_ok,
                     });
                 }
             }
@@ -2928,6 +3156,9 @@ fn collect_sugar_targets_in_items(items: &[syn::Item], targets: &mut Vec<SugarTa
         match item {
             syn::Item::Fn(item_fn) => {
                 if let Some(parsed) = extract_sugar_attr(item_fn) {
+                    let totality_result_ok =
+                        parsed.totality.as_deref() == Some("result_ok")
+                            && is_result_type_fn(item_fn);
                     targets.push(SugarTarget {
                         concept: parsed.concept,
                         library: parsed.library,
@@ -2936,6 +3167,7 @@ fn collect_sugar_targets_in_items(items: &[syn::Item], targets: &mut Vec<SugarTa
                         loss: parsed.loss,
                         observed_dimension: parsed.observed_dimension,
                         item_fn: item_fn.clone(),
+                        totality_result_ok,
                     });
                 }
             }
@@ -2979,6 +3211,51 @@ struct SugarAttrParsed {
     family: Option<String>,
     loss: Vec<String>,
     observed_dimension: Option<String>,
+    /// Phase-2 Tier D-lib: when `totality = "result_ok"`, the minted contract
+    /// post is the AXIOM `is_ok(result)` rather than the body-derived reflexive
+    /// post. Only valid on functions whose return type is always Ok by type
+    /// invariants (e.g. serde_json::to_string(&Value)). Must be explicitly set;
+    /// never inferred.
+    totality: Option<String>,
+}
+
+/// True iff the function carries `#[provekit::sugar(totality = "result_ok", ...)]`.
+///
+/// This is the ONLY gate for the totality post override: the attribute must be
+/// present AND the return type must be Result. Never infer from the type alone;
+/// explicit opt-in is required to prevent inadvertent totality labels on
+/// fallible functions that happen to take `&Value` arguments.
+fn sugar_declares_totality_result_ok(item_fn: &syn::ItemFn) -> bool {
+    let Some(parsed) = extract_sugar_attr(item_fn) else {
+        return false;
+    };
+    // Require explicit totality = "result_ok" in the attribute.
+    if parsed.totality.as_deref() != Some("result_ok") {
+        return false;
+    }
+    // Require a Result return type. A totality label on a non-Result return
+    // makes no sense and is rejected loudly here rather than silently mislabeling.
+    is_result_type_fn(item_fn)
+}
+
+/// True iff a syn Type is `Result<...>` (bare or path-qualified).
+fn is_result_type(ty: &syn::Type) -> bool {
+    let syn::Type::Path(tp) = ty else {
+        return false;
+    };
+    tp.path
+        .segments
+        .last()
+        .map(|seg| seg.ident == "Result")
+        .unwrap_or(false)
+}
+
+/// True iff an ItemFn has a `Result<...>` return type.
+fn is_result_type_fn(item_fn: &syn::ItemFn) -> bool {
+    matches!(
+        &item_fn.sig.output,
+        syn::ReturnType::Type(_, ty) if is_result_type(ty)
+    )
 }
 
 fn extract_sugar_attr(item_fn: &syn::ItemFn) -> Option<SugarAttrParsed> {
@@ -2998,6 +3275,7 @@ fn extract_sugar_attr(item_fn: &syn::ItemFn) -> Option<SugarAttrParsed> {
                         family: args.string("family"),
                         loss: args.string_array("loss"),
                         observed_dimension: args.string("observed_dimension"),
+                        totality: args.string("totality"),
                     });
                 }
             }

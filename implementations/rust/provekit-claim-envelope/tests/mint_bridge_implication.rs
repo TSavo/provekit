@@ -43,6 +43,7 @@ fn bridge_args() -> MintBridgeArgs {
         notes: String::new(),
         signer_seed: seed(),
         target_proof_cid: None,
+        callsite: None,
     }
 }
 
