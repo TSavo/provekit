@@ -309,6 +309,33 @@ is the one keyed in `bridges_by_symbol` for a panic-relevant producer. g
 "specialize consumer_pre" and "two breaks" framings: the serde break is a single
 producer-contract-selection bug in locate_producer_post.
 
+## CORRECTIONS (verified against the current binary)
+
+1. **`file`/`line` surfacing WORKS** (a stale belief earlier in this doc said it
+   was dropping). With the callsite-carry fix (e13763201) the minted bridge
+   carries `{file, start_line, panicSite}` and `prove --json` rows surface it:
+   f's unwrap is `callee=method:unwrap | file=src/lib.rs | line=25`, g's is
+   line=38. So per-site IDENTIFICATION for panic sites is in, and K-fix
+   verification is UNBLOCKED -- f (line 25 -> must become panicSafe) and g
+   (line 38 -> must stay undecidable) are cleanly distinguishable in the row
+   output despite the 138-callsite shim contamination. (Per-site {category,
+   tier-to-close} naming is still only partial: file/line yes, an explicit
+   category+tier field no.)
+
+2. **Refined lead on the producer-contract bug:** the unwrap's arg lifts as the
+   ctor `method:to_string`, but f's source is the FREE call
+   `serde_json::to_string(v)`, not a method `v.to_string()`. If the free call is
+   mis-lifted under a `method:` ctor, the disambiguation-to-totality
+   (`serde_json_to_string_value`) keys/targets a different symbol than the one
+   `locate_producer_post` looks up (`method:to_string`), so it only finds the
+   body-eq contract. NEXT: dump `bridges_by_symbol` keys + each target contract's
+   post on a fresh mint; confirm whether a totality-post bridge exists for the
+   `to_string` producer and under WHICH symbol. The fix is then either correct
+   the free-call lift (drop the bogus `method:` prefix) so the totality bridge is
+   keyed where `locate_producer_post` looks, OR have `locate_producer_post` prefer
+   a totality-post contract among the producer's bridges. Both verifiable now via
+   the line-25/line-38 discrimination.
+
 ## Reproduction
 
 Warm-oracle e2e on battleaxe: `/tmp/serde_e2e2.sh` (mints shim-std + shim-serde deps,
