@@ -1,0 +1,66 @@
+# SPDX-License-Identifier: Apache-2.0
+#
+# Panic-freedom fixture kit config. Four Rust surfaces, conjoined by
+# `provekit mint --project .`, exactly as the cli self-application:
+#
+#   rust-bind          sugar lifter (no #[provekit::sugar] here -> empty, kept
+#                      for parity with the canonical four-surface kit)
+#   rust-contracts     test lifter (#[test] asserts -> inv; none here)
+#   rust-fn-contracts  production fn lifter -> body-bearing formals+pre+post
+#                      for guarded_unwrap / unguarded_unwrap
+#   rust-implications  intra-body calls -> bridges; the `.unwrap()` call sites
+#                      bridge into the rust-std shim's option_unwrap partial
+#
+# rust-fn-contracts is ordered before rust-implications (a producer) so the
+# implication lifter binds the call sites against the body-bearing contracts.
+[[plugins]]
+name = "rust-bind"
+surface = "rust-bind"
+layer = "library-bindings"
+
+[[plugins]]
+name = "rust-contracts"
+surface = "rust-contracts"
+emit = "ir-document"
+
+[[plugins]]
+name = "rust-fn-contracts"
+surface = "rust-fn-contracts"
+emit = "ir-document"
+
+[[plugins]]
+name = "rust-implications"
+surface = "rust-implications"
+
+[platform_profile]
+language = "rust"
+family = "concept:family:provekit"
+library = "panic-freedom-fixture"
+version = "0.1.0"
+
+# Solver portfolio: the panic-freedom obligation (`is_some(opt) => is_some(opt)`)
+# is a quantifier-free uninterpreted-predicate implication, discharged by z3.
+[solvers]
+mode = "first-wins"
+portfolio = ["z3", "cvc5", "vampire"]
+
+[solvers.z3]
+binary = "z3"
+ir_compiler = "smt-lib-v2.6"
+flags = ["-smt2", "-in"]
+timeout_seconds = 30
+version = "4.x"
+
+[solvers.cvc5]
+binary = "cvc5"
+ir_compiler = "smt-lib-v2.6"
+flags = ["--lang=smt2", "--produce-models"]
+timeout_seconds = 30
+version = "1.x"
+
+[solvers.vampire]
+binary = "vampire"
+ir_compiler = "smt-lib-v2.6"
+flags = ["--input_syntax", "smtlib2", "--output_mode", "smtcomp"]
+timeout_seconds = 30
+version = "5.x"

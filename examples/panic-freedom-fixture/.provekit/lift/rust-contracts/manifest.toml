@@ -1,0 +1,8 @@
+# SPDX-License-Identifier: Apache-2.0
+#
+# Rust contracts (test) surface. Same path rule as rust-bind: two `..` for an
+# examples/ kit. Uses provekit-lift's contracts lane (none lift here -- the
+# fixture has no #[test] -- but the surface is kept for four-surface parity).
+name = "rust-contracts-lift"
+command = ["../../implementations/rust/target/debug/provekit-lift", "--rpc"]
+working_dir = "."
