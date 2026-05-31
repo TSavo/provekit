@@ -210,6 +210,21 @@ falsePass=0 on BOTH stage3-serde AND panic-freedom fixtures):
   Both lift e2e K together; both are sound-by-construction (specialization +
   syntactic guard are exact), gated by the discrimination test.
 
+## SEQUENCING: #1717 (Phase-1 soundness) must precede the K cascade fix
+
+BREAK 1's fix specializes the panic `consumer_pre` to the call arg, which puts a
+`forall <arg-sort>. <pre>` into the SMT-emitted implication. When the arg sort is
+OPAQUE (a non-primitive Rust sort), that is exactly the `forall x:<opaque>. ...`
+shape #1717 flags: the SMT emitter collapses it to literal `true`, so the negated
+obligation is `(not true)` = unsat = a FALSE "cannot panic" (latent false-pass).
+The else/guard branch already defends against this with
+`instantiate::strip_outer_forall`; the implication branch does NOT. So the K
+cascade fix MUST either close #1717 first (encode the opaque `forall` soundly or
+refuse, never collapse -- detector: `forall x:<opaque>. false` must be
+undecidable) or carry the same strip-outer-forall guard. Per the GOAL's Phase-0 ->
+Phase-1 -> Phase-2 order: close #1717 BEFORE turning K from 0 to N, or risk
+manufacturing the precise false-pass this whole effort exists to prevent.
+
 ## Reproduction
 
 Warm-oracle e2e on battleaxe: `/tmp/serde_e2e2.sh` (mints shim-std + shim-serde deps,
