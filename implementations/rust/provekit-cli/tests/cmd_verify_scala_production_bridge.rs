@@ -8,8 +8,8 @@ use std::fs;
 use std::path::{Path, PathBuf};
 use std::process::Command;
 
-use serial_test::serial;
 use serde_json::Value as Json;
+use serial_test::serial;
 
 #[path = "support/contradiction.rs"]
 mod contradiction;
@@ -270,7 +270,7 @@ fn scala_production_path_refuses_planted_contradictory_implication() {
         green_code, 0,
         "base Scala project must prove before planting contradiction; report: {green}"
     );
-    assert_eq!(green["totalCallsites"], 1, "green report: {green}");
+    contradiction::assert_green_proves_one_bridge(&green, green_code);
 
     contradiction::plant_contradictory_implication_proof(
         &project.join(".provekit"),

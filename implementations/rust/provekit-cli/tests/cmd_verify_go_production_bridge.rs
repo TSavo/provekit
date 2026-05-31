@@ -369,7 +369,7 @@ fn go_production_path_refuses_planted_contradictory_implication() {
         green_code, 0,
         "base Go project must prove before planting contradiction; report: {green}"
     );
-    assert_eq!(green["totalCallsites"], 1, "green report: {green}");
+    contradiction::assert_green_proves_one_bridge(&green, green_code);
 
     contradiction::plant_contradictory_implication_proof(
         &project.join(".provekit"),

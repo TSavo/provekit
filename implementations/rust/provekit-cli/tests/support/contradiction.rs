@@ -189,6 +189,41 @@ pub fn run_prove_json_with_code(provekit_bin: &Path, project: &Path) -> (Json, i
     (report, output.status.code().unwrap_or(-1))
 }
 
+pub fn assert_green_proves_one_bridge(report: &Json, code: i32) {
+    assert_eq!(
+        code, 0,
+        "base project must prove before planting contradiction; report: {report}"
+    );
+    assert_eq!(
+        report["violations"], 0,
+        "base project must have no violations before planting contradiction; report: {report}"
+    );
+    let rows = report["rows"].as_array().expect("rows");
+    let bridge_rows: Vec<_> = rows
+        .iter()
+        .filter(|row| {
+            row["bridge"]
+                .as_str()
+                .map(|bridge| !bridge.is_empty())
+                .unwrap_or(false)
+        })
+        .collect();
+    assert_eq!(
+        bridge_rows.len(),
+        1,
+        "base project must prove exactly one language bridge before planting contradiction; report: {report}"
+    );
+    let row = bridge_rows[0];
+    assert_eq!(
+        row["status"], "discharged",
+        "base project bridge must discharge before planting contradiction; row: {row}; report: {report}"
+    );
+    assert_ne!(
+        row["dischargeMethod"], "vacuous",
+        "base project bridge must not discharge vacuously before planting contradiction; row: {row}; report: {report}"
+    );
+}
+
 pub fn assert_prove_refuses_contradiction(report: &Json, code: i32, expected_bridge: &str) {
     assert_eq!(
         code, 1,
