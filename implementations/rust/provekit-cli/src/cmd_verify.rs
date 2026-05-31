@@ -1172,6 +1172,10 @@ mod tests {
             arg_term: None,
             containing_atomic: None,
             guard_facts: Vec::new(),
+            file: None,
+            line: None,
+            callee: None,
+            panic_site: false,
         };
         let obligation = json!({"kind":"atomic","name":"true","args":[]});
         let cid = mint_verification_witness(
@@ -1274,6 +1278,13 @@ mod tests {
             arg_term: Some(json!({"kind": "var", "name": "opt"})),
             containing_atomic: None,
             guard_facts,
+            file: None,
+            line: None,
+            callee: None,
+            // This fixture is a panic trap (`opt.unwrap()`); the guarded vs
+            // unguarded split keys off `panic_site` to demand the `panic-safe`
+            // discharge method, so it MUST be a panic site.
+            panic_site: true,
         }
     }
 
