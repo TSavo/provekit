@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 
+use libprovekit::concept::panic_freedom;
 use provekit_ir_types::{IrFormula, IrTerm};
 
 use crate::dropper::predicate::{
@@ -102,12 +103,15 @@ impl PredicateDescriptor for NotNullPredicate {
 fn is_guard_for(formula: &IrFormula, var_name: &str) -> bool {
     match formula {
         IrFormula::Atomic { name, args } => {
-            matches!(name.as_str(), "is_some") && has_var(args, var_name)
+            panic_freedom::normalize_option_predicate_name(name.as_str()) == panic_freedom::IS_SOME
+                && has_var(args, var_name)
         }
         IrFormula::Not { operands } => {
             if operands.len() == 1 {
                 if let IrFormula::Atomic { name, args } = &operands[0] {
-                    return matches!(name.as_str(), "is_none") && has_var(args, var_name);
+                    return panic_freedom::normalize_option_predicate_name(name.as_str())
+                        == panic_freedom::IS_NONE
+                        && has_var(args, var_name);
                 }
             }
             false
@@ -132,7 +136,9 @@ fn formula_contains_guard_for(formula: &IrFormula, var_name: &str) -> bool {
         IrFormula::Not { operands } => {
             if operands.len() == 1 {
                 if let IrFormula::Atomic { name, args } = &operands[0] {
-                    let is_guard = matches!(name.as_str(), "is_none");
+                    let is_guard =
+                        panic_freedom::normalize_option_predicate_name(name.as_str())
+                            == panic_freedom::IS_NONE;
                     let has_var = args.iter().any(|t| match t {
                         IrTerm::Var { name } => name == var_name,
                         _ => false,
@@ -170,6 +176,29 @@ mod tests {
     use super::*;
     use provekit_ir_types::{IrFormula, IrTerm};
 
+    fn var(name: &str) -> IrTerm {
+        IrTerm::Var { name: name.into() }
+    }
+
+    fn atom(name: &str, var_name: &str) -> IrFormula {
+        IrFormula::Atomic {
+            name: name.into(),
+            args: vec![var(var_name)],
+        }
+    }
+
+    fn not_atom(name: &str, var_name: &str) -> IrFormula {
+        IrFormula::Not {
+            operands: vec![atom(name, var_name)],
+        }
+    }
+
+    fn implies_not_null(premise: IrFormula, var_name: &str) -> IrFormula {
+        IrFormula::Implies {
+            operands: vec![premise, atom("not_null", var_name)],
+        }
+    }
+
     #[test]
     fn not_null_predicate_verified_templates_returns_defensive_only() {
         let templates = NotNullPredicate.verified_templates();
@@ -195,6 +224,22 @@ mod tests {
         assert!(
             rendered.contains("not_null"),
             "panic msg must name invariant"
+        );
+    }
+
+    #[test]
+    fn not_null_kit_render_still_emits_rust_is_none() {
+        let rendered = NotNullPredicate
+            .render(DropTemplate::Defensive, "x")
+            .expect("Defensive must render OK");
+
+        assert!(
+            rendered.contains("x.is_none()"),
+            "Rust kit render must keep Rust Option syntax: {rendered}"
+        );
+        assert!(
+            !rendered.contains(panic_freedom::IS_NONE_CONCEPT),
+            "Rust kit render must not emit substrate concept names: {rendered}"
         );
     }
 
@@ -259,6 +304,101 @@ mod tests {
             ],
         };
         assert!(NotNullPredicate.is_premise_guarded(&wp, "x"));
+    }
+
+    #[test]
+    fn is_premise_guarded_true_for_option_some_concept_premise() {
+        let premise = atom(panic_freedom::IS_SOME_CONCEPT, "x");
+        let wp = implies_not_null(premise.clone(), "x");
+
+        assert!(is_guard_for(&premise, "x"));
+        assert!(
+            NotNullPredicate.is_premise_guarded(&wp, "x"),
+            "concept option.some(x) must discharge the same not_null premise as is_some(x)"
+        );
+    }
+
+    #[test]
+    fn not_is_none_discharges_guard() {
+        let not_is_none = not_atom(panic_freedom::IS_NONE, "x");
+
+        assert!(is_guard_for(&not_is_none, "x"));
+        assert!(NotNullPredicate.guard_discharged(&not_is_none, "x"));
+        assert!(NotNullPredicate.is_premise_guarded(
+            &implies_not_null(not_is_none, "x"),
+            "x"
+        ));
+    }
+
+    #[test]
+    fn not_option_none_concept_discharges_guard() {
+        let not_option_none = not_atom(panic_freedom::IS_NONE_CONCEPT, "x");
+
+        assert!(is_guard_for(&not_option_none, "x"));
+        assert!(NotNullPredicate.guard_discharged(&not_option_none, "x"));
+        assert!(
+            NotNullPredicate.is_premise_guarded(&implies_not_null(not_option_none, "x"), "x"),
+            "Not(concept option.none(x)) must discharge the same not_null premise as Not(is_none(x))"
+        );
+    }
+
+    #[test]
+    fn result_predicates_do_not_discharge_not_null_guard() {
+        for name in [
+            panic_freedom::IS_OK,
+            panic_freedom::IS_ERR,
+            panic_freedom::IS_OK_CONCEPT,
+            panic_freedom::IS_ERR_CONCEPT,
+        ] {
+            let premise = atom(name, "x");
+            assert!(
+                !is_guard_for(&premise, "x"),
+                "result predicate {name} must not discharge not_null"
+            );
+            assert!(
+                !NotNullPredicate.is_premise_guarded(&implies_not_null(premise, "x"), "x"),
+                "result predicate {name} must not guard a not_null implication"
+            );
+        }
+    }
+
+    #[test]
+    fn malformed_option_concepts_do_not_discharge_not_null_guard() {
+        for name in [
+            "concept:panic-freedom.option.SOME",
+            "concept:panic-freedom.option.some ",
+            " concept:panic-freedom.option.some",
+            "method:concept:panic-freedom.option.some",
+            "concept:panic-freedom.option.null",
+        ] {
+            let premise = atom(name, "x");
+            assert!(
+                !is_guard_for(&premise, "x"),
+                "malformed option concept {name} must not discharge not_null"
+            );
+            assert!(
+                !NotNullPredicate.is_premise_guarded(&implies_not_null(premise, "x"), "x"),
+                "malformed option concept {name} must not guard a not_null implication"
+            );
+        }
+
+        for name in [
+            "concept:panic-freedom.option.NONE",
+            "concept:panic-freedom.option.none ",
+            " concept:panic-freedom.option.none",
+            "method:concept:panic-freedom.option.none",
+            "concept:panic-freedom.option.null",
+        ] {
+            let premise = not_atom(name, "x");
+            assert!(
+                !is_guard_for(&premise, "x"),
+                "malformed negated option concept {name} must not discharge not_null"
+            );
+            assert!(
+                !NotNullPredicate.guard_discharged(&premise, "x"),
+                "malformed negated option concept {name} must not count as a discharged guard"
+            );
+        }
     }
 
     #[test]

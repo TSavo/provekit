@@ -65,6 +65,14 @@ stays `d1c2f286...`; writer output remains on the v1 `is_ok`/`is_err` tokens.
 Hard invariants unchanged: `falsePass 0`, `silentlyDropped 0`,
 `droppedSites []`; `panicSafe` remains 5.
 
+Regenerated 2026-06-01: `reflexive 629 -> 630`. The option-predicate
+alias-read slice adds `normalize_option_predicate_name` to `libprovekit`; like
+the result helper, it is itself body-discharge-eligible and contributes one
+honest reflexive discharge through the dependency import chain. The shim target
+`catalogCid` stays `d1c2f286...`; writer output remains on the v1
+`is_some`/`is_none` tokens. Hard invariants unchanged: `falsePass 0`,
+`silentlyDropped 0`, `droppedSites []`; `panicSafe` remains 5.
+
 ## Normalization applied
 
 None. The output is byte-stable and path-independent without normalization:
