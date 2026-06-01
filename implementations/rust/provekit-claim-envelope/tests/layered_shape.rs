@@ -83,6 +83,8 @@ fn contract_args() -> MintContractArgs {
         emit_empty_formals: false,
         formal_sorts: Vec::new(),
         library: None,
+        body_discharge_eligible: true,
+        body_discharge_refusal_reason: None,
         panic_loci: Vec::new(),
         contract_name: "demo".into(),
         pre: Some(pre_n_gt_0()),

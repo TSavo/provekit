@@ -2280,13 +2280,35 @@ fn op_concept_name(op_definition_cid: &str) -> String {
     }
 }
 
+fn cargo_binary() -> PathBuf {
+    cargo_binary_from_env(std::env::var_os("CARGO"), std::env::var_os("HOME"))
+}
+
+fn cargo_binary_from_env(
+    cargo_env: Option<std::ffi::OsString>,
+    home_env: Option<std::ffi::OsString>,
+) -> PathBuf {
+    if let Some(cargo) = cargo_env {
+        if !cargo.is_empty() {
+            return PathBuf::from(cargo);
+        }
+    }
+    if let Some(home) = home_env {
+        let candidate = PathBuf::from(home).join(".cargo").join("bin").join("cargo");
+        if candidate.is_file() {
+            return candidate;
+        }
+    }
+    PathBuf::from("cargo")
+}
+
 fn resolve_dependency_proof_paths(project_root: &Path) -> Result<Vec<PathBuf>, String> {
     let manifest_path = project_root.join("Cargo.toml");
     if !manifest_path.is_file() {
         return Ok(Vec::new());
     }
 
-    let output = std::process::Command::new("cargo")
+    let output = std::process::Command::new(cargo_binary())
         .arg("metadata")
         .arg("--format-version")
         .arg("1")
@@ -5289,6 +5311,21 @@ mod tests {
 
     fn strings(items: &[&str]) -> Vec<String> {
         items.iter().map(|item| item.to_string()).collect()
+    }
+
+    #[test]
+    fn cargo_binary_falls_back_to_home_cargo_when_cargo_env_is_absent() {
+        let root = temp_operator_root("rust_dep_cargo_home");
+        let home = root.join("home");
+        let cargo = home.join(".cargo").join("bin").join("cargo");
+        fs::create_dir_all(cargo.parent().unwrap()).expect("create fake cargo dir");
+        fs::write(&cargo, b"#!/bin/sh\n").expect("write fake cargo");
+
+        assert_eq!(
+            cargo_binary_from_env(None, Some(home.into_os_string())),
+            cargo
+        );
+        let _ = fs::remove_dir_all(root);
     }
 
     #[test]

@@ -7,6 +7,8 @@ use std::path::{Path, PathBuf};
 use std::process::{Command, Output, Stdio};
 
 use clap::Parser;
+use provekit_canonicalizer::blake3_512_of;
+use provekit_verifier::load_all_proofs::ProofBytes;
 use serde::Serialize;
 use serde_json::Value;
 use tracing::{error, info};
@@ -216,6 +218,16 @@ fn run_inner(args: &SelfCheckArgs) -> Result<SelfCheckScoreboard, String> {
             "self-check: dependency proof ready"
         );
     }
+    let rpc_dependency_proof_count = stage_rpc_dependency_proofs_to_imports(
+        &target_abs,
+        &imports,
+        crate::kit_dispatch::dependency_proofs_via_rpc,
+    )?;
+    info!(
+        rpc_dependency_proof_count,
+        imports = %imports.display(),
+        "self-check: RPC dependency proofs staged"
+    );
     let imports_snapshot = snapshot_imports_proof_set(&imports)?;
     info!(
         imports = %imports.display(),
@@ -746,6 +758,41 @@ fn copy_proof_to_imports(proof_file: &Path, imports: &Path) -> Result<(), String
         )
     })?;
     Ok(())
+}
+
+fn stage_rpc_dependency_proofs_to_imports<F>(
+    target_abs: &Path,
+    imports: &Path,
+    resolve: F,
+) -> Result<usize, String>
+where
+    F: FnOnce(&Path) -> Result<Vec<ProofBytes>, String>,
+{
+    let proofs = resolve(target_abs)?;
+    let mut count = 0usize;
+    for proof in proofs {
+        let derived_cid = blake3_512_of(&proof.bytes);
+        let cid = match proof.expected_cid {
+            Some(expected_cid) if expected_cid != derived_cid => {
+                return Err(format!(
+                    "RPC dependency proof {} CID mismatch: expected {}, derived {}",
+                    proof.label, expected_cid, derived_cid
+                ));
+            }
+            Some(expected_cid) => expected_cid,
+            None => derived_cid,
+        };
+        let dest = imports.join(format!("{cid}.proof"));
+        fs::write(&dest, &proof.bytes).map_err(|e| {
+            format!(
+                "write RPC dependency proof {} to {}: {e}",
+                proof.label,
+                dest.display()
+            )
+        })?;
+        count += 1;
+    }
+    Ok(count)
 }
 
 fn build_scoreboard(
@@ -1293,6 +1340,36 @@ mod tests {
         assert!(
             err.contains("removed: [a.proof]"),
             "unexpected error: {err}"
+        );
+    }
+
+    #[test]
+    fn self_check_stages_rpc_dependency_proof_bytes_without_using_source_path() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let imports = dir.path().join("imports");
+        fs::create_dir_all(&imports).expect("create imports");
+        let target = dir.path().join("target");
+        let bytes = b"rpc dependency proof bytes".to_vec();
+        let cid = provekit_canonicalizer::blake3_512_of(&bytes);
+        let source_path_label = dir.path().join("package-internal").join("vendor.proof");
+
+        let count = stage_rpc_dependency_proofs_to_imports(&target, &imports, |_| {
+            Ok(vec![provekit_verifier::load_all_proofs::ProofBytes {
+                label: source_path_label.display().to_string(),
+                expected_cid: Some(cid.clone()),
+                bytes: bytes.clone(),
+            }])
+        })
+        .expect("stage rpc dependency proofs");
+
+        assert_eq!(count, 1);
+        let staged = imports.join(format!("{cid}.proof"));
+        assert_eq!(fs::read(&staged).expect("read staged proof"), bytes);
+        let snapshot = snapshot_imports_proof_set(&imports).expect("snapshot");
+        assert_eq!(
+            snapshot.path_list(),
+            format!("{cid}.proof"),
+            "self-check must stage proof bytes by CID, not by kit source path"
         );
     }
 

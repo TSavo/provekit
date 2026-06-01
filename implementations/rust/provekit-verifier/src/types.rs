@@ -744,6 +744,13 @@ pub struct CallSite {
     pub bridge_self_bundle_cid: Option<String>,
     pub property_name: String,
     pub property_cid: String,
+    /// The `.proof` bundle CID containing the property/contract whose body
+    /// produced this callsite. For panic-site producer lookup, co-located
+    /// receiver bridges are minted in this same caller bundle; this is distinct
+    /// from the selected bridge memento's own bundle, which can be polluted by
+    /// a global per-symbol bridge index when target and import proofs are
+    /// loaded together.
+    pub callsite_bundle_cid: Option<String>,
     pub arg_term: Option<Json>,
     /// The atomic predicate the matched call ctor sits directly inside, if
     /// the call was found as an argument of an atomic (e.g. the `=` in a

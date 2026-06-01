@@ -178,6 +178,8 @@ pub fn mint_args(
         emit_empty_formals: contract.formals.is_empty(),
         formal_sorts,
         library: None,
+        body_discharge_eligible: true,
+        body_discharge_refusal_reason: None,
         // PANIC-LOCUS PRESERVATION (#1745/#1749): header metadata only.
         // `provekit_claim_envelope::contract_cid` deliberately ignores this
         // field, so per-occurrence source provenance cannot perturb contract

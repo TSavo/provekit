@@ -41,6 +41,7 @@ pub fn run(pool: &MementoPool) -> Vec<CallSite> {
             // Stable fallback: short prefix of CID.
             property_name = format!("{}...", cid.chars().take(12).collect::<String>());
         }
+        let callsite_bundle_cid = bundle_containing_member(pool, cid);
         // PANIC-LOCUS PRESERVATION (#1745): the per-occurrence source loci the
         // lifter stamped on THIS contract, each `{argTerm, file, line, col,
         // callee}`. A panic-leaf call (`x.unwrap()`) lifts to the abstract ctor
@@ -59,7 +60,28 @@ pub fn run(pool: &MementoPool) -> Vec<CallSite> {
         for slot in ["pre", "post", "inv"] {
             if let Some(f) = body.get(slot) {
                 if f.is_object() {
-                    walk_formula(f, &property_name, cid, pool, panic_loci, &mut out);
+                    walk_formula(
+                        f,
+                        &property_name,
+                        cid,
+                        pool,
+                        callsite_bundle_cid.as_deref(),
+                        panic_loci,
+                        &mut out,
+                    );
+                }
+            }
+        }
+        for locus in panic_loci {
+            if let Some(cs) = callsite_from_panic_locus(
+                locus,
+                &property_name,
+                cid,
+                pool,
+                callsite_bundle_cid.as_deref(),
+            ) {
+                if !has_same_panic_callsite(&out, &cs) {
+                    out.push(cs);
                 }
             }
         }
@@ -80,11 +102,124 @@ pub fn run(pool: &MementoPool) -> Vec<CallSite> {
     out
 }
 
+fn callsite_from_panic_locus(
+    locus: &Json,
+    property_name: &str,
+    property_cid: &str,
+    pool: &MementoPool,
+    callsite_bundle_cid: Option<&str>,
+) -> Option<CallSite> {
+    if !locus.is_object() {
+        return None;
+    }
+    let callee = locus
+        .get("callee")
+        .and_then(|v| v.as_str())
+        .filter(|s| !s.is_empty())?;
+    let file = locus
+        .get("file")
+        .and_then(|v| v.as_str())
+        .filter(|s| !s.is_empty())
+        .map(str::to_string);
+    let line = locus
+        .get("line")
+        .or_else(|| locus.get("start_line"))
+        .and_then(|v| v.as_u64())
+        .map(|n| n as usize);
+    let arg_term = locus.get("argTerm").cloned();
+
+    let scoped_bridge = match (callsite_bundle_cid, file.as_deref(), line) {
+        (Some(bundle), Some(file), Some(line)) => pool.bridges_by_callsite.get(&(
+            bundle.to_string(),
+            file.to_string(),
+            line,
+            callee.to_string(),
+        )),
+        _ => None,
+    };
+    let bridge_env = scoped_bridge.or_else(|| pool.bridges_by_symbol.get(callee));
+    let bridge_body = bridge_env
+        .and_then(memento_body)
+        .cloned()
+        .unwrap_or_else(|| serde_json::json!({}));
+    if bridge_env.is_none() {
+        warn!(
+            callee = %callee,
+            file = ?file,
+            line = ?line,
+            "enumerate_callsites: panicLoci entry has no bridge; surfacing an undecidable panic callsite"
+        );
+    }
+
+    let bridge_self_bundle_cid = if scoped_bridge.is_some() {
+        callsite_bundle_cid.map(str::to_string)
+    } else {
+        pool.bridge_self_bundle_by_symbol.get(callee).cloned()
+    };
+
+    Some(CallSite {
+        bridge_ir_name: callee.to_string(),
+        bridge_target_cid: bridge_body
+            .get("targetContractCid")
+            .and_then(|v| v.as_str())
+            .unwrap_or_default()
+            .to_string(),
+        bridge_source_layer: bridge_body
+            .get("sourceLayer")
+            .and_then(|v| v.as_str())
+            .unwrap_or_default()
+            .to_string(),
+        bridge_target_layer: bridge_body
+            .get("targetLayer")
+            .and_then(|v| v.as_str())
+            .unwrap_or_default()
+            .to_string(),
+        bridge_target_proof_cid: bridge_body
+            .get("targetProofCid")
+            .and_then(|v| v.as_str())
+            .filter(|s| !s.is_empty())
+            .map(str::to_string),
+        bridge_self_bundle_cid,
+        property_name: property_name.to_string(),
+        property_cid: property_cid.to_string(),
+        callsite_bundle_cid: callsite_bundle_cid.map(str::to_string),
+        arg_term,
+        containing_atomic: None,
+        guard_facts: Vec::new(),
+        file,
+        line,
+        callee: Some(callee.to_string()),
+        panic_site: true,
+    })
+}
+
+fn has_same_panic_callsite(existing: &[CallSite], candidate: &CallSite) -> bool {
+    existing.iter().any(|cs| {
+        cs.panic_site
+            && cs.property_cid == candidate.property_cid
+            && cs.bridge_ir_name == candidate.bridge_ir_name
+            && cs.file == candidate.file
+            && cs.line == candidate.line
+            && cs.arg_term == candidate.arg_term
+    })
+}
+
+fn bundle_containing_member(pool: &MementoPool, member_cid: &str) -> Option<String> {
+    pool.bundle_members
+        .iter()
+        .find_map(|(bundle_cid, members)| {
+            members
+                .contains(member_cid)
+                .then(|| bundle_cid.to_string())
+        })
+}
+
 fn walk_formula(
     f: &Json,
     property_name: &str,
     property_cid: &str,
     pool: &MementoPool,
+    callsite_bundle_cid: Option<&str>,
     // PANIC-LOCUS PRESERVATION (#1745): the loci stamped on the contract being
     // walked, threaded down so a panic-site occurrence can resolve its OWN line.
     panic_loci: &[Json],
@@ -109,6 +244,7 @@ fn walk_formula(
                         pool,
                         Some(f),
                         &[],
+                        callsite_bundle_cid,
                         panic_loci,
                         out,
                     );
@@ -118,14 +254,30 @@ fn walk_formula(
         "and" | "or" | "not" | "implies" => {
             if let Some(ops) = f.get("operands").and_then(|v| v.as_array()) {
                 for op in ops {
-                    walk_formula(op, property_name, property_cid, pool, panic_loci, out);
+                    walk_formula(
+                        op,
+                        property_name,
+                        property_cid,
+                        pool,
+                        callsite_bundle_cid,
+                        panic_loci,
+                        out,
+                    );
                 }
             }
         }
         "forall" | "exists" => {
             if let Some(b) = f.get("body") {
                 if b.is_object() {
-                    walk_formula(b, property_name, property_cid, pool, panic_loci, out);
+                    walk_formula(
+                        b,
+                        property_name,
+                        property_cid,
+                        pool,
+                        callsite_bundle_cid,
+                        panic_loci,
+                        out,
+                    );
                 }
             }
         }
@@ -194,6 +346,9 @@ fn walk_term(
     // this position in the lifted caller body, accumulated as `cf_ite`
     // branches are descended. Empty at the top of a formula.
     path_cond: &[Json],
+    // The bundle containing the contract being walked. For panic sites, this is
+    // the caller bundle that also contains co-located producer bridges.
+    callsite_bundle_cid: Option<&str>,
     // PANIC-LOCUS PRESERVATION (#1745): the panic loci of the contract being
     // walked. A panic site reads its own line from here, keyed by arg_term.
     panic_loci: &[Json],
@@ -334,6 +489,7 @@ fn walk_term(
             bridge_self_bundle_cid: pool.bridge_self_bundle_by_symbol.get(&name).cloned(),
             property_name: property_name.to_string(),
             property_cid: property_cid.to_string(),
+            callsite_bundle_cid: callsite_bundle_cid.map(str::to_string),
             arg_term: arg_term.clone(),
             containing_atomic: containing_atomic.cloned(),
             // Snapshot the dominating guard context for this call site. The
@@ -402,6 +558,7 @@ fn walk_term(
                     pool,
                     None,
                     &branch_pc,
+                    callsite_bundle_cid,
                     panic_loci,
                     out,
                 );
@@ -421,6 +578,7 @@ fn walk_term(
                     pool,
                     None,
                     path_cond,
+                    callsite_bundle_cid,
                     panic_loci,
                     out,
                 );
@@ -436,6 +594,7 @@ fn walk_term(
                     pool,
                     None,
                     path_cond,
+                    callsite_bundle_cid,
                     panic_loci,
                     out,
                 );
@@ -466,6 +625,7 @@ fn walk_term(
                 pool,
                 inner_atomic,
                 path_cond,
+                callsite_bundle_cid,
                 panic_loci,
                 out,
             );

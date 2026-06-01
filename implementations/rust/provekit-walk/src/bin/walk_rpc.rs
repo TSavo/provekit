@@ -622,6 +622,11 @@ struct CallSite {
     /// STAYS the bare `callee` (that is the ctor name in the lifted caller body);
     /// only the TARGET binding selected changes to the disambiguated partial.
     disambiguated_callee: Option<String>,
+    /// Optional target crate for `disambiguated_callee`. Panic partials usually
+    /// live in the resolved receiver crate (`std`), but serde_json per-type
+    /// totality contracts live in the crate that owns the blessed type
+    /// (`libprovekit`, a consumer crate, etc.), not in serde_json itself.
+    disambiguated_crate: Option<String>,
     /// Some call syntaxes are real callsites, but not yet bridgeable to a
     /// stable contract key. Keep them in the census as explicit lift gaps
     /// rather than silently dropping them or guessing a bridge target.
@@ -637,6 +642,160 @@ struct OracleObservation {
     reachable: bool,
     attempted: u64,
     resolved: u64,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+struct TypeIdentity {
+    krate: String,
+    head: String,
+}
+
+#[derive(Debug, Clone, Default)]
+struct InfallibleSerializeManifest {
+    rules: Vec<InfallibleSerializeRule>,
+    by_key: HashMap<(String, String, String), usize>,
+}
+
+#[derive(Debug, Clone)]
+struct InfallibleSerializeRule {
+    function: String,
+    type_id: TypeIdentity,
+    contract: String,
+    reason: String,
+}
+
+impl InfallibleSerializeManifest {
+    fn load(workspace_root: &Path) -> Result<Self, String> {
+        let path = workspace_root
+            .join(".provekit")
+            .join("contracts")
+            .join("infallible_serialize.toml");
+        if !path.is_file() {
+            return Ok(Self::default());
+        }
+        // Side metadata/config: this file does not enter proof CIDs directly.
+        // The synthetic contract entries emitted from it do enter the normal
+        // mint path, so changing a blessed entry intentionally changes the
+        // corresponding contract bytes and CID.
+        let raw =
+            std::fs::read_to_string(&path).map_err(|e| format!("read {}: {e}", path.display()))?;
+        let value: toml::Value =
+            toml::from_str(&raw).map_err(|e| format!("parse {}: {e}", path.display()))?;
+        let table = value
+            .as_table()
+            .ok_or_else(|| format!("{} must be a TOML table", path.display()))?;
+        let Some(serde_json_value) = table.get("serde_json") else {
+            return Ok(Self::default());
+        };
+        let entries = serde_json_value.as_array().ok_or_else(|| {
+            format!(
+                "{} field `serde_json` must be an array of tables (`[[serde_json]]`)",
+                path.display()
+            )
+        })?;
+
+        let mut manifest = Self::default();
+        for (idx, entry) in entries.iter().enumerate() {
+            let table = entry.as_table().ok_or_else(|| {
+                format!(
+                    "{} `serde_json[{idx}]` must be a table, got {}",
+                    path.display(),
+                    toml_value_type(entry)
+                )
+            })?;
+            let function = required_toml_string(&path, idx, table, "function")?;
+            if !matches!(
+                function.as_str(),
+                "to_value" | "to_string" | "to_string_pretty"
+            ) {
+                return Err(format!(
+                    "{} `serde_json[{idx}].function` must be one of to_value, to_string, to_string_pretty",
+                    path.display()
+                ));
+            }
+            let type_crate =
+                normalize_crate_root(&required_toml_string(&path, idx, table, "type_crate")?);
+            let type_name = required_toml_string(&path, idx, table, "type_name")?;
+            let contract = required_toml_string(&path, idx, table, "contract")?;
+            let reason = required_toml_string(&path, idx, table, "reason")?;
+            let key = (function.clone(), type_crate.clone(), type_name.clone());
+            if manifest.by_key.contains_key(&key) {
+                return Err(format!(
+                    "{} duplicate serde_json infallible entry for function `{}`, type `{}`::{}`",
+                    path.display(),
+                    function,
+                    type_crate,
+                    type_name
+                ));
+            }
+            let rule = InfallibleSerializeRule {
+                function,
+                type_id: TypeIdentity {
+                    krate: type_crate,
+                    head: type_name,
+                },
+                contract,
+                reason,
+            };
+            manifest.by_key.insert(key, manifest.rules.len());
+            manifest.rules.push(rule);
+        }
+        Ok(manifest)
+    }
+
+    fn is_empty(&self) -> bool {
+        self.rules.is_empty()
+    }
+
+    fn contract_for(&self, function: &str, type_id: &TypeIdentity) -> Option<&str> {
+        let key = (
+            function.to_string(),
+            type_id.krate.clone(),
+            type_id.head.clone(),
+        );
+        self.by_key
+            .get(&key)
+            .and_then(|idx| self.rules.get(*idx))
+            .map(|rule| rule.contract.as_str())
+    }
+}
+
+fn toml_value_type(value: &toml::Value) -> &'static str {
+    match value {
+        toml::Value::String(_) => "string",
+        toml::Value::Integer(_) => "integer",
+        toml::Value::Float(_) => "float",
+        toml::Value::Boolean(_) => "boolean",
+        toml::Value::Datetime(_) => "datetime",
+        toml::Value::Array(_) => "array",
+        toml::Value::Table(_) => "table",
+    }
+}
+
+fn required_toml_string(
+    path: &Path,
+    idx: usize,
+    table: &toml::map::Map<String, toml::Value>,
+    field: &str,
+) -> Result<String, String> {
+    let value = table.get(field).ok_or_else(|| {
+        format!(
+            "{} `serde_json[{idx}]` missing required string field `{field}`",
+            path.display()
+        )
+    })?;
+    value
+        .as_str()
+        .map(str::trim)
+        .filter(|s| !s.is_empty())
+        .map(str::to_string)
+        .ok_or_else(|| {
+            format!(
+                "{} `serde_json[{idx}].{field}` must be a non-empty string, got {}",
+                path.display(),
+                toml_value_type(value)
+            )
+        })
 }
 
 /// Map of `leaf ident -> crate root` for the `use` imports in one file.
@@ -679,9 +838,10 @@ fn collect_use_tree(tree: &syn::UseTree, root: Option<&str>, map: &mut HashMap<S
         }
         syn::UseTree::Rename(r) => {
             // `use a::b as c`: the in-scope name is `c`, still rooted at `root`.
-            if let Some(rt) = root {
-                map.insert(r.rename.to_string(), rt.to_string());
-            }
+            let rt = root
+                .map(str::to_string)
+                .unwrap_or_else(|| r.ident.to_string());
+            map.insert(r.rename.to_string(), rt);
         }
         syn::UseTree::Group(g) => {
             for item in &g.items {
@@ -777,6 +937,189 @@ fn collect_local_type_names_in_items(items: &[syn::Item], names: &mut BTreeSet<S
     }
 }
 
+#[derive(Debug, Clone, Default)]
+struct EnumVariantTypeMap {
+    variants: HashMap<(String, String), VariantFieldTypes>,
+}
+
+#[derive(Debug, Clone)]
+enum VariantFieldTypes {
+    Named(HashMap<String, TypeIdentity>),
+    Unnamed(Vec<TypeIdentity>),
+    Unit,
+}
+
+fn collect_enum_variant_type_map(
+    file: &syn::File,
+    use_map: &HashMap<String, String>,
+    local_type_names: &BTreeSet<String>,
+    current_crate: &str,
+) -> EnumVariantTypeMap {
+    let mut map = EnumVariantTypeMap::default();
+    collect_enum_variant_type_map_in_items(
+        &file.items,
+        use_map,
+        local_type_names,
+        current_crate,
+        &mut map,
+    );
+    map
+}
+
+fn collect_enum_variant_type_map_in_items(
+    items: &[syn::Item],
+    use_map: &HashMap<String, String>,
+    local_type_names: &BTreeSet<String>,
+    current_crate: &str,
+    out: &mut EnumVariantTypeMap,
+) {
+    for item in items {
+        match item {
+            syn::Item::Enum(item_enum) => {
+                let enum_name = item_enum.ident.to_string();
+                for variant in &item_enum.variants {
+                    let variant_name = variant.ident.to_string();
+                    let fields = match &variant.fields {
+                        syn::Fields::Named(named) => {
+                            let mut fields = HashMap::new();
+                            for field in &named.named {
+                                let Some(ident) = field.ident.as_ref() else {
+                                    continue;
+                                };
+                                if let Some(type_id) = type_identity_for(
+                                    strip_reference_type(&field.ty),
+                                    use_map,
+                                    local_type_names,
+                                    current_crate,
+                                ) {
+                                    fields.insert(ident.to_string(), type_id);
+                                }
+                            }
+                            VariantFieldTypes::Named(fields)
+                        }
+                        syn::Fields::Unnamed(unnamed) => {
+                            let fields = unnamed
+                                .unnamed
+                                .iter()
+                                .filter_map(|field| {
+                                    type_identity_for(
+                                        strip_reference_type(&field.ty),
+                                        use_map,
+                                        local_type_names,
+                                        current_crate,
+                                    )
+                                })
+                                .collect();
+                            VariantFieldTypes::Unnamed(fields)
+                        }
+                        syn::Fields::Unit => VariantFieldTypes::Unit,
+                    };
+                    out.variants.insert((enum_name.clone(), variant_name), fields);
+                }
+            }
+            syn::Item::Mod(item_mod) => {
+                if let Some((_, ref nested)) = item_mod.content {
+                    collect_enum_variant_type_map_in_items(
+                        nested,
+                        use_map,
+                        local_type_names,
+                        current_crate,
+                        out,
+                    );
+                }
+            }
+            _ => {}
+        }
+    }
+}
+
+fn bind_pattern_type_id(
+    pat: &syn::Pat,
+    scrutinee_type: &TypeIdentity,
+    enum_variant_types: &EnumVariantTypeMap,
+    local_types: &mut HashMap<String, String>,
+    value_types: &mut HashMap<String, TypeIdentity>,
+) {
+    match pat {
+        syn::Pat::Ident(ident) => {
+            bind_value_type(&ident.ident.to_string(), scrutinee_type.clone(), local_types, value_types);
+        }
+        syn::Pat::Reference(reference) => {
+            bind_pattern_type_id(
+                &reference.pat,
+                scrutinee_type,
+                enum_variant_types,
+                local_types,
+                value_types,
+            );
+        }
+        syn::Pat::Struct(pat_struct) => {
+            let Some(variant_name) = pat_struct.path.segments.last().map(|seg| seg.ident.to_string()) else {
+                return;
+            };
+            let enum_name = pat_struct
+                .path
+                .segments
+                .iter()
+                .rev()
+                .nth(1)
+                .map(|seg| seg.ident.to_string())
+                .unwrap_or_else(|| scrutinee_type.head.clone());
+            let Some(VariantFieldTypes::Named(fields)) = enum_variant_types
+                .variants
+                .get(&(enum_name, variant_name))
+            else {
+                return;
+            };
+            for field in &pat_struct.fields {
+                let field_name = field.member.to_token_stream().to_string();
+                let Some(type_id) = fields.get(&field_name).cloned() else {
+                    continue;
+                };
+                bind_pattern_type_id(&field.pat, &type_id, enum_variant_types, local_types, value_types);
+            }
+        }
+        syn::Pat::TupleStruct(tuple_struct) => {
+            let Some(variant_name) = tuple_struct.path.segments.last().map(|seg| seg.ident.to_string()) else {
+                return;
+            };
+            let enum_name = tuple_struct
+                .path
+                .segments
+                .iter()
+                .rev()
+                .nth(1)
+                .map(|seg| seg.ident.to_string())
+                .unwrap_or_else(|| scrutinee_type.head.clone());
+            let Some(VariantFieldTypes::Unnamed(fields)) = enum_variant_types
+                .variants
+                .get(&(enum_name, variant_name))
+            else {
+                return;
+            };
+            for (subpat, type_id) in tuple_struct.elems.iter().zip(fields.iter()) {
+                bind_pattern_type_id(subpat, type_id, enum_variant_types, local_types, value_types);
+            }
+        }
+        syn::Pat::Or(or_pat) => {
+            for case in &or_pat.cases {
+                bind_pattern_type_id(case, scrutinee_type, enum_variant_types, local_types, value_types);
+            }
+        }
+        _ => {}
+    }
+}
+
+fn bind_value_type(
+    name: &str,
+    type_id: TypeIdentity,
+    local_types: &mut HashMap<String, String>,
+    value_types: &mut HashMap<String, TypeIdentity>,
+) {
+    local_types.insert(name.to_string(), type_id.krate.clone());
+    value_types.insert(name.to_string(), type_id);
+}
+
 fn function_return_crates(
     file: &syn::File,
     use_map: &HashMap<String, String>,
@@ -866,6 +1209,8 @@ fn collect_callsites_in_items(
     fn_return_crates: &HashMap<String, String>,
     local_type_names: &BTreeSet<String>,
     current_crate: &str,
+    enum_variant_types: &EnumVariantTypeMap,
+    infallible_serialize: &InfallibleSerializeManifest,
     out: &mut Vec<CallSite>,
 ) {
     for item in items {
@@ -883,6 +1228,8 @@ fn collect_callsites_in_items(
                     fn_return_crates,
                     local_type_names,
                     current_crate,
+                    enum_variant_types,
+                    infallible_serialize,
                     &param_type_map,
                     out,
                 );
@@ -910,6 +1257,8 @@ fn collect_callsites_in_items(
                             fn_return_crates,
                             local_type_names,
                             current_crate,
+                            enum_variant_types,
+                            infallible_serialize,
                             &param_type_map,
                             out,
                         );
@@ -928,6 +1277,8 @@ fn collect_callsites_in_items(
                         fn_return_crates,
                         local_type_names,
                         current_crate,
+                        enum_variant_types,
+                        infallible_serialize,
                         out,
                     );
                 }
@@ -944,10 +1295,12 @@ fn collect_callsites_in_block(
     fn_return_crates: &HashMap<String, String>,
     local_type_names: &BTreeSet<String>,
     current_crate: &str,
-    // Phase-2 Tier D-lib: param name -> (crate, type_head) for syntactic
-    // serde_json::Value arg-type disambiguation. Built from the enclosing
-    // function's declared parameter types; empty when called outside a fn.
-    param_type_map: &HashMap<String, (String, String)>,
+    enum_variant_types: &EnumVariantTypeMap,
+    infallible_serialize: &InfallibleSerializeManifest,
+    // Phase-2 Tier D-lib: param name -> concrete type identity for syntactic
+    // serde_json arg-type disambiguation. Built from the enclosing function's
+    // declared parameter types; empty when called outside a fn.
+    param_type_map: &HashMap<String, TypeIdentity>,
     out: &mut Vec<CallSite>,
 ) {
     use syn::visit::Visit;
@@ -958,8 +1311,18 @@ fn collect_callsites_in_block(
         local_type_names: &'a BTreeSet<String>,
         current_crate: &'a str,
         local_types: HashMap<String, String>,
-        param_type_map: &'a HashMap<String, (String, String)>,
+        value_types: HashMap<String, TypeIdentity>,
+        enum_variant_types: &'a EnumVariantTypeMap,
+        infallible_serialize: &'a InfallibleSerializeManifest,
+        param_type_map: &'a HashMap<String, TypeIdentity>,
         out: &'a mut Vec<CallSite>,
+    }
+    impl<'a> V<'a> {
+        fn value_type(&self, name: &str) -> Option<&TypeIdentity> {
+            self.value_types
+                .get(name)
+                .or_else(|| self.param_type_map.get(name))
+        }
     }
     impl<'ast, 'a> Visit<'ast> for V<'a> {
         fn visit_expr_call(&mut self, node: &'ast syn::ExprCall) {
@@ -968,29 +1331,23 @@ fn collect_callsites_in_block(
             {
                 let start = node.func.span().start();
                 // Phase-2 Tier D-lib: syntactic arg-type disambiguation for
-                // serde_json::to_string / to_string_pretty free calls.
-                // When the first argument is a simple ident whose declared
-                // parameter type is serde_json::Value (from the enclosing
-                // function's signature), set disambiguated_callee directly
-                // without the oracle. Sound: crate identity (serde_json) AND
-                // type head (Value) must both match the enclosing fn's
-                // explicit type annotation; inference paths leave None.
-                let disambiguated_callee = if needs_arg_type_resolution(
+                // serde_json::{to_value,to_string,to_string_pretty}. The
+                // manifest is per-crate Rust-kit config; the CLI/verifier never
+                // read it. Concrete type identity must be available from a
+                // conservative source position, otherwise we refuse to guess.
+                let disambiguated_target = if needs_arg_type_resolution(
                     callee_crate.as_deref(),
                     &callee,
                 ) {
                     node.args.first().and_then(|a| {
                         let name = expr_bare_ident_name(a)?;
-                        let (krate, head) = self.param_type_map.get(&name)?;
-                        if krate == "serde_json" && head == "Value" {
-                            Some(if callee == "to_string_pretty" {
-                                "serde_json_to_string_pretty_value".to_string()
-                            } else {
-                                "serde_json_to_string_value".to_string()
-                            })
-                        } else {
-                            None
-                        }
+                        let type_id = self.value_type(&name)?;
+                        disambiguated_serde_json_totality_target(
+                            &callee,
+                            type_id,
+                            self.infallible_serialize,
+                            self.current_crate,
+                        )
                     })
                 } else {
                     None
@@ -1000,7 +1357,10 @@ fn collect_callsites_in_block(
                     contract_callee,
                     callee_crate,
                     is_method: false,
-                    disambiguated_callee,
+                    disambiguated_callee: disambiguated_target
+                        .as_ref()
+                        .map(|(_, leaf)| leaf.clone()),
+                    disambiguated_crate: disambiguated_target.map(|(krate, _)| krate),
                     unsupported_reason: None,
                     file: self.rel_path.to_string(),
                     line: start.line,
@@ -1014,6 +1374,7 @@ fn collect_callsites_in_block(
                     callee_crate: None,
                     is_method: false,
                     disambiguated_callee: None,
+                    disambiguated_crate: None,
                     unsupported_reason: Some("unsupported-closure-invocation"),
                     file: self.rel_path.to_string(),
                     line: start.line,
@@ -1027,6 +1388,7 @@ fn collect_callsites_in_block(
                     callee_crate: None,
                     is_method: false,
                     disambiguated_callee: None,
+                    disambiguated_crate: None,
                     unsupported_reason: Some("unsupported-dynamic-callee"),
                     file: self.rel_path.to_string(),
                     line: start.line,
@@ -1062,12 +1424,37 @@ fn collect_callsites_in_block(
                 ),
                 is_method: true,
                 disambiguated_callee: None,
+                disambiguated_crate: None,
                 unsupported_reason: None,
                 file: self.rel_path.to_string(),
                 line: start.line,
                 col: start.column,
             });
             syn::visit::visit_expr_method_call(self, node);
+        }
+        fn visit_expr_match(&mut self, node: &'ast syn::ExprMatch) {
+            self.visit_expr(&node.expr);
+            let scrutinee_type = expr_bare_ident_name(&node.expr)
+                .and_then(|name| self.value_type(&name).cloned());
+            for arm in &node.arms {
+                let saved_local_types = self.local_types.clone();
+                let saved_value_types = self.value_types.clone();
+                if let Some(type_id) = scrutinee_type.as_ref() {
+                    bind_pattern_type_id(
+                        &arm.pat,
+                        type_id,
+                        self.enum_variant_types,
+                        &mut self.local_types,
+                        &mut self.value_types,
+                    );
+                }
+                if let Some((_if_token, guard)) = &arm.guard {
+                    self.visit_expr(guard);
+                }
+                self.visit_expr(&arm.body);
+                self.local_types = saved_local_types;
+                self.value_types = saved_value_types;
+            }
         }
         fn visit_expr_index(&mut self, node: &'ast syn::ExprIndex) {
             // `v[i]` is a PANIC site: indexing out of bounds panics. The term
@@ -1089,6 +1476,7 @@ fn collect_callsites_in_block(
                 callee_crate: None,
                 is_method: false,
                 disambiguated_callee: None,
+                disambiguated_crate: None,
                 unsupported_reason: None,
                 file: self.rel_path.to_string(),
                 line: start.line,
@@ -1097,12 +1485,13 @@ fn collect_callsites_in_block(
             syn::visit::visit_expr_index(self, node);
         }
         fn visit_local(&mut self, node: &'ast syn::Local) {
-            let explicit = pat_type_crate(
+            let explicit_type = pat_type_identity(
                 &node.pat,
                 self.use_map,
                 self.local_type_names,
                 self.current_crate,
             );
+            let explicit = explicit_type.as_ref().map(|type_id| type_id.krate.clone());
             let inferred = node.init.as_ref().and_then(|init| {
                 self.visit_expr(&init.expr);
                 expr_return_crate(
@@ -1116,6 +1505,9 @@ fn collect_callsites_in_block(
             if let (Some(name), Some(krate)) = (pat_ident_name(&node.pat), explicit.or(inferred)) {
                 self.local_types.insert(name, krate);
             }
+            if let (Some(name), Some(type_id)) = (pat_ident_name(&node.pat), explicit_type) {
+                self.value_types.insert(name, type_id);
+            }
         }
     }
     let mut v = V {
@@ -1124,7 +1516,13 @@ fn collect_callsites_in_block(
         fn_return_crates,
         local_type_names,
         current_crate,
-        local_types: HashMap::new(),
+        local_types: param_type_map
+            .iter()
+            .map(|(name, type_id)| (name.clone(), type_id.krate.clone()))
+            .collect(),
+        value_types: param_type_map.clone(),
+        enum_variant_types,
+        infallible_serialize,
         param_type_map,
         out,
     };
@@ -1147,10 +1545,11 @@ fn unsupported_macro_callsite(mac: &syn::Macro, rel_path: &str) -> CallSite {
             .last()
             .map(path_segment_contract_leaf)
             .map(|leaf| format!("{leaf}!"))
-            .unwrap_or_else(|| "<macro>!".to_string()),
+        .unwrap_or_else(|| "<macro>!".to_string()),
         callee_crate: None,
         is_method: false,
         disambiguated_callee: None,
+        disambiguated_crate: None,
         unsupported_reason: Some("unsupported-macro-callsite"),
         file: rel_path.to_string(),
         line: start.line,
@@ -1213,15 +1612,20 @@ fn pat_ident_name(pat: &syn::Pat) -> Option<String> {
     }
 }
 
-fn pat_type_crate(
+fn pat_type_identity(
     pat: &syn::Pat,
     use_map: &HashMap<String, String>,
     local_type_names: &BTreeSet<String>,
     current_crate: &str,
-) -> Option<String> {
+) -> Option<TypeIdentity> {
     match pat {
         syn::Pat::Type(pat_type) => {
-            type_crate_for(&pat_type.ty, use_map, local_type_names, current_crate)
+            type_identity_for(
+                strip_reference_type(&pat_type.ty),
+                use_map,
+                local_type_names,
+                current_crate,
+            )
         }
         _ => None,
     }
@@ -1448,7 +1852,39 @@ fn crate_name_for(dir: &Path) -> Option<String> {
 /// (it stays `to_string` -> no-contract-for-callee -> honestly undecidable).
 fn needs_arg_type_resolution(callee_crate: Option<&str>, callee: &str) -> bool {
     callee_crate == Some("serde_json")
-        && matches!(callee, "to_string" | "to_string_pretty")
+        && matches!(callee, "to_value" | "to_string" | "to_string_pretty")
+}
+
+fn disambiguated_serde_json_totality_target(
+    callee: &str,
+    type_id: &TypeIdentity,
+    manifest: &InfallibleSerializeManifest,
+    current_crate: &str,
+) -> Option<(String, String)> {
+    // `type_crate` is the argument type's crate identity, used only for
+    // matching. The synthetic totality contract is published by the current
+    // project proof, so the bridge targets `current_crate`.
+    manifest
+        .contract_for(callee, type_id)
+        .map(|contract| (current_crate.to_string(), contract.to_string()))
+        .or_else(|| {
+            // Backwards-compatible Rust-kit semantics for the serde_json shim's
+            // existing Value totality contracts. This stays in the kit: the
+            // CLI/verifier still see only opaque contract names over RPC.
+            if type_id.krate == "serde_json" && type_id.head == "Value" {
+                Some((
+                    "serde_json".to_string(),
+                    match callee {
+                    "to_string" => "serde_json_to_string_value",
+                    "to_string_pretty" => "serde_json_to_string_pretty_value",
+                    _ => return None,
+                }
+                    .to_string(),
+                ))
+            } else {
+                None
+            }
+        })
 }
 
 /// Extract the bare identifier name from an expression, stripping leading
@@ -1480,7 +1916,7 @@ fn build_param_type_map(
     use_map: &HashMap<String, String>,
     local_type_names: &BTreeSet<String>,
     current_crate: &str,
-) -> HashMap<String, (String, String)> {
+) -> HashMap<String, TypeIdentity> {
     let mut map = HashMap::new();
     for input in &sig.inputs {
         let syn::FnArg::Typed(pt) = input else {
@@ -1492,13 +1928,12 @@ fn build_param_type_map(
         let name = pi.ident.to_string();
         let ty = &*pt.ty;
         // Strip outer & / &mut
-        let inner_ty = match ty {
-            syn::Type::Reference(r) => &*r.elem,
-            other => other,
-        };
+        let inner_ty = strip_reference_type(ty);
         // Extract the type's (crate, head)
-        if let Some((krate, head)) = type_crate_and_head(inner_ty, use_map, local_type_names, current_crate) {
-            map.insert(name, (krate, head));
+        if let Some(type_id) =
+            type_identity_for(inner_ty, use_map, local_type_names, current_crate)
+        {
+            map.insert(name, type_id);
         }
     }
     map
@@ -1508,18 +1943,25 @@ fn build_param_type_map(
 /// crate and extracts the last path segment for the head.
 ///
 /// Returns `None` for non-path types or when the crate cannot be determined.
-fn type_crate_and_head(
+fn type_identity_for(
     ty: &syn::Type,
     use_map: &HashMap<String, String>,
     local_type_names: &BTreeSet<String>,
     current_crate: &str,
-) -> Option<(String, String)> {
+) -> Option<TypeIdentity> {
     let syn::Type::Path(tp) = ty else {
         return None;
     };
     let head = tp.path.segments.last()?.ident.to_string();
     let krate = type_crate_for(ty, use_map, local_type_names, current_crate)?;
-    Some((krate, head))
+    Some(TypeIdentity { krate, head })
+}
+
+fn strip_reference_type(ty: &syn::Type) -> &syn::Type {
+    match ty {
+        syn::Type::Reference(r) => strip_reference_type(&r.elem),
+        other => other,
+    }
 }
 
 fn disambiguated_partial_leaf(type_stem: &str, leaf: &str) -> Option<String> {
@@ -1741,6 +2183,7 @@ fn resolve_method_calls_via_oracle(
                     "oracle resolved method call (resident daemon)"
                 );
                 cs.callee_crate = Some(res.krate.clone());
+                cs.disambiguated_crate = disambiguated.as_ref().map(|_| res.krate.clone());
                 cs.disambiguated_callee = disambiguated;
             } else {
                 debug!(
@@ -1813,6 +2256,13 @@ fn lift_implications(params: &Value) -> Result<Value, String> {
     // tell this crate's `foo` from a same-named dependency `foo` (Tier 1).
     let current_crate = crate_name_for(&workspace_root).unwrap_or_default();
     debug!(current_crate = %current_crate, "lift_implications: resolved current crate");
+    let infallible_serialize = InfallibleSerializeManifest::load(&workspace_root)?;
+    if !infallible_serialize.is_empty() {
+        info!(
+            entries = infallible_serialize.rules.len(),
+            "lift_implications: loaded infallible serde_json manifest"
+        );
+    }
 
     // Index contracts by (crate, leaf), not bare leaf. The leaf is the substring
     // before the first '@' in the contract `name` (`<callee>@<file>:<line>:<col>`
@@ -1896,6 +2346,8 @@ fn lift_implications(params: &Value) -> Result<Value, String> {
 
         let use_map = build_use_crate_map(&file);
         let local_type_names = collect_local_type_names(&file);
+        let enum_variant_types =
+            collect_enum_variant_type_map(&file, &use_map, &local_type_names, &current_crate);
         let fn_return_crates =
             function_return_crates(&file, &use_map, &local_type_names, &current_crate);
         let mut callsites: Vec<CallSite> = Vec::new();
@@ -1907,6 +2359,8 @@ fn lift_implications(params: &Value) -> Result<Value, String> {
             &fn_return_crates,
             &local_type_names,
             &current_crate,
+            &enum_variant_types,
+            &infallible_serialize,
             &mut callsites,
         );
         let file_callsite_count = callsites.len();
@@ -1983,10 +2437,21 @@ fn lift_implications(params: &Value) -> Result<Value, String> {
             // bare `cs.callee` (the ctor name in the lifted caller body); only the
             // TARGET binding changes.
             let key = (resolved_crate.clone(), cs.contract_callee.clone());
-            let disambig_binding = cs.disambiguated_callee.as_ref().and_then(|leaf| {
-                let dkey = (resolved_crate.clone(), leaf.clone());
-                contracts_by_key.get(&dkey).copied()
+            let disambig_key = cs.disambiguated_callee.as_ref().map(|leaf| {
+                let dkey = (
+                    cs.disambiguated_crate
+                        .clone()
+                        .unwrap_or_else(|| resolved_crate.clone()),
+                    leaf.clone(),
+                );
+                dkey
             });
+            let disambig_binding = disambig_key
+                .as_ref()
+                .and_then(|dkey| contracts_by_key.get(dkey).copied());
+            let disambig_ineligible = disambig_key
+                .as_ref()
+                .and_then(|dkey| ineligible_by_key.get(dkey).copied());
             let is_panic = is_panic_leaf(&cs.callee);
             if is_panic {
                 info!(
@@ -1994,7 +2459,7 @@ fn lift_implications(params: &Value) -> Result<Value, String> {
                     resolved_crate = %resolved_crate,
                     disambiguated_callee = ?cs.disambiguated_callee,
                     disambig_binding_found = disambig_binding.is_some(),
-                    lookup_key = ?cs.disambiguated_callee.as_ref().map(|l| (resolved_crate.clone(), l.clone())),
+                    lookup_key = ?disambig_key,
                     file = %cs.file,
                     line = cs.line,
                     "PANIC-EMIT: panic-leaf site decision -- bridges to disambiguated partial iff disambig_binding_found, else REFUSES (panic-site-unproven)"
@@ -2048,7 +2513,10 @@ fn lift_implications(params: &Value) -> Result<Value, String> {
                 // routes to the honesty boundary, so the obligation is honestly
                 // surfaced instead of vanishing unseen. Only a callee with NO
                 // contract at all has nothing to bridge to.
-                match disambig_binding.or_else(|| contracts_by_key.get(&key).copied()) {
+                match disambig_binding
+                    .or(disambig_ineligible)
+                    .or_else(|| contracts_by_key.get(&key).copied())
+                {
                     Some(b) => b,
                     None => match ineligible_by_key.get(&key) {
                         Some(ineligible) => {
@@ -3042,6 +3510,7 @@ fn function_contract_lift(params: &Value) -> Result<Value, String> {
     // one package per workspace_root; a true multi-crate workspace would need
     // per-scan-root names, noted as a limitation.
     let current_crate = crate_name_for(&root).unwrap_or_default();
+    let infallible_serialize = InfallibleSerializeManifest::load(&root)?;
     let mut entries: Vec<Value> = Vec::new();
     let mut diagnostics: Vec<Value> = Vec::new();
     let mut visited: std::collections::BTreeSet<PathBuf> = Default::default();
@@ -3167,6 +3636,8 @@ fn function_contract_lift(params: &Value) -> Result<Value, String> {
         }
     }
 
+    emit_infallible_serialize_contracts(&infallible_serialize, &current_crate, &mut entries)?;
+
     // Producer-side visibility. This surface emits the contracts that the
     // implication matcher later bridges into; a collapse here (e.g. a soundness
     // gate flipping most contracts to body-discharge-ineligible) was previously
@@ -3232,6 +3703,51 @@ fn function_contract_lift(params: &Value) -> Result<Value, String> {
         "diagnostics": diagnostics,
         "refusals": [],
     }))
+}
+
+fn emit_infallible_serialize_contracts(
+    manifest: &InfallibleSerializeManifest,
+    current_crate: &str,
+    entries: &mut Vec<Value>,
+) -> Result<(), String> {
+    if manifest.is_empty() {
+        return Ok(());
+    }
+    if current_crate.is_empty() {
+        return Err(
+            "infallible_serialize.toml requires a Cargo package name for type_crate matching"
+                .to_string(),
+        );
+    }
+    for rule in &manifest.rules {
+        debug!(
+            function = %rule.function,
+            type_crate = %rule.type_id.krate,
+            type_name = %rule.type_id.head,
+            contract_library = %current_crate,
+            contract = %rule.contract,
+            reason = %rule.reason,
+            "function_contract_lift: emitting project-local infallible serde_json totality contract"
+        );
+        entries.push(json!({
+            "kind": "contract",
+            "name": rule.contract,
+            "post": is_ok_result_post_json(),
+            "outBinding": "out",
+            "bodyDischargeEligible": false,
+            "bodyDischargeRefusalReason": "totality-axiom",
+            "library": current_crate,
+        }));
+    }
+    Ok(())
+}
+
+fn is_ok_result_post_json() -> Value {
+    json!({
+        "kind": "atomic",
+        "name": "is_ok",
+        "args": [{ "kind": "var", "name": "result" }],
+    })
 }
 
 fn body_discharge_eligibility(post: &IrFormula, formals: &[String]) -> (bool, Option<String>) {
@@ -8902,6 +9418,13 @@ pub fn bitwise_not() -> i64 {
         root
     }
 
+    fn write_infallible_serialize_manifest(root: &Path, body: &str) {
+        let contracts_dir = root.join(".provekit").join("contracts");
+        fs::create_dir_all(&contracts_dir).expect("create contracts dir");
+        fs::write(contracts_dir.join("infallible_serialize.toml"), body)
+            .expect("write infallible serialize manifest");
+    }
+
     fn write_sugar_binding_proof(
         proof_dir: &Path,
         mut sugar_entry: Value,
@@ -9679,6 +10202,573 @@ pub fn identity(value: i64) -> i64 {
             .find(|entry| entry["name"] == "identity")
             .expect("identity function contract");
         assert_eq!(entry["library"], "provekit_cli");
+
+        let _ = fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn function_contract_lift_emits_infallible_serialize_contracts_from_manifest() {
+        let root = temp_workspace("function_contract_infallible_serialize");
+        let src_dir = root.join("src");
+        fs::create_dir_all(&src_dir).expect("create src dir");
+        fs::write(
+            root.join("Cargo.toml"),
+            r#"
+[package]
+name = "consumer-crate"
+version = "0.1.0"
+edition = "2021"
+"#,
+        )
+        .expect("write Cargo.toml");
+        fs::write(
+            src_dir.join("lib.rs"),
+            r#"
+pub fn identity(value: i64) -> i64 {
+    value
+}
+"#,
+        )
+        .expect("write source");
+        write_infallible_serialize_manifest(
+            &root,
+            r#"
+[[serde_json]]
+function = "to_value"
+type_crate = "consumer_crate"
+type_name = "RealizedSource"
+contract = "serde_json_to_value__realized_source"
+reason = "derive Serialize over serde_json-infallible fields"
+
+[[serde_json]]
+function = "to_string"
+type_crate = "consumer_crate"
+type_name = "Sort"
+contract = "serde_json_to_string__sort"
+reason = "derive Serialize over serde_json-infallible fields"
+"#,
+        );
+
+        let resp = function_contract_lift(&json!({
+            "workspace_root": root.to_string_lossy(),
+            "source_paths": ["."]
+        }))
+        .expect("function contract lift");
+
+        let entries = resp["ir"].as_array().expect("ir array");
+        let by_name = |name: &str| -> &Value {
+            entries
+                .iter()
+                .find(|entry| entry["name"] == name)
+                .unwrap_or_else(|| panic!("missing synthetic contract `{name}`: {entries:?}"))
+        };
+        let to_value = by_name("serde_json_to_value__realized_source");
+        assert_eq!(to_value["kind"], "contract");
+        assert_eq!(to_value["library"], "consumer_crate");
+        assert_eq!(to_value["outBinding"], "out");
+        assert_eq!(to_value["bodyDischargeEligible"], false);
+        assert_eq!(to_value["bodyDischargeRefusalReason"], "totality-axiom");
+        assert_eq!(
+            to_value["post"],
+            json!({
+                "kind": "atomic",
+                "name": "is_ok",
+                "args": [{ "kind": "var", "name": "result" }]
+            })
+        );
+        assert_eq!(
+            by_name("serde_json_to_string__sort")["post"],
+            to_value["post"]
+        );
+
+        let _ = fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn function_contract_lift_refuses_malformed_infallible_serialize_manifest() {
+        let cases = [
+            ("string", r#"serde_json = "not an array""#),
+            ("number", r#"serde_json = 7"#),
+            (
+                "object",
+                r#"
+[serde_json]
+function = "to_value"
+type_crate = "consumer_crate"
+type_name = "RealizedSource"
+contract = "serde_json_to_value__realized_source"
+reason = "derive Serialize over serde_json-infallible fields"
+"#,
+            ),
+            (
+                "missing-field",
+                r#"
+[[serde_json]]
+function = "to_value"
+type_crate = "consumer_crate"
+type_name = "RealizedSource"
+reason = "derive Serialize over serde_json-infallible fields"
+"#,
+            ),
+        ];
+
+        for (name, manifest) in cases {
+            let root = temp_workspace(&format!("infallible_serialize_bad_{name}"));
+            let src_dir = root.join("src");
+            fs::create_dir_all(&src_dir).expect("create src dir");
+            fs::write(
+                root.join("Cargo.toml"),
+                r#"
+[package]
+name = "consumer-crate"
+version = "0.1.0"
+edition = "2021"
+"#,
+            )
+            .expect("write Cargo.toml");
+            fs::write(
+                src_dir.join("lib.rs"),
+                r#"
+pub fn identity(value: i64) -> i64 {
+    value
+}
+"#,
+            )
+            .expect("write source");
+            write_infallible_serialize_manifest(&root, manifest);
+
+            let err = function_contract_lift(&json!({
+                "workspace_root": root.to_string_lossy(),
+                "source_paths": ["."]
+            }))
+            .expect_err("malformed infallible serialize manifest must refuse loudly");
+            assert!(
+                err.contains("infallible_serialize.toml"),
+                "error should name the manifest path for case {name}: {err}"
+            );
+            let _ = fs::remove_dir_all(root);
+        }
+    }
+
+    #[test]
+    fn lift_implications_disambiguates_blessed_concrete_param_from_manifest_alias() {
+        let src = r##"
+use serde_json as sj;
+
+pub struct RealizedSource;
+
+pub fn caller(realized: &RealizedSource) {
+    sj::to_value(realized).unwrap();
+}
+"##;
+        let root = temp_workspace("lift_implications_infallible_param");
+        let src_dir = root.join("src");
+        fs::create_dir_all(&src_dir).expect("create src dir");
+        fs::write(
+            root.join("Cargo.toml"),
+            r#"
+[package]
+name = "consumer-crate"
+version = "0.1.0"
+edition = "2021"
+"#,
+        )
+        .expect("write Cargo.toml");
+        let rel = "src/lib.rs";
+        fs::write(root.join(rel), src).expect("write source");
+        write_infallible_serialize_manifest(
+            &root,
+            r#"
+[[serde_json]]
+function = "to_value"
+type_crate = "consumer_crate"
+type_name = "RealizedSource"
+contract = "serde_json_to_value__realized_source"
+reason = "derive Serialize over serde_json-infallible fields"
+"#,
+        );
+
+        let expected_cid = "blake3-512:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa";
+        let resp = lift_implications(&json!({
+            "workspace_root": root.to_string_lossy(),
+            "source_paths": [rel],
+            "contract_bindings": [
+                {
+                    "name": "serde_json_to_value__realized_source",
+                    "library": "consumer_crate",
+                    "contract_cid": expected_cid,
+                    "bodyDischargeEligible": false,
+                    "bodyDischargeRefusalReason": "totality-axiom"
+                }
+            ],
+        }))
+        .expect("lift_implications");
+
+        let ir = resp["ir"].as_array().expect("ir array");
+        let bridge = ir
+            .iter()
+            .find(|entry| entry["sourceSymbol"] == "to_value")
+            .expect("aliased serde_json::to_value bridge for blessed concrete type");
+        assert_eq!(bridge["targetContractCid"], expected_cid);
+        assert_eq!(bridge["callsite"]["start_line"], 7);
+        assert_eq!(bridge["callsite"]["panicSite"], false);
+
+        let _ = fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn lift_implications_disambiguates_blessed_match_bindings_from_manifest() {
+        let src = r##"
+pub enum Dialect {
+    Rust,
+}
+
+pub enum Sort {
+    Primitive,
+    Function,
+}
+
+pub enum Term {
+    Unit,
+}
+
+pub enum Input {
+    Source { dialect: Dialect, bytes: Vec<u8> },
+    Term(Term),
+}
+
+pub fn caller(input: &Input) {
+    match input {
+        Input::Source { dialect, bytes: _ } => {
+            serde_json::to_value(dialect).unwrap();
+        }
+        Input::Term(term) => {
+            serde_json::to_value(term).unwrap();
+        }
+    }
+}
+
+pub fn sort_name(sort: &Sort) {
+    match sort {
+        Sort::Primitive => {}
+        other => {
+            serde_json::to_string(other).unwrap();
+        }
+    }
+}
+"##;
+        let root = temp_workspace("lift_implications_infallible_match_bindings");
+        let src_dir = root.join("src");
+        fs::create_dir_all(&src_dir).expect("create src dir");
+        fs::write(
+            root.join("Cargo.toml"),
+            r#"
+[package]
+name = "consumer-crate"
+version = "0.1.0"
+edition = "2021"
+"#,
+        )
+        .expect("write Cargo.toml");
+        let rel = "src/lib.rs";
+        fs::write(root.join(rel), src).expect("write source");
+        write_infallible_serialize_manifest(
+            &root,
+            r#"
+[[serde_json]]
+function = "to_value"
+type_crate = "consumer_crate"
+type_name = "Dialect"
+contract = "serde_json_to_value__dialect"
+reason = "derive Serialize over serde_json-infallible fields"
+
+[[serde_json]]
+function = "to_string"
+type_crate = "consumer_crate"
+type_name = "Sort"
+contract = "serde_json_to_string__sort"
+reason = "derive Serialize over serde_json-infallible fields"
+
+[[serde_json]]
+function = "to_value"
+type_crate = "consumer_crate"
+type_name = "Term"
+contract = "serde_json_to_value__term"
+reason = "derive Serialize over serde_json-infallible fields"
+"#,
+        );
+
+        let dialect_cid = "blake3-512:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb";
+        let term_cid = "blake3-512:cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc";
+        let sort_cid = "blake3-512:dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd";
+        let resp = lift_implications(&json!({
+            "workspace_root": root.to_string_lossy(),
+            "source_paths": [rel],
+            "contract_bindings": [
+                {
+                    "name": "serde_json_to_value__dialect",
+                    "library": "consumer_crate",
+                    "contract_cid": dialect_cid,
+                    "bodyDischargeEligible": false,
+                    "bodyDischargeRefusalReason": "totality-axiom"
+                },
+                {
+                    "name": "serde_json_to_string__sort",
+                    "library": "consumer_crate",
+                    "contract_cid": sort_cid,
+                    "bodyDischargeEligible": false,
+                    "bodyDischargeRefusalReason": "totality-axiom"
+                },
+                {
+                    "name": "serde_json_to_value__term",
+                    "library": "consumer_crate",
+                    "contract_cid": term_cid,
+                    "bodyDischargeEligible": false,
+                    "bodyDischargeRefusalReason": "totality-axiom"
+                }
+            ],
+        }))
+        .expect("lift_implications");
+
+        let to_value_targets: Vec<&str> = resp["ir"]
+            .as_array()
+            .expect("ir array")
+            .iter()
+            .filter(|entry| entry["sourceSymbol"] == "to_value")
+            .filter_map(|entry| entry["targetContractCid"].as_str())
+            .collect();
+        assert_eq!(to_value_targets, vec![dialect_cid, term_cid]);
+        let to_string_targets: Vec<&str> = resp["ir"]
+            .as_array()
+            .expect("ir array")
+            .iter()
+            .filter(|entry| entry["sourceSymbol"] == "to_string")
+            .filter_map(|entry| entry["targetContractCid"].as_str())
+            .collect();
+        assert_eq!(to_string_targets, vec![sort_cid]);
+
+        let _ = fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn infallible_serialize_manifest_matches_external_type_but_emits_current_crate_contract() {
+        let src = r##"
+use dep_crate::Sort;
+
+pub fn sort_name(sort: &Sort) {
+    match sort {
+        other => {
+            serde_json::to_string(other).unwrap();
+        }
+    }
+}
+"##;
+        let root = temp_workspace("infallible_serialize_external_type");
+        let src_dir = root.join("src");
+        fs::create_dir_all(&src_dir).expect("create src dir");
+        fs::write(
+            root.join("Cargo.toml"),
+            r#"
+[package]
+name = "consumer-crate"
+version = "0.1.0"
+edition = "2021"
+"#,
+        )
+        .expect("write Cargo.toml");
+        let rel = "src/lib.rs";
+        fs::write(root.join(rel), src).expect("write source");
+        write_infallible_serialize_manifest(
+            &root,
+            r#"
+[[serde_json]]
+function = "to_string"
+type_crate = "dep_crate"
+type_name = "Sort"
+contract = "serde_json_to_string__dep_sort"
+reason = "project-local totality axiom for dependency Sort serialization"
+"#,
+        );
+
+        let producer = function_contract_lift(&json!({
+            "workspace_root": root.to_string_lossy(),
+            "source_paths": [rel]
+        }))
+        .expect("function contract lift accepts external type match identity");
+        let entries = producer["ir"].as_array().expect("producer ir array");
+        let contract = entries
+            .iter()
+            .find(|entry| entry["name"] == "serde_json_to_string__dep_sort")
+            .expect("synthetic external-type totality contract");
+        assert_eq!(contract["library"], "consumer_crate");
+        assert_eq!(contract["bodyDischargeEligible"], false);
+        assert_eq!(contract["bodyDischargeRefusalReason"], "totality-axiom");
+
+        let sort_cid = "blake3-512:eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee";
+        let consumer = lift_implications(&json!({
+            "workspace_root": root.to_string_lossy(),
+            "source_paths": [rel],
+            "contract_bindings": [
+                {
+                    "name": "serde_json_to_string__dep_sort",
+                    "library": "consumer_crate",
+                    "contract_cid": sort_cid,
+                    "bodyDischargeEligible": false,
+                    "bodyDischargeRefusalReason": "totality-axiom"
+                }
+            ],
+        }))
+        .expect("lift implications");
+        let bridge = consumer["ir"]
+            .as_array()
+            .expect("consumer ir array")
+            .iter()
+            .find(|entry| entry["sourceSymbol"] == "to_string")
+            .expect("serde_json::to_string bridge for external type identity");
+        assert_eq!(bridge["targetContractCid"], sort_cid);
+
+        let _ = fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn lift_implications_disambiguates_explicit_local_json_value_to_string() {
+        let src = r##"
+use serde_json::{json, Value};
+
+pub fn dispatch() {
+    let req: Value = json!({
+        "jsonrpc": "2.0",
+        "id": 1,
+        "method": "provekit.plugin.invoke",
+    });
+    serde_json::to_string(&req).expect("serialize request");
+}
+"##;
+        let root = temp_workspace("lift_implications_explicit_local_json_value_to_string");
+        let src_dir = root.join("src");
+        fs::create_dir_all(&src_dir).expect("create src dir");
+        fs::write(
+            root.join("Cargo.toml"),
+            r#"
+[package]
+name = "consumer-crate"
+version = "0.1.0"
+edition = "2021"
+"#,
+        )
+        .expect("write Cargo.toml");
+        let rel = "src/lib.rs";
+        fs::write(root.join(rel), src).expect("write source");
+
+        let value_cid = "blake3-512:ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff";
+        let resp = lift_implications(&json!({
+            "workspace_root": root.to_string_lossy(),
+            "source_paths": [rel],
+            "contract_bindings": [
+                {
+                    "name": "serde_json_to_string_value",
+                    "library": "serde_json",
+                    "contract_cid": value_cid,
+                    "bodyDischargeEligible": false,
+                    "bodyDischargeRefusalReason": "totality-axiom"
+                }
+            ],
+        }))
+        .expect("lift implications");
+
+        let bridge = resp["ir"]
+            .as_array()
+            .expect("consumer ir array")
+            .iter()
+            .find(|entry| entry["sourceSymbol"] == "to_string")
+            .expect("serde_json::to_string bridge for explicit local Value");
+        assert_eq!(bridge["targetContractCid"], value_cid);
+
+        let _ = fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn lift_implications_refuses_unregistered_concrete_and_generic_bound_manifest_hits() {
+        let src = r##"
+pub struct RealizedSource;
+pub struct Unregistered;
+
+pub fn unregistered(value: &Unregistered) {
+    serde_json::to_value(value).unwrap();
+}
+
+pub fn generic<T: serde::Serialize>(value: &T) {
+    serde_json::to_value(value).unwrap();
+}
+
+pub fn wrong_method(value: &RealizedSource) {
+    value.to_string();
+}
+"##;
+        let root = temp_workspace("lift_implications_infallible_refuse_floor");
+        let src_dir = root.join("src");
+        fs::create_dir_all(&src_dir).expect("create src dir");
+        fs::write(
+            root.join("Cargo.toml"),
+            r#"
+[package]
+name = "consumer-crate"
+version = "0.1.0"
+edition = "2021"
+"#,
+        )
+        .expect("write Cargo.toml");
+        let rel = "src/lib.rs";
+        fs::write(root.join(rel), src).expect("write source");
+        write_infallible_serialize_manifest(
+            &root,
+            r#"
+[[serde_json]]
+function = "to_value"
+type_crate = "consumer_crate"
+type_name = "RealizedSource"
+contract = "serde_json_to_value__realized_source"
+reason = "derive Serialize over serde_json-infallible fields"
+"#,
+        );
+
+        let forbidden_cid = "blake3-512:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa";
+        let resp = lift_implications(&json!({
+            "workspace_root": root.to_string_lossy(),
+            "source_paths": [rel],
+            "contract_bindings": [
+                {
+                    "name": "serde_json_to_value__realized_source",
+                    "library": "consumer_crate",
+                    "contract_cid": forbidden_cid,
+                    "bodyDischargeEligible": false,
+                    "bodyDischargeRefusalReason": "totality-axiom"
+                }
+            ],
+        }))
+        .expect("lift_implications");
+
+        let ir = resp["ir"].as_array().expect("ir array");
+        assert!(
+            !ir.iter()
+                .any(|entry| entry["targetContractCid"] == forbidden_cid),
+            "unregistered concrete and generic-bound receivers must not borrow the blessed type's totality contract: {ir:?}"
+        );
+        let gaps: Vec<&Value> = resp["diagnostics"]
+            .as_array()
+            .expect("diagnostics array")
+            .iter()
+            .filter(|entry| {
+                entry["kind"] == "lift-gap"
+                    && entry["reason"] == "no-contract-for-callee"
+                    && entry["callee"] == "to_value"
+            })
+            .collect();
+        assert_eq!(
+            gaps.len(),
+            2,
+            "both refused to_value calls should stay as honest no-contract gaps: {gaps:?}"
+        );
 
         let _ = fs::remove_dir_all(root);
     }

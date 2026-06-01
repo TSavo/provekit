@@ -1290,7 +1290,7 @@ fn invoke_realize(
         .map_err(|e| format!("spawn realize kit: {e}"))?;
 
     let params = realize_request_params(request);
-    let req = json!({
+    let req: Value = json!({
         "jsonrpc": "2.0",
         "id": 1,
         "method": "provekit.plugin.invoke",
@@ -2115,7 +2115,7 @@ pub fn dispatch_assemble(
     }
     params.insert("fragments".to_string(), fragments_value);
 
-    let req = json!({
+    let req: Value = json!({
         "jsonrpc": "2.0",
         "id": 1,
         "method": "provekit.plugin.assemble",
