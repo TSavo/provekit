@@ -1,0 +1,21 @@
+# Stage 4 fixture for split-line serde_json Value totality discharge.
+#
+# Discrimination test:
+#   f/f_split/f_spanning(&serde_json::Value) -> PANIC-SAFE
+#   g/g_split/h_adjacent_cross_talk(&MyStruct) -> UNDECIDABLE
+#
+# Own [workspace] for RA isolation (fast index, no monorepo stall).
+[package]
+name = "stage4-serde-multiline-totality-fixture"
+version = "0.0.0"
+edition = "2021"
+publish = false
+
+[workspace]
+
+[dependencies]
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+
+[lib]
+path = "src/lib.rs"

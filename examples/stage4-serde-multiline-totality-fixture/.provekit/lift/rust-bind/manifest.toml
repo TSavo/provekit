@@ -1,0 +1,3 @@
+name = "rust-bind-lift"
+command = ["../../implementations/rust/target/debug/provekit-walk-rpc", "--rpc"]
+working_dir = "."
