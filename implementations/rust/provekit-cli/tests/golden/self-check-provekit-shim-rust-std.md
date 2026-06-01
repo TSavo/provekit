@@ -73,6 +73,14 @@ honest reflexive discharge through the dependency import chain. The shim target
 `is_some`/`is_none` tokens. Hard invariants unchanged: `falsePass 0`,
 `silentlyDropped 0`, `droppedSites []`; `panicSafe` remains 5.
 
+Regenerated 2026-06-01: `reflexive 630 -> 631`. The leaf-method alias-read
+slice adds `normalize_leaf_method_name` to `libprovekit`; as the third Path A
+helper, it contributes one honest reflexive discharge through the dependency
+import chain. The shim target `catalogCid` stays `d1c2f286...`; writer output
+remains on the v1 `method:unwrap`/`method:expect`/`method:unwrap_err` tokens.
+Hard invariants unchanged: `falsePass 0`, `silentlyDropped 0`,
+`droppedSites []`; `panicSafe` remains 5.
+
 ## Normalization applied
 
 None. The output is byte-stable and path-independent without normalization:
