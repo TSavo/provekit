@@ -522,6 +522,7 @@ fn run_pass(source_root: &Path, pass_id: u32, read_concept_comments: bool) -> Pa
                 formal_sorts: Vec::new(),
                 emit_empty_formals: false,
                 library: None,
+                panic_loci: Vec::new(),
             };
             match mint_contract(&mint_args) {
                 Ok(env) => {

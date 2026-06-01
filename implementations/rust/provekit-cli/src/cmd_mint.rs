@@ -1727,6 +1727,18 @@ fn mint_ir_document(
             .and_then(|v| v.as_array())
             .map(|arr| arr.iter().map(json_to_cvalue).collect())
             .unwrap_or_default();
+        // PANIC-LOCUS PRESERVATION (#1745): the lifter stamps each panic-leaf
+        // call's `{argTerm, file, line, col, callee}` on the function-contract
+        // decl (walk_rpc `collect_panic_loci`). Carry them through verbatim so
+        // the contract memento's header bears them and the verifier can
+        // attribute each `method:unwrap` obligation to its own source line.
+        // Carried as opaque provenance: the CLI does not interpret the terms.
+        let panic_loci: Vec<std::sync::Arc<provekit_canonicalizer::Value>> = decl
+            .get("panicLoci")
+            .or_else(|| decl.get("panic_loci"))
+            .and_then(|v| v.as_array())
+            .map(|arr| arr.iter().map(json_to_cvalue).collect())
+            .unwrap_or_default();
         let body_discharge_eligible = decl
             .get("bodyDischargeEligible")
             .or_else(|| decl.get("body_discharge_eligible"))
@@ -1825,6 +1837,7 @@ fn mint_ir_document(
             emit_empty_formals,
             formal_sorts,
             library: library.clone(),
+            panic_loci,
         };
 
         let ccid = contract_cid(&args);

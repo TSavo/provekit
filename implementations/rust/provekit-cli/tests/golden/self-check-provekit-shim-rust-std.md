@@ -14,6 +14,22 @@ rust-analyzer daemon, no wall-clock, no absolute paths.
 - `panicCensus`: 4 sites, all `src/lib.rs`, all `unproven`; the reason line is the verifier's refuse-floor message
 - `catalogCid` is a content hash of the lifted contracts; it is path-independent (verified 2026-05-31 across two checkout paths)
 
+## Regenerated 2026-06-01 (panic-locus branch)
+
+> `reflexive 629 -> 656` / `undecidable 1303 -> 1276`: the locus-branch lift
+> disambiguation (type-driven `serde_json::to_string::<Value>` -> distinct ctor,
+> plus `panic_loci` provenance threading) supplies body-derived contracts for 27
+> more sites, clustered in the CID/serialization functions (`term_cid`, `cid`,
+> `canonical_bytes`, ...). `wp` reduces each via the real body (ground truth, not
+> the post-as-axiom), so undecidable -> reflexive is a sound CLOSING, not a
+> masking. `catalogCid` changed for the same reason (lifted-contract content
+> changed). `+4 unsupported-macro-callsite` liftGaps are previously untracked
+> gaps now surfaced honestly (the no-silent-failure system), NOT drops:
+> `silentlyDropped` stays 0. Hard invariants unchanged: `falsePass 0`,
+> `panicSafe 0`, `silentlyDropped 0`; `panicCensus` still the same 4 unproven
+> sites. (No oracle here, so the serde panic-safe discharge does not appear; it
+> is exercised by the warm-oracle e2e on stage3-serde-totality-fixture.)
+
 ## Normalization applied
 
 None. The output is byte-stable and path-independent without normalization:

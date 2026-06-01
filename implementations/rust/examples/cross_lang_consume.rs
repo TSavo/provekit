@@ -130,6 +130,7 @@ fn run() -> Result<(), String> {
             emit_empty_formals: false,
             formal_sorts: Vec::new(),
             library: None,
+            panic_loci: Vec::new(),
             contract_name: d.name.clone(),
             pre: d.pre.as_deref().map(formula_to_value),
             post: d.post.as_deref().map(formula_to_value),

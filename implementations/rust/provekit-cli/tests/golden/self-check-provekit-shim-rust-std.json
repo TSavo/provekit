@@ -1,6 +1,6 @@
 {
   "target": "examples/provekit-shim-rust-std",
-  "catalogCid": "blake3-512:16007b7d49b85a3821ab1e4ddf1a755b546105163eb8ecbba5f4dc77317f579462de812f923b414acc106aa4d7754b6a7055cb3baad066a1aad3ef2770f50da5",
+  "catalogCid": "blake3-512:0f92781a6ffce991d168d5fbc1798a89eeb52159ffbf23949a04f087799a59163bed11b6db0c0635ecc06975bb128200dff54f99b886b47a26f03af333b45b9c",
   "lift": {
     "fnContracts": 27,
     "bodyDischargeEligible": 27,
@@ -10,7 +10,8 @@
     "emitted": 0,
     "liftGaps": {
       "no-contract-for-callee": 23,
-      "panic-site-unproven": 4
+      "panic-site-unproven": 4,
+      "unsupported-macro-callsite": 4
     }
   },
   "oracle": {
@@ -23,9 +24,9 @@
   "droppedSites": [],
   "dischargeSplit": {
     "panicSafe": 0,
-    "reflexive": 629,
+    "reflexive": 656,
     "vacuous": 0,
-    "undecidable": 1303,
+    "undecidable": 1276,
     "falsePass": 0
   },
   "panicCensus": [

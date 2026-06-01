@@ -1285,7 +1285,34 @@ fn work_one(
 
     let consumer_pre = resolved.ir_formula.as_ref();
     let consumer_pre_hash = consumer_pre.map(formula_hash);
-    let producer_post = locate_producer_post(&cs.arg_term, &pool.mementos, &pool.bridges_by_symbol);
+    // Producer-post resolution governs the IMPLICATION composition path only
+    // (Tier 0c/1/2 and the Tier-3 `post -> pre` form). For a PANIC site that
+    // path is never the sound one: the unwrap pre is `is_ok(receiver)` and the
+    // only producer post that could entail it is the callee totality `is_ok`,
+    // so the implication degenerates to the reflexive `is_ok(X) -> is_ok(X)`
+    // tautology. z3 discharges it WITHOUT using the totality axiom, and the
+    // refuse-floor (report_fmt) correctly flags any non-`panic-safe` discharge
+    // of a panic site as a false pass. So a panic site resolves NO producer
+    // post here; it falls through to the guard branch (the `else` below), where
+    // `callee_post_guard_fact` supplies `is_ok(arg)` ONLY when the receiver's
+    // co-located (callsite-scoped via `bridges_by_callsite`) target contract
+    // carries the exact `is_ok(result)` totality singleton (body_discharge.rs).
+    // That is the single floor-sanctioned panic-safe path: f@25 (Value totality)
+    // discharges panic-safe; g@38 (MyStruct, no totality) gets None -> stays
+    // undecidable. Non-panic sites keep the per-symbol implication path
+    // byte-for-byte.
+    //
+    // ASSUMPTION (name it, do not bury it): no panic site benefits from a
+    // SUBSTANTIVE (non-reflexive) implication composition. True for the current
+    // unwrap/expect + is_ok scope. A future bounds-check tier wanting
+    // `len > idx |- idx < len` for an index panic would need to revisit this
+    // blanket null and route such sites to a substantive (still floor-audited)
+    // discharge rather than the guard-fact path.
+    let producer_post = if cs.panic_site {
+        None
+    } else {
+        locate_producer_post(&cs.arg_term, &pool.mementos, &pool.bridges_by_symbol)
+    };
 
     // Tier 0: Memento IS verification. Look up the formula CID in the pool.
     // The hash IS the boundary: we verify by hash lookup, not by solving.

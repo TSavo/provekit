@@ -306,6 +306,35 @@ fn load_catalog_bytes(
                     // `.proof`'s content CID (the bundle CID).
                     pool.bridge_self_bundle_by_symbol
                         .insert(sym.to_string(), derived_full.clone());
+                    // Callsite-scoped index. A bridge whose body carries a
+                    // `callsite` with file + line is the producer guarantee for
+                    // a SPECIFIC call (not just the symbol). Keying it by
+                    // `(bundle, file, line, symbol)` lets a panic obligation
+                    // whose arg is itself a call select the producer post that
+                    // governs THAT call, rather than whichever same-symbol
+                    // bridge won the per-symbol slot. Bundle scoping is required
+                    // for soundness: relative paths (`src/lib.rs`) collide
+                    // across crates. First-writer wins per full key.
+                    if let Some(body) = crate::types::memento_body(&env) {
+                        let cs = body.get("callsite");
+                        let file = cs
+                            .and_then(|v| v.get("file"))
+                            .and_then(|v| v.as_str())
+                            .filter(|s| !s.is_empty());
+                        let line = cs
+                            .and_then(|v| v.get("start_line").or_else(|| v.get("line")))
+                            .and_then(|v| v.as_u64())
+                            .map(|n| n as usize);
+                        if let (Some(file), Some(line)) = (file, line) {
+                            let key = (
+                                derived_full.clone(),
+                                file.to_string(),
+                                line,
+                                sym.to_string(),
+                            );
+                            pool.bridges_by_callsite.entry(key).or_insert_with(|| env.clone());
+                        }
+                    }
                 }
             }
         }
