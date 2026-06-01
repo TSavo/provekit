@@ -10,6 +10,7 @@ rust-analyzer daemon, no wall-clock, no absolute paths.
 
 - `silentlyDropped: 0` -- hard invariant, must stay zero
 - `falsePass: 0` -- hard invariant, must stay zero
+- `totalCallsites: 1826` -- release-gate floor evidence, must stay nonzero
 - `panicSafe: 5` -- five rust-std shim panic sites discharge through real proof obligations
 - `panicCensus`: 30 sites, 5 `proven` and 25 `unproven`; unproven rows keep the verifier's refuse-floor reason
 - `catalogCid` is a content hash of the lifted contracts; it is path-independent (verified 2026-05-31 across two checkout paths)
@@ -51,6 +52,10 @@ runtime hook. The no-oracle scoreboard now records real bridge/prove effects:
 `panicCensus 5 -> 30` (`5 proven`, `25 unproven`), and the legacy
 `panic-site-unproven` liftGap key disappears from the production scoreboard.
 Hard invariants unchanged: `falsePass 0`, `silentlyDropped 0`, `droppedSites []`.
+
+Regenerated 2026-06-01: added top-level `totalCallsites 1826` for release-gate
+floor verification. This is a backward-compatible scoreboard schema expansion;
+hard invariants and proof counts are unchanged.
 
 ## Normalization applied
 

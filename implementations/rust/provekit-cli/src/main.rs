@@ -34,6 +34,7 @@ mod cmd_plugin;
 mod cmd_protocol;
 mod cmd_prove;
 mod cmd_recognize;
+mod cmd_release_gate;
 mod cmd_self_check;
 mod cmd_verify;
 mod cmd_verify_protocol;
@@ -153,6 +154,8 @@ enum Cmd {
     /// empty-set attestation. Exit 0 on pass (warnings allowed), exit 2 on any
     /// hard failure (invalid TOML or missing/non-executable binary).
     Doctor(cmd_doctor::DoctorArgs),
+    /// Run the v1 release health gate and emit a release evidence receipt.
+    ReleaseGate(cmd_release_gate::ReleaseGateArgs),
 }
 
 #[derive(Parser, Debug, Clone)]
@@ -322,6 +325,7 @@ fn main() -> ExitCode {
         Cmd::Bind(a) => cmd_bind::run(a),
         Cmd::Materialize(a) => cmd_materialize::run(a),
         Cmd::Doctor(a) => cmd_doctor::run(a),
+        Cmd::ReleaseGate(a) => cmd_release_gate::run(a),
     };
     ExitCode::from(code)
 }

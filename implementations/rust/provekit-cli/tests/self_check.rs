@@ -80,6 +80,10 @@ fn self_check_on_rust_std_shim_emits_scoreboard_shape_and_hard_invariants() {
     assert_eq!(scoreboard["oracle"]["attempted"], 0);
     assert_eq!(scoreboard["oracle"]["resolved"], 0);
     assert_eq!(scoreboard["silentlyDropped"], 0);
+    assert!(
+        scoreboard["totalCallsites"].as_u64().unwrap_or(0) > 0,
+        "totalCallsites is release-gate floor evidence"
+    );
     assert_eq!(scoreboard["dischargeSplit"]["falsePass"], 0);
     assert!(scoreboard["dischargeSplit"]["panicSafe"].is_u64());
     assert!(scoreboard["dischargeSplit"]["reflexive"].is_u64());
