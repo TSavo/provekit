@@ -6,6 +6,7 @@
 //
 // Mirrors implementations/cpp/.../verifier/enumerate_callsites.cpp.
 
+use libprovekit::concept::panic_freedom;
 use serde_json::Value as Json;
 use tracing::{debug, info, warn};
 
@@ -620,7 +621,7 @@ fn walk_term(
     //     under it. A branch the kit did not wrap (unrecognized guard) carries
     //     no `cf_guarded`, so a partial inside it stays honestly undecidable.
     //   * any other ctor: descends args with the path condition unchanged.
-    if name == "cf_guarded" {
+    if name == panic_freedom::CF_GUARDED {
         if let Some(args) = t.get("args").and_then(|v| v.as_array()) {
             let guard = args.first();
             let value = args.get(1);

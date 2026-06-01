@@ -1239,6 +1239,7 @@ mod callee_post_guard_fact_tests {
     //!   - a `var` arg_term (not a call) does NOT yield a fact (structural).
     use super::*;
     use crate::types::{CallSite, MementoPool};
+    use libprovekit::concept::panic_freedom;
     use serde_json::json;
 
     // CIDs for hand-built contracts in these tests.
@@ -1289,11 +1290,15 @@ mod callee_post_guard_fact_tests {
     ///   - a contract with `post = is_ok(result)` (the Value-totality contract)
     ///   - a bridge from BRIDGE_SYMBOL to that contract
     fn totality_pool() -> MementoPool {
-        singleton_totality_pool(BRIDGE_SYMBOL, TOTAL_CONTRACT_CID, "is_ok")
+        singleton_totality_pool(BRIDGE_SYMBOL, TOTAL_CONTRACT_CID, panic_freedom::IS_OK)
     }
 
     fn option_totality_pool() -> MementoPool {
-        singleton_totality_pool(OPTION_BRIDGE_SYMBOL, OPTION_TOTAL_CONTRACT_CID, "is_some")
+        singleton_totality_pool(
+            OPTION_BRIDGE_SYMBOL,
+            OPTION_TOTAL_CONTRACT_CID,
+            panic_freedom::IS_SOME,
+        )
     }
 
     /// A pool with a GENERIC (non-total) Result contract: post = is_ok || is_err.
@@ -1305,9 +1310,9 @@ mod callee_post_guard_fact_tests {
                     "post": {
                         "kind": "or",
                         "operands": [
-                            {"kind": "atomic", "name": "is_ok",
+                            {"kind": "atomic", "name": panic_freedom::IS_OK,
                              "args": [{"kind": "var", "name": "result"}]},
-                            {"kind": "atomic", "name": "is_err",
+                            {"kind": "atomic", "name": panic_freedom::IS_ERR,
                              "args": [{"kind": "var", "name": "result"}]}
                         ]
                     }
@@ -1374,7 +1379,7 @@ mod callee_post_guard_fact_tests {
         );
         assert_eq!(
             fact.get("name").and_then(|v| v.as_str()),
-            Some("is_ok"),
+            Some(panic_freedom::IS_OK),
             "the supplied fact must be is_ok"
         );
         // The arg of is_ok(.) is the whole ctor expression.
@@ -1412,7 +1417,7 @@ mod callee_post_guard_fact_tests {
         );
         assert_eq!(
             fact.get("name").and_then(|v| v.as_str()),
-            Some("is_some"),
+            Some(panic_freedom::IS_SOME),
             "the supplied fact must preserve the opaque singleton predicate name"
         );
         let fact_args = fact.get("args").and_then(|v| v.as_array()).unwrap();
@@ -1534,7 +1539,10 @@ mod callee_post_guard_fact_tests {
 
         let fact = callee_post_guard_fact(&cs, &pool)
             .expect("panic site must find producer in the caller contract bundle");
-        assert_eq!(fact.get("name").and_then(|v| v.as_str()), Some("is_ok"));
+        assert_eq!(
+            fact.get("name").and_then(|v| v.as_str()),
+            Some(panic_freedom::IS_OK)
+        );
     }
 
     #[test]
@@ -1582,7 +1590,10 @@ mod callee_post_guard_fact_tests {
 
         let fact = callee_post_guard_fact(&cs, &pool)
             .expect("split-line panic site must use producer coordinates");
-        assert_eq!(fact.get("name").and_then(|v| v.as_str()), Some("is_some"));
+        assert_eq!(
+            fact.get("name").and_then(|v| v.as_str()),
+            Some(panic_freedom::IS_SOME)
+        );
 
         let missing_producer_line = CallSite {
             producer_file: None,
