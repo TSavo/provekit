@@ -9,8 +9,14 @@
 /// Substrate panic-freedom result-ok predicate; see `SUBSTRATE-SHAPE-AUDIT.md`.
 pub const IS_OK: &str = "is_ok";
 
+/// Substrate panic-freedom result-ok predicate alias; see `SUBSTRATE-SHAPE-AUDIT.md`.
+pub const IS_OK_CONCEPT: &str = "concept:panic-freedom.result.ok";
+
 /// Substrate panic-freedom result-err predicate; see `SUBSTRATE-SHAPE-AUDIT.md`.
 pub const IS_ERR: &str = "is_err";
+
+/// Substrate panic-freedom result-err predicate alias; see `SUBSTRATE-SHAPE-AUDIT.md`.
+pub const IS_ERR_CONCEPT: &str = "concept:panic-freedom.result.err";
 
 /// Substrate panic-freedom option-some predicate; see `SUBSTRATE-SHAPE-AUDIT.md`.
 pub const IS_SOME: &str = "is_some";
@@ -38,3 +44,15 @@ pub const METHOD_EXPECT: &str = "method:expect";
 
 /// Substrate panic-freedom unwrap-err leaf; see `SUBSTRATE-SHAPE-AUDIT.md`.
 pub const METHOD_UNWRAP_ERR: &str = "method:unwrap_err";
+
+/// Normalize result predicate aliases to the Rust v1 wire token.
+///
+/// Phase 4 readers accept the concept aliases without changing default Rust v1
+/// proof emission. Unknown predicate names stay opaque.
+pub fn normalize_result_predicate_name(name: &str) -> &str {
+    match name {
+        IS_OK | IS_OK_CONCEPT => IS_OK,
+        IS_ERR | IS_ERR_CONCEPT => IS_ERR,
+        _ => name,
+    }
+}

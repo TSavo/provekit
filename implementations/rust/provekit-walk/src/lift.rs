@@ -424,7 +424,13 @@ fn lift_tail_if_to_ite_term(if_expr: &ExprIf, ctx: &mut LiftCtx) -> Option<IrTer
 /// condition head and emit the bare predicate name. The verifier never sees
 /// this normalization -- it only threads the resolved bare atom.
 fn branch_guard_head(cond_head: &str, else_branch: bool) -> Option<&'static str> {
-    let head = cond_head.strip_prefix("method:").unwrap_or(cond_head);
+    let method_head = cond_head.strip_prefix("method:");
+    let head = method_head.unwrap_or(cond_head);
+    let head = if method_head.is_some() {
+        head
+    } else {
+        panic_freedom::normalize_result_predicate_name(head)
+    };
     match (head, else_branch) {
         (panic_freedom::IS_SOME, false) | (panic_freedom::IS_NONE, true) => {
             Some(panic_freedom::IS_SOME)
@@ -2621,6 +2627,50 @@ mod tests {
     }
 
     #[test]
+    fn branch_guard_head_accepts_result_concept_aliases_as_read_only_inputs() {
+        assert_eq!(
+            branch_guard_head(panic_freedom::IS_OK_CONCEPT, false),
+            Some(panic_freedom::IS_OK)
+        );
+        assert_eq!(
+            branch_guard_head(panic_freedom::IS_OK_CONCEPT, true),
+            Some(panic_freedom::IS_ERR)
+        );
+        assert_eq!(
+            branch_guard_head(panic_freedom::IS_ERR_CONCEPT, false),
+            Some(panic_freedom::IS_ERR)
+        );
+        assert_eq!(
+            branch_guard_head(panic_freedom::IS_ERR_CONCEPT, true),
+            Some(panic_freedom::IS_OK)
+        );
+    }
+
+    #[test]
+    fn branch_guard_head_result_concept_aliases_are_exact() {
+        assert_eq!(
+            branch_guard_head("concept:panic-freedom.result.OK", false),
+            None
+        );
+        assert_eq!(
+            branch_guard_head("concept:panic-freedom.result.ok ", false),
+            None
+        );
+        assert_eq!(
+            branch_guard_head(" concept:panic-freedom.result.ok", false),
+            None
+        );
+        assert_eq!(
+            branch_guard_head("concept:panic-freedom.result.error", false),
+            None
+        );
+        assert_eq!(
+            branch_guard_head("method:concept:panic-freedom.result.ok", false),
+            None
+        );
+    }
+
+    #[test]
     fn branch_guard_head_refuses_unrecognized_and_negated_is_empty() {
         // `!is_empty` establishes no partial's pre -> no guard.
         assert_eq!(branch_guard_head("is_empty", true), None);
@@ -2785,6 +2835,10 @@ mod tests {
             json.contains("is_ok"),
             "guard must carry the result precondition: {json}"
         );
+        assert!(
+            !json.contains(panic_freedom::IS_OK_CONCEPT),
+            "Rust v1 writer must keep emitting the old result predicate token: {json}"
+        );
     }
 
     #[test]
@@ -2806,6 +2860,10 @@ mod tests {
         assert!(
             json.contains("is_ok"),
             "guard must carry the result precondition: {json}"
+        );
+        assert!(
+            !json.contains(panic_freedom::IS_OK_CONCEPT),
+            "Rust v1 writer must keep emitting the old result predicate token: {json}"
         );
     }
 
