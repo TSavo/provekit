@@ -12,7 +12,9 @@ honest verdict about correctness properties, starting with panic-freedom (which
 `unwrap`/index/`expect` sites cannot panic, which are unproven, and WHY). The
 proof that it is real and not a demo is that it proves ITSELF: run on provekit's
 own production crates (`provekit-cli`, `libprovekit`) it produces a substantive,
-honest scoreboard with ZERO silent drops and ZERO false "cannot panic".
+honest scoreboard with ZERO silent drops and ZERO false "cannot panic". Once
+that holds in Rust, the same substrate proves it in Python - that is the
+architectural thesis at v2.
 
 "Fully working" =
 1. **Sound and honest.** Every call site is enumerated, categorized, and either
@@ -28,78 +30,70 @@ honest scoreboard with ZERO silent drops and ZERO false "cannot panic".
    regressions scream with a readable diff.
 4. **Self-describing.** The wiring is executable knowledge (`doctor` + the
    runbook), not tribal knowledge or stale prose.
+5. **Cross-language at v2.** The same substrate proves Python; the second
+   language is cheaper than the first.
 
-## Where we are (2026-05-31, honest)
+## Where we are (2026-06-01)
 
-- UPDATE (2026-05-31 night): Phase 0 + Phase 1 are DONE; only substantive K remains.
-  - Phase 0 product surfaces all on main: `self-check --json`; `provekit doctor`
-    HARD-fails (exit 2) on the manifest method/phase omission footgun, language-blind
-    via plugin-self-declared `consumer_surfaces` (#1742); golden snapshot wired into
-    CI (`provekit-cli/tests/self_check_golden.rs` runs under `make test-all` ->
-    conformance, pins scoreboard + panicCensus + droppedSites with a readable line
-    diff). No-silent-failure scaffolding: plugin subprocess stderr inherits by default
-    (was the `Stdio::null` that hid a load-bearing bug from five investigations), a
-    counted `warn!` when a method-seam bridge reaches the verifier without callsite
-    provenance, tracing not eprintln.
-  - Phase 1: #1717 is CLOSED (opaque-sorted `forall` encoded soundly by the smt-lib
-    compiler; detector `forall x:opaque. false` is undecidable, not collapsed to true).
-  - The five-agent serde blocker is FIXED (#1742): stage3-serde-totality-fixture's
-    rust-implications manifest was missing `method = lift_implications` + `phase =
-    consumer`, so mint ran the default producer `lift` and the RA-oracle host method
-    never fired. `doctor` now guards against this whole class.
-  - Phase 2 K (serde D-lib) ROOT CAUSE LOCATED + dispatched to an Opus agent (branch
-    `fix/locate-producer-post-totality`): `locate_producer_post` returns the to_string
-    BODY-EQ contract (`=(result, to_string(value))`) instead of the
-    serde_json_to_string_value TOTALITY (`is_ok(result)`), so the panic implication is
-    `(_h0 = to_string(value)) -> is_ok(_h0)` = unsat instead of the reflexive
-    `is_ok(_h0) -> is_ok(_h0)`. Hard gate on the fix: f (src/lib.rs:25) -> panicSafe,
-    g (:38) -> undecidable, falsePass=0, silentlyDropped=0, verifier suite green.
-  - K (panicSafe) still 0, honestly; both hard invariants HELD throughout.
-  Full arc: docs/self-application/serde-panic-freedom-diagnosis.md.
-- Honesty layer on main (#1716): 291/311 body-discharge-eligible (was 1/310),
-  0 silently dropped (was 549), reflexive discharges LABELED (never sold as
-  proof). The old "211 real-solver" was the pre-gate spine rubber-stamping
-  tautologies; that fool's gold is gone.
-- Sound panic-freedom on main (#1718): a guarded `x.unwrap()` discharges
-  panic-safe, an unguarded one stays undecidable (deterministic test
-  `cmd_verify::tests::guarded_panic_safe_unguarded_undecidable`). The verifier is
-  LANGUAGE-BLIND; the rule is generic: "target carries a non-trivial pre ->
-  discharge it under the call-site guard facts."
-- On provekit-cli itself (2026-05-31, full oracle-engaged `self-check` run, warm
-  `provekit-linkerd` daemon): **K (panicSafe) = 0**, **silentlyDropped = 0**,
-  **falsePass = 0** (both hard invariants HELD). K=0 is HONEST: provekit-cli has
-  ZERO syntactically-guarded panic sites, so the oracle disambiguates each leaf
-  but cannot manufacture a guard. The oracle MATERIALLY improved the census vs
-  the syntactic-only run (catalog `be345b4d` -> `ec72ab4d`):
-  panic-site-unproven 26 -> 12, bridges emitted 1276 -> 2108, no-contract-for-callee
-  4043 -> 3225, undecidable 1948 -> 2160. The 12 residue are all `.expect()`,
-  9 of them `kit_dispatch.rs` Mutex `lock().expect()` (renders `LockResult`, a
-  `Result` alias) = genuine POISONING RESIDUE ("lock is total" would be unsound).
-- PRODUCT-PATH WIRING (operational, not yet a one-command surface): the mint
-  lifter resolves via a RESIDENT `provekit-linkerd` daemon, not a cold per-mint
-  RA. A cold mint finishes before the daemon's ~52s index, so queries refuse and
-  the census is syntactic-only. The oracle-engaged census requires the daemon
-  PRE-WARMED (`PROVEKIT_LINKERD_BIN` set, one warm-up mint, then `self-check`
-  within the 5-min idle window). Folding this warm-up into `self-check`/`doctor`
-  (so `--oracle` guarantees a warm daemon or loudly says it could not) is the
-  remaining Phase-0 wiring.
-- Known debt: #1717 (SMT emitter collapses an opaque-sorted `forall` to literal
-  `true` on the negated path = latent false-pass; the panic path routes around
-  it). name-in-CID preimage (contradicts names-are-sugar).
-- RESOLVED (2026-05-31): the "monorepo rust-analyzer never quiesces" stall was
-  NOT a distinct infra bug needing a warm-index daemon. It was a SILENT failure:
-  rust-analyzer shells out `cargo metadata`, and when the ambient cargo is a
-  different vintage than the RA binary that call fails on a flag mismatch (e.g.
-  `--lockfile-path`); RA then resolves NOTHING yet reports `quiescent=true,
-  health=warning` -- a K=0 census that looks honest but is a broken oracle.
-  `ra_oracle` now pins RA's `CARGO`/`RUSTUP_TOOLCHAIN` to the toolchain the RA
-  binary lives in. With the pin, RA indexes the FULL provekit-cli workspace and
-  quiesces `health=ok` in ~52s, resolving real cli method receivers via hover
-  (`serde_json::to_string_pretty(&report).unwrap()` -> `core::result::Result` ->
-  stem `result`). Validated by `provekit-walk`'s `hover_probe` bin against
-  `examples/oracle-hover-fixture` AND against provekit-cli itself. The cli-K
-  FOUNDATION (resolution + leaf disambiguation) is unblocked; the remaining lever
-  to raise K is the Phase 2 reasoning tiers, not infra.
+### Phase 0 - SCAFFOLDING - DONE
+
+- `self-check --json` on production crates: shipped.
+- Golden snapshot in CI: shipped (`provekit-cli/tests/self_check_golden.rs`
+  under conformance gate; readable diff on regression).
+- `provekit doctor` HARD-fails (exit 2) on the manifest method/phase footgun
+  (#1742); language-blind via plugin-self-declared `consumer_surfaces`.
+- No-silent-failure floor PRs (recent arc):
+  - **#1747** panic-locus preservation + guard-branch routing (the mechanism
+    for sound panic-safe discharge: callsite-scoped producer-post resolution,
+    content-gated `panic-safe` tag).
+  - **#1750** fail-closed `panicLoci` extraction in cmd_mint (silent-drop on
+    malformed input became a loud Err naming the field and offending type).
+  - **#1752** (closes #1748) multi-line receiver/unwrap line preservation
+    (walk_rpc emits producer.start_line; verifier untouched).
+  - **#1753** (closes #1751) convergent oracle harness with K=3 stable-pass
+    gate; tracing-to-file with stderr clean.
+  - **#1755** (closes #1754) mid-run `.provekit/imports/` mutation guard
+    (catches concurrent bcargo/rsync wiping deps; loud Err with symmetric
+    diff).
+- Plugin subprocess stderr inherits by default (the `Stdio::null` that hid
+  load-bearing bugs is gone); counted `warn!` on missing callsite provenance;
+  tracing throughout, not eprintln.
+
+### Phase 1 - SOUNDNESS - DONE
+
+- **#1717**: opaque-sorted `forall` encoded soundly (or refused). Detector
+  `forall x:<opaque>. false` is undecidable, not collapsed to `true`. CLOSED.
+
+### Phase 2 - SUBSTANTIVE K - IN FLIGHT
+
+- **Mechanism proven on fixture** (stage3-serde-totality-fixture, warm-oracle
+  e2e, regressed-and-confirmed across #1752):
+  `to_string(&Value).unwrap()` discharges **panic-safe**;
+  `to_string(&MyStruct).unwrap()` stays undecidable (refuse-floor intact).
+  dischargeSplit `{panicSafe:1, falsePass:0, silentlyDropped:0}`.
+- **Production K measurement on `provekit-cli`** (convergent harness, K=3
+  stable, 2026-06-01):
+  - `silentlyDropped=0, falsePass=0, droppedSites=[]` (hard floor HELD).
+  - `panicSafe=0, panicCensus=32` (mechanism not yet applied to production).
+  - `(attempted, resolved) = (3764, 3358)` stable across 3 passes; the 406
+    unresolved receivers are honest oracle ceiling (generics, dyn dispatch,
+    macros), not cold-pass artifacts.
+
+## Current census (provekit-cli, 32 unproven sites, named by category)
+
+| Category | Count | Closing mechanism |
+|---|---|---|
+| residue | 10 | Mutex `.lock().expect()` (9) + platform_semantics filesystem invariant (1). Honest residue; "lock is total" would be unsound. |
+| D-lib | 9 | serde_json totality. Splits: 2 `&Value` (close via existing #1747 mechanism); 6 libprovekit-blessable derived-Serialize types (PluginRegistryMemento, RealizedSource, Sort, Dialect, Term, RealizeRequest); 1 `to_string_pretty(&PluginRegistryMemento)`. |
+| C | 7 | `json!` construction tracking in cmd_protocol.rs (`payload["k"].as_str().unwrap()` pattern; literal field is built as String, must propagate). |
+| B | 4 | Intra-fn `assert!(x.is_some()/is_ok())` propagation; plus `len==1 -> next()` guard. |
+| D-fn | 2 | Cross-function postconditions: catalog primitive `.cid()`, `Cid::parse` on literal. |
+| oracle-residue | 0 | None in panicCensus; the 406 unresolved receivers are non-panic obligations. |
+| unknown | 0 | Every site has a named category. Honest. |
+
+The honest read: ~22 closable sites (D-lib + C + B + D-fn), 10 named residue.
+v1 is "K covering the closable categories, residue named, hard floor never
+violated." K = N is not required and not honest.
 
 ## The metric (the one number we watch)
 
@@ -113,75 +107,127 @@ Progress = K rising as tiers ship, M shrinking toward the honest residue, the
 invariants never violated. "Fully working" is K covering the provable buckets
 with the residue NAMED, not K == N.
 
-## The cli census (the grounded worklist, 37 production sites)
-
-| Bucket | Count | Why safe | Tier to close |
-|---|---|---|---|
-| `serde_json::to_string(&Value)` | ~12 | `Value` is genuinely total-serializable (keys always String, Number finite) | D-lib: sound `Value`-totality contract + type-fact discharge. NOT a vacuous "total" label. |
-| Mutex `lock().expect()` | ~8 | errs only on poisoning (another thread panicked holding it) | RESIDUE. "lock is total" would be UNSOUND. Name it residue or do a global no-panic-while-held analysis. |
-| `json!` field `payload["k"].as_str().unwrap()` | ~7 | literal built with key `k` as string lines above | C: construction tracking |
-| `map.get(key).expect("present")` from own keyset | ~4 | key drawn from the map's keys | B/E: collection membership |
-| misc (`len==1 -> next()`, fn invariant, blake3 tagged post) | ~3 | length->nonempty / dataflow / cross-fn post | B / B / D-fn |
-
-Honest correction to "catalog work closes 62%": only the ~12 `&Value` sites
-close cleanly by catalog, and ONLY because `Value` totality is a TRUE fact about
-the type (a sound contract, not a vacuous label). The Mutex bucket is residue by
-construction. The rest is real reasoning work.
-
 ## The path (dependency-ordered)
 
-### Phase 0 - SCAFFOLDING FIRST (this is why 2026-05-30 hurt). No feature work until these exist.
-- `provekit self-check --json`: the scoreboard + gap census as one deterministic
-  command. (Replaces hand-grepping runs and hand-categorizing sites.)
-- Golden snapshot of `self-check` in CI: a regression is a readable diff with the
-  reason, not a bare red gate. (The conformance break we spelunked for an hour
-  would have been one golden line.)
-- No-silent-failure, system-wide: every drop/refuse/fallback emits a loud,
-  counted, structured signal; build-time silent degradations (the manifest
-  empty-set attestation, an undeclared SMT symbol) become HARD ERRORS.
-- `provekit doctor`: validate a kit's config/manifest up front (catch the
-  manifest path footgun before it silently produces an empty-set attestation).
+### Phase 0 - SCAFFOLDING - DONE
+See "Where we are."
 
-### Phase 1 - Close the soundness holes (a verifier with a latent false-pass is not a product)
-- #1717: encode opaque-sorted quantifiers soundly, or REFUSE them; never collapse
-  to `true`. Detector: `forall x:<opaque>. false` must be undecidable.
-- (deep, optional) strip `name` from the contract CID preimage; resolve by
-  (concept/library, CID). Large blast radius; gate behind a golden.
+### Phase 1 - SOUNDNESS - DONE
+- #1717: CLOSED.
 
-### Phase 2 - Make K substantive (the reasoning tiers; each one PR, golden-pinned, visible delta)
-- Tier D-lib: sound `serde_json::Value` totality contract + type-fact discharge. ~12 sites.
-- Tier C: construction tracking for `json!` literals. ~7 sites.
-- Tier B: intra-fn dataflow / early-return narrowing + collection membership
-  (wire the existing forward_propagator facts into guard establishment). ~5 sites.
-- Tier D-fn: cross-function postconditions as assumable facts. misc.
+### Phase 2 - SUBSTANTIVE K - IN FLIGHT
+Each tier ships as one PR, golden-pinned, with visible scoreboard delta.
 
-### Phase 3 - Honest residue + product packaging
-- Name the irreducible residue (Mutex poisoning, external invariants) AS residue
-  in the scoreboard.
-- The panic-audit becomes a first-class deliverable: point provekit at ANY Rust
-  crate -> an honest K/M census. That IS the product.
+- **D-lib per-type for libprovekit** (next slice): per-type infallibility
+  contracts for the 6 derived-Serialize types in libprovekit. Cleaner target
+  than provekit-cli (libprovekit owns these types). Expected K delta on
+  libprovekit's self-check: +6-8 sites. Discrimination triplet mandatory
+  (positive blessed / negative unregistered concrete / negative generic
+  `T: Serialize`).
+- **D-lib `&Value` for provekit-cli**: closes the 2 kit_dispatch.rs `&Value`
+  sites via the existing #1747 mechanism.
+- **C `json!` construction tracking**: closes the 7 cmd_protocol.rs sites.
+  New mechanism (track that `payload["k"]` returns Value::String when the
+  literal built `k` as a string); design checkpoint required.
+- **B intra-fn `assert!` propagation**: closes the 4 sites where
+  `assert!(x.is_some()/is_ok())` precedes the unwrap. New lifter surface,
+  bounded.
+- **D-fn cross-function postconditions**: closes the 2 remaining sites
+  (`Cid::parse` on literal, catalog primitive `.cid()`).
+- **#1749 remaining surfaces**: provekit-walk single-contract envelope (in
+  flight) and provekit-lift direct mint paths get panic_loci threading.
+  Preventive, no current K delta but locks the no-silent-degradation boundary.
+
+### Phase 3 - RESIDUE NAMED + V1 RELEASE
+- The 10 residue sites get an explicit `residue` category in the panicCensus
+  output (not "unproven"; honest residue with reason).
+- `provekit doctor` aggregates the no-silent-failure surfaces (#1742 manifest
+  validation, #1750 fail-closed extraction, #1753 convergence, #1755 mutation
+  guard) into a startup health check.
+- v1 release tag: "Rust v1 done." `provekit self-check` on any Rust crate
+  produces an honest panic-freedom audit with a named gap census.
+
+### Phase 4 - SUBSTRATE PROMOTION + PYTHON PARITY
+Validation of the architectural thesis: the second language is cheaper than
+the first.
+
+**Substrate promotion (between v1 and Python pivot):**
+- `concept:panic-freedom` hub: promote panic-freedom from "in the Rust kit"
+  to "expressed as a concept hub with `is_ok(result)` as a language-agnostic
+  totality predicate." The M+N transport for Python.
+- Doctor cross-kit envelope: doctor validates the substrate protocol any kit
+  must implement, not just Rust kit specifics.
+- Contract shape audit: read-through of every contract type's fields for
+  Rust-shaped vocabulary leaks; promote leaks to concept-level or push back
+  into the kit.
+
+**Python parity (the v2 product win):**
+- Python kit lift: Python source -> ProofIR, with panic-equivalent semantics
+  (KeyError, IndexError, AttributeError, AssertionError from `assert`, None
+  dereference).
+- Python self-contracts: type totality blessings for `pydantic.BaseModel`,
+  `@dataclass`, `typing.Final`, the immutable/total Python types.
+- Python self-check on a real Python target: honest scoreboard with named
+  gap census. **This is v2 - "point provekit at your Python code, get a
+  trustworthy correctness verdict."**
+- v2 release tag: two languages, one substrate, honest scoreboards on both.
+
+**Post-v2 (architectural validation, not gating):**
+- Cross-language cycle proof (Rust <-> ProofIR <-> Python, byte-identical
+  CIDs after formatter normalization).
+- Multi-language scoreboard composition.
+- Rust libraries shipping proofs that Python consumers reuse.
 
 ## The discipline (every change obeys these; the lessons of 2026-05-30)
-1. Golden-pinned: if it changes a discharge number, it updates the golden with a one-line why.
-2. Observable: it emits a loud, structured, counted signal; no silent drop/refuse/fallback.
-3. Language-blind: no language-specific names in the CLI or verifier; semantics live in the kit.
-4. Refuse-floor: never a vacuous or false "cannot panic"; unproven stays honestly undecidable.
-5. CID-not-name: identity is content CID; name is opaque sugar / resolution index.
-6. Self-describing: new wiring is validated by `doctor` and documented in the runbook.
-7. Scaffolding before features: the observability surface exists before the thing it observes.
+1. **Golden-pinned**: if it changes a discharge number, it updates the golden
+   with a one-line why.
+2. **Observable**: it emits a loud, structured, counted signal; no silent
+   drop/refuse/fallback. Concurrent harness mutation is loud (#1755);
+   malformed input is loud (#1750); cold oracle either loops to convergence
+   or fails loud (#1753).
+3. **Language-blind verifier**: no language-specific names in the CLI or
+   verifier; semantics live in the kit; refuse-floor preserved per language.
+4. **Refuse-floor**: never a vacuous or false "cannot panic"; unproven stays
+   honestly undecidable.
+5. **CID-not-name**: identity is content CID; name is opaque sugar /
+   resolution index.
+6. **Self-describing**: new wiring is validated by `doctor` and documented in
+   the runbook.
+7. **Scaffolding before features**: the observability surface exists before
+   the thing it observes.
 
 ## Non-goals / honest bounds
 - K != N. Genuine residue stays unproven, by design and honestly.
 - "Make the number go up by labeling a partial function total" is the vacuous
-  trap; only sound contracts (a real pre that discharges, or a true type-level
-  totality) count.
+  trap; only sound contracts (a real pre that discharges, or a true
+  type-level totality) count.
+- Cross-language cycle proof is not gating v2. The v2 product win is "Python
+  users can find correctness bugs"; cycle proof is architectural validation
+  that lands post-v2.
 
 ## Pointers
-- Runbook: `docs/self-application/KIT-SETUP-AND-SELF-APPLICATION.md`. One command: `scripts/self-apply.sh`.
-- Issues: #1717 (opaque-`forall` false-pass).
-- Key files: `provekit-verifier/src/{runner.rs, enumerate_callsites.rs, body_discharge.rs}`,
-  `provekit-walk/src/{lift.rs, bin/walk_rpc.rs}`, `provekit-ir-compiler-smt-lib/src/generated.rs`,
-  the rust-std shim `examples/provekit-shim-rust-std`.
-- Dispatch: substrate code goes to Codex (`gpt-5.5`, `model_reasoning_effort=xhigh`), isolated
-  worktree, FULLY INLINE briefs (no file refs - they do not survive MCP serialization). The
-  coordinator owns all gh/PR ops and review.
+
+- **Plan file**: `docs/self-application/PLAN-panic-loci-completion.md`.
+  Current slice queue, advisor checkpoints, verification commands.
+- **Runbook**: `docs/self-application/KIT-SETUP-AND-SELF-APPLICATION.md`.
+  One command: `scripts/self-apply.sh`.
+- **Diagnosis**: `docs/self-application/serde-panic-freedom-diagnosis.md`.
+  Full arc of the #1747 root-cause hunt.
+- **Recent PRs (this arc)**:
+  - #1747 panic-locus preservation + guard-branch routing.
+  - #1750 fail-closed panicLoci extraction.
+  - #1752 (#1748) multi-line emitter fix.
+  - #1753 (#1751) convergent oracle harness + tracing.
+  - #1755 (#1754) mid-run imports mutation guard.
+- **Open follow-ups**: #1749 remaining heavy-lift surfaces (provekit-walk
+  envelope in flight; provekit-lift direct after).
+- **Key files**: `provekit-verifier/src/{runner.rs, enumerate_callsites.rs,
+  body_discharge.rs, handshake.rs, load_all_proofs.rs}`,
+  `provekit-walk/src/{lift.rs, bin/walk_rpc.rs, envelope.rs}`,
+  `provekit-cli/src/{cmd_self_check.rs, cmd_mint.rs}`,
+  `provekit-ir-compiler-smt-lib/src/generated.rs`,
+  rust-std shim `examples/provekit-shim-rust-std`.
+- **Dispatch**: Codex (`gpt-5.5`, `model_reasoning_effort=xhigh`), isolated
+  worktree, FULLY INLINE briefs (no file refs - they do not survive MCP
+  serialization). Coordinator owns all gh/PR ops + review. Standing arc:
+  see PLAN-panic-loci-completion.md.
