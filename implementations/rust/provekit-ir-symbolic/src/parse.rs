@@ -22,6 +22,7 @@
 
 use std::rc::Rc;
 
+use provekit_canonicalizer::Value as CValue;
 use serde_json::Value as Json;
 
 use crate::{
@@ -124,6 +125,8 @@ fn parse_contract_into_collector(v: &Json, path: &str) -> Result<(), ParseError>
         "post",
         "inv",
         "evidence",
+        "panicLoci",
+        "panic_loci",
     ];
     reject_extra_keys(obj, allowed, path, "contract")?;
 
@@ -161,6 +164,10 @@ fn parse_contract_into_collector(v: &Json, path: &str) -> Result<(), ParseError>
         .get("evidence")
         .map(|e| parse_evidence_at(e, &format!("{path}.evidence")))
         .transpose()?;
+    let panic_loci = parse_panic_loci_at(
+        obj.get("panicLoci").or_else(|| obj.get("panic_loci")),
+        &format!("{path}.panicLoci"),
+    )?;
 
     if pre.is_none() && post.is_none() && inv.is_none() {
         return Err(ParseError::EmptyContract { path: path.into() });
@@ -174,9 +181,46 @@ fn parse_contract_into_collector(v: &Json, path: &str) -> Result<(), ParseError>
             inv,
             out_binding: Some(out_binding),
             evidence,
+            panic_loci,
         },
     );
     Ok(())
+}
+
+fn parse_panic_loci_at(
+    v: Option<&Json>,
+    path: &str,
+) -> Result<Vec<std::sync::Arc<CValue>>, ParseError> {
+    let Some(v) = v else {
+        return Ok(Vec::new());
+    };
+    let arr = require_array(v, path, "panicLoci")?;
+    Ok(arr.iter().map(json_to_cvalue).collect())
+}
+
+fn json_to_cvalue(v: &Json) -> std::sync::Arc<CValue> {
+    match v {
+        Json::Null => CValue::null(),
+        Json::Bool(b) => CValue::boolean(*b),
+        Json::Number(n) => {
+            if let Some(i) = n.as_i64() {
+                CValue::integer(i)
+            } else if let Some(u) = n.as_u64() {
+                CValue::integer(u as i64)
+            } else if let Some(f) = n.as_f64() {
+                CValue::integer(f as i64)
+            } else {
+                CValue::integer(0)
+            }
+        }
+        Json::String(s) => CValue::string(s.clone()),
+        Json::Array(items) => CValue::array(items.iter().map(json_to_cvalue).collect()),
+        Json::Object(map) => CValue::object(
+            map.iter()
+                .map(|(key, value)| (key.clone(), json_to_cvalue(value)))
+                .collect::<Vec<_>>(),
+        ),
+    }
 }
 
 fn parse_evidence_at(v: &Json, path: &str) -> Result<EvidenceTerm, ParseError> {

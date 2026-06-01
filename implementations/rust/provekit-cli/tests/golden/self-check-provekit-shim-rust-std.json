@@ -1,6 +1,6 @@
 {
   "target": "examples/provekit-shim-rust-std",
-  "catalogCid": "blake3-512:0f92781a6ffce991d168d5fbc1798a89eeb52159ffbf23949a04f087799a59163bed11b6db0c0635ecc06975bb128200dff54f99b886b47a26f03af333b45b9c",
+  "catalogCid": "blake3-512:5943fb5bef2e46344df022782f50abe574ada18ff8db945c9906c926ee2ab0c85631acb82dd584d109f6571b96a772ed7df588d3368d09e1e331b9471f244f9c",
   "lift": {
     "fnContracts": 27,
     "bodyDischargeEligible": 27,

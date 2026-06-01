@@ -219,6 +219,7 @@ fn process(name: String, attrs: &[syn::Attribute], source_path: &str, out: &mut 
         inv: None,
         out_binding: "out".into(),
         evidence: None,
+        panic_loci: Vec::new(),
         concept_hint: None,
     });
     out.lifted += 1;

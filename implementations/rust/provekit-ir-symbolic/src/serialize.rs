@@ -20,7 +20,7 @@
 
 use std::sync::Arc;
 
-use provekit_canonicalizer::Value;
+use provekit_canonicalizer::{encode_jcs, Value};
 
 use crate::{ConstValue, ContractDecl, EvidenceTerm, Formula, Sort, Term};
 
@@ -177,6 +177,16 @@ pub fn marshal_declarations(decls: &[ContractDecl]) -> String {
         if let Some(ev) = &d.evidence {
             out.push_str(r#","evidence":"#);
             write_evidence(&mut out, ev);
+        }
+        if !d.panic_loci.is_empty() {
+            out.push_str(r#","panicLoci":["#);
+            for (i, locus) in d.panic_loci.iter().enumerate() {
+                if i > 0 {
+                    out.push(',');
+                }
+                out.push_str(&encode_jcs(locus.as_ref()));
+            }
+            out.push(']');
         }
         out.push('}');
     }

@@ -30,6 +30,11 @@ rust-analyzer daemon, no wall-clock, no absolute paths.
 > sites. (No oracle here, so the serde panic-safe discharge does not appear; it
 > is exercised by the warm-oracle e2e on stage3-serde-totality-fixture.)
 
+Refreshed 2026-06-01: `catalogCid` `0f9278...` -> `5943fb5b...`
+after pre-existing main drift; baseline `7daf1918a` (before this PR's
+lift-direct changes) produces `5943fb5b...`, with member set and decoded
+member JSON unchanged from this branch. Hard invariants unchanged.
+
 ## Normalization applied
 
 None. The output is byte-stable and path-independent without normalization:

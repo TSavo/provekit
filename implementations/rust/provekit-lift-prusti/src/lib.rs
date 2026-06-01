@@ -243,6 +243,7 @@ fn process(
         inv,
         out_binding: "out".into(),
         evidence: None,
+        panic_loci: Vec::new(),
         concept_hint: None,
     });
     out.lifted += 1;

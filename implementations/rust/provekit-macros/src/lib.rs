@@ -233,6 +233,7 @@ pub fn contract(attr: TokenStream, item: TokenStream) -> TokenStream {
                 inv: __inv,
                 out_binding: __out_binding,
                 evidence: None,
+                panic_loci: Vec::new(),
                 concept_hint: None,
             }
         }
