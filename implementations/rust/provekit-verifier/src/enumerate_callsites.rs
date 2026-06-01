@@ -127,6 +127,21 @@ fn callsite_from_panic_locus(
         .and_then(|v| v.as_u64())
         .map(|n| n as usize);
     let arg_term = locus.get("argTerm").cloned();
+    let producer_file = locus
+        .get("producerFile")
+        .and_then(|v| v.as_str())
+        .filter(|s| !s.is_empty())
+        .map(str::to_string)
+        .or_else(|| file.clone());
+    let producer_line = locus
+        .get("producerLine")
+        .and_then(|v| v.as_u64())
+        .map(|n| n as usize);
+    let producer_symbol = locus
+        .get("producerSymbol")
+        .and_then(|v| v.as_str())
+        .filter(|s| !s.is_empty())
+        .map(str::to_string);
 
     let scoped_bridge = match (callsite_bundle_cid, file.as_deref(), line) {
         (Some(bundle), Some(file), Some(line)) => pool.bridges_by_callsite.get(&(
@@ -183,6 +198,9 @@ fn callsite_from_panic_locus(
         property_cid: property_cid.to_string(),
         callsite_bundle_cid: callsite_bundle_cid.map(str::to_string),
         arg_term,
+        producer_file,
+        producer_line,
+        producer_symbol,
         containing_atomic: None,
         guard_facts: Vec::new(),
         file,
@@ -530,6 +548,27 @@ fn walk_term(
             property_cid: property_cid.to_string(),
             callsite_bundle_cid: callsite_bundle_cid.map(str::to_string),
             arg_term: arg_term.clone(),
+            producer_file: occ_locus
+                .and_then(|locus| {
+                    locus
+                        .get("producerFile")
+                        .and_then(|v| v.as_str())
+                        .filter(|s| !s.is_empty())
+                })
+                .map(str::to_string)
+                .or_else(|| callsite_file.clone()),
+            producer_line: occ_locus
+                .and_then(|locus| locus.get("producerLine"))
+                .and_then(|v| v.as_u64())
+                .map(|n| n as usize),
+            producer_symbol: occ_locus
+                .and_then(|locus| {
+                    locus
+                        .get("producerSymbol")
+                        .and_then(|v| v.as_str())
+                        .filter(|s| !s.is_empty())
+                })
+                .map(str::to_string),
             containing_atomic: containing_atomic.cloned(),
             // Snapshot the dominating guard context for this call site. The
             // runner discharges a panic partial's `pre` under these facts.

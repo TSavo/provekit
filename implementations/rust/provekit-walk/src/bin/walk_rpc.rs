@@ -761,6 +761,268 @@ impl InfallibleSerializeManifest {
     }
 }
 
+#[derive(Debug, Clone, Default)]
+struct FunctionPostconditionsManifest {
+    rules: Vec<FunctionPostconditionRule>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+enum FunctionPostconditionCallKind {
+    Associated,
+    Method,
+}
+
+#[derive(Debug, Clone)]
+enum FunctionPostconditionArg0 {
+    FormatRepeat {
+        format_literal: String,
+        repeat_literal: String,
+        repeat_count: u64,
+    },
+    Path(String),
+}
+
+#[derive(Debug, Clone)]
+struct FunctionPostconditionRule {
+    call_kind: FunctionPostconditionCallKind,
+    callee_crate: String,
+    type_path: Option<String>,
+    receiver_path: Option<String>,
+    callee: String,
+    arg0: FunctionPostconditionArg0,
+    contract: String,
+    post_predicate: String,
+    reason: String,
+}
+
+impl FunctionPostconditionsManifest {
+    fn load(workspace_root: &Path) -> Result<Self, String> {
+        let path = workspace_root
+            .join(".provekit")
+            .join("contracts")
+            .join("function_postconditions.toml");
+        if !path.is_file() {
+            return Ok(Self::default());
+        }
+        let raw =
+            std::fs::read_to_string(&path).map_err(|e| format!("read {}: {e}", path.display()))?;
+        let value: toml::Value =
+            toml::from_str(&raw).map_err(|e| format!("parse {}: {e}", path.display()))?;
+        let table = value
+            .as_table()
+            .ok_or_else(|| format!("{} must be a TOML table", path.display()))?;
+        let Some(functions_value) = table.get("functions") else {
+            return Ok(Self::default());
+        };
+        let entries = functions_value.as_array().ok_or_else(|| {
+            format!(
+                "{} field `functions` must be an array of tables (`[[functions]]`)",
+                path.display()
+            )
+        })?;
+
+        let mut manifest = Self::default();
+        let mut seen_contracts = BTreeSet::new();
+        for (idx, entry) in entries.iter().enumerate() {
+            let context = format!("functions[{idx}]");
+            let table = entry.as_table().ok_or_else(|| {
+                format!(
+                    "{} `{context}` must be a table, got {}",
+                    path.display(),
+                    toml_value_type(entry)
+                )
+            })?;
+            let call_kind = match required_toml_string_for(&path, &context, table, "call_kind")?
+                .as_str()
+            {
+                "associated" => FunctionPostconditionCallKind::Associated,
+                "method" => FunctionPostconditionCallKind::Method,
+                other => {
+                    return Err(format!(
+                        "{} `{context}.call_kind` must be `associated` or `method`, got `{other}`",
+                        path.display()
+                    ))
+                }
+            };
+            let callee_crate =
+                normalize_crate_root(&required_toml_string_for(&path, &context, table, "callee_crate")?);
+            let callee = required_toml_string_for(&path, &context, table, "callee")?;
+            let contract = required_toml_string_for(&path, &context, table, "contract")?;
+            let post_predicate =
+                required_toml_string_for(&path, &context, table, "post_predicate")?;
+            let reason = required_toml_string_for(&path, &context, table, "reason")?;
+            if !seen_contracts.insert(contract.clone()) {
+                return Err(format!(
+                    "{} duplicate function postcondition contract `{contract}`",
+                    path.display()
+                ));
+            }
+
+            let (type_path, receiver_path, arg0) = match call_kind {
+                FunctionPostconditionCallKind::Associated => {
+                    let type_path =
+                        required_toml_string_for(&path, &context, table, "type_path")?;
+                    let format_literal =
+                        required_toml_string_for(&path, &context, table, "arg0_format_literal")?;
+                    let repeat_literal =
+                        required_toml_string_for(&path, &context, table, "arg0_repeat_literal")?;
+                    let repeat_count =
+                        required_toml_u64_for(&path, &context, table, "arg0_repeat_count")?;
+                    (
+                        Some(type_path),
+                        None,
+                        FunctionPostconditionArg0::FormatRepeat {
+                            format_literal,
+                            repeat_literal,
+                            repeat_count,
+                        },
+                    )
+                }
+                FunctionPostconditionCallKind::Method => {
+                    let receiver_path =
+                        required_toml_string_for(&path, &context, table, "receiver_path")?;
+                    let arg0_path = required_toml_string_for(&path, &context, table, "arg0_path")?;
+                    (
+                        None,
+                        Some(receiver_path),
+                        FunctionPostconditionArg0::Path(arg0_path),
+                    )
+                }
+            };
+
+            manifest.rules.push(FunctionPostconditionRule {
+                call_kind,
+                callee_crate,
+                type_path,
+                receiver_path,
+                callee,
+                arg0,
+                contract,
+                post_predicate,
+                reason,
+            });
+        }
+        Ok(manifest)
+    }
+
+    fn is_empty(&self) -> bool {
+        self.rules.is_empty()
+    }
+
+    fn rule_for_associated_call(
+        &self,
+        func: &syn::Expr,
+        args: &syn::punctuated::Punctuated<syn::Expr, syn::Token![,]>,
+        current_crate: &str,
+    ) -> Option<&FunctionPostconditionRule> {
+        let (type_path, callee) = associated_call_path_and_leaf(func)?;
+        self.rules.iter().find_map(|rule| {
+            if rule.call_kind != FunctionPostconditionCallKind::Associated {
+                return None;
+            }
+            if rule.callee_crate != current_crate || rule.callee != callee {
+                return None;
+            }
+            if rule.type_path.as_deref() != Some(type_path.as_str()) {
+                return None;
+            }
+            let FunctionPostconditionArg0::FormatRepeat {
+                format_literal,
+                repeat_literal,
+                repeat_count,
+            } = &rule.arg0
+            else {
+                return None;
+            };
+            let arg0 = only_call_arg(args)?;
+            if !expr_matches_format_repeat(arg0, format_literal, repeat_literal, *repeat_count) {
+                return None;
+            }
+            Some(rule)
+        })
+    }
+
+    fn target_for_associated_call(
+        &self,
+        func: &syn::Expr,
+        args: &syn::punctuated::Punctuated<syn::Expr, syn::Token![,]>,
+        current_crate: &str,
+    ) -> Option<(String, String)> {
+        self.rule_for_associated_call(func, args, current_crate)
+            .map(|rule| (current_crate.to_string(), rule.contract.clone()))
+    }
+
+    fn rule_for_method_call(
+        &self,
+        node: &syn::ExprMethodCall,
+        current_crate: &str,
+    ) -> Option<&FunctionPostconditionRule> {
+        let callee = node.method.to_string();
+        self.rules.iter().find_map(|rule| {
+            if rule.call_kind != FunctionPostconditionCallKind::Method {
+                return None;
+            }
+            if rule.callee_crate != current_crate || rule.callee != callee {
+                return None;
+            }
+            if expr_path_text(&node.receiver) != rule.receiver_path {
+                return None;
+            }
+            let FunctionPostconditionArg0::Path(expected_arg) = &rule.arg0 else {
+                return None;
+            };
+            let arg0 = only_call_arg(&node.args)?;
+            if expr_path_text(arg0).as_deref() != Some(expected_arg.as_str()) {
+                return None;
+            }
+            Some(rule)
+        })
+    }
+
+    fn target_for_method_call(
+        &self,
+        node: &syn::ExprMethodCall,
+        current_crate: &str,
+    ) -> Option<(String, String)> {
+        self.rule_for_method_call(node, current_crate)
+            .map(|rule| (current_crate.to_string(), rule.contract.clone()))
+    }
+
+    fn panic_partial_for_receiver(
+        &self,
+        receiver: &syn::Expr,
+        current_crate: &str,
+        panic_leaf: &str,
+    ) -> Option<(String, String)> {
+        let rule = match receiver {
+            syn::Expr::Call(call) => {
+                self.rule_for_associated_call(&call.func, &call.args, current_crate)
+            }
+            syn::Expr::MethodCall(method) => self.rule_for_method_call(method, current_crate),
+            syn::Expr::Paren(paren) => {
+                return self.panic_partial_for_receiver(&paren.expr, current_crate, panic_leaf);
+            }
+            syn::Expr::Group(group) => {
+                return self.panic_partial_for_receiver(&group.expr, current_crate, panic_leaf);
+            }
+            syn::Expr::Reference(reference) => {
+                return self.panic_partial_for_receiver(&reference.expr, current_crate, panic_leaf);
+            }
+            _ => None,
+        }?;
+        let stem = panic_stem_for_post_predicate(&rule.post_predicate)?;
+        disambiguated_partial_leaf(stem, panic_leaf).map(|leaf| ("std".to_string(), leaf))
+    }
+}
+
+fn panic_stem_for_post_predicate(predicate: &str) -> Option<&'static str> {
+    match predicate {
+        "is_ok" => Some("result"),
+        "is_some" => Some("option"),
+        _ => None,
+    }
+}
+
 fn toml_value_type(value: &toml::Value) -> &'static str {
     match value {
         toml::Value::String(_) => "string",
@@ -779,9 +1041,18 @@ fn required_toml_string(
     table: &toml::map::Map<String, toml::Value>,
     field: &str,
 ) -> Result<String, String> {
+    required_toml_string_for(path, &format!("serde_json[{idx}]"), table, field)
+}
+
+fn required_toml_string_for(
+    path: &Path,
+    context: &str,
+    table: &toml::map::Map<String, toml::Value>,
+    field: &str,
+) -> Result<String, String> {
     let value = table.get(field).ok_or_else(|| {
         format!(
-            "{} `serde_json[{idx}]` missing required string field `{field}`",
+            "{} `{context}` missing required string field `{field}`",
             path.display()
         )
     })?;
@@ -792,11 +1063,38 @@ fn required_toml_string(
         .map(str::to_string)
         .ok_or_else(|| {
             format!(
-                "{} `serde_json[{idx}].{field}` must be a non-empty string, got {}",
+                "{} `{context}.{field}` must be a non-empty string, got {}",
                 path.display(),
                 toml_value_type(value)
             )
         })
+}
+
+fn required_toml_u64_for(
+    path: &Path,
+    context: &str,
+    table: &toml::map::Map<String, toml::Value>,
+    field: &str,
+) -> Result<u64, String> {
+    let value = table.get(field).ok_or_else(|| {
+        format!(
+            "{} `{context}` missing required integer field `{field}`",
+            path.display()
+        )
+    })?;
+    let raw = value.as_integer().ok_or_else(|| {
+        format!(
+            "{} `{context}.{field}` must be a non-negative integer, got {}",
+            path.display(),
+            toml_value_type(value)
+        )
+    })?;
+    u64::try_from(raw).map_err(|_| {
+        format!(
+            "{} `{context}.{field}` must be a non-negative integer, got {raw}",
+            path.display()
+        )
+    })
 }
 
 /// Map of `leaf ident -> crate root` for the `use` imports in one file.
@@ -1250,6 +1548,7 @@ fn collect_callsites_in_items(
     current_crate: &str,
     enum_variant_types: &EnumVariantTypeMap,
     infallible_serialize: &InfallibleSerializeManifest,
+    function_postconditions: &FunctionPostconditionsManifest,
     out: &mut Vec<CallSite>,
 ) {
     for item in items {
@@ -1269,6 +1568,7 @@ fn collect_callsites_in_items(
                     current_crate,
                     enum_variant_types,
                     infallible_serialize,
+                    function_postconditions,
                     &param_type_map,
                     out,
                 );
@@ -1298,6 +1598,7 @@ fn collect_callsites_in_items(
                             current_crate,
                             enum_variant_types,
                             infallible_serialize,
+                            function_postconditions,
                             &param_type_map,
                             out,
                         );
@@ -1318,6 +1619,7 @@ fn collect_callsites_in_items(
                         current_crate,
                         enum_variant_types,
                         infallible_serialize,
+                        function_postconditions,
                         out,
                     );
                 }
@@ -1336,6 +1638,7 @@ fn collect_callsites_in_block(
     current_crate: &str,
     enum_variant_types: &EnumVariantTypeMap,
     infallible_serialize: &InfallibleSerializeManifest,
+    function_postconditions: &FunctionPostconditionsManifest,
     // Phase-2 Tier D-lib: param name -> concrete type identity for syntactic
     // serde_json arg-type disambiguation. Built from the enclosing function's
     // declared parameter types; empty when called outside a fn.
@@ -1353,6 +1656,7 @@ fn collect_callsites_in_block(
         value_types: HashMap<String, TypeIdentity>,
         enum_variant_types: &'a EnumVariantTypeMap,
         infallible_serialize: &'a InfallibleSerializeManifest,
+        function_postconditions: &'a FunctionPostconditionsManifest,
         param_type_map: &'a HashMap<String, TypeIdentity>,
         out: &'a mut Vec<CallSite>,
     }
@@ -1389,6 +1693,13 @@ fn collect_callsites_in_block(
                     } else {
                         None
                     };
+                let disambiguated_target = disambiguated_target.or_else(|| {
+                    self.function_postconditions.target_for_associated_call(
+                        &node.func,
+                        &node.args,
+                        self.current_crate,
+                    )
+                });
                 self.out.push(CallSite {
                     callee,
                     contract_callee,
@@ -1457,6 +1768,17 @@ fn collect_callsites_in_block(
                     let stem = type_id.head.to_ascii_lowercase();
                     disambiguated_partial_leaf(&stem, &callee).map(|leaf| ("std".to_string(), leaf))
                 });
+            let manifest_panic_target = syntactic_panic_target.as_ref().is_none().then(|| {
+                if is_panic_leaf(&callee) {
+                    self.function_postconditions.panic_partial_for_receiver(
+                        &node.receiver,
+                        self.current_crate,
+                        &callee,
+                    )
+                } else {
+                    None
+                }
+            }).flatten();
             let callee_crate = syntactic_panic_target
                 .as_ref()
                 .map(|(krate, _)| krate.clone())
@@ -1470,6 +1792,14 @@ fn collect_callsites_in_block(
                         self.current_crate,
                     )
                 });
+            let function_postcondition_target = syntactic_panic_target
+                .as_ref()
+                .is_none()
+                .then(|| {
+                    self.function_postconditions
+                        .target_for_method_call(node, self.current_crate)
+                })
+                .flatten();
             self.out.push(CallSite {
                 callee,
                 contract_callee,
@@ -1477,8 +1807,21 @@ fn collect_callsites_in_block(
                 is_method: true,
                 disambiguated_callee: syntactic_panic_target
                     .as_ref()
-                    .map(|(_, leaf)| leaf.clone()),
-                disambiguated_crate: syntactic_panic_target.map(|(krate, _)| krate),
+                    .map(|(_, leaf)| leaf.clone())
+                    .or_else(|| {
+                        manifest_panic_target
+                            .as_ref()
+                            .map(|(_, leaf)| leaf.clone())
+                    })
+                    .or_else(|| {
+                        function_postcondition_target
+                            .as_ref()
+                            .map(|(_, leaf)| leaf.clone())
+                    }),
+                disambiguated_crate: syntactic_panic_target
+                    .map(|(krate, _)| krate)
+                    .or_else(|| manifest_panic_target.map(|(krate, _)| krate))
+                    .or_else(|| function_postcondition_target.map(|(krate, _)| krate)),
                 unsupported_reason: None,
                 file: self.rel_path.to_string(),
                 line: start.line,
@@ -1577,6 +1920,7 @@ fn collect_callsites_in_block(
         value_types: param_type_map.clone(),
         enum_variant_types,
         infallible_serialize,
+        function_postconditions,
         param_type_map,
         out,
     };
@@ -1812,6 +2156,114 @@ fn call_expr_callee(
         syn::Expr::Paren(p) => call_expr_callee(&p.expr, use_map, current_crate),
         _ => None,
     }
+}
+
+fn associated_call_path_and_leaf(expr: &syn::Expr) -> Option<(String, String)> {
+    let syn::Expr::Path(path) = expr else {
+        return None;
+    };
+    if path.path.segments.len() < 2 {
+        return None;
+    }
+    let callee = path.path.segments.last()?.ident.to_string();
+    let type_path = path
+        .path
+        .segments
+        .iter()
+        .take(path.path.segments.len() - 1)
+        .map(|seg| seg.ident.to_string())
+        .collect::<Vec<_>>()
+        .join("::");
+    Some((type_path, callee))
+}
+
+fn only_call_arg<T, P>(args: &syn::punctuated::Punctuated<T, P>) -> Option<&T> {
+    if args.len() == 1 {
+        args.first()
+    } else {
+        None
+    }
+}
+
+fn expr_path_text(expr: &syn::Expr) -> Option<String> {
+    match expr {
+        syn::Expr::Path(path) => Some(
+            path.path
+                .segments
+                .iter()
+                .map(|seg| seg.ident.to_string())
+                .collect::<Vec<_>>()
+                .join("::"),
+        ),
+        syn::Expr::Reference(reference) => expr_path_text(&reference.expr),
+        syn::Expr::Paren(paren) => expr_path_text(&paren.expr),
+        syn::Expr::Group(group) => expr_path_text(&group.expr),
+        _ => None,
+    }
+}
+
+fn expr_matches_format_repeat(
+    expr: &syn::Expr,
+    format_literal: &str,
+    repeat_literal: &str,
+    repeat_count: u64,
+) -> bool {
+    use syn::parse::Parser;
+
+    let syn::Expr::Macro(expr_macro) = expr else {
+        return false;
+    };
+    if expr_macro
+        .mac
+        .path
+        .segments
+        .last()
+        .map(|seg| seg.ident != "format")
+        .unwrap_or(true)
+    {
+        return false;
+    }
+    let parser = syn::punctuated::Punctuated::<syn::Expr, syn::Token![,]>::parse_terminated;
+    let Ok(args) = parser.parse2(expr_macro.mac.tokens.clone()) else {
+        return false;
+    };
+    if args.len() != 2 {
+        return false;
+    }
+    let Some(syn::Expr::Lit(format_arg)) = args.first() else {
+        return false;
+    };
+    let syn::Lit::Str(format_str) = &format_arg.lit else {
+        return false;
+    };
+    if format_str.value() != format_literal {
+        return false;
+    }
+    let Some(syn::Expr::MethodCall(repeat_call)) = args.iter().nth(1) else {
+        return false;
+    };
+    if repeat_call.method != "repeat" || repeat_call.args.len() != 1 {
+        return false;
+    }
+    let syn::Expr::Lit(receiver) = repeat_call.receiver.as_ref() else {
+        return false;
+    };
+    let syn::Lit::Str(receiver_str) = &receiver.lit else {
+        return false;
+    };
+    if receiver_str.value() != repeat_literal {
+        return false;
+    }
+    let Some(syn::Expr::Lit(count_arg)) = repeat_call.args.first() else {
+        return false;
+    };
+    let syn::Lit::Int(count_int) = &count_arg.lit else {
+        return false;
+    };
+    count_int
+        .base10_parse::<u64>()
+        .map(|count| count == repeat_count)
+        .unwrap_or(false)
 }
 
 /// Crate roots in source use `_`-free hyphenless identifiers; a Cargo package
@@ -2061,11 +2513,13 @@ fn is_panic_leaf(leaf: &str) -> bool {
 /// then carries no line and stays honestly undecidable (fail-safe, never the
 /// collapsed line).
 ///
-/// The `line`/`col` fields deliberately name the receiver producer call's start
-/// span, not the panic leaf's method-token span. `bridges_by_callsite` is keyed
-/// by the producer bridge line, so a split-line `to_string(v)\n.unwrap()` must
-/// use the receiver start line to find the co-located totality fact. The leaf
-/// position is preserved separately as `panicLine`/`panicCol` for diagnostics.
+/// The `line`/`col` fields name the panic leaf's method-token span, so the
+/// verifier can resolve the panic partial bridge at the exact panic site. The
+/// receiver producer's bridge coordinates ride separately as
+/// `producerLine`/`producerCol`/`producerSymbol`; a split-line
+/// `ConceptOpCatalog\n  .cid(..)\n  .expect(..)` needs all three coordinates
+/// because the receiver expression, producer call, and panic leaf can start on
+/// three different source lines. The verifier treats these as opaque provenance.
 fn collect_panic_loci(item_fn: &syn::ItemFn, rel_path: &str) -> Vec<Value> {
     use syn::visit::Visit;
 
@@ -2083,17 +2537,27 @@ fn collect_panic_loci(item_fn: &syn::ItemFn, rel_path: &str) -> Vec<Value> {
                 // production lifter so the term matches the contract `post`.
                 if let Some(recv) = provekit_walk::lift::lift_expr_to_term(&node.receiver) {
                     if let Ok(arg_term) = serde_json::to_value(&recv) {
-                        let producer_start = node.receiver.span().start();
+                        let receiver_start = node.receiver.span().start();
                         let panic_start = node.method.span().start();
-                        self.out.push(json!({
+                        let mut locus = json!({
                             "argTerm": arg_term,
                             "file": self.rel_path,
-                            "line": producer_start.line,
-                            "col": producer_start.column,
+                            "line": panic_start.line,
+                            "col": panic_start.column,
+                            "receiverLine": receiver_start.line,
+                            "receiverCol": receiver_start.column,
                             "panicLine": panic_start.line,
                             "panicCol": panic_start.column,
                             "callee": format!("method:{}", leaf),
-                        }));
+                        });
+                        if let Some((producer_symbol, producer_line, producer_col)) =
+                            receiver_producer_callsite(&node.receiver)
+                        {
+                            locus["producerSymbol"] = json!(producer_symbol);
+                            locus["producerLine"] = json!(producer_line);
+                            locus["producerCol"] = json!(producer_col);
+                        }
+                        self.out.push(locus);
                     }
                 }
             }
@@ -2108,6 +2572,24 @@ fn collect_panic_loci(item_fn: &syn::ItemFn, rel_path: &str) -> Vec<Value> {
     };
     v.visit_item_fn(item_fn);
     v.out
+}
+
+fn receiver_producer_callsite(receiver: &syn::Expr) -> Option<(String, usize, usize)> {
+    match receiver {
+        syn::Expr::MethodCall(method) => {
+            let start = method.method.span().start();
+            Some((format!("method:{}", method.method), start.line, start.column))
+        }
+        syn::Expr::Call(call) => {
+            let (_, callee) = associated_call_path_and_leaf(&call.func)?;
+            let start = call.func.span().start();
+            Some((callee, start.line, start.column))
+        }
+        syn::Expr::Paren(paren) => receiver_producer_callsite(&paren.expr),
+        syn::Expr::Group(group) => receiver_producer_callsite(&group.expr),
+        syn::Expr::Reference(reference) => receiver_producer_callsite(&reference.expr),
+        _ => None,
+    }
 }
 
 /// Tier 2b (§2.T2b): for the still-unresolved method calls in `callsites`
@@ -2347,6 +2829,13 @@ fn lift_implications(params: &Value) -> Result<Value, String> {
             "lift_implications: loaded infallible serde_json manifest"
         );
     }
+    let function_postconditions = FunctionPostconditionsManifest::load(&workspace_root)?;
+    if !function_postconditions.is_empty() {
+        info!(
+            entries = function_postconditions.rules.len(),
+            "lift_implications: loaded function postconditions manifest"
+        );
+    }
 
     // Index contracts by (crate, leaf), not bare leaf. The leaf is the substring
     // before the first '@' in the contract `name` (`<callee>@<file>:<line>:<col>`
@@ -2439,6 +2928,7 @@ fn lift_implications(params: &Value) -> Result<Value, String> {
             &current_crate,
             &enum_variant_types,
             &infallible_serialize,
+            &function_postconditions,
             &mut callsites,
         );
         let file_callsite_count = callsites.len();
@@ -3340,12 +3830,11 @@ fn bind_lift(params: &Value) -> Result<Value, String> {
             // TOTALITY EXCEPTION (Phase-2 Tier D-lib): when the sugar
             // annotation carries `totality = "result_ok"` and the
             // return type is Result, the post is the AXIOM `is_ok(result)`.
-            // This is the exact shape callee_post_guard_fact checks
-            // (body_discharge.rs:post_is_is_ok_of_result). With this
-            // post, bridges emitted by the recognize lane discharge the
-            // downstream `.unwrap()` as panic-safe. Sound: only functions
-            // explicitly marked totality get this post; inference from
-            // arg types is rejected (refuse-floor).
+            // This is one exact singleton shape callee_post_guard_fact accepts.
+            // With this post, bridges emitted by the recognize lane discharge
+            // the downstream `.unwrap()` as panic-safe. Sound: only functions
+            // explicitly marked totality get this post; inference from arg
+            // types is rejected (refuse-floor).
             let fn_name = item_fn.sig.ident.to_string();
             let post = if totality_result_ok {
                 // Singleton totality post: is_ok(result).
@@ -3617,6 +4106,7 @@ fn function_contract_lift(params: &Value) -> Result<Value, String> {
     // per-scan-root names, noted as a limitation.
     let current_crate = crate_name_for(&root).unwrap_or_default();
     let infallible_serialize = InfallibleSerializeManifest::load(&root)?;
+    let function_postconditions = FunctionPostconditionsManifest::load(&root)?;
     let mut entries: Vec<Value> = Vec::new();
     let mut diagnostics: Vec<Value> = Vec::new();
     let mut visited: std::collections::BTreeSet<PathBuf> = Default::default();
@@ -3747,6 +4237,11 @@ fn function_contract_lift(params: &Value) -> Result<Value, String> {
     }
 
     emit_infallible_serialize_contracts(&infallible_serialize, &current_crate, &mut entries)?;
+    emit_function_postcondition_contracts(
+        &function_postconditions,
+        &current_crate,
+        &mut entries,
+    )?;
 
     // Producer-side visibility. This surface emits the contracts that the
     // implication matcher later bridges into; a collapse here (e.g. a soundness
@@ -3842,7 +4337,7 @@ fn emit_infallible_serialize_contracts(
         entries.push(json!({
             "kind": "contract",
             "name": rule.contract,
-            "post": is_ok_result_post_json(),
+            "post": singleton_result_post_json("is_ok"),
             "outBinding": "out",
             "bodyDischargeEligible": false,
             "bodyDischargeRefusalReason": "totality-axiom",
@@ -3852,10 +4347,48 @@ fn emit_infallible_serialize_contracts(
     Ok(())
 }
 
-fn is_ok_result_post_json() -> Value {
+fn emit_function_postcondition_contracts(
+    manifest: &FunctionPostconditionsManifest,
+    current_crate: &str,
+    entries: &mut Vec<Value>,
+) -> Result<(), String> {
+    if manifest.is_empty() {
+        return Ok(());
+    }
+    if current_crate.is_empty() {
+        return Err(
+            "function_postconditions.toml requires a Cargo package name for contract emission"
+                .to_string(),
+        );
+    }
+    for rule in &manifest.rules {
+        debug!(
+            call_kind = ?rule.call_kind,
+            callee_crate = %rule.callee_crate,
+            callee = %rule.callee,
+            contract_library = %current_crate,
+            contract = %rule.contract,
+            post_predicate = %rule.post_predicate,
+            reason = %rule.reason,
+            "function_contract_lift: emitting project-local function postcondition contract"
+        );
+        entries.push(json!({
+            "kind": "contract",
+            "name": rule.contract,
+            "post": singleton_result_post_json(&rule.post_predicate),
+            "outBinding": "out",
+            "bodyDischargeEligible": false,
+            "bodyDischargeRefusalReason": "totality-axiom",
+            "library": current_crate,
+        }));
+    }
+    Ok(())
+}
+
+fn singleton_result_post_json(predicate: &str) -> Value {
     json!({
         "kind": "atomic",
-        "name": "is_ok",
+        "name": predicate,
         "args": [{ "kind": "var", "name": "result" }],
     })
 }
@@ -7411,20 +7944,29 @@ mod tests {
         collect_panic_loci(item_fn, "src/lib.rs")
     }
 
-    fn assert_single_panic_locus_lines(src: &str, expected_line: u64, expected_panic_line: u64) {
+    fn assert_single_panic_locus_lines(
+        src: &str,
+        expected_producer_line: u64,
+        expected_panic_line: u64,
+    ) {
         let loci = panic_loci_for_first_fn(src);
         assert_eq!(loci.len(), 1, "expected one panic locus: {loci:?}");
         assert_eq!(loci[0]["file"], "src/lib.rs");
         assert_eq!(loci[0]["callee"], "method:unwrap");
         assert_eq!(
             loci[0]["line"].as_u64(),
-            Some(expected_line),
-            "panic locus line must be the receiver producer call's start line, not the unwrap leaf line: {loci:?}"
+            Some(expected_panic_line),
+            "panic locus line must be the panic leaf line; producer provenance rides producerLine: {loci:?}"
         );
         assert_eq!(
             loci[0]["panicLine"].as_u64(),
             Some(expected_panic_line),
             "panicLine must preserve the unwrap leaf line for diagnostics: {loci:?}"
+        );
+        assert_eq!(
+            loci[0]["producerLine"].as_u64(),
+            Some(expected_producer_line),
+            "producerLine must key the receiver producer bridge independently from the panic leaf: {loci:?}"
         );
     }
 
@@ -7457,6 +7999,25 @@ mod tests {
 }
 "#;
         assert_single_panic_locus_lines(src, 2, 5);
+    }
+
+    #[test]
+    fn collect_panic_loci_splits_receiver_start_from_method_producer_line() {
+        let src = r#"pub struct ConceptOpCatalog;
+const CONCEPT_BIND_RESULT: &str = "concept:bind-result";
+
+pub fn split_method_chain() -> Cid {
+    ConceptOpCatalog
+        .cid(CONCEPT_BIND_RESULT)
+        .unwrap()
+}
+"#;
+        let loci = panic_loci_for_first_fn(src);
+        assert_eq!(loci.len(), 1, "expected one panic locus: {loci:?}");
+        assert_eq!(loci[0]["line"].as_u64(), Some(7), "{loci:?}");
+        assert_eq!(loci[0]["panicLine"].as_u64(), Some(7), "{loci:?}");
+        assert_eq!(loci[0]["producerLine"].as_u64(), Some(6), "{loci:?}");
+        assert_eq!(loci[0]["producerSymbol"], "method:cid", "{loci:?}");
     }
 
     #[test]
@@ -9534,6 +10095,13 @@ pub fn bitwise_not() -> i64 {
             .expect("write infallible serialize manifest");
     }
 
+    fn write_function_postconditions_manifest(root: &Path, body: &str) {
+        let contracts_dir = root.join(".provekit").join("contracts");
+        fs::create_dir_all(&contracts_dir).expect("create contracts dir");
+        fs::write(contracts_dir.join("function_postconditions.toml"), body)
+            .expect("write function postconditions manifest");
+    }
+
     fn write_sugar_binding_proof(
         proof_dir: &Path,
         mut sugar_entry: Value,
@@ -10460,6 +11028,102 @@ pub fn identity(value: i64) -> i64 {
     }
 
     #[test]
+    fn function_contract_lift_emits_function_postconditions_from_manifest() {
+        let root = temp_workspace("function_contract_dfn_postconditions");
+        let src_dir = root.join("src");
+        fs::create_dir_all(&src_dir).expect("create src dir");
+        fs::write(
+            root.join("Cargo.toml"),
+            r#"
+[package]
+name = "consumer-crate"
+version = "0.1.0"
+edition = "2021"
+"#,
+        )
+        .expect("write Cargo.toml");
+        fs::write(
+            src_dir.join("lib.rs"),
+            r#"
+pub fn identity(value: i64) -> i64 {
+    value
+}
+"#,
+        )
+        .expect("write source");
+        write_function_postconditions_manifest(
+            &root,
+            r#"
+[[functions]]
+call_kind = "associated"
+callee_crate = "consumer_crate"
+type_path = "Cid"
+callee = "parse"
+arg0_format_literal = "blake3-512:{}"
+arg0_repeat_literal = "0"
+arg0_repeat_count = 128
+contract = "cid_parse__zero_digest"
+post_predicate = "is_ok"
+reason = "format!(\"blake3-512:{}\", \"0\".repeat(128)) is a valid blake3-512 CID"
+
+[[functions]]
+call_kind = "method"
+callee_crate = "consumer_crate"
+receiver_path = "ConceptOpCatalog"
+callee = "cid"
+arg0_path = "CONCEPT_BIND_RESULT"
+contract = "concept_op_catalog_cid__concept_bind_result"
+post_predicate = "is_some"
+reason = "grammar_op_shape(CONCEPT_BIND_RESULT) has a fixed primitive arm and json_cid returns a valid CID"
+"#,
+        );
+
+        let resp = function_contract_lift(&json!({
+            "workspace_root": root.to_string_lossy(),
+            "source_paths": ["."]
+        }))
+        .expect("function contract lift");
+
+        let entries = resp["ir"].as_array().expect("ir array");
+        let by_name = |name: &str| -> &Value {
+            entries
+                .iter()
+                .find(|entry| entry["name"] == name)
+                .unwrap_or_else(|| panic!("missing synthetic D-fn contract `{name}`: {entries:?}"))
+        };
+
+        let parse = by_name("cid_parse__zero_digest");
+        assert_eq!(parse["kind"], "contract");
+        assert_eq!(parse["library"], "consumer_crate");
+        assert_eq!(parse["bodyDischargeEligible"], false);
+        assert_eq!(parse["bodyDischargeRefusalReason"], "totality-axiom");
+        assert_eq!(
+            parse["post"],
+            json!({
+                "kind": "atomic",
+                "name": "is_ok",
+                "args": [{ "kind": "var", "name": "result" }]
+            })
+        );
+
+        let cid = by_name("concept_op_catalog_cid__concept_bind_result");
+        assert_eq!(cid["kind"], "contract");
+        assert_eq!(cid["library"], "consumer_crate");
+        assert_eq!(cid["bodyDischargeEligible"], false);
+        assert_eq!(cid["bodyDischargeRefusalReason"], "totality-axiom");
+        assert_eq!(
+            cid["post"],
+            json!({
+                "kind": "atomic",
+                "name": "is_some",
+                "args": [{ "kind": "var", "name": "result" }]
+            })
+        );
+
+        let _ = fs::remove_dir_all(root);
+    }
+
+    #[test]
     fn lift_implications_disambiguates_blessed_concrete_param_from_manifest_alias() {
         let src = r##"
 use serde_json as sj;
@@ -10521,6 +11185,214 @@ reason = "derive Serialize over serde_json-infallible fields"
         assert_eq!(bridge["targetContractCid"], expected_cid);
         assert_eq!(bridge["callsite"]["start_line"], 7);
         assert_eq!(bridge["callsite"]["panicSite"], false);
+
+        let _ = fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn lift_implications_disambiguates_function_postcondition_shapes_from_manifest() {
+        let src = r##"
+pub struct Cid;
+pub struct ConceptOpCatalog;
+
+const CONCEPT_BIND_RESULT: &str = "concept:bind-result";
+const CONCEPT_SEQ: &str = "concept:seq";
+
+impl Cid {
+    pub fn parse(_value: String) -> Result<Cid, ()> {
+        panic!()
+    }
+}
+
+impl ConceptOpCatalog {
+    pub fn cid(&self, _name: &str) -> Option<Cid> {
+        panic!()
+    }
+}
+
+pub fn parse_zero_digest() -> Cid {
+    Cid::parse(format!("blake3-512:{}", "0".repeat(128))).expect("sentinel cid is valid")
+}
+
+pub fn parse_other_digest() -> Cid {
+    Cid::parse(format!("blake3-512:{}", "1".repeat(128))).expect("not audited")
+}
+
+pub fn parse_wrong_count() -> Cid {
+    Cid::parse(format!("blake3-512:{}", "0".repeat(64))).expect("not audited")
+}
+
+pub fn parse_wrong_prefix() -> Cid {
+    Cid::parse(format!("blake3-256:{}", "0".repeat(128))).expect("not audited")
+}
+
+pub fn parse_unknown_predicate() -> Cid {
+    Cid::parse(format!("blake3-512:{}", "2".repeat(128))).expect("audited producer, unknown panic predicate")
+}
+
+pub fn parse_variable(value: String) -> Cid {
+    Cid::parse(value).expect("not audited")
+}
+
+pub fn catalog_bind_result() -> Cid {
+    ConceptOpCatalog.cid(CONCEPT_BIND_RESULT).expect("concept:bind-result is primitive")
+}
+
+pub fn catalog_other_name() -> Cid {
+    ConceptOpCatalog.cid(CONCEPT_SEQ).expect("not audited")
+}
+"##;
+        let root = temp_workspace("lift_implications_dfn_postconditions");
+        let src_dir = root.join("src");
+        fs::create_dir_all(&src_dir).expect("create src dir");
+        fs::write(
+            root.join("Cargo.toml"),
+            r#"
+[package]
+name = "consumer-crate"
+version = "0.1.0"
+edition = "2021"
+"#,
+        )
+        .expect("write Cargo.toml");
+        let rel = "src/lib.rs";
+        fs::write(root.join(rel), src).expect("write source");
+        write_function_postconditions_manifest(
+            &root,
+            r#"
+[[functions]]
+call_kind = "associated"
+callee_crate = "consumer_crate"
+type_path = "Cid"
+callee = "parse"
+arg0_format_literal = "blake3-512:{}"
+arg0_repeat_literal = "0"
+arg0_repeat_count = 128
+contract = "cid_parse__zero_digest"
+post_predicate = "is_ok"
+reason = "format!(\"blake3-512:{}\", \"0\".repeat(128)) is a valid blake3-512 CID"
+
+[[functions]]
+call_kind = "associated"
+callee_crate = "consumer_crate"
+type_path = "Cid"
+callee = "parse"
+arg0_format_literal = "blake3-512:{}"
+arg0_repeat_literal = "2"
+arg0_repeat_count = 128
+contract = "cid_parse__unknown_predicate"
+post_predicate = "is_canonical"
+reason = "recognized producer with an unknown singleton predicate must not imply a std panic partial"
+
+[[functions]]
+call_kind = "method"
+callee_crate = "consumer_crate"
+receiver_path = "ConceptOpCatalog"
+callee = "cid"
+arg0_path = "CONCEPT_BIND_RESULT"
+contract = "concept_op_catalog_cid__concept_bind_result"
+post_predicate = "is_some"
+reason = "grammar_op_shape(CONCEPT_BIND_RESULT) has a fixed primitive arm and json_cid returns a valid CID"
+"#,
+        );
+
+        let parse_cid = "blake3-512:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa";
+        let catalog_cid = "blake3-512:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb";
+        let unknown_predicate_cid = "blake3-512:eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee";
+        let result_expect_cid = "blake3-512:cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc";
+        let option_expect_cid = "blake3-512:dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd";
+        let resp = lift_implications(&json!({
+            "workspace_root": root.to_string_lossy(),
+            "source_paths": [rel],
+            "contract_bindings": [
+                {
+                    "name": "cid_parse__zero_digest",
+                    "library": "consumer_crate",
+                    "contract_cid": parse_cid,
+                    "bodyDischargeEligible": false,
+                    "bodyDischargeRefusalReason": "totality-axiom"
+                },
+                {
+                    "name": "cid_parse__unknown_predicate",
+                    "library": "consumer_crate",
+                    "contract_cid": unknown_predicate_cid,
+                    "bodyDischargeEligible": false,
+                    "bodyDischargeRefusalReason": "totality-axiom"
+                },
+                {
+                    "name": "concept_op_catalog_cid__concept_bind_result",
+                    "library": "consumer_crate",
+                    "contract_cid": catalog_cid,
+                    "bodyDischargeEligible": false,
+                    "bodyDischargeRefusalReason": "totality-axiom"
+                },
+                {
+                    "name": "result_expect@std/src/result.rs:2:1",
+                    "library": "std",
+                    "contract_cid": result_expect_cid,
+                    "body_bearing": true,
+                    "has_pre": true
+                },
+                {
+                    "name": "option_expect@std/src/option.rs:2:1",
+                    "library": "std",
+                    "contract_cid": option_expect_cid,
+                    "body_bearing": true,
+                    "has_pre": true
+                }
+            ],
+        }))
+        .expect("lift_implications");
+
+        let ir = resp["ir"].as_array().expect("ir array");
+        let parse_hits: Vec<&Value> = ir
+            .iter()
+            .filter(|entry| {
+                entry["sourceSymbol"] == "parse" && entry["targetContractCid"] == parse_cid
+            })
+            .collect();
+        assert_eq!(
+            parse_hits.len(),
+            1,
+            "only the exact audited Cid::parse(format!(\"blake3-512:{{}}\", \"0\".repeat(128))) shape may bridge to the parse totality contract; wrong literal/count/prefix and variables must refuse: {ir:?}"
+        );
+
+        let unknown_predicate_hits: Vec<&Value> = ir
+            .iter()
+            .filter(|entry| {
+                entry["sourceSymbol"] == "parse"
+                    && entry["targetContractCid"] == unknown_predicate_cid
+            })
+            .collect();
+        assert_eq!(
+            unknown_predicate_hits.len(),
+            1,
+            "the unknown-predicate manifest entry should still emit its producer bridge, proving the later panic refusal is predicate-gated rather than recognizer failure: {ir:?}"
+        );
+
+        let catalog_hits: Vec<&Value> = ir
+            .iter()
+            .filter(|entry| {
+                entry["sourceSymbol"] == "method:cid"
+                    && entry["targetContractCid"] == catalog_cid
+            })
+            .collect();
+        assert_eq!(
+            catalog_hits.len(),
+            1,
+            "only ConceptOpCatalog.cid(CONCEPT_BIND_RESULT) may bridge to the catalog totality contract: {ir:?}"
+        );
+
+        let panic_targets: Vec<&str> = ir
+            .iter()
+            .filter(|entry| entry["sourceSymbol"] == "method:expect")
+            .filter_map(|entry| entry["targetContractCid"].as_str())
+            .collect();
+        assert_eq!(
+            panic_targets,
+            vec![result_expect_cid, option_expect_cid],
+            "manifest-audited receiver calls must route their panic leaf to the matching std partial; unaudited receiver shapes must still refuse: {ir:?}"
+        );
 
         let _ = fs::remove_dir_all(root);
     }

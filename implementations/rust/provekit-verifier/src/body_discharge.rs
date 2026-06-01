@@ -577,11 +577,11 @@ fn formula_is_reflexive(f: &Json) -> bool {
 ///
 /// When a callsite's `arg_term` is a `ctor` (i.e. the argument to the
 /// partial is the RETURN VALUE of another function call), look up that
-/// callee's contract in the pool and check whether its `post` is the
-/// `is_ok(result)` postcondition. If so, return `is_ok(arg_term)` as an
-/// established fact -- the callee's totality contract supplies the fact
-/// that its result is always `Ok`, so the receiving `unwrap()` cannot
-/// panic.
+/// callee's contract in the pool and check whether its `post` is a singleton
+/// atomic postcondition over `result`. If so, return the same atomic predicate
+/// over `arg_term` as an established fact -- the callee's totality contract
+/// supplies the fact that its result satisfies that predicate, so a matching
+/// receiving partial can discharge its precondition.
 ///
 /// This is the CROSS-FUNCTION-POSTCONDITION-AS-ASSUMABLE-FACT mechanism
 /// (Phase 2 Tier D-lib). It is LANGUAGE-BLIND: it reads the post field as
@@ -590,21 +590,19 @@ fn formula_is_reflexive(f: &Json) -> bool {
 ///
 ///   1. `cs.arg_term` is a `ctor` (the arg is a call expression, not a bare var)
 ///   2. The ctor name has a bridge in the pool
-///   3. The bridge's target contract has `post = is_ok(result)`
-///      (the strengthened singleton totality post, NOT the generic
-///      `is_ok || is_err` disjunction)
+///   3. The bridge's target contract has `post = P(result)` for a singleton
+///      atomic predicate `P`
 ///
 /// SOUNDNESS: the postcondition is read from a contract in the pool whose
 /// soundness is the contract author's responsibility. This function only
-/// checks structural shape. A false `is_ok` post is a false contract, not
+/// checks structural shape. A false singleton post is a false contract, not
 /// a verifier bug.
 ///
-/// DISCRIMINATION: when the bridge target's post is NOT exactly
-/// `is_ok(result)` (e.g. it is the generic `is_ok(result) || is_err(result)`
-/// or any other predicate), this returns `None`. Only the STRENGTHENED
-/// singleton triggers the fact supply.
+/// DISCRIMINATION: when the bridge target's post is NOT a singleton atomic over
+/// `result` (e.g. a disjunction or conjunction), this returns `None`. Only the
+/// strengthened singleton triggers the fact supply.
 ///
-/// Returns `Some(is_ok(arg_term))` when all three conditions hold, else `None`.
+/// Returns `Some(P(arg_term))` when all three conditions hold, else `None`.
 pub fn callee_post_guard_fact(cs: &CallSite, pool: &MementoPool) -> Option<Json> {
     macro_rules! gdbg {
         ($($a:tt)*) => {
@@ -644,13 +642,22 @@ pub fn callee_post_guard_fact(cs: &CallSite, pool: &MementoPool) -> Option<Json>
     // from elsewhere must never discharge a panic obligation it does not govern.
     // Non-panic sites keep the per-symbol lookup byte-for-byte.
     let bridge: &Json = if cs.panic_site {
-        match (cs.callsite_bundle_cid.as_deref(), cs.file.as_deref(), cs.line) {
+        let producer_file = cs.producer_file.as_deref().or(cs.file.as_deref());
+        let producer_line = cs.producer_line.or(cs.line);
+        let producer_symbol = cs.producer_symbol.as_deref().unwrap_or(ctor_name);
+        if producer_symbol != ctor_name {
+            gdbg!(
+                "REJECT cond2: producerSymbol={producer_symbol} does not match arg ctor {ctor_name}"
+            );
+            return None;
+        }
+        match (cs.callsite_bundle_cid.as_deref(), producer_file, producer_line) {
             (Some(bundle), Some(file), Some(line)) => {
                 let key = (
                     bundle.to_string(),
                     file.to_string(),
                     line,
-                    ctor_name.to_string(),
+                    producer_symbol.to_string(),
                 );
                 match pool.bridges_by_callsite.get(&key) {
                     Some(b) => {
@@ -704,52 +711,53 @@ pub fn callee_post_guard_fact(cs: &CallSite, pool: &MementoPool) -> Option<Json>
         return None;
     };
 
-    // Condition 3: the contract's `post` is exactly `is_ok(result)`.
+    // Condition 3: the contract's `post` is exactly one atomic `P(result)`.
     let Some(post) = body.get("post") else {
         gdbg!("REJECT cond3: target contract for {ctor_name} has no post field");
         return None;
     };
-    if !post_is_is_ok_of_result(post) {
-        gdbg!("REJECT cond3: post is NOT exactly is_ok(result) singleton -> post={post}");
+    let Some(predicate_name) = post_singleton_atomic_predicate_of_result(post) else {
+        gdbg!("REJECT cond3: post is NOT a singleton atomic P(result) -> post={post}");
         return None;
-    }
-    gdbg!("ACCEPT: supplying is_ok(arg) fact for ctor_name={ctor_name}");
+    };
+    gdbg!("ACCEPT: supplying {predicate_name}(arg) fact for ctor_name={ctor_name}");
 
-    // Supply the fact: `is_ok(arg_term)`. The arg_term (the ctor expression)
-    // is the value whose is_ok status the contract guarantees. This is
-    // structurally identical to what a syntactic `if result.is_ok()` guard
+    // Supply the fact: `P(arg_term)`. The arg_term (the ctor expression)
+    // is the value whose predicate status the contract guarantees. This is
+    // structurally identical to what a syntactic predicate guard
     // supplies; the discharge engine cannot tell them apart (language-blind).
     Some(serde_json::json!({
         "kind": "atomic",
-        "name": "is_ok",
+        "name": predicate_name,
         "args": [arg.clone()]
     }))
 }
 
-/// True iff `post` is the singleton totality postcondition `is_ok(result)`.
+/// Return the predicate name iff `post` is a singleton atomic `P(result)`.
 ///
-/// Shape: `{"kind": "atomic", "name": "is_ok", "args": [{"kind": "var", "name": "result"}]}`.
+/// Shape: `{"kind": "atomic", "name": "<predicate>", "args": [{"kind": "var", "name": "result"}]}`.
 ///
-/// Recognizes ONLY the strengthened singleton, not the generic
-/// `is_ok(result) || is_err(result)`. This is the soundness boundary for
-/// D-lib: only a contract that explicitly strengthens to ALWAYS-OK carries
+/// Recognizes ONLY a strengthened singleton, not a generic disjunction or
+/// conjunction. This is the soundness boundary for D-fn/D-lib: only a contract
+/// that explicitly strengthens to a single predicate over the result carries
 /// this post.
-fn post_is_is_ok_of_result(post: &Json) -> bool {
+fn post_singleton_atomic_predicate_of_result(post: &Json) -> Option<&str> {
     if post.get("kind").and_then(|v| v.as_str()) != Some("atomic") {
-        return false;
+        return None;
     }
-    if post.get("name").and_then(|v| v.as_str()) != Some("is_ok") {
-        return false;
-    }
-    let args = match post.get("args").and_then(|v| v.as_array()) {
-        Some(a) => a,
-        None => return false,
-    };
+    let predicate = post.get("name").and_then(|v| v.as_str())?;
+    let args = post.get("args").and_then(|v| v.as_array())?;
     if args.len() != 1 {
-        return false;
+        return None;
     }
-    args[0].get("kind").and_then(|v| v.as_str()) == Some("var")
-        && args[0].get("name").and_then(|v| v.as_str()) == Some("result")
+    let arg = &args[0];
+    if arg.get("kind").and_then(|v| v.as_str()) == Some("var")
+        && arg.get("name").and_then(|v| v.as_str()) == Some("result")
+    {
+        Some(predicate)
+    } else {
+        None
+    }
 }
 
 /// Recognize the `=(<call>, <expected>)` harvested-assertion shape on a
@@ -1235,21 +1243,27 @@ mod callee_post_guard_fact_tests {
 
     // CIDs for hand-built contracts in these tests.
     const TOTAL_CONTRACT_CID: &str = "blake3-512:serde-value-totality";
+    const OPTION_TOTAL_CONTRACT_CID: &str = "blake3-512:option-totality-contract";
     const GENERIC_CONTRACT_CID: &str = "blake3-512:generic-result-contract";
     const BRIDGE_SYMBOL: &str = "serde_json_to_string_value";
+    const OPTION_BRIDGE_SYMBOL: &str = "concept_op_catalog_cid_known";
     const GENERIC_BRIDGE_SYMBOL: &str = "to_string_generic";
 
     /// A memento pool with:
-    ///   - a contract with `post = is_ok(result)` (the Value-totality contract)
-    ///   - a bridge from BRIDGE_SYMBOL to that contract
-    fn totality_pool() -> MementoPool {
+    ///   - a contract with `post = <predicate>(result)`
+    ///   - a bridge from `bridge_symbol` to that contract
+    fn singleton_totality_pool(
+        bridge_symbol: &str,
+        contract_cid: &str,
+        predicate: &str,
+    ) -> MementoPool {
         let contract_env = json!({
             "evidence": {
                 "kind": "contract",
                 "body": {
                     "post": {
                         "kind": "atomic",
-                        "name": "is_ok",
+                        "name": predicate,
                         "args": [{"kind": "var", "name": "result"}]
                     }
                 }
@@ -1259,17 +1273,27 @@ mod callee_post_guard_fact_tests {
             "evidence": {
                 "kind": "bridge",
                 "body": {
-                    "sourceSymbol": BRIDGE_SYMBOL,
-                    "targetContractCid": TOTAL_CONTRACT_CID
+                    "sourceSymbol": bridge_symbol,
+                    "targetContractCid": contract_cid
                 }
             }
         });
         let mut pool = MementoPool::default();
-        pool.mementos
-            .insert(TOTAL_CONTRACT_CID.into(), contract_env);
+        pool.mementos.insert(contract_cid.into(), contract_env);
         pool.bridges_by_symbol
-            .insert(BRIDGE_SYMBOL.into(), bridge_env);
+            .insert(bridge_symbol.into(), bridge_env);
         pool
+    }
+
+    /// A memento pool with:
+    ///   - a contract with `post = is_ok(result)` (the Value-totality contract)
+    ///   - a bridge from BRIDGE_SYMBOL to that contract
+    fn totality_pool() -> MementoPool {
+        singleton_totality_pool(BRIDGE_SYMBOL, TOTAL_CONTRACT_CID, "is_ok")
+    }
+
+    fn option_totality_pool() -> MementoPool {
+        singleton_totality_pool(OPTION_BRIDGE_SYMBOL, OPTION_TOTAL_CONTRACT_CID, "is_some")
     }
 
     /// A pool with a GENERIC (non-total) Result contract: post = is_ok || is_err.
@@ -1365,6 +1389,38 @@ mod callee_post_guard_fact_tests {
             fact_args[0].get("name").and_then(|v| v.as_str()),
             Some(BRIDGE_SYMBOL),
             "the ctor name in the fact must match the bridge symbol"
+        );
+    }
+
+    #[test]
+    fn positive_ctor_with_is_some_post_supplies_fact() {
+        // LANGUAGE-BLINDNESS: the verifier should not know that `is_ok` is
+        // special. Any singleton atomic post `P(result)` supplies `P(arg)`;
+        // the solver decides whether that fact discharges the target pre.
+        let cs = cs_with_ctor_arg(OPTION_BRIDGE_SYMBOL);
+        let pool = option_totality_pool();
+        let fact = callee_post_guard_fact(&cs, &pool);
+        assert!(
+            fact.is_some(),
+            "a ctor arg whose contract has singleton post=is_some(result) must yield a guard fact"
+        );
+        let fact = fact.unwrap();
+        assert_eq!(
+            fact.get("kind").and_then(|v| v.as_str()),
+            Some("atomic"),
+            "the supplied fact must be an atomic"
+        );
+        assert_eq!(
+            fact.get("name").and_then(|v| v.as_str()),
+            Some("is_some"),
+            "the supplied fact must preserve the opaque singleton predicate name"
+        );
+        let fact_args = fact.get("args").and_then(|v| v.as_array()).unwrap();
+        assert_eq!(fact_args.len(), 1);
+        assert_eq!(
+            fact_args[0].get("name").and_then(|v| v.as_str()),
+            Some(OPTION_BRIDGE_SYMBOL),
+            "the fact's argument must be the receiver ctor expression"
         );
     }
 
@@ -1479,6 +1535,74 @@ mod callee_post_guard_fact_tests {
         let fact = callee_post_guard_fact(&cs, &pool)
             .expect("panic site must find producer in the caller contract bundle");
         assert_eq!(fact.get("name").and_then(|v| v.as_str()), Some("is_ok"));
+    }
+
+    #[test]
+    fn panic_site_uses_opaque_producer_coordinates_for_split_line_chain() {
+        // Multi-line chains have distinct coordinates: the panic leaf is at
+        // `.expect()`/`.unwrap()`, while the receiver producer bridge is keyed
+        // at the receiver call. The verifier must consume those coordinates as
+        // opaque data from the kit, with no Rust-specific semantics.
+        let callsite_bundle = "blake3-512:libprovekit-proof";
+        let mut pool = option_totality_pool();
+        let producer_bridge = json!({
+            "evidence": {
+                "kind": "bridge",
+                "body": {
+                    "sourceSymbol": OPTION_BRIDGE_SYMBOL,
+                    "targetContractCid": OPTION_TOTAL_CONTRACT_CID
+                }
+            }
+        });
+        pool.bridges_by_callsite.insert(
+            (
+                callsite_bundle.to_string(),
+                "src/core/bind.rs".to_string(),
+                549,
+                OPTION_BRIDGE_SYMBOL.to_string(),
+            ),
+            producer_bridge,
+        );
+
+        let cs = CallSite {
+            panic_site: true,
+            callsite_bundle_cid: Some(callsite_bundle.into()),
+            file: Some("src/core/bind.rs".into()),
+            line: Some(550),
+            producer_file: Some("src/core/bind.rs".into()),
+            producer_line: Some(549),
+            producer_symbol: Some(OPTION_BRIDGE_SYMBOL.into()),
+            arg_term: Some(json!({
+                "kind": "ctor",
+                "name": OPTION_BRIDGE_SYMBOL,
+                "args": [{"kind": "var", "name": "concept"}]
+            })),
+            ..Default::default()
+        };
+
+        let fact = callee_post_guard_fact(&cs, &pool)
+            .expect("split-line panic site must use producer coordinates");
+        assert_eq!(fact.get("name").and_then(|v| v.as_str()), Some("is_some"));
+
+        let missing_producer_line = CallSite {
+            producer_file: None,
+            producer_line: None,
+            producer_symbol: None,
+            ..cs.clone()
+        };
+        assert!(
+            callee_post_guard_fact(&missing_producer_line, &pool).is_none(),
+            "without producerLine, the panic leaf line must not find the receiver producer bridge"
+        );
+
+        let wrong_producer_symbol = CallSite {
+            producer_symbol: Some("method:other".into()),
+            ..cs
+        };
+        assert!(
+            callee_post_guard_fact(&wrong_producer_symbol, &pool).is_none(),
+            "producerSymbol must match the receiver ctor and must not fall back by line alone"
+        );
     }
 
     #[test]

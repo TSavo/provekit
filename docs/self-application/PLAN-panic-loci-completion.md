@@ -35,6 +35,12 @@ the marked checkpoints.
   `silentlyDropped=0`, `falsePass=0`, `panicSafe=0`, `panicCensus=32`, with
   every unproven site named by category. Next K movement comes from the Phase-2
   D-lib per-type slice, not more panic-locus plumbing.
+- **D-fn branch #1771 verified 2026-06-01.** The manifest-backed cross-function
+  postcondition slice reached the expected gates: libprovekit
+  `panicSafe=12`, provekit-cli `panicSafe=21`, both with `silentlyDropped=0`,
+  `falsePass=0`, and `droppedSites=[]`. See
+  `docs/self-application/GOAL-provekit-proves-provekit.md` for the current
+  scoreboard and census.
 
 ## Recommended order
 
