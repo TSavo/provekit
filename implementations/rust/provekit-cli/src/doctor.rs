@@ -26,6 +26,7 @@
 
 use std::path::{Path, PathBuf};
 
+use clap::ValueEnum;
 use serde_json::{json, Value};
 
 use crate::lift_plugin::{parse_manifest_at, resolved_working_dir_for};
@@ -56,6 +57,44 @@ pub enum CheckSeverity {
     Hard,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq, ValueEnum)]
+pub enum DoctorMode {
+    Structural,
+    Strict,
+}
+
+impl DoctorMode {
+    pub fn as_str(self) -> &'static str {
+        match self {
+            DoctorMode::Structural => "structural",
+            DoctorMode::Strict => "strict",
+        }
+    }
+}
+
+impl std::fmt::Display for DoctorMode {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(self.as_str())
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct DoctorContext {
+    pub mode: DoctorMode,
+}
+
+impl DoctorContext {
+    pub fn new(mode: DoctorMode) -> Self {
+        Self { mode }
+    }
+}
+
+impl Default for DoctorContext {
+    fn default() -> Self {
+        Self::new(DoctorMode::Structural)
+    }
+}
+
 /// One check result.
 #[derive(Debug, Clone)]
 pub struct DoctorCheck {
@@ -73,6 +112,7 @@ pub type Check = DoctorCheck;
 #[derive(Debug, Clone)]
 pub struct DoctorReport {
     pub target: PathBuf,
+    pub mode: DoctorMode,
     pub checks: Vec<DoctorCheck>,
     pub ok: bool,
 }
@@ -172,6 +212,21 @@ pub fn run_report(kit_dir: &Path) -> DoctorReport {
     let ok = !checks.iter().any(|c| c.status == CheckStatus::Fail);
     DoctorReport {
         target: kit_dir.to_path_buf(),
+        mode: DoctorMode::Structural,
+        checks,
+        ok,
+    }
+}
+
+pub fn run_report_with_context(kit_dir: &Path, context: DoctorContext) -> DoctorReport {
+    if context.mode == DoctorMode::Structural {
+        return run_report(kit_dir);
+    }
+    let checks = run_checks_with_context(kit_dir, context);
+    let ok = !checks.iter().any(|c| c.status == CheckStatus::Fail);
+    DoctorReport {
+        target: kit_dir.to_path_buf(),
+        mode: context.mode,
         checks,
         ok,
     }
@@ -180,6 +235,11 @@ pub fn run_report(kit_dir: &Path) -> DoctorReport {
 /// Run all checks against the target kit directory.
 /// Pure function: suitable for testing without CLI overhead.
 pub fn run_checks(kit_dir: &Path) -> Vec<Check> {
+    run_checks_with_context(kit_dir, DoctorContext::default())
+}
+
+pub fn run_checks_with_context(kit_dir: &Path, context: DoctorContext) -> Vec<Check> {
+    let _mode = context.mode;
     let mut checks: Vec<Check> = Vec::new();
 
     // --- Check 1: config.toml and all manifest TOML files parse as valid TOML.
@@ -962,6 +1022,117 @@ mod tests {
     }
 
     #[test]
+    fn run_report_defaults_to_structural_mode() {
+        let td = TempDir::new().unwrap();
+        let kit = td.path();
+        fs::create_dir_all(kit.join(".provekit")).unwrap();
+
+        let report = run_report(kit);
+
+        assert_eq!(report.mode, DoctorMode::Structural);
+    }
+
+    #[test]
+    fn doctor_report_mode_reflects_requested_mode() {
+        let td = TempDir::new().unwrap();
+        let kit = td.path();
+        fs::create_dir_all(kit.join(".provekit")).unwrap();
+
+        let strict = run_report_with_context(kit, DoctorContext::new(DoctorMode::Strict));
+
+        assert_eq!(strict.mode, DoctorMode::Strict);
+    }
+
+    #[test]
+    fn run_checks_with_context_preserves_default_engine_results() {
+        let td = TempDir::new().unwrap();
+        let kit = td.path();
+        fs::create_dir_all(kit.join(".provekit")).unwrap();
+
+        let default_checks = run_checks(kit);
+        let structural_checks =
+            run_checks_with_context(kit, DoctorContext::new(DoctorMode::Structural));
+
+        assert_eq!(default_checks.len(), structural_checks.len());
+        assert_eq!(default_checks[0].id, structural_checks[0].id);
+        assert_eq!(default_checks[0].status, structural_checks[0].status);
+        assert_eq!(default_checks[0].severity, structural_checks[0].severity);
+        assert_eq!(default_checks[0].evidence, structural_checks[0].evidence);
+    }
+
+    #[test]
+    fn modes_preserve_config_check_output() {
+        let td = TempDir::new().unwrap();
+        fs::create_dir_all(td.path().join(".provekit")).unwrap();
+
+        assert_modes_match_for_check(td.path(), "kit.config.parse");
+    }
+
+    #[test]
+    fn modes_preserve_manifest_check_output() {
+        let td = TempDir::new().unwrap();
+        let kit = td.path();
+        write_kit(
+            kit,
+            "[[plugins]]\nname = \"test\"\nkind = \"lift\"\nsurface = \"broken-surface\"\n",
+        );
+        let manifest_dir = kit.join(".provekit/lift/broken-surface");
+        fs::create_dir_all(&manifest_dir).unwrap();
+        fs::write(
+            manifest_dir.join("manifest.toml"),
+            b"name = \"broken\"\ncommand = [[[\n",
+        )
+        .unwrap();
+
+        assert_modes_match_for_check(kit, "kit.manifest.parse");
+    }
+
+    #[test]
+    fn modes_preserve_binary_check_output() {
+        let td = TempDir::new().unwrap();
+        let kit = td.path();
+        write_kit(
+            kit,
+            "[[plugins]]\nname = \"test\"\nkind = \"lift\"\nsurface = \"broken-surface\"\n",
+        );
+        write_manifest(
+            kit,
+            "lift",
+            "broken-surface",
+            "\"../target/debug/nonexistent-binary\"",
+            ".",
+        );
+
+        assert_modes_match_for_check(kit, "kit.plugin.command.available");
+    }
+
+    #[test]
+    fn modes_preserve_consumer_surface_check_output() {
+        let td = TempDir::new().unwrap();
+        let kit = td.path();
+        let plugin = kit.join("consumer-plugin");
+        make_consumer_plugin(
+            &plugin,
+            "consumer-surface",
+            "provekit.plugin.lift_implications",
+            "consumer",
+        );
+        write_kit(
+            kit,
+            "[[plugins]]\nname = \"consumer\"\nkind = \"lift\"\nsurface = \"consumer-surface\"\n",
+        );
+        write_manifest(
+            kit,
+            "lift",
+            "consumer-surface",
+            "\"./consumer-plugin\"",
+            ".",
+        );
+
+        assert_modes_match_for_check(kit, "kit.consumer_surface.contract");
+    }
+
+    #[test]
     fn invalid_manifest_toml_fails_with_substrate_id() {
         let td = TempDir::new().unwrap();
         let kit = td.path();
@@ -1164,6 +1335,34 @@ mod tests {
             config.detail.contains(".provekit/config.toml"),
             "missing-config detail should name the file: {}",
             config.detail
+        );
+    }
+
+    fn check_by_id<'a>(report: &'a DoctorReport, id: &str) -> &'a DoctorCheck {
+        report
+            .checks
+            .iter()
+            .find(|check| check.id == id)
+            .unwrap_or_else(|| panic!("{id} check in {report:#?}"))
+    }
+
+    fn assert_modes_match_for_check(kit: &Path, id: &str) {
+        let structural =
+            run_report_with_context(kit, DoctorContext::new(DoctorMode::Structural));
+        let strict = run_report_with_context(kit, DoctorContext::new(DoctorMode::Strict));
+
+        let structural_check = check_by_id(&structural, id);
+        let strict_check = check_by_id(&strict, id);
+
+        assert_eq!(structural_check.status, strict_check.status, "{id} status");
+        assert_eq!(
+            structural_check.severity, strict_check.severity,
+            "{id} severity"
+        );
+        assert_eq!(structural_check.detail, strict_check.detail, "{id} detail");
+        assert_eq!(
+            structural_check.evidence, strict_check.evidence,
+            "{id} evidence"
         );
     }
 

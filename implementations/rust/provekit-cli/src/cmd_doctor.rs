@@ -8,7 +8,9 @@ use clap::Parser;
 use owo_colors::OwoColorize;
 use serde_json::{json, Value};
 
-use crate::doctor::{run_report, CheckStatus, DoctorCheck, DoctorReport};
+use crate::doctor::{
+    run_report_with_context, CheckStatus, DoctorCheck, DoctorContext, DoctorMode, DoctorReport,
+};
 use crate::{EXIT_OK, EXIT_USER_ERROR};
 
 #[derive(Parser, Debug, Clone)]
@@ -21,6 +23,10 @@ pub struct DoctorArgs {
     /// Emit structured JSON instead of human-readable text.
     #[arg(long)]
     pub json: bool,
+
+    /// Doctor policy mode.
+    #[arg(long, value_enum, default_value_t = DoctorMode::Structural)]
+    pub mode: DoctorMode,
 }
 
 pub fn run(args: DoctorArgs) -> u8 {
@@ -32,7 +38,7 @@ pub fn run(args: DoctorArgs) -> u8 {
         }
     };
 
-    let report = run_report(&target);
+    let report = run_report_with_context(&target, DoctorContext::new(args.mode));
 
     if args.json {
         print_json(&report);
@@ -141,6 +147,7 @@ fn legacy_report_json(report: &DoctorReport) -> Value {
     let checks_json: Vec<Value> = report.checks.iter().map(legacy_check_json).collect();
     json!({
         "checks": checks_json,
+        "mode": report.mode.as_str(),
         "ok": report.ok,
     })
 }
@@ -171,13 +178,14 @@ mod tests {
         )
         .unwrap();
 
-        let report = run_report(kit);
+        let report = run_report_with_context(kit, DoctorContext::default());
         let value = legacy_report_json(&report);
         let first_check = value["checks"][0]
             .as_object()
             .expect("first check object");
 
         assert!(value.get("ok").is_some());
+        assert_eq!(value.get("mode").and_then(Value::as_str), Some("structural"));
         assert!(first_check.contains_key("name"));
         assert!(first_check.contains_key("status"));
         assert!(first_check.contains_key("detail"));
@@ -185,5 +193,35 @@ mod tests {
         assert!(!first_check.contains_key("domain"));
         assert!(!first_check.contains_key("severity"));
         assert!(!first_check.contains_key("evidence"));
+    }
+
+    #[test]
+    fn default_mode_is_structural() {
+        let args = DoctorArgs::try_parse_from(["doctor"]).unwrap();
+
+        assert_eq!(args.mode, DoctorMode::Structural);
+    }
+
+    #[test]
+    fn strict_mode_argument_parses() {
+        let args = DoctorArgs::try_parse_from(["doctor", "--mode", "strict"]).unwrap();
+
+        assert_eq!(args.mode, DoctorMode::Strict);
+    }
+
+    #[test]
+    fn invalid_mode_is_a_parse_error() {
+        let err = DoctorArgs::try_parse_from(["doctor", "--mode", "invalid"])
+            .expect_err("invalid mode should fail before doctor checks run")
+            .to_string();
+
+        assert!(
+            err.contains("invalid"),
+            "parse error should name the invalid value: {err}"
+        );
+        assert!(
+            err.contains("structural") && err.contains("strict"),
+            "parse error should list valid modes: {err}"
+        );
     }
 }
