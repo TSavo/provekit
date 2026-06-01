@@ -640,11 +640,7 @@ pub fn callee_post_guard_fact(cs: &CallSite, pool: &MementoPool) -> Option<Json>
     // from elsewhere must never discharge a panic obligation it does not govern.
     // Non-panic sites keep the per-symbol lookup byte-for-byte.
     let bridge: &Json = if cs.panic_site {
-        match (
-            cs.bridge_self_bundle_cid.as_deref(),
-            cs.file.as_deref(),
-            cs.line,
-        ) {
+        match (cs.callsite_bundle_cid.as_deref(), cs.file.as_deref(), cs.line) {
             (Some(bundle), Some(file), Some(line)) => {
                 let key = (
                     bundle.to_string(),
@@ -1432,6 +1428,54 @@ mod callee_post_guard_fact_tests {
             "a callsite with no arg_term must not supply a fact"
         );
     }
+
+    #[test]
+    fn panic_site_uses_callsite_bundle_for_co_located_producer_lookup() {
+        // Regression for target+imports pools: the selected `method:expect`
+        // bridge can come from a global per-symbol slot, but the receiver
+        // producer (`to_value(...)`) must be looked up in the bundle containing
+        // the caller contract. Otherwise imported libprovekit panic sites miss
+        // producer bridges that are present in their own imported proof.
+        let callsite_bundle = "blake3-512:imported-libprovekit-proof";
+        let wrong_bridge_bundle = "blake3-512:target-proof-global-method-expect";
+        let mut pool = totality_pool();
+        let producer_bridge = json!({
+            "evidence": {
+                "kind": "bridge",
+                "body": {
+                    "sourceSymbol": BRIDGE_SYMBOL,
+                    "targetContractCid": TOTAL_CONTRACT_CID
+                }
+            }
+        });
+        pool.bridges_by_callsite.insert(
+            (
+                callsite_bundle.to_string(),
+                "src/core/types.rs".to_string(),
+                2137,
+                BRIDGE_SYMBOL.to_string(),
+            ),
+            producer_bridge,
+        );
+
+        let cs = CallSite {
+            panic_site: true,
+            callsite_bundle_cid: Some(callsite_bundle.into()),
+            bridge_self_bundle_cid: Some(wrong_bridge_bundle.into()),
+            file: Some("src/core/types.rs".into()),
+            line: Some(2137),
+            arg_term: Some(json!({
+                "kind": "ctor",
+                "name": BRIDGE_SYMBOL,
+                "args": [{"kind": "var", "name": "req"}]
+            })),
+            ..Default::default()
+        };
+
+        let fact = callee_post_guard_fact(&cs, &pool)
+            .expect("panic site must find producer in the caller contract bundle");
+        assert_eq!(fact.get("name").and_then(|v| v.as_str()), Some("is_ok"));
+    }
 }
 
 #[cfg(test)]
@@ -2083,4 +2127,3 @@ mod nested_call_reduce_in_place_tests {
         );
     }
 }
-

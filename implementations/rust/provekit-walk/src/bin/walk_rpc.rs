@@ -10631,6 +10631,63 @@ reason = "project-local totality axiom for dependency Sort serialization"
     }
 
     #[test]
+    fn lift_implications_disambiguates_explicit_local_json_value_to_string() {
+        let src = r##"
+use serde_json::{json, Value};
+
+pub fn dispatch() {
+    let req: Value = json!({
+        "jsonrpc": "2.0",
+        "id": 1,
+        "method": "provekit.plugin.invoke",
+    });
+    serde_json::to_string(&req).expect("serialize request");
+}
+"##;
+        let root = temp_workspace("lift_implications_explicit_local_json_value_to_string");
+        let src_dir = root.join("src");
+        fs::create_dir_all(&src_dir).expect("create src dir");
+        fs::write(
+            root.join("Cargo.toml"),
+            r#"
+[package]
+name = "consumer-crate"
+version = "0.1.0"
+edition = "2021"
+"#,
+        )
+        .expect("write Cargo.toml");
+        let rel = "src/lib.rs";
+        fs::write(root.join(rel), src).expect("write source");
+
+        let value_cid = "blake3-512:ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff";
+        let resp = lift_implications(&json!({
+            "workspace_root": root.to_string_lossy(),
+            "source_paths": [rel],
+            "contract_bindings": [
+                {
+                    "name": "serde_json_to_string_value",
+                    "library": "serde_json",
+                    "contract_cid": value_cid,
+                    "bodyDischargeEligible": false,
+                    "bodyDischargeRefusalReason": "totality-axiom"
+                }
+            ],
+        }))
+        .expect("lift implications");
+
+        let bridge = resp["ir"]
+            .as_array()
+            .expect("consumer ir array")
+            .iter()
+            .find(|entry| entry["sourceSymbol"] == "to_string")
+            .expect("serde_json::to_string bridge for explicit local Value");
+        assert_eq!(bridge["targetContractCid"], value_cid);
+
+        let _ = fs::remove_dir_all(root);
+    }
+
+    #[test]
     fn lift_implications_refuses_unregistered_concrete_and_generic_bound_manifest_hits() {
         let src = r##"
 pub struct RealizedSource;

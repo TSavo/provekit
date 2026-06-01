@@ -1137,6 +1137,8 @@ async fn lift_rust_source(
                 emit_empty_formals: false,
                 formal_sorts: Vec::new(),
                 library: None,
+                body_discharge_eligible: true,
+                body_discharge_refusal_reason: None,
                 panic_loci: Vec::new(),
                 contract_name: decl.name.clone(),
                 pre: pre_v.clone(),

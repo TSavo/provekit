@@ -184,6 +184,8 @@ fn run() -> Result<(), String> {
             formals: Vec::new(),
             formal_sorts: Vec::new(),
             emit_empty_formals: false,
+            body_discharge_eligible: true,
+            body_discharge_refusal_reason: None,
             panic_loci: Vec::new(),
         })
         .map_err(|e| format!("mint parse-kit {}: {e}", d.name))?;
@@ -287,6 +289,8 @@ fn run() -> Result<(), String> {
             formals: Vec::new(),
             formal_sorts: Vec::new(),
             emit_empty_formals: false,
+            body_discharge_eligible: true,
+            body_discharge_refusal_reason: None,
             panic_loci: Vec::new(),
         })
         .map_err(|e| format!("mint consumer {}: {e}", d.name))?;

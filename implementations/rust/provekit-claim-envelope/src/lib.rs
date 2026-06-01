@@ -269,6 +269,19 @@ pub struct MintContractArgs {
     /// metadata field, not part of the contract CID: it does not change what
     /// is proven, only how a call site resolves to it. `None` omits the key.
     pub library: Option<String>,
+    /// Contract-directive metadata, not contract content: this does NOT
+    /// contribute to `contract_cid`. Whether this contract may be discharged
+    /// by reducing against a function body. Totality axioms such as
+    /// `is_ok(result)` are intentionally ineligible: they are trusted kit
+    /// facts, not body-derived equations. Kits are responsible for setting
+    /// this honestly; the verifier preserves and trusts the directive after a
+    /// packaged proof is reloaded. Omitted when `true` to preserve legacy
+    /// bytes and legacy reload behavior.
+    pub body_discharge_eligible: bool,
+    /// Loud reason paired with `body_discharge_eligible = false`, stored as
+    /// metadata so dependency-proof consumers can preserve the same honesty
+    /// boundary after reloading a packaged proof.
+    pub body_discharge_refusal_reason: Option<String>,
     /// PANIC-LOCUS PRESERVATION (#1745): per-occurrence source loci for the
     /// panic-leaf calls in this function's body, each `{argTerm, file, line,
     /// col, callee}`. A panic-leaf call (`x.unwrap()`) lifts to the abstract
@@ -566,6 +579,17 @@ pub fn mint_contract(args: &MintContractArgs) -> Result<MintedEnvelope, ClaimEnv
     if let Some(library) = &args.library {
         if !library.is_empty() {
             metadata_kvs.push(("library".into(), Value::string(library.clone())));
+        }
+    }
+    if !args.body_discharge_eligible {
+        metadata_kvs.push(("bodyDischargeEligible".into(), Value::boolean(false)));
+    }
+    if let Some(reason) = &args.body_discharge_refusal_reason {
+        if !reason.is_empty() {
+            metadata_kvs.push((
+                "bodyDischargeRefusalReason".into(),
+                Value::string(reason.clone()),
+            ));
         }
     }
     let metadata = Arc::new(Value::Object(metadata_kvs));
@@ -980,6 +1004,8 @@ mod tests {
             emit_empty_formals: false,
             formal_sorts: Vec::new(),
             library: None,
+            body_discharge_eligible: true,
+            body_discharge_refusal_reason: None,
             panic_loci: Vec::new(),
             contract_name: "x".into(),
             pre: None,
@@ -1027,6 +1053,8 @@ mod tests {
             emit_empty_formals: false,
             formal_sorts: Vec::new(),
             library: None,
+            body_discharge_eligible: true,
+            body_discharge_refusal_reason: None,
             panic_loci: Vec::new(),
             contract_name: "parseInt".into(),
             pre: Some(pre),
@@ -1059,6 +1087,8 @@ mod tests {
             emit_empty_formals: false,
             formal_sorts: Vec::new(),
             library: None,
+            body_discharge_eligible: true,
+            body_discharge_refusal_reason: None,
             panic_loci: Vec::new(),
             contract_name: "checked_add_u8.postcondition".into(),
             pre: None,

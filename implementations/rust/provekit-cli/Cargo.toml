@@ -45,6 +45,7 @@ tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 serde = { workspace = true }
 serde_json = { workspace = true }
+provekit-shim-serde-json-rust = { path = "../../../examples/provekit-shim-serde-json-rust" }
 serde_yaml = "0.9"
 walkdir = { workspace = true }
 thiserror = { workspace = true }

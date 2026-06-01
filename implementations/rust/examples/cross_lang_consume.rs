@@ -130,6 +130,8 @@ fn run() -> Result<(), String> {
             emit_empty_formals: false,
             formal_sorts: Vec::new(),
             library: None,
+            body_discharge_eligible: true,
+            body_discharge_refusal_reason: None,
             panic_loci: Vec::new(),
             contract_name: d.name.clone(),
             pre: d.pre.as_deref().map(formula_to_value),

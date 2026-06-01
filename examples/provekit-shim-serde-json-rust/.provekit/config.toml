@@ -9,6 +9,11 @@ surface = "rust-contracts"
 emit = "ir-document"
 
 [[plugins]]
+name = "rust-fn-contracts"
+surface = "rust-fn-contracts"
+emit = "ir-document"
+
+[[plugins]]
 name = "rust-implications"
 surface = "rust-implications"
 

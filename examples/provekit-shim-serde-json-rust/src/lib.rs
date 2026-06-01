@@ -12,7 +12,7 @@
 use serde_json::Value;
 
 pub const PROVEKIT_PROOF_BYTES: &[u8] = include_bytes!(
-    "../blake3-512:2887b2f19cc35a2b0381a79cadb43fb69d8a9b9c61062fde7208d54f2d273093b171873cea49cf43459ff6aaa6ebf85fd6c8a3de1d3b070152c158ea0fd9b6b8.proof"
+    "../blake3-512:a1ae6f5e91bd249869edae043d90d4b7a6936bf4269f6e14b190ce789ae048a4e2aff889fd1f81988fefbd0b2c5cb611b28633a89211dfaf5aa61be1ed86fbb1.proof"
 );
 
 /// `concept:json-parse` — serde_json's sugar. Parse one canonical

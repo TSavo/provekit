@@ -355,3 +355,235 @@ fn multiple_callsites_in_same_contract_each_listed() {
     let cs = enumerate_callsites::run(&pool);
     assert_eq!(cs.len(), 2);
 }
+
+#[test]
+fn panic_callsite_carries_containing_contract_bundle_not_global_symbol_bundle() {
+    let property_cid = "blake3-512:imported-libprovekit-contract";
+    let property_bundle = "blake3-512:imported-libprovekit-proof";
+    let wrong_global_bundle = "blake3-512:target-proof-global-method-expect";
+    let receiver = json!({
+        "kind": "ctor",
+        "name": "to_value",
+        "args": [{"kind": "var", "name": "req"}]
+    });
+
+    let mut pool = MementoPool::default();
+    pool.bridges_by_symbol.insert(
+        "method:expect".into(),
+        json!({
+            "evidence": {
+                "kind": "bridge",
+                "body": {
+                    "sourceSymbol": "method:expect",
+                    "targetContractCid": "blake3-512:result-expect",
+                    "sourceLayer": "rust",
+                    "targetLayer": "rust-tests",
+                    "callsite": {"panicSite": true}
+                }
+            }
+        }),
+    );
+    pool.bridge_self_bundle_by_symbol
+        .insert("method:expect".into(), wrong_global_bundle.into());
+    pool.bundle_members
+        .entry(property_bundle.into())
+        .or_default()
+        .insert(property_cid.into());
+    pool.mementos.insert(
+        property_cid.into(),
+        json!({
+            "evidence": {
+                "kind": "contract",
+                "body": {
+                    "contractName": "imported_libprovekit_fn",
+                    "post": {
+                        "kind": "atomic",
+                        "name": "=",
+                        "args": [
+                            {"kind": "var", "name": "out"},
+                            {"kind": "ctor", "name": "method:expect", "args": [receiver.clone()]}
+                        ]
+                    },
+                    "panicLoci": [{
+                        "argTerm": receiver,
+                        "file": "src/core/types.rs",
+                        "line": 2137,
+                        "callee": "method:expect"
+                    }]
+                }
+            }
+        }),
+    );
+
+    let cs = enumerate_callsites::run(&pool);
+    assert_eq!(cs.len(), 1);
+    assert_eq!(
+        cs[0].callsite_bundle_cid.as_deref(),
+        Some(property_bundle),
+        "panic producer lookup must use the bundle containing the contract being walked"
+    );
+    assert_eq!(
+        cs[0].bridge_self_bundle_cid.as_deref(),
+        Some(wrong_global_bundle),
+        "the global per-symbol bridge bundle is intentionally different in this regression"
+    );
+    assert_eq!(cs[0].file.as_deref(), Some("src/core/types.rs"));
+    assert_eq!(cs[0].line, Some(2137));
+}
+
+#[test]
+fn panic_loci_only_contract_becomes_panic_callsite() {
+    let property_cid = "blake3-512:panic-loci-only-contract";
+    let property_bundle = "blake3-512:panic-loci-only-proof";
+    let receiver = json!({
+        "kind": "ctor",
+        "name": "to_string",
+        "args": [{"kind": "var", "name": "req"}]
+    });
+
+    let mut pool = MementoPool::default();
+    pool.bridges_by_symbol.insert(
+        "method:expect".into(),
+        json!({
+            "evidence": {
+                "kind": "bridge",
+                "body": {
+                    "sourceSymbol": "method:expect",
+                    "targetContractCid": "blake3-512:result-expect",
+                    "sourceLayer": "rust",
+                    "targetLayer": "rust-tests",
+                    "callsite": {"panicSite": true}
+                }
+            }
+        }),
+    );
+    pool.bundle_members
+        .entry(property_bundle.into())
+        .or_default()
+        .insert(property_cid.into());
+    pool.mementos.insert(
+        property_cid.into(),
+        json!({
+            "evidence": {
+                "kind": "contract",
+                "body": {
+                    "contractName": "dispatch_assemble",
+                    "panicLoci": [{
+                        "argTerm": receiver,
+                        "file": "src/kit_dispatch.rs",
+                        "line": 2130,
+                        "panicLine": 2130,
+                        "callee": "method:expect"
+                    }]
+                }
+            }
+        }),
+    );
+
+    let cs = enumerate_callsites::run(&pool);
+    assert_eq!(cs.len(), 1);
+    assert!(cs[0].panic_site);
+    assert_eq!(cs[0].bridge_ir_name, "method:expect");
+    assert_eq!(cs[0].bridge_target_cid, "blake3-512:result-expect");
+    assert_eq!(cs[0].file.as_deref(), Some("src/kit_dispatch.rs"));
+    assert_eq!(cs[0].line, Some(2130));
+    assert_eq!(
+        cs[0].callsite_bundle_cid.as_deref(),
+        Some(property_bundle)
+    );
+}
+
+#[test]
+fn panic_loci_duplicate_formula_panic_is_not_double_counted() {
+    let property_cid = "blake3-512:panic-loci-duplicate-contract";
+    let property_bundle = "blake3-512:panic-loci-duplicate-proof";
+    let formula_receiver = json!({"kind": "var", "name": "value"});
+    let locus_receiver = json!({"name": "value", "kind": "var"});
+
+    let mut pool = MementoPool::default();
+    pool.bridges_by_symbol.insert(
+        "method:unwrap".into(),
+        json!({
+            "evidence": {
+                "kind": "bridge",
+                "body": {
+                    "sourceSymbol": "method:unwrap",
+                    "targetContractCid": "blake3-512:option-unwrap",
+                    "sourceLayer": "rust",
+                    "targetLayer": "rust-tests",
+                    "callsite": {"panicSite": true}
+                }
+            }
+        }),
+    );
+    pool.bundle_members
+        .entry(property_bundle.into())
+        .or_default()
+        .insert(property_cid.into());
+    pool.mementos.insert(
+        property_cid.into(),
+        json!({
+            "evidence": {
+                "kind": "contract",
+                "body": {
+                    "contractName": "already_formula_backed",
+                    "post": {
+                        "kind": "atomic",
+                        "name": "=",
+                        "args": [
+                            {"kind": "var", "name": "out"},
+                            {"kind": "ctor", "name": "method:unwrap", "args": [formula_receiver]}
+                        ]
+                    },
+                    "panicLoci": [{
+                        "argTerm": locus_receiver,
+                        "file": "src/lib.rs",
+                        "line": 25,
+                        "callee": "method:unwrap"
+                    }]
+                }
+            }
+        }),
+    );
+
+    let cs = enumerate_callsites::run(&pool);
+    assert_eq!(cs.len(), 1, "panicLoci must not duplicate formula callsites");
+    assert!(cs[0].panic_site);
+}
+
+#[test]
+fn panic_loci_without_bridge_still_surfaces_undecidable_callsite() {
+    let property_cid = "blake3-512:panic-loci-missing-bridge-contract";
+    let property_bundle = "blake3-512:panic-loci-missing-bridge-proof";
+
+    let mut pool = MementoPool::default();
+    pool.bundle_members
+        .entry(property_bundle.into())
+        .or_default()
+        .insert(property_cid.into());
+    pool.mementos.insert(
+        property_cid.into(),
+        json!({
+            "evidence": {
+                "kind": "contract",
+                "body": {
+                    "contractName": "bridge_gap_visible",
+                    "panicLoci": [{
+                        "argTerm": {"kind": "var", "name": "x"},
+                        "file": "src/lib.rs",
+                        "line": 99,
+                        "callee": "method:expect"
+                    }]
+                }
+            }
+        }),
+    );
+
+    let cs = enumerate_callsites::run(&pool);
+    assert_eq!(cs.len(), 1);
+    assert!(cs[0].panic_site);
+    assert_eq!(cs[0].bridge_ir_name, "method:expect");
+    assert_eq!(cs[0].bridge_target_cid, "");
+    assert_eq!(cs[0].file.as_deref(), Some("src/lib.rs"));
+    assert_eq!(cs[0].line, Some(99));
+}

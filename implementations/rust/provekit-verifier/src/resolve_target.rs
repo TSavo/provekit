@@ -21,6 +21,16 @@ pub fn run(cs: &CallSite, pool: &MementoPool) -> Result<ResolvedProperty, String
         target_cid = %cs.bridge_target_cid,
         "resolve_target: resolving bridge target contract"
     );
+    if cs.bridge_target_cid.is_empty() {
+        warn!(
+            bridge = %cs.bridge_ir_name,
+            "resolve_target: callsite has no targetContractCid"
+        );
+        return Err(format!(
+            "NoBridgeTarget: callsite {} has no targetContractCid",
+            cs.bridge_ir_name
+        ));
+    }
     let env = pool
         .mementos
         .get(&cs.bridge_target_cid)
