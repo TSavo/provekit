@@ -137,7 +137,7 @@ fn callsite_from_panic_locus(
         )),
         _ => None,
     };
-    let bridge_env = scoped_bridge.or_else(|| pool.bridges_by_symbol.get(callee));
+    let bridge_env = scoped_bridge;
     let bridge_body = bridge_env
         .and_then(memento_body)
         .cloned()
@@ -151,11 +151,10 @@ fn callsite_from_panic_locus(
         );
     }
 
-    let bridge_self_bundle_cid = if scoped_bridge.is_some() {
-        callsite_bundle_cid.map(str::to_string)
-    } else {
-        pool.bridge_self_bundle_by_symbol.get(callee).cloned()
-    };
+    let bridge_self_bundle_cid = scoped_bridge
+        .is_some()
+        .then(|| callsite_bundle_cid.map(str::to_string))
+        .flatten();
 
     Some(CallSite {
         bridge_ir_name: callee.to_string(),
@@ -208,9 +207,7 @@ fn bundle_containing_member(pool: &MementoPool, member_cid: &str) -> Option<Stri
     pool.bundle_members
         .iter()
         .find_map(|(bundle_cid, members)| {
-            members
-                .contains(member_cid)
-                .then(|| bundle_cid.to_string())
+            members.contains(member_cid).then(|| bundle_cid.to_string())
         })
 }
 
@@ -328,11 +325,36 @@ fn guarded_term_to_atomic(guard: &Json) -> Option<Json> {
 /// in one contract (same receiver, same lifted term => genuinely identical
 /// obligation, same verdict), the first locus is returned; the lines are a
 /// cosmetic tie, not a soundness question.
-fn panic_line_for<'a>(arg_term: Option<&Json>, panic_loci: &'a [Json]) -> Option<&'a Json> {
+fn panic_locus_for<'a>(
+    callee: &str,
+    arg_term: Option<&Json>,
+    panic_loci: &'a [Json],
+) -> Option<&'a Json> {
     let arg = arg_term?;
-    panic_loci
-        .iter()
-        .find(|locus| locus.get("argTerm") == Some(arg))
+    panic_loci.iter().find(|locus| {
+        locus.get("argTerm") == Some(arg)
+            && locus.get("callee").and_then(|v| v.as_str()) == Some(callee)
+    })
+}
+
+fn callsite_scoped_bridge_for_locus<'a>(
+    pool: &'a MementoPool,
+    callsite_bundle_cid: Option<&str>,
+    callee: &str,
+    locus: &Json,
+) -> Option<&'a Json> {
+    let bundle = callsite_bundle_cid?;
+    let file = locus.get("file").and_then(|v| v.as_str())?;
+    let line = locus
+        .get("line")
+        .or_else(|| locus.get("start_line"))
+        .and_then(|v| v.as_u64())? as usize;
+    pool.bridges_by_callsite.get(&(
+        bundle.to_string(),
+        file.to_string(),
+        line,
+        callee.to_string(),
+    ))
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -365,7 +387,28 @@ fn walk_term(
         .and_then(|v| v.as_str())
         .unwrap_or_default()
         .to_string();
-    if let Some(benv) = pool.bridges_by_symbol.get(&name) {
+    let arg_term = t
+        .get("args")
+        .and_then(|v| v.as_array())
+        .and_then(|arr| arr.first().cloned());
+    let scoped_panic_locus = panic_locus_for(&name, arg_term.as_ref(), panic_loci);
+    // Panic-leaf method bridges are overloadable (`method:unwrap` can target
+    // Option or Result). If the kit supplied an occurrence locus, choose the
+    // exact `(bundle,file,line,callee)` bridge before considering the global
+    // per-symbol index. This is language-blind: the verifier interprets no
+    // callee names or predicates; it only preserves the kit's opaque callsite
+    // identity. If a panic locus has no scoped bridge, do not fall back to the
+    // symbol winner; the panicLoci fallback below will surface an undecidable
+    // NoBridgeTarget instead of silently checking the wrong overload.
+    let scoped_bridge = scoped_panic_locus.and_then(|locus| {
+        callsite_scoped_bridge_for_locus(pool, callsite_bundle_cid, &name, locus)
+    });
+    let bridge_env = if scoped_panic_locus.is_some() {
+        scoped_bridge
+    } else {
+        pool.bridges_by_symbol.get(&name)
+    };
+    if let Some(benv) = bridge_env {
         // Shape-agnostic: v1.2-layered bridges carry the fields on
         // `header`; v1.1-flat on `evidence.body`.
         let bbody = memento_body(benv)
@@ -392,14 +435,6 @@ fn walk_term(
             .and_then(|v| v.get("panicSite"))
             .and_then(|v| v.as_bool())
             .unwrap_or(false);
-        // The bridged ctor's first argument is the obligation's receiver
-        // (e.g. `to_string(v)` in `to_string(v).unwrap()`); it is both the
-        // CallSite's `arg_term` AND the key that pairs a panic occurrence with
-        // its source locus in THIS contract.
-        let arg_term = t
-            .get("args")
-            .and_then(|v| v.as_array())
-            .and_then(|arr| arr.first().cloned());
         // PANIC-LOCUS PRESERVATION (#1745): a panic site reads its line/col/file
         // from the contract's own `panicLoci`, keyed by `arg_term` -- NOT from
         // the per-symbol bridge `callsite` (last-writer-wins, collapses two
@@ -409,7 +444,7 @@ fn walk_term(
         // bridged call keeps reading its line from the bridge as before (those
         // are 1:1 with their bridge and are not collapsed across occurrences).
         let occ_locus = if panic_site {
-            panic_line_for(arg_term.as_ref(), panic_loci)
+            scoped_panic_locus.or_else(|| panic_locus_for(&name, arg_term.as_ref(), panic_loci))
         } else {
             None
         };
@@ -486,7 +521,11 @@ fn walk_term(
                 .unwrap_or_default()
                 .to_string(),
             bridge_target_proof_cid,
-            bridge_self_bundle_cid: pool.bridge_self_bundle_by_symbol.get(&name).cloned(),
+            bridge_self_bundle_cid: if scoped_bridge.is_some() {
+                callsite_bundle_cid.map(str::to_string)
+            } else {
+                pool.bridge_self_bundle_by_symbol.get(&name).cloned()
+            },
             property_name: property_name.to_string(),
             property_cid: property_cid.to_string(),
             callsite_bundle_cid: callsite_bundle_cid.map(str::to_string),
@@ -710,6 +749,83 @@ mod guard_propagation_tests {
         pool
     }
 
+    fn bridge(target_cid: &str, file: Option<&str>, line: Option<usize>) -> Json {
+        let callsite = match (file, line) {
+            (Some(file), Some(line)) => json!({
+                "file": file,
+                "start_line": line,
+                "panicSite": true,
+            }),
+            _ => json!(null),
+        };
+        let mut header = json!({
+            "kind": "bridge",
+            "sourceSymbol": "panic_call",
+            "targetContractCid": target_cid,
+            "sourceLayer": "rust",
+            "targetLayer": "rust-tests",
+        });
+        if !callsite.is_null() {
+            header["callsite"] = callsite;
+        }
+        json!({
+            "envelope": true,
+            "header": header
+        })
+    }
+
+    fn pool_with_scoped_panic_bridge(body_term: Json) -> MementoPool {
+        let mut pool = MementoPool::default();
+        let bundle = "blake3-512:caller-bundle".to_string();
+        let caller = "blake3-512:caller".to_string();
+        pool.bridges_by_symbol.insert(
+            "panic_call".to_string(),
+            bridge(
+                "blake3-512:wrong-symbol-target",
+                Some("src/lib.rs"),
+                Some(99),
+            ),
+        );
+        pool.bridges_by_callsite.insert(
+            (
+                bundle.clone(),
+                "src/lib.rs".to_string(),
+                10,
+                "panic_call".to_string(),
+            ),
+            bridge(
+                "blake3-512:right-callsite-target",
+                Some("src/lib.rs"),
+                Some(10),
+            ),
+        );
+        pool.bundle_members
+            .entry(bundle)
+            .or_default()
+            .insert(caller.clone());
+        let contract = json!({
+            "envelope": true,
+            "header": {
+                "kind": "contract",
+                "contractName": "caller_self_post",
+                "panicLoci": [{
+                    "argTerm": recv(),
+                    "callee": "panic_call",
+                    "file": "src/lib.rs",
+                    "line": 10,
+                    "col": 4,
+                }],
+                "post": {
+                    "kind": "atomic",
+                    "name": "=",
+                    "args": [ { "kind": "var", "name": "result" }, body_term ],
+                }
+            }
+        });
+        pool.mementos.insert(caller, contract);
+        pool
+    }
+
     fn enumerated_call(sites: &[CallSite]) -> &CallSite {
         sites
             .iter()
@@ -798,5 +914,23 @@ mod guard_propagation_tests {
             enumerated_call(&sites).guard_facts.is_empty(),
             "a non-ctor guard must add no fact"
         );
+    }
+
+    #[test]
+    fn formula_walk_prefers_callsite_scoped_bridge_and_preserves_guard_fact() {
+        let body = cf_guarded(pred("pred_a"), panic_call());
+        let sites = run(&pool_with_scoped_panic_bridge(body));
+        let cs = enumerated_call(&sites);
+        assert_eq!(
+            cs.bridge_target_cid, "blake3-512:right-callsite-target",
+            "panic formula-walk must select the exact callsite bridge, not the global symbol winner"
+        );
+        assert_eq!(
+            cs.guard_facts,
+            vec![json!({ "kind": "atomic", "name": "pred_a", "args": [recv()] })],
+            "callsite-scoped bridge selection must not drop cf_guarded path facts"
+        );
+        assert_eq!(cs.file.as_deref(), Some("src/lib.rs"));
+        assert_eq!(cs.line, Some(10));
     }
 }

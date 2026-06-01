@@ -58,8 +58,8 @@ use libprovekit::core::{
 use provekit_canonicalizer::{blake3_512_of, encode_jcs, Value as CValue};
 use provekit_claim_envelope::{
     compute_contract_set_cid, contract_cid, mint_authority, mint_bridge, mint_contract,
-    mint_implication, Authoring, BridgeCallsite, MintAuthorityArgs, MintBridgeArgs, MintContractArgs,
-    MintImplicationArgs,
+    mint_implication, Authoring, BridgeCallsite, MintAuthorityArgs, MintBridgeArgs,
+    MintContractArgs, MintImplicationArgs,
 };
 use provekit_ir_types::Sort;
 use provekit_proof_envelope::{
@@ -614,7 +614,8 @@ impl MintKit {
             let dep_kept: Vec<Value> = dep_bindings
                 .into_iter()
                 .filter(|b| {
-                    let Some(name) = b.get("name").and_then(|v| v.as_str()).map(String::from) else {
+                    let Some(name) = b.get("name").and_then(|v| v.as_str()).map(String::from)
+                    else {
                         return false;
                     };
                     let lib = b
@@ -797,6 +798,14 @@ fn lift_options_from_request(
     }
 }
 
+fn has_nontrivial_pre_json(pre: &Value) -> bool {
+    if pre.is_null() {
+        return false;
+    }
+    !(pre.get("kind").and_then(|v| v.as_str()) == Some("atomic")
+        && pre.get("name").and_then(|v| v.as_str()) == Some("true"))
+}
+
 fn contract_bindings_from_producer_responses(
     producer_responses: &[PerPluginDispatch],
     project_root: &Path,
@@ -872,7 +881,7 @@ fn contract_bindings_from_dependency_proofs(project_root: &Path) -> Vec<Value> {
     let mut pool = provekit_verifier::types::MementoPool::default();
     provekit_verifier::load_all_proofs::load_files_into_pool(&proof_files, &mut pool);
 
-    use provekit_verifier::types::{memento_body_field, memento_kind};
+    use provekit_verifier::types::{memento_body, memento_body_field, memento_kind};
     // member CID -> the `.proof` bundle CID it was loaded from. This is the
     // `targetProofCid` a cross-crate bridge must pin so the verifier enforces
     // ConsequentBundlePinned (the contract member MUST come from THIS bundle,
@@ -903,7 +912,7 @@ fn contract_bindings_from_dependency_proofs(project_root: &Path) -> Vec<Value> {
     // them into one and lose the very disambiguation this exists for.
     let mut by_key: std::collections::BTreeMap<
         (Option<String>, String),
-        (String, bool, Option<String>, bool, Option<String>),
+        (String, bool, bool, Option<String>, bool, Option<String>),
     > = std::collections::BTreeMap::new();
     for (cid, env) in &pool.mementos {
         if memento_kind(env) != Some("contract") {
@@ -923,34 +932,38 @@ fn contract_bindings_from_dependency_proofs(project_root: &Path) -> Vec<Value> {
             .or_else(|| memento_body_field(env, "body_discharge_eligible"))
             .and_then(|v| v.as_bool())
             .unwrap_or(true);
-        let body_discharge_refusal_reason =
-            memento_body_field(env, "bodyDischargeRefusalReason")
-                .or_else(|| memento_body_field(env, "body_discharge_refusal_reason"))
-                .and_then(|v| v.as_str())
-                .map(|s| s.to_string());
+        let body_discharge_refusal_reason = memento_body_field(env, "bodyDischargeRefusalReason")
+            .or_else(|| memento_body_field(env, "body_discharge_refusal_reason"))
+            .and_then(|v| v.as_str())
+            .map(|s| s.to_string());
         // The dependency crate this contract belongs to (the lifter stamped it
         // at mint, the CLI forwards it opaquely).
         let library = memento_body_field(env, "library")
             .and_then(|v| v.as_str())
             .filter(|s| !s.is_empty())
             .map(|s| s.to_string());
-        let has_pre = memento_body_field(env, "preHash").is_some();
+        let has_pre = memento_body(env)
+            .and_then(|body| body.get("pre"))
+            .is_some_and(has_nontrivial_pre_json);
         let body_bearing =
             (has_pre || memento_body_field(env, "postHash").is_some()) && body_discharge_eligible;
         let bundle = member_to_bundle.get(cid.as_str()).map(|b| b.to_string());
         let key = (library, name);
-        // SELECTION PREFERENCE (most to least preferred), so a call site bridges
-        // to a DISCHARGEABLE target rather than a vacuous-passing shell:
-        //   1. PRE-bearing (carries a `preHash`): the ONLY shape that can prove
-        //      a partial cannot panic. The post-only sugar shape of the same
-        //      name vacuous-passes the obligation (a false "cannot panic"), so a
-        //      pre-bearing newcomer must always WIN over a post-only incumbent.
-        //   2. body-bearing (pre or post) over inv-only.
+        // SELECTION PREFERENCE (most to least preferred):
+        //   1. Eligible non-trivial-PRE contracts: the ONLY shape that can prove
+        //      a partial cannot panic.
+        //   2. Body-discharge-ineligible contracts: this preserves explicit
+        //      totality axioms over post-only duplicates so the lifter can route
+        //      them to the honesty boundary instead of silently picking an
+        //      eligible shell.
+        //   3. Other body-bearing (post-only) contracts over inv-only.
         // Names are not identity here -- two shapes share a name (post-only
         // sugar `option_unwrap` and pre-bearing fn-contract `option_unwrap`)
         // and we must select the dischargeable one deterministically.
-        let rank = |has_pre: bool, body_bearing: bool| -> u8 {
-            if has_pre {
+        let rank = |has_pre: bool, body_bearing: bool, eligible: bool| -> u8 {
+            if has_pre && eligible {
+                3
+            } else if !eligible {
                 2
             } else if body_bearing {
                 1
@@ -958,16 +971,11 @@ fn contract_bindings_from_dependency_proofs(project_root: &Path) -> Vec<Value> {
                 0
             }
         };
-        let new_rank = rank(has_pre, body_bearing);
+        let new_rank = rank(has_pre, body_bearing, body_discharge_eligible);
         let take = match by_key.get(&key) {
             None => true,
-            Some((incumbent_cid, incumbent_bb, _, _, _)) => {
-                let incumbent_has_pre = pool
-                    .mementos
-                    .get(incumbent_cid)
-                    .map(|e| memento_body_field(e, "preHash").is_some())
-                    .unwrap_or(false);
-                new_rank > rank(incumbent_has_pre, *incumbent_bb)
+            Some((_, incumbent_bb, incumbent_has_pre, _, incumbent_eligible, _)) => {
+                new_rank > rank(*incumbent_has_pre, *incumbent_bb, *incumbent_eligible)
             }
         };
         if take {
@@ -976,6 +984,7 @@ fn contract_bindings_from_dependency_proofs(project_root: &Path) -> Vec<Value> {
                 (
                     cid.clone(),
                     body_bearing,
+                    has_pre,
                     bundle,
                     body_discharge_eligible,
                     body_discharge_refusal_reason,
@@ -991,25 +1000,27 @@ fn contract_bindings_from_dependency_proofs(project_root: &Path) -> Vec<Value> {
                 (
                     cid,
                     body_bearing,
+                    has_pre,
                     bundle,
                     body_discharge_eligible,
                     body_discharge_refusal_reason,
                 ),
             )| {
-            json!({
-                "name": name,
-                "contract_cid": cid,
-                "body_bearing": body_bearing,
-                "bodyDischargeEligible": body_discharge_eligible,
-                "bodyDischargeRefusalReason": body_discharge_refusal_reason,
-                // The dependency bundle CID: the bridge pins this so the
-                // verifier resolves the target contract from THIS proof only.
-                "target_proof_cid": bundle,
-                // The crate this dependency contract belongs to: the lifter
-                // keys the call site by (crate, leaf) to match it.
-                "library": library,
-            })
-        },
+                json!({
+                    "name": name,
+                    "contract_cid": cid,
+                    "body_bearing": body_bearing,
+                    "has_pre": has_pre,
+                    "bodyDischargeEligible": body_discharge_eligible,
+                    "bodyDischargeRefusalReason": body_discharge_refusal_reason,
+                    // The dependency bundle CID: the bridge pins this so the
+                    // verifier resolves the target contract from THIS proof only.
+                    "target_proof_cid": bundle,
+                    // The crate this dependency contract belongs to: the lifter
+                    // keys the call site by (crate, leaf) to match it.
+                    "library": library,
+                })
+            },
         )
         .collect()
 }
@@ -1621,6 +1632,7 @@ fn mint_ir_document(
         pre_hash: Option<String>,
         post_hash: Option<String>,
         inv_hash: Option<String>,
+        has_nontrivial_pre: bool,
         body_discharge_eligible: bool,
         body_discharge_refusal_reason: Option<String>,
         library: Option<String>,
@@ -1737,10 +1749,9 @@ fn mint_ir_document(
             .and_then(|v| v.as_str())
             .unwrap_or("out")
             .to_string();
-        let pre = decl
-            .get("pre")
-            .or_else(|| decl.get("precondition"))
-            .map(json_to_cvalue);
+        let pre_decl = decl.get("pre").or_else(|| decl.get("precondition"));
+        let has_nontrivial_pre = pre_decl.is_some_and(has_nontrivial_pre_json);
+        let pre = pre_decl.map(json_to_cvalue);
         let post = decl
             .get("post")
             .or_else(|| decl.get("postcondition"))
@@ -1952,6 +1963,7 @@ fn mint_ir_document(
                 pre_hash,
                 post_hash,
                 inv_hash,
+                has_nontrivial_pre,
                 body_discharge_eligible,
                 body_discharge_refusal_reason,
                 library,
@@ -2049,17 +2061,17 @@ fn mint_ir_document(
                         // Fall back to the first shape under this name when the
                         // slot is absent everywhere (the error is raised below
                         // on the missing slot, with a clear message).
-                        .or_else(|| {
-                            cids.first().and_then(|cid| contracts_by_cid.get(cid))
-                        })
+                        .or_else(|| cids.first().and_then(|cid| contracts_by_cid.get(cid)))
                 })
             };
-            let antecedent = resolve_by_slot(antecedent_name, antecedent_slot).ok_or_else(|| {
-                format!("implication `{name}` references missing contract `{antecedent_name}`")
-            })?;
-            let consequent = resolve_by_slot(consequent_name, consequent_slot).ok_or_else(|| {
-                format!("implication `{name}` references missing contract `{consequent_name}`")
-            })?;
+            let antecedent =
+                resolve_by_slot(antecedent_name, antecedent_slot).ok_or_else(|| {
+                    format!("implication `{name}` references missing contract `{antecedent_name}`")
+                })?;
+            let consequent =
+                resolve_by_slot(consequent_name, consequent_slot).ok_or_else(|| {
+                    format!("implication `{name}` references missing contract `{consequent_name}`")
+                })?;
             let antecedent_hash = antecedent.slot_hash(antecedent_slot).ok_or_else(|| {
                 format!(
                     "implication `{name}` references missing slot `{antecedent_slot}` on contract `{antecedent_name}`"
@@ -2137,12 +2149,14 @@ fn mint_ir_document(
             // fact (carries only `inv` -> nothing for a general call site
             // to prove).
             let name = &contract.contract_name;
-            let body_bearing = (contract.pre_hash.is_some() || contract.post_hash.is_some())
-                && contract.body_discharge_eligible;
+            let has_pre = contract.has_nontrivial_pre;
+            let body_bearing =
+                (has_pre || contract.post_hash.is_some()) && contract.body_discharge_eligible;
             json!({
                 "name": name,
                 "contract_cid": contract.attestation_cid.clone(),
                 "body_bearing": body_bearing,
+                "has_pre": has_pre,
                 "bodyDischargeEligible": contract.body_discharge_eligible,
                 "bodyDischargeRefusalReason": contract.body_discharge_refusal_reason.clone(),
                 // Crate tag (Tier 1): lets the implication lifter key this
@@ -3697,9 +3711,54 @@ mod tests {
             })
             .expect("contract envelope");
         assert_eq!(
-            contract.pointer("/metadata/library").and_then(|v| v.as_str()),
+            contract
+                .pointer("/metadata/library")
+                .and_then(|v| v.as_str()),
             Some("libprovekit")
         );
+
+        let _ = std::fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn mint_ir_document_marks_only_nontrivial_pre_as_has_pre() {
+        let root = temp_workspace("mint_contract_has_pre");
+        let out_dir = root.join("out");
+        std::fs::create_dir_all(&out_dir).expect("create out dir");
+        let ir = vec![
+            json!({
+                "kind": "contract",
+                "name": "trivial_pre",
+                "outBinding": "out",
+                "pre": {"kind": "atomic", "name": "true", "args": []}
+            }),
+            json!({
+                "kind": "contract",
+                "name": "guarded_pre",
+                "outBinding": "out",
+                "pre": {"kind": "atomic", "name": "is_some", "args": []}
+            }),
+        ];
+
+        let minted = mint_ir_document(&ir, None, None, None, &root, &out_dir, true)
+            .expect("mint ir-document");
+        let by_name = |name: &str| {
+            minted
+                .contract_bindings
+                .iter()
+                .find(|binding| binding["name"] == name)
+                .unwrap_or_else(|| {
+                    panic!(
+                        "missing binding `{name}` in {:#?}",
+                        minted.contract_bindings
+                    )
+                })
+        };
+
+        assert_eq!(by_name("trivial_pre")["has_pre"], false);
+        assert_eq!(by_name("trivial_pre")["body_bearing"], false);
+        assert_eq!(by_name("guarded_pre")["has_pre"], true);
+        assert_eq!(by_name("guarded_pre")["body_bearing"], true);
 
         let _ = std::fs::remove_dir_all(root);
     }
@@ -3725,8 +3784,7 @@ mod tests {
             // ("v1.1.0 requires blake3-512:"). Each library yields distinct
             // bytes -> distinct CID -> a separate proof file.
             let fname = format!("{}.proof", minted.filename_cid);
-            std::fs::write(imports_dir.join(fname), minted.bytes)
-                .expect("write dependency proof");
+            std::fs::write(imports_dir.join(fname), minted.bytes).expect("write dependency proof");
         }
 
         let mut bindings = contract_bindings_from_dependency_proofs(&root);
@@ -3744,7 +3802,10 @@ mod tests {
             .collect();
         assert_eq!(libraries, vec!["lib_a", "lib_b"]);
         assert_eq!(
-            bindings.iter().filter(|binding| binding["name"] == "same_leaf").count(),
+            bindings
+                .iter()
+                .filter(|binding| binding["name"] == "same_leaf")
+                .count(),
             2
         );
 
@@ -3764,8 +3825,7 @@ mod tests {
         let value_totality = bindings
             .iter()
             .find(|binding| {
-                binding.get("name").and_then(|v| v.as_str())
-                    == Some("serde_json_to_string_value")
+                binding.get("name").and_then(|v| v.as_str()) == Some("serde_json_to_string_value")
                     && binding.get("library").and_then(|v| v.as_str()) == Some("serde_json")
             })
             .unwrap_or_else(|| {
@@ -3808,8 +3868,7 @@ mod tests {
             .iter()
             .find(|binding| {
                 binding.get("name").and_then(|v| v.as_str()) == Some("json_parse")
-                    && binding.get("library").and_then(|v| v.as_str())
-                        == Some("serde_json")
+                    && binding.get("library").and_then(|v| v.as_str()) == Some("serde_json")
             })
             .unwrap_or_else(|| panic!("missing json_parse binding in {bindings:#?}"));
         assert_eq!(
