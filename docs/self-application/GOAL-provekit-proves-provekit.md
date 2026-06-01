@@ -73,7 +73,7 @@ architectural thesis at v2.
 - **#1717**: opaque-sorted `forall` encoded soundly (or refused). Detector
   `forall x:<opaque>. false` is undecidable, not collapsed to `true`. CLOSED.
 
-### Phase 2 - SUBSTANTIVE K - IN FLIGHT
+### Phase 2 - SUBSTANTIVE K - DONE
 
 - **Mechanism proven on fixture** (stage3-serde-totality-fixture, warm-oracle
   e2e, regressed-and-confirmed across #1752):
@@ -87,7 +87,7 @@ architectural thesis at v2.
   - `(attempted, resolved) = (3764, 3358)` stable across 3 passes; the 406
     unresolved receivers are honest oracle ceiling (generics, dyn dispatch,
     macros), not cold-pass artifacts.
-- **D-lib slice queue in progress.**
+- **D-lib through D-fn slice queue complete through #1771.**
   - **PR-A (#1759, MERGED 2026-06-01):** Result::expect partial in rust-std
     shim + walk disambiguation `(result, expect) -> result_expect`. Verifier
     untouched. f_expect fixture e2e proves end-to-end composition with the
@@ -174,7 +174,7 @@ architectural thesis at v2.
   **Cumulative production K so far: 21 sites discharged via sound reasoning
   on real production code.**
 
-## Current census (provekit-cli, #1771 D-fn branch)
+## Current census (provekit-cli, post-#1771 main)
 
 Latest measured gate: `panicCensus=53`, `panicSafe=21`, `falsePass=0`,
 `silentlyDropped=0`, `droppedSites=[]`. The original 7-site C bucket is closed
@@ -183,7 +183,8 @@ are closed by #1771. Residue still needs first-class naming.
 
 | Category | Count | Closing mechanism |
 |---|---|---|
-| residue | 10 | Mutex `.lock().expect()` (9) + platform_semantics filesystem invariant (1). Honest residue; "lock is total" would be unsound. |
+| residue | 9 honest residue | Mutex `.lock().expect()` (8) + platform_semantics filesystem invariant (1). Honest residue; "lock is total" would be unsound. The previous count of 10 mixed honest residue with a closeable tier-to-close row. |
+| tier-to-close | 1 named row | `RealizeRequest` serialization needs provekit-cli-owned per-type D-lib manifest coverage, mirroring libprovekit's `infallible_serialize.toml` pattern. |
 | D-lib | 3 known remaining | serde_json totality not yet closed by #1762/#1765: remaining derived-Serialize / pretty-print cases. The `&Value` kit_dispatch sites are closed by #1765. |
 | C | 0 | Closed by #1767: 7 `cmd_protocol.rs` `payload["k"].as_str().unwrap()` sites discharged via Rust-kit `json!` construction tracking and `cf_guarded(...)` postcondition terms. |
 | B | 0 | Closed by #1769: intra-fn `assert!(x.is_some()/is_ok()/is_err())` propagation plus `len==1 -> next()` guard. |
@@ -229,7 +230,7 @@ Post-#1769 current libprovekit score: `panicCensus=36`, `panicSafe=10`,
 slice contributes 6 current K rows here: 5 prelude/std-shim rows plus
 `wp.rs:295` (`len()==1 -> next().unwrap()`), on top of the 4 D-lib sites.
 
-Current #1771 branch libprovekit score: `panicCensus=35`, `panicSafe=12`,
+Post-#1771 main libprovekit score: `panicCensus=35`, `panicSafe=12`,
 `falsePass=0`, `silentlyDropped=0`, `droppedSites=[]`; the +2 rows are
 `src/core/bind.rs:550` (`ConceptOpCatalog.cid(CONCEPT_BIND_RESULT).expect(...)`)
 and `src/wp/tests.rs:74`
@@ -255,7 +256,7 @@ See "Where we are."
 ### Phase 1 - SOUNDNESS - DONE
 - #1717: CLOSED.
 
-### Phase 2 - SUBSTANTIVE K - IN FLIGHT
+### Phase 2 - SUBSTANTIVE K - DONE
 Each tier ships as one PR, golden-pinned, with visible scoreboard delta.
 
 - **D-lib per-type for libprovekit** (in progress; three-PR split):
@@ -286,12 +287,14 @@ Each tier ships as one PR, golden-pinned, with visible scoreboard delta.
   `len()==1 -> next().unwrap()` site. Also hardens self-check dependency mints
   to inherit `--oracle` and adds the verifier no-scoped-bridge guard. +6 K
   delta on provekit-cli; cumulative production K=19.
-- **D-fn cross-function postconditions (#1771):** closes the 2
+- **D-fn cross-function postconditions (MERGED, #1771):** closes the 2
   remaining D-fn sites (`Cid::parse` on literal, catalog primitive `.cid()`).
   +2 K delta on provekit-cli; cumulative production K=21.
 ### Phase 3 - RESIDUE NAMED + V1 RELEASE
-- The 10 residue sites get an explicit `residue` category in the panicCensus
-  output (not "unproven"; honest residue with reason).
+- The 9 honest residue sites get an explicit `residue` category in the
+  panicCensus output (not raw "unproven"; honest residue with reason), and
+  the closeable `RealizeRequest` row remains `unproven` with an explicit
+  `tier_to_close` reason.
 - `provekit doctor` aggregates the no-silent-failure surfaces (#1742 manifest
   validation, #1750 fail-closed extraction, #1753 convergence, #1755 mutation
   guard) into a startup health check.
