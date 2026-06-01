@@ -103,8 +103,32 @@ architectural thesis at v2.
     reflexive:665, undecidable:1518, vacuous:154}`;
     `panicCensus=15`; `silentlyDropped=0`, `droppedSites=[]`. Baseline
     scoreboard measurement only; no K delta.
-  - **PR-C:** per-type infallibility totality for the 6 audited libprovekit
-    types. The K delta on libprovekit's self-check.
+  - **PR-C (#1762, MERGED 2026-06-01):** per-type infallibility totality for
+    the 4 confirmed libprovekit D-lib sites. Per-crate
+    `infallible_serialize.toml` manifest, walk_rpc disambiguation extension
+    for per-crate concrete types, lift_implications lookup for blessed types.
+    Discrimination triplet held. Cross-crate Sort blessing (audited_for_crate
+    metadata for external types). Result on libprovekit self-check:
+    `panicSafe=4`, dischargeSplit `{panicSafe:4, falsePass:0,
+    silentlyDropped:0}`, floor invariants intact. **First real production K
+    delta on production code: +4.**
+- **D-lib `&Value` for provekit-cli (PR-D, #1765, MERGED 2026-06-01).**
+  Closes the 2 `kit_dispatch.rs` `&Value` sites. Bundles four structural
+  fixes surfaced during this slice:
+  - **A**: verifier bundle provenance keyed by containing-contract bundle,
+    not global symbol map (fixes cross-target discharge of imported sites).
+  - **B**: verifier `enumerate_callsites` now enumerates from `panicLoci`
+    metadata, not just pre/post/inv (previously, panic sites with no
+    pre/post/inv obligation were silently invisible).
+  - **C-thin**: dep proof flow via RPC for serde_json shim; auditable,
+    manifest-driven; rust kit `resolve_dependency_proofs` wired.
+  - **Claim envelope metadata persistence**: `bodyDischargeEligible` /
+    `bodyDischargeRefusalReason` survive mint -> reload (silent-degradation
+    floor fix; axiom claims no longer lost on persist round trip).
+  Result on provekit-cli self-check: `panicSafe=6` (+2 kit_dispatch + 4
+  libprovekit imported via cross-target discharge), floor invariants intact.
+  **Cumulative production K so far: 6 sites discharged via sound reasoning
+  on real production code.**
 
 ## Current census (provekit-cli, 32 unproven sites, named by category)
 
@@ -185,15 +209,14 @@ Each tier ships as one PR, golden-pinned, with visible scoreboard delta.
     Warm-oracle baseline: `panicCensus=15`, confirmed D-lib=4, B=5,
     D-fn=2, residue=1, oracle-residue=3, unknown=0. Baseline scoreboard
     only; no K delta.
-  - **PR-C (the K delta):** per-type infallibility manifest blessing the 6
-    audited libprovekit types; walk_rpc disambiguation extension to handle
-    per-crate concrete types; lift_implications lookup for blessed types.
-    Discrimination triplet mandatory (positive blessed / negative unregistered
-    concrete / negative generic `T: Serialize`). Expected K delta on
-    libprovekit's self-check: +4 confirmed D-lib sites from the warm PR-B
-    baseline.
-- **D-lib `&Value` for provekit-cli**: closes the 2 kit_dispatch.rs `&Value`
-  sites via the existing #1747 mechanism.
+  - **PR-C (MERGED, #1762):** per-type infallibility for 4 audited
+    libprovekit types (`RealizedSource`, `Sort`, `Dialect`, `Term`). +4 K
+    delta on libprovekit's self-check. First real production K via sound
+    reasoning.
+- **D-lib `&Value` for provekit-cli (MERGED, #1765):** 2 kit_dispatch sites
+  discharge via &Value totality. Bundles 4 structural fixes (bundle
+  provenance, panicLoci enumeration, dep proof RPC flow,
+  bodyDischargeEligible metadata persistence). +2 K delta on provekit-cli.
 - **C `json!` construction tracking**: closes the 7 cmd_protocol.rs sites.
   New mechanism (track that `payload["k"]` returns Value::String when the
   literal built `k` as a string); design checkpoint required.
@@ -291,8 +314,18 @@ the first.
     disambiguation mapping. Infrastructure for D-lib per-type slice.
   - #1760 (D-lib PR-B) libprovekit rust-implications consumer enablement +
     warm-oracle baseline scoreboard (`panicCensus=15`, confirmed D-lib=4).
-- **Open follow-up**: #1757 self-check golden drift reached main without
-  gate update.
+  - #1762 (D-lib PR-C) per-type infallibility for 4 libprovekit types.
+    First real production K delta: +4 on libprovekit's self-check.
+  - #1765 (D-lib PR-D) `&Value` for provekit-cli + 4 structural fixes
+    (verifier bundle provenance, panicLoci enumeration,
+    `resolve_dependency_proofs` RPC flow, body-discharge metadata persistence).
+    +2 K delta on provekit-cli. Cumulative production K: 6.
+- **Open follow-ups**:
+  - #1757 self-check golden drift reached main without gate update.
+  - #1763 self-check should fail closed when requested oracle host cannot
+    start.
+  - #1764 cross-crate type totality should live in owning-crate contracts
+    (currently project-local with `audited_for_crate` metadata).
 - **Key files**: `provekit-verifier/src/{runner.rs, enumerate_callsites.rs,
   body_discharge.rs, handshake.rs, load_all_proofs.rs}`,
   `provekit-walk/src/{lift.rs, bin/walk_rpc.rs, envelope.rs}`,
