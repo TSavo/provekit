@@ -795,6 +795,142 @@ struct FunctionPostconditionRule {
     reason: String,
 }
 
+#[derive(Debug, Clone, Default)]
+struct ResidueManifest {
+    annotations: Vec<PanicSiteAnnotationDiagnostic>,
+}
+
+#[derive(Debug, Clone)]
+struct PanicSiteAnnotationDiagnostic {
+    file: String,
+    line: usize,
+    callee: String,
+    status: &'static str,
+    category: String,
+    tier_to_close: String,
+    reason: String,
+}
+
+impl ResidueManifest {
+    fn load(workspace_root: &Path) -> Result<Self, String> {
+        let path = workspace_root.join(".provekit").join("residue.toml");
+        if !path.is_file() {
+            return Ok(Self::default());
+        }
+        let raw =
+            std::fs::read_to_string(&path).map_err(|e| format!("read {}: {e}", path.display()))?;
+        let value: toml::Value =
+            toml::from_str(&raw).map_err(|e| format!("parse {}: {e}", path.display()))?;
+        let table = value
+            .as_table()
+            .ok_or_else(|| format!("{} must be a TOML table", path.display()))?;
+
+        let mut annotations = Vec::new();
+        let mut seen = BTreeSet::new();
+        Self::read_section(
+            &path,
+            table,
+            "residue",
+            "residue",
+            &mut annotations,
+            &mut seen,
+        )?;
+        Self::read_section(
+            &path,
+            table,
+            "tier_to_close",
+            "unproven",
+            &mut annotations,
+            &mut seen,
+        )?;
+
+        Ok(Self { annotations })
+    }
+
+    fn read_section(
+        path: &Path,
+        table: &toml::map::Map<String, toml::Value>,
+        section: &str,
+        status: &'static str,
+        annotations: &mut Vec<PanicSiteAnnotationDiagnostic>,
+        seen: &mut BTreeSet<(String, usize, String)>,
+    ) -> Result<(), String> {
+        let Some(entries_value) = table.get(section) else {
+            return Ok(());
+        };
+        let entries = entries_value.as_array().ok_or_else(|| {
+            format!(
+                "{} field `{section}` must be an array of tables (`[[{section}]]`)",
+                path.display()
+            )
+        })?;
+
+        for (idx, entry) in entries.iter().enumerate() {
+            let context = format!("{section}[{idx}]");
+            let table = entry.as_table().ok_or_else(|| {
+                format!(
+                    "{} `{context}` must be a table, got {}",
+                    path.display(),
+                    toml_value_type(entry)
+                )
+            })?;
+            let file = required_toml_string_for(path, &context, table, "file")?;
+            let line = required_toml_u64_for(path, &context, table, "line")? as usize;
+            let callee = required_toml_string_for(path, &context, table, "callee")?;
+            let category = required_toml_string_for(path, &context, table, "category")?;
+            let tier_to_close = required_toml_string_for(path, &context, table, "tier_to_close")?;
+            let reason = required_toml_string_for(path, &context, table, "reason")?;
+            let key = (file.clone(), line, callee.clone());
+            if !seen.insert(key) {
+                return Err(format!(
+                    "duplicate panic-site annotation for {}:{} {} in {}",
+                    file,
+                    line,
+                    callee,
+                    path.display()
+                ));
+            }
+            annotations.push(PanicSiteAnnotationDiagnostic {
+                file,
+                line,
+                callee,
+                status,
+                category,
+                tier_to_close,
+                reason,
+            });
+        }
+
+        Ok(())
+    }
+
+    fn is_empty(&self) -> bool {
+        self.annotations.is_empty()
+    }
+
+    fn into_diagnostics(self) -> Vec<Value> {
+        self.annotations
+            .into_iter()
+            .map(PanicSiteAnnotationDiagnostic::into_diagnostic)
+            .collect()
+    }
+}
+
+impl PanicSiteAnnotationDiagnostic {
+    fn into_diagnostic(self) -> Value {
+        json!({
+            "kind": "panic-site-annotation",
+            "file": self.file,
+            "line": self.line,
+            "callee": self.callee,
+            "status": self.status,
+            "category": self.category,
+            "tierToClose": self.tier_to_close,
+            "reason": self.reason,
+        })
+    }
+}
+
 impl FunctionPostconditionsManifest {
     fn load(workspace_root: &Path) -> Result<Self, String> {
         let path = workspace_root
@@ -832,20 +968,23 @@ impl FunctionPostconditionsManifest {
                     toml_value_type(entry)
                 )
             })?;
-            let call_kind = match required_toml_string_for(&path, &context, table, "call_kind")?
-                .as_str()
-            {
-                "associated" => FunctionPostconditionCallKind::Associated,
-                "method" => FunctionPostconditionCallKind::Method,
-                other => {
-                    return Err(format!(
+            let call_kind =
+                match required_toml_string_for(&path, &context, table, "call_kind")?.as_str() {
+                    "associated" => FunctionPostconditionCallKind::Associated,
+                    "method" => FunctionPostconditionCallKind::Method,
+                    other => {
+                        return Err(format!(
                         "{} `{context}.call_kind` must be `associated` or `method`, got `{other}`",
                         path.display()
                     ))
-                }
-            };
-            let callee_crate =
-                normalize_crate_root(&required_toml_string_for(&path, &context, table, "callee_crate")?);
+                    }
+                };
+            let callee_crate = normalize_crate_root(&required_toml_string_for(
+                &path,
+                &context,
+                table,
+                "callee_crate",
+            )?);
             let callee = required_toml_string_for(&path, &context, table, "callee")?;
             let contract = required_toml_string_for(&path, &context, table, "contract")?;
             let post_predicate =
@@ -860,8 +999,7 @@ impl FunctionPostconditionsManifest {
 
             let (type_path, receiver_path, arg0) = match call_kind {
                 FunctionPostconditionCallKind::Associated => {
-                    let type_path =
-                        required_toml_string_for(&path, &context, table, "type_path")?;
+                    let type_path = required_toml_string_for(&path, &context, table, "type_path")?;
                     let format_literal =
                         required_toml_string_for(&path, &context, table, "arg0_format_literal")?;
                     let repeat_literal =
@@ -1768,17 +1906,21 @@ fn collect_callsites_in_block(
                     let stem = type_id.head.to_ascii_lowercase();
                     disambiguated_partial_leaf(&stem, &callee).map(|leaf| ("std".to_string(), leaf))
                 });
-            let manifest_panic_target = syntactic_panic_target.as_ref().is_none().then(|| {
-                if is_panic_leaf(&callee) {
-                    self.function_postconditions.panic_partial_for_receiver(
-                        &node.receiver,
-                        self.current_crate,
-                        &callee,
-                    )
-                } else {
-                    None
-                }
-            }).flatten();
+            let manifest_panic_target = syntactic_panic_target
+                .as_ref()
+                .is_none()
+                .then(|| {
+                    if is_panic_leaf(&callee) {
+                        self.function_postconditions.panic_partial_for_receiver(
+                            &node.receiver,
+                            self.current_crate,
+                            &callee,
+                        )
+                    } else {
+                        None
+                    }
+                })
+                .flatten();
             let callee_crate = syntactic_panic_target
                 .as_ref()
                 .map(|(krate, _)| krate.clone())
@@ -1808,11 +1950,7 @@ fn collect_callsites_in_block(
                 disambiguated_callee: syntactic_panic_target
                     .as_ref()
                     .map(|(_, leaf)| leaf.clone())
-                    .or_else(|| {
-                        manifest_panic_target
-                            .as_ref()
-                            .map(|(_, leaf)| leaf.clone())
-                    })
+                    .or_else(|| manifest_panic_target.as_ref().map(|(_, leaf)| leaf.clone()))
                     .or_else(|| {
                         function_postcondition_target
                             .as_ref()
@@ -2578,7 +2716,11 @@ fn receiver_producer_callsite(receiver: &syn::Expr) -> Option<(String, usize, us
     match receiver {
         syn::Expr::MethodCall(method) => {
             let start = method.method.span().start();
-            Some((format!("method:{}", method.method), start.line, start.column))
+            Some((
+                format!("method:{}", method.method),
+                start.line,
+                start.column,
+            ))
         }
         syn::Expr::Call(call) => {
             let (_, callee) = associated_call_path_and_leaf(&call.func)?;
@@ -2836,6 +2978,13 @@ fn lift_implications(params: &Value) -> Result<Value, String> {
             "lift_implications: loaded function postconditions manifest"
         );
     }
+    let residue_manifest = ResidueManifest::load(&workspace_root)?;
+    if !residue_manifest.is_empty() {
+        info!(
+            entries = residue_manifest.annotations.len(),
+            "lift_implications: loaded panic-site residue manifest"
+        );
+    }
 
     // Index contracts by (crate, leaf), not bare leaf. The leaf is the substring
     // before the first '@' in the contract `name` (`<callee>@<file>:<line>:<col>`
@@ -2893,6 +3042,7 @@ fn lift_implications(params: &Value) -> Result<Value, String> {
 
     let mut entries: Vec<Value> = Vec::new();
     let mut diagnostics: Vec<Value> = Vec::new();
+    diagnostics.extend(residue_manifest.into_diagnostics());
 
     // Collect every call site across every file FIRST, carrying each one's
     // absolute path. The Tier-1/2a crate is set during collection; the Tier-2b
@@ -4237,11 +4387,7 @@ fn function_contract_lift(params: &Value) -> Result<Value, String> {
     }
 
     emit_infallible_serialize_contracts(&infallible_serialize, &current_crate, &mut entries)?;
-    emit_function_postcondition_contracts(
-        &function_postconditions,
-        &current_crate,
-        &mut entries,
-    )?;
+    emit_function_postcondition_contracts(&function_postconditions, &current_crate, &mut entries)?;
 
     // Producer-side visibility. This surface emits the contracts that the
     // implication matcher later bridges into; a collapse here (e.g. a soundness
@@ -10102,6 +10248,12 @@ pub fn bitwise_not() -> i64 {
             .expect("write function postconditions manifest");
     }
 
+    fn write_residue_manifest(root: &Path, body: &str) {
+        let provekit_dir = root.join(".provekit");
+        fs::create_dir_all(&provekit_dir).expect("create .provekit dir");
+        fs::write(provekit_dir.join("residue.toml"), body).expect("write residue manifest");
+    }
+
     fn write_sugar_binding_proof(
         proof_dir: &Path,
         mut sugar_entry: Value,
@@ -10801,6 +10953,162 @@ pub fn caller(input: &str) -> i64 {
     }
 
     #[test]
+    fn lift_implications_emits_residue_manifest_annotations() {
+        let root = temp_workspace("lift_implications_residue_annotations");
+        let src_dir = root.join("src");
+        fs::create_dir_all(&src_dir).expect("create src dir");
+        fs::write(
+            root.join("Cargo.toml"),
+            r#"
+[package]
+name = "consumer-crate"
+version = "0.1.0"
+edition = "2021"
+"#,
+        )
+        .expect("write Cargo.toml");
+        let rel = "src/lib.rs";
+        fs::write(root.join(rel), "pub fn f() {}\n").expect("write source");
+        write_residue_manifest(
+            &root,
+            r#"
+[[residue]]
+file = "src/kit_dispatch.rs"
+line = 106
+callee = "expect"
+category = "lock_poisoning_residue"
+tier_to_close = "irreducible"
+reason = "Mutex::lock returns Err only when another thread panicked while holding the lock; assuming lock totality would be unsound."
+
+[[tier_to_close]]
+file = "src/kit_dispatch.rs"
+line = 2416
+callee = "expect"
+category = "D-lib"
+tier_to_close = "provekit-cli per-type infallible serialization for RealizeRequest"
+reason = "serde_json::to_value(RealizeRequest) is closeable by a provekit-cli owned per-type manifest."
+"#,
+        );
+
+        let resp = lift_implications(&json!({
+            "workspace_root": root.to_string_lossy(),
+            "source_paths": [rel],
+            "contract_bindings": [],
+        }))
+        .expect("lift_implications");
+        let diagnostics = resp["diagnostics"].as_array().expect("diagnostics");
+        let annotations: Vec<&Value> = diagnostics
+            .iter()
+            .filter(|diagnostic| diagnostic["kind"] == "panic-site-annotation")
+            .collect();
+
+        assert_eq!(
+            annotations.len(),
+            2,
+            "expected manifest annotations: {diagnostics:#?}"
+        );
+        assert_eq!(annotations[0]["status"], "residue");
+        assert_eq!(annotations[0]["category"], "lock_poisoning_residue");
+        assert_eq!(annotations[0]["tierToClose"], "irreducible");
+        assert_eq!(annotations[1]["status"], "unproven");
+        assert_eq!(annotations[1]["category"], "D-lib");
+
+        let _ = fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn lift_implications_rejects_duplicate_residue_manifest_sites() {
+        let root = temp_workspace("lift_implications_residue_duplicate");
+        let src_dir = root.join("src");
+        fs::create_dir_all(&src_dir).expect("create src dir");
+        fs::write(
+            root.join("Cargo.toml"),
+            r#"
+[package]
+name = "consumer-crate"
+version = "0.1.0"
+edition = "2021"
+"#,
+        )
+        .expect("write Cargo.toml");
+        let rel = "src/lib.rs";
+        fs::write(root.join(rel), "pub fn f() {}\n").expect("write source");
+        write_residue_manifest(
+            &root,
+            r#"
+[[residue]]
+file = "src/kit_dispatch.rs"
+line = 106
+callee = "expect"
+category = "lock_poisoning_residue"
+tier_to_close = "irreducible"
+reason = "first"
+
+[[tier_to_close]]
+file = "src/kit_dispatch.rs"
+line = 106
+callee = "expect"
+category = "D-lib"
+tier_to_close = "future tier"
+reason = "second"
+"#,
+        );
+
+        let err = lift_implications(&json!({
+            "workspace_root": root.to_string_lossy(),
+            "source_paths": [rel],
+            "contract_bindings": [],
+        }))
+        .expect_err("duplicate residue manifest sites must fail closed");
+        assert!(
+            err.contains("duplicate panic-site annotation"),
+            "unexpected error: {err}"
+        );
+
+        let _ = fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn lift_implications_rejects_residue_manifest_missing_tier_to_close() {
+        let root = temp_workspace("lift_implications_residue_missing_tier");
+        let src_dir = root.join("src");
+        fs::create_dir_all(&src_dir).expect("create src dir");
+        fs::write(
+            root.join("Cargo.toml"),
+            r#"
+[package]
+name = "consumer-crate"
+version = "0.1.0"
+edition = "2021"
+"#,
+        )
+        .expect("write Cargo.toml");
+        let rel = "src/lib.rs";
+        fs::write(root.join(rel), "pub fn f() {}\n").expect("write source");
+        write_residue_manifest(
+            &root,
+            r#"
+[[residue]]
+file = "src/kit_dispatch.rs"
+line = 106
+callee = "expect"
+category = "lock_poisoning_residue"
+reason = "missing tier"
+"#,
+        );
+
+        let err = lift_implications(&json!({
+            "workspace_root": root.to_string_lossy(),
+            "source_paths": [rel],
+            "contract_bindings": [],
+        }))
+        .expect_err("missing tier_to_close must fail closed");
+        assert!(err.contains("tier_to_close"), "unexpected error: {err}");
+
+        let _ = fs::remove_dir_all(root);
+    }
+
+    #[test]
     fn lift_implications_skips_cfg_test_callsites() {
         let src = r##"
 pub fn production() -> i64 {
@@ -11373,8 +11681,7 @@ reason = "grammar_op_shape(CONCEPT_BIND_RESULT) has a fixed primitive arm and js
         let catalog_hits: Vec<&Value> = ir
             .iter()
             .filter(|entry| {
-                entry["sourceSymbol"] == "method:cid"
-                    && entry["targetContractCid"] == catalog_cid
+                entry["sourceSymbol"] == "method:cid" && entry["targetContractCid"] == catalog_cid
             })
             .collect();
         assert_eq!(
