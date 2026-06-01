@@ -25,12 +25,13 @@
 //   - early-return patterns beyond `panic!`.
 //   - postcondition lifting from `return` expressions.
 
-use std::collections::HashSet;
+use std::collections::{BTreeMap, HashSet};
 
+use proc_macro2::{Delimiter, TokenStream, TokenTree};
 use provekit_ir_types::{IrFormula, IrTerm};
 use syn::{
-    BinOp, Expr, ExprBinary, ExprIf, ExprMacro, ExprUnary, ItemFn, Lit, Local, Macro, Pat, Stmt,
-    StmtMacro, UnOp,
+    BinOp, Expr, ExprBinary, ExprIf, ExprMacro, ExprUnary, FnArg, GenericArgument, ItemFn, Lit,
+    Local, Macro, Pat, PathArguments, ReturnType, Stmt, StmtMacro, Type, UnOp,
 };
 
 use crate::wp::{free_vars_formula, Wp};
@@ -56,13 +57,21 @@ struct LiftCtx {
     /// Stack of frames; each frame holds (surface_name, unique_name) pairs
     /// in declaration order. Innermost frame shadows outer frames.
     scope: Vec<Vec<(String, String)>>,
+    local_value_kinds: BTreeMap<String, ValueKind>,
+    return_facts: FunctionReturnFacts,
 }
 
 impl LiftCtx {
     fn new() -> Self {
+        Self::with_return_facts(FunctionReturnFacts::default())
+    }
+
+    fn with_return_facts(return_facts: FunctionReturnFacts) -> Self {
         Self {
             next_binder_id: 0,
             scope: Vec::new(),
+            local_value_kinds: BTreeMap::new(),
+            return_facts,
         }
     }
 
@@ -101,6 +110,95 @@ impl LiftCtx {
     }
 }
 
+#[derive(Clone, Debug, Default)]
+pub struct FunctionReturnFacts {
+    direct_string: HashSet<String>,
+    result_string: HashSet<String>,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+enum ValueKind {
+    String,
+    Number,
+    Bool,
+    JsonObject(BTreeMap<String, ValueKind>),
+    Unknown,
+}
+
+/// Collect only EXPLICIT signature facts from a Rust file. This is a
+/// refuse-floor data source for json! construction tracking: the kit trusts
+/// `fn f(...) -> String` and `fn g(...) -> Result<String, _>` declarations,
+/// but never infers return kinds from function bodies in this slice.
+pub fn collect_explicit_function_return_facts(file: &syn::File) -> FunctionReturnFacts {
+    let mut facts = FunctionReturnFacts::default();
+    for item in &file.items {
+        let syn::Item::Fn(item_fn) = item else {
+            continue;
+        };
+        let name = item_fn.sig.ident.to_string();
+        match explicit_return_kind(&item_fn.sig.output) {
+            Some(ExplicitReturnKind::String) => {
+                facts.direct_string.insert(name);
+            }
+            Some(ExplicitReturnKind::ResultString) => {
+                facts.result_string.insert(name);
+            }
+            None => {}
+        }
+    }
+    facts
+}
+
+#[derive(Copy, Clone, Debug, PartialEq, Eq)]
+enum ExplicitReturnKind {
+    String,
+    ResultString,
+}
+
+fn explicit_return_kind(output: &ReturnType) -> Option<ExplicitReturnKind> {
+    let ReturnType::Type(_, ty) = output else {
+        return None;
+    };
+    if type_is_string(ty) {
+        return Some(ExplicitReturnKind::String);
+    }
+    if type_is_result_string(ty) {
+        return Some(ExplicitReturnKind::ResultString);
+    }
+    None
+}
+
+fn type_is_string(ty: &Type) -> bool {
+    let Type::Path(type_path) = ty else {
+        return false;
+    };
+    type_path
+        .path
+        .segments
+        .last()
+        .map(|seg| seg.ident == "String")
+        .unwrap_or(false)
+}
+
+fn type_is_result_string(ty: &Type) -> bool {
+    let Type::Path(type_path) = ty else {
+        return false;
+    };
+    let Some(seg) = type_path.path.segments.last() else {
+        return false;
+    };
+    if seg.ident != "Result" {
+        return false;
+    }
+    let PathArguments::AngleBracketed(args) = &seg.arguments else {
+        return false;
+    };
+    let Some(GenericArgument::Type(first)) = args.args.first() else {
+        return false;
+    };
+    type_is_string(first)
+}
+
 /// Lift the implicit precondition from a function body. Walks every
 /// statement and conjoins the contribution of each pattern recognized.
 ///
@@ -132,7 +230,14 @@ pub fn lift_function_precondition(item_fn: &ItemFn) -> Wp {
 /// body's structure that did not appear as explicit annotations. The
 /// postcondition is the conjunction of every such derived fact.
 pub fn lift_function_postcondition(item_fn: &ItemFn) -> Wp {
-    let mut ctx = LiftCtx::new();
+    lift_function_postcondition_with_return_facts(item_fn, &FunctionReturnFacts::default())
+}
+
+pub fn lift_function_postcondition_with_return_facts(
+    item_fn: &ItemFn,
+    return_facts: &FunctionReturnFacts,
+) -> Wp {
+    let mut ctx = LiftCtx::with_return_facts(return_facts.clone());
 
     // 1. Collect entry-assertion contributions, but track which names are
     //    subsequently shadowed by `let` bindings. An entry assertion
@@ -170,6 +275,9 @@ pub fn lift_function_postcondition(item_fn: &ItemFn) -> Wp {
         })
         .map(|(formula, _)| formula)
         .collect();
+
+    seed_param_value_kinds(item_fn, &mut ctx);
+    collect_local_value_facts(stmts, &mut ctx);
 
     // 2. Trailing-expression derivation: if the function body ends with
     //    an expression statement (no trailing semicolon), that
@@ -524,6 +632,313 @@ fn collect_pat_names(pat: &Pat, out: &mut HashSet<String>) {
     }
 }
 
+fn seed_param_value_kinds(item_fn: &ItemFn, ctx: &mut LiftCtx) {
+    for input in &item_fn.sig.inputs {
+        let FnArg::Typed(arg) = input else {
+            continue;
+        };
+        let Pat::Ident(ident) = &*arg.pat else {
+            continue;
+        };
+        if ident.mutability.is_some() {
+            continue;
+        }
+        if type_is_string(&arg.ty) {
+            ctx.local_value_kinds
+                .insert(ident.ident.to_string(), ValueKind::String);
+        }
+    }
+}
+
+/// Track local json! construction facts for this function body.
+///
+/// SOUNDNESS / refuse-floor: this is a Rust-kit-only analysis and must bless
+/// only facts proven by explicit local construction. Any uncertainty (mutable
+/// binding, assignment to a tracked value, non-literal json! macro, opaque call,
+/// or divergent shape we do not model) becomes `Unknown`; `Unknown` never emits
+/// `cf_guarded`, so the panic site stays honestly undecidable. In particular,
+/// `let mut x = json!(...); x["k"] = ...` is refused in this slice rather than
+/// tracked.
+fn collect_local_value_facts(stmts: &[Stmt], ctx: &mut LiftCtx) {
+    for stmt in stmts {
+        match stmt {
+            Stmt::Local(local) => collect_local_binding_value_fact(local, ctx),
+            Stmt::Expr(expr, _) => invalidate_assignment_targets(expr, ctx),
+            Stmt::Macro(_) | Stmt::Item(_) => {}
+        }
+    }
+}
+
+fn collect_local_binding_value_fact(local: &Local, ctx: &mut LiftCtx) {
+    let Some((name, mutable)) = local_binding_ident(local) else {
+        let mut names = HashSet::new();
+        collect_pat_names(&local.pat, &mut names);
+        for name in names {
+            ctx.local_value_kinds.remove(&name);
+        }
+        return;
+    };
+    if mutable {
+        ctx.local_value_kinds.remove(&name);
+        return;
+    }
+    let kind = local
+        .init
+        .as_ref()
+        .map(|init| infer_value_kind(&init.expr, ctx))
+        .unwrap_or(ValueKind::Unknown);
+    ctx.local_value_kinds.insert(name, kind);
+}
+
+fn local_binding_ident(local: &Local) -> Option<(String, bool)> {
+    match &local.pat {
+        Pat::Ident(ident) => Some((ident.ident.to_string(), ident.mutability.is_some())),
+        Pat::Type(typed) => match &*typed.pat {
+            Pat::Ident(ident) => Some((ident.ident.to_string(), ident.mutability.is_some())),
+            _ => None,
+        },
+        _ => None,
+    }
+}
+
+fn invalidate_assignment_targets(expr: &Expr, ctx: &mut LiftCtx) {
+    match expr {
+        Expr::Assign(assign) => {
+            if let Some(root) = assignment_root_ident(&assign.left) {
+                ctx.local_value_kinds.remove(&root);
+            }
+            invalidate_assignment_targets(&assign.right, ctx);
+        }
+        Expr::Block(block) => {
+            for stmt in &block.block.stmts {
+                if let Stmt::Expr(expr, _) = stmt {
+                    invalidate_assignment_targets(expr, ctx);
+                }
+            }
+        }
+        Expr::If(if_expr) => {
+            invalidate_assignment_targets(&if_expr.cond, ctx);
+            for stmt in &if_expr.then_branch.stmts {
+                if let Stmt::Expr(expr, _) = stmt {
+                    invalidate_assignment_targets(expr, ctx);
+                }
+            }
+            if let Some((_, else_expr)) = &if_expr.else_branch {
+                invalidate_assignment_targets(else_expr, ctx);
+            }
+        }
+        _ => {}
+    }
+}
+
+fn assignment_root_ident(expr: &Expr) -> Option<String> {
+    match expr {
+        Expr::Path(path) => path.path.segments.last().map(|seg| seg.ident.to_string()),
+        Expr::Index(index) => assignment_root_ident(&index.expr),
+        Expr::Field(field) => assignment_root_ident(&field.base),
+        Expr::Paren(paren) => assignment_root_ident(&paren.expr),
+        _ => None,
+    }
+}
+
+fn infer_value_kind(expr: &Expr, ctx: &LiftCtx) -> ValueKind {
+    match expr {
+        Expr::Lit(lit) => match &lit.lit {
+            Lit::Str(_) => ValueKind::String,
+            Lit::Int(_) | Lit::Float(_) => ValueKind::Number,
+            Lit::Bool(_) => ValueKind::Bool,
+            _ => ValueKind::Unknown,
+        },
+        Expr::Path(path) => path
+            .path
+            .segments
+            .last()
+            .and_then(|seg| ctx.local_value_kinds.get(&seg.ident.to_string()))
+            .cloned()
+            .unwrap_or(ValueKind::Unknown),
+        Expr::Paren(paren) => infer_value_kind(&paren.expr, ctx),
+        Expr::Reference(reference) => infer_value_kind(&reference.expr, ctx),
+        Expr::Group(group) => infer_value_kind(&group.expr, ctx),
+        Expr::MethodCall(method) => {
+            let method_name = method.method.to_string();
+            match method_name.as_str() {
+                "to_string" => ValueKind::String,
+                "clone" if method.args.is_empty() => infer_value_kind(&method.receiver, ctx),
+                _ => ValueKind::Unknown,
+            }
+        }
+        Expr::Call(call) => {
+            let Some(callee) = call_callee_name(call) else {
+                return ValueKind::Unknown;
+            };
+            if ctx.return_facts.direct_string.contains(&callee) {
+                ValueKind::String
+            } else {
+                // A bare call to `fn f() -> Result<String, _>` is not a string;
+                // only `f()?` produces the inner String in this slice.
+                ValueKind::Unknown
+            }
+        }
+        Expr::Try(try_expr) => {
+            if let Expr::Call(call) = &*try_expr.expr {
+                if let Some(callee) = call_callee_name(call) {
+                    if ctx.return_facts.result_string.contains(&callee) {
+                        return ValueKind::String;
+                    }
+                }
+            }
+            ValueKind::Unknown
+        }
+        Expr::Index(index) => infer_indexed_json_value_kind(index, ctx),
+        Expr::Macro(expr_macro) => infer_macro_value_kind(&expr_macro.mac, ctx),
+        _ => ValueKind::Unknown,
+    }
+}
+
+fn call_callee_name(call: &syn::ExprCall) -> Option<String> {
+    let Expr::Path(path) = &*call.func else {
+        return None;
+    };
+    path.path.segments.last().map(|seg| seg.ident.to_string())
+}
+
+fn infer_indexed_json_value_kind(index: &syn::ExprIndex, ctx: &LiftCtx) -> ValueKind {
+    let ValueKind::JsonObject(fields) = infer_value_kind(&index.expr, ctx) else {
+        return ValueKind::Unknown;
+    };
+    let Some(key) = expr_string_literal(&index.index) else {
+        return ValueKind::Unknown;
+    };
+    fields.get(&key).cloned().unwrap_or(ValueKind::Unknown)
+}
+
+fn expr_string_literal(expr: &Expr) -> Option<String> {
+    match expr {
+        Expr::Lit(lit) => match &lit.lit {
+            Lit::Str(s) => Some(s.value()),
+            _ => None,
+        },
+        Expr::Paren(paren) => expr_string_literal(&paren.expr),
+        Expr::Group(group) => expr_string_literal(&group.expr),
+        _ => None,
+    }
+}
+
+fn infer_macro_value_kind(mac: &Macro, ctx: &LiftCtx) -> ValueKind {
+    match macro_leaf_name(mac).as_deref() {
+        Some("format") => ValueKind::String,
+        Some("json") => parse_json_object_macro(mac, ctx)
+            .map(ValueKind::JsonObject)
+            .unwrap_or(ValueKind::Unknown),
+        _ => ValueKind::Unknown,
+    }
+}
+
+fn macro_leaf_name(mac: &Macro) -> Option<String> {
+    mac.path.segments.last().map(|seg| seg.ident.to_string())
+}
+
+fn parse_json_object_macro(mac: &Macro, ctx: &LiftCtx) -> Option<BTreeMap<String, ValueKind>> {
+    let mut iter = mac.tokens.clone().into_iter();
+    let Some(TokenTree::Group(group)) = iter.next() else {
+        return None;
+    };
+    if group.delimiter() != Delimiter::Brace || iter.next().is_some() {
+        return None;
+    }
+    parse_json_object_tokens(group.stream(), ctx)
+}
+
+fn parse_json_object_tokens(
+    tokens: TokenStream,
+    ctx: &LiftCtx,
+) -> Option<BTreeMap<String, ValueKind>> {
+    let mut fields = BTreeMap::new();
+    let mut iter = tokens.into_iter().peekable();
+    while let Some(token) = iter.next() {
+        if is_comma(&token) {
+            continue;
+        }
+        let key = token_string_literal(&token)?;
+        let Some(colon) = iter.next() else {
+            return None;
+        };
+        if !is_colon(&colon) {
+            return None;
+        }
+        let mut value_tokens = TokenStream::new();
+        while let Some(next) = iter.peek() {
+            if is_comma(next) {
+                iter.next();
+                break;
+            }
+            let next = iter.next().expect("peeked token exists");
+            value_tokens.extend(std::iter::once(next));
+        }
+        if value_tokens.is_empty() {
+            return None;
+        }
+        fields.insert(key, infer_json_value_tokens(value_tokens, ctx));
+    }
+    Some(fields)
+}
+
+fn infer_json_value_tokens(tokens: TokenStream, ctx: &LiftCtx) -> ValueKind {
+    let mut iter = tokens.clone().into_iter();
+    if let Some(TokenTree::Group(group)) = iter.next() {
+        if group.delimiter() == Delimiter::Brace && iter.next().is_none() {
+            return parse_json_object_tokens(group.stream(), ctx)
+                .map(ValueKind::JsonObject)
+                .unwrap_or(ValueKind::Unknown);
+        }
+    }
+    syn::parse2::<Expr>(tokens)
+        .ok()
+        .map(|expr| infer_value_kind(&expr, ctx))
+        .unwrap_or(ValueKind::Unknown)
+}
+
+fn token_string_literal(token: &TokenTree) -> Option<String> {
+    let TokenTree::Literal(lit) = token else {
+        return None;
+    };
+    let parsed = syn::parse_str::<Lit>(&lit.to_string()).ok()?;
+    match parsed {
+        Lit::Str(s) => Some(s.value()),
+        _ => None,
+    }
+}
+
+fn is_comma(token: &TokenTree) -> bool {
+    matches!(token, TokenTree::Punct(p) if p.as_char() == ',')
+}
+
+fn is_colon(token: &TokenTree) -> bool {
+    matches!(token, TokenTree::Punct(p) if p.as_char() == ':')
+}
+
+fn receiver_as_str_is_known_json_string(receiver: &Expr, ctx: &LiftCtx) -> bool {
+    let Expr::MethodCall(method) = receiver else {
+        return false;
+    };
+    method.method == "as_str"
+        && method.args.is_empty()
+        && matches!(infer_value_kind(&method.receiver, ctx), ValueKind::String)
+}
+
+fn wrap_known_option_unwrap_guard(receiver: IrTerm, value: IrTerm) -> IrTerm {
+    IrTerm::Ctor {
+        name: "cf_guarded".to_string(),
+        args: vec![
+            IrTerm::Ctor {
+                name: "is_some".to_string(),
+                args: vec![receiver],
+            },
+            value,
+        ],
+    }
+}
+
 /// If a statement is an explicit `return <expr>;`, derive
 /// `result = <lifted expr>`. Returns None for other statement kinds.
 fn lift_return_stmt_postcondition(stmt: &Stmt, ctx: &mut LiftCtx) -> Option<IrFormula> {
@@ -780,10 +1195,19 @@ fn lift_expr_to_term_inner(expr: &Expr, ctx: &mut LiftCtx) -> Option<IrTerm> {
                 let lifted = lift_expr_to_term_inner(a, ctx)?;
                 args.push(lifted);
             }
-            Some(IrTerm::Ctor {
+            let value = IrTerm::Ctor {
                 name: format!("method:{}", m.method),
                 args,
-            })
+            };
+            if m.method == "unwrap"
+                && m.args.is_empty()
+                && receiver_as_str_is_known_json_string(&m.receiver, ctx)
+            {
+                if let IrTerm::Ctor { args, .. } = &value {
+                    return Some(wrap_known_option_unwrap_guard(args[0].clone(), value));
+                }
+            }
+            Some(value)
         }
         Expr::Range(r) => {
             let start = match &r.start {
@@ -1757,7 +2181,10 @@ mod tests {
             "Ok(StructLiteral{{..}}) tail must synthesize a result equation"
         );
         let json = serde_json::to_string(&eq.unwrap()).unwrap();
-        assert!(json.contains("Ok"), "result term must carry the Ok ctor: {json}");
+        assert!(
+            json.contains("Ok"),
+            "result term must carry the Ok ctor: {json}"
+        );
         assert!(
             json.contains("Report"),
             "result term must carry the struct ctor: {json}"
@@ -1823,9 +2250,15 @@ mod tests {
         "#,
         );
         let eq = result_equation_of(&item_fn);
-        assert!(eq.is_some(), "tail containing `?` must synthesize a result equation");
+        assert!(
+            eq.is_some(),
+            "tail containing `?` must synthesize a result equation"
+        );
         let json = serde_json::to_string(&eq.unwrap()).unwrap();
-        assert!(json.contains("\"?\""), "`?` must lift to an opaque `?` ctor: {json}");
+        assert!(
+            json.contains("\"?\""),
+            "`?` must lift to an opaque `?` ctor: {json}"
+        );
     }
 
     #[test]
@@ -1839,8 +2272,14 @@ mod tests {
         let ta = lift_macro_to_opaque_term(&a1);
         let ta2 = lift_macro_to_opaque_term(&a2);
         let tb = lift_macro_to_opaque_term(&b);
-        assert_eq!(ta, ta2, "identical macro calls must lift to the same opaque term");
-        assert_ne!(ta, tb, "different macro calls must lift to different opaque terms");
+        assert_eq!(
+            ta, ta2,
+            "identical macro calls must lift to the same opaque term"
+        );
+        assert_ne!(
+            ta, tb,
+            "different macro calls must lift to different opaque terms"
+        );
     }
 
     // ---- PANIC-FREEDOM guard resolution lives in the Rust kit ----
@@ -1904,7 +2343,10 @@ mod tests {
                 assert_eq!(name, "cf_guarded");
                 match &args[0] {
                     IrTerm::Ctor { name, args } => {
-                        assert_eq!(name, "is_some", "then-branch carries the POSITIVE predicate");
+                        assert_eq!(
+                            name, "is_some",
+                            "then-branch carries the POSITIVE predicate"
+                        );
                         assert_eq!(args, &vec![recv.clone()], "guard names the receiver term");
                     }
                     other => panic!("then guard not a ctor: {other:?}"),
@@ -1974,10 +2416,128 @@ mod tests {
             json.contains("cf_guarded"),
             "guarded branches must carry cf_guarded wrappers: {json}"
         );
-        assert!(json.contains("is_some"), "then-branch guard is is_some: {json}");
+        assert!(
+            json.contains("is_some"),
+            "then-branch guard is is_some: {json}"
+        );
         assert!(
             json.contains("is_none"),
             "else-branch guard is the complement is_none: {json}"
+        );
+    }
+
+    #[test]
+    fn json_string_field_unwrap_carries_is_some_guard_fact() {
+        let item_fn = parse_fn(
+            r#"
+            fn f(from_catalog_cid: String) -> String {
+                let body = json!({
+                    "fromCatalogCid": from_catalog_cid
+                });
+                let payload = json!({
+                    "fromCatalogCid": body["fromCatalogCid"].clone()
+                });
+                payload["fromCatalogCid"].as_str().unwrap().to_string()
+            }
+        "#,
+        );
+        let eq = result_equation_of(&item_fn).expect("json unwrap must remain in result term");
+        let json = serde_json::to_string(&eq).unwrap();
+        assert!(
+            json.contains("cf_guarded"),
+            "json string construction must carry an opaque guard fact: {json}"
+        );
+        assert!(
+            json.contains("is_some"),
+            "json string construction must prove as_str() is Some: {json}"
+        );
+        assert!(
+            json.contains("fromCatalogCid"),
+            "guard must name the same indexed JSON field: {json}"
+        );
+    }
+
+    #[test]
+    fn dynamic_json_construction_does_not_carry_guard_fact() {
+        let item_fn = parse_fn(
+            r#"
+            fn f() -> String {
+                let payload = make_payload();
+                payload["value"].as_str().unwrap().to_string()
+            }
+        "#,
+        );
+        let eq = result_equation_of(&item_fn).expect("dynamic unwrap must remain in result term");
+        let json = serde_json::to_string(&eq).unwrap();
+        assert!(
+            !json.contains("cf_guarded"),
+            "opaque dynamic construction must stay honestly unguarded: {json}"
+        );
+    }
+
+    #[test]
+    fn numeric_json_field_does_not_carry_string_guard_fact() {
+        let item_fn = parse_fn(
+            r#"
+            fn f() -> String {
+                let payload = json!({
+                    "value": 7
+                });
+                payload["value"].as_str().unwrap().to_string()
+            }
+        "#,
+        );
+        let eq =
+            result_equation_of(&item_fn).expect("wrong-type unwrap must remain in result term");
+        let json = serde_json::to_string(&eq).unwrap();
+        assert!(
+            !json.contains("cf_guarded"),
+            "numeric JSON fields must not prove as_str() is Some: {json}"
+        );
+    }
+
+    #[test]
+    fn mutable_json_binding_does_not_carry_guard_fact() {
+        let item_fn = parse_fn(
+            r#"
+            fn f() -> String {
+                let mut payload = json!({
+                    "value": "ok"
+                });
+                payload["value"].as_str().unwrap().to_string()
+            }
+        "#,
+        );
+        let eq =
+            result_equation_of(&item_fn).expect("mutable JSON unwrap must remain in result term");
+        let json = serde_json::to_string(&eq).unwrap();
+        assert!(
+            !json.contains("cf_guarded"),
+            "mutable JSON construction must stay honestly unguarded: {json}"
+        );
+    }
+
+    #[test]
+    fn unknown_json_field_propagation_does_not_carry_guard_fact() {
+        let item_fn = parse_fn(
+            r#"
+            fn f() -> String {
+                let body = json!({
+                    "value": opaque()
+                });
+                let payload = json!({
+                    "value": body["value"].clone()
+                });
+                payload["value"].as_str().unwrap().to_string()
+            }
+        "#,
+        );
+        let eq =
+            result_equation_of(&item_fn).expect("unknown propagated unwrap must remain in term");
+        let json = serde_json::to_string(&eq).unwrap();
+        assert!(
+            !json.contains("cf_guarded"),
+            "unknown field kind must remain unknown through clone propagation: {json}"
         );
     }
 }
