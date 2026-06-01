@@ -10,9 +10,10 @@
 # up the crate graph: every dependency publishes its contracts, the consumer
 # bridges into them.
 #
-# Producer surfaces only (no rust-implications): this crate's job here is to
-# PUBLISH contracts the cli bridges into. (libprovekit's own internal
-# discharge would add rust-implications, the same way the cli does.)
+# Producer surfaces publish contracts the cli bridges into. The
+# rust-implications consumer surface also lets libprovekit self-check enumerate
+# its own internal callsite obligations, giving the D-lib per-type work a
+# production baseline instead of an empty census.
 
 [[plugins]]
 name = "rust-bind"
@@ -27,6 +28,11 @@ emit = "ir-document"
 [[plugins]]
 name = "rust-fn-contracts"
 surface = "rust-fn-contracts"
+emit = "ir-document"
+
+[[plugins]]
+name = "rust-implications"
+surface = "rust-implications"
 emit = "ir-document"
 
 [platform_profile]
