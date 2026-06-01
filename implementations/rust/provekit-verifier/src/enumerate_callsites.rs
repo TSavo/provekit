@@ -648,7 +648,10 @@ fn walk_term(
             // The guard term itself is a predicate over the receiver, not a
             // call value; do not descend it as a callsite source.
         }
-    } else if name == "cf_ite" {
+    } else if matches!(
+        name.as_str(),
+        panic_freedom::CF_ITE | panic_freedom::CF_ITE_CONCEPT
+    ) {
         if let Some(args) = t.get("args").and_then(|v| v.as_array()) {
             // arg0: the condition term, evaluated in the enclosing context. It
             // introduces no path fact (the dominating fact rides cf_guarded).
@@ -768,6 +771,37 @@ mod guard_propagation_tests {
         let body = guarded_carrier(name, pred("pred_a"), panic_call());
         let sites = run(&pool_with_post(body));
         enumerated_call(&sites).guard_facts.clone()
+    }
+
+    fn choice_carrier(name: &str, cond: Json, then_branch: Json, else_branch: Json) -> Json {
+        json!({
+            "kind": "ctor",
+            "name": name,
+            "args": [cond, then_branch, else_branch],
+        })
+    }
+
+    fn guarded_choice_callsite_shape(name: &str) -> (Vec<Json>, Option<Json>) {
+        let body = choice_carrier(
+            name,
+            pred("some_condition"),
+            cf_guarded(pred("pred_a"), panic_call()),
+            cf_guarded(pred("pred_b"), json!({ "kind": "lit", "value": 0 })),
+        );
+        let sites = run(&pool_with_post(body));
+        let call = enumerated_call(&sites);
+        (call.guard_facts.clone(), call.containing_atomic.clone())
+    }
+
+    fn direct_choice_containing_atomic(name: &str) -> Option<Json> {
+        let body = choice_carrier(
+            name,
+            pred("some_condition"),
+            panic_call(),
+            json!({ "kind": "lit", "value": 0 }),
+        );
+        let sites = run(&pool_with_post(body));
+        enumerated_call(&sites).containing_atomic.clone()
     }
 
     // Build a pool with a single `panic_call` bridge and one contract whose
@@ -973,36 +1007,94 @@ mod guard_propagation_tests {
         // The verifier reads the guard ONLY off the cf_guarded wrapper the kit
         // placed on the then-branch -- it does NOT derive anything from `cond`.
         // (cond uses an opaque head; the verifier must not recognize it.)
-        let body = json!({
-            "kind": "ctor",
-            "name": "cf_ite",
-            "args": [
-                pred("some_condition"),
-                cf_guarded(pred("pred_a"), panic_call()),
-                cf_guarded(pred("pred_b"), json!({ "kind": "lit", "value": 0 })),
-            ],
-        });
+        let body = choice_carrier(
+            panic_freedom::CF_ITE,
+            pred("some_condition"),
+            cf_guarded(pred("pred_a"), panic_call()),
+            cf_guarded(pred("pred_b"), json!({ "kind": "lit", "value": 0 })),
+        );
         let sites = run(&pool_with_post(body));
+        let call = enumerated_call(&sites);
         assert_eq!(
-            enumerated_call(&sites).guard_facts,
+            call.guard_facts,
             vec![json!({ "kind": "atomic", "name": "pred_a", "args": [recv()] })],
             "the call must carry ONLY the kit's then-branch wrapper atom, nothing from cond"
         );
+        assert!(
+            call.containing_atomic.is_none(),
+            "the old choice carrier must stop outer atomic threading for branch callsites"
+        );
+    }
+
+    #[test]
+    fn concept_choice_condition_introduces_no_fact_only_the_wrapper_does() {
+        let body = choice_carrier(
+            panic_freedom::CF_ITE_CONCEPT,
+            pred("some_condition"),
+            cf_guarded(pred("pred_a"), panic_call()),
+            cf_guarded(pred("pred_b"), json!({ "kind": "lit", "value": 0 })),
+        );
+        let sites = run(&pool_with_post(body));
+        let call = enumerated_call(&sites);
+        assert_eq!(
+            call.guard_facts,
+            vec![json!({ "kind": "atomic", "name": "pred_a", "args": [recv()] })],
+            "the substrate choice carrier must read exactly like the old choice carrier"
+        );
+        assert!(
+            call.containing_atomic.is_none(),
+            "the substrate choice carrier must stop outer atomic threading like the old choice carrier"
+        );
+    }
+
+    #[test]
+    fn old_and_concept_choice_carriers_are_equivalent() {
+        assert_eq!(
+            guarded_choice_callsite_shape(panic_freedom::CF_ITE),
+            guarded_choice_callsite_shape(panic_freedom::CF_ITE_CONCEPT),
+            "old and substrate choice carriers must produce identical callsite shape"
+        );
+        assert_eq!(
+            direct_choice_containing_atomic(panic_freedom::CF_ITE),
+            direct_choice_containing_atomic(panic_freedom::CF_ITE_CONCEPT),
+            "old and substrate choice carriers must both stop outer atomic threading"
+        );
+    }
+
+    #[test]
+    fn misspelled_concept_choice_carrier_does_not_match() {
+        let containing_atomic = direct_choice_containing_atomic("concept:panic-freedom.choiec");
+        assert!(
+            containing_atomic.is_some(),
+            "a misspelled substrate choice carrier must fall through generic ctor descent"
+        );
+    }
+
+    #[test]
+    fn concept_choice_carrier_is_exact_case_sensitive_token() {
+        for name in [
+            " concept:panic-freedom.choice",
+            "concept:panic-freedom.choice ",
+            "concept:panic-freedom.Choice",
+        ] {
+            let containing_atomic = direct_choice_containing_atomic(name);
+            assert!(
+                containing_atomic.is_some(),
+                "substrate choice token variations must not match the special carrier: {name}"
+            );
+        }
     }
 
     #[test]
     fn cf_ite_unwrapped_branch_carries_no_fact() {
         // An else-branch the kit did NOT wrap (e.g. its complement was not a
         // partial-pre-establishing predicate): the call there stays unguarded.
-        let body = json!({
-            "kind": "ctor",
-            "name": "cf_ite",
-            "args": [
-                pred("some_condition"),
-                { "kind": "lit", "value": 0 },
-                panic_call(), // bare, no cf_guarded wrapper
-            ],
-        });
+        let body = choice_carrier(
+            panic_freedom::CF_ITE,
+            pred("some_condition"),
+            json!({ "kind": "lit", "value": 0 }),
+            panic_call(), // bare, no cf_guarded wrapper
+        );
         let sites = run(&pool_with_post(body));
         assert!(
             enumerated_call(&sites).guard_facts.is_empty(),
