@@ -752,6 +752,14 @@ pub struct CallSite {
     /// loaded together.
     pub callsite_bundle_cid: Option<String>,
     pub arg_term: Option<Json>,
+    /// Optional kit-provided producer provenance for panic-site receiver calls.
+    /// For `producer().expect(..)`, the panic leaf and the producer call can
+    /// start on different source lines. The verifier treats these as opaque
+    /// coordinates into `bridges_by_callsite`; the language kit owns how they
+    /// were derived.
+    pub producer_file: Option<String>,
+    pub producer_line: Option<usize>,
+    pub producer_symbol: Option<String>,
     /// The atomic predicate the matched call ctor sits directly inside, if
     /// the call was found as an argument of an atomic (e.g. the `=` in a
     /// harvested `assert_eq!(double(3), 6)` -> `=(double(3), 6)`). Captured

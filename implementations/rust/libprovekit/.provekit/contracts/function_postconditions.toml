@@ -1,0 +1,27 @@
+# SPDX-License-Identifier: Apache-2.0
+#
+# Rust-kit manifest for audited function postconditions that are specific to
+# libprovekit's own code. The Rust kit reads this as side metadata during
+# lifting; the CLI/verifier receive only the emitted contract/bridge IR over RPC.
+
+[[functions]]
+call_kind = "associated"
+callee_crate = "libprovekit"
+type_path = "Cid"
+callee = "parse"
+arg0_format_literal = "blake3-512:{}"
+arg0_repeat_literal = "0"
+arg0_repeat_count = 128
+contract = "cid_parse__zero_digest"
+post_predicate = "is_ok"
+reason = "format!(\"blake3-512:{}\", \"0\".repeat(128)) is exactly a blake3-512 prefix plus 128 ASCII hex zeroes"
+
+[[functions]]
+call_kind = "method"
+callee_crate = "libprovekit"
+receiver_path = "ConceptOpCatalog"
+callee = "cid"
+arg0_path = "CONCEPT_BIND_RESULT"
+contract = "concept_op_catalog_cid__concept_bind_result"
+post_predicate = "is_some"
+reason = "grammar_op_shape(CONCEPT_BIND_RESULT) has a fixed primitive arm and json_cid returns a valid CID"

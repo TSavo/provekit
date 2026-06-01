@@ -156,13 +156,30 @@ architectural thesis at v2.
   post-#1767 is 5 B prelude/std-shim sites plus imported `libprovekit`
   `wp.rs:295` (`len()==1 -> next().unwrap()`). **Cumulative production K so
   far: 19 sites discharged via sound reasoning on real production code.**
+- **D-fn cross-function postconditions (#1771, verified
+  2026-06-01).** Rust kit reads audited
+  `.provekit/contracts/function_postconditions.toml` entries for
+  `Cid::parse(format!("blake3-512:{}", "0".repeat(128)))` and
+  `ConceptOpCatalog.cid(CONCEPT_BIND_RESULT)`, emits singleton postcondition
+  contracts, and routes manifest-backed panic receivers through fixed std
+  partials (`is_ok` -> Result, `is_some` -> Option). The verifier remains
+  language-blind: it consumes opaque producer coordinates and generic
+  singleton `P(result)` facts, with no Rust predicate vocabulary hardcoded.
+  Result on libprovekit self-check: `panicSafe=12`, `falsePass=0`,
+  `silentlyDropped=0`, `droppedSites=[]`, `panicCensus=35`,
+  `oracle={requested:true, engaged:true, attempted:2740, resolved:2504}`.
+  Result on provekit-cli self-check: `panicSafe=21`, `falsePass=0`,
+  `silentlyDropped=0`, `droppedSites=[]`, `panicCensus=53`,
+  `oracle={requested:true, engaged:true, attempted:3496, resolved:3410}`.
+  **Cumulative production K so far: 21 sites discharged via sound reasoning
+  on real production code.**
 
-## Current census (provekit-cli, post-#1769)
+## Current census (provekit-cli, #1771 D-fn branch)
 
-Latest measured gate: `panicCensus=53`, `panicSafe=19`, `falsePass=0`,
+Latest measured gate: `panicCensus=53`, `panicSafe=21`, `falsePass=0`,
 `silentlyDropped=0`, `droppedSites=[]`. The original 7-site C bucket is closed
-by #1767, and the B guarded-panic bucket is closed by #1769. The remaining
-closable row class is D-fn; residue still needs first-class naming.
+by #1767, the B guarded-panic bucket is closed by #1769, and the two D-fn rows
+are closed by #1771. Residue still needs first-class naming.
 
 | Category | Count | Closing mechanism |
 |---|---|---|
@@ -170,13 +187,13 @@ closable row class is D-fn; residue still needs first-class naming.
 | D-lib | 3 known remaining | serde_json totality not yet closed by #1762/#1765: remaining derived-Serialize / pretty-print cases. The `&Value` kit_dispatch sites are closed by #1765. |
 | C | 0 | Closed by #1767: 7 `cmd_protocol.rs` `payload["k"].as_str().unwrap()` sites discharged via Rust-kit `json!` construction tracking and `cf_guarded(...)` postcondition terms. |
 | B | 0 | Closed by #1769: intra-fn `assert!(x.is_some()/is_ok()/is_err())` propagation plus `len==1 -> next()` guard. |
-| D-fn | 2 | Cross-function postconditions: catalog primitive `.cid()`, `Cid::parse` on literal. |
+| D-fn | 0 | Closed by #1771: catalog primitive `.cid()` and `Cid::parse` on literal discharge through manifest-backed function postconditions. |
 | oracle-residue | 0 | None in panicCensus; the 86 unresolved receivers are non-panic obligations. |
 | unknown | 0 | Every site has a named category. Honest. |
 
-The honest read: C and B are closed, D-lib is mostly closed, and D-fn is the
-next closable bucket. v1 is "K covering the provable buckets, residue named,
-hard floor never violated." K = N is not required and not honest.
+The honest read: C, B, and D-fn are closed, D-lib is mostly closed, and residue
+must be named. v1 is "K covering the provable buckets, residue named, hard
+floor never violated." K = N is not required and not honest.
 
 ## Current census (libprovekit, 15 unproven sites, warm-oracle baseline)
 
@@ -211,6 +228,12 @@ Post-#1769 current libprovekit score: `panicCensus=36`, `panicSafe=10`,
 `falsePass=0`, `silentlyDropped=0`, `droppedSites=[]`; the B guarded-panic
 slice contributes 6 current K rows here: 5 prelude/std-shim rows plus
 `wp.rs:295` (`len()==1 -> next().unwrap()`), on top of the 4 D-lib sites.
+
+Current #1771 branch libprovekit score: `panicCensus=35`, `panicSafe=12`,
+`falsePass=0`, `silentlyDropped=0`, `droppedSites=[]`; the +2 rows are
+`src/core/bind.rs:550` (`ConceptOpCatalog.cid(CONCEPT_BIND_RESULT).expect(...)`)
+and `src/wp/tests.rs:74`
+(`Cid::parse(format!("blake3-512:{}", "0".repeat(128))).expect(...)`).
 
 ## The metric (the one number we watch)
 
@@ -263,8 +286,9 @@ Each tier ships as one PR, golden-pinned, with visible scoreboard delta.
   `len()==1 -> next().unwrap()` site. Also hardens self-check dependency mints
   to inherit `--oracle` and adds the verifier no-scoped-bridge guard. +6 K
   delta on provekit-cli; cumulative production K=19.
-- **D-fn cross-function postconditions**: closes the 2 remaining sites
-  (`Cid::parse` on literal, catalog primitive `.cid()`).
+- **D-fn cross-function postconditions (#1771):** closes the 2
+  remaining D-fn sites (`Cid::parse` on literal, catalog primitive `.cid()`).
+  +2 K delta on provekit-cli; cumulative production K=21.
 ### Phase 3 - RESIDUE NAMED + V1 RELEASE
 - The 10 residue sites get an explicit `residue` category in the panicCensus
   output (not "unproven"; honest residue with reason).
@@ -367,6 +391,9 @@ the first.
     `len()==1 -> next()`, self-check dependency mints inherit `--oracle`, and
     verifier no-scoped-bridge guard. +6 K delta on provekit-cli. Cumulative
     production K: 19.
+  - #1771 (D-fn slice) manifest-backed cross-function postconditions for
+    `Cid::parse` on literal and catalog primitive `.cid()`. +2 K delta on
+    provekit-cli. Cumulative production K: 21.
 - **Open follow-ups**:
   - #1757 self-check golden drift reached main without gate update.
   - #1763 self-check should fail closed when requested oracle host cannot

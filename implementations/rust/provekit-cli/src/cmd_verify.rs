@@ -1218,6 +1218,9 @@ mod tests {
             property_name: "demo_property".into(),
             property_cid: "blake3-512:prop".into(),
             arg_term: None,
+            producer_file: None,
+            producer_line: None,
+            producer_symbol: None,
             containing_atomic: None,
             guard_facts: Vec::new(),
             file: None,
@@ -1325,6 +1328,9 @@ mod tests {
             property_name: "panic_site".into(),
             property_cid: "blake3-512:panic-prop".into(),
             arg_term: Some(json!({"kind": "var", "name": "opt"})),
+            producer_file: None,
+            producer_line: None,
+            producer_symbol: None,
             containing_atomic: None,
             guard_facts,
             file: None,
@@ -1471,7 +1477,10 @@ mod tests {
 
     // CID constants for the D-lib test pool.
     const DLIB_TOTALITY_CONTRACT_CID: &str = "blake3-512:dlib-totality-contract";
+    const DLIB_OPTION_TOTALITY_CONTRACT_CID: &str = "blake3-512:dlib-option-totality-contract";
     const DLIB_RESULT_UNWRAP_CID: &str = "blake3-512:dlib-result-unwrap";
+    const DLIB_OPTION_EXPECT_CID: &str = "blake3-512:dlib-option-expect";
+    const DLIB_OPTION_EXPECT_MISMATCH_CID: &str = "blake3-512:dlib-option-expect-mismatch";
     const DLIB_GENERIC_CONTRACT_CID: &str = "blake3-512:dlib-generic-result";
     const DLIB_BUNDLE: &str = "blake3-512:dlib-bundle";
 
@@ -1491,6 +1500,21 @@ mod tests {
                     "post": {
                         "kind": "atomic",
                         "name": "is_ok",
+                        "args": [{"kind": "var", "name": "result"}]
+                    }
+                }
+            }
+        });
+
+        // Option-totality contract: post = is_some(result), no pre.
+        // This is the D-fn catalog primitive shape (`.cid(...)` known Some).
+        let option_totality_contract = json!({
+            "evidence": {
+                "kind": "contract",
+                "body": {
+                    "post": {
+                        "kind": "atomic",
+                        "name": "is_some",
                         "args": [{"kind": "var", "name": "result"}]
                     }
                 }
@@ -1526,6 +1550,57 @@ mod tests {
             }
         });
 
+        // Option::expect partial: pre = is_some(result).
+        let option_expect_contract = json!({
+            "evidence": {
+                "kind": "contract",
+                "body": {
+                    "pre": {
+                        "kind": "atomic",
+                        "name": "is_some",
+                        "args": [{"kind": "var", "name": "result"}]
+                    },
+                    "post": {
+                        "kind": "atomic",
+                        "name": "=",
+                        "args": [
+                            {"kind": "var", "name": "out"},
+                            {"kind": "ctor", "name": "option_expect",
+                             "args": [{"kind": "var", "name": "result"}]}
+                        ]
+                    },
+                    "formals": ["result"],
+                    "formalSorts": [{"kind": "primitive", "name": "Option"}]
+                }
+            }
+        });
+
+        // Same partial shape, but the pre mentions a different receiver.
+        // A supplied is_some(actual_receiver) fact must not discharge it.
+        let option_expect_mismatch_contract = json!({
+            "evidence": {
+                "kind": "contract",
+                "body": {
+                    "pre": {
+                        "kind": "atomic",
+                        "name": "is_some",
+                        "args": [{"kind": "var", "name": "other"}]
+                    },
+                    "post": {
+                        "kind": "atomic",
+                        "name": "=",
+                        "args": [
+                            {"kind": "var", "name": "out"},
+                            {"kind": "ctor", "name": "option_expect",
+                             "args": [{"kind": "var", "name": "result"}]}
+                        ]
+                    },
+                    "formals": ["result"],
+                    "formalSorts": [{"kind": "primitive", "name": "Option"}]
+                }
+            }
+        });
+
         // (c) generic Result contract: post = is_ok(result) || is_err(result).
         // This is NOT a totality contract -- it says the result is some kind
         // of Result, not specifically Ok. No pre, no formals.
@@ -1557,6 +1632,17 @@ mod tests {
             }
         });
 
+        // Bridge: concept_op_catalog_cid_known -> option-totality contract.
+        let option_totality_bridge = json!({
+            "evidence": {
+                "kind": "bridge",
+                "body": {
+                    "sourceSymbol": "concept_op_catalog_cid_known",
+                    "targetContractCid": DLIB_OPTION_TOTALITY_CONTRACT_CID
+                }
+            }
+        });
+
         // (d2) Bridge: to_string_generic -> generic contract.
         let generic_bridge = json!({
             "evidence": {
@@ -1571,12 +1657,26 @@ mod tests {
         let mut pool = MementoPool::default();
         pool.mementos
             .insert(DLIB_TOTALITY_CONTRACT_CID.into(), totality_contract);
+        pool.mementos.insert(
+            DLIB_OPTION_TOTALITY_CONTRACT_CID.into(),
+            option_totality_contract,
+        );
         pool.mementos
             .insert(DLIB_RESULT_UNWRAP_CID.into(), result_unwrap_contract);
+        pool.mementos
+            .insert(DLIB_OPTION_EXPECT_CID.into(), option_expect_contract);
+        pool.mementos.insert(
+            DLIB_OPTION_EXPECT_MISMATCH_CID.into(),
+            option_expect_mismatch_contract,
+        );
         pool.mementos
             .insert(DLIB_GENERIC_CONTRACT_CID.into(), generic_contract);
         pool.bridges_by_symbol
             .insert("serde_json_to_string_value".into(), totality_bridge);
+        pool.bridges_by_symbol.insert(
+            "concept_op_catalog_cid_known".into(),
+            option_totality_bridge,
+        );
         pool.bridges_by_symbol
             .insert("to_string_generic".into(), generic_bridge);
         pool.bundle_members
@@ -1584,7 +1684,10 @@ mod tests {
             .or_default()
             .extend([
                 DLIB_TOTALITY_CONTRACT_CID.to_string(),
+                DLIB_OPTION_TOTALITY_CONTRACT_CID.to_string(),
                 DLIB_RESULT_UNWRAP_CID.to_string(),
+                DLIB_OPTION_EXPECT_CID.to_string(),
+                DLIB_OPTION_EXPECT_MISMATCH_CID.to_string(),
                 DLIB_GENERIC_CONTRACT_CID.to_string(),
             ]);
         pool
@@ -1616,6 +1719,30 @@ mod tests {
             })),
             containing_atomic: None,
             guard_facts,
+            ..Default::default()
+        }
+    }
+
+    fn dlib_option_expect_callsite(
+        callee_ctor_name: &str,
+        target_cid: &str,
+    ) -> provekit_verifier::CallSite {
+        provekit_verifier::CallSite {
+            bridge_ir_name: "option_expect".into(),
+            bridge_target_cid: target_cid.into(),
+            bridge_source_layer: "rust".into(),
+            bridge_target_layer: "concept".into(),
+            bridge_target_proof_cid: None,
+            bridge_self_bundle_cid: Some(DLIB_BUNDLE.into()),
+            property_name: "dlib_option_panic_site".into(),
+            property_cid: "blake3-512:dlib-option-prop".into(),
+            arg_term: Some(json!({
+                "kind": "ctor",
+                "name": callee_ctor_name,
+                "args": [{"kind": "var", "name": "v"}]
+            })),
+            containing_atomic: None,
+            guard_facts: vec![],
             ..Default::default()
         }
     }
@@ -1693,6 +1820,103 @@ mod tests {
             Some("panic-safe"),
             "D-lib control must never be tagged panic-safe; reason: {}",
             control.reason
+        );
+
+        let _ = std::fs::remove_dir_all(&witness_dir);
+    }
+
+    #[test]
+    fn dlib_singleton_is_some_post_discharges_option_expect_panic_safe() {
+        // D-fn / language-blind callee-post fact supply:
+        // post = is_some(result) should supply is_some(receiver), exactly like
+        // post = is_ok(result) supplies is_ok(receiver). The verifier must not
+        // hardcode Rust's Result predicate vocabulary.
+        let pool = dlib_pool();
+        let no_kit = std::path::Path::new("/nonexistent-dlib-option-test-kit");
+        let (plan, registry, _) = build_plan_and_registry(no_kit, "z3");
+        let witness_dir =
+            std::env::temp_dir().join(format!("provekit-dlib-option-test-{}", std::process::id()));
+        std::fs::create_dir_all(&witness_dir).ok();
+
+        let positive = verify_one_claim(
+            &dlib_option_expect_callsite("concept_op_catalog_cid_known", DLIB_OPTION_EXPECT_CID),
+            &pool,
+            &plan,
+            &registry,
+            &witness_dir,
+            &VERIFY_SIGNER_SEED_DEV,
+            false,
+        );
+        assert_eq!(
+            positive.verdict,
+            ObligationVerdict::Discharged,
+            "D-fn singleton is_some post must discharge option_expect pre as PANIC-SAFE; reason: {}",
+            positive.reason
+        );
+        assert_eq!(
+            positive.discharge_method.as_deref(),
+            Some("panic-safe"),
+            "D-fn singleton post discharge must be tagged panic-safe; reason: {}",
+            positive.reason
+        );
+
+        let _ = std::fs::remove_dir_all(&witness_dir);
+    }
+
+    #[test]
+    fn dlib_wrong_predicate_and_wrong_receiver_stay_undecidable() {
+        let pool = dlib_pool();
+        let no_kit = std::path::Path::new("/nonexistent-dlib-option-negative-test-kit");
+        let (plan, registry, _) = build_plan_and_registry(no_kit, "z3");
+        let witness_dir =
+            std::env::temp_dir().join(format!("provekit-dlib-option-neg-test-{}", std::process::id()));
+        std::fs::create_dir_all(&witness_dir).ok();
+
+        let wrong_predicate = verify_one_claim(
+            &dlib_option_expect_callsite("serde_json_to_string_value", DLIB_OPTION_EXPECT_CID),
+            &pool,
+            &plan,
+            &registry,
+            &witness_dir,
+            &VERIFY_SIGNER_SEED_DEV,
+            false,
+        );
+        assert_ne!(
+            wrong_predicate.verdict,
+            ObligationVerdict::Discharged,
+            "post=is_ok(result) must not discharge pre=is_some(receiver); reason: {}",
+            wrong_predicate.reason
+        );
+        assert_ne!(
+            wrong_predicate.discharge_method.as_deref(),
+            Some("panic-safe"),
+            "wrong-predicate control must never be tagged panic-safe; reason: {}",
+            wrong_predicate.reason
+        );
+
+        let wrong_receiver = verify_one_claim(
+            &dlib_option_expect_callsite(
+                "concept_op_catalog_cid_known",
+                DLIB_OPTION_EXPECT_MISMATCH_CID,
+            ),
+            &pool,
+            &plan,
+            &registry,
+            &witness_dir,
+            &VERIFY_SIGNER_SEED_DEV,
+            false,
+        );
+        assert_ne!(
+            wrong_receiver.verdict,
+            ObligationVerdict::Discharged,
+            "post=is_some(actual_receiver) must not discharge pre=is_some(other_receiver); reason: {}",
+            wrong_receiver.reason
+        );
+        assert_ne!(
+            wrong_receiver.discharge_method.as_deref(),
+            Some("panic-safe"),
+            "wrong-receiver control must never be tagged panic-safe; reason: {}",
+            wrong_receiver.reason
         );
 
         let _ = std::fs::remove_dir_all(&witness_dir);
