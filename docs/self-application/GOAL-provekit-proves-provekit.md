@@ -94,10 +94,15 @@ architectural thesis at v2.
     existing #1747 panic-safe discharge path (warm-oracle convergent harness
     K=3, dischargeSplit `{panicSafe:2, falsePass:0, silentlyDropped:0}`).
     Infrastructure for PR-C; no current production K delta.
-  - **PR-B (next):** libprovekit rust-implications consumer enablement.
+  - **PR-B (#1760, MERGED 2026-06-01):** libprovekit rust-implications
+    consumer enablement.
     `.provekit/lift/rust-implications/manifest.toml` + config.toml entry.
     Wires libprovekit self-check to enumerate its own callsite obligations.
-    Baseline scoreboard measurement only; no K delta.
+    Warm-oracle baseline: `requested=true, engaged=true, attempted=3012,
+    resolved=2706`; `dischargeSplit={falsePass:0, panicSafe:0,
+    reflexive:665, undecidable:1518, vacuous:154}`;
+    `panicCensus=15`; `silentlyDropped=0`, `droppedSites=[]`. Baseline
+    scoreboard measurement only; no K delta.
   - **PR-C:** per-type infallibility totality for the 6 audited libprovekit
     types. The K delta on libprovekit's self-check.
 
@@ -116,6 +121,35 @@ architectural thesis at v2.
 The honest read: ~22 closable sites (D-lib + C + B + D-fn), 10 named residue.
 v1 is "K covering the closable categories, residue named, hard floor never
 violated." K = N is not required and not honest.
+
+## Current census (libprovekit, 15 unproven sites, warm-oracle baseline)
+
+PR-B (#1760) enabled the rust-implications consumer surface for libprovekit and
+captured the production baseline PR-C measures against. Cold numbers are not the
+baseline: the cold run had oracle off by invocation mistake and produced
+`panicCensus=27`, all receiver-type unresolved. The warm run is the real
+comparison point.
+
+Warm baseline:
+- `oracle={requested:true, engaged:true, attempted:3012, resolved:2706}`
+- `bridges.emitted=2344`
+- `liftGaps={no-contract-for-callee:2860, panic-site-unproven:3,
+  unsupported-macro-callsite:423}`
+- `dischargeSplit={falsePass:0, panicSafe:0, reflexive:665,
+  undecidable:1518, vacuous:154}`
+- hard floor held: `silentlyDropped=0`, `droppedSites=[]`
+
+| Category | Count | Closing mechanism |
+|---|---|---|
+| D-lib | 4 | serde_json totality for `RealizedSource`, `Sort`, `Dialect`, `Term`. These are PR-C's confirmed production K delta targets. |
+| B | 5 | Intra-fn fact flow: rust-std shim guards (`assert!(opt.is_some()/result.is_ok())` before unwrap/expect) plus `len==1 -> next().unwrap()`. |
+| D-fn | 2 | Cross-function postconditions: catalog primitive `.cid()` and `Cid::parse` on literal. |
+| residue | 1 | `platform_semantics_for_lower_target("python").expect(...)`: filesystem/config loading invariant. |
+| oracle-residue | 3 | Receiver did not resolve to a known panic partial: two compose.rs rows plus one wp/tests.rs direct row. |
+| unknown | 0 | Every warm row has a named category. |
+
+Expected PR-C K delta on libprovekit's self-check: **+4** confirmed D-lib
+sites. The B and D-fn rows are later tiers, not PR-C.
 
 ## The metric (the one number we watch)
 
@@ -145,15 +179,19 @@ Each tier ships as one PR, golden-pinned, with visible scoreboard delta.
     disambiguation `(result, expect) -> result_expect`. Verifier untouched;
     f_expect fixture e2e confirms end-to-end composition with #1747's
     panic-safe path. Infrastructure for PR-C; no current K delta.
-  - **PR-B (next):** libprovekit `.provekit/lift/rust-implications/manifest.toml`
-    + `config.toml` entry. Enables libprovekit self-check to enumerate its
-    own callsite obligations. Baseline scoreboard only; no K delta.
+  - **PR-B (MERGED, #1760):** libprovekit
+    `.provekit/lift/rust-implications/manifest.toml` + `config.toml` entry.
+    Enables libprovekit self-check to enumerate its own callsite obligations.
+    Warm-oracle baseline: `panicCensus=15`, confirmed D-lib=4, B=5,
+    D-fn=2, residue=1, oracle-residue=3, unknown=0. Baseline scoreboard
+    only; no K delta.
   - **PR-C (the K delta):** per-type infallibility manifest blessing the 6
     audited libprovekit types; walk_rpc disambiguation extension to handle
     per-crate concrete types; lift_implications lookup for blessed types.
     Discrimination triplet mandatory (positive blessed / negative unregistered
     concrete / negative generic `T: Serialize`). Expected K delta on
-    libprovekit's self-check: +6 to +12 sites.
+    libprovekit's self-check: +4 confirmed D-lib sites from the warm PR-B
+    baseline.
 - **D-lib `&Value` for provekit-cli**: closes the 2 kit_dispatch.rs `&Value`
   sites via the existing #1747 mechanism.
 - **C `json!` construction tracking**: closes the 7 cmd_protocol.rs sites.
@@ -251,6 +289,8 @@ the first.
     direct mint.
   - #1759 (D-lib PR-A) Result::expect partial in rust-std shim + walk
     disambiguation mapping. Infrastructure for D-lib per-type slice.
+  - #1760 (D-lib PR-B) libprovekit rust-implications consumer enablement +
+    warm-oracle baseline scoreboard (`panicCensus=15`, confirmed D-lib=4).
 - **Open follow-up**: #1757 self-check golden drift reached main without
   gate update.
 - **Key files**: `provekit-verifier/src/{runner.rs, enumerate_callsites.rs,
