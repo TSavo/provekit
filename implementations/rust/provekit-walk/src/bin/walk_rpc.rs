@@ -1430,6 +1430,7 @@ fn crate_name_for(dir: &Path) -> Option<String> {
 ///   (`option`, `unwrap`)     -> `option_unwrap`     (pre: `opt.is_some()`)
 ///   (`result`, `unwrap`)     -> `result_unwrap`     (pre: `result.is_ok()`)
 ///   (`option`, `expect`)     -> `option_expect`     (pre: `opt.is_some()`)
+///   (`result`, `expect`)     -> `result_expect`     (pre: `result.is_ok()`)
 ///   (`result`, `unwrap_err`) -> `result_unwrap_err` (pre: `result.is_err()`)
 ///
 /// The returned leaf is the shim partial's CONTRACT NAME, which is exactly the
@@ -1526,6 +1527,7 @@ fn disambiguated_partial_leaf(type_stem: &str, leaf: &str) -> Option<String> {
         ("option", "unwrap") => "option_unwrap",
         ("result", "unwrap") => "result_unwrap",
         ("option", "expect") => "option_expect",
+        ("result", "expect") => "result_expect",
         ("result", "unwrap_err") => "result_unwrap_err",
         _ => return None,
     };
@@ -6846,6 +6848,10 @@ mod tests {
         assert_eq!(
             disambiguated_partial_leaf("option", "expect").as_deref(),
             Some("option_expect")
+        );
+        assert_eq!(
+            disambiguated_partial_leaf("result", "expect").as_deref(),
+            Some("result_expect")
         );
         assert_eq!(
             disambiguated_partial_leaf("result", "unwrap_err").as_deref(),

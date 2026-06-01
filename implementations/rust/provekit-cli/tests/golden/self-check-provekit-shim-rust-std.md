@@ -10,8 +10,8 @@ rust-analyzer daemon, no wall-clock, no absolute paths.
 
 - `silentlyDropped: 0` -- hard invariant, must stay zero
 - `falsePass: 0` -- hard invariant, must stay zero
-- `panicSafe: 0` -- honest: the shim has 4 syntactic panic sites, none guarded, none dischargeable without the oracle
-- `panicCensus`: 4 sites, all `src/lib.rs`, all `unproven`; the reason line is the verifier's refuse-floor message
+- `panicSafe: 0` -- honest: the shim has 5 syntactic panic sites, none guarded, none dischargeable without the oracle
+- `panicCensus`: 5 sites, all `src/lib.rs`, all `unproven`; the reason line is the verifier's refuse-floor message
 - `catalogCid` is a content hash of the lifted contracts; it is path-independent (verified 2026-05-31 across two checkout paths)
 
 ## Regenerated 2026-06-01 (panic-locus branch)
@@ -34,6 +34,15 @@ Refreshed 2026-06-01: `catalogCid` `0f9278...` -> `5943fb5b...`
 after pre-existing main drift; baseline `7daf1918a` (before this PR's
 lift-direct changes) produces `5943fb5b...`, with member set and decoded
 member JSON unchanged from this branch. Hard invariants unchanged.
+
+Regenerated 2026-06-01: `catalogCid` `5943fb5b...` -> `b17a0f02...`.
+`Result::expect` was added as a distinct rust-std partial, mirroring
+`Result::unwrap` with precondition `result.is_ok()`. This intentionally adds one
+function contract (`27 -> 28`), one unproven panic site in the no-oracle shim
+self-check (`panicCensus 4 -> 5`, new `expect` at `src/lib.rs:190`), and one
+surfaced `assert!` macro gap (`unsupported-macro-callsite 4 -> 5`). Hard
+invariants unchanged: `falsePass 0`, `panicSafe 0`, `silentlyDropped 0`,
+`droppedSites []`.
 
 ## Normalization applied
 

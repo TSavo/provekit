@@ -175,6 +175,21 @@ pub fn result_unwrap<T, E: std::fmt::Debug>(result: Result<T, E>) -> T {
     result.unwrap()
 }
 
+// PARTIAL: Result::expect. Runtime precondition: result.is_ok() (same as
+// result_unwrap); separate concept for a distinctly named contract. Published
+// contract is post-only; the assert! is not lifted as a pre (see header note).
+#[provekit::sugar(
+    concept = "library:rust-result-expect",
+    library = "std",
+    version = "rust-1",
+    family = "concept:family:rust-std",
+    loss = [],
+)]
+pub fn result_expect<T, E: std::fmt::Debug>(result: Result<T, E>, msg: &str) -> T {
+    assert!(result.is_ok());
+    result.expect(msg)
+}
+
 // ---------------------------------------------------------------------------
 // Measured-frequency extensions
 // ---------------------------------------------------------------------------
@@ -520,6 +535,18 @@ mod tests {
     fn result_unwrap_partial_satisfied_precondition() {
         assert_eq!(result_unwrap(Result::Ok::<i32, &str>(5)), 5);
         assert_eq!(result_unwrap(Result::Ok::<&str, &str>("y")), "y");
+    }
+
+    #[test]
+    fn result_expect_partial_satisfied_precondition() {
+        assert_eq!(
+            result_expect(Result::Ok::<i32, &str>(5), "must be ok"),
+            5
+        );
+        assert_eq!(
+            result_expect(Result::Ok::<&str, &str>("y"), "must be ok"),
+            "y"
+        );
     }
 
     // --- measured-frequency extensions ---

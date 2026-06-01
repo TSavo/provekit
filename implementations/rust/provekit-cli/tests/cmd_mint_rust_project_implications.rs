@@ -469,6 +469,7 @@ fn rust_stdlib_checked_config_lifts_constructor_algebra_from_unit_tests() {
         ("is_none@src/lib.rs:", "False"),
         ("unwrap@src/lib.rs:", "Some"),
         ("unwrap@src/lib.rs:", "Ok"),
+        ("result_expect@src/lib.rs:", "Result::Ok"),
         ("unwrap_err@src/lib.rs:", "Err"),
         ("unwrap_or@src/lib.rs:", "Option::None"),
         ("unwrap_or@src/lib.rs:", "Err"),
