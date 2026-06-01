@@ -9,7 +9,8 @@ use owo_colors::OwoColorize;
 use serde_json::{json, Value};
 
 use crate::doctor::{
-    run_report_with_context, CheckStatus, DoctorCheck, DoctorContext, DoctorMode, DoctorReport,
+    oracle_requested_from_env, run_report_with_context, CheckStatus, DoctorCheck, DoctorContext,
+    DoctorMode, DoctorReport,
 };
 use crate::{EXIT_OK, EXIT_USER_ERROR};
 
@@ -27,6 +28,10 @@ pub struct DoctorArgs {
     /// Doctor policy mode.
     #[arg(long, value_enum, default_value_t = DoctorMode::Structural)]
     pub mode: DoctorMode,
+
+    /// Request oracle host readiness checks.
+    #[arg(long)]
+    pub oracle: bool,
 }
 
 pub fn run(args: DoctorArgs) -> u8 {
@@ -38,7 +43,9 @@ pub fn run(args: DoctorArgs) -> u8 {
         }
     };
 
-    let report = run_report_with_context(&target, DoctorContext::new(args.mode));
+    let context = DoctorContext::new(args.mode)
+        .with_oracle_requested(args.oracle || oracle_requested_from_env());
+    let report = run_report_with_context(&target, context);
 
     if args.json {
         print_json(&report);
@@ -65,8 +72,7 @@ fn resolve_target(target: Option<&PathBuf>) -> Result<PathBuf, String> {
                     .join(p)
             }
         }
-        None => std::env::current_dir()
-            .map_err(|e| format!("read current directory: {e}"))?,
+        None => std::env::current_dir().map_err(|e| format!("read current directory: {e}"))?,
     };
 
     let canonical = path
@@ -99,15 +105,24 @@ fn print_human(report: &DoctorReport) {
         let (label, colored_name) = match check.status {
             CheckStatus::Pass => {
                 passes += 1;
-                ("pass".green().bold().to_string(), check.name.green().to_string())
+                (
+                    "pass".green().bold().to_string(),
+                    check.name.green().to_string(),
+                )
             }
             CheckStatus::Warn => {
                 warns += 1;
-                ("warn".yellow().bold().to_string(), check.name.yellow().to_string())
+                (
+                    "warn".yellow().bold().to_string(),
+                    check.name.yellow().to_string(),
+                )
             }
             CheckStatus::Fail => {
                 fails += 1;
-                ("FAIL".red().bold().to_string(), check.name.red().to_string())
+                (
+                    "FAIL".red().bold().to_string(),
+                    check.name.red().to_string(),
+                )
             }
         };
         println!("  [{label}] {colored_name}");
@@ -181,12 +196,13 @@ mod tests {
 
         let report = run_report_with_context(kit, DoctorContext::default());
         let value = legacy_report_json(&report);
-        let first_check = value["checks"][0]
-            .as_object()
-            .expect("first check object");
+        let first_check = value["checks"][0].as_object().expect("first check object");
 
         assert!(value.get("ok").is_some());
-        assert_eq!(value.get("mode").and_then(Value::as_str), Some("structural"));
+        assert_eq!(
+            value.get("mode").and_then(Value::as_str),
+            Some("structural")
+        );
         assert!(first_check.contains_key("name"));
         assert!(first_check.contains_key("status"));
         assert!(first_check.contains_key("detail"));
@@ -215,6 +231,13 @@ mod tests {
         let args = DoctorArgs::try_parse_from(["doctor", "--mode", "releaseGate"]).unwrap();
 
         assert_eq!(args.mode, DoctorMode::ReleaseGate);
+    }
+
+    #[test]
+    fn oracle_argument_requests_oracle_checks() {
+        let args = DoctorArgs::try_parse_from(["doctor", "--oracle"]).unwrap();
+
+        assert!(args.oracle);
     }
 
     #[test]

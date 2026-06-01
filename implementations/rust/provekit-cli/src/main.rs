@@ -39,6 +39,7 @@ mod cmd_verify;
 mod cmd_verify_protocol;
 mod cmd_version;
 mod doctor;
+mod doctor_oracle;
 mod kit_dispatch;
 mod lift_plugin;
 mod project_config;

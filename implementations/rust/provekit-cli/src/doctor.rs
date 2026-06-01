@@ -16,9 +16,8 @@
 //      the command is a bare name.
 //   3. (WARN) .provekit/imports/ file count -- zero is a warning when the kit
 //      declares plugins with a non-trivial surface list.
-//   4. (WARN) When PROVEKIT_RESOLVE_ORACLE=rust-analyzer, check that the
-//      rust-analyzer binary is locatable and PROVEKIT_LINKERD_BIN or
-//      provekit-linkerd is on PATH.
+//   4. (MODE-AWARE) When an oracle host is requested, check that it is
+//      requested, locatable, ready, engaged, and convergence-accounted.
 //
 // Exit codes:
 //   0   all checks passed (warnings may be present)
@@ -35,6 +34,11 @@ use provekit_canonicalizer::blake3_512_of;
 use provekit_verifier::load_all_proofs::ProofBytes;
 use serde_json::{json, Value};
 
+use crate::doctor_oracle::{
+    OracleHostAdapter, OracleHostEngagement, OracleHostEnv, OracleHostLocatability,
+    OracleHostObservation, OracleHostReadiness, OracleResolutionConvergence,
+    RustAnalyzerOracleAdapter,
+};
 use crate::lift_plugin::{parse_manifest_at, resolved_working_dir_for};
 use crate::project_config::{read_project_config, PluginEntry};
 
@@ -90,11 +94,20 @@ impl std::fmt::Display for DoctorMode {
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct DoctorContext {
     pub mode: DoctorMode,
+    pub oracle_requested: bool,
 }
 
 impl DoctorContext {
     pub fn new(mode: DoctorMode) -> Self {
-        Self { mode }
+        Self {
+            mode,
+            oracle_requested: false,
+        }
+    }
+
+    pub fn with_oracle_requested(mut self, oracle_requested: bool) -> Self {
+        self.oracle_requested = oracle_requested;
+        self
     }
 }
 
@@ -235,10 +248,30 @@ fn check_metadata(
             "proof.import_pool",
             CheckSeverity::Advisory,
         )
-    } else if name == "oracle-wiring" {
+    } else if name == "oracle-requested" {
+        (
+            "oracle.requested",
+            "oracle.request",
+            CheckSeverity::Advisory,
+        )
+    } else if name == "oracle-host-locatable" || name == "oracle-wiring" {
         (
             "oracle.host.locatable",
             "oracle.host",
+            CheckSeverity::Advisory,
+        )
+    } else if name == "oracle-host-ready" {
+        ("oracle.host.ready", "oracle.host", CheckSeverity::Advisory)
+    } else if name == "oracle-host-engaged" {
+        (
+            "oracle.host.engaged",
+            "oracle.host",
+            CheckSeverity::Advisory,
+        )
+    } else if name == "oracle-resolution-converged" {
+        (
+            "oracle.resolution.converged",
+            "oracle.resolution",
             CheckSeverity::Advisory,
         )
     } else if name.starts_with("consumer-wiring:") {
@@ -291,7 +324,7 @@ pub fn run_report(kit_dir: &Path) -> DoctorReport {
 }
 
 pub fn run_report_with_context(kit_dir: &Path, context: DoctorContext) -> DoctorReport {
-    if context.mode == DoctorMode::Structural {
+    if context.mode == DoctorMode::Structural && !context.oracle_requested {
         return run_report(kit_dir);
     }
     let checks = run_checks_with_context(kit_dir, context);
@@ -308,6 +341,24 @@ where
     F: FnMut(&Path) -> Result<Vec<ProofBytes>, String>,
 {
     let checks = run_checks_with_context_and_dependency_resolver(kit_dir, context, resolver);
+    report_from_checks(kit_dir, context.mode, checks)
+}
+
+#[cfg(test)]
+fn run_report_with_context_and_oracle_adapter<A>(
+    kit_dir: &Path,
+    context: DoctorContext,
+    adapter: A,
+) -> DoctorReport
+where
+    A: OracleHostAdapter,
+{
+    let checks = run_checks_with_context_and_dependency_resolver_and_oracle_adapter(
+        kit_dir,
+        context,
+        crate::kit_dispatch::dependency_proofs_via_rpc,
+        &adapter,
+    );
     report_from_checks(kit_dir, context.mode, checks)
 }
 
@@ -343,6 +394,24 @@ fn run_checks_with_context_and_dependency_resolver<F>(
 ) -> Vec<Check>
 where
     F: FnMut(&Path) -> Result<Vec<ProofBytes>, String>,
+{
+    run_checks_with_context_and_dependency_resolver_and_oracle_adapter(
+        kit_dir,
+        context,
+        resolver,
+        &RustAnalyzerOracleAdapter,
+    )
+}
+
+fn run_checks_with_context_and_dependency_resolver_and_oracle_adapter<F, A>(
+    kit_dir: &Path,
+    context: DoctorContext,
+    resolver: F,
+    oracle_adapter: &A,
+) -> Vec<Check>
+where
+    F: FnMut(&Path) -> Result<Vec<ProofBytes>, String>,
+    A: OracleHostAdapter + ?Sized,
 {
     let mut checks: Vec<Check> = Vec::new();
 
@@ -446,10 +515,7 @@ where
         if manifest.command.is_empty() {
             checks.push(Check::fail_with_evidence(
                 &check_name,
-                format!(
-                    "manifest {} declares no command",
-                    manifest_path.display()
-                ),
+                format!("manifest {} declares no command", manifest_path.display()),
                 json!({
                     "kind": kind_dir,
                     "surface": surface,
@@ -520,10 +586,8 @@ where
     let imports_check = check_imports(&imports_dir, &config.plugins);
     checks.push(imports_check);
 
-    // --- Check 4: oracle wiring (advisory).
-    if let Some(oracle_check) = check_oracle_wiring() {
-        checks.push(oracle_check);
-    }
+    // --- Check 4: oracle host readiness.
+    checks.extend(run_oracle_host_checks_with_adapter(context, oracle_adapter));
 
     // --- Check 5: consumer-surface method/phase wiring (HARD).
     // The manifest method/phase omission footgun: a consumer surface
@@ -610,6 +674,220 @@ where
         kit_dir, context, resolver,
     ));
     checks
+}
+
+pub(crate) fn oracle_requested_from_env() -> bool {
+    std::env::var("PROVEKIT_RESOLVE_ORACLE")
+        .map(|value| !value.trim().is_empty())
+        .unwrap_or(false)
+}
+
+fn run_oracle_host_checks_with_adapter<A>(context: DoctorContext, adapter: &A) -> Vec<Check>
+where
+    A: OracleHostAdapter + ?Sized,
+{
+    let env = OracleHostEnv {
+        requested: context.oracle_requested,
+    };
+    let observation = if env.requested {
+        adapter.observe(&env)
+    } else {
+        OracleHostObservation::not_requested()
+    };
+
+    vec![
+        oracle_requested_check(&env, &observation),
+        oracle_locatable_check(context.mode, &env, &observation),
+        oracle_ready_check(context.mode, &env, &observation),
+        oracle_engaged_check(&env, &observation),
+        oracle_converged_check(&env, &observation),
+    ]
+}
+
+fn not_requested_oracle_check(name: &str) -> Check {
+    Check::pass_with_severity(
+        name,
+        CheckSeverity::Advisory,
+        "oracle not requested",
+        json!({"requested": false}),
+    )
+}
+
+fn oracle_requested_check(env: &OracleHostEnv, observation: &OracleHostObservation) -> Check {
+    if !env.requested {
+        return not_requested_oracle_check("oracle-requested");
+    }
+    Check::pass_with_severity(
+        "oracle-requested",
+        CheckSeverity::Advisory,
+        format!("oracle host requested ({})", observation.host),
+        json!({
+            "requested": true,
+            "host": observation.host.as_str(),
+        }),
+    )
+}
+
+fn oracle_locatable_check(
+    mode: DoctorMode,
+    env: &OracleHostEnv,
+    observation: &OracleHostObservation,
+) -> Check {
+    if !env.requested {
+        return not_requested_oracle_check("oracle-host-locatable");
+    }
+    match &observation.locatability {
+        OracleHostLocatability::NotRequested => not_requested_oracle_check("oracle-host-locatable"),
+        OracleHostLocatability::Found {
+            host_binary,
+            rust_analyzer_binary,
+            discovery,
+        } => Check::pass_with_severity(
+            "oracle-host-locatable",
+            CheckSeverity::Advisory,
+            format!("oracle host {} is locatable", observation.host),
+            json!({
+                "requested": true,
+                "host": observation.host.as_str(),
+                "locatable": true,
+                "hostBinary": host_binary,
+                "rustAnalyzerBinary": rust_analyzer_binary,
+                "discovery": discovery,
+            }),
+        ),
+        OracleHostLocatability::Missing { missing, detail } => {
+            let (status, severity) = requested_oracle_missing_policy(mode);
+            Check::with_status_and_severity(
+                "oracle-host-locatable",
+                status,
+                severity,
+                detail,
+                json!({
+                    "requested": true,
+                    "host": observation.host.as_str(),
+                    "locatable": false,
+                    "missing": missing,
+                }),
+            )
+        }
+    }
+}
+
+fn oracle_ready_check(
+    mode: DoctorMode,
+    env: &OracleHostEnv,
+    observation: &OracleHostObservation,
+) -> Check {
+    if !env.requested {
+        return not_requested_oracle_check("oracle-host-ready");
+    }
+    match &observation.readiness {
+        OracleHostReadiness::NotRequested => not_requested_oracle_check("oracle-host-ready"),
+        OracleHostReadiness::Ready { detail } => Check::pass_with_severity(
+            "oracle-host-ready",
+            CheckSeverity::Advisory,
+            detail,
+            json!({
+                "requested": true,
+                "host": observation.host.as_str(),
+                "ready": true,
+                "degraded": false,
+            }),
+        ),
+        OracleHostReadiness::Degraded { detail } => Check::warn_with_severity(
+            "oracle-host-ready",
+            CheckSeverity::Advisory,
+            detail,
+            json!({
+                "requested": true,
+                "host": observation.host.as_str(),
+                "ready": true,
+                "degraded": true,
+            }),
+        ),
+        OracleHostReadiness::NotReady { detail } => {
+            let (status, severity) = requested_oracle_missing_policy(mode);
+            Check::with_status_and_severity(
+                "oracle-host-ready",
+                status,
+                severity,
+                detail,
+                json!({
+                    "requested": true,
+                    "host": observation.host.as_str(),
+                    "ready": false,
+                    "degraded": false,
+                }),
+            )
+        }
+    }
+}
+
+fn oracle_engaged_check(env: &OracleHostEnv, observation: &OracleHostObservation) -> Check {
+    if !env.requested {
+        return not_requested_oracle_check("oracle-host-engaged");
+    }
+    match &observation.engagement {
+        OracleHostEngagement::NotRequested => not_requested_oracle_check("oracle-host-engaged"),
+        OracleHostEngagement::Engaged { detail } => Check::pass_with_severity(
+            "oracle-host-engaged",
+            CheckSeverity::Advisory,
+            detail,
+            json!({
+                "requested": true,
+                "host": observation.host.as_str(),
+                "engaged": true,
+            }),
+        ),
+        OracleHostEngagement::Unknown { detail } => Check::warn_with_severity(
+            "oracle-host-engaged",
+            CheckSeverity::Advisory,
+            detail,
+            json!({
+                "requested": true,
+                "host": observation.host.as_str(),
+                "engaged": Value::Null,
+            }),
+        ),
+    }
+}
+
+fn oracle_converged_check(env: &OracleHostEnv, observation: &OracleHostObservation) -> Check {
+    if !env.requested {
+        return not_requested_oracle_check("oracle-resolution-converged");
+    }
+    match &observation.convergence {
+        OracleResolutionConvergence::NotRequested => {
+            not_requested_oracle_check("oracle-resolution-converged")
+        }
+        OracleResolutionConvergence::Deferred { detail } => Check::pass_with_severity(
+            "oracle-resolution-converged",
+            CheckSeverity::Advisory,
+            detail,
+            json!({
+                "requested": true,
+                "host": observation.host.as_str(),
+                "converged": Value::Null,
+            }),
+        ),
+        OracleResolutionConvergence::Converged { detail } => Check::pass_with_severity(
+            "oracle-resolution-converged",
+            CheckSeverity::Advisory,
+            detail,
+            json!({
+                "requested": true,
+                "host": observation.host.as_str(),
+                "converged": true,
+            }),
+        ),
+    }
+}
+
+fn requested_oracle_missing_policy(mode: DoctorMode) -> (CheckStatus, CheckSeverity) {
+    match mode {
+        DoctorMode::Structural => (CheckStatus::Warn, CheckSeverity::Advisory),
+        DoctorMode::Strict | DoctorMode::ReleaseGate => (CheckStatus::Fail, CheckSeverity::Hard),
+    }
 }
 
 #[derive(Debug, Clone)]
@@ -789,7 +1067,10 @@ fn dependency_resolver_info(kit_dir: &Path) -> Result<Option<DependencyResolverI
         ),
         BinaryResolution::NotExecutable { abs } => (
             Some(abs.display().to_string()),
-            Some(format!("binary exists at {} but is not executable", abs.display())),
+            Some(format!(
+                "binary exists at {} but is not executable",
+                abs.display()
+            )),
         ),
     };
     Ok(Some(DependencyResolverInfo {
@@ -958,13 +1239,12 @@ where
         );
     }
 
-    let drift_kind = if pass1_before.proofs != pass1_after.proofs
-        || pass2_before.proofs != pass2_after.proofs
-    {
-        "between_passes_mutation"
-    } else {
-        "resolver_nondeterminism"
-    };
+    let drift_kind =
+        if pass1_before.proofs != pass1_after.proofs || pass2_before.proofs != pass2_after.proofs {
+            "between_passes_mutation"
+        } else {
+            "resolver_nondeterminism"
+        };
     Check::fail_with_severity(
         "dependency-pool-byte-consistent",
         CheckSeverity::Hard,
@@ -1372,97 +1652,6 @@ If this kit depends on others, mint them and place their .proof outputs here."
     }
 }
 
-/// Check oracle wiring (advisory only).
-/// Only runs when PROVEKIT_RESOLVE_ORACLE=rust-analyzer.
-fn check_oracle_wiring() -> Option<Check> {
-    let oracle = std::env::var("PROVEKIT_RESOLVE_ORACLE").unwrap_or_default();
-    if oracle != "rust-analyzer" {
-        return None;
-    }
-
-    let ra_found = locate_rust_analyzer().is_some();
-    let linkerd_found = locate_linkerd().is_some();
-
-    let mut problems: Vec<String> = Vec::new();
-    if !ra_found {
-        problems.push(
-            "rust-analyzer not found (checked PROVEKIT_RUST_ANALYZER, PATH, `rustup which rust-analyzer`)"
-                .to_string(),
-        );
-    }
-    if !linkerd_found {
-        problems.push(
-            "provekit-linkerd daemon not found (checked PROVEKIT_LINKERD_BIN and PATH)"
-                .to_string(),
-        );
-    }
-
-    if problems.is_empty() {
-        Some(Check::pass_with_evidence(
-            "oracle-wiring",
-            "PROVEKIT_RESOLVE_ORACLE=rust-analyzer: rust-analyzer and provekit-linkerd are both locatable",
-            json!({
-                "oracle": "rust-analyzer",
-                "rustAnalyzerFound": ra_found,
-                "linkerdFound": linkerd_found,
-            }),
-        ))
-    } else {
-        Some(Check::warn_with_evidence(
-            "oracle-wiring",
-            format!(
-                "PROVEKIT_RESOLVE_ORACLE=rust-analyzer is set but oracle prerequisites are missing: {}. \
-self-check with --oracle will hard-fail on an inert oracle.",
-                problems.join("; ")
-            ),
-            json!({
-                "oracle": "rust-analyzer",
-                "rustAnalyzerFound": ra_found,
-                "linkerdFound": linkerd_found,
-                "problems": problems,
-            }),
-        ))
-    }
-}
-
-/// Mirror the oracle-locate logic from ra_oracle.rs.
-fn locate_rust_analyzer() -> Option<PathBuf> {
-    if let Ok(p) = std::env::var("PROVEKIT_RUST_ANALYZER") {
-        if !p.is_empty() {
-            let pb = PathBuf::from(&p);
-            if pb.exists() {
-                return Some(pb);
-            }
-        }
-    }
-    // `rustup which rust-analyzer` gives the toolchain-resolved path.
-    if let Ok(out) = std::process::Command::new("rustup")
-        .args(["which", "rust-analyzer"])
-        .output()
-    {
-        if out.status.success() {
-            let path = String::from_utf8_lossy(&out.stdout).trim().to_string();
-            if !path.is_empty() && Path::new(&path).exists() {
-                return Some(PathBuf::from(path));
-            }
-        }
-    }
-    which_binary("rust-analyzer")
-}
-
-/// Locate the provekit-linkerd daemon binary.
-fn locate_linkerd() -> Option<PathBuf> {
-    if let Ok(p) = std::env::var("PROVEKIT_LINKERD_BIN") {
-        if !p.is_empty() {
-            let pb = PathBuf::from(&p);
-            if pb.exists() {
-                return Some(pb);
-            }
-        }
-    }
-    which_binary("provekit-linkerd")
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -1475,21 +1664,13 @@ mod tests {
         fs::create_dir_all(dir.join(".provekit/imports")).unwrap();
         fs::write(
             dir.join(".provekit/config.toml"),
-            format!(
-                "# test kit\n[authoring]\nsurface = \"test-surface\"\n{plugins_toml}"
-            ),
+            format!("# test kit\n[authoring]\nsurface = \"test-surface\"\n{plugins_toml}"),
         )
         .unwrap();
     }
 
     /// Write a manifest.toml for a surface under the given kind dir.
-    fn write_manifest(
-        kit_dir: &Path,
-        kind: &str,
-        surface: &str,
-        command: &str,
-        working_dir: &str,
-    ) {
+    fn write_manifest(kit_dir: &Path, kind: &str, surface: &str, command: &str, working_dir: &str) {
         let dir = kit_dir.join(".provekit").join(kind).join(surface);
         fs::create_dir_all(&dir).unwrap();
         fs::write(
@@ -1538,6 +1719,103 @@ mod tests {
         let mut perms = fs::metadata(path).unwrap().permissions();
         perms.set_mode(0o755);
         fs::set_permissions(path, perms).unwrap();
+    }
+
+    #[derive(Debug, Clone)]
+    struct MockOracleAdapter {
+        observation: OracleHostObservation,
+    }
+
+    impl MockOracleAdapter {
+        fn not_requested() -> Self {
+            Self {
+                observation: OracleHostObservation::not_requested(),
+            }
+        }
+
+        fn ready() -> Self {
+            Self {
+                observation: OracleHostObservation {
+                    host: "rust-analyzer".to_string(),
+                    locatability: OracleHostLocatability::Found {
+                        host_binary: "/bin/provekit-linkerd".to_string(),
+                        rust_analyzer_binary: Some("/bin/rust-analyzer".to_string()),
+                        discovery: "env".to_string(),
+                    },
+                    readiness: OracleHostReadiness::Ready {
+                        detail: "provekit-linkerd spawned and answered projectStatus RPC"
+                            .to_string(),
+                    },
+                    engagement: OracleHostEngagement::Engaged {
+                        detail: "oracle served requests during self-check".to_string(),
+                    },
+                    convergence: OracleResolutionConvergence::Deferred {
+                        detail: "resolution convergence is proved at self-check time".to_string(),
+                    },
+                },
+            }
+        }
+
+        fn ready_from_path() -> Self {
+            let mut adapter = Self::ready();
+            adapter.observation.locatability = OracleHostLocatability::Found {
+                host_binary: "/usr/local/bin/provekit-linkerd".to_string(),
+                rust_analyzer_binary: Some("/usr/local/bin/rust-analyzer".to_string()),
+                discovery: "path".to_string(),
+            };
+            adapter
+        }
+
+        fn missing_host() -> Self {
+            Self {
+                observation: OracleHostObservation {
+                    host: "rust-analyzer".to_string(),
+                    locatability: OracleHostLocatability::Missing {
+                        missing: vec!["provekit-linkerd".to_string()],
+                        detail: "missing oracle host prerequisite(s): provekit-linkerd".to_string(),
+                    },
+                    readiness: OracleHostReadiness::NotReady {
+                        detail: "oracle host is not locatable".to_string(),
+                    },
+                    engagement: OracleHostEngagement::Unknown {
+                        detail: "engagement is observed at self-check time".to_string(),
+                    },
+                    convergence: OracleResolutionConvergence::Deferred {
+                        detail: "resolution convergence is proved at self-check time".to_string(),
+                    },
+                },
+            }
+        }
+
+        fn spawn_failure() -> Self {
+            let mut adapter = Self::ready();
+            adapter.observation.readiness = OracleHostReadiness::NotReady {
+                detail: "spawn failed: permission denied".to_string(),
+            };
+            adapter
+        }
+
+        fn degraded() -> Self {
+            let mut adapter = Self::ready();
+            adapter.observation.readiness = OracleHostReadiness::Degraded {
+                detail: "ready with degraded cache warmup".to_string(),
+            };
+            adapter
+        }
+
+        fn ready_with_unknown_engagement() -> Self {
+            let mut adapter = Self::ready();
+            adapter.observation.engagement = OracleHostEngagement::Unknown {
+                detail: "oracle engagement is observed at self-check time".to_string(),
+            };
+            adapter
+        }
+    }
+
+    impl OracleHostAdapter for MockOracleAdapter {
+        fn observe(&self, _env: &OracleHostEnv) -> OracleHostObservation {
+            self.observation.clone()
+        }
     }
 
     #[test]
@@ -1862,7 +2140,10 @@ mod tests {
         assert_eq!(available.status, CheckStatus::Pass);
         assert_eq!(available.severity, CheckSeverity::Advisory);
         assert_eq!(
-            available.evidence.get("configured").and_then(Value::as_bool),
+            available
+                .evidence
+                .get("configured")
+                .and_then(Value::as_bool),
             Some(false)
         );
     }
@@ -1898,8 +2179,11 @@ mod tests {
         let td = TempDir::new().unwrap();
         let kit = td.path();
         fs::create_dir_all(kit.join(".provekit")).unwrap();
-        fs::write(kit.join(".provekit/config.toml"), "[authoring]\nsurface = \"test\"\n")
-            .unwrap();
+        fs::write(
+            kit.join(".provekit/config.toml"),
+            "[authoring]\nsurface = \"test\"\n",
+        )
+        .unwrap();
 
         let checks = run_dependency_proof_checks_with_resolver(
             kit,
@@ -1939,7 +2223,10 @@ mod tests {
 
         let stable = check_by_id_from_checks(&checks, "proof.dependency_pool.stable");
         assert_eq!(stable.status, CheckStatus::Pass);
-        assert_eq!(stable.evidence["proofs"][0]["derivedCid"].as_str(), Some(cid.as_str()));
+        assert_eq!(
+            stable.evidence["proofs"][0]["derivedCid"].as_str(),
+            Some(cid.as_str())
+        );
     }
 
     #[test]
@@ -1963,8 +2250,14 @@ mod tests {
         assert_eq!(stable.status, CheckStatus::Fail);
         assert_eq!(stable.severity, CheckSeverity::Hard);
         let evidence = stable.evidence.to_string();
-        assert!(evidence.contains(&old_cid), "should name pool CID: {evidence}");
-        assert!(evidence.contains(&new_cid), "should name staged CID: {evidence}");
+        assert!(
+            evidence.contains(&old_cid),
+            "should name pool CID: {evidence}"
+        );
+        assert!(
+            evidence.contains(&new_cid),
+            "should name staged CID: {evidence}"
+        );
     }
 
     #[test]
@@ -2009,7 +2302,11 @@ mod tests {
             |_| {
                 let call = calls.get();
                 calls.set(call + 1);
-                let bytes: &[u8] = if call == 0 { b"first proof" } else { b"second proof" };
+                let bytes: &[u8] = if call == 0 {
+                    b"first proof"
+                } else {
+                    b"second proof"
+                };
                 Ok(vec![proof_bytes("dep", bytes)])
             },
         );
@@ -2085,15 +2382,273 @@ mod tests {
             |_| {
                 let call = calls.get();
                 calls.set(call + 1);
-                let bytes: &[u8] = if call == 0 { b"first proof" } else { b"second proof" };
+                let bytes: &[u8] = if call == 0 {
+                    b"first proof"
+                } else {
+                    b"second proof"
+                };
                 Ok(vec![proof_bytes("dep", bytes)])
             },
         );
 
-        assert!(!report.ok, "release-gate dep proof drift should fail report");
+        assert!(
+            !report.ok,
+            "release-gate dep proof drift should fail report"
+        );
         assert!(
             !report.release_ready,
             "release-gate dep proof drift must block release readiness"
+        );
+    }
+
+    #[test]
+    fn oracle_not_requested_emits_passes_for_all_oracle_checks() {
+        for mode in [
+            DoctorMode::Structural,
+            DoctorMode::Strict,
+            DoctorMode::ReleaseGate,
+        ] {
+            let checks = run_oracle_host_checks_with_adapter(
+                DoctorContext::new(mode),
+                &MockOracleAdapter::not_requested(),
+            );
+
+            assert_eq!(checks.len(), 5, "every oracle check is explicit in {mode}");
+            for check in &checks {
+                assert_eq!(check.status, CheckStatus::Pass, "{check:#?}");
+                assert_eq!(
+                    check.evidence.get("requested").and_then(Value::as_bool),
+                    Some(false),
+                    "not-requested evidence should be explicit: {check:#?}"
+                );
+                assert!(
+                    check.detail.contains("oracle not requested"),
+                    "not-requested detail should be uniform: {}",
+                    check.detail
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn oracle_requested_ready_adapter_passes_all_oracle_checks() {
+        let checks = run_oracle_host_checks_with_adapter(
+            DoctorContext::new(DoctorMode::ReleaseGate).with_oracle_requested(true),
+            &MockOracleAdapter::ready(),
+        );
+
+        for id in [
+            "oracle.requested",
+            "oracle.host.locatable",
+            "oracle.host.ready",
+            "oracle.host.engaged",
+            "oracle.resolution.converged",
+        ] {
+            let check = check_by_id_from_checks(&checks, id);
+            assert_eq!(check.status, CheckStatus::Pass, "{id}: {check:#?}");
+        }
+        let locatable = check_by_id_from_checks(&checks, "oracle.host.locatable");
+        assert_eq!(
+            locatable.evidence.get("hostBinary").and_then(Value::as_str),
+            Some("/bin/provekit-linkerd")
+        );
+        assert_eq!(
+            locatable.evidence.get("discovery").and_then(Value::as_str),
+            Some("env")
+        );
+    }
+
+    #[test]
+    fn structural_missing_oracle_host_warns_with_missing_binary_evidence() {
+        let checks = run_oracle_host_checks_with_adapter(
+            DoctorContext::new(DoctorMode::Structural).with_oracle_requested(true),
+            &MockOracleAdapter::missing_host(),
+        );
+
+        let locatable = check_by_id_from_checks(&checks, "oracle.host.locatable");
+        assert_eq!(locatable.status, CheckStatus::Warn);
+        assert_eq!(locatable.severity, CheckSeverity::Advisory);
+        assert!(
+            locatable.detail.contains("provekit-linkerd"),
+            "missing-host detail should name the missing binary: {}",
+            locatable.detail
+        );
+        assert_eq!(
+            locatable
+                .evidence
+                .get("missing")
+                .and_then(Value::as_array)
+                .map(Vec::len),
+            Some(1)
+        );
+    }
+
+    #[test]
+    fn strict_missing_oracle_host_fails_hard_with_same_evidence() {
+        let structural = run_oracle_host_checks_with_adapter(
+            DoctorContext::new(DoctorMode::Structural).with_oracle_requested(true),
+            &MockOracleAdapter::missing_host(),
+        );
+        let strict = run_oracle_host_checks_with_adapter(
+            DoctorContext::new(DoctorMode::Strict).with_oracle_requested(true),
+            &MockOracleAdapter::missing_host(),
+        );
+
+        let structural_locatable = check_by_id_from_checks(&structural, "oracle.host.locatable");
+        let strict_locatable = check_by_id_from_checks(&strict, "oracle.host.locatable");
+        assert_eq!(strict_locatable.status, CheckStatus::Fail);
+        assert_eq!(strict_locatable.severity, CheckSeverity::Hard);
+        assert_eq!(
+            structural_locatable.evidence, strict_locatable.evidence,
+            "strict hardens policy over identical locatability evidence"
+        );
+    }
+
+    #[test]
+    fn release_gate_missing_oracle_host_fails_hard() {
+        let checks = run_oracle_host_checks_with_adapter(
+            DoctorContext::new(DoctorMode::ReleaseGate).with_oracle_requested(true),
+            &MockOracleAdapter::missing_host(),
+        );
+
+        let locatable = check_by_id_from_checks(&checks, "oracle.host.locatable");
+        assert_eq!(locatable.status, CheckStatus::Fail);
+        assert_eq!(locatable.severity, CheckSeverity::Hard);
+    }
+
+    #[test]
+    fn oracle_locatable_path_evidence_distinguishes_env_from_path_discovery() {
+        let checks = run_oracle_host_checks_with_adapter(
+            DoctorContext::new(DoctorMode::Strict).with_oracle_requested(true),
+            &MockOracleAdapter::ready_from_path(),
+        );
+
+        let locatable = check_by_id_from_checks(&checks, "oracle.host.locatable");
+        assert_eq!(locatable.status, CheckStatus::Pass);
+        assert_eq!(
+            locatable.evidence.get("discovery").and_then(Value::as_str),
+            Some("path")
+        );
+    }
+
+    #[test]
+    fn structural_not_ready_oracle_warns_with_spawn_failure() {
+        let checks = run_oracle_host_checks_with_adapter(
+            DoctorContext::new(DoctorMode::Structural).with_oracle_requested(true),
+            &MockOracleAdapter::spawn_failure(),
+        );
+
+        let ready = check_by_id_from_checks(&checks, "oracle.host.ready");
+        assert_eq!(ready.status, CheckStatus::Warn);
+        assert_eq!(ready.severity, CheckSeverity::Advisory);
+        assert!(
+            ready.detail.contains("spawn failed"),
+            "readiness detail should name the failure mode: {}",
+            ready.detail
+        );
+    }
+
+    #[test]
+    fn strict_not_ready_oracle_fails_hard_with_same_spawn_evidence() {
+        let structural = run_oracle_host_checks_with_adapter(
+            DoctorContext::new(DoctorMode::Structural).with_oracle_requested(true),
+            &MockOracleAdapter::spawn_failure(),
+        );
+        let strict = run_oracle_host_checks_with_adapter(
+            DoctorContext::new(DoctorMode::Strict).with_oracle_requested(true),
+            &MockOracleAdapter::spawn_failure(),
+        );
+
+        let structural_ready = check_by_id_from_checks(&structural, "oracle.host.ready");
+        let strict_ready = check_by_id_from_checks(&strict, "oracle.host.ready");
+        assert_eq!(strict_ready.status, CheckStatus::Fail);
+        assert_eq!(strict_ready.severity, CheckSeverity::Hard);
+        assert_eq!(
+            structural_ready.evidence, strict_ready.evidence,
+            "strict hardens policy over identical readiness evidence"
+        );
+    }
+
+    #[test]
+    fn strict_degraded_oracle_readiness_stays_advisory() {
+        let checks = run_oracle_host_checks_with_adapter(
+            DoctorContext::new(DoctorMode::Strict).with_oracle_requested(true),
+            &MockOracleAdapter::degraded(),
+        );
+
+        let ready = check_by_id_from_checks(&checks, "oracle.host.ready");
+        assert_eq!(ready.status, CheckStatus::Warn);
+        assert_eq!(ready.severity, CheckSeverity::Advisory);
+        assert_eq!(
+            ready.evidence.get("ready").and_then(Value::as_bool),
+            Some(true),
+            "degraded means functional but not ideal"
+        );
+    }
+
+    #[test]
+    fn release_gate_unknown_engagement_is_advisory() {
+        let checks = run_oracle_host_checks_with_adapter(
+            DoctorContext::new(DoctorMode::ReleaseGate).with_oracle_requested(true),
+            &MockOracleAdapter::ready_with_unknown_engagement(),
+        );
+
+        let engaged = check_by_id_from_checks(&checks, "oracle.host.engaged");
+        assert_eq!(engaged.status, CheckStatus::Warn);
+        assert_eq!(engaged.severity, CheckSeverity::Advisory);
+        assert!(
+            engaged.detail.contains("observed at self-check time"),
+            "engagement should not pretend standalone doctor observed work: {}",
+            engaged.detail
+        );
+    }
+
+    #[test]
+    fn standalone_oracle_convergence_is_advisory_in_all_modes() {
+        for mode in [
+            DoctorMode::Structural,
+            DoctorMode::Strict,
+            DoctorMode::ReleaseGate,
+        ] {
+            let checks = run_oracle_host_checks_with_adapter(
+                DoctorContext::new(mode).with_oracle_requested(true),
+                &MockOracleAdapter::ready(),
+            );
+
+            let converged = check_by_id_from_checks(&checks, "oracle.resolution.converged");
+            assert_eq!(
+                converged.status,
+                CheckStatus::Pass,
+                "{mode}: {converged:#?}"
+            );
+            assert_eq!(converged.severity, CheckSeverity::Advisory);
+            assert!(
+                converged.detail.contains("self-check time"),
+                "standalone doctor convergence should be explicitly deferred: {}",
+                converged.detail
+            );
+        }
+    }
+
+    #[test]
+    fn oracle_failure_marks_release_gate_report_not_release_ready() {
+        let td = TempDir::new().unwrap();
+        let kit = td.path();
+        write_kit(kit, "");
+
+        let report = run_report_with_context_and_oracle_adapter(
+            kit,
+            DoctorContext::new(DoctorMode::ReleaseGate).with_oracle_requested(true),
+            MockOracleAdapter::spawn_failure(),
+        );
+
+        assert!(
+            !report.ok,
+            "release-gate oracle hard fail should fail report"
+        );
+        assert!(
+            !report.release_ready,
+            "release-gate oracle hard fail must block release readiness"
         );
     }
 
@@ -2218,7 +2773,10 @@ mod tests {
 
         let report = run_report(kit);
 
-        assert!(report.ok, "warn-only doctor report should be ok: {report:#?}");
+        assert!(
+            report.ok,
+            "warn-only doctor report should be ok: {report:#?}"
+        );
 
         let missing = TempDir::new().unwrap();
         fs::create_dir_all(missing.path().join(".provekit")).unwrap();
@@ -2312,8 +2870,7 @@ mod tests {
     }
 
     fn assert_modes_match_for_check(kit: &Path, id: &str) {
-        let structural =
-            run_report_with_context(kit, DoctorContext::new(DoctorMode::Structural));
+        let structural = run_report_with_context(kit, DoctorContext::new(DoctorMode::Structural));
         let strict = run_report_with_context(kit, DoctorContext::new(DoctorMode::Strict));
 
         let structural_check = check_by_id(&structural, id);
@@ -2347,10 +2904,7 @@ mod tests {
         cid
     }
 
-    fn proof_bytes(
-        label: &str,
-        bytes: &[u8],
-    ) -> provekit_verifier::load_all_proofs::ProofBytes {
+    fn proof_bytes(label: &str, bytes: &[u8]) -> provekit_verifier::load_all_proofs::ProofBytes {
         provekit_verifier::load_all_proofs::ProofBytes {
             label: label.to_string(),
             expected_cid: Some(provekit_canonicalizer::blake3_512_of(bytes)),
