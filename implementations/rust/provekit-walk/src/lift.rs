@@ -2857,6 +2857,14 @@ mod tests {
             "then-branch guard is is_some: {json}"
         );
         assert!(
+            json.contains(panic_freedom::METHOD_UNWRAP),
+            "Rust v1 emission must keep the old unwrap leaf token: {json}"
+        );
+        assert!(
+            !json.contains(panic_freedom::METHOD_UNWRAP_CONCEPT),
+            "Rust v1 emission must not write the leaf concept alias: {json}"
+        );
+        assert!(
             !json.contains(panic_freedom::IS_SOME_CONCEPT),
             "Rust v1 emission must keep the old option predicate: {json}"
         );
@@ -2913,6 +2921,14 @@ mod tests {
             "guard must carry the result precondition: {json}"
         );
         assert!(
+            json.contains(panic_freedom::METHOD_UNWRAP),
+            "Rust v1 writer must keep emitting the old unwrap leaf token: {json}"
+        );
+        assert!(
+            !json.contains(panic_freedom::METHOD_UNWRAP_CONCEPT),
+            "Rust v1 writer must not emit the unwrap leaf concept alias: {json}"
+        );
+        assert!(
             !json.contains(panic_freedom::IS_OK_CONCEPT),
             "Rust v1 writer must keep emitting the old result predicate token: {json}"
         );
@@ -2937,6 +2953,14 @@ mod tests {
         assert!(
             json.contains("is_ok"),
             "guard must carry the result precondition: {json}"
+        );
+        assert!(
+            json.contains(panic_freedom::METHOD_EXPECT),
+            "Rust v1 writer must keep emitting the old expect leaf token: {json}"
+        );
+        assert!(
+            !json.contains(panic_freedom::METHOD_EXPECT_CONCEPT),
+            "Rust v1 writer must not emit the expect leaf concept alias: {json}"
         );
         assert!(
             !json.contains(panic_freedom::IS_OK_CONCEPT),

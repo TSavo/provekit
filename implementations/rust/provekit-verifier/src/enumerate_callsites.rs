@@ -117,6 +117,7 @@ fn callsite_from_panic_locus(
         .get("callee")
         .and_then(|v| v.as_str())
         .filter(|s| !s.is_empty())?;
+    let callee = panic_freedom::normalize_leaf_method_name(callee);
     let file = locus
         .get("file")
         .and_then(|v| v.as_str())
@@ -350,9 +351,14 @@ fn panic_locus_for<'a>(
     panic_loci: &'a [Json],
 ) -> Option<&'a Json> {
     let arg = arg_term?;
+    let callee = panic_freedom::normalize_leaf_method_name(callee);
     panic_loci.iter().find(|locus| {
         locus.get("argTerm") == Some(arg)
-            && locus.get("callee").and_then(|v| v.as_str()) == Some(callee)
+            && locus
+                .get("callee")
+                .and_then(|v| v.as_str())
+                .map(panic_freedom::normalize_leaf_method_name)
+                == Some(callee)
     })
 }
 
@@ -363,6 +369,7 @@ fn callsite_scoped_bridge_for_locus<'a>(
     locus: &Json,
 ) -> Option<&'a Json> {
     let bundle = callsite_bundle_cid?;
+    let callee = panic_freedom::normalize_leaf_method_name(callee);
     let file = locus.get("file").and_then(|v| v.as_str())?;
     let line = locus
         .get("line")
@@ -406,11 +413,12 @@ fn walk_term(
         .and_then(|v| v.as_str())
         .unwrap_or_default()
         .to_string();
+    let bridge_name = panic_freedom::normalize_leaf_method_name(&name).to_string();
     let arg_term = t
         .get("args")
         .and_then(|v| v.as_array())
         .and_then(|arr| arr.first().cloned());
-    let scoped_panic_locus = panic_locus_for(&name, arg_term.as_ref(), panic_loci);
+    let scoped_panic_locus = panic_locus_for(&bridge_name, arg_term.as_ref(), panic_loci);
     // Panic-leaf method bridges are overloadable (`method:unwrap` can target
     // Option or Result). If the kit supplied an occurrence locus, choose the
     // exact `(bundle,file,line,callee)` bridge before considering the global
@@ -420,12 +428,12 @@ fn walk_term(
     // symbol winner; the panicLoci fallback below will surface an undecidable
     // NoBridgeTarget instead of silently checking the wrong overload.
     let scoped_bridge = scoped_panic_locus.and_then(|locus| {
-        callsite_scoped_bridge_for_locus(pool, callsite_bundle_cid, &name, locus)
+        callsite_scoped_bridge_for_locus(pool, callsite_bundle_cid, &bridge_name, locus)
     });
     let bridge_env = if scoped_panic_locus.is_some() {
         scoped_bridge
     } else {
-        pool.bridges_by_symbol.get(&name)
+        pool.bridges_by_symbol.get(&bridge_name)
     };
     if let Some(benv) = bridge_env {
         // Shape-agnostic: v1.2-layered bridges carry the fields on
@@ -449,7 +457,8 @@ fn walk_term(
             .get("sourceSymbol")
             .and_then(|v| v.as_str())
             .filter(|s| !s.is_empty())
-            .map(|s| s.to_string());
+            .map(panic_freedom::normalize_leaf_method_name)
+            .map(str::to_string);
         let panic_site = bridge_callsite
             .and_then(|v| v.get("panicSite"))
             .and_then(|v| v.as_bool())
@@ -463,7 +472,8 @@ fn walk_term(
         // bridged call keeps reading its line from the bridge as before (those
         // are 1:1 with their bridge and are not collapsed across occurrences).
         let occ_locus = if panic_site {
-            scoped_panic_locus.or_else(|| panic_locus_for(&name, arg_term.as_ref(), panic_loci))
+            scoped_panic_locus
+                .or_else(|| panic_locus_for(&bridge_name, arg_term.as_ref(), panic_loci))
         } else {
             None
         };
@@ -486,13 +496,13 @@ fn walk_term(
             // stays honestly undecidable downstream.
             if panic_loci.is_empty() {
                 debug!(
-                    name = %name,
+                    name = %bridge_name,
                     "enumerate_callsites: panic site with no contract panicLoci -- \
                      carrying no line (occurrence locus unavailable; honestly undecidable)"
                 );
             } else {
                 warn!(
-                    name = %name,
+                    name = %bridge_name,
                     "enumerate_callsites: panic site arg_term matched no contract locus -- \
                      carrying no line rather than the collapsed per-symbol bridge line \
                      (panic-locus miss; site stays undecidable)"
@@ -515,7 +525,7 @@ fn walk_term(
         };
         if panic_site {
             debug!(
-                name = %name,
+                name = %bridge_name,
                 line = ?callsite_line,
                 file = ?callsite_file,
                 matched_locus = occ_locus.is_some(),
@@ -523,7 +533,7 @@ fn walk_term(
             );
         }
         let cs = CallSite {
-            bridge_ir_name: name.clone(),
+            bridge_ir_name: bridge_name.clone(),
             bridge_target_cid: bbody
                 .get("targetContractCid")
                 .and_then(|v| v.as_str())
@@ -543,7 +553,7 @@ fn walk_term(
             bridge_self_bundle_cid: if scoped_bridge.is_some() {
                 callsite_bundle_cid.map(str::to_string)
             } else {
-                pool.bridge_self_bundle_by_symbol.get(&name).cloned()
+                pool.bridge_self_bundle_by_symbol.get(&bridge_name).cloned()
             },
             property_name: property_name.to_string(),
             property_cid: property_cid.to_string(),
@@ -580,7 +590,7 @@ fn walk_term(
             panic_site,
         };
         debug!(
-            name = %name,
+            name = %bridge_name,
             panic_site,
             callsite_present = bridge_callsite.is_some(),
             arg_term_kind = ?cs.arg_term.as_ref().and_then(|a| a.get("kind")).and_then(|k| k.as_str()),
@@ -593,9 +603,9 @@ fn walk_term(
         // real panic leaf to undecidable. Surface it loudly and count it instead
         // of letting K silently rot. (Function-level bridges have no `method:`
         // seam, so they do not trip this.)
-        if name.starts_with("method:") && bridge_callsite.is_none() {
+        if bridge_name.starts_with("method:") && bridge_callsite.is_none() {
             warn!(
-                bridge = %name,
+                bridge = %bridge_name,
                 "enumerate_callsites: method-seam bridge has NO callsite provenance -- mint dropped it; \
                  this panic site will read panic_site=false and stay undecidable (callsite-provenance drop)"
             );
@@ -699,6 +709,8 @@ fn walk_term(
         // is not directly participating in.
         let inner_atomic = if pool.bridges_by_symbol.contains_key(&name) {
             None
+        } else if pool.bridges_by_symbol.contains_key(&bridge_name) {
+            None
         } else {
             containing_atomic
         };
@@ -750,6 +762,10 @@ mod guard_propagation_tests {
     // so it enumerates as a CallSite. The name is OPAQUE to the verifier.
     fn panic_call() -> Json {
         json!({ "kind": "ctor", "name": "panic_call", "args": [recv()] })
+    }
+
+    fn leaf_call(name: &str) -> Json {
+        json!({ "kind": "ctor", "name": name, "args": [recv()] })
     }
 
     // An OPAQUE guard predicate atom term -- whatever the kit resolved for this
@@ -838,6 +854,15 @@ mod guard_propagation_tests {
     }
 
     fn bridge(target_cid: &str, file: Option<&str>, line: Option<usize>) -> Json {
+        bridge_for_symbol("panic_call", target_cid, file, line)
+    }
+
+    fn bridge_for_symbol(
+        source_symbol: &str,
+        target_cid: &str,
+        file: Option<&str>,
+        line: Option<usize>,
+    ) -> Json {
         let callsite = match (file, line) {
             (Some(file), Some(line)) => json!({
                 "file": file,
@@ -848,7 +873,7 @@ mod guard_propagation_tests {
         };
         let mut header = json!({
             "kind": "bridge",
-            "sourceSymbol": "panic_call",
+            "sourceSymbol": source_symbol,
             "targetContractCid": target_cid,
             "sourceLayer": "rust",
             "targetLayer": "rust-tests",
@@ -914,11 +939,80 @@ mod guard_propagation_tests {
         pool
     }
 
+    fn pool_with_leaf_scoped_panic_bridge(body_term: Json, method: &str) -> MementoPool {
+        pool_with_leaf_scoped_panic_bridge_and_locus(body_term, method, method)
+    }
+
+    fn pool_with_leaf_scoped_panic_bridge_and_locus(
+        body_term: Json,
+        bridge_method: &str,
+        locus_callee: &str,
+    ) -> MementoPool {
+        let mut pool = MementoPool::default();
+        let bundle = "blake3-512:caller-bundle".to_string();
+        let caller = "blake3-512:caller".to_string();
+        pool.bridges_by_symbol.insert(
+            bridge_method.to_string(),
+            bridge_for_symbol(
+                bridge_method,
+                "blake3-512:wrong-symbol-target",
+                Some("src/lib.rs"),
+                Some(99),
+            ),
+        );
+        pool.bridges_by_callsite.insert(
+            (
+                bundle.clone(),
+                "src/lib.rs".to_string(),
+                10,
+                bridge_method.to_string(),
+            ),
+            bridge_for_symbol(
+                bridge_method,
+                "blake3-512:right-callsite-target",
+                Some("src/lib.rs"),
+                Some(10),
+            ),
+        );
+        pool.bundle_members
+            .entry(bundle)
+            .or_default()
+            .insert(caller.clone());
+        let contract = json!({
+            "envelope": true,
+            "header": {
+                "kind": "contract",
+                "contractName": "caller_self_post",
+                "panicLoci": [{
+                    "argTerm": recv(),
+                    "callee": locus_callee,
+                    "file": "src/lib.rs",
+                    "line": 10,
+                    "col": 4,
+                }],
+                "post": {
+                    "kind": "atomic",
+                    "name": "=",
+                    "args": [ { "kind": "var", "name": "result" }, body_term ],
+                }
+            }
+        });
+        pool.mementos.insert(caller, contract);
+        pool
+    }
+
     fn enumerated_call(sites: &[CallSite]) -> &CallSite {
         sites
             .iter()
             .find(|cs| cs.bridge_ir_name == "panic_call")
             .expect("the panic call must enumerate")
+    }
+
+    fn leaf_callsite<'a>(sites: &'a [CallSite], method: &str) -> &'a CallSite {
+        sites
+            .iter()
+            .find(|cs| cs.bridge_ir_name == method)
+            .unwrap_or_else(|| panic!("the leaf call must enumerate as {method}: {sites:?}"))
     }
 
     #[test]
@@ -1134,5 +1228,169 @@ mod guard_propagation_tests {
         );
         assert_eq!(cs.file.as_deref(), Some("src/lib.rs"));
         assert_eq!(cs.line, Some(10));
+    }
+
+    #[test]
+    fn leaf_method_concept_aliases_enumerate_with_canonical_callsites() {
+        for (method, concept) in [
+            (
+                panic_freedom::METHOD_UNWRAP,
+                panic_freedom::METHOD_UNWRAP_CONCEPT,
+            ),
+            (
+                panic_freedom::METHOD_EXPECT,
+                panic_freedom::METHOD_EXPECT_CONCEPT,
+            ),
+            (
+                panic_freedom::METHOD_UNWRAP_ERR,
+                panic_freedom::METHOD_UNWRAP_ERR_CONCEPT,
+            ),
+        ] {
+            let body = cf_guarded(pred("pred_a"), leaf_call(concept));
+            let sites = run(&pool_with_leaf_scoped_panic_bridge(body, method));
+            let cs = leaf_callsite(&sites, method);
+            assert_eq!(
+                cs.bridge_ir_name, method,
+                "concept leaf input must enumerate with the canonical old method token"
+            );
+            assert_eq!(
+                cs.callee.as_deref(),
+                Some(method),
+                "callsite callee output must stay canonical for {concept}"
+            );
+            assert_eq!(
+                cs.bridge_target_cid, "blake3-512:right-callsite-target",
+                "concept leaf input must select the old-key callsite-scoped bridge"
+            );
+            assert_eq!(
+                cs.guard_facts,
+                vec![json!({ "kind": "atomic", "name": "pred_a", "args": [recv()] })],
+                "formula-walk alias enumeration must preserve dominating guard facts; \
+                 panicLoci-only fallback would lose them for {concept}"
+            );
+            assert_eq!(cs.file.as_deref(), Some("src/lib.rs"));
+            assert_eq!(cs.line, Some(10));
+        }
+    }
+
+    #[test]
+    fn panic_locus_for_leaf_concept_input_matches_old_locus_key() {
+        let arg = recv();
+        for (method, concept) in [
+            (
+                panic_freedom::METHOD_UNWRAP,
+                panic_freedom::METHOD_UNWRAP_CONCEPT,
+            ),
+            (
+                panic_freedom::METHOD_EXPECT,
+                panic_freedom::METHOD_EXPECT_CONCEPT,
+            ),
+            (
+                panic_freedom::METHOD_UNWRAP_ERR,
+                panic_freedom::METHOD_UNWRAP_ERR_CONCEPT,
+            ),
+        ] {
+            let loci = vec![json!({
+                "argTerm": arg,
+                "callee": method,
+                "file": "src/lib.rs",
+                "line": 10,
+            })];
+            let locus = panic_locus_for(concept, Some(&arg), &loci)
+                .unwrap_or_else(|| panic!("concept leaf {concept} must match old locus {method}"));
+            assert_eq!(locus["callee"], method);
+        }
+    }
+
+    #[test]
+    fn callsite_scoped_bridge_for_locus_leaf_concept_input_uses_old_key() {
+        let locus = json!({
+            "argTerm": recv(),
+            "callee": panic_freedom::METHOD_UNWRAP,
+            "file": "src/lib.rs",
+            "line": 10,
+        });
+        let pool = pool_with_leaf_scoped_panic_bridge(
+            leaf_call(panic_freedom::METHOD_UNWRAP_CONCEPT),
+            panic_freedom::METHOD_UNWRAP,
+        );
+        let bridge = callsite_scoped_bridge_for_locus(
+            &pool,
+            Some("blake3-512:caller-bundle"),
+            panic_freedom::METHOD_UNWRAP_CONCEPT,
+            &locus,
+        )
+        .expect("concept leaf input must locate the old-key scoped bridge");
+        let body = memento_body(bridge).expect("bridge body");
+        assert_eq!(
+            body["targetContractCid"],
+            "blake3-512:right-callsite-target"
+        );
+    }
+
+    #[test]
+    fn panic_loci_concept_leaf_rows_surface_canonical_method_callsites() {
+        for (method, concept) in [
+            (
+                panic_freedom::METHOD_UNWRAP,
+                panic_freedom::METHOD_UNWRAP_CONCEPT,
+            ),
+            (
+                panic_freedom::METHOD_EXPECT,
+                panic_freedom::METHOD_EXPECT_CONCEPT,
+            ),
+            (
+                panic_freedom::METHOD_UNWRAP_ERR,
+                panic_freedom::METHOD_UNWRAP_ERR_CONCEPT,
+            ),
+        ] {
+            let pool = pool_with_leaf_scoped_panic_bridge_and_locus(
+                json!({ "kind": "lit", "value": 0 }),
+                method,
+                concept,
+            );
+            let locus = json!({
+                "argTerm": recv(),
+                "callee": concept,
+                "file": "src/lib.rs",
+                "line": 10,
+            });
+            let cs = callsite_from_panic_locus(
+                &locus,
+                "caller_self_post",
+                "blake3-512:caller",
+                &pool,
+                Some("blake3-512:caller-bundle"),
+            )
+            .unwrap_or_else(|| panic!("concept panicLoci row must surface {method}"));
+            assert_eq!(cs.bridge_ir_name, method);
+            assert_eq!(cs.callee.as_deref(), Some(method));
+            assert_eq!(
+                cs.bridge_target_cid, "blake3-512:right-callsite-target",
+                "concept panicLoci row must use the old-key scoped bridge"
+            );
+        }
+    }
+
+    #[test]
+    fn malformed_leaf_concept_tokens_do_not_match_method_bridges() {
+        for bad_name in [
+            " concept:panic-freedom.leaf.unwrap",
+            "concept:panic-freedom.leaf.unwrap ",
+            "concept:panic-freedom.leaf.Unwrap",
+            "concept:panic-freedom.leaf.unwrap_err",
+            panic_freedom::IS_SOME_CONCEPT,
+            panic_freedom::IS_OK_CONCEPT,
+        ] {
+            let body = cf_guarded(pred("pred_a"), leaf_call(bad_name));
+            let sites =
+                run(&pool_with_leaf_scoped_panic_bridge(body, panic_freedom::METHOD_UNWRAP));
+            let cs = leaf_callsite(&sites, panic_freedom::METHOD_UNWRAP);
+            assert!(
+                cs.guard_facts.is_empty(),
+                "malformed or cross-family token {bad_name} must not enumerate through the formula; \
+                 only the panicLoci fallback should remain"
+            );
+        }
     }
 }

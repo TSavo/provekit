@@ -215,6 +215,7 @@ fn value_type_name(value: &Value) -> &'static str {
 mod tests {
     use super::*;
     use crate::contract::build_function_contract;
+    use libprovekit::concept::panic_freedom;
     use provekit_claim_envelope::contract_cid as kit_contract_cid;
     use serde_json::Value as JsonValue;
 
@@ -284,7 +285,12 @@ mod tests {
         assert_eq!(panic_loci[0]["file"], "unknown");
         assert_eq!(panic_loci[0]["line"], expected_line);
         assert_eq!(panic_loci[0]["panicLine"], expected_panic_line);
-        assert_eq!(panic_loci[0]["callee"], "method:unwrap");
+        assert_eq!(panic_loci[0]["callee"], panic_freedom::METHOD_UNWRAP);
+        assert_ne!(
+            panic_loci[0]["callee"],
+            panic_freedom::METHOD_UNWRAP_CONCEPT,
+            "Rust v1 envelope writer must not emit the unwrap leaf concept alias"
+        );
     }
 
     #[test]
@@ -379,7 +385,12 @@ mod tests {
         assert_eq!(panic_loci[0]["file"], "src/lib.rs");
         assert_eq!(panic_loci[0]["line"], 2);
         assert_eq!(panic_loci[0]["panicLine"], 3);
-        assert_eq!(panic_loci[0]["callee"], "method:unwrap");
+        assert_eq!(panic_loci[0]["callee"], panic_freedom::METHOD_UNWRAP);
+        assert_ne!(
+            panic_loci[0]["callee"],
+            panic_freedom::METHOD_UNWRAP_CONCEPT,
+            "Rust v1 envelope writer must not emit the unwrap leaf concept alias"
+        );
     }
 
     #[test]

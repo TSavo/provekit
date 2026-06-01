@@ -1341,6 +1341,12 @@ proptest! {
             ))
             .expect("canonical locus parses as JSON")
         );
+        assert_eq!(panic_loci[0]["callee"], "method:unwrap");
+        assert_ne!(
+            panic_loci[0]["callee"],
+            "concept:panic-freedom.leaf.unwrap",
+            "Rust v1 lift/mint writer must not emit the unwrap leaf concept alias"
+        );
     }
 
     #[test]

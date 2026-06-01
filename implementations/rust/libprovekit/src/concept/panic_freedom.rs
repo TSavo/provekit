@@ -45,11 +45,20 @@ pub const CF_ITE_CONCEPT: &str = "concept:panic-freedom.choice";
 /// Substrate panic-freedom unwrap leaf; see `SUBSTRATE-SHAPE-AUDIT.md`.
 pub const METHOD_UNWRAP: &str = "method:unwrap";
 
+/// Substrate panic-freedom unwrap leaf alias; see `SUBSTRATE-SHAPE-AUDIT.md`.
+pub const METHOD_UNWRAP_CONCEPT: &str = "concept:panic-freedom.leaf.unwrap";
+
 /// Substrate panic-freedom expect leaf; see `SUBSTRATE-SHAPE-AUDIT.md`.
 pub const METHOD_EXPECT: &str = "method:expect";
 
+/// Substrate panic-freedom expect leaf alias; see `SUBSTRATE-SHAPE-AUDIT.md`.
+pub const METHOD_EXPECT_CONCEPT: &str = "concept:panic-freedom.leaf.expect";
+
 /// Substrate panic-freedom unwrap-err leaf; see `SUBSTRATE-SHAPE-AUDIT.md`.
 pub const METHOD_UNWRAP_ERR: &str = "method:unwrap_err";
+
+/// Substrate panic-freedom unwrap-err leaf alias; see `SUBSTRATE-SHAPE-AUDIT.md`.
+pub const METHOD_UNWRAP_ERR_CONCEPT: &str = "concept:panic-freedom.leaf.unwrap-err";
 
 /// Normalize result predicate aliases to the Rust v1 wire token.
 ///
@@ -71,6 +80,19 @@ pub fn normalize_option_predicate_name(name: &str) -> &str {
     match name {
         IS_SOME | IS_SOME_CONCEPT => IS_SOME,
         IS_NONE | IS_NONE_CONCEPT => IS_NONE,
+        _ => name,
+    }
+}
+
+/// Normalize panic leaf aliases to the Rust v1 wire token.
+///
+/// Phase 4 readers accept the concept aliases without changing default Rust v1
+/// proof emission. Unknown method names stay opaque.
+pub fn normalize_leaf_method_name(name: &str) -> &str {
+    match name {
+        METHOD_UNWRAP | METHOD_UNWRAP_CONCEPT => METHOD_UNWRAP,
+        METHOD_EXPECT | METHOD_EXPECT_CONCEPT => METHOD_EXPECT,
+        METHOD_UNWRAP_ERR | METHOD_UNWRAP_ERR_CONCEPT => METHOD_UNWRAP_ERR,
         _ => name,
     }
 }

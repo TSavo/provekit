@@ -2758,6 +2758,7 @@ pub fn run(args: MintArgs) -> u8 {
 mod tests {
     use super::*;
     use crate::project_config::PlatformProfile;
+    use libprovekit::concept::panic_freedom;
 
     fn temp_workspace(name: &str) -> PathBuf {
         let nanos = std::time::SystemTime::now()
@@ -3245,7 +3246,7 @@ mod tests {
             "file": "src/lib.rs",
             "line": 25,
             "col": 30,
-            "callee": "method:unwrap"
+            "callee": panic_freedom::METHOD_UNWRAP
         })
     }
 
@@ -3391,6 +3392,12 @@ mod tests {
             .and_then(|value| value.as_array())
             .expect("well-formed panicLoci must be preserved");
         assert_eq!(panic_loci, &[locus]);
+        assert_eq!(panic_loci[0]["callee"], panic_freedom::METHOD_UNWRAP);
+        assert_ne!(
+            panic_loci[0]["callee"],
+            panic_freedom::METHOD_UNWRAP_CONCEPT,
+            "Rust v1 mint writer must not emit the unwrap leaf concept alias"
+        );
     }
 
     fn assert_malformed_bridge_callsite_fails_closed(callsite: Value, expected: &str) {
