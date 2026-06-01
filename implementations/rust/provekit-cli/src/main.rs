@@ -296,14 +296,7 @@ fn main() -> ExitCode {
     //   RUST_LOG=info   -> pipeline narrative
     //   RUST_LOG=debug  -> per-item decisions
     //   RUST_LOG=trace  -> RPC payloads, RA queries
-    tracing_subscriber::fmt()
-        .with_writer(std::io::stderr)
-        .with_env_filter(
-            tracing_subscriber::EnvFilter::builder()
-                .with_default_directive(tracing_subscriber::filter::LevelFilter::WARN.into())
-                .from_env_lossy(),
-        )
-        .init();
+    init_tracing();
     let cli = Cli::parse();
     let code = match cli.cmd {
         Cmd::Prove(a) => cmd_prove::run(a),
@@ -327,4 +320,39 @@ fn main() -> ExitCode {
         Cmd::Doctor(a) => cmd_doctor::run(a),
     };
     ExitCode::from(code)
+}
+
+fn init_tracing() {
+    let filter = tracing_subscriber::EnvFilter::builder()
+        .with_default_directive(tracing_subscriber::filter::LevelFilter::WARN.into())
+        .from_env_lossy();
+    if let Ok(path) = std::env::var("PROVEKIT_LOG_FILE") {
+        match std::fs::OpenOptions::new()
+            .create(true)
+            .append(true)
+            .open(&path)
+        {
+            Ok(file) => {
+                tracing_subscriber::fmt()
+                    .with_writer(file)
+                    .with_ansi(false)
+                    .with_env_filter(filter)
+                    .init();
+            }
+            Err(error) => {
+                eprintln!(
+                    "warning: could not open PROVEKIT_LOG_FILE {path}: {error}; logging to stderr"
+                );
+                tracing_subscriber::fmt()
+                    .with_writer(std::io::stderr)
+                    .with_env_filter(filter)
+                    .init();
+            }
+        }
+    } else {
+        tracing_subscriber::fmt()
+            .with_writer(std::io::stderr)
+            .with_env_filter(filter)
+            .init();
+    }
 }

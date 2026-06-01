@@ -53,14 +53,7 @@ fn main() {
     // per-request round-trip logs actually surface under RUST_LOG (e.g.
     // RUST_LOG=info,provekit_walk::ra_oracle=debug). Without this the probe is
     // blind to WHY a resolution refused (not-ready vs. genuine null).
-    tracing_subscriber::fmt()
-        .with_writer(std::io::stderr)
-        .with_env_filter(
-            tracing_subscriber::EnvFilter::builder()
-                .with_default_directive(tracing_subscriber::filter::LevelFilter::WARN.into())
-                .from_env_lossy(),
-        )
-        .init();
+    init_tracing();
 
     if std::env::var("PROVEKIT_RESOLVE_ORACLE").ok().as_deref() != Some("rust-analyzer") {
         std::env::set_var("PROVEKIT_RESOLVE_ORACLE", "rust-analyzer");
@@ -184,5 +177,40 @@ fn main() {
              and the def path above."
         );
         std::process::exit(3);
+    }
+}
+
+fn init_tracing() {
+    let filter = tracing_subscriber::EnvFilter::builder()
+        .with_default_directive(tracing_subscriber::filter::LevelFilter::WARN.into())
+        .from_env_lossy();
+    if let Ok(path) = std::env::var("PROVEKIT_LOG_FILE") {
+        match std::fs::OpenOptions::new()
+            .create(true)
+            .append(true)
+            .open(&path)
+        {
+            Ok(file) => {
+                tracing_subscriber::fmt()
+                    .with_writer(file)
+                    .with_ansi(false)
+                    .with_env_filter(filter)
+                    .init();
+            }
+            Err(error) => {
+                eprintln!(
+                    "warning: could not open PROVEKIT_LOG_FILE {path}: {error}; logging to stderr"
+                );
+                tracing_subscriber::fmt()
+                    .with_writer(std::io::stderr)
+                    .with_env_filter(filter)
+                    .init();
+            }
+        }
+    } else {
+        tracing_subscriber::fmt()
+            .with_writer(std::io::stderr)
+            .with_env_filter(filter)
+            .init();
     }
 }

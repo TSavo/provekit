@@ -4,11 +4,12 @@ use std::collections::BTreeMap;
 use std::ffi::OsStr;
 use std::fs;
 use std::path::{Path, PathBuf};
-use std::process::{Command, Output};
+use std::process::{Command, Output, Stdio};
 
 use clap::Parser;
 use serde::Serialize;
 use serde_json::Value;
+use tracing::info;
 
 #[derive(Parser, Debug, Clone)]
 pub struct SelfCheckArgs {
@@ -96,6 +97,17 @@ struct MintOutput {
     json: Value,
 }
 
+const ORACLE_CONVERGENCE_STABLE_PASSES: usize = 3;
+const ORACLE_CONVERGENCE_MAX_PASSES: usize = 10;
+const ORACLE_CONVERGENCE_STABLE_PASSES_ENV: &str = "PROVEKIT_ORACLE_CONVERGE_K";
+const ORACLE_CONVERGENCE_MAX_PASSES_ENV: &str = "PROVEKIT_ORACLE_MAX_PASSES";
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum OracleConvergenceDecision {
+    Continue,
+    Done,
+}
+
 pub fn run(args: SelfCheckArgs) -> u8 {
     match run_inner(&args) {
         Ok(scoreboard) => {
@@ -131,7 +143,10 @@ pub fn run(args: SelfCheckArgs) -> u8 {
                     );
                 }
             }
-            if scoreboard.oracle.requested && !scoreboard.oracle.engaged {
+            if scoreboard.oracle.requested
+                && scoreboard.oracle.attempted > 0
+                && !scoreboard.oracle.engaged
+            {
                 failed = true;
                 eprintln!(
                     "self-check --oracle requested but the oracle resolved 0/{} receivers; the census is SYNTACTIC-ONLY (provekit-linkerd unreachable or not warm). Set PROVEKIT_LINKERD_BIN and pre-warm, or run doctor.",
@@ -178,16 +193,61 @@ fn run_inner(args: &SelfCheckArgs) -> Result<SelfCheckScoreboard, String> {
         if same_path(&dep, &target_abs) {
             continue;
         }
+        let dep_rel = repo_relative(&repo_root, &dep);
+        info!(
+            dependency = name,
+            project = %dep_rel,
+            "self-check: minting dependency proof"
+        );
         let out_dir = scratch.join(format!("dep-{name}"));
         let minted = mint_project(&bin, &repo_root, &dep, &out_dir, false)?;
         copy_proof_to_imports(&minted.proof_file, &imports)?;
+        let imports_proof_count = count_proof_files(&imports)?;
+        info!(
+            dependency = name,
+            proof_file = %minted.proof_file.display(),
+            imports_proof_count,
+            "self-check: dependency proof ready"
+        );
     }
 
     let target_out = scratch.join("target");
-    let target_mint = mint_project(&bin, &repo_root, &target_abs, &target_out, args.oracle)?;
+    info!(
+        target = %target_rel,
+        oracle = args.oracle,
+        "self-check: minting target"
+    );
+    let target_mint =
+        mint_project_converged(&bin, &repo_root, &target_abs, &target_out, args.oracle)?;
+    let target_proof_count = count_proof_files(&target_out)?;
+    let imports_proof_count = count_proof_files(&imports)?;
+    info!(
+        target_proof_count,
+        imports_proof_count,
+        with_dir = %target_out.display(),
+        imports = %imports.display(),
+        "self-check: target proof ready; starting prove"
+    );
     let prove_json = prove_project(&bin, &repo_root, &target_abs, &target_out)?;
+    info!("self-check: prove complete; building scoreboard");
 
-    build_scoreboard(&target_rel, &target_mint.json, &prove_json)
+    let scoreboard = build_scoreboard(&target_rel, &target_mint.json, &prove_json)?;
+    info!(
+        oracle_requested = scoreboard.oracle.requested,
+        oracle_engaged = scoreboard.oracle.engaged,
+        oracle_attempted = scoreboard.oracle.attempted,
+        oracle_resolved = scoreboard.oracle.resolved,
+        silently_dropped = scoreboard.silently_dropped,
+        dropped_sites = scoreboard.dropped_sites.len(),
+        panic_census = scoreboard.panic_census.len(),
+        panic_safe = scoreboard.discharge_split.panic_safe,
+        false_pass = scoreboard.discharge_split.false_pass,
+        reflexive = scoreboard.discharge_split.reflexive,
+        vacuous = scoreboard.discharge_split.vacuous,
+        undecidable = scoreboard.discharge_split.undecidable,
+        "self-check: scoreboard built"
+    );
+    Ok(scoreboard)
 }
 
 fn discover_repo_root() -> Result<PathBuf, String> {
@@ -247,6 +307,20 @@ fn recreate_imports(path: &Path) -> Result<(), String> {
     Ok(())
 }
 
+fn count_proof_files(path: &Path) -> Result<usize, String> {
+    if !path.exists() {
+        return Ok(0);
+    }
+    let mut count = 0usize;
+    for entry in fs::read_dir(path).map_err(|e| format!("read {}: {e}", path.display()))? {
+        let entry = entry.map_err(|e| format!("read {} entry: {e}", path.display()))?;
+        if entry.path().extension() == Some(OsStr::new("proof")) {
+            count += 1;
+        }
+    }
+    Ok(count)
+}
+
 fn mint_project(
     bin: &Path,
     repo_root: &Path,
@@ -271,6 +345,8 @@ fn mint_project(
         cmd.env_remove("PROVEKIT_RESOLVE_ORACLE");
     }
     let output = cmd
+        .stdout(Stdio::piped())
+        .stderr(child_stderr()?)
         .output()
         .map_err(|e| format!("run mint for {}: {e}", project.display()))?;
     if !output.status.success() {
@@ -293,6 +369,183 @@ fn mint_project(
     Ok(MintOutput { proof_file, json })
 }
 
+fn mint_project_converged(
+    bin: &Path,
+    repo_root: &Path,
+    project: &Path,
+    out_dir: &Path,
+    oracle: bool,
+) -> Result<MintOutput, String> {
+    if !oracle {
+        return mint_project(bin, repo_root, project, out_dir, false);
+    }
+
+    let (stable_passes, max_passes) = oracle_convergence_thresholds()?;
+    let mut observations = Vec::new();
+    for pass in 1..=max_passes {
+        info!(
+            pass,
+            max_passes, stable_passes, "self-check oracle convergence: mint pass start"
+        );
+        recreate_dir(out_dir)?;
+        let minted = mint_project(bin, repo_root, project, out_dir, true)?;
+        let oracle = oracle_scoreboard(&minted.json);
+        let attempted = oracle.attempted;
+        let resolved = oracle.resolved;
+        observations.push(oracle);
+        let stable_count = oracle_consecutive_stable_count(&observations);
+        info!(
+            pass,
+            max_passes,
+            resolved,
+            attempted,
+            stable_count,
+            stable_passes,
+            "self-check oracle convergence: mint pass complete"
+        );
+        match oracle_convergence_decision(&observations, stable_passes, max_passes)? {
+            OracleConvergenceDecision::Done => {
+                let reason = if resolved == attempted {
+                    "full resolution"
+                } else {
+                    "stable oracle ceiling"
+                };
+                info!(pass, reason, "self-check oracle convergence: accepted");
+                return Ok(minted);
+            }
+            OracleConvergenceDecision::Continue => {
+                info!(pass, max_passes, "self-check oracle convergence: reminting");
+            }
+        }
+    }
+
+    let final_observation = observations
+        .last()
+        .ok_or("oracle convergence ran no mint passes")?;
+    Err(format!(
+        "self-check --oracle did not converge after {max_passes} mint passes; last resolved {}/{} receivers; {}",
+        final_observation.resolved,
+        final_observation.attempted,
+        oracle_convergence_diagnostic(&observations, stable_passes)
+    ))
+}
+
+fn oracle_convergence_decision(
+    observations: &[OracleScoreboard],
+    stable_passes: usize,
+    max_passes: usize,
+) -> Result<OracleConvergenceDecision, String> {
+    let Some(current) = observations.last() else {
+        return Ok(OracleConvergenceDecision::Continue);
+    };
+    if !current.requested {
+        return Ok(OracleConvergenceDecision::Done);
+    }
+    if current.resolved == current.attempted {
+        return Ok(OracleConvergenceDecision::Done);
+    }
+    if observations.len() < stable_passes {
+        return Ok(OracleConvergenceDecision::Continue);
+    }
+    if oracle_observations_stable(observations, stable_passes) {
+        return Ok(OracleConvergenceDecision::Done);
+    }
+    if observations.len() >= max_passes {
+        return Err(format!(
+            "self-check --oracle did not converge after {max_passes} mint passes; last resolved {}/{} receivers; {}",
+            current.resolved,
+            current.attempted,
+            oracle_convergence_diagnostic(observations, stable_passes)
+        ));
+    }
+    Ok(OracleConvergenceDecision::Continue)
+}
+
+fn oracle_observations_stable(observations: &[OracleScoreboard], window: usize) -> bool {
+    if observations.len() < window {
+        return false;
+    }
+    let tail = &observations[observations.len() - window..];
+    let first = &tail[0];
+    tail.iter().all(|observation| {
+        observation.requested == first.requested
+            && observation.attempted == first.attempted
+            && observation.resolved == first.resolved
+    })
+}
+
+fn oracle_convergence_thresholds() -> Result<(usize, usize), String> {
+    let stable_passes = env_usize(
+        ORACLE_CONVERGENCE_STABLE_PASSES_ENV,
+        ORACLE_CONVERGENCE_STABLE_PASSES,
+    )?;
+    let max_passes = env_usize(
+        ORACLE_CONVERGENCE_MAX_PASSES_ENV,
+        ORACLE_CONVERGENCE_MAX_PASSES,
+    )?;
+    if stable_passes == 0 {
+        return Err(format!(
+            "{ORACLE_CONVERGENCE_STABLE_PASSES_ENV} must be greater than zero"
+        ));
+    }
+    if max_passes < stable_passes {
+        return Err(format!(
+            "{ORACLE_CONVERGENCE_MAX_PASSES_ENV} ({max_passes}) must be >= {ORACLE_CONVERGENCE_STABLE_PASSES_ENV} ({stable_passes})"
+        ));
+    }
+    Ok((stable_passes, max_passes))
+}
+
+fn env_usize(name: &str, default: usize) -> Result<usize, String> {
+    let Ok(raw) = std::env::var(name) else {
+        return Ok(default);
+    };
+    raw.parse::<usize>()
+        .map_err(|e| format!("{name} must be a positive integer, got {raw:?}: {e}"))
+}
+
+fn oracle_convergence_diagnostic(
+    observations: &[OracleScoreboard],
+    stable_passes: usize,
+) -> String {
+    let sequence = observations
+        .iter()
+        .enumerate()
+        .map(|(idx, observation)| {
+            format!(
+                "pass{}={}/{}",
+                idx + 1,
+                observation.resolved,
+                observation.attempted
+            )
+        })
+        .collect::<Vec<_>>()
+        .join(", ");
+    let stable_count = oracle_consecutive_stable_count(observations);
+    let current_pair = observations
+        .last()
+        .map(|observation| format!("{}/{}", observation.resolved, observation.attempted))
+        .unwrap_or_else(|| "none".to_string());
+    format!(
+        "oracle sequence [{sequence}], current pair {current_pair} stable for {stable_count}/{stable_passes} passes"
+    )
+}
+
+fn oracle_consecutive_stable_count(observations: &[OracleScoreboard]) -> usize {
+    let Some(current) = observations.last() else {
+        return 0;
+    };
+    observations
+        .iter()
+        .rev()
+        .take_while(|observation| {
+            observation.requested == current.requested
+                && observation.attempted == current.attempted
+                && observation.resolved == current.resolved
+        })
+        .count()
+}
+
 fn prove_project(
     bin: &Path,
     repo_root: &Path,
@@ -306,9 +559,24 @@ fn prove_project(
         .arg("--with")
         .arg(with_dir)
         .arg("--json")
+        .stdout(Stdio::piped())
+        .stderr(child_stderr()?)
         .output()
         .map_err(|e| format!("run prove for {}: {e}", target.display()))?;
     let json = parse_json_stdout("prove", target, &output)?;
+    let rows = json.get("rows").and_then(|v| v.as_array()).map_or(0, Vec::len);
+    let total_callsites = json.get("totalCallsites").and_then(|v| v.as_u64()).unwrap_or(0);
+    let split = json.get("dischargeSplit");
+    info!(
+        total_callsites,
+        rows,
+        panic_safe = split.map_or(0, |v| usize_field(v, "panicSafe")),
+        false_pass = split.map_or(0, |v| usize_field(v, "falsePass")),
+        reflexive = split.map_or(0, |v| usize_field(v, "reflexive")),
+        vacuous = split.map_or(0, |v| usize_field(v, "vacuous")),
+        undecidable = split.map_or(0, |v| usize_field(v, "undecidable")),
+        "self-check: prove JSON parsed"
+    );
     let total = json
         .get("totalCallsites")
         .and_then(|v| v.as_u64())
@@ -320,6 +588,18 @@ fn prove_project(
         ));
     }
     Ok(json)
+}
+
+fn child_stderr() -> Result<Stdio, String> {
+    let Ok(path) = std::env::var("PROVEKIT_LOG_FILE") else {
+        return Ok(Stdio::inherit());
+    };
+    let file = std::fs::OpenOptions::new()
+        .create(true)
+        .append(true)
+        .open(&path)
+        .map_err(|e| format!("open PROVEKIT_LOG_FILE {path} for child stderr: {e}"))?;
+    Ok(Stdio::from(file))
 }
 
 fn copy_proof_to_imports(proof_file: &Path, imports: &Path) -> Result<(), String> {
@@ -779,6 +1059,64 @@ mod tests {
         json!({
             "rows": []
         })
+    }
+
+    fn oracle_obs(attempted: u64, resolved: u64) -> OracleScoreboard {
+        OracleScoreboard {
+            requested: true,
+            engaged: resolved > 0,
+            attempted,
+            resolved,
+        }
+    }
+
+    #[test]
+    fn oracle_convergence_waits_through_two_identical_cold_passes() {
+        let observations = [oracle_obs(7, 0), oracle_obs(7, 0)];
+
+        assert_eq!(
+            oracle_convergence_decision(&observations, 3, 5).expect("decision"),
+            OracleConvergenceDecision::Continue
+        );
+    }
+
+    #[test]
+    fn oracle_convergence_accepts_full_resolution_before_min_passes() {
+        let observations = [oracle_obs(7, 0), oracle_obs(7, 7)];
+
+        assert_eq!(
+            oracle_convergence_decision(&observations, 3, 5).expect("decision"),
+            OracleConvergenceDecision::Done
+        );
+    }
+
+    #[test]
+    fn oracle_convergence_accepts_stable_partial_resolution_after_min_passes() {
+        let observations = [
+            oracle_obs(3720, 3626),
+            oracle_obs(3720, 3626),
+            oracle_obs(3720, 3626),
+        ];
+
+        assert_eq!(
+            oracle_convergence_decision(&observations, 3, 5).expect("decision"),
+            OracleConvergenceDecision::Done
+        );
+    }
+
+    #[test]
+    fn oracle_convergence_fails_closed_at_max_without_stability() {
+        let observations = [
+            oracle_obs(10, 1),
+            oracle_obs(10, 2),
+            oracle_obs(10, 3),
+            oracle_obs(10, 4),
+            oracle_obs(10, 5),
+        ];
+
+        let err = oracle_convergence_decision(&observations, 3, 5)
+            .expect_err("nonconverged observations should fail closed");
+        assert!(err.contains("did not converge"), "unexpected error: {err}");
     }
 
     #[test]
