@@ -57,6 +57,14 @@ Regenerated 2026-06-01: added top-level `totalCallsites 1826` for release-gate
 floor verification. This is a backward-compatible scoreboard schema expansion;
 hard invariants and proof counts are unchanged.
 
+Regenerated 2026-06-01: `reflexive 628 -> 629`. The result-predicate alias-read
+slice adds `normalize_result_predicate_name` to `libprovekit`; that helper is
+itself a body-discharge-eligible contract and contributes one honest reflexive
+discharge through the dependency import chain. The shim target `catalogCid`
+stays `d1c2f286...`; writer output remains on the v1 `is_ok`/`is_err` tokens.
+Hard invariants unchanged: `falsePass 0`, `silentlyDropped 0`,
+`droppedSites []`; `panicSafe` remains 5.
+
 ## Normalization applied
 
 None. The output is byte-stable and path-independent without normalization:
