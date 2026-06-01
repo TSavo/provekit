@@ -110,6 +110,7 @@ fn args_with(
         emit_empty_formals: false,
         formal_sorts: Vec::new(),
         library: None,
+        panic_loci: Vec::new(),
         contract_name: "demo".into(),
         pre,
         post,

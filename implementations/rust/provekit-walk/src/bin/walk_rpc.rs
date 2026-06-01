@@ -1516,6 +1516,68 @@ fn is_panic_leaf(leaf: &str) -> bool {
     matches!(leaf, "unwrap" | "expect" | "unwrap_err")
 }
 
+/// PANIC-LOCUS PRESERVATION (#1745): collect the source loci of every panic-leaf
+/// method call (`x.unwrap()` / `.expect()` / `.unwrap_err()`) in a function body,
+/// keyed by the LIFTED argument term so the verifier can attribute a per-symbol
+/// `method:unwrap` obligation back to ITS OWN call site.
+///
+/// The problem this closes: a panic-leaf call lifts to the abstract ctor
+/// `method:unwrap` with NO source span (the IR term is span-free by design). Two
+/// functions both calling `.unwrap()` therefore produce two `method:unwrap`
+/// obligations that the verifier's per-symbol bridge index (`bridges_by_symbol`,
+/// last-writer-wins) collapses to a single call-site line. The line is the call
+/// OCCURRENCE's provenance, and each occurrence lives in exactly one function's
+/// contract, so we record it HERE, scoped to this contract.
+///
+/// Key = the lifted argument term (the unwrap RECEIVER, e.g. `to_string(v)`),
+/// produced by the SAME `lift_expr_to_term` the post lift uses, so it is
+/// byte-identical to the `method:unwrap` ctor's first arg as it appears in the
+/// contract `post`. enumerate matches an occurrence to its locus by this term
+/// (NOT by positional order, which is fragile across two distinct walks). A
+/// receiver that does not lift (returns None) records no locus: the occurrence
+/// then carries no line and stays honestly undecidable (fail-safe, never the
+/// collapsed line).
+fn collect_panic_loci(item_fn: &syn::ItemFn, rel_path: &str) -> Vec<Value> {
+    use syn::visit::Visit;
+
+    struct PanicLocusVisitor {
+        rel_path: String,
+        out: Vec<Value>,
+    }
+
+    impl<'ast> Visit<'ast> for PanicLocusVisitor {
+        fn visit_expr_method_call(&mut self, node: &'ast syn::ExprMethodCall) {
+            let leaf = node.method.to_string();
+            if is_panic_leaf(&leaf) {
+                // The obligation the verifier discharges is about the receiver
+                // (`to_string(v)` in `to_string(v).unwrap()`); lift it with the
+                // production lifter so the term matches the contract `post`.
+                if let Some(recv) = provekit_walk::lift::lift_expr_to_term(&node.receiver) {
+                    if let Ok(arg_term) = serde_json::to_value(&recv) {
+                        let start = node.method.span().start();
+                        self.out.push(json!({
+                            "argTerm": arg_term,
+                            "file": self.rel_path,
+                            "line": start.line,
+                            "col": start.column,
+                            "callee": format!("method:{}", leaf),
+                        }));
+                    }
+                }
+            }
+            // Descend so nested panic leaves (e.g. inside arguments) are seen.
+            syn::visit::visit_expr_method_call(self, node);
+        }
+    }
+
+    let mut v = PanicLocusVisitor {
+        rel_path: rel_path.to_string(),
+        out: Vec::new(),
+    };
+    v.visit_item_fn(item_fn);
+    v.out
+}
+
 /// Tier 2b (§2.T2b): for the still-unresolved method calls in `callsites`
 /// (`is_method && callee_crate.is_none()`), consult the rust-analyzer semantic
 /// oracle in one warm session and stamp the resolved (normalized) crate. Free
@@ -3045,6 +3107,22 @@ fn function_contract_lift(params: &Value) -> Result<Value, String> {
             }
             if !current_crate.is_empty() {
                 entry["library"] = json!(current_crate.clone());
+            }
+            // PANIC-LOCUS PRESERVATION (#1745): each panic-leaf call in this
+            // function's body (e.g. `x.unwrap()`) is an abstract ctor term in
+            // `post` with NO source span -- two functions calling `.unwrap()`
+            // both lift to the bare ctor `method:unwrap`, and the verifier's
+            // per-symbol bridge index collapses their distinct call-site lines
+            // to one (last-writer-wins). The line is the call OCCURRENCE's
+            // provenance, and the occurrence lives in THIS function's contract,
+            // so carry it here, scoped to this contract, keyed by the lifted
+            // argument term so enumerate can match a specific occurrence (not by
+            // fragile positional order). Emitted OUTSIDE the contract content CID
+            // (added after `canonical_bytes`, like `name`/`fn_name`): the locus
+            // is developer-facing provenance, not part of what is proven.
+            let panic_loci = collect_panic_loci(&target.item_fn, rel.as_str());
+            if !panic_loci.is_empty() {
+                entry["panicLoci"] = json!(panic_loci);
             }
             entries.push(entry);
         }

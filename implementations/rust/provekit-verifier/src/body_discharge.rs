@@ -622,11 +622,63 @@ pub fn callee_post_guard_fact(cs: &CallSite, pool: &MementoPool) -> Option<Json>
     };
     gdbg!("cond1 OK: arg ctor_name={ctor_name}");
 
-    // Condition 2: find a bridge for this ctor name and follow it to the target contract.
-    let Some(bridge) = pool.bridges_by_symbol.get(ctor_name) else {
-        gdbg!("REJECT cond2: no bridge in bridges_by_symbol for ctor_name={ctor_name} (have keys: {:?})",
-            pool.bridges_by_symbol.keys().collect::<Vec<_>>());
-        return None;
+    // Condition 2: find the producer bridge for this receiver call and follow it
+    // to the target contract.
+    //
+    // PANIC-LOCUS / CALLSITE-SCOPED (#1745): for a PANIC site the producer must
+    // be the one minted at THIS call's own `(bundle, file, line)` -- the
+    // totality contract that governs the receiver `to_string(...)` at THIS
+    // panic site, NOT whichever same-symbol producer won the per-symbol slot.
+    // `bridges_by_symbol` is last-writer-wins, so a single `to_string` totality
+    // bridge (e.g. f's `serde_json::to_string::<Value>` at line 25) would
+    // otherwise supply its `is_ok` guard fact to EVERY `to_string`-receiver
+    // unwrap, including g's `to_string::<MyStruct>` at line 38 (no totality) --
+    // the invisible false pass this fix exists to prevent. The unwrap and its
+    // receiver call share a source line, so the panic site's own `cs.line`
+    // (now occurrence-correct, not collapsed) keys the co-located producer.
+    // NO fallback to the per-symbol map for panic sites: a same-symbol totality
+    // from elsewhere must never discharge a panic obligation it does not govern.
+    // Non-panic sites keep the per-symbol lookup byte-for-byte.
+    let bridge: &Json = if cs.panic_site {
+        match (
+            cs.bridge_self_bundle_cid.as_deref(),
+            cs.file.as_deref(),
+            cs.line,
+        ) {
+            (Some(bundle), Some(file), Some(line)) => {
+                let key = (
+                    bundle.to_string(),
+                    file.to_string(),
+                    line,
+                    ctor_name.to_string(),
+                );
+                match pool.bridges_by_callsite.get(&key) {
+                    Some(b) => {
+                        gdbg!("cond2 callsite-scoped: producer bridge for {ctor_name} \
+                               at ({file}:{line}) found");
+                        b
+                    }
+                    None => {
+                        gdbg!("REJECT cond2 callsite-scoped: no producer bridge for \
+                               {ctor_name} co-located at ({file}:{line}) -> no guard fact \
+                               (panic site stays undecidable; refuse-floor intact)");
+                        return None;
+                    }
+                }
+            }
+            _ => {
+                gdbg!("REJECT cond2: panic site has no (bundle,file,line) provenance \
+                       -> no callsite-scoped producer (stays undecidable)");
+                return None;
+            }
+        }
+    } else {
+        let Some(b) = pool.bridges_by_symbol.get(ctor_name) else {
+            gdbg!("REJECT cond2: no bridge in bridges_by_symbol for ctor_name={ctor_name} (have keys: {:?})",
+                pool.bridges_by_symbol.keys().collect::<Vec<_>>());
+            return None;
+        };
+        b
     };
     let Some(target_cid) = bridge
         .get("evidence")

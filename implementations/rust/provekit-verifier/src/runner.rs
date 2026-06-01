@@ -28,7 +28,8 @@ use tracing::{debug, info, warn};
 
 use crate::body_discharge::callee_post_guard_fact;
 use crate::handshake::{
-    formula_hash, implication_property_hash, locate_producer_post, try_tier1, try_tier2,
+    formula_hash, implication_property_hash, locate_producer_post,
+    locate_producer_post_at_callsite, try_tier1, try_tier2,
 };
 use crate::solvers::{
     plan::SolverInvocation, registry, run_plan, SolverHandle, SolverPlan, SolversConfig,
@@ -1285,7 +1286,65 @@ fn work_one(
 
     let consumer_pre = resolved.ir_formula.as_ref();
     let consumer_pre_hash = consumer_pre.map(formula_hash);
-    let producer_post = locate_producer_post(&cs.arg_term, &pool.mementos, &pool.bridges_by_symbol);
+    // Producer-post resolution. For a PANIC site whose argument is itself a
+    // call, resolve the producer post CALLSITE-SCOPED: the producer guarantee
+    // minted at this exact `(bundle, file, line)` governs this call, not
+    // whichever same-symbol bridge won the per-symbol slot (see
+    // `locate_producer_post_at_callsite`). No fallback to the symbol map for
+    // panic sites: a same-symbol producer from elsewhere must not discharge a
+    // panic obligation it does not govern (that is the g/MyStruct discrimination
+    // and the falsePass=0 floor). Non-panic sites keep the existing per-symbol
+    // path byte-for-byte, so their discharge is unchanged.
+    let inner_ctor = cs
+        .arg_term
+        .as_ref()
+        .filter(|a| a.get("kind").and_then(|k| k.as_str()) == Some("ctor"))
+        .and_then(|a| a.get("name"))
+        .and_then(|n| n.as_str());
+    let producer_post = if cs.panic_site {
+        match (cs.bridge_self_bundle_cid.as_deref(), cs.file.as_deref(), cs.line) {
+            (Some(bundle), Some(file), Some(line)) => {
+                let pp = locate_producer_post_at_callsite(
+                    &cs.arg_term,
+                    bundle,
+                    file,
+                    line,
+                    &pool.mementos,
+                    &pool.bridges_by_callsite,
+                );
+                debug!(
+                    bridge = %cs.bridge_ir_name,
+                    panic_site = cs.panic_site,
+                    file = %file,
+                    line,
+                    bundle = %short(bundle),
+                    inner_ctor = ?inner_ctor,
+                    arg_term = %cs.arg_term.as_ref().map(|a| a.to_string()).unwrap_or_default(),
+                    property_cid = %short(&cs.property_cid),
+                    property_name = %cs.property_name,
+                    producer_post_found = pp.is_some(),
+                    producer_post_head = ?pp.as_ref().and_then(|(f, _)| producer_post_head(f)),
+                    "work_one: panic-site producer-post resolution (callsite-scoped)"
+                );
+                pp
+            }
+            _ => {
+                debug!(
+                    bridge = %cs.bridge_ir_name,
+                    panic_site = cs.panic_site,
+                    file = ?cs.file,
+                    line = ?cs.line,
+                    bundle = ?cs.bridge_self_bundle_cid,
+                    inner_ctor = ?inner_ctor,
+                    "work_one: panic-site has no (bundle,file,line) provenance; \
+                     no callsite-scoped producer post (stays undecidable, refuse-floor intact)"
+                );
+                None
+            }
+        }
+    } else {
+        locate_producer_post(&cs.arg_term, &pool.mementos, &pool.bridges_by_symbol)
+    };
 
     // Tier 0: Memento IS verification. Look up the formula CID in the pool.
     // The hash IS the boundary: we verify by hash lookup, not by solving.
@@ -1684,6 +1743,28 @@ fn short(s: &str) -> String {
     let cleaned = s.trim_start_matches("blake3-512:");
     let take: String = cleaned.chars().take(12).collect();
     format!("blake3-512:{take}...")
+}
+
+/// Predicate head of a formula for observability logging only. Peels a single
+/// `forall` to report the body's `name` (e.g. `is_ok` vs `=`), so the panic-site
+/// producer-post selection is legible in `work_one` debug logs (which post a
+/// callsite-scoped lookup actually chose). Carries no verification weight.
+fn producer_post_head(formula: &Json) -> Option<String> {
+    let inner = if formula.get("kind").and_then(|v| v.as_str()) == Some("forall") {
+        formula.get("body").unwrap_or(formula)
+    } else {
+        formula
+    };
+    inner
+        .get("name")
+        .and_then(|v| v.as_str())
+        .map(|s| s.to_string())
+        .or_else(|| {
+            inner
+                .get("kind")
+                .and_then(|v| v.as_str())
+                .map(|s| s.to_string())
+        })
 }
 
 fn build_implication_obligation(post_formula: &Json, pre_formula: &Json) -> Result<Json, String> {

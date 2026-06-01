@@ -269,6 +269,17 @@ pub struct MintContractArgs {
     /// metadata field, not part of the contract CID: it does not change what
     /// is proven, only how a call site resolves to it. `None` omits the key.
     pub library: Option<String>,
+    /// PANIC-LOCUS PRESERVATION (#1745): per-occurrence source loci for the
+    /// panic-leaf calls in this function's body, each `{argTerm, file, line,
+    /// col, callee}`. A panic-leaf call (`x.unwrap()`) lifts to the abstract
+    /// ctor `method:unwrap` with no source span, so two functions both calling
+    /// `.unwrap()` produce indistinguishable `method:unwrap` obligations whose
+    /// distinct lines the verifier's per-symbol bridge index would otherwise
+    /// collapse. Carried in the contract HEADER but OUTSIDE the contract content
+    /// CID (emitted after `contract_cid` is computed, exactly like `inputCids`/
+    /// `verdict`): the locus is developer-facing provenance, not part of what is
+    /// proven, so it must not move the contract identity. Empty omits the key.
+    pub panic_loci: Vec<Arc<Value>>,
 }
 
 // =============================================================================
@@ -518,6 +529,21 @@ pub fn mint_contract(args: &MintContractArgs) -> Result<MintedEnvelope, ClaimEnv
     sorted_inputs.sort();
     let inputs_arr: Vec<Arc<Value>> = sorted_inputs.into_iter().map(Value::string).collect();
     kind_specific.push(("inputCids".into(), Value::array(inputs_arr)));
+
+    // PANIC-LOCUS PRESERVATION (#1745): per-occurrence panic-leaf source loci.
+    // Emitted in the header so the verifier's `enumerate_callsites` (which reads
+    // the contract body via `memento_body`, i.e. the header for v1.2-layered
+    // mementos) can attribute each `method:unwrap` obligation to ITS OWN source
+    // line. Pushed AFTER `header_cid`/`property_hash` are computed: it is
+    // provenance, NOT contract identity (`contract_cid`/`contract_property_hash`
+    // never read it), so it must not perturb the contract CID. Omitted when
+    // empty so contracts with no panic leaf keep their existing header bytes.
+    if !args.panic_loci.is_empty() {
+        kind_specific.push((
+            "panicLoci".into(),
+            Value::array(args.panic_loci.clone()),
+        ));
+    }
 
     let header = build_header("contract", &header_cid, kind_specific);
 
@@ -954,6 +980,7 @@ mod tests {
             emit_empty_formals: false,
             formal_sorts: Vec::new(),
             library: None,
+            panic_loci: Vec::new(),
             contract_name: "x".into(),
             pre: None,
             post: None,
@@ -1000,6 +1027,7 @@ mod tests {
             emit_empty_formals: false,
             formal_sorts: Vec::new(),
             library: None,
+            panic_loci: Vec::new(),
             contract_name: "parseInt".into(),
             pre: Some(pre),
             post: None,
@@ -1031,6 +1059,7 @@ mod tests {
             emit_empty_formals: false,
             formal_sorts: Vec::new(),
             library: None,
+            panic_loci: Vec::new(),
             contract_name: "checked_add_u8.postcondition".into(),
             pre: None,
             post: Some(post),

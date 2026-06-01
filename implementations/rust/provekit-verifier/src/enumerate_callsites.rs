@@ -41,10 +41,25 @@ pub fn run(pool: &MementoPool) -> Vec<CallSite> {
             // Stable fallback: short prefix of CID.
             property_name = format!("{}...", cid.chars().take(12).collect::<String>());
         }
+        // PANIC-LOCUS PRESERVATION (#1745): the per-occurrence source loci the
+        // lifter stamped on THIS contract, each `{argTerm, file, line, col,
+        // callee}`. A panic-leaf call (`x.unwrap()`) lifts to the abstract ctor
+        // `method:unwrap` with no source span; the bridge index is per-symbol
+        // (last-writer-wins), so two functions both calling `.unwrap()` would
+        // otherwise collapse onto one call-site line. The locus lives on the
+        // contract the occurrence belongs to, so we read it HERE, scoped to this
+        // contract, and match an occurrence to its locus by the lifted argument
+        // term (see `panic_line_for`). Absent/empty -> panic sites in this
+        // contract carry no line (honestly undecidable), never a collapsed one.
+        let panic_loci: &[Json] = body
+            .get("panicLoci")
+            .and_then(|v| v.as_array())
+            .map(|a| a.as_slice())
+            .unwrap_or(&[]);
         for slot in ["pre", "post", "inv"] {
             if let Some(f) = body.get(slot) {
                 if f.is_object() {
-                    walk_formula(f, &property_name, cid, pool, &mut out);
+                    walk_formula(f, &property_name, cid, pool, panic_loci, &mut out);
                 }
             }
         }
@@ -70,6 +85,9 @@ fn walk_formula(
     property_name: &str,
     property_cid: &str,
     pool: &MementoPool,
+    // PANIC-LOCUS PRESERVATION (#1745): the loci stamped on the contract being
+    // walked, threaded down so a panic-site occurrence can resolve its OWN line.
+    panic_loci: &[Json],
     out: &mut Vec<CallSite>,
 ) {
     let kind = f.get("kind").and_then(|v| v.as_str()).unwrap_or_default();
@@ -84,21 +102,30 @@ fn walk_formula(
                     // A formula's terms have no dominating control-flow guard
                     // until a `cf_ite` is descended into, so the path condition
                     // starts empty here.
-                    walk_term(a, property_name, property_cid, pool, Some(f), &[], out);
+                    walk_term(
+                        a,
+                        property_name,
+                        property_cid,
+                        pool,
+                        Some(f),
+                        &[],
+                        panic_loci,
+                        out,
+                    );
                 }
             }
         }
         "and" | "or" | "not" | "implies" => {
             if let Some(ops) = f.get("operands").and_then(|v| v.as_array()) {
                 for op in ops {
-                    walk_formula(op, property_name, property_cid, pool, out);
+                    walk_formula(op, property_name, property_cid, pool, panic_loci, out);
                 }
             }
         }
         "forall" | "exists" => {
             if let Some(b) = f.get("body") {
                 if b.is_object() {
-                    walk_formula(b, property_name, property_cid, pool, out);
+                    walk_formula(b, property_name, property_cid, pool, panic_loci, out);
                 }
             }
         }
@@ -131,6 +158,32 @@ fn guarded_term_to_atomic(guard: &Json) -> Option<Json> {
     Some(serde_json::json!({ "kind": "atomic", "name": head, "args": args }))
 }
 
+/// PANIC-LOCUS PRESERVATION (#1745): resolve a panic-site occurrence's OWN
+/// source `(file, line, col)` from the contract's `panicLoci`, matching by the
+/// lifted argument term.
+///
+/// `arg_term` is the bridged ctor's first argument as it appears in the contract
+/// formula (the unwrap RECEIVER, e.g. `to_string(v)`). The lifter recorded each
+/// panic leaf keyed by that SAME lifted term (via the same `lift_expr_to_term`),
+/// so a byte-equal `argTerm` uniquely identifies the occurrence WITHIN this
+/// contract. This is a content match, not a positional one: two `.unwrap()`
+/// calls in one function on different receivers each find their own line
+/// regardless of walk order.
+///
+/// Returns `None` when the term matches no locus (the occurrence then carries no
+/// line and stays honestly undecidable -- fail-SAFE, never the collapsed
+/// per-symbol line). For the degenerate case of two byte-identical occurrences
+/// in one contract (same receiver, same lifted term => genuinely identical
+/// obligation, same verdict), the first locus is returned; the lines are a
+/// cosmetic tie, not a soundness question.
+fn panic_line_for<'a>(arg_term: Option<&Json>, panic_loci: &'a [Json]) -> Option<&'a Json> {
+    let arg = arg_term?;
+    panic_loci
+        .iter()
+        .find(|locus| locus.get("argTerm") == Some(arg))
+}
+
+#[allow(clippy::too_many_arguments)]
 fn walk_term(
     t: &Json,
     property_name: &str,
@@ -141,6 +194,9 @@ fn walk_term(
     // this position in the lifted caller body, accumulated as `cf_ite`
     // branches are descended. Empty at the top of a formula.
     path_cond: &[Json],
+    // PANIC-LOCUS PRESERVATION (#1745): the panic loci of the contract being
+    // walked. A panic site reads its own line from here, keyed by arg_term.
+    panic_loci: &[Json],
     out: &mut Vec<CallSite>,
 ) {
     if !t.is_object() {
@@ -172,15 +228,6 @@ fn walk_term(
             .filter(|s| !s.is_empty())
             .map(|s| s.to_string());
         let bridge_callsite = bbody.get("callsite");
-        let callsite_file = bridge_callsite
-            .and_then(|v| v.get("file"))
-            .and_then(|v| v.as_str())
-            .filter(|s| !s.is_empty())
-            .map(|s| s.to_string());
-        let callsite_line = bridge_callsite
-            .and_then(|v| v.get("start_line").or_else(|| v.get("line")))
-            .and_then(|v| v.as_u64())
-            .map(|n| n as usize);
         let callsite_callee = bbody
             .get("sourceSymbol")
             .and_then(|v| v.as_str())
@@ -190,6 +237,82 @@ fn walk_term(
             .and_then(|v| v.get("panicSite"))
             .and_then(|v| v.as_bool())
             .unwrap_or(false);
+        // The bridged ctor's first argument is the obligation's receiver
+        // (e.g. `to_string(v)` in `to_string(v).unwrap()`); it is both the
+        // CallSite's `arg_term` AND the key that pairs a panic occurrence with
+        // its source locus in THIS contract.
+        let arg_term = t
+            .get("args")
+            .and_then(|v| v.as_array())
+            .and_then(|arr| arr.first().cloned());
+        // PANIC-LOCUS PRESERVATION (#1745): a panic site reads its line/col/file
+        // from the contract's own `panicLoci`, keyed by `arg_term` -- NOT from
+        // the per-symbol bridge `callsite` (last-writer-wins, collapses two
+        // distinct `.unwrap()` lines to one). The bridge `callsite` still
+        // classifies `panicSite`, but its line is occurrence-collapsed and must
+        // NOT be the source of truth for a panic obligation's locus. A non-panic
+        // bridged call keeps reading its line from the bridge as before (those
+        // are 1:1 with their bridge and are not collapsed across occurrences).
+        let occ_locus = if panic_site {
+            panic_line_for(arg_term.as_ref(), panic_loci)
+        } else {
+            None
+        };
+        let (callsite_file, callsite_line) = if let Some(locus) = occ_locus {
+            let f = locus
+                .get("file")
+                .and_then(|v| v.as_str())
+                .filter(|s| !s.is_empty())
+                .map(|s| s.to_string());
+            let l = locus
+                .get("line")
+                .or_else(|| locus.get("start_line"))
+                .and_then(|v| v.as_u64())
+                .map(|n| n as usize);
+            (f, l)
+        } else if panic_site {
+            // No matching locus for a panic site: carry NO line. The collapsed
+            // bridge line must never stand in for the real occurrence -- that is
+            // exactly the silent mis-attribution this fix removes. The site then
+            // stays honestly undecidable downstream.
+            if panic_loci.is_empty() {
+                debug!(
+                    name = %name,
+                    "enumerate_callsites: panic site with no contract panicLoci -- \
+                     carrying no line (occurrence locus unavailable; honestly undecidable)"
+                );
+            } else {
+                warn!(
+                    name = %name,
+                    "enumerate_callsites: panic site arg_term matched no contract locus -- \
+                     carrying no line rather than the collapsed per-symbol bridge line \
+                     (panic-locus miss; site stays undecidable)"
+                );
+            }
+            (None, None)
+        } else {
+            // Non-panic bridged call: keep the bridge-carried locus (1:1, not
+            // subject to the per-symbol panic collapse).
+            let f = bridge_callsite
+                .and_then(|v| v.get("file"))
+                .and_then(|v| v.as_str())
+                .filter(|s| !s.is_empty())
+                .map(|s| s.to_string());
+            let l = bridge_callsite
+                .and_then(|v| v.get("start_line").or_else(|| v.get("line")))
+                .and_then(|v| v.as_u64())
+                .map(|n| n as usize);
+            (f, l)
+        };
+        if panic_site {
+            debug!(
+                name = %name,
+                line = ?callsite_line,
+                file = ?callsite_file,
+                matched_locus = occ_locus.is_some(),
+                "enumerate_callsites: panic-site locus resolved from contract panicLoci by arg_term"
+            );
+        }
         let cs = CallSite {
             bridge_ir_name: name.clone(),
             bridge_target_cid: bbody
@@ -211,10 +334,7 @@ fn walk_term(
             bridge_self_bundle_cid: pool.bridge_self_bundle_by_symbol.get(&name).cloned(),
             property_name: property_name.to_string(),
             property_cid: property_cid.to_string(),
-            arg_term: t
-                .get("args")
-                .and_then(|v| v.as_array())
-                .and_then(|arr| arr.first().cloned()),
+            arg_term: arg_term.clone(),
             containing_atomic: containing_atomic.cloned(),
             // Snapshot the dominating guard context for this call site. The
             // runner discharges a panic partial's `pre` under these facts.
@@ -275,7 +395,16 @@ fn walk_term(
                 branch_pc.push(g);
             }
             if let Some(v) = value {
-                walk_term(v, property_name, property_cid, pool, None, &branch_pc, out);
+                walk_term(
+                    v,
+                    property_name,
+                    property_cid,
+                    pool,
+                    None,
+                    &branch_pc,
+                    panic_loci,
+                    out,
+                );
             }
             // The guard term itself is a predicate over the receiver, not a
             // call value; do not descend it as a callsite source.
@@ -285,7 +414,16 @@ fn walk_term(
             // arg0: the condition term, evaluated in the enclosing context. It
             // introduces no path fact (the dominating fact rides cf_guarded).
             if let Some(c) = args.first() {
-                walk_term(c, property_name, property_cid, pool, None, path_cond, out);
+                walk_term(
+                    c,
+                    property_name,
+                    property_cid,
+                    pool,
+                    None,
+                    path_cond,
+                    panic_loci,
+                    out,
+                );
             }
             // arg1 (then) / arg2 (else): descend unchanged. A guarded branch is
             // a `cf_guarded` wrapper handled above; an unguarded branch carries
@@ -298,6 +436,7 @@ fn walk_term(
                     pool,
                     None,
                     path_cond,
+                    panic_loci,
                     out,
                 );
             }
@@ -320,7 +459,16 @@ fn walk_term(
             containing_atomic
         };
         for a in args {
-            walk_term(a, property_name, property_cid, pool, inner_atomic, path_cond, out);
+            walk_term(
+                a,
+                property_name,
+                property_cid,
+                pool,
+                inner_atomic,
+                path_cond,
+                panic_loci,
+                out,
+            );
         }
     }
 }

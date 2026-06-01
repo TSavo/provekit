@@ -151,6 +151,11 @@ pub fn mint_args(
         emit_empty_formals: contract.formals.is_empty(),
         formal_sorts,
         library: None,
+        // PANIC-LOCUS PRESERVATION (#1745): this single-contract envelope path
+        // (used by walk's own minter, not the project-wide ir-document mint the
+        // panic-freedom fixture drives) does not yet thread per-occurrence panic
+        // loci. Emit none here; the field omits cleanly when empty.
+        panic_loci: Vec::new(),
     }
 }
 
