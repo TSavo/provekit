@@ -87,6 +87,19 @@ architectural thesis at v2.
   - `(attempted, resolved) = (3764, 3358)` stable across 3 passes; the 406
     unresolved receivers are honest oracle ceiling (generics, dyn dispatch,
     macros), not cold-pass artifacts.
+- **D-lib slice queue in progress.**
+  - **PR-A (#1759, MERGED 2026-06-01):** Result::expect partial in rust-std
+    shim + walk disambiguation `(result, expect) -> result_expect`. Verifier
+    untouched. f_expect fixture e2e proves end-to-end composition with the
+    existing #1747 panic-safe discharge path (warm-oracle convergent harness
+    K=3, dischargeSplit `{panicSafe:2, falsePass:0, silentlyDropped:0}`).
+    Infrastructure for PR-C; no current production K delta.
+  - **PR-B (next):** libprovekit rust-implications consumer enablement.
+    `.provekit/lift/rust-implications/manifest.toml` + config.toml entry.
+    Wires libprovekit self-check to enumerate its own callsite obligations.
+    Baseline scoreboard measurement only; no K delta.
+  - **PR-C:** per-type infallibility totality for the 6 audited libprovekit
+    types. The K delta on libprovekit's self-check.
 
 ## Current census (provekit-cli, 32 unproven sites, named by category)
 
@@ -127,12 +140,20 @@ See "Where we are."
 ### Phase 2 - SUBSTANTIVE K - IN FLIGHT
 Each tier ships as one PR, golden-pinned, with visible scoreboard delta.
 
-- **D-lib per-type for libprovekit** (next slice): per-type infallibility
-  contracts for the 6 derived-Serialize types in libprovekit. Cleaner target
-  than provekit-cli (libprovekit owns these types). Expected K delta on
-  libprovekit's self-check: +6-8 sites. Discrimination triplet mandatory
-  (positive blessed / negative unregistered concrete / negative generic
-  `T: Serialize`).
+- **D-lib per-type for libprovekit** (in progress; three-PR split):
+  - **PR-A (MERGED, #1759):** Result::expect partial in rust-std shim + walk
+    disambiguation `(result, expect) -> result_expect`. Verifier untouched;
+    f_expect fixture e2e confirms end-to-end composition with #1747's
+    panic-safe path. Infrastructure for PR-C; no current K delta.
+  - **PR-B (next):** libprovekit `.provekit/lift/rust-implications/manifest.toml`
+    + `config.toml` entry. Enables libprovekit self-check to enumerate its
+    own callsite obligations. Baseline scoreboard only; no K delta.
+  - **PR-C (the K delta):** per-type infallibility manifest blessing the 6
+    audited libprovekit types; walk_rpc disambiguation extension to handle
+    per-crate concrete types; lift_implications lookup for blessed types.
+    Discrimination triplet mandatory (positive blessed / negative unregistered
+    concrete / negative generic `T: Serialize`). Expected K delta on
+    libprovekit's self-check: +6 to +12 sites.
 - **D-lib `&Value` for provekit-cli**: closes the 2 kit_dispatch.rs `&Value`
   sites via the existing #1747 mechanism.
 - **C `json!` construction tracking**: closes the 7 cmd_protocol.rs sites.
@@ -228,6 +249,8 @@ the first.
     fingerprint key.
   - #1758 (#1749 lift direct) panic_loci threading through provekit-lift
     direct mint.
+  - #1759 (D-lib PR-A) Result::expect partial in rust-std shim + walk
+    disambiguation mapping. Infrastructure for D-lib per-type slice.
 - **Open follow-up**: #1757 self-check golden drift reached main without
   gate update.
 - **Key files**: `provekit-verifier/src/{runner.rs, enumerate_callsites.rs,
