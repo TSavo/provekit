@@ -13,6 +13,9 @@ use serde::Serialize;
 use serde_json::Value;
 use tracing::{error, info};
 
+use crate::floor_runtime_check::{
+    floor_runtime_check, FloorCheckMode, FloorCheckStatus, FloorRuntimeCheck, FloorSignals,
+};
 use crate::panic_annotations_runtime::{
     annotation_runtime_check, AnnotationCheckMode, PanicCensusRow,
 };
@@ -298,6 +301,7 @@ fn run_inner(args: &SelfCheckArgs) -> Result<SelfCheckScoreboard, String> {
         &prove_json,
         AnnotationCheckMode::Strict,
     )?;
+    enforce_floor_runtime_checks(&scoreboard, &prove_json)?;
     info!(
         oracle_requested = scoreboard.oracle.requested,
         oracle_engaged = scoreboard.oracle.engaged,
@@ -314,6 +318,69 @@ fn run_inner(args: &SelfCheckArgs) -> Result<SelfCheckScoreboard, String> {
         "self-check: scoreboard built"
     );
     Ok(scoreboard)
+}
+
+fn floor_signals_from_scoreboard(
+    scoreboard: &SelfCheckScoreboard,
+    prove_json: &Value,
+) -> FloorSignals {
+    FloorSignals {
+        silently_dropped: scoreboard.silently_dropped as u64,
+        false_pass: scoreboard.discharge_split.false_pass as u64,
+        dropped_sites_count: scoreboard.dropped_sites.len(),
+        panic_census_unnamed_count: scoreboard
+            .panic_census
+            .iter()
+            .filter(|row| {
+                row.status != "proven" && row.category.is_none() && row.tier_to_close.is_none()
+            })
+            .count(),
+        total_callsites: prove_json
+            .get("totalCallsites")
+            .and_then(Value::as_u64)
+            .unwrap_or(0),
+        discharge_split_present: prove_json
+            .get("dischargeSplit")
+            .map_or(false, |value| !value.is_null()),
+    }
+}
+
+fn enforce_floor_runtime_checks(
+    scoreboard: &SelfCheckScoreboard,
+    prove_json: &Value,
+) -> Result<(), String> {
+    let checks = floor_runtime_check(
+        floor_signals_from_scoreboard(scoreboard, prove_json),
+        FloorCheckMode::Strict,
+    );
+    log_floor_runtime_checks(&checks);
+    let failures = checks
+        .iter()
+        .filter(|check| check.status == FloorCheckStatus::Fail)
+        .map(|check| format!("{}: {}", check.id, check.detail))
+        .collect::<Vec<_>>();
+    if failures.is_empty() {
+        Ok(())
+    } else {
+        Err(format!(
+            "floor runtime check failed: {}",
+            failures.join("; ")
+        ))
+    }
+}
+
+fn log_floor_runtime_checks(checks: &[FloorRuntimeCheck]) {
+    for check in checks {
+        info!(
+            check_id = %check.id,
+            check_name = %check.name,
+            check_domain = %check.domain,
+            check_status = ?check.status,
+            check_severity = ?check.severity,
+            check_detail = %check.detail,
+            "self-check: floor runtime check complete"
+        );
+    }
 }
 
 fn discover_repo_root() -> Result<PathBuf, String> {
@@ -2044,6 +2111,73 @@ reason = "stale annotation"
 
         assert!(
             err.contains("panic annotation runtime check failed") && err.contains("src/missing.rs"),
+            "unexpected error: {err}"
+        );
+    }
+
+    #[test]
+    fn runtime_floor_check_receives_post_scoreboard_projection() {
+        let td = tempfile::tempdir().expect("tempdir");
+        let mint = mint_json_with_diagnostics(vec![]);
+        let prove = json!({
+            "totalCallsites": 1,
+            "dischargeSplit": {
+                "panicSafe": 0,
+                "reflexive": 0,
+                "vacuous": 0,
+                "undecidable": 1,
+                "falsePass": 0
+            },
+            "rows": [panic_row("src/live.rs", 1, "method:unwrap", "undecidable", None)]
+        });
+        let scoreboard = build_scoreboard_with_runtime_annotations(
+            "target",
+            td.path(),
+            &mint,
+            &prove,
+            crate::panic_annotations_runtime::AnnotationCheckMode::Strict,
+        )
+        .expect("scoreboard");
+
+        let signals = floor_signals_from_scoreboard(&scoreboard, &prove);
+
+        assert_eq!(signals.silently_dropped, 0);
+        assert_eq!(signals.false_pass, 0);
+        assert_eq!(signals.dropped_sites_count, 0);
+        assert_eq!(signals.panic_census_unnamed_count, 1);
+        assert_eq!(signals.total_callsites, 1);
+        assert!(signals.discharge_split_present);
+    }
+
+    #[test]
+    fn runtime_floor_check_fails_self_check_on_hard_floor_violation() {
+        let td = tempfile::tempdir().expect("tempdir");
+        let mint = mint_json_with_diagnostics(vec![]);
+        let prove = json!({
+            "totalCallsites": 1,
+            "dischargeSplit": {
+                "panicSafe": 0,
+                "reflexive": 1,
+                "vacuous": 0,
+                "undecidable": 0,
+                "falsePass": 1
+            },
+            "rows": [panic_row("src/live.rs", 1, "method:unwrap", "discharged", Some("reflexive"))]
+        });
+        let scoreboard = build_scoreboard_with_runtime_annotations(
+            "target",
+            td.path(),
+            &mint,
+            &prove,
+            crate::panic_annotations_runtime::AnnotationCheckMode::Strict,
+        )
+        .expect("scoreboard");
+
+        let err = enforce_floor_runtime_checks(&scoreboard, &prove)
+            .expect_err("falsePass must fail the runtime floor");
+
+        assert!(
+            err.contains("floor runtime check failed") && err.contains("floor.false_pass.zero"),
             "unexpected error: {err}"
         );
     }

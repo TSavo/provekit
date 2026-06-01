@@ -32,6 +32,7 @@ pub struct OutputFlags {
 }
 
 pub mod cmd_self_check;
+pub mod floor_runtime_check;
 pub mod kit_dispatch;
 pub mod panic_annotations_runtime;
 pub mod project_config;

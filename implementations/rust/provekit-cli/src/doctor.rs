@@ -39,6 +39,11 @@ use crate::doctor_oracle::{
     OracleHostObservation, OracleHostReadiness, OracleResolutionConvergence,
     RustAnalyzerOracleAdapter,
 };
+#[cfg(test)]
+use crate::floor_runtime_check::{
+    floor_runtime_check, FloorCheckMode, FloorCheckSeverity, FloorCheckStatus, FloorRuntimeCheck,
+    FloorSignals,
+};
 use crate::lift_plugin::{parse_manifest_at, resolved_working_dir_for};
 use crate::project_config::{read_project_config, PluginEntry};
 
@@ -370,6 +375,51 @@ fn report_from_checks(kit_dir: &Path, mode: DoctorMode, checks: Vec<DoctorCheck>
         release_ready: ok && mode == DoctorMode::ReleaseGate,
         checks,
         ok,
+    }
+}
+
+// Doctor-side floor aggregation is test-gated in PR6 because the production
+// caller arrives in PR7's v1 release-gate orchestration.
+#[cfg(test)]
+fn report_from_floor_signals(
+    kit_dir: &Path,
+    mode: DoctorMode,
+    signals: FloorSignals,
+) -> DoctorReport {
+    let floor_checks = floor_runtime_check(signals, floor_mode_from_doctor_mode(mode));
+    let checks = floor_checks
+        .into_iter()
+        .map(doctor_check_from_floor_runtime)
+        .collect();
+    report_from_checks(kit_dir, mode, checks)
+}
+
+#[cfg(test)]
+fn floor_mode_from_doctor_mode(mode: DoctorMode) -> FloorCheckMode {
+    match mode {
+        DoctorMode::Structural => FloorCheckMode::Structural,
+        DoctorMode::Strict => FloorCheckMode::Strict,
+        DoctorMode::ReleaseGate => FloorCheckMode::ReleaseGate,
+    }
+}
+
+#[cfg(test)]
+fn doctor_check_from_floor_runtime(check: FloorRuntimeCheck) -> DoctorCheck {
+    DoctorCheck {
+        id: check.id,
+        name: check.name,
+        status: match check.status {
+            FloorCheckStatus::Pass => CheckStatus::Pass,
+            FloorCheckStatus::Warn => CheckStatus::Warn,
+            FloorCheckStatus::Fail => CheckStatus::Fail,
+        },
+        severity: match check.severity {
+            FloorCheckSeverity::Advisory => CheckSeverity::Advisory,
+            FloorCheckSeverity::Hard => CheckSeverity::Hard,
+        },
+        domain: check.domain,
+        detail: check.detail,
+        evidence: check.evidence,
     }
 }
 
@@ -2858,6 +2908,87 @@ mod tests {
             config.detail.contains(".provekit/config.toml"),
             "missing-config detail should name the file: {}",
             config.detail
+        );
+    }
+
+    #[test]
+    fn floor_report_ok_is_true_when_floor_checks_pass() {
+        let td = TempDir::new().unwrap();
+        let report = report_from_floor_signals(
+            td.path(),
+            DoctorMode::Strict,
+            crate::floor_runtime_check::FloorSignals {
+                silently_dropped: 0,
+                false_pass: 0,
+                dropped_sites_count: 0,
+                panic_census_unnamed_count: 0,
+                total_callsites: 1,
+                discharge_split_present: true,
+            },
+        );
+
+        assert!(report.ok, "passing floor report should be ok: {report:#?}");
+        assert!(report
+            .checks
+            .iter()
+            .all(|check| check.status != CheckStatus::Fail));
+    }
+
+    #[test]
+    fn floor_report_ok_is_false_when_any_floor_check_fails() {
+        let td = TempDir::new().unwrap();
+        let report = report_from_floor_signals(
+            td.path(),
+            DoctorMode::Strict,
+            crate::floor_runtime_check::FloorSignals {
+                silently_dropped: 0,
+                false_pass: 1,
+                dropped_sites_count: 0,
+                panic_census_unnamed_count: 0,
+                total_callsites: 1,
+                discharge_split_present: true,
+            },
+        );
+
+        assert!(!report.ok, "failing floor report must not be ok");
+        assert_eq!(
+            check_by_id(&report, "floor.false_pass.zero").status,
+            CheckStatus::Fail
+        );
+    }
+
+    #[test]
+    fn release_gate_floor_failure_marks_report_not_release_ready() {
+        let td = TempDir::new().unwrap();
+        let passing = report_from_floor_signals(
+            td.path(),
+            DoctorMode::ReleaseGate,
+            crate::floor_runtime_check::FloorSignals {
+                silently_dropped: 0,
+                false_pass: 0,
+                dropped_sites_count: 0,
+                panic_census_unnamed_count: 0,
+                total_callsites: 1,
+                discharge_split_present: true,
+            },
+        );
+        let failing = report_from_floor_signals(
+            td.path(),
+            DoctorMode::ReleaseGate,
+            crate::floor_runtime_check::FloorSignals {
+                silently_dropped: 0,
+                false_pass: 0,
+                dropped_sites_count: 0,
+                panic_census_unnamed_count: 0,
+                total_callsites: 0,
+                discharge_split_present: true,
+            },
+        );
+
+        assert!(passing.release_ready, "passing floor must be release ready");
+        assert!(
+            !failing.release_ready,
+            "failing floor must block release readiness"
         );
     }
 
