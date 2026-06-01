@@ -129,22 +129,40 @@ architectural thesis at v2.
   libprovekit imported via cross-target discharge), floor invariants intact.
   **Cumulative production K so far: 6 sites discharged via sound reasoning
   on real production code.**
+- **C `json!` construction tracking for provekit-cli (#1767, MERGED
+  2026-06-01).** Rust kit tracks explicit local `json!({ ... })`
+  construction facts and emits guarded postcondition terms for known string
+  field `as_str().unwrap()` sites. The verifier stays language-blind:
+  `cmd_protocol` discharges via kit-emitted `cf_guarded(...)` terms, while the
+  existing producer-bridge path still handles the 2 `kit_dispatch` `&Value`
+  sites. Result on provekit-cli self-check after syncing `provekit-realize-rust`:
+  `dischargeSplit={falsePass:0, panicSafe:13, reflexive:1009,
+  undecidable:1799, vacuous:875}`, `silentlyDropped=0`, `droppedSites=[]`,
+  `panicCensus=53`; the 7 `cmd_protocol.rs` sites and the 2 `kit_dispatch.rs`
+  sites are proven. **Cumulative production K so far: 13 sites discharged via
+  sound reasoning on real production code.**
 
-## Current census (provekit-cli, 32 unproven sites, named by category)
+## Current census (provekit-cli, post-#1767)
+
+Latest measured gate: `panicCensus=53`, `panicSafe=13`, `falsePass=0`,
+`silentlyDropped=0`, `droppedSites=[]`. The original 7-site C bucket is now
+closed by #1767; the remaining unproven rows need the B/D-fn/residue slices
+below, plus a full category refresh after the expanded `panicLoci` enumeration
+from #1765.
 
 | Category | Count | Closing mechanism |
 |---|---|---|
 | residue | 10 | Mutex `.lock().expect()` (9) + platform_semantics filesystem invariant (1). Honest residue; "lock is total" would be unsound. |
-| D-lib | 9 | serde_json totality. Splits: 2 `&Value` (close via existing #1747 mechanism); 6 libprovekit-blessable derived-Serialize types (PluginRegistryMemento, RealizedSource, Sort, Dialect, Term, RealizeRequest); 1 `to_string_pretty(&PluginRegistryMemento)`. |
-| C | 7 | `json!` construction tracking in cmd_protocol.rs (`payload["k"].as_str().unwrap()` pattern; literal field is built as String, must propagate). |
+| D-lib | 3 known remaining | serde_json totality not yet closed by #1762/#1765: remaining derived-Serialize / pretty-print cases. The `&Value` kit_dispatch sites are closed by #1765. |
+| C | 0 | Closed by #1767: 7 `cmd_protocol.rs` `payload["k"].as_str().unwrap()` sites discharged via Rust-kit `json!` construction tracking and `cf_guarded(...)` postcondition terms. |
 | B | 4 | Intra-fn `assert!(x.is_some()/is_ok())` propagation; plus `len==1 -> next()` guard. |
 | D-fn | 2 | Cross-function postconditions: catalog primitive `.cid()`, `Cid::parse` on literal. |
 | oracle-residue | 0 | None in panicCensus; the 406 unresolved receivers are non-panic obligations. |
 | unknown | 0 | Every site has a named category. Honest. |
 
-The honest read: ~22 closable sites (D-lib + C + B + D-fn), 10 named residue.
-v1 is "K covering the closable categories, residue named, hard floor never
-violated." K = N is not required and not honest.
+The honest read: C is closed, D-lib is mostly closed, and B/D-fn remain the
+next closable buckets. v1 is "K covering the closable categories, residue
+named, hard floor never violated." K = N is not required and not honest.
 
 ## Current census (libprovekit, 15 unproven sites, warm-oracle baseline)
 
@@ -217,9 +235,10 @@ Each tier ships as one PR, golden-pinned, with visible scoreboard delta.
   discharge via &Value totality. Bundles 4 structural fixes (bundle
   provenance, panicLoci enumeration, dep proof RPC flow,
   bodyDischargeEligible metadata persistence). +2 K delta on provekit-cli.
-- **C `json!` construction tracking**: closes the 7 cmd_protocol.rs sites.
-  New mechanism (track that `payload["k"]` returns Value::String when the
-  literal built `k` as a string); design checkpoint required.
+- **C `json!` construction tracking (MERGED, #1767):** closes the 7
+  cmd_protocol.rs sites. The Rust kit tracks local `json!` construction facts
+  and emits `cf_guarded(is_some(...), ...)` for known string field unwraps.
+  +7 K delta on provekit-cli; cumulative production K=13.
 - **B intra-fn `assert!` propagation**: closes the 4 sites where
   `assert!(x.is_some()/is_ok())` precedes the unwrap. New lifter surface,
   bounded.
@@ -320,12 +339,17 @@ the first.
     (verifier bundle provenance, panicLoci enumeration,
     `resolve_dependency_proofs` RPC flow, body-discharge metadata persistence).
     +2 K delta on provekit-cli. Cumulative production K: 6.
+  - #1767 (C slice) Rust-kit `json!` construction tracking emits
+    `cf_guarded(...)` postcondition terms for known string field unwraps.
+    +7 K delta on provekit-cli. Cumulative production K: 13.
 - **Open follow-ups**:
   - #1757 self-check golden drift reached main without gate update.
   - #1763 self-check should fail closed when requested oracle host cannot
     start.
   - #1764 cross-crate type totality should live in owning-crate contracts
     (currently project-local with `audited_for_crate` metadata).
+  - #1766 self-check should fail closed when a configured
+    `resolve_dependency_proofs` RPC binary is missing.
 - **Key files**: `provekit-verifier/src/{runner.rs, enumerate_callsites.rs,
   body_discharge.rs, handshake.rs, load_all_proofs.rs}`,
   `provekit-walk/src/{lift.rs, bin/walk_rpc.rs, envelope.rs}`,
