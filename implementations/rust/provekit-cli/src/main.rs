@@ -38,6 +38,7 @@ mod cmd_self_check;
 mod cmd_verify;
 mod cmd_verify_protocol;
 mod cmd_version;
+mod doctor;
 mod kit_dispatch;
 mod lift_plugin;
 mod project_config;
