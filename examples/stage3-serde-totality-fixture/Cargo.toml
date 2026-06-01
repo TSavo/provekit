@@ -1,8 +1,8 @@
 # Stage 3 fixture for the serde_json Value totality discharge.
 #
 # Discrimination test:
-#   f(&serde_json::Value) -> should discharge PANIC-SAFE (Value is total)
-#   g(&MyStruct)          -> should stay UNDECIDABLE (struct Serialize may fail)
+#   f/f_expect(&serde_json::Value) -> should discharge PANIC-SAFE (Value is total)
+#   g(&MyStruct)                   -> should stay UNDECIDABLE (struct Serialize may fail)
 #
 # Own [workspace] for RA isolation (fast index, no monorepo stall).
 [package]

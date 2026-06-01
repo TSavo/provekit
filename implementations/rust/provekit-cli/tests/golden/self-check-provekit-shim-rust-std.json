@@ -1,17 +1,17 @@
 {
   "target": "examples/provekit-shim-rust-std",
-  "catalogCid": "blake3-512:5943fb5bef2e46344df022782f50abe574ada18ff8db945c9906c926ee2ab0c85631acb82dd584d109f6571b96a772ed7df588d3368d09e1e331b9471f244f9c",
+  "catalogCid": "blake3-512:b17a0f02846bf0a1a5226db5e3bee0c5e31c0608981df83f82a6b111c24b336f5a43833449691b69dd32ebadd007e9b93d31401951d767470fd928d8cc68cfa6",
   "lift": {
-    "fnContracts": 27,
-    "bodyDischargeEligible": 27,
+    "fnContracts": 28,
+    "bodyDischargeEligible": 28,
     "bodyDischargeIneligible": {}
   },
   "bridges": {
     "emitted": 0,
     "liftGaps": {
       "no-contract-for-callee": 23,
-      "panic-site-unproven": 4,
-      "unsupported-macro-callsite": 4
+      "panic-site-unproven": 5,
+      "unsupported-macro-callsite": 5
     }
   },
   "oracle": {
@@ -26,7 +26,7 @@
     "panicSafe": 0,
     "reflexive": 656,
     "vacuous": 0,
-    "undecidable": 1276,
+    "undecidable": 1380,
     "falsePass": 0
   },
   "panicCensus": [
@@ -46,14 +46,21 @@
     },
     {
       "file": "src/lib.rs",
-      "line": 366,
-      "callee": "unwrap_err",
+      "line": 190,
+      "callee": "expect",
       "status": "unproven",
       "reason": "receiver type did not resolve to a known panic partial; a bare unwrap/expect would vacuous-pass, so the site is reported as unproven (cannot show it does not panic)"
     },
     {
       "file": "src/lib.rs",
       "line": 381,
+      "callee": "unwrap_err",
+      "status": "unproven",
+      "reason": "receiver type did not resolve to a known panic partial; a bare unwrap/expect would vacuous-pass, so the site is reported as unproven (cannot show it does not panic)"
+    },
+    {
+      "file": "src/lib.rs",
+      "line": 396,
       "callee": "expect",
       "status": "unproven",
       "reason": "receiver type did not resolve to a known panic partial; a bare unwrap/expect would vacuous-pass, so the site is reported as unproven (cannot show it does not panic)"

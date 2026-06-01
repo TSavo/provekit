@@ -5,6 +5,8 @@
 // Acceptance criteria:
 //   f: serde_json::to_string(&serde_json::Value).unwrap()
 //      -> PANIC-SAFE (Value serialization is total; is_ok(result) axiom fires)
+//   f_expect: serde_json::to_string(&serde_json::Value).expect(...)
+//      -> PANIC-SAFE through the same totality producer and Result precondition
 //
 //   g: serde_json::to_string(&MyStruct).unwrap()
 //      -> UNDECIDABLE (struct Serialize may fail; no totality contract)
@@ -23,6 +25,13 @@ use serde_json::Value;
 /// (post: is_ok(result)) -> .unwrap() discharges PANIC-SAFE.
 pub fn f(v: &Value) -> String {
     serde_json::to_string(v).unwrap()
+}
+
+/// Same totality producer as `f`, but through `Result::expect`. This proves the
+/// rust-std `result_expect` partial composes with the existing D-lib totality
+/// path rather than only existing in the shim catalog.
+pub fn f_expect(v: &Value) -> String {
+    serde_json::to_string(v).expect("infallible for Value")
 }
 
 /// The non-total case: `s` is a user-defined struct. The oracle resolves the
