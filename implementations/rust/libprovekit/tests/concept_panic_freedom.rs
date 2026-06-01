@@ -15,7 +15,15 @@ fn panic_freedom_constants_keep_existing_wire_tokens() {
         "concept:panic-freedom.result.err"
     );
     assert_eq!(panic_freedom::IS_SOME, "is_some");
+    assert_eq!(
+        panic_freedom::IS_SOME_CONCEPT,
+        "concept:panic-freedom.option.some"
+    );
     assert_eq!(panic_freedom::IS_NONE, "is_none");
+    assert_eq!(
+        panic_freedom::IS_NONE_CONCEPT,
+        "concept:panic-freedom.option.none"
+    );
     assert_eq!(panic_freedom::CF_GUARDED, "cf_guarded");
     assert_eq!(
         panic_freedom::CF_GUARDED_CONCEPT,
@@ -56,5 +64,34 @@ fn result_predicate_concept_aliases_normalize_to_v1_wire_tokens() {
     assert_eq!(
         panic_freedom::normalize_result_predicate_name("concept:panic-freedom.result.ok "),
         "concept:panic-freedom.result.ok "
+    );
+}
+
+#[test]
+fn option_predicate_concept_aliases_normalize_to_v1_wire_tokens() {
+    assert_eq!(
+        panic_freedom::normalize_option_predicate_name(panic_freedom::IS_SOME),
+        panic_freedom::IS_SOME
+    );
+    assert_eq!(
+        panic_freedom::normalize_option_predicate_name(panic_freedom::IS_SOME_CONCEPT),
+        panic_freedom::IS_SOME
+    );
+    assert_eq!(
+        panic_freedom::normalize_option_predicate_name(panic_freedom::IS_NONE),
+        panic_freedom::IS_NONE
+    );
+    assert_eq!(
+        panic_freedom::normalize_option_predicate_name(panic_freedom::IS_NONE_CONCEPT),
+        panic_freedom::IS_NONE
+    );
+
+    assert_eq!(
+        panic_freedom::normalize_option_predicate_name("concept:panic-freedom.option.SOME"),
+        "concept:panic-freedom.option.SOME"
+    );
+    assert_eq!(
+        panic_freedom::normalize_option_predicate_name("concept:panic-freedom.option.some "),
+        "concept:panic-freedom.option.some "
     );
 }

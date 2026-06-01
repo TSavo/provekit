@@ -21,8 +21,14 @@ pub const IS_ERR_CONCEPT: &str = "concept:panic-freedom.result.err";
 /// Substrate panic-freedom option-some predicate; see `SUBSTRATE-SHAPE-AUDIT.md`.
 pub const IS_SOME: &str = "is_some";
 
+/// Substrate panic-freedom option-some predicate alias; see `SUBSTRATE-SHAPE-AUDIT.md`.
+pub const IS_SOME_CONCEPT: &str = "concept:panic-freedom.option.some";
+
 /// Substrate panic-freedom option-none predicate; see `SUBSTRATE-SHAPE-AUDIT.md`.
 pub const IS_NONE: &str = "is_none";
+
+/// Substrate panic-freedom option-none predicate alias; see `SUBSTRATE-SHAPE-AUDIT.md`.
+pub const IS_NONE_CONCEPT: &str = "concept:panic-freedom.option.none";
 
 /// Substrate panic-freedom guarded-branch carrier; see `SUBSTRATE-SHAPE-AUDIT.md`.
 pub const CF_GUARDED: &str = "cf_guarded";
@@ -53,6 +59,18 @@ pub fn normalize_result_predicate_name(name: &str) -> &str {
     match name {
         IS_OK | IS_OK_CONCEPT => IS_OK,
         IS_ERR | IS_ERR_CONCEPT => IS_ERR,
+        _ => name,
+    }
+}
+
+/// Normalize option predicate aliases to the Rust v1 wire token.
+///
+/// Phase 4 readers accept the concept aliases without changing default Rust v1
+/// proof emission. Unknown predicate names stay opaque.
+pub fn normalize_option_predicate_name(name: &str) -> &str {
+    match name {
+        IS_SOME | IS_SOME_CONCEPT => IS_SOME,
+        IS_NONE | IS_NONE_CONCEPT => IS_NONE,
         _ => name,
     }
 }
