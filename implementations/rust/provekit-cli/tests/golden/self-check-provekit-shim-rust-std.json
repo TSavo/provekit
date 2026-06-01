@@ -21,6 +21,7 @@
   },
   "silentlyDropped": 0,
   "droppedSites": [],
+  "totalCallsites": 1826,
   "dischargeSplit": {
     "panicSafe": 5,
     "reflexive": 628,

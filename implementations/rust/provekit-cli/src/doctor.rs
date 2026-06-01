@@ -39,7 +39,6 @@ use crate::doctor_oracle::{
     OracleHostObservation, OracleHostReadiness, OracleResolutionConvergence,
     RustAnalyzerOracleAdapter,
 };
-#[cfg(test)]
 use crate::floor_runtime_check::{
     floor_runtime_check, FloorCheckMode, FloorCheckSeverity, FloorCheckStatus, FloorRuntimeCheck,
     FloorSignals,
@@ -378,10 +377,7 @@ fn report_from_checks(kit_dir: &Path, mode: DoctorMode, checks: Vec<DoctorCheck>
     }
 }
 
-// Doctor-side floor aggregation is test-gated in PR6 because the production
-// caller arrives in PR7's v1 release-gate orchestration.
-#[cfg(test)]
-fn report_from_floor_signals(
+pub fn report_from_floor_signals(
     kit_dir: &Path,
     mode: DoctorMode,
     signals: FloorSignals,
@@ -394,7 +390,6 @@ fn report_from_floor_signals(
     report_from_checks(kit_dir, mode, checks)
 }
 
-#[cfg(test)]
 fn floor_mode_from_doctor_mode(mode: DoctorMode) -> FloorCheckMode {
     match mode {
         DoctorMode::Structural => FloorCheckMode::Structural,
@@ -403,7 +398,6 @@ fn floor_mode_from_doctor_mode(mode: DoctorMode) -> FloorCheckMode {
     }
 }
 
-#[cfg(test)]
 fn doctor_check_from_floor_runtime(check: FloorRuntimeCheck) -> DoctorCheck {
     DoctorCheck {
         id: check.id,

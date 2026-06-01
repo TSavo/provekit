@@ -32,8 +32,15 @@ pub struct OutputFlags {
 }
 
 pub mod cmd_self_check;
+pub mod cmd_release_gate;
+#[allow(dead_code)]
+pub mod doctor;
+#[allow(dead_code)]
+pub mod doctor_oracle;
 pub mod floor_runtime_check;
 pub mod kit_dispatch;
+#[allow(dead_code)]
+pub mod lift_plugin;
 pub mod panic_annotations_runtime;
 pub mod project_config;
 pub mod sort_morphism_catalog;

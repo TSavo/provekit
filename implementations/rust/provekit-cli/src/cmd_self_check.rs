@@ -101,6 +101,8 @@ struct SelfCheckScoreboard {
     oracle: OracleScoreboard,
     silently_dropped: usize,
     dropped_sites: Vec<Site>,
+    #[serde(rename = "totalCallsites")]
+    total_callsites: u64,
     discharge_split: DischargeSplit,
     panic_census: Vec<PanicCensusEntry>,
 }
@@ -309,6 +311,7 @@ fn run_inner(args: &SelfCheckArgs) -> Result<SelfCheckScoreboard, String> {
         oracle_resolved = scoreboard.oracle.resolved,
         silently_dropped = scoreboard.silently_dropped,
         dropped_sites = scoreboard.dropped_sites.len(),
+        total_callsites = scoreboard.total_callsites,
         panic_census = scoreboard.panic_census.len(),
         panic_safe = scoreboard.discharge_split.panic_safe,
         false_pass = scoreboard.discharge_split.false_pass,
@@ -335,10 +338,7 @@ fn floor_signals_from_scoreboard(
                 row.status != "proven" && row.category.is_none() && row.tier_to_close.is_none()
             })
             .count(),
-        total_callsites: prove_json
-            .get("totalCallsites")
-            .and_then(Value::as_u64)
-            .unwrap_or(0),
+        total_callsites: scoreboard.total_callsites,
         discharge_split_present: prove_json
             .get("dischargeSplit")
             .map_or(false, |value| !value.is_null()),
@@ -922,6 +922,7 @@ fn build_scoreboard(
     let discharge_split = discharge_split(prove_json);
     let panic_census = panic_census(prove_json, unbridged_panic_sites, panic_annotations)?;
     let silently_dropped = dropped_sites.len();
+    let total_callsites = total_callsites(prove_json);
 
     Ok(SelfCheckScoreboard {
         target: target_rel.to_string(),
@@ -931,6 +932,7 @@ fn build_scoreboard(
         oracle,
         silently_dropped,
         dropped_sites,
+        total_callsites,
         discharge_split,
         panic_census,
     })
@@ -983,6 +985,7 @@ fn build_scoreboard_with_runtime_annotations(
         .map(panic_census_entry_from_row)
         .collect();
     let silently_dropped = dropped_sites.len();
+    let total_callsites = total_callsites(prove_json);
 
     Ok(SelfCheckScoreboard {
         target: target_rel.to_string(),
@@ -992,9 +995,17 @@ fn build_scoreboard_with_runtime_annotations(
         oracle,
         silently_dropped,
         dropped_sites,
+        total_callsites,
         discharge_split,
         panic_census,
     })
+}
+
+fn total_callsites(prove_json: &Value) -> u64 {
+    prove_json
+        .get("totalCallsites")
+        .and_then(Value::as_u64)
+        .unwrap_or(0)
 }
 
 fn panic_census_row_from_entry(entry: &PanicCensusEntry) -> PanicCensusRow {
@@ -1381,6 +1392,7 @@ fn emit_scoreboard(scoreboard: &SelfCheckScoreboard, json: bool) {
         scoreboard.oracle.resolved
     );
     println!("silentlyDropped: {}", scoreboard.silently_dropped);
+    println!("totalCallsites: {}", scoreboard.total_callsites);
     println!(
         "dischargeSplit: panicSafe={}, reflexive={}, vacuous={}, undecidable={}, falsePass={}",
         scoreboard.discharge_split.panic_safe,
@@ -1799,6 +1811,20 @@ mod tests {
                 "requested={requested}, resolved={resolved}"
             );
         }
+    }
+
+    #[test]
+    fn build_scoreboard_emits_total_callsites_for_release_gate_floor() {
+        let prove = json!({
+            "totalCallsites": 1,
+            "rows": []
+        });
+        let scoreboard =
+            build_scoreboard("target", &mint_json(true, 7, 7), &prove).expect("scoreboard");
+        let rendered = serde_json::to_value(&scoreboard).expect("scoreboard json");
+
+        assert_eq!(scoreboard.total_callsites, 1);
+        assert_eq!(rendered["totalCallsites"], 1);
     }
 
     #[test]
