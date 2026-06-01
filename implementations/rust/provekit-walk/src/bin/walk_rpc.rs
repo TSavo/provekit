@@ -32,8 +32,9 @@ use provekit_walk::emit::{
     rust_function_term_json_for_file, shadow_proof_ir_cid, shadow_to_proof_ir,
 };
 use provekit_walk::{
-    build_function_contract_with_file, build_function_contract_with_file_and_post_override,
-    build_shadow_source, lift_function_postcondition, lift_function_precondition, CalleeContract,
+    build_function_contract_with_file_and_post_override, build_shadow_source,
+    collect_explicit_function_return_facts, lift_function_postcondition_with_return_facts,
+    lift_function_precondition, CalleeContract,
 };
 use quote::ToTokens;
 use serde_json::{json, Value};
@@ -2763,8 +2764,17 @@ fn lift_post(params: &Value) -> Result<Value, String> {
         .get("fn_name")
         .and_then(|v| v.as_str())
         .ok_or("missing `fn_name`")?;
-    let item = parse_fn(src, fn_name)?;
-    let post = lift_function_postcondition(&item);
+    let file: syn::File = syn::parse_str(src).map_err(|e| format!("parse error: {}", e))?;
+    let return_facts = collect_explicit_function_return_facts(&file);
+    let item = file
+        .items
+        .into_iter()
+        .find_map(|item| match item {
+            syn::Item::Fn(f) if f.sig.ident == fn_name => Some(f),
+            _ => None,
+        })
+        .ok_or_else(|| format!("function `{}` not found", fn_name))?;
+    let post = lift_function_postcondition_with_return_facts(&item, &return_facts);
     serde_json::to_value(post.as_formula()).map_err(|e| e.to_string())
 }
 
@@ -2778,8 +2788,19 @@ fn contract(params: &Value) -> Result<Value, String> {
         .and_then(|v| v.as_str())
         .ok_or("missing `fn_name`")?;
     let file = params.get("file").and_then(|v| v.as_str());
-    let item = parse_fn(src, fn_name)?;
-    let contract = build_function_contract_with_file(&item, None, file);
+    let parsed: syn::File = syn::parse_str(src).map_err(|e| format!("parse error: {}", e))?;
+    let return_facts = collect_explicit_function_return_facts(&parsed);
+    let item = parsed
+        .items
+        .into_iter()
+        .find_map(|item| match item {
+            syn::Item::Fn(f) if f.sig.ident == fn_name => Some(f),
+            _ => None,
+        })
+        .ok_or_else(|| format!("function `{}` not found", fn_name))?;
+    let post = lift_function_postcondition_with_return_facts(&item, &return_facts).into_formula();
+    let contract =
+        build_function_contract_with_file_and_post_override(&item, None, file, Some(post));
     serde_json::from_slice(&contract.canonical_bytes).map_err(|e| e.to_string())
 }
 
@@ -3557,6 +3578,7 @@ fn function_contract_lift(params: &Value) -> Result<Value, String> {
             .display()
             .to_string()
             .replace('\\', "/");
+        let return_facts = collect_explicit_function_return_facts(&file);
 
         for target in collect_function_contract_targets(&file) {
             // Phase-2 Tier D-lib: when a sugar function carries `totality =
@@ -3577,7 +3599,10 @@ fn function_contract_lift(params: &Value) -> Result<Value, String> {
                     }],
                 })
             } else {
-                None
+                Some(
+                    lift_function_postcondition_with_return_facts(&target.item_fn, &return_facts)
+                        .into_formula(),
+                )
             };
             let contract = build_function_contract_with_file_and_post_override(
                 &target.item_fn,
@@ -11314,6 +11339,55 @@ pub fn record_only(report: ExitReport) {
                 .any(|diag| diag["kind"] == "body-discharge-gap"
                     && (diag["function"] == "report_exit_code" || diag["function"] == "wrap_ok")),
             "value-returning contracts must NOT surface a body-discharge gap under the reflexive policy: {diagnostics:?}"
+        );
+
+        let _ = fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn function_contract_lift_uses_explicit_result_string_signature_for_json_guards() {
+        let src = r##"
+use serde_json::json;
+
+pub fn jcs_cid(value: &serde_json::Value) -> Result<String, String> {
+    Ok(value.to_string())
+}
+
+pub fn mint(from: serde_json::Value) -> Result<String, String> {
+    let from_catalog_cid = jcs_cid(&from)?;
+    let body = json!({
+        "fromCatalogCid": from_catalog_cid
+    });
+    let payload = json!({
+        "fromCatalogCid": body["fromCatalogCid"].clone()
+    });
+    Ok(payload["fromCatalogCid"].as_str().unwrap().to_string())
+}
+"##;
+        let root = temp_workspace("function_contract_json_guard_signature");
+        let src_dir = root.join("src");
+        fs::create_dir_all(&src_dir).expect("create src dir");
+        fs::write(src_dir.join("lib.rs"), src).expect("write source");
+
+        let resp = function_contract_lift(&json!({
+            "workspace_root": root.to_string_lossy(),
+            "source_paths": ["."],
+        }))
+        .expect("function contract lift");
+
+        let ir = resp["ir"].as_array().expect("ir array");
+        let mint = ir
+            .iter()
+            .find(|entry| entry["name"] == "mint")
+            .unwrap_or_else(|| panic!("missing mint contract: {ir:?}"));
+        let post = serde_json::to_string(&mint["post"]).expect("post stringifies");
+        assert!(
+            post.contains("cf_guarded"),
+            "explicit Result<String, _> signature must feed json guard facts: {post}"
+        );
+        assert!(
+            post.contains("is_some"),
+            "guard fact must prove as_str() is Some: {post}"
         );
 
         let _ = fs::remove_dir_all(root);

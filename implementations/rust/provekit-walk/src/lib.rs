@@ -55,7 +55,10 @@ pub use envelope::{
     mint_args, wrap_function_contract, wrap_function_contract_cached, EnvelopeCache,
     DEV_SIGNER_SEED,
 };
-pub use lift::{lift_function_postcondition, lift_function_precondition, lift_predicate};
+pub use lift::{
+    collect_explicit_function_return_facts, lift_function_postcondition,
+    lift_function_postcondition_with_return_facts, lift_function_precondition, lift_predicate,
+};
 pub use shadow::{
     build_shadow_source, compose_chain, compose_edges, edge_memento_cid, edge_memento_value,
     CalleeContract, ComposedEdge, ShadowArrival, ShadowSlot, ShadowSource,
