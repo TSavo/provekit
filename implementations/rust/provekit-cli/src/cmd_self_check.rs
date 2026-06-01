@@ -77,6 +77,10 @@ struct PanicCensusEntry {
     callee: String,
     status: String,
     reason: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    category: Option<String>,
+    #[serde(rename = "tierToClose", skip_serializing_if = "Option::is_none")]
+    tier_to_close: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -97,6 +101,17 @@ struct SelfCheckScoreboard {
 struct MintOutput {
     proof_file: PathBuf,
     json: Value,
+}
+
+#[derive(Debug, Clone)]
+struct PanicSiteAnnotation {
+    file: String,
+    line: usize,
+    callee: String,
+    status: String,
+    category: String,
+    tier_to_close: String,
+    reason: String,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -820,9 +835,10 @@ fn build_scoreboard(
         .get("lift")
         .ok_or("target mint JSON missing lift result")?;
     let (lift, bridges, dropped_sites, unbridged_panic_sites) = lift_scoreboards(lift_json);
+    let panic_annotations = panic_site_annotations(lift_json)?;
     let oracle = oracle_scoreboard(mint_json);
     let discharge_split = discharge_split(prove_json);
-    let panic_census = panic_census(prove_json, unbridged_panic_sites);
+    let panic_census = panic_census(prove_json, unbridged_panic_sites, panic_annotations)?;
     let silently_dropped = dropped_sites.len();
 
     Ok(SelfCheckScoreboard {
@@ -960,7 +976,73 @@ fn discharge_split(prove_json: &Value) -> DischargeSplit {
     split
 }
 
-fn panic_census(prove_json: &Value, unbridged: Vec<Site>) -> Vec<PanicCensusEntry> {
+fn panic_site_annotations(
+    lift_json: &Value,
+) -> Result<BTreeMap<(String, usize, String), PanicSiteAnnotation>, String> {
+    let mut annotations = BTreeMap::new();
+    let Some(diagnostics) = lift_json.get("diagnostics").and_then(|v| v.as_array()) else {
+        return Ok(annotations);
+    };
+    for diagnostic in diagnostics {
+        if diagnostic.get("kind").and_then(|v| v.as_str()) != Some("panic-site-annotation") {
+            continue;
+        }
+        let file = required_annotation_string(diagnostic, "file")?;
+        let line = diagnostic
+            .get("line")
+            .and_then(|v| v.as_u64())
+            .ok_or_else(|| format!("panic-site annotation for {file} missing numeric line"))?
+            as usize;
+        let callee = required_annotation_string(diagnostic, "callee")?;
+        let status = required_annotation_string(diagnostic, "status")?;
+        if status != "residue" && status != "unproven" {
+            return Err(format!(
+                "panic-site annotation for {}:{} {} has invalid status `{}`",
+                file, line, callee, status
+            ));
+        }
+        let category = required_annotation_string(diagnostic, "category")?;
+        let tier_to_close = required_annotation_string(diagnostic, "tierToClose")?;
+        let reason = required_annotation_string(diagnostic, "reason")?;
+        let key = (file.clone(), line, callee.clone());
+        if annotations
+            .insert(
+                key,
+                PanicSiteAnnotation {
+                    file: file.clone(),
+                    line,
+                    callee: callee.clone(),
+                    status,
+                    category,
+                    tier_to_close,
+                    reason,
+                },
+            )
+            .is_some()
+        {
+            return Err(format!(
+                "duplicate panic-site annotation for {}:{} {}",
+                file, line, callee
+            ));
+        }
+    }
+    Ok(annotations)
+}
+
+fn required_annotation_string(diagnostic: &Value, field: &str) -> Result<String, String> {
+    diagnostic
+        .get(field)
+        .and_then(|v| v.as_str())
+        .filter(|s| !s.is_empty())
+        .map(str::to_string)
+        .ok_or_else(|| format!("panic-site annotation missing {field}"))
+}
+
+fn panic_census(
+    prove_json: &Value,
+    unbridged: Vec<Site>,
+    annotations: BTreeMap<(String, usize, String), PanicSiteAnnotation>,
+) -> Result<Vec<PanicCensusEntry>, String> {
     let mut by_site: BTreeMap<(String, usize, String), PanicCensusEntry> = BTreeMap::new();
     if let Some(rows) = prove_json.get("rows").and_then(|v| v.as_array()) {
         for row in rows {
@@ -1006,6 +1088,8 @@ fn panic_census(prove_json: &Value, unbridged: Vec<Site>) -> Vec<PanicCensusEntr
                     callee,
                     status,
                     reason,
+                    category: None,
+                    tier_to_close: None,
                 },
             );
         }
@@ -1020,10 +1104,31 @@ fn panic_census(prove_json: &Value, unbridged: Vec<Site>) -> Vec<PanicCensusEntr
                 callee: site.callee,
                 status: "unproven".to_string(),
                 reason: site.reason,
+                category: None,
+                tier_to_close: None,
             });
     }
 
-    by_site.into_values().collect()
+    for (key, annotation) in annotations {
+        let Some(entry) = by_site.get_mut(&key) else {
+            return Err(format!(
+                "stale panic-site annotation for {}:{} {}",
+                annotation.file, annotation.line, annotation.callee
+            ));
+        };
+        if entry.status == "proven" {
+            return Err(format!(
+                "proven panic-site annotation for {}:{} {}",
+                annotation.file, annotation.line, annotation.callee
+            ));
+        }
+        entry.status = annotation.status;
+        entry.category = Some(annotation.category);
+        entry.tier_to_close = Some(annotation.tier_to_close);
+        entry.reason = annotation.reason;
+    }
+
+    Ok(by_site.into_values().collect())
 }
 
 fn row_reason(row: &Value) -> String {
@@ -1243,9 +1348,69 @@ mod tests {
         })
     }
 
+    fn mint_json_with_diagnostics(diagnostics: Vec<Value>) -> Value {
+        json!({
+            "filenameCid": "blake3-512:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+            "oracle": {
+                "requested": true,
+                "reachable": true,
+                "attempted": 1,
+                "resolved": 1
+            },
+            "lift": {
+                "kind": "ir-document",
+                "ir": [],
+                "diagnostics": diagnostics
+            }
+        })
+    }
+
     fn prove_json() -> Value {
         json!({
             "rows": []
+        })
+    }
+
+    fn panic_row(
+        file: &str,
+        line: usize,
+        callee: &str,
+        status: &str,
+        method: Option<&str>,
+    ) -> Value {
+        let mut row = json!({
+            "file": file,
+            "line": line,
+            "callee": callee,
+            "panicSite": true,
+            "status": status,
+            "reason": "synthetic panic row"
+        });
+        if let Some(method) = method {
+            row.as_object_mut()
+                .expect("row object")
+                .insert("dischargeMethod".to_string(), json!(method));
+        }
+        row
+    }
+
+    fn panic_site_annotation(
+        file: &str,
+        line: usize,
+        callee: &str,
+        status: &str,
+        category: &str,
+        tier_to_close: &str,
+    ) -> Value {
+        json!({
+            "kind": "panic-site-annotation",
+            "file": file,
+            "line": line,
+            "callee": callee,
+            "status": status,
+            "category": category,
+            "tierToClose": tier_to_close,
+            "reason": "synthetic annotation reason"
         })
     }
 
@@ -1465,5 +1630,196 @@ mod tests {
                 "requested={requested}, resolved={resolved}"
             );
         }
+    }
+
+    #[test]
+    fn panic_census_applies_residue_annotation_to_unproven_site() {
+        let mint = mint_json_with_diagnostics(vec![panic_site_annotation(
+            "src/kit_dispatch.rs",
+            106,
+            "expect",
+            "residue",
+            "lock_poisoning_residue",
+            "irreducible",
+        )]);
+        let prove = json!({
+            "rows": [panic_row("src/kit_dispatch.rs", 106, "expect", "undecidable", None)]
+        });
+
+        let scoreboard = build_scoreboard("target", &mint, &prove).expect("scoreboard");
+        let rendered = serde_json::to_value(&scoreboard).expect("scoreboard json");
+        let row = &rendered["panicCensus"][0];
+
+        assert_eq!(row["status"], "residue");
+        assert_eq!(row["category"], "lock_poisoning_residue");
+        assert_eq!(row["tierToClose"], "irreducible");
+        assert_eq!(row["reason"], "synthetic annotation reason");
+    }
+
+    #[test]
+    fn panic_census_applies_tier_to_close_annotation_without_proving_site() {
+        let mint = mint_json_with_diagnostics(vec![panic_site_annotation(
+            "src/kit_dispatch.rs",
+            2416,
+            "expect",
+            "unproven",
+            "D-lib",
+            "provekit-cli per-type infallible serialization for RealizeRequest",
+        )]);
+        let prove = json!({
+            "rows": [panic_row("src/kit_dispatch.rs", 2416, "expect", "undecidable", None)]
+        });
+
+        let scoreboard = build_scoreboard("target", &mint, &prove).expect("scoreboard");
+        let rendered = serde_json::to_value(&scoreboard).expect("scoreboard json");
+        let row = &rendered["panicCensus"][0];
+
+        assert_eq!(row["status"], "unproven");
+        assert_eq!(row["category"], "D-lib");
+        assert_eq!(
+            row["tierToClose"],
+            "provekit-cli per-type infallible serialization for RealizeRequest"
+        );
+    }
+
+    #[test]
+    fn panic_census_rejects_duplicate_annotation_keys() {
+        let mint = mint_json_with_diagnostics(vec![
+            panic_site_annotation(
+                "src/kit_dispatch.rs",
+                106,
+                "expect",
+                "residue",
+                "lock_poisoning_residue",
+                "irreducible",
+            ),
+            panic_site_annotation(
+                "src/kit_dispatch.rs",
+                106,
+                "expect",
+                "unproven",
+                "D-lib",
+                "future tier",
+            ),
+        ]);
+        let prove = json!({
+            "rows": [panic_row("src/kit_dispatch.rs", 106, "expect", "undecidable", None)]
+        });
+
+        let err = build_scoreboard("target", &mint, &prove)
+            .expect_err("duplicate annotations must fail closed");
+        assert!(
+            err.contains("duplicate panic-site annotation"),
+            "unexpected error: {err}"
+        );
+    }
+
+    #[test]
+    fn panic_census_rejects_stale_annotation_without_matching_site() {
+        let mint = mint_json_with_diagnostics(vec![panic_site_annotation(
+            "src/kit_dispatch.rs",
+            9999,
+            "expect",
+            "residue",
+            "lock_poisoning_residue",
+            "irreducible",
+        )]);
+        let prove = json!({
+            "rows": [panic_row("src/kit_dispatch.rs", 106, "expect", "undecidable", None)]
+        });
+
+        let err = build_scoreboard("target", &mint, &prove)
+            .expect_err("stale annotations must fail closed");
+        assert!(
+            err.contains("stale panic-site annotation"),
+            "unexpected error: {err}"
+        );
+    }
+
+    #[test]
+    fn panic_census_rejects_annotation_on_proven_site() {
+        let mint = mint_json_with_diagnostics(vec![panic_site_annotation(
+            "src/kit_dispatch.rs",
+            106,
+            "expect",
+            "residue",
+            "lock_poisoning_residue",
+            "irreducible",
+        )]);
+        let prove = json!({
+            "rows": [panic_row(
+                "src/kit_dispatch.rs",
+                106,
+                "expect",
+                "discharged",
+                Some("panic-safe")
+            )]
+        });
+
+        let err = build_scoreboard("target", &mint, &prove)
+            .expect_err("annotations on proven sites must fail closed");
+        assert!(
+            err.contains("proven panic-site annotation"),
+            "unexpected error: {err}"
+        );
+    }
+
+    #[test]
+    fn panic_census_rejects_annotation_missing_tier_to_close() {
+        let mut annotation = panic_site_annotation(
+            "src/kit_dispatch.rs",
+            106,
+            "expect",
+            "residue",
+            "lock_poisoning_residue",
+            "irreducible",
+        );
+        annotation
+            .as_object_mut()
+            .expect("annotation object")
+            .remove("tierToClose");
+        let mint = mint_json_with_diagnostics(vec![annotation]);
+        let prove = json!({
+            "rows": [panic_row("src/kit_dispatch.rs", 106, "expect", "undecidable", None)]
+        });
+
+        let err = build_scoreboard("target", &mint, &prove)
+            .expect_err("missing tierToClose must fail closed");
+        assert!(err.contains("tierToClose"), "unexpected error: {err}");
+    }
+
+    #[test]
+    fn panic_census_annotation_preserves_panic_safe_count() {
+        let mut rows = Vec::new();
+        for line in 1..=21 {
+            rows.push(panic_row(
+                "src/proven.rs",
+                line,
+                "unwrap",
+                "discharged",
+                Some("panic-safe"),
+            ));
+        }
+        rows.push(panic_row(
+            "src/kit_dispatch.rs",
+            106,
+            "expect",
+            "undecidable",
+            None,
+        ));
+        let mint = mint_json_with_diagnostics(vec![panic_site_annotation(
+            "src/kit_dispatch.rs",
+            106,
+            "expect",
+            "residue",
+            "lock_poisoning_residue",
+            "irreducible",
+        )]);
+        let prove = json!({ "rows": rows });
+
+        let scoreboard = build_scoreboard("target", &mint, &prove).expect("scoreboard");
+
+        assert_eq!(scoreboard.discharge_split.panic_safe, 21);
+        assert_eq!(scoreboard.discharge_split.false_pass, 0);
     }
 }
