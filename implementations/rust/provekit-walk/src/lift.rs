@@ -59,6 +59,9 @@ struct LiftCtx {
     scope: Vec<Vec<(String, String)>>,
     local_value_kinds: BTreeMap<String, ValueKind>,
     return_facts: FunctionReturnFacts,
+    assertion_guard_facts: Vec<TrackedGuardFact>,
+    len_eq_one_facts: Vec<LenEqOneFact>,
+    mutable_roots: HashSet<String>,
 }
 
 impl LiftCtx {
@@ -72,6 +75,9 @@ impl LiftCtx {
             scope: Vec::new(),
             local_value_kinds: BTreeMap::new(),
             return_facts,
+            assertion_guard_facts: Vec::new(),
+            len_eq_one_facts: Vec::new(),
+            mutable_roots: HashSet::new(),
         }
     }
 
@@ -108,6 +114,12 @@ impl LiftCtx {
         }
         base.to_string()
     }
+
+    fn invalidate_root(&mut self, root: &str) {
+        self.local_value_kinds.remove(root);
+        self.assertion_guard_facts.retain(|fact| fact.root != root);
+        self.len_eq_one_facts.retain(|fact| fact.root != root);
+    }
 }
 
 #[derive(Clone, Debug, Default)]
@@ -123,6 +135,20 @@ enum ValueKind {
     Bool,
     JsonObject(BTreeMap<String, ValueKind>),
     Unknown,
+}
+
+#[derive(Clone, Debug)]
+struct TrackedGuardFact {
+    root: String,
+    receiver_key: String,
+    guard_head: String,
+    guard: IrTerm,
+}
+
+#[derive(Clone, Debug)]
+struct LenEqOneFact {
+    root: String,
+    receiver_key: String,
 }
 
 /// Collect only EXPLICIT signature facts from a Rust file. This is a
@@ -277,6 +303,8 @@ pub fn lift_function_postcondition_with_return_facts(
         .collect();
 
     seed_param_value_kinds(item_fn, &mut ctx);
+    seed_mutable_param_roots(item_fn, &mut ctx);
+    collect_assertion_guard_facts(stmts, &mut ctx);
     collect_local_value_facts(stmts, &mut ctx);
 
     // 2. Trailing-expression derivation: if the function body ends with
@@ -423,6 +451,11 @@ fn branch_guard_head(cond_head: &str, else_branch: bool) -> Option<&'static str>
 /// `cf_ite` byte-identical to before this change (CID stability / reflexive
 /// discharge unperturbed).
 fn wrap_branch_guard(cond_term: &IrTerm, else_branch: bool, value: IrTerm) -> IrTerm {
+    if !else_branch {
+        if let Some(guard) = len_eq_one_branch_guard(cond_term, &value) {
+            return wrap_cf_guarded(guard, value);
+        }
+    }
     let (head, args) = match &cond_term {
         IrTerm::Ctor { name, args } => (name.as_str(), args),
         _ => return value,
@@ -437,6 +470,49 @@ fn wrap_branch_guard(cond_term: &IrTerm, else_branch: bool, value: IrTerm) -> Ir
     IrTerm::Ctor {
         name: "cf_guarded".to_string(),
         args: vec![guard, value],
+    }
+}
+
+fn len_eq_one_branch_guard(cond_term: &IrTerm, value: &IrTerm) -> Option<IrTerm> {
+    let receiver_key = len_eq_one_receiver_key(cond_term)?;
+    let next_receiver = find_next_partial_receiver(value, &receiver_key)?;
+    Some(IrTerm::Ctor {
+        name: "is_some".to_string(),
+        args: vec![next_receiver],
+    })
+}
+
+fn len_eq_one_receiver_key(cond_term: &IrTerm) -> Option<String> {
+    let IrTerm::Ctor { name, args } = cond_term else {
+        return None;
+    };
+    if name != "cf_eq" || args.len() != 2 {
+        return None;
+    }
+    let receiver = if is_const_one(&args[1]) {
+        len_receiver_term(&args[0])?
+    } else if is_const_one(&args[0]) {
+        len_receiver_term(&args[1])?
+    } else {
+        return None;
+    };
+    term_key(&receiver)
+}
+
+fn find_next_partial_receiver(term: &IrTerm, collection_receiver_key: &str) -> Option<IrTerm> {
+    match term {
+        IrTerm::Ctor { name, args }
+            if matches!(name.as_str(), "method:unwrap" | "method:expect")
+                && !args.is_empty()
+                && next_into_iter_receiver_key(&args[0]).as_deref()
+                    == Some(collection_receiver_key) =>
+        {
+            Some(args[0].clone())
+        }
+        IrTerm::Ctor { args, .. } => args
+            .iter()
+            .find_map(|arg| find_next_partial_receiver(arg, collection_receiver_key)),
+        _ => None,
     }
 }
 
@@ -632,6 +708,20 @@ fn collect_pat_names(pat: &Pat, out: &mut HashSet<String>) {
     }
 }
 
+fn seed_mutable_param_roots(item_fn: &ItemFn, ctx: &mut LiftCtx) {
+    for input in &item_fn.sig.inputs {
+        let FnArg::Typed(arg) = input else {
+            continue;
+        };
+        let Pat::Ident(ident) = &*arg.pat else {
+            continue;
+        };
+        if ident.mutability.is_some() {
+            ctx.mutable_roots.insert(ident.ident.to_string());
+        }
+    }
+}
+
 fn seed_param_value_kinds(item_fn: &ItemFn, ctx: &mut LiftCtx) {
     for input in &item_fn.sig.inputs {
         let FnArg::Typed(arg) = input else {
@@ -648,6 +738,164 @@ fn seed_param_value_kinds(item_fn: &ItemFn, ctx: &mut LiftCtx) {
                 .insert(ident.ident.to_string(), ValueKind::String);
         }
     }
+}
+
+/// Track top-level facts established by `assert!` for later panic partials.
+///
+/// SOUNDNESS / refuse-floor: the propagation is same-function, top-level, and
+/// same-receiver only. Branch-local asserts are not scanned; mutations or
+/// shadowing invalidate a fact immediately. Mutable roots are refused because
+/// this slice does not model aliasing or mutation.
+fn collect_assertion_guard_facts(stmts: &[Stmt], ctx: &mut LiftCtx) {
+    for stmt in stmts {
+        match stmt {
+            Stmt::Local(local) => {
+                let mut names = HashSet::new();
+                collect_pat_names(&local.pat, &mut names);
+                let local_mutable = local_binding_ident(local)
+                    .map(|(_, mutable)| mutable)
+                    .unwrap_or(false);
+                for name in names {
+                    ctx.invalidate_root(&name);
+                    if local_mutable {
+                        ctx.mutable_roots.insert(name);
+                    }
+                }
+            }
+            Stmt::Macro(StmtMacro { mac, .. }) => {
+                collect_assert_macro_guard_fact(mac, ctx);
+            }
+            Stmt::Expr(Expr::Macro(ExprMacro { mac, .. }), _) => {
+                collect_assert_macro_guard_fact(mac, ctx);
+            }
+            Stmt::Expr(expr, _) => invalidate_assignment_targets(expr, ctx),
+            Stmt::Item(_) => {}
+        }
+    }
+}
+
+fn collect_assert_macro_guard_fact(mac: &Macro, ctx: &mut LiftCtx) {
+    let Some(first) = assert_macro_condition(mac) else {
+        return;
+    };
+    if let Some(fact) = tracked_direct_guard_fact(&first, ctx) {
+        ctx.assertion_guard_facts.push(fact);
+        return;
+    }
+    if let Some(fact) = tracked_len_eq_one_fact(&first, ctx) {
+        ctx.len_eq_one_facts.push(fact);
+    }
+}
+
+fn assert_macro_condition(mac: &Macro) -> Option<Expr> {
+    let seg = mac.path.segments.last()?;
+    if seg.ident != "assert" {
+        return None;
+    }
+    let parsed_cond = syn::parse2::<Expr>(mac.tokens.clone()).ok()?;
+    // assert!(c) parses to just c. assert!(c, "msg") parses as a tuple-expr;
+    // take the first elem.
+    match parsed_cond {
+        Expr::Tuple(t) => t.elems.first().cloned(),
+        other => Some(other),
+    }
+}
+
+fn tracked_direct_guard_fact(expr: &Expr, ctx: &mut LiftCtx) -> Option<TrackedGuardFact> {
+    let Expr::MethodCall(method_call) = expr else {
+        return None;
+    };
+    if !method_call.args.is_empty() {
+        return None;
+    }
+    let guard_head = method_call.method.to_string();
+    if !matches!(guard_head.as_str(), "is_some" | "is_ok" | "is_err") {
+        return None;
+    }
+    let root = expr_root_ident(&method_call.receiver)?;
+    if ctx.mutable_roots.contains(&root) {
+        return None;
+    }
+    let receiver = lift_expr_to_term_inner(&method_call.receiver, ctx)?;
+    let receiver_key = term_key(&receiver)?;
+    let guard = IrTerm::Ctor {
+        name: guard_head.clone(),
+        args: vec![receiver],
+    };
+    Some(TrackedGuardFact {
+        root,
+        receiver_key,
+        guard_head,
+        guard,
+    })
+}
+
+fn tracked_len_eq_one_fact(expr: &Expr, ctx: &mut LiftCtx) -> Option<LenEqOneFact> {
+    let Expr::Binary(binary) = expr else {
+        return None;
+    };
+    if !matches!(binary.op, BinOp::Eq(_)) {
+        return None;
+    }
+    let left = lift_expr_to_term_inner(&binary.left, ctx)?;
+    let right = lift_expr_to_term_inner(&binary.right, ctx)?;
+    let receiver = if is_const_one(&right) {
+        len_receiver_term(&left)?
+    } else if is_const_one(&left) {
+        len_receiver_term(&right)?
+    } else {
+        return None;
+    };
+    let root =
+        len_receiver_root_expr(&binary.left).or_else(|| len_receiver_root_expr(&binary.right))?;
+    if ctx.mutable_roots.contains(&root) {
+        return None;
+    }
+    Some(LenEqOneFact {
+        root,
+        receiver_key: term_key(&receiver)?,
+    })
+}
+
+fn len_receiver_term(term: &IrTerm) -> Option<IrTerm> {
+    match term {
+        IrTerm::Ctor { name, args } if name == "method:len" && args.len() == 1 => {
+            Some(args[0].clone())
+        }
+        _ => None,
+    }
+}
+
+fn len_receiver_root_expr(expr: &Expr) -> Option<String> {
+    match expr {
+        Expr::MethodCall(method_call)
+            if method_call.method == "len" && method_call.args.is_empty() =>
+        {
+            expr_root_ident(&method_call.receiver)
+        }
+        Expr::Paren(paren) => len_receiver_root_expr(&paren.expr),
+        _ => None,
+    }
+}
+
+fn is_const_one(term: &IrTerm) -> bool {
+    matches!(term, IrTerm::Const { value, .. } if value.as_i64() == Some(1))
+}
+
+fn expr_root_ident(expr: &Expr) -> Option<String> {
+    match expr {
+        Expr::Path(path) => path.path.segments.last().map(|seg| seg.ident.to_string()),
+        Expr::Reference(reference) => expr_root_ident(&reference.expr),
+        Expr::Paren(paren) => expr_root_ident(&paren.expr),
+        Expr::Cast(cast) => expr_root_ident(&cast.expr),
+        Expr::Field(field) => expr_root_ident(&field.base),
+        Expr::Index(index) => expr_root_ident(&index.expr),
+        _ => None,
+    }
+}
+
+fn term_key(term: &IrTerm) -> Option<String> {
+    serde_json::to_string(term).ok()
 }
 
 /// Track local json! construction facts for this function body.
@@ -705,7 +953,7 @@ fn invalidate_assignment_targets(expr: &Expr, ctx: &mut LiftCtx) {
     match expr {
         Expr::Assign(assign) => {
             if let Some(root) = assignment_root_ident(&assign.left) {
-                ctx.local_value_kinds.remove(&root);
+                ctx.invalidate_root(&root);
             }
             invalidate_assignment_targets(&assign.right, ctx);
         }
@@ -927,15 +1175,61 @@ fn receiver_as_str_is_known_json_string(receiver: &Expr, ctx: &LiftCtx) -> bool 
 }
 
 fn wrap_known_option_unwrap_guard(receiver: IrTerm, value: IrTerm) -> IrTerm {
+    wrap_cf_guarded(
+        IrTerm::Ctor {
+            name: "is_some".to_string(),
+            args: vec![receiver],
+        },
+        value,
+    )
+}
+
+fn wrap_cf_guarded(guard: IrTerm, value: IrTerm) -> IrTerm {
     IrTerm::Ctor {
         name: "cf_guarded".to_string(),
-        args: vec![
-            IrTerm::Ctor {
-                name: "is_some".to_string(),
-                args: vec![receiver],
-            },
-            value,
-        ],
+        args: vec![guard, value],
+    }
+}
+
+fn assertion_guard_for_partial(
+    method: &syn::Ident,
+    receiver_term: &IrTerm,
+    ctx: &LiftCtx,
+) -> Option<IrTerm> {
+    let method = method.to_string();
+    let receiver_key = term_key(receiver_term)?;
+    for fact in &ctx.assertion_guard_facts {
+        if fact.receiver_key != receiver_key {
+            continue;
+        }
+        match (method.as_str(), fact.guard_head.as_str()) {
+            ("unwrap" | "expect", "is_some" | "is_ok") => return Some(fact.guard.clone()),
+            ("unwrap_err", "is_err") => return Some(fact.guard.clone()),
+            _ => {}
+        }
+    }
+    if matches!(method.as_str(), "unwrap" | "expect")
+        && ctx.len_eq_one_facts.iter().any(|fact| {
+            next_into_iter_receiver_key(receiver_term).as_ref() == Some(&fact.receiver_key)
+        })
+    {
+        return Some(IrTerm::Ctor {
+            name: "is_some".to_string(),
+            args: vec![receiver_term.clone()],
+        });
+    }
+    None
+}
+
+fn next_into_iter_receiver_key(term: &IrTerm) -> Option<String> {
+    match term {
+        IrTerm::Ctor { name, args } if name == "method:next" && args.len() == 1 => match &args[0] {
+            IrTerm::Ctor { name, args } if name == "method:into_iter" && args.len() == 1 => {
+                term_key(&args[0])
+            }
+            _ => None,
+        },
+        _ => None,
     }
 }
 
@@ -982,14 +1276,8 @@ fn lift_macro_contribution(mac: &Macro, ctx: &mut LiftCtx) -> Option<IrFormula> 
     let name = seg.ident.to_string();
     match name.as_str() {
         "assert" => {
-            let parsed_cond = syn::parse2::<Expr>(mac.tokens.clone()).ok()?;
-            // assert!(c) parses to just c. assert!(c, "msg") parses
-            // as a tuple-expr; take the first elem.
-            let first = match &parsed_cond {
-                Expr::Tuple(t) => t.elems.first()?,
-                other => other,
-            };
-            lift_predicate_inner(first, ctx)
+            let first = assert_macro_condition(mac)?;
+            lift_predicate_inner(&first, ctx)
         }
         // debug_assert! is compiled out in release builds. Lifting its
         // predicate as a real contract would misrepresent what holds in
@@ -1190,7 +1478,7 @@ fn lift_expr_to_term_inner(expr: &Expr, ctx: &mut LiftCtx) -> Option<IrTerm> {
         }
         Expr::MethodCall(m) => {
             let receiver = lift_expr_to_term_inner(&m.receiver, ctx)?;
-            let mut args = vec![receiver];
+            let mut args = vec![receiver.clone()];
             for a in &m.args {
                 let lifted = lift_expr_to_term_inner(a, ctx)?;
                 args.push(lifted);
@@ -1199,6 +1487,9 @@ fn lift_expr_to_term_inner(expr: &Expr, ctx: &mut LiftCtx) -> Option<IrTerm> {
                 name: format!("method:{}", m.method),
                 args,
             };
+            if let Some(guard) = assertion_guard_for_partial(&m.method, &receiver, ctx) {
+                return Some(wrap_cf_guarded(guard, value));
+            }
             if m.method == "unwrap"
                 && m.args.is_empty()
                 && receiver_as_str_is_known_json_string(&m.receiver, ctx)
@@ -2423,6 +2714,283 @@ mod tests {
         assert!(
             json.contains("is_none"),
             "else-branch guard is the complement is_none: {json}"
+        );
+    }
+
+    #[test]
+    fn assert_is_some_guards_later_option_unwrap() {
+        let item_fn = parse_fn(
+            r#"
+            fn f(x: Option<i64>) -> i64 {
+                assert!(x.is_some());
+                x.unwrap()
+            }
+        "#,
+        );
+        let eq = result_equation_of(&item_fn).expect("unwrap must remain in result term");
+        let json = serde_json::to_string(&eq).unwrap();
+        assert!(
+            json.contains("cf_guarded"),
+            "assert!(x.is_some()) must guard the later unwrap: {json}"
+        );
+        assert!(
+            json.contains("is_some"),
+            "guard must carry the option precondition: {json}"
+        );
+    }
+
+    #[test]
+    fn assert_is_ok_guards_later_result_unwrap() {
+        let item_fn = parse_fn(
+            r#"
+            fn f(r: Result<i64, String>) -> i64 {
+                assert!(r.is_ok());
+                r.unwrap()
+            }
+        "#,
+        );
+        let eq = result_equation_of(&item_fn).expect("unwrap must remain in result term");
+        let json = serde_json::to_string(&eq).unwrap();
+        assert!(
+            json.contains("cf_guarded"),
+            "assert!(r.is_ok()) must guard the later unwrap: {json}"
+        );
+        assert!(
+            json.contains("is_ok"),
+            "guard must carry the result precondition: {json}"
+        );
+    }
+
+    #[test]
+    fn assert_is_ok_guards_later_result_expect() {
+        let item_fn = parse_fn(
+            r#"
+            fn f(r: Result<i64, String>) -> i64 {
+                assert!(r.is_ok());
+                r.expect("present")
+            }
+        "#,
+        );
+        let eq = result_equation_of(&item_fn).expect("expect must remain in result term");
+        let json = serde_json::to_string(&eq).unwrap();
+        assert!(
+            json.contains("cf_guarded"),
+            "assert!(r.is_ok()) must guard the later expect: {json}"
+        );
+        assert!(
+            json.contains("is_ok"),
+            "guard must carry the result precondition: {json}"
+        );
+    }
+
+    #[test]
+    fn len_eq_one_guards_into_iter_next_unwrap() {
+        let item_fn = parse_fn(
+            r#"
+            fn f(values: Vec<i64>) -> i64 {
+                assert!(values.len() == 1);
+                values.into_iter().next().unwrap()
+            }
+        "#,
+        );
+        let eq = result_equation_of(&item_fn).expect("unwrap must remain in result term");
+        let json = serde_json::to_string(&eq).unwrap();
+        assert!(
+            json.contains("cf_guarded"),
+            "len == 1 must guard into_iter().next().unwrap(): {json}"
+        );
+        assert!(
+            json.contains("is_some"),
+            "guard must prove next() returns Some: {json}"
+        );
+        assert!(
+            json.contains("method:next"),
+            "guard must name the same next() receiver term: {json}"
+        );
+    }
+
+    #[test]
+    fn if_len_eq_one_guards_then_branch_into_iter_next_unwrap() {
+        let item_fn = parse_fn(
+            r#"
+            fn f(values: Vec<i64>) -> Option<i64> {
+                if values.len() == 1 {
+                    Some(values.into_iter().next().unwrap())
+                } else {
+                    None
+                }
+            }
+        "#,
+        );
+        let eq = result_equation_of(&item_fn).expect("if-tail must synthesize a result equation");
+        let json = serde_json::to_string(&eq).unwrap();
+        assert!(json.contains("cf_ite"), "must lift to a cf_ite: {json}");
+        assert!(
+            json.contains("cf_guarded"),
+            "positive len == 1 branch must guard next().unwrap(): {json}"
+        );
+        assert!(
+            json.contains("is_some"),
+            "guard must prove next() returns Some: {json}"
+        );
+        assert!(
+            json.contains("method:next"),
+            "guard must name the next() receiver term: {json}"
+        );
+    }
+
+    #[test]
+    fn if_len_eq_one_wrong_collection_does_not_guard_next_unwrap() {
+        let item_fn = parse_fn(
+            r#"
+            fn f(a: Vec<i64>, b: Vec<i64>) -> Option<i64> {
+                if a.len() == 1 {
+                    Some(b.into_iter().next().unwrap())
+                } else {
+                    None
+                }
+            }
+        "#,
+        );
+        let eq = result_equation_of(&item_fn).expect("if-tail must synthesize a result equation");
+        let json = serde_json::to_string(&eq).unwrap();
+        assert!(
+            !json.contains("cf_guarded"),
+            "len fact for a must not guard b.into_iter().next().unwrap(): {json}"
+        );
+    }
+
+    #[test]
+    fn if_compound_len_eq_one_condition_does_not_guard_next_unwrap() {
+        let item_fn = parse_fn(
+            r#"
+            fn f(values: Vec<i64>, ready: bool) -> Option<i64> {
+                if values.len() == 1 && ready {
+                    Some(values.into_iter().next().unwrap())
+                } else {
+                    None
+                }
+            }
+        "#,
+        );
+        let eq = result_equation_of(&item_fn).expect("if-tail must synthesize a result equation");
+        let json = serde_json::to_string(&eq).unwrap();
+        assert!(
+            !json.contains("cf_guarded"),
+            "compound conditions are outside the audited len==1 shape: {json}"
+        );
+    }
+
+    #[test]
+    fn if_len_not_one_does_not_guard_next_unwrap() {
+        let item_fn = parse_fn(
+            r#"
+            fn f(values: Vec<i64>) -> Option<i64> {
+                if values.len() != 0 {
+                    Some(values.into_iter().next().unwrap())
+                } else {
+                    None
+                }
+            }
+        "#,
+        );
+        let eq = result_equation_of(&item_fn).expect("if-tail must synthesize a result equation");
+        let json = serde_json::to_string(&eq).unwrap();
+        assert!(
+            !json.contains("cf_guarded"),
+            "len != 0 does not establish the exact len==1 iterator fact: {json}"
+        );
+    }
+
+    #[test]
+    fn no_assert_does_not_guard_option_unwrap() {
+        let item_fn = parse_fn(
+            r#"
+            fn f(x: Option<i64>) -> i64 {
+                x.unwrap()
+            }
+        "#,
+        );
+        let eq = result_equation_of(&item_fn).expect("unwrap must remain in result term");
+        let json = serde_json::to_string(&eq).unwrap();
+        assert!(
+            !json.contains("cf_guarded"),
+            "unguarded unwrap must remain honestly undecidable: {json}"
+        );
+    }
+
+    #[test]
+    fn unrelated_assert_does_not_guard_option_unwrap() {
+        let item_fn = parse_fn(
+            r#"
+            fn f(x: Option<i64>, ready: bool) -> i64 {
+                assert!(ready);
+                x.unwrap()
+            }
+        "#,
+        );
+        let eq = result_equation_of(&item_fn).expect("unwrap must remain in result term");
+        let json = serde_json::to_string(&eq).unwrap();
+        assert!(
+            !json.contains("cf_guarded"),
+            "unrelated assert must not guard x.unwrap(): {json}"
+        );
+    }
+
+    #[test]
+    fn different_receiver_assert_does_not_guard_option_unwrap() {
+        let item_fn = parse_fn(
+            r#"
+            fn f(x: Option<i64>, y: Option<i64>) -> i64 {
+                assert!(y.is_some());
+                x.unwrap()
+            }
+        "#,
+        );
+        let eq = result_equation_of(&item_fn).expect("unwrap must remain in result term");
+        let json = serde_json::to_string(&eq).unwrap();
+        assert!(
+            !json.contains("cf_guarded"),
+            "assert about y must not guard x.unwrap(): {json}"
+        );
+    }
+
+    #[test]
+    fn mutation_after_assert_does_not_guard_option_unwrap() {
+        let item_fn = parse_fn(
+            r#"
+            fn f(mut x: Option<i64>) -> i64 {
+                assert!(x.is_some());
+                x = None;
+                x.unwrap()
+            }
+        "#,
+        );
+        let eq = result_equation_of(&item_fn).expect("unwrap must remain in result term");
+        let json = serde_json::to_string(&eq).unwrap();
+        assert!(
+            !json.contains("cf_guarded"),
+            "mutation after assert must invalidate the guard fact: {json}"
+        );
+    }
+
+    #[test]
+    fn branch_local_assert_does_not_guard_outer_unwrap() {
+        let item_fn = parse_fn(
+            r#"
+            fn f(x: Option<i64>, cond: bool) -> i64 {
+                if cond {
+                    assert!(x.is_some());
+                }
+                x.unwrap()
+            }
+        "#,
+        );
+        let eq = result_equation_of(&item_fn).expect("unwrap must remain in result term");
+        let json = serde_json::to_string(&eq).unwrap();
+        assert!(
+            !json.contains("cf_guarded"),
+            "branch-local assert must not guard an outer unwrap: {json}"
         );
     }
 

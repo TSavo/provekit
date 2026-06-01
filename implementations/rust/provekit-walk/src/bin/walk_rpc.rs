@@ -900,11 +900,17 @@ fn type_crate_for(
             .or_else(|| {
                 if !current_crate.is_empty() && local_type_names.contains(first) {
                     Some(current_crate.to_string())
+                } else if is_std_prelude_panic_type(first) {
+                    Some("std".to_string())
                 } else {
                     None
                 }
             })
     }
+}
+
+fn is_std_prelude_panic_type(name: &str) -> bool {
+    matches!(name, "Option" | "Result")
 }
 
 fn collect_local_type_names(file: &syn::File) -> BTreeSet<String> {
@@ -1015,7 +1021,8 @@ fn collect_enum_variant_type_map_in_items(
                         }
                         syn::Fields::Unit => VariantFieldTypes::Unit,
                     };
-                    out.variants.insert((enum_name.clone(), variant_name), fields);
+                    out.variants
+                        .insert((enum_name.clone(), variant_name), fields);
                 }
             }
             syn::Item::Mod(item_mod) => {
@@ -1043,7 +1050,12 @@ fn bind_pattern_type_id(
 ) {
     match pat {
         syn::Pat::Ident(ident) => {
-            bind_value_type(&ident.ident.to_string(), scrutinee_type.clone(), local_types, value_types);
+            bind_value_type(
+                &ident.ident.to_string(),
+                scrutinee_type.clone(),
+                local_types,
+                value_types,
+            );
         }
         syn::Pat::Reference(reference) => {
             bind_pattern_type_id(
@@ -1055,7 +1067,12 @@ fn bind_pattern_type_id(
             );
         }
         syn::Pat::Struct(pat_struct) => {
-            let Some(variant_name) = pat_struct.path.segments.last().map(|seg| seg.ident.to_string()) else {
+            let Some(variant_name) = pat_struct
+                .path
+                .segments
+                .last()
+                .map(|seg| seg.ident.to_string())
+            else {
                 return;
             };
             let enum_name = pat_struct
@@ -1066,9 +1083,8 @@ fn bind_pattern_type_id(
                 .nth(1)
                 .map(|seg| seg.ident.to_string())
                 .unwrap_or_else(|| scrutinee_type.head.clone());
-            let Some(VariantFieldTypes::Named(fields)) = enum_variant_types
-                .variants
-                .get(&(enum_name, variant_name))
+            let Some(VariantFieldTypes::Named(fields)) =
+                enum_variant_types.variants.get(&(enum_name, variant_name))
             else {
                 return;
             };
@@ -1077,11 +1093,22 @@ fn bind_pattern_type_id(
                 let Some(type_id) = fields.get(&field_name).cloned() else {
                     continue;
                 };
-                bind_pattern_type_id(&field.pat, &type_id, enum_variant_types, local_types, value_types);
+                bind_pattern_type_id(
+                    &field.pat,
+                    &type_id,
+                    enum_variant_types,
+                    local_types,
+                    value_types,
+                );
             }
         }
         syn::Pat::TupleStruct(tuple_struct) => {
-            let Some(variant_name) = tuple_struct.path.segments.last().map(|seg| seg.ident.to_string()) else {
+            let Some(variant_name) = tuple_struct
+                .path
+                .segments
+                .last()
+                .map(|seg| seg.ident.to_string())
+            else {
                 return;
             };
             let enum_name = tuple_struct
@@ -1092,19 +1119,30 @@ fn bind_pattern_type_id(
                 .nth(1)
                 .map(|seg| seg.ident.to_string())
                 .unwrap_or_else(|| scrutinee_type.head.clone());
-            let Some(VariantFieldTypes::Unnamed(fields)) = enum_variant_types
-                .variants
-                .get(&(enum_name, variant_name))
+            let Some(VariantFieldTypes::Unnamed(fields)) =
+                enum_variant_types.variants.get(&(enum_name, variant_name))
             else {
                 return;
             };
             for (subpat, type_id) in tuple_struct.elems.iter().zip(fields.iter()) {
-                bind_pattern_type_id(subpat, type_id, enum_variant_types, local_types, value_types);
+                bind_pattern_type_id(
+                    subpat,
+                    type_id,
+                    enum_variant_types,
+                    local_types,
+                    value_types,
+                );
             }
         }
         syn::Pat::Or(or_pat) => {
             for case in &or_pat.cases {
-                bind_pattern_type_id(case, scrutinee_type, enum_variant_types, local_types, value_types);
+                bind_pattern_type_id(
+                    case,
+                    scrutinee_type,
+                    enum_variant_types,
+                    local_types,
+                    value_types,
+                );
             }
         }
         _ => {}
@@ -1336,23 +1374,21 @@ fn collect_callsites_in_block(
                 // manifest is per-crate Rust-kit config; the CLI/verifier never
                 // read it. Concrete type identity must be available from a
                 // conservative source position, otherwise we refuse to guess.
-                let disambiguated_target = if needs_arg_type_resolution(
-                    callee_crate.as_deref(),
-                    &callee,
-                ) {
-                    node.args.first().and_then(|a| {
-                        let name = expr_bare_ident_name(a)?;
-                        let type_id = self.value_type(&name)?;
-                        disambiguated_serde_json_totality_target(
-                            &callee,
-                            type_id,
-                            self.infallible_serialize,
-                            self.current_crate,
-                        )
-                    })
-                } else {
-                    None
-                };
+                let disambiguated_target =
+                    if needs_arg_type_resolution(callee_crate.as_deref(), &callee) {
+                        node.args.first().and_then(|a| {
+                            let name = expr_bare_ident_name(a)?;
+                            let type_id = self.value_type(&name)?;
+                            disambiguated_serde_json_totality_target(
+                                &callee,
+                                type_id,
+                                self.infallible_serialize,
+                                self.current_crate,
+                            )
+                        })
+                    } else {
+                        None
+                    };
                 self.out.push(CallSite {
                     callee,
                     contract_callee,
@@ -1412,20 +1448,37 @@ fn collect_callsites_in_block(
             let callee = node.method.to_string();
             let contract_callee = callee_with_angle_args(&callee, node.turbofish.as_ref());
             let start = node.method.span().start();
+            let syntactic_panic_target = expr_bare_ident_name(&node.receiver)
+                .and_then(|name| self.value_type(&name).cloned())
+                .and_then(|type_id| {
+                    if type_id.krate != "std" {
+                        return None;
+                    }
+                    let stem = type_id.head.to_ascii_lowercase();
+                    disambiguated_partial_leaf(&stem, &callee).map(|leaf| ("std".to_string(), leaf))
+                });
+            let callee_crate = syntactic_panic_target
+                .as_ref()
+                .map(|(krate, _)| krate.clone())
+                .or_else(|| {
+                    receiver_crate_for_expr(
+                        &node.receiver,
+                        &self.local_types,
+                        self.use_map,
+                        self.fn_return_crates,
+                        self.local_type_names,
+                        self.current_crate,
+                    )
+                });
             self.out.push(CallSite {
                 callee,
                 contract_callee,
-                callee_crate: receiver_crate_for_expr(
-                    &node.receiver,
-                    &self.local_types,
-                    self.use_map,
-                    self.fn_return_crates,
-                    self.local_type_names,
-                    self.current_crate,
-                ),
+                callee_crate,
                 is_method: true,
-                disambiguated_callee: None,
-                disambiguated_crate: None,
+                disambiguated_callee: syntactic_panic_target
+                    .as_ref()
+                    .map(|(_, leaf)| leaf.clone()),
+                disambiguated_crate: syntactic_panic_target.map(|(krate, _)| krate),
                 unsupported_reason: None,
                 file: self.rel_path.to_string(),
                 line: start.line,
@@ -1435,8 +1488,8 @@ fn collect_callsites_in_block(
         }
         fn visit_expr_match(&mut self, node: &'ast syn::ExprMatch) {
             self.visit_expr(&node.expr);
-            let scrutinee_type = expr_bare_ident_name(&node.expr)
-                .and_then(|name| self.value_type(&name).cloned());
+            let scrutinee_type =
+                expr_bare_ident_name(&node.expr).and_then(|name| self.value_type(&name).cloned());
             for arm in &node.arms {
                 let saved_local_types = self.local_types.clone();
                 let saved_value_types = self.value_types.clone();
@@ -1546,7 +1599,7 @@ fn unsupported_macro_callsite(mac: &syn::Macro, rel_path: &str) -> CallSite {
             .last()
             .map(path_segment_contract_leaf)
             .map(|leaf| format!("{leaf}!"))
-        .unwrap_or_else(|| "<macro>!".to_string()),
+            .unwrap_or_else(|| "<macro>!".to_string()),
         callee_crate: None,
         is_method: false,
         disambiguated_callee: None,
@@ -1620,14 +1673,12 @@ fn pat_type_identity(
     current_crate: &str,
 ) -> Option<TypeIdentity> {
     match pat {
-        syn::Pat::Type(pat_type) => {
-            type_identity_for(
-                strip_reference_type(&pat_type.ty),
-                use_map,
-                local_type_names,
-                current_crate,
-            )
-        }
+        syn::Pat::Type(pat_type) => type_identity_for(
+            strip_reference_type(&pat_type.ty),
+            use_map,
+            local_type_names,
+            current_crate,
+        ),
         _ => None,
     }
 }
@@ -1876,10 +1927,10 @@ fn disambiguated_serde_json_totality_target(
                 Some((
                     "serde_json".to_string(),
                     match callee {
-                    "to_string" => "serde_json_to_string_value",
-                    "to_string_pretty" => "serde_json_to_string_pretty_value",
-                    _ => return None,
-                }
+                        "to_string" => "serde_json_to_string_value",
+                        "to_string_pretty" => "serde_json_to_string_pretty_value",
+                        _ => return None,
+                    }
                     .to_string(),
                 ))
             } else {
@@ -1931,8 +1982,7 @@ fn build_param_type_map(
         // Strip outer & / &mut
         let inner_ty = strip_reference_type(ty);
         // Extract the type's (crate, head)
-        if let Some(type_id) =
-            type_identity_for(inner_ty, use_map, local_type_names, current_crate)
+        if let Some(type_id) = type_identity_for(inner_ty, use_map, local_type_names, current_crate)
         {
             map.insert(name, type_id);
         }
@@ -2208,6 +2258,39 @@ fn resolve_method_calls_via_oracle(
     observation
 }
 
+fn binding_has_pre(binding: &Value) -> bool {
+    binding
+        .get("has_pre")
+        .or_else(|| binding.get("hasPre"))
+        .and_then(|v| v.as_bool())
+        .unwrap_or_else(|| binding.get("pre").is_some_and(has_nontrivial_pre_json))
+}
+
+fn has_nontrivial_pre_json(pre: &Value) -> bool {
+    if pre.is_null() {
+        return false;
+    }
+    !(pre.get("kind").and_then(|v| v.as_str()) == Some("atomic")
+        && pre.get("name").and_then(|v| v.as_str()) == Some("true"))
+}
+
+fn binding_is_body_bearing(binding: &Value) -> bool {
+    binding
+        .get("body_bearing")
+        .and_then(|v| v.as_bool())
+        .unwrap_or(false)
+}
+
+fn binding_rank(binding: &Value) -> u8 {
+    if binding_has_pre(binding) {
+        2
+    } else if binding_is_body_bearing(binding) {
+        1
+    } else {
+        0
+    }
+}
+
 fn lift_implications(params: &Value) -> Result<Value, String> {
     use std::collections::HashMap;
 
@@ -2303,21 +2386,15 @@ fn lift_implications(params: &Value) -> Result<Value, String> {
                 ineligible_by_key.insert(key, binding);
                 continue;
             }
-            let is_body_bearing = binding
-                .get("body_bearing")
-                .and_then(|v| v.as_bool())
-                .unwrap_or(false);
             match contracts_by_key.get(&key) {
                 None => {
                     contracts_by_key.insert(key, binding);
                 }
                 Some(existing) => {
-                    let existing_body_bearing = existing
-                        .get("body_bearing")
-                        .and_then(|v| v.as_bool())
-                        .unwrap_or(false);
-                    // Upgrade to the body-bearing binding; never downgrade.
-                    if is_body_bearing && !existing_body_bearing {
+                    // Upgrade to the most dischargeable binding; never
+                    // downgrade. For panic partials, a pre-bearing contract is
+                    // the only shape that can prove the site cannot panic.
+                    if binding_rank(binding) > binding_rank(existing) {
                         contracts_by_key.insert(key, binding);
                     }
                 }
@@ -2447,23 +2524,31 @@ fn lift_implications(params: &Value) -> Result<Value, String> {
                 );
                 dkey
             });
-            let disambig_binding = disambig_key
+            let is_panic = is_panic_leaf(&cs.callee);
+            let raw_disambig_binding = disambig_key
                 .as_ref()
                 .and_then(|dkey| contracts_by_key.get(dkey).copied());
+            let raw_disambig_binding_has_pre =
+                raw_disambig_binding.map(binding_has_pre).unwrap_or(false);
+            let disambig_binding = match (is_panic, raw_disambig_binding) {
+                (true, Some(binding)) if binding_has_pre(binding) => Some(binding),
+                (true, _) => None,
+                (false, binding) => binding,
+            };
             let disambig_ineligible = disambig_key
                 .as_ref()
                 .and_then(|dkey| ineligible_by_key.get(dkey).copied());
-            let is_panic = is_panic_leaf(&cs.callee);
             if is_panic {
                 info!(
                     callee = %cs.callee,
                     resolved_crate = %resolved_crate,
                     disambiguated_callee = ?cs.disambiguated_callee,
-                    disambig_binding_found = disambig_binding.is_some(),
+                    disambig_binding_found = raw_disambig_binding.is_some(),
+                    disambig_binding_has_pre = raw_disambig_binding_has_pre,
                     lookup_key = ?disambig_key,
                     file = %cs.file,
                     line = cs.line,
-                    "PANIC-EMIT: panic-leaf site decision -- bridges to disambiguated partial iff disambig_binding_found, else REFUSES (panic-site-unproven)"
+                    "PANIC-EMIT: panic-leaf site decision -- bridges to disambiguated pre-bearing partial iff found, else REFUSES (panic-site-unproven)"
                 );
             }
             // A value-producing select (NOT a let-else): the total-leaf branch must
@@ -4031,9 +4116,8 @@ fn collect_sugar_targets_in_items(items: &[syn::Item], targets: &mut Vec<SugarTa
         match item {
             syn::Item::Fn(item_fn) => {
                 if let Some(parsed) = extract_sugar_attr(item_fn) {
-                    let totality_result_ok =
-                        parsed.totality.as_deref() == Some("result_ok")
-                            && is_result_type_fn(item_fn);
+                    let totality_result_ok = parsed.totality.as_deref() == Some("result_ok")
+                        && is_result_type_fn(item_fn);
                     targets.push(SugarTarget {
                         concept: parsed.concept,
                         library: parsed.library,
@@ -10927,6 +11011,432 @@ edition = "2021"
             .filter_map(|entry| entry["targetContractCid"].as_str())
             .collect();
         assert_eq!(run_targets, vec![dep_run, dep_run]);
+
+        let _ = fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn lift_implications_disambiguates_prelude_option_result_panic_partials() {
+        let src = r##"
+pub fn option_case<T>(opt: Option<T>) -> T {
+    opt.unwrap()
+}
+
+pub fn result_case<T, E: std::fmt::Debug>(result: Result<T, E>, msg: &str) -> T {
+    if result.is_ok() {
+        result.expect(msg)
+    } else {
+        result.unwrap()
+    }
+}
+
+pub fn option_expect_case<T>(opt: Option<T>, msg: &str) -> T {
+    opt.expect(msg)
+}
+"##;
+        let root = temp_workspace("lift_implications_prelude_panic_partials");
+        let src_dir = root.join("src");
+        fs::create_dir_all(&src_dir).expect("create src dir");
+        fs::write(
+            root.join("Cargo.toml"),
+            r#"
+[package]
+name = "consumer-crate"
+version = "0.1.0"
+edition = "2021"
+"#,
+        )
+        .expect("write Cargo.toml");
+        let rel = "src/lib.rs";
+        fs::write(root.join(rel), src).expect("write source");
+
+        let option_unwrap_no_pre =
+            "blake3-512:111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111";
+        let result_unwrap_no_pre =
+            "blake3-512:222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222";
+        let result_expect_no_pre =
+            "blake3-512:333333333333333333333333333333333333333333333333333333333333333333333333333333333333333333333333333333333333333333333333";
+        let option_expect_no_pre =
+            "blake3-512:444444444444444444444444444444444444444444444444444444444444444444444444444444444444444444444444444444444444444444444444";
+        let option_unwrap =
+            "blake3-512:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa";
+        let result_unwrap =
+            "blake3-512:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb";
+        let result_expect =
+            "blake3-512:cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc";
+        let option_expect =
+            "blake3-512:dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd";
+        let contract_bindings = json!([
+            { "name": "option_unwrap@std/src/option.rs:1:1",
+              "library": "std",
+              "contract_cid": option_unwrap_no_pre,
+              "body_bearing": true,
+              "has_pre": false },
+            { "name": "option_unwrap@std/src/option.rs:2:1",
+              "library": "std",
+              "contract_cid": option_unwrap,
+              "body_bearing": true,
+              "has_pre": true },
+            { "name": "result_unwrap@std/src/result.rs:1:1",
+              "library": "std",
+              "contract_cid": result_unwrap_no_pre,
+              "body_bearing": true,
+              "has_pre": false },
+            { "name": "result_unwrap@std/src/result.rs:2:1",
+              "library": "std",
+              "contract_cid": result_unwrap,
+              "body_bearing": true,
+              "has_pre": true },
+            { "name": "result_expect@std/src/result.rs:1:1",
+              "library": "std",
+              "contract_cid": result_expect_no_pre,
+              "body_bearing": true,
+              "has_pre": false },
+            { "name": "result_expect@std/src/result.rs:2:1",
+              "library": "std",
+              "contract_cid": result_expect,
+              "body_bearing": true,
+              "has_pre": true },
+            { "name": "option_expect@std/src/option.rs:1:1",
+              "library": "std",
+              "contract_cid": option_expect_no_pre,
+              "body_bearing": true,
+              "has_pre": false },
+            { "name": "option_expect@std/src/option.rs:2:1",
+              "library": "std",
+              "contract_cid": option_expect,
+              "body_bearing": true,
+              "has_pre": true },
+        ]);
+
+        let resp = lift_implications(&json!({
+            "workspace_root": root.to_string_lossy(),
+            "source_paths": [rel],
+            "contract_bindings": contract_bindings,
+        }))
+        .expect("lift_implications");
+
+        let ir = resp["ir"].as_array().expect("ir array");
+        let panic_targets: Vec<&str> = ir
+            .iter()
+            .filter(|entry| {
+                entry["sourceSymbol"] == "method:unwrap" || entry["sourceSymbol"] == "method:expect"
+            })
+            .filter_map(|entry| entry["targetContractCid"].as_str())
+            .collect();
+        assert_eq!(
+            panic_targets,
+            vec![option_unwrap, result_expect, result_unwrap, option_expect],
+            "prelude Option/Result panic leaves must bridge to the std partials, not refuse or pick the current crate: {ir:?}"
+        );
+        assert!(
+            resp["diagnostics"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .all(|diagnostic| diagnostic["reason"] != "panic-site-unproven"),
+            "prelude Option/Result panic leaves should not emit panic-site-unproven: {:#?}",
+            resp["diagnostics"]
+        );
+
+        let _ = fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn lift_implications_refuses_prelude_panic_partial_without_pre_bearing_contract() {
+        let src = r##"
+pub fn option_case<T>(opt: Option<T>) -> T {
+    opt.unwrap()
+}
+"##;
+        let root = temp_workspace("lift_implications_panic_partial_requires_pre");
+        let src_dir = root.join("src");
+        fs::create_dir_all(&src_dir).expect("create src dir");
+        fs::write(
+            root.join("Cargo.toml"),
+            r#"
+[package]
+name = "consumer-crate"
+version = "0.1.0"
+edition = "2021"
+"#,
+        )
+        .expect("write Cargo.toml");
+        let rel = "src/lib.rs";
+        fs::write(root.join(rel), src).expect("write source");
+
+        let no_pre =
+            "blake3-512:111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111";
+        let contract_bindings = json!([
+            { "name": "option_unwrap@std/src/option.rs:1:1",
+              "library": "std",
+              "contract_cid": no_pre,
+              "body_bearing": true,
+              "pre": { "kind": "atomic", "name": "true", "args": [] } },
+        ]);
+
+        let resp = lift_implications(&json!({
+            "workspace_root": root.to_string_lossy(),
+            "source_paths": [rel],
+            "contract_bindings": contract_bindings,
+        }))
+        .expect("lift_implications");
+
+        let ir = resp["ir"].as_array().expect("ir array");
+        assert!(
+            !ir.iter()
+                .any(|entry| entry["sourceSymbol"] == "method:unwrap"),
+            "panic partials must refuse rather than bridge to a no-pre duplicate: {ir:?}"
+        );
+        assert!(
+            resp["diagnostics"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .any(|diagnostic| diagnostic["reason"] == "panic-site-unproven"),
+            "no-pre panic partial should stay as an honest panic-site-unproven gap: {:#?}",
+            resp["diagnostics"]
+        );
+
+        let _ = fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn lift_implications_refuses_prelude_panic_partial_with_only_ineligible_totality() {
+        let src = r##"
+pub fn option_case<T>(opt: Option<T>) -> T {
+    opt.unwrap()
+}
+"##;
+        let root = temp_workspace("lift_implications_panic_partial_refuses_ineligible_totality");
+        let src_dir = root.join("src");
+        fs::create_dir_all(&src_dir).expect("create src dir");
+        fs::write(
+            root.join("Cargo.toml"),
+            r#"
+[package]
+name = "consumer-crate"
+version = "0.1.0"
+edition = "2021"
+"#,
+        )
+        .expect("write Cargo.toml");
+        let rel = "src/lib.rs";
+        fs::write(root.join(rel), src).expect("write source");
+
+        let ineligible =
+            "blake3-512:222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222";
+        let contract_bindings = json!([
+            { "name": "option_unwrap@std/src/option.rs:1:1",
+              "library": "std",
+              "contract_cid": ineligible,
+              "bodyDischargeEligible": false,
+              "bodyDischargeRefusalReason": "totality-axiom" },
+        ]);
+
+        let resp = lift_implications(&json!({
+            "workspace_root": root.to_string_lossy(),
+            "source_paths": [rel],
+            "contract_bindings": contract_bindings,
+        }))
+        .expect("lift_implications");
+
+        let ir = resp["ir"].as_array().expect("ir array");
+        assert!(
+            !ir.iter()
+                .any(|entry| entry["sourceSymbol"] == "method:unwrap"),
+            "panic partials must not fall through to ineligible totality bindings: {ir:?}"
+        );
+        assert!(
+            resp["diagnostics"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .any(|diagnostic| diagnostic["reason"] == "panic-site-unproven"),
+            "ineligible totality-only panic partial should stay as an honest panic-site-unproven gap: {:#?}",
+            resp["diagnostics"]
+        );
+
+        let _ = fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn lift_implications_refuses_local_option_shadow_as_std_panic_partial() {
+        let src = r##"
+mod local {
+    pub struct Option<T>(pub T);
+
+    impl<T> Option<T> {
+        pub fn unwrap(self) -> T {
+            self.0
+        }
+    }
+}
+
+pub fn local_case<T>(opt: local::Option<T>) -> T {
+    opt.unwrap()
+}
+"##;
+        let root = temp_workspace("lift_implications_local_option_shadow");
+        let src_dir = root.join("src");
+        fs::create_dir_all(&src_dir).expect("create src dir");
+        fs::write(
+            root.join("Cargo.toml"),
+            r#"
+[package]
+name = "consumer-crate"
+version = "0.1.0"
+edition = "2021"
+"#,
+        )
+        .expect("write Cargo.toml");
+        let rel = "src/lib.rs";
+        fs::write(root.join(rel), src).expect("write source");
+
+        let contract_bindings = json!([
+            { "name": "option_unwrap@std/src/option.rs:1:1",
+              "library": "std",
+              "contract_cid": "blake3-512:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa" },
+        ]);
+
+        let resp = lift_implications(&json!({
+            "workspace_root": root.to_string_lossy(),
+            "source_paths": [rel],
+            "contract_bindings": contract_bindings,
+        }))
+        .expect("lift_implications");
+
+        let ir = resp["ir"].as_array().expect("ir array");
+        assert!(
+            !ir.iter()
+                .any(|entry| entry["sourceSymbol"] == "method:unwrap"),
+            "local Option shadow must not bridge to std option_unwrap: {ir:?}"
+        );
+        assert!(
+            resp["diagnostics"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .any(|diagnostic| diagnostic["reason"] == "panic-site-unproven"),
+            "local Option shadow should refuse as an unresolved panic site: {:#?}",
+            resp["diagnostics"]
+        );
+
+        let _ = fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn lift_implications_refuses_generic_trait_receiver_as_std_panic_partial() {
+        let src = r##"
+pub trait MaybeUnwrap {
+    type Output;
+    fn unwrap(self) -> Self::Output;
+}
+
+pub fn generic_case<T: MaybeUnwrap>(value: T) -> T::Output {
+    value.unwrap()
+}
+"##;
+        let root = temp_workspace("lift_implications_generic_trait_unwrap");
+        let src_dir = root.join("src");
+        fs::create_dir_all(&src_dir).expect("create src dir");
+        fs::write(
+            root.join("Cargo.toml"),
+            r#"
+[package]
+name = "consumer-crate"
+version = "0.1.0"
+edition = "2021"
+"#,
+        )
+        .expect("write Cargo.toml");
+        let rel = "src/lib.rs";
+        fs::write(root.join(rel), src).expect("write source");
+
+        let contract_bindings = json!([
+            { "name": "option_unwrap@std/src/option.rs:1:1",
+              "library": "std",
+              "contract_cid": "blake3-512:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa" },
+        ]);
+
+        let resp = lift_implications(&json!({
+            "workspace_root": root.to_string_lossy(),
+            "source_paths": [rel],
+            "contract_bindings": contract_bindings,
+        }))
+        .expect("lift_implications");
+
+        let ir = resp["ir"].as_array().expect("ir array");
+        assert!(
+            !ir.iter()
+                .any(|entry| entry["sourceSymbol"] == "method:unwrap"),
+            "generic trait unwrap must not bridge to std option_unwrap: {ir:?}"
+        );
+        assert!(
+            resp["diagnostics"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .any(|diagnostic| diagnostic["reason"] == "panic-site-unproven"),
+            "generic trait unwrap should refuse as unresolved: {:#?}",
+            resp["diagnostics"]
+        );
+
+        let _ = fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn lift_implications_refuses_option_type_alias_without_canonical_type_resolution() {
+        let src = r##"
+type MyOption<T> = std::option::Option<T>;
+
+pub fn alias_case<T>(opt: MyOption<T>) -> T {
+    opt.unwrap()
+}
+"##;
+        let root = temp_workspace("lift_implications_option_alias_refuse");
+        let src_dir = root.join("src");
+        fs::create_dir_all(&src_dir).expect("create src dir");
+        fs::write(
+            root.join("Cargo.toml"),
+            r#"
+[package]
+name = "consumer-crate"
+version = "0.1.0"
+edition = "2021"
+"#,
+        )
+        .expect("write Cargo.toml");
+        let rel = "src/lib.rs";
+        fs::write(root.join(rel), src).expect("write source");
+
+        let contract_bindings = json!([
+            { "name": "option_unwrap@std/src/option.rs:1:1",
+              "library": "std",
+              "contract_cid": "blake3-512:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa" },
+        ]);
+
+        let resp = lift_implications(&json!({
+            "workspace_root": root.to_string_lossy(),
+            "source_paths": [rel],
+            "contract_bindings": contract_bindings,
+        }))
+        .expect("lift_implications");
+
+        let ir = resp["ir"].as_array().expect("ir array");
+        assert!(
+            !ir.iter().any(|entry| entry["sourceSymbol"] == "method:unwrap"),
+            "type aliases are refused in this syntactic prelude slice until canonical type resolution is available: {ir:?}"
+        );
+        assert!(
+            resp["diagnostics"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .any(|diagnostic| diagnostic["reason"] == "panic-site-unproven"),
+            "type alias should refuse rather than guessing std Option: {:#?}",
+            resp["diagnostics"]
+        );
 
         let _ = fs::remove_dir_all(root);
     }

@@ -304,6 +304,10 @@ pub fn extract_body_obligation(
     cs: &CallSite,
     pool: &MementoPool,
 ) -> Result<Option<BodyObligation>, String> {
+    if cs.panic_site && cs.bridge_target_cid.is_empty() {
+        return Ok(None);
+    }
+
     let resolver = CatalogResolver::new(pool);
 
     // The callee must have a body-derived contract; otherwise this is not
@@ -1475,6 +1479,69 @@ mod callee_post_guard_fact_tests {
         let fact = callee_post_guard_fact(&cs, &pool)
             .expect("panic site must find producer in the caller contract bundle");
         assert_eq!(fact.get("name").and_then(|v| v.as_str()), Some("is_ok"));
+    }
+
+    #[test]
+    fn panic_locus_without_scoped_bridge_does_not_fall_into_global_body_discharge() {
+        // A panicLoci fallback can surface a panic site even when the kit did
+        // not emit the scoped panic-leaf bridge. In that case the verifier must
+        // let resolve_target report NoBridgeTarget. It must not grab a global
+        // same-symbol body contract and produce the misleading body-discharge
+        // refusal seen in the imported libprovekit regression.
+        let body_contract_cid = "blake3-512:global-method-expect-body";
+        let mut pool = MementoPool::default();
+        pool.mementos.insert(
+            body_contract_cid.into(),
+            json!({
+                "envelope": true,
+                "header": {
+                    "kind": "contract",
+                    "contractName": "method:expect",
+                    "formals": ["x"],
+                    "post": {
+                        "kind": "atomic",
+                        "name": "=",
+                        "args": [
+                            {"kind": "var", "name": "result"},
+                            {"kind": "var", "name": "x"}
+                        ]
+                    }
+                }
+            }),
+        );
+        pool.bridges_by_symbol.insert(
+            "method:expect".into(),
+            json!({
+                "envelope": true,
+                "header": {
+                    "kind": "bridge",
+                    "sourceSymbol": "method:expect",
+                    "targetContractCid": body_contract_cid
+                }
+            }),
+        );
+
+        let cs = CallSite {
+            panic_site: true,
+            bridge_ir_name: "method:expect".into(),
+            bridge_target_cid: String::new(),
+            callsite_bundle_cid: Some("blake3-512:caller-bundle".into()),
+            file: Some("src/core/types.rs".into()),
+            line: Some(2105),
+            arg_term: Some(json!({
+                "kind": "ctor",
+                "name": "to_value",
+                "args": [{"kind": "var", "name": "term"}]
+            })),
+            ..Default::default()
+        };
+
+        let result = extract_body_obligation(&cs, &pool)
+            .expect("missing scoped panic bridge should not become a body-discharge refusal");
+        assert!(
+            result.is_none(),
+            "missing scoped panic bridge should fall through to resolve_target/NoBridgeTarget"
+        );
     }
 }
 
