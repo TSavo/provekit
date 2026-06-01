@@ -15,8 +15,9 @@
 // into the proof.ir bundle pipeline and the resolve/index
 // substrate-verifier path with no further translation.
 
-use std::collections::HashMap;
+use std::{collections::HashMap, sync::Arc};
 
+use provekit_canonicalizer::{encode_jcs, Value};
 use provekit_claim_envelope::{
     contract_cid as kit_contract_cid, mint_contract, Authoring, ClaimEnvelopeError,
     MintContractArgs, MintedEnvelope,
@@ -39,7 +40,7 @@ pub fn wrap_function_contract(
     produced_at: &str,
     signer_seed: &Ed25519Seed,
 ) -> Result<MintedEnvelope, ClaimEnvelopeError> {
-    let args = mint_args(contract, produced_at, signer_seed);
+    let args = mint_args(contract, produced_at, signer_seed)?;
     mint_contract(&args)
 }
 
@@ -48,13 +49,13 @@ pub fn wrap_function_contract(
 /// mint-counter assertion)" — paper 07 §6's "compose for free,
 /// compress to nothing" empirically.
 ///
-/// Lookups are by `contract_cid` (signer-independent). The cache
-/// returns the previously-minted MintedEnvelope unchanged on hit;
-/// callers receive the same `cid` and `canonical_bytes` they would
-/// have re-minted, but without paying the Ed25519 signing cost.
+/// Lookups are by signer-independent `contract_cid` plus a deterministic
+/// fingerprint of header-only panic provenance. `panic_loci` does not move the
+/// contract CID, but it must affect the cache key so a source-locus edit cannot
+/// return a stale `panicLoci` header.
 #[derive(Debug, Default)]
 pub struct EnvelopeCache {
-    /// contract_cid → cached MintedEnvelope
+    /// contract_cid + panic_loci fingerprint → cached MintedEnvelope
     by_contract: HashMap<String, MintedEnvelope>,
     /// Number of times mint_contract was actually invoked.
     pub mints: u64,
@@ -77,25 +78,49 @@ impl EnvelopeCache {
 }
 
 /// Wrap a FunctionContractMemento with a content-addressed cache: if the
-/// signer-independent `contract_cid` has already been minted into this
-/// cache, return the cached envelope (incrementing `cache.hits`);
-/// otherwise mint, insert, and return (incrementing `cache.mints`).
+/// signer-independent `contract_cid` and header provenance fingerprint have
+/// already been minted into this cache, return the cached envelope
+/// (incrementing `cache.hits`); otherwise mint, insert, and return
+/// (incrementing `cache.mints`).
 pub fn wrap_function_contract_cached(
     contract: &FunctionContractMemento,
     produced_at: &str,
     signer_seed: &Ed25519Seed,
     cache: &mut EnvelopeCache,
 ) -> Result<MintedEnvelope, ClaimEnvelopeError> {
-    let args = mint_args(contract, produced_at, signer_seed);
+    let args = mint_args(contract, produced_at, signer_seed)?;
     let cid = kit_contract_cid(&args);
-    if let Some(env) = cache.by_contract.get(&cid) {
+    let cache_key = envelope_cache_key(&cid, &args.panic_loci);
+    if let Some(env) = cache.by_contract.get(&cache_key) {
         cache.hits += 1;
         return Ok(env.clone());
     }
     let env = mint_contract(&args)?;
     cache.mints += 1;
-    cache.by_contract.insert(cid, env.clone());
+    cache.by_contract.insert(cache_key, env.clone());
     Ok(env)
+}
+
+fn envelope_cache_key(
+    contract_cid: &str,
+    panic_loci: &[Arc<provekit_canonicalizer::Value>],
+) -> String {
+    let loci_cid = panic_loci_fingerprint(panic_loci);
+    format!("{contract_cid}:{loci_cid}")
+}
+
+fn panic_loci_fingerprint(panic_loci: &[Arc<Value>]) -> String {
+    let canonical_loci = normalized_panic_loci(panic_loci);
+    crate::canonical::cid_of_value(Value::array(canonical_loci).as_ref())
+}
+
+fn normalized_panic_loci(panic_loci: &[Arc<Value>]) -> Vec<Arc<Value>> {
+    let mut keyed: Vec<(String, Arc<Value>)> = panic_loci
+        .iter()
+        .map(|locus| (encode_jcs(locus.as_ref()), locus.clone()))
+        .collect();
+    keyed.sort_by(|a, b| a.0.cmp(&b.0));
+    keyed.into_iter().map(|(_, locus)| locus).collect()
 }
 
 /// Build the `MintContractArgs` from a contract memento. Exposed so
@@ -106,10 +131,12 @@ pub fn mint_args(
     contract: &FunctionContractMemento,
     produced_at: &str,
     signer_seed: &Ed25519Seed,
-) -> MintContractArgs {
+) -> Result<MintContractArgs, ClaimEnvelopeError> {
+    validate_panic_loci(&contract.panic_loci)?;
     let pre = formula_to_canonical(&contract.pre);
     let post = formula_to_canonical(&contract.post);
     let out_binding = contract.result_var_name();
+    let panic_loci = normalized_panic_loci(&contract.panic_loci);
 
     let input_cids: Vec<String> = contract
         .body_cid
@@ -132,7 +159,7 @@ pub fn mint_args(
         })
         .collect();
 
-    MintContractArgs {
+    Ok(MintContractArgs {
         contract_name: contract.fn_name.clone(),
         pre: Some(pre),
         post: Some(post),
@@ -151,11 +178,34 @@ pub fn mint_args(
         emit_empty_formals: contract.formals.is_empty(),
         formal_sorts,
         library: None,
-        // PANIC-LOCUS PRESERVATION (#1745): this single-contract envelope path
-        // (used by walk's own minter, not the project-wide ir-document mint the
-        // panic-freedom fixture drives) does not yet thread per-occurrence panic
-        // loci. Emit none here; the field omits cleanly when empty.
-        panic_loci: Vec::new(),
+        // PANIC-LOCUS PRESERVATION (#1745/#1749): header metadata only.
+        // `provekit_claim_envelope::contract_cid` deliberately ignores this
+        // field, so per-occurrence source provenance cannot perturb contract
+        // identity or invalidate existing proofs.
+        panic_loci,
+    })
+}
+
+fn validate_panic_loci(panic_loci: &[Arc<Value>]) -> Result<(), ClaimEnvelopeError> {
+    for (idx, locus) in panic_loci.iter().enumerate() {
+        if !matches!(locus.as_ref(), Value::Object(_)) {
+            return Err(ClaimEnvelopeError::Other(format!(
+                "panic_loci[{idx}] must be an object, got {}",
+                value_type_name(locus.as_ref())
+            )));
+        }
+    }
+    Ok(())
+}
+
+fn value_type_name(value: &Value) -> &'static str {
+    match value {
+        Value::Null => "null",
+        Value::Bool(_) => "bool",
+        Value::Integer(_) => "number",
+        Value::String(_) => "string",
+        Value::Array(_) => "array",
+        Value::Object(_) => "object",
     }
 }
 
@@ -164,6 +214,7 @@ mod tests {
     use super::*;
     use crate::contract::build_function_contract;
     use provekit_claim_envelope::contract_cid as kit_contract_cid;
+    use serde_json::Value as JsonValue;
 
     fn fixture_contract(src: &str) -> FunctionContractMemento {
         let file: syn::File = syn::parse_str(src).unwrap();
@@ -176,6 +227,62 @@ mod tests {
             })
             .unwrap();
         build_function_contract(&item_fn, None)
+    }
+
+    fn sample_panic_locus() -> Arc<Value> {
+        sample_panic_locus_at(2, 3)
+    }
+
+    fn sample_panic_locus_at(line: i64, panic_line: i64) -> Arc<Value> {
+        Value::object([
+            (
+                "argTerm",
+                Value::object([
+                    ("kind", Value::string("call")),
+                    ("callee", Value::string("serde_json::to_string")),
+                    (
+                        "args",
+                        Value::array(vec![Value::object([
+                            ("kind", Value::string("var")),
+                            ("name", Value::string("v")),
+                        ])]),
+                    ),
+                ]),
+            ),
+            ("file", Value::string("src/lib.rs")),
+            ("line", Value::integer(line)),
+            ("col", Value::integer(4)),
+            ("panicLine", Value::integer(panic_line)),
+            ("panicCol", Value::integer(9)),
+            ("callee", Value::string("method:unwrap")),
+        ])
+    }
+
+    fn header_json(env: &MintedEnvelope) -> JsonValue {
+        serde_json::from_slice::<JsonValue>(&env.canonical_bytes)
+            .expect("canonical envelope JSON")
+            .get("header")
+            .expect("layered envelope header")
+            .clone()
+    }
+
+    fn assert_panic_locus_lines(src: &str, expected_line: u64, expected_panic_line: u64) {
+        let c = fixture_contract(src);
+        let env = wrap_function_contract(&c, "2026-05-04T00:00:00Z", &DEV_SIGNER_SEED).unwrap();
+        let header = header_json(&env);
+        let panic_loci = header
+            .get("panicLoci")
+            .and_then(JsonValue::as_array)
+            .expect("panicLoci must be present for panic-bearing contracts");
+        assert_eq!(
+            panic_loci.len(),
+            1,
+            "expected one panic locus: {panic_loci:?}"
+        );
+        assert_eq!(panic_loci[0]["file"], "unknown");
+        assert_eq!(panic_loci[0]["line"], expected_line);
+        assert_eq!(panic_loci[0]["panicLine"], expected_panic_line);
+        assert_eq!(panic_loci[0]["callee"], "method:unwrap");
     }
 
     #[test]
@@ -248,10 +355,178 @@ mod tests {
         // minted envelope, so callers can compute it cheaply without
         // signing.
         let c = fixture_contract("fn neg(x: i64) -> i64 { -x }");
-        let args = mint_args(&c, "2026-05-04T00:00:00Z", &DEV_SIGNER_SEED);
+        let args = mint_args(&c, "2026-05-04T00:00:00Z", &DEV_SIGNER_SEED).unwrap();
         let cid_via_args = kit_contract_cid(&args);
         let env = wrap_function_contract(&c, "2026-05-04T00:00:00Z", &DEV_SIGNER_SEED).unwrap();
         assert_eq!(cid_via_args, env.contract_cid);
+    }
+
+    #[test]
+    fn panic_loci_round_trip_in_contract_header() {
+        let mut c = fixture_contract("fn split(v: serde_json::Value) -> String { v.to_string() }");
+        c.panic_loci = vec![sample_panic_locus()];
+
+        let env = wrap_function_contract(&c, "2026-05-04T00:00:00Z", &DEV_SIGNER_SEED).unwrap();
+        let header = header_json(&env);
+
+        let panic_loci = header
+            .get("panicLoci")
+            .and_then(JsonValue::as_array)
+            .expect("panicLoci must be present for panic-bearing contracts");
+        assert_eq!(panic_loci.len(), 1);
+        assert_eq!(panic_loci[0]["file"], "src/lib.rs");
+        assert_eq!(panic_loci[0]["line"], 2);
+        assert_eq!(panic_loci[0]["panicLine"], 3);
+        assert_eq!(panic_loci[0]["callee"], "method:unwrap");
+    }
+
+    #[test]
+    fn one_line_unwrap_panic_locus_round_trips_through_envelope() {
+        let src = r#"fn one_line(v: serde_json::Value) -> String {
+    serde_json::to_string(&v).unwrap()
+}
+"#;
+        assert_panic_locus_lines(src, 2, 2);
+    }
+
+    #[test]
+    fn split_line_unwrap_panic_locus_round_trips_through_envelope() {
+        let src = r#"fn split_line(v: serde_json::Value) -> String {
+    serde_json::to_string(&v)
+        .unwrap()
+}
+"#;
+        assert_panic_locus_lines(src, 2, 3);
+    }
+
+    #[test]
+    fn spanning_receiver_panic_locus_round_trips_through_envelope() {
+        let src = r#"fn spanning(v: serde_json::Value) -> String {
+    serde_json::to_string(
+        &v,
+    )
+    .unwrap()
+}
+"#;
+        assert_panic_locus_lines(src, 2, 5);
+    }
+
+    #[test]
+    fn empty_panic_loci_omits_header_field() {
+        let mut c = fixture_contract("fn no_panic(x: i64) -> i64 { x }");
+        c.panic_loci = Vec::new();
+
+        let env = wrap_function_contract(&c, "2026-05-04T00:00:00Z", &DEV_SIGNER_SEED).unwrap();
+        let header = header_json(&env);
+
+        assert!(
+            header.get("panicLoci").is_none(),
+            "empty panic_loci must omit panicLoci, got {header:#}"
+        );
+    }
+
+    #[test]
+    fn malformed_panic_loci_string_entry_fails_closed() {
+        let mut c = fixture_contract("fn bad(x: i64) -> i64 { x }");
+        c.panic_loci = vec![Value::string("not-a-locus-object")];
+
+        let err = wrap_function_contract(&c, "2026-05-04T00:00:00Z", &DEV_SIGNER_SEED)
+            .expect_err("malformed panic_loci must fail closed");
+
+        assert!(
+            err.to_string()
+                .contains("panic_loci[0] must be an object, got string"),
+            "error should name panic_loci path and type, got: {err}"
+        );
+    }
+
+    #[test]
+    fn malformed_panic_loci_number_entry_fails_closed() {
+        let mut c = fixture_contract("fn bad(x: i64) -> i64 { x }");
+        c.panic_loci = vec![Value::integer(42)];
+
+        let err = wrap_function_contract(&c, "2026-05-04T00:00:00Z", &DEV_SIGNER_SEED)
+            .expect_err("malformed panic_loci must fail closed");
+
+        assert!(
+            err.to_string()
+                .contains("panic_loci[0] must be an object, got number"),
+            "error should name panic_loci path and type, got: {err}"
+        );
+    }
+
+    #[test]
+    fn malformed_panic_loci_array_entry_fails_closed() {
+        let mut c = fixture_contract("fn bad(x: i64) -> i64 { x }");
+        c.panic_loci = vec![Value::array(vec![])];
+
+        let err = wrap_function_contract(&c, "2026-05-04T00:00:00Z", &DEV_SIGNER_SEED)
+            .expect_err("malformed panic_loci must fail closed");
+
+        assert!(
+            err.to_string()
+                .contains("panic_loci[0] must be an object, got array"),
+            "error should name panic_loci path and type, got: {err}"
+        );
+    }
+
+    #[test]
+    fn malformed_panic_loci_null_entry_fails_closed() {
+        let mut c = fixture_contract("fn bad(x: i64) -> i64 { x }");
+        c.panic_loci = vec![Value::null()];
+
+        let err = wrap_function_contract(&c, "2026-05-04T00:00:00Z", &DEV_SIGNER_SEED)
+            .expect_err("malformed panic_loci must fail closed");
+
+        assert!(
+            err.to_string()
+                .contains("panic_loci[0] must be an object, got null"),
+            "error should name panic_loci path and type, got: {err}"
+        );
+    }
+
+    #[test]
+    fn panic_loci_are_header_metadata_not_contract_identity() {
+        let base = fixture_contract("fn stable(x: i64) -> i64 { x }");
+        let absent_or_default =
+            mint_args(&base, "2026-05-04T00:00:00Z", &DEV_SIGNER_SEED).expect("base mint args");
+
+        let mut empty = base.clone();
+        empty.panic_loci = Vec::new();
+        let empty_args = mint_args(&empty, "2026-05-04T00:00:00Z", &DEV_SIGNER_SEED)
+            .expect("empty panic_loci mint args");
+
+        let mut nonempty = base.clone();
+        nonempty.panic_loci = vec![sample_panic_locus()];
+        let nonempty_args = mint_args(&nonempty, "2026-05-04T00:00:00Z", &DEV_SIGNER_SEED)
+            .expect("nonempty panic_loci mint args");
+
+        let cid = kit_contract_cid(&absent_or_default);
+        assert_eq!(kit_contract_cid(&empty_args), cid);
+        assert_eq!(kit_contract_cid(&nonempty_args), cid);
+    }
+
+    #[test]
+    fn panic_loci_header_bytes_are_deterministic() {
+        let mut c = fixture_contract("fn stable(v: serde_json::Value) -> String { v.to_string() }");
+        c.panic_loci = vec![sample_panic_locus()];
+
+        let a = wrap_function_contract(&c, "2026-05-04T00:00:00Z", &DEV_SIGNER_SEED).unwrap();
+        let b = wrap_function_contract(&c, "2026-05-04T00:00:00Z", &DEV_SIGNER_SEED).unwrap();
+
+        assert_eq!(a.contract_cid, b.contract_cid);
+        assert_eq!(a.canonical_bytes, b.canonical_bytes);
+    }
+
+    #[test]
+    fn panic_loci_fingerprint_is_order_independent() {
+        let first = sample_panic_locus_at(2, 2);
+        let second = sample_panic_locus_at(5, 5);
+
+        let a = panic_loci_fingerprint(&[first.clone(), second.clone()]);
+        let b = panic_loci_fingerprint(&[second, first]);
+
+        assert_eq!(a, b);
     }
 
     // ---- AC #6: mint-counter cache assertion ----
@@ -306,6 +581,78 @@ mod tests {
             .unwrap();
         assert_eq!(cache.mints, 2, "no re-mint");
         assert_eq!(cache.hits, 2);
+    }
+
+    #[test]
+    fn cached_wrap_keys_by_panic_loci_header_metadata() {
+        let mut first =
+            fixture_contract("fn same(v: serde_json::Value) -> String { v.to_string() }");
+        first.panic_loci = vec![sample_panic_locus_at(2, 2)];
+        let mut second = first.clone();
+        second.panic_loci = vec![sample_panic_locus_at(5, 5)];
+        let mut cache = EnvelopeCache::new();
+
+        let env1 = wrap_function_contract_cached(
+            &first,
+            "2026-05-05T00:00:00Z",
+            &DEV_SIGNER_SEED,
+            &mut cache,
+        )
+        .unwrap();
+        let env2 = wrap_function_contract_cached(
+            &second,
+            "2026-05-05T00:00:00Z",
+            &DEV_SIGNER_SEED,
+            &mut cache,
+        )
+        .unwrap();
+
+        assert_eq!(env1.contract_cid, env2.contract_cid);
+        assert_ne!(
+            header_json(&env1)["panicLoci"],
+            header_json(&env2)["panicLoci"],
+            "cache must not return stale header panicLoci for same contract cid"
+        );
+        assert_eq!(cache.mints, 2);
+        assert_eq!(cache.hits, 0);
+
+        let env2_again = wrap_function_contract_cached(
+            &second,
+            "2026-05-05T00:00:00Z",
+            &DEV_SIGNER_SEED,
+            &mut cache,
+        )
+        .unwrap();
+        assert_eq!(env2.canonical_bytes, env2_again.canonical_bytes);
+        assert_eq!(cache.mints, 2);
+        assert_eq!(cache.hits, 1);
+    }
+
+    #[test]
+    fn cached_wrap_empty_panic_loci_hits_default_key() {
+        let default = fixture_contract("fn same(x: i64) -> i64 { x }");
+        let mut explicit_empty = default.clone();
+        explicit_empty.panic_loci = Vec::new();
+        let mut cache = EnvelopeCache::new();
+
+        let env1 = wrap_function_contract_cached(
+            &default,
+            "2026-05-05T00:00:00Z",
+            &DEV_SIGNER_SEED,
+            &mut cache,
+        )
+        .unwrap();
+        let env2 = wrap_function_contract_cached(
+            &explicit_empty,
+            "2026-05-05T00:00:00Z",
+            &DEV_SIGNER_SEED,
+            &mut cache,
+        )
+        .unwrap();
+
+        assert_eq!(env1.canonical_bytes, env2.canonical_bytes);
+        assert_eq!(cache.mints, 1);
+        assert_eq!(cache.hits, 1);
     }
 
     #[test]

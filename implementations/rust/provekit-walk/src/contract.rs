@@ -17,7 +17,7 @@
 // lives once, in libprovekit.
 
 use provekit_ir_types::IrFormula;
-use syn::{Expr, ExprUnsafe, FnArg, ItemFn, Pat, Stmt};
+use syn::{spanned::Spanned, Expr, ExprUnsafe, FnArg, ItemFn, Pat, Stmt};
 
 // ---- Re-export the canonical algebra and supporting types ----
 
@@ -74,11 +74,11 @@ pub fn build_function_contract_with_file_and_post_override(
     let (formals, formal_sorts) = extract_formals(item_fn);
     let return_sort = extract_return_sort(item_fn);
     let pre = crate::lift::lift_function_precondition(item_fn).into_formula();
-    let post = post_override.unwrap_or_else(|| {
-        crate::lift::lift_function_postcondition(item_fn).into_formula()
-    });
+    let post = post_override
+        .unwrap_or_else(|| crate::lift::lift_function_postcondition(item_fn).into_formula());
     let effects = detect_effects(item_fn);
     let locus = crate::locus::from_span(item_fn.sig.ident.span(), file_path);
+    let panic_loci = collect_panic_loci(item_fn, file_path);
 
     let value = build_value(
         &fn_name,
@@ -110,8 +110,57 @@ pub fn build_function_contract_with_file_and_post_override(
         canonical_bytes,
         cid,
         auto_minted_mementos: vec![],
+        panic_loci,
         concept_hint: None,
     }
+}
+
+fn is_panic_leaf(leaf: &str) -> bool {
+    matches!(leaf, "unwrap" | "expect" | "unwrap_err")
+}
+
+fn collect_panic_loci(
+    item_fn: &ItemFn,
+    file_path: Option<&str>,
+) -> Vec<std::sync::Arc<provekit_canonicalizer::Value>> {
+    use syn::visit::Visit;
+
+    struct PanicLocusVisitor {
+        file: String,
+        out: Vec<std::sync::Arc<provekit_canonicalizer::Value>>,
+    }
+
+    impl<'ast> Visit<'ast> for PanicLocusVisitor {
+        fn visit_expr_method_call(&mut self, node: &'ast syn::ExprMethodCall) {
+            let leaf = node.method.to_string();
+            if is_panic_leaf(&leaf) {
+                if let Some(recv) = crate::lift::lift_expr_to_term(&node.receiver) {
+                    if let Ok(arg_term) = serde_json::to_value(&recv) {
+                        let producer_start = node.receiver.span().start();
+                        let panic_start = node.method.span().start();
+                        self.out
+                            .push(crate::canonical::serde_to_canonical(serde_json::json!({
+                                "argTerm": arg_term,
+                                "file": self.file,
+                                "line": producer_start.line,
+                                "col": producer_start.column,
+                                "panicLine": panic_start.line,
+                                "panicCol": panic_start.column,
+                                "callee": format!("method:{}", leaf),
+                            })));
+                    }
+                }
+            }
+            syn::visit::visit_expr_method_call(self, node);
+        }
+    }
+
+    let mut visitor = PanicLocusVisitor {
+        file: file_path.unwrap_or("unknown").to_string(),
+        out: Vec::new(),
+    };
+    visitor.visit_item_fn(item_fn);
+    visitor.out
 }
 
 // ---- Effect detection ----
@@ -1087,23 +1136,29 @@ mod tests {
             }
         }
 
-        let int_sort = || provekit_ir_types::Sort::Primitive { name: "Int".to_string() };
+        let int_sort = || provekit_ir_types::Sort::Primitive {
+            name: "Int".to_string(),
+        };
         // Contract for "method_double" with formals [self, x]:
         //   post = (result == *(x, 2))
         // This mirrors what extract_formals produces for `fn method_double(&self, x: i64) -> i64 { x * 2 }`.
-        let mut info = OpContractInfo::new(vec![
-            SlotInfo::value("self"),
-            SlotInfo::value("x"),
-        ]);
+        let mut info = OpContractInfo::new(vec![SlotInfo::value("self"), SlotInfo::value("x")]);
         info.post = Some(IrFormula::Atomic {
             name: "=".to_string(),
             args: vec![
-                IrTerm::Var { name: "result".to_string() },
+                IrTerm::Var {
+                    name: "result".to_string(),
+                },
                 IrTerm::Ctor {
                     name: "*".to_string(),
                     args: vec![
-                        IrTerm::Var { name: "x".to_string() },
-                        IrTerm::Const { value: serde_json::json!(2), sort: int_sort() },
+                        IrTerm::Var {
+                            name: "x".to_string(),
+                        },
+                        IrTerm::Const {
+                            value: serde_json::json!(2),
+                            sort: int_sort(),
+                        },
                     ],
                 },
             ],
@@ -1117,8 +1172,13 @@ mod tests {
             op_cid: Cid::parse(format!("blake3-512:{}", "0".repeat(128))).unwrap(),
             name: "method_double".to_string(),
             args: vec![
-                Term::Var { name: "self_val".to_string() },
-                Term::Const { value: serde_json::json!(3), sort: int_sort() },
+                Term::Var {
+                    name: "self_val".to_string(),
+                },
+                Term::Const {
+                    value: serde_json::json!(3),
+                    sort: int_sort(),
+                },
             ],
         };
 
@@ -1126,8 +1186,13 @@ mod tests {
         let q = IrFormula::Atomic {
             name: "=".to_string(),
             args: vec![
-                IrTerm::Var { name: "result".to_string() },
-                IrTerm::Const { value: serde_json::json!(6), sort: int_sort() },
+                IrTerm::Var {
+                    name: "result".to_string(),
+                },
+                IrTerm::Const {
+                    value: serde_json::json!(6),
+                    sort: int_sort(),
+                },
             ],
         };
 
@@ -1187,22 +1252,28 @@ mod tests {
             }
         }
 
-        let int_sort = || provekit_ir_types::Sort::Primitive { name: "Int".to_string() };
+        let int_sort = || provekit_ir_types::Sort::Primitive {
+            name: "Int".to_string(),
+        };
         // WRONG post: `result == *(x, 3)` (body actually does `x * 2`).
-        let mut info = OpContractInfo::new(vec![
-            SlotInfo::value("self"),
-            SlotInfo::value("x"),
-        ]);
+        let mut info = OpContractInfo::new(vec![SlotInfo::value("self"), SlotInfo::value("x")]);
         info.post = Some(IrFormula::Atomic {
             name: "=".to_string(),
             args: vec![
-                IrTerm::Var { name: "result".to_string() },
+                IrTerm::Var {
+                    name: "result".to_string(),
+                },
                 IrTerm::Ctor {
                     name: "*".to_string(),
                     args: vec![
-                        IrTerm::Var { name: "x".to_string() },
+                        IrTerm::Var {
+                            name: "x".to_string(),
+                        },
                         // WRONG: 3 instead of 2
-                        IrTerm::Const { value: serde_json::json!(3), sort: int_sort() },
+                        IrTerm::Const {
+                            value: serde_json::json!(3),
+                            sort: int_sort(),
+                        },
                     ],
                 },
             ],
@@ -1215,8 +1286,13 @@ mod tests {
             op_cid: Cid::parse(format!("blake3-512:{}", "0".repeat(128))).unwrap(),
             name: "method_wrong".to_string(),
             args: vec![
-                Term::Var { name: "self_val".to_string() },
-                Term::Const { value: serde_json::json!(3), sort: int_sort() },
+                Term::Var {
+                    name: "self_val".to_string(),
+                },
+                Term::Const {
+                    value: serde_json::json!(3),
+                    sort: int_sort(),
+                },
             ],
         };
 
@@ -1224,13 +1300,22 @@ mod tests {
         let q = IrFormula::Atomic {
             name: "=".to_string(),
             args: vec![
-                IrTerm::Var { name: "result".to_string() },
-                IrTerm::Const { value: serde_json::json!(6), sort: int_sort() },
+                IrTerm::Var {
+                    name: "result".to_string(),
+                },
+                IrTerm::Const {
+                    value: serde_json::json!(6),
+                    sort: int_sort(),
+                },
             ],
         };
 
         let result = libprovekit::wp::wp(&call, &q, &resolver);
-        assert!(result.is_ok(), "wp must not error even for a wrong post: {:?}", result);
+        assert!(
+            result.is_ok(),
+            "wp must not error even for a wrong post: {:?}",
+            result
+        );
 
         let reduced = result.unwrap();
         // The reduced formula should be `=(*(3,3), 6)` -- sides differ structurally.
@@ -1249,10 +1334,7 @@ mod tests {
                 );
             }
             _ => {
-                panic!(
-                    "expected an = atomic from wp reduction, got: {}",
-                    s
-                );
+                panic!("expected an = atomic from wp reduction, got: {}", s);
             }
         }
     }

@@ -11,7 +11,6 @@ use serde::{Deserialize, Serialize};
 use serde_json::{json, Value as Json};
 use thiserror::Error;
 
-
 use super::primitives::address;
 use super::traits::{Kit, KitError};
 use super::types::{
@@ -1855,7 +1854,6 @@ fn seed_catalog() -> Catalog {
     }
 }
 
-
 fn primitive_sort(name: &str) -> Sort {
     Sort::Primitive {
         name: name.to_string(),
@@ -1909,6 +1907,7 @@ mod tests {
             canonical_bytes: vec![],
             cid: "blake3-512:test".to_string(),
             auto_minted_mementos: vec![],
+            panic_loci: vec![],
             concept_hint: None,
         }
     }
@@ -2235,6 +2234,4 @@ mod tests {
             "default fn_line should not serialize: {value}"
         );
     }
-
-
 }

@@ -110,6 +110,7 @@ fn pure_identity_contract(fn_name: &str, formal: &str) -> FunctionContractMement
         canonical_bytes,
         cid,
         auto_minted_mementos: vec![],
+        panic_loci: vec![],
         concept_hint: None,
     }
 }

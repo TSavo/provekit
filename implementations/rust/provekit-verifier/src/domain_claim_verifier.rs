@@ -1037,6 +1037,7 @@ mod tests {
             canonical_bytes: vec![],
             cid: "blake3-512:000000".to_string(),
             auto_minted_mementos: vec![],
+            panic_loci: vec![],
             concept_hint: None,
         };
 

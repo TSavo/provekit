@@ -394,6 +394,7 @@ mod tests {
             canonical_bytes,
             cid,
             auto_minted_mementos: vec![],
+            panic_loci: vec![],
             concept_hint: None,
         }
     }
@@ -726,5 +727,4 @@ mod tests {
         assert_eq!(err.node_op_cid, missing_cid);
         assert_eq!(err.term_position, vec![1]);
     }
-
 }
