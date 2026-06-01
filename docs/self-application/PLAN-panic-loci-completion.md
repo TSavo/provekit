@@ -9,7 +9,7 @@ the marked checkpoints.
 
 ## Current state (verified 2026-06-01)
 
-- `main` at `dff308cc5` after #1756 merged.
+- `main` at `0955fa696` after #1758 merged.
 - **#1747 merged.** Panic-locus preservation + guard-branch routing landed.
   `serde_json::to_string(v: &Value).unwrap()` discharges **panic-safe** on the
   warm-oracle `stage3-serde-totality-fixture` e2e; `to_string(s: &MyStruct)`
@@ -24,9 +24,13 @@ the marked checkpoints.
 - **#1756 merged.** provekit-walk single-contract envelope now threads
   `panic_loci` into contract headers and keys `EnvelopeCache` by
   `contract_cid` plus panic-loci fingerprint.
-- **Open follow-up:**
-  - **#1749** - remaining `provekit-lift` direct mint path panic_loci
-    threading. cmd_mint and provekit-walk envelope are done.
+- **#1758 merged and closed #1749.** provekit-lift direct mint now threads
+  `panic_loci` through both the CID prepass and real mint pass, validates
+  malformed entries fail closed, and preserves distinct provenance during
+  same-name coalescing. #1757 tracks the stale self-check golden gate drift
+  found while closing this slice.
+- **Open follow-up:** #1757 self-check golden drift reached main without gate
+  update.
 - **Production K measurement exists.** Per GOAL, provekit-cli currently reports
   `silentlyDropped=0`, `falsePass=0`, `panicSafe=0`, `panicCensus=32`, with
   every unproven site named by category. Next K movement comes from the Phase-2
@@ -36,8 +40,9 @@ the marked checkpoints.
 
 **(a) #1749 fail-closed slice first** - done by #1750.
 **(b) Production K measurement on provekit-cli** - done and recorded in GOAL.
-**(c) #1748 or the #1749 heavy-lift surfaces next** - #1748 is done by #1752;
-provekit-walk envelope is done by #1756; provekit-lift direct remains.
+**(c) #1748 or the #1749 heavy-lift surfaces next** - done. #1748 is done by
+#1752; provekit-walk envelope is done by #1756; provekit-lift direct is done
+by #1758.
 
 ### Why this order
 
@@ -266,10 +271,9 @@ checks. Those are coordinator's.
 
 ## After this slice + measurement
 
-The remaining #1749 work is provekit-lift direct mint path panic_loci
-threading. It is preventive, with no current K delta expected. After that,
-the next substantive K increment comes from the Phase-2 D-lib per-type slice
-named in GOAL.
+#1749 is closed. The panic-loci floor is now threaded through cmd_mint,
+provekit-walk envelopes, and provekit-lift direct mint. The next substantive K
+increment comes from the Phase-2 D-lib per-type slice named in GOAL.
 
 The Phase-2 tier worklist remains the goal-doc reference:
 
