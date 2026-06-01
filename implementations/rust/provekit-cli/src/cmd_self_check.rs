@@ -208,7 +208,13 @@ fn run_inner(args: &SelfCheckArgs) -> Result<SelfCheckScoreboard, String> {
             "self-check: minting dependency proof"
         );
         let out_dir = scratch.join(format!("dep-{name}"));
-        let minted = mint_project(&bin, &repo_root, &dep, &out_dir, false)?;
+        let minted = mint_project_converged(
+            &bin,
+            &repo_root,
+            &dep,
+            &out_dir,
+            dependency_mint_uses_oracle(args.oracle),
+        )?;
         copy_proof_to_imports(&minted.proof_file, &imports)?;
         let imports_proof_count = count_proof_files(&imports)?;
         info!(
@@ -504,6 +510,10 @@ fn mint_project(
         ));
     }
     Ok(MintOutput { proof_file, json })
+}
+
+fn dependency_mint_uses_oracle(self_check_oracle: bool) -> bool {
+    self_check_oracle
 }
 
 fn mint_project_converged(
@@ -1246,6 +1256,18 @@ mod tests {
             attempted,
             resolved,
         }
+    }
+
+    #[test]
+    fn dependency_mints_inherit_self_check_oracle_request() {
+        assert!(
+            dependency_mint_uses_oracle(true),
+            "self-check --oracle must mint local dependency proofs with the same oracle setting"
+        );
+        assert!(
+            !dependency_mint_uses_oracle(false),
+            "self-check without --oracle must keep dependency mints syntactic-only"
+        );
     }
 
     fn write_import(path: &Path, file_name: &str) {
