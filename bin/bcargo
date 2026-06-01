@@ -190,6 +190,7 @@ sync_dir examples
 sync_dir menagerie
 sync_dir tools
 sync_dir protocol
+sync_dir docs/self-application
 sync_dir scripts
 sync_dir bootstrap
 sync_dir conformance

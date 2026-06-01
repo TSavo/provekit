@@ -85,6 +85,17 @@ const FOUNDATION_V0_SEED: Ed25519Seed = [0x42u8; 32];
 /// unified pipeline. Matches the v1.6.0 catalog declared_at for consistency.
 const SELF_CONTRACTS_DECLARED_AT: &str = "2026-05-05T18:00:00Z";
 
+fn json_type_name(value: &Value) -> &'static str {
+    match value {
+        Value::Null => "null",
+        Value::Bool(_) => "boolean",
+        Value::Number(_) => "number",
+        Value::String(_) => "string",
+        Value::Array(_) => "array",
+        Value::Object(_) => "object",
+    }
+}
+
 /// Result of resolving a project/user configured `--kit=<alias>`.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) struct KitResolution {
@@ -1460,6 +1471,57 @@ pub(crate) fn stamp_platform_profile(
     }
 }
 
+fn parse_bridge_callsite(
+    decl: &Value,
+    source_symbol: &str,
+) -> Result<Option<BridgeCallsite>, String> {
+    let Some(callsite) = decl.get("callsite") else {
+        return Ok(None);
+    };
+    let object = callsite.as_object().ok_or_else(|| {
+        format!(
+            "bridge `{source_symbol}`: callsite must be an object, got {}",
+            json_type_name(callsite)
+        )
+    })?;
+    let panic_site = match object.get("panicSite") {
+        Some(value) => value.as_bool().ok_or_else(|| {
+            format!(
+                "bridge `{source_symbol}`: callsite.panicSite must be a boolean, got {}",
+                json_type_name(value)
+            )
+        })?,
+        None => false,
+    };
+    let file = match object.get("file") {
+        Some(value) => {
+            let file = value.as_str().filter(|s| !s.is_empty()).ok_or_else(|| {
+                format!(
+                    "bridge `{source_symbol}`: callsite.file must be a non-empty string, got {}",
+                    json_type_name(value)
+                )
+            })?;
+            Some(file.to_string())
+        }
+        None => None,
+    };
+    let line = match object.get("start_line").or_else(|| object.get("line")) {
+        Some(value) => Some(value.as_i64().ok_or_else(|| {
+            format!(
+                "bridge `{source_symbol}`: callsite.line must be an integer, got {}",
+                json_type_name(value)
+            )
+        })?),
+        None => None,
+    };
+
+    Ok(Some(BridgeCallsite {
+        panic_site,
+        file,
+        line,
+    }))
+}
+
 fn mint_bridge_from_decl(
     decl: &Value,
     produced_at: &str,
@@ -1495,21 +1557,7 @@ fn mint_bridge_from_decl(
     // Carry the lifter's call-site provenance (panicSite/file/line) into the
     // bridge memento. Without this the verifier reads panic_site=false on every
     // minted panic leaf and the panic-safe discharge path is never entered.
-    let callsite = decl.get("callsite").map(|cs| BridgeCallsite {
-        panic_site: cs
-            .get("panicSite")
-            .and_then(|v| v.as_bool())
-            .unwrap_or(false),
-        file: cs
-            .get("file")
-            .and_then(|v| v.as_str())
-            .filter(|s| !s.is_empty())
-            .map(|s| s.to_string()),
-        line: cs
-            .get("start_line")
-            .or_else(|| cs.get("line"))
-            .and_then(|v| v.as_i64()),
-    });
+    let callsite = parse_bridge_callsite(decl, source_symbol)?;
     let bridge = mint_bridge(&MintBridgeArgs {
         produced_by: "provekit-cli".to_string(),
         produced_at: produced_at.to_string(),
@@ -1733,12 +1781,17 @@ fn mint_ir_document(
         // the contract memento's header bears them and the verifier can
         // attribute each `method:unwrap` obligation to its own source line.
         // Carried as opaque provenance: the CLI does not interpret the terms.
-        let panic_loci: Vec<std::sync::Arc<provekit_canonicalizer::Value>> = decl
-            .get("panicLoci")
-            .or_else(|| decl.get("panic_loci"))
-            .and_then(|v| v.as_array())
-            .map(|arr| arr.iter().map(json_to_cvalue).collect())
-            .unwrap_or_default();
+        let panic_loci_value = decl.get("panicLoci").or_else(|| decl.get("panic_loci"));
+        let panic_loci: Vec<Arc<CValue>> = match panic_loci_value {
+            Some(Value::Array(arr)) => arr.iter().map(json_to_cvalue).collect(),
+            Some(value) => {
+                return Err(format!(
+                    "contract `{name}`: panicLoci must be an array, got {}",
+                    json_type_name(value)
+                ));
+            }
+            None => Vec::new(),
+        };
         let body_discharge_eligible = decl
             .get("bodyDischargeEligible")
             .or_else(|| decl.get("body_discharge_eligible"))
@@ -3121,6 +3174,263 @@ mod tests {
             report.errors.is_empty(),
             "minted ir-document proof should inspect cleanly: {:?}",
             report.errors
+        );
+    }
+
+    fn function_contract_with_panic_loci(panic_loci: Option<Value>) -> Vec<Value> {
+        let mut decl = json!({
+            "kind": "function-contract",
+            "fn_name": "panic_locus_subject",
+            "formals": ["v"],
+            "formalSorts": [{"kind": "primitive", "name": "JsonValue"}],
+            "outBinding": "result",
+            "post": {
+                "kind": "atomic",
+                "name": "=",
+                "args": [
+                    {"kind": "var", "name": "result"},
+                    {
+                        "kind": "ctor",
+                        "name": "to_string",
+                        "args": [{"kind": "var", "name": "v"}]
+                    }
+                ]
+            }
+        });
+        if let Some(panic_loci) = panic_loci {
+            decl["panicLoci"] = panic_loci;
+        }
+        vec![decl]
+    }
+
+    fn sample_panic_locus() -> Value {
+        json!({
+            "argTerm": {
+                "kind": "ctor",
+                "name": "to_string",
+                "args": [{"kind": "var", "name": "v"}]
+            },
+            "file": "src/lib.rs",
+            "line": 25,
+            "col": 30,
+            "callee": "method:unwrap"
+        })
+    }
+
+    fn contract_header(catalog: &provekit_verifier::cbor_decode::CborValue, name: &str) -> Value {
+        let members = catalog
+            .as_map()
+            .and_then(|m| m.get("members"))
+            .and_then(|v| v.as_map())
+            .expect("proof members");
+        members
+            .values()
+            .filter_map(|member| member.as_bstr())
+            .filter_map(|bytes| serde_json::from_slice::<Value>(bytes).ok())
+            .find_map(|envelope| {
+                let is_contract =
+                    envelope.pointer("/header/kind").and_then(|v| v.as_str()) == Some("contract");
+                let has_name = envelope
+                    .pointer("/header/name")
+                    .or_else(|| envelope.pointer("/header/contractName"))
+                    .and_then(|v| v.as_str())
+                    == Some(name);
+                (is_contract && has_name).then(|| {
+                    envelope
+                        .pointer("/header")
+                        .expect("contract header")
+                        .clone()
+                })
+            })
+            .unwrap_or_else(|| panic!("contract header `{name}` not found"))
+    }
+
+    fn minted_panic_locus_contract_header(panic_loci: Option<Value>) -> Value {
+        let (bytes, _, _) = mint_from_ir_document(
+            &function_contract_with_panic_loci(panic_loci),
+            None,
+            None,
+            None,
+            Path::new("."),
+            Path::new("."),
+            true,
+        )
+        .expect("mint function contract");
+        let catalog = provekit_verifier::cbor_decode::decode(&bytes).expect("decode proof");
+        contract_header(&catalog, "panic_locus_subject")
+    }
+
+    fn bridge_header(catalog: &provekit_verifier::cbor_decode::CborValue) -> Value {
+        let members = catalog
+            .as_map()
+            .and_then(|m| m.get("members"))
+            .and_then(|v| v.as_map())
+            .expect("proof members");
+        members
+            .values()
+            .filter_map(|member| member.as_bstr())
+            .filter_map(|bytes| serde_json::from_slice::<Value>(bytes).ok())
+            .find_map(|envelope| {
+                (envelope.pointer("/header/kind").and_then(|v| v.as_str()) == Some("bridge"))
+                    .then(|| envelope.pointer("/header").expect("bridge header").clone())
+            })
+            .expect("bridge header")
+    }
+
+    fn explicit_bridge_ir_with_callsite(callsite: Option<Value>) -> Vec<Value> {
+        let target_cid = "blake3-512:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa";
+        let mut bridge = json!({
+            "kind": "bridge",
+            "name": "intra-body:rust:callee@src/lib.rs:2:4",
+            "schemaVersion": "1",
+            "sourceContractCid": target_cid,
+            "sourceLayer": "rust",
+            "sourceSymbol": "callee",
+            "target": {"cid": target_cid, "kind": "contract"},
+            "targetContractCid": target_cid,
+            "targetLayer": "rust-tests"
+        });
+        if let Some(callsite) = callsite {
+            bridge["callsite"] = callsite;
+        }
+        vec![
+            json!({
+                "kind": "contract",
+                "name": "callee@src/lib.rs:1:1",
+                "outBinding": "out",
+                "post": {"kind": "atomic", "name": "producer_post", "args": []}
+            }),
+            bridge,
+        ]
+    }
+
+    #[test]
+    fn mint_ir_document_absent_panic_loci_yields_empty_header() {
+        let header = minted_panic_locus_contract_header(None);
+        assert!(
+            header.get("panicLoci").is_none(),
+            "absent panicLoci must omit the provenance header: {header:#}"
+        );
+    }
+
+    fn assert_malformed_panic_loci_fails_closed(panic_loci: Value) {
+        let error = mint_from_ir_document(
+            &function_contract_with_panic_loci(Some(panic_loci)),
+            None,
+            None,
+            None,
+            Path::new("."),
+            Path::new("."),
+            true,
+        )
+        .expect_err("present malformed panicLoci must fail closed");
+        assert!(
+            error.contains("panicLoci must be an array"),
+            "error should come from the panicLoci extraction check, got: {error}"
+        );
+    }
+
+    #[test]
+    fn mint_ir_document_rejects_string_panic_loci() {
+        assert_malformed_panic_loci_fails_closed(json!("not-an-array"));
+    }
+
+    #[test]
+    fn mint_ir_document_rejects_number_panic_loci() {
+        assert_malformed_panic_loci_fails_closed(json!(42));
+    }
+
+    #[test]
+    fn mint_ir_document_rejects_object_panic_loci() {
+        assert_malformed_panic_loci_fails_closed(json!({"argTerm": {"kind": "var", "name": "x"}}));
+    }
+
+    #[test]
+    fn mint_ir_document_rejects_null_panic_loci() {
+        assert_malformed_panic_loci_fails_closed(Value::Null);
+    }
+
+    #[test]
+    fn mint_ir_document_well_formed_panic_loci_threads_through_header() {
+        let locus = sample_panic_locus();
+        let header = minted_panic_locus_contract_header(Some(json!([locus.clone()])));
+        let panic_loci = header
+            .get("panicLoci")
+            .and_then(|value| value.as_array())
+            .expect("well-formed panicLoci must be preserved");
+        assert_eq!(panic_loci, &[locus]);
+    }
+
+    fn assert_malformed_bridge_callsite_fails_closed(callsite: Value, expected: &str) {
+        let error = mint_from_ir_document(
+            &explicit_bridge_ir_with_callsite(Some(callsite)),
+            None,
+            None,
+            None,
+            Path::new("."),
+            Path::new("."),
+            true,
+        )
+        .expect_err("present malformed bridge callsite must fail closed");
+        assert!(
+            error.contains(expected),
+            "error should contain `{expected}`, got: {error}"
+        );
+    }
+
+    #[test]
+    fn mint_ir_document_rejects_non_object_bridge_callsite() {
+        assert_malformed_bridge_callsite_fails_closed(
+            json!("not-an-object"),
+            "callsite must be an object",
+        );
+    }
+
+    #[test]
+    fn mint_ir_document_rejects_non_bool_bridge_panic_site() {
+        assert_malformed_bridge_callsite_fails_closed(
+            json!({"panicSite": "true", "file": "src/lib.rs", "line": 25}),
+            "callsite.panicSite must be a boolean",
+        );
+    }
+
+    #[test]
+    fn mint_ir_document_rejects_non_string_bridge_file() {
+        assert_malformed_bridge_callsite_fails_closed(
+            json!({"panicSite": true, "file": 12, "line": 25}),
+            "callsite.file must be a non-empty string",
+        );
+    }
+
+    #[test]
+    fn mint_ir_document_rejects_non_integer_bridge_line() {
+        assert_malformed_bridge_callsite_fails_closed(
+            json!({"panicSite": true, "file": "src/lib.rs", "line": "25"}),
+            "callsite.line must be an integer",
+        );
+    }
+
+    #[test]
+    fn mint_ir_document_well_formed_bridge_callsite_threads_through_header() {
+        let (bytes, _, _) = mint_from_ir_document(
+            &explicit_bridge_ir_with_callsite(Some(json!({
+                "panicSite": true,
+                "file": "src/lib.rs",
+                "line": 25
+            }))),
+            None,
+            None,
+            None,
+            Path::new("."),
+            Path::new("."),
+            true,
+        )
+        .expect("well-formed bridge callsite must mint");
+        let catalog = provekit_verifier::cbor_decode::decode(&bytes).expect("decode proof");
+        let header = bridge_header(&catalog);
+        assert_eq!(
+            header.get("callsite"),
+            Some(&json!({"panicSite": true, "file": "src/lib.rs", "start_line": 25}))
         );
     }
 
