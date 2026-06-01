@@ -1,0 +1,43 @@
+# Stage 4 discrimination fixture for multi-line serde_json Value totality.
+#
+# f/f_split/f_spanning(&serde_json::Value).unwrap() -> PANIC-SAFE.
+# g/g_split/h_adjacent_cross_talk(&MyStruct).unwrap() -> UNDECIDABLE.
+#
+# The rust-bind surface provides the shim contracts (from .provekit/imports).
+# rust-fn-contracts produces body-bearing contracts for the fixture functions.
+# rust-implications bridges the to_string and .unwrap() call sites.
+[[plugins]]
+name = "rust-bind"
+surface = "rust-bind"
+layer = "library-bindings"
+
+[[plugins]]
+name = "rust-contracts"
+surface = "rust-contracts"
+emit = "ir-document"
+
+[[plugins]]
+name = "rust-fn-contracts"
+surface = "rust-fn-contracts"
+emit = "ir-document"
+
+[[plugins]]
+name = "rust-implications"
+surface = "rust-implications"
+
+[platform_profile]
+language = "rust"
+family = "concept:family:json"
+library = "stage4-serde-multiline-totality-fixture"
+version = "0.0.0"
+
+[solvers]
+mode = "first-wins"
+portfolio = ["z3"]
+
+[solvers.z3]
+binary = "z3"
+ir_compiler = "smt-lib-v2.6"
+flags = ["-smt2", "-in"]
+timeout_seconds = 30
+version = "4.x"

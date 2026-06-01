@@ -1519,7 +1519,7 @@ fn is_panic_leaf(leaf: &str) -> bool {
 /// PANIC-LOCUS PRESERVATION (#1745): collect the source loci of every panic-leaf
 /// method call (`x.unwrap()` / `.expect()` / `.unwrap_err()`) in a function body,
 /// keyed by the LIFTED argument term so the verifier can attribute a per-symbol
-/// `method:unwrap` obligation back to ITS OWN call site.
+/// `method:unwrap` obligation back to ITS OWN receiver producer call site.
 ///
 /// The problem this closes: a panic-leaf call lifts to the abstract ctor
 /// `method:unwrap` with NO source span (the IR term is span-free by design). Two
@@ -1537,6 +1537,12 @@ fn is_panic_leaf(leaf: &str) -> bool {
 /// receiver that does not lift (returns None) records no locus: the occurrence
 /// then carries no line and stays honestly undecidable (fail-safe, never the
 /// collapsed line).
+///
+/// The `line`/`col` fields deliberately name the receiver producer call's start
+/// span, not the panic leaf's method-token span. `bridges_by_callsite` is keyed
+/// by the producer bridge line, so a split-line `to_string(v)\n.unwrap()` must
+/// use the receiver start line to find the co-located totality fact. The leaf
+/// position is preserved separately as `panicLine`/`panicCol` for diagnostics.
 fn collect_panic_loci(item_fn: &syn::ItemFn, rel_path: &str) -> Vec<Value> {
     use syn::visit::Visit;
 
@@ -1554,12 +1560,15 @@ fn collect_panic_loci(item_fn: &syn::ItemFn, rel_path: &str) -> Vec<Value> {
                 // production lifter so the term matches the contract `post`.
                 if let Some(recv) = provekit_walk::lift::lift_expr_to_term(&node.receiver) {
                     if let Ok(arg_term) = serde_json::to_value(&recv) {
-                        let start = node.method.span().start();
+                        let producer_start = node.receiver.span().start();
+                        let panic_start = node.method.span().start();
                         self.out.push(json!({
                             "argTerm": arg_term,
                             "file": self.rel_path,
-                            "line": start.line,
-                            "col": start.column,
+                            "line": producer_start.line,
+                            "col": producer_start.column,
+                            "panicLine": panic_start.line,
+                            "panicCol": panic_start.column,
                             "callee": format!("method:{}", leaf),
                         }));
                     }
@@ -6733,6 +6742,67 @@ mod tests {
     use std::collections::BTreeMap;
     use std::fs;
     use std::time::{SystemTime, UNIX_EPOCH};
+
+    fn panic_loci_for_first_fn(src: &str) -> Vec<Value> {
+        let file = syn::parse_file(src).expect("source parses");
+        let item_fn = file
+            .items
+            .iter()
+            .find_map(|item| match item {
+                syn::Item::Fn(item_fn) => Some(item_fn),
+                _ => None,
+            })
+            .expect("fixture has a function");
+        collect_panic_loci(item_fn, "src/lib.rs")
+    }
+
+    fn assert_single_panic_locus_lines(src: &str, expected_line: u64, expected_panic_line: u64) {
+        let loci = panic_loci_for_first_fn(src);
+        assert_eq!(loci.len(), 1, "expected one panic locus: {loci:?}");
+        assert_eq!(loci[0]["file"], "src/lib.rs");
+        assert_eq!(loci[0]["callee"], "method:unwrap");
+        assert_eq!(
+            loci[0]["line"].as_u64(),
+            Some(expected_line),
+            "panic locus line must be the receiver producer call's start line, not the unwrap leaf line: {loci:?}"
+        );
+        assert_eq!(
+            loci[0]["panicLine"].as_u64(),
+            Some(expected_panic_line),
+            "panicLine must preserve the unwrap leaf line for diagnostics: {loci:?}"
+        );
+    }
+
+    #[test]
+    fn collect_panic_loci_uses_receiver_line_for_single_line_unwrap() {
+        let src = r#"pub fn one_line(v: &serde_json::Value) -> String {
+    serde_json::to_string(v).unwrap()
+}
+"#;
+        assert_single_panic_locus_lines(src, 2, 2);
+    }
+
+    #[test]
+    fn collect_panic_loci_uses_receiver_line_for_two_line_unwrap() {
+        let src = r#"pub fn two_line(v: &serde_json::Value) -> String {
+    serde_json::to_string(v)
+        .unwrap()
+}
+"#;
+        assert_single_panic_locus_lines(src, 2, 3);
+    }
+
+    #[test]
+    fn collect_panic_loci_uses_receiver_start_line_for_spanning_unwrap() {
+        let src = r#"pub fn spanning(v: &serde_json::Value) -> String {
+    serde_json::to_string(
+        v,
+    )
+    .unwrap()
+}
+"#;
+        assert_single_panic_locus_lines(src, 2, 5);
+    }
 
     #[test]
     fn disambiguated_partial_leaf_maps_panic_set() {
