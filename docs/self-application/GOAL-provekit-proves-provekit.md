@@ -55,6 +55,10 @@ architectural thesis at v2.
   - **#1755** (closes #1754) mid-run `.provekit/imports/` mutation guard
     (catches concurrent bcargo/rsync wiping deps; loud Err with symmetric
     diff).
+  - **#1756** (#1749 walk envelope surface) threads `panic_loci` through the
+    provekit-walk single-contract envelope mint path and keys `EnvelopeCache`
+    by `contract_cid` plus panic-loci fingerprint, so header provenance cannot
+    silently stale or disappear.
 - Plugin subprocess stderr inherits by default (the `Stdio::null` that hid
   load-bearing bugs is gone); counted `warn!` on missing callsite provenance;
   tracing throughout, not eprintln.
@@ -134,9 +138,10 @@ Each tier ships as one PR, golden-pinned, with visible scoreboard delta.
   bounded.
 - **D-fn cross-function postconditions**: closes the 2 remaining sites
   (`Cid::parse` on literal, catalog primitive `.cid()`).
-- **#1749 remaining surfaces**: provekit-walk single-contract envelope (in
-  flight) and provekit-lift direct mint paths get panic_loci threading.
-  Preventive, no current K delta but locks the no-silent-degradation boundary.
+- **#1749 remaining surface**: provekit-lift direct mint paths get
+  `panic_loci` threading. cmd_mint and provekit-walk single-contract envelope
+  are done. Preventive, no current K delta, but locks the
+  no-silent-degradation boundary.
 
 ### Phase 3 - RESIDUE NAMED + V1 RELEASE
 - The 10 residue sites get an explicit `residue` category in the panicCensus
@@ -219,8 +224,10 @@ the first.
   - #1752 (#1748) multi-line emitter fix.
   - #1753 (#1751) convergent oracle harness + tracing.
   - #1755 (#1754) mid-run imports mutation guard.
-- **Open follow-ups**: #1749 remaining heavy-lift surfaces (provekit-walk
-  envelope in flight; provekit-lift direct after).
+  - #1756 (#1749 walk envelope) panic_loci threading + EnvelopeCache
+    fingerprint key.
+- **Open follow-up**: #1749 provekit-lift direct mint path panic_loci
+  threading.
 - **Key files**: `provekit-verifier/src/{runner.rs, enumerate_callsites.rs,
   body_discharge.rs, handshake.rs, load_all_proofs.rs}`,
   `provekit-walk/src/{lift.rs, bin/walk_rpc.rs, envelope.rs}`,

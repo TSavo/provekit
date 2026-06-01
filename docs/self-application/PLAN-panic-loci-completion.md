@@ -9,31 +9,35 @@ the marked checkpoints.
 
 ## Current state (verified 2026-06-01)
 
-- `main` at `83092d604` after `gh pr merge 1747 --admin --merge`.
+- `main` at `dff308cc5` after #1756 merged.
 - **#1747 merged.** Panic-locus preservation + guard-branch routing landed.
   `serde_json::to_string(v: &Value).unwrap()` discharges **panic-safe** on the
   warm-oracle `stage3-serde-totality-fixture` e2e; `to_string(s: &MyStruct)`
   stays honestly undecidable. Hard invariants held throughout:
-  `silentlyDropped=0`, `falsePass=0`. Three commits on the branch:
-  `8be551515` (locus WIP), `628d5bd11` (panic-fix), `8b00c2001` (golden regen).
-- **#1745 closed** by merge.
-- **Open follow-ups:**
-  - **#1748** - multi-line receiver/unwrap line mismatch (Codex P2;
-    completeness, safe-direction: missed lookup -> undecidable, never false-pass).
-  - **#1749** - `panic_loci` universal mint-surface coverage + fail-closed on
-    malformed (CodeRabbit; contains the one no-silent-failure exposure).
-- **No open PRs.**
-- **DONE per the goal hook is NOT satisfied.** #1747 proved the *mechanism* on a
-  fixture; the *application surface* (provekit-cli / libprovekit) has not been
-  measured. Substantive K must come from a production run with named gap
-  categories.
+  `silentlyDropped=0`, `falsePass=0`.
+- **#1750 merged.** cmd_mint now fails closed on malformed `panicLoci` instead
+  of silently defaulting dropped provenance to empty.
+- **#1752 merged and closed #1748.** walk_rpc emits the producer receiver start
+  line for split/spanning receiver `.unwrap()` sites.
+- **#1753 merged.** self-check oracle convergence is explicit and logged.
+- **#1755 merged.** self-check guards mid-run `.provekit/imports` mutation.
+- **#1756 merged.** provekit-walk single-contract envelope now threads
+  `panic_loci` into contract headers and keys `EnvelopeCache` by
+  `contract_cid` plus panic-loci fingerprint.
+- **Open follow-up:**
+  - **#1749** - remaining `provekit-lift` direct mint path panic_loci
+    threading. cmd_mint and provekit-walk envelope are done.
+- **Production K measurement exists.** Per GOAL, provekit-cli currently reports
+  `silentlyDropped=0`, `falsePass=0`, `panicSafe=0`, `panicCensus=32`, with
+  every unproven site named by category. Next K movement comes from the Phase-2
+  D-lib per-type slice, not more panic-locus plumbing.
 
 ## Recommended order
 
-**(a) #1749 fail-closed slice first** (small, isolable, hardens the floor).
-**(b) Production K measurement on provekit-cli** (the load-bearing step).
-**(c) #1748 or the #1749 heavy-lift surfaces next**, picked by which one
-closes more sites the measurement actually surfaces.
+**(a) #1749 fail-closed slice first** - done by #1750.
+**(b) Production K measurement on provekit-cli** - done and recorded in GOAL.
+**(c) #1748 or the #1749 heavy-lift surfaces next** - #1748 is done by #1752;
+provekit-walk envelope is done by #1756; provekit-lift direct remains.
 
 ### Why this order
 
@@ -196,8 +200,8 @@ macOS-swift is the known inherited red.
 
 ## Production K measurement (the load-bearing step after the slice)
 
-After the slice lands, the next move is the production K measurement on
-provekit-cli. This is the goal-hook signal.
+The production K measurement has landed in GOAL. Keep this harness section as
+the recipe for reruns after any future panic-locus or K-moving slice.
 
 ### Harness
 
@@ -262,12 +266,10 @@ checks. Those are coordinator's.
 
 ## After this slice + measurement
 
-Pick #1748 vs the #1749 heavy-lift surfaces by which one is on the path
-to the next substantive K increment, informed by the production gap
-census. #1748 (multi-line receiver/unwrap) likely closes more real
-serde sites in production; the #1749 heavy-lift covers surfaces nothing
-currently mints panic-bearing through, so it is theoretical until
-something does.
+The remaining #1749 work is provekit-lift direct mint path panic_loci
+threading. It is preventive, with no current K delta expected. After that,
+the next substantive K increment comes from the Phase-2 D-lib per-type slice
+named in GOAL.
 
 The Phase-2 tier worklist remains the goal-doc reference:
 
