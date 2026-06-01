@@ -9,6 +9,10 @@ fn panic_freedom_constants_keep_existing_wire_tokens() {
     assert_eq!(panic_freedom::IS_SOME, "is_some");
     assert_eq!(panic_freedom::IS_NONE, "is_none");
     assert_eq!(panic_freedom::CF_GUARDED, "cf_guarded");
+    assert_eq!(
+        panic_freedom::CF_GUARDED_CONCEPT,
+        "concept:panic-freedom.guard"
+    );
     assert_eq!(panic_freedom::CF_ITE, "cf_ite");
     assert_eq!(panic_freedom::METHOD_UNWRAP, "method:unwrap");
     assert_eq!(panic_freedom::METHOD_EXPECT, "method:expect");

@@ -621,7 +621,10 @@ fn walk_term(
     //     under it. A branch the kit did not wrap (unrecognized guard) carries
     //     no `cf_guarded`, so a partial inside it stays honestly undecidable.
     //   * any other ctor: descends args with the path condition unchanged.
-    if name == panic_freedom::CF_GUARDED {
+    if matches!(
+        name.as_str(),
+        panic_freedom::CF_GUARDED | panic_freedom::CF_GUARDED_CONCEPT
+    ) {
         if let Some(args) = t.get("args").and_then(|v| v.as_array()) {
             let guard = args.first();
             let value = args.get(1);
@@ -732,6 +735,7 @@ mod guard_propagation_tests {
     //! property and is pinned in `provekit-walk`'s lift tests, not here.
 
     use super::*;
+    use libprovekit::concept::panic_freedom;
     use serde_json::json;
 
     // The receiver term the obligation is about (`x` in `x.panic_call()`).
@@ -753,7 +757,17 @@ mod guard_propagation_tests {
 
     // Wrap a value in the kit's `cf_guarded(guard, value)` carrier.
     fn cf_guarded(guard: Json, value: Json) -> Json {
-        json!({ "kind": "ctor", "name": "cf_guarded", "args": [guard, value] })
+        guarded_carrier(panic_freedom::CF_GUARDED, guard, value)
+    }
+
+    fn guarded_carrier(name: &str, guard: Json, value: Json) -> Json {
+        json!({ "kind": "ctor", "name": name, "args": [guard, value] })
+    }
+
+    fn guard_facts_for_carrier(name: &str) -> Vec<Json> {
+        let body = guarded_carrier(name, pred("pred_a"), panic_call());
+        let sites = run(&pool_with_post(body));
+        enumerated_call(&sites).guard_facts.clone()
     }
 
     // Build a pool with a single `panic_call` bridge and one contract whose
@@ -884,6 +898,62 @@ mod guard_propagation_tests {
             vec![json!({ "kind": "atomic", "name": "pred_a", "args": [recv()] })],
             "a cf_guarded-wrapped call must carry the kit's opaque guard atom verbatim"
         );
+    }
+
+    #[test]
+    fn concept_guarded_threads_the_opaque_atom_verbatim() {
+        let body = guarded_carrier(
+            panic_freedom::CF_GUARDED_CONCEPT,
+            pred("pred_a"),
+            panic_call(),
+        );
+        let sites = run(&pool_with_post(body));
+        assert_eq!(
+            enumerated_call(&sites).guard_facts,
+            vec![json!({ "kind": "atomic", "name": "pred_a", "args": [recv()] })],
+            "the substrate guarded-value carrier must read exactly like cf_guarded"
+        );
+    }
+
+    #[test]
+    fn old_and_concept_guarded_carriers_are_equivalent() {
+        assert_eq!(
+            guard_facts_for_carrier(panic_freedom::CF_GUARDED),
+            guard_facts_for_carrier(panic_freedom::CF_GUARDED_CONCEPT),
+            "old and substrate guarded carriers must produce identical guard facts"
+        );
+    }
+
+    #[test]
+    fn misspelled_concept_guarded_carrier_does_not_match() {
+        let sites = run(&pool_with_post(guarded_carrier(
+            "concept:panic-freedom.gaurd",
+            pred("pred_a"),
+            panic_call(),
+        )));
+        assert!(
+            enumerated_call(&sites).guard_facts.is_empty(),
+            "a misspelled substrate carrier must not silently match"
+        );
+    }
+
+    #[test]
+    fn concept_guarded_carrier_is_exact_case_sensitive_token() {
+        for name in [
+            " concept:panic-freedom.guard",
+            "concept:panic-freedom.guard ",
+            "concept:panic-freedom.Guard",
+        ] {
+            let sites = run(&pool_with_post(guarded_carrier(
+                name,
+                pred("pred_a"),
+                panic_call(),
+            )));
+            assert!(
+                enumerated_call(&sites).guard_facts.is_empty(),
+                "substrate carrier token variations must not match: {name}"
+            );
+        }
     }
 
     #[test]

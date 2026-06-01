@@ -2726,6 +2726,10 @@ mod tests {
             "guarded branches must carry cf_guarded wrappers: {json}"
         );
         assert!(
+            !json.contains(panic_freedom::CF_GUARDED_CONCEPT),
+            "Rust v1 emission must keep the old cf_guarded carrier: {json}"
+        );
+        assert!(
             json.contains("is_some"),
             "then-branch guard is is_some: {json}"
         );
