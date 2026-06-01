@@ -149,6 +149,7 @@ fn legacy_report_json(report: &DoctorReport) -> Value {
         "checks": checks_json,
         "mode": report.mode.as_str(),
         "ok": report.ok,
+        "releaseReady": report.release_ready,
     })
 }
 
@@ -210,6 +211,13 @@ mod tests {
     }
 
     #[test]
+    fn release_gate_mode_argument_parses() {
+        let args = DoctorArgs::try_parse_from(["doctor", "--mode", "releaseGate"]).unwrap();
+
+        assert_eq!(args.mode, DoctorMode::ReleaseGate);
+    }
+
+    #[test]
     fn invalid_mode_is_a_parse_error() {
         let err = DoctorArgs::try_parse_from(["doctor", "--mode", "invalid"])
             .expect_err("invalid mode should fail before doctor checks run")
@@ -220,7 +228,7 @@ mod tests {
             "parse error should name the invalid value: {err}"
         );
         assert!(
-            err.contains("structural") && err.contains("strict"),
+            err.contains("structural") && err.contains("strict") && err.contains("releaseGate"),
             "parse error should list valid modes: {err}"
         );
     }
