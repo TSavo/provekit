@@ -173,13 +173,32 @@ architectural thesis at v2.
   `oracle={requested:true, engaged:true, attempted:3496, resolved:3410}`.
   **Cumulative production K so far: 21 sites discharged via sound reasoning
   on real production code.**
+- **Residue declaration (#1775, MERGED 2026-06-01).** Rust kit reads
+  target-scoped `.provekit/residue.toml` entries and emits
+  `panic-site-annotation` lift diagnostics. `self-check` joins those
+  diagnostics into the panic census and fails closed on stale, duplicate, or
+  proven-site annotations. Result on libprovekit self-check:
+  `panicSafe=12`, `falsePass=0`, `silentlyDropped=0`, `droppedSites=[]`,
+  `panicCensus=35`, with 1 `platform_semantics_runtime_residue` row. Result
+  on provekit-cli self-check: `panicSafe=21`, `falsePass=0`,
+  `silentlyDropped=0`, `droppedSites=[]`, `panicCensus=53`, with 8
+  `lock_poisoning_residue` rows and 1 closeable `D-lib` tier-to-close row for
+  `RealizeRequest` serialization. #1773 tracks cross-target propagation of
+  annotations as proof mementos.
 
-## Current census (provekit-cli, post-#1771 main)
+## Current census (provekit-cli, post-#1775 main)
 
 Latest measured gate: `panicCensus=53`, `panicSafe=21`, `falsePass=0`,
 `silentlyDropped=0`, `droppedSites=[]`. The original 7-site C bucket is closed
-by #1767, the B guarded-panic bucket is closed by #1769, and the two D-fn rows
-are closed by #1771. Residue still needs first-class naming.
+by #1767, the B guarded-panic bucket is closed by #1769, the two D-fn rows
+are closed by #1771, and residue is first-class in the panic census as of
+#1775.
+
+Important reproducibility caveat: #1774 tracks that a clean dependency-proof
+state can reproduce `panicSafe=14` with the same #1771 oracle resolution
+profile, while warmed/cached dependency proof state reaches the recorded
+`panicSafe=21`. The current K claim is therefore not a v1 release claim until
+doctor validates dependency-proof state consistency.
 
 | Category | Count | Closing mechanism |
 |---|---|---|
@@ -192,9 +211,10 @@ are closed by #1771. Residue still needs first-class naming.
 | oracle-residue | 0 | None in panicCensus; the 86 unresolved receivers are non-panic obligations. |
 | unknown | 0 | Every site has a named category. Honest. |
 
-The honest read: C, B, and D-fn are closed, D-lib is mostly closed, and residue
-must be named. v1 is "K covering the provable buckets, residue named, hard
-floor never violated." K = N is not required and not honest.
+The honest read: C, B, D-fn, and residue declaration are closed, D-lib is
+mostly closed, and doctor must make the K claim reproducible. v1 is "K
+covering the provable buckets, residue named, hard floor never violated, and
+doctor green." K = N is not required and not honest.
 
 ## Current census (libprovekit, 15 unproven sites, warm-oracle baseline)
 
@@ -235,6 +255,11 @@ Post-#1771 main libprovekit score: `panicCensus=35`, `panicSafe=12`,
 `src/core/bind.rs:550` (`ConceptOpCatalog.cid(CONCEPT_BIND_RESULT).expect(...)`)
 and `src/wp/tests.rs:74`
 (`Cid::parse(format!("blake3-512:{}", "0".repeat(128))).expect(...)`).
+
+Post-#1775 main libprovekit score: `panicCensus=35`, `panicSafe=12`,
+`falsePass=0`, `silentlyDropped=0`, `droppedSites=[]`; the
+`src/core/platform_semantics.rs:42` row is now explicitly
+`platform_semantics_runtime_residue` with tier `irreducible`.
 
 ## The metric (the one number we watch)
 
@@ -290,14 +315,21 @@ Each tier ships as one PR, golden-pinned, with visible scoreboard delta.
 - **D-fn cross-function postconditions (MERGED, #1771):** closes the 2
   remaining D-fn sites (`Cid::parse` on literal, catalog primitive `.cid()`).
   +2 K delta on provekit-cli; cumulative production K=21.
+- **Residue declaration (MERGED, #1775):** target-scoped Rust-kit
+  `.provekit/residue.toml` entries annotate panic census rows without
+  changing discharge. 8 provekit-cli Mutex poisoning sites become
+  `lock_poisoning_residue`; the `RealizeRequest` serialization site remains
+  `unproven` with an explicit D-lib tier-to-close; the libprovekit
+  `platform_semantics` site becomes `platform_semantics_runtime_residue`.
 ### Phase 3 - RESIDUE NAMED + V1 RELEASE
-- The 9 honest residue sites get an explicit `residue` category in the
-  panicCensus output (not raw "unproven"; honest residue with reason), and
-  the closeable `RealizeRequest` row remains `unproven` with an explicit
-  `tier_to_close` reason.
+- Residue naming is DONE in #1775: the 9 honest residue sites get an explicit
+  `residue` category in the panicCensus output (not raw "unproven"; honest
+  residue with reason), and the closeable `RealizeRequest` row remains
+  `unproven` with an explicit `tier_to_close` reason.
 - `provekit doctor` aggregates the no-silent-failure surfaces (#1742 manifest
   validation, #1750 fail-closed extraction, #1753 convergence, #1755 mutation
-  guard) into a startup health check.
+  guard, #1775 residue consistency, and #1774 dependency-proof state
+  reproducibility) into a startup health check.
 - v1 release tag: "Rust v1 done." `provekit self-check` on any Rust crate
   produces an honest panic-freedom audit with a named gap census.
 
@@ -397,7 +429,16 @@ the first.
   - #1771 (D-fn slice) manifest-backed cross-function postconditions for
     `Cid::parse` on literal and catalog primitive `.cid()`. +2 K delta on
     provekit-cli. Cumulative production K: 21.
+  - #1775 (residue declaration) Rust-kit target-scoped residue manifest and
+    `self-check` panic census annotation join. Names 8 provekit-cli Mutex
+    residues, 1 provekit-cli D-lib tier-to-close row, and 1 libprovekit
+    platform semantics residue.
 - **Open follow-ups**:
+  - #1773 promote panic-site annotations into proof mementos so target-scoped
+    residue declarations can propagate through dependency `.proof` bundles.
+  - #1774 K reproducibility depends on cached dependency proof state; doctor
+    must detect or normalize clean-root vs warmed-root scoreboard variance
+    before a v1 K release claim.
   - #1757 self-check golden drift reached main without gate update.
   - #1763 self-check should fail closed when requested oracle host cannot
     start.
