@@ -25,6 +25,9 @@
 
 use std::cell::RefCell;
 use std::rc::Rc;
+use std::sync::Arc;
+
+use provekit_canonicalizer::Value;
 
 pub mod convert;
 pub mod parse;
@@ -349,6 +352,7 @@ pub struct ContractArgs {
     pub inv: Option<Rc<Formula>>,
     pub out_binding: Option<String>,
     pub evidence: Option<EvidenceTerm>,
+    pub panic_loci: Vec<Arc<Value>>,
 }
 
 #[derive(Debug, Clone)]
@@ -359,6 +363,10 @@ pub struct ContractDecl {
     pub inv: Option<Rc<Formula>>,
     pub out_binding: String,
     pub evidence: Option<EvidenceTerm>,
+    /// Header-only panic provenance carried through minting as opaque
+    /// canonical JSON. The verifier reads it to attribute panic obligations,
+    /// but it does not participate in contract CID derivation.
+    pub panic_loci: Vec<Arc<Value>>,
     /// Human-supplied concept name extracted from a `// concept: <name>` (or
     /// `/// concept: <name>`) annotation immediately preceding the function.
     ///
@@ -396,6 +404,7 @@ pub fn contract<S: Into<String>>(name: S, args: ContractArgs) {
             inv: args.inv,
             out_binding: args.out_binding.unwrap_or_else(|| "out".into()),
             evidence: args.evidence,
+            panic_loci: args.panic_loci,
             concept_hint: None,
         });
     });

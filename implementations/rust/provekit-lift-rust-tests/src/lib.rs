@@ -402,6 +402,7 @@ fn visit_test_fn(f: &syn::ItemFn, source_path: &str, out: &mut AdapterOutput) {
                         inv: Some(part.formula),
                         out_binding: "out".into(),
                         evidence: None,
+                        panic_loci: Vec::new(),
                         concept_hint: None,
                     });
                     out.lifted += 1;
@@ -460,6 +461,7 @@ fn visit_test_fn_with_evidence(
                         inv: Some(part.formula.clone()),
                         out_binding: "out".into(),
                         evidence: None,
+                        panic_loci: Vec::new(),
                         concept_hint: None,
                     });
                     out.lifted += 1;

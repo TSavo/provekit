@@ -40,17 +40,18 @@
 use base64::Engine;
 use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
+use std::sync::Arc;
 
-use provekit_canonicalizer::blake3_512_of;
+use provekit_canonicalizer::{blake3_512_of, encode_jcs, Value};
 use provekit_claim_envelope::{
     compute_contract_set_cid, contract_cid as compute_contract_cid, mint_contract, Authoring,
     MintContractArgs,
 };
 use provekit_ir_symbolic::{serialize::formula_to_value, ContractDecl, Formula};
-use std::rc::Rc;
 use provekit_proof_envelope::{
     build_proof_envelope, ed25519_pubkey_string, Ed25519Seed, ProofEnvelopeInput,
 };
+use std::rc::Rc;
 
 pub mod call_edges;
 pub use call_edges::{
@@ -443,28 +444,7 @@ pub fn lift_path(root: &Path) -> LiftReport {
             // Compute the signer-independent content CID using a minimal
             // MintContractArgs (only the content-bearing fields matter;
             // signer_seed, produced_at, etc. do not affect the CID per spec #94).
-            let args = MintContractArgs {
-                formals: Vec::new(),
-                emit_empty_formals: false,
-                formal_sorts: Vec::new(),
-                library: None,
-                panic_loci: Vec::new(),
-                contract_name: d.name.clone(),
-                pre: d.pre.as_deref().map(formula_to_value),
-                post: d.post.as_deref().map(formula_to_value),
-                inv: d.inv.as_deref().map(formula_to_value),
-                out_binding: d.out_binding.clone(),
-                produced_by: "provekit-lift".into(),
-                produced_at: "2026-01-01T00:00:00.000Z".into(),
-                input_cids: vec![],
-                authoring: Authoring::Lift {
-                    lifter: "provekit-lift".into(),
-                    evidence: String::new(),
-                    source_cid: None,
-                },
-                signer_seed: [0u8; 32],
-            };
-            let ccid = compute_contract_cid(&args);
+            let ccid = contract_cid_for_lift_path_prepass(d);
             // If the same name was lifted multiple times (e.g. semantic dedup),
             // use the first; they'll produce the same CID anyway.
             map.entry(d.name.clone()).or_insert(ccid);
@@ -579,6 +559,8 @@ pub enum LiftMintError {
     Mint(String),
     #[error("name collision on different IR: contract `{0}` lifted twice with different bodies")]
     NameCollisionDifferentIr(String),
+    #[error("{0}")]
+    InvalidPanicLoci(String),
 }
 
 /// Coalesce decls that share a name into one. A producer callsite asserted
@@ -606,6 +588,7 @@ fn coalesce_decls_by_name(decls: &[ContractDecl]) -> (Vec<ContractDecl>, usize) 
             let identical = format!("{:?}", acc.pre) == format!("{:?}", d.pre)
                 && format!("{:?}", acc.post) == format!("{:?}", d.post)
                 && format!("{:?}", acc.inv) == format!("{:?}", d.inv);
+            merge_panic_loci(&mut acc.panic_loci, &d.panic_loci);
             if identical {
                 deduplicated += 1;
             } else {
@@ -625,6 +608,77 @@ fn coalesce_decls_by_name(decls: &[ContractDecl]) -> (Vec<ContractDecl>, usize) 
     (out, deduplicated)
 }
 
+fn merge_panic_loci(acc: &mut Vec<Arc<Value>>, incoming: &[Arc<Value>]) {
+    for locus in incoming {
+        // Full canonical-entry equality keeps this metadata lossless. Do not
+        // collapse by projected file/line: col, callee, and argTerm matter.
+        let key = encode_jcs(locus.as_ref());
+        if !acc
+            .iter()
+            .any(|existing| encode_jcs(existing.as_ref()) == key)
+        {
+            acc.push(locus.clone());
+        }
+    }
+}
+
+fn validate_panic_loci(panic_loci: &[Arc<Value>]) -> Result<(), LiftMintError> {
+    for (idx, locus) in panic_loci.iter().enumerate() {
+        if !matches!(locus.as_ref(), Value::Object(_)) {
+            return Err(LiftMintError::InvalidPanicLoci(format!(
+                "panic_loci[{idx}] must be an object, got {}",
+                value_type_name(locus.as_ref())
+            )));
+        }
+    }
+    Ok(())
+}
+
+fn normalized_panic_loci(panic_loci: &[Arc<Value>]) -> Vec<Arc<Value>> {
+    let mut keyed: Vec<(String, Arc<Value>)> = panic_loci
+        .iter()
+        .map(|locus| (encode_jcs(locus.as_ref()), locus.clone()))
+        .collect();
+    keyed.sort_by(|a, b| a.0.cmp(&b.0));
+    keyed.into_iter().map(|(_, locus)| locus).collect()
+}
+
+fn value_type_name(value: &Value) -> &'static str {
+    match value {
+        Value::Null => "null",
+        Value::Bool(_) => "bool",
+        Value::Integer(_) => "number",
+        Value::String(_) => "string",
+        Value::Array(_) => "array",
+        Value::Object(_) => "object",
+    }
+}
+
+fn contract_cid_for_lift_path_prepass(d: &ContractDecl) -> String {
+    let args = MintContractArgs {
+        formals: Vec::new(),
+        emit_empty_formals: false,
+        formal_sorts: Vec::new(),
+        library: None,
+        panic_loci: normalized_panic_loci(&d.panic_loci),
+        contract_name: d.name.clone(),
+        pre: d.pre.as_deref().map(formula_to_value),
+        post: d.post.as_deref().map(formula_to_value),
+        inv: d.inv.as_deref().map(formula_to_value),
+        out_binding: d.out_binding.clone(),
+        produced_by: "provekit-lift".into(),
+        produced_at: "2026-01-01T00:00:00.000Z".into(),
+        input_cids: vec![],
+        authoring: Authoring::Lift {
+            lifter: "provekit-lift".into(),
+            evidence: String::new(),
+            source_cid: None,
+        },
+        signer_seed: [0u8; 32],
+    };
+    compute_contract_cid(&args)
+}
+
 /// Conjoin two optional formulas into one `and` connective, flattening nested
 /// `and`s and dropping exact-duplicate operands (compared by canonical Debug
 /// form, since `Formula` has no `PartialEq`). Distinct operands — including a
@@ -638,7 +692,10 @@ fn conjoin_formula(a: Option<Rc<Formula>>, b: Option<Rc<Formula>>) -> Option<Rc<
     let mut operands: Vec<Rc<Formula>> = Vec::new();
     for f in [a, b] {
         match &*f {
-            Formula::Connective { kind, operands: inner } if kind == "and" => {
+            Formula::Connective {
+                kind,
+                operands: inner,
+            } if kind == "and" => {
                 for op in inner {
                     push_unique_operand(&mut operands, op.clone());
                 }
@@ -658,7 +715,10 @@ fn conjoin_formula(a: Option<Rc<Formula>>, b: Option<Rc<Formula>>) -> Option<Rc<
 
 fn push_unique_operand(operands: &mut Vec<Rc<Formula>>, candidate: Rc<Formula>) {
     let key = format!("{candidate:?}");
-    if !operands.iter().any(|existing| format!("{existing:?}") == key) {
+    if !operands
+        .iter()
+        .any(|existing| format!("{existing:?}") == key)
+    {
         operands.push(candidate);
     }
 }
@@ -684,12 +744,14 @@ pub fn mint_proof(decls: &[ContractDecl], opts: &LiftOptions) -> Result<MintOutp
     let (coalesced, mut deduplicated) = coalesce_decls_by_name(decls);
 
     for d in &coalesced {
+        validate_panic_loci(&d.panic_loci)?;
+        let panic_loci = normalized_panic_loci(&d.panic_loci);
         let args = MintContractArgs {
             formals: Vec::new(),
             emit_empty_formals: false,
             formal_sorts: Vec::new(),
             library: None,
-            panic_loci: Vec::new(),
+            panic_loci,
             contract_name: d.name.clone(),
             pre: d.pre.as_deref().map(formula_to_value),
             post: d.post.as_deref().map(formula_to_value),
@@ -1014,6 +1076,15 @@ fn contract_decl_to_memento(decl: &ContractDecl) -> serde_json::Value {
     if let Some(v) = post_value {
         entry["post"] = v;
     }
+    if !decl.panic_loci.is_empty() {
+        let panic_loci: Vec<serde_json::Value> = normalized_panic_loci(&decl.panic_loci)
+            .into_iter()
+            .map(|locus| {
+                serde_json::from_str(&encode_jcs(locus.as_ref())).unwrap_or(serde_json::Value::Null)
+            })
+            .collect();
+        entry["panicLoci"] = serde_json::Value::Array(panic_loci);
+    }
     entry
 }
 
@@ -1069,6 +1140,10 @@ pub fn run_cli(flags: CliFlags) -> i32 {
 mod tests {
     use super::*;
     use std::io::Write;
+    use std::sync::Arc;
+
+    use provekit_canonicalizer::Value;
+    use provekit_proof_envelope::{cbor_decode, CborValue};
 
     fn tempdir() -> tempdir_compat::TempDir {
         tempdir_compat::TempDir::new("provekit-lift-test").unwrap()
@@ -1168,6 +1243,212 @@ proptest! {{
                 .collect::<Vec<String>>(),
         );
         assert_eq!(flags.workspace.as_deref(), Some(Path::new("/a")));
+    }
+
+    fn proptest_contract_decl(name: &str) -> ContractDecl {
+        let src = r#"
+proptest! {
+    #[test]
+    fn lifted_property(x: i64) {
+        prop_assert_eq!(x, 42);
+    }
+}
+"#;
+        let parsed = syn::parse_file(src).expect("fixture parses");
+        let mut decl = adapter_proptest::lift_file(&parsed, "src/lib.rs")
+            .decls
+            .into_iter()
+            .next()
+            .expect("fixture lifts one contract");
+        decl.name = name.to_string();
+        decl
+    }
+
+    fn sample_panic_locus_at(line: i64, panic_line: i64) -> Arc<Value> {
+        Value::object([
+            (
+                "argTerm",
+                Value::object([
+                    ("kind", Value::string("call")),
+                    ("callee", Value::string("serde_json::to_string")),
+                    (
+                        "args",
+                        Value::array(vec![Value::object([
+                            ("kind", Value::string("var")),
+                            ("name", Value::string("v")),
+                        ])]),
+                    ),
+                ]),
+            ),
+            ("file", Value::string("src/lib.rs")),
+            ("line", Value::integer(line)),
+            ("col", Value::integer(4)),
+            ("panicLine", Value::integer(panic_line)),
+            ("panicCol", Value::integer(9)),
+            ("callee", Value::string("method:unwrap")),
+        ])
+    }
+
+    fn proof_member_headers(minted: &MintOutput) -> Vec<serde_json::Value> {
+        let catalog = cbor_decode(&minted.bytes).expect("decode proof envelope");
+        let members = catalog
+            .as_map()
+            .and_then(|root| root.get("members"))
+            .and_then(CborValue::as_map)
+            .expect("proof members map");
+        let mut headers: Vec<_> = members
+            .values()
+            .map(|member| {
+                serde_json::from_slice::<serde_json::Value>(member.as_bstr().expect("member bytes"))
+                    .expect("member is JSON")
+                    .get("header")
+                    .expect("layered member header")
+                    .clone()
+            })
+            .collect();
+        headers.sort_by_key(|header| header["name"].as_str().unwrap_or_default().to_string());
+        headers
+    }
+
+    fn only_proof_member_header(minted: &MintOutput) -> serde_json::Value {
+        let mut headers = proof_member_headers(minted);
+        assert_eq!(headers.len(), 1, "expected one proof member");
+        headers.pop().unwrap()
+    }
+
+    #[test]
+    fn mint_proof_preserves_panic_loci_in_contract_header() {
+        let mut decl = proptest_contract_decl("panic_loci_fixture");
+        let locus = sample_panic_locus_at(12, 13);
+        decl.panic_loci = vec![locus.clone()];
+
+        let minted = mint_proof(&[decl], &LiftOptions::default()).expect("mint");
+        let header = only_proof_member_header(&minted);
+
+        let panic_loci = header
+            .get("panicLoci")
+            .and_then(|value| value.as_array())
+            .expect("panicLoci header must be present");
+        assert_eq!(panic_loci.len(), 1);
+        assert_eq!(
+            panic_loci[0],
+            serde_json::from_str::<serde_json::Value>(&provekit_canonicalizer::encode_jcs(
+                locus.as_ref()
+            ))
+            .expect("canonical locus parses as JSON")
+        );
+    }
+
+    #[test]
+    fn mint_proof_rejects_malformed_panic_loci_entries() {
+        for (label, locus, expected_type) in [
+            ("string", Value::string("not-a-locus-object"), "string"),
+            ("number", Value::integer(42), "number"),
+            ("array", Value::array(vec![]), "array"),
+            ("null", Value::null(), "null"),
+        ] {
+            let mut decl = proptest_contract_decl("malformed_panic_locus");
+            decl.panic_loci = vec![locus];
+
+            let err = mint_proof(&[decl], &LiftOptions::default())
+                .expect_err("malformed panic_loci must fail closed");
+            let err = err.to_string();
+            assert!(
+                err.contains(&format!(
+                    "panic_loci[0] must be an object, got {expected_type}"
+                )),
+                "{label}: error should name panic_loci path and type, got: {err}"
+            );
+        }
+    }
+
+    #[test]
+    fn mint_proof_keeps_absent_empty_and_nonempty_panic_loci_out_of_contract_set_cid() {
+        let absent = proptest_contract_decl("panic_loci_identity");
+        let mut empty = absent.clone();
+        empty.panic_loci = Vec::new();
+        let mut nonempty = absent.clone();
+        nonempty.panic_loci = vec![sample_panic_locus_at(20, 21)];
+
+        let absent_mint = mint_proof(&[absent], &LiftOptions::default()).expect("absent mint");
+        let empty_mint = mint_proof(&[empty], &LiftOptions::default()).expect("empty mint");
+        let nonempty_mint =
+            mint_proof(&[nonempty], &LiftOptions::default()).expect("nonempty mint");
+
+        assert_eq!(
+            absent_mint.contract_set_cid, empty_mint.contract_set_cid,
+            "absent and explicit-empty panic_loci must be equivalent at the cid layer"
+        );
+        assert_eq!(
+            empty_mint.contract_set_cid, nonempty_mint.contract_set_cid,
+            "panic_loci is header provenance, not contract identity"
+        );
+        assert_eq!(
+            absent_mint.cid, empty_mint.cid,
+            "explicit empty panic_loci must preserve legacy proof envelope bytes"
+        );
+        assert_ne!(
+            empty_mint.cid, nonempty_mint.cid,
+            "nonempty panic_loci must change the proof envelope bytes/CID"
+        );
+    }
+
+    #[test]
+    fn lift_path_panic_loci_prepass_contract_cid_matches_real_minted_header_cid() {
+        let mut decl = proptest_contract_decl("panic_loci_prepass_equivalence");
+        decl.panic_loci = vec![sample_panic_locus_at(22, 23)];
+
+        let prepass_cid = contract_cid_for_lift_path_prepass(&decl);
+        let minted = mint_proof(&[decl], &LiftOptions::default()).expect("mint");
+        let header = only_proof_member_header(&minted);
+        let real_header_cid = header
+            .get("cid")
+            .and_then(|value| value.as_str())
+            .expect("contract header cid");
+
+        assert_eq!(
+            prepass_cid, real_header_cid,
+            "lift_path CID prepass and real mint header cid must stay equivalent"
+        );
+    }
+
+    #[test]
+    fn mint_proof_normalizes_panic_loci_order_for_deterministic_headers() {
+        let first = sample_panic_locus_at(30, 31);
+        let second = sample_panic_locus_at(40, 41);
+        let mut forward = proptest_contract_decl("panic_loci_order");
+        forward.panic_loci = vec![first.clone(), second.clone()];
+        let mut reverse = proptest_contract_decl("panic_loci_order");
+        reverse.panic_loci = vec![second, first];
+
+        let forward_mint = mint_proof(&[forward], &LiftOptions::default()).expect("forward mint");
+        let reverse_mint = mint_proof(&[reverse], &LiftOptions::default()).expect("reverse mint");
+
+        assert_eq!(
+            forward_mint.bytes, reverse_mint.bytes,
+            "panic_loci order must not perturb deterministic proof bytes"
+        );
+    }
+
+    #[test]
+    fn mint_proof_coalesces_same_name_panic_loci_without_dropping_provenance() {
+        let mut first = proptest_contract_decl("panic_loci_coalesce");
+        first.panic_loci = vec![sample_panic_locus_at(50, 51)];
+        let mut second = proptest_contract_decl("panic_loci_coalesce");
+        second.panic_loci = vec![sample_panic_locus_at(60, 61)];
+
+        let minted = mint_proof(&[first, second], &LiftOptions::default()).expect("mint");
+        let header = only_proof_member_header(&minted);
+        let panic_loci = header
+            .get("panicLoci")
+            .and_then(|value| value.as_array())
+            .expect("panicLoci header must be present");
+
+        assert_eq!(
+            panic_loci.len(),
+            2,
+            "coalescing same-name facts must union panic_loci provenance"
+        );
     }
 
     // -----------------------------------------------------------------------

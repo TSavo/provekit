@@ -125,6 +125,7 @@ fn visit_fn(f: &syn::ItemFn, source_path: &str, out: &mut AdapterOutput) {
         inv: Some(wrapped),
         out_binding: "out".into(),
         evidence: None,
+        panic_loci: Vec::new(),
         concept_hint: None,
     });
     out.lifted += 1;

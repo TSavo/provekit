@@ -423,6 +423,7 @@ fn classify_for_loop(
             inv: Some(quantified),
             out_binding: "out".into(),
             evidence: None,
+            panic_loci: Vec::new(),
             concept_hint: None,
         });
         out.lifted += 1;
@@ -605,6 +606,7 @@ fn classify_helper_inlining(
             inv: Some(inlined),
             out_binding: "out".into(),
             evidence: None,
+            panic_loci: Vec::new(),
             concept_hint: None,
         });
         out.lifted += 1;
@@ -777,6 +779,7 @@ fn classify_characterization(
             inv: Some(part.formula),
             out_binding: "out".into(),
             evidence: None,
+            panic_loci: Vec::new(),
             concept_hint: None,
         });
         out.lifted += 1;

@@ -514,6 +514,7 @@ fn lift_test_fn_with_helpers(
         inv: Some(wrapped),
         out_binding: "out".into(),
         evidence: None,
+        panic_loci: Vec::new(),
         concept_hint: None,
     })
 }
