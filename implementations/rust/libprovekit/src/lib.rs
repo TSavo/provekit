@@ -2,6 +2,7 @@
 
 pub mod canonical;
 pub mod compose;
+pub mod concept;
 pub mod core;
 pub mod desugar;
 pub mod effect_propagation;

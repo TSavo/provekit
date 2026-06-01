@@ -27,6 +27,7 @@
 
 use std::collections::{BTreeMap, HashSet};
 
+use libprovekit::concept::panic_freedom;
 use proc_macro2::{Delimiter, TokenStream, TokenTree};
 use provekit_ir_types::{IrFormula, IrTerm};
 use syn::{
@@ -394,7 +395,7 @@ fn lift_tail_if_to_ite_term(if_expr: &ExprIf, ctx: &mut LiftCtx) -> Option<IrTer
         // satisfy -- a sort-mismatch error that fails the reflexive
         // discharge. As a fresh uninterpreted symbol, congruence closes
         // `cf_ite(g,a,b) == cf_ite(g,a,b)` regardless of operand sorts.
-        name: "cf_ite".to_string(),
+        name: panic_freedom::CF_ITE.to_string(),
         args: vec![cond_term, then_term, else_term],
     })
 }
@@ -425,10 +426,16 @@ fn lift_tail_if_to_ite_term(if_expr: &ExprIf, ctx: &mut LiftCtx) -> Option<IrTer
 fn branch_guard_head(cond_head: &str, else_branch: bool) -> Option<&'static str> {
     let head = cond_head.strip_prefix("method:").unwrap_or(cond_head);
     match (head, else_branch) {
-        ("is_some", false) | ("is_none", true) => Some("is_some"),
-        ("is_none", false) | ("is_some", true) => Some("is_none"),
-        ("is_ok", false) | ("is_err", true) => Some("is_ok"),
-        ("is_err", false) | ("is_ok", true) => Some("is_err"),
+        (panic_freedom::IS_SOME, false) | (panic_freedom::IS_NONE, true) => {
+            Some(panic_freedom::IS_SOME)
+        }
+        (panic_freedom::IS_NONE, false) | (panic_freedom::IS_SOME, true) => {
+            Some(panic_freedom::IS_NONE)
+        }
+        (panic_freedom::IS_OK, false) | (panic_freedom::IS_ERR, true) => Some(panic_freedom::IS_OK),
+        (panic_freedom::IS_ERR, false) | (panic_freedom::IS_OK, true) => {
+            Some(panic_freedom::IS_ERR)
+        }
         ("is_empty", false) => Some("is_empty"),
         // `!is_empty` (else of `if c.is_empty()`) establishes no partial pre.
         ("is_empty", true) => None,
@@ -468,7 +475,7 @@ fn wrap_branch_guard(cond_term: &IrTerm, else_branch: bool, value: IrTerm) -> Ir
         args: args.clone(),
     };
     IrTerm::Ctor {
-        name: "cf_guarded".to_string(),
+        name: panic_freedom::CF_GUARDED.to_string(),
         args: vec![guard, value],
     }
 }
@@ -477,7 +484,7 @@ fn len_eq_one_branch_guard(cond_term: &IrTerm, value: &IrTerm) -> Option<IrTerm>
     let receiver_key = len_eq_one_receiver_key(cond_term)?;
     let next_receiver = find_next_partial_receiver(value, &receiver_key)?;
     Some(IrTerm::Ctor {
-        name: "is_some".to_string(),
+        name: panic_freedom::IS_SOME.to_string(),
         args: vec![next_receiver],
     })
 }
@@ -502,8 +509,10 @@ fn len_eq_one_receiver_key(cond_term: &IrTerm) -> Option<String> {
 fn find_next_partial_receiver(term: &IrTerm, collection_receiver_key: &str) -> Option<IrTerm> {
     match term {
         IrTerm::Ctor { name, args }
-            if matches!(name.as_str(), "method:unwrap" | "method:expect")
-                && !args.is_empty()
+            if matches!(
+                name.as_str(),
+                panic_freedom::METHOD_UNWRAP | panic_freedom::METHOD_EXPECT
+            ) && !args.is_empty()
                 && next_into_iter_receiver_key(&args[0]).as_deref()
                     == Some(collection_receiver_key) =>
         {
@@ -555,7 +564,7 @@ fn lift_match_to_ite_term(match_expr: &syn::ExprMatch, ctx: &mut LiftCtx) -> Opt
             IrTerm::Ctor {
                 // `cf_ite` (uninterpreted), not the builtin `ite`: see the
                 // note in `lift_tail_if_to_ite_term`.
-                name: "cf_ite".to_string(),
+                name: panic_freedom::CF_ITE.to_string(),
                 args: vec![guard, value, acc.expect("non-final arm has an accumulator")],
             }
         });
@@ -809,7 +818,10 @@ fn tracked_direct_guard_fact(expr: &Expr, ctx: &mut LiftCtx) -> Option<TrackedGu
         return None;
     }
     let guard_head = method_call.method.to_string();
-    if !matches!(guard_head.as_str(), "is_some" | "is_ok" | "is_err") {
+    if !matches!(
+        guard_head.as_str(),
+        panic_freedom::IS_SOME | panic_freedom::IS_OK | panic_freedom::IS_ERR
+    ) {
         return None;
     }
     let root = expr_root_ident(&method_call.receiver)?;
@@ -1177,7 +1189,7 @@ fn receiver_as_str_is_known_json_string(receiver: &Expr, ctx: &LiftCtx) -> bool 
 fn wrap_known_option_unwrap_guard(receiver: IrTerm, value: IrTerm) -> IrTerm {
     wrap_cf_guarded(
         IrTerm::Ctor {
-            name: "is_some".to_string(),
+            name: panic_freedom::IS_SOME.to_string(),
             args: vec![receiver],
         },
         value,
@@ -1186,7 +1198,7 @@ fn wrap_known_option_unwrap_guard(receiver: IrTerm, value: IrTerm) -> IrTerm {
 
 fn wrap_cf_guarded(guard: IrTerm, value: IrTerm) -> IrTerm {
     IrTerm::Ctor {
-        name: "cf_guarded".to_string(),
+        name: panic_freedom::CF_GUARDED.to_string(),
         args: vec![guard, value],
     }
 }
@@ -1203,8 +1215,10 @@ fn assertion_guard_for_partial(
             continue;
         }
         match (method.as_str(), fact.guard_head.as_str()) {
-            ("unwrap" | "expect", "is_some" | "is_ok") => return Some(fact.guard.clone()),
-            ("unwrap_err", "is_err") => return Some(fact.guard.clone()),
+            ("unwrap" | "expect", panic_freedom::IS_SOME | panic_freedom::IS_OK) => {
+                return Some(fact.guard.clone())
+            }
+            ("unwrap_err", panic_freedom::IS_ERR) => return Some(fact.guard.clone()),
             _ => {}
         }
     }
@@ -1214,7 +1228,7 @@ fn assertion_guard_for_partial(
         })
     {
         return Some(IrTerm::Ctor {
-            name: "is_some".to_string(),
+            name: panic_freedom::IS_SOME.to_string(),
             args: vec![receiver_term.clone()],
         });
     }
@@ -1371,7 +1385,11 @@ fn lift_predicate_inner(expr: &Expr, ctx: &mut LiftCtx) -> Option<IrFormula> {
             let method_name = method.to_string();
             let is_bool_predicate = matches!(
                 method_name.as_str(),
-                "is_some" | "is_none" | "is_empty" | "is_err" | "is_ok"
+                panic_freedom::IS_SOME
+                    | panic_freedom::IS_NONE
+                    | "is_empty"
+                    | panic_freedom::IS_ERR
+                    | panic_freedom::IS_OK
             );
             if is_bool_predicate {
                 let recv_term = lift_expr_to_term_inner(receiver, ctx)?;
@@ -2031,7 +2049,7 @@ mod tests {
                     // (uninterpreted), not the SMT builtins `ite`/`=`, so
                     // they encode over uninterpreted operands without a
                     // sort mismatch and discharge reflexively.
-                    name: "cf_ite".to_string(),
+                    name: panic_freedom::CF_ITE.to_string(),
                     args: vec![
                         IrTerm::Ctor {
                             name: "cf_eq".to_string(),

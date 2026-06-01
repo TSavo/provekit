@@ -25,6 +25,7 @@ use std::path::{Path, PathBuf};
 use std::sync::{Arc, OnceLock};
 
 use base64::Engine;
+use libprovekit::concept::panic_freedom;
 use provekit_canonicalizer::{blake3_512_of, encode_jcs, Value as CValue};
 use provekit_ir_types::{EvidenceMemento, IrFormula, IrTerm, SourceKind};
 use provekit_lift_contracts::lift_file_with_docstring_evidence;
@@ -1155,8 +1156,8 @@ impl FunctionPostconditionsManifest {
 
 fn panic_stem_for_post_predicate(predicate: &str) -> Option<&'static str> {
     match predicate {
-        "is_ok" => Some("result"),
-        "is_some" => Some("option"),
+        panic_freedom::IS_OK => Some("result"),
+        panic_freedom::IS_SOME => Some("option"),
         _ => None,
     }
 }
@@ -3991,7 +3992,7 @@ fn bind_lift(params: &Value) -> Result<Value, String> {
                 // Shape: {"kind":"atomic","name":"is_ok","args":[{"kind":"var","name":"result"}]}
                 json!({
                     "kind": "atomic",
-                    "name": "is_ok",
+                    "name": panic_freedom::IS_OK,
                     "args": [{ "kind": "var", "name": "result" }],
                 })
             } else {
@@ -4318,7 +4319,7 @@ fn function_contract_lift(params: &Value) -> Result<Value, String> {
             // Matches the exact shape callee_post_guard_fact requires (body_discharge.rs).
             let post_override: Option<IrFormula> = if target.totality_result_ok {
                 Some(IrFormula::Atomic {
-                    name: "is_ok".to_string(),
+                    name: panic_freedom::IS_OK.to_string(),
                     args: vec![IrTerm::Var {
                         name: "result".to_string(),
                     }],
@@ -4483,7 +4484,7 @@ fn emit_infallible_serialize_contracts(
         entries.push(json!({
             "kind": "contract",
             "name": rule.contract,
-            "post": singleton_result_post_json("is_ok"),
+            "post": singleton_result_post_json(panic_freedom::IS_OK),
             "outBinding": "out",
             "bodyDischargeEligible": false,
             "bodyDischargeRefusalReason": "totality-axiom",
