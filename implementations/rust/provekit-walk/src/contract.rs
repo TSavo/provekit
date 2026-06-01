@@ -16,6 +16,8 @@
 // Memento from a `syn::ItemFn`. AST traversal stays in walk; the algebra
 // lives once, in libprovekit.
 
+use std::collections::HashSet;
+
 use provekit_ir_types::IrFormula;
 use syn::{Expr, ExprUnsafe, FnArg, ItemFn, Pat, Stmt};
 
@@ -70,12 +72,46 @@ pub fn build_function_contract_with_file_and_post_override(
     file_path: Option<&str>,
     post_override: Option<IrFormula>,
 ) -> FunctionContractMemento {
+    build_function_contract_full(
+        item_fn,
+        body_cid,
+        file_path,
+        post_override,
+        HashSet::new(),
+    )
+}
+
+/// Build a FunctionContractMemento with an explicit file path, optional post
+/// override, AND the set of parameter names the caller proved to be
+/// `serde_json::Value`-typed.
+///
+/// The value-param set is threaded into the body-derived postcondition lift so a
+/// `serde_json::to_string(<value-param>)` free call lifts to the disambiguated
+/// ctor `serde_json_to_string_value` (matching the totality producer bridge's
+/// `sourceSymbol`) instead of the bare `to_string`. This is the kit-side half of
+/// the Value-totality disambiguation: the producer CONTRACT body and the producer
+/// BRIDGE both carry the distinct symbol for a genuine `Value` arg, so the
+/// verifier's per-symbol producer lookup cannot alias the Value totality onto a
+/// non-Value `to_string(&MyStruct)` call (which keeps the bare ctor and finds no
+/// totality bridge -> stays honestly undecidable). When `post_override` is
+/// `Some`, it wins and the value-param set is irrelevant (totality-axiom path).
+pub fn build_function_contract_full(
+    item_fn: &ItemFn,
+    body_cid: Option<String>,
+    file_path: Option<&str>,
+    post_override: Option<IrFormula>,
+    value_to_string_params: HashSet<String>,
+) -> FunctionContractMemento {
     let fn_name = item_fn.sig.ident.to_string();
     let (formals, formal_sorts) = extract_formals(item_fn);
     let return_sort = extract_return_sort(item_fn);
     let pre = crate::lift::lift_function_precondition(item_fn).into_formula();
     let post = post_override.unwrap_or_else(|| {
-        crate::lift::lift_function_postcondition(item_fn).into_formula()
+        crate::lift::lift_function_postcondition_with_value_params(
+            item_fn,
+            value_to_string_params,
+        )
+        .into_formula()
     });
     let effects = detect_effects(item_fn);
     let locus = crate::locus::from_span(item_fn.sig.ident.span(), file_path);

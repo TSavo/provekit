@@ -32,8 +32,8 @@ use provekit_walk::emit::{
     rust_function_term_json_for_file, shadow_proof_ir_cid, shadow_to_proof_ir,
 };
 use provekit_walk::{
-    build_function_contract_with_file, build_function_contract_with_file_and_post_override,
-    build_shadow_source, lift_function_postcondition, lift_function_precondition, CalleeContract,
+    build_function_contract_full, build_function_contract_with_file, build_shadow_source,
+    lift_function_postcondition, lift_function_precondition, CalleeContract,
 };
 use quote::ToTokens;
 use serde_json::{json, Value};
@@ -1475,6 +1475,28 @@ fn build_param_type_map(
     map
 }
 
+/// The set of parameter names whose declared type resolves to
+/// `serde_json::Value` (crate `serde_json`, head `Value`), using the module's
+/// use-map to resolve a bare `Value` (`use serde_json::Value`) to the right
+/// crate. This is the SOUND input to the body-side to_string totality
+/// disambiguation: only a parameter proven to be `serde_json::Value` lets a
+/// `serde_json::to_string(<param>)` call lift to the distinct
+/// `serde_json_to_string_value` ctor. A `use other::Value` alias, an inferred
+/// type, or any non-Value param is excluded (stays bare `to_string`, no
+/// totality, honestly undecidable).
+fn value_to_string_param_set(
+    sig: &syn::Signature,
+    use_map: &HashMap<String, String>,
+    local_type_names: &BTreeSet<String>,
+    current_crate: &str,
+) -> std::collections::HashSet<String> {
+    build_param_type_map(sig, use_map, local_type_names, current_crate)
+        .into_iter()
+        .filter(|(_, (krate, head))| krate == "serde_json" && head == "Value")
+        .map(|(name, _)| name)
+        .collect()
+}
+
 /// For a type path, return `(crate, type_head)`. Uses `type_crate_for` for the
 /// crate and extracts the last path segment for the head.
 ///
@@ -2052,11 +2074,35 @@ fn lift_implications(params: &Value) -> Result<Value, String> {
             // verifier matches by this opaque key, with no `method:` stripping or
             // Rust-method set on the verifier side. Target selection above is
             // unchanged: it correctly keys `contracts_by_key` on the bare leaf.
+            //
+            // serde_json::Value to_string totality disambiguation (consumer/bridge
+            // side): a FREE call disambiguated to a distinct partial leaf
+            // (`serde_json_to_string_value`) lifts in the producer's contract body
+            // to that SAME distinct ctor (see `lift.rs` `Expr::Call`), so the
+            // bridge sourceSymbol MUST be the disambiguated leaf, not the bare
+            // `to_string`. Otherwise the verifier looks up the totality under
+            // `to_string` and ALIASES it onto every other `to_string` call (e.g. a
+            // non-Value `to_string(&MyStruct)` that deserves no totality). The
+            // disambiguation is empty for a non-Value arg, so its bridge stays bare
+            // `to_string`. This applies ONLY to free calls; method callsites keep
+            // the `method:<leaf>` seam (their `disambiguated_callee`, when set, is
+            // the receiver-type partial like `result_unwrap`, which must NOT
+            // replace the `method:unwrap` body-ctor key).
             let source_symbol = if cs.is_method {
                 format!("method:{}", cs.callee)
             } else {
-                cs.callee.clone()
+                cs.disambiguated_callee
+                    .clone()
+                    .unwrap_or_else(|| cs.callee.clone())
             };
+            debug!(
+                callee = %cs.callee,
+                disambiguated_callee = ?cs.disambiguated_callee,
+                source_symbol = %source_symbol,
+                file = %cs.file,
+                line = cs.line,
+                "lift_implications: bridge sourceSymbol decision (disambiguated free-call keys totality away from bare leaf)"
+            );
             let mut bridge = json!({
                 "kind": "bridge",
                 "name": format!(
@@ -2988,6 +3034,13 @@ fn function_contract_lift(params: &Value) -> Result<Value, String> {
             .to_string()
             .replace('\\', "/");
 
+        // Per-file resolution context for the serde_json::Value to_string
+        // totality disambiguation (mirrors the callsite-collection path so the
+        // PRODUCER contract body and the CONSUMER bridge agree on which params
+        // are Value-typed). Built once per file; queried per function below.
+        let use_map = build_use_crate_map(&file);
+        let local_type_names = collect_local_type_names(&file);
+
         for target in collect_function_contract_targets(&file) {
             // Phase-2 Tier D-lib: when a sugar function carries `totality =
             // "result_ok"`, the minted post is the AXIOM `is_ok(result)`
@@ -3009,12 +3062,44 @@ fn function_contract_lift(params: &Value) -> Result<Value, String> {
             } else {
                 None
             };
-            let contract = build_function_contract_with_file_and_post_override(
+            // serde_json::Value to_string totality disambiguation (body side):
+            // pass the function's Value-typed param names so a
+            // `serde_json::to_string(<value-param>)` call in the body lifts to
+            // the distinct `serde_json_to_string_value` ctor (matching the
+            // totality bridge sourceSymbol minted in `lift_implications`). Empty
+            // for the totality-axiom path (post_override wins) and for every fn
+            // with no Value param, so non-Value `to_string` stays bare and finds
+            // no totality -> honestly undecidable.
+            let value_to_string_params = value_to_string_param_set(
+                &target.item_fn.sig,
+                &use_map,
+                &local_type_names,
+                &current_crate,
+            );
+            let contract = build_function_contract_full(
                 &target.item_fn,
                 None,
                 Some(rel.as_str()),
-                post_override,
+                post_override.clone(),
+                value_to_string_params.clone(),
             );
+            // PRODUCER-POST PROVENANCE: the body-side half of the to_string
+            // totality disambiguation. The post's inner call ctor MUST match the
+            // bridge sourceSymbol minted by `lift_implications` (the verifier
+            // resolves a panic site's producer by this inner ctor name), so log
+            // both the resolved Value-param set and the post for a fn that has a
+            // serde_json::Value param. This is the "tracing not inference" witness
+            // that f's `to_string(&Value)` body ctor is `serde_json_to_string_value`
+            // while a non-Value fn keeps the bare `to_string`.
+            if !value_to_string_params.is_empty() && post_override.is_none() {
+                debug!(
+                    fn_name = %contract.fn_name,
+                    value_to_string_params = ?value_to_string_params,
+                    post = %serde_json::to_string(&contract.post).unwrap_or_default(),
+                    file = %rel,
+                    "function_contract_lift: producer post for a serde_json::Value-param fn (to_string ctor disambiguated)"
+                );
+            }
             // Totality-axiom contracts are body-discharge-INELIGIBLE (no
             // result equation, by design: the post is an axiom, not derived
             // from the body). Mark with a distinct reason so the loud

@@ -56,6 +56,18 @@ struct LiftCtx {
     /// Stack of frames; each frame holds (surface_name, unique_name) pairs
     /// in declaration order. Innermost frame shadows outer frames.
     scope: Vec<Vec<(String, String)>>,
+    /// Phase-2 Tier D-lib: parameter names whose declared type is
+    /// `serde_json::Value` (resolved with the module's use-map by the caller).
+    /// A `serde_json::to_string(<param>)` free call whose first argument is one
+    /// of these names lifts to the DISAMBIGUATED ctor `serde_json_to_string_value`
+    /// (instead of the bare `to_string`), so the call's body-ctor name matches
+    /// the totality producer bridge's `sourceSymbol`. This is what keeps the
+    /// Value totality from aliasing onto a non-Value `to_string(&MyStruct)` call:
+    /// only the genuine Value arg gets the distinct symbol; everything else stays
+    /// bare `to_string` and finds no totality bridge. Empty for every call the
+    /// caller did not prove to be a serde_json::Value parameter (the refuse-floor:
+    /// inference never strengthens this set).
+    value_to_string_params: HashSet<String>,
 }
 
 impl LiftCtx {
@@ -63,6 +75,17 @@ impl LiftCtx {
         Self {
             next_binder_id: 0,
             scope: Vec::new(),
+            value_to_string_params: HashSet::new(),
+        }
+    }
+
+    /// Construct a lift context that knows which parameter names are
+    /// `serde_json::Value`-typed (for the to_string totality disambiguation).
+    fn with_value_to_string_params(params: HashSet<String>) -> Self {
+        Self {
+            next_binder_id: 0,
+            scope: Vec::new(),
+            value_to_string_params: params,
         }
     }
 
@@ -132,8 +155,27 @@ pub fn lift_function_precondition(item_fn: &ItemFn) -> Wp {
 /// body's structure that did not appear as explicit annotations. The
 /// postcondition is the conjunction of every such derived fact.
 pub fn lift_function_postcondition(item_fn: &ItemFn) -> Wp {
-    let mut ctx = LiftCtx::new();
+    lift_function_postcondition_inner(item_fn, LiftCtx::new())
+}
 
+/// Like `lift_function_postcondition`, but with the set of parameter names the
+/// caller has proven to be `serde_json::Value`-typed (resolved against the
+/// module's use-map). A `serde_json::to_string(<value-param>)` free call in the
+/// body lifts to the disambiguated ctor `serde_json_to_string_value` so its
+/// body-ctor name matches the totality producer bridge's `sourceSymbol`; every
+/// other `to_string` call keeps the bare ctor. See the `Expr::Call` arm for the
+/// soundness gate. Passing an empty set reproduces `lift_function_postcondition`.
+pub fn lift_function_postcondition_with_value_params(
+    item_fn: &ItemFn,
+    value_to_string_params: HashSet<String>,
+) -> Wp {
+    lift_function_postcondition_inner(
+        item_fn,
+        LiftCtx::with_value_to_string_params(value_to_string_params),
+    )
+}
+
+fn lift_function_postcondition_inner(item_fn: &ItemFn, mut ctx: LiftCtx) -> Wp {
     // 1. Collect entry-assertion contributions, but track which names are
     //    subsequently shadowed by `let` bindings. An entry assertion
     //    `assert!(x >= 5)` that is followed LATER by `let x = 0` is UNSOUND to
@@ -521,6 +563,20 @@ fn collect_pat_names(pat: &Pat, out: &mut HashSet<String>) {
             }
         }
         _ => {}
+    }
+}
+
+/// Extract the bare identifier name from a call-argument expression, stripping
+/// leading `&`/`&mut` references. Returns `Some("v")` for `v`, `&v`, `&mut v`;
+/// `None` for non-ident expressions. Used by the `serde_json::to_string` Value
+/// totality disambiguation to look the argument up in `value_to_string_params`.
+fn expr_bare_param_name(expr: &Expr) -> Option<String> {
+    match expr {
+        Expr::Path(p) if p.path.segments.len() == 1 => {
+            Some(p.path.segments[0].ident.to_string())
+        }
+        Expr::Reference(r) => expr_bare_param_name(&r.expr),
+        _ => None,
     }
 }
 
@@ -913,6 +969,50 @@ fn lift_expr_to_term_inner(expr: &Expr, ctx: &mut LiftCtx) -> Option<IrTerm> {
             let mut args = Vec::with_capacity(call.args.len());
             for a in &call.args {
                 args.push(lift_expr_to_term_inner(a, ctx)?);
+            }
+            // Phase-2 Tier D-lib: serde_json::to_string Value-totality
+            // disambiguation. `serde_json::to_string::<Value>` is TOTAL (always
+            // Ok); the shim publishes that fact as the `serde_json_to_string_value`
+            // contract with post `is_ok(result)`. The totality producer BRIDGE is
+            // keyed (sourceSymbol) on that disambiguated leaf, NOT the bare
+            // `to_string`. The verifier resolves a panic site's producer by the
+            // INNER CTOR NAME in this body (`bridges_by_symbol.get(inner_name)`),
+            // so unless this body's to_string ctor carries the same disambiguated
+            // name, the totality is keyed on the bare `to_string` and ALIASES onto
+            // every other `to_string` call (notably a non-Value
+            // `to_string(&MyStruct)`, which has no totality and must stay
+            // undecidable). Rename the ctor here, in LOCKSTEP with the bridge
+            // sourceSymbol, so f's `to_string(&Value)` keys the totality and g's
+            // `to_string(&MyStruct)` keys the bare `to_string` (no totality bridge).
+            //
+            // SOUNDNESS / refuse-floor: the rename fires ONLY when (1) the callee
+            // is the full `serde_json::to_string[_pretty]` path (crate identity in
+            // the source), and (2) the first argument is a bare parameter the
+            // CALLER proved to be `serde_json::Value` (use-map-resolved, in
+            // `value_to_string_params`). A non-Value arg, an inferred-type arg, or
+            // a same-named `to_string` from another crate leaves the bare ctor
+            // untouched -> no totality -> honestly undecidable.
+            if matches!(callee.as_str(), "to_string" | "to_string_pretty")
+                && path
+                    .segments
+                    .iter()
+                    .any(|seg| seg.ident == "serde_json")
+            {
+                if let Some(first) = call.args.first() {
+                    if let Some(arg_name) = expr_bare_param_name(first) {
+                        if ctx.value_to_string_params.contains(&arg_name) {
+                            let disambiguated = if callee == "to_string_pretty" {
+                                "serde_json_to_string_pretty_value"
+                            } else {
+                                "serde_json_to_string_value"
+                            };
+                            return Some(IrTerm::Ctor {
+                                name: disambiguated.to_string(),
+                                args,
+                            });
+                        }
+                    }
+                }
             }
             Some(IrTerm::Ctor { name: callee, args })
         }
@@ -1978,6 +2078,122 @@ mod tests {
         assert!(
             json.contains("is_none"),
             "else-branch guard is the complement is_none: {json}"
+        );
+    }
+
+    // ---- serde_json::Value to_string totality disambiguation (issue #1745) ----
+    //
+    // The discrimination the whole fix exists for: a `serde_json::to_string(arg)`
+    // call lifts to the DISTINCT ctor `serde_json_to_string_value` ONLY when the
+    // arg is a proven `serde_json::Value` parameter. A non-Value arg keeps the
+    // bare `to_string` ctor. The distinct ctor is what matches the totality
+    // producer bridge's `sourceSymbol`; without it the Value totality aliases onto
+    // every `to_string` call (the falsePass risk).
+
+    #[test]
+    fn value_arg_to_string_lifts_to_disambiguated_ctor() {
+        // f: serde_json::to_string(v).unwrap() with v: &serde_json::Value.
+        // The CALLER (walk_rpc) resolves `v` to Value via the use-map; here we
+        // pass that resolved fact directly.
+        let item_fn = parse_fn(
+            r#"
+            fn f(v: &Value) -> String {
+                serde_json::to_string(v).unwrap()
+            }
+        "#,
+        );
+        let mut value_params = HashSet::new();
+        value_params.insert("v".to_string());
+        let post = lift_function_postcondition_with_value_params(&item_fn, value_params);
+        let json = serde_json::to_string(&post.as_formula()).unwrap();
+        assert!(
+            json.contains("serde_json_to_string_value"),
+            "Value arg must lift to the disambiguated totality ctor, got: {json}"
+        );
+        assert!(
+            !json.contains("\"name\":\"to_string\""),
+            "the bare `to_string` ctor must NOT survive for the Value arg: {json}"
+        );
+    }
+
+    #[test]
+    fn non_value_arg_to_string_keeps_bare_ctor() {
+        // g: serde_json::to_string(s).unwrap() with s: &MyStruct. The caller's
+        // Value-param set does NOT contain `s` (MyStruct is not serde_json::Value),
+        // so the totality must NOT be minted: the ctor stays bare `to_string`,
+        // which keys no totality bridge -> the .unwrap() stays honestly
+        // undecidable. This is the refuse-floor / falsePass=0 guard.
+        let item_fn = parse_fn(
+            r#"
+            fn g(s: &MyStruct) -> String {
+                serde_json::to_string(s).unwrap()
+            }
+        "#,
+        );
+        // Empty Value-param set: the caller proved no param is serde_json::Value.
+        let post = lift_function_postcondition_with_value_params(&item_fn, HashSet::new());
+        let json = serde_json::to_string(&post.as_formula()).unwrap();
+        assert!(
+            json.contains("\"name\":\"to_string\""),
+            "non-Value arg must keep the bare `to_string` ctor: {json}"
+        );
+        assert!(
+            !json.contains("serde_json_to_string_value"),
+            "non-Value arg must NEVER get the Value totality ctor (falsePass risk): {json}"
+        );
+    }
+
+    #[test]
+    fn to_string_value_disambiguation_requires_value_param_membership() {
+        // STRUCTURAL discrimination: the SAME `serde_json::to_string(v)` body
+        // lifts differently purely on whether `v` is in the Value-param set. An
+        // empty set (caller could not prove Value) must leave the bare ctor, even
+        // though the source text is identical to the f case. This pins that the
+        // rename is gated on the resolved type fact, not on syntax alone.
+        let item_fn = parse_fn(
+            r#"
+            fn h(v: &T) -> String {
+                serde_json::to_string(v).unwrap()
+            }
+        "#,
+        );
+        let bare = lift_function_postcondition_with_value_params(&item_fn, HashSet::new());
+        let bare_json = serde_json::to_string(&bare.as_formula()).unwrap();
+        assert!(
+            bare_json.contains("\"name\":\"to_string\"")
+                && !bare_json.contains("serde_json_to_string_value"),
+            "without Value-param membership the ctor stays bare: {bare_json}"
+        );
+
+        let mut value_params = HashSet::new();
+        value_params.insert("v".to_string());
+        let promoted = lift_function_postcondition_with_value_params(&item_fn, value_params);
+        let promoted_json = serde_json::to_string(&promoted.as_formula()).unwrap();
+        assert!(
+            promoted_json.contains("serde_json_to_string_value"),
+            "with Value-param membership the ctor is disambiguated: {promoted_json}"
+        );
+    }
+
+    #[test]
+    fn to_string_on_non_serde_path_is_not_disambiguated() {
+        // SOUNDNESS: a `to_string` that is NOT the serde_json free call (here a
+        // method call `v.to_string()`) must never get the Value totality, even
+        // when `v` is a Value param. The rename gates on the serde_json call path.
+        let item_fn = parse_fn(
+            r#"
+            fn k(v: &Value) -> String {
+                v.to_string()
+            }
+        "#,
+        );
+        let mut value_params = HashSet::new();
+        value_params.insert("v".to_string());
+        let post = lift_function_postcondition_with_value_params(&item_fn, value_params);
+        let json = serde_json::to_string(&post.as_formula()).unwrap();
+        assert!(
+            !json.contains("serde_json_to_string_value"),
+            "a method-call to_string must not be promoted to the serde totality: {json}"
         );
     }
 }
