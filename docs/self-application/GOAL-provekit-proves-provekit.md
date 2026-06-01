@@ -24,16 +24,21 @@ architectural thesis at v2.
 2. **Substantive.** On provekit's own code, K (provably panic-safe sites) covers
    the provable categories via SOUND reasoning, not a fixture and not a vacuous
    label. The reasoning tiers that close the real buckets are shipped.
-3. **Observable and self-checking.** The verdict is one command
-   (`provekit self-check`), pinned by a golden in CI, with a `doctor` that
-   validates kit wiring up front. Progress is a number you watch move;
-   regressions scream with a readable diff.
+3. **Observable and self-checking.** The target verdict is one command
+   (`provekit self-check`), pinned by a golden in CI, with `doctor` validating
+   kit wiring up front and `provekit release-gate` producing the v1 evidence
+   receipt. Progress is a number you watch move; regressions scream with a
+   readable diff.
 4. **Self-describing.** The wiring is executable knowledge (`doctor` + the
    runbook), not tribal knowledge or stale prose.
 5. **Cross-language at v2.** The same substrate proves Python; the second
    language is cheaper than the first.
 
-## Where we are (2026-06-01)
+Rust v1 status as of 2026-06-01: criteria 1-4 are satisfied for
+`provekit-cli` and `libprovekit` by #1787. The fifth criterion is the next
+arc: prove the same substrate in Python.
+
+## Where we are (2026-06-01, Rust v1 done)
 
 ### Phase 0 - SCAFFOLDING - DONE
 
@@ -186,37 +191,46 @@ architectural thesis at v2.
   `RealizeRequest` serialization. #1773 tracks cross-target propagation of
   annotations as proof mementos.
 
-## Current census (provekit-cli, post-#1775 main)
+### Phase 3 - RESIDUE NAMED + V1 RELEASE - DONE
 
-Latest measured gate: `panicCensus=53`, `panicSafe=21`, `falsePass=0`,
-`silentlyDropped=0`, `droppedSites=[]`. The original 7-site C bucket is closed
-by #1767, the B guarded-panic bucket is closed by #1769, the two D-fn rows
-are closed by #1771, and residue is first-class in the panic census as of
-#1775.
+- **Residue declaration ledger:** #1775 names the target-scoped residue,
+  #1776 updates the GOAL ledger for residue, and #1778 records the doctor
+  scope/design that makes the release gate auditable.
+- **Doctor + release-gate arc:** #1779 refactors doctor around a reusable
+  engine, #1780 adds `DoctorMode`, #1781 validates dependency-proof state
+  consistency, #1782 validates oracle host readiness, #1784 checks annotation
+  runtime consistency, #1785 aggregates the no-silent-failure floor, and
+  #1787 adds `provekit release-gate`.
+- **Rust v1 executable claim:** `provekit release-gate --json` runs
+  `doctor --mode releaseGate` and `self-check --json` on `provekit-cli` and
+  `libprovekit`, aggregates the receipt, and exits 0 only when the floor and
+  target evidence are green. The v1 git tag itself is a separate release-policy
+  decision; the evidence command now exists.
 
-Important reproducibility caveat: #1774 tracks that a clean dependency-proof
-state can reproduce `panicSafe=14` with the same #1771 oracle resolution
-profile, while warmed/cached dependency proof state reaches the recorded
-`panicSafe=21`. The current K claim is therefore not a v1 release claim until
-doctor validates dependency-proof state consistency.
+## Current census (provekit-cli, Rust v1 release gate)
+
+Rust v1 evidence surface: `provekit release-gate --json` as of #1787. The
+`provekit-cli` target evidence reports `panicCensus=53`, `panicSafe=21`,
+`falsePass=0`, `silentlyDropped=0`, and `droppedSites=[]`. The original 7-site
+C bucket is closed by #1767, the B guarded-panic bucket is closed by #1769, the
+two D-fn rows are closed by #1771, and residue is first-class in the panic
+census as of #1775.
+
+The #1774 reproducibility caveat is closed: the release gate validates the
+dependency-proof state as part of doctor release-gate mode before accepting the
+v1 K claim.
 
 | Category | Count | Closing mechanism |
 |---|---|---|
-| residue | 9 honest residue | Mutex `.lock().expect()` (8) + platform_semantics filesystem invariant (1). Honest residue; "lock is total" would be unsound. The previous count of 10 mixed honest residue with a closeable tier-to-close row. |
+| proven K | 21 panic-safe | D-lib, C `json!`, B guarded-panic, and D-fn tiers shipped through #1771 and remain release-gated by #1787. |
+| residue | 8 honest residue | Mutex `.lock().expect()` rows. Honest residue; "lock is total" would be unsound. |
 | tier-to-close | 1 named row | `RealizeRequest` serialization needs provekit-cli-owned per-type D-lib manifest coverage, mirroring libprovekit's `infallible_serialize.toml` pattern. |
-| D-lib | 3 known remaining | serde_json totality not yet closed by #1762/#1765: remaining derived-Serialize / pretty-print cases. The `&Value` kit_dispatch sites are closed by #1765. |
-| C | 0 | Closed by #1767: 7 `cmd_protocol.rs` `payload["k"].as_str().unwrap()` sites discharged via Rust-kit `json!` construction tracking and `cf_guarded(...)` postcondition terms. |
-| B | 0 | Closed by #1769: intra-fn `assert!(x.is_some()/is_ok()/is_err())` propagation plus `len==1 -> next()` guard. |
-| D-fn | 0 | Closed by #1771: catalog primitive `.cid()` and `Cid::parse` on literal discharge through manifest-backed function postconditions. |
-| oracle-residue | 0 | None in panicCensus; the 86 unresolved receivers are non-panic obligations. |
-| unknown | 0 | Every site has a named category. Honest. |
+| raw unproven | 23 | Still honest unproven rows in the panic census. They are not labeled panic-safe, not silently dropped, and not allowed to inflate K. |
 
-The honest read: C, B, D-fn, and residue declaration are closed, D-lib is
-mostly closed, and doctor must make the K claim reproducible. v1 is "K
-covering the provable buckets, residue named, hard floor never violated, and
-doctor green." K = N is not required and not honest.
+The honest read: Rust v1 is not K == N. It is K covering the provable buckets,
+residue named, hard floor never violated, and doctor/release-gate green.
 
-## Current census (libprovekit, 15 unproven sites, warm-oracle baseline)
+## Current census (libprovekit, Rust v1 release gate)
 
 PR-B (#1760) enabled the rust-implications consumer surface for libprovekit and
 captured the production baseline PR-C measures against. Cold numbers are not the
@@ -260,6 +274,11 @@ Post-#1775 main libprovekit score: `panicCensus=35`, `panicSafe=12`,
 `falsePass=0`, `silentlyDropped=0`, `droppedSites=[]`; the
 `src/core/platform_semantics.rs:42` row is now explicitly
 `platform_semantics_runtime_residue` with tier `irreducible`.
+
+Rust v1 release-gate score: `panicCensus=36`, `panicSafe=12`,
+`falsePass=0`, `silentlyDropped=0`, `droppedSites=[]`; the receipt records
+12 proven panic-safe rows, 1 honest residue row, and 23 raw unproven rows.
+The floor remains intact.
 
 ## The metric (the one number we watch)
 
@@ -321,23 +340,29 @@ Each tier ships as one PR, golden-pinned, with visible scoreboard delta.
   `lock_poisoning_residue`; the `RealizeRequest` serialization site remains
   `unproven` with an explicit D-lib tier-to-close; the libprovekit
   `platform_semantics` site becomes `platform_semantics_runtime_residue`.
-### Phase 3 - RESIDUE NAMED + V1 RELEASE
-- Residue naming is DONE in #1775: the 9 honest residue sites get an explicit
+
+### Phase 3 - RESIDUE NAMED + V1 RELEASE - DONE
+- Residue naming is DONE in #1775: the honest residue sites get an explicit
   `residue` category in the panicCensus output (not raw "unproven"; honest
   residue with reason), and the closeable `RealizeRequest` row remains
   `unproven` with an explicit `tier_to_close` reason.
-- `provekit doctor` aggregates the no-silent-failure surfaces (#1742 manifest
-  validation, #1750 fail-closed extraction, #1753 convergence, #1755 mutation
-  guard, #1775 residue consistency, and #1774 dependency-proof state
-  reproducibility) into a startup health check.
-- v1 release tag: "Rust v1 done." `provekit self-check` on any Rust crate
-  produces an honest panic-freedom audit with a named gap census.
+- The doctor + release-gate arc is DONE:
+  - #1779 reusable doctor engine.
+  - #1780 `DoctorMode`.
+  - #1781 dependency-proof state consistency.
+  - #1782 oracle host readiness.
+  - #1784 annotation runtime check.
+  - #1785 floor aggregation.
+  - #1787 v1 release-gate command.
+- Rust v1 is executable: `provekit release-gate --json` validates
+  `provekit-cli` and `libprovekit` through doctor release-gate mode and
+  self-check. A git tag remains a separate release-policy decision.
 
-### Phase 4 - SUBSTRATE PROMOTION + PYTHON PARITY
-Validation of the architectural thesis: the second language is cheaper than
-the first.
+### Phase 4 - SUBSTRATE PROMOTION + PYTHON PARITY - STARTING
+Validation of the architectural thesis starts now: the second language is
+cheaper than the first.
 
-**Substrate promotion (between v1 and Python pivot):**
+**Substrate promotion (after Rust v1, before Python pivot):**
 - `concept:panic-freedom` hub: promote panic-freedom from "in the Rust kit"
   to "expressed as a concept hub with `is_ok(result)` as a language-agnostic
   totality predicate." The M+N transport for Python.
@@ -433,19 +458,32 @@ the first.
     `self-check` panic census annotation join. Names 8 provekit-cli Mutex
     residues, 1 provekit-cli D-lib tier-to-close row, and 1 libprovekit
     platform semantics residue.
+  - #1776 GOAL ledger update for residue declaration.
+  - #1778 DOCTOR-DESIGN.md scope and release-gate design.
+  - #1779 (doctor PR 1) reusable doctor engine.
+  - #1780 (doctor PR 2) `DoctorMode` scaffold.
+  - #1781 (doctor PR 3) dependency-proof state consistency; #1774 is closed.
+  - #1782 (doctor PR 4) oracle host readiness adapter.
+  - #1784 (doctor PR 5) annotation runtime consistency check.
+  - #1785 (doctor PR 6) no-silent-failure floor aggregation.
+  - #1787 (doctor PR 7) `provekit release-gate` command and v1 evidence
+    receipt.
 - **Open follow-ups**:
-  - #1773 promote panic-site annotations into proof mementos so target-scoped
-    residue declarations can propagate through dependency `.proof` bundles.
-  - #1774 K reproducibility depends on cached dependency proof state; doctor
-    must detect or normalize clean-root vs warmed-root scoreboard variance
-    before a v1 K release claim.
   - #1757 self-check golden drift reached main without gate update.
   - #1763 self-check should fail closed when requested oracle host cannot
-    start.
+    start. Doctor release-gate mode checks oracle readiness; the self-check
+    command behavior remains tracked separately.
   - #1764 cross-crate type totality should live in owning-crate contracts
     (currently project-local with `audited_for_crate` metadata).
   - #1766 self-check should fail closed when a configured
-    `resolve_dependency_proofs` RPC binary is missing.
+    `resolve_dependency_proofs` RPC binary is missing. Doctor release-gate mode
+    validates dependency-proof state; the self-check command behavior remains
+    tracked separately.
+  - #1773 promote panic-site annotations into proof mementos so target-scoped
+    residue declarations can propagate through dependency `.proof` bundles.
+  - #1783 retire legacy lift-diagnostic panic-site annotation join.
+  - #1786 update stale `--release-gate` doctor spelling to
+    `--mode releaseGate`.
 - **Key files**: `provekit-verifier/src/{runner.rs, enumerate_callsites.rs,
   body_discharge.rs, handshake.rs, load_all_proofs.rs}`,
   `provekit-walk/src/{lift.rs, bin/walk_rpc.rs, envelope.rs}`,
