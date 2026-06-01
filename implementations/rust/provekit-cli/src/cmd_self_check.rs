@@ -13,6 +13,10 @@ use serde::Serialize;
 use serde_json::Value;
 use tracing::{error, info};
 
+use crate::panic_annotations_runtime::{
+    annotation_runtime_check, AnnotationCheckMode, PanicCensusRow,
+};
+
 #[derive(Parser, Debug, Clone)]
 pub struct SelfCheckArgs {
     /// Target crate directory. Defaults to implementations/rust/provekit-cli.
@@ -287,7 +291,13 @@ fn run_inner(args: &SelfCheckArgs) -> Result<SelfCheckScoreboard, String> {
     };
     info!("self-check: prove complete; building scoreboard");
 
-    let scoreboard = build_scoreboard(&target_rel, &target_mint.json, &prove_json)?;
+    let scoreboard = build_scoreboard_with_runtime_annotations(
+        &target_rel,
+        &target_abs,
+        &target_mint.json,
+        &prove_json,
+        AnnotationCheckMode::Strict,
+    )?;
     info!(
         oracle_requested = scoreboard.oracle.requested,
         oracle_engaged = scoreboard.oracle.engaged,
@@ -820,6 +830,11 @@ where
     Ok(count)
 }
 
+#[cfg(test)]
+// DEPRECATED (#1783): legacy lift-diagnostic panic-site annotation join.
+// Production self-check uses panic_annotations_runtime with target-local
+// .provekit/residue.toml after prove produces panicCensus. Retain this
+// test-only route until the old tests are migrated or deleted.
 fn build_scoreboard(
     target_rel: &str,
     mint_json: &Value,
@@ -852,6 +867,91 @@ fn build_scoreboard(
         discharge_split,
         panic_census,
     })
+}
+
+fn build_scoreboard_with_runtime_annotations(
+    target_rel: &str,
+    target_path: &Path,
+    mint_json: &Value,
+    prove_json: &Value,
+    doctor_mode: AnnotationCheckMode,
+) -> Result<SelfCheckScoreboard, String> {
+    let catalog_cid = mint_json
+        .get("filenameCid")
+        .and_then(|v| v.as_str())
+        .filter(|s| !s.is_empty())
+        .ok_or("target mint JSON missing filenameCid")?
+        .to_string();
+    let lift_json = mint_json
+        .get("lift")
+        .ok_or("target mint JSON missing lift result")?;
+    let (lift, bridges, dropped_sites, unbridged_panic_sites) = lift_scoreboards(lift_json);
+    let oracle = oracle_scoreboard(mint_json);
+    let discharge_split = discharge_split(prove_json);
+    let raw_panic_census = panic_census(prove_json, unbridged_panic_sites, BTreeMap::new())?;
+    let projected_rows: Vec<PanicCensusRow> = raw_panic_census
+        .iter()
+        .map(panic_census_row_from_entry)
+        .collect();
+    let annotation_outcome = annotation_runtime_check(target_path, &projected_rows, doctor_mode)
+        .map_err(|error| {
+            format!(
+                "panic annotation runtime check failed: {}; evidence={}",
+                error, error.check.evidence
+            )
+        })?;
+    let annotation_check = &annotation_outcome.check;
+    info!(
+        check_id = %annotation_check.id,
+        check_name = %annotation_check.name,
+        check_domain = %annotation_check.domain,
+        check_status = ?annotation_check.status,
+        check_severity = ?annotation_check.severity,
+        check_detail = %annotation_check.detail,
+        "self-check: panic annotation runtime check complete"
+    );
+    let panic_census = annotation_outcome
+        .rows
+        .iter()
+        .map(panic_census_entry_from_row)
+        .collect();
+    let silently_dropped = dropped_sites.len();
+
+    Ok(SelfCheckScoreboard {
+        target: target_rel.to_string(),
+        catalog_cid,
+        lift,
+        bridges,
+        oracle,
+        silently_dropped,
+        dropped_sites,
+        discharge_split,
+        panic_census,
+    })
+}
+
+fn panic_census_row_from_entry(entry: &PanicCensusEntry) -> PanicCensusRow {
+    PanicCensusRow {
+        file: entry.file.clone(),
+        line: entry.line,
+        callee: entry.callee.clone(),
+        status: entry.status.clone(),
+        reason: entry.reason.clone(),
+        category: entry.category.clone(),
+        tier_to_close: entry.tier_to_close.clone(),
+    }
+}
+
+fn panic_census_entry_from_row(row: &PanicCensusRow) -> PanicCensusEntry {
+    PanicCensusEntry {
+        file: row.file.clone(),
+        line: row.line,
+        callee: row.callee.clone(),
+        status: row.status.clone(),
+        reason: row.reason.clone(),
+        category: row.category.clone(),
+        tier_to_close: row.tier_to_close.clone(),
+    }
 }
 
 fn lift_scoreboards(lift_json: &Value) -> (LiftScoreboard, BridgeScoreboard, Vec<Site>, Vec<Site>) {
@@ -976,6 +1076,7 @@ fn discharge_split(prove_json: &Value) -> DischargeSplit {
     split
 }
 
+#[cfg(test)]
 fn panic_site_annotations(
     lift_json: &Value,
 ) -> Result<BTreeMap<(String, usize, String), PanicSiteAnnotation>, String> {
@@ -1029,6 +1130,7 @@ fn panic_site_annotations(
     Ok(annotations)
 }
 
+#[cfg(test)]
 fn required_annotation_string(diagnostic: &Value, field: &str) -> Result<String, String> {
     diagnostic
         .get(field)
@@ -1821,5 +1923,128 @@ mod tests {
 
         assert_eq!(scoreboard.discharge_split.panic_safe, 21);
         assert_eq!(scoreboard.discharge_split.false_pass, 0);
+    }
+
+    fn write_self_check_residue_manifest(target: &Path, body: &str) {
+        let provekit = target.join(".provekit");
+        fs::create_dir_all(&provekit).expect("create .provekit");
+        fs::write(provekit.join("residue.toml"), body).expect("write residue manifest");
+    }
+
+    #[test]
+    fn build_scoreboard_applies_runtime_doctor_annotations_from_target_manifest() {
+        let td = tempfile::tempdir().expect("tempdir");
+        write_self_check_residue_manifest(
+            td.path(),
+            r#"
+[[residue]]
+file = "src/kit_dispatch.rs"
+line = 106
+callee = "expect"
+category = "lock_poisoning_residue"
+tier_to_close = "irreducible"
+reason = "runtime doctor annotation"
+"#,
+        );
+        let mint = mint_json_with_diagnostics(vec![]);
+        let prove = json!({
+            "rows": [panic_row("src/kit_dispatch.rs", 106, "expect", "undecidable", None)]
+        });
+
+        let scoreboard = build_scoreboard_with_runtime_annotations(
+            "target",
+            td.path(),
+            &mint,
+            &prove,
+            crate::panic_annotations_runtime::AnnotationCheckMode::Strict,
+        )
+        .expect("scoreboard");
+        let rendered = serde_json::to_value(&scoreboard).expect("scoreboard json");
+        let row = &rendered["panicCensus"][0];
+
+        assert_eq!(row["status"], "residue");
+        assert_eq!(row["category"], "lock_poisoning_residue");
+        assert_eq!(row["tierToClose"], "irreducible");
+        assert_eq!(row["reason"], "runtime doctor annotation");
+    }
+
+    #[test]
+    fn runtime_doctor_annotation_receives_post_prove_panic_census_projection() {
+        let td = tempfile::tempdir().expect("tempdir");
+        write_self_check_residue_manifest(
+            td.path(),
+            r#"
+[[tier_to_close]]
+file = "src/generated_by_prove.rs"
+line = 44
+callee = "method:unwrap"
+category = "D-lib"
+tier_to_close = "future totality proof"
+reason = "this row exists only in prove output"
+"#,
+        );
+        let mint = mint_json_with_diagnostics(vec![]);
+        let prove = json!({
+            "rows": [panic_row(
+                "src/generated_by_prove.rs",
+                44,
+                "method:unwrap",
+                "undecidable",
+                None
+            )]
+        });
+
+        let scoreboard = build_scoreboard_with_runtime_annotations(
+            "target",
+            td.path(),
+            &mint,
+            &prove,
+            crate::panic_annotations_runtime::AnnotationCheckMode::Strict,
+        )
+        .expect("scoreboard");
+
+        assert_eq!(
+            scoreboard.panic_census[0].category.as_deref(),
+            Some("D-lib")
+        );
+        assert_eq!(
+            scoreboard.panic_census[0].tier_to_close.as_deref(),
+            Some("future totality proof")
+        );
+    }
+
+    #[test]
+    fn runtime_doctor_annotation_drift_fails_self_check_scoreboard_build() {
+        let td = tempfile::tempdir().expect("tempdir");
+        write_self_check_residue_manifest(
+            td.path(),
+            r#"
+[[residue]]
+file = "src/missing.rs"
+line = 99
+callee = "method:unwrap"
+category = "lock_poisoning_residue"
+tier_to_close = "irreducible"
+reason = "stale annotation"
+"#,
+        );
+        let mint = mint_json_with_diagnostics(vec![]);
+        let prove = json!({
+            "rows": [panic_row("src/live.rs", 1, "method:unwrap", "undecidable", None)]
+        });
+
+        let err = build_scoreboard_with_runtime_annotations(
+            "target",
+            td.path(),
+            &mint,
+            &prove,
+            crate::panic_annotations_runtime::AnnotationCheckMode::Strict,
+        )
+        .expect_err("strict runtime annotation drift must fail");
+
+        assert!(
+            err.contains("panic annotation runtime check failed") && err.contains("src/missing.rs"),
+            "unexpected error: {err}"
+        );
     }
 }

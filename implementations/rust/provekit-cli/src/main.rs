@@ -42,6 +42,7 @@ mod doctor;
 mod doctor_oracle;
 mod kit_dispatch;
 mod lift_plugin;
+pub mod panic_annotations_runtime;
 mod project_config;
 mod protocol;
 mod report_fmt;

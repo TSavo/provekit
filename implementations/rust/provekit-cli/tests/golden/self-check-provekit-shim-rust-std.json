@@ -1,16 +1,15 @@
 {
   "target": "examples/provekit-shim-rust-std",
-  "catalogCid": "blake3-512:b17a0f02846bf0a1a5226db5e3bee0c5e31c0608981df83f82a6b111c24b336f5a43833449691b69dd32ebadd007e9b93d31401951d767470fd928d8cc68cfa6",
+  "catalogCid": "blake3-512:d1c2f28626001b6b2436d35620b50624d2aae3b88dda5a7eea5bb1baa872cfd3100c4f6534625639e7a1e7a201eddc7aebcfc521c81a0d014dd8213ab12cf8bc",
   "lift": {
     "fnContracts": 28,
     "bodyDischargeEligible": 28,
     "bodyDischargeIneligible": {}
   },
   "bridges": {
-    "emitted": 0,
+    "emitted": 9,
     "liftGaps": {
-      "no-contract-for-callee": 23,
-      "panic-site-unproven": 5,
+      "no-contract-for-callee": 19,
       "unsupported-macro-callsite": 5
     }
   },
@@ -23,47 +22,222 @@
   "silentlyDropped": 0,
   "droppedSites": [],
   "dischargeSplit": {
-    "panicSafe": 0,
-    "reflexive": 656,
-    "vacuous": 0,
-    "undecidable": 1380,
+    "panicSafe": 5,
+    "reflexive": 628,
+    "vacuous": 552,
+    "undecidable": 1222,
     "falsePass": 0
   },
   "panicCensus": [
     {
+      "file": "src/compose.rs",
+      "line": 1157,
+      "callee": "method:expect",
+      "status": "unproven",
+      "reason": "resolve-target: NoBridgeTarget: callsite method:expect has no targetContractCid"
+    },
+    {
+      "file": "src/compose.rs",
+      "line": 1410,
+      "callee": "method:expect",
+      "status": "unproven",
+      "reason": "resolve-target: NoBridgeTarget: callsite method:expect has no targetContractCid"
+    },
+    {
+      "file": "src/core/bind.rs",
+      "line": 550,
+      "callee": "method:expect",
+      "status": "unproven",
+      "reason": "resolve-target: NoBridgeTarget: callsite method:expect has no targetContractCid"
+    },
+    {
+      "file": "src/core/emit_obligation.rs",
+      "line": 62,
+      "callee": "method:expect",
+      "status": "unproven",
+      "reason": "resolve-target: NoBridgeTarget: callsite method:expect has no targetContractCid"
+    },
+    {
+      "file": "src/core/lower_plugin.rs",
+      "line": 155,
+      "callee": "method:expect",
+      "status": "unproven",
+      "reason": "resolve-target: NoBridgeTarget: callsite method:expect has no targetContractCid"
+    },
+    {
+      "file": "src/core/lower_plugin.rs",
+      "line": 1477,
+      "callee": "method:expect",
+      "status": "unproven",
+      "reason": "resolve-target: NoBridgeTarget: callsite method:expect has no targetContractCid"
+    },
+    {
+      "file": "src/core/lower_plugin.rs",
+      "line": 1684,
+      "callee": "method:expect",
+      "status": "unproven",
+      "reason": "resolve-target: NoBridgeTarget: callsite method:expect has no targetContractCid"
+    },
+    {
+      "file": "src/core/platform_semantics.rs",
+      "line": 42,
+      "callee": "method:expect",
+      "status": "unproven",
+      "reason": "resolve-target: NoBridgeTarget: callsite method:expect has no targetContractCid"
+    },
+    {
+      "file": "src/core/source_transform.rs",
+      "line": 645,
+      "callee": "method:unwrap",
+      "status": "unproven",
+      "reason": "resolve-target: NoBridgeTarget: callsite method:unwrap has no targetContractCid"
+    },
+    {
+      "file": "src/core/source_transform.rs",
+      "line": 1055,
+      "callee": "method:unwrap",
+      "status": "unproven",
+      "reason": "resolve-target: NoBridgeTarget: callsite method:unwrap has no targetContractCid"
+    },
+    {
+      "file": "src/core/source_transform_kit.rs",
+      "line": 296,
+      "callee": "method:expect",
+      "status": "unproven",
+      "reason": "resolve-target: NoBridgeTarget: callsite method:expect has no targetContractCid"
+    },
+    {
+      "file": "src/core/source_transform_kit.rs",
+      "line": 307,
+      "callee": "method:expect",
+      "status": "unproven",
+      "reason": "resolve-target: NoBridgeTarget: callsite method:expect has no targetContractCid"
+    },
+    {
+      "file": "src/core/source_transform_kit.rs",
+      "line": 308,
+      "callee": "method:expect",
+      "status": "unproven",
+      "reason": "resolve-target: NoBridgeTarget: callsite method:expect has no targetContractCid"
+    },
+    {
+      "file": "src/core/types.rs",
+      "line": 1193,
+      "callee": "method:expect",
+      "status": "unproven",
+      "reason": "resolve-target: NoBridgeTarget: callsite method:expect has no targetContractCid"
+    },
+    {
+      "file": "src/core/types.rs",
+      "line": 1198,
+      "callee": "method:expect",
+      "status": "unproven",
+      "reason": "resolve-target: NoBridgeTarget: callsite method:expect has no targetContractCid"
+    },
+    {
+      "file": "src/core/types.rs",
+      "line": 1946,
+      "callee": "method:expect",
+      "status": "unproven",
+      "reason": "resolve-target: NoBridgeTarget: callsite method:expect has no targetContractCid"
+    },
+    {
+      "file": "src/core/types.rs",
+      "line": 2070,
+      "callee": "method:expect",
+      "status": "unproven",
+      "reason": "resolve-target: NoBridgeTarget: callsite method:expect has no targetContractCid"
+    },
+    {
+      "file": "src/core/types.rs",
+      "line": 2093,
+      "callee": "method:expect",
+      "status": "unproven",
+      "reason": "resolve-target: NoBridgeTarget: callsite method:expect has no targetContractCid"
+    },
+    {
+      "file": "src/core/types.rs",
+      "line": 2105,
+      "callee": "method:expect",
+      "status": "unproven",
+      "reason": "resolve-target: NoBridgeTarget: callsite method:expect has no targetContractCid"
+    },
+    {
+      "file": "src/core/types.rs",
+      "line": 2137,
+      "callee": "method:expect",
+      "status": "unproven",
+      "reason": "resolve-target: NoBridgeTarget: callsite method:expect has no targetContractCid"
+    },
+    {
+      "file": "src/core/types.rs",
+      "line": 2180,
+      "callee": "method:expect",
+      "status": "unproven",
+      "reason": "resolve-target: NoBridgeTarget: callsite method:expect has no targetContractCid"
+    },
+    {
+      "file": "src/desugar.rs",
+      "line": 489,
+      "callee": "method:expect",
+      "status": "unproven",
+      "reason": "resolve-target: NoBridgeTarget: callsite method:expect has no targetContractCid"
+    },
+    {
       "file": "src/lib.rs",
       "line": 161,
-      "callee": "unwrap",
-      "status": "unproven",
-      "reason": "receiver type did not resolve to a known panic partial; a bare unwrap/expect would vacuous-pass, so the site is reported as unproven (cannot show it does not panic)"
+      "callee": "method:unwrap",
+      "status": "proven",
+      "reason": "solver 'z3' returned unsat (obligation holds)"
     },
     {
       "file": "src/lib.rs",
       "line": 175,
-      "callee": "unwrap",
-      "status": "unproven",
-      "reason": "receiver type did not resolve to a known panic partial; a bare unwrap/expect would vacuous-pass, so the site is reported as unproven (cannot show it does not panic)"
+      "callee": "method:unwrap",
+      "status": "proven",
+      "reason": "solver 'z3' returned unsat (obligation holds)"
     },
     {
       "file": "src/lib.rs",
       "line": 190,
-      "callee": "expect",
-      "status": "unproven",
-      "reason": "receiver type did not resolve to a known panic partial; a bare unwrap/expect would vacuous-pass, so the site is reported as unproven (cannot show it does not panic)"
+      "callee": "method:expect",
+      "status": "proven",
+      "reason": "solver 'z3' returned unsat (obligation holds)"
     },
     {
       "file": "src/lib.rs",
       "line": 381,
-      "callee": "unwrap_err",
-      "status": "unproven",
-      "reason": "receiver type did not resolve to a known panic partial; a bare unwrap/expect would vacuous-pass, so the site is reported as unproven (cannot show it does not panic)"
+      "callee": "method:unwrap_err",
+      "status": "proven",
+      "reason": "solver 'z3' returned unsat (obligation holds)"
     },
     {
       "file": "src/lib.rs",
       "line": 396,
-      "callee": "expect",
+      "callee": "method:expect",
+      "status": "proven",
+      "reason": "solver 'z3' returned unsat (obligation holds)"
+    },
+    {
+      "file": "src/wp.rs",
+      "line": 295,
+      "callee": "method:unwrap",
       "status": "unproven",
-      "reason": "receiver type did not resolve to a known panic partial; a bare unwrap/expect would vacuous-pass, so the site is reported as unproven (cannot show it does not panic)"
+      "reason": "resolve-target: NoBridgeTarget: callsite method:unwrap has no targetContractCid"
+    },
+    {
+      "file": "src/wp/tests.rs",
+      "line": 74,
+      "callee": "method:expect",
+      "status": "unproven",
+      "reason": "resolve-target: NoBridgeTarget: callsite method:expect has no targetContractCid"
+    },
+    {
+      "file": "src/wp/tests.rs",
+      "line": 578,
+      "callee": "method:expect",
+      "status": "unproven",
+      "reason": "resolve-target: NoBridgeTarget: callsite method:expect has no targetContractCid"
     }
   ]
 }
