@@ -1346,6 +1346,7 @@ fn collect_callsites_in_block(
                             &callee,
                             type_id,
                             self.infallible_serialize,
+                            self.current_crate,
                         )
                     })
                 } else {
@@ -1858,10 +1859,14 @@ fn disambiguated_serde_json_totality_target(
     callee: &str,
     type_id: &TypeIdentity,
     manifest: &InfallibleSerializeManifest,
+    current_crate: &str,
 ) -> Option<(String, String)> {
+    // `type_crate` is the argument type's crate identity, used only for
+    // matching. The synthetic totality contract is published by the current
+    // project proof, so the bridge targets `current_crate`.
     manifest
         .contract_for(callee, type_id)
-        .map(|contract| (type_id.krate.clone(), contract.to_string()))
+        .map(|contract| (current_crate.to_string(), contract.to_string()))
         .or_else(|| {
             // Backwards-compatible Rust-kit semantics for the serde_json shim's
             // existing Value totality contracts. This stays in the kit: the
@@ -3715,19 +3720,14 @@ fn emit_infallible_serialize_contracts(
         );
     }
     for rule in &manifest.rules {
-        if rule.type_id.krate != current_crate {
-            return Err(format!(
-                "infallible_serialize.toml entry `{}` blesses type `{}`::`{}` but current crate is `{}`",
-                rule.contract, rule.type_id.krate, rule.type_id.head, current_crate
-            ));
-        }
         debug!(
             function = %rule.function,
             type_crate = %rule.type_id.krate,
             type_name = %rule.type_id.head,
+            contract_library = %current_crate,
             contract = %rule.contract,
             reason = %rule.reason,
-            "function_contract_lift: emitting infallible serde_json totality contract"
+            "function_contract_lift: emitting project-local infallible serde_json totality contract"
         );
         entries.push(json!({
             "kind": "contract",
@@ -10546,6 +10546,86 @@ reason = "derive Serialize over serde_json-infallible fields"
             .filter_map(|entry| entry["targetContractCid"].as_str())
             .collect();
         assert_eq!(to_string_targets, vec![sort_cid]);
+
+        let _ = fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn infallible_serialize_manifest_matches_external_type_but_emits_current_crate_contract() {
+        let src = r##"
+use dep_crate::Sort;
+
+pub fn sort_name(sort: &Sort) {
+    match sort {
+        other => {
+            serde_json::to_string(other).unwrap();
+        }
+    }
+}
+"##;
+        let root = temp_workspace("infallible_serialize_external_type");
+        let src_dir = root.join("src");
+        fs::create_dir_all(&src_dir).expect("create src dir");
+        fs::write(
+            root.join("Cargo.toml"),
+            r#"
+[package]
+name = "consumer-crate"
+version = "0.1.0"
+edition = "2021"
+"#,
+        )
+        .expect("write Cargo.toml");
+        let rel = "src/lib.rs";
+        fs::write(root.join(rel), src).expect("write source");
+        write_infallible_serialize_manifest(
+            &root,
+            r#"
+[[serde_json]]
+function = "to_string"
+type_crate = "dep_crate"
+type_name = "Sort"
+contract = "serde_json_to_string__dep_sort"
+reason = "project-local totality axiom for dependency Sort serialization"
+"#,
+        );
+
+        let producer = function_contract_lift(&json!({
+            "workspace_root": root.to_string_lossy(),
+            "source_paths": [rel]
+        }))
+        .expect("function contract lift accepts external type match identity");
+        let entries = producer["ir"].as_array().expect("producer ir array");
+        let contract = entries
+            .iter()
+            .find(|entry| entry["name"] == "serde_json_to_string__dep_sort")
+            .expect("synthetic external-type totality contract");
+        assert_eq!(contract["library"], "consumer_crate");
+        assert_eq!(contract["bodyDischargeEligible"], false);
+        assert_eq!(contract["bodyDischargeRefusalReason"], "totality-axiom");
+
+        let sort_cid = "blake3-512:eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee";
+        let consumer = lift_implications(&json!({
+            "workspace_root": root.to_string_lossy(),
+            "source_paths": [rel],
+            "contract_bindings": [
+                {
+                    "name": "serde_json_to_string__dep_sort",
+                    "library": "consumer_crate",
+                    "contract_cid": sort_cid,
+                    "bodyDischargeEligible": false,
+                    "bodyDischargeRefusalReason": "totality-axiom"
+                }
+            ],
+        }))
+        .expect("lift implications");
+        let bridge = consumer["ir"]
+            .as_array()
+            .expect("consumer ir array")
+            .iter()
+            .find(|entry| entry["sourceSymbol"] == "to_string")
+            .expect("serde_json::to_string bridge for external type identity");
+        assert_eq!(bridge["targetContractCid"], sort_cid);
 
         let _ = fs::remove_dir_all(root);
     }

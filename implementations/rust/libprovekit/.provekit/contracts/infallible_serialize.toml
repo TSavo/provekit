@@ -13,10 +13,12 @@ reason = "RealizedSource derives Serialize over serde_json-infallible fields: st
 
 [[serde_json]]
 function = "to_string"
-type_crate = "libprovekit"
+type_crate = "provekit_ir_types"
 type_name = "Sort"
 contract = "serde_json_to_string__sort"
-reason = "Sort derives Serialize over enum variants containing strings, u8, Vec<Sort>, and Box<Sort>; serialization Result has no custom error path"
+reason = "Sort derives Serialize over enum variants containing strings, u8, Vec<Sort>, and Box<Sort>; recursive Box<Sort> may stack-overflow as an abort, but serialization Result has no custom error path"
+audited_for_crate = "provekit_ir_types"
+audited_at = "2026-06-01"
 
 [[serde_json]]
 function = "to_value"
