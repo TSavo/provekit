@@ -27,6 +27,9 @@ pub const CF_GUARDED_CONCEPT: &str = "concept:panic-freedom.guard";
 /// Substrate panic-freedom control-flow choice carrier; see `SUBSTRATE-SHAPE-AUDIT.md`.
 pub const CF_ITE: &str = "cf_ite";
 
+/// Substrate panic-freedom control-flow choice carrier alias; see `SUBSTRATE-SHAPE-AUDIT.md`.
+pub const CF_ITE_CONCEPT: &str = "concept:panic-freedom.choice";
+
 /// Substrate panic-freedom unwrap leaf; see `SUBSTRATE-SHAPE-AUDIT.md`.
 pub const METHOD_UNWRAP: &str = "method:unwrap";
 

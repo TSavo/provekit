@@ -2722,6 +2722,10 @@ mod tests {
         let json = serde_json::to_string(&eq).unwrap();
         assert!(json.contains("cf_ite"), "must lift to a cf_ite: {json}");
         assert!(
+            !json.contains(panic_freedom::CF_ITE_CONCEPT),
+            "Rust v1 emission must keep the old choice carrier: {json}"
+        );
+        assert!(
             json.contains("cf_guarded"),
             "guarded branches must carry cf_guarded wrappers: {json}"
         );

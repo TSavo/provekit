@@ -14,6 +14,10 @@ fn panic_freedom_constants_keep_existing_wire_tokens() {
         "concept:panic-freedom.guard"
     );
     assert_eq!(panic_freedom::CF_ITE, "cf_ite");
+    assert_eq!(
+        panic_freedom::CF_ITE_CONCEPT,
+        "concept:panic-freedom.choice"
+    );
     assert_eq!(panic_freedom::METHOD_UNWRAP, "method:unwrap");
     assert_eq!(panic_freedom::METHOD_EXPECT, "method:expect");
     assert_eq!(panic_freedom::METHOD_UNWRAP_ERR, "method:unwrap_err");
