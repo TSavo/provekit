@@ -24,9 +24,15 @@
 //   0   all checks passed (warnings may be present)
 //   2   at least one HARD check failed
 
+use std::collections::BTreeSet;
+use std::ffi::OsStr;
+use std::fs;
 use std::path::{Path, PathBuf};
+use std::time::{SystemTime, UNIX_EPOCH};
 
 use clap::ValueEnum;
+use provekit_canonicalizer::blake3_512_of;
+use provekit_verifier::load_all_proofs::ProofBytes;
 use serde_json::{json, Value};
 
 use crate::lift_plugin::{parse_manifest_at, resolved_working_dir_for};
@@ -61,6 +67,8 @@ pub enum CheckSeverity {
 pub enum DoctorMode {
     Structural,
     Strict,
+    #[value(name = "releaseGate")]
+    ReleaseGate,
 }
 
 impl DoctorMode {
@@ -68,6 +76,7 @@ impl DoctorMode {
         match self {
             DoctorMode::Structural => "structural",
             DoctorMode::Strict => "strict",
+            DoctorMode::ReleaseGate => "releaseGate",
         }
     }
 }
@@ -115,6 +124,7 @@ pub struct DoctorReport {
     pub mode: DoctorMode,
     pub checks: Vec<DoctorCheck>,
     pub ok: bool,
+    pub release_ready: bool,
 }
 
 impl DoctorCheck {
@@ -139,6 +149,30 @@ impl DoctorCheck {
     ) -> Self {
         Self::with_status(name, CheckStatus::Fail, detail, evidence)
     }
+    fn pass_with_severity(
+        name: impl Into<String>,
+        severity: CheckSeverity,
+        detail: impl Into<String>,
+        evidence: Value,
+    ) -> Self {
+        Self::with_status_and_severity(name, CheckStatus::Pass, severity, detail, evidence)
+    }
+    fn warn_with_severity(
+        name: impl Into<String>,
+        severity: CheckSeverity,
+        detail: impl Into<String>,
+        evidence: Value,
+    ) -> Self {
+        Self::with_status_and_severity(name, CheckStatus::Warn, severity, detail, evidence)
+    }
+    fn fail_with_severity(
+        name: impl Into<String>,
+        severity: CheckSeverity,
+        detail: impl Into<String>,
+        evidence: Value,
+    ) -> Self {
+        Self::with_status_and_severity(name, CheckStatus::Fail, severity, detail, evidence)
+    }
     fn with_status(
         name: impl Into<String>,
         status: CheckStatus,
@@ -148,6 +182,26 @@ impl DoctorCheck {
         let name = name.into();
         let detail = detail.into();
         let (id, domain, severity, evidence) = check_metadata(&name, &detail, evidence);
+        Self {
+            id,
+            name,
+            status,
+            severity,
+            domain,
+            detail,
+            evidence,
+        }
+    }
+    fn with_status_and_severity(
+        name: impl Into<String>,
+        status: CheckStatus,
+        severity: CheckSeverity,
+        detail: impl Into<String>,
+        evidence: Value,
+    ) -> Self {
+        let name = name.into();
+        let detail = detail.into();
+        let (id, domain, _, evidence) = check_metadata(&name, &detail, evidence);
         Self {
             id,
             name,
@@ -193,6 +247,30 @@ fn check_metadata(
             "kit.consumer_surface",
             CheckSeverity::Hard,
         )
+    } else if name == "dependency-resolver-available" {
+        (
+            "proof.dependency_resolver.available",
+            "proof.dependency_resolver",
+            CheckSeverity::Advisory,
+        )
+    } else if name == "dependency-resolver-protocol" {
+        (
+            "proof.dependency_resolver.protocol",
+            "proof.dependency_resolver",
+            CheckSeverity::Advisory,
+        )
+    } else if name == "dependency-pool-stable" {
+        (
+            "proof.dependency_pool.stable",
+            "proof.dependency_pool",
+            CheckSeverity::Advisory,
+        )
+    } else if name == "dependency-pool-byte-consistent" {
+        (
+            "proof.dependency_pool.byte_consistent",
+            "proof.dependency_pool",
+            CheckSeverity::Hard,
+        )
     } else {
         ("doctor.check", "doctor", CheckSeverity::Hard)
     };
@@ -209,13 +287,7 @@ fn check_metadata(
 
 pub fn run_report(kit_dir: &Path) -> DoctorReport {
     let checks = run_checks(kit_dir);
-    let ok = !checks.iter().any(|c| c.status == CheckStatus::Fail);
-    DoctorReport {
-        target: kit_dir.to_path_buf(),
-        mode: DoctorMode::Structural,
-        checks,
-        ok,
-    }
+    report_from_checks(kit_dir, DoctorMode::Structural, checks)
 }
 
 pub fn run_report_with_context(kit_dir: &Path, context: DoctorContext) -> DoctorReport {
@@ -223,10 +295,28 @@ pub fn run_report_with_context(kit_dir: &Path, context: DoctorContext) -> Doctor
         return run_report(kit_dir);
     }
     let checks = run_checks_with_context(kit_dir, context);
+    report_from_checks(kit_dir, context.mode, checks)
+}
+
+#[cfg(test)]
+fn run_report_with_context_and_dependency_resolver<F>(
+    kit_dir: &Path,
+    context: DoctorContext,
+    resolver: F,
+) -> DoctorReport
+where
+    F: FnMut(&Path) -> Result<Vec<ProofBytes>, String>,
+{
+    let checks = run_checks_with_context_and_dependency_resolver(kit_dir, context, resolver);
+    report_from_checks(kit_dir, context.mode, checks)
+}
+
+fn report_from_checks(kit_dir: &Path, mode: DoctorMode, checks: Vec<DoctorCheck>) -> DoctorReport {
     let ok = !checks.iter().any(|c| c.status == CheckStatus::Fail);
     DoctorReport {
         target: kit_dir.to_path_buf(),
-        mode: context.mode,
+        mode,
+        release_ready: ok && mode == DoctorMode::ReleaseGate,
         checks,
         ok,
     }
@@ -239,7 +329,21 @@ pub fn run_checks(kit_dir: &Path) -> Vec<Check> {
 }
 
 pub fn run_checks_with_context(kit_dir: &Path, context: DoctorContext) -> Vec<Check> {
-    let _mode = context.mode;
+    run_checks_with_context_and_dependency_resolver(
+        kit_dir,
+        context,
+        crate::kit_dispatch::dependency_proofs_via_rpc,
+    )
+}
+
+fn run_checks_with_context_and_dependency_resolver<F>(
+    kit_dir: &Path,
+    context: DoctorContext,
+    resolver: F,
+) -> Vec<Check>
+where
+    F: FnMut(&Path) -> Result<Vec<ProofBytes>, String>,
+{
     let mut checks: Vec<Check> = Vec::new();
 
     // --- Check 1: config.toml and all manifest TOML files parse as valid TOML.
@@ -502,7 +606,524 @@ pub fn run_checks_with_context(kit_dir: &Path, context: DoctorContext) -> Vec<Ch
         }
     }
 
+    checks.extend(run_dependency_proof_checks_with_resolver(
+        kit_dir, context, resolver,
+    ));
     checks
+}
+
+#[derive(Debug, Clone)]
+struct DependencyResolverInfo {
+    kind: String,
+    surface: String,
+    manifest_path: PathBuf,
+    command: String,
+    resolved_path: Option<String>,
+    unavailable_reason: Option<String>,
+}
+
+#[derive(Debug, Clone, Eq)]
+struct DependencyProofFingerprint {
+    derived_cid: String,
+    byte_hash: String,
+    byte_length: usize,
+    label: String,
+}
+
+impl PartialEq for DependencyProofFingerprint {
+    fn eq(&self, other: &Self) -> bool {
+        self.derived_cid == other.derived_cid
+            && self.byte_hash == other.byte_hash
+            && self.byte_length == other.byte_length
+    }
+}
+
+impl PartialOrd for DependencyProofFingerprint {
+    fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
+        Some(self.cmp(other))
+    }
+}
+
+impl Ord for DependencyProofFingerprint {
+    fn cmp(&self, other: &Self) -> std::cmp::Ordering {
+        (&self.derived_cid, &self.byte_hash, self.byte_length).cmp(&(
+            &other.derived_cid,
+            &other.byte_hash,
+            other.byte_length,
+        ))
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct DependencyProofPool {
+    present: bool,
+    proofs: Vec<DependencyProofFingerprint>,
+}
+
+fn run_dependency_proof_checks_with_resolver<F>(
+    kit_dir: &Path,
+    context: DoctorContext,
+    resolver: F,
+) -> Vec<Check>
+where
+    F: FnMut(&Path) -> Result<Vec<ProofBytes>, String>,
+{
+    run_dependency_proof_checks_with_pass_hook(kit_dir, context, resolver, |_, _| {})
+}
+
+fn run_dependency_proof_checks_with_pass_hook<F, H>(
+    kit_dir: &Path,
+    context: DoctorContext,
+    mut resolver: F,
+    mut pass_hook: H,
+) -> Vec<Check>
+where
+    F: FnMut(&Path) -> Result<Vec<ProofBytes>, String>,
+    H: FnMut(usize, &Path),
+{
+    let mut checks = Vec::new();
+    let resolver_info = match dependency_resolver_info(kit_dir) {
+        Ok(info) => info,
+        Err(error) => {
+            checks.push(Check::fail_with_severity(
+                "dependency-resolver-available",
+                CheckSeverity::Hard,
+                format!("could not inspect dependency proof resolver config: {error}"),
+                json!({"error": error}),
+            ));
+            return checks;
+        }
+    };
+
+    let Some(info) = resolver_info else {
+        checks.push(Check::pass_with_severity(
+            "dependency-resolver-available",
+            CheckSeverity::Advisory,
+            "no dependency proof resolver configured",
+            json!({"configured": false}),
+        ));
+        checks.push(pool_stable_structural_check(kit_dir));
+        return checks;
+    };
+
+    let configured_evidence = json!({
+        "configured": true,
+        "kind": info.kind,
+        "surface": info.surface,
+        "path": info.manifest_path.display().to_string(),
+        "command": info.command,
+        "resolvedPath": info.resolved_path,
+        "reason": info.unavailable_reason,
+    });
+    if let Some(reason) = &info.unavailable_reason {
+        let (status, severity) = match context.mode {
+            DoctorMode::Structural => (CheckStatus::Warn, CheckSeverity::Advisory),
+            DoctorMode::Strict | DoctorMode::ReleaseGate => {
+                (CheckStatus::Fail, CheckSeverity::Hard)
+            }
+        };
+        checks.push(Check::with_status_and_severity(
+            "dependency-resolver-available",
+            status,
+            severity,
+            format!("dependency proof resolver unavailable: {reason}"),
+            configured_evidence,
+        ));
+        if context.mode == DoctorMode::Structural {
+            checks.push(pool_stable_structural_check(kit_dir));
+        }
+        return checks;
+    }
+
+    checks.push(Check::pass_with_severity(
+        "dependency-resolver-available",
+        CheckSeverity::Advisory,
+        "dependency proof resolver is locatable",
+        configured_evidence,
+    ));
+
+    match context.mode {
+        DoctorMode::Structural => {
+            checks.push(pool_stable_structural_check(kit_dir));
+        }
+        DoctorMode::Strict => {
+            checks.push(strict_dependency_pool_check(kit_dir, &mut resolver));
+        }
+        DoctorMode::ReleaseGate => {
+            checks.push(release_gate_dependency_pool_check(
+                kit_dir,
+                &mut resolver,
+                &mut pass_hook,
+            ));
+        }
+    }
+
+    checks
+}
+
+fn dependency_resolver_info(kit_dir: &Path) -> Result<Option<DependencyResolverInfo>, String> {
+    let config = read_project_config(kit_dir);
+    let manifest_entries = collect_manifest_entries(kit_dir, &config.plugins);
+    let Some((surface, kind, manifest_path)) = manifest_entries.into_iter().next() else {
+        return Ok(None);
+    };
+    let manifest = parse_manifest_at(&manifest_path)
+        .map_err(|e| format!("parse {}: {e}", manifest_path.display()))?;
+    let Some(command) = manifest.command.first().cloned() else {
+        return Ok(Some(DependencyResolverInfo {
+            kind,
+            surface,
+            manifest_path,
+            command: String::new(),
+            resolved_path: None,
+            unavailable_reason: Some("manifest declares no command".to_string()),
+        }));
+    };
+    let resolved_wd = resolved_working_dir_for(kit_dir, &manifest);
+    let (resolved_path, unavailable_reason) = match resolve_binary(&command, resolved_wd.as_deref())
+    {
+        BinaryResolution::Found(path) => (Some(path.display().to_string()), None),
+        BinaryResolution::NotFound { resolved_path } => (
+            Some(resolved_path.clone()),
+            Some(format!("binary not found at {resolved_path}")),
+        ),
+        BinaryResolution::NotExecutable { abs } => (
+            Some(abs.display().to_string()),
+            Some(format!("binary exists at {} but is not executable", abs.display())),
+        ),
+    };
+    Ok(Some(DependencyResolverInfo {
+        kind,
+        surface,
+        manifest_path,
+        command,
+        resolved_path,
+        unavailable_reason,
+    }))
+}
+
+fn pool_stable_structural_check(kit_dir: &Path) -> Check {
+    match proof_pool_from_imports(kit_dir) {
+        Ok(pool) if !pool.present => Check::pass_with_severity(
+            "dependency-pool-stable",
+            CheckSeverity::Advisory,
+            "no pool yet: .provekit/imports/ is absent",
+            proof_pool_evidence(&pool),
+        ),
+        Ok(pool) => Check::pass_with_severity(
+            "dependency-pool-stable",
+            CheckSeverity::Advisory,
+            format!(
+                "current dependency proof pool fingerprint: {} proof(s)",
+                pool.proofs.len()
+            ),
+            proof_pool_evidence(&pool),
+        ),
+        Err(error) => Check::warn_with_severity(
+            "dependency-pool-stable",
+            CheckSeverity::Advisory,
+            format!("could not fingerprint dependency proof pool: {error}"),
+            json!({"error": error}),
+        ),
+    }
+}
+
+fn strict_dependency_pool_check<F>(kit_dir: &Path, resolver: &mut F) -> Check
+where
+    F: FnMut(&Path) -> Result<Vec<ProofBytes>, String>,
+{
+    let pool = match proof_pool_from_imports(kit_dir) {
+        Ok(pool) => pool,
+        Err(error) => {
+            return Check::fail_with_severity(
+                "dependency-pool-stable",
+                CheckSeverity::Hard,
+                format!("could not fingerprint dependency proof pool: {error}"),
+                json!({"error": error}),
+            );
+        }
+    };
+    let staged = match resolver(kit_dir).and_then(proof_pool_from_rpc_proofs) {
+        Ok(staged) => staged,
+        Err(error) => {
+            return Check::fail_with_severity(
+                "dependency-resolver-protocol",
+                CheckSeverity::Hard,
+                format!("dependency proof resolver protocol failed: {error}"),
+                json!({"error": error}),
+            );
+        }
+    };
+    if pool.proofs == staged.proofs {
+        return Check::pass_with_severity(
+            "dependency-pool-stable",
+            CheckSeverity::Hard,
+            "dependency proof pool matches resolver-staged proof set",
+            json!({
+                "pool": proof_pool_evidence(&pool),
+                "staged": proof_pool_evidence(&staged),
+                "proofs": proof_entries_json(&pool.proofs),
+            }),
+        );
+    }
+    Check::fail_with_severity(
+        "dependency-pool-stable",
+        CheckSeverity::Hard,
+        "dependency proof pool differs from resolver-staged proof set",
+        pool_diff_evidence("pool_vs_staged", &pool.proofs, &staged.proofs),
+    )
+}
+
+fn release_gate_dependency_pool_check<F, H>(
+    kit_dir: &Path,
+    resolver: &mut F,
+    pass_hook: &mut H,
+) -> Check
+where
+    F: FnMut(&Path) -> Result<Vec<ProofBytes>, String>,
+    H: FnMut(usize, &Path),
+{
+    let scratch = std::env::temp_dir().join(format!(
+        "provekit-doctor-dep-{}-{}",
+        std::process::id(),
+        SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .map(|d| d.as_nanos())
+            .unwrap_or(0)
+    ));
+    let pass1 = scratch.join("pass1");
+    let pass2 = scratch.join("pass2");
+    let pass1_before = match stage_dependency_proof_pass(kit_dir, &pass1, resolver) {
+        Ok(pool) => pool,
+        Err(error) => {
+            let _ = fs::remove_dir_all(&scratch);
+            return Check::fail_with_severity(
+                "dependency-pool-byte-consistent",
+                CheckSeverity::Hard,
+                format!("dependency proof release gate pass 1 failed: {error}"),
+                json!({"error": error, "pass": 1}),
+            );
+        }
+    };
+    pass_hook(1, &pass1);
+    let pass1_after = match proof_pool_from_dir(&pass1) {
+        Ok(pool) => pool,
+        Err(error) => {
+            let _ = fs::remove_dir_all(&scratch);
+            return Check::fail_with_severity(
+                "dependency-pool-byte-consistent",
+                CheckSeverity::Hard,
+                format!("dependency proof release gate pass 1 rescan failed: {error}"),
+                json!({"error": error, "pass": 1}),
+            );
+        }
+    };
+    let pass2_before = match stage_dependency_proof_pass(kit_dir, &pass2, resolver) {
+        Ok(pool) => pool,
+        Err(error) => {
+            let _ = fs::remove_dir_all(&scratch);
+            return Check::fail_with_severity(
+                "dependency-pool-byte-consistent",
+                CheckSeverity::Hard,
+                format!("dependency proof release gate pass 2 failed: {error}"),
+                json!({"error": error, "pass": 2}),
+            );
+        }
+    };
+    pass_hook(2, &pass2);
+    let pass2_after = match proof_pool_from_dir(&pass2) {
+        Ok(pool) => pool,
+        Err(error) => {
+            let _ = fs::remove_dir_all(&scratch);
+            return Check::fail_with_severity(
+                "dependency-pool-byte-consistent",
+                CheckSeverity::Hard,
+                format!("dependency proof release gate pass 2 rescan failed: {error}"),
+                json!({"error": error, "pass": 2}),
+            );
+        }
+    };
+    let _ = fs::remove_dir_all(&scratch);
+
+    if pass1_after.proofs == pass2_after.proofs && pass1_before.proofs == pass1_after.proofs {
+        return Check::pass_with_severity(
+            "dependency-pool-byte-consistent",
+            CheckSeverity::Hard,
+            "dependency proof release gate produced byte-identical proof sets",
+            json!({
+                "proofs": proof_entries_json(&pass1_after.proofs),
+                "pass1": proof_pool_evidence(&pass1_after),
+                "pass2": proof_pool_evidence(&pass2_after),
+            }),
+        );
+    }
+
+    let drift_kind = if pass1_before.proofs != pass1_after.proofs
+        || pass2_before.proofs != pass2_after.proofs
+    {
+        "between_passes_mutation"
+    } else {
+        "resolver_nondeterminism"
+    };
+    Check::fail_with_severity(
+        "dependency-pool-byte-consistent",
+        CheckSeverity::Hard,
+        "dependency proof release gate produced divergent proof bytes",
+        pool_diff_evidence(drift_kind, &pass1_after.proofs, &pass2_after.proofs),
+    )
+}
+
+fn stage_dependency_proof_pass<F>(
+    kit_dir: &Path,
+    dest: &Path,
+    resolver: &mut F,
+) -> Result<DependencyProofPool, String>
+where
+    F: FnMut(&Path) -> Result<Vec<ProofBytes>, String>,
+{
+    fs::create_dir_all(dest).map_err(|e| format!("mkdir {}: {e}", dest.display()))?;
+    let proofs = resolver(kit_dir)?;
+    for proof in proofs {
+        let fingerprint = fingerprint_bytes(proof.label.clone(), &proof.bytes);
+        if let Some(expected) = proof.expected_cid {
+            if expected != fingerprint.derived_cid {
+                return Err(format!(
+                    "dependency proof CID mismatch: expected {}, derived {}",
+                    expected, fingerprint.derived_cid
+                ));
+            }
+        }
+        fs::write(
+            dest.join(format!("{}.proof", fingerprint.derived_cid)),
+            &proof.bytes,
+        )
+        .map_err(|e| {
+            format!(
+                "write staged dependency proof {}: {e}",
+                fingerprint.derived_cid
+            )
+        })?;
+    }
+    proof_pool_from_dir(dest)
+}
+
+fn proof_pool_from_imports(kit_dir: &Path) -> Result<DependencyProofPool, String> {
+    proof_pool_from_dir(&kit_dir.join(".provekit/imports"))
+}
+
+fn proof_pool_from_dir(path: &Path) -> Result<DependencyProofPool, String> {
+    if !path.exists() {
+        return Ok(DependencyProofPool {
+            present: false,
+            proofs: Vec::new(),
+        });
+    }
+    let mut proofs = Vec::new();
+    for entry in fs::read_dir(path).map_err(|e| format!("read {}: {e}", path.display()))? {
+        let entry = entry.map_err(|e| format!("read {} entry: {e}", path.display()))?;
+        if entry.path().extension() == Some(OsStr::new("proof")) {
+            let label = entry.file_name().to_string_lossy().to_string();
+            let bytes = fs::read(entry.path())
+                .map_err(|e| format!("read {}: {e}", entry.path().display()))?;
+            proofs.push(fingerprint_bytes(label, &bytes));
+        }
+    }
+    proofs.sort();
+    proofs.dedup();
+    Ok(DependencyProofPool {
+        present: true,
+        proofs,
+    })
+}
+
+fn proof_pool_from_rpc_proofs(proofs: Vec<ProofBytes>) -> Result<DependencyProofPool, String> {
+    let mut fingerprints = Vec::new();
+    for proof in proofs {
+        let fingerprint = fingerprint_bytes(proof.label, &proof.bytes);
+        if let Some(expected) = proof.expected_cid {
+            if expected != fingerprint.derived_cid {
+                return Err(format!(
+                    "dependency proof CID mismatch: expected {}, derived {}",
+                    expected, fingerprint.derived_cid
+                ));
+            }
+        }
+        fingerprints.push(fingerprint);
+    }
+    fingerprints.sort();
+    fingerprints.dedup();
+    Ok(DependencyProofPool {
+        present: true,
+        proofs: fingerprints,
+    })
+}
+
+fn fingerprint_bytes(label: String, bytes: &[u8]) -> DependencyProofFingerprint {
+    let byte_hash = blake3_512_of(bytes);
+    DependencyProofFingerprint {
+        derived_cid: byte_hash.clone(),
+        byte_hash,
+        byte_length: bytes.len(),
+        label,
+    }
+}
+
+fn proof_pool_evidence(pool: &DependencyProofPool) -> Value {
+    json!({
+        "poolPresent": pool.present,
+        "proofCount": pool.proofs.len(),
+        "proofs": proof_entries_json(&pool.proofs),
+    })
+}
+
+fn proof_entries_json(proofs: &[DependencyProofFingerprint]) -> Value {
+    Value::Array(
+        proofs
+            .iter()
+            .map(|proof| {
+                json!({
+                    "label": proof.label,
+                    "derivedCid": proof.derived_cid,
+                    "byteHash": proof.byte_hash,
+                    "byteLength": proof.byte_length,
+                })
+            })
+            .collect(),
+    )
+}
+
+fn pool_diff_evidence(
+    drift_kind: &str,
+    first: &[DependencyProofFingerprint],
+    second: &[DependencyProofFingerprint],
+) -> Value {
+    let first_cids = first
+        .iter()
+        .map(|proof| proof.derived_cid.clone())
+        .collect::<BTreeSet<_>>();
+    let second_cids = second
+        .iter()
+        .map(|proof| proof.derived_cid.clone())
+        .collect::<BTreeSet<_>>();
+    let first_only = first_cids
+        .difference(&second_cids)
+        .cloned()
+        .collect::<Vec<_>>();
+    let second_only = second_cids
+        .difference(&first_cids)
+        .cloned()
+        .collect::<Vec<_>>();
+    let first_byte_hash = first.first().map(|proof| proof.byte_hash.clone());
+    let second_byte_hash = second.first().map(|proof| proof.byte_hash.clone());
+    json!({
+        "driftKind": drift_kind,
+        "first": proof_entries_json(first),
+        "second": proof_entries_json(second),
+        "firstOnlyCids": first_only,
+        "secondOnlyCids": second_only,
+        "firstByteHash": first_byte_hash,
+        "secondByteHash": second_byte_hash,
+    })
 }
 
 /// Query a plugin's `initialize` capabilities and return its declared
@@ -1044,6 +1665,17 @@ mod tests {
     }
 
     #[test]
+    fn doctor_report_mode_reflects_release_gate() {
+        let td = TempDir::new().unwrap();
+        let kit = td.path();
+        fs::create_dir_all(kit.join(".provekit")).unwrap();
+
+        let report = run_report_with_context(kit, DoctorContext::new(DoctorMode::ReleaseGate));
+
+        assert_eq!(report.mode, DoctorMode::ReleaseGate);
+    }
+
+    #[test]
     fn run_checks_with_context_preserves_default_engine_results() {
         let td = TempDir::new().unwrap();
         let kit = td.path();
@@ -1130,6 +1762,339 @@ mod tests {
         );
 
         assert_modes_match_for_check(kit, "kit.consumer_surface.contract");
+    }
+
+    #[test]
+    fn structural_dependency_resolver_available_passes_with_binary_evidence() {
+        let td = TempDir::new().unwrap();
+        let kit = td.path();
+        let resolver = kit.join("dep-resolver");
+        make_executable(&resolver);
+        write_dependency_resolver_kit(kit, "\"./dep-resolver\"");
+
+        let checks = run_dependency_proof_checks_with_resolver(
+            kit,
+            DoctorContext::new(DoctorMode::Structural),
+            |_| Ok(Vec::new()),
+        );
+
+        let available = check_by_id_from_checks(&checks, "proof.dependency_resolver.available");
+        assert_eq!(available.status, CheckStatus::Pass);
+        assert_eq!(available.severity, CheckSeverity::Advisory);
+        assert_eq!(
+            available.evidence.get("command").and_then(Value::as_str),
+            Some("./dep-resolver")
+        );
+        assert!(
+            available
+                .evidence
+                .get("resolvedPath")
+                .and_then(Value::as_str)
+                .is_some(),
+            "availability evidence should name the resolver binary: {available:#?}"
+        );
+    }
+
+    #[test]
+    fn structural_missing_dependency_resolver_warns_with_missing_binary_evidence() {
+        let td = TempDir::new().unwrap();
+        let kit = td.path();
+        write_dependency_resolver_kit(kit, "\"./missing-dep-resolver\"");
+
+        let checks = run_dependency_proof_checks_with_resolver(
+            kit,
+            DoctorContext::new(DoctorMode::Structural),
+            |_| Ok(Vec::new()),
+        );
+
+        let available = check_by_id_from_checks(&checks, "proof.dependency_resolver.available");
+        assert_eq!(available.status, CheckStatus::Warn);
+        assert_eq!(available.severity, CheckSeverity::Advisory);
+        assert!(
+            available.detail.contains("missing-dep-resolver"),
+            "missing resolver detail should name the binary: {}",
+            available.detail
+        );
+    }
+
+    #[test]
+    fn strict_missing_dependency_resolver_fails_hard_with_same_evidence() {
+        let td = TempDir::new().unwrap();
+        let kit = td.path();
+        write_dependency_resolver_kit(kit, "\"./missing-dep-resolver\"");
+
+        let structural = run_dependency_proof_checks_with_resolver(
+            kit,
+            DoctorContext::new(DoctorMode::Structural),
+            |_| Ok(Vec::new()),
+        );
+        let strict = run_dependency_proof_checks_with_resolver(
+            kit,
+            DoctorContext::new(DoctorMode::Strict),
+            |_| Ok(Vec::new()),
+        );
+
+        let structural_available =
+            check_by_id_from_checks(&structural, "proof.dependency_resolver.available");
+        let strict_available =
+            check_by_id_from_checks(&strict, "proof.dependency_resolver.available");
+        assert_eq!(strict_available.status, CheckStatus::Fail);
+        assert_eq!(strict_available.severity, CheckSeverity::Hard);
+        assert_eq!(
+            structural_available.evidence, strict_available.evidence,
+            "strict should harden policy over the same missing-resolver evidence"
+        );
+    }
+
+    #[test]
+    fn strict_no_dependency_resolver_configured_passes_when_no_dep_specs() {
+        let td = TempDir::new().unwrap();
+        let kit = td.path();
+        write_kit(kit, "");
+
+        let checks = run_dependency_proof_checks_with_resolver(
+            kit,
+            DoctorContext::new(DoctorMode::Strict),
+            |_| Ok(Vec::new()),
+        );
+
+        let available = check_by_id_from_checks(&checks, "proof.dependency_resolver.available");
+        assert_eq!(available.status, CheckStatus::Pass);
+        assert_eq!(available.severity, CheckSeverity::Advisory);
+        assert_eq!(
+            available.evidence.get("configured").and_then(Value::as_bool),
+            Some(false)
+        );
+    }
+
+    #[test]
+    fn structural_existing_imports_pool_reports_fingerprint() {
+        let td = TempDir::new().unwrap();
+        let kit = td.path();
+        write_kit(kit, "");
+        let cid = write_import_proof(kit, b"stable dependency proof");
+
+        let checks = run_dependency_proof_checks_with_resolver(
+            kit,
+            DoctorContext::new(DoctorMode::Structural),
+            |_| Ok(Vec::new()),
+        );
+
+        let stable = check_by_id_from_checks(&checks, "proof.dependency_pool.stable");
+        assert_eq!(stable.status, CheckStatus::Pass);
+        assert_eq!(stable.severity, CheckSeverity::Advisory);
+        assert_eq!(
+            stable.evidence["proofs"][0]["derivedCid"].as_str(),
+            Some(cid.as_str())
+        );
+        assert!(
+            stable.evidence["proofs"][0]["byteHash"].as_str().is_some(),
+            "fingerprint evidence should include byte hash: {stable:#?}"
+        );
+    }
+
+    #[test]
+    fn structural_absent_imports_pool_reports_no_pool_yet() {
+        let td = TempDir::new().unwrap();
+        let kit = td.path();
+        fs::create_dir_all(kit.join(".provekit")).unwrap();
+        fs::write(kit.join(".provekit/config.toml"), "[authoring]\nsurface = \"test\"\n")
+            .unwrap();
+
+        let checks = run_dependency_proof_checks_with_resolver(
+            kit,
+            DoctorContext::new(DoctorMode::Structural),
+            |_| Ok(Vec::new()),
+        );
+
+        let stable = check_by_id_from_checks(&checks, "proof.dependency_pool.stable");
+        assert_eq!(stable.status, CheckStatus::Pass);
+        assert_eq!(stable.severity, CheckSeverity::Advisory);
+        assert_eq!(
+            stable.evidence.get("poolPresent").and_then(Value::as_bool),
+            Some(false)
+        );
+        assert!(
+            stable.detail.contains("no pool yet"),
+            "absent pool should be explicit: {}",
+            stable.detail
+        );
+    }
+
+    #[test]
+    fn strict_pool_matching_resolver_staged_set_passes() {
+        let td = TempDir::new().unwrap();
+        let kit = td.path();
+        let resolver = kit.join("dep-resolver");
+        make_executable(&resolver);
+        write_dependency_resolver_kit(kit, "\"./dep-resolver\"");
+        let bytes = b"stable dependency proof".to_vec();
+        let cid = write_import_proof(kit, &bytes);
+
+        let checks = run_dependency_proof_checks_with_resolver(
+            kit,
+            DoctorContext::new(DoctorMode::Strict),
+            move |_| Ok(vec![proof_bytes("dep", &bytes)]),
+        );
+
+        let stable = check_by_id_from_checks(&checks, "proof.dependency_pool.stable");
+        assert_eq!(stable.status, CheckStatus::Pass);
+        assert_eq!(stable.evidence["proofs"][0]["derivedCid"].as_str(), Some(cid.as_str()));
+    }
+
+    #[test]
+    fn strict_pool_drift_from_resolver_staged_set_fails_with_differing_cids() {
+        let td = TempDir::new().unwrap();
+        let kit = td.path();
+        let resolver = kit.join("dep-resolver");
+        make_executable(&resolver);
+        write_dependency_resolver_kit(kit, "\"./dep-resolver\"");
+        let old_cid = write_import_proof(kit, b"old dependency proof");
+        let new_bytes = b"new dependency proof".to_vec();
+        let new_cid = provekit_canonicalizer::blake3_512_of(&new_bytes);
+
+        let checks = run_dependency_proof_checks_with_resolver(
+            kit,
+            DoctorContext::new(DoctorMode::Strict),
+            move |_| Ok(vec![proof_bytes("dep", &new_bytes)]),
+        );
+
+        let stable = check_by_id_from_checks(&checks, "proof.dependency_pool.stable");
+        assert_eq!(stable.status, CheckStatus::Fail);
+        assert_eq!(stable.severity, CheckSeverity::Hard);
+        let evidence = stable.evidence.to_string();
+        assert!(evidence.contains(&old_cid), "should name pool CID: {evidence}");
+        assert!(evidence.contains(&new_cid), "should name staged CID: {evidence}");
+    }
+
+    #[test]
+    fn release_gate_identical_staging_passes_are_byte_consistent() {
+        let td = TempDir::new().unwrap();
+        let kit = td.path();
+        let resolver = kit.join("dep-resolver");
+        make_executable(&resolver);
+        write_dependency_resolver_kit(kit, "\"./dep-resolver\"");
+        let bytes = b"stable dependency proof".to_vec();
+        let cid = provekit_canonicalizer::blake3_512_of(&bytes);
+
+        let checks = run_dependency_proof_checks_with_resolver(
+            kit,
+            DoctorContext::new(DoctorMode::ReleaseGate),
+            move |_| Ok(vec![proof_bytes("dep", &bytes)]),
+        );
+
+        let byte_consistent =
+            check_by_id_from_checks(&checks, "proof.dependency_pool.byte_consistent");
+        assert_eq!(byte_consistent.status, CheckStatus::Pass);
+        assert_eq!(
+            byte_consistent.evidence["proofs"][0]["derivedCid"].as_str(),
+            Some(cid.as_str())
+        );
+    }
+
+    #[test]
+    fn release_gate_nondeterministic_staging_fails_with_byte_hashes() {
+        let td = TempDir::new().unwrap();
+        let kit = td.path();
+        let resolver = kit.join("dep-resolver");
+        make_executable(&resolver);
+        write_dependency_resolver_kit(kit, "\"./dep-resolver\"");
+        let calls = std::cell::Cell::new(0usize);
+        let first_cid = provekit_canonicalizer::blake3_512_of(b"first proof");
+        let second_cid = provekit_canonicalizer::blake3_512_of(b"second proof");
+
+        let checks = run_dependency_proof_checks_with_resolver(
+            kit,
+            DoctorContext::new(DoctorMode::ReleaseGate),
+            |_| {
+                let call = calls.get();
+                calls.set(call + 1);
+                let bytes: &[u8] = if call == 0 { b"first proof" } else { b"second proof" };
+                Ok(vec![proof_bytes("dep", bytes)])
+            },
+        );
+
+        let byte_consistent =
+            check_by_id_from_checks(&checks, "proof.dependency_pool.byte_consistent");
+        assert_eq!(byte_consistent.status, CheckStatus::Fail);
+        assert_eq!(byte_consistent.severity, CheckSeverity::Hard);
+        let evidence = byte_consistent.evidence.to_string();
+        assert_eq!(
+            byte_consistent
+                .evidence
+                .get("driftKind")
+                .and_then(Value::as_str),
+            Some("resolver_nondeterminism")
+        );
+        assert!(
+            evidence.contains(&first_cid) && evidence.contains(&second_cid),
+            "release gate should name both diverging proof CIDs: {evidence}"
+        );
+        assert!(
+            evidence.contains("firstByteHash") && evidence.contains("secondByteHash"),
+            "release gate should show both hashes side by side: {evidence}"
+        );
+    }
+
+    #[test]
+    fn release_gate_between_pass_external_mutation_fails_with_distinct_reason() {
+        let td = TempDir::new().unwrap();
+        let kit = td.path();
+        let resolver = kit.join("dep-resolver");
+        make_executable(&resolver);
+        write_dependency_resolver_kit(kit, "\"./dep-resolver\"");
+        let bytes = b"stable dependency proof".to_vec();
+
+        let checks = run_dependency_proof_checks_with_pass_hook(
+            kit,
+            DoctorContext::new(DoctorMode::ReleaseGate),
+            move |_| Ok(vec![proof_bytes("dep", &bytes)]),
+            |pass, scratch| {
+                if pass == 1 {
+                    let mutated = scratch.join("external-mutation.proof");
+                    fs::write(mutated, b"external mutation").unwrap();
+                }
+            },
+        );
+
+        let byte_consistent =
+            check_by_id_from_checks(&checks, "proof.dependency_pool.byte_consistent");
+        assert_eq!(byte_consistent.status, CheckStatus::Fail);
+        assert_eq!(byte_consistent.severity, CheckSeverity::Hard);
+        assert_eq!(
+            byte_consistent
+                .evidence
+                .get("driftKind")
+                .and_then(Value::as_str),
+            Some("between_passes_mutation")
+        );
+    }
+
+    #[test]
+    fn release_gate_dependency_proof_failure_marks_report_not_release_ready() {
+        let td = TempDir::new().unwrap();
+        let kit = td.path();
+        let resolver = kit.join("dep-resolver");
+        make_executable(&resolver);
+        write_dependency_resolver_kit(kit, "\"./dep-resolver\"");
+        let calls = std::cell::Cell::new(0usize);
+
+        let report = run_report_with_context_and_dependency_resolver(
+            kit,
+            DoctorContext::new(DoctorMode::ReleaseGate),
+            |_| {
+                let call = calls.get();
+                calls.set(call + 1);
+                let bytes: &[u8] = if call == 0 { b"first proof" } else { b"second proof" };
+                Ok(vec![proof_bytes("dep", bytes)])
+            },
+        );
+
+        assert!(!report.ok, "release-gate dep proof drift should fail report");
+        assert!(
+            !report.release_ready,
+            "release-gate dep proof drift must block release readiness"
+        );
     }
 
     #[test]
@@ -1364,6 +2329,40 @@ mod tests {
             structural_check.evidence, strict_check.evidence,
             "{id} evidence"
         );
+    }
+
+    fn write_dependency_resolver_kit(kit: &Path, command: &str) {
+        write_kit(
+            kit,
+            "[[plugins]]\nname = \"dep-resolver\"\nkind = \"lift\"\nsurface = \"dep-resolver\"\n",
+        );
+        write_manifest(kit, "lift", "dep-resolver", command, ".");
+    }
+
+    fn write_import_proof(kit: &Path, bytes: &[u8]) -> String {
+        let cid = provekit_canonicalizer::blake3_512_of(bytes);
+        let imports = kit.join(".provekit/imports");
+        fs::create_dir_all(&imports).unwrap();
+        fs::write(imports.join(format!("{cid}.proof")), bytes).unwrap();
+        cid
+    }
+
+    fn proof_bytes(
+        label: &str,
+        bytes: &[u8],
+    ) -> provekit_verifier::load_all_proofs::ProofBytes {
+        provekit_verifier::load_all_proofs::ProofBytes {
+            label: label.to_string(),
+            expected_cid: Some(provekit_canonicalizer::blake3_512_of(bytes)),
+            bytes: bytes.to_vec(),
+        }
+    }
+
+    fn check_by_id_from_checks<'a>(checks: &'a [DoctorCheck], id: &str) -> &'a DoctorCheck {
+        checks
+            .iter()
+            .find(|check| check.id == id)
+            .unwrap_or_else(|| panic!("{id} check in {checks:#?}"))
     }
 
     #[test]
