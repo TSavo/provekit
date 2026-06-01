@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 use std::ffi::OsStr;
 use std::fs;
 use std::path::{Path, PathBuf};
@@ -9,7 +9,7 @@ use std::process::{Command, Output, Stdio};
 use clap::Parser;
 use serde::Serialize;
 use serde_json::Value;
-use tracing::info;
+use tracing::{error, info};
 
 #[derive(Parser, Debug, Clone)]
 pub struct SelfCheckArgs {
@@ -95,6 +95,12 @@ struct SelfCheckScoreboard {
 struct MintOutput {
     proof_file: PathBuf,
     json: Value,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct ImportsProofSetSnapshot {
+    entries: BTreeSet<String>,
+    directory_present: bool,
 }
 
 const ORACLE_CONVERGENCE_STABLE_PASSES: usize = 3;
@@ -210,6 +216,13 @@ fn run_inner(args: &SelfCheckArgs) -> Result<SelfCheckScoreboard, String> {
             "self-check: dependency proof ready"
         );
     }
+    let imports_snapshot = snapshot_imports_proof_set(&imports)?;
+    info!(
+        imports = %imports.display(),
+        imports_proof_count = imports_snapshot.len(),
+        imports_proofs = %imports_snapshot.path_list(),
+        "self-check: imports proof set snapshotted"
+    );
 
     let target_out = scratch.join("target");
     info!(
@@ -228,7 +241,17 @@ fn run_inner(args: &SelfCheckArgs) -> Result<SelfCheckScoreboard, String> {
         imports = %imports.display(),
         "self-check: target proof ready; starting prove"
     );
-    let prove_json = prove_project(&bin, &repo_root, &target_abs, &target_out)?;
+    assert_imports_proof_set_unchanged(&imports, &imports_snapshot, "target mint")?;
+    let prove_result = prove_project(&bin, &repo_root, &target_abs, &target_out);
+    let imports_result = assert_imports_proof_set_unchanged(&imports, &imports_snapshot, "prove");
+    let prove_json = match (prove_result, imports_result) {
+        (Ok(json), Ok(())) => json,
+        (Ok(_), Err(imports_error)) => return Err(imports_error),
+        (Err(prove_error), Ok(())) => return Err(prove_error),
+        (Err(prove_error), Err(imports_error)) => {
+            return Err(format!("{imports_error}; prove also failed: {prove_error}"));
+        }
+    };
     info!("self-check: prove complete; building scoreboard");
 
     let scoreboard = build_scoreboard(&target_rel, &target_mint.json, &prove_json)?;
@@ -319,6 +342,108 @@ fn count_proof_files(path: &Path) -> Result<usize, String> {
         }
     }
     Ok(count)
+}
+
+impl ImportsProofSetSnapshot {
+    fn len(&self) -> usize {
+        self.entries.len()
+    }
+
+    fn path_list(&self) -> String {
+        format_imports_path_list(self.entries.iter())
+    }
+}
+
+fn snapshot_imports_proof_set(path: &Path) -> Result<ImportsProofSetSnapshot, String> {
+    if !path.exists() {
+        return Ok(ImportsProofSetSnapshot {
+            entries: BTreeSet::new(),
+            directory_present: false,
+        });
+    }
+    let mut entries = BTreeSet::new();
+    for entry in fs::read_dir(path).map_err(|e| format!("read {}: {e}", path.display()))? {
+        let entry = entry.map_err(|e| format!("read {} entry: {e}", path.display()))?;
+        if entry.path().extension() == Some(OsStr::new("proof")) {
+            let file_name = entry.file_name().into_string().map_err(|name| {
+                format!("non-utf8 proof filename in {}: {name:?}", path.display())
+            })?;
+            entries.insert(file_name);
+        }
+    }
+    Ok(ImportsProofSetSnapshot {
+        entries,
+        directory_present: true,
+    })
+}
+
+fn assert_imports_proof_set_unchanged(
+    imports: &Path,
+    before: &ImportsProofSetSnapshot,
+    phase: &str,
+) -> Result<(), String> {
+    let after = snapshot_imports_proof_set(imports)?;
+    if &after == before {
+        info!(
+            imports = %imports.display(),
+            phase,
+            imports_proof_count = before.len(),
+            imports_proofs = %before.path_list(),
+            "self-check: imports proof set unchanged"
+        );
+        return Ok(());
+    }
+
+    let added = after
+        .entries
+        .difference(&before.entries)
+        .cloned()
+        .collect::<Vec<_>>();
+    let removed = before
+        .entries
+        .difference(&after.entries)
+        .cloned()
+        .collect::<Vec<_>>();
+    let message = format!(
+        "self-check refused: {} mutated during {phase}; before ({}) proof files: [{}]; after ({}) proof files: [{}]; added: [{}]; removed: [{}]{}",
+        imports.display(),
+        before.len(),
+        before.path_list(),
+        after.len(),
+        after.path_list(),
+        format_imports_path_list(added.iter()),
+        format_imports_path_list(removed.iter()),
+        imports_directory_status_note(before, &after)
+    );
+    error!(
+        imports = %imports.display(),
+        phase,
+        before_count = before.len(),
+        after_count = after.len(),
+        before = %before.path_list(),
+        after = %after.path_list(),
+        added = %format_imports_path_list(added.iter()),
+        removed = %format_imports_path_list(removed.iter()),
+        before_directory_present = before.directory_present,
+        after_directory_present = after.directory_present,
+        "self-check: imports proof set mutated during measurement"
+    );
+    Err(message)
+}
+
+fn format_imports_path_list<'a>(items: impl Iterator<Item = &'a String>) -> String {
+    items.cloned().collect::<Vec<_>>().join(", ")
+}
+
+fn imports_directory_status_note(
+    before: &ImportsProofSetSnapshot,
+    after: &ImportsProofSetSnapshot,
+) -> &'static str {
+    match (before.directory_present, after.directory_present) {
+        (true, false) => "; imports directory disappeared",
+        (false, true) => "; imports directory appeared",
+        _ => "",
+    }
 }
 
 fn mint_project(
@@ -564,8 +689,14 @@ fn prove_project(
         .output()
         .map_err(|e| format!("run prove for {}: {e}", target.display()))?;
     let json = parse_json_stdout("prove", target, &output)?;
-    let rows = json.get("rows").and_then(|v| v.as_array()).map_or(0, Vec::len);
-    let total_callsites = json.get("totalCallsites").and_then(|v| v.as_u64()).unwrap_or(0);
+    let rows = json
+        .get("rows")
+        .and_then(|v| v.as_array())
+        .map_or(0, Vec::len);
+    let total_callsites = json
+        .get("totalCallsites")
+        .and_then(|v| v.as_u64())
+        .unwrap_or(0);
     let split = json.get("dischargeSplit");
     info!(
         total_callsites,
@@ -1068,6 +1199,101 @@ mod tests {
             attempted,
             resolved,
         }
+    }
+
+    fn write_import(path: &Path, file_name: &str) {
+        fs::write(path.join(file_name), format!("contents for {file_name}")).expect("write import");
+    }
+
+    #[test]
+    fn imports_snapshot_sorts_proof_files_and_ignores_other_files() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        write_import(dir.path(), "b.proof");
+        write_import(dir.path(), "notes.txt");
+        write_import(dir.path(), "a.proof");
+
+        let snapshot = snapshot_imports_proof_set(dir.path()).expect("snapshot");
+
+        assert!(snapshot.directory_present);
+        assert_eq!(snapshot.len(), 2);
+        assert_eq!(snapshot.path_list(), "a.proof, b.proof");
+    }
+
+    #[test]
+    fn imports_unchanged_snapshot_passes() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        write_import(dir.path(), "a.proof");
+        let snapshot = snapshot_imports_proof_set(dir.path()).expect("snapshot");
+
+        assert_imports_proof_set_unchanged(dir.path(), &snapshot, "test phase")
+            .expect("unchanged imports should pass");
+    }
+
+    #[test]
+    fn imports_removed_file_fails_closed() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        write_import(dir.path(), "a.proof");
+        write_import(dir.path(), "b.proof");
+        let snapshot = snapshot_imports_proof_set(dir.path()).expect("snapshot");
+
+        fs::remove_file(dir.path().join("b.proof")).expect("remove proof");
+
+        let err = assert_imports_proof_set_unchanged(dir.path(), &snapshot, "after prove")
+            .expect_err("removed import should fail closed");
+        assert!(
+            err.contains("mutated during after prove"),
+            "unexpected error: {err}"
+        );
+        assert!(
+            err.contains("before (2) proof files"),
+            "unexpected error: {err}"
+        );
+        assert!(
+            err.contains("after (1) proof files"),
+            "unexpected error: {err}"
+        );
+        assert!(
+            err.contains("removed: [b.proof]"),
+            "unexpected error: {err}"
+        );
+    }
+
+    #[test]
+    fn imports_added_file_fails_closed() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        write_import(dir.path(), "a.proof");
+        let snapshot = snapshot_imports_proof_set(dir.path()).expect("snapshot");
+
+        write_import(dir.path(), "extra.proof");
+
+        let err = assert_imports_proof_set_unchanged(dir.path(), &snapshot, "after prove")
+            .expect_err("added import should fail closed");
+        assert!(
+            err.contains("added: [extra.proof]"),
+            "unexpected error: {err}"
+        );
+    }
+
+    #[test]
+    fn imports_directory_removed_fails_closed() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let imports = dir.path().join("imports");
+        fs::create_dir_all(&imports).expect("create imports");
+        write_import(&imports, "a.proof");
+        let snapshot = snapshot_imports_proof_set(&imports).expect("snapshot");
+
+        fs::remove_dir_all(&imports).expect("remove imports");
+
+        let err = assert_imports_proof_set_unchanged(&imports, &snapshot, "after prove")
+            .expect_err("removed imports directory should fail closed");
+        assert!(
+            err.contains("imports directory disappeared"),
+            "unexpected error: {err}"
+        );
+        assert!(
+            err.contains("removed: [a.proof]"),
+            "unexpected error: {err}"
+        );
     }
 
     #[test]
