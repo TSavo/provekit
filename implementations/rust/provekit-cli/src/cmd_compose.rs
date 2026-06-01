@@ -474,6 +474,7 @@ impl WireFunctionContractMemento {
             canonical_bytes,
             cid,
             auto_minted_mementos: auto,
+            panic_loci: vec![],
             concept_hint: None,
         }
     }

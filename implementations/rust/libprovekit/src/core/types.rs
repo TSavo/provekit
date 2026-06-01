@@ -1614,6 +1614,7 @@ impl PathContractMaterial {
             auto_minted_mementos: parse_aliasing_mementos(
                 object.and_then(|object| object.get("autoMintedMementos")),
             ),
+            panic_loci: vec![],
             concept_hint: self.concept_hint.clone(),
         }
     }
@@ -2042,6 +2043,7 @@ pub(crate) fn memento_from_parts(
         canonical_bytes,
         cid,
         auto_minted_mementos: vec![],
+        panic_loci: vec![],
         concept_hint: None,
     }
 }

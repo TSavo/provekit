@@ -363,6 +363,12 @@ pub struct FunctionContractMemento {
     pub canonical_bytes: Vec<u8>,
     pub cid: String,
     pub auto_minted_mementos: Vec<AliasingMemento>,
+    /// Per-occurrence panic-leaf source loci. METADATA ONLY: these are emitted
+    /// into contract envelope headers for verifier attribution, but they do
+    /// NOT participate in `canonical_bytes` or `cid` derivation. This shape is
+    /// the same `panicLoci` header shape emitted by walk_rpc/cmd_mint and
+    /// consumed by the verifier; keep those surfaces in lock-step.
+    pub panic_loci: Vec<Arc<Value>>,
     /// Human-supplied concept name extracted from a `// concept: <name>` (or
     /// `/// concept: <name>`) annotation immediately preceding the function.
     ///
@@ -1804,6 +1810,7 @@ mod fcm_auto_promote_tests {
             canonical_bytes: vec![],
             cid: cid.to_string(),
             auto_minted_mementos: vec![],
+            panic_loci: vec![],
             concept_hint: None,
         }
     }
@@ -2163,6 +2170,7 @@ mod domain_claim_fcm_tests {
             canonical_bytes: vec![],
             cid: "blake3-512:000000".to_string(),
             auto_minted_mementos: vec![],
+            panic_loci: vec![],
             concept_hint: None,
         }
     }

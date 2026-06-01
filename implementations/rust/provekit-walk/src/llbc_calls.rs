@@ -345,6 +345,7 @@ mod tests {
             canonical_bytes: vec![],
             cid: String::new(),
             auto_minted_mementos: vec![],
+            panic_loci: vec![],
             concept_hint: None,
         };
         let composed = compose_callsite_pre(&callee, &[var("x")]);

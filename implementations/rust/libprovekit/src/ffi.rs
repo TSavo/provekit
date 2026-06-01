@@ -374,6 +374,7 @@ fn inner_compose(atoms_jcs: &str, effects_jcs: &str) -> Result<(String, String),
             canonical_bytes,
             cid,
             auto_minted_mementos: auto_minted,
+            panic_loci: vec![],
             concept_hint: None,
         };
         owned.push((memento, formal_idx));

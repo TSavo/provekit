@@ -70,6 +70,7 @@ fn minimal_contract(fn_name: &str) -> FunctionContractMemento {
         canonical_bytes: jcs_bytes_of_value(&value),
         cid: cid_of_value(&value),
         auto_minted_mementos: vec![],
+        panic_loci: vec![],
         concept_hint: None,
     }
 }
