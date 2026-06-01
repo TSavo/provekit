@@ -21,6 +21,9 @@ pub const IS_NONE: &str = "is_none";
 /// Substrate panic-freedom guarded-branch carrier; see `SUBSTRATE-SHAPE-AUDIT.md`.
 pub const CF_GUARDED: &str = "cf_guarded";
 
+/// Substrate panic-freedom guarded-value carrier alias; see `SUBSTRATE-SHAPE-AUDIT.md`.
+pub const CF_GUARDED_CONCEPT: &str = "concept:panic-freedom.guard";
+
 /// Substrate panic-freedom control-flow choice carrier; see `SUBSTRATE-SHAPE-AUDIT.md`.
 pub const CF_ITE: &str = "cf_ite";
 
