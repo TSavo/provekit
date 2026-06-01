@@ -6,12 +6,12 @@ The deterministic scoreboard from `provekit self-check --target examples/proveki
 run WITHOUT `--oracle`. `oracle.requested=false` makes the output fully deterministic: no
 rust-analyzer daemon, no wall-clock, no absolute paths.
 
-## Honest numbers (2026-05-31)
+## Honest numbers (current 2026-06-01)
 
 - `silentlyDropped: 0` -- hard invariant, must stay zero
 - `falsePass: 0` -- hard invariant, must stay zero
-- `panicSafe: 0` -- honest: the shim has 5 syntactic panic sites, none guarded, none dischargeable without the oracle
-- `panicCensus`: 5 sites, all `src/lib.rs`, all `unproven`; the reason line is the verifier's refuse-floor message
+- `panicSafe: 5` -- five rust-std shim panic sites discharge through real proof obligations
+- `panicCensus`: 30 sites, 5 `proven` and 25 `unproven`; unproven rows keep the verifier's refuse-floor reason
 - `catalogCid` is a content hash of the lifted contracts; it is path-independent (verified 2026-05-31 across two checkout paths)
 
 ## Regenerated 2026-06-01 (panic-locus branch)
@@ -43,6 +43,14 @@ self-check (`panicCensus 4 -> 5`, new `expect` at `src/lib.rs:190`), and one
 surfaced `assert!` macro gap (`unsupported-macro-callsite 4 -> 5`). Hard
 invariants unchanged: `falsePass 0`, `panicSafe 0`, `silentlyDropped 0`,
 `droppedSites []`.
+
+Regenerated 2026-06-01: `catalogCid` `b17a0f02...` -> `d1c2f286...`.
+PR5 moves self-check residue/tier classification to the post-prove panic census
+runtime hook. The no-oracle scoreboard now records real bridge/prove effects:
+`bridges.emitted 0 -> 9`, `panicSafe 0 -> 5`, `vacuous 0 -> 552`,
+`panicCensus 5 -> 30` (`5 proven`, `25 unproven`), and the legacy
+`panic-site-unproven` liftGap key disappears from the production scoreboard.
+Hard invariants unchanged: `falsePass 0`, `silentlyDropped 0`, `droppedSites []`.
 
 ## Normalization applied
 
