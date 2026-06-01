@@ -389,3 +389,55 @@ producer-contract-selection bug in locate_producer_post.
 
 Warm-oracle e2e on battleaxe: `/tmp/serde_e2e2.sh` (mints shim-std + shim-serde deps,
 warm-daemon mint of the fixture, prove). Debug: `RUST_LOG=warn,provekit_verifier::runner=debug,provekit_verifier::body_discharge=debug,provekit_verifier::enumerate_callsites=debug`.
+
+## DEEPER ROOT (2026-05-31, two agents): line collapse + shared contract, NOT the verifier layer
+
+Two Opus agents attempted the callsite-scoped producer fix. Both correctly refused
+to ship unsoundness. Findings:
+
+- Agent 1 (implication form): made f discharge but via the IMPLICATION branch
+  (is_ok->is_ok, reflexive), discharge_method=solver-substantive -> report_fmt
+  counted it falsePass=2 (panic site + method != panic-safe). Honest, not landable.
+- Agent 2 (guard-fact form, the prescribed correction): rerouted to the guard
+  branch (method=panic-safe), suite green + 4 discrimination tests. But the e2e
+  showed panicSafe=2: g (line 38, to_string(&MyStruct)) ALSO discharged panic-safe
+  -- an INVISIBLE false pass, because report_fmt's falsePass counter
+  (`panic_site && method != "panic-safe"`) is structurally BLIND to a panic site
+  WRONGLY TAGGED panic-safe. Strictly worse than agent 1. Reverted.
+
+THE ACTUAL BLOCKER (upstream of the verifier guard-fact layer):
+1. LINE COLLAPSE: `enumerate_callsites` assigns `line=25` to EVERY panic
+   obligation -- it reads the line from the per-symbol `method:unwrap` bridge
+   (bridges_by_symbol, one bridge) instead of each occurrence's own line. g's true
+   site is line 38. So g's panic obligation arrives at the verifier byte-identical
+   to f's: same bundle, collapsed line 25, same `to_string` arg ctor, same totality
+   target contract. The callsite-scoped key (bundle,src/lib.rs,25,to_string)
+   COLLIDES g onto f's totality bridge. NO verifier-side change keyed on the
+   proof-as-fed can separate f from g.
+2. SHARED TOTALITY CONTRACT: the fixture mint produced ONE `to_string` totality
+   bridge (line 25, is_ok totality); there is no distinct non-totality contract for
+   g's MyStruct case (the oracle disambiguation that the recipe assumes -- g's stem
+   != "value" -> no totality -- did not produce a separate contract).
+
+FIX (a DIFFERENT layer than the verifier guard-fact path):
+- (a) Line attribution: each panic CallSite must carry its OWN source line, not the
+  per-symbol bridge's line. This is in `enumerate_callsites` / how the
+  `method:unwrap` obligation's provenance is threaded from the lifter. The IR term
+  is abstract (no span), so the obligation/bridge must carry per-occurrence line and
+  enumerate must use it (e.g. via bridges_by_callsite or per-occurrence provenance),
+  not the collapsed per-symbol line.
+- (b) With correct lines, g@38 resolves to ITS OWN producer (body-eq or none, no
+  totality) -> no guard fact -> undecidable; f@25 -> totality -> panic-safe. Then
+  re-apply agent 2's guard-fact rerouting (preserved approach).
+
+ALSO A NO-SILENT-FAILURE GAP TO CLOSE: report_fmt's falsePass detector is blind to a
+panic site wrongly tagged `panic-safe`. The structural rule trusts that
+method=panic-safe is sound. Until line attribution is fixed, that trust is
+misplaced. Consider a cross-check: the count of panic-safe sites must equal the
+count of sites with a co-located totality producer, or the e2e must assert per-site
+(f panic-safe, g undecidable), not just falsePass=0.
+
+GATE for the next attempt: dischargeSplit panicSafe == 1 (f ONLY), g (line 38)
+explicitly undecidable, falsePass=0, silentlyDropped=0, verifier suite green. The
+falsePass=0 counter alone is INSUFFICIENT (see the blind spot above) -- assert g's
+specific row.
