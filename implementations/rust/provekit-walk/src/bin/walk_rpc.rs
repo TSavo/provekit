@@ -74,14 +74,7 @@ fn main() -> io::Result<()> {
     //   RUST_LOG=provekit_walk::ra_oracle=trace -> every RA LSP query
     // Note: ra_oracle now lives in the provekit_walk library, so its event
     // target is provekit_walk::ra_oracle.
-    tracing_subscriber::fmt()
-        .with_writer(std::io::stderr)
-        .with_env_filter(
-            tracing_subscriber::EnvFilter::builder()
-                .with_default_directive(tracing_subscriber::filter::LevelFilter::WARN.into())
-                .from_env_lossy(),
-        )
-        .init();
+    init_tracing();
     let stdin = io::stdin();
     let mut stdout = io::stdout().lock();
     info!("provekit-walk-rpc listening on stdio (JSON-RPC 2.0, line-delimited)");
@@ -99,6 +92,41 @@ fn main() -> io::Result<()> {
         stdout.flush()?;
     }
     Ok(())
+}
+
+fn init_tracing() {
+    let filter = tracing_subscriber::EnvFilter::builder()
+        .with_default_directive(tracing_subscriber::filter::LevelFilter::WARN.into())
+        .from_env_lossy();
+    if let Ok(path) = std::env::var("PROVEKIT_LOG_FILE") {
+        match std::fs::OpenOptions::new()
+            .create(true)
+            .append(true)
+            .open(&path)
+        {
+            Ok(file) => {
+                tracing_subscriber::fmt()
+                    .with_writer(file)
+                    .with_ansi(false)
+                    .with_env_filter(filter)
+                    .init();
+            }
+            Err(error) => {
+                eprintln!(
+                    "warning: could not open PROVEKIT_LOG_FILE {path}: {error}; logging to stderr"
+                );
+                tracing_subscriber::fmt()
+                    .with_writer(std::io::stderr)
+                    .with_env_filter(filter)
+                    .init();
+            }
+        }
+    } else {
+        tracing_subscriber::fmt()
+            .with_writer(std::io::stderr)
+            .with_env_filter(filter)
+            .init();
+    }
 }
 
 fn handle_line(line: &str) -> Value {

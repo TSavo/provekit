@@ -35,16 +35,7 @@ use tracing::info;
 
 fn main() -> anyhow::Result<()> {
     // Structured logging.
-    tracing_subscriber::fmt()
-        .with_env_filter(
-            tracing_subscriber::EnvFilter::from_default_env()
-                .add_directive("provekit_linkerd=info".parse().unwrap())
-                // Surface the resident rust-analyzer host's own index progress
-                // (it lives in provekit_walk::ra_oracle) so an operator watching
-                // the daemon sees the one-time workspace index, not silence.
-                .add_directive("provekit_walk::ra_oracle=info".parse().unwrap()),
-        )
-        .init();
+    init_tracing();
 
     // Parse arguments (hand-rolled to avoid a heavy CLI dep in the daemon).
     let args: Vec<String> = std::env::args().collect();
@@ -122,4 +113,42 @@ fn main() -> anyhow::Result<()> {
         .block_on(server::run(config))?;
 
     Ok(())
+}
+
+fn init_tracing() {
+    let filter = tracing_subscriber::EnvFilter::from_default_env()
+        .add_directive("provekit_linkerd=info".parse().unwrap())
+        // Surface the resident rust-analyzer host's own index progress
+        // (it lives in provekit_walk::ra_oracle) so an operator watching
+        // the daemon sees the one-time workspace index, not silence.
+        .add_directive("provekit_walk::ra_oracle=info".parse().unwrap());
+    if let Ok(path) = std::env::var("PROVEKIT_LOG_FILE") {
+        match std::fs::OpenOptions::new()
+            .create(true)
+            .append(true)
+            .open(&path)
+        {
+            Ok(file) => {
+                tracing_subscriber::fmt()
+                    .with_writer(file)
+                    .with_ansi(false)
+                    .with_env_filter(filter)
+                    .init();
+            }
+            Err(error) => {
+                eprintln!(
+                    "warning: could not open PROVEKIT_LOG_FILE {path}: {error}; logging to stderr"
+                );
+                tracing_subscriber::fmt()
+                    .with_writer(std::io::stderr)
+                    .with_env_filter(filter)
+                    .init();
+            }
+        }
+    } else {
+        tracing_subscriber::fmt()
+            .with_writer(std::io::stderr)
+            .with_env_filter(filter)
+            .init();
+    }
 }
