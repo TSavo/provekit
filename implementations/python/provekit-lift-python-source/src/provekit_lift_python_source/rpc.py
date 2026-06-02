@@ -46,7 +46,13 @@ def kit_declaration_result() -> dict[str, Any]:
         },
         "proofResolution": {"strategy": "pip"},
         "effectKinds": ["concept:panic-freedom"],
-        "effectLeaves": [],
+        "effectLeaves": [
+            {
+                "surface": SURFACE,
+                "local": "python:raise",
+                "concept": "concept:panic-freedom.leaf.runtime-failure-site",
+            }
+        ],
         "guardPredicates": [
             {
                 "surface": SURFACE,
