@@ -20,6 +20,8 @@ jobs:
         run: npm install -g pnpm
       - name: Install dependencies
         run: pnpm install
+      - name: Typecheck TypeScript
+        run: pnpm exec tsc --noEmit --pretty false
       - name: Run tests
         run: pnpm test
       # `ProvekIt verify` removed 2026-05-28: this package's package.json

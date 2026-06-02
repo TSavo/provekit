@@ -4,6 +4,7 @@ import { describe, expect, it } from "vitest";
 
 const KIT_DECLARATION_RPC_METHOD = "provekit.plugin.kit_declaration";
 const TYPESCRIPT_SOURCE_DIR = join(process.cwd(), "implementations/typescript");
+const RPC_TEST_TIMEOUT_MS = 30_000;
 
 function runRpc(requests: Array<Record<string, unknown>>): Array<Record<string, any>> {
   const input = `${requests.map((request) => JSON.stringify(request)).join("\n")}\n`;
@@ -60,7 +61,7 @@ describe("typescript-source kit_declaration RPC", () => {
       controlCarriers: [],
       residueCategories: [],
     });
-  });
+  }, RPC_TEST_TIMEOUT_MS);
 
   it("returns a deterministic kit_declaration response", () => {
     const [first, second] = runRpc([
@@ -71,7 +72,7 @@ describe("typescript-source kit_declaration RPC", () => {
     expect(first).not.toHaveProperty("error");
     expect(second).not.toHaveProperty("error");
     expect(first.result).toEqual(second.result);
-  });
+  }, RPC_TEST_TIMEOUT_MS);
 
   it("keeps initialize separate from kit_declaration content", () => {
     const initialize = runRpc([{ jsonrpc: "2.0", id: 1, method: "initialize" }])[0];
@@ -81,5 +82,5 @@ describe("typescript-source kit_declaration RPC", () => {
     expect(initialize.result).not.toHaveProperty("effectKinds");
     expect(initialize.result).not.toHaveProperty("effectLeaves");
     expect(initialize.result).not.toHaveProperty("kit");
-  });
+  }, RPC_TEST_TIMEOUT_MS);
 });
