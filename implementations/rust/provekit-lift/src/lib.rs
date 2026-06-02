@@ -42,10 +42,11 @@ use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
+use libprovekit::concept::panic_freedom;
 use provekit_canonicalizer::{blake3_512_of, encode_jcs, Value};
 use provekit_claim_envelope::{
     compute_contract_set_cid, contract_cid as compute_contract_cid, mint_contract, Authoring,
-    MintContractArgs,
+    MintContractArgs, KIT_DECLARATION_RPC_METHOD,
 };
 use provekit_ir_symbolic::{serialize::formula_to_value, ContractDecl, Formula};
 use provekit_proof_envelope::{
@@ -933,6 +934,14 @@ fn run_rpc_mode() -> i32 {
                 let resp = serde_json::json!({"jsonrpc":"2.0","id":id,"result":{"name":"provekit-lift","version":"1.0","protocol_version":"pep/1.7.0","capabilities":{"authoring_surfaces":["rust"],"ir_version":"v1.1.0"}}});
                 let _ = writeln!(stdout, "{resp}");
             }
+            KIT_DECLARATION_RPC_METHOD => {
+                let resp = serde_json::json!({
+                    "jsonrpc": "2.0",
+                    "id": id,
+                    "result": kit_declaration_result(),
+                });
+                let _ = writeln!(stdout, "{resp}");
+            }
             "lift" => {
                 let params = req
                     .get("params")
@@ -1035,6 +1044,51 @@ fn run_rpc_mode() -> i32 {
         }
     }
     0
+}
+
+const RUST_CONTRACTS_SURFACE: &str = "rust-contracts";
+
+fn kit_declaration_result() -> serde_json::Value {
+    serde_json::json!({
+        "kit": {
+            "id": "provekit-lift",
+            "language": "rust",
+            "version": env!("CARGO_PKG_VERSION")
+        },
+        "rpc": {
+            "methods": [
+                {"name": "initialize", "required": true},
+                {"name": "lift", "required": true},
+                {"name": "shutdown", "required": true},
+                {"name": KIT_DECLARATION_RPC_METHOD, "required": false}
+            ]
+        },
+        "proofResolution": {
+            "strategy": "cargo"
+        },
+        "effectKinds": ["concept:panic-freedom"],
+        "effectLeaves": [],
+        "guardPredicates": kit_declaration_guard_predicates(),
+        "controlCarriers": [],
+        "residueCategories": []
+    })
+}
+
+fn kit_declaration_mapping(local: &str, concept: &str) -> serde_json::Value {
+    serde_json::json!({
+        "surface": RUST_CONTRACTS_SURFACE,
+        "local": local,
+        "concept": concept
+    })
+}
+
+fn kit_declaration_guard_predicates() -> Vec<serde_json::Value> {
+    vec![
+        kit_declaration_mapping(panic_freedom::IS_OK, panic_freedom::IS_OK_CONCEPT),
+        kit_declaration_mapping(panic_freedom::IS_ERR, panic_freedom::IS_ERR_CONCEPT),
+        kit_declaration_mapping(panic_freedom::IS_SOME, panic_freedom::IS_SOME_CONCEPT),
+        kit_declaration_mapping(panic_freedom::IS_NONE, panic_freedom::IS_NONE_CONCEPT),
+    ]
 }
 
 /// Serialize a `ContractDecl` as a `kind: "contract"` JSON memento in
@@ -1343,8 +1397,7 @@ proptest! {
         );
         assert_eq!(panic_loci[0]["callee"], "method:unwrap");
         assert_ne!(
-            panic_loci[0]["callee"],
-            "concept:panic-freedom.leaf.unwrap",
+            panic_loci[0]["callee"], "concept:panic-freedom.leaf.unwrap",
             "Rust v1 lift/mint writer must not emit the unwrap leaf concept alias"
         );
     }
