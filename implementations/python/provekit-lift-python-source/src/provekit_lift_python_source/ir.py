@@ -86,8 +86,9 @@ def function_contract(
     effects: list[Json],
     source_path: str,
     line: int,
+    panic_loci: list[Json] | None = None,
 ) -> Json:
-    return {
+    contract = {
         "schemaVersion": "1",
         "kind": "function-contract",
         "fnName": fn_name,
@@ -101,6 +102,9 @@ def function_contract(
         "locus": locus(source_path, line, 1),
         "autoMintedMementos": [],
     }
+    if panic_loci:
+        contract["panicLoci"] = list(panic_loci)
+    return contract
 
 
 def source_unit_contract(

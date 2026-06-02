@@ -22,6 +22,10 @@ from .ir import (
     var,
 )
 
+PANIC_FREEDOM_EFFECT_KIND = "concept:panic-freedom"
+RUNTIME_FAILURE_SITE_CONCEPT = "concept:panic-freedom.leaf.runtime-failure-site"
+
+
 @dataclass
 class LiftResult:
     ir: list[Json] = field(default_factory=list)
@@ -248,11 +252,15 @@ class _Emitter:
         locals_: set[str],
         module_globals: set[str],
         effects: _EffectSet,
+        source_path: str,
+        panic_loci: list[Json],
     ) -> None:
         self.fn_name = fn_name
         self.locals = set(locals_)
         self.module_globals = module_globals
         self.effects = effects
+        self.source_path = source_path
+        self.panic_loci = panic_loci
 
     def statements(self, statements: list[ast.stmt]) -> Json:
         emitted: list[Json] = []
@@ -315,8 +323,24 @@ class _Emitter:
         if isinstance(node, ast.Raise):
             self.effects.add_panics()
             value = none_const() if node.exc is None else self.expr(node.exc)
+            self.panic_loci.append(self.runtime_failure_locus(node, value))
             return ctor("python:raise", value)
         raise _UnsupportedSyntax(node, f"unhandled statement kind: {type(node).__name__}")
+
+    def runtime_failure_locus(self, node: ast.Raise, arg_term: Json) -> Json:
+        locus = {
+            "effectKind": PANIC_FREEDOM_EFFECT_KIND,
+            "callee": RUNTIME_FAILURE_SITE_CONCEPT,
+            "subkind": "explicit-raise",
+            "argTerm": arg_term,
+            "file": self.source_path,
+            "line": int(getattr(node, "lineno", 0) or 0),
+            "col": int(getattr(node, "col_offset", 0) or 0) + 1,
+        }
+        exception_class = _exception_class(node.exc)
+        if exception_class:
+            locus["exceptionClass"] = exception_class
+        return locus
 
     def target(self, node: ast.expr) -> Json:
         if isinstance(node, ast.Name):
@@ -502,11 +526,14 @@ def _lift_function(
         formals = [arg.arg for arg in node.args.args]
         locals_ = _function_locals(node, formals)
         effects = _EffectSet()
+        panic_loci: list[Json] = []
         emitter = _Emitter(
             fn_name=info.fn_name,
             locals_=locals_,
             module_globals=module_globals,
             effects=effects,
+            source_path=source_path,
+            panic_loci=panic_loci,
         )
         body = emitter.statements(node.body)
         return function_contract(
@@ -516,6 +543,7 @@ def _lift_function(
             effects=effects.sorted(),
             source_path=source_path,
             line=node.lineno,
+            panic_loci=panic_loci,
         )
     except _UnsupportedSyntax as exc:
         result.refusals.append(
@@ -636,6 +664,19 @@ def _callee_name(node: ast.expr) -> str:
         base = _callee_name(node.value)
         return f"{base}.{node.attr}" if base else node.attr
     raise _UnsupportedSyntax(node, f"unsupported callee kind: {type(node).__name__}")
+
+
+def _exception_class(node: ast.expr | None) -> str | None:
+    if node is None:
+        return None
+    try:
+        if isinstance(node, ast.Call):
+            return _callee_name(node.func)
+        if isinstance(node, (ast.Name, ast.Attribute)):
+            return _callee_name(node)
+    except _UnsupportedSyntax:
+        return None
+    return None
 
 
 def _target_text(node: ast.AST) -> str:
