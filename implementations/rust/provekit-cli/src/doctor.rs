@@ -23,7 +23,7 @@
 //   0   all checks passed (warnings may be present)
 //   2   at least one HARD check failed
 
-use std::collections::BTreeSet;
+use std::collections::{BTreeMap, BTreeSet};
 use std::ffi::OsStr;
 use std::fs;
 use std::path::{Path, PathBuf};
@@ -311,6 +311,12 @@ fn check_metadata(
     } else if name.starts_with("kit-declaration-rpc-methods:") {
         (
             "kit.declaration.rpc_methods_declared",
+            "kit.declaration",
+            CheckSeverity::Hard,
+        )
+    } else if name == "kit-declaration-cross-kit-consistency" {
+        (
+            "kit.declaration.cross_kit_consistency",
             "kit.declaration",
             CheckSeverity::Hard,
         )
@@ -978,12 +984,28 @@ fn requested_oracle_missing_policy(mode: DoctorMode) -> (CheckStatus, CheckSever
 
 const PANIC_FREEDOM_EFFECT_KIND: &str = "concept:panic-freedom";
 
+#[derive(Debug, Clone)]
+struct LoadedKitDeclaration {
+    kind_dir: String,
+    surface: String,
+    declaration: KitDeclaration,
+}
+
+#[derive(Debug, Clone)]
+struct CrossKitMappingRecord {
+    kit_id: String,
+    surface: String,
+    category: String,
+    concept: String,
+}
+
 fn run_kit_declaration_checks(
     kit_dir: &Path,
     mode: DoctorMode,
     manifest_entries: &[(String, String, PathBuf)],
 ) -> Vec<Check> {
     let mut checks = Vec::new();
+    let mut loaded_declarations = Vec::new();
     for (surface, kind_dir, manifest_path) in manifest_entries {
         let manifest = match parse_manifest_at(manifest_path) {
             Ok(manifest) => manifest,
@@ -1034,6 +1056,11 @@ fn run_kit_declaration_checks(
                     elapsed_ms,
                     &declaration,
                 ));
+                loaded_declarations.push(LoadedKitDeclaration {
+                    kind_dir: kind_dir.clone(),
+                    surface: surface.clone(),
+                    declaration,
+                });
             }
             Err(error) => {
                 let (status, severity) = declaration_failure_policy(mode);
@@ -1061,6 +1088,10 @@ fn run_kit_declaration_checks(
             }
         }
     }
+    checks.push(kit_declaration_cross_kit_consistency_check(
+        mode,
+        &loaded_declarations,
+    ));
     checks
 }
 
@@ -1215,6 +1246,172 @@ fn kit_declaration_rpc_methods_check(
             evidence,
         )
     }
+}
+
+fn kit_declaration_cross_kit_consistency_check(
+    mode: DoctorMode,
+    declarations: &[LoadedKitDeclaration],
+) -> Check {
+    let check_name = "kit-declaration-cross-kit-consistency";
+    if mode == DoctorMode::Structural {
+        return Check::skip_with_evidence(
+            check_name,
+            "structural mode: cross-kit declaration consistency is advisory only",
+            json!({
+                "mode": mode.as_str(),
+                "declarationCount": declarations.len(),
+                "skipped": true,
+                "reason": "structural-mode",
+            }),
+        );
+    }
+
+    let mut by_effect_and_local: BTreeMap<(String, String), Vec<CrossKitMappingRecord>> =
+        BTreeMap::new();
+    for loaded in declarations {
+        collect_cross_kit_mapping_records(
+            &loaded.kind_dir,
+            &loaded.surface,
+            &loaded.declaration,
+            &mut by_effect_and_local,
+        );
+    }
+
+    let mut conflicts = Vec::new();
+    let mut consistent_locals = Vec::new();
+    for ((effect_kind, local), records) in by_effect_and_local {
+        let kit_ids = records
+            .iter()
+            .map(|record| record.kit_id.clone())
+            .collect::<BTreeSet<_>>();
+        if kit_ids.len() < 2 {
+            continue;
+        }
+        let concepts = records
+            .iter()
+            .map(|record| record.concept.clone())
+            .collect::<BTreeSet<_>>();
+        let has_cross_kit_conflict = records.iter().any(|left| {
+            records
+                .iter()
+                .any(|right| left.kit_id != right.kit_id && left.concept != right.concept)
+        });
+        if has_cross_kit_conflict {
+            conflicts.push(json!({
+                "effectKind": effect_kind,
+                "local": local,
+                "concepts": concepts.iter().cloned().collect::<Vec<_>>(),
+                "kitIds": kit_ids.iter().cloned().collect::<Vec<_>>(),
+                "mappings": records.iter().map(cross_kit_mapping_record_evidence).collect::<Vec<_>>(),
+            }));
+        } else {
+            consistent_locals.push(json!({
+                "effectKind": effect_kind,
+                "local": local,
+                "concept": concepts.iter().next().cloned().unwrap_or_default(),
+                "kitIds": kit_ids.iter().cloned().collect::<Vec<_>>(),
+                "mappings": records.iter().map(cross_kit_mapping_record_evidence).collect::<Vec<_>>(),
+            }));
+        }
+    }
+
+    let evidence = json!({
+        "mode": mode.as_str(),
+        "declarationCount": declarations.len(),
+        "conflicts": conflicts,
+        "consistentLocals": consistent_locals,
+    });
+
+    if evidence
+        .get("conflicts")
+        .and_then(Value::as_array)
+        .is_some_and(|conflicts| conflicts.is_empty())
+    {
+        Check::pass_with_evidence(
+            check_name,
+            "cross-kit declaration locals are consistent",
+            evidence,
+        )
+    } else {
+        let conflict_labels = evidence
+            .get("conflicts")
+            .and_then(Value::as_array)
+            .into_iter()
+            .flatten()
+            .filter_map(|conflict| {
+                Some(format!(
+                    "{}/{}",
+                    conflict.get("effectKind")?.as_str()?,
+                    conflict.get("local")?.as_str()?
+                ))
+            })
+            .collect::<Vec<_>>();
+        Check::with_status_and_severity(
+            check_name,
+            CheckStatus::Fail,
+            CheckSeverity::Hard,
+            format!(
+                "cross-kit declaration local conflict(s): {}",
+                conflict_labels.join(", ")
+            ),
+            evidence,
+        )
+    }
+}
+
+fn collect_cross_kit_mapping_records(
+    kind_dir: &str,
+    manifest_surface: &str,
+    declaration: &KitDeclaration,
+    by_effect_and_local: &mut BTreeMap<(String, String), Vec<CrossKitMappingRecord>>,
+) {
+    for (category, mappings) in [
+        ("effectLeaves", declaration.effect_leaves.as_slice()),
+        ("guardPredicates", declaration.guard_predicates.as_slice()),
+        ("controlCarriers", declaration.control_carriers.as_slice()),
+    ] {
+        for mapping in mappings {
+            let Some(effect_kind) =
+                matching_effect_kind(&declaration.effect_kinds, &mapping.concept)
+            else {
+                continue;
+            };
+            by_effect_and_local
+                .entry((effect_kind.to_string(), mapping.local.clone()))
+                .or_default()
+                .push(CrossKitMappingRecord {
+                    kit_id: declaration.kit.id.clone(),
+                    surface: mapping
+                        .surface
+                        .clone()
+                        .unwrap_or_else(|| manifest_surface.to_string()),
+                    category: format!("{kind_dir}:{category}"),
+                    concept: mapping.concept.clone(),
+                });
+        }
+    }
+}
+
+fn matching_effect_kind<'a>(effect_kinds: &'a [String], concept: &str) -> Option<&'a str> {
+    effect_kinds
+        .iter()
+        .filter(|effect_kind| {
+            concept == effect_kind.as_str()
+                || concept
+                    .strip_prefix(effect_kind.as_str())
+                    .is_some_and(|suffix| suffix.starts_with('.'))
+        })
+        .max_by_key(|effect_kind| effect_kind.len())
+        .map(String::as_str)
+}
+
+fn cross_kit_mapping_record_evidence(record: &CrossKitMappingRecord) -> Value {
+    json!({
+        "kitId": record.kit_id,
+        "surface": record.surface,
+        "category": record.category,
+        "concept": record.concept,
+    })
 }
 
 fn kit_declaration_panic_freedom_vocabulary_check(
@@ -2306,6 +2503,65 @@ mod tests {
         declaration["effectLeaves"] = json!([]);
         declaration["controlCarriers"] = json!([]);
         declaration
+    }
+
+    fn declaration_with_mapping(
+        kit_id: &str,
+        language: &str,
+        surface: &str,
+        effect_kind: &str,
+        category: &str,
+        local: &str,
+        concept: &str,
+    ) -> Value {
+        let mut declaration = valid_panic_freedom_declaration(surface);
+        declaration["kit"] = json!({"id": kit_id, "language": language, "version": "0.1.0"});
+        declaration["proofResolution"] = json!({"strategy": "pip"});
+        declaration["effectKinds"] = json!([effect_kind]);
+        declaration["effectLeaves"] = json!([]);
+        declaration["guardPredicates"] = json!([]);
+        declaration["controlCarriers"] = json!([]);
+        declaration[category] = json!([
+            {"surface": surface, "local": local, "concept": concept}
+        ]);
+        declaration
+    }
+
+    fn declaration_with_two_same_local_mappings(
+        kit_id: &str,
+        surface: &str,
+        local: &str,
+        concept: &str,
+    ) -> Value {
+        let mut declaration = declaration_with_mapping(
+            kit_id,
+            "python",
+            surface,
+            PANIC_FREEDOM_EFFECT_KIND,
+            "guardPredicates",
+            local,
+            concept,
+        );
+        declaration["effectLeaves"] = json!([
+            {"surface": surface, "local": local, "concept": concept}
+        ]);
+        declaration
+    }
+
+    fn write_declaration_plugins(kit: &Path, plugins: &[(&str, &str, Value)]) {
+        let mut config = String::new();
+        for (plugin_name, surface, _) in plugins {
+            config.push_str(&format!(
+                "[[plugins]]\nname = \"{plugin_name}\"\nkind = \"lift\"\nsurface = \"{surface}\"\n"
+            ));
+        }
+        write_kit(kit, &config);
+
+        for (plugin_name, surface, declaration) in plugins {
+            let plugin = kit.join(plugin_name);
+            make_kit_declaration_plugin(&plugin, declaration.clone());
+            write_manifest(kit, "lift", surface, &format!("\"./{plugin_name}\""), ".");
+        }
     }
 
     fn make_kit_declaration_plugin(path: &Path, declaration: Value) {
@@ -3423,6 +3679,448 @@ mod tests {
         assert_eq!(
             vocabulary.evidence.get("skipped").and_then(Value::as_bool),
             Some(true)
+        );
+    }
+
+    #[test]
+    fn doctor_cross_kit_declaration_consistency_fails_same_local_different_concepts_in_strict() {
+        use libprovekit::concept::panic_freedom;
+
+        let td = TempDir::new().unwrap();
+        let kit = td.path();
+        write_declaration_plugins(
+            kit,
+            &[
+                (
+                    "python-source-plugin",
+                    "python-source",
+                    declaration_with_mapping(
+                        "python-source",
+                        "python",
+                        "python-source",
+                        PANIC_FREEDOM_EFFECT_KIND,
+                        "guardPredicates",
+                        "is_none",
+                        panic_freedom::IS_NONE_CONCEPT,
+                    ),
+                ),
+                (
+                    "python-tests-plugin",
+                    "python-tests",
+                    declaration_with_mapping(
+                        "python-tests",
+                        "python",
+                        "python-tests",
+                        PANIC_FREEDOM_EFFECT_KIND,
+                        "guardPredicates",
+                        "is_none",
+                        panic_freedom::IS_SOME_CONCEPT,
+                    ),
+                ),
+            ],
+        );
+
+        let report = run_report_with_context(kit, DoctorContext::new(DoctorMode::Strict));
+
+        let consistency = check_by_id(&report, "kit.declaration.cross_kit_consistency");
+        assert_eq!(consistency.status, CheckStatus::Fail);
+        assert_eq!(consistency.severity, CheckSeverity::Hard);
+        assert!(
+            consistency.detail.contains("is_none"),
+            "conflict detail should name local: {}",
+            consistency.detail
+        );
+    }
+
+    #[test]
+    fn doctor_cross_kit_declaration_consistency_conflict_evidence_names_kits_and_concepts() {
+        use libprovekit::concept::panic_freedom;
+
+        let td = TempDir::new().unwrap();
+        let kit = td.path();
+        write_declaration_plugins(
+            kit,
+            &[
+                (
+                    "python-source-plugin",
+                    "python-source",
+                    declaration_with_mapping(
+                        "python-source",
+                        "python",
+                        "python-source",
+                        PANIC_FREEDOM_EFFECT_KIND,
+                        "guardPredicates",
+                        "is_none",
+                        panic_freedom::IS_NONE_CONCEPT,
+                    ),
+                ),
+                (
+                    "python-verify-plugin",
+                    "python-verify",
+                    declaration_with_mapping(
+                        "python-verify",
+                        "python",
+                        "python-verify",
+                        PANIC_FREEDOM_EFFECT_KIND,
+                        "guardPredicates",
+                        "is_none",
+                        panic_freedom::IS_SOME_CONCEPT,
+                    ),
+                ),
+            ],
+        );
+
+        let report = run_report_with_context(kit, DoctorContext::new(DoctorMode::Strict));
+
+        let consistency = check_by_id(&report, "kit.declaration.cross_kit_consistency");
+        let conflict = consistency
+            .evidence
+            .get("conflicts")
+            .and_then(Value::as_array)
+            .and_then(|conflicts| conflicts.first())
+            .expect("first conflict");
+        assert_eq!(
+            conflict.get("local").and_then(Value::as_str),
+            Some("is_none")
+        );
+        assert_eq!(
+            conflict.get("effectKind").and_then(Value::as_str),
+            Some(PANIC_FREEDOM_EFFECT_KIND)
+        );
+        let concepts = conflict
+            .get("concepts")
+            .and_then(Value::as_array)
+            .expect("conflict concepts");
+        assert!(concepts.contains(&Value::String(panic_freedom::IS_NONE_CONCEPT.to_string())));
+        assert!(concepts.contains(&Value::String(panic_freedom::IS_SOME_CONCEPT.to_string())));
+        let kit_ids = conflict
+            .get("kitIds")
+            .and_then(Value::as_array)
+            .expect("conflict kit ids");
+        assert!(kit_ids.contains(&Value::String("python-source".to_string())));
+        assert!(kit_ids.contains(&Value::String("python-verify".to_string())));
+    }
+
+    #[test]
+    fn doctor_cross_kit_declaration_consistency_fails_same_conflict_in_release_gate() {
+        use libprovekit::concept::panic_freedom;
+
+        let td = TempDir::new().unwrap();
+        let kit = td.path();
+        write_declaration_plugins(
+            kit,
+            &[
+                (
+                    "python-source-plugin",
+                    "python-source",
+                    declaration_with_mapping(
+                        "python-source",
+                        "python",
+                        "python-source",
+                        PANIC_FREEDOM_EFFECT_KIND,
+                        "guardPredicates",
+                        "is_none",
+                        panic_freedom::IS_NONE_CONCEPT,
+                    ),
+                ),
+                (
+                    "python-tests-plugin",
+                    "python-tests",
+                    declaration_with_mapping(
+                        "python-tests",
+                        "python",
+                        "python-tests",
+                        PANIC_FREEDOM_EFFECT_KIND,
+                        "guardPredicates",
+                        "is_none",
+                        panic_freedom::IS_SOME_CONCEPT,
+                    ),
+                ),
+            ],
+        );
+
+        let report = run_report_with_context(kit, DoctorContext::new(DoctorMode::ReleaseGate));
+
+        let consistency = check_by_id(&report, "kit.declaration.cross_kit_consistency");
+        assert_eq!(consistency.status, CheckStatus::Fail);
+        assert_eq!(consistency.severity, CheckSeverity::Hard);
+        assert!(!report.release_ready);
+    }
+
+    #[test]
+    fn doctor_cross_kit_declaration_consistency_skips_in_structural_mode() {
+        use libprovekit::concept::panic_freedom;
+
+        let td = TempDir::new().unwrap();
+        let kit = td.path();
+        write_declaration_plugins(
+            kit,
+            &[
+                (
+                    "python-source-plugin",
+                    "python-source",
+                    declaration_with_mapping(
+                        "python-source",
+                        "python",
+                        "python-source",
+                        PANIC_FREEDOM_EFFECT_KIND,
+                        "guardPredicates",
+                        "is_none",
+                        panic_freedom::IS_NONE_CONCEPT,
+                    ),
+                ),
+                (
+                    "python-tests-plugin",
+                    "python-tests",
+                    declaration_with_mapping(
+                        "python-tests",
+                        "python",
+                        "python-tests",
+                        PANIC_FREEDOM_EFFECT_KIND,
+                        "guardPredicates",
+                        "is_none",
+                        panic_freedom::IS_SOME_CONCEPT,
+                    ),
+                ),
+            ],
+        );
+
+        let report = run_report_with_context(kit, DoctorContext::new(DoctorMode::Structural));
+
+        let consistency = check_by_id(&report, "kit.declaration.cross_kit_consistency");
+        assert_eq!(consistency.status, CheckStatus::Skip);
+        assert_eq!(consistency.severity, CheckSeverity::Advisory);
+        assert!(report.ok);
+    }
+
+    #[test]
+    fn doctor_cross_kit_declaration_consistency_passes_same_local_same_concept() {
+        use libprovekit::concept::panic_freedom;
+
+        let td = TempDir::new().unwrap();
+        let kit = td.path();
+        write_declaration_plugins(
+            kit,
+            &[
+                (
+                    "python-source-plugin",
+                    "python-source",
+                    declaration_with_mapping(
+                        "python-source",
+                        "python",
+                        "python-source",
+                        PANIC_FREEDOM_EFFECT_KIND,
+                        "guardPredicates",
+                        "is_none",
+                        panic_freedom::IS_NONE_CONCEPT,
+                    ),
+                ),
+                (
+                    "python-tests-plugin",
+                    "python-tests",
+                    declaration_with_mapping(
+                        "python-tests",
+                        "python",
+                        "python-tests",
+                        PANIC_FREEDOM_EFFECT_KIND,
+                        "guardPredicates",
+                        "is_none",
+                        panic_freedom::IS_NONE_CONCEPT,
+                    ),
+                ),
+            ],
+        );
+
+        let report = run_report_with_context(kit, DoctorContext::new(DoctorMode::Strict));
+
+        let consistency = check_by_id(&report, "kit.declaration.cross_kit_consistency");
+        assert_eq!(consistency.status, CheckStatus::Pass, "{consistency:#?}");
+        let consistent = consistency
+            .evidence
+            .get("consistentLocals")
+            .and_then(Value::as_array)
+            .expect("consistent locals");
+        let shared = consistent
+            .iter()
+            .find(|entry| entry.get("local").and_then(Value::as_str) == Some("is_none"))
+            .expect("shared is_none evidence");
+        let kit_ids = shared
+            .get("kitIds")
+            .and_then(Value::as_array)
+            .expect("shared kit ids");
+        assert!(kit_ids.contains(&Value::String("python-source".to_string())));
+        assert!(kit_ids.contains(&Value::String("python-tests".to_string())));
+    }
+
+    #[test]
+    fn doctor_cross_kit_declaration_consistency_passes_different_locals_same_concept() {
+        use libprovekit::concept::panic_freedom;
+
+        let td = TempDir::new().unwrap();
+        let kit = td.path();
+        write_declaration_plugins(
+            kit,
+            &[
+                (
+                    "python-source-plugin",
+                    "python-source",
+                    declaration_with_mapping(
+                        "python-source",
+                        "python",
+                        "python-source",
+                        PANIC_FREEDOM_EFFECT_KIND,
+                        "guardPredicates",
+                        "x is None",
+                        panic_freedom::IS_NONE_CONCEPT,
+                    ),
+                ),
+                (
+                    "python-tests-plugin",
+                    "python-tests",
+                    declaration_with_mapping(
+                        "python-tests",
+                        "python",
+                        "python-tests",
+                        PANIC_FREEDOM_EFFECT_KIND,
+                        "guardPredicates",
+                        "is_none",
+                        panic_freedom::IS_NONE_CONCEPT,
+                    ),
+                ),
+            ],
+        );
+
+        let report = run_report_with_context(kit, DoctorContext::new(DoctorMode::Strict));
+
+        let consistency = check_by_id(&report, "kit.declaration.cross_kit_consistency");
+        assert_eq!(consistency.status, CheckStatus::Pass, "{consistency:#?}");
+        assert_eq!(
+            consistency
+                .evidence
+                .get("conflicts")
+                .and_then(Value::as_array)
+                .map(Vec::len),
+            Some(0)
+        );
+    }
+
+    #[test]
+    fn doctor_cross_kit_declaration_consistency_ignores_same_kit_duplicate_across_categories() {
+        use libprovekit::concept::panic_freedom;
+
+        let td = TempDir::new().unwrap();
+        let kit = td.path();
+        write_declaration_plugins(
+            kit,
+            &[(
+                "python-source-plugin",
+                "python-source",
+                declaration_with_two_same_local_mappings(
+                    "python-source",
+                    "python-source",
+                    "is_none",
+                    panic_freedom::IS_NONE_CONCEPT,
+                ),
+            )],
+        );
+
+        let report = run_report_with_context(kit, DoctorContext::new(DoctorMode::Strict));
+
+        let consistency = check_by_id(&report, "kit.declaration.cross_kit_consistency");
+        assert_eq!(consistency.status, CheckStatus::Pass, "{consistency:#?}");
+    }
+
+    #[test]
+    fn doctor_cross_kit_declaration_consistency_ignores_same_local_different_effect_kinds() {
+        use libprovekit::concept::panic_freedom;
+
+        let td = TempDir::new().unwrap();
+        let kit = td.path();
+        write_declaration_plugins(
+            kit,
+            &[
+                (
+                    "python-source-plugin",
+                    "python-source",
+                    declaration_with_mapping(
+                        "python-source",
+                        "python",
+                        "python-source",
+                        PANIC_FREEDOM_EFFECT_KIND,
+                        "guardPredicates",
+                        "shared-local",
+                        panic_freedom::IS_NONE_CONCEPT,
+                    ),
+                ),
+                (
+                    "python-io-plugin",
+                    "python-io",
+                    declaration_with_mapping(
+                        "python-io",
+                        "python",
+                        "python-io",
+                        "concept:io",
+                        "guardPredicates",
+                        "shared-local",
+                        "concept:io.resource.open",
+                    ),
+                ),
+            ],
+        );
+
+        let report = run_report_with_context(kit, DoctorContext::new(DoctorMode::Strict));
+
+        let consistency = check_by_id(&report, "kit.declaration.cross_kit_consistency");
+        assert_eq!(consistency.status, CheckStatus::Pass, "{consistency:#?}");
+    }
+
+    #[test]
+    fn doctor_cross_kit_declaration_consistency_fails_same_local_different_categories_across_kits()
+    {
+        use libprovekit::concept::panic_freedom;
+
+        let td = TempDir::new().unwrap();
+        let kit = td.path();
+        write_declaration_plugins(
+            kit,
+            &[
+                (
+                    "python-source-plugin",
+                    "python-source",
+                    declaration_with_mapping(
+                        "python-source",
+                        "python",
+                        "python-source",
+                        PANIC_FREEDOM_EFFECT_KIND,
+                        "guardPredicates",
+                        "same-local",
+                        panic_freedom::IS_NONE_CONCEPT,
+                    ),
+                ),
+                (
+                    "python-leaf-plugin",
+                    "python-leaf",
+                    declaration_with_mapping(
+                        "python-leaf",
+                        "python",
+                        "python-leaf",
+                        PANIC_FREEDOM_EFFECT_KIND,
+                        "effectLeaves",
+                        "same-local",
+                        panic_freedom::METHOD_UNWRAP_CONCEPT,
+                    ),
+                ),
+            ],
+        );
+
+        let report = run_report_with_context(kit, DoctorContext::new(DoctorMode::Strict));
+
+        let consistency = check_by_id(&report, "kit.declaration.cross_kit_consistency");
+        assert_eq!(consistency.status, CheckStatus::Fail);
+        assert!(
+            consistency.detail.contains("same-local"),
+            "cross-category conflict detail should name local: {}",
+            consistency.detail
         );
     }
 
