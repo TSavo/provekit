@@ -38,8 +38,19 @@ export interface FunctionContractMemento {
   post: IrFormula;
   bodyCid: string | null;
   effects: TypeScriptSourceEffect[];
+  panicLoci?: TypeScriptSourcePanicLocus[];
   locus: { file: string; line: number; col: number };
   autoMintedMementos: unknown[];
+}
+
+export interface TypeScriptSourcePanicLocus {
+  effectKind: "concept:panic-freedom";
+  callee: "concept:panic-freedom.leaf.runtime-failure-site";
+  subkind: "explicit-throw";
+  argTerm: IrTerm;
+  file: string;
+  line: number;
+  col: number;
 }
 
 export interface TypeScriptLibrarySugarBindingEntry {
@@ -143,6 +154,7 @@ interface FunctionContext extends FileLiftContext {
   functionName: string;
   locals: Set<string>;
   effects: Map<string, TypeScriptSourceEffect>;
+  panicLoci: TypeScriptSourcePanicLocus[];
 }
 
 class UnsupportedSyntaxError extends Error {
@@ -157,6 +169,7 @@ class UnsupportedSyntaxError extends Error {
 
 const TRUE_FORMULA: IrFormula = { kind: "atomic", name: "true", args: [] };
 const RETURN_VALUE: VarTerm = { kind: "var", name: "return_value" };
+const RUNTIME_FAILURE_SITE_CONCEPT = "concept:panic-freedom.leaf.runtime-failure-site";
 const SKIP_DIRS = new Set([
   "node_modules",
   ".git",
@@ -687,6 +700,7 @@ function libraryBindingEntryForFunction(
         functionName: `${modulePath}:${node.name?.text ?? "unknown"}`,
         locals: new Set<string>(formals),
         effects: new Map(),
+        panicLoci: [],
       };
       collectLocalDeclarations(body, functionContext.locals);
       const rawBodyTerm = singleReturnExpression(body)
@@ -1244,6 +1258,7 @@ function liftFunctionLike(
       functionName: fnName,
       locals,
       effects: new Map(),
+      panicLoci: [],
     };
     collectLocalDeclarations(body, locals);
     const bodyTerm = emitBlock(body, functionContext);
@@ -1262,6 +1277,7 @@ function liftFunctionLike(
       post: eqFormula(RETURN_VALUE, postTerm),
       bodyCid: null,
       effects: sortEffects([...functionContext.effects.values()]),
+      ...(functionContext.panicLoci.length > 0 ? { panicLoci: [...functionContext.panicLoci] } : {}),
       locus: { file: fileContext.modulePath, line, col: 1 },
       autoMintedMementos: [],
     };
@@ -1322,8 +1338,19 @@ function emitStatement(stmt: ts.Statement, context: FunctionContext): IrTerm {
     return loopTerm;
   }
   if (ts.isThrowStatement(stmt)) {
+    const argTerm = stmt.expression ? emitExpression(stmt.expression, context) : unitConst();
     addEffect(context, { kind: "panics" });
-    return ctor("ts:throw", stmt.expression ? emitExpression(stmt.expression, context) : unitConst());
+    const start = sourcePosition(context.sourceFile, stmt);
+    context.panicLoci.push({
+      effectKind: "concept:panic-freedom",
+      callee: RUNTIME_FAILURE_SITE_CONCEPT,
+      subkind: "explicit-throw",
+      argTerm,
+      file: context.modulePath,
+      line: start.line,
+      col: start.col,
+    });
+    return ctor("ts:throw", argTerm);
   }
   if (ts.isBreakStatement(stmt)) return ctor("ts:break", unitConst());
   if (ts.isContinueStatement(stmt)) return ctor("ts:continue", unitConst());
@@ -1704,6 +1731,11 @@ function addRefusal(
 
 function lineOf(sourceFile: ts.SourceFile, node: ts.Node): number {
   return sourceFile.getLineAndCharacterOfPosition(node.getStart(sourceFile)).line + 1;
+}
+
+function sourcePosition(sourceFile: ts.SourceFile, node: ts.Node): { line: number; col: number } {
+  const start = sourceFile.getLineAndCharacterOfPosition(node.getStart(sourceFile));
+  return { line: start.line + 1, col: start.character };
 }
 
 function syntaxKindName(node: ts.Node): string {
