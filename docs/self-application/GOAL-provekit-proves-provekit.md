@@ -7,14 +7,14 @@ change must obey. Update it as state moves; do not let it go stale.
 
 ## The promise
 
-provekit is a verifier PRODUCT: point it at real source code and get a sound,
-honest verdict about correctness properties, starting with panic-freedom (which
-`unwrap`/index/`expect` sites cannot panic, which are unproven, and WHY). The
-proof that it is real and not a demo is that it proves ITSELF: run on provekit's
-own production crates (`provekit-cli`, `libprovekit`) it produces a substantive,
-honest scoreboard with ZERO silent drops and ZERO false "cannot panic". Once
-that holds in Rust, the same substrate proves it in Python - that is the
-architectural thesis at v2.
+provekit is a verifier PRODUCT a real vendor deploys against their existing
+code: a TypeScript shop, a Rust shop, a Java shop, a Go shop points provekit at
+its production codebase and gets correctness their existing unit tests cannot
+reach with ZERO source modifications. No rewrites, no annotations, no proof
+scaffolding added to the target project. The proof that it is real and not a
+demo is that it proves ITSELF (snake-eats-tail on `provekit-cli` and
+`libprovekit`) AND the federation surface holds across the four kits that ship
+today (Python, TypeScript, Go, Java) with one language-blind verifier.
 
 "Fully working" =
 1. **Sound and honest.** Every call site is enumerated, categorized, and either
@@ -31,12 +31,25 @@ architectural thesis at v2.
    readable diff.
 4. **Self-describing.** The wiring is executable knowledge (`doctor` + the
    runbook), not tribal knowledge or stale prose.
-5. **Cross-language at v2.** The same substrate proves Python; the second
-   language is cheaper than the first.
+5. **Cross-language.** The same substrate proves Python, TypeScript, Go, and
+   Java. Each new language is cheaper than the last. Verifier knows nothing
+   about which language it is verifying.
+6. **Vendor-deployable.** A vendor with an existing TypeScript / Rust / Java /
+   Go codebase and existing unit tests points provekit at their project,
+   installs it cleanly per ecosystem (`cargo install`, `npm i -g`, Maven
+   plugin, `go install`), and the verifier discharges enough sites with ZERO
+   source modifications for the output to materially differentiate from "your
+   tests pass." That means K rises into the hundreds on a real production
+   target, not single digits. Vendor onboarding is documented, the
+   differential vs unit tests is concrete, and at least one OSS project per
+   language is verified end-to-end as the pitch artifact.
 
 Rust v1 status as of 2026-06-01: criteria 1-4 are satisfied for
-`provekit-cli` and `libprovekit` by #1787. The fifth criterion is the next
-arc: prove the same substrate in Python.
+`provekit-cli` and `libprovekit` by #1787. Criterion 5 (cross-language)
+substantially landed across 2026-06-01 through 2026-06-02 via slices 14-28
+(panicLoci emission across Java/Go/TS, 4-language kit_declaration parity at
+#1865, federation hardening through #1883). Criterion 6 (vendor-deployable)
+is now the active arc; see Phase 5.
 
 ## Where we are (2026-06-01, Rust v1 done)
 
@@ -358,36 +371,156 @@ Each tier ships as one PR, golden-pinned, with visible scoreboard delta.
   `provekit-cli` and `libprovekit` through doctor release-gate mode and
   self-check. A git tag remains a separate release-policy decision.
 
-### Phase 4 - SUBSTRATE PROMOTION + PYTHON PARITY - STARTING
-Validation of the architectural thesis starts now: the second language is
-cheaper than the first.
+### Phase 4 - SUBSTRATE PROMOTION + CROSS-LANGUAGE PARITY - DONE (2026-06-02)
 
-**Substrate promotion (after Rust v1, before Python pivot):**
-- `concept:panic-freedom` hub: promote panic-freedom from "in the Rust kit"
-  to "expressed as a concept hub with `is_ok(result)` as a language-agnostic
-  totality predicate." The M+N transport for Python.
-- Doctor cross-kit envelope: doctor validates the substrate protocol any kit
-  must implement, not just Rust kit specifics.
-- Contract shape audit: read-through of every contract type's fields for
-  Rust-shaped vocabulary leaks; promote leaks to concept-level or push back
-  into the kit.
+The architectural thesis is empirically demonstrated. Four languages (Python,
+TypeScript, Go, Java) ship with kits that lift to ProofIR, declare their
+capabilities through a shared `provekit.plugin.kit_declaration` RPC, and route
+through one language-blind Rust verifier. The substrate vocabulary
+(`concept:panic-freedom.leaf.runtime-failure-site`) federates at the metadata
+layer across all four kits.
 
-**Python parity (the v2 product win):**
-- Python kit lift: Python source -> ProofIR, with panic-equivalent semantics
-  (KeyError, IndexError, AttributeError, AssertionError from `assert`, None
-  dereference).
-- Python self-contracts: type totality blessings for `pydantic.BaseModel`,
-  `@dataclass`, `typing.Final`, the immutable/total Python types.
-- Python self-check on a real Python target: honest scoreboard with named
-  gap census. **This is v2 - "point provekit at your Python code, get a
-  trustworthy correctness verdict."**
-- v2 release tag: two languages, one substrate, honest scoreboards on both.
+Completed across slices 14-28 (2026-06-01 through 2026-06-02):
+- **Slice 14-15 (#1850, #1849, #1851, #1852)**: Java source kit emits
+  explicit-throw panicLoci; Java RPC dispatch repaired; bcargo Java sync.
+- **Slice 16 (#1854)**: Go source kit emits explicit-panic panicLoci with
+  intra-package shadow discrimination via `types.Builtin`.
+- **Slice 17a (#1855, #1856)**: bcargo provisions TypeScript env
+  (BCARGO_TYPESCRIPT_ENV) including root pnpm install + emitter + realize kits.
+- **Slice 17b (#1857, #1861)**: TS source kit emits explicit-throw panicLoci
+  with __proto__ refusal predicate.
+- **Slice 18 (#1859, #1863)**: TS lifter supports object literal as ProofIR
+  term; shorthand-vs-PropertyAssignment __proto__ semantics handled correctly.
+- **Slices 19-23 (#1866, #1867, #1868, #1870, #1872 - umbrella #1865 closed)**:
+  Six-RPC-entry kit_declaration parity across Python source, TS source, Go
+  source, Java source, Go verify-facing, Java core. Each kit declares its own
+  empirical capability per honesty-gradient discipline (#856). Manager-level
+  proofResolution.strategy convention (pip / npm / go-mod / maven).
+- **Slice 24 (#1873)**: Java source + Go verify-facing version normalized to
+  manifest "0.1.0-draft" via per-kit VERSION constants.
+- **Slice 25 (#1864 closed)**: Test harness ETXTBSY safe-write pattern
+  (sync_all + fd drop before chmod) + structural regression pin.
+- **Slice 26 (#1862 closed)**: tsc --noEmit gate restored via tsconfig module
+  node20 / moduleResolution nodenext; per-test 30s timeout boy-scout.
+- **Slice 27 (#1878 closed)**: Doctor enforces per-kit manifest/runtime
+  version consistency (`kit-declaration-version-consistent` check).
+- **Slice 28 (#1883)**: Doctor manifest collection widens beyond [[plugins]]
+  to authoring lift surfaces via capabilities predicates (no hard-coded kit
+  names; manifest-driven).
 
-**Post-v2 (architectural validation, not gating):**
-- Cross-language cycle proof (Rust <-> ProofIR <-> Python, byte-identical
-  CIDs after formatter normalization).
-- Multi-language scoreboard composition.
-- Rust libraries shipping proofs that Python consumers reuse.
+Open mechanical follow-ups (Phase 4 residue, not Phase 5 gates): #1885 (Go
+implications surface mismatch), #1886 (self-contract aliases expose
+kit_declaration), #1887 (stale TS [authoring] surface normalization).
+
+### Phase 5 - VENDOR-DEPLOYABLE VERIFICATION DEPTH - STARTING
+
+The architectural foundation holds. The product shift now is from "we proved
+the thesis works cleanly across four languages" to "a TypeScript / Rust /
+Java / Go vendor wants to deploy this because pointing it at their existing
+code reveals correctness their unit tests cannot reach with ZERO source
+modifications."
+
+Proof and materialization are separate surfaces. The proof product runs on
+unmodified source: kits lift language-native evidence, the verifier consumes
+normalized ProofIR, and correctness is discharged without edits to the target
+project. Sugar and boundary annotations are downstream helpers for
+materializing sugar under proven correctness (federation, cross-language emit,
+and boundary realization). They are not prerequisites to proving correctness.
+
+The number that moves: K (panic-safe sites discharged via sound reasoning) on
+real production code in each language. Today on Rust self-application: K=21
+on provekit-cli, K=12 on libprovekit. On Python / TS / Go / Java production
+targets: not yet measured at the K level; each language emits panicLoci but
+discharge tier infrastructure is Rust-only today. A vendor running today
+sees mostly "I don't know" verdicts. To shift to "I want to deploy this,"
+the K-per-language number has to be in the hundreds on a real codebase, the
+output has to be actionable, and the value differential vs unit tests has to
+be visible.
+
+**Phase 5 staging (T direction 2026-06-02): dogfood is the gold standard,
+then third-party parity per language.**
+1. **Dogfood depth first.** Drive Rust self-application K into vendor-
+   meaningful range (K=21 → into the hundreds on `provekit-cli` and
+   `libprovekit`) via shim catalog expansion and discharge tier work. This
+   is the proof that the technique scales on a real codebase before we ask
+   anyone else to point it at theirs.
+2. **Third-party Rust OSS project parity.** Once dogfood "feels eaten" by
+   architectural judgment (K depth, residue clearly named, hard floor
+   intact), pick one popular OSS Rust crate. Prove it end-to-end with the
+   same techniques. Document the differential vs its unit test suite as the
+   pitch artifact: "your existing tests pass; provekit additionally proved
+   N invariants across all inputs without you changing a line."
+3. **Per-language repeat (TS, Java, Go).** Apply the same dogfood-then-
+   third-party pattern to each remaining language. Each language gets its
+   own discharge tier infrastructure brought to vendor-meaningful K on a
+   self-application target, then a third-party OSS project proves the
+   parity story for that language ecosystem.
+
+The gate from step 1 to step 2 is soft architectural judgment, not a
+numeric trigger. "Dogfood is gold standard" means provekit's own scoreboard
+is the example the vendor pitch points to; "next project on" means once
+that bar holds, the next project is a third-party in the same language,
+and the pattern repeats per language.
+
+**Rust depth expansion (continues the original tier campaign):**
+- Multiply rust-std shim catalog: extend coverage of Result/Option methods,
+  iterator length idioms, common std partials, panic-implication propagation
+  across function boundaries.
+- Cross-crate audited shims for top ecosystem crates (serde, tokio, sqlx,
+  reqwest, clap, anyhow, thiserror, others). Per-crate
+  `infallible_serialize.toml` and equivalent manifests mature into a
+  catalog.
+- Target: K from 21 to 100+ on `provekit-cli`, K from 12 to 50+ on
+  `libprovekit`, with ZERO source modifications.
+- **Pitch artifact**: pick one popular OSS Rust crate, prove it end-to-end,
+  publish the differential vs its unit test suite as the vendor onboarding
+  story.
+
+**TypeScript depth expansion:**
+- Add a TS discharge tier (currently emits panicLoci, has no closure logic).
+- Handler-aware closure: `throw` dominated by a `try/catch` that catches the
+  thrown type is decidable. This is the substrate decision tracked at #750;
+  under standing delegation, kit-local structural support lands first
+  (reversible), federated concept lifts only when the kit-local pattern has
+  empirical legs.
+- Type-narrowed throws: `throw new Error(...)` after a type guard is
+  decidable; `Promise.reject` handling distinguished from sync throw.
+- ts-shim catalog: common Promise idioms, Array/Object access patterns,
+  React/Node ecosystem partials.
+- Target: nonzero K on a real OSS TypeScript project (e.g., a small library
+  used in the wild).
+
+**Java + Go depth expansion (parallel pattern):**
+- Discharge-tier pattern proven on Rust ports to Java and Go.
+- Java: `catch (Exception e)` closures; checked exception flow; Spring
+  null-safety metadata already present in source as type-level totality
+  evidence.
+- Go: `defer`/`recover` handling; `error`-return idiom as the canonical
+  Go safety pattern.
+- Target: discharge story parity across all four languages.
+
+**Substrate decisions under standing delegation:**
+- The substrate calls (#750 try/catch handler awareness, #1858 async
+  Promise-vs-throw semantics, #1839 verifier CallSite collapse, #1880
+  federation initialize capabilities shape) are inside this campaign. They
+  are not parked architecture committees; they are discharge-tier
+  infrastructure dressed up as substrate questions.
+- Discipline (per advisor 2026-06-02): default to the reversible branch.
+  Kit-local structural first; federated concept later when binding evidence
+  arrives. Each call gets stamped "decided under standing delegation
+  2026-06-02, T ratify-or-reverse on return." Honesty-gradient (#856) still
+  binds: no identity-valid-but-behavior-inert mints.
+
+**Vendor onboarding (after depth proves valuable on real code):**
+- One-command install per language ecosystem.
+- Vendor-facing docs: "point at your project, here's what you get, here's
+  the differential vs your existing tests."
+- Concrete OSS-project pitch artifacts per language.
+
+**The Phase 5 metric:** K per language on a real production target. Hard
+floor invariants unchanged: `silentlyDropped = 0`, `falsePass = 0`,
+`droppedSites = []`. K rising via sound discharge tier closures, not
+labeling.
 
 ## The discipline (every change obeys these; the lessons of 2026-05-30)
 1. **Golden-pinned**: if it changes a discharge number, it updates the golden
@@ -411,10 +544,22 @@ cheaper than the first.
 - K != N. Genuine residue stays unproven, by design and honestly.
 - "Make the number go up by labeling a partial function total" is the vacuous
   trap; only sound contracts (a real pre that discharges, or a true
-  type-level totality) count.
-- Cross-language cycle proof is not gating v2. The v2 product win is "Python
-  users can find correctness bugs"; cycle proof is architectural validation
-  that lands post-v2.
+  type-level totality) count. Phase 5 multiplies K via discharge tier closure,
+  NOT via labeling.
+- Cross-language cycle proof (byte-identical CIDs across languages) is not a
+  Phase 5 gate. The Phase 5 win is "a vendor's existing code gets correctness
+  output their unit tests miss with ZERO source modifications." Cycle proof is
+  architectural validation that lands later, after vendor adoption proves the
+  depth story.
+- Federation breadth is sufficient at four languages (Python / TS / Go / Java)
+  for Phase 5. Adding a fifth language is not a Phase 5 priority; depth in the
+  four shipped languages is.
+- Annotations as proof prerequisites are out of scope entirely. A vendor
+  should get nontrivial K from running provekit against an unmodified
+  codebase. Sugar and boundary annotations are post-proof materializers for
+  federation, cross-language emit, and boundary realization; they are not
+  proof-enabling artifacts. If initial K requires source modifications, the
+  catalog / discharge tier is too shallow.
 
 ## Pointers
 
@@ -494,3 +639,41 @@ cheaper than the first.
   worktree, FULLY INLINE briefs (no file refs - they do not survive MCP
   serialization). Coordinator owns all gh/PR ops + review. Standing arc:
   see PLAN-panic-loci-completion.md.
+
+**Cross-language federation arc (2026-06-01 - 2026-06-02, Phase 4 closing):**
+- #1850 (slice 14) Java source kit explicit-throw panicLoci emission.
+- #1849 (slice 15) Java source RPC dispatch repair (Program flag dispatch +
+  SourceRpcServer).
+- #1851 bcargo Java sync (standalone infrastructure PR).
+- #1852 (slice 15 merge) Java source kit RPC dispatch lands.
+- #1854 (slice 16) Go source kit explicit-panic panicLoci with
+  `types.Builtin` intra-package shadow discrimination.
+- #1855 (slice 17a) bcargo TypeScript env provisioning (BCARGO_TYPESCRIPT_ENV).
+- #1856 widening: realize-kit npm ci coverage for ts-better-sqlite3 / ts-pg /
+  ts-core after Codex P2 audit gap surfaced.
+- #1857 / #1861 (slice 17b) TS source kit explicit-throw panicLoci emission
+  with `__proto__` prototype-setter refusal predicate.
+- #1859 / #1863 (slice 18) TS lifter ObjectLiteralExpression as ProofIR term
+  with shorthand-vs-PropertyAssignment `__proto__` discipline.
+- #1865 umbrella (closed by slice 21): six-RPC-entry kit_declaration parity.
+  Children: #1866 TS source, #1867 Go source, #1868 Java source, #1870 Go
+  verify-facing, #1872 Java core; PRs #1869 / #1871 / #1874 / #1875 / #1877.
+- #1873 (slice 24) Java source + Go verify-facing version normalization to
+  manifest `0.1.0-draft` via per-kit `VERSION` constants. PR #1879.
+- #1864 (slice 25 closed) test harness ETXTBSY safe-write pattern
+  (`sync_all` + fd drop before chmod) + structural regression pin. PR #1881.
+- #1862 (slice 26 closed) tsc --noEmit gate restoration via tsconfig
+  `module: node20` / `moduleResolution: nodenext`; per-test 30s timeout
+  boy-scout for vitest. PR #1882.
+- #1878 (slice 27 closed) doctor enforces per-kit manifest/runtime version
+  consistency (`kit-declaration-version-consistent` check). PR #1884.
+- #1883 (slice 28) doctor manifest collection widens to authoring lift
+  surfaces via capabilities predicates. Manifest-driven, no hard-coded kit
+  names. Closes the slice 27 disclosed coverage gap (4 of 6 advisor entries
+  now doctor-enforced).
+- Phase 4 follow-ups still open: #1885 (Go implications surface mismatch),
+  #1886 (self-contract aliases expose kit_declaration consistently), #1887
+  (stale TS `[authoring]` surface normalization to `typescript-source`).
+
+**Phase 5 active arc** starts where Phase 4 lands. Phase 4 hardened the
+substrate; Phase 5 multiplies K so vendors deploy.
