@@ -305,60 +305,36 @@ pub(crate) fn resolved_working_dir_for(
 fn parse_manifest(path: &Path) -> Result<LiftPluginManifest, String> {
     let text =
         std::fs::read_to_string(path).map_err(|e| format!("read {}: {e}", path.display()))?;
-    let mut manifest = LiftPluginManifest {
-        name: String::new(),
-        version: None,
-        command: Vec::new(),
-        working_dir: None,
-        method: None,
-        phase: None,
+    let toml: toml::Value = text
+        .parse()
+        .map_err(|e| format!("invalid TOML in {}: {e}", path.display()))?;
+
+    let string_field = |key: &str| -> Option<String> {
+        toml.get(key)
+            .and_then(toml::Value::as_str)
+            .map(str::to_string)
+            .filter(|value| !value.is_empty())
     };
-    for line in text.lines() {
-        let line = match line.find('#') {
-            Some(pos) => &line[..pos],
-            None => line,
-        }
-        .trim();
-        if line.is_empty() || line.starts_with('[') {
-            continue;
-        }
-        let Some(eq) = line.find('=') else { continue };
-        let key = line[..eq].trim();
-        let val = line[eq + 1..].trim();
-        match key {
-            "name" => manifest.name = val.trim_matches('"').to_string(),
-            "version" => {
-                let version = val.trim_matches('"').to_string();
-                manifest.version = if version.is_empty() {
-                    None
-                } else {
-                    Some(version)
-                };
-            }
-            "working_dir" => manifest.working_dir = Some(PathBuf::from(val.trim_matches('"'))),
-            "method" => {
-                let method = val.trim_matches('"').to_string();
-                manifest.method = if method.is_empty() {
-                    None
-                } else {
-                    Some(method)
-                };
-            }
-            "phase" => {
-                let phase = val.trim_matches('"').to_string();
-                manifest.phase = if phase.is_empty() { None } else { Some(phase) };
-            }
-            "command" => {
-                let inner = val.trim_matches(|c| c == '[' || c == ']');
-                manifest.command = inner
-                    .split(',')
-                    .map(|s| s.trim().trim_matches('"').to_string())
-                    .filter(|s| !s.is_empty())
-                    .collect();
-            }
-            _ => {}
-        }
-    }
+    let command = toml
+        .get("command")
+        .and_then(toml::Value::as_array)
+        .map(|values| {
+            values
+                .iter()
+                .filter_map(toml::Value::as_str)
+                .map(str::to_string)
+                .filter(|value| !value.is_empty())
+                .collect::<Vec<_>>()
+        })
+        .unwrap_or_default();
+    let manifest = LiftPluginManifest {
+        name: string_field("name").unwrap_or_default(),
+        version: string_field("version"),
+        command,
+        working_dir: string_field("working_dir").map(PathBuf::from),
+        method: string_field("method"),
+        phase: string_field("phase"),
+    };
     if manifest.command.is_empty() {
         return Err(format!("manifest {} has no `command`", path.display()));
     }
