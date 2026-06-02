@@ -34,6 +34,7 @@ use std::sync::Arc;
 
 use provekit_canonicalizer::{blake3_512_of, encode_jcs, Value};
 use provekit_proof_envelope::{ed25519_pubkey_string, ed25519_sign_string, Ed25519Seed};
+use serde::{Deserialize, Serialize};
 use serde_json::Value as JsonValue;
 
 #[derive(Debug, thiserror::Error)]
@@ -67,6 +68,273 @@ pub struct MintedEnvelope {
 /// emitted by this kit. Older flat mementos carry `"1"`; verifiers
 /// branch on this string at load time.
 pub const LAYERED_SCHEMA_VERSION: &str = "2";
+
+/// JSON-RPC method used by kits to serve their substrate declaration.
+///
+/// The declaration is semantic content, not startup negotiation, so it is
+/// fetched on demand instead of being embedded in `initialize.capabilities`.
+pub const KIT_DECLARATION_RPC_METHOD: &str = "provekit.plugin.kit_declaration";
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct KitDeclaration {
+    pub kit: KitIdentity,
+    pub rpc: KitDeclarationRpc,
+    #[serde(rename = "proofResolution")]
+    pub proof_resolution: KitProofResolution,
+    #[serde(rename = "effectKinds")]
+    pub effect_kinds: Vec<String>,
+    #[serde(rename = "effectLeaves")]
+    pub effect_leaves: Vec<KitDeclarationMapping>,
+    #[serde(rename = "guardPredicates")]
+    pub guard_predicates: Vec<KitDeclarationMapping>,
+    #[serde(rename = "controlCarriers")]
+    pub control_carriers: Vec<KitDeclarationMapping>,
+    #[serde(
+        rename = "oracleHost",
+        default,
+        skip_serializing_if = "Option::is_none"
+    )]
+    pub oracle_host: Option<KitOracleHost>,
+    #[serde(rename = "residueCategories")]
+    pub residue_categories: Vec<KitResidueCategory>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct KitIdentity {
+    pub id: String,
+    pub language: String,
+    pub version: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct KitDeclarationRpc {
+    pub methods: Vec<KitDeclarationRpcMethod>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct KitDeclarationRpcMethod {
+    pub name: String,
+    #[serde(default)]
+    pub required: bool,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct KitProofResolution {
+    pub strategy: String,
+    #[serde(rename = "rpcMethod", default, skip_serializing_if = "Option::is_none")]
+    pub rpc_method: Option<String>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct KitDeclarationMapping {
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub surface: Option<String>,
+    pub local: String,
+    pub concept: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct KitOracleHost {
+    #[serde(rename = "hostKind")]
+    pub host_kind: String,
+    #[serde(default)]
+    pub required: bool,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct KitResidueCategory {
+    pub name: String,
+    pub status: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub reason: Option<String>,
+}
+
+#[derive(Debug, thiserror::Error, PartialEq, Eq)]
+pub enum KitDeclarationError {
+    #[error("kit declaration: {field} must not be empty")]
+    EmptyField { field: &'static str },
+    #[error(
+        "kit declaration: {category} has conflicting mapping for surface={surface:?} local={local}: {first} vs {second}"
+    )]
+    ConflictingMapping {
+        category: &'static str,
+        surface: Option<String>,
+        local: String,
+        first: String,
+        second: String,
+    },
+}
+
+impl KitDeclaration {
+    pub fn validate(&self) -> Result<(), KitDeclarationError> {
+        require_nonempty("kit.id", &self.kit.id)?;
+        require_nonempty("kit.language", &self.kit.language)?;
+        require_nonempty("kit.version", &self.kit.version)?;
+        if self.rpc.methods.is_empty() {
+            return Err(KitDeclarationError::EmptyField {
+                field: "rpc.methods",
+            });
+        }
+        for method in &self.rpc.methods {
+            require_nonempty("rpc.methods[].name", &method.name)?;
+        }
+        require_nonempty("proofResolution.strategy", &self.proof_resolution.strategy)?;
+        if let Some(method) = &self.proof_resolution.rpc_method {
+            require_nonempty("proofResolution.rpcMethod", method)?;
+        }
+        if self.effect_kinds.is_empty() {
+            return Err(KitDeclarationError::EmptyField {
+                field: "effectKinds",
+            });
+        }
+        for effect_kind in &self.effect_kinds {
+            require_nonempty("effectKinds[]", effect_kind)?;
+        }
+        validate_mappings("effectLeaves", &self.effect_leaves)?;
+        validate_mappings("guardPredicates", &self.guard_predicates)?;
+        validate_mappings("controlCarriers", &self.control_carriers)?;
+        if let Some(oracle_host) = &self.oracle_host {
+            require_nonempty("oracleHost.hostKind", &oracle_host.host_kind)?;
+        }
+        for category in &self.residue_categories {
+            require_nonempty("residueCategories[].name", &category.name)?;
+            require_nonempty("residueCategories[].status", &category.status)?;
+        }
+        Ok(())
+    }
+}
+
+fn require_nonempty(field: &'static str, value: &str) -> Result<(), KitDeclarationError> {
+    if value.trim().is_empty() {
+        Err(KitDeclarationError::EmptyField { field })
+    } else {
+        Ok(())
+    }
+}
+
+fn validate_mappings(
+    category: &'static str,
+    mappings: &[KitDeclarationMapping],
+) -> Result<(), KitDeclarationError> {
+    let mut seen = std::collections::BTreeMap::<(Option<String>, String), String>::new();
+    for mapping in mappings {
+        if let Some(surface) = &mapping.surface {
+            require_nonempty("mapping.surface", surface)?;
+        }
+        require_nonempty("mapping.local", &mapping.local)?;
+        require_nonempty("mapping.concept", &mapping.concept)?;
+        let key = (mapping.surface.clone(), mapping.local.clone());
+        if let Some(existing) = seen.get(&key) {
+            if existing != &mapping.concept {
+                return Err(KitDeclarationError::ConflictingMapping {
+                    category,
+                    surface: key.0,
+                    local: key.1,
+                    first: existing.clone(),
+                    second: mapping.concept.clone(),
+                });
+            }
+        } else {
+            seen.insert(key, mapping.concept.clone());
+        }
+    }
+    Ok(())
+}
+
+#[cfg(test)]
+mod kit_declaration_schema_tests {
+    use super::{
+        KitDeclaration, KitDeclarationMapping, KitDeclarationRpc, KitDeclarationRpcMethod,
+        KitIdentity, KitProofResolution,
+    };
+
+    fn valid_declaration() -> KitDeclaration {
+        KitDeclaration {
+            kit: KitIdentity {
+                id: "provekit-walk-rpc".to_string(),
+                language: "rust".to_string(),
+                version: "0.1.0".to_string(),
+            },
+            rpc: KitDeclarationRpc {
+                methods: vec![KitDeclarationRpcMethod {
+                    name: "provekit.plugin.kit_declaration".to_string(),
+                    required: true,
+                }],
+            },
+            proof_resolution: KitProofResolution {
+                strategy: "rpc-proof-bytes".to_string(),
+                rpc_method: Some("provekit.plugin.resolve_dependency_proofs".to_string()),
+            },
+            effect_kinds: vec!["concept:panic-freedom".to_string()],
+            effect_leaves: vec![KitDeclarationMapping {
+                surface: Some("rust-implications".to_string()),
+                local: "method:unwrap".to_string(),
+                concept: "concept:panic-freedom.leaf.unwrap".to_string(),
+            }],
+            guard_predicates: vec![],
+            control_carriers: vec![],
+            oracle_host: None,
+            residue_categories: vec![],
+        }
+    }
+
+    #[test]
+    fn kit_declaration_roundtrips_with_optional_defaults() {
+        let declaration = valid_declaration();
+
+        declaration.validate().expect("valid declaration");
+        let encoded = serde_json::to_string(&declaration).expect("encode declaration");
+        let decoded: KitDeclaration = serde_json::from_str(&encoded).expect("decode declaration");
+
+        assert_eq!(decoded, declaration);
+        assert!(decoded.oracle_host.is_none());
+    }
+
+    #[test]
+    fn kit_declaration_rejects_missing_required_fields() {
+        let missing_effect_kinds = serde_json::json!({
+            "kit": {"id": "provekit-walk-rpc", "language": "rust", "version": "0.1.0"},
+            "rpc": {"methods": [{"name": "provekit.plugin.kit_declaration", "required": true}]},
+            "proofResolution": {"strategy": "rpc-proof-bytes"}
+        });
+
+        let err = serde_json::from_value::<KitDeclaration>(missing_effect_kinds)
+            .expect_err("effectKinds is required");
+
+        assert!(
+            err.to_string().contains("effectKinds"),
+            "error should name missing field: {err}"
+        );
+    }
+
+    #[test]
+    fn kit_declaration_allows_exact_duplicate_mapping_but_rejects_conflict() {
+        let mut declaration = valid_declaration();
+        let duplicate = declaration.effect_leaves[0].clone();
+        declaration.effect_leaves.push(duplicate);
+        declaration
+            .validate()
+            .expect("exact duplicate declaration is harmless");
+
+        declaration.effect_leaves.push(KitDeclarationMapping {
+            surface: Some("rust-implications".to_string()),
+            local: "method:unwrap".to_string(),
+            concept: "concept:panic-freedom.leaf.expect".to_string(),
+        });
+
+        let err = declaration
+            .validate()
+            .expect_err("conflicting scoped mapping must fail");
+        assert!(
+            err.to_string().contains("effectLeaves"),
+            "error should identify the mapping category: {err}"
+        );
+        assert!(
+            err.to_string().contains("method:unwrap"),
+            "error should identify the local key: {err}"
+        );
+    }
+}
 
 // ---------- DERIVED hash helpers --------------------------------------------
 
@@ -325,9 +593,11 @@ pub fn body_discharge_policy_from_object_with_default(
     default_eligible: bool,
 ) -> BodyDischargePolicy {
     body_discharge_policy_from_fields_with_default(
-        entry.get("bodyDischargeEligible")
+        entry
+            .get("bodyDischargeEligible")
             .or_else(|| entry.get("body_discharge_eligible")),
-        entry.get("bodyDischargeRefusalReason")
+        entry
+            .get("bodyDischargeRefusalReason")
             .or_else(|| entry.get("body_discharge_refusal_reason")),
         entry.get("dischargePolicy"),
         default_eligible,
@@ -443,9 +713,8 @@ fn parse_body_reduction(
                         return (
                             None,
                             vec![BodyDischargePolicyWarning::Malformed {
-                                reason:
-                                    "dischargePolicy.bodyReduction.reason must be a string"
-                                        .to_string(),
+                                reason: "dischargePolicy.bodyReduction.reason must be a string"
+                                    .to_string(),
                             }],
                         )
                     }
@@ -722,10 +991,7 @@ pub fn mint_contract(args: &MintContractArgs) -> Result<MintedEnvelope, ClaimEnv
     // never read it), so it must not perturb the contract CID. Omitted when
     // empty so contracts with no panic leaf keep their existing header bytes.
     if !args.panic_loci.is_empty() {
-        kind_specific.push((
-            "panicLoci".into(),
-            Value::array(args.panic_loci.clone()),
-        ));
+        kind_specific.push(("panicLoci".into(), Value::array(args.panic_loci.clone())));
     }
 
     let header = build_header("contract", &header_cid, kind_specific);

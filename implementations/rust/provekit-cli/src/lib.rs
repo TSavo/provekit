@@ -38,6 +38,7 @@ pub mod doctor;
 #[allow(dead_code)]
 pub mod doctor_oracle;
 pub mod floor_runtime_check;
+pub mod kit_declaration;
 pub mod kit_dispatch;
 #[allow(dead_code)]
 pub mod lift_plugin;
