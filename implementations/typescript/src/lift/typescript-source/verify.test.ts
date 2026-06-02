@@ -36,12 +36,16 @@ describe("typescript-source verify projection", () => {
       `export function fail(reason: unknown): void {
   throw reason;
 }
+
+export function failObject(): void {
+  throw { code: 500, message: "bad" };
+}
 `,
       "src/fail.ts",
     );
 
     const doc = normalizeTypeScriptSourceVerifyDocument(lifted);
-    const contract = doc.ir[0] as any;
+    const contract = doc.ir.find((decl) => decl.fnName === "src/fail.ts:fail") as any;
 
     expect(contract.fnName).toBe("src/fail.ts:fail");
     expect(contract.panicLoci).toEqual([
@@ -52,6 +56,56 @@ describe("typescript-source verify projection", () => {
         argTerm: { kind: "var", name: "reason" },
         file: "src/fail.ts",
         line: 2,
+        col: 2,
+      },
+    ]);
+
+    const objectContract = doc.ir.find((decl) => decl.fnName === "src/fail.ts:failObject") as any;
+    expect(objectContract.panicLoci).toEqual([
+      {
+        effectKind: "concept:panic-freedom",
+        callee: RUNTIME_FAILURE_SITE_CONCEPT,
+        subkind: "explicit-throw",
+        argTerm: {
+          kind: "ctor",
+          name: "ts:object-literal",
+          args: [
+            {
+              kind: "ctor",
+              name: "ts:property",
+              args: [
+                {
+                  kind: "const",
+                  sort: { kind: "primitive", name: "String" },
+                  value: "code",
+                },
+                {
+                  kind: "const",
+                  sort: { kind: "primitive", name: "Int" },
+                  value: 500,
+                },
+              ],
+            },
+            {
+              kind: "ctor",
+              name: "ts:property",
+              args: [
+                {
+                  kind: "const",
+                  sort: { kind: "primitive", name: "String" },
+                  value: "message",
+                },
+                {
+                  kind: "const",
+                  sort: { kind: "primitive", name: "String" },
+                  value: "bad",
+                },
+              ],
+            },
+          ],
+        },
+        file: "src/fail.ts",
+        line: 6,
         col: 2,
       },
     ]);

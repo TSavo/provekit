@@ -44,6 +44,9 @@ export function normalizeFunctionContractForVerify(
     returnSort: normalizeSortForVerify(contract.returnSort),
     pre: normalizeFormulaForVerify(contract.pre),
     post: normalizeFormulaForVerify(contract.post),
+    ...(contract.panicLoci
+      ? { panicLoci: contract.panicLoci.map((locus) => ({ ...locus, argTerm: normalizeTermForVerify(locus.argTerm) })) }
+      : {}),
   };
 }
 

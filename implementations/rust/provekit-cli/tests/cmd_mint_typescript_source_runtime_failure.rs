@@ -71,6 +71,10 @@ fn stage_typescript_source_project() -> PathBuf {
         r#"export function fail(reason: unknown): void {
   throw reason;
 }
+
+export function failObject(): void {
+  throw { code: 500, message: "bad" };
+}
 "#,
     )
     .expect("write src/panic.ts");
@@ -164,41 +168,98 @@ fn typescript_source_throw_mint_preserves_runtime_failure_locus_and_enumerates_c
         pool.load_errors
     );
 
-    let loci = contract_runtime_failure_loci(&pool);
+    let mut loci = contract_runtime_failure_loci(&pool);
+    loci.sort_by_key(|locus| locus.get("line").and_then(Json::as_i64).unwrap_or_default());
     assert_eq!(
         loci,
-        vec![json!({
-            "effectKind": "concept:panic-freedom",
-            "callee": RUNTIME_FAILURE_SITE_CONCEPT,
-            "subkind": "explicit-throw",
-            "argTerm": {
-                "kind": "var",
-                "name": "reason"
-            },
-            "file": "src/panic.ts",
-            "line": 2,
-            "col": 2
-        })],
+        vec![
+            json!({
+                "effectKind": "concept:panic-freedom",
+                "callee": RUNTIME_FAILURE_SITE_CONCEPT,
+                "subkind": "explicit-throw",
+                "argTerm": {
+                    "kind": "var",
+                    "name": "reason"
+                },
+                "file": "src/panic.ts",
+                "line": 2,
+                "col": 2
+            }),
+            json!({
+                "effectKind": "concept:panic-freedom",
+                "callee": RUNTIME_FAILURE_SITE_CONCEPT,
+                "subkind": "explicit-throw",
+                "argTerm": {
+                    "kind": "ctor",
+                    "name": "ts:object-literal",
+                    "args": [
+                        {
+                            "kind": "ctor",
+                            "name": "ts:property",
+                            "args": [
+                                {
+                                    "kind": "const",
+                                    "sort": { "kind": "primitive", "name": "String" },
+                                    "value": "code"
+                                },
+                                {
+                                    "kind": "const",
+                                    "sort": { "kind": "primitive", "name": "Int" },
+                                    "value": 500
+                                }
+                            ]
+                        },
+                        {
+                            "kind": "ctor",
+                            "name": "ts:property",
+                            "args": [
+                                {
+                                    "kind": "const",
+                                    "sort": { "kind": "primitive", "name": "String" },
+                                    "value": "message"
+                                },
+                                {
+                                    "kind": "const",
+                                    "sort": { "kind": "primitive", "name": "String" },
+                                    "value": "bad"
+                                }
+                            ]
+                        }
+                    ]
+                },
+                "file": "src/panic.ts",
+                "line": 6,
+                "col": 2
+            }),
+        ],
         "mint must preserve the typescript-source runtime-failure panicLoci row"
     );
 
     let callsites = provekit_verifier::enumerate_callsites::run(&pool);
-    let runtime_failure_sites: Vec<_> = callsites
+    let mut runtime_failure_sites: Vec<_> = callsites
         .iter()
         .filter(|cs| cs.panic_site && cs.callee.as_deref() == Some(RUNTIME_FAILURE_SITE_CONCEPT))
         .collect();
+    runtime_failure_sites.sort_by_key(|cs| cs.line.unwrap_or_default());
     assert_eq!(
         runtime_failure_sites.len(),
-        1,
-        "verifier must surface exactly one TypeScript runtime-failure panic site; got {callsites:#?}"
+        2,
+        "verifier must surface exactly two TypeScript runtime-failure panic sites; got {callsites:#?}"
     );
     assert_eq!(
         runtime_failure_sites[0].file.as_deref(),
         Some("src/panic.ts")
     );
     assert_eq!(runtime_failure_sites[0].line, Some(2));
+    assert_eq!(
+        runtime_failure_sites[1].file.as_deref(),
+        Some("src/panic.ts")
+    );
+    assert_eq!(runtime_failure_sites[1].line, Some(6));
     assert!(
-        runtime_failure_sites[0].bridge_target_cid.is_empty(),
+        runtime_failure_sites
+            .iter()
+            .all(|site| site.bridge_target_cid.is_empty()),
         "no bridge exists yet, so the surfaced callsite must remain undecidable"
     );
 
