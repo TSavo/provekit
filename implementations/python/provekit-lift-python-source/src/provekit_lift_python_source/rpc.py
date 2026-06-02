@@ -45,10 +45,32 @@ def kit_declaration_result() -> dict[str, Any]:
             ]
         },
         "proofResolution": {"strategy": "pip"},
-        "effectKinds": [],
+        "effectKinds": ["concept:panic-freedom"],
         "effectLeaves": [],
-        "guardPredicates": [],
-        "controlCarriers": [],
+        "guardPredicates": [
+            {
+                "surface": SURFACE,
+                "local": "is_some",
+                "concept": "concept:panic-freedom.option.some",
+            },
+            {
+                "surface": SURFACE,
+                "local": "is_none",
+                "concept": "concept:panic-freedom.option.none",
+            },
+        ],
+        "controlCarriers": [
+            {
+                "surface": SURFACE,
+                "local": "cf_guarded",
+                "concept": "concept:panic-freedom.guard",
+            },
+            {
+                "surface": SURFACE,
+                "local": "cf_ite",
+                "concept": "concept:panic-freedom.choice",
+            },
+        ],
         "residueCategories": [],
     }
 
