@@ -19,3 +19,9 @@ name = "python-bind"
 kind = "lift"
 surface = "python-bind"
 layer = "library-bindings"
+
+[[plugins]]
+name = "python-verify"
+kind = "lift"
+surface = "python-verify"
+emit = "ir-document"
