@@ -173,6 +173,8 @@ def _expr(term: Json) -> ast.expr:
         return ast.Attribute(value=_expr(args[0]), attr=_const_string(args[1]), ctx=ast.Load())
     if name == "python:subscript":
         return ast.Subscript(value=_expr(args[0]), slice=_slice_or_expr(args[1]), ctx=ast.Load())
+    if name == "python:walrus":
+        return ast.NamedExpr(target=_walrus_target(args[0]), value=_expr(args[1]))
     raise ValueError(f"unsupported python operation in expression position: {name}")
 
 
@@ -190,6 +192,14 @@ def _slice_or_expr(term: Json) -> ast.expr | ast.slice:
 def _target(term: Json) -> ast.expr:
     expr = _expr(term)
     return _with_context(expr, ast.Store())
+
+
+def _walrus_target(term: Json) -> ast.Name:
+    expr = _expr(term)
+    if not isinstance(expr, ast.Name):
+        raise ValueError(f"walrus target is not a name: {ast.dump(expr)}")
+    expr.ctx = ast.Store()
+    return expr
 
 
 def _with_context(expr: ast.expr, ctx: ast.expr_context) -> ast.expr:

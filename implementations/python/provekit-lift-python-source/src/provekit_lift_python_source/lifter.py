@@ -569,6 +569,13 @@ class _Emitter:
                 )
             )
             return term
+        if isinstance(node, ast.NamedExpr):
+            if not isinstance(node.target, ast.Name):
+                raise _UnsupportedSyntax(
+                    node.target,
+                    f"unsupported walrus target: {type(node.target).__name__}",
+                )
+            return ctor("python:walrus", var(node.target.id), self.expr(node.value))
         raise _UnsupportedSyntax(node, f"unhandled expression kind: {type(node).__name__}")
 
     def constant(self, node: ast.Constant) -> Json:
@@ -783,8 +790,6 @@ def _contains_refused_control(fn: ast.FunctionDef) -> _UnsupportedSyntax | None:
             return _UnsupportedSyntax(child, "generators are refused")
         if isinstance(child, ast.Await):
             return _UnsupportedSyntax(child, "await expressions are refused")
-        if isinstance(child, ast.NamedExpr):
-            return _UnsupportedSyntax(child, "walrus expressions are refused")
     return None
 
 

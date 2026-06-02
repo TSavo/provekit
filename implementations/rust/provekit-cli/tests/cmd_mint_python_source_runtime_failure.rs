@@ -414,6 +414,52 @@ emits_signed_mementos = false
     project
 }
 
+fn stage_python_walrus_project(lift_script: &Path) -> PathBuf {
+    let project = unique_dir("walrus-project");
+    fs::write(
+        project.join("walrus.py"),
+        "def capture(obj, xs, key, a, b):\n    literal = (local := 42)\n    name = (same := literal)\n    attr = (x := obj.name)\n    item = (y := xs[key])\n    slice_value = (z := xs[a:b])\n    if (guard := obj.flag):\n        return attr\n    while (line := xs[key]):\n        return line\n    return slice_value\n",
+    )
+    .expect("write walrus.py");
+
+    let provekit = project.join(".provekit");
+    fs::create_dir_all(provekit.join("lift").join("python-source"))
+        .expect("mkdir .provekit/lift/python-source");
+    fs::write(
+        provekit.join("config.toml"),
+        r#"[[plugins]]
+name = "python-source"
+kind = "lift"
+surface = "python-source"
+"#,
+    )
+    .expect("write config.toml");
+    fs::write(
+        provekit
+            .join("lift")
+            .join("python-source")
+            .join("manifest.toml"),
+        format!(
+            r#"name = "python-source"
+version = "0.1.0-draft"
+protocol_version = "provekit-lift/1"
+kind = "lift"
+command = ["{}", "--rpc"]
+working_dir = "."
+
+[capabilities]
+authoring_surfaces = ["python-source"]
+ir_version = "v1.1.0"
+emits_signed_mementos = false
+"#,
+            lift_script.display()
+        ),
+    )
+    .expect("write manifest.toml");
+
+    project
+}
+
 fn stage_python_augassign_project(lift_script: &Path) -> PathBuf {
     let project = unique_dir("augassign-project");
     fs::write(
@@ -1642,6 +1688,116 @@ fn python_source_slice_annassign_mint_preserves_runtime_failure_loci_and_enumera
             (Some(15), true),
         ],
         "no bridges exist yet, so surfaced slice AnnAssign callsites must remain undecidable"
+    );
+
+    let _ = fs::remove_dir_all(&project);
+}
+
+#[test]
+fn python_source_walrus_mint_preserves_rhs_runtime_failure_loci_and_enumerates_callsites() {
+    if !python_available() {
+        eprintln!("python3 not on PATH: skipping python-source walrus runtime-failure mint test");
+        return;
+    }
+    let lift_script = build_python_lift_source();
+    let project = stage_python_walrus_project(&lift_script);
+    run_mint(&project);
+
+    let pool = provekit_verifier::load_all_proofs::run(&project);
+    assert!(
+        pool.load_errors.is_empty(),
+        "python-source walrus proof must load cleanly: {:?}",
+        pool.load_errors
+    );
+
+    let xs_key = ir_subscript(ir_var("xs"), ir_var("key"));
+    let loci = contract_runtime_failure_loci(&pool);
+    assert_eq!(
+        loci,
+        vec![
+            json!({
+                "effectKind": "concept:panic-freedom",
+                "callee": RUNTIME_FAILURE_SITE_CONCEPT,
+                "subkind": "attribute-access",
+                "exceptionClass": "AttributeError",
+                "argTerm": ir_attr(ir_var("obj"), "name"),
+                "file": "walrus.py",
+                "line": 4,
+                "col": 17
+            }),
+            json!({
+                "effectKind": "concept:panic-freedom",
+                "callee": RUNTIME_FAILURE_SITE_CONCEPT,
+                "subkind": "subscript-access",
+                "argTerm": xs_key,
+                "file": "walrus.py",
+                "line": 5,
+                "col": 17
+            }),
+            json!({
+                "effectKind": "concept:panic-freedom",
+                "callee": RUNTIME_FAILURE_SITE_CONCEPT,
+                "subkind": "subscript-access",
+                "argTerm": ir_subscript(
+                    ir_var("xs"),
+                    ir_slice(ir_var("a"), ir_var("b"), ir_none())
+                ),
+                "file": "walrus.py",
+                "line": 6,
+                "col": 24
+            }),
+            json!({
+                "effectKind": "concept:panic-freedom",
+                "callee": RUNTIME_FAILURE_SITE_CONCEPT,
+                "subkind": "attribute-access",
+                "exceptionClass": "AttributeError",
+                "argTerm": ir_attr(ir_var("obj"), "flag"),
+                "file": "walrus.py",
+                "line": 7,
+                "col": 17
+            }),
+            json!({
+                "effectKind": "concept:panic-freedom",
+                "callee": RUNTIME_FAILURE_SITE_CONCEPT,
+                "subkind": "subscript-access",
+                "argTerm": ir_subscript(ir_var("xs"), ir_var("key")),
+                "file": "walrus.py",
+                "line": 9,
+                "col": 19
+            }),
+        ],
+        "mint must preserve python-source walrus RHS runtime-failure panicLoci rows"
+    );
+
+    let callsites = provekit_verifier::enumerate_callsites::run(&pool);
+    let runtime_failure_sites: Vec<_> = callsites
+        .iter()
+        .filter(|cs| cs.panic_site && cs.callee.as_deref() == Some(RUNTIME_FAILURE_SITE_CONCEPT))
+        .collect();
+    assert_eq!(
+        runtime_failure_sites.len(),
+        5,
+        "verifier must surface five walrus RHS runtime-failure obligations; got {callsites:#?}"
+    );
+    assert!(
+        runtime_failure_sites
+            .iter()
+            .all(|cs| cs.file.as_deref() == Some("walrus.py")),
+        "all surfaced walrus callsites must preserve walrus.py provenance: {runtime_failure_sites:#?}"
+    );
+    assert_eq!(
+        runtime_failure_sites
+            .iter()
+            .map(|cs| (cs.line, cs.bridge_target_cid.is_empty()))
+            .collect::<Vec<_>>(),
+        vec![
+            (Some(4), true),
+            (Some(5), true),
+            (Some(6), true),
+            (Some(7), true),
+            (Some(9), true),
+        ],
+        "no bridges exist yet, so surfaced walrus callsites must remain undecidable"
     );
 
     let _ = fs::remove_dir_all(&project);

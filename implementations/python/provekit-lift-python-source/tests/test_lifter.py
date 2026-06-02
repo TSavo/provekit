@@ -176,6 +176,22 @@ def _ann_assign(
     }
 
 
+def _walrus(target: dict[str, object], value: dict[str, object]) -> dict[str, object]:
+    return {
+        "kind": "ctor",
+        "name": "python:walrus",
+        "args": [target, value],
+    }
+
+
+def _call(name: str, *args: dict[str, object]) -> dict[str, object]:
+    return {
+        "kind": "ctor",
+        "name": "python:call",
+        "args": [_str_const(name), *args],
+    }
+
+
 def _ctor_names(node: object) -> list[str]:
     if isinstance(node, dict):
         names = [str(node["name"])] if node.get("kind") == "ctor" else []
@@ -330,6 +346,162 @@ def test_compare_three_chain_mixed_ops_lifts_to_pairwise_and_composition(
     assert result.refusals == []
     assert _compare_pairs(body) == expected_pairs
     assert _ctor_names(body).count("python:and") == 2
+
+
+def test_walrus_literal_rhs_lifts_without_runtime_failure_loci_or_effects() -> None:
+    source = "def f():\n    return (x := 42)\n"
+
+    result = lift_source(source, "walrus_literal.py")
+
+    contract = _contract(result.ir, ".f")
+    body = contract["post"]["args"][1]
+    assert result.refusals == []
+    assert contract["effects"] == []
+    assert contract.get("panicLoci", []) == []
+    assert body == {
+        "kind": "ctor",
+        "name": "python:return",
+        "args": [
+            _walrus(
+                _var("x"),
+                {"kind": "const", "value": 42, "sort": {"kind": "primitive", "name": "Int"}},
+            )
+        ],
+    }
+
+
+def test_walrus_name_rhs_lifts_to_expression_position_assignment() -> None:
+    source = "def f(y):\n    return (x := y)\n"
+
+    result = lift_source(source, "walrus_name.py")
+
+    contract = _contract(result.ir, ".f")
+    body = contract["post"]["args"][1]
+    assert result.refusals == []
+    assert contract["effects"] == []
+    assert contract.get("panicLoci", []) == []
+    assert body["args"][0] == _walrus(_var("x"), _var("y"))
+
+
+def test_walrus_attribute_rhs_preserves_attribute_runtime_failure_locus() -> None:
+    source = "def f(obj):\n    return (x := obj.name)\n"
+
+    result = lift_source(source, "walrus_attr.py")
+
+    contract = _contract(result.ir, ".f")
+    target = _attr(_var("obj"), "name")
+    loci = _runtime_failure_loci(contract)
+    body = contract["post"]["args"][1]
+    assert result.refusals == []
+    assert contract["effects"] == [{"kind": "panics"}]
+    assert [locus["subkind"] for locus in loci] == ["attribute-access"]
+    assert [locus["argTerm"] for locus in loci] == [target]
+    assert [(locus["line"], locus["col"]) for locus in loci] == [(2, 17)]
+    assert [locus.get("exceptionClass") for locus in loci] == ["AttributeError"]
+    assert body["args"][0] == _walrus(_var("x"), target)
+
+
+def test_walrus_subscript_rhs_preserves_subscript_runtime_failure_locus() -> None:
+    source = "def f(xs, key):\n    return (x := xs[key])\n"
+
+    result = lift_source(source, "walrus_subscript.py")
+
+    contract = _contract(result.ir, ".f")
+    target = _subscript(_var("xs"), _var("key"))
+    loci = _runtime_failure_loci(contract)
+    body = contract["post"]["args"][1]
+    assert result.refusals == []
+    assert contract["effects"] == [{"kind": "panics"}]
+    assert [locus["subkind"] for locus in loci] == ["subscript-access"]
+    assert [locus["argTerm"] for locus in loci] == [target]
+    assert [(locus["line"], locus["col"]) for locus in loci] == [(2, 17)]
+    assert body["args"][0] == _walrus(_var("x"), target)
+
+
+def test_walrus_slice_rhs_preserves_slice_runtime_failure_locus() -> None:
+    source = "def f(xs, a, b):\n    return (x := xs[a:b])\n"
+
+    result = lift_source(source, "walrus_slice.py")
+
+    contract = _contract(result.ir, ".f")
+    target = _subscript(_var("xs"), _slice(_var("a"), _var("b"), _none_const()))
+    loci = _runtime_failure_loci(contract)
+    body = contract["post"]["args"][1]
+    assert result.refusals == []
+    assert contract["effects"] == [{"kind": "panics"}]
+    assert [locus["subkind"] for locus in loci] == ["subscript-access"]
+    assert [locus["argTerm"] for locus in loci] == [target]
+    assert [(locus["line"], locus["col"]) for locus in loci] == [(2, 17)]
+    assert body["args"][0] == _walrus(_var("x"), target)
+
+
+def test_walrus_if_condition_lifts_condition_as_expression() -> None:
+    source = (
+        "def f(compute, fallback):\n"
+        "    if (x := compute()):\n"
+        "        return x\n"
+        "    return fallback\n"
+    )
+
+    result = lift_source(source, "walrus_if.py")
+
+    contract = _contract(result.ir, ".f")
+    body = contract["post"]["args"][1]
+    assert result.refusals == []
+    assert contract["effects"] == [{"kind": "unresolved_call", "name": "compute"}]
+    assert contract.get("panicLoci", []) == []
+    assert body["name"] == "python:seq"
+    condition = body["args"][0]
+    assert condition["name"] == "python:if"
+    assert condition["args"][0] == _walrus(_var("x"), _call("compute"))
+
+
+def test_walrus_while_condition_lifts_condition_as_expression() -> None:
+    source = (
+        "def f(next_value):\n"
+        "    while (x := next_value()):\n"
+        "        return x\n"
+        "    return None\n"
+    )
+
+    result = lift_source(source, "walrus_while.py")
+
+    contract = _contract(result.ir, ".f")
+    body = contract["post"]["args"][1]
+    assert result.refusals == []
+    assert {"kind": "unresolved_call", "name": "next_value"} in contract["effects"]
+    assert any(effect["kind"] == "opaque_loop" for effect in contract["effects"])
+    assert contract.get("panicLoci", []) == []
+    assert body["name"] == "python:seq"
+    loop = body["args"][0]
+    assert loop["name"] == "python:while"
+    assert loop["args"][0] == _walrus(_var("x"), _call("next_value"))
+
+
+@pytest.mark.parametrize(
+    "source",
+    [
+        "def f(y):\n    return (x := y)\n",
+        "def f(compute, fallback):\n    if (x := compute()):\n        return x\n    return fallback\n",
+    ],
+)
+def test_compile_lift_roundtrip_preserves_walrus_body(source: str) -> None:
+    lifted = lift_source(source, "roundtrip_walrus.py")
+    assert lifted.refusals == []
+    contract = _contract(lifted.ir, ".f")
+    body = contract["post"]["args"][1]
+
+    compiled = compile_body_term(
+        body,
+        fn_name="f",
+        formals=[str(formal) for formal in contract["formals"]],
+    )
+    relifted = lift_source(compiled, "roundtrip_walrus.py")
+    assert relifted.refusals == []
+    relifted_body = _contract(relifted.ir, ".f")["post"]["args"][1]
+
+    assert canonical_json_bytes(relifted_body) == canonical_json_bytes(body)
+    assert ":=" in compiled
 
 
 def test_if_is_none_lifts_to_cf_guarded_option_guards() -> None:
@@ -2036,9 +2208,9 @@ def test_compile_lift_roundtrip_preserves_name_annassign_explicit_none_value() -
             "unsupported assignment target: List",
         ),
         (
-            "def f(value):\n    if (x := value):\n        return x\n    return value\n",
-            "walrus_refusal.py",
-            "walrus expressions are refused",
+            "def f(xs, compute):\n    return [y for x in xs if (y := compute(x))]\n",
+            "walrus_listcomp_refusal.py",
+            "unhandled expression kind: ListComp",
         ),
     ],
 )
