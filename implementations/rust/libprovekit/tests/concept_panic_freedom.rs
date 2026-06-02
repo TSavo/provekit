@@ -49,6 +49,10 @@ fn panic_freedom_constants_keep_existing_wire_tokens() {
         panic_freedom::METHOD_UNWRAP_ERR_CONCEPT,
         "concept:panic-freedom.leaf.unwrap-err"
     );
+    assert_eq!(
+        panic_freedom::RUNTIME_FAILURE_SITE_CONCEPT,
+        "concept:panic-freedom.leaf.runtime-failure-site"
+    );
 }
 
 #[test]
@@ -133,6 +137,10 @@ fn leaf_method_concept_aliases_normalize_to_v1_wire_tokens() {
     assert_eq!(
         panic_freedom::normalize_leaf_method_name(panic_freedom::METHOD_UNWRAP_ERR_CONCEPT),
         panic_freedom::METHOD_UNWRAP_ERR
+    );
+    assert_eq!(
+        panic_freedom::normalize_leaf_method_name(panic_freedom::RUNTIME_FAILURE_SITE_CONCEPT),
+        panic_freedom::RUNTIME_FAILURE_SITE_CONCEPT
     );
 
     assert_eq!(

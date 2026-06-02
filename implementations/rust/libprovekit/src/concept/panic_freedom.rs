@@ -60,6 +60,9 @@ pub const METHOD_UNWRAP_ERR: &str = "method:unwrap_err";
 /// Substrate panic-freedom unwrap-err leaf alias; see `SUBSTRATE-SHAPE-AUDIT.md`.
 pub const METHOD_UNWRAP_ERR_CONCEPT: &str = "concept:panic-freedom.leaf.unwrap-err";
 
+/// Substrate panic-freedom runtime-failure-site leaf; see `SUBSTRATE-SHAPE-AUDIT.md`.
+pub const RUNTIME_FAILURE_SITE_CONCEPT: &str = "concept:panic-freedom.leaf.runtime-failure-site";
+
 /// Normalize result predicate aliases to the Rust v1 wire token.
 ///
 /// Phase 4 readers accept the concept aliases without changing default Rust v1
