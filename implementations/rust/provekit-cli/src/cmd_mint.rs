@@ -48,7 +48,7 @@ use base64::Engine;
 use clap::Parser;
 use owo_colors::OwoColorize;
 use serde_json::{json, Value};
-use tracing::{debug, info};
+use tracing::{debug, info, warn};
 
 use libprovekit::core::{
     address, Boundary, Cid, Dialect, Domain, DomainClaim, DomainKind, FunctionContractDomain,
@@ -57,9 +57,9 @@ use libprovekit::core::{
 };
 use provekit_canonicalizer::{blake3_512_of, encode_jcs, Value as CValue};
 use provekit_claim_envelope::{
-    compute_contract_set_cid, contract_cid, mint_authority, mint_bridge, mint_contract,
-    mint_implication, Authoring, BridgeCallsite, MintAuthorityArgs, MintBridgeArgs,
-    MintContractArgs, MintImplicationArgs,
+    body_discharge_policy_from_fields, compute_contract_set_cid, contract_cid, mint_authority,
+    mint_bridge, mint_contract, mint_implication, Authoring, BodyDischargePolicyWarning,
+    BridgeCallsite, MintAuthorityArgs, MintBridgeArgs, MintContractArgs, MintImplicationArgs,
 };
 use provekit_ir_types::Sort;
 use provekit_proof_envelope::{
@@ -77,6 +77,37 @@ use crate::{EXIT_OK, EXIT_USER_ERROR, EXIT_VERIFY_FAIL};
 // ---------------------------------------------------------------------------
 // Foundation signing constants
 // ---------------------------------------------------------------------------
+
+fn log_body_discharge_policy_warnings(
+    context: &str,
+    contract: &str,
+    warnings: &[BodyDischargePolicyWarning],
+) {
+    for warning in warnings {
+        match warning {
+            BodyDischargePolicyWarning::Disagreement {
+                legacy_eligible,
+                legacy_reason,
+                policy_eligible,
+                policy_reason,
+            } => warn!(
+                context = %context,
+                contract = %contract,
+                legacy_eligible = *legacy_eligible,
+                legacy_reason = ?legacy_reason,
+                policy_eligible = *policy_eligible,
+                policy_reason = ?policy_reason,
+                "body-discharge-disagreement: dischargePolicy/bodyDischarge* disagree; using legacy bodyDischarge*"
+            ),
+            BodyDischargePolicyWarning::Malformed { reason } => warn!(
+                context = %context,
+                contract = %contract,
+                reason = %reason,
+                "body-discharge-malformed: ignoring malformed dischargePolicy"
+            ),
+        }
+    }
+}
 
 /// The v0 foundation seed. PUBLICLY KNOWN. Same seed used by foundation-keygen.
 const FOUNDATION_V0_SEED: Ed25519Seed = [0x42u8; 32];
@@ -928,14 +959,20 @@ fn contract_bindings_from_dependency_proofs(project_root: &Path) -> Vec<Value> {
             Some(n) => n.to_string(),
             None => continue,
         };
-        let body_discharge_eligible = memento_body_field(env, "bodyDischargeEligible")
-            .or_else(|| memento_body_field(env, "body_discharge_eligible"))
-            .and_then(|v| v.as_bool())
-            .unwrap_or(true);
-        let body_discharge_refusal_reason = memento_body_field(env, "bodyDischargeRefusalReason")
-            .or_else(|| memento_body_field(env, "body_discharge_refusal_reason"))
-            .and_then(|v| v.as_str())
-            .map(|s| s.to_string());
+        let body_policy = body_discharge_policy_from_fields(
+            memento_body_field(env, "bodyDischargeEligible")
+                .or_else(|| memento_body_field(env, "body_discharge_eligible")),
+            memento_body_field(env, "bodyDischargeRefusalReason")
+                .or_else(|| memento_body_field(env, "body_discharge_refusal_reason")),
+            memento_body_field(env, "dischargePolicy"),
+        );
+        log_body_discharge_policy_warnings(
+            "mint-dependency-contract-binding",
+            &name,
+            &body_policy.warnings,
+        );
+        let body_discharge_eligible = body_policy.body_discharge_eligible;
+        let body_discharge_refusal_reason = body_policy.body_discharge_refusal_reason;
         // The dependency crate this contract belongs to (the lifter stamped it
         // at mint, the CLI forwards it opaquely).
         let library = memento_body_field(env, "library")
@@ -1803,16 +1840,20 @@ fn mint_ir_document(
             }
             None => Vec::new(),
         };
-        let body_discharge_eligible = decl
-            .get("bodyDischargeEligible")
-            .or_else(|| decl.get("body_discharge_eligible"))
-            .and_then(|v| v.as_bool())
-            .unwrap_or(true);
-        let body_discharge_refusal_reason = decl
-            .get("bodyDischargeRefusalReason")
-            .or_else(|| decl.get("body_discharge_refusal_reason"))
-            .and_then(|v| v.as_str())
-            .map(|s| s.to_string());
+        let body_policy = body_discharge_policy_from_fields(
+            decl.get("bodyDischargeEligible")
+                .or_else(|| decl.get("body_discharge_eligible")),
+            decl.get("bodyDischargeRefusalReason")
+                .or_else(|| decl.get("body_discharge_refusal_reason")),
+            decl.get("dischargePolicy"),
+        );
+        log_body_discharge_policy_warnings(
+            "mint-ir-contract-decl",
+            &name,
+            &body_policy.warnings,
+        );
+        let body_discharge_eligible = body_policy.body_discharge_eligible;
+        let body_discharge_refusal_reason = body_policy.body_discharge_refusal_reason;
         // A bridge is written only when this contract is a body-bearing
         // function target: it carries a `post` AND an explicit `formals`
         // field. Presence is the marker, not non-emptiness: zero-arg
@@ -3815,6 +3856,128 @@ mod tests {
                 .count(),
             2
         );
+
+        let _ = std::fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn dependency_contract_bindings_accept_discharge_policy_body_reduction_refused() {
+        let root = temp_workspace("dependency_contract_discharge_policy_refused");
+        let imports_dir = root.join(".provekit").join("imports");
+        std::fs::create_dir_all(&imports_dir).expect("create imports dir");
+        let signer_seed: Ed25519Seed = [0x42; 32];
+        let produced_at = "2026-06-01T00:00:00.000Z".to_string();
+        let contract = mint_contract(&MintContractArgs {
+            contract_name: "new_policy_dep".to_string(),
+            pre: None,
+            post: Some(json_to_cvalue(&json!({
+                "kind": "atomic",
+                "name": "=",
+                "args": [
+                    {"kind": "var", "name": "result"},
+                    {"kind": "var", "name": "x"}
+                ]
+            }))),
+            inv: None,
+            out_binding: "result".to_string(),
+            produced_by: "test".to_string(),
+            produced_at: produced_at.clone(),
+            input_cids: Vec::new(),
+            authoring: Authoring::KitAuthor {
+                author: "test".to_string(),
+                note: None,
+            },
+            signer_seed,
+            formals: vec!["x".to_string()],
+            emit_empty_formals: false,
+            formal_sorts: Vec::new(),
+            library: Some("dep_lib".to_string()),
+            body_discharge_eligible: true,
+            body_discharge_refusal_reason: None,
+            panic_loci: Vec::new(),
+        })
+        .expect("mint contract");
+        let mut env: Value =
+            serde_json::from_slice(&contract.canonical_bytes).expect("parse memento");
+        env.pointer_mut("/metadata")
+            .and_then(|v| v.as_object_mut())
+            .expect("metadata object")
+            .insert(
+                "dischargePolicy".to_string(),
+                json!({
+                    "bodyReduction": {
+                        "status": "refused",
+                        "reason": "totality-axiom"
+                    }
+                }),
+            );
+
+        let mut members = BTreeMap::new();
+        members.insert(
+            contract.cid,
+            serde_json::to_vec(&env).expect("serialize mutated memento"),
+        );
+        let proof = build_proof_envelope(&ProofEnvelopeInput {
+            name: "dependency-policy-fixture".to_string(),
+            version: "1.0.0".to_string(),
+            binary_cid: None,
+            metadata: None,
+            members,
+            signer_cid: ed25519_pubkey_string(&signer_seed),
+            signer_seed,
+            declared_at: produced_at,
+        });
+        std::fs::write(imports_dir.join(format!("{}.proof", proof.cid)), proof.bytes)
+            .expect("write dependency proof");
+
+        let bindings = contract_bindings_from_dependency_proofs(&root);
+        let binding = bindings
+            .iter()
+            .find(|binding| binding["name"] == "new_policy_dep")
+            .unwrap_or_else(|| panic!("missing new_policy_dep binding: {bindings:#?}"));
+
+        assert_eq!(binding["bodyDischargeEligible"], false);
+        assert_eq!(binding["bodyDischargeRefusalReason"], "totality-axiom");
+
+        let _ = std::fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn mint_ir_document_accepts_discharge_policy_body_reduction_refused() {
+        let root = temp_workspace("mint_ir_document_discharge_policy_refused");
+        let out_dir = root.join("out");
+        std::fs::create_dir_all(&out_dir).expect("create out dir");
+        let ir = vec![json!({
+            "kind": "function-contract",
+            "name": "totality_axiom",
+            "outBinding": "result",
+            "formals": ["x"],
+            "post": {
+                "kind": "atomic",
+                "name": "=",
+                "args": [
+                    {"kind": "var", "name": "result"},
+                    {"kind": "var", "name": "x"}
+                ]
+            },
+            "dischargePolicy": {
+                "bodyReduction": {
+                    "status": "refused",
+                    "reason": "totality-axiom"
+                }
+            }
+        })];
+
+        let minted =
+            mint_ir_document(&ir, None, None, None, &root, &out_dir, true).expect("mint");
+        let binding = minted
+            .contract_bindings
+            .iter()
+            .find(|binding| binding["name"] == "totality_axiom")
+            .unwrap_or_else(|| panic!("missing totality_axiom binding: {:#?}", minted.contract_bindings));
+
+        assert_eq!(binding["bodyDischargeEligible"], false);
+        assert_eq!(binding["bodyDischargeRefusalReason"], "totality-axiom");
 
         let _ = std::fs::remove_dir_all(root);
     }

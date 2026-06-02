@@ -34,6 +34,7 @@ use std::sync::Arc;
 
 use provekit_canonicalizer::{blake3_512_of, encode_jcs, Value};
 use provekit_proof_envelope::{ed25519_pubkey_string, ed25519_sign_string, Ed25519Seed};
+use serde_json::Value as JsonValue;
 
 #[derive(Debug, thiserror::Error)]
 pub enum ClaimEnvelopeError {
@@ -293,6 +294,175 @@ pub struct MintContractArgs {
     /// `verdict`): the locus is developer-facing provenance, not part of what is
     /// proven, so it must not move the contract identity. Empty omits the key.
     pub panic_loci: Vec<Arc<Value>>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct BodyDischargePolicy {
+    pub body_discharge_eligible: bool,
+    pub body_discharge_refusal_reason: Option<String>,
+    pub warnings: Vec<BodyDischargePolicyWarning>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum BodyDischargePolicyWarning {
+    Disagreement {
+        legacy_eligible: bool,
+        legacy_reason: Option<String>,
+        policy_eligible: bool,
+        policy_reason: Option<String>,
+    },
+    Malformed {
+        reason: String,
+    },
+}
+
+pub fn body_discharge_policy_from_object(entry: &JsonValue) -> BodyDischargePolicy {
+    body_discharge_policy_from_object_with_default(entry, true)
+}
+
+pub fn body_discharge_policy_from_object_with_default(
+    entry: &JsonValue,
+    default_eligible: bool,
+) -> BodyDischargePolicy {
+    body_discharge_policy_from_fields_with_default(
+        entry.get("bodyDischargeEligible")
+            .or_else(|| entry.get("body_discharge_eligible")),
+        entry.get("bodyDischargeRefusalReason")
+            .or_else(|| entry.get("body_discharge_refusal_reason")),
+        entry.get("dischargePolicy"),
+        default_eligible,
+    )
+}
+
+pub fn body_discharge_policy_from_fields(
+    legacy_eligible: Option<&JsonValue>,
+    legacy_reason: Option<&JsonValue>,
+    discharge_policy: Option<&JsonValue>,
+) -> BodyDischargePolicy {
+    body_discharge_policy_from_fields_with_default(
+        legacy_eligible,
+        legacy_reason,
+        discharge_policy,
+        true,
+    )
+}
+
+pub fn body_discharge_policy_from_fields_with_default(
+    legacy_eligible: Option<&JsonValue>,
+    legacy_reason: Option<&JsonValue>,
+    discharge_policy: Option<&JsonValue>,
+    default_eligible: bool,
+) -> BodyDischargePolicy {
+    let legacy_eligible = legacy_eligible.and_then(JsonValue::as_bool);
+    let legacy_reason = legacy_reason
+        .and_then(JsonValue::as_str)
+        .map(str::to_string);
+    let legacy_present = legacy_eligible.is_some() || legacy_reason.is_some();
+    let legacy_policy = (
+        legacy_eligible.unwrap_or(default_eligible),
+        legacy_reason.clone(),
+    );
+
+    let (policy, mut warnings) = parse_body_reduction(discharge_policy);
+    match policy {
+        Some((policy_eligible, policy_reason)) if legacy_present => {
+            if legacy_policy != (policy_eligible, policy_reason.clone()) {
+                warnings.push(BodyDischargePolicyWarning::Disagreement {
+                    legacy_eligible: legacy_policy.0,
+                    legacy_reason: legacy_policy.1.clone(),
+                    policy_eligible,
+                    policy_reason,
+                });
+            }
+            BodyDischargePolicy {
+                body_discharge_eligible: legacy_policy.0,
+                body_discharge_refusal_reason: legacy_policy.1,
+                warnings,
+            }
+        }
+        Some((policy_eligible, policy_reason)) => BodyDischargePolicy {
+            body_discharge_eligible: policy_eligible,
+            body_discharge_refusal_reason: policy_reason,
+            warnings,
+        },
+        None => BodyDischargePolicy {
+            body_discharge_eligible: legacy_policy.0,
+            body_discharge_refusal_reason: legacy_policy.1,
+            warnings,
+        },
+    }
+}
+
+fn parse_body_reduction(
+    discharge_policy: Option<&JsonValue>,
+) -> (
+    Option<(bool, Option<String>)>,
+    Vec<BodyDischargePolicyWarning>,
+) {
+    let Some(discharge_policy) = discharge_policy else {
+        return (None, Vec::new());
+    };
+    let Some(policy_object) = discharge_policy.as_object() else {
+        return (
+            None,
+            vec![BodyDischargePolicyWarning::Malformed {
+                reason: "dischargePolicy must be an object".to_string(),
+            }],
+        );
+    };
+    let Some(body_reduction) = policy_object.get("bodyReduction") else {
+        return (None, Vec::new());
+    };
+    let Some(body_reduction_object) = body_reduction.as_object() else {
+        return (
+            None,
+            vec![BodyDischargePolicyWarning::Malformed {
+                reason: "dischargePolicy.bodyReduction must be an object".to_string(),
+            }],
+        );
+    };
+    let Some(status) = body_reduction_object
+        .get("status")
+        .and_then(JsonValue::as_str)
+    else {
+        return (
+            None,
+            vec![BodyDischargePolicyWarning::Malformed {
+                reason: "dischargePolicy.bodyReduction.status must be a string".to_string(),
+            }],
+        );
+    };
+
+    match status {
+        "allowed" => (Some((true, None)), Vec::new()),
+        "refused" => {
+            let reason = match body_reduction_object.get("reason") {
+                Some(reason) => match reason.as_str() {
+                    Some(reason) => Some(reason.to_string()),
+                    None => {
+                        return (
+                            None,
+                            vec![BodyDischargePolicyWarning::Malformed {
+                                reason:
+                                    "dischargePolicy.bodyReduction.reason must be a string"
+                                        .to_string(),
+                            }],
+                        )
+                    }
+                },
+                None => None,
+            };
+            (Some((false, reason)), Vec::new())
+        }
+        other => (
+            None,
+            vec![BodyDischargePolicyWarning::Malformed {
+                reason: format!(
+                    "dischargePolicy.bodyReduction.status must be allowed or refused, got {other}"
+                ),
+            }],
+        ),
+    }
 }
 
 // =============================================================================
@@ -995,6 +1165,148 @@ mod tests {
 
     fn dummy_seed() -> Ed25519Seed {
         [0x42; 32]
+    }
+
+    #[test]
+    fn body_discharge_policy_accepts_new_allowed() {
+        let entry = serde_json::json!({
+            "dischargePolicy": {
+                "bodyReduction": {
+                    "status": "allowed"
+                }
+            }
+        });
+
+        let policy = body_discharge_policy_from_object(&entry);
+
+        assert!(policy.body_discharge_eligible);
+        assert_eq!(policy.body_discharge_refusal_reason, None);
+        assert!(policy.warnings.is_empty());
+    }
+
+    #[test]
+    fn body_discharge_policy_accepts_new_refused_with_reason() {
+        let entry = serde_json::json!({
+            "dischargePolicy": {
+                "bodyReduction": {
+                    "status": "refused",
+                    "reason": "totality-axiom"
+                }
+            }
+        });
+
+        let policy = body_discharge_policy_from_object(&entry);
+
+        assert!(!policy.body_discharge_eligible);
+        assert_eq!(
+            policy.body_discharge_refusal_reason.as_deref(),
+            Some("totality-axiom")
+        );
+        assert!(policy.warnings.is_empty());
+    }
+
+    #[test]
+    fn body_discharge_policy_keeps_snake_case_legacy_fields() {
+        let entry = serde_json::json!({
+            "body_discharge_eligible": false,
+            "body_discharge_refusal_reason": "legacy-snake"
+        });
+
+        let policy = body_discharge_policy_from_object(&entry);
+
+        assert!(!policy.body_discharge_eligible);
+        assert_eq!(
+            policy.body_discharge_refusal_reason.as_deref(),
+            Some("legacy-snake")
+        );
+        assert!(policy.warnings.is_empty());
+    }
+
+    #[test]
+    fn body_discharge_policy_accepts_matching_legacy_and_policy_fields() {
+        let entry = serde_json::json!({
+            "bodyDischargeEligible": false,
+            "bodyDischargeRefusalReason": "totality-axiom",
+            "dischargePolicy": {
+                "bodyReduction": {
+                    "status": "refused",
+                    "reason": "totality-axiom"
+                }
+            }
+        });
+
+        let policy = body_discharge_policy_from_object(&entry);
+
+        assert!(!policy.body_discharge_eligible);
+        assert_eq!(
+            policy.body_discharge_refusal_reason.as_deref(),
+            Some("totality-axiom")
+        );
+        assert!(policy.warnings.is_empty());
+    }
+
+    #[test]
+    fn body_discharge_policy_legacy_wins_on_disagreement() {
+        let entry = serde_json::json!({
+            "bodyDischargeEligible": false,
+            "bodyDischargeRefusalReason": "legacy-refusal",
+            "dischargePolicy": {
+                "bodyReduction": {
+                    "status": "allowed"
+                }
+            }
+        });
+
+        let policy = body_discharge_policy_from_object(&entry);
+
+        assert!(!policy.body_discharge_eligible);
+        assert_eq!(
+            policy.body_discharge_refusal_reason.as_deref(),
+            Some("legacy-refusal")
+        );
+        assert!(matches!(
+            policy.warnings.as_slice(),
+            [BodyDischargePolicyWarning::Disagreement { .. }]
+        ));
+    }
+
+    #[test]
+    fn body_discharge_policy_malformed_warns_and_falls_back_to_legacy() {
+        let entry = serde_json::json!({
+            "bodyDischargeEligible": true,
+            "dischargePolicy": {
+                "bodyReduction": {
+                    "status": "maybe"
+                }
+            }
+        });
+
+        let policy = body_discharge_policy_from_object(&entry);
+
+        assert!(policy.body_discharge_eligible);
+        assert_eq!(policy.body_discharge_refusal_reason, None);
+        assert!(matches!(
+            policy.warnings.as_slice(),
+            [BodyDischargePolicyWarning::Malformed { .. }]
+        ));
+    }
+
+    #[test]
+    fn body_discharge_policy_ignores_foreign_policy_keys() {
+        let entry = serde_json::json!({
+            "dischargePolicy": {
+                "headerReduction": {
+                    "status": "refused",
+                    "reason": "not-this-policy"
+                }
+            }
+        });
+
+        let policy = body_discharge_policy_from_object_with_default(&entry, false);
+
+        assert!(!policy.body_discharge_eligible);
+        assert_eq!(policy.body_discharge_refusal_reason, None);
+        assert!(policy.warnings.is_empty());
     }
 
     #[test]
