@@ -51,6 +51,16 @@ def kit_declaration_result() -> dict[str, Any]:
                 "surface": SURFACE,
                 "local": "python:raise",
                 "concept": "concept:panic-freedom.leaf.runtime-failure-site",
+            },
+            {
+                "surface": SURFACE,
+                "local": "python:attribute",
+                "concept": "concept:panic-freedom.leaf.runtime-failure-site",
+            },
+            {
+                "surface": SURFACE,
+                "local": "python:subscript",
+                "concept": "concept:panic-freedom.leaf.runtime-failure-site",
             }
         ],
         "guardPredicates": [

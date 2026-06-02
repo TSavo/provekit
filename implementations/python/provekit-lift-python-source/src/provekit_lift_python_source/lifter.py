@@ -261,6 +261,7 @@ class _Emitter:
         self.effects = effects
         self.source_path = source_path
         self.panic_loci = panic_loci
+        self._suppress_runtime_failure_loci = 0
 
     def statements(self, statements: list[ast.stmt]) -> Json:
         emitted: list[Json] = []
@@ -323,21 +324,34 @@ class _Emitter:
         if isinstance(node, ast.Raise):
             self.effects.add_panics()
             value = none_const() if node.exc is None else self.expr(node.exc)
-            self.panic_loci.append(self.runtime_failure_locus(node, value))
+            self.panic_loci.append(
+                self.runtime_failure_locus(
+                    node,
+                    value,
+                    subkind="explicit-raise",
+                    exception_class=_exception_class(node.exc),
+                )
+            )
             return ctor("python:raise", value)
         raise _UnsupportedSyntax(node, f"unhandled statement kind: {type(node).__name__}")
 
-    def runtime_failure_locus(self, node: ast.Raise, arg_term: Json) -> Json:
+    def runtime_failure_locus(
+        self,
+        node: ast.AST,
+        arg_term: Json,
+        *,
+        subkind: str,
+        exception_class: str | None = None,
+    ) -> Json:
         locus = {
             "effectKind": PANIC_FREEDOM_EFFECT_KIND,
             "callee": RUNTIME_FAILURE_SITE_CONCEPT,
-            "subkind": "explicit-raise",
+            "subkind": subkind,
             "argTerm": arg_term,
             "file": self.source_path,
             "line": int(getattr(node, "lineno", 0) or 0),
             "col": int(getattr(node, "col_offset", 0) or 0),
         }
-        exception_class = _exception_class(node.exc)
         if exception_class:
             locus["exceptionClass"] = exception_class
         return locus
@@ -346,10 +360,30 @@ class _Emitter:
         if isinstance(node, ast.Name):
             return var(node.id)
         if isinstance(node, ast.Attribute):
-            return ctor("python:attribute", self.expr(node.value), str_const(node.attr))
+            return ctor(
+                "python:attribute",
+                self.store_target_expr(node.value),
+                str_const(node.attr),
+            )
         if isinstance(node, ast.Subscript):
-            return ctor("python:subscript", self.expr(node.value), self.subscript_index(node))
+            return ctor(
+                "python:subscript",
+                self.store_target_expr(node.value),
+                self.store_target_subscript_index(node),
+            )
         raise _UnsupportedSyntax(node, f"unsupported assignment target: {type(node).__name__}")
+
+    def store_target_expr(self, node: ast.expr) -> Json:
+        self._suppress_runtime_failure_loci += 1
+        try:
+            return self.expr(node)
+        finally:
+            self._suppress_runtime_failure_loci -= 1
+
+    def store_target_subscript_index(self, node: ast.Subscript) -> Json:
+        if isinstance(node.slice, ast.Slice):
+            raise _UnsupportedSyntax(node.slice, "slice subscripts are refused")
+        return self.store_target_expr(node.slice)
 
     def expr(self, node: ast.expr) -> Json:
         if isinstance(node, ast.Constant):
@@ -381,9 +415,30 @@ class _Emitter:
         if isinstance(node, ast.Call):
             return self.call(node)
         if isinstance(node, ast.Attribute):
-            return ctor("python:attribute", self.expr(node.value), str_const(node.attr))
+            term = ctor("python:attribute", self.expr(node.value), str_const(node.attr))
+            if self._suppress_runtime_failure_loci == 0:
+                self.effects.add_panics()
+                self.panic_loci.append(
+                    self.runtime_failure_locus(
+                        node,
+                        term,
+                        subkind="attribute-access",
+                        exception_class="AttributeError",
+                    )
+                )
+            return term
         if isinstance(node, ast.Subscript):
-            return ctor("python:subscript", self.expr(node.value), self.subscript_index(node))
+            term = ctor("python:subscript", self.expr(node.value), self.subscript_index(node))
+            if self._suppress_runtime_failure_loci == 0:
+                self.effects.add_panics()
+                self.panic_loci.append(
+                    self.runtime_failure_locus(
+                        node,
+                        term,
+                        subkind="subscript-access",
+                    )
+                )
+            return term
         raise _UnsupportedSyntax(node, f"unhandled expression kind: {type(node).__name__}")
 
     def constant(self, node: ast.Constant) -> Json:
@@ -429,6 +484,8 @@ class _Emitter:
         for arg in node.args:
             if isinstance(arg, ast.Starred):
                 raise _UnsupportedSyntax(arg, "starred call arguments are refused")
+        if isinstance(node.func, ast.Attribute):
+            self.expr(node.func)
         callee = _callee_name(node.func)
         if callee == "print":
             self.effects.add_io()
@@ -448,7 +505,7 @@ class _Emitter:
         then_branch: Json,
         else_branch: Json,
     ) -> Json | None:
-        guard = self.none_guard(test)
+        guard = self.none_guard(test, condition)
         if guard is None:
             return None
         then_head, else_head, receiver = guard
@@ -459,10 +516,19 @@ class _Emitter:
             substrate_ctor("cf_guarded", substrate_ctor(else_head, receiver), else_branch),
         )
 
-    def none_guard(self, test: ast.expr) -> tuple[str, str, Json] | None:
+    def none_guard(self, test: ast.expr, condition: Json) -> tuple[str, str, Json] | None:
         if not isinstance(test, ast.Compare):
             return None
         if len(test.ops) != 1 or len(test.comparators) != 1:
+            return None
+        if (
+            not isinstance(condition, dict)
+            or condition.get("kind") != "ctor"
+            or condition.get("name") != "python:compare"
+        ):
+            return None
+        condition_args = condition.get("args")
+        if not isinstance(condition_args, list) or len(condition_args) != 3:
             return None
         raw_op = test.ops[0]
         if not isinstance(raw_op, (ast.Is, ast.IsNot)):
@@ -470,9 +536,9 @@ class _Emitter:
         lhs = test.left
         rhs = test.comparators[0]
         if _is_none_literal(rhs) and not _is_none_literal(lhs):
-            receiver = self.expr(lhs)
+            receiver = condition_args[1]
         elif _is_none_literal(lhs) and not _is_none_literal(rhs):
-            receiver = self.expr(rhs)
+            receiver = condition_args[2]
         else:
             return None
         if isinstance(raw_op, ast.Is):
