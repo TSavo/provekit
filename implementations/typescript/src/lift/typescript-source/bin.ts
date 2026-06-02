@@ -13,6 +13,7 @@ import { normalizeTypeScriptSourceVerifyDocument } from "./verify.js";
 const DIALECT = "typescript-source";
 const SURFACE_ALIASES = new Set([DIALECT, "typescript-bind"]);
 const VERSION = "0.1.0-draft";
+const KIT_DECLARATION_RPC_METHOD = "provekit.plugin.kit_declaration";
 
 interface JsonRpcRequest {
   jsonrpc?: string;
@@ -68,11 +69,45 @@ function dispatch(request: JsonRpcRequest): Record<string, unknown> | null {
       return compileRpc(request);
     case "provekit.plugin.recognize":
       return recognizeRpc(request);
+    case KIT_DECLARATION_RPC_METHOD:
+      return success(request.id, kitDeclarationResult());
     case "shutdown":
       return success(request.id, null);
     default:
       return errorResponse(request.id ?? null, -32601, `METHOD_NOT_FOUND: ${request.method ?? ""}`);
   }
+}
+
+function kitDeclarationResult(): Record<string, unknown> {
+  return {
+    kit: {
+      id: DIALECT,
+      language: "typescript",
+      version: VERSION,
+    },
+    rpc: {
+      methods: [
+        { name: "initialize", required: true },
+        { name: KIT_DECLARATION_RPC_METHOD, required: true },
+        { name: "lift", required: true },
+        { name: "compile", required: false },
+        { name: "provekit.plugin.recognize", required: false },
+        { name: "shutdown", required: false },
+      ],
+    },
+    proofResolution: { strategy: "npm" },
+    effectKinds: ["concept:panic-freedom"],
+    effectLeaves: [
+      {
+        surface: DIALECT,
+        local: "ts:throw",
+        concept: "concept:panic-freedom.leaf.runtime-failure-site",
+      },
+    ],
+    guardPredicates: [],
+    controlCarriers: [],
+    residueCategories: [],
+  };
 }
 
 function liftRpc(request: JsonRpcRequest): Record<string, unknown> {

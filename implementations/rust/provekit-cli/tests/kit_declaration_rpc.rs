@@ -1,9 +1,21 @@
 use std::fs;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 
 use tempfile::TempDir;
 
 use provekit_claim_envelope::{KitDeclaration, KIT_DECLARATION_RPC_METHOD};
+
+fn repo_root() -> PathBuf {
+    Path::new(env!("CARGO_MANIFEST_DIR"))
+        .ancestors()
+        .nth(3)
+        .expect("repo root")
+        .to_path_buf()
+}
+
+fn typescript_env_enabled() -> bool {
+    std::env::var("BCARGO_TYPESCRIPT_ENV").map_or(false, |value| value == "1")
+}
 
 fn make_executable(path: &Path, body: &str) {
     fs::write(path, body).expect("write stub");
@@ -204,6 +216,67 @@ done
         .methods
         .iter()
         .any(|method| method.name == "provekit.plugin.lift_implications"));
+}
+
+#[test]
+fn loader_dispatches_to_typescript_source_kit_declaration() {
+    if !typescript_env_enabled() {
+        eprintln!("skipping: BCARGO_TYPESCRIPT_ENV is not enabled");
+        return;
+    }
+
+    let repo = repo_root();
+    let typescript_dir = repo.join("implementations/typescript");
+    let command = [
+        "npx".to_string(),
+        "tsx".to_string(),
+        "src/lift/typescript-source/bin.ts".to_string(),
+        "--rpc".to_string(),
+    ];
+
+    let declaration: KitDeclaration =
+        provekit_cli::kit_declaration::load_kit_declaration_with_command(
+            &command,
+            Some(&typescript_dir),
+        )
+        .expect("load TypeScript source kit declaration");
+
+    assert_eq!(declaration.kit.id, "typescript-source");
+    assert_eq!(declaration.kit.language, "typescript");
+    assert_eq!(declaration.kit.version, "0.1.0-draft");
+    assert_eq!(declaration.proof_resolution.strategy, "npm");
+    assert_eq!(declaration.effect_kinds, ["concept:panic-freedom"]);
+    assert_eq!(declaration.effect_leaves.len(), 1);
+    assert_eq!(
+        declaration.effect_leaves[0].surface.as_deref(),
+        Some("typescript-source")
+    );
+    assert_eq!(declaration.effect_leaves[0].local, "ts:throw");
+    assert_eq!(
+        declaration.effect_leaves[0].concept,
+        "concept:panic-freedom.leaf.runtime-failure-site"
+    );
+    assert!(declaration.guard_predicates.is_empty());
+    assert!(declaration.control_carriers.is_empty());
+    assert!(declaration.residue_categories.is_empty());
+
+    let required_by_name = declaration
+        .rpc
+        .methods
+        .iter()
+        .map(|method| (method.name.as_str(), method.required))
+        .collect::<std::collections::BTreeMap<_, _>>();
+    assert_eq!(
+        required_by_name,
+        std::collections::BTreeMap::from([
+            ("initialize", true),
+            (KIT_DECLARATION_RPC_METHOD, true),
+            ("lift", true),
+            ("compile", false),
+            ("provekit.plugin.recognize", false),
+            ("shutdown", false),
+        ])
+    );
 }
 
 #[test]
