@@ -106,6 +106,40 @@ def test_walk_none_precondition_emits_substrate_guard_fact():
     )
 
 
+def test_walk_non_none_identity_precondition_is_not_lifted_as_value_equality():
+    out = _lift(
+        """
+        def f(x, y):
+            assert x is y
+            return x
+
+        def caller(left, right):
+            return f(left, right)
+        """
+    )
+
+    assert out.decls == []
+    assert out.implications == []
+
+
+def test_walk_eq_none_precondition_does_not_emit_substrate_guard_fact():
+    out = _lift(
+        """
+        def f(x):
+            assert x == None
+            return x
+
+        def caller(value):
+            return f(value)
+        """
+    )
+
+    entry_edge = _edge(out, "::entry")
+    atoms = [atom for atom in _flatten_and(entry_edge.pre) if isinstance(atom, _Atomic)]
+    assert [atom.name for atom in atoms] == ["="]
+    assert all(atom.name not in {"is_none", "is_some"} for atom in atoms)
+
+
 def test_walk_if_guard_becomes_callsite_premise():
     out = _lift(
         """

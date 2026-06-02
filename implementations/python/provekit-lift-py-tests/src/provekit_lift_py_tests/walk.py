@@ -19,6 +19,7 @@ from .ir import (
     ContractDecl,
     Formula,
     Term,
+    _Ctor,
     and_,
     atomic,
     bool_const,
@@ -81,6 +82,9 @@ _COMPARE_OP_MAP = {
     ast.LtE: "≤",
     ast.Gt: ">",
     ast.GtE: "≥",
+}
+
+_IDENTITY_OP_MAP = {
     ast.Is: "=",
     ast.IsNot: "≠",
 }
@@ -94,6 +98,27 @@ _BINOP_TERM_NAMES = {
     ast.Mod: "%",
     ast.Pow: "**",
 }
+
+
+def _is_none_term(term: Term) -> bool:
+    return isinstance(term, _Ctor) and term.name == "None" and not term.args
+
+
+def _comparison_from_ast_op(op: ast.cmpop, left: Term, right: Term) -> Formula:
+    identity_sym = _IDENTITY_OP_MAP.get(type(op))
+    if identity_sym is not None:
+        if _is_none_term(left) == _is_none_term(right):
+            raise ValueError("identity comparison is only supported against None")
+        return comparison_with_none_guard(
+            identity_sym,
+            left,
+            right,
+            emit_none_guard=True,
+        )
+    sym = _COMPARE_OP_MAP.get(type(op))
+    if sym is None:
+        raise ValueError(f"unsupported comparison op: {type(op).__name__}")
+    return comparison_with_none_guard(sym, left, right, emit_none_guard=False)
 
 
 def lift_production_walk(source: str, source_path: str) -> ProductionWalkOutput:
@@ -410,11 +435,10 @@ def _lift_predicate(node: ast.expr) -> Formula:
     if isinstance(node, ast.Compare):
         if len(node.ops) != 1 or len(node.comparators) != 1:
             raise ValueError("only single comparisons are liftable")
-        sym = _COMPARE_OP_MAP.get(type(node.ops[0]))
-        if sym is None:
-            raise ValueError(f"unsupported comparison op: {type(node.ops[0]).__name__}")
-        return comparison_with_none_guard(
-            sym, _term_from_expr(node.left), _term_from_expr(node.comparators[0])
+        return _comparison_from_ast_op(
+            node.ops[0],
+            _term_from_expr(node.left),
+            _term_from_expr(node.comparators[0]),
         )
     if isinstance(node, ast.BoolOp):
         operands = [_lift_predicate(value) for value in node.values]

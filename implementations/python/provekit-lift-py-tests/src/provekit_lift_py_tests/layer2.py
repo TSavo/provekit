@@ -74,6 +74,7 @@ from .ir import (
     Formula,
     Int,
     Term,
+    _Ctor,
     and_,
     atomic,
     bool_const,
@@ -482,9 +483,33 @@ _COMPARE_OP_MAP = {
     ast.LtE: "≤",
     ast.Gt: ">",
     ast.GtE: "≥",
+}
+
+_IDENTITY_OP_MAP = {
     ast.Is: "=",
     ast.IsNot: "≠",
 }
+
+
+def _is_none_term(term: Term) -> bool:
+    return isinstance(term, _Ctor) and term.name == "None" and not term.args
+
+
+def _comparison_from_ast_op(op: ast.cmpop, left: Term, right: Term) -> Formula:
+    identity_sym = _IDENTITY_OP_MAP.get(type(op))
+    if identity_sym is not None:
+        if _is_none_term(left) == _is_none_term(right):
+            raise ValueError("identity comparison is only supported against None")
+        return comparison_with_none_guard(
+            identity_sym,
+            left,
+            right,
+            emit_none_guard=True,
+        )
+    sym = _COMPARE_OP_MAP.get(type(op))
+    if sym is None:
+        raise ValueError(f"unsupported comparison op: {type(op).__name__}")
+    return comparison_with_none_guard(sym, left, right, emit_none_guard=False)
 
 
 def _translate_bool_expr(node: ast.expr) -> Formula:
@@ -492,14 +517,9 @@ def _translate_bool_expr(node: ast.expr) -> Formula:
     if isinstance(node, ast.Compare):
         if len(node.ops) != 1 or len(node.comparators) != 1:
             raise ValueError("only single comparisons are liftable (no chained `a < b < c`)")
-        op = node.ops[0]
-        op_kind = type(op)
-        sym = _COMPARE_OP_MAP.get(op_kind)
-        if sym is None:
-            raise ValueError(f"unsupported comparison op: {op_kind.__name__}")
         l = _translate_term(node.left)
         r = _translate_term(node.comparators[0])
-        return comparison_with_none_guard(sym, l, r)
+        return _comparison_from_ast_op(node.ops[0], l, r)
     if isinstance(node, ast.NamedExpr):
         # Walrus inside an assert: skip.
         raise ValueError("walrus operator in assert is not liftable")
@@ -521,13 +541,16 @@ def _lift_assertion_stmt(stmt: ast.stmt) -> Formula:
             l = _translate_term(call.args[0])
             r = _translate_term(call.args[1])
             sym = _UNITTEST_BINARY_PREDICATES[name]
-            return comparison_with_none_guard(sym, l, r)
+            return comparison_with_none_guard(sym, l, r, emit_none_guard=False)
         if name in _UNITTEST_NONE_PREDICATES:
             if len(call.args) < 1:
                 raise ValueError(f"{name} expects 1 positional arg")
             t = _translate_term(call.args[0])
             return comparison_with_none_guard(
-                _UNITTEST_NONE_PREDICATES[name], t, ctor("None", [])
+                _UNITTEST_NONE_PREDICATES[name],
+                t,
+                ctor("None", []),
+                emit_none_guard=True,
             )
         if name == "assertTrue":
             if len(call.args) < 1:
@@ -1409,13 +1432,21 @@ def _lift_assertion_stmt_scoped(
                 raise ValueError(f"{name} expects at least 2 positional args")
             l = _translate_term_scoped(call.args[0], scope, call_vars)
             r = _translate_term_scoped(call.args[1], scope, call_vars)
-            return comparison_with_none_guard(_UNITTEST_BINARY_PREDICATES[name], l, r)
+            return comparison_with_none_guard(
+                _UNITTEST_BINARY_PREDICATES[name],
+                l,
+                r,
+                emit_none_guard=False,
+            )
         if name in _UNITTEST_NONE_PREDICATES:
             if len(call.args) < 1:
                 raise ValueError(f"{name} expects 1 positional arg")
             t = _translate_term_scoped(call.args[0], scope, call_vars)
             return comparison_with_none_guard(
-                _UNITTEST_NONE_PREDICATES[name], t, ctor("None", [])
+                _UNITTEST_NONE_PREDICATES[name],
+                t,
+                ctor("None", []),
+                emit_none_guard=True,
             )
         if name == "assertTrue":
             if len(call.args) < 1:
@@ -1436,11 +1467,8 @@ def _translate_bool_expr_scoped(
     if isinstance(node, ast.Compare):
         if len(node.ops) != 1 or len(node.comparators) != 1:
             raise ValueError("only single comparisons are liftable")
-        sym = _COMPARE_OP_MAP.get(type(node.ops[0]))
-        if sym is None:
-            raise ValueError(f"unsupported comparison op: {type(node.ops[0]).__name__}")
-        return comparison_with_none_guard(
-            sym,
+        return _comparison_from_ast_op(
+            node.ops[0],
             _translate_term_scoped(node.left, scope, call_vars),
             _translate_term_scoped(node.comparators[0], scope, call_vars),
         )
