@@ -293,7 +293,7 @@ class _Emitter:
                 target = self.annassign_target_without_value(node.target)
                 value = ctor("python:no_value")
             else:
-                target = self.target(node.target)
+                target = self.assign_target(node.target)
                 self._record_write_if_nonlocal(node.target)
                 value = self.expr(node.value)
             return ctor("python:ann_assign", target, annotation, value)
@@ -481,6 +481,12 @@ class _Emitter:
                 str_const(node.attr),
             )
         if isinstance(node, ast.Subscript):
+            if isinstance(node.slice, ast.Slice):
+                return ctor(
+                    "python:subscript",
+                    self.expr(node.value),
+                    self.slice_index(node.slice),
+                )
             return ctor(
                 "python:subscript",
                 self.expr(node.value),
