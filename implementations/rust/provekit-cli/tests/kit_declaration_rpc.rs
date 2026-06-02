@@ -1,4 +1,5 @@
 use std::fs;
+use std::io::Write as _;
 use std::path::{Path, PathBuf};
 use std::process::{Command, Output};
 use std::sync::{Mutex, OnceLock};
@@ -185,7 +186,11 @@ fn java_core_kit_command() -> Option<Vec<String>> {
 }
 
 fn make_executable(path: &Path, body: &str) {
-    fs::write(path, body).expect("write stub");
+    {
+        let mut file = fs::File::create(path).expect("create stub");
+        file.write_all(body.as_bytes()).expect("write stub");
+        file.sync_all().expect("sync stub");
+    }
     let mut perms = fs::metadata(path).expect("metadata").permissions();
     #[cfg(unix)]
     {
@@ -197,6 +202,49 @@ fn make_executable(path: &Path, body: &str) {
 
 fn shell_stub_command(path: &Path) -> Vec<String> {
     vec!["sh".to_string(), path.display().to_string()]
+}
+
+#[test]
+fn make_executable_syncs_writer_before_chmod() {
+    let source = include_str!("kit_declaration_rpc.rs");
+    let helper_start = source
+        .find("fn make_executable(path: &Path, body: &str)")
+        .expect("make_executable helper is present");
+    let helper_end = source[helper_start..]
+        .find("\nfn shell_stub_command")
+        .expect("shell_stub_command follows make_executable");
+    let helper = &source[helper_start..helper_start + helper_end];
+
+    assert!(
+        helper.contains("fs::File::create(path)"),
+        "make_executable must create the script with an explicit writer"
+    );
+    assert!(
+        helper.contains("write_all(body.as_bytes())"),
+        "make_executable must write the full script body before chmod/spawn"
+    );
+    assert!(
+        helper.contains("sync_all()"),
+        "make_executable must sync the script before chmod/spawn"
+    );
+    assert!(
+        !helper.contains("fs::write(path, body)"),
+        "make_executable must not rely on fs::write for executable test stubs"
+    );
+
+    let sync_pos = helper
+        .find("sync_all()")
+        .expect("sync_all checked above");
+    let chmod_pos = helper
+        .find("set_permissions")
+        .expect("chmod call remains in helper");
+    let metadata_pos = helper
+        .find("let mut perms")
+        .expect("permission setup remains in helper");
+    assert!(
+        sync_pos < metadata_pos && metadata_pos < chmod_pos,
+        "make_executable must sync and close the writer before chmod"
+    );
 }
 
 #[test]
