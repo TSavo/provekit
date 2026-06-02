@@ -138,6 +138,55 @@ class JavaSourceLifterTest {
     }
 
     @Test
+    void throwStatementsEmitExplicitThrowRuntimeFailureLoci() {
+        String source = """
+            class C {
+              int f(int x) {
+                if (x < 0) {
+                  throw new IllegalArgumentException("neg");
+                }
+                throw new IllegalStateException("pos");
+              }
+            }
+            """;
+
+        JavaSourceLifter.LiftResult result = new JavaSourceLifter().liftSource("C.java", source);
+
+        assertTrue(result.refusals().isEmpty(), result.refusals().toString());
+        Jcs.Obj contract = contractByName(result, "C.f(int)");
+        Jcs.Arr effects = contract.arrayField("effects");
+        assertEquals(1, effects.values().size());
+        assertEquals("panics", effects.objectAt(0).stringField("kind"));
+
+        Jcs.Arr loci = contract.arrayField("panicLoci");
+        assertEquals(2, loci.values().size(), Jcs.encode(contract));
+
+        Jcs.Obj first = loci.objectAt(0);
+        assertEquals("concept:panic-freedom", first.stringField("effectKind"));
+        assertEquals("concept:panic-freedom.leaf.runtime-failure-site", first.stringField("callee"));
+        assertEquals("explicit-throw", first.stringField("subkind"));
+        assertEquals("IllegalArgumentException", first.stringField("exceptionClass"));
+        assertEquals("C.java", first.stringField("file"));
+        assertEquals(4, ((Jcs.Num) first.get("line")).value());
+        assertEquals(7, ((Jcs.Num) first.get("col")).value());
+        Jcs.Obj firstArg = first.objectField("argTerm");
+        assertEquals("java:new", firstArg.stringField("name"));
+        assertEquals("IllegalArgumentException", firstArg.arrayField("args").objectAt(0).stringField("value"));
+
+        Jcs.Obj second = loci.objectAt(1);
+        assertEquals("concept:panic-freedom", second.stringField("effectKind"));
+        assertEquals("concept:panic-freedom.leaf.runtime-failure-site", second.stringField("callee"));
+        assertEquals("explicit-throw", second.stringField("subkind"));
+        assertEquals("IllegalStateException", second.stringField("exceptionClass"));
+        assertEquals("C.java", second.stringField("file"));
+        assertEquals(6, ((Jcs.Num) second.get("line")).value());
+        assertEquals(5, ((Jcs.Num) second.get("col")).value());
+        Jcs.Obj secondArg = second.objectField("argTerm");
+        assertEquals("java:new", secondArg.stringField("name"));
+        assertEquals("IllegalStateException", secondArg.arrayField("args").objectAt(0).stringField("value"));
+    }
+
+    @Test
     void sourceUnitCompilerRoundTripsToByteIdenticalLiftedTerm() {
         String source = """
             class C {
@@ -153,6 +202,32 @@ class JavaSourceLifterTest {
         JavaSourceLifter.LiftResult second = lifter.liftSource("C.java", compiled);
 
         assertEquals(Jcs.encode(first.sourceUnitTerm()), Jcs.encode(second.sourceUnitTerm()));
+    }
+
+    @Test
+    void throwSourceUnitCompilerRoundTripsToByteIdenticalLiftedTerm() {
+        String source = """
+            class C {
+              int f(int x) {
+                throw new IllegalStateException("boom");
+              }
+            }
+            """;
+
+        JavaSourceLifter lifter = new JavaSourceLifter();
+        JavaSourceLifter.LiftResult first = lifter.liftSource("C.java", source);
+        String compiled = new JavaSourceCompiler().compile(first.sourceUnitTerm());
+        JavaSourceLifter.LiftResult second = lifter.liftSource("C.java", compiled);
+
+        assertEquals(Jcs.encode(first.sourceUnitTerm()), Jcs.encode(second.sourceUnitTerm()));
+    }
+
+    private static Jcs.Obj contractByName(JavaSourceLifter.LiftResult result, String fnName) {
+        return result.declarations().stream()
+            .map(Jcs.Obj.class::cast)
+            .filter(o -> fnName.equals(o.stringField("fnName")))
+            .findFirst()
+            .orElseThrow();
     }
 
     private static void assertAllOpsAreJavaNamespaced(Jcs.Json value) {

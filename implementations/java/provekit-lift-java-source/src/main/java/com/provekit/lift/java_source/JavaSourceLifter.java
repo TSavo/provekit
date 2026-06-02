@@ -67,6 +67,9 @@ import javax.tools.SimpleJavaFileObject;
 import javax.tools.ToolProvider;
 
 public final class JavaSourceLifter {
+    private static final String PANIC_FREEDOM_EFFECT_KIND = "concept:panic-freedom";
+    private static final String RUNTIME_FAILURE_SITE_CONCEPT = "concept:panic-freedom.leaf.runtime-failure-site";
+
     public LiftResult liftSource(String path, String source) {
         List<Jcs.Json> declarations = new ArrayList<>();
         List<Jcs.Json> diagnosticsJson = new ArrayList<>();
@@ -88,6 +91,7 @@ public final class JavaSourceLifter {
             List.of(),
             sort("Int"),
             eq(var("result"), sourceUnitTerm),
+            List.of(),
             List.of(),
             path,
             1,
@@ -248,7 +252,7 @@ public final class JavaSourceLifter {
                 return null;
             }
             try {
-                Emitter emitter = new Emitter(parsed, getCurrentPath().getCompilationUnit(), fnName);
+                Emitter emitter = new Emitter(parsed, getCurrentPath().getCompilationUnit(), path, fnName);
                 for (VariableElement param : executable.getParameters()) {
                     emitter.addLocal(param.getSimpleName().toString());
                 }
@@ -272,6 +276,7 @@ public final class JavaSourceLifter {
                     // Undecidable.
                     eq(var("result"), postValue),
                     emitter.effectsJson(),
+                    emitter.panicLociJson(),
                     path,
                     line,
                     1
@@ -296,13 +301,16 @@ public final class JavaSourceLifter {
     private static final class Emitter {
         private final Parsed parsed;
         private final CompilationUnitTree unit;
+        private final String sourcePath;
         private final String fnName;
         private final Set<String> locals = new LinkedHashSet<>();
         private final Map<String, Effect> effects = new LinkedHashMap<>();
+        private final List<Jcs.Json> panicLoci = new ArrayList<>();
 
-        Emitter(Parsed parsed, CompilationUnitTree unit, String fnName) {
+        Emitter(Parsed parsed, CompilationUnitTree unit, String sourcePath, String fnName) {
             this.parsed = parsed;
             this.unit = unit;
+            this.sourcePath = sourcePath;
             this.fnName = fnName;
         }
 
@@ -330,7 +338,15 @@ public final class JavaSourceLifter {
                 case THROW -> {
                     addEffect(Effect.panics());
                     ThrowTree t = (ThrowTree) tree;
-                    yield ctor("java:throw", emitExpression(new TreePath(path, t.getExpression())));
+                    TreePath expressionPath = new TreePath(path, t.getExpression());
+                    Jcs.Json thrownValue = emitExpression(expressionPath);
+                    panicLoci.add(runtimeFailureLocus(
+                        path,
+                        thrownValue,
+                        "explicit-throw",
+                        exceptionClass(t.getExpression())
+                    ));
+                    yield ctor("java:throw", thrownValue);
                 }
                 case EMPTY_STATEMENT -> skip();
                 default -> throw refuse(path, "unhandled statement kind: " + tree.getKind());
@@ -545,8 +561,36 @@ public final class JavaSourceLifter {
                 .toList();
         }
 
+        private List<Jcs.Json> panicLociJson() {
+            return List.copyOf(panicLoci);
+        }
+
         private void addEffect(Effect effect) {
             effects.putIfAbsent(effect.sortKey(), effect);
+        }
+
+        private Jcs.Obj runtimeFailureLocus(TreePath path, Jcs.Json argTerm, String subkind, String exceptionClass) {
+            List<Object> fields = new ArrayList<>(List.of(
+                "effectKind", Jcs.string(PANIC_FREEDOM_EFFECT_KIND),
+                "callee", Jcs.string(RUNTIME_FAILURE_SITE_CONCEPT),
+                "subkind", Jcs.string(subkind),
+                "argTerm", argTerm,
+                "file", Jcs.string(sourcePath),
+                "line", Jcs.integer(lineOf(parsed.trees(), unit, path.getLeaf())),
+                "col", Jcs.integer(columnOf(parsed.trees(), unit, path.getLeaf()))
+            ));
+            if (exceptionClass != null && !exceptionClass.isEmpty()) {
+                fields.add("exceptionClass");
+                fields.add(Jcs.string(exceptionClass));
+            }
+            return Jcs.object(fields.toArray());
+        }
+
+        private String exceptionClass(ExpressionTree expression) {
+            if (expression instanceof NewClassTree created) {
+                return created.getIdentifier().toString();
+            }
+            return null;
         }
 
         private RefuseException refuse(TreePath path, String reason) {
@@ -678,6 +722,13 @@ public final class JavaSourceLifter {
         return (int) unit.getLineMap().getLineNumber(pos);
     }
 
+    private static int columnOf(Trees trees, CompilationUnitTree unit, Tree tree) {
+        SourcePositions positions = trees.getSourcePositions();
+        long pos = positions.getStartPosition(unit, tree);
+        if (pos < 0 || unit.getLineMap() == null) return 0;
+        return (int) unit.getLineMap().getColumnNumber(pos);
+    }
+
     private static Jcs.Obj wrapSeqFromContracts(List<Jcs.Json> decls, int start) {
         List<Jcs.Json> terms = new ArrayList<>();
         for (int i = start; i < decls.size(); i++) {
@@ -699,8 +750,19 @@ public final class JavaSourceLifter {
         return (Jcs.Obj) result;
     }
 
-    private static Jcs.Obj functionContract(String fnName, List<String> formals, List<Jcs.Json> formalSorts, Jcs.Obj returnSort, Jcs.Obj post, List<Jcs.Json> effects, String file, int line, int col) {
-        return Jcs.object(
+    private static Jcs.Obj functionContract(
+        String fnName,
+        List<String> formals,
+        List<Jcs.Json> formalSorts,
+        Jcs.Obj returnSort,
+        Jcs.Obj post,
+        List<Jcs.Json> effects,
+        List<Jcs.Json> panicLoci,
+        String file,
+        int line,
+        int col
+    ) {
+        List<Object> fields = new ArrayList<>(List.of(
             "schemaVersion", Jcs.string("1"),
             "kind", Jcs.string("function-contract"),
             "fnName", Jcs.string(fnName),
@@ -713,7 +775,12 @@ public final class JavaSourceLifter {
             "effects", Jcs.array(effects),
             "locus", Jcs.object("file", Jcs.string(file), "line", Jcs.integer(line), "col", Jcs.integer(col)),
             "autoMintedMementos", Jcs.array()
-        );
+        ));
+        if (!panicLoci.isEmpty()) {
+            fields.add("panicLoci");
+            fields.add(Jcs.array(panicLoci));
+        }
+        return Jcs.object(fields.toArray());
     }
 
     private static Jcs.Obj trueFormula() {
