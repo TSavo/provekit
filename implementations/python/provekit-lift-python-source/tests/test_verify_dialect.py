@@ -262,6 +262,38 @@ def test_leaf_harvester_plain_equality_does_not_emit_option_guard():
     assert _atoms_named(result.ir[0]["inv"], "is_some") == []
 
 
+def test_leaf_harvester_eq_none_does_not_emit_option_guard():
+    source = "def test_missing():\n    assert maybe_none() == None\n"
+    result = harvest_source(source, "test_m.py")
+    assert result.diagnostics == []
+    assert len(result.ir) == 1
+
+    inv = result.ir[0]["inv"]
+    assert inv == {
+        "kind": "atomic",
+        "name": "=",
+        "args": [_call_term("maybe_none"), _none_term()],
+    }
+    assert _atoms_named(inv, "is_none") == []
+    assert _atoms_named(inv, "is_some") == []
+
+
+def test_leaf_harvester_ne_none_does_not_emit_option_guard():
+    source = "def test_present():\n    assert maybe_value() != None\n"
+    result = harvest_source(source, "test_m.py")
+    assert result.diagnostics == []
+    assert len(result.ir) == 1
+
+    inv = result.ir[0]["inv"]
+    assert inv == {
+        "kind": "atomic",
+        "name": "≠",
+        "args": [_call_term("maybe_value"), _none_term()],
+    }
+    assert _atoms_named(inv, "is_none") == []
+    assert _atoms_named(inv, "is_some") == []
+
+
 def test_leaf_harvester_non_none_identity_skips_instead_of_lowering_to_equality():
     source = "def test_alias(left, right):\n    assert left is right\n"
     result = harvest_source(source, "test_m.py")

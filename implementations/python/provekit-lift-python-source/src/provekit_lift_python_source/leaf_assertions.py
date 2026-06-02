@@ -121,7 +121,7 @@ def _lift_assert(stmt: ast.Assert) -> Json:
     op = _CMP.get(type(test.ops[0]))
     if op is None:
         raise _Unsupported(f"comparison op {type(test.ops[0]).__name__} not in whitelist")
-    return _comparison_with_none_guard(op, lhs, rhs)
+    return _comparison(op, lhs, rhs)
 
 
 def _translate_term(node: ast.expr) -> Json:
@@ -159,8 +159,12 @@ def _and(atoms: list[Json]) -> Json:
     return {"kind": "and", "operands": atoms}
 
 
+def _comparison(name: str, lhs: Json, rhs: Json) -> Json:
+    return {"kind": "atomic", "name": name, "args": [lhs, rhs]}
+
+
 def _comparison_with_none_guard(name: str, lhs: Json, rhs: Json) -> Json:
-    base = {"kind": "atomic", "name": name, "args": [lhs, rhs]}
+    base = _comparison(name, lhs, rhs)
     lhs_is_none = _is_none_ctor(lhs)
     rhs_is_none = _is_none_ctor(rhs)
     if lhs_is_none == rhs_is_none:
