@@ -277,8 +277,21 @@ class _Emitter:
         if isinstance(node, ast.Assign):
             if len(node.targets) != 1:
                 raise _UnsupportedSyntax(node, "multiple-target assignment is refused")
-            target = self.assign_target(node.targets[0])
-            self._record_write_if_nonlocal(node.targets[0])
+            target_node = node.targets[0]
+            if isinstance(target_node, (ast.Tuple, ast.List)):
+                value = self.expr(node.value)
+                term = self.unpack_assign(target_node, value)
+                self.effects.add_panics()
+                self.panic_loci.append(
+                    self.runtime_failure_locus(
+                        target_node,
+                        term,
+                        subkind="iter-unpack",
+                    )
+                )
+                return term
+            target = self.assign_target(target_node)
+            self._record_write_if_nonlocal(target_node)
             return ctor("python:assign", target, self.expr(node.value))
         if isinstance(node, ast.AugAssign):
             op = _BINOPS.get(type(node.op))
@@ -425,6 +438,27 @@ class _Emitter:
             )
             return term
         return self.target(node)
+
+    def unpack_assign(self, node: ast.expr, value: Json) -> Json:
+        if isinstance(node, ast.Tuple):
+            kind = "tuple"
+        elif isinstance(node, ast.List):
+            kind = "list"
+        else:
+            raise _UnsupportedSyntax(node, f"unsupported assignment target: {type(node).__name__}")
+        if not node.elts:
+            raise _UnsupportedSyntax(node, f"unsupported assignment target: {type(node).__name__}")
+        targets: list[Json] = []
+        for element in node.elts:
+            if not isinstance(element, ast.Name):
+                raise _UnsupportedSyntax(node, f"unsupported assignment target: {type(node).__name__}")
+            targets.append(var(element.id))
+        return ctor(
+            "python:unpack_assign",
+            str_const(kind),
+            ctor("python:unpack_targets", *targets),
+            value,
+        )
 
     def augassign_target(self, node: ast.expr) -> Json:
         if isinstance(node, ast.Name):

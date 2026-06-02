@@ -85,6 +85,11 @@ def _stmt(term: Json) -> ast.stmt:
     args = term.get("args", [])
     if name == "python:assign":
         return ast.Assign(targets=[_target(args[0])], value=_expr(args[1]))
+    if name == "python:unpack_assign":
+        return ast.Assign(
+            targets=[_unpack_target(args[0], args[1])],
+            value=_expr(args[2]),
+        )
     if name == "python:aug_assign":
         return ast.AugAssign(
             target=_target(args[0]),
@@ -192,6 +197,28 @@ def _slice_or_expr(term: Json) -> ast.expr | ast.slice:
 def _target(term: Json) -> ast.expr:
     expr = _expr(term)
     return _with_context(expr, ast.Store())
+
+
+def _unpack_target(kind_term: Json, targets_term: Json) -> ast.expr:
+    kind = _const_string(kind_term)
+    if _name(targets_term) != "python:unpack_targets":
+        raise ValueError(f"expected python:unpack_targets: {targets_term!r}")
+    targets = [_unpack_name_target(term) for term in targets_term.get("args", [])]
+    if not targets:
+        raise ValueError("unpack target must contain at least one name")
+    if kind == "tuple":
+        return ast.Tuple(elts=targets, ctx=ast.Store())
+    if kind == "list":
+        return ast.List(elts=targets, ctx=ast.Store())
+    raise ValueError(f"unsupported unpack target kind: {kind}")
+
+
+def _unpack_name_target(term: Json) -> ast.Name:
+    expr = _expr(term)
+    if not isinstance(expr, ast.Name):
+        raise ValueError(f"unpack target is not a name: {ast.dump(expr)}")
+    expr.ctx = ast.Store()
+    return expr
 
 
 def _walrus_target(term: Json) -> ast.Name:

@@ -192,6 +192,26 @@ def _call(name: str, *args: dict[str, object]) -> dict[str, object]:
     }
 
 
+def _unpack_targets(*targets: dict[str, object]) -> dict[str, object]:
+    return {
+        "kind": "ctor",
+        "name": "python:unpack_targets",
+        "args": list(targets),
+    }
+
+
+def _unpack_assign(
+    kind: str,
+    targets: dict[str, object],
+    value: dict[str, object],
+) -> dict[str, object]:
+    return {
+        "kind": "ctor",
+        "name": "python:unpack_assign",
+        "args": [_str_const(kind), targets, value],
+    }
+
+
 def _ctor_names(node: object) -> list[str]:
     if isinstance(node, dict):
         names = [str(node["name"])] if node.get("kind") == "ctor" else []
@@ -502,6 +522,171 @@ def test_compile_lift_roundtrip_preserves_walrus_body(source: str) -> None:
 
     assert canonical_json_bytes(relifted_body) == canonical_json_bytes(body)
     assert ":=" in compiled
+
+
+def test_tuple_unpack_names_emits_unpack_assign_runtime_failure_locus() -> None:
+    source = "def f(pair):\n    a, b = pair\n    return a\n"
+
+    result = lift_source(source, "tuple_unpack.py")
+
+    contract = _contract(result.ir, ".f")
+    body = contract["post"]["args"][1]
+    unpack = _unpack_assign("tuple", _unpack_targets(_var("a"), _var("b")), _var("pair"))
+    assert result.refusals == []
+    assert contract["effects"] == [{"kind": "panics"}]
+    assert _runtime_failure_loci(contract) == [
+        {
+            "effectKind": PANIC_FREEDOM_EFFECT_KIND,
+            "callee": RUNTIME_FAILURE_SITE_CONCEPT,
+            "subkind": "iter-unpack",
+            "argTerm": unpack,
+            "file": "tuple_unpack.py",
+            "line": 2,
+            "col": 4,
+        }
+    ]
+    assert body["name"] == "python:seq"
+    assert body["args"][0] == unpack
+
+
+def test_list_unpack_names_preserves_list_kind_in_unpack_assign() -> None:
+    source = "def f(pair):\n    [a, b] = pair\n    return b\n"
+
+    result = lift_source(source, "list_unpack.py")
+
+    contract = _contract(result.ir, ".f")
+    body = contract["post"]["args"][1]
+    unpack = _unpack_assign("list", _unpack_targets(_var("a"), _var("b")), _var("pair"))
+    assert result.refusals == []
+    assert contract["effects"] == [{"kind": "panics"}]
+    assert _runtime_failure_loci(contract) == [
+        {
+            "effectKind": PANIC_FREEDOM_EFFECT_KIND,
+            "callee": RUNTIME_FAILURE_SITE_CONCEPT,
+            "subkind": "iter-unpack",
+            "argTerm": unpack,
+            "file": "list_unpack.py",
+            "line": 2,
+            "col": 4,
+        }
+    ]
+    assert body["name"] == "python:seq"
+    assert body["args"][0] == unpack
+
+
+def test_tuple_unpack_three_names_preserves_all_targets() -> None:
+    source = "def f(triple):\n    a, b, c = triple\n    return c\n"
+
+    result = lift_source(source, "tuple_unpack_three.py")
+
+    contract = _contract(result.ir, ".f")
+    body = contract["post"]["args"][1]
+    unpack = _unpack_assign(
+        "tuple",
+        _unpack_targets(_var("a"), _var("b"), _var("c")),
+        _var("triple"),
+    )
+    assert result.refusals == []
+    assert contract["effects"] == [{"kind": "panics"}]
+    assert _runtime_failure_loci(contract)[0]["argTerm"] == unpack
+    assert _runtime_failure_loci(contract)[0]["subkind"] == "iter-unpack"
+    assert body["args"][0] == unpack
+
+
+def test_single_element_tuple_unpack_preserves_one_target() -> None:
+    source = "def f(single):\n    (a,) = single\n    return a\n"
+
+    result = lift_source(source, "tuple_unpack_single.py")
+
+    contract = _contract(result.ir, ".f")
+    unpack = _unpack_assign("tuple", _unpack_targets(_var("a")), _var("single"))
+    assert result.refusals == []
+    assert contract["effects"] == [{"kind": "panics"}]
+    assert _runtime_failure_loci(contract) == [
+        {
+            "effectKind": PANIC_FREEDOM_EFFECT_KIND,
+            "callee": RUNTIME_FAILURE_SITE_CONCEPT,
+            "subkind": "iter-unpack",
+            "argTerm": unpack,
+            "file": "tuple_unpack_single.py",
+            "line": 2,
+            "col": 4,
+        }
+    ]
+
+
+def test_tuple_unpack_rhs_attribute_composes_attribute_and_unpack_loci() -> None:
+    source = "def f(obj):\n    a, b = obj.pair\n    return a\n"
+
+    result = lift_source(source, "tuple_unpack_attr_rhs.py")
+
+    contract = _contract(result.ir, ".f")
+    rhs = _attr(_var("obj"), "pair")
+    unpack = _unpack_assign("tuple", _unpack_targets(_var("a"), _var("b")), rhs)
+    loci = _runtime_failure_loci(contract)
+    assert result.refusals == []
+    assert contract["effects"] == [{"kind": "panics"}]
+    assert [locus["subkind"] for locus in loci] == ["attribute-access", "iter-unpack"]
+    assert [locus["argTerm"] for locus in loci] == [rhs, unpack]
+    assert [(locus["line"], locus["col"]) for locus in loci] == [(2, 11), (2, 4)]
+    assert [locus.get("exceptionClass") for locus in loci] == ["AttributeError", None]
+
+
+def test_tuple_unpack_rhs_subscript_composes_subscript_and_unpack_loci() -> None:
+    source = "def f(xs, key):\n    a, b = xs[key]\n    return b\n"
+
+    result = lift_source(source, "tuple_unpack_subscript_rhs.py")
+
+    contract = _contract(result.ir, ".f")
+    rhs = _subscript(_var("xs"), _var("key"))
+    unpack = _unpack_assign("tuple", _unpack_targets(_var("a"), _var("b")), rhs)
+    loci = _runtime_failure_loci(contract)
+    assert result.refusals == []
+    assert contract["effects"] == [{"kind": "panics"}]
+    assert [locus["subkind"] for locus in loci] == ["subscript-access", "iter-unpack"]
+    assert [locus["argTerm"] for locus in loci] == [rhs, unpack]
+    assert [(locus["line"], locus["col"]) for locus in loci] == [(2, 11), (2, 4)]
+
+
+def test_tuple_unpack_rhs_slice_composes_slice_and_unpack_loci() -> None:
+    source = "def f(xs, i, j):\n    a, b = xs[i:j]\n    return b\n"
+
+    result = lift_source(source, "tuple_unpack_slice_rhs.py")
+
+    contract = _contract(result.ir, ".f")
+    rhs = _subscript(_var("xs"), _slice(_var("i"), _var("j"), _none_const()))
+    unpack = _unpack_assign("tuple", _unpack_targets(_var("a"), _var("b")), rhs)
+    loci = _runtime_failure_loci(contract)
+    assert result.refusals == []
+    assert contract["effects"] == [{"kind": "panics"}]
+    assert [locus["subkind"] for locus in loci] == ["subscript-access", "iter-unpack"]
+    assert [locus["argTerm"] for locus in loci] == [rhs, unpack]
+    assert [(locus["line"], locus["col"]) for locus in loci] == [(2, 11), (2, 4)]
+
+
+@pytest.mark.parametrize(
+    "source",
+    [
+        "def f(pair):\n    a, b = pair\n    return a\n",
+        "def f(pair):\n    [a, b] = pair\n    return b\n",
+    ],
+)
+def test_compile_lift_roundtrip_preserves_unpack_assign_body(source: str) -> None:
+    lifted = lift_source(source, "roundtrip_unpack.py")
+    assert lifted.refusals == []
+    contract = _contract(lifted.ir, ".f")
+    body = contract["post"]["args"][1]
+
+    compiled = compile_body_term(
+        body,
+        fn_name="f",
+        formals=[str(formal) for formal in contract["formals"]],
+    )
+    relifted = lift_source(compiled, "roundtrip_unpack.py")
+    assert relifted.refusals == []
+    relifted_body = _contract(relifted.ir, ".f")["post"]["args"][1]
+
+    assert canonical_json_bytes(relifted_body) == canonical_json_bytes(body)
 
 
 def test_if_is_none_lifts_to_cf_guarded_option_guards() -> None:
@@ -2198,14 +2383,24 @@ def test_compile_lift_roundtrip_preserves_name_annassign_explicit_none_value() -
     ("source", "module", "reason"),
     [
         (
-            "def f(a, b, pair):\n    a, b = pair\n    return a\n",
-            "tuple_unpacking_refusal.py",
+            "def f(pair):\n    (a, (b, c)) = pair\n    return c\n",
+            "nested_unpacking_refusal.py",
             "unsupported assignment target: Tuple",
         ),
         (
-            "def f(a, b, pair):\n    [a, b] = pair\n    return a\n",
-            "list_unpacking_refusal.py",
-            "unsupported assignment target: List",
+            "def f(pair):\n    a, *rest = pair\n    return rest\n",
+            "starred_unpacking_refusal.py",
+            "unsupported assignment target: Tuple",
+        ),
+        (
+            "def f(obj, pair):\n    obj.a, b = pair\n    return b\n",
+            "attribute_unpack_target_refusal.py",
+            "unsupported assignment target: Tuple",
+        ),
+        (
+            "def f(xs, pair):\n    xs[0], b = pair\n    return b\n",
+            "subscript_unpack_target_refusal.py",
+            "unsupported assignment target: Tuple",
         ),
         (
             "def f(xs, compute):\n    return [y for x in xs if (y := compute(x))]\n",
@@ -2214,7 +2409,7 @@ def test_compile_lift_roundtrip_preserves_name_annassign_explicit_none_value() -
         ),
     ],
 )
-def test_slice_11_keeps_tuple_list_unpacking_and_walrus_out_of_scope(
+def test_slice_13_keeps_complex_unpacking_and_listcomp_out_of_scope(
     source: str,
     module: str,
     reason: str,
