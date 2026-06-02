@@ -322,6 +322,52 @@ emits_signed_mementos = false
     project
 }
 
+fn stage_python_slice_augassign_project(lift_script: &Path) -> PathBuf {
+    let project = unique_dir("slice-augassign-project");
+    fs::write(
+        project.join("slice_augassign.py"),
+        "def slice_bump(obj, xs, a, b, c, value):\n    xs[a:b] += value\n    xs[a:b:c] += value\n    xs[:b] += value\n    xs[a:] += value\n    xs[:] += value\n    obj.inner[a:b] += value\n    xs[obj.i:obj.j] += value\n    return value\n",
+    )
+    .expect("write slice_augassign.py");
+
+    let provekit = project.join(".provekit");
+    fs::create_dir_all(provekit.join("lift").join("python-source"))
+        .expect("mkdir .provekit/lift/python-source");
+    fs::write(
+        provekit.join("config.toml"),
+        r#"[[plugins]]
+name = "python-source"
+kind = "lift"
+surface = "python-source"
+"#,
+    )
+    .expect("write config.toml");
+    fs::write(
+        provekit
+            .join("lift")
+            .join("python-source")
+            .join("manifest.toml"),
+        format!(
+            r#"name = "python-source"
+version = "0.1.0-draft"
+protocol_version = "provekit-lift/1"
+kind = "lift"
+command = ["{}", "--rpc"]
+working_dir = "."
+
+[capabilities]
+authoring_surfaces = ["python-source"]
+ir_version = "v1.1.0"
+emits_signed_mementos = false
+"#,
+            lift_script.display()
+        ),
+    )
+    .expect("write manifest.toml");
+
+    project
+}
+
 fn stage_python_augassign_project(lift_script: &Path) -> PathBuf {
     let project = unique_dir("augassign-project");
     fs::write(
@@ -1106,6 +1152,246 @@ fn python_source_slice_access_mint_preserves_runtime_failure_loci_and_enumerates
             (Some(8), true),
         ],
         "no bridges exist yet, so surfaced slice Load callsites must remain undecidable"
+    );
+
+    let _ = fs::remove_dir_all(&project);
+}
+
+#[test]
+fn python_source_slice_augassign_mint_preserves_runtime_failure_loci_and_enumerates_callsites() {
+    if !python_available() {
+        eprintln!(
+            "python3 not on PATH: skipping python-source slice AugAssign runtime-failure mint test"
+        );
+        return;
+    }
+    let lift_script = build_python_lift_source();
+    let project = stage_python_slice_augassign_project(&lift_script);
+    run_mint(&project);
+
+    let pool = provekit_verifier::load_all_proofs::run(&project);
+    assert!(
+        pool.load_errors.is_empty(),
+        "python-source slice AugAssign proof must load cleanly: {:?}",
+        pool.load_errors
+    );
+
+    let obj_inner = ir_attr(ir_var("obj"), "inner");
+    let obj_i = ir_attr(ir_var("obj"), "i");
+    let obj_j = ir_attr(ir_var("obj"), "j");
+    let loci = contract_runtime_failure_loci(&pool);
+    assert_eq!(
+        loci,
+        vec![
+            json!({
+                "effectKind": "concept:panic-freedom",
+                "callee": RUNTIME_FAILURE_SITE_CONCEPT,
+                "subkind": "subscript-access",
+                "argTerm": ir_subscript(ir_var("xs"), ir_slice(ir_var("a"), ir_var("b"), ir_none())),
+                "file": "slice_augassign.py",
+                "line": 2,
+                "col": 4
+            }),
+            json!({
+                "effectKind": "concept:panic-freedom",
+                "callee": RUNTIME_FAILURE_SITE_CONCEPT,
+                "subkind": "subscript-write",
+                "argTerm": ir_subscript(ir_var("xs"), ir_slice(ir_var("a"), ir_var("b"), ir_none())),
+                "file": "slice_augassign.py",
+                "line": 2,
+                "col": 4
+            }),
+            json!({
+                "effectKind": "concept:panic-freedom",
+                "callee": RUNTIME_FAILURE_SITE_CONCEPT,
+                "subkind": "subscript-access",
+                "argTerm": ir_subscript(ir_var("xs"), ir_slice(ir_var("a"), ir_var("b"), ir_var("c"))),
+                "file": "slice_augassign.py",
+                "line": 3,
+                "col": 4
+            }),
+            json!({
+                "effectKind": "concept:panic-freedom",
+                "callee": RUNTIME_FAILURE_SITE_CONCEPT,
+                "subkind": "subscript-write",
+                "argTerm": ir_subscript(ir_var("xs"), ir_slice(ir_var("a"), ir_var("b"), ir_var("c"))),
+                "file": "slice_augassign.py",
+                "line": 3,
+                "col": 4
+            }),
+            json!({
+                "effectKind": "concept:panic-freedom",
+                "callee": RUNTIME_FAILURE_SITE_CONCEPT,
+                "subkind": "subscript-access",
+                "argTerm": ir_subscript(ir_var("xs"), ir_slice(ir_none(), ir_var("b"), ir_none())),
+                "file": "slice_augassign.py",
+                "line": 4,
+                "col": 4
+            }),
+            json!({
+                "effectKind": "concept:panic-freedom",
+                "callee": RUNTIME_FAILURE_SITE_CONCEPT,
+                "subkind": "subscript-write",
+                "argTerm": ir_subscript(ir_var("xs"), ir_slice(ir_none(), ir_var("b"), ir_none())),
+                "file": "slice_augassign.py",
+                "line": 4,
+                "col": 4
+            }),
+            json!({
+                "effectKind": "concept:panic-freedom",
+                "callee": RUNTIME_FAILURE_SITE_CONCEPT,
+                "subkind": "subscript-access",
+                "argTerm": ir_subscript(ir_var("xs"), ir_slice(ir_var("a"), ir_none(), ir_none())),
+                "file": "slice_augassign.py",
+                "line": 5,
+                "col": 4
+            }),
+            json!({
+                "effectKind": "concept:panic-freedom",
+                "callee": RUNTIME_FAILURE_SITE_CONCEPT,
+                "subkind": "subscript-write",
+                "argTerm": ir_subscript(ir_var("xs"), ir_slice(ir_var("a"), ir_none(), ir_none())),
+                "file": "slice_augassign.py",
+                "line": 5,
+                "col": 4
+            }),
+            json!({
+                "effectKind": "concept:panic-freedom",
+                "callee": RUNTIME_FAILURE_SITE_CONCEPT,
+                "subkind": "subscript-access",
+                "argTerm": ir_subscript(ir_var("xs"), ir_slice(ir_none(), ir_none(), ir_none())),
+                "file": "slice_augassign.py",
+                "line": 6,
+                "col": 4
+            }),
+            json!({
+                "effectKind": "concept:panic-freedom",
+                "callee": RUNTIME_FAILURE_SITE_CONCEPT,
+                "subkind": "subscript-write",
+                "argTerm": ir_subscript(ir_var("xs"), ir_slice(ir_none(), ir_none(), ir_none())),
+                "file": "slice_augassign.py",
+                "line": 6,
+                "col": 4
+            }),
+            json!({
+                "effectKind": "concept:panic-freedom",
+                "callee": RUNTIME_FAILURE_SITE_CONCEPT,
+                "subkind": "attribute-access",
+                "exceptionClass": "AttributeError",
+                "argTerm": obj_inner,
+                "file": "slice_augassign.py",
+                "line": 7,
+                "col": 4
+            }),
+            json!({
+                "effectKind": "concept:panic-freedom",
+                "callee": RUNTIME_FAILURE_SITE_CONCEPT,
+                "subkind": "subscript-access",
+                "argTerm": ir_subscript(
+                    ir_attr(ir_var("obj"), "inner"),
+                    ir_slice(ir_var("a"), ir_var("b"), ir_none())
+                ),
+                "file": "slice_augassign.py",
+                "line": 7,
+                "col": 4
+            }),
+            json!({
+                "effectKind": "concept:panic-freedom",
+                "callee": RUNTIME_FAILURE_SITE_CONCEPT,
+                "subkind": "subscript-write",
+                "argTerm": ir_subscript(
+                    ir_attr(ir_var("obj"), "inner"),
+                    ir_slice(ir_var("a"), ir_var("b"), ir_none())
+                ),
+                "file": "slice_augassign.py",
+                "line": 7,
+                "col": 4
+            }),
+            json!({
+                "effectKind": "concept:panic-freedom",
+                "callee": RUNTIME_FAILURE_SITE_CONCEPT,
+                "subkind": "attribute-access",
+                "exceptionClass": "AttributeError",
+                "argTerm": obj_i,
+                "file": "slice_augassign.py",
+                "line": 8,
+                "col": 7
+            }),
+            json!({
+                "effectKind": "concept:panic-freedom",
+                "callee": RUNTIME_FAILURE_SITE_CONCEPT,
+                "subkind": "attribute-access",
+                "exceptionClass": "AttributeError",
+                "argTerm": obj_j,
+                "file": "slice_augassign.py",
+                "line": 8,
+                "col": 13
+            }),
+            json!({
+                "effectKind": "concept:panic-freedom",
+                "callee": RUNTIME_FAILURE_SITE_CONCEPT,
+                "subkind": "subscript-access",
+                "argTerm": ir_subscript(
+                    ir_var("xs"),
+                    ir_slice(ir_attr(ir_var("obj"), "i"), ir_attr(ir_var("obj"), "j"), ir_none())
+                ),
+                "file": "slice_augassign.py",
+                "line": 8,
+                "col": 4
+            }),
+            json!({
+                "effectKind": "concept:panic-freedom",
+                "callee": RUNTIME_FAILURE_SITE_CONCEPT,
+                "subkind": "subscript-write",
+                "argTerm": ir_subscript(
+                    ir_var("xs"),
+                    ir_slice(ir_attr(ir_var("obj"), "i"), ir_attr(ir_var("obj"), "j"), ir_none())
+                ),
+                "file": "slice_augassign.py",
+                "line": 8,
+                "col": 4
+            }),
+        ],
+        "mint must preserve python-source slice AugAssign runtime-failure panicLoci rows"
+    );
+
+    let callsites = provekit_verifier::enumerate_callsites::run(&pool);
+    let runtime_failure_sites: Vec<_> = callsites
+        .iter()
+        .filter(|cs| cs.panic_site && cs.callee.as_deref() == Some(RUNTIME_FAILURE_SITE_CONCEPT))
+        .collect();
+    // The proof keeps all seventeen panicLoci rows above. CallSite enumeration
+    // deduplicates access/write rows that share callee, file, line, and
+    // argTerm because CallSite does not carry panicLoci subkind (#1839).
+    assert_eq!(
+        runtime_failure_sites.len(),
+        10,
+        "verifier currently surfaces ten unique slice AugAssign runtime-failure obligations; got {callsites:#?}"
+    );
+    assert!(
+        runtime_failure_sites
+            .iter()
+            .all(|cs| cs.file.as_deref() == Some("slice_augassign.py")),
+        "all surfaced slice AugAssign callsites must preserve slice_augassign.py provenance: {runtime_failure_sites:#?}"
+    );
+    assert_eq!(
+        runtime_failure_sites
+            .iter()
+            .map(|cs| (cs.line, cs.bridge_target_cid.is_empty()))
+            .collect::<Vec<_>>(),
+        vec![
+            (Some(2), true),
+            (Some(3), true),
+            (Some(4), true),
+            (Some(5), true),
+            (Some(6), true),
+            (Some(7), true),
+            (Some(7), true),
+            (Some(8), true),
+            (Some(8), true),
+            (Some(8), true),
+        ],
+        "no bridges exist yet, so surfaced slice AugAssign callsites must remain undecidable"
     );
 
     let _ = fs::remove_dir_all(&project);
