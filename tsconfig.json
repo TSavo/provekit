@@ -2,9 +2,9 @@
   "compilerOptions": {
     "rootDir": "implementations/typescript/src",
     "outDir": "dist",
-    "module": "commonjs",
+    "module": "node20",
     "target": "es2022",
-    "moduleResolution": "bundler",
+    "moduleResolution": "nodenext",
     "ignoreDeprecations": "6.0",
     "strict": true,
     "esModuleInterop": true,
