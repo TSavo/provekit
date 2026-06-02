@@ -50,6 +50,13 @@ def ctor(name: str, *args: Json) -> Json:
     return {"kind": "ctor", "name": name, "args": list(args)}
 
 
+def substrate_ctor(name: str, *args: Json) -> Json:
+    allowed = {"cf_ite", "cf_guarded", "is_none", "is_some"}
+    if name not in allowed:
+        raise ValueError(f"unsupported substrate operation name: {name}")
+    return {"kind": "ctor", "name": name, "args": list(args)}
+
+
 def pass_stmt() -> Json:
     return ctor("python:pass", none_const())
 

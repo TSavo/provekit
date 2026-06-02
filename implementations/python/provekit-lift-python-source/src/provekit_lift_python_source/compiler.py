@@ -94,6 +94,14 @@ def _stmt(term: Json) -> ast.stmt:
             body=_stmt_list(args[1]) or [ast.Pass()],
             orelse=[] if _name(args[2]) == "python:pass" else _stmt_list(args[2]),
         )
+    if name == "cf_ite":
+        then_branch = _unguarded(args[1])
+        else_branch = _unguarded(args[2])
+        return ast.If(
+            test=_expr(args[0]),
+            body=_stmt_list(then_branch) or [ast.Pass()],
+            orelse=[] if _name(else_branch) == "python:pass" else _stmt_list(else_branch),
+        )
     if name == "python:while":
         return ast.While(test=_expr(args[0]), body=_stmt_list(args[1]), orelse=[])
     if name == "python:for":
@@ -212,6 +220,14 @@ def _is_function_contract(value: Json) -> bool:
 
 def _name(term: Any) -> str:
     return str(term.get("name", "")) if isinstance(term, dict) else ""
+
+
+def _unguarded(term: Json) -> Json:
+    if _name(term) == "cf_guarded":
+        args = term.get("args", [])
+        if len(args) == 2:
+            return args[1]
+    return term
 
 
 def _const_string(term: Json) -> str:

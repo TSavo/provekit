@@ -18,6 +18,7 @@ from .ir import (
     pass_stmt,
     source_unit_contract,
     str_const,
+    substrate_ctor,
     var,
 )
 
@@ -272,11 +273,17 @@ class _Emitter:
             self._record_write_if_nonlocal(node.targets[0])
             return ctor("python:assign", target, self.expr(node.value))
         if isinstance(node, ast.If):
+            condition = self.expr(node.test)
+            then_branch = self.statements(node.body)
+            else_branch = self.statements(node.orelse) if node.orelse else pass_stmt()
+            guarded = self.none_guarded_if(node.test, condition, then_branch, else_branch)
+            if guarded is not None:
+                return guarded
             return ctor(
                 "python:if",
-                self.expr(node.test),
-                self.statements(node.body),
-                self.statements(node.orelse) if node.orelse else pass_stmt(),
+                condition,
+                then_branch,
+                else_branch,
             )
         if isinstance(node, ast.While):
             if node.orelse:
@@ -409,6 +416,44 @@ class _Emitter:
         if isinstance(node.slice, ast.Slice):
             raise _UnsupportedSyntax(node.slice, "slice subscripts are refused")
         return self.expr(node.slice)
+
+    def none_guarded_if(
+        self,
+        test: ast.expr,
+        condition: Json,
+        then_branch: Json,
+        else_branch: Json,
+    ) -> Json | None:
+        guard = self.none_guard(test)
+        if guard is None:
+            return None
+        then_head, else_head, receiver = guard
+        return substrate_ctor(
+            "cf_ite",
+            condition,
+            substrate_ctor("cf_guarded", substrate_ctor(then_head, receiver), then_branch),
+            substrate_ctor("cf_guarded", substrate_ctor(else_head, receiver), else_branch),
+        )
+
+    def none_guard(self, test: ast.expr) -> tuple[str, str, Json] | None:
+        if not isinstance(test, ast.Compare):
+            return None
+        if len(test.ops) != 1 or len(test.comparators) != 1:
+            return None
+        raw_op = test.ops[0]
+        if not isinstance(raw_op, (ast.Is, ast.IsNot)):
+            return None
+        lhs = test.left
+        rhs = test.comparators[0]
+        if _is_none_literal(rhs) and not _is_none_literal(lhs):
+            receiver = self.expr(lhs)
+        elif _is_none_literal(lhs) and not _is_none_literal(rhs):
+            receiver = self.expr(rhs)
+        else:
+            return None
+        if isinstance(raw_op, ast.Is):
+            return "is_none", "is_some", receiver
+        return "is_some", "is_none", receiver
 
     def _record_read_if_global(self, name: str) -> None:
         if name in self.module_globals and name not in self.locals:
@@ -578,6 +623,10 @@ def _is_docstring_stmt(statement: ast.stmt) -> bool:
         and isinstance(statement.value, ast.Constant)
         and isinstance(statement.value.value, str)
     )
+
+
+def _is_none_literal(node: ast.expr) -> bool:
+    return isinstance(node, ast.Constant) and node.value is None
 
 
 def _callee_name(node: ast.expr) -> str:

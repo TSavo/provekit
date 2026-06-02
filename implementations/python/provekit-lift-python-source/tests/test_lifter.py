@@ -114,6 +114,43 @@ def _compare_pairs(node: object) -> list[tuple[str, str, str]]:
     return pairs
 
 
+def _assert_guard(term: object, expected_head: str, expected_arg: str) -> dict[str, object]:
+    assert isinstance(term, dict)
+    assert term["kind"] == "ctor"
+    assert term["name"] == "cf_guarded"
+    args = term["args"]
+    guard = args[0]
+    assert guard == {
+        "kind": "ctor",
+        "name": expected_head,
+        "args": [{"kind": "var", "name": expected_arg}],
+    }
+    return args[1]
+
+
+def _assert_none_guarded_if(
+    body: dict[str, object],
+    *,
+    op: str,
+    then_head: str,
+    else_head: str,
+) -> None:
+    assert body["kind"] == "ctor"
+    assert body["name"] == "cf_ite"
+    cond, then_branch, else_branch = body["args"]
+    assert cond == {
+        "kind": "ctor",
+        "name": "python:compare",
+        "args": [
+            {"kind": "const", "value": op, "sort": {"kind": "primitive", "name": "String"}},
+            {"kind": "var", "name": "x"},
+            {"kind": "const", "value": None, "sort": {"kind": "primitive", "name": "Unit"}},
+        ],
+    }
+    assert _assert_guard(then_branch, then_head, "x")["name"] == "python:return"
+    assert _assert_guard(else_branch, else_head, "x")["name"] == "python:return"
+
+
 def test_lift_function_emits_source_unit_and_python_ops() -> None:
     source = "GLOBAL = 3\n\ndef add_one(x):\n    y = x + GLOBAL\n    return y\n"
 
@@ -203,6 +240,73 @@ def test_compare_three_chain_mixed_ops_lifts_to_pairwise_and_composition(
     assert result.refusals == []
     assert _compare_pairs(body) == expected_pairs
     assert _ctor_names(body).count("python:and") == 2
+
+
+def test_if_is_none_lifts_to_cf_guarded_option_guards() -> None:
+    source = (
+        "def f(x):\n"
+        "    if x is None:\n"
+        "        return 0\n"
+        "    else:\n"
+        "        return 1\n"
+    )
+
+    result = lift_source(source, "none_guard.py")
+
+    body = _contract(result.ir, ".f")["post"]["args"][1]
+    assert result.refusals == []
+    _assert_none_guarded_if(
+        body,
+        op="is",
+        then_head="is_none",
+        else_head="is_some",
+    )
+    assert "python:compare" in _ctor_names(body)
+
+
+def test_if_is_not_none_lifts_to_cf_guarded_option_guards() -> None:
+    source = (
+        "def f(x):\n"
+        "    if x is not None:\n"
+        "        return 0\n"
+        "    else:\n"
+        "        return 1\n"
+    )
+
+    result = lift_source(source, "some_guard.py")
+
+    body = _contract(result.ir, ".f")["post"]["args"][1]
+    assert result.refusals == []
+    _assert_none_guarded_if(
+        body,
+        op="is not",
+        then_head="is_some",
+        else_head="is_none",
+    )
+    assert "python:compare" in _ctor_names(body)
+
+
+def test_compile_lift_roundtrip_preserves_cf_guarded_none_if_body() -> None:
+    source = (
+        "def f(x):\n"
+        "    if x is None:\n"
+        "        return 0\n"
+        "    else:\n"
+        "        return 1\n"
+    )
+    lifted = lift_source(source, "roundtrip_none.py")
+    contract = _contract(lifted.ir, ".f")
+    body = contract["post"]["args"][1]
+
+    compiled = compile_body_term(
+        body,
+        fn_name="f",
+        formals=[str(formal) for formal in contract["formals"]],
+    )
+    relifted = lift_source(compiled, "roundtrip_none.py")
+    relifted_body = _contract(relifted.ir, ".f")["post"]["args"][1]
+
+    assert canonical_json_bytes(relifted_body) == canonical_json_bytes(body)
 
 
 def test_refuses_unhandled_syntax_without_unknown_ops() -> None:
@@ -374,8 +478,30 @@ def test_kit_declaration_returns_python_source_lift_surface() -> None:
         "shutdown": False,
     }
     assert result["proofResolution"] == {"strategy": "pip"}
-    assert result["effectKinds"] == []
+    assert result["effectKinds"] == ["concept:panic-freedom"]
     assert result["effectLeaves"] == []
-    assert result["guardPredicates"] == []
-    assert result["controlCarriers"] == []
+    assert result["guardPredicates"] == [
+        {
+            "surface": "python-source",
+            "local": "is_some",
+            "concept": "concept:panic-freedom.option.some",
+        },
+        {
+            "surface": "python-source",
+            "local": "is_none",
+            "concept": "concept:panic-freedom.option.none",
+        },
+    ]
+    assert result["controlCarriers"] == [
+        {
+            "surface": "python-source",
+            "local": "cf_guarded",
+            "concept": "concept:panic-freedom.guard",
+        },
+        {
+            "surface": "python-source",
+            "local": "cf_ite",
+            "concept": "concept:panic-freedom.choice",
+        },
+    ]
     assert result["residueCategories"] == []
