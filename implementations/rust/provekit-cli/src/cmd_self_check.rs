@@ -1342,7 +1342,8 @@ fn panic_census(
     unbridged: Vec<Site>,
     annotations: BTreeMap<(String, usize, String), PanicSiteAnnotation>,
 ) -> Result<Vec<PanicCensusEntry>, String> {
-    let mut by_site: BTreeMap<(String, usize, String), PanicCensusEntry> = BTreeMap::new();
+    let mut by_site: BTreeMap<(Option<String>, String, usize, String), PanicCensusEntry> =
+        BTreeMap::new();
     if let Some(rows) = prove_json.get("rows").and_then(|v| v.as_array()) {
         for row in rows {
             if !row
@@ -1384,25 +1385,36 @@ fn panic_census(
             } else {
                 ("unproven".to_string(), row_reason(row))
             };
-            by_site.insert(
-                (file.clone(), line, callee.clone()),
-                PanicCensusEntry {
-                    file,
-                    line,
-                    callee,
-                    callsite_bundle_cid,
-                    status,
-                    reason,
-                    category: None,
-                    tier_to_close: None,
-                },
+            let key = (
+                callsite_bundle_cid.clone(),
+                file.clone(),
+                line,
+                callee.clone(),
             );
+            if by_site
+                .insert(
+                    key,
+                    PanicCensusEntry {
+                        file,
+                        line,
+                        callee,
+                        callsite_bundle_cid,
+                        status,
+                        reason,
+                        category: None,
+                        tier_to_close: None,
+                    },
+                )
+                .is_some()
+            {
+                return Err("duplicate panic census row after bundle scoping".to_string());
+            }
         }
     }
 
     for site in unbridged {
         by_site
-            .entry((site.file.clone(), site.line, site.callee.clone()))
+            .entry((None, site.file.clone(), site.line, site.callee.clone()))
             .or_insert(PanicCensusEntry {
                 file: site.file,
                 line: site.line,
@@ -1416,7 +1428,8 @@ fn panic_census(
     }
 
     for (key, annotation) in annotations {
-        let Some(entry) = by_site.get_mut(&key) else {
+        let scoped_key = (None, key.0, key.1, key.2);
+        let Some(entry) = by_site.get_mut(&scoped_key) else {
             return Err(format!(
                 "stale panic-site annotation for {}:{} {}",
                 annotation.file, annotation.line, annotation.callee
@@ -1434,7 +1447,16 @@ fn panic_census(
         entry.reason = annotation.reason;
     }
 
-    Ok(by_site.into_values().collect())
+    let mut census: Vec<_> = by_site.into_values().collect();
+    census.sort_by(|a, b| {
+        (&a.file, a.line, &a.callee, &a.callsite_bundle_cid).cmp(&(
+            &b.file,
+            b.line,
+            &b.callee,
+            &b.callsite_bundle_cid,
+        ))
+    });
+    Ok(census)
 }
 
 fn row_reason(row: &Value) -> String {
@@ -1738,6 +1760,21 @@ mod tests {
                 .expect("row object")
                 .insert("dischargeMethod".to_string(), json!(method));
         }
+        row
+    }
+
+    fn panic_row_with_bundle(
+        bundle: &str,
+        file: &str,
+        line: usize,
+        callee: &str,
+        status: &str,
+        method: Option<&str>,
+    ) -> Value {
+        let mut row = panic_row(file, line, callee, status, method);
+        row.as_object_mut()
+            .expect("row object")
+            .insert("callsiteBundleCid".to_string(), json!(bundle));
         row
     }
 
@@ -2486,6 +2523,59 @@ reason = "this row exists only in prove output"
         assert!(
             row.get("callsiteBundleCid").is_none(),
             "self-check panicCensus must not expose prove-row bundle metadata"
+        );
+    }
+
+    #[test]
+    fn panic_census_preserves_bundle_scoped_duplicate_sites_for_runtime_join() {
+        let td = tempfile::tempdir().expect("tempdir");
+        let mint = mint_json_with_diagnostics(vec![]);
+        let prove = json!({
+            "rows": [
+                panic_row_with_bundle(
+                    "blake3-512:bundle-a",
+                    "src/lib.rs",
+                    25,
+                    "method:unwrap",
+                    "undecidable",
+                    None
+                ),
+                panic_row_with_bundle(
+                    "blake3-512:bundle-b",
+                    "src/lib.rs",
+                    25,
+                    "method:unwrap",
+                    "undecidable",
+                    None
+                )
+            ]
+        });
+
+        let scoreboard = build_scoreboard_with_runtime_annotations(
+            "target",
+            td.path(),
+            &mint,
+            &prove,
+            crate::panic_annotations_runtime::AnnotationCheckMode::Strict,
+        )
+        .expect("scoreboard");
+
+        assert_eq!(
+            scoreboard.panic_census.len(),
+            2,
+            "bundle-scoped panic sites must not collapse before runtime annotation join"
+        );
+        let bundles: std::collections::BTreeSet<_> = scoreboard
+            .panic_census
+            .iter()
+            .filter_map(|entry| entry.callsite_bundle_cid.as_deref())
+            .collect();
+        assert_eq!(
+            bundles,
+            std::collections::BTreeSet::from([
+                "blake3-512:bundle-a",
+                "blake3-512:bundle-b",
+            ])
         );
     }
 

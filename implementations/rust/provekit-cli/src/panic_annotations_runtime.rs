@@ -175,23 +175,7 @@ pub fn annotation_runtime_check_with_mementos(
     let memento_annotation_count = memento_annotations.len();
     let mut rows = panic_census.to_vec();
     let before_k = count_proven_rows(&rows);
-    let row_index: BTreeMap<(String, usize, String), usize> = rows
-        .iter()
-        .enumerate()
-        .map(|(index, row)| ((row.file.clone(), row.line, row.callee.clone()), index))
-        .collect();
-    let scoped_row_index: BTreeMap<(String, String, usize, String), usize> = rows
-        .iter()
-        .enumerate()
-        .filter_map(|(index, row)| {
-            row.callsite_bundle_cid.as_ref().map(|bundle| {
-                (
-                    (bundle.clone(), row.file.clone(), row.line, row.callee.clone()),
-                    index,
-                )
-            })
-        })
-        .collect();
+    let (row_index, scoped_row_index) = build_row_indexes(&rows, &mut issues);
     let mut annotated_rows = BTreeMap::<usize, String>::new();
 
     for annotation in manifest.annotations {
@@ -313,15 +297,43 @@ fn runtime_annotations_from_mementos(
 
 fn apply_runtime_annotation(
     annotation: RuntimeAnnotation,
-    row_index: &BTreeMap<(String, usize, String), usize>,
-    scoped_row_index: &BTreeMap<(String, String, usize, String), usize>,
+    row_index: &BTreeMap<(String, usize, String), Option<usize>>,
+    scoped_row_index: &BTreeMap<(String, String, usize, String), Option<usize>>,
     annotated_rows: &mut BTreeMap<usize, String>,
     rows: &mut [PanicCensusRow],
     issues: &mut Vec<Value>,
 ) {
     let index = match annotation.scoped_key() {
-        Some(scoped_key) => scoped_row_index.get(&scoped_key).copied(),
-        None => row_index.get(&annotation.key()).copied(),
+        Some(scoped_key) => match scoped_row_index.get(&scoped_key).copied().flatten() {
+            Some(index) => Some(index),
+            None if scoped_row_index.contains_key(&scoped_key) => {
+                issues.push(annotation_issue(
+                    "panic-census-row-duplicate",
+                    &format!(
+                        "duplicate panic census row for scoped key {}:{} {} in bundle {}",
+                        annotation.file, annotation.line, annotation.callee, scoped_key.0
+                    ),
+                    Some(&annotation),
+                ));
+                return;
+            }
+            None => None,
+        },
+        None => match row_index.get(&annotation.key()).copied().flatten() {
+            Some(index) => Some(index),
+            None if row_index.contains_key(&annotation.key()) => {
+                issues.push(annotation_issue(
+                    "panic-census-row-ambiguous",
+                    &format!(
+                        "ambiguous panic census row for unscoped annotation {}:{} {}",
+                        annotation.file, annotation.line, annotation.callee
+                    ),
+                    Some(&annotation),
+                ));
+                return;
+            }
+            None => None,
+        },
     };
     let Some(index) = index else {
         issues.push(annotation_issue(
@@ -361,6 +373,56 @@ fn apply_runtime_annotation(
     rows[index].category = Some(annotation.category);
     rows[index].tier_to_close = Some(annotation.tier_to_close);
     rows[index].reason = annotation.reason;
+}
+
+fn build_row_indexes(
+    rows: &[PanicCensusRow],
+    issues: &mut Vec<Value>,
+) -> (
+    BTreeMap<(String, usize, String), Option<usize>>,
+    BTreeMap<(String, String, usize, String), Option<usize>>,
+) {
+    let mut row_index = BTreeMap::<(String, usize, String), Option<usize>>::new();
+    let mut scoped_row_index =
+        BTreeMap::<(String, String, usize, String), Option<usize>>::new();
+
+    for (index, row) in rows.iter().enumerate() {
+        let key = (row.file.clone(), row.line, row.callee.clone());
+        match row_index.get_mut(&key) {
+            Some(slot) => *slot = None,
+            None => {
+                row_index.insert(key, Some(index));
+            }
+        }
+
+        let Some(bundle) = &row.callsite_bundle_cid else {
+            continue;
+        };
+        let scoped_key = (
+            bundle.clone(),
+            row.file.clone(),
+            row.line,
+            row.callee.clone(),
+        );
+        match scoped_row_index.get_mut(&scoped_key) {
+            Some(slot) => {
+                *slot = None;
+                issues.push(json!({
+                    "kind": "panic-census-row-duplicate",
+                    "bundleCid": scoped_key.0,
+                    "file": scoped_key.1,
+                    "line": scoped_key.2,
+                    "callee": scoped_key.3,
+                    "secondRowIndex": index,
+                }));
+            }
+            None => {
+                scoped_row_index.insert(scoped_key, Some(index));
+            }
+        }
+    }
+
+    (row_index, scoped_row_index)
 }
 
 fn annotation_source(annotation: &RuntimeAnnotation) -> String {
@@ -855,6 +917,146 @@ reason = "second"
         assert!(
             err.check.evidence.to_string().contains("duplicate"),
             "duplicate evidence should be named: {:#?}",
+            err.check
+        );
+    }
+
+    #[test]
+    fn annotation_runtime_unscoped_manifest_refuses_ambiguous_bundle_rows() {
+        let td = tempfile::tempdir().unwrap();
+        write_runtime_annotation_manifest(
+            td.path(),
+            r#"
+[[residue]]
+file = "src/lib.rs"
+line = 10
+callee = "method:expect"
+category = "lock_poisoning_residue"
+tier_to_close = "irreducible"
+reason = "ambiguous without bundle"
+"#,
+        );
+        let rows = vec![
+            runtime_panic_row_with_bundle(
+                "blake3-512:bundle-a",
+                "src/lib.rs",
+                10,
+                "method:expect",
+                "unproven",
+            ),
+            runtime_panic_row_with_bundle(
+                "blake3-512:bundle-b",
+                "src/lib.rs",
+                10,
+                "method:expect",
+                "unproven",
+            ),
+        ];
+
+        let err = annotation_runtime_check(td.path(), &rows, AnnotationCheckMode::Strict)
+            .expect_err("unscoped annotation over bundle-ambiguous rows must fail");
+
+        assert!(
+            err.check.evidence.to_string().contains("ambiguous"),
+            "ambiguous base-key evidence should be named: {:#?}",
+            err.check
+        );
+    }
+
+    #[test]
+    fn annotation_runtime_scoped_memento_disambiguates_ambiguous_bundle_rows() {
+        let td = tempfile::tempdir().unwrap();
+        let rows = vec![
+            runtime_panic_row_with_bundle(
+                "blake3-512:bundle-a",
+                "src/lib.rs",
+                10,
+                "method:expect",
+                "unproven",
+            ),
+            runtime_panic_row_with_bundle(
+                "blake3-512:bundle-b",
+                "src/lib.rs",
+                10,
+                "method:expect",
+                "unproven",
+            ),
+        ];
+        let annotations = vec![effect_annotation(
+            "blake3-512:bundle-b",
+            "src/lib.rs",
+            10,
+            "method:expect",
+            "residue",
+            "lock_poisoning_residue",
+            "irreducible",
+            "scoped dependency memento",
+        )];
+
+        let outcome = annotation_runtime_check_with_mementos(
+            td.path(),
+            &rows,
+            &annotations,
+            AnnotationCheckMode::Strict,
+        )
+        .expect("bundle-scoped memento must disambiguate ambiguous base key");
+
+        let annotated = outcome
+            .rows
+            .iter()
+            .find(|row| row.callsite_bundle_cid.as_deref() == Some("blake3-512:bundle-b"))
+            .expect("bundle-b row");
+        assert_eq!(annotated.category.as_deref(), Some("lock_poisoning_residue"));
+        assert_eq!(annotated.reason, "scoped dependency memento");
+        let untouched = outcome
+            .rows
+            .iter()
+            .find(|row| row.callsite_bundle_cid.as_deref() == Some("blake3-512:bundle-a"))
+            .expect("bundle-a row");
+        assert_eq!(untouched.category, None);
+    }
+
+    #[test]
+    fn annotation_runtime_duplicate_scoped_rows_fail_closed() {
+        let td = tempfile::tempdir().unwrap();
+        let rows = vec![
+            runtime_panic_row_with_bundle(
+                "blake3-512:bundle-a",
+                "src/lib.rs",
+                10,
+                "method:expect",
+                "unproven",
+            ),
+            runtime_panic_row_with_bundle(
+                "blake3-512:bundle-a",
+                "src/lib.rs",
+                10,
+                "method:expect",
+                "unproven",
+            ),
+        ];
+        let annotations = vec![effect_annotation(
+            "blake3-512:bundle-a",
+            "src/lib.rs",
+            10,
+            "method:expect",
+            "residue",
+            "lock_poisoning_residue",
+            "irreducible",
+            "duplicate scoped row",
+        )];
+
+        let err = annotation_runtime_check_with_mementos(
+            td.path(),
+            &rows,
+            &annotations,
+            AnnotationCheckMode::Strict,
+        )
+        .expect_err("duplicate scoped rows must fail closed");
+
+        assert!(
+            err.check.evidence.to_string().contains("duplicate"),
+            "duplicate scoped-row evidence should be named: {:#?}",
             err.check
         );
     }

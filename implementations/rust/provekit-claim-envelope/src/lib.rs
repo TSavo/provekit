@@ -1178,14 +1178,14 @@ pub struct MintEffectSiteAnnotationArgs {
     pub signer_seed: Ed25519Seed,
 }
 
-fn effect_site_annotation_content_cid(args: &MintEffectSiteAnnotationArgs) -> String {
+fn effect_site_annotation_content_cid(args: &MintEffectSiteAnnotationArgs, line: i64) -> String {
     let mut sorted_inputs = args.input_cids.clone();
     sorted_inputs.sort();
     let input_arr: Vec<Arc<Value>> = sorted_inputs.into_iter().map(Value::string).collect();
     let content = Value::object([
         ("effectKind", Value::string(args.effect_kind.clone())),
         ("file", Value::string(args.file.clone())),
-        ("line", Value::integer(args.line as i64)),
+        ("line", Value::integer(line)),
         ("callee", Value::string(args.callee.clone())),
         ("status", Value::string(args.status.clone())),
         ("category", Value::string(args.category.clone())),
@@ -1239,8 +1239,13 @@ pub fn mint_effect_site_annotation(
             "mint_effect_site_annotation: producedBy and producedAt must not be empty".into(),
         ));
     }
+    let line = i64::try_from(args.line).map_err(|_| {
+        ClaimEnvelopeError::Other(
+            "mint_effect_site_annotation: line does not fit signed 64-bit integer".into(),
+        )
+    })?;
 
-    let header_cid = effect_site_annotation_content_cid(args);
+    let header_cid = effect_site_annotation_content_cid(args, line);
     let mut sorted_inputs = args.input_cids.clone();
     sorted_inputs.sort();
     let input_arr: Vec<Arc<Value>> = sorted_inputs.into_iter().map(Value::string).collect();
@@ -1250,7 +1255,7 @@ pub fn mint_effect_site_annotation(
         vec![
             ("effectKind".into(), Value::string(args.effect_kind.clone())),
             ("file".into(), Value::string(args.file.clone())),
-            ("line".into(), Value::integer(args.line as i64)),
+            ("line".into(), Value::integer(line)),
             ("callee".into(), Value::string(args.callee.clone())),
             ("status".into(), Value::string(args.status.clone())),
             ("category".into(), Value::string(args.category.clone())),
@@ -1282,6 +1287,23 @@ mod tests {
 
     fn dummy_seed() -> Ed25519Seed {
         [0x42; 32]
+    }
+
+    fn valid_effect_site_annotation_args() -> MintEffectSiteAnnotationArgs {
+        MintEffectSiteAnnotationArgs {
+            effect_kind: "concept:panic-freedom".into(),
+            file: "src/lib.rs".into(),
+            line: 42,
+            callee: "method:unwrap".into(),
+            status: "residue".into(),
+            category: "lock_poisoning_residue".into(),
+            tier_to_close: "irreducible".into(),
+            reason: "lock poisoning is runtime residue".into(),
+            input_cids: vec!["blake3-512:input".into()],
+            produced_by: "test".into(),
+            produced_at: "2026-06-01T00:00:00Z".into(),
+            signer_seed: dummy_seed(),
+        }
     }
 
     #[test]
@@ -1593,20 +1615,7 @@ mod tests {
 
     #[test]
     fn effect_site_annotation_mints_layered_panic_annotation_header() {
-        let args = MintEffectSiteAnnotationArgs {
-            effect_kind: "concept:panic-freedom".into(),
-            file: "src/lib.rs".into(),
-            line: 42,
-            callee: "method:unwrap".into(),
-            status: "residue".into(),
-            category: "lock_poisoning_residue".into(),
-            tier_to_close: "irreducible".into(),
-            reason: "lock poisoning is runtime residue".into(),
-            input_cids: vec!["blake3-512:input".into()],
-            produced_by: "test".into(),
-            produced_at: "2026-06-01T00:00:00Z".into(),
-            signer_seed: dummy_seed(),
-        };
+        let args = valid_effect_site_annotation_args();
 
         let minted = mint_effect_site_annotation(&args).expect("mint annotation");
         let env: serde_json::Value =
@@ -1653,6 +1662,40 @@ mod tests {
             Some("blake3-512:input")
         );
         assert!(minted.cid.starts_with("blake3-512:"));
+    }
+
+    #[test]
+    fn effect_site_annotation_input_cids_are_order_invariant() {
+        let mut first = valid_effect_site_annotation_args();
+        first.input_cids = vec!["blake3-512:a".into(), "blake3-512:b".into()];
+        let mut second = valid_effect_site_annotation_args();
+        second.input_cids = vec!["blake3-512:b".into(), "blake3-512:a".into()];
+
+        let first = mint_effect_site_annotation(&first).expect("mint first");
+        let second = mint_effect_site_annotation(&second).expect("mint second");
+        let first_env: serde_json::Value =
+            serde_json::from_slice(&first.canonical_bytes).expect("parse first");
+        let second_env: serde_json::Value =
+            serde_json::from_slice(&second.canonical_bytes).expect("parse second");
+
+        assert_eq!(first.cid, second.cid);
+        assert_eq!(
+            first_env.pointer("/header/cid"),
+            second_env.pointer("/header/cid")
+        );
+    }
+
+    #[test]
+    fn effect_site_annotation_rejects_line_values_that_do_not_fit_i64() {
+        let mut args = valid_effect_site_annotation_args();
+        args.line = usize::MAX;
+
+        let err = mint_effect_site_annotation(&args).expect_err("line overflow must fail");
+
+        assert!(
+            err.to_string().contains("line"),
+            "line conversion error should identify the field: {err}"
+        );
     }
 
     #[test]

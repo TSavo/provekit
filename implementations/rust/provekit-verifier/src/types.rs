@@ -1001,6 +1001,37 @@ mod tests {
         assert_eq!(merged.effect_kind, "concept:panic-freedom");
         assert_eq!(merged.status, "residue");
         assert!(left.load_errors.is_empty(), "{:#?}", left.load_errors);
+
+        let original = EffectSiteAnnotation {
+            memento_cid: "blake3-512:annotation-original".to_string(),
+            ..merged.clone()
+        };
+        let duplicate = EffectSiteAnnotation {
+            memento_cid: "blake3-512:annotation-duplicate".to_string(),
+            ..merged.clone()
+        };
+        let mut left = MementoPool::default();
+        left.panic_effect_site_annotations
+            .insert(key.clone(), original);
+        let mut right = MementoPool::default();
+        right
+            .panic_effect_site_annotations
+            .insert(key.clone(), duplicate);
+
+        left.merge(right);
+
+        let kept = left
+            .panic_effect_site_annotations
+            .get(&key)
+            .expect("original annotation must remain indexed");
+        assert_eq!(kept.memento_cid, "blake3-512:annotation-original");
+        assert!(
+            left.load_errors.iter().any(|error| error
+                .reason
+                .contains("[effect-site-annotation-duplicate]")),
+            "duplicate merge must emit stable tagged load error: {:#?}",
+            left.load_errors
+        );
     }
 
     #[test]
