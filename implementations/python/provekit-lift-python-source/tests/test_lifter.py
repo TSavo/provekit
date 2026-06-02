@@ -29,6 +29,21 @@ RUNTIME_FAILURE_EFFECT_LEAF = {
     "local": "python:raise",
     "concept": "concept:panic-freedom.leaf.runtime-failure-site",
 }
+ATTRIBUTE_RUNTIME_FAILURE_EFFECT_LEAF = {
+    "surface": "python-source",
+    "local": "python:attribute",
+    "concept": "concept:panic-freedom.leaf.runtime-failure-site",
+}
+SUBSCRIPT_RUNTIME_FAILURE_EFFECT_LEAF = {
+    "surface": "python-source",
+    "local": "python:subscript",
+    "concept": "concept:panic-freedom.leaf.runtime-failure-site",
+}
+RUNTIME_FAILURE_EFFECT_LEAVES = [
+    RUNTIME_FAILURE_EFFECT_LEAF,
+    ATTRIBUTE_RUNTIME_FAILURE_EFFECT_LEAF,
+    SUBSCRIPT_RUNTIME_FAILURE_EFFECT_LEAF,
+]
 PANIC_FREEDOM_EFFECT_KIND = "concept:panic-freedom"
 RUNTIME_FAILURE_SITE_CONCEPT = "concept:panic-freedom.leaf.runtime-failure-site"
 
@@ -372,6 +387,190 @@ def test_bare_raise_emits_runtime_failure_locus_with_unit_arg() -> None:
     ]
 
 
+def test_attribute_load_emits_runtime_failure_locus_and_panics_effect() -> None:
+    source = "def f(obj):\n    return obj.name\n"
+
+    result = lift_source(source, "attr_access.py")
+
+    contract = _contract(result.ir, ".f")
+    assert result.refusals == []
+    assert contract["effects"] == [{"kind": "panics"}]
+    assert _runtime_failure_loci(contract) == [
+        {
+            "effectKind": PANIC_FREEDOM_EFFECT_KIND,
+            "callee": RUNTIME_FAILURE_SITE_CONCEPT,
+            "subkind": "attribute-access",
+            "exceptionClass": "AttributeError",
+            "argTerm": {
+                "kind": "ctor",
+                "name": "python:attribute",
+                "args": [
+                    {"kind": "var", "name": "obj"},
+                    {
+                        "kind": "const",
+                        "value": "name",
+                        "sort": {"kind": "primitive", "name": "String"},
+                    },
+                ],
+            },
+            "file": "attr_access.py",
+            "line": 2,
+            "col": 11,
+        }
+    ]
+
+
+def test_subscript_load_emits_runtime_failure_locus_and_panics_effect() -> None:
+    source = "def f(xs, key):\n    return xs[key]\n"
+
+    result = lift_source(source, "subscript_access.py")
+
+    contract = _contract(result.ir, ".f")
+    assert result.refusals == []
+    assert contract["effects"] == [{"kind": "panics"}]
+    assert _runtime_failure_loci(contract) == [
+        {
+            "effectKind": PANIC_FREEDOM_EFFECT_KIND,
+            "callee": RUNTIME_FAILURE_SITE_CONCEPT,
+            "subkind": "subscript-access",
+            "argTerm": {
+                "kind": "ctor",
+                "name": "python:subscript",
+                "args": [
+                    {"kind": "var", "name": "xs"},
+                    {"kind": "var", "name": "key"},
+                ],
+            },
+            "file": "subscript_access.py",
+            "line": 2,
+            "col": 11,
+        }
+    ]
+
+
+def test_mixed_runtime_failure_sites_share_deduped_panics_effect() -> None:
+    source = (
+        "def f(obj, xs, key):\n"
+        "    a = obj.name\n"
+        "    b = xs[key]\n"
+        "    raise RuntimeError\n"
+    )
+
+    result = lift_source(source, "mixed_runtime.py")
+
+    contract = _contract(result.ir, ".f")
+    loci = _runtime_failure_loci(contract)
+    assert result.refusals == []
+    assert contract["effects"] == [{"kind": "panics"}]
+    assert [locus["subkind"] for locus in loci] == [
+        "attribute-access",
+        "subscript-access",
+        "explicit-raise",
+    ]
+    assert [(locus["line"], locus["col"]) for locus in loci] == [(2, 8), (3, 8), (4, 4)]
+
+
+def test_attribute_and_subscript_store_targets_are_not_slice4_runtime_failure_loci() -> None:
+    source = (
+        "def f(obj, xs, key, value):\n"
+        "    obj.name = value\n"
+        "    xs[key] = value\n"
+        "    return value\n"
+    )
+
+    result = lift_source(source, "store_targets.py")
+
+    contract = _contract(result.ir, ".f")
+    assert result.refusals == []
+    assert contract["effects"] == [
+        {"kind": "writes", "target": "obj.name"},
+        {"kind": "writes", "target": "xs[key]"},
+    ]
+    assert contract.get("panicLoci", []) == []
+
+
+def test_nested_attribute_and_subscript_store_targets_do_not_leak_runtime_failure_loci() -> None:
+    source = (
+        "def f(obj, xs, ys, i, value):\n"
+        "    obj.inner.name = value\n"
+        "    xs[ys[i]] = value\n"
+        "    return value\n"
+    )
+
+    result = lift_source(source, "nested_store_targets.py")
+
+    contract = _contract(result.ir, ".f")
+    assert result.refusals == []
+    assert contract["effects"] == [
+        {"kind": "writes", "target": "obj.inner.name"},
+        {"kind": "writes", "target": "xs[ys[i]]"},
+    ]
+    assert contract.get("panicLoci", []) == []
+
+
+def test_none_guarded_attribute_access_emits_one_runtime_failure_locus() -> None:
+    source = (
+        "def f(obj):\n"
+        "    if obj.name is None:\n"
+        "        return 0\n"
+        "    return 1\n"
+    )
+
+    result = lift_source(source, "attr_guard.py")
+
+    contract = _contract(result.ir, ".f")
+    loci = _runtime_failure_loci(contract)
+    assert result.refusals == []
+    assert contract["effects"] == [{"kind": "panics"}]
+    assert [locus["subkind"] for locus in loci] == ["attribute-access"]
+    assert [(locus["line"], locus["col"]) for locus in loci] == [(2, 7)]
+
+
+def test_none_guarded_subscript_access_emits_one_runtime_failure_locus() -> None:
+    source = (
+        "def f(xs, key):\n"
+        "    if xs[key] is None:\n"
+        "        return 0\n"
+        "    return 1\n"
+    )
+
+    result = lift_source(source, "subscript_guard.py")
+
+    contract = _contract(result.ir, ".f")
+    loci = _runtime_failure_loci(contract)
+    assert result.refusals == []
+    assert contract["effects"] == [{"kind": "panics"}]
+    assert [locus["subkind"] for locus in loci] == ["subscript-access"]
+    assert [(locus["line"], locus["col"]) for locus in loci] == [(2, 7)]
+
+
+def test_method_call_callee_attribute_emits_runtime_failure_locus() -> None:
+    source = "def f(obj):\n    return obj.method()\n"
+
+    result = lift_source(source, "method_call.py")
+
+    contract = _contract(result.ir, ".f")
+    loci = _runtime_failure_loci(contract)
+    assert result.refusals == []
+    assert {"kind": "panics"} in contract["effects"]
+    assert {"kind": "unresolved_call", "name": "obj.method"} in contract["effects"]
+    assert [locus["subkind"] for locus in loci] == ["attribute-access"]
+    assert loci[0]["exceptionClass"] == "AttributeError"
+    assert loci[0]["argTerm"] == {
+        "kind": "ctor",
+        "name": "python:attribute",
+        "args": [
+            {"kind": "var", "name": "obj"},
+            {
+                "kind": "const",
+                "value": "method",
+                "sort": {"kind": "primitive", "name": "String"},
+            },
+        ],
+    }
+    assert (loci[0]["line"], loci[0]["col"]) == (2, 11)
+
+
 def test_compile_lift_roundtrip_preserves_cf_guarded_none_if_body() -> None:
     source = (
         "def f(x):\n"
@@ -541,7 +740,7 @@ def test_checked_in_python_source_manifest_invokes_module_form_and_declares_kit(
     declaration = next(response for response in responses if response.get("id") == 2)
     assert "error" not in declaration, declaration
     assert declaration["result"]["kit"]["id"] == "python-source"
-    assert declaration["result"]["effectLeaves"] == [RUNTIME_FAILURE_EFFECT_LEAF]
+    assert declaration["result"]["effectLeaves"] == RUNTIME_FAILURE_EFFECT_LEAVES
 
 
 def test_kit_declaration_returns_python_source_lift_surface() -> None:
@@ -566,8 +765,8 @@ def test_kit_declaration_returns_python_source_lift_surface() -> None:
     }
     assert result["proofResolution"] == {"strategy": "pip"}
     assert result["effectKinds"] == ["concept:panic-freedom"]
-    assert result["effectLeaves"] == [RUNTIME_FAILURE_EFFECT_LEAF]
-    assert "subkind" not in result["effectLeaves"][0]
+    assert result["effectLeaves"] == RUNTIME_FAILURE_EFFECT_LEAVES
+    assert all("subkind" not in leaf for leaf in result["effectLeaves"])
     assert result["guardPredicates"] == [
         {
             "surface": "python-source",

@@ -138,6 +138,52 @@ emits_signed_mementos = false
     project
 }
 
+fn stage_python_access_project(lift_script: &Path) -> PathBuf {
+    let project = unique_dir("access-project");
+    fs::write(
+        project.join("access.py"),
+        "def use(obj, xs, key):\n    attr = obj.name\n    item = xs[key]\n    return attr\n",
+    )
+    .expect("write access.py");
+
+    let provekit = project.join(".provekit");
+    fs::create_dir_all(provekit.join("lift").join("python-source"))
+        .expect("mkdir .provekit/lift/python-source");
+    fs::write(
+        provekit.join("config.toml"),
+        r#"[[plugins]]
+name = "python-source"
+kind = "lift"
+surface = "python-source"
+"#,
+    )
+    .expect("write config.toml");
+    fs::write(
+        provekit
+            .join("lift")
+            .join("python-source")
+            .join("manifest.toml"),
+        format!(
+            r#"name = "python-source"
+version = "0.1.0-draft"
+protocol_version = "provekit-lift/1"
+kind = "lift"
+command = ["{}", "--rpc"]
+working_dir = "."
+
+[capabilities]
+authoring_surfaces = ["python-source"]
+ir_version = "v1.1.0"
+emits_signed_mementos = false
+"#,
+            lift_script.display()
+        ),
+    )
+    .expect("write manifest.toml");
+
+    project
+}
+
 fn run_mint(project: &Path) {
     let out = Command::new(provekit_bin())
         .arg("mint")
@@ -215,6 +261,88 @@ fn python_source_raise_mint_preserves_runtime_failure_locus_and_enumerates_calls
     assert!(
         runtime_failure_sites[0].bridge_target_cid.is_empty(),
         "no bridge exists yet, so the surfaced callsite must remain undecidable"
+    );
+
+    let _ = fs::remove_dir_all(&project);
+}
+
+#[test]
+fn python_source_access_mint_preserves_runtime_failure_loci_and_enumerates_callsites() {
+    if !python_available() {
+        eprintln!("python3 not on PATH: skipping python-source access runtime-failure mint test");
+        return;
+    }
+    let lift_script = build_python_lift_source();
+    let project = stage_python_access_project(&lift_script);
+    run_mint(&project);
+
+    let pool = provekit_verifier::load_all_proofs::run(&project);
+    assert!(
+        pool.load_errors.is_empty(),
+        "python-source access proof must load cleanly: {:?}",
+        pool.load_errors
+    );
+
+    let loci = contract_runtime_failure_loci(&pool);
+    assert_eq!(
+        loci,
+        vec![
+            json!({
+                "effectKind": "concept:panic-freedom",
+                "callee": RUNTIME_FAILURE_SITE_CONCEPT,
+                "subkind": "attribute-access",
+                "exceptionClass": "AttributeError",
+                "argTerm": {
+                    "kind": "ctor",
+                    "name": "python:attribute",
+                    "args": [
+                        {"kind": "var", "name": "obj"},
+                        {"kind": "const", "value": "name", "sort": {"kind": "primitive", "name": "String"}}
+                    ]
+                },
+                "file": "access.py",
+                "line": 2,
+                "col": 11
+            }),
+            json!({
+                "effectKind": "concept:panic-freedom",
+                "callee": RUNTIME_FAILURE_SITE_CONCEPT,
+                "subkind": "subscript-access",
+                "argTerm": {
+                    "kind": "ctor",
+                    "name": "python:subscript",
+                    "args": [
+                        {"kind": "var", "name": "xs"},
+                        {"kind": "var", "name": "key"}
+                    ]
+                },
+                "file": "access.py",
+                "line": 3,
+                "col": 11
+            }),
+        ],
+        "mint must preserve python-source access runtime-failure panicLoci rows"
+    );
+
+    let callsites = provekit_verifier::enumerate_callsites::run(&pool);
+    let runtime_failure_sites: Vec<_> = callsites
+        .iter()
+        .filter(|cs| cs.panic_site && cs.callee.as_deref() == Some(RUNTIME_FAILURE_SITE_CONCEPT))
+        .collect();
+    assert_eq!(
+        runtime_failure_sites.len(),
+        2,
+        "verifier must surface exactly two substrate runtime-failure panic sites; got {callsites:#?}"
+    );
+    assert_eq!(runtime_failure_sites[0].file.as_deref(), Some("access.py"));
+    assert_eq!(runtime_failure_sites[0].line, Some(2));
+    assert_eq!(runtime_failure_sites[1].file.as_deref(), Some("access.py"));
+    assert_eq!(runtime_failure_sites[1].line, Some(3));
+    assert!(
+        runtime_failure_sites
+            .iter()
+            .all(|cs| cs.bridge_target_cid.is_empty()),
+        "no bridges exist yet, so surfaced access callsites must remain undecidable"
     );
 
     let _ = fs::remove_dir_all(&project);
