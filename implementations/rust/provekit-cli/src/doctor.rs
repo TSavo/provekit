@@ -2307,13 +2307,19 @@ fn plugin_consumer_surfaces(
     Ok(out)
 }
 
-/// Collect all (surface, kind_dir, manifest_path) triples for declared plugins.
-/// Manifests live at .provekit/<kind_dir>/<surface>/manifest.toml.
+/// Collect all (surface, kind_dir, manifest_path) triples doctor should check.
+///
+/// Configured plugins remain the primary entrypoint. In addition, project-local
+/// lift manifests may opt into authoring-surface doctor checks by declaring
+/// their authoring capability in the manifest itself. That keeps doctor
+/// manifest-driven and language-blind: it reads kit-owned metadata instead of a
+/// Rust-side list of known kits.
 fn collect_manifest_entries(
     kit_dir: &Path,
     plugins: &[PluginEntry],
 ) -> Vec<(String, String, PathBuf)> {
     let mut entries = Vec::new();
+    let mut seen = BTreeSet::new();
     for plugin in plugins {
         let kind_dir = plugin_kind_dir(plugin);
         let manifest_path = kit_dir
@@ -2321,9 +2327,76 @@ fn collect_manifest_entries(
             .join(&kind_dir)
             .join(&plugin.surface)
             .join("manifest.toml");
+        seen.insert((kind_dir.clone(), plugin.surface.clone()));
         entries.push((plugin.surface.clone(), kind_dir, manifest_path));
     }
+
+    let lift_root = kit_dir.join(".provekit").join("lift");
+    let mut authoring_entries = Vec::new();
+    if let Ok(read_dir) = fs::read_dir(&lift_root) {
+        for entry in read_dir.flatten() {
+            let Ok(file_type) = entry.file_type() else {
+                continue;
+            };
+            if !file_type.is_dir() {
+                continue;
+            }
+            let surface = entry.file_name().to_string_lossy().to_string();
+            if surface.is_empty() {
+                continue;
+            }
+            let key = ("lift".to_string(), surface.clone());
+            if seen.contains(&key) {
+                continue;
+            }
+            let manifest_path = entry.path().join("manifest.toml");
+            if !manifest_path.is_file() {
+                continue;
+            }
+            if manifest_file_declares_authoring_lift_surface(&manifest_path) {
+                authoring_entries.push((surface, manifest_path));
+            }
+        }
+    }
+    authoring_entries.sort_by(|left, right| left.0.cmp(&right.0));
+    for (surface, manifest_path) in authoring_entries {
+        let key = ("lift".to_string(), surface.clone());
+        if seen.insert(key) {
+            entries.push((surface, "lift".to_string(), manifest_path));
+        }
+    }
+
     entries
+}
+
+fn manifest_file_declares_authoring_lift_surface(manifest_path: &Path) -> bool {
+    let Ok(text) = fs::read_to_string(manifest_path) else {
+        return false;
+    };
+    let Ok(manifest) = text.parse::<toml::Value>() else {
+        return false;
+    };
+    let capabilities = manifest.get("capabilities");
+    manifest_authoring_surfaces_nonempty(capabilities)
+        && !capability_bool(capabilities, "emits_signed_mementos").unwrap_or(false)
+        && manifest.get("phase").and_then(toml::Value::as_str) != Some("consumer")
+}
+
+fn manifest_authoring_surfaces_nonempty(capabilities: Option<&toml::Value>) -> bool {
+    capabilities
+        .and_then(|capabilities| capabilities.get("authoring_surfaces"))
+        .and_then(toml::Value::as_array)
+        .is_some_and(|surfaces| {
+            surfaces
+                .iter()
+                .any(|surface| surface.as_str().is_some_and(|surface| !surface.is_empty()))
+        })
+}
+
+fn capability_bool(capabilities: Option<&toml::Value>, key: &str) -> Option<bool> {
+    capabilities
+        .and_then(|capabilities| capabilities.get(key))
+        .and_then(toml::Value::as_bool)
 }
 
 /// Map a PluginEntry's declared kind to the manifest subdirectory name.
@@ -2538,6 +2611,48 @@ mod tests {
             ),
         )
         .unwrap();
+    }
+
+    fn write_manifest_with_capabilities(
+        kit_dir: &Path,
+        kind: &str,
+        surface: &str,
+        command: &str,
+        working_dir: &str,
+        version: Option<&str>,
+        phase: Option<&str>,
+        authoring_surfaces: Option<&[&str]>,
+        emits_signed_mementos: Option<bool>,
+    ) {
+        let dir = kit_dir.join(".provekit").join(kind).join(surface);
+        fs::create_dir_all(&dir).unwrap();
+        let mut text = format!("name = \"test-{surface}\"\n");
+        if let Some(version) = version {
+            text.push_str(&format!("version = \"{version}\"\n"));
+        }
+        text.push_str(&format!(
+            "command = [{command}]\nworking_dir = \"{working_dir}\"\n"
+        ));
+        if let Some(phase) = phase {
+            text.push_str(&format!("phase = \"{phase}\"\n"));
+        }
+        if authoring_surfaces.is_some() || emits_signed_mementos.is_some() {
+            text.push_str("\n[capabilities]\n");
+            if let Some(surfaces) = authoring_surfaces {
+                let values = surfaces
+                    .iter()
+                    .map(|surface| format!("\"{surface}\""))
+                    .collect::<Vec<_>>()
+                    .join(", ");
+                text.push_str(&format!("authoring_surfaces = [{values}]\n"));
+            }
+            if let Some(emits_signed_mementos) = emits_signed_mementos {
+                text.push_str(&format!(
+                    "emits_signed_mementos = {emits_signed_mementos}\n"
+                ));
+            }
+        }
+        fs::write(dir.join("manifest.toml"), text).unwrap();
     }
 
     /// Create a dummy executable file.
@@ -3238,6 +3353,260 @@ mod tests {
                 .get("runtimeVersion")
                 .and_then(Value::as_str),
             Some("0.1.0")
+        );
+    }
+
+    fn assert_manifest_declared_authoring_surface_is_collected(surface: &str) {
+        let td = TempDir::new().unwrap();
+        let kit = td.path();
+        let plugin_name = format!("{surface}-plugin");
+        let plugin = kit.join(&plugin_name);
+        make_kit_declaration_plugin(&plugin, valid_panic_freedom_declaration(surface));
+        write_kit(kit, "");
+        write_manifest_with_capabilities(
+            kit,
+            "lift",
+            surface,
+            &format!("\"./{plugin_name}\""),
+            ".",
+            Some("0.1.0"),
+            None,
+            Some(&[surface]),
+            Some(false),
+        );
+
+        let report = run_report_with_context(kit, DoctorContext::new(DoctorMode::Strict));
+
+        let available = check_by_id_and_surface(&report, "kit.declaration.available", surface);
+        assert_eq!(available.status, CheckStatus::Pass);
+        let version =
+            check_by_id_and_surface(&report, "kit.declaration.version.consistent", surface);
+        assert_eq!(version.status, CheckStatus::Pass);
+        let vocabulary = check_by_id_and_surface(
+            &report,
+            "kit.declaration.substrate_vocabulary.panic_freedom",
+            surface,
+        );
+        assert_eq!(vocabulary.status, CheckStatus::Pass);
+    }
+
+    #[test]
+    fn doctor_collects_manifest_declared_authoring_typescript_source_surface() {
+        assert_manifest_declared_authoring_surface_is_collected("typescript-source");
+    }
+
+    #[test]
+    fn doctor_collects_manifest_declared_authoring_go_source_surface() {
+        assert_manifest_declared_authoring_surface_is_collected("go-source");
+    }
+
+    #[test]
+    fn doctor_collects_manifest_declared_authoring_go_verify_surface() {
+        assert_manifest_declared_authoring_surface_is_collected("go");
+    }
+
+    #[test]
+    fn doctor_collects_manifest_declared_authoring_java_source_surface() {
+        assert_manifest_declared_authoring_surface_is_collected("java-source");
+    }
+
+    #[test]
+    fn doctor_excludes_lift_manifest_without_authoring_surfaces_capability() {
+        let td = TempDir::new().unwrap();
+        let kit = td.path();
+        let plugin = kit.join("unclaimed-plugin");
+        make_kit_declaration_plugin(
+            &plugin,
+            valid_panic_freedom_declaration("unclaimed-source"),
+        );
+        write_kit(kit, "");
+        write_manifest_with_capabilities(
+            kit,
+            "lift",
+            "unclaimed-source",
+            "\"./unclaimed-plugin\"",
+            ".",
+            Some("0.1.0"),
+            None,
+            None,
+            Some(false),
+        );
+
+        let report = run_report_with_context(kit, DoctorContext::new(DoctorMode::Strict));
+
+        assert_no_check_by_id_and_surface(
+            &report,
+            "kit.declaration.available",
+            "unclaimed-source",
+        );
+    }
+
+    #[test]
+    fn doctor_excludes_lift_manifest_with_empty_authoring_surfaces_capability() {
+        let td = TempDir::new().unwrap();
+        let kit = td.path();
+        let plugin = kit.join("empty-authoring-plugin");
+        make_kit_declaration_plugin(
+            &plugin,
+            valid_panic_freedom_declaration("empty-authoring-source"),
+        );
+        write_kit(kit, "");
+        write_manifest_with_capabilities(
+            kit,
+            "lift",
+            "empty-authoring-source",
+            "\"./empty-authoring-plugin\"",
+            ".",
+            Some("0.1.0"),
+            None,
+            Some(&[]),
+            Some(false),
+        );
+
+        let report = run_report_with_context(kit, DoctorContext::new(DoctorMode::Strict));
+
+        assert_no_check_by_id_and_surface(
+            &report,
+            "kit.declaration.available",
+            "empty-authoring-source",
+        );
+    }
+
+    #[test]
+    fn doctor_excludes_consumer_phase_lift_manifest_from_authoring_collection() {
+        let td = TempDir::new().unwrap();
+        let kit = td.path();
+        let plugin = kit.join("consumer-authoring-plugin");
+        make_kit_declaration_plugin(
+            &plugin,
+            valid_panic_freedom_declaration("consumer-authoring-source"),
+        );
+        write_kit(kit, "");
+        write_manifest_with_capabilities(
+            kit,
+            "lift",
+            "consumer-authoring-source",
+            "\"./consumer-authoring-plugin\"",
+            ".",
+            Some("0.1.0"),
+            Some("consumer"),
+            Some(&["consumer-authoring-source"]),
+            Some(false),
+        );
+
+        let report = run_report_with_context(kit, DoctorContext::new(DoctorMode::Strict));
+
+        assert_no_check_by_id_and_surface(
+            &report,
+            "kit.declaration.available",
+            "consumer-authoring-source",
+        );
+    }
+
+    #[test]
+    fn doctor_excludes_signed_memento_lift_manifest_from_authoring_collection() {
+        let td = TempDir::new().unwrap();
+        let kit = td.path();
+        let plugin = kit.join("signed-memento-plugin");
+        make_kit_declaration_plugin(
+            &plugin,
+            valid_panic_freedom_declaration("signed-memento-source"),
+        );
+        write_kit(kit, "");
+        write_manifest_with_capabilities(
+            kit,
+            "lift",
+            "signed-memento-source",
+            "\"./signed-memento-plugin\"",
+            ".",
+            Some("0.1.0"),
+            None,
+            Some(&["signed-memento-source"]),
+            Some(true),
+        );
+
+        let report = run_report_with_context(kit, DoctorContext::new(DoctorMode::Strict));
+
+        assert_no_check_by_id_and_surface(
+            &report,
+            "kit.declaration.available",
+            "signed-memento-source",
+        );
+    }
+
+    #[test]
+    fn doctor_deduplicates_authoring_manifest_already_declared_as_plugin() {
+        let td = TempDir::new().unwrap();
+        let kit = td.path();
+        let plugin = kit.join("dedupe-plugin");
+        make_kit_declaration_plugin(&plugin, valid_panic_freedom_declaration("dedupe-source"));
+        write_kit(
+            kit,
+            "[[plugins]]\nname = \"dedupe\"\nkind = \"lift\"\nsurface = \"dedupe-source\"\n",
+        );
+        write_manifest_with_capabilities(
+            kit,
+            "lift",
+            "dedupe-source",
+            "\"./dedupe-plugin\"",
+            ".",
+            Some("0.1.0"),
+            None,
+            Some(&["dedupe-source"]),
+            Some(false),
+        );
+
+        let report = run_report_with_context(kit, DoctorContext::new(DoctorMode::Strict));
+
+        assert_eq!(
+            count_checks_by_id_and_surface(&report, "kit.declaration.available", "dedupe-source"),
+            1
+        );
+    }
+
+    #[test]
+    fn doctor_reports_manifest_declared_authoring_surface_with_missing_command() {
+        let td = TempDir::new().unwrap();
+        let kit = td.path();
+        write_kit(kit, "");
+        let manifest_dir = kit.join(".provekit/lift/missing-command-source");
+        fs::create_dir_all(&manifest_dir).unwrap();
+        fs::write(
+            manifest_dir.join("manifest.toml"),
+            "name = \"missing-command-source\"\n\
+             [capabilities]\n\
+             authoring_surfaces = [\"missing-command-source\"]\n",
+        )
+        .unwrap();
+
+        let report = run_report_with_context(kit, DoctorContext::new(DoctorMode::Strict));
+
+        let command = check_by_id_and_surface(
+            &report,
+            "kit.plugin.command.available",
+            "missing-command-source",
+        );
+        assert_eq!(command.status, CheckStatus::Fail);
+        assert!(
+            command.detail.contains("no `command`"),
+            "missing command should fail loudly instead of skipping: {}",
+            command.detail
+        );
+    }
+
+    #[test]
+    fn doctor_skips_missing_lift_manifest_during_authoring_collection() {
+        let td = TempDir::new().unwrap();
+        let kit = td.path();
+        write_kit(kit, "");
+        fs::create_dir_all(kit.join(".provekit/lift/missing-authoring")).unwrap();
+
+        let report = run_report_with_context(kit, DoctorContext::new(DoctorMode::Strict));
+
+        assert_no_check_by_id_and_surface(
+            &report,
+            "kit.declaration.available",
+            "missing-authoring",
         );
     }
 
@@ -5428,6 +5797,25 @@ mod tests {
                     && check.evidence.get("surface").and_then(Value::as_str) == Some(surface)
             })
             .unwrap_or_else(|| panic!("{id} check for surface={surface} in {report:#?}"))
+    }
+
+    fn count_checks_by_id_and_surface(report: &DoctorReport, id: &str, surface: &str) -> usize {
+        report
+            .checks
+            .iter()
+            .filter(|check| {
+                check.id == id
+                    && check.evidence.get("surface").and_then(Value::as_str) == Some(surface)
+            })
+            .count()
+    }
+
+    fn assert_no_check_by_id_and_surface(report: &DoctorReport, id: &str, surface: &str) {
+        assert_eq!(
+            count_checks_by_id_and_surface(report, id, surface),
+            0,
+            "unexpected {id} check for surface={surface} in {report:#?}"
+        );
     }
 
     fn assert_modes_match_for_check(kit: &Path, id: &str) {
