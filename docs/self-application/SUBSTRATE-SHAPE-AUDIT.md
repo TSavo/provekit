@@ -188,6 +188,21 @@ Doctor validates:
 - No kit is required to declare Rust-specific behavior unless it is the Rust
   kit.
 
+Doctor vocabulary validation is language-aware. For Rust kit declarations,
+doctor validates both the local and concept sides against
+`libprovekit::concept::*` constants, because Rust owns the current canonical
+local panic-freedom vocabulary. For non-Rust kit declarations, doctor validates
+the concept side against known substrate concepts and treats local strings as
+kit-owned, format-free syntax. Mapping surfaces are checked only against the
+configured kit surface for manifest/declaration coherence; doctor does not own
+per-language surface registries.
+
+The rationale is that kits own language semantics. Per-language local
+vocabulary in `libprovekit` would require substrate edits for each new kit and
+would violate the language-boundary invariant. Concept identifiers are the
+federated substrate identity; local names are language-specific renderings of
+that identity. Cross-kit local consistency is deferred to later doctor work.
+
 ## Python Parity Target
 
 Python parity at v2 means more than "Python can mint". The v2 claim should be:

@@ -1256,48 +1256,89 @@ fn kit_declaration_panic_freedom_vocabulary_check(
         );
     }
 
+    let effect_leaf_vocabulary = [
+        (
+            panic_freedom::METHOD_UNWRAP,
+            panic_freedom::METHOD_UNWRAP_CONCEPT,
+        ),
+        (
+            panic_freedom::METHOD_EXPECT,
+            panic_freedom::METHOD_EXPECT_CONCEPT,
+        ),
+        (
+            panic_freedom::METHOD_UNWRAP_ERR,
+            panic_freedom::METHOD_UNWRAP_ERR_CONCEPT,
+        ),
+    ];
+    let guard_predicate_vocabulary = [
+        (panic_freedom::IS_OK, panic_freedom::IS_OK_CONCEPT),
+        (panic_freedom::IS_ERR, panic_freedom::IS_ERR_CONCEPT),
+        (panic_freedom::IS_SOME, panic_freedom::IS_SOME_CONCEPT),
+        (panic_freedom::IS_NONE, panic_freedom::IS_NONE_CONCEPT),
+    ];
+    let control_carrier_vocabulary = [
+        (panic_freedom::CF_GUARDED, panic_freedom::CF_GUARDED_CONCEPT),
+        (panic_freedom::CF_ITE, panic_freedom::CF_ITE_CONCEPT),
+    ];
+
+    let rust_strict = declaration.kit.language == "rust";
     let mut mismatches = Vec::new();
-    mismatches.extend(mapping_category_mismatches(
-        "effectLeaves",
-        &declaration.effect_leaves,
-        surface,
-        &[
-            (
-                panic_freedom::METHOD_UNWRAP,
-                panic_freedom::METHOD_UNWRAP_CONCEPT,
-            ),
-            (
-                panic_freedom::METHOD_EXPECT,
-                panic_freedom::METHOD_EXPECT_CONCEPT,
-            ),
-            (
-                panic_freedom::METHOD_UNWRAP_ERR,
-                panic_freedom::METHOD_UNWRAP_ERR_CONCEPT,
-            ),
-        ],
-    ));
-    mismatches.extend(mapping_category_mismatches(
-        "guardPredicates",
-        &declaration.guard_predicates,
-        surface,
-        &[
-            (panic_freedom::IS_OK, panic_freedom::IS_OK_CONCEPT),
-            (panic_freedom::IS_ERR, panic_freedom::IS_ERR_CONCEPT),
-            (panic_freedom::IS_SOME, panic_freedom::IS_SOME_CONCEPT),
-            (panic_freedom::IS_NONE, panic_freedom::IS_NONE_CONCEPT),
-        ],
-    ));
-    mismatches.extend(mapping_category_mismatches(
-        "controlCarriers",
-        &declaration.control_carriers,
-        surface,
-        &[
-            (panic_freedom::CF_GUARDED, panic_freedom::CF_GUARDED_CONCEPT),
-            (panic_freedom::CF_ITE, panic_freedom::CF_ITE_CONCEPT),
-        ],
-    ));
+    if rust_strict {
+        mismatches.extend(mapping_category_mismatches(
+            "effectLeaves",
+            &declaration.effect_leaves,
+            surface,
+            &effect_leaf_vocabulary,
+        ));
+        mismatches.extend(mapping_category_mismatches(
+            "guardPredicates",
+            &declaration.guard_predicates,
+            surface,
+            &guard_predicate_vocabulary,
+        ));
+        mismatches.extend(mapping_category_mismatches(
+            "controlCarriers",
+            &declaration.control_carriers,
+            surface,
+            &control_carrier_vocabulary,
+        ));
+    } else {
+        mismatches.extend(mapping_category_concept_mismatches(
+            "effectLeaves",
+            &declaration.effect_leaves,
+            surface,
+            &effect_leaf_vocabulary,
+        ));
+        mismatches.extend(mapping_category_concept_mismatches(
+            "guardPredicates",
+            &declaration.guard_predicates,
+            surface,
+            &guard_predicate_vocabulary,
+        ));
+        mismatches.extend(mapping_category_concept_mismatches(
+            "controlCarriers",
+            &declaration.control_carriers,
+            surface,
+            &control_carrier_vocabulary,
+        ));
+    }
 
     if let Some(obj) = evidence.as_object_mut() {
+        obj.insert(
+            "validationMode".to_string(),
+            Value::String(
+                if rust_strict {
+                    "rust-strict"
+                } else {
+                    "concept-side-only"
+                }
+                .to_string(),
+            ),
+        );
+        obj.insert(
+            "localVocabularyOwner".to_string(),
+            Value::String(if rust_strict { "libprovekit" } else { "kit" }.to_string()),
+        );
         obj.insert(
             "mismatches".to_string(),
             Value::Array(mismatches.iter().cloned().map(Value::String).collect()),
@@ -1305,11 +1346,12 @@ fn kit_declaration_panic_freedom_vocabulary_check(
     }
 
     if mismatches.is_empty() {
-        Check::pass_with_evidence(
-            &check_name,
-            format!("surface={surface} panic-freedom vocabulary matches substrate constants"),
-            evidence,
-        )
+        let pass_detail = if rust_strict {
+            format!("surface={surface} panic-freedom vocabulary matches substrate constants")
+        } else {
+            format!("surface={surface} panic-freedom vocabulary uses known substrate concepts")
+        };
+        Check::pass_with_evidence(&check_name, pass_detail, evidence)
     } else {
         let (status, severity) = declaration_failure_policy(mode);
         Check::with_status_and_severity(
@@ -1360,6 +1402,35 @@ fn mapping_category_mismatches(
         mismatches.push(format!(
             "extra {category} surface={surface} local={local} concept={concept}"
         ));
+    }
+    mismatches
+}
+
+fn mapping_category_concept_mismatches(
+    category: &str,
+    actual: &[KitDeclarationMapping],
+    surface: &str,
+    expected: &[(&str, &str)],
+) -> Vec<String> {
+    let expected_concepts = expected
+        .iter()
+        .map(|(_, concept)| *concept)
+        .collect::<BTreeSet<_>>();
+    let mut mismatches = Vec::new();
+    for mapping in actual {
+        let mapping_surface = mapping.surface.as_deref().unwrap_or("<none>");
+        if mapping_surface != surface {
+            mismatches.push(format!(
+                "wrong-surface {category} surface={mapping_surface} expectedSurface={surface} local={} concept={}",
+                mapping.local, mapping.concept
+            ));
+        }
+        if !expected_concepts.contains(mapping.concept.as_str()) {
+            mismatches.push(format!(
+                "unknown-concept {category} surface={mapping_surface} local={} concept={}",
+                mapping.local, mapping.concept
+            ));
+        }
     }
     mismatches
 }
@@ -2956,6 +3027,238 @@ mod tests {
             vocabulary.detail.contains("rust-fn-contracts"),
             "vocabulary failure should name wrongly attributed surface: {}",
             vocabulary.detail
+        );
+    }
+
+    #[test]
+    fn doctor_kit_declaration_non_rust_vocabulary_accepts_kit_owned_locals() {
+        use libprovekit::concept::panic_freedom;
+
+        let td = TempDir::new().unwrap();
+        let kit = td.path();
+        let plugin = kit.join("python-panic-vocab-plugin");
+        let mut declaration = valid_panic_freedom_declaration("python");
+        declaration["kit"] = json!({"id": "python", "language": "python", "version": "0.1.0"});
+        declaration["proofResolution"] = json!({"strategy": "pip"});
+        declaration["effectLeaves"] = json!([
+            {"surface": "python", "local": "subscript raises IndexError", "concept": panic_freedom::METHOD_UNWRAP_CONCEPT}
+        ]);
+        declaration["guardPredicates"] = json!([
+            {"surface": "python", "local": "x is not None", "concept": panic_freedom::IS_SOME_CONCEPT},
+            {"surface": "python", "local": "x is None", "concept": panic_freedom::IS_NONE_CONCEPT}
+        ]);
+        declaration["controlCarriers"] = json!([
+            {"surface": "python", "local": "if/else dominance", "concept": panic_freedom::CF_GUARDED_CONCEPT}
+        ]);
+        make_kit_declaration_plugin(&plugin, declaration);
+        write_kit(
+            kit,
+            "[[plugins]]\nname = \"python\"\nkind = \"lift\"\nsurface = \"python\"\n",
+        );
+        write_manifest(
+            kit,
+            "lift",
+            "python",
+            "\"./python-panic-vocab-plugin\"",
+            ".",
+        );
+
+        let report = run_report_with_context(kit, DoctorContext::new(DoctorMode::Strict));
+
+        let vocabulary = check_by_id_and_surface(
+            &report,
+            "kit.declaration.substrate_vocabulary.panic_freedom",
+            "python",
+        );
+        assert_eq!(vocabulary.status, CheckStatus::Pass, "{vocabulary:#?}");
+        assert_eq!(
+            vocabulary
+                .evidence
+                .get("validationMode")
+                .and_then(Value::as_str),
+            Some("concept-side-only")
+        );
+        assert_eq!(
+            vocabulary
+                .evidence
+                .get("localVocabularyOwner")
+                .and_then(Value::as_str),
+            Some("kit")
+        );
+        assert_eq!(
+            vocabulary
+                .evidence
+                .get("guardPredicates")
+                .and_then(Value::as_u64),
+            Some(2)
+        );
+    }
+
+    #[test]
+    fn doctor_kit_declaration_non_rust_vocabulary_rejects_unknown_concept() {
+        let td = TempDir::new().unwrap();
+        let kit = td.path();
+        let plugin = kit.join("python-unknown-concept-plugin");
+        let mut declaration = valid_panic_freedom_declaration("python");
+        declaration["kit"] = json!({"id": "python", "language": "python", "version": "0.1.0"});
+        declaration["proofResolution"] = json!({"strategy": "pip"});
+        declaration["effectLeaves"] = json!([]);
+        declaration["guardPredicates"] = json!([
+            {"surface": "python", "local": "x is pending", "concept": "concept:panic-freedom.result.pending"}
+        ]);
+        declaration["controlCarriers"] = json!([]);
+        make_kit_declaration_plugin(&plugin, declaration);
+        write_kit(
+            kit,
+            "[[plugins]]\nname = \"python\"\nkind = \"lift\"\nsurface = \"python\"\n",
+        );
+        write_manifest(
+            kit,
+            "lift",
+            "python",
+            "\"./python-unknown-concept-plugin\"",
+            ".",
+        );
+
+        let report = run_report_with_context(kit, DoctorContext::new(DoctorMode::Strict));
+
+        let vocabulary = check_by_id_and_surface(
+            &report,
+            "kit.declaration.substrate_vocabulary.panic_freedom",
+            "python",
+        );
+        assert_eq!(vocabulary.status, CheckStatus::Fail);
+        assert!(
+            vocabulary
+                .detail
+                .contains("concept:panic-freedom.result.pending"),
+            "vocabulary failure should name unknown concept: {}",
+            vocabulary.detail
+        );
+    }
+
+    #[test]
+    fn doctor_kit_declaration_non_rust_vocabulary_rejects_wrong_surface() {
+        use libprovekit::concept::panic_freedom;
+
+        let td = TempDir::new().unwrap();
+        let kit = td.path();
+        let plugin = kit.join("python-wrong-surface-plugin");
+        let mut declaration = valid_panic_freedom_declaration("python");
+        declaration["kit"] = json!({"id": "python", "language": "python", "version": "0.1.0"});
+        declaration["proofResolution"] = json!({"strategy": "pip"});
+        declaration["effectLeaves"] = json!([]);
+        declaration["guardPredicates"] = json!([
+            {"surface": "python-tests", "local": "x is not None", "concept": panic_freedom::IS_SOME_CONCEPT}
+        ]);
+        declaration["controlCarriers"] = json!([]);
+        make_kit_declaration_plugin(&plugin, declaration);
+        write_kit(
+            kit,
+            "[[plugins]]\nname = \"python\"\nkind = \"lift\"\nsurface = \"python\"\n",
+        );
+        write_manifest(
+            kit,
+            "lift",
+            "python",
+            "\"./python-wrong-surface-plugin\"",
+            ".",
+        );
+
+        let report = run_report_with_context(kit, DoctorContext::new(DoctorMode::Strict));
+
+        let vocabulary = check_by_id_and_surface(
+            &report,
+            "kit.declaration.substrate_vocabulary.panic_freedom",
+            "python",
+        );
+        assert_eq!(vocabulary.status, CheckStatus::Fail);
+        assert!(
+            vocabulary.detail.contains("wrong-surface")
+                && vocabulary.detail.contains("python-tests"),
+            "vocabulary failure should name wrong kit surface: {}",
+            vocabulary.detail
+        );
+    }
+
+    #[test]
+    fn doctor_kit_declaration_non_rust_vocabulary_accepts_java_locals() {
+        use libprovekit::concept::panic_freedom;
+
+        let td = TempDir::new().unwrap();
+        let kit = td.path();
+        let plugin = kit.join("java-panic-vocab-plugin");
+        let mut declaration = valid_panic_freedom_declaration("java");
+        declaration["kit"] = json!({"id": "java", "language": "java", "version": "0.1.0"});
+        declaration["proofResolution"] = json!({"strategy": "jar"});
+        declaration["effectLeaves"] = json!([
+            {"surface": "java", "local": "Optional.get throws NoSuchElementException", "concept": panic_freedom::METHOD_UNWRAP_CONCEPT}
+        ]);
+        declaration["guardPredicates"] = json!([
+            {"surface": "java", "local": "optional.isPresent()", "concept": panic_freedom::IS_SOME_CONCEPT}
+        ]);
+        declaration["controlCarriers"] = json!([
+            {"surface": "java", "local": "if branch dominates dereference", "concept": panic_freedom::CF_GUARDED_CONCEPT}
+        ]);
+        make_kit_declaration_plugin(&plugin, declaration);
+        write_kit(
+            kit,
+            "[[plugins]]\nname = \"java\"\nkind = \"lift\"\nsurface = \"java\"\n",
+        );
+        write_manifest(kit, "lift", "java", "\"./java-panic-vocab-plugin\"", ".");
+
+        let report = run_report_with_context(kit, DoctorContext::new(DoctorMode::Strict));
+
+        let vocabulary = check_by_id_and_surface(
+            &report,
+            "kit.declaration.substrate_vocabulary.panic_freedom",
+            "java",
+        );
+        assert_eq!(vocabulary.status, CheckStatus::Pass, "{vocabulary:#?}");
+        assert_eq!(
+            vocabulary
+                .evidence
+                .get("validationMode")
+                .and_then(Value::as_str),
+            Some("concept-side-only")
+        );
+    }
+
+    #[test]
+    fn doctor_kit_declaration_rejects_empty_mapping_concept_before_vocabulary_check() {
+        let td = TempDir::new().unwrap();
+        let kit = td.path();
+        let plugin = kit.join("python-empty-concept-plugin");
+        let mut declaration = valid_panic_freedom_declaration("python");
+        declaration["kit"] = json!({"id": "python", "language": "python", "version": "0.1.0"});
+        declaration["proofResolution"] = json!({"strategy": "pip"});
+        declaration["effectLeaves"] = json!([]);
+        declaration["guardPredicates"] = json!([
+            {"surface": "python", "local": "x is not None", "concept": ""}
+        ]);
+        declaration["controlCarriers"] = json!([]);
+        make_kit_declaration_plugin(&plugin, declaration);
+        write_kit(
+            kit,
+            "[[plugins]]\nname = \"python\"\nkind = \"lift\"\nsurface = \"python\"\n",
+        );
+        write_manifest(
+            kit,
+            "lift",
+            "python",
+            "\"./python-empty-concept-plugin\"",
+            ".",
+        );
+
+        let report = run_report_with_context(kit, DoctorContext::new(DoctorMode::Strict));
+
+        let declaration_available =
+            check_by_id_and_surface(&report, "kit.declaration.available", "python");
+        assert_eq!(declaration_available.status, CheckStatus::Fail);
+        assert!(
+            declaration_available.detail.contains("mapping.concept"),
+            "declaration failure should name empty mapping concept: {}",
+            declaration_available.detail
         );
     }
 
