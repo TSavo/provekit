@@ -13,3 +13,9 @@ surface = "python"
 name = "python-source"
 kind = "lift"
 surface = "python-source"
+
+[[plugins]]
+name = "python-bind"
+kind = "lift"
+surface = "python-bind"
+layer = "library-bindings"
