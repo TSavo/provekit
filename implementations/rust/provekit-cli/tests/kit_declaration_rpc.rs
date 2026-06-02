@@ -17,6 +17,13 @@ fn typescript_env_enabled() -> bool {
     std::env::var("BCARGO_TYPESCRIPT_ENV").map_or(false, |value| value == "1")
 }
 
+fn command_available(command: &str) -> bool {
+    std::process::Command::new(command)
+        .arg("version")
+        .output()
+        .map_or(false, |output| output.status.success())
+}
+
 fn make_executable(path: &Path, body: &str) {
     fs::write(path, body).expect("write stub");
     let mut perms = fs::metadata(path).expect("metadata").permissions();
@@ -272,6 +279,68 @@ fn loader_dispatches_to_typescript_source_kit_declaration() {
             ("initialize", true),
             (KIT_DECLARATION_RPC_METHOD, true),
             ("lift", true),
+            ("compile", false),
+            ("provekit.plugin.recognize", false),
+            ("shutdown", false),
+        ])
+    );
+}
+
+#[test]
+fn loader_dispatches_to_go_source_kit_declaration() {
+    if !command_available("go") {
+        eprintln!("skipping: go is not available");
+        return;
+    }
+
+    let repo = repo_root();
+    let go_source_dir = repo.join("implementations/go/provekit-lift-go");
+    let command = [
+        "go".to_string(),
+        "run".to_string(),
+        "./cmd/provekit-lift-go".to_string(),
+        "--rpc".to_string(),
+    ];
+
+    let declaration: KitDeclaration =
+        provekit_cli::kit_declaration::load_kit_declaration_with_command(
+            &command,
+            Some(&go_source_dir),
+        )
+        .expect("load Go source kit declaration");
+
+    assert_eq!(declaration.kit.id, "go-source");
+    assert_eq!(declaration.kit.language, "go");
+    assert_eq!(declaration.kit.version, "0.1.0-draft");
+    assert_eq!(declaration.proof_resolution.strategy, "go-mod");
+    assert_eq!(declaration.effect_kinds, ["concept:panic-freedom"]);
+    assert_eq!(declaration.effect_leaves.len(), 1);
+    assert_eq!(
+        declaration.effect_leaves[0].surface.as_deref(),
+        Some("go-source")
+    );
+    assert_eq!(declaration.effect_leaves[0].local, "go:panic");
+    assert_eq!(
+        declaration.effect_leaves[0].concept,
+        "concept:panic-freedom.leaf.runtime-failure-site"
+    );
+    assert!(declaration.guard_predicates.is_empty());
+    assert!(declaration.control_carriers.is_empty());
+    assert!(declaration.residue_categories.is_empty());
+
+    let required_by_name = declaration
+        .rpc
+        .methods
+        .iter()
+        .map(|method| (method.name.as_str(), method.required))
+        .collect::<std::collections::BTreeMap<_, _>>();
+    assert_eq!(
+        required_by_name,
+        std::collections::BTreeMap::from([
+            ("initialize", true),
+            (KIT_DECLARATION_RPC_METHOD, true),
+            ("lift", true),
+            ("provekit.plugin.lift_implications", false),
             ("compile", false),
             ("provekit.plugin.recognize", false),
             ("shutdown", false),

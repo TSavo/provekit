@@ -62,6 +62,8 @@ func RunRPCWithDefault(stdin io.Reader, stdout io.Writer, defaultOpts LiftOption
 		switch req.Method {
 		case "initialize":
 			writeRPC(stdout, successResponse(req.ID, InitializeResult()))
+		case KitDeclarationRPCMethod:
+			writeRPC(stdout, successResponse(req.ID, KitDeclarationResult()))
 		case "lift":
 			writeRPC(stdout, handleLift(req.ID, req.Params, defaultOpts))
 		case "provekit.plugin.lift_implications":
