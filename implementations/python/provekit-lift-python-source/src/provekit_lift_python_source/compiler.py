@@ -91,6 +91,14 @@ def _stmt(term: Json) -> ast.stmt:
             op=_augop(_const_string(args[1])),
             value=_expr(args[2]),
         )
+    if name == "python:ann_assign":
+        target = _target(args[0])
+        return ast.AnnAssign(
+            target=target,
+            annotation=_expr(args[1]),
+            value=None if _is_no_value(args[2]) else _expr(args[2]),
+            simple=1 if isinstance(target, ast.Name) else 0,
+        )
     if name == "python:return":
         value = None if _is_none_const(args[0]) else _expr(args[0])
         return ast.Return(value=value)
@@ -251,6 +259,10 @@ def _const_string(term: Json) -> str:
 
 def _is_none_const(term: Any) -> bool:
     return isinstance(term, dict) and term.get("kind") == "const" and term.get("value") is None
+
+
+def _is_no_value(term: Any) -> bool:
+    return isinstance(term, dict) and term.get("kind") == "ctor" and term.get("name") == "python:no_value"
 
 
 _BINOPS: dict[str, type[ast.operator]] = {

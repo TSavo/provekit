@@ -134,6 +134,18 @@ def _subscript(value: dict[str, object], index: dict[str, object]) -> dict[str, 
     return {"kind": "ctor", "name": "python:subscript", "args": [value, index]}
 
 
+def _none_const() -> dict[str, object]:
+    return {
+        "kind": "const",
+        "value": None,
+        "sort": {"kind": "primitive", "name": "Unit"},
+    }
+
+
+def _no_value() -> dict[str, object]:
+    return {"kind": "ctor", "name": "python:no_value", "args": []}
+
+
 def _aug_assign(
     target: dict[str, object], op: str, value: dict[str, object]
 ) -> dict[str, object]:
@@ -141,6 +153,18 @@ def _aug_assign(
         "kind": "ctor",
         "name": "python:aug_assign",
         "args": [target, _str_const(op), value],
+    }
+
+
+def _ann_assign(
+    target: dict[str, object],
+    annotation: dict[str, object],
+    value: dict[str, object],
+) -> dict[str, object]:
+    return {
+        "kind": "ctor",
+        "name": "python:ann_assign",
+        "args": [target, annotation, value],
     }
 
 
@@ -843,6 +867,284 @@ def test_compile_lift_roundtrip_preserves_subscript_augassign_body() -> None:
     relifted_body = _contract(relifted.ir, ".f")["post"]["args"][1]
 
     assert canonical_json_bytes(relifted_body) == canonical_json_bytes(body)
+
+
+def test_name_annassign_without_value_has_no_runtime_failure_loci_or_effects() -> None:
+    source = "def f():\n    x: int\n    return 0\n"
+
+    result = lift_source(source, "name_annassign_no_value.py")
+
+    assert result.refusals == []
+    contract = _contract(result.ir, ".f")
+    body = contract["post"]["args"][1]
+    assert contract["effects"] == []
+    assert contract.get("panicLoci", []) == []
+    assert body["name"] == "python:seq"
+    assert body["args"][0] == _ann_assign(_var("x"), _var("int"), _no_value())
+
+
+def test_name_annassign_with_value_has_no_runtime_failure_loci_or_effects() -> None:
+    source = "def f(y):\n    x: int = y\n    return x\n"
+
+    result = lift_source(source, "name_annassign_value.py")
+
+    assert result.refusals == []
+    contract = _contract(result.ir, ".f")
+    body = contract["post"]["args"][1]
+    assert contract["effects"] == []
+    assert contract.get("panicLoci", []) == []
+    assert body["args"][0] == _ann_assign(_var("x"), _var("int"), _var("y"))
+
+
+def test_direct_attribute_annassign_without_value_does_not_access_final_attribute() -> None:
+    source = "def f(obj):\n    obj.name: int\n    return obj\n"
+
+    result = lift_source(source, "attr_annassign_no_value.py")
+
+    assert result.refusals == []
+    contract = _contract(result.ir, ".f")
+    body = contract["post"]["args"][1]
+    target = _attr(_var("obj"), "name")
+    assert contract["effects"] == []
+    assert contract.get("panicLoci", []) == []
+    assert body["args"][0] == _ann_assign(target, _var("int"), _no_value())
+
+
+def test_direct_attribute_annassign_with_value_emits_store_write_locus_only() -> None:
+    source = "def f(obj, y):\n    obj.name: int = y\n    return obj\n"
+
+    result = lift_source(source, "attr_annassign_value.py")
+
+    assert result.refusals == []
+    contract = _contract(result.ir, ".f")
+    target = _attr(_var("obj"), "name")
+    loci = _runtime_failure_loci(contract)
+    body = contract["post"]["args"][1]
+    assert contract["effects"] == [
+        {"kind": "writes", "target": "obj.name"},
+        {"kind": "panics"},
+    ]
+    assert [locus["subkind"] for locus in loci] == ["attribute-write"]
+    assert [locus["argTerm"] for locus in loci] == [target]
+    assert [(locus["line"], locus["col"]) for locus in loci] == [(2, 4)]
+    assert loci[0]["exceptionClass"] == "AttributeError"
+    assert body["args"][0] == _ann_assign(target, _var("int"), _var("y"))
+
+
+def test_direct_subscript_annassign_without_value_does_not_access_final_subscript() -> None:
+    source = "def f(xs, key):\n    xs[key]: int\n    return xs\n"
+
+    result = lift_source(source, "subscript_annassign_no_value.py")
+
+    assert result.refusals == []
+    contract = _contract(result.ir, ".f")
+    body = contract["post"]["args"][1]
+    target = _subscript(_var("xs"), _var("key"))
+    assert contract["effects"] == []
+    assert contract.get("panicLoci", []) == []
+    assert body["args"][0] == _ann_assign(target, _var("int"), _no_value())
+
+
+def test_direct_subscript_annassign_with_value_emits_store_write_locus_only() -> None:
+    source = "def f(xs, key, y):\n    xs[key]: int = y\n    return xs\n"
+
+    result = lift_source(source, "subscript_annassign_value.py")
+
+    assert result.refusals == []
+    contract = _contract(result.ir, ".f")
+    target = _subscript(_var("xs"), _var("key"))
+    loci = _runtime_failure_loci(contract)
+    body = contract["post"]["args"][1]
+    assert contract["effects"] == [
+        {"kind": "writes", "target": "xs[key]"},
+        {"kind": "panics"},
+    ]
+    assert [locus["subkind"] for locus in loci] == ["subscript-write"]
+    assert [locus["argTerm"] for locus in loci] == [target]
+    assert [(locus["line"], locus["col"]) for locus in loci] == [(2, 4)]
+    assert "exceptionClass" not in loci[0]
+    assert body["args"][0] == _ann_assign(target, _var("int"), _var("y"))
+
+
+def test_nested_annassign_without_value_emits_only_intermediate_navigation_loci() -> None:
+    source = (
+        "def f(obj, xs, ys, i):\n"
+        "    obj.inner.name: int\n"
+        "    xs[ys[i]]: int\n"
+        "    return obj\n"
+    )
+
+    result = lift_source(source, "nested_annassign_no_value.py")
+
+    assert result.refusals == []
+    contract = _contract(result.ir, ".f")
+    loci = _runtime_failure_loci(contract)
+    obj_inner = _attr(_var("obj"), "inner")
+    ys_i = _subscript(_var("ys"), _var("i"))
+    body = contract["post"]["args"][1]
+    assert contract["effects"] == [{"kind": "panics"}]
+    assert [locus["subkind"] for locus in loci] == [
+        "attribute-access",
+        "subscript-access",
+    ]
+    assert [locus["argTerm"] for locus in loci] == [obj_inner, ys_i]
+    assert [(locus["line"], locus["col"]) for locus in loci] == [(2, 4), (3, 7)]
+    statements = body["args"][0]["args"]
+    assert statements[0] == _ann_assign(
+        _attr(obj_inner, "name"), _var("int"), _no_value()
+    )
+    assert statements[1] == _ann_assign(
+        _subscript(_var("xs"), ys_i), _var("int"), _no_value()
+    )
+
+
+def test_annassign_missing_value_and_explicit_none_have_distinct_body_terms() -> None:
+    source = "def f():\n    missing: int\n    explicit: int = None\n    return explicit\n"
+
+    result = lift_source(source, "annassign_none_discrimination.py")
+
+    assert result.refusals == []
+    contract = _contract(result.ir, ".f")
+    body = contract["post"]["args"][1]
+    statements = body["args"][0]["args"]
+    missing = _ann_assign(_var("missing"), _var("int"), _no_value())
+    explicit_none = _ann_assign(_var("explicit"), _var("int"), _none_const())
+    assert statements[0] == missing
+    assert statements[1] == explicit_none
+    assert missing != explicit_none
+
+
+def test_nested_annassign_with_value_reuses_store_target_navigation_once() -> None:
+    source = (
+        "def f(obj, xs, ys, i, value):\n"
+        "    obj.inner.name: int = value\n"
+        "    xs[ys[i]]: int = value\n"
+        "    return value\n"
+    )
+
+    result = lift_source(source, "nested_annassign_value.py")
+
+    assert result.refusals == []
+    contract = _contract(result.ir, ".f")
+    loci = _runtime_failure_loci(contract)
+    obj_inner = _attr(_var("obj"), "inner")
+    obj_inner_name = _attr(obj_inner, "name")
+    ys_i = _subscript(_var("ys"), _var("i"))
+    xs_ys_i = _subscript(_var("xs"), ys_i)
+    assert contract["effects"] == [
+        {"kind": "writes", "target": "obj.inner.name"},
+        {"kind": "writes", "target": "xs[ys[i]]"},
+        {"kind": "panics"},
+    ]
+    assert [locus["subkind"] for locus in loci] == [
+        "attribute-access",
+        "attribute-write",
+        "subscript-access",
+        "subscript-write",
+    ]
+    assert [locus["argTerm"] for locus in loci] == [
+        obj_inner,
+        obj_inner_name,
+        ys_i,
+        xs_ys_i,
+    ]
+    assert [(locus["line"], locus["col"]) for locus in loci] == [
+        (2, 4),
+        (2, 4),
+        (3, 7),
+        (3, 4),
+    ]
+    assert [locus["argTerm"] for locus in loci].count(obj_inner) == 1
+    assert [locus["argTerm"] for locus in loci].count(ys_i) == 1
+
+
+def test_no_value_annassign_evaluates_receiver_but_not_final_attribute() -> None:
+    source = "def f(make):\n    make().name: int\n    return 0\n"
+
+    result = lift_source(source, "annassign_receiver_call.py")
+
+    assert result.refusals == []
+    contract = _contract(result.ir, ".f")
+    assert contract["effects"] == [{"kind": "unresolved_call", "name": "make"}]
+    assert contract.get("panicLoci", []) == []
+
+
+def test_compile_lift_roundtrip_preserves_attribute_annassign_body_with_value() -> None:
+    source = "def f(obj, y):\n    obj.name: int = y\n    return obj\n"
+    lifted = lift_source(source, "roundtrip_ann_attr_value.py")
+    assert lifted.refusals == []
+    contract = _contract(lifted.ir, ".f")
+    body = contract["post"]["args"][1]
+
+    compiled = compile_body_term(
+        body,
+        fn_name="f",
+        formals=[str(formal) for formal in contract["formals"]],
+    )
+    relifted = lift_source(compiled, "roundtrip_ann_attr_value.py")
+    assert relifted.refusals == []
+    relifted_body = _contract(relifted.ir, ".f")["post"]["args"][1]
+
+    assert canonical_json_bytes(relifted_body) == canonical_json_bytes(body)
+
+
+def test_compile_lift_roundtrip_preserves_attribute_annassign_body_without_value() -> None:
+    source = "def f(obj):\n    obj.name: int\n    return obj\n"
+    lifted = lift_source(source, "roundtrip_ann_attr_no_value.py")
+    assert lifted.refusals == []
+    contract = _contract(lifted.ir, ".f")
+    body = contract["post"]["args"][1]
+
+    compiled = compile_body_term(
+        body,
+        fn_name="f",
+        formals=[str(formal) for formal in contract["formals"]],
+    )
+    relifted = lift_source(compiled, "roundtrip_ann_attr_no_value.py")
+    assert relifted.refusals == []
+    relifted_body = _contract(relifted.ir, ".f")["post"]["args"][1]
+
+    assert canonical_json_bytes(relifted_body) == canonical_json_bytes(body)
+
+
+def test_compile_lift_roundtrip_preserves_name_annassign_without_value() -> None:
+    source = "def f():\n    x: int\n    return 0\n"
+    lifted = lift_source(source, "roundtrip_ann_name_no_value.py")
+    assert lifted.refusals == []
+    contract = _contract(lifted.ir, ".f")
+    body = contract["post"]["args"][1]
+
+    compiled = compile_body_term(
+        body,
+        fn_name="f",
+        formals=[str(formal) for formal in contract["formals"]],
+    )
+    relifted = lift_source(compiled, "roundtrip_ann_name_no_value.py")
+    assert relifted.refusals == []
+    relifted_body = _contract(relifted.ir, ".f")["post"]["args"][1]
+
+    assert canonical_json_bytes(relifted_body) == canonical_json_bytes(body)
+    assert "x: int = None" not in compiled
+
+
+def test_compile_lift_roundtrip_preserves_name_annassign_explicit_none_value() -> None:
+    source = "def f():\n    x: int = None\n    return x\n"
+    lifted = lift_source(source, "roundtrip_ann_name_explicit_none.py")
+    assert lifted.refusals == []
+    contract = _contract(lifted.ir, ".f")
+    body = contract["post"]["args"][1]
+
+    compiled = compile_body_term(
+        body,
+        fn_name="f",
+        formals=[str(formal) for formal in contract["formals"]],
+    )
+    relifted = lift_source(compiled, "roundtrip_ann_name_explicit_none.py")
+    assert relifted.refusals == []
+    relifted_body = _contract(relifted.ir, ".f")["post"]["args"][1]
+
+    assert canonical_json_bytes(relifted_body) == canonical_json_bytes(body)
+    assert "x: int = None" in compiled
 
 
 def test_none_guarded_attribute_access_emits_one_runtime_failure_locus() -> None:
