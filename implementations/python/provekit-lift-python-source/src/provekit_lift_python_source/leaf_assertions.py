@@ -21,6 +21,8 @@ call ``f(arg)`` as a ctor / negative-int literal):
     assert <lhs> == <rhs>   -> = (lhs, rhs)
     assert <lhs> != <rhs>   -> ≠ (lhs, rhs)
     assert <lhs> <  <rhs>   -> < (lhs, rhs)        (and <=, >, >=)
+    assert <lhs> is None    -> and(=(lhs, None), is_none(lhs))
+    assert <lhs> is not None -> and(≠(lhs, None), is_some(lhs))
 
 Anything else is skipped (a diagnostic, not a contract) so the harvester never
 fabricates a callsite it cannot faithfully lift.
@@ -41,6 +43,8 @@ _CMP: dict[type[ast.cmpop], str] = {
     ast.LtE: "≤",
     ast.Gt: ">",
     ast.GtE: "≥",
+    ast.Is: "=",
+    ast.IsNot: "≠",
 }
 
 
@@ -112,7 +116,7 @@ def _lift_assert(stmt: ast.Assert) -> Json:
         raise _Unsupported(f"comparison op {type(test.ops[0]).__name__} not in whitelist")
     lhs = _translate_term(test.left)
     rhs = _translate_term(test.comparators[0])
-    return {"kind": "atomic", "name": op, "args": [lhs, rhs]}
+    return _comparison_with_none_guard(op, lhs, rhs)
 
 
 def _translate_term(node: ast.expr) -> Json:
@@ -126,6 +130,8 @@ def _translate_term(node: ast.expr) -> Json:
             return {"kind": "const", "value": value, "sort": {"kind": "primitive", "name": "Int"}}
         if isinstance(value, str):
             return {"kind": "const", "value": value, "sort": {"kind": "primitive", "name": "String"}}
+        if value is None:
+            return {"kind": "ctor", "name": "None", "args": []}
         raise _Unsupported(f"unsupported constant {type(value).__name__}")
     if isinstance(node, ast.UnaryOp) and isinstance(node.op, ast.USub):
         operand = node.operand
@@ -146,3 +152,22 @@ def _translate_term(node: ast.expr) -> Json:
 
 def _and(atoms: list[Json]) -> Json:
     return {"kind": "and", "operands": atoms}
+
+
+def _comparison_with_none_guard(name: str, lhs: Json, rhs: Json) -> Json:
+    base = {"kind": "atomic", "name": name, "args": [lhs, rhs]}
+    lhs_is_none = _is_none_ctor(lhs)
+    rhs_is_none = _is_none_ctor(rhs)
+    if lhs_is_none == rhs_is_none:
+        return base
+
+    subject = rhs if lhs_is_none else lhs
+    if name == "=":
+        return _and([base, {"kind": "atomic", "name": "is_none", "args": [subject]}])
+    if name == "≠":
+        return _and([base, {"kind": "atomic", "name": "is_some", "args": [subject]}])
+    return base
+
+
+def _is_none_ctor(term: Json) -> bool:
+    return term.get("kind") == "ctor" and term.get("name") == "None" and term.get("args") == []

@@ -95,6 +95,27 @@ def _fn_contract(source: str, source_path: str = "m.py"):
     raise AssertionError("no function-contract lifted")
 
 
+def _flatten_and(formula: dict[str, object]) -> list[dict[str, object]]:
+    if formula.get("kind") != "and":
+        return [formula]
+    atoms: list[dict[str, object]] = []
+    for operand in formula["operands"]:
+        atoms.extend(_flatten_and(operand))
+    return atoms
+
+
+def _call_term(name: str, *args: dict[str, object]) -> dict[str, object]:
+    return {"kind": "ctor", "name": name, "args": list(args)}
+
+
+def _none_term() -> dict[str, object]:
+    return {"kind": "ctor", "name": "None", "args": []}
+
+
+def _atoms_named(formula: dict[str, object], name: str) -> list[dict[str, object]]:
+    return [atom for atom in _flatten_and(formula) if atom.get("name") == name]
+
+
 def test_double_lowers_to_dischargeable_core_form():
     source = "def double(x: int) -> int:\n    return x * 2\n"
     contract = _fn_contract(source)
@@ -173,6 +194,105 @@ def test_leaf_harvester_lifts_call_eq():
         "args": [{"kind": "const", "value": 3, "sort": {"kind": "primitive", "name": "Int"}}],
     }
     assert inv["args"][1]["value"] == 6
+
+
+def test_leaf_harvester_lifts_is_none_with_substrate_guard():
+    source = "def test_missing():\n    assert maybe_none() is None\n"
+    result = harvest_source(source, "test_m.py")
+    assert result.diagnostics == []
+    assert len(result.ir) == 1
+
+    inv = result.ir[0]["inv"]
+    call = _call_term("maybe_none")
+    assert {
+        "kind": "atomic",
+        "name": "=",
+        "args": [call, _none_term()],
+    } in _flatten_and(inv)
+    assert {
+        "kind": "atomic",
+        "name": "is_none",
+        "args": [call],
+    } in _flatten_and(inv)
+
+
+def test_leaf_harvester_lifts_is_not_none_with_substrate_guard():
+    source = "def test_present():\n    assert maybe_value() is not None\n"
+    result = harvest_source(source, "test_m.py")
+    assert result.diagnostics == []
+    assert len(result.ir) == 1
+
+    inv = result.ir[0]["inv"]
+    call = _call_term("maybe_value")
+    assert {
+        "kind": "atomic",
+        "name": "≠",
+        "args": [call, _none_term()],
+    } in _flatten_and(inv)
+    assert {
+        "kind": "atomic",
+        "name": "is_some",
+        "args": [call],
+    } in _flatten_and(inv)
+
+
+def test_leaf_harvester_emits_bare_substrate_guard_heads():
+    source = (
+        "def test_option_guards():\n"
+        "    assert maybe_none() is None\n"
+        "    assert maybe_value() is not None\n"
+    )
+    result = harvest_source(source, "test_m.py")
+    guard_names = [
+        atom["name"]
+        for atom in _flatten_and(result.ir[0]["inv"])
+        if atom.get("name") in {"is_none", "is_some"}
+    ]
+
+    assert guard_names == ["is_none", "is_some"]
+    assert all(":" not in name for name in guard_names)
+
+
+def test_leaf_harvester_plain_equality_does_not_emit_option_guard():
+    source = "def test_count():\n    assert count() == 0\n"
+    result = harvest_source(source, "test_m.py")
+    assert len(result.ir) == 1
+
+    assert _atoms_named(result.ir[0]["inv"], "is_none") == []
+    assert _atoms_named(result.ir[0]["inv"], "is_some") == []
+
+
+def test_leaf_harvester_non_none_identity_does_not_emit_option_guard():
+    source = "def test_alias(left, right):\n    assert left is right\n"
+    result = harvest_source(source, "test_m.py")
+    assert len(result.ir) == 1
+
+    inv = result.ir[0]["inv"]
+    assert inv == {
+        "kind": "atomic",
+        "name": "=",
+        "args": [
+            {"kind": "var", "name": "left"},
+            {"kind": "var", "name": "right"},
+        ],
+    }
+    assert _atoms_named(inv, "is_none") == []
+    assert _atoms_named(inv, "is_some") == []
+
+
+def test_leaf_harvester_mixed_assertions_guard_only_none_comparison():
+    source = (
+        "def test_mixed():\n"
+        "    assert maybe_none() is None\n"
+        "    assert count() == 0\n"
+    )
+    result = harvest_source(source, "test_m.py")
+    assert len(result.ir) == 1
+
+    inv = result.ir[0]["inv"]
+    assert len(_atoms_named(inv, "is_none")) == 1
+    assert _atoms_named(inv, "is_some") == []
+    assert len(_atoms_named(inv, "=")) == 2
 
 
 def test_leaf_harvester_negative_int_literal():
@@ -283,9 +403,20 @@ def test_verify_rpc_kit_declaration_returns_python_verify_surface():
         "shutdown": False,
     }
     assert result["proofResolution"] == {"strategy": "pip"}
-    assert result["effectKinds"] == []
+    assert result["effectKinds"] == ["concept:panic-freedom"]
     assert result["effectLeaves"] == []
-    assert result["guardPredicates"] == []
+    assert result["guardPredicates"] == [
+        {
+            "surface": "python-verify",
+            "local": "is_some",
+            "concept": "concept:panic-freedom.option.some",
+        },
+        {
+            "surface": "python-verify",
+            "local": "is_none",
+            "concept": "concept:panic-freedom.option.none",
+        },
+    ]
     assert result["controlCarriers"] == []
     assert result["residueCategories"] == []
 
