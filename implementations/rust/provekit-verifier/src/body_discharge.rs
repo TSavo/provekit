@@ -100,7 +100,9 @@ use serde_json::Value as Json;
 
 use libprovekit::concept::panic_freedom;
 use libprovekit::core::types::Term;
-use libprovekit::wp::{self, value_expr_of_term, OpContractInfo, OpContractResolver, SlotInfo, WpError};
+use libprovekit::wp::{
+    self, value_expr_of_term, OpContractInfo, OpContractResolver, SlotInfo, WpError,
+};
 use provekit_ir_types::{IrFormula, IrTerm};
 
 use crate::types::{memento_body, memento_kind, CallSite, MementoPool};
@@ -406,6 +408,7 @@ pub fn extract_body_obligation(
         Ok(reduced) => {
             let reduced_json = serde_json::to_value(&reduced)
                 .map_err(|e| format!("wp obligation serialize: {e}"))?;
+            refuse_non_reflexive_namespaced_body_symbol(&reduced_json, &cs.bridge_ir_name)?;
             Ok(Some(BodyObligation::Reduced {
                 formula: reduced_json,
                 tier: BodyDischargeTier::CallExpected,
@@ -471,6 +474,7 @@ fn extract_eq_both_calls_obligation(
     };
     let obligation_json = serde_json::to_value(&obligation)
         .map_err(|e| format!("body-discharge: eq-both-calls: serialize: {e}"))?;
+    refuse_non_reflexive_namespaced_body_symbol(&obligation_json, &cs.bridge_ir_name)?;
 
     Ok(Some(BodyObligation::Reduced {
         formula: obligation_json,
@@ -574,6 +578,110 @@ fn formula_is_reflexive(f: &Json) -> bool {
     }
 }
 
+fn refuse_non_reflexive_namespaced_body_symbol(
+    obligation: &Json,
+    callee_name: &str,
+) -> Result<(), String> {
+    if formula_is_reflexive(obligation) {
+        return Ok(());
+    }
+    if let Some(symbol) = namespaced_symbol_in_formula_json(obligation) {
+        return Err(format!(
+            "refuse: callee `{callee_name}` reduced to a non-reflexive obligation \
+             containing opaque namespaced symbol `{symbol}`; refusing before SMT \
+             rather than treating an arbitrary uninterpreted-function model as a \
+             user-facing violation"
+        ));
+    }
+    Ok(())
+}
+
+fn is_opaque_namespaced_symbol(name: &str) -> bool {
+    name.contains(':') && !name.starts_with("concept:")
+}
+
+fn namespaced_symbol_in_formula_json(formula: &Json) -> Option<&str> {
+    match formula.get("kind").and_then(|v| v.as_str()) {
+        Some("atomic") => formula
+            .get("name")
+            .and_then(|v| v.as_str())
+            .filter(|name| is_opaque_namespaced_symbol(name))
+            .or_else(|| {
+                formula
+                    .get("args")
+                    .and_then(|v| v.as_array())
+                    .and_then(|args| args.iter().find_map(namespaced_symbol_in_term_json))
+            }),
+        Some("and") | Some("or") | Some("not") | Some("implies") => formula
+            .get("operands")
+            .and_then(|v| v.as_array())
+            .and_then(|operands| operands.iter().find_map(namespaced_symbol_in_formula_json)),
+        Some("forall") | Some("exists") | Some("choice") => formula
+            .get("body")
+            .and_then(namespaced_symbol_in_formula_json),
+        Some("substitute") => formula
+            .get("term")
+            .and_then(namespaced_symbol_in_term_json)
+            .or_else(|| {
+                formula
+                    .get("target")
+                    .and_then(namespaced_symbol_in_formula_json)
+            }),
+        Some("apply") => formula
+            .get("fn")
+            .and_then(|v| v.as_str())
+            .filter(|name| is_opaque_namespaced_symbol(name))
+            .or_else(|| {
+                formula
+                    .get("args")
+                    .and_then(|v| v.as_array())
+                    .and_then(|args| args.iter().find_map(namespaced_symbol_in_formula_json))
+            }),
+        Some("divergenceBetween") | Some("divergence_between") | Some("divergence-between") => {
+            formula
+                .get("source")
+                .and_then(namespaced_symbol_in_formula_json)
+                .or_else(|| {
+                    formula
+                        .get("target")
+                        .and_then(namespaced_symbol_in_formula_json)
+                })
+        }
+        _ => None,
+    }
+}
+
+fn namespaced_symbol_in_term_json(term: &Json) -> Option<&str> {
+    match term.get("kind").and_then(|v| v.as_str()) {
+        Some("ctor") => term
+            .get("name")
+            .and_then(|v| v.as_str())
+            .filter(|name| is_opaque_namespaced_symbol(name))
+            .or_else(|| {
+                term.get("args")
+                    .and_then(|v| v.as_array())
+                    .and_then(|args| args.iter().find_map(namespaced_symbol_in_term_json))
+            }),
+        Some("lambda") => term.get("body").and_then(namespaced_symbol_in_term_json),
+        Some("let") => {
+            let binding_symbol =
+                term.get("bindings")
+                    .and_then(|v| v.as_array())
+                    .and_then(|bindings| {
+                        bindings.iter().find_map(|binding| {
+                            binding
+                                .get("boundTerm")
+                                .or_else(|| binding.get("bound_term"))
+                                .and_then(namespaced_symbol_in_term_json)
+                        })
+                    });
+            binding_symbol.or_else(|| term.get("body").and_then(namespaced_symbol_in_term_json))
+        }
+        Some("var") | Some("const") => None,
+        _ => None,
+    }
+}
+
 /// Extract a guard fact from the callee's postcondition.
 ///
 /// When a callsite's `arg_term` is a `ctor` (i.e. the argument to the
@@ -616,7 +724,10 @@ pub fn callee_post_guard_fact(cs: &CallSite, pool: &MementoPool) -> Option<Json>
         return None;
     };
     if arg.get("kind").and_then(|v| v.as_str()) != Some("ctor") {
-        gdbg!("REJECT cond1: arg_term kind != ctor (kind={:?})", arg.get("kind"));
+        gdbg!(
+            "REJECT cond1: arg_term kind != ctor (kind={:?})",
+            arg.get("kind")
+        );
         return None;
     }
     let Some(ctor_name) = arg.get("name").and_then(|v| v.as_str()) else {
@@ -652,7 +763,11 @@ pub fn callee_post_guard_fact(cs: &CallSite, pool: &MementoPool) -> Option<Json>
             );
             return None;
         }
-        match (cs.callsite_bundle_cid.as_deref(), producer_file, producer_line) {
+        match (
+            cs.callsite_bundle_cid.as_deref(),
+            producer_file,
+            producer_line,
+        ) {
             (Some(bundle), Some(file), Some(line)) => {
                 let key = (
                     bundle.to_string(),
@@ -662,21 +777,27 @@ pub fn callee_post_guard_fact(cs: &CallSite, pool: &MementoPool) -> Option<Json>
                 );
                 match pool.bridges_by_callsite.get(&key) {
                     Some(b) => {
-                        gdbg!("cond2 callsite-scoped: producer bridge for {ctor_name} \
-                               at ({file}:{line}) found");
+                        gdbg!(
+                            "cond2 callsite-scoped: producer bridge for {ctor_name} \
+                               at ({file}:{line}) found"
+                        );
                         b
                     }
                     None => {
-                        gdbg!("REJECT cond2 callsite-scoped: no producer bridge for \
+                        gdbg!(
+                            "REJECT cond2 callsite-scoped: no producer bridge for \
                                {ctor_name} co-located at ({file}:{line}) -> no guard fact \
-                               (panic site stays undecidable; refuse-floor intact)");
+                               (panic site stays undecidable; refuse-floor intact)"
+                        );
                         return None;
                     }
                 }
             }
             _ => {
-                gdbg!("REJECT cond2: panic site has no (bundle,file,line) provenance \
-                       -> no callsite-scoped producer (stays undecidable)");
+                gdbg!(
+                    "REJECT cond2: panic site has no (bundle,file,line) provenance \
+                       -> no callsite-scoped producer (stays undecidable)"
+                );
                 return None;
             }
         }
@@ -704,7 +825,10 @@ pub fn callee_post_guard_fact(cs: &CallSite, pool: &MementoPool) -> Option<Json>
         return None;
     };
     if memento_kind(env) != Some("contract") {
-        gdbg!("REJECT cond2: target {target_cid} kind != contract ({:?})", memento_kind(env));
+        gdbg!(
+            "REJECT cond2: target {target_cid} kind != contract ({:?})",
+            memento_kind(env)
+        );
         return None;
     }
     let Some(body) = memento_body(env).filter(|v| v.is_object()) else {
@@ -1051,6 +1175,7 @@ fn extract_eq_nested_reduce_obligation(
     };
     let obligation_json = serde_json::to_value(&obligation)
         .map_err(|e| format!("nested-call reduce-in-place: serialize: {e}"))?;
+    refuse_non_reflexive_namespaced_body_symbol(&obligation_json, &cs.bridge_ir_name)?;
 
     Ok(Some(BodyObligation::Reduced {
         formula: obligation_json,
@@ -1129,6 +1254,70 @@ mod discharge_method_tests {
             ]}
         ]});
         assert_eq!(classify_discharge_method(&ob), DischargeMethod::Substantive);
+    }
+
+    #[test]
+    fn reflexive_opaque_namespaced_obligation_is_allowed() {
+        let floordiv = json!({"kind": "ctor", "name": "kit:floordiv", "args": [
+            {"kind": "var", "name": "a"},
+            {"kind": "var", "name": "b"}
+        ]});
+        let ob = json!({"kind": "atomic", "name": "=", "args": [floordiv.clone(), floordiv]});
+        assert!(
+            refuse_non_reflexive_namespaced_body_symbol(&ob, "halve").is_ok(),
+            "reflexive equality over an opaque namespaced term is sound by congruence"
+        );
+    }
+
+    #[test]
+    fn non_reflexive_opaque_namespaced_obligation_refuses() {
+        let ob = json!({"kind": "atomic", "name": "=", "args": [
+            {"kind": "ctor", "name": "kit:floordiv", "args": [
+                {"kind": "var", "name": "a"},
+                {"kind": "var", "name": "b"}
+            ]},
+            {"kind": "ctor", "name": "python:floordiv", "args": [
+                {"kind": "var", "name": "a"},
+                {"kind": "var", "name": "b"}
+            ]}
+        ]});
+        let err = refuse_non_reflexive_namespaced_body_symbol(&ob, "halve")
+            .expect_err("non-reflexive opaque namespaced terms must refuse");
+        assert!(
+            err.contains("kit:floordiv"),
+            "refusal must name the first opaque symbol; got: {err}"
+        );
+    }
+
+    #[test]
+    fn concept_namespace_is_substrate_not_opaque() {
+        let ob = json!({"kind": "atomic", "name": "=", "args": [
+            {"kind": "ctor", "name": panic_freedom::IS_OK_CONCEPT, "args": [
+                {"kind": "var", "name": "result"}
+            ]},
+            {"kind": "ctor", "name": panic_freedom::IS_OK, "args": [
+                {"kind": "var", "name": "result"}
+            ]}
+        ]});
+        assert!(
+            refuse_non_reflexive_namespaced_body_symbol(&ob, "result_totality").is_ok(),
+            "concept:* substrate vocabulary must not be classified as opaque kit syntax"
+        );
+    }
+
+    #[test]
+    fn non_namespaced_non_reflexive_body_obligation_is_not_refused() {
+        let ob = json!({"kind": "atomic", "name": "=", "args": [
+            {"kind": "ctor", "name": "*", "args": [
+                {"kind": "const", "value": 3, "sort": {"kind": "primitive", "name": "Int"}},
+                {"kind": "const", "value": 2, "sort": {"kind": "primitive", "name": "Int"}}
+            ]},
+            {"kind": "const", "value": 7, "sort": {"kind": "primitive", "name": "Int"}}
+        ]});
+        assert!(
+            refuse_non_reflexive_namespaced_body_symbol(&ob, "double").is_ok(),
+            "ordinary non-reflexive arithmetic remains a solver obligation"
+        );
     }
 }
 
@@ -1402,11 +1591,8 @@ mod callee_post_guard_fact_tests {
     #[test]
     fn result_ok_concept_post_supplies_same_fact_as_old_is_ok() {
         let cs = cs_with_ctor_arg(BRIDGE_SYMBOL);
-        let old_pool = singleton_totality_pool(
-            BRIDGE_SYMBOL,
-            TOTAL_CONTRACT_CID,
-            panic_freedom::IS_OK,
-        );
+        let old_pool =
+            singleton_totality_pool(BRIDGE_SYMBOL, TOTAL_CONTRACT_CID, panic_freedom::IS_OK);
         let concept_pool = singleton_totality_pool(
             BRIDGE_SYMBOL,
             TOTAL_CONTRACT_CID,
@@ -1432,11 +1618,8 @@ mod callee_post_guard_fact_tests {
     #[test]
     fn result_err_concept_post_supplies_same_fact_as_old_is_err() {
         let cs = cs_with_ctor_arg(BRIDGE_SYMBOL);
-        let old_pool = singleton_totality_pool(
-            BRIDGE_SYMBOL,
-            TOTAL_CONTRACT_CID,
-            panic_freedom::IS_ERR,
-        );
+        let old_pool =
+            singleton_totality_pool(BRIDGE_SYMBOL, TOTAL_CONTRACT_CID, panic_freedom::IS_ERR);
         let concept_pool = singleton_totality_pool(
             BRIDGE_SYMBOL,
             TOTAL_CONTRACT_CID,
@@ -2139,6 +2322,69 @@ mod eq_both_calls_discharge_tests {
             "one-sided call must produce an obligation"
         );
     }
+
+    #[test]
+    fn opaque_namespaced_one_sided_body_claim_refuses_before_solver() {
+        let opaque_cid = "blake3-512:opaque-body-contract";
+        let opaque_symbol = "halve";
+        let contract_env = json!({
+            "evidence": {
+                "kind": "contract",
+                "body": {
+                    "formals": ["x"],
+                    "post": {
+                        "kind": "atomic",
+                        "name": "=",
+                        "args": [
+                            {"kind": "var", "name": "result"},
+                            {"kind": "ctor", "name": "kit:floordiv", "args": [
+                                {"kind": "var", "name": "x"},
+                                {"kind": "const", "value": 2,
+                                 "sort": {"kind": "primitive", "name": "Int"}}
+                            ]}
+                        ]
+                    }
+                }
+            }
+        });
+        let bridge_env = json!({
+            "evidence": {
+                "kind": "bridge",
+                "body": {
+                    "sourceSymbol": opaque_symbol,
+                    "targetContractCid": opaque_cid
+                }
+            }
+        });
+        let mut pool = MementoPool::default();
+        pool.mementos.insert(opaque_cid.into(), contract_env);
+        pool.bridges_by_symbol
+            .insert(opaque_symbol.into(), bridge_env);
+
+        let cs = CallSite {
+            bridge_ir_name: opaque_symbol.into(),
+            containing_atomic: Some(json!({
+                "kind": "atomic",
+                "name": "=",
+                "args": [
+                    {"kind": "ctor", "name": opaque_symbol, "args": [int_const(-7)]},
+                    int_const(-4)
+                ]
+            })),
+            ..Default::default()
+        };
+
+        let result = extract_body_obligation(&cs, &pool);
+        let err = result.expect_err(
+            "a non-reflexive body obligation containing a namespaced opaque \
+             operation must refuse before SMT, not become an arbitrary-model \
+             unsatisfied result",
+        );
+        assert!(
+            err.contains("kit:floordiv"),
+            "refusal must name the opaque symbol; got: {err}"
+        );
+    }
 }
 
 #[cfg(test)]
@@ -2268,9 +2514,12 @@ mod nested_call_reduce_in_place_tests {
         });
         let mut pool = MementoPool::default();
         pool.mementos.insert(DOUBLE_CID.into(), double_contract);
-        pool.bridges_by_symbol.insert(DOUBLE_SYMBOL.into(), double_bridge);
-        pool.mementos.insert(PRE_BEARING_CID.into(), pre_bearing_contract);
-        pool.bridges_by_symbol.insert(PRE_BEARING_SYMBOL.into(), pre_bearing_bridge);
+        pool.bridges_by_symbol
+            .insert(DOUBLE_SYMBOL.into(), double_bridge);
+        pool.mementos
+            .insert(PRE_BEARING_CID.into(), pre_bearing_contract);
+        pool.bridges_by_symbol
+            .insert(PRE_BEARING_SYMBOL.into(), pre_bearing_bridge);
         pool
     }
 
@@ -2306,7 +2555,11 @@ mod nested_call_reduce_in_place_tests {
         // Sides differ (*(3,2) vs 6) -- Substantive, not reflexive. z3 verifies
         // `*(3,2) == 6` is SAT (6 == 6 after arithmetic). In the unit test we
         // only check the shape and that the callee symbol is gone.
-        let cs = cs_nested(DOUBLE_SYMBOL, ok_wrap(double_call(3)), ok_wrap(int_const(6)));
+        let cs = cs_nested(
+            DOUBLE_SYMBOL,
+            ok_wrap(double_call(3)),
+            ok_wrap(int_const(6)),
+        );
         let pool = nested_test_pool();
 
         // recognize_eq_nested_call must fire for this shape.
@@ -2332,7 +2585,9 @@ mod nested_call_reduce_in_place_tests {
         );
         let ob = result.unwrap();
         assert!(ob.is_some(), "must produce Some obligation, not None");
-        let BodyObligation::Reduced { formula: ob_json, .. } = ob.unwrap();
+        let BodyObligation::Reduced {
+            formula: ob_json, ..
+        } = ob.unwrap();
 
         // The reduced formula must not contain the uninterpreted `double` symbol.
         assert!(
@@ -2341,7 +2596,10 @@ mod nested_call_reduce_in_place_tests {
         );
         // Both sides must be inside `Ok` (the outer wrapper is preserved since
         // Ok is uninterpreted).
-        let args = ob_json.get("args").and_then(|v| v.as_array()).expect("= args");
+        let args = ob_json
+            .get("args")
+            .and_then(|v| v.as_array())
+            .expect("= args");
         assert_eq!(args.len(), 2, "obligation must be a binary equality");
         assert_eq!(
             args[0].get("name").and_then(|v| v.as_str()),
@@ -2369,7 +2627,11 @@ mod nested_call_reduce_in_place_tests {
         // where `Ok` != `Err` as uninterpreted distinct ctors) -> NOT discharged.
         // This proves the tier cannot falsely discharge an equality where the
         // nested call's wrapper differs on the two sides.
-        let cs = cs_nested(DOUBLE_SYMBOL, ok_wrap(double_call(3)), err_wrap(int_const(6)));
+        let cs = cs_nested(
+            DOUBLE_SYMBOL,
+            ok_wrap(double_call(3)),
+            err_wrap(int_const(6)),
+        );
         let pool = nested_test_pool();
 
         let result = extract_body_obligation(&cs, &pool);
@@ -2378,8 +2640,13 @@ mod nested_call_reduce_in_place_tests {
             "must produce an obligation (not Err) even for the wrong-wrapper case: {result:?}"
         );
         let ob = result.unwrap();
-        assert!(ob.is_some(), "must produce Some obligation even for wrong-wrapper");
-        let BodyObligation::Reduced { formula: ob_json, .. } = ob.unwrap();
+        assert!(
+            ob.is_some(),
+            "must produce Some obligation even for wrong-wrapper"
+        );
+        let BodyObligation::Reduced {
+            formula: ob_json, ..
+        } = ob.unwrap();
 
         // THE DISCRIMINATION ASSERTION: the obligation must NOT be reflexive.
         // `Ok(body) == Err(6)` can never be reflexive because the ctor names differ.
@@ -2394,7 +2661,10 @@ mod nested_call_reduce_in_place_tests {
             "wrong-outer-ctor must classify Substantive (sides differ in ctor name)"
         );
         // Confirm the two sides have different outer ctor names (Ok vs Err).
-        let args = ob_json.get("args").and_then(|v| v.as_array()).expect("= args");
+        let args = ob_json
+            .get("args")
+            .and_then(|v| v.as_array())
+            .expect("= args");
         let lhs_name = args[0].get("name").and_then(|v| v.as_str()).unwrap_or("?");
         let rhs_name = args[1].get("name").and_then(|v| v.as_str()).unwrap_or("?");
         assert_ne!(
@@ -2523,8 +2793,13 @@ mod nested_call_reduce_in_place_tests {
             "arithmetic discrimination must produce an obligation: {result:?}"
         );
         let ob = result.unwrap();
-        assert!(ob.is_some(), "arithmetic discrimination must produce Some(obligation)");
-        let BodyObligation::Reduced { formula: ob_json, .. } = ob.unwrap();
+        assert!(
+            ob.is_some(),
+            "arithmetic discrimination must produce Some(obligation)"
+        );
+        let BodyObligation::Reduced {
+            formula: ob_json, ..
+        } = ob.unwrap();
 
         // THE ARITHMETIC DISCRIMINATION ASSERTION: sides must NOT be reflexive.
         // LHS contains `*(3,2)` (or similar body-reduced form); RHS is `7`.
