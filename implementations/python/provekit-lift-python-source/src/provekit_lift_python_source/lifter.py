@@ -261,7 +261,6 @@ class _Emitter:
         self.effects = effects
         self.source_path = source_path
         self.panic_loci = panic_loci
-        self._suppress_runtime_failure_loci = 0
 
     def statements(self, statements: list[ast.stmt]) -> Json:
         emitted: list[Json] = []
@@ -360,30 +359,37 @@ class _Emitter:
         if isinstance(node, ast.Name):
             return var(node.id)
         if isinstance(node, ast.Attribute):
-            return ctor(
+            term = ctor(
                 "python:attribute",
-                self.store_target_expr(node.value),
+                self.expr(node.value),
                 str_const(node.attr),
             )
-        if isinstance(node, ast.Subscript):
-            return ctor(
-                "python:subscript",
-                self.store_target_expr(node.value),
-                self.store_target_subscript_index(node),
+            self.effects.add_panics()
+            self.panic_loci.append(
+                self.runtime_failure_locus(
+                    node,
+                    term,
+                    subkind="attribute-write",
+                    exception_class="AttributeError",
+                )
             )
+            return term
+        if isinstance(node, ast.Subscript):
+            term = ctor(
+                "python:subscript",
+                self.expr(node.value),
+                self.subscript_index(node),
+            )
+            self.effects.add_panics()
+            self.panic_loci.append(
+                self.runtime_failure_locus(
+                    node,
+                    term,
+                    subkind="subscript-write",
+                )
+            )
+            return term
         raise _UnsupportedSyntax(node, f"unsupported assignment target: {type(node).__name__}")
-
-    def store_target_expr(self, node: ast.expr) -> Json:
-        self._suppress_runtime_failure_loci += 1
-        try:
-            return self.expr(node)
-        finally:
-            self._suppress_runtime_failure_loci -= 1
-
-    def store_target_subscript_index(self, node: ast.Subscript) -> Json:
-        if isinstance(node.slice, ast.Slice):
-            raise _UnsupportedSyntax(node.slice, "slice subscripts are refused")
-        return self.store_target_expr(node.slice)
 
     def expr(self, node: ast.expr) -> Json:
         if isinstance(node, ast.Constant):
@@ -416,28 +422,26 @@ class _Emitter:
             return self.call(node)
         if isinstance(node, ast.Attribute):
             term = ctor("python:attribute", self.expr(node.value), str_const(node.attr))
-            if self._suppress_runtime_failure_loci == 0:
-                self.effects.add_panics()
-                self.panic_loci.append(
-                    self.runtime_failure_locus(
-                        node,
-                        term,
-                        subkind="attribute-access",
-                        exception_class="AttributeError",
-                    )
+            self.effects.add_panics()
+            self.panic_loci.append(
+                self.runtime_failure_locus(
+                    node,
+                    term,
+                    subkind="attribute-access",
+                    exception_class="AttributeError",
                 )
+            )
             return term
         if isinstance(node, ast.Subscript):
             term = ctor("python:subscript", self.expr(node.value), self.subscript_index(node))
-            if self._suppress_runtime_failure_loci == 0:
-                self.effects.add_panics()
-                self.panic_loci.append(
-                    self.runtime_failure_locus(
-                        node,
-                        term,
-                        subkind="subscript-access",
-                    )
+            self.effects.add_panics()
+            self.panic_loci.append(
+                self.runtime_failure_locus(
+                    node,
+                    term,
+                    subkind="subscript-access",
                 )
+            )
             return term
         raise _UnsupportedSyntax(node, f"unhandled expression kind: {type(node).__name__}")
 
