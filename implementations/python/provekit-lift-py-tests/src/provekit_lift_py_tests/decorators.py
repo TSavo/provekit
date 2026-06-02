@@ -28,6 +28,7 @@ from .ir import (
     Bool,
     Sort,
     atomic,
+    comparison_with_none_guard,
     eq,
     ne,
     gt,
@@ -225,7 +226,7 @@ def _translate_expr(node: ast.expr, available_names: List[str]) -> Formula:
             raise ValueError(f"unsupported comparison: {type(op).__name__}")
         l = _translate_term(node.left, available_names)
         r = _translate_term(node.comparators[0], available_names)
-        return atomic(sym, [l, r])
+        return comparison_with_none_guard(sym, l, r)
 
     if isinstance(node, ast.BinOp) and isinstance(node.op, ast.Add):
         l = _translate_term(node.left, available_names)

@@ -121,9 +121,20 @@ def kit_declaration_result() -> Dict[str, Any]:
             ]
         },
         "proofResolution": {"strategy": "pip"},
-        "effectKinds": [],
+        "effectKinds": ["concept:panic-freedom"],
         "effectLeaves": [],
-        "guardPredicates": [],
+        "guardPredicates": [
+            {
+                "surface": KIT_ID,
+                "local": "is_some",
+                "concept": "concept:panic-freedom.option.some",
+            },
+            {
+                "surface": KIT_ID,
+                "local": "is_none",
+                "concept": "concept:panic-freedom.option.none",
+            },
+        ],
         "controlCarriers": [],
         "residueCategories": [],
     }

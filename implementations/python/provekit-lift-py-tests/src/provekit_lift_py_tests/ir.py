@@ -188,6 +188,24 @@ def ne(a: Term, b: Term) -> Formula:
     return atomic("≠", [a, b])
 
 
+def comparison_with_none_guard(name: str, left: Term, right: Term) -> Formula:
+    base = atomic(name, [left, right])
+    left_is_none = _is_none_ctor(left)
+    right_is_none = _is_none_ctor(right)
+    if left_is_none == right_is_none:
+        return base
+    subject = right if left_is_none else left
+    if name == "=":
+        return and_([base, atomic("is_none", [subject])])
+    if name == "≠":
+        return and_([base, atomic("is_some", [subject])])
+    return base
+
+
+def _is_none_ctor(term: Term) -> bool:
+    return isinstance(term, _Ctor) and term.name == "None" and not term.args
+
+
 def connective(kind: str, operands: List[Formula]) -> Formula:
     return _Connective(kind, tuple(operands))
 

@@ -22,6 +22,7 @@ from .ir import (
     and_,
     atomic,
     bool_const,
+    comparison_with_none_guard,
     connective,
     ctor,
     eq,
@@ -412,7 +413,9 @@ def _lift_predicate(node: ast.expr) -> Formula:
         sym = _COMPARE_OP_MAP.get(type(node.ops[0]))
         if sym is None:
             raise ValueError(f"unsupported comparison op: {type(node.ops[0]).__name__}")
-        return atomic(sym, [_term_from_expr(node.left), _term_from_expr(node.comparators[0])])
+        return comparison_with_none_guard(
+            sym, _term_from_expr(node.left), _term_from_expr(node.comparators[0])
+        )
     if isinstance(node, ast.BoolOp):
         operands = [_lift_predicate(value) for value in node.values]
         if isinstance(node.op, ast.And):

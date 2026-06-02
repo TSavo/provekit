@@ -97,5 +97,6 @@ class TestPydanticLift:
         assert any(w["extension_fields"]["loss_record"] for w in witnesses)
         predicate_text = " ".join(w["predicate_text"] for w in witnesses)
         assert "name != None" in predicate_text
+        assert "is_some(name)" in predicate_text
         assert "type(name) == str" in predicate_text
         assert "strlen(name) >= 1" in predicate_text

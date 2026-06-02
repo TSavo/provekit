@@ -10,6 +10,9 @@ from provekit_lift_py_tests.decorators import (
     collect_module,
 )
 from provekit_lift_py_tests.ir import (
+    _Atomic,
+    _Connective,
+    _Ctor,
     atomic,
     eq,
     gt,
@@ -19,6 +22,30 @@ from provekit_lift_py_tests.ir import (
     str_const,
     bool_const,
 )
+
+
+def _flatten_and(formula):
+    if isinstance(formula, _Connective) and formula.kind == "and":
+        out = []
+        for operand in formula.operands:
+            out.extend(_flatten_and(operand))
+        return out
+    return [formula]
+
+
+def _assert_none_guard_formula(formula, *, comparison_name: str, guard_name: str):
+    atoms = [atom for atom in _flatten_and(formula) if isinstance(atom, _Atomic)]
+    assert any(
+        atom.name == comparison_name
+        and len(atom.args) == 2
+        and isinstance(atom.args[1], _Ctor)
+        and atom.args[1].name == "None"
+        for atom in atoms
+    )
+    guards = [atom for atom in atoms if atom.name == guard_name]
+    assert len(guards) == 1
+    assert ":" not in guards[0].name
+    assert len(guards[0].args) == 1
 
 
 class TestContractDecorator:
@@ -43,6 +70,19 @@ class TestContractDecorator:
         assert decl.pre is not None
         assert decl.post is not None
         assert decl.out_binding == "out"
+
+    def test_none_string_expr_emits_substrate_guard_fact(self):
+        @contract(pre="x is not None")
+        def identity(x: object) -> object:
+            return x
+
+        decl = identity._provekit_contract
+        assert decl.pre is not None
+        _assert_none_guard_formula(
+            decl.pre,
+            comparison_name="≠",
+            guard_name="is_some",
+        )
 
     def test_runtime_precondition_passes(self):
         @contract(pre=lambda x: x >= 0)
