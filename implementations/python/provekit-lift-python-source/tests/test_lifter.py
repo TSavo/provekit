@@ -470,7 +470,7 @@ def test_mixed_runtime_failure_sites_share_deduped_panics_effect() -> None:
     assert [(locus["line"], locus["col"]) for locus in loci] == [(2, 8), (3, 8), (4, 4)]
 
 
-def test_attribute_and_subscript_store_targets_are_not_slice4_runtime_failure_loci() -> None:
+def test_attribute_and_subscript_store_targets_emit_runtime_failure_loci() -> None:
     source = (
         "def f(obj, xs, key, value):\n"
         "    obj.name = value\n"
@@ -485,11 +485,50 @@ def test_attribute_and_subscript_store_targets_are_not_slice4_runtime_failure_lo
     assert contract["effects"] == [
         {"kind": "writes", "target": "obj.name"},
         {"kind": "writes", "target": "xs[key]"},
+        {"kind": "panics"},
     ]
-    assert contract.get("panicLoci", []) == []
+    assert _runtime_failure_loci(contract) == [
+        {
+            "effectKind": PANIC_FREEDOM_EFFECT_KIND,
+            "callee": RUNTIME_FAILURE_SITE_CONCEPT,
+            "subkind": "attribute-write",
+            "exceptionClass": "AttributeError",
+            "argTerm": {
+                "kind": "ctor",
+                "name": "python:attribute",
+                "args": [
+                    {"kind": "var", "name": "obj"},
+                    {
+                        "kind": "const",
+                        "value": "name",
+                        "sort": {"kind": "primitive", "name": "String"},
+                    },
+                ],
+            },
+            "file": "store_targets.py",
+            "line": 2,
+            "col": 4,
+        },
+        {
+            "effectKind": PANIC_FREEDOM_EFFECT_KIND,
+            "callee": RUNTIME_FAILURE_SITE_CONCEPT,
+            "subkind": "subscript-write",
+            "argTerm": {
+                "kind": "ctor",
+                "name": "python:subscript",
+                "args": [
+                    {"kind": "var", "name": "xs"},
+                    {"kind": "var", "name": "key"},
+                ],
+            },
+            "file": "store_targets.py",
+            "line": 3,
+            "col": 4,
+        },
+    ]
 
 
-def test_nested_attribute_and_subscript_store_targets_do_not_leak_runtime_failure_loci() -> None:
+def test_nested_attribute_and_subscript_store_targets_resurface_load_loci() -> None:
     source = (
         "def f(obj, xs, ys, i, value):\n"
         "    obj.inner.name = value\n"
@@ -504,8 +543,102 @@ def test_nested_attribute_and_subscript_store_targets_do_not_leak_runtime_failur
     assert contract["effects"] == [
         {"kind": "writes", "target": "obj.inner.name"},
         {"kind": "writes", "target": "xs[ys[i]]"},
+        {"kind": "panics"},
     ]
-    assert contract.get("panicLoci", []) == []
+    assert _runtime_failure_loci(contract) == [
+        {
+            "effectKind": PANIC_FREEDOM_EFFECT_KIND,
+            "callee": RUNTIME_FAILURE_SITE_CONCEPT,
+            "subkind": "attribute-access",
+            "exceptionClass": "AttributeError",
+            "argTerm": {
+                "kind": "ctor",
+                "name": "python:attribute",
+                "args": [
+                    {"kind": "var", "name": "obj"},
+                    {
+                        "kind": "const",
+                        "value": "inner",
+                        "sort": {"kind": "primitive", "name": "String"},
+                    },
+                ],
+            },
+            "file": "nested_store_targets.py",
+            "line": 2,
+            "col": 4,
+        },
+        {
+            "effectKind": PANIC_FREEDOM_EFFECT_KIND,
+            "callee": RUNTIME_FAILURE_SITE_CONCEPT,
+            "subkind": "attribute-write",
+            "exceptionClass": "AttributeError",
+            "argTerm": {
+                "kind": "ctor",
+                "name": "python:attribute",
+                "args": [
+                    {
+                        "kind": "ctor",
+                        "name": "python:attribute",
+                        "args": [
+                            {"kind": "var", "name": "obj"},
+                            {
+                                "kind": "const",
+                                "value": "inner",
+                                "sort": {"kind": "primitive", "name": "String"},
+                            },
+                        ],
+                    },
+                    {
+                        "kind": "const",
+                        "value": "name",
+                        "sort": {"kind": "primitive", "name": "String"},
+                    },
+                ],
+            },
+            "file": "nested_store_targets.py",
+            "line": 2,
+            "col": 4,
+        },
+        {
+            "effectKind": PANIC_FREEDOM_EFFECT_KIND,
+            "callee": RUNTIME_FAILURE_SITE_CONCEPT,
+            "subkind": "subscript-access",
+            "argTerm": {
+                "kind": "ctor",
+                "name": "python:subscript",
+                "args": [
+                    {"kind": "var", "name": "ys"},
+                    {"kind": "var", "name": "i"},
+                ],
+            },
+            "file": "nested_store_targets.py",
+            "line": 3,
+            "col": 7,
+        },
+        {
+            "effectKind": PANIC_FREEDOM_EFFECT_KIND,
+            "callee": RUNTIME_FAILURE_SITE_CONCEPT,
+            "subkind": "subscript-write",
+            "argTerm": {
+                "kind": "ctor",
+                "name": "python:subscript",
+                "args": [
+                    {"kind": "var", "name": "xs"},
+                    {
+                        "kind": "ctor",
+                        "name": "python:subscript",
+                        "args": [
+                            {"kind": "var", "name": "ys"},
+                            {"kind": "var", "name": "i"},
+                        ],
+                    },
+                ],
+            },
+            "file": "nested_store_targets.py",
+            "line": 3,
+            "col": 4,
+        },
+    ]
 
 
 def test_none_guarded_attribute_access_emits_one_runtime_failure_locus() -> None:
