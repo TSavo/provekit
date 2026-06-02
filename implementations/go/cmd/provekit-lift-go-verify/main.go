@@ -134,6 +134,8 @@ func runRPC(stdin io.Reader, stdout io.Writer) error {
 			}))
 		case "lift":
 			writeJSON(stdout, handleLift(req.ID, req.Params))
+		case kitDeclarationRPCMethodName:
+			writeJSON(stdout, successResponse(req.ID, kitDeclarationResult()))
 		case "shutdown":
 			writeJSON(stdout, successResponse(req.ID, nil))
 			return nil
