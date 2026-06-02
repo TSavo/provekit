@@ -1159,12 +1159,151 @@ pub fn mint_witness(args: &MintWitnessArgs) -> Result<MintedEnvelope, ClaimEnvel
     ))
 }
 
+// =============================================================================
+// mint_effect_site_annotation
+// =============================================================================
+
+pub struct MintEffectSiteAnnotationArgs {
+    pub effect_kind: String,
+    pub file: String,
+    pub line: usize,
+    pub callee: String,
+    pub status: String,
+    pub category: String,
+    pub tier_to_close: String,
+    pub reason: String,
+    pub input_cids: Vec<String>,
+    pub produced_by: String,
+    pub produced_at: String,
+    pub signer_seed: Ed25519Seed,
+}
+
+fn effect_site_annotation_content_cid(args: &MintEffectSiteAnnotationArgs, line: i64) -> String {
+    let mut sorted_inputs = args.input_cids.clone();
+    sorted_inputs.sort();
+    let input_arr: Vec<Arc<Value>> = sorted_inputs.into_iter().map(Value::string).collect();
+    let content = Value::object([
+        ("effectKind", Value::string(args.effect_kind.clone())),
+        ("file", Value::string(args.file.clone())),
+        ("line", Value::integer(line)),
+        ("callee", Value::string(args.callee.clone())),
+        ("status", Value::string(args.status.clone())),
+        ("category", Value::string(args.category.clone())),
+        ("tierToClose", Value::string(args.tier_to_close.clone())),
+        ("reason", Value::string(args.reason.clone())),
+        ("inputCids", Value::array(input_arr)),
+    ]);
+    blake3_512_of(encode_jcs(&content).as_bytes())
+}
+
+pub fn mint_effect_site_annotation(
+    args: &MintEffectSiteAnnotationArgs,
+) -> Result<MintedEnvelope, ClaimEnvelopeError> {
+    if args.effect_kind.is_empty() {
+        return Err(ClaimEnvelopeError::Other(
+            "mint_effect_site_annotation: effectKind must not be empty".into(),
+        ));
+    }
+    if args.file.is_empty() {
+        return Err(ClaimEnvelopeError::Other(
+            "mint_effect_site_annotation: file must not be empty".into(),
+        ));
+    }
+    if args.callee.is_empty() {
+        return Err(ClaimEnvelopeError::Other(
+            "mint_effect_site_annotation: callee must not be empty".into(),
+        ));
+    }
+    if !matches!(args.status.as_str(), "residue" | "unproven") {
+        return Err(ClaimEnvelopeError::Other(
+            "mint_effect_site_annotation: status must be residue or unproven".into(),
+        ));
+    }
+    if args.category.is_empty() {
+        return Err(ClaimEnvelopeError::Other(
+            "mint_effect_site_annotation: category must not be empty".into(),
+        ));
+    }
+    if args.tier_to_close.is_empty() {
+        return Err(ClaimEnvelopeError::Other(
+            "mint_effect_site_annotation: tierToClose must not be empty".into(),
+        ));
+    }
+    if args.reason.is_empty() {
+        return Err(ClaimEnvelopeError::Other(
+            "mint_effect_site_annotation: reason must not be empty".into(),
+        ));
+    }
+    if args.produced_by.is_empty() || args.produced_at.is_empty() {
+        return Err(ClaimEnvelopeError::Other(
+            "mint_effect_site_annotation: producedBy and producedAt must not be empty".into(),
+        ));
+    }
+    let line = i64::try_from(args.line).map_err(|_| {
+        ClaimEnvelopeError::Other(
+            "mint_effect_site_annotation: line does not fit signed 64-bit integer".into(),
+        )
+    })?;
+
+    let header_cid = effect_site_annotation_content_cid(args, line);
+    let mut sorted_inputs = args.input_cids.clone();
+    sorted_inputs.sort();
+    let input_arr: Vec<Arc<Value>> = sorted_inputs.into_iter().map(Value::string).collect();
+    let header = build_header(
+        "effect-site-annotation",
+        &header_cid,
+        vec![
+            ("effectKind".into(), Value::string(args.effect_kind.clone())),
+            ("file".into(), Value::string(args.file.clone())),
+            ("line".into(), Value::integer(line)),
+            ("callee".into(), Value::string(args.callee.clone())),
+            ("status".into(), Value::string(args.status.clone())),
+            ("category".into(), Value::string(args.category.clone())),
+            (
+                "tierToClose".into(),
+                Value::string(args.tier_to_close.clone()),
+            ),
+            ("reason".into(), Value::string(args.reason.clone())),
+            ("inputCids".into(), Value::array(input_arr)),
+        ],
+    );
+    let metadata = Arc::new(Value::Object(vec![
+        ("producedBy".into(), Value::string(args.produced_by.clone())),
+        ("producedAt".into(), Value::string(args.produced_at.clone())),
+    ]));
+
+    Ok(assemble_layered(
+        header,
+        metadata,
+        &args.produced_at,
+        &args.signer_seed,
+        String::new(),
+    ))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
 
     fn dummy_seed() -> Ed25519Seed {
         [0x42; 32]
+    }
+
+    fn valid_effect_site_annotation_args() -> MintEffectSiteAnnotationArgs {
+        MintEffectSiteAnnotationArgs {
+            effect_kind: "concept:panic-freedom".into(),
+            file: "src/lib.rs".into(),
+            line: 42,
+            callee: "method:unwrap".into(),
+            status: "residue".into(),
+            category: "lock_poisoning_residue".into(),
+            tier_to_close: "irreducible".into(),
+            reason: "lock poisoning is runtime residue".into(),
+            input_cids: vec!["blake3-512:input".into()],
+            produced_by: "test".into(),
+            produced_at: "2026-06-01T00:00:00Z".into(),
+            signer_seed: dummy_seed(),
+        }
     }
 
     #[test]
@@ -1472,5 +1611,122 @@ mod tests {
             Some("blake3-512:parent")
         );
         assert!(minted.cid.starts_with("blake3-512:"));
+    }
+
+    #[test]
+    fn effect_site_annotation_mints_layered_panic_annotation_header() {
+        let args = valid_effect_site_annotation_args();
+
+        let minted = mint_effect_site_annotation(&args).expect("mint annotation");
+        let env: serde_json::Value =
+            serde_json::from_slice(&minted.canonical_bytes).expect("parse annotation");
+
+        assert_eq!(
+            env.pointer("/header/kind").and_then(|v| v.as_str()),
+            Some("effect-site-annotation")
+        );
+        assert_eq!(
+            env.pointer("/header/effectKind").and_then(|v| v.as_str()),
+            Some("concept:panic-freedom")
+        );
+        assert_eq!(
+            env.pointer("/header/file").and_then(|v| v.as_str()),
+            Some("src/lib.rs")
+        );
+        assert_eq!(
+            env.pointer("/header/line").and_then(|v| v.as_u64()),
+            Some(42)
+        );
+        assert_eq!(
+            env.pointer("/header/callee").and_then(|v| v.as_str()),
+            Some("method:unwrap")
+        );
+        assert_eq!(
+            env.pointer("/header/status").and_then(|v| v.as_str()),
+            Some("residue")
+        );
+        assert_eq!(
+            env.pointer("/header/category").and_then(|v| v.as_str()),
+            Some("lock_poisoning_residue")
+        );
+        assert_eq!(
+            env.pointer("/header/tierToClose").and_then(|v| v.as_str()),
+            Some("irreducible")
+        );
+        assert_eq!(
+            env.pointer("/header/reason").and_then(|v| v.as_str()),
+            Some("lock poisoning is runtime residue")
+        );
+        assert_eq!(
+            env.pointer("/header/inputCids/0").and_then(|v| v.as_str()),
+            Some("blake3-512:input")
+        );
+        assert!(minted.cid.starts_with("blake3-512:"));
+    }
+
+    #[test]
+    fn effect_site_annotation_input_cids_are_order_invariant() {
+        let mut first = valid_effect_site_annotation_args();
+        first.input_cids = vec!["blake3-512:a".into(), "blake3-512:b".into()];
+        let mut second = valid_effect_site_annotation_args();
+        second.input_cids = vec!["blake3-512:b".into(), "blake3-512:a".into()];
+
+        let first = mint_effect_site_annotation(&first).expect("mint first");
+        let second = mint_effect_site_annotation(&second).expect("mint second");
+        let first_env: serde_json::Value =
+            serde_json::from_slice(&first.canonical_bytes).expect("parse first");
+        let second_env: serde_json::Value =
+            serde_json::from_slice(&second.canonical_bytes).expect("parse second");
+
+        assert_eq!(first.cid, second.cid);
+        assert_eq!(
+            first_env.pointer("/header/cid"),
+            second_env.pointer("/header/cid")
+        );
+    }
+
+    #[test]
+    fn effect_site_annotation_rejects_line_values_that_do_not_fit_i64() {
+        let mut args = valid_effect_site_annotation_args();
+        args.line = usize::MAX;
+
+        let err = mint_effect_site_annotation(&args).expect_err("line overflow must fail");
+
+        assert!(
+            err.to_string().contains("line"),
+            "line conversion error should identify the field: {err}"
+        );
+    }
+
+    #[test]
+    fn effect_site_annotation_rejects_missing_required_fields_and_invalid_status() {
+        let mut args = MintEffectSiteAnnotationArgs {
+            effect_kind: "concept:panic-freedom".into(),
+            file: "src/lib.rs".into(),
+            line: 42,
+            callee: "method:unwrap".into(),
+            status: "maybe".into(),
+            category: "lock_poisoning_residue".into(),
+            tier_to_close: "irreducible".into(),
+            reason: "lock poisoning is runtime residue".into(),
+            input_cids: Vec::new(),
+            produced_by: "test".into(),
+            produced_at: "2026-06-01T00:00:00Z".into(),
+            signer_seed: dummy_seed(),
+        };
+
+        let err = mint_effect_site_annotation(&args).expect_err("invalid status must fail");
+        assert!(
+            err.to_string().contains("status"),
+            "error should name invalid status: {err}"
+        );
+
+        args.status = "unproven".into();
+        args.effect_kind.clear();
+        let err = mint_effect_site_annotation(&args).expect_err("missing effectKind must fail");
+        assert!(
+            err.to_string().contains("effectKind"),
+            "error should name missing effectKind: {err}"
+        );
     }
 }

@@ -46,6 +46,7 @@ fn row_to_json(row: &ReportRow) -> Json {
         "file": row.callsite.file,
         "line": row.callsite.line,
         "callee": row.callsite.callee,
+        "callsiteBundleCid": row.callsite.callsite_bundle_cid,
         "panicSite": row.callsite.panic_site,
     })
 }
@@ -220,5 +221,52 @@ mod tests {
 
         let j = report_to_json(&r);
         assert_eq!(j["rows"][0]["bodyDischargeTier"], "body-eq-same-callee");
+    }
+
+    #[test]
+    fn report_json_includes_callsite_bundle_cid_when_present() {
+        let mut r = Report::default();
+        r.rows.push(ReportRow {
+            callsite: CallSite {
+                bridge_ir_name: "method:unwrap".into(),
+                callsite_bundle_cid: Some("blake3-512:caller-bundle".into()),
+                panic_site: true,
+                ..CallSite::default()
+            },
+            status: "undecidable".into(),
+            reason: "synthetic panic row".into(),
+            discharge_method: None,
+            body_discharge_tier: None,
+        });
+
+        let j = report_to_json(&r);
+
+        assert_eq!(
+            j["rows"][0]["callsiteBundleCid"],
+            "blake3-512:caller-bundle"
+        );
+    }
+
+    #[test]
+    fn report_json_nulls_callsite_bundle_cid_when_absent() {
+        let mut r = Report::default();
+        r.rows.push(ReportRow {
+            callsite: CallSite {
+                bridge_ir_name: "method:unwrap".into(),
+                panic_site: true,
+                ..CallSite::default()
+            },
+            status: "undecidable".into(),
+            reason: "synthetic panic row".into(),
+            discharge_method: None,
+            body_discharge_tier: None,
+        });
+
+        let j = report_to_json(&r);
+
+        assert!(
+            j["rows"][0]["callsiteBundleCid"].is_null(),
+            "absent callsite bundle should serialize as null to match existing Option field style"
+        );
     }
 }
