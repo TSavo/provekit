@@ -40,6 +40,18 @@ fn z3_available() -> bool {
         .unwrap_or(false)
 }
 
+fn typescript_env_enabled() -> bool {
+    std::env::var("BCARGO_TYPESCRIPT_ENV").map_or(true, |value| value != "0")
+}
+
+fn skip_when_typescript_env_disabled(test_name: &str) -> bool {
+    if typescript_env_enabled() {
+        return false;
+    }
+    eprintln!("skipping: BCARGO_TYPESCRIPT_ENV=0 for {test_name}");
+    true
+}
+
 fn tsx_cli() -> Option<PathBuf> {
     let path = repo_root()
         .join("node_modules")
@@ -312,6 +324,9 @@ fn assert_no_vacuous_rows(report: &Json) {
 
 #[test]
 fn typescript_recognize_write_self_resolves_package_proofs_and_proves() {
+    if skip_when_typescript_env_disabled("TypeScript recognizer parity test") {
+        return;
+    }
     if !node_available() || tsx_cli().is_none() {
         eprintln!("skipping TypeScript recognizer parity test: node/tsx unavailable");
         return;
@@ -344,6 +359,9 @@ fn typescript_recognize_write_self_resolves_package_proofs_and_proves() {
 
 #[test]
 fn typescript_recognize_returns_no_tags_for_non_matching_source() {
+    if skip_when_typescript_env_disabled("TypeScript recognizer non-match test") {
+        return;
+    }
     if !node_available() || tsx_cli().is_none() {
         eprintln!("skipping TypeScript recognizer non-match test: node/tsx unavailable");
         return;

@@ -36,6 +36,18 @@ fn z3_available() -> bool {
         .unwrap_or(false)
 }
 
+fn typescript_env_enabled() -> bool {
+    std::env::var("BCARGO_TYPESCRIPT_ENV").map_or(true, |value| value != "0")
+}
+
+fn skip_when_typescript_env_disabled(test_name: &str) -> bool {
+    if typescript_env_enabled() {
+        return false;
+    }
+    eprintln!("skipping: BCARGO_TYPESCRIPT_ENV=0 for {test_name}");
+    true
+}
+
 fn node_available() -> bool {
     Command::new("node")
         .arg("--version")
@@ -190,6 +202,9 @@ fn json_contains_str(value: &Json, needle: &str) -> bool {
 
 #[test]
 fn typescript_mint_auto_writes_body_discharge_bridge_from_real_lifters() {
+    if skip_when_typescript_env_disabled("TypeScript production-bridge bridge-writer test") {
+        return;
+    }
     if !node_available() {
         eprintln!("node not on PATH: skipping TypeScript production-bridge bridge-writer test");
         return;
@@ -254,6 +269,9 @@ fn typescript_mint_auto_writes_body_discharge_bridge_from_real_lifters() {
 
 #[test]
 fn typescript_production_path_double_discharges_and_mints_witness() {
+    if skip_when_typescript_env_disabled("TypeScript production-bridge positive test") {
+        return;
+    }
     if !node_available() {
         eprintln!("node not on PATH: skipping TypeScript production-bridge positive test");
         return;
@@ -302,6 +320,9 @@ fn typescript_production_path_double_discharges_and_mints_witness() {
 
 #[test]
 fn typescript_production_path_broken_body_fails_unsatisfied_no_witness() {
+    if skip_when_typescript_env_disabled("TypeScript production-bridge negative test") {
+        return;
+    }
     if !node_available() {
         eprintln!("node not on PATH: skipping TypeScript production-bridge negative test");
         return;
@@ -350,6 +371,9 @@ fn typescript_production_path_broken_body_fails_unsatisfied_no_witness() {
 
 #[test]
 fn typescript_production_path_refuses_planted_contradictory_implication() {
+    if skip_when_typescript_env_disabled("TypeScript contradictory-implication test") {
+        return;
+    }
     if !node_available() {
         eprintln!("node not on PATH: skipping TypeScript contradictory-implication test");
         return;

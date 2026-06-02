@@ -29,6 +29,18 @@ fn node_available() -> bool {
         .unwrap_or(false)
 }
 
+fn typescript_env_enabled() -> bool {
+    std::env::var("BCARGO_TYPESCRIPT_ENV").map_or(true, |value| value != "0")
+}
+
+fn skip_when_typescript_env_disabled(test_name: &str) -> bool {
+    if typescript_env_enabled() {
+        return false;
+    }
+    eprintln!("skipping: BCARGO_TYPESCRIPT_ENV=0 for {test_name}");
+    true
+}
+
 fn typescript_vitest_emitter_available() -> bool {
     let emitter = repo_root()
         .join("implementations")
@@ -86,6 +98,9 @@ fn install_emit_registration(project: &Path) {
 
 #[test]
 fn emit_typescript_vitest_dispatches_real_emitter_and_vitest_checks_output() {
+    if skip_when_typescript_env_disabled("TypeScript Vitest emitter test") {
+        return;
+    }
     if !node_available() {
         eprintln!("skipping: node not on PATH");
         return;
