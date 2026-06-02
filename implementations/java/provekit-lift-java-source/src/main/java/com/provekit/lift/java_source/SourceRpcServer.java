@@ -37,6 +37,11 @@ public final class SourceRpcServer {
         if (method == null) return error(id, -32600, "INVALID_REQUEST: missing method");
         return switch (method) {
             case "initialize" -> initialize(id);
+            case KitDeclaration.RPC_METHOD -> Jcs.object(
+                "id", id,
+                "jsonrpc", Jcs.string("2.0"),
+                "result", KitDeclaration.toJson()
+            );
             case "lift" -> lift(id, request.get("params"));
             case "shutdown" -> Jcs.object("jsonrpc", Jcs.string("2.0"), "id", id, "result", Jcs.nullValue());
             default -> error(id, -32601, "METHOD_NOT_FOUND: " + method);

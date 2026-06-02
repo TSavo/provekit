@@ -26,6 +26,65 @@ class SourceRpcServerTest {
     }
 
     @Test
+    void kitDeclarationReturnsEmpiricalJavaSourceSurface() throws Exception {
+        Jcs.Obj response = handle(
+            "{\"jsonrpc\":\"2.0\",\"id\":2,\"method\":\"provekit.plugin.kit_declaration\",\"params\":{}}"
+        );
+        assertNoRpcError(response);
+        Jcs.Obj result = response.objectField("result");
+
+        Jcs.Obj kit = result.objectField("kit");
+        assertEquals("java-source", kit.stringField("id"));
+        assertEquals("java", kit.stringField("language"));
+        assertEquals("0.1.0", kit.stringField("version"));
+
+        assertEquals("maven", result.objectField("proofResolution").stringField("strategy"));
+        assertEquals("concept:panic-freedom", result.arrayField("effectKinds").stringAt(0).value());
+
+        Jcs.Arr effectLeaves = result.arrayField("effectLeaves");
+        assertEquals(1, effectLeaves.values().size(), Jcs.encode(result));
+        Jcs.Obj leaf = effectLeaves.objectAt(0);
+        assertEquals("java-source", leaf.stringField("surface"));
+        assertEquals("java:throw", leaf.stringField("local"));
+        assertEquals("concept:panic-freedom.leaf.runtime-failure-site", leaf.stringField("concept"));
+
+        assertTrue(result.arrayField("guardPredicates").isEmpty());
+        assertTrue(result.arrayField("controlCarriers").isEmpty());
+        assertTrue(result.arrayField("residueCategories").isEmpty());
+
+        assertMethodRequired(result, "initialize", true);
+        assertMethodRequired(result, "provekit.plugin.kit_declaration", true);
+        assertMethodRequired(result, "lift", true);
+        assertMethodRequired(result, "shutdown", false);
+    }
+
+    @Test
+    void kitDeclarationResponseIsDeterministic() throws Exception {
+        Jcs.Obj firstResponse = handle(
+            "{\"jsonrpc\":\"2.0\",\"id\":7,\"method\":\"provekit.plugin.kit_declaration\",\"params\":{}}"
+        );
+        Jcs.Obj secondResponse = handle(
+            "{\"jsonrpc\":\"2.0\",\"id\":8,\"method\":\"provekit.plugin.kit_declaration\",\"params\":{}}"
+        );
+        assertNoRpcError(firstResponse);
+        assertNoRpcError(secondResponse);
+        Jcs.Obj first = firstResponse.objectField("result");
+        Jcs.Obj second = secondResponse.objectField("result");
+
+        assertEquals(Jcs.encode(first), Jcs.encode(second));
+    }
+
+    @Test
+    void initializeStaysSeparateFromKitDeclarationContent() throws Exception {
+        Jcs.Obj response = handle("{\"jsonrpc\":\"2.0\",\"id\":1,\"method\":\"initialize\",\"params\":{}}");
+        Jcs.Obj result = response.objectField("result");
+
+        assertEquals(null, result.get("kit"));
+        assertEquals(null, result.get("effectKinds"));
+        assertEquals(null, result.get("effectLeaves"));
+    }
+
+    @Test
     void liftReturnsFunctionContractWithExplicitThrowRuntimeFailureLocus() throws Exception {
         Files.writeString(temp.resolve("Thrower.java"), """
 public class Thrower {
@@ -84,6 +143,20 @@ return x;
             .filter(o -> fnName.equals(o.stringFieldOrNull("fnName")))
             .findFirst()
             .orElseThrow();
+    }
+
+    private static void assertNoRpcError(Jcs.Obj response) {
+        assertEquals(null, response.get("error"), Jcs.encode(response));
+    }
+
+    private static void assertMethodRequired(Jcs.Obj declaration, String name, boolean required) {
+        Jcs.Arr methods = declaration.objectField("rpc").arrayField("methods");
+        Jcs.Obj method = methods.values().stream()
+            .map(Jcs.Obj.class::cast)
+            .filter(candidate -> name.equals(candidate.stringFieldOrNull("name")))
+            .findFirst()
+            .orElseThrow();
+        assertEquals(required, method.boolField("required"), Jcs.encode(method));
     }
 
     private static String jsonEncodeString(String s) {
