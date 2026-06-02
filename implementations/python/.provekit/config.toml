@@ -8,3 +8,8 @@ emit = "hypothesis"
 name = "python-lift"
 kind = "lift"
 surface = "python"
+
+[[plugins]]
+name = "python-source"
+kind = "lift"
+surface = "python-source"
