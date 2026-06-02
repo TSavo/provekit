@@ -201,21 +201,24 @@ func LiftSourceWithOptions(packagePath, sourcePath string, source []byte, opts L
 		pkg = types.NewPackage(packagePath, file.Name.Name)
 	}
 
-	known := map[string]bool{}
-	for _, decl := range file.Decls {
-		fn, ok := decl.(*ast.FuncDecl)
-		if !ok {
-			continue
-		}
-		if obj, ok := info.Defs[fn.Name].(*types.Func); ok {
-			known[obj.FullName()] = true
-		} else {
-			known[fallbackFuncName(packagePath, fn)] = true
-		}
-	}
-
-	var result LiftResult
+	known := knownFunctions(packagePath, []*ast.File{file}, info)
+	result, err := liftCheckedFileWithOptions(packagePath, sourcePath, source, fset, file, pkg, info, known, opts)
 	result.Diagnostics = diagnostics
+	return result, err
+}
+
+func liftCheckedFileWithOptions(
+	packagePath string,
+	sourcePath string,
+	source []byte,
+	fset *token.FileSet,
+	file *ast.File,
+	pkg *types.Package,
+	info *types.Info,
+	known map[string]bool,
+	opts LiftOptions,
+) (LiftResult, error) {
+	var result LiftResult
 	result.Annotations = map[string]*Annotation{}
 	var bodyTerms []any
 	for _, decl := range file.Decls {
@@ -375,7 +378,7 @@ func (l *lifter) liftLeadingGuardPreconditions(stmts []ast.Stmt) ir.IrFormula {
 	var atoms []ir.IrFormula
 	for _, stmt := range stmts {
 		ifStmt, ok := stmt.(*ast.IfStmt)
-		if !ok || ifStmt.Init != nil || ifStmt.Else != nil || !isPanicOnlyBlock(ifStmt.Body) {
+		if !ok || ifStmt.Init != nil || ifStmt.Else != nil || !l.isPanicOnlyBlock(ifStmt.Body) {
 			break
 		}
 		atom, ok := l.guardPreconditionAtom(ifStmt.Cond)
@@ -407,7 +410,7 @@ func (l *lifter) guardPreconditionAtom(cond ast.Expr) (ir.IrFormula, bool) {
 }
 
 // isPanicOnlyBlock reports whether a block is exactly `{ panic(...) }`.
-func isPanicOnlyBlock(b *ast.BlockStmt) bool {
+func (l *lifter) isPanicOnlyBlock(b *ast.BlockStmt) bool {
 	if b == nil || len(b.List) != 1 {
 		return false
 	}
@@ -419,8 +422,7 @@ func isPanicOnlyBlock(b *ast.BlockStmt) bool {
 	if !ok {
 		return false
 	}
-	ident, ok := call.Fun.(*ast.Ident)
-	return ok && ident.Name == "panic"
+	return l.isBuiltinPanicCall(call)
 }
 
 func extractFormals(info *types.Info, fn *ast.FuncDecl) ([]string, []any, map[types.Object]bool, error) {
@@ -886,7 +888,7 @@ func (l *lifter) isBuiltinPanicCall(call *ast.CallExpr) bool {
 		builtin, ok := obj.(*types.Builtin)
 		return ok && builtin.Name() == "panic"
 	}
-	return true
+	return false
 }
 
 func (l *lifter) runtimeFailureLocus(pos token.Pos, argTerm ir.IrTerm) any {
@@ -1391,17 +1393,18 @@ func LiftPathsWithOptions(workspaceRoot string, sourcePaths []string, opts LiftO
 		}
 		files = append(files, expanded...)
 	}
+	groups := map[string][]string{}
 	for _, path := range files {
-		bytes, err := readFile(path)
-		if err != nil {
-			return LiftResult{}, err
-		}
-		rel := path
-		if r, relErr := filepath.Rel(workspaceRoot, path); relErr == nil {
-			rel = r
-		}
 		pkgPath := packagePathFor(modulePath, workspaceRoot, path)
-		lifted, err := LiftSourceWithOptions(pkgPath, rel, bytes, opts)
+		groups[pkgPath] = append(groups[pkgPath], path)
+	}
+	var pkgPaths []string
+	for pkgPath := range groups {
+		pkgPaths = append(pkgPaths, pkgPath)
+	}
+	sort.Strings(pkgPaths)
+	for _, pkgPath := range pkgPaths {
+		lifted, err := liftPackagePathsWithOptions(workspaceRoot, pkgPath, groups[pkgPath], opts)
 		if err != nil {
 			return LiftResult{}, err
 		}
@@ -1418,4 +1421,93 @@ func LiftPathsWithOptions(workspaceRoot string, sourcePaths []string, opts LiftO
 		}
 	}
 	return merged, nil
+}
+
+type parsedGoFile struct {
+	rel    string
+	source []byte
+	file   *ast.File
+}
+
+func liftPackagePathsWithOptions(workspaceRoot string, packagePath string, paths []string, opts LiftOptions) (LiftResult, error) {
+	sort.Strings(paths)
+	fset := token.NewFileSet()
+	var parsed []parsedGoFile
+	var astFiles []*ast.File
+	for _, path := range paths {
+		bytes, err := readFile(path)
+		if err != nil {
+			return LiftResult{}, err
+		}
+		rel := path
+		if r, relErr := filepath.Rel(workspaceRoot, path); relErr == nil {
+			rel = r
+		}
+		file, err := parser.ParseFile(fset, rel, bytes, parser.ParseComments)
+		if err != nil {
+			return LiftResult{}, err
+		}
+		parsed = append(parsed, parsedGoFile{rel: rel, source: bytes, file: file})
+		astFiles = append(astFiles, file)
+	}
+	info := &types.Info{
+		Types:      map[ast.Expr]types.TypeAndValue{},
+		Defs:       map[*ast.Ident]types.Object{},
+		Uses:       map[*ast.Ident]types.Object{},
+		Selections: map[*ast.SelectorExpr]*types.Selection{},
+	}
+	var diagnostics []Diagnostic
+	conf := types.Config{
+		Importer: importer.Default(),
+		Error: func(err error) {
+			diagnostics = append(diagnostics, Diagnostic{Path: packagePath, Message: err.Error()})
+		},
+	}
+	pkg, _ := conf.Check(packagePath, fset, astFiles, info)
+	if pkg == nil {
+		pkgName := packagePath
+		if len(astFiles) > 0 && astFiles[0].Name != nil {
+			pkgName = astFiles[0].Name.Name
+		}
+		pkg = types.NewPackage(packagePath, pkgName)
+	}
+	known := knownFunctions(packagePath, astFiles, info)
+
+	var merged LiftResult
+	merged.Diagnostics = diagnostics
+	for _, item := range parsed {
+		lifted, err := liftCheckedFileWithOptions(packagePath, item.rel, item.source, fset, item.file, pkg, info, known, opts)
+		if err != nil {
+			return LiftResult{}, err
+		}
+		merged.IR = append(merged.IR, lifted.IR...)
+		merged.Contracts = append(merged.Contracts, lifted.Contracts...)
+		merged.SourceUnits = append(merged.SourceUnits, lifted.SourceUnits...)
+		merged.Refusals = append(merged.Refusals, lifted.Refusals...)
+		for fnName, ann := range lifted.Annotations {
+			if merged.Annotations == nil {
+				merged.Annotations = map[string]*Annotation{}
+			}
+			merged.Annotations[fnName] = ann
+		}
+	}
+	return merged, nil
+}
+
+func knownFunctions(packagePath string, files []*ast.File, info *types.Info) map[string]bool {
+	known := map[string]bool{}
+	for _, file := range files {
+		for _, decl := range file.Decls {
+			fn, ok := decl.(*ast.FuncDecl)
+			if !ok {
+				continue
+			}
+			if obj, ok := info.Defs[fn.Name].(*types.Func); ok {
+				known[obj.FullName()] = true
+			} else {
+				known[fallbackFuncName(packagePath, fn)] = true
+			}
+		}
+	}
+	return known
 }

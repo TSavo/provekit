@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"encoding/json"
 	"os"
+	"path/filepath"
 	"reflect"
 	"strings"
 	"testing"
@@ -382,6 +383,65 @@ panic("boom")
 	}
 }
 
+func TestShadowedPanicGuardDoesNotSynthesizePrecondition(t *testing.T) {
+	src := `package sample
+
+func panic(x any) {}
+
+func F(bad bool) {
+	if bad {
+		panic("boom")
+	}
+}
+`
+	result, err := LiftSource("example.com/sample", "shadow_guard.go", []byte(src))
+	if err != nil {
+		t.Fatalf("LiftSource: %v", err)
+	}
+	contract := contractNamed(t, result, "example.com/sample.F")
+	assertNoRuntimeFailureLoci(t, contract)
+	gotPre, err := json.Marshal(contract.Pre)
+	if err != nil {
+		t.Fatalf("marshal pre: %v", err)
+	}
+	if strings.Contains(string(gotPre), `"bad"`) {
+		t.Fatalf("shadowed panic guard must not synthesize precondition over bad: %s", gotPre)
+	}
+}
+
+func TestCrossFileShadowedPanicDoesNotEmitRuntimeFailureLocus(t *testing.T) {
+	tmpDir := t.TempDir()
+	if err := os.WriteFile(filepath.Join(tmpDir, "go.mod"), []byte("module example.com/sample\n\ngo 1.22\n"), 0644); err != nil {
+		t.Fatalf("write go.mod: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(tmpDir, "a.go"), []byte(`package sample
+
+func panic(x any) {}
+`), 0644); err != nil {
+		t.Fatalf("write a.go: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(tmpDir, "b.go"), []byte(`package sample
+
+func F() {
+	panic("boom")
+}
+`), 0644); err != nil {
+		t.Fatalf("write b.go: %v", err)
+	}
+	result, err := LiftPaths(tmpDir, []string{"."})
+	if err != nil {
+		t.Fatalf("LiftPaths: %v", err)
+	}
+	for _, contract := range result.FunctionContracts() {
+		assertNoRuntimeFailureLoci(t, contract)
+		if gotEffects, err := json.Marshal(contract.Effects); err != nil {
+			t.Fatalf("marshal effects: %v", err)
+		} else if strings.Contains(string(gotEffects), `"panics"`) {
+			t.Fatalf("cross-file shadowed panic must not emit panics effect: %s", gotEffects)
+		}
+	}
+}
+
 func TestNonPanicCallsDoNotEmitRuntimeFailureLoci(t *testing.T) {
 	src := `package sample
 
@@ -680,6 +740,17 @@ func functionContractGeneric(t *testing.T, contract FunctionContract) map[string
 		t.Fatalf("contract generic = %#v, want object", generic)
 	}
 	return m
+}
+
+func contractNamed(t *testing.T, result LiftResult, name string) FunctionContract {
+	t.Helper()
+	for _, contract := range result.FunctionContracts() {
+		if contract.FnName == name {
+			return contract
+		}
+	}
+	t.Fatalf("missing contract %q; got %+v", name, result.FunctionContracts())
+	return FunctionContract{}
 }
 
 func sourceUnitBodyTerm(t *testing.T, result LiftResult) map[string]any {
