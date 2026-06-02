@@ -882,6 +882,64 @@ function ok(): number {
     });
   });
 
+  it("refuses __proto__ object literal prototype setter forms", () => {
+    const cases = [
+      ["identifier key", "return { __proto__: value };"],
+      ["double-quoted key", 'return { "__proto__": value };'],
+      ["single-quoted key", "return { '__proto__': value };"],
+    ];
+
+    for (const [label, statement] of cases) {
+      const result = liftTypeScriptSourceText(
+        `function payload(value: unknown): unknown {
+  ${statement}
+}
+`,
+        `src/proto-${label.replaceAll(" ", "-")}.ts`,
+      );
+
+      expect(result.declarations.filter((decl) => !decl.fnName.endsWith(":<source-unit>"))).toEqual([]);
+      expect(result.refusals).toEqual([
+        {
+          kind: expect.any(String),
+          function: expect.stringContaining(":payload"),
+          line: 2,
+          reason: expect.stringContaining("__proto__ prototype setter"),
+        },
+      ]);
+    }
+  });
+
+  it("round-trips __proto__ shorthand object literal properties without prototype setter syntax", () => {
+    const first = liftTypeScriptSourceText(
+      `function payload(__proto__: unknown): unknown {
+  return { __proto__ };
+}
+`,
+      "src/proto-shorthand-roundtrip.ts",
+    );
+    expect(first.refusals).toEqual([]);
+
+    const firstContract = contractNamed(first, "src/proto-shorthand-roundtrip.ts:payload");
+    const originalBodyTerm = rhs(firstContract);
+    const compiled = compileTypeScriptSourceBodyIr(originalBodyTerm, {
+      functionName: "payload",
+      formals: firstContract.formals,
+      formalSorts: firstContract.formalSorts,
+      returnSort: firstContract.returnSort,
+    });
+
+    expect(compiled).toContain("return { __proto__ };");
+    expect(compiled).not.toContain("\"__proto__\"");
+
+    const second = liftTypeScriptSourceText(compiled, "src/proto-shorthand-roundtrip.ts");
+    expect(second.refusals).toEqual([]);
+    const secondContract = contractNamed(second, "src/proto-shorthand-roundtrip.ts:payload");
+    const reliftedBodyTerm = rhs(secondContract);
+    expect([...canonicalEncode(reliftedBodyTerm)]).toEqual([...canonicalEncode(originalBodyTerm)]);
+    expect(canonicalCid(reliftedBodyTerm)).toBe(canonicalCid(originalBodyTerm));
+  });
+
   it("continues refusing array literals instead of conflating them with object literals", () => {
     const result = liftTypeScriptSourceText(
       `function payload(): unknown {

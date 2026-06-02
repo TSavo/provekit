@@ -1434,6 +1434,9 @@ function emitObjectLiteralExpression(expr: ts.ObjectLiteralExpression, context: 
       if (name === null) {
         throw new UnsupportedSyntaxError(property.name, "computed object literal property names are not handled");
       }
+      if (name === "__proto__") {
+        throw new UnsupportedSyntaxError(property.name, "__proto__ prototype setter object literal properties are not handled");
+      }
       properties.push(ctor("ts:property", stringConst(name), emitExpression(property.initializer, context)));
       continue;
     }
@@ -2089,7 +2092,18 @@ function objectLiteralPropertyFromTerm(term: IrTerm): ts.ObjectLiteralElementLik
   if (!key || key.kind !== "const" || typeof key.value !== "string") {
     throw new Error("cannot compile object literal property with non-string key");
   }
-  return ts.factory.createPropertyAssignment(ts.factory.createStringLiteral(key.value), expressionFromTerm(args[1]));
+  const value = args[1];
+  if (canEmitShorthandProperty(key.value, value)) {
+    return ts.factory.createShorthandPropertyAssignment(key.value);
+  }
+  const propertyName = key.value === "__proto__"
+    ? ts.factory.createComputedPropertyName(ts.factory.createStringLiteral(key.value))
+    : ts.factory.createStringLiteral(key.value);
+  return ts.factory.createPropertyAssignment(propertyName, expressionFromTerm(value));
+}
+
+function canEmitShorthandProperty(name: string, value: IrTerm | undefined): boolean {
+  return value?.kind === "var" && value.name === name && /^[A-Za-z_$][A-Za-z0-9_$]*$/.test(name);
 }
 
 function binaryTokenForCtor(name: string): ts.BinaryOperator | null {
