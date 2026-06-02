@@ -16,6 +16,12 @@ demo is that it proves ITSELF (snake-eats-tail on `provekit-cli` and
 `libprovekit`) AND the federation surface holds across the four kits that ship
 today (Python, TypeScript, Go, Java) with one language-blind verifier.
 
+Contracts can live anywhere in the code. Per-language lifters mean contracts
+can be formed by any ecosystem-native library or framework surface a project
+already uses: Creusot, Spring, JUnit, Zod, serde derives, struct tags, and the
+rest of the language's ordinary vocabulary. Vendors do not learn provekit's
+contract language first; provekit's lifters learn the vendor's ecosystem.
+
 "Fully working" =
 1. **Sound and honest.** Every call site is enumerated, categorized, and either
    discharged with a real proof, refused as honestly undecidable (with the
@@ -427,6 +433,16 @@ project. Sugar and boundary annotations are downstream helpers for
 materializing sugar under proven correctness (federation, cross-language emit,
 and boundary realization). They are not prerequisites to proving correctness.
 
+Phase 5 has two parallel levers:
+1. **Shim catalog expansion.** Library partials and totality facts close panic
+   sites through sound discharge tiers (`rust-std`, Java standard library, Go
+   standard library, ecosystem crates and packages).
+2. **Ecosystem-native lifter coverage.** Lifters mine contracts from whatever
+   contract-bearing surface the language ecosystem already uses: Creusot,
+   Spring, JUnit, Zod, serde derives, class-validator decorators, struct tags,
+   and ordinary test frameworks. These contracts may live anywhere in the
+   codebase; they are not centralized in provekit-specific files.
+
 The number that moves: K (panic-safe sites discharged via sound reasoning) on
 real production code in each language. Today on Rust self-application: K=21
 on provekit-cli, K=12 on libprovekit. On Python / TS / Go / Java production
@@ -466,6 +482,8 @@ and the pattern repeats per language.
 - Multiply rust-std shim catalog: extend coverage of Result/Option methods,
   iterator length idioms, common std partials, panic-implication propagation
   across function boundaries.
+- Lift ecosystem-native Rust evidence already in code, including ordinary
+  unit tests, derives, serde shape evidence, and crate-local contract surfaces.
 - Cross-crate audited shims for top ecosystem crates (serde, tokio, sqlx,
   reqwest, clap, anyhow, thiserror, others). Per-crate
   `infallible_serialize.toml` and equivalent manifests mature into a
@@ -487,6 +505,9 @@ and the pattern repeats per language.
   decidable; `Promise.reject` handling distinguished from sync throw.
 - ts-shim catalog: common Promise idioms, Array/Object access patterns,
   React/Node ecosystem partials.
+- TS lifter coverage for ecosystem-native contract surfaces already present in
+  source, including Zod schemas, class-validator decorators, assertion
+  libraries, and test frameworks.
 - Target: nonzero K on a real OSS TypeScript project (e.g., a small library
   used in the wild).
 
@@ -494,9 +515,10 @@ and the pattern repeats per language.
 - Discharge-tier pattern proven on Rust ports to Java and Go.
 - Java: `catch (Exception e)` closures; checked exception flow; Spring
   null-safety metadata already present in source as type-level totality
-  evidence.
+  evidence; JUnit tests as ecosystem-native contract sources.
 - Go: `defer`/`recover` handling; `error`-return idiom as the canonical
-  Go safety pattern.
+  Go safety pattern; struct tags and test assertions as ecosystem-native
+  contract sources.
 - Target: discharge story parity across all four languages.
 
 **Substrate decisions under standing delegation:**
@@ -560,6 +582,10 @@ labeling.
   federation, cross-language emit, and boundary realization; they are not
   proof-enabling artifacts. If initial K requires source modifications, the
   catalog / discharge tier is too shallow.
+- Provekit-specific contract centralization is the wrong product shape. A
+  contract can be formed anywhere ordinary source, tests, framework metadata,
+  or library-specific declarations already carry one. Lifters are the
+  ecosystem boundary that turns those surfaces into ProofIR.
 
 ## Pointers
 
