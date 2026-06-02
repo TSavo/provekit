@@ -280,6 +280,13 @@ class _Emitter:
             target = self.target(node.targets[0])
             self._record_write_if_nonlocal(node.targets[0])
             return ctor("python:assign", target, self.expr(node.value))
+        if isinstance(node, ast.AugAssign):
+            op = _BINOPS.get(type(node.op))
+            if op is None:
+                raise _UnsupportedSyntax(node, f"unsupported binary operator: {type(node.op).__name__}")
+            target = self.augassign_target(node.target)
+            self._record_write_if_nonlocal(node.target)
+            return ctor("python:aug_assign", target, str_const(op), self.expr(node.value))
         if isinstance(node, ast.If):
             condition = self.expr(node.test)
             then_branch = self.statements(node.body)
@@ -390,6 +397,49 @@ class _Emitter:
             )
             return term
         raise _UnsupportedSyntax(node, f"unsupported assignment target: {type(node).__name__}")
+
+    def augassign_target(self, node: ast.expr) -> Json:
+        if isinstance(node, ast.Name):
+            return var(node.id)
+        if isinstance(node, ast.Attribute):
+            term = ctor("python:attribute", self.expr(node.value), str_const(node.attr))
+            self.effects.add_panics()
+            self.panic_loci.append(
+                self.runtime_failure_locus(
+                    node,
+                    term,
+                    subkind="attribute-access",
+                    exception_class="AttributeError",
+                )
+            )
+            self.panic_loci.append(
+                self.runtime_failure_locus(
+                    node,
+                    term,
+                    subkind="attribute-write",
+                    exception_class="AttributeError",
+                )
+            )
+            return term
+        if isinstance(node, ast.Subscript):
+            term = ctor("python:subscript", self.expr(node.value), self.subscript_index(node))
+            self.effects.add_panics()
+            self.panic_loci.append(
+                self.runtime_failure_locus(
+                    node,
+                    term,
+                    subkind="subscript-access",
+                )
+            )
+            self.panic_loci.append(
+                self.runtime_failure_locus(
+                    node,
+                    term,
+                    subkind="subscript-write",
+                )
+            )
+            return term
+        raise _UnsupportedSyntax(node, f"unsupported augmented assignment target: {type(node).__name__}")
 
     def expr(self, node: ast.expr) -> Json:
         if isinstance(node, ast.Constant):

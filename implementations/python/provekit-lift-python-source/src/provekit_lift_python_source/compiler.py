@@ -85,6 +85,12 @@ def _stmt(term: Json) -> ast.stmt:
     args = term.get("args", [])
     if name == "python:assign":
         return ast.Assign(targets=[_target(args[0])], value=_expr(args[1]))
+    if name == "python:aug_assign":
+        return ast.AugAssign(
+            target=_target(args[0]),
+            op=_augop(_const_string(args[1])),
+            value=_expr(args[2]),
+        )
     if name == "python:return":
         value = None if _is_none_const(args[0]) else _expr(args[0])
         return ast.Return(value=value)
@@ -203,6 +209,13 @@ def _cmpop(op: str) -> ast.cmpop:
     if op not in mapping:
         raise ValueError(f"unsupported comparison operator: {op}")
     return mapping[op]()
+
+
+def _augop(op: str) -> ast.operator:
+    operator = _BINOPS.get(op)
+    if operator is None:
+        raise ValueError(f"unsupported augmented assignment operator: {op}")
+    return operator()
 
 
 def _contract_term(contract: Json) -> Json:
