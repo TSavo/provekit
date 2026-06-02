@@ -1091,18 +1091,13 @@ def test_compile_lift_roundtrip_preserves_slice_assign_body(source: str) -> None
     ("source", "module", "function_name"),
     [
         (
-            "def f(xs, a, b, value):\n    xs[a:b] += value\n    return xs\n",
-            "slice_augassign_refusal.py",
-            "slice_augassign_refusal.f",
-        ),
-        (
             "def f(xs, a, b, value):\n    xs[a:b]: int = value\n    return xs\n",
             "slice_annassign_refusal.py",
             "slice_annassign_refusal.f",
         ),
     ],
 )
-def test_non_load_or_assign_slice_subscripts_remain_refused_for_slice_9_scope(
+def test_non_augassign_slice_subscripts_remain_refused_for_slice_10_scope(
     source: str,
     module: str,
     function_name: str,
@@ -1181,6 +1176,221 @@ def test_subscript_augassign_emits_access_and_write_runtime_failure_loci() -> No
     assert "exceptionClass" not in loci[0]
     assert "exceptionClass" not in loci[1]
     assert body["args"][0] == _aug_assign(target, "python:add", _var("y"))
+
+
+def test_slice_augassign_emits_access_and_write_runtime_failure_loci() -> None:
+    source = "def f(xs, a, b, value):\n    xs[a:b] += value\n    return xs\n"
+
+    result = lift_source(source, "slice_augassign.py")
+
+    assert result.refusals == []
+    contract = _contract(result.ir, ".f")
+    target = _subscript(_var("xs"), _slice(_var("a"), _var("b"), _none_const()))
+    loci = _runtime_failure_loci(contract)
+    body = contract["post"]["args"][1]
+    assert contract["effects"] == [
+        {"kind": "writes", "target": "xs[a:b]"},
+        {"kind": "panics"},
+    ]
+    assert [locus["subkind"] for locus in loci] == [
+        "subscript-access",
+        "subscript-write",
+    ]
+    assert [locus["argTerm"] for locus in loci] == [target, target]
+    assert [(locus["line"], locus["col"]) for locus in loci] == [(2, 4), (2, 4)]
+    assert "exceptionClass" not in loci[0]
+    assert "exceptionClass" not in loci[1]
+    assert body["args"][0] == _aug_assign(target, "python:add", _var("value"))
+
+
+@pytest.mark.parametrize(
+    ("source_target", "expected_target", "expected_write"),
+    [
+        (
+            "xs[a:b:c]",
+            _subscript(_var("xs"), _slice(_var("a"), _var("b"), _var("c"))),
+            "xs[a:b:c]",
+        ),
+        (
+            "xs[:b]",
+            _subscript(_var("xs"), _slice(_none_const(), _var("b"), _none_const())),
+            "xs[:b]",
+        ),
+        (
+            "xs[a:]",
+            _subscript(_var("xs"), _slice(_var("a"), _none_const(), _none_const())),
+            "xs[a:]",
+        ),
+        (
+            "xs[:]",
+            _subscript(_var("xs"), _slice(_none_const(), _none_const(), _none_const())),
+            "xs[:]",
+        ),
+    ],
+)
+def test_slice_augassign_preserves_slice_shape_in_body_and_locus(
+    source_target: str,
+    expected_target: dict[str, object],
+    expected_write: str,
+) -> None:
+    source = f"def f(xs, a, b, c, value):\n    {source_target} += value\n    return xs\n"
+
+    result = lift_source(source, "slice_augassign_shape.py")
+
+    assert result.refusals == []
+    contract = _contract(result.ir, ".f")
+    loci = _runtime_failure_loci(contract)
+    body = contract["post"]["args"][1]
+    assert contract["effects"] == [
+        {"kind": "writes", "target": expected_write},
+        {"kind": "panics"},
+    ]
+    assert [locus["subkind"] for locus in loci] == [
+        "subscript-access",
+        "subscript-write",
+    ]
+    assert [locus["argTerm"] for locus in loci] == [expected_target, expected_target]
+    assert [(locus["line"], locus["col"]) for locus in loci] == [(2, 4), (2, 4)]
+    assert "exceptionClass" not in loci[0]
+    assert "exceptionClass" not in loci[1]
+    assert body["args"][0] == _aug_assign(expected_target, "python:add", _var("value"))
+
+
+def test_nested_slice_augassign_receiver_emits_intermediate_access_and_slice_loci() -> None:
+    source = "def f(obj, a, b, value):\n    obj.inner[a:b] += value\n    return obj\n"
+
+    result = lift_source(source, "nested_slice_augassign.py")
+
+    assert result.refusals == []
+    contract = _contract(result.ir, ".f")
+    obj_inner = _attr(_var("obj"), "inner")
+    target = _subscript(obj_inner, _slice(_var("a"), _var("b"), _none_const()))
+    loci = _runtime_failure_loci(contract)
+    body = contract["post"]["args"][1]
+    assert contract["effects"] == [
+        {"kind": "writes", "target": "obj.inner[a:b]"},
+        {"kind": "panics"},
+    ]
+    assert [locus["subkind"] for locus in loci] == [
+        "attribute-access",
+        "subscript-access",
+        "subscript-write",
+    ]
+    assert [locus["argTerm"] for locus in loci] == [obj_inner, target, target]
+    assert [(locus["line"], locus["col"]) for locus in loci] == [(2, 4), (2, 4), (2, 4)]
+    assert loci[0]["exceptionClass"] == "AttributeError"
+    assert "exceptionClass" not in loci[1]
+    assert "exceptionClass" not in loci[2]
+    assert body["args"][0] == _aug_assign(target, "python:add", _var("value"))
+
+
+def test_slice_augassign_bound_expressions_resurface_load_loci_before_slice_loci() -> None:
+    source = "def f(xs, obj, value):\n    xs[obj.i:obj.j] += value\n    return xs\n"
+
+    result = lift_source(source, "slice_augassign_bounds.py")
+
+    assert result.refusals == []
+    contract = _contract(result.ir, ".f")
+    obj_i = _attr(_var("obj"), "i")
+    obj_j = _attr(_var("obj"), "j")
+    target = _subscript(_var("xs"), _slice(obj_i, obj_j, _none_const()))
+    loci = _runtime_failure_loci(contract)
+    body = contract["post"]["args"][1]
+    assert contract["effects"] == [
+        {"kind": "writes", "target": "xs[obj.i:obj.j]"},
+        {"kind": "panics"},
+    ]
+    assert [locus["subkind"] for locus in loci] == [
+        "attribute-access",
+        "attribute-access",
+        "subscript-access",
+        "subscript-write",
+    ]
+    assert [locus["argTerm"] for locus in loci] == [obj_i, obj_j, target, target]
+    assert [(locus["line"], locus["col"]) for locus in loci] == [
+        (2, 7),
+        (2, 13),
+        (2, 4),
+        (2, 4),
+    ]
+    assert [locus.get("exceptionClass") for locus in loci] == [
+        "AttributeError",
+        "AttributeError",
+        None,
+        None,
+    ]
+    assert body["args"][0] == _aug_assign(target, "python:add", _var("value"))
+
+
+def test_slice_augassign_receiver_is_evaluated_before_slice_bounds() -> None:
+    source = (
+        "def f(obj, other, value):\n"
+        "    obj.inner[other.i:other.j] += value\n"
+        "    return obj\n"
+    )
+
+    result = lift_source(source, "slice_augassign_order.py")
+
+    assert result.refusals == []
+    contract = _contract(result.ir, ".f")
+    obj_inner = _attr(_var("obj"), "inner")
+    other_i = _attr(_var("other"), "i")
+    other_j = _attr(_var("other"), "j")
+    target = _subscript(obj_inner, _slice(other_i, other_j, _none_const()))
+    loci = _runtime_failure_loci(contract)
+    body = contract["post"]["args"][1]
+    assert contract["effects"] == [
+        {"kind": "writes", "target": "obj.inner[other.i:other.j]"},
+        {"kind": "panics"},
+    ]
+    assert [locus["subkind"] for locus in loci] == [
+        "attribute-access",
+        "attribute-access",
+        "attribute-access",
+        "subscript-access",
+        "subscript-write",
+    ]
+    assert [locus["argTerm"] for locus in loci] == [
+        obj_inner,
+        other_i,
+        other_j,
+        target,
+        target,
+    ]
+    assert [(locus["line"], locus["col"]) for locus in loci] == [
+        (2, 4),
+        (2, 14),
+        (2, 22),
+        (2, 4),
+        (2, 4),
+    ]
+    assert body["args"][0] == _aug_assign(target, "python:add", _var("value"))
+
+
+@pytest.mark.parametrize(
+    "source",
+    [
+        "def f(xs, a, b, value):\n    xs[a:b] += value\n    return xs\n",
+        "def f(xs, a, b, value):\n    xs[:b] += value\n    xs[a:] += value\n    xs[:] += value\n    return xs\n",
+        "def f(xs, a, b, c, value):\n    xs[a:b:c] += value\n    return xs\n",
+    ],
+)
+def test_compile_lift_roundtrip_preserves_slice_augassign_body(source: str) -> None:
+    lifted = lift_source(source, "roundtrip_slice_augassign.py")
+    assert lifted.refusals == []
+    contract = _contract(lifted.ir, ".f")
+    body = contract["post"]["args"][1]
+
+    compiled = compile_body_term(
+        body,
+        fn_name="f",
+        formals=[str(formal) for formal in contract["formals"]],
+    )
+    relifted = lift_source(compiled, "roundtrip_slice_augassign.py")
+    assert relifted.refusals == []
+    relifted_body = _contract(relifted.ir, ".f")["post"]["args"][1]
+
+    assert canonical_json_bytes(relifted_body) == canonical_json_bytes(body)
 
 
 def test_nested_augassign_targets_evaluate_navigation_once() -> None:
