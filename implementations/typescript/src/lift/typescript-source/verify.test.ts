@@ -3,6 +3,8 @@ import { describe, expect, it } from "vitest";
 import { liftTypeScriptSourceText } from "./index.js";
 import { normalizeTypeScriptSourceVerifyDocument } from "./verify.js";
 
+const RUNTIME_FAILURE_SITE_CONCEPT = "concept:panic-freedom.leaf.runtime-failure-site";
+
 describe("typescript-source verify projection", () => {
   it("projects TypeScript body contracts into solver-facing ProofIR without source-unit noise", () => {
     const lifted = liftTypeScriptSourceText(
@@ -27,5 +29,31 @@ describe("typescript-source verify projection", () => {
       sort: { kind: "primitive", name: "Int" },
     });
     expect(JSON.stringify(doc.ir)).not.toContain("<source-unit>");
+  });
+
+  it("preserves explicit throw runtime-failure panic loci through verify projection", () => {
+    const lifted = liftTypeScriptSourceText(
+      `export function fail(reason: unknown): void {
+  throw reason;
+}
+`,
+      "src/fail.ts",
+    );
+
+    const doc = normalizeTypeScriptSourceVerifyDocument(lifted);
+    const contract = doc.ir[0] as any;
+
+    expect(contract.fnName).toBe("src/fail.ts:fail");
+    expect(contract.panicLoci).toEqual([
+      {
+        effectKind: "concept:panic-freedom",
+        callee: RUNTIME_FAILURE_SITE_CONCEPT,
+        subkind: "explicit-throw",
+        argTerm: { kind: "var", name: "reason" },
+        file: "src/fail.ts",
+        line: 2,
+        col: 2,
+      },
+    ]);
   });
 });

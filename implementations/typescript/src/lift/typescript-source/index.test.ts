@@ -30,6 +30,14 @@ function canonicalCid(value: unknown): string {
   return computeCid(canonicalEncode(value));
 }
 
+const RUNTIME_FAILURE_SITE_CONCEPT = "concept:panic-freedom.leaf.runtime-failure-site";
+
+function contractNamed(result: { declarations: Record<string, any>[] }, fnName: string): Record<string, any> {
+  const contract = result.declarations.find((decl) => decl.fnName === fnName);
+  expect(contract).toBeDefined();
+  return contract!;
+}
+
 function installTypeScriptShimProof(
   projectRoot: string,
   packageName: string,
@@ -561,6 +569,89 @@ function missingBoth(x: string): string { return x; }
       { kind: "unresolved_call", name: "missing" },
       { kind: "opaque_loop", loopCid: expect.stringMatching(/^blake3-512:[0-9a-f]{128}$/) },
     ]);
+  });
+
+  it("emits runtime-failure panic loci for explicit throw statements", () => {
+    const result = liftTypeScriptSourceText(
+      `function stringThrow(): void {
+  throw "boom";
+}
+
+function identifierThrow(err: unknown): void {
+  throw err;
+}
+
+function newErrorThrow(): void {
+  throw new Error("bad");
+}
+
+function ok(): number {
+  return 1;
+}
+`,
+      "src/throws.ts",
+    );
+
+    expect(result.refusals).toEqual([]);
+
+    expect(contractNamed(result, "src/throws.ts:stringThrow").panicLoci).toEqual([
+      {
+        effectKind: "concept:panic-freedom",
+        callee: RUNTIME_FAILURE_SITE_CONCEPT,
+        subkind: "explicit-throw",
+        argTerm: {
+          kind: "const",
+          sort: { kind: "primitive", name: "String" },
+          value: "boom",
+        },
+        file: "src/throws.ts",
+        line: 2,
+        col: 2,
+      },
+    ]);
+
+    expect(contractNamed(result, "src/throws.ts:identifierThrow").panicLoci).toEqual([
+      {
+        effectKind: "concept:panic-freedom",
+        callee: RUNTIME_FAILURE_SITE_CONCEPT,
+        subkind: "explicit-throw",
+        argTerm: { kind: "var", name: "err" },
+        file: "src/throws.ts",
+        line: 6,
+        col: 2,
+      },
+    ]);
+
+    expect(contractNamed(result, "src/throws.ts:newErrorThrow").panicLoci).toEqual([
+      {
+        effectKind: "concept:panic-freedom",
+        callee: RUNTIME_FAILURE_SITE_CONCEPT,
+        subkind: "explicit-throw",
+        argTerm: {
+          kind: "ctor",
+          name: "ts:new",
+          args: [
+            { kind: "var", name: "Error" },
+            {
+              kind: "ctor",
+              name: "ts:args",
+              args: [
+                {
+                  kind: "const",
+                  sort: { kind: "primitive", name: "String" },
+                  value: "bad",
+                },
+              ],
+            },
+          ],
+        },
+        file: "src/throws.ts",
+        line: 10,
+        col: 2,
+      },
+    ]);
+
+    expect(contractNamed(result, "src/throws.ts:ok").panicLoci).toBeUndefined();
   });
 
   it("refuses unsupported syntax instead of emitting unknown or skip fallbacks", () => {
