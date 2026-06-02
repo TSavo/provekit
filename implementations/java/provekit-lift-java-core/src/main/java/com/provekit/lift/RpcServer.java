@@ -30,6 +30,7 @@ public class RpcServer {
             String method = extractMethod(line);
             switch (method) {
                 case "initialize" -> sendResponse(id, initResult());
+                case KitDeclaration.RPC_METHOD -> sendResponse(id, Jcs.encode(KitDeclaration.toJson()));
                 case "parse" -> {
                     // Daemon-conformant wire protocol: {path, source} -> {declarations, callEdges, warnings}.
                     // Uses decodeJsonString to correctly handle source code with embedded quotes/escapes.

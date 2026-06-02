@@ -1,7 +1,7 @@
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::process::{Command, Output};
-use std::sync::OnceLock;
+use std::sync::{Mutex, OnceLock};
 use std::time::{Duration, Instant};
 
 use tempfile::TempDir;
@@ -71,6 +71,11 @@ fn maven_available() -> bool {
         .unwrap_or(false)
 }
 
+fn java_maven_lock() -> &'static Mutex<()> {
+    static JAVA_MAVEN_LOCK: OnceLock<Mutex<()>> = OnceLock::new();
+    JAVA_MAVEN_LOCK.get_or_init(|| Mutex::new(()))
+}
+
 fn java_source_kit_command() -> Option<Vec<String>> {
     static JAVA_SOURCE_KIT_COMMAND: OnceLock<Option<Vec<String>>> = OnceLock::new();
     JAVA_SOURCE_KIT_COMMAND
@@ -84,6 +89,7 @@ fn java_source_kit_command() -> Option<Vec<String>> {
                 return None;
             }
 
+            let _guard = java_maven_lock().lock().expect("lock Java Maven package");
             let root = repo_root();
             let java_root = root.join("implementations").join("java");
             let mut mvn = Command::new("mvn");
@@ -109,6 +115,60 @@ fn java_source_kit_command() -> Option<Vec<String>> {
                 .join("provekit-lift-java-source")
                 .join("target")
                 .join("provekit-lift-java-source.jar");
+            assert!(
+                jar.exists(),
+                "maven build produced no jar at {}",
+                jar.display()
+            );
+            Some(vec![
+                java.display().to_string(),
+                "-jar".to_string(),
+                jar.display().to_string(),
+                "--rpc".to_string(),
+            ])
+        })
+        .clone()
+}
+
+fn java_core_kit_command() -> Option<Vec<String>> {
+    static JAVA_CORE_KIT_COMMAND: OnceLock<Option<Vec<String>>> = OnceLock::new();
+    JAVA_CORE_KIT_COMMAND
+        .get_or_init(|| {
+            let Some(java) = java_bin() else {
+                eprintln!("skipping: no working java binary found");
+                return None;
+            };
+            if !maven_available() {
+                eprintln!("skipping: mvn is unavailable");
+                return None;
+            }
+
+            let _guard = java_maven_lock().lock().expect("lock Java Maven package");
+            let root = repo_root();
+            let java_root = root.join("implementations").join("java");
+            let mut mvn = Command::new("mvn");
+            mvn.current_dir(&java_root).args([
+                "-B",
+                "-ntp",
+                "-pl",
+                "provekit-lift-java-core",
+                "-am",
+                "-DskipTests",
+                "package",
+            ]);
+            let out =
+                run_with_timeout(&mut mvn, Duration::from_secs(120)).expect("spawn mvn package");
+            assert!(
+                out.status.success(),
+                "mvn package provekit-lift-java-core failed\nstdout:\n{}\nstderr:\n{}",
+                String::from_utf8_lossy(&out.stdout),
+                String::from_utf8_lossy(&out.stderr)
+            );
+
+            let jar = java_root
+                .join("provekit-lift-java-core")
+                .join("target")
+                .join("provekit-lsp-java.jar");
             assert!(
                 jar.exists(),
                 "maven build produced no jar at {}",
@@ -552,6 +612,52 @@ fn loader_dispatches_to_java_source_kit_declaration() {
             ("initialize", true),
             (KIT_DECLARATION_RPC_METHOD, true),
             ("lift", true),
+            ("shutdown", false),
+        ])
+    );
+}
+
+#[test]
+fn loader_dispatches_to_java_core_kit_declaration() {
+    let Some(command) = java_core_kit_command() else {
+        return;
+    };
+
+    let repo = repo_root();
+    let java_dir = repo.join("implementations/java");
+
+    let declaration: KitDeclaration =
+        provekit_cli::kit_declaration::load_kit_declaration_with_command(
+            &command,
+            Some(&java_dir),
+        )
+        .expect("load Java core kit declaration");
+
+    assert_eq!(declaration.kit.id, "java");
+    assert_eq!(declaration.kit.language, "java");
+    assert_eq!(declaration.kit.version, "0.1.0");
+    assert_eq!(declaration.proof_resolution.strategy, "maven");
+    assert!(declaration.effect_kinds.is_empty());
+    assert!(declaration.effect_leaves.is_empty());
+    assert!(declaration.guard_predicates.is_empty());
+    assert!(declaration.control_carriers.is_empty());
+    assert!(declaration.residue_categories.is_empty());
+
+    let required_by_name = declaration
+        .rpc
+        .methods
+        .iter()
+        .map(|method| (method.name.as_str(), method.required))
+        .collect::<std::collections::BTreeMap<_, _>>();
+    assert_eq!(
+        required_by_name,
+        std::collections::BTreeMap::from([
+            ("initialize", true),
+            (KIT_DECLARATION_RPC_METHOD, true),
+            ("parse", true),
+            ("provekit.plugin.lift_implications", true),
+            ("lift", false),
+            ("provekit.plugin.recognize", false),
             ("shutdown", false),
         ])
     );
