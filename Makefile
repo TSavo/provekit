@@ -76,6 +76,8 @@ BCARGO_PYTHON_VENV ?= /tmp/provekit-bcargo-python-kit-env
 BCARGO_PYTHON_BIN := $(BCARGO_PYTHON_VENV)/bin
 BCARGO_PYTHON := $(BCARGO_PYTHON_BIN)/python
 BCARGO_PYTHON_ENV_STAMP := $(BCARGO_PYTHON_VENV)/.provekit-python-kits.stamp
+BCARGO_TYPESCRIPT_ENV_DIR ?= /tmp/provekit-bcargo-typescript-kit-env
+BCARGO_TYPESCRIPT_ENV_STAMP := $(BCARGO_TYPESCRIPT_ENV_DIR)/.provekit-typescript-kits.stamp
 PYTHON_KIT_EDITABLES = \
 	-e examples/provekit-shim-python-sqlite3 \
 	-e examples/provekit-shim-python-aiosqlite \
@@ -718,6 +720,30 @@ $(BCARGO_PYTHON_ENV_STAMP): Makefile $(wildcard implementations/python/*/pyproje
 	$(BCARGO_PYTHON) -m pip install --quiet --no-cache-dir pytest $(PYTHON_KIT_EDITABLES)
 	mkdir -p $(dir $(BCARGO_PYTHON_ENV_STAMP))
 	touch $(BCARGO_PYTHON_ENV_STAMP)
+
+.PHONY: bcargo-typescript-kit-env
+bcargo-typescript-kit-env: $(BCARGO_TYPESCRIPT_ENV_STAMP)
+
+$(BCARGO_TYPESCRIPT_ENV_STAMP): Makefile package.json pnpm-lock.yaml \
+		implementations/typescript/provekit-emit-typescript-vitest/package.json \
+		implementations/typescript/provekit-emit-typescript-vitest/package-lock.json \
+		implementations/typescript/provekit-realize-typescript-core/package.json \
+		implementations/typescript/provekit-realize-typescript-core/package-lock.json \
+		implementations/typescript/provekit-realize-typescript-better-sqlite3/package.json \
+		implementations/typescript/provekit-realize-typescript-better-sqlite3/package-lock.json \
+		implementations/typescript/provekit-realize-typescript-pg/package.json \
+		implementations/typescript/provekit-realize-typescript-pg/package-lock.json \
+		examples/provekit-shim-typescript-better-sqlite3/package.json \
+		examples/provekit-shim-typescript-better-sqlite3/provekit.proof \
+		examples/provekit-shim-typescript-pg/package.json \
+		examples/provekit-shim-typescript-pg/provekit.proof
+	pnpm install --frozen-lockfile
+	npm --prefix implementations/typescript/provekit-emit-typescript-vitest ci
+	npm --prefix implementations/typescript/provekit-realize-typescript-core ci
+	npm --prefix implementations/typescript/provekit-realize-typescript-better-sqlite3 ci
+	npm --prefix implementations/typescript/provekit-realize-typescript-pg ci
+	mkdir -p $(dir $(BCARGO_TYPESCRIPT_ENV_STAMP))
+	touch $(BCARGO_TYPESCRIPT_ENV_STAMP)
 
 .PHONY: check-cross-language-proof-parity-scope
 check-cross-language-proof-parity-scope:
