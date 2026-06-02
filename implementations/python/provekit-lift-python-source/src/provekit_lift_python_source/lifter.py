@@ -335,7 +335,7 @@ class _Emitter:
             "argTerm": arg_term,
             "file": self.source_path,
             "line": int(getattr(node, "lineno", 0) or 0),
-            "col": int(getattr(node, "col_offset", 0) or 0) + 1,
+            "col": int(getattr(node, "col_offset", 0) or 0),
         }
         exception_class = _exception_class(node.exc)
         if exception_class:

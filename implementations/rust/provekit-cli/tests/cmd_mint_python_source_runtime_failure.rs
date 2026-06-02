@@ -195,7 +195,7 @@ fn python_source_raise_mint_preserves_runtime_failure_locus_and_enumerates_calls
             "argTerm": {"kind": "var", "name": "ValueError"},
             "file": "boom.py",
             "line": 2,
-            "col": 5
+            "col": 4
         })],
         "mint must preserve the python-source runtime-failure panicLoci row"
     );

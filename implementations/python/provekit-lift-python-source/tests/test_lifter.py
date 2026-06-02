@@ -322,7 +322,7 @@ def test_raise_emits_runtime_failure_locus_without_changing_effect_set() -> None
             "argTerm": {"kind": "var", "name": "ValueError"},
             "file": "raises.py",
             "line": 2,
-            "col": 5,
+            "col": 4,
         }
     ]
 
@@ -342,7 +342,7 @@ def test_multiple_raise_sites_keep_distinct_runtime_failure_loci() -> None:
     assert contract["effects"] == [{"kind": "panics"}]
     loci = _runtime_failure_loci(contract)
     assert [locus["exceptionClass"] for locus in loci] == ["ValueError", "RuntimeError"]
-    assert [(locus["line"], locus["col"]) for locus in loci] == [(3, 9), (4, 5)]
+    assert [(locus["line"], locus["col"]) for locus in loci] == [(3, 8), (4, 4)]
     assert all(locus["effectKind"] == PANIC_FREEDOM_EFFECT_KIND for locus in loci)
     assert all(locus["callee"] == RUNTIME_FAILURE_SITE_CONCEPT for locus in loci)
     assert all(locus["subkind"] == "explicit-raise" for locus in loci)
@@ -367,7 +367,7 @@ def test_bare_raise_emits_runtime_failure_locus_with_unit_arg() -> None:
             },
             "file": "bare_raise.py",
             "line": 2,
-            "col": 5,
+            "col": 4,
         }
     ]
 
