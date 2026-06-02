@@ -44,6 +44,14 @@ def _assert_none_guard_formula(formula, *, comparison_name: str, guard_name: str
     assert len(guards[0].args) == 1
 
 
+def _guard_names(formula):
+    return [
+        atom.name
+        for atom in _flatten_and(formula)
+        if isinstance(atom, _Atomic) and atom.name in {"is_none", "is_some"}
+    ]
+
+
 # --- Pattern 1: bounded loops --------------------------------------------
 
 
@@ -253,6 +261,75 @@ def test_pattern3_pytest_none_comparisons_emit_substrate_guard_facts():
     _assert_none_guard_formula(inv, comparison_name="≠", guard_name="is_some")
 
 
+def test_pattern3_pytest_non_none_identity_is_not_lifted_as_value_equality():
+    out = _lift("""
+        def test_identity_is_not_equality():
+            assert left() is right()
+            assert f(1) == 1
+    """)
+    assert out.characterization_lifted == 0
+    assert "test_identity_is_not_equality" not in out.claimed_tests
+
+
+def test_pattern3_pytest_eq_none_does_not_emit_substrate_guard_facts():
+    out = _lift("""
+        def test_eq_none_is_value_equality():
+            assert maybe_none() == None
+            assert maybe_value() != None
+    """)
+    assert out.characterization_lifted == 1, f"warnings: {out.warnings}"
+    inv = out.decls[0].inv
+    assert isinstance(inv, _Connective)
+    assert inv.kind == "and"
+    assert _guard_names(inv) == []
+
+
+def test_pattern3_unittest_equal_none_does_not_emit_substrate_guard_facts():
+    out = _lift("""
+        import unittest
+
+        class TestSomething(unittest.TestCase):
+            def test_none_equality(self):
+                self.assertEqual(maybe_none(), None)
+                self.assertNotEqual(maybe_value(), None)
+    """)
+    assert out.characterization_lifted == 1, f"warnings: {out.warnings}"
+    inv = out.decls[0].inv
+    assert isinstance(inv, _Connective)
+    assert inv.kind == "and"
+    assert _guard_names(inv) == []
+
+
+def test_pattern3_unittest_non_none_identity_is_not_lifted_as_value_equality():
+    out = _lift("""
+        import unittest
+
+        class TestSomething(unittest.TestCase):
+            def test_identity_is_not_equality(self):
+                self.assertIs(left(), right())
+                self.assertIsNot(other_left(), other_right())
+    """)
+    assert out.characterization_lifted == 0
+    assert "test_identity_is_not_equality" not in out.claimed_tests
+
+
+def test_pattern3_unittest_identity_none_assertions_emit_substrate_guard_facts():
+    out = _lift("""
+        import unittest
+
+        class TestSomething(unittest.TestCase):
+            def test_none_identity(self):
+                self.assertIs(maybe_none(), None)
+                self.assertIsNot(maybe_value(), None)
+    """)
+    assert out.characterization_lifted == 1, f"warnings: {out.warnings}"
+    inv = out.decls[0].inv
+    assert isinstance(inv, _Connective)
+    assert inv.kind == "and"
+    _assert_none_guard_formula(inv, comparison_name="=", guard_name="is_none")
+    _assert_none_guard_formula(inv, comparison_name="≠", guard_name="is_some")
+
+
 def test_unittest_unsupported_assertion_warns_without_fake_contract():
     out = _lift("""
         import unittest
@@ -431,6 +508,72 @@ def test_pattern5_mints_every_callsite_implication_in_one_assertion():
     assert len(out.implications) == 2
     assert all(imp.antecedent.endswith("::facts") for imp in out.implications)
     assert all(imp.consequent.endswith("::assertion") for imp in out.implications)
+
+
+def test_pattern5_non_none_identity_assertion_is_not_lifted_as_value_equality():
+    out = _lift("""
+        def test_parse_identity():
+            actual = parse_int("42")
+            expected = parse_int("042")
+            assert actual is expected
+    """)
+    assert out.value_scope_lifted == 0
+    assert not out.implications
+    assert all(not name.endswith("::assertion") for name in {d.name for d in out.decls})
+
+
+def test_pattern5_unittest_non_none_identity_assertion_is_not_lifted_as_value_equality():
+    out = _lift("""
+        import unittest
+
+        class TestParser(unittest.TestCase):
+            def test_parse_identity(self):
+                actual = parse_int("42")
+                expected = parse_int("042")
+                self.assertIs(actual, expected)
+    """)
+    assert out.value_scope_lifted == 0
+    assert not out.implications
+    assert all(not name.endswith("::assertion") for name in {d.name for d in out.decls})
+
+
+def test_pattern5_eq_none_assertion_does_not_emit_substrate_guard_fact():
+    out = _lift("""
+        def test_parse_eq_none():
+            actual = parse_optional("42")
+            assert actual == None
+    """)
+    assert out.value_scope_lifted == 1, f"warnings: {out.warnings}"
+    assertion = next(d for d in out.decls if d.name.endswith("::assertion"))
+    assert _guard_names(assertion.inv) == []
+
+
+def test_pattern5_unittest_identity_none_assertion_emits_substrate_guard_fact():
+    out = _lift("""
+        import unittest
+
+        class TestParser(unittest.TestCase):
+            def test_parse_none_identity(self):
+                actual = parse_optional("42")
+                self.assertIs(actual, None)
+    """)
+    assert out.value_scope_lifted == 1, f"warnings: {out.warnings}"
+    assertion = next(d for d in out.decls if d.name.endswith("::assertion"))
+    _assert_none_guard_formula(assertion.inv, comparison_name="=", guard_name="is_none")
+
+
+def test_pattern5_unittest_identity_not_none_assertion_emits_substrate_guard_fact():
+    out = _lift("""
+        import unittest
+
+        class TestParser(unittest.TestCase):
+            def test_parse_not_none_identity(self):
+                actual = parse_optional("42")
+                self.assertIsNot(actual, None)
+    """)
+    assert out.value_scope_lifted == 1, f"warnings: {out.warnings}"
+    assertion = next(d for d in out.decls if d.name.endswith("::assertion"))
+    _assert_none_guard_formula(assertion.inv, comparison_name="≠", guard_name="is_some")
 
 
 # --- No pattern fires ----------------------------------------------------

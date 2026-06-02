@@ -188,8 +188,12 @@ def ne(a: Term, b: Term) -> Formula:
     return atomic("≠", [a, b])
 
 
-def comparison_with_none_guard(name: str, left: Term, right: Term) -> Formula:
+def comparison_with_none_guard(
+    name: str, left: Term, right: Term, *, emit_none_guard: bool = True
+) -> Formula:
     base = atomic(name, [left, right])
+    if not emit_none_guard:
+        return base
     left_is_none = _is_none_ctor(left)
     right_is_none = _is_none_ctor(right)
     if left_is_none == right_is_none:
