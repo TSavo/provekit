@@ -186,6 +186,7 @@ sync_dir .provekit/lift
 sync_dir .provekit/realize
 
 sync_dir implementations/rust
+sync_dir implementations/python
 sync_dir examples
 sync_dir menagerie
 sync_dir tools
