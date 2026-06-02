@@ -361,6 +361,9 @@ _UNITTEST_BINARY_PREDICATES = {
     "assertGreaterEqual": "≥",
     "assertLess": "<",
     "assertLessEqual": "≤",
+}
+
+_UNITTEST_IDENTITY_PREDICATES = {
     "assertIs": "=",
     "assertIsNot": "≠",
 }
@@ -386,6 +389,8 @@ def _is_assertion_stmt(stmt: ast.stmt) -> bool:
         if isinstance(call, ast.Call):
             name = _attr_method_name(call.func)
             if name is not None and name in _UNITTEST_BINARY_PREDICATES:
+                return True
+            if name is not None and name in _UNITTEST_IDENTITY_PREDICATES:
                 return True
             if name is not None and name in _UNITTEST_NONE_PREDICATES:
                 return True
@@ -418,6 +423,7 @@ def _unsupported_unittest_assertions(stmts: Sequence[ast.stmt]) -> List[str]:
             continue
         if (
             name in _UNITTEST_BINARY_PREDICATES
+            or name in _UNITTEST_IDENTITY_PREDICATES
             or name in _UNITTEST_NONE_PREDICATES
             or name in _UNITTEST_TRUTH_PREDICATES
         ):
@@ -495,17 +501,21 @@ def _is_none_term(term: Term) -> bool:
     return isinstance(term, _Ctor) and term.name == "None" and not term.args
 
 
+def _comparison_from_identity_symbol(sym: str, left: Term, right: Term) -> Formula:
+    if _is_none_term(left) == _is_none_term(right):
+        raise ValueError("identity comparison is only supported against None")
+    return comparison_with_none_guard(
+        sym,
+        left,
+        right,
+        emit_none_guard=True,
+    )
+
+
 def _comparison_from_ast_op(op: ast.cmpop, left: Term, right: Term) -> Formula:
     identity_sym = _IDENTITY_OP_MAP.get(type(op))
     if identity_sym is not None:
-        if _is_none_term(left) == _is_none_term(right):
-            raise ValueError("identity comparison is only supported against None")
-        return comparison_with_none_guard(
-            identity_sym,
-            left,
-            right,
-            emit_none_guard=True,
-        )
+        return _comparison_from_identity_symbol(identity_sym, left, right)
     sym = _COMPARE_OP_MAP.get(type(op))
     if sym is None:
         raise ValueError(f"unsupported comparison op: {type(op).__name__}")
@@ -535,6 +545,16 @@ def _lift_assertion_stmt(stmt: ast.stmt) -> Formula:
     if isinstance(stmt, ast.Expr) and isinstance(stmt.value, ast.Call):
         call = stmt.value
         name = _attr_method_name(call.func)
+        if name in _UNITTEST_IDENTITY_PREDICATES:
+            if len(call.args) < 2:
+                raise ValueError(f"{name} expects at least 2 positional args")
+            l = _translate_term(call.args[0])
+            r = _translate_term(call.args[1])
+            return _comparison_from_identity_symbol(
+                _UNITTEST_IDENTITY_PREDICATES[name],
+                l,
+                r,
+            )
         if name in _UNITTEST_BINARY_PREDICATES:
             if len(call.args) < 2:
                 raise ValueError(f"{name} expects at least 2 positional args")
@@ -1350,6 +1370,8 @@ def _assertion_value_exprs(stmt: ast.stmt) -> List[ast.expr]:
         name = _attr_method_name(stmt.value.func)
         if name in _UNITTEST_BINARY_PREDICATES:
             exprs.extend(stmt.value.args[:2])
+        elif name in _UNITTEST_IDENTITY_PREDICATES:
+            exprs.extend(stmt.value.args[:2])
         elif name in _UNITTEST_NONE_PREDICATES and stmt.value.args:
             exprs.append(stmt.value.args[0])
         elif name in _UNITTEST_TRUTH_PREDICATES and stmt.value.args:
@@ -1427,6 +1449,16 @@ def _lift_assertion_stmt_scoped(
     if isinstance(stmt, ast.Expr) and isinstance(stmt.value, ast.Call):
         call = stmt.value
         name = _attr_method_name(call.func)
+        if name in _UNITTEST_IDENTITY_PREDICATES:
+            if len(call.args) < 2:
+                raise ValueError(f"{name} expects at least 2 positional args")
+            l = _translate_term_scoped(call.args[0], scope, call_vars)
+            r = _translate_term_scoped(call.args[1], scope, call_vars)
+            return _comparison_from_identity_symbol(
+                _UNITTEST_IDENTITY_PREDICATES[name],
+                l,
+                r,
+            )
         if name in _UNITTEST_BINARY_PREDICATES:
             if len(call.args) < 2:
                 raise ValueError(f"{name} expects at least 2 positional args")
