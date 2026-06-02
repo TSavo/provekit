@@ -1,8 +1,11 @@
 use std::io::{BufRead, BufReader, Write};
 use std::process::{Command, Stdio};
 
+use libprovekit::concept::panic_freedom;
 use provekit_claim_envelope::{KitDeclaration, KIT_DECLARATION_RPC_METHOD};
 use serde_json::{json, Value};
+
+const RUST_FN_CONTRACTS_SURFACE: &str = "rust-fn-contracts";
 
 #[test]
 fn walk_rpc_serves_kit_declaration_over_stdio() {
@@ -65,9 +68,52 @@ fn walk_rpc_serves_kit_declaration_over_stdio() {
         "declaration must advertise its declaration RPC method"
     );
     assert_eq!(declaration.effect_kinds, ["concept:panic-freedom"]);
-    assert!(declaration.effect_leaves.is_empty());
-    assert!(declaration.guard_predicates.is_empty());
-    assert!(declaration.control_carriers.is_empty());
+    assert_kit_declaration_mappings(
+        "effectLeaves",
+        &declaration.effect_leaves,
+        &[
+            (
+                panic_freedom::METHOD_UNWRAP,
+                panic_freedom::METHOD_UNWRAP_CONCEPT,
+            ),
+            (
+                panic_freedom::METHOD_EXPECT,
+                panic_freedom::METHOD_EXPECT_CONCEPT,
+            ),
+            (
+                panic_freedom::METHOD_UNWRAP_ERR,
+                panic_freedom::METHOD_UNWRAP_ERR_CONCEPT,
+            ),
+        ],
+    );
+    assert_kit_declaration_mappings(
+        "guardPredicates",
+        &declaration.guard_predicates,
+        &[
+            (panic_freedom::IS_OK, panic_freedom::IS_OK_CONCEPT),
+            (panic_freedom::IS_ERR, panic_freedom::IS_ERR_CONCEPT),
+            (panic_freedom::IS_SOME, panic_freedom::IS_SOME_CONCEPT),
+            (panic_freedom::IS_NONE, panic_freedom::IS_NONE_CONCEPT),
+        ],
+    );
+    assert_kit_declaration_mappings(
+        "controlCarriers",
+        &declaration.control_carriers,
+        &[
+            (panic_freedom::CF_GUARDED, panic_freedom::CF_GUARDED_CONCEPT),
+            (panic_freedom::CF_ITE, panic_freedom::CF_ITE_CONCEPT),
+        ],
+    );
+    assert_mapping_absent(
+        "guardPredicates",
+        &declaration.guard_predicates,
+        panic_freedom::METHOD_UNWRAP,
+    );
+    assert_mapping_absent(
+        "controlCarriers",
+        &declaration.control_carriers,
+        panic_freedom::METHOD_UNWRAP,
+    );
 
     writeln!(
         stdin,
@@ -90,4 +136,46 @@ fn read_response(reader: &mut impl BufRead) -> Value {
     reader.read_line(&mut line).expect("read response");
     assert!(!line.trim().is_empty(), "empty JSON-RPC response");
     serde_json::from_str(line.trim()).expect("JSON-RPC response JSON")
+}
+
+fn assert_kit_declaration_mappings(
+    category: &str,
+    mappings: &[provekit_claim_envelope::KitDeclarationMapping],
+    expected: &[(&str, &str)],
+) {
+    assert_eq!(
+        mappings.len(),
+        expected.len(),
+        "{category} should declare exactly the expected mappings: {mappings:#?}"
+    );
+
+    for mapping in mappings {
+        assert_eq!(
+            mapping.surface.as_deref(),
+            Some(RUST_FN_CONTRACTS_SURFACE),
+            "{category} mapping should be owned by rust-fn-contracts: {mapping:#?}"
+        );
+    }
+
+    for (local, concept) in expected {
+        assert!(
+            mappings.iter().any(|mapping| {
+                mapping.surface.as_deref() == Some(RUST_FN_CONTRACTS_SURFACE)
+                    && mapping.local == *local
+                    && mapping.concept == *concept
+            }),
+            "{category} missing mapping {local} -> {concept}: {mappings:#?}"
+        );
+    }
+}
+
+fn assert_mapping_absent(
+    category: &str,
+    mappings: &[provekit_claim_envelope::KitDeclarationMapping],
+    local: &str,
+) {
+    assert!(
+        !mappings.iter().any(|mapping| mapping.local == local),
+        "{category} must not contain {local}: {mappings:#?}"
+    );
 }

@@ -267,7 +267,7 @@ mod kit_declaration_schema_tests {
             },
             effect_kinds: vec!["concept:panic-freedom".to_string()],
             effect_leaves: vec![KitDeclarationMapping {
-                surface: Some("rust-implications".to_string()),
+                surface: Some("rust-fn-contracts".to_string()),
                 local: "method:unwrap".to_string(),
                 concept: "concept:panic-freedom.leaf.unwrap".to_string(),
             }],
@@ -317,7 +317,7 @@ mod kit_declaration_schema_tests {
             .expect("exact duplicate declaration is harmless");
 
         declaration.effect_leaves.push(KitDeclarationMapping {
-            surface: Some("rust-implications".to_string()),
+            surface: Some("rust-fn-contracts".to_string()),
             local: "method:unwrap".to_string(),
             concept: "concept:panic-freedom.leaf.expect".to_string(),
         });
