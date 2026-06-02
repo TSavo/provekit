@@ -29,6 +29,8 @@ RUNTIME_FAILURE_EFFECT_LEAF = {
     "local": "python:raise",
     "concept": "concept:panic-freedom.leaf.runtime-failure-site",
 }
+PANIC_FREEDOM_EFFECT_KIND = "concept:panic-freedom"
+RUNTIME_FAILURE_SITE_CONCEPT = "concept:panic-freedom.leaf.runtime-failure-site"
 
 
 def _canon(value: object) -> str:
@@ -89,6 +91,12 @@ def _contract(ir: list[dict[str, object]], suffix: str) -> dict[str, object]:
         if str(item.get("fnName", "")).endswith(suffix):
             return item
     raise AssertionError(f"missing contract ending in {suffix!r}: {ir!r}")
+
+
+def _runtime_failure_loci(contract: dict[str, object]) -> list[dict[str, object]]:
+    loci = contract.get("panicLoci")
+    assert isinstance(loci, list), contract
+    return [locus for locus in loci if isinstance(locus, dict)]
 
 
 def _ctor_names(node: object) -> list[str]:
@@ -289,6 +297,79 @@ def test_if_is_not_none_lifts_to_cf_guarded_option_guards() -> None:
         else_head="is_none",
     )
     assert "python:compare" in _ctor_names(body)
+
+
+def test_raise_emits_runtime_failure_locus_without_changing_effect_set() -> None:
+    source = "def f():\n    raise ValueError\n"
+
+    result = lift_source(source, "raises.py")
+
+    contract = _contract(result.ir, ".f")
+    body = contract["post"]["args"][1]
+    assert result.refusals == []
+    assert body == {
+        "kind": "ctor",
+        "name": "python:raise",
+        "args": [{"kind": "var", "name": "ValueError"}],
+    }
+    assert contract["effects"] == [{"kind": "panics"}]
+    assert _runtime_failure_loci(contract) == [
+        {
+            "effectKind": PANIC_FREEDOM_EFFECT_KIND,
+            "callee": RUNTIME_FAILURE_SITE_CONCEPT,
+            "subkind": "explicit-raise",
+            "exceptionClass": "ValueError",
+            "argTerm": {"kind": "var", "name": "ValueError"},
+            "file": "raises.py",
+            "line": 2,
+            "col": 4,
+        }
+    ]
+
+
+def test_multiple_raise_sites_keep_distinct_runtime_failure_loci() -> None:
+    source = (
+        "def f(flag):\n"
+        "    if flag:\n"
+        "        raise ValueError\n"
+        "    raise RuntimeError\n"
+    )
+
+    result = lift_source(source, "multi_raise.py")
+
+    contract = _contract(result.ir, ".f")
+    assert result.refusals == []
+    assert contract["effects"] == [{"kind": "panics"}]
+    loci = _runtime_failure_loci(contract)
+    assert [locus["exceptionClass"] for locus in loci] == ["ValueError", "RuntimeError"]
+    assert [(locus["line"], locus["col"]) for locus in loci] == [(3, 8), (4, 4)]
+    assert all(locus["effectKind"] == PANIC_FREEDOM_EFFECT_KIND for locus in loci)
+    assert all(locus["callee"] == RUNTIME_FAILURE_SITE_CONCEPT for locus in loci)
+    assert all(locus["subkind"] == "explicit-raise" for locus in loci)
+
+
+def test_bare_raise_emits_runtime_failure_locus_with_unit_arg() -> None:
+    source = "def f():\n    raise\n"
+
+    result = lift_source(source, "bare_raise.py")
+
+    contract = _contract(result.ir, ".f")
+    assert result.refusals == []
+    assert _runtime_failure_loci(contract) == [
+        {
+            "effectKind": PANIC_FREEDOM_EFFECT_KIND,
+            "callee": RUNTIME_FAILURE_SITE_CONCEPT,
+            "subkind": "explicit-raise",
+            "argTerm": {
+                "kind": "const",
+                "value": None,
+                "sort": {"kind": "primitive", "name": "Unit"},
+            },
+            "file": "bare_raise.py",
+            "line": 2,
+            "col": 4,
+        }
+    ]
 
 
 def test_compile_lift_roundtrip_preserves_cf_guarded_none_if_body() -> None:
