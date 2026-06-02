@@ -1,6 +1,8 @@
 from __future__ import annotations
 
+import ast
 import json
+import subprocess
 import sys
 from pathlib import Path
 
@@ -29,6 +31,57 @@ CONCEPT_SKIP_CID = (
     "9a905548a44fce23882b17d857d275d7822bd235ab71dbf786cd991563cc1de9e"
     "610594f50ad3c89a3b7eeb43234a31b36caa8031914c85227158030669c63cb"
 )
+
+KIT_DECLARATION_RPC_METHOD = "provekit.plugin.kit_declaration"
+
+
+def _parse_top_level_toml(path: Path) -> dict[str, object]:
+    values: dict[str, object] = {}
+    for raw in path.read_text(encoding="utf-8").splitlines():
+        line = raw.strip()
+        if not line or line.startswith("#") or line.startswith("[") or "=" not in line:
+            continue
+        key, value = line.split("=", 1)
+        raw_value = value.strip()
+        if raw_value == "true":
+            values[key.strip()] = True
+        elif raw_value == "false":
+            values[key.strip()] = False
+        else:
+            values[key.strip()] = ast.literal_eval(raw_value)
+    return values
+
+
+def _plugin_entries(path: Path) -> list[dict[str, object]]:
+    entries: list[dict[str, object]] = []
+    current: dict[str, object] | None = None
+    for raw in path.read_text(encoding="utf-8").splitlines():
+        line = raw.strip()
+        if not line or line.startswith("#"):
+            continue
+        if line == "[[plugins]]":
+            current = {}
+            entries.append(current)
+            continue
+        if current is not None and "=" in line:
+            key, value = line.split("=", 1)
+            current[key.strip()] = ast.literal_eval(value.strip())
+    return entries
+
+
+def _build_kit_declaration_session() -> str:
+    messages = [
+        {"jsonrpc": "2.0", "id": 1, "method": "initialize", "params": {}},
+        {"jsonrpc": "2.0", "id": 2, "method": KIT_DECLARATION_RPC_METHOD},
+        {"jsonrpc": "2.0", "id": 3, "method": "shutdown"},
+    ]
+    return "\n".join(json.dumps(message) for message in messages) + "\n"
+
+
+def _python_bind_manifest() -> dict[str, object]:
+    manifest = ROOT / "implementations/python/.provekit/lift/python-bind/manifest.toml"
+    assert manifest.exists(), f"missing checked-in python-bind manifest: {manifest}"
+    return _parse_top_level_toml(manifest)
 
 
 def _cid(ch: str) -> str:
@@ -801,6 +854,75 @@ def test_bind_rpc_initialize_declares_bind_ir_surface() -> None:
         "emits_signed_mementos": False,
         "ir_version": "bind-ir/1.0.0",
     }
+
+
+def test_checked_in_project_registers_python_bind_recognizer_surface() -> None:
+    entries = _plugin_entries(ROOT / "implementations/python/.provekit/config.toml")
+
+    assert {
+        "name": "python-bind",
+        "kind": "lift",
+        "surface": "python-bind",
+        "layer": "library-bindings",
+    } in entries
+
+
+def test_checked_in_python_bind_manifest_invokes_module_form_and_declares_kit() -> None:
+    manifest = _python_bind_manifest()
+
+    assert manifest["command"] == [
+        "python3",
+        "-m",
+        "provekit_lift_python_source.bind_rpc",
+        "--rpc",
+    ]
+    assert manifest["working_dir"] == "provekit-lift-python-source/src"
+
+    completed = subprocess.run(
+        manifest["command"],
+        cwd=ROOT / "implementations/python" / str(manifest["working_dir"]),
+        input=_build_kit_declaration_session(),
+        capture_output=True,
+        text=True,
+        timeout=10,
+        check=False,
+    )
+
+    assert completed.returncode == 0, completed.stderr
+    responses = [
+        json.loads(line) for line in completed.stdout.splitlines() if line.strip()
+    ]
+    declaration = next(response for response in responses if response.get("id") == 2)
+    assert "error" not in declaration, declaration
+    assert declaration["result"]["kit"]["id"] == "python-bind"
+
+
+def test_bind_rpc_kit_declaration_returns_python_bind_surface() -> None:
+    response = dispatch({"jsonrpc": "2.0", "id": 2, "method": KIT_DECLARATION_RPC_METHOD})
+
+    assert "error" not in response, response
+    result = response["result"]
+    assert result["kit"] == {
+        "id": "python-bind",
+        "language": "python",
+        "version": "0.1.0",
+    }
+    required_by_name = {
+        method["name"]: method["required"] for method in result["rpc"]["methods"]
+    }
+    assert required_by_name == {
+        "initialize": True,
+        KIT_DECLARATION_RPC_METHOD: True,
+        "lift": True,
+        "provekit.plugin.recognize": True,
+        "shutdown": False,
+    }
+    assert result["proofResolution"] == {"strategy": "pip"}
+    assert result["effectKinds"] == []
+    assert result["effectLeaves"] == []
+    assert result["guardPredicates"] == []
+    assert result["controlCarriers"] == []
+    assert result["residueCategories"] == []
 
 
 def test_bind_rpc_lift_returns_ir_document(tmp_path: Path) -> None:
