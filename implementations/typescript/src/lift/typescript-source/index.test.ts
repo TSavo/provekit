@@ -585,6 +585,10 @@ function newErrorThrow(): void {
   throw new Error("bad");
 }
 
+function objectThrow(): void {
+  throw { code: 500, message: "bad" };
+}
+
 function ok(): number {
   return 1;
 }
@@ -647,6 +651,55 @@ function ok(): number {
         },
         file: "src/throws.ts",
         line: 10,
+        col: 2,
+      },
+    ]);
+
+    expect(contractNamed(result, "src/throws.ts:objectThrow").panicLoci).toEqual([
+      {
+        effectKind: "concept:panic-freedom",
+        callee: RUNTIME_FAILURE_SITE_CONCEPT,
+        subkind: "explicit-throw",
+        argTerm: {
+          kind: "ctor",
+          name: "ts:object-literal",
+          args: [
+            {
+              kind: "ctor",
+              name: "ts:property",
+              args: [
+                {
+                  kind: "const",
+                  sort: { kind: "primitive", name: "String" },
+                  value: "code",
+                },
+                {
+                  kind: "const",
+                  sort: { kind: "primitive", name: "Number" },
+                  value: 500,
+                },
+              ],
+            },
+            {
+              kind: "ctor",
+              name: "ts:property",
+              args: [
+                {
+                  kind: "const",
+                  sort: { kind: "primitive", name: "String" },
+                  value: "message",
+                },
+                {
+                  kind: "const",
+                  sort: { kind: "primitive", name: "String" },
+                  value: "bad",
+                },
+              ],
+            },
+          ],
+        },
+        file: "src/throws.ts",
+        line: 14,
         col: 2,
       },
     ]);
@@ -764,6 +817,147 @@ function ok(): number {
     const reliftedBodyTerm = rhs(secondContract);
     expect([...canonicalEncode(reliftedBodyTerm)]).toEqual([...canonicalEncode(originalBodyTerm)]);
     expect(canonicalCid(reliftedBodyTerm)).toBe(canonicalCid(originalBodyTerm));
+  });
+
+  it("round-trips object literal body terms through the AST printer", () => {
+    const first = liftTypeScriptSourceText(
+      `function payload(): unknown {
+  return { code: 500, "message": "bad", 1: false, nested: { retry: false } };
+}
+`,
+      "src/object-roundtrip.ts",
+    );
+    expect(first.refusals).toEqual([]);
+
+    const firstContract = first.declarations.find((decl) => decl.fnName === "src/object-roundtrip.ts:payload")!;
+    const originalBodyTerm = rhs(firstContract);
+    expect(originalBodyTerm).toMatchObject({
+      kind: "ctor",
+      name: "ts:object-literal",
+    });
+
+    const compiled = compileTypeScriptSourceBodyIr(originalBodyTerm, {
+      functionName: "payload",
+      formals: firstContract.formals,
+      formalSorts: firstContract.formalSorts,
+      returnSort: firstContract.returnSort,
+    });
+    const second = liftTypeScriptSourceText(compiled, "src/object-roundtrip.ts");
+
+    expect(second.refusals).toEqual([]);
+    const secondContract = second.declarations.find((decl) => decl.fnName === "src/object-roundtrip.ts:payload")!;
+    const reliftedBodyTerm = rhs(secondContract);
+    expect([...canonicalEncode(reliftedBodyTerm)]).toEqual([...canonicalEncode(originalBodyTerm)]);
+    expect(canonicalCid(reliftedBodyTerm)).toBe(canonicalCid(originalBodyTerm));
+  });
+
+  it("emits shorthand object literal properties as explicit key-value terms", () => {
+    const result = liftTypeScriptSourceText(
+      `function payload(code: number): unknown {
+  return { code };
+}
+`,
+      "src/object-shorthand.ts",
+    );
+
+    expect(result.refusals).toEqual([]);
+    const contract = contractNamed(result, "src/object-shorthand.ts:payload");
+    expect(rhs(contract)).toEqual({
+      kind: "ctor",
+      name: "ts:object-literal",
+      args: [
+        {
+          kind: "ctor",
+          name: "ts:property",
+          args: [
+            {
+              kind: "const",
+              sort: { kind: "primitive", name: "String" },
+              value: "code",
+            },
+            { kind: "var", name: "code" },
+          ],
+        },
+      ],
+    });
+  });
+
+  it("refuses __proto__ object literal prototype setter forms", () => {
+    const cases = [
+      ["identifier key", "return { __proto__: value };"],
+      ["double-quoted key", 'return { "__proto__": value };'],
+      ["single-quoted key", "return { '__proto__': value };"],
+    ];
+
+    for (const [label, statement] of cases) {
+      const result = liftTypeScriptSourceText(
+        `function payload(value: unknown): unknown {
+  ${statement}
+}
+`,
+        `src/proto-${label.replaceAll(" ", "-")}.ts`,
+      );
+
+      expect(result.declarations.filter((decl) => !decl.fnName.endsWith(":<source-unit>"))).toEqual([]);
+      expect(result.refusals).toEqual([
+        {
+          kind: expect.any(String),
+          function: expect.stringContaining(":payload"),
+          line: 2,
+          reason: expect.stringContaining("__proto__ prototype setter"),
+        },
+      ]);
+    }
+  });
+
+  it("round-trips __proto__ shorthand object literal properties without prototype setter syntax", () => {
+    const first = liftTypeScriptSourceText(
+      `function payload(__proto__: unknown): unknown {
+  return { __proto__ };
+}
+`,
+      "src/proto-shorthand-roundtrip.ts",
+    );
+    expect(first.refusals).toEqual([]);
+
+    const firstContract = contractNamed(first, "src/proto-shorthand-roundtrip.ts:payload");
+    const originalBodyTerm = rhs(firstContract);
+    const compiled = compileTypeScriptSourceBodyIr(originalBodyTerm, {
+      functionName: "payload",
+      formals: firstContract.formals,
+      formalSorts: firstContract.formalSorts,
+      returnSort: firstContract.returnSort,
+    });
+
+    expect(compiled).toContain("return { __proto__ };");
+    expect(compiled).not.toContain("\"__proto__\"");
+
+    const second = liftTypeScriptSourceText(compiled, "src/proto-shorthand-roundtrip.ts");
+    expect(second.refusals).toEqual([]);
+    const secondContract = contractNamed(second, "src/proto-shorthand-roundtrip.ts:payload");
+    const reliftedBodyTerm = rhs(secondContract);
+    expect([...canonicalEncode(reliftedBodyTerm)]).toEqual([...canonicalEncode(originalBodyTerm)]);
+    expect(canonicalCid(reliftedBodyTerm)).toBe(canonicalCid(originalBodyTerm));
+  });
+
+  it("continues refusing array literals instead of conflating them with object literals", () => {
+    const result = liftTypeScriptSourceText(
+      `function payload(): unknown {
+  return [1, 2, 3];
+}
+`,
+      "src/array-refusal.ts",
+    );
+
+    expect(result.declarations.filter((decl) => !decl.fnName.endsWith(":<source-unit>"))).toEqual([]);
+    expect(result.refusals).toEqual([
+      {
+        kind: "ArrayLiteralExpression",
+        function: "src/array-refusal.ts:payload",
+        line: 2,
+        reason: expect.stringContaining("ArrayLiteralExpression"),
+      },
+    ]);
   });
 
   it("rejects source paths that escape the workspace root", () => {

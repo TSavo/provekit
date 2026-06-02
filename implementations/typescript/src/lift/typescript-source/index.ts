@@ -1393,6 +1393,7 @@ function emitExpression(expr: ts.Expression, context: FunctionContext): IrTerm {
     return ctor("ts:ite", emitExpression(expr.condition, context), emitExpression(expr.whenTrue, context), emitExpression(expr.whenFalse, context));
   }
   if (ts.isCallExpression(expr)) return emitCallExpression(expr, context);
+  if (ts.isObjectLiteralExpression(expr)) return emitObjectLiteralExpression(expr, context);
   if (ts.isTypeOfExpression(expr)) return ctor("ts:typeof", emitExpression(expr.expression, context));
   if (ts.isPropertyAccessExpression(expr)) {
     if (expr.questionDotToken) {
@@ -1423,6 +1424,32 @@ function emitExpression(expr: ts.Expression, context: FunctionContext): IrTerm {
     throw new UnsupportedSyntaxError(expr, "function expressions are not handled");
   }
   throw new UnsupportedSyntaxError(expr, `expression kind ${syntaxKindName(expr)} is not handled`);
+}
+
+function emitObjectLiteralExpression(expr: ts.ObjectLiteralExpression, context: FunctionContext): IrTerm {
+  const properties: IrTerm[] = [];
+  for (const property of expr.properties) {
+    if (ts.isPropertyAssignment(property)) {
+      const name = nameFromPropertyName(property.name);
+      if (name === null) {
+        throw new UnsupportedSyntaxError(property.name, "computed object literal property names are not handled");
+      }
+      if (name === "__proto__") {
+        throw new UnsupportedSyntaxError(property.name, "__proto__ prototype setter object literal properties are not handled");
+      }
+      properties.push(ctor("ts:property", stringConst(name), emitExpression(property.initializer, context)));
+      continue;
+    }
+    if (ts.isSpreadAssignment(property)) {
+      throw new UnsupportedSyntaxError(property, "object literal spread properties are not handled");
+    }
+    if (ts.isShorthandPropertyAssignment(property)) {
+      properties.push(ctor("ts:property", stringConst(property.name.text), emitExpression(property.name, context)));
+      continue;
+    }
+    throw new UnsupportedSyntaxError(property, `object literal property kind ${syntaxKindName(property)} is not handled`);
+  }
+  return ctor("ts:object-literal", ...properties);
 }
 
 function emitBinaryExpression(expr: ts.BinaryExpression, context: FunctionContext): IrTerm {
@@ -2051,8 +2078,32 @@ function expressionFromTerm(term: IrTerm | undefined): ts.Expression {
     case "ts:index": return ts.factory.createElementAccessExpression(expressionFromTerm(args[0]), expressionFromTerm(args[1]));
     case "ts:call": return ts.factory.createCallExpression(expressionFromTerm(args[0]), undefined, args[1] && isCtor(args[1], "ts:args") ? termArgs(args[1]).map(expressionFromTerm) : []);
     case "ts:new": return ts.factory.createNewExpression(expressionFromTerm(args[0]), undefined, args[1] && isCtor(args[1], "ts:args") ? termArgs(args[1]).map(expressionFromTerm) : []);
+    case "ts:object-literal": return ts.factory.createObjectLiteralExpression(args.map(objectLiteralPropertyFromTerm), false);
     default: throw new Error(`cannot compile operation ${term.name}`);
   }
+}
+
+function objectLiteralPropertyFromTerm(term: IrTerm): ts.ObjectLiteralElementLike {
+  if (!isCtor(term, "ts:property")) {
+    throw new Error(`cannot compile object literal property term ${term.kind === "ctor" ? term.name : term.kind}`);
+  }
+  const args = termArgs(term);
+  const key = args[0];
+  if (!key || key.kind !== "const" || typeof key.value !== "string") {
+    throw new Error("cannot compile object literal property with non-string key");
+  }
+  const value = args[1];
+  if (canEmitShorthandProperty(key.value, value)) {
+    return ts.factory.createShorthandPropertyAssignment(key.value);
+  }
+  const propertyName = key.value === "__proto__"
+    ? ts.factory.createComputedPropertyName(ts.factory.createStringLiteral(key.value))
+    : ts.factory.createStringLiteral(key.value);
+  return ts.factory.createPropertyAssignment(propertyName, expressionFromTerm(value));
+}
+
+function canEmitShorthandProperty(name: string, value: IrTerm | undefined): boolean {
+  return value?.kind === "var" && value.name === name && /^[A-Za-z_$][A-Za-z0-9_$]*$/.test(name);
 }
 
 function binaryTokenForCtor(name: string): ts.BinaryOperator | null {
