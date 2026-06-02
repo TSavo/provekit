@@ -11,6 +11,7 @@ from .lifter import lift_paths
 
 SURFACE = "python-source"
 VERSION = "0.1.0-draft"
+KIT_DECLARATION_RPC_METHOD = "provekit.plugin.kit_declaration"
 
 
 def initialize_result() -> dict[str, Any]:
@@ -24,6 +25,31 @@ def initialize_result() -> dict[str, Any]:
             "ir_version": "v1.1.0",
             "emits_signed_mementos": False,
         },
+    }
+
+
+def kit_declaration_result() -> dict[str, Any]:
+    return {
+        "kit": {
+            "id": SURFACE,
+            "language": "python",
+            "version": VERSION,
+        },
+        "rpc": {
+            "methods": [
+                {"name": "initialize", "required": True},
+                {"name": KIT_DECLARATION_RPC_METHOD, "required": True},
+                {"name": "lift", "required": True},
+                {"name": "compile", "required": False},
+                {"name": "shutdown", "required": False},
+            ]
+        },
+        "proofResolution": {"strategy": "pip"},
+        "effectKinds": [],
+        "effectLeaves": [],
+        "guardPredicates": [],
+        "controlCarriers": [],
+        "residueCategories": [],
     }
 
 
@@ -49,6 +75,8 @@ def dispatch(request: dict[str, Any]) -> dict[str, Any]:
 
     if method == "initialize":
         return {"jsonrpc": "2.0", "id": msg_id, "result": initialize_result()}
+    if method == KIT_DECLARATION_RPC_METHOD:
+        return {"jsonrpc": "2.0", "id": msg_id, "result": kit_declaration_result()}
     if method == "lift":
         return _lift(msg_id, params)
     if method == "compile":
