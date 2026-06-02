@@ -3028,6 +3028,55 @@ mod tests {
     }
 
     #[test]
+    fn doctor_kit_declaration_empty_effect_kinds_passes_and_skips_vocabulary() {
+        let td = TempDir::new().unwrap();
+        let kit = td.path();
+        let plugin = kit.join("emit-only-plugin");
+        let mut declaration = valid_panic_freedom_declaration("python-hypothesis");
+        declaration["kit"] =
+            json!({"id": "python-hypothesis", "language": "python", "version": "0.1.0"});
+        declaration["proofResolution"] = json!({"strategy": "pip"});
+        declaration["effectKinds"] = json!([]);
+        declaration["effectLeaves"] = json!([]);
+        declaration["guardPredicates"] = json!([]);
+        declaration["controlCarriers"] = json!([]);
+        make_kit_declaration_plugin(&plugin, declaration);
+        write_kit(
+            kit,
+            "[[plugins]]\nname = \"python-hypothesis\"\nkind = \"emit\"\nsurface = \"python-hypothesis\"\n",
+        );
+        write_manifest(
+            kit,
+            "emit",
+            "python-hypothesis",
+            "\"./emit-only-plugin\"",
+            ".",
+        );
+
+        let report = run_report_with_context(kit, DoctorContext::new(DoctorMode::Strict));
+
+        let available =
+            check_by_id_and_surface(&report, "kit.declaration.available", "python-hypothesis");
+        let methods = check_by_id_and_surface(
+            &report,
+            "kit.declaration.rpc_methods_declared",
+            "python-hypothesis",
+        );
+        let vocabulary = check_by_id_and_surface(
+            &report,
+            "kit.declaration.substrate_vocabulary.panic_freedom",
+            "python-hypothesis",
+        );
+        assert_eq!(available.status, CheckStatus::Pass);
+        assert_eq!(methods.status, CheckStatus::Pass);
+        assert_eq!(vocabulary.status, CheckStatus::Skip);
+        assert_eq!(
+            vocabulary.evidence.get("skipped").and_then(Value::as_bool),
+            Some(true)
+        );
+    }
+
+    #[test]
     fn structural_dependency_resolver_available_passes_with_binary_evidence() {
         let td = TempDir::new().unwrap();
         let kit = td.path();

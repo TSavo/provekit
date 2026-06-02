@@ -3,6 +3,10 @@
 from __future__ import annotations
 
 import json
+import os
+import subprocess
+import sys
+from pathlib import Path
 
 from provekit_emit_python_hypothesis.rpc import dispatch
 
@@ -28,6 +32,66 @@ def test_describe_returns_emit_plugin_memento_for_hypothesis() -> None:
     assert header["content"]["target_framework"] == "hypothesis"
     assert "concept:lt" in header["content"]["capabilities"]["predicates"]
     json.dumps(response)
+
+
+def test_kit_declaration_returns_emit_only_hypothesis_declaration() -> None:
+    response = dispatch(
+        {"jsonrpc": "2.0", "id": 11, "method": "provekit.plugin.kit_declaration"}
+    )
+    result = response["result"]
+
+    assert response["id"] == 11
+    assert result["kit"] == {
+        "id": "python-hypothesis",
+        "language": "python",
+        "version": "0.1.0",
+    }
+    method_names = {method["name"] for method in result["rpc"]["methods"]}
+    assert method_names == {
+        "initialize",
+        "provekit.plugin.describe",
+        "provekit.plugin.invoke",
+        "provekit.plugin.check",
+        "provekit.plugin.shutdown",
+        "provekit.plugin.kit_declaration",
+        "shutdown",
+    }
+    assert result["proofResolution"] == {"strategy": "pip"}
+    assert result["effectKinds"] == []
+    assert result["effectLeaves"] == []
+    assert result["guardPredicates"] == []
+    assert result["controlCarriers"] == []
+    assert result["residueCategories"] == []
+    json.dumps(response)
+
+
+def test_kit_declaration_stdio_round_trip() -> None:
+    src = Path(__file__).resolve().parents[1] / "src"
+    env = os.environ.copy()
+    existing = env.get("PYTHONPATH")
+    env["PYTHONPATH"] = str(src) if not existing else os.pathsep.join([str(src), existing])
+    messages = [
+        {"jsonrpc": "2.0", "id": 1, "method": "initialize"},
+        {"jsonrpc": "2.0", "id": 2, "method": "provekit.plugin.kit_declaration"},
+        {"jsonrpc": "2.0", "id": 3, "method": "shutdown"},
+    ]
+    completed = subprocess.run(
+        [sys.executable, "-m", "provekit_emit_python_hypothesis", "--rpc"],
+        input="\n".join(json.dumps(message) for message in messages) + "\n",
+        text=True,
+        capture_output=True,
+        env=env,
+        timeout=10,
+        check=False,
+    )
+
+    assert completed.returncode == 0, completed.stderr
+    responses = [json.loads(line) for line in completed.stdout.splitlines() if line.strip()]
+    initialize = next(response for response in responses if response.get("id") == 1)
+    declaration = next(response for response in responses if response.get("id") == 2)
+    assert initialize["result"]["name"] == "python-hypothesis"
+    assert declaration["result"]["kit"]["id"] == "python-hypothesis"
+    assert declaration["result"]["effectKinds"] == []
 
 
 def test_invoke_emits_hypothesis_module() -> None:

@@ -10,7 +10,7 @@ import traceback
 from typing import Any
 
 from .emitter import EmitPlan, emit
-from .plugin_memento import PLUGIN_MEMENTO
+from .plugin_memento import PLUGIN_MEMENTO, PLUGIN_VERSION
 
 
 def run_rpc() -> None:
@@ -28,7 +28,7 @@ def run_rpc() -> None:
         except Exception as exc:  # noqa: BLE001 - plugin errors must surface to host
             response = _error(None, -32603, f"{exc}\n{traceback.format_exc()}")
         _send(response)
-        if method == "provekit.plugin.shutdown":
+        if method in {"provekit.plugin.shutdown", "shutdown"}:
             break
 
 
@@ -38,6 +38,12 @@ def dispatch(request: dict[str, Any]) -> dict[str, Any]:
     params = request.get("params")
     if params is None:
         params = {}
+
+    if method == "initialize":
+        return {"jsonrpc": "2.0", "id": msg_id, "result": initialize_result()}
+
+    if method == "provekit.plugin.kit_declaration":
+        return {"jsonrpc": "2.0", "id": msg_id, "result": kit_declaration_result()}
 
     if method == "provekit.plugin.describe":
         return {"jsonrpc": "2.0", "id": msg_id, "result": PLUGIN_MEMENTO}
@@ -59,7 +65,49 @@ def dispatch(request: dict[str, Any]) -> dict[str, Any]:
     if method == "provekit.plugin.shutdown":
         return {"jsonrpc": "2.0", "id": msg_id, "result": None}
 
+    if method == "shutdown":
+        return {"jsonrpc": "2.0", "id": msg_id, "result": None}
+
     return _error(msg_id, -32601, f"METHOD_NOT_FOUND: {method}")
+
+
+def initialize_result() -> dict[str, Any]:
+    return {
+        "name": "python-hypothesis",
+        "version": PLUGIN_VERSION,
+        "protocol_version": "pep/1.7.0",
+        "capabilities": {
+            "target_language": "python",
+            "target_framework": "hypothesis",
+        },
+    }
+
+
+def kit_declaration_result() -> dict[str, Any]:
+    return {
+        "kit": {
+            "id": "python-hypothesis",
+            "language": "python",
+            "version": PLUGIN_VERSION,
+        },
+        "rpc": {
+            "methods": [
+                {"name": "initialize", "required": True},
+                {"name": "provekit.plugin.kit_declaration", "required": True},
+                {"name": "provekit.plugin.describe", "required": False},
+                {"name": "provekit.plugin.invoke", "required": True},
+                {"name": "provekit.plugin.check", "required": False},
+                {"name": "provekit.plugin.shutdown", "required": False},
+                {"name": "shutdown", "required": False},
+            ]
+        },
+        "proofResolution": {"strategy": "pip"},
+        "effectKinds": [],
+        "effectLeaves": [],
+        "guardPredicates": [],
+        "controlCarriers": [],
+        "residueCategories": [],
+    }
 
 
 def _check_pytest(out_dir: str) -> dict[str, Any]:
