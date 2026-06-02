@@ -124,6 +124,32 @@ def _build_kit_declaration_session() -> str:
     return "\n".join(json.dumps(m) for m in msgs) + "\n"
 
 
+def _flatten_and_json(formula: dict) -> List[dict]:
+    if formula.get("kind") == "and":
+        out: List[dict] = []
+        for operand in formula.get("operands", []):
+            out.extend(_flatten_and_json(operand))
+        return out
+    return [formula]
+
+
+def _assert_json_none_guard_formula(
+    formula: dict, *, comparison_name: str, guard_name: str
+) -> None:
+    atoms = [atom for atom in _flatten_and_json(formula) if atom.get("kind") == "atomic"]
+    assert any(
+        atom.get("name") == comparison_name
+        and len(atom.get("args", [])) == 2
+        and atom["args"][1].get("kind") == "ctor"
+        and atom["args"][1].get("name") == "None"
+        for atom in atoms
+    )
+    guards = [atom for atom in atoms if atom.get("name") == guard_name]
+    assert len(guards) == 1
+    assert ":" not in guards[0]["name"]
+    assert len(guards[0].get("args", [])) == 1
+
+
 def _repo_root() -> str:
     return os.path.normpath(os.path.join(os.path.dirname(__file__), "../../../.."))
 
@@ -204,7 +230,7 @@ class TestDaemonProtocol:
         assert declaration["result"]["kit"]["id"] == "python"
 
     def test_kit_declaration_returns_python_lift_surface(self):
-        """Binary serves an honest empty-vocabulary kit declaration."""
+        """Binary serves an honest Python test-lift declaration."""
         responses = _run_lsp(_build_kit_declaration_session())
         declaration_resp = next(r for r in responses if r.get("id") == 2)
         assert "error" not in declaration_resp, declaration_resp
@@ -225,9 +251,20 @@ class TestDaemonProtocol:
             "shutdown",
         }
         assert result["proofResolution"] == {"strategy": "pip"}
-        assert result["effectKinds"] == []
+        assert result["effectKinds"] == ["concept:panic-freedom"]
         assert result["effectLeaves"] == []
-        assert result["guardPredicates"] == []
+        assert result["guardPredicates"] == [
+            {
+                "surface": "python",
+                "local": "is_some",
+                "concept": "concept:panic-freedom.option.some",
+            },
+            {
+                "surface": "python",
+                "local": "is_none",
+                "concept": "concept:panic-freedom.option.none",
+            },
+        ]
         assert result["controlCarriers"] == []
         assert result["residueCategories"] == []
         json.dumps(declaration_resp)
@@ -397,15 +434,28 @@ class ParserTest(unittest.TestCase):
         assert decl["name"] == "test_native_assertions"
         inv = decl["inv"]
         assert inv["kind"] == "and"
-        assert [op["name"] for op in inv["operands"]] == ["=", "≠", ">", "=", "≠"]
+        flat_atoms = [
+            op for op in _flatten_and_json(inv) if op.get("kind") == "atomic"
+        ]
+        assert [op["name"] for op in flat_atoms] == [
+            "=",
+            "≠",
+            ">",
+            "=",
+            "is_none",
+            "≠",
+            "is_some",
+        ]
         none_atoms = [
-            op for op in inv["operands"]
+            op for op in flat_atoms
             if op["name"] in {"=", "≠"}
             and len(op["args"]) == 2
             and op["args"][1].get("kind") == "ctor"
             and op["args"][1].get("name") == "None"
         ]
         assert len(none_atoms) == 2
+        _assert_json_none_guard_formula(inv, comparison_name="=", guard_name="is_none")
+        _assert_json_none_guard_formula(inv, comparison_name="≠", guard_name="is_some")
 
     def test_parse_unsupported_unittest_assertion_reports_lift_gap_warning(self):
         """Unsupported unittest forms report a gap and do not mint a contract."""

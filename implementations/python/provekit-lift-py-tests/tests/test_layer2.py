@@ -20,6 +20,30 @@ def _lift(src: str):
     return lift_file_layer2(textwrap.dedent(src), "t.py")
 
 
+def _flatten_and(formula):
+    if isinstance(formula, _Connective) and formula.kind == "and":
+        out = []
+        for operand in formula.operands:
+            out.extend(_flatten_and(operand))
+        return out
+    return [formula]
+
+
+def _assert_none_guard_formula(formula, *, comparison_name: str, guard_name: str):
+    atoms = [atom for atom in _flatten_and(formula) if isinstance(atom, _Atomic)]
+    assert any(
+        atom.name == comparison_name
+        and len(atom.args) == 2
+        and isinstance(atom.args[1], _Ctor)
+        and atom.args[1].name == "None"
+        for atom in atoms
+    )
+    guards = [atom for atom in atoms if atom.name == guard_name]
+    assert len(guards) == 1
+    assert ":" not in guards[0].name
+    assert len(guards[0].args) == 1
+
+
 # --- Pattern 1: bounded loops --------------------------------------------
 
 
@@ -203,15 +227,30 @@ def test_pattern3_plain_unittest_testcase_assertions_lift_to_contract_atoms():
     inv = out.decls[0].inv
     assert isinstance(inv, _Connective)
     assert inv.kind == "and"
-    atoms = list(inv.operands)
-    assert len(atoms) == 5
-    assert [atom.name for atom in atoms] == ["=", "≠", ">", "=", "≠"]
+    atoms = [atom for atom in _flatten_and(inv) if isinstance(atom, _Atomic)]
+    assert [atom.name for atom in atoms] == ["=", "≠", ">", "=", "is_none", "≠", "is_some"]
     none_atoms = [
         atom
         for atom in atoms
         if atom.name in {"=", "≠"} and isinstance(atom.args[1], _Ctor)
     ]
     assert [atom.args[1].name for atom in none_atoms] == ["None", "None"]
+    _assert_none_guard_formula(inv, comparison_name="=", guard_name="is_none")
+    _assert_none_guard_formula(inv, comparison_name="≠", guard_name="is_some")
+
+
+def test_pattern3_pytest_none_comparisons_emit_substrate_guard_facts():
+    out = _lift("""
+        def test_none_assertions():
+            assert maybe_none() is None
+            assert maybe_value() is not None
+    """)
+    assert out.characterization_lifted == 1, f"warnings: {out.warnings}"
+    inv = out.decls[0].inv
+    assert isinstance(inv, _Connective)
+    assert inv.kind == "and"
+    _assert_none_guard_formula(inv, comparison_name="=", guard_name="is_none")
+    _assert_none_guard_formula(inv, comparison_name="≠", guard_name="is_some")
 
 
 def test_unittest_unsupported_assertion_warns_without_fake_contract():

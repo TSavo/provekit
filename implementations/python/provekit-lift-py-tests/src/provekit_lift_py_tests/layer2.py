@@ -77,6 +77,7 @@ from .ir import (
     and_,
     atomic,
     bool_const,
+    comparison_with_none_guard,
     connective,
     ctor,
     eq,
@@ -498,7 +499,7 @@ def _translate_bool_expr(node: ast.expr) -> Formula:
             raise ValueError(f"unsupported comparison op: {op_kind.__name__}")
         l = _translate_term(node.left)
         r = _translate_term(node.comparators[0])
-        return atomic(sym, [l, r])
+        return comparison_with_none_guard(sym, l, r)
     if isinstance(node, ast.NamedExpr):
         # Walrus inside an assert: skip.
         raise ValueError("walrus operator in assert is not liftable")
@@ -520,12 +521,14 @@ def _lift_assertion_stmt(stmt: ast.stmt) -> Formula:
             l = _translate_term(call.args[0])
             r = _translate_term(call.args[1])
             sym = _UNITTEST_BINARY_PREDICATES[name]
-            return atomic(sym, [l, r])
+            return comparison_with_none_guard(sym, l, r)
         if name in _UNITTEST_NONE_PREDICATES:
             if len(call.args) < 1:
                 raise ValueError(f"{name} expects 1 positional arg")
             t = _translate_term(call.args[0])
-            return atomic(_UNITTEST_NONE_PREDICATES[name], [t, ctor("None", [])])
+            return comparison_with_none_guard(
+                _UNITTEST_NONE_PREDICATES[name], t, ctor("None", [])
+            )
         if name == "assertTrue":
             if len(call.args) < 1:
                 raise ValueError("assertTrue expects 1 positional arg")
@@ -1406,12 +1409,14 @@ def _lift_assertion_stmt_scoped(
                 raise ValueError(f"{name} expects at least 2 positional args")
             l = _translate_term_scoped(call.args[0], scope, call_vars)
             r = _translate_term_scoped(call.args[1], scope, call_vars)
-            return atomic(_UNITTEST_BINARY_PREDICATES[name], [l, r])
+            return comparison_with_none_guard(_UNITTEST_BINARY_PREDICATES[name], l, r)
         if name in _UNITTEST_NONE_PREDICATES:
             if len(call.args) < 1:
                 raise ValueError(f"{name} expects 1 positional arg")
             t = _translate_term_scoped(call.args[0], scope, call_vars)
-            return atomic(_UNITTEST_NONE_PREDICATES[name], [t, ctor("None", [])])
+            return comparison_with_none_guard(
+                _UNITTEST_NONE_PREDICATES[name], t, ctor("None", [])
+            )
         if name == "assertTrue":
             if len(call.args) < 1:
                 raise ValueError("assertTrue expects 1 positional arg")
@@ -1434,12 +1439,10 @@ def _translate_bool_expr_scoped(
         sym = _COMPARE_OP_MAP.get(type(node.ops[0]))
         if sym is None:
             raise ValueError(f"unsupported comparison op: {type(node.ops[0]).__name__}")
-        return atomic(
+        return comparison_with_none_guard(
             sym,
-            [
-                _translate_term_scoped(node.left, scope, call_vars),
-                _translate_term_scoped(node.comparators[0], scope, call_vars),
-            ],
+            _translate_term_scoped(node.left, scope, call_vars),
+            _translate_term_scoped(node.comparators[0], scope, call_vars),
         )
     if isinstance(node, ast.BoolOp):
         operands = [

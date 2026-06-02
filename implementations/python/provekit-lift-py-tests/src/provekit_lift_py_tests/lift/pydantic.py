@@ -41,6 +41,7 @@ from ..ir import (
     String,
     Bool,
     atomic,
+    comparison_with_none_guard,
     eq,
     ne,
     gt,
@@ -241,7 +242,9 @@ def lift_pydantic_model_witnesses(
         annotation = annotations.get(field_name, getattr(field_info, "annotation", None))
         formulas: List[Formula] = []
         if _field_required(field_info) and not _is_optional_annotation(annotation):
-            formulas.append(ne(make_var(field_name), ctor("None", [])))
+            formulas.append(
+                comparison_with_none_guard("≠", make_var(field_name), ctor("None", []))
+            )
         type_name = _annotation_name(annotation)
         if type_name and type_name != "Any":
             formulas.append(atomic("is_type", [make_var(field_name), str_const(type_name)]))

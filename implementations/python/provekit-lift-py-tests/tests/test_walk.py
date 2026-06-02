@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import textwrap
 
-from provekit_lift_py_tests.ir import _Atomic, _Connective, _ConstInt, _Var
+from provekit_lift_py_tests.ir import _Atomic, _Connective, _ConstInt, _Ctor, _Var
 from provekit_lift_py_tests.lsp import _lift_source
 from provekit_lift_py_tests.walk import lift_production_walk
 
@@ -17,6 +17,30 @@ def _edge(out, suffix: str):
     matches = [d for d in out.decls if d.name.endswith(suffix)]
     assert len(matches) == 1, f"expected one {suffix} edge, got {[d.name for d in out.decls]}"
     return matches[0]
+
+
+def _flatten_and(formula):
+    if isinstance(formula, _Connective) and formula.kind == "and":
+        out = []
+        for operand in formula.operands:
+            out.extend(_flatten_and(operand))
+        return out
+    return [formula]
+
+
+def _assert_none_guard_formula(formula, *, comparison_name: str, guard_name: str):
+    atoms = [atom for atom in _flatten_and(formula) if isinstance(atom, _Atomic)]
+    assert any(
+        atom.name == comparison_name
+        and len(atom.args) == 2
+        and isinstance(atom.args[1], _Ctor)
+        and atom.args[1].name == "None"
+        for atom in atoms
+    )
+    guards = [atom for atom in atoms if atom.name == guard_name]
+    assert len(guards) == 1
+    assert ":" not in guards[0].name
+    assert len(guards[0].args) == 1
 
 
 def test_walk_substitutes_assignment_back_to_function_entry():
@@ -60,6 +84,26 @@ def test_walk_substitutes_assignment_back_to_function_entry():
 
     entry_edge = _edge(out, "::entry")
     assert entry_edge.pre == pre
+
+
+def test_walk_none_precondition_emits_substrate_guard_fact():
+    out = _lift(
+        """
+        def f(x):
+            assert x is not None
+            return x
+
+        def caller(value):
+            return f(value)
+        """
+    )
+
+    entry_edge = _edge(out, "::entry")
+    _assert_none_guard_formula(
+        entry_edge.pre,
+        comparison_name="≠",
+        guard_name="is_some",
+    )
 
 
 def test_walk_if_guard_becomes_callsite_premise():
