@@ -16,6 +16,7 @@
 
 from __future__ import annotations
 
+import ast
 import json
 import os
 import shutil
@@ -113,6 +114,40 @@ def _build_analyze_session(source: str, path: str, uri: str = "file:///project/t
     return "\n".join(json.dumps(m) for m in msgs) + "\n"
 
 
+def _build_kit_declaration_session() -> str:
+    """Build NDJSON input for initialize -> kit_declaration -> shutdown."""
+    msgs = [
+        {"jsonrpc": "2.0", "id": 1, "method": "initialize", "params": {}},
+        {"jsonrpc": "2.0", "id": 2, "method": "provekit.plugin.kit_declaration"},
+        {"jsonrpc": "2.0", "id": 3, "method": "shutdown"},
+    ]
+    return "\n".join(json.dumps(m) for m in msgs) + "\n"
+
+
+def _repo_root() -> str:
+    return os.path.normpath(os.path.join(os.path.dirname(__file__), "../../../.."))
+
+
+def _python_lift_manifest() -> dict[str, object]:
+    manifest = os.path.join(
+        _repo_root(), "implementations/python/.provekit/lift/python/manifest.toml"
+    )
+    values: dict[str, object] = {}
+    with open(manifest, "r", encoding="utf-8") as f:
+        for raw in f:
+            line = raw.strip()
+            if not line or line.startswith("#") or "=" not in line:
+                continue
+            key, value = line.split("=", 1)
+            key = key.strip()
+            value = value.strip()
+            if value.startswith("["):
+                values[key] = ast.literal_eval(value)
+            elif value.startswith('"'):
+                values[key] = ast.literal_eval(value)
+    return values
+
+
 # ---------------------------------------------------------------------------
 # Tests
 # ---------------------------------------------------------------------------
@@ -130,6 +165,72 @@ class TestDaemonProtocol:
         assert result["kit_id"] == "python"
         assert "python-source" in result["capabilities"]["source_surfaces"]
         assert "provekit.lsp.implication_failed" in result["capabilities"]["diagnostic_codes"]
+
+    def test_checked_in_project_registers_python_lift_surface(self):
+        """The checked-in Python kit config registers the lift-py-tests surface."""
+        config = os.path.join(_repo_root(), "implementations/python/.provekit/config.toml")
+        with open(config, "r", encoding="utf-8") as f:
+            text = f.read()
+        assert 'name = "python-lift"' in text
+        assert 'kind = "lift"' in text
+        assert 'surface = "python"' in text
+
+    def test_checked_in_python_lift_manifest_invokes_module_form(self):
+        """The checked-in lift manifest works from a clean source working_dir."""
+        manifest = _python_lift_manifest()
+        assert manifest["command"] == [
+            "python3",
+            "-m",
+            "provekit_lift_py_tests.lsp",
+            "--rpc",
+        ]
+        assert manifest["working_dir"] == "provekit-lift-py-tests/src"
+
+        completed = subprocess.run(
+            manifest["command"],
+            cwd=os.path.join(_repo_root(), "implementations/python", manifest["working_dir"]),
+            input=_build_kit_declaration_session(),
+            capture_output=True,
+            text=True,
+            timeout=10,
+            check=False,
+        )
+
+        assert completed.returncode == 0, completed.stderr
+        responses = [
+            json.loads(line) for line in completed.stdout.splitlines() if line.strip()
+        ]
+        declaration = next(response for response in responses if response.get("id") == 2)
+        assert declaration["result"]["kit"]["id"] == "python"
+
+    def test_kit_declaration_returns_python_lift_surface(self):
+        """Binary serves an honest empty-vocabulary kit declaration."""
+        responses = _run_lsp(_build_kit_declaration_session())
+        declaration_resp = next(r for r in responses if r.get("id") == 2)
+        assert "error" not in declaration_resp, declaration_resp
+        result = declaration_resp["result"]
+        assert result["kit"] == {
+            "id": "python",
+            "language": "python",
+            "version": "0.1.0",
+        }
+        method_names = {method["name"] for method in result["rpc"]["methods"]}
+        assert method_names == {
+            "initialize",
+            "provekit.plugin.kit_declaration",
+            "analyzeDocument",
+            "parse",
+            "lift",
+            "provekit.plugin.lift_implications",
+            "shutdown",
+        }
+        assert result["proofResolution"] == {"strategy": "pip"}
+        assert result["effectKinds"] == []
+        assert result["effectLeaves"] == []
+        assert result["guardPredicates"] == []
+        assert result["controlCarriers"] == []
+        assert result["residueCategories"] == []
+        json.dumps(declaration_resp)
 
     def test_parse_declarations_is_array(self):
         """parse response: result.declarations is a JSON array, not a string."""
@@ -236,9 +337,7 @@ def compute(x: int) -> int:
 
     def test_analyze_document_floor_fixture_emits_shared_callsite_diagnostic(self):
         """analyzeDocument returns shared envelope plus call-site diagnostic."""
-        repo_root = os.path.normpath(
-            os.path.join(os.path.dirname(__file__), "../../../..")
-        )
+        repo_root = _repo_root()
         fixture = os.path.join(repo_root, "tests/lsp/floor-fixture/python.py")
         with open(fixture, "r", encoding="utf-8") as f:
             source = f.read()
