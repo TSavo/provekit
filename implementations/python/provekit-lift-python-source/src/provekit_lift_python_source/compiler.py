@@ -91,6 +91,14 @@ def _stmt(term: Json) -> ast.stmt:
             op=_augop(_const_string(args[1])),
             value=_expr(args[2]),
         )
+    if name == "python:ann_assign":
+        target = _target(args[0])
+        return ast.AnnAssign(
+            target=target,
+            annotation=_expr(args[1]),
+            value=None if _is_none_const(args[2]) else _expr(args[2]),
+            simple=1 if isinstance(target, ast.Name) else 0,
+        )
     if name == "python:return":
         value = None if _is_none_const(args[0]) else _expr(args[0])
         return ast.Return(value=value)

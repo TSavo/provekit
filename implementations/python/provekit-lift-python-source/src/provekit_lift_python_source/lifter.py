@@ -287,6 +287,16 @@ class _Emitter:
             target = self.augassign_target(node.target)
             self._record_write_if_nonlocal(node.target)
             return ctor("python:aug_assign", target, str_const(op), self.expr(node.value))
+        if isinstance(node, ast.AnnAssign):
+            annotation = self.annotation_expr(node.annotation)
+            if node.value is None:
+                target = self.annassign_target_without_value(node.target)
+                value = none_const()
+            else:
+                target = self.target(node.target)
+                self._record_write_if_nonlocal(node.target)
+                value = self.expr(node.value)
+            return ctor("python:ann_assign", target, annotation, value)
         if isinstance(node, ast.If):
             condition = self.expr(node.test)
             then_branch = self.statements(node.body)
@@ -440,6 +450,44 @@ class _Emitter:
             )
             return term
         raise _UnsupportedSyntax(node, f"unsupported augmented assignment target: {type(node).__name__}")
+
+    def annassign_target_without_value(self, node: ast.expr) -> Json:
+        if isinstance(node, ast.Name):
+            return var(node.id)
+        if isinstance(node, ast.Attribute):
+            return ctor(
+                "python:attribute",
+                self.expr(node.value),
+                str_const(node.attr),
+            )
+        if isinstance(node, ast.Subscript):
+            return ctor(
+                "python:subscript",
+                self.expr(node.value),
+                self.subscript_index(node),
+            )
+        raise _UnsupportedSyntax(node, f"unsupported annotated assignment target: {type(node).__name__}")
+
+    def annotation_expr(self, node: ast.expr) -> Json:
+        if isinstance(node, ast.Constant):
+            return self.constant(node)
+        if isinstance(node, ast.Name):
+            return var(node.id)
+        if isinstance(node, ast.Attribute):
+            return ctor(
+                "python:attribute",
+                self.annotation_expr(node.value),
+                str_const(node.attr),
+            )
+        if isinstance(node, ast.Subscript):
+            if isinstance(node.slice, ast.Slice):
+                raise _UnsupportedSyntax(node.slice, "slice annotations are refused")
+            return ctor(
+                "python:subscript",
+                self.annotation_expr(node.value),
+                self.annotation_expr(node.slice),
+            )
+        raise _UnsupportedSyntax(node, f"unsupported annotation expression: {type(node).__name__}")
 
     def expr(self, node: ast.expr) -> Json:
         if isinstance(node, ast.Constant):
