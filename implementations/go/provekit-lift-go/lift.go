@@ -20,6 +20,12 @@ import (
 	"github.com/tsavo/provekit/go/provekit-ir-symbolic/ir"
 )
 
+const (
+	panicFreedomConceptName     = "concept:panic-freedom"
+	runtimeFailureSiteConceptID = "concept:panic-freedom.leaf.runtime-failure-site"
+	explicitPanicSubkind        = "explicit-panic"
+)
+
 type lifter struct {
 	fset       *token.FileSet
 	file       *ast.File
@@ -30,6 +36,7 @@ type lifter struct {
 	locals     map[types.Object]bool
 	knownFuncs map[string]bool
 	effects    *effectSet
+	panicLoci  []any
 	// normalizeCoreArith selects the VERIFY-FACING op dialect: when true, the
 	// arithmetic / comparison operators that map onto SMT-LIB core theories
 	// (Int / Bool) are emitted with their core symbol (`*`, `+`, `<`, ...)
@@ -347,6 +354,7 @@ func liftFunc(fset *token.FileSet, file *ast.File, pkg *types.Package, info *typ
 		Formals:            formals,
 		Kind:               "function-contract",
 		Locus:              Locus{File: &fileName, Line: pos.Line, Col: pos.Column},
+		PanicLoci:          l.panicLoci,
 		Post:               post,
 		Pre:                pre,
 		ReturnSort:         returnSort,
@@ -831,6 +839,7 @@ func (l *lifter) liftIdent(id *ast.Ident) (exprResult, error) {
 }
 
 func (l *lifter) liftCall(call *ast.CallExpr) (exprResult, error) {
+	isBuiltinPanic := l.isBuiltinPanicCall(call)
 	calleeName := l.calleeName(call.Fun)
 	var args []ir.IrTerm
 	var algArgs []any
@@ -842,8 +851,18 @@ func (l *lifter) liftCall(call *ast.CallExpr) (exprResult, error) {
 		args = append(args, lifted.term)
 		algArgs = append(algArgs, lifted.alg)
 	}
-	if calleeName == "panic" {
+	if isBuiltinPanic {
+		if len(args) != 1 {
+			return exprResult{}, errAt(call.Pos(), "panic call with %d args is not modeled", len(args))
+		}
 		l.effects.add(Effect{Kind: "panics"})
+		l.panicLoci = append(l.panicLoci, l.runtimeFailureLocus(call.Pos(), args[0]))
+		sort := irSort(l.info.Types[call].Type)
+		return exprResult{
+			term: ir.MakeCtor("go:panic", args, sort),
+			alg:  op("go:panic", algArgs...),
+			sort: sort,
+		}, nil
 	} else if isIOCall(calleeName) {
 		l.effects.add(Effect{Kind: "io"})
 	} else if calleeName == "unsafe" || strings.HasPrefix(calleeName, "unsafe.") {
@@ -856,6 +875,35 @@ func (l *lifter) liftCall(call *ast.CallExpr) (exprResult, error) {
 	alg := op("go:call", append([]any{map[string]any{"kind": "identifier", "name": calleeName}}, algArgs...)...)
 	sort := irSort(l.info.Types[call].Type)
 	return exprResult{term: ir.MakeCtor("go:call", termArgs, sort), alg: alg, sort: sort}, nil
+}
+
+func (l *lifter) isBuiltinPanicCall(call *ast.CallExpr) bool {
+	id, ok := call.Fun.(*ast.Ident)
+	if !ok || id.Name != "panic" {
+		return false
+	}
+	if obj := l.info.Uses[id]; obj != nil {
+		builtin, ok := obj.(*types.Builtin)
+		return ok && builtin.Name() == "panic"
+	}
+	return true
+}
+
+func (l *lifter) runtimeFailureLocus(pos token.Pos, argTerm ir.IrTerm) any {
+	location := l.fset.Position(pos)
+	col := location.Column - 1
+	if col < 0 {
+		col = 0
+	}
+	return map[string]any{
+		"effectKind": panicFreedomConceptName,
+		"callee":     runtimeFailureSiteConceptID,
+		"subkind":    explicitPanicSubkind,
+		"argTerm":    argTerm,
+		"file":       l.path,
+		"line":       location.Line,
+		"col":        col,
+	}
 }
 
 // liftCompositeLit models unkeyed slice/array literals (`[]T{e0, e1, …}`):

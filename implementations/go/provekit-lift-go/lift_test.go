@@ -4,8 +4,14 @@ import (
 	"bytes"
 	"encoding/json"
 	"os"
+	"reflect"
 	"strings"
 	"testing"
+)
+
+const (
+	panicFreedomEffectKind    = "concept:panic-freedom"
+	runtimeFailureSiteConcept = "concept:panic-freedom.leaf.runtime-failure-site"
 )
 
 const addSource = `package sample
@@ -214,6 +220,206 @@ func F(p *int) int {
 	want := `[{"kind":"writes","target":"example.com/sample.G"},{"kind":"panics"}]`
 	if string(got) != want {
 		t.Fatalf("effects mismatch:\n got: %s\nwant: %s", got, want)
+	}
+}
+
+func TestBuiltinPanicEmitsRuntimeFailureLocusAndBodyCtor(t *testing.T) {
+	src := `package sample
+
+func F() {
+panic("boom")
+}
+`
+	result, err := LiftSource("example.com/sample", "panic.go", []byte(src))
+	if err != nil {
+		t.Fatalf("LiftSource: %v", err)
+	}
+	contracts := result.FunctionContracts()
+	if len(contracts) != 1 {
+		t.Fatalf("contracts = %d, refusals=%+v", len(contracts), result.Refusals)
+	}
+	gotEffects, err := json.Marshal(contracts[0].Effects)
+	if err != nil {
+		t.Fatalf("marshal effects: %v", err)
+	}
+	if string(gotEffects) != `[{"kind":"panics"}]` {
+		t.Fatalf("panic effect changed:\n got: %s", gotEffects)
+	}
+
+	body := sourceUnitBodyTerm(t, result)
+	if body["kind"] != "op" || body["name"] != "go:panic" {
+		t.Fatalf("explicit panic must lift to go:panic body term, got: %#v", body)
+	}
+	want := []any{map[string]any{
+		"effectKind": panicFreedomEffectKind,
+		"callee":     runtimeFailureSiteConcept,
+		"subkind":    "explicit-panic",
+		"argTerm": map[string]any{
+			"kind":  "const",
+			"sort":  map[string]any{"kind": "primitive", "name": "String"},
+			"value": "boom",
+		},
+		"file": "panic.go",
+		"line": json.Number("4"),
+		"col":  json.Number("0"),
+	}}
+	if got := runtimeFailureLoci(t, contracts[0]); !reflect.DeepEqual(got, want) {
+		t.Fatalf("panicLoci mismatch:\n got: %#v\nwant: %#v", got, want)
+	}
+}
+
+func TestBuiltinPanicRuntimeFailureLocusPreservesIdentifierArg(t *testing.T) {
+	src := `package sample
+
+func F(err any) {
+panic(err)
+}
+`
+	result, err := LiftSource("example.com/sample", "panic_ident.go", []byte(src))
+	if err != nil {
+		t.Fatalf("LiftSource: %v", err)
+	}
+	contracts := result.FunctionContracts()
+	if len(contracts) != 1 {
+		t.Fatalf("contracts = %d, refusals=%+v", len(contracts), result.Refusals)
+	}
+	loci := runtimeFailureLoci(t, contracts[0])
+	if len(loci) != 1 {
+		t.Fatalf("panicLoci = %#v, want one locus", loci)
+	}
+	locus := loci[0].(map[string]any)
+	if locus["subkind"] != "explicit-panic" || locus["line"] != json.Number("4") || locus["col"] != json.Number("0") {
+		t.Fatalf("bad identifier panic locus metadata: %#v", locus)
+	}
+	wantArg := map[string]any{"kind": "var", "name": "err"}
+	if !reflect.DeepEqual(locus["argTerm"], wantArg) {
+		t.Fatalf("panic argTerm mismatch:\n got: %#v\nwant: %#v", locus["argTerm"], wantArg)
+	}
+}
+
+func TestBuiltinPanicRuntimeFailureLocusPreservesCallArg(t *testing.T) {
+	src := `package sample
+
+import "fmt"
+
+func F() {
+panic(fmt.Errorf("boom"))
+}
+`
+	result, err := LiftSource("example.com/sample", "panic_call.go", []byte(src))
+	if err != nil {
+		t.Fatalf("LiftSource: %v", err)
+	}
+	contracts := result.FunctionContracts()
+	if len(contracts) != 1 {
+		t.Fatalf("contracts = %d, refusals=%+v", len(contracts), result.Refusals)
+	}
+	loci := runtimeFailureLoci(t, contracts[0])
+	if len(loci) != 1 {
+		t.Fatalf("panicLoci = %#v, want one locus", loci)
+	}
+	arg, ok := loci[0].(map[string]any)["argTerm"].(map[string]any)
+	if !ok {
+		t.Fatalf("argTerm = %#v, want object", loci[0])
+	}
+	if arg["kind"] != "ctor" || arg["name"] != "go:call" {
+		t.Fatalf("panic call arg must stay as a go:call ctor, got: %#v", arg)
+	}
+	args, ok := arg["args"].([]any)
+	if !ok || len(args) == 0 {
+		t.Fatalf("go:call args = %#v, want nonempty", arg["args"])
+	}
+	head, ok := args[0].(map[string]any)
+	if !ok || head["kind"] != "const" || head["value"] != "fmt.Errorf" {
+		t.Fatalf("go:call head = %#v, want fmt.Errorf const", args[0])
+	}
+}
+
+func TestBuiltinPanicRuntimeFailureLocusPreservesNilArg(t *testing.T) {
+	src := `package sample
+
+func F() {
+panic(nil)
+}
+`
+	result, err := LiftSource("example.com/sample", "panic_nil.go", []byte(src))
+	if err != nil {
+		t.Fatalf("LiftSource: %v", err)
+	}
+	contracts := result.FunctionContracts()
+	if len(contracts) != 1 {
+		t.Fatalf("contracts = %d, refusals=%+v", len(contracts), result.Refusals)
+	}
+	loci := runtimeFailureLoci(t, contracts[0])
+	if len(loci) != 1 {
+		t.Fatalf("panicLoci = %#v, want one locus", loci)
+	}
+	locus := loci[0].(map[string]any)
+	wantArg := map[string]any{"kind": "var", "name": "nil"}
+	if !reflect.DeepEqual(locus["argTerm"], wantArg) {
+		t.Fatalf("nil panic argTerm mismatch:\n got: %#v\nwant: %#v", locus["argTerm"], wantArg)
+	}
+}
+
+func TestShadowedPanicDoesNotEmitRuntimeFailureLocus(t *testing.T) {
+	src := `package sample
+
+func panic(x any) {}
+
+func F() {
+panic("boom")
+}
+`
+	result, err := LiftSource("example.com/sample", "shadow_panic.go", []byte(src))
+	if err != nil {
+		t.Fatalf("LiftSource: %v", err)
+	}
+	if len(result.Refusals) != 0 {
+		t.Fatalf("unexpected refusals: %+v", result.Refusals)
+	}
+	for _, contract := range result.FunctionContracts() {
+		assertNoRuntimeFailureLoci(t, contract)
+	}
+}
+
+func TestNonPanicCallsDoNotEmitRuntimeFailureLoci(t *testing.T) {
+	src := `package sample
+
+func F(xs []int) int {
+return len(xs)
+}
+`
+	result, err := LiftSource("example.com/sample", "len.go", []byte(src))
+	if err != nil {
+		t.Fatalf("LiftSource: %v", err)
+	}
+	contracts := result.FunctionContracts()
+	if len(contracts) != 1 {
+		t.Fatalf("contracts = %d, refusals=%+v", len(contracts), result.Refusals)
+	}
+	assertNoRuntimeFailureLoci(t, contracts[0])
+}
+
+func TestMethodNamedPanicDoesNotEmitRuntimeFailureLocus(t *testing.T) {
+	src := `package sample
+
+type T struct{}
+
+func (t T) Panic() {}
+
+func F(t T) {
+t.Panic()
+}
+`
+	result, err := LiftSource("example.com/sample", "method_panic.go", []byte(src))
+	if err != nil {
+		t.Fatalf("LiftSource: %v", err)
+	}
+	if len(result.Refusals) != 0 {
+		t.Fatalf("unexpected refusals: %+v", result.Refusals)
+	}
+	for _, contract := range result.FunctionContracts() {
+		assertNoRuntimeFailureLoci(t, contract)
 	}
 }
 
@@ -443,4 +649,51 @@ func canonicalTermBytes(t *testing.T, term any) []byte {
 		t.Fatalf("canonical term: %v", err)
 	}
 	return bytes
+}
+
+func runtimeFailureLoci(t *testing.T, contract FunctionContract) []any {
+	t.Helper()
+	generic := functionContractGeneric(t, contract)
+	loci, ok := generic["panicLoci"].([]any)
+	if !ok {
+		t.Fatalf("panicLoci = %#v, want array", generic["panicLoci"])
+	}
+	return loci
+}
+
+func assertNoRuntimeFailureLoci(t *testing.T, contract FunctionContract) {
+	t.Helper()
+	generic := functionContractGeneric(t, contract)
+	if _, ok := generic["panicLoci"]; ok {
+		t.Fatalf("panicLoci must be omitted when empty: %#v", generic["panicLoci"])
+	}
+}
+
+func functionContractGeneric(t *testing.T, contract FunctionContract) map[string]any {
+	t.Helper()
+	generic, err := toGeneric(contract)
+	if err != nil {
+		t.Fatalf("contract to generic: %v", err)
+	}
+	m, ok := generic.(map[string]any)
+	if !ok {
+		t.Fatalf("contract generic = %#v, want object", generic)
+	}
+	return m
+}
+
+func sourceUnitBodyTerm(t *testing.T, result LiftResult) map[string]any {
+	t.Helper()
+	if len(result.SourceUnits) != 1 {
+		t.Fatalf("source units = %d, want one", len(result.SourceUnits))
+	}
+	args, ok := result.SourceUnits[0].Term["args"].([]any)
+	if !ok || len(args) != 2 {
+		t.Fatalf("source-unit args = %#v, want two args", result.SourceUnits[0].Term["args"])
+	}
+	body, ok := args[1].(map[string]any)
+	if !ok {
+		t.Fatalf("source-unit body = %#v, want object", args[1])
+	}
+	return body
 }

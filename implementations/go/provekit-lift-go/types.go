@@ -36,6 +36,7 @@ type FunctionContract struct {
 	Formals            []string `json:"formals"`
 	Kind               string   `json:"kind"`
 	Locus              Locus    `json:"locus"`
+	PanicLoci          []any    `json:"panicLoci,omitempty"`
 	Post               any      `json:"post"`
 	Pre                any      `json:"pre"`
 	ReturnSort         any      `json:"returnSort"`
