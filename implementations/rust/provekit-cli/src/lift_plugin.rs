@@ -22,6 +22,7 @@ use serde_json::{json, Value};
 #[derive(Debug, Clone)]
 pub(crate) struct LiftPluginManifest {
     pub name: String,
+    pub version: Option<String>,
     pub command: Vec<String>,
     pub working_dir: Option<PathBuf>,
     /// Optional JSON-RPC method override. Defaults to `lift`.
@@ -306,6 +307,7 @@ fn parse_manifest(path: &Path) -> Result<LiftPluginManifest, String> {
         std::fs::read_to_string(path).map_err(|e| format!("read {}: {e}", path.display()))?;
     let mut manifest = LiftPluginManifest {
         name: String::new(),
+        version: None,
         command: Vec::new(),
         working_dir: None,
         method: None,
@@ -325,6 +327,14 @@ fn parse_manifest(path: &Path) -> Result<LiftPluginManifest, String> {
         let val = line[eq + 1..].trim();
         match key {
             "name" => manifest.name = val.trim_matches('"').to_string(),
+            "version" => {
+                let version = val.trim_matches('"').to_string();
+                manifest.version = if version.is_empty() {
+                    None
+                } else {
+                    Some(version)
+                };
+            }
             "working_dir" => manifest.working_dir = Some(PathBuf::from(val.trim_matches('"'))),
             "method" => {
                 let method = val.trim_matches('"').to_string();
