@@ -48,12 +48,31 @@ fn repo_root() -> PathBuf {
         .to_path_buf()
 }
 
-fn python_lift_src() -> PathBuf {
+fn python_source_lift_src() -> PathBuf {
     repo_root()
         .join("implementations")
         .join("python")
         .join("provekit-lift-python-source")
         .join("src")
+}
+
+fn python_test_lift_src() -> PathBuf {
+    repo_root()
+        .join("implementations")
+        .join("python")
+        .join("provekit-lift-py-tests")
+        .join("src")
+}
+
+fn python_lift_pythonpath() -> String {
+    std::env::join_paths([python_source_lift_src(), python_test_lift_src()])
+        .expect("join Python lift source roots")
+        .into_string()
+        .expect("Python lift source roots must be UTF-8")
+}
+
+fn shell_single_quote(value: &str) -> String {
+    format!("'{}'", value.replace('\'', "'\\''"))
 }
 
 fn z3_available() -> bool {
@@ -88,16 +107,18 @@ fn build_python_lift_verify() -> PathBuf {
     // Unique per call: parallel tests in this binary share one process id, so a
     // pid-keyed path collides (ETXTBSY when one execs while another writes).
     static SEQ: AtomicU64 = AtomicU64::new(0);
-    let src = python_lift_src();
+    let pythonpath = python_lift_pythonpath();
+    let quoted_pythonpath = shell_single_quote(&pythonpath);
     let script = std::env::temp_dir().join(format!(
         "provekit-lift-python-verify-div-{}-{}.sh",
         std::process::id(),
         SEQ.fetch_add(1, Ordering::Relaxed)
     ));
     let body = format!(
-        "#!/bin/sh\nexec python3 -c \"import sys; sys.path.insert(0, '{}'); \
-         from provekit_lift_python_source.verify_rpc import run_rpc; run_rpc()\"\n",
-        src.display()
+        "#!/bin/sh\nPYTHON=${{PYTHON:-python3}}\n\
+         PYTHONPATH={quoted_pythonpath}${{PYTHONPATH:+:$PYTHONPATH}}\n\
+         export PYTHONPATH\n\
+         exec \"$PYTHON\" -c \"from provekit_lift_python_source.verify_rpc import run_rpc; run_rpc()\"\n"
     );
     // sync_all + drop writer fd before chmod/spawn so exec never sees an open writer.
     {
