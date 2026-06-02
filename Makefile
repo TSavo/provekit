@@ -72,6 +72,24 @@ SCALA_CLI ?= scala-cli
 PARITY_PYTHON_VENV ?= /tmp/provekit-cross-language-parity-python
 PARITY_PYTHON_BIN := $(PARITY_PYTHON_VENV)/bin
 PARITY_PYTHON := $(PARITY_PYTHON_BIN)/python
+BCARGO_PYTHON_VENV ?= /tmp/provekit-bcargo-python-kit-env
+BCARGO_PYTHON_BIN := $(BCARGO_PYTHON_VENV)/bin
+BCARGO_PYTHON := $(BCARGO_PYTHON_BIN)/python
+BCARGO_PYTHON_ENV_STAMP := $(BCARGO_PYTHON_VENV)/.provekit-python-kits.stamp
+PYTHON_KIT_EDITABLES = \
+	-e examples/provekit-shim-python-sqlite3 \
+	-e examples/provekit-shim-python-aiosqlite \
+	-e examples/provekit-shim-python-requests \
+	-e implementations/python/libprovekit-py \
+	-e implementations/python/provekit-lift-py-tests \
+	-e implementations/python/provekit-lift-python-source \
+	-e implementations/python/provekit-emit-python-pytest \
+	-e implementations/python/provekit-emit-python-unittest \
+	-e implementations/python/provekit-emit-python-hypothesis \
+	-e implementations/python/provekit-realize-python-core \
+	-e implementations/python/provekit-realize-python-sqlite3 \
+	-e implementations/python/provekit-realize-python-aiosqlite \
+	-e implementations/python/provekit-realize-python-requests
 BCARGO ?= $(CURDIR)/bin/bcargo
 CARGO_LOCAL ?= cargo
 ifeq ($(CI),)
@@ -690,6 +708,16 @@ cross-language-proof-parity-python-env:
 		-e implementations/python/provekit-lift-python-source \
 		-e implementations/python/provekit-realize-python-core \
 		-e implementations/python/provekit-realize-python-requests
+
+.PHONY: bcargo-python-kit-env
+bcargo-python-kit-env: $(BCARGO_PYTHON_ENV_STAMP)
+
+$(BCARGO_PYTHON_ENV_STAMP): Makefile $(wildcard implementations/python/*/pyproject.toml examples/provekit-shim-python-*/pyproject.toml)
+	$(PYTHON) -m venv $(BCARGO_PYTHON_VENV)
+	$(BCARGO_PYTHON) -m pip install --quiet --upgrade pip
+	$(BCARGO_PYTHON) -m pip install --quiet --no-cache-dir pytest $(PYTHON_KIT_EDITABLES)
+	mkdir -p $(dir $(BCARGO_PYTHON_ENV_STAMP))
+	touch $(BCARGO_PYTHON_ENV_STAMP)
 
 .PHONY: check-cross-language-proof-parity-scope
 check-cross-language-proof-parity-scope:
