@@ -549,7 +549,9 @@ class _Emitter:
             )
             return term
         if isinstance(node, ast.Subscript):
-            term = ctor("python:subscript", self.expr(node.value), self.subscript_index(node))
+            receiver = self.expr(node.value)
+            index = self.slice_index(node.slice) if isinstance(node.slice, ast.Slice) else self.subscript_index(node)
+            term = ctor("python:subscript", receiver, index)
             self.effects.add_panics()
             self.panic_loci.append(
                 self.runtime_failure_locus(
