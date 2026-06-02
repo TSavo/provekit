@@ -27,10 +27,12 @@ use std::collections::BTreeSet;
 use std::ffi::OsStr;
 use std::fs;
 use std::path::{Path, PathBuf};
-use std::time::{SystemTime, UNIX_EPOCH};
+use std::time::{Instant, SystemTime, UNIX_EPOCH};
 
 use clap::ValueEnum;
+use libprovekit::concept::panic_freedom;
 use provekit_canonicalizer::blake3_512_of;
+use provekit_claim_envelope::{KitDeclaration, KitDeclarationMapping, KIT_DECLARATION_RPC_METHOD};
 use provekit_verifier::load_all_proofs::ProofBytes;
 use serde_json::{json, Value};
 
@@ -43,6 +45,7 @@ use crate::floor_runtime_check::{
     floor_runtime_check, FloorCheckMode, FloorCheckSeverity, FloorCheckStatus, FloorRuntimeCheck,
     FloorSignals,
 };
+use crate::kit_declaration::load_kit_declaration_with_command;
 use crate::lift_plugin::{parse_manifest_at, resolved_working_dir_for};
 use crate::project_config::{read_project_config, PluginEntry};
 
@@ -50,6 +53,7 @@ use crate::project_config::{read_project_config, PluginEntry};
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum CheckStatus {
     Pass,
+    Skip,
     Warn,
     Fail,
 }
@@ -58,6 +62,7 @@ impl CheckStatus {
     pub fn as_str(&self) -> &'static str {
         match self {
             CheckStatus::Pass => "pass",
+            CheckStatus::Skip => "skip",
             CheckStatus::Warn => "warn",
             CheckStatus::Fail => "fail",
         }
@@ -151,6 +156,19 @@ impl DoctorCheck {
         evidence: Value,
     ) -> Self {
         Self::with_status(name, CheckStatus::Pass, detail, evidence)
+    }
+    fn skip_with_evidence(
+        name: impl Into<String>,
+        detail: impl Into<String>,
+        evidence: Value,
+    ) -> Self {
+        Self::with_status_and_severity(
+            name,
+            CheckStatus::Skip,
+            CheckSeverity::Advisory,
+            detail,
+            evidence,
+        )
     }
     fn warn_with_evidence(
         name: impl Into<String>,
@@ -282,6 +300,24 @@ fn check_metadata(
         (
             "kit.consumer_surface.contract",
             "kit.consumer_surface",
+            CheckSeverity::Hard,
+        )
+    } else if name.starts_with("kit-declaration-available:") {
+        (
+            "kit.declaration.available",
+            "kit.declaration",
+            CheckSeverity::Hard,
+        )
+    } else if name.starts_with("kit-declaration-rpc-methods:") {
+        (
+            "kit.declaration.rpc_methods_declared",
+            "kit.declaration",
+            CheckSeverity::Hard,
+        )
+    } else if name.starts_with("kit-declaration-panic-freedom-vocabulary:") {
+        (
+            "kit.declaration.substrate_vocabulary.panic_freedom",
+            "kit.declaration",
             CheckSeverity::Hard,
         )
     } else if name == "dependency-resolver-available" {
@@ -714,6 +750,12 @@ where
         }
     }
 
+    checks.extend(run_kit_declaration_checks(
+        kit_dir,
+        context.mode,
+        &manifest_entries,
+    ));
+
     checks.extend(run_dependency_proof_checks_with_resolver(
         kit_dir, context, resolver,
     ));
@@ -932,6 +974,394 @@ fn requested_oracle_missing_policy(mode: DoctorMode) -> (CheckStatus, CheckSever
         DoctorMode::Structural => (CheckStatus::Warn, CheckSeverity::Advisory),
         DoctorMode::Strict | DoctorMode::ReleaseGate => (CheckStatus::Fail, CheckSeverity::Hard),
     }
+}
+
+const PANIC_FREEDOM_EFFECT_KIND: &str = "concept:panic-freedom";
+
+fn run_kit_declaration_checks(
+    kit_dir: &Path,
+    mode: DoctorMode,
+    manifest_entries: &[(String, String, PathBuf)],
+) -> Vec<Check> {
+    let mut checks = Vec::new();
+    for (surface, kind_dir, manifest_path) in manifest_entries {
+        let manifest = match parse_manifest_at(manifest_path) {
+            Ok(manifest) => manifest,
+            Err(_) => continue,
+        };
+        let resolved_wd = resolved_working_dir_for(kit_dir, &manifest);
+        let check_name = format!("kit-declaration-available:{kind_dir}:{surface}");
+        let started = Instant::now();
+        let declaration =
+            load_kit_declaration_with_command(&manifest.command, resolved_wd.as_deref());
+        let elapsed_ms = started.elapsed().as_millis() as u64;
+
+        match declaration {
+            Ok(declaration) => {
+                checks.push(Check::pass_with_evidence(
+                    &check_name,
+                    format!(
+                        "surface={surface} served kit declaration from kit {}",
+                        declaration.kit.id
+                    ),
+                    kit_declaration_evidence(
+                        kind_dir,
+                        surface,
+                        manifest_path,
+                        &manifest.command,
+                        resolved_wd.as_deref(),
+                        elapsed_ms,
+                        Some(&declaration),
+                    ),
+                ));
+                checks.push(kit_declaration_rpc_methods_check(
+                    mode,
+                    kind_dir,
+                    surface,
+                    manifest_path,
+                    &manifest.command,
+                    resolved_wd.as_deref(),
+                    elapsed_ms,
+                    &declaration,
+                ));
+                checks.push(kit_declaration_panic_freedom_vocabulary_check(
+                    mode,
+                    kind_dir,
+                    surface,
+                    manifest_path,
+                    &manifest.command,
+                    resolved_wd.as_deref(),
+                    elapsed_ms,
+                    &declaration,
+                ));
+            }
+            Err(error) => {
+                let (status, severity) = declaration_failure_policy(mode);
+                checks.push(Check::with_status_and_severity(
+                    &check_name,
+                    status,
+                    severity,
+                    format!("surface={surface} kit declaration RPC unavailable: {error}"),
+                    {
+                        let mut evidence = kit_declaration_evidence(
+                            kind_dir,
+                            surface,
+                            manifest_path,
+                            &manifest.command,
+                            resolved_wd.as_deref(),
+                            elapsed_ms,
+                            None,
+                        );
+                        if let Some(obj) = evidence.as_object_mut() {
+                            obj.insert("error".to_string(), Value::String(error.to_string()));
+                        }
+                        evidence
+                    },
+                ));
+            }
+        }
+    }
+    checks
+}
+
+fn declaration_failure_policy(mode: DoctorMode) -> (CheckStatus, CheckSeverity) {
+    match mode {
+        DoctorMode::Structural => (CheckStatus::Warn, CheckSeverity::Advisory),
+        DoctorMode::Strict | DoctorMode::ReleaseGate => (CheckStatus::Fail, CheckSeverity::Hard),
+    }
+}
+
+fn kit_declaration_evidence(
+    kind_dir: &str,
+    surface: &str,
+    manifest_path: &Path,
+    command: &[String],
+    working_dir: Option<&Path>,
+    elapsed_ms: u64,
+    declaration: Option<&KitDeclaration>,
+) -> Value {
+    let mut evidence = json!({
+        "kind": kind_dir,
+        "surface": surface,
+        "path": manifest_path.display().to_string(),
+        "command": command,
+        "workingDir": working_dir.map(|path| path.display().to_string()),
+        "elapsedMs": elapsed_ms,
+    });
+    if let (Some(obj), Some(declaration)) = (evidence.as_object_mut(), declaration) {
+        obj.insert(
+            "kitId".to_string(),
+            Value::String(declaration.kit.id.clone()),
+        );
+        obj.insert(
+            "language".to_string(),
+            Value::String(declaration.kit.language.clone()),
+        );
+        obj.insert(
+            "version".to_string(),
+            Value::String(declaration.kit.version.clone()),
+        );
+        obj.insert(
+            "effectKinds".to_string(),
+            Value::Array(
+                declaration
+                    .effect_kinds
+                    .iter()
+                    .cloned()
+                    .map(Value::String)
+                    .collect(),
+            ),
+        );
+        obj.insert(
+            "rpcMethods".to_string(),
+            Value::Array(
+                declaration
+                    .rpc
+                    .methods
+                    .iter()
+                    .map(|method| Value::String(method.name.clone()))
+                    .collect(),
+            ),
+        );
+        obj.insert(
+            "effectLeaves".to_string(),
+            Value::from(declaration.effect_leaves.len() as u64),
+        );
+        obj.insert(
+            "guardPredicates".to_string(),
+            Value::from(declaration.guard_predicates.len() as u64),
+        );
+        obj.insert(
+            "controlCarriers".to_string(),
+            Value::from(declaration.control_carriers.len() as u64),
+        );
+        obj.insert(
+            "residueCategories".to_string(),
+            Value::from(declaration.residue_categories.len() as u64),
+        );
+    }
+    evidence
+}
+
+fn kit_declaration_rpc_methods_check(
+    mode: DoctorMode,
+    kind_dir: &str,
+    surface: &str,
+    manifest_path: &Path,
+    command: &[String],
+    working_dir: Option<&Path>,
+    elapsed_ms: u64,
+    declaration: &KitDeclaration,
+) -> Check {
+    let check_name = format!("kit-declaration-rpc-methods:{kind_dir}:{surface}");
+    let declared = declaration
+        .rpc
+        .methods
+        .iter()
+        .map(|method| method.name.as_str())
+        .collect::<BTreeSet<_>>();
+    let required = ["initialize", "shutdown", KIT_DECLARATION_RPC_METHOD];
+    let missing = required
+        .iter()
+        .copied()
+        .filter(|method| !declared.contains(method))
+        .collect::<Vec<_>>();
+    let mut evidence = kit_declaration_evidence(
+        kind_dir,
+        surface,
+        manifest_path,
+        command,
+        working_dir,
+        elapsed_ms,
+        Some(declaration),
+    );
+    if let Some(obj) = evidence.as_object_mut() {
+        obj.insert(
+            "requiredMethods".to_string(),
+            Value::Array(
+                required
+                    .iter()
+                    .map(|method| Value::String((*method).to_string()))
+                    .collect(),
+            ),
+        );
+        obj.insert(
+            "missingMethods".to_string(),
+            Value::Array(
+                missing
+                    .iter()
+                    .map(|method| Value::String((*method).to_string()))
+                    .collect(),
+            ),
+        );
+    }
+
+    if missing.is_empty() {
+        Check::pass_with_evidence(
+            &check_name,
+            format!("surface={surface} declares required kit RPC methods"),
+            evidence,
+        )
+    } else {
+        let (status, severity) = declaration_failure_policy(mode);
+        Check::with_status_and_severity(
+            &check_name,
+            status,
+            severity,
+            format!(
+                "surface={surface} kit declaration is missing required RPC method(s): {}",
+                missing.join(", ")
+            ),
+            evidence,
+        )
+    }
+}
+
+fn kit_declaration_panic_freedom_vocabulary_check(
+    mode: DoctorMode,
+    kind_dir: &str,
+    surface: &str,
+    manifest_path: &Path,
+    command: &[String],
+    working_dir: Option<&Path>,
+    elapsed_ms: u64,
+    declaration: &KitDeclaration,
+) -> Check {
+    let check_name = format!("kit-declaration-panic-freedom-vocabulary:{kind_dir}:{surface}");
+    let mut evidence = kit_declaration_evidence(
+        kind_dir,
+        surface,
+        manifest_path,
+        command,
+        working_dir,
+        elapsed_ms,
+        Some(declaration),
+    );
+    if !declaration
+        .effect_kinds
+        .iter()
+        .any(|kind| kind == PANIC_FREEDOM_EFFECT_KIND)
+    {
+        if let Some(obj) = evidence.as_object_mut() {
+            obj.insert("skipped".to_string(), Value::Bool(true));
+            obj.insert(
+                "reason".to_string(),
+                Value::String(format!("{PANIC_FREEDOM_EFFECT_KIND} not declared")),
+            );
+        }
+        return Check::skip_with_evidence(
+            &check_name,
+            format!("surface={surface} does not declare {PANIC_FREEDOM_EFFECT_KIND}"),
+            evidence,
+        );
+    }
+
+    let mut mismatches = Vec::new();
+    mismatches.extend(mapping_category_mismatches(
+        "effectLeaves",
+        &declaration.effect_leaves,
+        surface,
+        &[
+            (
+                panic_freedom::METHOD_UNWRAP,
+                panic_freedom::METHOD_UNWRAP_CONCEPT,
+            ),
+            (
+                panic_freedom::METHOD_EXPECT,
+                panic_freedom::METHOD_EXPECT_CONCEPT,
+            ),
+            (
+                panic_freedom::METHOD_UNWRAP_ERR,
+                panic_freedom::METHOD_UNWRAP_ERR_CONCEPT,
+            ),
+        ],
+    ));
+    mismatches.extend(mapping_category_mismatches(
+        "guardPredicates",
+        &declaration.guard_predicates,
+        surface,
+        &[
+            (panic_freedom::IS_OK, panic_freedom::IS_OK_CONCEPT),
+            (panic_freedom::IS_ERR, panic_freedom::IS_ERR_CONCEPT),
+            (panic_freedom::IS_SOME, panic_freedom::IS_SOME_CONCEPT),
+            (panic_freedom::IS_NONE, panic_freedom::IS_NONE_CONCEPT),
+        ],
+    ));
+    mismatches.extend(mapping_category_mismatches(
+        "controlCarriers",
+        &declaration.control_carriers,
+        surface,
+        &[
+            (panic_freedom::CF_GUARDED, panic_freedom::CF_GUARDED_CONCEPT),
+            (panic_freedom::CF_ITE, panic_freedom::CF_ITE_CONCEPT),
+        ],
+    ));
+
+    if let Some(obj) = evidence.as_object_mut() {
+        obj.insert(
+            "mismatches".to_string(),
+            Value::Array(mismatches.iter().cloned().map(Value::String).collect()),
+        );
+    }
+
+    if mismatches.is_empty() {
+        Check::pass_with_evidence(
+            &check_name,
+            format!("surface={surface} panic-freedom vocabulary matches substrate constants"),
+            evidence,
+        )
+    } else {
+        let (status, severity) = declaration_failure_policy(mode);
+        Check::with_status_and_severity(
+            &check_name,
+            status,
+            severity,
+            format!(
+                "surface={surface} panic-freedom vocabulary mismatch: {}",
+                mismatches.join("; ")
+            ),
+            evidence,
+        )
+    }
+}
+
+fn mapping_category_mismatches(
+    category: &str,
+    actual: &[KitDeclarationMapping],
+    surface: &str,
+    expected: &[(&str, &str)],
+) -> Vec<String> {
+    let actual = actual
+        .iter()
+        .map(|mapping| {
+            (
+                mapping
+                    .surface
+                    .clone()
+                    .unwrap_or_else(|| "<none>".to_string()),
+                mapping.local.clone(),
+                mapping.concept.clone(),
+            )
+        })
+        .collect::<BTreeSet<_>>();
+    let expected = expected
+        .iter()
+        .map(|(local, concept)| {
+            (
+                surface.to_string(),
+                (*local).to_string(),
+                (*concept).to_string(),
+            )
+        })
+        .collect::<BTreeSet<_>>();
+
+    let mut mismatches = Vec::new();
+    for (surface, local, concept) in actual.difference(&expected) {
+        mismatches.push(format!(
+            "extra {category} surface={surface} local={local} concept={concept}"
+        ));
+    }
+    mismatches
 }
 
 #[derive(Debug, Clone)]
@@ -1765,6 +2195,94 @@ mod tests {
         fs::set_permissions(path, perms).unwrap();
     }
 
+    fn valid_panic_freedom_declaration(surface: &str) -> Value {
+        use libprovekit::concept::panic_freedom;
+        use provekit_claim_envelope::KIT_DECLARATION_RPC_METHOD;
+
+        json!({
+            "kit": {"id": "stub-kit", "language": "rust", "version": "0.1.0"},
+            "rpc": {
+                "methods": [
+                    {"name": "initialize", "required": true},
+                    {"name": KIT_DECLARATION_RPC_METHOD, "required": true},
+                    {"name": "shutdown", "required": false},
+                    {"name": "provekit.plugin.lift", "required": true}
+                ]
+            },
+            "proofResolution": {"strategy": "rpc-proof-bytes"},
+            "effectKinds": ["concept:panic-freedom"],
+            "effectLeaves": [
+                {"surface": surface, "local": panic_freedom::METHOD_UNWRAP, "concept": panic_freedom::METHOD_UNWRAP_CONCEPT},
+                {"surface": surface, "local": panic_freedom::METHOD_EXPECT, "concept": panic_freedom::METHOD_EXPECT_CONCEPT},
+                {"surface": surface, "local": panic_freedom::METHOD_UNWRAP_ERR, "concept": panic_freedom::METHOD_UNWRAP_ERR_CONCEPT}
+            ],
+            "guardPredicates": [
+                {"surface": surface, "local": panic_freedom::IS_OK, "concept": panic_freedom::IS_OK_CONCEPT},
+                {"surface": surface, "local": panic_freedom::IS_ERR, "concept": panic_freedom::IS_ERR_CONCEPT},
+                {"surface": surface, "local": panic_freedom::IS_SOME, "concept": panic_freedom::IS_SOME_CONCEPT},
+                {"surface": surface, "local": panic_freedom::IS_NONE, "concept": panic_freedom::IS_NONE_CONCEPT}
+            ],
+            "controlCarriers": [
+                {"surface": surface, "local": panic_freedom::CF_GUARDED, "concept": panic_freedom::CF_GUARDED_CONCEPT},
+                {"surface": surface, "local": panic_freedom::CF_ITE, "concept": panic_freedom::CF_ITE_CONCEPT}
+            ],
+            "residueCategories": []
+        })
+    }
+
+    fn panic_freedom_guard_subset_declaration(surface: &str) -> Value {
+        let mut declaration = valid_panic_freedom_declaration(surface);
+        declaration["effectLeaves"] = json!([]);
+        declaration["controlCarriers"] = json!([]);
+        declaration
+    }
+
+    fn make_kit_declaration_plugin(path: &Path, declaration: Value) {
+        make_kit_declaration_plugin_with_response(
+            path,
+            json!({"jsonrpc": "2.0", "id": 2, "result": declaration}).to_string(),
+        );
+    }
+
+    fn make_kit_declaration_plugin_with_response(path: &Path, declaration_response: String) {
+        if let Some(parent) = path.parent() {
+            fs::create_dir_all(parent).unwrap();
+        }
+        let initialize_response = json!({
+            "jsonrpc": "2.0",
+            "id": 1,
+            "result": {
+                "capabilities": {
+                    "consumer_surfaces": {}
+                }
+            }
+        })
+        .to_string();
+        fs::write(
+            path,
+            format!(
+                "#!/bin/sh\nwhile IFS= read -r line; do\ncase \"$line\" in\n  *initialize*) printf '%s\\n' '{}';;\n  *provekit.plugin.kit_declaration*) printf '%s\\n' '{}';;\n  *shutdown*) exit 0;;\n  *) printf '%s\\n' '{{\"jsonrpc\":\"2.0\",\"id\":99,\"error\":{{\"code\":-32601,\"message\":\"unknown method\"}}}}';;\nesac\ndone\n",
+                initialize_response, declaration_response
+            ),
+        )
+        .unwrap();
+        let mut perms = fs::metadata(path).unwrap().permissions();
+        perms.set_mode(0o755);
+        fs::set_permissions(path, perms).unwrap();
+    }
+
+    fn write_declaration_kit(kit: &Path, plugin_name: &str) {
+        write_declaration_kit_with_surface(kit, "rust-fn-contracts", plugin_name);
+    }
+
+    fn write_declaration_kit_with_surface(kit: &Path, surface: &str, plugin_name: &str) {
+        write_kit(
+            kit,
+            &format!("[[plugins]]\nname = \"test\"\nkind = \"lift\"\nsurface = \"{surface}\"\n"),
+        );
+        write_manifest(kit, "lift", surface, &format!("\"./{plugin_name}\""), ".");
+    }
+
     #[derive(Debug, Clone)]
     struct MockOracleAdapter {
         observation: OracleHostObservation,
@@ -2084,6 +2602,429 @@ mod tests {
         );
 
         assert_modes_match_for_check(kit, "kit.consumer_surface.contract");
+    }
+
+    #[test]
+    fn doctor_kit_declaration_available_passes_for_live_rpc() {
+        let td = TempDir::new().unwrap();
+        let kit = td.path();
+        let plugin = kit.join("kit-declaration-plugin");
+        make_kit_declaration_plugin(
+            &plugin,
+            valid_panic_freedom_declaration("rust-fn-contracts"),
+        );
+        write_declaration_kit(kit, "kit-declaration-plugin");
+
+        let report = run_report_with_context(kit, DoctorContext::new(DoctorMode::Strict));
+
+        let available = check_by_id(&report, "kit.declaration.available");
+        assert_eq!(available.status, CheckStatus::Pass);
+        assert_eq!(available.severity, CheckSeverity::Hard);
+        assert_eq!(
+            available.evidence.get("surface").and_then(Value::as_str),
+            Some("rust-fn-contracts")
+        );
+        assert_eq!(
+            available.evidence.get("kitId").and_then(Value::as_str),
+            Some("stub-kit")
+        );
+    }
+
+    #[test]
+    fn doctor_kit_declaration_unsupported_is_warn_in_structural_and_fail_in_strict() {
+        let td = TempDir::new().unwrap();
+        let kit = td.path();
+        let plugin = kit.join("missing-declaration-plugin");
+        make_kit_declaration_plugin_with_response(
+            &plugin,
+            json!({
+                "jsonrpc": "2.0",
+                "id": 2,
+                "error": {"code": -32601, "message": "method not found: provekit.plugin.kit_declaration"}
+            })
+            .to_string(),
+        );
+        write_declaration_kit(kit, "missing-declaration-plugin");
+
+        let structural = run_report_with_context(kit, DoctorContext::new(DoctorMode::Structural));
+        let strict = run_report_with_context(kit, DoctorContext::new(DoctorMode::Strict));
+
+        let structural_available = check_by_id(&structural, "kit.declaration.available");
+        let strict_available = check_by_id(&strict, "kit.declaration.available");
+        assert_eq!(structural_available.status, CheckStatus::Warn);
+        assert_eq!(structural_available.severity, CheckSeverity::Advisory);
+        assert_eq!(strict_available.status, CheckStatus::Fail);
+        assert_eq!(strict_available.severity, CheckSeverity::Hard);
+    }
+
+    #[test]
+    fn doctor_kit_declaration_failure_isolated_per_manifest() {
+        let td = TempDir::new().unwrap();
+        let kit = td.path();
+        let broken_plugin = kit.join("broken-declaration-plugin");
+        let good_plugin = kit.join("good-declaration-plugin");
+        make_kit_declaration_plugin_with_response(
+            &broken_plugin,
+            json!({
+                "jsonrpc": "2.0",
+                "id": 2,
+                "error": {"code": -32601, "message": "method not found: provekit.plugin.kit_declaration"}
+            })
+            .to_string(),
+        );
+        make_kit_declaration_plugin(
+            &good_plugin,
+            valid_panic_freedom_declaration("rust-fn-contracts"),
+        );
+        write_kit(
+            kit,
+            "[[plugins]]\nname = \"broken\"\nkind = \"lift\"\nsurface = \"broken-surface\"\n\
+             [[plugins]]\nname = \"good\"\nkind = \"lift\"\nsurface = \"rust-fn-contracts\"\n",
+        );
+        write_manifest(
+            kit,
+            "lift",
+            "broken-surface",
+            "\"./broken-declaration-plugin\"",
+            ".",
+        );
+        write_manifest(
+            kit,
+            "lift",
+            "rust-fn-contracts",
+            "\"./good-declaration-plugin\"",
+            ".",
+        );
+
+        let report = run_report_with_context(kit, DoctorContext::new(DoctorMode::Strict));
+
+        let broken_available =
+            check_by_id_and_surface(&report, "kit.declaration.available", "broken-surface");
+        let good_available =
+            check_by_id_and_surface(&report, "kit.declaration.available", "rust-fn-contracts");
+        let good_methods = check_by_id_and_surface(
+            &report,
+            "kit.declaration.rpc_methods_declared",
+            "rust-fn-contracts",
+        );
+        let good_vocabulary = check_by_id_and_surface(
+            &report,
+            "kit.declaration.substrate_vocabulary.panic_freedom",
+            "rust-fn-contracts",
+        );
+
+        assert_eq!(broken_available.status, CheckStatus::Fail);
+        assert_eq!(good_available.status, CheckStatus::Pass);
+        assert_eq!(good_methods.status, CheckStatus::Pass);
+        assert_eq!(good_vocabulary.status, CheckStatus::Pass);
+        assert!(
+            report.checks.iter().all(|check| {
+                check.id != "kit.declaration.rpc_methods_declared"
+                    || check.evidence.get("surface").and_then(Value::as_str)
+                        != Some("broken-surface")
+            }),
+            "broken manifest should not emit follow-on declaration checks: {report:#?}"
+        );
+    }
+
+    #[test]
+    fn doctor_kit_declaration_malformed_response_fails() {
+        let td = TempDir::new().unwrap();
+        let kit = td.path();
+        let plugin = kit.join("malformed-declaration-plugin");
+        make_kit_declaration_plugin_with_response(&plugin, "not-json".to_string());
+        write_declaration_kit(kit, "malformed-declaration-plugin");
+
+        let report = run_report_with_context(kit, DoctorContext::new(DoctorMode::Strict));
+
+        let available = check_by_id(&report, "kit.declaration.available");
+        assert_eq!(available.status, CheckStatus::Fail);
+        assert!(
+            available.detail.contains("invalid JSON"),
+            "malformed declaration detail should name JSON failure: {}",
+            available.detail
+        );
+    }
+
+    #[test]
+    fn doctor_kit_declaration_required_methods_are_declared() {
+        let td = TempDir::new().unwrap();
+        let kit = td.path();
+        let plugin = kit.join("method-gap-plugin");
+        let mut declaration = valid_panic_freedom_declaration("rust-fn-contracts");
+        declaration["rpc"]["methods"] = json!([
+            {"name": provekit_claim_envelope::KIT_DECLARATION_RPC_METHOD, "required": true}
+        ]);
+        make_kit_declaration_plugin(&plugin, declaration);
+        write_declaration_kit(kit, "method-gap-plugin");
+
+        let report = run_report_with_context(kit, DoctorContext::new(DoctorMode::Strict));
+
+        let methods = check_by_id(&report, "kit.declaration.rpc_methods_declared");
+        assert_eq!(methods.status, CheckStatus::Fail);
+        assert!(
+            methods.detail.contains("initialize"),
+            "required-method failure should name missing initialize: {}",
+            methods.detail
+        );
+    }
+
+    #[test]
+    fn doctor_kit_declaration_panic_freedom_vocabulary_passes_for_complete_mapping() {
+        let td = TempDir::new().unwrap();
+        let kit = td.path();
+        let plugin = kit.join("panic-vocab-plugin");
+        make_kit_declaration_plugin(
+            &plugin,
+            valid_panic_freedom_declaration("rust-fn-contracts"),
+        );
+        write_declaration_kit(kit, "panic-vocab-plugin");
+
+        let report = run_report_with_context(kit, DoctorContext::new(DoctorMode::Strict));
+
+        let vocabulary = check_by_id(
+            &report,
+            "kit.declaration.substrate_vocabulary.panic_freedom",
+        );
+        assert_eq!(vocabulary.status, CheckStatus::Pass);
+        assert_eq!(
+            vocabulary
+                .evidence
+                .get("effectLeaves")
+                .and_then(Value::as_u64),
+            Some(3)
+        );
+        assert_eq!(
+            vocabulary
+                .evidence
+                .get("guardPredicates")
+                .and_then(Value::as_u64),
+            Some(4)
+        );
+        assert_eq!(
+            vocabulary
+                .evidence
+                .get("controlCarriers")
+                .and_then(Value::as_u64),
+            Some(2)
+        );
+    }
+
+    #[test]
+    fn doctor_kit_declaration_panic_freedom_vocabulary_passes_for_guard_subset() {
+        let td = TempDir::new().unwrap();
+        let kit = td.path();
+        let plugin = kit.join("panic-vocab-subset-plugin");
+        make_kit_declaration_plugin(
+            &plugin,
+            panic_freedom_guard_subset_declaration("rust-contracts"),
+        );
+        write_declaration_kit_with_surface(kit, "rust-contracts", "panic-vocab-subset-plugin");
+
+        let report = run_report_with_context(kit, DoctorContext::new(DoctorMode::Strict));
+
+        let vocabulary = check_by_id(
+            &report,
+            "kit.declaration.substrate_vocabulary.panic_freedom",
+        );
+        assert_eq!(vocabulary.status, CheckStatus::Pass, "{vocabulary:#?}");
+        assert_eq!(
+            vocabulary
+                .evidence
+                .get("effectLeaves")
+                .and_then(Value::as_u64),
+            Some(0)
+        );
+        assert_eq!(
+            vocabulary
+                .evidence
+                .get("guardPredicates")
+                .and_then(Value::as_u64),
+            Some(4)
+        );
+        assert_eq!(
+            vocabulary
+                .evidence
+                .get("controlCarriers")
+                .and_then(Value::as_u64),
+            Some(0)
+        );
+    }
+
+    #[test]
+    fn doctor_kit_declaration_panic_freedom_vocabulary_fails_on_wrong_concept() {
+        let td = TempDir::new().unwrap();
+        let kit = td.path();
+        let plugin = kit.join("wrong-vocab-plugin");
+        let mut declaration = valid_panic_freedom_declaration("rust-fn-contracts");
+        declaration["effectLeaves"][0]["concept"] = Value::String("concept:wrong".to_string());
+        make_kit_declaration_plugin(&plugin, declaration);
+        write_declaration_kit(kit, "wrong-vocab-plugin");
+
+        let report = run_report_with_context(kit, DoctorContext::new(DoctorMode::Strict));
+
+        let vocabulary = check_by_id(
+            &report,
+            "kit.declaration.substrate_vocabulary.panic_freedom",
+        );
+        assert_eq!(vocabulary.status, CheckStatus::Fail);
+        assert!(
+            vocabulary.detail.contains("method:unwrap"),
+            "vocabulary failure should name mismatched local mapping: {}",
+            vocabulary.detail
+        );
+    }
+
+    #[test]
+    fn doctor_kit_declaration_panic_freedom_vocabulary_fails_on_subset_wrong_concept() {
+        let td = TempDir::new().unwrap();
+        let kit = td.path();
+        let plugin = kit.join("wrong-subset-vocab-plugin");
+        let mut declaration = panic_freedom_guard_subset_declaration("rust-contracts");
+        declaration["guardPredicates"][0]["concept"] = Value::String("concept:wrong".to_string());
+        make_kit_declaration_plugin(&plugin, declaration);
+        write_declaration_kit_with_surface(kit, "rust-contracts", "wrong-subset-vocab-plugin");
+
+        let report = run_report_with_context(kit, DoctorContext::new(DoctorMode::Strict));
+
+        let vocabulary = check_by_id(
+            &report,
+            "kit.declaration.substrate_vocabulary.panic_freedom",
+        );
+        assert_eq!(vocabulary.status, CheckStatus::Fail);
+        assert!(
+            vocabulary.detail.contains("is_ok"),
+            "vocabulary failure should name mismatched guard mapping: {}",
+            vocabulary.detail
+        );
+    }
+
+    #[test]
+    fn doctor_kit_declaration_panic_freedom_vocabulary_fails_on_subset_foreign_mapping() {
+        let td = TempDir::new().unwrap();
+        let kit = td.path();
+        let plugin = kit.join("foreign-subset-vocab-plugin");
+        let mut declaration = panic_freedom_guard_subset_declaration("rust-contracts");
+        declaration["guardPredicates"]
+            .as_array_mut()
+            .expect("guardPredicates array")
+            .push(json!({
+                "surface": "rust-contracts",
+                "local": "is_pending",
+                "concept": "concept:panic-freedom.result.pending"
+            }));
+        make_kit_declaration_plugin(&plugin, declaration);
+        write_declaration_kit_with_surface(kit, "rust-contracts", "foreign-subset-vocab-plugin");
+
+        let report = run_report_with_context(kit, DoctorContext::new(DoctorMode::Strict));
+
+        let vocabulary = check_by_id(
+            &report,
+            "kit.declaration.substrate_vocabulary.panic_freedom",
+        );
+        assert_eq!(vocabulary.status, CheckStatus::Fail);
+        assert!(
+            vocabulary.detail.contains("is_pending"),
+            "vocabulary failure should name foreign mapping: {}",
+            vocabulary.detail
+        );
+    }
+
+    #[test]
+    fn doctor_kit_declaration_panic_freedom_vocabulary_fails_on_subset_wrong_surface() {
+        let td = TempDir::new().unwrap();
+        let kit = td.path();
+        let plugin = kit.join("wrong-surface-subset-vocab-plugin");
+        make_kit_declaration_plugin(
+            &plugin,
+            panic_freedom_guard_subset_declaration("rust-fn-contracts"),
+        );
+        write_declaration_kit_with_surface(
+            kit,
+            "rust-contracts",
+            "wrong-surface-subset-vocab-plugin",
+        );
+
+        let report = run_report_with_context(kit, DoctorContext::new(DoctorMode::Strict));
+
+        let vocabulary = check_by_id(
+            &report,
+            "kit.declaration.substrate_vocabulary.panic_freedom",
+        );
+        assert_eq!(vocabulary.status, CheckStatus::Fail);
+        assert!(
+            vocabulary.detail.contains("rust-fn-contracts"),
+            "vocabulary failure should name wrongly attributed surface: {}",
+            vocabulary.detail
+        );
+    }
+
+    #[test]
+    fn doctor_kit_declaration_panic_freedom_vocabulary_passes_for_empty_declared_effect_kind() {
+        let td = TempDir::new().unwrap();
+        let kit = td.path();
+        let plugin = kit.join("empty-panic-vocab-plugin");
+        let mut declaration = valid_panic_freedom_declaration("rust-contracts");
+        declaration["effectLeaves"] = json!([]);
+        declaration["guardPredicates"] = json!([]);
+        declaration["controlCarriers"] = json!([]);
+        make_kit_declaration_plugin(&plugin, declaration);
+        write_declaration_kit_with_surface(kit, "rust-contracts", "empty-panic-vocab-plugin");
+
+        let report = run_report_with_context(kit, DoctorContext::new(DoctorMode::Strict));
+
+        let vocabulary = check_by_id(
+            &report,
+            "kit.declaration.substrate_vocabulary.panic_freedom",
+        );
+        assert_eq!(vocabulary.status, CheckStatus::Pass, "{vocabulary:#?}");
+        assert_eq!(
+            vocabulary
+                .evidence
+                .get("effectLeaves")
+                .and_then(Value::as_u64),
+            Some(0)
+        );
+        assert_eq!(
+            vocabulary
+                .evidence
+                .get("guardPredicates")
+                .and_then(Value::as_u64),
+            Some(0)
+        );
+        assert_eq!(
+            vocabulary
+                .evidence
+                .get("controlCarriers")
+                .and_then(Value::as_u64),
+            Some(0)
+        );
+    }
+
+    #[test]
+    fn doctor_kit_declaration_panic_freedom_vocabulary_skips_when_effect_kind_absent() {
+        let td = TempDir::new().unwrap();
+        let kit = td.path();
+        let plugin = kit.join("non-panic-vocab-plugin");
+        let mut declaration = valid_panic_freedom_declaration("rust-fn-contracts");
+        declaration["effectKinds"] = json!(["concept:io"]);
+        declaration["effectLeaves"] = json!([]);
+        declaration["guardPredicates"] = json!([]);
+        declaration["controlCarriers"] = json!([]);
+        make_kit_declaration_plugin(&plugin, declaration);
+        write_declaration_kit(kit, "non-panic-vocab-plugin");
+
+        let report = run_report_with_context(kit, DoctorContext::new(DoctorMode::Strict));
+
+        let vocabulary = check_by_id(
+            &report,
+            "kit.declaration.substrate_vocabulary.panic_freedom",
+        );
+        assert_eq!(vocabulary.status, CheckStatus::Skip);
+        assert_eq!(
+            vocabulary.evidence.get("skipped").and_then(Value::as_bool),
+            Some(true)
+        );
     }
 
     #[test]
@@ -2992,6 +3933,21 @@ mod tests {
             .iter()
             .find(|check| check.id == id)
             .unwrap_or_else(|| panic!("{id} check in {report:#?}"))
+    }
+
+    fn check_by_id_and_surface<'a>(
+        report: &'a DoctorReport,
+        id: &str,
+        surface: &str,
+    ) -> &'a DoctorCheck {
+        report
+            .checks
+            .iter()
+            .find(|check| {
+                check.id == id
+                    && check.evidence.get("surface").and_then(Value::as_str) == Some(surface)
+            })
+            .unwrap_or_else(|| panic!("{id} check for surface={surface} in {report:#?}"))
     }
 
     fn assert_modes_match_for_check(kit: &Path, id: &str) {
