@@ -24,6 +24,11 @@ from provekit_lift_python_source.lifter import lift_source
 from provekit_lift_python_source.rpc import dispatch, initialize_result
 
 KIT_DECLARATION_RPC_METHOD = "provekit.plugin.kit_declaration"
+RUNTIME_FAILURE_EFFECT_LEAF = {
+    "surface": "python-source",
+    "local": "python:raise",
+    "concept": "concept:panic-freedom.leaf.runtime-failure-site",
+}
 
 
 def _canon(value: object) -> str:
@@ -455,6 +460,7 @@ def test_checked_in_python_source_manifest_invokes_module_form_and_declares_kit(
     declaration = next(response for response in responses if response.get("id") == 2)
     assert "error" not in declaration, declaration
     assert declaration["result"]["kit"]["id"] == "python-source"
+    assert declaration["result"]["effectLeaves"] == [RUNTIME_FAILURE_EFFECT_LEAF]
 
 
 def test_kit_declaration_returns_python_source_lift_surface() -> None:
@@ -479,7 +485,8 @@ def test_kit_declaration_returns_python_source_lift_surface() -> None:
     }
     assert result["proofResolution"] == {"strategy": "pip"}
     assert result["effectKinds"] == ["concept:panic-freedom"]
-    assert result["effectLeaves"] == []
+    assert result["effectLeaves"] == [RUNTIME_FAILURE_EFFECT_LEAF]
+    assert "subkind" not in result["effectLeaves"][0]
     assert result["guardPredicates"] == [
         {
             "surface": "python-source",
