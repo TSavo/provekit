@@ -44,7 +44,8 @@ from .leaf_assertions import harvest_source
 from .lifter import lift_source
 from .verify_dialect import VerifyDialectRefusal, collect_int_signatures, to_verify_dialect
 
-SURFACE = "python"
+KIT_DECLARATION_RPC_METHOD = "provekit.plugin.kit_declaration"
+SURFACE = "python-verify"
 VERSION = "0.1.0"
 
 _IGNORED_DIRS = {".git", ".venv", "venv", "__pycache__", ".mypy_cache", ".pytest_cache", ".provekit"}
@@ -65,6 +66,30 @@ def initialize_result() -> dict[str, Any]:
             "ir_version": "v1.1.0",
             "emits_signed_mementos": False,
         },
+    }
+
+
+def kit_declaration_result() -> dict[str, Any]:
+    return {
+        "kit": {
+            "id": SURFACE,
+            "language": "python",
+            "version": VERSION,
+        },
+        "rpc": {
+            "methods": [
+                {"name": "initialize", "required": True},
+                {"name": KIT_DECLARATION_RPC_METHOD, "required": True},
+                {"name": "lift", "required": True},
+                {"name": "shutdown", "required": False},
+            ]
+        },
+        "proofResolution": {"strategy": "pip"},
+        "effectKinds": [],
+        "effectLeaves": [],
+        "guardPredicates": [],
+        "controlCarriers": [],
+        "residueCategories": [],
     }
 
 
@@ -216,6 +241,8 @@ def dispatch(request: dict[str, Any]) -> dict[str, Any]:
 
     if method == "initialize":
         return {"jsonrpc": "2.0", "id": msg_id, "result": initialize_result()}
+    if method == KIT_DECLARATION_RPC_METHOD:
+        return {"jsonrpc": "2.0", "id": msg_id, "result": kit_declaration_result()}
     if method == "lift":
         root = str(params.get("workspace_root", "."))
         mode = _mode_from_options(params.get("options"))
@@ -265,3 +292,7 @@ def main(argv: list[str] | None = None) -> None:
         run_rpc()
     else:
         parser.print_help()
+
+
+if __name__ == "__main__":
+    main()
