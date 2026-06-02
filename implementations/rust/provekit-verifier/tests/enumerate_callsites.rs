@@ -9,9 +9,53 @@
 //   - nested ctor (ctor inside ctor args) also triggers
 //   - the callsite carries the bridge's targetContractCid + layers
 
-use serde_json::json;
+use std::io::{self, Write};
+use std::sync::{Arc, Mutex};
 
+use serde_json::json;
+use tracing_subscriber::fmt::MakeWriter;
+
+use libprovekit::concept::panic_freedom;
 use provekit_verifier::{enumerate_callsites, MementoPool};
+
+const PANIC_EFFECT_KIND: &str = "concept:panic-freedom";
+
+#[derive(Clone, Default)]
+struct SharedLog(Arc<Mutex<Vec<u8>>>);
+
+struct SharedLogWriter(Arc<Mutex<Vec<u8>>>);
+
+impl Write for SharedLogWriter {
+    fn write(&mut self, buf: &[u8]) -> io::Result<usize> {
+        self.0.lock().expect("log lock").extend_from_slice(buf);
+        Ok(buf.len())
+    }
+
+    fn flush(&mut self) -> io::Result<()> {
+        Ok(())
+    }
+}
+
+impl<'a> MakeWriter<'a> for SharedLog {
+    type Writer = SharedLogWriter;
+
+    fn make_writer(&'a self) -> Self::Writer {
+        SharedLogWriter(self.0.clone())
+    }
+}
+
+fn capture_warn_log(f: impl FnOnce()) -> String {
+    let log = SharedLog::default();
+    let subscriber = tracing_subscriber::fmt()
+        .with_max_level(tracing::Level::WARN)
+        .with_writer(log.clone())
+        .with_ansi(false)
+        .without_time()
+        .finish();
+    tracing::subscriber::with_default(subscriber, f);
+    let bytes = log.0.lock().expect("log lock").clone();
+    String::from_utf8(bytes).expect("log is utf8")
+}
 
 fn pool_with_bridge_and_contract(
     bridge_symbol: &str,
@@ -368,20 +412,28 @@ fn panic_callsite_carries_containing_contract_bundle_not_global_symbol_bundle() 
     });
 
     let mut pool = MementoPool::default();
-    pool.bridges_by_symbol.insert(
-        "method:expect".into(),
-        json!({
-            "evidence": {
-                "kind": "bridge",
-                "body": {
-                    "sourceSymbol": "method:expect",
-                    "targetContractCid": "blake3-512:result-expect",
-                    "sourceLayer": "rust",
-                    "targetLayer": "rust-tests",
-                    "callsite": {"panicSite": true}
-                }
+    let bridge = json!({
+        "evidence": {
+            "kind": "bridge",
+            "body": {
+                "sourceSymbol": "method:expect",
+                "targetContractCid": "blake3-512:result-expect",
+                "sourceLayer": "rust",
+                "targetLayer": "rust-tests",
+                "callsite": {"panicSite": true}
             }
-        }),
+        }
+    });
+    pool.bridges_by_symbol
+        .insert("method:expect".into(), bridge.clone());
+    pool.bridges_by_callsite.insert(
+        (
+            property_bundle.into(),
+            "src/core/types.rs".into(),
+            2137,
+            panic_freedom::normalize_leaf_method_name("method:expect").into(),
+        ),
+        bridge,
     );
     pool.bridge_self_bundle_by_symbol
         .insert("method:expect".into(), wrong_global_bundle.into());
@@ -424,8 +476,8 @@ fn panic_callsite_carries_containing_contract_bundle_not_global_symbol_bundle() 
     );
     assert_eq!(
         cs[0].bridge_self_bundle_cid.as_deref(),
-        Some(wrong_global_bundle),
-        "the global per-symbol bridge bundle is intentionally different in this regression"
+        Some(property_bundle),
+        "panic producer lookup must not leak the global per-symbol bridge bundle"
     );
     assert_eq!(cs[0].file.as_deref(), Some("src/core/types.rs"));
     assert_eq!(cs[0].line, Some(2137));
@@ -442,20 +494,28 @@ fn panic_loci_only_contract_becomes_panic_callsite() {
     });
 
     let mut pool = MementoPool::default();
-    pool.bridges_by_symbol.insert(
-        "method:expect".into(),
-        json!({
-            "evidence": {
-                "kind": "bridge",
-                "body": {
-                    "sourceSymbol": "method:expect",
-                    "targetContractCid": "blake3-512:result-expect",
-                    "sourceLayer": "rust",
-                    "targetLayer": "rust-tests",
-                    "callsite": {"panicSite": true}
-                }
+    let bridge = json!({
+        "evidence": {
+            "kind": "bridge",
+            "body": {
+                "sourceSymbol": "method:expect",
+                "targetContractCid": "blake3-512:result-expect",
+                "sourceLayer": "rust",
+                "targetLayer": "rust-tests",
+                "callsite": {"panicSite": true}
             }
-        }),
+        }
+    });
+    pool.bridges_by_symbol
+        .insert("method:expect".into(), bridge.clone());
+    pool.bridges_by_callsite.insert(
+        (
+            property_bundle.into(),
+            "src/kit_dispatch.rs".into(),
+            2130,
+            panic_freedom::normalize_leaf_method_name("method:expect").into(),
+        ),
+        bridge,
     );
     pool.bundle_members
         .entry(property_bundle.into())
@@ -586,4 +646,347 @@ fn panic_loci_without_bridge_still_surfaces_undecidable_callsite() {
     assert_eq!(cs[0].bridge_target_cid, "");
     assert_eq!(cs[0].file.as_deref(), Some("src/lib.rs"));
     assert_eq!(cs[0].line, Some(99));
+}
+
+#[test]
+fn effect_loci_only_contract_becomes_panic_callsite() {
+    let property_cid = "blake3-512:effect-loci-only-contract";
+    let property_bundle = "blake3-512:effect-loci-only-proof";
+    let receiver = json!({
+        "kind": "ctor",
+        "name": "to_string",
+        "args": [{"kind": "var", "name": "req"}]
+    });
+
+    let mut pool = MementoPool::default();
+    pool.bridges_by_symbol.insert(
+        "method:expect".into(),
+        json!({
+            "evidence": {
+                "kind": "bridge",
+                "body": {
+                    "sourceSymbol": "method:expect",
+                    "targetContractCid": "blake3-512:result-expect",
+                    "sourceLayer": "rust",
+                    "targetLayer": "rust-tests",
+                    "callsite": {"panicSite": true}
+                }
+            }
+        }),
+    );
+    pool.bundle_members
+        .entry(property_bundle.into())
+        .or_default()
+        .insert(property_cid.into());
+    pool.mementos.insert(
+        property_cid.into(),
+        json!({
+            "evidence": {
+                "kind": "contract",
+                "body": {
+                    "contractName": "dispatch_assemble",
+                    "effectLoci": [{
+                        "effectKind": PANIC_EFFECT_KIND,
+                        "argTerm": receiver,
+                        "file": "src/kit_dispatch.rs",
+                        "line": 2130,
+                        "callee": "method:expect"
+                    }]
+                }
+            }
+        }),
+    );
+
+    let cs = enumerate_callsites::run(&pool);
+    assert_eq!(cs.len(), 1);
+    assert!(cs[0].panic_site);
+    assert_eq!(cs[0].bridge_ir_name, "method:expect");
+    assert_eq!(cs[0].file.as_deref(), Some("src/kit_dispatch.rs"));
+    assert_eq!(cs[0].line, Some(2130));
+}
+
+#[test]
+fn effect_site_concept_routes_bridge_as_panic_site() {
+    let target_cid = "blake3-512:result-expect";
+    let pool = pool_with_bridge_and_contract(
+        "method:expect",
+        target_cid,
+        json!({
+            "contractName": "useExpect",
+            "post": {
+                "kind": "atomic",
+                "name": "=",
+                "args": [
+                    {"kind": "var", "name": "out"},
+                    {"kind": "ctor", "name": "method:expect", "args": [{"kind": "var", "name": "result"}]}
+                ]
+            }
+        }),
+    );
+    let mut pool = pool;
+    pool.bridges_by_symbol.insert(
+        "method:expect".into(),
+        json!({
+            "evidence": {
+                "kind": "bridge",
+                "body": {
+                    "sourceSymbol": "method:expect",
+                    "targetContractCid": target_cid,
+                    "sourceLayer": "rust",
+                    "targetLayer": "rust-tests",
+                    "callsite": {
+                        "effectSite": PANIC_EFFECT_KIND,
+                        "file": "src/lib.rs",
+                        "start_line": 25
+                    }
+                }
+            }
+        }),
+    );
+
+    let cs = enumerate_callsites::run(&pool);
+    assert_eq!(cs.len(), 1);
+    assert!(cs[0].panic_site);
+    assert_eq!(cs[0].bridge_ir_name, "method:expect");
+}
+
+#[test]
+fn non_panic_effect_loci_are_ignored() {
+    let property_cid = "blake3-512:io-effect-contract";
+    let mut pool = MementoPool::default();
+    pool.mementos.insert(
+        property_cid.into(),
+        json!({
+            "evidence": {
+                "kind": "contract",
+                "body": {
+                    "contractName": "io_only",
+                    "effectLoci": [{
+                        "effectKind": "concept:io",
+                        "argTerm": {"kind": "var", "name": "x"},
+                        "file": "src/lib.rs",
+                        "line": 99,
+                        "callee": "method:expect"
+                    }]
+                }
+            }
+        }),
+    );
+
+    let cs = enumerate_callsites::run(&pool);
+    assert!(cs.is_empty(), "non-panic effect loci must not surface panic sites");
+}
+
+#[test]
+fn matching_panic_loci_and_effect_loci_do_not_duplicate_callsite() {
+    let property_cid = "blake3-512:matching-effect-loci-contract";
+    let property_bundle = "blake3-512:matching-effect-loci-proof";
+    let receiver = json!({"kind": "var", "name": "result"});
+    let locus = json!({
+        "argTerm": receiver,
+        "file": "src/lib.rs",
+        "line": 25,
+        "callee": "method:unwrap"
+    });
+    let mut effect_locus = locus.clone();
+    effect_locus
+        .as_object_mut()
+        .expect("effect locus object")
+        .insert("effectKind".to_string(), json!(PANIC_EFFECT_KIND));
+
+    let mut pool = MementoPool::default();
+    pool.bridges_by_symbol.insert(
+        "method:unwrap".into(),
+        json!({
+            "evidence": {
+                "kind": "bridge",
+                "body": {
+                    "sourceSymbol": "method:unwrap",
+                    "targetContractCid": "blake3-512:option-unwrap",
+                    "sourceLayer": "rust",
+                    "targetLayer": "rust-tests",
+                    "callsite": {
+                        "panicSite": true,
+                        "effectSite": PANIC_EFFECT_KIND
+                    }
+                }
+            }
+        }),
+    );
+    pool.bundle_members
+        .entry(property_bundle.into())
+        .or_default()
+        .insert(property_cid.into());
+    pool.mementos.insert(
+        property_cid.into(),
+        json!({
+            "evidence": {
+                "kind": "contract",
+                "body": {
+                    "contractName": "both_agree",
+                    "panicLoci": [locus],
+                    "effectLoci": [effect_locus]
+                }
+            }
+        }),
+    );
+
+    let cs = enumerate_callsites::run(&pool);
+    assert_eq!(cs.len(), 1, "matching old/new effect fields must not duplicate");
+    assert!(cs[0].panic_site);
+    assert_eq!(cs[0].line, Some(25));
+}
+
+#[test]
+fn disagreeing_effect_aliases_warn_and_preserve_old_panic_loci() {
+    let property_cid = "blake3-512:disagreeing-effect-loci-contract";
+    let property_bundle = "blake3-512:disagreeing-effect-loci-proof";
+    let receiver = json!({"kind": "var", "name": "result"});
+
+    let mut pool = MementoPool::default();
+    let bridge = json!({
+        "evidence": {
+            "kind": "bridge",
+            "body": {
+                "sourceSymbol": "method:unwrap",
+                "targetContractCid": "blake3-512:option-unwrap",
+                "sourceLayer": "rust",
+                "targetLayer": "rust-tests",
+                "callsite": {
+                    "panicSite": true,
+                    "effectSite": "concept:io"
+                }
+            }
+        }
+    });
+    pool.bridges_by_symbol
+        .insert("method:unwrap".into(), bridge.clone());
+    pool.bridges_by_callsite.insert(
+        (
+            property_bundle.into(),
+            "src/lib.rs".into(),
+            25,
+            panic_freedom::normalize_leaf_method_name("method:unwrap").into(),
+        ),
+        bridge,
+    );
+    pool.bundle_members
+        .entry(property_bundle.into())
+        .or_default()
+        .insert(property_cid.into());
+    pool.mementos.insert(
+        property_cid.into(),
+        json!({
+            "evidence": {
+                "kind": "contract",
+                "body": {
+                    "contractName": "both_disagree",
+                    "panicLoci": [{
+                        "argTerm": receiver,
+                        "file": "src/lib.rs",
+                        "line": 25,
+                        "callee": "method:unwrap"
+                    }],
+                    "effectLoci": [{
+                        "effectKind": PANIC_EFFECT_KIND,
+                        "argTerm": {"kind": "var", "name": "other"},
+                        "file": "src/lib.rs",
+                        "line": 99,
+                        "callee": "method:unwrap"
+                    }]
+                }
+            }
+        }),
+    );
+
+    let mut cs = Vec::new();
+    let logs = capture_warn_log(|| {
+        cs = enumerate_callsites::run(&pool);
+    });
+    assert_eq!(cs.len(), 1);
+    assert_eq!(cs[0].line, Some(25), "old panicLoci must win on disagreement");
+    assert!(
+        logs.contains("effect-site-disagreement")
+            && logs.contains("panicLoci")
+            && logs.contains("effectLoci")
+            && logs.contains("panicSite")
+            && logs.contains("effectSite"),
+        "disagreement must emit a structured, greppable warning; logs:\n{logs}"
+    );
+}
+
+#[test]
+fn formula_backed_panic_locus_warns_once_for_effect_site_disagreement() {
+    let property_cid = "blake3-512:formula-backed-effect-disagreement-contract";
+    let property_bundle = "blake3-512:formula-backed-effect-disagreement-proof";
+    let receiver = json!({"kind": "var", "name": "result"});
+    let locus = json!({
+        "argTerm": receiver,
+        "file": "src/lib.rs",
+        "line": 25,
+        "callee": "method:unwrap"
+    });
+
+    let mut pool = MementoPool::default();
+    let bridge = json!({
+        "evidence": {
+            "kind": "bridge",
+            "body": {
+                "sourceSymbol": "method:unwrap",
+                "targetContractCid": "blake3-512:option-unwrap",
+                "sourceLayer": "rust",
+                "targetLayer": "rust-tests",
+                "callsite": {
+                    "panicSite": true,
+                    "effectSite": "concept:io"
+                }
+            }
+        }
+    });
+    pool.bridges_by_symbol
+        .insert("method:unwrap".into(), bridge.clone());
+    pool.bridges_by_callsite.insert(
+        (
+            property_bundle.into(),
+            "src/lib.rs".into(),
+            25,
+            panic_freedom::normalize_leaf_method_name("method:unwrap").into(),
+        ),
+        bridge,
+    );
+    pool.bundle_members
+        .entry(property_bundle.into())
+        .or_default()
+        .insert(property_cid.into());
+    pool.mementos.insert(
+        property_cid.into(),
+        json!({
+            "evidence": {
+                "kind": "contract",
+                "body": {
+                    "contractName": "formula_backed_disagreement",
+                    "post": {
+                        "kind": "atomic",
+                        "name": "=",
+                        "args": [
+                            {"kind": "var", "name": "out"},
+                            {"kind": "ctor", "name": "method:unwrap", "args": [locus["argTerm"].clone()]}
+                        ]
+                    },
+                    "panicLoci": [locus]
+                }
+            }
+        }),
+    );
+
+    let mut cs = Vec::new();
+    let logs = capture_warn_log(|| {
+        cs = enumerate_callsites::run(&pool);
+    });
+    assert_eq!(cs.len(), 1, "formula callsite and panicLoci fallback must dedup");
+    assert_eq!(
+        logs.matches("panicSite/effectSite").count(),
+        1,
+        "one callsite disagreement must warn once; logs:\n{logs}"
+    );
 }
