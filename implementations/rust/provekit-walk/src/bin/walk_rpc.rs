@@ -29,7 +29,7 @@ use libprovekit::concept::panic_freedom;
 use provekit_canonicalizer::{blake3_512_of, encode_jcs, Value as CValue};
 use provekit_claim_envelope::{
     body_discharge_policy_from_object, body_discharge_policy_from_object_with_default,
-    BodyDischargePolicyWarning,
+    BodyDischargePolicyWarning, KIT_DECLARATION_RPC_METHOD,
 };
 use provekit_ir_types::{EvidenceMemento, IrFormula, IrTerm, SourceKind};
 use provekit_lift_contracts::lift_file_with_docstring_evidence;
@@ -188,6 +188,7 @@ fn handle_line(line: &str) -> Value {
         "initialize" => Ok(initialize_result()),
         "lift" => bind_lift(&params),
         "shutdown" => Ok(Value::Null),
+        KIT_DECLARATION_RPC_METHOD => Ok(kit_declaration_result()),
         // Recognizer foundation (#81, #82) per protocol §4.2.5. The lift
         // binary handles this too because it already owns the syn AST
         // machinery that recognize needs — same kit, same language.
@@ -3696,6 +3697,34 @@ fn initialize_result() -> Value {
                 }
             }
         }
+    })
+}
+
+fn kit_declaration_result() -> Value {
+    json!({
+        "kit": {
+            "id": "provekit-walk-rpc",
+            "language": "rust",
+            "version": env!("CARGO_PKG_VERSION")
+        },
+        "rpc": {
+            "methods": [
+                {"name": "initialize", "required": true},
+                {"name": "lift", "required": true},
+                {"name": "shutdown", "required": true},
+                {"name": "provekit.plugin.recognize", "required": false},
+                {"name": "provekit.plugin.lift_implications", "required": false},
+                {"name": KIT_DECLARATION_RPC_METHOD, "required": false}
+            ]
+        },
+        "proofResolution": {
+            "strategy": "cargo"
+        },
+        "effectKinds": ["concept:panic-freedom"],
+        "effectLeaves": [],
+        "guardPredicates": [],
+        "controlCarriers": [],
+        "residueCategories": []
     })
 }
 
@@ -8377,6 +8406,32 @@ pub fn wrap_positive(amount: usize) -> Option<usize> {
         );
 
         let _ = fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn kit_declaration_result_is_minimal_valid_declaration() {
+        let declaration: provekit_claim_envelope::KitDeclaration =
+            serde_json::from_value(kit_declaration_result()).expect("kit declaration shape");
+
+        declaration.validate().expect("valid kit declaration");
+        assert_eq!(declaration.kit.id, "provekit-walk-rpc");
+        assert_eq!(declaration.kit.language, "rust");
+        assert_eq!(
+            declaration.effect_kinds,
+            vec!["concept:panic-freedom".to_string()]
+        );
+        assert!(
+            declaration.effect_leaves.is_empty(),
+            "3a stub must not claim full rust effect-leaf coverage"
+        );
+        assert!(
+            declaration.guard_predicates.is_empty(),
+            "3a stub must not claim full rust guard-predicate coverage"
+        );
+        assert!(
+            declaration.control_carriers.is_empty(),
+            "3a stub must not claim full rust control-carrier coverage"
+        );
     }
 
     #[test]
