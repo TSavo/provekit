@@ -277,7 +277,7 @@ class _Emitter:
         if isinstance(node, ast.Assign):
             if len(node.targets) != 1:
                 raise _UnsupportedSyntax(node, "multiple-target assignment is refused")
-            target = self.target(node.targets[0])
+            target = self.assign_target(node.targets[0])
             self._record_write_if_nonlocal(node.targets[0])
             return ctor("python:assign", target, self.expr(node.value))
         if isinstance(node, ast.AugAssign):
@@ -407,6 +407,24 @@ class _Emitter:
             )
             return term
         raise _UnsupportedSyntax(node, f"unsupported assignment target: {type(node).__name__}")
+
+    def assign_target(self, node: ast.expr) -> Json:
+        if isinstance(node, ast.Subscript) and isinstance(node.slice, ast.Slice):
+            term = ctor(
+                "python:subscript",
+                self.expr(node.value),
+                self.slice_index(node.slice),
+            )
+            self.effects.add_panics()
+            self.panic_loci.append(
+                self.runtime_failure_locus(
+                    node,
+                    term,
+                    subkind="subscript-write",
+                )
+            )
+            return term
+        return self.target(node)
 
     def augassign_target(self, node: ast.expr) -> Json:
         if isinstance(node, ast.Name):
@@ -599,6 +617,12 @@ class _Emitter:
         if isinstance(node.slice, ast.Slice):
             raise _UnsupportedSyntax(node.slice, "slice subscripts are refused")
         return self.expr(node.slice)
+
+    def slice_index(self, node: ast.Slice) -> Json:
+        lower = none_const() if node.lower is None else self.expr(node.lower)
+        upper = none_const() if node.upper is None else self.expr(node.upper)
+        step = none_const() if node.step is None else self.expr(node.step)
+        return ctor("python:slice", lower, upper, step)
 
     def none_guarded_if(
         self,

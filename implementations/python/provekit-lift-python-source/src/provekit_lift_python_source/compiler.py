@@ -172,8 +172,19 @@ def _expr(term: Json) -> ast.expr:
     if name == "python:attribute":
         return ast.Attribute(value=_expr(args[0]), attr=_const_string(args[1]), ctx=ast.Load())
     if name == "python:subscript":
-        return ast.Subscript(value=_expr(args[0]), slice=_expr(args[1]), ctx=ast.Load())
+        return ast.Subscript(value=_expr(args[0]), slice=_slice_or_expr(args[1]), ctx=ast.Load())
     raise ValueError(f"unsupported python operation in expression position: {name}")
+
+
+def _slice_or_expr(term: Json) -> ast.expr | ast.slice:
+    if _name(term) == "python:slice":
+        args = term.get("args", [])
+        return ast.Slice(
+            lower=None if _is_none_const(args[0]) else _expr(args[0]),
+            upper=None if _is_none_const(args[1]) else _expr(args[1]),
+            step=None if _is_none_const(args[2]) else _expr(args[2]),
+        )
+    return _expr(term)
 
 
 def _target(term: Json) -> ast.expr:
