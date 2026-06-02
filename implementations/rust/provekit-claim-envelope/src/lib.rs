@@ -182,11 +182,6 @@ impl KitDeclaration {
         if let Some(method) = &self.proof_resolution.rpc_method {
             require_nonempty("proofResolution.rpcMethod", method)?;
         }
-        if self.effect_kinds.is_empty() {
-            return Err(KitDeclarationError::EmptyField {
-                field: "effectKinds",
-            });
-        }
         for effect_kind in &self.effect_kinds {
             require_nonempty("effectKinds[]", effect_kind)?;
         }
@@ -305,6 +300,19 @@ mod kit_declaration_schema_tests {
             err.to_string().contains("effectKinds"),
             "error should name missing field: {err}"
         );
+    }
+
+    #[test]
+    fn kit_declaration_allows_empty_effect_kinds_for_non_effect_kits() {
+        let mut declaration = valid_declaration();
+        declaration.effect_kinds.clear();
+        declaration.effect_leaves.clear();
+        declaration.guard_predicates.clear();
+        declaration.control_carriers.clear();
+
+        declaration
+            .validate()
+            .expect("emit-only kits may declare no effect vocabulary");
     }
 
     #[test]
