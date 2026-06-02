@@ -314,6 +314,12 @@ fn check_metadata(
             "kit.declaration",
             CheckSeverity::Hard,
         )
+    } else if name.starts_with("kit-declaration-version-consistent:") {
+        (
+            "kit.declaration.version.consistent",
+            "kit.declaration",
+            CheckSeverity::Hard,
+        )
     } else if name == "kit-declaration-cross-kit-consistency" {
         (
             "kit.declaration.cross_kit_consistency",
@@ -1046,6 +1052,16 @@ fn run_kit_declaration_checks(
                     elapsed_ms,
                     &declaration,
                 ));
+                checks.push(kit_declaration_version_consistency_check(
+                    mode,
+                    kind_dir,
+                    surface,
+                    manifest_path,
+                    &manifest,
+                    resolved_wd.as_deref(),
+                    elapsed_ms,
+                    &declaration,
+                ));
                 checks.push(kit_declaration_panic_freedom_vocabulary_check(
                     mode,
                     kind_dir,
@@ -1172,6 +1188,88 @@ fn kit_declaration_evidence(
         );
     }
     evidence
+}
+
+fn kit_declaration_version_consistency_check(
+    mode: DoctorMode,
+    kind_dir: &str,
+    surface: &str,
+    manifest_path: &Path,
+    manifest: &crate::lift_plugin::LiftPluginManifest,
+    working_dir: Option<&Path>,
+    elapsed_ms: u64,
+    declaration: &KitDeclaration,
+) -> Check {
+    let check_name = format!("kit-declaration-version-consistent:{kind_dir}:{surface}");
+    let mut evidence = kit_declaration_evidence(
+        kind_dir,
+        surface,
+        manifest_path,
+        &manifest.command,
+        working_dir,
+        elapsed_ms,
+        Some(declaration),
+    );
+    if let Some(obj) = evidence.as_object_mut() {
+        obj.insert(
+            "manifestPath".to_string(),
+            Value::String(manifest_path.display().to_string()),
+        );
+        obj.insert(
+            "manifestVersion".to_string(),
+            manifest
+                .version
+                .as_ref()
+                .map(|version| Value::String(version.clone()))
+                .unwrap_or(Value::Null),
+        );
+        obj.insert(
+            "runtimeKitId".to_string(),
+            Value::String(declaration.kit.id.clone()),
+        );
+        obj.insert(
+            "runtimeVersion".to_string(),
+            Value::String(declaration.kit.version.clone()),
+        );
+    }
+
+    let Some(manifest_version) = manifest.version.as_deref() else {
+        if let Some(obj) = evidence.as_object_mut() {
+            obj.insert("skipped".to_string(), Value::Bool(true));
+            obj.insert(
+                "reason".to_string(),
+                Value::String("manifest-version-absent".to_string()),
+            );
+        }
+        return Check::skip_with_evidence(
+            &check_name,
+            format!("surface={surface} manifest does not declare a kit version"),
+            evidence,
+        );
+    };
+
+    if manifest_version == declaration.kit.version {
+        Check::pass_with_evidence(
+            &check_name,
+            format!(
+                "surface={surface} manifest version matches runtime kit {} version",
+                declaration.kit.id
+            ),
+            evidence,
+        )
+    } else {
+        let (status, severity) = declaration_failure_policy(mode);
+        Check::with_status_and_severity(
+            &check_name,
+            status,
+            severity,
+            format!(
+                "surface={surface} manifest version {manifest_version} does not match runtime kit {} version {}",
+                declaration.kit.id, declaration.kit.version
+            ),
+            evidence,
+        )
+    }
 }
 
 fn kit_declaration_rpc_methods_check(
@@ -2417,12 +2515,26 @@ mod tests {
 
     /// Write a manifest.toml for a surface under the given kind dir.
     fn write_manifest(kit_dir: &Path, kind: &str, surface: &str, command: &str, working_dir: &str) {
+        write_manifest_with_version(kit_dir, kind, surface, command, working_dir, None);
+    }
+
+    fn write_manifest_with_version(
+        kit_dir: &Path,
+        kind: &str,
+        surface: &str,
+        command: &str,
+        working_dir: &str,
+        version: Option<&str>,
+    ) {
         let dir = kit_dir.join(".provekit").join(kind).join(surface);
         fs::create_dir_all(&dir).unwrap();
+        let version_line = version
+            .map(|version| format!("version = \"{version}\"\n"))
+            .unwrap_or_default();
         fs::write(
             dir.join("manifest.toml"),
             format!(
-                "name = \"test-{surface}\"\ncommand = [{command}]\nworking_dir = \"{working_dir}\"\n"
+                "name = \"test-{surface}\"\n{version_line}command = [{command}]\nworking_dir = \"{working_dir}\"\n"
             ),
         )
         .unwrap();
@@ -2958,6 +3070,174 @@ mod tests {
         assert_eq!(
             available.evidence.get("kitId").and_then(Value::as_str),
             Some("stub-kit")
+        );
+    }
+
+    #[test]
+    fn doctor_kit_declaration_version_consistency_passes_for_matching_manifest() {
+        let td = TempDir::new().unwrap();
+        let kit = td.path();
+        let plugin = kit.join("kit-version-plugin");
+        make_kit_declaration_plugin(
+            &plugin,
+            valid_panic_freedom_declaration("rust-fn-contracts"),
+        );
+        write_kit(
+            kit,
+            "[[plugins]]\nname = \"test\"\nkind = \"lift\"\nsurface = \"rust-fn-contracts\"\n",
+        );
+        write_manifest_with_version(
+            kit,
+            "lift",
+            "rust-fn-contracts",
+            "\"./kit-version-plugin\"",
+            ".",
+            Some("0.1.0"),
+        );
+
+        let report = run_report_with_context(kit, DoctorContext::new(DoctorMode::Strict));
+
+        let version_check = check_by_id_and_surface(
+            &report,
+            "kit.declaration.version.consistent",
+            "rust-fn-contracts",
+        );
+        assert_eq!(version_check.status, CheckStatus::Pass);
+        assert_eq!(version_check.severity, CheckSeverity::Hard);
+        assert_eq!(
+            version_check
+                .evidence
+                .get("manifestVersion")
+                .and_then(Value::as_str),
+            Some("0.1.0")
+        );
+        assert_eq!(
+            version_check
+                .evidence
+                .get("runtimeKitId")
+                .and_then(Value::as_str),
+            Some("stub-kit")
+        );
+        assert_eq!(
+            version_check
+                .evidence
+                .get("runtimeVersion")
+                .and_then(Value::as_str),
+            Some("0.1.0")
+        );
+        assert!(
+            version_check
+                .evidence
+                .get("manifestPath")
+                .and_then(Value::as_str)
+                .is_some_and(|path| path.ends_with(".provekit/lift/rust-fn-contracts/manifest.toml")),
+            "version check evidence should name the manifest path: {version_check:#?}"
+        );
+    }
+
+    #[test]
+    fn doctor_kit_declaration_version_mismatch_warns_structural_and_fails_strict() {
+        let td = TempDir::new().unwrap();
+        let kit = td.path();
+        let plugin = kit.join("kit-version-plugin");
+        let mut declaration = valid_panic_freedom_declaration("rust-fn-contracts");
+        declaration["kit"]["version"] = json!("0.2.0");
+        make_kit_declaration_plugin(&plugin, declaration);
+        write_kit(
+            kit,
+            "[[plugins]]\nname = \"test\"\nkind = \"lift\"\nsurface = \"rust-fn-contracts\"\n",
+        );
+        write_manifest_with_version(
+            kit,
+            "lift",
+            "rust-fn-contracts",
+            "\"./kit-version-plugin\"",
+            ".",
+            Some("0.1.0"),
+        );
+
+        let structural = run_report_with_context(kit, DoctorContext::new(DoctorMode::Structural));
+        let strict = run_report_with_context(kit, DoctorContext::new(DoctorMode::Strict));
+
+        let structural_check = check_by_id_and_surface(
+            &structural,
+            "kit.declaration.version.consistent",
+            "rust-fn-contracts",
+        );
+        let strict_check = check_by_id_and_surface(
+            &strict,
+            "kit.declaration.version.consistent",
+            "rust-fn-contracts",
+        );
+
+        assert_eq!(structural_check.status, CheckStatus::Warn);
+        assert_eq!(structural_check.severity, CheckSeverity::Advisory);
+        assert_eq!(strict_check.status, CheckStatus::Fail);
+        assert_eq!(strict_check.severity, CheckSeverity::Hard);
+        assert!(
+            strict_check.detail.contains("0.1.0") && strict_check.detail.contains("0.2.0"),
+            "mismatch detail should name both versions: {}",
+            strict_check.detail
+        );
+        assert_eq!(
+            strict_check
+                .evidence
+                .get("manifestVersion")
+                .and_then(Value::as_str),
+            Some("0.1.0")
+        );
+        assert_eq!(
+            strict_check
+                .evidence
+                .get("runtimeVersion")
+                .and_then(Value::as_str),
+            Some("0.2.0")
+        );
+        assert_eq!(
+            strict_check
+                .evidence
+                .get("runtimeKitId")
+                .and_then(Value::as_str),
+            Some("stub-kit")
+        );
+    }
+
+    #[test]
+    fn doctor_kit_declaration_version_check_skips_when_manifest_version_absent() {
+        let td = TempDir::new().unwrap();
+        let kit = td.path();
+        let plugin = kit.join("kit-version-plugin");
+        make_kit_declaration_plugin(
+            &plugin,
+            valid_panic_freedom_declaration("rust-fn-contracts"),
+        );
+        write_declaration_kit(kit, "kit-version-plugin");
+
+        let report = run_report_with_context(kit, DoctorContext::new(DoctorMode::Strict));
+
+        let version_check = check_by_id_and_surface(
+            &report,
+            "kit.declaration.version.consistent",
+            "rust-fn-contracts",
+        );
+        assert_eq!(version_check.status, CheckStatus::Skip);
+        assert_eq!(
+            version_check.evidence.get("reason").and_then(Value::as_str),
+            Some("manifest-version-absent")
+        );
+        assert_eq!(
+            version_check
+                .evidence
+                .get("manifestVersion")
+                .and_then(Value::as_str),
+            None
+        );
+        assert_eq!(
+            version_check
+                .evidence
+                .get("runtimeVersion")
+                .and_then(Value::as_str),
+            Some("0.1.0")
         );
     }
 
