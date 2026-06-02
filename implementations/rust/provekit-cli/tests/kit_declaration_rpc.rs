@@ -453,6 +453,59 @@ fn loader_dispatches_to_go_source_kit_declaration() {
 }
 
 #[test]
+fn loader_dispatches_to_go_verify_kit_declaration() {
+    if !command_available("go") {
+        eprintln!("skipping: go is not available");
+        return;
+    }
+
+    let repo = repo_root();
+    let go_dir = repo.join("implementations/go");
+    let command = [
+        "go".to_string(),
+        "run".to_string(),
+        "./cmd/provekit-lift-go-verify".to_string(),
+        "--rpc".to_string(),
+    ];
+
+    let declaration: KitDeclaration =
+        provekit_cli::kit_declaration::load_kit_declaration_with_command(&command, Some(&go_dir))
+            .expect("load Go verify-facing kit declaration");
+
+    assert_eq!(declaration.kit.id, "go");
+    assert_eq!(declaration.kit.language, "go");
+    assert_eq!(declaration.kit.version, "0.1.0");
+    assert_eq!(declaration.proof_resolution.strategy, "go-mod");
+    assert_eq!(declaration.effect_kinds, ["concept:panic-freedom"]);
+    assert_eq!(declaration.effect_leaves.len(), 1);
+    assert_eq!(declaration.effect_leaves[0].surface.as_deref(), Some("go"));
+    assert_eq!(declaration.effect_leaves[0].local, "go:panic");
+    assert_eq!(
+        declaration.effect_leaves[0].concept,
+        "concept:panic-freedom.leaf.runtime-failure-site"
+    );
+    assert!(declaration.guard_predicates.is_empty());
+    assert!(declaration.control_carriers.is_empty());
+    assert!(declaration.residue_categories.is_empty());
+
+    let required_by_name = declaration
+        .rpc
+        .methods
+        .iter()
+        .map(|method| (method.name.as_str(), method.required))
+        .collect::<std::collections::BTreeMap<_, _>>();
+    assert_eq!(
+        required_by_name,
+        std::collections::BTreeMap::from([
+            ("initialize", true),
+            (KIT_DECLARATION_RPC_METHOD, true),
+            ("lift", true),
+            ("shutdown", false),
+        ])
+    );
+}
+
+#[test]
 fn loader_dispatches_to_java_source_kit_declaration() {
     let Some(command) = java_source_kit_command() else {
         return;
