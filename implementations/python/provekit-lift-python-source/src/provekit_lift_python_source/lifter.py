@@ -291,7 +291,7 @@ class _Emitter:
             annotation = self.annotation_expr(node.annotation)
             if node.value is None:
                 target = self.annassign_target_without_value(node.target)
-                value = none_const()
+                value = ctor("python:no_value")
             else:
                 target = self.target(node.target)
                 self._record_write_if_nonlocal(node.target)

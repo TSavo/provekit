@@ -142,6 +142,10 @@ def _none_const() -> dict[str, object]:
     }
 
 
+def _no_value() -> dict[str, object]:
+    return {"kind": "ctor", "name": "python:no_value", "args": []}
+
+
 def _aug_assign(
     target: dict[str, object], op: str, value: dict[str, object]
 ) -> dict[str, object]:
@@ -876,7 +880,7 @@ def test_name_annassign_without_value_has_no_runtime_failure_loci_or_effects() -
     assert contract["effects"] == []
     assert contract.get("panicLoci", []) == []
     assert body["name"] == "python:seq"
-    assert body["args"][0] == _ann_assign(_var("x"), _var("int"), _none_const())
+    assert body["args"][0] == _ann_assign(_var("x"), _var("int"), _no_value())
 
 
 def test_name_annassign_with_value_has_no_runtime_failure_loci_or_effects() -> None:
@@ -903,7 +907,7 @@ def test_direct_attribute_annassign_without_value_does_not_access_final_attribut
     target = _attr(_var("obj"), "name")
     assert contract["effects"] == []
     assert contract.get("panicLoci", []) == []
-    assert body["args"][0] == _ann_assign(target, _var("int"), _none_const())
+    assert body["args"][0] == _ann_assign(target, _var("int"), _no_value())
 
 
 def test_direct_attribute_annassign_with_value_emits_store_write_locus_only() -> None:
@@ -938,7 +942,7 @@ def test_direct_subscript_annassign_without_value_does_not_access_final_subscrip
     target = _subscript(_var("xs"), _var("key"))
     assert contract["effects"] == []
     assert contract.get("panicLoci", []) == []
-    assert body["args"][0] == _ann_assign(target, _var("int"), _none_const())
+    assert body["args"][0] == _ann_assign(target, _var("int"), _no_value())
 
 
 def test_direct_subscript_annassign_with_value_emits_store_write_locus_only() -> None:
@@ -987,11 +991,27 @@ def test_nested_annassign_without_value_emits_only_intermediate_navigation_loci(
     assert [(locus["line"], locus["col"]) for locus in loci] == [(2, 4), (3, 7)]
     statements = body["args"][0]["args"]
     assert statements[0] == _ann_assign(
-        _attr(obj_inner, "name"), _var("int"), _none_const()
+        _attr(obj_inner, "name"), _var("int"), _no_value()
     )
     assert statements[1] == _ann_assign(
-        _subscript(_var("xs"), ys_i), _var("int"), _none_const()
+        _subscript(_var("xs"), ys_i), _var("int"), _no_value()
     )
+
+
+def test_annassign_missing_value_and_explicit_none_have_distinct_body_terms() -> None:
+    source = "def f():\n    missing: int\n    explicit: int = None\n    return explicit\n"
+
+    result = lift_source(source, "annassign_none_discrimination.py")
+
+    assert result.refusals == []
+    contract = _contract(result.ir, ".f")
+    body = contract["post"]["args"][1]
+    statements = body["args"][0]["args"]
+    missing = _ann_assign(_var("missing"), _var("int"), _no_value())
+    explicit_none = _ann_assign(_var("explicit"), _var("int"), _none_const())
+    assert statements[0] == missing
+    assert statements[1] == explicit_none
+    assert missing != explicit_none
 
 
 def test_nested_annassign_with_value_reuses_store_target_navigation_once() -> None:
@@ -1085,6 +1105,46 @@ def test_compile_lift_roundtrip_preserves_attribute_annassign_body_without_value
     relifted_body = _contract(relifted.ir, ".f")["post"]["args"][1]
 
     assert canonical_json_bytes(relifted_body) == canonical_json_bytes(body)
+
+
+def test_compile_lift_roundtrip_preserves_name_annassign_without_value() -> None:
+    source = "def f():\n    x: int\n    return 0\n"
+    lifted = lift_source(source, "roundtrip_ann_name_no_value.py")
+    assert lifted.refusals == []
+    contract = _contract(lifted.ir, ".f")
+    body = contract["post"]["args"][1]
+
+    compiled = compile_body_term(
+        body,
+        fn_name="f",
+        formals=[str(formal) for formal in contract["formals"]],
+    )
+    relifted = lift_source(compiled, "roundtrip_ann_name_no_value.py")
+    assert relifted.refusals == []
+    relifted_body = _contract(relifted.ir, ".f")["post"]["args"][1]
+
+    assert canonical_json_bytes(relifted_body) == canonical_json_bytes(body)
+    assert "x: int = None" not in compiled
+
+
+def test_compile_lift_roundtrip_preserves_name_annassign_explicit_none_value() -> None:
+    source = "def f():\n    x: int = None\n    return x\n"
+    lifted = lift_source(source, "roundtrip_ann_name_explicit_none.py")
+    assert lifted.refusals == []
+    contract = _contract(lifted.ir, ".f")
+    body = contract["post"]["args"][1]
+
+    compiled = compile_body_term(
+        body,
+        fn_name="f",
+        formals=[str(formal) for formal in contract["formals"]],
+    )
+    relifted = lift_source(compiled, "roundtrip_ann_name_explicit_none.py")
+    assert relifted.refusals == []
+    relifted_body = _contract(relifted.ir, ".f")["post"]["args"][1]
+
+    assert canonical_json_bytes(relifted_body) == canonical_json_bytes(body)
+    assert "x: int = None" in compiled
 
 
 def test_none_guarded_attribute_access_emits_one_runtime_failure_locus() -> None:
