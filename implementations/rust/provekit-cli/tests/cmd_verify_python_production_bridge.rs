@@ -58,14 +58,32 @@ fn repo_root() -> PathBuf {
         .to_path_buf()
 }
 
-/// The verify-facing Python lifter's source tree, prepended to `sys.path` so
-/// the binary resolves to THIS checkout's module (not a stale installed one).
-fn python_lift_src() -> PathBuf {
+/// The verify-facing Python lifter source tree.
+fn python_source_lift_src() -> PathBuf {
     repo_root()
         .join("implementations")
         .join("python")
         .join("provekit-lift-python-source")
         .join("src")
+}
+
+fn python_test_lift_src() -> PathBuf {
+    repo_root()
+        .join("implementations")
+        .join("python")
+        .join("provekit-lift-py-tests")
+        .join("src")
+}
+
+fn python_lift_pythonpath() -> String {
+    std::env::join_paths([python_source_lift_src(), python_test_lift_src()])
+        .expect("join Python lift source roots")
+        .into_string()
+        .expect("Python lift source roots must be UTF-8")
+}
+
+fn shell_single_quote(value: &str) -> String {
+    format!("'{}'", value.replace('\'', "'\\''"))
 }
 
 fn z3_available() -> bool {
@@ -95,9 +113,9 @@ fn unique_dir(suffix: &str) -> PathBuf {
 }
 
 /// Write a small wrapper shell script that runs the verify-facing Python lift
-/// surface with THIS checkout's `src` on `sys.path`, and return its path. The
-/// Go test compiles a Go binary; Python is interpreted, so the analog is a
-/// stable wrapper invoking `python3 -c "...; run_rpc()"`.
+/// surface with THIS checkout's source roots on `PYTHONPATH`, and return its
+/// path. The Go test compiles a Go binary; Python is interpreted, so the analog
+/// is a stable wrapper invoking `python3 -c "...; run_rpc()"`.
 fn build_python_lift_verify() -> PathBuf {
     use std::io::Write as _;
     use std::sync::atomic::{AtomicU64, Ordering};
@@ -106,16 +124,18 @@ fn build_python_lift_verify() -> PathBuf {
     // One test exec'ing the wrapper while another truncates it for write =>
     // ETXTBSY (os error 26). An atomic counter gives each call its own path.
     static SEQ: AtomicU64 = AtomicU64::new(0);
-    let src = python_lift_src();
+    let pythonpath = python_lift_pythonpath();
+    let quoted_pythonpath = shell_single_quote(&pythonpath);
     let script = std::env::temp_dir().join(format!(
         "provekit-lift-python-verify-{}-{}.sh",
         std::process::id(),
         SEQ.fetch_add(1, Ordering::Relaxed)
     ));
     let body = format!(
-        "#!/bin/sh\nexec python3 -c \"import sys; sys.path.insert(0, '{}'); \
-         from provekit_lift_python_source.verify_rpc import run_rpc; run_rpc()\"\n",
-        src.display()
+        "#!/bin/sh\nPYTHON=${{PYTHON:-python3}}\n\
+         PYTHONPATH={quoted_pythonpath}${{PYTHONPATH:+:$PYTHONPATH}}\n\
+         export PYTHONPATH\n\
+         exec \"$PYTHON\" -c \"from provekit_lift_python_source.verify_rpc import run_rpc; run_rpc()\"\n"
     );
     // sync_all + drop the writer fd BEFORE chmod/spawn so `exec` never sees an
     // open writer (the second half of the ETXTBSY guard; see cli_surface.rs).
