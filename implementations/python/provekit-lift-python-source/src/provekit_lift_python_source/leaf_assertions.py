@@ -43,8 +43,6 @@ _CMP: dict[type[ast.cmpop], str] = {
     ast.LtE: "≤",
     ast.Gt: ">",
     ast.GtE: "≥",
-    ast.Is: "=",
-    ast.IsNot: "≠",
 }
 
 
@@ -111,11 +109,18 @@ def _lift_assert(stmt: ast.Assert) -> Json:
         raise _Unsupported("assert is not a comparison")
     if len(test.ops) != 1 or len(test.comparators) != 1:
         raise _Unsupported("only single-comparison asserts are harvested")
+    lhs = _translate_term(test.left)
+    rhs = _translate_term(test.comparators[0])
+
+    if isinstance(test.ops[0], (ast.Is, ast.IsNot)):
+        if _is_none_ctor(lhs) == _is_none_ctor(rhs):
+            raise _Unsupported("identity comparison is only supported against None")
+        op = "=" if isinstance(test.ops[0], ast.Is) else "≠"
+        return _comparison_with_none_guard(op, lhs, rhs)
+
     op = _CMP.get(type(test.ops[0]))
     if op is None:
         raise _Unsupported(f"comparison op {type(test.ops[0]).__name__} not in whitelist")
-    lhs = _translate_term(test.left)
-    rhs = _translate_term(test.comparators[0])
     return _comparison_with_none_guard(op, lhs, rhs)
 
 

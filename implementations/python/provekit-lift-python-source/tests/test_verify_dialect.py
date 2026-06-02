@@ -262,22 +262,18 @@ def test_leaf_harvester_plain_equality_does_not_emit_option_guard():
     assert _atoms_named(result.ir[0]["inv"], "is_some") == []
 
 
-def test_leaf_harvester_non_none_identity_does_not_emit_option_guard():
+def test_leaf_harvester_non_none_identity_skips_instead_of_lowering_to_equality():
     source = "def test_alias(left, right):\n    assert left is right\n"
     result = harvest_source(source, "test_m.py")
-    assert len(result.ir) == 1
-
-    inv = result.ir[0]["inv"]
-    assert inv == {
-        "kind": "atomic",
-        "name": "=",
-        "args": [
-            {"kind": "var", "name": "left"},
-            {"kind": "var", "name": "right"},
-        ],
-    }
-    assert _atoms_named(inv, "is_none") == []
-    assert _atoms_named(inv, "is_some") == []
+    assert result.ir == []
+    assert result.diagnostics == [
+        {
+            "kind": "leaf-assertion-skipped",
+            "message": "identity comparison is only supported against None",
+            "path": "test_m.py",
+            "line": 2,
+        }
+    ]
 
 
 def test_leaf_harvester_mixed_assertions_guard_only_none_comparison():
