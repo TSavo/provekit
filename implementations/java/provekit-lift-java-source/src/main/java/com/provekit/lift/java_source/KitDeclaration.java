@@ -14,7 +14,7 @@ final class KitDeclaration {
             "kit", Jcs.object(
                 "id", Jcs.string("java-source"),
                 "language", Jcs.string("java"),
-                "version", Jcs.string("0.1.0")
+                "version", Jcs.string(SourceRpcServer.VERSION)
             ),
             "rpc", Jcs.object(
                 "methods", Jcs.array(

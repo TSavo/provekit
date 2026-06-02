@@ -47,6 +47,8 @@ import (
 	lifgotests "github.com/tsavo/provekit/go/provekit-lift-go-tests"
 )
 
+const Version = "0.1.0-draft"
+
 func main() {
 	if len(os.Args) > 1 && os.Args[1] == "--rpc" {
 		if err := runRPC(os.Stdin, os.Stdout); err != nil {
@@ -125,7 +127,7 @@ func runRPC(stdin io.Reader, stdout io.Writer) error {
 		case "initialize":
 			writeJSON(stdout, successResponse(req.ID, map[string]any{
 				"name":             "provekit-lift-go-verify",
-				"version":          "0.1.0",
+				"version":          Version,
 				"protocol_version": "pep/1.7.0",
 				"capabilities": map[string]any{
 					"authoring_surfaces": []string{"go"},

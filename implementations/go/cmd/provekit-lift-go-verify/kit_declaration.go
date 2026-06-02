@@ -7,7 +7,7 @@ func kitDeclarationResult() map[string]any {
 		"kit": map[string]any{
 			"id":       "go",
 			"language": "go",
-			"version":  "0.1.0",
+			"version":  Version,
 		},
 		"rpc": map[string]any{
 			"methods": []any{

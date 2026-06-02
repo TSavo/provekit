@@ -12,6 +12,7 @@ import java.util.List;
 
 public final class SourceRpcServer {
     private static final String KIT_ID = "java";
+    static final String VERSION = "0.1.0-draft";
 
     private SourceRpcServer() {}
 
@@ -61,7 +62,7 @@ public final class SourceRpcServer {
                 "kit_id", Jcs.string(KIT_ID),
                 "name", Jcs.string("provekit-lift-java-source"),
                 "protocol_version", Jcs.string("pep/1.7.0"),
-                "version", Jcs.string("0.1.0")
+                "version", Jcs.string(VERSION)
             )
         );
     }
