@@ -3,3 +3,8 @@ name = "python-hypothesis"
 kind = "emit"
 surface = "python-hypothesis"
 emit = "hypothesis"
+
+[[plugins]]
+name = "python-lift"
+kind = "lift"
+surface = "python"

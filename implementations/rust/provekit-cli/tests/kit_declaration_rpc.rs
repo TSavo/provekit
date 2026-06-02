@@ -165,6 +165,48 @@ done
 }
 
 #[test]
+fn loader_accepts_empty_effect_kinds_for_python_lift_kit() {
+    let td = TempDir::new().expect("tempdir");
+    let stub = td.path().join("kit.sh");
+    make_executable(
+        &stub,
+        r#"#!/bin/sh
+while IFS= read -r line; do
+  case "$line" in
+    *initialize*)
+      printf '%s\n' '{"jsonrpc":"2.0","id":1,"result":{"name":"provekit-lsp-python","version":"0.1.0","protocol_version":"provekit-lsp-shared/1","kit_id":"python","capabilities":{}}}'
+      ;;
+    *provekit.plugin.kit_declaration*)
+      printf '%s\n' '{"jsonrpc":"2.0","id":2,"result":{"kit":{"id":"python","language":"python","version":"0.1.0"},"rpc":{"methods":[{"name":"initialize","required":true},{"name":"provekit.plugin.kit_declaration","required":true},{"name":"analyzeDocument","required":false},{"name":"parse","required":false},{"name":"lift","required":true},{"name":"provekit.plugin.lift_implications","required":false},{"name":"shutdown","required":false}]},"proofResolution":{"strategy":"pip"},"effectKinds":[],"effectLeaves":[],"guardPredicates":[],"controlCarriers":[],"residueCategories":[]}}'
+      ;;
+    *shutdown*)
+      printf '%s\n' '{"jsonrpc":"2.0","id":3,"result":null}'
+      exit 0
+      ;;
+  esac
+done
+"#,
+    );
+
+    let declaration: KitDeclaration =
+        provekit_cli::kit_declaration::load_kit_declaration_with_command(
+            &[stub.display().to_string()],
+            Some(td.path()),
+        )
+        .expect("load declaration");
+
+    assert_eq!(declaration.kit.id, "python");
+    assert_eq!(declaration.kit.language, "python");
+    assert!(declaration.effect_kinds.is_empty());
+    assert_eq!(declaration.proof_resolution.strategy, "pip");
+    assert!(declaration
+        .rpc
+        .methods
+        .iter()
+        .any(|method| method.name == "provekit.plugin.lift_implications"));
+}
+
+#[test]
 fn loader_rejects_kit_declaration_response_id_mismatch() {
     let td = TempDir::new().expect("tempdir");
     let stub = td.path().join("kit.sh");

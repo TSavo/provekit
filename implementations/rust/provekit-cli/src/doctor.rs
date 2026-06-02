@@ -3077,6 +3077,53 @@ mod tests {
     }
 
     #[test]
+    fn doctor_kit_declaration_python_lift_empty_effect_kinds_passes_and_skips_vocabulary() {
+        let td = TempDir::new().unwrap();
+        let kit = td.path();
+        let plugin = kit.join("python-lift-plugin");
+        let mut declaration = valid_panic_freedom_declaration("python");
+        declaration["kit"] = json!({"id": "python", "language": "python", "version": "0.1.0"});
+        declaration["rpc"]["methods"] = json!([
+            {"name": "initialize", "required": true},
+            {"name": provekit_claim_envelope::KIT_DECLARATION_RPC_METHOD, "required": true},
+            {"name": "analyzeDocument", "required": false},
+            {"name": "parse", "required": false},
+            {"name": "lift", "required": true},
+            {"name": "provekit.plugin.lift_implications", "required": false},
+            {"name": "shutdown", "required": false}
+        ]);
+        declaration["proofResolution"] = json!({"strategy": "pip"});
+        declaration["effectKinds"] = json!([]);
+        declaration["effectLeaves"] = json!([]);
+        declaration["guardPredicates"] = json!([]);
+        declaration["controlCarriers"] = json!([]);
+        make_kit_declaration_plugin(&plugin, declaration);
+        write_kit(
+            kit,
+            "[[plugins]]\nname = \"python-lift\"\nkind = \"lift\"\nsurface = \"python\"\n",
+        );
+        write_manifest(kit, "lift", "python", "\"./python-lift-plugin\"", ".");
+
+        let report = run_report_with_context(kit, DoctorContext::new(DoctorMode::Strict));
+
+        let available = check_by_id_and_surface(&report, "kit.declaration.available", "python");
+        let methods =
+            check_by_id_and_surface(&report, "kit.declaration.rpc_methods_declared", "python");
+        let vocabulary = check_by_id_and_surface(
+            &report,
+            "kit.declaration.substrate_vocabulary.panic_freedom",
+            "python",
+        );
+        assert_eq!(available.status, CheckStatus::Pass);
+        assert_eq!(methods.status, CheckStatus::Pass);
+        assert_eq!(vocabulary.status, CheckStatus::Skip);
+        assert_eq!(
+            vocabulary.evidence.get("skipped").and_then(Value::as_bool),
+            Some(true)
+        );
+    }
+
+    #[test]
     fn structural_dependency_resolver_available_passes_with_binary_evidence() {
         let td = TempDir::new().unwrap();
         let kit = td.path();

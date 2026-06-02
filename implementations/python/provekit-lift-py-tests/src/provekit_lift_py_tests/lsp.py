@@ -48,6 +48,8 @@ from .cpython_ctypes_resolver import resolve_ctypes_calls
 # ---------------------------------------------------------------------------
 
 KIT_ID = "python"
+KIT_VERSION = "0.1.0"
+KIT_DECLARATION_RPC_METHOD = "provekit.plugin.kit_declaration"
 SHARED_LSP_PROTOCOL_VERSION = "provekit-lsp-shared/1"
 SHARED_LSP_PROTOCOL_CATALOG_CID = (
     "blake3-512:0e3905c2a7a098cd538b9669428a7dffd2b84ba8ccf8fde3724fe2ab61fd3fbc1e1a616a6b20b6817464cdc50c466b5497d4ac2e2dc34c3c15f05535b463643c"
@@ -82,7 +84,7 @@ def handle_initialize(msg_id: Any) -> None:
             "id": msg_id,
             "result": {
                 "name": "provekit-lsp-python",
-                "version": "0.1.0",
+                "version": KIT_VERSION,
                 "protocol_version": SHARED_LSP_PROTOCOL_VERSION,
                 "kit_id": KIT_ID,
                 "protocol_catalog_cid": SHARED_LSP_PROTOCOL_CATALOG_CID,
@@ -98,6 +100,37 @@ def handle_initialize(msg_id: Any) -> None:
             },
         }
     )
+
+
+def kit_declaration_result() -> Dict[str, Any]:
+    return {
+        "kit": {
+            "id": KIT_ID,
+            "language": "python",
+            "version": KIT_VERSION,
+        },
+        "rpc": {
+            "methods": [
+                {"name": "initialize", "required": True},
+                {"name": KIT_DECLARATION_RPC_METHOD, "required": True},
+                {"name": "analyzeDocument", "required": False},
+                {"name": "parse", "required": False},
+                {"name": "lift", "required": True},
+                {"name": "provekit.plugin.lift_implications", "required": False},
+                {"name": "shutdown", "required": False},
+            ]
+        },
+        "proofResolution": {"strategy": "pip"},
+        "effectKinds": [],
+        "effectLeaves": [],
+        "guardPredicates": [],
+        "controlCarriers": [],
+        "residueCategories": [],
+    }
+
+
+def handle_kit_declaration(msg_id: Any) -> None:
+    _send({"jsonrpc": "2.0", "id": msg_id, "result": kit_declaration_result()})
 
 
 def _implications_to_json(layer2) -> List[Dict[str, Any]]:
@@ -852,6 +885,8 @@ def main() -> None:
 
         if method == "initialize":
             handle_initialize(msg_id)
+        elif method == KIT_DECLARATION_RPC_METHOD:
+            handle_kit_declaration(msg_id)
         elif method == "analyzeDocument":
             handle_analyze_document(msg_id, params)
         elif method == "parse":
