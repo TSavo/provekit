@@ -34,6 +34,7 @@ Use explicit concept identifiers for substrate panic-freedom vocabulary:
 - `concept:panic-freedom.leaf.unwrap`
 - `concept:panic-freedom.leaf.expect`
 - `concept:panic-freedom.leaf.unwrap-err`
+- `concept:panic-freedom.leaf.runtime-failure-site`
 - `concept:panic-freedom.effect-locus`
 
 The exact wire spelling can remain a string atom in ProofIR. The important
@@ -107,6 +108,7 @@ compatibility classification.
 | `method:unwrap` | `provekit-walk/src/bin/walk_rpc.rs`, `provekit-verifier/src/enumerate_callsites.rs`, panic census tests | `concept:panic-freedom.leaf.unwrap` | Rust adapter maps `Option::unwrap` and `Result::unwrap` call leaves to the concept plus a type-family precondition concept. Existing bridge `sourceSymbol` remains accepted. | Alias-read first. Bridge source symbol default change is migration-required. |
 | `method:expect` | same as above | `concept:panic-freedom.leaf.expect` | Rust adapter maps `Option::expect` and `Result::expect` to the concept plus type-family precondition concept. | Alias-read first. |
 | `method:unwrap_err` | rust-std shim and future callsite census | `concept:panic-freedom.leaf.unwrap-err` | Rust adapter maps `Result::unwrap_err` to result-err precondition. | Alias-read first. |
+| Kit-declared runtime failure leaves such as Python `raise`, Java `throw`, Go `panic`, TypeScript `throw`, nil dereference, and checked runtime-failure assertions | Non-Rust kit declarations and future effect-locus metadata | `concept:panic-freedom.leaf.runtime-failure-site` | Rust v1 leaves stay parallel for now; no Rust default emission changes. Non-Rust kits map local/subkind diagnostics to this concept while the verifier discharges only over normalized pre/post/guard facts. | Additive Path A. Subkind strings are kit-owned diagnostics, not libprovekit taxonomy or verifier semantics. |
 | `panicLoci` header field | `provekit-claim-envelope/src/lib.rs`, `provekit-lift/src/lib.rs`, `provekit-verifier/src/enumerate_callsites.rs` | `effectLoci` with `effectKind = concept:panic-freedom` | Rust adapter reads/writes current `panicLoci`; substrate readers can also accept `effectLoci`. Existing `panicLoci` remains the Rust v1 default. | Dual-read is safe. Default dual-write changes envelope bytes, so emit migration is required. |
 | `panicSite` bridge callsite field | `BridgeCallsite`, `walk_rpc.rs`, `enumerate_callsites.rs` | `effectSite = concept:panic-freedom` | Rust adapter maps current boolean to the effect-site concept. Verifier can keep bool path while accepting concept metadata. | Dual-read is safe. Default emit migration is required. |
 | `panic-site-annotation` diagnostic kind | `panic_annotations_runtime.rs`, Rust kit lift diagnostics | `effect-site-annotation` with `effectKind = concept:panic-freedom` | Rust adapter maps residue and tier annotations for Rust panic leaves. Python adapter can emit same shape for Python exception sites. | Additive reader first. Existing diagnostic kind remains accepted. |

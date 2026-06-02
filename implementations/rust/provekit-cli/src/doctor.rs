@@ -1466,6 +1466,10 @@ fn kit_declaration_panic_freedom_vocabulary_check(
             panic_freedom::METHOD_UNWRAP_ERR,
             panic_freedom::METHOD_UNWRAP_ERR_CONCEPT,
         ),
+        (
+            panic_freedom::RUNTIME_FAILURE_SITE_CONCEPT,
+            panic_freedom::RUNTIME_FAILURE_SITE_CONCEPT,
+        ),
     ];
     let guard_predicate_vocabulary = [
         (panic_freedom::IS_OK, panic_freedom::IS_OK_CONCEPT),
@@ -3481,6 +3485,54 @@ mod tests {
     }
 
     #[test]
+    fn doctor_kit_declaration_non_rust_vocabulary_accepts_runtime_failure_site_leaf() {
+        let td = TempDir::new().unwrap();
+        let kit = td.path();
+        let plugin = kit.join("python-runtime-failure-plugin");
+        let mut declaration = valid_panic_freedom_declaration("python");
+        declaration["kit"] =
+            json!({"id": "python-source", "language": "python", "version": "0.1.0"});
+        declaration["proofResolution"] = json!({"strategy": "pip"});
+        declaration["effectLeaves"] = json!([
+            {
+                "surface": "python",
+                "local": "python:raise",
+                "concept": "concept:panic-freedom.leaf.runtime-failure-site"
+            }
+        ]);
+        declaration["guardPredicates"] = json!([]);
+        declaration["controlCarriers"] = json!([]);
+        make_kit_declaration_plugin(&plugin, declaration);
+        write_kit(
+            kit,
+            "[[plugins]]\nname = \"python\"\nkind = \"lift\"\nsurface = \"python\"\n",
+        );
+        write_manifest(
+            kit,
+            "lift",
+            "python",
+            "\"./python-runtime-failure-plugin\"",
+            ".",
+        );
+
+        let report = run_report_with_context(kit, DoctorContext::new(DoctorMode::Strict));
+
+        let vocabulary = check_by_id_and_surface(
+            &report,
+            "kit.declaration.substrate_vocabulary.panic_freedom",
+            "python",
+        );
+        assert_eq!(vocabulary.status, CheckStatus::Pass, "{vocabulary:#?}");
+        assert_eq!(
+            vocabulary
+                .evidence
+                .get("validationMode")
+                .and_then(Value::as_str),
+            Some("concept-side-only")
+        );
+    }
+
+    #[test]
     fn doctor_kit_declaration_rejects_empty_mapping_concept_before_vocabulary_check() {
         let td = TempDir::new().unwrap();
         let kit = td.path();
@@ -3950,6 +4002,57 @@ mod tests {
             .expect("shared kit ids");
         assert!(kit_ids.contains(&Value::String("python-source".to_string())));
         assert!(kit_ids.contains(&Value::String("python-tests".to_string())));
+    }
+
+    #[test]
+    fn doctor_cross_kit_consistency_ignores_runtime_failure_subkind() {
+        let td = TempDir::new().unwrap();
+        let kit = td.path();
+        let mut source_declaration = declaration_with_mapping(
+            "python-source",
+            "python",
+            "python-source",
+            PANIC_FREEDOM_EFFECT_KIND,
+            "effectLeaves",
+            "python:raise",
+            "concept:panic-freedom.leaf.runtime-failure-site",
+        );
+        source_declaration["effectLeaves"][0]["subkind"] = json!("explicit-raise");
+        let mut tests_declaration = declaration_with_mapping(
+            "python-tests",
+            "python",
+            "python-tests",
+            PANIC_FREEDOM_EFFECT_KIND,
+            "effectLeaves",
+            "python:raise",
+            "concept:panic-freedom.leaf.runtime-failure-site",
+        );
+        tests_declaration["effectLeaves"][0]["subkind"] = json!("assert-raises");
+        write_declaration_plugins(
+            kit,
+            &[
+                ("python-source-plugin", "python-source", source_declaration),
+                ("python-tests-plugin", "python-tests", tests_declaration),
+            ],
+        );
+
+        let report = run_report_with_context(kit, DoctorContext::new(DoctorMode::Strict));
+
+        let consistency = check_by_id(&report, "kit.declaration.cross_kit_consistency");
+        assert_eq!(consistency.status, CheckStatus::Pass, "{consistency:#?}");
+        let consistent = consistency
+            .evidence
+            .get("consistentLocals")
+            .and_then(Value::as_array)
+            .expect("consistent locals");
+        let shared = consistent
+            .iter()
+            .find(|entry| entry.get("local").and_then(Value::as_str) == Some("python:raise"))
+            .expect("shared python:raise evidence");
+        assert_eq!(
+            shared.get("concept").and_then(Value::as_str),
+            Some("concept:panic-freedom.leaf.runtime-failure-site")
+        );
     }
 
     #[test]
