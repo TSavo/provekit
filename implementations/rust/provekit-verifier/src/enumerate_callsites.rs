@@ -12,6 +12,8 @@ use tracing::{debug, info, warn};
 
 use crate::types::{memento_body, memento_kind, CallSite, MementoPool};
 
+const PANIC_EFFECT_KIND: &str = "concept:panic-freedom";
+
 pub fn run(pool: &MementoPool) -> Vec<CallSite> {
     let _span = tracing::info_span!("enumerate_callsites").entered();
     info!(
@@ -53,11 +55,7 @@ pub fn run(pool: &MementoPool) -> Vec<CallSite> {
         // contract, and match an occurrence to its locus by the lifted argument
         // term (see `panic_line_for`). Absent/empty -> panic sites in this
         // contract carry no line (honestly undecidable), never a collapsed one.
-        let panic_loci: &[Json] = body
-            .get("panicLoci")
-            .and_then(|v| v.as_array())
-            .map(|a| a.as_slice())
-            .unwrap_or(&[]);
+        let panic_loci = panic_loci_from_body(body);
         for slot in ["pre", "post", "inv"] {
             if let Some(f) = body.get(slot) {
                 if f.is_object() {
@@ -67,13 +65,13 @@ pub fn run(pool: &MementoPool) -> Vec<CallSite> {
                         cid,
                         pool,
                         callsite_bundle_cid.as_deref(),
-                        panic_loci,
+                        &panic_loci,
                         &mut out,
                     );
                 }
             }
         }
-        for locus in panic_loci {
+        for locus in &panic_loci {
             if let Some(cs) = callsite_from_panic_locus(
                 locus,
                 &property_name,
@@ -82,6 +80,11 @@ pub fn run(pool: &MementoPool) -> Vec<CallSite> {
                 callsite_bundle_cid.as_deref(),
             ) {
                 if !has_same_panic_callsite(&out, &cs) {
+                    warn_if_panic_callsite_alias_disagrees_for_locus(
+                        pool,
+                        callsite_bundle_cid.as_deref(),
+                        locus,
+                    );
                     out.push(cs);
                 }
             }
@@ -101,6 +104,59 @@ pub fn run(pool: &MementoPool) -> Vec<CallSite> {
         }
     }
     out
+}
+
+fn panic_loci_from_body(body: &Json) -> Vec<Json> {
+    let old = json_array_field(body, "panicLoci");
+    let new = json_array_field(body, "effectLoci")
+        .into_iter()
+        .filter(|locus| {
+            locus.get("effectKind").and_then(|v| v.as_str()) == Some(PANIC_EFFECT_KIND)
+        })
+        .collect::<Vec<_>>();
+
+    if old.is_empty() {
+        return new;
+    }
+    if new.is_empty() || normalized_loci(&old) == normalized_loci(&new) {
+        return old;
+    }
+
+    warn!(
+        contract = body
+            .get("contractName")
+            .and_then(|v| v.as_str())
+            .unwrap_or_default(),
+        panic_loci = ?old,
+        effect_loci = ?new,
+        "effect-site-disagreement: panicLoci/effectLoci disagree; using panicLoci"
+    );
+    old
+}
+
+fn json_array_field(body: &Json, key: &str) -> Vec<Json> {
+    body.get(key)
+        .and_then(|v| v.as_array())
+        .map(|items| items.to_vec())
+        .unwrap_or_default()
+}
+
+fn normalized_loci(loci: &[Json]) -> Vec<String> {
+    let mut normalized = loci
+        .iter()
+        .map(|locus| serde_json::to_string(&locus_without_effect_kind(locus)).unwrap_or_default())
+        .collect::<Vec<_>>();
+    normalized.sort();
+    normalized
+}
+
+fn locus_without_effect_kind(locus: &Json) -> Json {
+    let Some(object) = locus.as_object() else {
+        return locus.clone();
+    };
+    let mut object = object.clone();
+    object.remove("effectKind");
+    Json::Object(object)
 }
 
 fn callsite_from_panic_locus(
@@ -212,6 +268,75 @@ fn callsite_from_panic_locus(
     })
 }
 
+fn warn_if_panic_callsite_alias_disagrees_for_locus(
+    pool: &MementoPool,
+    callsite_bundle_cid: Option<&str>,
+    locus: &Json,
+) {
+    let Some(callee) = locus
+        .get("callee")
+        .and_then(|v| v.as_str())
+        .filter(|s| !s.is_empty())
+        .map(panic_freedom::normalize_leaf_method_name)
+    else {
+        return;
+    };
+    let Some(bridge_body) =
+        callsite_scoped_bridge_for_locus(pool, callsite_bundle_cid, callee, locus)
+            .and_then(memento_body)
+    else {
+        return;
+    };
+    if let Some(bridge_callsite) = bridge_body.get("callsite") {
+        let _ = callsite_is_panic_site(Some(bridge_callsite), callee);
+    }
+}
+
+fn callsite_is_panic_site(callsite: Option<&Json>, bridge_name: &str) -> bool {
+    let Some(callsite) = callsite else {
+        return false;
+    };
+    let legacy = callsite.get("panicSite").and_then(|v| v.as_bool());
+    let effect_site = callsite.get("effectSite");
+    let effect = match effect_site {
+        Some(Json::String(kind)) => Some(kind == PANIC_EFFECT_KIND),
+        Some(other) => {
+            warn!(
+                bridge = %bridge_name,
+                file = ?callsite.get("file").and_then(|v| v.as_str()),
+                line = ?callsite
+                    .get("start_line")
+                    .or_else(|| callsite.get("line"))
+                    .and_then(|v| v.as_u64()),
+                effect_site = ?other,
+                "effect-site-malformed: effectSite must be a concept string; ignoring effectSite"
+            );
+            None
+        }
+        None => None,
+    };
+
+    match (legacy, effect) {
+        (Some(old), Some(new)) if old != new => {
+            warn!(
+                bridge = %bridge_name,
+                file = ?callsite.get("file").and_then(|v| v.as_str()),
+                line = ?callsite
+                    .get("start_line")
+                    .or_else(|| callsite.get("line"))
+                    .and_then(|v| v.as_u64()),
+                panic_site = old,
+                effect_site = ?effect_site,
+                "effect-site-disagreement: panicSite/effectSite disagree; using panicSite"
+            );
+            old
+        }
+        (Some(old), _) => old,
+        (None, Some(new)) => new,
+        (None, None) => false,
+    }
+}
+
 fn has_same_panic_callsite(existing: &[CallSite], candidate: &CallSite) -> bool {
     existing.iter().any(|cs| {
         cs.panic_site
@@ -229,6 +354,195 @@ fn bundle_containing_member(pool: &MementoPool, member_cid: &str) -> Option<Stri
         .find_map(|(bundle_cid, members)| {
             members.contains(member_cid).then(|| bundle_cid.to_string())
         })
+}
+
+#[cfg(test)]
+mod effect_alias_reader_tests {
+    use super::*;
+    use serde_json::json;
+    use std::io::{self, Write};
+    use std::sync::{Arc, Mutex};
+    use tracing_subscriber::fmt::MakeWriter;
+
+    #[derive(Clone, Default)]
+    struct SharedLog(Arc<Mutex<Vec<u8>>>);
+
+    struct SharedLogWriter(Arc<Mutex<Vec<u8>>>);
+
+    impl Write for SharedLogWriter {
+        fn write(&mut self, buf: &[u8]) -> io::Result<usize> {
+            self.0.lock().expect("log lock").extend_from_slice(buf);
+            Ok(buf.len())
+        }
+
+        fn flush(&mut self) -> io::Result<()> {
+            Ok(())
+        }
+    }
+
+    impl<'a> MakeWriter<'a> for SharedLog {
+        type Writer = SharedLogWriter;
+
+        fn make_writer(&'a self) -> Self::Writer {
+            SharedLogWriter(self.0.clone())
+        }
+    }
+
+    fn capture_warn_log(f: impl FnOnce()) -> String {
+        let log = SharedLog::default();
+        let subscriber = tracing_subscriber::fmt()
+            .with_max_level(tracing::Level::WARN)
+            .with_writer(log.clone())
+            .with_ansi(false)
+            .without_time()
+            .finish();
+        tracing::subscriber::with_default(subscriber, f);
+        let bytes = log.0.lock().expect("log lock").clone();
+        String::from_utf8(bytes).expect("log is utf8")
+    }
+
+    fn old_locus(line: u64) -> Json {
+        json!({
+            "argTerm": {"kind": "var", "name": "result"},
+            "file": "src/lib.rs",
+            "line": line,
+            "callee": "method:unwrap"
+        })
+    }
+
+    fn effect_locus(line: u64, effect_kind: &str) -> Json {
+        json!({
+            "effectKind": effect_kind,
+            "argTerm": {"kind": "var", "name": "result"},
+            "file": "src/lib.rs",
+            "line": line,
+            "callee": "method:unwrap"
+        })
+    }
+
+    #[test]
+    fn effect_loci_reader_accepts_legacy_panic_loci_only() {
+        let body = json!({"panicLoci": [old_locus(25)]});
+        let loci = panic_loci_from_body(&body);
+        assert_eq!(loci, vec![old_locus(25)]);
+    }
+
+    #[test]
+    fn effect_loci_reader_accepts_panic_effect_loci_only() {
+        let body = json!({"effectLoci": [effect_locus(25, PANIC_EFFECT_KIND)]});
+        let loci = panic_loci_from_body(&body);
+        assert_eq!(loci, vec![effect_locus(25, PANIC_EFFECT_KIND)]);
+    }
+
+    #[test]
+    fn effect_loci_reader_ignores_non_panic_effect_kind() {
+        let body = json!({"effectLoci": [effect_locus(25, "concept:io")]});
+        assert!(panic_loci_from_body(&body).is_empty());
+    }
+
+    #[test]
+    fn effect_loci_reader_ignores_malformed_effect_kind() {
+        let body = json!({
+            "effectLoci": [{
+                "effectKind": 7,
+                "argTerm": {"kind": "var", "name": "result"},
+                "file": "src/lib.rs",
+                "line": 25,
+                "callee": "method:unwrap"
+            }]
+        });
+        assert!(panic_loci_from_body(&body).is_empty());
+    }
+
+    #[test]
+    fn effect_loci_reader_accepts_matching_old_and_new_without_duplication() {
+        let body = json!({
+            "panicLoci": [old_locus(25)],
+            "effectLoci": [effect_locus(25, PANIC_EFFECT_KIND)]
+        });
+        let loci = panic_loci_from_body(&body);
+        assert_eq!(loci, vec![old_locus(25)]);
+    }
+
+    #[test]
+    fn effect_loci_reader_preserves_legacy_and_warns_on_disagreement() {
+        let body = json!({
+            "contractName": "both_disagree",
+            "panicLoci": [old_locus(25)],
+            "effectLoci": [effect_locus(99, PANIC_EFFECT_KIND)]
+        });
+        let mut loci = Vec::new();
+        let logs = capture_warn_log(|| {
+            loci = panic_loci_from_body(&body);
+        });
+        assert_eq!(loci, vec![old_locus(25)]);
+        assert!(logs.contains("effect-site-disagreement"));
+        assert!(logs.contains("panicLoci"));
+        assert!(logs.contains("effectLoci"));
+        assert!(logs.contains("both_disagree"));
+    }
+
+    #[test]
+    fn effect_loci_reader_filters_mixed_effect_kinds() {
+        let body = json!({
+            "effectLoci": [
+                effect_locus(25, "concept:io"),
+                effect_locus(38, PANIC_EFFECT_KIND)
+            ]
+        });
+        let loci = panic_loci_from_body(&body);
+        assert_eq!(loci, vec![effect_locus(38, PANIC_EFFECT_KIND)]);
+    }
+
+    #[test]
+    fn effect_site_reader_accepts_legacy_panic_site_only() {
+        let callsite = json!({"panicSite": true});
+        assert!(callsite_is_panic_site(Some(&callsite), "method:unwrap"));
+    }
+
+    #[test]
+    fn effect_site_reader_accepts_panic_effect_site_only() {
+        let callsite = json!({"effectSite": PANIC_EFFECT_KIND});
+        assert!(callsite_is_panic_site(Some(&callsite), "method:unwrap"));
+    }
+
+    #[test]
+    fn effect_site_reader_ignores_non_panic_effect_site() {
+        let callsite = json!({"effectSite": "concept:io"});
+        assert!(!callsite_is_panic_site(Some(&callsite), "method:unwrap"));
+    }
+
+    #[test]
+    fn effect_site_reader_warns_and_ignores_malformed_effect_site() {
+        let callsite = json!({"effectSite": 7});
+        let mut is_panic = true;
+        let logs = capture_warn_log(|| {
+            is_panic = callsite_is_panic_site(Some(&callsite), "method:unwrap");
+        });
+        assert!(!is_panic);
+        assert!(logs.contains("effect-site-malformed"));
+        assert!(logs.contains("effectSite"));
+    }
+
+    #[test]
+    fn effect_site_reader_preserves_legacy_and_warns_on_disagreement() {
+        let callsite = json!({
+            "panicSite": true,
+            "effectSite": "concept:io",
+            "file": "src/lib.rs",
+            "start_line": 25
+        });
+        let mut is_panic = false;
+        let logs = capture_warn_log(|| {
+            is_panic = callsite_is_panic_site(Some(&callsite), "method:unwrap");
+        });
+        assert!(is_panic);
+        assert!(logs.contains("effect-site-disagreement"));
+        assert!(logs.contains("panicSite"));
+        assert!(logs.contains("effectSite"));
+        assert!(logs.contains("src/lib.rs"));
+        assert!(logs.contains("25"));
+    }
 }
 
 fn walk_formula(
@@ -459,10 +773,7 @@ fn walk_term(
             .filter(|s| !s.is_empty())
             .map(panic_freedom::normalize_leaf_method_name)
             .map(str::to_string);
-        let panic_site = bridge_callsite
-            .and_then(|v| v.get("panicSite"))
-            .and_then(|v| v.as_bool())
-            .unwrap_or(false);
+        let panic_site = callsite_is_panic_site(bridge_callsite, &bridge_name);
         // PANIC-LOCUS PRESERVATION (#1745): a panic site reads its line/col/file
         // from the contract's own `panicLoci`, keyed by `arg_term` -- NOT from
         // the per-symbol bridge `callsite` (last-writer-wins, collapses two
