@@ -11036,11 +11036,19 @@ reason = "serde_json::to_value(RealizeRequest) is closeable by a provekit-cli ow
             .iter()
             .filter(|diagnostic| diagnostic["kind"] == "panic-site-annotation")
             .collect();
+        let effect_annotations: Vec<&Value> = diagnostics
+            .iter()
+            .filter(|diagnostic| diagnostic["kind"] == "effect-site-annotation")
+            .collect();
 
         assert_eq!(
             annotations.len(),
             2,
             "expected manifest annotations: {diagnostics:#?}"
+        );
+        assert!(
+            effect_annotations.is_empty(),
+            "writer-stability: Rust kit must not emit effect-site-annotation diagnostics in the reader-only slice: {diagnostics:#?}"
         );
         assert_eq!(annotations[0]["status"], "residue");
         assert_eq!(annotations[0]["category"], "lock_poisoning_residue");

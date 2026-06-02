@@ -89,6 +89,20 @@ pub struct LoadError {
     pub reason: String,
 }
 
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct EffectSiteAnnotation {
+    pub effect_kind: String,
+    pub file: String,
+    pub line: usize,
+    pub callee: String,
+    pub status: String,
+    pub category: String,
+    pub tier_to_close: String,
+    pub reason: String,
+    pub memento_cid: String,
+    pub bundle_cid: String,
+}
+
 #[derive(Debug, Default, Clone)]
 pub struct MementoPool {
     /// CID -> the canonical-bytes-decoded memento envelope (as JSON).
@@ -124,6 +138,16 @@ pub struct MementoPool {
     /// two same-symbol calls on one source line, which (same bundle => same
     /// target contract => same post) is a K-completeness edge, not a false-pass.
     pub bridges_by_callsite: BTreeMap<(String, String, usize, String), Json>,
+    /// `(bundle_cid, file, line, callee)` -> panic-freedom annotation memento.
+    ///
+    /// Effect-site annotations are diagnostic proof mementos, not discharge
+    /// evidence. They annotate a specific unproven/residue effect occurrence
+    /// after `prove --json` has produced its panic census. Bundle scoping is
+    /// load-bearing: paths like `src/lib.rs` and call symbols collide across
+    /// packages, so the annotation must join only to the proof bundle that
+    /// produced the row it describes.
+    pub panic_effect_site_annotations:
+        BTreeMap<(String, String, usize, String), EffectSiteAnnotation>,
     /// sourceSymbol -> the `.proof` bundle CID the bridge memento was loaded
     /// from. Lets resolve_target enforce the self-pinned (no `targetProofCid`)
     /// case: the target contract must be a co-member of this bundle. Keyed by
@@ -563,6 +587,21 @@ impl MementoPool {
         for (k, v) in other.bridges_by_callsite {
             self.bridges_by_callsite.entry(k).or_insert(v);
         }
+        for (k, v) in other.panic_effect_site_annotations {
+            if let Some(existing) = self.panic_effect_site_annotations.get(&k) {
+                if existing.memento_cid != v.memento_cid {
+                    self.load_errors.push(LoadError {
+                        proof_path: v.memento_cid.clone(),
+                        reason: format!(
+                            "[effect-site-annotation-duplicate] for ({}, {}, {}, {}): kept `{}`, dropped `{}`",
+                            k.0, k.1, k.2, k.3, existing.memento_cid, v.memento_cid
+                        ),
+                    });
+                }
+            } else {
+                self.panic_effect_site_annotations.insert(k, v);
+            }
+        }
         for (k, v) in other.bridge_self_bundle_by_symbol {
             self.bridge_self_bundle_by_symbol.entry(k).or_insert(v);
         }
@@ -925,6 +964,43 @@ mod tests {
             "Expected direct proof, got {:?}",
             result
         );
+    }
+
+    #[test]
+    fn memento_pool_merge_preserves_effect_site_annotations() {
+        let key = (
+            "blake3-512:bundle".to_string(),
+            "src/lib.rs".to_string(),
+            42,
+            "method:unwrap".to_string(),
+        );
+        let annotation = EffectSiteAnnotation {
+            effect_kind: "concept:panic-freedom".to_string(),
+            file: "src/lib.rs".to_string(),
+            line: 42,
+            callee: "method:unwrap".to_string(),
+            status: "residue".to_string(),
+            category: "lock_poisoning_residue".to_string(),
+            tier_to_close: "irreducible".to_string(),
+            reason: "lock poisoning is runtime residue".to_string(),
+            memento_cid: "blake3-512:annotation".to_string(),
+            bundle_cid: "blake3-512:bundle".to_string(),
+        };
+        let mut left = MementoPool::default();
+        let mut right = MementoPool::default();
+        right
+            .panic_effect_site_annotations
+            .insert(key.clone(), annotation);
+
+        left.merge(right);
+
+        let merged = left
+            .panic_effect_site_annotations
+            .get(&key)
+            .expect("merge must carry annotation index");
+        assert_eq!(merged.effect_kind, "concept:panic-freedom");
+        assert_eq!(merged.status, "residue");
+        assert!(left.load_errors.is_empty(), "{:#?}", left.load_errors);
     }
 
     #[test]

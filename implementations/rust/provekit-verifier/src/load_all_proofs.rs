@@ -24,10 +24,14 @@ use serde_json::Value as Json;
 use tracing::{debug, info, warn};
 
 use crate::cbor_decode::decode;
-use crate::types::{LoadError, MementoPool};
+use crate::types::{memento_body, memento_kind, EffectSiteAnnotation, LoadError, MementoPool};
 
 const HASH_TAG_PREFIX: &str = "blake3-512:";
 const SIG_TAG_PREFIX: &str = "ed25519:";
+const PANIC_FREEDOM_EFFECT: &str = "concept:panic-freedom";
+const EFFECT_SITE_ANNOTATION_LOAD_ERROR_TAG: &str = "[effect-site-annotation]";
+const EFFECT_SITE_ANNOTATION_DUPLICATE_LOAD_ERROR_TAG: &str =
+    "[effect-site-annotation-duplicate]";
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ProofBytes {
@@ -280,6 +284,7 @@ fn load_catalog_bytes(
             .entry(derived_full.clone())
             .or_default()
             .insert(cid.clone());
+        index_effect_site_annotation(&source_label, &derived_full, cid, &env, pool);
 
         // Bridge indexing. Same dual-shape rule:
         //   v1.1: evidence.kind == "bridge", evidence.body.sourceSymbol
@@ -340,6 +345,146 @@ fn load_catalog_bytes(
         }
     }
     Ok(())
+}
+
+fn index_effect_site_annotation(
+    source_label: &str,
+    bundle_cid: &str,
+    memento_cid: &str,
+    env: &Json,
+    pool: &mut MementoPool,
+) {
+    if memento_kind(env) != Some("effect-site-annotation") {
+        return;
+    }
+    let Some(body) = memento_body(env) else {
+        pool.load_errors.push(LoadError {
+            proof_path: source_label.to_string(),
+            reason: format!(
+                "{EFFECT_SITE_ANNOTATION_LOAD_ERROR_TAG} {memento_cid}: missing header/body"
+            ),
+        });
+        return;
+    };
+
+    let Some(effect_kind) =
+        required_annotation_string(source_label, memento_cid, body, "effectKind", pool)
+    else {
+        return;
+    };
+    if effect_kind != PANIC_FREEDOM_EFFECT {
+        return;
+    }
+    let Some(file) = required_annotation_string(source_label, memento_cid, body, "file", pool)
+    else {
+        return;
+    };
+    let Some(line) = required_annotation_line(source_label, memento_cid, body, pool) else {
+        return;
+    };
+    let Some(callee) = required_annotation_string(source_label, memento_cid, body, "callee", pool)
+    else {
+        return;
+    };
+    let Some(status) = required_annotation_string(source_label, memento_cid, body, "status", pool)
+    else {
+        return;
+    };
+    if !matches!(status.as_str(), "residue" | "unproven") {
+        pool.load_errors.push(LoadError {
+            proof_path: source_label.to_string(),
+            reason: format!(
+                "{EFFECT_SITE_ANNOTATION_LOAD_ERROR_TAG} {memento_cid}: status must be residue or unproven"
+            ),
+        });
+        return;
+    }
+    let Some(category) =
+        required_annotation_string(source_label, memento_cid, body, "category", pool)
+    else {
+        return;
+    };
+    let Some(tier_to_close) =
+        required_annotation_string(source_label, memento_cid, body, "tierToClose", pool)
+    else {
+        return;
+    };
+    let Some(reason) = required_annotation_string(source_label, memento_cid, body, "reason", pool)
+    else {
+        return;
+    };
+
+    let key = (
+        bundle_cid.to_string(),
+        file.clone(),
+        line,
+        callee.clone(),
+    );
+    let annotation = EffectSiteAnnotation {
+        effect_kind,
+        file,
+        line,
+        callee,
+        status,
+        category,
+        tier_to_close,
+        reason,
+        memento_cid: memento_cid.to_string(),
+        bundle_cid: bundle_cid.to_string(),
+    };
+    if let Some(existing) = pool.panic_effect_site_annotations.get(&key) {
+        pool.load_errors.push(LoadError {
+            proof_path: source_label.to_string(),
+            reason: format!(
+                "{EFFECT_SITE_ANNOTATION_DUPLICATE_LOAD_ERROR_TAG} for ({}, {}, {}, {}): kept `{}`, dropped `{}`",
+                key.0, key.1, key.2, key.3, existing.memento_cid, memento_cid
+            ),
+        });
+        return;
+    }
+    pool.panic_effect_site_annotations.insert(key, annotation);
+}
+
+fn required_annotation_string(
+    source_label: &str,
+    memento_cid: &str,
+    body: &Json,
+    field: &str,
+    pool: &mut MementoPool,
+) -> Option<String> {
+    let value = body.get(field).and_then(|v| v.as_str()).filter(|s| !s.is_empty());
+    match value {
+        Some(value) => Some(value.to_string()),
+        None => {
+            pool.load_errors.push(LoadError {
+                proof_path: source_label.to_string(),
+                reason: format!(
+                    "{EFFECT_SITE_ANNOTATION_LOAD_ERROR_TAG} {memento_cid}: missing or invalid `{field}`"
+                ),
+            });
+            None
+        }
+    }
+}
+
+fn required_annotation_line(
+    source_label: &str,
+    memento_cid: &str,
+    body: &Json,
+    pool: &mut MementoPool,
+) -> Option<usize> {
+    match body.get("line").and_then(|v| v.as_u64()) {
+        Some(line) if usize::try_from(line).is_ok() => Some(line as usize),
+        _ => {
+            pool.load_errors.push(LoadError {
+                proof_path: source_label.to_string(),
+                reason: format!(
+                    "{EFFECT_SITE_ANNOTATION_LOAD_ERROR_TAG} {memento_cid}: missing or invalid `line`"
+                ),
+            });
+            None
+        }
+    }
 }
 
 /// Re-derive an envelope's CID. Branches on memento shape:
@@ -406,5 +551,189 @@ fn json_to_value(j: &Json) -> std::sync::Arc<Value> {
                 .collect();
             std::sync::Arc::new(Value::Object(entries))
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use provekit_claim_envelope::{mint_effect_site_annotation, MintEffectSiteAnnotationArgs};
+    use provekit_proof_envelope::{build_proof_envelope, ProofEnvelopeInput};
+    use std::collections::BTreeMap;
+
+    const PANIC_EFFECT: &str = "concept:panic-freedom";
+
+    fn annotation_args(
+        effect_kind: &str,
+        file: &str,
+        line: usize,
+        callee: &str,
+        status: &str,
+        category: &str,
+        reason: &str,
+    ) -> MintEffectSiteAnnotationArgs {
+        MintEffectSiteAnnotationArgs {
+            effect_kind: effect_kind.to_string(),
+            file: file.to_string(),
+            line,
+            callee: callee.to_string(),
+            status: status.to_string(),
+            category: category.to_string(),
+            tier_to_close: "irreducible".to_string(),
+            reason: reason.to_string(),
+            input_cids: Vec::new(),
+            produced_by: "test".to_string(),
+            produced_at: "2026-06-01T00:00:00Z".to_string(),
+            signer_seed: [0x42; 32],
+        }
+    }
+
+    fn proof_bytes(members: Vec<provekit_claim_envelope::MintedEnvelope>) -> ProofBytes {
+        let mut member_map = BTreeMap::new();
+        for member in members {
+            member_map.insert(member.cid, member.canonical_bytes);
+        }
+        let proof = build_proof_envelope(&ProofEnvelopeInput {
+            name: "annotation-test".to_string(),
+            version: "1.0.0".to_string(),
+            binary_cid: None,
+            metadata: None,
+            members: member_map,
+            signer_cid: "test-signer".to_string(),
+            signer_seed: [0x24; 32],
+            declared_at: "2026-06-01T00:00:00Z".to_string(),
+        });
+        ProofBytes {
+            label: "annotation-test.proof".to_string(),
+            expected_cid: Some(proof.cid),
+            bytes: proof.bytes,
+        }
+    }
+
+    #[test]
+    fn load_all_proofs_indexes_panic_effect_site_annotation_by_bundle_and_site() {
+        let annotation = mint_effect_site_annotation(&annotation_args(
+            PANIC_EFFECT,
+            "src/lib.rs",
+            42,
+            "method:unwrap",
+            "residue",
+            "lock_poisoning_residue",
+            "lock poisoning is runtime residue",
+        ))
+        .expect("mint annotation");
+        let proof = proof_bytes(vec![annotation]);
+        let expected_bundle = proof.expected_cid.clone().expect("bundle cid");
+        let mut pool = MementoPool::default();
+
+        load_proof_bytes_into_pool(&[proof], &mut pool);
+
+        let key = (
+            expected_bundle,
+            "src/lib.rs".to_string(),
+            42,
+            "method:unwrap".to_string(),
+        );
+        let indexed = pool
+            .panic_effect_site_annotations
+            .get(&key)
+            .expect("annotation indexed by bundle/site");
+        assert_eq!(indexed.status, "residue");
+        assert_eq!(indexed.category, "lock_poisoning_residue");
+        assert_eq!(indexed.tier_to_close, "irreducible");
+        assert!(pool.load_errors.is_empty(), "{:#?}", pool.load_errors);
+    }
+
+    #[test]
+    fn load_all_proofs_ignores_non_panic_effect_site_annotation() {
+        let annotation = mint_effect_site_annotation(&annotation_args(
+            "concept:io",
+            "src/lib.rs",
+            42,
+            "read",
+            "unproven",
+            "io_residue",
+            "not a panic-freedom annotation",
+        ))
+        .expect("mint annotation");
+        let proof = proof_bytes(vec![annotation]);
+        let mut pool = MementoPool::default();
+
+        load_proof_bytes_into_pool(&[proof], &mut pool);
+
+        assert!(pool.panic_effect_site_annotations.is_empty());
+        assert!(pool.load_errors.is_empty(), "{:#?}", pool.load_errors);
+    }
+
+    #[test]
+    fn load_all_proofs_reports_malformed_panic_effect_site_annotation() {
+        let mut annotation = mint_effect_site_annotation(&annotation_args(
+            PANIC_EFFECT,
+            "src/lib.rs",
+            42,
+            "method:unwrap",
+            "residue",
+            "lock_poisoning_residue",
+            "lock poisoning is runtime residue",
+        ))
+        .expect("mint annotation");
+        let mut env: serde_json::Value =
+            serde_json::from_slice(&annotation.canonical_bytes).expect("parse annotation");
+        env.pointer_mut("/header")
+            .and_then(|v| v.as_object_mut())
+            .expect("header object")
+            .remove("callee");
+        annotation.canonical_bytes =
+            serde_json::to_vec(&env).expect("serialize malformed annotation");
+        let proof = proof_bytes(vec![annotation]);
+        let mut pool = MementoPool::default();
+
+        load_proof_bytes_into_pool(&[proof], &mut pool);
+
+        assert!(pool.panic_effect_site_annotations.is_empty());
+        assert!(
+            pool.load_errors
+                .iter()
+                .any(|err| err.reason.contains("effect-site-annotation")
+                    && err.reason.contains("callee")),
+            "missing callee should be a typed load error: {:#?}",
+            pool.load_errors
+        );
+    }
+
+    #[test]
+    fn load_all_proofs_reports_duplicate_effect_site_annotation_key() {
+        let first = mint_effect_site_annotation(&annotation_args(
+            PANIC_EFFECT,
+            "src/lib.rs",
+            42,
+            "method:unwrap",
+            "residue",
+            "lock_poisoning_residue",
+            "first annotation",
+        ))
+        .expect("mint first annotation");
+        let second = mint_effect_site_annotation(&annotation_args(
+            PANIC_EFFECT,
+            "src/lib.rs",
+            42,
+            "method:unwrap",
+            "unproven",
+            "D-lib",
+            "second annotation",
+        ))
+        .expect("mint second annotation");
+        let proof = proof_bytes(vec![first, second]);
+        let mut pool = MementoPool::default();
+
+        load_proof_bytes_into_pool(&[proof], &mut pool);
+
+        assert!(
+            pool.load_errors
+                .iter()
+                .any(|err| err.reason.contains("effect-site-annotation-duplicate")),
+            "duplicate effect-site annotation should fail loud: {:#?}",
+            pool.load_errors
+        );
     }
 }

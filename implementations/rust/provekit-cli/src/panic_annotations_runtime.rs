@@ -4,6 +4,7 @@ use std::collections::BTreeMap;
 use std::fs;
 use std::path::Path;
 
+use provekit_verifier::types::EffectSiteAnnotation;
 use serde::Serialize;
 use serde_json::{json, Value};
 
@@ -78,6 +79,8 @@ pub struct PanicCensusRow {
     pub file: String,
     pub line: usize,
     pub callee: String,
+    #[serde(rename = "callsiteBundleCid", skip_serializing_if = "Option::is_none")]
+    pub callsite_bundle_cid: Option<String>,
     pub status: String,
     pub reason: String,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -109,6 +112,7 @@ impl std::error::Error for AnnotationCheckError {}
 
 #[derive(Debug, Clone)]
 struct RuntimeAnnotation {
+    bundle_cid: Option<String>,
     file: String,
     line: usize,
     callee: String,
@@ -121,6 +125,12 @@ struct RuntimeAnnotation {
 impl RuntimeAnnotation {
     fn key(&self) -> (String, usize, String) {
         (self.file.clone(), self.line, self.callee.clone())
+    }
+
+    fn scoped_key(&self) -> Option<(String, String, usize, String)> {
+        self.bundle_cid
+            .as_ref()
+            .map(|bundle| (bundle.clone(), self.file.clone(), self.line, self.callee.clone()))
     }
 }
 
@@ -136,8 +146,17 @@ pub fn annotation_runtime_check(
     panic_census: &[PanicCensusRow],
     mode: AnnotationCheckMode,
 ) -> Result<AnnotationRuntimeOutcome, AnnotationCheckError> {
+    annotation_runtime_check_with_mementos(target_path, panic_census, &[], mode)
+}
+
+pub fn annotation_runtime_check_with_mementos(
+    target_path: &Path,
+    panic_census: &[PanicCensusRow],
+    memento_annotations: &[EffectSiteAnnotation],
+    mode: AnnotationCheckMode,
+) -> Result<AnnotationRuntimeOutcome, AnnotationCheckError> {
     let manifest = runtime_annotation_manifest(target_path);
-    if !manifest.present {
+    if !manifest.present && memento_annotations.is_empty() {
         return Ok(AnnotationRuntimeOutcome {
             rows: panic_census.to_vec(),
             check: AnnotationRuntimeCheck::pass_with_severity(
@@ -152,6 +171,8 @@ pub fn annotation_runtime_check(
     }
 
     let mut issues = manifest.issues;
+    let memento_annotations = runtime_annotations_from_mementos(memento_annotations, &mut issues);
+    let memento_annotation_count = memento_annotations.len();
     let mut rows = panic_census.to_vec();
     let before_k = count_proven_rows(&rows);
     let row_index: BTreeMap<(String, usize, String), usize> = rows
@@ -159,35 +180,39 @@ pub fn annotation_runtime_check(
         .enumerate()
         .map(|(index, row)| ((row.file.clone(), row.line, row.callee.clone()), index))
         .collect();
+    let scoped_row_index: BTreeMap<(String, String, usize, String), usize> = rows
+        .iter()
+        .enumerate()
+        .filter_map(|(index, row)| {
+            row.callsite_bundle_cid.as_ref().map(|bundle| {
+                (
+                    (bundle.clone(), row.file.clone(), row.line, row.callee.clone()),
+                    index,
+                )
+            })
+        })
+        .collect();
+    let mut annotated_rows = BTreeMap::<usize, String>::new();
 
     for annotation in manifest.annotations {
-        let key = annotation.key();
-        let Some(index) = row_index.get(&key).copied() else {
-            issues.push(annotation_issue(
-                "stale",
-                &format!(
-                    "stale panic-site annotation for {}:{} {}",
-                    annotation.file, annotation.line, annotation.callee
-                ),
-                Some(&annotation),
-            ));
-            continue;
-        };
-        if rows[index].status == "proven" {
-            issues.push(annotation_issue(
-                "proven_site_collision",
-                &format!(
-                    "proven panic-site annotation for {}:{} {}",
-                    annotation.file, annotation.line, annotation.callee
-                ),
-                Some(&annotation),
-            ));
-            continue;
-        }
-        rows[index].status = annotation.status;
-        rows[index].category = Some(annotation.category);
-        rows[index].tier_to_close = Some(annotation.tier_to_close);
-        rows[index].reason = annotation.reason;
+        apply_runtime_annotation(
+            annotation,
+            &row_index,
+            &scoped_row_index,
+            &mut annotated_rows,
+            &mut rows,
+            &mut issues,
+        );
+    }
+    for annotation in memento_annotations {
+        apply_runtime_annotation(
+            annotation,
+            &row_index,
+            &scoped_row_index,
+            &mut annotated_rows,
+            &mut rows,
+            &mut issues,
+        );
     }
 
     let after_k = count_proven_rows(&rows);
@@ -201,8 +226,9 @@ pub fn annotation_runtime_check(
     }
 
     let evidence = json!({
-        "manifestPresent": true,
+        "manifestPresent": manifest.present,
         "rowCount": panic_census.len(),
+        "mementoAnnotationCount": memento_annotation_count,
         "annotatedRowCount": rows
             .iter()
             .filter(|row| row.category.is_some() || row.tier_to_close.is_some())
@@ -244,6 +270,105 @@ pub fn annotation_runtime_check(
             ),
         })
     }
+}
+
+fn runtime_annotations_from_mementos(
+    annotations: &[EffectSiteAnnotation],
+    issues: &mut Vec<Value>,
+) -> Vec<RuntimeAnnotation> {
+    let mut out = Vec::new();
+    let mut seen = BTreeMap::<(String, String, usize, String), String>::new();
+    for annotation in annotations {
+        let key = (
+            annotation.bundle_cid.clone(),
+            annotation.file.clone(),
+            annotation.line,
+            annotation.callee.clone(),
+        );
+        if let Some(previous) = seen.insert(key.clone(), annotation.memento_cid.clone()) {
+            issues.push(json!({
+                "kind": "effect-site-annotation-duplicate",
+                "bundleCid": key.0,
+                "file": key.1,
+                "line": key.2,
+                "callee": key.3,
+                "firstMementoCid": previous,
+                "secondMementoCid": annotation.memento_cid,
+            }));
+            continue;
+        }
+        out.push(RuntimeAnnotation {
+            bundle_cid: Some(annotation.bundle_cid.clone()),
+            file: annotation.file.clone(),
+            line: annotation.line,
+            callee: annotation.callee.clone(),
+            status: annotation.status.clone(),
+            category: annotation.category.clone(),
+            tier_to_close: annotation.tier_to_close.clone(),
+            reason: annotation.reason.clone(),
+        });
+    }
+    out
+}
+
+fn apply_runtime_annotation(
+    annotation: RuntimeAnnotation,
+    row_index: &BTreeMap<(String, usize, String), usize>,
+    scoped_row_index: &BTreeMap<(String, String, usize, String), usize>,
+    annotated_rows: &mut BTreeMap<usize, String>,
+    rows: &mut [PanicCensusRow],
+    issues: &mut Vec<Value>,
+) {
+    let index = match annotation.scoped_key() {
+        Some(scoped_key) => scoped_row_index.get(&scoped_key).copied(),
+        None => row_index.get(&annotation.key()).copied(),
+    };
+    let Some(index) = index else {
+        issues.push(annotation_issue(
+            "stale",
+            &format!(
+                "stale panic-site annotation for {}:{} {}",
+                annotation.file, annotation.line, annotation.callee
+            ),
+            Some(&annotation),
+        ));
+        return;
+    };
+    if let Some(previous) = annotated_rows.get(&index) {
+        issues.push(annotation_issue(
+            "effect-site-annotation-duplicate",
+            &format!(
+                "duplicate panic-site annotation for {}:{} {}; first source {previous}",
+                annotation.file, annotation.line, annotation.callee
+            ),
+            Some(&annotation),
+        ));
+        return;
+    }
+    if rows[index].status == "proven" {
+        issues.push(annotation_issue(
+            "proven_site_collision",
+            &format!(
+                "proven panic-site annotation for {}:{} {}",
+                annotation.file, annotation.line, annotation.callee
+            ),
+            Some(&annotation),
+        ));
+        return;
+    }
+    annotated_rows.insert(index, annotation_source(&annotation));
+    rows[index].status = annotation.status;
+    rows[index].category = Some(annotation.category);
+    rows[index].tier_to_close = Some(annotation.tier_to_close);
+    rows[index].reason = annotation.reason;
+}
+
+fn annotation_source(annotation: &RuntimeAnnotation) -> String {
+    annotation
+        .bundle_cid
+        .as_ref()
+        .map(|bundle| format!("memento:{bundle}"))
+        .unwrap_or_else(|| "manifest".to_string())
 }
 
 fn runtime_annotation_manifest(target_path: &Path) -> RuntimeAnnotationManifest {
@@ -386,6 +511,7 @@ fn runtime_annotation_from_value(
         })?;
     let reason = runtime_annotation_str(entry, "reason", table, index)?;
     Ok(RuntimeAnnotation {
+        bundle_cid: None,
         file,
         line,
         callee,
@@ -433,6 +559,9 @@ fn annotation_issue(kind: &str, detail: &str, annotation: Option<&RuntimeAnnotat
         "detail": detail,
     });
     if let (Some(obj), Some(annotation)) = (issue.as_object_mut(), annotation) {
+        if let Some(bundle) = &annotation.bundle_cid {
+            obj.insert("bundleCid".to_string(), Value::String(bundle.clone()));
+        }
         obj.insert("file".to_string(), Value::String(annotation.file.clone()));
         obj.insert("line".to_string(), json!(annotation.line));
         obj.insert(
@@ -470,10 +599,54 @@ mod tests {
             file: file.to_string(),
             line,
             callee: callee.to_string(),
+            callsite_bundle_cid: None,
             status: status.to_string(),
             reason: "synthetic runtime row".to_string(),
             category: None,
             tier_to_close: None,
+        }
+    }
+
+    fn runtime_panic_row_with_bundle(
+        bundle: &str,
+        file: &str,
+        line: usize,
+        callee: &str,
+        status: &str,
+    ) -> PanicCensusRow {
+        PanicCensusRow {
+            file: file.to_string(),
+            line,
+            callee: callee.to_string(),
+            status: status.to_string(),
+            reason: "synthetic runtime row".to_string(),
+            category: None,
+            tier_to_close: None,
+            callsite_bundle_cid: Some(bundle.to_string()),
+        }
+    }
+
+    fn effect_annotation(
+        bundle: &str,
+        file: &str,
+        line: usize,
+        callee: &str,
+        status: &str,
+        category: &str,
+        tier_to_close: &str,
+        reason: &str,
+    ) -> EffectSiteAnnotation {
+        EffectSiteAnnotation {
+            effect_kind: "concept:panic-freedom".to_string(),
+            file: file.to_string(),
+            line,
+            callee: callee.to_string(),
+            status: status.to_string(),
+            category: category.to_string(),
+            tier_to_close: tier_to_close.to_string(),
+            reason: reason.to_string(),
+            memento_cid: format!("blake3-512:memento-{line}"),
+            bundle_cid: bundle.to_string(),
         }
     }
 
@@ -835,6 +1008,266 @@ reason = "runtime residue"
             .count();
 
         assert_eq!(before, after, "annotation must not move K");
+    }
+
+    #[test]
+    fn annotation_runtime_memento_annotation_enriches_matching_bundle_row() {
+        let td = tempfile::tempdir().unwrap();
+        let rows = vec![runtime_panic_row_with_bundle(
+            "blake3-512:dep-bundle",
+            "src/lib.rs",
+            10,
+            "method:expect",
+            "unproven",
+        )];
+        let annotations = vec![effect_annotation(
+            "blake3-512:dep-bundle",
+            "src/lib.rs",
+            10,
+            "method:expect",
+            "residue",
+            "platform_semantics_runtime_residue",
+            "irreducible",
+            "dependency memento residue",
+        )];
+
+        let outcome = annotation_runtime_check_with_mementos(
+            td.path(),
+            &rows,
+            &annotations,
+            AnnotationCheckMode::Strict,
+        )
+        .expect("memento annotation");
+        let row = &outcome.rows[0];
+
+        assert_eq!(row.status, "residue");
+        assert_eq!(
+            row.category.as_deref(),
+            Some("platform_semantics_runtime_residue")
+        );
+        assert_eq!(row.reason, "dependency memento residue");
+    }
+
+    #[test]
+    fn annotation_runtime_manifest_and_memento_distinct_keys_union() {
+        let td = tempfile::tempdir().unwrap();
+        write_runtime_annotation_manifest(
+            td.path(),
+            r#"
+[[residue]]
+file = "src/local.rs"
+line = 1
+callee = "method:unwrap"
+category = "lock_poisoning_residue"
+tier_to_close = "irreducible"
+reason = "local manifest residue"
+"#,
+        );
+        let rows = vec![
+            runtime_panic_row("src/local.rs", 1, "method:unwrap", "unproven"),
+            runtime_panic_row_with_bundle(
+                "blake3-512:dep-bundle",
+                "src/dep.rs",
+                2,
+                "method:expect",
+                "unproven",
+            ),
+        ];
+        let annotations = vec![effect_annotation(
+            "blake3-512:dep-bundle",
+            "src/dep.rs",
+            2,
+            "method:expect",
+            "unproven",
+            "D-lib",
+            "future totality proof",
+            "dependency memento tier",
+        )];
+
+        let outcome = annotation_runtime_check_with_mementos(
+            td.path(),
+            &rows,
+            &annotations,
+            AnnotationCheckMode::Strict,
+        )
+        .expect("union");
+
+        assert_eq!(outcome.rows.len(), 2);
+        assert_eq!(outcome.rows[0].category.as_deref(), Some("lock_poisoning_residue"));
+        assert_eq!(outcome.rows[1].category.as_deref(), Some("D-lib"));
+    }
+
+    #[test]
+    fn annotation_runtime_manifest_and_memento_same_key_fails_closed() {
+        let td = tempfile::tempdir().unwrap();
+        write_runtime_annotation_manifest(
+            td.path(),
+            r#"
+[[residue]]
+file = "src/lib.rs"
+line = 10
+callee = "method:expect"
+category = "lock_poisoning_residue"
+tier_to_close = "irreducible"
+reason = "local manifest residue"
+"#,
+        );
+        let rows = vec![runtime_panic_row_with_bundle(
+            "blake3-512:target-bundle",
+            "src/lib.rs",
+            10,
+            "method:expect",
+            "unproven",
+        )];
+        let annotations = vec![effect_annotation(
+            "blake3-512:target-bundle",
+            "src/lib.rs",
+            10,
+            "method:expect",
+            "unproven",
+            "D-lib",
+            "future totality proof",
+            "duplicate memento annotation",
+        )];
+
+        let err = annotation_runtime_check_with_mementos(
+            td.path(),
+            &rows,
+            &annotations,
+            AnnotationCheckMode::Strict,
+        )
+        .expect_err("duplicate manifest/memento annotation must fail closed");
+
+        assert!(
+            err.check
+                .evidence
+                .to_string()
+                .contains("effect-site-annotation-duplicate"),
+            "duplicate evidence should carry structured tag: {:#?}",
+            err.check
+        );
+    }
+
+    #[test]
+    fn annotation_runtime_stale_memento_annotation_fails_hard() {
+        let td = tempfile::tempdir().unwrap();
+        let rows = vec![runtime_panic_row_with_bundle(
+            "blake3-512:dep-bundle",
+            "src/live.rs",
+            1,
+            "method:expect",
+            "unproven",
+        )];
+        let annotations = vec![effect_annotation(
+            "blake3-512:dep-bundle",
+            "src/stale.rs",
+            99,
+            "method:expect",
+            "residue",
+            "stale",
+            "irreducible",
+            "stale dependency memento residue",
+        )];
+
+        let err = annotation_runtime_check_with_mementos(
+            td.path(),
+            &rows,
+            &annotations,
+            AnnotationCheckMode::Strict,
+        )
+        .expect_err("strict stale memento annotation must fail");
+
+        assert!(
+            err.check.evidence.to_string().contains("stale"),
+            "stale evidence should be named: {:#?}",
+            err.check
+        );
+    }
+
+    #[test]
+    fn annotation_runtime_memento_annotation_on_proven_site_fails_closed() {
+        let td = tempfile::tempdir().unwrap();
+        let rows = vec![runtime_panic_row_with_bundle(
+            "blake3-512:dep-bundle",
+            "src/lib.rs",
+            10,
+            "method:expect",
+            "proven",
+        )];
+        let annotations = vec![effect_annotation(
+            "blake3-512:dep-bundle",
+            "src/lib.rs",
+            10,
+            "method:expect",
+            "residue",
+            "lock_poisoning_residue",
+            "irreducible",
+            "should not annotate proven rows",
+        )];
+
+        let err = annotation_runtime_check_with_mementos(
+            td.path(),
+            &rows,
+            &annotations,
+            AnnotationCheckMode::Strict,
+        )
+        .expect_err("proven-site memento annotation must fail");
+
+        assert!(
+            err.check
+                .evidence
+                .to_string()
+                .contains("proven_site_collision"),
+            "proven collision evidence should be typed: {:#?}",
+            err.check
+        );
+    }
+
+    #[test]
+    fn annotation_runtime_memento_annotations_preserve_proven_count() {
+        let td = tempfile::tempdir().unwrap();
+        let rows = vec![
+            runtime_panic_row_with_bundle(
+                "blake3-512:dep-bundle",
+                "src/lib.rs",
+                10,
+                "method:expect",
+                "proven",
+            ),
+            runtime_panic_row_with_bundle(
+                "blake3-512:dep-bundle",
+                "src/lib.rs",
+                20,
+                "method:expect",
+                "unproven",
+            ),
+        ];
+        let annotations = vec![effect_annotation(
+            "blake3-512:dep-bundle",
+            "src/lib.rs",
+            20,
+            "method:expect",
+            "residue",
+            "lock_poisoning_residue",
+            "irreducible",
+            "runtime residue",
+        )];
+        let before = rows.iter().filter(|row| row.status == "proven").count();
+
+        let outcome = annotation_runtime_check_with_mementos(
+            td.path(),
+            &rows,
+            &annotations,
+            AnnotationCheckMode::Strict,
+        )
+        .expect("valid memento annotation");
+        let after = outcome
+            .rows
+            .iter()
+            .filter(|row| row.status == "proven")
+            .count();
+
+        assert_eq!(before, after, "annotation mementos must not move K");
     }
 
     #[test]

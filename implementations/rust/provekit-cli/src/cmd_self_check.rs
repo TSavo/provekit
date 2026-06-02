@@ -11,7 +11,8 @@ use provekit_canonicalizer::blake3_512_of;
 use provekit_claim_envelope::{
     body_discharge_policy_from_object_with_default, BodyDischargePolicyWarning,
 };
-use provekit_verifier::load_all_proofs::ProofBytes;
+use provekit_verifier::load_all_proofs::{self, ProofBytes};
+use provekit_verifier::types::{EffectSiteAnnotation, LoadError, MementoPool};
 use serde::Serialize;
 use serde_json::Value;
 use tracing::{error, info, warn};
@@ -20,7 +21,7 @@ use crate::floor_runtime_check::{
     floor_runtime_check, FloorCheckMode, FloorCheckStatus, FloorRuntimeCheck, FloorSignals,
 };
 use crate::panic_annotations_runtime::{
-    annotation_runtime_check, AnnotationCheckMode, PanicCensusRow,
+    annotation_runtime_check_with_mementos, AnnotationCheckMode, PanicCensusRow,
 };
 
 #[derive(Parser, Debug, Clone)]
@@ -116,6 +117,8 @@ struct PanicCensusEntry {
     file: String,
     line: usize,
     callee: String,
+    #[serde(skip)]
+    callsite_bundle_cid: Option<String>,
     status: String,
     reason: String,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -330,11 +333,13 @@ fn run_inner(args: &SelfCheckArgs) -> Result<SelfCheckScoreboard, String> {
     };
     info!("self-check: prove complete; building scoreboard");
 
-    let scoreboard = build_scoreboard_with_runtime_annotations(
+    let annotation_mementos = load_effect_site_annotation_mementos(&target_abs, &target_out)?;
+    let scoreboard = build_scoreboard_with_runtime_annotations_and_mementos(
         &target_rel,
         &target_abs,
         &target_mint.json,
         &prove_json,
+        &annotation_mementos,
         AnnotationCheckMode::Strict,
     )?;
     enforce_floor_runtime_checks(&scoreboard, &prove_json)?;
@@ -486,6 +491,58 @@ fn count_proof_files(path: &Path) -> Result<usize, String> {
         }
     }
     Ok(count)
+}
+
+fn proof_files_in(path: &Path) -> Result<Vec<PathBuf>, String> {
+    if !path.exists() {
+        return Ok(Vec::new());
+    }
+    let mut files = Vec::new();
+    for entry in fs::read_dir(path).map_err(|e| format!("read {}: {e}", path.display()))? {
+        let entry = entry.map_err(|e| format!("read {} entry: {e}", path.display()))?;
+        let path = entry.path();
+        if path.extension() == Some(OsStr::new("proof")) {
+            files.push(path);
+        }
+    }
+    files.sort();
+    Ok(files)
+}
+
+fn load_effect_site_annotation_mementos(
+    target_abs: &Path,
+    target_out: &Path,
+) -> Result<Vec<EffectSiteAnnotation>, String> {
+    let target_proofs = proof_files_in(target_out)?;
+    let pool = load_all_proofs::run_with_files(target_abs, &target_proofs);
+    effect_site_annotations_from_pool(pool)
+}
+
+fn effect_site_annotations_from_pool(
+    pool: MementoPool,
+) -> Result<Vec<EffectSiteAnnotation>, String> {
+    let annotation_errors = pool
+        .load_errors
+        .iter()
+        .filter(|error| is_effect_site_annotation_load_error(error))
+        .map(|error| format!("{}: {}", error.proof_path, error.reason))
+        .collect::<Vec<_>>();
+    if !annotation_errors.is_empty() {
+        let errors = annotation_errors.join("; ");
+        return Err(format!("effect-site annotation proof load failed: {errors}"));
+    }
+    Ok(pool
+        .panic_effect_site_annotations
+        .values()
+        .cloned()
+        .collect())
+}
+
+fn is_effect_site_annotation_load_error(error: &LoadError) -> bool {
+    error.reason.starts_with("[effect-site-annotation]")
+        || error
+            .reason
+            .starts_with("[effect-site-annotation-duplicate]")
 }
 
 impl ImportsProofSetSnapshot {
@@ -972,11 +1029,30 @@ fn build_scoreboard(
     })
 }
 
+#[cfg(test)]
 fn build_scoreboard_with_runtime_annotations(
     target_rel: &str,
     target_path: &Path,
     mint_json: &Value,
     prove_json: &Value,
+    doctor_mode: AnnotationCheckMode,
+) -> Result<SelfCheckScoreboard, String> {
+    build_scoreboard_with_runtime_annotations_and_mementos(
+        target_rel,
+        target_path,
+        mint_json,
+        prove_json,
+        &[],
+        doctor_mode,
+    )
+}
+
+fn build_scoreboard_with_runtime_annotations_and_mementos(
+    target_rel: &str,
+    target_path: &Path,
+    mint_json: &Value,
+    prove_json: &Value,
+    memento_annotations: &[EffectSiteAnnotation],
     doctor_mode: AnnotationCheckMode,
 ) -> Result<SelfCheckScoreboard, String> {
     let catalog_cid = mint_json
@@ -996,13 +1072,18 @@ fn build_scoreboard_with_runtime_annotations(
         .iter()
         .map(panic_census_row_from_entry)
         .collect();
-    let annotation_outcome = annotation_runtime_check(target_path, &projected_rows, doctor_mode)
-        .map_err(|error| {
+    let annotation_outcome = annotation_runtime_check_with_mementos(
+        target_path,
+        &projected_rows,
+        memento_annotations,
+        doctor_mode,
+    )
+    .map_err(|error| {
             format!(
                 "panic annotation runtime check failed: {}; evidence={}",
                 error, error.check.evidence
             )
-        })?;
+    })?;
     let annotation_check = &annotation_outcome.check;
     info!(
         check_id = %annotation_check.id,
@@ -1047,6 +1128,7 @@ fn panic_census_row_from_entry(entry: &PanicCensusEntry) -> PanicCensusRow {
         file: entry.file.clone(),
         line: entry.line,
         callee: entry.callee.clone(),
+        callsite_bundle_cid: entry.callsite_bundle_cid.clone(),
         status: entry.status.clone(),
         reason: entry.reason.clone(),
         category: entry.category.clone(),
@@ -1059,6 +1141,7 @@ fn panic_census_entry_from_row(row: &PanicCensusRow) -> PanicCensusEntry {
         file: row.file.clone(),
         line: row.line,
         callee: row.callee.clone(),
+        callsite_bundle_cid: row.callsite_bundle_cid.clone(),
         status: row.status.clone(),
         reason: row.reason.clone(),
         category: row.category.clone(),
@@ -1281,6 +1364,11 @@ fn panic_census(
                 .or_else(|| row.get("bridge").and_then(|v| v.as_str()))
                 .unwrap_or("unknown")
                 .to_string();
+            let callsite_bundle_cid = row
+                .get("callsiteBundleCid")
+                .and_then(|v| v.as_str())
+                .filter(|s| !s.is_empty())
+                .map(str::to_string);
             let method = row.get("dischargeMethod").and_then(|v| v.as_str());
             let row_status = row.get("status").and_then(|v| v.as_str()).unwrap_or("");
             let (status, reason) = if row_status == "discharged" && method == Some("panic-safe") {
@@ -1302,6 +1390,7 @@ fn panic_census(
                     file,
                     line,
                     callee,
+                    callsite_bundle_cid,
                     status,
                     reason,
                     category: None,
@@ -1318,6 +1407,7 @@ fn panic_census(
                 file: site.file,
                 line: site.line,
                 callee: site.callee,
+                callsite_bundle_cid: None,
                 status: "unproven".to_string(),
                 reason: site.reason,
                 category: None,
@@ -1678,6 +1768,59 @@ mod tests {
             attempted,
             resolved,
         }
+    }
+
+    fn load_error(reason: &str) -> LoadError {
+        LoadError {
+            proof_path: "synthetic.proof".to_string(),
+            reason: reason.to_string(),
+        }
+    }
+
+    #[test]
+    fn effect_site_annotation_scan_tolerates_unrelated_load_errors() {
+        let mut pool = MementoPool::default();
+        pool.load_errors.push(load_error(
+            "duplicate contract name `read_response` resolves to two CIDs",
+        ));
+
+        let annotations = effect_site_annotations_from_pool(pool).expect("unrelated errors");
+
+        assert!(annotations.is_empty());
+    }
+
+    #[test]
+    fn effect_site_annotation_scan_fails_on_tagged_annotation_errors() {
+        let mut pool = MementoPool::default();
+        pool.load_errors.push(load_error(
+            "[effect-site-annotation] blake3-512:abc: missing or invalid `callee`",
+        ));
+
+        let err = effect_site_annotations_from_pool(pool)
+            .expect_err("annotation load errors must fail");
+
+        assert!(err.contains("[effect-site-annotation]"), "{err}");
+        assert!(err.contains("callee"), "{err}");
+    }
+
+    #[test]
+    fn effect_site_annotation_scan_reports_only_tagged_errors_when_mixed() {
+        let mut pool = MementoPool::default();
+        pool.load_errors.push(load_error(
+            "duplicate contract name `string_field` resolves to two CIDs",
+        ));
+        pool.load_errors.push(load_error(
+            "[effect-site-annotation-duplicate] for (bundle, src/lib.rs, 10, method:unwrap)",
+        ));
+
+        let err =
+            effect_site_annotations_from_pool(pool).expect_err("tagged mixed error must fail");
+
+        assert!(
+            err.contains("[effect-site-annotation-duplicate]"),
+            "{err}"
+        );
+        assert!(!err.contains("string_field"), "{err}");
     }
 
     #[test]
@@ -2296,6 +2439,53 @@ reason = "this row exists only in prove output"
         assert_eq!(
             scoreboard.panic_census[0].tier_to_close.as_deref(),
             Some("future totality proof")
+        );
+    }
+
+    #[test]
+    fn self_check_scoreboard_does_not_serialize_callsite_bundle_cid_in_panic_census() {
+        let td = tempfile::tempdir().expect("tempdir");
+        let mint = mint_json_with_diagnostics(vec![]);
+        let prove = json!({
+            "rows": [{
+                "file": "src/generated_by_prove.rs",
+                "line": 44,
+                "callee": "method:unwrap",
+                "panicSite": true,
+                "status": "undecidable",
+                "reason": "synthetic panic row",
+                "callsiteBundleCid": "blake3-512:dependency-bundle"
+            }]
+        });
+        let annotations = vec![provekit_verifier::types::EffectSiteAnnotation {
+            effect_kind: "concept:panic-freedom".to_string(),
+            file: "src/generated_by_prove.rs".to_string(),
+            line: 44,
+            callee: "method:unwrap".to_string(),
+            status: "unproven".to_string(),
+            category: "D-lib".to_string(),
+            tier_to_close: "future totality proof".to_string(),
+            reason: "dependency memento annotation".to_string(),
+            memento_cid: "blake3-512:annotation".to_string(),
+            bundle_cid: "blake3-512:dependency-bundle".to_string(),
+        }];
+
+        let scoreboard = build_scoreboard_with_runtime_annotations_and_mementos(
+            "target",
+            td.path(),
+            &mint,
+            &prove,
+            &annotations,
+            crate::panic_annotations_runtime::AnnotationCheckMode::Strict,
+        )
+        .expect("scoreboard");
+        let rendered = serde_json::to_value(&scoreboard).expect("scoreboard json");
+        let row = &rendered["panicCensus"][0];
+
+        assert_eq!(row["category"], "D-lib");
+        assert!(
+            row.get("callsiteBundleCid").is_none(),
+            "self-check panicCensus must not expose prove-row bundle metadata"
         );
     }
 
