@@ -8,10 +8,13 @@ use std::process::{Command, Output, Stdio};
 
 use clap::Parser;
 use provekit_canonicalizer::blake3_512_of;
+use provekit_claim_envelope::{
+    body_discharge_policy_from_object_with_default, BodyDischargePolicyWarning,
+};
 use provekit_verifier::load_all_proofs::ProofBytes;
 use serde::Serialize;
 use serde_json::Value;
-use tracing::{error, info};
+use tracing::{error, info, warn};
 
 use crate::floor_runtime_check::{
     floor_runtime_check, FloorCheckMode, FloorCheckStatus, FloorRuntimeCheck, FloorSignals,
@@ -74,6 +77,37 @@ struct Site {
     line: usize,
     callee: String,
     reason: String,
+}
+
+fn log_body_discharge_policy_warnings(
+    context: &str,
+    contract: &str,
+    warnings: &[BodyDischargePolicyWarning],
+) {
+    for warning in warnings {
+        match warning {
+            BodyDischargePolicyWarning::Disagreement {
+                legacy_eligible,
+                legacy_reason,
+                policy_eligible,
+                policy_reason,
+            } => warn!(
+                context = %context,
+                contract = %contract,
+                legacy_eligible = *legacy_eligible,
+                legacy_reason = ?legacy_reason,
+                policy_eligible = *policy_eligible,
+                policy_reason = ?policy_reason,
+                "body-discharge-disagreement: dischargePolicy/bodyDischarge* disagree; using legacy bodyDischarge*"
+            ),
+            BodyDischargePolicyWarning::Malformed { reason } => warn!(
+                context = %context,
+                contract = %contract,
+                reason = %reason,
+                "body-discharge-malformed: ignoring malformed dischargePolicy"
+            ),
+        }
+    }
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -1043,20 +1077,22 @@ fn lift_scoreboards(lift_json: &Value) -> (LiftScoreboard, BridgeScoreboard, Vec
             match entry.get("kind").and_then(|v| v.as_str()) {
                 Some("function-contract") => {
                     fn_contracts += 1;
-                    if entry
-                        .get("bodyDischargeEligible")
-                        .or_else(|| entry.get("body_discharge_eligible"))
-                        .and_then(|v| v.as_bool())
-                        .unwrap_or(false)
-                    {
+                    let body_policy = body_discharge_policy_from_object_with_default(entry, false);
+                    let contract = entry
+                        .get("name")
+                        .and_then(|v| v.as_str())
+                        .unwrap_or("<unnamed>");
+                    log_body_discharge_policy_warnings(
+                        "self-check-lift-scoreboard",
+                        contract,
+                        &body_policy.warnings,
+                    );
+                    if body_policy.body_discharge_eligible {
                         body_discharge_eligible += 1;
                     } else {
-                        let reason = entry
-                            .get("bodyDischargeRefusalReason")
-                            .or_else(|| entry.get("body_discharge_refusal_reason"))
-                            .and_then(|v| v.as_str())
-                            .unwrap_or("unspecified")
-                            .to_string();
+                        let reason = body_policy
+                            .body_discharge_refusal_reason
+                            .unwrap_or_else(|| "unspecified".to_string());
                         *body_discharge_ineligible.entry(reason).or_insert(0) += 1;
                     }
                 }
@@ -1511,6 +1547,46 @@ fn oracle_scoreboard(mint_json: &Value) -> OracleScoreboard {
 mod tests {
     use super::*;
     use serde_json::json;
+    use std::io::{self, Write};
+    use std::sync::{Arc, Mutex};
+    use tracing_subscriber::fmt::MakeWriter;
+
+    #[derive(Clone, Default)]
+    struct SharedLog(Arc<Mutex<Vec<u8>>>);
+
+    struct SharedLogWriter(Arc<Mutex<Vec<u8>>>);
+
+    impl Write for SharedLogWriter {
+        fn write(&mut self, buf: &[u8]) -> io::Result<usize> {
+            self.0.lock().expect("log lock").extend_from_slice(buf);
+            Ok(buf.len())
+        }
+
+        fn flush(&mut self) -> io::Result<()> {
+            Ok(())
+        }
+    }
+
+    impl<'a> MakeWriter<'a> for SharedLog {
+        type Writer = SharedLogWriter;
+
+        fn make_writer(&'a self) -> Self::Writer {
+            SharedLogWriter(self.0.clone())
+        }
+    }
+
+    fn capture_warn_log(f: impl FnOnce()) -> String {
+        let log = SharedLog::default();
+        let subscriber = tracing_subscriber::fmt()
+            .with_max_level(tracing::Level::WARN)
+            .with_writer(log.clone())
+            .with_ansi(false)
+            .without_time()
+            .finish();
+        tracing::subscriber::with_default(subscriber, f);
+        let bytes = log.0.lock().expect("log lock").clone();
+        String::from_utf8(bytes).expect("log is utf8")
+    }
 
     fn mint_json(requested: bool, attempted: u64, resolved: u64) -> Value {
         json!({
@@ -1602,6 +1678,123 @@ mod tests {
             attempted,
             resolved,
         }
+    }
+
+    #[test]
+    fn lift_scoreboard_accepts_discharge_policy_body_reduction_allowed() {
+        let lift_json = json!({
+            "ir": [{
+                "kind": "function-contract",
+                "name": "total",
+                "dischargePolicy": {
+                    "bodyReduction": {
+                        "status": "allowed"
+                    }
+                }
+            }]
+        });
+
+        let (lift, _, _, _) = lift_scoreboards(&lift_json);
+
+        assert_eq!(lift.fn_contracts, 1);
+        assert_eq!(lift.body_discharge_eligible, 1);
+        assert!(lift.body_discharge_ineligible.is_empty());
+    }
+
+    #[test]
+    fn lift_scoreboard_accepts_discharge_policy_body_reduction_refused() {
+        let lift_json = json!({
+            "ir": [{
+                "kind": "function-contract",
+                "name": "axiom",
+                "dischargePolicy": {
+                    "bodyReduction": {
+                        "status": "refused",
+                        "reason": "totality-axiom"
+                    }
+                }
+            }]
+        });
+
+        let (lift, _, _, _) = lift_scoreboards(&lift_json);
+
+        assert_eq!(lift.fn_contracts, 1);
+        assert_eq!(lift.body_discharge_eligible, 0);
+        assert_eq!(lift.body_discharge_ineligible.get("totality-axiom"), Some(&1));
+    }
+
+    #[test]
+    fn lift_scoreboard_keeps_legacy_body_discharge_fields_on_disagreement() {
+        let lift_json = json!({
+            "ir": [{
+                "kind": "function-contract",
+                "name": "legacy_wins",
+                "bodyDischargeEligible": false,
+                "bodyDischargeRefusalReason": "legacy-refusal",
+                "dischargePolicy": {
+                    "bodyReduction": {
+                        "status": "allowed"
+                    }
+                }
+            }]
+        });
+
+        let (lift, _, _, _) = lift_scoreboards(&lift_json);
+
+        assert_eq!(lift.body_discharge_eligible, 0);
+        assert_eq!(lift.body_discharge_ineligible.get("legacy-refusal"), Some(&1));
+    }
+
+    #[test]
+    fn lift_scoreboard_warns_once_for_body_discharge_policy_disagreement() {
+        let lift_json = json!({
+            "ir": [{
+                "kind": "function-contract",
+                "name": "legacy_wins",
+                "bodyDischargeEligible": false,
+                "bodyDischargeRefusalReason": "legacy-refusal",
+                "dischargePolicy": {
+                    "bodyReduction": {
+                        "status": "allowed"
+                    }
+                }
+            }]
+        });
+
+        let logs = capture_warn_log(|| {
+            let _ = lift_scoreboards(&lift_json);
+        });
+
+        assert_eq!(
+            logs.matches("body-discharge-disagreement").count(),
+            1,
+            "one policy disagreement must warn once; logs:\n{logs}"
+        );
+    }
+
+    #[test]
+    fn lift_scoreboard_warns_for_malformed_body_discharge_policy() {
+        let lift_json = json!({
+            "ir": [{
+                "kind": "function-contract",
+                "name": "malformed_policy",
+                "bodyDischargeEligible": true,
+                "dischargePolicy": {
+                    "bodyReduction": {
+                        "status": 42
+                    }
+                }
+            }]
+        });
+
+        let logs = capture_warn_log(|| {
+            let _ = lift_scoreboards(&lift_json);
+        });
+
+        assert!(
+            logs.contains("body-discharge-malformed"),
+            "malformed policy must warn with tag; logs:\n{logs}"
+        );
     }
 
     #[test]

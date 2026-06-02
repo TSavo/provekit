@@ -9,9 +9,9 @@ description = "ProvekIt: claim/memento envelope minters (contract, bridge, impli
 [dependencies]
 provekit-canonicalizer = { path = "../provekit-canonicalizer" }
 provekit-proof-envelope = { path = "../provekit-proof-envelope" }
+serde_json = { workspace = true }
 thiserror = { workspace = true }
 
 [dev-dependencies]
 serde = { workspace = true }
-serde_json = { workspace = true }
 hex = { workspace = true }

@@ -27,6 +27,10 @@ use std::sync::{Arc, OnceLock};
 use base64::Engine;
 use libprovekit::concept::panic_freedom;
 use provekit_canonicalizer::{blake3_512_of, encode_jcs, Value as CValue};
+use provekit_claim_envelope::{
+    body_discharge_policy_from_object, body_discharge_policy_from_object_with_default,
+    BodyDischargePolicyWarning,
+};
 use provekit_ir_types::{EvidenceMemento, IrFormula, IrTerm, SourceKind};
 use provekit_lift_contracts::lift_file_with_docstring_evidence;
 use provekit_walk::emit::{
@@ -67,6 +71,37 @@ const SORT_STRING_CID: &str = "blake3-512:be8721d24849feb74c4721520bdba02d352a94
 const BODY_TEXT_CANONICALIZATION: &str = "trim-outer-whitespace-v1";
 
 static CONCEPT_OP_CIDS: OnceLock<BTreeMap<String, String>> = OnceLock::new();
+
+fn log_body_discharge_policy_warnings(
+    context: &str,
+    contract: &str,
+    warnings: &[BodyDischargePolicyWarning],
+) {
+    for warning in warnings {
+        match warning {
+            BodyDischargePolicyWarning::Disagreement {
+                legacy_eligible,
+                legacy_reason,
+                policy_eligible,
+                policy_reason,
+            } => warn!(
+                context = %context,
+                contract = %contract,
+                legacy_eligible = *legacy_eligible,
+                legacy_reason = ?legacy_reason,
+                policy_eligible = *policy_eligible,
+                policy_reason = ?policy_reason,
+                "body-discharge-disagreement: dischargePolicy/bodyDischarge* disagree; using legacy bodyDischarge*"
+            ),
+            BodyDischargePolicyWarning::Malformed { reason } => warn!(
+                context = %context,
+                contract = %contract,
+                reason = %reason,
+                "body-discharge-malformed: ignoring malformed dischargePolicy"
+            ),
+        }
+    }
+}
 
 fn main() -> io::Result<()> {
     // Logs go to stderr only; stdout is the JSON-RPC channel and must stay
@@ -3009,11 +3044,13 @@ fn lift_implications(params: &Value) -> Result<Value, String> {
             if leaf.is_empty() {
                 continue;
             }
-            let body_discharge_eligible = binding
-                .get("bodyDischargeEligible")
-                .or_else(|| binding.get("body_discharge_eligible"))
-                .and_then(|v| v.as_bool())
-                .unwrap_or(true);
+            let body_policy = body_discharge_policy_from_object(binding);
+            log_body_discharge_policy_warnings(
+                "walk-lift-implication-contract-binding",
+                name,
+                &body_policy.warnings,
+            );
+            let body_discharge_eligible = body_policy.body_discharge_eligible;
             let library = binding
                 .get("library")
                 .and_then(|v| v.as_str())
@@ -3261,11 +3298,9 @@ fn lift_implications(params: &Value) -> Result<Value, String> {
                             diagnostics.push(json!({
                                 "kind": "lift-note",
                                 "reason": "body-discharge-ineligible-bridged",
-                                "detail": ineligible
-                                    .get("bodyDischargeRefusalReason")
-                                    .or_else(|| ineligible.get("body_discharge_refusal_reason"))
-                                    .and_then(|v| v.as_str())
-                                    .unwrap_or("callee contract is not body-discharge eligible; bridged anyway"),
+                                "detail": body_discharge_policy_from_object(ineligible)
+                                    .body_discharge_refusal_reason
+                                    .unwrap_or_else(|| "callee contract is not body-discharge eligible; bridged anyway".to_string()),
                                 "callee": cs.callee,
                                 "calleeCrate": key.0,
                                 "file": cs.file,
@@ -4400,17 +4435,16 @@ fn function_contract_lift(params: &Value) -> Result<Value, String> {
     let total_fnc = entries.len();
     let eligible = entries
         .iter()
-        .filter(|e| {
-            e.get("bodyDischargeEligible")
-                .and_then(|v| v.as_bool())
-                .unwrap_or(false)
-        })
+        .filter(|e| body_discharge_policy_from_object_with_default(e, false).body_discharge_eligible)
         .count();
-    let mut refusal_by_reason: std::collections::BTreeMap<&str, usize> =
+    let mut refusal_by_reason: std::collections::BTreeMap<String, usize> =
         std::collections::BTreeMap::new();
     for e in &entries {
-        if let Some(r) = e.get("bodyDischargeRefusalReason").and_then(|v| v.as_str()) {
-            *refusal_by_reason.entry(r).or_insert(0) += 1;
+        let body_policy = body_discharge_policy_from_object_with_default(e, false);
+        if !body_policy.body_discharge_eligible {
+            if let Some(reason) = body_policy.body_discharge_refusal_reason {
+                *refusal_by_reason.entry(reason).or_insert(0) += 1;
+            }
         }
     }
     let refusal_breakdown = refusal_by_reason
@@ -12941,6 +12975,52 @@ pub fn caller(x: i64) -> i64 {
         assert!(
             diags.is_empty(),
             "matched generic call should not gap: {diags:?}"
+        );
+
+        let _ = fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn lift_implications_treats_discharge_policy_refused_binding_as_ineligible() {
+        let src = r##"
+pub fn blocked(x: i64) -> i64 {
+    x
+}
+
+pub fn caller(x: i64) -> i64 {
+    blocked(x)
+}
+"##;
+        let root = temp_workspace("lift_implications_discharge_policy_refused");
+        let src_dir = root.join("src");
+        fs::create_dir_all(&src_dir).expect("create src dir");
+        fs::write(src_dir.join("lib.rs"), src).expect("write source");
+        let target_cid = "blake3-512:111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111";
+
+        let resp = lift_implications(&json!({
+            "workspace_root": root.to_string_lossy(),
+            "source_paths": ["."],
+            "contract_bindings": [{
+                "name": "blocked",
+                "contract_cid": target_cid,
+                "dischargePolicy": {
+                    "bodyReduction": {
+                        "status": "refused",
+                        "reason": "totality-axiom"
+                    }
+                }
+            }]
+        }))
+        .expect("lift implications");
+
+        let diagnostics = resp["diagnostics"].as_array().expect("diagnostics array");
+        assert!(
+            diagnostics.iter().any(|diag| {
+                diag["kind"] == "lift-note"
+                    && diag["reason"] == "body-discharge-ineligible-bridged"
+                    && diag["detail"] == "totality-axiom"
+            }),
+            "new dischargePolicy refused binding must be surfaced as ineligible: {diagnostics:?}"
         );
 
         let _ = fs::remove_dir_all(root);
