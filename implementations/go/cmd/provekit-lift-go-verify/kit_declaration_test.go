@@ -48,7 +48,7 @@ func expectedGoVerifyKitDeclaration() map[string]any {
 		"kit": map[string]any{
 			"id":       "go",
 			"language": "go",
-			"version":  "0.1.0",
+			"version":  "0.1.0-draft",
 		},
 		"rpc": map[string]any{
 			"methods": []any{
@@ -120,6 +120,9 @@ func TestInitializeStaysSeparateFromKitDeclarationContent(t *testing.T) {
 	result, ok := initialize["result"].(map[string]any)
 	if !ok {
 		t.Fatalf("initialize result = %#v, want object", initialize["result"])
+	}
+	if result["version"] != "0.1.0-draft" {
+		t.Fatalf("initialize version = %#v, want 0.1.0-draft", result["version"])
 	}
 	for _, forbidden := range []string{"effectKinds", "effectLeaves", "kit"} {
 		if _, ok := result[forbidden]; ok {

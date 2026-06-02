@@ -534,7 +534,7 @@ fn loader_dispatches_to_go_verify_kit_declaration() {
 
     assert_eq!(declaration.kit.id, "go");
     assert_eq!(declaration.kit.language, "go");
-    assert_eq!(declaration.kit.version, "0.1.0");
+    assert_eq!(declaration.kit.version, "0.1.0-draft");
     assert_eq!(declaration.proof_resolution.strategy, "go-mod");
     assert_eq!(declaration.effect_kinds, ["concept:panic-freedom"]);
     assert_eq!(declaration.effect_leaves.len(), 1);
@@ -583,7 +583,7 @@ fn loader_dispatches_to_java_source_kit_declaration() {
 
     assert_eq!(declaration.kit.id, "java-source");
     assert_eq!(declaration.kit.language, "java");
-    assert_eq!(declaration.kit.version, "0.1.0");
+    assert_eq!(declaration.kit.version, "0.1.0-draft");
     assert_eq!(declaration.proof_resolution.strategy, "maven");
     assert_eq!(declaration.effect_kinds, ["concept:panic-freedom"]);
     assert_eq!(declaration.effect_leaves.len(), 1);

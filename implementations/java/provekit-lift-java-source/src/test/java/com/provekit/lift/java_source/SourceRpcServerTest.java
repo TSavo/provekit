@@ -19,6 +19,7 @@ class SourceRpcServerTest {
         Jcs.Obj result = response.objectField("result");
 
         assertEquals("provekit-lift-java-source", result.stringField("name"));
+        assertEquals("0.1.0-draft", result.stringField("version"));
         assertEquals("pep/1.7.0", result.stringField("protocol_version"));
         Jcs.Obj capabilities = result.objectField("capabilities");
         assertTrue(Jcs.encode(capabilities.arrayField("authoring_surfaces")).contains("java-source"));
@@ -36,7 +37,7 @@ class SourceRpcServerTest {
         Jcs.Obj kit = result.objectField("kit");
         assertEquals("java-source", kit.stringField("id"));
         assertEquals("java", kit.stringField("language"));
-        assertEquals("0.1.0", kit.stringField("version"));
+        assertEquals("0.1.0-draft", kit.stringField("version"));
 
         assertEquals("maven", result.objectField("proofResolution").stringField("strategy"));
         assertEquals("concept:panic-freedom", result.arrayField("effectKinds").stringAt(0).value());
