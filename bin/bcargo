@@ -270,14 +270,16 @@ done
 provision_steps=()
 cargo_env=()
 cargo_env+=("BCARGO_TYPESCRIPT_ENV=$(quote_sh "$provision_typescript_env")")
+path_prefix="$remote_target_dir/$profile"
 if [[ "$provision_python_env" != "0" ]]; then
   provision_steps+=("BCARGO_PYTHON_VENV=$(quote_sh "$remote_python_venv") make --quiet bcargo-python-kit-env")
   cargo_env+=("PYTHON=$(quote_sh "$remote_python")")
-  cargo_env+=("PATH=$(quote_sh "$remote_python_bin"):\$PATH")
+  path_prefix="$path_prefix:$remote_python_bin"
 fi
 if [[ "$provision_typescript_env" != "0" ]]; then
   provision_steps+=("BCARGO_TYPESCRIPT_ENV_DIR=$(quote_sh "$remote_typescript_env") make --quiet bcargo-typescript-kit-env")
 fi
+cargo_env+=("PATH=$(quote_sh "$path_prefix"):\$PATH")
 
 if ((${#provision_steps[@]} == 0)); then
   inner="cd $(quote_sh "$remote_cwd") && "
