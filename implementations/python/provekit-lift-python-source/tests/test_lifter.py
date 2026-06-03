@@ -2532,6 +2532,13 @@ def test_b1_signature_forms_lift_body_and_preserve_parameter_shape() -> None:
         "args": [_tuple(_var("a"), _var("b"), _var("items"), _var("c"), _var("d"), _var("kwargs"))],
     }
 
+    compiled = compile_ir_document([contract])
+    relifted = lift_source(compiled, "b1_signature.py")
+    relifted_contract = _contract(relifted.ir, ".f")
+    assert relifted.refusals == []
+    assert relifted_contract["formals"] == contract["formals"]
+    assert relifted_contract["parameterShape"] == contract["parameterShape"]
+
 
 def test_b1_signed_integer_defaults_are_literal_parameter_shape() -> None:
     source = "def f(axis=-1, *, step=+2):\n    return (axis, step)\n"
@@ -2603,6 +2610,41 @@ def test_b1_try_lifts_opaque_and_retains_inner_raise_locus() -> None:
     loci = _runtime_failure_loci(contract)
     assert [locus["subkind"] for locus in loci] == ["explicit-raise"]
     assert loci[0]["exceptionClass"] == "ValueError"
+
+
+def test_b1_except_handler_name_is_handler_local_not_module_global() -> None:
+    source = (
+        "err = 'module'\n"
+        "def f():\n"
+        "    try:\n"
+        "        raise ValueError\n"
+        "    except ValueError as err:\n"
+        "        return err\n"
+    )
+
+    result = lift_source(source, "b1_except_alias.py")
+
+    assert result.refusals == []
+    contract = _contract(result.ir, ".f")
+    assert {"kind": "reads", "target": "err"} not in contract["effects"]
+
+
+def test_b1_except_handler_name_does_not_leak_after_handler() -> None:
+    source = (
+        "err = 'module'\n"
+        "def f():\n"
+        "    try:\n"
+        "        raise ValueError\n"
+        "    except ValueError as err:\n"
+        "        pass\n"
+        "    return err\n"
+    )
+
+    result = lift_source(source, "b1_except_alias_after.py")
+
+    assert result.refusals == []
+    contract = _contract(result.ir, ".f")
+    assert {"kind": "reads", "target": "err"} in contract["effects"]
 
 
 def test_b1_with_statement_remains_refused() -> None:

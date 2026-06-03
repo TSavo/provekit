@@ -270,6 +270,14 @@ class _Emitter:
             emitted.append(self.statement(statement))
         return fold_seq(emitted)
 
+    def statements_with_extra_locals(self, statements: list[ast.stmt], extra_locals: set[str]) -> Json:
+        previous = self.locals
+        self.locals = self.locals | extra_locals
+        try:
+            return self.statements(statements)
+        finally:
+            self.locals = previous
+
     def statement(self, node: ast.stmt) -> Json:
         if isinstance(node, ast.Return):
             value = none_const() if node.value is None else self.expr(node.value)
@@ -381,11 +389,16 @@ class _Emitter:
     def except_handler(self, node: ast.ExceptHandler) -> Json:
         exception_type = none_const() if node.type is None else self.expr(node.type)
         name = none_const() if node.name is None else str_const(node.name)
+        body = (
+            self.statements_with_extra_locals(node.body, {node.name})
+            if node.name is not None
+            else self.statements(node.body)
+        )
         return ctor(
             "python:except_handler",
             exception_type,
             name,
-            self.statements(node.body),
+            body,
         )
 
     def runtime_failure_locus(

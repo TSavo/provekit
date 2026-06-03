@@ -48,16 +48,28 @@ def _source_unit_bytes(ir: list[Json]) -> str | None:
 
 def _compile_contract(contract: Json) -> ast.FunctionDef:
     fn_name = _source_function_name(str(contract["fnName"]))
-    formals = [
-        ast.arg(arg=str(name), annotation=None, type_comment=None)
-        for name in contract.get("formals", [])
-    ]
     body = _stmt_list(_contract_term(contract))
     if not body:
         body = [ast.Pass()]
+    args = _arguments(contract)
     return ast.FunctionDef(
         name=fn_name,
-        args=ast.arguments(
+        args=args,
+        body=body,
+        decorator_list=[],
+        returns=None,
+        type_comment=None,
+    )
+
+
+def _arguments(contract: Json) -> ast.arguments:
+    shape = contract.get("parameterShape")
+    if not shape:
+        formals = [
+            ast.arg(arg=str(name), annotation=None, type_comment=None)
+            for name in contract.get("formals", [])
+        ]
+        return ast.arguments(
             posonlyargs=[],
             args=formals,
             vararg=None,
@@ -65,12 +77,59 @@ def _compile_contract(contract: Json) -> ast.FunctionDef:
             kw_defaults=[],
             kwarg=None,
             defaults=[],
-        ),
-        body=body,
-        decorator_list=[],
-        returns=None,
-        type_comment=None,
+        )
+
+    posonlyargs: list[ast.arg] = []
+    args: list[ast.arg] = []
+    positional_defaults: list[Json | None] = []
+    vararg: ast.arg | None = None
+    kwonlyargs: list[ast.arg] = []
+    kw_defaults: list[ast.expr | None] = []
+    kwarg: ast.arg | None = None
+
+    for raw_entry in shape:
+        if not isinstance(raw_entry, dict):
+            raise ValueError(f"parameterShape entry is not an object: {raw_entry!r}")
+        name = str(raw_entry["name"])
+        kind = str(raw_entry["kind"])
+        arg = ast.arg(arg=name, annotation=None, type_comment=None)
+        default = raw_entry.get("default")
+        if kind == "positional-only":
+            posonlyargs.append(arg)
+            positional_defaults.append(default if isinstance(default, dict) else None)
+        elif kind == "positional-or-keyword":
+            args.append(arg)
+            positional_defaults.append(default if isinstance(default, dict) else None)
+        elif kind == "vararg":
+            vararg = arg
+        elif kind == "keyword-only":
+            kwonlyargs.append(arg)
+            kw_defaults.append(_expr(default) if isinstance(default, dict) else None)
+        elif kind == "kwarg":
+            kwarg = arg
+        else:
+            raise ValueError(f"unsupported parameter kind: {kind}")
+
+    defaults = _trailing_defaults(positional_defaults)
+    return ast.arguments(
+        posonlyargs=posonlyargs,
+        args=args,
+        vararg=vararg,
+        kwonlyargs=kwonlyargs,
+        kw_defaults=kw_defaults,
+        kwarg=kwarg,
+        defaults=defaults,
     )
+
+
+def _trailing_defaults(defaults: list[Json | None]) -> list[ast.expr]:
+    first_default = next((index for index, value in enumerate(defaults) if value is not None), None)
+    if first_default is None:
+        return []
+    trailing = defaults[first_default:]
+    if any(value is None for value in trailing):
+        raise ValueError("positional parameter defaults must be trailing")
+    return [_expr(value) for value in trailing if value is not None]
 
 
 def _stmt_list(term: Json) -> list[ast.stmt]:
