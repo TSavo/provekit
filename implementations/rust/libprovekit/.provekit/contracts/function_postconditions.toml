@@ -25,3 +25,39 @@ arg0_path = "CONCEPT_BIND_RESULT"
 contract = "concept_op_catalog_cid__concept_bind_result"
 post_predicate = "is_some"
 reason = "grammar_op_shape(CONCEPT_BIND_RESULT) has a fixed primitive arm and json_cid returns a valid CID"
+
+[[functions]]
+call_kind = "associated"
+callee_crate = "libprovekit"
+type_path = "crate::canonical"
+callee = "serializable_jcs"
+source_file = "src/core/lower_plugin.rs"
+source_line = 154
+arg0_path = "canonical"
+contract = "canonical_serializable_jcs__parametric_sort_expansion"
+post_predicate = "is_ok"
+reason = "ParametricSortExpansion::compose_cid builds canonical with json! from string literal keys, constructor_cid, and Vec<String> arg_cids before serializable_jcs; closes src/core/lower_plugin.rs:155"
+
+[[functions]]
+call_kind = "associated"
+callee_crate = "libprovekit"
+type_path = "crate::canonical"
+callee = "json_jcs"
+source_file = "src/core/source_transform_kit.rs"
+source_line = 307
+arg0_path = "value"
+contract = "canonical_json_jcs__source_transform_bridge_header"
+post_predicate = "is_ok"
+reason = "Bridge header value is produced from BridgeHeaderV14 then augmented with string fields targetContractCid and targetLayer before json_jcs; closes src/core/source_transform_kit.rs:307"
+
+[[functions]]
+call_kind = "associated"
+callee_crate = "libprovekit"
+type_path = "crate::canonical"
+callee = "json_cid"
+source_file = "src/core/source_transform_kit.rs"
+source_line = 308
+arg0_path = "value"
+contract = "canonical_json_cid__source_transform_bridge_header"
+post_predicate = "is_ok"
+reason = "Same BridgeHeaderV14-derived value as the adjacent json_jcs audit; json_cid delegates through json_jcs then hashes; closes src/core/source_transform_kit.rs:308"
