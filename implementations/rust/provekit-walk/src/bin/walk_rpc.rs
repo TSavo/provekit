@@ -1261,6 +1261,8 @@ impl FunctionPostconditionsManifest {
         current_crate: &str,
         source_file: &str,
         source_line: usize,
+        stability_block: Option<&syn::Block>,
+        param_names: &BTreeSet<String>,
     ) -> Option<&FunctionPostconditionRule> {
         let callee = node.method.to_string();
         self.rules.iter().find_map(|rule| {
@@ -1276,12 +1278,20 @@ impl FunctionPostconditionsManifest {
             if !function_postcondition_source_matches(rule, source_file, source_line) {
                 return None;
             }
-            let Some(FunctionPostconditionArg0::Path(expected_arg)) = &rule.arg0 else {
-                return None;
-            };
+            if let Some(block) = stability_block {
+                if !method_postcondition_receiver_is_stable(node, block, param_names) {
+                    return None;
+                }
+            }
+            let rule_arg0 = rule.arg0.as_ref()?;
             let arg0 = only_call_arg(&node.args)?;
-            if expr_path_text(arg0).as_deref() != Some(expected_arg.as_str()) {
-                return None;
+            match rule_arg0 {
+                FunctionPostconditionArg0::Path(expected_arg) => {
+                    if expr_path_text(arg0).as_deref() != Some(expected_arg.as_str()) {
+                        return None;
+                    }
+                }
+                FunctionPostconditionArg0::FormatRepeat { .. } => return None,
             }
             Some(rule)
         })
@@ -1293,9 +1303,18 @@ impl FunctionPostconditionsManifest {
         current_crate: &str,
         source_file: &str,
         source_line: usize,
+        stability_block: &syn::Block,
+        param_names: &BTreeSet<String>,
     ) -> Option<(String, String)> {
-        self.rule_for_method_call(node, current_crate, source_file, source_line)
-            .map(|rule| (current_crate.to_string(), rule.contract.clone()))
+        self.rule_for_method_call(
+            node,
+            current_crate,
+            source_file,
+            source_line,
+            Some(stability_block),
+            param_names,
+        )
+        .map(|rule| (current_crate.to_string(), rule.contract.clone()))
     }
 
     fn panic_partial_for_receiver(
@@ -1304,6 +1323,8 @@ impl FunctionPostconditionsManifest {
         current_crate: &str,
         source_file: &str,
         panic_leaf: &str,
+        stability_block: &syn::Block,
+        param_names: &BTreeSet<String>,
     ) -> Option<(String, String)> {
         let rule = match receiver {
             syn::Expr::Call(call) => {
@@ -1318,7 +1339,14 @@ impl FunctionPostconditionsManifest {
             }
             syn::Expr::MethodCall(method) => {
                 let start = method.method.span().start();
-                self.rule_for_method_call(method, current_crate, source_file, start.line)
+                self.rule_for_method_call(
+                    method,
+                    current_crate,
+                    source_file,
+                    start.line,
+                    Some(stability_block),
+                    param_names,
+                )
             }
             syn::Expr::Paren(paren) => {
                 return self.panic_partial_for_receiver(
@@ -1326,6 +1354,8 @@ impl FunctionPostconditionsManifest {
                     current_crate,
                     source_file,
                     panic_leaf,
+                    stability_block,
+                    param_names,
                 );
             }
             syn::Expr::Group(group) => {
@@ -1334,6 +1364,8 @@ impl FunctionPostconditionsManifest {
                     current_crate,
                     source_file,
                     panic_leaf,
+                    stability_block,
+                    param_names,
                 );
             }
             syn::Expr::Reference(reference) => {
@@ -1342,6 +1374,8 @@ impl FunctionPostconditionsManifest {
                     current_crate,
                     source_file,
                     panic_leaf,
+                    stability_block,
+                    param_names,
                 );
             }
             _ => None,
@@ -2087,6 +2121,7 @@ fn collect_callsites_in_items(
                 }
                 let param_type_map =
                     build_param_type_map(&item_fn.sig, use_map, local_type_names, current_crate);
+                let param_names = build_param_name_set(&item_fn.sig);
                 collect_callsites_in_block(
                     &item_fn.block,
                     rel_path,
@@ -2100,6 +2135,7 @@ fn collect_callsites_in_items(
                     infallible_serialize,
                     function_postconditions,
                     &param_type_map,
+                    &param_names,
                     out,
                 );
             }
@@ -2119,6 +2155,7 @@ fn collect_callsites_in_items(
                             local_type_names,
                             current_crate,
                         );
+                        let param_names = build_param_name_set(&method.sig);
                         collect_callsites_in_block(
                             &method.block,
                             rel_path,
@@ -2132,6 +2169,7 @@ fn collect_callsites_in_items(
                             infallible_serialize,
                             function_postconditions,
                             &param_type_map,
+                            &param_names,
                             out,
                         );
                     }
@@ -2179,6 +2217,7 @@ fn collect_callsites_in_block(
     // serde_json arg-type disambiguation. Built from the enclosing function's
     // declared parameter types; empty when called outside a fn.
     param_type_map: &HashMap<String, TypeIdentity>,
+    param_names: &BTreeSet<String>,
     out: &mut Vec<CallSite>,
 ) {
     use syn::visit::Visit;
@@ -2196,6 +2235,8 @@ fn collect_callsites_in_block(
         infallible_serialize: &'a InfallibleSerializeManifest,
         function_postconditions: &'a FunctionPostconditionsManifest,
         param_type_map: &'a HashMap<String, TypeIdentity>,
+        param_names: &'a BTreeSet<String>,
+        stability_block: &'a syn::Block,
         pure_free_guard_facts: Vec<PureFreeCallGuardFact>,
         out: &'a mut Vec<CallSite>,
     }
@@ -2533,6 +2574,8 @@ fn collect_callsites_in_block(
                                     self.current_crate,
                                     self.rel_path,
                                     &callee,
+                                    self.stability_block,
+                                    self.param_names,
                                 )
                             })
                     } else {
@@ -2562,6 +2605,8 @@ fn collect_callsites_in_block(
                         self.current_crate,
                         self.rel_path,
                         start.line,
+                        self.stability_block,
+                        self.param_names,
                     )
                 })
                 .flatten();
@@ -2765,6 +2810,8 @@ fn collect_callsites_in_block(
         infallible_serialize,
         function_postconditions,
         param_type_map,
+        param_names,
+        stability_block: block,
         pure_free_guard_facts: Vec::new(),
         out,
     };
@@ -3398,6 +3445,161 @@ fn expr_bare_ident_name(expr: &syn::Expr) -> Option<String> {
         syn::Expr::Reference(r) => expr_bare_ident_name(&r.expr),
         _ => None,
     }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct MethodCallOccurrence {
+    method: String,
+    line: usize,
+    column: usize,
+}
+
+#[derive(Debug, Default)]
+struct MethodPostconditionStability {
+    local_bindings: HashMap<String, usize>,
+    effect_roots: BTreeSet<String>,
+}
+
+fn method_call_occurrence(node: &syn::ExprMethodCall) -> MethodCallOccurrence {
+    let start = node.method.span().start();
+    MethodCallOccurrence {
+        method: node.method.to_string(),
+        line: start.line,
+        column: start.column,
+    }
+}
+
+fn method_postcondition_receiver_is_stable(
+    node: &syn::ExprMethodCall,
+    block: &syn::Block,
+    param_names: &BTreeSet<String>,
+) -> bool {
+    let Some(root) = expr_bare_ident_name(&node.receiver) else {
+        return false;
+    };
+    let occurrence = method_call_occurrence(node);
+    let stability = method_postcondition_stability_for_block(block, &occurrence);
+    if stability.effect_roots.contains(&root) {
+        return false;
+    }
+    let binding_count = stability
+        .local_bindings
+        .get(&root)
+        .copied()
+        .unwrap_or_default()
+        + usize::from(param_names.contains(&root));
+    binding_count <= 1
+}
+
+fn method_postcondition_stability_for_block(
+    block: &syn::Block,
+    candidate: &MethodCallOccurrence,
+) -> MethodPostconditionStability {
+    struct V<'a> {
+        candidate: &'a MethodCallOccurrence,
+        stability: MethodPostconditionStability,
+    }
+
+    impl<'ast, 'a> syn::visit::Visit<'ast> for V<'a> {
+        fn visit_local(&mut self, node: &'ast syn::Local) {
+            for root in pat_bound_idents(&node.pat) {
+                *self.stability.local_bindings.entry(root).or_default() += 1;
+            }
+            syn::visit::visit_local(self, node);
+        }
+
+        fn visit_expr_assign(&mut self, node: &'ast syn::ExprAssign) {
+            self.stability
+                .effect_roots
+                .extend(expr_assignment_roots(&node.left));
+            syn::visit::visit_expr_assign(self, node);
+        }
+
+        fn visit_expr_binary(&mut self, node: &'ast syn::ExprBinary) {
+            if binop_is_assignment(&node.op) {
+                self.stability
+                    .effect_roots
+                    .extend(expr_assignment_roots(&node.left));
+            }
+            syn::visit::visit_expr_binary(self, node);
+        }
+
+        fn visit_expr_reference(&mut self, node: &'ast syn::ExprReference) {
+            if node.mutability.is_some() {
+                if let Some(root) = expr_bare_ident_name(&node.expr) {
+                    self.stability.effect_roots.insert(root);
+                }
+            }
+            syn::visit::visit_expr_reference(self, node);
+        }
+
+        fn visit_expr_method_call(&mut self, node: &'ast syn::ExprMethodCall) {
+            let occurrence = method_call_occurrence(node);
+            if &occurrence != self.candidate && !method_postcondition_method_is_pure_read(node) {
+                if let Some(root) = expr_bare_ident_name(&node.receiver) {
+                    self.stability.effect_roots.insert(root);
+                }
+            }
+            syn::visit::visit_expr_method_call(self, node);
+        }
+    }
+
+    let mut visitor = V {
+        candidate,
+        stability: MethodPostconditionStability::default(),
+    };
+    syn::visit::Visit::visit_block(&mut visitor, block);
+    visitor.stability
+}
+
+fn method_postcondition_method_is_pure_read(node: &syn::ExprMethodCall) -> bool {
+    let receiver_pure = method_postcondition_expr_is_pure_read(&node.receiver);
+    let args_pure = node.args.iter().all(method_postcondition_expr_is_pure_read);
+    if !receiver_pure || !args_pure {
+        return false;
+    }
+    match node.method.to_string().as_str() {
+        "cid" | "is_empty" | "is_none" | "is_some" | "len" => node.args.is_empty(),
+        "get" | "starts_with" | "strip_prefix" => node.args.len() == 1,
+        _ => false,
+    }
+}
+
+fn method_postcondition_expr_is_pure_read(expr: &syn::Expr) -> bool {
+    match expr {
+        syn::Expr::Array(array) => array
+            .elems
+            .iter()
+            .all(method_postcondition_expr_is_pure_read),
+        syn::Expr::Field(field) => method_postcondition_expr_is_pure_read(&field.base),
+        syn::Expr::Group(group) => method_postcondition_expr_is_pure_read(&group.expr),
+        syn::Expr::Index(index) => {
+            method_postcondition_expr_is_pure_read(&index.expr)
+                && method_postcondition_expr_is_pure_read(&index.index)
+        }
+        syn::Expr::Lit(_) | syn::Expr::Path(_) => true,
+        syn::Expr::MethodCall(method) => method_postcondition_method_is_pure_read(method),
+        syn::Expr::Paren(paren) => method_postcondition_expr_is_pure_read(&paren.expr),
+        syn::Expr::Reference(reference) if reference.mutability.is_none() => {
+            method_postcondition_expr_is_pure_read(&reference.expr)
+        }
+        syn::Expr::Tuple(tuple) => tuple
+            .elems
+            .iter()
+            .all(method_postcondition_expr_is_pure_read),
+        _ => false,
+    }
+}
+
+fn build_param_name_set(sig: &syn::Signature) -> BTreeSet<String> {
+    let mut names = BTreeSet::new();
+    for input in &sig.inputs {
+        let syn::FnArg::Typed(pt) = input else {
+            continue;
+        };
+        names.extend(pat_bound_idents(&pt.pat));
+    }
+    names
 }
 
 /// Build a map from parameter name to `(crate, type_head)` for the given
@@ -14418,6 +14620,79 @@ reason = "The audited value is known to contain only canonicalizable JSON primit
             panic_targets,
             vec![result_expect_cid],
             "only the audited receiver should route its expect panic leaf through result_expect: {resp:#?}"
+        );
+
+        let _ = fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn lift_implications_refuses_method_postcondition_after_receiver_reassignment() {
+        let src = r##"
+pub fn audited(mut digest: String, prefix: &str, other: String) {
+    digest = other;
+    digest.strip_prefix(prefix).expect("audited prefix");
+}
+"##;
+        let root = temp_workspace("lift_implications_method_postcondition_reassign");
+        let src_dir = root.join("src");
+        fs::create_dir_all(&src_dir).expect("create src dir");
+        fs::write(
+            root.join("Cargo.toml"),
+            r#"
+[package]
+name = "consumer-crate"
+version = "0.1.0"
+edition = "2021"
+"#,
+        )
+        .expect("write Cargo.toml");
+        let rel = "src/lib.rs";
+        fs::write(root.join(rel), src).expect("write source");
+        let audited_line = source_line_containing(src, "audited prefix");
+        write_function_postconditions_manifest(
+            &root,
+            &format!(
+                r#"
+[[functions]]
+call_kind = "method"
+callee_crate = "consumer_crate"
+receiver_path = "digest"
+callee = "strip_prefix"
+source_file = "src/lib.rs"
+source_line = {audited_line}
+arg0_path = "prefix"
+contract = "digest_strip_prefix__audited"
+post_predicate = "is_some"
+reason = "audited digest prefix"
+"#,
+            ),
+        );
+
+        let option_expect_cid = "blake3-512:abababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababab";
+        let resp = lift_implications(&json!({
+            "workspace_root": root.to_string_lossy(),
+            "source_paths": [rel],
+            "contract_bindings": [
+                {
+                    "name": "option_expect@std/src/option.rs:2:1",
+                    "library": "std",
+                    "contract_cid": option_expect_cid,
+                    "body_bearing": true,
+                    "has_pre": true
+                }
+            ],
+        }))
+        .expect("lift_implications");
+
+        let ir = resp["ir"].as_array().expect("ir array");
+        let panic_targets: Vec<&str> = ir
+            .iter()
+            .filter(|entry| entry["sourceSymbol"] == "method:expect")
+            .filter_map(|entry| entry["targetContractCid"].as_str())
+            .collect();
+        assert!(
+            panic_targets.is_empty(),
+            "a source-line-gated method postcondition must refuse after receiver reassignment: {resp:#?}"
         );
 
         let _ = fs::remove_dir_all(root);
