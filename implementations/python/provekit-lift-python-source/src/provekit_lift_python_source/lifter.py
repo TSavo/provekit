@@ -893,6 +893,13 @@ def _literal_default(node: ast.expr) -> Json:
             return str_const(value)
         if value is None:
             return none_const()
+    if isinstance(node, ast.UnaryOp) and isinstance(node.op, (ast.UAdd, ast.USub)):
+        operand = node.operand
+        if isinstance(operand, ast.Constant) and type(operand.value) is int:
+            value = operand.value
+            if isinstance(node.op, ast.USub):
+                value = -value
+            return int_const(value)
     if isinstance(node, ast.Tuple):
         return ctor("python:tuple", *[_literal_default(element) for element in node.elts])
     if isinstance(node, ast.List):

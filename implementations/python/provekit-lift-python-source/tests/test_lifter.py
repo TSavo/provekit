@@ -2533,6 +2533,19 @@ def test_b1_signature_forms_lift_body_and_preserve_parameter_shape() -> None:
     }
 
 
+def test_b1_signed_integer_defaults_are_literal_parameter_shape() -> None:
+    source = "def f(axis=-1, *, step=+2):\n    return (axis, step)\n"
+
+    result = lift_source(source, "b1_signed_defaults.py")
+
+    assert result.refusals == []
+    contract = _contract(result.ir, ".f")
+    assert contract["parameterShape"] == [
+        {"name": "axis", "kind": "positional-or-keyword", "default": _int_const(-1)},
+        {"name": "step", "kind": "keyword-only", "default": _int_const(2)},
+    ]
+
+
 def test_b1_nonliteral_default_remains_refused_as_definition_time_hazard() -> None:
     result = lift_source("def f(x=make()):\n    return x\n", "b1_default_refusal.py")
 
@@ -2540,6 +2553,29 @@ def test_b1_nonliteral_default_remains_refused_as_definition_time_hazard() -> No
         {
             "kind": "unhandled-syntax",
             "function": "b1_default_refusal.f",
+            "line": 1,
+            "reason": "non-literal default parameter values are refused",
+        }
+    ]
+
+
+@pytest.mark.parametrize(
+    ("source", "module"),
+    [
+        ("def f(x=-y):\n    return x\n", "b1_unary_name_default_refusal.py"),
+        ("def f(x=~0):\n    return x\n", "b1_unary_invert_default_refusal.py"),
+    ],
+)
+def test_b1_unary_defaults_remain_refused_unless_signed_integer_literal(
+    source: str,
+    module: str,
+) -> None:
+    result = lift_source(source, module)
+
+    assert result.refusals == [
+        {
+            "kind": "unhandled-syntax",
+            "function": f"{module.removesuffix('.py')}.f",
             "line": 1,
             "reason": "non-literal default parameter values are refused",
         }
