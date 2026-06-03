@@ -249,10 +249,13 @@ is now the active arc; see Phase 5.
   `serializable_jcs(&canonical)`, `json_jcs(&value)`, and `json_cid(&value)`.
   Cold self-checks landed the predicted close-list exactly: libprovekit moves
   to `panicSafe=22` with `falsePass=0`, `silentlyDropped=0`, `droppedSites=[]`;
-  provekit-cli moves to `panicSafe=30` with `falsePass=0`,
-  `silentlyDropped=0`, `droppedSites=[]`. #1898 now tracks only the remaining
-  libprovekit gap census, and the independent provekit-cli rows move to
-  slice-33 tracking in #1901.
+  provekit-cli moves to `panicSafe=32` with `falsePass=0`,
+  `silentlyDropped=0`, `droppedSites=[]`. The predicted provekit-cli cascade was
+  K=30; two additional `kit_dispatch.rs` JSON-RPC request serialization sites
+  discharged through SMT solvers after slice-31 manifest enrichment, not through
+  catalog blessing or the `to_value` routing wire. #1898 now tracks only the
+  remaining libprovekit gap census, and the independent provekit-cli rows move
+  to slice-33 tracking in #1901.
 
 ### Phase 3 - RESIDUE NAMED + V1 RELEASE - DONE
 
@@ -276,14 +279,15 @@ Phase 5 K movement is measured on reproducible self-check infrastructure:
 `bcargo`, battleaxe rust-analyzer on stable 1.96.0, oracle enabled, and
 rust-analyzer readiness gating. The convergence harness is no longer part of
 the product baseline. The current `provekit-cli` target reports
-`panicCensus=54`, `panicSafe=30`, `falsePass=0`, `silentlyDropped=0`, and
+`panicCensus=54`, `panicSafe=32`, `falsePass=0`, `silentlyDropped=0`, and
 `droppedSites=[]`. Clean main before #1896 was K=12 on the same
 infrastructure; #1896 moved exactly one closeable D-lib row,
 `src/kit_dispatch.rs:2416 method:expect`, from unproven to proven. The
 readiness-signal closure then restored deterministic dependency and target
 oracle readiness, moving the reproducible baseline to K=20. Slice 31 then
 closed 10 imported libprovekit-backed rows in the provekit-cli cascade,
-moving the reproducible baseline to K=30.
+and exposed 2 additional solver-side `kit_dispatch` closes, moving the
+reproducible baseline to K=32.
 
 The #1774 reproducibility caveat is closed: the release gate validates the
 dependency-proof state as part of doctor release-gate mode before accepting the
@@ -292,10 +296,10 @@ measurement setup and is not the current Phase 5 baseline.
 
 | Category | Count | Closing mechanism |
 |---|---|---|
-| proven K | 30 panic-safe | Current reproducible K after readiness-signal gating replaces convergence and slice 31's catalog-backed libprovekit cascade lands. D-lib, C `json!`, B guarded-panic, D-fn, and audited catalog-backed serde/function entries remain the closing mechanisms, measured against the cold bcargo + battleaxe RA baseline. |
+| proven K | 32 panic-safe | Current reproducible K after readiness-signal gating replaces convergence and slice 31's catalog-backed libprovekit cascade lands. D-lib, C `json!`, B guarded-panic, D-fn, audited catalog-backed serde/function entries, and 2 solver-side `kit_dispatch` JSON-RPC request serialization closes remain the closing mechanisms, measured against the cold bcargo + battleaxe RA baseline. |
 | residue | 8 honest residue | Mutex `.lock().expect()` rows. Honest residue; "lock is total" would be unsound. |
 | closeable tier-to-close | 0 named D-lib rows | #1896 closed the `RealizeRequest` serialization row with provekit-cli-owned per-type D-lib manifest coverage, mirroring libprovekit's `infallible_serialize.toml` pattern. |
-| independent provekit-cli unproven | 8 | `cmd_emit`, `cmd_mint`, `cmd_protocol` x3, `doctor_oracle`, and `kit_dispatch` x2. Tracked separately from #1898 in #1901. |
+| independent provekit-cli unproven | 6 | `cmd_emit`, `cmd_mint`, `cmd_protocol` x3, and `doctor_oracle`. Tracked separately from #1898 in #1901. |
 | imported libprovekit parked rows | 8 | Remaining libprovekit rows propagated through dependency import: 3 NoBridge physical sites, 1 residue, and 4 catalog-excluded solver rows. |
 
 The honest read: Rust v1 is not K == N. It is K covering the provable buckets,
@@ -517,7 +521,7 @@ Phase 5 has two parallel levers:
 
 The number that moves: K (panic-safe sites discharged via sound reasoning) on
 real production code in each language. Today on Rust self-application, the
-reproducible Phase 5 baseline is K=30 on provekit-cli after slice 31 and K=22
+reproducible Phase 5 baseline is K=32 on provekit-cli after slice 31 and K=22
 on libprovekit. Earlier provekit-cli K=21 references came from a different
 measurement setup and are not the current baseline. On Python / TS / Go / Java
 production targets: not yet measured at
@@ -530,7 +534,7 @@ differential vs unit tests has to be visible.
 **Phase 5 staging (T direction 2026-06-02): dogfood is the gold standard,
 then third-party parity per language.**
 1. **Dogfood depth first.** Drive Rust self-application K into vendor-
-   meaningful range (current reproducible K=30 -> into the hundreds on
+   meaningful range (current reproducible K=32 -> into the hundreds on
    `provekit-cli` and `libprovekit`) via shim catalog expansion and discharge
    tier work. This
    is the proof that the technique scales on a real codebase before we ask
@@ -563,7 +567,7 @@ and the pattern repeats per language.
   reqwest, clap, anyhow, thiserror, others). Per-crate
   `infallible_serialize.toml` and equivalent manifests mature into a
   catalog.
-- Target: K from 30 to 100+ on `provekit-cli`, K from 22 to 50+ on
+- Target: K from 32 to 100+ on `provekit-cli`, K from 22 to 50+ on
   `libprovekit`, with ZERO source modifications.
 - **Pitch artifact**: pick one popular OSS Rust crate, prove it end-to-end,
   publish the differential vs its unit test suite as the vendor onboarding
@@ -716,7 +720,7 @@ labeling.
     receipt.
   - #1902 (Slice 31 catalog K multiplication): Rust-kit manifest-backed
     lifter support plus libprovekit serde/function catalog entries. Current
-    reproducible baselines: libprovekit K=22 and provekit-cli K=30, with
+    reproducible baselines: libprovekit K=22 and provekit-cli K=32, with
     `falsePass=0`, `silentlyDropped=0`, and `droppedSites=[]` on both crates.
 - **Open follow-ups**:
   - #1757 self-check golden drift reached main without gate update.

@@ -2199,6 +2199,18 @@ fn collect_callsites_in_block(
         }
     }
     impl<'ast, 'a> Visit<'ast> for V<'a> {
+        // Let-binding inference mutates these maps while traversing a block.
+        // Bracket block traversal so nested blocks, if/loop bodies, and
+        // closures cannot leak inferred bindings into later outer callsites.
+        // Match/if-let pattern binders keep their narrower save/restore below.
+        fn visit_block(&mut self, node: &'ast syn::Block) {
+            let saved_local_types = self.local_types.clone();
+            let saved_value_types = self.value_types.clone();
+            syn::visit::visit_block(self, node);
+            self.local_types = saved_local_types;
+            self.value_types = saved_value_types;
+        }
+
         fn visit_expr_call(&mut self, node: &'ast syn::ExprCall) {
             if let Some((callee, callee_crate, contract_callee)) =
                 call_expr_callee(&node.func, self.use_map, self.current_crate)
@@ -10958,6 +10970,61 @@ pub fn bitwise_not() -> i64 {
             + 1
     }
 
+    fn manifest_to_value_hit_count(temp_name: &str, src: &str, type_name: &str) -> usize {
+        let root = temp_workspace(temp_name);
+        let src_dir = root.join("src");
+        fs::create_dir_all(&src_dir).expect("create src dir");
+        fs::write(
+            root.join("Cargo.toml"),
+            r#"
+[package]
+name = "consumer-crate"
+version = "0.1.0"
+edition = "2021"
+"#,
+        )
+        .expect("write Cargo.toml");
+        let rel = "src/lib.rs";
+        fs::write(root.join(rel), src).expect("write source");
+        write_infallible_serialize_manifest(
+            &root,
+            &format!(
+                r#"
+[[serde_json]]
+function = "to_value"
+type_crate = "consumer_crate"
+type_name = "{type_name}"
+contract = "serde_json_to_value__scope_probe"
+reason = "scope discipline probe"
+"#,
+            ),
+        );
+
+        let expected_cid = "blake3-512:abababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababab";
+        let resp = lift_implications(&json!({
+            "workspace_root": root.to_string_lossy(),
+            "source_paths": [rel],
+            "contract_bindings": [{
+                "name": "serde_json_to_value__scope_probe",
+                "library": "consumer_crate",
+                "contract_cid": expected_cid,
+                "bodyDischargeEligible": false,
+                "bodyDischargeRefusalReason": "totality-axiom"
+            }],
+        }))
+        .expect("lift_implications");
+
+        let count = resp["ir"]
+            .as_array()
+            .expect("ir array")
+            .iter()
+            .filter(|entry| entry["sourceSymbol"] == "to_value")
+            .filter(|entry| entry["targetContractCid"] == expected_cid)
+            .count();
+        let _ = fs::remove_dir_all(root);
+        count
+    }
+
     fn write_residue_manifest(root: &Path, body: &str) {
         let provekit_dir = root.join(".provekit");
         fs::create_dir_all(&provekit_dir).expect("create .provekit dir");
@@ -12643,6 +12710,325 @@ reason = "Witness derives Serialize over serde_json-infallible fields"
         );
 
         let _ = fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn constructor_local_type_does_not_escape_nested_block_scope() {
+        let src = r##"
+use serde_json as sj;
+
+pub struct BridgeHeaderV14 {
+    name: String,
+}
+
+pub struct Other {
+    name: String,
+}
+
+pub fn block_scope(header: Other) {
+    {
+        let header = BridgeHeaderV14 {
+            name: "inner".to_string(),
+        };
+        drop(header);
+    }
+    sj::to_value(header).unwrap();
+}
+"##;
+        assert_eq!(
+            manifest_to_value_hit_count("constructor_scope_nested_block", src, "BridgeHeaderV14"),
+            0,
+            "constructor-local type inferred inside a nested block must not type the post-block binding"
+        );
+    }
+
+    #[test]
+    fn constructor_local_type_does_not_escape_match_arm_scope() {
+        let src = r##"
+use serde_json as sj;
+
+pub struct BridgeHeaderV14 {
+    name: String,
+}
+
+pub struct Other {
+    name: String,
+}
+
+pub fn match_scope(header: Other, flag: bool) {
+    match flag {
+        true => {
+            let header = BridgeHeaderV14 {
+                name: "inner".to_string(),
+            };
+            drop(header);
+        }
+        false => {}
+    }
+    sj::to_value(header).unwrap();
+}
+"##;
+        assert_eq!(
+            manifest_to_value_hit_count("constructor_scope_match_arm", src, "BridgeHeaderV14"),
+            0,
+            "constructor-local type inferred inside a match arm must not type the post-match binding"
+        );
+    }
+
+    #[test]
+    fn constructor_local_type_does_not_escape_if_branch_scope() {
+        let src = r##"
+use serde_json as sj;
+
+pub struct BridgeHeaderV14 {
+    name: String,
+}
+
+pub struct Other {
+    name: String,
+}
+
+pub fn if_scope(header: Other, flag: bool) {
+    if flag {
+        let header = BridgeHeaderV14 {
+            name: "inner".to_string(),
+        };
+        drop(header);
+    }
+    sj::to_value(header).unwrap();
+}
+"##;
+        assert_eq!(
+            manifest_to_value_hit_count("constructor_scope_if_branch", src, "BridgeHeaderV14"),
+            0,
+            "constructor-local type inferred inside an if branch must not type the post-if binding"
+        );
+    }
+
+    #[test]
+    fn constructor_local_type_does_not_escape_loop_body_scope() {
+        let src = r##"
+use serde_json as sj;
+
+pub struct BridgeHeaderV14 {
+    name: String,
+}
+
+pub struct Other {
+    name: String,
+}
+
+pub fn loop_scope(header: Other) {
+    loop {
+        let header = BridgeHeaderV14 {
+            name: "inner".to_string(),
+        };
+        drop(header);
+        break;
+    }
+    sj::to_value(header).unwrap();
+}
+"##;
+        assert_eq!(
+            manifest_to_value_hit_count("constructor_scope_loop_body", src, "BridgeHeaderV14"),
+            0,
+            "constructor-local type inferred inside a loop body must not type the post-loop binding"
+        );
+    }
+
+    #[test]
+    fn constructor_local_type_does_not_escape_closure_body_scope() {
+        let src = r##"
+use serde_json as sj;
+
+pub struct BridgeHeaderV14 {
+    name: String,
+}
+
+pub struct Other {
+    name: String,
+}
+
+pub fn closure_scope(header: Other) {
+    let _f = || {
+        let header = BridgeHeaderV14 {
+            name: "inner".to_string(),
+        };
+        drop(header);
+    };
+    sj::to_value(header).unwrap();
+}
+"##;
+        assert_eq!(
+            manifest_to_value_hit_count("constructor_scope_closure_body", src, "BridgeHeaderV14"),
+            0,
+            "constructor-local type inferred inside a closure body must not type the post-closure binding"
+        );
+    }
+
+    #[test]
+    fn option_field_binding_does_not_escape_if_let_scope() {
+        let src = r##"
+use serde_json as sj;
+
+pub struct Claim {
+    witness: Option<Witness>,
+}
+
+pub struct Witness {
+    value: String,
+}
+
+pub struct Other {
+    value: String,
+}
+
+pub fn if_let_scope(claim: &Claim, witness: Other) {
+    if let Some(witness) = &claim.witness {
+        drop(witness);
+    }
+    sj::to_value(witness).unwrap();
+}
+"##;
+        assert_eq!(
+            manifest_to_value_hit_count("option_scope_if_let", src, "Witness"),
+            0,
+            "Option field binding inside if-let must not type the post-if binding"
+        );
+    }
+
+    #[test]
+    fn option_field_binding_does_not_escape_match_scope() {
+        let src = r##"
+use serde_json as sj;
+
+pub struct Claim {
+    witness: Option<Witness>,
+}
+
+pub struct Witness {
+    value: String,
+}
+
+pub struct Other {
+    value: String,
+}
+
+pub fn match_scope(claim: &Claim, witness: Other) {
+    match &claim.witness {
+        Some(witness) => {
+            drop(witness);
+        }
+        None => {}
+    }
+    sj::to_value(witness).unwrap();
+}
+"##;
+        assert_eq!(
+            manifest_to_value_hit_count("option_scope_match", src, "Witness"),
+            0,
+            "Option field binding inside match must not type the post-match binding"
+        );
+    }
+
+    #[test]
+    fn option_field_binding_does_not_escape_nested_block_scope() {
+        let src = r##"
+use serde_json as sj;
+
+pub struct Claim {
+    witness: Option<Witness>,
+}
+
+pub struct Witness {
+    value: String,
+}
+
+pub struct Other {
+    value: String,
+}
+
+pub fn block_scope(claim: &Claim, witness: Other) {
+    {
+        if let Some(witness) = &claim.witness {
+            drop(witness);
+        }
+    }
+    sj::to_value(witness).unwrap();
+}
+"##;
+        assert_eq!(
+            manifest_to_value_hit_count("option_scope_nested_block", src, "Witness"),
+            0,
+            "Option field binding inside a nested block must not type the post-block binding"
+        );
+    }
+
+    #[test]
+    fn option_field_binding_does_not_escape_loop_body_scope() {
+        let src = r##"
+use serde_json as sj;
+
+pub struct Claim {
+    witness: Option<Witness>,
+}
+
+pub struct Witness {
+    value: String,
+}
+
+pub struct Other {
+    value: String,
+}
+
+pub fn loop_scope(claim: &Claim, witness: Other) {
+    loop {
+        if let Some(witness) = &claim.witness {
+            drop(witness);
+        }
+        break;
+    }
+    sj::to_value(witness).unwrap();
+}
+"##;
+        assert_eq!(
+            manifest_to_value_hit_count("option_scope_loop_body", src, "Witness"),
+            0,
+            "Option field binding inside a loop body must not type the post-loop binding"
+        );
+    }
+
+    #[test]
+    fn option_field_binding_does_not_escape_closure_body_scope() {
+        let src = r##"
+use serde_json as sj;
+
+pub struct Claim {
+    witness: Option<Witness>,
+}
+
+pub struct Witness {
+    value: String,
+}
+
+pub struct Other {
+    value: String,
+}
+
+pub fn closure_scope(claim: &Claim, witness: Other) {
+    let _f = || {
+        if let Some(witness) = &claim.witness {
+            drop(witness);
+        }
+    };
+    sj::to_value(witness).unwrap();
+}
+"##;
+        assert_eq!(
+            manifest_to_value_hit_count("option_scope_closure_body", src, "Witness"),
+            0,
+            "Option field binding inside a closure body must not type the post-closure binding"
+        );
     }
 
     #[test]
