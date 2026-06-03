@@ -25,15 +25,17 @@
 //   - early-return patterns beyond `panic!`.
 //   - postcondition lifting from `return` expressions.
 
-use std::collections::{BTreeMap, HashSet};
+use std::collections::{BTreeMap, BTreeSet, HashSet};
 
 use libprovekit::concept::panic_freedom;
 use proc_macro2::{Delimiter, TokenStream, TokenTree};
 use provekit_ir_types::{IrFormula, IrTerm};
+use syn::spanned::Spanned;
 use syn::{
     BinOp, Expr, ExprBinary, ExprIf, ExprMacro, ExprUnary, FnArg, GenericArgument, ItemFn, Lit,
     Local, Macro, Pat, PathArguments, ReturnType, Stmt, StmtMacro, Type, UnOp,
 };
+use tracing::debug;
 
 use crate::wp::{free_vars_formula, Wp};
 
@@ -53,6 +55,7 @@ use crate::wp::{free_vars_formula, Wp};
 // The binder counter is per-formula. Two structurally identical
 // inputs produce structurally identical IR (deterministic for content
 // addressing).
+#[derive(Clone)]
 struct LiftCtx {
     next_binder_id: u32,
     /// Stack of frames; each frame holds (surface_name, unique_name) pairs
@@ -63,6 +66,7 @@ struct LiftCtx {
     assertion_guard_facts: Vec<TrackedGuardFact>,
     len_eq_one_facts: Vec<LenEqOneFact>,
     mutable_roots: HashSet<String>,
+    pure_free_guard_rules: Vec<PureFreeGuardRule>,
 }
 
 impl LiftCtx {
@@ -71,6 +75,13 @@ impl LiftCtx {
     }
 
     fn with_return_facts(return_facts: FunctionReturnFacts) -> Self {
+        Self::with_return_facts_and_pure_free_guards(return_facts, Vec::new())
+    }
+
+    fn with_return_facts_and_pure_free_guards(
+        return_facts: FunctionReturnFacts,
+        pure_free_guard_rules: Vec<PureFreeGuardRule>,
+    ) -> Self {
         Self {
             next_binder_id: 0,
             scope: Vec::new(),
@@ -79,6 +90,7 @@ impl LiftCtx {
             assertion_guard_facts: Vec::new(),
             len_eq_one_facts: Vec::new(),
             mutable_roots: HashSet::new(),
+            pure_free_guard_rules,
         }
     }
 
@@ -127,6 +139,21 @@ impl LiftCtx {
 pub struct FunctionReturnFacts {
     direct_string: HashSet<String>,
     result_string: HashSet<String>,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct PureFreeGuardRule {
+    pub callee: String,
+    pub post_predicate: String,
+    pub source_line: Option<usize>,
+}
+
+#[derive(Clone, Debug)]
+struct StatementPureFreeGuardFact {
+    callee: String,
+    args: Vec<Expr>,
+    arg_roots: BTreeSet<String>,
+    post_predicate: String,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -264,7 +291,18 @@ pub fn lift_function_postcondition_with_return_facts(
     item_fn: &ItemFn,
     return_facts: &FunctionReturnFacts,
 ) -> Wp {
-    let mut ctx = LiftCtx::with_return_facts(return_facts.clone());
+    lift_function_postcondition_with_return_facts_and_pure_free_guards(item_fn, return_facts, &[])
+}
+
+pub fn lift_function_postcondition_with_return_facts_and_pure_free_guards(
+    item_fn: &ItemFn,
+    return_facts: &FunctionReturnFacts,
+    pure_free_guard_rules: &[PureFreeGuardRule],
+) -> Wp {
+    let mut ctx = LiftCtx::with_return_facts_and_pure_free_guards(
+        return_facts.clone(),
+        pure_free_guard_rules.to_vec(),
+    );
 
     // 1. Collect entry-assertion contributions, but track which names are
     //    subsequently shadowed by `let` bindings. An entry assertion
@@ -307,6 +345,7 @@ pub fn lift_function_postcondition_with_return_facts(
     seed_mutable_param_roots(item_fn, &mut ctx);
     collect_assertion_guard_facts(stmts, &mut ctx);
     collect_local_value_facts(stmts, &mut ctx);
+    accum.extend(collect_statement_guarded_panic_effects(stmts, &mut ctx));
 
     // 2. Trailing-expression derivation: if the function body ends with
     //    an expression statement (no trailing semicolon), that
@@ -1251,6 +1290,601 @@ fn next_into_iter_receiver_key(term: &IrTerm) -> Option<String> {
             _ => None,
         },
         _ => None,
+    }
+}
+
+fn collect_statement_guarded_panic_effects(stmts: &[Stmt], ctx: &mut LiftCtx) -> Vec<IrFormula> {
+    if ctx.pure_free_guard_rules.is_empty() {
+        return Vec::new();
+    }
+    let mut guard_facts = Vec::new();
+    let mut out = Vec::new();
+    collect_guarded_panic_effects_in_stmts(stmts, ctx, &mut guard_facts, &mut out);
+    out
+}
+
+fn collect_guarded_panic_effects_in_stmts(
+    stmts: &[Stmt],
+    ctx: &mut LiftCtx,
+    guard_facts: &mut Vec<StatementPureFreeGuardFact>,
+    out: &mut Vec<IrFormula>,
+) {
+    for stmt in stmts {
+        collect_guarded_panic_effects_in_stmt(stmt, ctx, guard_facts, out);
+    }
+}
+
+fn collect_guarded_panic_effects_in_stmt(
+    stmt: &Stmt,
+    ctx: &mut LiftCtx,
+    guard_facts: &mut Vec<StatementPureFreeGuardFact>,
+    out: &mut Vec<IrFormula>,
+) {
+    match stmt {
+        Stmt::Local(local) => {
+            if let Some(init) = &local.init {
+                collect_guarded_panic_effects_in_expr(&init.expr, ctx, guard_facts, out);
+                invalidate_statement_guard_facts_for_expr_effects(&init.expr, guard_facts);
+            }
+            invalidate_statement_guard_facts_for_pat(&local.pat, guard_facts);
+        }
+        Stmt::Expr(expr, _) => {
+            collect_guarded_panic_effects_in_expr(expr, ctx, guard_facts, out);
+            invalidate_statement_guard_facts_for_expr_effects(expr, guard_facts);
+        }
+        Stmt::Macro(_) | Stmt::Item(_) => {}
+    }
+}
+
+fn collect_guarded_panic_effects_in_expr(
+    expr: &Expr,
+    ctx: &mut LiftCtx,
+    guard_facts: &mut Vec<StatementPureFreeGuardFact>,
+    out: &mut Vec<IrFormula>,
+) {
+    match expr {
+        Expr::If(if_expr) => {
+            collect_guarded_panic_effects_in_expr(&if_expr.cond, ctx, guard_facts, out);
+            let saved_guard_facts = guard_facts.clone();
+            let mut branch_guard_facts = Vec::new();
+            if expr_effect_mutation_roots(&if_expr.cond).is_empty() {
+                collect_statement_pure_free_guard_facts(
+                    &if_expr.cond,
+                    ctx,
+                    &mut branch_guard_facts,
+                );
+            } else {
+                debug!(
+                    "lift_function_postcondition: refusing pure-free statement guard facts from mutating if condition"
+                );
+            }
+            guard_facts.extend(branch_guard_facts);
+            collect_guarded_panic_effects_in_stmts(
+                &if_expr.then_branch.stmts,
+                ctx,
+                guard_facts,
+                out,
+            );
+            *guard_facts = saved_guard_facts;
+            if let Some((_, else_expr)) = &if_expr.else_branch {
+                collect_guarded_panic_effects_in_expr(else_expr, ctx, guard_facts, out);
+            }
+        }
+        Expr::While(while_expr) => {
+            collect_guarded_panic_effects_in_expr(&while_expr.cond, ctx, guard_facts, out);
+            let saved_guard_facts = guard_facts.clone();
+            collect_guarded_panic_effects_in_stmts(&while_expr.body.stmts, ctx, guard_facts, out);
+            *guard_facts = saved_guard_facts;
+        }
+        Expr::Block(block) => {
+            collect_guarded_panic_effects_in_stmts(&block.block.stmts, ctx, guard_facts, out);
+        }
+        Expr::Assign(assign) => {
+            collect_guarded_panic_effects_in_expr(&assign.right, ctx, guard_facts, out);
+            let roots = statement_expr_assignment_roots(&assign.left);
+            invalidate_statement_guard_facts_for_roots(&roots, guard_facts);
+        }
+        Expr::Binary(binary) => {
+            collect_guarded_panic_effects_in_expr(&binary.left, ctx, guard_facts, out);
+            collect_guarded_panic_effects_in_expr(&binary.right, ctx, guard_facts, out);
+            if binop_is_assignment_lift(&binary.op) {
+                let roots = statement_expr_assignment_roots(&binary.left);
+                invalidate_statement_guard_facts_for_roots(&roots, guard_facts);
+            }
+        }
+        Expr::Call(call) => {
+            for arg in &call.args {
+                collect_guarded_panic_effects_in_expr(arg, ctx, guard_facts, out);
+            }
+        }
+        Expr::MethodCall(method) => {
+            if let Some(formula) =
+                statement_guarded_panic_effect_for_method(method, ctx, guard_facts)
+            {
+                out.push(formula);
+            }
+            collect_guarded_panic_effects_in_expr(&method.receiver, ctx, guard_facts, out);
+            for arg in &method.args {
+                collect_guarded_panic_effects_in_expr(arg, ctx, guard_facts, out);
+            }
+        }
+        Expr::Paren(paren) => {
+            collect_guarded_panic_effects_in_expr(&paren.expr, ctx, guard_facts, out)
+        }
+        Expr::Group(group) => {
+            collect_guarded_panic_effects_in_expr(&group.expr, ctx, guard_facts, out)
+        }
+        Expr::Reference(reference) => {
+            collect_guarded_panic_effects_in_expr(&reference.expr, ctx, guard_facts, out)
+        }
+        Expr::Tuple(tuple) => {
+            for elem in &tuple.elems {
+                collect_guarded_panic_effects_in_expr(elem, ctx, guard_facts, out);
+            }
+        }
+        Expr::Array(array) => {
+            for elem in &array.elems {
+                collect_guarded_panic_effects_in_expr(elem, ctx, guard_facts, out);
+            }
+        }
+        Expr::Cast(cast) => {
+            collect_guarded_panic_effects_in_expr(&cast.expr, ctx, guard_facts, out)
+        }
+        Expr::Field(field) => {
+            collect_guarded_panic_effects_in_expr(&field.base, ctx, guard_facts, out)
+        }
+        Expr::Index(index) => {
+            collect_guarded_panic_effects_in_expr(&index.expr, ctx, guard_facts, out);
+            collect_guarded_panic_effects_in_expr(&index.index, ctx, guard_facts, out);
+        }
+        _ => {}
+    }
+}
+
+fn collect_statement_pure_free_guard_facts(
+    expr: &Expr,
+    ctx: &mut LiftCtx,
+    facts: &mut Vec<StatementPureFreeGuardFact>,
+) {
+    match expr {
+        Expr::Binary(binary) if matches!(binary.op, BinOp::And(_)) => {
+            collect_statement_pure_free_guard_facts(&binary.left, ctx, facts);
+            collect_statement_pure_free_guard_facts(&binary.right, ctx, facts);
+        }
+        Expr::MethodCall(method) => {
+            if let Some(fact) = statement_pure_free_guard_fact_for_is_some(method, ctx) {
+                facts.push(fact);
+            }
+        }
+        Expr::Paren(paren) => collect_statement_pure_free_guard_facts(&paren.expr, ctx, facts),
+        Expr::Group(group) => collect_statement_pure_free_guard_facts(&group.expr, ctx, facts),
+        _ => {}
+    }
+}
+
+fn statement_pure_free_guard_fact_for_is_some(
+    node: &syn::ExprMethodCall,
+    ctx: &mut LiftCtx,
+) -> Option<StatementPureFreeGuardFact> {
+    if node.method != panic_freedom::IS_SOME || !node.args.is_empty() {
+        return None;
+    }
+    let call = expr_as_call_lift(&node.receiver)?;
+    let callee = call_callee_name(call)?;
+    let call_line = call.func.span().start().line;
+    let rule = ctx.pure_free_guard_rules.iter().find(|rule| {
+        rule.callee == callee
+            && rule.post_predicate == panic_freedom::IS_SOME
+            && rule
+                .source_line
+                .map(|line| line == call_line)
+                .unwrap_or(true)
+    })?;
+    let args = call.args.iter().cloned().collect::<Vec<_>>();
+    if !args.iter().all(pure_free_guard_arg_is_stable) {
+        debug!(
+            callee = %callee,
+            line = call_line,
+            "lift_function_postcondition: refusing manifest pure-free guard fact because an arg expression is not stable"
+        );
+        return None;
+    }
+    debug!(
+        callee = %callee,
+        line = call_line,
+        args = args.len(),
+        "lift_function_postcondition: accepted manifest pure-free statement guard fact"
+    );
+    Some(StatementPureFreeGuardFact {
+        callee: rule.callee.clone(),
+        args: args.clone(),
+        arg_roots: expr_roots_for_lift_args(&args),
+        post_predicate: rule.post_predicate.clone(),
+    })
+}
+
+fn statement_guarded_panic_effect_for_method(
+    method: &syn::ExprMethodCall,
+    ctx: &mut LiftCtx,
+    guard_facts: &[StatementPureFreeGuardFact],
+) -> Option<IrFormula> {
+    let panic_leaf = method.method.to_string();
+    if !matches!(panic_leaf.as_str(), "unwrap" | "expect") || !method.args.is_empty() {
+        return None;
+    }
+    let call = expr_as_call_lift(&method.receiver)?;
+    let callee = call_callee_name(call)?;
+    let args = call.args.iter().cloned().collect::<Vec<_>>();
+    if !args.iter().all(pure_free_guard_arg_is_stable) {
+        debug!(
+            callee = %callee,
+            method = %panic_leaf,
+            "lift_function_postcondition: refusing pure-free statement panic carrier because receiver args are not stable"
+        );
+        return None;
+    }
+    let fact = guard_facts
+        .iter()
+        .rev()
+        .find(|fact| fact.callee == callee && expr_vecs_ast_equal_lift(&fact.args, &args))?;
+    let receiver = lift_expr_to_term_inner(&method.receiver, ctx)?;
+    let mut method_args = vec![receiver.clone()];
+    for arg in &method.args {
+        method_args.push(lift_expr_to_term_inner(arg, ctx)?);
+    }
+    let value = IrTerm::Ctor {
+        name: format!("method:{}", method.method),
+        args: method_args,
+    };
+    let guard = IrTerm::Ctor {
+        name: fact.post_predicate.clone(),
+        args: vec![receiver],
+    };
+    let guarded = wrap_cf_guarded(guard, value);
+    debug!(
+        callee = %callee,
+        method = %panic_leaf,
+        "lift_function_postcondition: emitting content-bearing guarded panic-effect carrier"
+    );
+    Some(IrFormula::Atomic {
+        name: "panic_effect".to_string(),
+        args: vec![guarded],
+    })
+}
+
+fn invalidate_statement_guard_facts_for_expr_effects(
+    expr: &Expr,
+    guard_facts: &mut Vec<StatementPureFreeGuardFact>,
+) {
+    let roots = expr_effect_mutation_roots(expr);
+    invalidate_statement_guard_facts_for_roots(&roots, guard_facts);
+}
+
+fn invalidate_statement_guard_facts_for_roots(
+    roots: &BTreeSet<String>,
+    guard_facts: &mut Vec<StatementPureFreeGuardFact>,
+) {
+    if roots.is_empty() {
+        return;
+    }
+    let before = guard_facts.len();
+    guard_facts.retain(|fact| fact.arg_roots.is_disjoint(roots));
+    let removed = before.saturating_sub(guard_facts.len());
+    if removed > 0 {
+        debug!(
+            roots = ?roots,
+            removed,
+            "lift_function_postcondition: invalidated manifest pure-free statement guard facts"
+        );
+    }
+}
+
+fn invalidate_statement_guard_facts_for_pat(
+    pat: &Pat,
+    guard_facts: &mut Vec<StatementPureFreeGuardFact>,
+) {
+    let roots = pat_bound_idents_lift(pat);
+    invalidate_statement_guard_facts_for_roots(&roots, guard_facts);
+}
+
+fn expr_as_call_lift(expr: &Expr) -> Option<&syn::ExprCall> {
+    match expr {
+        Expr::Call(call) => Some(call),
+        Expr::Paren(paren) => expr_as_call_lift(&paren.expr),
+        Expr::Group(group) => expr_as_call_lift(&group.expr),
+        _ => None,
+    }
+}
+
+fn expr_vecs_ast_equal_lift(left: &[Expr], right: &[Expr]) -> bool {
+    left.len() == right.len() && left.iter().zip(right).all(|(left, right)| left == right)
+}
+
+pub fn pure_free_guard_arg_is_stable(expr: &Expr) -> bool {
+    pure_free_guard_expr_is_pure_read(expr)
+}
+
+pub fn pure_free_guard_expr_effect_roots(expr: &Expr) -> BTreeSet<String> {
+    expr_effect_mutation_roots(expr)
+}
+
+fn pure_free_guard_expr_is_pure_read(expr: &Expr) -> bool {
+    match expr {
+        Expr::Array(array) => array.elems.iter().all(pure_free_guard_expr_is_pure_read),
+        Expr::Binary(binary) => {
+            !binop_is_assignment_lift(&binary.op)
+                && pure_free_guard_expr_is_pure_read(&binary.left)
+                && pure_free_guard_expr_is_pure_read(&binary.right)
+        }
+        Expr::Cast(cast) => pure_free_guard_expr_is_pure_read(&cast.expr),
+        Expr::Field(field) => pure_free_guard_expr_is_pure_read(&field.base),
+        Expr::Group(group) => pure_free_guard_expr_is_pure_read(&group.expr),
+        Expr::Index(index) => {
+            pure_free_guard_expr_is_pure_read(&index.expr)
+                && pure_free_guard_expr_is_pure_read(&index.index)
+        }
+        Expr::Lit(_) | Expr::Path(_) => true,
+        Expr::MethodCall(method) => pure_free_guard_method_is_pure_read(method),
+        Expr::Paren(paren) => pure_free_guard_expr_is_pure_read(&paren.expr),
+        Expr::Reference(reference) => {
+            reference.mutability.is_none() && pure_free_guard_expr_is_pure_read(&reference.expr)
+        }
+        Expr::Tuple(tuple) => tuple.elems.iter().all(pure_free_guard_expr_is_pure_read),
+        Expr::Unary(unary) => pure_free_guard_expr_is_pure_read(&unary.expr),
+        _ => false,
+    }
+}
+
+fn pure_free_guard_method_is_pure_read(method: &syn::ExprMethodCall) -> bool {
+    let name = method.method.to_string();
+    let args_pure = method.args.iter().all(pure_free_guard_expr_is_pure_read);
+    let receiver_pure = pure_free_guard_expr_is_pure_read(&method.receiver);
+    receiver_pure
+        && args_pure
+        && match name.as_str() {
+            "len" | "is_empty" | "is_some" | "is_none" => method.args.is_empty(),
+            "get" => method.args.len() == 1,
+            _ => false,
+        }
+}
+
+fn expr_roots_for_lift_args(args: &[Expr]) -> BTreeSet<String> {
+    let mut roots = BTreeSet::new();
+    for arg in args {
+        collect_expr_roots_lift(arg, &mut roots);
+    }
+    roots
+}
+
+fn collect_expr_roots_lift(expr: &Expr, roots: &mut BTreeSet<String>) {
+    match expr {
+        Expr::Path(path) if path.path.segments.len() == 1 => {
+            if let Some(segment) = path.path.segments.first() {
+                roots.insert(segment.ident.to_string());
+            }
+        }
+        Expr::Array(array) => {
+            for elem in &array.elems {
+                collect_expr_roots_lift(elem, roots);
+            }
+        }
+        Expr::Binary(binary) => {
+            collect_expr_roots_lift(&binary.left, roots);
+            collect_expr_roots_lift(&binary.right, roots);
+        }
+        Expr::Cast(cast) => collect_expr_roots_lift(&cast.expr, roots),
+        Expr::Field(field) => collect_expr_roots_lift(&field.base, roots),
+        Expr::Group(group) => collect_expr_roots_lift(&group.expr, roots),
+        Expr::Index(index) => {
+            collect_expr_roots_lift(&index.expr, roots);
+            collect_expr_roots_lift(&index.index, roots);
+        }
+        Expr::Paren(paren) => collect_expr_roots_lift(&paren.expr, roots),
+        Expr::Reference(reference) => collect_expr_roots_lift(&reference.expr, roots),
+        Expr::Tuple(tuple) => {
+            for elem in &tuple.elems {
+                collect_expr_roots_lift(elem, roots);
+            }
+        }
+        Expr::Unary(unary) => collect_expr_roots_lift(&unary.expr, roots),
+        _ => {}
+    }
+}
+
+fn expr_effect_mutation_roots(expr: &Expr) -> BTreeSet<String> {
+    let mut roots = BTreeSet::new();
+    collect_expr_effect_mutation_roots(expr, &mut roots);
+    roots
+}
+
+fn collect_expr_effect_mutation_roots(expr: &Expr, roots: &mut BTreeSet<String>) {
+    match expr {
+        Expr::Assign(assign) => {
+            collect_assignment_roots_lift(&assign.left, roots);
+            collect_expr_effect_mutation_roots(&assign.right, roots);
+        }
+        Expr::Binary(binary) => {
+            if binop_is_assignment_lift(&binary.op) {
+                collect_assignment_roots_lift(&binary.left, roots);
+            }
+            collect_expr_effect_mutation_roots(&binary.left, roots);
+            collect_expr_effect_mutation_roots(&binary.right, roots);
+        }
+        Expr::Call(call) => {
+            collect_expr_effect_mutation_roots(&call.func, roots);
+            for arg in &call.args {
+                collect_expr_effect_mutation_roots(arg, roots);
+            }
+        }
+        Expr::MethodCall(method) => {
+            if !pure_free_guard_method_is_pure_read(method)
+                && !matches!(
+                    method.method.to_string().as_str(),
+                    "unwrap" | "expect" | "unwrap_err"
+                )
+            {
+                if let Some(root) = expr_root_ident(&method.receiver) {
+                    roots.insert(root);
+                }
+            }
+            collect_expr_effect_mutation_roots(&method.receiver, roots);
+            for arg in &method.args {
+                collect_expr_effect_mutation_roots(arg, roots);
+            }
+        }
+        Expr::Reference(reference) => {
+            if reference.mutability.is_some() {
+                if let Some(root) = expr_root_ident(&reference.expr) {
+                    roots.insert(root);
+                }
+            }
+            collect_expr_effect_mutation_roots(&reference.expr, roots);
+        }
+        Expr::Array(array) => {
+            for elem in &array.elems {
+                collect_expr_effect_mutation_roots(elem, roots);
+            }
+        }
+        Expr::Block(block) => {
+            for stmt in &block.block.stmts {
+                match stmt {
+                    Stmt::Local(local) => {
+                        if let Some(init) = &local.init {
+                            collect_expr_effect_mutation_roots(&init.expr, roots);
+                        }
+                    }
+                    Stmt::Expr(expr, _) => collect_expr_effect_mutation_roots(expr, roots),
+                    Stmt::Macro(_) | Stmt::Item(_) => {}
+                }
+            }
+        }
+        Expr::Cast(cast) => collect_expr_effect_mutation_roots(&cast.expr, roots),
+        Expr::Field(field) => collect_expr_effect_mutation_roots(&field.base, roots),
+        Expr::Group(group) => collect_expr_effect_mutation_roots(&group.expr, roots),
+        Expr::If(if_expr) => {
+            collect_expr_effect_mutation_roots(&if_expr.cond, roots);
+            for stmt in &if_expr.then_branch.stmts {
+                match stmt {
+                    Stmt::Local(local) => {
+                        if let Some(init) = &local.init {
+                            collect_expr_effect_mutation_roots(&init.expr, roots);
+                        }
+                    }
+                    Stmt::Expr(expr, _) => collect_expr_effect_mutation_roots(expr, roots),
+                    Stmt::Macro(_) | Stmt::Item(_) => {}
+                }
+            }
+            if let Some((_, else_expr)) = &if_expr.else_branch {
+                collect_expr_effect_mutation_roots(else_expr, roots);
+            }
+        }
+        Expr::While(while_expr) => {
+            collect_expr_effect_mutation_roots(&while_expr.cond, roots);
+            for stmt in &while_expr.body.stmts {
+                match stmt {
+                    Stmt::Local(local) => {
+                        if let Some(init) = &local.init {
+                            collect_expr_effect_mutation_roots(&init.expr, roots);
+                        }
+                    }
+                    Stmt::Expr(expr, _) => collect_expr_effect_mutation_roots(expr, roots),
+                    Stmt::Macro(_) | Stmt::Item(_) => {}
+                }
+            }
+        }
+        Expr::Index(index) => {
+            collect_expr_effect_mutation_roots(&index.expr, roots);
+            collect_expr_effect_mutation_roots(&index.index, roots);
+        }
+        Expr::Paren(paren) => collect_expr_effect_mutation_roots(&paren.expr, roots),
+        Expr::Tuple(tuple) => {
+            for elem in &tuple.elems {
+                collect_expr_effect_mutation_roots(elem, roots);
+            }
+        }
+        Expr::Unary(unary) => collect_expr_effect_mutation_roots(&unary.expr, roots),
+        _ => {}
+    }
+}
+
+fn statement_expr_assignment_roots(expr: &Expr) -> BTreeSet<String> {
+    let mut roots = BTreeSet::new();
+    collect_assignment_roots_lift(expr, &mut roots);
+    roots
+}
+
+fn collect_assignment_roots_lift(expr: &Expr, roots: &mut BTreeSet<String>) {
+    match expr {
+        Expr::Path(path) if path.path.segments.len() == 1 => {
+            if let Some(segment) = path.path.segments.first() {
+                roots.insert(segment.ident.to_string());
+            }
+        }
+        Expr::Field(field) => collect_assignment_roots_lift(&field.base, roots),
+        Expr::Group(group) => collect_assignment_roots_lift(&group.expr, roots),
+        Expr::Index(index) => collect_assignment_roots_lift(&index.expr, roots),
+        Expr::Paren(paren) => collect_assignment_roots_lift(&paren.expr, roots),
+        Expr::Reference(reference) => collect_assignment_roots_lift(&reference.expr, roots),
+        _ => {}
+    }
+}
+
+fn binop_is_assignment_lift(op: &BinOp) -> bool {
+    matches!(
+        op,
+        BinOp::AddAssign(_)
+            | BinOp::SubAssign(_)
+            | BinOp::MulAssign(_)
+            | BinOp::DivAssign(_)
+            | BinOp::RemAssign(_)
+            | BinOp::BitXorAssign(_)
+            | BinOp::BitAndAssign(_)
+            | BinOp::BitOrAssign(_)
+            | BinOp::ShlAssign(_)
+            | BinOp::ShrAssign(_)
+    )
+}
+
+fn pat_bound_idents_lift(pat: &Pat) -> BTreeSet<String> {
+    let mut roots = BTreeSet::new();
+    collect_pat_bound_idents_lift(pat, &mut roots);
+    roots
+}
+
+fn collect_pat_bound_idents_lift(pat: &Pat, roots: &mut BTreeSet<String>) {
+    match pat {
+        Pat::Ident(ident) => {
+            roots.insert(ident.ident.to_string());
+        }
+        Pat::Or(or) => {
+            for case in &or.cases {
+                collect_pat_bound_idents_lift(case, roots);
+            }
+        }
+        Pat::Paren(paren) => collect_pat_bound_idents_lift(&paren.pat, roots),
+        Pat::Reference(reference) => collect_pat_bound_idents_lift(&reference.pat, roots),
+        Pat::Slice(slice) => {
+            for elem in &slice.elems {
+                collect_pat_bound_idents_lift(elem, roots);
+            }
+        }
+        Pat::Struct(strukt) => {
+            for field in &strukt.fields {
+                collect_pat_bound_idents_lift(&field.pat, roots);
+            }
+        }
+        Pat::Tuple(tuple) => {
+            for elem in &tuple.elems {
+                collect_pat_bound_idents_lift(elem, roots);
+            }
+        }
+        Pat::TupleStruct(tuple) => {
+            for elem in &tuple.elems {
+                collect_pat_bound_idents_lift(elem, roots);
+            }
+        }
+        Pat::Type(typed) => collect_pat_bound_idents_lift(&typed.pat, roots),
+        _ => {}
     }
 }
 

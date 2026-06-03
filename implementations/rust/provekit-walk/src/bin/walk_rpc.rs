@@ -39,7 +39,9 @@ use provekit_walk::emit::{
 use provekit_walk::{
     build_function_contract_with_file_and_post_override, build_shadow_source,
     collect_explicit_function_return_facts, lift_function_postcondition_with_return_facts,
-    lift_function_precondition, CalleeContract,
+    lift_function_postcondition_with_return_facts_and_pure_free_guards, lift_function_precondition,
+    pure_free_guard_arg_is_stable, pure_free_guard_expr_effect_roots, CalleeContract,
+    PureFreeGuardRule,
 };
 use quote::ToTokens;
 use serde_json::{json, Value};
@@ -807,6 +809,7 @@ struct FunctionPostconditionsManifest {
 #[derive(Debug, Clone, PartialEq, Eq)]
 enum FunctionPostconditionCallKind {
     Associated,
+    Free,
     Method,
 }
 
@@ -827,12 +830,21 @@ struct FunctionPostconditionRule {
     type_path: Option<String>,
     receiver_path: Option<String>,
     callee: String,
+    pure: bool,
     source_file: Option<String>,
     source_line: Option<usize>,
-    arg0: FunctionPostconditionArg0,
+    arg0: Option<FunctionPostconditionArg0>,
     contract: String,
     post_predicate: String,
     reason: String,
+}
+
+#[derive(Debug, Clone)]
+struct PureFreeCallGuardFact {
+    callee: String,
+    args: Vec<syn::Expr>,
+    arg_roots: BTreeSet<String>,
+    post_predicate: String,
 }
 
 #[derive(Debug, Clone, Default)]
@@ -1011,10 +1023,11 @@ impl FunctionPostconditionsManifest {
             let call_kind =
                 match required_toml_string_for(&path, &context, table, "call_kind")?.as_str() {
                     "associated" => FunctionPostconditionCallKind::Associated,
+                    "free" => FunctionPostconditionCallKind::Free,
                     "method" => FunctionPostconditionCallKind::Method,
                     other => {
                         return Err(format!(
-                        "{} `{context}.call_kind` must be `associated` or `method`, got `{other}`",
+                        "{} `{context}.call_kind` must be `associated`, `free`, or `method`, got `{other}`",
                         path.display()
                     ))
                     }
@@ -1030,6 +1043,19 @@ impl FunctionPostconditionsManifest {
             let post_predicate =
                 required_toml_string_for(&path, &context, table, "post_predicate")?;
             let reason = required_toml_string_for(&path, &context, table, "reason")?;
+            let pure = table
+                .get("pure")
+                .map(|value| {
+                    value.as_bool().ok_or_else(|| {
+                        format!(
+                            "{} `{context}.pure` must be a boolean, got {}",
+                            path.display(),
+                            toml_value_type(value)
+                        )
+                    })
+                })
+                .transpose()?
+                .unwrap_or(false);
             let source_file = table
                 .get("source_file")
                 .and_then(toml::Value::as_str)
@@ -1080,7 +1106,28 @@ impl FunctionPostconditionsManifest {
                             repeat_count,
                         }
                     };
-                    (Some(type_path), None, arg0)
+                    (Some(type_path), None, Some(arg0))
+                }
+                FunctionPostconditionCallKind::Free => {
+                    if !pure {
+                        return Err(format!(
+                            "{} `{context}` with `call_kind = \"free\"` must set `pure = true`",
+                            path.display()
+                        ));
+                    }
+                    if table.contains_key("type_path")
+                        || table.contains_key("receiver_path")
+                        || table.contains_key("arg0_path")
+                        || table.contains_key("arg0_format_literal")
+                        || table.contains_key("arg0_repeat_literal")
+                        || table.contains_key("arg0_repeat_count")
+                    {
+                        return Err(format!(
+                            "{} `{context}` with `call_kind = \"free\"` is guard-only and must not set type/receiver/arg0 match fields",
+                            path.display()
+                        ));
+                    }
+                    (None, None, None)
                 }
                 FunctionPostconditionCallKind::Method => {
                     let receiver_path =
@@ -1089,7 +1136,7 @@ impl FunctionPostconditionsManifest {
                     (
                         None,
                         Some(receiver_path),
-                        FunctionPostconditionArg0::Path(arg0_path),
+                        Some(FunctionPostconditionArg0::Path(arg0_path)),
                     )
                 }
             };
@@ -1100,6 +1147,7 @@ impl FunctionPostconditionsManifest {
                 type_path,
                 receiver_path,
                 callee,
+                pure,
                 source_file,
                 source_line,
                 arg0,
@@ -1138,7 +1186,8 @@ impl FunctionPostconditionsManifest {
                 return None;
             }
             let arg0 = only_call_arg(args)?;
-            match &rule.arg0 {
+            let rule_arg0 = rule.arg0.as_ref()?;
+            match rule_arg0 {
                 FunctionPostconditionArg0::FormatRepeat {
                     format_literal,
                     repeat_literal,
@@ -1158,6 +1207,37 @@ impl FunctionPostconditionsManifest {
                         return None;
                     }
                 }
+            }
+            Some(rule)
+        })
+    }
+
+    fn rule_for_free_pure_call(
+        &self,
+        func: &syn::Expr,
+        use_map: &HashMap<String, String>,
+        current_crate: &str,
+        source_file: &str,
+        source_line: usize,
+        local_free_functions: &BTreeSet<String>,
+    ) -> Option<&FunctionPostconditionRule> {
+        let (callee, callee_crate, _) = call_expr_callee(func, use_map, current_crate)?;
+        let resolved_crate = callee_crate.unwrap_or_else(|| current_crate.to_string());
+        if resolved_crate != current_crate || !local_free_functions.contains(&callee) {
+            return None;
+        }
+        self.rules.iter().find_map(|rule| {
+            if rule.call_kind != FunctionPostconditionCallKind::Free || !rule.pure {
+                return None;
+            }
+            if rule.callee_crate != current_crate || rule.callee != callee {
+                return None;
+            }
+            if !function_postcondition_source_matches(rule, source_file, source_line) {
+                return None;
+            }
+            if panic_stem_for_post_predicate(&rule.post_predicate).is_none() {
+                return None;
             }
             Some(rule)
         })
@@ -1196,7 +1276,7 @@ impl FunctionPostconditionsManifest {
             if !function_postcondition_source_matches(rule, source_file, source_line) {
                 return None;
             }
-            let FunctionPostconditionArg0::Path(expected_arg) = &rule.arg0 else {
+            let Some(FunctionPostconditionArg0::Path(expected_arg)) = &rule.arg0 else {
                 return None;
             };
             let arg0 = only_call_arg(&node.args)?;
@@ -1991,6 +2071,7 @@ fn collect_callsites_in_items(
     use_map: &HashMap<String, String>,
     fn_return_crates: &HashMap<String, String>,
     local_type_names: &BTreeSet<String>,
+    local_free_functions: &BTreeSet<String>,
     current_crate: &str,
     enum_variant_types: &EnumVariantTypeMap,
     struct_field_types: &StructFieldTypeMap,
@@ -2012,6 +2093,7 @@ fn collect_callsites_in_items(
                     use_map,
                     fn_return_crates,
                     local_type_names,
+                    local_free_functions,
                     current_crate,
                     enum_variant_types,
                     struct_field_types,
@@ -2043,6 +2125,7 @@ fn collect_callsites_in_items(
                             use_map,
                             fn_return_crates,
                             local_type_names,
+                            local_free_functions,
                             current_crate,
                             enum_variant_types,
                             struct_field_types,
@@ -2065,6 +2148,7 @@ fn collect_callsites_in_items(
                         use_map,
                         fn_return_crates,
                         local_type_names,
+                        local_free_functions,
                         current_crate,
                         enum_variant_types,
                         struct_field_types,
@@ -2085,6 +2169,7 @@ fn collect_callsites_in_block(
     use_map: &HashMap<String, String>,
     fn_return_crates: &HashMap<String, String>,
     local_type_names: &BTreeSet<String>,
+    local_free_functions: &BTreeSet<String>,
     current_crate: &str,
     enum_variant_types: &EnumVariantTypeMap,
     struct_field_types: &StructFieldTypeMap,
@@ -2102,6 +2187,7 @@ fn collect_callsites_in_block(
         use_map: &'a HashMap<String, String>,
         fn_return_crates: &'a HashMap<String, String>,
         local_type_names: &'a BTreeSet<String>,
+        local_free_functions: &'a BTreeSet<String>,
         current_crate: &'a str,
         local_types: HashMap<String, String>,
         value_types: HashMap<String, TypeIdentity>,
@@ -2110,6 +2196,7 @@ fn collect_callsites_in_block(
         infallible_serialize: &'a InfallibleSerializeManifest,
         function_postconditions: &'a FunctionPostconditionsManifest,
         param_type_map: &'a HashMap<String, TypeIdentity>,
+        pure_free_guard_facts: Vec<PureFreeCallGuardFact>,
         out: &'a mut Vec<CallSite>,
     }
     impl<'a> V<'a> {
@@ -2196,6 +2283,124 @@ fn collect_callsites_in_block(
                 }
                 _ => None,
             }
+        }
+
+        fn pure_free_guard_fact_for_is_some(
+            &self,
+            node: &syn::ExprMethodCall,
+        ) -> Option<PureFreeCallGuardFact> {
+            if node.method != "is_some" || !node.args.is_empty() {
+                return None;
+            }
+            let call = expr_as_call(&node.receiver)?;
+            let start = call.func.span().start();
+            let rule = self.function_postconditions.rule_for_free_pure_call(
+                &call.func,
+                self.use_map,
+                self.current_crate,
+                self.rel_path,
+                start.line,
+                self.local_free_functions,
+            )?;
+            if rule.post_predicate != panic_freedom::IS_SOME {
+                return None;
+            }
+            let args = call.args.iter().cloned().collect::<Vec<_>>();
+            if !args.iter().all(pure_free_guard_arg_is_stable) {
+                debug!(
+                    callee = %rule.callee,
+                    line = start.line,
+                    "lift_implications: refusing manifest pure-free guard fact because an arg expression is not stable"
+                );
+                return None;
+            }
+            Some(PureFreeCallGuardFact {
+                callee: rule.callee.clone(),
+                arg_roots: expr_roots_for_args(&args),
+                args,
+                post_predicate: rule.post_predicate.clone(),
+            })
+        }
+
+        fn collect_pure_free_guard_facts(
+            &self,
+            expr: &syn::Expr,
+            facts: &mut Vec<PureFreeCallGuardFact>,
+        ) {
+            match expr {
+                syn::Expr::Binary(binary) if matches!(binary.op, syn::BinOp::And(_)) => {
+                    self.collect_pure_free_guard_facts(&binary.left, facts);
+                    self.collect_pure_free_guard_facts(&binary.right, facts);
+                }
+                syn::Expr::MethodCall(method) => {
+                    if let Some(fact) = self.pure_free_guard_fact_for_is_some(method) {
+                        facts.push(fact);
+                    }
+                }
+                syn::Expr::Paren(paren) => self.collect_pure_free_guard_facts(&paren.expr, facts),
+                syn::Expr::Group(group) => self.collect_pure_free_guard_facts(&group.expr, facts),
+                _ => {}
+            }
+        }
+
+        fn pure_free_guarded_panic_partial_for_receiver(
+            &self,
+            receiver: &syn::Expr,
+            panic_leaf: &str,
+        ) -> Option<(String, String)> {
+            let call = expr_as_call(receiver)?;
+            let (callee, callee_crate, _) =
+                call_expr_callee(&call.func, self.use_map, self.current_crate)?;
+            let resolved_crate = callee_crate.unwrap_or_else(|| self.current_crate.to_string());
+            if resolved_crate != self.current_crate
+                || !self.local_free_functions.contains(&callee)
+                || self
+                    .function_postconditions
+                    .rule_for_free_pure_call(
+                        &call.func,
+                        self.use_map,
+                        self.current_crate,
+                        self.rel_path,
+                        call.func.span().start().line,
+                        self.local_free_functions,
+                    )
+                    .is_none()
+            {
+                return None;
+            }
+            let args = call.args.iter().cloned().collect::<Vec<_>>();
+            if !args.iter().all(pure_free_guard_arg_is_stable) {
+                debug!(
+                    callee = %callee,
+                    "lift_implications: refusing manifest pure-free panic partial because receiver args are not stable"
+                );
+                return None;
+            }
+            let fact = self
+                .pure_free_guard_facts
+                .iter()
+                .rev()
+                .find(|fact| fact.callee == callee && expr_vecs_ast_equal(&fact.args, &args))?;
+            let stem = panic_stem_for_post_predicate(&fact.post_predicate)?;
+            disambiguated_partial_leaf(stem, panic_leaf).map(|leaf| ("std".to_string(), leaf))
+        }
+
+        fn invalidate_pure_free_guard_facts_for_roots(&mut self, roots: &BTreeSet<String>) {
+            if roots.is_empty() {
+                return;
+            }
+            self.pure_free_guard_facts
+                .retain(|fact| fact.arg_roots.is_disjoint(roots));
+        }
+
+        fn invalidate_pure_free_guard_facts_for_expr_effects(&mut self, expr: &syn::Expr) {
+            let roots = pure_free_guard_expr_effect_roots(expr);
+            self.invalidate_pure_free_guard_facts_for_roots(&roots);
+        }
+
+        fn invalidate_pure_free_guard_facts_for_pat(&mut self, pat: &syn::Pat) {
+            let roots = pat_bound_idents(pat);
+            self.invalidate_pure_free_guard_facts_for_roots(&roots);
         }
     }
     impl<'ast, 'a> Visit<'ast> for V<'a> {
@@ -2288,6 +2493,7 @@ fn collect_callsites_in_block(
                 });
             }
             syn::visit::visit_expr_call(self, node);
+            self.invalidate_pure_free_guard_facts_for_expr_effects(&syn::Expr::Call(node.clone()));
         }
         fn visit_expr_macro(&mut self, node: &'ast syn::ExprMacro) {
             self.out
@@ -2317,7 +2523,10 @@ fn collect_callsites_in_block(
                 .is_none()
                 .then(|| {
                     if is_panic_leaf(&callee) {
-                        self.serde_json_panic_partial_for_receiver(&node.receiver, &callee)
+                        self.pure_free_guarded_panic_partial_for_receiver(&node.receiver, &callee)
+                            .or_else(|| {
+                                self.serde_json_panic_partial_for_receiver(&node.receiver, &callee)
+                            })
                             .or_else(|| {
                                 self.function_postconditions.panic_partial_for_receiver(
                                     &node.receiver,
@@ -2380,6 +2589,9 @@ fn collect_callsites_in_block(
                 col: start.column,
             });
             syn::visit::visit_expr_method_call(self, node);
+            self.invalidate_pure_free_guard_facts_for_expr_effects(&syn::Expr::MethodCall(
+                node.clone(),
+            ));
         }
         fn visit_expr_match(&mut self, node: &'ast syn::ExprMatch) {
             self.visit_expr(&node.expr);
@@ -2413,24 +2625,34 @@ fn collect_callsites_in_block(
             }
         }
         fn visit_expr_if(&mut self, node: &'ast syn::ExprIf) {
-            let syn::Expr::Let(expr_let) = &*node.cond else {
-                syn::visit::visit_expr_if(self, node);
+            if let syn::Expr::Let(expr_let) = &*node.cond {
+                self.visit_expr(&expr_let.expr);
+                let saved_local_types = self.local_types.clone();
+                let saved_value_types = self.value_types.clone();
+                if let Some(inner_type) = self.expr_option_inner_type_identity(&expr_let.expr) {
+                    bind_option_pattern_type_id(
+                        &expr_let.pat,
+                        &inner_type,
+                        &mut self.local_types,
+                        &mut self.value_types,
+                    );
+                }
+                self.visit_block(&node.then_branch);
+                self.local_types = saved_local_types;
+                self.value_types = saved_value_types;
+                if let Some((_else_token, else_branch)) = &node.else_branch {
+                    self.visit_expr(else_branch);
+                }
                 return;
-            };
-            self.visit_expr(&expr_let.expr);
-            let saved_local_types = self.local_types.clone();
-            let saved_value_types = self.value_types.clone();
-            if let Some(inner_type) = self.expr_option_inner_type_identity(&expr_let.expr) {
-                bind_option_pattern_type_id(
-                    &expr_let.pat,
-                    &inner_type,
-                    &mut self.local_types,
-                    &mut self.value_types,
-                );
             }
+
+            self.visit_expr(&node.cond);
+            let saved_guard_facts = self.pure_free_guard_facts.clone();
+            let mut guard_facts = Vec::new();
+            self.collect_pure_free_guard_facts(&node.cond, &mut guard_facts);
+            self.pure_free_guard_facts.extend(guard_facts);
             self.visit_block(&node.then_branch);
-            self.local_types = saved_local_types;
-            self.value_types = saved_value_types;
+            self.pure_free_guard_facts = saved_guard_facts;
             if let Some((_else_token, else_branch)) = &node.else_branch {
                 self.visit_expr(else_branch);
             }
@@ -2463,6 +2685,18 @@ fn collect_callsites_in_block(
             });
             syn::visit::visit_expr_index(self, node);
         }
+        fn visit_expr_assign(&mut self, node: &'ast syn::ExprAssign) {
+            syn::visit::visit_expr_assign(self, node);
+            let roots = expr_assignment_roots(&node.left);
+            self.invalidate_pure_free_guard_facts_for_roots(&roots);
+        }
+        fn visit_expr_binary(&mut self, node: &'ast syn::ExprBinary) {
+            syn::visit::visit_expr_binary(self, node);
+            if binop_is_assignment(&node.op) {
+                let roots = expr_assignment_roots(&node.left);
+                self.invalidate_pure_free_guard_facts_for_roots(&roots);
+            }
+        }
         fn visit_local(&mut self, node: &'ast syn::Local) {
             let explicit_type = pat_type_identity(
                 &node.pat,
@@ -2492,6 +2726,7 @@ fn collect_callsites_in_block(
                         )
                     })
             });
+            self.invalidate_pure_free_guard_facts_for_pat(&node.pat);
             let local_type = explicit_type.clone().or(inferred_type);
             if let (Some(name), Some(krate)) = (
                 pat_ident_name(&node.pat),
@@ -2512,6 +2747,7 @@ fn collect_callsites_in_block(
         use_map,
         fn_return_crates,
         local_type_names,
+        local_free_functions,
         current_crate,
         local_types: param_type_map
             .iter()
@@ -2523,6 +2759,7 @@ fn collect_callsites_in_block(
         infallible_serialize,
         function_postconditions,
         param_type_map,
+        pure_free_guard_facts: Vec::new(),
         out,
     };
     v.visit_block(block);
@@ -2783,6 +3020,155 @@ fn only_call_arg<T, P>(args: &syn::punctuated::Punctuated<T, P>) -> Option<&T> {
         args.first()
     } else {
         None
+    }
+}
+
+fn expr_as_call(expr: &syn::Expr) -> Option<&syn::ExprCall> {
+    match expr {
+        syn::Expr::Call(call) => Some(call),
+        syn::Expr::Paren(paren) => expr_as_call(&paren.expr),
+        syn::Expr::Group(group) => expr_as_call(&group.expr),
+        _ => None,
+    }
+}
+
+fn expr_vecs_ast_equal(left: &[syn::Expr], right: &[syn::Expr]) -> bool {
+    left.len() == right.len() && left.iter().zip(right).all(|(left, right)| left == right)
+}
+
+fn expr_roots_for_args(args: &[syn::Expr]) -> BTreeSet<String> {
+    let mut roots = BTreeSet::new();
+    for arg in args {
+        collect_expr_roots(arg, &mut roots);
+    }
+    roots
+}
+
+fn collect_expr_roots(expr: &syn::Expr, roots: &mut BTreeSet<String>) {
+    match expr {
+        syn::Expr::Path(path) if path.path.segments.len() == 1 => {
+            if let Some(segment) = path.path.segments.first() {
+                roots.insert(segment.ident.to_string());
+            }
+        }
+        syn::Expr::Array(array) => {
+            for elem in &array.elems {
+                collect_expr_roots(elem, roots);
+            }
+        }
+        syn::Expr::Binary(binary) => {
+            collect_expr_roots(&binary.left, roots);
+            collect_expr_roots(&binary.right, roots);
+        }
+        syn::Expr::Call(call) => {
+            collect_expr_roots(&call.func, roots);
+            for arg in &call.args {
+                collect_expr_roots(arg, roots);
+            }
+        }
+        syn::Expr::Cast(cast) => collect_expr_roots(&cast.expr, roots),
+        syn::Expr::Field(field) => collect_expr_roots(&field.base, roots),
+        syn::Expr::Group(group) => collect_expr_roots(&group.expr, roots),
+        syn::Expr::Index(index) => {
+            collect_expr_roots(&index.expr, roots);
+            collect_expr_roots(&index.index, roots);
+        }
+        syn::Expr::MethodCall(method) => {
+            collect_expr_roots(&method.receiver, roots);
+            for arg in &method.args {
+                collect_expr_roots(arg, roots);
+            }
+        }
+        syn::Expr::Paren(paren) => collect_expr_roots(&paren.expr, roots),
+        syn::Expr::Reference(reference) => collect_expr_roots(&reference.expr, roots),
+        syn::Expr::Tuple(tuple) => {
+            for elem in &tuple.elems {
+                collect_expr_roots(elem, roots);
+            }
+        }
+        syn::Expr::Unary(unary) => collect_expr_roots(&unary.expr, roots),
+        _ => {}
+    }
+}
+
+fn expr_assignment_roots(expr: &syn::Expr) -> BTreeSet<String> {
+    let mut roots = BTreeSet::new();
+    collect_assignment_roots(expr, &mut roots);
+    roots
+}
+
+fn collect_assignment_roots(expr: &syn::Expr, roots: &mut BTreeSet<String>) {
+    match expr {
+        syn::Expr::Path(path) if path.path.segments.len() == 1 => {
+            if let Some(segment) = path.path.segments.first() {
+                roots.insert(segment.ident.to_string());
+            }
+        }
+        syn::Expr::Field(field) => collect_assignment_roots(&field.base, roots),
+        syn::Expr::Group(group) => collect_assignment_roots(&group.expr, roots),
+        syn::Expr::Index(index) => collect_assignment_roots(&index.expr, roots),
+        syn::Expr::Paren(paren) => collect_assignment_roots(&paren.expr, roots),
+        syn::Expr::Reference(reference) => collect_assignment_roots(&reference.expr, roots),
+        _ => {}
+    }
+}
+
+fn binop_is_assignment(op: &syn::BinOp) -> bool {
+    matches!(
+        op,
+        syn::BinOp::AddAssign(_)
+            | syn::BinOp::SubAssign(_)
+            | syn::BinOp::MulAssign(_)
+            | syn::BinOp::DivAssign(_)
+            | syn::BinOp::RemAssign(_)
+            | syn::BinOp::BitXorAssign(_)
+            | syn::BinOp::BitAndAssign(_)
+            | syn::BinOp::BitOrAssign(_)
+            | syn::BinOp::ShlAssign(_)
+            | syn::BinOp::ShrAssign(_)
+    )
+}
+
+fn pat_bound_idents(pat: &syn::Pat) -> BTreeSet<String> {
+    let mut roots = BTreeSet::new();
+    collect_pat_bound_idents(pat, &mut roots);
+    roots
+}
+
+fn collect_pat_bound_idents(pat: &syn::Pat, roots: &mut BTreeSet<String>) {
+    match pat {
+        syn::Pat::Ident(ident) => {
+            roots.insert(ident.ident.to_string());
+        }
+        syn::Pat::Or(or) => {
+            for case in &or.cases {
+                collect_pat_bound_idents(case, roots);
+            }
+        }
+        syn::Pat::Paren(paren) => collect_pat_bound_idents(&paren.pat, roots),
+        syn::Pat::Reference(reference) => collect_pat_bound_idents(&reference.pat, roots),
+        syn::Pat::Slice(slice) => {
+            for elem in &slice.elems {
+                collect_pat_bound_idents(elem, roots);
+            }
+        }
+        syn::Pat::Struct(strukt) => {
+            for field in &strukt.fields {
+                collect_pat_bound_idents(&field.pat, roots);
+            }
+        }
+        syn::Pat::Tuple(tuple) => {
+            for elem in &tuple.elems {
+                collect_pat_bound_idents(elem, roots);
+            }
+        }
+        syn::Pat::TupleStruct(tuple) => {
+            for elem in &tuple.elems {
+                collect_pat_bound_idents(elem, roots);
+            }
+        }
+        syn::Pat::Type(typed) => collect_pat_bound_idents(&typed.pat, roots),
+        _ => {}
     }
 }
 
@@ -3580,6 +3966,7 @@ fn lift_implications(params: &Value) -> Result<Value, String> {
 
         let use_map = build_use_crate_map(&file);
         let local_type_names = collect_local_type_names(&file);
+        let local_free_functions = collect_local_free_function_names(&file);
         let enum_variant_types =
             collect_enum_variant_type_map(&file, &use_map, &local_type_names, &current_crate);
         let struct_field_types =
@@ -3594,6 +3981,7 @@ fn lift_implications(params: &Value) -> Result<Value, String> {
             &use_map,
             &fn_return_crates,
             &local_type_names,
+            &local_free_functions,
             &current_crate,
             &enum_variant_types,
             &struct_field_types,
@@ -4894,6 +5282,13 @@ fn function_contract_lift(params: &Value) -> Result<Value, String> {
             .to_string()
             .replace('\\', "/");
         let return_facts = collect_explicit_function_return_facts(&file);
+        let local_free_functions = collect_local_free_function_names(&file);
+        let pure_free_guard_rules = pure_free_guard_rules_for_function_post_lift(
+            &function_postconditions,
+            &current_crate,
+            rel.as_str(),
+            &local_free_functions,
+        );
 
         for target in collect_function_contract_targets(&file) {
             // Phase-2 Tier D-lib: when a sugar function carries `totality =
@@ -4915,8 +5310,12 @@ fn function_contract_lift(params: &Value) -> Result<Value, String> {
                 })
             } else {
                 Some(
-                    lift_function_postcondition_with_return_facts(&target.item_fn, &return_facts)
-                        .into_formula(),
+                    lift_function_postcondition_with_return_facts_and_pure_free_guards(
+                        &target.item_fn,
+                        &return_facts,
+                        &pure_free_guard_rules,
+                    )
+                    .into_formula(),
                 )
             };
             let contract = build_function_contract_with_file_and_post_override(
@@ -5099,6 +5498,17 @@ fn emit_function_postcondition_contracts(
         );
     }
     for rule in &manifest.rules {
+        if rule.call_kind == FunctionPostconditionCallKind::Free {
+            debug!(
+                callee_crate = %rule.callee_crate,
+                callee = %rule.callee,
+                contract = %rule.contract,
+                post_predicate = %rule.post_predicate,
+                reason = %rule.reason,
+                "function_contract_lift: skipping guard-only pure free-function declaration"
+            );
+            continue;
+        }
         debug!(
             call_kind = ?rule.call_kind,
             callee_crate = %rule.callee_crate,
@@ -5120,6 +5530,56 @@ fn emit_function_postcondition_contracts(
         }));
     }
     Ok(())
+}
+
+fn pure_free_guard_rules_for_function_post_lift(
+    manifest: &FunctionPostconditionsManifest,
+    current_crate: &str,
+    source_file: &str,
+    local_free_functions: &BTreeSet<String>,
+) -> Vec<PureFreeGuardRule> {
+    manifest
+        .rules
+        .iter()
+        .filter_map(|rule| {
+            if rule.call_kind != FunctionPostconditionCallKind::Free || !rule.pure {
+                return None;
+            }
+            if rule.callee_crate != current_crate || !local_free_functions.contains(&rule.callee) {
+                debug!(
+                    callee_crate = %rule.callee_crate,
+                    callee = %rule.callee,
+                    current_crate = %current_crate,
+                    source_file = %source_file,
+                    "function_contract_lift: refusing pure-free post-lift guard rule outside current crate/local function set"
+                );
+                return None;
+            }
+            if rule.source_file.as_deref().is_some_and(|file| file != source_file) {
+                return None;
+            }
+            if panic_stem_for_post_predicate(&rule.post_predicate).is_none() {
+                debug!(
+                    callee = %rule.callee,
+                    post_predicate = %rule.post_predicate,
+                    "function_contract_lift: refusing pure-free post-lift guard rule with unsupported panic predicate"
+                );
+                return None;
+            }
+            debug!(
+                callee = %rule.callee,
+                post_predicate = %rule.post_predicate,
+                source_file = %source_file,
+                source_line = ?rule.source_line,
+                "function_contract_lift: enabling pure-free post-lift guard rule"
+            );
+            Some(PureFreeGuardRule {
+                callee: rule.callee.clone(),
+                post_predicate: rule.post_predicate.clone(),
+                source_line: rule.source_line,
+            })
+        })
+        .collect()
 }
 
 fn singleton_result_post_json(predicate: &str) -> Value {
@@ -5241,6 +5701,40 @@ fn collect_function_contract_targets(file: &syn::File) -> Vec<FunctionContractLi
     let mut targets = Vec::new();
     collect_function_contract_targets_in_items(&file.items, false, &mut targets);
     targets
+}
+
+fn collect_local_free_function_names(file: &syn::File) -> BTreeSet<String> {
+    let mut names = BTreeSet::new();
+    collect_local_free_function_names_in_items(&file.items, false, &mut names);
+    names
+}
+
+fn collect_local_free_function_names_in_items(
+    items: &[syn::Item],
+    in_test_context: bool,
+    names: &mut BTreeSet<String>,
+) {
+    for item in items {
+        match item {
+            syn::Item::Fn(item_fn) => {
+                if in_test_context || is_rust_test_fn(item_fn) {
+                    continue;
+                }
+                names.insert(item_fn.sig.ident.to_string());
+            }
+            syn::Item::Mod(module) => {
+                let nested_test_context = in_test_context || attrs_include_cfg_test(&module.attrs);
+                if let Some((_, nested_items)) = &module.content {
+                    collect_local_free_function_names_in_items(
+                        nested_items,
+                        nested_test_context,
+                        names,
+                    );
+                }
+            }
+            _ => {}
+        }
+    }
 }
 
 fn collect_function_contract_targets_in_items(
@@ -12217,6 +12711,597 @@ reason = "grammar_op_shape(CONCEPT_BIND_RESULT) has a fixed primitive arm and js
     }
 
     #[test]
+    fn function_contract_lift_does_not_emit_guard_only_free_pure_postcondition() {
+        let root = temp_workspace("function_contract_free_pure_guard_only");
+        let src_dir = root.join("src");
+        fs::create_dir_all(&src_dir).expect("create src dir");
+        fs::write(
+            root.join("Cargo.toml"),
+            r#"
+[package]
+name = "consumer-crate"
+version = "0.1.0"
+edition = "2021"
+"#,
+        )
+        .expect("write Cargo.toml");
+        fs::write(
+            src_dir.join("lib.rs"),
+            r#"
+pub fn pure_fn(_line: &str) -> Option<&str> {
+    None
+}
+"#,
+        )
+        .expect("write source");
+        write_function_postconditions_manifest(
+            &root,
+            r#"
+[[functions]]
+call_kind = "free"
+callee_crate = "consumer_crate"
+callee = "pure_fn"
+pure = true
+contract = "pure_fn__guard_only"
+post_predicate = "is_some"
+reason = "purity lets a dominating is_some guard transfer to an identical repeated call; it is not a global postcondition"
+"#,
+        );
+
+        let resp = function_contract_lift(&json!({
+            "workspace_root": root.to_string_lossy(),
+            "source_paths": ["."]
+        }))
+        .expect("function contract lift");
+
+        let entries = resp["ir"].as_array().expect("ir array");
+        assert!(
+            entries
+                .iter()
+                .all(|entry| entry["name"] != "pure_fn__guard_only"),
+            "free pure rules are guard-transfer declarations, not unconditional function postconditions: {entries:?}"
+        );
+
+        let _ = fs::remove_dir_all(root);
+    }
+
+    fn function_contract_entry_for_free_pure_fixture(
+        temp_name: &str,
+        src: &str,
+        target_name: &str,
+        manifest: Option<String>,
+    ) -> Value {
+        let root = temp_workspace(temp_name);
+        let src_dir = root.join("src");
+        fs::create_dir_all(&src_dir).expect("create src dir");
+        fs::write(
+            root.join("Cargo.toml"),
+            r#"
+[package]
+name = "consumer-crate"
+version = "0.1.0"
+edition = "2021"
+"#,
+        )
+        .expect("write Cargo.toml");
+        let rel = "src/lib.rs";
+        fs::write(root.join(rel), src).expect("write source");
+        if let Some(manifest) = manifest {
+            write_function_postconditions_manifest(&root, &manifest);
+        }
+
+        let resp = function_contract_lift(&json!({
+            "workspace_root": root.to_string_lossy(),
+            "source_paths": ["."]
+        }))
+        .expect("function contract lift");
+        let entries = resp["ir"].as_array().expect("ir array");
+        let target = entries
+            .iter()
+            .find(|entry| entry["name"] == target_name)
+            .unwrap_or_else(|| panic!("missing `{target_name}` contract: {entries:?}"));
+        let target = target.clone();
+
+        let _ = fs::remove_dir_all(root);
+        target
+    }
+
+    fn function_contract_post_for_free_pure_fixture(
+        temp_name: &str,
+        src: &str,
+        target_name: &str,
+        manifest: Option<String>,
+    ) -> String {
+        let target =
+            function_contract_entry_for_free_pure_fixture(temp_name, src, target_name, manifest);
+        let post = serde_json::to_string(&target["post"]).expect("post stringifies");
+        post
+    }
+
+    fn assert_post_has_guarded_pure_free_unwrap(post: &str) {
+        assert!(
+            post.contains("cf_guarded"),
+            "statement-position pure free guard must emit a content-bearing cf_guarded carrier: {post}"
+        );
+        assert!(
+            post.contains("is_some"),
+            "guard carrier must establish the Option precondition: {post}"
+        );
+        assert!(
+            post.contains("pure_fn"),
+            "guard and unwrap receiver must name the manifest pure function: {post}"
+        );
+        assert!(
+            post.contains("method:unwrap"),
+            "guard carrier must contain the panic leaf term the verifier enumerates: {post}"
+        );
+    }
+
+    fn assert_post_has_no_guarded_effect(post: &str) {
+        assert!(
+            !post.contains("cf_guarded"),
+            "refused guard-transfer shape must not emit a cf_guarded proof carrier: {post}"
+        );
+    }
+
+    fn count_ctor_name(value: &Value, target: &str) -> usize {
+        match value {
+            Value::Object(map) => {
+                let here = (map.get("kind").and_then(Value::as_str) == Some("ctor")
+                    && map.get("name").and_then(Value::as_str) == Some(target))
+                    as usize;
+                here + map
+                    .values()
+                    .map(|child| count_ctor_name(child, target))
+                    .sum::<usize>()
+            }
+            Value::Array(items) => items
+                .iter()
+                .map(|child| count_ctor_name(child, target))
+                .sum(),
+            _ => 0,
+        }
+    }
+
+    #[test]
+    fn function_contract_lift_carries_manifest_pure_free_guard_for_statement_unwrap() {
+        let src = r##"
+pub fn pure_fn(_line: &str) -> Option<&str> {
+    None
+}
+
+pub fn guarded(line: &str) -> Option<&str> {
+    if pure_fn(line).is_some() {
+        let declared = pure_fn(line).unwrap();
+        return Some(declared);
+    }
+    None
+}
+"##;
+
+        let post = function_contract_post_for_free_pure_fixture(
+            "function_contract_free_pure_statement_guard_positive",
+            src,
+            "guarded",
+            Some(free_pure_option_manifest("pure_fn")),
+        );
+
+        assert_post_has_guarded_pure_free_unwrap(&post);
+    }
+
+    #[test]
+    fn function_contract_lift_emits_one_formula_occurrence_for_guarded_panic_carrier() {
+        let src = r##"
+pub fn pure_fn(_line: &str) -> Option<&str> {
+    None
+}
+
+pub fn guarded(line: &str) -> Option<&str> {
+    if pure_fn(line).is_some() {
+        let declared = pure_fn(line).unwrap();
+        return Some(declared);
+    }
+    None
+}
+"##;
+
+        let entry = function_contract_entry_for_free_pure_fixture(
+            "function_contract_free_pure_statement_single_formula_carrier",
+            src,
+            "guarded",
+            Some(free_pure_option_manifest("pure_fn")),
+        );
+
+        assert_eq!(
+            count_ctor_name(&entry["post"], "method:unwrap"),
+            1,
+            "formula-backed guarded panic carrier must emit exactly one unwrap occurrence; verifier dedup must not mask kit double-emission: {}",
+            entry["post"]
+        );
+    }
+
+    #[test]
+    fn function_contract_lift_carries_manifest_pure_free_guard_through_len_condition() {
+        let src = r##"
+pub fn pure_fn(_line: &str) -> Option<&str> {
+    None
+}
+
+pub fn guarded(lines: &[&str], idx: usize, consumed: usize) -> Option<&str> {
+    if idx + consumed < lines.len() && pure_fn(lines[idx + consumed]).is_some() {
+        let declared = pure_fn(lines[idx + consumed]).unwrap();
+        return Some(declared);
+    }
+    None
+}
+"##;
+
+        let post = function_contract_post_for_free_pure_fixture(
+            "function_contract_free_pure_statement_len_condition",
+            src,
+            "guarded",
+            Some(free_pure_option_manifest("pure_fn")),
+        );
+
+        assert_post_has_guarded_pure_free_unwrap(&post);
+    }
+
+    #[test]
+    fn function_contract_lift_carries_manifest_pure_free_guard_inside_while_body() {
+        let src = r##"
+pub fn pure_fn(_line: &str) -> Option<&str> {
+    None
+}
+
+pub fn guarded(lines: &[&str]) -> Option<&str> {
+    let mut idx = 0usize;
+    while idx < lines.len() {
+        let consumed = 1usize;
+        if idx + consumed < lines.len() && pure_fn(lines[idx + consumed]).is_some() {
+            let declared = pure_fn(lines[idx + consumed]).unwrap();
+            return Some(declared);
+        }
+        idx += 1;
+    }
+    None
+}
+"##;
+
+        let post = function_contract_post_for_free_pure_fixture(
+            "function_contract_free_pure_statement_loop_guard",
+            src,
+            "guarded",
+            Some(free_pure_option_manifest("pure_fn")),
+        );
+
+        assert_post_has_guarded_pure_free_unwrap(&post);
+    }
+
+    #[test]
+    fn function_contract_lift_carries_manifest_pure_free_guard_through_len_read_before_unwrap() {
+        let src = r##"
+pub fn pure_fn(_line: &str) -> Option<&str> {
+    None
+}
+
+pub fn guarded(lines: &[&str], idx: usize) -> Option<&str> {
+    if pure_fn(lines[idx]).is_some() {
+        let _line_count = lines.len();
+        let declared = pure_fn(lines[idx]).unwrap();
+        return Some(declared);
+    }
+    None
+}
+"##;
+
+        let post = function_contract_post_for_free_pure_fixture(
+            "function_contract_free_pure_statement_len_read",
+            src,
+            "guarded",
+            Some(free_pure_option_manifest("pure_fn")),
+        );
+
+        assert_post_has_guarded_pure_free_unwrap(&post);
+    }
+
+    #[test]
+    fn function_contract_lift_does_not_leak_pure_free_guard_outside_then_branch() {
+        let src = r##"
+pub fn pure_fn(_line: &str) -> Option<&str> {
+    None
+}
+
+pub fn scope_leak(line: &str) -> Option<&str> {
+    if pure_fn(line).is_some() {
+    }
+    let declared = pure_fn(line).unwrap();
+    Some(declared)
+}
+"##;
+
+        let post = function_contract_post_for_free_pure_fixture(
+            "function_contract_free_pure_statement_scope_leak",
+            src,
+            "scope_leak",
+            Some(free_pure_option_manifest("pure_fn")),
+        );
+
+        assert_post_has_no_guarded_effect(&post);
+    }
+
+    #[test]
+    fn function_contract_lift_refuses_pure_free_guard_with_wrong_polarity() {
+        let src = r##"
+pub fn pure_fn(_line: &str) -> Option<&str> {
+    None
+}
+
+pub fn wrong_polarity(line: &str) -> Option<&str> {
+    if pure_fn(line).is_none() {
+        let declared = pure_fn(line).unwrap();
+        return Some(declared);
+    }
+    None
+}
+"##;
+
+        let post = function_contract_post_for_free_pure_fixture(
+            "function_contract_free_pure_statement_wrong_polarity",
+            src,
+            "wrong_polarity",
+            Some(free_pure_option_manifest("pure_fn")),
+        );
+
+        assert_post_has_no_guarded_effect(&post);
+    }
+
+    #[test]
+    fn function_contract_lift_refuses_pure_free_guard_in_else_branch() {
+        let src = r##"
+pub fn pure_fn(_line: &str) -> Option<&str> {
+    None
+}
+
+pub fn else_branch(line: &str) -> Option<&str> {
+    if pure_fn(line).is_some() {
+    } else {
+        let declared = pure_fn(line).unwrap();
+        return Some(declared);
+    }
+    None
+}
+"##;
+
+        let post = function_contract_post_for_free_pure_fixture(
+            "function_contract_free_pure_statement_else_branch",
+            src,
+            "else_branch",
+            Some(free_pure_option_manifest("pure_fn")),
+        );
+
+        assert_post_has_no_guarded_effect(&post);
+    }
+
+    #[test]
+    fn function_contract_lift_refuses_pure_free_guard_after_arg_reassignment() {
+        let src = r##"
+pub fn pure_fn(_line: &str) -> Option<&str> {
+    None
+}
+
+pub fn reassigned(mut line: &str, other: &str) -> Option<&str> {
+    if pure_fn(line).is_some() {
+        line = other;
+        let declared = pure_fn(line).unwrap();
+        return Some(declared);
+    }
+    None
+}
+"##;
+
+        let post = function_contract_post_for_free_pure_fixture(
+            "function_contract_free_pure_statement_reassigned",
+            src,
+            "reassigned",
+            Some(free_pure_option_manifest("pure_fn")),
+        );
+
+        assert_post_has_no_guarded_effect(&post);
+    }
+
+    #[test]
+    fn function_contract_lift_refuses_pure_free_guard_after_method_mutation() {
+        let src = r##"
+pub struct Slot(String);
+
+impl Slot {
+    pub fn mutate(&mut self) {}
+}
+
+pub fn pure_fn(_slot: &Slot) -> Option<&str> {
+    None
+}
+
+pub fn method_mutation(mut slot: Slot) -> Option<&str> {
+    if pure_fn(&slot).is_some() {
+        slot.mutate();
+        let declared = pure_fn(&slot).unwrap();
+        return Some(declared);
+    }
+    None
+}
+"##;
+
+        let post = function_contract_post_for_free_pure_fixture(
+            "function_contract_free_pure_statement_method_mutation",
+            src,
+            "method_mutation",
+            Some(free_pure_option_manifest("pure_fn")),
+        );
+
+        assert_post_has_no_guarded_effect(&post);
+    }
+
+    #[test]
+    fn function_contract_lift_refuses_pure_free_guard_after_mut_borrow_call() {
+        let src = r##"
+pub fn take_mut(_line: &mut &str) {}
+
+pub fn pure_fn(_line: &str) -> Option<&str> {
+    None
+}
+
+pub fn mut_borrow(mut line: &str) -> Option<&str> {
+    if pure_fn(line).is_some() {
+        take_mut(&mut line);
+        let declared = pure_fn(line).unwrap();
+        return Some(declared);
+    }
+    None
+}
+"##;
+
+        let post = function_contract_post_for_free_pure_fixture(
+            "function_contract_free_pure_statement_mut_borrow",
+            src,
+            "mut_borrow",
+            Some(free_pure_option_manifest("pure_fn")),
+        );
+
+        assert_post_has_no_guarded_effect(&post);
+    }
+
+    #[test]
+    fn function_contract_lift_refuses_pure_free_guard_with_non_stable_arg_expression() {
+        let src = r##"
+pub fn pure_fn(_line: Option<&str>) -> Option<&str> {
+    None
+}
+
+pub fn non_stable_arg(mut iter: std::vec::IntoIter<&str>) -> Option<&str> {
+    if pure_fn(iter.next()).is_some() {
+        let declared = pure_fn(iter.next()).unwrap();
+        return Some(declared);
+    }
+    None
+}
+"##;
+
+        let post = function_contract_post_for_free_pure_fixture(
+            "function_contract_free_pure_statement_non_stable_arg",
+            src,
+            "non_stable_arg",
+            Some(free_pure_option_manifest("pure_fn")),
+        );
+
+        assert_post_has_no_guarded_effect(&post);
+    }
+
+    #[test]
+    fn function_contract_lift_refuses_pure_free_guard_for_different_function() {
+        let src = r##"
+pub fn pure_fn(_line: &str) -> Option<&str> {
+    None
+}
+
+pub fn other_fn(_line: &str) -> Option<&str> {
+    None
+}
+
+pub fn different_function(line: &str) -> Option<&str> {
+    if pure_fn(line).is_some() {
+        let declared = other_fn(line).unwrap();
+        return Some(declared);
+    }
+    None
+}
+"##;
+
+        let post = function_contract_post_for_free_pure_fixture(
+            "function_contract_free_pure_statement_different_function",
+            src,
+            "different_function",
+            Some(free_pure_option_manifest("pure_fn")),
+        );
+
+        assert_post_has_no_guarded_effect(&post);
+    }
+
+    #[test]
+    fn function_contract_lift_refuses_pure_free_guard_for_different_args() {
+        let src = r##"
+pub fn pure_fn(_line: &str) -> Option<&str> {
+    None
+}
+
+pub fn different_args(left: &str, right: &str) -> Option<&str> {
+    if pure_fn(left).is_some() {
+        let declared = pure_fn(right).unwrap();
+        return Some(declared);
+    }
+    None
+}
+"##;
+
+        let post = function_contract_post_for_free_pure_fixture(
+            "function_contract_free_pure_statement_different_args",
+            src,
+            "different_args",
+            Some(free_pure_option_manifest("pure_fn")),
+        );
+
+        assert_post_has_no_guarded_effect(&post);
+    }
+
+    #[test]
+    fn function_contract_lift_refuses_unregistered_pure_free_guard() {
+        let src = r##"
+pub fn pure_fn(_line: &str) -> Option<&str> {
+    None
+}
+
+pub fn unregistered(line: &str) -> Option<&str> {
+    if pure_fn(line).is_some() {
+        let declared = pure_fn(line).unwrap();
+        return Some(declared);
+    }
+    None
+}
+"##;
+
+        let post = function_contract_post_for_free_pure_fixture(
+            "function_contract_free_pure_statement_unregistered",
+            src,
+            "unregistered",
+            None,
+        );
+
+        assert_post_has_no_guarded_effect(&post);
+    }
+
+    #[test]
+    fn function_contract_lift_refuses_pure_free_guard_without_local_definition() {
+        let src = r##"
+pub fn missing_definition(line: &str) -> Option<&str> {
+    if pure_fn(line).is_some() {
+        let declared = pure_fn(line).unwrap();
+        return Some(declared);
+    }
+    None
+}
+"##;
+
+        let post = function_contract_post_for_free_pure_fixture(
+            "function_contract_free_pure_statement_missing_definition",
+            src,
+            "missing_definition",
+            Some(free_pure_option_manifest("pure_fn")),
+        );
+
+        assert_post_has_no_guarded_effect(&post);
+    }
+
+    #[test]
     fn lift_implications_disambiguates_blessed_concrete_param_from_manifest_alias() {
         let src = r##"
 use serde_json as sj;
@@ -13139,6 +14224,455 @@ reason = "The audited value is known to contain only canonicalizable JSON primit
         );
 
         let _ = fs::remove_dir_all(root);
+    }
+
+    fn free_pure_option_manifest(callee: &str) -> String {
+        format!(
+            r#"
+[[functions]]
+call_kind = "free"
+callee_crate = "consumer_crate"
+callee = "{callee}"
+pure = true
+contract = "manifest_pure_option_contract"
+post_predicate = "is_some"
+reason = "manifest-declared pure free Option producer may share an identical-call is_some guard"
+"#,
+        )
+    }
+
+    fn lift_implications_for_free_pure_fixture(
+        temp_name: &str,
+        src: &str,
+        manifest: Option<String>,
+    ) -> Value {
+        let root = temp_workspace(temp_name);
+        let src_dir = root.join("src");
+        fs::create_dir_all(&src_dir).expect("create src dir");
+        fs::write(
+            root.join("Cargo.toml"),
+            r#"
+[package]
+name = "consumer-crate"
+version = "0.1.0"
+edition = "2021"
+"#,
+        )
+        .expect("write Cargo.toml");
+        let rel = "src/lib.rs";
+        fs::write(root.join(rel), src).expect("write source");
+        if let Some(manifest) = manifest {
+            write_function_postconditions_manifest(&root, &manifest);
+        }
+
+        let option_unwrap_cid = "blake3-512:abababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababab";
+        let resp = lift_implications(&json!({
+            "workspace_root": root.to_string_lossy(),
+            "source_paths": [rel],
+            "contract_bindings": [
+                {
+                    "name": "manifest_pure_option_contract",
+                    "library": "consumer_crate",
+                    "contract_cid": "blake3-512:cdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcd",
+                    "bodyDischargeEligible": false,
+                    "bodyDischargeRefusalReason": "totality-axiom"
+                },
+                {
+                    "name": "option_unwrap@std/src/option.rs:2:1",
+                    "library": "std",
+                    "contract_cid": option_unwrap_cid,
+                    "body_bearing": true,
+                    "has_pre": true
+                }
+            ],
+        }))
+        .expect("lift_implications");
+
+        let _ = fs::remove_dir_all(root);
+        resp
+    }
+
+    fn method_unwrap_targets(resp: &Value) -> Vec<&str> {
+        resp["ir"]
+            .as_array()
+            .expect("ir array")
+            .iter()
+            .filter(|entry| entry["sourceSymbol"] == "method:unwrap")
+            .filter_map(|entry| entry["targetContractCid"].as_str())
+            .collect()
+    }
+
+    #[test]
+    fn lift_implications_routes_manifest_pure_free_call_guarded_unwrap() {
+        let src = r##"
+pub fn pure_fn(_line: &str) -> Option<&str> {
+    panic!()
+}
+
+pub fn guarded(line: &str) -> &str {
+    if pure_fn(line).is_some() {
+        pure_fn(line).unwrap()
+    } else {
+        ""
+    }
+}
+"##;
+
+        let resp = lift_implications_for_free_pure_fixture(
+            "free_pure_guard_positive",
+            src,
+            Some(free_pure_option_manifest("pure_fn")),
+        );
+
+        assert_eq!(
+            method_unwrap_targets(&resp),
+            vec!["blake3-512:abababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababab"],
+            "manifest-pure identical repeated call under is_some guard must route to std option_unwrap: {resp:#?}"
+        );
+    }
+
+    #[test]
+    fn lift_implications_routes_manifest_pure_free_call_with_ast_normalized_whitespace() {
+        let src = r##"
+pub fn pure_fn(_line: &str) -> Option<&str> {
+    panic!()
+}
+
+pub fn guarded(line: &str) -> &str {
+    if pure_fn(line).is_some() {
+        pure_fn( line ).unwrap()
+    } else {
+        ""
+    }
+}
+"##;
+
+        let resp = lift_implications_for_free_pure_fixture(
+            "free_pure_guard_ast_normalized_whitespace",
+            src,
+            Some(free_pure_option_manifest("pure_fn")),
+        );
+
+        assert_eq!(
+            method_unwrap_targets(&resp),
+            vec!["blake3-512:abababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababab"],
+            "manifest-pure repeated call matching must normalize AST whitespace without semantic equivalence: {resp:#?}"
+        );
+    }
+
+    #[test]
+    fn lift_implications_refuses_manifest_pure_free_call_without_guard() {
+        let src = r##"
+pub fn pure_fn(_line: &str) -> Option<&str> {
+    panic!()
+}
+
+pub fn unguarded(line: &str) -> &str {
+    pure_fn(line).unwrap()
+}
+"##;
+
+        let resp = lift_implications_for_free_pure_fixture(
+            "free_pure_guard_unguarded",
+            src,
+            Some(free_pure_option_manifest("pure_fn")),
+        );
+
+        assert!(
+            method_unwrap_targets(&resp).is_empty(),
+            "manifest-pure free call must not route without a dominating is_some guard: {resp:#?}"
+        );
+    }
+
+    #[test]
+    fn lift_implications_refuses_manifest_pure_free_call_with_different_arg() {
+        let src = r##"
+pub fn pure_fn(_line: &str) -> Option<&str> {
+    panic!()
+}
+
+pub fn different_arg(left: &str, right: &str) -> &str {
+    if pure_fn(left).is_some() {
+        pure_fn(right).unwrap()
+    } else {
+        ""
+    }
+}
+"##;
+
+        let resp = lift_implications_for_free_pure_fixture(
+            "free_pure_guard_different_arg",
+            src,
+            Some(free_pure_option_manifest("pure_fn")),
+        );
+
+        assert!(
+            method_unwrap_targets(&resp).is_empty(),
+            "guarded pure free call must require exact syntactic arg equality: {resp:#?}"
+        );
+    }
+
+    #[test]
+    fn lift_implications_refuses_manifest_pure_free_call_with_different_function() {
+        let src = r##"
+pub fn pure_fn_a(_line: &str) -> Option<&str> {
+    panic!()
+}
+
+pub fn pure_fn_b(_line: &str) -> Option<&str> {
+    panic!()
+}
+
+pub fn different_function(line: &str) -> &str {
+    if pure_fn_a(line).is_some() {
+        pure_fn_b(line).unwrap()
+    } else {
+        ""
+    }
+}
+"##;
+
+        let resp = lift_implications_for_free_pure_fixture(
+            "free_pure_guard_different_function",
+            src,
+            Some(free_pure_option_manifest("pure_fn_a")),
+        );
+
+        assert!(
+            method_unwrap_targets(&resp).is_empty(),
+            "guarded pure free call must require the same callee as the guard: {resp:#?}"
+        );
+    }
+
+    #[test]
+    fn lift_implications_refuses_manifest_pure_free_call_after_mutation() {
+        let src = r##"
+pub fn pure_fn(_line: &str) -> Option<&str> {
+    panic!()
+}
+
+pub fn mutated(mut line: &str, replacement: &str) -> &str {
+    if pure_fn(line).is_some() {
+        line = replacement;
+        pure_fn(line).unwrap()
+    } else {
+        ""
+    }
+}
+"##;
+
+        let resp = lift_implications_for_free_pure_fixture(
+            "free_pure_guard_after_mutation",
+            src,
+            Some(free_pure_option_manifest("pure_fn")),
+        );
+
+        assert!(
+            method_unwrap_targets(&resp).is_empty(),
+            "guarded pure free call must refuse when a receiver arg root mutates between guard and unwrap: {resp:#?}"
+        );
+    }
+
+    #[test]
+    fn lift_implications_refuses_manifest_pure_free_call_after_compound_assignment() {
+        let src = r##"
+pub fn pure_fn(_line: &str) -> Option<&str> {
+    panic!()
+}
+
+pub fn mutated(mut idx: usize, lines: &[&str]) -> &str {
+    if pure_fn(lines[idx]).is_some() {
+        idx += 1;
+        pure_fn(lines[idx]).unwrap()
+    } else {
+        ""
+    }
+}
+"##;
+
+        let resp = lift_implications_for_free_pure_fixture(
+            "free_pure_guard_after_compound_assignment",
+            src,
+            Some(free_pure_option_manifest("pure_fn")),
+        );
+
+        assert!(
+            method_unwrap_targets(&resp).is_empty(),
+            "guarded pure free call must refuse when a receiver arg root is compound-assigned between guard and unwrap: {resp:#?}"
+        );
+    }
+
+    #[test]
+    fn lift_implications_routes_manifest_pure_free_call_after_len_read() {
+        let src = r##"
+pub fn pure_fn(_line: &str) -> Option<&str> {
+    panic!()
+}
+
+pub fn guarded(lines: &[&str], idx: usize) -> &str {
+    if pure_fn(lines[idx]).is_some() {
+        let _line_count = lines.len();
+        pure_fn(lines[idx]).unwrap()
+    } else {
+        ""
+    }
+}
+"##;
+
+        let resp = lift_implications_for_free_pure_fixture(
+            "free_pure_guard_after_len_read",
+            src,
+            Some(free_pure_option_manifest("pure_fn")),
+        );
+
+        assert_eq!(
+            method_unwrap_targets(&resp),
+            vec!["blake3-512:abababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababab"],
+            "whitelisted shared-read methods like len must not invalidate the guarded pure-free fact: {resp:#?}"
+        );
+    }
+
+    #[test]
+    fn lift_implications_refuses_manifest_pure_free_call_after_unknown_method_on_arg_root() {
+        let src = r##"
+pub struct Slot(String);
+
+impl Slot {
+    pub fn touch(&self) {}
+}
+
+pub fn pure_fn(_slot: &Slot) -> Option<&str> {
+    panic!()
+}
+
+pub fn guarded(slot: Slot) -> &str {
+    if pure_fn(&slot).is_some() {
+        slot.touch();
+        pure_fn(&slot).unwrap()
+    } else {
+        ""
+    }
+}
+"##;
+
+        let resp = lift_implications_for_free_pure_fixture(
+            "free_pure_guard_after_unknown_method",
+            src,
+            Some(free_pure_option_manifest("pure_fn")),
+        );
+
+        assert!(
+            method_unwrap_targets(&resp).is_empty(),
+            "unknown methods on a guarded arg root must invalidate the pure-free fact by default: {resp:#?}"
+        );
+    }
+
+    #[test]
+    fn lift_implications_refuses_manifest_pure_free_call_after_mut_borrow() {
+        let src = r##"
+pub fn take_mut(_line: &mut &str) {}
+
+pub fn pure_fn(_line: &str) -> Option<&str> {
+    panic!()
+}
+
+pub fn guarded(mut line: &str) -> &str {
+    if pure_fn(line).is_some() {
+        take_mut(&mut line);
+        pure_fn(line).unwrap()
+    } else {
+        ""
+    }
+}
+"##;
+
+        let resp = lift_implications_for_free_pure_fixture(
+            "free_pure_guard_after_mut_borrow",
+            src,
+            Some(free_pure_option_manifest("pure_fn")),
+        );
+
+        assert!(
+            method_unwrap_targets(&resp).is_empty(),
+            "mutable borrows of a guarded arg root must invalidate the pure-free fact: {resp:#?}"
+        );
+    }
+
+    #[test]
+    fn lift_implications_refuses_manifest_pure_free_call_with_non_stable_arg_expression() {
+        let src = r##"
+pub fn pure_fn(_line: Option<&str>) -> Option<&str> {
+    panic!()
+}
+
+pub fn non_stable_arg(mut iter: std::vec::IntoIter<&str>) -> &str {
+    if pure_fn(iter.next()).is_some() {
+        pure_fn(iter.next()).unwrap()
+    } else {
+        ""
+    }
+}
+"##;
+
+        let resp = lift_implications_for_free_pure_fixture(
+            "free_pure_guard_non_stable_arg",
+            src,
+            Some(free_pure_option_manifest("pure_fn")),
+        );
+
+        assert!(
+            method_unwrap_targets(&resp).is_empty(),
+            "guarded pure free call must refuse when the identical arg expression can evaluate differently: {resp:#?}"
+        );
+    }
+
+    #[test]
+    fn lift_implications_refuses_unregistered_free_call_guarded_unwrap() {
+        let src = r##"
+pub fn random_fn(_line: &str) -> Option<&str> {
+    panic!()
+}
+
+pub fn unregistered(line: &str) -> &str {
+    if random_fn(line).is_some() {
+        random_fn(line).unwrap()
+    } else {
+        ""
+    }
+}
+"##;
+
+        let resp =
+            lift_implications_for_free_pure_fixture("free_pure_guard_unregistered", src, None);
+
+        assert!(
+            method_unwrap_targets(&resp).is_empty(),
+            "unregistered free function must not borrow manifest-pure routing: {resp:#?}"
+        );
+    }
+
+    #[test]
+    fn lift_implications_refuses_manifest_pure_free_call_without_local_function_definition() {
+        let src = r##"
+pub fn missing_definition(line: &str) -> &str {
+    if missing_fn(line).is_some() {
+        missing_fn(line).unwrap()
+    } else {
+        ""
+    }
+}
+"##;
+
+        let resp = lift_implications_for_free_pure_fixture(
+            "free_pure_guard_missing_definition",
+            src,
+            Some(free_pure_option_manifest("missing_fn")),
+        );
+
+        assert!(
+            method_unwrap_targets(&resp).is_empty(),
+            "manifest-pure routing must require the free function to resolve in the lifted crate: {resp:#?}"
+        );
     }
 
     #[test]

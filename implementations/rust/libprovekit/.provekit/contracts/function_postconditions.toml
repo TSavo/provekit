@@ -27,6 +27,15 @@ post_predicate = "is_some"
 reason = "grammar_op_shape(CONCEPT_BIND_RESULT) has a fixed primitive arm and json_cid returns a valid CID"
 
 [[functions]]
+call_kind = "free"
+callee_crate = "libprovekit"
+callee = "concept_payload_cid_from_line"
+pure = true
+contract = "concept_payload_cid_from_line__guard_only"
+post_predicate = "is_some"
+reason = "concept_payload_cid_from_line is a pure parser over one input line; an is_some guard for an identical repeated call transfers to the guarded unwrap without asserting global totality"
+
+[[functions]]
 call_kind = "associated"
 callee_crate = "libprovekit"
 type_path = "crate::canonical"
