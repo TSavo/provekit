@@ -239,7 +239,7 @@ is now the active arc; see Phase 5.
   23 total `panicSite=true` bridges pinned to shim-std. #1898 tracks the
   remaining libprovekit lifter rows; #1899 tracks replacing the self-check
   staging workaround with a manifest-driven dependency proof DAG.
-- **Slice 31 catalog K multiplication (this PR, 2026-06-03).** The Rust kit
+- **Slice 31 catalog K multiplication (#1902, 2026-06-03).** The Rust kit
   gained manifest-backed lifter support for constructor-local type inference,
   direct `Option` field match/if-let bindings, source-site-gated
   function-postcondition routing, and immediate `serde_json::to_value(...).expect`
@@ -714,7 +714,7 @@ labeling.
   - #1785 (doctor PR 6) no-silent-failure floor aggregation.
   - #1787 (doctor PR 7) `provekit release-gate` command and v1 evidence
     receipt.
-  - Slice 31 catalog K multiplication (this PR): Rust-kit manifest-backed
+  - #1902 (Slice 31 catalog K multiplication): Rust-kit manifest-backed
     lifter support plus libprovekit serde/function catalog entries. Current
     reproducible baselines: libprovekit K=22 and provekit-cli K=30, with
     `falsePass=0`, `silentlyDropped=0`, and `droppedSites=[]` on both crates.
