@@ -31,6 +31,7 @@ use libprovekit::concept::panic_freedom;
 use proc_macro2::{Delimiter, TokenStream, TokenTree};
 use provekit_ir_types::{IrFormula, IrTerm};
 use syn::spanned::Spanned;
+use syn::visit::{self, Visit};
 use syn::{
     BinOp, Expr, ExprBinary, ExprIf, ExprMacro, ExprUnary, FnArg, GenericArgument, ItemFn, Lit,
     Local, Macro, Pat, PathArguments, ReturnType, Stmt, StmtMacro, Type, UnOp,
@@ -1345,6 +1346,7 @@ fn collect_guarded_panic_effects_in_expr(
     match expr {
         Expr::If(if_expr) => {
             collect_guarded_panic_effects_in_expr(&if_expr.cond, ctx, guard_facts, out);
+            invalidate_statement_guard_facts_for_expr_effects(&if_expr.cond, guard_facts);
             let saved_guard_facts = guard_facts.clone();
             let mut branch_guard_facts = Vec::new();
             if expr_effect_mutation_roots(&if_expr.cond).is_empty() {
@@ -1372,6 +1374,7 @@ fn collect_guarded_panic_effects_in_expr(
         }
         Expr::While(while_expr) => {
             collect_guarded_panic_effects_in_expr(&while_expr.cond, ctx, guard_facts, out);
+            invalidate_statement_guard_facts_for_expr_effects(&while_expr.cond, guard_facts);
             let saved_guard_facts = guard_facts.clone();
             collect_guarded_panic_effects_in_stmts(&while_expr.body.stmts, ctx, guard_facts, out);
             *guard_facts = saved_guard_facts;
@@ -1380,21 +1383,22 @@ fn collect_guarded_panic_effects_in_expr(
             collect_guarded_panic_effects_in_stmts(&block.block.stmts, ctx, guard_facts, out);
         }
         Expr::Assign(assign) => {
-            collect_guarded_panic_effects_in_expr(&assign.right, ctx, guard_facts, out);
+            collect_guarded_panic_effects_in_child_expr(&assign.right, ctx, guard_facts, out);
             let roots = statement_expr_assignment_roots(&assign.left);
             invalidate_statement_guard_facts_for_roots(&roots, guard_facts);
         }
         Expr::Binary(binary) => {
-            collect_guarded_panic_effects_in_expr(&binary.left, ctx, guard_facts, out);
-            collect_guarded_panic_effects_in_expr(&binary.right, ctx, guard_facts, out);
+            collect_guarded_panic_effects_in_child_expr(&binary.left, ctx, guard_facts, out);
+            collect_guarded_panic_effects_in_child_expr(&binary.right, ctx, guard_facts, out);
             if binop_is_assignment_lift(&binary.op) {
                 let roots = statement_expr_assignment_roots(&binary.left);
                 invalidate_statement_guard_facts_for_roots(&roots, guard_facts);
             }
         }
         Expr::Call(call) => {
+            collect_guarded_panic_effects_in_child_expr(&call.func, ctx, guard_facts, out);
             for arg in &call.args {
-                collect_guarded_panic_effects_in_expr(arg, ctx, guard_facts, out);
+                collect_guarded_panic_effects_in_child_expr(arg, ctx, guard_facts, out);
             }
         }
         Expr::MethodCall(method) => {
@@ -1403,9 +1407,14 @@ fn collect_guarded_panic_effects_in_expr(
             {
                 out.push(formula);
             }
-            collect_guarded_panic_effects_in_expr(&method.receiver, ctx, guard_facts, out);
+            collect_guarded_panic_effects_in_child_expr(
+                &method.receiver,
+                ctx,
+                guard_facts,
+                out,
+            );
             for arg in &method.args {
-                collect_guarded_panic_effects_in_expr(arg, ctx, guard_facts, out);
+                collect_guarded_panic_effects_in_child_expr(arg, ctx, guard_facts, out);
             }
         }
         Expr::Paren(paren) => {
@@ -1419,12 +1428,12 @@ fn collect_guarded_panic_effects_in_expr(
         }
         Expr::Tuple(tuple) => {
             for elem in &tuple.elems {
-                collect_guarded_panic_effects_in_expr(elem, ctx, guard_facts, out);
+                collect_guarded_panic_effects_in_child_expr(elem, ctx, guard_facts, out);
             }
         }
         Expr::Array(array) => {
             for elem in &array.elems {
-                collect_guarded_panic_effects_in_expr(elem, ctx, guard_facts, out);
+                collect_guarded_panic_effects_in_child_expr(elem, ctx, guard_facts, out);
             }
         }
         Expr::Cast(cast) => {
@@ -1434,11 +1443,21 @@ fn collect_guarded_panic_effects_in_expr(
             collect_guarded_panic_effects_in_expr(&field.base, ctx, guard_facts, out)
         }
         Expr::Index(index) => {
-            collect_guarded_panic_effects_in_expr(&index.expr, ctx, guard_facts, out);
-            collect_guarded_panic_effects_in_expr(&index.index, ctx, guard_facts, out);
+            collect_guarded_panic_effects_in_child_expr(&index.expr, ctx, guard_facts, out);
+            collect_guarded_panic_effects_in_child_expr(&index.index, ctx, guard_facts, out);
         }
         _ => {}
     }
+}
+
+fn collect_guarded_panic_effects_in_child_expr(
+    expr: &Expr,
+    ctx: &mut LiftCtx,
+    guard_facts: &mut Vec<StatementPureFreeGuardFact>,
+    out: &mut Vec<IrFormula>,
+) {
+    collect_guarded_panic_effects_in_expr(expr, ctx, guard_facts, out);
+    invalidate_statement_guard_facts_for_expr_effects(expr, guard_facts);
 }
 
 fn collect_statement_pure_free_guard_facts(
@@ -1509,7 +1528,12 @@ fn statement_guarded_panic_effect_for_method(
     guard_facts: &[StatementPureFreeGuardFact],
 ) -> Option<IrFormula> {
     let panic_leaf = method.method.to_string();
-    if !matches!(panic_leaf.as_str(), "unwrap" | "expect") || !method.args.is_empty() {
+    let valid_panic_call = match panic_leaf.as_str() {
+        "unwrap" => method.args.is_empty(),
+        "expect" => true,
+        _ => false,
+    };
+    if !valid_panic_call {
         return None;
     }
     let call = expr_as_call_lift(&method.receiver)?;
@@ -1697,114 +1721,49 @@ fn expr_effect_mutation_roots(expr: &Expr) -> BTreeSet<String> {
     roots
 }
 
-fn collect_expr_effect_mutation_roots(expr: &Expr, roots: &mut BTreeSet<String>) {
-    match expr {
-        Expr::Assign(assign) => {
-            collect_assignment_roots_lift(&assign.left, roots);
-            collect_expr_effect_mutation_roots(&assign.right, roots);
-        }
-        Expr::Binary(binary) => {
-            if binop_is_assignment_lift(&binary.op) {
-                collect_assignment_roots_lift(&binary.left, roots);
-            }
-            collect_expr_effect_mutation_roots(&binary.left, roots);
-            collect_expr_effect_mutation_roots(&binary.right, roots);
-        }
-        Expr::Call(call) => {
-            collect_expr_effect_mutation_roots(&call.func, roots);
-            for arg in &call.args {
-                collect_expr_effect_mutation_roots(arg, roots);
-            }
-        }
-        Expr::MethodCall(method) => {
-            if !pure_free_guard_method_is_pure_read(method)
-                && !matches!(
-                    method.method.to_string().as_str(),
-                    "unwrap" | "expect" | "unwrap_err"
-                )
-            {
-                if let Some(root) = expr_root_ident(&method.receiver) {
-                    roots.insert(root);
-                }
-            }
-            collect_expr_effect_mutation_roots(&method.receiver, roots);
-            for arg in &method.args {
-                collect_expr_effect_mutation_roots(arg, roots);
-            }
-        }
-        Expr::Reference(reference) => {
-            if reference.mutability.is_some() {
-                if let Some(root) = expr_root_ident(&reference.expr) {
-                    roots.insert(root);
-                }
-            }
-            collect_expr_effect_mutation_roots(&reference.expr, roots);
-        }
-        Expr::Array(array) => {
-            for elem in &array.elems {
-                collect_expr_effect_mutation_roots(elem, roots);
-            }
-        }
-        Expr::Block(block) => {
-            for stmt in &block.block.stmts {
-                match stmt {
-                    Stmt::Local(local) => {
-                        if let Some(init) = &local.init {
-                            collect_expr_effect_mutation_roots(&init.expr, roots);
-                        }
-                    }
-                    Stmt::Expr(expr, _) => collect_expr_effect_mutation_roots(expr, roots),
-                    Stmt::Macro(_) | Stmt::Item(_) => {}
-                }
-            }
-        }
-        Expr::Cast(cast) => collect_expr_effect_mutation_roots(&cast.expr, roots),
-        Expr::Field(field) => collect_expr_effect_mutation_roots(&field.base, roots),
-        Expr::Group(group) => collect_expr_effect_mutation_roots(&group.expr, roots),
-        Expr::If(if_expr) => {
-            collect_expr_effect_mutation_roots(&if_expr.cond, roots);
-            for stmt in &if_expr.then_branch.stmts {
-                match stmt {
-                    Stmt::Local(local) => {
-                        if let Some(init) = &local.init {
-                            collect_expr_effect_mutation_roots(&init.expr, roots);
-                        }
-                    }
-                    Stmt::Expr(expr, _) => collect_expr_effect_mutation_roots(expr, roots),
-                    Stmt::Macro(_) | Stmt::Item(_) => {}
-                }
-            }
-            if let Some((_, else_expr)) = &if_expr.else_branch {
-                collect_expr_effect_mutation_roots(else_expr, roots);
-            }
-        }
-        Expr::While(while_expr) => {
-            collect_expr_effect_mutation_roots(&while_expr.cond, roots);
-            for stmt in &while_expr.body.stmts {
-                match stmt {
-                    Stmt::Local(local) => {
-                        if let Some(init) = &local.init {
-                            collect_expr_effect_mutation_roots(&init.expr, roots);
-                        }
-                    }
-                    Stmt::Expr(expr, _) => collect_expr_effect_mutation_roots(expr, roots),
-                    Stmt::Macro(_) | Stmt::Item(_) => {}
-                }
-            }
-        }
-        Expr::Index(index) => {
-            collect_expr_effect_mutation_roots(&index.expr, roots);
-            collect_expr_effect_mutation_roots(&index.index, roots);
-        }
-        Expr::Paren(paren) => collect_expr_effect_mutation_roots(&paren.expr, roots),
-        Expr::Tuple(tuple) => {
-            for elem in &tuple.elems {
-                collect_expr_effect_mutation_roots(elem, roots);
-            }
-        }
-        Expr::Unary(unary) => collect_expr_effect_mutation_roots(&unary.expr, roots),
-        _ => {}
+struct ExprEffectMutationRootCollector<'a> {
+    roots: &'a mut BTreeSet<String>,
+}
+
+impl<'ast> Visit<'ast> for ExprEffectMutationRootCollector<'_> {
+    fn visit_expr_assign(&mut self, node: &'ast syn::ExprAssign) {
+        collect_assignment_roots_lift(&node.left, self.roots);
+        visit::visit_expr_assign(self, node);
     }
+
+    fn visit_expr_binary(&mut self, node: &'ast syn::ExprBinary) {
+        if binop_is_assignment_lift(&node.op) {
+            collect_assignment_roots_lift(&node.left, self.roots);
+        }
+        visit::visit_expr_binary(self, node);
+    }
+
+    fn visit_expr_method_call(&mut self, node: &'ast syn::ExprMethodCall) {
+        if !pure_free_guard_method_is_pure_read(node)
+            && !matches!(
+                node.method.to_string().as_str(),
+                "unwrap" | "expect" | "unwrap_err"
+            )
+        {
+            if let Some(root) = expr_root_ident(&node.receiver) {
+                self.roots.insert(root);
+            }
+        }
+        visit::visit_expr_method_call(self, node);
+    }
+
+    fn visit_expr_reference(&mut self, node: &'ast syn::ExprReference) {
+        if node.mutability.is_some() {
+            if let Some(root) = expr_root_ident(&node.expr) {
+                self.roots.insert(root);
+            }
+        }
+        visit::visit_expr_reference(self, node);
+    }
+}
+
+fn collect_expr_effect_mutation_roots(expr: &Expr, roots: &mut BTreeSet<String>) {
+    ExprEffectMutationRootCollector { roots }.visit_expr(expr);
 }
 
 fn statement_expr_assignment_roots(expr: &Expr) -> BTreeSet<String> {

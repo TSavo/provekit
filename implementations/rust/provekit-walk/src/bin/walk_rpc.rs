@@ -2649,7 +2649,13 @@ fn collect_callsites_in_block(
             self.visit_expr(&node.cond);
             let saved_guard_facts = self.pure_free_guard_facts.clone();
             let mut guard_facts = Vec::new();
-            self.collect_pure_free_guard_facts(&node.cond, &mut guard_facts);
+            if pure_free_guard_expr_effect_roots(&node.cond).is_empty() {
+                self.collect_pure_free_guard_facts(&node.cond, &mut guard_facts);
+            } else {
+                debug!(
+                    "lift_implications: refusing manifest pure-free guard facts from mutating if condition"
+                );
+            }
             self.pure_free_guard_facts.extend(guard_facts);
             self.visit_block(&node.then_branch);
             self.pure_free_guard_facts = saved_guard_facts;
@@ -12837,6 +12843,25 @@ edition = "2021"
         );
     }
 
+    fn assert_post_has_guarded_pure_free_expect(post: &str) {
+        assert!(
+            post.contains("cf_guarded"),
+            "statement-position pure free guard must emit a content-bearing cf_guarded carrier: {post}"
+        );
+        assert!(
+            post.contains("is_some"),
+            "guard carrier must establish the Option precondition: {post}"
+        );
+        assert!(
+            post.contains("pure_fn"),
+            "guard and expect receiver must name the manifest pure function: {post}"
+        );
+        assert!(
+            post.contains("method:expect"),
+            "guard carrier must contain the expect panic leaf term the verifier enumerates: {post}"
+        );
+    }
+
     fn assert_post_has_no_guarded_effect(post: &str) {
         assert!(
             !post.contains("cf_guarded"),
@@ -12887,6 +12912,32 @@ pub fn guarded(line: &str) -> Option<&str> {
         );
 
         assert_post_has_guarded_pure_free_unwrap(&post);
+    }
+
+    #[test]
+    fn function_contract_lift_carries_manifest_pure_free_guard_for_statement_expect() {
+        let src = r##"
+pub fn pure_fn(_line: &str) -> Option<&str> {
+    None
+}
+
+pub fn guarded(line: &str) -> Option<&str> {
+    if pure_fn(line).is_some() {
+        let declared = pure_fn(line).expect("present");
+        return Some(declared);
+    }
+    None
+}
+"##;
+
+        let post = function_contract_post_for_free_pure_fixture(
+            "function_contract_free_pure_statement_guard_expect_positive",
+            src,
+            "guarded",
+            Some(free_pure_option_manifest("pure_fn")),
+        );
+
+        assert_post_has_guarded_pure_free_expect(&post);
     }
 
     #[test]
@@ -13191,6 +13242,126 @@ pub fn mut_borrow(mut line: &str) -> Option<&str> {
             "function_contract_free_pure_statement_mut_borrow",
             src,
             "mut_borrow",
+            Some(free_pure_option_manifest("pure_fn")),
+        );
+
+        assert_post_has_no_guarded_effect(&post);
+    }
+
+    #[test]
+    fn function_contract_lift_refuses_pure_free_guard_after_same_expression_mut_borrow() {
+        let src = r##"
+pub fn take_mut(_line: &mut &str) {}
+
+pub fn pure_fn(_line: &str) -> Option<&str> {
+    None
+}
+
+pub fn same_expression_mut_borrow(mut line: &str) -> Option<&str> {
+    if pure_fn(line).is_some() {
+        let pair = (take_mut(&mut line), pure_fn(line).unwrap());
+        return Some(pair.1);
+    }
+    None
+}
+"##;
+
+        let post = function_contract_post_for_free_pure_fixture(
+            "function_contract_free_pure_statement_same_expression_mut_borrow",
+            src,
+            "same_expression_mut_borrow",
+            Some(free_pure_option_manifest("pure_fn")),
+        );
+
+        assert_post_has_no_guarded_effect(&post);
+    }
+
+    #[test]
+    fn function_contract_lift_refuses_pure_free_expect_after_same_expression_mut_borrow() {
+        let src = r##"
+pub fn take_mut(_line: &mut &str) {}
+
+pub fn pure_fn(_line: &str) -> Option<&str> {
+    None
+}
+
+pub fn same_expression_expect_mut_borrow(mut line: &str) -> Option<&str> {
+    if pure_fn(line).is_some() {
+        let pair = (take_mut(&mut line), pure_fn(line).expect("present"));
+        return Some(pair.1);
+    }
+    None
+}
+"##;
+
+        let post = function_contract_post_for_free_pure_fixture(
+            "function_contract_free_pure_statement_same_expression_expect_mut_borrow",
+            src,
+            "same_expression_expect_mut_borrow",
+            Some(free_pure_option_manifest("pure_fn")),
+        );
+
+        assert_post_has_no_guarded_effect(&post);
+    }
+
+    #[test]
+    fn function_contract_lift_refuses_pure_free_guard_after_call_callee_mutation() {
+        let src = r##"
+pub fn take_mut(_line: &mut &str) {}
+
+pub fn consume(value: &str) -> &str {
+    value
+}
+
+pub fn pure_fn(_line: &str) -> Option<&str> {
+    None
+}
+
+pub fn call_callee_mutates(mut line: &str) -> Option<&str> {
+    if pure_fn(line).is_some() {
+        let declared = ({ take_mut(&mut line); consume })(pure_fn(line).unwrap());
+        return Some(declared);
+    }
+    None
+}
+"##;
+
+        let post = function_contract_post_for_free_pure_fixture(
+            "function_contract_free_pure_statement_call_callee_mutates",
+            src,
+            "call_callee_mutates",
+            Some(free_pure_option_manifest("pure_fn")),
+        );
+
+        assert_post_has_no_guarded_effect(&post);
+    }
+
+    #[test]
+    fn function_contract_lift_refuses_pure_free_guard_after_uncollected_struct_mutation() {
+        let src = r##"
+pub struct Holder<'a> {
+    pub value: &'a str,
+}
+
+pub fn take_mut(_line: &mut &str) {}
+
+pub fn pure_fn(_line: &str) -> Option<&str> {
+    None
+}
+
+pub fn struct_literal_mutates(mut line: &str) -> Option<&str> {
+    if pure_fn(line).is_some() {
+        let pair = (Holder { value: { take_mut(&mut line); "" } }, pure_fn(line).unwrap());
+        return Some(pair.1);
+    }
+    None
+}
+"##;
+
+        let post = function_contract_post_for_free_pure_fixture(
+            "function_contract_free_pure_statement_struct_literal_mutates",
+            src,
+            "struct_literal_mutates",
             Some(free_pure_option_manifest("pure_fn")),
         );
 
@@ -14649,6 +14820,38 @@ pub fn guarded(mut line: &str) -> &str {
         assert!(
             method_unwrap_targets(&resp).is_empty(),
             "mutable borrows of a guarded arg root must invalidate the pure-free fact: {resp:#?}"
+        );
+    }
+
+    #[test]
+    fn lift_implications_refuses_manifest_pure_free_call_when_condition_mutates_arg() {
+        let src = r##"
+pub fn take_mut(_line: &mut &str) -> bool {
+    true
+}
+
+pub fn pure_fn(_line: &str) -> Option<&str> {
+    panic!()
+}
+
+pub fn condition_mutates(mut line: &str) -> &str {
+    if pure_fn(line).is_some() && take_mut(&mut line) {
+        pure_fn(line).unwrap()
+    } else {
+        ""
+    }
+}
+"##;
+
+        let resp = lift_implications_for_free_pure_fixture(
+            "free_pure_guard_condition_mutates_arg",
+            src,
+            Some(free_pure_option_manifest("pure_fn")),
+        );
+
+        assert!(
+            method_unwrap_targets(&resp).is_empty(),
+            "mutating a guarded arg inside the same if condition must not leave a stale pure-free route: {resp:#?}"
         );
     }
 
