@@ -24,6 +24,12 @@ from .ir import (
 
 PANIC_FREEDOM_EFFECT_KIND = "concept:panic-freedom"
 RUNTIME_FAILURE_SITE_CONCEPT = "concept:panic-freedom.leaf.runtime-failure-site"
+CLASS_SHAPE_ASSUMPTIONS = [
+    "presence-guaranteed-assuming-standard-construction-via-__init__",
+    "not-robust-to-__new__-or-pickle-bypass",
+    "not-robust-to-cross-module-monkey-patch-or-delete",
+]
+SLOT_PRESENCE_NOTE = "slot-membership alone does not discharge presence"
 
 
 @dataclass
@@ -39,6 +45,13 @@ class _FunctionInfo:
     node: ast.AST
     qualname: str
     fn_name: str
+
+
+@dataclass(frozen=True)
+class _ClassInfo:
+    node: ast.ClassDef
+    qualname: str
+    class_name: str
 
 
 class _UnsupportedSyntax(Exception):
@@ -115,6 +128,7 @@ def lift_source(source: str, source_path: str) -> LiftResult:
 
     module_path = _module_path(source_path)
     module_globals = _module_global_names(tree)
+    class_shapes = _lift_class_shapes(tree, module_path)
     collector = _DefinitionCollector(module_path)
     collector.visit(tree)
 
@@ -132,6 +146,7 @@ def lift_source(source: str, source_path: str) -> LiftResult:
             source_path=source_path,
             source=source,
             operational_term=fold_seq(body_terms),
+            class_shapes=class_shapes if class_shapes else None,
         )
     )
     result.ir.extend(contracts)
@@ -224,6 +239,299 @@ class _DefinitionCollector(ast.NodeVisitor):
                 fn_name=f"{self.module_path}.{qualname}",
             )
         )
+
+
+class _ClassCollector(ast.NodeVisitor):
+    def __init__(self, module_path: str):
+        self.module_path = module_path
+        self.scope: list[tuple[str, str]] = []
+        self.classes: list[_ClassInfo] = []
+
+    def visit_ClassDef(self, node: ast.ClassDef) -> Any:
+        qualname = _qualname(self.scope, node.name)
+        self.classes.append(
+            _ClassInfo(
+                node=node,
+                qualname=qualname,
+                class_name=f"{self.module_path}.{qualname}",
+            )
+        )
+        self.scope.append(("class", node.name))
+        for stmt in node.body:
+            self.visit(stmt)
+        self.scope.pop()
+
+    def visit_FunctionDef(self, node: ast.FunctionDef) -> Any:
+        self.scope.append(("function", node.name))
+        for stmt in node.body:
+            self.visit(stmt)
+        self.scope.pop()
+
+    def visit_AsyncFunctionDef(self, node: ast.AsyncFunctionDef) -> Any:
+        self.scope.append(("function", node.name))
+        for stmt in node.body:
+            self.visit(stmt)
+        self.scope.pop()
+
+
+class _MethodAttributeScanner(ast.NodeVisitor):
+    def __init__(
+        self,
+        *,
+        method_name: str,
+        method_kind: str,
+        instance_receiver: str | None,
+    ) -> None:
+        self.method_name = method_name
+        self.method_kind = method_kind
+        self.instance_receiver = instance_receiver
+        self.guaranteed: dict[str, list[Json]] = {}
+        self.open_attrs: dict[str, dict[str, object]] = {}
+        self.open_reasons: set[str] = set()
+        self.deleted_attrs: set[str] = set()
+        self._conditional_depth = 0
+        self._nested_depth = 0
+
+    def visit_FunctionDef(self, node: ast.FunctionDef) -> None:
+        self._visit_nested_scope(node)
+
+    def visit_AsyncFunctionDef(self, node: ast.AsyncFunctionDef) -> None:
+        self._visit_nested_scope(node)
+
+    def visit_Lambda(self, node: ast.Lambda) -> None:
+        self._nested_depth += 1
+        try:
+            self.visit(node.body)
+        finally:
+            self._nested_depth -= 1
+
+    def visit_ClassDef(self, node: ast.ClassDef) -> None:
+        self._visit_nested_scope(node)
+
+    def visit_If(self, node: ast.If) -> None:
+        self.visit(node.test)
+        self._visit_conditionally([*node.body, *node.orelse])
+
+    def visit_For(self, node: ast.For) -> None:
+        self.visit(node.iter)
+        self._visit_conditionally([node.target, *node.body, *node.orelse])
+
+    def visit_AsyncFor(self, node: ast.AsyncFor) -> None:
+        self.visit(node.iter)
+        self._visit_conditionally([node.target, *node.body, *node.orelse])
+
+    def visit_While(self, node: ast.While) -> None:
+        self.visit(node.test)
+        self._visit_conditionally([*node.body, *node.orelse])
+
+    def visit_With(self, node: ast.With) -> None:
+        for item in node.items:
+            self.visit(item.context_expr)
+            if item.optional_vars is not None:
+                self.visit(item.optional_vars)
+        self._visit_conditionally(node.body)
+
+    def visit_AsyncWith(self, node: ast.AsyncWith) -> None:
+        for item in node.items:
+            self.visit(item.context_expr)
+            if item.optional_vars is not None:
+                self.visit(item.optional_vars)
+        self._visit_conditionally(node.body)
+
+    def visit_Try(self, node: ast.Try) -> None:
+        self._visit_conditionally([*node.body, *node.orelse, *node.finalbody])
+        for handler in node.handlers:
+            self._visit_conditionally(handler.body)
+
+    def visit_Match(self, node: ast.Match) -> None:
+        self.visit(node.subject)
+        for case in node.cases:
+            if case.guard is not None:
+                self.visit(case.guard)
+            self._visit_conditionally(case.body)
+
+    def visit_Assign(self, node: ast.Assign) -> None:
+        for target in node.targets:
+            self._record_assignment_target(target, node)
+        self.visit(node.value)
+
+    def visit_AnnAssign(self, node: ast.AnnAssign) -> None:
+        self.visit(node.annotation)
+        if node.value is None:
+            return
+        self._record_assignment_target(node.target, node)
+        self.visit(node.value)
+
+    def visit_AugAssign(self, node: ast.AugAssign) -> None:
+        attr = self._instance_attr_name(node.target)
+        if attr is not None:
+            self._record_open_attr(
+                attr,
+                "read-modify-instance-attribute",
+                node,
+            )
+        self.visit(node.value)
+
+    def visit_Delete(self, node: ast.Delete) -> None:
+        for target in node.targets:
+            attr = self._instance_attr_name(target)
+            if attr is not None:
+                self._record_deleted_attr(attr, node)
+            else:
+                self.visit(target)
+
+    def visit_Call(self, node: ast.Call) -> None:
+        name = _decorator_name(node.func)
+        if name in {"setattr", "builtins.setattr"} and node.args:
+            attr = self._literal_attr_arg(node, index=1)
+            if self._is_instance_receiver(node.args[0]):
+                self.open_reasons.add("dynamic-setattr")
+                if attr is not None:
+                    self._record_open_attr(attr, "dynamic-setattr", node)
+        elif name in {"delattr", "builtins.delattr"} and node.args:
+            attr = self._literal_attr_arg(node, index=1)
+            if self._is_instance_receiver(node.args[0]):
+                self.open_reasons.add("dynamic-delattr")
+                if attr is not None:
+                    self._record_deleted_attr(attr, node, reason="deleted-in-method")
+        elif name in {"object.__setattr__", "super.__setattr__"} and node.args:
+            attr = self._literal_attr_arg(node, index=1)
+            if self._is_instance_receiver(node.args[0]):
+                self.open_reasons.add("dynamic-setattr")
+                if attr is not None:
+                    self._record_open_attr(attr, "dynamic-setattr", node)
+        elif name in {"object.__delattr__", "super.__delattr__"} and node.args:
+            attr = self._literal_attr_arg(node, index=1)
+            if self._is_instance_receiver(node.args[0]):
+                self.open_reasons.add("dynamic-delattr")
+                if attr is not None:
+                    self._record_deleted_attr(attr, node, reason="deleted-in-method")
+        self.generic_visit(node)
+
+    def _visit_nested_scope(
+        self,
+        node: ast.FunctionDef | ast.AsyncFunctionDef | ast.ClassDef,
+    ) -> None:
+        self._nested_depth += 1
+        try:
+            for child in ast.iter_child_nodes(node):
+                self.visit(child)
+        finally:
+            self._nested_depth -= 1
+
+    def _visit_conditionally(self, nodes: Iterable[ast.AST]) -> None:
+        self._conditional_depth += 1
+        try:
+            for node in nodes:
+                self.visit(node)
+        finally:
+            self._conditional_depth -= 1
+
+    def _record_assignment_target(self, target: ast.AST, source_node: ast.AST) -> None:
+        attr = self._instance_attr_name(target)
+        if attr is None:
+            self.visit(target)
+            return
+        if (
+            self.method_name == "__init__"
+            and self.method_kind == "instance"
+            and self._conditional_depth == 0
+            and self._nested_depth == 0
+        ):
+            self.guaranteed.setdefault(attr, []).append(
+                _shape_source(
+                    "unconditional-init-assignment",
+                    source_node,
+                    method=self.method_name,
+                )
+            )
+            return
+        if self._nested_depth > 0:
+            reason = "nested-instance-attribute"
+        elif self.method_name == "__init__":
+            reason = "conditional-init-attribute"
+        else:
+            reason = "late-instance-attribute"
+        self._record_open_attr(attr, reason, source_node)
+
+    def _record_deleted_attr(
+        self,
+        attr: str,
+        source_node: ast.AST,
+        *,
+        reason: str = "deleted-in-method",
+    ) -> None:
+        self.deleted_attrs.add(attr)
+        self.open_reasons.add("deleted-instance-attribute")
+        self._record_open_attr(attr, reason, source_node)
+
+    def _record_open_attr(self, attr: str, reason: str, source_node: ast.AST) -> None:
+        self.open_reasons.add(reason)
+        entry = self.open_attrs.setdefault(
+            attr,
+            {
+                "name": attr,
+                "memberKind": "instance-attribute",
+                "presence": "open",
+                "reasons": [],
+                "sources": [],
+            },
+        )
+        reasons = entry["reasons"]
+        assert isinstance(reasons, list)
+        if reason not in reasons:
+            reasons.append(reason)
+        sources = entry["sources"]
+        assert isinstance(sources, list)
+        sources.append(_shape_source(reason, source_node, method=self.method_name))
+
+    def _instance_attr_name(self, target: ast.AST) -> str | None:
+        if not isinstance(target, ast.Attribute):
+            return None
+        if not self._is_instance_receiver(target.value):
+            return None
+        return target.attr
+
+    def _is_instance_receiver(self, node: ast.AST) -> bool:
+        return (
+            self.instance_receiver is not None
+            and isinstance(node, ast.Name)
+            and node.id == self.instance_receiver
+        )
+
+    def _literal_attr_arg(self, node: ast.Call, *, index: int) -> str | None:
+        if len(node.args) <= index:
+            return None
+        arg = node.args[index]
+        if isinstance(arg, ast.Constant) and isinstance(arg.value, str):
+            return arg.value
+        return None
+
+
+class _ClassBodyPoisonScanner(ast.NodeVisitor):
+    def __init__(self) -> None:
+        self.open_reasons: set[str] = set()
+
+    def visit_FunctionDef(self, node: ast.FunctionDef) -> None:
+        return
+
+    def visit_AsyncFunctionDef(self, node: ast.AsyncFunctionDef) -> None:
+        return
+
+    def visit_ClassDef(self, node: ast.ClassDef) -> None:
+        return
+
+    def visit_Call(self, node: ast.Call) -> None:
+        name = _decorator_name(node.func)
+        if name in {"setattr", "builtins.setattr", "object.__setattr__", "super.__setattr__"}:
+            self.open_reasons.add("dynamic-setattr")
+        if name in {"delattr", "builtins.delattr", "object.__delattr__", "super.__delattr__"}:
+            self.open_reasons.add("dynamic-delattr")
+        self.generic_visit(node)
+
+    def visit_Delete(self, node: ast.Delete) -> None:
+        self.open_reasons.add("dynamic-class-delete")
+        self.generic_visit(node)
 
 
 class _LocalCollector(ast.NodeVisitor):
@@ -842,6 +1150,396 @@ def _lift_function(
             )
         )
         return None
+
+
+def _lift_class_shapes(tree: ast.Module, module_path: str) -> list[Json]:
+    collector = _ClassCollector(module_path)
+    collector.visit(tree)
+    shapes: list[Json] = []
+    shapes_by_name: dict[str, Json] = {}
+    setattr_override_by_name: dict[str, bool] = {}
+
+    for info in collector.classes:
+        shape, setattr_override_in_mro = _build_class_shape(
+            info,
+            shapes_by_name=shapes_by_name,
+            setattr_override_by_name=setattr_override_by_name,
+        )
+        shapes.append(shape)
+        shapes_by_name[info.node.name] = shape
+        setattr_override_by_name[info.node.name] = setattr_override_in_mro
+    return shapes
+
+
+def _build_class_shape(
+    info: _ClassInfo,
+    *,
+    shapes_by_name: dict[str, Json],
+    setattr_override_by_name: dict[str, bool],
+) -> tuple[Json, bool]:
+    node = info.node
+    open_reasons: set[str] = set()
+    attributes: dict[str, Json] = {}
+    open_attrs: dict[str, Json] = {}
+    methods: list[Json] = []
+    permitted: dict[str, Json] = {}
+    bases: list[Json] = []
+
+    if node.decorator_list:
+        open_reasons.add("class-decorator")
+    if node.keywords:
+        open_reasons.add("metaclass")
+
+    own_setattr_override = _class_overrides_setattr(node)
+    visible_setattr_override = own_setattr_override
+
+    for base in node.bases:
+        base_name = _base_name(base)
+        base_record: Json = {"name": base_name, "resolution": "non-local"}
+        if isinstance(base, ast.Name) and base.id in shapes_by_name:
+            base_shape = shapes_by_name[base.id]
+            if base_shape.get("status") == "closed":
+                base_record["resolution"] = "local-closed"
+            else:
+                base_record["resolution"] = "local-open"
+                open_reasons.add("non-local-base")
+            if setattr_override_by_name.get(base.id, False):
+                visible_setattr_override = True
+        else:
+            open_reasons.add("non-local-base")
+        bases.append(base_record)
+
+    if visible_setattr_override:
+        open_reasons.add("setattr-override-in-mro")
+
+    body_scanner = _ClassBodyPoisonScanner()
+    for stmt in node.body:
+        body_scanner.visit(stmt)
+    open_reasons.update(body_scanner.open_reasons)
+
+    slot_names: set[str] = set()
+    for stmt in node.body:
+        slot_entries, dynamic_slots = _slot_entries(stmt)
+        if dynamic_slots:
+            open_reasons.add("dynamic-slots")
+        for entry in slot_entries:
+            slot_names.add(str(entry["name"]))
+            permitted[str(entry["name"])] = entry
+
+        for attr_name, source in _class_body_attribute_sources(stmt):
+            if attr_name == "__slots__":
+                continue
+            attributes[attr_name] = {
+                "name": attr_name,
+                "memberKind": "class-attribute",
+                "presence": "guaranteed",
+                "presenceSource": source["kind"],
+                "sources": [source],
+            }
+
+        if isinstance(stmt, (ast.FunctionDef, ast.AsyncFunctionDef)):
+            method = _method_shape(stmt, info.qualname)
+            methods.append(method)
+            method_kind = str(method["methodKind"])
+            if method_kind == "property":
+                open_reasons.add("property-descriptor")
+                _merge_open_attr(
+                    open_attrs,
+                    stmt.name,
+                    member_kind="property",
+                    reason="property-descriptor",
+                    source=_shape_source("property-descriptor", stmt, method=stmt.name),
+                )
+            if _method_has_unknown_decorator(stmt):
+                open_reasons.add("method-decorator")
+
+            scanner = _MethodAttributeScanner(
+                method_name=stmt.name,
+                method_kind=method_kind,
+                instance_receiver=(
+                    str(method["instanceReceiver"])
+                    if method.get("instanceReceiver") is not None
+                    else None
+                ),
+            )
+            for body_stmt in stmt.body:
+                scanner.visit(body_stmt)
+            open_reasons.update(scanner.open_reasons)
+
+            for attr_name, sources in scanner.guaranteed.items():
+                existing = attributes.get(attr_name)
+                if existing is not None and existing.get("memberKind") == "class-attribute":
+                    sources = [*existing.get("sources", []), *sources]
+                attributes[attr_name] = {
+                    "name": attr_name,
+                    "memberKind": "instance-attribute",
+                    "presence": "guaranteed",
+                    "presenceSource": "unconditional-init-assignment",
+                    "slotBacked": attr_name in slot_names,
+                    "sources": list(sources),
+                }
+
+            for attr_name, entry in scanner.open_attrs.items():
+                _merge_open_attr_entry(open_attrs, attr_name, entry)
+            for attr_name in scanner.deleted_attrs:
+                attributes.pop(attr_name, None)
+
+    for attr_name, entry in open_attrs.items():
+        if attr_name in attributes and "deleted-in-method" in entry.get("reasons", []):
+            attributes.pop(attr_name, None)
+
+    status = "open" if open_reasons else "closed"
+    return (
+        {
+            "schemaVersion": "1",
+            "kind": "python:class-shape",
+            "name": node.name,
+            "qualname": info.qualname,
+            "className": info.class_name,
+            "status": status,
+            "attributes": _sorted_json_entries(attributes.values()),
+            "permittedAttributes": _sorted_json_entries(permitted.values()),
+            "openAttributes": _sorted_json_entries(open_attrs.values()),
+            "methods": _sorted_json_entries(methods),
+            "bases": bases,
+            "openReasons": sorted(open_reasons),
+            "assumptions": list(CLASS_SHAPE_ASSUMPTIONS),
+            "locus": {
+                "line": int(getattr(node, "lineno", 0) or 0),
+                "col": int(getattr(node, "col_offset", 0) or 0),
+            },
+        },
+        visible_setattr_override,
+    )
+
+
+def _method_shape(
+    node: ast.FunctionDef | ast.AsyncFunctionDef,
+    owner_qualname: str,
+) -> Json:
+    method_kind = _method_kind(node)
+    first_arg = _first_parameter_name(node)
+    shape: Json = {
+        "name": node.name,
+        "qualname": f"{owner_qualname}.{node.name}",
+        "methodKind": method_kind,
+        "instanceReceiver": first_arg if method_kind == "instance" else None,
+        "line": int(getattr(node, "lineno", 0) or 0),
+    }
+    if method_kind == "classmethod":
+        shape["classReceiver"] = first_arg
+    return shape
+
+
+def _method_kind(node: ast.FunctionDef | ast.AsyncFunctionDef) -> str:
+    names = {_decorator_name(decorator) for decorator in node.decorator_list}
+    names.discard(None)
+    if "classmethod" in names or "builtins.classmethod" in names:
+        return "classmethod"
+    if "staticmethod" in names or "builtins.staticmethod" in names:
+        return "staticmethod"
+    if "property" in names or "builtins.property" in names:
+        return "property"
+    if any(name and (name.endswith(".setter") or name.endswith(".deleter")) for name in names):
+        return "property"
+    return "instance"
+
+
+def _method_has_unknown_decorator(node: ast.FunctionDef | ast.AsyncFunctionDef) -> bool:
+    known = {
+        "classmethod",
+        "builtins.classmethod",
+        "staticmethod",
+        "builtins.staticmethod",
+        "property",
+        "builtins.property",
+    }
+    for decorator in node.decorator_list:
+        name = _decorator_name(decorator)
+        if name in known:
+            continue
+        if name and (name.endswith(".setter") or name.endswith(".deleter")):
+            continue
+        return True
+    return False
+
+
+def _first_parameter_name(node: ast.FunctionDef | ast.AsyncFunctionDef) -> str | None:
+    positional = [*node.args.posonlyargs, *node.args.args]
+    if not positional:
+        return None
+    return positional[0].arg
+
+
+def _class_overrides_setattr(node: ast.ClassDef) -> bool:
+    return any(
+        isinstance(stmt, (ast.FunctionDef, ast.AsyncFunctionDef))
+        and stmt.name in {"__setattr__", "__delattr__"}
+        for stmt in node.body
+    )
+
+
+def _slot_entries(stmt: ast.stmt) -> tuple[list[Json], bool]:
+    if not isinstance(stmt, ast.Assign):
+        return [], False
+    if not any(isinstance(target, ast.Name) and target.id == "__slots__" for target in stmt.targets):
+        return [], False
+    slots = _literal_slots(stmt.value)
+    if slots is None:
+        return [], True
+    return [
+        {
+            "name": slot,
+            "memberKind": "slot",
+            "presence": "permitted-only",
+            "guaranteesPresence": False,
+            "note": SLOT_PRESENCE_NOTE,
+            "sources": [_shape_source("slot-declaration", stmt)],
+        }
+        for slot in slots
+    ], False
+
+
+def _literal_slots(node: ast.expr) -> list[str] | None:
+    if isinstance(node, ast.Constant) and isinstance(node.value, str):
+        return [node.value]
+    if isinstance(node, (ast.Tuple, ast.List, ast.Set)):
+        slots: list[str] = []
+        for element in node.elts:
+            if not isinstance(element, ast.Constant) or not isinstance(element.value, str):
+                return None
+            slots.append(element.value)
+        return slots
+    return None
+
+
+def _class_body_attribute_sources(stmt: ast.stmt) -> list[tuple[str, Json]]:
+    if isinstance(stmt, ast.Assign):
+        sources: list[tuple[str, Json]] = []
+        for target in stmt.targets:
+            if isinstance(target, ast.Name):
+                sources.append(
+                    (
+                        target.id,
+                        _shape_source("class-body-assignment", stmt),
+                    )
+                )
+        return sources
+    if isinstance(stmt, ast.AnnAssign) and stmt.value is not None and isinstance(stmt.target, ast.Name):
+        return [
+            (
+                stmt.target.id,
+                _shape_source("class-body-assignment", stmt),
+            )
+        ]
+    if isinstance(stmt, ast.ClassDef):
+        return [
+            (
+                stmt.name,
+                _shape_source("nested-class-definition", stmt),
+            )
+        ]
+    return []
+
+
+def _merge_open_attr(
+    open_attrs: dict[str, Json],
+    attr_name: str,
+    *,
+    member_kind: str,
+    reason: str,
+    source: Json,
+) -> None:
+    entry = open_attrs.setdefault(
+        attr_name,
+        {
+            "name": attr_name,
+            "memberKind": member_kind,
+            "presence": "open",
+            "reasons": [],
+            "sources": [],
+        },
+    )
+    reasons = entry["reasons"]
+    assert isinstance(reasons, list)
+    if reason not in reasons:
+        reasons.append(reason)
+    sources = entry["sources"]
+    assert isinstance(sources, list)
+    sources.append(source)
+
+
+def _merge_open_attr_entry(
+    open_attrs: dict[str, Json],
+    attr_name: str,
+    entry: dict[str, object],
+) -> None:
+    reasons = entry.get("reasons", [])
+    sources = entry.get("sources", [])
+    if not isinstance(reasons, list):
+        reasons = []
+    if not isinstance(sources, list):
+        sources = []
+    for reason in reasons:
+        _merge_open_attr(
+            open_attrs,
+            attr_name,
+            member_kind=str(entry.get("memberKind", "instance-attribute")),
+            reason=str(reason),
+            source=sources[0] if sources and isinstance(sources[0], dict) else {},
+        )
+    if not reasons and sources and isinstance(sources[0], dict):
+        _merge_open_attr(
+            open_attrs,
+            attr_name,
+            member_kind=str(entry.get("memberKind", "instance-attribute")),
+            reason="open",
+            source=sources[0],
+        )
+    target = open_attrs.get(attr_name)
+    if target is None:
+        return
+    target_sources = target["sources"]
+    assert isinstance(target_sources, list)
+    for source in sources[1:]:
+        if isinstance(source, dict):
+            target_sources.append(source)
+
+
+def _shape_source(kind: str, node: ast.AST, *, method: str | None = None) -> Json:
+    source: Json = {
+        "kind": kind,
+        "line": int(getattr(node, "lineno", 0) or 0),
+        "col": int(getattr(node, "col_offset", 0) or 0),
+    }
+    if method is not None:
+        source["method"] = method
+    return source
+
+
+def _base_name(node: ast.expr) -> str:
+    try:
+        return ast.unparse(node)
+    except Exception:
+        return type(node).__name__
+
+
+def _decorator_name(node: ast.AST) -> str | None:
+    if isinstance(node, ast.Call):
+        return _decorator_name(node.func)
+    if isinstance(node, ast.Name):
+        return node.id
+    if isinstance(node, ast.Attribute):
+        base = _decorator_name(node.value)
+        return f"{base}.{node.attr}" if base else node.attr
+    return None
+
+
+def _sorted_json_entries(entries: Iterable[Json]) -> list[Json]:
+    return sorted(
+        (dict(entry) for entry in entries),
+        key=lambda entry: (str(entry.get("name", "")), str(entry.get("qualname", ""))),
+    )
 
 
 def _parameter_shape(node: ast.FunctionDef) -> tuple[list[str], list[Json]]:

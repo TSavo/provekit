@@ -115,8 +115,9 @@ def source_unit_contract(
     source_path: str,
     source: str,
     operational_term: Json,
+    class_shapes: list[Json] | None = None,
 ) -> Json:
-    return {
+    contract = {
         "schemaVersion": "1",
         "kind": "function-contract",
         "fnName": f"<source-unit:{source_path}>",
@@ -133,3 +134,6 @@ def source_unit_contract(
         "locus": locus(source_path, 1, 1),
         "autoMintedMementos": [],
     }
+    if class_shapes is not None:
+        contract["classShapes"] = list(class_shapes)
+    return contract
