@@ -256,6 +256,17 @@ is now the active arc; see Phase 5.
   catalog blessing or the `to_value` routing wire. #1898 now tracks only the
   remaining libprovekit gap census, and the independent provekit-cli rows move
   to slice-33 tracking in #1901.
+- **Slice 32 guarded pure-free routing (#1905, 2026-06-03).** The Rust kit
+  now lifts stable `pure_fn(x).is_some()` guards into the matching
+  `pure_fn(x).unwrap()` panic obligation when the guarded argument and receiver
+  stay stable across the true branch. The implementation keeps carrier
+  collection narrow and invalidation complete, including same-expression
+  mutations caught during CodeRabbit review. Cold self-checks move
+  libprovekit to `panicSafe=24` and provekit-cli to `panicSafe=34`, with
+  `falsePass=0`, `silentlyDropped=0`, and `droppedSites=[]` on both crates.
+  The +2 closes are the `src/core/source_transform.rs:645` and
+  `src/core/source_transform.rs:1055` `method:unwrap` rows discharged via
+  `cf_guarded` facts.
 
 ### Phase 3 - RESIDUE NAMED + V1 RELEASE - DONE
 
@@ -279,7 +290,7 @@ Phase 5 K movement is measured on reproducible self-check infrastructure:
 `bcargo`, battleaxe rust-analyzer on stable 1.96.0, oracle enabled, and
 rust-analyzer readiness gating. The convergence harness is no longer part of
 the product baseline. The current `provekit-cli` target reports
-`panicCensus=54`, `panicSafe=32`, `falsePass=0`, `silentlyDropped=0`, and
+`panicCensus=54`, `panicSafe=34`, `falsePass=0`, `silentlyDropped=0`, and
 `droppedSites=[]`. Clean main before #1896 was K=12 on the same
 infrastructure; #1896 moved exactly one closeable D-lib row,
 `src/kit_dispatch.rs:2416 method:expect`, from unproven to proven. The
@@ -287,7 +298,9 @@ readiness-signal closure then restored deterministic dependency and target
 oracle readiness, moving the reproducible baseline to K=20. Slice 31 then
 closed 10 imported libprovekit-backed rows in the provekit-cli cascade,
 and exposed 2 additional solver-side `kit_dispatch` closes, moving the
-reproducible baseline to K=32.
+reproducible baseline to K=32. Slice 32 then closed the 2 imported
+libprovekit source-transform guarded-panic rows via stable pure-free guard
+facts, moving the reproducible baseline to K=34.
 
 The #1774 reproducibility caveat is closed: the release gate validates the
 dependency-proof state as part of doctor release-gate mode before accepting the
@@ -296,11 +309,11 @@ measurement setup and is not the current Phase 5 baseline.
 
 | Category | Count | Closing mechanism |
 |---|---|---|
-| proven K | 32 panic-safe | Current reproducible K after readiness-signal gating replaces convergence and slice 31's catalog-backed libprovekit cascade lands. D-lib, C `json!`, B guarded-panic, D-fn, audited catalog-backed serde/function entries, and 2 solver-side `kit_dispatch` JSON-RPC request serialization closes remain the closing mechanisms, measured against the cold bcargo + battleaxe RA baseline. |
+| proven K | 34 panic-safe | Current reproducible K after readiness-signal gating replaces convergence, slice 31's catalog-backed libprovekit cascade lands, and slice 32's stable pure-free guard facts close the two imported source-transform rows. D-lib, C `json!`, B guarded-panic, D-fn, audited catalog-backed serde/function entries, 2 solver-side `kit_dispatch` JSON-RPC request serialization closes, and 2 `cf_guarded` source-transform closes remain the closing mechanisms, measured against the cold bcargo + battleaxe RA baseline. |
 | residue | 8 honest residue | Mutex `.lock().expect()` rows. Honest residue; "lock is total" would be unsound. |
 | closeable tier-to-close | 0 named D-lib rows | #1896 closed the `RealizeRequest` serialization row with provekit-cli-owned per-type D-lib manifest coverage, mirroring libprovekit's `infallible_serialize.toml` pattern. |
 | independent provekit-cli unproven | 6 | `cmd_emit`, `cmd_mint`, `cmd_protocol` x3, and `doctor_oracle`. Tracked separately from #1898 in #1901. |
-| imported libprovekit parked rows | 8 | Remaining libprovekit rows propagated through dependency import: 3 NoBridge physical sites, 1 residue, and 4 catalog-excluded solver rows. |
+| imported libprovekit parked rows | 6 | Remaining libprovekit rows propagated through dependency import: the `compose.rs:1157` NoBridge physical site, the `platform_semantics.rs:42` external-runtime site, and 4 catalog-excluded solver rows. |
 
 The honest read: Rust v1 is not K == N. It is K covering the provable buckets,
 residue named, hard floor never violated, and doctor/release-gate green.
@@ -355,22 +368,23 @@ Rust v1 release-gate score: `panicCensus=36`, `panicSafe=12`,
 12 proven panic-safe rows, 1 honest residue row, and 23 raw unproven rows.
 The floor remains intact.
 
-Post-slice-31 libprovekit score: `panicSafe=22`, `falsePass=0`,
+Current post-slice-32 libprovekit score: `panicSafe=24`, `falsePass=0`,
 `silentlyDropped=0`, `droppedSites=[]`, with
-`panicCensus={proven:22, residue:1, unproven:11}`. The slice closes 10
+`panicCensus={proven:24, residue:1, unproven:7}`. Slice 31 closed 10
 additional libprovekit rows:
 `src/core/emit_obligation.rs:62`, `src/core/lower_plugin.rs:155`,
 `src/core/source_transform_kit.rs:296`, `src/core/source_transform_kit.rs:307`,
 `src/core/source_transform_kit.rs:308`, `src/core/types.rs:2070`,
 `src/core/types.rs:2093`, `src/core/types.rs:2180`, `src/wp/tests.rs:578`,
-and `src/compose.rs:1410`. The remaining libprovekit rows are named:
-3 NoBridge physical sites (`src/compose.rs:1157`,
-`src/core/source_transform.rs:645`, `src/core/source_transform.rs:1055`) that
-account for 6 rows, 4 catalog-excluded solver rows
-(`src/core/types.rs:1193`, `src/core/types.rs:1198`,
+and `src/compose.rs:1410`. Slice 32 closed
+`src/core/source_transform.rs:645` and `src/core/source_transform.rs:1055`
+through stable pure-free `cf_guarded` facts. The remaining libprovekit rows are
+named: `src/compose.rs:1157` as a NoBridge duplicate pair,
+`src/core/platform_semantics.rs:42` as an external-runtime site with one
+type-unresolved row plus one honest residue row, and 4 catalog-excluded solver
+rows (`src/core/types.rs:1193`, `src/core/types.rs:1198`,
 `src/core/types.rs:1946`, `src/desugar.rs:489`) split as
-invariant-from-construction x3 plus generic monomorphization x1, and 1 honest
-residue row (`src/core/platform_semantics.rs:42`).
+invariant-from-construction x3 plus generic monomorphization x1.
 
 ## The metric (the one number we watch)
 
@@ -521,7 +535,7 @@ Phase 5 has two parallel levers:
 
 The number that moves: K (panic-safe sites discharged via sound reasoning) on
 real production code in each language. Today on Rust self-application, the
-reproducible Phase 5 baseline is K=32 on provekit-cli after slice 31 and K=22
+reproducible Phase 5 baseline is K=34 on provekit-cli after slice 32 and K=24
 on libprovekit. Earlier provekit-cli K=21 references came from a different
 measurement setup and are not the current baseline. On Python / TS / Go / Java
 production targets: not yet measured at
@@ -534,7 +548,7 @@ differential vs unit tests has to be visible.
 **Phase 5 staging (T direction 2026-06-02): dogfood is the gold standard,
 then third-party parity per language.**
 1. **Dogfood depth first.** Drive Rust self-application K into vendor-
-   meaningful range (current reproducible K=32 -> into the hundreds on
+   meaningful range (current reproducible K=34 -> into the hundreds on
    `provekit-cli` and `libprovekit`) via shim catalog expansion and discharge
    tier work. This
    is the proof that the technique scales on a real codebase before we ask
@@ -719,9 +733,14 @@ labeling.
   - #1787 (doctor PR 7) `provekit release-gate` command and v1 evidence
     receipt.
   - #1902 (Slice 31 catalog K multiplication): Rust-kit manifest-backed
-    lifter support plus libprovekit serde/function catalog entries. Current
+    lifter support plus libprovekit serde/function catalog entries. Post-slice-31
     reproducible baselines: libprovekit K=22 and provekit-cli K=32, with
     `falsePass=0`, `silentlyDropped=0`, and `droppedSites=[]` on both crates.
+  - #1905 (Slice 32 guarded pure-free routing): stable pure-free
+    `is_some()` guards now route the matching `unwrap()` obligations through
+    `cf_guarded` facts. Current reproducible baselines: libprovekit K=24 and
+    provekit-cli K=34, with `falsePass=0`, `silentlyDropped=0`, and
+    `droppedSites=[]` on both crates.
 - **Open follow-ups**:
   - #1757 self-check golden drift reached main without gate update.
   - #1763 self-check should fail closed when requested oracle host cannot
