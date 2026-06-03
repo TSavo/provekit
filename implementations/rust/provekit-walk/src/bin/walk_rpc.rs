@@ -3452,6 +3452,8 @@ struct MethodCallOccurrence {
     method: String,
     line: usize,
     column: usize,
+    end_line: usize,
+    end_column: usize,
 }
 
 #[derive(Debug, Default)]
@@ -3462,11 +3464,22 @@ struct MethodPostconditionStability {
 
 fn method_call_occurrence(node: &syn::ExprMethodCall) -> MethodCallOccurrence {
     let start = node.method.span().start();
+    let end = node.span().end();
     MethodCallOccurrence {
         method: node.method.to_string(),
         line: start.line,
         column: start.column,
+        end_line: end.line,
+        end_column: end.column,
     }
+}
+
+fn source_position_after_method_call(
+    line: usize,
+    column: usize,
+    candidate: &MethodCallOccurrence,
+) -> bool {
+    line > candidate.end_line || (line == candidate.end_line && column >= candidate.end_column)
 }
 
 fn method_postcondition_receiver_is_stable(
@@ -3502,6 +3515,10 @@ fn method_postcondition_stability_for_block(
 
     impl<'ast, 'a> syn::visit::Visit<'ast> for V<'a> {
         fn visit_local(&mut self, node: &'ast syn::Local) {
+            let start = node.span().start();
+            if source_position_after_method_call(start.line, start.column, self.candidate) {
+                return;
+            }
             for root in pat_bound_idents(&node.pat) {
                 *self.stability.local_bindings.entry(root).or_default() += 1;
             }
@@ -3509,6 +3526,10 @@ fn method_postcondition_stability_for_block(
         }
 
         fn visit_expr_assign(&mut self, node: &'ast syn::ExprAssign) {
+            let start = node.span().start();
+            if source_position_after_method_call(start.line, start.column, self.candidate) {
+                return;
+            }
             self.stability
                 .effect_roots
                 .extend(expr_assignment_roots(&node.left));
@@ -3516,6 +3537,10 @@ fn method_postcondition_stability_for_block(
         }
 
         fn visit_expr_binary(&mut self, node: &'ast syn::ExprBinary) {
+            let start = node.span().start();
+            if source_position_after_method_call(start.line, start.column, self.candidate) {
+                return;
+            }
             if binop_is_assignment(&node.op) {
                 self.stability
                     .effect_roots
@@ -3525,6 +3550,10 @@ fn method_postcondition_stability_for_block(
         }
 
         fn visit_expr_reference(&mut self, node: &'ast syn::ExprReference) {
+            let start = node.span().start();
+            if source_position_after_method_call(start.line, start.column, self.candidate) {
+                return;
+            }
             if node.mutability.is_some() {
                 if let Some(root) = expr_bare_ident_name(&node.expr) {
                     self.stability.effect_roots.insert(root);
@@ -3534,6 +3563,10 @@ fn method_postcondition_stability_for_block(
         }
 
         fn visit_expr_method_call(&mut self, node: &'ast syn::ExprMethodCall) {
+            let start = node.span().start();
+            if source_position_after_method_call(start.line, start.column, self.candidate) {
+                return;
+            }
             let occurrence = method_call_occurrence(node);
             if &occurrence != self.candidate && !method_postcondition_method_is_pure_read(node) {
                 if let Some(root) = expr_bare_ident_name(&node.receiver) {
@@ -14625,15 +14658,8 @@ reason = "The audited value is known to contain only canonicalizable JSON primit
         let _ = fs::remove_dir_all(root);
     }
 
-    #[test]
-    fn lift_implications_refuses_method_postcondition_after_receiver_reassignment() {
-        let src = r##"
-pub fn audited(mut digest: String, prefix: &str, other: String) {
-    digest = other;
-    digest.strip_prefix(prefix).expect("audited prefix");
-}
-"##;
-        let root = temp_workspace("lift_implications_method_postcondition_reassign");
+    fn lift_method_postcondition_fixture(temp_name: &str, src: &str) -> (Value, String) {
+        let root = temp_workspace(temp_name);
         let src_dir = root.join("src");
         fs::create_dir_all(&src_dir).expect("create src dir");
         fs::write(
@@ -14684,18 +14710,78 @@ reason = "audited digest prefix"
         }))
         .expect("lift_implications");
 
+        let _ = fs::remove_dir_all(root);
+        (resp, option_expect_cid.to_string())
+    }
+
+    fn method_expect_targets(resp: &Value) -> Vec<&str> {
         let ir = resp["ir"].as_array().expect("ir array");
-        let panic_targets: Vec<&str> = ir
-            .iter()
+        ir.iter()
             .filter(|entry| entry["sourceSymbol"] == "method:expect")
             .filter_map(|entry| entry["targetContractCid"].as_str())
-            .collect();
+            .collect()
+    }
+
+    #[test]
+    fn lift_implications_refuses_method_postcondition_after_receiver_reassignment() {
+        let src = r##"
+pub fn audited(mut digest: String, prefix: &str, other: String) {
+    digest = other;
+    digest.strip_prefix(prefix).expect("audited prefix");
+}
+"##;
+        let (resp, _) = lift_method_postcondition_fixture(
+            "lift_implications_method_postcondition_reassign",
+            src,
+        );
+        let panic_targets = method_expect_targets(&resp);
         assert!(
             panic_targets.is_empty(),
             "a source-line-gated method postcondition must refuse after receiver reassignment: {resp:#?}"
         );
+    }
 
-        let _ = fs::remove_dir_all(root);
+    #[test]
+    fn lift_implications_routes_method_postcondition_before_later_receiver_reassignment() {
+        let src = r##"
+pub fn audited(mut digest: String, prefix: &str, other: String) {
+    digest.strip_prefix(prefix).expect("audited prefix");
+    digest = other;
+}
+"##;
+        let (resp, option_expect_cid) = lift_method_postcondition_fixture(
+            "lift_implications_method_postcondition_post_reassign",
+            src,
+        );
+        let panic_targets = method_expect_targets(&resp);
+        assert_eq!(
+            panic_targets,
+            vec![option_expect_cid.as_str()],
+            "later receiver reassignment must not invalidate an already-audited method call: {resp:#?}"
+        );
+    }
+
+    #[test]
+    fn lift_implications_refuses_method_postcondition_after_same_expression_mut_borrow() {
+        let src = r##"
+fn touch(_digest: &mut String) -> bool {
+    true
+}
+
+pub fn audited(mut digest: String, prefix: &str) {
+    if touch(&mut digest) && digest.strip_prefix(prefix).expect("audited prefix").is_empty() {
+    }
+}
+"##;
+        let (resp, _) = lift_method_postcondition_fixture(
+            "lift_implications_method_postcondition_same_expression_mut_borrow",
+            src,
+        );
+        let panic_targets = method_expect_targets(&resp);
+        assert!(
+            panic_targets.is_empty(),
+            "a same-expression mut-borrow before the audited call must keep the method postcondition refused: {resp:#?}"
+        );
     }
 
     fn free_pure_option_manifest(callee: &str) -> String {
