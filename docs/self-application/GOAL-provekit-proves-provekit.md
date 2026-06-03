@@ -227,6 +227,18 @@ is now the active arc; see Phase 5.
   tier-to-close bucket to proven. Earlier provekit-cli K=21 / panicCensus=53
   references are retained as historical measurements from a different setup,
   not the current Phase 5 baseline.
+- **Readiness-signal closure (2026-06-03).** The convergence harness is
+  deleted; rust-analyzer readiness is now the gate. On a cold battleaxe run
+  with `/run/user/1000/provekit`, `/tmp/provekit`, and the rust-analyzer cache
+  cleared, `serverStatus quiescent=true` arrived in 1s for shim-std, 4s for
+  libprovekit, and 4s for provekit-cli. The run reported
+  `panicSafe=20`, `falsePass=0`, `silentlyDropped=0`, `droppedSites=[]`,
+  `panicCensus=54`, `bridges.emitted=2832`, and
+  `oracle={attempted:4173, resolved:4079}`. The dep-libprovekit `.proof`
+  bundle directly contains the 7 required shim-std-pinned panic bridges, with
+  23 total `panicSite=true` bridges pinned to shim-std. #1898 tracks the
+  remaining libprovekit lifter rows; #1899 tracks replacing the self-check
+  staging workaround with a manifest-driven dependency proof DAG.
 
 ### Phase 3 - RESIDUE NAMED + V1 RELEASE - DONE
 
@@ -248,11 +260,14 @@ is now the active arc; see Phase 5.
 
 Phase 5 K movement is measured on reproducible self-check infrastructure:
 `bcargo`, battleaxe rust-analyzer on stable 1.96.0, oracle enabled, and
-default self-check convergence. As of #1896, the `provekit-cli` target reports
-`panicCensus=54`, `panicSafe=13`, `falsePass=0`, `silentlyDropped=0`, and
+rust-analyzer readiness gating. The convergence harness is no longer part of
+the product baseline. The current `provekit-cli` target reports
+`panicCensus=54`, `panicSafe=20`, `falsePass=0`, `silentlyDropped=0`, and
 `droppedSites=[]`. Clean main before #1896 was K=12 on the same
 infrastructure; #1896 moved exactly one closeable D-lib row,
-`src/kit_dispatch.rs:2416 method:expect`, from unproven to proven.
+`src/kit_dispatch.rs:2416 method:expect`, from unproven to proven. The
+readiness-signal closure then restored deterministic dependency and target
+oracle readiness, moving the reproducible baseline to K=20.
 
 The #1774 reproducibility caveat is closed: the release gate validates the
 dependency-proof state as part of doctor release-gate mode before accepting the
@@ -261,10 +276,10 @@ measurement setup and is not the current Phase 5 baseline.
 
 | Category | Count | Closing mechanism |
 |---|---|---|
-| proven K | 13 panic-safe | Current reproducible K after #1896. D-lib, C `json!`, B guarded-panic, and D-fn tiers remain the closing mechanisms, but K is now reported against the reproducible bcargo + battleaxe RA baseline. |
+| proven K | 20 panic-safe | Current reproducible K after readiness-signal gating replaces convergence. D-lib, C `json!`, B guarded-panic, and D-fn tiers remain the closing mechanisms, now measured against the cold bcargo + battleaxe RA baseline. |
 | residue | 8 honest residue | Mutex `.lock().expect()` rows. Honest residue; "lock is total" would be unsound. |
 | closeable tier-to-close | 0 named D-lib rows | #1896 closed the `RealizeRequest` serialization row with provekit-cli-owned per-type D-lib manifest coverage, mirroring libprovekit's `infallible_serialize.toml` pattern. |
-| raw unproven | 33 | Still honest unproven rows in the panic census. They are not labeled panic-safe, not silently dropped, and not allowed to inflate K. |
+| raw unproven | 26 | Still honest unproven rows in the panic census. They are not labeled panic-safe, not silently dropped, and not allowed to inflate K. |
 
 The honest read: Rust v1 is not K == N. It is K covering the provable buckets,
 residue named, hard floor never violated, and doctor/release-gate green.
@@ -468,21 +483,22 @@ Phase 5 has two parallel levers:
 
 The number that moves: K (panic-safe sites discharged via sound reasoning) on
 real production code in each language. Today on Rust self-application, the
-reproducible Phase 5 baseline is K=13 on provekit-cli after #1896; libprovekit
-last documented K=12. Earlier provekit-cli K=21 references came from a
-different measurement setup and are not the current baseline. On Python / TS /
-Go / Java production targets: not yet measured at the K level; each language
-emits panicLoci but discharge tier infrastructure is Rust-only today. A vendor
-running today sees mostly "I don't know" verdicts. To shift to "I want to
-deploy this," the K-per-language number has to be in the hundreds on a real
-codebase, the output has to be actionable, and the value differential vs unit
-tests has to be visible.
+reproducible Phase 5 baseline is K=20 on provekit-cli after the readiness
+signal closure; libprovekit last documented K=12. Earlier provekit-cli K=21
+references came from a different measurement setup and are not the current
+baseline. On Python / TS / Go / Java production targets: not yet measured at
+the K level; each language emits panicLoci but discharge tier infrastructure is
+Rust-only today. A vendor running today sees mostly "I don't know" verdicts. To
+shift to "I want to deploy this," the K-per-language number has to be in the
+hundreds on a real codebase, the output has to be actionable, and the value
+differential vs unit tests has to be visible.
 
 **Phase 5 staging (T direction 2026-06-02): dogfood is the gold standard,
 then third-party parity per language.**
 1. **Dogfood depth first.** Drive Rust self-application K into vendor-
-   meaningful range (current reproducible K=13 -> into the hundreds on `provekit-cli` and
-   `libprovekit`) via shim catalog expansion and discharge tier work. This
+   meaningful range (current reproducible K=20 -> into the hundreds on
+   `provekit-cli` and `libprovekit`) via shim catalog expansion and discharge
+   tier work. This
    is the proof that the technique scales on a real codebase before we ask
    anyone else to point it at theirs.
 2. **Third-party Rust OSS project parity.** Once dogfood "feels eaten" by

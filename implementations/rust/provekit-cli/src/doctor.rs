@@ -2863,14 +2863,16 @@ mod tests {
                         discovery: "env".to_string(),
                     },
                     readiness: OracleHostReadiness::Ready {
-                        detail: "provekit-linkerd spawned and answered projectStatus RPC"
+                        detail: "provekit-linkerd spawned and reported rust-analyzer ready"
                             .to_string(),
                     },
                     engagement: OracleHostEngagement::Engaged {
                         detail: "oracle served requests during self-check".to_string(),
                     },
-                    convergence: OracleResolutionConvergence::Deferred {
-                        detail: "resolution convergence is proved at self-check time".to_string(),
+                    convergence: OracleResolutionConvergence::Converged {
+                        detail:
+                            "resolution readiness is gated by linkerd rustAnalyzerReady; convergence harness removed"
+                                .to_string(),
                     },
                 },
             }
@@ -2901,7 +2903,8 @@ mod tests {
                         detail: "engagement is observed at self-check time".to_string(),
                     },
                     convergence: OracleResolutionConvergence::Deferred {
-                        detail: "resolution convergence is proved at self-check time".to_string(),
+                        detail: "oracle readiness cannot be established until the host is locatable"
+                            .to_string(),
                     },
                 },
             }
@@ -2911,6 +2914,9 @@ mod tests {
             let mut adapter = Self::ready();
             adapter.observation.readiness = OracleHostReadiness::NotReady {
                 detail: "spawn failed: permission denied".to_string(),
+            };
+            adapter.observation.convergence = OracleResolutionConvergence::Deferred {
+                detail: "resolution readiness was not reached".to_string(),
             };
             adapter
         }
@@ -5438,7 +5444,7 @@ mod tests {
     }
 
     #[test]
-    fn standalone_oracle_convergence_is_advisory_in_all_modes() {
+    fn oracle_readiness_gate_accounts_for_resolution_convergence_in_all_modes() {
         for mode in [
             DoctorMode::Structural,
             DoctorMode::Strict,
@@ -5457,9 +5463,13 @@ mod tests {
             );
             assert_eq!(converged.severity, CheckSeverity::Advisory);
             assert!(
-                converged.detail.contains("self-check time"),
-                "standalone doctor convergence should be explicitly deferred: {}",
+                converged.detail.contains("rustAnalyzerReady"),
+                "convergence compatibility check should point at the readiness gate: {}",
                 converged.detail
+            );
+            assert_eq!(
+                converged.evidence.get("converged").and_then(Value::as_bool),
+                Some(true)
             );
         }
     }

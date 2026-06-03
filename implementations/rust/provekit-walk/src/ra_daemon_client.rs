@@ -8,15 +8,14 @@
 // asks the persistent daemon, which keeps ONE warm rust-analyzer session per
 // workspace root indexed once and reused across mints, fronted by a
 // content-addressed per-file resolution cache (specs #1705/#1706/#1707). The
-// first ever mint of a cold workspace contributes nothing (the daemon answers
-// `ready:false` while RA indexes in the background) and the lifter REFUSES to
-// the syntactic tiers; the second mint resolves from the warm session, and a
+// first ever mint of a cold workspace waits once for the daemon's
+// rust-analyzer readiness signal, then resolves from that indexed session. A
 // later mint with unchanged files resolves from the cache with NO RA spawn.
 //
 // Refuse-floor (supra omnia rectum, spec §1.R2): if the daemon is unreachable,
-// the spawn times out, or the response says `ready:false`, this client returns
-// an EMPTY map. The caller leaves `callee_crate = None` and the call falls back
-// to Tier 1/2a. It NEVER blocks for the index and NEVER guesses an edge.
+// the spawn times out, or readiness fails, this client returns an EMPTY map. The
+// caller leaves `callee_crate = None` and the call falls back to Tier 1/2a. It
+// waits only on linkerd's LSP-backed readiness signal and NEVER guesses an edge.
 //
 // std-only and synchronous, mirroring `provekit-lsp-rust/src/daemon_client.rs`:
 // the parent binary speaks line-framed NDJSON; no async runtime is needed.
@@ -54,17 +53,24 @@ pub struct DaemonResolution {
 #[derive(Debug, Clone, Default)]
 pub struct DaemonResolutionBatch {
     pub reachable: bool,
+    pub ready: bool,
     pub resolutions: HashMap<(String, u32, u32), DaemonResolution>,
+}
+
+#[derive(Debug, Clone, Default)]
+pub struct DaemonReadiness {
+    pub ready: bool,
+    pub phase: Option<String>,
+    pub detail: Option<String>,
 }
 
 /// Ask the resident daemon to resolve a batch of method-call positions in
 /// `workspace_root` to their receiver-defining crate AND receiver-type stem.
 ///
 /// Returns a map from `(file, line, col)` to the resolution. Positions the
-/// daemon refuses (or could not service because RA is not yet ready) are simply
-/// ABSENT from the map: the caller treats absence as refusal and falls back to
-/// the syntactic tiers. A daemon that is unreachable or not-ready yields an empty
-/// map without blocking.
+/// daemon refuses are simply ABSENT from the map: the caller treats absence as
+/// refusal and falls back to the syntactic tiers. A daemon that is unreachable
+/// or cannot reach readiness yields an empty map.
 pub fn resolve_receiver_crates(
     workspace_root: &Path,
     queries: &[DaemonQuery],
@@ -91,6 +97,34 @@ pub fn resolve_receiver_crates(
             return batch;
         }
     };
+    batch.reachable = true;
+
+    let timeout_ms = ready_timeout_ms();
+    match request_readiness(&mut stream, workspace_root, timeout_ms) {
+        Ok(readiness) if readiness.ready => {
+            batch.ready = true;
+            info!(
+                phase = ?readiness.phase,
+                detail = ?readiness.detail,
+                "ra-daemon: rust-analyzer readiness gate passed"
+            );
+        }
+        Ok(readiness) => {
+            warn!(
+                phase = ?readiness.phase,
+                detail = ?readiness.detail,
+                "ra-daemon: rust-analyzer readiness gate did not pass; refusing all method-call resolutions"
+            );
+            return batch;
+        }
+        Err(error) => {
+            warn!(
+                error = %error,
+                "ra-daemon: rust-analyzer readiness RPC failed; refusing all method-call resolutions"
+            );
+            return batch;
+        }
+    }
 
     let q_json: Vec<Json> = queries
         .iter()
@@ -103,6 +137,7 @@ pub fn resolve_receiver_crates(
         "method": "resolveReceiverCrate",
         "params": {
             "workspaceRoot": workspace_root.to_string_lossy(),
+            "timeoutMs": timeout_ms,
             "queries": q_json,
         }
     });
@@ -114,7 +149,6 @@ pub fn resolve_receiver_crates(
             return batch;
         }
     };
-    batch.reachable = true;
 
     if let Some(err_obj) = resp.get("error") {
         warn!(error = %err_obj, "ra-daemon: daemon returned RPC error; refusing");
@@ -131,12 +165,13 @@ pub fn resolve_receiver_crates(
     let resolved_count = resolved_obj.map(|m| m.len()).unwrap_or(0);
 
     if !ready && resolved_count == 0 {
-        // Cold daemon, first mint: RA still indexing and nothing cached. This is
-        // the correct refuse-floor outcome. The NEXT mint will be warm.
+        // Readiness passed, but RA still reported not-ready during resolution
+        // and nothing was cache-resolved. Refuse rather than caching partial
+        // answers or guessing edges.
         info!(
             queries = queries.len(),
-            "ra-daemon: not ready (rust-analyzer still indexing, no cache hits); \
-             refusing to the syntactic tiers. The next mint resolves warm."
+            "ra-daemon: resolution returned not-ready after readiness gate; \
+             refusing to the syntactic tiers"
         );
         return batch;
     }
@@ -173,6 +208,49 @@ pub fn resolve_receiver_crates(
         "ra-daemon: resolveReceiverCrate complete"
     );
     batch
+}
+
+fn request_readiness(
+    stream: &mut UnixStream,
+    workspace_root: &Path,
+    timeout_ms: u64,
+) -> Result<DaemonReadiness, String> {
+    let req = json!({
+        "jsonrpc": "2.0",
+        "id": 0,
+        "method": "rustAnalyzerReady",
+        "params": {
+            "workspaceRoot": workspace_root.to_string_lossy(),
+            "timeoutMs": timeout_ms,
+        }
+    });
+    let resp = send_one(stream, &req).map_err(|e| format!("rustAnalyzerReady transport: {e}"))?;
+    if let Some(error) = resp.get("error") {
+        return Err(format!("rustAnalyzerReady returned RPC error: {error}"));
+    }
+    let result = resp.get("result").cloned().unwrap_or(Json::Null);
+    Ok(DaemonReadiness {
+        ready: result
+            .get("ready")
+            .and_then(|v| v.as_bool())
+            .unwrap_or(false),
+        phase: result
+            .get("phase")
+            .and_then(|v| v.as_str())
+            .map(str::to_string),
+        detail: result
+            .get("detail")
+            .and_then(|v| v.as_str())
+            .map(str::to_string),
+    })
+}
+
+fn ready_timeout_ms() -> u64 {
+    std::env::var("PROVEKIT_ORACLE_READY_TIMEOUT_MS")
+        .ok()
+        .and_then(|raw| raw.parse::<u64>().ok())
+        .filter(|v| *v > 0)
+        .unwrap_or(300_000)
 }
 
 /// Parse a `"<file>:<line>:<col>"` position key back into its parts. The file

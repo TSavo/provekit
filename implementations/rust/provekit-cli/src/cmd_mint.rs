@@ -235,6 +235,7 @@ struct PerPluginDispatch {
 struct OracleObservation {
     requested: bool,
     reachable: bool,
+    ready: bool,
     attempted: u64,
     resolved: u64,
 }
@@ -288,9 +289,11 @@ fn merge_ir_document_responses(per_plugin: Vec<PerPluginDispatch>) -> Result<Val
     let mut seen_implications: std::collections::HashSet<String> = std::collections::HashSet::new();
     let mut seen_authorities: std::collections::HashSet<String> = std::collections::HashSet::new();
     for entry in per_plugin {
+        assert_oracle_ready_if_requested(&entry.surface, &entry.response)?;
         let plugin_oracle = oracle_observation_from_lift(&entry.response);
         oracle_observation.requested |= plugin_oracle.requested;
         oracle_observation.reachable |= plugin_oracle.reachable;
+        oracle_observation.ready |= plugin_oracle.ready;
         oracle_observation.attempted += plugin_oracle.attempted;
         oracle_observation.resolved += plugin_oracle.resolved;
 
@@ -377,6 +380,7 @@ fn merge_ir_document_responses(per_plugin: Vec<PerPluginDispatch>) -> Result<Val
         "lift_gaps": lift_gaps,
         "oracle_requested": oracle_observation.requested,
         "oracle_reachable": oracle_observation.reachable,
+        "oracle_ready": oracle_observation.ready,
         "receivers_attempted": oracle_observation.attempted,
         "receivers_resolved": oracle_observation.resolved,
     });
@@ -405,6 +409,11 @@ fn oracle_observation_from_lift(lift: &Value) -> OracleObservation {
             .and_then(Value::as_bool)
             .or_else(|| lift.get("oracle_reachable").and_then(Value::as_bool))
             .unwrap_or(false),
+        ready: nested
+            .and_then(|v| v.get("ready"))
+            .and_then(Value::as_bool)
+            .or_else(|| lift.get("oracle_ready").and_then(Value::as_bool))
+            .unwrap_or(false),
         attempted: nested
             .and_then(|v| v.get("attempted"))
             .and_then(Value::as_u64)
@@ -416,6 +425,17 @@ fn oracle_observation_from_lift(lift: &Value) -> OracleObservation {
             .or_else(|| lift.get("receivers_resolved").and_then(Value::as_u64))
             .unwrap_or(0),
     }
+}
+
+fn assert_oracle_ready_if_requested(surface: &str, lift: &Value) -> Result<(), String> {
+    let oracle = oracle_observation_from_lift(lift);
+    if oracle.requested && oracle.attempted > 0 && !oracle.ready {
+        return Err(format!(
+            "lift surface `{surface}` requested rust-analyzer oracle and found {} receiver query candidate(s), but provekit-linkerd did not report rust-analyzer ready; refusing to mint a syntactic-only proof",
+            oracle.attempted
+        ));
+    }
+    Ok(())
 }
 
 #[derive(Debug, Clone, Default)]
@@ -582,6 +602,8 @@ impl MintKit {
             };
 
             let response = session.response().clone();
+            assert_oracle_ready_if_requested(&step.surface, &response)
+                .map_err(KitError::Transformation)?;
             // Carry forward the first plugin's lift_claim as the
             // session's lift claim. (Future: aggregate claims into a
             // composite — out of scope for the multi-plugin landing.)
@@ -737,6 +759,8 @@ impl MintKit {
             };
 
             let response = session.response().clone();
+            assert_oracle_ready_if_requested(&step.surface, &response)
+                .map_err(KitError::Transformation)?;
             if combined_lift_claim.is_none() {
                 combined_lift_claim = Some(session.claim);
             }
@@ -1467,6 +1491,7 @@ fn dispatch_result_to_value(result: &DispatchResult) -> Value {
         "oracle": {
             "requested": oracle.requested,
             "reachable": oracle.reachable,
+            "ready": oracle.ready,
             "attempted": oracle.attempted,
             "resolved": oracle.resolved,
         },
@@ -3637,6 +3662,7 @@ mod tests {
                 "diagnostics": [],
                 "oracle_requested": true,
                 "oracle_reachable": true,
+                "oracle_ready": true,
                 "receivers_attempted": 7,
                 "receivers_resolved": 3
             }),
@@ -3649,10 +3675,49 @@ mod tests {
             json!({
                 "requested": true,
                 "reachable": true,
+                "ready": true,
                 "attempted": 7,
                 "resolved": 3
             })
         );
+    }
+
+    #[test]
+    fn requested_oracle_not_ready_refuses_mint() {
+        let lift = json!({
+            "kind": "ir-document",
+            "ir": [],
+            "diagnostics": [],
+            "oracle_requested": true,
+            "oracle_reachable": true,
+            "oracle_ready": false,
+            "receivers_attempted": 7,
+            "receivers_resolved": 0
+        });
+
+        let err = assert_oracle_ready_if_requested("rust-implications", &lift)
+            .expect_err("requested oracle with candidates must fail when not ready");
+        assert!(
+            err.contains("did not report rust-analyzer ready"),
+            "unexpected error: {err}"
+        );
+    }
+
+    #[test]
+    fn ready_oracle_with_zero_resolutions_remains_honest_refusal() {
+        let lift = json!({
+            "kind": "ir-document",
+            "ir": [],
+            "diagnostics": [],
+            "oracle_requested": true,
+            "oracle_reachable": true,
+            "oracle_ready": true,
+            "receivers_attempted": 7,
+            "receivers_resolved": 0
+        });
+
+        assert_oracle_ready_if_requested("rust-implications", &lift)
+            .expect("ready oracle may honestly refuse every candidate");
     }
 
     #[test]

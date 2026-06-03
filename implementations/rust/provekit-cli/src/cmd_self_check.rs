@@ -149,6 +149,11 @@ struct MintOutput {
     json: Value,
 }
 
+#[derive(Debug, Default)]
+struct StagedDependencyImportsGuard {
+    staged_files: Vec<PathBuf>,
+}
+
 #[derive(Debug, Clone)]
 struct PanicSiteAnnotation {
     file: String,
@@ -164,17 +169,6 @@ struct PanicSiteAnnotation {
 struct ImportsProofSetSnapshot {
     entries: BTreeSet<String>,
     directory_present: bool,
-}
-
-const ORACLE_CONVERGENCE_STABLE_PASSES: usize = 3;
-const ORACLE_CONVERGENCE_MAX_PASSES: usize = 10;
-const ORACLE_CONVERGENCE_STABLE_PASSES_ENV: &str = "PROVEKIT_ORACLE_CONVERGE_K";
-const ORACLE_CONVERGENCE_MAX_PASSES_ENV: &str = "PROVEKIT_ORACLE_MAX_PASSES";
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-enum OracleConvergenceDecision {
-    Continue,
-    Done,
 }
 
 pub fn run(args: SelfCheckArgs) -> u8 {
@@ -218,7 +212,7 @@ pub fn run(args: SelfCheckArgs) -> u8 {
             {
                 failed = true;
                 eprintln!(
-                    "self-check --oracle requested but the oracle resolved 0/{} receivers; the census is SYNTACTIC-ONLY (provekit-linkerd unreachable or not warm). Set PROVEKIT_LINKERD_BIN and pre-warm, or run doctor.",
+                    "self-check --oracle requested but the oracle resolved 0/{} receivers; the census is SYNTACTIC-ONLY (provekit-linkerd unreachable or rust-analyzer not ready). Set PROVEKIT_LINKERD_BIN and run doctor.",
                     scoreboard.oracle.attempted
                 );
             }
@@ -248,35 +242,40 @@ fn run_inner(args: &SelfCheckArgs) -> Result<SelfCheckScoreboard, String> {
     let imports = target_abs.join(".provekit").join("imports");
     recreate_imports(&imports)?;
 
+    let libprovekit = repo_root.join("implementations/rust/libprovekit");
+    let shim_std = repo_root.join("examples/provekit-shim-rust-std");
     let dependency_specs = [
-        (
-            "libprovekit",
-            repo_root.join("implementations/rust/libprovekit"),
-        ),
-        (
-            "shim-std",
-            repo_root.join("examples/provekit-shim-rust-std"),
-        ),
+        ("shim-std", shim_std.as_path()),
+        ("libprovekit", libprovekit.as_path()),
     ];
+    let mut dependency_proofs = BTreeMap::new();
     for (name, dep) in dependency_specs {
-        if same_path(&dep, &target_abs) {
+        if same_path(dep, &target_abs) {
             continue;
         }
-        let dep_rel = repo_relative(&repo_root, &dep);
+        let dep_rel = repo_relative(&repo_root, dep);
+        let staged_imports = stage_dependency_imports_for_mint(
+            name,
+            dep,
+            dependency_import_requirements(name, &target_abs, &shim_std),
+            &dependency_proofs,
+        )?;
         info!(
             dependency = name,
             project = %dep_rel,
             "self-check: minting dependency proof"
         );
         let out_dir = scratch.join(format!("dep-{name}"));
-        let minted = mint_project_converged(
+        let minted = mint_project(
             &bin,
             &repo_root,
-            &dep,
+            dep,
             &out_dir,
             dependency_mint_uses_oracle(args.oracle),
         )?;
+        drop(staged_imports);
         copy_proof_to_imports(&minted.proof_file, &imports)?;
+        dependency_proofs.insert(name.to_string(), minted.proof_file.clone());
         let imports_proof_count = count_proof_files(&imports)?;
         info!(
             dependency = name,
@@ -309,8 +308,7 @@ fn run_inner(args: &SelfCheckArgs) -> Result<SelfCheckScoreboard, String> {
         oracle = args.oracle,
         "self-check: minting target"
     );
-    let target_mint =
-        mint_project_converged(&bin, &repo_root, &target_abs, &target_out, args.oracle)?;
+    let target_mint = mint_project(&bin, &repo_root, &target_abs, &target_out, args.oracle)?;
     let target_proof_count = count_proof_files(&target_out)?;
     let imports_proof_count = count_proof_files(&imports)?;
     info!(
@@ -699,183 +697,6 @@ fn dependency_mint_uses_oracle(self_check_oracle: bool) -> bool {
     self_check_oracle
 }
 
-fn mint_project_converged(
-    bin: &Path,
-    repo_root: &Path,
-    project: &Path,
-    out_dir: &Path,
-    oracle: bool,
-) -> Result<MintOutput, String> {
-    if !oracle {
-        return mint_project(bin, repo_root, project, out_dir, false);
-    }
-
-    let (stable_passes, max_passes) = oracle_convergence_thresholds()?;
-    let mut observations = Vec::new();
-    for pass in 1..=max_passes {
-        info!(
-            pass,
-            max_passes, stable_passes, "self-check oracle convergence: mint pass start"
-        );
-        recreate_dir(out_dir)?;
-        let minted = mint_project(bin, repo_root, project, out_dir, true)?;
-        let oracle = oracle_scoreboard(&minted.json);
-        let attempted = oracle.attempted;
-        let resolved = oracle.resolved;
-        observations.push(oracle);
-        let stable_count = oracle_consecutive_stable_count(&observations);
-        info!(
-            pass,
-            max_passes,
-            resolved,
-            attempted,
-            stable_count,
-            stable_passes,
-            "self-check oracle convergence: mint pass complete"
-        );
-        match oracle_convergence_decision(&observations, stable_passes, max_passes)? {
-            OracleConvergenceDecision::Done => {
-                let reason = if resolved == attempted {
-                    "full resolution"
-                } else {
-                    "stable oracle ceiling"
-                };
-                info!(pass, reason, "self-check oracle convergence: accepted");
-                return Ok(minted);
-            }
-            OracleConvergenceDecision::Continue => {
-                info!(pass, max_passes, "self-check oracle convergence: reminting");
-            }
-        }
-    }
-
-    let final_observation = observations
-        .last()
-        .ok_or("oracle convergence ran no mint passes")?;
-    Err(format!(
-        "self-check --oracle did not converge after {max_passes} mint passes; last resolved {}/{} receivers; {}",
-        final_observation.resolved,
-        final_observation.attempted,
-        oracle_convergence_diagnostic(&observations, stable_passes)
-    ))
-}
-
-fn oracle_convergence_decision(
-    observations: &[OracleScoreboard],
-    stable_passes: usize,
-    max_passes: usize,
-) -> Result<OracleConvergenceDecision, String> {
-    let Some(current) = observations.last() else {
-        return Ok(OracleConvergenceDecision::Continue);
-    };
-    if !current.requested {
-        return Ok(OracleConvergenceDecision::Done);
-    }
-    if current.resolved == current.attempted {
-        return Ok(OracleConvergenceDecision::Done);
-    }
-    if observations.len() < stable_passes {
-        return Ok(OracleConvergenceDecision::Continue);
-    }
-    if oracle_observations_stable(observations, stable_passes) {
-        return Ok(OracleConvergenceDecision::Done);
-    }
-    if observations.len() >= max_passes {
-        return Err(format!(
-            "self-check --oracle did not converge after {max_passes} mint passes; last resolved {}/{} receivers; {}",
-            current.resolved,
-            current.attempted,
-            oracle_convergence_diagnostic(observations, stable_passes)
-        ));
-    }
-    Ok(OracleConvergenceDecision::Continue)
-}
-
-fn oracle_observations_stable(observations: &[OracleScoreboard], window: usize) -> bool {
-    if observations.len() < window {
-        return false;
-    }
-    let tail = &observations[observations.len() - window..];
-    let first = &tail[0];
-    tail.iter().all(|observation| {
-        observation.requested == first.requested
-            && observation.attempted == first.attempted
-            && observation.resolved == first.resolved
-    })
-}
-
-fn oracle_convergence_thresholds() -> Result<(usize, usize), String> {
-    let stable_passes = env_usize(
-        ORACLE_CONVERGENCE_STABLE_PASSES_ENV,
-        ORACLE_CONVERGENCE_STABLE_PASSES,
-    )?;
-    let max_passes = env_usize(
-        ORACLE_CONVERGENCE_MAX_PASSES_ENV,
-        ORACLE_CONVERGENCE_MAX_PASSES,
-    )?;
-    if stable_passes == 0 {
-        return Err(format!(
-            "{ORACLE_CONVERGENCE_STABLE_PASSES_ENV} must be greater than zero"
-        ));
-    }
-    if max_passes < stable_passes {
-        return Err(format!(
-            "{ORACLE_CONVERGENCE_MAX_PASSES_ENV} ({max_passes}) must be >= {ORACLE_CONVERGENCE_STABLE_PASSES_ENV} ({stable_passes})"
-        ));
-    }
-    Ok((stable_passes, max_passes))
-}
-
-fn env_usize(name: &str, default: usize) -> Result<usize, String> {
-    let Ok(raw) = std::env::var(name) else {
-        return Ok(default);
-    };
-    raw.parse::<usize>()
-        .map_err(|e| format!("{name} must be a positive integer, got {raw:?}: {e}"))
-}
-
-fn oracle_convergence_diagnostic(
-    observations: &[OracleScoreboard],
-    stable_passes: usize,
-) -> String {
-    let sequence = observations
-        .iter()
-        .enumerate()
-        .map(|(idx, observation)| {
-            format!(
-                "pass{}={}/{}",
-                idx + 1,
-                observation.resolved,
-                observation.attempted
-            )
-        })
-        .collect::<Vec<_>>()
-        .join(", ");
-    let stable_count = oracle_consecutive_stable_count(observations);
-    let current_pair = observations
-        .last()
-        .map(|observation| format!("{}/{}", observation.resolved, observation.attempted))
-        .unwrap_or_else(|| "none".to_string());
-    format!(
-        "oracle sequence [{sequence}], current pair {current_pair} stable for {stable_count}/{stable_passes} passes"
-    )
-}
-
-fn oracle_consecutive_stable_count(observations: &[OracleScoreboard]) -> usize {
-    let Some(current) = observations.last() else {
-        return 0;
-    };
-    observations
-        .iter()
-        .rev()
-        .take_while(|observation| {
-            observation.requested == current.requested
-                && observation.attempted == current.attempted
-                && observation.resolved == current.resolved
-        })
-        .count()
-}
-
 fn prove_project(
     bin: &Path,
     repo_root: &Path,
@@ -951,6 +772,111 @@ fn copy_proof_to_imports(proof_file: &Path, imports: &Path) -> Result<(), String
         )
     })?;
     Ok(())
+}
+
+fn dependency_import_requirements(
+    dependency_name: &str,
+    target_abs: &Path,
+    shim_std: &Path,
+) -> &'static [&'static str] {
+    if dependency_name == "libprovekit" && !same_path(target_abs, shim_std) {
+        &["shim-std"]
+    } else {
+        &[]
+    }
+}
+
+fn stage_dependency_imports_for_mint(
+    dependency_name: &str,
+    dependency_root: &Path,
+    required_dependencies: &[&str],
+    dependency_proofs: &BTreeMap<String, PathBuf>,
+) -> Result<StagedDependencyImportsGuard, String> {
+    let imports = dependency_root.join(".provekit").join("imports");
+    let mut guard = StagedDependencyImportsGuard::default();
+    for required_name in required_dependencies {
+        let proof_file = dependency_proofs.get(*required_name).ok_or_else(|| {
+            format!(
+                "self-check dependency `{dependency_name}` requires `{required_name}` proof before minting; dependency order is incomplete"
+            )
+        })?;
+        guard.stage_proof(&imports, proof_file, dependency_name, required_name)?;
+    }
+    Ok(guard)
+}
+
+impl StagedDependencyImportsGuard {
+    fn stage_proof(
+        &mut self,
+        imports: &Path,
+        proof_file: &Path,
+        dependency_name: &str,
+        required_name: &str,
+    ) -> Result<(), String> {
+        fs::create_dir_all(imports).map_err(|e| format!("mkdir {}: {e}", imports.display()))?;
+        let file_name = proof_file
+            .file_name()
+            .ok_or_else(|| format!("proof path has no file name: {}", proof_file.display()))?;
+        let dest = imports.join(file_name);
+        if dest.exists() {
+            let existing = fs::read(&dest).map_err(|e| format!("read {}: {e}", dest.display()))?;
+            let incoming =
+                fs::read(proof_file).map_err(|e| format!("read {}: {e}", proof_file.display()))?;
+            if existing != incoming {
+                return Err(format!(
+                    "self-check refused to stage `{required_name}` proof for `{dependency_name}`: {} already exists with different bytes",
+                    dest.display()
+                ));
+            }
+            info!(
+                dependency = dependency_name,
+                required_dependency = required_name,
+                proof_file = %proof_file.display(),
+                imports = %imports.display(),
+                "self-check: dependency import already staged"
+            );
+            return Ok(());
+        }
+        fs::copy(proof_file, &dest).map_err(|e| {
+            format!(
+                "stage dependency proof {} to {}: {e}",
+                proof_file.display(),
+                dest.display()
+            )
+        })?;
+        self.staged_files.push(dest.clone());
+        info!(
+            dependency = dependency_name,
+            required_dependency = required_name,
+            proof_file = %proof_file.display(),
+            staged_proof = %dest.display(),
+            "self-check: staged dependency import for dependency mint"
+        );
+        Ok(())
+    }
+}
+
+impl Drop for StagedDependencyImportsGuard {
+    fn drop(&mut self) {
+        for path in self.staged_files.iter().rev() {
+            match fs::remove_file(path) {
+                Ok(()) => {
+                    info!(
+                        staged_proof = %path.display(),
+                        "self-check: removed staged dependency import"
+                    );
+                }
+                Err(error) if error.kind() == std::io::ErrorKind::NotFound => {}
+                Err(error) => {
+                    warn!(
+                        staged_proof = %path.display(),
+                        %error,
+                        "self-check: failed to remove staged dependency import"
+                    );
+                }
+            }
+        }
+    }
 }
 
 fn stage_rpc_dependency_proofs_to_imports<F>(
@@ -1798,15 +1724,6 @@ mod tests {
         })
     }
 
-    fn oracle_obs(attempted: u64, resolved: u64) -> OracleScoreboard {
-        OracleScoreboard {
-            requested: true,
-            engaged: resolved > 0,
-            attempted,
-            resolved,
-        }
-    }
-
     fn load_error(reason: &str) -> LoadError {
         LoadError {
             proof_path: "synthetic.proof".to_string(),
@@ -2115,52 +2032,111 @@ mod tests {
     }
 
     #[test]
-    fn oracle_convergence_waits_through_two_identical_cold_passes() {
-        let observations = [oracle_obs(7, 0), oracle_obs(7, 0)];
+    fn dependency_import_staging_copies_required_proof_and_drop_removes_it() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let dependency_root = dir.path().join("libprovekit");
+        let proof_dir = dir.path().join("proofs");
+        fs::create_dir_all(&proof_dir).expect("create proof dir");
+        let proof = proof_dir.join("shim-std.proof");
+        fs::write(&proof, b"shim std proof bytes").expect("write proof");
+        let mut proofs = BTreeMap::new();
+        proofs.insert("shim-std".to_string(), proof.clone());
 
+        let guard = stage_dependency_imports_for_mint(
+            "libprovekit",
+            &dependency_root,
+            &["shim-std"],
+            &proofs,
+        )
+        .expect("stage dependency import");
+
+        let staged = dependency_root
+            .join(".provekit")
+            .join("imports")
+            .join("shim-std.proof");
         assert_eq!(
-            oracle_convergence_decision(&observations, 3, 5).expect("decision"),
-            OracleConvergenceDecision::Continue
+            fs::read(&staged).expect("read staged proof"),
+            b"shim std proof bytes"
+        );
+
+        drop(guard);
+        assert!(
+            !staged.exists(),
+            "drop guard must remove proof staged by this self-check run"
         );
     }
 
     #[test]
-    fn oracle_convergence_accepts_full_resolution_before_min_passes() {
-        let observations = [oracle_obs(7, 0), oracle_obs(7, 7)];
+    fn dependency_import_staging_preserves_existing_identical_proof() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let dependency_root = dir.path().join("libprovekit");
+        let imports = dependency_root.join(".provekit").join("imports");
+        fs::create_dir_all(&imports).expect("create imports");
+        let existing = imports.join("shim-std.proof");
+        fs::write(&existing, b"same proof bytes").expect("write existing proof");
+        let proof = dir.path().join("shim-std.proof");
+        fs::write(&proof, b"same proof bytes").expect("write incoming proof");
+        let mut proofs = BTreeMap::new();
+        proofs.insert("shim-std".to_string(), proof);
 
+        let guard = stage_dependency_imports_for_mint(
+            "libprovekit",
+            &dependency_root,
+            &["shim-std"],
+            &proofs,
+        )
+        .expect("identical pre-existing proof should be accepted");
+
+        drop(guard);
         assert_eq!(
-            oracle_convergence_decision(&observations, 3, 5).expect("decision"),
-            OracleConvergenceDecision::Done
+            fs::read(&existing).expect("existing proof remains"),
+            b"same proof bytes",
+            "drop guard must not delete an import that existed before staging"
         );
     }
 
     #[test]
-    fn oracle_convergence_accepts_stable_partial_resolution_after_min_passes() {
-        let observations = [
-            oracle_obs(3720, 3626),
-            oracle_obs(3720, 3626),
-            oracle_obs(3720, 3626),
-        ];
+    fn dependency_import_staging_refuses_existing_different_proof() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let dependency_root = dir.path().join("libprovekit");
+        let imports = dependency_root.join(".provekit").join("imports");
+        fs::create_dir_all(&imports).expect("create imports");
+        fs::write(imports.join("shim-std.proof"), b"old bytes").expect("write existing proof");
+        let proof = dir.path().join("shim-std.proof");
+        fs::write(&proof, b"new bytes").expect("write incoming proof");
+        let mut proofs = BTreeMap::new();
+        proofs.insert("shim-std".to_string(), proof);
 
-        assert_eq!(
-            oracle_convergence_decision(&observations, 3, 5).expect("decision"),
-            OracleConvergenceDecision::Done
+        let err = stage_dependency_imports_for_mint(
+            "libprovekit",
+            &dependency_root,
+            &["shim-std"],
+            &proofs,
+        )
+        .expect_err("different pre-existing proof must fail closed");
+        assert!(
+            err.contains("already exists with different bytes"),
+            "unexpected error: {err}"
         );
     }
 
     #[test]
-    fn oracle_convergence_fails_closed_at_max_without_stability() {
-        let observations = [
-            oracle_obs(10, 1),
-            oracle_obs(10, 2),
-            oracle_obs(10, 3),
-            oracle_obs(10, 4),
-            oracle_obs(10, 5),
-        ];
+    fn dependency_import_staging_requires_declared_dependency_proof() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let dependency_root = dir.path().join("libprovekit");
+        let proofs = BTreeMap::new();
 
-        let err = oracle_convergence_decision(&observations, 3, 5)
-            .expect_err("nonconverged observations should fail closed");
-        assert!(err.contains("did not converge"), "unexpected error: {err}");
+        let err = stage_dependency_imports_for_mint(
+            "libprovekit",
+            &dependency_root,
+            &["shim-std"],
+            &proofs,
+        )
+        .expect_err("missing required dependency proof must fail closed");
+        assert!(
+            err.contains("requires `shim-std` proof before minting"),
+            "unexpected error: {err}"
+        );
     }
 
     #[test]

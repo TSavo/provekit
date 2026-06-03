@@ -53,8 +53,8 @@ use tracing::{debug, info, trace, warn};
 // COLD-SPAWNS rust-analyzer per mint; it asks the warm resident daemon via
 // `resolveReceiverCrate` (see `resolve_method_calls_via_oracle`). The oracle is
 // opt-in (PROVEKIT_RESOLVE_ORACLE=rust-analyzer) and refuses (leaves
-// callee_crate = None) when the daemon is unreachable or not yet ready, so the
-// fast path and CI are unaffected. The RA LSP client itself lives in
+// callee_crate = None) when the daemon is unreachable or cannot reach readiness,
+// so the fast path and CI are unaffected. The RA LSP client itself lives in
 // `provekit_walk::ra_oracle` and is imported by the daemon, not this binary.
 
 // The daemon client lives alongside this binary (std-only, synchronous NDJSON).
@@ -678,6 +678,7 @@ struct CallSite {
 struct OracleObservation {
     requested: bool,
     reachable: bool,
+    ready: bool,
     attempted: u64,
     resolved: u64,
 }
@@ -2852,10 +2853,11 @@ fn resolve_method_calls_via_oracle(
     );
     // The resident warm rust-analyzer indexes the workspace ONCE inside the
     // daemon and is reused across mints, fronted by a content-addressed cache.
-    // On a cold daemon this returns empty (ready:false) and we refuse to the
-    // syntactic tiers; the next mint resolves warm. NEVER blocks for the index.
+    // The daemon client waits on linkerd's readiness signal before resolving,
+    // so a cold proof mint does not bake a partially-indexed answer into proof.
     let batch = ra_daemon_client::resolve_receiver_crates(workspace_root, &queries);
     observation.reachable = batch.reachable;
+    observation.ready = batch.ready;
     let resolved = batch.resolutions;
     let resolved_count = resolved.len();
     observation.resolved = resolved_count as u64;
@@ -3498,6 +3500,7 @@ fn lift_implications(params: &Value) -> Result<Value, String> {
         "lift_gaps": gap_count as u64,
         "oracle_requested": oracle_observation.requested,
         "oracle_reachable": oracle_observation.reachable,
+        "oracle_ready": oracle_observation.ready,
         "receivers_attempted": oracle_observation.attempted,
         "receivers_resolved": oracle_observation.resolved,
     }))
@@ -12966,6 +12969,7 @@ pub fn caller() -> i64 {
         assert_eq!(diags[0]["callee"], "completely_unknown_function");
         assert!(resp["oracle_requested"].is_boolean());
         assert_eq!(resp["oracle_reachable"], false);
+        assert_eq!(resp["oracle_ready"], false);
         assert_eq!(resp["receivers_attempted"], 0);
         assert_eq!(resp["receivers_resolved"], 0);
 

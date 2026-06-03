@@ -200,6 +200,82 @@ pub async fn handle_project_status(
 }
 
 // -------------------------------------------------------------------
+// rustAnalyzerReady: resident RA readiness gate
+// -------------------------------------------------------------------
+
+/// Handle a `rustAnalyzerReady` request.
+///
+/// Params:
+/// `{ "workspaceRoot": "/abs/path", "timeoutMs": <optional u64> }`
+///
+/// Returns:
+/// `{ "ready": <bool>, "phase": "spawning|ready|failed", "detail": <str> }`
+///
+/// This is the event-backed readiness seam for proof-producing Rust-kit paths:
+/// linkerd owns the resident rust-analyzer session, `RaOracle::start` consumes
+/// rust-analyzer's LSP progress/serverStatus stream, and callers wait here
+/// before issuing resolution queries. No CLI/verifier language semantics move
+/// across this boundary.
+#[instrument(skip(host, params))]
+pub async fn handle_rust_analyzer_ready(
+    host: Arc<crate::ra_host::RaHost>,
+    params: &Json,
+    id: &Json,
+) -> Json {
+    use std::path::PathBuf;
+    use std::time::Duration;
+
+    let workspace_root = match params.get("workspaceRoot").and_then(|v| v.as_str()) {
+        Some(w) => PathBuf::from(w),
+        None => return rpc_error(ERR_INVALID_PARAMS, "missing 'workspaceRoot'", id),
+    };
+    let timeout_ms = params
+        .get("timeoutMs")
+        .and_then(|v| v.as_u64())
+        .unwrap_or(300_000);
+    let timeout = Duration::from_millis(timeout_ms);
+    let host_for_wait = host.clone();
+    let root_for_wait = workspace_root.clone();
+    let phase = match task::spawn_blocking(move || {
+        host_for_wait.wait_until_ready(&root_for_wait, timeout)
+    })
+    .await
+    {
+        Ok(phase) => phase,
+        Err(error) => {
+            return rpc_result(
+                serde_json::json!({
+                    "ready": false,
+                    "phase": "failed",
+                    "detail": format!("rust-analyzer readiness wait task failed: {error}"),
+                }),
+                id,
+            )
+        }
+    };
+    let ready = phase == crate::ra_host::Phase::Ready;
+    let detail = match phase {
+        crate::ra_host::Phase::Ready => {
+            "rust-analyzer workspace indexed and ready".to_string()
+        }
+        crate::ra_host::Phase::Failed => {
+            "rust-analyzer failed to reach readiness; resolutions refuse".to_string()
+        }
+        crate::ra_host::Phase::Spawning => format!(
+            "rust-analyzer still indexing after {timeout_ms}ms; resolutions refuse"
+        ),
+    };
+    rpc_result(
+        serde_json::json!({
+            "ready": ready,
+            "phase": phase.as_str(),
+            "detail": detail,
+        }),
+        id,
+    )
+}
+
+// -------------------------------------------------------------------
 // R8: flushCache
 // -------------------------------------------------------------------
 
@@ -328,6 +404,7 @@ pub async fn handle_resolve_receiver_crate(
     use crate::resolve_cache::{CachedPosition, FileResolution, PosOutcome, ResolutionDeps};
     use provekit_walk::ra_oracle::ResolveQuery;
     use std::collections::BTreeMap;
+    use std::time::Duration;
 
     let workspace_root = match params.get("workspaceRoot").and_then(|v| v.as_str()) {
         Some(w) => PathBuf::from(w),
@@ -406,13 +483,30 @@ pub async fn handle_resolve_receiver_crate(
         );
     }
 
-    // -- Pass 2: RA, only if the resident session is Ready. --
+    // -- Pass 2: RA, after the resident session reaches readiness. --
     let session = host.session_for(&workspace_root);
-    let phase = session.phase();
+    let timeout_ms = params
+        .get("timeoutMs")
+        .and_then(|v| v.as_u64())
+        .unwrap_or(300_000);
+    let session_for_wait = session.clone();
+    let phase = match task::spawn_blocking(move || {
+        session_for_wait.wait_until_ready(Duration::from_millis(timeout_ms))
+    })
+    .await
+    {
+        Ok(phase) => phase,
+        Err(error) => {
+            tracing::warn!(
+                %error,
+                "resolveReceiverCrate: readiness wait task failed; refusing RA-needed misses"
+            );
+            Phase::Failed
+        }
+    };
     if phase != Phase::Ready {
-        // Cold/indexing/failed: do NOT block. Return cache hits gathered so far
-        // with ready:false so the caller refuses the RA-needed misses to Tier
-        // 1/2a. The next mint, once the background index settles, warms.
+        // Indexing timed out or startup failed. Return cache hits gathered so
+        // far with ready:false so the caller refuses RA-needed misses.
         return rpc_result(
             serde_json::json!({ "resolved": Json::Object(resolved), "ready": false }),
             id,
