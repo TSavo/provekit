@@ -209,6 +209,24 @@ is now the active arc; see Phase 5.
   `lock_poisoning_residue` rows and 1 closeable `D-lib` tier-to-close row for
   `RealizeRequest` serialization. #1773 tracks cross-target propagation of
   annotations as proof mementos.
+- **Phase 5 reproducible K re-baseline (#1896, MERGED 2026-06-02).** The
+  Phase 5 baseline now uses the same reproducible infrastructure for the clean
+  main baseline and the slice under test: `bcargo`, battleaxe
+  rust-analyzer on stable 1.96.0, oracle enabled, and default self-check
+  convergence. On that infrastructure, clean main before #1896 reported
+  `panicSafe=12`, `falsePass=0`, `silentlyDropped=0`, `droppedSites=[]`,
+  `panicCensus=54`, `bridges.emitted=2818`, and
+  `oracle={attempted:4160, resolved:4066}`. #1896 added the
+  provekit-cli-local Rust-kit `infallible_serialize.toml` entry for
+  `serde_json::to_value(RealizeRequest)` and removed the matching residue row.
+  Current main after #1896 reports `panicSafe=13`, `falsePass=0`,
+  `silentlyDropped=0`, `droppedSites=[]`, `panicCensus=54`,
+  `bridges.emitted=2819`, and the same `oracle={attempted:4160,
+  resolved:4066}`. The normalized panic-census delta is exactly one row:
+  `src/kit_dispatch.rs:2416 method:expect` moves from the closeable D-lib
+  tier-to-close bucket to proven. Earlier provekit-cli K=21 / panicCensus=53
+  references are retained as historical measurements from a different setup,
+  not the current Phase 5 baseline.
 
 ### Phase 3 - RESIDUE NAMED + V1 RELEASE - DONE
 
@@ -226,25 +244,27 @@ is now the active arc; see Phase 5.
   target evidence are green. The v1 git tag itself is a separate release-policy
   decision; the evidence command now exists.
 
-## Current census (provekit-cli, Rust v1 release gate)
+## Current reproducible census (provekit-cli, Rust self-application)
 
-Rust v1 evidence surface: `provekit release-gate --json` as of #1787. The
-`provekit-cli` target evidence reports `panicCensus=53`, `panicSafe=21`,
-`falsePass=0`, `silentlyDropped=0`, and `droppedSites=[]`. The original 7-site
-C bucket is closed by #1767, the B guarded-panic bucket is closed by #1769, the
-two D-fn rows are closed by #1771, and residue is first-class in the panic
-census as of #1775.
+Phase 5 K movement is measured on reproducible self-check infrastructure:
+`bcargo`, battleaxe rust-analyzer on stable 1.96.0, oracle enabled, and
+default self-check convergence. As of #1896, the `provekit-cli` target reports
+`panicCensus=54`, `panicSafe=13`, `falsePass=0`, `silentlyDropped=0`, and
+`droppedSites=[]`. Clean main before #1896 was K=12 on the same
+infrastructure; #1896 moved exactly one closeable D-lib row,
+`src/kit_dispatch.rs:2416 method:expect`, from unproven to proven.
 
 The #1774 reproducibility caveat is closed: the release gate validates the
 dependency-proof state as part of doctor release-gate mode before accepting the
-v1 K claim.
+v1 K claim. The older K=21 / panicCensus=53 figure came from a different
+measurement setup and is not the current Phase 5 baseline.
 
 | Category | Count | Closing mechanism |
 |---|---|---|
-| proven K | 21 panic-safe | D-lib, C `json!`, B guarded-panic, and D-fn tiers shipped through #1771 and remain release-gated by #1787. |
+| proven K | 13 panic-safe | Current reproducible K after #1896. D-lib, C `json!`, B guarded-panic, and D-fn tiers remain the closing mechanisms, but K is now reported against the reproducible bcargo + battleaxe RA baseline. |
 | residue | 8 honest residue | Mutex `.lock().expect()` rows. Honest residue; "lock is total" would be unsound. |
-| tier-to-close | 1 named row | `RealizeRequest` serialization needs provekit-cli-owned per-type D-lib manifest coverage, mirroring libprovekit's `infallible_serialize.toml` pattern. |
-| raw unproven | 23 | Still honest unproven rows in the panic census. They are not labeled panic-safe, not silently dropped, and not allowed to inflate K. |
+| closeable tier-to-close | 0 named D-lib rows | #1896 closed the `RealizeRequest` serialization row with provekit-cli-owned per-type D-lib manifest coverage, mirroring libprovekit's `infallible_serialize.toml` pattern. |
+| raw unproven | 33 | Still honest unproven rows in the panic census. They are not labeled panic-safe, not silently dropped, and not allowed to inflate K. |
 
 The honest read: Rust v1 is not K == N. It is K covering the provable buckets,
 residue named, hard floor never violated, and doctor/release-gate green.
@@ -352,19 +372,22 @@ Each tier ships as one PR, golden-pinned, with visible scoreboard delta.
   delta on provekit-cli; cumulative production K=19.
 - **D-fn cross-function postconditions (MERGED, #1771):** closes the 2
   remaining D-fn sites (`Cid::parse` on literal, catalog primitive `.cid()`).
-  +2 K delta on provekit-cli; cumulative production K=21.
+  +2 K delta on the earlier provekit-cli measurement, reaching historical
+  cumulative production K=21 before the Phase 5 reproducible baseline was
+  reset.
 - **Residue declaration (MERGED, #1775):** target-scoped Rust-kit
   `.provekit/residue.toml` entries annotate panic census rows without
   changing discharge. 8 provekit-cli Mutex poisoning sites become
-  `lock_poisoning_residue`; the `RealizeRequest` serialization site remains
-  `unproven` with an explicit D-lib tier-to-close; the libprovekit
+  `lock_poisoning_residue`; the `RealizeRequest` serialization site became
+  an explicit D-lib tier-to-close row, then #1896 closed it with
+  provekit-cli-local infallible serialization metadata; the libprovekit
   `platform_semantics` site becomes `platform_semantics_runtime_residue`.
 
 ### Phase 3 - RESIDUE NAMED + V1 RELEASE - DONE
 - Residue naming is DONE in #1775: the honest residue sites get an explicit
   `residue` category in the panicCensus output (not raw "unproven"; honest
-  residue with reason), and the closeable `RealizeRequest` row remains
-  `unproven` with an explicit `tier_to_close` reason.
+  residue with reason). The closeable `RealizeRequest` row was named here and
+  closed later by #1896.
 - The doctor + release-gate arc is DONE:
   - #1779 reusable doctor engine.
   - #1780 `DoctorMode`.
@@ -444,19 +467,21 @@ Phase 5 has two parallel levers:
    codebase; they are not centralized in provekit-specific files.
 
 The number that moves: K (panic-safe sites discharged via sound reasoning) on
-real production code in each language. Today on Rust self-application: K=21
-on provekit-cli, K=12 on libprovekit. On Python / TS / Go / Java production
-targets: not yet measured at the K level; each language emits panicLoci but
-discharge tier infrastructure is Rust-only today. A vendor running today
-sees mostly "I don't know" verdicts. To shift to "I want to deploy this,"
-the K-per-language number has to be in the hundreds on a real codebase, the
-output has to be actionable, and the value differential vs unit tests has to
-be visible.
+real production code in each language. Today on Rust self-application, the
+reproducible Phase 5 baseline is K=13 on provekit-cli after #1896; libprovekit
+last documented K=12. Earlier provekit-cli K=21 references came from a
+different measurement setup and are not the current baseline. On Python / TS /
+Go / Java production targets: not yet measured at the K level; each language
+emits panicLoci but discharge tier infrastructure is Rust-only today. A vendor
+running today sees mostly "I don't know" verdicts. To shift to "I want to
+deploy this," the K-per-language number has to be in the hundreds on a real
+codebase, the output has to be actionable, and the value differential vs unit
+tests has to be visible.
 
 **Phase 5 staging (T direction 2026-06-02): dogfood is the gold standard,
 then third-party parity per language.**
 1. **Dogfood depth first.** Drive Rust self-application K into vendor-
-   meaningful range (K=21 → into the hundreds on `provekit-cli` and
+   meaningful range (current reproducible K=13 -> into the hundreds on `provekit-cli` and
    `libprovekit`) via shim catalog expansion and discharge tier work. This
    is the proof that the technique scales on a real codebase before we ask
    anyone else to point it at theirs.
