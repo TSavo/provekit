@@ -32,15 +32,15 @@ the marked checkpoints.
 - **Open follow-up:** #1757 self-check golden drift reached main without gate
   update.
 - **Production K measurement exists.** Per GOAL, provekit-cli currently reports
-  `silentlyDropped=0`, `falsePass=0`, `panicSafe=0`, `panicCensus=32`, with
-  every unproven site named by category. Next K movement comes from the Phase-2
-  D-lib per-type slice, not more panic-locus plumbing.
+  `silentlyDropped=0`, `falsePass=0`, `droppedSites=[]`, `panicSafe=13`, and
+  `panicCensus=54` on the reproducible Phase 5 baseline (`bcargo`, battleaxe
+  rust-analyzer stable 1.96.0, oracle enabled, default convergence). Every
+  unproven site remains named by category; #1896 closed the previously
+  closeable `RealizeRequest` D-lib row.
 - **D-fn branch #1771 verified 2026-06-01.** The manifest-backed cross-function
-  postcondition slice reached the expected gates: libprovekit
-  `panicSafe=12`, provekit-cli `panicSafe=21`, both with `silentlyDropped=0`,
-  `falsePass=0`, and `droppedSites=[]`. See
-  `docs/self-application/GOAL-provekit-proves-provekit.md` for the current
-  scoreboard and census.
+  postcondition slice reached the expected gates on its original measurement
+  setup. The current scoreboard and census are maintained in
+  `docs/self-application/GOAL-provekit-proves-provekit.md`.
 
 ## Recommended order
 
