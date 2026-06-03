@@ -157,6 +157,27 @@ struct StatementPureFreeGuardFact {
     post_predicate: String,
 }
 
+#[derive(Clone, Debug, Default)]
+struct StatementGuardFacts {
+    pure_free: Vec<StatementPureFreeGuardFact>,
+    resolved: Vec<StatementResolvedGuardFact>,
+    keyset_snapshots: BTreeMap<String, KeysetMapSource>,
+}
+
+#[derive(Clone, Debug)]
+struct StatementResolvedGuardFact {
+    receiver_key: String,
+    guard: IrTerm,
+    roots: BTreeSet<String>,
+}
+
+#[derive(Clone, Debug)]
+struct KeysetMapSource {
+    map_root: String,
+    map_term: IrTerm,
+    roots: BTreeSet<String>,
+}
+
 #[derive(Clone, Debug, PartialEq, Eq)]
 enum ValueKind {
     String,
@@ -1295,10 +1316,7 @@ fn next_into_iter_receiver_key(term: &IrTerm) -> Option<String> {
 }
 
 fn collect_statement_guarded_panic_effects(stmts: &[Stmt], ctx: &mut LiftCtx) -> Vec<IrFormula> {
-    if ctx.pure_free_guard_rules.is_empty() {
-        return Vec::new();
-    }
-    let mut guard_facts = Vec::new();
+    let mut guard_facts = StatementGuardFacts::default();
     let mut out = Vec::new();
     collect_guarded_panic_effects_in_stmts(stmts, ctx, &mut guard_facts, &mut out);
     out
@@ -1307,7 +1325,7 @@ fn collect_statement_guarded_panic_effects(stmts: &[Stmt], ctx: &mut LiftCtx) ->
 fn collect_guarded_panic_effects_in_stmts(
     stmts: &[Stmt],
     ctx: &mut LiftCtx,
-    guard_facts: &mut Vec<StatementPureFreeGuardFact>,
+    guard_facts: &mut StatementGuardFacts,
     out: &mut Vec<IrFormula>,
 ) {
     for stmt in stmts {
@@ -1318,7 +1336,7 @@ fn collect_guarded_panic_effects_in_stmts(
 fn collect_guarded_panic_effects_in_stmt(
     stmt: &Stmt,
     ctx: &mut LiftCtx,
-    guard_facts: &mut Vec<StatementPureFreeGuardFact>,
+    guard_facts: &mut StatementGuardFacts,
     out: &mut Vec<IrFormula>,
 ) {
     match stmt {
@@ -1328,6 +1346,9 @@ fn collect_guarded_panic_effects_in_stmt(
                 invalidate_statement_guard_facts_for_expr_effects(&init.expr, guard_facts);
             }
             invalidate_statement_guard_facts_for_pat(&local.pat, guard_facts);
+            if let Some((root, source)) = keyset_snapshot_for_local(local, ctx) {
+                guard_facts.keyset_snapshots.insert(root, source);
+            }
         }
         Stmt::Expr(expr, _) => {
             collect_guarded_panic_effects_in_expr(expr, ctx, guard_facts, out);
@@ -1340,7 +1361,7 @@ fn collect_guarded_panic_effects_in_stmt(
 fn collect_guarded_panic_effects_in_expr(
     expr: &Expr,
     ctx: &mut LiftCtx,
-    guard_facts: &mut Vec<StatementPureFreeGuardFact>,
+    guard_facts: &mut StatementGuardFacts,
     out: &mut Vec<IrFormula>,
 ) {
     match expr {
@@ -1360,7 +1381,7 @@ fn collect_guarded_panic_effects_in_expr(
                     "lift_function_postcondition: refusing pure-free statement guard facts from mutating if condition"
                 );
             }
-            guard_facts.extend(branch_guard_facts);
+            guard_facts.pure_free.extend(branch_guard_facts);
             collect_guarded_panic_effects_in_stmts(
                 &if_expr.then_branch.stmts,
                 ctx,
@@ -1377,6 +1398,21 @@ fn collect_guarded_panic_effects_in_expr(
             invalidate_statement_guard_facts_for_expr_effects(&while_expr.cond, guard_facts);
             let saved_guard_facts = guard_facts.clone();
             collect_guarded_panic_effects_in_stmts(&while_expr.body.stmts, ctx, guard_facts, out);
+            *guard_facts = saved_guard_facts;
+        }
+        Expr::ForLoop(for_loop) => {
+            collect_guarded_panic_effects_in_expr(&for_loop.expr, ctx, guard_facts, out);
+            invalidate_statement_guard_facts_for_expr_effects(&for_loop.expr, guard_facts);
+            let saved_guard_facts = guard_facts.clone();
+            ctx.push_frame();
+            bind_pat_idents_lift(&for_loop.pat, ctx);
+            guard_facts.resolved.extend(keyset_guard_facts_for_for_loop(
+                for_loop,
+                ctx,
+                &saved_guard_facts.keyset_snapshots,
+            ));
+            collect_guarded_panic_effects_in_stmts(&for_loop.body.stmts, ctx, guard_facts, out);
+            ctx.pop_frame();
             *guard_facts = saved_guard_facts;
         }
         Expr::Block(block) => {
@@ -1407,12 +1443,7 @@ fn collect_guarded_panic_effects_in_expr(
             {
                 out.push(formula);
             }
-            collect_guarded_panic_effects_in_child_expr(
-                &method.receiver,
-                ctx,
-                guard_facts,
-                out,
-            );
+            collect_guarded_panic_effects_in_child_expr(&method.receiver, ctx, guard_facts, out);
             for arg in &method.args {
                 collect_guarded_panic_effects_in_child_expr(arg, ctx, guard_facts, out);
             }
@@ -1453,7 +1484,7 @@ fn collect_guarded_panic_effects_in_expr(
 fn collect_guarded_panic_effects_in_child_expr(
     expr: &Expr,
     ctx: &mut LiftCtx,
-    guard_facts: &mut Vec<StatementPureFreeGuardFact>,
+    guard_facts: &mut StatementGuardFacts,
     out: &mut Vec<IrFormula>,
 ) {
     collect_guarded_panic_effects_in_expr(expr, ctx, guard_facts, out);
@@ -1525,7 +1556,7 @@ fn statement_pure_free_guard_fact_for_is_some(
 fn statement_guarded_panic_effect_for_method(
     method: &syn::ExprMethodCall,
     ctx: &mut LiftCtx,
-    guard_facts: &[StatementPureFreeGuardFact],
+    guard_facts: &StatementGuardFacts,
 ) -> Option<IrFormula> {
     let panic_leaf = method.method.to_string();
     let valid_panic_call = match panic_leaf.as_str() {
@@ -1535,6 +1566,11 @@ fn statement_guarded_panic_effect_for_method(
     };
     if !valid_panic_call {
         return None;
+    }
+    if let Some(formula) =
+        resolved_statement_guarded_panic_effect_for_method(method, ctx, guard_facts)
+    {
+        return Some(formula);
     }
     let call = expr_as_call_lift(&method.receiver)?;
     let callee = call_callee_name(call)?;
@@ -1548,6 +1584,7 @@ fn statement_guarded_panic_effect_for_method(
         return None;
     }
     let fact = guard_facts
+        .pure_free
         .iter()
         .rev()
         .find(|fact| fact.callee == callee && expr_vecs_ast_equal_lift(&fact.args, &args))?;
@@ -1576,9 +1613,332 @@ fn statement_guarded_panic_effect_for_method(
     })
 }
 
+fn resolved_statement_guarded_panic_effect_for_method(
+    method: &syn::ExprMethodCall,
+    ctx: &mut LiftCtx,
+    guard_facts: &StatementGuardFacts,
+) -> Option<IrFormula> {
+    let receiver = lift_expr_to_term_inner(&method.receiver, ctx)?;
+    let receiver_key = term_key(&receiver)?;
+    let fact = guard_facts
+        .resolved
+        .iter()
+        .rev()
+        .find(|fact| fact.receiver_key == receiver_key)?;
+    let mut method_args = vec![receiver];
+    for arg in &method.args {
+        method_args.push(lift_expr_to_term_inner(arg, ctx)?);
+    }
+    let value = IrTerm::Ctor {
+        name: format!("method:{}", method.method),
+        args: method_args,
+    };
+    let guarded = wrap_cf_guarded(fact.guard.clone(), value);
+    debug!(
+        method = %method.method,
+        "lift_function_postcondition: emitting resolved guarded panic-effect carrier"
+    );
+    Some(IrFormula::Atomic {
+        name: "panic_effect".to_string(),
+        args: vec![guarded],
+    })
+}
+
+fn keyset_snapshot_for_local(
+    local: &Local,
+    ctx: &mut LiftCtx,
+) -> Option<(String, KeysetMapSource)> {
+    let root = local_pat_single_ident(&local.pat)?;
+    let init = &local.init.as_ref()?.expr;
+    let collect = expr_as_method_call_lift(init)?;
+    let typed_as_btreeset = pat_type_mentions_ident(&local.pat, "BTreeSet")
+        || method_turbofish_mentions_ident(collect, "BTreeSet");
+    if !typed_as_btreeset {
+        return None;
+    }
+    let mut source = keyset_source_from_keys_collect(init, ctx)?;
+    source.roots.insert(root.clone());
+    Some((root, source))
+}
+
+fn keyset_source_from_keys_collect(expr: &Expr, ctx: &mut LiftCtx) -> Option<KeysetMapSource> {
+    let collect = expr_as_method_call_lift(expr)?;
+    if collect.method != "collect" || !collect.args.is_empty() {
+        return None;
+    }
+    let keys_receiver = match expr_as_method_call_lift(&collect.receiver) {
+        Some(cloned) if cloned.method == "cloned" && cloned.args.is_empty() => &cloned.receiver,
+        _ => &collect.receiver,
+    };
+    let keys = expr_as_method_call_lift(keys_receiver)?;
+    if keys.method != "keys" || !keys.args.is_empty() {
+        return None;
+    }
+    keyset_source_from_map_expr(&keys.receiver, ctx)
+}
+
+fn keyset_guard_facts_for_for_loop(
+    for_loop: &syn::ExprForLoop,
+    ctx: &mut LiftCtx,
+    snapshots: &BTreeMap<String, KeysetMapSource>,
+) -> Vec<StatementResolvedGuardFact> {
+    keyset_guard_facts_for_iterable(&for_loop.expr, &for_loop.pat, ctx, snapshots)
+}
+
+fn keyset_guard_facts_for_iterable(
+    iterable: &Expr,
+    pat: &Pat,
+    ctx: &mut LiftCtx,
+    snapshots: &BTreeMap<String, KeysetMapSource>,
+) -> Vec<StatementResolvedGuardFact> {
+    if let Some(method) = expr_as_method_call_lift(iterable) {
+        let name = method.method.to_string();
+        match name.as_str() {
+            "keys" if method.args.is_empty() => {
+                return keyset_direct_key_guard_facts(
+                    pat,
+                    &[keyset_source_from_map_expr(&method.receiver, ctx)],
+                    ctx,
+                );
+            }
+            "iter" if method.args.is_empty() => {
+                if let Some(snapshot) = keyset_snapshot_source_for_expr(&method.receiver, snapshots)
+                {
+                    return keyset_direct_key_guard_facts(pat, &[Some(snapshot)], ctx);
+                }
+                return keyset_tuple_key_guard_facts(
+                    pat,
+                    &[keyset_source_from_map_expr(&method.receiver, ctx)],
+                    ctx,
+                );
+            }
+            "difference" if method.args.len() == 1 => {
+                let Some(right_arg) = method.args.first() else {
+                    return Vec::new();
+                };
+                let left = keyset_snapshot_source_for_expr(&method.receiver, snapshots);
+                let right = keyset_snapshot_source_for_expr(right_arg, snapshots);
+                if left.is_some() && right.is_some() {
+                    return keyset_direct_key_guard_facts(pat, &[left], ctx);
+                }
+                return Vec::new();
+            }
+            "intersection" if method.args.len() == 1 => {
+                let Some(right_arg) = method.args.first() else {
+                    return Vec::new();
+                };
+                let left = keyset_snapshot_source_for_expr(&method.receiver, snapshots);
+                let right = keyset_snapshot_source_for_expr(right_arg, snapshots);
+                if left.is_some() && right.is_some() {
+                    return keyset_direct_key_guard_facts(pat, &[left, right], ctx);
+                }
+                return Vec::new();
+            }
+            _ => return Vec::new(),
+        }
+    }
+
+    if let Some(source) = keyset_source_from_borrowed_map_expr(iterable, ctx) {
+        return keyset_tuple_key_guard_facts(pat, &[Some(source)], ctx);
+    }
+
+    Vec::new()
+}
+
+fn keyset_direct_key_guard_facts(
+    pat: &Pat,
+    sources: &[Option<KeysetMapSource>],
+    ctx: &mut LiftCtx,
+) -> Vec<StatementResolvedGuardFact> {
+    let Some((key_root, key_term)) = direct_key_term_for_pat(pat, ctx) else {
+        return Vec::new();
+    };
+    sources
+        .iter()
+        .filter_map(|source| {
+            keyset_guard_fact_for_source(source.as_ref()?, &key_root, key_term.clone())
+        })
+        .collect()
+}
+
+fn keyset_tuple_key_guard_facts(
+    pat: &Pat,
+    sources: &[Option<KeysetMapSource>],
+    ctx: &mut LiftCtx,
+) -> Vec<StatementResolvedGuardFact> {
+    let Some((key_root, key_term)) = tuple_key_term_for_pat(pat, ctx) else {
+        return Vec::new();
+    };
+    sources
+        .iter()
+        .filter_map(|source| {
+            keyset_guard_fact_for_source(source.as_ref()?, &key_root, key_term.clone())
+        })
+        .collect()
+}
+
+fn keyset_guard_fact_for_source(
+    source: &KeysetMapSource,
+    key_root: &str,
+    key_term: IrTerm,
+) -> Option<StatementResolvedGuardFact> {
+    let receiver = IrTerm::Ctor {
+        name: "method:get".to_string(),
+        args: vec![source.map_term.clone(), key_term],
+    };
+    let receiver_key = term_key(&receiver)?;
+    let guard = IrTerm::Ctor {
+        name: panic_freedom::IS_SOME.to_string(),
+        args: vec![receiver],
+    };
+    let mut roots = source.roots.clone();
+    roots.insert(source.map_root.clone());
+    roots.insert(key_root.to_string());
+    Some(StatementResolvedGuardFact {
+        receiver_key,
+        guard,
+        roots,
+    })
+}
+
+fn keyset_source_from_map_expr(expr: &Expr, ctx: &mut LiftCtx) -> Option<KeysetMapSource> {
+    let map_root = expr_root_ident(expr)?;
+    let map_term = lift_expr_to_term_inner(expr, ctx)?;
+    let mut roots = expr_roots_for_lift_args(&[expr.clone()]);
+    roots.insert(map_root.clone());
+    Some(KeysetMapSource {
+        map_root,
+        map_term,
+        roots,
+    })
+}
+
+fn keyset_source_from_borrowed_map_expr(expr: &Expr, ctx: &mut LiftCtx) -> Option<KeysetMapSource> {
+    match expr {
+        Expr::Reference(reference) if reference.mutability.is_none() => {
+            keyset_source_from_map_expr(&reference.expr, ctx)
+        }
+        Expr::Paren(paren) => keyset_source_from_borrowed_map_expr(&paren.expr, ctx),
+        Expr::Group(group) => keyset_source_from_borrowed_map_expr(&group.expr, ctx),
+        _ => None,
+    }
+}
+
+fn keyset_snapshot_source_for_expr(
+    expr: &Expr,
+    snapshots: &BTreeMap<String, KeysetMapSource>,
+) -> Option<KeysetMapSource> {
+    let root = expr_root_ident(expr)?;
+    snapshots.get(&root).cloned()
+}
+
+fn direct_key_term_for_pat(pat: &Pat, ctx: &LiftCtx) -> Option<(String, IrTerm)> {
+    let root = pat_single_ident(pat)?;
+    Some((root.clone(), crate::wp::var(ctx.resolve(&root))))
+}
+
+fn tuple_key_term_for_pat(pat: &Pat, ctx: &LiftCtx) -> Option<(String, IrTerm)> {
+    let root = tuple_first_pat_ident(pat)?;
+    Some((root.clone(), crate::wp::var(ctx.resolve(&root))))
+}
+
+fn local_pat_single_ident(pat: &Pat) -> Option<String> {
+    match pat {
+        Pat::Ident(ident) => Some(ident.ident.to_string()),
+        Pat::Paren(paren) => local_pat_single_ident(&paren.pat),
+        Pat::Reference(reference) => local_pat_single_ident(&reference.pat),
+        Pat::Type(typed) => local_pat_single_ident(&typed.pat),
+        _ => None,
+    }
+}
+
+fn pat_single_ident(pat: &Pat) -> Option<String> {
+    match pat {
+        Pat::Ident(ident) => Some(ident.ident.to_string()),
+        Pat::Paren(paren) => pat_single_ident(&paren.pat),
+        Pat::Reference(reference) => pat_single_ident(&reference.pat),
+        Pat::Type(typed) => pat_single_ident(&typed.pat),
+        _ => None,
+    }
+}
+
+fn tuple_first_pat_ident(pat: &Pat) -> Option<String> {
+    match pat {
+        Pat::Tuple(tuple) => tuple.elems.first().and_then(pat_single_ident),
+        Pat::Paren(paren) => tuple_first_pat_ident(&paren.pat),
+        Pat::Reference(reference) => tuple_first_pat_ident(&reference.pat),
+        Pat::Type(typed) => tuple_first_pat_ident(&typed.pat),
+        _ => None,
+    }
+}
+
+fn pat_type_mentions_ident(pat: &Pat, needle: &str) -> bool {
+    match pat {
+        Pat::Paren(paren) => pat_type_mentions_ident(&paren.pat, needle),
+        Pat::Reference(reference) => pat_type_mentions_ident(&reference.pat, needle),
+        Pat::Type(typed) => type_mentions_ident(&typed.ty, needle),
+        _ => false,
+    }
+}
+
+fn type_mentions_ident(ty: &Type, needle: &str) -> bool {
+    match ty {
+        Type::Path(path) => path.path.segments.iter().any(|segment| {
+            segment.ident == needle || path_arguments_mentions_ident(&segment.arguments, needle)
+        }),
+        Type::Reference(reference) => type_mentions_ident(&reference.elem, needle),
+        Type::Group(group) => type_mentions_ident(&group.elem, needle),
+        Type::Paren(paren) => type_mentions_ident(&paren.elem, needle),
+        Type::Tuple(tuple) => tuple
+            .elems
+            .iter()
+            .any(|elem| type_mentions_ident(elem, needle)),
+        _ => false,
+    }
+}
+
+fn path_arguments_mentions_ident(args: &PathArguments, needle: &str) -> bool {
+    match args {
+        PathArguments::AngleBracketed(args) => args.args.iter().any(|arg| match arg {
+            GenericArgument::Type(ty) => type_mentions_ident(ty, needle),
+            _ => false,
+        }),
+        PathArguments::Parenthesized(args) => {
+            args.inputs.iter().any(|ty| type_mentions_ident(ty, needle))
+                || matches!(&args.output, ReturnType::Type(_, ty) if type_mentions_ident(ty, needle))
+        }
+        PathArguments::None => false,
+    }
+}
+
+fn method_turbofish_mentions_ident(method: &syn::ExprMethodCall, needle: &str) -> bool {
+    method
+        .turbofish
+        .as_ref()
+        .map(|args| {
+            args.args.iter().any(|arg| match arg {
+                GenericArgument::Type(ty) => type_mentions_ident(ty, needle),
+                _ => false,
+            })
+        })
+        .unwrap_or(false)
+}
+
+fn expr_as_method_call_lift(expr: &Expr) -> Option<&syn::ExprMethodCall> {
+    match expr {
+        Expr::MethodCall(method) => Some(method),
+        Expr::Paren(paren) => expr_as_method_call_lift(&paren.expr),
+        Expr::Group(group) => expr_as_method_call_lift(&group.expr),
+        Expr::Reference(reference) if reference.mutability.is_none() => {
+            expr_as_method_call_lift(&reference.expr)
+        }
+        _ => None,
+    }
+}
+
 fn invalidate_statement_guard_facts_for_expr_effects(
     expr: &Expr,
-    guard_facts: &mut Vec<StatementPureFreeGuardFact>,
+    guard_facts: &mut StatementGuardFacts,
 ) {
     let roots = expr_effect_mutation_roots(expr);
     invalidate_statement_guard_facts_for_roots(&roots, guard_facts);
@@ -1586,27 +1946,36 @@ fn invalidate_statement_guard_facts_for_expr_effects(
 
 fn invalidate_statement_guard_facts_for_roots(
     roots: &BTreeSet<String>,
-    guard_facts: &mut Vec<StatementPureFreeGuardFact>,
+    guard_facts: &mut StatementGuardFacts,
 ) {
     if roots.is_empty() {
         return;
     }
-    let before = guard_facts.len();
-    guard_facts.retain(|fact| fact.arg_roots.is_disjoint(roots));
-    let removed = before.saturating_sub(guard_facts.len());
+    let pure_free_before = guard_facts.pure_free.len();
+    guard_facts
+        .pure_free
+        .retain(|fact| fact.arg_roots.is_disjoint(roots));
+    let resolved_before = guard_facts.resolved.len();
+    guard_facts
+        .resolved
+        .retain(|fact| fact.roots.is_disjoint(roots));
+    let snapshots_before = guard_facts.keyset_snapshots.len();
+    guard_facts
+        .keyset_snapshots
+        .retain(|_, source| source.roots.is_disjoint(roots));
+    let removed = pure_free_before.saturating_sub(guard_facts.pure_free.len())
+        + resolved_before.saturating_sub(guard_facts.resolved.len())
+        + snapshots_before.saturating_sub(guard_facts.keyset_snapshots.len());
     if removed > 0 {
         debug!(
             roots = ?roots,
             removed,
-            "lift_function_postcondition: invalidated manifest pure-free statement guard facts"
+            "lift_function_postcondition: invalidated statement guard facts"
         );
     }
 }
 
-fn invalidate_statement_guard_facts_for_pat(
-    pat: &Pat,
-    guard_facts: &mut Vec<StatementPureFreeGuardFact>,
-) {
+fn invalidate_statement_guard_facts_for_pat(pat: &Pat, guard_facts: &mut StatementGuardFacts) {
     let roots = pat_bound_idents_lift(pat);
     invalidate_statement_guard_facts_for_roots(&roots, guard_facts);
 }
@@ -1666,7 +2035,10 @@ fn pure_free_guard_method_is_pure_read(method: &syn::ExprMethodCall) -> bool {
     receiver_pure
         && args_pure
         && match name.as_str() {
-            "len" | "is_empty" | "is_some" | "is_none" => method.args.is_empty(),
+            "cloned" | "iter" | "keys" | "len" | "is_empty" | "is_some" | "is_none" => {
+                method.args.is_empty()
+            }
+            "difference" | "intersection" | "union" => method.args.len() == 1,
             "get" => method.args.len() == 1,
             _ => false,
         }
@@ -1702,6 +2074,12 @@ fn collect_expr_roots_lift(expr: &Expr, roots: &mut BTreeSet<String>) {
         Expr::Index(index) => {
             collect_expr_roots_lift(&index.expr, roots);
             collect_expr_roots_lift(&index.index, roots);
+        }
+        Expr::MethodCall(method) => {
+            collect_expr_roots_lift(&method.receiver, roots);
+            for arg in &method.args {
+                collect_expr_roots_lift(arg, roots);
+            }
         }
         Expr::Paren(paren) => collect_expr_roots_lift(&paren.expr, roots),
         Expr::Reference(reference) => collect_expr_roots_lift(&reference.expr, roots),
@@ -1843,6 +2221,43 @@ fn collect_pat_bound_idents_lift(pat: &Pat, roots: &mut BTreeSet<String>) {
             }
         }
         Pat::Type(typed) => collect_pat_bound_idents_lift(&typed.pat, roots),
+        _ => {}
+    }
+}
+
+fn bind_pat_idents_lift(pat: &Pat, ctx: &mut LiftCtx) {
+    match pat {
+        Pat::Ident(ident) => {
+            ctx.bind(&ident.ident.to_string());
+        }
+        Pat::Or(or) => {
+            for case in &or.cases {
+                bind_pat_idents_lift(case, ctx);
+            }
+        }
+        Pat::Paren(paren) => bind_pat_idents_lift(&paren.pat, ctx),
+        Pat::Reference(reference) => bind_pat_idents_lift(&reference.pat, ctx),
+        Pat::Slice(slice) => {
+            for elem in &slice.elems {
+                bind_pat_idents_lift(elem, ctx);
+            }
+        }
+        Pat::Struct(strukt) => {
+            for field in &strukt.fields {
+                bind_pat_idents_lift(&field.pat, ctx);
+            }
+        }
+        Pat::Tuple(tuple) => {
+            for elem in &tuple.elems {
+                bind_pat_idents_lift(elem, ctx);
+            }
+        }
+        Pat::TupleStruct(tuple) => {
+            for elem in &tuple.elems {
+                bind_pat_idents_lift(elem, ctx);
+            }
+        }
+        Pat::Type(typed) => bind_pat_idents_lift(&typed.pat, ctx),
         _ => {}
     }
 }
@@ -2030,6 +2445,101 @@ fn lift_predicate_inner(expr: &Expr, ctx: &mut LiftCtx) -> Option<IrFormula> {
 pub fn lift_expr_to_term(expr: &Expr) -> Option<IrTerm> {
     let mut ctx = LiftCtx::new();
     lift_expr_to_term_inner(expr, &mut ctx)
+}
+
+pub fn collect_panic_loci_json(item_fn: &ItemFn, rel_path: &str) -> Vec<serde_json::Value> {
+    struct PanicLocusVisitor {
+        rel_path: String,
+        ctx: LiftCtx,
+        out: Vec<serde_json::Value>,
+    }
+
+    impl<'ast> Visit<'ast> for PanicLocusVisitor {
+        fn visit_expr_for_loop(&mut self, node: &'ast syn::ExprForLoop) {
+            self.visit_expr(&node.expr);
+            self.ctx.push_frame();
+            bind_pat_idents_lift(&node.pat, &mut self.ctx);
+            self.visit_block(&node.body);
+            self.ctx.pop_frame();
+        }
+
+        fn visit_expr_method_call(&mut self, node: &'ast syn::ExprMethodCall) {
+            let leaf = node.method.to_string();
+            if is_panic_leaf_method_lift(&leaf) {
+                let mut occurrence_ctx = self.ctx.clone();
+                if let Some(recv) = lift_expr_to_term_inner(&node.receiver, &mut occurrence_ctx) {
+                    if let Ok(arg_term) = serde_json::to_value(&recv) {
+                        let receiver_start = node.receiver.span().start();
+                        let panic_start = node.method.span().start();
+                        let mut locus = serde_json::json!({
+                            "argTerm": arg_term,
+                            "file": self.rel_path,
+                            "line": panic_start.line,
+                            "col": panic_start.column,
+                            "receiverLine": receiver_start.line,
+                            "receiverCol": receiver_start.column,
+                            "panicLine": panic_start.line,
+                            "panicCol": panic_start.column,
+                            "callee": format!("method:{}", leaf),
+                        });
+                        if let Some((producer_symbol, producer_line, producer_col)) =
+                            receiver_producer_callsite_lift(&node.receiver)
+                        {
+                            locus["producerSymbol"] = serde_json::json!(producer_symbol);
+                            locus["producerLine"] = serde_json::json!(producer_line);
+                            locus["producerCol"] = serde_json::json!(producer_col);
+                        }
+                        self.out.push(locus);
+                    }
+                }
+            }
+            visit::visit_expr_method_call(self, node);
+        }
+    }
+
+    let mut visitor = PanicLocusVisitor {
+        rel_path: rel_path.to_string(),
+        ctx: LiftCtx::new(),
+        out: Vec::new(),
+    };
+    visitor.visit_item_fn(item_fn);
+    visitor.out
+}
+
+fn is_panic_leaf_method_lift(leaf: &str) -> bool {
+    matches!(leaf, "unwrap" | "expect" | "unwrap_err")
+}
+
+fn receiver_producer_callsite_lift(receiver: &Expr) -> Option<(String, usize, usize)> {
+    match receiver {
+        Expr::MethodCall(method) => {
+            let start = method.method.span().start();
+            Some((
+                format!("method:{}", method.method),
+                start.line,
+                start.column,
+            ))
+        }
+        Expr::Call(call) => {
+            let callee = associated_call_path_leaf_lift(&call.func)?;
+            let start = call.func.span().start();
+            Some((callee, start.line, start.column))
+        }
+        Expr::Paren(paren) => receiver_producer_callsite_lift(&paren.expr),
+        Expr::Group(group) => receiver_producer_callsite_lift(&group.expr),
+        Expr::Reference(reference) => receiver_producer_callsite_lift(&reference.expr),
+        _ => None,
+    }
+}
+
+fn associated_call_path_leaf_lift(expr: &Expr) -> Option<String> {
+    let Expr::Path(path) = expr else {
+        return None;
+    };
+    if path.path.segments.len() < 2 {
+        return None;
+    }
+    path.path.segments.last().map(|seg| seg.ident.to_string())
 }
 
 fn lift_expr_to_term_inner(expr: &Expr, ctx: &mut LiftCtx) -> Option<IrTerm> {
@@ -3584,6 +4094,326 @@ mod tests {
         assert!(
             json.contains("method:next"),
             "guard must name the same next() receiver term: {json}"
+        );
+    }
+
+    #[test]
+    fn keyset_keys_iteration_guards_map_get_expect() {
+        let item_fn = parse_fn(
+            r#"
+            fn f(map: BTreeMap<String, String>) {
+                for key in map.keys() {
+                    map.get(key).expect("present");
+                }
+            }
+        "#,
+        );
+        let post = lift_function_postcondition(&item_fn).into_formula();
+        let json = serde_json::to_string(&post).unwrap();
+        assert!(
+            json.contains("cf_guarded"),
+            "map.keys() must guard get(key).expect(): {json}"
+        );
+        assert!(
+            json.contains("is_some") && json.contains("method:get"),
+            "guard must prove the same map.get(key) is Some: {json}"
+        );
+    }
+
+    #[test]
+    fn keyset_map_iter_guards_map_get_expect() {
+        let item_fn = parse_fn(
+            r#"
+            fn f(map: BTreeMap<String, String>) {
+                for (key, _) in map.iter() {
+                    map.get(key).expect("present");
+                }
+            }
+        "#,
+        );
+        let post = lift_function_postcondition(&item_fn).into_formula();
+        let json = serde_json::to_string(&post).unwrap();
+        assert!(
+            json.contains("cf_guarded"),
+            "map.iter() key binding must guard get(key).expect(): {json}"
+        );
+        assert!(
+            json.contains("is_some") && json.contains("method:get"),
+            "guard must prove the same map.get(key) is Some: {json}"
+        );
+    }
+
+    #[test]
+    fn keyset_difference_guards_left_map_get_expect() {
+        let item_fn = parse_fn(
+            r#"
+            fn f(left: BTreeMap<String, String>, right: BTreeMap<String, String>) {
+                let left_keys: BTreeSet<String> = left.keys().cloned().collect();
+                let right_keys: BTreeSet<String> = right.keys().cloned().collect();
+                for key in left_keys.difference(&right_keys) {
+                    left.get(key).expect("present");
+                }
+            }
+        "#,
+        );
+        let post = lift_function_postcondition(&item_fn).into_formula();
+        let json = serde_json::to_string(&post).unwrap();
+        assert!(
+            json.contains("cf_guarded"),
+            "left_keys.difference(right_keys) must guard left.get(key): {json}"
+        );
+        assert!(
+            json.contains("is_some") && json.contains("method:get"),
+            "guard must prove the same left.get(key) is Some: {json}"
+        );
+    }
+
+    #[test]
+    fn keyset_intersection_guards_both_map_get_expects() {
+        let item_fn = parse_fn(
+            r#"
+            fn f(left: BTreeMap<String, String>, right: BTreeMap<String, String>) {
+                let left_keys: BTreeSet<String> = left.keys().cloned().collect();
+                let right_keys: BTreeSet<String> = right.keys().cloned().collect();
+                for key in left_keys.intersection(&right_keys) {
+                    left.get(key).expect("present");
+                    right.get(key).expect("present");
+                }
+            }
+        "#,
+        );
+        let post = lift_function_postcondition(&item_fn).into_formula();
+        let json = serde_json::to_string(&post).unwrap();
+        let guarded_count = json.matches("cf_guarded").count();
+        assert!(
+            guarded_count >= 2,
+            "intersection must guard both left.get(key) and right.get(key): {json}"
+        );
+        assert!(
+            json.contains("is_some") && json.contains("method:get"),
+            "guards must prove the get receivers are Some: {json}"
+        );
+    }
+
+    #[test]
+    fn keyset_reused_loop_key_names_are_scoped_in_post_and_panic_loci() {
+        let item_fn = parse_fn(
+            r#"
+            fn f(left: BTreeMap<String, String>, right: BTreeMap<String, String>) {
+                for key in left.keys() {
+                    left.get(key).expect("present");
+                }
+                for key in right.keys() {
+                    right.get(key).expect("present");
+                }
+            }
+        "#,
+        );
+        let post = lift_function_postcondition(&item_fn).into_formula();
+        let post_json = serde_json::to_string(&post).unwrap();
+        assert!(
+            post_json.contains("key#0") && post_json.contains("key#1"),
+            "guarded post must preserve distinct loop binders: {post_json}"
+        );
+        let loci = collect_panic_loci_json(&item_fn, "src/lib.rs");
+        assert_eq!(loci.len(), 2, "expected two panic loci: {loci:#?}");
+        let key_names = loci
+            .iter()
+            .map(|locus| {
+                locus["argTerm"]["args"][1]["name"]
+                    .as_str()
+                    .expect("second get arg is key var")
+                    .to_string()
+            })
+            .collect::<BTreeSet<_>>();
+        assert_eq!(
+            key_names,
+            BTreeSet::from(["key#0".to_string(), "key#1".to_string()]),
+            "panic loci must use the same scoped loop binders as the post: {loci:#?}"
+        );
+    }
+
+    #[test]
+    fn keyset_wrong_map_does_not_guard_get_expect() {
+        let item_fn = parse_fn(
+            r#"
+            fn f(left: BTreeMap<String, String>, other: BTreeMap<String, String>) {
+                for key in left.keys() {
+                    other.get(key).expect("present");
+                }
+            }
+        "#,
+        );
+        let post = lift_function_postcondition(&item_fn).into_formula();
+        let json = serde_json::to_string(&post).unwrap();
+        assert!(
+            !json.contains("cf_guarded"),
+            "key provenance from left must not guard other.get(key): {json}"
+        );
+    }
+
+    #[test]
+    fn keyset_difference_reversed_polarity_does_not_guard_right_map_get_expect() {
+        let item_fn = parse_fn(
+            r#"
+            fn f(left: BTreeMap<String, String>, right: BTreeMap<String, String>) {
+                let left_keys: BTreeSet<String> = left.keys().cloned().collect();
+                let right_keys: BTreeSet<String> = right.keys().cloned().collect();
+                for key in left_keys.difference(&right_keys) {
+                    right.get(key).expect("present");
+                }
+            }
+        "#,
+        );
+        let post = lift_function_postcondition(&item_fn).into_formula();
+        let json = serde_json::to_string(&post).unwrap();
+        assert!(
+            !json.contains("cf_guarded"),
+            "left minus right must not prove key membership in right: {json}"
+        );
+    }
+
+    #[test]
+    fn keyset_intersection_third_map_does_not_guard_get_expect() {
+        let item_fn = parse_fn(
+            r#"
+            fn f(
+                left: BTreeMap<String, String>,
+                right: BTreeMap<String, String>,
+                third: BTreeMap<String, String>,
+            ) {
+                let left_keys: BTreeSet<String> = left.keys().cloned().collect();
+                let right_keys: BTreeSet<String> = right.keys().cloned().collect();
+                for key in left_keys.intersection(&right_keys) {
+                    third.get(key).expect("present");
+                }
+            }
+        "#,
+        );
+        let post = lift_function_postcondition(&item_fn).into_formula();
+        let json = serde_json::to_string(&post).unwrap();
+        assert!(
+            !json.contains("cf_guarded"),
+            "intersection must not prove membership in an unrelated map: {json}"
+        );
+    }
+
+    #[test]
+    fn keyset_mutation_between_does_not_guard_get_expect() {
+        let item_fn = parse_fn(
+            r#"
+            fn f(mut map: BTreeMap<String, String>) {
+                for key in map.keys() {
+                    map.clear();
+                    map.get(key).expect("present");
+                }
+            }
+        "#,
+        );
+        let post = lift_function_postcondition(&item_fn).into_formula();
+        let json = serde_json::to_string(&post).unwrap();
+        assert!(
+            !json.contains("cf_guarded"),
+            "mutation between key binding and get must invalidate membership: {json}"
+        );
+    }
+
+    #[test]
+    fn keyset_key_removed_between_does_not_guard_get_expect() {
+        let item_fn = parse_fn(
+            r#"
+            fn f(mut map: BTreeMap<String, String>) {
+                for key in map.keys() {
+                    map.remove(key);
+                    map.get(key).expect("present");
+                }
+            }
+        "#,
+        );
+        let post = lift_function_postcondition(&item_fn).into_formula();
+        let json = serde_json::to_string(&post).unwrap();
+        assert!(
+            !json.contains("cf_guarded"),
+            "removing the current key must invalidate membership: {json}"
+        );
+    }
+
+    #[test]
+    fn keyset_opaque_key_does_not_guard_get_expect() {
+        let item_fn = parse_fn(
+            r#"
+            fn f(map: BTreeMap<String, String>) {
+                for key in map.keys() {
+                    map.get(opaque_key()).expect("present");
+                }
+            }
+        "#,
+        );
+        let post = lift_function_postcondition(&item_fn).into_formula();
+        let json = serde_json::to_string(&post).unwrap();
+        assert!(
+            !json.contains("cf_guarded"),
+            "keyset fact must apply only to the bound key expression: {json}"
+        );
+    }
+
+    #[test]
+    fn keyset_opaque_source_does_not_guard_get_expect() {
+        let item_fn = parse_fn(
+            r#"
+            fn f(map: BTreeMap<String, String>) {
+                let keys: BTreeSet<String> = build_keys();
+                for key in keys.iter() {
+                    map.get(key).expect("present");
+                }
+            }
+        "#,
+        );
+        let post = lift_function_postcondition(&item_fn).into_formula();
+        let json = serde_json::to_string(&post).unwrap();
+        assert!(
+            !json.contains("cf_guarded"),
+            "opaque keyset source must not prove map membership: {json}"
+        );
+    }
+
+    #[test]
+    fn keyset_transformed_key_does_not_guard_get_expect() {
+        let item_fn = parse_fn(
+            r#"
+            fn f(map: BTreeMap<String, String>) {
+                for key in map.keys() {
+                    map.get(key.to_string()).expect("present");
+                }
+            }
+        "#,
+        );
+        let post = lift_function_postcondition(&item_fn).into_formula();
+        let json = serde_json::to_string(&post).unwrap();
+        assert!(
+            !json.contains("cf_guarded"),
+            "transformed keys must not inherit the bound key membership fact: {json}"
+        );
+    }
+
+    #[test]
+    fn keyset_unmodeled_op_default_refuses_get_expect_guard() {
+        let item_fn = parse_fn(
+            r#"
+            fn f(left: BTreeMap<String, String>, right: BTreeMap<String, String>) {
+                let left_keys: BTreeSet<String> = left.keys().cloned().collect();
+                let right_keys: BTreeSet<String> = right.keys().cloned().collect();
+                for key in left_keys.union(&right_keys) {
+                    left.get(key).expect("present");
+                }
+            }
+        "#,
+        );
+        let post = lift_function_postcondition(&item_fn).into_formula();
+        let json = serde_json::to_string(&post).unwrap();
+        assert!(
+            !json.contains("cf_guarded"),
+            "unmodeled keyset ops must default-refuse instead of guessing: {json}"
         );
     }
 
