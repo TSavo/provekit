@@ -66,11 +66,3 @@ callee = "method:expect"
 category = "lock_poisoning_residue"
 tier_to_close = "irreducible"
 reason = "diagnostics lock push in record_fallback_diagnostic can panic only if another thread panicked while recording fallback diagnostics."
-
-[[tier_to_close]]
-file = "src/kit_dispatch.rs"
-line = 2416
-callee = "method:expect"
-category = "D-lib"
-tier_to_close = "provekit-cli per-type infallible serialization for RealizeRequest"
-reason = "serde_json::to_value(RealizeRequest) is expected to be total for this CLI-owned request type, but needs a manifest-backed per-type serialization totality proof."
