@@ -13,28 +13,28 @@
 // THE FIX: keep ONE warm `RaOracle` session PER workspace root, indexed ONCE,
 // alive across mints, here in the long-lived daemon.
 //
-// NON-BLOCKING READINESS is the load-bearing constraint (the refuse-floor is
-// non-negotiable): `RaOracle::start` blocks ~260s through the cold index, so it
-// MUST NOT run in the request path. Each session is therefore a dedicated OS
-// thread that owns the `RaOracle`:
+// READINESS is the load-bearing constraint (the refuse-floor is non-negotiable):
+// `RaOracle::start` blocks through rust-analyzer's LSP progress/serverStatus
+// readiness stream. Each session is therefore a dedicated OS thread that owns
+// the `RaOracle`:
 //
 //   - The thread runs `RaOracle::start` (blocking through the cold index), then
 //     flips a `Phase` flag (Spawning -> Ready | Failed) and loops servicing
 //     `ResolveBatch` commands sent over a channel.
-//   - The async daemon handler reads the phase flag (cheap, non-blocking). Not
-//     Ready -> answer immediately so the caller refuses to Tier 1/2a. Ready ->
-//     send the batch and await the result. The first cold mint thus never hangs
-//     for the index; the second (warm) mint resolves.
+//   - The daemon exposes an explicit readiness wait. Proof-producing callers
+//     block once on that readiness signal before resolution, so the first cold
+//     mint is complete instead of baking "not ready yet" into a proof.
 //
 // The cache (resolve_cache.rs) sits IN FRONT of this in the request handler:
 // cache hits never reach RA, so even a cold daemon answers cached files with no
-// spawn. ra_host is consulted only for cache MISSES on a Ready session.
+// spawn. ra_host is consulted for readiness and then for cache misses.
 
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 use std::sync::mpsc::{Receiver, Sender};
-use std::sync::{Arc, Mutex};
+use std::sync::{Arc, Condvar, Mutex};
 use std::thread::JoinHandle;
+use std::time::{Duration, Instant};
 
 use provekit_walk::ra_oracle::{RaOracle, ResolveQuery};
 use tracing::{info, warn};
@@ -50,6 +50,16 @@ pub enum Phase {
     /// failed, or RA never reached quiescence). Resolution permanently refuses
     /// for this session; the caller falls back to the syntactic tiers.
     Failed,
+}
+
+impl Phase {
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Phase::Spawning => "spawning",
+            Phase::Ready => "ready",
+            Phase::Failed => "failed",
+        }
+    }
 }
 
 /// The classified outcome of resolving one position against the warm session.
@@ -81,7 +91,7 @@ struct BatchCmd {
 
 /// One resident rust-analyzer session for a single workspace root.
 pub struct RaSession {
-    phase: Arc<Mutex<Phase>>,
+    phase: Arc<(Mutex<Phase>, Condvar)>,
     cmd_tx: Sender<BatchCmd>,
     _thread: JoinHandle<()>,
 }
@@ -91,7 +101,7 @@ impl RaSession {
     /// thread runs the (blocking) `RaOracle::start` in the background and flips
     /// the phase when it settles. The phase begins `Spawning`.
     fn spawn(workspace_root: PathBuf) -> RaSession {
-        let phase = Arc::new(Mutex::new(Phase::Spawning));
+        let phase = Arc::new((Mutex::new(Phase::Spawning), Condvar::new()));
         let (cmd_tx, cmd_rx): (Sender<BatchCmd>, Receiver<BatchCmd>) = std::sync::mpsc::channel();
         let phase_thread = phase.clone();
         let thread = std::thread::Builder::new()
@@ -105,9 +115,27 @@ impl RaSession {
         }
     }
 
-    /// Current phase (cheap, non-blocking).
-    pub fn phase(&self) -> Phase {
-        *self.phase.lock().unwrap()
+    /// Block until the resident rust-analyzer session is Ready/Failed or the
+    /// timeout expires. The first cold caller waits for the indexing thread;
+    /// subsequent callers return immediately because the phase is terminal.
+    pub fn wait_until_ready(&self, timeout: Duration) -> Phase {
+        let (lock, cvar) = &*self.phase;
+        let deadline = Instant::now() + timeout;
+        let mut phase = lock.lock().unwrap();
+        loop {
+            match *phase {
+                Phase::Ready | Phase::Failed => return *phase,
+                Phase::Spawning => {}
+            }
+            let Some(remaining) = deadline.checked_duration_since(Instant::now()) else {
+                return *phase;
+            };
+            let (next, wait_result) = cvar.wait_timeout(phase, remaining).unwrap();
+            phase = next;
+            if wait_result.timed_out() {
+                return *phase;
+            }
+        }
     }
 
     /// Resolve a batch against the warm session. ONLY call when phase is Ready;
@@ -139,7 +167,11 @@ fn vec_not_ready(n: usize) -> Vec<PosResult> {
 
 /// The session thread body: start RA (blocking), flip phase, then service
 /// batches until the command channel closes (daemon shutdown).
-fn session_loop(workspace_root: PathBuf, phase: Arc<Mutex<Phase>>, cmd_rx: Receiver<BatchCmd>) {
+fn session_loop(
+    workspace_root: PathBuf,
+    phase: Arc<(Mutex<Phase>, Condvar)>,
+    cmd_rx: Receiver<BatchCmd>,
+) {
     info!(
         workspace = %workspace_root.display(),
         "ra-host: starting resident rust-analyzer session (indexing once, in background)"
@@ -152,7 +184,7 @@ fn session_loop(workspace_root: PathBuf, phase: Arc<Mutex<Phase>>, cmd_rx: Recei
         None => {
             // Oracle off, binary missing, or handshake failed. RaOracle::start
             // already logged the specific cause.
-            *phase.lock().unwrap() = Phase::Failed;
+            set_phase(&phase, Phase::Failed);
             warn!(
                 workspace = %workspace_root.display(),
                 "ra-host: rust-analyzer session failed to start; all resolutions refuse"
@@ -160,12 +192,10 @@ fn session_loop(workspace_root: PathBuf, phase: Arc<Mutex<Phase>>, cmd_rx: Recei
             return;
         }
     };
-    // RaOracle::start returns Some even if quiescence was not reached (it logs a
-    // warning and resolves best-effort). For the resident host we treat that as
-    // Ready: a warm session that reached quiescence resolves fully, and a
-    // best-effort one still classifies NotReady per query via the
-    // ContentModified path, so the refuse-floor holds either way.
-    *phase.lock().unwrap() = Phase::Ready;
+    // RaOracle::start returns Some only after rust-analyzer's readiness signal
+    // reached quiescence. A timeout/failure is Phase::Failed above, never a
+    // best-effort Ready label.
+    set_phase(&phase, Phase::Ready);
     info!(
         workspace = %workspace_root.display(),
         "ra-host: resident rust-analyzer session READY (warm, reused across mints)"
@@ -196,6 +226,12 @@ fn session_loop(workspace_root: PathBuf, phase: Arc<Mutex<Phase>>, cmd_rx: Recei
     );
 }
 
+fn set_phase(phase: &Arc<(Mutex<Phase>, Condvar)>, next: Phase) {
+    let (lock, cvar) = &**phase;
+    *lock.lock().unwrap() = next;
+    cvar.notify_all();
+}
+
 /// The host: owns one resident RA session per absolute workspace root.
 ///
 /// Lives behind an `Arc` shared across daemon clients. Sessions are created
@@ -224,5 +260,11 @@ impl RaHost {
         let session = Arc::new(RaSession::spawn(key.clone()));
         sessions.insert(key, session.clone());
         session
+    }
+
+    /// Wait for the workspace's resident rust-analyzer session to become ready.
+    /// This is the process-global readiness gate exposed over RPC.
+    pub fn wait_until_ready(&self, workspace_root: &Path, timeout: Duration) -> Phase {
+        self.session_for(workspace_root).wait_until_ready(timeout)
     }
 }

@@ -196,10 +196,11 @@ impl RaOracle {
             warn!(
                 workspace = %workspace_root.display(),
                 index_wait_s = INDEX_WAIT.as_secs(),
-                "oracle: rust-analyzer NOT quiescent after the index wait; resolving best-effort. \
-                 On a cold/large workspace this yields few or zero resolutions — the fix is a \
-                 resident warm rust-analyzer (provekit-linkerd) that indexes once and stays up."
+                "oracle: rust-analyzer NOT quiescent after the index wait; refusing rather than \
+                 minting against a partially-indexed analyzer"
             );
+            let _ = oracle.child.kill();
+            return None;
         }
         Some(oracle)
     }

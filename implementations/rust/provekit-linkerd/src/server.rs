@@ -29,7 +29,8 @@ use tracing::{debug, error, info, warn};
 
 use crate::methods::{
     handle_flush_cache, handle_get_diagnostics, handle_parse_file, handle_project_status,
-    handle_resolve_receiver_crate, rpc_error, shutdown_response, ERR_METHOD_NOT_FOUND,
+    handle_resolve_receiver_crate, handle_rust_analyzer_ready, rpc_error, shutdown_response,
+    ERR_METHOD_NOT_FOUND,
 };
 use crate::ra_host::RaHost;
 use crate::resolve_cache::ResolveCache;
@@ -147,8 +148,8 @@ pub async fn run(config: ServerConfig) -> anyhow::Result<()> {
     };
 
     // Resident rust-analyzer host: one warm session per workspace root, shared
-    // across all clients. Created empty; sessions spawn lazily (non-blocking) on
-    // the first resolveReceiverCrate for a workspace.
+    // across all clients. Created empty; sessions spawn lazily on the first
+    // rustAnalyzerReady or resolveReceiverCrate for a workspace.
     let ra_host = Arc::new(RaHost::new());
 
     // Content-addressed callee-resolution cache (#1705/#1706), persisted in a
@@ -320,6 +321,9 @@ async fn handle_client(
             "parseFile" => handle_parse_file(state.clone(), &params, &id).await,
             "getDiagnostics" => handle_get_diagnostics(state.clone(), &params, &id).await,
             "projectStatus" => handle_project_status(state.clone(), &params, &id).await,
+            "rustAnalyzerReady" => {
+                handle_rust_analyzer_ready(ra_host.clone(), &params, &id).await
+            }
             "flushCache" => handle_flush_cache(state.clone(), &params, &id).await,
             "resolveReceiverCrate" => {
                 handle_resolve_receiver_crate(

@@ -112,13 +112,28 @@ impl OracleHostAdapter for RustAnalyzerOracleAdapter {
                     detail: "engagement is observed at self-check time".to_string(),
                 },
                 convergence: OracleResolutionConvergence::Deferred {
-                    detail: "resolution convergence is proved at self-check time".to_string(),
+                    detail: "oracle readiness cannot be established until the host is locatable"
+                        .to_string(),
                 },
             };
         }
 
         let linkerd_path = linkerd.path.expect("linkerd path checked above");
         let readiness = probe_linkerd_readiness(&linkerd_path);
+        let convergence = match &readiness {
+            OracleHostReadiness::Ready { .. } | OracleHostReadiness::Degraded { .. } => {
+                OracleResolutionConvergence::Converged {
+                    detail:
+                        "resolution readiness is gated by linkerd rustAnalyzerReady; convergence harness removed"
+                            .to_string(),
+                }
+            }
+            OracleHostReadiness::NotRequested | OracleHostReadiness::NotReady { .. } => {
+                OracleResolutionConvergence::Deferred {
+                    detail: "resolution readiness was not reached".to_string(),
+                }
+            }
+        };
         OracleHostObservation {
             host: "rust-analyzer".to_string(),
             locatability: OracleHostLocatability::Found {
@@ -130,9 +145,7 @@ impl OracleHostAdapter for RustAnalyzerOracleAdapter {
             engagement: OracleHostEngagement::Unknown {
                 detail: "oracle engagement is observed at self-check time".to_string(),
             },
-            convergence: OracleResolutionConvergence::Deferred {
-                detail: "resolution convergence is proved at self-check time".to_string(),
-            },
+            convergence,
         }
     }
 }
@@ -240,12 +253,10 @@ fn is_executable(path: &Path) -> bool {
 fn probe_linkerd_readiness(binary: &Path) -> OracleHostReadiness {
     #[cfg(unix)]
     {
-        match probe_linkerd_project_status(binary) {
-            Ok(()) => OracleHostReadiness::Ready {
-                detail: "provekit-linkerd spawned and answered projectStatus RPC".to_string(),
-            },
+        match probe_linkerd_rust_analyzer_ready(binary) {
+            Ok(detail) => OracleHostReadiness::Ready { detail },
             Err(error) => OracleHostReadiness::NotReady {
-                detail: format!("provekit-linkerd spawn failed or did not answer RPC: {error}"),
+                detail: format!("provekit-linkerd did not report rust-analyzer ready: {error}"),
             },
         }
     }
@@ -260,7 +271,7 @@ fn probe_linkerd_readiness(binary: &Path) -> OracleHostReadiness {
 }
 
 #[cfg(unix)]
-fn probe_linkerd_project_status(binary: &Path) -> Result<(), String> {
+fn probe_linkerd_rust_analyzer_ready(binary: &Path) -> Result<String, String> {
     use serde_json::json;
     use std::os::unix::net::UnixStream;
     use std::process::{Command, Stdio};
@@ -274,6 +285,9 @@ fn probe_linkerd_project_status(binary: &Path) -> Result<(), String> {
     std::fs::create_dir_all(&dir).map_err(|e| format!("create temp dir: {e}"))?;
     let socket = dir.join("linkerd.sock");
     let snapshot = dir.join("snapshot.bin");
+    let workspace_root =
+        std::env::current_dir().map_err(|e| format!("resolve current workspace: {e}"))?;
+    let ready_timeout_ms = oracle_ready_timeout_ms();
 
     let mut child = Command::new(binary)
         .arg("--socket")
@@ -305,26 +319,55 @@ fn probe_linkerd_project_status(binary: &Path) -> Result<(), String> {
             }
         }
     };
+    stream
+        .set_read_timeout(Some(Duration::from_millis(ready_timeout_ms + 5_000)))
+        .map_err(|e| format!("set readiness read timeout: {e}"))?;
 
     let status = send_rpc(
         &mut stream,
-        &json!({"jsonrpc": "2.0", "id": 1, "method": "projectStatus", "params": {}}),
+        &json!({
+            "jsonrpc": "2.0",
+            "id": 1,
+            "method": "rustAnalyzerReady",
+            "params": {
+                "workspaceRoot": workspace_root,
+                "timeoutMs": ready_timeout_ms,
+            }
+        }),
     )
     .and_then(|resp| {
-        if resp.get("result").is_some() {
-            Ok(())
-        } else {
-            Err(format!(
-                "projectStatus returned non-result response: {resp}"
+        let Some(result) = resp.get("result") else {
+            return Err(format!("rustAnalyzerReady returned non-result response: {resp}"));
+        };
+        let ready = result
+            .get("ready")
+            .and_then(|v| v.as_bool())
+            .unwrap_or(false);
+        let phase = result
+            .get("phase")
+            .and_then(|v| v.as_str())
+            .unwrap_or("unknown");
+        let detail = result
+            .get("detail")
+            .and_then(|v| v.as_str())
+            .unwrap_or("no detail");
+        if ready {
+            Ok(format!(
+                "provekit-linkerd spawned and reported rust-analyzer ready ({phase}: {detail})"
             ))
+        } else {
+            Err(format!("phase={phase}; {detail}"))
         }
     });
-    if let Err(error) = status {
-        let _ = child.kill();
-        let _ = child.wait();
-        let _ = std::fs::remove_dir_all(&dir);
-        return Err(error);
-    }
+    let detail = match status {
+        Ok(detail) => detail,
+        Err(error) => {
+            let _ = child.kill();
+            let _ = child.wait();
+            let _ = std::fs::remove_dir_all(&dir);
+            return Err(error);
+        }
+    };
 
     let _ = send_rpc(
         &mut stream,
@@ -332,7 +375,15 @@ fn probe_linkerd_project_status(binary: &Path) -> Result<(), String> {
     );
     let _ = child.wait();
     let _ = std::fs::remove_dir_all(&dir);
-    Ok(())
+    Ok(detail)
+}
+
+fn oracle_ready_timeout_ms() -> u64 {
+    std::env::var("PROVEKIT_ORACLE_READY_TIMEOUT_MS")
+        .ok()
+        .and_then(|raw| raw.parse::<u64>().ok())
+        .filter(|v| *v > 0)
+        .unwrap_or(300_000)
 }
 
 #[cfg(unix)]
