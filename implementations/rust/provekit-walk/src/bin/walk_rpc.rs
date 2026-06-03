@@ -13056,6 +13056,32 @@ pub fn wrong_polarity(line: &str) -> Option<&str> {
     }
 
     #[test]
+    fn function_contract_lift_refuses_pure_free_guard_from_disjunction() {
+        let src = r##"
+pub fn pure_fn(_line: &str) -> Option<&str> {
+    None
+}
+
+pub fn disjunction(line: &str, flag: bool) -> Option<&str> {
+    if flag || pure_fn(line).is_some() {
+        let declared = pure_fn(line).unwrap();
+        return Some(declared);
+    }
+    None
+}
+"##;
+
+        let post = function_contract_post_for_free_pure_fixture(
+            "function_contract_free_pure_statement_disjunction",
+            src,
+            "disjunction",
+            Some(free_pure_option_manifest("pure_fn")),
+        );
+
+        assert_post_has_no_guarded_effect(&post);
+    }
+
+    #[test]
     fn function_contract_lift_refuses_pure_free_guard_in_else_branch() {
         let src = r##"
 pub fn pure_fn(_line: &str) -> Option<&str> {
@@ -14381,6 +14407,34 @@ pub fn unguarded(line: &str) -> &str {
         assert!(
             method_unwrap_targets(&resp).is_empty(),
             "manifest-pure free call must not route without a dominating is_some guard: {resp:#?}"
+        );
+    }
+
+    #[test]
+    fn lift_implications_refuses_manifest_pure_free_call_from_disjunction() {
+        let src = r##"
+pub fn pure_fn(_line: &str) -> Option<&str> {
+    panic!()
+}
+
+pub fn disjunction(line: &str, flag: bool) -> &str {
+    if flag || pure_fn(line).is_some() {
+        pure_fn(line).unwrap()
+    } else {
+        ""
+    }
+}
+"##;
+
+        let resp = lift_implications_for_free_pure_fixture(
+            "free_pure_guard_disjunction",
+            src,
+            Some(free_pure_option_manifest("pure_fn")),
+        );
+
+        assert!(
+            method_unwrap_targets(&resp).is_empty(),
+            "manifest-pure free call under || must not route because disjunction does not dominate the unwrap: {resp:#?}"
         );
     }
 
