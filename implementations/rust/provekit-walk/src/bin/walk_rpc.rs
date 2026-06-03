@@ -827,6 +827,8 @@ struct FunctionPostconditionRule {
     type_path: Option<String>,
     receiver_path: Option<String>,
     callee: String,
+    source_file: Option<String>,
+    source_line: Option<usize>,
     arg0: FunctionPostconditionArg0,
     contract: String,
     post_predicate: String,
@@ -1028,6 +1030,21 @@ impl FunctionPostconditionsManifest {
             let post_predicate =
                 required_toml_string_for(&path, &context, table, "post_predicate")?;
             let reason = required_toml_string_for(&path, &context, table, "reason")?;
+            let source_file = table
+                .get("source_file")
+                .and_then(toml::Value::as_str)
+                .map(ToString::to_string);
+            let source_line = table
+                .get("source_line")
+                .map(|_| required_toml_u64_for(&path, &context, table, "source_line"))
+                .transpose()?
+                .map(|line| line as usize);
+            if source_file.is_some() != source_line.is_some() {
+                return Err(format!(
+                    "{} `{context}` must set `source_file` and `source_line` together",
+                    path.display()
+                ));
+            }
             if !seen_contracts.insert(contract.clone()) {
                 return Err(format!(
                     "{} duplicate function postcondition contract `{contract}`",
@@ -1038,21 +1055,32 @@ impl FunctionPostconditionsManifest {
             let (type_path, receiver_path, arg0) = match call_kind {
                 FunctionPostconditionCallKind::Associated => {
                     let type_path = required_toml_string_for(&path, &context, table, "type_path")?;
-                    let format_literal =
-                        required_toml_string_for(&path, &context, table, "arg0_format_literal")?;
-                    let repeat_literal =
-                        required_toml_string_for(&path, &context, table, "arg0_repeat_literal")?;
-                    let repeat_count =
-                        required_toml_u64_for(&path, &context, table, "arg0_repeat_count")?;
-                    (
-                        Some(type_path),
-                        None,
+                    let arg0 = if let Some(arg0_path) =
+                        table.get("arg0_path").and_then(toml::Value::as_str)
+                    {
+                        FunctionPostconditionArg0::Path(arg0_path.to_string())
+                    } else {
+                        let format_literal = required_toml_string_for(
+                            &path,
+                            &context,
+                            table,
+                            "arg0_format_literal",
+                        )?;
+                        let repeat_literal = required_toml_string_for(
+                            &path,
+                            &context,
+                            table,
+                            "arg0_repeat_literal",
+                        )?;
+                        let repeat_count =
+                            required_toml_u64_for(&path, &context, table, "arg0_repeat_count")?;
                         FunctionPostconditionArg0::FormatRepeat {
                             format_literal,
                             repeat_literal,
                             repeat_count,
-                        },
-                    )
+                        }
+                    };
+                    (Some(type_path), None, arg0)
                 }
                 FunctionPostconditionCallKind::Method => {
                     let receiver_path =
@@ -1072,6 +1100,8 @@ impl FunctionPostconditionsManifest {
                 type_path,
                 receiver_path,
                 callee,
+                source_file,
+                source_line,
                 arg0,
                 contract,
                 post_predicate,
@@ -1090,6 +1120,8 @@ impl FunctionPostconditionsManifest {
         func: &syn::Expr,
         args: &syn::punctuated::Punctuated<syn::Expr, syn::Token![,]>,
         current_crate: &str,
+        source_file: &str,
+        source_line: usize,
     ) -> Option<&FunctionPostconditionRule> {
         let (type_path, callee) = associated_call_path_and_leaf(func)?;
         self.rules.iter().find_map(|rule| {
@@ -1102,17 +1134,30 @@ impl FunctionPostconditionsManifest {
             if rule.type_path.as_deref() != Some(type_path.as_str()) {
                 return None;
             }
-            let FunctionPostconditionArg0::FormatRepeat {
-                format_literal,
-                repeat_literal,
-                repeat_count,
-            } = &rule.arg0
-            else {
+            if !function_postcondition_source_matches(rule, source_file, source_line) {
                 return None;
-            };
+            }
             let arg0 = only_call_arg(args)?;
-            if !expr_matches_format_repeat(arg0, format_literal, repeat_literal, *repeat_count) {
-                return None;
+            match &rule.arg0 {
+                FunctionPostconditionArg0::FormatRepeat {
+                    format_literal,
+                    repeat_literal,
+                    repeat_count,
+                } => {
+                    if !expr_matches_format_repeat(
+                        arg0,
+                        format_literal,
+                        repeat_literal,
+                        *repeat_count,
+                    ) {
+                        return None;
+                    }
+                }
+                FunctionPostconditionArg0::Path(expected_arg) => {
+                    if expr_path_text(arg0).as_deref() != Some(expected_arg.as_str()) {
+                        return None;
+                    }
+                }
             }
             Some(rule)
         })
@@ -1123,8 +1168,10 @@ impl FunctionPostconditionsManifest {
         func: &syn::Expr,
         args: &syn::punctuated::Punctuated<syn::Expr, syn::Token![,]>,
         current_crate: &str,
+        source_file: &str,
+        source_line: usize,
     ) -> Option<(String, String)> {
-        self.rule_for_associated_call(func, args, current_crate)
+        self.rule_for_associated_call(func, args, current_crate, source_file, source_line)
             .map(|rule| (current_crate.to_string(), rule.contract.clone()))
     }
 
@@ -1132,6 +1179,8 @@ impl FunctionPostconditionsManifest {
         &self,
         node: &syn::ExprMethodCall,
         current_crate: &str,
+        source_file: &str,
+        source_line: usize,
     ) -> Option<&FunctionPostconditionRule> {
         let callee = node.method.to_string();
         self.rules.iter().find_map(|rule| {
@@ -1142,6 +1191,9 @@ impl FunctionPostconditionsManifest {
                 return None;
             }
             if expr_path_text(&node.receiver) != rule.receiver_path {
+                return None;
+            }
+            if !function_postcondition_source_matches(rule, source_file, source_line) {
                 return None;
             }
             let FunctionPostconditionArg0::Path(expected_arg) = &rule.arg0 else {
@@ -1159,8 +1211,10 @@ impl FunctionPostconditionsManifest {
         &self,
         node: &syn::ExprMethodCall,
         current_crate: &str,
+        source_file: &str,
+        source_line: usize,
     ) -> Option<(String, String)> {
-        self.rule_for_method_call(node, current_crate)
+        self.rule_for_method_call(node, current_crate, source_file, source_line)
             .map(|rule| (current_crate.to_string(), rule.contract.clone()))
     }
 
@@ -1168,26 +1222,66 @@ impl FunctionPostconditionsManifest {
         &self,
         receiver: &syn::Expr,
         current_crate: &str,
+        source_file: &str,
         panic_leaf: &str,
     ) -> Option<(String, String)> {
         let rule = match receiver {
             syn::Expr::Call(call) => {
-                self.rule_for_associated_call(&call.func, &call.args, current_crate)
+                let start = call.func.span().start();
+                self.rule_for_associated_call(
+                    &call.func,
+                    &call.args,
+                    current_crate,
+                    source_file,
+                    start.line,
+                )
             }
-            syn::Expr::MethodCall(method) => self.rule_for_method_call(method, current_crate),
+            syn::Expr::MethodCall(method) => {
+                let start = method.method.span().start();
+                self.rule_for_method_call(method, current_crate, source_file, start.line)
+            }
             syn::Expr::Paren(paren) => {
-                return self.panic_partial_for_receiver(&paren.expr, current_crate, panic_leaf);
+                return self.panic_partial_for_receiver(
+                    &paren.expr,
+                    current_crate,
+                    source_file,
+                    panic_leaf,
+                );
             }
             syn::Expr::Group(group) => {
-                return self.panic_partial_for_receiver(&group.expr, current_crate, panic_leaf);
+                return self.panic_partial_for_receiver(
+                    &group.expr,
+                    current_crate,
+                    source_file,
+                    panic_leaf,
+                );
             }
             syn::Expr::Reference(reference) => {
-                return self.panic_partial_for_receiver(&reference.expr, current_crate, panic_leaf);
+                return self.panic_partial_for_receiver(
+                    &reference.expr,
+                    current_crate,
+                    source_file,
+                    panic_leaf,
+                );
             }
             _ => None,
         }?;
         let stem = panic_stem_for_post_predicate(&rule.post_predicate)?;
         disambiguated_partial_leaf(stem, panic_leaf).map(|leaf| ("std".to_string(), leaf))
+    }
+}
+
+fn function_postcondition_source_matches(
+    rule: &FunctionPostconditionRule,
+    source_file: &str,
+    source_line: usize,
+) -> bool {
+    match (rule.source_file.as_deref(), rule.source_line) {
+        (Some(expected_file), Some(expected_line)) => {
+            expected_file == source_file && expected_line == source_line
+        }
+        (None, None) => true,
+        _ => false,
     }
 }
 
@@ -1423,6 +1517,17 @@ struct EnumVariantTypeMap {
     variants: HashMap<(String, String), VariantFieldTypes>,
 }
 
+#[derive(Debug, Clone, Default)]
+struct StructFieldTypeMap {
+    fields: HashMap<(String, String, String), FieldTypeIdentity>,
+}
+
+#[derive(Debug, Clone)]
+struct FieldTypeIdentity {
+    type_id: TypeIdentity,
+    option_inner: Option<TypeIdentity>,
+}
+
 #[derive(Debug, Clone)]
 enum VariantFieldTypes {
     Named(HashMap<String, TypeIdentity>),
@@ -1445,6 +1550,117 @@ fn collect_enum_variant_type_map(
         &mut map,
     );
     map
+}
+
+fn collect_struct_field_type_map(
+    file: &syn::File,
+    use_map: &HashMap<String, String>,
+    local_type_names: &BTreeSet<String>,
+    current_crate: &str,
+) -> StructFieldTypeMap {
+    let mut map = StructFieldTypeMap::default();
+    collect_struct_field_type_map_in_items(
+        &file.items,
+        use_map,
+        local_type_names,
+        current_crate,
+        &mut map,
+    );
+    map
+}
+
+fn collect_struct_field_type_map_in_items(
+    items: &[syn::Item],
+    use_map: &HashMap<String, String>,
+    local_type_names: &BTreeSet<String>,
+    current_crate: &str,
+    out: &mut StructFieldTypeMap,
+) {
+    for item in items {
+        match item {
+            syn::Item::Struct(item_struct) => {
+                let struct_type = TypeIdentity {
+                    krate: current_crate.to_string(),
+                    head: item_struct.ident.to_string(),
+                };
+                let syn::Fields::Named(named) = &item_struct.fields else {
+                    continue;
+                };
+                for field in &named.named {
+                    let Some(ident) = field.ident.as_ref() else {
+                        continue;
+                    };
+                    let Some(field_type) = field_type_identity_for(
+                        strip_reference_type(&field.ty),
+                        use_map,
+                        local_type_names,
+                        current_crate,
+                    ) else {
+                        continue;
+                    };
+                    out.fields.insert(
+                        (
+                            struct_type.krate.clone(),
+                            struct_type.head.clone(),
+                            ident.to_string(),
+                        ),
+                        field_type,
+                    );
+                }
+            }
+            syn::Item::Mod(item_mod) => {
+                if let Some((_, ref nested)) = item_mod.content {
+                    collect_struct_field_type_map_in_items(
+                        nested,
+                        use_map,
+                        local_type_names,
+                        current_crate,
+                        out,
+                    );
+                }
+            }
+            _ => {}
+        }
+    }
+}
+
+fn field_type_identity_for(
+    ty: &syn::Type,
+    use_map: &HashMap<String, String>,
+    local_type_names: &BTreeSet<String>,
+    current_crate: &str,
+) -> Option<FieldTypeIdentity> {
+    Some(FieldTypeIdentity {
+        type_id: type_identity_for(ty, use_map, local_type_names, current_crate)?,
+        option_inner: option_inner_type_identity_for(ty, use_map, local_type_names, current_crate),
+    })
+}
+
+fn option_inner_type_identity_for(
+    ty: &syn::Type,
+    use_map: &HashMap<String, String>,
+    local_type_names: &BTreeSet<String>,
+    current_crate: &str,
+) -> Option<TypeIdentity> {
+    let syn::Type::Path(path) = ty else {
+        return None;
+    };
+    let segment = path.path.segments.last()?;
+    if segment.ident != "Option" {
+        return None;
+    }
+    let syn::PathArguments::AngleBracketed(args) = &segment.arguments else {
+        return None;
+    };
+    let syn::GenericArgument::Type(inner_ty) = args.args.first()? else {
+        return None;
+    };
+    type_identity_for(
+        strip_reference_type(inner_ty),
+        use_map,
+        local_type_names,
+        current_crate,
+    )
 }
 
 fn collect_enum_variant_type_map_in_items(
@@ -1623,6 +1839,60 @@ fn bind_pattern_type_id(
     }
 }
 
+fn bind_option_pattern_type_id(
+    pat: &syn::Pat,
+    inner_type: &TypeIdentity,
+    local_types: &mut HashMap<String, String>,
+    value_types: &mut HashMap<String, TypeIdentity>,
+) {
+    match pat {
+        syn::Pat::TupleStruct(tuple_struct)
+            if tuple_struct
+                .path
+                .segments
+                .last()
+                .map(|segment| segment.ident == "Some")
+                .unwrap_or(false)
+                && tuple_struct.elems.len() == 1 =>
+        {
+            if let Some(inner_pat) = tuple_struct.elems.first() {
+                bind_pattern_type_id_direct(inner_pat, inner_type, local_types, value_types);
+            }
+        }
+        syn::Pat::Reference(reference) => {
+            bind_option_pattern_type_id(&reference.pat, inner_type, local_types, value_types);
+        }
+        syn::Pat::Or(or_pat) => {
+            for case in &or_pat.cases {
+                bind_option_pattern_type_id(case, inner_type, local_types, value_types);
+            }
+        }
+        _ => {}
+    }
+}
+
+fn bind_pattern_type_id_direct(
+    pat: &syn::Pat,
+    type_id: &TypeIdentity,
+    local_types: &mut HashMap<String, String>,
+    value_types: &mut HashMap<String, TypeIdentity>,
+) {
+    match pat {
+        syn::Pat::Ident(ident) => {
+            bind_value_type(
+                &ident.ident.to_string(),
+                type_id.clone(),
+                local_types,
+                value_types,
+            );
+        }
+        syn::Pat::Reference(reference) => {
+            bind_pattern_type_id_direct(&reference.pat, type_id, local_types, value_types);
+        }
+        _ => {}
+    }
+}
+
 fn bind_value_type(
     name: &str,
     type_id: TypeIdentity,
@@ -1723,6 +1993,7 @@ fn collect_callsites_in_items(
     local_type_names: &BTreeSet<String>,
     current_crate: &str,
     enum_variant_types: &EnumVariantTypeMap,
+    struct_field_types: &StructFieldTypeMap,
     infallible_serialize: &InfallibleSerializeManifest,
     function_postconditions: &FunctionPostconditionsManifest,
     out: &mut Vec<CallSite>,
@@ -1743,6 +2014,7 @@ fn collect_callsites_in_items(
                     local_type_names,
                     current_crate,
                     enum_variant_types,
+                    struct_field_types,
                     infallible_serialize,
                     function_postconditions,
                     &param_type_map,
@@ -1773,6 +2045,7 @@ fn collect_callsites_in_items(
                             local_type_names,
                             current_crate,
                             enum_variant_types,
+                            struct_field_types,
                             infallible_serialize,
                             function_postconditions,
                             &param_type_map,
@@ -1794,6 +2067,7 @@ fn collect_callsites_in_items(
                         local_type_names,
                         current_crate,
                         enum_variant_types,
+                        struct_field_types,
                         infallible_serialize,
                         function_postconditions,
                         out,
@@ -1813,6 +2087,7 @@ fn collect_callsites_in_block(
     local_type_names: &BTreeSet<String>,
     current_crate: &str,
     enum_variant_types: &EnumVariantTypeMap,
+    struct_field_types: &StructFieldTypeMap,
     infallible_serialize: &InfallibleSerializeManifest,
     function_postconditions: &FunctionPostconditionsManifest,
     // Phase-2 Tier D-lib: param name -> concrete type identity for syntactic
@@ -1831,6 +2106,7 @@ fn collect_callsites_in_block(
         local_types: HashMap<String, String>,
         value_types: HashMap<String, TypeIdentity>,
         enum_variant_types: &'a EnumVariantTypeMap,
+        struct_field_types: &'a StructFieldTypeMap,
         infallible_serialize: &'a InfallibleSerializeManifest,
         function_postconditions: &'a FunctionPostconditionsManifest,
         param_type_map: &'a HashMap<String, TypeIdentity>,
@@ -1841,6 +2117,85 @@ fn collect_callsites_in_block(
             self.value_types
                 .get(name)
                 .or_else(|| self.param_type_map.get(name))
+        }
+
+        fn expr_type_identity(&self, expr: &syn::Expr) -> Option<TypeIdentity> {
+            match expr {
+                syn::Expr::Path(path) if path.path.segments.len() == 1 => path
+                    .path
+                    .segments
+                    .first()
+                    .and_then(|segment| self.value_type(&segment.ident.to_string()).cloned()),
+                syn::Expr::Field(field) => {
+                    let receiver = self.expr_type_identity(&field.base)?;
+                    let field_name = match &field.member {
+                        syn::Member::Named(ident) => ident.to_string(),
+                        syn::Member::Unnamed(_) => return None,
+                    };
+                    self.struct_field_types
+                        .fields
+                        .get(&(receiver.krate, receiver.head, field_name))
+                        .map(|field| field.type_id.clone())
+                }
+                syn::Expr::Reference(reference) => self.expr_type_identity(&reference.expr),
+                syn::Expr::Paren(paren) => self.expr_type_identity(&paren.expr),
+                syn::Expr::Group(group) => self.expr_type_identity(&group.expr),
+                _ => None,
+            }
+        }
+
+        fn expr_option_inner_type_identity(&self, expr: &syn::Expr) -> Option<TypeIdentity> {
+            match expr {
+                syn::Expr::Field(field) => {
+                    let receiver = self.expr_type_identity(&field.base)?;
+                    let field_name = match &field.member {
+                        syn::Member::Named(ident) => ident.to_string(),
+                        syn::Member::Unnamed(_) => return None,
+                    };
+                    self.struct_field_types
+                        .fields
+                        .get(&(receiver.krate, receiver.head, field_name))
+                        .and_then(|field| field.option_inner.clone())
+                }
+                syn::Expr::Reference(reference) => {
+                    self.expr_option_inner_type_identity(&reference.expr)
+                }
+                syn::Expr::Paren(paren) => self.expr_option_inner_type_identity(&paren.expr),
+                syn::Expr::Group(group) => self.expr_option_inner_type_identity(&group.expr),
+                _ => None,
+            }
+        }
+
+        fn serde_json_panic_partial_for_receiver(
+            &self,
+            receiver: &syn::Expr,
+            panic_leaf: &str,
+        ) -> Option<(String, String)> {
+            match receiver {
+                syn::Expr::Call(call) => {
+                    let (producer, producer_crate, _) =
+                        call_expr_callee(&call.func, self.use_map, self.current_crate)?;
+                    if !needs_arg_type_resolution(producer_crate.as_deref(), &producer) {
+                        return None;
+                    }
+                    let arg = call.args.first()?;
+                    let type_id = self.expr_type_identity(arg)?;
+                    self.infallible_serialize
+                        .contract_for(&producer, &type_id)?;
+                    disambiguated_partial_leaf("result", panic_leaf)
+                        .map(|leaf| ("std".to_string(), leaf))
+                }
+                syn::Expr::Paren(paren) => {
+                    self.serde_json_panic_partial_for_receiver(&paren.expr, panic_leaf)
+                }
+                syn::Expr::Group(group) => {
+                    self.serde_json_panic_partial_for_receiver(&group.expr, panic_leaf)
+                }
+                syn::Expr::Reference(reference) => {
+                    self.serde_json_panic_partial_for_receiver(&reference.expr, panic_leaf)
+                }
+                _ => None,
+            }
         }
     }
     impl<'ast, 'a> Visit<'ast> for V<'a> {
@@ -1857,11 +2212,10 @@ fn collect_callsites_in_block(
                 let disambiguated_target =
                     if needs_arg_type_resolution(callee_crate.as_deref(), &callee) {
                         node.args.first().and_then(|a| {
-                            let name = expr_bare_ident_name(a)?;
-                            let type_id = self.value_type(&name)?;
+                            let type_id = self.expr_type_identity(a)?;
                             disambiguated_serde_json_totality_target(
                                 &callee,
-                                type_id,
+                                &type_id,
                                 self.infallible_serialize,
                                 self.current_crate,
                             )
@@ -1874,6 +2228,8 @@ fn collect_callsites_in_block(
                         &node.func,
                         &node.args,
                         self.current_crate,
+                        self.rel_path,
+                        start.line,
                     )
                 });
                 self.out.push(CallSite {
@@ -1949,11 +2305,15 @@ fn collect_callsites_in_block(
                 .is_none()
                 .then(|| {
                     if is_panic_leaf(&callee) {
-                        self.function_postconditions.panic_partial_for_receiver(
-                            &node.receiver,
-                            self.current_crate,
-                            &callee,
-                        )
+                        self.serde_json_panic_partial_for_receiver(&node.receiver, &callee)
+                            .or_else(|| {
+                                self.function_postconditions.panic_partial_for_receiver(
+                                    &node.receiver,
+                                    self.current_crate,
+                                    self.rel_path,
+                                    &callee,
+                                )
+                            })
                     } else {
                         None
                     }
@@ -1976,8 +2336,12 @@ fn collect_callsites_in_block(
                 .as_ref()
                 .is_none()
                 .then(|| {
-                    self.function_postconditions
-                        .target_for_method_call(node, self.current_crate)
+                    self.function_postconditions.target_for_method_call(
+                        node,
+                        self.current_crate,
+                        self.rel_path,
+                        start.line,
+                    )
                 })
                 .flatten();
             self.out.push(CallSite {
@@ -2007,12 +2371,19 @@ fn collect_callsites_in_block(
         }
         fn visit_expr_match(&mut self, node: &'ast syn::ExprMatch) {
             self.visit_expr(&node.expr);
-            let scrutinee_type =
-                expr_bare_ident_name(&node.expr).and_then(|name| self.value_type(&name).cloned());
+            let scrutinee_type = self.expr_type_identity(&node.expr);
+            let option_inner_type = self.expr_option_inner_type_identity(&node.expr);
             for arm in &node.arms {
                 let saved_local_types = self.local_types.clone();
                 let saved_value_types = self.value_types.clone();
-                if let Some(type_id) = scrutinee_type.as_ref() {
+                if let Some(inner_type) = option_inner_type.as_ref() {
+                    bind_option_pattern_type_id(
+                        &arm.pat,
+                        inner_type,
+                        &mut self.local_types,
+                        &mut self.value_types,
+                    );
+                } else if let Some(type_id) = scrutinee_type.as_ref() {
                     bind_pattern_type_id(
                         &arm.pat,
                         type_id,
@@ -2027,6 +2398,29 @@ fn collect_callsites_in_block(
                 self.visit_expr(&arm.body);
                 self.local_types = saved_local_types;
                 self.value_types = saved_value_types;
+            }
+        }
+        fn visit_expr_if(&mut self, node: &'ast syn::ExprIf) {
+            let syn::Expr::Let(expr_let) = &*node.cond else {
+                syn::visit::visit_expr_if(self, node);
+                return;
+            };
+            self.visit_expr(&expr_let.expr);
+            let saved_local_types = self.local_types.clone();
+            let saved_value_types = self.value_types.clone();
+            if let Some(inner_type) = self.expr_option_inner_type_identity(&expr_let.expr) {
+                bind_option_pattern_type_id(
+                    &expr_let.pat,
+                    &inner_type,
+                    &mut self.local_types,
+                    &mut self.value_types,
+                );
+            }
+            self.visit_block(&node.then_branch);
+            self.local_types = saved_local_types;
+            self.value_types = saved_value_types;
+            if let Some((_else_token, else_branch)) = &node.else_branch {
+                self.visit_expr(else_branch);
             }
         }
         fn visit_expr_index(&mut self, node: &'ast syn::ExprIndex) {
@@ -2064,21 +2458,39 @@ fn collect_callsites_in_block(
                 self.local_type_names,
                 self.current_crate,
             );
-            let explicit = explicit_type.as_ref().map(|type_id| type_id.krate.clone());
-            let inferred = node.init.as_ref().and_then(|init| {
+            let mut inferred_type = None;
+            let inferred_crate = node.init.as_ref().and_then(|init| {
                 self.visit_expr(&init.expr);
-                expr_return_crate(
+                inferred_type = expr_constructed_type_identity(
                     &init.expr,
                     self.use_map,
-                    self.fn_return_crates,
                     self.local_type_names,
                     self.current_crate,
-                )
+                );
+                inferred_type
+                    .as_ref()
+                    .map(|type_id| type_id.krate.clone())
+                    .or_else(|| {
+                        expr_return_crate(
+                            &init.expr,
+                            self.use_map,
+                            self.fn_return_crates,
+                            self.local_type_names,
+                            self.current_crate,
+                        )
+                    })
             });
-            if let (Some(name), Some(krate)) = (pat_ident_name(&node.pat), explicit.or(inferred)) {
-                self.local_types.insert(name, krate);
+            let local_type = explicit_type.clone().or(inferred_type);
+            if let (Some(name), Some(krate)) = (
+                pat_ident_name(&node.pat),
+                local_type
+                    .as_ref()
+                    .map(|type_id| type_id.krate.clone())
+                    .or(inferred_crate),
+            ) {
+                self.local_types.insert(name.clone(), krate);
             }
-            if let (Some(name), Some(type_id)) = (pat_ident_name(&node.pat), explicit_type) {
+            if let (Some(name), Some(type_id)) = (pat_ident_name(&node.pat), local_type) {
                 self.value_types.insert(name, type_id);
             }
         }
@@ -2095,6 +2507,7 @@ fn collect_callsites_in_block(
             .collect(),
         value_types: param_type_map.clone(),
         enum_variant_types,
+        struct_field_types,
         infallible_serialize,
         function_postconditions,
         param_type_map,
@@ -2636,6 +3049,57 @@ fn type_identity_for(
     Some(TypeIdentity { krate, head })
 }
 
+fn expr_constructed_type_identity(
+    expr: &syn::Expr,
+    use_map: &HashMap<String, String>,
+    local_type_names: &BTreeSet<String>,
+    current_crate: &str,
+) -> Option<TypeIdentity> {
+    match expr {
+        syn::Expr::Struct(expr_struct) => {
+            type_identity_for_path(&expr_struct.path, use_map, local_type_names, current_crate)
+        }
+        syn::Expr::Paren(paren) => {
+            expr_constructed_type_identity(&paren.expr, use_map, local_type_names, current_crate)
+        }
+        syn::Expr::Group(group) => {
+            expr_constructed_type_identity(&group.expr, use_map, local_type_names, current_crate)
+        }
+        _ => None,
+    }
+}
+
+fn type_identity_for_path(
+    path: &syn::Path,
+    use_map: &HashMap<String, String>,
+    local_type_names: &BTreeSet<String>,
+    current_crate: &str,
+) -> Option<TypeIdentity> {
+    let head = path.segments.last()?.ident.to_string();
+    let segs: Vec<String> = path
+        .segments
+        .iter()
+        .map(|segment| segment.ident.to_string())
+        .collect();
+    let krate = if segs.len() >= 2 {
+        resolve_path_root_crate(segs.first()?, use_map, current_crate)
+    } else {
+        use_map
+            .get(&head)
+            .map(|root| resolve_path_root_crate(root, use_map, current_crate))
+            .or_else(|| {
+                if !current_crate.is_empty() && local_type_names.contains(&head) {
+                    Some(current_crate.to_string())
+                } else if is_std_prelude_panic_type(&head) {
+                    Some("std".to_string())
+                } else {
+                    None
+                }
+            })?
+    };
+    Some(TypeIdentity { krate, head })
+}
+
 fn strip_reference_type(ty: &syn::Type) -> &syn::Type {
     match ty {
         syn::Type::Reference(r) => strip_reference_type(&r.elem),
@@ -3106,6 +3570,8 @@ fn lift_implications(params: &Value) -> Result<Value, String> {
         let local_type_names = collect_local_type_names(&file);
         let enum_variant_types =
             collect_enum_variant_type_map(&file, &use_map, &local_type_names, &current_crate);
+        let struct_field_types =
+            collect_struct_field_type_map(&file, &use_map, &local_type_names, &current_crate);
         let fn_return_crates =
             function_return_crates(&file, &use_map, &local_type_names, &current_crate);
         let mut callsites: Vec<CallSite> = Vec::new();
@@ -3118,6 +3584,7 @@ fn lift_implications(params: &Value) -> Result<Value, String> {
             &local_type_names,
             &current_crate,
             &enum_variant_types,
+            &struct_field_types,
             &infallible_serialize,
             &function_postconditions,
             &mut callsites,
@@ -4510,7 +4977,9 @@ fn function_contract_lift(params: &Value) -> Result<Value, String> {
     let total_fnc = entries.len();
     let eligible = entries
         .iter()
-        .filter(|e| body_discharge_policy_from_object_with_default(e, false).body_discharge_eligible)
+        .filter(|e| {
+            body_discharge_policy_from_object_with_default(e, false).body_discharge_eligible
+        })
         .count();
     let mut refusal_by_reason: std::collections::BTreeMap<String, usize> =
         std::collections::BTreeMap::new();
@@ -10482,6 +10951,13 @@ pub fn bitwise_not() -> i64 {
             .expect("write function postconditions manifest");
     }
 
+    fn source_line_containing(src: &str, needle: &str) -> usize {
+        src.lines()
+            .position(|line| line.contains(needle))
+            .unwrap_or_else(|| panic!("missing source line containing `{needle}`"))
+            + 1
+    }
+
     fn write_residue_manifest(root: &Path, body: &str) {
         let provekit_dir = root.join(".provekit");
         fs::create_dir_all(&provekit_dir).expect("create .provekit dir");
@@ -11947,6 +12423,339 @@ reason = "grammar_op_shape(CONCEPT_BIND_RESULT) has a fixed primitive arm and js
     }
 
     #[test]
+    fn lift_implications_disambiguates_constructor_locals_for_infallible_serde_manifest() {
+        let src = r##"
+use serde_json as sj;
+
+pub struct BridgeHeaderV14 {
+    name: String,
+}
+
+pub struct Other {
+    name: String,
+}
+
+macro_rules! make_header {
+    () => {
+        BridgeHeaderV14 {
+            name: "macro".to_string(),
+        }
+    };
+}
+
+pub fn audited_constructor() {
+    let header = BridgeHeaderV14 {
+        name: "ok".to_string(),
+    };
+    sj::to_value(header).unwrap();
+}
+
+pub fn explicit_type_wins() {
+    let header: Other = BridgeHeaderV14 {
+        name: "wrong".to_string(),
+    }.into();
+    sj::to_value(header).unwrap();
+}
+
+pub fn macro_constructor_does_not_bind() {
+    let header = make_header!();
+    sj::to_value(header).unwrap();
+}
+"##;
+        let root = temp_workspace("lift_implications_constructor_local_type");
+        let src_dir = root.join("src");
+        fs::create_dir_all(&src_dir).expect("create src dir");
+        fs::write(
+            root.join("Cargo.toml"),
+            r#"
+[package]
+name = "consumer-crate"
+version = "0.1.0"
+edition = "2021"
+"#,
+        )
+        .expect("write Cargo.toml");
+        let rel = "src/lib.rs";
+        fs::write(root.join(rel), src).expect("write source");
+        write_infallible_serialize_manifest(
+            &root,
+            r#"
+[[serde_json]]
+function = "to_value"
+type_crate = "consumer_crate"
+type_name = "BridgeHeaderV14"
+contract = "serde_json_to_value__bridge_header_v14"
+reason = "BridgeHeaderV14 derives Serialize over serde_json-infallible fields"
+"#,
+        );
+
+        let expected_cid = "blake3-512:abababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababab";
+        let resp = lift_implications(&json!({
+            "workspace_root": root.to_string_lossy(),
+            "source_paths": [rel],
+            "contract_bindings": [{
+                "name": "serde_json_to_value__bridge_header_v14",
+                "library": "consumer_crate",
+                "contract_cid": expected_cid,
+                "bodyDischargeEligible": false,
+                "bodyDischargeRefusalReason": "totality-axiom"
+            }],
+        }))
+        .expect("lift_implications");
+
+        let hits: Vec<&Value> = resp["ir"]
+            .as_array()
+            .expect("ir array")
+            .iter()
+            .filter(|entry| entry["sourceSymbol"] == "to_value")
+            .filter(|entry| entry["targetContractCid"] == expected_cid)
+            .collect();
+        assert_eq!(
+            hits.len(),
+            1,
+            "only the direct local struct constructor should bind to the manifest type; explicit-type and macro locals must not borrow it: {resp:#?}"
+        );
+
+        let _ = fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn lift_implications_disambiguates_option_field_match_bindings_for_infallible_serde_manifest() {
+        let src = r##"
+use serde_json as sj;
+
+pub struct Claim {
+    witness: Option<Witness>,
+    other: Option<Other>,
+}
+
+pub struct Witness {
+    value: String,
+}
+
+pub struct Other {
+    value: String,
+}
+
+pub fn audited_option_field(claim: &Claim) {
+    match &claim.witness {
+        Some(witness) => {
+            sj::to_value(witness).unwrap();
+        }
+        None => {}
+    }
+}
+
+pub fn audited_option_field_if_let(claim: &Claim) {
+    if let Some(witness) = &claim.witness {
+        sj::to_value(witness).unwrap();
+    }
+}
+
+pub fn shadowed_binding_does_not_remain_typed(claim: &Claim) {
+    match &claim.witness {
+        Some(witness) => {
+            let witness = Other {
+                value: "shadow".to_string(),
+            };
+            sj::to_value(witness).unwrap();
+        }
+        None => {}
+    }
+}
+
+pub fn method_receiver_does_not_bind(claim: &Claim) {
+    match claim.witness.as_ref() {
+        Some(witness) => {
+            sj::to_value(witness).unwrap();
+        }
+        None => {}
+    }
+}
+
+pub fn if_let_method_receiver_does_not_bind(claim: &Claim) {
+    if let Some(witness) = claim.witness.as_ref() {
+        sj::to_value(witness).unwrap();
+    }
+}
+
+pub fn wrong_field_does_not_bind(claim: &Claim) {
+    match &claim.other {
+        Some(witness) => {
+            sj::to_value(witness).unwrap();
+        }
+        None => {}
+    }
+}
+"##;
+        let root = temp_workspace("lift_implications_option_field_bindings");
+        let src_dir = root.join("src");
+        fs::create_dir_all(&src_dir).expect("create src dir");
+        fs::write(
+            root.join("Cargo.toml"),
+            r#"
+[package]
+name = "consumer-crate"
+version = "0.1.0"
+edition = "2021"
+"#,
+        )
+        .expect("write Cargo.toml");
+        let rel = "src/lib.rs";
+        fs::write(root.join(rel), src).expect("write source");
+        write_infallible_serialize_manifest(
+            &root,
+            r#"
+[[serde_json]]
+function = "to_value"
+type_crate = "consumer_crate"
+type_name = "Witness"
+contract = "serde_json_to_value__witness"
+reason = "Witness derives Serialize over serde_json-infallible fields"
+"#,
+        );
+
+        let expected_cid = "blake3-512:bcbcbcbcbcbcbcbcbcbcbcbcbcbcbcbcbcbcbcbcbcbcbcbcbcbcbcbcbcbcbcbcbcbcbcbcbcbcbcbcbcbcbcbcbcbcbcbcbcbcbcbcbcbcbcbcbcbcbcbcbcbcbcbcbc";
+        let resp = lift_implications(&json!({
+            "workspace_root": root.to_string_lossy(),
+            "source_paths": [rel],
+            "contract_bindings": [{
+                "name": "serde_json_to_value__witness",
+                "library": "consumer_crate",
+                "contract_cid": expected_cid,
+                "bodyDischargeEligible": false,
+                "bodyDischargeRefusalReason": "totality-axiom"
+            }],
+        }))
+        .expect("lift_implications");
+
+        let hits: Vec<&Value> = resp["ir"]
+            .as_array()
+            .expect("ir array")
+            .iter()
+            .filter(|entry| entry["sourceSymbol"] == "to_value")
+            .filter(|entry| entry["targetContractCid"] == expected_cid)
+            .collect();
+        assert_eq!(
+            hits.len(),
+            2,
+            "only direct Option field patterns over &claim.witness should bind witness to Witness; shadowed, method-derived, and wrong-field bindings must not borrow it: {resp:#?}"
+        );
+
+        let _ = fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn lift_implications_matches_function_postconditions_by_arg0_path_without_fuzzy_borrowing() {
+        let src = r##"
+pub mod canonical {
+    pub fn json_jcs(_value: &serde_json::Value) -> Result<String, String> {
+        panic!()
+    }
+}
+
+pub mod other {
+    pub fn json_jcs(_value: &serde_json::Value) -> Result<String, String> {
+        panic!()
+    }
+}
+
+pub fn audited(value: serde_json::Value, other_value: serde_json::Value) {
+    crate::canonical::json_jcs(&value).expect("audited value canonicalizes");
+    crate::canonical::json_jcs(&other_value).expect("wrong arg");
+    crate::other::json_jcs(&value).expect("wrong function path");
+}
+
+pub fn same_shape_later(value: serde_json::Value) {
+    crate::canonical::json_jcs(&value).expect("same shape, wrong source site");
+}
+"##;
+        let root = temp_workspace("lift_implications_arg0_path_postconditions");
+        let src_dir = root.join("src");
+        fs::create_dir_all(&src_dir).expect("create src dir");
+        fs::write(
+            root.join("Cargo.toml"),
+            r#"
+[package]
+name = "consumer-crate"
+version = "0.1.0"
+edition = "2021"
+"#,
+        )
+        .expect("write Cargo.toml");
+        let rel = "src/lib.rs";
+        fs::write(root.join(rel), src).expect("write source");
+        let audited_line = source_line_containing(src, "audited value canonicalizes");
+        write_function_postconditions_manifest(
+            &root,
+            &format!(
+                r#"
+[[functions]]
+call_kind = "associated"
+callee_crate = "consumer_crate"
+type_path = "crate::canonical"
+callee = "json_jcs"
+source_file = "src/lib.rs"
+source_line = {audited_line}
+arg0_path = "value"
+contract = "canonical_json_jcs__audited_value"
+post_predicate = "is_ok"
+reason = "The audited value is known to contain only canonicalizable JSON primitives"
+"#,
+            ),
+        );
+
+        let post_cid = "blake3-512:cdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcd";
+        let result_expect_cid = "blake3-512:dededededededededededededededededededededededededededededededededededededededededededededededededededededededededededededededededede";
+        let resp = lift_implications(&json!({
+            "workspace_root": root.to_string_lossy(),
+            "source_paths": [rel],
+            "contract_bindings": [
+                {
+                    "name": "canonical_json_jcs__audited_value",
+                    "library": "consumer_crate",
+                    "contract_cid": post_cid,
+                    "bodyDischargeEligible": false,
+                    "bodyDischargeRefusalReason": "totality-axiom"
+                },
+                {
+                    "name": "result_expect@std/src/result.rs:2:1",
+                    "library": "std",
+                    "contract_cid": result_expect_cid,
+                    "body_bearing": true,
+                    "has_pre": true
+                }
+            ],
+        }))
+        .expect("lift_implications");
+
+        let ir = resp["ir"].as_array().expect("ir array");
+        let post_hits: Vec<&Value> = ir
+            .iter()
+            .filter(|entry| {
+                entry["sourceSymbol"] == "json_jcs" && entry["targetContractCid"] == post_cid
+            })
+            .collect();
+        assert_eq!(
+            post_hits.len(),
+            1,
+            "only crate::canonical::json_jcs(&value) may bridge to the audited postcondition: {resp:#?}"
+        );
+        let panic_targets: Vec<&str> = ir
+            .iter()
+            .filter(|entry| entry["sourceSymbol"] == "method:expect")
+            .filter_map(|entry| entry["targetContractCid"].as_str())
+            .collect();
+        assert_eq!(
+            panic_targets,
+            vec![result_expect_cid],
+            "only the audited receiver should route its expect panic leaf through result_expect: {resp:#?}"
+        );
+
+        let _ = fs::remove_dir_all(root);
+    }
+
+    #[test]
     fn lift_implications_disambiguates_blessed_match_bindings_from_manifest() {
         let src = r##"
 pub enum Dialect {
@@ -12156,6 +12965,97 @@ reason = "project-local totality axiom for dependency Sort serialization"
             .find(|entry| entry["sourceSymbol"] == "to_string")
             .expect("serde_json::to_string bridge for external type identity");
         assert_eq!(bridge["targetContractCid"], sort_cid);
+
+        let _ = fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn lift_implications_routes_external_to_value_expect_for_line_broken_receiver() {
+        let src = r##"
+use dep_crate::{IrFormula, IrTerm};
+
+pub fn formula_to_canonical(f: &IrFormula, g: &IrTerm) {
+    let serde =
+        serde_json::to_value(f).expect("IrFormula serializes");
+    serde_json::to_value(g).expect("wrong arg type");
+    serde_json::to_string(f).expect("wrong serde function");
+    let through_var = serde_json::to_value(f);
+    through_var.expect("non-immediate receiver");
+    drop(serde);
+}
+"##;
+        let root = temp_workspace("lift_implications_external_to_value_expect");
+        let src_dir = root.join("src");
+        fs::create_dir_all(&src_dir).expect("create src dir");
+        fs::write(
+            root.join("Cargo.toml"),
+            r#"
+[package]
+name = "consumer-crate"
+version = "0.1.0"
+edition = "2021"
+"#,
+        )
+        .expect("write Cargo.toml");
+        let rel = "src/lib.rs";
+        fs::write(root.join(rel), src).expect("write source");
+        write_infallible_serialize_manifest(
+            &root,
+            r#"
+[[serde_json]]
+function = "to_value"
+type_crate = "dep_crate"
+type_name = "IrFormula"
+contract = "serde_json_to_value__ir_formula"
+reason = "project-local totality axiom for dependency IrFormula serialization"
+"#,
+        );
+
+        let producer_cid = "blake3-512:abababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababab";
+        let result_expect_cid = "blake3-512:babababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababa";
+        let resp = lift_implications(&json!({
+            "workspace_root": root.to_string_lossy(),
+            "source_paths": [rel],
+            "contract_bindings": [
+                {
+                    "name": "serde_json_to_value__ir_formula",
+                    "library": "consumer_crate",
+                    "contract_cid": producer_cid,
+                    "bodyDischargeEligible": false,
+                    "bodyDischargeRefusalReason": "totality-axiom"
+                },
+                {
+                    "name": "result_expect@std/src/result.rs:2:1",
+                    "library": "std",
+                    "contract_cid": result_expect_cid,
+                    "body_bearing": true,
+                    "has_pre": true
+                }
+            ],
+        }))
+        .expect("lift implications");
+
+        let ir = resp["ir"].as_array().expect("ir array");
+        let producer_hits: Vec<&Value> = ir
+            .iter()
+            .filter(|entry| entry["sourceSymbol"] == "to_value")
+            .filter(|entry| entry["targetContractCid"] == producer_cid)
+            .collect();
+        assert_eq!(
+            producer_hits.len(),
+            2,
+            "both direct serde_json::to_value(f) producer calls should bridge to the external IrFormula totality contract; wrong arg type and wrong serde function must not: {resp:#?}"
+        );
+        let panic_targets: Vec<&str> = ir
+            .iter()
+            .filter(|entry| entry["sourceSymbol"] == "method:expect")
+            .filter_map(|entry| entry["targetContractCid"].as_str())
+            .collect();
+        assert_eq!(
+            panic_targets,
+            vec![result_expect_cid],
+            "only the immediate serde_json::to_value(f).expect(...) receiver should route through Result::expect; wrong arg type, wrong serde function, and through-var receiver must not: {resp:#?}"
+        );
 
         let _ = fs::remove_dir_all(root);
     }

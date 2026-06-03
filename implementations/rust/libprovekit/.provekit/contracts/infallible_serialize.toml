@@ -32,4 +32,36 @@ function = "to_value"
 type_crate = "libprovekit"
 type_name = "Term"
 contract = "serde_json_to_value__term"
-reason = "Term derives Serialize over Cid-as-string, strings, Vec<Term>, serde_json::Value, and Sort"
+reason = "Term derives Serialize at src/core/types.rs:125 over Cid-as-string, strings, Vec<Term>, serde_json::Value, and Sort; closes src/core/types.rs:2093 via claim.payload field binding"
+
+[[serde_json]]
+function = "to_value"
+type_crate = "provekit_ir_types"
+type_name = "BridgeHeaderV14"
+contract = "serde_json_to_value__bridge_header_v14"
+reason = "BridgeHeaderV14 derives Serialize at provekit-ir-types/src/lib.rs:68 over strings plus BridgeTarget string-CID payloads; closes src/core/emit_obligation.rs:62 and src/core/source_transform_kit.rs:296"
+audited_for_crate = "provekit_ir_types"
+audited_at = "2026-06-03"
+
+[[serde_json]]
+function = "to_value"
+type_crate = "libprovekit"
+type_name = "Witness"
+contract = "serde_json_to_value__witness"
+reason = "Witness derives Serialize at src/core/types.rs:698 over serde_json::Value, Cid/string-like fields, and Serialize-derived chain witnesses; closes src/core/types.rs:2070"
+
+[[serde_json]]
+function = "to_value"
+type_crate = "libprovekit"
+type_name = "Verb"
+contract = "serde_json_to_value__verb"
+reason = "Verb derives Serialize at src/core/types.rs:1241 as a two-variant enum; closes src/core/types.rs:2180"
+
+[[serde_json]]
+function = "to_value"
+type_crate = "provekit_ir_types"
+type_name = "IrFormula"
+contract = "serde_json_to_value__ir_formula"
+reason = "IrFormula derives Serialize at provekit-ir-types/src/lib.rs:398 over strings, vectors, boxes, Sort, and IrTerm; closes src/wp/tests.rs:578 and predicted D-lib side effect src/compose.rs:1410"
+audited_for_crate = "provekit_ir_types"
+audited_at = "2026-06-03"
