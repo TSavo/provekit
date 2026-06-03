@@ -192,6 +192,38 @@ def _call(name: str, *args: dict[str, object]) -> dict[str, object]:
     }
 
 
+def _kwarg(name: str, value: dict[str, object]) -> dict[str, object]:
+    return {
+        "kind": "ctor",
+        "name": "python:kwarg",
+        "args": [_str_const(name), value],
+    }
+
+
+def _tuple(*items: dict[str, object]) -> dict[str, object]:
+    return {"kind": "ctor", "name": "python:tuple", "args": list(items)}
+
+
+def _list(*items: dict[str, object]) -> dict[str, object]:
+    return {"kind": "ctor", "name": "python:list", "args": list(items)}
+
+
+def _bool_const(value: bool) -> dict[str, object]:
+    return {
+        "kind": "const",
+        "value": value,
+        "sort": {"kind": "primitive", "name": "Bool"},
+    }
+
+
+def _int_const(value: int) -> dict[str, object]:
+    return {
+        "kind": "const",
+        "value": value,
+        "sort": {"kind": "primitive", "name": "Int"},
+    }
+
+
 def _unpack_targets(*targets: dict[str, object]) -> dict[str, object]:
     return {
         "kind": "ctor",
@@ -2422,6 +2454,176 @@ def test_slice_13_keeps_complex_unpacking_and_listcomp_out_of_scope(
             "function": f"{module.removesuffix('.py')}.f",
             "line": 2,
             "reason": reason,
+        }
+    ]
+
+
+def test_b1_tuple_and_list_literals_lift_as_faithful_body_terms() -> None:
+    source = (
+        "def f(a, b):\n"
+        "    pair = (a, b)\n"
+        "    xs = [a, b]\n"
+        "    return pair\n"
+    )
+
+    result = lift_source(source, "b1_literals.py")
+
+    assert result.refusals == []
+    contract = _contract(result.ir, ".f")
+    body = contract["post"]["args"][1]
+    statements = body["args"][0]["args"]
+    assert statements[0] == {
+        "kind": "ctor",
+        "name": "python:assign",
+        "args": [_var("pair"), _tuple(_var("a"), _var("b"))],
+    }
+    assert statements[1] == {
+        "kind": "ctor",
+        "name": "python:assign",
+        "args": [_var("xs"), _list(_var("a"), _var("b"))],
+    }
+
+
+def test_b1_keyword_call_arguments_preserve_names_and_order() -> None:
+    source = "def f(a, b):\n    return make(a, dtype=b, copy=False)\n"
+
+    result = lift_source(source, "b1_kwargs.py")
+
+    assert result.refusals == []
+    contract = _contract(result.ir, ".f")
+    body = contract["post"]["args"][1]
+    assert body == {
+        "kind": "ctor",
+        "name": "python:return",
+        "args": [
+            _call(
+                "make",
+                _var("a"),
+                _kwarg("dtype", _var("b")),
+                _kwarg("copy", _bool_const(False)),
+            )
+        ],
+    }
+
+
+def test_b1_signature_forms_lift_body_and_preserve_parameter_shape() -> None:
+    source = (
+        "def f(a, /, b=None, *items, c=True, d=(1, 'x'), **kwargs):\n"
+        "    return (a, b, items, c, d, kwargs)\n"
+    )
+
+    result = lift_source(source, "b1_signature.py")
+
+    assert result.refusals == []
+    contract = _contract(result.ir, ".f")
+    assert contract["formals"] == ["a", "b", "items", "c", "d", "kwargs"]
+    assert contract["parameterShape"] == [
+        {"name": "a", "kind": "positional-only"},
+        {"name": "b", "kind": "positional-or-keyword", "default": _none_const()},
+        {"name": "items", "kind": "vararg"},
+        {"name": "c", "kind": "keyword-only", "default": _bool_const(True)},
+        {"name": "d", "kind": "keyword-only", "default": _tuple(_int_const(1), _str_const("x"))},
+        {"name": "kwargs", "kind": "kwarg"},
+    ]
+    body = contract["post"]["args"][1]
+    assert body == {
+        "kind": "ctor",
+        "name": "python:return",
+        "args": [_tuple(_var("a"), _var("b"), _var("items"), _var("c"), _var("d"), _var("kwargs"))],
+    }
+
+
+def test_b1_nonliteral_default_remains_refused_as_definition_time_hazard() -> None:
+    result = lift_source("def f(x=make()):\n    return x\n", "b1_default_refusal.py")
+
+    assert result.refusals == [
+        {
+            "kind": "unhandled-syntax",
+            "function": "b1_default_refusal.f",
+            "line": 1,
+            "reason": "non-literal default parameter values are refused",
+        }
+    ]
+
+
+def test_b1_try_lifts_opaque_and_retains_inner_raise_locus() -> None:
+    source = (
+        "def f(flag):\n"
+        "    try:\n"
+        "        if flag:\n"
+        "            raise ValueError\n"
+        "    except ValueError:\n"
+        "        return 0\n"
+        "    return 1\n"
+    )
+
+    result = lift_source(source, "b1_try.py")
+
+    assert result.refusals == []
+    contract = _contract(result.ir, ".f")
+    body = contract["post"]["args"][1]
+    first_stmt = body["args"][0]
+    assert first_stmt["name"] == "python:try"
+    loci = _runtime_failure_loci(contract)
+    assert [locus["subkind"] for locus in loci] == ["explicit-raise"]
+    assert loci[0]["exceptionClass"] == "ValueError"
+
+
+def test_b1_with_statement_remains_refused() -> None:
+    source = "def f(lock):\n    with lock:\n        return 1\n"
+
+    result = lift_source(source, "b1_with_refusal.py")
+
+    assert result.refusals == [
+        {
+            "kind": "unhandled-syntax",
+            "function": "b1_with_refusal.f",
+            "line": 2,
+            "reason": "with statements are refused",
+        }
+    ]
+
+
+def test_b1_decorated_functions_remain_deferred() -> None:
+    source = (
+        "def dispatcher(a):\n"
+        "    return (a,)\n"
+        "\n"
+        "@array_function_dispatch(dispatcher)\n"
+        "def f(a):\n"
+        "    return a.name\n"
+    )
+
+    result = lift_source(source, "b1_decorator_refusal.py")
+
+    assert result.refusals == [
+        {
+            "kind": "unhandled-syntax",
+            "function": "b1_decorator_refusal.f",
+            "line": 5,
+            "reason": "decorated functions are refused",
+        }
+    ]
+
+
+def test_b1_starred_call_and_dynamic_callee_stay_out_of_scope() -> None:
+    starred = lift_source("def f(xs):\n    return make(*xs)\n", "b1_starred_call.py")
+    dynamic = lift_source("def f(factory):\n    return factory()(1)\n", "b1_dynamic_callee.py")
+
+    assert starred.refusals == [
+        {
+            "kind": "unhandled-syntax",
+            "function": "b1_starred_call.f",
+            "line": 2,
+            "reason": "starred call arguments are refused",
+        }
+    ]
+    assert dynamic.refusals == [
+        {
+            "kind": "unhandled-syntax",
+            "function": "b1_dynamic_callee.f",
+            "line": 2,
+            "reason": "unsupported callee kind: Call",
         }
     ]
 

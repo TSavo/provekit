@@ -121,6 +121,13 @@ def _stmt(term: Json) -> ast.stmt:
             body=_stmt_list(then_branch) or [ast.Pass()],
             orelse=[] if _name(else_branch) == "python:pass" else _stmt_list(else_branch),
         )
+    if name == "python:try":
+        return ast.Try(
+            body=_stmt_list(args[0]) or [ast.Pass()],
+            handlers=_except_handlers(args[1]),
+            orelse=[] if _name(args[2]) == "python:pass" else _stmt_list(args[2]),
+            finalbody=[] if _name(args[3]) == "python:pass" else _stmt_list(args[3]),
+        )
     if name == "python:while":
         return ast.While(test=_expr(args[0]), body=_stmt_list(args[1]), orelse=[])
     if name == "python:for":
@@ -169,15 +176,32 @@ def _expr(term: Json) -> ast.expr:
             comparators=[_expr(args[2])],
         )
     if name == "python:call":
+        positional: list[ast.expr] = []
+        keywords: list[ast.keyword] = []
+        for arg in args[1:]:
+            if _name(arg) == "python:kwarg":
+                keyword_args = arg.get("args", [])
+                keywords.append(
+                    ast.keyword(
+                        arg=_const_string(keyword_args[0]),
+                        value=_expr(keyword_args[1]),
+                    )
+                )
+            else:
+                positional.append(_expr(arg))
         return ast.Call(
             func=_dotted_expr(_const_string(args[0])),
-            args=[_expr(arg) for arg in args[1:]],
-            keywords=[],
+            args=positional,
+            keywords=keywords,
         )
     if name == "python:attribute":
         return ast.Attribute(value=_expr(args[0]), attr=_const_string(args[1]), ctx=ast.Load())
     if name == "python:subscript":
         return ast.Subscript(value=_expr(args[0]), slice=_slice_or_expr(args[1]), ctx=ast.Load())
+    if name == "python:tuple":
+        return ast.Tuple(elts=[_expr(arg) for arg in args], ctx=ast.Load())
+    if name == "python:list":
+        return ast.List(elts=[_expr(arg) for arg in args], ctx=ast.Load())
     if name == "python:walrus":
         return ast.NamedExpr(target=_walrus_target(args[0]), value=_expr(args[1]))
     raise ValueError(f"unsupported python operation in expression position: {name}")
@@ -219,6 +243,23 @@ def _unpack_name_target(term: Json) -> ast.Name:
         raise ValueError(f"unpack target is not a name: {ast.dump(expr)}")
     expr.ctx = ast.Store()
     return expr
+
+
+def _except_handlers(term: Json) -> list[ast.ExceptHandler]:
+    if _name(term) != "python:except_handlers":
+        raise ValueError(f"expected python:except_handlers: {term!r}")
+    return [_except_handler(handler) for handler in term.get("args", [])]
+
+
+def _except_handler(term: Json) -> ast.ExceptHandler:
+    if _name(term) != "python:except_handler":
+        raise ValueError(f"expected python:except_handler: {term!r}")
+    args = term.get("args", [])
+    return ast.ExceptHandler(
+        type=None if _is_none_const(args[0]) else _expr(args[0]),
+        name=None if _is_none_const(args[1]) else _const_string(args[1]),
+        body=_stmt_list(args[2]) or [ast.Pass()],
+    )
 
 
 def _walrus_target(term: Json) -> ast.Name:

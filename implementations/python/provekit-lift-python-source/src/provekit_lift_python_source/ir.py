@@ -87,6 +87,7 @@ def function_contract(
     source_path: str,
     line: int,
     panic_loci: list[Json] | None = None,
+    parameter_shape: list[Json] | None = None,
 ) -> Json:
     contract = {
         "schemaVersion": "1",
@@ -104,6 +105,8 @@ def function_contract(
     }
     if panic_loci:
         contract["panicLoci"] = list(panic_loci)
+    if parameter_shape:
+        contract["parameterShape"] = list(parameter_shape)
     return contract
 
 
