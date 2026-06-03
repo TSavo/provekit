@@ -270,6 +270,14 @@ class _Emitter:
             emitted.append(self.statement(statement))
         return fold_seq(emitted)
 
+    def statements_with_extra_locals(self, statements: list[ast.stmt], extra_locals: set[str]) -> Json:
+        previous = self.locals
+        self.locals = self.locals | extra_locals
+        try:
+            return self.statements(statements)
+        finally:
+            self.locals = previous
+
     def statement(self, node: ast.stmt) -> Json:
         if isinstance(node, ast.Return):
             value = none_const() if node.value is None else self.expr(node.value)
@@ -323,6 +331,20 @@ class _Emitter:
                 then_branch,
                 else_branch,
             )
+        if isinstance(node, ast.Try):
+            handlers = [
+                self.except_handler(handler)
+                for handler in node.handlers
+            ]
+            return ctor(
+                "python:try",
+                self.statements(node.body),
+                ctor("python:except_handlers", *handlers),
+                self.statements(node.orelse) if node.orelse else pass_stmt(),
+                self.statements(node.finalbody) if node.finalbody else pass_stmt(),
+            )
+        if isinstance(node, ast.With):
+            raise _UnsupportedSyntax(node, "with statements are refused")
         if isinstance(node, ast.While):
             if node.orelse:
                 raise _UnsupportedSyntax(node, "while/else is refused")
@@ -363,6 +385,21 @@ class _Emitter:
             )
             return ctor("python:raise", value)
         raise _UnsupportedSyntax(node, f"unhandled statement kind: {type(node).__name__}")
+
+    def except_handler(self, node: ast.ExceptHandler) -> Json:
+        exception_type = none_const() if node.type is None else self.expr(node.type)
+        name = none_const() if node.name is None else str_const(node.name)
+        body = (
+            self.statements_with_extra_locals(node.body, {node.name})
+            if node.name is not None
+            else self.statements(node.body)
+        )
+        return ctor(
+            "python:except_handler",
+            exception_type,
+            name,
+            body,
+        )
 
     def runtime_failure_locus(
         self,
@@ -603,6 +640,10 @@ class _Emitter:
                 )
             )
             return term
+        if isinstance(node, ast.Tuple):
+            return ctor("python:tuple", *[self.expr(element) for element in node.elts])
+        if isinstance(node, ast.List):
+            return ctor("python:list", *[self.expr(element) for element in node.elts])
         if isinstance(node, ast.NamedExpr):
             if not isinstance(node.target, ast.Name):
                 raise _UnsupportedSyntax(
@@ -650,11 +691,12 @@ class _Emitter:
         return result
 
     def call(self, node: ast.Call) -> Json:
-        if node.keywords:
-            raise _UnsupportedSyntax(node, "keyword arguments are refused")
         for arg in node.args:
             if isinstance(arg, ast.Starred):
                 raise _UnsupportedSyntax(arg, "starred call arguments are refused")
+        for keyword in node.keywords:
+            if keyword.arg is None:
+                raise _UnsupportedSyntax(keyword, "starred call arguments are refused")
         if isinstance(node.func, ast.Attribute):
             self.expr(node.func)
         callee = _callee_name(node.func)
@@ -662,7 +704,12 @@ class _Emitter:
             self.effects.add_io()
         else:
             self.effects.add_unresolved_call(callee)
-        return ctor("python:call", str_const(callee), *[self.expr(arg) for arg in node.args])
+        args = [self.expr(arg) for arg in node.args]
+        args.extend(
+            ctor("python:kwarg", str_const(str(keyword.arg)), self.expr(keyword.value))
+            for keyword in node.keywords
+        )
+        return ctor("python:call", str_const(callee), *args)
 
     def subscript_index(self, node: ast.Subscript) -> Json:
         if isinstance(node.slice, ast.Slice):
@@ -754,19 +801,11 @@ def _lift_function(
         non_authoring = [d for d in node.decorator_list if not is_authoring_decorator(d)]
         if non_authoring:
             raise _UnsupportedSyntax(node, "decorated functions are refused")
-        if node.args.vararg is not None or node.args.kwarg is not None:
-            raise _UnsupportedSyntax(node, "*args and **kwargs are refused")
-        if node.args.posonlyargs:
-            raise _UnsupportedSyntax(node, "positional-only parameters are refused")
-        if node.args.kwonlyargs:
-            raise _UnsupportedSyntax(node, "keyword-only parameters are refused")
-        if node.args.defaults or node.args.kw_defaults:
-            raise _UnsupportedSyntax(node, "default parameter values are refused")
+        formals, parameter_shape = _parameter_shape(node)
         refused = _contains_refused_control(node)
         if refused is not None:
             raise refused
 
-        formals = [arg.arg for arg in node.args.args]
         locals_ = _function_locals(node, formals)
         effects = _EffectSet()
         panic_loci: list[Json] = []
@@ -787,6 +826,11 @@ def _lift_function(
             source_path=source_path,
             line=node.lineno,
             panic_loci=panic_loci,
+            parameter_shape=(
+                parameter_shape
+                if _has_nontrivial_parameter_shape(parameter_shape)
+                else None
+            ),
         )
     except _UnsupportedSyntax as exc:
         result.refusals.append(
@@ -798,6 +842,82 @@ def _lift_function(
             )
         )
         return None
+
+
+def _parameter_shape(node: ast.FunctionDef) -> tuple[list[str], list[Json]]:
+    formals: list[str] = []
+    shape: list[Json] = []
+    positional = [*node.args.posonlyargs, *node.args.args]
+    defaults = list(node.args.defaults)
+    default_offset = len(positional) - len(defaults)
+    default_by_index = {
+        index + default_offset: default
+        for index, default in enumerate(defaults)
+    }
+
+    for index, arg in enumerate(node.args.posonlyargs):
+        entry: Json = {"name": arg.arg, "kind": "positional-only"}
+        if index in default_by_index:
+            entry["default"] = _literal_default(default_by_index[index])
+        formals.append(arg.arg)
+        shape.append(entry)
+
+    for local_index, arg in enumerate(node.args.args):
+        index = len(node.args.posonlyargs) + local_index
+        entry = {"name": arg.arg, "kind": "positional-or-keyword"}
+        if index in default_by_index:
+            entry["default"] = _literal_default(default_by_index[index])
+        formals.append(arg.arg)
+        shape.append(entry)
+
+    if node.args.vararg is not None:
+        formals.append(node.args.vararg.arg)
+        shape.append({"name": node.args.vararg.arg, "kind": "vararg"})
+
+    for arg, default in zip(node.args.kwonlyargs, node.args.kw_defaults, strict=True):
+        entry = {"name": arg.arg, "kind": "keyword-only"}
+        if default is not None:
+            entry["default"] = _literal_default(default)
+        formals.append(arg.arg)
+        shape.append(entry)
+
+    if node.args.kwarg is not None:
+        formals.append(node.args.kwarg.arg)
+        shape.append({"name": node.args.kwarg.arg, "kind": "kwarg"})
+
+    return formals, shape
+
+
+def _has_nontrivial_parameter_shape(shape: list[Json]) -> bool:
+    return any(
+        entry.get("kind") != "positional-or-keyword" or "default" in entry
+        for entry in shape
+    )
+
+
+def _literal_default(node: ast.expr) -> Json:
+    if isinstance(node, ast.Constant):
+        value = node.value
+        if isinstance(value, bool):
+            return bool_const(value)
+        if isinstance(value, int):
+            return int_const(value)
+        if isinstance(value, str):
+            return str_const(value)
+        if value is None:
+            return none_const()
+    if isinstance(node, ast.UnaryOp) and isinstance(node.op, (ast.UAdd, ast.USub)):
+        operand = node.operand
+        if isinstance(operand, ast.Constant) and type(operand.value) is int:
+            value = operand.value
+            if isinstance(node.op, ast.USub):
+                value = -value
+            return int_const(value)
+    if isinstance(node, ast.Tuple):
+        return ctor("python:tuple", *[_literal_default(element) for element in node.elts])
+    if isinstance(node, ast.List):
+        return ctor("python:list", *[_literal_default(element) for element in node.elts])
+    raise _UnsupportedSyntax(node, "non-literal default parameter values are refused")
 
 
 def _refusal(
