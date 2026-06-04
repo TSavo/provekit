@@ -301,6 +301,11 @@ pub fn emit_formula(formula: &Formula) -> String {
 // full Python-`==`-semantics rationale.
 use crate::literal_encoding::{emit_const_value as encode_const, LiteralConstants};
 
+// isinstance disjointness axioms live in the hand-maintained
+// `isinstance_encoding` module (NOT here) so a regeneration of this file
+// cannot silently revert the soundness-critical type-disjointness encoding.
+use crate::isinstance_encoding::IsinstanceClauses;
+
 fn emit_const_value(value: &serde_json::Value, sort_name: &str) -> String {
     // sort_name is unused: literals are encoded into the Int universe
     // (concrete ints for int/bool, hash-named uninterpreted consts for str)
@@ -966,6 +971,10 @@ pub fn compile_formula(formula: &Formula) -> CompiledFormula {
     // The axiom is a Python-TRUE fact, so it is sound on the negated path too:
     // it only removes spurious models, never adds one.
     preamble.push_str(&LiteralConstants::from_formula(formula).preamble());
+    // Emit isinstance disjointness clauses for genuinely-disjoint builtin type
+    // pairs that appear with the same subject in the formula. These are
+    // Python-TRUE facts (ground, quantifier-free). See `isinstance_encoding`.
+    preamble.push_str(&IsinstanceClauses::from_formula(formula).preamble());
     let body = format!("(assert (not {}))\n(check-sat)\n", body_formula);
     let free_vars_vec = free_vars
         .into_iter()
@@ -1052,6 +1061,8 @@ pub fn compile_asserted_formula(formula: &Formula) -> CompiledFormula {
     // axiom (str/None distinct from each other and from concrete int/bool
     // values; bool encoded as int; floats residual). See `literal_encoding`.
     preamble.push_str(&LiteralConstants::from_formula(formula).preamble());
+    // Emit isinstance disjointness clauses (see `isinstance_encoding`).
+    preamble.push_str(&IsinstanceClauses::from_formula(formula).preamble());
 
     let body = format!("(assert {})\n(check-sat)\n", body_formula);
     let free_vars_vec = free_vars

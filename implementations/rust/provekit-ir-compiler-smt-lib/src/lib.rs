@@ -14,6 +14,7 @@ use provekit_ir_compiler::{
 };
 
 mod generated;
+mod isinstance_encoding;
 mod literal_encoding;
 
 pub const DIALECT: &str = "smt-lib-v2.6";

@@ -1552,23 +1552,26 @@ def test_truthiness_isinstance_is_loudly_refused():
     )
 
 
-def test_truthiness_isinstance_as_bare_assert_is_loudly_refused():
-    # Pure-assert form (no binding, Pattern 3 path): ``assert isinstance(x, T)``
-    # in a 2-assert body.  The isinstance assert raises ValueError → atom skipped.
-    # With only 1 liftable atom (or 0), characterization releases to Layer 0.
+def test_truthiness_isinstance_builtin_as_bare_assert_lifts_as_characterization():
+    # UPDATED (isinstance now lifts for known builtins): ``assert isinstance(x, T)``
+    # on recognized concrete builtin types now lifts to an atomic formula.
+    # A 2-assert body with both isinstance assertions on DIFFERENT subjects
+    # is a valid characterization (independent atoms → consistent).
     out = _lift("""
         def test_isinstance_in_characterization(x, y):
             assert isinstance(x, int)
             assert isinstance(y, str)
     """)
-    # With 0 liftable atoms (both isinstance), characterization skips the test.
-    # The test must NOT appear as a lifted characterization.
-    assert out.characterization_lifted == 0, (
-        f"isinstance asserts must not produce characterization lift: {[d.name for d in out.decls]}"
+    # Both isinstance assertions on different subjects → must lift as characterization.
+    assert out.characterization_lifted == 1, (
+        f"isinstance(x,int) ∧ isinstance(y,str) must lift as characterization; "
+        f"warnings={[w.reason for w in out.warnings]}, decls={[d.name for d in out.decls]}"
     )
-    # Warnings must name isinstance.
-    assert any("isinstance" in w.reason for w in out.warnings), (
-        f"expected isinstance warning; warnings: {[w.reason for w in out.warnings]}"
+    # The lifted formula must have two isinstance atoms.
+    atoms = _flatten_and(out.decls[0].inv)
+    isinstance_atoms = [a for a in atoms if isinstance(a, _Atomic) and a.name == "isinstance"]
+    assert len(isinstance_atoms) == 2, (
+        f"expected 2 isinstance atoms; atoms={atoms!r}"
     )
 
 
@@ -2675,4 +2678,241 @@ def test_approx_in_value_scope_pattern_lifts():
     # No silent skip: must be claimed.
     assert "test_approx_value_scope" in out.claimed_tests, (
         "test must be CLAIMED (not silently fall through to Layer 0)"
+    )
+
+
+# ---------------------------------------------------------------------------
+# isinstance form — census row: Bucket A
+# Per-form discrimination tests (3 per variant: positive + discrimination +
+# structural). RED-first; implementations in layer2.py follow.
+# ---------------------------------------------------------------------------
+
+
+# --- POSITIVE: isinstance(x, int) is a single liftable atom -----------------
+
+def test_isinstance_builtin_int_lifts_to_atomic():
+    # POSITIVE: a single ``assert isinstance(x, int)`` in a 2-assert body
+    # must lift to an atomic("isinstance", [x, pytype_int]).
+    # (Pairs with the truthy-and-none assert so characterization fires.)
+    out = _lift("""
+        def test_type_guard(x):
+            assert x is not None
+            assert isinstance(x, int)
+    """)
+    assert out.lifted == 1, (
+        f"isinstance(x,int) must lift to a contract; warnings={[w.reason for w in out.warnings]}"
+    )
+    atoms = _flatten_and(out.decls[0].inv)
+    isinstance_atoms = [a for a in atoms if isinstance(a, _Atomic) and a.name == "isinstance"]
+    assert isinstance_atoms, (
+        f"expected atomic('isinstance',...) in lifted formula; atoms={atoms!r}"
+    )
+    atom = isinstance_atoms[0]
+    # arg[0] is the subject var; arg[1] is a nullary Ctor for the type name
+    assert len(atom.args) == 2
+    assert isinstance(atom.args[0], _Var) and atom.args[0].name == "x"
+    assert isinstance(atom.args[1], _Ctor) and atom.args[1].name == "pytype_int"
+    assert len(atom.args[1].args) == 0, "type ctor must be nullary"
+
+
+# --- DISCRIMINATION: isinstance(x,int) ∧ not isinstance(x,int) is contradictory
+
+def test_isinstance_same_type_self_contradiction_is_refused():
+    # DISCRIMINATION: isinstance(x,int) ∧ ¬isinstance(x,int) — same subject,
+    # same type — must be unsatisfiable (refused by the consistency pass).
+    # Layer 2 lifts both; the Rust verifier's consistency pass must refuse it.
+    # Here we only check the LIFT side: both atoms must appear in the conjunction.
+    out = _lift("""
+        def test_isinstance_contradiction(x):
+            assert isinstance(x, int)
+            assert not isinstance(x, int)
+    """)
+    assert out.lifted == 1, (
+        f"both isinstance atoms must lift into one contract; "
+        f"warnings={[w.reason for w in out.warnings]}"
+    )
+    atoms = _flatten_and(out.decls[0].inv)
+    pos_atoms = [a for a in atoms if isinstance(a, _Atomic) and a.name == "isinstance"]
+    neg_atoms = [
+        a for a in atoms
+        if isinstance(a, _Connective) and a.kind == "not"
+        and isinstance(a.operands[0], _Atomic)
+        and a.operands[0].name == "isinstance"
+    ]
+    assert pos_atoms, "must have positive isinstance atom"
+    assert neg_atoms, "must have negated isinstance atom (not (isinstance ...))"
+
+
+# --- STRUCTURAL: isinstance atom has correct subject and type ctor ----------
+
+def test_isinstance_atom_carries_pytype_ctor_for_each_builtin():
+    # STRUCTURAL: for each recognized builtin type name T, the lifted atom
+    # is atomic("isinstance", [<subject>, ctor("pytype_<T>", [])]).
+    # Checked for int, str, float, list, dict, set, tuple, bytes.
+    builtins = ["int", "str", "float", "list", "dict", "set", "tuple", "bytes"]
+    for type_name in builtins:
+        # Build a 2-assert characterization body so Pattern 3 fires.
+        src = (
+            f"def test_type_check_{type_name}(x, y):\n"
+            f"    assert isinstance(x, {type_name})\n"
+            f"    assert isinstance(y, {type_name})\n"
+        )
+        out = _lift(src)
+        assert out.lifted == 1, (
+            f"isinstance(x,{type_name}) must lift; warnings={[w.reason for w in out.warnings]}"
+        )
+        atoms = _flatten_and(out.decls[0].inv)
+        isinstance_atoms = [a for a in atoms if isinstance(a, _Atomic) and a.name == "isinstance"]
+        assert isinstance_atoms, f"expected isinstance atom for {type_name!r}"
+        atom = isinstance_atoms[0]
+        expected_ctor_name = f"pytype_{type_name}"
+        assert isinstance(atom.args[1], _Ctor) and atom.args[1].name == expected_ctor_name, (
+            f"type ctor for {type_name!r} must be {expected_ctor_name!r}; got {atom.args[1]!r}"
+        )
+
+
+# --- not isinstance(...) negation lifts correctly ---------------------------
+
+def test_isinstance_negated_form_lifts():
+    # POSITIVE (negation): ``assert not isinstance(x, str)`` must lift to
+    # not_(atomic("isinstance", [x, ctor("pytype_str", [])])).
+    out = _lift("""
+        def test_not_type_guard(x):
+            assert x > 0
+            assert not isinstance(x, str)
+    """)
+    assert out.lifted == 1, (
+        f"not isinstance must lift; warnings={[w.reason for w in out.warnings]}"
+    )
+    atoms = _flatten_and(out.decls[0].inv)
+    neg_isinstance = [
+        a for a in atoms
+        if isinstance(a, _Connective) and a.kind == "not"
+        and isinstance(a.operands[0], _Atomic)
+        and a.operands[0].name == "isinstance"
+    ]
+    assert neg_isinstance, "must have not_(isinstance) atom"
+    inner = neg_isinstance[0].operands[0]
+    assert isinstance(inner.args[1], _Ctor) and inner.args[1].name == "pytype_str"
+
+
+# --- LOUD REFUSE: user-defined class (non-builtin second arg) ---------------
+
+def test_isinstance_user_class_is_loudly_refused():
+    # LOUD REFUSE: ``assert isinstance(x, MyClass)`` must remain refused
+    # (type-lattice unknown for user classes).
+    out = _lift("""
+        def test_isinstance_guard():
+            x = get_value()
+            assert isinstance(x, MyClass)
+    """)
+    assert out.mixed_body_lifted == 0, (
+        f"isinstance(x,MyClass) must not produce a contract; decls={[d.name for d in out.decls]}"
+    )
+    assert any("isinstance" in w.reason for w in out.warnings), (
+        f"expected isinstance loud-refusal warning; warnings={[w.reason for w in out.warnings]}"
+    )
+
+
+# --- LOUD REFUSE: tuple-of-types second arg is refused ----------------------
+
+def test_isinstance_tuple_of_types_is_loudly_refused():
+    # LOUD REFUSE: ``assert isinstance(x, (int, str))`` — tuple-of-types form.
+    # Cannot model as a single type constant; must refuse loudly.
+    out = _lift("""
+        def test_tuple_isinstance(x, y):
+            assert isinstance(x, (int, str))
+            assert isinstance(y, int)
+    """)
+    # The tuple form must not produce an isinstance atom; the int form may lift.
+    all_decl_invs = [d.inv for d in out.decls]
+    all_atoms = []
+    for inv in all_decl_invs:
+        all_atoms.extend(_flatten_and(inv))
+    tuple_isinstance = [
+        a for a in all_atoms
+        if isinstance(a, _Atomic) and a.name == "isinstance"
+        and len(a.args) == 2
+        and isinstance(a.args[1], _Ctor)
+        and a.args[1].name == "pytype_int_str"  # would be wrong
+    ]
+    # The key constraint: NO isinstance atom whose type arg is a multi-type ctor.
+    # Instead we expect a loud-refuse warning.
+    assert any(
+        "isinstance" in w.reason or "tuple" in w.reason.lower()
+        for w in out.warnings
+    ), (
+        f"tuple-of-types isinstance must produce a loud-refuse warning; "
+        f"warnings={[w.reason for w in out.warnings]}"
+    )
+
+
+# --- LOUD REFUSE: isinstance against typing/abstract type -------------------
+
+def test_isinstance_attribute_type_is_loudly_refused():
+    # LOUD REFUSE: ``assert isinstance(x, typing.Sequence)`` —  attribute
+    # expression as the second arg.  Unknown subtype hierarchy; refuse loudly.
+    out = _lift("""
+        def test_abstract_isinstance(x, y):
+            assert isinstance(x, typing.Sequence)
+            assert x is not None
+    """)
+    # Must warn about isinstance.
+    assert any("isinstance" in w.reason for w in out.warnings), (
+        f"isinstance with attribute type must warn; warnings={[w.reason for w in out.warnings]}"
+    )
+
+
+# --- DISCRIMINATION (different subjects): isinstance(x,int); isinstance(y,str) PROVEN
+
+def test_isinstance_different_subjects_is_consistent():
+    # DISCRIMINATION (false-refusal guard): isinstance(x,int) ∧ isinstance(y,str)
+    # with DIFFERENT subjects must lift consistently — NOT refused.
+    # Different subject vars => independent atoms => satisfiable conjunction.
+    out = _lift("""
+        def test_different_subjects(x, y):
+            assert isinstance(x, int)
+            assert isinstance(y, str)
+    """)
+    assert out.lifted == 1, (
+        f"different-subject isinstance must lift as consistent characterization; "
+        f"warnings={[w.reason for w in out.warnings]}"
+    )
+    atoms = _flatten_and(out.decls[0].inv)
+    isinstance_atoms = [a for a in atoms if isinstance(a, _Atomic) and a.name == "isinstance"]
+    assert len(isinstance_atoms) == 2, (
+        f"expected 2 isinstance atoms for different subjects; atoms={atoms!r}"
+    )
+    subjects = {a.args[0].name for a in isinstance_atoms if isinstance(a.args[0], _Var)}
+    assert subjects == {"x", "y"}, f"subjects must be x and y; got {subjects}"
+
+
+# --- FALSE-REFUSAL GUARD: isinstance(x,int) ∧ isinstance(x,bool) must NOT be refused
+
+def test_isinstance_int_and_bool_same_subject_is_consistent():
+    # bool IS a subtype of int in Python: isinstance(True, int) is True.
+    # So isinstance(x,int) ∧ isinstance(x,bool) on the SAME subject must be
+    # CONSISTENT (not refused). This is the permanent false-refusal guard.
+    # Layer 2 must lift both atoms; the encoder must NOT assert int/bool disjoint.
+    out = _lift("""
+        def test_bool_subtype_of_int(x):
+            assert isinstance(x, int)
+            assert isinstance(x, bool)
+    """)
+    assert out.lifted == 1, (
+        f"isinstance(x,int) ∧ isinstance(x,bool) must lift (bool⊂int is consistent); "
+        f"warnings={[w.reason for w in out.warnings]}"
+    )
+    atoms = _flatten_and(out.decls[0].inv)
+    isinstance_atoms = [a for a in atoms if isinstance(a, _Atomic) and a.name == "isinstance"]
+    assert len(isinstance_atoms) == 2, (
+        f"both isinstance atoms must appear in the conjunction; atoms={atoms!r}"
+    )
+    type_names = {
+        a.args[1].name
+        for a in isinstance_atoms
+        if isinstance(a.args[1], _Ctor)
+    }
+    assert "pytype_int" in type_names and "pytype_bool" in type_names, (
+        f"must have both pytype_int and pytype_bool; got {type_names}"
     )

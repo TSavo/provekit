@@ -1038,6 +1038,112 @@ def _truthiness_call_head(callee: str, arity: int) -> str:
     return f"call_{safe}_a{arity}"
 
 
+## ---------------------------------------------------------------------------
+## isinstance: recognized concrete builtin Python types for soundness.
+##
+## ONLY concrete (leaf) builtin types are recognized. Abstract types
+## (Iterable, Sequence, etc.), user-defined classes, and typing generics
+## are LOUDLY REFUSED because their subtype relationships are unknown.
+##
+## bool IS a subtype of int: isinstance(True, int) is True, so
+## isinstance(x, int) ∧ isinstance(x, bool) is CONSISTENT. The encoder
+## must never assert pytype_int and pytype_bool disjoint.
+## ---------------------------------------------------------------------------
+
+_ISINSTANCE_CONCRETE_BUILTINS: Set[str] = {
+    "int",
+    "str",
+    "float",
+    "complex",
+    "bytes",
+    "bytearray",
+    "list",
+    "tuple",
+    "dict",
+    "set",
+    "frozenset",
+    "bool",
+    "NoneType",
+    "type",
+}
+
+
+def _lift_isinstance_call(node: ast.Call, translate_term_fn) -> Formula:
+    """Lift ``isinstance(x, T)`` to ``atomic("isinstance", [x_term, ctor("pytype_T", [])])``.
+
+    SOUND MODEL:
+      - arg[0] (subject): translated via ``translate_term_fn`` (any liftable term).
+      - arg[1] (type):    MUST be a bare ``ast.Name`` whose id is in
+        ``_ISINSTANCE_CONCRETE_BUILTINS``. Any other shape → LOUD REFUSE.
+
+    EXPLICIT LOUD REFUSES (raise ValueError with descriptive message):
+      - tuple-of-types second arg: ``isinstance(x, (int, str))``
+      - attribute second arg:      ``isinstance(x, typing.Sequence)``
+      - non-builtin Name:          ``isinstance(x, MyClass)``
+      - wrong arity (not exactly 2 positional args):
+      - keyword args:
+
+    The type constant is encoded as a NULLARY CTOR ``pytype_<T>`` (ASCII
+    alnum+underscore only) so the SMT encoder declares it as an
+    uninterpreted Int constant, distinct per type, with no semantic
+    content beyond identity.
+
+    Disjointness axioms are emitted by the Rust SMT encoder (isinstance_encoding.rs)
+    for pairwise-disjoint pairs present in the same formula. The encoder
+    MUST NOT assert int/bool disjoint (bool⊂int is Python-true).
+    """
+    # Arity check.
+    if node.keywords:
+        raise ValueError(
+            "isinstance: keyword arguments are not supported; expected exactly "
+            "2 positional args (subject, type)"
+        )
+    if len(node.args) != 2:
+        raise ValueError(
+            f"isinstance: expected exactly 2 positional args, got {len(node.args)}"
+        )
+
+    subject_node = node.args[0]
+    type_node = node.args[1]
+
+    # Type arg: MUST be a bare Name in the recognized builtin set.
+    if isinstance(type_node, ast.Tuple):
+        raise ValueError(
+            "isinstance: tuple-of-types second arg ``isinstance(x, (A, B))`` is "
+            "not soundly liftable as a single type constant; LOUD REFUSE"
+        )
+    if isinstance(type_node, ast.Attribute):
+        raise ValueError(
+            "isinstance: attribute type expression (e.g. ``typing.Sequence``, "
+            "``collections.abc.Mapping``) has unknown subtype hierarchy; "
+            "type-lattice required for soundness; LOUD REFUSE"
+        )
+    if not isinstance(type_node, ast.Name):
+        raise ValueError(
+            f"isinstance: unsupported type-arg shape {type(type_node).__name__!r}; "
+            "only a bare builtin Name is liftable"
+        )
+    type_name = type_node.id
+    if type_name not in _ISINSTANCE_CONCRETE_BUILTINS:
+        raise ValueError(
+            f"isinstance: ``{type_name}`` is not a recognized concrete builtin type; "
+            "subtype relationships unknown; type-lattice required for soundness; "
+            "LOUD REFUSE (deferred to type-lattice lifter)"
+        )
+
+    # Subject term.
+    try:
+        subject_term = translate_term_fn(subject_node)
+    except ValueError as e:
+        raise ValueError(
+            f"isinstance: subject expression not liftable: {e}"
+        )
+
+    # Type constant: nullary ctor ``pytype_<name>``.
+    type_const = ctor(f"pytype_{type_name}", [])
+    return atomic("isinstance", [subject_term, type_const])
+
+
 def _translate_truthiness_call_formula(
     node: ast.Call,
     translate_term_fn,  # callable: ast.expr -> Term
@@ -1049,24 +1155,20 @@ def _translate_truthiness_call_formula(
       - Method call: ``recv.method(args...)``  -> ``atomic("call_method_a<n>", [recv_term, arg_terms...])``
       - Function call: ``func(args...)``        -> ``atomic("call_func_a<n>", [arg_terms...])``
 
-    Special case: ``isinstance(x, T)`` is LOUDLY REFUSED because it requires
-    a type-lattice to be sound (``isinstance(x, int)`` and ``isinstance(x, str)``
-    are disjoint-contradictory in Python, but an uninterpreted predicate would
-    call them consistent = falsePass).
+    Special case: ``isinstance(x, T)`` is lifted to
+    ``atomic("isinstance", [x_term, ctor("pytype_T", [])])`` for recognized
+    concrete builtin types T. Non-builtin / abstract / tuple-of-types T raises
+    ValueError (LOUD REFUSE). See ``_lift_isinstance_call`` for the full
+    soundness contract and the disjointness model.
 
     Any argument that cannot be translated by ``translate_term_fn`` raises
     ValueError (LOUD REFUSE at call site, never silent).
     """
     if isinstance(node.func, ast.Name):
         callee = node.func.id
-        # isinstance: loud refuse — needs type-lattice for soundness.
+        # isinstance: lift soundly for known concrete builtins; loud-refuse rest.
         if callee == "isinstance":
-            raise ValueError(
-                "isinstance: needs type-lattice to be sound (isinstance(x,int) and "
-                "isinstance(x,str) are disjoint-contradictory in Python but an "
-                "uninterpreted predicate would call them consistent = falsePass); "
-                "deferred to type-lattice lifter"
-            )
+            return _lift_isinstance_call(node, translate_term_fn)
         # Regular function call.
         if node.keywords:
             raise ValueError(
