@@ -512,6 +512,12 @@ def test_pattern4_per_row_multi_param_yields_per_row_decls():
 
 
 def test_pattern5_local_assignment_scopes_pytest_assertion():
+    # BINDING-FORM EUF SUBSTITUTION: ``actual = parse_int("42")`` with a
+    # concrete literal arg.  After the fix, the ::assertion subject is the
+    # EUF ctor ``callresult_parse_int_a1("42")`` (not the SSA var ``actual$0``),
+    # so cross-function contradictions on the same (callee, args) can coalesce.
+    # The base is now argument-keyed (``parse_int#euf#...``), not location-keyed.
+    # The ::facts contract is unchanged: it still records ``actual$0 = parse_int("42")``.
     out = _lift("""
         def test_parse_value_scope():
             actual = parse_int("42")
@@ -522,12 +528,15 @@ def test_pattern5_local_assignment_scopes_pytest_assertion():
     assert "test_parse_value_scope" in out.claimed_tests
     by_name = {d.name: d for d in out.decls}
     assert len(by_name) == 2
-    assert all(name.startswith("parse_int@t.py:") for name in by_name)
+    # Concrete arg "42" -> argument-keyed EUF base (not location-keyed).
+    assert all(name.startswith("parse_int#euf#") for name in by_name), (
+        f"expected EUF-keyed base for concrete-arg binding, got: {list(by_name)}"
+    )
     assert all("test_parse_value_scope" not in name for name in by_name)
     callsite_name = next(name for name in by_name if name.endswith("::facts"))
     assertion_name = next(name for name in by_name if name.endswith("::assertion"))
     assert len(out.implications) == 1
-    assert out.implications[0].name.startswith("parse_int@t.py:")
+    assert out.implications[0].name.startswith("parse_int#euf#")
     assert "test_parse_value_scope" not in out.implications[0].name
     assert out.implications[0].antecedent == callsite_name
     assert out.implications[0].consequent == assertion_name
@@ -535,6 +544,7 @@ def test_pattern5_local_assignment_scopes_pytest_assertion():
     fact = by_name[callsite_name].inv
     consequent = by_name[assertion_name].inv
 
+    # ::facts contract: SSA var = RHS ctor (unchanged by the fix).
     assert isinstance(fact, _Atomic)
     assert fact.name == "="
     assert isinstance(fact.args[0], _Var)
@@ -544,15 +554,28 @@ def test_pattern5_local_assignment_scopes_pytest_assertion():
     assert isinstance(fact.args[1].args[0], _ConstStr)
     assert fact.args[1].args[0].value == "42"
 
+    # ::assertion contract: subject is now the EUF ctor (not the SSA var).
+    # ``actual$0`` was substituted by ``callresult_parse_int_a1("42")`` so that
+    # cross-function same-input contradictions coalesce.
     assert isinstance(consequent, _Atomic)
     assert consequent.name == "="
-    assert isinstance(consequent.args[0], _Var)
-    assert consequent.args[0].name == "actual$0"
+    assert isinstance(consequent.args[0], _Ctor), (
+        f"expected EUF ctor as assertion subject after binding-form substitution, "
+        f"got {type(consequent.args[0])!r}: {consequent.args[0]!r}"
+    )
+    assert "callresult" in consequent.args[0].name, consequent.args[0].name
     assert isinstance(consequent.args[1], _ConstInt)
     assert consequent.args[1].value == 42
 
 
 def test_pattern5_if_else_scopes_assertion_to_each_branch():
+    # BINDING-FORM EUF SUBSTITUTION: the if-branch binds ``actual = parse_int(raw)``
+    # (symbolic arg -> location-keyed, unchanged); the else-branch binds
+    # ``actual = parse_int("0")`` (concrete arg -> EUF-keyed, base changes).
+    # After the fix the two ::assertion decls have DIFFERENT base prefixes:
+    # one location-keyed (``parse_int@t.py:...``) and one EUF-keyed
+    # (``parse_int#euf#...``).  The assertion formula is ``>= 0`` in both cases
+    # (no same-subject contradiction) so the overall pattern still lifts.
     out = _lift("""
         def test_branch_value_scope(raw):
             if raw == "42":
@@ -564,7 +587,12 @@ def test_pattern5_if_else_scopes_assertion_to_each_branch():
     assert out.value_scope_lifted == 1, f"warnings: {out.warnings}"
     names = {d.name for d in out.decls}
     assert len(names) == 4
-    assert all(name.startswith("parse_int@t.py:") for name in names)
+    # The two branches produce different base styles: symbolic arg -> location-keyed;
+    # concrete arg -> EUF-keyed.  Every name is still parse_int-prefixed, test-name-free.
+    assert all(
+        name.startswith("parse_int@t.py:") or name.startswith("parse_int#euf#")
+        for name in names
+    ), f"unexpected name prefix: {names}"
     assert all("test_branch_value_scope" not in name for name in names)
     assert len([name for name in names if name.endswith("::facts")]) == 2
     assert len([name for name in names if name.endswith("::assertion")]) == 2
@@ -580,6 +608,8 @@ def test_pattern5_if_else_scopes_assertion_to_each_branch():
 
 
 def test_pattern5_local_assignment_scopes_unittest_assertion():
+    # BINDING-FORM EUF SUBSTITUTION: ``actual = parse_int("42")`` concrete arg
+    # -> EUF-keyed base (``parse_int#euf#...``) after the fix.
     out = _lift("""
         import unittest
 
@@ -591,7 +621,10 @@ def test_pattern5_local_assignment_scopes_unittest_assertion():
     assert out.value_scope_lifted == 1, f"warnings: {out.warnings}"
     names = {d.name for d in out.decls}
     assert len(names) == 2
-    assert all(name.startswith("parse_int@t.py:") for name in names)
+    # Concrete arg "42" -> argument-keyed EUF base (not location-keyed).
+    assert all(name.startswith("parse_int#euf#") for name in names), (
+        f"expected EUF-keyed base for concrete-arg binding, got: {list(names)}"
+    )
     assert all("test_parse_value_scope" not in name for name in names)
     assert len(out.implications) == 1
 
@@ -783,6 +816,312 @@ def test_euf_reassigned_concrete_arg_yields_fresh_term_no_false_refuse():
         f"the two make_value calls must have DISTINCT bases after reassignment "
         f"(no false-refuse), got {names}"
     )
+
+
+# --- BINDING-FORM EUF SUBSTITUTION: cross-function / reassign discrimination ---
+#
+# The gap this closes: ``r = make_value(5); assert r == 1`` previously kept the
+# assertion subject as the SSA var ``r$0`` (location-keyed), so two functions
+# each binding ``r = make_value(5)`` with contradictory return values did NOT
+# unify → spuriously PROVEN.  After the fix, a CONCRETE-arg (>=1 arg) binding
+# substitutes the EUF ctor ``callresult_make_value_a1(5)`` for ``r$0`` as the
+# assertion subject → argument-keyed base → cross-function coalesce → REFUSED.
+#
+# CARDINAL SOUNDNESS — the concrete-only / >=1-arg rule is LOAD-BEARING:
+#   - CONCRETE 1-arg binding  → EUF-keyed   → cross-fn unify → REFUSED on conflict
+#   - SYMBOLIC-arg binding    → location-keyed (NO unify)    → PROVEN (no false-refuse)
+#   - ZERO-arg binding (f())  → location-keyed (NO unify)    → PROVEN (no false-refuse;
+#       no input to key on, and zero-arg calls are the most likely to be stateful)
+#   - within-fn CONCRETE reassign (same args) → EUF-keyed coalesce → REFUSED (purity flip)
+#   - within-fn SYMBOLIC/ZERO reassign        → fresh SSA / location → PROVEN
+
+
+def _binding_assertion_decls(out):
+    return [d for d in out.decls if d.name.endswith("::assertion")]
+
+
+def test_binding_concrete_arg_cross_function_coalesces_and_refuses():
+    # CONCRETE 1-arg binding, two functions, contradictory return values.
+    # ``r = make_value(5); assert r == 1`` / ``== 2`` must coalesce into ONE
+    # EUF-keyed ::assertion whose inv conjoins the two equalities → UNSAT.
+    out = _lift("""
+        def test_a():
+            r = make_value(5)
+            assert r == 1
+        def test_b():
+            r = make_value(5)
+            assert r == 2
+    """)
+    assert out.value_scope_lifted == 2, f"warnings: {out.warnings}"
+    asserts = _binding_assertion_decls(out)
+    assert len(asserts) == 1, (
+        f"concrete-arg binding cross-fn must coalesce into ONE ::assertion, got "
+        f"{[d.name for d in asserts]}"
+    )
+    name = asserts[0].name
+    assert name.startswith("make_value#euf#"), name
+    # The coalesced inv conjoins =(cr(5),1) ∧ =(cr(5),2) — contradictory.
+    atoms = [a for a in _flatten_and(asserts[0].inv) if isinstance(a, _Atomic)]
+    eqs = [a for a in atoms if a.name == "="]
+    assert len(eqs) == 2, f"expected 2 conjoined equalities, got {atoms!r}"
+    subjects = [a.args[0] for a in eqs]
+    # Both equalities are over the SAME EUF ctor (cross-fn unify on the subject).
+    assert isinstance(subjects[0], _Ctor) and "callresult" in subjects[0].name
+    assert subjects[0] == subjects[1], (
+        f"EUF binding subjects must unify cross-fn; got {subjects[0]!r} != {subjects[1]!r}"
+    )
+    consts = sorted(a.args[1].value for a in eqs if isinstance(a.args[1], _ConstInt))
+    assert consts == [1, 2], f"expected distinct constants 1,2; got {consts}"
+
+
+def test_binding_symbolic_arg_cross_function_stays_independent_no_false_refuse():
+    # FALSE-REFUSAL GUARD (cardinal): SYMBOLIC-arg binding ``r = make_value(x)``
+    # in two functions with param ``x`` must NOT unify — the params are
+    # independently bound and may differ at runtime.  Two INDEPENDENT
+    # location-keyed ::assertion decls → each a single equality → each SAT → PROVEN.
+    out = _lift("""
+        def test_a(x):
+            r = make_value(x)
+            assert r == 1
+        def test_b(x):
+            r = make_value(x)
+            assert r == 2
+    """)
+    assert out.value_scope_lifted == 2, f"warnings: {out.warnings}"
+    asserts = _binding_assertion_decls(out)
+    assert len(asserts) == 2, (
+        f"symbolic-arg binding cross-fn must stay INDEPENDENT (no false-refuse), got "
+        f"{[d.name for d in asserts]}"
+    )
+    for d in asserts:
+        assert "#euf#" not in d.name, (
+            f"symbolic-arg binding must be location-keyed (no #euf#), got: {d.name}"
+        )
+        atoms = [a for a in _flatten_and(d.inv) if isinstance(a, _Atomic)]
+        eqs = [a for a in atoms if a.name == "="]
+        assert len(eqs) == 1, (
+            f"{d.name}: symbolic-arg binding must give ONE independent equality, got {atoms!r}"
+        )
+
+
+def test_binding_zero_arg_cross_function_stays_independent_no_false_refuse():
+    # ZERO-arg binding ``r = make_value()`` in two functions must NOT unify —
+    # there is no input to key on, and zero-arg calls are the most likely to be
+    # stateful.  Two INDEPENDENT location-keyed ::assertion decls → PROVEN.
+    out = _lift("""
+        def test_a():
+            r = make_value()
+            assert r == 1
+        def test_b():
+            r = make_value()
+            assert r == 2
+    """)
+    assert out.value_scope_lifted == 2, f"warnings: {out.warnings}"
+    asserts = _binding_assertion_decls(out)
+    assert len(asserts) == 2, (
+        f"zero-arg binding cross-fn must stay INDEPENDENT (no false-refuse), got "
+        f"{[d.name for d in asserts]}"
+    )
+    for d in asserts:
+        assert "#euf#" not in d.name, (
+            f"zero-arg binding must be location-keyed (no #euf#), got: {d.name}"
+        )
+
+
+def test_binding_different_concrete_args_cross_function_stay_independent():
+    # DISCRIMINATION: DIFFERENT concrete args (3 vs 7) must NOT coalesce.
+    out = _lift("""
+        def test_a():
+            r = make_value(3)
+            assert r == 1
+        def test_b():
+            r = make_value(7)
+            assert r == 2
+    """)
+    assert out.value_scope_lifted == 2, f"warnings: {out.warnings}"
+    asserts = _binding_assertion_decls(out)
+    assert len(asserts) == 2, (
+        f"different concrete args must stay INDEPENDENT, got {[d.name for d in asserts]}"
+    )
+    assert all(d.name.startswith("make_value#euf#") for d in asserts)
+    assert asserts[0].name != asserts[1].name
+
+
+def test_binding_within_function_concrete_reassign_same_args_refuses():
+    # PURITY FLIP (intended): within ONE function, ``r = make_value(5)`` bound
+    # twice (same concrete arg) with contradictory asserts must coalesce →
+    # REFUSED.  make_value(5) is make_value(5) — same value (pure-fn assumption).
+    out = _lift("""
+        def test_reassign():
+            r = make_value(5)
+            assert r == 1
+            r = make_value(5)
+            assert r == 2
+    """)
+    assert out.value_scope_lifted == 1, f"warnings: {out.warnings}"
+    asserts = _binding_assertion_decls(out)
+    assert len(asserts) == 1, (
+        f"concrete within-fn reassign (same args) must coalesce into ONE "
+        f"::assertion, got {[d.name for d in asserts]}"
+    )
+    assert asserts[0].name.startswith("make_value#euf#")
+    atoms = [a for a in _flatten_and(asserts[0].inv) if isinstance(a, _Atomic)]
+    eqs = [a for a in atoms if a.name == "="]
+    assert len(eqs) == 2, f"expected 2 conjoined equalities (contradiction), got {atoms!r}"
+    consts = sorted(a.args[1].value for a in eqs if isinstance(a.args[1], _ConstInt))
+    assert consts == [1, 2]
+
+
+def test_binding_within_function_symbolic_reassign_stays_proven():
+    # FALSE-REFUSAL GUARD: within ONE function, ``r = make_value(x)`` bound to a
+    # SYMBOLIC arg, then reassigned, with contradictory asserts must STAY PROVEN
+    # (location-keyed, independent SSA generations — no false-refuse).
+    out = _lift("""
+        def test_reassign(x):
+            r = make_value(x)
+            assert r == 1
+            r = make_value(x)
+            assert r == 2
+    """)
+    assert out.value_scope_lifted == 1, f"warnings: {out.warnings}"
+    asserts = _binding_assertion_decls(out)
+    # Two location-keyed assertion decls (one per call site) — independent.
+    assert len(asserts) == 2, (
+        f"symbolic within-fn reassign must stay INDEPENDENT (no false-refuse), got "
+        f"{[d.name for d in asserts]}"
+    )
+    for d in asserts:
+        assert "#euf#" not in d.name, d.name
+        atoms = [a for a in _flatten_and(d.inv) if isinstance(a, _Atomic)]
+        eqs = [a for a in atoms if a.name == "="]
+        assert len(eqs) == 1, f"{d.name}: each must be one independent equality, got {atoms!r}"
+
+
+def test_binding_within_function_zero_arg_reassign_stays_proven():
+    # FALSE-REFUSAL GUARD: within ONE function, ``r = make_value()`` (zero-arg)
+    # bound twice with contradictory asserts must STAY PROVEN (location-keyed,
+    # independent — no input to key on, likely stateful).
+    out = _lift("""
+        def test_reassign():
+            r = make_value()
+            assert r == 1
+            r = make_value()
+            assert r == 2
+    """)
+    assert out.value_scope_lifted == 1, f"warnings: {out.warnings}"
+    asserts = _binding_assertion_decls(out)
+    assert len(asserts) == 2, (
+        f"zero-arg within-fn reassign must stay INDEPENDENT (no false-refuse), got "
+        f"{[d.name for d in asserts]}"
+    )
+    for d in asserts:
+        assert "#euf#" not in d.name, d.name
+
+
+# --- BINDING-FORM EUF: attribute / subscript subjects (the substitution boundary) ---
+#
+# The EUF substitution replaces the BARE SSA var ``r$0`` for the EUF ctor.  When
+# the assertion subject is NOT the bare var but an attribute/subscript over it,
+# the behavior differs and these tests pin the exact (sound) boundary that shipped:
+#   - SUBSCRIPT ``r['k']`` lifts to ``subscript(r$0, 'k')`` — the base ``r$0`` is a
+#     bare Var nested in the ctor, so subst_var_in_formula DOES replace it →
+#     the EUF ctor becomes the subscript base → cross-fn unify → REFUSED on conflict.
+#   - ATTRIBUTE ``r.x`` lifts to a SINGLE dotted Var ``r$0.x`` — the name ``r$0.x``
+#     does NOT match ``r$0`` so subst does NOT fire.  Cross-fn unify still happens
+#     via the shared ``#euf#`` BASE NAME when the SSA versions ALIGN (both ``r$0``)
+#     → REFUSED.  Under SSA version SKEW (``r$0.x`` vs ``r$1.x``) the two atoms are
+#     independent → PROVEN.  That residual is a SOUND UNDER-REFUSAL (never falsePass),
+#     the same class as the original gap.
+
+
+def test_binding_concrete_arg_subscript_subject_cross_function_refuses():
+    # SUBSCRIPT subject: the EUF ctor substitutes into the subscript base →
+    # both functions share the same subscript term → contradiction → REFUSED.
+    out = _lift("""
+        def test_a():
+            r = make_value(5)
+            assert r['k'] == 1
+        def test_b():
+            r = make_value(5)
+            assert r['k'] == 2
+    """)
+    asserts = _binding_assertion_decls(out)
+    assert len(asserts) == 1, (
+        f"concrete-arg subscript binding cross-fn must coalesce into ONE ::assertion, "
+        f"got {[d.name for d in asserts]}"
+    )
+    assert asserts[0].name.startswith("make_value#euf#")
+    atoms = [a for a in _flatten_and(asserts[0].inv) if isinstance(a, _Atomic)]
+    eqs = [a for a in atoms if a.name == "="]
+    assert len(eqs) == 2
+    # Both subjects are subscript Ctors whose BASE is the SAME EUF ctor (substituted).
+    subjects = [a.args[0] for a in eqs]
+    for s in subjects:
+        assert isinstance(s, _Ctor) and s.name == "subscript", s
+        assert isinstance(s.args[0], _Ctor) and "callresult" in s.args[0].name, s.args[0]
+    assert subjects[0] == subjects[1], (
+        f"subscript subjects must unify on the substituted EUF base; "
+        f"{subjects[0]!r} != {subjects[1]!r}"
+    )
+
+
+def test_binding_concrete_arg_attribute_subject_aligned_ssa_cross_function_refuses():
+    # ATTRIBUTE subject, ALIGNED SSA (both r$0): subst does not fire on the dotted
+    # var, but the shared #euf# base coalesces the two atoms over the SAME
+    # ``r$0.x`` var → contradiction → REFUSED.
+    out = _lift("""
+        def test_a():
+            r = make_value(5)
+            assert r.x == 1
+        def test_b():
+            r = make_value(5)
+            assert r.x == 2
+    """)
+    asserts = _binding_assertion_decls(out)
+    assert len(asserts) == 1, (
+        f"concrete-arg attribute binding (aligned SSA) cross-fn must coalesce into "
+        f"ONE ::assertion, got {[d.name for d in asserts]}"
+    )
+    assert asserts[0].name.startswith("make_value#euf#")
+    atoms = [a for a in _flatten_and(asserts[0].inv) if isinstance(a, _Atomic)]
+    eqs = [a for a in atoms if a.name == "="]
+    assert len(eqs) == 2
+    subjects = [a.args[0] for a in eqs]
+    # Both subjects are the SAME dotted attribute Var (aligned SSA generation).
+    for s in subjects:
+        assert isinstance(s, _Var) and s.name == "r$0.x", s
+    assert subjects[0] == subjects[1]
+
+
+def test_binding_concrete_arg_attribute_subject_ssa_skew_stays_proven():
+    # ATTRIBUTE subject, SSA SKEW: an extra binding in test_b bumps r to r$1, so
+    # the two atoms reference DIFFERENT dotted vars (r$0.x vs r$1.x) → independent
+    # → PROVEN.  SOUND UNDER-REFUSAL: never a falsePass; the residual is the same
+    # class as the original conservative gap.
+    out = _lift("""
+        def test_a():
+            r = make_value(5)
+            assert r.x == 1
+        def test_b():
+            r = first()
+            r = make_value(5)
+            assert r.x == 2
+    """)
+    asserts = _binding_assertion_decls(out)
+    # The two atoms still coalesce by #euf# base name (both make_value(5)), but the
+    # SUBJECTS differ (r$0.x vs r$1.x) so the conjoined inv is SATISFIABLE → PROVEN.
+    euf_asserts = [d for d in asserts if d.name.startswith("make_value#euf#")]
+    assert len(euf_asserts) == 1, [d.name for d in asserts]
+    atoms = [a for a in _flatten_and(euf_asserts[0].inv) if isinstance(a, _Atomic)]
+    eqs = [a for a in atoms if a.name == "="]
+    assert len(eqs) == 2
+    subjects = [a.args[0] for a in eqs]
+    names = sorted(s.name for s in subjects if isinstance(s, _Var))
+    assert names == ["r$0.x", "r$1.x"], (
+        f"SSA-skew attribute subjects must be DISTINCT dotted vars (sound "
+        f"under-refusal, no false-refuse), got {names}"
+    )
+    assert subjects[0] != subjects[1]
 
 
 def test_pattern5_non_none_identity_assertion_is_not_lifted_as_value_equality():

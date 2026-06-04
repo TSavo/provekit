@@ -267,15 +267,36 @@ def test_lsp_lift_source_shows_production_composes_while_tests_conflict():
     assert let_edge["pre"]["args"][0]["value"] == 42
     assert let_edge["pre"]["args"][1]["value"] == 10
 
+    # BINDING-FORM EUF SUBSTITUTION: both test methods bind
+    # ``actual = checked(42)`` (a CONCRETE 1-arg call) then assert contradictory
+    # values (``== 42`` and ``!= 42``).  After the fix the bound assertion
+    # subject is the EUF ctor ``callresult_checked_a1(42)`` (not the per-method
+    # SSA var ``actual$0``), so the two cross-method assertions coalesce by name
+    # into ONE ``checked#euf#...::assertion`` contract whose inv conjoins both
+    # equalities — a contradiction that fires UNSAT (REFUSED) at prove time.
+    # That is the "tests conflict" this test asserts: the conflict is now a
+    # single coalesced contradictory contract rather than two independent
+    # location-keyed assertions that would each spuriously PROVE.
     test_assertions = [
         decl
         for decl in contracts
-        if decl["name"].startswith("checked@app.py:")
+        if decl["name"].startswith("checked#euf#")
         and decl["name"].endswith("::assertion")
     ]
-    assert len(test_assertions) == 2
-    assertion_ops = sorted(decl["inv"]["name"] for decl in test_assertions)
-    assert assertion_ops == ["=", "≠"]
+    assert len(test_assertions) == 1, (
+        f"concrete-arg binding cross-method must coalesce into ONE EUF assertion, "
+        f"got {[d['name'] for d in test_assertions]}"
+    )
+    # The coalesced inv is an ``and`` of the two contradictory equalities.
+    coalesced = test_assertions[0]["inv"]
+    assert coalesced["kind"] == "and", coalesced
+    coalesced_ops = sorted(op["name"] for op in coalesced["operands"])
+    assert coalesced_ops == ["=", "≠"], coalesced_ops
+    # No location-keyed ::assertion survives for the concrete-arg binding.
+    assert not [
+        d for d in contracts
+        if d["name"].startswith("checked@app.py:") and d["name"].endswith("::assertion")
+    ]
     for test_name in ["test_checked_returns_42", "test_checked_does_not_return_42"]:
         assert all(test_name not in name for name in names)
 
@@ -286,4 +307,6 @@ def test_lsp_lift_source_shows_production_composes_while_tests_conflict():
         imp for imp in lifted["implications"] if imp["prover"] == "python-test-value-scope"
     ]
     assert len(wp_implications) == 3
+    # Both value-scope facts-implies-assertion edges now point at the SAME
+    # coalesced EUF assertion name (one per call site, two call sites).
     assert len(test_implications) == 2

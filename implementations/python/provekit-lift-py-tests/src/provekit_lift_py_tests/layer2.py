@@ -174,6 +174,15 @@ class _CallOrigin:
     # ``::assertion`` inv → the contradiction fires UNSAT.  None when the call
     # fell back to the location-keyed free var (no cross-location unification).
     arg_sig: Optional[str] = None
+    # BINDING-FORM EUF SUBSTITUTION: when a local ``r = f(5)`` is bound via
+    # ``_apply_value_scope_binding`` and the RHS is a concrete-arg call, these
+    # two fields carry the EUF ctor term and the SSA var name so that
+    # ``_assertion_callsite_context`` can substitute the SSA var for the EUF
+    # ctor in the assertion formula.  None when the origin came from a direct
+    # call in the assertion expression (not a binding), or when the binding RHS
+    # has symbolic args (location-keyed path, no substitution).
+    euf_term: Optional["Term"] = None
+    ssa_name: Optional[str] = None
 
 
 @dataclass
@@ -2873,6 +2882,38 @@ def _apply_value_scope_binding(
         next_scope.current[name] = ssa
         origin = _call_origin_from_expr(value)
         if origin is not None:
+            # BINDING-FORM EUF SUBSTITUTION: check whether the RHS call has
+            # ALL-CONCRETE literal args.  If so, compute the EUF ctor term and
+            # store it alongside the SSA var name on the origin so
+            # ``_assertion_callsite_context`` can substitute the EUF ctor for
+            # the SSA var in the assertion formula.
+            #
+            # CARDINAL SOUNDNESS — concrete-only rule:
+            #   Concrete args (``r = f(5)``): EUF ctor keyed by (callee, args);
+            #     ``assert r == 1`` becomes ``callresult_f_a1(5) == 1`` →
+            #     cross-function same-input contradictions REFUSED. CORRECT.
+            #   Symbolic args (``r = f(x)``): origin.euf_term stays None →
+            #     assertion stays as SSA var ``r$0`` → location-keyed, no
+            #     cross-function unification → stays PROVEN. (x is
+            #     function-local; unifying would be the false-refusal bug.)
+            #     DO NOT set euf_term for symbolic args.
+            #   ZERO-arg calls (``r = f()``): NO input to unify on, and a
+            #     zero-arg call is the MOST likely to be stateful (reads ambient
+            #     state — counter, RNG, clock).  Require >=1 concrete arg:
+            #     ``r = f()`` stays location-keyed/SSA-var (independent), exactly
+            #     like symbolic args.  This also preserves SSA-reassign
+            #     independence for subscript/attribute bases over zero-arg call
+            #     results (``parsed = f(); parsed['k']`` stays a Var base).
+            euf_term = _call_result_term(value, origin, scope, {})
+            if (
+                euf_term is not None
+                and isinstance(euf_term, _Ctor)
+                and euf_term.args  # >=1 arg required (zero-arg → no input to key on)
+                and _euf_args_all_concrete(euf_term)
+            ):
+                origin.arg_sig = _canonical_term_sig(euf_term)
+                origin.euf_term = euf_term
+                origin.ssa_name = ssa_name
             next_scope.origins[name] = origin
         else:
             next_scope.origins.pop(name, None)
@@ -3037,6 +3078,25 @@ def _assertion_callsite_context(
         assertion = _lift_assertion_stmt_scoped(stmt, scope, call_vars)
     except ValueError:
         return None
+
+    # BINDING-FORM EUF SUBSTITUTION: for each origin that came from a binding
+    # ``r = f(5)`` (concrete args), substitute the EUF ctor for the SSA var
+    # in the assertion formula.  This transforms ``assert r == 1`` from
+    # ``=(r$0, 1)`` into ``=(callresult_f_a1(5), 1)`` — the EUF-keyed subject
+    # that allows cross-function unification when another function also binds
+    # the same call result to an SSA var and asserts a contradictory value.
+    #
+    # CARDINAL SOUNDNESS — subst_var_in_formula keyed on the bare SSA var NAME
+    # (not the ctor) ensures:
+    #   - Attribute/subscript vars (``r$0.x``, ``subscript(r$0, k)``) are NOT
+    #     touched (they are separate Var names / Ctor args, not the bare name).
+    #   - Only the exact ``r$0`` Var in the assertion is replaced → behavior
+    #     change is confined to bare-var subjects of comparisons.
+    #   - Symbolic-arg origins never carry euf_term (set to None in binding),
+    #     so the symbolic false-refusal guard is intact.
+    for origin in origins:
+        if origin.euf_term is not None and origin.ssa_name is not None:
+            assertion = subst_var_in_formula(assertion, origin.ssa_name, origin.euf_term)
 
     return origins, facts, assertion
 
