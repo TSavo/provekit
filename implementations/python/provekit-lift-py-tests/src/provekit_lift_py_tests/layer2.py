@@ -698,18 +698,123 @@ def _comparison_from_ast_op(op: ast.cmpop, left: Term, right: Term) -> Formula:
     return comparison_with_none_guard(sym, left, right, emit_none_guard=False)
 
 
+def _truthiness_call_head(callee: str, arity: int) -> str:
+    """Build an ASCII-safe, arity-stable SMT predicate head for a truthiness
+    call assertion.
+
+    Shape: ``call_<callee>_a<arity>`` where ``<callee>`` is the callee name
+    with non-alphanumeric chars replaced by ``_``, and ``<arity>`` is the
+    total number of SMT arguments (receiver counts as arg 0 for method calls).
+
+    Encoding arity in the name guarantees that the SMT emitter never sees two
+    declarations with the same head at different arities (which would silently
+    adopt the first arity, producing ill-sorted applications).
+    """
+    safe = "".join(c if (c.isascii() and c.isalnum()) else "_" for c in callee)
+    return f"call_{safe}_a{arity}"
+
+
+def _translate_truthiness_call_formula(
+    node: ast.Call,
+    translate_term_fn,  # callable: ast.expr -> Term
+) -> Formula:
+    """Lift a bare call expression used as a boolean assertion to an
+    UNINTERPRETED predicate atom.
+
+    Handles two shapes:
+      - Method call: ``recv.method(args...)``  -> ``atomic("call_method_a<n>", [recv_term, arg_terms...])``
+      - Function call: ``func(args...)``        -> ``atomic("call_func_a<n>", [arg_terms...])``
+
+    Special case: ``isinstance(x, T)`` is LOUDLY REFUSED because it requires
+    a type-lattice to be sound (``isinstance(x, int)`` and ``isinstance(x, str)``
+    are disjoint-contradictory in Python, but an uninterpreted predicate would
+    call them consistent = falsePass).
+
+    Any argument that cannot be translated by ``translate_term_fn`` raises
+    ValueError (LOUD REFUSE at call site, never silent).
+    """
+    if isinstance(node.func, ast.Name):
+        callee = node.func.id
+        # isinstance: loud refuse — needs type-lattice for soundness.
+        if callee == "isinstance":
+            raise ValueError(
+                "isinstance: needs type-lattice to be sound (isinstance(x,int) and "
+                "isinstance(x,str) are disjoint-contradictory in Python but an "
+                "uninterpreted predicate would call them consistent = falsePass); "
+                "deferred to type-lattice lifter"
+            )
+        # Regular function call.
+        if node.keywords:
+            raise ValueError(
+                f"call `{callee}` with keyword args is not soundly liftable "
+                "(keyword args cannot be order-stably translated without knowing "
+                "the function signature)"
+            )
+        arg_terms = []
+        for i, arg in enumerate(node.args):
+            try:
+                arg_terms.append(translate_term_fn(arg))
+            except ValueError as e:
+                raise ValueError(
+                    f"call `{callee}` arg[{i}] not liftable: {e}"
+                )
+        head = _truthiness_call_head(callee, len(arg_terms))
+        return atomic(head, arg_terms)
+
+    if isinstance(node.func, ast.Attribute):
+        method = node.func.attr
+        recv_node = node.func.value
+        if node.keywords:
+            raise ValueError(
+                f"method call `{method}` with keyword args is not soundly liftable"
+            )
+        try:
+            recv_term = translate_term_fn(recv_node)
+        except ValueError as e:
+            raise ValueError(
+                f"method call `{method}` receiver not liftable: {e}"
+            )
+        arg_terms = [recv_term]
+        for i, arg in enumerate(node.args):
+            try:
+                arg_terms.append(translate_term_fn(arg))
+            except ValueError as e:
+                raise ValueError(
+                    f"method call `{method}` arg[{i}] not liftable: {e}"
+                )
+        head = _truthiness_call_head(method, len(arg_terms))
+        return atomic(head, arg_terms)
+
+    raise ValueError(
+        "call with non-Name/non-Attribute func is not liftable as a truthiness predicate"
+    )
+
+
 def _translate_bool_expr(node: ast.expr) -> Formula:
-    """``assert <expr>``: only a single-comparison expression is liftable."""
+    """``assert <expr>``: only a single-comparison or truthiness-call
+    expression is liftable.
+
+    Handles:
+      - ``assert <comparison>``        -> comparison formula
+      - ``assert <call>``              -> uninterpreted predicate atom (TRUTHINESS)
+      - ``assert not <call>``          -> not_(predicate atom)
+      - ``assert not <comparison>``    -> not_(comparison formula)
+    """
     if isinstance(node, ast.Compare):
         if len(node.ops) != 1 or len(node.comparators) != 1:
             raise ValueError("only single comparisons are liftable (no chained `a < b < c`)")
         l = _translate_term(node.left)
         r = _translate_term(node.comparators[0])
         return _comparison_from_ast_op(node.ops[0], l, r)
+    if isinstance(node, ast.UnaryOp) and isinstance(node.op, ast.Not):
+        inner = _translate_bool_expr(node.operand)
+        return not_(inner)
+    if isinstance(node, ast.Call):
+        return _translate_truthiness_call_formula(node, _translate_term)
     if isinstance(node, ast.NamedExpr):
         # Walrus inside an assert: skip.
         raise ValueError("walrus operator in assert is not liftable")
-    raise ValueError("assert body must be a comparison expression")
+    raise ValueError("assert body must be a comparison expression or a call/not-call")
 
 
 def _lift_assertion_stmt(stmt: ast.stmt) -> Formula:
@@ -1060,9 +1165,10 @@ def _classify_characterization(
     if len(atoms) < 2:
         out.claimed_tests.discard(test_name)
         out.characterization_skipped += 1
+        skip_detail = f"; skipped: {'; '.join(skipped)}" if skipped else ""
         out.warnings.append(
             LiftWarning(source_path, test_name,
-                        f"layer2 characterization: only {len(atoms)} of {len(asserts)} asserts were liftable; releasing to layer 0")
+                        f"layer2 characterization: only {len(atoms)} of {len(asserts)} asserts were liftable; releasing to layer 0{skip_detail}")
         )
         return
 
@@ -1728,6 +1834,17 @@ def _translate_bool_expr_scoped(
             return connective("or", operands)
     if isinstance(node, ast.UnaryOp) and isinstance(node.op, ast.Not):
         return not_(_translate_bool_expr_scoped(node.operand, scope, call_vars))
+    if isinstance(node, ast.Call):
+        # Truthiness call (``assert h.startswith(p)``): lift as uninterpreted
+        # predicate.  Use a term-translator that honours the current SSA scope.
+        def _scoped_term(n: ast.expr) -> Term:
+            return _translate_term_scoped(n, scope, call_vars)
+        return _translate_truthiness_call_formula(node, _scoped_term)
+    # Bare-var / attribute truthiness (``assert flag``, ``assert obj.ok``):
+    # encode as ``eq(term, True)``.  This path is a fallback for non-call
+    # expressions that are syntactically boolean; it does NOT apply to Call
+    # nodes (handled above) — so isinstance and other calls are not silently
+    # wrapped here.
     term = _translate_term_scoped(node, scope, call_vars)
     return eq(term, bool_const(True))
 

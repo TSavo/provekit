@@ -1396,3 +1396,263 @@ def test_subscript_nested_two_levels_lifts():
     # Outer key is 'kind', inner key is 'header'.
     assert isinstance(lhs.args[1], _ConstStr) and lhs.args[1].value == "kind"
     assert isinstance(inner.args[1], _ConstStr) and inner.args[1].value == "header"
+
+
+# ---------------------------------------------------------------------------
+# TRUTHINESS CALL ASSERTIONS (census row: method/fn call as boolean)
+# ---------------------------------------------------------------------------
+#
+# These tests cover the new "truthiness" lift: ``assert <call>`` where the
+# call is a method call (``h.startswith(p)``) or a function call (``f(a,b)``).
+# The lift model: UNINTERPRETED Bool predicate, exactly like membership.
+# ``P ∧ ¬P`` is propositionally UNSAT; ``P(args1) ∧ P(args2)`` is CONSISTENT.
+#
+# Discrimination rule (soundness invariant):
+#   same call expression, both true and false  → REFUSED (UNSAT conjunction)
+#   same callee, different args                → PROVEN (independent predicates)
+#   isinstance                                 → LOUD REFUSAL (type-lattice needed)
+
+
+def test_truthiness_method_call_lifts_to_atomic_predicate():
+    # ``assert h.startswith(prefix)`` lifts to an uninterpreted Bool predicate
+    # ``call_startswith_a2(h, prefix)``.  Two such asserts (different prefixes)
+    # must produce a PROVEN conjunction — the predicate atoms are independent.
+    out = _lift("""
+        def test_header_has_right_prefix(h):
+            assert h.startswith("blake3-512:")
+            assert h.startswith("ed25519:")
+    """)
+    # Pattern 3: two asserts → characterization.
+    assert out.characterization_lifted == 1, (
+        f"expected characterization lift; warnings: {[w.reason for w in out.warnings]}"
+    )
+    assert len(out.decls) == 1
+    inv = out.decls[0].inv
+    atoms = _flatten_and(inv)
+    # Both atoms must be _Atomic with the same predicate head (startswith, arity 2).
+    assert len(atoms) == 2, f"expected 2 atoms, got: {atoms}"
+    for atom in atoms:
+        assert isinstance(atom, _Atomic), f"expected _Atomic, got {type(atom)}"
+        assert atom.name == "call_startswith_a2", (
+            f"expected predicate head 'call_startswith_a2', got {atom.name!r}"
+        )
+        assert len(atom.args) == 2, f"expected arity 2, got {len(atom.args)}"
+
+
+def test_truthiness_method_call_discrimination_same_args_produces_contradiction():
+    # DISCRIMINATION: ``assert h.startswith(p); assert not h.startswith(p)``
+    # lifts to ``call_startswith_a2(h,p) ∧ ¬call_startswith_a2(h,p)`` which is
+    # propositionally UNSAT.  The conjoined inv is the REFUSED case.
+    # (This is the "unsafe twin" that must be present for soundness.)
+    out = _lift("""
+        def test_contradiction_same_call():
+            assert h.startswith(prefix)
+            assert not h.startswith(prefix)
+    """)
+    # Must lift (characterization pattern, 2 atoms).
+    assert out.characterization_lifted == 1, (
+        f"expected characterization lift; warnings: {[w.reason for w in out.warnings]}"
+    )
+    assert len(out.decls) == 1
+    inv = out.decls[0].inv
+    atoms = _flatten_and(inv)
+    # The conjoined inv must contain a positive atom and a NOT-wrapped atom.
+    positive = [a for a in atoms if isinstance(a, _Atomic) and "startswith" in a.name]
+    negated = [
+        a for a in atoms
+        if isinstance(a, _Connective) and a.kind == "not"
+    ]
+    assert positive, f"expected positive predicate atom in conjunction: {atoms}"
+    assert negated, f"expected negated predicate atom in conjunction: {atoms}"
+    # The negated operand must also be the same predicate.
+    neg_inner = negated[0].operands[0]
+    assert isinstance(neg_inner, _Atomic) and "startswith" in neg_inner.name, (
+        f"negated inner must be call_startswith_a2 atom: {neg_inner!r}"
+    )
+    # Predicate heads must match: same call expression, same args binding.
+    assert positive[0].name == neg_inner.name, (
+        f"positive head {positive[0].name!r} must match negated head {neg_inner.name!r}"
+    )
+    assert positive[0].args == neg_inner.args, (
+        f"positive args {positive[0].args!r} must match negated args {neg_inner.args!r}"
+    )
+
+
+def test_truthiness_function_call_lifts_to_atomic_predicate():
+    # ``assert f(a, b)`` lifts to ``call_f_a2(a, b)`` — function call shape.
+    out = _lift("""
+        def test_function_call_truthiness(a, b):
+            assert is_valid(a)
+            assert is_valid(b)
+    """)
+    assert out.characterization_lifted == 1, (
+        f"warnings: {[w.reason for w in out.warnings]}"
+    )
+    inv = out.decls[0].inv
+    atoms = _flatten_and(inv)
+    assert len(atoms) == 2
+    for atom in atoms:
+        assert isinstance(atom, _Atomic)
+        assert atom.name == "call_is_valid_a1", (
+            f"expected 'call_is_valid_a1', got {atom.name!r}"
+        )
+
+
+def test_truthiness_not_call_lifts_to_not_atomic():
+    # ``assert not x.is_valid()`` lifts to ``not(call_is_valid_a1(x))``.
+    out = _lift("""
+        def test_method_not_call(x):
+            assert not x.is_valid()
+            assert x.is_valid()
+    """)
+    assert out.characterization_lifted == 1, (
+        f"warnings: {[w.reason for w in out.warnings]}"
+    )
+    inv = out.decls[0].inv
+    atoms = _flatten_and(inv)
+    assert len(atoms) == 2
+    negated = [a for a in atoms if isinstance(a, _Connective) and a.kind == "not"]
+    positive = [a for a in atoms if isinstance(a, _Atomic)]
+    assert negated, f"expected negated atom: {atoms}"
+    assert positive, f"expected positive atom: {atoms}"
+    neg_inner = negated[0].operands[0]
+    assert isinstance(neg_inner, _Atomic) and neg_inner.name == positive[0].name
+
+
+def test_truthiness_isinstance_is_loudly_refused():
+    # ``assert isinstance(x, SomeType)`` must be LOUDLY REFUSED: the lifter
+    # emits a warning naming "isinstance" and "type-lattice", and claims the
+    # test (so Layer 0 does not silently retry it).  Zero contracts.
+    out = _lift("""
+        def test_isinstance_guard():
+            x = get_value()
+            assert isinstance(x, MyClass)
+    """)
+    # The mixed-body pattern must either:
+    # (a) loudly refuse (claimed, 0 contracts, warning about isinstance), or
+    # (b) the assert is silently skipped and 0 atoms → mixed_body_skipped.
+    # Either way: 0 lifted contracts for the isinstance assert.
+    assert out.mixed_body_lifted == 0, (
+        f"isinstance must not produce lifted contracts; got {[d.name for d in out.decls]}"
+    )
+    # A warning MUST be present naming isinstance and type-lattice.
+    isinstance_warnings = [
+        w for w in out.warnings
+        if "isinstance" in w.reason
+    ]
+    assert isinstance_warnings, (
+        f"expected loud isinstance refusal warning; warnings: {[w.reason for w in out.warnings]}"
+    )
+    assert any(
+        "type-lattice" in w.reason or "type lattice" in w.reason.lower()
+        for w in isinstance_warnings
+    ), (
+        f"isinstance warning must mention type-lattice: {[w.reason for w in isinstance_warnings]}"
+    )
+
+
+def test_truthiness_isinstance_as_bare_assert_is_loudly_refused():
+    # Pure-assert form (no binding, Pattern 3 path): ``assert isinstance(x, T)``
+    # in a 2-assert body.  The isinstance assert raises ValueError → atom skipped.
+    # With only 1 liftable atom (or 0), characterization releases to Layer 0.
+    out = _lift("""
+        def test_isinstance_in_characterization(x, y):
+            assert isinstance(x, int)
+            assert isinstance(y, str)
+    """)
+    # With 0 liftable atoms (both isinstance), characterization skips the test.
+    # The test must NOT appear as a lifted characterization.
+    assert out.characterization_lifted == 0, (
+        f"isinstance asserts must not produce characterization lift: {[d.name for d in out.decls]}"
+    )
+    # Warnings must name isinstance.
+    assert any("isinstance" in w.reason for w in out.warnings), (
+        f"expected isinstance warning; warnings: {[w.reason for w in out.warnings]}"
+    )
+
+
+def test_truthiness_method_receiver_from_subscript_lifts():
+    # Census form from test_claim_envelope.py:
+    # ``assert parsed["envelope"]["signer"].startswith("ed25519:")``
+    # The receiver is a nested subscript — verify it lifts as an opaque term.
+    out = _lift("""
+        def test_envelope_fields(parsed):
+            assert parsed["envelope"]["signer"].startswith("ed25519:")
+            assert parsed["envelope"]["signature"].startswith("ed25519:")
+    """)
+    assert out.characterization_lifted == 1, (
+        f"expected characterization lift; warnings: {[w.reason for w in out.warnings]}"
+    )
+    atoms = _flatten_and(out.decls[0].inv)
+    assert len(atoms) == 2
+    for atom in atoms:
+        assert isinstance(atom, _Atomic)
+        assert atom.name == "call_startswith_a2", (
+            f"expected call_startswith_a2, got {atom.name!r}"
+        )
+        # Receiver must be a subscript Ctor (nested).
+        recv = atom.args[0]
+        assert isinstance(recv, _Ctor) and recv.name == "subscript", (
+            f"receiver must be subscript Ctor: {recv!r}"
+        )
+
+
+def test_truthiness_arity_stable_different_callees_different_heads():
+    # Two different method names produce DIFFERENT predicate heads (no aliasing).
+    out = _lift("""
+        def test_two_methods(x):
+            assert x.startswith("a")
+            assert x.endswith("z")
+    """)
+    assert out.characterization_lifted == 1, (
+        f"warnings: {[w.reason for w in out.warnings]}"
+    )
+    atoms = _flatten_and(out.decls[0].inv)
+    heads = [a.name for a in atoms if isinstance(a, _Atomic)]
+    assert "call_startswith_a2" in heads, f"missing startswith head: {heads}"
+    assert "call_endswith_a2" in heads, f"missing endswith head: {heads}"
+    assert heads[0] != heads[1], "different callees must produce different predicate heads"
+
+
+def test_truthiness_arg_carrying_different_args_not_contradictory():
+    # ARG-CARRYING DISCRIMINATION: ``assert h.startswith(p); assert not h.startswith(q)``
+    # must lift to ``call_startswith_a2(h,p) ∧ ¬call_startswith_a2(h,q)`` which is
+    # SATISFIABLE — the predicate CAN be true for p and false for q independently.
+    # This is the third receipt that proves arg-carrying is faithful: an arg-DROPPING
+    # implementation would collapse both to a 0-ary P → P ∧ ¬P → UNSAT (falsePass).
+    # Here we verify the LIFTED representation has distinct arg terms in pos vs neg.
+    out = _lift("""
+        def test_arg_carrying(h, p, q):
+            assert h.startswith(p)
+            assert not h.startswith(q)
+    """)
+    assert out.characterization_lifted == 1, (
+        f"warnings: {[w.reason for w in out.warnings]}"
+    )
+    inv = out.decls[0].inv
+    atoms = _flatten_and(inv)
+    # Find the positive atom and the negated atom.
+    positive = [a for a in atoms if isinstance(a, _Atomic) and "startswith" in a.name]
+    negated = [
+        a for a in atoms
+        if isinstance(a, _Connective) and a.kind == "not"
+        and isinstance(a.operands[0], _Atomic) and "startswith" in a.operands[0].name
+    ]
+    assert positive, f"expected positive call_startswith_a2 atom: {atoms}"
+    assert negated, f"expected negated call_startswith_a2 atom: {atoms}"
+    pos_atom = positive[0]
+    neg_atom = negated[0].operands[0]
+    # Both must be arity 2 (receiver + 1 arg).
+    assert len(pos_atom.args) == 2, f"positive atom must be arity 2: {pos_atom}"
+    assert len(neg_atom.args) == 2, f"negated atom must be arity 2: {neg_atom}"
+    # CRITICAL: arg[1] must differ (p ≠ q as distinct free vars).
+    pos_arg1 = pos_atom.args[1]
+    neg_arg1 = neg_atom.args[1]
+    assert pos_arg1 != neg_arg1, (
+        f"arg[1] of positive ({pos_arg1!r}) must differ from negated ({neg_arg1!r}); "
+        "arg-dropping would make them equal (falsePass regression)"
+    )
+    # arg[0] (receiver) must be the same (same h).
+    assert pos_atom.args[0] == neg_atom.args[0], (
+        f"arg[0] (receiver) must be same h: pos={pos_atom.args[0]!r}, neg={neg_atom.args[0]!r}"
+    )
