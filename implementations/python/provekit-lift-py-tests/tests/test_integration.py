@@ -76,7 +76,8 @@ def test_layer2_claim_set_covers_every_owned_test():
         "test_many_42s",
         "test_ranges_ok",
         "test_parse_int_characterization",
-        "test_three_facts",
+        # Class methods are qualified: "ClassName::method_name".
+        "TestUnittestStyle::test_three_facts",
         "test_v_nonneg",
         "test_nested_loop_skipped",
     }
@@ -96,9 +97,9 @@ def test_layer2_memento_naming_matches_spec():
     assert "test_many_42s::call::0" in names
     assert "test_many_42s::call::1" in names
     assert "test_many_42s::call::2" in names
-    # Pattern 3: <test> bare
+    # Pattern 3: <test> bare (free fn) or <class>::<test> (class method)
     assert "test_parse_int_characterization" in names
-    assert "test_three_facts" in names
+    assert "TestUnittestStyle::test_three_facts" in names
     # Pattern 4: <test>::parametrize::<params>
     assert "test_v_nonneg::parametrize::v" in names
 

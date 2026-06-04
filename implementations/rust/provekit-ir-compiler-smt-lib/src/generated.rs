@@ -1,5 +1,19 @@
 // SPDX-License-Identifier: Apache-2.0
-// GENERATED SMT-LIB v2.6 compiler
+// SMT-LIB v2.6 compiler.
+//
+// HISTORICAL NOTE on the "GENERATED" label: this file's logic has been
+// HAND-MAINTAINED for a long time (see git log -- every SMT-encoding fix is a
+// manual edit; there is NO active generator that writes this file). The CDDL
+// generator `tools/generate-from-cddl.py` emits the IR *type* definitions
+// (`provekit-ir-types`) and a JSON Document emitter -- NOT this SMT-LIB
+// compiler. The label is vestigial.
+//
+// CLOBBER-PROOFING: to be safe against a hypothetical future regeneration, the
+// literal-constant encoding (string -> uninterpreted Int const, bool -> int,
+// None/str/number cross-type distinctness per Python `==`) lives in the
+// SEPARATE hand-maintained module `crate::literal_encoding`, which this file
+// merely CALLS. Even a full rewrite of this file cannot silently revert that
+// soundness-critical encoding without also touching `literal_encoding.rs`.
 
 #![allow(unused_imports, unused_mut, unreachable_patterns)]
 
@@ -281,27 +295,18 @@ pub fn emit_formula(formula: &Formula) -> String {
     }
 }
 
-fn emit_const_value(value: &serde_json::Value, _sort_name: &str) -> String {
-    match value {
-        serde_json::Value::Number(n) => {
-            if let Some(i) = n.as_i64() {
-                i.to_string()
-            } else if let Some(u) = n.as_u64() {
-                u.to_string()
-            } else {
-                n.to_string()
-            }
-        }
-        serde_json::Value::Bool(b) => {
-            if *b {
-                "true".to_string()
-            } else {
-                "false".to_string()
-            }
-        }
-        serde_json::Value::String(s) => format!("\"{}\"", s),
-        _ => "0".to_string(),
-    }
+// String/bool literal encoding + cross-type distinctness live in the
+// hand-maintained `literal_encoding` module (NOT here) so a regeneration of
+// this file cannot silently revert them. See that module's header for the
+// full Python-`==`-semantics rationale.
+use crate::literal_encoding::{emit_const_value as encode_const, LiteralConstants};
+
+fn emit_const_value(value: &serde_json::Value, sort_name: &str) -> String {
+    // sort_name is unused: literals are encoded into the Int universe
+    // (concrete ints for int/bool, hash-named uninterpreted consts for str)
+    // independent of the declared sort label.
+    let _ = sort_name;
+    encode_const(value)
 }
 
 // smt_quote renders a name as an SMT-LIB symbol, quoting with |...| when it is
@@ -637,7 +642,28 @@ fn sort_name(sort: &Sort) -> String {
 
 fn known_term_sort(term: &Term) -> Option<String> {
     match term {
-        Term::Const { sort, .. } => Some(sort_name(sort)),
+        Term::Const { sort, value } => {
+            // String AND bool literals are encoded into the Int universe (see
+            // `literal_encoding`): strings as hash-named uninterpreted Int
+            // consts, bools as concrete ints (True->1, False->0). Return "Int"
+            // for both so ctor-decl / predicate-decl passes emit consistent
+            // Int-sort declarations rather than ill-sorted String/Bool ones
+            // that z3 rejects against an Int free var.
+            match sort {
+                Sort::Primitive { name }
+                    if name == "String" && matches!(value, serde_json::Value::String(_)) =>
+                {
+                    return Some("Int".to_string());
+                }
+                Sort::Primitive { name }
+                    if name == "Bool" && matches!(value, serde_json::Value::Bool(_)) =>
+                {
+                    return Some("Int".to_string());
+                }
+                _ => {}
+            }
+            Some(sort_name(sort))
+        }
         Term::Var { .. } => Some("Int".to_string()),
         Term::Ctor { .. } => None,
         Term::Lambda { .. } => None,
@@ -934,6 +960,12 @@ pub fn compile_formula(formula: &Formula) -> CompiledFormula {
             signature.ret
         ));
     }
+    // Declare string-literal constants and emit the cross-type distinctness
+    // axiom (str/None distinct from each other and from concrete int/bool
+    // values; bool encoded as int; floats residual). See `literal_encoding`.
+    // The axiom is a Python-TRUE fact, so it is sound on the negated path too:
+    // it only removes spurious models, never adds one.
+    preamble.push_str(&LiteralConstants::from_formula(formula).preamble());
     let body = format!("(assert (not {}))\n(check-sat)\n", body_formula);
     let free_vars_vec = free_vars
         .into_iter()
@@ -1016,6 +1048,10 @@ pub fn compile_asserted_formula(formula: &Formula) -> CompiledFormula {
             signature.ret
         ));
     }
+    // Declare string-literal constants and emit the cross-type distinctness
+    // axiom (str/None distinct from each other and from concrete int/bool
+    // values; bool encoded as int; floats residual). See `literal_encoding`.
+    preamble.push_str(&LiteralConstants::from_formula(formula).preamble());
 
     let body = format!("(assert {})\n(check-sat)\n", body_formula);
     let free_vars_vec = free_vars

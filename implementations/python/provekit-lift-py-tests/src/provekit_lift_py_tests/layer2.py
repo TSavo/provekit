@@ -125,6 +125,8 @@ class Layer2Output:
     parametrize_skipped: int = 0
     value_scope_lifted: int = 0
     value_scope_skipped: int = 0
+    mixed_body_lifted: int = 0
+    mixed_body_skipped: int = 0
     implications: List["ImplicationDecl"] = field(default_factory=list)
 
 
@@ -187,8 +189,8 @@ def lift_file_layer2(source: str, source_path: str) -> Layer2Output:
 
     helpers = _collect_helpers(tree)
     test_fns = list(_iter_test_functions(tree))
-    for fn in test_fns:
-        _classify_and_lift(fn, source_path, helpers, out)
+    for fn, class_name in test_fns:
+        _classify_and_lift(fn, source_path, helpers, out, class_name=class_name)
     return out
 
 
@@ -198,16 +200,29 @@ def lift_file_layer2(source: str, source_path: str) -> Layer2Output:
 
 
 def _iter_test_functions(tree: ast.AST):
-    """Yield FunctionDef / AsyncFunctionDef nodes that look like tests:
-    free function ``test_*`` OR method ``test_*`` on a ``TestCase`` class.
+    """Yield (FunctionDef, class_name_or_None) pairs for test functions:
+    free function ``test_*`` OR method ``test_*`` on a class.
+
+    Class name is the enclosing class so the caller can qualify the decl
+    name as ``ClassName::test_method`` and keep each class-method's
+    scope isolated from same-named methods in other classes.
+    Methods inside a class carry ``self`` (or ``cls``) as their first
+    arg which ``_strip_self`` strips before classification.
     """
+    # Build a mapping from function-node id -> enclosing class name.
+    # ast.walk yields nodes in no particular order, so we do a targeted
+    # traversal of top-level and nested statements to find ClassDef bodies.
+    class_of: Dict[int, str] = {}
+    for node in ast.walk(tree):
+        if isinstance(node, ast.ClassDef):
+            for child in node.body:
+                if isinstance(child, (ast.FunctionDef, ast.AsyncFunctionDef)):
+                    class_of[id(child)] = node.name
+
     for node in ast.walk(tree):
         if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
-            if node.name.startswith("test_") or node.name.startswith("test"):
-                if node.name.startswith("test"):
-                    # Methods inside a class show up here too; they have
-                    # an ``self`` first arg which we strip when classifying.
-                    yield node
+            if node.name.startswith("test"):
+                yield node, class_of.get(id(node))
 
 
 def _collect_helpers(tree: ast.AST) -> Dict[str, _HelperDef]:
@@ -283,8 +298,14 @@ def _classify_and_lift(
     source_path: str,
     helpers: Dict[str, _HelperDef],
     out: Layer2Output,
+    class_name: Optional[str] = None,
 ) -> None:
-    test_name = fn.name
+    # Qualify the test name with the enclosing class so that same-named
+    # methods in different classes produce independent decl scopes.
+    # ``TestFoo::test_bar`` is distinct from ``TestBaz::test_bar`` even
+    # though both have ``fn.name == "test_bar"``.  Free functions keep
+    # their bare name.
+    test_name = f"{class_name}::{fn.name}" if class_name else fn.name
     body = _strip_self(fn.body, fn)
 
     # PATTERN 4: parametrize decorator is the strongest claim. If a
@@ -329,6 +350,9 @@ def _classify_and_lift(
         return
 
     if _classify_value_scope(body, test_name, source_path, out):
+        return
+
+    if _classify_mixed_body(body, test_name, source_path, out):
         return
 
     unsupported_unittest_asserts = _unsupported_unittest_assertions(body)
@@ -437,12 +461,68 @@ def _unsupported_unittest_assertions(stmts: Sequence[ast.stmt]) -> List[str]:
 # ---------------------------------------------------------------------------
 
 
+def _dotted_attr_path(node: ast.expr) -> Optional[str]:
+    """Extract the dotted path from an attribute-access chain.
+
+    ``out.bounded_loop_lifted`` -> ``"out.bounded_loop_lifted"``.
+    ``a.b.c`` -> ``"a.b.c"``.
+    Returns None if the base is not a simple Name (e.g. ``f().attr``).
+    """
+    if isinstance(node, ast.Name):
+        return node.id
+    if isinstance(node, ast.Attribute):
+        base = _dotted_attr_path(node.value)
+        if base is None:
+            return None
+        return f"{base}.{node.attr}"
+    return None
+
+
+def _ssa_dotted_attr_path(node: ast.Attribute, scope: "_ValueScope") -> Optional[str]:
+    """Build a dotted attribute path whose base is SSA-keyed.
+
+    Walks the attribute chain to find the leftmost Name base.  If that
+    base is tracked in ``scope.current`` (i.e. it is an SSA-renamed
+    local variable), replace it with its SSA name and return the
+    reassembled path.  Otherwise return None so the caller falls back
+    to the unscoped (raw) dotted path.
+
+    Examples with ``scope.current = {"out": make_var("out$1")}``:
+      ``out.val``   -> ``"out$1.val"``
+      ``out.a.b``   -> ``"out$1.a.b"``
+      ``other.val`` -> None  (``other`` not in scope)
+    """
+    raw = _dotted_attr_path(node)
+    if raw is None:
+        return None
+    # Find the leftmost Name segment (root of the dotted chain).
+    root: ast.expr = node
+    while isinstance(root, ast.Attribute):
+        root = root.value
+    if not isinstance(root, ast.Name):
+        return None
+    root_name = root.id
+    if root_name not in scope.current:
+        return None
+    ssa_term = scope.current[root_name]
+    # Extract the SSA var name from the Term (always a _Var here).
+    from .ir import _Var as _IrVar
+    if not isinstance(ssa_term, _IrVar):
+        return None
+    ssa_base = ssa_term.name
+    # Replace the root segment with its SSA name.  The raw path starts
+    # with root_name; everything after the root is the suffix.
+    suffix = raw[len(root_name):]   # e.g. ".val" or ".a.b" or ""
+    return f"{ssa_base}{suffix}"
+
+
 def _translate_term(node: ast.expr) -> Term:
     """Whitelist:
       - identifier (Var)
       - integer / string / bool literal
       - unary-neg of an integer literal
       - single-arg call (Ctor with one arg)
+      - attribute access (Var named by dotted path, e.g. ``obj.attr``)
     Everything else raises ValueError.
     """
     if isinstance(node, ast.Name):
@@ -479,6 +559,20 @@ def _translate_term(node: ast.expr) -> Term:
             raise ValueError(f"call `{node.func.id}` with {len(node.args)} args is not liftable in v0 (single-arg only)")
         inner = _translate_term(node.args[0])
         return ctor(node.func.id, [inner])
+    if isinstance(node, ast.Attribute):
+        # Attribute access (``obj.attr``): lift as an opaque Var named by the
+        # dotted path.  The subject ``obj`` must itself reduce to a simple Var
+        # or attribute chain so the resulting dotted name is stable and unique.
+        # Sound because: same dotted path -> same Var name -> same-term
+        # contradictions fire UNSAT; different paths remain independent.
+        # Restriction: no method calls (``obj.method()``); those must go
+        # through the Call branch with a simple-Name func.
+        obj_name = _dotted_attr_path(node)
+        if obj_name is None:
+            raise ValueError(
+                "attribute access on a non-name/non-attribute subject is not liftable"
+            )
+        return make_var(obj_name)
     raise ValueError("expression shape not in v0 lift whitelist")
 
 
@@ -516,6 +610,20 @@ def _comparison_from_ast_op(op: ast.cmpop, left: Term, right: Term) -> Formula:
     identity_sym = _IDENTITY_OP_MAP.get(type(op))
     if identity_sym is not None:
         return _comparison_from_identity_symbol(identity_sym, left, right)
+    # Membership: ``x in coll`` -> ``member(x,coll)``; ``x not in coll`` ->
+    # ``not(member(x,coll))``.  Using the SAME predicate symbol for both forms
+    # is intentional and necessary for discrimination: ``member(x,c) ∧
+    # ¬member(x,c)`` is propositionally UNSAT without any theory; z3 discharges
+    # it trivially.  The SMT emitter declares unknown predicates as uninterpreted
+    # Bool fns (``(declare-fun member (Int Int) Bool)``), so no Undecidable
+    # result fires.  ASCII name chosen deliberately: the Unicode ``∈`` (U+2208)
+    # is not a valid SMT-LIB simple-symbol char and z3 rejects it with a parse
+    # error -- the same class of bug as the bare-string-literal encoding before
+    # the strlit_<hash> fix.
+    if isinstance(op, ast.In):
+        return atomic("member", [left, right])
+    if isinstance(op, ast.NotIn):
+        return not_(atomic("member", [left, right]))
     sym = _COMPARE_OP_MAP.get(type(op))
     if sym is None:
         raise ValueError(f"unsupported comparison op: {type(op).__name__}")
@@ -1108,10 +1216,18 @@ def _classify_value_scope(
     implications: List[ImplicationDecl] = []
     used_names: Set[str] = set()
     assertion_index = 0
+    # Accumulate assertion formulas per call-site base so we can emit ONE
+    # conjoined ::assertion contract per base (same shape as Pattern 3's
+    # pre-conjoined ContractDecl). This is what makes same-subject
+    # contradictions visible to the consistency pass without any CLI-side
+    # conjoin logic: and(=(y,None), ≠(y,None)) lands in one memento -> UNSAT.
+    # Order is preserved so the conjunction is deterministic.
+    assertion_atoms_by_base: Dict[str, List[Formula]] = {}
+    base_order: List[str] = []
 
     for stmt in body:
         if _is_assertion_stmt(stmt):
-            made = _emit_value_scope_assertion(
+            pairs = _collect_value_scope_assertion_facts(
                 stmt,
                 scopes,
                 test_name,
@@ -1120,9 +1236,11 @@ def _classify_value_scope(
                 decls,
                 implications,
                 used_names,
+                assertion_atoms_by_base,
+                base_order,
             )
             assertion_index += 1
-            if made:
+            if pairs:
                 continue
             if not decls:
                 return False
@@ -1135,6 +1253,16 @@ def _classify_value_scope(
 
     if not implications:
         return False
+
+    # Emit ONE conjoined ::assertion contract per call-site base.  Multiple
+    # assertions about the same subject (e.g. both `assert y is None` and
+    # `assert y is not None`) are conjoined here into a single inv so the
+    # consistency pass sees the full fact set and can detect contradictions.
+    for base in base_order:
+        atoms = assertion_atoms_by_base[base]
+        conjoined_inv = atoms[0] if len(atoms) == 1 else and_(atoms)
+        assertion_name = f"{base}::assertion"
+        decls.append(ContractDecl(name=assertion_name, inv=conjoined_inv))
 
     out.claimed_tests.add(test_name)
     out.seen += 1
@@ -1243,7 +1371,7 @@ def _apply_value_scope_binding(
     return out
 
 
-def _emit_value_scope_assertion(
+def _collect_value_scope_assertion_facts(
     stmt: ast.stmt,
     scopes: List[_ValueScope],
     test_name: str,
@@ -1252,7 +1380,15 @@ def _emit_value_scope_assertion(
     decls: List[ContractDecl],
     implications: List[ImplicationDecl],
     used_names: Set[str],
+    assertion_atoms_by_base: Dict[str, List[Formula]],
+    base_order: List[str],
 ) -> int:
+    """Collect ::facts contracts and implication wiring for one assertion
+    statement.  The ::assertion contract itself is NOT emitted here; the
+    caller (_classify_value_scope) emits ONE conjoined ::assertion per
+    call-site base after processing all statements.  This keeps the kit
+    dumb: it just admits facts; the conjunction (and all consistency
+    checking) lives in the single conjoined invariant per base."""
     made = 0
     for scope in scopes:
         context = _assertion_callsite_context(stmt, scope)
@@ -1263,13 +1399,23 @@ def _emit_value_scope_assertion(
         for origin in origins:
             base = _callsite_contract_base(origin, source_path)
             facts_name = _unique_contract_name(f"{base}::facts", used_names)
-            assertion_name = _unique_contract_name(f"{base}::assertion", used_names)
             implication_name = _unique_contract_name(
                 f"{base}::facts-implies-assertion", used_names
             )
             fact_formula = facts[0] if len(facts) == 1 else and_(facts)
             decls.append(ContractDecl(name=facts_name, inv=fact_formula))
-            decls.append(ContractDecl(name=assertion_name, inv=assertion))
+            # Accumulate assertion formula for this base; the conjoined
+            # ::assertion contract is emitted once at the end of
+            # _classify_value_scope so all assertions about the same
+            # call-site subject land in one inv.
+            if base not in assertion_atoms_by_base:
+                assertion_atoms_by_base[base] = []
+                base_order.append(base)
+            assertion_atoms_by_base[base].append(assertion)
+            # Wire the implication antecedent to the (not-yet-emitted)
+            # conjoined assertion name; the contract will exist in the
+            # same .proof bundle by the time the verifier loads it.
+            assertion_name = f"{base}::assertion"
             implications.append(
                 ImplicationDecl(
                     name=implication_name,
@@ -1555,6 +1701,26 @@ def _translate_term_scoped(
                 _translate_term_scoped(node.right, scope, call_vars),
             ],
         )
+    if isinstance(node, ast.Attribute):
+        # Attribute access in value-scope context.  SSA-key the attribute
+        # Var on the base's current SSA name so that ``out = f(x); assert
+        # out.v == 1; out = g(y); assert out.v == 2`` produces two
+        # independent Vars (``out$0.v`` and ``out$1.v``) rather than the
+        # same ``out.v`` Var, which would look like a contradiction.
+        # Without SSA the two atoms would share a Var and a conjunction
+        # across the two assertions would be spuriously UNSAT.
+        #
+        # Algorithm: walk the dotted path; for each Name segment look it up
+        # in scope.current; replace the FIRST Name segment that has an SSA
+        # version.  Deep chains like ``a.b.c`` where only ``a`` is in scope
+        # become ``a$N.b.c``.  If no segment is in scope, fall through to
+        # the unscoped translator (raw dotted path = opaque free var) which
+        # is unchanged behaviour for parameters and module-level names.
+        ssa_attr_name = _ssa_dotted_attr_path(node, scope)
+        if ssa_attr_name is not None:
+            return make_var(ssa_attr_name)
+        # Fall through: base not in scope → opaque free var by raw path.
+        return _translate_term(node)
     raise ValueError("expression shape not in value-scope lift whitelist")
 
 
@@ -1572,3 +1738,215 @@ def _unparse(node: ast.AST) -> str:
         return ast.unparse(node)  # type: ignore[attr-defined]
     except Exception:
         return node.__class__.__name__
+
+
+# ---------------------------------------------------------------------------
+# PATTERN 6: mixed-body (opaque bindings + multiple asserts)
+# ---------------------------------------------------------------------------
+#
+# Handles test methods / functions whose body is an interleaving of
+# assignment statements (setup bindings) and ``assert`` statements, where the
+# RHS of many bindings is NOT translatable (e.g. ``out = mint_contract(**kw)``,
+# ``parsed = json.loads(...)``).  Pattern 5 requires a translatable call-result
+# and emits ``::facts`` / ``::assertion`` contracts with implication wiring.
+# Pattern 6 is simpler: it does NOT emit ``::facts`` contracts and does NOT
+# require a translatable RHS.  Instead it:
+#
+#   1. Builds an SSA scope by walking each binding in order.  A translatable
+#      RHS → SSA var bound to a term (same as Pattern 5).  An opaque RHS →
+#      SSA var bound to a fresh free var (name$N) with NO value fact.  This
+#      keeps attribute-access assertions (``assert out.cid == X``) scoped to
+#      the correct SSA generation.
+#
+#   2. Collects liftable ``assert`` statements, translating each under the
+#      current SSA scope.  Unliftable asserts → warn-and-skip (do NOT refuse
+#      the whole method; partial lift is better than silence).
+#
+#   3. Conjoins all successfully lifted atoms into ONE ``ContractDecl`` named
+#      by the test name.  This lands in the consistency pass as a whole-test
+#      invariant (same path as Pattern 3), so contradictions in the conjoined
+#      formula are detected by z3.
+#
+# SOUNDNESS RULES:
+#   - Bindings are FACTS (definitions), never asserted properties.  They are
+#     NOT emitted as contracts and do NOT enter the consistency pass.
+#   - Opaque bindings produce a fresh SSA var with zero constraints → they
+#     cannot create spurious UNSAT.  The consistency pass sees only the
+#     asserted properties, which is correct.
+#   - Reassignment: SSA bumps the version, so ``out = f(); assert out.x==1;
+#     out = g(); assert out.x==2`` produces ``out$0.x`` and ``out$1.x``
+#     (distinct Vars) → the two atoms are independent → CONSISTENT.
+#   - Methods with unsupported control-flow or mutation (``with``, ``for``,
+#     ``while``, ``try``, ``import``, subscript-assign) are LOUDLY REFUSED:
+#     the method is claimed so Layer 0 does not retry it, a warning is
+#     emitted, and zero contracts are produced.
+#
+# GATE: fires ONLY when the body has AT LEAST ONE binding AND at least one
+# liftable assert.  Pure-assert bodies (all asserts, no binding) are Pattern 3.
+# Pure-binding bodies (no asserts) are not test characterizations; they fall
+# through to Layer 0.
+
+
+def _mixed_body_unsupported_stmt(stmt: ast.stmt) -> Optional[str]:
+    """Return a human-readable reason if ``stmt`` is an unsupported statement
+    for the mixed-body pattern, or None if it is permitted.
+
+    Permitted: ``ast.Assign`` (simple-name target only),
+    ``ast.AnnAssign`` (simple-name target), ``ast.Assert``, ``ast.Pass``.
+    Everything else (``with``, ``for``, ``while``, ``try``, ``import``,
+    ``raise``, subscript-assign, etc.) is UNSUPPORTED → loud refusal.
+    """
+    if isinstance(stmt, ast.Assert):
+        return None
+    if isinstance(stmt, ast.Pass):
+        return None
+    if isinstance(stmt, ast.Assign):
+        # Subscript or attribute ASSIGN target is mutation → unsupported.
+        for tgt in stmt.targets:
+            if not isinstance(tgt, ast.Name):
+                return (
+                    f"non-simple assignment target `{_unparse(tgt)[:60]}` "
+                    "(subscript/attribute mutation is not soundly liftable)"
+                )
+        return None
+    if isinstance(stmt, ast.AnnAssign):
+        if not isinstance(stmt.target, ast.Name):
+            return (
+                f"non-simple annotated-assignment target `{_unparse(stmt.target)[:60]}`"
+            )
+        return None
+    # Anything else is unsupported.
+    kind = type(stmt).__name__
+    return f"unsupported statement kind `{kind}` in mixed-body test"
+
+
+
+def _classify_mixed_body(
+    body: Sequence[ast.stmt],
+    test_name: str,
+    source_path: str,
+    out: Layer2Output,
+) -> bool:
+    """Pattern 6: mixed body with opaque bindings + multiple asserts.
+
+    Returns True if this pattern claimed the test (even on a loud refusal),
+    False if the body does not fit the mixed-body shape (caller tries next).
+    """
+    # Pre-screen: the body must contain at least one binding AND at least one
+    # assert.  Pure-assert is Pattern 3; pure-binding is not a test claim.
+    has_binding = any(isinstance(s, (ast.Assign, ast.AnnAssign)) for s in body)
+    has_assert = any(isinstance(s, ast.Assert) for s in body)
+    if not (has_binding and has_assert):
+        return False
+
+    # Check every statement for unsupported constructs BEFORE doing any work.
+    unsupported: List[str] = []
+    for stmt in body:
+        reason = _mixed_body_unsupported_stmt(stmt)
+        if reason is not None:
+            unsupported.append(reason)
+
+    if unsupported:
+        # LOUD REFUSAL: claim the test so Layer 0 does not retry it, emit
+        # a warning per unsupported construct, produce zero contracts.
+        out.claimed_tests.add(test_name)
+        out.seen += 1
+        out.mixed_body_skipped += 1
+        for reason in unsupported:
+            out.warnings.append(
+                LiftWarning(
+                    source_path,
+                    test_name,
+                    f"layer2 mixed-body: LOUD REFUSAL — {reason}",
+                )
+            )
+        return True
+
+    # --- SSA scope build + assertion collection -------------------------
+    #
+    # Walk the body in order.  For each binding, bump the SSA version and
+    # install a fresh var in scope (opaque bindings → fresh free var with no
+    # constraints; translatable bindings → term-valued var, same as P5).
+    # For each assert, translate under the current scope and collect the atom.
+
+    # SSA state: maps local name → current SSA var term.
+    ssa_current: Dict[str, Term] = {}
+    ssa_versions: Dict[str, int] = {}
+
+    atoms: List[Formula] = []
+    skip_reasons: List[str] = []
+
+    for stmt in body:
+        # ---- Binding ----
+        if isinstance(stmt, (ast.Assign, ast.AnnAssign)):
+            if isinstance(stmt, ast.Assign):
+                target_name = stmt.targets[0].id  # simple name guaranteed above
+                value_node = stmt.value
+            else:  # AnnAssign
+                target_name = stmt.target.id
+                value_node = stmt.value  # may be None (bare annotation)
+
+            version = ssa_versions.get(target_name, 0)
+            ssa_versions[target_name] = version + 1
+            ssa_name = f"{target_name}${version}"
+            ssa_var = make_var(ssa_name)
+            ssa_current[target_name] = ssa_var
+            # We do NOT emit a facts contract. The SSA var is an opaque free
+            # var unless the RHS is translatable (in which case a value
+            # constraint would be useful, but for the consistency pass only
+            # the asserted properties matter; we intentionally keep this
+            # simple and sound).
+            continue
+
+        # ---- Assert ----
+        if isinstance(stmt, ast.Assert):
+            # Translate under the current SSA scope.
+            scope = _ValueScope(current=dict(ssa_current))
+            try:
+                atom = _lift_assertion_stmt_scoped(stmt, scope)
+            except ValueError as e:
+                skip_reasons.append(f"`{_unparse(stmt)[:60]}`: {e}")
+                continue
+            atoms.append(atom)
+            continue
+
+        # ---- Pass ----
+        # already permitted; nothing to do.
+
+    if not atoms:
+        # No assert was liftable. Warn and claim (so Layer 0 can try).
+        out.claimed_tests.add(test_name)
+        out.seen += 1
+        out.mixed_body_skipped += 1
+        out.warnings.append(
+            LiftWarning(
+                source_path,
+                test_name,
+                f"layer2 mixed-body: 0 of {len([s for s in body if isinstance(s, ast.Assert)])} "
+                f"asserts were liftable; releasing claim to Layer 0. "
+                f"Skipped: {'; '.join(skip_reasons)}",
+            )
+        )
+        return True
+
+    # Conjoin all lifted atoms into ONE contract (Pattern-3 shape).
+    # A single lifted atom is emitted as-is (no redundant and-wrapper).
+    inv = atoms[0] if len(atoms) == 1 else and_(atoms)
+    out.claimed_tests.add(test_name)
+    out.seen += 1
+    out.decls.append(ContractDecl(name=test_name, inv=inv))
+    out.lifted += 1
+    out.mixed_body_lifted += 1
+
+    if skip_reasons:
+        out.warnings.append(
+            LiftWarning(
+                source_path,
+                test_name,
+                f"layer2 mixed-body: {len(skip_reasons)} of "
+                f"{len([s for s in body if isinstance(s, ast.Assert)])} asserts skipped "
+                f"(unliftable shape): {'; '.join(skip_reasons)}",
+            )
+        )
+
+    return True

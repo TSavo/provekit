@@ -35,6 +35,7 @@
 pub mod body_discharge;
 pub mod call_edge_loader;
 pub mod cbor_decode;
+pub mod consistency;
 pub mod domain_claim_verifier;
 pub mod enumerate_callsites;
 pub mod formula_rewrite;

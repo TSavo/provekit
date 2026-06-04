@@ -383,6 +383,33 @@ impl Runner {
             "verifier: contract self-post pass complete"
         );
 
+        // Receipt 1: test-assertion consistency pass. Picks up coalesced
+        // inv-only contracts (no enumerable bridge call site) that
+        // `enumerate_callsites` would otherwise drop silently, and proves /
+        // refuses their internal consistency. Discharged => PROVEN-consistent;
+        // Unsatisfied => REFUSED-contradictory; Undecidable => encoding STOP
+        // surfaced as a violation (never silently passed).
+        let consistency_results =
+            crate::consistency::verify_consistency(&pool, &self.plan, &self.registry);
+        for cr in &consistency_results {
+            match cr.verdict {
+                ObligationVerdict::Discharged => {
+                    n_solved.fetch_add(1, Ordering::Relaxed);
+                }
+                _ => {
+                    violations += 1;
+                    n_residue.fetch_add(1, Ordering::Relaxed);
+                }
+            }
+            report_stage::add_consistency(
+                &cr.contract_cid,
+                &cr.property_name,
+                cr.verdict,
+                &cr.reason,
+                &mut report,
+            );
+        }
+
         let invs = invs_sink.into_inner().unwrap_or_default();
         let mut per_solver: BTreeMap<String, SolverStats> = BTreeMap::new();
         for inv in &invs {
@@ -634,6 +661,28 @@ impl Runner {
                 .count(),
             "verifier: contract self-post pass complete"
         );
+
+        // Receipt 1: test-assertion consistency pass (see the matching block
+        // in the primary run path).
+        let consistency_results = crate::consistency::verify_consistency(&pool, plan, registry);
+        for cr in &consistency_results {
+            match cr.verdict {
+                ObligationVerdict::Discharged => {
+                    n_solved.fetch_add(1, Ordering::Relaxed);
+                }
+                _ => {
+                    violations += 1;
+                    n_residue.fetch_add(1, Ordering::Relaxed);
+                }
+            }
+            report_stage::add_consistency(
+                &cr.contract_cid,
+                &cr.property_name,
+                cr.verdict,
+                &cr.reason,
+                &mut report,
+            );
+        }
 
         // Aggregate per-solver stats from telemetry sink.
         let invs = invs_sink.into_inner().unwrap_or_default();

@@ -431,7 +431,8 @@ class ParserTest(unittest.TestCase):
         assert len(decls) == 1
         decl = decls[0]
         assert decl["kind"] == "contract"
-        assert decl["name"] == "test_native_assertions"
+        # Class methods are qualified: "ClassName::method_name".
+        assert decl["name"] == "ParserTest::test_native_assertions"
         inv = decl["inv"]
         assert inv["kind"] == "and"
         flat_atoms = [
