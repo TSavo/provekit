@@ -1083,9 +1083,19 @@ surface = "python"
     let implications = report["implications"]
         .as_array()
         .expect("implications array");
+    // EUF argument-carrying lift (post-EUF-change): same-arg callsites across
+    // tests collapse to one EUF-keyed base (per arg). The fixture has:
+    //   test_parse_value_scope: parse_int("42") via variable binding
+    //     -> location-keyed (variable-binding path): parse_int@...:5:13
+    //   test_direct_parse: parse_int("42") == 42
+    //     -> EUF-keyed (s:'42'): parse_int#euf#...(s:'42')
+    //   test_two_callsites: parse_int("42") == parse_int("042")
+    //     -> EUF-keyed: parse_int#euf#...(s:'42') + parse_int#euf#...(s:'042')
+    // After within-file EUF coalesce: 3 ::facts + 3 ::assertion = 6 contracts.
+    // Implications: 4 (one per unique base::facts -> ::assertion link).
     assert_eq!(
         ir.len(),
-        8,
+        6,
         "expected callsite fact + assertion contracts: {report:#}"
     );
     assert_eq!(
@@ -1097,7 +1107,11 @@ surface = "python"
         .iter()
         .map(|decl| decl["name"].as_str().unwrap_or_default())
         .collect();
-    assert!(names.iter().all(|name| name.starts_with("parse_int@")));
+    // All names start with "parse_int" (either @-location-keyed or #euf#-arg-keyed)
+    assert!(
+        names.iter().all(|name| name.starts_with("parse_int")),
+        "all names must start with parse_int: {names:?}"
+    );
     for test_name in [
         "test_parse_value_scope",
         "test_direct_parse",
@@ -1110,14 +1124,16 @@ surface = "python"
             .iter()
             .filter(|name| name.ends_with("::facts"))
             .count(),
-        4
+        3,
+        "expected 3 ::facts contracts: {names:?}"
     );
     assert_eq!(
         names
             .iter()
             .filter(|name| name.ends_with("::assertion"))
             .count(),
-        4
+        3,
+        "expected 3 ::assertion contracts: {names:?}"
     );
     for implication in implications {
         let antecedent = implication["antecedent"].as_str().unwrap_or_default();

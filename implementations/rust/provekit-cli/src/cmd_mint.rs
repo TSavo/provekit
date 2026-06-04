@@ -1791,6 +1791,172 @@ fn mint_ir_document(
         }
     }
 
+    // Cross-file consistency conjoin (CLI-side, language-neutral).
+    //
+    // When the kit lifts a multi-file project, same-named EUF contracts from
+    // DIFFERENT source files land as separate `ir` entries. Within a single
+    // file the kit already coalesces them (e.g. layer2.py
+    // `_coalesce_same_named_decls`), but that coalesce only runs per-file.
+    // Without this pre-pass, `mint_ir_document` would mint TWO separate
+    // contracts — each individually SAT — and the consistency pass checks
+    // them independently, hiding the conjunction `=(t,1) ∧ =(t,2)` that
+    // would be UNSAT.
+    //
+    // Scope: ONLY inv-only contracts (inv present, no nontrivial pre, no
+    // post).  Bridge-bearing and pre/post contracts are NOT merged here;
+    // they have different invariants about uniqueness that this transform
+    // must not disturb (see merge_ir_document_responses comments).
+    //
+    // Algorithm (mirrors coalesce_decls_by_name / _coalesce_same_named_decls):
+    //   - Group contract decls by name.  First-seen order preserved.
+    //   - Identical-content same-name decls: dedup (one copy, not double-conjoin).
+    //   - Distinct-content same-name inv-only decls: conjoin invs into
+    //     `{"kind":"and","operands":[...]}`, flattening nested `and` nodes
+    //     and deduping operands by JCS-canonical key.
+    //   - Non-inv-only same-name decls: keep only the first (existing behaviour).
+    // Non-contract ir entries (bridge, implication, etc.) pass through untouched.
+    let ir_coalesced: Vec<Value> = {
+        // Maps name -> (first_decl_index_in_ir_coalesced_so_far, is_inv_only, accumulated_inv_operands)
+        // We work in two passes: first build the grouped structure, then emit.
+        struct InvOnlyGroup {
+            /// Clone of the first decl (template for out_binding, outBinding, etc.)
+            template: Value,
+            /// Canonical JCS keys of operands already added (for dedup)
+            operand_keys: Vec<String>,
+            /// The operand `serde_json::Value` list (in order, deduped)
+            operands: Vec<Value>,
+        }
+        let mut inv_only_groups: std::collections::BTreeMap<String, InvOnlyGroup> =
+            std::collections::BTreeMap::new();
+        // Passthrough bucket: non-contract entries, and contract entries
+        // that are NOT inv-only (pre/post-bearing or function-contract).
+        // We preserve original order via a combined stream.
+        enum CoalesceEntry {
+            InvOnly(String),          // name key -> resolved from inv_only_groups
+            Passthrough(Value),       // emitted as-is
+        }
+        let mut stream: Vec<CoalesceEntry> = Vec::new();
+        let mut inv_only_name_emitted: std::collections::HashSet<String> =
+            std::collections::HashSet::new();
+
+        for decl in ir {
+            let kind = decl.get("kind").and_then(|v| v.as_str()).unwrap_or("");
+            if kind != "contract" {
+                // Non-contract (bridge, library-sugar-binding-entry, etc.) → passthrough
+                stream.push(CoalesceEntry::Passthrough(decl.clone()));
+                continue;
+            }
+            let name = decl
+                .get("name")
+                .or_else(|| decl.get("symbol"))
+                .or_else(|| decl.get("fn_name"))
+                .or_else(|| decl.get("fnName"))
+                .and_then(|v| v.as_str())
+                .unwrap_or("unnamed")
+                .to_string();
+
+            // A contract is inv-only if: has inv, no pre/precondition, no post/postcondition,
+            // and kind == "contract" (not "function-contract").
+            // `has_nontrivial_pre_json` is the same gate used in the main loop.
+            let pre_val = decl.get("pre").or_else(|| decl.get("precondition"));
+            let post_val = decl.get("post").or_else(|| decl.get("postcondition"));
+            let inv_val = decl.get("inv").or_else(|| decl.get("invariant"));
+            let is_inv_only = inv_val.is_some()
+                && !pre_val.is_some_and(has_nontrivial_pre_json)
+                && post_val.is_none();
+
+            if !is_inv_only {
+                // Pre/post-bearing contract → pass through untouched regardless of name
+                stream.push(CoalesceEntry::Passthrough(decl.clone()));
+                continue;
+            }
+
+            // inv-only contract — accumulate into the group for this name.
+            let inv = inv_val.expect("inv_val is_some checked above");
+
+            // Compute a canonical key for this operand to dedup byte-identical invs.
+            let operand_key = encode_jcs(json_to_cvalue(inv).as_ref());
+
+            if let Some(group) = inv_only_groups.get_mut(&name) {
+                // Add this operand only if it is not already present (dedup by canonical bytes).
+                if !group.operand_keys.iter().any(|k| k == &operand_key) {
+                    group.operand_keys.push(operand_key);
+                    group.operands.push(inv.clone());
+                }
+                // The stream slot was already added when the first decl for this name arrived.
+            } else {
+                // First decl for this name: create the group and add the stream slot.
+                let group = InvOnlyGroup {
+                    template: decl.clone(),
+                    operand_keys: vec![operand_key],
+                    operands: vec![inv.clone()],
+                };
+                inv_only_groups.insert(name.clone(), group);
+                if inv_only_name_emitted.insert(name.clone()) {
+                    stream.push(CoalesceEntry::InvOnly(name));
+                }
+            }
+        }
+
+        // Resolve the stream into the final coalesced IR.
+        let mut result: Vec<Value> = Vec::with_capacity(ir.len());
+        for entry in stream {
+            match entry {
+                CoalesceEntry::Passthrough(v) => result.push(v),
+                CoalesceEntry::InvOnly(name) => {
+                    if let Some(mut group) = inv_only_groups.remove(&name) {
+                        // Build the (possibly conjoined) inv.
+                        let merged_inv = if group.operands.len() == 1 {
+                            group.operands.remove(0)
+                        } else {
+                            // Flatten any top-level `and` operands from each
+                            // individual inv into a single flat `and` list,
+                            // then dedup by canonical key.
+                            let mut flat_operands: Vec<Value> = Vec::new();
+                            let mut flat_keys: Vec<String> = Vec::new();
+                            for op in group.operands {
+                                // If this operand is itself `{kind:"and", operands:[...]}`,
+                                // flatten its children rather than nesting another `and`.
+                                let is_and = op.get("kind").and_then(|v| v.as_str())
+                                    == Some("and");
+                                let children: Vec<Value> = if is_and {
+                                    op.get("operands")
+                                        .and_then(|v| v.as_array())
+                                        .cloned()
+                                        .unwrap_or_default()
+                                } else {
+                                    vec![op]
+                                };
+                                for child in children {
+                                    let key = encode_jcs(json_to_cvalue(&child).as_ref());
+                                    if !flat_keys.iter().any(|k| k == &key) {
+                                        flat_keys.push(key);
+                                        flat_operands.push(child);
+                                    }
+                                }
+                            }
+                            match flat_operands.len() {
+                                0 => Value::Null,
+                                1 => flat_operands.remove(0),
+                                _ => json!({"kind": "and", "operands": flat_operands}),
+                            }
+                        };
+                        // Emit the merged decl: clone the template and replace inv.
+                        let mut merged_decl = group.template.clone();
+                        if let Some(obj) = merged_decl.as_object_mut() {
+                            obj.insert("inv".to_string(), merged_inv);
+                            // Remove the alternate key if present (use canonical "inv").
+                            obj.shift_remove("invariant");
+                        }
+                        result.push(merged_decl);
+                    }
+                }
+            }
+        }
+        result
+    };
+    let ir = &ir_coalesced;
+
     for decl in ir {
         let kind = decl.get("kind").and_then(|v| v.as_str()).unwrap_or("");
         if kind != "contract" && kind != "function-contract" {
@@ -4259,5 +4425,208 @@ mod tests {
         assert!(a.starts_with("blake3-512:"));
         // Print so the integration test can verify against the pinned value.
         eprintln!("empty-set CID = {a}");
+    }
+
+    // ── Cross-file inv-only conjoin regression (permanent) ─────────────────
+    // When two IR entries share the SAME name and are both inv-only (inv
+    // present, no pre/post), the pre-pass must conjoin them into ONE contract
+    // with `inv = and(inv_a, inv_b)`.  Without the pre-pass, both contracts
+    // land in the bundle as separate mementos; the consistency pass checks
+    // them individually (each SAT) and the cross-file contradiction is hidden.
+    //
+    // These tests verify the pre-pass at the unit level so the verifier-level
+    // behaviour (REFUSED on the conjoined inv) is a separate concern.
+    //
+    // Soundness invariant: bridge-bearing (pre/post) contracts with the same
+    // name must NOT be merged — they represent different function contracts.
+
+    fn inv_const(val: i64) -> Value {
+        json!({
+            "kind": "atomic",
+            "name": "=",
+            "args": [
+                {"kind": "var", "name": "x"},
+                {"kind": "const", "sort": {"kind": "primitive", "name": "Int"}, "value": val}
+            ]
+        })
+    }
+
+    #[test]
+    fn cross_file_same_name_inv_only_contracts_are_conjoined() {
+        // Two same-named inv-only contracts (inv=1 and inv=2) must yield ONE
+        // contract in the bundle with a conjoined `and` inv.
+        let ir = vec![
+            json!({
+                "kind": "contract",
+                "name": "make_value#euf#c:callresult_make_value_a1(v:x)::assertion",
+                "outBinding": "out",
+                "inv": inv_const(1)
+            }),
+            json!({
+                "kind": "contract",
+                "name": "make_value#euf#c:callresult_make_value_a1(v:x)::assertion",
+                "outBinding": "out",
+                "inv": inv_const(2)
+            }),
+        ];
+        let tempdir = tempfile::tempdir().expect("tempdir");
+        let (bytes, _, _) = mint_from_ir_document(
+            &ir, None, None, None,
+            Path::new("."), tempdir.path(), true,
+        )
+        .expect("mint should succeed");
+        // Decode and find the contract member.
+        let catalog = provekit_verifier::cbor_decode::decode(&bytes).expect("decode catalog");
+        let members = catalog.as_map().expect("catalog map")
+            .get("members").expect("members").as_map().expect("members map");
+        let contract_entries: Vec<_> = members
+            .values()
+            .filter_map(|v| {
+                let text = v.as_bstr().and_then(|b| std::str::from_utf8(b).ok())?;
+                let env: serde_json::Value = serde_json::from_str(text).ok()?;
+                let h = env.get("header")?;
+                if h.get("kind").and_then(|k| k.as_str()) == Some("contract") {
+                    Some(env)
+                } else {
+                    None
+                }
+            })
+            .collect();
+        // POSITIVE: exactly one contract (the two were coalesced, not doubled)
+        assert_eq!(
+            contract_entries.len(), 1,
+            "expected one conjoined contract, got {}: {contract_entries:#?}",
+            contract_entries.len()
+        );
+        // STRUCTURAL: the inv must be an `and` with two operands
+        let inv = contract_entries[0]
+            .pointer("/header/inv")
+            .expect("contract must have inv");
+        assert_eq!(
+            inv.get("kind").and_then(|k| k.as_str()), Some("and"),
+            "conjoined inv must be kind=and; got: {inv}"
+        );
+        let operands = inv.get("operands").and_then(|o| o.as_array())
+            .expect("and must have operands array");
+        assert_eq!(
+            operands.len(), 2,
+            "conjoined inv must have 2 operands; got: {operands:#?}"
+        );
+    }
+
+    #[test]
+    fn cross_file_identical_inv_only_contracts_are_deduped_not_double_conjoined() {
+        // Two same-named inv-only contracts with IDENTICAL invs must yield ONE
+        // contract with the SAME inv (not `and(inv, inv)`).
+        let ir = vec![
+            json!({
+                "kind": "contract",
+                "name": "make_value#euf#c:callresult_make_value_a1(v:x)::assertion",
+                "outBinding": "out",
+                "inv": inv_const(1)
+            }),
+            json!({
+                "kind": "contract",
+                "name": "make_value#euf#c:callresult_make_value_a1(v:x)::assertion",
+                "outBinding": "out",
+                "inv": inv_const(1)
+            }),
+        ];
+        let tempdir = tempfile::tempdir().expect("tempdir");
+        let (bytes, _, _) = mint_from_ir_document(
+            &ir, None, None, None,
+            Path::new("."), tempdir.path(), true,
+        )
+        .expect("mint should succeed");
+        let catalog = provekit_verifier::cbor_decode::decode(&bytes).expect("decode catalog");
+        let members = catalog.as_map().expect("catalog map")
+            .get("members").expect("members").as_map().expect("members map");
+        let contract_entries: Vec<_> = members
+            .values()
+            .filter_map(|v| {
+                let text = v.as_bstr().and_then(|b| std::str::from_utf8(b).ok())?;
+                let env: serde_json::Value = serde_json::from_str(text).ok()?;
+                let h = env.get("header")?;
+                if h.get("kind").and_then(|k| k.as_str()) == Some("contract") {
+                    Some(env)
+                } else {
+                    None
+                }
+            })
+            .collect();
+        // POSITIVE: exactly one contract (deduped, not doubled)
+        assert_eq!(
+            contract_entries.len(), 1,
+            "identical inv must yield one deduped contract, got {}",
+            contract_entries.len()
+        );
+        // DISCRIMINATION: inv is NOT an `and` — it is just the original atomic
+        let inv = contract_entries[0]
+            .pointer("/header/inv")
+            .expect("contract must have inv");
+        assert_ne!(
+            inv.get("kind").and_then(|k| k.as_str()), Some("and"),
+            "identical inv must NOT be wrapped in `and`; got: {inv}"
+        );
+    }
+
+    #[test]
+    fn cross_file_pre_bearing_same_name_contracts_are_not_merged() {
+        // A pre/post-bearing contract with the same name must NOT be merged
+        // with an inv-only one — they represent different obligations.
+        let pre_bearing = json!({
+            "kind": "contract",
+            "name": "make_value::contract",
+            "outBinding": "out",
+            "pre": {"kind": "atomic", "name": "≠", "args": [
+                {"kind": "var", "name": "x"},
+                {"kind": "ctor", "name": "None", "args": []}
+            ]},
+            "inv": inv_const(1)
+        });
+        let inv_only = json!({
+            "kind": "contract",
+            "name": "make_value::contract",
+            "outBinding": "out",
+            "inv": inv_const(2)
+        });
+        let ir = vec![pre_bearing, inv_only];
+        let tempdir = tempfile::tempdir().expect("tempdir");
+        let (bytes, _, _) = mint_from_ir_document(
+            &ir, None, None, None,
+            Path::new("."), tempdir.path(), true,
+        )
+        .expect("mint should succeed");
+        let catalog = provekit_verifier::cbor_decode::decode(&bytes).expect("decode catalog");
+        let members = catalog.as_map().expect("catalog map")
+            .get("members").expect("members").as_map().expect("members map");
+        let contract_entries: Vec<_> = members
+            .values()
+            .filter_map(|v| {
+                let text = v.as_bstr().and_then(|b| std::str::from_utf8(b).ok())?;
+                let env: serde_json::Value = serde_json::from_str(text).ok()?;
+                let h = env.get("header")?;
+                if h.get("kind").and_then(|k| k.as_str()) == Some("contract") {
+                    Some(env)
+                } else {
+                    None
+                }
+            })
+            .collect();
+        // DISCRIMINATION: pre-bearing contract must NOT be merged with inv-only.
+        // Both must survive (different shapes).
+        assert_eq!(
+            contract_entries.len(), 2,
+            "pre-bearing + inv-only must both survive (no cross-shape merge), got {}:\n{contract_entries:#?}",
+            contract_entries.len()
+        );
+        // The pre-bearing one must still carry `pre`
+        let has_pre_bearing = contract_entries.iter().any(|env| {
+            env.pointer("/header/pre").is_some()
+        });
+        assert!(
+            has_pre_bearing,
+            "pre-bearing contract must not be merged away"
+        );
     }
 }
