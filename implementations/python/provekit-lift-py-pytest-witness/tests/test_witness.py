@@ -76,3 +76,32 @@ def test_forged_passed_witness_over_failing_code_is_caught_by_recompute(tmp_path
 
 
 from provekit_pytest_witness import Witness  # noqa: E402  (used above)
+
+
+# --- The verifier<->kit contract: the discharge command ----------------------
+
+from provekit_pytest_witness.discharge_cli import main as discharge_main
+import json as _json, io, contextlib
+
+def _run_discharge(proof_path, proj, code):
+    buf = io.StringIO()
+    with contextlib.redirect_stdout(buf):
+        rc = discharge_main([proof_path, proj, *code])
+    return rc, _json.loads(buf.getvalue())
+
+def test_discharge_command_good(tmp_path):
+    proj, code = _project(tmp_path, GOOD)
+    from provekit_pytest_witness import run_and_witness as rw, emit_witness_proof as ep
+    out = tmp_path/"out"; out.mkdir()
+    path = ep(rw(proj,"test_add.py",code), str(out))
+    rc, j = _run_discharge(path, proj, code)
+    assert rc == 0 and j["verdict"] == "DISCHARGED", j
+
+def test_discharge_command_refuses_mutated(tmp_path):
+    proj, code = _project(tmp_path, GOOD)
+    from provekit_pytest_witness import run_and_witness as rw, emit_witness_proof as ep
+    out = tmp_path/"out"; out.mkdir()
+    path = ep(rw(proj,"test_add.py",code), str(out))
+    (tmp_path/"impl.py").write_text(BAD)  # mutate after witnessing
+    rc, j = _run_discharge(path, proj, code)
+    assert rc == 1 and j["verdict"] == "REFUSED", j

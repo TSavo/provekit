@@ -7,5 +7,8 @@ version = "0.1.0"
 description = "pytest witness lifter — k(I)=t execution-witness proofchain links"
 requires-python = ">=3.10"
 dependencies = ["provekit-lift-py-tests"]
+[project.scripts]
+provekit-pytest-witness-discharge = "provekit_pytest_witness.discharge_cli:main"
+
 [tool.setuptools.packages.find]
 where = ["src"]
