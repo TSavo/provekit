@@ -18,6 +18,7 @@ that runs wrong.
 """
 from __future__ import annotations
 
+import json
 import os
 import platform
 import subprocess
@@ -25,7 +26,13 @@ import sys
 from dataclasses import dataclass
 from typing import List, Tuple
 
-from provekit_lift_py_tests.canonicalizer import blake3_512_of, jcs_hash, vobj, vstr
+from provekit_lift_py_tests.canonicalizer import (
+    blake3_512_of,
+    encode_jcs,
+    jcs_hash,
+    vobj,
+    vstr,
+)
 
 
 def code_cid(code_paths: List[str]) -> str:
@@ -100,3 +107,62 @@ def verify(witness: Witness, project_dir: str, code_paths: List[str]) -> Tuple[s
     if witness.outcome != "passed":
         return ("REFUSED", f"witnessed outcome is {witness.outcome!r}, not a discharge")
     return ("DISCHARGED", "re-ran on pinned code; assertions held; witness CID reproduced")
+
+
+# ---------------------------------------------------------------------------
+# Pipeline-native form: persist the witness as a content-addressed .proof
+# memento (the IR EvidenceTerm{proofType:"custom"} shape) and discharge it by
+# RECOMPUTE.  The Rust verifier stays language-blind; the kit owns recompute
+# because the kit owns the runtime (mirrors "kit owns .proof resolution").
+# ---------------------------------------------------------------------------
+
+
+def _witness_envelope_value(w: Witness):
+    """EvidenceTerm{kind:evidence, proofType:custom, certificate:{...}} — the
+    dark IR slot, now with a real producer.  ``proofData`` carries exactly the
+    fields needed to reconstruct and RE-RUN the witness."""
+    proof_data = json.dumps(
+        {"codeCid": w.code_cid, "runtimeCid": w.runtime_cid,
+         "test": w.test_id, "outcome": w.outcome},
+        sort_keys=True, separators=(",", ":"),
+    )
+    cert = vobj([
+        ("tool", vstr("pytest")),
+        ("version", vstr(w.runtime_cid)),
+        ("formulaHash", vstr(w.cid)),
+        ("proofData", vstr(proof_data)),
+    ])
+    return vobj([
+        ("kind", vstr("evidence")),
+        ("proofType", vstr("custom")),
+        ("certificate", cert),
+    ])
+
+
+def emit_witness_proof(w: Witness, out_dir: str) -> str:
+    """Write the witness as a content-addressed ``.proof`` (filename = its CID).
+    Returns the path."""
+    val = _witness_envelope_value(w)
+    envelope_cid = jcs_hash(val)
+    path = os.path.join(out_dir, envelope_cid.replace(":", "_") + ".proof")
+    with open(path, "w", encoding="utf-8") as f:
+        f.write(encode_jcs(val))
+    return path
+
+
+def load_witness_from_proof(proof_path: str) -> Witness:
+    env = json.loads(open(proof_path, encoding="utf-8").read())
+    pd = json.loads(env["certificate"]["proofData"])
+    cid = jcs_hash(_witness_value(pd["codeCid"], pd["runtimeCid"], pd["test"], pd["outcome"]))
+    return Witness(pd["codeCid"], pd["runtimeCid"], pd["test"], pd["outcome"], cid)
+
+
+def discharge_from_proof(proof_path: str, project_dir: str, code_paths: List[str]) -> Tuple[str, str]:
+    """Pipeline discharge: load the witness memento and settle it BY RECOMPUTE.
+
+    Re-runs the pinned test; a forged ``passed`` envelope over failing code is
+    caught here, because the re-run mints a ``failed`` witness whose CID will not
+    match the forged one.  No trust in the recorded outcome.
+    """
+    w = load_witness_from_proof(proof_path)
+    return verify(w, project_dir, code_paths)
