@@ -49,6 +49,7 @@ from provekit_lift_py_tests.layer2 import (
     Layer2Output,
     LiftWarning,
     _ValueScope,
+    _call_key,
     _iter_test_functions,
     _lift_assertion_stmt_scoped,
     _strip_self,
@@ -117,10 +118,12 @@ def _npt_assertion_name(stmt: ast.stmt) -> Optional[str]:
     return None
 
 
-def _lift_npt_assertion_scoped(call: ast.Call, scope: _ValueScope) -> Formula:
+def _lift_npt_assertion_scoped(call: ast.Call, scope: _ValueScope, call_vars) -> Formula:
     """Lift one numpy.testing assertion call under the current SSA scope.
-    Raises ValueError (loud, recorded as a skip) for approximate / unsupported
-    forms so they are NEVER silently lifted as exact equality."""
+    ``call_vars`` location-keys recomputed call results so they are NOT assumed
+    stable across statements.  Raises ValueError (loud, recorded as a skip) for
+    approximate / unsupported forms so they are NEVER silently lifted as exact
+    equality."""
     name = _npt_call_name(call.func)
     if call.keywords:
         # err_msg=/verbose= are common and harmless, but a keyword in the
@@ -133,14 +136,14 @@ def _lift_npt_assertion_scoped(call: ast.Call, scope: _ValueScope) -> Formula:
     if name in _NPT_EQUALITY:
         if len(call.args) < 2:
             raise ValueError(f"{name} expects at least 2 positional args")
-        l = _translate_term_scoped(call.args[0], scope)
-        r = _translate_term_scoped(call.args[1], scope)
+        l = _translate_term_scoped(call.args[0], scope, call_vars)
+        r = _translate_term_scoped(call.args[1], scope, call_vars)
         # Same atom the pytest/unittest path builds for equality.
         return comparison_with_none_guard("=", l, r, emit_none_guard=False)
     if name in _NPT_TRUTH:
         if len(call.args) < 1:
             raise ValueError(f"{name} expects 1 positional arg")
-        return _translate_bool_expr_scoped(call.args[0], scope)
+        return _translate_bool_expr_scoped(call.args[0], scope, call_vars)
     if name in _NPT_APPROX:
         raise ValueError(
             f"approximate assertion `{name}` is not exact equality "
@@ -217,6 +220,21 @@ def _classify_numpy_testing(
     atoms: List[Formula] = []
     skipped: List[str] = []
 
+    # SOUNDNESS — impure repeated calls: a call RESULT (repr(x), len(x), ...) is
+    # NOT assumed stable across statements, because an intervening call can
+    # change global/observable state (e.g. np.set_printoptions changes repr(x)).
+    # Pre-key every call occurrence to a LOCATION-unique opaque var so the same
+    # call text at two locations yields DISTINCT terms (no false contradiction).
+    # Bound variables (SSA vars) are unaffected — they remain stable and still
+    # detect genuine same-variable contradictions.
+    call_vars = {}
+    for stmt in body:
+        for c in ast.walk(stmt):
+            if isinstance(c, ast.Call):
+                k = _call_key(c)
+                if k not in call_vars:
+                    call_vars[k] = make_var(f"__call${c.lineno}${c.col_offset}")
+
     for stmt in body:
         if isinstance(stmt, (ast.Assign, ast.AnnAssign)):
             target = stmt.targets[0].id if isinstance(stmt, ast.Assign) else stmt.target.id
@@ -229,9 +247,9 @@ def _classify_numpy_testing(
         scope = _ValueScope(current=dict(ssa_current))
         try:
             if _npt_assertion_name(stmt) is not None:
-                atoms.append(_lift_npt_assertion_scoped(stmt.value, scope))
+                atoms.append(_lift_npt_assertion_scoped(stmt.value, scope, call_vars))
             else:  # bare assert — conjoin for a complete per-test claim
-                atoms.append(_lift_assertion_stmt_scoped(stmt, scope))
+                atoms.append(_lift_assertion_stmt_scoped(stmt, scope, call_vars))
         except ValueError as e:
             skipped.append(f"`{_unparse(stmt)[:60]}`: {e}")
 

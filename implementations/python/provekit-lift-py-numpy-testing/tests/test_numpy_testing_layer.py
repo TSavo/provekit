@@ -120,6 +120,38 @@ def test_partial_exact_plus_approx_lifts_exact_warns_approx():
     assert any("skipped" in w.reason for w in out.warnings), out.warnings
 
 
+# --- Impure repeated call must NOT false-unify (the numpy false-violation) ----
+
+
+def test_impure_repeated_call_not_false_unified():
+    # Real numpy shape (TestPrintOptions::test_basic): repr(x) is RECOMPUTED,
+    # and an intervening call (set_printoptions) changes what it returns.  The
+    # two repr(x) terms must be DISTINCT (location-keyed), so the conjunction is
+    # NOT a spurious contradiction.  RED against structural-ctor unification.
+    out = _lift(
+        "def test_a():\n"
+        "    x = make()\n"
+        '    assert_equal(repr(x), "a")\n'
+        "    ret = mutate()\n"
+        '    assert_equal(repr(x), "b")\n'
+    )
+    inv = _only_decl(out)
+    assert isinstance(inv, _Connective) and inv.kind == "and"
+    lefts = [op.args[0] for op in inv.operands if isinstance(op, _Atomic) and op.name == "="]
+    assert len(lefts) == 2
+    assert lefts[0] != lefts[1], "repr(x) must not unify across statements (impure call)"
+
+
+def test_same_bound_var_still_contradicts():
+    # The teeth that MUST survive the fix: a bound variable is stable, so two
+    # equalities about it with distinct constants are a genuine contradiction.
+    out = _lift("def test_a():\n    x = make()\n    assert_equal(x, 1)\n    assert_equal(x, 2)\n")
+    inv = _only_decl(out)
+    assert isinstance(inv, _Connective) and inv.kind == "and"
+    lefts = {op.args[0].name for op in inv.operands if isinstance(op, _Atomic) and isinstance(op.args[0], _Var)}
+    assert lefts == {"x$0"}, lefts  # SAME var both times -> z3 sees contradiction
+
+
 # --- Mutation / control-flow / side-effect -> LOUD REFUSE ---------------------
 
 
