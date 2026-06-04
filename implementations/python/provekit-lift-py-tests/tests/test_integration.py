@@ -100,8 +100,11 @@ def test_layer2_memento_naming_matches_spec():
     # Pattern 3: <test> bare (free fn) or <class>::<test> (class method)
     assert "test_parse_int_characterization" in names
     assert "TestUnittestStyle::test_three_facts" in names
-    # Pattern 4: <test>::parametrize::<params>
-    assert "test_v_nonneg::parametrize::v" in names
+    # Pattern 4: per-row decls <test>::parametrize::<params>::row<i>
+    assert "test_v_nonneg::parametrize::v::row0" in names
+    assert "test_v_nonneg::parametrize::v::row1" in names
+    assert "test_v_nonneg::parametrize::v::row2" in names
+    assert "test_v_nonneg::parametrize::v::row3" in names
 
 
 def test_layer2_pattern1_jcs_canonical_byte_stable():

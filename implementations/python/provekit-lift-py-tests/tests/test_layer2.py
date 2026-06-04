@@ -352,7 +352,9 @@ def test_unittest_unsupported_assertion_warns_without_fake_contract():
 # --- Pattern 4: parametrize ---------------------------------------------
 
 
-def test_pattern4_parametrize_single_param_lifts_to_and_over_rows():
+def test_pattern4_parametrize_single_param_lifts_per_row():
+    # v in [1,2,3,4]: assert v >= 0 — all 4 rows consistent.
+    # Per-row: 4 independent decls, each a single atomic.
     out = _lift("""
         import pytest
 
@@ -361,15 +363,12 @@ def test_pattern4_parametrize_single_param_lifts_to_and_over_rows():
             assert v >= 0
     """)
     assert out.parametrize_lifted == 1, f"warnings: {out.warnings}"
-    assert out.decls[0].name == "test_nonneg::parametrize::v"
-    inv = out.decls[0].inv
-    assert isinstance(inv, _Connective)
-    assert inv.kind == "and"
-    assert len(inv.operands) == 4
-    # Each operand should be an atomic with the literal value substituted in.
-    for op in inv.operands:
-        assert isinstance(op, _Atomic)
-        assert op.name == "≥"
+    assert len(out.decls) == 4, f"expected 4 per-row decls, got {[d.name for d in out.decls]}"
+    for i, d in enumerate(out.decls):
+        assert d.name == f"test_nonneg::parametrize::v::row{i}", d.name
+        # Each row inv is a single atomic (value substituted, not a conjunction).
+        assert isinstance(d.inv, _Atomic), f"row{i}: expected _Atomic, got {type(d.inv).__name__}"
+        assert d.inv.name == "≥"
 
 
 def test_pattern4_parametrize_two_params_via_tuple_rows():
@@ -381,7 +380,9 @@ def test_pattern4_parametrize_two_params_via_tuple_rows():
             assert a == b
     """)
     assert out.parametrize_lifted == 1, f"warnings: {out.warnings}"
-    assert out.decls[0].name == "test_pairs::parametrize::a_b"
+    assert len(out.decls) == 3, f"expected 3 per-row decls, got {[d.name for d in out.decls]}"
+    for i, d in enumerate(out.decls):
+        assert d.name == f"test_pairs::parametrize::a_b::row{i}", d.name
 
 
 def test_pattern4_parametrize_skips_non_literal_row():
@@ -396,6 +397,114 @@ def test_pattern4_parametrize_skips_non_literal_row():
     assert out.parametrize_lifted == 0
     assert "test_dyn" in out.claimed_tests
     assert any("parametrize" in w.reason for w in out.warnings)
+
+
+# Per-row discrimination tests — soundness gate for Pattern 4.
+#
+# The key soundness crux: each row is an INDEPENDENT test instance.  A body
+# with a free non-param var ``k`` gets per-row SAT contracts (k is free in
+# both).  If the lifter incorrectly conjoins rows into a single formula,
+# ``eq(k,1) ∧ eq(k,2)`` is UNSAT — a false-refuse on a consistent test.
+# These tests are written RED-first against the and-conjunction
+# implementation to serve as the permanent soundness gate.
+
+
+def test_pattern4_per_row_free_nonparam_var_yields_one_decl_per_row():
+    # DISCRIMINATION (false-refuse gate): body references free var k (not param).
+    # Per-row: row v=1 -> eq(k,1) SAT; row v=2 -> eq(k,2) SAT.
+    # And-conjunction: eq(k,1) ^ eq(k,2) -> UNSAT -> false-REFUSE.
+    # This test confirms per-row structure: 2 decls, each SAT independently.
+    out = _lift("""
+        import pytest
+
+        @pytest.mark.parametrize("v", [1, 2])
+        def test_k_eq_v(v):
+            assert k == v
+    """)
+    assert out.parametrize_lifted == 1, f"warnings: {out.warnings}"
+    # Must produce one decl per row (not a single and-conjunction).
+    assert len(out.decls) == 2, (
+        f"expected 2 per-row decls, got {len(out.decls)}: {[d.name for d in out.decls]}"
+    )
+    names = {d.name for d in out.decls}
+    assert "test_k_eq_v::parametrize::v::row0" in names, names
+    assert "test_k_eq_v::parametrize::v::row1" in names, names
+    # Each row's inv is a single atomic (not a conjunction).
+    for d in out.decls:
+        assert isinstance(d.inv, _Atomic), (
+            f"row decl {d.name!r} should be a single atomic, got {type(d.inv).__name__}"
+        )
+
+
+def test_pattern4_per_row_contradictory_single_row_is_refused():
+    # DISCRIMINATION: parametrize("v",[1,2]); assert v == 1
+    # Row v=1: eq(1,1) -> SAT (consistent row, proven).
+    # Row v=2: eq(2,1) -> UNSAT (contradictory row, refused).
+    # The lifter must emit two separate decls so each row's verdict is independent.
+    out = _lift("""
+        import pytest
+
+        @pytest.mark.parametrize("v", [1, 2])
+        def test_eq_one(v):
+            assert v == 1
+    """)
+    assert out.parametrize_lifted == 1, f"warnings: {out.warnings}"
+    assert len(out.decls) == 2, (
+        f"expected 2 per-row decls, got {len(out.decls)}: {[d.name for d in out.decls]}"
+    )
+    names = {d.name for d in out.decls}
+    assert "test_eq_one::parametrize::v::row0" in names, names
+    assert "test_eq_one::parametrize::v::row1" in names, names
+    by_name = {d.name: d for d in out.decls}
+    # row0: v=1 -> eq(num(1), num(1)) - both args are concrete ints
+    row0 = by_name["test_eq_one::parametrize::v::row0"].inv
+    assert isinstance(row0, _Atomic)
+    assert row0.name == "="
+    assert isinstance(row0.args[0], _ConstInt) and row0.args[0].value == 1
+    assert isinstance(row0.args[1], _ConstInt) and row0.args[1].value == 1
+    # row1: v=2 -> eq(num(2), num(1))
+    row1 = by_name["test_eq_one::parametrize::v::row1"].inv
+    assert isinstance(row1, _Atomic)
+    assert row1.name == "="
+    assert isinstance(row1.args[0], _ConstInt) and row1.args[0].value == 2
+    assert isinstance(row1.args[1], _ConstInt) and row1.args[1].value == 1
+
+
+def test_pattern4_per_row_all_consistent_yields_per_row_decls():
+    # DISCRIMINATION: parametrize("v",[1,2]); assert v > 0
+    # Both rows SAT.  Per-row: two independent contracts both consistent.
+    out = _lift("""
+        import pytest
+
+        @pytest.mark.parametrize("v", [1, 2])
+        def test_pos(v):
+            assert v > 0
+    """)
+    assert out.parametrize_lifted == 1, f"warnings: {out.warnings}"
+    assert len(out.decls) == 2, (
+        f"expected 2 per-row decls, got {len(out.decls)}: {[d.name for d in out.decls]}"
+    )
+    names = {d.name for d in out.decls}
+    assert "test_pos::parametrize::v::row0" in names, names
+    assert "test_pos::parametrize::v::row1" in names, names
+
+
+def test_pattern4_per_row_multi_param_yields_per_row_decls():
+    # DISCRIMINATION: multi-param parametrize, each row independent.
+    out = _lift("""
+        import pytest
+
+        @pytest.mark.parametrize("a, b", [(1, 2), (3, 4)])
+        def test_distinct(a, b):
+            assert a != b
+    """)
+    assert out.parametrize_lifted == 1, f"warnings: {out.warnings}"
+    assert len(out.decls) == 2, (
+        f"expected 2 per-row decls, got {len(out.decls)}: {[d.name for d in out.decls]}"
+    )
+    names = {d.name for d in out.decls}
+    assert "test_distinct::parametrize::a_b::row0" in names, names
+    assert "test_distinct::parametrize::a_b::row1" in names, names
 
 
 # --- Pattern 5: value-scope assertions -----------------------------------

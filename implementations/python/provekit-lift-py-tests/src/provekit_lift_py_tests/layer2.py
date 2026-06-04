@@ -42,8 +42,12 @@
 #       @pytest.mark.parametrize("v", [1, 2, 3])
 #       def test_x(v):
 #           assert v >= 0
-#   Lift to: ONE memento, body = and-conjunction over each row substitution.
-#   Memento name: ``<test>::parametrize::<param-names>``.
+#   Lift to: ONE ContractDecl per row, each checked independently.
+#   Memento name: ``<test>::parametrize::<param-names>::row<i>``.
+#   SOUNDNESS: pytest runs each row as an independent test instance; a free
+#   non-param variable k in the body must not be tied across rows.
+#   Conjoining rows into a single formula (eq(k,1) ^ eq(k,2)) would be UNSAT
+#   (a false-refuse) when k is free.  Per-row contracts are the correct model.
 #
 #   PATTERN 5 - callsite value-scope facts plus implications
 #       def test_parse():
@@ -1802,24 +1806,7 @@ def _classify_parametrize(
         )
         return
 
-    # Substitute each row.
-    row_atoms: List[Formula] = []
-    for row in pmark.rows:
-        f = raw
-        for pname, arg_node in zip(pmark.param_names, row):
-            try:
-                arg_term = _translate_term(arg_node)
-            except ValueError as e:
-                out.parametrize_skipped += 1
-                out.warnings.append(
-                    LiftWarning(source_path, test_name,
-                                f"layer2 parametrize: row arg not liftable: {e}")
-                )
-                return
-            f = subst_var_in_formula(f, pname, arg_term)
-        row_atoms.append(f)
-
-    if not row_atoms:
+    if not pmark.rows:
         out.parametrize_skipped += 1
         out.warnings.append(
             LiftWarning(source_path, test_name,
@@ -1827,10 +1814,41 @@ def _classify_parametrize(
         )
         return
 
-    folded: Formula = and_(row_atoms) if len(row_atoms) > 1 else row_atoms[0]
+    # SOUNDNESS: emit ONE contract per row, each checked independently.
+    #
+    # Each parametrize row is an INDEPENDENT test instance in pytest: pytest
+    # invokes the test function once per row with that row's values substituted
+    # for the parameters.  Conjoining row-substituted formulas into a single
+    # contract is UNSOUND: a body that references a free non-param variable k
+    # with `assert k == v` produces eq(k,1) ^ eq(k,2) across rows v=1,v=2,
+    # which is UNSAT (a false-refuse on a consistent test case).
+    #
+    # Correct model: substitute each row's values independently, emit one
+    # ContractDecl per row named ``<test>::parametrize::<params>::row<i>``.
+    # The verifier checks each row's contract independently; a row whose
+    # substituted formula is UNSAT is REFUSED (that row's test is wrong),
+    # but other rows remain unaffected.
     suffix = "_".join(pmark.param_names)
-    memento_name = f"{test_name}::parametrize::{suffix}"
-    out.decls.append(ContractDecl(name=memento_name, inv=folded))
+    for row_idx, row in enumerate(pmark.rows):
+        f = raw
+        failed = False
+        for pname, arg_node in zip(pmark.param_names, row):
+            try:
+                arg_term = _translate_term(arg_node)
+            except ValueError as e:
+                out.parametrize_skipped += 1
+                out.warnings.append(
+                    LiftWarning(source_path, test_name,
+                                f"layer2 parametrize: row {row_idx} arg not liftable: {e}")
+                )
+                failed = True
+                break
+            f = subst_var_in_formula(f, pname, arg_term)
+        if failed:
+            return
+        memento_name = f"{test_name}::parametrize::{suffix}::row{row_idx}"
+        out.decls.append(ContractDecl(name=memento_name, inv=f))
+
     out.lifted += 1
     out.parametrize_lifted += 1
 

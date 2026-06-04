@@ -20,8 +20,11 @@ byte-identical to the Rust, TypeScript, and C++ canonicalizers.
    `and`-conjunction memento at `<test>`. <2 atoms releases the claim back
    to Layer 0.
 4. **`@pytest.mark.parametrize` over a literal arg list.** Each row is
-   substituted into the body, then folded to `and(...)`. Memento name:
-   `<test>::parametrize::<param-names>`.
+   substituted independently into the body; one `ContractDecl` is emitted
+   per row (pytest runs each row as an independent test instance). Memento
+   names: `<test>::parametrize::<param-names>::row0`,
+   `<test>::parametrize::<param-names>::row1`, etc. Non-literal rows (e.g.
+   computed values, `pytest.param(...)`) are loudly refused.
 5. **Callsite value-scope facts plus implications.** Local assignments and
    simple `if/else` branches around pytest/unittest assertions become
    callsite-owned contracts named `<callee>@<file>:<line>:<col>::facts`
