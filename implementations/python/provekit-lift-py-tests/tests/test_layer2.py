@@ -194,11 +194,14 @@ def test_pattern3_lifts_to_and_conjunction():
 
 
 def test_pattern3_releases_claim_with_only_one_atom():
-    # f(1) is liftable; "hi".upper() is not. 1 < 2 -> release claim.
+    # f(1) is liftable; assert with a walrus operator is not. 1 < 2 -> release claim.
+    # NOTE: ``"hi".upper() == "HI"`` is now LIFTABLE (method-call-result, Form 3).
+    # Use a walrus-operator assert (not liftable in any form) to exercise the
+    # "only 1 of 2 atoms lifted → release" path.
     out = _lift("""
         def test_mixed():
             assert f(1) == 1
-            assert "hi".upper() == "HI"
+            assert (y := f(2)) == 2
     """)
     assert out.characterization_lifted == 0
     assert "test_mixed" not in out.claimed_tests
@@ -1150,19 +1153,17 @@ def test_mixed_body_unliftable_assert_warned_but_rest_lifts():
 
 
 def test_mixed_body_pure_opaque_all_unliftable_claims_with_warning():
-    # When ALL asserts are unliftable (e.g. all are method-calls that have a
-    # non-simple-name call target), zero contracts are produced but the test is
-    # still CLAIMED so Layer 0 can pick it up.  A warning is emitted explaining
-    # the skip.
+    # When ALL asserts are unliftable, zero contracts are produced but the test
+    # is still CLAIMED so Layer 0 can pick it up.  A warning is emitted.
     #
-    # NOTE: ``parsed['key'] == 'value'`` is now LIFTABLE (subscript-index
-    # support).  Use a method-call assert (``parsed.keys()`` is a call with an
-    # attribute func, not liftable) to keep this test exercising the all-
-    # unliftable path.
+    # NOTE: ``parsed.keys() == {'a', 'b'}`` is now LIFTABLE (Form 2: set literal
+    # on RHS, Form 3: method-call-result on LHS).  To keep this test exercising
+    # the all-unliftable path we need an assert whose expression cannot be translated
+    # at all — a walrus (named expression) inside the assert is not liftable.
     out = _lift("""
         def test_all_unliftable():
             parsed = json_parse(raw)
-            assert parsed.keys() == {'a', 'b'}
+            assert (k := parsed.key) is not None and (k := other.key) is not None
     """)
     # Nothing liftable → 0 contracts but claimed + warned.
     assert out.mixed_body_lifted == 0, f"unexpected lift, decls: {[d.name for d in out.decls]}"
@@ -1655,4 +1656,416 @@ def test_truthiness_arg_carrying_different_args_not_contradictory():
     # arg[0] (receiver) must be the same (same h).
     assert pos_atom.args[0] == neg_atom.args[0], (
         f"arg[0] (receiver) must be same h: pos={pos_atom.args[0]!r}, neg={neg_atom.args[0]!r}"
+    )
+
+
+# ---------------------------------------------------------------------------
+# Form 1: CHAINED COMPARE  ``assert a == b == c``
+# ---------------------------------------------------------------------------
+#
+# Python semantics: ``a == b == c`` is ``(a == b) and (b == c)`` (with b
+# evaluated once).  We lift to and_([eq(a,b), eq(b,c)]) — a CONJUNCTION of
+# the pairwise comparisons.  Generalises to n-way and mixed ops.
+#
+# DISCRIMINATION:
+#   CONSISTENT chain  (a == b == 42 with a=b free) → lifted → PROVEN
+#   CONTRADICTORY chain (x == 1 == 2) → lifted conjunction is UNSAT → REFUSED
+#
+# ---------------------------------------------------------------------------
+
+
+def test_chained_compare_consistent_lifts():
+    # CONSISTENT 3-way chain: ``assert a == b == 42``
+    # Lifts to: and_([eq(a,b), eq(b,num(42))]) — satisfiable → PROVEN.
+    # Uses 2-assert body so Pattern 3 / characterization handles it.
+    out = _lift("""
+        def test_chain_consistent(a, b, c):
+            assert a == b == 42
+            assert c >= 0
+    """)
+    assert out.lifted == 1, f"expected 1 lifted, warnings: {[w.reason for w in out.warnings]}"
+    inv = out.decls[0].inv
+    # Must be an and-conjunction (chain contributes 2 eq atoms; c>=0 contributes 1).
+    assert isinstance(inv, _Connective) and inv.kind == "and", (
+        f"expected and-conjunction, got: {inv!r}"
+    )
+    atoms = _flatten_and(inv)
+    eq_atoms = [a for a in atoms if isinstance(a, _Atomic) and a.name == "="]
+    assert len(eq_atoms) == 2, f"expected 2 eq atoms from chain, got: {eq_atoms}"
+    # Pair 0: eq(a, b); Pair 1: eq(b, 42)
+    assert isinstance(eq_atoms[0].args[0], _Var) and eq_atoms[0].args[0].name == "a"
+    assert isinstance(eq_atoms[0].args[1], _Var) and eq_atoms[0].args[1].name == "b"
+    assert isinstance(eq_atoms[1].args[0], _Var) and eq_atoms[1].args[0].name == "b"
+    assert isinstance(eq_atoms[1].args[1], _ConstInt) and eq_atoms[1].args[1].value == 42
+
+
+def test_chained_compare_contradictory_lifts_as_conjunction():
+    # CONTRADICTION: ``assert x == 1 == 2``
+    # Lifts to: and_([eq(x,1), eq(1,2)]) — eq(1,2) is False in any Int model → UNSAT → REFUSED.
+    # We verify here only that it LIFTS (not silently skipped), producing a conjunction.
+    # The prove-step REFUSAL is the real receipt; this test guards the lift side.
+    # Uses 2-assert body so Pattern 3 / characterization handles it.
+    out = _lift("""
+        def test_chain_contradictory(x, y):
+            assert x == 1 == 2
+            assert y >= 0
+    """)
+    assert out.lifted == 1, f"expected 1 lifted (contradiction must lift, not silently skip), warnings: {[w.reason for w in out.warnings]}"
+    inv = out.decls[0].inv
+    assert isinstance(inv, _Connective) and inv.kind == "and", (
+        f"expected and-conjunction for contradictory chain, got: {inv!r}"
+    )
+    atoms = _flatten_and(inv)
+    eq_atoms = [a for a in atoms if isinstance(a, _Atomic) and a.name == "="]
+    # Pair 0: eq(x, 1); Pair 1: eq(1, 2) — both must be present.
+    assert len(eq_atoms) == 2, f"expected 2 eq atoms from chain, got: {eq_atoms}"
+    # eq(1, 2) must be present — this is the UNSAT witness.
+    num_pairs = [(a.args[0], a.args[1]) for a in eq_atoms
+                 if isinstance(a.args[0], _ConstInt) and isinstance(a.args[1], _ConstInt)]
+    assert num_pairs, f"expected eq(1,2) in atoms, got: {eq_atoms}"
+
+
+def test_chained_compare_mixed_ops_lifts():
+    # MIXED OPS: ``assert a < b <= c`` → and_([lt(a,b), lte(b,c)])
+    # Uses 2-assert body so Pattern 3 handles it.
+    out = _lift("""
+        def test_chain_mixed(a, b, c, d):
+            assert a < b <= c
+            assert d == 0
+    """)
+    assert out.lifted == 1, f"warnings: {[w.reason for w in out.warnings]}"
+    inv = out.decls[0].inv
+    assert isinstance(inv, _Connective) and inv.kind == "and"
+    atoms = _flatten_and(inv)
+    lt_atoms = [a for a in atoms if isinstance(a, _Atomic) and a.name == "<"]
+    lte_atoms = [a for a in atoms if isinstance(a, _Atomic) and a.name == "≤"]
+    assert lt_atoms, f"expected < atom, got: {atoms}"
+    assert lte_atoms, f"expected ≤ atom, got: {atoms}"
+
+
+def test_chained_compare_four_way_lifts():
+    # 4-WAY: ``assert a == b == c == d`` → and_([eq(a,b), eq(b,c), eq(c,d)])
+    # Uses 2-assert body so Pattern 3 handles it.
+    out = _lift("""
+        def test_chain_four(a, b, c, d, e):
+            assert a == b == c == d
+            assert e >= 0
+    """)
+    assert out.lifted == 1, f"warnings: {[w.reason for w in out.warnings]}"
+    inv = out.decls[0].inv
+    atoms = _flatten_and(inv)
+    eq_atoms = [a for a in atoms if isinstance(a, _Atomic) and a.name == "="]
+    assert len(eq_atoms) == 3, f"expected 3 eq atoms for 4-way chain, got: {eq_atoms}"
+
+
+def test_chained_compare_in_characterization_body():
+    # Chained compare inside a multi-assert body (Pattern 3 / characterization).
+    # ``assert a == b == CONST; assert c == d`` → both lift → conjunction of 3 atoms total.
+    out = _lift("""
+        def test_multi_with_chain(a, b, c, d):
+            assert a == b == 99
+            assert c == d
+    """)
+    assert out.lifted == 1, f"warnings: {[w.reason for w in out.warnings]}"
+    inv = out.decls[0].inv
+    atoms = _flatten_and(inv)
+    eq_atoms = [a for a in atoms if isinstance(a, _Atomic) and a.name == "="]
+    # Chain contributes 2; the plain eq contributes 1 → 3 total.
+    assert len(eq_atoms) == 3, f"expected 3 eq atoms, got: {eq_atoms}"
+
+
+# ---------------------------------------------------------------------------
+# Form 2: DICT / SET LITERAL EQUALITY  ``assert x == {'k': 'v'}``
+# ---------------------------------------------------------------------------
+#
+# Model: the dict/set literal is an opaque constant keyed by its CANONICAL
+# string representation (sorted keys for dicts, sorted elements for sets).
+# We use ``str_const(canonical)`` so the Rust encoder emits ``strlit_<hash>``
+# — two structurally-different literals → different hashes → distinct consts
+# → contradictions fire UNSAT; identical literals → same hash → same const
+# → contradictions still fire UNSAT.
+#
+# SOUNDNESS (the only direction that matters):
+#   different literals MUST be distinct → if x==L1 ∧ x==L2 and L1≠L2 → UNSAT.
+#   same literal twice → same const → x==L ∧ x==L is SAT → PROVEN.
+#   non-translatable contents (nested calls, computed values) → LOUD REFUSE.
+#
+# ---------------------------------------------------------------------------
+
+
+def test_dict_literal_eq_lifts():
+    # ``assert a == {'k': 'v'}`` → eq(a, str_const(canonical_dict_repr))
+    # Uses 2-assert body so Pattern 3 / characterization handles it.
+    out = _lift("""
+        def test_dict_eq(a, b):
+            assert a == {'k': 'v'}
+            assert b >= 0
+    """)
+    assert out.lifted == 1, f"expected 1 lifted, warnings: {[w.reason for w in out.warnings]}"
+    inv = out.decls[0].inv
+    atoms = _flatten_and(inv)
+    eq_atoms = [a for a in atoms if isinstance(a, _Atomic) and a.name == "="]
+    assert eq_atoms, f"expected eq atom for dict literal, got: {atoms}"
+    # RHS must be a _ConstStr (the canonical representation).
+    rhs_terms = [a.args[1] for a in eq_atoms if isinstance(a.args[1], _ConstStr)]
+    assert rhs_terms, f"expected _ConstStr on RHS, got args: {[(a.args[0], a.args[1]) for a in eq_atoms]}"
+
+
+def test_set_literal_eq_lifts():
+    # ``assert a == {1, 2}`` — the set literal on RHS → opaque str_const.
+    # Note: in Python AST, ``{1, 2}`` is ast.Set, not ast.Dict.
+    # Uses 2-assert body so Pattern 3 / characterization handles it.
+    out = _lift("""
+        def test_set_eq(a, b):
+            assert a == {1, 2}
+            assert b >= 0
+    """)
+    assert out.lifted == 1, f"expected 1 lifted, warnings: {[w.reason for w in out.warnings]}"
+    inv = out.decls[0].inv
+    atoms = _flatten_and(inv)
+    eq_atoms = [a for a in atoms if isinstance(a, _Atomic) and a.name == "="]
+    assert eq_atoms, f"expected eq atom for set literal, got: {atoms}"
+    rhs_terms = [a.args[1] for a in eq_atoms if isinstance(a.args[1], _ConstStr)]
+    assert rhs_terms, f"expected _ConstStr on RHS for set literal"
+
+
+def test_dict_literal_discrimination_different_content_distinct():
+    # DISCRIMINATION: ``assert x == {'k': 1}; assert x == {'k': 2}``
+    # Two DIFFERENT dict literals → two different str_const values → different
+    # strlit_<hash> SMT consts → x == L1 ∧ x == L2 with L1 ≠ L2 → UNSAT → REFUSED.
+    # This test verifies the LIFTED representation has DISTINCT RHS terms.
+    out = _lift("""
+        def test_dict_discrimination(x):
+            assert x == {'k': 1}
+            assert x == {'k': 2}
+    """)
+    assert out.lifted == 1, f"expected 1 lifted, warnings: {[w.reason for w in out.warnings]}"
+    inv = out.decls[0].inv
+    atoms = _flatten_and(inv)
+    eq_atoms = [a for a in atoms if isinstance(a, _Atomic) and a.name == "="]
+    const_rhs = [a.args[1] for a in eq_atoms if isinstance(a.args[1], _ConstStr)]
+    assert len(const_rhs) == 2, f"expected 2 ConstStr RHS terms, got: {const_rhs}"
+    # CRITICAL: the two constants must be DISTINCT so the SMT solver sees the contradiction.
+    assert const_rhs[0] != const_rhs[1], (
+        f"different dict literals must produce distinct str_const values; "
+        f"got {const_rhs[0]!r} == {const_rhs[1]!r} (falsePass regression)"
+    )
+
+
+def test_dict_literal_discrimination_same_content_equal():
+    # CONSISTENT: ``assert x == {'k': 1}; assert x == {'k': 1}`` (identical literal twice).
+    # Same content → same str_const → same strlit_<hash> → SAT → PROVEN.
+    out = _lift("""
+        def test_dict_same(x):
+            assert x == {'k': 1}
+            assert x == {'k': 1}
+    """)
+    assert out.lifted == 1, f"expected 1 lifted, warnings: {[w.reason for w in out.warnings]}"
+    inv = out.decls[0].inv
+    atoms = _flatten_and(inv)
+    eq_atoms = [a for a in atoms if isinstance(a, _Atomic) and a.name == "="]
+    const_rhs = [a.args[1] for a in eq_atoms if isinstance(a.args[1], _ConstStr)]
+    assert len(const_rhs) == 2, f"expected 2 ConstStr RHS terms for same-literal pair"
+    # CRITICAL: the two constants must be EQUAL (same content → same str_const).
+    assert const_rhs[0] == const_rhs[1], (
+        f"identical dict literals must produce equal str_const values; "
+        f"got {const_rhs[0]!r} != {const_rhs[1]!r}"
+    )
+
+
+def test_dict_literal_nontranslatable_value_loudly_refused():
+    # LOUD REFUSE: dict literal with a computed/untranslatable value.
+    # ``assert x == {'k': some_call()}`` → cannot establish content identity → REFUSED.
+    # Uses 2-assert body so Pattern 3 tries both; the dict assert is skipped with warning.
+    out = _lift("""
+        def test_dict_nontranslatable(x, y):
+            assert x == {'k': some_call()}
+            assert y >= 0
+    """)
+    # The non-translatable dict assert must NOT contribute a lifted contract —
+    # only the y>=0 assert may be lifted (or characterization falls back to 1 atom → releases).
+    # The critical invariant: no dict-equality contract with a computed value should appear.
+    dict_eq_contracts = [
+        d for d in out.decls
+        if any(
+            isinstance(a, _Atomic) and a.name == "=" and isinstance(a.args[1], _ConstStr)
+            for a in _flatten_and(d.inv)
+        )
+    ]
+    assert not dict_eq_contracts, (
+        f"dict literal with computed value MUST NOT produce an eq(_ConstStr) contract; "
+        f"got: {[d.inv for d in dict_eq_contracts]}"
+    )
+    # A warning must be emitted for the non-translatable literal.
+    assert any("dict" in w.reason.lower() or "set" in w.reason.lower() or
+               "not liftable" in w.reason.lower() or "literal" in w.reason.lower() or
+               "liftable" in w.reason.lower()
+               for w in out.warnings), (
+        f"expected a warning about non-translatable dict literal, got: {[w.reason for w in out.warnings]}"
+    )
+
+
+def test_set_literal_discrimination_different_content_distinct():
+    # DISCRIMINATION: ``assert x == {1, 2}; assert x == {1, 3}`` → DISTINCT consts → REFUSED.
+    out = _lift("""
+        def test_set_discrimination(x):
+            assert x == {1, 2}
+            assert x == {1, 3}
+    """)
+    assert out.lifted == 1, f"warnings: {[w.reason for w in out.warnings]}"
+    inv = out.decls[0].inv
+    atoms = _flatten_and(inv)
+    eq_atoms = [a for a in atoms if isinstance(a, _Atomic) and a.name == "="]
+    const_rhs = [a.args[1] for a in eq_atoms if isinstance(a.args[1], _ConstStr)]
+    assert len(const_rhs) == 2, f"expected 2 ConstStr RHS"
+    assert const_rhs[0] != const_rhs[1], "different set literals must be distinct (falsePass guard)"
+
+
+# ---------------------------------------------------------------------------
+# Form 3: METHOD-CALL-RESULT COMPARE  ``assert x.method(args) == y``
+# ---------------------------------------------------------------------------
+#
+# The call result is a VALUE on LHS/RHS of ==.  We model it as an opaque term:
+#   ``ctor('callval_<method>_a<n>', [recv_term, arg_terms...])``
+# where n = total arity (receiver + args).
+#
+# Identity rule (soundness):
+#   Same method name + same recv + same args → same frozen ctor term → EQUAL in SMT.
+#   Different method OR args → different ctor terms → INDEPENDENT.
+#
+# DISCRIMINATION:
+#   ``assert x.m() == 1; assert x.m() == 2`` → callval_m_a1(x)==1 ∧ callval_m_a1(x)==2
+#     → same ctor, both equated to distinct Int consts → UNSAT → REFUSED.
+#   ``assert x.m(p) == 1; assert x.m(q) == 2`` (p≠q) → different arg terms → independent.
+#
+# Keyword args / untranslatable args → LOUD REFUSE (raise ValueError in _translate_term).
+#
+# ---------------------------------------------------------------------------
+
+
+def test_method_call_result_eq_lifts():
+    # ``assert x.method() == 1`` → eq(ctor('callval_method_a1', [x]), num(1))
+    # Uses 2-assert body so Pattern 3 / characterization handles it.
+    out = _lift("""
+        def test_method_result(x, y):
+            assert x.method() == 1
+            assert y >= 0
+    """)
+    assert out.lifted == 1, f"expected 1 lifted, warnings: {[w.reason for w in out.warnings]}"
+    inv = out.decls[0].inv
+    atoms = _flatten_and(inv)
+    eq_atoms = [a for a in atoms if isinstance(a, _Atomic) and a.name == "="]
+    assert eq_atoms, f"expected eq atom for method-call-result, got: {atoms}"
+    # LHS must be a _Ctor with 'callval' in the name.
+    callval_ctors = [
+        a.args[0] for a in eq_atoms
+        if isinstance(a.args[0], _Ctor) and "callval" in a.args[0].name
+    ]
+    assert callval_ctors, f"expected callval _Ctor on LHS, got atoms: {eq_atoms}"
+    cval = callval_ctors[0]
+    # Arity: method() with receiver → n=1 arity in ctor.
+    assert len(cval.args) == 1, f"expected 1 arg (receiver only), got: {cval.args}"
+    assert isinstance(cval.args[0], _Var) and cval.args[0].name == "x"
+
+
+def test_method_call_result_with_arg_lifts():
+    # ``assert x.method(k) == 'v'`` → eq(ctor('callval_method_a2', [x, k]), str_const('v'))
+    # Uses 2-assert body so Pattern 3 handles it.
+    out = _lift("""
+        def test_method_with_arg(x, k, z):
+            assert x.method(k) == 'v'
+            assert z >= 0
+    """)
+    assert out.lifted == 1, f"warnings: {[w.reason for w in out.warnings]}"
+    inv = out.decls[0].inv
+    atoms = _flatten_and(inv)
+    eq_atoms = [a for a in atoms if isinstance(a, _Atomic) and a.name == "="]
+    callval_ctors = [
+        a.args[0] for a in eq_atoms
+        if isinstance(a.args[0], _Ctor) and "callval" in a.args[0].name
+    ]
+    assert callval_ctors, f"expected callval _Ctor: {eq_atoms}"
+    cval = callval_ctors[0]
+    # Arity 2: receiver + 1 arg.
+    assert len(cval.args) == 2, f"expected 2 args (receiver + k), got: {cval.args}"
+
+
+def test_method_call_result_discrimination_same_recv_same_args_contradicts():
+    # DISCRIMINATION: same recv, same method, same args, different RHS consts → REFUSED.
+    # ``assert x.m() == 1; assert x.m() == 2`` → same callval_m_a1(x) Ctor → UNSAT.
+    out = _lift("""
+        def test_method_contradiction(x):
+            assert x.m() == 1
+            assert x.m() == 2
+    """)
+    assert out.lifted == 1, f"expected 1 lifted, warnings: {[w.reason for w in out.warnings]}"
+    inv = out.decls[0].inv
+    atoms = _flatten_and(inv)
+    eq_atoms = [a for a in atoms if isinstance(a, _Atomic) and a.name == "="]
+    callval_lhs = [
+        a.args[0] for a in eq_atoms
+        if isinstance(a.args[0], _Ctor) and "callval" in a.args[0].name
+    ]
+    assert len(callval_lhs) == 2, f"expected 2 callval LHS terms, got: {callval_lhs}"
+    # CRITICAL: the two callval terms must be EQUAL (same recv, same args) → same ctor → UNSAT.
+    assert callval_lhs[0] == callval_lhs[1], (
+        f"same method call on same receiver must produce equal ctor terms for contradiction to fire; "
+        f"got {callval_lhs[0]!r} != {callval_lhs[1]!r} (falsePass regression)"
+    )
+    # RHS constants must be DISTINCT.
+    rhs_consts = [a.args[1] for a in eq_atoms if isinstance(a.args[1], _ConstInt)]
+    assert len(rhs_consts) == 2 and rhs_consts[0] != rhs_consts[1], (
+        f"expected distinct Int RHS constants, got: {rhs_consts}"
+    )
+
+
+def test_method_call_result_discrimination_different_args_independent():
+    # INDEPENDENT: same method, same recv, DIFFERENT args → different ctor terms → SAT.
+    # ``assert x.m(p) == 1; assert x.m(q) == 2`` must NOT contradict (p and q are free vars).
+    out = _lift("""
+        def test_method_different_args(x, p, q):
+            assert x.m(p) == 1
+            assert x.m(q) == 2
+    """)
+    assert out.lifted == 1, f"warnings: {[w.reason for w in out.warnings]}"
+    inv = out.decls[0].inv
+    atoms = _flatten_and(inv)
+    eq_atoms = [a for a in atoms if isinstance(a, _Atomic) and a.name == "="]
+    callval_lhs = [
+        a.args[0] for a in eq_atoms
+        if isinstance(a.args[0], _Ctor) and "callval" in a.args[0].name
+    ]
+    assert len(callval_lhs) == 2, f"expected 2 callval terms"
+    # CRITICAL: different args → DIFFERENT ctor terms → independent (NOT a contradiction).
+    assert callval_lhs[0] != callval_lhs[1], (
+        f"different args must produce distinct ctor terms; "
+        f"got same {callval_lhs[0]!r} (would miss contradiction between independent calls)"
+    )
+
+
+def test_method_call_result_keyword_args_loudly_refused():
+    # LOUD REFUSE: keyword args in the comparison call.
+    # ``assert x.method(k=1) == 1`` → LOUD REFUSE (cannot order-stably translate kwargs).
+    # Uses 2-assert body; the kwarg assert is skipped with a warning; the other lifts.
+    out = _lift("""
+        def test_method_kwarg(x, y):
+            assert x.method(k=1) == 1
+            assert y >= 0
+    """)
+    # A callval_method contract with kwarg MUST NOT appear.
+    kwarg_method_contracts = [
+        d for d in out.decls
+        if any(
+            isinstance(a, _Atomic) and a.name == "=" and isinstance(a.args[0], _Ctor) and "callval_method" in a.args[0].name
+            for a in _flatten_and(d.inv)
+        )
+    ]
+    assert not kwarg_method_contracts, (
+        f"method call with kwargs MUST NOT be silently lifted; got: {[d.inv for d in kwarg_method_contracts]}"
+    )
+    # A warning must be emitted about the non-liftable kwarg call.
+    assert any("kwarg" in w.reason.lower() or "keyword" in w.reason.lower() or
+               "not liftable" in w.reason.lower()
+               for w in out.warnings), (
+        f"expected warning about keyword args, got: {[w.reason for w in out.warnings]}"
     )

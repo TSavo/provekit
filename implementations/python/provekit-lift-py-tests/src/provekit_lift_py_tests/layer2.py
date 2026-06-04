@@ -575,12 +575,106 @@ def _translate_subscript_term(node: ast.Subscript, base_term: Term) -> Term:
     return ctor("subscript", [base_term, key_term])
 
 
+def _callval_head(method: str, arity: int) -> str:
+    """Build an ASCII-safe, arity-stable ctor name for a method-call-result term.
+
+    Shape: ``callval_<method>_a<arity>`` where ``<method>`` has non-alphanumeric
+    chars replaced by ``_``, and ``<arity>`` is the total number of ctor args
+    (receiver is arg 0).
+
+    Encoding arity in the name ensures that calls with different arities
+    (``x.m()`` vs ``x.m(k)``) produce different ctor heads and therefore
+    different SMT declarations, preventing ill-sorted ctor applications.
+    """
+    safe = "".join(c if (c.isascii() and c.isalnum()) else "_" for c in method)
+    return f"callval_{safe}_a{arity}"
+
+
+def _translate_dict_set_literal_term(node: ast.expr) -> Term:
+    """Translate a dict or set literal to an opaque ``str_const`` keyed by its
+    canonical content.
+
+    SOUNDNESS RULE: two structurally-different literals MUST produce DISTINCT
+    str_const values (different strings → different strlit_<hash> SMT consts →
+    z3 can distinguish them → ``x == L1 ∧ x == L2`` with L1≠L2 is UNSAT →
+    REFUSED).  Identical literals produce the SAME str_const → SAT → PROVEN.
+
+    Content restriction: every key and value in the literal must itself be a
+    literal leaf (int / str / bool / None).  Non-literal contents (nested
+    calls, computed keys/values) LOUDLY REFUSE via ValueError — we cannot
+    establish content identity without evaluating the expression at lift time.
+
+    Canonical form:
+      - dict: sorted by key repr, ``{repr(k): repr(v), ...}``
+      - set:  sorted element reprs, ``{repr(e), ...}``
+    Both are then serialized as a deterministic string used as the str_const
+    payload.
+    """
+    if isinstance(node, ast.Dict):
+        items: list = []
+        for k, v in zip(node.keys, node.values):
+            if k is None:
+                # dict unpacking (**other) inside dict literal — not liftable
+                raise ValueError(
+                    "dict literal with unpacking (**expr) is not liftable "
+                    "(cannot establish content identity at lift time)"
+                )
+            k_val = _literal_leaf_value(k)
+            v_val = _literal_leaf_value(v)
+            items.append((k_val, v_val))
+        # Sort by key repr for deterministic canonical form.
+        items.sort(key=lambda kv: repr(kv[0]))
+        canonical = "dict:" + repr(dict(items))
+        return str_const(canonical)
+
+    if isinstance(node, ast.Set):
+        elts_raw = []
+        for el in node.elts:
+            elts_raw.append(_literal_leaf_value(el))
+        # Sort elements by repr for deterministic canonical form (set is unordered).
+        # CRITICAL: repr(set(...)) is hash-randomized for strings in CPython, so we
+        # MUST NOT use repr(set(elts)) here — it produces a different string each
+        # process invocation, breaking content-addressing and Δ=0 determinism.
+        # Instead: deduplicate (matching Python set semantics), then sort by repr.
+        unique_elts = list({repr(e): e for e in elts_raw}.values())
+        unique_elts.sort(key=repr)
+        canonical = "set:[" + ", ".join(repr(e) for e in unique_elts) + "]"
+        return str_const(canonical)
+
+    raise ValueError("node is not a dict or set literal")
+
+
+def _literal_leaf_value(node: ast.expr):
+    """Extract the Python value from a literal leaf node (int/str/bool/None).
+
+    Raises ValueError for any non-literal or non-leaf node so the caller can
+    produce a LOUD REFUSE (never a silent lift of a computed value).
+    """
+    if isinstance(node, ast.Constant):
+        v = node.value
+        if isinstance(v, (int, str, bool)) or v is None:
+            return v
+        raise ValueError(
+            f"dict/set literal leaf has unsupported constant type {type(v)!r}; "
+            "only int / str / bool / None are liftable"
+        )
+    if isinstance(node, ast.UnaryOp) and isinstance(node.op, ast.USub):
+        if isinstance(node.operand, ast.Constant) and isinstance(node.operand.value, int) and not isinstance(node.operand.value, bool):
+            return -node.operand.value
+    raise ValueError(
+        f"dict/set literal element is not a literal leaf ({type(node).__name__}); "
+        "computed values are not liftable — cannot establish content identity at lift time"
+    )
+
+
 def _translate_term(node: ast.expr) -> Term:
     """Whitelist:
       - identifier (Var)
       - integer / string / bool literal
       - unary-neg of an integer literal
-      - single-arg call (Ctor with one arg)
+      - dict / set literal (opaque str_const keyed by canonical content)
+      - function call with simple-Name func (Ctor with args)
+      - method call ``recv.method(args)`` → ``ctor('callval_<method>_a<n>', [recv, args...])``
       - attribute access (Var named by dotted path, e.g. ``obj.attr``)
       - subscript-index with a literal key (``obj['key']``, ``obj[0]``)
     Everything else raises ValueError.
@@ -608,9 +702,34 @@ def _translate_term(node: ast.expr) -> Term:
         if isinstance(node.operand, ast.Constant) and isinstance(node.operand.value, int) and not isinstance(node.operand.value, bool):
             return num(-node.operand.value)
         raise ValueError("unary-neg only liftable on integer literals")
+    if isinstance(node, (ast.Dict, ast.Set)):
+        # Dict/set literal: opaque str_const keyed by canonical content.
+        # Non-literal contents → ValueError (LOUD REFUSE at call site).
+        return _translate_dict_set_literal_term(node)
     if isinstance(node, ast.Call):
+        if isinstance(node.func, ast.Attribute):
+            # Method call: ``recv.method(args)`` → callval ctor.
+            # LOUD REFUSE on keyword args: cannot order-stably translate.
+            method = node.func.attr
+            if node.keywords:
+                raise ValueError(
+                    f"method call `{method}` with keyword args is not liftable as a term "
+                    "(keyword args cannot be order-stably translated without knowing "
+                    "the function signature)"
+                )
+            recv_term = _translate_term(node.func.value)
+            arg_terms = [recv_term]
+            for i, arg in enumerate(node.args):
+                try:
+                    arg_terms.append(_translate_term(arg))
+                except ValueError as e:
+                    raise ValueError(
+                        f"method call `{method}` arg[{i}] not liftable as term: {e}"
+                    )
+            head = _callval_head(method, len(arg_terms))
+            return ctor(head, arg_terms)
         if not isinstance(node.func, ast.Name):
-            raise ValueError("call target must be a simple name")
+            raise ValueError("call target must be a simple name or method (recv.method)")
         if node.keywords:
             raise ValueError("call with kwargs is not liftable")
         if len(node.args) == 0:
@@ -626,7 +745,7 @@ def _translate_term(node: ast.expr) -> Term:
         # Sound because: same dotted path -> same Var name -> same-term
         # contradictions fire UNSAT; different paths remain independent.
         # Restriction: no method calls (``obj.method()``); those must go
-        # through the Call branch with a simple-Name func.
+        # through the Call branch with an Attribute func.
         obj_name = _dotted_attr_path(node)
         if obj_name is None:
             raise ValueError(
@@ -790,22 +909,51 @@ def _translate_truthiness_call_formula(
     )
 
 
+def _translate_chained_compare(node: ast.Compare, translate_term_fn) -> Formula:
+    """Translate an n-way chained comparison (``a == b == c``, ``a < b <= c``, etc.)
+    to a CONJUNCTION of pairwise comparisons.
+
+    Python semantics: ``a op1 b op2 c`` means ``(a op1 b) and (b op2 c)`` with
+    each intermediate operand evaluated once.  We model this exactly by
+    building pairwise (left_i, op_i, right_i) pairs and conjoining the results.
+
+    Generalises to n-way (any number of operators).  Mixed ops (``<``, ``<=``,
+    ``==``) are handled by the existing ``_comparison_from_ast_op`` dispatcher.
+
+    Sound because:
+      - The conjunction is SATISFIABLE iff all pairwise comparisons are
+        simultaneously satisfiable (correct model of Python chain semantics).
+      - A contradictory chain (e.g. ``x == 1 == 2``) produces
+        ``and_([eq(x,1), eq(1,2)])``; ``eq(1,2)`` is UNSAT in any Int model
+        → the conjunction is UNSAT → REFUSED.
+    """
+    operands: list = [node.left] + list(node.comparators)
+    pairs: list = []
+    for i, op in enumerate(node.ops):
+        l = translate_term_fn(operands[i])
+        r = translate_term_fn(operands[i + 1])
+        pairs.append(_comparison_from_ast_op(op, l, r))
+    return and_(pairs) if len(pairs) > 1 else pairs[0]
+
+
 def _translate_bool_expr(node: ast.expr) -> Formula:
-    """``assert <expr>``: only a single-comparison or truthiness-call
-    expression is liftable.
+    """``assert <expr>``: only a single-comparison, chained-comparison, or
+    truthiness-call expression is liftable.
 
     Handles:
-      - ``assert <comparison>``        -> comparison formula
+      - ``assert <comparison>``         -> comparison formula
+      - ``assert a op1 b op2 c ...``   -> conjunction of pairwise comparisons
       - ``assert <call>``              -> uninterpreted predicate atom (TRUTHINESS)
       - ``assert not <call>``          -> not_(predicate atom)
       - ``assert not <comparison>``    -> not_(comparison formula)
     """
     if isinstance(node, ast.Compare):
-        if len(node.ops) != 1 or len(node.comparators) != 1:
-            raise ValueError("only single comparisons are liftable (no chained `a < b < c`)")
-        l = _translate_term(node.left)
-        r = _translate_term(node.comparators[0])
-        return _comparison_from_ast_op(node.ops[0], l, r)
+        if len(node.ops) == 1:
+            l = _translate_term(node.left)
+            r = _translate_term(node.comparators[0])
+            return _comparison_from_ast_op(node.ops[0], l, r)
+        # Chained comparison: n >= 2 operators.
+        return _translate_chained_compare(node, _translate_term)
     if isinstance(node, ast.UnaryOp) and isinstance(node.op, ast.Not):
         inner = _translate_bool_expr(node.operand)
         return not_(inner)
@@ -1817,13 +1965,16 @@ def _translate_bool_expr_scoped(
     call_vars: Optional[Dict[Tuple[int, int], Term]] = None,
 ) -> Formula:
     if isinstance(node, ast.Compare):
-        if len(node.ops) != 1 or len(node.comparators) != 1:
-            raise ValueError("only single comparisons are liftable")
-        return _comparison_from_ast_op(
-            node.ops[0],
-            _translate_term_scoped(node.left, scope, call_vars),
-            _translate_term_scoped(node.comparators[0], scope, call_vars),
-        )
+        def _scoped_term_fn(n: ast.expr) -> Term:
+            return _translate_term_scoped(n, scope, call_vars)
+        if len(node.ops) == 1:
+            return _comparison_from_ast_op(
+                node.ops[0],
+                _scoped_term_fn(node.left),
+                _scoped_term_fn(node.comparators[0]),
+            )
+        # Chained comparison: n >= 2 operators.
+        return _translate_chained_compare(node, _scoped_term_fn)
     if isinstance(node, ast.BoolOp):
         operands = [
             _translate_bool_expr_scoped(v, scope, call_vars) for v in node.values
@@ -1863,9 +2014,38 @@ def _translate_term_scoped(
         return _translate_term(node)
     if isinstance(node, ast.UnaryOp) and isinstance(node.op, ast.USub):
         return _translate_term(node)
+    if isinstance(node, (ast.Dict, ast.Set)):
+        # Dict/set literal in value-scope: delegate to the content-hashed
+        # opaque-constant translator.  SSA scope does not affect the literal
+        # itself (its content is fully determined at lift time).
+        return _translate_dict_set_literal_term(node)
     if isinstance(node, ast.Call):
+        if isinstance(node.func, ast.Attribute):
+            # Method call as a TERM: ``recv.method(args)`` → callval ctor.
+            # SSA-key the receiver through the current scope so that
+            # ``out = f(); assert out.m() == 1; out = g(); assert out.m() == 2``
+            # produces distinct ctor terms (out$0 vs out$1 as receiver).
+            # LOUD REFUSE on keyword args.
+            method = node.func.attr
+            if node.keywords:
+                raise ValueError(
+                    f"method call `{method}` with keyword args is not liftable as a term "
+                    "(keyword args cannot be order-stably translated without knowing "
+                    "the function signature)"
+                )
+            recv_term = _translate_term_scoped(node.func.value, scope, call_vars)
+            arg_terms = [recv_term]
+            for i, arg in enumerate(node.args):
+                try:
+                    arg_terms.append(_translate_term_scoped(arg, scope, call_vars))
+                except ValueError as e:
+                    raise ValueError(
+                        f"method call `{method}` arg[{i}] not liftable as term: {e}"
+                    )
+            head = _callval_head(method, len(arg_terms))
+            return ctor(head, arg_terms)
         if not isinstance(node.func, ast.Name):
-            raise ValueError("call target must be a simple name")
+            raise ValueError("call target must be a simple name or method (recv.method)")
         if node.keywords:
             raise ValueError("call with kwargs is not liftable")
         key = _call_key(node)
